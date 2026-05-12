@@ -1,0 +1,53 @@
+{
+  "type": "json_schema",
+  "json_schema": {
+    "name": "self_reflection",
+    "strict": true,
+    "schema": {
+      "type": "object",
+      "properties": {
+        "outcome": {
+          "type": "string",
+          "description": "One of: success, partial, failure."
+        },
+        "cycles_used": {
+          "type": "integer",
+          "description": "How many cycles the run used."
+        },
+        "lessons": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Up to 5 concise lessons learned."
+        },
+        "actor_prompt_rewrite": {
+          "type": "string",
+          "description": "Full new actor system prompt. Must be same size or shorter than current. Empty string if no change."
+        },
+        "planner_prompt_rewrite": {
+          "type": "string",
+          "description": "Full new planner system prompt. Must be same size or shorter than current. Empty string if no change."
+        },
+        "actor_schema_rewrite": {
+          "type": "string",
+          "description": "Full new actor_schema.json content if the actor output format needs to change (add/remove/rename fields). Empty string if no change. Must be valid JSON schema."
+        },
+        "planner_schema_rewrite": {
+          "type": "string",
+          "description": "Full new planner_schema.json content if the planner output format needs to change. Empty string if no change. Must be valid JSON schema."
+        },
+        "patterns_that_worked": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Action patterns that succeeded."
+        },
+        "patterns_that_failed": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Action patterns that failed or caused loops."
+        }
+      },
+      "required": ["outcome", "cycles_used", "lessons", "actor_prompt_rewrite", "planner_prompt_rewrite", "actor_schema_rewrite", "planner_schema_rewrite", "patterns_that_worked", "patterns_that_failed"],
+      "additionalProperties": false
+    }
+  }
+}

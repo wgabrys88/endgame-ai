@@ -1,0 +1,27 @@
+{
+  "type": "json_schema",
+  "json_schema": {
+    "name": "planner_output",
+    "strict": true,
+    "schema": {
+      "type": "object",
+      "properties": {
+        "expand_hwnds": {
+          "type": "array",
+          "items": {"type": "integer"},
+          "description": "HWNDs to expand UI trees for. Focused window is auto-expanded — list ADDITIONAL ones only."
+        },
+        "done_so_far": {
+          "type": "string",
+          "description": "Factual progress summary from VERIFIED STATE. OK=success, ELEMENT_CHANGED=progress, NOT_FOUND=gone. Min 50 words."
+        },
+        "next_step": {
+          "type": "string",
+          "description": "Specific next action(s). Name exact elements, text, keys. If stuck, suggest different approach. Min 50 words."
+        }
+      },
+      "required": ["expand_hwnds", "done_so_far", "next_step"],
+      "additionalProperties": false
+    }
+  }
+}
