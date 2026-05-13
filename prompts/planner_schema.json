@@ -13,11 +13,11 @@
         },
         "done_so_far": {
           "type": "string",
-          "description": "Factual progress summary from VERIFIED STATE. OK=success, ELEMENT_CHANGED=progress, NOT_FOUND=gone. Min 50 words."
+          "description": "Factual progress from VERIFIED STATE. Mention phase (launch/interact/verify/done), what succeeded, what failed. Min 50 words."
         },
         "next_step": {
           "type": "string",
-          "description": "Specific next action(s). Name exact elements, text, keys. If stuck, suggest different approach. Min 50 words."
+          "description": "Specific next instruction. Name keys, text to type, or element type to find (not hardcoded IDs). If stuck, diagnose and suggest different approach. Min 50 words."
         }
       },
       "required": ["expand_hwnds", "done_so_far", "next_step"],
