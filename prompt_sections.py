@@ -131,8 +131,8 @@ def _fetch_data(ref: str, book: dict[str, dict] | None = None) -> str:
         cycle_num = int(m.group(1))
         return _get_cycle_actor(cycle_num)
 
-    # element_ID_value → value of element from current screen book
-    m = re.match(r"element_(\d+)_value", ref)
+    # element_ID_value or element_ID → value of element from current screen book
+    m = re.match(r"element_(\d+)(?:_value)?", ref)
     if m and book:
         eid = m.group(1)
         entry = book.get(eid)
