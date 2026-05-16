@@ -8,31 +8,44 @@
       "properties": {
         "observe": {
           "type": "string",
-          "description": "What you see on screen RIGHT NOW. Mention element names, window titles, values, focus state. ONLY from SCREEN section. Min 50 words."
+          "description": "What you see on screen RIGHT NOW. Key elements, window titles, values, focus state. Produce at least 150 tokens."
         },
         "reason": {
           "type": "string",
-          "description": "Why this action. Reference elements, goal, next_step. If retrying, explain what failed and what's different. Min 50 words."
+          "description": "Why this action. Reference goal, next_step, and relevant elements. If retrying, explain what's different. Produce at least 150 tokens."
         },
         "actions": {
           "type": "array",
           "items": {"type": "string"},
-          "description": "One or more actions to execute in sequence. Each must be: 'click <ID>', 'double_click <ID>', 'type <ID> <text>', 'press <keys>', or 'done'. Chain related actions (e.g. type then press enter). Execution stops at first failure or 'done'."
+          "description": "Actions to execute in sequence: 'click <ID>', 'double_click <ID>', 'type <ID> <text>', 'replace <ID> <text>', 'press <keys>', or 'done'. Chain deterministic sequences. Execution stops at first failure or 'done'."
         },
         "expect": {
           "type": "string",
-          "description": "What screen looks like AFTER all actions execute. Be specific and falsifiable. Min 50 words."
+          "description": "Predicted screen state after execution. Be specific and falsifiable."
         },
         "extended_observation_needed": {
           "type": "boolean",
           "description": "True only if you need UI trees of windows not currently shown."
         },
+        "expand_data": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "ref": {"type": "string"},
+              "range": {"type": "array", "items": {"type": "integer"}}
+            },
+            "required": ["ref", "range"],
+            "additionalProperties": false
+          },
+          "description": "Request full data for next cycle. ref: 'cycle_N_typed', 'element_ID_value', 'clipboard', 'run_history'. range: [start_pct, end_pct] 0-100. Data arrives next cycle in EXPANDED DATA section."
+        },
         "developer_feedback": {
           "type": "string",
-          "description": "Honest self-critique. What confused you? What's missing? Used to improve your prompt."
+          "description": "Honest self-critique: what could go wrong, what's uncertain, what loops are you detecting. Produce at least 150 tokens."
         }
       },
-      "required": ["observe", "reason", "actions", "expect", "extended_observation_needed", "developer_feedback"],
+      "required": ["observe", "reason", "actions", "expect", "extended_observation_needed", "expand_data", "developer_feedback"],
       "additionalProperties": false
     }
   }
