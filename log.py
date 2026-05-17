@@ -14,6 +14,15 @@ def init() -> None:
     _file = (run_dir / "log.txt").open("a", encoding="utf-8")
 
 
+def log(msg: str) -> None:
+    ts = datetime.now().strftime("%H:%M:%S")
+    line = f"[{ts}] {msg}"
+    print(line)
+    if _file:
+        _file.write(line + "\n")
+        _file.flush()
+
+
 def pretty(s: str) -> str:
     s = s.replace('\\\\', '\x00')
     s = s.replace('\\n', '\n')
@@ -23,12 +32,10 @@ def pretty(s: str) -> str:
     return s
 
 
-def log(msg: str) -> None:
-    ts = datetime.now().strftime("%H:%M:%S")
-    line = f"[{ts}] {msg}"
-    print(line)
+def log_file(msg: str) -> None:
     if _file:
-        _file.write(line + "\n")
+        ts = datetime.now().strftime("%H:%M:%S")
+        _file.write(f"[{ts}] {msg}\n")
         _file.flush()
 
 
@@ -58,6 +65,23 @@ def read_current_run(tag: str) -> list[str]:
         if "[RUN_START]" in lines[i]:
             start_idx = i
             break
+    return [l.split(f"[{tag}] ", 1)[1] for l in lines[start_idx:] if f"[{tag}]" in l]
+
+
+def read_since_last_lesson(tag: str) -> list[str]:
+    if not HISTORY_PATH.exists():
+        return []
+    lines = HISTORY_PATH.read_text(encoding="utf-8").splitlines()
+    start_idx = 0
+    for i in range(len(lines) - 1, -1, -1):
+        if "[LESSON]" in lines[i]:
+            start_idx = i + 1
+            break
+    else:
+        for i in range(len(lines) - 1, -1, -1):
+            if "[RUN_START]" in lines[i]:
+                start_idx = i
+                break
     return [l.split(f"[{tag}] ", 1)[1] for l in lines[start_idx:] if f"[{tag}]" in l]
 
 
