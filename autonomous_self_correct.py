@@ -41,9 +41,6 @@ def evolve(analysis: dict) -> list[str]:
             continue
         target = PROMPTS_DIR / filename
         old_content = target.read_text(encoding="utf-8") if target.exists() else ""
-        if old_content and len(new_content) > len(old_content) * 1.1:
-            log(f"EVOLUTION REJECTED: {filename} grew {len(old_content)}→{len(new_content)} (>10%)")
-            continue
         pending.append((target, filename, old_content, new_content))
 
     for key, filename in [("actor_schema_rewrite", "actor_schema.json"),
@@ -51,7 +48,7 @@ def evolve(analysis: dict) -> list[str]:
         new_content = analysis.get(key, "").strip()
         if not new_content:
             continue
-        parsed = json.loads(new_content)
+        json.loads(new_content)
         target = PROMPTS_DIR / filename
         old_content = target.read_text(encoding="utf-8") if target.exists() else ""
         pending.append((target, filename, old_content, new_content))
@@ -67,13 +64,10 @@ def evolve(analysis: dict) -> list[str]:
         target.write_text(new_content, encoding="utf-8")
         changed.append(filename)
         log(f"EVOLVED: {filename} ({len(old_content)} → {len(new_content)} chars)")
-
-    # Rotate history: knowledge is now in evolved prompts, flush raw data
     return changed
 
 
 def _rotate_history() -> None:
-    """Keep only LESSON and RUN markers, discard raw action/actor/planner data."""
     history_path = BASE_PATH / "execution_history.txt"
     if not history_path.exists():
         return
