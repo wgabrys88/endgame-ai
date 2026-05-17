@@ -7,8 +7,6 @@ import time
 import uuid
 from collections import deque
 
-import probe_log
-
 BASE_PATH = pathlib.Path(__file__).parent
 INTERACTION_LOG_PATH = BASE_PATH / "interaction_log.jsonl"
 VERIFIED_STATE_PATH = BASE_PATH / "verified_state.txt"
@@ -97,10 +95,8 @@ def vt(this, idx, proto_args, *args):
     proto = ctypes.WINFUNCTYPE(ctypes.HRESULT, *proto_args)
     try:
         return proto(vtable[idx])(this, *args)
-    except (OSError, PermissionError) as e:
-        # Return a fake failure HRESULT so upper layers can handle it gracefully
-        log(f"[COM] vtable call failed with {e}")
-        return 0x80070005  # E_ACCESSDENIED
+    except (OSError, PermissionError):
+        return 0x80070005
 
 
 def release(ptr) -> None:
@@ -334,80 +330,83 @@ def phase_focused(out: list[str]) -> tuple[str, int]:
     return buf.value, int(hwnd)
 
 
+def _ground_track_points(x0: int, y0: int, x1: int, y1: int, step: int) -> list[tuple[int, int]]:
+    w, h = x1 - x0, y1 - y0
+    if w <= 0 or h <= 0:
+        return []
+    cols = max(1, w // step)
+    rows = max(1, h // step)
+    total = cols * rows
+    slope = h / w if w > 0 else 1.0
+    points: list[tuple[int, int]] = []
+    x_pos = 0.0
+    y_pos = 0.0
+    for _ in range(total):
+        px = x0 + int(x_pos) % w
+        py = y0 + int(y_pos) % h
+        points.append((px, py))
+        x_pos += step
+        y_pos += step * slope * 0.4
+        if x_pos >= w:
+            x_pos -= w
+            y_pos += step * 3
+    return points
+
+
 def phase_probe(out: list[str], step: int, x0: int, y0: int, x1: int, y1: int) -> None:
-    import math
-    probe_log.log_event(f"PROBE_START region=({x0},{y0})-({x1},{y1}) step={step}")
     _ensure_tree_walker()
     seen_rids: set[tuple[int, ...]] = set()
-    amplitude = step * 0.4
-    wavelength = step * 4.0
-    phase_shift = math.pi * 2 / 3
-    for y in range(y0, y1, step):
-        row_idx = (y - y0) // step
-        x_range = range(x1 - step, x0 - 1, -step) if row_idx % 2 else range(x0, x1, step)
-        for x in x_range:
-            y_actual = y + int(amplitude * math.sin(2 * math.pi * x / wavelength + row_idx * phase_shift))
-            y_actual = max(y0, min(y1 - 1, y_actual))
-            user32.SetCursorPos(x, y_actual)
-            time.sleep(DELAY_PROBE_DWELL)
-            el = element_from_point(x, y_actual)
-            if not el or not el.value:
+    points = _ground_track_points(x0, y0, x1, y1, step)
+    for px, py in points:
+        user32.SetCursorPos(px, py)
+        time.sleep(DELAY_PROBE_DWELL)
+        el = element_from_point(px, py)
+        if not el or not el.value:
+            continue
+        try:
+            rid = get_runtime_id(el)
+            if rid and rid in seen_rids:
                 continue
-            try:
-                rid = get_runtime_id(el)
-                if rid and rid in seen_rids:
-                    continue
-                if rid:
-                    seen_rids.add(rid)
-
-                ct = get_int(el, UIA_CONTROL_TYPE)
-                role = CONTROL_TYPE_MAP.get(ct, "")
-                if not role:
-                    continue
-                name = get_str(el, UIA_NAME)
-                enabled = get_bool(el, UIA_IS_ENABLED)
-                offscreen = get_bool(el, UIA_IS_OFFSCREEN)
-
-                # Walk parent chain to find containing window
-                # Use RuntimeId[1] as hwnd hint (UIA encodes process hwnd there)
-                wnd_name = ""
-                wnd_hwnd = rid[1] if rid and len(rid) >= 2 else 0
-
-                # Get window name from hwnd via window title
-                if wnd_hwnd:
-                    buf = ctypes.create_unicode_buffer(512)
-                    user32.GetWindowTextW(W.HWND(wnd_hwnd), buf, 512)
-                    wnd_name = buf.value
-
-                # Count depth by walking up (capped for performance)
-                depth = 0
-                ancestor = el
-                for _ in range(8):
-                    parent = get_parent_element(ancestor)
-                    if not parent or not parent.value:
-                        break
-                    p_hwnd = _get_hwnd_from_element(parent)
-                    if p_hwnd:
-                        break
-                    depth += 1
-                    ancestor = parent
-
-                r = get_rect(el)
-                out.append(json.dumps({
-                    "probe_px": x, "probe_py": y_actual,
-                    "p_role": role, "p_name": name,
-                    "p_aid": get_str(el, UIA_AUTOMATION_ID), "p_desc": get_str(el, UIA_DESCRIPTION),
-                    "p_x": r[0], "p_y": r[1], "p_w": r[2], "p_h": r[3],
-                    "p_enabled": enabled,
-                    "p_focus": get_bool(el, UIA_HAS_KEYBOARD_FOCUS),
-                    "p_offscreen": offscreen,
-                    "p_value": get_legacy_value(el), "p_readonly": get_legacy_readonly(el),
-                    "p_depth": depth, "p_wnd": wnd_name, "p_hwnd": wnd_hwnd,
-                }, ensure_ascii=False))
-                probe_log.log_probe(x, y_actual, role, name, enabled, offscreen)
-            except OSError:
+            if rid:
+                seen_rids.add(rid)
+            ct = get_int(el, UIA_CONTROL_TYPE)
+            role = CONTROL_TYPE_MAP.get(ct, "")
+            if not role:
                 continue
-    probe_log.log_event("PROBE_END")
+            name = get_str(el, UIA_NAME)
+            enabled = get_bool(el, UIA_IS_ENABLED)
+            offscreen = get_bool(el, UIA_IS_OFFSCREEN)
+            wnd_name = ""
+            wnd_hwnd = rid[1] if rid and len(rid) >= 2 else 0
+            if wnd_hwnd:
+                buf = ctypes.create_unicode_buffer(512)
+                user32.GetWindowTextW(W.HWND(wnd_hwnd), buf, 512)
+                wnd_name = buf.value
+            depth = 0
+            ancestor = el
+            for _ in range(8):
+                parent = get_parent_element(ancestor)
+                if not parent or not parent.value:
+                    break
+                p_hwnd = _get_hwnd_from_element(parent)
+                if p_hwnd:
+                    break
+                depth += 1
+                ancestor = parent
+            r = get_rect(el)
+            out.append(json.dumps({
+                "probe_px": px, "probe_py": py,
+                "p_role": role, "p_name": name,
+                "p_aid": get_str(el, UIA_AUTOMATION_ID), "p_desc": get_str(el, UIA_DESCRIPTION),
+                "p_x": r[0], "p_y": r[1], "p_w": r[2], "p_h": r[3],
+                "p_enabled": enabled,
+                "p_focus": get_bool(el, UIA_HAS_KEYBOARD_FOCUS),
+                "p_offscreen": offscreen,
+                "p_value": get_legacy_value(el), "p_readonly": get_legacy_readonly(el),
+                "p_depth": depth, "p_wnd": wnd_name, "p_hwnd": wnd_hwnd,
+            }, ensure_ascii=False))
+        except OSError:
+            continue
 
 
 def phase_windows(out: list[str], fg_title: str) -> list[tuple[ctypes.c_void_p, str, int]]:
@@ -439,7 +438,7 @@ def phase_windows(out: list[str], fg_title: str) -> list[tuple[ctypes.c_void_p, 
 
 
 def phase_z_order(out: list[str]) -> None:
-    hwnd = user32.GetForegroundWindow()
+    hwnd = user32.GetTopWindow(None)
     z_list: list[dict] = []
     buf = ctypes.create_unicode_buffer(512)
     seen: set[str] = set()
@@ -463,7 +462,6 @@ ACTIONABLE_ROLES = frozenset({
 
 
 def phase_tree(out: list[str], target_el, wnd_name: str, wnd_hwnd: int, timeout: float) -> None:
-    probe_log.log_event(f"TREE_START wnd={wnd_name!r} hwnd={wnd_hwnd}")
     start = time.perf_counter()
     queue: deque[tuple[ctypes.c_void_p, int]] = deque()
     for child in get_children_raw(target_el):
@@ -471,7 +469,6 @@ def phase_tree(out: list[str], target_el, wnd_name: str, wnd_hwnd: int, timeout:
     count = 0
     while queue:
         if time.perf_counter() - start > timeout:
-            probe_log.log_event(f"TREE_TIMEOUT after {count} nodes")
             break
         raw_el, depth = queue.popleft()
         try:
@@ -502,7 +499,6 @@ def phase_tree(out: list[str], target_el, wnd_name: str, wnd_hwnd: int, timeout:
                 "t_offscreen": get_bool(raw_el, UIA_IS_OFFSCREEN),
             }, ensure_ascii=False))
             count += 1
-            probe_log.log_tree(wnd_name, depth, role, name, enabled, x, y, w, h)
         except OSError:
             continue
         try:
@@ -510,7 +506,6 @@ def phase_tree(out: list[str], target_el, wnd_name: str, wnd_hwnd: int, timeout:
                 queue.append((child, depth + 1))
         except OSError:
             pass
-    probe_log.log_event(f"TREE_END nodes={count}")
 
 
 def phase_rescan_interacted() -> None:
@@ -521,8 +516,10 @@ def phase_rescan_interacted() -> None:
     if not entries:
         VERIFIED_STATE_PATH.write_text("", encoding="utf-8")
         return
+    max_cycle = max((e.get("cycle", 0) for e in entries), default=0)
+    recent = [e for e in entries if e.get("cycle", 0) >= max_cycle - 1]
     seen: dict[tuple[int, int], dict] = {}
-    for e in entries:
+    for e in recent:
         seen[(e["px"], e["py"])] = e
     results: list[str] = []
     buf = ctypes.create_unicode_buffer(512)
@@ -535,20 +532,12 @@ def phase_rescan_interacted() -> None:
                 "px": px, "py": py, "hwnd": entry.get("hwnd", 0),
             }, ensure_ascii=False))
             continue
-        try:
-            ct = get_int(el, UIA_CONTROL_TYPE)
-            role = CONTROL_TYPE_MAP.get(ct, "")
-            name = get_str(el, UIA_NAME)
-            value = get_legacy_value(el)
-            enabled = get_bool(el, UIA_IS_ENABLED)
-            rx, ry, rw, rh = get_rect(el)
-        except OSError:
-            results.append(json.dumps({
-                "verified": True, "status": "NOT_FOUND",
-                "original_role": entry.get("role", ""), "original_name": entry.get("name", ""),
-                "px": px, "py": py, "hwnd": entry.get("hwnd", 0),
-            }, ensure_ascii=False))
-            continue
+        ct = get_int(el, UIA_CONTROL_TYPE)
+        role = CONTROL_TYPE_MAP.get(ct, "")
+        name = get_str(el, UIA_NAME)
+        value = get_legacy_value(el)
+        enabled = get_bool(el, UIA_IS_ENABLED)
+        rx, ry, rw, rh = get_rect(el)
         orig_role, orig_name = entry.get("role", ""), entry.get("name", "")
         status = "ELEMENT_CHANGED" if (role != orig_role or (orig_name and name != orig_name)) else "OK"
         hwnd = entry.get("hwnd", 0)
@@ -574,9 +563,13 @@ def pipeline(timeout: float, probe_step: int, expand_hwnds: list[int] | None) ->
     sw, sh = phase_screen(out)
     phase_hwnds(out)
     fg_title, fg_hwnd = phase_focused(out)
+    saved_pos = W.POINT()
+    user32.GetCursorPos(ctypes.byref(saved_pos))
+    cls_buf = ctypes.create_unicode_buffer(256)
+    user32.GetClassNameW(W.HWND(fg_hwnd), cls_buf, 256)
+    desktop_focused = cls_buf.value in ("Progman", "WorkerW")
+    probed_rects: set[tuple[int, int, int, int]] = set()
     if expand_hwnds:
-        # Probe each expanded window's rectangle, not full screen
-        probed_rects: set[tuple[int, int, int, int]] = set()
         for ehwnd in expand_hwnds:
             rect = W.RECT()
             if user32.GetWindowRect(W.HWND(ehwnd), ctypes.byref(rect)):
@@ -584,16 +577,14 @@ def pipeline(timeout: float, probe_step: int, expand_hwnds: list[int] | None) ->
                 if r not in probed_rects:
                     phase_probe(out, probe_step, *r)
                     probed_rects.add(r)
-        # Also probe focused window if not already covered
+    if not desktop_focused:
         rect = W.RECT()
-        user32.GetWindowRect(W.HWND(fg_hwnd), ctypes.byref(rect))
-        r = (rect.left, rect.top, rect.right, rect.bottom)
-        if r not in probed_rects:
-            phase_probe(out, probe_step, *r)
-    else:
-        rect = W.RECT()
-        user32.GetWindowRect(W.HWND(fg_hwnd), ctypes.byref(rect))
-        phase_probe(out, probe_step, rect.left, rect.top, rect.right, rect.bottom)
+        if user32.GetWindowRect(W.HWND(fg_hwnd), ctypes.byref(rect)):
+            r = (rect.left, rect.top, rect.right, rect.bottom)
+            if r not in probed_rects:
+                phase_probe(out, probe_step, *r)
+                probed_rects.add(r)
+    user32.SetCursorPos(saved_pos.x, saved_pos.y)
     phase_rescan_interacted()
     targets = phase_windows(out, fg_title)
     phase_z_order(out)
@@ -601,7 +592,19 @@ def pipeline(timeout: float, probe_step: int, expand_hwnds: list[int] | None) ->
     for target_el, wnd_name, wnd_hwnd in targets:
         phase_tree(out, target_el, wnd_name, wnd_hwnd, timeout)
         walked_hwnds.add(wnd_hwnd)
-    if expand_hwnds:
+    walk_hwnds: set[int] = set(expand_hwnds) if expand_hwnds else set()
+    if desktop_focused:
+        top = user32.GetTopWindow(None)
+        title_buf = ctypes.create_unicode_buffer(512)
+        while top:
+            if user32.IsWindowVisible(top) and int(top) != fg_hwnd:
+                user32.GetClassNameW(top, cls_buf, 256)
+                user32.GetWindowTextW(top, title_buf, 512)
+                if cls_buf.value not in ("Progman", "WorkerW") and title_buf.value:
+                    walk_hwnds.add(int(top))
+                    break
+            top = user32.GetWindow(top, 2)
+    if walk_hwnds:
         root = ctypes.c_void_p()
         vt(_uia, 5, (ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)), ctypes.byref(root))
         for top_el in get_children_raw(root):
@@ -609,11 +612,12 @@ def pipeline(timeout: float, probe_step: int, expand_hwnds: list[int] | None) ->
                 el_hwnd = _get_hwnd_from_element(top_el)
             except OSError:
                 continue
-            if el_hwnd in expand_hwnds and el_hwnd not in walked_hwnds:
+            if el_hwnd in walk_hwnds and el_hwnd not in walked_hwnds:
+                name = ""
                 try:
                     name = get_str(top_el, UIA_NAME)
                 except OSError:
-                    name = ""
+                    pass
                 phase_tree(out, top_el, name, el_hwnd, timeout)
                 walked_hwnds.add(el_hwnd)
     return out
