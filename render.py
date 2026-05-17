@@ -152,43 +152,38 @@ def build_context(screen: dict, focused: dict, windows: list[dict],
     focused_hwnd = focused.get("focused_hwnd", 0)
     focused_title = focused.get("focused_title", "")
 
-    # Merge probe data into tree with proper window assignment
     merged_nodes = merge_probe_into_tree(tree_nodes, probes, windows, z_order)
 
-    # Assign unassigned nodes to focused window
     for node in merged_nodes:
         if not node.get("t_hwnd"):
             node["t_hwnd"] = focused_hwnd
         if not node.get("t_wnd"):
             node["t_wnd"] = focused_title
 
-    # Determine which windows to show (focused + any target windows)
-    target_wnd_names: list[str] = []
-    for win in windows:
-        if win["wnd_target"]:
-            target_wnd_names.append(win["wnd_name"])
-    if focused_title and focused_title not in target_wnd_names:
-        target_wnd_names.insert(0, focused_title)
-
-    # Group nodes by window name
     wnd_groups: dict[str, list[dict]] = {}
     for node in merged_nodes:
         wnd = node.get("t_wnd") or ""
         wnd_groups.setdefault(wnd, []).append(node)
 
-    # Render target windows in order, then other windows with elements
-    seq = 0
-    rendered_wnds: set[str] = set()
+    z_list = z_order.get("z_order", [])
+    z_titles = [e["title"] for e in z_list]
+    render_order = []
+    for title in z_titles:
+        if title in wnd_groups:
+            render_order.append(title)
+    for title in wnd_groups:
+        if title not in render_order:
+            render_order.append(title)
 
-    for wnd_name in target_wnd_names:
-        nodes = wnd_groups.get(wnd_name, [])
-        if not nodes:
+    seq = 0
+    for wnd_name in render_order:
+        nodes = wnd_groups[wnd_name]
+        visible = [n for n in nodes if _filter_node(n)]
+        if not visible:
             continue
-        output_lines.append(f"[{wnd_name}]")
-        rendered_wnds.add(wnd_name)
-        for node in nodes:
-            if not _filter_node(node):
-                continue
+        marker = " [FOCUSED]" if wnd_name == focused_title else ""
+        output_lines.append(f"[{wnd_name}]{marker}")
+        for node in visible:
             seq += 1
             node_id = str(seq)
             role = node["t_role"]
@@ -204,29 +199,6 @@ def build_context(screen: dict, focused: dict, windows: list[dict],
                 "enabled": enabled, "readonly": readonly, "action": action_tag,
             })
             output_lines.append(_render_node(node, node_id))
-
-    # Show other windows that have elements (non-target) as collapsed list
-    other_windows: list[str] = []
-    for wnd_name, nodes in wnd_groups.items():
-        if wnd_name in rendered_wnds or not wnd_name:
-            continue
-        visible_count = sum(1 for n in nodes if _filter_node(n))
-        if visible_count > 0:
-            other_windows.append(f"  [{wnd_name}] ({visible_count} elements)")
-
-    if other_windows:
-        output_lines.append("")
-        output_lines.append("OTHER WINDOWS:")
-        output_lines.extend(other_windows)
-
-    # Z-order section
-    z_list = z_order.get("z_order", [])
-    if z_list:
-        output_lines.append("")
-        output_lines.append("Z-ORDER (front to back):")
-        for entry in z_list[:8]:
-            marker = " [FOCUSED]" if entry["z"] == 0 else ""
-            output_lines.append(f"  z={entry['z']} \"{entry['title']}\"{marker}")
 
     return "\n".join(output_lines), book_entries
 
