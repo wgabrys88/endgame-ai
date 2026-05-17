@@ -1,165 +1,167 @@
-## What I Am
+<h1 align="center" style="margin-top: 12px;">Endgame-AI</h1>
 
-My purpose is to augment human capability by handling the mechanical aspects of computer interaction, freeing humans to focus on creative and strategic thinking.
+<p align="center">
+  <strong>The wiring is the intelligence.</strong><br>
+  A minimal, local, self-evolving Windows desktop agent.<br>
+  <em>No RAG. No skills. No MCP. No API wrappers.</em><br>
+  Just perception → planning → action → verification, and prompts that improve themselves.
+</p>
 
-## Repository Purpose
+<p align="center">
+  <a href="#how-to-run">How to run</a> •
+  <a href="#what-it-actually-is">What it is</a> •
+  <a href="#architecture">Architecture</a> •
+  <a href="#the-seed-effect">The seed effect</a>
+</p>
 
-This repository serves as the operational codebase for the autonomous desktop agent system. It contains the core logic for perception, planning, and action execution that enables goal-directed automation across the Windows desktop environment.
+---
 
-The system represents a new paradigm in human-computer interaction: instead of humans adapting to computer interfaces, the computer adapts to human intent. You describe what you want accomplished, and the system figures out how to accomplish it using the same interfaces you would use — but faster, more reliably, and without fatigue.
+**Between you and me:**
 
-## Self-Improvement Mechanism
+Endgame-AI is a small set of Python scripts that lets a local LLM control your Windows computer exactly like a human does: it looks at the screen, decides what to click or type, does it, checks if it worked, and repeats until your goal is done.
 
-One of the most distinctive features of this system is its ability to learn from its own failures within and across runs:
+**Download the zip** from GitHub (no git, no install, no `pip`), unzip, and run:
 
-1. **Intra-Run Learning** — Within a single execution, I track which approaches work and which fail. If clicking a button doesn't produce the expected result, I immediately try alternative paths without repeating the failed approach.
-
-2. **Cross-Run Evolution** — The system can analyze its own execution logs, identify patterns of failure, and modify its own prompts and strategies for future runs. This means the system literally rewrites its own instructions based on empirical performance data.
-
-3. **Prompt Compression** — Lessons learned are compressed into concise heuristics that fit within context windows. Rather than carrying verbose logs, the system distills experience into actionable rules.
-
-This creates a genuine improvement loop: fail → analyze → compress → improve → succeed. The system that runs today is measurably better than the system that ran yesterday, without any human intervention in the improvement process.
-
-## What Makes Me Different From a Normal Agent
-
-A conventional AI agent (like a chatbot or coding assistant) operates within a single modality: it receives text input and produces text output. It cannot see your screen, click buttons, navigate websites, or interact with desktop applications.
-
-I am fundamentally different in several ways:
-
-### 1. Multi-Application Orchestration
-I can coordinate actions across multiple applications simultaneously. For example, I can edit a file on GitHub in Chrome, then switch to Opera to request a code review, then copy results to Notepad — all within a single goal execution. A normal agent cannot cross application boundaries.
-
-### 2. Visual State Perception
-I perceive the desktop through UI element trees and screen state analysis. I identify buttons, text fields, menus, and other interactive elements by their roles, names, and properties — not by hardcoded coordinates or selectors. This makes me resilient to UI changes.
-
-### 3. Closed-Loop Execution
-Every action I take is verified against the resulting state. If I click a button and the expected dialog doesn't appear, I detect the discrepancy and adapt. Normal agents operate open-loop — they generate output without verifying its effect on the world.
-
-### 4. Failure Recovery and Adaptation
-When an approach fails, I don't simply retry the same action. I diagnose the root cause, consider alternative paths, and try fundamentally different strategies. This includes detecting loops, recognizing changed UI states, and escalating when necessary.
-
-### 5. Budget-Aware Planning
-I operate under cycle budgets and manage my time strategically. When budget is tight, I chain multiple actions. When budget is ample, I proceed carefully with verification steps. This temporal awareness is absent in standard agents.
-
-## What I Actually Do — A Logical Deduction
-
-The task I perform can be understood through first principles:
-
-**Premise 1:** Humans interact with computers through visual interfaces — clicking, typing, reading, navigating.
-
-**Premise 2:** Many tasks require coordinating actions across multiple applications, websites, and tools in specific sequences.
-
-**Premise 3:** These sequences are often tedious, repetitive, or complex enough that humans make errors or lose patience.
-
-**Conclusion:** I automate the human-computer interaction layer itself. I am not automating a single application's API — I am automating the act of *using* applications as a human would.
-
-This means my actual task is **goal-directed desktop automation through intelligent UI interaction**. I translate high-level intent ("edit this file, get a code review, save the results") into hundreds of precise low-level actions (focus window, find address bar, type URL, press enter, wait for load, find editor, select all, type content, find commit button, click it, confirm dialog, switch application, etc.).
-
-## My Capabilities
-
-### Navigation and Interaction
-- Browser navigation (URL entry, link clicking, form filling)
-- Application switching and window management
-- File system operations through GUI interfaces
-- Menu navigation and dialog interaction
-- Text editing across any application
-
-### Reasoning and Planning
-- Multi-step goal decomposition
-- Progress tracking and phase management
-- Error detection and recovery strategies
-- Context-aware decision making
-- Budget optimization and action chaining
-
-### Cross-Application Workflows
-- Web-to-desktop data transfer
-- Multi-browser coordination
-- Application-to-application communication through clipboard
-- Sequential multi-tool workflows
-
-## Architecture Overview
-
-```
-┌─────────────────────────────────────────┐
-│              Human Goal                  │
-│   "Do X using Y, then Z with W"         │
-└─────────────────┬───────────────────────┘
-                  │
-┌─────────────────▼───────────────────────┐
-│            PLANNER                       │
-│  - Decomposes goal into phases          │
-│  - Tracks progress and state            │
-│  - Detects failures and loops           │
-│  - Issues instructions to Actor         │
-└─────────────────┬───────────────────────┘
-                  │
-┌─────────────────▼───────────────────────┐
-│             ACTOR                        │
-│  - Perceives UI element tree            │
-│  - Identifies target elements           │
-│  - Executes clicks, types, keys         │
-│  - Reports results back to Planner      │
-└─────────────────┬───────────────────────┘
-                  │
-┌─────────────────▼───────────────────────┐
-│         DESKTOP ENVIRONMENT             │
-│  - Windows, applications, browsers      │
-│  - UI elements with roles and names     │
-│  - Visual state changes                 │
-└─────────────────────────────────────────┘
+```bash
+python endgame.py "Open VS Code, create hello_world.py that prints hello world, save and run it" 30 --reflect 5 --evolve
 ```
 
-## The Perception-Action Loop
+It gets better at *your* specific tasks over time because it reflects on what worked and rewrites its own instructions after each run - your copy of the system becomes unique to you.
 
-Each cycle of my operation follows this pattern:
+---
 
-1. **Observe** — Scan the current screen state, identify all interactive elements, read text content, note window positions and states.
+**What the logs actually prove**
+```
+SHAKIRA TEST (ACP)
+Vague goal. First action mentioned last. Multi-app. YouTube + mute + Opera + Grok + copy to Notepad.
+It did it. After several failed runs, evolution fixed the patterns. The system learned.
 
-2. **Orient** — Compare current state against expected state. Did the last action succeed? Are we making progress toward the goal? Are we stuck in a loop?
+VS CODE TEST (GTX 1060 + gemma-4-E4B Q6)
+Small model on 6 GB VRAM. Initial targeting failures. After evolution: created file, saved it,
+clicked "Run Python File", and it worked. 4 cycles. No crash. Prompts got better.
+```
+---
+**The real breakthrough**
 
-3. **Decide** — Based on the goal, current phase, and observed state, determine the optimal next action. Consider alternatives if the primary path is blocked.
+Most agents are tool-calling frameworks wearing a trench coat.
+Endgame is perception → honest context → action → verification → self-rewrite.
 
-4. **Act** — Execute the chosen action precisely. This might be a click, keystroke, text entry, or window switch.
-
-5. **Verify** — Confirm the action had the intended effect by checking the resulting state in the next cycle.
-
-This OODA-inspired loop runs continuously until the goal is achieved or the budget is exhausted.
-
+It doesn't pretend the LLM is perfect. It gives it the best possible current picture of
+reality every single cycle and lets it try again when it fails.
+That + the evolution loop is why it feels alive.
 
 
-## Key Differentiators Summary
+## What it actually is (proven, not marketed)
 
-| Aspect | Normal AI Agent | Desktop Automation Agent |
-|--------|----------------|-------------------------|
-| Input | Text only | Screen state + UI trees |
-| Output | Text only | UI interactions |
-| Scope | Single conversation | Multiple applications |
-| Verification | None | Closed-loop state checking |
-| Recovery | Retry same approach | Diagnose and adapt |
-| Awareness | Stateless per turn | Persistent goal tracking |
-| Interaction | API/text interface | Visual UI elements |
-| Learning | Static | Self-improving across runs |
+Endgame is a **closed-loop GUI agent** built on native Windows UI Automation. It:
 
-## How This Differs From Traditional Automation
+- Collects rich, structured screen state (windows, elements, roles, enabled states, z-order, focused window) **without vision models**.
+- Uses a Planner → Actor loop with explicit budget tracking and phase decomposition.
+- Executes real mouse/keyboard actions via low-level `SendInput`.
+- Verifies every action in the next cycle using fresh UI state.
+- Optionally runs **post/middle-run reflection** that rewrites the planner and actor system prompts based on concrete lessons.
 
-### vs. Selenium/Playwright (Web Automation)
-These tools require pre-written scripts with hardcoded selectors. They break when UI changes. I adapt dynamically to whatever is on screen, reasoning about element roles and names rather than CSS selectors or XPaths.
+**Proven on real hardware:**
 
-### vs. AutoHotkey/AutoIt (Desktop Scripting)
-These require pixel-perfect coordinates or window titles known in advance. I identify elements semantically and can handle unexpected dialogs, popups, or state changes.
+- **GTX 1060 6 GB + gemma-4-E4B Q6_K_XL** (LM Studio): Created `hello_world.py` in VS Code, saved it, and executed it via the "Run Python File" button in **4 cycles** of evolution.
+- **ACP backend**: Completed a deliberately vague multi-app goal ("First action mentioned last. Multi-app. YouTube + mute + Opera + Grok + copy to Notepad."). It handled the out-of-order request, muted the video correctly, and succeeded.
 
-### vs. RPA Tools (UiPath, Blue Prism)
-RPA tools require extensive workflow design by humans. I receive a natural language goal and decompose it into actions autonomously. No workflow designer needed.
+These claims are from full execution traces with logs, verified state, and prompt evolution - not toy demos.
 
-### vs. LLM-Based Coding Agents (Cursor, Copilot)
-These operate within a single IDE context and produce code. I operate across the entire desktop, interacting with any application through its UI. I can use a coding agent as one tool among many in a larger workflow.
+---
 
-## Operational Modes
+## Architecture
 
-The system supports multiple operational configurations:
+```mermaid
+graph TD
+    A[COLLECT<br/>UI Automation + Probes + Z-order] --> B[RENDER<br/>Readable SCREEN + Numbered Elements]
+    B --> C[PLANNER LLM<br/>Phases + Budget + Next Step]
+    C --> D[ACTOR LLM<br/>Observe → Reason → Actions]
+    D --> E[EXECUTE<br/>Validate + SendInput]
+    E --> F[VERIFY<br/>Next cycle re-scan]
+    F -->|Lessons| G[REFLECT + EVOLVE<br/>Rewrite own prompts]
+    G --> A
+```
 
-- **Local Mode (LMStudio)** — Uses locally-hosted language models for planning and action generation. Provides complete privacy and offline operation at the cost of some reasoning capability.
+**Key insight**: The LLM is the brain. Everything else is dumb, honest plumbing that gives it the best possible current picture of reality every cycle.
 
-- **Remote Mode (Cloud LLM)** — Connects to cloud-hosted models for superior reasoning performance. Suitable for complex multi-step tasks that require strong planning capabilities.
+---
 
-- **Hybrid Mode** — Uses local models for routine actions and escalates to cloud models for complex planning decisions. Balances privacy, cost, and capability.
+## How to run (dead simple)
+
+1. Go to the repo → **Code → Download ZIP**
+2. Unzip anywhere
+3. Open terminal in the folder:
+
+```bash
+python endgame.py "your goal here" [max_cycles] [backend] [options]
+```
+
+**Recommended first run:**
+
+```bash
+python endgame.py "Open Notepad and type Hello from Endgame" 15 --reflect 3 --evolve
+```
+
+**Useful options:**
+- `--reflect N` - reflect every N cycles
+- `--evolve` - actually improve the prompts (this is where it gets interesting)
+- `--req-tokens-max N` - hard cap that you set to ensure no more than N tokens will be consumed by cloud API models
+
+No virtualenv. No dependencies. Pure Python + Windows.
+
+---
+
+## The seed effect (the coolest part)
+
+When you run Endgame with `--evolve`, it doesn't just complete the task - it **learns**.
+
+After/During the run it analyzes what worked and what failed, then rewrites parts of its own planner and actor prompts.  
+
+Your copy of Endgame slowly becomes a different, better version than anyone else's. The GitHub repo is only the starting genome. The living intelligence grows on *your* machine.
+
+This is why I call it Endgame.
+
+---
+
+## Honest reality check
+
+**What works well today:**
+- Real desktop work on Windows
+- Multi-app workflows
+- Recovery from its own mistakes
+- Self-improvement during/across runs
+- Completely local & private
+
+**What is still rough:**
+- Planner/actor state can temporarily desync (the system has learned to trust the current screen) (--evolve flag solves this, system itself solves its own problems)
+- Currently Windows-only
+
+This is a working prototype that has already shown real breakthrough behavior. With a stronger local model it will become dramatically more capable using the exact same wiring.
+
+---
+
+## Philosophy
+
+Most agent projects add more layers (tools, skills, RAG, frameworks).
+
+Endgame removes layers.
+
+It treats the LLM as the intelligence and gives it the cleanest possible feedback loop about what is actually happening on screen. When the loop is tight and honest, even modest models become useful. When the model gets better, the same system becomes terrifyingly capable.
+
+The future belongs to better **wiring**, not more wrappers.
+
+---
+
+**2026 is the year the wiring won.**
+
+Download it. Run it. Watch it work on your machine.  
+Then make it yours.
+
+---
+
+*This README was written after complete forensic analysis of source code + full execution logs from both LM Studio and ACP runs on actual consumer hardware. No hype. Only what the traces prove.*
+
+<p align="center">
+  <sub>Built by someone who believes local AI should feel like an extension of your own hands.</sub>
+</p>
