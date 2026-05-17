@@ -5,7 +5,7 @@ import pathlib
 import subprocess
 import tempfile
 
-from log import log, pretty
+from log import log, log_file
 
 BASE_PATH = pathlib.Path(__file__).parent
 PROMPTS_DIR = BASE_PATH / "prompts"
@@ -116,7 +116,10 @@ def call_backend(system: str, user: str, backend: str, role: str) -> str:
             f"[{role.upper()}] request too large: ~{tokens_est} tokens "
             f"(limit: {_max_request_tokens}). Chars: {chars}"
         )
-    log(f"[{role.upper()} RAW REQUEST ~{tokens_est}tok]\n{pretty(json.dumps(body, indent=2, ensure_ascii=False))}")
+    log(f"[{role.upper()} REQUEST ~{tokens_est}tok]")
+    log(f"  system: {len(system)} chars")
+    log(f"  user:\n{user}")
+    log_file(json.dumps(body, indent=2, ensure_ascii=False))
     match backend:
         case "lmstudio": result = call_lmstudio(body)
         case "acp": result = call_acp(body)
