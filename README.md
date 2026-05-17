@@ -1,3 +1,5 @@
+
+
 <h1 align="center" style="margin-top: 12px;">Endgame-AI</h1>
 
 <p align="center">
@@ -8,11 +10,23 @@
 </p>
 
 <p align="center">
+  <a href="#demo-videos">Demo Videos</a> •
   <a href="#how-to-run">How to run</a> •
   <a href="#what-it-actually-is">What it is</a> •
   <a href="#architecture">Architecture</a> •
   <a href="#the-seed-effect">The seed effect</a>
 </p>
+
+---
+
+## Demo Videos
+
+Real execution traces. Left = **LM Studio** (local model on consumer hardware). Right = **ACP** backend.
+
+| **LM Studio Run** (Local • gemma-4-E4B Q6) | **ACP Run** (Multi-app • Vague goal) |
+|---------------------------------------------|--------------------------------------|
+| **Created `hello_world.py` in VS Code, saved it, and clicked "Run Python File"** — 4 evolution cycles on GTX 1060 6GB. | **Completed complex multi-app task** (YouTube + mute + Opera + Grok + copy to Notepad) after evolution fixed the patterns. |
+| https://github.com/user-attachments/assets/ef4b72d8-bd78-444c-b9fb-d69e0eb30bf4 | https://github.com/user-attachments/assets/6314f179-8abe-4d10-9be9-0df2f96228cc |
 
 ---
 
@@ -26,7 +40,7 @@ Endgame-AI is a small set of Python scripts that lets a local LLM control your W
 python endgame.py "Open VS Code, create hello_world.py that prints hello world, save and run it" 30 --reflect 5 --evolve
 ```
 
-It gets better at *your* specific tasks over time because it reflects on what worked and rewrites its own instructions after each run - your copy of the system becomes unique to you.
+It gets better at *your* specific tasks over time because it reflects on what worked and rewrites its own instructions after each run — your copy of the system becomes unique to you.
 
 ---
 
@@ -40,16 +54,8 @@ VS CODE TEST (GTX 1060 + gemma-4-E4B Q6)
 Small model on 6 GB VRAM. Initial targeting failures. After evolution: created file, saved it,
 clicked "Run Python File", and it worked. 4 cycles. No crash. Prompts got better.
 ```
+
 ---
-**The real breakthrough**
-
-Most agents are tool-calling frameworks wearing a trench coat.
-Endgame is perception → honest context → action → verification → self-rewrite.
-
-It doesn't pretend the LLM is perfect. It gives it the best possible current picture of
-reality every single cycle and lets it try again when it fails.
-That + the evolution loop is why it feels alive.
-
 
 ## What it actually is (proven, not marketed)
 
@@ -64,9 +70,9 @@ Endgame is a **closed-loop GUI agent** built on native Windows UI Automation. It
 **Proven on real hardware:**
 
 - **GTX 1060 6 GB + gemma-4-E4B Q6_K_XL** (LM Studio): Created `hello_world.py` in VS Code, saved it, and executed it via the "Run Python File" button in **4 cycles** of evolution.
-- **ACP backend**: Completed a deliberately vague multi-app goal ("First action mentioned last. Multi-app. YouTube + mute + Opera + Grok + copy to Notepad."). It handled the out-of-order request, muted the video correctly, and succeeded.
+- **ACP backend**: Completed a deliberately vague multi-app goal. It handled the out-of-order request, muted the video correctly, and succeeded.
 
-These claims are from full execution traces with logs, verified state, and prompt evolution - not toy demos.
+These claims are from full execution traces with logs, verified state, and prompt evolution — not toy demos.
 
 ---
 
@@ -104,9 +110,9 @@ python endgame.py "Open Notepad and type Hello from Endgame" 15 --reflect 3 --ev
 ```
 
 **Useful options:**
-- `--reflect N` - reflect every N cycles
-- `--evolve` - actually improve the prompts (this is where it gets interesting)
-- `--req-tokens-max N` - hard cap that you set to ensure no more than N tokens will be consumed by cloud API models
+- `--reflect N` — reflect every N cycles
+- `--evolve` — actually improve the prompts (this is where it gets interesting)
+- `--req-tokens-max N` — hard cap on tokens for cloud models
 
 No virtualenv. No dependencies. Pure Python + Windows.
 
@@ -114,9 +120,9 @@ No virtualenv. No dependencies. Pure Python + Windows.
 
 ## The seed effect (the coolest part)
 
-When you run Endgame with `--evolve`, it doesn't just complete the task - it **learns**.
+When you run Endgame with `--evolve`, it doesn't just complete the task — it **learns**.
 
-After/During the run it analyzes what worked and what failed, then rewrites parts of its own planner and actor prompts.  
+After/During the run it analyzes what worked and what failed, then rewrites parts of its own planner and actor prompts.
 
 Your copy of Endgame slowly becomes a different, better version than anyone else's. The GitHub repo is only the starting genome. The living intelligence grows on *your* machine.
 
@@ -134,7 +140,7 @@ This is why I call it Endgame.
 - Completely local & private
 
 **What is still rough:**
-- Planner/actor state can temporarily desync (the system has learned to trust the current screen) (--evolve flag solves this, system itself solves its own problems)
+- Planner/actor state can temporarily desync (the `--evolve` flag + system itself solves most of this)
 - Currently Windows-only
 
 This is a working prototype that has already shown real breakthrough behavior. With a stronger local model it will become dramatically more capable using the exact same wiring.
@@ -165,3 +171,4 @@ Then make it yours.
 <p align="center">
   <sub>Built by someone who believes local AI should feel like an extension of your own hands.</sub>
 </p>
+
