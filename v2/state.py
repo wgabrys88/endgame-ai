@@ -75,8 +75,8 @@ class Blackboard:
     repetition_score: float = 0.0
     chaos_level: float = 0.0
     lorenz_x: float = 0.1
-    lorenz_y: float = 0.0
-    lorenz_z: float = 0.0
+    lorenz_y: float = 1.0
+    lorenz_z: float = 1.0
     blocked_signatures: list[str] = field(default_factory=list)
     expectation_miss_streak: int = 0
 
@@ -284,7 +284,7 @@ class Blackboard:
             x, y, z = x * scale, y * scale, z * scale
 
         self.lorenz_x, self.lorenz_y, self.lorenz_z = x, y, z
-        self.chaos_level = min(1.0, abs(z) / rho)
+        self.chaos_level = min(1.0, (abs(z) + self.consecutive_failures * 5.0 + self.expectation_miss_streak * 4.0 + self.repetition_score * 3.0) / rho)
 
         if self.chaos_level > 0.5:
             recent = sigs[-4:]
