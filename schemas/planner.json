@@ -1,0 +1,62 @@
+{
+  "type": "json_schema",
+  "json_schema": {
+    "name": "planner_output",
+    "strict": true,
+    "schema": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["direct", "parallel", "done"],
+          "description": "One of: direct (perform the next_action yourself), parallel (decompose into child agents), done (goal achieved with evidence)."
+        },
+        "because": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 500,
+          "description": "Concise reasoning for the chosen mode and next_action."
+        },
+        "next_action": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 800,
+          "description": "Concrete instruction for the actor when mode=direct. Empty string for parallel or done."
+        },
+        "expect": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 400,
+          "description": "What observable result is expected from this step."
+        },
+        "decompose": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 5,
+          "description": "When mode=parallel, up to 5 self-contained sub-goals for child agents. Empty otherwise.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "sub_goal": {
+                "type": "string",
+                "minLength": 20,
+                "maxLength": 600,
+                "description": "Self-contained sub-goal for a child agent."
+              },
+              "agent_id": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 40,
+                "description": "Short unique identifier for the child."
+              }
+            },
+            "required": ["sub_goal", "agent_id"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["mode", "because", "next_action", "expect", "decompose"],
+      "additionalProperties": false
+    }
+  }
+}
