@@ -1,0 +1,13 @@
+lessons.json
+evolution_ledger.json
+blackboard/blackboard_state.json
+comms/
+journal-*.txt
+trace-*.txt
+*.bak
+__pycache__/
+*.pyc
+.venv/
+PYRIGHT.md
+AGENTS.md
+*.code-workspace

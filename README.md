@@ -1,174 +1,91 @@
+# Endgame-AI
 
+Closed-loop autonomous Windows 11 desktop agent. Local LLM or remote backend observes the screen via UI Automation, plans semantically, resolves targets from fresh observation, executes via SendInput, verifies, reflects, and rewrites its own prompts during execution.
 
-<h1 align="center" style="margin-top: 12px;">Endgame-AI</h1>
-
-<p align="center">
-  <strong>The wiring is the intelligence.</strong><br>
-  A minimal, local, self-evolving Windows desktop agent.<br>
-  <em>No RAG. No skills. No MCP. No API wrappers.</em><br>
-  Just perception → planning → action → verification, and prompts that improve themselves.
-</p>
-
-<p align="center">
-  <a href="#demo-videos">Demo Videos</a> •
-  <a href="#how-to-run">How to run</a> •
-  <a href="#what-it-actually-is">What it is</a> •
-  <a href="#architecture">Architecture</a> •
-  <a href="#the-seed-effect">The seed effect</a>
-</p>
+No dependencies. No pip install. Pure Python 3.13 + Windows.
 
 ---
 
-## Demo Videos
+## How to Run
 
-Real execution traces. Left = **LM Studio** (local model on consumer hardware). Right = **ACP** backend.
-
-| **LM Studio Run** (Local • gemma-4-E4B Q6) | **ACP Run** (Multi-app • Vague goal) |
-|---------------------------------------------|--------------------------------------|
-| **Created `hello_world.py` in VS Code, saved it, and clicked "Run Python File"** — 4 evolution cycles on GTX 1060 6GB. | **Completed complex multi-app task** (YouTube + mute + Opera + Grok + copy to Notepad) after evolution fixed the patterns. |
-| [![LM Studio Demo](assets/thumbnail-lmstudio.jpg)](https://github.com/user-attachments/assets/ef4b72d8-bd78-444c-b9fb-d69e0eb30bf4) | [![ACP Demo](assets/thumbnail-acp.jpg)](https://github.com/user-attachments/assets/6314f179-8abe-4d10-9be9-0df2f96228cc) |
-
----
-
-**Between you and me:**
-
-Endgame-AI is a small set of Python scripts that lets a local LLM control your Windows computer exactly like a human does: it looks at the screen, decides what to click or type, does it, checks if it worked, and repeats until your goal is done.
-
-**Download the zip** from GitHub (no git, no install, no `pip`), unzip, and run:
-
-```bash
-python endgame.py "Open VS Code, create hello_world.py that prints hello world, save and run it" 30 --reflect 5 --evolve
+```
+python main.py "your goal here" --backend lmstudio
+python main.py "your goal here" --backend acp
+python main.py --resume --backend lmstudio
+python main.py "your goal here" --backend acp --agent-id worker_1
 ```
 
-It gets better at *your* specific tasks over time because it reflects on what worked and rewrites its own instructions after each run — your copy of the system becomes unique to you.
+Run as Administrator. The system needs UI Automation access.
 
----
-
-**What the logs actually prove**
-```
-SHAKIRA TEST (ACP)
-Vague goal. First action mentioned last. Multi-app. YouTube + mute + Opera + Grok + copy to Notepad.
-It did it. After several failed runs, evolution fixed the patterns. The system learned.
-
-VS CODE TEST (GTX 1060 + gemma-4-E4B Q6)
-Small model on 6 GB VRAM. Initial targeting failures. After evolution: created file, saved it,
-clicked "Run Python File", and it worked. 4 cycles. No crash. Prompts got better.
-```
-
----
-
-## What it actually is
-
-Endgame is a **closed-loop GUI agent** built on native Windows UI Automation. It:
-
-- Collects rich, structured screen state (windows, elements, roles, enabled states, z-order, focused window) **without vision models**.
-- Uses a Planner → Actor loop with explicit budget tracking and phase decomposition.
-- Executes real mouse/keyboard actions via low-level `SendInput`.
-- Verifies every action in the next cycle using fresh UI state.
-- Optionally runs **post/middle-run reflection** that rewrites the planner and actor system prompts based on concrete lessons.
-
-**Proven on real hardware:**
-
-- **GTX 1060 6 GB + gemma-4-E4B Q6_K_XL** (LM Studio): Created `hello_world.py` in VS Code, saved it, and executed it via the "Run Python File" button in **4 cycles** of evolution.
-- **ACP backend**: Completed a deliberately vague multi-app goal. It handled the out-of-order request, muted the video correctly, and succeeded.
-
-These claims are from full execution traces with logs, verified state, and prompt evolution — not toy demos.
+**Backends:**
+- `lmstudio` — local LLM via LM Studio HTTP API (default: `localhost:1234`)
+- `acp` — remote via kiro-cli ACP protocol in WSL2
 
 ---
 
 ## Architecture
 
-```mermaid
-graph TD
-    A[COLLECT<br/>UI Automation + Probes + Z-order] --> B[RENDER<br/>Readable SCREEN + Numbered Elements]
-    B --> C[PLANNER LLM<br/>Phases + Budget + Next Step]
-    C --> D[ACTOR LLM<br/>Observe → Reason → Actions]
-    D --> E[EXECUTE<br/>Validate + SendInput]
-    E --> F[VERIFY<br/>Next cycle re-scan]
-    F -->|Lessons| G[REFLECT + EVOLVE<br/>Rewrite own prompts]
-    G --> A
+```
+observer → planner → actor → execute → verify → reflect → loop
 ```
 
-**Key insight**: The LLM is the brain. Everything else is dumb, honest plumbing that gives it the best possible current picture of reality every cycle.
+- **Observer** — walks the UI Automation tree + probes screen with cursor movement to discover elements. Produces numbered element list.
+- **Planner** — decides WHAT to do next (semantic, no IDs). Modes: direct, parallel, done.
+- **Actor** — resolves planner instruction to specific element IDs from fresh screen list. Outputs verb + target + value.
+- **Execute** — runs the action (click, write, press, hotkey, scroll, wait, focus, read_file, write_file, spawn_agent, cmd, done).
+- **Verifier** — confirms goal completion with evidence.
+- **Reflector** — analyzes execution history, rewrites prompts, adds lessons, rewrites goals.
 
 ---
 
-## How to run
+## Termination
 
-1. Go to the repo → **Code → Download ZIP**
-2. Unzip anywhere
-3. Open terminal in the folder:
+No cycle caps. The system runs `while True` and terminates on:
 
-```bash
-python endgame.py "your goal here" [max_cycles] [backend] [options]
-```
-
-**Recommended first run:**
-
-```bash
-python endgame.py "Open Notepad and type Hello from Endgame" 15 --reflect 3 --evolve
-```
-
-**Useful options:**
-- `--reflect N` — reflect every N cycles
-- `--evolve` — actually improve the prompts (this is where it gets interesting)
-- `--req-tokens-max N` — hard cap on tokens for cloud models
-
-No virtualenv. No dependencies. Pure Python + Windows.
+1. **Done** — goal achieved, verified → exit 0
+2. **Chaos halt** — chaos ≥ 0.95 sustained 5 iterations → exit 1
+3. **Interrupt** — Ctrl+C → exit 1
+4. **Inbox kill** — external kill command → exit 0
 
 ---
 
-## The seed effect
+## Files
 
-When you run Endgame with `--evolve`, it doesn't just complete the task — it **learns**.
-
-After/During the run it analyzes what worked and what failed, then rewrites parts of its own planner and actor prompts.
-
-Your copy of Endgame slowly becomes a different, better version than anyone else's. The GitHub repo is only the starting genome. The living intelligence grows on *your* machine.
-
-This is why I call it Endgame.
-
----
-
-## Honest reality check
-
-**What works well today:**
-- Real desktop work on Windows
-- Multi-app workflows
-- Recovery from its own mistakes
-- Self-improvement during/across runs
-- Completely local & private
-
-**What is still rough:**
-- Planner/actor state can temporarily desync (the `--evolve` flag + system itself solves most of this)
-- Currently Windows-only
-
-This is a working prototype that has already shown real breakthrough behavior. With a stronger local model it will become dramatically more capable using the exact same wiring.
+| File | Purpose |
+|------|---------|
+| main.py | Entry point, CLI |
+| orchestrator.py | Core loop |
+| state.py | Blackboard, EventBus, Lorenz chaos |
+| observer.py | UI Automation tree walk + probe scan |
+| actions.py | 12 verb handlers |
+| dispatch.py | LLM call + JSON extraction |
+| llm.py | LM Studio / ACP backend |
+| config.py | All constants |
+| journal.py | Execution journal |
+| lessons.py | Learned insights CRUD |
+| persistence.py | Blackboard state, evolution ledger |
+| win32.py | Raw ctypes: UIA COM, SendInput |
+| acp_client.py | ACP backend via kiro-cli |
+| prompts/ | System prompts (rewritten by reflector during execution) |
+| schemas/ | JSON schemas enforced on LLM output |
+| blackboard/ | Inter-agent communication |
 
 ---
 
-## Philosophy
+## Self-Improvement
 
-Most agent projects add more layers (tools, skills, RAG, frameworks).
+The reflector rewrites `prompts/planner.txt`, `prompts/actor.txt`, and `prompts/verifier.txt` during execution based on concrete lessons from action history. The system also accumulates insights in `lessons.json` and maintains an evolution ledger across runs.
 
-Endgame removes layers.
-
-It treats the LLM as the intelligence and gives it the cleanest possible feedback loop about what is actually happening on screen. When the loop is tight and honest, even modest models become useful. When the model gets better, the same system becomes terrifyingly capable.
-
-The future belongs to better **wiring**, not more wrappers.
+Prompts that ship in this repo are the starting genome. After execution, your copy diverges.
 
 ---
 
-**2026 is the year the wiring won.**
+## Multi-Agent
 
-Download it. Run it. Watch it work on your machine.  
-Then make it yours.
+The planner can decompose goals into parallel sub-goals. Each child runs the same architecture. Coordination happens via the blackboard (`blackboard/blackboard_state.json`). Screen access is serialized via file-based locking.
 
 ---
 
-*This README was written after complete forensic analysis of source code + full execution logs from both LM Studio and ACP runs on actual consumer hardware. No hype. Only what the traces prove.*
+## Chaos System
 
-<p align="center">
-  <sub>Built by someone who believes local AI should feel like an extension of your own hands.</sub>
-</p>
-
+Lorenz attractor drives self-regulation. Inputs: action diversity, progress, stagnation, repetition. Outputs: chaos level that gates behavior — blocks repeated actions, forces parallel decomposition, rejects premature done claims, and ultimately halts the system if it cannot self-correct.
