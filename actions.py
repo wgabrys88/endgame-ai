@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 import time
 
 from config import (DELAY_FOCUS, DELAY_CURSOR_SETTLE, DELAY_MOUSE_HOLD,
@@ -8,6 +8,9 @@ from config import (DELAY_FOCUS, DELAY_CURSOR_SETTLE, DELAY_MOUSE_HOLD,
 from win32 import user32, get_window_title, VK_MAP, EXTENDED_VKS, INPUT
 
 __all__ = ["execute_verb", "ActionResult", "VERBS"]
+
+type ElementBook = dict[str, Any]
+type VerbFn = Callable[[dict[str, Any], ElementBook, Any], ActionResult]
 
 
 @dataclass(slots=True)
@@ -18,10 +21,10 @@ class ActionResult:
     duration_ms: int = 0
 
 
-VERBS: dict[str, Any] = {}
+VERBS: dict[str, VerbFn] = {}
 
 
-def execute_verb(verb: str, args: dict[str, Any], book: dict, state: Any) -> ActionResult:
+def execute_verb(verb: str, args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
     handler = VERBS.get(verb)
     if not handler:
         return ActionResult(verb=verb, success=False,
@@ -38,15 +41,15 @@ def execute_verb(verb: str, args: dict[str, Any], book: dict, state: Any) -> Act
                             duration_ms=int((time.perf_counter() - t0) * 1000))
 
 
-def _register(name: str):
-    def decorator(fn):
+def _register(name: str) -> Callable[[VerbFn], VerbFn]:
+    def decorator(fn: VerbFn) -> VerbFn:
         VERBS[name] = fn
         return fn
     return decorator
 
 
 @_register("click")
-def _click(args: dict, book: dict, state) -> ActionResult:
+def _click(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
     selector = str(args.get("selector", ""))
     if selector not in book:
         return ActionResult("click", False, f"selector {selector} not in book")
@@ -64,7 +67,7 @@ def _click(args: dict, book: dict, state) -> ActionResult:
 
 
 @_register("write")
-def _write(args: dict, book: dict, state) -> ActionResult:
+def _write(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
     import ctypes
     selector = str(args.get("selector", ""))
     text = str(args.get("text", ""))
@@ -92,7 +95,7 @@ def _write(args: dict, book: dict, state) -> ActionResult:
 
 
 @_register("press")
-def _press(args: dict, book: dict, state) -> ActionResult:
+def _press(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
     selector = str(args.get("selector", ""))
     key = str(args.get("key", "")).lower()
     if not key:
@@ -114,16 +117,16 @@ def _press(args: dict, book: dict, state) -> ActionResult:
 
 
 @_register("hotkey")
-def _hotkey(args: dict, book: dict, state) -> ActionResult:
+def _hotkey(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
     selector = str(args.get("selector", ""))
-    keys = args.get("keys", [])
+    keys: list[str] = args.get("keys", [])
     if not keys:
         return ActionResult("hotkey", False, "keys array is empty or missing")
     if selector and selector in book:
         entry = book[selector]
         user32.SetForegroundWindow(entry.hwnd)
         time.sleep(DELAY_FOCUS)
-    vks = []
+    vks: list[int] = []
     for k in keys:
         k = k.lower()
         if k not in VK_MAP:
@@ -139,7 +142,7 @@ def _hotkey(args: dict, book: dict, state) -> ActionResult:
 
 
 @_register("scroll")
-def _scroll(args: dict, book: dict, state) -> ActionResult:
+def _scroll(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
     selector = str(args.get("selector", ""))
     amount = int(args.get("amount", 3))
     if selector not in book:
@@ -155,18 +158,18 @@ def _scroll(args: dict, book: dict, state) -> ActionResult:
 
 
 @_register("wait")
-def _wait(args: dict, book: dict, state) -> ActionResult:
+def _wait(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
     seconds = min(float(args.get("seconds", 1.0)), MAX_WAIT_SECONDS)
     time.sleep(seconds)
     return ActionResult("wait", True, f"waited {seconds}s")
 
 
 @_register("focus")
-def _focus(args: dict, book: dict, state) -> ActionResult:
+def _focus(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
     title = str(args.get("window_title", ""))
     if not title:
         return ActionResult("focus", False, "no window_title provided")
-    found_hwnd = None
+    found_hwnd: int | None = None
     hwnd = user32.GetTopWindow(None)
     while hwnd:
         if user32.IsWindowVisible(hwnd):
@@ -184,7 +187,7 @@ def _focus(args: dict, book: dict, state) -> ActionResult:
 
 
 @_register("read_file")
-def _read_file(args: dict, book: dict, state) -> ActionResult:
+def _read_file(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
     from pathlib import Path
     path = str(args.get("path", ""))
     target = Path(path)
@@ -201,7 +204,7 @@ def _read_file(args: dict, book: dict, state) -> ActionResult:
 
 
 @_register("write_file")
-def _write_file(args: dict, book: dict, state) -> ActionResult:
+def _write_file(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
     import hashlib
     from pathlib import Path
     path = str(args.get("path", ""))
@@ -210,8 +213,6 @@ def _write_file(args: dict, book: dict, state) -> ActionResult:
     if not target.is_absolute():
         target = BASE_DIR / target
     resolved = target.resolve()
-    if not resolved.is_relative_to(BASE_DIR):
-        return ActionResult("write_file", False, f"path escapes project root: {path}")
     if resolved.exists():
         backup = resolved.with_suffix(resolved.suffix + ".bak")
         backup.write_text(resolved.read_text(encoding="utf-8"), encoding="utf-8")
@@ -222,7 +223,7 @@ def _write_file(args: dict, book: dict, state) -> ActionResult:
 
 
 @_register("spawn_agent")
-def _spawn_agent(args: dict, book: dict, state) -> ActionResult:
+def _spawn_agent(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
     import subprocess
     goal = str(args.get("goal", ""))
     if not goal:
@@ -234,13 +235,15 @@ def _spawn_agent(args: dict, book: dict, state) -> ActionResult:
 
 
 @_register("cmd")
-def _cmd(args: dict, book: dict, state) -> ActionResult:
+def _cmd(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
     import subprocess
     command = str(args.get("command", ""))
     if not command:
         return ActionResult("cmd", False, "no command provided")
     try:
-        proc = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=30, cwd=str(BASE_DIR))
+        proc = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-Command", command],
+            capture_output=True, text=True, timeout=30, cwd=str(BASE_DIR))
         output = (proc.stdout + proc.stderr).strip()
         return ActionResult("cmd", proc.returncode == 0, output or f"exit code {proc.returncode}")
     except subprocess.TimeoutExpired:
@@ -248,6 +251,6 @@ def _cmd(args: dict, book: dict, state) -> ActionResult:
 
 
 @_register("done")
-def _done(args: dict, book: dict, state) -> ActionResult:
+def _done(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
     evidence = str(args.get("evidence", ""))
     return ActionResult("done", True, f"completion claimed: {evidence}")

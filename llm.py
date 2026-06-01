@@ -2,6 +2,8 @@ from __future__ import annotations
 import json
 import subprocess
 import time
+from typing import Any
+
 from config import (LMS_HOSTS, LMS_TIMEOUT, ACP_TIMEOUT, LLM_TEMPERATURE,
                     LLM_TOP_P, LLM_MAX_TOKENS, SCHEMAS_DIR)
 
@@ -22,8 +24,8 @@ def get_backend() -> str:
 
 
 def call_llm(system: str, user: str, role: str, *, max_tokens: int = LLM_MAX_TOKENS) -> str:
-    schema = _load_schema(role)
-    body: dict = {
+    schema: dict[str, Any] = _load_schema(role)
+    body: dict[str, Any] = {
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
@@ -41,7 +43,7 @@ def call_llm(system: str, user: str, role: str, *, max_tokens: int = LLM_MAX_TOK
     raise ValueError(f"unknown backend: {_backend}")
 
 
-def _load_schema(role: str) -> dict:
+def _load_schema(role: str) -> dict[str, Any]:
     path = SCHEMAS_DIR / f"{role}.json"
     if not path.exists():
         return {}
@@ -58,7 +60,7 @@ def _resolve_host_model() -> tuple[str, str]:
                 ["curl.exe", "-s", "--max-time", "3", f"{host}/v1/models"],
                 capture_output=True, timeout=10)
             if r.returncode == 0 and r.stdout.strip():
-                data = json.loads(r.stdout)
+                data: dict[str, Any] = json.loads(r.stdout)
                 if data.get("data"):
                     model_id: str = data["data"][0]["id"]
                     _cached_host = host
@@ -69,7 +71,7 @@ def _resolve_host_model() -> tuple[str, str]:
                     ["curl.exe", "-s", "--max-time", "30", f"{host}/v1/models"],
                     capture_output=True, timeout=35)
                 if r2.returncode == 0 and r2.stdout.strip():
-                    data2 = json.loads(r2.stdout)
+                    data2: dict[str, Any] = json.loads(r2.stdout)
                     if data2.get("data"):
                         model_id2: str = data2["data"][0]["id"]
                         _cached_host = host
@@ -85,7 +87,7 @@ def _try_reload_model(host: str) -> None:
     time.sleep(5)
 
 
-def _call_lmstudio(body: dict) -> str:
+def _call_lmstudio(body: dict[str, Any]) -> str:
     global _cached_host, _cached_model
     host, model = _resolve_host_model()
     body["model"] = model
@@ -107,9 +109,9 @@ def _call_lmstudio(body: dict) -> str:
                 time.sleep(2)
                 continue
             raise ValueError("empty LLM response")
-        result = json.loads(raw)
+        result: dict[str, Any] = json.loads(raw)
         if "choices" not in result or not result["choices"]:
-            error_msg = result.get("error", {}).get("message", str(result))
+            error_msg: str = result.get("error", {}).get("message", str(result))
             if "no models loaded" in error_msg.lower() or "No models loaded" in error_msg:
                 _cached_host = None
                 _cached_model = None
@@ -127,13 +129,13 @@ def _call_lmstudio(body: dict) -> str:
     raise RuntimeError("LLM call failed after 3 attempts")
 
 
-def _call_acp(body: dict) -> str:
+def _call_acp(body: dict[str, Any]) -> str:
     from acp_client import prompt_once
-    msgs = body.get("messages", [])
-    sys_content = next((m["content"] for m in msgs if m["role"] == "system"), "")
-    user_content = next((m["content"] for m in msgs if m["role"] == "user"), "")
-    schema = body.get("response_format", {})
-    schema_def = json.dumps(schema.get("json_schema", {}).get("schema", {}), indent=2)
+    msgs: list[dict[str, str]] = body.get("messages", [])
+    sys_content: str = next((m["content"] for m in msgs if m["role"] == "system"), "")
+    user_content: str = next((m["content"] for m in msgs if m["role"] == "user"), "")
+    schema: dict[str, Any] = body.get("response_format", {})
+    schema_def: str = json.dumps(schema.get("json_schema", {}).get("schema", {}), indent=2)
     prompt = (
         f"{sys_content}\n\n"
         f"Output ONLY a valid JSON object matching this schema. No other text.\n\nSchema:\n{schema_def}\n\n"

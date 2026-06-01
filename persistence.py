@@ -3,22 +3,22 @@ import json
 import msvcrt
 import os
 from datetime import datetime, timezone
-from pathlib import Path
+from typing import Any
 
 from config import BASE_DIR
 
-BB_PATH = BASE_DIR / "blackboard" / "blackboard_state.json"
+BB_PATH = BASE_DIR / "blackboard_state.json"
 EVOLUTION_LEDGER_PATH = BASE_DIR / "evolution_ledger.json"
 
 
-def _locked_read() -> dict:
+def _locked_read() -> dict[str, Any]:
     with open(BB_PATH, "r", encoding="utf-8") as f:
         msvcrt.locking(f.fileno(), msvcrt.LK_LOCK, 1)
-        data = json.load(f)
+        data: dict[str, Any] = json.load(f)
     return data
 
 
-def _locked_write(data: dict) -> None:
+def _locked_write(data: dict[str, Any]) -> None:
     with open(BB_PATH, "w", encoding="utf-8") as f:
         msvcrt.locking(f.fileno(), msvcrt.LK_LOCK, 1)
         json.dump(data, f, indent=2, ensure_ascii=False)
@@ -35,7 +35,7 @@ def _ensure_bb() -> None:
         }, indent=2), encoding="utf-8")
 
 
-def save_snapshot(board_data: dict) -> None:
+def save_snapshot(board_data: dict[str, Any]) -> None:
     _ensure_bb()
     bb = _locked_read()
     bb["state"] = board_data
@@ -43,29 +43,29 @@ def save_snapshot(board_data: dict) -> None:
     _locked_write(bb)
 
 
-def load_snapshot() -> dict | None:
+def load_snapshot() -> dict[str, Any] | None:
     _ensure_bb()
     bb = _locked_read()
-    state = bb.get("state")
+    state: dict[str, Any] | None = bb.get("state")
     if not state or not state.get("goal"):
         return None
     return state
 
 
-def post_event(verb: str, source: str, target: str, payload=None) -> None:
-    from blackboard.event_schema import create_event
+def post_event(verb: str, source: str, target: str, payload: Any = None) -> None:
+    from event_schema import create_event
     _ensure_bb()
     bb = _locked_read()
-    evt = create_event(verb, source, target, payload)
+    evt: dict[str, Any] = create_event(verb, source, target, payload)
     bb["events"].append(evt)
     bb["meta"]["last_updated"] = datetime.now(timezone.utc).isoformat()
     _locked_write(bb)
 
 
-def poll_events(target: str) -> list[dict]:
+def poll_events(target: str) -> list[dict[str, Any]]:
     _ensure_bb()
     bb = _locked_read()
-    pending = [e for e in bb["events"] if e.get("target") == target and e.get("status") == "pending"]
+    pending: list[dict[str, Any]] = [e for e in bb["events"] if e.get("target") == target and e.get("status") == "pending"]
     if pending:
         for e in pending:
             e["status"] = "done"
@@ -90,14 +90,14 @@ def unregister_agent(agent_id: str) -> None:
     _locked_write(bb)
 
 
-def get_registered_agents() -> dict:
+def get_registered_agents() -> dict[str, Any]:
     _ensure_bb()
     bb = _locked_read()
     return bb.get("agents", {})
 
 
 def append_to_evolution_ledger(entry: str, source_run: str = "") -> None:
-    data = {"entries": []}
+    data: dict[str, Any] = {"entries": []}
     if EVOLUTION_LEDGER_PATH.exists():
         try:
             data = json.loads(EVOLUTION_LEDGER_PATH.read_text(encoding="utf-8"))
@@ -116,8 +116,8 @@ def get_evolution_ledger_context() -> str:
     if not EVOLUTION_LEDGER_PATH.exists():
         return ""
     try:
-        data = json.loads(EVOLUTION_LEDGER_PATH.read_text(encoding="utf-8"))
-        entries = data.get("entries", [])
+        data: dict[str, Any] = json.loads(EVOLUTION_LEDGER_PATH.read_text(encoding="utf-8"))
+        entries: list[dict[str, Any]] = data.get("entries", [])
         if not entries:
             return ""
         lines = ["LONG-TERM EVOLUTIONARY LEDGER (distilled by the organism itself):"]

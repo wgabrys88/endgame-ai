@@ -1,0 +1,7 @@
+{
+  "pythonVersion": "3.13",
+  "pythonPlatform": "Windows",
+  "typeCheckingMode": "strict",
+  "include": ["*.py"],
+  "exclude": ["**/__pycache__"]
+}

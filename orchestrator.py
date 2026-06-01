@@ -1,9 +1,9 @@
 from __future__ import annotations
-import json
+
 import subprocess
 import time
 import uuid
-from pathlib import Path
+
 from typing import Any, Callable
 
 from config import (
@@ -38,6 +38,7 @@ def run(board: Blackboard, journal: ExecutionJournal | NullJournal, *,
     reflector_called_this_iteration = False
     spawns_this_iteration = 0
     chaos_halt_counter = 0
+    unchanged_count = 0
 
     def on_goal_rewritten(payload: dict[str, Any]) -> None:
         journal.append("blackboard.goal_rewritten", payload, it=board.iteration, aid="blackboard")
@@ -102,7 +103,7 @@ def run(board: Blackboard, journal: ExecutionJournal | NullJournal, *,
     board.events.subscribe("refusal.detected", on_refusal_detected)
 
     def on_action_recorded(payload: dict[str, Any]) -> None:
-        board._broadcast_action(payload["verb"], payload["success"], payload.get("obs", ""))
+        board.broadcast_action(payload["verb"], payload["success"], payload.get("obs", ""))
     board.events.subscribe("action.recorded", on_action_recorded)
 
     while True:
@@ -150,31 +151,37 @@ def run(board: Blackboard, journal: ExecutionJournal | NullJournal, *,
         if is_distillation:
             board.record_screen("(distillation mode — no screen observation)", "distill", {})
         elif not board.acquire_screen():
-            print(f"  [WAIT] Screen locked by another agent. Skipping this iteration.")
-            time.sleep(DELAY_BETWEEN_ITERATIONS)
-            journal.append("iteration.end", {"iteration": board.iteration, "screen_locked": True}, it=board.iteration, ph="system")
-            continue
+            board.problem = "SCREEN LOCKED: Another agent holds the screen lock."
+            board.record_action("screen_locked", {}, False, "another agent holds lock")
+            print(f"  [WAIT] Screen locked by another agent. Planner will run blind.")
+            journal.append("error.screen_lock", {"iteration": board.iteration}, it=board.iteration, lvl="WARN")
         else:
             try:
                 obs = observe()
-                board.record_screen(obs.context_text, obs.content_hash, obs.book)
+                board.record_screen(obs.context_text, obs.content_hash, obs.book, focused=obs.focused_title, windows=[w["name"] for w in obs.windows])
                 journal.append("screen.observed", {"hash": obs.content_hash, "elements": len(obs.book)},
                                it=board.iteration, aid="observer", ph="observe")
             except Exception as e:
                 board.release_screen()
+                board.problem = f"OBSERVE FAILED: {e}"
+                board.record_action("observe_fail", {}, False, str(e))
+                board.record_failure()
                 journal.append("error.observe", {"error": str(e)}, it=board.iteration, lvl="ERROR")
                 print(f"  [ERROR] observe failed: {e}")
-                time.sleep(DELAY_BETWEEN_ITERATIONS)
-                continue
 
         if not is_distillation:
             if board.screen_hash == prev_screen_hash and board.last_verb == "wait" and not child_events:
+                unchanged_count += 1
+                if unchanged_count < 3:
+                    board.release_screen()
+                    journal.append("screen.unchanged", {"hash": board.screen_hash}, it=board.iteration, ph="system")
+                    time.sleep(DELAY_BETWEEN_ITERATIONS)
+                    journal.append("iteration.end", {"iteration": board.iteration, "skipped": True}, it=board.iteration, ph="system")
+                    continue
+                board.problem = f"SCREEN UNCHANGED for {unchanged_count} iterations after wait."
                 board.release_screen()
-                journal.append("screen.unchanged", {"hash": board.screen_hash}, it=board.iteration, ph="system")
-                time.sleep(DELAY_BETWEEN_ITERATIONS)
-                prev_screen_hash = board.screen_hash
-                journal.append("iteration.end", {"iteration": board.iteration, "skipped": True}, it=board.iteration, ph="system")
-                continue
+            else:
+                unchanged_count = 0
             prev_screen_hash = board.screen_hash
 
         context = board.planner_context()
@@ -225,7 +232,7 @@ def run(board: Blackboard, journal: ExecutionJournal | NullJournal, *,
             if mode == "direct" and not next_action:
                 next_action = "Observe the current screen state and take the first concrete step toward the goal."
 
-        if mode != "done" and board._detect_repetition_in_history():
+        if mode != "done" and board.detect_repetition_in_history():
             goal_lower = board.goal.lower()
             if any(phrase in goal_lower for phrase in ("emit done", "and done", "then done")):
                 mode = "done"
@@ -292,7 +299,7 @@ def run(board: Blackboard, journal: ExecutionJournal | NullJournal, *,
             board.expectation_miss_streak = 0
 
         iteration_had_failure = False
-        raw_actions = actor_out.get("actions", [])
+        raw_actions: list[dict[str, Any]] = actor_out.get("actions", [])
         if not isinstance(raw_actions, list):
             raw_actions = []
 
@@ -374,8 +381,8 @@ def _process_inbox_command(board: Blackboard, journal: ExecutionJournal | NullJo
         journal.append("inbox.hint", {"hint": payload}, it=board.iteration)
     elif cmd_type == "inject_lesson":
         store = Lessons()
-        store._data.setdefault("insights", []).append(payload)
-        store._save()
+        store.data.setdefault("insights", []).append(payload)
+        store.save()
         journal.append("inbox.lesson", {"lesson": payload}, it=board.iteration)
     elif cmd_type == "set_chaos":
         try:
@@ -422,7 +429,7 @@ def _execute_decomposition(board: Blackboard, journal: ExecutionJournal | NullJo
             result_text = child_board.done_evidence or child_board.last_observation or ""
             state = "done" if success else "failed"
             handle = AgentHandle(agent_id=agent_id, goal=sub_goal, pid=0,
-                                 status_file=BASE_DIR / "blackboard" / "blackboard_state.json")
+                                 status_file=BASE_DIR / "blackboard_state.json")
             handle.state = state
             handle.result = result_text
             board.children[agent_id] = handle
@@ -458,7 +465,7 @@ def _spawn_child(agent_id: str, goal: str, journal: ExecutionJournal | NullJourn
         register_agent(agent_id, proc.pid)
         journal.append("child.spawned", {"agent_id": agent_id, "goal": goal, "pid": proc.pid},
                        it=iteration, ph="coordinate")
-        return AgentHandle(agent_id=agent_id, goal=goal, pid=proc.pid, status_file=BASE_DIR / "blackboard" / "blackboard_state.json"), proc
+        return AgentHandle(agent_id=agent_id, goal=goal, pid=proc.pid, status_file=BASE_DIR / "blackboard_state.json"), proc
     except Exception as e:
         journal.append("error.spawn", {"agent_id": agent_id, "error": str(e)}, it=iteration, lvl="ERROR")
         return None, None
@@ -512,7 +519,7 @@ def _call_llm_role(role: str, spec: RoleSpec, context: str,
                    journal: ExecutionJournal | NullJournal, iteration: int = 0) -> dict[str, Any] | None:
     try:
         result = call_role(spec, context)
-        if not isinstance(result, dict):
+        if not isinstance(result, dict):  # type: ignore[reportUnnecessaryIsInstance]
             journal.append(f"error.{role}", {"error": f"non-dict response: {type(result).__name__}"}, it=iteration, lvl="ERROR")
             return None
         journal.append(f"{role}.output", result, it=iteration, aid=role, ph=role)
@@ -557,8 +564,8 @@ def _call_reflector(board: Blackboard, journal: ExecutionJournal | NullJournal) 
         if lessons_list:
             store = Lessons()
             for lesson in lessons_list:
-                store._data.setdefault("insights", []).append(lesson)
-            store._save()
+                store.data.setdefault("insights", []).append(lesson)
+            store.save()
 
         for role, key in [("actor", "actor_prompt_rewrite"),
                           ("planner", "planner_prompt_rewrite"),

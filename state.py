@@ -54,6 +54,9 @@ class Blackboard:
     screen: str = ""
     screen_hash: str = ""
     screen_elements: dict[str, Any] = field(default_factory=dict)
+    focused_window: str = ""
+    window_list: list[str] = field(default_factory=list)
+    prev_window_list: list[str] = field(default_factory=list)
 
     history: list[dict[str, Any]] = field(default_factory=list)
 
@@ -196,7 +199,7 @@ class Blackboard:
         return "\n".join(lines)
 
     def rewrite_goal(self, new_goal: str) -> None:
-        if not new_goal or not isinstance(new_goal, str):
+        if not new_goal:
             return
         if not self.original_goal:
             self.original_goal = self.goal
@@ -303,7 +306,7 @@ class Blackboard:
             return False
         return self.chaos_level > 0.3 or self.iteration < 3 or self.expectation_miss_streak > 0
 
-    def _detect_repetition_in_history(self) -> bool:
+    def detect_repetition_in_history(self) -> bool:
         if len(self.history) < 3:
             return False
         recent = self.history[-4:]
@@ -341,7 +344,7 @@ class Blackboard:
             "iteration": self.iteration
         })
 
-    def _broadcast_action(self, verb: str, success: bool, observation: str) -> None:
+    def broadcast_action(self, verb: str, success: bool, observation: str) -> None:
         action_log = COMMS_DIR / f"{self.agent_id}_actions.jsonl"
         line = json.dumps({"verb": verb, "success": success, "obs": observation, "iteration": self.iteration, "ts": time.time()})
         with open(action_log, "a", encoding="utf-8") as f:
@@ -373,10 +376,16 @@ class Blackboard:
         if self.iteration > 0 and self.iteration % DISTILL_EVERY_N_ITERATIONS == 0:
             self.events.publish("evolution.distillation_due", {"iteration": self.iteration})
 
-    def record_screen(self, text: str, hash_val: str, elements: dict[str, Any]) -> None:
+    def record_screen(self, text: str, hash_val: str, elements: dict[str, Any],
+                      focused: str = "", windows: list[str] | None = None) -> None:
         self.screen = text
         self.screen_hash = hash_val
         self.screen_elements = elements
+        if focused:
+            self.focused_window = focused
+        if windows is not None:
+            self.prev_window_list = self.window_list
+            self.window_list = windows
 
     def clear_signals(self) -> None:
         self.done_claimed = False
@@ -386,8 +395,9 @@ class Blackboard:
     def planner_context(self) -> str:
         parts = [f"ITERATION: {self.iteration}"]
         parts.append(f"MODE: {self.mode}")
+        parts.append(f"HOME: {BASE_DIR}")
 
-        if self._detect_repetition_in_history():
+        if self.detect_repetition_in_history():
             parts.append(
                 "!!! WARNING: You have repeated the same action multiple times. "
                 "If the goal's core action already succeeded, set mode=done NOW. "

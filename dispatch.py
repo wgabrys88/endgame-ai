@@ -26,8 +26,8 @@ def _get_required_fields(role: str) -> list[str]:
     if not path.exists():
         _schema_cache[role] = []
         return []
-    data = json.loads(path.read_text(encoding="utf-8"))
-    fields = data.get("json_schema", {}).get("schema", {}).get("required", [])
+    data: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+    fields: list[str] = data.get("json_schema", {}).get("schema", {}).get("required", [])
     _schema_cache[role] = fields
     return fields
 
@@ -48,13 +48,13 @@ def _extract_json(raw: str, required_fields: list[str]) -> dict[str, Any]:
     stripped = raw.strip()
     if stripped.startswith("{"):
         try:
-            result = json.loads(stripped)
+            result: dict[str, Any] = json.loads(stripped)
             if isinstance(result, dict) and _matches_schema(result, required_fields):
                 trace("dispatch.parse", "clean JSON, schema match")
                 return result
         except json.JSONDecodeError:
             pass
-    candidates = []
+    candidates: list[tuple[int, str]] = []
     depth = 0
     start = -1
     for i, ch in enumerate(raw):
@@ -67,9 +67,9 @@ def _extract_json(raw: str, required_fields: list[str]) -> dict[str, Any]:
             if depth == 0 and start != -1:
                 candidates.append((start, raw[start:i + 1]))
                 start = -1
-    schema_match = None
-    actionable = None
-    fallback = None
+    schema_match: tuple[int, dict[str, Any]] | None = None
+    actionable: tuple[int, dict[str, Any]] | None = None
+    fallback: tuple[int, dict[str, Any]] | None = None
     for pos, candidate in reversed(candidates):
         try:
             result = json.loads(candidate)
@@ -96,7 +96,7 @@ def _extract_json(raw: str, required_fields: list[str]) -> dict[str, Any]:
     raise ValueError(f"no JSON in response: {raw}")
 
 
-def _matches_schema(obj: dict, required_fields: list[str]) -> bool:
+def _matches_schema(obj: dict[str, Any], required_fields: list[str]) -> bool:
     if not required_fields:
         return True
     return all(field in obj for field in required_fields)

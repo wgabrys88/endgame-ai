@@ -30,7 +30,7 @@ class Event:
     status: str = "pending"
 
 
-def create_event(verb: str, source: str, target: str, payload: Any = None, status: str = "pending") -> dict:
+def create_event(verb: str, source: str, target: str, payload: Any = None, status: str = "pending") -> dict[str, Any]:
     if verb not in VERBS:
         raise ValueError(f"Invalid verb '{verb}'. Must be one of {VERBS}")
     e = Event(
@@ -45,7 +45,7 @@ def create_event(verb: str, source: str, target: str, payload: Any = None, statu
     return asdict(e)
 
 
-def validate_event(evt: dict) -> bool:
+def validate_event(evt: dict[str, Any]) -> bool:
     required = {"id", "verb", "source", "target", "payload", "timestamp", "status"}
     if not required.issubset(evt.keys()):
         return False

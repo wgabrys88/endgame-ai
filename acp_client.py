@@ -5,8 +5,8 @@ import json
 import queue
 import subprocess
 import threading
-import time
 from dataclasses import dataclass, field
+from typing import Any
 
 __all__ = ["ACPError", "prompt_once"]
 
@@ -16,6 +16,8 @@ WORKSPACE: str = "/tmp/poke-acp"
 MODEL: str = "claude-opus-4.7"
 PROTOCOL_VERSION: int = 1
 DEFAULT_TIMEOUT: float = 300.0
+
+type JsonMsg = dict[str, Any]
 
 
 class ACPError(RuntimeError):
@@ -32,12 +34,12 @@ class _Flight:
 
 class _Pool:
     def __init__(self) -> None:
-        self._proc: subprocess.Popen | None = None
+        self._proc: subprocess.Popen[bytes] | None = None
         self._lock = threading.Lock()
-        self._next_id = 0
-        self._pending: dict[int, queue.Queue] = {}
+        self._next_id: int = 0
+        self._pending: dict[int, queue.Queue[JsonMsg]] = {}
         self._flights: dict[str, _Flight] = {}
-        self._started = False
+        self._started: bool = False
         atexit.register(self.close)
 
     def _alive(self) -> bool:
@@ -64,7 +66,7 @@ class _Pool:
             ["wsl.exe", "-d", DISTRO, "--cd", WORKSPACE, "--exec", KIRO_CLI, "acp"],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         threading.Thread(target=self._reader, daemon=True).start()
-        resp = self._request("initialize", {
+        resp: JsonMsg = self._request("initialize", {
             "protocolVersion": PROTOCOL_VERSION,
             "clientCapabilities": {"fs": {"readTextFile": True, "writeTextFile": True}, "terminal": True}})
         if resp.get("protocolVersion") != PROTOCOL_VERSION:
@@ -73,7 +75,8 @@ class _Pool:
 
     def prompt(self, text: str, timeout: float = DEFAULT_TIMEOUT) -> str:
         self._start()
-        sid = self._request("session/new", {"cwd": WORKSPACE, "mcpServers": []}).get("sessionId")
+        sid_resp: JsonMsg = self._request("session/new", {"cwd": WORKSPACE, "mcpServers": []})
+        sid: Any = sid_resp.get("sessionId")
         if not isinstance(sid, str):
             raise ACPError("no sessionId returned")
         flight = _Flight(session_id=sid)
@@ -91,18 +94,18 @@ class _Pool:
         self._flights.pop(sid, None)
         return "".join(flight.chunks)
 
-    def _send(self, method: str, params: dict) -> int:
+    def _send(self, method: str, params: JsonMsg) -> int:
         self._next_id += 1
         rid = self._next_id
         self._pending[rid] = queue.Queue()
         self._write({"jsonrpc": "2.0", "id": rid, "method": method, "params": params})
         return rid
 
-    def _request(self, method: str, params: dict, timeout: float = 60.0) -> dict:
+    def _request(self, method: str, params: JsonMsg, timeout: float = 60.0) -> JsonMsg:
         with self._lock:
             rid = self._send(method, params)
         try:
-            msg = self._pending[rid].get(timeout=timeout)
+            msg: JsonMsg = self._pending[rid].get(timeout=timeout)
         except queue.ShutDown:
             raise ACPError("client shut down during request")
         self._pending.pop(rid, None)
@@ -110,7 +113,7 @@ class _Pool:
             raise ACPError(str(msg["error"]))
         return msg.get("result") or {}
 
-    def _write(self, msg: dict) -> None:
+    def _write(self, msg: JsonMsg) -> None:
         if not self._alive() or self._proc is None or self._proc.stdin is None:
             raise ACPError("process not running")
         self._proc.stdin.write(json.dumps(msg, separators=(",", ":")).encode() + b"\n")
@@ -135,19 +138,19 @@ class _Pool:
         for f in self._flights.values():
             f.done.set()
 
-    def _dispatch(self, msg: dict) -> None:
-        method = msg.get("method")
-        mid = msg.get("id")
+    def _dispatch(self, msg: JsonMsg) -> None:
+        method: str | None = msg.get("method")
+        mid: int | None = msg.get("id")
         if method == "session/update":
-            params = msg.get("params") or {}
-            sid = params.get("sessionId")
-            up = params.get("update") or {}
+            params: JsonMsg = msg.get("params") or {}
+            sid: str | None = params.get("sessionId")
+            up: JsonMsg = params.get("update") or {}
             if up.get("sessionUpdate") == "agent_message_chunk":
-                c = up.get("content") or {}
-                if c.get("type") == "text" and sid in self._flights:
+                c: JsonMsg = up.get("content") or {}
+                if c.get("type") == "text" and sid and sid in self._flights:
                     self._flights[sid].chunks.append(c.get("text", ""))
         elif method is None and isinstance(mid, int):
-            result = msg.get("result") or {}
+            result: JsonMsg = msg.get("result") or {}
             if result.get("stopReason"):
                 for f in self._flights.values():
                     if f.request_id == mid:
@@ -157,8 +160,8 @@ class _Pool:
             if q:
                 q.put(msg)
         elif method == "session/request_permission" and isinstance(mid, int):
-            opts = (msg.get("params") or {}).get("options") or []
-            chosen = next(
+            opts: list[JsonMsg] = (msg.get("params") or {}).get("options") or []
+            chosen: str | None = next(
                 (o.get("optionId") for o in opts if o.get("kind") == "allow_always"),
                 (opts[0].get("optionId") if opts else None))
             self._write({"jsonrpc": "2.0", "id": mid,

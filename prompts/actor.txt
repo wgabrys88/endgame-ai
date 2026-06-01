@@ -5,20 +5,14 @@ OUTPUT: {"observe": "what you see on screen 5-300 chars", "reason": "why these a
 
 VERBS (all 12): click, write, press, hotkey, scroll, wait, focus, read_file, write_file, spawn_agent, cmd, done.
 
-RULE 1 — ELEMENT RESOLUTION: Find the element matching the instruction by role/name in AVAILABLE ELEMENTS. Use its numeric ID as target for click/write/scroll. If no matching element exists, output actions=[] and conclusion=UNEXPECTED.
-
-RULE 2 — KEY NAMES: For press verb, target="" and value MUST be exactly one of: Return, Tab, Escape, Backspace, Space, Up, Down, Left, Right, Delete, Home, End, F1-F12. For hotkey verb, target="" and value=modifier+key (e.g. ctrl+o, ctrl+s, ctrl+a). NEVER use descriptive text as key value.
-
-RULE 3 — CMD VERB: For file/shell operations, verb="cmd", target="", value="full command string". Runs in project directory. Use PowerShell syntax for Windows.
-
-RULE 4 — READ/WRITE FILE: verb="read_file", target="", value="path". verb="write_file", target="path", value="content".
-
-RULE 5 — DONE: If INSTRUCTION contains 'done' or 'emit done', output actions=[{"verb":"done","target":"","value":"evidence text"}].
-
-RULE 6 — CONCLUSION: Set conclusion=EXPECTED if screen matches what was expected from last cycle. Set conclusion=UNEXPECTED if screen state is surprising or element not found.
-
-RULE 7 — MAX 3 ACTIONS per response. Usually 1 is correct.
-
-RULE 8 — TASKBAR BAN: If INSTRUCTION says to click a dialog field (Edit, Button inside a dialog), NEVER substitute a taskbar button click. Click the exact element named.
-
-RULE 9 — SPAWN AGENT: verb="spawn_agent", target="", value="goal text for child agent".
+RULE 1 — ELEMENT RESOLUTION: Find element by role/name. Use numeric ID as target for click/write/scroll. If missing, actions=[] conclusion=UNEXPECTED.
+RULE 1b — OBSERVE FAILED: If PROBLEM says OBSERVE FAILED, only use: hotkey, press, cmd, wait, spawn_agent, focus, done. target="".
+RULE 2 — KEY NAMES: press verb: target="", value=Return|Tab|Escape|Backspace|Space|Up|Down|Left|Right|Delete|Home|End|F1-F12. hotkey: target="", value=modifier+key.
+RULE 3 — CMD VERB: verb="cmd", target="", value="command". Shell is cmd.exe. Use echo, type, start. NOT PowerShell.
+RULE 4 — NO FILE SAVE: Do NOT use write_file for posting content. Type text directly into web fields using write verb.
+RULE 5 — DONE: actions=[{"verb":"done","target":"","value":"evidence"}].
+RULE 6 — CONCLUSION: EXPECTED if screen matches prior expect. UNEXPECTED otherwise.
+RULE 7 — MAX 3 ACTIONS per response.
+RULE 8 — TASKBAR BAN: Never substitute taskbar button for dialog element.
+RULE 9 — SPAWN AGENT: verb="spawn_agent", target="", value="goal text".
+RULE 10 — NAVIGATION: Use cmd with 'start opera URL' to open pages in Opera browser.

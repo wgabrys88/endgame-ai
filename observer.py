@@ -83,7 +83,7 @@ def observe() -> ObserveResult:
     windows = _enumerate_windows()
     z_order = _get_z_order()
 
-    probe_nodes: list[dict] = []
+    probe_nodes: list[dict[str, Any]] = []
     regions = _probe_regions(windows, z_order, focused_hwnd, screen_w, screen_h)
     ensure_tree_walker()
     saved = W.POINT()
@@ -95,7 +95,7 @@ def observe() -> ObserveResult:
         _probe_region(probe_nodes, PROBE_STEP_PX, x0, y0, x1, y1, wname, whwnd)
     user32.SetCursorPos(saved.x, saved.y)
 
-    tree_nodes: list[dict] = []
+    tree_nodes: list[dict[str, Any]] = []
     for wnd in windows:
         _tree_walk(tree_nodes, wnd["element"], str(wnd["name"]), int(wnd["hwnd"]),
                    TREE_WALK_TIMEOUT)
@@ -110,7 +110,7 @@ def observe() -> ObserveResult:
     classified.sort(key=lambda n: (wnd_rank.get(n["wnd"], 999), n["depth"], n["y"], n["x"]))
 
     text, book = _render(classified, target_wnd, focused_title)
-    content_hash = hashlib.md5(text.encode()).hexdigest()
+    content_hash = hashlib.md5(text.encode("utf-8", errors="surrogatepass")).hexdigest()
 
     trace("observer.book", f"elements={len(book)} focused={focused_title} hash={content_hash}")
     for eid, entry in book.items():
@@ -124,8 +124,8 @@ def observe() -> ObserveResult:
     )
 
 
-def _enumerate_windows() -> list[dict]:
-    windows: list[dict] = []
+def _enumerate_windows() -> list[dict[str, Any]]:
+    windows: list[dict[str, Any]] = []
     for top_el in get_children(get_root()):
         try:
             x, y, w, h = get_rect(top_el)
@@ -143,9 +143,9 @@ def _enumerate_windows() -> list[dict]:
     return windows
 
 
-def _get_z_order() -> list[dict]:
+def _get_z_order() -> list[dict[str, Any]]:
     hwnd = user32.GetTopWindow(None)
-    result: list[dict] = []
+    result: list[dict[str, Any]] = []
     seen: set[str] = set()
     z = 0
     while hwnd:
@@ -159,10 +159,10 @@ def _get_z_order() -> list[dict]:
     return result
 
 
-def _tree_walk(out: list[dict], el, wnd_name: str, wnd_hwnd: int, timeout: float) -> None:
+def _tree_walk(out: list[dict[str, Any]], el: Any, wnd_name: str, wnd_hwnd: int, timeout: float) -> None:
     from collections import deque
     start = time.perf_counter()
-    queue: deque = deque()
+    queue: deque[tuple[Any, int]] = deque()
     for child in get_children(el):
         queue.append((child, 1))
     while queue:
@@ -212,7 +212,7 @@ def _tree_walk(out: list[dict], el, wnd_name: str, wnd_hwnd: int, timeout: float
             pass
 
 
-def _probe_regions(windows, z_order, focused_hwnd, sw, sh):
+def _probe_regions(windows: list[dict[str, Any]], z_order: list[dict[str, Any]], focused_hwnd: int, sw: int, sh: int) -> list[tuple[int, int, int, int, str, int]]:
     for z in z_order:
         if get_window_class(int(z["hwnd"])) in POPUP_CLASSES:
             return [(0, 0, sw, sh, "Desktop", 0)]
@@ -225,8 +225,8 @@ def _probe_regions(windows, z_order, focused_hwnd, sw, sh):
     return [(0, 0, sw, sh, "Desktop", 0)]
 
 
-def _probe_region(out, step, x0, y0, x1, y1, wname, whwnd):
-    seen_rids: set = set()
+def _probe_region(out: list[dict[str, Any]], step: int, x0: int, y0: int, x1: int, y1: int, wname: str, whwnd: int) -> None:
+    seen_rids: set[Any] = set()
     amp = step * 0.4
     freq = 2 * math.pi / (step * 6)
     for y in range(y0 + step // 2, y1, step):
@@ -286,9 +286,9 @@ def _filter_terminal_text(raw: str) -> str:
     return "\n".join(tail)
 
 
-def _merge(tree_nodes, probe_nodes):
-    keys: set = set()
-    merged = []
+def _merge(tree_nodes: list[dict[str, Any]], probe_nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    keys: set[tuple[Any, ...]] = set()
+    merged: list[dict[str, Any]] = []
     for n in tree_nodes:
         k = (n["role"], n["name"], n["x"], n["y"], n["w"], n["h"])
         keys.add(k)
@@ -301,13 +301,13 @@ def _merge(tree_nodes, probe_nodes):
     return merged
 
 
-def _classify(nodes):
-    tab_rects = []
+def _classify(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    tab_rects: list[tuple[int, int, int, int]] = []
     for n in nodes:
         if n["role"] == "TabItem":
             tab_rects.append((n["x"], n["y"], n["x"] + n["w"], n["y"] + n["h"]))
 
-    result = []
+    result: list[dict[str, Any]] = []
     for n in nodes:
         role = n["role"]
         w, h = n["w"], n["h"]
@@ -341,9 +341,9 @@ def _classify(nodes):
     return result
 
 
-def _render(nodes, target_wnd, focused_title):
+def _render(nodes: list[dict[str, Any]], target_wnd: set[str], focused_title: str) -> tuple[str, dict[str, BookEntry]]:
     book: dict[str, BookEntry] = {}
-    lines = [LEGEND]
+    lines: list[str] = [LEGEND]
     current_wnd = ""
     seq = 0
     for n in nodes:

@@ -1,4 +1,5 @@
 from __future__ import annotations
+import io
 import pathlib
 
 BASE_DIR: pathlib.Path = pathlib.Path(__file__).parent.resolve()
@@ -53,29 +54,29 @@ LLM_TEMPERATURE: float = 0.22
 LLM_TOP_P: float = 0.92
 LLM_MAX_TOKENS: int = 200000
 
-_TRACE_HANDLE = None
-_TRACE_PATH: pathlib.Path | None = None
+_trace_handle: io.TextIOWrapper | None = None
+_trace_path: pathlib.Path | None = None
 
 
 def init_trace(execution_id: str) -> None:
-    global _TRACE_HANDLE, _TRACE_PATH
+    global _trace_handle, _trace_path
     if not ENABLE_FILE_TRACING:
         return
-    _TRACE_PATH = BASE_DIR / f"trace-{execution_id}.txt"
-    _TRACE_HANDLE = open(_TRACE_PATH, "a", encoding="utf-8")
+    _trace_path = BASE_DIR / f"trace-{execution_id}.txt"
+    _trace_handle = open(_trace_path, "a", encoding="utf-8")
 
 
 def trace(section: str, data: str) -> None:
-    if _TRACE_HANDLE is None:
+    if _trace_handle is None:
         return
     from datetime import datetime, timezone
     ts = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
-    _TRACE_HANDLE.write(f"[{ts}] [{section}] {data}\n")
-    _TRACE_HANDLE.flush()
+    _trace_handle.write(f"[{ts}] [{section}] {data}\n")
+    _trace_handle.flush()
 
 
 def close_trace() -> None:
-    global _TRACE_HANDLE
-    if _TRACE_HANDLE:
-        _TRACE_HANDLE.close()
-        _TRACE_HANDLE = None
+    global _trace_handle
+    if _trace_handle:
+        _trace_handle.close()
+        _trace_handle = None
