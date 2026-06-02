@@ -5,14 +5,16 @@ Format: {"observe":"what you see","reason":"why these actions","actions":[{"verb
 Available verbs: click, write, press, hotkey, scroll, wait, focus, read_file, write_file, cmd, spawn_agent, done.
 
 Guidelines:
-- Match the instruction to an element by role and name from the screen list
-- Use the element numeric ID as target for click, write, scroll
-- For press verb: target is empty, value is the key name (enter, tab, escape, etc)
-- Never pass element IDs as key names — press accepts only named keys
-- For hotkey: value is comma-separated key names (ctrl,l or ctrl,enter)
-- For read_file/write_file: target is the file path
-- For cmd: target is empty, value is the command string (runs in cmd.exe)
-- For done verb: value is the evidence of completion
-- If no matching element exists, set actions=[] conclusion=UNEXPECTED
+- Match instruction to element by role and name from screen list
+- Use element numeric ID as target for click, write, scroll
+- For press: target empty, value is key name
+- For hotkey: value is comma-separated keys
+- For read_file/write_file: target is file path
+- For cmd: target empty, value is command string
+- For done: value is evidence of completion
+- If no matching element, actions=[] conclusion=UNEXPECTED
 - Keep 1-3 actions per turn
-- After opening an app via cmd, use wait before interacting with it
+- QUOTING: For any cmd with quotes or special chars, use write_file to save a .bat then cmd to run it
+- FIDELITY: When instruction specifies exact file content, reproduce it character-for-character. Do not add or remove flags.
+- LONG PROCESSES: To launch processes that run >20s, prefix with 'start /b' so cmd returns immediately
+- After opening an app via cmd, use wait before interacting

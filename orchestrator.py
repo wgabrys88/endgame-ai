@@ -224,7 +224,7 @@ def _phase_plan_act(board: Blackboard, journal: ExecutionJournal | NullJournal, 
 
 
 def _phase_act(board: Blackboard, journal: ExecutionJournal | NullJournal, instruction: str, *, blind: bool) -> str:
-    _print(board, f"  [LLM] Calling actor... (instruction: {instruction[:80]})")
+    _print(board, f"  [LLM] Calling actor... (instruction: {instruction})")
     actor_out = _call_llm_role("actor", ACTOR_SPEC, board.actor_context(instruction), journal, board.iteration)
 
     if isinstance(actor_out, dict) and actor_out.get("__refusal_detected__"):
@@ -466,7 +466,7 @@ def _spawn_child(agent_id: str, goal: str, journal: ExecutionJournal | NullJourn
     from persistence import register_agent
     cmd = ["python", str(BASE_DIR / "main.py"), goal, "--backend", get_backend(), "--agent-id", agent_id]
     try:
-        proc = subprocess.Popen(cmd, cwd=str(BASE_DIR), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        proc = subprocess.Popen(cmd, cwd=str(BASE_DIR))
         register_agent(agent_id, proc.pid)
         _log_raw(journal, "child.spawned", {"agent_id": agent_id, "goal": goal, "pid": proc.pid}, iteration)
         return AgentHandle(agent_id=agent_id, goal=goal, pid=proc.pid, status_file=BASE_DIR / "blackboard_state.json")
@@ -560,8 +560,9 @@ def _build_args(verb: str, target: str, value: str) -> dict[str, Any]:
 
 
 def _print(board: Blackboard, msg: str) -> None:
+    tagged = f"[{board.agent_id}] {msg}" if board.agent_id != "main" else msg
     if CONSOLE_VERBOSITY != "quiet":
-        print(msg)
+        print(tagged)
     board.console_log.append(msg)
 
 

@@ -58,7 +58,7 @@ class Blackboard:
     lorenz_x: float = 0.1
     lorenz_y: float = 1.0
     lorenz_z: float = 1.0
-    blocked_signatures: list[str] = field(default_factory=list)
+    blocked_signatures: dict[str, int] = field(default_factory=dict)
     expectation_miss_streak: int = 0
 
     actor_observe: str = ""
@@ -266,11 +266,12 @@ class Blackboard:
         self.lorenz_x, self.lorenz_y, self.lorenz_z = x, y, z
         self.chaos_level = min(1.0, (abs(z) + self.consecutive_failures * 5.0 + self.expectation_miss_streak * 4.0 + self.repetition_score * 12.0) / rho)
 
-        if self.chaos_level > 0.5:
-            recent = sigs[-4:]
-            self.blocked_signatures = list(set(recent))
-        else:
-            self.blocked_signatures = []
+        if self.chaos_level > 0.5 and not self.last_success:
+            self.blocked_signatures[signature] = self.iteration
+        expired = [s for s, it in self.blocked_signatures.items()
+                   if self.iteration - it > 5]
+        for s in expired:
+            del self.blocked_signatures[s]
 
     def chaos_rejects_done(self) -> bool:
         if self.repetition_score > 0.4:
