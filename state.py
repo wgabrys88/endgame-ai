@@ -1,34 +1,14 @@
 from __future__ import annotations
 import json
 import os
-import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from config import BASE_DIR, COMMS_DIR, SCREEN_LOCK_PATH, trace
 
 COMMS_DIR.mkdir(parents=True, exist_ok=True)
-
-
-class EventBus:
-    def __init__(self) -> None:
-        self._subscribers: dict[str, list[Callable[[dict[str, Any]], None]]] = {}
-        self._lock = threading.RLock()
-
-    def subscribe(self, topic: str, callback: Callable[[dict[str, Any]], None]) -> None:
-        with self._lock:
-            self._subscribers.setdefault(topic, []).append(callback)
-
-    def publish(self, topic: str, payload: dict[str, Any]) -> None:
-        with self._lock:
-            listeners = list(self._subscribers.get(topic, []))
-        for cb in listeners:
-            try:
-                cb(payload)
-            except Exception:
-                pass
 
 
 @dataclass(slots=True)
@@ -54,11 +34,11 @@ class Blackboard:
     screen: str = ""
     screen_hash: str = ""
     screen_elements: dict[str, Any] = field(default_factory=dict)
-    focused_window: str = ""
-    window_list: list[str] = field(default_factory=list)
-    prev_window_list: list[str] = field(default_factory=list)
+    screen_valid: bool = False
 
     history: list[dict[str, Any]] = field(default_factory=list)
+    console_log: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
 
     last_verb: str = ""
     last_success: bool = False
@@ -68,6 +48,7 @@ class Blackboard:
     done_claimed: bool = False
     done_evidence: str = ""
     problem: str = ""
+    verifier_denied_last: bool = False
 
     consecutive_failures: int = 0
 
@@ -81,13 +62,10 @@ class Blackboard:
     expectation_miss_streak: int = 0
 
     actor_observe: str = ""
-    actor_reason: str = ""
 
     children: dict[str, AgentHandle] = field(default_factory=dict)
     completed_subtasks: list[dict[str, Any]] = field(default_factory=list)
     pending_subtasks: list[dict[str, Any]] = field(default_factory=list)
-
-    events: EventBus = field(default_factory=EventBus)
 
     _screen_lock_held: bool = False
 
@@ -203,13 +181,7 @@ class Blackboard:
             return
         if not self.original_goal:
             self.original_goal = self.goal
-        old = self.goal
         self.goal = new_goal.strip()
-        self.events.publish("goal.rewritten", {
-            "old": old,
-            "new": self.goal,
-            "iteration": self.iteration,
-        })
 
     def get_persistable_snapshot(self) -> dict[str, Any]:
         return {
@@ -230,6 +202,9 @@ class Blackboard:
             "lorenz_z": self.lorenz_z,
             "expectation_miss_streak": self.expectation_miss_streak,
             "history": self.history,
+            "errors": self.errors,
+            "screen_valid": self.screen_valid,
+            "verifier_denied_last": self.verifier_denied_last,
         }
 
     def load_from_snapshot(self, snap: dict[str, Any]) -> None:
@@ -249,6 +224,9 @@ class Blackboard:
         self.lorenz_z = snap.get("lorenz_z", 0.0)
         self.expectation_miss_streak = snap.get("expectation_miss_streak", 0)
         self.history = snap.get("history", [])
+        self.errors = snap.get("errors", [])
+        self.screen_valid = snap.get("screen_valid", False)
+        self.verifier_denied_last = snap.get("verifier_denied_last", False)
 
     def update_chaos_and_repetition(self, verb: str, target: str) -> None:
         from config import MAX_SIGNATURES
@@ -294,13 +272,6 @@ class Blackboard:
         else:
             self.blocked_signatures = []
 
-        self.events.publish("chaos.changed", {
-            "x": round(x, 3), "y": round(y, 3), "z": round(z, 3),
-            "chaos_level": round(self.chaos_level, 3),
-            "blocked": self.blocked_signatures,
-            "iteration": self.iteration,
-        })
-
     def chaos_rejects_done(self) -> bool:
         if self.repetition_score > 0.4:
             return False
@@ -334,58 +305,25 @@ class Blackboard:
         if len(self.history) > MAX_HISTORY_ENTRIES:
             self.history = self.history[-MAX_HISTORY_ENTRIES:]
 
-        target = str(args.get("target", "") or args.get("selector", ""))
+        target = str(args.get("target", "") or args.get("selector", "") or args.get("path", "") or args.get("command", "") or args.get("goal", "") or args.get("window_title", ""))
         self.update_chaos_and_repetition(verb, target)
 
-        self.events.publish("action.recorded", {
-            "verb": verb,
-            "success": success,
-            "obs": observation,
-            "iteration": self.iteration
-        })
-
-    def broadcast_action(self, verb: str, success: bool, observation: str) -> None:
-        action_log = COMMS_DIR / f"{self.agent_id}_actions.jsonl"
-        line = json.dumps({"verb": verb, "success": success, "obs": observation, "iteration": self.iteration, "ts": time.time()})
-        with open(action_log, "a", encoding="utf-8") as f:
-            f.write(line + "\n")
-
     def record_failure(self) -> None:
-        from config import CONSECUTIVE_FAILURES_FOR_REFLECT
         self.consecutive_failures += 1
-        if self.consecutive_failures >= 3 and self.chaos_level > 0.5:
-            self.events.publish("self_regulation.needs_goal_softening", {
-                "failures": self.consecutive_failures,
-                "chaos": self.chaos_level,
-                "iteration": self.iteration,
-            })
-        if self.consecutive_failures >= CONSECUTIVE_FAILURES_FOR_REFLECT:
-            self.events.publish("self_regulation.needs_reflection", {
-                "failures": self.consecutive_failures,
-                "iteration": self.iteration,
-            })
-            self.consecutive_failures = 0
 
     def record_success(self) -> None:
         self.consecutive_failures = 0
 
-    def advance_iteration(self) -> None:
-        from config import REFLECT_EVERY_N_ITERATIONS, DISTILL_EVERY_N_ITERATIONS
-        if self.iteration > 0 and self.iteration % REFLECT_EVERY_N_ITERATIONS == 0:
-            self.events.publish("evolution.periodic_reflection_due", {"iteration": self.iteration})
-        if self.iteration > 0 and self.iteration % DISTILL_EVERY_N_ITERATIONS == 0:
-            self.events.publish("evolution.distillation_due", {"iteration": self.iteration})
-
-    def record_screen(self, text: str, hash_val: str, elements: dict[str, Any],
-                      focused: str = "", windows: list[str] | None = None) -> None:
+    def record_screen(self, text: str, hash_val: str, elements: dict[str, Any]) -> None:
         self.screen = text
         self.screen_hash = hash_val
         self.screen_elements = elements
-        if focused:
-            self.focused_window = focused
-        if windows is not None:
-            self.prev_window_list = self.window_list
-            self.window_list = windows
+
+    def record_error(self, error_type: str, detail: str) -> None:
+        entry = f"[{error_type}] {detail}"
+        self.errors.append(entry)
+        if not self.problem:
+            self.problem = entry
 
     def clear_signals(self) -> None:
         self.done_claimed = False
@@ -396,6 +334,10 @@ class Blackboard:
         parts = [f"ITERATION: {self.iteration}"]
         parts.append(f"MODE: {self.mode}")
         parts.append(f"HOME: {BASE_DIR}")
+        parts.append(f"SCREEN_VALID: {self.screen_valid}")
+
+        if self.errors:
+            parts.append("ERRORS THIS RUN:\n" + "\n".join(f"  {e}" for e in self.errors[-5:]))
 
         if self.detect_repetition_in_history():
             parts.append(
@@ -528,7 +470,14 @@ class Blackboard:
             f"CONSECUTIVE_FAILURES: {self.consecutive_failures}",
             f"CHAOS_LEVEL: {self.chaos_level:.3f}",
             f"REPETITION_SCORE: {self.repetition_score:.3f}",
+            f"SCREEN_VALID: {self.screen_valid}",
         ]
+
+        if self.errors:
+            parts.append("ERRORS:\n" + "\n".join(f"  {e}" for e in self.errors[-10:]))
+
+        if self.console_log:
+            parts.append("CONSOLE (last 20 lines):\n" + "\n".join(self.console_log[-20:]))
 
         try:
             from persistence import get_evolution_ledger_context

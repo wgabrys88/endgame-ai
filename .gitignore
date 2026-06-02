@@ -14,3 +14,11 @@ AGENTS.md
 PLAN-A-EVENT-DRIVEN.md
 PLAN-B-REMOVE-GATES.md
 cmd-log*.md
+*_result.jsonl
+*_result.json
+*_result.txt
+*_proof.json
+*_report.json
+*_analysis.json
+powershell-log*.md
+*_actions.jsonl
