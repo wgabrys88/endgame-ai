@@ -2,7 +2,7 @@ from __future__ import annotations
 import argparse, json, signal, sys, time, types
 
 from config import DELAY_STARTUP, BASE_DIR, ENABLE_FILE_TRACING, init_trace, close_trace
-from state import Blackboard, EventBus
+from state import Blackboard
 from journal import create_execution_journal
 from llm import set_backend
 from orchestrator import run
@@ -41,7 +41,6 @@ def main() -> None:
     set_backend(args.backend)
 
     board = Blackboard()
-    board.events = EventBus()
     board.agent_id = args.agent_id
 
     if args.resume:

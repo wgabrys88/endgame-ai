@@ -9,7 +9,7 @@ COMMS_DIR: pathlib.Path = BASE_DIR / "comms"
 INBOX_PATH: pathlib.Path = COMMS_DIR / "inbox.json"
 SCREEN_LOCK_PATH: pathlib.Path = COMMS_DIR / "screen_lock.json"
 
-LMS_HOSTS: list[str] = ["http://localhost:1234", "http://192.168.16.31:1234"]
+LMS_HOSTS: list[str] = ["http://localhost:1234"]
 ACP_TIMEOUT: float = 90.0
 LMS_TIMEOUT: int = 120
 

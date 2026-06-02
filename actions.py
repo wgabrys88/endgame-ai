@@ -213,6 +213,8 @@ def _write_file(args: dict[str, Any], book: ElementBook, state: Any) -> ActionRe
     if not target.is_absolute():
         target = BASE_DIR / target
     resolved = target.resolve()
+    if resolved.is_dir():
+        return ActionResult("write_file", False, f"path is a directory, not a file: {path}")
     if resolved.exists():
         backup = resolved.with_suffix(resolved.suffix + ".bak")
         backup.write_text(resolved.read_text(encoding="utf-8"), encoding="utf-8")
@@ -242,7 +244,7 @@ def _cmd(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
         return ActionResult("cmd", False, "no command provided")
     try:
         proc = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-Command", command],
+            ["cmd.exe", "/c", command],
             capture_output=True, text=True, timeout=30, cwd=str(BASE_DIR))
         output = (proc.stdout + proc.stderr).strip()
         return ActionResult("cmd", proc.returncode == 0, output or f"exit code {proc.returncode}")
