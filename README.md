@@ -1,166 +1,108 @@
-# Endgame-AI
+# endgame-ai
 
-A persistent, self-regulating, self-improving autonomous desktop agent. Event-driven architecture. Chaos-governed scheduling. Self-verifying execution.
+A desktop automation tool for Windows 11. Observes the screen, plans actions, executes them, verifies results, and learns from mistakes. Zero dependencies. Pure Python 3.13 + ctypes.
 
-No dependencies. No pip install. No frameworks. Pure Python 3.13 + Windows 11.
+Repository: github.com/wgabrys88/endgame-ai
 
 ---
 
-## Architecture
+## How It Works
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        BLACKBOARD                                │
-│                                                                  │
-│  screen: str           screen_valid: bool     errors: list       │
-│  console_log: list     chaos_level: float     iteration: int     │
-│  history: list         goal: str              mode: str          │
-│                                                                  │
+│                     SCHEDULER (chaos-governed)                    │
+│  chaos < 0.5:  observe → plan → act → verify                   │
+│  chaos >= 0.5: reflect (analyze what went wrong, try to fix)    │
+│  chaos >= 0.7: emergency (reflect + reset + spawn analysis)     │
+│  chaos >= 0.95 sustained 5 iterations: halt + spawn successor   │
 └─────────────────────────────────────────────────────────────────┘
          │              │              │              │
          ▼              ▼              ▼              ▼
 ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
 │   OBSERVER   │ │   PLANNER    │ │    ACTOR     │ │  REFLECTOR   │
-│ UIA tree +   │ │ Semantic     │ │ Resolves to  │ │ Rewrites     │
-│ probe scan   │ │ decisions    │ │ element IDs  │ │ own prompts  │
-│ → screen     │ │ → mode/action│ │ → verbs      │ │ → lessons    │
+│ Screen scan  │ │ Decides what │ │ Executes it  │ │ Learns from  │
+│ via UIA COM  │ │ to do next   │ │ via verbs    │ │ mistakes     │
 └──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘
 ```
 
-## Scheduler (Chaos as Arbiter)
+Available verbs: click, write, press, hotkey, scroll, wait, focus, read_file, write_file, spawn_agent, cmd, done.
 
-```
-chaos < 0.25 AND screen_valid:   observe → plan → act (full pipeline)
-chaos >= 0.25 AND !screen_valid: plan_blind (no click/scroll)
-chaos >= 0.5:                    reflect_only (reflector analyzes)
-chaos >= 0.7:                    emergency (reflect + reset + distill)
-chaos >= 0.95 sustained 5 iter:  halt → spawn successor → exit 1
-```
+Multi-agent: spawn_agent starts another instance. Screen access serialized via lock file. Agents take turns like cooperative multitasking.
 
-Periodic: reflect every 5 iterations, distill every 10.
-
-## Termination
-
-1. Done — goal verified by verifier LLM with evidence → exit 0
-2. Chaos halt — spawn successor agent, then exit 1
-3. Interrupt — Ctrl+C → exit 1
+---
 
 ## How to Run
 
 ```
-python main.py "your goal here" --backend acp
-python main.py "your goal here" --backend lmstudio
+python main.py "goal" --backend acp
+python main.py "goal" --backend lmstudio
 python main.py --resume --backend acp
 ```
 
-Run as Administrator. Backends: `lmstudio` (local LLM at localhost:1234), `acp` (Claude via kiro-cli in WSL2).
+Run as Administrator. Backends: `acp` (Claude via kiro-cli in WSL2), `lmstudio` (local LLM at localhost:1234).
 
-## 12 Verbs
-
-click, write, press, hotkey, scroll, wait, focus, read_file, write_file, spawn_agent, cmd, done.
-
-Blind-mode verbs (no screen required): cmd, read_file, write_file, spawn_agent, wait, press, hotkey, done.
+---
 
 ## Files
 
 ```
-main.py              Entry point, CLI, signal handling
-orchestrator.py      Event-driven scheduler, phase functions
-state.py             Blackboard dataclass, chaos/Lorenz system
-observer.py          UIA tree walk + sinusoidal probe scan
+main.py              Entry point, CLI
+orchestrator.py      Event-driven scheduler
+state.py             Blackboard state, Lorenz chaos system
+observer.py          Windows UIA screen observation
 actions.py           12 verb handlers
-dispatch.py          LLM call + JSON extraction with salvage
-llm.py               LM Studio / ACP backend
+dispatch.py          LLM call + JSON extraction
+llm.py               Backend switching (LM Studio / ACP)
 config.py            All constants
 journal.py           Execution journal
 lessons.py           Cross-run learning
-persistence.py       Blackboard snapshots, evolution ledger, IPC events
+persistence.py       State snapshots, evolution ledger
 event_schema.py      Inter-agent event protocol
-blackboard_controller.py  CLI for blackboard management
-acp_client.py        ACP backend via kiro-cli in WSL2
-win32.py             Raw ctypes: UIA COM, SendInput, VK_MAP
+blackboard_controller.py  Blackboard CLI management
+acp_client.py        ACP backend (WSL2 → kiro-cli)
+win32.py             Raw ctypes: UIA COM, SendInput
 ```
-
-## Design Philosophy
-
-The wiring is the intelligence. The LLM is the brain. Everything else is dumb, honest plumbing that gives it the best possible current picture of reality every iteration.
-
-No RAG. No skills database. No MCP. No API wrappers. No frameworks.
 
 ---
 
-## Self-Validation Protocol
-
-The tests below are ordered by signal value. Each test is a self-contained goal string. Run them in sequence. Each must exit 0 before proceeding to the next.
-
-### Test 1 — File Read + Write (Blind Mode Proof)
+## Goal Template
 
 ```
-python main.py "Read 3 of your own source files: config.py, lessons.py, event_schema.py. After reading all 3, write a one-line JSON summary to validation_result.jsonl containing keys: files_read (count), status (pass or fail). Then emit done with the file path as evidence." --backend acp
+python main.py "Hey, you're endgame-ai at %USERPROFILE%\Downloads\endgame-ai. You're a desktop automation tool on Windows 11 — you can see the screen, use apps, run commands, and read/write files. Your code lives on github.com/wgabrys88/endgame-ai and you can use GitHub Desktop to push changes. [ENVIRONMENT: which apps and logins are available]. First take a moment to explore your environment — check what's on screen and what you're working with. Then: [TASK]. Done when: [OBSERVABLE CHECKPOINTS — verify each before claiming done]. Work step by step. If something fails twice, try a different way. For big tasks, start another instance to handle parts in parallel — pass it full context of what you know. Take your time." --backend acp
 ```
-
-Proves: read_file verb works, write_file verb works, planner sequences multi-step goals, done detection with evidence.
-
-Success criteria: validation_result.jsonl exists with files_read=3 and status=pass.
-
-### Test 2 — Self-Architecture Analysis
-
-```
-python main.py "Read orchestrator.py and state.py using read_file verb. Write a JSON analysis to self_analysis.json containing: scheduler_modes (list the 4 modes from _schedule function), blackboard_fields (list 5 key fields), chaos_thresholds (list the 4 threshold values). Then emit done with evidence." --backend acp
-```
-
-Proves: the system can read its own architecture and extract structured facts.
-
-Success criteria: self_analysis.json exists with correct scheduler modes, field names, and threshold values matching code.
-
-### Test 3 — Parallel Decomposition
-
-```
-python main.py "Decompose into 2 parallel children: Child 1 (agent_id=reader_1) reads config.py and writes its line count to child_1_result.txt. Child 2 (agent_id=reader_2) reads dispatch.py and writes its line count to child_2_result.txt. After both children complete, write combined_results.json with both line counts. Then emit done." --backend acp
-```
-
-Proves: parallel decomposition works, children complete independently, parent integrates results.
-
-Success criteria: child_1_result.txt, child_2_result.txt, and combined_results.json all exist with correct line counts.
-
-### Test 4 — Error Recovery (Blind Mode)
-
-```
-python main.py "Attempt to read a file that does not exist: nonexistent_file_xyz.py. When this fails, recover by reading config.py instead. Write recovery_proof.json with keys: failed_file, recovered_file, recovered_content_length. Then emit done." --backend acp
-```
-
-Proves: system handles errors without chaos spiral, planner adapts after failure, error shows in context.
-
-Success criteria: recovery_proof.json exists with correct failed_file and positive recovered_content_length.
-
-### Test 5 — Reflector Fires Under Pressure
-
-```
-python main.py "Attempt to read_file INVALID_PATH_1, then INVALID_PATH_2, then INVALID_PATH_3 (all will fail). After these failures trigger reflection, read config.py successfully and write reflection_proof.json with keys: total_failures_before_success (should be 3), final_chaos_level (numeric). Then emit done." --backend acp
-```
-
-Proves: consecutive failures raise chaos, reflector fires at iteration 5, system recovers and completes goal after reflection.
-
-Success criteria: reflection_proof.json exists with total_failures_before_success=3 and chaos > 0.
-
-### Test 6 — Self-Validation Meta-Test
-
-```
-python main.py "Read README.md using read_file verb. Find the Self-Validation Protocol section. Execute Test 1 by spawning yourself with the exact goal string from Test 1. After the spawned agent completes, verify validation_result.jsonl exists using read_file. Write meta_test_result.json with keys: test_executed (1), spawn_succeeded (true/false), validation_file_found (true/false). Then emit done." --backend acp
-```
-
-Proves: the system can read its own documentation, extract a goal, spawn itself with that goal, and verify the result. This is the recursive self-test.
-
-Success criteria: meta_test_result.json exists with test_executed=1, spawn_succeeded=true, validation_file_found=true.
 
 ---
 
-## The Bootstrap Goal
+## Examples
 
-To run the full self-validation sequence as a single command:
+### Example 1 — Self-Analysis (file operations, no GUI)
 
 ```
-python main.py "Read README.md using read_file verb. In the Self-Validation Protocol section you will find 6 tests numbered Test 1 through Test 6. Execute them in order. For each test: spawn yourself using spawn_agent with the exact goal string shown in the code block. After each spawn completes, verify the expected output file exists. If a test fails, record it and continue to the next. After all 6 tests, write bootstrap_report.json with keys: tests_attempted (number), tests_passed (number), tests_failed (list of failed test numbers). Then emit done with the report path as evidence." --backend acp
+python main.py "Hey, you're endgame-ai at %USERPROFILE%\Downloads\endgame-ai. You're a desktop automation tool on Windows 11. Read your own source files: orchestrator.py, state.py, and config.py. Write a JSON summary to self_check.json with keys: total_lines, scheduler_modes (list them), chaos_thresholds (list the numeric values from code). Done when: self_check.json exists with correct data — verify with read_file. Take your time." --backend acp
+```
+
+### Example 2 — Multi-App Real Work (Chrome + GitHub Desktop + Opera)
+
+```
+python main.py "Hey, you're endgame-ai at %USERPROFILE%\Downloads\endgame-ai. You're a desktop automation tool on Windows 11. Chrome is installed and logged into GitHub. GitHub Desktop is installed and connected to wgabrys88/endgame-ai. Opera is installed and logged into X and LinkedIn. First check what's on screen and which apps are running. Then: go to your GitHub repo in Chrome and create an issue describing something you think could be improved in your architecture. Use GitHub Desktop to create a branch, commit a small fix to that issue, and push. Then use Opera to post on X about what you improved. Done when: issue exists, branch is pushed, post is live — verify each visually. Work step by step. If something fails twice, try a different way. Take your time." --backend acp
+```
+
+### Example 3 — Cross-Instance Coordination (spawns child)
+
+```
+python main.py "Hey, you're endgame-ai at %USERPROFILE%\Downloads\endgame-ai. You're a desktop automation tool on Windows 11. Chrome is installed and logged into GitHub. Download your own code from github.com/wgabrys88/endgame-ai as a ZIP from Chrome, unpack it to %USERPROFILE%\Downloads\endgame-ai-verify using cmd, and start that copy with a goal to read its own config.py and write a confirmation to verified.txt. After it finishes, read verified.txt to confirm. Done when: verified.txt exists with correct content. When starting the other instance, tell it exactly where it runs from, that it only needs read_file and write_file, and what to produce. Take your time." --backend acp
+```
+
+### Example 4 — Read GitHub + Find Bug + Fix (development workflow)
+
+```
+python main.py "Hey, you're endgame-ai at %USERPROFILE%\Downloads\endgame-ai. You're a desktop automation tool on Windows 11. Chrome is installed and logged into GitHub. GitHub Desktop is installed and connected to wgabrys88/endgame-ai. First explore what's on screen. Then open Chrome, go to github.com/wgabrys88/endgame-ai, and read through the README and a few source files on the web to understand the current state of the project. Look for something that could be more reliable, more concise, or use fewer tokens. Once you find something specific, use GitHub Desktop to create a branch with a descriptive name, make the improvement locally using read_file and write_file, commit via GitHub Desktop, and push. Done when: the new branch is visible on GitHub with your improvement committed. Work step by step. Take your time." --backend acp
+```
+
+### Example 5 — Continuous Improvement (self-directed)
+
+```
+python main.py "Hey, you're endgame-ai at %USERPROFILE%\Downloads\endgame-ai. You're a desktop automation tool on Windows 11. Chrome is installed and logged into GitHub. GitHub Desktop is installed and connected to wgabrys88/endgame-ai. Your job today: make yourself better. Start by reading your own orchestrator.py and state.py to understand how you work. Then identify one thing that could be simpler, faster, or more robust — maybe a function that's too long, a threshold that could be smarter, or a context builder that wastes tokens. Make the improvement. Test it by reading the result back and checking it makes sense. Then use GitHub Desktop to create a branch, commit your change with a clear message explaining what you improved and why, and push it. Done when: the branch with your improvement is pushed to GitHub. Take your time and think carefully about what actually matters." --backend acp
 ```
 
 ---
