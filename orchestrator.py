@@ -466,7 +466,7 @@ def _spawn_child(agent_id: str, goal: str, journal: ExecutionJournal | NullJourn
     from persistence import register_agent
     cmd = ["python", str(BASE_DIR / "main.py"), goal, "--backend", get_backend(), "--agent-id", agent_id]
     try:
-        proc = subprocess.Popen(cmd, cwd=str(BASE_DIR))
+        proc = subprocess.Popen(cmd, cwd=str(BASE_DIR), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         register_agent(agent_id, proc.pid)
         _log_raw(journal, "child.spawned", {"agent_id": agent_id, "goal": goal, "pid": proc.pid}, iteration)
         return AgentHandle(agent_id=agent_id, goal=goal, pid=proc.pid, status_file=BASE_DIR / "blackboard_state.json")
@@ -482,7 +482,7 @@ def _spawn_distillation(board: Blackboard, journal: ExecutionJournal | NullJourn
     )
     try:
         cmd = ["python", str(BASE_DIR / "main.py"), goal, "--backend", get_backend(), "--agent-id", "distill"]
-        subprocess.Popen(cmd, cwd=str(BASE_DIR))
+        subprocess.Popen(cmd, cwd=str(BASE_DIR), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         _log(board, journal, "distillation.spawned", {"goal": goal})
     except Exception as e:
         board.record_error("distill_spawn_fail", str(e))
