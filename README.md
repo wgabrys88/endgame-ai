@@ -4,7 +4,15 @@ A desktop automation tool for Windows 11. Observes the screen, plans actions, ex
 
 Repository: github.com/wgabrys88/endgame-ai
 
-## Quick StartTry it with one command (using LM Studio as backend):```bashpython main.py "Open Notepad and type 'Endgame-AI is working!'" --backend lmstudio```------
+## DEBUG MODE ACTIVATED - (DO NOT USE WITH REMOTE LLMs - POSSIBLE HIGH TOKEN USAGE)
+## THIS WILL BE SWITCHED OFF TOMORROW - need this mode to locally evaluate blackboard access permissions per Agents
+
+```
+PS C:\Users\%USERPROFILE%\Downloads\endgame-ai> python .\main.py "open opera and ask grok.com for a task related to endgame-ai from github.com wgabrys88 and perform that task on chrome on github" --backend acp
+PS C:\Users\%USERPROFILE%\Downloads\endgame-ai> python .\main.py "open opera and ask grok.com for a task related to endgame-ai from github.com wgabrys88 and perform that task on chrome on github. Ensure that the grok will invent a task for you by its own, you must not suggest anything, and you must perform replanning / redefining the goal due to the fact that it will be the grok who is giving the goal, in endgame-ai the goal can change during execution if you are unable to perform that change, modify your own code using proper functions - keep grok updated about your capabilities and report to him what are you going to do regurarly until its task will be completely done." --backend acp
+PS C:\Users\%USERPROFILE%\Downloads\endgame-ai>
+```
+
 
 ## How It Works
 
