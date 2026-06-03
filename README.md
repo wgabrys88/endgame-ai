@@ -4,7 +4,7 @@ A desktop automation tool for Windows 11. Observes the screen, plans actions, ex
 
 Repository: github.com/wgabrys88/endgame-ai
 
----
+## Quick StartTry it with one command (using LM Studio as backend):```bashpython main.py "Open Notepad and type 'Endgame-AI is working!'" --backend lmstudio```------
 
 ## How It Works
 
