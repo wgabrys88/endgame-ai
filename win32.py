@@ -284,14 +284,6 @@ def get_runtime_id(el: ctypes.c_void_p) -> tuple[int, ...] | None:
     return result
 
 
-def get_parent(el: ctypes.c_void_p) -> ctypes.c_void_p | None:
-    ensure_tree_walker()
-    parent = ctypes.c_void_p()
-    hr = vt(_tree_walker, 3,
-            (ctypes.c_void_p, ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)),
-            el, ctypes.byref(parent))
-    return parent if hr == 0 and parent.value else None
-
 
 def get_root() -> ctypes.c_void_p:
     root = ctypes.c_void_p()

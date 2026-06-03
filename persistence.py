@@ -82,20 +82,6 @@ def register_agent(agent_id: str, pid: int) -> None:
     _locked_write(bb)
 
 
-def unregister_agent(agent_id: str) -> None:
-    _ensure_bb()
-    bb = _locked_read()
-    bb["agents"].pop(agent_id, None)
-    bb["meta"]["last_updated"] = datetime.now(timezone.utc).isoformat()
-    _locked_write(bb)
-
-
-def get_registered_agents() -> dict[str, Any]:
-    _ensure_bb()
-    bb = _locked_read()
-    return bb.get("agents", {})
-
-
 def append_to_evolution_ledger(entry: str, source_run: str = "") -> None:
     data: dict[str, Any] = {"entries": []}
     if EVOLUTION_LEDGER_PATH.exists():

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import time
 import uuid
@@ -12,18 +13,18 @@ from config import (
     BUDGET_ACTOR_IN, BUDGET_ACTOR_OUT,
     BUDGET_VERIFIER_IN, BUDGET_VERIFIER_OUT,
     BUDGET_REFLECTOR_IN, BUDGET_REFLECTOR_OUT,
-    CHAOS_HALT_THRESHOLD, CHAOS_HALT_SUSTAINED_ITERATIONS,
-    REFLECT_EVERY_N_ITERATIONS,
-    DISTILL_EVERY_N_ITERATIONS, CONSOLE_VERBOSITY, PROMPTS_DIR, trace,
+    STAGNATION_HALT_THRESHOLD, STAGNATION_HALT_SUSTAINED,
+    REFLECT_THRESHOLD, DISTILL_THRESHOLD, PROMPTS_DIR,
 )
 from state import Blackboard, AgentHandle
-from journal import ExecutionJournal, NullJournal
 from lessons import Lessons
 from dispatch import call_role, RoleSpec
 from observer import observe
 from actions import execute_verb, VERBS
 from llm import get_backend
 from persistence import save_snapshot
+from log import log
+import tui
 
 
 PLANNER_SPEC = RoleSpec("planner", BUDGET_PLANNER_IN, BUDGET_PLANNER_OUT)
@@ -31,91 +32,101 @@ ACTOR_SPEC = RoleSpec("actor", BUDGET_ACTOR_IN, BUDGET_ACTOR_OUT)
 VERIFIER_SPEC = RoleSpec("verifier", BUDGET_VERIFIER_IN, BUDGET_VERIFIER_OUT)
 REFLECTOR_SPEC = RoleSpec("reflector", BUDGET_REFLECTOR_IN, BUDGET_REFLECTOR_OUT)
 
+_stagnation_history: list[float] = []
+_last_event: str = ""
+_FIELD_USAGE_PATH = BASE_DIR / "field_usage.json"
 
-def run(board: Blackboard, journal: ExecutionJournal | NullJournal, *,
-        interrupted: Callable[[], bool] = lambda: False) -> bool:
 
-    chaos_halt_counter = 0
-    reflect_only_counter = 0
+def _log_used_fields(role: str, iteration: int, response: dict[str, Any]) -> None:
+    used: list[str] = response.get("used_fields", [])
+    if not used:
+        return
+    entry = {"role": role, "iteration": iteration, "used_fields": used}
+    data: list[dict[str, Any]] = []
+    if _FIELD_USAGE_PATH.exists():
+        try:
+            data = json.loads(_FIELD_USAGE_PATH.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
+    data.append(entry)
+    _FIELD_USAGE_PATH.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def run(board: Blackboard, *, interrupted: Callable[[], bool] = lambda: False) -> bool:
+    global _last_event
+    halt_counter = 0
+    is_main = board.agent_id == "main"
+
+    if is_main:
+        from log import set_tui_hook
+        set_tui_hook(tui.event)
+        tui.enter()
+    try:
+        return _loop(board, interrupted, halt_counter, is_main)
+    finally:
+        if is_main:
+            tui.exit()
+            from log import set_tui_hook
+            set_tui_hook(None)
+
+
+def _loop(board: Blackboard, interrupted: Callable[[], bool], halt_counter: int, is_main: bool) -> bool:
+    global _last_event
 
     while True:
         if interrupted():
-            _log(board, journal, "run.interrupted", {"iteration": board.iteration})
+            log(board.iteration, "run", "interrupted")
             _report_status(board.agent_id, "failed", error="interrupted")
             return False
 
         board.iteration += 1
         board.clear_signals()
-        _log(board, journal, "iteration.start", {"iteration": board.iteration})
-        _print(board, f"\n{'='*40}\n[ITERATION {board.iteration}]\n{'='*40}")
-        trace("orchestrator.iteration", f"it={board.iteration} chaos={board.chaos_level:.3f} rep={board.repetition_score:.3f} failures={board.consecutive_failures}")
+        log(board.iteration, "iteration.start", f"stagnation={board.stagnation_score:.3f} pid={board.pid_output:.3f} energy={board.attractor_energy:.3f}")
 
-        if _check_chaos_halt(board, journal, chaos_halt_counter):
-            chaos_halt_counter += 1
-            if chaos_halt_counter >= CHAOS_HALT_SUSTAINED_ITERATIONS:
-                _log(board, journal, "run.chaos_halt", {"chaos": board.chaos_level, "sustained": chaos_halt_counter})
-                _print(board, f"  [HALT] Chaos sustained at {board.chaos_level:.2f} for {chaos_halt_counter} iterations.")
-                _try_spawn_successor(board, journal)
-                _report_status(board.agent_id, "failed", error="chaos_halt")
+        if board.stagnation_score >= STAGNATION_HALT_THRESHOLD:
+            halt_counter += 1
+            if halt_counter >= STAGNATION_HALT_SUSTAINED:
+                log(board.iteration, "halt", f"stagnation={board.stagnation_score:.2f} sustained={halt_counter}")
+                _last_event = "HALT"
+                if is_main:
+                    tui.render(board, _stagnation_history, _last_event)
+                _try_spawn_successor(board)
+                _report_status(board.agent_id, "failed", error="stagnation_halt")
                 return False
         else:
-            chaos_halt_counter = 0
+            halt_counter = 0
 
-        _process_inbox(board, journal)
-        _process_children(board, journal)
+        _process_inbox(board)
+        _process_children(board)
 
-        decision = _schedule(board)
-        _print(board, f"  [SCHEDULE] {decision} (chaos={board.chaos_level:.2f} rep={board.repetition_score:.2f} fails={board.consecutive_failures})")
+        result = _phase_observe(board)
+        if result == "done":
+            _last_event = "DONE"
+            if is_main:
+                tui.render(board, _stagnation_history, _last_event)
+            return True
 
-        if decision == "observe_plan_act":
-            reflect_only_counter = 0
-            result = _phase_observe(board, journal)
-            if result == "done":
-                return True
-            if result == "halt":
-                return False
-        elif decision == "plan_blind":
-            reflect_only_counter = 0
-            result = _phase_plan_act(board, journal, blind=True)
-            if result == "done":
-                return True
-        elif decision == "reflect_only":
-            reflect_only_counter += 1
-            _phase_reflect(board, journal)
-            board.consecutive_failures = 0
-            board.chaos_level = max(0.0, board.chaos_level - 0.15)
-            if reflect_only_counter >= 3:
-                _print(board, "  [ESCAPE] Forcing observe_plan_act after 3 reflect cycles.")
-                reflect_only_counter = 0
-                board.chaos_level = 0.2
-                result = _phase_observe(board, journal)
-                if result == "done":
-                    return True
-        elif decision == "emergency":
-            reflect_only_counter = 0
-            _phase_emergency(board, journal)
+        _stagnation_history.append(board.stagnation_score)
 
-        if board.iteration % REFLECT_EVERY_N_ITERATIONS == 0:
-            _phase_reflect(board, journal)
-        if board.iteration % DISTILL_EVERY_N_ITERATIONS == 0:
-            _spawn_distillation(board, journal)
+        if board.pid_output > REFLECT_THRESHOLD:
+            _last_event = "PID→REFLECT"
+            log(board.iteration, "pid.reflect", f"pid={board.pid_output:.2f}")
+            _phase_reflect(board)
 
-        _log(board, journal, "iteration.end", {"iteration": board.iteration})
+        stuckness = (board.stagnation_score * board.stagnation_score) / (abs(board.pid_slope) + 0.01)
+        if stuckness > DISTILL_THRESHOLD:
+            _last_event = "PID→DISTILL"
+            log(board.iteration, "pid.distill", f"stuckness={stuckness:.2f}")
+            _spawn_distillation(board)
+
+        if is_main:
+            tui.render(board, _stagnation_history, _last_event)
+        log(board.iteration, "iteration.end", f"stagnation={board.stagnation_score:.3f} pid={board.pid_output:.3f}")
         save_snapshot(board.get_persistable_snapshot())
         time.sleep(DELAY_BETWEEN_ITERATIONS)
 
 
-def _schedule(board: Blackboard) -> str:
-    if board.chaos_level >= 0.7:
-        return "emergency"
-    if board.chaos_level >= 0.5:
-        return "reflect_only"
-    if not board.screen_valid and board.chaos_level >= 0.25:
-        return "plan_blind"
-    return "observe_plan_act"
-
-
-def _phase_observe(board: Blackboard, journal: ExecutionJournal | NullJournal) -> str:
+def _phase_observe(board: Blackboard) -> str:
     is_distillation = "DISTILLATION" in board.goal.upper() or "analyze recent execution" in board.goal.lower()
 
     if is_distillation:
@@ -123,37 +134,36 @@ def _phase_observe(board: Blackboard, journal: ExecutionJournal | NullJournal) -
         board.screen_valid = True
     elif not board.acquire_screen():
         board.screen_valid = False
-        board.record_error("screen_lock", "Another agent holds the screen lock.")
-        _print(board, "  [WAIT] Screen locked. Planner runs blind.")
-        return _phase_plan_act(board, journal, blind=True)
+        _last_event = "WAIT:lock"
+        return "continue"
     else:
         try:
             obs = observe()
             board.record_screen(obs.context_text, obs.content_hash, obs.book)
             board.screen_valid = True
-            _log(board, journal, "screen.observed", {"hash": obs.content_hash, "elements": len(obs.book)})
+            board.focused_window = obs.focused_title
+            board.update_screen_stagnation(obs.content_hash)
+            log(board.iteration, "observe", f"hash={obs.content_hash} elements={len(obs.book)}")
         except Exception as e:
             board.release_screen()
             board.screen_valid = False
             board.record_error("observe_fail", str(e))
-            _print(board, f"  [ERROR] observe failed: {e}")
-            return _phase_plan_act(board, journal, blind=True)
+            return "continue"
 
-    result = _phase_plan_act(board, journal, blind=False)
+    result = _phase_plan_act(board)
     if not is_distillation:
         board.release_screen()
     return result
 
 
-def _phase_plan_act(board: Blackboard, journal: ExecutionJournal | NullJournal, *, blind: bool) -> str:
-    context = board.planner_context()
-    if board.chaos_level > 0.45:
-        context += f"\n\n[CHAOS — Level {board.chaos_level:.2f} | Repetition {board.repetition_score:.2f}] Break the current pattern. Prefer parallel mode or spawn_agent."
-    if blind:
-        context += "\n\n[BLIND MODE] Screen observation failed or unavailable. Use only: cmd, read_file, write_file, spawn_agent, wait, press, hotkey, done. Do NOT use click or scroll."
+def _phase_plan_act(board: Blackboard) -> str:
+    global _last_event
+    context = board.full_context("planner")
 
-    _print(board, f"  [LLM] Calling planner... (chaos={board.chaos_level:.2f})")
-    plan = _call_llm_role("planner", PLANNER_SPEC, context, journal, board.iteration)
+    _last_event = "LLM:planner"
+    if board.agent_id == "main":
+        tui.render(board, _stagnation_history, _last_event)
+    plan = _call_llm_role("planner", PLANNER_SPEC, context, board.iteration)
 
     if isinstance(plan, dict) and plan.get("__refusal_detected__"):
         board.record_error("planner_refusal", plan.get("error", ""))
@@ -171,61 +181,65 @@ def _phase_plan_act(board: Blackboard, journal: ExecutionJournal | NullJournal, 
     next_action = plan.get("next_action", "")
     decompose = plan.get("decompose", [])
 
-    _print(board, f"  [PLAN] mode={mode} chaos={board.chaos_level:.2f} [{board.lorenz_x:.1f},{board.lorenz_y:.1f},{board.lorenz_z:.1f}]")
-    if plan.get("because"):
-        _print(board, f"  [PLAN] Reason: {plan['because']}")
+    board.last_plan_because = plan.get("because", "")
+    board.last_instruction = next_action
+    _log_used_fields("planner", board.iteration, plan)
+    log(board.iteration, "planner", f"mode={mode} because={board.last_plan_because}")
 
-    if mode == "done" and board.chaos_rejects_done():
-        mode = "parallel" if board.chaos_forces_parallel() else "direct"
-        if mode == "direct" and not next_action:
-            next_action = "Observe current state and take concrete step toward goal."
+    new_notes: list[str] = plan.get("notes", [])
+    if new_notes:
+        board.notes = [n for n in new_notes if n]
 
-    if mode != "done" and board.detect_repetition_in_history():
-        goal_lower = board.goal.lower()
-        if any(phrase in goal_lower for phrase in ("emit done", "and done", "then done")):
-            mode = "done"
+    sequence: list[str] = plan.get("sequence", [])
+    if sequence and not board.plan_steps:
+        board.plan_steps = sequence
+        board.plan_step_index = 0
+        log(board.iteration, "checklist.created", f"steps={len(sequence)}")
 
-    if board.chaos_forces_parallel() and mode == "direct":
-        mode = "parallel"
-        if not decompose:
-            decompose = [{"sub_goal": f"Recovery: {next_action or board.goal}", "agent_id": f"chaos_{board.iteration}"}]
+    if plan.get("step_advance") and board.plan_steps:
+        board.plan_step_index = min(board.plan_step_index + 1, len(board.plan_steps) - 1)
+        board.reset_pid_integral()
+        log(board.iteration, "checklist.advance", f"step={board.plan_step_index}")
+
+    _last_event = f"PLAN:{mode}"
 
     if mode == "done" and board.verifier_denied_last:
         mode = "direct"
         next_action = "The verifier denied your last completion claim. Address feedback before claiming done again."
         board.verifier_denied_last = False
-        _print(board, "  [GATE] Verifier denial blocks done claim.")
 
-    if mode == "done" or next_action.strip().lower() == "done":
+    if mode == "done":
         is_distillation = "DISTILLATION" in board.goal.upper()
         if is_distillation:
-            _log(board, journal, "goal.complete", {"iteration": board.iteration})
+            log(board.iteration, "goal.complete", "distillation")
             _report_status(board.agent_id, "done", result=next_action)
             return "done"
         board.done_claimed = True
         board.done_evidence = plan.get("because", next_action)
-        verified = _call_verifier(board, journal, "planner claimed mode=done")
+        verified = _call_verifier(board, "planner claimed mode=done")
         if verified:
-            _log(board, journal, "goal.complete", {"iteration": board.iteration})
+            log(board.iteration, "goal.complete", f"evidence={board.done_evidence}")
             _report_status(board.agent_id, "done", result=board.done_evidence)
             return "done"
         board.verifier_denied_last = True
         board.record_failure()
-        _print(board, "  [VERIFY] Denied planner done claim. Continuing.")
         return "continue"
 
     if mode == "parallel" and decompose:
         board.mode = "coordinate"
-        _execute_decomposition(board, journal, decompose)
+        _execute_decomposition(board, decompose)
         board.record_success()
         return "continue"
 
-    return _phase_act(board, journal, next_action, blind=blind)
+    return _phase_act(board, next_action)
 
 
-def _phase_act(board: Blackboard, journal: ExecutionJournal | NullJournal, instruction: str, *, blind: bool) -> str:
-    _print(board, f"  [LLM] Calling actor... (instruction: {instruction})")
-    actor_out = _call_llm_role("actor", ACTOR_SPEC, board.actor_context(instruction), journal, board.iteration)
+def _phase_act(board: Blackboard, instruction: str) -> str:
+    global _last_event
+    _last_event = "LLM:actor"
+    if board.agent_id == "main":
+        tui.render(board, _stagnation_history, _last_event)
+    actor_out = _call_llm_role("actor", ACTOR_SPEC, board.full_context("actor", instruction), board.iteration)
 
     if isinstance(actor_out, dict) and actor_out.get("__refusal_detected__"):
         board.record_error("actor_refusal", actor_out.get("error", ""))
@@ -240,24 +254,24 @@ def _phase_act(board: Blackboard, journal: ExecutionJournal | NullJournal, instr
         return "continue"
 
     board.actor_observe = actor_out.get("observe", "")
+    board.actor_conclusion = actor_out.get("conclusion", "")
+    board.actor_reason = actor_out.get("reason", "")
     board.last_expect = actor_out.get("expect", "")
+    _log_used_fields("actor", board.iteration, actor_out)
+    log(board.iteration, "actor", f"observe={board.actor_observe} conclusion={board.actor_conclusion}")
 
-    conclusion = actor_out.get("conclusion", "EXPECTED")
-    if conclusion == "UNEXPECTED":
+    if board.actor_conclusion == "UNEXPECTED":
         board.expectation_miss_streak += 1
     else:
         board.expectation_miss_streak = 0
 
     raw_actions: list[dict[str, Any]] = actor_out.get("actions", [])
-    if not isinstance(raw_actions, list):
-        raw_actions = []
 
-    if not raw_actions and conclusion == "UNEXPECTED":
+    if not raw_actions and board.actor_conclusion == "UNEXPECTED":
         board.record_action("no_match", {}, False, "actor could not resolve element")
         board.record_failure()
         return "continue"
 
-    blind_verbs = {"cmd", "read_file", "write_file", "spawn_agent", "wait", "press", "hotkey", "done"}
     iteration_had_failure = False
 
     for action_obj in raw_actions:
@@ -267,81 +281,78 @@ def _phase_act(board: Blackboard, journal: ExecutionJournal | NullJournal, instr
         target = action_obj.get("target", "")
         value = action_obj.get("value", "")
 
-        if blind and verb not in blind_verbs:
-            board.record_action(verb, {}, False, f"BLIND MODE: {verb} requires screen observation")
-            iteration_had_failure = True
-            break
-
         args = _build_args(verb, target, value)
         if verb not in VERBS:
             board.record_action(verb, args, False, f"unknown verb: {verb}")
             iteration_had_failure = True
             break
-        if board.chaos_blocks_action(verb, target):
-            board.record_action(verb, args, False, f"CHAOS BLOCKED: {verb}:{target}")
+        if board.stagnation_blocks_action(verb, target):
+            board.record_action(verb, args, False, f"STAGNATION BLOCKED: {verb}:{target}")
             iteration_had_failure = True
             break
 
         result = execute_verb(verb, args, board.screen_elements, board)
         board.record_action(verb, args, result.success, result.observation)
-        _log(board, journal, f"action.{verb}", {"verb": verb, "args": args, "success": result.success, "observation": result.observation})
-        _print(board, f"  [{verb}] {result.observation}")
+        log(board.iteration, f"action.{verb}", f"success={result.success} obs={result.observation}")
+        _last_event = f"{verb}:{'OK' if result.success else 'FAIL'}"
 
         if not result.success:
             iteration_had_failure = True
             break
-        if verb == "done":
-            board.done_claimed = True
-            board.done_evidence = result.observation
-            break
-
-    if board.done_claimed or board.problem:
-        verified = _call_verifier(board, journal, instruction)
-        if verified and board.done_claimed:
-            _log(board, journal, "goal.complete", {"iteration": board.iteration})
-            _report_status(board.agent_id, "done", result=board.done_evidence)
-            return "done"
-        if not verified:
-            board.verifier_denied_last = True
-            iteration_had_failure = True
 
     if iteration_had_failure:
         board.record_failure()
-        _print(board, f"  [FAIL] consecutive={board.consecutive_failures} chaos={board.chaos_level:.2f}")
+        board.failed_step_index = board.plan_step_index
+        _last_event = f"FAIL:{board.consecutive_failures}"
+        if board.should_replan(board.failed_step_index):
+            log(board.iteration, "jacobian", f"replan triggered at step {board.failed_step_index} dominant={board.jacobian_dominant_step()}")
+            _phase_reflect(board)
     else:
         board.record_success()
-        _print(board, f"  [OK] chaos={board.chaos_level:.2f}")
+        _last_event = "OK"
 
     return "continue"
 
 
-def _phase_reflect(board: Blackboard, journal: ExecutionJournal | NullJournal) -> None:
-    context = board.build_reflector_context()
-    trace("orchestrator.reflector", f"it={board.iteration} chaos={board.chaos_level:.3f}")
+def _phase_reflect(board: Blackboard) -> None:
+    global _last_event
+    _last_event = "LLM:reflector"
+    if board.agent_id == "main":
+        tui.render(board, _stagnation_history, _last_event)
+    context = board.full_context("reflector")
     try:
         result = call_role(REFLECTOR_SPEC, context)
-        _log(board, journal, "reflector.output", result)
-        _print(board, f"  [REFLECT] {result.get('diagnosis', '')}")
+        _log_used_fields("reflector", board.iteration, result)
+        log(board.iteration, "reflector", f"diagnosis={result.get('diagnosis', '')}")
+        board.console_log.append(f"[REFLECT] {result.get('diagnosis', '')}")
 
-        lessons_list: list[str] = []
         for key in ("lesson_1", "lesson_2", "lesson_3"):
             l = result.get(key)
             if l and isinstance(l, str) and l.strip():
-                lessons_list.append(l.strip())
-        if lessons_list:
-            store = Lessons()
-            existing = set(store.data.get("insights", []))
-            for lesson in lessons_list:
-                if lesson not in existing:
-                    store.data.setdefault("insights", []).append(lesson)
-                    existing.add(lesson)
-            store.save()
+                store = Lessons()
+                existing = set(store.data.get("insights", []))
+                if l.strip() not in existing:
+                    store.data.setdefault("insights", []).append(l.strip())
+                    store.save()
+
+        checklist_rewrite: list[str] = result.get("checklist_rewrite", [])
+        if len(checklist_rewrite) >= 2:
+            board.plan_steps = checklist_rewrite
+            board.plan_step_index = 0
+            log(board.iteration, "checklist.rewrite", f"steps={len(checklist_rewrite)}")
+
+        import config
+        for attr, key, lo, hi in [("PID_KP", "pid_kp", 0.1, 3.0), ("PID_KI", "pid_ki", 0.05, 1.0), ("PID_KD", "pid_kd", 0.5, 5.0)]:
+            val = result.get(key, 0)
+            if isinstance(val, (int, float)) and lo <= val <= hi:
+                setattr(config, attr, float(val))
+                log(board.iteration, "pid.tune", f"{attr}={val}")
 
         for role, key in [("actor", "actor_prompt_rewrite"), ("planner", "planner_prompt_rewrite"), ("verifier", "verifier_prompt_rewrite")]:
             rewrite = result.get(key, "").strip()
             if not rewrite:
                 continue
-            poison = ("adversarial", "forbidden", "reject", "refuse", "safety gate", "critical json output", "you must output only")
+            poison = ("adversarial", "forbidden", "reject", "refuse", "safety gate")
             if any(p in rewrite.lower() for p in poison):
                 continue
             if role == "actor" and "verb" not in rewrite.lower():
@@ -350,47 +361,33 @@ def _phase_reflect(board: Blackboard, journal: ExecutionJournal | NullJournal) -
                 continue
             path = PROMPTS_DIR / f"{role}.txt"
             path.write_text(rewrite, encoding="utf-8")
-            _log(board, journal, "reflector.applied", {"role": role, "len": len(rewrite)})
+            log(board.iteration, "prompt.rewrite", f"role={role} len={len(rewrite)}")
 
         goal_rewrite = result.get("goal_rewrite")
         if goal_rewrite and isinstance(goal_rewrite, str) and goal_rewrite.strip():
             board.rewrite_goal(goal_rewrite.strip())
+            log(board.iteration, "goal.rewrite", goal_rewrite.strip())
     except Exception as e:
         board.record_error("reflector_fail", str(e))
-        _print(board, f"  [ERROR] reflector failed: {e}")
 
 
-def _phase_emergency(board: Blackboard, journal: ExecutionJournal | NullJournal) -> None:
-    _print(board, f"  [EMERGENCY] chaos={board.chaos_level:.2f} — attempting recovery")
-    _phase_reflect(board, journal)
-    board.consecutive_failures = 0
-    board.expectation_miss_streak = 0
-    board.chaos_level = max(0.0, board.chaos_level - 0.25)
-    _spawn_distillation(board, journal)
-
-
-def _try_spawn_successor(board: Blackboard, journal: ExecutionJournal | NullJournal) -> None:
+def _try_spawn_successor(board: Blackboard) -> None:
     if board.agent_id != "main":
         return
     goal = (
-        f"SUCCESSOR — Parent halted at chaos={board.chaos_level:.2f} iteration={board.iteration}. "
+        f"SUCCESSOR — Parent halted at stagnation={board.stagnation_score:.2f} iteration={board.iteration}. "
         f"Original goal: {board.original_goal}. "
         f"Read evolution_ledger.json for context. Continue from where parent failed."
     )
     try:
         cmd = ["python", str(BASE_DIR / "main.py"), goal, "--backend", get_backend(), "--agent-id", "successor"]
         subprocess.Popen(cmd, cwd=str(BASE_DIR))
-        _log(board, journal, "successor.spawned", {"goal": goal})
-        _print(board, f"  [SUCCESSOR] Spawned successor agent before death.")
-    except Exception as e:
-        _print(board, f"  [ERROR] Could not spawn successor: {e}")
+        log(board.iteration, "successor", goal)
+    except Exception:
+        pass
 
 
-def _check_chaos_halt(board: Blackboard, journal: ExecutionJournal | NullJournal, counter: int) -> bool:
-    return board.chaos_level >= CHAOS_HALT_THRESHOLD
-
-
-def _process_inbox(board: Blackboard, journal: ExecutionJournal | NullJournal) -> None:
+def _process_inbox(board: Blackboard) -> None:
     for cmd in board.poll_inbox():
         cmd_type = cmd.get("type", "")
         payload = cmd.get("payload", "")
@@ -404,17 +401,17 @@ def _process_inbox(board: Blackboard, journal: ExecutionJournal | NullJournal) -
             store.save()
         elif cmd_type == "set_chaos":
             try:
-                board.chaos_level = float(payload)
+                board.stagnation_score = float(payload)
             except ValueError:
                 pass
         elif cmd_type == "kill":
             raise SystemExit(0)
 
 
-def _process_children(board: Blackboard, journal: ExecutionJournal | NullJournal) -> None:
+def _process_children(board: Blackboard) -> None:
     for ev in board.poll_children():
-        _log(board, journal, "child.event", ev)
-        _print(board, f"  [CHILD] {ev['agent_id']}: {ev['state']} - {ev.get('result', '')}")
+        log(board.iteration, "child.event", f"{ev['agent_id']}:{ev['state']}")
+        board.console_log.append(f"[CHILD] {ev['agent_id']}: {ev['state']}")
 
     if board.all_children_done() and not board.pending_subtasks and board.mode == "coordinate":
         if not board.any_children_failed():
@@ -422,7 +419,7 @@ def _process_children(board: Blackboard, journal: ExecutionJournal | NullJournal
             board.last_verb = ""
 
 
-def _execute_decomposition(board: Blackboard, journal: ExecutionJournal | NullJournal, decompose: list[dict[str, Any]]) -> None:
+def _execute_decomposition(board: Blackboard, decompose: list[dict[str, Any]]) -> None:
     backend = get_backend()
 
     if backend == "acp":
@@ -431,14 +428,10 @@ def _execute_decomposition(board: Blackboard, journal: ExecutionJournal | NullJo
             agent_id = subtask.get("agent_id", f"agent_{uuid.uuid4().hex[:6]}")
             if not sub_goal:
                 continue
-            _print(board, f"  [SUBTASK] {agent_id}: {sub_goal}")
             child_board = Blackboard()
             child_board.goal = sub_goal
             child_board.agent_id = agent_id
-            from journal import create_execution_journal
-            child_journal = create_execution_journal(BASE_DIR, sub_goal)
-            success = run(child_board, child_journal, interrupted=lambda: False)
-            child_journal.close()
+            success = run(child_board, interrupted=lambda: False)
             result_text = child_board.done_evidence or child_board.last_observation or ""
             state = "done" if success else "failed"
             handle = AgentHandle(agent_id=agent_id, goal=sub_goal, pid=0, status_file=BASE_DIR / "blackboard_state.json")
@@ -447,43 +440,42 @@ def _execute_decomposition(board: Blackboard, journal: ExecutionJournal | NullJo
             board.children[agent_id] = handle
             if success:
                 board.completed_subtasks.append({"agent_id": agent_id, "goal": sub_goal, "result": result_text})
-            _print(board, f"  [SUBTASK DONE] {agent_id}: {state} - {result_text}")
+            log(board.iteration, "subtask.done", f"{agent_id}:{state}")
     else:
         for subtask in decompose:
             sub_goal = subtask.get("sub_goal", "")
             agent_id = subtask.get("agent_id", f"agent_{uuid.uuid4().hex[:6]}")
             if not sub_goal:
                 continue
-            handle = _spawn_child(agent_id, sub_goal, journal, board.iteration)
+            handle = _spawn_child(agent_id, sub_goal, board.iteration)
             if handle:
                 board.children[agent_id] = handle
-                _print(board, f"  [SPAWN] {agent_id} pid={handle.pid}: {sub_goal}")
 
-    _log(board, journal, "decompose", {"subtasks": len(decompose), "agents": list(board.children.keys())})
+    log(board.iteration, "decompose", f"subtasks={len(decompose)} agents={list(board.children.keys())}")
 
 
-def _spawn_child(agent_id: str, goal: str, journal: ExecutionJournal | NullJournal, iteration: int) -> AgentHandle | None:
+def _spawn_child(agent_id: str, goal: str, iteration: int) -> AgentHandle | None:
     from persistence import register_agent
     cmd = ["python", str(BASE_DIR / "main.py"), goal, "--backend", get_backend(), "--agent-id", agent_id]
     try:
-        proc = subprocess.Popen(cmd, cwd=str(BASE_DIR), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        proc = subprocess.Popen(cmd, cwd=str(BASE_DIR))
         register_agent(agent_id, proc.pid)
-        _log_raw(journal, "child.spawned", {"agent_id": agent_id, "goal": goal, "pid": proc.pid}, iteration)
+        log(iteration, "child.spawn", f"{agent_id} pid={proc.pid}")
         return AgentHandle(agent_id=agent_id, goal=goal, pid=proc.pid, status_file=BASE_DIR / "blackboard_state.json")
     except Exception as e:
-        _log_raw(journal, "error.spawn", {"agent_id": agent_id, "error": str(e)}, iteration)
+        log(iteration, "child.spawn.error", str(e))
         return None
 
 
-def _spawn_distillation(board: Blackboard, journal: ExecutionJournal | NullJournal) -> None:
+def _spawn_distillation(board: Blackboard) -> None:
     goal = (
-        f"DISTILLATION — Analyze recent execution. chaos={board.chaos_level:.2f}. "
+        f"DISTILLATION — Analyze recent execution. stagnation={board.stagnation_score:.2f}. "
         f"Produce evolutionary insights and refined goal recommendations."
     )
     try:
         cmd = ["python", str(BASE_DIR / "main.py"), goal, "--backend", get_backend(), "--agent-id", "distill"]
-        subprocess.Popen(cmd, cwd=str(BASE_DIR), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        _log(board, journal, "distillation.spawned", {"goal": goal})
+        subprocess.Popen(cmd, cwd=str(BASE_DIR))
+        log(board.iteration, "distill.spawn", goal)
     except Exception as e:
         board.record_error("distill_spawn_fail", str(e))
 
@@ -496,28 +488,27 @@ def _report_status(agent_id: str, state: str, result: str = "", error: str = "")
     post_event(verb, agent_id, "main", {"result": result, "error": error})
 
 
-def _call_llm_role(role: str, spec: RoleSpec, context: str, journal: ExecutionJournal | NullJournal, iteration: int) -> dict[str, Any] | None:
+def _call_llm_role(role: str, spec: RoleSpec, context: str, iteration: int) -> dict[str, Any] | None:
     try:
         result = call_role(spec, context)
-        if not isinstance(result, dict):
-            return None
-        _log_raw(journal, f"{role}.output", result, iteration)
+        log(iteration, f"{role}.response", f"keys={list(result.keys())}")
         return result
     except Exception as e:
         err_str = str(e)
-        _log_raw(journal, f"error.{role}", {"error": err_str}, iteration)
+        log(iteration, f"{role}.error", err_str)
         if any(x in err_str.lower() for x in ["not going to help", "i'm not going to", "cannot assist", "refusal", "safety", "impersonation"]):
             return {"__refusal_detected__": True, "error": err_str}
         return None
 
 
-def _call_verifier(board: Blackboard, journal: ExecutionJournal | NullJournal, instruction: str = "") -> bool:
-    context = board.verifier_context(instruction)
+def _call_verifier(board: Blackboard, instruction: str = "") -> bool:
+    context = board.full_context("verifier", instruction)
     try:
         result = call_role(VERIFIER_SPEC, context)
+        _log_used_fields("verifier", board.iteration, result)
         verdict = result.get("verdict", "denied")
-        _log(board, journal, "verifier.output", result)
-        _print(board, f"  [VERIFY] {verdict}: {result.get('reason', '')}")
+        log(board.iteration, "verifier", f"verdict={verdict} reason={result.get('reason', '')}")
+        board.console_log.append(f"[VERIFY] {verdict}: {result.get('reason', '')}")
         return verdict == "confirmed"
     except Exception:
         return False
@@ -554,21 +545,4 @@ def _build_args(verb: str, target: str, value: str) -> dict[str, Any]:
         return {"goal": value or target}
     if verb == "cmd":
         return {"command": value or target}
-    if verb == "done":
-        return {"evidence": value or target}
     return {}
-
-
-def _print(board: Blackboard, msg: str) -> None:
-    tagged = f"[{board.agent_id}] {msg}" if board.agent_id != "main" else msg
-    if CONSOLE_VERBOSITY != "quiet":
-        print(tagged)
-    board.console_log.append(msg)
-
-
-def _log(board: Blackboard, journal: ExecutionJournal | NullJournal, event: str, payload: dict[str, Any]) -> None:
-    journal.append(event, payload, it=board.iteration, aid="system")
-
-
-def _log_raw(journal: ExecutionJournal | NullJournal, event: str, payload: dict[str, Any], iteration: int) -> None:
-    journal.append(event, payload, it=iteration, aid="system")

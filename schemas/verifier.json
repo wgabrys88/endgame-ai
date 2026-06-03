@@ -33,9 +33,14 @@
           "type": ["string", "null"],
           "enum": ["general", "refusal", "timeout", "parse_error", "action_failed", null],
           "description": "Classification of failure when denied."
+        },
+        "used_fields": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "List all blackboard fields you actually read and used to make this decision."
         }
       },
-      "required": ["verdict", "evidence", "reason", "suggestion", "failure_type"],
+      "required": ["verdict", "evidence", "reason", "suggestion", "failure_type", "used_fields"],
       "additionalProperties": false
     }
   }

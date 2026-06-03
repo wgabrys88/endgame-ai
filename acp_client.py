@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import atexit
+import io
 import json
 import queue
 import subprocess
 import threading
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 __all__ = ["ACPError", "prompt_once"]
 
@@ -28,7 +29,7 @@ class ACPError(RuntimeError):
 class _Flight:
     session_id: str
     request_id: int = -1
-    chunks: list[str] = field(default_factory=list)
+    chunks: list[str] = field(default_factory=lambda: list[str]())
     done: threading.Event = field(default_factory=threading.Event)
 
 
@@ -120,19 +121,22 @@ class _Pool:
         self._proc.stdin.flush()
 
     def _reader(self) -> None:
-        buf = b""
+        buf: bytes = b""
         while self._alive():
             if self._proc is None or self._proc.stdout is None:
                 break
-            chunk = self._proc.stdout.read1(65536)  # type: ignore[attr-defined]
+            reader = cast(io.BufferedReader, self._proc.stdout)
+            chunk: bytes = reader.read1(65536)
             if not chunk:
                 break
-            buf += chunk
+            buf = buf + chunk
             while b"\n" in buf:
-                line, buf = buf.split(b"\n", 1)
+                parts: list[bytes] = buf.split(b"\n", 1)
+                line: bytes = parts[0]
+                buf = parts[1]
                 if line.strip():
                     try:
-                        self._dispatch(json.loads(line))
+                        self._dispatch(json.loads(line.decode("utf-8")))
                     except (json.JSONDecodeError, Exception):
                         pass
         for f in self._flights.values():
@@ -160,10 +164,12 @@ class _Pool:
             if q:
                 q.put(msg)
         elif method == "session/request_permission" and isinstance(mid, int):
-            opts: list[JsonMsg] = (msg.get("params") or {}).get("options") or []
+            params_data: JsonMsg = msg.get("params") or {}
+            raw_opts: object = params_data.get("options") or []
+            opts: list[JsonMsg] = cast(list[JsonMsg], raw_opts) if isinstance(raw_opts, list) else []
             chosen: str | None = next(
-                (o.get("optionId") for o in opts if o.get("kind") == "allow_always"),
-                (opts[0].get("optionId") if opts else None))
+                (str(o.get("optionId")) for o in opts if o.get("kind") == "allow_always"),
+                (str(opts[0].get("optionId")) if opts else None))
             self._write({"jsonrpc": "2.0", "id": mid,
                          "result": {"outcome": {"outcome": "selected", "optionId": chosen}}})
         elif isinstance(mid, int):

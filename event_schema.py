@@ -43,10 +43,3 @@ def create_event(verb: str, source: str, target: str, payload: Any = None, statu
         status=status,
     )
     return asdict(e)
-
-
-def validate_event(evt: dict[str, Any]) -> bool:
-    required = {"id", "verb", "source", "target", "payload", "timestamp", "status"}
-    if not required.issubset(evt.keys()):
-        return False
-    return evt.get("verb") in VERBS

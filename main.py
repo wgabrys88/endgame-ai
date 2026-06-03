@@ -1,12 +1,12 @@
 from __future__ import annotations
 import argparse, json, signal, sys, time, types
 
-from config import DELAY_STARTUP, BASE_DIR, ENABLE_FILE_TRACING, init_trace, close_trace
+from config import DELAY_STARTUP, BASE_DIR
 from state import Blackboard
-from journal import create_execution_journal
 from llm import set_backend
 from orchestrator import run
 from persistence import save_snapshot, load_snapshot, append_to_evolution_ledger
+from log import open_log, log, close_log
 
 _interrupted = False
 
@@ -16,7 +16,6 @@ def _handle_sigint(sig: int, frame: types.FrameType | None) -> None:
     if _interrupted:
         sys.exit(1)
     _interrupted = True
-    print("\n[INTERRUPTED] Ctrl+C received. Finishing current iteration...")
 
 
 def main() -> None:
@@ -47,7 +46,6 @@ def main() -> None:
         snap = load_snapshot()
         if snap:
             board.load_from_snapshot(snap)
-            print(f"[RESUME] Loaded snapshot: goal='{board.goal}' iteration={board.iteration}")
         elif not args.goal:
             print("No snapshot found and no goal provided.")
             return
@@ -60,52 +58,30 @@ def main() -> None:
         print("usage: python main.py 'goal' [--backend lmstudio|acp] [--resume]")
         return
 
-    print(f"[ENDGAME] goal='{board.goal}' backend={args.backend} agent={args.agent_id}")
-    print(f"[STARTUP] Waiting {DELAY_STARTUP}s...")
     time.sleep(DELAY_STARTUP)
 
     lessons_path = BASE_DIR / "lessons.json"
     if not lessons_path.exists():
-        lessons_path.write_text(json.dumps({"insights": [
-            "Fresh run. Proceed with main goal.",
-            "On repeated failures, use parallel agents instead of looping.",
-            "For file operations, prefer cmd verb with PowerShell over GUI navigation."
-        ]}, indent=2, ensure_ascii=False), encoding="utf-8")
+        lessons_path.write_text(json.dumps({"insights": []}, indent=2, ensure_ascii=False), encoding="utf-8")
 
-    journal = create_execution_journal(BASE_DIR, board.goal)
-    if ENABLE_FILE_TRACING:
-        init_trace(journal.execution_id)
+    log_path = open_log(board.agent_id)
+    log(0, "run.start", f"goal={board.goal} backend={args.backend} agent={board.agent_id} log={log_path}")
 
-    success = run(board, journal, interrupted=lambda: _interrupted)
+    success = run(board, interrupted=lambda: _interrupted)
 
-    if success:
-        journal.append("run.end", {"success": True}, ph="system")
-    journal.close()
-
+    log(board.iteration, "run.end", f"success={success} stagnation={board.stagnation_score:.2f} iterations={board.iteration}")
     save_snapshot(board.get_persistable_snapshot())
-    _distill_end_of_run(board, journal)
-    close_trace()
 
-    sys.exit(0 if success else 1)
-
-
-def _distill_end_of_run(board: Blackboard, journal: object) -> None:
-    from config import CONTEXT_HISTORY_LIMIT
-    summary_parts = [
-        f"goal={board.goal}",
-        f"iterations={board.iteration}",
-        f"final_chaos={board.chaos_level:.2f}",
-        f"final_failures={board.consecutive_failures}",
-        f"done_claimed={board.done_claimed}",
-    ]
+    summary = (
+        f"goal={board.goal} | iterations={board.iteration} | "
+        f"stagnation={board.stagnation_score:.2f} | done={board.done_claimed}"
+    )
     if board.done_evidence:
-        summary_parts.append(f"evidence={board.done_evidence}")
-    if board.history:
-        for h in board.history[-CONTEXT_HISTORY_LIMIT:]:
-            summary_parts.append(f"  {h['verb']}->{'ok' if h['success'] else 'FAIL'}")
+        summary += f" | evidence={board.done_evidence}"
+    append_to_evolution_ledger(summary, source_run=board.agent_id)
 
-    entry = " | ".join(summary_parts)
-    append_to_evolution_ledger(entry, source_run=getattr(journal, "execution_id", "unknown"))
+    close_log()
+    sys.exit(0 if success else 1)
 
 
 if __name__ == "__main__":

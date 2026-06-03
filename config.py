@@ -1,5 +1,4 @@
 from __future__ import annotations
-import io
 import pathlib
 
 BASE_DIR: pathlib.Path = pathlib.Path(__file__).parent.resolve()
@@ -24,12 +23,6 @@ BUDGET_REFLECTOR_OUT: int = 8000
 
 DELAY_STARTUP: float = 5.0
 DELAY_BETWEEN_ITERATIONS: float = 3.0
-CONSECUTIVE_FAILURES_FOR_REFLECT: int = 2
-REFLECT_EVERY_N_ITERATIONS: int = 5
-DISTILL_EVERY_N_ITERATIONS: int = 10
-
-CONSOLE_VERBOSITY: str = "normal"
-ENABLE_FILE_TRACING: bool = False
 
 DELAY_FOCUS: float = 0.5
 DELAY_CURSOR_SETTLE: float = 0.05
@@ -47,36 +40,36 @@ MAX_LESSONS: int = 50
 MAX_LEDGER_ENTRIES: int = 200
 CONTEXT_HISTORY_LIMIT: int = 10
 
-CHAOS_HALT_THRESHOLD: float = 0.95
-CHAOS_HALT_SUSTAINED_ITERATIONS: int = 5
+STAGNATION_HALT_THRESHOLD: float = 0.95
+STAGNATION_HALT_SUSTAINED: int = 5
+
+PIPELINE_LORENZ: bool = True
+PIPELINE_PID: bool = True
+PIPELINE_JACOBIAN: bool = True
+
+LORENZ_SIGMA: float = 10.0
+LORENZ_RHO: float = 28.0
+LORENZ_BETA: float = 8.0 / 3.0
+LORENZ_DT: float = 0.02
+LORENZ_MAG_CAP: float = 80.0
+LORENZ_RHO_SENSITIVITY: float = 1.5
+LORENZ_BETA_SENSITIVITY: float = 0.3
+
+PID_KP: float = 1.0
+PID_KI: float = 0.3
+PID_KD: float = 0.8
+PID_INTEGRAL_MAX: float = 5.0
+PID_DEAD_ZONE: float = 0.05
+
+STAGNATION_WEIGHT_FAILURES: float = 5.0
+STAGNATION_WEIGHT_MISS: float = 4.0
+STAGNATION_WEIGHT_REPETITION: float = 12.0
+STAGNATION_WEIGHT_SCREEN: float = 6.0
+STAGNATION_NORMALIZER: float = 28.0
+
+REFLECT_THRESHOLD: float = 0.3
+DISTILL_THRESHOLD: float = 2.0
 
 LLM_TEMPERATURE: float = 0.22
 LLM_TOP_P: float = 0.92
 LLM_MAX_TOKENS: int = 200000
-
-_trace_handle: io.TextIOWrapper | None = None
-_trace_path: pathlib.Path | None = None
-
-
-def init_trace(execution_id: str) -> None:
-    global _trace_handle, _trace_path
-    if not ENABLE_FILE_TRACING:
-        return
-    _trace_path = BASE_DIR / f"trace-{execution_id}.txt"
-    _trace_handle = open(_trace_path, "a", encoding="utf-8")
-
-
-def trace(section: str, data: str) -> None:
-    if _trace_handle is None:
-        return
-    from datetime import datetime, timezone
-    ts = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
-    _trace_handle.write(f"[{ts}] [{section}] {data}\n")
-    _trace_handle.flush()
-
-
-def close_trace() -> None:
-    global _trace_handle
-    if _trace_handle:
-        _trace_handle.close()
-        _trace_handle = None

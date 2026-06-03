@@ -9,53 +9,82 @@
         "mode": {
           "type": "string",
           "enum": ["direct", "parallel", "done"],
-          "description": "One of: direct (perform the next_action yourself), parallel (decompose into child agents), done (goal achieved with evidence)."
+          "description": "direct: actor executes next_action. parallel: decompose into child agents. done: goal complete."
         },
         "because": {
           "type": "string",
           "minLength": 10,
           "maxLength": 500,
-          "description": "Concise reasoning for the chosen mode and next_action."
+          "description": "Reasoning for this decision."
         },
         "next_action": {
           "type": "string",
           "minLength": 0,
           "maxLength": 800,
-          "description": "Concrete instruction for the actor when mode=direct. Empty string for parallel or done."
+          "description": "Semantic instruction for actor. Describe elements by role and visible text, not by numeric ID."
         },
         "expect": {
           "type": "string",
           "minLength": 5,
           "maxLength": 400,
-          "description": "What observable result is expected from this step."
+          "description": "Observable outcome expected from this step."
+        },
+        "step_advance": {
+          "type": "boolean",
+          "description": "Set true when the current checklist step is complete."
+        },
+        "notes": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 5,
+          "description": "Persistent facts for future steps. URLs, IDs, key values. Replaces previous notes array entirely.",
+          "items": {
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 200
+          }
+        },
+        "sequence": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 10,
+          "description": "On first iteration or when replanning, emit the full step sequence. Empty on subsequent iterations.",
+          "items": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 200
+          }
         },
         "decompose": {
           "type": "array",
           "minItems": 0,
           "maxItems": 5,
-          "description": "When mode=parallel, up to 5 self-contained sub-goals for child agents. Empty otherwise.",
+          "description": "When mode=parallel, self-contained sub-goals for child agents.",
           "items": {
             "type": "object",
             "properties": {
               "sub_goal": {
                 "type": "string",
                 "minLength": 20,
-                "maxLength": 600,
-                "description": "Self-contained sub-goal for a child agent."
+                "maxLength": 600
               },
               "agent_id": {
                 "type": "string",
                 "minLength": 3,
-                "maxLength": 40,
-                "description": "Short unique identifier for the child."
+                "maxLength": 40
               }
             },
             "required": ["sub_goal", "agent_id"],
             "additionalProperties": false
           }
+        },
+        "used_fields": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "List all blackboard fields you actually read and used to make this decision."
         }
       },
-      "required": ["mode", "because", "next_action", "expect", "decompose"],
+      "required": ["mode", "because", "next_action", "expect", "step_advance", "notes", "sequence", "decompose", "used_fields"],
       "additionalProperties": false
     }
   }

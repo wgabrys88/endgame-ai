@@ -1,9 +1,9 @@
 from __future__ import annotations
 import json
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
-from config import PROMPTS_DIR, SCHEMAS_DIR, trace
+from config import PROMPTS_DIR, SCHEMAS_DIR
 from llm import call_llm
 
 __all__ = ["call_role", "RoleSpec"]
@@ -34,24 +34,18 @@ def _get_required_fields(role: str) -> list[str]:
 
 def call_role(spec: RoleSpec, context: str) -> dict[str, Any]:
     system = _load_prompt(spec.name)
-    trace("dispatch.call", f"role={spec.name} context_len={len(context)} system_len={len(system)}")
     raw = call_llm(system, context, spec.name, max_tokens=spec.max_output_tokens)
-    trace("dispatch.raw", f"role={spec.name} raw_len={len(raw)} raw_start={raw}")
     required = _get_required_fields(spec.name)
-    result = _extract_json(raw, required)
-    if not isinstance(result, dict):
-        raise ValueError(f"expected dict, got {type(result).__name__}: {str(result)}")
-    return result
+    return _extract_json(raw, required)
 
 
 def _extract_json(raw: str, required_fields: list[str]) -> dict[str, Any]:
     stripped = raw.strip()
     if stripped.startswith("{"):
         try:
-            result: dict[str, Any] = json.loads(stripped)
-            if isinstance(result, dict) and _matches_schema(result, required_fields):
-                trace("dispatch.parse", "clean JSON, schema match")
-                return result
+            top_result: dict[str, Any] = json.loads(stripped)
+            if _matches_schema(top_result, required_fields):
+                return top_result
         except json.JSONDecodeError:
             pass
     candidates: list[tuple[int, str]] = []
@@ -72,9 +66,10 @@ def _extract_json(raw: str, required_fields: list[str]) -> dict[str, Any]:
     fallback: tuple[int, dict[str, Any]] | None = None
     for pos, candidate in reversed(candidates):
         try:
-            result = json.loads(candidate)
-            if not isinstance(result, dict):
+            parsed: object = json.loads(candidate)
+            if not isinstance(parsed, dict):
                 continue
+            result: dict[str, Any] = cast(dict[str, Any], parsed)
             if schema_match is None and _matches_schema(result, required_fields):
                 schema_match = (pos, result)
                 if result.get("mode") != "done":
@@ -87,12 +82,8 @@ def _extract_json(raw: str, required_fields: list[str]) -> dict[str, Any]:
             continue
     chosen = schema_match or actionable or fallback
     if chosen:
-        pos, result = chosen
-        preamble = raw[:pos].strip()
-        method = "schema_match" if chosen == schema_match else ("actionable" if chosen == actionable else "fallback")
-        trace("dispatch.salvage", f"{len(candidates)} blocks, chose {method}. Preamble ({len(preamble)} chars): {preamble}")
+        _, result = chosen
         return result
-    trace("dispatch.no_json", f"no valid JSON in response ({len(raw)} chars): {raw}")
     raise ValueError(f"no JSON in response: {raw}")
 
 

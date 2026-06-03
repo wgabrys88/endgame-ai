@@ -28,7 +28,7 @@
             "properties": {
               "verb": {
                 "type": "string",
-                "enum": ["click", "write", "press", "hotkey", "scroll", "wait", "focus", "read_file", "write_file", "spawn_agent", "cmd", "done"]
+                "enum": ["click", "write", "press", "hotkey", "scroll", "wait", "focus", "read_file", "write_file", "spawn_agent", "cmd"]
               },
               "target": { "type": "string", "minLength": 0, "maxLength": 100 },
               "value": { "type": "string", "minLength": 0, "maxLength": 500 }
@@ -47,9 +47,14 @@
           "type": "string",
           "enum": ["EXPECTED", "UNEXPECTED"],
           "description": "Does current screen match what was expected last cycle?"
+        },
+        "used_fields": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "List all blackboard fields you actually read and used to make this decision."
         }
       },
-      "required": ["observe", "reason", "actions", "expect", "conclusion"],
+      "required": ["observe", "reason", "actions", "expect", "conclusion", "used_fields"],
       "additionalProperties": false
     }
   }

@@ -35,6 +35,29 @@
           "maxLength": 300,
           "description": "Tertiary lesson or empty."
         },
+        "checklist_rewrite": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 10,
+          "description": "Replacement checklist if current plan is stuck. Empty array means keep current.",
+          "items": {
+            "type": "string",
+            "minLength": 10,
+            "maxLength": 200
+          }
+        },
+        "pid_kp": {
+          "type": "number",
+          "description": "PID proportional gain adjustment. 0 means keep current value. Range 0.1-3.0."
+        },
+        "pid_ki": {
+          "type": "number",
+          "description": "PID integral gain adjustment. 0 means keep current value. Range 0.05-1.0."
+        },
+        "pid_kd": {
+          "type": "number",
+          "description": "PID derivative gain adjustment. 0 means keep current value. Range 0.5-5.0."
+        },
         "actor_prompt_rewrite": {
           "type": "string",
           "minLength": 0,
@@ -58,9 +81,14 @@
           "minLength": 0,
           "maxLength": 400,
           "description": "Rephrased goal or empty."
+        },
+        "used_fields": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "List all blackboard fields you actually read and used to make this decision."
         }
       },
-      "required": ["outcome", "diagnosis", "lesson_1", "lesson_2", "lesson_3", "actor_prompt_rewrite", "planner_prompt_rewrite", "verifier_prompt_rewrite", "goal_rewrite"],
+      "required": ["outcome", "diagnosis", "lesson_1", "lesson_2", "lesson_3", "checklist_rewrite", "pid_kp", "pid_ki", "pid_kd", "actor_prompt_rewrite", "planner_prompt_rewrite", "verifier_prompt_rewrite", "goal_rewrite", "used_fields"],
       "additionalProperties": false
     }
   }

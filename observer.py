@@ -3,7 +3,7 @@ import hashlib, math, time
 from dataclasses import dataclass
 from typing import Any
 
-from config import TREE_WALK_TIMEOUT, PROBE_STEP_PX, trace
+from config import TREE_WALK_TIMEOUT, PROBE_STEP_PX
 from win32 import (
     user32, init, set_dpi_aware, ensure_tree_walker,
     get_str, get_int, get_bool, get_rect,
@@ -111,11 +111,6 @@ def observe() -> ObserveResult:
 
     text, book = _render(classified, target_wnd, focused_title)
     content_hash = hashlib.md5(text.encode("utf-8", errors="surrogatepass")).hexdigest()
-
-    trace("observer.book", f"elements={len(book)} focused={focused_title} hash={content_hash}")
-    for eid, entry in book.items():
-        if entry.action != "none":
-            trace("observer.element", f"[{eid}] {entry.action} {entry.role} '{entry.name}' v='{entry.value}' pos=({entry.px},{entry.py}) sz=({entry.pw},{entry.ph}) wnd={entry.wnd}")
 
     return ObserveResult(
         context_text=text, book=book, focused_title=focused_title,

@@ -4,7 +4,7 @@ from typing import Any, Callable
 import time
 
 from config import (DELAY_FOCUS, DELAY_CURSOR_SETTLE, DELAY_MOUSE_HOLD,
-                    DELAY_CHAR_SEND, DELAY_KEY_INTER, MAX_WAIT_SECONDS, BASE_DIR, trace)
+                    DELAY_CHAR_SEND, DELAY_KEY_INTER, MAX_WAIT_SECONDS, BASE_DIR)
 from win32 import user32, get_window_title, VK_MAP, EXTENDED_VKS, INPUT
 
 __all__ = ["execute_verb", "ActionResult", "VERBS"]
@@ -33,7 +33,6 @@ def execute_verb(verb: str, args: dict[str, Any], book: ElementBook, state: Any)
     try:
         result = handler(args, book, state)
         result.duration_ms = int((time.perf_counter() - t0) * 1000)
-        trace("action.result", f"verb={verb} args={args} success={result.success} obs={result.observation}")
         return result
     except Exception as e:
         return ActionResult(verb=verb, success=False,
@@ -49,13 +48,12 @@ def _register(name: str) -> Callable[[VerbFn], VerbFn]:
 
 
 @_register("click")
-def _click(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
+def click_verb(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
     selector = str(args.get("selector", ""))
     if selector not in book:
         return ActionResult("click", False, f"selector {selector} not in book")
     entry = book[selector]
     px, py = entry.px + entry.pw // 2, entry.py + entry.ph // 2
-    trace("action.click", f"selector={selector} role={entry.role} name={entry.name} pos=({px},{py}) hwnd={entry.hwnd}")
     user32.SetForegroundWindow(entry.hwnd)
     time.sleep(DELAY_FOCUS)
     user32.SetCursorPos(px, py)
@@ -67,7 +65,7 @@ def _click(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
 
 
 @_register("write")
-def _write(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
+def write_verb(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
     import ctypes
     selector = str(args.get("selector", ""))
     text = str(args.get("text", ""))
@@ -75,11 +73,8 @@ def _write(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
         return ActionResult("write", False, "text field is empty")
     if selector and selector in book:
         entry = book[selector]
-        trace("action.write", f"selector={selector} role={entry.role} name={entry.name} hwnd={entry.hwnd} text_len={len(text)}")
         user32.SetForegroundWindow(entry.hwnd)
         time.sleep(DELAY_FOCUS)
-    else:
-        trace("action.write", f"no selector, typing into focused window, text_len={len(text)}")
     for char in text:
         code = ord(char)
         inputs = (INPUT * 2)()
@@ -95,7 +90,7 @@ def _write(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
 
 
 @_register("press")
-def _press(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
+def press_verb(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
     selector = str(args.get("selector", ""))
     key = str(args.get("key", "")).lower()
     if not key:
@@ -117,7 +112,7 @@ def _press(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
 
 
 @_register("hotkey")
-def _hotkey(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
+def hotkey_verb(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
     selector = str(args.get("selector", ""))
     keys: list[str] = args.get("keys", [])
     if not keys:
@@ -142,7 +137,7 @@ def _hotkey(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult
 
 
 @_register("scroll")
-def _scroll(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
+def scroll_verb(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
     selector = str(args.get("selector", ""))
     amount = int(args.get("amount", 3))
     if selector not in book:
@@ -158,14 +153,14 @@ def _scroll(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult
 
 
 @_register("wait")
-def _wait(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
+def wait_verb(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
     seconds = min(float(args.get("seconds", 1.0)), MAX_WAIT_SECONDS)
     time.sleep(seconds)
     return ActionResult("wait", True, f"waited {seconds}s")
 
 
 @_register("focus")
-def _focus(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
+def focus_verb(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
     title = str(args.get("window_title", ""))
     if not title:
         return ActionResult("focus", False, "no window_title provided")
@@ -187,7 +182,7 @@ def _focus(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
 
 
 @_register("read_file")
-def _read_file(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
+def read_file_verb(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
     from pathlib import Path
     path = str(args.get("path", ""))
     target = Path(path)
@@ -204,7 +199,7 @@ def _read_file(args: dict[str, Any], book: ElementBook, state: Any) -> ActionRes
 
 
 @_register("write_file")
-def _write_file(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
+def write_file_verb(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
     import hashlib
     from pathlib import Path
     path = str(args.get("path", ""))
@@ -225,7 +220,7 @@ def _write_file(args: dict[str, Any], book: ElementBook, state: Any) -> ActionRe
 
 
 @_register("spawn_agent")
-def _spawn_agent(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
+def spawn_agent_verb(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
     import subprocess
     goal = str(args.get("goal", ""))
     if not goal:
@@ -237,7 +232,7 @@ def _spawn_agent(args: dict[str, Any], book: ElementBook, state: Any) -> ActionR
 
 
 @_register("cmd")
-def _cmd(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
+def cmd_verb(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
     import subprocess
     command = str(args.get("command", ""))
     if not command:
@@ -252,7 +247,3 @@ def _cmd(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
         return ActionResult("cmd", False, "command timed out after 30s")
 
 
-@_register("done")
-def _done(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
-    evidence = str(args.get("evidence", ""))
-    return ActionResult("done", True, f"completion claimed: {evidence}")

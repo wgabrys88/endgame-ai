@@ -1,7 +1,4 @@
-# Ignore everything
 *
-
-# Allow known project files
 !.gitattributes
 !.gitignore
 !README.md
