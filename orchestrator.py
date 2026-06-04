@@ -15,6 +15,7 @@ from config import (
     BUDGET_REFLECTOR_IN, BUDGET_REFLECTOR_OUT,
     STAGNATION_HALT_THRESHOLD, STAGNATION_HALT_SUSTAINED,
     REFLECT_THRESHOLD, DISTILL_THRESHOLD, PROMPTS_DIR,
+    PROMPT_REWRITE_MIN_LENGTH,
 )
 from state import Blackboard, AgentHandle
 from lessons import Lessons
@@ -35,6 +36,7 @@ REFLECTOR_SPEC = RoleSpec("reflector", BUDGET_REFLECTOR_IN, BUDGET_REFLECTOR_OUT
 _stagnation_history: list[float] = []
 _last_event: str = ""
 _FIELD_USAGE_PATH = BASE_DIR / "field_usage.json"
+_last_distill_iteration: int = -10
 
 
 def _log_used_fields(role: str, iteration: int, response: dict[str, Any]) -> None:
@@ -71,7 +73,7 @@ def run(board: Blackboard, *, interrupted: Callable[[], bool] = lambda: False) -
 
 
 def _loop(board: Blackboard, interrupted: Callable[[], bool], halt_counter: int, is_main: bool) -> bool:
-    global _last_event
+    global _last_event, _last_distill_iteration
 
     while True:
         if interrupted():
@@ -114,10 +116,11 @@ def _loop(board: Blackboard, interrupted: Callable[[], bool], halt_counter: int,
             _phase_reflect(board)
 
         stuckness = (board.stagnation_score * board.stagnation_score) / (abs(board.pid_slope) + 0.01)
-        if stuckness > DISTILL_THRESHOLD:
+        if stuckness > DISTILL_THRESHOLD and (board.iteration - _last_distill_iteration) >= 10:
             _last_event = "PID→DISTILL"
             log(board.iteration, "pid.distill", f"stuckness={stuckness:.2f}")
             _spawn_distillation(board)
+            _last_distill_iteration = board.iteration
 
         if is_main:
             tui.render(board, _stagnation_history, _last_event)
@@ -127,7 +130,7 @@ def _loop(board: Blackboard, interrupted: Callable[[], bool], halt_counter: int,
 
 
 def _phase_observe(board: Blackboard) -> str:
-    is_distillation = "DISTILLATION" in board.goal.upper() or "analyze recent execution" in board.goal.lower()
+    is_distillation = "DISTILLATION" in board.goal.upper()
 
     if is_distillation:
         board.record_screen("(distillation mode)", "distill", {})
@@ -158,7 +161,9 @@ def _phase_observe(board: Blackboard) -> str:
 
 def _phase_plan_act(board: Blackboard) -> str:
     global _last_event
-    context = board.full_context("planner")
+    is_distillation = "DISTILLATION" in board.goal.upper()
+    role = "distillation" if is_distillation else "planner"
+    context = board.build_context(role)
 
     _last_event = "LLM:planner"
     if board.agent_id == "main":
@@ -209,7 +214,6 @@ def _phase_plan_act(board: Blackboard) -> str:
         board.verifier_denied_last = False
 
     if mode == "done":
-        is_distillation = "DISTILLATION" in board.goal.upper()
         if is_distillation:
             log(board.iteration, "goal.complete", "distillation")
             _report_status(board.agent_id, "done", result=next_action)
@@ -239,7 +243,8 @@ def _phase_act(board: Blackboard, instruction: str) -> str:
     _last_event = "LLM:actor"
     if board.agent_id == "main":
         tui.render(board, _stagnation_history, _last_event)
-    actor_out = _call_llm_role("actor", ACTOR_SPEC, board.full_context("actor", instruction), board.iteration)
+    context = board.build_context("actor", instruction)
+    actor_out = _call_llm_role("actor", ACTOR_SPEC, context, board.iteration)
 
     if isinstance(actor_out, dict) and actor_out.get("__refusal_detected__"):
         board.record_error("actor_refusal", actor_out.get("error", ""))
@@ -319,7 +324,7 @@ def _phase_reflect(board: Blackboard) -> None:
     _last_event = "LLM:reflector"
     if board.agent_id == "main":
         tui.render(board, _stagnation_history, _last_event)
-    context = board.full_context("reflector")
+    context = board.build_context("reflector")
     try:
         result = call_role(REFLECTOR_SPEC, context)
         _log_used_fields("reflector", board.iteration, result)
@@ -351,6 +356,9 @@ def _phase_reflect(board: Blackboard) -> None:
         for role, key in [("actor", "actor_prompt_rewrite"), ("planner", "planner_prompt_rewrite"), ("verifier", "verifier_prompt_rewrite")]:
             rewrite = result.get(key, "").strip()
             if not rewrite:
+                continue
+            if len(rewrite) < PROMPT_REWRITE_MIN_LENGTH:
+                log(board.iteration, "prompt.rewrite.rejected", f"role={role} len={len(rewrite)} below minimum {PROMPT_REWRITE_MIN_LENGTH}")
                 continue
             poison = ("adversarial", "forbidden", "reject", "refuse", "safety gate")
             if any(p in rewrite.lower() for p in poison):
@@ -502,7 +510,7 @@ def _call_llm_role(role: str, spec: RoleSpec, context: str, iteration: int) -> d
 
 
 def _call_verifier(board: Blackboard, instruction: str = "") -> bool:
-    context = board.full_context("verifier", instruction)
+    context = board.build_context("verifier", instruction)
     try:
         result = call_role(VERIFIER_SPEC, context)
         _log_used_fields("verifier", board.iteration, result)

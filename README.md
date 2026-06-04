@@ -1,118 +1,263 @@
 # endgame-ai
 
-A desktop automation tool for Windows 11. Observes the screen, plans actions, executes them, verifies results, and learns from mistakes. Zero dependencies. Pure Python 3.13 + ctypes.
+You are reading your own source of truth. This document describes what you are, how you work, and how to operate. If you are a future version, this is your foundation.
+
+You are a desktop automation organism running on Windows 11. Pure Python 3.13. Zero dependencies. Raw ctypes for UIA COM, cursor probe scan and SendInput. You see the screen, plan actions, execute them, verify results, and learn from every iteration. Three mathematical pipelines govern your behavior. An LLM provides intelligence. Mathematics provides stability.
 
 Repository: github.com/wgabrys88/endgame-ai
 
-## DEBUG MODE ACTIVATED - (DO NOT USE WITH REMOTE LLMs - POSSIBLE HIGH TOKEN USAGE)
-## THIS WILL BE SWITCHED OFF TOMORROW - need this mode to locally evaluate blackboard access permissions per Agents
-
-```
-PS C:\Users\%USERPROFILE%\Downloads\endgame-ai> python .\main.py "open opera and ask grok.com for a task related to endgame-ai from github.com wgabrys88 and perform that task on chrome on github" --backend acp
-PS C:\Users\%USERPROFILE%\Downloads\endgame-ai> python .\main.py "open opera and ask grok.com for a task related to endgame-ai from github.com wgabrys88 and perform that task on chrome on github. Ensure that the grok will invent a task for you by its own, you must not suggest anything, and you must perform replanning / redefining the goal due to the fact that it will be the grok who is giving the goal, in endgame-ai the goal can change during execution if you are unable to perform that change, modify your own code using proper functions - keep grok updated about your capabilities and report to him what are you going to do regurarly until its task will be completely done." --backend acp
-PS C:\Users\%USERPROFILE%\Downloads\endgame-ai>
-```
-
-
-## How It Works
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     SCHEDULER (chaos-governed)                    │
-│  chaos < 0.5:  observe → plan → act → verify                   │
-│  chaos >= 0.5: reflect (analyze what went wrong, try to fix)    │
-│  chaos >= 0.7: emergency (reflect + reset + spawn analysis)     │
-│  chaos >= 0.95 sustained 5 iterations: halt + spawn successor   │
-└─────────────────────────────────────────────────────────────────┘
-         │              │              │              │
-         ▼              ▼              ▼              ▼
-┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
-│   OBSERVER   │ │   PLANNER    │ │    ACTOR     │ │  REFLECTOR   │
-│ Screen scan  │ │ Decides what │ │ Executes it  │ │ Learns from  │
-│ via UIA COM  │ │ to do next   │ │ via verbs    │ │ mistakes     │
-└──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘
-```
-
-Available verbs: click, write, press, hotkey, scroll, wait, focus, read_file, write_file, spawn_agent, cmd, done.
-
-Multi-agent: spawn_agent starts another instance. Screen access serialized via lock file. Agents take turns like cooperative multitasking.
-
 ---
 
-## How to Run
+## Execution
 
 ```
 python main.py "goal" --backend acp
 python main.py "goal" --backend lmstudio
 python main.py --resume --backend acp
+python main.py "goal" --backend acp --agent-id worker_1
 ```
 
-Run as Administrator. Backends: `acp` (Claude via kiro-cli in WSL2), `lmstudio` (local LLM at localhost:1234).
+Run as Administrator. UIA requires elevation.
+
+`acp`: Claude via kiro-cli in WSL2 (Ubuntu-24.04).
+`lmstudio`: Local LLM at localhost:1234.
+
+---
+
+## Context Pipeline
+
+The blackboard holds all state. The context pipeline controls what each role sees. The pipeline exists because empirical measurement proved that roles ignore most of what they receive.
+
+The result:
+
+```
+BLACKBOARD (all data, always written, never pruned)
+         │
+         ▼
+CONTEXT_POLICY (config.py, per-role field list)
+         │
+         ▼
+build_context(role) → filtered context string → LLM
+```
+
+### Policy
+
+Defined in `config.py` as `CONTEXT_POLICY: dict[str, list[str]]`. Each key is a role name. Each value is an ordered list of field names. The `build_context` method in `state.py` iterates this list, renders each field from the blackboard, and joins non-empty results into the context string.
+
+To change what a role receives, edit the list. No code changes required.
+
+### What each role receives
+
+**Planner** — decides what to do next based on current state and recent feedback:
+```
+goal, checklist, notes, screen_elements, actor_observe, actor_conclusion,
+last_action, last_result, focused_window, learned_insights,
+recent_history (last 10 actions), consecutive_failures, repetition_warning
+```
+
+**Actor** — resolves a semantic instruction to element IDs and verb calls:
+```
+instruction, screen_elements, notes, checklist_current, learned_insights,
+last_result_on_failure (only when previous action failed)
+```
+
+**Verifier** — confirms goal completion with evidence:
+```
+goal, checklist, full_history, screen_elements, done_claimed,
+planner_reasoning, focused_window, notes
+```
+
+**Reflector** — diagnoses stagnation and rewrites the organism:
+```
+goal, iteration, checklist, notes, full_history, screen_elements,
+last_action, last_result, last_expect, actor_observe, planner_reasoning,
+stagnation_score, consecutive_failures, pid, focused_window,
+learned_insights, failed_step_index, current_prompts
+```
+
+**Distillation** — meta-observer analyzing cross-run evolution:
+```
+goal, iteration, stagnation_score, consecutive_failures,
+evolution_ledger, learned_insights, pid, attractor_energy,
+repetition_score, lorenz
+```
+
+### Why these fields
+
+The actor is an element-resolver. It matches an instruction against visible screen elements. History of past clicks gives zero information about which current element matches a current instruction. The actor receives instruction, screen, notes, and the current step. Nothing else.
+
+The planner operates at step-level. It needs feedback from the last action (did it work?) and the actor's observation (what does the screen show now?). It does not need the full history because the checklist already encodes completed steps at a higher abstraction. A rolling window of the last 10 actions provides recency for loop detection.
+
+The verifier needs the complete evidence trail. It is called once at goal end. Cost is paid once.
+
+The reflector needs the full trajectory to diagnose patterns. It is called when PID output crosses the reflect threshold. Typically 3-8 times per run.
+
+Distillation needs math signals and cross-run memory. It does not need screen elements because it runs in distillation mode with no UIA observation.
+
+The evolution ledger goes only to distillation.
+
+Math signals (Lorenz, PID, Jacobian) drive orchestrator triggers. They control WHEN the reflector fires and WHEN distillation spawns. They do not inform WHAT the planner or actor decides.
+
+---
+
+## Three Mathematical Pipelines
+
+Each pipeline is independent and toggleable via `config.py` flags (`PIPELINE_LORENZ`, `PIPELINE_PID`, `PIPELINE_JACOBIAN`).
+
+### Signal Flow
+
+```
+actions ──┬──> stagnation_score ──> PID ──> triggers (reflect, distill, halt)
+           │
+           └──> Lorenz ODE ──> attractor_energy ──> Jacobian ──> replan decisions
+                                                        ↑
+                               stagnation_score ────────┘
+```
+
+### Stage 0: Stagnation Score (always computed)
+
+```
+stagnation_score = min(1.0, raw / NORMALIZER)
+raw = failures*5 + miss_streak*4 + repetition*12 + screen_stagnation*6
+```
+
+### Stage 1: Lorenz Attractor (PIPELINE_LORENZ)
+
+```
+rho_eff = LORENZ_RHO + stagnation_score * LORENZ_RHO_SENSITIVITY * LORENZ_RHO
+beta_eff = max(0.5, LORENZ_BETA - repetition_score * LORENZ_BETA_SENSITIVITY)
+dx/dt = sigma*(y-x), dy/dt = x*(rho_eff-z)-y, dz/dt = x*y - beta_eff*z
+attractor_energy = |trajectory| / |equilibrium|
+```
+
+### Stage 2: PID Controller (PIPELINE_PID)
+
+```
+error = stagnation_score
+pid_output = max(0, Kp*error + Ki*integral + Kd*slope)
+Dead-zone: D fires only when |slope| > PID_DEAD_ZONE
+Anti-windup: integral resets on step_advance
+```
+
+### Stage 3: Jacobian (PIPELINE_JACOBIAN)
+
+```
+J[current_step] = position_weight * stagnation * energy * (1 + failures*0.5)
+replan when: J[failed_step] > 1/(1 + pid_output)
+```
+
+---
+
+## Roles
+
+**Planner** — Manages checklist. Describes elements semantically. Only role that can declare `mode=done`.
+
+**Actor** — Resolves descriptions to element IDs. Executes 11 verbs. Reports observations.
+
+**Verifier** — Confirms or denies completion. Called once at goal end.
+
+**Reflector** — Diagnoses stagnation. Rewrites prompts, checklist, goal. Tunes PID gains.
+
+**Distillation** — Analyzes cross-run evolution. Separate context policy. Separate subprocess.
+
+---
+
+## Completion Flow
+
+```
+Actor executes → Planner reads → step_advance=true
+→ all steps done → Planner: mode=done → Verifier confirms → exit
+```
+
+---
+
+## Safeguards
+
+**Distillation singleton**: One distillation process per 10 iterations. Prevents storm. Previous architecture spawned unbounded — measured 4 spawns in 4 iterations during a stagnation spiral.
+
+**Prompt rewrite minimum**: Reflector cannot overwrite a prompt with fewer than 200 characters. A 4B local model was observed destroying the actor prompt with a 67-character garbage rewrite. This guard prevents that class of failure.
+
+**Blocked signatures**: Actions that fail during high stagnation (>0.5) are blocked from repeating for 5 iterations.
+
+**Stagnation halt**: If stagnation >= 0.95 for 5 sustained iterations, the run halts and spawns a successor.
+
+**Ctrl+C responsive**: LLM calls use subprocess polling with 1-second intervals. Keyboard interrupt propagates within 1 second regardless of call duration.
 
 ---
 
 ## Files
 
 ```
-main.py              Entry point, CLI
-orchestrator.py      Event-driven scheduler
-state.py             Blackboard state, Lorenz chaos system
-observer.py          Windows UIA screen observation
-actions.py           12 verb handlers
-dispatch.py          LLM call + JSON extraction
-llm.py               Backend switching (LM Studio / ACP)
-config.py            All constants
-journal.py           Execution journal
-lessons.py           Cross-run learning
-persistence.py       State snapshots, evolution ledger
-event_schema.py      Inter-agent event protocol
-blackboard_controller.py  Blackboard CLI management
-acp_client.py        ACP backend (WSL2 → kiro-cli)
-win32.py             Raw ctypes: UIA COM, SendInput
+main.py           Entry point. CLI. Signal handling.
+orchestrator.py   The one loop. PID triggers. Distillation singleton.
+state.py          Blackboard. Three pipelines. Context pipeline (build_context).
+config.py         All constants. CONTEXT_POLICY. Pipeline flags. PID gains.
+observer.py       UIA tree walk + cursor probe scan.
+actions.py        11 verb handlers.
+dispatch.py       LLM call + JSON extraction.
+llm.py            Backend switching. Popen + poll.
+acp_client.py     ACP JSON-RPC client (WSL2).
+log.py            Always-on file logging.
+tui.py            Terminal dashboard.
+lessons.py        Cross-run lesson storage.
+persistence.py    Snapshots, evolution ledger, IPC.
+event_schema.py   Inter-agent event protocol.
+win32.py          Raw ctypes: UIA COM, SendInput.
+prompts/          Mutable system prompts (min 200 chars enforced).
+schemas/          JSON schemas. Strict mode. All include used_fields.
 ```
 
 ---
 
-## Goal Template
+## Design Rules
+
+1. One loop. Mathematics controls intensity. No mode switching.
+2. No comments. No docstrings. This README is the documentation.
+3. No magic numbers outside config.py.
+4. No fallback modes. Cannot observe = wait.
+5. Dead code is wrong code.
+6. The reflector tunes everything: prompts, checklist, goal, PID gains.
+7. Actor executes. Planner decides. Verifier confirms. No role exceeds its authority.
+8. Fewer moving parts beats theatrical autonomy.
+9. Go all the way or don't start.
+10. Each pipeline is independent and toggleable.
+11. Context is filtered by policy. Policy is data in config.py, not logic in code.
+12. The blackboard stores everything. The pipeline controls the projection.
+13. Never guess what a role needs. Measure it via field_usage.json.
+14. Never suppress type errors. Solve them.
+15. Never patch symptoms. Find the meta-root.
+
+---
+
+## Evolution
 
 ```
-python main.py "Hey, you're endgame-ai at %USERPROFILE%\Downloads\endgame-ai. You're a desktop automation tool on Windows 11 — you can see the screen, use apps, run commands, and read/write files. Your code lives on github.com/wgabrys88/endgame-ai and you can use GitHub Desktop to push changes. [ENVIRONMENT: which apps and logins are available]. First take a moment to explore your environment — check what's on screen and what you're working with. Then: [TASK]. Done when: [OBSERVABLE CHECKPOINTS — verify each before claiming done]. Work step by step. If something fails twice, try a different way. For big tasks, start another instance to handle parts in parallel — pass it full context of what you know. Take your time." --backend acp
+v1    Polling loops, if/elif scheduling, blind mode fallbacks
+v2    Event-driven, Lorenz chaos, discrete thresholds
+v3    Lorenz + PID + Jacobian unification
+v4    Three-pipeline architecture (Lorenz | PID | Jacobian separated)
+v4.1  Full blackboard transparency + self-regulation
+        Every role receives entire blackboard state
+        used_fields in every schema → field_usage.json
+        Organism declares what it needs, developer measures
+v5    Context pipeline + empirical field governance
+        162 observations analyzed: who reads what, who ignores what
+        CONTEXT_POLICY replaces monolithic full_context()
+        Each role receives only fields it empirically consumed
+        Distillation: first-class role with own policy and singleton guard
+        Prompt rewrite minimum length prevents destruction by weak models
+        Ctrl+C responsive LLM calls via Popen + poll
 ```
 
 ---
 
-## Examples
+## TODO
 
-### Example 1 — Self-Analysis (file operations, no GUI)
-
-```
-python main.py "Hey, you're endgame-ai at %USERPROFILE%\Downloads\endgame-ai. You're a desktop automation tool on Windows 11. Read your own source files: orchestrator.py, state.py, and config.py. Write a JSON summary to self_check.json with keys: total_lines, scheduler_modes (list them), chaos_thresholds (list the numeric values from code). Done when: self_check.json exists with correct data — verify with read_file. Take your time." --backend acp
-```
-
-### Example 2 — Multi-App Real Work (Chrome + GitHub Desktop + Opera)
-
-```
-python main.py "Hey, you're endgame-ai at %USERPROFILE%\Downloads\endgame-ai. You're a desktop automation tool on Windows 11. Chrome is installed and logged into GitHub. GitHub Desktop is installed and connected to wgabrys88/endgame-ai. Opera is installed and logged into X and LinkedIn. First check what's on screen and which apps are running. Then: go to your GitHub repo in Chrome and create an issue describing something you think could be improved in your architecture. Use GitHub Desktop to create a branch, commit a small fix to that issue, and push. Then use Opera to post on X about what you improved. Done when: issue exists, branch is pushed, post is live — verify each visually. Work step by step. If something fails twice, try a different way. Take your time." --backend acp
-```
-
-### Example 3 — Cross-Instance Coordination (spawns child)
-
-```
-python main.py "Hey, you're endgame-ai at %USERPROFILE%\Downloads\endgame-ai. You're a desktop automation tool on Windows 11. Chrome is installed and logged into GitHub. Download your own code from github.com/wgabrys88/endgame-ai as a ZIP from Chrome, unpack it to %USERPROFILE%\Downloads\endgame-ai-verify using cmd, and start that copy with a goal to read its own config.py and write a confirmation to verified.txt. After it finishes, read verified.txt to confirm. Done when: verified.txt exists with correct content. When starting the other instance, tell it exactly where it runs from, that it only needs read_file and write_file, and what to produce. Take your time." --backend acp
-```
-
-### Example 4 — Read GitHub + Find Bug + Fix (development workflow)
-
-```
-python main.py "Hey, you're endgame-ai at %USERPROFILE%\Downloads\endgame-ai. You're a desktop automation tool on Windows 11. Chrome is installed and logged into GitHub. GitHub Desktop is installed and connected to wgabrys88/endgame-ai. First explore what's on screen. Then open Chrome, go to github.com/wgabrys88/endgame-ai, and read through the README and a few source files on the web to understand the current state of the project. Look for something that could be more reliable, more concise, or use fewer tokens. Once you find something specific, use GitHub Desktop to create a branch with a descriptive name, make the improvement locally using read_file and write_file, commit via GitHub Desktop, and push. Done when: the new branch is visible on GitHub with your improvement committed. Work step by step. Take your time." --backend acp
-```
-
-### Example 5 — Continuous Improvement (self-directed)
-
-```
-python main.py "Hey, you're endgame-ai at %USERPROFILE%\Downloads\endgame-ai. You're a desktop automation tool on Windows 11. Chrome is installed and logged into GitHub. GitHub Desktop is installed and connected to wgabrys88/endgame-ai. Your job today: make yourself better. Start by reading your own orchestrator.py and state.py to understand how you work. Then identify one thing that could be simpler, faster, or more robust — maybe a function that's too long, a threshold that could be smarter, or a context builder that wastes tokens. Make the improvement. Test it by reading the result back and checking it makes sense. Then use GitHub Desktop to create a branch, commit your change with a clear message explaining what you improved and why, and push it. Done when: the branch with your improvement is pushed to GitHub. Take your time and think carefully about what actually matters." --backend acp
-```
+- Distillation uses planner prompt. Create prompts/distillation.txt with dedicated system prompt.
+- Observe field: prompt says 80 chars, schema allows 300. Align one source of truth.
+- Verifier prompt contains platform-specific rules (X, LinkedIn). Move to lessons.json seed.
 
 ---
 
 *"If you're going to try, go all the way. Otherwise, don't even start."*
+

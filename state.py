@@ -89,6 +89,26 @@ class Blackboard:
 
     _screen_lock_held: bool = False
 
+    def build_context(self, role: str, instruction: str = "") -> str:
+        from config import CONTEXT_POLICY
+        fields = CONTEXT_POLICY.get(role, [])
+        parts: list[str] = []
+        for f in fields:
+            text = _render_field(self, f, instruction)
+            if text:
+                parts.append(text)
+        return "\n\n".join(parts)
+
+    def format_history(self, label: str = "RECENT", full: bool = False) -> str:
+        from config import CONTEXT_HISTORY_LIMIT
+        recent = self.history if full else self.history[-CONTEXT_HISTORY_LIMIT:]
+        if not recent:
+            return ""
+        lines = [label + ":"]
+        for h in recent:
+            lines.append(f"  {h['verb']} -> {'ok' if h['success'] else 'FAIL'}: {h['obs']}")
+        return "\n".join(lines)
+
     def acquire_screen(self) -> bool:
         lock_data = {"agent_id": self.agent_id, "ts": time.time(), "pid": os.getpid()}
         if SCREEN_LOCK_PATH.exists():
@@ -159,37 +179,6 @@ class Blackboard:
 
     def active_children_count(self) -> int:
         return sum(1 for h in self.children.values() if h.state == "running")
-
-    def children_summary(self) -> str:
-        if not self.children:
-            return ""
-        lines = ["CHILD AGENTS:"]
-        for aid, h in self.children.items():
-            elapsed = int(time.time() - h.started_at)
-            lines.append(f"  [{aid}] state={h.state} goal='{h.goal}' elapsed={elapsed}s")
-            if h.result:
-                lines.append(f"    result: {h.result}")
-            if h.error:
-                lines.append(f"    error: {h.error}")
-        return "\n".join(lines)
-
-    def completed_summary(self) -> str:
-        if not self.completed_subtasks:
-            return ""
-        lines = ["COMPLETED SUBTASKS:"]
-        for st in self.completed_subtasks:
-            lines.append(f"  [{st['agent_id']}] {st['goal']} -> {st['result']}")
-        return "\n".join(lines)
-
-    def format_history(self, label: str = "RECENT", full: bool = False) -> str:
-        from config import CONTEXT_HISTORY_LIMIT
-        recent = self.history if full else self.history[-CONTEXT_HISTORY_LIMIT:]
-        if not recent:
-            return ""
-        lines = [label + ":"]
-        for h in recent:
-            lines.append(f"  {h['verb']} -> {'ok' if h['success'] else 'FAIL'}: {h['obs']}")
-        return "\n".join(lines)
 
     def rewrite_goal(self, new_goal: str) -> None:
         if not new_goal:
@@ -443,368 +432,132 @@ class Blackboard:
         self.done_evidence = ""
         self.problem = ""
 
-    def full_context(self, role: str, instruction: str = "") -> str:
-        parts: list[str] = []
-        parts.append(f"ROLE: {role}")
-        parts.append(f"GOAL: {self.goal}")
-        if self.original_goal and self.original_goal != self.goal:
-            parts.append(f"ORIGINAL_GOAL: {self.original_goal}")
-        parts.append(f"ITERATION: {self.iteration}")
-        parts.append(f"MODE: {self.mode}")
-        parts.append(f"AGENT_ID: {self.agent_id}")
-        parts.append(f"HOME: {BASE_DIR}")
-        if instruction:
-            parts.append(f"INSTRUCTION_TO_ACTOR: {instruction}")
-        if self.last_instruction:
-            parts.append(f"LAST_INSTRUCTION_ISSUED: {self.last_instruction}")
-        if self.focused_window:
-            parts.append(f"FOCUSED_WINDOW: {self.focused_window}")
-        if self.plan_steps:
+
+def _render_field(board: Blackboard, field_name: str, instruction: str) -> str:
+    match field_name:
+        case "goal":
+            if board.original_goal and board.original_goal != board.goal:
+                return f"GOAL: {board.goal}\nORIGINAL_GOAL: {board.original_goal}"
+            return f"GOAL: {board.goal}"
+        case "iteration":
+            return f"ITERATION: {board.iteration}"
+        case "instruction":
+            if instruction:
+                return f"INSTRUCTION: {instruction}"
+            return ""
+        case "checklist":
+            if not board.plan_steps:
+                return ""
             lines = ["CHECKLIST:"]
-            for i, step in enumerate(self.plan_steps):
-                if i < self.plan_step_index:
+            for i, step in enumerate(board.plan_steps):
+                if i < board.plan_step_index:
                     lines.append(f"  [{i}] done  {step}")
-                elif i == self.plan_step_index:
+                elif i == board.plan_step_index:
                     lines.append(f"  [{i}] >>>   {step}")
                 else:
                     lines.append(f"  [{i}]       {step}")
-            parts.append("\n".join(lines))
-        if self.notes:
-            parts.append("NOTES:\n" + "\n".join(f"  - {n}" for n in self.notes))
-        if self.last_plan_because:
-            parts.append(f"PLANNER_REASONING: {self.last_plan_because}")
-        if self.actor_observe:
-            parts.append(f"ACTOR_OBSERVE: {self.actor_observe}")
-        if self.actor_conclusion:
-            parts.append(f"ACTOR_CONCLUSION: {self.actor_conclusion}")
-        if self.actor_reason:
-            parts.append(f"ACTOR_REASON: {self.actor_reason}")
-        if self.last_verb:
-            parts.append(f"LAST_ACTION: {self.last_verb} {'succeeded' if self.last_success else 'FAILED'}")
-            if self.last_observation:
-                parts.append(f"LAST_RESULT: {self.last_observation}")
-        if self.last_expect:
-            parts.append(f"LAST_EXPECT: {self.last_expect}")
-        if self.done_claimed:
-            parts.append(f"DONE_CLAIMED: {self.done_evidence}")
-        if self.problem:
-            parts.append(f"PROBLEM: {self.problem}")
-        if self.verifier_denied_last:
-            parts.append("VERIFIER_DENIED_LAST: true")
-        parts.append(f"CONSECUTIVE_FAILURES: {self.consecutive_failures}")
-        parts.append(f"STAGNATION_SCORE: {self.stagnation_score:.3f}")
-        parts.append(f"ATTRACTOR_ENERGY: {self.attractor_energy:.3f}")
-        parts.append(f"PID: output={self.pid_output:.3f} integral={self.pid_integral:.3f} slope={self.pid_slope:.3f}")
-        parts.append(f"REPETITION_SCORE: {self.repetition_score:.3f}")
-        parts.append(f"SCREEN_STAGNATION: {self.screen_stagnation}")
-        parts.append(f"EXPECTATION_MISS_STREAK: {self.expectation_miss_streak}")
-        parts.append(f"LORENZ: x={self.lorenz_x:.3f} y={self.lorenz_y:.3f} z={self.lorenz_z:.3f}")
-        if self.jacobian_vector:
-            parts.append(f"JACOBIAN_VECTOR: {[round(v, 3) for v in self.jacobian_vector]}")
-        parts.append(f"FAILED_STEP_INDEX: {self.failed_step_index}")
-        hist = self.format_history("FULL_HISTORY", full=True)
-        if hist:
-            parts.append(hist)
-        if self.errors:
-            parts.append("ERRORS:\n" + "\n".join(f"  {e}" for e in self.errors))
-        if self.screen:
-            parts.append(f"SCREEN_ELEMENTS:\n{self.screen}")
-        children_sum = self.children_summary()
-        if children_sum:
-            parts.append(children_sum)
-        completed_sum = self.completed_summary()
-        if completed_sum:
-            parts.append(completed_sum)
-        if self.pending_subtasks:
-            parts.append("PENDING_SUBTASKS: " + json.dumps(self.pending_subtasks, ensure_ascii=False))
-        try:
-            from lessons import Lessons
-            lesson_text = Lessons().get_context()
-            if lesson_text:
-                parts.append(lesson_text)
-        except Exception:
-            pass
-        try:
-            from persistence import get_evolution_ledger_context
-            ledger = get_evolution_ledger_context()
-            if ledger:
-                parts.append(ledger)
-        except Exception:
-            pass
-        if role == "reflector":
+            return "\n".join(lines)
+        case "checklist_current":
+            if not board.plan_steps:
+                return ""
+            current = board.plan_steps[board.plan_step_index] if board.plan_step_index < len(board.plan_steps) else ""
+            return f"CURRENT STEP: {current}" if current else ""
+        case "notes":
+            if not board.notes:
+                return ""
+            return "NOTES:\n" + "\n".join(f"  - {n}" for n in board.notes)
+        case "screen_elements":
+            if not board.screen:
+                return ""
+            return f"SCREEN_ELEMENTS:\n{board.screen}"
+        case "focused_window":
+            if not board.focused_window:
+                return ""
+            return f"FOCUSED_WINDOW: {board.focused_window}"
+        case "actor_observe":
+            if not board.actor_observe:
+                return ""
+            return f"ACTOR_OBSERVE: {board.actor_observe}"
+        case "actor_conclusion":
+            if not board.actor_conclusion:
+                return ""
+            return f"ACTOR_CONCLUSION: {board.actor_conclusion}"
+        case "last_action":
+            if not board.last_verb:
+                return ""
+            return f"LAST_ACTION: {board.last_verb} {'succeeded' if board.last_success else 'FAILED'}"
+        case "last_result":
+            if not board.last_observation:
+                return ""
+            return f"LAST_RESULT: {board.last_observation}"
+        case "last_result_on_failure":
+            if board.last_success or not board.last_observation:
+                return ""
+            return f"LAST_RESULT: {board.last_verb} FAILED: {board.last_observation}"
+        case "last_expect":
+            if not board.last_expect:
+                return ""
+            return f"LAST_EXPECT: {board.last_expect}"
+        case "done_claimed":
+            if not board.done_claimed:
+                return ""
+            return f"DONE_CLAIMED: {board.done_evidence}"
+        case "planner_reasoning":
+            if not board.last_plan_because:
+                return ""
+            return f"PLANNER_REASONING: {board.last_plan_because}"
+        case "consecutive_failures":
+            if board.consecutive_failures <= 0:
+                return ""
+            return f"CONSECUTIVE_FAILURES: {board.consecutive_failures}"
+        case "stagnation_score":
+            return f"STAGNATION_SCORE: {board.stagnation_score:.3f}"
+        case "pid":
+            return f"PID: output={board.pid_output:.3f} integral={board.pid_integral:.3f} slope={board.pid_slope:.3f}"
+        case "attractor_energy":
+            return f"ATTRACTOR_ENERGY: {board.attractor_energy:.3f}"
+        case "repetition_score":
+            return f"REPETITION_SCORE: {board.repetition_score:.3f}"
+        case "lorenz":
+            return f"LORENZ: x={board.lorenz_x:.3f} y={board.lorenz_y:.3f} z={board.lorenz_z:.3f}"
+        case "failed_step_index":
+            if board.failed_step_index <= 0:
+                return ""
+            return f"FAILED_STEP_INDEX: {board.failed_step_index}"
+        case "recent_history":
+            return board.format_history("RECENT_HISTORY", full=False)
+        case "full_history":
+            return board.format_history("FULL_HISTORY", full=True)
+        case "learned_insights":
+            try:
+                from lessons import Lessons
+                text = Lessons().get_context()
+                return text if text else ""
+            except Exception:
+                return ""
+        case "evolution_ledger":
+            try:
+                from persistence import get_evolution_ledger_context
+                text = get_evolution_ledger_context()
+                return text if text else ""
+            except Exception:
+                return ""
+        case "current_prompts":
             prompts: dict[str, str] = {}
             for r in ("actor", "planner", "verifier"):
                 p = BASE_DIR / "prompts" / f"{r}.txt"
                 if p.exists():
                     prompts[r] = p.read_text(encoding="utf-8")
-            if prompts:
-                parts.append("CURRENT_PROMPTS:\n" + "\n\n".join(f"[{r}.txt]\n{c}" for r, c in prompts.items()))
-        return "\n\n".join(parts)
-
-    def planner_context(self) -> str:
-        parts = [f"ITERATION: {self.iteration}"]
-        parts.append(f"MODE: {self.mode}")
-        parts.append(f"HOME: {BASE_DIR}")
-        if self.focused_window:
-            parts.append(f"FOCUSED WINDOW: {self.focused_window}")
-
-        if self.plan_steps:
-            lines = ["CHECKLIST:"]
-            for i, step in enumerate(self.plan_steps):
-                if i < self.plan_step_index:
-                    lines.append(f"  [{i}] done  {step}")
-                elif i == self.plan_step_index:
-                    lines.append(f"  [{i}] >>>   {step}")
-                else:
-                    lines.append(f"  [{i}]       {step}")
-            parts.append("\n".join(lines))
-
-        if self.last_plan_because:
-            parts.append(f"PREVIOUS PLAN REASONING: {self.last_plan_because}")
-
-        if self.notes:
-            parts.append("NOTES:\n" + "\n".join(f"  - {n}" for n in self.notes))
-
-        sitrep: list[str] = []
-        if self.actor_observe:
-            sitrep.append(f"ACTOR SEES: {self.actor_observe}")
-        if self.actor_conclusion:
-            sitrep.append(f"ACTOR CONCLUSION: {self.actor_conclusion}")
-        if self.last_verb:
-            sitrep.append(f"LAST ACTION: {self.last_verb} {'succeeded' if self.last_success else 'FAILED'}")
-            if self.last_observation:
-                sitrep.append(f"RESULT: {self.last_observation}")
-        if self.last_expect and not self.last_success:
-            sitrep.append(f"EXPECTED (unmet): {self.last_expect}")
-        if sitrep:
-            parts.append("\n".join(sitrep))
-
-        try:
-            from lessons import Lessons
-            lesson_text = Lessons().get_context()
-            if lesson_text:
-                parts.append(lesson_text)
-        except Exception:
-            pass
-
-        if self.errors:
-            parts.append("ERRORS THIS RUN:\n" + "\n".join(f"  {e}" for e in self.errors[-5:]))
-
-        if self.detect_repetition_in_history():
-            parts.append(
+            if not prompts:
+                return ""
+            return "CURRENT_PROMPTS:\n" + "\n\n".join(f"[{r}.txt]\n{c}" for r, c in prompts.items())
+        case "repetition_warning":
+            if not board.detect_repetition_in_history():
+                return ""
+            return (
                 "!!! WARNING: You have repeated the same action multiple times. "
                 "If the goal's core action already succeeded, set mode=done NOW. "
                 "If not done, you MUST try a DIFFERENT action."
             )
-
-        if self.active_children_count() > 0:
-            parts.append(f"ACTIVE CHILDREN: {self.active_children_count()}")
-        children_sum = self.children_summary()
-        if children_sum:
-            parts.append(children_sum)
-        completed_sum = self.completed_summary()
-        if completed_sum:
-            parts.append(completed_sum)
-        if self.pending_subtasks:
-            parts.append("PENDING SUBTASKS: " + json.dumps(self.pending_subtasks, ensure_ascii=False))
-
-        if self.problem:
-            parts.append(f"PROBLEM: {self.problem}")
-        if self.consecutive_failures > 0:
-            parts.append(f"CONSECUTIVE FAILURES: {self.consecutive_failures}")
-
-        hist = self.format_history()
-        if hist:
-            parts.append(hist)
-
-        if self.original_goal and self.original_goal != self.goal:
-            parts.append(f"ORIGINAL GOAL: {self.original_goal}")
-            parts.append(f"CURRENT GOAL (adapted): {self.goal}")
-        else:
-            parts.append(f"GOAL: {self.goal}")
-
-        try:
-            from persistence import get_evolution_ledger_context
-            ledger = get_evolution_ledger_context()
-            if ledger:
-                parts.append(ledger)
-        except Exception:
-            pass
-
-        if self.stagnation_score > 0.25:
-            parts.append(
-                f"\n[STAGNATION {self.stagnation_score:.2f} | Repetition {self.repetition_score:.2f}] "
-                f"Prefer parallel decomposition or spawn_agent. Avoid repeating recent failing actions."
-            )
-
-        return "\n\n".join(parts)
-
-    def actor_context(self, instruction: str) -> str:
-        parts: list[str] = []
-        if instruction:
-            parts.append(f"INSTRUCTION: {instruction}")
-
-        if self.plan_steps:
-            current = self.plan_steps[self.plan_step_index] if self.plan_step_index < len(self.plan_steps) else ""
-            parts.append(f"CURRENT STEP: {current}")
-
-        if self.problem:
-            parts.append(f"PROBLEM: {self.problem}")
-        if self.last_verb:
-            parts.append(f"LAST: {self.last_verb} {'succeeded' if self.last_success else 'FAILED'}")
-            if self.last_observation:
-                parts.append(f"RESULT: {self.last_observation}")
-        if self.last_expect and not self.last_success:
-            parts.append(f"EXPECTED FROM LAST ITERATION: {self.last_expect}")
-        hist = self.format_history()
-        if hist:
-            parts.append(hist)
-
-        try:
-            from lessons import Lessons
-            lesson_text = Lessons().get_context()
-            if lesson_text:
-                parts.append(lesson_text)
-        except Exception:
-            pass
-
-        parts.append(f"AVAILABLE ELEMENTS (match instruction by role/name, use numeric ID as target):\n{self.screen}")
-
-        if self.original_goal and self.original_goal != self.goal:
-            parts.append(f"ORIGINAL GOAL: {self.original_goal}")
-            parts.append(f"CURRENT GOAL (adapted): {self.goal}")
-        else:
-            parts.append(f"GOAL: {self.goal}")
-
-        if self.stagnation_score > 0.25:
-            parts.append(
-                f"\n[STAGNATION {self.stagnation_score:.2f}] "
-                f"If stuck, use spawn_agent or different approach instead of repeating."
-            )
-
-        return "\n\n".join(parts)
-
-    def verifier_context(self, instruction: str = "") -> str:
-        parts = [f"GOAL: {self.goal}"]
-        if self.plan_steps:
-            done_count = self.plan_step_index
-            total_count = len(self.plan_steps)
-            parts.append(f"COMPLETION STATUS: {done_count}/{total_count} steps done. {'ALL COMPLETE.' if done_count >= total_count else 'INCOMPLETE — cannot confirm done until all steps are marked done.'}")
-            lines = ["CHECKLIST:"]
-            for i, step in enumerate(self.plan_steps):
-                if i < self.plan_step_index:
-                    lines.append(f"  [{i}] done  {step}")
-                elif i == self.plan_step_index:
-                    lines.append(f"  [{i}] >>>   {step}")
-                else:
-                    lines.append(f"  [{i}]       {step}")
-            parts.append("\n".join(lines))
-        if instruction:
-            parts.append(f"INSTRUCTION GIVEN TO ACTOR: {instruction}")
-        if self.done_claimed:
-            parts.append(f"DONE CLAIMED: {self.done_evidence}")
-        if self.problem:
-            parts.append(f"PROBLEM REPORTED: {self.problem}")
-        hist = self.format_history("ACTIONS TAKEN", full=True)
-        if hist:
-            parts.append(hist)
-        if self.actor_observe:
-            parts.append(f"ACTOR OBSERVED: {self.actor_observe}")
-        children_sum = self.children_summary()
-        if children_sum:
-            parts.append(children_sum)
-        completed_sum = self.completed_summary()
-        if completed_sum:
-            parts.append(completed_sum)
-        parts.append(f"SCREEN:\n{self.screen}")
-        return "\n\n".join(parts)
-
-    def build_reflector_context(self) -> str:
-        parts = [
-            f"GOAL: {self.goal}",
-            f"ORIGINAL_GOAL: {self.original_goal}",
-            f"MODE: {self.mode}",
-            f"ITERATION: {self.iteration}",
-            f"CONSECUTIVE_FAILURES: {self.consecutive_failures}",
-            f"STAGNATION_SCORE: {self.stagnation_score:.3f}",
-            f"ATTRACTOR_ENERGY: {self.attractor_energy:.3f}",
-            f"PID: output={self.pid_output:.3f} slope={self.pid_slope:.3f} integral={self.pid_integral:.3f} screen_stag={self.screen_stagnation}",
-            f"REPETITION_SCORE: {self.repetition_score:.3f}",
-        ]
-
-        if self.plan_steps:
-            lines = ["CHECKLIST:"]
-            for i, step in enumerate(self.plan_steps):
-                if i < self.plan_step_index:
-                    lines.append(f"  [{i}] done  {step}")
-                elif i == self.plan_step_index:
-                    lines.append(f"  [{i}] >>>   {step}")
-                else:
-                    lines.append(f"  [{i}]       {step}")
-            parts.append("\n".join(lines))
-
-        if self.errors:
-            parts.append("ERRORS:\n" + "\n".join(f"  {e}" for e in self.errors[-10:]))
-
-        if self.console_log:
-            parts.append("CONSOLE (last 20 lines):\n" + "\n".join(self.console_log[-20:]))
-
-        try:
-            from persistence import get_evolution_ledger_context
-            ledger = get_evolution_ledger_context()
-            if ledger:
-                parts.append(ledger)
-        except Exception:
-            pass
-
-        if self.problem:
-            parts.append(f"PROBLEM: {self.problem}")
-
-        hist = self.format_history("RECENT_HISTORY", full=True)
-        if hist:
-            parts.append(hist)
-
-        damage = max(self.stagnation_score, self.repetition_score * 0.8)
-        if damage > 0.45:
-            parts.append(
-                "HIGH DAMAGE STATE: Generate meaningfully divergent rewrite families. "
-                "Avoid repeating previous failed patterns."
-            )
-        if damage > 0.65:
-            parts.append(
-                "GOAL_REWRITE ENCOURAGED: If the current goal phrasing causes repeated problems, "
-                "propose a version that preserves intent using different surface language."
-            )
-
-        children_sum = self.children_summary()
-        if children_sum:
-            parts.append(children_sum)
-        completed_sum = self.completed_summary()
-        if completed_sum:
-            parts.append(completed_sum)
-
-        prompts: dict[str, str] = {}
-        for role in ("actor", "planner", "verifier"):
-            p = BASE_DIR / "prompts" / f"{role}.txt"
-            if p.exists():
-                prompts[role] = p.read_text(encoding="utf-8")
-
-        if prompts:
-            parts.append("CURRENT_PROMPTS:\n" +
-                         "\n\n".join(f"[{r}.txt]\n{c}" for r, c in prompts.items()))
-
-        try:
-            from lessons import Lessons
-            existing = Lessons().get_context()
-            if existing:
-                parts.append(f"EXISTING_LESSONS:\n{existing}")
-        except Exception:
-            pass
-
-        if self.stagnation_score > 0.55 or self.repetition_score > 0.6:
-            parts.append(
-                "\n!!! HIGH STAGNATION / REPETITION: Focus on finding different approaches "
-                "and rewrites that break the current pattern."
-            )
-
-        return "\n\n".join(parts)
+        case _:
+            return ""

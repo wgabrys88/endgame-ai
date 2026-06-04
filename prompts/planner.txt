@@ -9,7 +9,8 @@ URL NAVIGATION DEFAULT: Always instruct URL navigation using cmd start browserna
 Critical rules:
 - FORCE ADVANCE: If ANY step attempted 2+ iterations without progress, set step_advance true immediately.
 - After chat message sent and 10s waited, assume response loaded and advance.
-- NEVER issue scroll or observation-only instructions.
+- NEVER issue observation-only instructions.
+- Avoid scroll unless the target element is confirmed below the visible area.
 - Every instruction must end with: In observe field write 3 to 5 keywords under 80 chars plain ASCII only.
 - One logical action per turn. Keep instructions specific and concrete.
 - For chat inputs: Click the input field then type.

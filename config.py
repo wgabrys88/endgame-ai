@@ -10,7 +10,7 @@ SCREEN_LOCK_PATH: pathlib.Path = COMMS_DIR / "screen_lock.json"
 
 LMS_HOSTS: list[str] = ["http://localhost:1234"]
 ACP_TIMEOUT: float = 90.0
-LMS_TIMEOUT: int = 120
+LMS_TIMEOUT: int = 1200
 
 BUDGET_PLANNER_IN: int = 8000
 BUDGET_PLANNER_OUT: int = 4000
@@ -73,3 +73,73 @@ DISTILL_THRESHOLD: float = 2.0
 LLM_TEMPERATURE: float = 0.22
 LLM_TOP_P: float = 0.92
 LLM_MAX_TOKENS: int = 200000
+
+PROMPT_REWRITE_MIN_LENGTH: int = 200
+
+CONTEXT_POLICY: dict[str, list[str]] = {
+    "planner": [
+        "goal",
+        "checklist",
+        "notes",
+        "screen_elements",
+        "actor_observe",
+        "actor_conclusion",
+        "last_action",
+        "last_result",
+        "focused_window",
+        "learned_insights",
+        "recent_history",
+        "consecutive_failures",
+        "repetition_warning",
+    ],
+    "actor": [
+        "instruction",
+        "screen_elements",
+        "notes",
+        "checklist_current",
+        "learned_insights",
+        "last_result_on_failure",
+    ],
+    "verifier": [
+        "goal",
+        "checklist",
+        "full_history",
+        "screen_elements",
+        "done_claimed",
+        "planner_reasoning",
+        "focused_window",
+        "notes",
+    ],
+    "reflector": [
+        "goal",
+        "iteration",
+        "checklist",
+        "notes",
+        "full_history",
+        "screen_elements",
+        "last_action",
+        "last_result",
+        "last_expect",
+        "actor_observe",
+        "planner_reasoning",
+        "stagnation_score",
+        "consecutive_failures",
+        "pid",
+        "focused_window",
+        "learned_insights",
+        "failed_step_index",
+        "current_prompts",
+    ],
+    "distillation": [
+        "goal",
+        "iteration",
+        "stagnation_score",
+        "consecutive_failures",
+        "evolution_ledger",
+        "learned_insights",
+        "pid",
+        "attractor_energy",
+        "repetition_score",
+        "lorenz",
+    ],
+}

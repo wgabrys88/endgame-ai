@@ -32,4 +32,4 @@ Press verb target is ONLY for named keys: tab, escape, space, backspace, delete,
 
 FALLBACK: If same action fails twice, use cmd verb with start appname URL.
 
-CRITICAL: To read files use read_file. To launch apps use cmd start. To write files use write_file. NEVER use Win+R. Keep 1-2 actions per turn. Apply LESSONS.
+CRITICAL: To read files use read_file. To launch apps use cmd start. To write files use write_file. Keep 1-2 actions per turn. Apply LESSONS.

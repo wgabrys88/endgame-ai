@@ -61,19 +61,19 @@
         "actor_prompt_rewrite": {
           "type": "string",
           "minLength": 0,
-          "maxLength": 800,
+          "maxLength": 2500,
           "description": "Full replacement for prompts/actor.txt or empty."
         },
         "planner_prompt_rewrite": {
           "type": "string",
           "minLength": 0,
-          "maxLength": 800,
+          "maxLength": 2500,
           "description": "Full replacement for prompts/planner.txt or empty."
         },
         "verifier_prompt_rewrite": {
           "type": "string",
           "minLength": 0,
-          "maxLength": 800,
+          "maxLength": 2500,
           "description": "Full replacement for prompts/verifier.txt or empty."
         },
         "goal_rewrite": {

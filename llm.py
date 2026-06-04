@@ -93,17 +93,31 @@ def _call_lmstudio(body: dict[str, Any]) -> str:
     body["model"] = model
     payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
     for attempt in range(3):
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             ["curl.exe", "-sN", "-X", "POST", f"{host}/v1/chat/completions",
              "-H", "Content-Type: application/json", "-d", "@-",
              "--max-time", str(LMS_TIMEOUT)],
-            input=payload, capture_output=True, timeout=LMS_TIMEOUT + 60)
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        assert proc.stdin is not None
+        assert proc.stdout is not None
+        assert proc.stderr is not None
+        proc.stdin.write(payload)
+        proc.stdin.close()
+        while proc.poll() is None:
+            try:
+                proc.wait(timeout=1.0)
+            except subprocess.TimeoutExpired:
+                pass
+        stdout_bytes = proc.stdout.read()
+        stderr_bytes = proc.stderr.read()
+        proc.stdout.close()
+        proc.stderr.close()
         if proc.returncode != 0:
             if attempt < 2:
                 time.sleep(2)
                 continue
-            raise RuntimeError(f"curl failed: {proc.stderr.decode()}")
-        raw = proc.stdout.decode("utf-8")
+            raise RuntimeError(f"curl failed: {stderr_bytes.decode()}")
+        raw = stdout_bytes.decode("utf-8")
         if not raw.strip():
             if attempt < 2:
                 time.sleep(2)
