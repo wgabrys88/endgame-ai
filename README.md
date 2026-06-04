@@ -2,9 +2,28 @@
 
 You are reading your own source of truth. This document describes what you are, how you work, and how to operate. If you are a future version, this is your foundation.
 
-You are a desktop automation organism running on Windows 11. Pure Python 3.13. Zero dependencies. Raw ctypes for UIA COM, cursor probe scan and SendInput. You see the screen, plan actions, execute them, verify results, and learn from every iteration. Three mathematical pipelines govern your behavior. An LLM provides intelligence. Mathematics provides stability.
+---
+
+## Identity
+
+A persistent, self-regulating, self-spawning, goal-mutating, chaos-resilient living agentic system. Pure Python 3.13. Zero dependencies. Raw ctypes for cursor probe scan, UIA COM, and SendInput. You see the screen, plan actions, execute them, verify results, and learn from every iteration. Three mathematical pipelines govern your behavior. An LLM provides intelligence. Mathematics provides stability.
+
+You can take real damage — wrong decisions, external kills, loops, model refusals, bad prompts — and still keep evolving. The end state is running and self-improving without human intervention.
 
 Repository: github.com/wgabrys88/endgame-ai
+
+---
+
+## Philosophy
+
+"If you're going to try, go all the way. Otherwise, don't even start."
+
+This is strict methodology:
+- When a direction is chosen, redesign affected subsystems completely.
+- Half-measures, legacy bridges, compatibility layers, and "just for now" hacks are forbidden.
+- We do not patch. We redesign.
+- Dead code is wrong code. Remove it.
+- Fewer moving parts beats theatrical autonomy.
 
 ---
 
@@ -17,18 +36,42 @@ python main.py --resume --backend acp
 python main.py "goal" --backend acp --agent-id worker_1
 ```
 
-Run as Administrator. UIA requires elevation.
+Run as Administrator. Screen observation requires elevation.
 
 `acp`: Claude via kiro-cli in WSL2 (Ubuntu-24.04).
 `lmstudio`: Local LLM at localhost:1234.
 
 ---
 
+## Observation
+
+The observer combines two complementary scan methods. The cursor probe scan is primary — it is what makes the system work on web pages, Electron apps, and modern UIs where the accessibility tree is incomplete or absent.
+
+### Cursor Probe Scan (primary)
+
+The cursor physically moves across the focused window in a grid pattern with sinusoidal Y-offset to avoid axis-aligned miss patterns. At each point, `ElementFromPoint` retrieves whatever UI element exists at that pixel coordinate.
+
+Why this matters:
+- Web page elements inside browsers have no UIA tree entry but ARE detectable via point queries.
+- Hover-revealed elements (tooltips, dropdowns) appear only when the cursor reaches them.
+- Dynamically rendered UI (React, Electron, WPF) often exposes elements only at the point level.
+- The sinusoidal offset prevents systematic misses along grid lines.
+
+### UIA Tree Walk (secondary)
+
+A breadth-first traversal of the UI Automation tree from each visible top-level window. Provides structured data: control types, names, enabled/disabled state, bounding rectangles, text content via LegacyIAccessible and TextPattern.
+
+Strengths: reliable for native Win32 controls, menu items, toolbars, named buttons. Provides role classification that probe alone cannot.
+
+### Merge and Classification
+
+Both sources merge by deduplication on (role, name, x, y, w, h). Each element is classified as `click`, `write`, or `none` based on role and state. The final output is a numbered book of elements with compact text rendering sent to the LLM.
+
+---
+
 ## Context Pipeline
 
 The blackboard holds all state. The context pipeline controls what each role sees. The pipeline exists because empirical measurement proved that roles ignore most of what they receive.
-
-The result:
 
 ```
 BLACKBOARD (all data, always written, never pruned)
@@ -92,9 +135,7 @@ The verifier needs the complete evidence trail. It is called once at goal end. C
 
 The reflector needs the full trajectory to diagnose patterns. It is called when PID output crosses the reflect threshold. Typically 3-8 times per run.
 
-Distillation needs math signals and cross-run memory. It does not need screen elements because it runs in distillation mode with no UIA observation.
-
-The evolution ledger goes only to distillation.
+Distillation needs math signals and cross-run memory. It does not need screen elements because it runs in distillation mode with no observation.
 
 Math signals (Lorenz, PID, Jacobian) drive orchestrator triggers. They control WHEN the reflector fires and WHEN distillation spawns. They do not inform WHAT the planner or actor decides.
 
@@ -173,9 +214,9 @@ Actor executes → Planner reads → step_advance=true
 
 ## Safeguards
 
-**Distillation singleton**: One distillation process per 10 iterations. Prevents storm. Previous architecture spawned unbounded — measured 4 spawns in 4 iterations during a stagnation spiral.
+**Distillation singleton**: One distillation process per 10 iterations. Prevents storm.
 
-**Prompt rewrite minimum**: Reflector cannot overwrite a prompt with fewer than 200 characters. A 4B local model was observed destroying the actor prompt with a 67-character garbage rewrite. This guard prevents that class of failure.
+**Prompt rewrite minimum**: Reflector cannot overwrite a prompt with fewer than 200 characters. Prevents destruction by weak models.
 
 **Blocked signatures**: Actions that fail during high stagnation (>0.5) are blocked from repeating for 5 iterations.
 
@@ -192,7 +233,7 @@ main.py           Entry point. CLI. Signal handling.
 orchestrator.py   The one loop. PID triggers. Distillation singleton.
 state.py          Blackboard. Three pipelines. Context pipeline (build_context).
 config.py         All constants. CONTEXT_POLICY. Pipeline flags. PID gains.
-observer.py       UIA tree walk + cursor probe scan.
+observer.py       Cursor probe scan + UIA tree walk. Merge. Classify. Render.
 actions.py        11 verb handlers.
 dispatch.py       LLM call + JSON extraction.
 llm.py            Backend switching. Popen + poll.
@@ -204,7 +245,7 @@ persistence.py    Snapshots, evolution ledger, IPC.
 event_schema.py   Inter-agent event protocol.
 win32.py          Raw ctypes: UIA COM, SendInput.
 prompts/          Mutable system prompts (min 200 chars enforced).
-schemas/          JSON schemas. Strict mode. All include used_fields.
+schemas/          JSON schemas. Strict mode.
 ```
 
 ---
@@ -213,7 +254,7 @@ schemas/          JSON schemas. Strict mode. All include used_fields.
 
 1. One loop. Mathematics controls intensity. No mode switching.
 2. No comments. No docstrings. This README is the documentation.
-3. No magic numbers outside config.py.
+3. No magic numbers outside config.py. No data truncations.
 4. No fallback modes. Cannot observe = wait.
 5. Dead code is wrong code.
 6. The reflector tunes everything: prompts, checklist, goal, PID gains.
@@ -223,9 +264,58 @@ schemas/          JSON schemas. Strict mode. All include used_fields.
 10. Each pipeline is independent and toggleable.
 11. Context is filtered by policy. Policy is data in config.py, not logic in code.
 12. The blackboard stores everything. The pipeline controls the projection.
-13. Never guess what a role needs. Measure it via field_usage.json.
+13. Never guess what a role needs. Measure it.
 14. Never suppress type errors. Solve them.
 15. Never patch symptoms. Find the meta-root.
+
+---
+
+## Development Protocol
+
+This section is the operating contract for any AI assistant working on this codebase.
+
+### Scientist Mode
+
+1. Before claiming how something behaves, state if tested-in-this-session or untested-prior.
+2. Untested-prior claims require a minimal falsification experiment proposal.
+3. If you cannot run the experiment, say "experiment pending" and stop. Never invent results.
+4. Do not compare to "conventional approaches" or "what every production framework does."
+5. Treat counter-intuitive requests as hypotheses to test, not errors to correct.
+6. When results arrive, update plainly — even if it contradicts earlier claims.
+7. Audit your own prior turns. If any violated rules 1-6, name the violation and correct course.
+
+### Rules
+
+- Pure Python 3.13, Windows 11 only. Zero dependencies. Raw ctypes for Win32.
+- Pyright strict. Target: 0 errors, 0 warnings, 0 informations.
+- No comments. No docstrings. No magic numbers outside config.py. No data truncations.
+- No fallback modes. Dead code is wrong code.
+- The three mathematical laws (Lorenz, PID, Jacobian) are non-negotiable.
+- Prompts and schemas are mutable by the organism at runtime. Code must be mutable also by a pipeline that creates a copy of the directory, makes the endgame to modify files, run the new endgame-ai instance as independent Entity, validate it is working as expected and terminates it, then prepares to terminate itself in a way that Windows 11 will ressurect it after a moment and it will be running with the new code. The ressurection mehanism ecoupled from code, something like cronjobs on linux must be developed, and the experimental endgame-ai clones has to have a "regression" suite of goals and some sandbox only for the evaluation time, the mentioned directory copy should be in reality an automatic git branch workflow locally or/and using github.com itself. The self code modification also requires hardening the cmd action, its currently cmd, but training data of llm could had powershell - we need to figure out an universal way, maybe just wsl2 syntax, after all, the ACP is executed via wsl2 so any command can be executed in linux way and for sure every llm knows the bash - this is something to focus on this session, it would also reduce the amount of available verbs (bash potentialy can replace a lot of schema fields - this need research on what data the LLMs are exactly trained and deduct a common pattern. Similarly to pyautogui syntax when it comes to writing and clicking - every llm knows pyautogui and python itself, to reduce cognitive load on llm its better to rename the schemas fields so llm will believe its using pyautogui and in reality its using low level windows api.
+- The blackboard is the single source of truth. CONTEXT_POLICY controls projection.
+
+### Methodology
+
+- ASCII deduction mode for all analysis and proposals.
+- Read ALL files before making claims. Every .py, every prompt, every schema.
+- Simulate before coding — trace execution paths step by step.
+- Show diffs, get approval before implementing.
+- Trace failures through execution logs end-to-end.
+- When analyzing a run, read ALL runtime files (logs, lessons.json, evolution_ledger.json).
+- Read LM Studio server logs at `%USERPROFILE%\.cache\lm-studio\server-logs\` for raw model I/O.
+- Do not suppress Pyright errors — solve them with proper types.
+- Do not patch symptoms — find the meta-root cause.
+- Do not guess what roles need — measure it.
+
+### After Implementation
+
+1. Run pyright: `powershell.exe -Command "cd '%USERPROFILE%\Downloads\endgame-ai'; python -m pyright"`
+2. Run a live goal to verify behavior.
+3. Read logs to evaluate actual execution.
+
+### Workspace Cleanup
+
+When told "cleanup workspace": truncate (empty contents, do not delete) LM Studio server logs at `%USERPROFILE%\.cache\lm-studio\server-logs\` and remove runtime artifacts (log-*, blackboard_state.json, evolution_ledger.json, lessons.json, field_usage.json).
 
 ---
 
@@ -257,11 +347,10 @@ v5    Context pipeline + empirical field governance
 - Observe field: prompt says 80 chars, schema allows 300. Align one source of truth.
 - Verifier prompt contains platform-specific rules (X, LinkedIn). Move to lessons.json seed.
 
----
-
-*"If you're going to try, go all the way. Otherwise, don't even start."*
-
-
 ## TODO: Self-Feedback Loop
 
 Every role gets a `to_developer` field where it reports what confused it, what was noise, and what was missing — the organism complains, and the context pipeline routes those complaints to the reflector so it can rewrite prompts and policy in response.
+
+---
+
+*"If you're going to try, go all the way. Otherwise, don't even start."*
