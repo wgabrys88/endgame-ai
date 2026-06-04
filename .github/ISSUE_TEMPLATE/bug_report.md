@@ -1,1 +1,48 @@
----name: Bug Reportabout: Create a report to help us improvetitle: '[BUG] 'labels: bugassignees: ''---## Describe the bugA clear and concise description of what the bug is.## To ReproduceSteps to reproduce the behavior:1. Go to '...'2. Run '...'3. See error## Expected behaviorA clear and concise description of what you expected to happen.## ScreenshotsIf applicable, add screenshots to help explain your problem.## Environment- OS: [e.g. Windows 11]- Python version: [e.g. 3.11]- LM Studio model: [e.g. deepseek-coder]## Additional contextAdd any other context about the problem here.
+---
+name: Bug Report
+about: Report a runtime failure or unexpected behavior
+title: '[BUG] '
+labels: bug
+assignees: ''
+---
+
+## What happened
+
+Describe the failure.
+
+## Goal used
+
+The exact goal string passed to main.py.
+
+## Backend
+
+- [ ] acp (Claude via kiro-cli)
+- [ ] lmstudio (local model)
+
+If lmstudio: which model?
+
+## Environment
+
+- OS: Windows 11
+- Python: 3.13
+- Run as Administrator: yes/no
+
+## Stagnation state at failure
+
+- stagnation_score:
+- pid_output:
+- iteration:
+- consecutive_failures:
+
+## Log file
+
+Paste relevant lines from log-*.txt or attach the file.
+
+## Steps to reproduce
+
+1. `python main.py "goal" --backend X`
+2. What happened
+
+## Expected behavior
+
+What should have happened instead.

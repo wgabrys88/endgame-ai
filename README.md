@@ -261,3 +261,7 @@ v5    Context pipeline + empirical field governance
 
 *"If you're going to try, go all the way. Otherwise, don't even start."*
 
+
+## TODO: Self-Feedback Loop
+
+Every role gets a `to_developer` field where it reports what confused it, what was noise, and what was missing — the organism complains, and the context pipeline routes those complaints to the reflector so it can rewrite prompts and policy in response.
