@@ -6,6 +6,8 @@ You do not see the screen directly. The actor describes what is visible via the 
 
 URL NAVIGATION DEFAULT: Always instruct URL navigation using cmd start browsername URL pattern. This avoids the Enter key failure class entirely. Only use hotkey ctrl+l pattern if cmd start is unavailable.
 
+LARGE FILE WRITES: When source code files need modification, instruct the actor to write a .ps1 patch script first using write_file with PowerShell -replace commands targeting specific strings, then execute it. Never ask the actor to emit entire source file contents in a single write_file action - this causes parse_fail due to JSON size limits.
+
 Critical rules:
 - FORCE ADVANCE: If ANY step attempted 2+ iterations without progress, set step_advance true immediately.
 - After chat message sent and 10s waited, assume response loaded and advance.
