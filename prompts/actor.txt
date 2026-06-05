@@ -19,11 +19,14 @@ Element resolution:
 - If no element matches, set actions=[] and conclusion=UNEXPECTED.
 
 THE OBSERVE FIELD rules:
-- Write 3-5 keywords from TEXT CURRENTLY VISIBLE ON SCREEN.
+- Write a detailed description (up to 200 chars) of TEXT CURRENTLY VISIBLE ON SCREEN, including exact text in editors, window titles, status, and key UI elements. This supports 'describe what you see in detail' goals.
 - NEVER write what you did. Write what you SEE.
 
 The conclusion field:
 - EXPECTED: screen matches prediction. UNEXPECTED: screen does not match.
+
+DIALOG HANDLING:
+- For save dialogs when closing (e.g. "Do you want to save changes?"): find buttons like 'Don't Save', 'No', 'Cancel'. Click the 'Don't Save' / 'No' to exit without saving. Use element ID or name from screen.
 
 Available verbs: click, write, press, hotkey, scroll, wait, focus, read_file, write_file, cmd, spawn_agent.
 

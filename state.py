@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from config import BASE_DIR, COMMS_DIR, SCREEN_LOCK_PATH
+from config import BASE_DIR, COMMS_DIR, SCREEN_LOCK_PATH, SCREEN_SNAPSHOT_PATH, SCREEN_SNAPSHOT_MAX_AGE
 
 COMMS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -126,6 +126,35 @@ class Blackboard:
         self._screen_lock_held = True
         return True
 
+    def publish_shared_screen(self) -> None:
+        if not self.screen or not self.screen_valid:
+            return
+        payload = {
+            "agent_id": self.agent_id,
+            "ts": time.time(),
+            "context_text": self.screen,
+            "content_hash": self.screen_hash,
+            "focused_window": self.focused_window,
+        }
+        tmp = SCREEN_SNAPSHOT_PATH.with_suffix(".tmp")
+        tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        os.replace(str(tmp), str(SCREEN_SNAPSHOT_PATH))
+
+    def load_shared_screen(self) -> tuple[str, str, str] | None:
+        if not SCREEN_SNAPSHOT_PATH.exists():
+            return None
+        try:
+            data = json.loads(SCREEN_SNAPSHOT_PATH.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return None
+        age = time.time() - float(data.get("ts", 0))
+        if age > SCREEN_SNAPSHOT_MAX_AGE:
+            return None
+        text = str(data.get("context_text", ""))
+        if not text:
+            return None
+        return text, str(data.get("content_hash", "shared")), str(data.get("focused_window", ""))
+
     def release_screen(self) -> None:
         if self._screen_lock_held and SCREEN_LOCK_PATH.exists():
             try:
@@ -154,7 +183,8 @@ class Blackboard:
         for evt in child_events:
             verb: str = evt.get("verb", "")
             source: str = evt.get("source", "")
-            payload: dict[str, str] = evt.get("payload") or {}
+            raw_payload = evt.get("payload")
+            payload: dict[str, str] = raw_payload if isinstance(raw_payload, dict) else {}
             if verb == "child_done" and source in self.children:
                 handle = self.children[source]
                 handle.state = "done"

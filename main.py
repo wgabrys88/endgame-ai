@@ -14,8 +14,10 @@ _interrupted = False
 def _handle_sigint(sig: int, frame: types.FrameType | None) -> None:
     global _interrupted
     if _interrupted:
-        sys.exit(1)
+        sys.exit(130)
     _interrupted = True
+    sys.stderr.write("\n[endgame-ai] Ctrl+C — finishing current step, then exit (no --resume unless you intend it).\n")
+    sys.stderr.flush()
 
 
 def main() -> None:
@@ -81,6 +83,9 @@ def main() -> None:
     append_to_evolution_ledger(summary, source_run=board.agent_id)
 
     close_log()
+    if _interrupted:
+        sys.stderr.write("[endgame-ai] Stopped by user. Start a new goal without --resume for a clean run.\n")
+        sys.exit(130)
     sys.exit(0 if success else 1)
 
 

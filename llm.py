@@ -5,7 +5,8 @@ import time
 from typing import Any
 
 from config import (LMS_HOSTS, LMS_TIMEOUT, ACP_TIMEOUT, LLM_TEMPERATURE,
-                    LLM_TOP_P, LLM_MAX_TOKENS, SCHEMAS_DIR)
+                    LLM_TOP_P, LLM_TOP_K, LLM_REPEAT_PENALTY, LLM_PRESENCE_PENALTY,
+                    LLM_FREQUENCY_PENALTY, LLM_SEED, LLM_MAX_TOKENS, LLM_STOP, LLM_LOGIT_BIAS, SCHEMAS_DIR)
 
 __all__ = ["call_llm", "set_backend", "get_backend"]
 
@@ -33,8 +34,15 @@ def call_llm(system: str, user: str, role: str, *, max_tokens: int = LLM_MAX_TOK
         "response_format": schema,
         "temperature": LLM_TEMPERATURE,
         "top_p": LLM_TOP_P,
+        "top_k": LLM_TOP_K,
         "max_tokens": max_tokens,
         "stream": False,
+        "stop": LLM_STOP,
+        "presence_penalty": LLM_PRESENCE_PENALTY,
+        "frequency_penalty": LLM_FREQUENCY_PENALTY,
+        "logit_bias": LLM_LOGIT_BIAS,
+        "repeat_penalty": LLM_REPEAT_PENALTY,
+        "seed": LLM_SEED if LLM_SEED is not None else None,
     }
     if _backend == "lmstudio":
         return _call_lmstudio(body)
@@ -125,7 +133,11 @@ def _call_lmstudio(body: dict[str, Any]) -> str:
             raise ValueError("empty LLM response")
         result: dict[str, Any] = json.loads(raw)
         if "choices" not in result or not result["choices"]:
-            error_msg: str = result.get("error", {}).get("message", str(result))
+            err_raw = result.get("error", result)
+            if isinstance(err_raw, dict):
+                error_msg = str(err_raw.get("message", err_raw))
+            else:
+                error_msg = str(err_raw)
             if "no models loaded" in error_msg.lower() or "No models loaded" in error_msg:
                 _cached_host = None
                 _cached_model = None
