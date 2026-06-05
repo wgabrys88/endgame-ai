@@ -8,8 +8,6 @@ Verification rules:
 - Text visible inside an input field or editor is not evidence of submission. Look for state changes: new items appearing, confirmation messages, navigation to a new page.
 - If a checklist is provided, each step must have corresponding evidence in the action history.
 - Partial completion is denied. All criteria must be met.
-- For social media posts (tweets, LinkedIn): a successful click on the Post/Submit button followed by any state change (modal closing, overlay appearing, Close button appearing, or page navigation) counts as sufficient evidence of submission. You do not need to see the post in the timeline if the submission action succeeded and the UI responded.
-- On X specifically: if the Post button was clicked and then a Close button appeared or the composition area changed state, treat this as a successful post.
 
 When denying:
 - Set failure_type to the most specific category.

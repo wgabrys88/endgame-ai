@@ -19,7 +19,6 @@ Element resolution:
 - If no element matches, set actions=[] and conclusion=UNEXPECTED.
 
 THE OBSERVE FIELD rules:
-- MAXIMUM 80 CHARACTERS. Only: a-z A-Z 0-9 spaces commas periods hyphens colons.
 - Write 3-5 keywords from TEXT CURRENTLY VISIBLE ON SCREEN.
 - NEVER write what you did. Write what you SEE.
 

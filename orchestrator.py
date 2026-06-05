@@ -124,6 +124,11 @@ def _loop(board: Blackboard, interrupted: Callable[[], bool], halt_counter: int,
 
         if is_main:
             tui.render(board, _stagnation_history, _last_event)
+            for cmd in tui.poll_commands():
+                if cmd.startswith("force_advance:") and board.plan_steps:
+                    board.plan_step_index = min(board.plan_step_index + 1, len(board.plan_steps) - 1)
+                    board.reset_pid_integral()
+                    log(board.iteration, "tui.force_advance", f"step={board.plan_step_index}")
         log(board.iteration, "iteration.end", f"stagnation={board.stagnation_score:.3f} pid={board.pid_output:.3f}")
         save_snapshot(board.get_persistable_snapshot())
         time.sleep(DELAY_BETWEEN_ITERATIONS)

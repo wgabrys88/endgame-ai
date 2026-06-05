@@ -344,8 +344,9 @@ v5    Context pipeline + empirical field governance
 ## TODO
 
 - Distillation uses planner prompt. Create prompts/distillation.txt with dedicated system prompt.
-- Observe field: prompt says 80 chars, schema allows 300. Align one source of truth.
-- Verifier prompt contains platform-specific rules (X, LinkedIn). Move to lessons.json seed.
+- Observe field: schema allows 300 chars. Decide single source of truth.
+- Actor prompt ordering: file verbs (read_file, write_file, cmd) are buried at the bottom under CRITICAL. Element resolution rules come first. Local models pattern-match top-down — file verbs must appear BEFORE element resolution. Affects: prompts/actor.txt ordering, and the schema field ordering in schemas/actor.json.
+- Verifier platform-specific rules (X, LinkedIn) moved out. Seed into lessons.json if needed per task.
 
 ## TODO: Self-Feedback Loop
 
