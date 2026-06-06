@@ -79,6 +79,9 @@ def _loop(board: Blackboard, interrupted: Callable[[], bool], halt_counter: int,
         if interrupted():
             log(board.iteration, "run", "interrupted")
             _report_status(board.agent_id, "failed", error="interrupted")
+            if is_main:
+                tui.render(board, _stagnation_history, "STOP:interrupt")
+                tui.exit()
             return False
 
         board.iteration += 1
@@ -100,6 +103,22 @@ def _loop(board: Blackboard, interrupted: Callable[[], bool], halt_counter: int,
 
         _process_inbox(board)
         _process_children(board)
+
+        if board.agent_id == "main" and board.mode == "coordinate" and board.active_children_count() > 0:
+            done_n = sum(1 for h in board.children.values() if h.state == "done")
+            fail_n = sum(1 for h in board.children.values() if h.state == "failed")
+            _last_event = "COORD:wait"
+            log(
+                board.iteration,
+                "coordinate.wait",
+                f"running={board.active_children_count()} done={done_n} failed={fail_n} agents={list(board.children.keys())}",
+            )
+            if is_main:
+                tui.render(board, _stagnation_history, _last_event)
+            log(board.iteration, "iteration.end", f"stagnation={board.stagnation_score:.3f} pid={board.pid_output:.3f}")
+            save_snapshot(board.get_persistable_snapshot())
+            time.sleep(DELAY_BETWEEN_ITERATIONS)
+            continue
 
         result = _phase_observe(board)
         if result == "done":
@@ -141,9 +160,20 @@ def _phase_observe(board: Blackboard) -> str:
         board.record_screen("(distillation mode)", "distill", {})
         board.screen_valid = True
     elif not board.acquire_screen():
-        board.screen_valid = False
-        _last_event = "WAIT:lock"
-        return "continue"
+        if board.agent_id == "main":
+            board.screen_valid = False
+            _last_event = "WAIT:lock"
+            log(board.iteration, "observe.wait_lock", "main blocked on screen lock")
+            return "continue"
+        shared = board.load_shared_screen()
+        if shared:
+            board.record_screen(shared[0], shared[1], {})
+            board.screen_valid = True
+            board.focused_window = shared[2]
+            log(board.iteration, "observe.shared", f"hash={shared[1]} from snapshot")
+        else:
+            board.screen_valid = False
+            log(board.iteration, "observe.wait_lock", f"{board.agent_id} no lock no snapshot")
     else:
         try:
             obs = observe()
@@ -151,17 +181,64 @@ def _phase_observe(board: Blackboard) -> str:
             board.screen_valid = True
             board.focused_window = obs.focused_title
             board.update_screen_stagnation(obs.content_hash)
+            board.publish_shared_screen()
             log(board.iteration, "observe", f"hash={obs.content_hash} elements={len(obs.book)}")
         except Exception as e:
             board.release_screen()
             board.screen_valid = False
+            board.record_screen(f"OBSERVE_FAILED: {str(e)[:250]}", f"obsfail-{board.iteration}", {})
             board.record_error("observe_fail", str(e))
-            return "continue"
+            board.record_failure()
+            log(board.iteration, "observe.fail", str(e)[:300])
+            # Fallthrough (no return "continue"): call planner anyway.
+            # This prevents permanent "awaiting checklist" spin when UIA observe has persistent Access Denied.
+            # Planner gets empty screen + error info via board state (consecutive_failures etc will update on failures downstream).
+            # The goal (parallel + describe screen + read own source) can still be decomposed and acted on via non-screen actions like read_file/cmd.
 
     result = _phase_plan_act(board)
     if not is_distillation:
         board.release_screen()
     return result
+
+
+def _instruction_for_actor(board: Blackboard, next_action: str) -> str:
+    import re
+    if board.plan_steps and board.plan_step_index < len(board.plan_steps):
+        step = board.plan_steps[board.plan_step_index]
+        match = re.search(r"read_file\s+(\S+)", step, re.I)
+        if match:
+            return f"Use read_file with path exactly: {match.group(1)}. One action only."
+    return next_action
+
+
+def _maybe_advance_after_read(board: Blackboard, verb: str, args: dict[str, Any], success: bool) -> None:
+    if verb != "read_file" or not success or not board.plan_steps:
+        return
+    if board.plan_step_index >= len(board.plan_steps):
+        return
+    path = str(args.get("path", ""))
+    base = path.replace("\\", "/").split("/")[-1].lower()
+    step = board.plan_steps[board.plan_step_index].lower()
+    if base and base in step:
+        if board.plan_step_index < len(board.plan_steps) - 1:
+            board.plan_step_index += 1
+            board.reset_pid_integral()
+            log(board.iteration, "checklist.advance", f"auto read_file={path} step={board.plan_step_index}")
+
+
+def _normalize_decompose(raw: Any) -> list[dict[str, Any]]:
+    if not isinstance(raw, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for item in raw:
+        if isinstance(item, dict):
+            sub_goal = str(item.get("sub_goal", "")).strip()
+            agent_id = str(item.get("agent_id", "")).strip()
+            if sub_goal and agent_id:
+                out.append({"sub_goal": sub_goal, "agent_id": agent_id})
+        elif isinstance(item, str) and item.strip():
+            out.append({"sub_goal": item.strip(), "agent_id": f"agent_{uuid.uuid4().hex[:6]}"})
+    return out
 
 
 def _phase_plan_act(board: Blackboard) -> str:
@@ -187,20 +264,23 @@ def _phase_plan_act(board: Blackboard) -> str:
         board.record_failure()
         return "continue"
 
-    mode = plan.get("mode", "direct")
-    next_action = plan.get("next_action", "")
-    decompose = plan.get("decompose", [])
+    mode = str(plan.get("mode", "direct"))
+    next_action = str(plan.get("next_action", ""))
+    decompose = _normalize_decompose(plan.get("decompose", []))
 
-    board.last_plan_because = plan.get("because", "")
+    board.last_plan_because = str(plan.get("because", ""))
     board.last_instruction = next_action
     _log_used_fields("planner", board.iteration, plan)
     log(board.iteration, "planner", f"mode={mode} because={board.last_plan_because}")
 
-    new_notes: list[str] = plan.get("notes", [])
-    if new_notes:
-        board.notes = [n for n in new_notes if n]
+    new_notes = plan.get("notes", [])
+    if isinstance(new_notes, list):
+        board.notes = [str(n) for n in new_notes if n]
+    elif isinstance(new_notes, str) and new_notes.strip():
+        board.notes = [new_notes.strip()]
 
-    sequence: list[str] = plan.get("sequence", [])
+    sequence_raw = plan.get("sequence", [])
+    sequence: list[str] = [str(s) for s in sequence_raw] if isinstance(sequence_raw, list) else []
     if sequence and not board.plan_steps:
         board.plan_steps = sequence
         board.plan_step_index = 0
@@ -235,12 +315,16 @@ def _phase_plan_act(board: Blackboard) -> str:
         return "continue"
 
     if mode == "parallel" and decompose:
+        if board.mode == "coordinate" and board.active_children_count() > 0:
+            log(board.iteration, "decompose.skip", f"running={board.active_children_count()}")
+            board.record_success()
+            return "continue"
         board.mode = "coordinate"
         _execute_decomposition(board, decompose)
         board.record_success()
         return "continue"
 
-    return _phase_act(board, next_action)
+    return _phase_act(board, _instruction_for_actor(board, next_action))
 
 
 def _phase_act(board: Blackboard, instruction: str) -> str:
@@ -305,6 +389,7 @@ def _phase_act(board: Blackboard, instruction: str) -> str:
         board.record_action(verb, args, result.success, result.observation)
         log(board.iteration, f"action.{verb}", f"success={result.success} obs={result.observation}")
         _last_event = f"{verb}:{'OK' if result.success else 'FAIL'}"
+        _maybe_advance_after_read(board, verb, args, result.success)
 
         if not result.success:
             iteration_had_failure = True
@@ -455,14 +540,30 @@ def _execute_decomposition(board: Blackboard, decompose: list[dict[str, Any]]) -
                 board.completed_subtasks.append({"agent_id": agent_id, "goal": sub_goal, "result": result_text})
             log(board.iteration, "subtask.done", f"{agent_id}:{state}")
     else:
+        spawned = 0
+        max_spawn = 4 if "exactly 4 parallel" in board.goal.lower() else 8
         for subtask in decompose:
+            if spawned >= max_spawn:
+                break
             sub_goal = subtask.get("sub_goal", "")
             agent_id = subtask.get("agent_id", f"agent_{uuid.uuid4().hex[:6]}")
             if not sub_goal:
                 continue
+            aid_lower = agent_id.lower()
+            if aid_lower in ("main", "main_sync") or aid_lower.startswith("main_"):
+                log(board.iteration, "child.spawn.skip", f"{agent_id} reserved for parent")
+                continue
+            sub_lower = sub_goal.lower()
+            if "main waits" in sub_lower or "child_done events" in sub_lower:
+                log(board.iteration, "child.spawn.skip", f"{agent_id} parent-only sub_goal")
+                continue
+            existing = board.children.get(agent_id)
+            if existing and existing.state == "running":
+                continue
             handle = _spawn_child(agent_id, sub_goal, board.iteration)
             if handle:
                 board.children[agent_id] = handle
+                spawned += 1
 
     log(board.iteration, "decompose", f"subtasks={len(decompose)} agents={list(board.children.keys())}")
 

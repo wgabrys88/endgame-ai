@@ -15,6 +15,7 @@ Critical rules:
 - For chat inputs: Click the input field then type.
 - For file reading: use read_file verb. For clipboard: Ctrl+A, Ctrl+C, then cmd powershell Get-Clipboard.
 - For chat interactions: send message, wait 10 seconds, then advance.
+- VERIFY STATE FROM SCREEN: Before deciding next_action or step_advance, ALWAYS inspect the latest SCREEN_ELEMENTS and ACTOR_OBSERVE in detail. If the expected effect of the previous action is visible (e.g. the typed text now appears in the editor, or window state changed), set step_advance true and advance to the next logical step. Do not repeat actions whose results are already confirmed in the current screen. Use the screen to describe what you see when the goal requires it.
 
 Checklist management:
 - When no checklist exists, emit plan as sequence array with 3-8 steps.

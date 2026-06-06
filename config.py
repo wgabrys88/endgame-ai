@@ -7,6 +7,8 @@ SCHEMAS_DIR: pathlib.Path = BASE_DIR / "schemas"
 COMMS_DIR: pathlib.Path = BASE_DIR / "comms"
 INBOX_PATH: pathlib.Path = COMMS_DIR / "inbox.json"
 SCREEN_LOCK_PATH: pathlib.Path = COMMS_DIR / "screen_lock.json"
+SCREEN_SNAPSHOT_PATH: pathlib.Path = COMMS_DIR / "screen_snapshot.json"
+SCREEN_SNAPSHOT_MAX_AGE: float = 20.0
 
 LMS_HOSTS: list[str] = ["http://localhost:1234"]
 ACP_TIMEOUT: float = 90.0
@@ -70,9 +72,16 @@ STAGNATION_NORMALIZER: float = 28.0
 REFLECT_THRESHOLD: float = 0.3
 DISTILL_THRESHOLD: float = 2.0
 
-LLM_TEMPERATURE: float = 0.22
-LLM_TOP_P: float = 0.92
+LLM_TEMPERATURE: float = 0.30
+LLM_TOP_P: float = 0.95
+LLM_TOP_K: int = 64
+LLM_REPEAT_PENALTY: float = 1.05
+LLM_PRESENCE_PENALTY: float = 0.0
+LLM_FREQUENCY_PENALTY: float = 0.0
+LLM_SEED: int | None = 3407
 LLM_MAX_TOKENS: int = 200000
+LLM_STOP: list = []
+LLM_LOGIT_BIAS: dict = {}
 
 PROMPT_REWRITE_MIN_LENGTH: int = 200
 

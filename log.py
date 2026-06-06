@@ -32,7 +32,7 @@ def log(iteration: int, section: str, data: str) -> None:
     _handle.write(line + "\n")
     _handle.flush()
     if _tui_hook is not None:
-        _tui_hook(f"{section} {data[:60]}")
+        _tui_hook(f"{section} {data}")
 
 
 def close_log() -> None:
