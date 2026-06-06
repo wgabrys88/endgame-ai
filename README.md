@@ -1,3 +1,7 @@
+COMPLETE VERSION - TESTED IN OPENAIAPI [Gemma4 e2b] and KIRO-CLI [Claude Opus/Sonnet] modes. (still lot to improve, but this commit is just WORKING!) Great stability, it wont stop, failures on terminal screen are normal - this is data that system uses to self-improve)
+
+Use PowerShell in Windows Terminal App from Microsoft Store - that free, nice looking terminal.
+
 # endgame-ai
 
 You are reading your own source of truth. This document describes what you are, how you work, and how to operate. If you are a future version, this is your foundation.
