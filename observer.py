@@ -379,16 +379,3 @@ def _render(nodes: list[dict[str, Any]], target_wnd: set[str], focused_title: st
             action=n["action"],
         )
     return "\n".join(lines), book
-
-# Fix #8.3: Use Get-CimInstance for reliable CommandLine visibility
-def get_process_by_cmdline(pattern: str) -> list:
-    import subprocess
-    cmd = f'powershell.exe -Command "Get-CimInstance Win32_Process | Where-Object {{ $_.CommandLine -match \''{pattern}\'' }} | Select-Object ProcessId,Name,CommandLine | ConvertTo-Json"'
-    r = subprocess.run(['cmd.exe','/c',cmd], capture_output=True, text=True, timeout=10)
-    if r.returncode == 0 and r.stdout.strip():
-        import json
-        try:
-            return json.loads(r.stdout)
-        except Exception:
-            pass
-    return []
