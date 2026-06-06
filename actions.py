@@ -245,12 +245,3 @@ def cmd_verb(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResul
         return ActionResult("cmd", proc.returncode == 0, output or f"exit code {proc.returncode}")
     except subprocess.TimeoutExpired:
         return ActionResult("cmd", False, "command timed out after 30s")
-
-
-
-# Fix #8.4: Reliable GUI launch - always use Start-Process, re-check window presence
-def launch_gui_app(exe: str, args: str = '') -> dict:
-    import subprocess
-    cmd = f'powershell.exe -Command "Start-Process \''{exe}\'' -ArgumentList \''{args}\''"'
-    r = subprocess.run(['cmd.exe','/c',cmd], capture_output=True, text=True, timeout=10)
-    return {"status": "ok" if r.returncode == 0 else "error", "output": r.stdout + r.stderr}
