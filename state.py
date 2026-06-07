@@ -1,12 +1,23 @@
 from __future__ import annotations
+from config import ZERO_INT, ONE_INT, TWO_INT, FLOAT_ZERO, FLOAT_ONE
 import json
 import os
 import time
+import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-from config import BASE_DIR, COMMS_DIR, SCREEN_LOCK_PATH, SCREEN_SNAPSHOT_PATH, SCREEN_SNAPSHOT_MAX_AGE
+from config import (
+    BASE_DIR, COMMS_DIR, SCREEN_LOCK_PATH, SCREEN_SNAPSHOT_PATH,
+    SCREEN_SNAPSHOT_MAX_AGE, SCREEN_LOCK_STALE_SECONDS, LORENZ_INITIAL_X,
+    LORENZ_INITIAL_Y, LORENZ_INITIAL_Z, REPETITION_WINDOW, REPETITION_MIN_WINDOW,
+    STAGNATION_BLOCK_THRESHOLD, SIGNATURE_BLOCK_EXPIRY_ITERATIONS,
+    LORENZ_EQUILIBRIUM_OFFSET, LORENZ_MAG_EXPONENT, JACOBIAN_FAILURE_GAIN,
+    LORENZ_BETA_MIN, JACOBIAN_FUTURE_STEP_GAIN, SCREEN_STAGNATION_LOOKBACK,
+    SCREEN_HASH_HISTORY_LIMIT, HISTORY_REPETITION_LOOKBACK,
+    HISTORY_REPETITION_MIN_MATCHES, CONTEXT_OBSERVATION_EVIDENCE_LINES,
+)
 
 COMMS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -27,7 +38,7 @@ class AgentHandle:
 class Blackboard:
     goal: str = ""
     original_goal: str = ""
-    iteration: int = 0
+    iteration: int = ZERO_INT
     mode: str = "direct"
     agent_id: str = "main"
 
@@ -50,28 +61,28 @@ class Blackboard:
     problem: str = ""
     verifier_denied_last: bool = False
 
-    consecutive_failures: int = 0
+    consecutive_failures: int = ZERO_INT
     recent_action_signatures: list[str] = field(default_factory=lambda: list[str]())
     blocked_signatures: dict[str, int] = field(default_factory=lambda: dict[str, int]())
-    expectation_miss_streak: int = 0
+    expectation_miss_streak: int = ZERO_INT
 
-    repetition_score: float = 0.0
-    stagnation_score: float = 0.0
-    screen_stagnation: int = 0
+    repetition_score: float = FLOAT_ZERO
+    stagnation_score: float = FLOAT_ZERO
+    screen_stagnation: int = ZERO_INT
     recent_screen_hashes: list[str] = field(default_factory=lambda: list[str]())
 
-    lorenz_x: float = 8.485
-    lorenz_y: float = 8.485
-    lorenz_z: float = 27.0
-    attractor_energy: float = 1.0
+    lorenz_x: float = LORENZ_INITIAL_X
+    lorenz_y: float = LORENZ_INITIAL_Y
+    lorenz_z: float = LORENZ_INITIAL_Z
+    attractor_energy: float = FLOAT_ONE
 
-    pid_output: float = 0.0
-    pid_integral: float = 0.0
-    pid_prev: float = 0.0
-    pid_slope: float = 0.0
+    pid_output: float = FLOAT_ZERO
+    pid_integral: float = FLOAT_ZERO
+    pid_prev: float = FLOAT_ZERO
+    pid_slope: float = FLOAT_ZERO
 
     jacobian_vector: list[float] = field(default_factory=lambda: list[float]())
-    failed_step_index: int = 0
+    failed_step_index: int = ZERO_INT
 
     actor_observe: str = ""
     actor_conclusion: str = ""
@@ -79,7 +90,7 @@ class Blackboard:
     last_plan_because: str = ""
     last_instruction: str = ""
     plan_steps: list[str] = field(default_factory=lambda: list[str]())
-    plan_step_index: int = 0
+    plan_step_index: int = ZERO_INT
     notes: list[str] = field(default_factory=lambda: list[str]())
     focused_window: str = ""
 
@@ -115,8 +126,8 @@ class Blackboard:
             try:
                 existing = json.loads(SCREEN_LOCK_PATH.read_text(encoding="utf-8"))
                 if existing.get("agent_id") != self.agent_id:
-                    age = time.time() - existing.get("ts", 0)
-                    if age < 30:
+                    age = time.time() - existing.get("ts", ZERO_INT)
+                    if age < SCREEN_LOCK_STALE_SECONDS:
                         return False
             except (json.JSONDecodeError, OSError):
                 pass
@@ -147,7 +158,7 @@ class Blackboard:
             data = json.loads(SCREEN_SNAPSHOT_PATH.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             return None
-        age = time.time() - float(data.get("ts", 0))
+        age = time.time() - float(data.get("ts", ZERO_INT))
         if age > SCREEN_SNAPSHOT_MAX_AGE:
             return None
         text = str(data.get("context_text", ""))
@@ -184,7 +195,7 @@ class Blackboard:
             verb: str = evt.get("verb", "")
             source: str = evt.get("source", "")
             raw_payload = evt.get("payload")
-            payload: dict[str, str] = raw_payload if isinstance(raw_payload, dict) else {}
+            payload: dict[str, str] = {str(k): str(v) for k, v in cast(dict[Any, Any], raw_payload).items()} if isinstance(raw_payload, dict) else {}
             if verb == "child_done" and source in self.children:
                 handle = self.children[source]
                 handle.state = "done"
@@ -208,7 +219,19 @@ class Blackboard:
         return [aid for aid, h in self.children.items() if h.state == "failed"]
 
     def active_children_count(self) -> int:
-        return sum(1 for h in self.children.values() if h.state == "running")
+        return sum(ONE_INT for h in self.children.values() if h.state == "running")
+
+    def terminate_running_children(self) -> list[dict[str, Any]]:
+        terminated: list[dict[str, Any]] = []
+        for agent_id, handle in self.children.items():
+            if handle.state != "running" or handle.pid <= ZERO_INT:
+                continue
+            from win32 import terminate_process
+            if terminate_process(handle.pid):
+                handle.state = "failed"
+                handle.error = "terminated_with_parent"
+                terminated.append({"agent_id": agent_id, "pid": handle.pid, "goal": handle.goal})
+        return terminated
 
     def rewrite_goal(self, new_goal: str) -> None:
         if not new_goal:
@@ -256,32 +279,32 @@ class Blackboard:
     def load_from_snapshot(self, snap: dict[str, Any]) -> None:
         self.goal = snap.get("goal", self.goal)
         self.original_goal = snap.get("original_goal", self.original_goal)
-        self.iteration = snap.get("iteration", 0)
+        self.iteration = snap.get("iteration", ZERO_INT)
         self.mode = snap.get("mode", "direct")
         self.agent_id = snap.get("agent_id", "main")
-        self.consecutive_failures = snap.get("consecutive_failures", 0)
+        self.consecutive_failures = snap.get("consecutive_failures", ZERO_INT)
         self.last_verb = snap.get("last_verb", "")
         self.last_success = snap.get("last_success", False)
         self.problem = snap.get("problem", "")
-        self.repetition_score = snap.get("repetition_score", 0.0)
-        self.stagnation_score = snap.get("stagnation_score", 0.0)
-        self.screen_stagnation = snap.get("screen_stagnation", 0)
-        self.lorenz_x = snap.get("lorenz_x", 8.485)
-        self.lorenz_y = snap.get("lorenz_y", 8.485)
-        self.lorenz_z = snap.get("lorenz_z", 27.0)
-        self.attractor_energy = snap.get("attractor_energy", 1.0)
-        self.pid_output = snap.get("pid_output", 0.0)
-        self.pid_integral = snap.get("pid_integral", 0.0)
-        self.pid_prev = snap.get("pid_prev", 0.0)
-        self.pid_slope = snap.get("pid_slope", 0.0)
-        self.expectation_miss_streak = snap.get("expectation_miss_streak", 0)
+        self.repetition_score = snap.get("repetition_score", FLOAT_ZERO)
+        self.stagnation_score = snap.get("stagnation_score", FLOAT_ZERO)
+        self.screen_stagnation = snap.get("screen_stagnation", ZERO_INT)
+        self.lorenz_x = snap.get("lorenz_x", LORENZ_INITIAL_X)
+        self.lorenz_y = snap.get("lorenz_y", LORENZ_INITIAL_Y)
+        self.lorenz_z = snap.get("lorenz_z", LORENZ_INITIAL_Z)
+        self.attractor_energy = snap.get("attractor_energy", FLOAT_ONE)
+        self.pid_output = snap.get("pid_output", FLOAT_ZERO)
+        self.pid_integral = snap.get("pid_integral", FLOAT_ZERO)
+        self.pid_prev = snap.get("pid_prev", FLOAT_ZERO)
+        self.pid_slope = snap.get("pid_slope", FLOAT_ZERO)
+        self.expectation_miss_streak = snap.get("expectation_miss_streak", ZERO_INT)
         self.history = snap.get("history", [])
         self.errors = snap.get("errors", [])
         self.screen_valid = snap.get("screen_valid", False)
         self.verifier_denied_last = snap.get("verifier_denied_last", False)
         self.plan_steps = snap.get("plan_steps", [])
-        self.plan_step_index = snap.get("plan_step_index", 0)
-        self.failed_step_index = snap.get("failed_step_index", 0)
+        self.plan_step_index = snap.get("plan_step_index", ZERO_INT)
+        self.failed_step_index = snap.get("failed_step_index", ZERO_INT)
         self.notes = snap.get("notes", [])
         self.last_plan_because = snap.get("last_plan_because", "")
         self.jacobian_vector = snap.get("jacobian_vector", [])
@@ -293,22 +316,22 @@ class Blackboard:
         if len(self.recent_action_signatures) > MAX_SIGNATURES:
             self.recent_action_signatures = self.recent_action_signatures[-MAX_SIGNATURES:]
 
-        window = self.recent_action_signatures[-12:]
-        if len(window) >= 4:
+        window = self.recent_action_signatures[-REPETITION_WINDOW:]
+        if len(window) >= REPETITION_MIN_WINDOW:
             unique = len(set(window))
-            self.repetition_score = 1.0 - (unique / len(window))
+            self.repetition_score = FLOAT_ONE - (unique / len(window))
         else:
-            self.repetition_score = 0.0
+            self.repetition_score = FLOAT_ZERO
 
         self._compute_stagnation_score()
         self._step_lorenz()
         self._step_pid()
         self._step_jacobian()
 
-        if self.stagnation_score > 0.5 and not self.last_success:
+        if self.stagnation_score > STAGNATION_BLOCK_THRESHOLD and not self.last_success:
             self.blocked_signatures[signature] = self.iteration
         expired = [s for s, it in self.blocked_signatures.items()
-                   if self.iteration - it > 5]
+                   if self.iteration - it > SIGNATURE_BLOCK_EXPIRY_ITERATIONS]
         for s in expired:
             del self.blocked_signatures[s]
 
@@ -320,26 +343,26 @@ class Blackboard:
                + self.expectation_miss_streak * STAGNATION_WEIGHT_MISS
                + self.repetition_score * STAGNATION_WEIGHT_REPETITION
                + self.screen_stagnation * STAGNATION_WEIGHT_SCREEN)
-        self.stagnation_score = min(1.0, raw / STAGNATION_NORMALIZER)
+        self.stagnation_score = min(FLOAT_ONE, raw / STAGNATION_NORMALIZER)
 
     def _step_lorenz(self) -> None:
         from config import (PIPELINE_LORENZ, LORENZ_SIGMA, LORENZ_RHO, LORENZ_BETA,
                             LORENZ_DT, LORENZ_MAG_CAP,
                             LORENZ_RHO_SENSITIVITY, LORENZ_BETA_SENSITIVITY)
         if not PIPELINE_LORENZ:
-            self.attractor_energy = 1.0
+            self.attractor_energy = FLOAT_ONE
             return
 
         x, y, z = self.lorenz_x, self.lorenz_y, self.lorenz_z
 
         rho_eff = LORENZ_RHO + self.stagnation_score * LORENZ_RHO_SENSITIVITY * LORENZ_RHO
-        beta_eff = max(0.5, LORENZ_BETA - self.repetition_score * LORENZ_BETA_SENSITIVITY)
+        beta_eff = max(LORENZ_BETA_MIN, LORENZ_BETA - self.repetition_score * LORENZ_BETA_SENSITIVITY)
 
         x = x + LORENZ_SIGMA * (y - x) * LORENZ_DT
         y = y + (x * (rho_eff - z) - y) * LORENZ_DT
         z = z + (x * y - beta_eff * z) * LORENZ_DT
 
-        mag = (x * x + y * y + z * z) ** 0.5
+        mag = (x * x + y * y + z * z) ** LORENZ_MAG_EXPONENT
         if mag > LORENZ_MAG_CAP:
             scale = LORENZ_MAG_CAP / mag
             x, y, z = x * scale, y * scale, z * scale
@@ -347,9 +370,9 @@ class Blackboard:
 
         self.lorenz_x, self.lorenz_y, self.lorenz_z = x, y, z
 
-        eq_xy_sq = LORENZ_BETA * (LORENZ_RHO - 1.0)
-        equilibrium_mag = (eq_xy_sq + eq_xy_sq + (LORENZ_RHO - 1.0) ** 2) ** 0.5
-        self.attractor_energy = mag / max(equilibrium_mag, 1.0)
+        eq_xy_sq = LORENZ_BETA * (LORENZ_RHO - LORENZ_EQUILIBRIUM_OFFSET)
+        equilibrium_mag = (eq_xy_sq + eq_xy_sq + (LORENZ_RHO - LORENZ_EQUILIBRIUM_OFFSET) ** TWO_INT) ** LORENZ_MAG_EXPONENT
+        self.attractor_energy = mag / max(equilibrium_mag, LORENZ_EQUILIBRIUM_OFFSET)
 
     def _step_pid(self) -> None:
         from config import (PIPELINE_PID, PID_KP, PID_KI, PID_KD,
@@ -361,8 +384,8 @@ class Blackboard:
         error = self.stagnation_score
         self.pid_integral = min(self.pid_integral + error, PID_INTEGRAL_MAX)
         self.pid_slope = error - self.pid_prev
-        d_term = PID_KD * self.pid_slope if abs(self.pid_slope) > PID_DEAD_ZONE else 0.0
-        self.pid_output = max(0.0, PID_KP * error + PID_KI * self.pid_integral + d_term)
+        d_term = PID_KD * self.pid_slope if abs(self.pid_slope) > PID_DEAD_ZONE else FLOAT_ZERO
+        self.pid_output = max(FLOAT_ZERO, PID_KP * error + PID_KI * self.pid_integral + d_term)
         self.pid_prev = error
 
     def _step_jacobian(self) -> None:
@@ -371,29 +394,29 @@ class Blackboard:
             self.jacobian_vector = []
             return
         n = len(self.plan_steps)
-        self.jacobian_vector = [0.0] * n
+        self.jacobian_vector = [FLOAT_ZERO] * n
         for i in range(n):
             position_weight = (n - i) / n
             if i < self.plan_step_index:
-                self.jacobian_vector[i] = 0.0
+                self.jacobian_vector[i] = FLOAT_ZERO
             elif i == self.plan_step_index:
                 self.jacobian_vector[i] = (position_weight
                                            * self.stagnation_score
                                            * self.attractor_energy
-                                           * (1.0 + self.consecutive_failures * 0.5))
+                                           * (LORENZ_EQUILIBRIUM_OFFSET + self.consecutive_failures * JACOBIAN_FAILURE_GAIN))
             else:
-                self.jacobian_vector[i] = position_weight * self.stagnation_score * self.attractor_energy * 0.3
+                self.jacobian_vector[i] = position_weight * self.stagnation_score * self.attractor_energy * JACOBIAN_FUTURE_STEP_GAIN
 
     def update_screen_stagnation(self, screen_hash: str) -> None:
-        if screen_hash in self.recent_screen_hashes[-4:]:
-            self.screen_stagnation += 1
+        if screen_hash in self.recent_screen_hashes[-SCREEN_STAGNATION_LOOKBACK:]:
+            self.screen_stagnation += ONE_INT
         else:
-            self.screen_stagnation = 0
+            self.screen_stagnation = ZERO_INT
         self.recent_screen_hashes.append(screen_hash)
-        self.recent_screen_hashes = self.recent_screen_hashes[-8:]
+        self.recent_screen_hashes = self.recent_screen_hashes[-SCREEN_HASH_HISTORY_LIMIT:]
 
     def reset_pid_integral(self) -> None:
-        self.pid_integral = 0.0
+        self.pid_integral = FLOAT_ZERO
 
     def jacobian_impact(self, step_index: int) -> float:
         if not self.jacobian_vector:
@@ -404,7 +427,7 @@ class Blackboard:
 
     def should_replan(self, step_index: int) -> bool:
         impact = self.jacobian_impact(step_index)
-        threshold = 1.0 / (1.0 + self.pid_output)
+        threshold = FLOAT_ONE / (FLOAT_ONE + self.pid_output)
         return impact > threshold
 
     def jacobian_dominant_step(self) -> int:
@@ -413,11 +436,11 @@ class Blackboard:
         return max(range(len(self.jacobian_vector)), key=lambda i: self.jacobian_vector[i])
 
     def detect_repetition_in_history(self) -> bool:
-        if len(self.history) < 3:
+        if len(self.history) < HISTORY_REPETITION_MIN_MATCHES:
             return False
-        recent = self.history[-4:]
+        recent = self.history[-HISTORY_REPETITION_LOOKBACK:]
         sigs = [f"{h['verb']}:{h['obs']}" for h in recent if h['success']]
-        return len(sigs) >= 3 and len(set(sigs)) == 1
+        return len(sigs) >= HISTORY_REPETITION_MIN_MATCHES and len(set(sigs)) == ONE_INT
 
     def stagnation_blocks_action(self, verb: str, target: str) -> bool:
         return f"{verb}:{target}" in self.blocked_signatures
@@ -425,13 +448,15 @@ class Blackboard:
     def record_action(self, verb: str, args: dict[str, Any], success: bool, observation: str) -> None:
         self.last_verb = verb
         self.last_success = success
-        self.last_observation = observation
+        obs_record = _observation_record(observation)
+        self.last_observation = str(obs_record["summary"])
 
         self.history.append({
             "verb": verb,
             "args": args,
             "success": success,
-            "obs": observation if observation else ""
+            "obs": self.last_observation,
+            "observation": obs_record,
         })
         from config import MAX_HISTORY_ENTRIES
         if len(self.history) > MAX_HISTORY_ENTRIES:
@@ -441,10 +466,10 @@ class Blackboard:
         self.update_signals(verb, target_str)
 
     def record_failure(self) -> None:
-        self.consecutive_failures += 1
+        self.consecutive_failures += ONE_INT
 
     def record_success(self) -> None:
-        self.consecutive_failures = 0
+        self.consecutive_failures = ZERO_INT
 
     def record_screen(self, text: str, hash_val: str, elements: dict[str, Any]) -> None:
         self.screen = text
@@ -537,7 +562,7 @@ def _render_field(board: Blackboard, field_name: str, instruction: str) -> str:
                 return ""
             return f"PLANNER_REASONING: {board.last_plan_because}"
         case "consecutive_failures":
-            if board.consecutive_failures <= 0:
+            if board.consecutive_failures <= ZERO_INT:
                 return ""
             return f"CONSECUTIVE_FAILURES: {board.consecutive_failures}"
         case "stagnation_score":
@@ -551,7 +576,7 @@ def _render_field(board: Blackboard, field_name: str, instruction: str) -> str:
         case "lorenz":
             return f"LORENZ: x={board.lorenz_x:.3f} y={board.lorenz_y:.3f} z={board.lorenz_z:.3f}"
         case "failed_step_index":
-            if board.failed_step_index <= 0:
+            if board.failed_step_index <= ZERO_INT:
                 return ""
             return f"FAILED_STEP_INDEX: {board.failed_step_index}"
         case "recent_history":
@@ -591,3 +616,25 @@ def _render_field(board: Blackboard, field_name: str, instruction: str) -> str:
             )
         case _:
             return ""
+
+
+def _observation_record(observation: str) -> dict[str, Any]:
+    if not observation:
+        return {"chars": ZERO_INT, "lines": ZERO_INT, "sha256": "", "evidence_lines": [], "summary": ""}
+    clean_lines = [line.strip() for line in observation.splitlines() if line.strip()]
+    digest = hashlib.sha256(observation.encode("utf-8", errors="surrogatepass")).hexdigest()
+    evidence = clean_lines[:CONTEXT_OBSERVATION_EVIDENCE_LINES]
+    summary_parts = [
+        f"chars={len(observation)}",
+        f"lines={len(clean_lines)}",
+        f"sha256={digest}",
+    ]
+    if evidence:
+        summary_parts.append("evidence_lines=" + " | ".join(evidence))
+    return {
+        "chars": len(observation),
+        "lines": len(clean_lines),
+        "sha256": digest,
+        "evidence_lines": evidence,
+        "summary": "; ".join(summary_parts),
+    }

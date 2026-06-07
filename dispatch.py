@@ -1,10 +1,12 @@
 from __future__ import annotations
+from config import ZERO_INT, ONE_INT
 import json
 from dataclasses import dataclass
 from typing import Any, cast
 
-from config import PROMPTS_DIR, SCHEMAS_DIR
+from config import PROMPTS_DIR, SCHEMAS_DIR, LOG_NO_ITERATION
 from llm import call_llm
+from log import log
 
 __all__ = ["call_role", "RoleSpec"]
 
@@ -32,11 +34,14 @@ def _get_required_fields(role: str) -> list[str]:
     return fields
 
 
-def call_role(spec: RoleSpec, context: str) -> dict[str, Any]:
+def call_role(spec: RoleSpec, context: str, iteration: int = LOG_NO_ITERATION) -> dict[str, Any]:
     system = _load_prompt(spec.name)
-    raw = call_llm(system, context, spec.name, max_tokens=spec.max_output_tokens)
+    log(iteration, "role.context", "role context projection", {"role": spec.name, "system": system, "context": context})
+    raw = call_llm(system, context, spec.name, max_tokens=spec.max_output_tokens, iteration=iteration)
     required = _get_required_fields(spec.name)
-    return _extract_json(raw, required)
+    parsed = _extract_json(raw, required)
+    log(iteration, "role.response.parsed", "role parsed json", {"role": spec.name, "required_fields": required, "response": parsed})
+    return parsed
 
 
 def _extract_json(raw: str, required_fields: list[str]) -> dict[str, Any]:
@@ -49,21 +54,21 @@ def _extract_json(raw: str, required_fields: list[str]) -> dict[str, Any]:
         except json.JSONDecodeError:
             pass
     candidates: list[tuple[int, str]] = []
-    depth = 0
-    start = -1
+    depth = ZERO_INT
+    start = -ONE_INT
     for i, ch in enumerate(raw):
         if ch == "{":
-            if depth == 0:
+            if depth == ZERO_INT:
                 start = i
-            depth += 1
+            depth += ONE_INT
         elif ch == "}":
-            depth -= 1
-            if depth == 0 and start != -1:
-                candidates.append((start, raw[start:i + 1]))
-                start = -1
+            depth -= ONE_INT
+            if depth == ZERO_INT and start != -ONE_INT:
+                candidates.append((start, raw[start:i + ONE_INT]))
+                start = -ONE_INT
     schema_match: tuple[int, dict[str, Any]] | None = None
     actionable: tuple[int, dict[str, Any]] | None = None
-    fallback: tuple[int, dict[str, Any]] | None = None
+    last_valid: tuple[int, dict[str, Any]] | None = None
     for pos, candidate in reversed(candidates):
         try:
             parsed: object = json.loads(candidate)
@@ -76,11 +81,11 @@ def _extract_json(raw: str, required_fields: list[str]) -> dict[str, Any]:
                     break
             if actionable is None and result.get("mode") != "done":
                 actionable = (pos, result)
-            if fallback is None:
-                fallback = (pos, result)
+            if last_valid is None:
+                last_valid = (pos, result)
         except json.JSONDecodeError:
             continue
-    chosen = schema_match or actionable or fallback
+    chosen = schema_match or actionable or last_valid
     if chosen:
         _, result = chosen
         return result

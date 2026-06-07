@@ -1,12 +1,19 @@
 from __future__ import annotations
+from config import ZERO_INT, ONE_INT, TWO_INT
 import json
 import subprocess
 import time
-from typing import Any
+from typing import Any, cast
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 from config import (LMS_HOSTS, LMS_TIMEOUT, ACP_TIMEOUT, LLM_TEMPERATURE,
                     LLM_TOP_P, LLM_TOP_K, LLM_REPEAT_PENALTY, LLM_PRESENCE_PENALTY,
-                    LLM_FREQUENCY_PENALTY, LLM_SEED, LLM_MAX_TOKENS, LLM_STOP, LLM_LOGIT_BIAS, SCHEMAS_DIR)
+                    LLM_FREQUENCY_PENALTY, LLM_SEED, LLM_MAX_TOKENS, LLM_STOP, LLM_LOGIT_BIAS, SCHEMAS_DIR,
+                    LOG_NO_ITERATION, LMS_MODEL_LIST_TIMEOUT, LMS_MODEL_RELOAD_TIMEOUT,
+                    LMS_MODEL_RELOAD_DELAY, LMS_REQUEST_ATTEMPTS, LMS_RETRY_DELAY,
+                    LMS_ERROR_RETRY_DELAY, HTTP_ERROR_STATUS_MIN)
+from log import log
 
 __all__ = ["call_llm", "set_backend", "get_backend"]
 
@@ -24,7 +31,7 @@ def get_backend() -> str:
     return _backend
 
 
-def call_llm(system: str, user: str, role: str, *, max_tokens: int = LLM_MAX_TOKENS) -> str:
+def call_llm(system: str, user: str, role: str, *, max_tokens: int = LLM_MAX_TOKENS, iteration: int = LOG_NO_ITERATION) -> str:
     schema: dict[str, Any] = _load_schema(role)
     body: dict[str, Any] = {
         "messages": [
@@ -45,9 +52,9 @@ def call_llm(system: str, user: str, role: str, *, max_tokens: int = LLM_MAX_TOK
         "seed": LLM_SEED if LLM_SEED is not None else None,
     }
     if _backend == "lmstudio":
-        return _call_lmstudio(body)
+        return _call_lmstudio(body, role, iteration)
     if _backend == "acp":
-        return _call_acp(body)
+        return _call_acp(body, role, iteration)
     raise ValueError(f"unknown backend: {_backend}")
 
 
@@ -58,114 +65,146 @@ def _load_schema(role: str) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _http_json(url: str, timeout: float) -> dict[str, Any]:
+    req = Request(url, method="GET")
+    try:
+        with urlopen(req, timeout=timeout) as response:
+            raw = response.read().decode("utf-8")
+    except HTTPError as e:
+        body = e.read().decode("utf-8")
+        raise RuntimeError(f"http {e.code}: {body}") from e
+    except (URLError, TimeoutError, OSError) as e:
+        raise RuntimeError(str(e)) from e
+    parsed: object = json.loads(raw)
+    if not isinstance(parsed, dict):
+        raise ValueError(raw)
+    return cast(dict[str, Any], parsed)
+
+
+def _http_post_json(url: str, payload: bytes, timeout: float) -> tuple[str, int]:
+    req = Request(url, data=payload, headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with urlopen(req, timeout=timeout) as response:
+            raw = response.read().decode("utf-8")
+            status = response.getcode()
+    except HTTPError as e:
+        raw = e.read().decode("utf-8")
+        return raw, e.code
+    except (URLError, TimeoutError, OSError) as e:
+        raise RuntimeError(str(e)) from e
+    return raw, status
+
+
 def _resolve_host_model() -> tuple[str, str]:
     global _cached_host, _cached_model
     if _cached_host is not None and _cached_model is not None:
         return _cached_host, _cached_model
     for host in LMS_HOSTS:
         try:
-            r = subprocess.run(
-                ["curl.exe", "-s", "--max-time", "3", f"{host}/v1/models"],
-                capture_output=True, timeout=10)
-            if r.returncode == 0 and r.stdout.strip():
-                data: dict[str, Any] = json.loads(r.stdout)
-                if data.get("data"):
-                    model_id: str = data["data"][0]["id"]
-                    _cached_host = host
-                    _cached_model = model_id
-                    return host, model_id
-                _try_reload_model(host)
-                r2 = subprocess.run(
-                    ["curl.exe", "-s", "--max-time", "30", f"{host}/v1/models"],
-                    capture_output=True, timeout=35)
-                if r2.returncode == 0 and r2.stdout.strip():
-                    data2: dict[str, Any] = json.loads(r2.stdout)
-                    if data2.get("data"):
-                        model_id2: str = data2["data"][0]["id"]
-                        _cached_host = host
-                        _cached_model = model_id2
-                        return host, model_id2
-        except (subprocess.TimeoutExpired, OSError, json.JSONDecodeError, KeyError, IndexError):
+            data = _http_json(f"{host}/v1/models", LMS_MODEL_LIST_TIMEOUT)
+            model_id = _first_model_id(data)
+            if model_id:
+                _cached_host = host
+                _cached_model = model_id
+                return host, model_id
+            _try_reload_model(host)
+            data2 = _http_json(f"{host}/v1/models", LMS_MODEL_LIST_TIMEOUT)
+            model_id2 = _first_model_id(data2)
+            if model_id2:
+                _cached_host = host
+                _cached_model = model_id2
+                return host, model_id2
+        except (RuntimeError, OSError, json.JSONDecodeError, KeyError, IndexError, ValueError):
             continue
     raise ConnectionError("no LM Studio host reachable")
 
 
+def _first_model_id(data: dict[str, Any]) -> str:
+    models = data.get("data")
+    if not isinstance(models, list):
+        return ""
+    if not models:
+        return ""
+    first = cast(list[Any], models)[ZERO_INT]
+    if not isinstance(first, dict):
+        return ""
+    model_id = cast(dict[str, Any], first).get("id")
+    if not isinstance(model_id, str):
+        return ""
+    return model_id
+
+
 def _try_reload_model(host: str) -> None:
-    subprocess.run(["lms", "load", _cached_model or "gemma-4-e2b-it"], capture_output=True, timeout=60)
-    time.sleep(5)
+    subprocess.run(["lms", "load", _cached_model or "gemma-4-e2b-it"], capture_output=True, timeout=LMS_MODEL_RELOAD_TIMEOUT)
+    time.sleep(LMS_MODEL_RELOAD_DELAY)
 
 
-def _call_lmstudio(body: dict[str, Any]) -> str:
+def _call_lmstudio(body: dict[str, Any], role: str, iteration: int) -> str:
     global _cached_host, _cached_model
     host, model = _resolve_host_model()
     body["model"] = model
     payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
-    for attempt in range(3):
-        proc = subprocess.Popen(
-            ["curl.exe", "-sN", "-X", "POST", f"{host}/v1/chat/completions",
-             "-H", "Content-Type: application/json", "-d", "@-",
-             "--max-time", str(LMS_TIMEOUT)],
-            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        assert proc.stdin is not None
-        assert proc.stdout is not None
-        assert proc.stderr is not None
-        proc.stdin.write(payload)
-        proc.stdin.close()
-        while proc.poll() is None:
-            try:
-                proc.wait(timeout=1.0)
-            except subprocess.TimeoutExpired:
-                pass
-        stdout_bytes = proc.stdout.read()
-        stderr_bytes = proc.stderr.read()
-        proc.stdout.close()
-        proc.stderr.close()
-        if proc.returncode != 0:
-            if attempt < 2:
-                time.sleep(2)
+    for attempt in range(LMS_REQUEST_ATTEMPTS):
+        log(iteration, "llm.request", "lmstudio chat completion request", {"role": role, "attempt": attempt, "host": host, "model": model, "body": body})
+        try:
+            raw, status = _http_post_json(f"{host}/v1/chat/completions", payload, LMS_TIMEOUT)
+        except RuntimeError as e:
+            log(iteration, "llm.transport.error", "lmstudio http failure", {"role": role, "attempt": attempt, "error": str(e)})
+            if attempt < LMS_REQUEST_ATTEMPTS - ONE_INT:
+                time.sleep(LMS_RETRY_DELAY)
                 continue
-            raise RuntimeError(f"curl failed: {stderr_bytes.decode()}")
-        raw = stdout_bytes.decode("utf-8")
+            raise
+        log(iteration, "llm.response.raw", "lmstudio raw response", {"role": role, "attempt": attempt, "status": status, "body": raw})
+        if status >= HTTP_ERROR_STATUS_MIN:
+            if attempt < LMS_REQUEST_ATTEMPTS - ONE_INT:
+                time.sleep(LMS_ERROR_RETRY_DELAY)
+                continue
+            raise RuntimeError(f"LM Studio HTTP {status}: {raw}")
         if not raw.strip():
-            if attempt < 2:
-                time.sleep(2)
+            if attempt < LMS_REQUEST_ATTEMPTS - ONE_INT:
+                time.sleep(LMS_RETRY_DELAY)
                 continue
             raise ValueError("empty LLM response")
         result: dict[str, Any] = json.loads(raw)
+        log(iteration, "llm.response.parsed", "lmstudio parsed response", {"role": role, "attempt": attempt, "response": result})
         if "choices" not in result or not result["choices"]:
             err_raw = result.get("error", result)
             if isinstance(err_raw, dict):
-                error_msg = str(err_raw.get("message", err_raw))
+                err_dict = cast(dict[str, Any], err_raw)
+                error_msg = str(err_dict.get("message", err_raw))
             else:
                 error_msg = str(err_raw)
             if "no models loaded" in error_msg.lower() or "No models loaded" in error_msg:
                 _cached_host = None
                 _cached_model = None
-                if attempt < 2:
+                if attempt < LMS_REQUEST_ATTEMPTS - ONE_INT:
                     _try_reload_model(host)
                     host, model = _resolve_host_model()
                     body["model"] = model
                     payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
                     continue
-            if attempt < 2:
-                time.sleep(3)
+            if attempt < LMS_REQUEST_ATTEMPTS - ONE_INT:
+                time.sleep(LMS_ERROR_RETRY_DELAY)
                 continue
             raise RuntimeError(f"LLM error: {error_msg}")
-        return result["choices"][0]["message"]["content"]
+        return result["choices"][ZERO_INT]["message"]["content"]
     raise RuntimeError("LLM call failed after 3 attempts")
 
 
-def _call_acp(body: dict[str, Any]) -> str:
+def _call_acp(body: dict[str, Any], role: str, iteration: int) -> str:
     from acp_client import prompt_once
     msgs: list[dict[str, str]] = body.get("messages", [])
     sys_content: str = next((m["content"] for m in msgs if m["role"] == "system"), "")
     user_content: str = next((m["content"] for m in msgs if m["role"] == "user"), "")
     schema: dict[str, Any] = body.get("response_format", {})
-    schema_def: str = json.dumps(schema.get("json_schema", {}).get("schema", {}), indent=2)
+    schema_def: str = json.dumps(schema.get("json_schema", {}).get("schema", {}), indent=TWO_INT)
     prompt = (
         f"{sys_content}\n\n"
         f"Output ONLY a valid JSON object matching this schema. No other text.\n\nSchema:\n{schema_def}\n\n"
         f"---\n{user_content}\n---\n\n"
         f"Respond with the JSON object only."
     )
-    return prompt_once(prompt, timeout=ACP_TIMEOUT)
+    log(iteration, "llm.request", "acp prompt request", {"role": role, "body": body, "prompt": prompt})
+    response = prompt_once(prompt, timeout=ACP_TIMEOUT)
+    log(iteration, "llm.response.raw", "acp raw response", {"role": role, "response": response})
+    return response

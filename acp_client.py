@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from config import ZERO_INT, ONE_INT
 import atexit
 import io
 import json
@@ -9,14 +10,20 @@ import threading
 from dataclasses import dataclass, field
 from typing import Any, cast
 
+from config import (
+    ACP_PROTOCOL_VERSION, ACP_DEFAULT_TIMEOUT, ACP_REQUEST_TIMEOUT,
+    ACP_WSL_MKDIR_TIMEOUT, ACP_SETTINGS_TIMEOUT, ACP_CLOSE_TIMEOUT,
+    ACP_READ_CHUNK_SIZE, JSONRPC_METHOD_NOT_FOUND,
+)
+
 __all__ = ["ACPError", "prompt_once"]
 
 DISTRO: str = "Ubuntu-24.04"
 KIRO_CLI: str = "/usr/bin/kiro-cli"
 WORKSPACE: str = "/tmp/poke-acp"
 MODEL: str = "claude-opus-4.7"
-PROTOCOL_VERSION: int = 1
-DEFAULT_TIMEOUT: float = 300.0
+PROTOCOL_VERSION: int = ACP_PROTOCOL_VERSION
+DEFAULT_TIMEOUT: float = ACP_DEFAULT_TIMEOUT
 
 type JsonMsg = dict[str, Any]
 
@@ -28,7 +35,7 @@ class ACPError(RuntimeError):
 @dataclass
 class _Flight:
     session_id: str
-    request_id: int = -1
+    request_id: int = -ONE_INT
     chunks: list[str] = field(default_factory=lambda: list[str]())
     done: threading.Event = field(default_factory=threading.Event)
 
@@ -37,7 +44,7 @@ class _Pool:
     def __init__(self) -> None:
         self._proc: subprocess.Popen[bytes] | None = None
         self._lock = threading.Lock()
-        self._next_id: int = 0
+        self._next_id: int = ZERO_INT
         self._pending: dict[int, queue.Queue[JsonMsg]] = {}
         self._flights: dict[str, _Flight] = {}
         self._started: bool = False
@@ -51,18 +58,18 @@ class _Pool:
             return
         if self._proc is not None:
             self._proc.terminate()
-            self._proc.wait(timeout=5)
+            self._proc.wait(timeout=ACP_CLOSE_TIMEOUT)
         self._started = False
         self._pending.clear()
         self._flights.clear()
-        self._next_id = 0
+        self._next_id = ZERO_INT
         subprocess.run(
             ["wsl.exe", "-d", DISTRO, "--exec", "mkdir", "-p", WORKSPACE],
-            capture_output=True, timeout=10)
+            capture_output=True, timeout=ACP_WSL_MKDIR_TIMEOUT)
         subprocess.run(
             ["wsl.exe", "-d", DISTRO, "--cd", WORKSPACE, "--exec",
              KIRO_CLI, "settings", "chat.defaultModel", MODEL, "--workspace"],
-            capture_output=True, timeout=15)
+            capture_output=True, timeout=ACP_SETTINGS_TIMEOUT)
         self._proc = subprocess.Popen(
             ["wsl.exe", "-d", DISTRO, "--cd", WORKSPACE, "--exec", KIRO_CLI, "acp"],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -82,7 +89,7 @@ class _Pool:
             raise ACPError("no sessionId returned")
         flight = _Flight(session_id=sid)
         with self._lock:
-            self._next_id += 1
+            self._next_id += ONE_INT
             rid = self._next_id
             flight.request_id = rid
             self._pending[rid] = queue.Queue()
@@ -96,13 +103,13 @@ class _Pool:
         return "".join(flight.chunks)
 
     def _send(self, method: str, params: JsonMsg) -> int:
-        self._next_id += 1
+        self._next_id += ONE_INT
         rid = self._next_id
         self._pending[rid] = queue.Queue()
         self._write({"jsonrpc": "2.0", "id": rid, "method": method, "params": params})
         return rid
 
-    def _request(self, method: str, params: JsonMsg, timeout: float = 60.0) -> JsonMsg:
+    def _request(self, method: str, params: JsonMsg, timeout: float = ACP_REQUEST_TIMEOUT) -> JsonMsg:
         with self._lock:
             rid = self._send(method, params)
         try:
@@ -126,14 +133,14 @@ class _Pool:
             if self._proc is None or self._proc.stdout is None:
                 break
             reader = cast(io.BufferedReader, self._proc.stdout)
-            chunk: bytes = reader.read1(65536)
+            chunk: bytes = reader.read1(ACP_READ_CHUNK_SIZE)
             if not chunk:
                 break
             buf = buf + chunk
             while b"\n" in buf:
-                parts: list[bytes] = buf.split(b"\n", 1)
-                line: bytes = parts[0]
-                buf = parts[1]
+                parts: list[bytes] = buf.split(b"\n", ONE_INT)
+                line: bytes = parts[ZERO_INT]
+                buf = parts[ONE_INT]
                 if line.strip():
                     try:
                         self._dispatch(json.loads(line.decode("utf-8")))
@@ -169,12 +176,12 @@ class _Pool:
             opts: list[JsonMsg] = cast(list[JsonMsg], raw_opts) if isinstance(raw_opts, list) else []
             chosen: str | None = next(
                 (str(o.get("optionId")) for o in opts if o.get("kind") == "allow_always"),
-                (str(opts[0].get("optionId")) if opts else None))
+                (str(opts[ZERO_INT].get("optionId")) if opts else None))
             self._write({"jsonrpc": "2.0", "id": mid,
                          "result": {"outcome": {"outcome": "selected", "optionId": chosen}}})
         elif isinstance(mid, int):
             self._write({"jsonrpc": "2.0", "id": mid,
-                         "error": {"code": -32601, "message": "not implemented"}})
+                         "error": {"code": JSONRPC_METHOD_NOT_FOUND, "message": "not implemented"}})
 
     def close(self) -> None:
         if self._proc is None:
@@ -187,7 +194,7 @@ class _Pool:
         for f in self._flights.values():
             f.done.set()
         p.terminate()
-        p.wait(timeout=5)
+        p.wait(timeout=ACP_CLOSE_TIMEOUT)
 
 
 _pool: _Pool | None = None

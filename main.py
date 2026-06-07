@@ -1,20 +1,28 @@
 from __future__ import annotations
-import argparse, json, signal, sys, time, types
+from config import ZERO_INT, ONE_INT, TWO_INT
+import argparse, json, signal, sys, time, traceback, types
+from typing import Protocol, cast
 
-from config import DELAY_STARTUP, BASE_DIR
+from config import DELAY_STARTUP, BASE_DIR, SIGINT_EXIT_CODE, PROCESS_DPI_AWARENESS_CONTEXT
 from state import Blackboard
 from llm import set_backend
 from orchestrator import run
 from persistence import save_snapshot, load_snapshot, append_to_evolution_ledger
-from log import open_log, log, close_log
+from log import open_log, log, close_log, set_tui_hook
+import tui
 
 _interrupted = False
+
+
+class _StdoutReconfigure(Protocol):
+    def reconfigure(self, *, encoding: str) -> None:
+        ...
 
 
 def _handle_sigint(sig: int, frame: types.FrameType | None) -> None:
     global _interrupted
     if _interrupted:
-        sys.exit(130)
+        sys.exit(SIGINT_EXIT_CODE)
     _interrupted = True
     sys.stderr.write("\n[endgame-ai] Ctrl+C — finishing current step, then exit (no --resume unless you intend it).\n")
     sys.stderr.flush()
@@ -31,11 +39,11 @@ def main() -> None:
     args = parser.parse_args()
 
     signal.signal(signal.SIGINT, _handle_sigint)
-    sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
+    cast(_StdoutReconfigure, sys.stdout).reconfigure(encoding="utf-8")
 
     try:
         import ctypes
-        ctypes.WinDLL("user32").SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
+        ctypes.WinDLL("user32").SetProcessDpiAwarenessContext(ctypes.c_void_p(PROCESS_DPI_AWARENESS_CONTEXT))
     except (OSError, AttributeError):
         pass
 
@@ -45,7 +53,7 @@ def main() -> None:
     board.agent_id = args.agent_id
 
     if args.resume:
-        snap = load_snapshot()
+        snap = load_snapshot(args.agent_id)
         if snap:
             board.load_from_snapshot(snap)
         elif not args.goal:
@@ -64,29 +72,42 @@ def main() -> None:
 
     lessons_path = BASE_DIR / "lessons.json"
     if not lessons_path.exists():
-        lessons_path.write_text(json.dumps({"insights": []}, indent=2, ensure_ascii=False), encoding="utf-8")
+        lessons_path.write_text(json.dumps({"insights": []}, indent=TWO_INT, ensure_ascii=False), encoding="utf-8")
 
     log_path = open_log(board.agent_id)
-    log(0, "run.start", f"goal={board.goal} backend={args.backend} agent={board.agent_id} log={log_path}")
+    tui_enabled = board.agent_id == "main"
+    if tui_enabled:
+        set_tui_hook(tui.event)
+        tui.enter()
+    success = False
+    try:
+        log(ZERO_INT, "run.start", "run started", {"goal": board.goal, "backend": args.backend, "agent_id": board.agent_id, "log_path": log_path})
+        success = run(board, interrupted=lambda: _interrupted)
+        log(board.iteration, "run.end", "run ended", {"success": success, "stagnation_score": board.stagnation_score, "iterations": board.iteration, "done_claimed": board.done_claimed, "done_evidence": board.done_evidence})
+        save_snapshot(board.get_persistable_snapshot())
 
-    success = run(board, interrupted=lambda: _interrupted)
-
-    log(board.iteration, "run.end", f"success={success} stagnation={board.stagnation_score:.2f} iterations={board.iteration}")
-    save_snapshot(board.get_persistable_snapshot())
-
-    summary = (
-        f"goal={board.goal} | iterations={board.iteration} | "
-        f"stagnation={board.stagnation_score:.2f} | done={board.done_claimed}"
-    )
-    if board.done_evidence:
-        summary += f" | evidence={board.done_evidence}"
-    append_to_evolution_ledger(summary, source_run=board.agent_id)
-
-    close_log()
+        summary = (
+            f"goal={board.goal} | iterations={board.iteration} | "
+            f"stagnation={board.stagnation_score:.2f} | done={board.done_claimed}"
+        )
+        if board.done_evidence:
+            summary += f" | evidence={board.done_evidence}"
+        append_to_evolution_ledger(summary, source_run=board.agent_id)
+    except Exception as e:
+        log(board.iteration, "run.error", "run failed", {"exception_type": type(e).__name__, "exception": str(e), "traceback": traceback.format_exc()})
+        raise
+    finally:
+        terminated = board.terminate_running_children()
+        if terminated:
+            log(board.iteration, "child.terminate", "terminated child processes before exit", {"children": terminated})
+        if tui_enabled:
+            tui.exit()
+        set_tui_hook(None)
+        close_log()
     if _interrupted:
         sys.stderr.write("[endgame-ai] Stopped by user. Start a new goal without --resume for a clean run.\n")
-        sys.exit(130)
-    sys.exit(0 if success else 1)
+        sys.exit(SIGINT_EXIT_CODE)
+    sys.exit(ZERO_INT if success else ONE_INT)
 
 
 if __name__ == "__main__":

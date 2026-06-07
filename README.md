@@ -1,361 +1,247 @@
-COMPLETE VERSION - TESTED IN OPENAIAPI [Gemma4 e2b] and KIRO-CLI [Claude Opus/Sonnet] modes. (still lot to improve, but this commit is just WORKING!) Great stability, it wont stop, failures on terminal screen are normal - this is data that system uses to self-improve)
-
-Use PowerShell in Windows Terminal App from Microsoft Store - that free, nice looking terminal.
-
 # endgame-ai
 
-You are reading your own source of truth. This document describes what you are, how you work, and how to operate. If you are a future version, this is your foundation.
+Endgame-ai is a Windows 11 desktop automation organism written in pure Python. It observes the desktop through raw Win32 and UI Automation calls, projects the blackboard into role-specific contexts, asks an LLM backend for planner/actor/verifier/reflector decisions, executes typed verbs, and records every runtime phase as JSONL.
 
----
+The current architecture treats the append-only blackboard event stream as the source of truth. Snapshot files are projections. Role contexts are projections. TUI output is a projection. Runtime logs are designed for the organism itself to read during self-diagnosis and future adaptation.
 
-## Identity
+## Platform Contract
 
-A persistent, self-regulating, self-spawning, goal-mutating, chaos-resilient living agentic system. Pure Python 3.13. Zero dependencies. Raw ctypes for cursor probe scan, UIA COM, and SendInput. You see the screen, plan actions, execute them, verify results, and learn from every iteration. Three mathematical pipelines govern your behavior. An LLM provides intelligence. Mathematics provides stability.
+- Windows 11.
+- Python 3.13.
+- Zero third-party Python dependencies.
+- Raw `ctypes` for Win32, UI Automation, process, keyboard, mouse, and console interaction.
+- Pyright strict target: 0 errors, 0 warnings, 0 informations.
+- Numeric constants live in `config.py`.
+- The Lorenz, PID, and Jacobian mechanisms are core control laws and should not be removed.
 
-You can take real damage — wrong decisions, external kills, loops, model refusals, bad prompts — and still keep evolving. The end state is running and self-improving without human intervention.
+## Runtime Command
 
-Repository: github.com/wgabrys88/endgame-ai
-
----
-
-## Philosophy
-
-"If you're going to try, go all the way. Otherwise, don't even start."
-
-This is strict methodology:
-- When a direction is chosen, redesign affected subsystems completely.
-- Half-measures, legacy bridges, compatibility layers, and "just for now" hacks are forbidden.
-- We do not patch. We redesign.
-- Dead code is wrong code. Remove it.
-- Fewer moving parts beats theatrical autonomy.
-
----
-
-## Execution
-
-```
-python main.py "goal" --backend acp
-python main.py "goal" --backend lmstudio
-python main.py --resume --backend acp
-python main.py "goal" --backend acp --agent-id worker_1
+```powershell
+& "C:\Users\%USERPROFILE%\AppData\Local\Python\bin\python.exe" main.py "your goal" --backend lmstudio
 ```
 
-Run as Administrator. Screen observation requires elevation.
+The ACP backend remains present:
 
-`acp`: Claude via kiro-cli in WSL2 (Ubuntu-24.04).
-`lmstudio`: Local LLM at localhost:1234.
-
----
-
-## Observation
-
-The observer combines two complementary scan methods. The cursor probe scan is primary — it is what makes the system work on web pages, Electron apps, and modern UIs where the accessibility tree is incomplete or absent.
-
-### Cursor Probe Scan (primary)
-
-The cursor physically moves across the focused window in a grid pattern with sinusoidal Y-offset to avoid axis-aligned miss patterns. At each point, `ElementFromPoint` retrieves whatever UI element exists at that pixel coordinate.
-
-Why this matters:
-- Web page elements inside browsers have no UIA tree entry but ARE detectable via point queries.
-- Hover-revealed elements (tooltips, dropdowns) appear only when the cursor reaches them.
-- Dynamically rendered UI (React, Electron, WPF) often exposes elements only at the point level.
-- The sinusoidal offset prevents systematic misses along grid lines.
-
-### UIA Tree Walk (secondary)
-
-A breadth-first traversal of the UI Automation tree from each visible top-level window. Provides structured data: control types, names, enabled/disabled state, bounding rectangles, text content via LegacyIAccessible and TextPattern.
-
-Strengths: reliable for native Win32 controls, menu items, toolbars, named buttons. Provides role classification that probe alone cannot.
-
-### Merge and Classification
-
-Both sources merge by deduplication on (role, name, x, y, w, h). Each element is classified as `click`, `write`, or `none` based on role and state. The final output is a numbered book of elements with compact text rendering sent to the LLM.
-
----
-
-## Context Pipeline
-
-The blackboard holds all state. The context pipeline controls what each role sees. The pipeline exists because empirical measurement proved that roles ignore most of what they receive.
-
-```
-BLACKBOARD (all data, always written, never pruned)
-         │
-         ▼
-CONTEXT_POLICY (config.py, per-role field list)
-         │
-         ▼
-build_context(role) → filtered context string → LLM
+```powershell
+& "C:\Users\%USERPROFILE%\AppData\Local\Python\bin\python.exe" main.py "your goal" --backend acp
 ```
 
-### Policy
+For this workspace, validation has been performed with LM Studio mode. LM Studio is expected at:
 
-Defined in `config.py` as `CONTEXT_POLICY: dict[str, list[str]]`. Each key is a role name. Each value is an ordered list of field names. The `build_context` method in `state.py` iterates this list, renders each field from the blackboard, and joins non-empty results into the context string.
-
-To change what a role receives, edit the list. No code changes required.
-
-### What each role receives
-
-**Planner** — decides what to do next based on current state and recent feedback:
-```
-goal, checklist, notes, screen_elements, actor_observe, actor_conclusion,
-last_action, last_result, focused_window, learned_insights,
-recent_history (last 10 actions), consecutive_failures, repetition_warning
+```text
+http://localhost:1234
 ```
 
-**Actor** — resolves a semantic instruction to element IDs and verb calls:
-```
-instruction, screen_elements, notes, checklist_current, learned_insights,
-last_result_on_failure (only when previous action failed)
-```
+LM Studio server logs are outside the workspace at:
 
-**Verifier** — confirms goal completion with evidence:
-```
-goal, checklist, full_history, screen_elements, done_claimed,
-planner_reasoning, focused_window, notes
+```text
+C:\Users\%USERPROFILE%\.lmstudio\server-logs\2026-06\
 ```
 
-**Reflector** — diagnoses stagnation and rewrites the organism:
-```
-goal, iteration, checklist, notes, full_history, screen_elements,
-last_action, last_result, last_expect, actor_observe, planner_reasoning,
-stagnation_score, consecutive_failures, pid, focused_window,
-learned_insights, failed_step_index, current_prompts
-```
+Windows may report that server log as zero length while readable content is still available through a shared read handle. Do not trust metadata length alone.
 
-**Distillation** — meta-observer analyzing cross-run evolution:
-```
-goal, iteration, stagnation_score, consecutive_failures,
-evolution_ledger, learned_insights, pid, attractor_energy,
-repetition_score, lorenz
+## Static Gates
+
+Use the local Python executable:
+
+```powershell
+& "C:\Users\%USERPROFILE%\AppData\Local\Python\bin\python.exe" -m compileall -q .
 ```
 
-### Why these fields
+Pyright requires the bundled Node path in this environment:
 
-The actor is an element-resolver. It matches an instruction against visible screen elements. History of past clicks gives zero information about which current element matches a current instruction. The actor receives instruction, screen, notes, and the current step. Nothing else.
-
-The planner operates at step-level. It needs feedback from the last action (did it work?) and the actor's observation (what does the screen show now?). It does not need the full history because the checklist already encodes completed steps at a higher abstraction. A rolling window of the last 10 actions provides recency for loop detection.
-
-The verifier needs the complete evidence trail. It is called once at goal end. Cost is paid once.
-
-The reflector needs the full trajectory to diagnose patterns. It is called when PID output crosses the reflect threshold. Typically 3-8 times per run.
-
-Distillation needs math signals and cross-run memory. It does not need screen elements because it runs in distillation mode with no observation.
-
-Math signals (Lorenz, PID, Jacobian) drive orchestrator triggers. They control WHEN the reflector fires and WHEN distillation spawns. They do not inform WHAT the planner or actor decides.
-
----
-
-## Three Mathematical Pipelines
-
-Each pipeline is independent and toggleable via `config.py` flags (`PIPELINE_LORENZ`, `PIPELINE_PID`, `PIPELINE_JACOBIAN`).
-
-### Signal Flow
-
-```
-actions ──┬──> stagnation_score ──> PID ──> triggers (reflect, distill, halt)
-           │
-           └──> Lorenz ODE ──> attractor_energy ──> Jacobian ──> replan decisions
-                                                        ↑
-                               stagnation_score ────────┘
+```powershell
+$env:PATH='C:\Users\%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin;' + $env:PATH; & 'C:\Users\%USERPROFILE%\AppData\Local\Python\bin\python.exe' -m pyright
 ```
 
-### Stage 0: Stagnation Score (always computed)
+Useful source audits:
 
-```
-stagnation_score = min(1.0, raw / NORMALIZER)
-raw = failures*5 + miss_streak*4 + repetition*12 + screen_stagnation*6
-```
-
-### Stage 1: Lorenz Attractor (PIPELINE_LORENZ)
-
-```
-rho_eff = LORENZ_RHO + stagnation_score * LORENZ_RHO_SENSITIVITY * LORENZ_RHO
-beta_eff = max(0.5, LORENZ_BETA - repetition_score * LORENZ_BETA_SENSITIVITY)
-dx/dt = sigma*(y-x), dy/dt = x*(rho_eff-z)-y, dz/dt = x*y - beta_eff*z
-attractor_energy = |trajectory| / |equilibrium|
+```powershell
+rg -n "FALLBACK|fallback|cmd start|field_usage|log_screen|format_exc\(\)\[:" -S -g "*.py" -g "prompts/*.txt" -g "schemas/*.json"
+rg -n "#" -g "*.py" -g "!config.py" -g "!__pycache__/**"
+rg -n '"""' -g "*.py" -g "!__pycache__/**"
+rg -n "'''" -g "*.py" -g "!__pycache__/**"
+rg -n "(?<![A-Za-z_])-?\d+(?:\.\d+)?" -P -g "*.py" -g "!config.py" -g "!__pycache__/**"
 ```
 
-### Stage 2: PID Controller (PIPELINE_PID)
+## Runtime Cleanup
 
-```
-error = stagnation_score
-pid_output = max(0, Kp*error + Ki*integral + Kd*slope)
-Dead-zone: D fires only when |slope| > PID_DEAD_ZONE
-Anti-windup: integral resets on step_advance
-```
+Runtime files are generated in the workspace root and `comms`.
 
-### Stage 3: Jacobian (PIPELINE_JACOBIAN)
-
-```
-J[current_step] = position_weight * stagnation * energy * (1 + failures*0.5)
-replan when: J[failed_step] > 1/(1 + pid_output)
+```powershell
+$root=(Resolve-Path .).Path
+$runtimeNames=@('blackboard_state.json','blackboard_state.lock','blackboard_state.tmp','blackboard_events.jsonl','evolution_ledger.json','lessons.json')
+Get-ChildItem -LiteralPath $root -Force -File | Where-Object { $_.Name -like 'log-*.jsonl' -or $_.Name -like 'validation-*.out' -or $runtimeNames -contains $_.Name } | Remove-Item -Force
+Remove-Item -LiteralPath (Join-Path $root 'comms\screen_lock.json'),(Join-Path $root 'comms\screen_snapshot.json') -Force -ErrorAction SilentlyContinue
 ```
 
----
+If an isolated LM Studio validation is needed, truncate the active server log with a shared handle:
 
-## Roles
-
-**Planner** — Manages checklist. Describes elements semantically. Only role that can declare `mode=done`.
-
-**Actor** — Resolves descriptions to element IDs. Executes 11 verbs. Reports observations.
-
-**Verifier** — Confirms or denies completion. Called once at goal end.
-
-**Reflector** — Diagnoses stagnation. Rewrites prompts, checklist, goal. Tunes PID gains.
-
-**Distillation** — Analyzes cross-run evolution. Separate context policy. Separate subprocess.
-
----
-
-## Completion Flow
-
-```
-Actor executes → Planner reads → step_advance=true
-→ all steps done → Planner: mode=done → Verifier confirms → exit
+```powershell
+$p='C:\Users\%USERPROFILE%\.lmstudio\server-logs\2026-06\'
+$fs=[System.IO.File]::Open($p,[System.IO.FileMode]::OpenOrCreate,[System.IO.FileAccess]::ReadWrite,[System.IO.FileShare]::ReadWrite)
+try { $fs.SetLength(0) } finally { $fs.Close() }
 ```
 
----
+## File Map
 
-## Safeguards
+- `main.py`: CLI entry point, backend selection, log lifecycle, snapshot save, evolution ledger append, child termination on exit.
+- `orchestrator.py`: control loop, observe/plan/act/verify/reflect phases, child spawning, distillation spawning, explicit `read_file` path guard, role used-field telemetry.
+- `state.py`: blackboard state, context projection, compact action evidence, PID/Lorenz/Jacobian state, child process termination hook.
+- `log.py`: JSONL log writer, sequence numbers, TUI hook isolation, append to blackboard event stream.
+- `persistence.py`: locked JSON persistence, per-agent snapshots, append-only blackboard events, inbox and child event mechanics.
+- `observer.py`: desktop observation, foreground/window enumeration, probe sampling, UI Automation tree sampling, node merge/classification, rendered screen context.
+- `win32.py`: raw ctypes wrappers for Win32, UI Automation, process termination, input, window, and console primitives.
+- `actions.py`: verb execution for click, write, press, hotkey, scroll, wait, focus, read_file, write_file, cmd, spawn_agent.
+- `dispatch.py`: prompt/schema loading, role calls, response extraction.
+- `llm.py`: LM Studio and ACP backend calls, request/response logging.
+- `tui.py`: live state projection through the same JSONL event records.
+- `sixel.py`: sixel rendering helpers.
+- `lessons.py`: persisted lessons store.
+- `event_schema.py`: runtime event schema helper.
+- `config.py`: constants and context policy.
+- `prompts/*.txt`: mutable role prompts.
+- `schemas/*.json`: strict role response schemas.
 
-**Distillation singleton**: One distillation process per 10 iterations. Prevents storm.
+## Logging Architecture
 
-**Prompt rewrite minimum**: Reflector cannot overwrite a prompt with fewer than 200 characters. Prevents destruction by weak models.
+Every call to `log.log()` writes one JSON object to the agent log file and appends the same record to `blackboard_events.jsonl`.
 
-**Blocked signatures**: Actions that fail during high stagnation (>0.5) are blocked from repeating for 5 iterations.
+Runtime record fields:
 
-**Stagnation halt**: If stagnation >= 0.95 for 5 sustained iterations, the run halts and spawns a successor.
-
-**Ctrl+C responsive**: LLM calls use subprocess polling with 1-second intervals. Keyboard interrupt propagates within 1 second regardless of call duration.
-
----
-
-## Files
-
-```
-main.py           Entry point. CLI. Signal handling.
-orchestrator.py   The one loop. PID triggers. Distillation singleton.
-state.py          Blackboard. Three pipelines. Context pipeline (build_context).
-config.py         All constants. CONTEXT_POLICY. Pipeline flags. PID gains.
-observer.py       Cursor probe scan + UIA tree walk. Merge. Classify. Render.
-actions.py        11 verb handlers.
-dispatch.py       LLM call + JSON extraction.
-llm.py            Backend switching. Popen + poll.
-acp_client.py     ACP JSON-RPC client (WSL2).
-log.py            Always-on file logging.
-tui.py            Terminal dashboard.
-lessons.py        Cross-run lesson storage.
-persistence.py    Snapshots, evolution ledger, IPC.
-event_schema.py   Inter-agent event protocol.
-win32.py          Raw ctypes: UIA COM, SendInput.
-prompts/          Mutable system prompts (min 200 chars enforced).
-schemas/          JSON schemas. Strict mode.
-```
-
----
-
-## Design Rules
-
-1. One loop. Mathematics controls intensity. No mode switching.
-2. No comments. No docstrings. This README is the documentation.
-3. No magic numbers outside config.py. No data truncations.
-4. No fallback modes. Cannot observe = wait.
-5. Dead code is wrong code.
-6. The reflector tunes everything: prompts, checklist, goal, PID gains.
-7. Actor executes. Planner decides. Verifier confirms. No role exceeds its authority.
-8. Fewer moving parts beats theatrical autonomy.
-9. Go all the way or don't start.
-10. Each pipeline is independent and toggleable.
-11. Context is filtered by policy. Policy is data in config.py, not logic in code.
-12. The blackboard stores everything. The pipeline controls the projection.
-13. Never guess what a role needs. Measure it.
-14. Never suppress type errors. Solve them.
-15. Never patch symptoms. Find the meta-root.
-
----
-
-## Development Protocol
-
-This section is the operating contract for any AI assistant working on this codebase.
-
-### Scientist Mode
-
-1. Before claiming how something behaves, state if tested-in-this-session or untested-prior.
-2. Untested-prior claims require a minimal falsification experiment proposal.
-3. If you cannot run the experiment, say "experiment pending" and stop. Never invent results.
-4. Do not compare to "conventional approaches" or "what every production framework does."
-5. Treat counter-intuitive requests as hypotheses to test, not errors to correct.
-6. When results arrive, update plainly — even if it contradicts earlier claims.
-7. Audit your own prior turns. If any violated rules 1-6, name the violation and correct course.
-
-### Rules
-
-- Pure Python 3.13, Windows 11 only. Zero dependencies. Raw ctypes for Win32.
-- Pyright strict. Target: 0 errors, 0 warnings, 0 informations.
-- No comments. No docstrings. No magic numbers outside config.py. No data truncations.
-- No fallback modes. Dead code is wrong code.
-- The three mathematical laws (Lorenz, PID, Jacobian) are non-negotiable.
-- Prompts and schemas are mutable by the organism at runtime. Code must be mutable also by a pipeline that creates a copy of the directory, makes the endgame to modify files, run the new endgame-ai instance as independent Entity, validate it is working as expected and terminates it, then prepares to terminate itself in a way that Windows 11 will ressurect it after a moment and it will be running with the new code. The ressurection mehanism ecoupled from code, something like cronjobs on linux must be developed, and the experimental endgame-ai clones has to have a "regression" suite of goals and some sandbox only for the evaluation time, the mentioned directory copy should be in reality an automatic git branch workflow locally or/and using github.com itself. The self code modification also requires hardening the cmd action, its currently cmd, but training data of llm could had powershell - we need to figure out an universal way, maybe just wsl2 syntax, after all, the ACP is executed via wsl2 so any command can be executed in linux way and for sure every llm knows the bash - this is something to focus on this session, it would also reduce the amount of available verbs (bash potentialy can replace a lot of schema fields - this need research on what data the LLMs are exactly trained and deduct a common pattern. Similarly to pyautogui syntax when it comes to writing and clicking - every llm knows pyautogui and python itself, to reduce cognitive load on llm its better to rename the schemas fields so llm will believe its using pyautogui and in reality its using low level windows api.
-- The blackboard is the single source of truth. CONTEXT_POLICY controls projection.
-
-### Methodology
-
-- ASCII deduction mode for all analysis and proposals.
-- Read ALL files before making claims. Every .py, every prompt, every schema.
-- Simulate before coding — trace execution paths step by step.
-- Show diffs, get approval before implementing.
-- Trace failures through execution logs end-to-end.
-- When analyzing a run, read ALL runtime files (logs, lessons.json, evolution_ledger.json).
-- Read LM Studio server logs at `%USERPROFILE%\.cache\lm-studio\server-logs\` for raw model I/O.
-- Do not suppress Pyright errors — solve them with proper types.
-- Do not patch symptoms — find the meta-root cause.
-- Do not guess what roles need — measure it.
-
-### After Implementation
-
-1. Run pyright: `powershell.exe -Command "cd '%USERPROFILE%\Downloads\endgame-ai'; python -m pyright"`
-2. Run a live goal to verify behavior.
-3. Read logs to evaluate actual execution.
-
-### Workspace Cleanup
-
-When told "cleanup workspace": truncate (empty contents, do not delete) LM Studio server logs at `%USERPROFILE%\.cache\lm-studio\server-logs\` and remove runtime artifacts (log-*, blackboard_state.json, evolution_ledger.json, lessons.json, field_usage.json).
-
----
-
-## Evolution
-
-```
-v1    Polling loops, if/elif scheduling, blind mode fallbacks
-v2    Event-driven, Lorenz chaos, discrete thresholds
-v3    Lorenz + PID + Jacobian unification
-v4    Three-pipeline architecture (Lorenz | PID | Jacobian separated)
-v4.1  Full blackboard transparency + self-regulation
-        Every role receives entire blackboard state
-        used_fields in every schema → field_usage.json
-        Organism declares what it needs, developer measures
-v5    Context pipeline + empirical field governance
-        162 observations analyzed: who reads what, who ignores what
-        CONTEXT_POLICY replaces monolithic full_context()
-        Each role receives only fields it empirically consumed
-        Distillation: first-class role with own policy and singleton guard
-        Prompt rewrite minimum length prevents destruction by weak models
-        Ctrl+C responsive LLM calls via Popen + poll
+```json
+{
+  "version": 1,
+  "sequence": 1,
+  "timestamp_utc": "ISO-8601",
+  "agent_id": "main",
+  "iteration": 0,
+  "phase": "run.start",
+  "message": "run started",
+  "data": {}
+}
 ```
 
----
+The blackboard event file is append-only. It is the durable event stream. `blackboard_state.json` is a projection with this shape:
 
-## TODO
+```json
+{
+  "states": {
+    "main": {}
+  },
+  "events": [],
+  "agents": {},
+  "meta": {}
+}
+```
 
-- Distillation uses planner prompt. Create prompts/distillation.txt with dedicated system prompt.
-- Observe field: schema allows 300 chars. Decide single source of truth.
-- Actor prompt ordering: file verbs (read_file, write_file, cmd) are buried at the bottom under CRITICAL. Element resolution rules come first. Local models pattern-match top-down — file verbs must appear BEFORE element resolution. Affects: prompts/actor.txt ordering, and the schema field ordering in schemas/actor.json.
-- Verifier platform-specific rules (X, LinkedIn) moved out. Seed into lessons.json if needed per task.
+Child agents write under their own `agent_id` inside `states` and write their own `log-<agent_id>-<timestamp>.jsonl` files. The shared `blackboard_events.jsonl` receives events from every agent.
 
-## TODO: Self-Feedback Loop
+The logger writes the file record and blackboard event before invoking the TUI hook. If the TUI hook raises, the logger records `tui.error` to the file and blackboard streams, detaches the TUI hook, and keeps the event source alive.
 
-Every role gets a `to_developer` field where it reports what confused it, what was noise, and what was missing — the organism complains, and the context pipeline routes those complaints to the reflector so it can rewrite prompts and policy in response.
+The TUI receives the same serialized log line as the file logger. Redirected PowerShell output can be UTF-16 with a BOM; strip the BOM and normalize CR line endings before JSON parsing.
 
----
+## Observation Pipeline
 
-*"If you're going to try, go all the way. Otherwise, don't even start."*
+Observation has three logged phases:
+
+- `observe.raw`: screen metrics, focused window, windows, z-order, probe regions, probe samples, probe raw nodes, UI Automation tree samples, tree raw nodes.
+- `observe.filtered`: merged nodes, classified nodes, and the selector book.
+- `observe.rendered`: content hash, focused title, window titles, rendered screen text.
+
+These phases are intentionally verbose because the organism must be able to diagnose bad UI filtering, mapping, and element selection from its own runtime logs.
+
+## Context Projection
+
+`CONTEXT_POLICY` in `config.py` controls which fields each role receives.
+
+Full action observations are preserved in `action.result` events. Blackboard history stores compact evidence:
+
+```text
+chars=<count>; lines=<count>; sha256=<hash>; evidence_lines=<first lines>
+```
+
+This prevents large file contents from being repeated through `LAST_RESULT`, `RECENT_HISTORY`, and `FULL_HISTORY`, while preserving full data in the event stream.
+
+## Role Used-Field Telemetry
+
+When a role returns `used_fields`, `orchestrator._log_used_fields()` logs:
+
+- raw `used_fields`
+- `accepted_fields`
+- `unknown_fields`
+- `missing_policy_fields`
+- `policy_fields`
+
+This does not assume the model uses valid field names. Invalid declarations are preserved and measured.
+
+## Explicit Read-File Guard
+
+For goals or instructions that explicitly say to use `read_file` on a path, the orchestrator extracts the requested path and forces the actor instruction:
+
+```text
+Use read_file with path exactly: <path>. One action only.
+```
+
+If the actor proposes another verb or path for that forced instruction, the orchestrator logs `action.override` and executes the forced `read_file` action. The guard remains active for the whole explicit read-file goal, so retries can repeat the requested file but cannot drift to another path.
+
+## Verifier Consistency
+
+Verifier responses must keep verdict and failure type aligned:
+
+- `verdict="confirmed"` requires `failure_type=null`.
+- `verdict="denied"` requires a non-null `failure_type`.
+
+Inconsistent verifier responses are logged as `verifier.inconsistent` and do not complete the goal.
+
+## Command Runner
+
+The `cmd` verb executes Bash through WSL:
+
+```text
+wsl.exe bash -lc <command>
+```
+
+This keeps command syntax stable for LLM-generated shell actions. The workspace is passed as the Windows current working directory; in the tested environment WSL maps it to `/mnt/c/Users/%USERPROFILE%/Downloads/endgame-ai`.
+
+## Prompt Mutation
+
+Prompts are runtime-mutable by the reflector. Prompt rewrites are accepted only after length, poison-string, and role-shape checks. Actor, planner, and verifier rewrites must preserve their JSON skeleton and `used_fields` telemetry contract. The rewrite mechanism remains auditable through `prompt.rewrite` and `prompt.rewrite.rejected` events.
+
+## Child Agents
+
+Parallel child agents and distillation agents are tracked through `AgentHandle`. Distillation spawning is restricted to the main agent so distillation children do not recursively spawn more distillation children. Main process shutdown calls `terminate_running_children()` and logs `child.terminate` when child processes are killed.
+
+## Validation Shape
+
+A compact validation goal used during this logging rewrite was:
+
+```powershell
+& "C:\Users\%USERPROFILE%\AppData\Local\Python\bin\python.exe" main.py "SCIENTIST FINAL PIPELINE VALIDATION: use the read_file verb on README.md. Do not use cmd. Do not use write_file. Do not use spawn_agent. Do not claim done until action.result contains read_file success for path README.md and verifier confirmed verdict has failure_type null." --backend lmstudio *> validation-final-pipeline.out
+```
+
+Expected runtime evidence:
+
+- one or more `read_file` actions on `README.md`
+- every `read_file` success path is `README.md`
+- no `cmd` action
+- no `write_file` action
+- no `spawn_agent` action
+- full README content in `action.result`
+- compact evidence in `blackboard_state.json`
+- `blackboard_events.jsonl` line-for-line equal to main log when no child is spawned
+- redirected TUI stream equal to the JSONL log after BOM and CR handling
+- verifier confirmation has `failure_type=null`
+- `role.used_fields` is logged for planner, actor, verifier, and any reflector response that occurs
+- no lingering Python or curl process after exit
+
+## Known Platform Quirks
+
+- PowerShell redirection with `*> file.out` can produce UTF-16 text.
+- LM Studio server log metadata length can report zero while direct shared-handle reads return content.
+- Direct `python.exe -c` may be blocked by local policy even when `python.exe -m compileall` works.
+- Use native PowerShell file operations for cleanup on Windows. Avoid shell-mixing for deletes.
+
+## Current Clean Workspace Expectation
+
+After runtime cleanup, the workspace should contain source, prompts, schemas, docs, and `comms/` as a directory, but no `log-*.jsonl`, no `validation-*.out`, no `blackboard_events.jsonl`, no `blackboard_state.json`, no `lessons.json`, no `evolution_ledger.json`, no `screen_snapshot.json`, and no `screen_lock.json`.

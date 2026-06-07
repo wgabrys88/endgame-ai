@@ -36,7 +36,7 @@ If lmstudio: which model?
 
 ## Log file
 
-Paste relevant lines from log-*.txt or attach the file.
+Paste relevant JSONL events from log-*.jsonl or attach the file.
 
 ## Steps to reproduce
 

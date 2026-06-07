@@ -1,12 +1,13 @@
 from __future__ import annotations
+from config import ZERO_INT, ONE_INT, TWO_INT
 import json
 import msvcrt
 import os
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
-from config import BASE_DIR
+from config import BASE_DIR, BLACKBOARD_EVENTS_PATH
 
 BB_PATH = BASE_DIR / "blackboard_state.json"
 BB_LOCK_PATH = BASE_DIR / "blackboard_state.lock"
@@ -15,7 +16,7 @@ EVOLUTION_LEDGER_PATH = BASE_DIR / "evolution_ledger.json"
 
 def _default_bb() -> dict[str, Any]:
     return {
-        "state": {},
+        "states": {},
         "events": [],
         "agents": {},
         "meta": {"created": datetime.now(timezone.utc).isoformat(), "last_updated": None},
@@ -32,7 +33,7 @@ def _parse_bb_text(raw: str) -> dict[str, Any]:
                 return json.loads(repaired)
             except json.JSONDecodeError:
                 pass
-        if err.pos and err.pos > 0:
+        if err.pos and err.pos > ZERO_INT:
             try:
                 return json.loads(raw[: err.pos])
             except json.JSONDecodeError:
@@ -56,16 +57,16 @@ def _bb_file_lock():
     BB_LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(str(BB_LOCK_PATH), os.O_CREAT | os.O_RDWR)
     try:
-        msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+        msvcrt.locking(fd, msvcrt.LK_LOCK, ONE_INT)
         yield
     finally:
-        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, ONE_INT)
         os.close(fd)
 
 
 def _atomic_write_bb(data: dict[str, Any]) -> None:
     tmp = BB_PATH.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp.write_text(json.dumps(data, indent=TWO_INT, ensure_ascii=False), encoding="utf-8")
     os.replace(str(tmp), str(BB_PATH))
 
 
@@ -101,16 +102,27 @@ def save_snapshot(board_data: dict[str, Any]) -> None:
     _ensure_bb()
 
     def _apply(bb: dict[str, Any]) -> None:
-        bb["state"] = board_data
+        agent_id = str(board_data.get("agent_id", "main"))
+        states = bb.setdefault("states", {})
+        if isinstance(states, dict):
+            states[agent_id] = board_data
+        bb.pop("state", None)
 
     _mutate_bb(_apply)
 
 
-def load_snapshot() -> dict[str, Any] | None:
+def load_snapshot(agent_id: str = "main") -> dict[str, Any] | None:
     _ensure_bb()
     with _bb_file_lock():
         bb = _read_bb_locked()
-    state: dict[str, Any] | None = bb.get("state")
+    states_raw = bb.get("states", {})
+    if not isinstance(states_raw, dict):
+        return None
+    states = cast(dict[str, Any], states_raw)
+    state_raw = states.get(agent_id)
+    if not isinstance(state_raw, dict):
+        return None
+    state = cast(dict[str, Any], state_raw)
     if not state or not state.get("goal"):
         return None
     return state
@@ -166,8 +178,16 @@ def append_to_evolution_ledger(entry: str, source_run: str = "") -> None:
     if len(data["entries"]) > MAX_LEDGER_ENTRIES:
         data["entries"] = data["entries"][-MAX_LEDGER_ENTRIES:]
     tmp = EVOLUTION_LEDGER_PATH.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp.write_text(json.dumps(data, indent=TWO_INT, ensure_ascii=False), encoding="utf-8")
     os.replace(str(tmp), str(EVOLUTION_LEDGER_PATH))
+
+
+def append_runtime_event(record: dict[str, Any]) -> None:
+    BLACKBOARD_EVENTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    line = json.dumps(record, ensure_ascii=False, separators=(",", ":"))
+    with _bb_file_lock():
+        with BLACKBOARD_EVENTS_PATH.open("a", encoding="utf-8", newline="\n") as handle:
+            handle.write(line + "\n")
 
 
 def get_evolution_ledger_context() -> str:

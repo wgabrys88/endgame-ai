@@ -1,9 +1,14 @@
 from __future__ import annotations
+from config import ZERO_INT, ONE_INT, TWO_INT
 import hashlib, math, time
 from dataclasses import dataclass
 from typing import Any
 
-from config import TREE_WALK_TIMEOUT, PROBE_STEP_PX
+from config import (
+    TREE_WALK_TIMEOUT, PROBE_STEP_PX, PROBE_FOREGROUND_DELAY, PROBE_SAMPLE_DELAY,
+    PROBE_SINE_AMPLITUDE_RATIO, PROBE_SINE_PERIOD_STEPS, WINDOW_SORT_FALLBACK_RANK,
+    READ_TEXT_MAX_LENGTH,
+)
 from win32 import (
     user32, init, set_dpi_aware, ensure_tree_walker,
     get_str, get_int, get_bool, get_rect,
@@ -70,13 +75,14 @@ class ObserveResult:
     focused_title: str
     windows: list[dict[str, Any]]
     content_hash: str
+    trace: dict[str, Any]
 
 
 def observe() -> ObserveResult:
     set_dpi_aware()
     init()
-    screen_w = user32.GetSystemMetrics(0)
-    screen_h = user32.GetSystemMetrics(1)
+    screen_w = user32.GetSystemMetrics(ZERO_INT)
+    screen_h = user32.GetSystemMetrics(ONE_INT)
     focused_hwnd = int(user32.GetForegroundWindow())
     focused_title = get_window_title(focused_hwnd)
 
@@ -84,6 +90,7 @@ def observe() -> ObserveResult:
     z_order = _get_z_order()
 
     probe_nodes: list[dict[str, Any]] = []
+    probe_trace: list[dict[str, Any]] = []
     regions = _probe_regions(windows, z_order, focused_hwnd, screen_w, screen_h)
     ensure_tree_walker()
     saved = W.POINT()
@@ -91,31 +98,50 @@ def observe() -> ObserveResult:
     for x0, y0, x1, y1, wname, whwnd in regions:
         if whwnd:
             user32.SetForegroundWindow(W.HWND(whwnd))
-            time.sleep(0.3)
-        _probe_region(probe_nodes, PROBE_STEP_PX, x0, y0, x1, y1, wname, whwnd)
+            time.sleep(PROBE_FOREGROUND_DELAY)
+        _probe_region(probe_nodes, probe_trace, PROBE_STEP_PX, x0, y0, x1, y1, wname, whwnd)
     user32.SetCursorPos(saved.x, saved.y)
 
     tree_nodes: list[dict[str, Any]] = []
+    tree_trace: list[dict[str, Any]] = []
     for wnd in windows:
-        _tree_walk(tree_nodes, wnd["element"], str(wnd["name"]), int(wnd["hwnd"]),
+        _tree_walk(tree_nodes, tree_trace, wnd["element"], str(wnd["name"]), int(wnd["hwnd"]),
                    TREE_WALK_TIMEOUT)
 
     merged = _merge(tree_nodes, probe_nodes)
+    merged_nodes = _clone_nodes(merged)
     classified = _classify(merged)
 
     target_wnd: set[str] = {focused_title} if focused_title else set()
 
     z_titles = [str(e["title"]) for e in z_order]
     wnd_rank = {t: i for i, t in enumerate(z_titles)}
-    classified.sort(key=lambda n: (wnd_rank.get(n["wnd"], 999), n["depth"], n["y"], n["x"]))
+    classified.sort(key=lambda n: (wnd_rank.get(n["wnd"], WINDOW_SORT_FALLBACK_RANK), n["depth"], n["y"], n["x"]))
 
     text, book = _render(classified, target_wnd, focused_title)
     content_hash = hashlib.md5(text.encode("utf-8", errors="surrogatepass")).hexdigest()
+    trace = {
+        "screen": {"width": screen_w, "height": screen_h},
+        "focused": {"hwnd": focused_hwnd, "title": focused_title},
+        "windows": _public_windows(windows),
+        "z_order": z_order,
+        "probe_regions": _public_regions(regions),
+        "probe_samples": probe_trace,
+        "probe_nodes_raw": _clone_nodes(probe_nodes),
+        "tree_samples": tree_trace,
+        "tree_nodes_raw": _clone_nodes(tree_nodes),
+        "merged_nodes": merged_nodes,
+        "classified_nodes": _clone_nodes(classified),
+        "rendered_text": text,
+        "book": _book_trace(book),
+        "content_hash": content_hash,
+    }
 
     return ObserveResult(
         context_text=text, book=book, focused_title=focused_title,
         windows=[{"name": w["name"], "hwnd": w["hwnd"]} for w in windows],
         content_hash=content_hash,
+        trace=trace,
     )
 
 
@@ -126,7 +152,7 @@ def _enumerate_windows() -> list[dict[str, Any]]:
             x, y, w, h = get_rect(top_el)
             ct = get_int(top_el, UIA_CONTROL_TYPE)
             role = CONTROL_TYPE_MAP.get(ct, "")
-            if w <= 0 or h <= 0 or role not in ("Window", "Pane"):
+            if w <= ZERO_INT or h <= ZERO_INT or role not in ("Window", "Pane"):
                 continue
             name = get_str(top_el, UIA_NAME)
             el_hwnd = get_hwnd(top_el)
@@ -142,24 +168,24 @@ def _get_z_order() -> list[dict[str, Any]]:
     hwnd = user32.GetTopWindow(None)
     result: list[dict[str, Any]] = []
     seen: set[str] = set()
-    z = 0
+    z = ZERO_INT
     while hwnd:
         if user32.IsWindowVisible(hwnd):
             title = get_window_title(int(hwnd))
             if title and title not in seen:
                 result.append({"z": z, "hwnd": int(hwnd), "title": title})
                 seen.add(title)
-                z += 1
-        hwnd = user32.GetWindow(hwnd, 2)
+                z += ONE_INT
+        hwnd = user32.GetWindow(hwnd, TWO_INT)
     return result
 
 
-def _tree_walk(out: list[dict[str, Any]], el: Any, wnd_name: str, wnd_hwnd: int, timeout: float) -> None:
+def _tree_walk(out: list[dict[str, Any]], trace: list[dict[str, Any]], el: Any, wnd_name: str, wnd_hwnd: int, timeout: float) -> None:
     from collections import deque
     start = time.perf_counter()
     queue: deque[tuple[Any, int]] = deque()
     for child in get_children(el):
-        queue.append((child, 1))
+        queue.append((child, ONE_INT))
     while queue:
         if time.perf_counter() - start > timeout:
             break
@@ -168,9 +194,24 @@ def _tree_walk(out: list[dict[str, Any]], el: Any, wnd_name: str, wnd_hwnd: int,
             x, y, w, h = get_rect(raw_el)
             ct = get_int(raw_el, UIA_CONTROL_TYPE)
         except OSError:
+            trace.append({"source": "tree", "wnd": wnd_name, "hwnd": wnd_hwnd, "depth": depth, "status": "property_error"})
             continue
         role = CONTROL_TYPE_MAP.get(ct, "")
+        raw = {
+            "source": "tree",
+            "wnd": wnd_name,
+            "hwnd": wnd_hwnd,
+            "depth": depth,
+            "control_type": ct,
+            "role": role,
+            "x": x,
+            "y": y,
+            "w": w,
+            "h": h,
+        }
         if not role:
+            raw["status"] = "no_role"
+            trace.append(raw)
             try:
                 for c in get_children(raw_el):
                     queue.append((c, depth))
@@ -180,7 +221,7 @@ def _tree_walk(out: list[dict[str, Any]], el: Any, wnd_name: str, wnd_hwnd: int,
         try:
             value = get_legacy_value(raw_el) if role in ACTIONABLE_ROLES else ""
             if not value and role in ("Text", "Document", "Edit", "Pane"):
-                tc = get_text_content(raw_el, -1)
+                tc = get_text_content(raw_el, READ_TEXT_MAX_LENGTH)
                 if tc:
                     value = _filter_terminal_text(tc)
                     n_has_text_pattern = True
@@ -198,11 +239,21 @@ def _tree_walk(out: list[dict[str, Any]], el: Any, wnd_name: str, wnd_hwnd: int,
                 "offscreen": get_bool(raw_el, UIA_IS_OFFSCREEN),
                 "has_text_pattern": n_has_text_pattern,
             })
+            raw["name"] = out[-ONE_INT]["name"]
+            raw["value"] = value
+            raw["enabled"] = out[-ONE_INT]["enabled"]
+            raw["readonly"] = out[-ONE_INT]["readonly"]
+            raw["offscreen"] = out[-ONE_INT]["offscreen"]
+            raw["has_text_pattern"] = n_has_text_pattern
+            raw["status"] = "accepted"
+            trace.append(raw)
         except OSError:
+            raw["status"] = "value_error"
+            trace.append(raw)
             continue
         try:
             for c in get_children(raw_el):
-                queue.append((c, depth + 1))
+                queue.append((c, depth + ONE_INT))
         except OSError:
             pass
 
@@ -210,57 +261,72 @@ def _tree_walk(out: list[dict[str, Any]], el: Any, wnd_name: str, wnd_hwnd: int,
 def _probe_regions(windows: list[dict[str, Any]], z_order: list[dict[str, Any]], focused_hwnd: int, sw: int, sh: int) -> list[tuple[int, int, int, int, str, int]]:
     for z in z_order:
         if get_window_class(int(z["hwnd"])) in POPUP_CLASSES:
-            return [(0, 0, sw, sh, "Desktop", 0)]
+            return [(ZERO_INT, ZERO_INT, sw, sh, "Desktop", ZERO_INT)]
     for wnd in windows:
         if int(wnd["hwnd"]) == focused_hwnd:
             return [(int(wnd["x"]), int(wnd["y"]),
                      int(wnd["x"]) + int(wnd["w"]),
                      int(wnd["y"]) + int(wnd["h"]),
                      str(wnd["name"]), int(wnd["hwnd"]))]
-    return [(0, 0, sw, sh, "Desktop", 0)]
+    return [(ZERO_INT, ZERO_INT, sw, sh, "Desktop", ZERO_INT)]
 
 
-def _probe_region(out: list[dict[str, Any]], step: int, x0: int, y0: int, x1: int, y1: int, wname: str, whwnd: int) -> None:
+def _probe_region(out: list[dict[str, Any]], trace: list[dict[str, Any]], step: int, x0: int, y0: int, x1: int, y1: int, wname: str, whwnd: int) -> None:
     seen_rids: set[Any] = set()
-    amp = step * 0.4
-    freq = 2 * math.pi / (step * 6)
-    for y in range(y0 + step // 2, y1, step):
-        for x in range(x0 + step // 2, x1, step):
-            py = max(y0, min(y1 - 1, y + int(amp * math.sin(freq * x))))
+    amp = step * PROBE_SINE_AMPLITUDE_RATIO
+    freq = TWO_INT * math.pi / (step * PROBE_SINE_PERIOD_STEPS)
+    for y in range(y0 + step // TWO_INT, y1, step):
+        for x in range(x0 + step // TWO_INT, x1, step):
+            py = max(y0, min(y1 - ONE_INT, y + int(amp * math.sin(freq * x))))
             user32.SetCursorPos(x, py)
-            time.sleep(0.003)
-            el = element_from_point(x, py)
+            time.sleep(PROBE_SAMPLE_DELAY)
+            try:
+                el = element_from_point(x, py)
+            except OSError as e:
+                trace.append({"source": "probe", "wnd": wname, "hwnd": whwnd, "x": x, "y": py, "status": "element_from_point_error", "exception_type": type(e).__name__, "exception": str(e)})
+                continue
             if not el:
+                trace.append({"source": "probe", "wnd": wname, "hwnd": whwnd, "x": x, "y": py, "status": "no_element"})
                 continue
             try:
                 rid = get_runtime_id(el)
                 if rid and rid in seen_rids:
+                    trace.append({"source": "probe", "wnd": wname, "hwnd": whwnd, "x": x, "y": py, "runtime_id": rid, "status": "duplicate_runtime_id"})
                     continue
                 if rid:
                     seen_rids.add(rid)
                 ct = get_int(el, UIA_CONTROL_TYPE)
                 role = CONTROL_TYPE_MAP.get(ct, "")
                 if not role:
+                    trace.append({"source": "probe", "wnd": wname, "hwnd": whwnd, "x": x, "y": py, "runtime_id": rid, "control_type": ct, "status": "no_role"})
                     continue
                 name = get_str(el, UIA_NAME)
                 value = get_legacy_value(el)
                 if not value:
-                    text_content = get_text_content(el, -1)
+                    text_content = get_text_content(el, READ_TEXT_MAX_LENGTH)
                     if text_content:
                         value = _filter_terminal_text(text_content)
                 r = get_rect(el)
                 if not name and not value:
+                    trace.append({"source": "probe", "wnd": wname, "hwnd": whwnd, "x": x, "y": py, "runtime_id": rid, "control_type": ct, "role": role, "rect": r, "status": "empty_text"})
                     continue
-                out.append({
-                    "wnd": wname, "hwnd": whwnd, "depth": 0,
+                rx, ry, rw, rh = r
+                node = {
+                    "wnd": wname, "hwnd": whwnd, "depth": ZERO_INT,
                     "role": role, "name": name,
-                    "x": r[0], "y": r[1], "w": r[2], "h": r[3],
+                    "x": rx, "y": ry, "w": rw, "h": rh,
                     "enabled": get_bool(el, UIA_IS_ENABLED),
                     "value": value,
                     "readonly": get_legacy_readonly(el),
                     "offscreen": get_bool(el, UIA_IS_OFFSCREEN),
-                })
+                    "runtime_id": rid,
+                    "probe_x": x,
+                    "probe_y": py,
+                }
+                out.append(node)
+                trace.append({"source": "probe", "wnd": wname, "hwnd": whwnd, "x": x, "y": py, "runtime_id": rid, "control_type": ct, "role": role, "name": name, "value": value, "rect": r, "status": "accepted"})
             except OSError:
+                trace.append({"source": "probe", "wnd": wname, "hwnd": whwnd, "x": x, "y": py, "status": "property_error"})
                 continue
 
 
@@ -269,13 +335,13 @@ def _filter_terminal_text(raw: str) -> str:
     stripped = [l.rstrip() for l in lines if l.rstrip()]
     if not stripped:
         return ""
-    last_sep = -1
-    for i in range(len(stripped) - 1, -1, -1):
+    last_sep = -ONE_INT
+    for i in range(len(stripped) - ONE_INT, -ONE_INT, -ONE_INT):
         if " - Completed in " in stripped[i]:
             last_sep = i
             break
-    if last_sep >= 0 and last_sep < len(stripped) - 1:
-        tail = stripped[last_sep + 1:]
+    if last_sep >= ZERO_INT and last_sep < len(stripped) - ONE_INT:
+        tail = stripped[last_sep + ONE_INT:]
     else:
         tail = stripped
     return "\n".join(tail)
@@ -306,7 +372,7 @@ def _classify(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for n in nodes:
         role = n["role"]
         w, h = n["w"], n["h"]
-        if w <= 0 or h <= 0 or n.get("offscreen"):
+        if w <= ZERO_INT or h <= ZERO_INT or n.get("offscreen"):
             continue
         name = n.get("name", "")
         value = n.get("value", "")
@@ -340,13 +406,13 @@ def _render(nodes: list[dict[str, Any]], target_wnd: set[str], focused_title: st
     book: dict[str, BookEntry] = {}
     lines: list[str] = [LEGEND]
     current_wnd = ""
-    seq = 0
+    seq = ZERO_INT
     for n in nodes:
         wnd = n["wnd"]
         if target_wnd and wnd not in target_wnd and wnd != "Taskbar":
             continue
         if n["action"] == "none" and not n.get("value"):
-            seq += 1
+            seq += ONE_INT
             book[str(seq)] = BookEntry(
                 id=str(seq), role=n["role"], name=n.get("name", ""),
                 value=n.get("value", ""), hwnd=n["hwnd"], wnd=wnd,
@@ -359,7 +425,7 @@ def _render(nodes: list[dict[str, Any]], target_wnd: set[str], focused_title: st
             current_wnd = wnd
             marker = "*" if wnd == focused_title else ""
             lines.append(f"[{wnd}]{marker}")
-        seq += 1
+        seq += ONE_INT
         nid = str(seq)
         act = {"click": "C", "write": "W"}.get(n["action"], ".")
         typ = ROLE_SHORT.get(n["role"], n["role"])
@@ -379,3 +445,43 @@ def _render(nodes: list[dict[str, Any]], target_wnd: set[str], focused_title: st
             action=n["action"],
         )
     return "\n".join(lines), book
+
+
+def _clone_nodes(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [dict(n) for n in nodes]
+
+
+def _public_windows(windows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    result: list[dict[str, Any]] = []
+    for w in windows:
+        result.append({k: v for k, v in w.items() if k != "element"})
+    return result
+
+
+def _public_regions(regions: list[tuple[int, int, int, int, str, int]]) -> list[dict[str, Any]]:
+    return [
+        {"x0": x0, "y0": y0, "x1": x1, "y1": y1, "window": wname, "hwnd": whwnd}
+        for x0, y0, x1, y1, wname, whwnd in regions
+    ]
+
+
+def _book_trace(book: dict[str, BookEntry]) -> dict[str, dict[str, Any]]:
+    return {
+        key: {
+            "id": value.id,
+            "role": value.role,
+            "name": value.name,
+            "value": value.value,
+            "hwnd": value.hwnd,
+            "wnd": value.wnd,
+            "px": value.px,
+            "py": value.py,
+            "pw": value.pw,
+            "ph": value.ph,
+            "enabled": value.enabled,
+            "readonly": value.readonly,
+            "action": value.action,
+        }
+        for key, value in book.items()
+    }
+

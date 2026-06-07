@@ -1,4 +1,5 @@
 from __future__ import annotations
+from config import TWO_INT
 import json
 from typing import Any
 
@@ -24,4 +25,4 @@ class Lessons:
         insights = self.data.get("insights", [])
         if len(insights) > MAX_LESSONS:
             self.data["insights"] = insights[-MAX_LESSONS:]
-        _PATH.write_text(json.dumps(self.data, indent=2, ensure_ascii=False), encoding="utf-8")
+        _PATH.write_text(json.dumps(self.data, indent=TWO_INT, ensure_ascii=False), encoding="utf-8")
