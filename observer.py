@@ -120,8 +120,9 @@ def observe() -> ObserveResult:
     tree_nodes: list[dict[str, Any]] = []
     tree_trace: list[dict[str, Any]] = []
     t_start = _profile_start()
+    tree_windows = _tree_windows(windows, target_wnd, regions)
     if tree_decision["enabled"]:
-        for wnd in windows:
+        for wnd in tree_windows:
             _tree_walk(tree_nodes, tree_trace, wnd["element"], str(wnd["name"]), int(wnd["hwnd"]),
                        TREE_WALK_TIMEOUT)
     _profile_add(timing, "tree_walk", t_start)
@@ -152,6 +153,7 @@ def observe() -> ObserveResult:
         "probe_samples": probe_trace,
         "probe_nodes_raw": _clone_nodes(probe_nodes),
         "tree_decision": tree_decision,
+        "tree_windows": _public_windows(tree_windows),
         "tree_samples": tree_trace,
         "tree_nodes_raw": _clone_nodes(tree_nodes),
         "merged_nodes": merged_nodes,
@@ -334,6 +336,15 @@ def _target_windows(focused_title: str, regions: list[tuple[int, int, int, int, 
     if focused_title and (not region_titles or focused_title in region_titles):
         return {focused_title}
     return region_titles
+
+
+def _tree_windows(windows: list[dict[str, Any]], target_wnd: set[str], regions: list[tuple[int, int, int, int, str, int]]) -> list[dict[str, Any]]:
+    if not target_wnd or any(_is_desktop_window(region) for region in regions):
+        return windows
+    selected = [wnd for wnd in windows if str(wnd["name"]) in target_wnd or str(wnd["name"]) == "Taskbar"]
+    if selected:
+        return selected
+    return windows
 
 
 def _region_name(region: tuple[int, int, int, int, str, int]) -> str:
