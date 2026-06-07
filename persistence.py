@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any, Callable, cast
 
-from config import BASE_DIR, BLACKBOARD_EVENTS_PATH, PERSISTENCE_REPLACE_ATTEMPTS, PERSISTENCE_REPLACE_RETRY_DELAY, MAX_BLACKBOARD_EVENT_RECORDS
+from config import BASE_DIR, BLACKBOARD_EVENTS_PATH, PERSISTENCE_REPLACE_ATTEMPTS, PERSISTENCE_REPLACE_RETRY_DELAY, MAX_BLACKBOARD_EVENT_RECORDS, LOG_SCHEMA_VERSION, LOG_NO_ITERATION
 
 BB_PATH = BASE_DIR / "blackboard_state.json"
 BB_LOCK_PATH = BASE_DIR / "blackboard_state.lock"
@@ -154,6 +154,21 @@ def post_event(verb: str, source: str, target: str, payload: Any = None) -> None
         bb["events"].append(evt)
 
     _mutate_bb(_apply)
+    append_coordination_event(verb, source, target, payload)
+
+
+def append_coordination_event(verb: str, source: str, target: str, payload: Any = None) -> None:
+    record: dict[str, Any] = {
+        "version": LOG_SCHEMA_VERSION,
+        "sequence": LOG_NO_ITERATION,
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+        "agent_id": source,
+        "iteration": LOG_NO_ITERATION,
+        "phase": verb,
+        "message": f"{source}->{target}",
+        "data": {"target": target, "payload": payload},
+    }
+    append_runtime_event(record)
 
 
 def poll_events(target: str, verbs: set[str] | None = None) -> list[dict[str, Any]]:

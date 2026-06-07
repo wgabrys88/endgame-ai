@@ -444,7 +444,7 @@ def _filter_terminal_text(raw: str) -> str:
         return ""
     kept: list[str] = []
     for line in stripped:
-        if _is_runtime_log_line(line):
+        if _is_runtime_log_line(line) or _is_tui_dashboard_line(line):
             continue
         kept.append(line)
     if not kept:
@@ -469,6 +469,20 @@ def _is_runtime_log_line(line: str) -> bool:
         return False
     markers = ('"version":', '"phase":', '"agent_id":', '"timestamp_utc":')
     return all(marker in compact for marker in markers[:TWO_INT])
+
+
+def _is_tui_dashboard_line(line: str) -> bool:
+    compact = line.strip()
+    if not compact:
+        return False
+    if "\x1bP" in compact:
+        return True
+    if compact.startswith("endgame-ai |"):
+        return True
+    if compact in ("LORENZ", "STAGNATION"):
+        return True
+    prefixes = ("mode=", "goal:", "focus:", "plan[", "plan:", "action:", "result:", "children:", "lorenz:")
+    return any(compact.startswith(prefix) for prefix in prefixes)
 
 
 def _compact_display_value(value: str) -> str:

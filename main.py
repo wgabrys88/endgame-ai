@@ -36,7 +36,22 @@ def main() -> None:
     parser.add_argument("--backend", choices=["lmstudio", "acp"], default="lmstudio")
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--agent-id", default="main")
+    parser.add_argument("--tui-mode", choices=["auto", "visual", "json"], default="auto")
+    parser.add_argument("--wt-launch", action="store_true", help="Open a Windows Terminal tab running this goal with visual TUI")
     args = parser.parse_args()
+
+    if args.wt_launch:
+        if not args.goal:
+            print("usage: python main.py 'goal' --wt-launch")
+            return
+        pid = tui.launch_windows_terminal_preview(args.goal, args.backend, str(BASE_DIR))
+        if pid <= ZERO_INT:
+            print("wt.exe not found; run from Windows Terminal or pass --tui-mode visual")
+            return
+        print(f"launched Windows Terminal tab pid={pid}")
+        return
+
+    tui.set_mode(args.tui_mode)
 
     signal.signal(signal.SIGINT, _handle_sigint)
     cast(_StdoutReconfigure, sys.stdout).reconfigure(encoding="utf-8")
