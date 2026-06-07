@@ -9,12 +9,16 @@ from typing import Any, cast
 from config import (
     ARTIFACTS_DIR, BASE_DIR, ARTIFACT_INLINE_CHAR_LIMIT,
     ARTIFACT_CHUNK_CHAR_LIMIT, ARTIFACT_SHA_PREFIX_LENGTH,
-    ARTIFACT_PATH_PART_LIMIT,
+    ARTIFACT_PATH_PART_LIMIT, MAX_RUNTIME_ARTIFACT_ENTRIES,
 )
 
 
 def materialize(value: Any, agent_id: str, sequence: int, phase: str) -> Any:
     return _materialize(value, agent_id, sequence, phase, ())
+
+
+def materialize_text(text: str, agent_id: str, sequence: int, phase: str, path: tuple[str, ...]) -> dict[str, Any]:
+    return _write_text(text, "text", agent_id, sequence, phase, path)
 
 
 def _materialize(value: Any, agent_id: str, sequence: int, phase: str, path: tuple[str, ...]) -> Any:
@@ -41,17 +45,18 @@ def _materialize(value: Any, agent_id: str, sequence: int, phase: str, path: tup
 
 def _write_text(text: str, kind: str, agent_id: str, sequence: int, phase: str, path: tuple[str, ...]) -> dict[str, Any]:
     digest = hashlib.sha256(text.encode("utf-8", errors="surrogatepass")).hexdigest()
-    name = _artifact_name(sequence, phase, path, digest)
-    target_dir = ARTIFACTS_DIR / _safe(agent_id) / name
-    target_dir.mkdir(parents=True, exist_ok=True)
+    target_dir = ARTIFACTS_DIR / _safe(agent_id) / digest[:ARTIFACT_SHA_PREFIX_LENGTH]
     files: list[str] = []
     part = ZERO_INT
     for start in range(ZERO_INT, len(text), ARTIFACT_CHUNK_CHAR_LIMIT):
         chunk = text[start:start + ARTIFACT_CHUNK_CHAR_LIMIT]
         file_path = target_dir / f"{part}.txt"
-        file_path.write_text(chunk, encoding="utf-8")
+        if not file_path.exists():
+            target_dir.mkdir(parents=True, exist_ok=True)
+            file_path.write_text(chunk, encoding="utf-8")
         files.append(str(file_path.relative_to(BASE_DIR)))
         part += ONE_INT
+    _prune_agent_artifacts(agent_id)
     return {
         "artifact_ref": True,
         "kind": kind,
@@ -62,12 +67,18 @@ def _write_text(text: str, kind: str, agent_id: str, sequence: int, phase: str, 
     }
 
 
-def _artifact_name(sequence: int, phase: str, path: tuple[str, ...], digest: str) -> str:
-    path_part = "-".join(p for p in path if p)
-    if not path_part:
-        path_part = "data"
-    raw = f"{sequence}-{_safe(phase)}-{_safe(path_part)}-{digest[:ARTIFACT_SHA_PREFIX_LENGTH]}"
-    return raw[:ARTIFACT_PATH_PART_LIMIT + ARTIFACT_SHA_PREFIX_LENGTH]
+def _prune_agent_artifacts(agent_id: str) -> None:
+    agent_dir = ARTIFACTS_DIR / _safe(agent_id)
+    if not agent_dir.exists():
+        return
+    entries = [p for p in agent_dir.iterdir() if p.is_dir()]
+    if len(entries) <= MAX_RUNTIME_ARTIFACT_ENTRIES:
+        return
+    entries.sort(key=lambda p: p.stat().st_mtime)
+    for entry in entries[:len(entries) - MAX_RUNTIME_ARTIFACT_ENTRIES]:
+        for child in entry.iterdir():
+            child.unlink(missing_ok=True)
+        entry.rmdir()
 
 
 def _safe(value: str) -> str:

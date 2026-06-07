@@ -1,10 +1,12 @@
 from __future__ import annotations
 from config import ZERO_INT, ONE_INT
+import hashlib
 import json
 from dataclasses import dataclass
 from typing import Any, cast
 
 from config import PROMPTS_DIR, SCHEMAS_DIR, LOG_NO_ITERATION
+from artifacts import materialize_text
 from llm import call_llm
 from log import log
 
@@ -34,10 +36,12 @@ def _get_required_fields(role: str) -> list[str]:
     return fields
 
 
-def call_role(spec: RoleSpec, context: str, iteration: int = LOG_NO_ITERATION) -> dict[str, Any]:
+def call_role(spec: RoleSpec, context: str, iteration: int = LOG_NO_ITERATION, agent_id: str = "main") -> dict[str, Any]:
     system = _load_prompt(spec.name)
-    log(iteration, "role.context", "role context projection", {"role": spec.name, "system": system, "context": context})
-    raw = call_llm(system, context, spec.name, max_tokens=spec.max_output_tokens, iteration=iteration)
+    context_ref = materialize_text(context, agent_id, iteration, "role.context", ("context",))
+    system_digest = hashlib.sha256(system.encode("utf-8", errors="surrogatepass")).hexdigest()
+    log(iteration, "role.context", "role context projection", {"role": spec.name, "system_chars": len(system), "system_sha256": system_digest, "context": context_ref})
+    raw = call_llm(system, context, spec.name, max_tokens=spec.max_output_tokens, iteration=iteration, context_ref=context_ref)
     required = _get_required_fields(spec.name)
     parsed = _extract_json(raw, required)
     log(iteration, "role.response.parsed", "role parsed json", {"role": spec.name, "required_fields": required, "response": parsed})

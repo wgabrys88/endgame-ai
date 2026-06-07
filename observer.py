@@ -8,7 +8,8 @@ from config import (
     TREE_WALK_TIMEOUT, PROBE_STEP_PX, PROBE_FOREGROUND_DELAY, PROBE_SAMPLE_DELAY,
     PROBE_SINE_AMPLITUDE_RATIO, PROBE_SINE_PERIOD_STEPS, WINDOW_SORT_FALLBACK_RANK,
     READ_TEXT_MAX_LENGTH, DURATION_MS_PER_SECOND, OBSERVER_PROBE_ACTION_MIN,
-    OBSERVER_REGION_NAME_INDEX,
+    OBSERVER_REGION_NAME_INDEX, SCREEN_ELEMENT_VALUE_LIMIT, ARTIFACT_SHA_PREFIX_LENGTH,
+    TERMINAL_CONTEXT_TAIL_LINES,
 )
 from win32 import (
     user32, init, set_dpi_aware,
@@ -437,20 +438,58 @@ def _probe_region(out: list[dict[str, Any]], trace: list[dict[str, Any]], step: 
 
 
 def _filter_terminal_text(raw: str) -> str:
-    lines = raw.split("\r\n")
+    lines = raw.splitlines()
     stripped = [l.rstrip() for l in lines if l.rstrip()]
     if not stripped:
         return ""
+    kept: list[str] = []
+    for line in stripped:
+        if _is_runtime_log_line(line) or _is_tui_dashboard_line(line):
+            continue
+        kept.append(line)
+    if not kept:
+        kept = stripped
     last_sep = -ONE_INT
-    for i in range(len(stripped) - ONE_INT, -ONE_INT, -ONE_INT):
-        if " - Completed in " in stripped[i]:
+    for i in range(len(kept) - ONE_INT, -ONE_INT, -ONE_INT):
+        if " - Completed in " in kept[i]:
             last_sep = i
             break
-    if last_sep >= ZERO_INT and last_sep < len(stripped) - ONE_INT:
-        tail = stripped[last_sep + ONE_INT:]
+    if last_sep >= ZERO_INT and last_sep < len(kept) - ONE_INT:
+        tail = kept[last_sep + ONE_INT:]
     else:
-        tail = stripped
+        tail = kept
+    if len(tail) > TERMINAL_CONTEXT_TAIL_LINES:
+        tail = tail[-TERMINAL_CONTEXT_TAIL_LINES:]
     return "\n".join(tail)
+
+
+def _is_runtime_log_line(line: str) -> bool:
+    compact = line.strip()
+    if not compact.startswith("{"):
+        return False
+    markers = ('"version":', '"phase":', '"agent_id":', '"timestamp_utc":')
+    return all(marker in compact for marker in markers[:TWO_INT])
+
+
+def _is_tui_dashboard_line(line: str) -> bool:
+    compact = line.strip()
+    if not compact:
+        return False
+    if "\x1bP" in compact:
+        return True
+    if compact.startswith("endgame-ai |"):
+        return True
+    if compact in ("LORENZ", "STAGNATION"):
+        return True
+    prefixes = ("mode=", "goal:", "focus:", "plan[", "plan:", "action:", "result:", "children:", "lorenz:")
+    return any(compact.startswith(prefix) for prefix in prefixes)
+
+
+def _compact_display_value(value: str) -> str:
+    if len(value) <= SCREEN_ELEMENT_VALUE_LIMIT:
+        return value
+    digest = hashlib.sha256(value.encode("utf-8", errors="surrogatepass")).hexdigest()
+    return f"[chars={len(value)} sha256={digest[:ARTIFACT_SHA_PREFIX_LENGTH]}]"
 
 
 def _merge(tree_nodes: list[dict[str, Any]], probe_nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -539,7 +578,7 @@ def _render(nodes: list[dict[str, Any]], target_wnd: set[str], focused_title: st
         if n.get("name"):
             line += f" '{n['name']}'"
         if n.get("value"):
-            line += f" v='{n['value']}'"
+            line += f" v='{_compact_display_value(str(n['value']))}'"
         if not n.get("enabled"):
             line += " -"
         lines.append(line)

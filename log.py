@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable, TextIO, cast
 
-from config import BASE_DIR, LOG_SCHEMA_VERSION
+from config import BASE_DIR, LOG_SCHEMA_VERSION, RUNTIME_LOG_SUFFIX
 from artifacts import materialize
 from persistence import append_runtime_event
 
@@ -23,7 +23,7 @@ _sequence: int = ZERO_INT
 def open_log(agent_id: str) -> Path:
     global _handle, _path, _agent_id, _sequence
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-    _path = BASE_DIR / f"log-{agent_id}-{ts}.jsonl"
+    _path = BASE_DIR / f"log-{agent_id}-{ts}{RUNTIME_LOG_SUFFIX}"
     _handle = _path.open("a", encoding="utf-8", newline="\n")
     _agent_id = agent_id
     _sequence = ZERO_INT
