@@ -8,6 +8,7 @@ from config import (
     TREE_WALK_TIMEOUT, PROBE_STEP_PX, PROBE_FOREGROUND_DELAY, PROBE_SAMPLE_DELAY,
     PROBE_SINE_AMPLITUDE_RATIO, PROBE_SINE_PERIOD_STEPS, WINDOW_SORT_FALLBACK_RANK,
     READ_TEXT_MAX_LENGTH, DURATION_MS_PER_SECOND, OBSERVER_PROBE_ACTION_MIN,
+    OBSERVER_REGION_NAME_INDEX,
 )
 from win32 import (
     user32, init, set_dpi_aware, ensure_tree_walker,
@@ -97,12 +98,11 @@ def observe() -> ObserveResult:
     z_order = _get_z_order()
     _profile_add(timing, "z_order", t_start)
 
-    target_wnd: set[str] = {focused_title} if focused_title else set()
-
     probe_nodes: list[dict[str, Any]] = []
     probe_trace: list[dict[str, Any]] = []
     t_start = _profile_start()
     regions = _probe_regions(windows, z_order, focused_hwnd, screen_w, screen_h)
+    target_wnd = _target_windows(focused_title, regions)
     ensure_tree_walker()
     saved = W.POINT()
     user32.GetCursorPos(ctypes.byref(saved))
@@ -292,13 +292,52 @@ def _tree_walk(out: list[dict[str, Any]], trace: list[dict[str, Any]], el: Any, 
 def _probe_regions(windows: list[dict[str, Any]], z_order: list[dict[str, Any]], focused_hwnd: int, sw: int, sh: int) -> list[tuple[int, int, int, int, str, int]]:
     if _topmost_popup(z_order):
         return [(ZERO_INT, ZERO_INT, sw, sh, "Desktop", ZERO_INT)]
+    focused_region: tuple[int, int, int, int, str, int] | None = None
     for wnd in windows:
         if int(wnd["hwnd"]) == focused_hwnd:
-            return [(int(wnd["x"]), int(wnd["y"]),
-                     int(wnd["x"]) + int(wnd["w"]),
-                     int(wnd["y"]) + int(wnd["h"]),
-                     str(wnd["name"]), int(wnd["hwnd"]))]
+            focused_region = _window_region(wnd)
+            if not _is_desktop_window(focused_region):
+                return [focused_region]
+            break
+    top_region = _top_window_region(windows, z_order)
+    if top_region is not None:
+        return [top_region]
+    if focused_region is not None:
+        return [focused_region]
     return [(ZERO_INT, ZERO_INT, sw, sh, "Desktop", ZERO_INT)]
+
+
+def _window_region(wnd: dict[str, Any]) -> tuple[int, int, int, int, str, int]:
+    x = int(wnd["x"])
+    y = int(wnd["y"])
+    return (x, y, x + int(wnd["w"]), y + int(wnd["h"]), str(wnd["name"]), int(wnd["hwnd"]))
+
+
+def _top_window_region(windows: list[dict[str, Any]], z_order: list[dict[str, Any]]) -> tuple[int, int, int, int, str, int] | None:
+    by_hwnd = {int(wnd["hwnd"]): wnd for wnd in windows}
+    for entry in z_order:
+        wnd = by_hwnd.get(int(entry["hwnd"]))
+        if wnd is None:
+            continue
+        region = _window_region(wnd)
+        if not _is_desktop_window(region):
+            return region
+    return None
+
+
+def _is_desktop_window(region: tuple[int, int, int, int, str, int]) -> bool:
+    return _region_name(region) in ("Desktop", "Program Manager")
+
+
+def _target_windows(focused_title: str, regions: list[tuple[int, int, int, int, str, int]]) -> set[str]:
+    region_titles = {_region_name(r) for r in regions if _region_name(r) and not _is_desktop_window(r)}
+    if focused_title and (not region_titles or focused_title in region_titles):
+        return {focused_title}
+    return region_titles
+
+
+def _region_name(region: tuple[int, int, int, int, str, int]) -> str:
+    return str(region[OBSERVER_REGION_NAME_INDEX])
 
 
 def _tree_decision(probe_decision: dict[str, Any]) -> dict[str, Any]:
