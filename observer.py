@@ -11,7 +11,7 @@ from config import (
     OBSERVER_REGION_NAME_INDEX,
 )
 from win32 import (
-    user32, init, set_dpi_aware, ensure_tree_walker,
+    user32, init, set_dpi_aware,
     get_str, get_int, get_bool, get_rect,
     get_legacy_value, get_legacy_readonly, get_text_content, element_from_point,
     get_children, get_hwnd, get_runtime_id, get_root,
@@ -103,7 +103,6 @@ def observe() -> ObserveResult:
     t_start = _profile_start()
     regions = _probe_regions(windows, z_order, focused_hwnd, screen_w, screen_h)
     target_wnd = _target_windows(focused_title, regions)
-    ensure_tree_walker()
     saved = W.POINT()
     user32.GetCursorPos(ctypes.byref(saved))
     for x0, y0, x1, y1, wname, whwnd in regions:

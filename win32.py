@@ -16,8 +16,7 @@ from config import (
     UIA_NATIVE_WINDOW_HANDLE, UIA_LEGACY_IACCESSIBLE_PATTERN, UIA_TEXT_PATTERN,
     UIA_GET_ROOT_ELEMENT_INDEX, UIA_FIND_ALL_INDEX, UIA_ELEMENT_FROM_POINT_INDEX,
     UIA_GET_CURRENT_PROPERTY_VALUE_INDEX, UIA_GET_CURRENT_PATTERN_AS_INDEX,
-    UIA_GET_CONTROL_VIEW_WALKER_INDEX, UIA_CREATE_TRUE_CONDITION_INDEX,
-    UIA_ELEMENT_ARRAY_LENGTH_INDEX, UIA_ELEMENT_ARRAY_GET_INDEX,
+    UIA_CREATE_TRUE_CONDITION_INDEX, UIA_ELEMENT_ARRAY_LENGTH_INDEX, UIA_ELEMENT_ARRAY_GET_INDEX,
     UIA_GET_RUNTIME_ID_INDEX, TREE_SCOPE_CHILDREN, LEGACY_GET_CURRENT_VALUE_INDEX,
     LEGACY_GET_CURRENT_STATE_INDEX, TEXT_PATTERN_DOCUMENT_RANGE_INDEX,
     TEXT_RANGE_GET_TEXT_INDEX, WIN_CLASS_NAME_BUFFER, WIN_WINDOW_TEXT_BUFFER,
@@ -33,7 +32,7 @@ __all__ = [
     "init", "set_dpi_aware", "get_str", "get_int", "get_bool", "get_rect",
     "get_legacy_value", "get_legacy_readonly", "get_text_content", "element_from_point",
     "get_children", "get_hwnd", "get_runtime_id", "get_root",
-    "get_window_class", "get_window_title", "ensure_tree_walker", "terminate_process",
+    "get_window_class", "get_window_title", "terminate_process",
 ]
 
 ole32: ctypes.OleDLL = ctypes.OleDLL("ole32")
@@ -106,7 +105,6 @@ IID_TextPattern = make_guid("32eba289-3583-42c9-9c59-3b6d9a1e9b6a")
 
 _uia: ctypes.c_void_p = ctypes.c_void_p()
 _true_cond: ctypes.c_void_p = ctypes.c_void_p()
-_tree_walker: ctypes.c_void_p = ctypes.c_void_p()
 
 
 def vt(this: ctypes.c_void_p, idx: int, proto_args: tuple[type, ...], *args: object) -> int:
@@ -138,14 +136,6 @@ def init() -> None:
 
 def set_dpi_aware() -> None:
     user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(PROCESS_DPI_AWARENESS_CONTEXT))
-
-
-def ensure_tree_walker() -> None:
-    global _tree_walker
-    if _tree_walker.value:
-        return
-    vt(_uia, UIA_GET_CONTROL_VIEW_WALKER_INDEX, (ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)),
-       ctypes.byref(_tree_walker))
 
 
 def _get_property(el: ctypes.c_void_p, prop_id: int) -> VARIANT:
