@@ -34,6 +34,7 @@ from actions import execute_verb, VERBS
 from llm import get_backend
 from persistence import save_snapshot
 from log import log
+from stop_signal import stop_requested
 import tui
 
 
@@ -129,6 +130,9 @@ def _loop(board: Blackboard, interrupted: Callable[[], bool], halt_counter: int,
     global _last_event, _last_distill_iteration
 
     while True:
+        if _handle_stop_signal(board, is_main):
+            return False
+
         if interrupted():
             log(board.iteration, "run", "interrupted")
             _report_status(board.agent_id, "failed", error="interrupted")
@@ -234,7 +238,7 @@ def _phase_observe(board: Blackboard) -> str:
             board.focused_window = obs.focused_title
             board.update_screen_stagnation(obs.semantic_hash)
             board.publish_shared_screen()
-            log(board.iteration, "observe.raw", "raw screen observation data", {"screen": obs.trace["screen"], "focused": obs.trace["focused"], "windows": obs.trace["windows"], "z_order": obs.trace["z_order"], "probe_regions": obs.trace["probe_regions"], "probe_samples": obs.trace["probe_samples"], "probe_nodes_raw": obs.trace["probe_nodes_raw"], "tree_samples": obs.trace["tree_samples"], "tree_nodes_raw": obs.trace["tree_nodes_raw"]})
+            log(board.iteration, "observe.raw", "raw screen observation data", {"screen": obs.trace["screen"], "focused": obs.trace["focused"], "windows": obs.trace["windows"], "z_order": obs.trace["z_order"], "probe_regions": obs.trace["probe_regions"], "probe_decision": obs.trace["probe_decision"], "probe_samples": obs.trace["probe_samples"], "probe_nodes_raw": obs.trace["probe_nodes_raw"], "tree_decision": obs.trace["tree_decision"], "tree_samples": obs.trace["tree_samples"], "tree_nodes_raw": obs.trace["tree_nodes_raw"], "timing": obs.trace["timing"]})
             log(board.iteration, "observe.filtered", "screen observation after merge and classification", {"merged_nodes": obs.trace["merged_nodes"], "classified_nodes": obs.trace["classified_nodes"], "book": obs.trace["book"]})
             log(board.iteration, "observe.rendered", "rendered screen context", {"content_hash": obs.content_hash, "semantic_hash": obs.semantic_hash, "semantic_text": obs.trace["semantic_text"], "focused_title": obs.focused_title, "windows": obs.windows, "context_text": obs.context_text})
         except Exception as e:
@@ -469,6 +473,10 @@ def _phase_act(board: Blackboard, instruction: str) -> str:
             break
 
         log(board.iteration, "action.request", "executing action", {"verb": verb, "args": args, "raw_action": action_obj})
+        if stop_requested():
+            log(board.iteration, "stop.signal", "stop requested before action", {"agent_id": board.agent_id})
+            iteration_had_failure = True
+            break
         result = execute_verb(verb, args, board.screen_elements, board)
         board.record_action(verb, args, result.success, result.observation)
         log(board.iteration, "action.result", "action completed", {"verb": verb, "args": args, "result": result})
@@ -567,6 +575,16 @@ def _try_spawn_successor(board: Blackboard) -> None:
         log(board.iteration, "successor", goal)
     except Exception:
         log(board.iteration, "successor.error", "successor spawn failed", {"traceback": traceback.format_exc()})
+
+
+def _handle_stop_signal(board: Blackboard, is_main: bool) -> bool:
+    if not stop_requested():
+        return False
+    log(board.iteration, "stop.signal", "stop requested via comms stop file", {"agent_id": board.agent_id})
+    _report_status(board.agent_id, "failed", error="stop_signal")
+    if is_main:
+        tui.render(board, _stagnation_history, "STOP:signal")
+    return True
 
 
 def _process_inbox(board: Blackboard) -> None:

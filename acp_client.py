@@ -8,6 +8,7 @@ import os
 import queue
 import subprocess
 import threading
+import time
 from dataclasses import dataclass, field
 from typing import Any, cast
 
@@ -15,7 +16,9 @@ from config import (
     ACP_PROTOCOL_VERSION, ACP_DEFAULT_TIMEOUT, ACP_REQUEST_TIMEOUT,
     ACP_WSL_MKDIR_TIMEOUT, ACP_SETTINGS_TIMEOUT, ACP_CLOSE_TIMEOUT,
     ACP_READ_CHUNK_SIZE, JSONRPC_METHOD_NOT_FOUND, ACP_WORKSPACE_BASE,
+    ACP_STOP_POLL_SECONDS,
 )
+from stop_signal import stop_requested
 
 __all__ = ["ACPError", "prompt_once"]
 
@@ -97,9 +100,14 @@ class _Pool:
             self._flights[sid] = flight
             self._write({"jsonrpc": "2.0", "id": rid, "method": "session/prompt",
                          "params": {"sessionId": sid, "prompt": [{"type": "text", "text": text}]}})
-        if not flight.done.wait(timeout):
-            self._flights.pop(sid, None)
-            raise ACPError(f"prompt timed out after {timeout}s")
+        deadline = time.monotonic() + timeout
+        while not flight.done.wait(ACP_STOP_POLL_SECONDS):
+            if stop_requested():
+                self._flights.pop(sid, None)
+                raise ACPError("stop signal requested")
+            if time.monotonic() >= deadline:
+                self._flights.pop(sid, None)
+                raise ACPError(f"prompt timed out after {timeout}s")
         self._flights.pop(sid, None)
         return "".join(flight.chunks)
 

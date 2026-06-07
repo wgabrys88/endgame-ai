@@ -77,6 +77,8 @@ Get-ChildItem -LiteralPath $root -Force -File | Where-Object { $_.Name -like 'lo
 Remove-Item -LiteralPath (Join-Path $root 'comms\screen_lock.json'),(Join-Path $root 'comms\screen_snapshot.json') -Force -ErrorAction SilentlyContinue
 ```
 
+Create `comms\stop.txt` to request cooperative shutdown from every running agent loop. The main loop checks it before each iteration and before actions. ACP prompt waits also poll it, so ACP-backed agents can stop during model waits instead of sitting until the full request timeout.
+
 If an isolated LM Studio validation is needed, truncate the active server log with a shared handle:
 
 ```powershell
@@ -148,13 +150,21 @@ The TUI receives the same serialized log line as the file logger. Redirected Pow
 
 Observation has three logged phases:
 
-- `observe.raw`: screen metrics, focused window, windows, z-order, probe regions, probe samples, probe raw nodes, UI Automation tree samples, tree raw nodes. Raw UI text is preserved as `raw_value` when the rendered value is filtered for role context.
+- `observe.raw`: screen metrics, focused window, windows, z-order, probe regions, probe decision, probe samples, probe raw nodes, tree decision, UI Automation tree samples, tree raw nodes, and timing. Raw UI text is preserved as `raw_value` when the rendered value is filtered for role context.
 - `observe.filtered`: merged nodes, classified nodes, and the selector book.
 - `observe.rendered`: exact rendered `content_hash`, normalized `semantic_hash`, semantic text, focused title, window titles, rendered screen text.
 
 These phases are intentionally verbose because the organism must be able to diagnose bad UI filtering, mapping, and element selection from its own runtime logs.
 
+The observer is probe-first. It runs the mouse hover probe as the primary source of visible UI evidence, then runs UI Automation tree walk only when the probe produces too few actionable elements. This keeps webpage and canvas-like visible text discoverable while avoiding routine tree-walk cost when the probe already provides usable context.
+
+`observe.raw.data.timing` records per-phase wall and process CPU milliseconds for setup, window enumeration, z-order, probe, tree walk, merge/classify, and render/hash. Direct desktop timing on June 7, 2026 measured the old full observe path around 11-13 seconds. After the probe-first conditional tree policy, the same focused Chrome desktop measured 1.376-1.574 seconds when the probe produced actionable context. A synthetic empty-probe test triggered tree walk and produced 918 tree nodes and 139 book entries, proving the tree path remains reachable.
+
 Stagnation uses the semantic hash. Exact rendered text is still logged, but volatile numbers such as clocks, throughput, percentages, and other changing metrics are normalized before the semantic signature is computed. Tested on the same focused Task Manager window, exact content hashes changed across one-second observations while the semantic hash stayed stable.
+
+## Runtime Artifacts
+
+Large runtime values are stored as content-addressed `.txt` artifact chunks under `runtime_artifacts/`. JSONL events keep bounded `artifact_ref` objects containing kind, SHA-256, character count, line count, and the chunk file list. This keeps logs and blackboard events bounded without truncating data. Reconstructing the referenced chunks must hash to the recorded SHA-256.
 
 ## Context Projection
 

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, TextIO, cast
 
 from config import BASE_DIR, LOG_SCHEMA_VERSION
+from artifacts import materialize
 from persistence import append_runtime_event
 
 type LogRecord = dict[str, Any]
@@ -64,6 +65,7 @@ def _record(iteration: int, section: str, message: str, data: Any) -> LogRecord:
     global _sequence
     _sequence += ONE_INT
     ts = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+    ready_data = materialize(_json_ready(data), _agent_id, _sequence, section)
     return {
         "version": LOG_SCHEMA_VERSION,
         "sequence": _sequence,
@@ -72,7 +74,7 @@ def _record(iteration: int, section: str, message: str, data: Any) -> LogRecord:
         "iteration": iteration,
         "phase": section,
         "message": message,
-        "data": _json_ready(data),
+        "data": ready_data,
     }
 
 

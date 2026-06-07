@@ -7,7 +7,7 @@ from typing import Any
 from config import (
     TREE_WALK_TIMEOUT, PROBE_STEP_PX, PROBE_FOREGROUND_DELAY, PROBE_SAMPLE_DELAY,
     PROBE_SINE_AMPLITUDE_RATIO, PROBE_SINE_PERIOD_STEPS, WINDOW_SORT_FALLBACK_RANK,
-    READ_TEXT_MAX_LENGTH,
+    READ_TEXT_MAX_LENGTH, DURATION_MS_PER_SECOND, OBSERVER_PROBE_ACTION_MIN,
 )
 from win32 import (
     user32, init, set_dpi_aware, ensure_tree_walker,
@@ -80,18 +80,28 @@ class ObserveResult:
 
 
 def observe() -> ObserveResult:
+    timing: dict[str, dict[str, int]] = {}
+    t_start = _profile_start()
     set_dpi_aware()
     init()
     screen_w = user32.GetSystemMetrics(ZERO_INT)
     screen_h = user32.GetSystemMetrics(ONE_INT)
     focused_hwnd = int(user32.GetForegroundWindow())
     focused_title = get_window_title(focused_hwnd)
+    _profile_add(timing, "setup", t_start)
 
+    t_start = _profile_start()
     windows = _enumerate_windows()
+    _profile_add(timing, "enumerate_windows", t_start)
+    t_start = _profile_start()
     z_order = _get_z_order()
+    _profile_add(timing, "z_order", t_start)
+
+    target_wnd: set[str] = {focused_title} if focused_title else set()
 
     probe_nodes: list[dict[str, Any]] = []
     probe_trace: list[dict[str, Any]] = []
+    t_start = _profile_start()
     regions = _probe_regions(windows, z_order, focused_hwnd, screen_w, screen_h)
     ensure_tree_walker()
     saved = W.POINT()
@@ -102,19 +112,27 @@ def observe() -> ObserveResult:
             time.sleep(PROBE_FOREGROUND_DELAY)
         _probe_region(probe_nodes, probe_trace, PROBE_STEP_PX, x0, y0, x1, y1, wname, whwnd)
     user32.SetCursorPos(saved.x, saved.y)
+    _profile_add(timing, "probe", t_start)
+
+    probe_decision = {"enabled": True, "reason": "primary_probe", "probe_actionable": _target_action_count(_classify(_clone_nodes(probe_nodes)), target_wnd)}
+    tree_decision = _tree_decision(probe_decision)
 
     tree_nodes: list[dict[str, Any]] = []
     tree_trace: list[dict[str, Any]] = []
-    for wnd in windows:
-        _tree_walk(tree_nodes, tree_trace, wnd["element"], str(wnd["name"]), int(wnd["hwnd"]),
-                   TREE_WALK_TIMEOUT)
+    t_start = _profile_start()
+    if tree_decision["enabled"]:
+        for wnd in windows:
+            _tree_walk(tree_nodes, tree_trace, wnd["element"], str(wnd["name"]), int(wnd["hwnd"]),
+                       TREE_WALK_TIMEOUT)
+    _profile_add(timing, "tree_walk", t_start)
 
+    t_start = _profile_start()
     merged = _merge(tree_nodes, probe_nodes)
     merged_nodes = _clone_nodes(merged)
     classified = _classify(merged)
+    _profile_add(timing, "merge_classify", t_start)
 
-    target_wnd: set[str] = {focused_title} if focused_title else set()
-
+    t_start = _profile_start()
     z_titles = [str(e["title"]) for e in z_order]
     wnd_rank = {t: i for i, t in enumerate(z_titles)}
     classified.sort(key=lambda n: (wnd_rank.get(n["wnd"], WINDOW_SORT_FALLBACK_RANK), n["depth"], n["y"], n["x"]))
@@ -123,14 +141,17 @@ def observe() -> ObserveResult:
     semantic_text = _semantic_render(classified, target_wnd, focused_title)
     content_hash = hashlib.md5(text.encode("utf-8", errors="surrogatepass")).hexdigest()
     semantic_hash = hashlib.md5(semantic_text.encode("utf-8", errors="surrogatepass")).hexdigest()
+    _profile_add(timing, "render_hash", t_start)
     trace = {
         "screen": {"width": screen_w, "height": screen_h},
         "focused": {"hwnd": focused_hwnd, "title": focused_title},
         "windows": _public_windows(windows),
         "z_order": z_order,
         "probe_regions": _public_regions(regions),
+        "probe_decision": probe_decision,
         "probe_samples": probe_trace,
         "probe_nodes_raw": _clone_nodes(probe_nodes),
+        "tree_decision": tree_decision,
         "tree_samples": tree_trace,
         "tree_nodes_raw": _clone_nodes(tree_nodes),
         "merged_nodes": merged_nodes,
@@ -140,6 +161,7 @@ def observe() -> ObserveResult:
         "book": _book_trace(book),
         "content_hash": content_hash,
         "semantic_hash": semantic_hash,
+        "timing": timing,
     }
 
     return ObserveResult(
@@ -268,9 +290,8 @@ def _tree_walk(out: list[dict[str, Any]], trace: list[dict[str, Any]], el: Any, 
 
 
 def _probe_regions(windows: list[dict[str, Any]], z_order: list[dict[str, Any]], focused_hwnd: int, sw: int, sh: int) -> list[tuple[int, int, int, int, str, int]]:
-    for z in z_order:
-        if get_window_class(int(z["hwnd"])) in POPUP_CLASSES:
-            return [(ZERO_INT, ZERO_INT, sw, sh, "Desktop", ZERO_INT)]
+    if _topmost_popup(z_order):
+        return [(ZERO_INT, ZERO_INT, sw, sh, "Desktop", ZERO_INT)]
     for wnd in windows:
         if int(wnd["hwnd"]) == focused_hwnd:
             return [(int(wnd["x"]), int(wnd["y"]),
@@ -278,6 +299,30 @@ def _probe_regions(windows: list[dict[str, Any]], z_order: list[dict[str, Any]],
                      int(wnd["y"]) + int(wnd["h"]),
                      str(wnd["name"]), int(wnd["hwnd"]))]
     return [(ZERO_INT, ZERO_INT, sw, sh, "Desktop", ZERO_INT)]
+
+
+def _tree_decision(probe_decision: dict[str, Any]) -> dict[str, Any]:
+    action_count = int(probe_decision.get("probe_actionable", ZERO_INT))
+    enabled = action_count < OBSERVER_PROBE_ACTION_MIN
+    reason = "probe_actionable_empty" if enabled else "probe_actionable_sufficient"
+    return {"enabled": enabled, "reason": reason, "probe_actionable": action_count}
+
+
+def _topmost_popup(z_order: list[dict[str, Any]]) -> bool:
+    if not z_order:
+        return False
+    return get_window_class(int(z_order[ZERO_INT]["hwnd"])) in POPUP_CLASSES
+
+
+def _target_action_count(nodes: list[dict[str, Any]], target_wnd: set[str]) -> int:
+    count = ZERO_INT
+    for n in nodes:
+        wnd = str(n.get("wnd", ""))
+        if target_wnd and wnd not in target_wnd and wnd != "Taskbar":
+            continue
+        if n.get("action") != "none":
+            count += ONE_INT
+    return count
 
 
 def _probe_region(out: list[dict[str, Any]], trace: list[dict[str, Any]], step: int, x0: int, y0: int, x1: int, y1: int, wname: str, whwnd: int) -> None:
@@ -492,6 +537,17 @@ def _normalize_dynamic_text(text: str) -> str:
     for pattern in _DYNAMIC_TEXT_PATTERNS:
         normalized = re.sub(pattern, "<dynamic>", normalized, flags=re.IGNORECASE)
     return normalized
+
+
+def _profile_start() -> tuple[float, float]:
+    return time.perf_counter(), time.process_time()
+
+
+def _profile_add(profile: dict[str, dict[str, int]], phase: str, start: tuple[float, float]) -> None:
+    row = profile.setdefault(phase, {"wall_ms": ZERO_INT, "cpu_ms": ZERO_INT, "calls": ZERO_INT})
+    row["wall_ms"] += int((time.perf_counter() - start[ZERO_INT]) * DURATION_MS_PER_SECOND)
+    row["cpu_ms"] += int((time.process_time() - start[ONE_INT]) * DURATION_MS_PER_SECOND)
+    row["calls"] += ONE_INT
 
 
 def _clone_nodes(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
