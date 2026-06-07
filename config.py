@@ -14,7 +14,8 @@ COMMS_DIR: pathlib.Path = BASE_DIR / "comms"
 INBOX_PATH: pathlib.Path = COMMS_DIR / "inbox.json"
 SCREEN_LOCK_PATH: pathlib.Path = COMMS_DIR / "screen_lock.json"
 SCREEN_SNAPSHOT_PATH: pathlib.Path = COMMS_DIR / "screen_snapshot.json"
-BLACKBOARD_EVENTS_PATH: pathlib.Path = BASE_DIR / "blackboard_events.jsonl"
+BLACKBOARD_EVENTS_PATH: pathlib.Path = BASE_DIR / "blackboard_events.txt"
+RUNTIME_LOG_SUFFIX: str = ".txt"
 ARTIFACTS_DIR: pathlib.Path = BASE_DIR / "runtime_artifacts"
 STOP_SIGNAL_PATH: pathlib.Path = COMMS_DIR / "stop.txt"
 SCREEN_SNAPSHOT_MAX_AGE: float = 20.0
@@ -62,6 +63,11 @@ ARTIFACT_INLINE_CHAR_LIMIT: int = 12000
 ARTIFACT_CHUNK_CHAR_LIMIT: int = 60000
 ARTIFACT_SHA_PREFIX_LENGTH: int = 16
 ARTIFACT_PATH_PART_LIMIT: int = 48
+READ_FILE_EVIDENCE_MARKER: str = "sha256="
+SCREEN_ELEMENT_VALUE_LIMIT: int = 240
+TERMINAL_CONTEXT_TAIL_LINES: int = 8
+MAX_BLACKBOARD_EVENT_RECORDS: int = 400
+MAX_RUNTIME_ARTIFACT_ENTRIES: int = 120
 OBSERVER_PROBE_ACTION_MIN: int = 1
 OBSERVER_REGION_NAME_INDEX: int = 4
 

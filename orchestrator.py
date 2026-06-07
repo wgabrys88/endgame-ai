@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from config import ZERO_INT, ONE_INT, TWO_INT
+import json
 import subprocess
 import sys
 import time
@@ -24,7 +25,7 @@ from config import (
     CHECKLIST_REWRITE_MIN_STEPS, PID_KP_MIN, PID_KP_MAX,
     PID_KI_MIN, PID_KI_MAX, PID_KD_MIN, PID_KD_MAX,
     AGENT_ID_HEX_LENGTH, DEFAULT_SCROLL_AMOUNT, DEFAULT_WAIT_SECONDS,
-    CONTEXT_POLICY,
+    CONTEXT_POLICY, READ_FILE_EVIDENCE_MARKER,
 )
 from state import Blackboard, AgentHandle
 from lessons import Lessons
@@ -57,20 +58,35 @@ def _path_key(path: str) -> str:
     return path.replace("\\", "/").lower()
 
 
+def _sanitize_read_path(raw: str) -> str:
+    cleaned = raw.strip().strip("\"'").rstrip(".,;")
+    if cleaned.lower().startswith("path="):
+        cleaned = cleaned[5:]
+    return cleaned.strip().strip("\"'").rstrip(".,;")
+
+
 def _read_file_goal_path(text: str) -> str:
     import re
     patterns = [
         r"\bread_file\s+with\s+path\s+exactly:?\s+\"([^\"]+)\"",
         r"\bread_file\s+with\s+path\s+exactly:?\s+'([^']+)'",
         r"\bread_file\s+with\s+path\s+exactly:?\s+([^\s]+)",
+        r"\bread_file\s+with\s+path\s+([A-Za-z0-9_.\\/-]+)",
+        r"\bread_file\s+path\s*=\s*([A-Za-z0-9_.\\/-]+)",
+        r"\buse\s+read_file\s+with\s+path\s+exactly:?\s+([^\s]+)",
         r"\buse\s+the\s+read_file\s+verb\s+on\s+\"([^\"]+)\"",
         r"\buse\s+the\s+read_file\s+verb\s+on\s+'([^']+)'",
         r"\buse\s+the\s+read_file\s+verb\s+on\s+([^\s]+)",
+        r"\bread\s+([A-Za-z0-9_.-]+\.md)\b",
+        r"\bread[_\s]+([A-Za-z0-9_.-]+\.md)\b",
+        r"\bpath\s+exactly\s+([A-Za-z0-9_.-]+\.md)\b",
     ]
     for pattern in patterns:
         match = re.search(pattern, text, re.I)
         if match:
-            return match.group(ONE_INT).strip().strip("\"'").rstrip(".,;")
+            path = _sanitize_read_path(match.group(ONE_INT))
+            if path and "=" not in path:
+                return path
     return ""
 
 
@@ -78,8 +94,23 @@ def _read_file_instruction_path(text: str) -> str:
     import re
     match = re.search(r"\bUse\s+read_file\s+with\s+path\s+exactly:\s+(.+?)\.\s+One\s+action\s+only\.", text, re.I)
     if match:
-        return match.group(ONE_INT).strip().strip("\"'").rstrip(".,;")
+        path = _sanitize_read_path(match.group(ONE_INT))
+        if path and "=" not in path:
+            return path
     return ""
+
+
+def _goal_is_parallel_coordinate(text: str) -> bool:
+    lower = text.lower()
+    markers = ("parallel", "worker_", "child agent", "children", "spawn exactly", "main must wait")
+    return any(marker in lower for marker in markers)
+
+
+def _agent_read_file_goal_path(board: Blackboard) -> str:
+    goal_text = board.original_goal or board.goal
+    if board.agent_id == "main" and _goal_is_parallel_coordinate(goal_text):
+        return ""
+    return _read_file_goal_path(goal_text)
 
 
 def _log_used_fields(role: str, iteration: int, response: dict[str, Any]) -> None:
@@ -226,7 +257,9 @@ def _phase_observe(board: Blackboard) -> str:
             board.record_screen(shared[ZERO_INT], shared[ONE_INT], {})
             board.screen_valid = True
             board.focused_window = shared[TWO_INT]
-            log(board.iteration, "observe.shared", "loaded shared screen snapshot", {"content_hash": shared[ONE_INT], "focused_window": shared[TWO_INT], "context_text": shared[ZERO_INT]})
+            from artifacts import materialize_text
+            shared_ref = materialize_text(shared[ZERO_INT], board.agent_id, board.iteration, "observe.shared", ("context_text",))
+            log(board.iteration, "observe.shared", "loaded shared screen snapshot", {"content_hash": shared[ONE_INT], "focused_window": shared[TWO_INT], "context_text": shared_ref, "context_chars": len(shared[ZERO_INT])})
         else:
             board.screen_valid = False
             log(board.iteration, "observe.wait_lock", "no screen lock and no shared snapshot", {"agent_id": board.agent_id})
@@ -238,9 +271,14 @@ def _phase_observe(board: Blackboard) -> str:
             board.focused_window = obs.focused_title
             board.update_screen_stagnation(obs.semantic_hash)
             board.publish_shared_screen()
-            log(board.iteration, "observe.raw", "raw screen observation data", {"screen": obs.trace["screen"], "focused": obs.trace["focused"], "windows": obs.trace["windows"], "z_order": obs.trace["z_order"], "probe_regions": obs.trace["probe_regions"], "probe_decision": obs.trace["probe_decision"], "probe_samples": obs.trace["probe_samples"], "probe_nodes_raw": obs.trace["probe_nodes_raw"], "tree_decision": obs.trace["tree_decision"], "tree_samples": obs.trace["tree_samples"], "tree_nodes_raw": obs.trace["tree_nodes_raw"], "timing": obs.trace["timing"]})
-            log(board.iteration, "observe.filtered", "screen observation after merge and classification", {"merged_nodes": obs.trace["merged_nodes"], "classified_nodes": obs.trace["classified_nodes"], "book": obs.trace["book"]})
-            log(board.iteration, "observe.rendered", "rendered screen context", {"content_hash": obs.content_hash, "semantic_hash": obs.semantic_hash, "semantic_text": obs.trace["semantic_text"], "focused_title": obs.focused_title, "windows": obs.windows, "context_text": obs.context_text})
+            from artifacts import materialize_text
+            raw_ref = materialize_text(json.dumps({"screen": obs.trace["screen"], "focused": obs.trace["focused"], "windows": obs.trace["windows"], "z_order": obs.trace["z_order"], "probe_regions": obs.trace["probe_regions"], "probe_decision": obs.trace["probe_decision"], "probe_samples": obs.trace["probe_samples"], "tree_decision": obs.trace["tree_decision"], "tree_samples": obs.trace["tree_samples"], "timing": obs.trace["timing"]}, ensure_ascii=False, separators=(",", ":")), board.agent_id, board.iteration, "observe.raw", ("data",))
+            filtered_ref = materialize_text(json.dumps({"merged_nodes": len(obs.trace["merged_nodes"]), "classified_nodes": len(obs.trace["classified_nodes"]), "book_entries": len(obs.trace["book"]), "book_ids": sorted(obs.trace["book"].keys())}, ensure_ascii=False, separators=(",", ":")), board.agent_id, board.iteration, "observe.filtered", ("data",))
+            rendered_ref = materialize_text(obs.context_text, board.agent_id, board.iteration, "observe.rendered", ("context_text",))
+            semantic_ref = materialize_text(obs.trace["semantic_text"], board.agent_id, board.iteration, "observe.rendered", ("semantic_text",))
+            log(board.iteration, "observe.raw", "raw screen observation data", raw_ref)
+            log(board.iteration, "observe.filtered", "screen observation after merge and classification", filtered_ref)
+            log(board.iteration, "observe.rendered", "rendered screen context", {"content_hash": obs.content_hash, "semantic_hash": obs.semantic_hash, "semantic_text": semantic_ref, "focused_title": obs.focused_title, "windows": obs.windows, "context_text": rendered_ref, "context_chars": len(obs.context_text)})
         except Exception as e:
             board.release_screen()
             board.screen_valid = False
@@ -257,15 +295,58 @@ def _phase_observe(board: Blackboard) -> str:
 
 def _instruction_for_actor(board: Blackboard, next_action: str) -> str:
     import re
-    forced_path = _read_file_goal_path(board.original_goal) or _read_file_goal_path(board.goal)
+    forced_path = _agent_read_file_goal_path(board)
     if forced_path:
         return f"Use read_file with path exactly: {forced_path}. One action only."
     if board.plan_steps and board.plan_step_index < len(board.plan_steps):
         step = board.plan_steps[board.plan_step_index]
-        match = re.search(r"read_file\s+(\S+)", step, re.I)
-        if match:
-            return f"Use read_file with path exactly: {match.group(ONE_INT)}. One action only."
+        step_path = _read_file_goal_path(step)
+        if not step_path:
+            step_match = re.search(r"\bread_file\s+(?:path\s*=\s*)?(\S+)", step, re.I)
+            if step_match:
+                step_path = _sanitize_read_path(step_match.group(ONE_INT))
+        if step_path and "=" not in step_path:
+            return f"Use read_file with path exactly: {step_path}. One action only."
     return next_action
+
+
+def _forced_read_file_complete(board: Blackboard) -> str:
+    forced_path = _agent_read_file_goal_path(board)
+    if not forced_path:
+        return ""
+    if board.last_verb != "read_file" or not board.last_success:
+        return ""
+    if READ_FILE_EVIDENCE_MARKER not in board.last_observation:
+        return ""
+    return forced_path
+
+
+def _coordinate_children_ready(board: Blackboard) -> bool:
+    if board.agent_id != "main" or not board.children:
+        return False
+    if not board.all_children_done() or board.any_children_failed():
+        return False
+    goal_lower = (board.original_goal or board.goal).lower()
+    if "parallel" not in goal_lower and "child" not in goal_lower and "worker_" not in goal_lower:
+        return False
+    return len(board.completed_subtasks) >= len(board.children)
+
+
+def _claim_done(board: Blackboard, evidence: str, is_distillation: bool, claim_source: str) -> str:
+    if is_distillation:
+        log(board.iteration, "goal.complete", "distillation")
+        _report_status(board.agent_id, "done", result=evidence)
+        return "done"
+    board.done_claimed = True
+    board.done_evidence = evidence
+    verified = _call_verifier(board, claim_source)
+    if verified:
+        log(board.iteration, "goal.complete", f"evidence={board.done_evidence}")
+        _report_status(board.agent_id, "done", result=board.done_evidence)
+        return "done"
+    board.verifier_denied_last = True
+    board.record_failure()
+    return "continue"
 
 
 def _maybe_advance_after_read(board: Blackboard, verb: str, args: dict[str, Any], success: bool) -> None:
@@ -302,13 +383,35 @@ def _normalize_decompose(raw: Any) -> list[dict[str, Any]]:
 def _phase_plan_act(board: Blackboard) -> str:
     global _last_event
     is_distillation = "DISTILLATION" in board.goal.upper()
+
+    if _coordinate_children_ready(board):
+        parts = [f"{item['agent_id']}:{item.get('result', '')}" for item in board.completed_subtasks]
+        evidence = "; ".join(parts) if parts else "all parallel children completed"
+        log(board.iteration, "coordinate.complete", f"children={list(board.children.keys())} evidence={evidence}")
+        _last_event = "COORD:done"
+        return _claim_done(board, evidence, is_distillation, "all parallel children completed")
+
+    forced_path = _forced_read_file_complete(board)
+    if forced_path:
+        evidence = f"read_file {forced_path} succeeded: {board.last_observation}"
+        log(board.iteration, "read_file.complete", f"path={forced_path}")
+        _last_event = "READ:done"
+        return _claim_done(board, evidence, is_distillation, f"forced read_file goal satisfied for {forced_path}")
+
+    pending_read_path = _agent_read_file_goal_path(board)
+    if pending_read_path:
+        instruction = f"Use read_file with path exactly: {pending_read_path}. One action only."
+        log(board.iteration, "read_file.force", f"path={pending_read_path}")
+        _last_event = "READ:force"
+        return _phase_act(board, instruction)
+
     role = "distillation" if is_distillation else "planner"
     context = board.build_context(role)
 
     _last_event = "LLM:planner"
     if board.agent_id == "main":
         tui.render(board, _stagnation_history, _last_event)
-    plan = _call_llm_role("planner", PLANNER_SPEC, context, board.iteration)
+    plan = _call_llm_role("planner", PLANNER_SPEC, context, board.iteration, board.agent_id)
 
     if isinstance(plan, dict) and plan.get("__role_error__"):
         err = str(plan.get("error", ""))
@@ -365,23 +468,15 @@ def _phase_plan_act(board: Blackboard) -> str:
         board.verifier_denied_last = False
 
     if mode == "done":
-        if is_distillation:
-            log(board.iteration, "goal.complete", "distillation")
-            _report_status(board.agent_id, "done", result=next_action)
-            return "done"
-        board.done_claimed = True
-        board.done_evidence = plan.get("because", next_action)
-        verified = _call_verifier(board, "planner claimed mode=done")
-        if verified:
-            log(board.iteration, "goal.complete", f"evidence={board.done_evidence}")
-            _report_status(board.agent_id, "done", result=board.done_evidence)
-            return "done"
-        board.verifier_denied_last = True
-        board.record_failure()
-        return "continue"
+        return _claim_done(board, str(plan.get("because", next_action)), is_distillation, "planner claimed mode=done")
 
     if mode == "parallel" and decompose:
-        if board.mode == "coordinate" and board.active_children_count() > ZERO_INT:
+        if board.agent_id != "main":
+            log(board.iteration, "decompose.blocked", f"parallel mode blocked for child agent {board.agent_id}")
+            mode = "direct"
+            next_action = f"Complete the assigned sub-goal using GUI-first actions: {board.goal}"
+            decompose = []
+        elif board.mode == "coordinate" and board.active_children_count() > ZERO_INT:
             log(board.iteration, "decompose.skip", f"running={board.active_children_count()}")
             board.record_success()
             return "continue"
@@ -399,7 +494,7 @@ def _phase_act(board: Blackboard, instruction: str) -> str:
     if board.agent_id == "main":
         tui.render(board, _stagnation_history, _last_event)
     context = board.build_context("actor", instruction)
-    actor_out = _call_llm_role("actor", ACTOR_SPEC, context, board.iteration)
+    actor_out = _call_llm_role("actor", ACTOR_SPEC, context, board.iteration, board.agent_id)
 
     if isinstance(actor_out, dict) and actor_out.get("__role_error__"):
         err = str(actor_out.get("error", ""))
@@ -508,7 +603,7 @@ def _phase_reflect(board: Blackboard) -> None:
         tui.render(board, _stagnation_history, _last_event)
     context = board.build_context("reflector")
     try:
-        result = call_role(REFLECTOR_SPEC, context, board.iteration)
+        result = call_role(REFLECTOR_SPEC, context, board.iteration, board.agent_id)
         _log_used_fields("reflector", board.iteration, result)
         log(board.iteration, "reflector", "reflector decision", {"response": result})
         board.console_log.append(f"[REFLECT] {result.get('diagnosis', '')}")
@@ -650,11 +745,15 @@ def _execute_decomposition(board: Blackboard, decompose: list[dict[str, Any]]) -
 
 def _spawn_child(agent_id: str, goal: str, iteration: int) -> AgentHandle | None:
     from persistence import register_agent
+    original_goal = goal
+    forced_path = _read_file_goal_path(goal)
+    if forced_path:
+        goal = f"Use read_file with path exactly: {forced_path}. One action only. Claim done when file content is visible in action results."
     cmd = [sys.executable, str(BASE_DIR / "main.py"), goal, "--backend", get_backend(), "--agent-id", agent_id]
     try:
         proc = subprocess.Popen(cmd, cwd=str(BASE_DIR))
         register_agent(agent_id, proc.pid)
-        log(iteration, "child.spawn", f"{agent_id} pid={proc.pid}")
+        log(iteration, "child.spawn", f"{agent_id} pid={proc.pid}", {"original_goal": original_goal, "goal": goal, "forced_path": forced_path or None})
         return AgentHandle(agent_id=agent_id, goal=goal, pid=proc.pid, status_file=BASE_DIR / "blackboard_state.json")
     except Exception as e:
         log(iteration, "child.spawn.error", str(e))
@@ -690,9 +789,9 @@ def _report_status(agent_id: str, state: str, result: str = "", error: str = "")
     post_event(verb, agent_id, "main", {"result": result, "error": error})
 
 
-def _call_llm_role(role: str, spec: RoleSpec, context: str, iteration: int) -> dict[str, Any] | None:
+def _call_llm_role(role: str, spec: RoleSpec, context: str, iteration: int, agent_id: str = "main") -> dict[str, Any] | None:
     try:
-        result = call_role(spec, context, iteration)
+        result = call_role(spec, context, iteration, agent_id)
         log(iteration, f"{role}.response", "role response accepted", {"role": role, "keys": list(result.keys()), "response": result})
         return result
     except Exception as e:
@@ -706,7 +805,7 @@ def _call_llm_role(role: str, spec: RoleSpec, context: str, iteration: int) -> d
 def _call_verifier(board: Blackboard, instruction: str = "") -> bool:
     context = board.build_context("verifier", instruction)
     try:
-        result = call_role(VERIFIER_SPEC, context, board.iteration)
+        result = call_role(VERIFIER_SPEC, context, board.iteration, board.agent_id)
         _log_used_fields("verifier", board.iteration, result)
         verdict = result.get("verdict", "denied")
         if not _verifier_response_consistent(result):

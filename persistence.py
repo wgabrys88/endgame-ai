@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any, Callable, cast
 
-from config import BASE_DIR, BLACKBOARD_EVENTS_PATH, PERSISTENCE_REPLACE_ATTEMPTS, PERSISTENCE_REPLACE_RETRY_DELAY
+from config import BASE_DIR, BLACKBOARD_EVENTS_PATH, PERSISTENCE_REPLACE_ATTEMPTS, PERSISTENCE_REPLACE_RETRY_DELAY, MAX_BLACKBOARD_EVENT_RECORDS
 
 BB_PATH = BASE_DIR / "blackboard_state.json"
 BB_LOCK_PATH = BASE_DIR / "blackboard_state.lock"
@@ -204,6 +204,18 @@ def append_runtime_event(record: dict[str, Any]) -> None:
     with _bb_file_lock():
         with BLACKBOARD_EVENTS_PATH.open("a", encoding="utf-8", newline="\n") as handle:
             handle.write(line + "\n")
+        _trim_runtime_events()
+
+
+def _trim_runtime_events() -> None:
+    if not BLACKBOARD_EVENTS_PATH.exists():
+        return
+    raw = BLACKBOARD_EVENTS_PATH.read_text(encoding="utf-8")
+    lines = [line for line in raw.splitlines() if line.strip()]
+    if len(lines) <= MAX_BLACKBOARD_EVENT_RECORDS:
+        return
+    kept = lines[-MAX_BLACKBOARD_EVENT_RECORDS:]
+    BLACKBOARD_EVENTS_PATH.write_text("\n".join(kept) + "\n", encoding="utf-8")
 
 
 def get_evolution_ledger_context() -> str:

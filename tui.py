@@ -39,6 +39,8 @@ def exit() -> None:
 
 
 def render(board: Any, stagnation_history: list[float], last_event: str = "") -> None:
+    if last_event.startswith("COORD:"):
+        return
     from log import log
     log(
         board.iteration,
