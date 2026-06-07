@@ -1,6 +1,6 @@
 from __future__ import annotations
 from config import ZERO_INT, ONE_INT, TWO_INT
-import hashlib, math, time
+import hashlib, math, re, time
 from dataclasses import dataclass
 from typing import Any
 
@@ -75,6 +75,7 @@ class ObserveResult:
     focused_title: str
     windows: list[dict[str, Any]]
     content_hash: str
+    semantic_hash: str
     trace: dict[str, Any]
 
 
@@ -119,7 +120,9 @@ def observe() -> ObserveResult:
     classified.sort(key=lambda n: (wnd_rank.get(n["wnd"], WINDOW_SORT_FALLBACK_RANK), n["depth"], n["y"], n["x"]))
 
     text, book = _render(classified, target_wnd, focused_title)
+    semantic_text = _semantic_render(classified, target_wnd, focused_title)
     content_hash = hashlib.md5(text.encode("utf-8", errors="surrogatepass")).hexdigest()
+    semantic_hash = hashlib.md5(semantic_text.encode("utf-8", errors="surrogatepass")).hexdigest()
     trace = {
         "screen": {"width": screen_w, "height": screen_h},
         "focused": {"hwnd": focused_hwnd, "title": focused_title},
@@ -133,14 +136,16 @@ def observe() -> ObserveResult:
         "merged_nodes": merged_nodes,
         "classified_nodes": _clone_nodes(classified),
         "rendered_text": text,
+        "semantic_text": semantic_text,
         "book": _book_trace(book),
         "content_hash": content_hash,
+        "semantic_hash": semantic_hash,
     }
 
     return ObserveResult(
         context_text=text, book=book, focused_title=focused_title,
         windows=[{"name": w["name"], "hwnd": w["hwnd"]} for w in windows],
-        content_hash=content_hash,
+        content_hash=content_hash, semantic_hash=semantic_hash,
         trace=trace,
     )
 
@@ -220,9 +225,11 @@ def _tree_walk(out: list[dict[str, Any]], trace: list[dict[str, Any]], el: Any, 
             continue
         try:
             value = get_legacy_value(raw_el) if role in ACTIONABLE_ROLES else ""
+            raw_value = value
             if not value and role in ("Text", "Document", "Edit", "Pane"):
                 tc = get_text_content(raw_el, READ_TEXT_MAX_LENGTH)
                 if tc:
+                    raw_value = tc
                     value = _filter_terminal_text(tc)
                     n_has_text_pattern = True
                 else:
@@ -235,12 +242,14 @@ def _tree_walk(out: list[dict[str, Any]], trace: list[dict[str, Any]], el: Any, 
                 "x": x, "y": y, "w": w, "h": h,
                 "enabled": get_bool(raw_el, UIA_IS_ENABLED),
                 "value": value,
+                "raw_value": raw_value,
                 "readonly": get_legacy_readonly(raw_el) if role in ACTIONABLE_ROLES else False,
                 "offscreen": get_bool(raw_el, UIA_IS_OFFSCREEN),
                 "has_text_pattern": n_has_text_pattern,
             })
             raw["name"] = out[-ONE_INT]["name"]
             raw["value"] = value
+            raw["raw_value"] = raw_value
             raw["enabled"] = out[-ONE_INT]["enabled"]
             raw["readonly"] = out[-ONE_INT]["readonly"]
             raw["offscreen"] = out[-ONE_INT]["offscreen"]
@@ -302,9 +311,11 @@ def _probe_region(out: list[dict[str, Any]], trace: list[dict[str, Any]], step: 
                     continue
                 name = get_str(el, UIA_NAME)
                 value = get_legacy_value(el)
+                raw_value = value
                 if not value:
                     text_content = get_text_content(el, READ_TEXT_MAX_LENGTH)
                     if text_content:
+                        raw_value = text_content
                         value = _filter_terminal_text(text_content)
                 r = get_rect(el)
                 if not name and not value:
@@ -317,6 +328,7 @@ def _probe_region(out: list[dict[str, Any]], trace: list[dict[str, Any]], step: 
                     "x": rx, "y": ry, "w": rw, "h": rh,
                     "enabled": get_bool(el, UIA_IS_ENABLED),
                     "value": value,
+                    "raw_value": raw_value,
                     "readonly": get_legacy_readonly(el),
                     "offscreen": get_bool(el, UIA_IS_OFFSCREEN),
                     "runtime_id": rid,
@@ -324,7 +336,7 @@ def _probe_region(out: list[dict[str, Any]], trace: list[dict[str, Any]], step: 
                     "probe_y": py,
                 }
                 out.append(node)
-                trace.append({"source": "probe", "wnd": wname, "hwnd": whwnd, "x": x, "y": py, "runtime_id": rid, "control_type": ct, "role": role, "name": name, "value": value, "rect": r, "status": "accepted"})
+                trace.append({"source": "probe", "wnd": wname, "hwnd": whwnd, "x": x, "y": py, "runtime_id": rid, "control_type": ct, "role": role, "name": name, "value": value, "raw_value": raw_value, "rect": r, "status": "accepted"})
             except OSError:
                 trace.append({"source": "probe", "wnd": wname, "hwnd": whwnd, "x": x, "y": py, "status": "property_error"})
                 continue
@@ -445,6 +457,41 @@ def _render(nodes: list[dict[str, Any]], target_wnd: set[str], focused_title: st
             action=n["action"],
         )
     return "\n".join(lines), book
+
+
+_DYNAMIC_TEXT_PATTERNS = (
+    r"\b\d+:\d+(?::\d+)?\s*(?:am|pm)?\b",
+    r"\b\d+(?:\.\d+)?\s*(?:%|bps|kbps|mbps|gbps|hz|khz|mhz|ghz|kb|mb|gb|tb|ms|sec|s)\b",
+    r"\b[\da-f]+(?::[\da-f]*)+%?\w*\b",
+    r"\b\d+(?:\.\d+)?\b",
+)
+
+
+def _semantic_render(nodes: list[dict[str, Any]], target_wnd: set[str], focused_title: str) -> str:
+    lines: list[str] = []
+    for n in nodes:
+        wnd = str(n["wnd"])
+        if target_wnd and wnd not in target_wnd and wnd != "Taskbar":
+            continue
+        parts = [
+            _normalize_dynamic_text(wnd),
+            "focused" if wnd == focused_title else "",
+            str(n["role"]),
+            str(n["action"]),
+            _normalize_dynamic_text(str(n.get("name", ""))),
+            _normalize_dynamic_text(str(n.get("value", ""))),
+            "enabled" if n.get("enabled", True) else "disabled",
+            "readonly" if n.get("readonly", False) else "editable",
+        ]
+        lines.append("|".join(parts))
+    return "\n".join(lines)
+
+
+def _normalize_dynamic_text(text: str) -> str:
+    normalized = " ".join(text.casefold().split())
+    for pattern in _DYNAMIC_TEXT_PATTERNS:
+        normalized = re.sub(pattern, "<dynamic>", normalized, flags=re.IGNORECASE)
+    return normalized
 
 
 def _clone_nodes(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:

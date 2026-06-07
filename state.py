@@ -178,7 +178,7 @@ class Blackboard:
 
     def poll_inbox(self) -> list[dict[str, Any]]:
         from persistence import poll_events
-        raw_events = poll_events(self.agent_id)
+        raw_events = poll_events(self.agent_id, {"goal_rewrite", "hint", "kill", "inject_lesson", "set_chaos"})
         commands: list[dict[str, Any]] = []
         for evt in raw_events:
             verb = evt.get("verb", "")
@@ -190,7 +190,7 @@ class Blackboard:
     def poll_children(self) -> list[dict[str, str]]:
         from persistence import poll_events
         events: list[dict[str, str]] = []
-        child_events = poll_events(self.agent_id)
+        child_events = poll_events(self.agent_id, {"child_done", "child_failed"})
         for evt in child_events:
             verb: str = evt.get("verb", "")
             source: str = evt.get("source", "")

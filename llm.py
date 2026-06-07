@@ -15,7 +15,7 @@ from config import (LMS_HOSTS, LMS_TIMEOUT, ACP_TIMEOUT, LLM_TEMPERATURE,
                     LMS_ERROR_RETRY_DELAY, HTTP_ERROR_STATUS_MIN)
 from log import log
 
-__all__ = ["call_llm", "set_backend", "get_backend"]
+__all__ = ["call_llm", "set_backend", "get_backend", "close_backend"]
 
 _backend: str = "lmstudio"
 _cached_host: str | None = None
@@ -29,6 +29,12 @@ def set_backend(name: str) -> None:
 
 def get_backend() -> str:
     return _backend
+
+
+def close_backend() -> None:
+    if _backend == "acp":
+        from acp_client import close_pool
+        close_pool()
 
 
 def call_llm(system: str, user: str, role: str, *, max_tokens: int = LLM_MAX_TOKENS, iteration: int = LOG_NO_ITERATION) -> str:

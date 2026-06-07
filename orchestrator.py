@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from config import ZERO_INT, ONE_INT, TWO_INT
 import subprocess
+import sys
 import time
 import traceback
 import uuid
@@ -228,14 +229,14 @@ def _phase_observe(board: Blackboard) -> str:
     else:
         try:
             obs = observe()
-            board.record_screen(obs.context_text, obs.content_hash, obs.book)
+            board.record_screen(obs.context_text, obs.semantic_hash, obs.book)
             board.screen_valid = True
             board.focused_window = obs.focused_title
-            board.update_screen_stagnation(obs.content_hash)
+            board.update_screen_stagnation(obs.semantic_hash)
             board.publish_shared_screen()
             log(board.iteration, "observe.raw", "raw screen observation data", {"screen": obs.trace["screen"], "focused": obs.trace["focused"], "windows": obs.trace["windows"], "z_order": obs.trace["z_order"], "probe_regions": obs.trace["probe_regions"], "probe_samples": obs.trace["probe_samples"], "probe_nodes_raw": obs.trace["probe_nodes_raw"], "tree_samples": obs.trace["tree_samples"], "tree_nodes_raw": obs.trace["tree_nodes_raw"]})
             log(board.iteration, "observe.filtered", "screen observation after merge and classification", {"merged_nodes": obs.trace["merged_nodes"], "classified_nodes": obs.trace["classified_nodes"], "book": obs.trace["book"]})
-            log(board.iteration, "observe.rendered", "rendered screen context", {"content_hash": obs.content_hash, "focused_title": obs.focused_title, "windows": obs.windows, "context_text": obs.context_text})
+            log(board.iteration, "observe.rendered", "rendered screen context", {"content_hash": obs.content_hash, "semantic_hash": obs.semantic_hash, "semantic_text": obs.trace["semantic_text"], "focused_title": obs.focused_title, "windows": obs.windows, "context_text": obs.context_text})
         except Exception as e:
             board.release_screen()
             board.screen_valid = False
@@ -304,6 +305,14 @@ def _phase_plan_act(board: Blackboard) -> str:
     if board.agent_id == "main":
         tui.render(board, _stagnation_history, _last_event)
     plan = _call_llm_role("planner", PLANNER_SPEC, context, board.iteration)
+
+    if isinstance(plan, dict) and plan.get("__role_error__"):
+        err = str(plan.get("error", ""))
+        exception_type = str(plan.get("exception_type", ""))
+        board.record_error("planner_role_error", err)
+        board.record_action("role_error", {"role": "planner", "exception_type": exception_type}, False, f"planner role error: {exception_type}: {err}")
+        board.record_failure()
+        return "continue"
 
     if isinstance(plan, dict) and plan.get("__refusal_detected__"):
         board.record_error("planner_refusal", plan.get("error", ""))
@@ -387,6 +396,14 @@ def _phase_act(board: Blackboard, instruction: str) -> str:
         tui.render(board, _stagnation_history, _last_event)
     context = board.build_context("actor", instruction)
     actor_out = _call_llm_role("actor", ACTOR_SPEC, context, board.iteration)
+
+    if isinstance(actor_out, dict) and actor_out.get("__role_error__"):
+        err = str(actor_out.get("error", ""))
+        exception_type = str(actor_out.get("exception_type", ""))
+        board.record_error("actor_role_error", err)
+        board.record_action("role_error", {"role": "actor", "exception_type": exception_type}, False, f"actor role error: {exception_type}: {err}")
+        board.record_failure()
+        return "continue"
 
     if isinstance(actor_out, dict) and actor_out.get("__refusal_detected__"):
         board.record_error("actor_refusal", actor_out.get("error", ""))
@@ -545,7 +562,7 @@ def _try_spawn_successor(board: Blackboard) -> None:
         f"Read evolution_ledger.json for context. Continue from where parent failed."
     )
     try:
-        cmd = ["python", str(BASE_DIR / "main.py"), goal, "--backend", get_backend(), "--agent-id", "successor"]
+        cmd = [sys.executable, str(BASE_DIR / "main.py"), goal, "--backend", get_backend(), "--agent-id", "successor"]
         subprocess.Popen(cmd, cwd=str(BASE_DIR))
         log(board.iteration, "successor", goal)
     except Exception:
@@ -585,59 +602,37 @@ def _process_children(board: Blackboard) -> None:
 
 
 def _execute_decomposition(board: Blackboard, decompose: list[dict[str, Any]]) -> None:
-    backend = get_backend()
-
-    if backend == "acp":
-        for subtask in decompose:
-            sub_goal = subtask.get("sub_goal", "")
-            agent_id = subtask.get("agent_id", f"agent_{uuid.uuid4().hex[:AGENT_ID_HEX_LENGTH]}")
-            if not sub_goal:
-                continue
-            child_board = Blackboard()
-            child_board.goal = sub_goal
-            child_board.agent_id = agent_id
-            success = run(child_board, interrupted=lambda: False)
-            result_text = child_board.done_evidence or child_board.last_observation or ""
-            state = "done" if success else "failed"
-            handle = AgentHandle(agent_id=agent_id, goal=sub_goal, pid=ZERO_INT, status_file=BASE_DIR / "blackboard_state.json")
-            handle.state = state
-            handle.result = result_text
+    spawned = ZERO_INT
+    max_spawn = MAX_PARALLEL_CHILDREN_EXACT if "exactly 4 parallel" in board.goal.lower() else MAX_PARALLEL_CHILDREN_DEFAULT
+    for subtask in decompose:
+        if spawned >= max_spawn:
+            break
+        sub_goal = subtask.get("sub_goal", "")
+        agent_id = subtask.get("agent_id", f"agent_{uuid.uuid4().hex[:AGENT_ID_HEX_LENGTH]}")
+        if not sub_goal:
+            continue
+        aid_lower = agent_id.lower()
+        if aid_lower in ("main", "main_sync") or aid_lower.startswith("main_"):
+            log(board.iteration, "child.spawn.skip", f"{agent_id} reserved for parent")
+            continue
+        sub_lower = sub_goal.lower()
+        if "main waits" in sub_lower or "child_done events" in sub_lower:
+            log(board.iteration, "child.spawn.skip", f"{agent_id} parent-only sub_goal")
+            continue
+        existing = board.children.get(agent_id)
+        if existing and existing.state == "running":
+            continue
+        handle = _spawn_child(agent_id, sub_goal, board.iteration)
+        if handle:
             board.children[agent_id] = handle
-            if success:
-                board.completed_subtasks.append({"agent_id": agent_id, "goal": sub_goal, "result": result_text})
-            log(board.iteration, "subtask.done", f"{agent_id}:{state}")
-    else:
-        spawned = ZERO_INT
-        max_spawn = MAX_PARALLEL_CHILDREN_EXACT if "exactly 4 parallel" in board.goal.lower() else MAX_PARALLEL_CHILDREN_DEFAULT
-        for subtask in decompose:
-            if spawned >= max_spawn:
-                break
-            sub_goal = subtask.get("sub_goal", "")
-            agent_id = subtask.get("agent_id", f"agent_{uuid.uuid4().hex[:AGENT_ID_HEX_LENGTH]}")
-            if not sub_goal:
-                continue
-            aid_lower = agent_id.lower()
-            if aid_lower in ("main", "main_sync") or aid_lower.startswith("main_"):
-                log(board.iteration, "child.spawn.skip", f"{agent_id} reserved for parent")
-                continue
-            sub_lower = sub_goal.lower()
-            if "main waits" in sub_lower or "child_done events" in sub_lower:
-                log(board.iteration, "child.spawn.skip", f"{agent_id} parent-only sub_goal")
-                continue
-            existing = board.children.get(agent_id)
-            if existing and existing.state == "running":
-                continue
-            handle = _spawn_child(agent_id, sub_goal, board.iteration)
-            if handle:
-                board.children[agent_id] = handle
-                spawned += ONE_INT
+            spawned += ONE_INT
 
     log(board.iteration, "decompose", f"subtasks={len(decompose)} agents={list(board.children.keys())}")
 
 
 def _spawn_child(agent_id: str, goal: str, iteration: int) -> AgentHandle | None:
     from persistence import register_agent
-    cmd = ["python", str(BASE_DIR / "main.py"), goal, "--backend", get_backend(), "--agent-id", agent_id]
+    cmd = [sys.executable, str(BASE_DIR / "main.py"), goal, "--backend", get_backend(), "--agent-id", agent_id]
     try:
         proc = subprocess.Popen(cmd, cwd=str(BASE_DIR))
         register_agent(agent_id, proc.pid)
@@ -687,7 +682,7 @@ def _call_llm_role(role: str, spec: RoleSpec, context: str, iteration: int) -> d
         log(iteration, f"{role}.error", "role call failed", {"exception_type": type(e).__name__, "exception": err_str, "traceback": traceback.format_exc()})
         if any(x in err_str.lower() for x in ["not going to help", "i'm not going to", "cannot assist", "refusal", "safety", "impersonation"]):
             return {"__refusal_detected__": True, "error": err_str}
-        return None
+        return {"__role_error__": True, "exception_type": type(e).__name__, "error": err_str}
 
 
 def _call_verifier(board: Blackboard, instruction: str = "") -> bool:

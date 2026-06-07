@@ -4,6 +4,7 @@ from config import ZERO_INT, ONE_INT
 import atexit
 import io
 import json
+import os
 import queue
 import subprocess
 import threading
@@ -13,14 +14,14 @@ from typing import Any, cast
 from config import (
     ACP_PROTOCOL_VERSION, ACP_DEFAULT_TIMEOUT, ACP_REQUEST_TIMEOUT,
     ACP_WSL_MKDIR_TIMEOUT, ACP_SETTINGS_TIMEOUT, ACP_CLOSE_TIMEOUT,
-    ACP_READ_CHUNK_SIZE, JSONRPC_METHOD_NOT_FOUND,
+    ACP_READ_CHUNK_SIZE, JSONRPC_METHOD_NOT_FOUND, ACP_WORKSPACE_BASE,
 )
 
 __all__ = ["ACPError", "prompt_once"]
 
 DISTRO: str = "Ubuntu-24.04"
 KIRO_CLI: str = "/usr/bin/kiro-cli"
-WORKSPACE: str = "/tmp/poke-acp"
+WORKSPACE: str = f"{ACP_WORKSPACE_BASE}-{os.getpid()}"
 MODEL: str = "claude-opus-4.7"
 PROTOCOL_VERSION: int = ACP_PROTOCOL_VERSION
 DEFAULT_TIMEOUT: float = ACP_DEFAULT_TIMEOUT
@@ -63,13 +64,13 @@ class _Pool:
         self._pending.clear()
         self._flights.clear()
         self._next_id = ZERO_INT
-        subprocess.run(
+        _run_setup_command(
             ["wsl.exe", "-d", DISTRO, "--exec", "mkdir", "-p", WORKSPACE],
-            capture_output=True, timeout=ACP_WSL_MKDIR_TIMEOUT)
-        subprocess.run(
+            ACP_WSL_MKDIR_TIMEOUT)
+        _run_setup_command(
             ["wsl.exe", "-d", DISTRO, "--cd", WORKSPACE, "--exec",
              KIRO_CLI, "settings", "chat.defaultModel", MODEL, "--workspace"],
-            capture_output=True, timeout=ACP_SETTINGS_TIMEOUT)
+            ACP_SETTINGS_TIMEOUT)
         self._proc = subprocess.Popen(
             ["wsl.exe", "-d", DISTRO, "--cd", WORKSPACE, "--exec", KIRO_CLI, "acp"],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -194,11 +195,22 @@ class _Pool:
         for f in self._flights.values():
             f.done.set()
         p.terminate()
-        p.wait(timeout=ACP_CLOSE_TIMEOUT)
+        try:
+            p.wait(timeout=ACP_CLOSE_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            p.kill()
+            p.wait(timeout=ACP_CLOSE_TIMEOUT)
 
 
 _pool: _Pool | None = None
 _pool_lock = threading.Lock()
+
+
+def _run_setup_command(cmd: list[str], timeout: float) -> None:
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    if proc.returncode != ZERO_INT:
+        output = (proc.stdout + proc.stderr).strip()
+        raise ACPError(f"setup command failed: {cmd} exit={proc.returncode} output={output}")
 
 
 def prompt_once(text: str, timeout: float = DEFAULT_TIMEOUT) -> str:
@@ -207,3 +219,12 @@ def prompt_once(text: str, timeout: float = DEFAULT_TIMEOUT) -> str:
         if _pool is None:
             _pool = _Pool()
     return _pool.prompt(text, timeout=timeout)
+
+
+def close_pool() -> None:
+    global _pool
+    with _pool_lock:
+        if _pool is None:
+            return
+        _pool.close()
+        _pool = None

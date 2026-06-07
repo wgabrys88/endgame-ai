@@ -231,11 +231,12 @@ def write_file_verb(args: dict[str, Any], book: ElementBook, state: Any) -> Acti
 @_register("spawn_agent")
 def spawn_agent_verb(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
     import subprocess
+    import sys
     goal = str(args.get("goal", ""))
     if not goal:
         return ActionResult("spawn_agent", False, "no goal provided")
     from llm import get_backend
-    cmd = ["python", str(BASE_DIR / "main.py"), goal, "--backend", get_backend()]
+    cmd = [sys.executable, str(BASE_DIR / "main.py"), goal, "--backend", get_backend()]
     proc = subprocess.Popen(cmd, cwd=str(BASE_DIR))
     return ActionResult("spawn_agent", True, f"spawned agent pid={proc.pid} for '{goal}'", data={"goal": goal, "pid": proc.pid, "cwd": str(BASE_DIR), "command": cmd})
 
@@ -246,6 +247,10 @@ def cmd_verb(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResul
     command = str(args.get("command", ""))
     if not command:
         return ActionResult("cmd", False, "no command provided")
+    lower = command.lower()
+    blocked = ("cmd.exe /c", "cmd /c", "cmd.exe /k", "cmd /k", "%username%", "%userprofile%")
+    if any(item in lower for item in blocked):
+        return ActionResult("cmd", False, "disallowed Windows cmd syntax inside WSL cmd verb", data={"command": command, "blocked": blocked})
     try:
         proc = subprocess.run(
             [COMMAND_EXECUTABLE, COMMAND_SHELL, COMMAND_SHELL_FLAG, command],

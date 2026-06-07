@@ -3,11 +3,14 @@ from config import ZERO_INT, ONE_INT, TWO_INT
 import json
 import msvcrt
 import os
+import threading
+import time
+import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any, Callable, cast
 
-from config import BASE_DIR, BLACKBOARD_EVENTS_PATH
+from config import BASE_DIR, BLACKBOARD_EVENTS_PATH, PERSISTENCE_REPLACE_ATTEMPTS, PERSISTENCE_REPLACE_RETRY_DELAY
 
 BB_PATH = BASE_DIR / "blackboard_state.json"
 BB_LOCK_PATH = BASE_DIR / "blackboard_state.lock"
@@ -65,9 +68,22 @@ def _bb_file_lock():
 
 
 def _atomic_write_bb(data: dict[str, Any]) -> None:
-    tmp = BB_PATH.with_suffix(".tmp")
+    tmp = BB_PATH.with_name(f"{BB_PATH.name}.{os.getpid()}.{threading.get_ident()}.{uuid.uuid4().hex}.tmp")
     tmp.write_text(json.dumps(data, indent=TWO_INT, ensure_ascii=False), encoding="utf-8")
-    os.replace(str(tmp), str(BB_PATH))
+    try:
+        for attempt in range(PERSISTENCE_REPLACE_ATTEMPTS):
+            try:
+                os.replace(str(tmp), str(BB_PATH))
+                return
+            except PermissionError:
+                if attempt == PERSISTENCE_REPLACE_ATTEMPTS - ONE_INT:
+                    raise
+                time.sleep(PERSISTENCE_REPLACE_RETRY_DELAY)
+    finally:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def _read_bb_locked() -> dict[str, Any]:
@@ -140,13 +156,13 @@ def post_event(verb: str, source: str, target: str, payload: Any = None) -> None
     _mutate_bb(_apply)
 
 
-def poll_events(target: str) -> list[dict[str, Any]]:
+def poll_events(target: str, verbs: set[str] | None = None) -> list[dict[str, Any]]:
     _ensure_bb()
     collected: list[dict[str, Any]] = []
 
     def _apply(bb: dict[str, Any]) -> None:
         pending: list[dict[str, Any]] = [
-            e for e in bb["events"] if e.get("target") == target and e.get("status") == "pending"
+            e for e in bb["events"] if e.get("target") == target and e.get("status") == "pending" and (verbs is None or str(e.get("verb", "")) in verbs)
         ]
         if pending:
             for e in pending:

@@ -16,17 +16,19 @@ The current architecture treats the append-only blackboard event stream as the s
 
 ## Runtime Command
 
-```powershell
-& "C:\Users\%USERPROFILE%\AppData\Local\Python\bin\python.exe" main.py "your goal" --backend lmstudio
-```
-
-The ACP backend remains present:
+ACP is the primary validation backend for this workspace. Run ACP first:
 
 ```powershell
 & "C:\Users\%USERPROFILE%\AppData\Local\Python\bin\python.exe" main.py "your goal" --backend acp
 ```
 
-For this workspace, validation has been performed with LM Studio mode. LM Studio is expected at:
+Then compare with LM Studio:
+
+```powershell
+& "C:\Users\%USERPROFILE%\AppData\Local\Python\bin\python.exe" main.py "your goal" --backend lmstudio
+```
+
+LM Studio is expected at:
 
 ```text
 http://localhost:1234
@@ -35,10 +37,10 @@ http://localhost:1234
 LM Studio server logs are outside the workspace at:
 
 ```text
-C:\Users\%USERPROFILE%\.lmstudio\server-logs\2026-06\
+C:\Users\%USERPROFILE%\.cache\lm-studio\server-logs\2026-06\
 ```
 
-Windows may report that server log as zero length while readable content is still available through a shared read handle. Do not trust metadata length alone.
+Windows may report misleading server log metadata while readable content is still available through a shared read handle. LM Studio can rotate logs during a run, so read every touched file for the validation window.
 
 ## Static Gates
 
@@ -78,7 +80,8 @@ Remove-Item -LiteralPath (Join-Path $root 'comms\screen_lock.json'),(Join-Path $
 If an isolated LM Studio validation is needed, truncate the active server log with a shared handle:
 
 ```powershell
-$p='C:\Users\%USERPROFILE%\.lmstudio\server-logs\2026-06\'
+$dir='C:\Users\%USERPROFILE%\.cache\lm-studio\server-logs\2026-06\'
+$p=(Get-ChildItem -LiteralPath $dir -File | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
 $fs=[System.IO.File]::Open($p,[System.IO.FileMode]::OpenOrCreate,[System.IO.FileAccess]::ReadWrite,[System.IO.FileShare]::ReadWrite)
 try { $fs.SetLength(0) } finally { $fs.Close() }
 ```
@@ -90,7 +93,7 @@ try { $fs.SetLength(0) } finally { $fs.Close() }
 - `state.py`: blackboard state, context projection, compact action evidence, PID/Lorenz/Jacobian state, child process termination hook.
 - `log.py`: JSONL log writer, sequence numbers, TUI hook isolation, append to blackboard event stream.
 - `persistence.py`: locked JSON persistence, per-agent snapshots, append-only blackboard events, inbox and child event mechanics.
-- `observer.py`: desktop observation, foreground/window enumeration, probe sampling, UI Automation tree sampling, node merge/classification, rendered screen context.
+- `observer.py`: desktop observation, foreground/window enumeration, probe sampling, UI Automation tree sampling, node merge/classification, rendered screen context, semantic screen signatures.
 - `win32.py`: raw ctypes wrappers for Win32, UI Automation, process termination, input, window, and console primitives.
 - `actions.py`: verb execution for click, write, press, hotkey, scroll, wait, focus, read_file, write_file, cmd, spawn_agent.
 - `dispatch.py`: prompt/schema loading, role calls, response extraction.
@@ -145,11 +148,13 @@ The TUI receives the same serialized log line as the file logger. Redirected Pow
 
 Observation has three logged phases:
 
-- `observe.raw`: screen metrics, focused window, windows, z-order, probe regions, probe samples, probe raw nodes, UI Automation tree samples, tree raw nodes.
+- `observe.raw`: screen metrics, focused window, windows, z-order, probe regions, probe samples, probe raw nodes, UI Automation tree samples, tree raw nodes. Raw UI text is preserved as `raw_value` when the rendered value is filtered for role context.
 - `observe.filtered`: merged nodes, classified nodes, and the selector book.
-- `observe.rendered`: content hash, focused title, window titles, rendered screen text.
+- `observe.rendered`: exact rendered `content_hash`, normalized `semantic_hash`, semantic text, focused title, window titles, rendered screen text.
 
 These phases are intentionally verbose because the organism must be able to diagnose bad UI filtering, mapping, and element selection from its own runtime logs.
+
+Stagnation uses the semantic hash. Exact rendered text is still logged, but volatile numbers such as clocks, throughput, percentages, and other changing metrics are normalized before the semantic signature is computed. Tested on the same focused Task Manager window, exact content hashes changed across one-second observations while the semantic hash stayed stable.
 
 ## Context Projection
 
@@ -174,6 +179,12 @@ When a role returns `used_fields`, `orchestrator._log_used_fields()` logs:
 - `policy_fields`
 
 This does not assume the model uses valid field names. Invalid declarations are preserved and measured.
+
+Prompt examples use the same field names as `CONTEXT_POLICY`, so `screen_elements`, `full_history`, and `done_claimed` declarations are accepted instead of being recorded as unknown aliases.
+
+## ACP Backend
+
+ACP runs through WSL and `kiro-cli`. Cold WSL startup can exceed short setup windows, so ACP setup timeouts are long enough for a cold start. Setup commands are checked for nonzero exit codes and raise explicit ACP errors instead of silently continuing.
 
 ## Explicit Read-File Guard
 
@@ -214,10 +225,11 @@ Parallel child agents and distillation agents are tracked through `AgentHandle`.
 
 ## Validation Shape
 
-A compact validation goal used during this logging rewrite was:
+Run validation in ACP-first order:
 
 ```powershell
-& "C:\Users\%USERPROFILE%\AppData\Local\Python\bin\python.exe" main.py "SCIENTIST FINAL PIPELINE VALIDATION: use the read_file verb on README.md. Do not use cmd. Do not use write_file. Do not use spawn_agent. Do not claim done until action.result contains read_file success for path README.md and verifier confirmed verdict has failure_type null." --backend lmstudio *> validation-final-pipeline.out
+& "C:\Users\%USERPROFILE%\AppData\Local\Python\bin\python.exe" main.py "SCIENTIST FINAL ACP PIPELINE VALIDATION: use the read_file verb on README.md. Do not use cmd. Do not use write_file. Do not use spawn_agent. Do not claim done until action.result contains read_file success for path README.md and verifier confirmed verdict has failure_type null." --backend acp *> validation-final-acp.out
+& "C:\Users\%USERPROFILE%\AppData\Local\Python\bin\python.exe" main.py "SCIENTIST FINAL LMSTUDIO COMPARISON VALIDATION: use the read_file verb on README.md. Do not use cmd. Do not use write_file. Do not use spawn_agent. Do not claim done until action.result contains read_file success for path README.md and verifier confirmed verdict has failure_type null." --backend lmstudio *> validation-final-lmstudio.out
 ```
 
 Expected runtime evidence:
@@ -233,7 +245,14 @@ Expected runtime evidence:
 - redirected TUI stream equal to the JSONL log after BOM and CR handling
 - verifier confirmation has `failure_type=null`
 - `role.used_fields` is logged for planner, actor, verifier, and any reflector response that occurs
+- `role.used_fields.unknown_fields` is empty for planner, actor, and verifier
+- exact `content_hash` may change on dynamic screens while `semantic_hash` remains stable when semantic UI identity is unchanged
 - no lingering Python or curl process after exit
+
+Measured post-change validation on June 7, 2026:
+
+- ACP first: exited 0 after 2 iterations, one `read_file` action on `README.md`, no prohibited verbs, no role errors, no lessons pollution, verifier confirmed with `failure_type=null`, blackboard events equaled the main log, redirected TUI equaled the same JSONL.
+- LM Studio second: exited 0 after 2 iterations, one `read_file` action on `README.md`, no prohibited verbs, no role errors, no lessons pollution, verifier confirmed with `failure_type=null`, blackboard events equaled the main log, redirected TUI equaled the same JSONL. LM Studio rotated logs across `2026-06-07.4.log` and `2026-06-07.5.log`; combined logs showed 5 received requests, 4 chat completion POSTs, 4 generated predictions, 0 disconnects, and 0 truncation flags.
 
 ## Known Platform Quirks
 

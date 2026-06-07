@@ -5,7 +5,7 @@ from typing import Protocol, cast
 
 from config import DELAY_STARTUP, BASE_DIR, SIGINT_EXIT_CODE, PROCESS_DPI_AWARENESS_CONTEXT
 from state import Blackboard
-from llm import set_backend
+from llm import set_backend, close_backend
 from orchestrator import run
 from persistence import save_snapshot, load_snapshot, append_to_evolution_ledger
 from log import open_log, log, close_log, set_tui_hook
@@ -100,6 +100,7 @@ def main() -> None:
         terminated = board.terminate_running_children()
         if terminated:
             log(board.iteration, "child.terminate", "terminated child processes before exit", {"children": terminated})
+        close_backend()
         if tui_enabled:
             tui.exit()
         set_tui_hook(None)
