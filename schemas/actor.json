@@ -6,41 +6,17 @@
     "schema": {
       "type": "object",
       "properties": {
-        "observe": {
-          "type": "string",
-          "minLength": 5,
-          "maxLength": 800,
-          "description": "Factual summary of current screen state relevant to the instruction."
-        },
-        "reason": {
-          "type": "string",
-          "minLength": 5,
-          "maxLength": 400,
-          "description": "Why these actions advance the instruction."
-        },
         "actions": {
           "type": "array",
           "minItems": 0,
           "maxItems": 5,
-          "description": "Actions to execute in sequence.",
+          "description": "Actions to execute in order.",
           "items": {
             "type": "object",
             "properties": {
               "verb": {
                 "type": "string",
-                "enum": [
-                  "click",
-                  "write",
-                  "press",
-                  "hotkey",
-                  "scroll",
-                  "wait",
-                  "focus",
-                  "read_file",
-                  "write_file",
-                  "spawn_agent",
-                  "cmd"
-                ]
+                "enum": ["click", "write", "press", "hotkey", "scroll", "wait", "focus", "read_file", "write_file", "spawn_agent", "cmd"]
               },
               "target": {
                 "type": "string",
@@ -53,37 +29,17 @@
                 "maxLength": 2000
               }
             },
-            "required": [
-              "verb",
-              "target",
-              "value"
-            ],
+            "required": ["verb", "target", "value"],
             "additionalProperties": false
           }
         },
-        "expect": {
-          "type": "string",
-          "minLength": 5,
-          "maxLength": 400,
-          "description": "Observable outcome expected after actions."
-        },
         "conclusion": {
           "type": "string",
-          "enum": [
-            "DONE",
-            "EXPECTED",
-            "UNEXPECTED"
-          ],
-          "description": "DONE: current instruction is satisfied and no action is needed. EXPECTED: action can continue. UNEXPECTED: blocked or no match."
+          "enum": ["DONE", "EXPECTED", "UNEXPECTED"],
+          "description": "DONE: instruction already satisfied. EXPECTED: actions should run. UNEXPECTED: blocked."
         }
       },
-      "required": [
-        "observe",
-        "reason",
-        "actions",
-        "expect",
-        "conclusion"
-      ],
+      "required": ["actions", "conclusion"],
       "additionalProperties": false
     }
   }

@@ -8,94 +8,28 @@
       "properties": {
         "mode": {
           "type": "string",
-          "enum": [
-            "direct",
-            "parallel",
-            "done"
-          ],
-          "description": "direct: actor executes next_action. parallel: decompose into child agents. done: goal complete."
-        },
-        "because": {
-          "type": "string",
-          "minLength": 10,
-          "maxLength": 800,
-          "description": "Reasoning for this decision."
+          "enum": ["direct", "done"],
+          "description": "direct: actor executes next_action. done: goal complete."
         },
         "next_action": {
           "type": "string",
           "minLength": 0,
           "maxLength": 1500,
-          "description": "Semantic instruction for actor. Describe elements by role and visible text, not by numeric ID."
-        },
-        "expect": {
-          "type": "string",
-          "minLength": 5,
-          "maxLength": 600,
-          "description": "Observable outcome expected from this step."
-        },
-        "step_advance": {
-          "type": "boolean",
-          "description": "Set true when the current checklist step is complete."
-        },
-        "notes": {
-          "type": "array",
-          "minItems": 0,
-          "maxItems": 8,
-          "description": "Persistent facts for future steps. URLs, IDs, key values. Replaces previous notes array entirely.",
-          "items": {
-            "type": "string",
-            "minLength": 0,
-            "maxLength": 400
-          }
+          "description": "One atomic instruction for the actor. Do NOT combine multiple steps."
         },
         "sequence": {
           "type": "array",
           "minItems": 0,
           "maxItems": 12,
-          "description": "On first iteration or when replanning, emit the full step sequence. Empty on subsequent iterations.",
+          "description": "Full step-by-step plan. Emit on first call; empty [] on subsequent calls.",
           "items": {
             "type": "string",
-            "minLength": 10,
+            "minLength": 5,
             "maxLength": 300
-          }
-        },
-        "decompose": {
-          "type": "array",
-          "minItems": 0,
-          "maxItems": 5,
-          "description": "When mode=parallel, self-contained sub-goals for child agents.",
-          "items": {
-            "type": "object",
-            "properties": {
-              "sub_goal": {
-                "type": "string",
-                "minLength": 20,
-                "maxLength": 600
-              },
-              "agent_id": {
-                "type": "string",
-                "minLength": 3,
-                "maxLength": 40
-              }
-            },
-            "required": [
-              "sub_goal",
-              "agent_id"
-            ],
-            "additionalProperties": false
           }
         }
       },
-      "required": [
-        "mode",
-        "because",
-        "next_action",
-        "expect",
-        "step_advance",
-        "notes",
-        "sequence",
-        "decompose"
-      ],
+      "required": ["mode", "next_action", "sequence"],
       "additionalProperties": false
     }
   }
