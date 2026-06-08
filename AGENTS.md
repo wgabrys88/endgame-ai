@@ -34,11 +34,17 @@ The orchestrator does NOT run a static pipeline. Each iteration:
 2. Observe desktop.
 3. If children are running and parent is coordinating, wait.
 4. If actor has an active subtask producing evidence, continue actor (skip planner).
-5. Otherwise call planner for next decision.
-6. Verify only on done claims.
-7. Reflect only when PID + failure evidence justify it.
+5. If Lorenz wing crosses zero under stagnation, clear instruction to force replan.
+6. Otherwise call planner for next decision.
+7. Verify only on done claims at the LAST checklist step.
+8. Reflect only when PID + failure evidence justify it.
 
 Actor continuation is the key efficiency mechanism: when a multi-step subtask is in progress and the screen is changing, the actor keeps executing without burning a planner LLM call.
+
+Math pipeline:
+- Lorenz attractor drives `attractor_energy` — when x crosses zero (wing switch) under stagnation, forces replan.
+- PID accumulates only on actual failures (not screen latency), output gates reflection.
+- Jacobian weights checklist steps by position × stagnation × energy × failure gain.
 
 ## Schemas and Limits
 
@@ -46,7 +52,7 @@ Schema field limits in `schemas/*.json` control response length. Key limits:
 - Actor: observe 800 chars, action.value 2000 chars, up to 5 actions per call.
 - Planner: next_action 1500 chars, because 800 chars, up to 12 sequence steps.
 
-These are generous for ACP/Claude. If using small local models, reduce them.
+No `used_fields` in schemas — removed as dead telemetry with no behavioral impact.
 
 ## Child Agents
 
