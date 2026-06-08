@@ -78,8 +78,8 @@ Runtime files are generated in the workspace root and `comms`.
 
 ```powershell
 $root=(Resolve-Path .).Path
-$runtimeNames=@('blackboard_state.json','blackboard_state.lock','blackboard_state.tmp','blackboard_events.jsonl','evolution_ledger.json','lessons.json')
-Get-ChildItem -LiteralPath $root -Force -File | Where-Object { $_.Name -like 'log-*.jsonl' -or $_.Name -like 'validation-*.out' -or $runtimeNames -contains $_.Name } | Remove-Item -Force
+$runtimeNames=@('blackboard_state.json','blackboard_state.lock','blackboard_state.tmp','blackboard_events.txt','blackboard_events.jsonl','evolution_ledger.json','lessons.json')
+Get-ChildItem -LiteralPath $root -Force -File | Where-Object { $_.Name -like 'log-*' -or $_.Name -like 'validation-*' -or $runtimeNames -contains $_.Name } | Remove-Item -Force
 Remove-Item -LiteralPath (Join-Path $root 'comms\screen_lock.json'),(Join-Path $root 'comms\screen_snapshot.json') -Force -ErrorAction SilentlyContinue
 ```
 
@@ -116,7 +116,7 @@ try { $fs.SetLength(0) } finally { $fs.Close() }
 
 ## Logging Architecture
 
-Every call to `log.log()` writes one JSON object to the agent log file and appends the same record to `blackboard_events.jsonl`.
+Every call to `log.log()` writes one JSON object to the agent log file and appends the same record to `blackboard_events.txt`.
 
 Runtime record fields:
 
@@ -146,7 +146,7 @@ The blackboard event file is append-only. It is the durable event stream. `black
 }
 ```
 
-Child agents write under their own `agent_id` inside `states` and write their own `log-<agent_id>-<timestamp>.jsonl` files. The shared `blackboard_events.jsonl` receives events from every agent.
+Child agents write under their own `agent_id` inside `states` and write their own `log-<agent_id>-<timestamp>.txt` files. The shared `blackboard_events.txt` receives events from every agent.
 
 The logger writes the file record and blackboard event before invoking the TUI hook. If the TUI hook raises, the logger records `tui.error` to the file and blackboard streams, detaches the TUI hook, and keeps the event source alive.
 
@@ -263,7 +263,7 @@ Expected runtime evidence:
 - no `spawn_agent` action
 - full README content in `action.result`
 - compact evidence in `blackboard_state.json`
-- `blackboard_events.jsonl` line-for-line equal to main log when no child is spawned
+- `blackboard_events.txt` line-for-line equal to main log when no child is spawned
 - redirected TUI stream equal to the JSONL log after BOM and CR handling
 - verifier confirmation has `failure_type=null`
 - `role.used_fields` is logged for planner, actor, verifier, and any reflector response that occurs
@@ -285,4 +285,4 @@ Measured post-change validation on June 7, 2026:
 
 ## Current Clean Workspace Expectation
 
-After runtime cleanup, the workspace should contain source, prompts, schemas, docs, and `comms/` as a directory, but no `log-*.jsonl`, no `validation-*.out`, no `blackboard_events.jsonl`, no `blackboard_state.json`, no `lessons.json`, no `evolution_ledger.json`, no `screen_snapshot.json`, and no `screen_lock.json`.
+After runtime cleanup, the workspace should contain source, prompts, schemas, docs, and `comms/` as a directory, but no `log-*.txt`, no `validation-*.out`, no `blackboard_events.txt`, no `blackboard_events.jsonl`, no `blackboard_state.json`, no `lessons.json`, no `evolution_ledger.json`, no `screen_snapshot.json`, and no `screen_lock.json`.

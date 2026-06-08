@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from config import (
     CHECKLIST_REWRITE_MIN_STEPS,
@@ -137,15 +137,16 @@ def maybe_apply_prompt_mutation(store: Lessons, role: str, iteration: int) -> Pr
     log(iteration, "prompt.mutation.result", result.reason, result)
     if result.applied or result.reason == "unchanged":
         mutation_id = str(selected.get("id", ""))
-        mutation = {
+        lesson_ids: list[str] = [str(item.get("id", "")) for item in batch]
+        mutation: dict[str, Any] = {
             "id": mutation_id,
             "role": role,
-            "issue_key": selected.get("issue_key", ""),
-            "lesson_ids": [str(item.get("id", "")) for item in batch],
+            "issue_key": str(selected.get("issue_key", "")),
+            "lesson_ids": lesson_ids,
             "old_line": result.old_line,
             "new_line": result.new_line,
         }
-        store.mark_prompt_applied(mutation["lesson_ids"], mutation)
+        store.mark_prompt_applied(lesson_ids, mutation)
     return result
 
 
@@ -240,7 +241,8 @@ def _apply_checklist_rewrite(board: Any, result: dict[str, Any]) -> None:
     checklist_rewrite = result.get("checklist_rewrite", [])
     if not isinstance(checklist_rewrite, list):
         return
-    steps = [str(item).strip() for item in checklist_rewrite if str(item).strip()]
+    raw_steps = cast(list[Any], checklist_rewrite)
+    steps = [str(item).strip() for item in raw_steps if str(item).strip()]
     if len(steps) >= CHECKLIST_REWRITE_MIN_STEPS:
         board.plan_steps = steps
         board.plan_step_index = ZERO_INT

@@ -1,10 +1,14 @@
 *
 !.gitattributes
 !.gitignore
+!AGENTS.md
+!ENDGAME-AI-META-CHECKLIST.md
 !README.md
 !*.py
 !prompts/
 !prompts/*.txt
 !schemas/
 !schemas/*.json
+!tests/
+!tests/*.py
 !pyrightconfig.json
