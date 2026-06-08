@@ -38,6 +38,8 @@ def main() -> None:
     parser.add_argument("--agent-id", default="main")
     parser.add_argument("--tui-mode", choices=["auto", "visual", "json"], default="auto")
     parser.add_argument("--wt-launch", action="store_true", help="Open a Windows Terminal tab running this goal with visual TUI")
+    parser.add_argument("--enable-prompt-mutations", dest="prompt_mutations_enabled", action="store_true", default=False, help="Allow guarded one-line prompt mutations after enough lessons accumulate")
+    parser.add_argument("--disable-prompt-mutations", dest="prompt_mutations_enabled", action="store_false", help="Keep lessons extraction enabled but disable prompt mutations")
     args = parser.parse_args()
 
     if args.wt_launch:
@@ -63,6 +65,8 @@ def main() -> None:
         pass
 
     set_backend(args.backend)
+    import config
+    config.PROMPT_MUTATIONS_ENABLED = bool(args.prompt_mutations_enabled)
 
     board = Blackboard()
     board.agent_id = args.agent_id
@@ -96,8 +100,8 @@ def main() -> None:
         tui.enter()
     success = False
     try:
-        log(ZERO_INT, "run.start", "run started", {"goal": board.goal, "backend": args.backend, "agent_id": board.agent_id, "log_path": log_path})
-        success = run(board, interrupted=lambda: _interrupted)
+        log(ZERO_INT, "run.start", "run started", {"goal": board.goal, "backend": args.backend, "agent_id": board.agent_id, "log_path": log_path, "prompt_mutations_enabled": args.prompt_mutations_enabled})
+        success = run(board, interrupted=lambda: _interrupted, prompt_mutations_enabled=args.prompt_mutations_enabled)
         log(board.iteration, "run.end", "run ended", {"success": success, "stagnation_score": board.stagnation_score, "iterations": board.iteration, "done_claimed": board.done_claimed, "done_evidence": board.done_evidence})
         save_snapshot(board.get_persistable_snapshot())
 

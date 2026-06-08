@@ -17,13 +17,12 @@ from config import (
     BUDGET_VERIFIER_IN, BUDGET_VERIFIER_OUT,
     BUDGET_REFLECTOR_IN, BUDGET_REFLECTOR_OUT,
     STAGNATION_HALT_THRESHOLD, STAGNATION_HALT_SUSTAINED,
-    REFLECT_THRESHOLD, DISTILL_THRESHOLD, PROMPTS_DIR,
-    PROMPT_REWRITE_MIN_LENGTH,
+    REFLECT_THRESHOLD, DISTILL_THRESHOLD,
     DISTILLATION_ITERATION_OFFSET, DISTILLATION_ITERATION_INTERVAL,
     STUCKNESS_SLOPE_EPSILON,
     MAX_PARALLEL_CHILDREN_EXACT, MAX_PARALLEL_CHILDREN_DEFAULT,
-    CHECKLIST_REWRITE_MIN_STEPS, PID_KP_MIN, PID_KP_MAX,
-    PID_KI_MIN, PID_KI_MAX, PID_KD_MIN, PID_KD_MAX,
+    REFLECT_MIN_ITERATION_INTERVAL, REFLECT_MIN_CONSECUTIVE_FAILURES,
+    REFLECT_MIN_EXPECTATION_MISSES, REFLECT_MIN_REPETITION_SCORE,
     AGENT_ID_HEX_LENGTH, DEFAULT_SCROLL_AMOUNT, DEFAULT_WAIT_SECONDS,
     CONTEXT_POLICY, READ_FILE_EVIDENCE_MARKER,
 )
@@ -36,6 +35,7 @@ from llm import get_backend
 from persistence import save_snapshot
 from log import log
 from stop_signal import stop_requested
+from self_evolution import process_reflection_result
 import tui
 
 
@@ -47,6 +47,8 @@ REFLECTOR_SPEC = RoleSpec("reflector", BUDGET_REFLECTOR_IN, BUDGET_REFLECTOR_OUT
 _stagnation_history: list[float] = []
 _last_event: str = ""
 _last_distill_iteration: int = DISTILLATION_ITERATION_OFFSET
+_last_reflect_iteration: int = -1000000
+_prompt_mutations_enabled: bool = False
 
 
 def _normalize_used_field(value: str) -> str:
@@ -139,19 +141,11 @@ def _verifier_response_consistent(result: dict[str, Any]) -> bool:
     return failure_type is not None
 
 
-def _prompt_rewrite_valid(role: str, rewrite: str) -> bool:
-    lower = rewrite.lower()
-    if role == "actor":
-        return "{\"observe\"" in rewrite and "used_fields" in lower and "available verbs" in lower
-    if role == "planner":
-        return "{\"mode\"" in rewrite and "used_fields" in lower and "checklist management" in lower
-    if role == "verifier":
-        return "{\"verdict\"" in rewrite and "failure_type" in lower and "used_fields" in lower
-    return False
-
-
-def run(board: Blackboard, *, interrupted: Callable[[], bool] = lambda: False) -> bool:
-    global _last_event
+def run(board: Blackboard, *, interrupted: Callable[[], bool] = lambda: False, prompt_mutations_enabled: bool | None = None) -> bool:
+    global _last_event, _prompt_mutations_enabled
+    import config
+    _prompt_mutations_enabled = config.PROMPT_MUTATIONS_ENABLED if prompt_mutations_enabled is None else prompt_mutations_enabled
+    config.PROMPT_MUTATIONS_ENABLED = _prompt_mutations_enabled
     halt_counter = ZERO_INT
     is_main = board.agent_id == "main"
     return _loop(board, interrupted, halt_counter, is_main)
@@ -219,7 +213,7 @@ def _loop(board: Blackboard, interrupted: Callable[[], bool], halt_counter: int,
         if board.pid_output > REFLECT_THRESHOLD:
             _last_event = "PID→REFLECT"
             log(board.iteration, "pid.reflect", f"pid={board.pid_output:.2f}")
-            _phase_reflect(board)
+            _maybe_phase_reflect(board, "pid")
 
         stuckness = (board.stagnation_score * board.stagnation_score) / (abs(board.pid_slope) + STUCKNESS_SLOPE_EPSILON)
         if stuckness > DISTILL_THRESHOLD and (board.iteration - _last_distill_iteration) >= DISTILLATION_ITERATION_INTERVAL:
@@ -588,7 +582,7 @@ def _phase_act(board: Blackboard, instruction: str) -> str:
         _last_event = f"FAIL:{board.consecutive_failures}"
         if board.should_replan(board.failed_step_index):
             log(board.iteration, "jacobian", f"replan triggered at step {board.failed_step_index} dominant={board.jacobian_dominant_step()}")
-            _phase_reflect(board)
+            _maybe_phase_reflect(board, "replan")
     else:
         board.record_success()
         _last_event = "OK"
@@ -596,8 +590,37 @@ def _phase_act(board: Blackboard, instruction: str) -> str:
     return "continue"
 
 
+def _maybe_phase_reflect(board: Blackboard, reason: str) -> bool:
+    global _last_reflect_iteration
+    elapsed = board.iteration - _last_reflect_iteration
+    if elapsed < REFLECT_MIN_ITERATION_INTERVAL:
+        log(board.iteration, "reflect.skip", "minimum reflection interval not met", {"reason": reason, "elapsed": elapsed, "minimum": REFLECT_MIN_ITERATION_INTERVAL})
+        return False
+    if reason == "pid":
+        strong_signal = (
+            board.consecutive_failures >= REFLECT_MIN_CONSECUTIVE_FAILURES
+            or board.expectation_miss_streak >= REFLECT_MIN_EXPECTATION_MISSES
+            or board.repetition_score >= REFLECT_MIN_REPETITION_SCORE
+        )
+        if not strong_signal:
+            log(
+                board.iteration,
+                "reflect.skip",
+                "pid signal below reflection evidence threshold",
+                {
+                    "consecutive_failures": board.consecutive_failures,
+                    "expectation_miss_streak": board.expectation_miss_streak,
+                    "repetition_score": board.repetition_score,
+                },
+            )
+            return False
+    _last_reflect_iteration = board.iteration
+    _phase_reflect(board)
+    return True
+
+
 def _phase_reflect(board: Blackboard) -> None:
-    global _last_event
+    global _last_event, _prompt_mutations_enabled
     _last_event = "LLM:reflector"
     if board.agent_id == "main":
         tui.render(board, _stagnation_history, _last_event)
@@ -607,50 +630,8 @@ def _phase_reflect(board: Blackboard) -> None:
         _log_used_fields("reflector", board.iteration, result)
         log(board.iteration, "reflector", "reflector decision", {"response": result})
         board.console_log.append(f"[REFLECT] {result.get('diagnosis', '')}")
-
-        for key in ("lesson_1", "lesson_2", "lesson_3"):
-            l = result.get(key)
-            if l and isinstance(l, str) and l.strip():
-                store = Lessons()
-                existing = set(store.data.get("insights", []))
-                if l.strip() not in existing:
-                    store.data.setdefault("insights", []).append(l.strip())
-                    store.save()
-
-        checklist_rewrite: list[str] = result.get("checklist_rewrite", [])
-        if len(checklist_rewrite) >= CHECKLIST_REWRITE_MIN_STEPS:
-            board.plan_steps = checklist_rewrite
-            board.plan_step_index = ZERO_INT
-            log(board.iteration, "checklist.rewrite", f"steps={len(checklist_rewrite)}")
-
-        import config
-        for attr, key, lo, hi in [("PID_KP", "pid_kp", PID_KP_MIN, PID_KP_MAX), ("PID_KI", "pid_ki", PID_KI_MIN, PID_KI_MAX), ("PID_KD", "pid_kd", PID_KD_MIN, PID_KD_MAX)]:
-            val = result.get(key, ZERO_INT)
-            if isinstance(val, (int, float)) and lo <= val <= hi:
-                setattr(config, attr, float(val))
-                log(board.iteration, "pid.tune", f"{attr}={val}")
-
-        for role, key in [("actor", "actor_prompt_rewrite"), ("planner", "planner_prompt_rewrite"), ("verifier", "verifier_prompt_rewrite")]:
-            rewrite = result.get(key, "").strip()
-            if not rewrite:
-                continue
-            if len(rewrite) < PROMPT_REWRITE_MIN_LENGTH:
-                log(board.iteration, "prompt.rewrite.rejected", f"role={role} len={len(rewrite)} below minimum {PROMPT_REWRITE_MIN_LENGTH}")
-                continue
-            poison = ("adversarial", "forbidden", "reject", "refuse", "safety gate")
-            if any(p in rewrite.lower() for p in poison):
-                continue
-            if not _prompt_rewrite_valid(role, rewrite):
-                log(board.iteration, "prompt.rewrite.rejected", f"role={role} failed integrity check")
-                continue
-            path = PROMPTS_DIR / f"{role}.txt"
-            path.write_text(rewrite, encoding="utf-8")
-            log(board.iteration, "prompt.rewrite", f"role={role} len={len(rewrite)}")
-
-        goal_rewrite = result.get("goal_rewrite")
-        if goal_rewrite and isinstance(goal_rewrite, str) and goal_rewrite.strip():
-            board.rewrite_goal(goal_rewrite.strip())
-            log(board.iteration, "goal.rewrite", goal_rewrite.strip())
+        evolution_result = process_reflection_result(board, result, prompt_mutations_enabled=_prompt_mutations_enabled)
+        log(board.iteration, "reflection.pipeline", "linearized reflection pipeline completed", evolution_result)
     except Exception as e:
         board.record_error("reflector_fail", str(e))
         log(board.iteration, "reflector.error", "reflector failed", {"exception_type": type(e).__name__, "exception": str(e), "traceback": traceback.format_exc()})
@@ -666,6 +647,7 @@ def _try_spawn_successor(board: Blackboard) -> None:
     )
     try:
         cmd = [sys.executable, str(BASE_DIR / "main.py"), goal, "--backend", get_backend(), "--agent-id", "successor"]
+        _append_prompt_mutation_flag(cmd)
         subprocess.Popen(cmd, cwd=str(BASE_DIR))
         log(board.iteration, "successor", goal)
     except Exception:
@@ -692,7 +674,7 @@ def _process_inbox(board: Blackboard) -> None:
             board.problem = payload
         elif cmd_type == "inject_lesson":
             store = Lessons()
-            store.data.setdefault("insights", []).append(payload)
+            store.add_lesson(str(payload), role="planner", issue_key="manual", diagnosis="manual injection", source_iteration=board.iteration)
             store.save()
         elif cmd_type == "set_chaos":
             try:
@@ -750,6 +732,7 @@ def _spawn_child(agent_id: str, goal: str, iteration: int) -> AgentHandle | None
     if forced_path:
         goal = f"Use read_file with path exactly: {forced_path}. One action only. Claim done when file content is visible in action results."
     cmd = [sys.executable, str(BASE_DIR / "main.py"), goal, "--backend", get_backend(), "--agent-id", agent_id]
+    _append_prompt_mutation_flag(cmd)
     try:
         proc = subprocess.Popen(cmd, cwd=str(BASE_DIR))
         register_agent(agent_id, proc.pid)
@@ -779,6 +762,12 @@ def _spawn_distillation(board: Blackboard) -> None:
             log(board.iteration, "distill.spawn", goal, {"agent_id": agent_id, "pid": handle.pid})
     except Exception as e:
         board.record_error("distill_spawn_fail", str(e))
+
+
+def _append_prompt_mutation_flag(cmd: list[str]) -> None:
+    import config
+    if config.PROMPT_MUTATIONS_ENABLED:
+        cmd.append("--enable-prompt-mutations")
 
 
 def _report_status(agent_id: str, state: str, result: str = "", error: str = "") -> None:

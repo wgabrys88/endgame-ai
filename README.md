@@ -28,6 +28,12 @@ Then compare with LM Studio:
 & "C:\Users\%USERPROFILE%\AppData\Local\Python\bin\python.exe" main.py "your goal" --backend lmstudio
 ```
 
+Prompt mutation is disabled by default. Lessons are still extracted during reflection. To allow guarded one-line prompt mutation after enough same-role lessons accumulate, pass:
+
+```powershell
+& "C:\Users\%USERPROFILE%\AppData\Local\Python\bin\python.exe" main.py "your goal" --backend acp --enable-prompt-mutations
+```
+
 LM Studio is expected at:
 
 ```text
@@ -225,9 +231,15 @@ wsl.exe bash -lc <command>
 
 This keeps command syntax stable for LLM-generated shell actions. The workspace is passed as the Windows current working directory; in the tested environment WSL maps it to `/mnt/c/Users/%USERPROFILE%/Downloads/endgame-ai`.
 
-## Prompt Mutation
+## Reflection Evolution
 
-Prompts are runtime-mutable by the reflector. Prompt rewrites are accepted only after length, poison-string, and role-shape checks. Actor, planner, and verifier rewrites must preserve their JSON skeleton and `used_fields` telemetry contract. The rewrite mechanism remains auditable through `prompt.rewrite` and `prompt.rewrite.rejected` events.
+Reflection is linearized into three tiers:
+
+- Tier 1 extracts and stores one reusable lesson per reflector call. This runs even when prompt mutation is disabled.
+- Tier 2 is opt-in through `--enable-prompt-mutations`. Python waits for enough unapplied lessons for a role, then replaces exactly one line inside the role prompt's `### MUTABLE_LESSONS_START` / `### MUTABLE_LESSONS_END` block. Text outside that block, including the first sentence that defines the role, is immutable.
+- Tier 3 switches the main run to a code-evolution goal only after repeated same-issue lessons and prior prompt mutations indicate prompt-level repair was insufficient. The tier-3 checklist reads `lessons.json` and role prompts first, then decides whether source reading and patches are worth the time, and validates justified changes through a subagent test goal.
+
+The reflector schema intentionally does not include full prompt rewrites, PID tuning, or goal rewrites. Those operations are controlled by deterministic Python rather than by a single model response.
 
 ## Child Agents
 

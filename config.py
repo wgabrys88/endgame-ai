@@ -109,6 +109,20 @@ PID_KI_MAX: float = 1.0
 PID_KD_MIN: float = 0.5
 PID_KD_MAX: float = 5.0
 ACTION_ID_HEX_LENGTH: int = 6
+LESSON_ID_HEX_LENGTH: int = 16
+PROMPT_MUTATIONS_ENABLED: bool = False
+PROMPT_MUTATION_LESSON_THRESHOLD: int = 3
+PROMPT_MUTATION_LINE_MAX_CHARS: int = 180
+PROMPT_MUTATION_ISSUE_TOKEN_LIMIT: int = 5
+PROMPT_MUTATION_ISSUE_TOKEN_MIN_LENGTH: int = 2
+TIER3_PATTERN_LESSON_THRESHOLD: int = 6
+TIER3_PROMPT_MUTATION_THRESHOLD: int = 2
+REFLECT_MIN_ITERATION_INTERVAL: int = 4
+REFLECT_MIN_CONSECUTIVE_FAILURES: int = 2
+REFLECT_MIN_EXPECTATION_MISSES: int = 2
+REFLECT_MIN_REPETITION_SCORE: float = 0.5
+MUTABLE_PROMPT_START: str = "### MUTABLE_LESSONS_START"
+MUTABLE_PROMPT_END: str = "### MUTABLE_LESSONS_END"
 
 MOUSEEVENTF_LEFTDOWN: int = 0x0002
 MOUSEEVENTF_LEFTUP: int = 0x0004
@@ -374,7 +388,7 @@ CONTEXT_POLICY: dict[str, list[str]] = {
         "iteration",
         "checklist",
         "notes",
-        "full_history",
+        "recent_history",
         "screen_elements",
         "last_action",
         "last_result",
@@ -387,7 +401,6 @@ CONTEXT_POLICY: dict[str, list[str]] = {
         "focused_window",
         "learned_insights",
         "failed_step_index",
-        "current_prompts",
     ],
     "distillation": [
         "goal",
