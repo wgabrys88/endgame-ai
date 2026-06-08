@@ -16,7 +16,7 @@ from config import (
     ACP_PROTOCOL_VERSION, ACP_DEFAULT_TIMEOUT, ACP_REQUEST_TIMEOUT,
     ACP_WSL_MKDIR_TIMEOUT, ACP_SETTINGS_TIMEOUT, ACP_CLOSE_TIMEOUT,
     ACP_READ_CHUNK_SIZE, JSONRPC_METHOD_NOT_FOUND, ACP_WORKSPACE_BASE,
-    ACP_STOP_POLL_SECONDS,
+    ACP_STOP_POLL_SECONDS, ACP_SETUP_ATTEMPTS, ACP_SETUP_RETRY_DELAY,
 )
 from stop_signal import stop_requested
 
@@ -62,7 +62,11 @@ class _Pool:
             return
         if self._proc is not None:
             self._proc.terminate()
-            self._proc.wait(timeout=ACP_CLOSE_TIMEOUT)
+            try:
+                self._proc.wait(timeout=ACP_CLOSE_TIMEOUT)
+            except subprocess.TimeoutExpired:
+                self._proc.kill()
+                self._proc.wait(timeout=ACP_CLOSE_TIMEOUT)
         self._started = False
         self._pending.clear()
         self._flights.clear()
@@ -215,10 +219,20 @@ _pool_lock = threading.Lock()
 
 
 def _run_setup_command(cmd: list[str], timeout: float) -> None:
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-    if proc.returncode != ZERO_INT:
-        output = (proc.stdout + proc.stderr).strip()
-        raise ACPError(f"setup command failed: {cmd} exit={proc.returncode} output={output}")
+    last_error = ""
+    for attempt in range(ONE_INT, ACP_SETUP_ATTEMPTS + ONE_INT):
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            last_error = f"timed out after {timeout}s"
+        else:
+            if proc.returncode == ZERO_INT:
+                return
+            output = (proc.stdout + proc.stderr).strip()
+            last_error = f"exit={proc.returncode} output={output}"
+        if attempt < ACP_SETUP_ATTEMPTS:
+            time.sleep(ACP_SETUP_RETRY_DELAY)
+    raise ACPError(f"setup command failed after {ACP_SETUP_ATTEMPTS} attempts: {cmd} {last_error}")
 
 
 def prompt_once(text: str, timeout: float = DEFAULT_TIMEOUT) -> str:

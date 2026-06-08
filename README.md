@@ -122,6 +122,7 @@ ACP backend:
 
 - implemented by `acp_client.py` and `llm.py`;
 - runs through WSL and `kiro-cli`;
+- retries WSL setup commands before surfacing a backend startup failure;
 - polls `comms/stop.txt` while waiting for prompts;
 - raises explicit ACP errors on setup or request failure.
 
@@ -227,7 +228,7 @@ python -m unittest tests.test_self_evolution
 Live ACP smoke validation:
 
 ```powershell
-python main.py "ACP SMOKE VALIDATION: use the read_file verb on README.md. Do not use cmd. Do not use write_file. Do not use spawn_agent. Claim done only after read_file succeeds for README.md." --backend acp --tui-mode json *> validation-acp.out
+python main.py "ACP WRAPPED GOAL VALIDATION: use the read_file verb on README.md. Do not use cmd. Do not use write_file. Do not use spawn_agent. Claim done only after read_file succeeds for README.md." --backend acp --tui-mode json *> validation-acp.out
 ```
 
 Expected live evidence:
