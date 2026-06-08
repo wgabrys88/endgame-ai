@@ -17,3 +17,4 @@
 !tests/
 !tests/*.py
 !pyrightconfig.json
+!NEXT_SESSION_COGNITIVE_LOAD.md
