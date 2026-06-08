@@ -14,6 +14,7 @@ Project-level checklist for making `endgame-ai` more efficient, more reliable, a
 - [done] Human goals are wrapped by Python and resumed snapshots are normalized so legacy unwrapped goals do not bypass the wrapper.
 - [done] Goal wrapper now includes long-goal evidence gathering and provider-steering guidance while staying short enough for small models.
 - [done] Child agents inherit prompt-mutation settings through the direct `spawn_agent` action path.
+- [done] Actor-level `spawn_agent` now creates a unique non-main child id, registers it, attaches it to parent coordination state, and uses the normal child event channel.
 - [done] ACP setup commands retry before surfacing transient WSL startup failures.
 - [done] ACP smoke validation succeeded on 2026-06-08 with `read_file README.md`, verifier `confirmed`, `failure_type:null`, and no `cmd`, `write_file`, or `spawn_agent` action.
 - [validated] `ENDGAME-AI-WHAT-IS-NOT-NEEDED.json` is runtime/session evidence, not source. Its useful findings are distilled below instead of committing the raw ignored report.
@@ -44,6 +45,7 @@ Project-level checklist for making `endgame-ai` more efficient, more reliable, a
 - [next] Harden `cmd` action semantics around Bash/WSL syntax and remove ambiguity with Windows shell syntax.
 - [next] Test `comms/stop.txt` while an ACP request is waiting, not only before iterations/actions.
 - [next] Validate child-agent termination behavior under a live multi-agent ACP goal.
+- [next] Validate actor-level `spawn_agent` under live ACP with one child read-file task and verifier-confirmed parent completion.
 - [next] Add runtime cleanup as a first-class command or script that preserves source and deletes only generated artifacts.
 - [next] Decide whether `lessons.json` should remain runtime-only forever or whether a curated seed lesson file should be tracked separately.
 

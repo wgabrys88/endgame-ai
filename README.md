@@ -158,6 +158,8 @@ wsl.exe bash -lc <command>
 
 The actor prompt instructs models to use Bash syntax for `cmd` and GUI actions for visible human interfaces.
 
+`spawn_agent` creates a unique child `agent_id`, launches `main.py` with that id, registers the child in the shared blackboard, and puts the parent into coordination mode. Planner `parallel` decomposition uses the same reporting channel.
+
 ## Observation
 
 `observer.py` is probe-first.

@@ -42,6 +42,13 @@ Current reflection design:
 
 Do not reintroduce reflector fields for full prompt rewrites, PID tuning, or goal rewrite unless there is fresh runtime evidence that deterministic Python cannot own that step.
 
+## Child Agents
+
+- Planner `parallel` mode spawns children through `orchestrator._spawn_child`.
+- Actor `spawn_agent` spawns children through `actions.spawn_agent_verb`.
+- Both paths must use unique non-main `agent_id` values, register with `persistence.register_agent`, preserve the parent/child event channel, and report completion through `child_done` / `child_failed`.
+- A parent may claim completion from child results only after the verifier confirms the child evidence satisfies the original goal.
+
 ## Git And Ignore Contract
 
 The repository uses a default-ignore policy:

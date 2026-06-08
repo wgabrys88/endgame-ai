@@ -11,7 +11,7 @@ from config import (DELAY_FOCUS, DELAY_CURSOR_SETTLE, DELAY_MOUSE_HOLD,
                     MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_WHEEL,
                     WHEEL_DELTA, INPUT_KEYBOARD, KEYEVENTF_EXTENDEDKEY,
                     KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, KEYEVENTF_UNICODE_KEYUP,
-                    DEFAULT_SCROLL_AMOUNT)
+                    DEFAULT_SCROLL_AMOUNT, AGENT_ID_HEX_LENGTH)
 from win32 import user32, get_window_title, VK_MAP, EXTENDED_VKS, INPUT
 
 __all__ = ["execute_verb", "ActionResult", "VERBS"]
@@ -232,16 +232,27 @@ def write_file_verb(args: dict[str, Any], book: ElementBook, state: Any) -> Acti
 def spawn_agent_verb(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
     import subprocess
     import sys
+    import uuid
     goal = str(args.get("goal", ""))
     if not goal:
         return ActionResult("spawn_agent", False, "no goal provided")
     from llm import get_backend
-    cmd = [sys.executable, str(BASE_DIR / "main.py"), goal, "--backend", get_backend()]
+    parent_id = str(getattr(state, "agent_id", "main") or "main")
+    agent_id = str(args.get("agent_id", "")).strip()
+    if not agent_id:
+        agent_id = f"{parent_id}_spawn_{uuid.uuid4().hex[:AGENT_ID_HEX_LENGTH]}"
+    cmd = [sys.executable, str(BASE_DIR / "main.py"), goal, "--backend", get_backend(), "--agent-id", agent_id]
     import config
     if config.PROMPT_MUTATIONS_ENABLED:
         cmd.append("--enable-prompt-mutations")
     proc = subprocess.Popen(cmd, cwd=str(BASE_DIR))
-    return ActionResult("spawn_agent", True, f"spawned agent pid={proc.pid} for '{goal}'", data={"goal": goal, "pid": proc.pid, "cwd": str(BASE_DIR), "command": cmd})
+    from persistence import register_agent
+    register_agent(agent_id, proc.pid)
+    children = getattr(state, "children", None)
+    if isinstance(children, dict):
+        from state import AgentHandle
+        children[agent_id] = AgentHandle(agent_id=agent_id, goal=goal, pid=proc.pid, status_file=BASE_DIR / "blackboard_state.json")
+    return ActionResult("spawn_agent", True, f"spawned agent {agent_id} pid={proc.pid} for '{goal}'", data={"goal": goal, "agent_id": agent_id, "pid": proc.pid, "cwd": str(BASE_DIR), "command": cmd})
 
 
 @_register("cmd")

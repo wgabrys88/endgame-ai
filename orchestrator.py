@@ -212,13 +212,13 @@ def _loop(board: Blackboard, interrupted: Callable[[], bool], halt_counter: int,
         _stagnation_history.append(board.stagnation_score)
 
         if board.pid_output > REFLECT_THRESHOLD:
-            _last_event = "PID→REFLECT"
+            _last_event = "PID:reflect"
             log(board.iteration, "pid.reflect", f"pid={board.pid_output:.2f}")
             _maybe_phase_reflect(board, "pid")
 
         stuckness = (board.stagnation_score * board.stagnation_score) / (abs(board.pid_slope) + STUCKNESS_SLOPE_EPSILON)
         if stuckness > DISTILL_THRESHOLD and (board.iteration - _last_distill_iteration) >= DISTILLATION_ITERATION_INTERVAL:
-            _last_event = "PID→DISTILL"
+            _last_event = "PID:distill"
             log(board.iteration, "pid.distill", f"stuckness={stuckness:.2f}")
             _spawn_distillation(board)
             _last_distill_iteration = board.iteration
@@ -319,10 +319,9 @@ def _forced_read_file_complete(board: Blackboard) -> str:
 def _coordinate_children_ready(board: Blackboard) -> bool:
     if board.agent_id != "main" or not board.children:
         return False
-    if not board.all_children_done() or board.any_children_failed():
+    if board.verifier_denied_last:
         return False
-    goal_lower = (board.original_goal or board.goal).lower()
-    if "parallel" not in goal_lower and "child" not in goal_lower and "worker_" not in goal_lower:
+    if not board.all_children_done() or board.any_children_failed():
         return False
     return len(board.completed_subtasks) >= len(board.children)
 
@@ -571,6 +570,8 @@ def _phase_act(board: Blackboard, instruction: str) -> str:
         board.record_action(verb, args, result.success, result.observation)
         log(board.iteration, "action.result", "action completed", {"verb": verb, "args": args, "result": result})
         _last_event = f"{verb}:{'OK' if result.success else 'FAIL'}"
+        if verb == "spawn_agent" and result.success and board.children:
+            board.mode = "coordinate"
         _maybe_advance_after_read(board, verb, args, result.success)
 
         if not result.success:
