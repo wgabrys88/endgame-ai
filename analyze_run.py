@@ -11,10 +11,11 @@ import sys
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 
 def analyze(path: Path) -> None:
-    events = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    events: list[dict[str, Any]] = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
     if not events:
         print("No events found.")
         return
@@ -81,11 +82,13 @@ def analyze(path: Path) -> None:
     if verifier:
         print(f"    Verifier called: {verifier}")
 
-    windows = set()
+    windows: set[str] = set()
     for e in events:
         if e.get("phase") == "observe.rendered":
-            for w in e.get("data", {}).get("windows", []):
-                name = w.get("name", "")
+            data_val: dict[str, Any] = e.get("data", {})
+            wnd_list: list[dict[str, Any]] = data_val.get("windows", [])
+            for w in wnd_list:
+                name = str(w.get("name", ""))
                 if name and name not in ("Taskbar", "Program Manager"):
                     windows.add(name)
     if windows:
