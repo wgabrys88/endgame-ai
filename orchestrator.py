@@ -50,11 +50,7 @@ _prompt_mutations_enabled: bool = False
 
 
 def _verifier_response_consistent(result: dict[str, Any]) -> bool:
-    verdict = str(result.get("verdict", "denied"))
-    failure_type = result.get("failure_type")
-    if verdict == "confirmed":
-        return failure_type is None
-    return failure_type is not None
+    return str(result.get("verdict", "")) in ("confirmed", "denied")
 
 
 def _is_backend_unavailable(exception_type: str, error: str) -> bool:

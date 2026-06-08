@@ -6,6 +6,12 @@
     "schema": {
       "type": "object",
       "properties": {
+        "observe": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 800,
+          "description": "What is visible on screen right now relevant to the instruction."
+        },
         "actions": {
           "type": "array",
           "minItems": 0,
@@ -39,7 +45,7 @@
           "description": "DONE: instruction already satisfied. EXPECTED: actions should run. UNEXPECTED: blocked."
         }
       },
-      "required": ["actions", "conclusion"],
+      "required": ["observe", "actions", "conclusion"],
       "additionalProperties": false
     }
   }
