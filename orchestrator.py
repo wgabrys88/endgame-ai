@@ -22,8 +22,7 @@ from config import (
     REFLECT_MIN_ITERATION_INTERVAL, REFLECT_MIN_CONSECUTIVE_FAILURES,
     REFLECT_MIN_EXPECTATION_MISSES, REFLECT_MIN_REPETITION_SCORE,
     AGENT_ID_HEX_LENGTH, DEFAULT_SCROLL_AMOUNT, DEFAULT_WAIT_SECONDS,
-    CONTEXT_POLICY, READ_FILE_EVIDENCE_MARKER,
-    HUMAN_WAIT_SCREEN_STAGNATION_MIN,
+    CONTEXT_POLICY,
 )
 from state import Blackboard, AgentHandle
 from lessons import Lessons
@@ -52,65 +51,6 @@ _prompt_mutations_enabled: bool = False
 def _normalize_used_field(value: str) -> str:
     cleaned = value.split("(", ONE_INT)[ZERO_INT].strip().lower()
     return cleaned.replace(" ", "_").replace("-", "_")
-
-
-def _path_key(path: str) -> str:
-    return path.replace("\\", "/").lower()
-
-
-def _sanitize_read_path(raw: str) -> str:
-    cleaned = raw.strip().strip("\"'").rstrip(".,;")
-    if cleaned.lower().startswith("path="):
-        cleaned = cleaned[5:]
-    return cleaned.strip().strip("\"'").rstrip(".,;")
-
-
-def _read_file_goal_path(text: str) -> str:
-    import re
-    patterns = [
-        r"\bread_file\s+with\s+path\s+exactly:?\s+\"([^\"]+)\"",
-        r"\bread_file\s+with\s+path\s+exactly:?\s+'([^']+)'",
-        r"\bread_file\s+with\s+path\s+exactly:?\s+([^\s]+)",
-        r"\bread_file\s+with\s+path\s+([A-Za-z0-9_.\\/-]+)",
-        r"\bread_file\s+path\s*=\s*([A-Za-z0-9_.\\/-]+)",
-        r"\buse\s+read_file\s+with\s+path\s+exactly:?\s+([^\s]+)",
-        r"\buse\s+the\s+read_file\s+verb\s+on\s+\"([^\"]+)\"",
-        r"\buse\s+the\s+read_file\s+verb\s+on\s+'([^']+)'",
-        r"\buse\s+the\s+read_file\s+verb\s+on\s+([^\s]+)",
-        r"\bread\s+([A-Za-z0-9_.-]+\.md)\b",
-        r"\bread[_\s]+([A-Za-z0-9_.-]+\.md)\b",
-        r"\bpath\s+exactly\s+([A-Za-z0-9_.-]+\.md)\b",
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, text, re.I)
-        if match:
-            path = _sanitize_read_path(match.group(ONE_INT))
-            if path and "=" not in path:
-                return path
-    return ""
-
-
-def _read_file_instruction_path(text: str) -> str:
-    import re
-    match = re.search(r"\bUse\s+read_file\s+with\s+path\s+exactly:\s+(.+?)\.\s+One\s+action\s+only\.", text, re.I)
-    if match:
-        path = _sanitize_read_path(match.group(ONE_INT))
-        if path and "=" not in path:
-            return path
-    return ""
-
-
-def _goal_is_parallel_coordinate(text: str) -> bool:
-    lower = text.lower()
-    markers = ("parallel", "worker_", "child agent", "children", "spawn exactly", "main must wait")
-    return any(marker in lower for marker in markers)
-
-
-def _agent_read_file_goal_path(board: Blackboard) -> str:
-    goal_text = board.original_goal or board.goal
-    if board.agent_id == "main" and _goal_is_parallel_coordinate(goal_text):
-        return ""
-    return _read_file_goal_path(goal_text)
 
 
 def _log_used_fields(role: str, iteration: int, response: dict[str, Any]) -> None:
@@ -278,12 +218,7 @@ def _loop(board: Blackboard, interrupted: Callable[[], bool], halt_counter: int,
 
 
 def _phase_observe(board: Blackboard) -> str:
-    is_distillation = "DISTILLATION" in board.goal.upper()
-
-    if is_distillation:
-        board.record_screen("(distillation mode)", "distill", {})
-        board.screen_valid = True
-    elif not board.acquire_screen():
+    if not board.acquire_screen():
         if board.agent_id == "main":
             board.screen_valid = False
             _last_event = "WAIT:lock"
@@ -325,37 +260,12 @@ def _phase_observe(board: Blackboard) -> str:
             log(board.iteration, "observe.fail", "screen observation failed", {"exception_type": type(e).__name__, "exception": str(e), "traceback": traceback.format_exc()})
 
     result = _phase_plan_act(board)
-    if not is_distillation:
-        board.release_screen()
+    board.release_screen()
     return result
 
 
 def _instruction_for_actor(board: Blackboard, next_action: str) -> str:
-    import re
-    forced_path = _agent_read_file_goal_path(board)
-    if forced_path:
-        return f"Use read_file with path exactly: {forced_path}. One action only."
-    if board.plan_steps and board.plan_step_index < len(board.plan_steps):
-        step = board.plan_steps[board.plan_step_index]
-        step_path = _read_file_goal_path(step)
-        if not step_path:
-            step_match = re.search(r"\bread_file\s+(?:path\s*=\s*)?(\S+)", step, re.I)
-            if step_match:
-                step_path = _sanitize_read_path(step_match.group(ONE_INT))
-        if step_path and "=" not in step_path:
-            return f"Use read_file with path exactly: {step_path}. One action only."
     return next_action
-
-
-def _forced_read_file_complete(board: Blackboard) -> str:
-    forced_path = _agent_read_file_goal_path(board)
-    if not forced_path:
-        return ""
-    if board.last_verb != "read_file" or not board.last_success:
-        return ""
-    if READ_FILE_EVIDENCE_MARKER not in board.last_observation:
-        return ""
-    return forced_path
 
 
 def _coordinate_children_ready(board: Blackboard) -> bool:
@@ -368,65 +278,11 @@ def _coordinate_children_ready(board: Blackboard) -> bool:
     return len(board.completed_subtasks) >= len(board.children)
 
 
-def _awaits_human_response(board: Blackboard) -> bool:
-    goal = (board.original_goal or board.goal).lower()
-    current_step = ""
-    if board.plan_steps and board.plan_step_index < len(board.plan_steps):
-        current_step = board.plan_steps[board.plan_step_index].lower()
-    if "await" not in goal and "wait" not in goal:
-        return False
-    if "human" not in goal and "user" not in goal:
-        return False
-    return "await" in current_step or "human" in current_step or "instruction" in current_step or "response" in current_step
-
-
-def _should_wait_for_human_event(board: Blackboard) -> bool:
-    if not _awaits_human_response(board):
-        return False
-    if board.screen_stagnation < HUMAN_WAIT_SCREEN_STAGNATION_MIN:
-        return False
-    if board.last_verb == "role_error" or board.consecutive_failures > ZERO_INT:
-        return False
-    return True
-
-
-def _is_verifier_only_step(step: str) -> bool:
-    lower = step.strip().lower()
-    if not lower:
-        return True
-    action_markers = (
-        "click",
-        "type",
-        "write",
-        "press",
-        "focus",
-        "open",
-        "read_file",
-        "write_file",
-        "spawn",
-        "scroll",
-        "wait for human",
-        "await human",
-        "select",
-        "replace",
-    )
-    if any(marker in lower for marker in action_markers):
-        return False
-    done_markers = ("mark goal", "claim done", "goal as done", "emit done", "report done")
-    if any(marker in lower for marker in done_markers):
-        return True
-    return lower.startswith(("verify", "confirm")) and ("visible" in lower or "complete" in lower or "done" in lower)
-
-
 def _actionable_sequence(raw_steps: list[str]) -> list[str]:
-    return [step for step in raw_steps if not _is_verifier_only_step(step)]
+    return raw_steps
 
 
-def _claim_done(board: Blackboard, evidence: str, is_distillation: bool, claim_source: str) -> str:
-    if is_distillation:
-        log(board.iteration, "goal.complete", "distillation")
-        _report_status(board.agent_id, "done", result=evidence)
-        return "done"
+def _claim_done(board: Blackboard, evidence: str, claim_source: str) -> str:
     board.done_claimed = True
     board.done_evidence = evidence
     verified = _call_verifier(board, claim_source)
@@ -481,40 +337,22 @@ def _normalize_decompose(raw: Any) -> list[dict[str, Any]]:
 
 def _phase_plan_act(board: Blackboard) -> str:
     global _last_event
-    is_distillation = "DISTILLATION" in board.goal.upper()
-
     if _coordinate_children_ready(board):
         parts = [f"{item['agent_id']}:{item.get('result', '')}" for item in board.completed_subtasks]
         evidence = "; ".join(parts) if parts else "all parallel children completed"
         log(board.iteration, "coordinate.complete", f"children={list(board.children.keys())} evidence={evidence}")
         _last_event = "COORD:done"
-        return _claim_done(board, evidence, is_distillation, "all parallel children completed")
+        return _claim_done(board, evidence, "all parallel children completed")
 
-    forced_path = _forced_read_file_complete(board)
-    if forced_path:
-        evidence = f"read_file {forced_path} succeeded: {board.last_observation}"
-        log(board.iteration, "read_file.complete", f"path={forced_path}")
-        _last_event = "READ:done"
-        return _claim_done(board, evidence, is_distillation, f"forced read_file goal satisfied for {forced_path}")
-
-    pending_read_path = _agent_read_file_goal_path(board)
-    if pending_read_path:
-        instruction = f"Use read_file with path exactly: {pending_read_path}. One action only."
-        log(board.iteration, "read_file.force", f"path={pending_read_path}")
-        _last_event = "READ:force"
-        return _phase_act(board, instruction)
-
-    if _should_wait_for_human_event(board):
-        log(board.iteration, "human.wait", "awaiting human-visible screen change", {"screen_stagnation": board.screen_stagnation, "focused_window": board.focused_window, "step": board.plan_step_index})
-        _last_event = "WAIT:human"
+    if board.screen_stagnation >= 3 and board.last_verb == "wait" and board.consecutive_failures == ZERO_INT:
+        log(board.iteration, "idle.stagnation", "screen unchanged, skipping planner", {"screen_stagnation": board.screen_stagnation})
         return "continue"
 
     if _should_continue_actor(board):
         log(board.iteration, "actor.continue", "continuing current actor subtask", {"instruction": board.last_instruction, "last_verb": board.last_verb})
         return _phase_act(board, board.last_instruction)
 
-    role = "distillation" if is_distillation else "planner"
-    context = board.build_context(role)
+    context = board.build_context("planner")
 
     _last_event = "LLM:planner"
     if board.agent_id == "main":
@@ -577,13 +415,7 @@ def _phase_plan_act(board: Blackboard) -> str:
         board.verifier_denied_last = False
 
     if mode == "done":
-        return _claim_done(board, str(plan.get("because", next_action)), is_distillation, "planner claimed mode=done")
-
-    if _awaits_human_response(board):
-        log(board.iteration, "human.wait", "awaiting human response after planner step", {"screen_stagnation": board.screen_stagnation, "focused_window": board.focused_window, "step": board.plan_step_index})
-        board.record_success()
-        _last_event = "WAIT:human"
-        return "continue"
+        return _claim_done(board, str(plan.get("because", next_action)), "planner claimed mode=done")
 
     if mode == "parallel" and decompose:
         if board.agent_id != "main":
@@ -655,18 +487,8 @@ def _phase_act(board: Blackboard, instruction: str) -> str:
             log(board.iteration, "checklist.advance", f"actor_done step={board.plan_step_index}")
         if _actor_done_should_verify_goal(board):
             evidence = f"actor reported instruction done: {board.actor_observe or board.actor_reason}"
-            return _claim_done(board, evidence, "DISTILLATION" in board.goal.upper(), "actor emitted DONE")
+            return _claim_done(board, evidence, "actor emitted DONE")
         return "continue"
-
-    forced_read_path = _read_file_instruction_path(instruction)
-    if forced_read_path:
-        proposed_dict: dict[str, Any] = {}
-        if len(raw_actions) == ONE_INT and isinstance(raw_actions[ZERO_INT], dict):
-            proposed_dict = cast(dict[str, Any], raw_actions[ZERO_INT])
-        proposed_path = str(proposed_dict.get("target") or proposed_dict.get("value") or "")
-        if proposed_dict.get("verb") != "read_file" or _path_key(proposed_path) != _path_key(forced_read_path):
-            log(board.iteration, "action.override", "forced read_file instruction", {"forced_path": forced_read_path, "raw_actions": raw_actions_raw})
-        raw_actions = [{"verb": "read_file", "target": forced_read_path, "value": ""}]
 
     if not raw_actions and board.actor_conclusion == "UNEXPECTED":
         board.record_action("no_match", {}, False, "actor could not resolve element")
@@ -737,65 +559,11 @@ def _should_continue_actor(board: Blackboard) -> bool:
         return False
     if board.last_verb in ("role_error", "parse_fail", "no_match"):
         return False
-    if _primitive_missed_named_target(board):
-        return False
-    if _primitive_missed_expected_dialog(board):
-        return False
     if board.last_verb in ("click", "focus", "hotkey", "press", "scroll", "wait") and board.screen_stagnation > ZERO_INT:
         return False
     if board.detect_repetition_in_history():
         return False
-    if _awaits_human_response(board):
-        return False
     return True
-
-
-def _is_primitive_action(verb: str) -> bool:
-    return verb in ("click", "focus", "hotkey", "press", "scroll", "wait")
-
-
-def _primitive_missed_named_target(board: Blackboard) -> bool:
-    if not _is_primitive_action(board.last_verb):
-        return False
-    import re
-    text = f"{board.last_instruction} {board.last_expect}"
-    targets: list[str] = []
-    for match in re.finditer(r"\b([A-Z][A-Za-z0-9._-]*(?:\s+[A-Z][A-Za-z0-9._-]*){0,3})\s+windows?\b", text):
-        target = match.group(ONE_INT).strip().lower()
-        for article in ("the ", "a ", "an "):
-            if target.startswith(article):
-                target = target[len(article):]
-        if target and target not in ("open", "visible"):
-            targets.append(target)
-    if not targets:
-        return False
-    screen_text = f"{board.focused_window}\n{board.screen}".lower()
-    missed = [target for target in targets if target not in screen_text]
-    if not missed:
-        return False
-    log(board.iteration, "actor.continue.skip", "primitive action did not reveal named target", {"last_verb": board.last_verb, "missed_targets": missed, "focused_window": board.focused_window})
-    return True
-
-
-def _primitive_missed_expected_dialog(board: Blackboard) -> bool:
-    if not _is_primitive_action(board.last_verb):
-        return False
-    text = f"{board.last_instruction} {board.last_expect}"
-    if "dialog" not in text.lower():
-        return False
-    import re
-    expected_names: list[str] = []
-    for pattern in (r"['\"]([^'\"]+)['\"]\s+dialog", r"dialog(?:\s+titled|\s+named)?\s+['\"]([^'\"]+)['\"]"):
-        expected_names.extend(match.group(ONE_INT).strip().lower() for match in re.finditer(pattern, text, re.I))
-    screen_text = f"{board.focused_window}\n{board.screen}".lower()
-    missed = [name for name in expected_names if name and name not in screen_text]
-    if missed:
-        log(board.iteration, "actor.continue.skip", "primitive action did not reveal expected dialog", {"last_verb": board.last_verb, "missed_dialogs": missed, "focused_window": board.focused_window})
-        return True
-    if not expected_names and "dialog" not in screen_text:
-        log(board.iteration, "actor.continue.skip", "primitive action did not reveal any dialog", {"last_verb": board.last_verb, "focused_window": board.focused_window})
-        return True
-    return False
 
 
 def _maybe_phase_reflect(board: Blackboard, reason: str) -> bool:
@@ -854,23 +622,8 @@ def _phase_reflect(board: Blackboard) -> None:
 
 
 def _try_spawn_successor(board: Blackboard) -> None:
-    if board.agent_id != "main":
-        return
-    if _backend_unavailable_recent(board):
-        log(board.iteration, "successor.skip", "backend unavailable; successor would repeat the same failure", {"backend": get_backend()})
-        return
-    goal = (
-        f"SUCCESSOR — Parent halted at stagnation={board.stagnation_score:.2f} iteration={board.iteration}. "
-        f"Original goal: {board.original_goal}. "
-        f"Read evolution_ledger.json for context. Continue from where parent failed."
-    )
-    try:
-        cmd = [sys.executable, str(BASE_DIR / "main.py"), goal, "--backend", get_backend(), "--agent-id", "successor"]
-        _append_prompt_mutation_flag(cmd)
-        subprocess.Popen(cmd, cwd=str(BASE_DIR))
-        log(board.iteration, "successor", goal)
-    except Exception:
-        log(board.iteration, "successor.error", "successor spawn failed", {"traceback": traceback.format_exc()})
+    pass
+
 
 
 def _handle_stop_signal(board: Blackboard, is_main: bool) -> bool:
@@ -947,15 +700,12 @@ def _execute_decomposition(board: Blackboard, decompose: list[dict[str, Any]]) -
 def _spawn_child(agent_id: str, goal: str, iteration: int) -> AgentHandle | None:
     from persistence import register_agent
     original_goal = goal
-    forced_path = _read_file_goal_path(goal)
-    if forced_path:
-        goal = f"Use read_file with path exactly: {forced_path}. One action only. Claim done when file content is visible in action results."
     cmd = [sys.executable, str(BASE_DIR / "main.py"), goal, "--backend", get_backend(), "--agent-id", agent_id]
     _append_prompt_mutation_flag(cmd)
     try:
         proc = subprocess.Popen(cmd, cwd=str(BASE_DIR))
         register_agent(agent_id, proc.pid)
-        log(iteration, "child.spawn", f"{agent_id} pid={proc.pid}", {"original_goal": original_goal, "goal": goal, "forced_path": forced_path or None})
+        log(iteration, "child.spawn", f"{agent_id} pid={proc.pid}", {"original_goal": original_goal, "goal": goal})
         return AgentHandle(agent_id=agent_id, goal=goal, pid=proc.pid, status_file=BASE_DIR / "blackboard_state.json")
     except Exception as e:
         log(iteration, "child.spawn.error", str(e))

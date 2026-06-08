@@ -8,25 +8,29 @@
       "properties": {
         "mode": {
           "type": "string",
-          "enum": ["direct", "parallel", "done"],
+          "enum": [
+            "direct",
+            "parallel",
+            "done"
+          ],
           "description": "direct: actor executes next_action. parallel: decompose into child agents. done: goal complete."
         },
         "because": {
           "type": "string",
           "minLength": 10,
-          "maxLength": 500,
+          "maxLength": 800,
           "description": "Reasoning for this decision."
         },
         "next_action": {
           "type": "string",
           "minLength": 0,
-          "maxLength": 800,
+          "maxLength": 1500,
           "description": "Semantic instruction for actor. Describe elements by role and visible text, not by numeric ID."
         },
         "expect": {
           "type": "string",
           "minLength": 5,
-          "maxLength": 400,
+          "maxLength": 600,
           "description": "Observable outcome expected from this step."
         },
         "step_advance": {
@@ -36,23 +40,23 @@
         "notes": {
           "type": "array",
           "minItems": 0,
-          "maxItems": 5,
+          "maxItems": 8,
           "description": "Persistent facts for future steps. URLs, IDs, key values. Replaces previous notes array entirely.",
           "items": {
             "type": "string",
             "minLength": 0,
-            "maxLength": 200
+            "maxLength": 400
           }
         },
         "sequence": {
           "type": "array",
           "minItems": 0,
-          "maxItems": 10,
+          "maxItems": 12,
           "description": "On first iteration or when replanning, emit the full step sequence. Empty on subsequent iterations.",
           "items": {
             "type": "string",
             "minLength": 10,
-            "maxLength": 200
+            "maxLength": 300
           }
         },
         "decompose": {
@@ -74,17 +78,32 @@
                 "maxLength": 40
               }
             },
-            "required": ["sub_goal", "agent_id"],
+            "required": [
+              "sub_goal",
+              "agent_id"
+            ],
             "additionalProperties": false
           }
         },
         "used_fields": {
           "type": "array",
-          "items": {"type": "string"},
+          "items": {
+            "type": "string"
+          },
           "description": "List all blackboard fields you actually read and used to make this decision."
         }
       },
-      "required": ["mode", "because", "next_action", "expect", "step_advance", "notes", "sequence", "decompose", "used_fields"],
+      "required": [
+        "mode",
+        "because",
+        "next_action",
+        "expect",
+        "step_advance",
+        "notes",
+        "sequence",
+        "decompose",
+        "used_fields"
+      ],
       "additionalProperties": false
     }
   }

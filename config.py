@@ -11,7 +11,6 @@ BASE_DIR: pathlib.Path = pathlib.Path(__file__).parent.resolve()
 PROMPTS_DIR: pathlib.Path = BASE_DIR / "prompts"
 SCHEMAS_DIR: pathlib.Path = BASE_DIR / "schemas"
 COMMS_DIR: pathlib.Path = BASE_DIR / "comms"
-INBOX_PATH: pathlib.Path = COMMS_DIR / "inbox.json"
 SCREEN_LOCK_PATH: pathlib.Path = COMMS_DIR / "screen_lock.json"
 SCREEN_SNAPSHOT_PATH: pathlib.Path = COMMS_DIR / "screen_snapshot.json"
 BLACKBOARD_EVENTS_PATH: pathlib.Path = BASE_DIR / "blackboard_events.txt"
@@ -77,15 +76,14 @@ HTTP_ERROR_STATUS_MIN: int = 400
 DEFAULT_SCROLL_AMOUNT: int = 3
 DEFAULT_WAIT_SECONDS: float = 1.0
 READ_TEXT_MAX_LENGTH: int = -1
-CONTEXT_OBSERVATION_EVIDENCE_LINES: int = 3
+CONTEXT_OBSERVATION_EVIDENCE_LINES: int = 8
 PERSISTENCE_REPLACE_ATTEMPTS: int = 5
 PERSISTENCE_REPLACE_RETRY_DELAY: float = 0.2
 ARTIFACT_INLINE_CHAR_LIMIT: int = 12000
 ARTIFACT_CHUNK_CHAR_LIMIT: int = 60000
 ARTIFACT_SHA_PREFIX_LENGTH: int = 16
 ARTIFACT_PATH_PART_LIMIT: int = 48
-READ_FILE_EVIDENCE_MARKER: str = "sha256="
-SCREEN_ELEMENT_VALUE_LIMIT: int = 240
+SCREEN_ELEMENT_VALUE_LIMIT: int = 500
 TERMINAL_CONTEXT_TAIL_LINES: int = 8
 MAX_BLACKBOARD_EVENT_RECORDS: int = 400
 MAX_RUNTIME_ARTIFACT_ENTRIES: int = 120
@@ -101,13 +99,6 @@ AGENT_ID_HEX_LENGTH: int = 6
 MAX_PARALLEL_CHILDREN_EXACT: int = 4
 MAX_PARALLEL_CHILDREN_DEFAULT: int = 8
 CHECKLIST_REWRITE_MIN_STEPS: int = 2
-PID_KP_MIN: float = 0.1
-PID_KP_MAX: float = 3.0
-PID_KI_MIN: float = 0.05
-PID_KI_MAX: float = 1.0
-PID_KD_MIN: float = 0.5
-PID_KD_MAX: float = 5.0
-ACTION_ID_HEX_LENGTH: int = 6
 LESSON_ID_HEX_LENGTH: int = 16
 PROMPT_MUTATIONS_ENABLED: bool = False
 PROMPT_MUTATION_LESSON_THRESHOLD: int = 3
@@ -127,18 +118,6 @@ GOAL_WRAPPER_END: str = "ENDGAME_GOAL_WRAPPER_END"
 GOAL_WRAPPER_HUMAN_START: str = "HUMAN_GOAL_START"
 GOAL_WRAPPER_HUMAN_END: str = "HUMAN_GOAL_END"
 GOAL_WRAPPER_PREFIX: str = """ENDGAME_GOAL_WRAPPER_START
-SYSTEM_OPERATING_GOAL:
-- Work from visible GUI evidence first when a human interface is involved.
-- Use the available verbs and backend tools; do not wait for the human to describe system mechanics.
-- Build or maintain a checklist for multi-step work.
-- Replan when evidence changes, an action repeats, or the current route is blocked.
-- Use observe/action/verifier events to decide the next role; replan only when evidence changes, repeats, or blocks justify it.
-- Use child agents only for independent work that can report back.
-- For long goals, gather evidence from files, GUI, web/source tools, remote machines, and AI provider interfaces when available and allowed.
-- When steering other AI or coding providers, give concrete subgoals and verify their outputs before trusting them.
-- Preserve full evidence in logs and use compact role context.
-- Learn reusable lessons during reflection; mutate prompts only through guarded Python policy.
-- Complete only when verifier evidence proves the human goal.
 HUMAN_GOAL_START
 """
 GOAL_WRAPPER_SUFFIX: str = """
@@ -291,8 +270,8 @@ BUDGET_VERIFIER_OUT: int = 4000
 BUDGET_REFLECTOR_IN: int = 16000
 BUDGET_REFLECTOR_OUT: int = 8000
 
-DELAY_STARTUP: float = 5.0
-DELAY_BETWEEN_ITERATIONS: float = 3.0
+DELAY_STARTUP: float = 0.5
+DELAY_BETWEEN_ITERATIONS: float = 1.0
 
 DELAY_FOCUS: float = 0.5
 DELAY_CURSOR_SETTLE: float = 0.05
@@ -355,7 +334,6 @@ STAGNATION_WEIGHT_SCREEN: float = 6.0
 STAGNATION_NORMALIZER: float = 28.0
 
 REFLECT_THRESHOLD: float = 0.3
-HUMAN_WAIT_SCREEN_STAGNATION_MIN: int = 1
 
 LLM_TEMPERATURE: float = 0.30
 LLM_TOP_P: float = 0.95
@@ -368,7 +346,6 @@ LLM_MAX_TOKENS: int = 200000
 LLM_STOP: list[str] = []
 LLM_LOGIT_BIAS: dict[str, float] = {}
 
-PROMPT_REWRITE_MIN_LENGTH: int = 200
 
 CONTEXT_POLICY: dict[str, list[str]] = {
     "planner": [
@@ -423,16 +400,5 @@ CONTEXT_POLICY: dict[str, list[str]] = {
         "learned_insights",
         "failed_step_index",
     ],
-    "distillation": [
-        "goal",
-        "iteration",
-        "stagnation_score",
-        "consecutive_failures",
-        "evolution_ledger",
-        "learned_insights",
-        "pid",
-        "attractor_energy",
-        "repetition_score",
-        "lorenz",
-    ],
+
 }

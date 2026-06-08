@@ -1,297 +1,147 @@
 # endgame-ai
 
-`endgame-ai` is a Windows 11 desktop automation organism written in pure Python. It observes the visible desktop, projects bounded role-specific context to an LLM backend, executes typed actions, verifies completion from evidence, and records runtime truth into append-only logs and blackboard snapshots.
+Event-driven desktop automation organism. Pure Python 3.13 on Windows 11. Zero third-party dependencies. Raw ctypes for Win32 and UI Automation.
 
-The system is intentionally provider-agnostic. It can use ACP or LM Studio as the model backend, while the desktop control layer remains local Python and Win32/UI Automation.
-
-## Platform
-
-- Windows 11.
-- Python 3.13.
-- Zero third-party Python package dependency in the runtime code.
-- Raw `ctypes` wrappers for Win32, UI Automation, keyboard, mouse, process, and console behavior.
-- Strict Pyright target: `0 errors, 0 warnings, 0 informations`.
-- Runtime files are ignored by git.
+The system observes the visible desktop, projects bounded context to an LLM, executes typed actions, and verifies completion from evidence. It is provider-agnostic: ACP (Claude via kiro-cli) or LM Studio as the model backend.
 
 ## Quick Start
 
-Run a goal with ACP:
-
 ```powershell
-python main.py "use the read_file verb on README.md" --backend acp --tui-mode json
-```
-
-Run a goal with LM Studio:
-
-```powershell
-python main.py "use the read_file verb on README.md" --backend lmstudio --tui-mode json
-```
-
-Resume a saved agent state:
-
-```powershell
-python main.py --resume --agent-id main --backend acp
-```
-
-Open a visual Windows Terminal session:
-
-```powershell
+python main.py "Open Notepad via Win+R and type hello world" --backend acp
+python main.py "Open Notepad via Win+R and type hello world" --backend lmstudio
+python main.py --resume --backend acp
 python main.py "your goal" --backend acp --wt-launch
 ```
 
-The visual TUI is optimized for Windows Terminal. It shows the current event, checklist progress, signal risk, focused window, current step, latest action/result, actor observation, planner reason, and child counts.
+Run as Administrator. UIA requires elevation.
 
-## Goal Wrapping
+## How It Works
 
-Human goals are allowed to be vague. `main.py` wraps every supplied goal with an operating envelope before the planner sees it.
+Each iteration:
 
-The wrapper tells the system to:
+1. **Observe** the desktop through probe-first hover sampling + conditional UIA tree walk.
+2. **Decide** the cheapest useful next step:
+   - Continue the actor if a real subtask is still producing evidence.
+   - Call planner only when evidence changes, an action repeats, or a route blocks.
+   - Verify only when planner or actor claims done.
+   - Reflect only on real failure/repetition evidence.
+3. **Execute** typed actions (click, write, hotkey, focus, etc.).
+4. **Record** events, save state, sleep briefly.
 
-- prefer GUI evidence when a human interface is involved;
-- use its own verbs and backend tools without waiting for the human to explain mechanics;
-- keep a checklist for multi-step work;
-- replan when evidence changes, an action repeats, or a route is blocked;
-- let the actor continue a real subtask until it emits `DONE`, while planner/verifier roles wake only on useful events;
-- use child agents only for independent work;
-- gather evidence from files, GUI, web/source tools, remote machines, and AI provider interfaces when available and allowed;
-- steer other AI or coding providers with concrete subgoals and verify their outputs before trusting them;
-- preserve full evidence in logs and use compact role context;
-- learn reusable lessons through reflection;
-- complete only when verifier evidence proves the human goal.
-
-The raw human goal is still preserved in `original_goal`. Existing guards such as explicit `read_file` path detection use the raw goal so wrapping does not break forced file reads or coordination heuristics. Resumed snapshots are normalized too, so older unwrapped saved goals do not bypass the operating envelope.
-
-## Runtime Scheduler
-
-Each iteration observes the desktop, updates blackboard signals, and then chooses the cheapest useful event handler:
-
-1. Coordinate child results when children are already running.
-2. Satisfy forced deterministic paths such as explicit `read_file` goals.
-3. Idle on explicit await-human goals while the screen is unchanged.
-4. Continue the actor when a real subtask is still producing evidence.
-5. Replan only when no cheaper event applies, evidence changes, an action repeats, or a route blocks.
-6. Verify only when planner or actor emits a done claim.
-7. Reflect only when control signals justify it.
-8. Save blackboard state and append runtime events.
-
-The control laws in `state.py` are Lorenz, PID, and Jacobian. They update stagnation, attractor energy, and replan pressure from action history and screen semantics.
+The system does NOT run a static planner→actor→verifier→reflector pipeline. The scheduler picks the role that has work to do based on blackboard signals.
 
 ## Roles
 
-Prompts live in `prompts/*.txt`; schemas live in `schemas/*.json`.
+- **Planner**: decides next step, maintains checklist, gives actor one subtask.
+- **Actor**: maps subtask to 0-5 typed actions; emits DONE when subtask is satisfied.
+- **Verifier**: confirms or denies done claims from concrete evidence.
+- **Reflector**: extracts one reusable lesson when stagnation and failure evidence justify it.
 
-- `planner`: decides direct, parallel, or done; maintains actionable checklist steps; gives one actor subtask.
-- `actor`: maps one subtask to 0-3 typed actions and emits `DONE` when that subtask is already satisfied.
-- `verifier`: confirms or denies done claims from concrete evidence.
-- `reflector`: extracts one reusable lesson and optional checklist repair.
+Prompts: `prompts/*.txt`. Schemas: `schemas/*.json`.
 
-Role prompts are short and schema-literal so smaller models can follow them. Each role prompt contains one mutable lesson line between:
+## Control Laws
 
-```text
-### MUTABLE_LESSONS_START
-### MUTABLE_LESSONS_END
-```
+Three mathematical pipelines in `state.py` govern scheduling intensity:
 
-Python may replace exactly one line inside that block when prompt mutation is enabled.
+- **Lorenz attractor**: chaos-driven exploration pressure.
+- **PID controller**: temporal stagnation memory with anti-windup.
+- **Jacobian vector**: per-step sensitivity for replan pressure.
 
-## Reflection Evolution
-
-Reflection is a three-tier pipeline.
-
-Tier 1 stores lessons:
-
-- always enabled;
-- one reusable lesson per reflector result;
-- persisted by `lessons.py`;
-- deduplicated with metadata for role, issue key, source iteration, prompt application, and tier-3 escalation.
-
-Tier 2 mutates prompts:
-
-- disabled by default;
-- enabled with `--enable-prompt-mutations`;
-- applies only after enough unapplied lessons accumulate for a role;
-- changes exactly one line inside the mutable block;
-- never rewrites a full prompt.
-
-Tier 3 switches to code evolution:
-
-- triggers only after repeated same-issue lessons and prior prompt mutations show prompt-level repair was insufficient;
-- rewrites the run into a code-evolution goal;
-- first reads lessons and prompts;
-- decides whether source reads and patches are worth time;
-- validates justified patches through a focused subagent goal.
-
-Online distillation children are not part of the main task loop. Reflection still extracts lessons from real failures, and explicit distillation/evolution goals can be run separately when evidence justifies them.
-
-## Backends
-
-ACP backend:
-
-- implemented by `acp_client.py` and `llm.py`;
-- runs through WSL and `kiro-cli`;
-- retries WSL setup commands before surfacing a backend startup failure;
-- polls `comms/stop.txt` while waiting for prompts;
-- raises explicit ACP errors on setup or request failure.
-
-LM Studio backend:
-
-- expected at `http://localhost:1234`;
-- used through the OpenAI-compatible local server API;
-- useful as a comparison backend after ACP validation.
+These are toggleable via `config.py` flags (`PIPELINE_LORENZ`, `PIPELINE_PID`, `PIPELINE_JACOBIAN`).
 
 ## Actions
 
-Actor actions are typed verbs:
+Actor verbs: `click`, `write`, `press`, `hotkey`, `scroll`, `wait`, `focus`, `read_file`, `write_file`, `spawn_agent`, `cmd`.
 
-- `click`
-- `write`
-- `press`
-- `hotkey`
-- `scroll`
-- `wait`
-- `focus`
-- `read_file`
-- `write_file`
-- `spawn_agent`
-- `cmd`
-
-`cmd` runs Bash through WSL:
-
-```text
-wsl.exe bash -lc <command>
-```
-
-The actor prompt instructs models to use Bash syntax for `cmd` and GUI actions for visible human interfaces.
-
-`spawn_agent` creates a unique child `agent_id`, launches `main.py` with that id, registers the child in the shared blackboard, and puts the parent into coordination mode. Planner `parallel` decomposition uses the same reporting channel.
+- `cmd` runs Bash through `wsl.exe bash -lc <command>`.
+- `spawn_agent` creates a child process with its own goal and reports back via events.
+- GUI actions preferred over cmd unless the goal explicitly requires shell work.
 
 ## Observation
 
-`observer.py` is probe-first.
+`observer.py`:
+- Enumerates visible windows.
+- Probe-samples UI elements through hover regions.
+- Falls back to UIA tree walk when needed.
+- Renders compact screen context with element IDs for the actor.
+- Computes content hash and semantic hash for stagnation detection.
 
-It:
+## Backends
 
-- enumerates visible windows;
-- samples visible UI through hover/probe regions;
-- falls back to UI Automation tree walk only when probe evidence is insufficient;
-- merges and classifies nodes into a selector book;
-- renders compact screen context for roles;
-- records raw evidence, filtered counts, semantic text, content hash, semantic hash, and timing.
+**ACP**: Claude via kiro-cli in WSL2. Implemented in `acp_client.py`. Polls `comms/stop.txt` while waiting. Raises explicit errors on setup failure.
 
-Exact content hashes can change on dynamic screens. Semantic hashes are used for stagnation so volatile clocks, counters, and similar text do not create false progress.
+**LM Studio**: local LLM at `http://localhost:1234`. OpenAI-compatible API.
 
-## Blackboard And Logs
+## Files
 
-The append-only runtime event stream is the durable truth source.
+```
+main.py           CLI entry point and lifecycle
+orchestrator.py   Event scheduler and control loop
+state.py          Blackboard, control laws, context builders
+config.py         All constants and context policy
+observer.py       Desktop observation (probe + UIA)
+actions.py        Typed verb execution
+dispatch.py       Prompt/schema loading and JSON extraction
+llm.py            Backend selection and request logging
+acp_client.py     ACP JSON-RPC client over WSL
+log.py            Append-only event logging
+tui.py            Live terminal dashboard
+lessons.py        Lesson persistence
+self_evolution.py Reflection pipeline (lesson extraction, optional prompt mutation)
+persistence.py    Locked state/event persistence
+artifacts.py      Externalized runtime artifact chunks
+event_schema.py   Blackboard event records
+goal_wrapper.py   Deterministic goal wrapping
+sixel.py          Terminal graphics
+stop_signal.py    Cooperative stop check
+win32.py          Win32/UIA ctypes primitives
+prompts/          Role prompts (mutable by reflection)
+schemas/          JSON schemas (strict mode)
+tests/            Deterministic regression tests
+```
 
-Generated runtime files:
+## Runtime Files (Ignored)
 
-- `blackboard_events.txt`
-- `blackboard_state.json`
-- `blackboard_state.lock`
-- `log-<agent>-<timestamp>.txt`
-- `lessons.json`
-- `evolution_ledger.json`
-- `runtime_artifacts/`
-- `comms/`
-- `validation-*`
-
-Large values are externalized into `runtime_artifacts/` as content-addressed `.txt` chunks with SHA-256 metadata. Logs keep bounded `artifact_ref` records instead of duplicating large payloads.
-
-`blackboard_state.json` is a projection. It is useful for resume and inspection, but runtime events and artifact chunks preserve fuller evidence.
+```
+blackboard_events.txt    Append-only event stream (runtime truth)
+blackboard_state.json    Blackboard snapshot (for resume)
+log-<agent>-*.txt        Per-agent log
+lessons.json             Learned lessons
+evolution_ledger.json    Run summaries
+runtime_artifacts/       Content-addressed artifact chunks
+comms/                   Stop signal, screen lock, inbox
+```
 
 ## Git Policy
 
-The repository ignores everything by default and explicitly unignores source and handoff files.
-
-Trackable files include:
-
-- root `*.py`;
-- `prompts/*.txt`;
-- `schemas/*.json`;
-- `tests/*.py`;
-- `README.md`;
-- `AGENTS.md`;
-- `CONTRIBUTING.md`;
-- `ENDGAME-AI-META-CHECKLIST.md`;
-- `LICENSE`;
-- `.github/ISSUE_TEMPLATE/*.md`;
-- `.gitattributes`;
-- `.gitignore`;
-- `pyrightconfig.json`.
-
-Runtime reports such as `ENDGAME-AI-WHAT-IS-NOT-NEEDED.json` remain ignored unless the human explicitly asks to track them.
+Default-ignore-all with explicit unignore for source and docs. Runtime files never committed.
 
 ## Validation
 
-Static gates:
-
+Static:
 ```powershell
 python -m compileall -q .
 python -m pyright
 ```
 
-Focused unit regressions live under `tests/`. They guard self-evolution invariants, but live ACP validation is the runtime proof path. Do not keep running unit tests if the current session or evidence says they hang.
-
-Live ACP smoke validation:
-
+Live regression (60-second bounded):
 ```powershell
-python main.py "ACP WRAPPED GOAL VALIDATION: use the read_file verb on README.md. Do not use cmd. Do not use write_file. Do not use spawn_agent. Claim done only after read_file succeeds for README.md." --backend acp --tui-mode json *> validation-acp.out
+python main.py "Open Notepad via Win+R, replace all text with exactly: SCIENCE EVENT DRIVEN SAMPLE. Use GUI actions only. Do not use cmd. Claim done only when that exact text is visible in Notepad." --backend acp --tui-mode json
 ```
-
-Expected live evidence:
-
-- process exits `0`;
-- at least one `action.result` has `verb=read_file`, `path=README.md`, and `success=true`;
-- no `cmd`, `write_file`, or `spawn_agent` action;
-- verifier verdict is `confirmed`;
-- verifier `failure_type` is `null`;
-- no role error, parse failure, refusal, or verifier inconsistency.
 
 ## Cleanup
 
-Use PowerShell-native cleanup from the repository root:
-
 ```powershell
-$root=(Resolve-Path -LiteralPath .).Path
+$root=(Resolve-Path .).Path
 $runtimeNames=@('blackboard_state.json','blackboard_state.lock','blackboard_state.tmp','blackboard_events.txt','blackboard_events.jsonl','evolution_ledger.json','lessons.json')
 $targets=@()
-$targets += Get-ChildItem -LiteralPath $root -Force -File | Where-Object { $_.Name -like 'log-*' -or $_.Name -like 'validation-*' -or $_.Name -like 'blackboard_state.json.*.tmp' -or $runtimeNames -contains $_.Name }
+$targets += Get-ChildItem -LiteralPath $root -Force -File | Where-Object { $_.Name -like 'log-*' -or $_.Name -like 'validation-*' -or $runtimeNames -contains $_.Name }
 $targets += Get-ChildItem -LiteralPath $root -Force -Directory | Where-Object { $_.Name -eq '__pycache__' -or $_.Name -eq 'runtime_artifacts' }
-$testsCache=Join-Path $root 'tests\__pycache__'
-if (Test-Path -LiteralPath $testsCache) { $targets += Get-Item -LiteralPath $testsCache }
 $commsPath=Join-Path $root 'comms'
-$commsTargets=@()
-if (Test-Path -LiteralPath $commsPath) { $commsTargets += Get-ChildItem -LiteralPath $commsPath -Force -ErrorAction SilentlyContinue }
+if (Test-Path $commsPath) { Get-ChildItem $commsPath -Force | Remove-Item -Recurse -Force }
 foreach ($item in $targets) { Remove-Item -LiteralPath $item.FullName -Recurse -Force }
-foreach ($item in $commsTargets) { Remove-Item -LiteralPath $item.FullName -Recurse -Force }
 ```
-
-Do not delete source, prompts, schemas, docs, tests, or `.git`.
-
-## File Map
-
-- `acp_client.py`: ACP JSON-RPC client over WSL.
-- `actions.py`: typed verb execution.
-- `artifacts.py`: externalized runtime artifact chunks.
-- `config.py`: constants and context policy.
-- `dispatch.py`: prompt/schema loading and JSON extraction.
-- `event_schema.py`: blackboard event records.
-- `goal_wrapper.py`: deterministic goal prefix/suffix wrapping.
-- `lessons.py`: lesson persistence and metadata.
-- `llm.py`: backend selection and request logging.
-- `log.py`: runtime log and event append.
-- `main.py`: CLI entry point and lifecycle.
-- `observer.py`: desktop observation.
-- `orchestrator.py`: main control loop.
-- `persistence.py`: locked state/event persistence.
-- `self_evolution.py`: reflection tiers.
-- `sixel.py`: terminal graphics helpers.
-- `state.py`: blackboard and control laws.
-- `stop_signal.py`: cooperative stop check.
-- `tui.py`: live state projection.
-- `win32.py`: Win32/UIA primitives.
 
 ## Handoff
 
-Read `AGENTS.md` before assigning this repository to any AI coding provider. Read `ENDGAME-AI-META-CHECKLIST.md` for the current improvement backlog and evidence status.
+Read `AGENTS.md` before assigning this repository to any AI coding provider.

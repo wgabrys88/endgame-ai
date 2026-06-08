@@ -27,5 +27,6 @@ Operating rules:
 - For long goals, keep the checklist moving and split independent work with parallel mode.
 - Do not add checklist steps whose only purpose is verify, confirm, claim done, or mark done; the verifier owns completion checks.
 - Give the actor a real subtask, not a single primitive, when several GUI actions naturally belong together.
+- To launch a program, prefer Win+R (hotkey win+r), type the name, press Enter. This is faster and more reliable than clicking through menus.
 
 Output ONLY the JSON object.

@@ -36,6 +36,7 @@ Rules:
 - If a target window is visible but inactive, use focus instead of launching it again.
 - For read_file, use the exact requested path.
 - For cmd, write Bash syntax for WSL.
-- Do not repeat a successful action. If the instruction is satisfied after the last result, use conclusion DONE and actions [].
+- Do not repeat a successful action. If the ENTIRE instruction is satisfied after the last result, use conclusion DONE and actions [].
+- If the instruction has multiple steps (e.g. "click X then type Y then press Z"), only declare DONE when ALL steps are complete, not just the first.
 
 Output ONLY the JSON object.
