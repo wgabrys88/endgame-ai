@@ -752,7 +752,7 @@ def _spawn_distillation(board: Blackboard) -> None:
         log(board.iteration, "distill.skip", "distillation child already running")
         return
     goal = (
-        f"DISTILLATION — Analyze recent execution. stagnation={board.stagnation_score:.2f}. "
+        f"DISTILLATION - Analyze recent execution. stagnation={board.stagnation_score:.2f}. "
         f"Produce evolutionary insights and refined goal recommendations."
     )
     try:
