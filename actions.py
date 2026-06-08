@@ -241,18 +241,21 @@ def spawn_agent_verb(args: dict[str, Any], book: ElementBook, state: Any) -> Act
     agent_id = str(args.get("agent_id", "")).strip()
     if not agent_id:
         agent_id = f"{parent_id}_spawn_{uuid.uuid4().hex[:AGENT_ID_HEX_LENGTH]}"
-    cmd = [sys.executable, str(BASE_DIR / "main.py"), goal, "--backend", get_backend(), "--agent-id", agent_id]
     import config
+    cmd = [sys.executable, str(BASE_DIR / "main.py"), goal, "--backend", get_backend(), "--agent-id", agent_id]
     if config.PROMPT_MUTATIONS_ENABLED:
         cmd.append("--enable-prompt-mutations")
-    proc = subprocess.Popen(cmd, cwd=str(BASE_DIR))
+    try:
+        proc = subprocess.Popen(cmd, cwd=str(BASE_DIR))
+    except OSError as e:
+        return ActionResult("spawn_agent", False, f"spawn failed: {e}")
     from persistence import register_agent
     register_agent(agent_id, proc.pid)
     children = getattr(state, "children", None)
     if isinstance(children, dict):
         from state import AgentHandle
         children[agent_id] = AgentHandle(agent_id=agent_id, goal=goal, pid=proc.pid, status_file=BASE_DIR / "blackboard_state.json")
-    return ActionResult("spawn_agent", True, f"spawned agent {agent_id} pid={proc.pid} for '{goal}'", data={"goal": goal, "agent_id": agent_id, "pid": proc.pid, "cwd": str(BASE_DIR), "command": cmd})
+    return ActionResult("spawn_agent", True, f"spawned agent {agent_id} pid={proc.pid}", data={"goal": goal, "agent_id": agent_id, "pid": proc.pid})
 
 
 @_register("cmd")

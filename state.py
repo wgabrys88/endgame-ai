@@ -100,6 +100,7 @@ class Blackboard:
     pending_subtasks: list[dict[str, Any]] = field(default_factory=lambda: list[dict[str, Any]]())
 
     _screen_lock_held: bool = False
+    _action_succeeded_this_iter: bool = False
 
     def build_context(self, role: str, instruction: str = "") -> str:
         from config import CONTEXT_POLICY
@@ -373,9 +374,11 @@ class Blackboard:
         rho_eff = LORENZ_RHO + self.stagnation_score * LORENZ_RHO_SENSITIVITY * LORENZ_RHO
         beta_eff = max(LORENZ_BETA_MIN, LORENZ_BETA - self.repetition_score * LORENZ_BETA_SENSITIVITY)
 
-        x = x + LORENZ_SIGMA * (y - x) * LORENZ_DT
-        y = y + (x * (rho_eff - z) - y) * LORENZ_DT
-        z = z + (x * y - beta_eff * z) * LORENZ_DT
+        steps = ONE_INT + int(self.stagnation_score * 4)
+        for _ in range(steps):
+            x = x + LORENZ_SIGMA * (y - x) * LORENZ_DT
+            y = y + (x * (rho_eff - z) - y) * LORENZ_DT
+            z = z + (x * y - beta_eff * z) * LORENZ_DT
 
         mag = (x * x + y * y + z * z) ** LORENZ_MAG_EXPONENT
         if mag > LORENZ_MAG_CAP:
@@ -425,7 +428,9 @@ class Blackboard:
                 self.jacobian_vector[i] = position_weight * self.stagnation_score * self.attractor_energy * JACOBIAN_FUTURE_STEP_GAIN
 
     def update_screen_stagnation(self, screen_hash: str) -> None:
-        if screen_hash in self.recent_screen_hashes[-SCREEN_STAGNATION_LOOKBACK:]:
+        if self._action_succeeded_this_iter:
+            self.screen_stagnation = ZERO_INT
+        elif screen_hash in self.recent_screen_hashes[-SCREEN_STAGNATION_LOOKBACK:]:
             self.screen_stagnation += ONE_INT
         else:
             self.screen_stagnation = ZERO_INT
@@ -465,6 +470,8 @@ class Blackboard:
     def record_action(self, verb: str, args: dict[str, Any], success: bool, observation: str) -> None:
         self.last_verb = verb
         self.last_success = success
+        if success:
+            self._action_succeeded_this_iter = True
         obs_record = _observation_record(observation)
         self.last_observation = str(obs_record["summary"])
 
@@ -515,6 +522,7 @@ class Blackboard:
         self.done_claimed = False
         self.done_evidence = ""
         self.problem = ""
+        self._action_succeeded_this_iter = False
 
 
 def _render_field(board: Blackboard, field_name: str, instruction: str) -> str:
