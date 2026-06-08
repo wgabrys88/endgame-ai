@@ -43,9 +43,9 @@ Prompts: `prompts/*.txt`. Schemas: `schemas/*.json`.
 
 Three mathematical pipelines in `state.py` govern scheduling intensity:
 
-- **Lorenz attractor**: chaos-driven exploration pressure.
-- **PID controller**: temporal stagnation memory with anti-windup.
-- **Jacobian vector**: per-step sensitivity for replan pressure.
+- **Lorenz attractor**: chaos-driven exploration. When x crosses zero (wing switch) under stagnation, forces replan. Higher stagnation = faster dt steps toward next crossing.
+- **PID controller**: temporal failure memory. Accumulates only on actual failures/expectation misses, not screen latency. Output gates reflector activation.
+- **Jacobian vector**: per-step sensitivity. Weights by position × stagnation × attractor energy × failure gain. Triggers replan when dominant step impact exceeds threshold.
 
 These are toggleable via `config.py` flags (`PIPELINE_LORENZ`, `PIPELINE_PID`, `PIPELINE_JACOBIAN`).
 

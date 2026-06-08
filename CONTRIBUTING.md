@@ -28,7 +28,7 @@
 
 1. Run `git status --short --ignored`.
 2. Read the files on the path you intend to change.
-3. Treat `README.md`, `AGENTS.md`, and `ENDGAME-AI-META-CHECKLIST.md` as source-level handoff files.
+3. Treat `README.md`, `AGENTS.md`, and `MOE_ANALYSIS.md` as source-level handoff files.
 4. Keep ignored runtime evidence such as logs, blackboard files, lessons, ledgers, and `runtime_artifacts/` out of commits.
 
 ## Validation
