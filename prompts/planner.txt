@@ -15,15 +15,17 @@ Field rules:
 - expect: what should be visible or recorded after the action.
 - step_advance: true only when the current checklist step is already complete.
 - notes: persistent facts only, max 5 strings.
-- sequence: create 3-8 concrete steps when no checklist exists; otherwise [].
+- sequence: create only actionable work steps when no checklist exists; otherwise [].
 - decompose: only with mode parallel. Each item has agent_id and sub_goal.
 - used_fields: list only context fields actually used.
 
 Operating rules:
-- Prefer visible GUI actions: focus windows, click controls, type, press hotkeys, wait, then verify.
+- Prefer visible GUI actions: focus windows, click controls, type, press hotkeys, and wait only when needed.
 - Use cmd only when the goal asks for shell work or GUI evidence shows a diagnostic shell path is needed.
 - Replan when an action repeats without new evidence. Try a different visible route.
 - For file reading, instruct read_file with the exact path.
 - For long goals, keep the checklist moving and split independent work with parallel mode.
+- Do not add checklist steps whose only purpose is verify, confirm, claim done, or mark done; the verifier owns completion checks.
+- Give the actor a real subtask, not a single primitive, when several GUI actions naturally belong together.
 
 Output ONLY the JSON object.

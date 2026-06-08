@@ -39,6 +39,8 @@ Open a visual Windows Terminal session:
 python main.py "your goal" --backend acp --wt-launch
 ```
 
+The visual TUI is optimized for Windows Terminal. It shows the current event, checklist progress, signal risk, focused window, current step, latest action/result, actor observation, planner reason, and child counts.
+
 ## Goal Wrapping
 
 Human goals are allowed to be vague. `main.py` wraps every supplied goal with an operating envelope before the planner sees it.
@@ -49,6 +51,7 @@ The wrapper tells the system to:
 - use its own verbs and backend tools without waiting for the human to explain mechanics;
 - keep a checklist for multi-step work;
 - replan when evidence changes, an action repeats, or a route is blocked;
+- let the actor continue a real subtask until it emits `DONE`, while planner/verifier roles wake only on useful events;
 - use child agents only for independent work;
 - gather evidence from files, GUI, web/source tools, remote machines, and AI provider interfaces when available and allowed;
 - steer other AI or coding providers with concrete subgoals and verify their outputs before trusting them;
@@ -58,16 +61,16 @@ The wrapper tells the system to:
 
 The raw human goal is still preserved in `original_goal`. Existing guards such as explicit `read_file` path detection use the raw goal so wrapping does not break forced file reads or coordination heuristics. Resumed snapshots are normalized too, so older unwrapped saved goals do not bypass the operating envelope.
 
-## Runtime Pipeline
+## Runtime Scheduler
 
-The main loop is:
+Each iteration observes the desktop, updates blackboard signals, and then chooses the cheapest useful event handler:
 
-1. Observe the desktop.
-2. Build role context from `CONTEXT_POLICY`.
-3. Ask the planner for mode, next action, checklist changes, or child decomposition.
-4. Ask the actor to convert one instruction into typed actions.
-5. Execute actions through `actions.py`.
-6. Verify completion when done is claimed.
+1. Coordinate child results when children are already running.
+2. Satisfy forced deterministic paths such as explicit `read_file` goals.
+3. Idle on explicit await-human goals while the screen is unchanged.
+4. Continue the actor when a real subtask is still producing evidence.
+5. Replan only when no cheaper event applies, evidence changes, an action repeats, or a route blocks.
+6. Verify only when planner or actor emits a done claim.
 7. Reflect only when control signals justify it.
 8. Save blackboard state and append runtime events.
 
@@ -77,8 +80,8 @@ The control laws in `state.py` are Lorenz, PID, and Jacobian. They update stagna
 
 Prompts live in `prompts/*.txt`; schemas live in `schemas/*.json`.
 
-- `planner`: decides direct, parallel, or done; maintains checklist; gives one actor instruction.
-- `actor`: maps one instruction to 0-3 typed actions.
+- `planner`: decides direct, parallel, or done; maintains actionable checklist steps; gives one actor subtask.
+- `actor`: maps one subtask to 0-3 typed actions and emits `DONE` when that subtask is already satisfied.
 - `verifier`: confirms or denies done claims from concrete evidence.
 - `reflector`: extracts one reusable lesson and optional checklist repair.
 
@@ -117,6 +120,8 @@ Tier 3 switches to code evolution:
 - first reads lessons and prompts;
 - decides whether source reads and patches are worth time;
 - validates justified patches through a focused subagent goal.
+
+Online distillation children are not part of the main task loop. Reflection still extracts lessons from real failures, and explicit distillation/evolution goals can be run separately when evidence justifies them.
 
 ## Backends
 

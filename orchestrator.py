@@ -17,14 +17,13 @@ from config import (
     BUDGET_VERIFIER_IN, BUDGET_VERIFIER_OUT,
     BUDGET_REFLECTOR_IN, BUDGET_REFLECTOR_OUT,
     STAGNATION_HALT_THRESHOLD, STAGNATION_HALT_SUSTAINED,
-    REFLECT_THRESHOLD, DISTILL_THRESHOLD,
-    DISTILLATION_ITERATION_OFFSET, DISTILLATION_ITERATION_INTERVAL,
-    STUCKNESS_SLOPE_EPSILON,
+    REFLECT_THRESHOLD,
     MAX_PARALLEL_CHILDREN_EXACT, MAX_PARALLEL_CHILDREN_DEFAULT,
     REFLECT_MIN_ITERATION_INTERVAL, REFLECT_MIN_CONSECUTIVE_FAILURES,
     REFLECT_MIN_EXPECTATION_MISSES, REFLECT_MIN_REPETITION_SCORE,
     AGENT_ID_HEX_LENGTH, DEFAULT_SCROLL_AMOUNT, DEFAULT_WAIT_SECONDS,
     CONTEXT_POLICY, READ_FILE_EVIDENCE_MARKER,
+    HUMAN_WAIT_SCREEN_STAGNATION_MIN,
 )
 from state import Blackboard, AgentHandle
 from lessons import Lessons
@@ -46,7 +45,6 @@ REFLECTOR_SPEC = RoleSpec("reflector", BUDGET_REFLECTOR_IN, BUDGET_REFLECTOR_OUT
 
 _stagnation_history: list[float] = []
 _last_event: str = ""
-_last_distill_iteration: int = DISTILLATION_ITERATION_OFFSET
 _last_reflect_iteration: int = -1000000
 _prompt_mutations_enabled: bool = False
 
@@ -141,6 +139,53 @@ def _verifier_response_consistent(result: dict[str, Any]) -> bool:
     return failure_type is not None
 
 
+def _is_backend_unavailable(exception_type: str, error: str) -> bool:
+    lower = f"{exception_type} {error}".lower()
+    markers = (
+        "setup command failed",
+        "wsl/service/e_unexpected",
+        "protocol version mismatch",
+        "no sessionid returned",
+        "process not running",
+        "connection refused",
+        "failed to establish",
+        "no connection could be made",
+        "client shut down",
+    )
+    return any(marker in lower for marker in markers)
+
+
+def _backend_unavailable_recent(board: Blackboard) -> bool:
+    if board.last_verb == "backend_unavailable":
+        return True
+    return any("_backend_unavailable" in error or "[backend_unavailable]" in error for error in board.errors[-TWO_INT:])
+
+
+def _handle_role_call_failure(board: Blackboard, role: str, exception_type: str, error: str) -> str:
+    if _is_backend_unavailable(exception_type, error):
+        board.record_error(f"{role}_backend_unavailable", error)
+        board.record_action(
+            "backend_unavailable",
+            {"role": role, "backend": get_backend(), "exception_type": exception_type},
+            False,
+            f"{role} backend unavailable: {exception_type}: {error}",
+        )
+        board.record_failure()
+        log(board.iteration, "backend.unavailable", "ending run until backend is available", {"role": role, "backend": get_backend(), "exception_type": exception_type, "error": error})
+        _report_status(board.agent_id, "failed", error=f"backend_unavailable:{exception_type}")
+        return "failed"
+    board.record_error(f"{role}_role_error", error)
+    board.record_action("role_error", {"role": role, "exception_type": exception_type}, False, f"{role} role error: {exception_type}: {error}")
+    board.record_failure()
+    return "continue"
+
+
+def _handle_role_stop(board: Blackboard, role: str, error: str) -> str:
+    log(board.iteration, "stop.signal", "stop requested during role call", {"role": role, "error": error})
+    _report_status(board.agent_id, "failed", error="stop_signal")
+    return "failed"
+
+
 def run(board: Blackboard, *, interrupted: Callable[[], bool] = lambda: False, prompt_mutations_enabled: bool | None = None) -> bool:
     global _last_event, _prompt_mutations_enabled
     import config
@@ -153,7 +198,7 @@ def run(board: Blackboard, *, interrupted: Callable[[], bool] = lambda: False, p
 
 
 def _loop(board: Blackboard, interrupted: Callable[[], bool], halt_counter: int, is_main: bool) -> bool:
-    global _last_event, _last_distill_iteration
+    global _last_event
 
     while True:
         if _handle_stop_signal(board, is_main):
@@ -208,20 +253,17 @@ def _loop(board: Blackboard, interrupted: Callable[[], bool], halt_counter: int,
             if is_main:
                 tui.render(board, _stagnation_history, _last_event)
             return True
+        if result == "failed":
+            _last_event = "FAIL"
+            if is_main:
+                tui.render(board, _stagnation_history, _last_event)
+            return False
 
         _stagnation_history.append(board.stagnation_score)
 
-        if board.pid_output > REFLECT_THRESHOLD:
+        if board.pid_output > REFLECT_THRESHOLD and _maybe_phase_reflect(board, "pid"):
             _last_event = "PID:reflect"
             log(board.iteration, "pid.reflect", f"pid={board.pid_output:.2f}")
-            _maybe_phase_reflect(board, "pid")
-
-        stuckness = (board.stagnation_score * board.stagnation_score) / (abs(board.pid_slope) + STUCKNESS_SLOPE_EPSILON)
-        if stuckness > DISTILL_THRESHOLD and (board.iteration - _last_distill_iteration) >= DISTILLATION_ITERATION_INTERVAL:
-            _last_event = "PID:distill"
-            log(board.iteration, "pid.distill", f"stuckness={stuckness:.2f}")
-            _spawn_distillation(board)
-            _last_distill_iteration = board.iteration
 
         if is_main:
             tui.render(board, _stagnation_history, _last_event)
@@ -326,6 +368,60 @@ def _coordinate_children_ready(board: Blackboard) -> bool:
     return len(board.completed_subtasks) >= len(board.children)
 
 
+def _awaits_human_response(board: Blackboard) -> bool:
+    goal = (board.original_goal or board.goal).lower()
+    current_step = ""
+    if board.plan_steps and board.plan_step_index < len(board.plan_steps):
+        current_step = board.plan_steps[board.plan_step_index].lower()
+    if "await" not in goal and "wait" not in goal:
+        return False
+    if "human" not in goal and "user" not in goal:
+        return False
+    return "await" in current_step or "human" in current_step or "instruction" in current_step or "response" in current_step
+
+
+def _should_wait_for_human_event(board: Blackboard) -> bool:
+    if not _awaits_human_response(board):
+        return False
+    if board.screen_stagnation < HUMAN_WAIT_SCREEN_STAGNATION_MIN:
+        return False
+    if board.last_verb == "role_error" or board.consecutive_failures > ZERO_INT:
+        return False
+    return True
+
+
+def _is_verifier_only_step(step: str) -> bool:
+    lower = step.strip().lower()
+    if not lower:
+        return True
+    action_markers = (
+        "click",
+        "type",
+        "write",
+        "press",
+        "focus",
+        "open",
+        "read_file",
+        "write_file",
+        "spawn",
+        "scroll",
+        "wait for human",
+        "await human",
+        "select",
+        "replace",
+    )
+    if any(marker in lower for marker in action_markers):
+        return False
+    done_markers = ("mark goal", "claim done", "goal as done", "emit done", "report done")
+    if any(marker in lower for marker in done_markers):
+        return True
+    return lower.startswith(("verify", "confirm")) and ("visible" in lower or "complete" in lower or "done" in lower)
+
+
+def _actionable_sequence(raw_steps: list[str]) -> list[str]:
+    return [step for step in raw_steps if not _is_verifier_only_step(step)]
+
+
 def _claim_done(board: Blackboard, evidence: str, is_distillation: bool, claim_source: str) -> str:
     if is_distillation:
         log(board.iteration, "goal.complete", "distillation")
@@ -338,9 +434,18 @@ def _claim_done(board: Blackboard, evidence: str, is_distillation: bool, claim_s
         log(board.iteration, "goal.complete", f"evidence={board.done_evidence}")
         _report_status(board.agent_id, "done", result=board.done_evidence)
         return "done"
+    if _backend_unavailable_recent(board):
+        return "failed"
     board.verifier_denied_last = True
     board.record_failure()
     return "continue"
+
+
+def _actor_done_should_verify_goal(board: Blackboard) -> bool:
+    if not board.plan_steps:
+        return True
+    remaining = len(board.plan_steps) - board.plan_step_index - ONE_INT
+    return remaining <= ONE_INT
 
 
 def _maybe_advance_after_read(board: Blackboard, verb: str, args: dict[str, Any], success: bool) -> None:
@@ -399,6 +504,15 @@ def _phase_plan_act(board: Blackboard) -> str:
         _last_event = "READ:force"
         return _phase_act(board, instruction)
 
+    if _should_wait_for_human_event(board):
+        log(board.iteration, "human.wait", "awaiting human-visible screen change", {"screen_stagnation": board.screen_stagnation, "focused_window": board.focused_window, "step": board.plan_step_index})
+        _last_event = "WAIT:human"
+        return "continue"
+
+    if _should_continue_actor(board):
+        log(board.iteration, "actor.continue", "continuing current actor subtask", {"instruction": board.last_instruction, "last_verb": board.last_verb})
+        return _phase_act(board, board.last_instruction)
+
     role = "distillation" if is_distillation else "planner"
     context = board.build_context(role)
 
@@ -407,13 +521,13 @@ def _phase_plan_act(board: Blackboard) -> str:
         tui.render(board, _stagnation_history, _last_event)
     plan = _call_llm_role("planner", PLANNER_SPEC, context, board.iteration, board.agent_id)
 
+    if isinstance(plan, dict) and plan.get("__stop_requested__"):
+        return _handle_role_stop(board, "planner", str(plan.get("error", "")))
+
     if isinstance(plan, dict) and plan.get("__role_error__"):
         err = str(plan.get("error", ""))
         exception_type = str(plan.get("exception_type", ""))
-        board.record_error("planner_role_error", err)
-        board.record_action("role_error", {"role": "planner", "exception_type": exception_type}, False, f"planner role error: {exception_type}: {err}")
-        board.record_failure()
-        return "continue"
+        return _handle_role_call_failure(board, "planner", exception_type, err)
 
     if isinstance(plan, dict) and plan.get("__refusal_detected__"):
         board.record_error("planner_refusal", plan.get("error", ""))
@@ -443,11 +557,12 @@ def _phase_plan_act(board: Blackboard) -> str:
         board.notes = [new_notes.strip()]
 
     sequence_raw = plan.get("sequence", [])
-    sequence: list[str] = [str(s) for s in cast(list[Any], sequence_raw)] if isinstance(sequence_raw, list) else []
+    sequence_raw_strings: list[str] = [str(s) for s in cast(list[Any], sequence_raw)] if isinstance(sequence_raw, list) else []
+    sequence = _actionable_sequence(sequence_raw_strings)
     if sequence and not board.plan_steps:
         board.plan_steps = sequence
         board.plan_step_index = ZERO_INT
-        log(board.iteration, "checklist.created", "planner created checklist", {"steps": sequence})
+        log(board.iteration, "checklist.created", "planner created checklist", {"steps": sequence, "dropped": [step for step in sequence_raw_strings if step not in sequence]})
 
     if plan.get("step_advance") and board.plan_steps:
         board.plan_step_index = min(board.plan_step_index + ONE_INT, len(board.plan_steps) - ONE_INT)
@@ -463,6 +578,12 @@ def _phase_plan_act(board: Blackboard) -> str:
 
     if mode == "done":
         return _claim_done(board, str(plan.get("because", next_action)), is_distillation, "planner claimed mode=done")
+
+    if _awaits_human_response(board):
+        log(board.iteration, "human.wait", "awaiting human response after planner step", {"screen_stagnation": board.screen_stagnation, "focused_window": board.focused_window, "step": board.plan_step_index})
+        board.record_success()
+        _last_event = "WAIT:human"
+        return "continue"
 
     if mode == "parallel" and decompose:
         if board.agent_id != "main":
@@ -490,13 +611,13 @@ def _phase_act(board: Blackboard, instruction: str) -> str:
     context = board.build_context("actor", instruction)
     actor_out = _call_llm_role("actor", ACTOR_SPEC, context, board.iteration, board.agent_id)
 
+    if isinstance(actor_out, dict) and actor_out.get("__stop_requested__"):
+        return _handle_role_stop(board, "actor", str(actor_out.get("error", "")))
+
     if isinstance(actor_out, dict) and actor_out.get("__role_error__"):
         err = str(actor_out.get("error", ""))
         exception_type = str(actor_out.get("exception_type", ""))
-        board.record_error("actor_role_error", err)
-        board.record_action("role_error", {"role": "actor", "exception_type": exception_type}, False, f"actor role error: {exception_type}: {err}")
-        board.record_failure()
-        return "continue"
+        return _handle_role_call_failure(board, "actor", exception_type, err)
 
     if isinstance(actor_out, dict) and actor_out.get("__refusal_detected__"):
         board.record_error("actor_refusal", actor_out.get("error", ""))
@@ -524,6 +645,19 @@ def _phase_act(board: Blackboard, instruction: str) -> str:
 
     raw_actions_raw = actor_out.get("actions", [])
     raw_actions: list[Any] = cast(list[Any], raw_actions_raw) if isinstance(raw_actions_raw, list) else []
+    if board.actor_conclusion == "DONE" and not raw_actions:
+        board.record_success()
+        board.last_instruction = ""
+        _last_event = "ACTOR:done"
+        if board.plan_steps and board.plan_step_index < len(board.plan_steps) - ONE_INT:
+            board.plan_step_index += ONE_INT
+            board.reset_pid_integral()
+            log(board.iteration, "checklist.advance", f"actor_done step={board.plan_step_index}")
+        if _actor_done_should_verify_goal(board):
+            evidence = f"actor reported instruction done: {board.actor_observe or board.actor_reason}"
+            return _claim_done(board, evidence, "DISTILLATION" in board.goal.upper(), "actor emitted DONE")
+        return "continue"
+
     forced_read_path = _read_file_instruction_path(instruction)
     if forced_read_path:
         proposed_dict: dict[str, Any] = {}
@@ -592,17 +726,93 @@ def _phase_act(board: Blackboard, instruction: str) -> str:
     return "continue"
 
 
+def _should_continue_actor(board: Blackboard) -> bool:
+    if not board.last_instruction:
+        return False
+    if board.actor_conclusion == "DONE":
+        return False
+    if board.verifier_denied_last or board.consecutive_failures > ZERO_INT:
+        return False
+    if not board.last_success:
+        return False
+    if board.last_verb in ("role_error", "parse_fail", "no_match"):
+        return False
+    if _primitive_missed_named_target(board):
+        return False
+    if _primitive_missed_expected_dialog(board):
+        return False
+    if board.last_verb in ("click", "focus", "hotkey", "press", "scroll", "wait") and board.screen_stagnation > ZERO_INT:
+        return False
+    if board.detect_repetition_in_history():
+        return False
+    if _awaits_human_response(board):
+        return False
+    return True
+
+
+def _is_primitive_action(verb: str) -> bool:
+    return verb in ("click", "focus", "hotkey", "press", "scroll", "wait")
+
+
+def _primitive_missed_named_target(board: Blackboard) -> bool:
+    if not _is_primitive_action(board.last_verb):
+        return False
+    import re
+    text = f"{board.last_instruction} {board.last_expect}"
+    targets: list[str] = []
+    for match in re.finditer(r"\b([A-Z][A-Za-z0-9._-]*(?:\s+[A-Z][A-Za-z0-9._-]*){0,3})\s+windows?\b", text):
+        target = match.group(ONE_INT).strip().lower()
+        for article in ("the ", "a ", "an "):
+            if target.startswith(article):
+                target = target[len(article):]
+        if target and target not in ("open", "visible"):
+            targets.append(target)
+    if not targets:
+        return False
+    screen_text = f"{board.focused_window}\n{board.screen}".lower()
+    missed = [target for target in targets if target not in screen_text]
+    if not missed:
+        return False
+    log(board.iteration, "actor.continue.skip", "primitive action did not reveal named target", {"last_verb": board.last_verb, "missed_targets": missed, "focused_window": board.focused_window})
+    return True
+
+
+def _primitive_missed_expected_dialog(board: Blackboard) -> bool:
+    if not _is_primitive_action(board.last_verb):
+        return False
+    text = f"{board.last_instruction} {board.last_expect}"
+    if "dialog" not in text.lower():
+        return False
+    import re
+    expected_names: list[str] = []
+    for pattern in (r"['\"]([^'\"]+)['\"]\s+dialog", r"dialog(?:\s+titled|\s+named)?\s+['\"]([^'\"]+)['\"]"):
+        expected_names.extend(match.group(ONE_INT).strip().lower() for match in re.finditer(pattern, text, re.I))
+    screen_text = f"{board.focused_window}\n{board.screen}".lower()
+    missed = [name for name in expected_names if name and name not in screen_text]
+    if missed:
+        log(board.iteration, "actor.continue.skip", "primitive action did not reveal expected dialog", {"last_verb": board.last_verb, "missed_dialogs": missed, "focused_window": board.focused_window})
+        return True
+    if not expected_names and "dialog" not in screen_text:
+        log(board.iteration, "actor.continue.skip", "primitive action did not reveal any dialog", {"last_verb": board.last_verb, "focused_window": board.focused_window})
+        return True
+    return False
+
+
 def _maybe_phase_reflect(board: Blackboard, reason: str) -> bool:
     global _last_reflect_iteration
+    if _backend_unavailable_recent(board):
+        log(board.iteration, "reflect.skip", "backend unavailable", {"reason": reason, "last_verb": board.last_verb})
+        return False
     elapsed = board.iteration - _last_reflect_iteration
     if elapsed < REFLECT_MIN_ITERATION_INTERVAL:
         log(board.iteration, "reflect.skip", "minimum reflection interval not met", {"reason": reason, "elapsed": elapsed, "minimum": REFLECT_MIN_ITERATION_INTERVAL})
         return False
     if reason == "pid":
+        repeated_without_screen_progress = board.repetition_score >= REFLECT_MIN_REPETITION_SCORE and board.screen_stagnation > ZERO_INT
         strong_signal = (
             board.consecutive_failures >= REFLECT_MIN_CONSECUTIVE_FAILURES
             or board.expectation_miss_streak >= REFLECT_MIN_EXPECTATION_MISSES
-            or board.repetition_score >= REFLECT_MIN_REPETITION_SCORE
+            or repeated_without_screen_progress
         )
         if not strong_signal:
             log(
@@ -613,6 +823,7 @@ def _maybe_phase_reflect(board: Blackboard, reason: str) -> bool:
                     "consecutive_failures": board.consecutive_failures,
                     "expectation_miss_streak": board.expectation_miss_streak,
                     "repetition_score": board.repetition_score,
+                    "screen_stagnation": board.screen_stagnation,
                 },
             )
             return False
@@ -635,12 +846,18 @@ def _phase_reflect(board: Blackboard) -> None:
         evolution_result = process_reflection_result(board, result, prompt_mutations_enabled=_prompt_mutations_enabled)
         log(board.iteration, "reflection.pipeline", "linearized reflection pipeline completed", evolution_result)
     except Exception as e:
+        if "stop signal requested" in str(e).lower():
+            log(board.iteration, "stop.signal", "stop requested during reflector call", {"error": str(e)})
+            return
         board.record_error("reflector_fail", str(e))
         log(board.iteration, "reflector.error", "reflector failed", {"exception_type": type(e).__name__, "exception": str(e), "traceback": traceback.format_exc()})
 
 
 def _try_spawn_successor(board: Blackboard) -> None:
     if board.agent_id != "main":
+        return
+    if _backend_unavailable_recent(board):
+        log(board.iteration, "successor.skip", "backend unavailable; successor would repeat the same failure", {"backend": get_backend()})
         return
     goal = (
         f"SUCCESSOR — Parent halted at stagnation={board.stagnation_score:.2f} iteration={board.iteration}. "
@@ -745,27 +962,6 @@ def _spawn_child(agent_id: str, goal: str, iteration: int) -> AgentHandle | None
         return None
 
 
-def _spawn_distillation(board: Blackboard) -> None:
-    if board.agent_id != "main":
-        log(board.iteration, "distill.skip", "distillation only runs from main")
-        return
-    if any(agent_id.startswith("distill") and handle.state == "running" for agent_id, handle in board.children.items()):
-        log(board.iteration, "distill.skip", "distillation child already running")
-        return
-    goal = (
-        f"DISTILLATION - Analyze recent execution. stagnation={board.stagnation_score:.2f}. "
-        f"Produce evolutionary insights and refined goal recommendations."
-    )
-    try:
-        agent_id = f"distill_{board.iteration}"
-        handle = _spawn_child(agent_id, goal, board.iteration)
-        if handle:
-            board.children[agent_id] = handle
-            log(board.iteration, "distill.spawn", goal, {"agent_id": agent_id, "pid": handle.pid})
-    except Exception as e:
-        board.record_error("distill_spawn_fail", str(e))
-
-
 def _append_prompt_mutation_flag(cmd: list[str]) -> None:
     import config
     if config.PROMPT_MUTATIONS_ENABLED:
@@ -788,6 +984,8 @@ def _call_llm_role(role: str, spec: RoleSpec, context: str, iteration: int, agen
     except Exception as e:
         err_str = str(e)
         log(iteration, f"{role}.error", "role call failed", {"exception_type": type(e).__name__, "exception": err_str, "traceback": traceback.format_exc()})
+        if "stop signal requested" in err_str.lower():
+            return {"__stop_requested__": True, "error": err_str}
         if any(x in err_str.lower() for x in ["not going to help", "i'm not going to", "cannot assist", "refusal", "safety", "impersonation"]):
             return {"__refusal_detected__": True, "error": err_str}
         return {"__role_error__": True, "exception_type": type(e).__name__, "error": err_str}
@@ -806,7 +1004,11 @@ def _call_verifier(board: Blackboard, instruction: str = "") -> bool:
         board.console_log.append(f"[VERIFY] {verdict}: {result.get('reason', '')}")
         return verdict == "confirmed"
     except Exception as e:
-        log(board.iteration, "verifier.error", "verifier failed", {"exception_type": type(e).__name__, "exception": str(e), "traceback": traceback.format_exc()})
+        exception_type = type(e).__name__
+        error = str(e)
+        log(board.iteration, "verifier.error", "verifier failed", {"exception_type": exception_type, "exception": error, "traceback": traceback.format_exc()})
+        if _is_backend_unavailable(exception_type, error):
+            _handle_role_call_failure(board, "verifier", exception_type, error)
         return False
 
 

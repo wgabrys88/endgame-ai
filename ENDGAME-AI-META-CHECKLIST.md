@@ -16,7 +16,14 @@ Project-level checklist for making `endgame-ai` more efficient, more reliable, a
 - [done] Child agents inherit prompt-mutation settings through the direct `spawn_agent` action path.
 - [done] Actor-level `spawn_agent` now creates a unique non-main child id, registers it, attaches it to parent coordination state, and uses the normal child event channel.
 - [done] ACP setup commands retry before surfacing transient WSL startup failures.
+- [done] Online distillation spawning was removed from the main task loop; explicit distillation/evolution goals remain separate.
+- [done] Await-human goals can idle on unchanged screen evidence instead of spending planner/actor turns.
+- [done] Actor continuation now follows real subtask progress and stops primitive repeats when screen semantics do not change.
+- [done] Actor `DONE` can trigger verifier directly near the end of actionable checklist work instead of requiring planner to claim done first.
+- [done] Planner checklists now drop verify/confirm/claim-done-only steps because the verifier already owns completion checks.
+- [done] Visual TUI now prioritizes checklist progress, signal risk, current step, latest action/result, actor observation, planner reason, and child counts.
 - [done] ACP smoke validation succeeded on 2026-06-08 with `read_file README.md`, verifier `confirmed`, `failure_type:null`, and no `cmd`, `write_file`, or `spawn_agent` action.
+- [validated] ACP Notepad validation on 2026-06-08 exited `0`, used GUI actions, produced actor `DONE`, verifier `confirmed`, and spawned no distillation children; it also exposed primitive-repeat and verifier-only checklist waste that this session patched.
 - [validated] `ENDGAME-AI-WHAT-IS-NOT-NEEDED.json` is runtime/session evidence, not source. Its useful findings are distilled below instead of committing the raw ignored report.
 
 ## Validated Report Findings
@@ -46,6 +53,7 @@ Project-level checklist for making `endgame-ai` more efficient, more reliable, a
 - [next] Test `comms/stop.txt` while an ACP request is waiting, not only before iterations/actions.
 - [next] Validate child-agent termination behavior under a live multi-agent ACP goal.
 - [next] Validate actor-level `spawn_agent` under live ACP with one child read-file task and verifier-confirmed parent completion.
+- [next] Validate the Notepad await-human scenario as a one-shot ACP run after TUI/event-driven gating changes.
 - [next] Add runtime cleanup as a first-class command or script that preserves source and deletes only generated artifacts.
 - [next] Decide whether `lessons.json` should remain runtime-only forever or whether a curated seed lesson file should be tracked separately.
 

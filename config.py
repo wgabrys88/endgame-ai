@@ -98,9 +98,6 @@ PROBE_SINE_AMPLITUDE_RATIO: float = 0.4
 PROBE_SINE_PERIOD_STEPS: float = 6.0
 WINDOW_SORT_FALLBACK_RANK: int = 999
 AGENT_ID_HEX_LENGTH: int = 6
-STUCKNESS_SLOPE_EPSILON: float = 0.01
-DISTILLATION_ITERATION_OFFSET: int = -10
-DISTILLATION_ITERATION_INTERVAL: int = 10
 MAX_PARALLEL_CHILDREN_EXACT: int = 4
 MAX_PARALLEL_CHILDREN_DEFAULT: int = 8
 CHECKLIST_REWRITE_MIN_STEPS: int = 2
@@ -135,7 +132,7 @@ SYSTEM_OPERATING_GOAL:
 - Use the available verbs and backend tools; do not wait for the human to describe system mechanics.
 - Build or maintain a checklist for multi-step work.
 - Replan when evidence changes, an action repeats, or the current route is blocked.
-- Chain actions through observe, plan, act, verify, and reflect instead of treating the goal as one prompt.
+- Use observe/action/verifier events to decide the next role; replan only when evidence changes, repeats, or blocks justify it.
 - Use child agents only for independent work that can report back.
 - For long goals, gather evidence from files, GUI, web/source tools, remote machines, and AI provider interfaces when available and allowed.
 - When steering other AI or coding providers, give concrete subgoals and verify their outputs before trusting them.
@@ -358,7 +355,7 @@ STAGNATION_WEIGHT_SCREEN: float = 6.0
 STAGNATION_NORMALIZER: float = 28.0
 
 REFLECT_THRESHOLD: float = 0.3
-DISTILL_THRESHOLD: float = 2.0
+HUMAN_WAIT_SCREEN_STAGNATION_MIN: int = 1
 
 LLM_TEMPERATURE: float = 0.30
 LLM_TOP_P: float = 0.95

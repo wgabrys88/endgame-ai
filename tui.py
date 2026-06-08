@@ -165,25 +165,52 @@ def _child_line(children: Any) -> str:
     return "children: " + ", ".join(parts) if parts else "children: none"
 
 
+def _child_summary(children: Any) -> str:
+    if not isinstance(children, dict) or not children:
+        return "children run=0 done=0 fail=0"
+    running = done = failed = ZERO_INT
+    children_dict = cast(dict[Any, Any], children)
+    for handle in children_dict.values():
+        if hasattr(handle, "state"):
+            state = str(getattr(handle, "state"))
+        elif isinstance(handle, dict):
+            state = str(cast(dict[str, Any], handle).get("state", ""))
+        else:
+            state = ""
+        if state == "running":
+            running += ONE_INT
+        elif state == "done":
+            done += ONE_INT
+        elif state == "failed":
+            failed += ONE_INT
+    return f"children run={running} done={done} fail={failed}"
+
+
 def _status_lines(board: Any, stagnation_history: list[float], last_event: str, layout: _Layout) -> list[str]:
-    goal = _clip(str(getattr(board, "goal", "")), layout.text_cols - 6)
+    goal = _clip(str(getattr(board, "original_goal", "") or getattr(board, "goal", "")), layout.text_cols - 6)
     focus = _clip(str(getattr(board, "focused_window", "")), layout.text_cols - 8)
-    plan_steps = getattr(board, "plan_steps", [])
+    plan_steps = cast(list[Any], getattr(board, "plan_steps", []))
     plan_index = getattr(board, "plan_step_index", ZERO_INT)
     step = ""
     if plan_steps and plan_index < len(plan_steps):
         step = _clip(str(plan_steps[plan_index]), layout.text_cols - 6)
+    total_steps = len(plan_steps)
+    progress = f"{min(plan_index + ONE_INT, total_steps)}/{total_steps}" if total_steps else "0/0"
     last_obs = _clip(str(getattr(board, "last_observation", "")), layout.text_cols - 7)
+    actor = _clip(str(getattr(board, "actor_observe", "")), layout.text_cols - 7)
+    reason = _clip(str(getattr(board, "last_plan_because", "")), layout.text_cols - 7)
     lines = [
         f"endgame-ai | {getattr(board, 'agent_id', 'main')} | iter {getattr(board, 'iteration', ZERO_INT)} | {last_event}",
-        f"mode={getattr(board, 'mode', '')} screen={getattr(board, 'screen_valid', False)} stagnation={getattr(board, 'stagnation_score', 0.0):.3f} pid={getattr(board, 'pid_output', 0.0):.3f}",
+        f"mode={getattr(board, 'mode', '')} step={progress} screen={getattr(board, 'screen_valid', False)}",
+        f"sig stag={getattr(board, 'stagnation_score', 0.0):.3f} pid={getattr(board, 'pid_output', 0.0):.3f} slope={getattr(board, 'pid_slope', 0.0):.3f} rep={getattr(board, 'repetition_score', 0.0):.3f}",
+        f"risk fail={getattr(board, 'consecutive_failures', 0)} miss={getattr(board, 'expectation_miss_streak', 0)} screen_stag={getattr(board, 'screen_stagnation', 0)} { _child_summary(getattr(board, 'children', {})) }",
         f"goal: {goal}",
         f"focus: {focus}",
-        f"plan[{plan_index}]: {step}" if step else "plan: (none)",
+        f"now: {step}" if step else "now: (none)",
         f"action: {getattr(board, 'last_verb', '')} ok={getattr(board, 'last_success', False)}",
         f"result: {last_obs}",
-        _child_line(getattr(board, "children", {})),
-        f"lorenz: x={getattr(board, 'lorenz_x', 0.0):.2f} y={getattr(board, 'lorenz_y', 0.0):.2f} z={getattr(board, 'lorenz_z', 0.0):.2f} energy={getattr(board, 'attractor_energy', 0.0):.3f}",
+        f"actor: {actor}" if actor else _child_line(getattr(board, "children", {})),
+        f"plan: {reason}" if reason else f"energy={getattr(board, 'attractor_energy', 0.0):.3f}",
     ]
     return lines[:TUI_STATUS_ROWS]
 
@@ -288,10 +315,12 @@ def render(board: Any, stagnation_history: list[float], last_event: str = "") ->
             "pid_slope": board.pid_slope,
             "repetition_score": board.repetition_score,
             "screen_stagnation": board.screen_stagnation,
+            "expectation_miss_streak": board.expectation_miss_streak,
             "consecutive_failures": board.consecutive_failures,
             "attractor_energy": board.attractor_energy,
             "plan_steps": board.plan_steps,
             "plan_step_index": board.plan_step_index,
+            "plan_progress": f"{min(board.plan_step_index + ONE_INT, len(board.plan_steps))}/{len(board.plan_steps)}" if board.plan_steps else "0/0",
             "last_instruction": board.last_instruction,
             "last_verb": board.last_verb,
             "last_success": board.last_success,

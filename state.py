@@ -475,7 +475,19 @@ class Blackboard:
         if len(self.history) > MAX_HISTORY_ENTRIES:
             self.history = self.history[-MAX_HISTORY_ENTRIES:]
 
-        target_str = str(args.get("target", "") or args.get("selector", "") or args.get("path", "") or args.get("command", "") or args.get("goal", "") or args.get("window_title", ""))
+        keys_raw = args.get("keys", [])
+        keys = "+".join(str(k) for k in cast(list[Any], keys_raw)) if isinstance(keys_raw, list) else str(keys_raw)
+        target_str = str(
+            args.get("target", "")
+            or args.get("selector", "")
+            or args.get("path", "")
+            or args.get("command", "")
+            or args.get("goal", "")
+            or args.get("window_title", "")
+            or args.get("key", "")
+            or keys
+            or args.get("seconds", "")
+        )
         self.update_signals(verb, target_str)
 
     def record_failure(self) -> None:

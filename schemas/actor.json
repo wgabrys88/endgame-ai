@@ -45,8 +45,8 @@
         },
         "conclusion": {
           "type": "string",
-          "enum": ["EXPECTED", "UNEXPECTED"],
-          "description": "Does current screen match what was expected last cycle?"
+          "enum": ["DONE", "EXPECTED", "UNEXPECTED"],
+          "description": "DONE: current instruction is satisfied and no action is needed. EXPECTED: action can continue. UNEXPECTED: blocked or no match."
         },
         "used_fields": {
           "type": "array",
