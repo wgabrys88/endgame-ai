@@ -50,11 +50,13 @@ The wrapper tells the system to:
 - keep a checklist for multi-step work;
 - replan when evidence changes, an action repeats, or a route is blocked;
 - use child agents only for independent work;
+- gather evidence from files, GUI, web/source tools, remote machines, and AI provider interfaces when available and allowed;
+- steer other AI or coding providers with concrete subgoals and verify their outputs before trusting them;
 - preserve full evidence in logs and use compact role context;
 - learn reusable lessons through reflection;
 - complete only when verifier evidence proves the human goal.
 
-The raw human goal is still preserved in `original_goal`. Existing guards such as explicit `read_file` path detection use the raw goal so wrapping does not break forced file reads or coordination heuristics.
+The raw human goal is still preserved in `original_goal`. Existing guards such as explicit `read_file` path detection use the raw goal so wrapping does not break forced file reads or coordination heuristics. Resumed snapshots are normalized too, so older unwrapped saved goals do not bypass the operating envelope.
 
 ## Runtime Pipeline
 
@@ -203,7 +205,10 @@ Trackable files include:
 - `tests/*.py`;
 - `README.md`;
 - `AGENTS.md`;
+- `CONTRIBUTING.md`;
 - `ENDGAME-AI-META-CHECKLIST.md`;
+- `LICENSE`;
+- `.github/ISSUE_TEMPLATE/*.md`;
 - `.gitattributes`;
 - `.gitignore`;
 - `pyrightconfig.json`.
@@ -219,11 +224,7 @@ python -m compileall -q .
 python -m pyright
 ```
 
-Focused deterministic regression:
-
-```powershell
-python -m unittest tests.test_self_evolution
-```
+Focused unit regressions live under `tests/`. They guard self-evolution invariants, but live ACP validation is the runtime proof path. Do not keep running unit tests if the current session or evidence says they hang.
 
 Live ACP smoke validation:
 

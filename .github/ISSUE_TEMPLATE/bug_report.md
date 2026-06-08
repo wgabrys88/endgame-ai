@@ -12,7 +12,7 @@ Describe the failure.
 
 ## Goal used
 
-The exact goal string passed to main.py.
+The exact raw goal string passed to main.py. Runtime logs should also show the wrapped goal and `original_goal`.
 
 ## Backend
 
@@ -36,7 +36,7 @@ If lmstudio: which model?
 
 ## Log file
 
-Paste relevant JSONL events from log-*.jsonl or attach the file.
+Paste relevant JSON events from `log-*.txt` or `blackboard_events.txt`, or attach the file.
 
 ## Steps to reproduce
 

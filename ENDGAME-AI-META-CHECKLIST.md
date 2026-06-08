@@ -11,6 +11,10 @@ Project-level checklist for making `endgame-ai` more efficient, more reliable, a
 - [done] Lesson metadata is typed and persisted with issue keys, prompt mutation history, and tier-3 escalation history.
 - [done] `AGENTS.md` exists as a provider-agnostic handoff artifact.
 - [done] Git ignore policy was validated: docs/tests need explicit unignore rules; runtime reports remain ignored.
+- [done] Human goals are wrapped by Python and resumed snapshots are normalized so legacy unwrapped goals do not bypass the wrapper.
+- [done] Goal wrapper now includes long-goal evidence gathering and provider-steering guidance while staying short enough for small models.
+- [done] Child agents inherit prompt-mutation settings through the direct `spawn_agent` action path.
+- [done] ACP setup commands retry before surfacing transient WSL startup failures.
 - [done] ACP smoke validation succeeded on 2026-06-08 with `read_file README.md`, verifier `confirmed`, `failure_type:null`, and no `cmd`, `write_file`, or `spawn_agent` action.
 - [validated] `ENDGAME-AI-WHAT-IS-NOT-NEEDED.json` is runtime/session evidence, not source. Its useful findings are distilled below instead of committing the raw ignored report.
 
@@ -39,7 +43,7 @@ Project-level checklist for making `endgame-ai` more efficient, more reliable, a
 - [next] Add a subagent validation goal dedicated to self-evolution invariants: lesson extraction, default-disabled prompt mutation, guarded enabled mutation, and tier-3 threshold behavior.
 - [next] Harden `cmd` action semantics around Bash/WSL syntax and remove ambiguity with Windows shell syntax.
 - [next] Test `comms/stop.txt` while an ACP request is waiting, not only before iterations/actions.
-- [next] Ensure child agents inherit prompt-mutation settings and termination behavior across every spawn path.
+- [next] Validate child-agent termination behavior under a live multi-agent ACP goal.
 - [next] Add runtime cleanup as a first-class command or script that preserves source and deletes only generated artifacts.
 - [next] Decide whether `lessons.json` should remain runtime-only forever or whether a curated seed lesson file should be tracked separately.
 

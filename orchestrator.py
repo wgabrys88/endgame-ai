@@ -144,6 +144,7 @@ def _verifier_response_consistent(result: dict[str, Any]) -> bool:
 def run(board: Blackboard, *, interrupted: Callable[[], bool] = lambda: False, prompt_mutations_enabled: bool | None = None) -> bool:
     global _last_event, _prompt_mutations_enabled
     import config
+    board.ensure_goal_wrapped()
     _prompt_mutations_enabled = config.PROMPT_MUTATIONS_ENABLED if prompt_mutations_enabled is None else prompt_mutations_enabled
     config.PROMPT_MUTATIONS_ENABLED = _prompt_mutations_enabled
     halt_counter = ZERO_INT

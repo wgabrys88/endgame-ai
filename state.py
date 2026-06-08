@@ -110,6 +110,16 @@ class Blackboard:
                 parts.append(text)
         return "\n\n".join(parts)
 
+    def ensure_goal_wrapped(self) -> None:
+        if not self.goal:
+            return
+        from goal_wrapper import extract_human_goal, wrap_goal
+        if self.original_goal:
+            self.original_goal = extract_human_goal(self.original_goal)
+        else:
+            self.original_goal = extract_human_goal(self.goal)
+        self.goal = wrap_goal(self.goal)
+
     def format_history(self, label: str = "RECENT", full: bool = False) -> str:
         from config import CONTEXT_HISTORY_LIMIT
         recent = self.history if full else self.history[-CONTEXT_HISTORY_LIMIT:]
@@ -242,6 +252,7 @@ class Blackboard:
         self.goal = wrap_goal(new_goal)
 
     def get_persistable_snapshot(self) -> dict[str, Any]:
+        self.ensure_goal_wrapped()
         return {
             "goal": self.goal,
             "original_goal": self.original_goal,
@@ -309,6 +320,7 @@ class Blackboard:
         self.notes = snap.get("notes", [])
         self.last_plan_because = snap.get("last_plan_because", "")
         self.jacobian_vector = snap.get("jacobian_vector", [])
+        self.ensure_goal_wrapped()
 
     def update_signals(self, verb: str, target: str) -> None:
         from config import MAX_SIGNATURES

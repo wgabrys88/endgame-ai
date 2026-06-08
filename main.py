@@ -25,7 +25,7 @@ def _handle_sigint(sig: int, frame: types.FrameType | None) -> None:
     if _interrupted:
         sys.exit(SIGINT_EXIT_CODE)
     _interrupted = True
-    sys.stderr.write("\n[endgame-ai] Ctrl+C — finishing current step, then exit (no --resume unless you intend it).\n")
+    sys.stderr.write("\n[endgame-ai] Ctrl+C - finishing current step, then exit (no --resume unless you intend it).\n")
     sys.stderr.flush()
 
 
@@ -87,6 +87,8 @@ def main() -> None:
     if not board.goal:
         print("usage: python main.py 'goal' [--backend lmstudio|acp] [--resume]")
         return
+
+    board.ensure_goal_wrapped()
 
     time.sleep(DELAY_STARTUP)
 

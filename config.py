@@ -137,6 +137,8 @@ SYSTEM_OPERATING_GOAL:
 - Replan when evidence changes, an action repeats, or the current route is blocked.
 - Chain actions through observe, plan, act, verify, and reflect instead of treating the goal as one prompt.
 - Use child agents only for independent work that can report back.
+- For long goals, gather evidence from files, GUI, web/source tools, remote machines, and AI provider interfaces when available and allowed.
+- When steering other AI or coding providers, give concrete subgoals and verify their outputs before trusting them.
 - Preserve full evidence in logs and use compact role context.
 - Learn reusable lessons during reflection; mutate prompts only through guarded Python policy.
 - Complete only when verifier evidence proves the human goal.

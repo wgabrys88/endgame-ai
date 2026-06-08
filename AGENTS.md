@@ -19,6 +19,7 @@ Provider-agnostic handoff for AI coding agents working on `endgame-ai`.
 `endgame-ai` is a desktop automation organism:
 
 - `main.py` owns CLI setup, backend selection, lifecycle logging, snapshot save, and exit code.
+- `goal_wrapper.py` owns deterministic goal prefix/suffix wrapping; `state.py`, `main.py`, and `orchestrator.py` normalize goals before resume, save, and run.
 - `orchestrator.py` owns the observe -> plan -> act -> verify -> reflect loop, child agents, distillation, and explicit read-file guards.
 - `observer.py` reads the Windows desktop through probe-first hover sampling plus conditional UI Automation tree walk.
 - `state.py` owns the blackboard state and context projection through `CONTEXT_POLICY`.
@@ -56,7 +57,10 @@ Tracked source/docs must be explicitly unignored. Current intentionally trackabl
 - `schemas/*.json`
 - `README.md`
 - `AGENTS.md`
+- `CONTRIBUTING.md`
 - `ENDGAME-AI-META-CHECKLIST.md`
+- `LICENSE`
+- `.github/ISSUE_TEMPLATE/*.md`
 - `tests/*.py`
 - `pyrightconfig.json`
 - `.gitattributes`
@@ -78,7 +82,7 @@ Expected: the docs and tests are not ignored; runtime reports remain ignored.
 Use ACP for real end-to-end validation when the goal asks to prove the organism works:
 
 ```powershell
-python main.py "ACP SMOKE VALIDATION: use the read_file verb on README.md. Do not use cmd. Do not use write_file. Do not use spawn_agent. Claim done only after read_file succeeds for README.md." --backend acp --tui-mode json
+python main.py "ACP WRAPPED GOAL VALIDATION: use the read_file verb on README.md. Do not use cmd. Do not use write_file. Do not use spawn_agent. Claim done only after read_file succeeds for README.md." --backend acp --tui-mode json
 ```
 
 Static gates:
@@ -88,7 +92,7 @@ python -m compileall -q .
 python -m pyright
 ```
 
-Focused deterministic regression tests exist under `tests/`. They guard self-evolution invariants and should be kept in git. Do not substitute unit tests for requested live ACP validation.
+Focused deterministic regression tests exist under `tests/`. They guard self-evolution invariants and should be kept in git. Do not substitute unit tests for requested live ACP validation, and stop or skip them when current session evidence says they hang.
 
 ## Runtime Cleanup
 

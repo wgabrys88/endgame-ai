@@ -1,8 +1,13 @@
 *
 !.gitattributes
 !.gitignore
+!.github/
+!.github/ISSUE_TEMPLATE/
+!.github/ISSUE_TEMPLATE/*.md
 !AGENTS.md
+!CONTRIBUTING.md
 !ENDGAME-AI-META-CHECKLIST.md
+!LICENSE
 !README.md
 !*.py
 !prompts/
