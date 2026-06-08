@@ -123,6 +123,26 @@ REFLECT_MIN_EXPECTATION_MISSES: int = 2
 REFLECT_MIN_REPETITION_SCORE: float = 0.5
 MUTABLE_PROMPT_START: str = "### MUTABLE_LESSONS_START"
 MUTABLE_PROMPT_END: str = "### MUTABLE_LESSONS_END"
+GOAL_WRAPPER_START: str = "ENDGAME_GOAL_WRAPPER_START"
+GOAL_WRAPPER_END: str = "ENDGAME_GOAL_WRAPPER_END"
+GOAL_WRAPPER_HUMAN_START: str = "HUMAN_GOAL_START"
+GOAL_WRAPPER_HUMAN_END: str = "HUMAN_GOAL_END"
+GOAL_WRAPPER_PREFIX: str = """ENDGAME_GOAL_WRAPPER_START
+SYSTEM_OPERATING_GOAL:
+- Work from visible GUI evidence first when a human interface is involved.
+- Use the available verbs and backend tools; do not wait for the human to describe system mechanics.
+- Build or maintain a checklist for multi-step work.
+- Replan when evidence changes, an action repeats, or the current route is blocked.
+- Chain actions through observe, plan, act, verify, and reflect instead of treating the goal as one prompt.
+- Use child agents only for independent work that can report back.
+- Preserve full evidence in logs and use compact role context.
+- Learn reusable lessons during reflection; mutate prompts only through guarded Python policy.
+- Complete only when verifier evidence proves the human goal.
+HUMAN_GOAL_START
+"""
+GOAL_WRAPPER_SUFFIX: str = """
+HUMAN_GOAL_END
+ENDGAME_GOAL_WRAPPER_END"""
 
 MOUSEEVENTF_LEFTDOWN: int = 0x0002
 MOUSEEVENTF_LEFTUP: int = 0x0004

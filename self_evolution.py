@@ -22,7 +22,7 @@ from lessons import Lessons
 from log import log
 
 
-PROMPT_MUTATION_ROLES: tuple[str, ...] = ("actor", "planner", "verifier")
+PROMPT_MUTATION_ROLES: tuple[str, ...] = ("actor", "planner", "verifier", "reflector")
 
 _ROLE_KEYWORDS: dict[str, tuple[str, ...]] = {
     "actor": (
@@ -36,6 +36,10 @@ _ROLE_KEYWORDS: dict[str, tuple[str, ...]] = {
     "verifier": (
         "complete", "confirm", "done", "evidence", "failure_type", "verify",
         "verdict", "verifier",
+    ),
+    "reflector": (
+        "diagnosis", "lesson", "reflect", "reflection", "reflector", "stuck",
+        "wasteful",
     ),
 }
 

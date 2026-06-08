@@ -236,9 +236,10 @@ class Blackboard:
     def rewrite_goal(self, new_goal: str) -> None:
         if not new_goal:
             return
+        from goal_wrapper import extract_human_goal, wrap_goal
         if not self.original_goal:
-            self.original_goal = self.goal
-        self.goal = new_goal.strip()
+            self.original_goal = extract_human_goal(self.goal)
+        self.goal = wrap_goal(new_goal)
 
     def get_persistable_snapshot(self) -> dict[str, Any]:
         return {
@@ -492,6 +493,9 @@ def _render_field(board: Blackboard, field_name: str, instruction: str) -> str:
     match field_name:
         case "goal":
             if board.original_goal and board.original_goal != board.goal:
+                from goal_wrapper import is_wrapped_goal
+                if is_wrapped_goal(board.goal):
+                    return f"GOAL:\n{board.goal}"
                 return f"GOAL: {board.goal}\nORIGINAL_GOAL: {board.original_goal}"
             return f"GOAL: {board.goal}"
         case "iteration":

@@ -237,6 +237,9 @@ def spawn_agent_verb(args: dict[str, Any], book: ElementBook, state: Any) -> Act
         return ActionResult("spawn_agent", False, "no goal provided")
     from llm import get_backend
     cmd = [sys.executable, str(BASE_DIR / "main.py"), goal, "--backend", get_backend()]
+    import config
+    if config.PROMPT_MUTATIONS_ENABLED:
+        cmd.append("--enable-prompt-mutations")
     proc = subprocess.Popen(cmd, cwd=str(BASE_DIR))
     return ActionResult("spawn_agent", True, f"spawned agent pid={proc.pid} for '{goal}'", data={"goal": goal, "pid": proc.pid, "cwd": str(BASE_DIR), "command": cmd})
 
