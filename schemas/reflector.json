@@ -33,14 +33,9 @@
             "minLength": 10,
             "maxLength": 200
           }
-        },
-        "used_fields": {
-          "type": "array",
-          "items": {"type": "string"},
-          "description": "Blackboard fields actually used to make this decision."
         }
       },
-      "required": ["outcome", "diagnosis", "lesson", "checklist_rewrite", "used_fields"],
+      "required": ["outcome", "diagnosis", "lesson", "checklist_rewrite"],
       "additionalProperties": false
     }
   }

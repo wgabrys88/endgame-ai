@@ -75,13 +75,6 @@
             "UNEXPECTED"
           ],
           "description": "DONE: current instruction is satisfied and no action is needed. EXPECTED: action can continue. UNEXPECTED: blocked or no match."
-        },
-        "used_fields": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "description": "List all blackboard fields you actually read and used to make this decision."
         }
       },
       "required": [
@@ -89,8 +82,7 @@
         "reason",
         "actions",
         "expect",
-        "conclusion",
-        "used_fields"
+        "conclusion"
       ],
       "additionalProperties": false
     }

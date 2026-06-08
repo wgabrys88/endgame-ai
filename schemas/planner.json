@@ -84,13 +84,6 @@
             ],
             "additionalProperties": false
           }
-        },
-        "used_fields": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          },
-          "description": "List all blackboard fields you actually read and used to make this decision."
         }
       },
       "required": [
@@ -101,8 +94,7 @@
         "step_advance",
         "notes",
         "sequence",
-        "decompose",
-        "used_fields"
+        "decompose"
       ],
       "additionalProperties": false
     }

@@ -75,6 +75,7 @@ class Blackboard:
     lorenz_y: float = LORENZ_INITIAL_Y
     lorenz_z: float = LORENZ_INITIAL_Z
     attractor_energy: float = FLOAT_ONE
+    lorenz_wing_crossed: bool = False
 
     pid_output: float = FLOAT_ZERO
     pid_integral: float = FLOAT_ZERO
@@ -366,6 +367,7 @@ class Blackboard:
             self.attractor_energy = FLOAT_ONE
             return
 
+        prev_x = self.lorenz_x
         x, y, z = self.lorenz_x, self.lorenz_y, self.lorenz_z
 
         rho_eff = LORENZ_RHO + self.stagnation_score * LORENZ_RHO_SENSITIVITY * LORENZ_RHO
@@ -381,6 +383,7 @@ class Blackboard:
             x, y, z = x * scale, y * scale, z * scale
             mag = LORENZ_MAG_CAP
 
+        self.lorenz_wing_crossed = (prev_x > FLOAT_ZERO) != (x > FLOAT_ZERO) and self.stagnation_score > FLOAT_ZERO
         self.lorenz_x, self.lorenz_y, self.lorenz_z = x, y, z
 
         eq_xy_sq = LORENZ_BETA * (LORENZ_RHO - LORENZ_EQUILIBRIUM_OFFSET)
@@ -395,7 +398,8 @@ class Blackboard:
             return
 
         error = self.stagnation_score
-        self.pid_integral = min(self.pid_integral + error, PID_INTEGRAL_MAX)
+        if self.consecutive_failures > ZERO_INT or self.expectation_miss_streak > ZERO_INT:
+            self.pid_integral = min(self.pid_integral + error, PID_INTEGRAL_MAX)
         self.pid_slope = error - self.pid_prev
         d_term = PID_KD * self.pid_slope if abs(self.pid_slope) > PID_DEAD_ZONE else FLOAT_ZERO
         self.pid_output = max(FLOAT_ZERO, PID_KP * error + PID_KI * self.pid_integral + d_term)

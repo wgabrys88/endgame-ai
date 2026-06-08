@@ -22,7 +22,6 @@ from config import (
     REFLECT_MIN_ITERATION_INTERVAL, REFLECT_MIN_CONSECUTIVE_FAILURES,
     REFLECT_MIN_EXPECTATION_MISSES, REFLECT_MIN_REPETITION_SCORE,
     AGENT_ID_HEX_LENGTH, DEFAULT_SCROLL_AMOUNT, DEFAULT_WAIT_SECONDS,
-    CONTEXT_POLICY,
 )
 from state import Blackboard, AgentHandle
 from lessons import Lessons
@@ -48,27 +47,6 @@ _last_reflect_iteration: int = -1000000
 _prompt_mutations_enabled: bool = False
 
 
-def _normalize_used_field(value: str) -> str:
-    cleaned = value.split("(", ONE_INT)[ZERO_INT].strip().lower()
-    return cleaned.replace(" ", "_").replace("-", "_")
-
-
-def _log_used_fields(role: str, iteration: int, response: dict[str, Any]) -> None:
-    used_raw = response.get("used_fields", [])
-    used: list[str] = [str(item) for item in cast(list[Any], used_raw)] if isinstance(used_raw, list) else []
-    policy_fields = CONTEXT_POLICY.get(role, [])
-    policy_set = set(policy_fields)
-    accepted_fields: list[str] = []
-    unknown_fields: list[str] = []
-    for field in used:
-        normalized = _normalize_used_field(field)
-        if normalized in policy_set:
-            accepted_fields.append(normalized)
-        else:
-            unknown_fields.append(field)
-    accepted_set = set(accepted_fields)
-    missing_policy_fields = [field for field in policy_fields if field not in accepted_set]
-    log(iteration, "role.used_fields", "role declared used fields", {"role": role, "used_fields": used, "accepted_fields": accepted_fields, "unknown_fields": unknown_fields, "missing_policy_fields": missing_policy_fields, "policy_fields": policy_fields})
 
 
 def _verifier_response_consistent(result: dict[str, Any]) -> bool:
@@ -201,6 +179,12 @@ def _loop(board: Blackboard, interrupted: Callable[[], bool], halt_counter: int,
 
         _stagnation_history.append(board.stagnation_score)
 
+        if board.lorenz_wing_crossed:
+            board.last_instruction = ""
+            board.lorenz_wing_crossed = False
+            _last_event = "LORENZ:fork"
+            log(board.iteration, "lorenz.fork", "wing crossing forced replan", {"lorenz_x": board.lorenz_x, "stagnation": board.stagnation_score})
+
         if board.pid_output > REFLECT_THRESHOLD and _maybe_phase_reflect(board, "pid"):
             _last_event = "PID:reflect"
             log(board.iteration, "pid.reflect", f"pid={board.pid_output:.2f}")
@@ -278,9 +262,6 @@ def _coordinate_children_ready(board: Blackboard) -> bool:
     return len(board.completed_subtasks) >= len(board.children)
 
 
-def _actionable_sequence(raw_steps: list[str]) -> list[str]:
-    return raw_steps
-
 
 def _claim_done(board: Blackboard, evidence: str, claim_source: str) -> str:
     board.done_claimed = True
@@ -300,8 +281,7 @@ def _claim_done(board: Blackboard, evidence: str, claim_source: str) -> str:
 def _actor_done_should_verify_goal(board: Blackboard) -> bool:
     if not board.plan_steps:
         return True
-    remaining = len(board.plan_steps) - board.plan_step_index - ONE_INT
-    return remaining <= ONE_INT
+    return board.plan_step_index >= len(board.plan_steps) - ONE_INT
 
 
 def _maybe_advance_after_read(board: Blackboard, verb: str, args: dict[str, Any], success: bool) -> None:
@@ -385,7 +365,6 @@ def _phase_plan_act(board: Blackboard) -> str:
 
     board.last_plan_because = str(plan.get("because", ""))
     board.last_instruction = next_action
-    _log_used_fields("planner", board.iteration, plan)
     log(board.iteration, "planner", "planner decision", {"mode": mode, "because": board.last_plan_because, "next_action": next_action, "plan": plan})
 
     new_notes = plan.get("notes", [])
@@ -395,12 +374,11 @@ def _phase_plan_act(board: Blackboard) -> str:
         board.notes = [new_notes.strip()]
 
     sequence_raw = plan.get("sequence", [])
-    sequence_raw_strings: list[str] = [str(s) for s in cast(list[Any], sequence_raw)] if isinstance(sequence_raw, list) else []
-    sequence = _actionable_sequence(sequence_raw_strings)
+    sequence: list[str] = [str(s) for s in cast(list[Any], sequence_raw) if str(s).strip()] if isinstance(sequence_raw, list) else []
     if sequence and not board.plan_steps:
         board.plan_steps = sequence
         board.plan_step_index = ZERO_INT
-        log(board.iteration, "checklist.created", "planner created checklist", {"steps": sequence, "dropped": [step for step in sequence_raw_strings if step not in sequence]})
+        log(board.iteration, "checklist.created", "planner created checklist", {"steps": sequence})
 
     if plan.get("step_advance") and board.plan_steps:
         board.plan_step_index = min(board.plan_step_index + ONE_INT, len(board.plan_steps) - ONE_INT)
@@ -467,7 +445,6 @@ def _phase_act(board: Blackboard, instruction: str) -> str:
     board.actor_conclusion = actor_out.get("conclusion", "")
     board.actor_reason = actor_out.get("reason", "")
     board.last_expect = actor_out.get("expect", "")
-    _log_used_fields("actor", board.iteration, actor_out)
     log(board.iteration, "actor", "actor decision", {"observe": board.actor_observe, "conclusion": board.actor_conclusion, "reason": board.actor_reason, "expect": board.last_expect, "actions": actor_out.get("actions", []), "response": actor_out})
 
     if board.actor_conclusion == "UNEXPECTED":
@@ -608,7 +585,6 @@ def _phase_reflect(board: Blackboard) -> None:
     context = board.build_context("reflector")
     try:
         result = call_role(REFLECTOR_SPEC, context, board.iteration, board.agent_id)
-        _log_used_fields("reflector", board.iteration, result)
         log(board.iteration, "reflector", "reflector decision", {"response": result})
         board.console_log.append(f"[REFLECT] {result.get('diagnosis', '')}")
         evolution_result = process_reflection_result(board, result, prompt_mutations_enabled=_prompt_mutations_enabled)
@@ -622,7 +598,10 @@ def _phase_reflect(board: Blackboard) -> None:
 
 
 def _try_spawn_successor(board: Blackboard) -> None:
-    pass
+    board.plan_steps = []
+    board.plan_step_index = ZERO_INT
+    board.reset_pid_integral()
+    board.last_instruction = ""
 
 
 
@@ -745,7 +724,6 @@ def _call_verifier(board: Blackboard, instruction: str = "") -> bool:
     context = board.build_context("verifier", instruction)
     try:
         result = call_role(VERIFIER_SPEC, context, board.iteration, board.agent_id)
-        _log_used_fields("verifier", board.iteration, result)
         verdict = result.get("verdict", "denied")
         if not _verifier_response_consistent(result):
             log(board.iteration, "verifier.inconsistent", "verifier verdict and failure_type mismatch", {"response": result})

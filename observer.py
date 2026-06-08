@@ -50,7 +50,6 @@ ROLE_SHORT = {
     "CheckBox": "Chk", "RadioButton": "Rad", "ScrollBar": "Scr",
     "SplitButton": "Spl", "DataItem": "Dat", "Document": "Doc", "TreeItem": "Tre",
 }
-LEGEND = ""
 
 
 @dataclass(slots=True)
@@ -549,7 +548,7 @@ def _classify(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _render(nodes: list[dict[str, Any]], target_wnd: set[str], focused_title: str) -> tuple[str, dict[str, BookEntry]]:
     book: dict[str, BookEntry] = {}
-    lines: list[str] = [LEGEND]
+    lines: list[str] = []
     current_wnd = ""
     seq = ZERO_INT
     for n in nodes:
