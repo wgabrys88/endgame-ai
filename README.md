@@ -2,7 +2,7 @@
 
 Self-regulating Windows desktop automation. Pure Python 3.13, zero dependencies, raw ctypes.
 
-Six agents — one pulse (all math + scheduling), one observer, four LLMs — communicate through a unified blackboard. The organism has a heartbeat: every cycle emits observe + pulse + work. Every event counts equally. Mathematics provides controlled chaos. LLMs provide intelligence. Python provides working memory.
+Nine agents — four math, one scheduler, one observer, three LLMs — communicate through a plain dict blackboard. A 7-line dispatcher reads `board["next"]` and runs that agent. No orchestrator logic. The math agents cycle endlessly as a heartbeat. The scheduler breaks out to LLMs when work is needed. Every event counts equally. Mathematics provides controlled chaos. LLMs provide intelligence. Python provides working memory.
 
 ---
 
@@ -14,11 +14,9 @@ Working system. Proven on both cloud (ACP/Claude) and local (LM Studio/gemma-4-e
 
 | Goal | ACP (Claude) | LM Studio (2B) |
 |------|-------------|-----------------|
-| write_file output.txt (text) | 15 events, EXIT=0 | 15 events, EXIT=0 |
-| open notepad type hello | cmd notepad.exe (correct) | clicked wrong element (planning) |
-| write hello world to output.txt | 9 events, EXIT=0 | self-corrected via deny-replan |
+| write_file output.txt (text) | 16 events, EXIT=0 | budget-limited (2B plans poorly) |
 
-Both backends produce **identical event traces** for file tasks: start → observe → pulse → plan → observe → pulse → action → actor → observe → pulse → plan(done) → observe → pulse → verify → complete.
+Both backends produce events through agent-routed dispatch: start → stagnation → lorenz → pid → schedule(initial) → observe → plan(direct) → action(write_file ✓) → actor(direct) → stagnation → lorenz → pid → schedule(requested=planner) → plan(done) → verify(confirmed) → complete.
 
 ---
 
@@ -26,31 +24,39 @@ Both backends produce **identical event traces** for file tasks: start → obser
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        BLACKBOARD (board.py)                      │
-│              pure state — no computation, no methods              │
+│                     BLACKBOARD (plain dict)                       │
+│              pure state — agents read/write via "reads" list      │
 └────────────────────────────┬────────────────────────────────────┘
                              │
-          ┌──────────────────┼──────────────────┐
-          │                  │                  │
-     OBSERVER            PULSE            LLM AGENTS
-     (screen scan)   (math+schedule)     (on demand)
-          │                  │                  │
-          ▼                  ▼                  ▼
-       1 event           1 event           1 event
-          └──────────────────┼──────────────────┘
-                             │
-                    3 events per cycle
-                             │
-                         TUI (viewer + launcher + agent toggle)
-                             │
-                    disabled.json ──► orchestrator skips agent
+          DISPATCHER (7 lines):
+            board["next"] = "stagnation"
+            while board["next"] not in ("done", "halt"):
+                agent = AGENTS[board["next"]]
+                result = agent.run(context_slice)
+                board.update(result["writes"])
+                board["next"] = result["next"]
+
+          ROUTING CHAIN:
+            stagnation → lorenz → pid → scheduler → (decision)
+                 ↑                           │
+                 │                           ├─→ observer → planner
+                 │                           ├─→ planner → actor | verifier
+                 │                           ├─→ actor → stagnation
+                 │                           ├─→ verifier → done | stagnation
+                 │                           └─→ reflector → stagnation
+                 │
+                 └── heartbeat: math agents cycle endlessly
 ```
 
 All agents implement the same protocol:
 ```
-should_run(board) → bool
-run(board) → AgentResult{writes, next_agent, event_phase, event_data}
+class Agent(Protocol):
+    name: str
+    reads: list[str]
+    def run(self, ctx: dict[str, Any]) -> dict[str, Any]: ...
 ```
+
+Every agent returns: `{"writes": {...}, "next": "agent_name", "phase": "...", "data": {...}}`
 
 Every event counts against budget equally. Budget = organism lifetime in ticks.
 
@@ -58,23 +64,29 @@ Every event counts against budget equally. Budget = organism lifetime in ticks.
 
 | Agent | Type | Purpose |
 |-------|------|---------|
-| observer | sys | Screen scan via UIA + cursor probe |
-| pulse | math | Stagnation + Lorenz + PID + Jacobian + Scheduling — all in one tick |
-| planner | llm | Generates multi-step plan (once per plan) |
-| actor | llm | Executes actions (with direct-execute bypass) |
-| verifier | llm | Confirms goal complete with evidence |
-| reflector | llm | Diagnoses loops, writes lessons, mutates prompts |
+| stagnation | math | Computes stagnation + repetition score, next=lorenz |
+| lorenz | math | ODE step, wing cross detection, next=pid |
+| pid | math | PID controller on stagnation error, next=scheduler |
+| scheduler | math | The brain: routes to observer/LLM/halt based on state |
+| observer | sys | Screen scan via UIA + cursor probe, next=planner |
+| planner | llm | Generates multi-step plan, next=actor/verifier |
+| actor | llm | Executes actions (with direct-execute bypass), next=stagnation |
+| verifier | llm | Confirms goal complete with evidence, next=done/stagnation |
+| reflector | llm | Diagnoses loops, writes lessons, mutates prompts, next=stagnation |
 
-### Pulse Agent (agents/pulse.py)
+### Scheduler Agent (agents/scheduler.py)
 
-Single agent that computes all math and makes the scheduling decision:
-1. Stagnation: repetition window + failure weight + screen stagnation
-2. Lorenz: ODE step, wing cross detection (forces replan)
-3. PID: error integration, gates reflector
-4. Jacobian: verb effectiveness tracking
-5. Schedule: picks next LLM (planner/actor/verifier/reflector/halt)
+The brain. Only agent with conditional routing:
+1. Stagnation halt check (sustained high stagnation → halt)
+2. Wing cross → force replan (diverge)
+3. Requested next (from prior agent) → honor it
+4. Initial state → observer (need screen data)
+5. PID gate → reflector (too many failures)
+6. No instruction → observer (need fresh plan)
+7. Post-action → observer (need updated screen)
+8. Idle → stagnation (heartbeat continues)
 
-Returns `next_agent` field — orchestrator dispatches that LLM.
+All other agents have fixed routing (hard-coded `next` field).
 
 ### Direct-Execute
 
@@ -120,10 +132,10 @@ TUI controls: `Space`=launch `↑↓`=select agent `Enter`=toggle `q`=quit
 ## Files
 
 ```
-main.py              Entry point, CLI, signal handling
-orchestrator.py      observe + pulse + LLM dispatch loop (no branching)
-board.py             Pure state blackboard (no computation)
-context.py           Renders blackboard to text for LLM context
+main.py              Entry point, CLI, board init (plain dict)
+orchestrator.py      7-line dispatcher + save/disabled helpers
+board.py             Board dataclass (used by LLM agents for context rendering)
+context.py           Renders blackboard fields to text for LLM context
 config.py            All constants, CONTEXT_POLICY, math params
 log.py               Single emit function, every event counts
 observer.py          Full-screen probe (UIA + cursor), element tree
@@ -134,15 +146,16 @@ acp_client.py        ACP protocol client (session, streaming)
 win32.py             Raw ctypes: UIA COM, SendInput, window management
 tui.py               Dashboard + launcher (braille Lorenz plot, agent toggle)
 analyze_run.py       Post-execution statistics
-agents/__init__.py   Agent protocol (AgentResult dataclass)
-agents/observer_agent.py  Screen observation agent
-agents/pulse.py           All math + scheduling in one tick
-agents/planner.py         LLM planner agent
-agents/actor.py           LLM actor + direct-execute
-agents/verifier.py        LLM verifier agent
-agents/reflector.py       LLM reflector + prompt mutation
-prompts/             System prompts (mutable at runtime by reflector)
-schemas/             JSON schemas for constrained decoding
+agents/__init__.py   Agent protocol (Protocol class, 9 lines)
+agents/stagnation.py Stagnation + repetition score (next=lorenz)
+agents/lorenz.py     Lorenz attractor ODE + wing cross (next=pid)
+agents/pid.py        PID controller (next=scheduler)
+agents/scheduler.py  Brain: conditional routing to all other agents
+agents/observer_agent.py  Screen observation (next=planner)
+agents/planner.py    LLM planner (next=actor/verifier)
+agents/actor.py      LLM actor + direct-execute (next=stagnation)
+agents/verifier.py   LLM verifier (next=done/stagnation)
+agents/reflector.py  LLM reflector + prompt mutation (next=stagnation)
 ```
 
 ---
@@ -164,7 +177,9 @@ schemas/             JSON schemas for constrained decoding
 
 ## Next Session Focus
 
-**Pulse-driven observation:** Currently observer runs every cycle unconditionally. The pulse agent should determine whether observation is needed based on events. When no LLM is working (idle state), pulse decides the next recipient — which could be observer OR an LLM. Observer becomes demand-driven, not always-on. This reduces events-per-cycle from 3 to 2 when observation isn't needed (e.g., after a write_file where screen didn't change).
+1. **Eliminate board.py** — Make context.py work on plain dict instead of Board dataclass. LLM agents pass ctx dict directly. Board.py deleted.
+2. **Visual TUI test** — Run in Windows Terminal Preview, observe the braille plot and math cycling live.
+3. **Event noise** — Math agents emit 4 events per cycle (stagnation/lorenz/pid/schedule). Consider: should these be silent (no log.emit) or aggregated into one summary event? They're sub-ms but inflate event count.
 
 ---
 
@@ -178,32 +193,24 @@ BRANCH: math-pulse
 PYTHON: "C:\Program Files\Python313\python.exe"
 BACKEND: ACP (Claude via kiro-cli) primary, LM Studio (gemma-4-e2b-it 2B) validation
 
-ARCHITECTURE — Unified Agent Protocol:
+ARCHITECTURE — Agent-Routed Events:
 - Pure Python 3.13, Windows 11, zero dependencies, raw ctypes
-- 6 agents: pulse (stagnation+lorenz+pid+jacobian+scheduler) + observer + 4 LLMs
-- All agents: should_run(board) → run(board) → AgentResult{writes, next_agent}
-- Every event counts equally. Budget = organism lifetime in ticks.
-- Pattern per cycle: observe(1) + pulse(1) + work(1) = 3 events
-- Orchestrator: single _emit_agent() dispatches any agent identically, zero branching
+- 9 agents: stagnation, lorenz, pid, scheduler, observer, planner, actor, verifier, reflector
+- All agents: run(ctx: dict) → {"writes": {...}, "next": "agent_name", "phase": "...", "data": {...}}
+- Dispatcher: 7 lines. Reads board["next"], runs agent, applies writes, repeats.
+- Math agents cycle endlessly as heartbeat (stagnation → lorenz → pid → scheduler)
+- Scheduler is the brain: only agent with conditional routing
 - Direct-execute: if step starts with known verb, Python executes without actor LLM
 - Agent toggle: disabled.json disables agents, system adapts
-- Board is pure state. Context rendering is separate. No computation in Board.
+- Board = plain dict. Context rendering via Board dataclass (to be eliminated).
 - TUI: dashboard + launcher (braille Lorenz plot, spacebar launches system)
 
-NEXT SESSION GOAL: Make observer demand-driven. Pulse decides next recipient
-(observer OR LLM). When pulse determines no observation needed (screen unchanged,
-no LLM pending), it skips observer. Every agent event has a "next" field that
-tells orchestrator who runs next. This unifies the pipeline completely — pulse
-is the brain that routes ALL agents, not just LLMs.
-
 PROVEN FACTS (2026-06-09):
-- Both backends: 15 events for file-write task (EXIT=0, identical traces)
-- No math agent uses wall-clock time (all tick per call)
-- Single pulse event replaces 5 separate math events
-- Actor schema: 2 fields (actions, conclusion). 60% token reduction.
-- Full-screen probe = single most impactful change for 2B behavior
-- Direct-execute reduces events AND removes actor confusion
-- 2B weakness is PLANNING, not perception or execution
+- ACP: 16 events, EXIT=0, write_file task
+- Pyright 0/0/0 across entire project
+- Math agents cycle as heartbeat, scheduler routes correctly
+- System halts cleanly on budget exhaustion
+- No math agent uses wall-clock time
 
 RULES (non-negotiable):
 - Pyright strict: 0/0/0
@@ -211,11 +218,11 @@ RULES (non-negotiable):
 - No fallback modes. Dead code is wrong code
 - No examples/templates in prompts (2B copies verbatim)
 - No push without human approval
-- Scientist mode: test claims, state tested vs untested, update plainly
+- Scientist mode: test claims, state tested vs untested
 
 TESTING:
   python tui.py "goal" --backend lmstudio --event-budget 20  (launcher)
-  python main.py "goal" --backend acp --event-budget 20       (direct)
+  python main.py "goal" --backend acp --event-budget 30       (direct)
   Cleanup: del events.jsonl snapshot.json output.txt lessons.txt
   Typecheck: python -m pyright (must be 0/0/0)
 ```
