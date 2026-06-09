@@ -15,3 +15,6 @@ field_usage.json
 _run_test.bat
 *.corrupt_*.json
 AGENTS.md
+test_output.txt
+lessons.txt
+test_output.txt

@@ -6,6 +6,7 @@ PROMPTS_DIR: pathlib.Path = BASE_DIR / "prompts"
 SCHEMAS_DIR: pathlib.Path = BASE_DIR / "schemas"
 EVENTS_PATH: pathlib.Path = BASE_DIR / "events.jsonl"
 SNAPSHOT_PATH: pathlib.Path = BASE_DIR / "snapshot.json"
+LESSONS_PATH: pathlib.Path = BASE_DIR / "lessons.txt"
 
 EVENT_BUDGET: int = 100
 
@@ -152,10 +153,10 @@ UIA_CONTROL_TYPE_MAP: dict[int, str] = {
 }
 
 CONTEXT_POLICY: dict[str, list[str]] = {
-    "planner": ["goal", "screen", "plan", "history", "budget", "diverge", "failures", "roles"],
-    "actor": ["instruction", "screen", "roles"],
-    "verifier": ["goal", "screen", "history", "plan", "roles"],
-    "reflector": ["goal", "screen", "plan", "history", "math", "roles"],
+    "planner": ["goal", "desktop", "screen", "plan", "history", "budget", "diverge", "failures", "lessons", "roles"],
+    "actor": ["instruction", "screen", "lessons", "roles"],
+    "verifier": ["goal", "desktop", "screen", "history", "plan", "roles"],
+    "reflector": ["goal", "desktop", "screen", "plan", "history", "math", "roles"],
 }
 
 GUID_DATA1_END: int = 4
@@ -199,5 +200,3 @@ TEXT_RANGE_GET_TEXT_INDEX: int = 12
 WIN_CLASS_NAME_BUFFER: int = 256
 WIN_WINDOW_TEXT_BUFFER: int = 512
 POINT_PACK_SHIFT_BITS: int = 32
-PROCESS_TERMINATE_RIGHT: int = 0x0001
-CHILD_TERMINATE_EXIT_CODE: int = 1

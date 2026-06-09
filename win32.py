@@ -22,7 +22,7 @@ from config import (
     TEXT_RANGE_GET_TEXT_INDEX, WIN_CLASS_NAME_BUFFER, WIN_WINDOW_TEXT_BUFFER,
     POINT_PACK_SHIFT_BITS, UIA_CONTROL_TYPE_MAP, VIRTUAL_KEY_MAP,
     EXTENDED_VK_CODES, PROCESS_DPI_AWARENESS_CONTEXT, READ_TEXT_MAX_LENGTH,
-    PROCESS_TERMINATE_RIGHT, CHILD_TERMINATE_EXIT_CODE,
+    
 )
 
 __all__ = [
@@ -32,7 +32,7 @@ __all__ = [
     "init", "set_dpi_aware", "get_str", "get_int", "get_bool", "get_rect",
     "get_legacy_value", "get_legacy_readonly", "get_text_content", "element_from_point",
     "get_children", "get_hwnd", "get_runtime_id", "get_root",
-    "get_window_class", "get_window_title", "terminate_process",
+    "get_window_class", "get_window_title",
 ]
 
 ole32: ctypes.OleDLL = ctypes.OleDLL("ole32")
@@ -304,15 +304,6 @@ def get_window_title(hwnd: int) -> str:
     user32.GetWindowTextW(W.HWND(hwnd), buf, WIN_WINDOW_TEXT_BUFFER)
     return buf.value
 
-
-def terminate_process(pid: int) -> bool:
-    handle = kernel32.OpenProcess(PROCESS_TERMINATE_RIGHT, False, pid)
-    if not handle:
-        return False
-    try:
-        return bool(kernel32.TerminateProcess(handle, CHILD_TERMINATE_EXIT_CODE))
-    finally:
-        kernel32.CloseHandle(handle)
 
 
 VK_MAP: dict[str, int] = VIRTUAL_KEY_MAP

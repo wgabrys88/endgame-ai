@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from config import (
-    SNAPSHOT_PATH,
+    SNAPSHOT_PATH, LESSONS_PATH,
     LORENZ_SIGMA, LORENZ_RHO, LORENZ_BETA, LORENZ_DT, LORENZ_MAG_CAP,
     LORENZ_RHO_SENSITIVITY, LORENZ_BETA_SENSITIVITY, LORENZ_BETA_MIN,
     LORENZ_EQUILIBRIUM_OFFSET,
@@ -29,6 +29,7 @@ class Board:
     screen: str = ""
     screen_hash: str = ""
     screen_elements: dict[str, Any] = field(default_factory=lambda: dict[str, Any]())
+    desktop_summary: str = ""
     focused_window: str = ""
     last_verb: str = ""
     last_success: bool = False
@@ -84,11 +85,12 @@ class Board:
         alpha = 1.0 / min(trials, 10)
         self.jacobian[verb] = old + alpha * ((1.0 if screen_changed else 0.0) - old)
 
-    def record_screen(self, text: str, hash_val: str, elements: dict[str, Any], focused: str) -> None:
+    def record_screen(self, text: str, hash_val: str, elements: dict[str, Any], focused: str, desktop: str = "") -> None:
         self.screen = text
         self.screen_hash = hash_val
         self.screen_elements = elements
         self.focused_window = focused
+        self.desktop_summary = desktop
         if hash_val in self.recent_hashes[-SCREEN_STAGNATION_LOOKBACK:]:
             self.screen_stagnation += 1
         else:
@@ -106,14 +108,6 @@ class Board:
 
     def on_verify_denied(self) -> None:
         self.verify_denied_count += 1
-        if not (len(self.history) > 0 and self.history[-1].get("ok")):
-            self.consecutive_failures += 1
-        self._compute_stagnation()
-
-    def on_last_step(self) -> bool:
-        if not self.plan_steps:
-            return False
-        return self.plan_index >= len(self.plan_steps) - 1
 
     def advance_step(self) -> None:
         if self.plan_steps and self.plan_index < len(self.plan_steps) - 1:
@@ -179,6 +173,12 @@ class Board:
         }
         SNAPSHOT_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
+    def write_lesson(self, lesson: str) -> None:
+        if not lesson.strip():
+            return
+        with LESSONS_PATH.open("a", encoding="utf-8") as f:
+            f.write(lesson.strip() + "\n")
+
     def effective_temperature(self) -> float:
         from config import LLM_TEMPERATURE
         base = LLM_TEMPERATURE
@@ -231,6 +231,8 @@ def _render(b: Board, field: str, instruction: str) -> str:
     match field:
         case "goal":
             return f"GOAL: {b.goal}"
+        case "desktop":
+            return b.desktop_summary if b.desktop_summary else ""
         case "instruction":
             return f"INSTRUCTION: {instruction}" if instruction else ""
         case "screen":
@@ -283,5 +285,13 @@ def _render(b: Board, field: str, instruction: str) -> str:
             for role_name, output in b.last_outputs.items():
                 lines_r.append(f"  {role_name}: {output[:120]}")
             return "\n".join(lines_r)
+        case "lessons":
+            if not LESSONS_PATH.exists():
+                return ""
+            text_l = LESSONS_PATH.read_text(encoding="utf-8").strip()
+            if not text_l:
+                return ""
+            lines_l = text_l.splitlines()[-10:]
+            return "LESSONS:\n" + "\n".join(f"  - {l}" for l in lines_l)
         case _:
             return ""

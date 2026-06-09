@@ -136,20 +136,30 @@ schemas/          JSON schemas with recipient field (4 roles)
 
 ## Evolution Roadmap
 
-### Current: v6 — Math-Pulse (this branch)
+### Current: v7 — Math-Pulse + Self-Evolution (this branch)
 
-Working system. Math schedules roles. LLMs route via recipient. Lorenz/PID/Jacobian all active. Proven: completes multi-step GUI tasks in 20-40 events.
+Working system. Math schedules roles. LLMs route via recipient. Lorenz/PID/Jacobian all active.
 
-### Next: v7 — Event-Driven Blackboard
+Self-evolution tiers active:
+- Tier 1: Lessons persist to lessons.txt across runs (active)
+- Tier 2: Reflector mutates prompts at runtime (active, min 200 chars enforced)
+- Tier 3: Code modification — future (git branch + test + swap)
+- Tier 4: Resurrection — future (scheduled task + self-termination)
 
-Events become the communication substrate, not just a log. Each LLM emits events that other LLMs consume. The event stream IS the blackboard truth. Python becomes minimal glue — math + event routing only.
+Proven results:
+- "emit done" → 6 events
+- "read README + write summary" → 13 events
+- "open notepad + type text" → 26 events
+- "open notepad + save file" → 38 events (13 actions, all ok)
 
-### Future: v8 — 3-Tier Self-Evolution
+### Next: v8 — Event-Driven Blackboard
+
+Events become the communication substrate. Each LLM emits events that others consume. The event stream IS the blackboard truth. Python becomes minimal glue — math + event routing only.
+
+### Future: v9 — Code Self-Modification
 
 ```
-Tier 1: Prompt mutation     — reflector rewrites prompts at runtime (min 200 chars enforced)
-Tier 2: Code modification   — git branch + clone + regression test + swap
-Tier 3: Resurrection        — scheduled task resurrects with new code after self-termination
+git branch → modify source → run regression → swap if passing → self-restart
 ```
 
 The organism modifies itself, tests the modification, and replaces itself with a better version. Decoupled resurrection ensures it cannot permanently die.

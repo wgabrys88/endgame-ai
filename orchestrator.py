@@ -4,7 +4,7 @@ from typing import Any, Callable, cast
 
 from config import (
     BUDGET_PLANNER_OUT, BUDGET_ACTOR_OUT, BUDGET_VERIFIER_OUT, BUDGET_REFLECTOR_OUT,
-    DELAY_BETWEEN_CYCLES, DEFAULT_SCROLL_AMOUNT,
+    DELAY_BETWEEN_CYCLES, DEFAULT_SCROLL_AMOUNT, PROMPTS_DIR,
 )
 from state import Board
 from dispatch import call_role, RoleSpec
@@ -61,7 +61,7 @@ def _observe(board: Board) -> None:
             return
         if board.last_verb:
             board.update_jacobian(board.last_verb, True)
-        board.record_screen(obs.context_text, obs.semantic_hash, obs.book, obs.focused_title)
+        board.record_screen(obs.context_text, obs.semantic_hash, obs.book, obs.focused_title, obs.desktop_summary)
         log.emit("observe", {"hash": obs.semantic_hash, "focused": obs.focused_title, "chars": len(obs.context_text)})
     except Exception as e:
         board.screen = f"OBSERVE_FAILED: {e}"
@@ -136,10 +136,7 @@ def _run_actor(board: Board) -> str:
     if board.actor_conclusion == "DONE" and not actions:
         board.on_success()
         board.record_role_call("actor")
-        if board.on_last_step():
-            board.requested_next = "verifier"
-        else:
-            board.advance_step()
+        board.advance_step()
         return "continue"
 
     log.emit("actor", {"conclusion": board.actor_conclusion, "actions": len(actions)})
@@ -168,10 +165,7 @@ def _run_actor(board: Board) -> str:
         board.on_failure()
     else:
         board.on_success()
-        if board.on_last_step():
-            board.requested_next = "verifier"
-        else:
-            board.advance_step()
+        board.advance_step()
 
     board.record_role_call("actor")
     board.last_outputs["actor"] = f"conclusion={board.actor_conclusion} actions={len(actions)}"
@@ -209,6 +203,13 @@ def _run_reflector(board: Board) -> str:
         log.emit("reflect", {"diagnosis": diagnosis, "lesson": lesson})
         board.notes = [f"REFLECT: {lesson}"]
         board.last_outputs["reflector"] = f"lesson='{lesson[:80]}'"
+        board.write_lesson(lesson)
+        mutation = result.get("prompt_mutation")
+        if isinstance(mutation, dict):
+            target = str(cast(dict[str, Any], mutation).get("target", ""))
+            append_text = str(cast(dict[str, Any], mutation).get("append", ""))
+            if target and append_text:
+                _apply_prompt_mutation(target, append_text)
     board.record_role_call("reflector")
     return "continue"
 
@@ -253,3 +254,18 @@ def _build_args(verb: str, target: str, value: str) -> dict[str, Any]:
     if verb == "cmd":
         return {"command": value or target}
     return {}
+
+
+PROMPT_MIN_LENGTH: int = 200
+
+
+def _apply_prompt_mutation(target: str, append_text: str) -> None:
+    path = PROMPTS_DIR / f"{target}.txt"
+    if not path.exists():
+        return
+    current = path.read_text(encoding="utf-8")
+    new_content = current.rstrip() + "\n\n" + append_text.strip() + "\n"
+    if len(new_content) < PROMPT_MIN_LENGTH:
+        return
+    path.write_text(new_content, encoding="utf-8")
+    log.emit("mutation", {"target": target, "appended": append_text[:100]})
