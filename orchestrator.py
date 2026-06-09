@@ -32,6 +32,7 @@ from llm import get_backend
 from persistence import save_snapshot
 from log import log
 from stop_signal import stop_requested
+from persistence import budget_exhausted, event_count
 from self_evolution import process_reflection_result
 import tui
 
@@ -123,6 +124,14 @@ def _loop(board: Blackboard, interrupted: Callable[[], bool], halt_counter: int,
             _report_status(board.agent_id, "failed", error="interrupted")
             if is_main:
                 tui.render(board, _stagnation_history, "STOP:interrupt")
+            return False
+
+        if budget_exhausted():
+            log(board.iteration, "budget.exhausted", "event budget reached", {"events": event_count()})
+            _last_event = "BUDGET"
+            if is_main:
+                tui.render(board, _stagnation_history, _last_event)
+            _report_status(board.agent_id, "failed", error="event_budget_exhausted")
             return False
 
         board.iteration += ONE_INT
@@ -242,10 +251,6 @@ def _phase_observe(board: Blackboard) -> str:
     result = _phase_plan_act(board)
     board.release_screen()
     return result
-
-
-def _instruction_for_actor(board: Blackboard, next_action: str) -> str:
-    return next_action
 
 
 def _coordinate_children_ready(board: Blackboard) -> bool:
@@ -406,7 +411,7 @@ def _phase_plan_act(board: Blackboard) -> str:
         board.record_success()
         return "continue"
 
-    return _phase_act(board, _instruction_for_actor(board, next_action))
+    return _phase_act(board, next_action)
 
 
 def _phase_act(board: Blackboard, instruction: str) -> str:
@@ -517,6 +522,14 @@ def _phase_act(board: Blackboard, instruction: str) -> str:
     else:
         board.record_success()
         _last_event = "OK"
+        should_verify = (
+            board.actor_conclusion == "DONE"
+            or (board.plan_steps and board.plan_step_index >= len(board.plan_steps) - ONE_INT)
+        )
+        if should_verify:
+            evidence = f"actions succeeded on final step: {board.actor_observe or instruction}"
+            log(board.iteration, "verify.proactive", "proactive verification after success", {"step_index": board.plan_step_index, "conclusion": board.actor_conclusion, "plan_steps": len(board.plan_steps)})
+            return _claim_done(board, evidence, "proactive verify after actions")
 
     return "continue"
 
@@ -598,8 +611,6 @@ def _try_spawn_successor(board: Blackboard) -> None:
     board.plan_step_index = ZERO_INT
     board.reset_pid_integral()
     board.last_instruction = ""
-
-
 
 def _handle_stop_signal(board: Blackboard, is_main: bool) -> bool:
     if not stop_requested():

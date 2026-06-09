@@ -25,6 +25,10 @@ def analyze(path: Path) -> None:
     t_end = datetime.fromisoformat(events[-1]["timestamp_utc"])
     wall = (t_end - t_start).total_seconds()
     iters = max((e.get("iteration", 0) for e in events), default=0)
+    total_events = len(events)
+
+    run_end = [e for e in events if e.get("phase") == "run.end"]
+    event_budget = run_end[-1].get("data", {}).get("event_budget", total_events) if run_end else total_events
 
     llm_reqs = [e for e in events if e.get("phase") == "llm.request"]
     role_counts = Counter(e.get("data", {}).get("role", "?") for e in llm_reqs)
@@ -40,7 +44,9 @@ def analyze(path: Path) -> None:
     print(f"{'='*60}")
     print(f"  Wall time:        {wall:.1f}s")
     print(f"  Iterations:       {iters}")
-    print(f"  Total events:     {len(events)}")
+    print(f"  Total events:     {total_events}")
+    print(f"  Event budget:     {event_budget}")
+    print(f"  Budget used:      {total_events}/{event_budget} ({total_events*100//max(event_budget,1)}%)")
     print()
     print(f"  DECISIONS (LLM calls):  {decisions}")
     for role, count in role_counts.most_common():

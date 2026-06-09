@@ -9,6 +9,7 @@ from llm import set_backend, close_backend
 from goal_wrapper import extract_human_goal, wrap_goal
 from orchestrator import run
 from persistence import save_snapshot, load_snapshot, append_to_evolution_ledger
+from persistence import event_count
 from log import open_log, log, close_log, set_tui_hook
 import tui
 
@@ -41,6 +42,7 @@ def main() -> None:
     parser.add_argument("--wt-launch", action="store_true", help="Open a Windows Terminal tab running this goal with visual TUI")
     parser.add_argument("--enable-prompt-mutations", dest="prompt_mutations_enabled", action="store_true", default=False, help="Allow guarded one-line prompt mutations after enough lessons accumulate")
     parser.add_argument("--disable-prompt-mutations", dest="prompt_mutations_enabled", action="store_false", help="Keep lessons extraction enabled but disable prompt mutations")
+    parser.add_argument("--event-budget", type=int, default=None, help="Max events before forced stop (default: 100)")
     args = parser.parse_args()
 
     if args.wt_launch:
@@ -68,6 +70,8 @@ def main() -> None:
     set_backend(args.backend)
     import config
     config.PROMPT_MUTATIONS_ENABLED = bool(args.prompt_mutations_enabled)
+    if args.event_budget is not None:
+        config.EVENT_BUDGET = int(args.event_budget)
 
     board = Blackboard()
     board.agent_id = args.agent_id
@@ -105,7 +109,7 @@ def main() -> None:
     try:
         log(ZERO_INT, "run.start", "run started", {"goal": board.goal, "backend": args.backend, "agent_id": board.agent_id, "log_path": log_path, "prompt_mutations_enabled": args.prompt_mutations_enabled})
         success = run(board, interrupted=lambda: _interrupted, prompt_mutations_enabled=args.prompt_mutations_enabled)
-        log(board.iteration, "run.end", "run ended", {"success": success, "stagnation_score": board.stagnation_score, "iterations": board.iteration, "done_claimed": board.done_claimed, "done_evidence": board.done_evidence})
+        log(board.iteration, "run.end", "run ended", {"success": success, "stagnation_score": board.stagnation_score, "iterations": board.iteration, "done_claimed": board.done_claimed, "done_evidence": board.done_evidence, "events_used": event_count(), "event_budget": config.EVENT_BUDGET})
         save_snapshot(board.get_persistable_snapshot())
 
         summary = (

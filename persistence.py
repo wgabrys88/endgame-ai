@@ -16,6 +16,17 @@ BB_PATH = BASE_DIR / "blackboard_state.json"
 BB_LOCK_PATH = BASE_DIR / "blackboard_state.lock"
 EVOLUTION_LEDGER_PATH = BASE_DIR / "evolution_ledger.json"
 
+_event_counter: int = ZERO_INT
+_budget_exhausted: bool = False
+
+
+def event_count() -> int:
+    return _event_counter
+
+
+def budget_exhausted() -> bool:
+    return _budget_exhausted
+
 
 def _default_bb() -> dict[str, Any]:
     return {
@@ -214,6 +225,11 @@ def append_to_evolution_ledger(entry: str, source_run: str = "") -> None:
 
 
 def append_runtime_event(record: dict[str, Any]) -> None:
+    global _event_counter, _budget_exhausted
+    import config
+    _event_counter += ONE_INT
+    if _event_counter >= config.EVENT_BUDGET:
+        _budget_exhausted = True
     BLACKBOARD_EVENTS_PATH.parent.mkdir(parents=True, exist_ok=True)
     line = json.dumps(record, ensure_ascii=False, separators=(",", ":"))
     with _bb_file_lock():
