@@ -371,23 +371,12 @@ def _phase_plan_act(board: Blackboard) -> str:
     board.last_instruction = next_action
     log(board.iteration, "planner", "planner decision", {"mode": mode, "because": board.last_plan_because, "next_action": next_action, "plan": plan})
 
-    new_notes = plan.get("notes", [])
-    if isinstance(new_notes, list):
-        board.notes = [str(n) for n in cast(list[Any], new_notes) if n]
-    elif isinstance(new_notes, str) and new_notes.strip():
-        board.notes = [new_notes.strip()]
-
     sequence_raw = plan.get("sequence", [])
     sequence: list[str] = [str(s) for s in cast(list[Any], sequence_raw) if str(s).strip()] if isinstance(sequence_raw, list) else []
     if sequence and not board.plan_steps:
         board.plan_steps = sequence
         board.plan_step_index = ZERO_INT
         log(board.iteration, "checklist.created", "planner created checklist", {"steps": sequence})
-
-    if plan.get("step_advance") and board.plan_steps:
-        board.plan_step_index = min(board.plan_step_index + ONE_INT, len(board.plan_steps) - ONE_INT)
-        board.reset_pid_integral()
-        log(board.iteration, "checklist.advance", f"step={board.plan_step_index}")
 
     _last_event = f"PLAN:{mode}"
 
