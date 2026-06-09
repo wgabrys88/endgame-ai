@@ -17,7 +17,7 @@ from config import (
     BUDGET_VERIFIER_IN, BUDGET_VERIFIER_OUT,
     BUDGET_REFLECTOR_IN, BUDGET_REFLECTOR_OUT,
     STAGNATION_HALT_THRESHOLD, STAGNATION_HALT_SUSTAINED,
-    REFLECT_THRESHOLD,
+    REFLECT_THRESHOLD, REFLECT_BUDGET_GATE,
     MAX_PARALLEL_CHILDREN_EXACT, MAX_PARALLEL_CHILDREN_DEFAULT,
     REFLECT_MIN_ITERATION_INTERVAL, REFLECT_MIN_CONSECUTIVE_FAILURES,
     REFLECT_MIN_EXPECTATION_MISSES, REFLECT_MIN_REPETITION_SCORE,
@@ -187,6 +187,9 @@ def _loop(board: Blackboard, interrupted: Callable[[], bool], halt_counter: int,
         if board.lorenz_wing_crossed:
             board.last_instruction = ""
             board.lorenz_wing_crossed = False
+            board.plan_steps = []
+            board.plan_step_index = ZERO_INT
+            board.notes = ["DIVERGE: previous approach exhausted. Try a fundamentally different method."]
             _last_event = "LORENZ:fork"
             log(board.iteration, "lorenz.fork", "wing crossing forced replan", {"lorenz_x": board.lorenz_x, "stagnation": board.stagnation_score})
 
@@ -556,6 +559,11 @@ def _maybe_phase_reflect(board: Blackboard, reason: str) -> bool:
     global _last_reflect_iteration
     if _backend_unavailable_recent(board):
         log(board.iteration, "reflect.skip", "backend unavailable", {"reason": reason, "last_verb": board.last_verb})
+        return False
+    import config
+    budget_used_ratio = event_count() / max(config.EVENT_BUDGET, ONE_INT)
+    if budget_used_ratio > REFLECT_BUDGET_GATE:
+        log(board.iteration, "reflect.skip", "budget pressure too high", {"reason": reason, "budget_used_ratio": budget_used_ratio})
         return False
     elapsed = board.iteration - _last_reflect_iteration
     if elapsed < REFLECT_MIN_ITERATION_INTERVAL:

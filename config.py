@@ -311,6 +311,7 @@ STAGNATION_HALT_SUSTAINED: int = 5
 
 EVENT_BUDGET_DEFAULT: int = 100
 EVENT_BUDGET: int = EVENT_BUDGET_DEFAULT
+REFLECT_BUDGET_GATE: float = 0.75
 
 PIPELINE_LORENZ: bool = True
 PIPELINE_PID: bool = True
@@ -365,6 +366,7 @@ CONTEXT_POLICY: dict[str, list[str]] = {
         "recent_history",
         "consecutive_failures",
         "repetition_warning",
+        "budget_pressure",
     ],
     "actor": [
         "instruction",

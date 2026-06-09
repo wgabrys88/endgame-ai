@@ -654,6 +654,13 @@ def _render_field(board: Blackboard, field_name: str, instruction: str) -> str:
                 "If the goal's core action already succeeded, set mode=done NOW. "
                 "If not done, you MUST try a DIFFERENT action."
             )
+        case "budget_pressure":
+            from persistence import event_count
+            import config
+            remaining = config.EVENT_BUDGET - event_count()
+            if remaining > config.EVENT_BUDGET // TWO_INT:
+                return ""
+            return f"BUDGET: {remaining} events remaining out of {config.EVENT_BUDGET}. Be decisive."
         case _:
             return ""
 
