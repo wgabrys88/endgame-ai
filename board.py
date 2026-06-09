@@ -58,10 +58,13 @@ class Board:
         data = {
             "goal": self.goal, "plan_steps": self.plan_steps, "plan_index": self.plan_index,
             "history": self.history[-20:], "consecutive_failures": self.consecutive_failures,
-            "stagnation_score": self.stagnation_score, "lorenz_x": self.lorenz_x,
-            "lorenz_y": self.lorenz_y, "lorenz_z": self.lorenz_z,
+            "stagnation_score": self.stagnation_score, "repetition_score": self.repetition_score,
+            "lorenz_x": self.lorenz_x, "lorenz_y": self.lorenz_y, "lorenz_z": self.lorenz_z,
+            "attractor_energy": self.attractor_energy, "lorenz_wing_crossed": self.lorenz_wing_crossed,
             "pid_output": self.pid_output, "pid_integral": self.pid_integral,
-            "jacobian": self.jacobian,
+            "screen_stagnation": self.screen_stagnation, "halt_count": self.halt_count,
+            "jacobian": self.jacobian, "last_verb": self.last_verb,
+            "last_instruction": self.last_instruction, "focused_window": self.focused_window,
             "events": log.count(), "budget": log.budget(),
         }
         SNAPSHOT_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
