@@ -2,6 +2,7 @@
   "pythonVersion": "3.13",
   "pythonPlatform": "Windows",
   "typeCheckingMode": "strict",
-  "include": ["*.py", "tests/*.py"],
-  "exclude": ["**/__pycache__"]
+  "include": ["*.py"],
+  "exclude": ["**/__pycache__"],
+  "reportUnusedFunction": "none"
 }

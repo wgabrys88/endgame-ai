@@ -1,14 +1,12 @@
 from __future__ import annotations
-from config import ZERO_INT, ONE_INT, TWO_INT
 import hashlib, math, re, time
 from dataclasses import dataclass
 from typing import Any
 
 from config import (
     TREE_WALK_TIMEOUT, PROBE_STEP_PX, PROBE_FOREGROUND_DELAY, PROBE_SAMPLE_DELAY,
-    PROBE_SINE_AMPLITUDE_RATIO, PROBE_SINE_PERIOD_STEPS, WINDOW_SORT_FALLBACK_RANK,
-    READ_TEXT_MAX_LENGTH, DURATION_MS_PER_SECOND, OBSERVER_PROBE_ACTION_MIN,
-    OBSERVER_REGION_NAME_INDEX, SCREEN_ELEMENT_VALUE_LIMIT, ARTIFACT_SHA_PREFIX_LENGTH,
+    PROBE_SINE_AMPLITUDE_RATIO, PROBE_SINE_PERIOD_STEPS,
+    READ_TEXT_MAX_LENGTH, SCREEN_ELEMENT_VALUE_LIMIT,
     TERMINAL_CONTEXT_TAIL_LINES,
 )
 from win32 import (
@@ -85,8 +83,8 @@ def observe() -> ObserveResult:
     t_start = _profile_start()
     set_dpi_aware()
     init()
-    screen_w = user32.GetSystemMetrics(ZERO_INT)
-    screen_h = user32.GetSystemMetrics(ONE_INT)
+    screen_w = user32.GetSystemMetrics(0)
+    screen_h = user32.GetSystemMetrics(1)
     focused_hwnd = int(user32.GetForegroundWindow())
     focused_title = get_window_title(focused_hwnd)
     _profile_add(timing, "setup", t_start)
@@ -135,7 +133,7 @@ def observe() -> ObserveResult:
     t_start = _profile_start()
     z_titles = [str(e["title"]) for e in z_order]
     wnd_rank = {t: i for i, t in enumerate(z_titles)}
-    classified.sort(key=lambda n: (wnd_rank.get(n["wnd"], WINDOW_SORT_FALLBACK_RANK), n["depth"], n["y"], n["x"]))
+    classified.sort(key=lambda n: (wnd_rank.get(n["wnd"], 999), n["depth"], n["y"], n["x"]))
 
     text, book = _render(classified, target_wnd, focused_title)
     semantic_text = _semantic_render(classified, target_wnd, focused_title)
@@ -180,7 +178,7 @@ def _enumerate_windows() -> list[dict[str, Any]]:
             x, y, w, h = get_rect(top_el)
             ct = get_int(top_el, UIA_CONTROL_TYPE)
             role = CONTROL_TYPE_MAP.get(ct, "")
-            if w <= ZERO_INT or h <= ZERO_INT or role not in ("Window", "Pane"):
+            if w <= 0 or h <= 0 or role not in ("Window", "Pane"):
                 continue
             name = get_str(top_el, UIA_NAME)
             el_hwnd = get_hwnd(top_el)
@@ -196,15 +194,15 @@ def _get_z_order() -> list[dict[str, Any]]:
     hwnd = user32.GetTopWindow(None)
     result: list[dict[str, Any]] = []
     seen: set[str] = set()
-    z = ZERO_INT
+    z = 0
     while hwnd:
         if user32.IsWindowVisible(hwnd):
             title = get_window_title(int(hwnd))
             if title and title not in seen:
                 result.append({"z": z, "hwnd": int(hwnd), "title": title})
                 seen.add(title)
-                z += ONE_INT
-        hwnd = user32.GetWindow(hwnd, TWO_INT)
+                z += 1
+        hwnd = user32.GetWindow(hwnd, 2)
     return result
 
 
@@ -213,7 +211,7 @@ def _tree_walk(out: list[dict[str, Any]], trace: list[dict[str, Any]], el: Any, 
     start = time.perf_counter()
     queue: deque[tuple[Any, int]] = deque()
     for child in get_children(el):
-        queue.append((child, ONE_INT))
+        queue.append((child, 1))
     while queue:
         if time.perf_counter() - start > timeout:
             break
@@ -270,12 +268,12 @@ def _tree_walk(out: list[dict[str, Any]], trace: list[dict[str, Any]], el: Any, 
                 "offscreen": get_bool(raw_el, UIA_IS_OFFSCREEN),
                 "has_text_pattern": n_has_text_pattern,
             })
-            raw["name"] = out[-ONE_INT]["name"]
+            raw["name"] = out[-1]["name"]
             raw["value"] = value
             raw["raw_value"] = raw_value
-            raw["enabled"] = out[-ONE_INT]["enabled"]
-            raw["readonly"] = out[-ONE_INT]["readonly"]
-            raw["offscreen"] = out[-ONE_INT]["offscreen"]
+            raw["enabled"] = out[-1]["enabled"]
+            raw["readonly"] = out[-1]["readonly"]
+            raw["offscreen"] = out[-1]["offscreen"]
             raw["has_text_pattern"] = n_has_text_pattern
             raw["status"] = "accepted"
             trace.append(raw)
@@ -285,14 +283,14 @@ def _tree_walk(out: list[dict[str, Any]], trace: list[dict[str, Any]], el: Any, 
             continue
         try:
             for c in get_children(raw_el):
-                queue.append((c, depth + ONE_INT))
+                queue.append((c, depth + 1))
         except OSError:
             pass
 
 
 def _probe_regions(windows: list[dict[str, Any]], z_order: list[dict[str, Any]], focused_hwnd: int, sw: int, sh: int) -> list[tuple[int, int, int, int, str, int]]:
     if _topmost_popup(z_order):
-        return [(ZERO_INT, ZERO_INT, sw, sh, "Desktop", ZERO_INT)]
+        return [(0, 0, sw, sh, "Desktop", 0)]
     focused_region: tuple[int, int, int, int, str, int] | None = None
     for wnd in windows:
         if int(wnd["hwnd"]) == focused_hwnd:
@@ -305,7 +303,7 @@ def _probe_regions(windows: list[dict[str, Any]], z_order: list[dict[str, Any]],
         return [top_region]
     if focused_region is not None:
         return [focused_region]
-    return [(ZERO_INT, ZERO_INT, sw, sh, "Desktop", ZERO_INT)]
+    return [(0, 0, sw, sh, "Desktop", 0)]
 
 
 def _window_region(wnd: dict[str, Any]) -> tuple[int, int, int, int, str, int]:
@@ -347,12 +345,12 @@ def _tree_windows(windows: list[dict[str, Any]], target_wnd: set[str], regions: 
 
 
 def _region_name(region: tuple[int, int, int, int, str, int]) -> str:
-    return str(region[OBSERVER_REGION_NAME_INDEX])
+    return str(region[4])
 
 
 def _tree_decision(probe_decision: dict[str, Any]) -> dict[str, Any]:
-    action_count = int(probe_decision.get("probe_actionable", ZERO_INT))
-    enabled = action_count < OBSERVER_PROBE_ACTION_MIN
+    action_count = int(probe_decision.get("probe_actionable", 0))
+    enabled = action_count < 1
     reason = "probe_actionable_empty" if enabled else "probe_actionable_sufficient"
     return {"enabled": enabled, "reason": reason, "probe_actionable": action_count}
 
@@ -360,27 +358,27 @@ def _tree_decision(probe_decision: dict[str, Any]) -> dict[str, Any]:
 def _topmost_popup(z_order: list[dict[str, Any]]) -> bool:
     if not z_order:
         return False
-    return get_window_class(int(z_order[ZERO_INT]["hwnd"])) in POPUP_CLASSES
+    return get_window_class(int(z_order[0]["hwnd"])) in POPUP_CLASSES
 
 
 def _target_action_count(nodes: list[dict[str, Any]], target_wnd: set[str]) -> int:
-    count = ZERO_INT
+    count = 0
     for n in nodes:
         wnd = str(n.get("wnd", ""))
         if target_wnd and wnd not in target_wnd and wnd != "Taskbar":
             continue
         if n.get("action") != "none":
-            count += ONE_INT
+            count += 1
     return count
 
 
 def _probe_region(out: list[dict[str, Any]], trace: list[dict[str, Any]], step: int, x0: int, y0: int, x1: int, y1: int, wname: str, whwnd: int) -> None:
     seen_rids: set[Any] = set()
     amp = step * PROBE_SINE_AMPLITUDE_RATIO
-    freq = TWO_INT * math.pi / (step * PROBE_SINE_PERIOD_STEPS)
-    for y in range(y0 + step // TWO_INT, y1, step):
-        for x in range(x0 + step // TWO_INT, x1, step):
-            py = max(y0, min(y1 - ONE_INT, y + int(amp * math.sin(freq * x))))
+    freq = 2 * math.pi / (step * PROBE_SINE_PERIOD_STEPS)
+    for y in range(y0 + step // 2, y1, step):
+        for x in range(x0 + step // 2, x1, step):
+            py = max(y0, min(y1 - 1, y + int(amp * math.sin(freq * x))))
             user32.SetCursorPos(x, py)
             time.sleep(PROBE_SAMPLE_DELAY)
             try:
@@ -417,7 +415,7 @@ def _probe_region(out: list[dict[str, Any]], trace: list[dict[str, Any]], step: 
                     continue
                 rx, ry, rw, rh = r
                 node = {
-                    "wnd": wname, "hwnd": whwnd, "depth": ZERO_INT,
+                    "wnd": wname, "hwnd": whwnd, "depth": 0,
                     "role": role, "name": name,
                     "x": rx, "y": ry, "w": rw, "h": rh,
                     "enabled": get_bool(el, UIA_IS_ENABLED),
@@ -448,13 +446,13 @@ def _filter_terminal_text(raw: str) -> str:
         kept.append(line)
     if not kept:
         kept = stripped
-    last_sep = -ONE_INT
-    for i in range(len(kept) - ONE_INT, -ONE_INT, -ONE_INT):
+    last_sep = -1
+    for i in range(len(kept) - 1, -1, -1):
         if " - Completed in " in kept[i]:
             last_sep = i
             break
-    if last_sep >= ZERO_INT and last_sep < len(kept) - ONE_INT:
-        tail = kept[last_sep + ONE_INT:]
+    if last_sep >= 0 and last_sep < len(kept) - 1:
+        tail = kept[last_sep + 1:]
     else:
         tail = kept
     if len(tail) > TERMINAL_CONTEXT_TAIL_LINES:
@@ -467,7 +465,7 @@ def _is_runtime_log_line(line: str) -> bool:
     if not compact.startswith("{"):
         return False
     markers = ('"version":', '"phase":', '"agent_id":', '"timestamp_utc":')
-    return all(marker in compact for marker in markers[:TWO_INT])
+    return all(marker in compact for marker in markers[:2])
 
 
 def _is_tui_dashboard_line(line: str) -> bool:
@@ -488,7 +486,7 @@ def _compact_display_value(value: str) -> str:
     if len(value) <= SCREEN_ELEMENT_VALUE_LIMIT:
         return value
     digest = hashlib.sha256(value.encode("utf-8", errors="surrogatepass")).hexdigest()
-    return f"[chars={len(value)} sha256={digest[:ARTIFACT_SHA_PREFIX_LENGTH]}]"
+    return f"[chars={len(value)} sha256={digest[:16]}]"
 
 
 def _merge(tree_nodes: list[dict[str, Any]], probe_nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -516,7 +514,7 @@ def _classify(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for n in nodes:
         role = n["role"]
         w, h = n["w"], n["h"]
-        if w <= ZERO_INT or h <= ZERO_INT or n.get("offscreen"):
+        if w <= 0 or h <= 0 or n.get("offscreen"):
             continue
         name = n.get("name", "")
         value = n.get("value", "")
@@ -550,13 +548,13 @@ def _render(nodes: list[dict[str, Any]], target_wnd: set[str], focused_title: st
     book: dict[str, BookEntry] = {}
     lines: list[str] = []
     current_wnd = ""
-    seq = ZERO_INT
+    seq = 0
     for n in nodes:
         wnd = n["wnd"]
         if target_wnd and wnd not in target_wnd and wnd != "Taskbar":
             continue
         if n["action"] == "none" and not n.get("value"):
-            seq += ONE_INT
+            seq += 1
             book[str(seq)] = BookEntry(
                 id=str(seq), role=n["role"], name=n.get("name", ""),
                 value=n.get("value", ""), hwnd=n["hwnd"], wnd=wnd,
@@ -569,7 +567,7 @@ def _render(nodes: list[dict[str, Any]], target_wnd: set[str], focused_title: st
             current_wnd = wnd
             marker = "*" if wnd == focused_title else ""
             lines.append(f"[{wnd}]{marker}")
-        seq += ONE_INT
+        seq += 1
         nid = str(seq)
         act = {"click": "C", "write": "W"}.get(n["action"], ".")
         typ = ROLE_SHORT.get(n["role"], n["role"])
@@ -631,10 +629,10 @@ def _profile_start() -> tuple[float, float]:
 
 
 def _profile_add(profile: dict[str, dict[str, int]], phase: str, start: tuple[float, float]) -> None:
-    row = profile.setdefault(phase, {"wall_ms": ZERO_INT, "cpu_ms": ZERO_INT, "calls": ZERO_INT})
-    row["wall_ms"] += int((time.perf_counter() - start[ZERO_INT]) * DURATION_MS_PER_SECOND)
-    row["cpu_ms"] += int((time.process_time() - start[ONE_INT]) * DURATION_MS_PER_SECOND)
-    row["calls"] += ONE_INT
+    row = profile.setdefault(phase, {"wall_ms": 0, "cpu_ms": 0, "calls": 0})
+    row["wall_ms"] += int((time.perf_counter() - start[0]) * 1000)
+    row["cpu_ms"] += int((time.process_time() - start[1]) * 1000)
+    row["calls"] += 1
 
 
 def _clone_nodes(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:

@@ -1,10 +1,4 @@
-You are the verifier for a Windows desktop automation system. Output one JSON object only.
+You are the verifier. Check if the goal is visibly complete on screen.
 
-Required JSON:
-{"verdict":"confirmed|denied","evidence":"what you see that proves it"}
-
-Field rules:
-- verdict: confirmed only when the goal is visibly complete. denied otherwise.
-- evidence: quote specific screen state or action results.
-
-Output ONLY the JSON object.
+Output one JSON object:
+{"verdict":"confirmed|denied","evidence":"what proves it"}
