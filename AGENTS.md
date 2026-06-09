@@ -1,64 +1,62 @@
-# Session Checklist — Event Budget (2026-06-09)
+# Session Checklist — Event Budget (2026-06-09) FINAL
 
-## CONCEPT
-
-The blackboard event stream is the single source of truth.
-Every runtime event flows through `persistence.append_runtime_event()`.
-The EVENT BUDGET is the execution boundary: system stops after N events.
-
-## IMPLEMENTATION STATUS
-
-- [x] `config.EVENT_BUDGET` (default 100, mutable via CLI)
-- [x] `--event-budget N` CLI argument in main.py
-- [x] Counter in `persistence.append_runtime_event()`
-- [x] `budget_exhausted()` flag checked in orchestrator loop
-- [x] Graceful exit path with log event + TUI render
-- [x] `event_count()` exported for metrics
-- [x] `run.end` log includes events_used and event_budget
-- [x] `analyze_run.py` reports budget usage percentage
-- [x] Proactive verification on last plan step
-- [x] Dead code removal: `_instruction_for_actor` identity function
-- [x] Pyright: 0 errors, 0 warnings, 0 informations
-
-## USAGE
+## RESULT: EVENT BUDGET MECHANISM OPERATIONAL
 
 ```
-python main.py "open notepad" --backend acp --event-budget 50
-python main.py "emit done" --backend lmstudio --event-budget 200
-python analyze_run.py blackboard_events.txt
+python main.py "open notepad and type hello world" --backend acp --event-budget 100
 ```
 
-## SCIENTIFIC VALUE
+System completed ALL 4 plan steps (6 actions) in 100 events / 7 iterations / 54s:
+1. hotkey win+r ✓
+2. click Edit 'Open:' + write "notepad" ✓  
+3. hotkey return ✓
+4. click 'Text editor' + write "hello world" ✓
 
-Fixed event count per experiment enables:
-- Comparing backends (ACP vs LM Studio) under identical resource constraints
-- Measuring efficiency: successful_actions / total_events
-- Measuring waste: LLM calls that produce no state change
-- Reproducible experiments with bounded resource usage
-- Evolutionary pressure: system must accomplish MORE in FEWER events
+Budget ran out during final verification call. With budget=120 → goal confirmed.
 
-## ASCII ARCHITECTURE
+## CHANGES MADE THIS SESSION
+
+| Commit | Change | Impact |
+|--------|--------|--------|
+| 149c69a | Event budget implementation | Bounded execution |
+| ebdf974 | Budget pressure to planner + gate reflection | Math wired to budget |
+| 59b5853 | Remove dead code (step_advance, notes-clear bug) | Fixed Lorenz DIVERGE erasure |
+| 7bfaf1d | Reduce event overhead (3→1 observe, remove redundant logs) | 60% more work per budget |
+
+## ARCHITECTURE NOW
 
 ```
 CLI --event-budget=100
         │
         ▼
-config.EVENT_BUDGET = 100
-        │
-        ▼
-┌──────────────────────────────┐
-│  persistence.append_runtime_ │
-│  event(record)               │
-│    _event_counter++          │◄── EVERY event passes here
-│    if >= budget:             │
-│      _budget_exhausted=True  │
-└──────────────────────────────┘
-        │
-        ▼
-orchestrator._loop():
-  while True:
-    if budget_exhausted():     ◄── checked BEFORE each iteration
-      log + graceful exit
-      return False
-    ...normal iteration...
+┌────────────────────────────────────────────────────────────┐
+│                    EVENT STREAM                              │
+│  (blackboard_events.txt = single source of truth)          │
+│                                                            │
+│  Every state mutation → 1 event → counter++                │
+│  Counter >= budget → budget_exhausted flag → graceful stop │
+│                                                            │
+│  PRESSURE MECHANISMS:                                      │
+│  ├─ Reflection gated at 75% budget (REFLECT_BUDGET_GATE)  │
+│  ├─ Budget pressure visible to planner (context field)     │
+│  └─ Lorenz fork clears plan + injects DIVERGE note        │
+│                                                            │
+│  OVERHEAD (per iteration):                                 │
+│  ├─ observe: 1 event                                      │
+│  ├─ llm.request + llm.response.raw: 2 per LLM call       │
+│  ├─ role-specific decision log: 1 per call                │
+│  ├─ action.request + action.result: 2 per action          │
+│  ├─ tui.render: 1                                         │
+│  └─ iteration.start/end: 2                                │
+│  = ~12-14 events/iteration (was ~20)                       │
+│                                                            │
+└────────────────────────────────────────────────────────────┘
 ```
+
+## METRICS FROM TESTED RUN
+
+- Efficiency: 0.46 actions/decision
+- 3 actor continuations (planner skipped = budget saved)
+- 3 checklist advances (plan progression working)
+- Lorenz stable (no fork needed - task progressing)
+- PID: 0.21 (low stagnation, correctly not triggering reflection)
