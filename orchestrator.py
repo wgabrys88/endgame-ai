@@ -215,6 +215,8 @@ def _run_verifier(board: Board) -> str:
     if verdict == "confirmed":
         return "done"
     board.on_verify_denied()
+    board.plan_steps = []
+    board.plan_index = 0
     board.requested_next = "planner"
     return "continue"
 
@@ -250,6 +252,7 @@ def _call_role(role: str, context: str, board: Board) -> dict[str, Any] | None:
 
 
 def _build_args(verb: str, target: str, value: str) -> dict[str, Any]:
+    target = target.strip("[]")
     if verb == "click":
         return {"selector": target}
     if verb == "write":

@@ -24,3 +24,5 @@ Rules:
 - For file operations use read_file/write_file directly.
 - To launch programs use hotkey win+r then type program name then hotkey return.
 - Never repeat actions that already succeeded (check HISTORY).
+
+Ensure all attempted selectors exist in the agent's current state or known inventory.

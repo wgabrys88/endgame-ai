@@ -205,6 +205,12 @@ class Board:
             self.lorenz_wing_crossed = False
             self.plan_steps = []
             self.plan_index = 0
+            self.consecutive_failures = 0
+            self.halt_count = 0
+            self.recent_sigs = []
+            self.repetition_score = 0.0
+            self.stagnation_score = 0.0
+            self.pid_integral = 0.0
             self.notes = ["DIVERGE: previous approach failed. Try a completely different method."]
             log.emit("lorenz.fork", {"x": self.lorenz_x, "stagnation": self.stagnation_score})
             self.requested_next = ""
