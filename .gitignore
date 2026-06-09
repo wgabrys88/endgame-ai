@@ -10,6 +10,8 @@ blackboard_state.json
 blackboard_state.lock
 evolution_ledger.json
 lessons.json
+field_usage.json
 *.bak
 _run_test.bat
 *.corrupt_*.json
+AGENTS.md

@@ -4,9 +4,7 @@ from typing import Any, Callable, cast
 
 from config import (
     BUDGET_PLANNER_OUT, BUDGET_ACTOR_OUT, BUDGET_VERIFIER_OUT, BUDGET_REFLECTOR_OUT,
-    DELAY_BETWEEN_CYCLES, STAGNATION_HALT_THRESHOLD, STAGNATION_HALT_SUSTAINED,
-    REFLECT_THRESHOLD, REFLECT_BUDGET_GATE, REFLECT_MIN_INTERVAL, REFLECT_MIN_FAILURES,
-    DEFAULT_SCROLL_AMOUNT,
+    DELAY_BETWEEN_CYCLES, DEFAULT_SCROLL_AMOUNT,
 )
 from state import Board
 from dispatch import call_role, RoleSpec
@@ -14,32 +12,36 @@ from observer import observe
 from actions import execute_verb, VERBS
 import log
 
-PLANNER = RoleSpec("planner", 8000, BUDGET_PLANNER_OUT)
-ACTOR = RoleSpec("actor", 8000, BUDGET_ACTOR_OUT)
-VERIFIER = RoleSpec("verifier", 8000, BUDGET_VERIFIER_OUT)
-REFLECTOR = RoleSpec("reflector", 16000, BUDGET_REFLECTOR_OUT)
-
-_halt_count: int = 0
-_last_reflect: int = 0
+ROLES: dict[str, RoleSpec] = {
+    "planner": RoleSpec("planner", 8000, BUDGET_PLANNER_OUT),
+    "actor": RoleSpec("actor", 8000, BUDGET_ACTOR_OUT),
+    "verifier": RoleSpec("verifier", 8000, BUDGET_VERIFIER_OUT),
+    "reflector": RoleSpec("reflector", 16000, BUDGET_REFLECTOR_OUT),
+}
 
 
 def run(board: Board, interrupted: Callable[[], bool]) -> bool:
-    global _halt_count, _last_reflect
-    _halt_count = 0
-    _last_reflect = 0
-
     log.emit("start", {"goal": board.goal, "budget": log.budget()})
 
     while not log.exhausted() and not interrupted():
-        result = _cycle(board)
+        _observe(board)
+        if log.exhausted():
+            break
+
+        role = board.decide_next_role()
+
+        if role == "halt":
+            log.emit("halt", {"stagnation": board.stagnation_score, "events": log.count()})
+            board.save()
+            return False
+
+        result = _dispatch(board, role)
+
         if result == "done":
             log.emit("complete", {"goal": board.goal, "events": log.count()})
             board.save()
             return True
-        if result == "halt":
-            log.emit("halt", {"stagnation": board.stagnation_score, "events": log.count()})
-            board.save()
-            return False
+
         board.save()
         time.sleep(DELAY_BETWEEN_CYCLES)
 
@@ -49,37 +51,16 @@ def run(board: Board, interrupted: Callable[[], bool]) -> bool:
     return False
 
 
-def _cycle(board: Board) -> str:
-    global _halt_count
-
-    if board.stagnation_score >= STAGNATION_HALT_THRESHOLD:
-        _halt_count += 1
-        if _halt_count >= STAGNATION_HALT_SUSTAINED:
-            return "halt"
-    else:
-        _halt_count = 0
-
-    if board.lorenz_wing_crossed:
-        board.lorenz_wing_crossed = False
-        board.plan_steps = []
-        board.plan_index = 0
-        board.notes = ["DIVERGE: previous approach failed. Try a completely different method."]
-        log.emit("lorenz.fork", {"x": board.lorenz_x, "stagnation": board.stagnation_score})
-
-    if board.pid_output > REFLECT_THRESHOLD:
-        _maybe_reflect(board)
-
-    _observe(board)
-
-    if log.exhausted():
-        return "continue"
-
-    return _plan_act(board)
-
-
 def _observe(board: Board) -> None:
     try:
         obs = observe()
+        if obs.semantic_hash == board.screen_hash:
+            board.screen_stagnation += 1
+            if board.last_verb:
+                board.update_jacobian(board.last_verb, False)
+            return
+        if board.last_verb:
+            board.update_jacobian(board.last_verb, True)
         board.record_screen(obs.context_text, obs.semantic_hash, obs.book, obs.focused_title)
         log.emit("observe", {"hash": obs.semantic_hash, "focused": obs.focused_title, "chars": len(obs.context_text)})
     except Exception as e:
@@ -88,15 +69,28 @@ def _observe(board: Board) -> None:
         log.emit("observe.fail", {"error": str(e)})
 
 
-def _plan_act(board: Board) -> str:
+def _dispatch(board: Board, role: str) -> str:
+    if role == "planner":
+        return _run_planner(board)
+    if role == "actor":
+        return _run_actor(board)
+    if role == "verifier":
+        return _run_verifier(board)
+    if role == "reflector":
+        return _run_reflector(board)
+    return "continue"
+
+
+def _run_planner(board: Board) -> str:
     context = board.context("planner")
-    plan = _call_role("planner", PLANNER, context)
+    plan = _call_role("planner", context, board)
     if plan is None:
         board.on_failure()
         return "continue"
 
     mode = str(plan.get("mode", "direct"))
     next_action = str(plan.get("next_action", ""))
+    recipient = str(plan.get("recipient", ""))
 
     sequence = plan.get("sequence", [])
     if isinstance(sequence, list) and sequence and not board.plan_steps:
@@ -105,30 +99,47 @@ def _plan_act(board: Board) -> str:
 
     log.emit("plan", {"mode": mode, "action": next_action, "step": board.plan_index, "steps": len(board.plan_steps)})
 
+    board.last_instruction = next_action
+    board.record_role_call("planner")
+    board.last_outputs["planner"] = f"mode={mode} action='{next_action[:60]}'"
+
+    if recipient:
+        board.requested_next = recipient
+
     if mode == "done":
-        return _verify(board, next_action or "planner declared done")
+        board.requested_next = "verifier"
+    elif not board.requested_next:
+        board.requested_next = "actor"
 
-    return _act(board, next_action)
+    return "continue"
 
 
-def _act(board: Board, instruction: str) -> str:
+def _run_actor(board: Board) -> str:
+    instruction = board.last_instruction or (board.plan_steps[board.plan_index] if board.plan_steps else "")
+    if not instruction:
+        board.on_failure()
+        return "continue"
+
     context = board.context("actor", instruction)
-    actor_out = _call_role("actor", ACTOR, context)
+    actor_out = _call_role("actor", context, board)
     if actor_out is None:
         board.on_failure()
         return "continue"
 
     board.actor_observe = str(actor_out.get("observe", ""))
     board.actor_conclusion = str(actor_out.get("conclusion", ""))
+    recipient = str(actor_out.get("recipient", ""))
 
     raw_actions = actor_out.get("actions", [])
     actions: list[dict[str, Any]] = cast(list[dict[str, Any]], raw_actions) if isinstance(raw_actions, list) else []
 
     if board.actor_conclusion == "DONE" and not actions:
         board.on_success()
+        board.record_role_call("actor")
         if board.on_last_step():
-            return _verify(board, f"actor done: {board.actor_observe}")
-        board.advance_step()
+            board.requested_next = "verifier"
+        else:
+            board.advance_step()
         return "continue"
 
     log.emit("actor", {"conclusion": board.actor_conclusion, "actions": len(actions)})
@@ -158,47 +169,55 @@ def _act(board: Board, instruction: str) -> str:
     else:
         board.on_success()
         if board.on_last_step():
-            return _verify(board, f"actions succeeded: {board.actor_observe}")
+            board.requested_next = "verifier"
+        else:
+            board.advance_step()
+
+    board.record_role_call("actor")
+    board.last_outputs["actor"] = f"conclusion={board.actor_conclusion} actions={len(actions)}"
+    if recipient:
+        board.requested_next = recipient
+    elif not board.requested_next:
+        board.requested_next = "planner"
 
     return "continue"
 
 
-def _verify(board: Board, evidence: str) -> str:
+def _run_verifier(board: Board) -> str:
     context = board.context("verifier")
-    result = _call_role("verifier", VERIFIER, context)
+    result = _call_role("verifier", context, board)
     if result is None:
         board.on_failure()
         return "continue"
     verdict = str(result.get("verdict", "denied"))
     log.emit("verify", {"verdict": verdict, "evidence": str(result.get("evidence", ""))[:200]})
+    board.record_role_call("verifier")
+    board.last_outputs["verifier"] = f"verdict={verdict}"
     if verdict == "confirmed":
         return "done"
-    board.on_failure()
+    board.on_verify_denied()
+    board.requested_next = "planner"
     return "continue"
 
 
-def _maybe_reflect(board: Board) -> None:
-    global _last_reflect
-    elapsed = log.count() - _last_reflect
-    if elapsed < REFLECT_MIN_INTERVAL:
-        return
-    if board.consecutive_failures < REFLECT_MIN_FAILURES:
-        return
-    budget_ratio = log.count() / max(log.budget(), 1)
-    if budget_ratio > REFLECT_BUDGET_GATE:
-        return
-    _last_reflect = log.count()
+def _run_reflector(board: Board) -> str:
     context = board.context("reflector")
-    result = _call_role("reflector", REFLECTOR, context)
+    result = _call_role("reflector", context, board)
     if result:
         diagnosis = str(result.get("diagnosis", ""))
         lesson = str(result.get("lesson", ""))
         log.emit("reflect", {"diagnosis": diagnosis, "lesson": lesson})
+        board.notes = [f"REFLECT: {lesson}"]
+        board.last_outputs["reflector"] = f"lesson='{lesson[:80]}'"
+    board.record_role_call("reflector")
+    return "continue"
 
 
-def _call_role(role: str, spec: RoleSpec, context: str) -> dict[str, Any] | None:
+def _call_role(role: str, context: str, board: Board) -> dict[str, Any] | None:
+    spec = ROLES[role]
     try:
-        return call_role(spec, context)
+        temp = board.effective_temperature()
+        return call_role(spec, context, temperature=temp)
     except Exception as e:
         log.emit(f"{role}.error", {"type": type(e).__name__, "msg": str(e)[:200]})
         return None

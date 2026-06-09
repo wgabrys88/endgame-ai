@@ -8,17 +8,19 @@
       "properties": {
         "verdict": {
           "type": "string",
-          "enum": ["confirmed", "denied"],
-          "description": "confirmed if goal is visibly complete. denied otherwise."
+          "enum": ["confirmed", "denied"]
         },
         "evidence": {
           "type": "string",
           "minLength": 5,
-          "maxLength": 800,
-          "description": "Specific screen state or action results proving the verdict."
+          "maxLength": 800
+        },
+        "recipient": {
+          "type": "string",
+          "enum": ["planner", "actor", "reflector", ""]
         }
       },
-      "required": ["verdict", "evidence"],
+      "required": ["verdict", "evidence", "recipient"],
       "additionalProperties": false
     }
   }

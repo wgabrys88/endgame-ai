@@ -6,7 +6,7 @@ import time
 from config import (
     BASE_DIR, DELAY_FOCUS, DELAY_CURSOR_SETTLE, DELAY_MOUSE_HOLD,
     DELAY_CHAR_SEND, DELAY_KEY_INTER, MAX_WAIT_SECONDS,
-    COMMAND_TIMEOUT_SECONDS, COMMAND_EXECUTABLE, COMMAND_SHELL, COMMAND_SHELL_FLAG,
+    COMMAND_TIMEOUT_SECONDS, COMMAND_EXECUTABLE, COMMAND_SHELL,
     MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_WHEEL,
     WHEEL_DELTA, INPUT_KEYBOARD, KEYEVENTF_EXTENDEDKEY,
     KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, KEYEVENTF_UNICODE_KEYUP,
@@ -199,8 +199,9 @@ def _cmd(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
     if not command:
         return ActionResult("cmd", False, "no command")
     try:
+        cmd_parts = [COMMAND_EXECUTABLE, COMMAND_SHELL, command] if COMMAND_SHELL else [COMMAND_EXECUTABLE, command]
         proc = subprocess.run(
-            [COMMAND_EXECUTABLE, COMMAND_SHELL, COMMAND_SHELL_FLAG, command],
+            cmd_parts,
             capture_output=True, text=True, timeout=COMMAND_TIMEOUT_SECONDS, cwd=str(BASE_DIR))
         output = (proc.stdout + proc.stderr).strip()
         return ActionResult("cmd", proc.returncode == 0, output or f"exit {proc.returncode}")

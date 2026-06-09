@@ -8,28 +8,29 @@
       "properties": {
         "mode": {
           "type": "string",
-          "enum": ["direct", "done"],
-          "description": "direct: actor executes next_action. done: goal complete."
+          "enum": ["direct", "done"]
         },
         "next_action": {
           "type": "string",
           "minLength": 0,
-          "maxLength": 1500,
-          "description": "One atomic instruction for the actor. Do NOT combine multiple steps."
+          "maxLength": 1500
         },
         "sequence": {
           "type": "array",
           "minItems": 0,
           "maxItems": 12,
-          "description": "Full step-by-step plan. Emit on first call; empty [] on subsequent calls.",
           "items": {
             "type": "string",
             "minLength": 5,
             "maxLength": 300
           }
+        },
+        "recipient": {
+          "type": "string",
+          "enum": ["actor", "verifier", "reflector", ""]
         }
       },
-      "required": ["mode", "next_action", "sequence"],
+      "required": ["mode", "next_action", "sequence", "recipient"],
       "additionalProperties": false
     }
   }

@@ -12,12 +12,9 @@ EVENT_BUDGET: int = 100
 LMS_HOSTS: list[str] = ["http://localhost:1234"]
 LMS_TIMEOUT: float = 300.0
 LMS_MODEL_LIST_TIMEOUT: float = 10.0
-LMS_MODEL_RELOAD_TIMEOUT: float = 60.0
-LMS_MODEL_RELOAD_DELAY: float = 5.0
 LMS_REQUEST_ATTEMPTS: int = 3
 LMS_RETRY_DELAY: float = 2.0
 LMS_ERROR_RETRY_DELAY: float = 3.0
-HTTP_ERROR_STATUS_MIN: int = 400
 
 ACP_TIMEOUT: float = 90.0
 ACP_PROTOCOL_VERSION: int = 1
@@ -57,9 +54,8 @@ DELAY_KEY_INTER: float = 0.03
 DELAY_CHAR_SEND: float = 0.03
 MAX_WAIT_SECONDS: float = 10.0
 COMMAND_TIMEOUT_SECONDS: float = 30.0
-COMMAND_EXECUTABLE: str = "wsl.exe"
-COMMAND_SHELL: str = "bash"
-COMMAND_SHELL_FLAG: str = "-lc"
+COMMAND_EXECUTABLE: str = "cmd.exe"
+COMMAND_SHELL: str = "/c"
 
 TREE_WALK_TIMEOUT: float = 5.0
 PROBE_STEP_PX: int = 90
@@ -156,10 +152,10 @@ UIA_CONTROL_TYPE_MAP: dict[int, str] = {
 }
 
 CONTEXT_POLICY: dict[str, list[str]] = {
-    "planner": ["goal", "screen", "plan", "history", "budget", "diverge"],
-    "actor": ["instruction", "screen"],
-    "verifier": ["goal", "screen", "history"],
-    "reflector": ["goal", "screen", "plan", "history", "math"],
+    "planner": ["goal", "screen", "plan", "history", "budget", "diverge", "failures", "roles"],
+    "actor": ["instruction", "screen", "roles"],
+    "verifier": ["goal", "screen", "history", "plan", "roles"],
+    "reflector": ["goal", "screen", "plan", "history", "math", "roles"],
 }
 
 GUID_DATA1_END: int = 4

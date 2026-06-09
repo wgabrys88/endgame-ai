@@ -11,6 +11,7 @@ from config import (
     PID_KP, PID_KI, PID_KD, PID_INTEGRAL_MAX, PID_DEAD_ZONE,
     STAGNATION_WEIGHT_FAILURES, STAGNATION_WEIGHT_REPETITION,
     STAGNATION_WEIGHT_SCREEN, STAGNATION_NORMALIZER,
+    STAGNATION_HALT_THRESHOLD, STAGNATION_HALT_SUSTAINED,
     REPETITION_WINDOW, REPETITION_MIN_WINDOW,
     SCREEN_STAGNATION_LOOKBACK, SCREEN_HASH_HISTORY_LIMIT,
     MAX_HISTORY, CONTEXT_POLICY,
@@ -35,11 +36,14 @@ class Board:
     actor_observe: str = ""
     actor_conclusion: str = ""
     consecutive_failures: int = 0
+    verify_denied_count: int = 0
     repetition_score: float = 0.0
     stagnation_score: float = 0.0
     screen_stagnation: int = 0
     recent_hashes: list[str] = field(default_factory=list[str])
     recent_sigs: list[str] = field(default_factory=list[str])
+    jacobian: dict[str, float] = field(default_factory=lambda: dict[str, float]())
+    jacobian_trials: dict[str, int] = field(default_factory=lambda: dict[str, int]())
     lorenz_x: float = 8.485
     lorenz_y: float = 8.485
     lorenz_z: float = 27.0
@@ -48,6 +52,12 @@ class Board:
     pid_output: float = 0.0
     pid_integral: float = 0.0
     pid_prev: float = 0.0
+    last_instruction: str = ""
+    requested_next: str = ""
+    role_calls: dict[str, int] = field(default_factory=lambda: dict[str, int]())
+    total_role_calls: int = 0
+    halt_count: int = 0
+    last_outputs: dict[str, str] = field(default_factory=lambda: dict[str, str]())
 
     def context(self, role: str, instruction: str = "") -> str:
         fields = CONTEXT_POLICY.get(role, [])
@@ -67,6 +77,13 @@ class Board:
             self.history = self.history[-MAX_HISTORY:]
         self._update_signals(verb)
 
+    def update_jacobian(self, verb: str, screen_changed: bool) -> None:
+        trials = self.jacobian_trials.get(verb, 0) + 1
+        self.jacobian_trials[verb] = trials
+        old = self.jacobian.get(verb, 0.5)
+        alpha = 1.0 / min(trials, 10)
+        self.jacobian[verb] = old + alpha * ((1.0 if screen_changed else 0.0) - old)
+
     def record_screen(self, text: str, hash_val: str, elements: dict[str, Any], focused: str) -> None:
         self.screen = text
         self.screen_hash = hash_val
@@ -85,6 +102,13 @@ class Board:
 
     def on_failure(self) -> None:
         self.consecutive_failures += 1
+        self._update_signals("_fail")
+
+    def on_verify_denied(self) -> None:
+        self.verify_denied_count += 1
+        if not (len(self.history) > 0 and self.history[-1].get("ok")):
+            self.consecutive_failures += 1
+        self._compute_stagnation()
 
     def on_last_step(self) -> bool:
         if not self.plan_steps:
@@ -106,8 +130,6 @@ class Board:
         else:
             self.repetition_score = 0.0
         self._compute_stagnation()
-        self._step_lorenz()
-        self._step_pid()
 
     def _compute_stagnation(self) -> None:
         raw = (self.consecutive_failures * STAGNATION_WEIGHT_FAILURES
@@ -152,9 +174,57 @@ class Board:
             "stagnation_score": self.stagnation_score, "lorenz_x": self.lorenz_x,
             "lorenz_y": self.lorenz_y, "lorenz_z": self.lorenz_z,
             "pid_output": self.pid_output, "pid_integral": self.pid_integral,
+            "jacobian": self.jacobian,
             "events": log.count(), "budget": log.budget(),
         }
         SNAPSHOT_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    def effective_temperature(self) -> float:
+        from config import LLM_TEMPERATURE
+        base = LLM_TEMPERATURE
+        chaos_boost = min(0.4, self.attractor_energy * 0.1)
+        stagnation_boost = min(0.3, self.stagnation_score * 0.3)
+        return min(1.0, base + chaos_boost + stagnation_boost)
+
+    def record_role_call(self, role: str) -> None:
+        self.role_calls[role] = self.role_calls.get(role, 0) + 1
+        self.total_role_calls += 1
+
+    def decide_next_role(self) -> str:
+        self._step_lorenz()
+        self._step_pid()
+
+        if self.stagnation_score >= STAGNATION_HALT_THRESHOLD:
+            self.halt_count += 1
+            if self.halt_count >= STAGNATION_HALT_SUSTAINED:
+                return "halt"
+        else:
+            self.halt_count = 0
+
+        if self.lorenz_wing_crossed:
+            self.lorenz_wing_crossed = False
+            self.plan_steps = []
+            self.plan_index = 0
+            self.notes = ["DIVERGE: previous approach failed. Try a completely different method."]
+            log.emit("lorenz.fork", {"x": self.lorenz_x, "stagnation": self.stagnation_score})
+            self.requested_next = ""
+            return "planner"
+
+        if self.requested_next:
+            role = self.requested_next
+            self.requested_next = ""
+            return role
+
+        if self.total_role_calls == 0:
+            return "planner"
+
+        if self.pid_output > 0.5 and self.role_calls.get("reflector", 0) < self.total_role_calls * 0.15:
+            return "reflector"
+
+        if not self.last_instruction:
+            return "planner"
+
+        return "actor"
 
 
 def _render(b: Board, field: str, instruction: str) -> str:
@@ -191,7 +261,27 @@ def _render(b: Board, field: str, instruction: str) -> str:
                 return ""
             return "\n".join(b.notes)
         case "math":
+            jac = ""
+            if b.jacobian:
+                top = sorted(b.jacobian.items(), key=lambda x: x[1], reverse=True)[:5]
+                jac = " jacobian=[" + ",".join(f"{k}:{v:.2f}" for k, v in top) + "]"
             return (f"MATH: stagnation={b.stagnation_score:.2f} pid={b.pid_output:.2f} "
-                    f"energy={b.attractor_energy:.2f} lorenz_x={b.lorenz_x:.2f}")
+                    f"energy={b.attractor_energy:.2f} lorenz_x={b.lorenz_x:.2f}{jac}")
+        case "failures":
+            if b.consecutive_failures == 0 and b.verify_denied_count == 0:
+                return ""
+            parts_f: list[str] = []
+            if b.verify_denied_count > 0:
+                parts_f.append(f"Verifier DENIED {b.verify_denied_count} times. You MUST choose mode=direct and take actions.")
+            if b.consecutive_failures > 0:
+                parts_f.append(f"Consecutive failures: {b.consecutive_failures}. Try a different approach.")
+            return "\n".join(parts_f)
+        case "roles":
+            if not b.last_outputs:
+                return ""
+            lines_r = ["OTHER AGENTS:"]
+            for role_name, output in b.last_outputs.items():
+                lines_r.append(f"  {role_name}: {output[:120]}")
+            return "\n".join(lines_r)
         case _:
             return ""

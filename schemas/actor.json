@@ -9,20 +9,18 @@
         "observe": {
           "type": "string",
           "minLength": 5,
-          "maxLength": 800,
-          "description": "What is visible on screen right now relevant to the instruction."
+          "maxLength": 800
         },
         "actions": {
           "type": "array",
           "minItems": 0,
           "maxItems": 5,
-          "description": "Actions to execute in order.",
           "items": {
             "type": "object",
             "properties": {
               "verb": {
                 "type": "string",
-                "enum": ["click", "write", "press", "hotkey", "scroll", "wait", "focus", "read_file", "write_file", "spawn_agent", "cmd"]
+                "enum": ["click", "write", "press", "hotkey", "scroll", "wait", "focus", "read_file", "write_file", "cmd"]
               },
               "target": {
                 "type": "string",
@@ -41,11 +39,14 @@
         },
         "conclusion": {
           "type": "string",
-          "enum": ["DONE", "EXPECTED", "UNEXPECTED"],
-          "description": "DONE: instruction already satisfied. EXPECTED: actions should run. UNEXPECTED: blocked."
+          "enum": ["DONE", "EXPECTED", "UNEXPECTED"]
+        },
+        "recipient": {
+          "type": "string",
+          "enum": ["planner", "verifier", "reflector", ""]
         }
       },
-      "required": ["observe", "actions", "conclusion"],
+      "required": ["observe", "actions", "conclusion", "recipient"],
       "additionalProperties": false
     }
   }

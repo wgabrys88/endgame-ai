@@ -32,9 +32,9 @@ def _get_required_fields(role: str) -> list[str]:
     return fields
 
 
-def call_role(spec: RoleSpec, context: str) -> dict[str, Any]:
+def call_role(spec: RoleSpec, context: str, temperature: float | None = None) -> dict[str, Any]:
     system = _load_prompt(spec.name)
-    raw = call_llm(system, context, spec.name, max_tokens=spec.max_output_tokens)
+    raw = call_llm(system, context, spec.name, max_tokens=spec.max_output_tokens, temperature=temperature)
     required = _get_required_fields(spec.name)
     return _extract_json(raw, required)
 

@@ -35,15 +35,16 @@ def close_backend() -> None:
         close_pool()
 
 
-def call_llm(system: str, user: str, role: str, *, max_tokens: int = LLM_MAX_TOKENS) -> str:
+def call_llm(system: str, user: str, role: str, *, max_tokens: int = LLM_MAX_TOKENS, temperature: float | None = None) -> str:
     schema: dict[str, Any] = _load_schema(role)
+    temp = temperature if temperature is not None else LLM_TEMPERATURE
     body: dict[str, Any] = {
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
         "response_format": schema,
-        "temperature": LLM_TEMPERATURE,
+        "temperature": temp,
         "top_p": LLM_TOP_P,
         "top_k": LLM_TOP_K,
         "max_tokens": max_tokens,
