@@ -110,7 +110,7 @@ class Board:
         self.verify_denied_count += 1
 
     def advance_step(self) -> None:
-        if self.plan_steps and self.plan_index < len(self.plan_steps) - 1:
+        if self.plan_steps:
             self.plan_index += 1
             self.pid_integral = 0.0
 

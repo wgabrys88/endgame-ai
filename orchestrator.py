@@ -82,6 +82,22 @@ def _dispatch(board: Board, role: str) -> str:
 
 
 def _run_planner(board: Board) -> str:
+    if board.plan_steps and board.plan_index < len(board.plan_steps):
+        step = board.plan_steps[board.plan_index]
+        board.last_instruction = step
+        board.requested_next = "actor"
+        board.record_role_call("planner")
+        board.last_outputs["planner"] = f"mode=direct action='{step[:60]}'"
+        log.emit("plan", {"mode": "direct", "action": step, "step": board.plan_index, "steps": len(board.plan_steps)})
+        return "continue"
+
+    if board.plan_steps and board.plan_index >= len(board.plan_steps):
+        board.requested_next = "verifier"
+        board.record_role_call("planner")
+        board.last_outputs["planner"] = "mode=done (plan exhausted)"
+        log.emit("plan", {"mode": "done", "action": "plan complete", "step": board.plan_index, "steps": len(board.plan_steps)})
+        return "continue"
+
     context = board.context("planner")
     plan = _call_role("planner", context, board)
     if plan is None:
@@ -93,7 +109,7 @@ def _run_planner(board: Board) -> str:
     recipient = str(plan.get("recipient", ""))
 
     sequence = plan.get("sequence", [])
-    if isinstance(sequence, list) and sequence and not board.plan_steps:
+    if isinstance(sequence, list) and sequence:
         board.plan_steps = [str(s) for s in cast(list[Any], sequence) if str(s).strip()]
         board.plan_index = 0
 
