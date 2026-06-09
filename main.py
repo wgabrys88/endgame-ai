@@ -3,9 +3,9 @@ import argparse
 import signal
 import sys
 import types
+from typing import Any
 
 from config import PROCESS_DPI_AWARENESS_CONTEXT, SIGINT_EXIT_CODE
-from board import Board
 from llm import set_backend, close_backend
 from orchestrator import run
 import log
@@ -49,8 +49,46 @@ def main() -> None:
 
     log.init(config.EVENT_BUDGET)
 
-    board = Board()
-    board.goal = args.goal
+    board: dict[str, Any] = {
+        "goal": args.goal,
+        "plan_steps": [],
+        "plan_index": 0,
+        "history": [],
+        "notes": [],
+        "screen": "",
+        "screen_hash": "",
+        "screen_elements": {},
+        "desktop_summary": "",
+        "focused_window": "",
+        "last_verb": "",
+        "last_success": False,
+        "last_observation": "",
+        "actor_conclusion": "",
+        "consecutive_failures": 0,
+        "verify_denied_count": 0,
+        "repetition_score": 0.0,
+        "stagnation_score": 0.0,
+        "screen_stagnation": 0,
+        "recent_hashes": [],
+        "recent_sigs": [],
+        "jacobian": {},
+        "jacobian_trials": {},
+        "lorenz_x": 8.485,
+        "lorenz_y": 8.485,
+        "lorenz_z": 27.0,
+        "attractor_energy": 1.0,
+        "lorenz_wing_crossed": False,
+        "pid_output": 0.0,
+        "pid_integral": 0.0,
+        "pid_prev": 0.0,
+        "last_instruction": "",
+        "requested_next": "",
+        "role_calls": {},
+        "total_role_calls": 0,
+        "halt_count": 0,
+        "last_outputs": {},
+        "done": False,
+    }
 
     try:
         success = run(board, interrupted=lambda: _interrupted)

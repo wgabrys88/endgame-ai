@@ -20,7 +20,7 @@ _mode = ctypes.c_ulong()
 _kernel32.GetConsoleMode(_stdout_handle, ctypes.byref(_mode))
 _kernel32.SetConsoleMode(_stdout_handle, _mode.value | ENABLE_VIRTUAL_TERMINAL)
 
-ALL_AGENTS: list[str] = ["observer", "pulse", "planner", "actor", "verifier", "reflector"]
+ALL_AGENTS: list[str] = ["stagnation", "lorenz", "pid", "scheduler", "observer", "planner", "actor", "verifier", "reflector"]
 
 PLOT_W: int = 40
 PLOT_H: int = 14
@@ -135,9 +135,9 @@ class TUI:
                     self.lorenz_xs = []
                     self.lorenz_ys = []
                     for e in self.events:
-                        if e.get("phase") == "pulse":
+                        if e.get("phase") == "lorenz":
                             d = e.get("d", {})
-                            self.lorenz_xs.append(float(d.get("lorenz_x", 0)))
+                            self.lorenz_xs.append(float(d.get("x", 0)))
                             self.lorenz_ys.append(float(d.get("energy", 1)))
                     if len(self.lorenz_xs) > LORENZ_HISTORY:
                         self.lorenz_xs = self.lorenz_xs[-LORENZ_HISTORY:]
@@ -301,9 +301,15 @@ class TUI:
             case "observe":
                 stag = "≡" if d.get("stagnant") else ""
                 return f"{stag}[{d.get('focused', '')}] {d.get('chars', 0)}ch"[:max_w]
-            case "pulse":
+            case "stagnation":
+                return f"s={d.get('stag', 0):.3f} rep={d.get('rep', 0):.3f}"[:max_w]
+            case "lorenz":
                 w_str = "⚡" if d.get("wing") else ""
-                return f"s={d.get('stag', 0):.2f} x={d.get('lorenz_x', 0):.1f} p={d.get('pid', 0):.2f} →{d.get('next', '')}{w_str}"[:max_w]
+                return f"x={d.get('x', 0):.2f} e={d.get('energy', 0):.2f}{w_str}"[:max_w]
+            case "pid":
+                return f"pid={d.get('pid', 0):.3f}"[:max_w]
+            case "schedule":
+                return f"→{d.get('reason', '')} {d.get('target', '')}"[:max_w]
             case "plan":
                 return f"{d.get('mode', '')} {d.get('action', '')}"[:max_w]
             case "actor":
@@ -328,8 +334,14 @@ class TUI:
 
     def _phase_color(self, phase: str) -> str:
         match phase:
-            case "pulse":
+            case "stagnation":
+                return _rgb_fg(255, 100, 100)
+            case "lorenz":
                 return _rgb_fg(180, 120, 255)
+            case "pid":
+                return _rgb_fg(255, 200, 80)
+            case "schedule":
+                return _rgb_fg(140, 140, 180)
             case "observe":
                 return _rgb_fg(100, 180, 220)
             case "plan":
