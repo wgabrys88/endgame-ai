@@ -22,7 +22,7 @@ _kernel32.GetConsoleMode(_stdout_handle, ctypes.byref(_mode))
 _kernel32.SetConsoleMode(_stdout_handle, _mode.value | ENABLE_VIRTUAL_TERMINAL)
 
 ALL_AGENTS: list[str] = [
-    "observer", "stagnation", "lorenz", "pid", "jacobian",
+    "observer", "pulse",
     "planner", "actor", "verifier", "reflector",
 ]
 
@@ -205,21 +205,18 @@ class TUI:
         last_phases: dict[str, str] = {}
         for e in self.events[-50:]:
             phase = str(e.get("phase", ""))
-            for agent_name in ALL_AGENTS:
-                if agent_name in phase or (phase == "schedule" and agent_name == "scheduler"):
-                    last_phases[agent_name] = phase
-                elif phase == "observe" and agent_name == "observer":
-                    last_phases[agent_name] = phase
-                elif phase == "plan" and agent_name == "planner":
-                    last_phases[agent_name] = phase
-                elif phase == "actor" and agent_name == "actor":
-                    last_phases[agent_name] = phase
-                elif phase == "action" and agent_name == "actor":
-                    last_phases[agent_name] = phase
-                elif phase == "verify" and agent_name == "verifier":
-                    last_phases[agent_name] = phase
-                elif phase == "reflect" and agent_name == "reflector":
-                    last_phases[agent_name] = phase
+            if phase == "observe":
+                last_phases["observer"] = phase
+            elif phase == "pulse":
+                last_phases["pulse"] = phase
+            elif phase == "plan":
+                last_phases["planner"] = phase
+            elif phase in ("actor", "action"):
+                last_phases["actor"] = phase
+            elif phase == "verify":
+                last_phases["verifier"] = phase
+            elif phase == "reflect":
+                last_phases["reflector"] = phase
 
         for i, name in enumerate(ALL_AGENTS):
             is_disabled = name in self.disabled
@@ -227,13 +224,13 @@ class TUI:
 
             if is_disabled:
                 status_str = "\x1b[31m■ OFF \x1b[0m"
-            elif name in ("observer", "stagnation", "lorenz", "pid", "jacobian"):
+            elif name in ("observer", "pulse"):
                 status_str = "\x1b[32m♥ PULSE\x1b[0m"
             else:
                 status_str = "\x1b[36m◆ READY\x1b[0m"
 
             last_event = last_phases.get(name, "—")
-            agent_type = "math" if name in ("lorenz", "pid", "jacobian", "stagnation") else ("sys" if name == "observer" else "llm")
+            agent_type = "math" if name == "pulse" else ("sys" if name == "observer" else "llm")
 
             line = f" {cursor_mark} [{agent_type:4}] {name:12} │ {status_str} │ {last_event}"
             if i == self.agent_cursor:
@@ -272,7 +269,7 @@ class TUI:
             marker = "\x1b[33m►\x1b[0m" if i == self.cursor else " "
             detail = self._format_event(e, w - 25)
             ep = e.get("phase", "?")
-            en = e.get("n", e.get("seq", i + 1))
+            en = e.get("n", i + 1)
             lines.append(f" {marker} {en:3} │ {ep:18} │ {detail}")
         return lines[:max_h]
 
@@ -350,19 +347,9 @@ class TUI:
                 return f"goal={d.get('goal', '')}"[:max_w]
             case "observe":
                 return f"[{d.get('focused', '')}] {d.get('chars', 0)}ch"[:max_w]
-            case "heartbeat.stagnation":
-                return f"stag={d.get('stagnation', 0):.2f} rep={d.get('repetition', 0):.2f}"[:max_w]
-            case "heartbeat.lorenz":
+            case "pulse":
                 w_str = "⚡" if d.get("wing") else ""
-                return f"x={d.get('x', 0):.2f} e={d.get('energy', 0):.2f}{w_str}"[:max_w]
-            case "heartbeat.pid":
-                return f"out={d.get('output', 0):.3f} int={d.get('integral', 0):.3f}"[:max_w]
-            case "heartbeat.jacobian":
-                return f"{d.get('verb', '')}={d.get('score', 0):.2f} Δ={'Y' if d.get('changed') else 'N'}"[:max_w]
-            case "heartbeat.observer":
-                return f"stagnant hash={d.get('hash', '')[:8]}"[:max_w]
-            case "schedule":
-                return f"→ {d.get('decision', '')} ({d.get('reason', '')})"[:max_w]
+                return f"s={d.get('stag', 0):.2f} x={d.get('lorenz_x', 0):.1f} p={d.get('pid', 0):.2f}{w_str} →{d.get('next', '')}"[:max_w]
             case "plan":
                 return f"{d.get('mode', '')} → {d.get('action', '')}"[:max_w]
             case "actor":

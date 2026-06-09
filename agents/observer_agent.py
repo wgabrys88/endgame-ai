@@ -29,7 +29,7 @@ class ObserverAgent:
             writes["screen_stagnation"] = new_stag
             return AgentResult(
                 writes=writes,
-                event_phase="heartbeat.observer",
+                event_phase="observe",
                 event_data={"hash": obs.semantic_hash, "stagnant": True},
             )
 
