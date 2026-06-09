@@ -8,8 +8,8 @@
       "properties": {
         "observe": {
           "type": "string",
-          "minLength": 5,
-          "maxLength": 800
+          "minLength": 100,
+          "maxLength": 2000
         },
         "actions": {
           "type": "array",
@@ -20,7 +20,18 @@
             "properties": {
               "verb": {
                 "type": "string",
-                "enum": ["click", "write", "press", "hotkey", "scroll", "wait", "focus", "read_file", "write_file", "cmd"]
+                "enum": [
+                  "click",
+                  "write",
+                  "press",
+                  "hotkey",
+                  "scroll",
+                  "wait",
+                  "focus",
+                  "read_file",
+                  "write_file",
+                  "cmd"
+                ]
               },
               "target": {
                 "type": "string",
@@ -30,23 +41,41 @@
               "value": {
                 "type": "string",
                 "minLength": 0,
-                "maxLength": 2000
+                "maxLength": 8000
               }
             },
-            "required": ["verb", "target", "value"],
+            "required": [
+              "verb",
+              "target",
+              "value"
+            ],
             "additionalProperties": false
           }
         },
         "conclusion": {
           "type": "string",
-          "enum": ["DONE", "EXPECTED", "UNEXPECTED"]
+          "enum": [
+            "DONE",
+            "EXPECTED",
+            "UNEXPECTED"
+          ]
         },
         "recipient": {
           "type": "string",
-          "enum": ["planner", "verifier", "reflector", ""]
+          "enum": [
+            "planner",
+            "verifier",
+            "reflector",
+            ""
+          ]
         }
       },
-      "required": ["observe", "actions", "conclusion", "recipient"],
+      "required": [
+        "observe",
+        "actions",
+        "conclusion",
+        "recipient"
+      ],
       "additionalProperties": false
     }
   }

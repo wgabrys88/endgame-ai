@@ -115,7 +115,7 @@ def _run_planner(board: Board) -> str:
 
     log.emit("plan", {"mode": mode, "action": next_action, "step": board.plan_index, "steps": len(board.plan_steps)})
 
-    board.last_instruction = next_action
+    board.last_instruction = board.plan_steps[0] if board.plan_steps else next_action
     board.record_role_call("planner")
     board.last_outputs["planner"] = f"mode={mode} action='{next_action[:60]}'"
 

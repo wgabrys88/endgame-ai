@@ -8,12 +8,12 @@
       "properties": {
         "diagnosis": {
           "type": "string",
-          "minLength": 10,
+          "minLength": 100,
           "maxLength": 500
         },
         "lesson": {
           "type": "string",
-          "minLength": 10,
+          "minLength": 50,
           "maxLength": 300
         },
         "prompt_mutation": {
@@ -21,7 +21,12 @@
           "properties": {
             "target": {
               "type": "string",
-              "enum": ["planner", "actor", "verifier", ""]
+              "enum": [
+                "planner",
+                "actor",
+                "verifier",
+                ""
+              ]
             },
             "append": {
               "type": "string",
@@ -29,15 +34,28 @@
               "maxLength": 500
             }
           },
-          "required": ["target", "append"],
+          "required": [
+            "target",
+            "append"
+          ],
           "additionalProperties": false
         },
         "recipient": {
           "type": "string",
-          "enum": ["planner", "actor", "verifier", ""]
+          "enum": [
+            "planner",
+            "actor",
+            "verifier",
+            ""
+          ]
         }
       },
-      "required": ["diagnosis", "lesson", "prompt_mutation", "recipient"],
+      "required": [
+        "diagnosis",
+        "lesson",
+        "prompt_mutation",
+        "recipient"
+      ],
       "additionalProperties": false
     }
   }

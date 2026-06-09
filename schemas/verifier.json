@@ -8,19 +8,31 @@
       "properties": {
         "verdict": {
           "type": "string",
-          "enum": ["confirmed", "denied"]
+          "enum": [
+            "confirmed",
+            "denied"
+          ]
         },
         "evidence": {
           "type": "string",
-          "minLength": 5,
+          "minLength": 100,
           "maxLength": 800
         },
         "recipient": {
           "type": "string",
-          "enum": ["planner", "actor", "reflector", ""]
+          "enum": [
+            "planner",
+            "actor",
+            "reflector",
+            ""
+          ]
         }
       },
-      "required": ["verdict", "evidence", "recipient"],
+      "required": [
+        "verdict",
+        "evidence",
+        "recipient"
+      ],
       "additionalProperties": false
     }
   }
