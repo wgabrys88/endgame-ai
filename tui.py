@@ -107,7 +107,7 @@ def _bar(value: float, width: int, color: str) -> str:
 
 
 class TUI:
-    def __init__(self, events_path: Path, snapshot_path: Path) -> None:
+    def __init__(self, events_path: Path, snapshot_path: Path, goal: str = "", backend: str = "lmstudio", budget: int = 20) -> None:
         self.events_path = events_path
         self.snapshot_path = snapshot_path
         self.events: list[dict[str, Any]] = []
@@ -118,6 +118,11 @@ class TUI:
         self.agent_cursor: int = 0
         self.lorenz_xs: list[float] = []
         self.lorenz_ys: list[float] = []
+        self.goal: str = goal
+        self.backend: str = backend
+        self.budget: int = budget
+        self.proc: Any = None
+        self.paused: bool = bool(goal)
 
     def load(self) -> None:
         if self.events_path.exists():
@@ -167,6 +172,8 @@ class TUI:
             return
         if key == b"q":
             self.running = False
+        elif key == b" ":
+            self._launch()
         elif key == b"\r" or key == b"\n":
             name = ALL_AGENTS[self.agent_cursor]
             if name in self.disabled:
@@ -174,6 +181,31 @@ class TUI:
             else:
                 self.disabled.add(name)
             DISABLED_PATH.write_text(json.dumps(sorted(self.disabled)), encoding="utf-8")
+
+    def _launch(self) -> None:
+        import subprocess
+        if self.proc is not None:
+            return
+        if not self.goal:
+            return
+        for p in (self.events_path, self.snapshot_path, DISABLED_PATH):
+            if p.exists():
+                p.unlink()
+        self.events = []
+        self.lorenz_xs = []
+        self.lorenz_ys = []
+        self.last_file_size = 0
+        self.paused = False
+        from config import BASE_DIR
+        self.proc = subprocess.Popen(
+            [sys.executable, "main.py", self.goal, "--backend", self.backend, "--event-budget", str(self.budget)],
+            cwd=str(BASE_DIR),
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+
+    def check_proc(self) -> None:
+        if self.proc is not None and self.proc.poll() is not None:
+            self.proc = None
 
     def render(self) -> str:
         w, h = _size()
@@ -243,7 +275,7 @@ class TUI:
                 agents_str += f" {_rgb_fg(80, 80, 80)}{name}{RST}"
             else:
                 agents_str += f" {_rgb_fg(100, 200, 100)}{name}{RST}"
-        out.append(f"{agents_str}  {DIM}↑↓ select  Enter toggle  q quit{RST}")
+        out.append(f"{agents_str}  {DIM}↑↓ select  Enter toggle  Space {'launch' if self.paused else 'relaunch'}  q quit{RST}")
 
         return "\n".join(out[:h])
 
@@ -316,6 +348,8 @@ class TUI:
                 return DIM
 
     def _outcome(self) -> str:
+        if self.paused and not self.events:
+            return f"{_rgb_fg(255, 180, 80)}▌▌ READY — Space to launch{RST}"
         phases = [e.get("phase") for e in self.events]
         if "complete" in phases:
             return f"{_rgb_fg(80, 255, 80)}✓ COMPLETE{RST}"
@@ -323,28 +357,40 @@ class TUI:
             return f"{_rgb_fg(255, 80, 80)}✗ HALTED{RST}"
         if "stop" in phases:
             return f"{_rgb_fg(255, 180, 80)}■ STOPPED{RST}"
+        if self.proc is not None:
+            return f"{_rgb_fg(100, 200, 255)}▶ RUNNING{RST}"
         if self.events:
-            return f"{_rgb_fg(100, 200, 255)}… LIVE{RST}"
+            return f"{_rgb_fg(100, 200, 255)}… DONE{RST}"
         return f"{DIM}waiting{RST}"
 
 
-def run_tui(path: Path | None = None) -> None:
+def run_tui(path: Path | None = None, goal: str = "", backend: str = "lmstudio", budget: int = 20) -> None:
     events_path = path or EVENTS_PATH
-    tui = TUI(events_path, SNAPSHOT_PATH)
+    tui = TUI(events_path, SNAPSHOT_PATH, goal=goal, backend=backend, budget=budget)
     _write(TUI_ALT_SCREEN_ON + TUI_HIDE_CURSOR)
     try:
         while tui.running:
             tui.load()
             tui.handle_key()
+            tui.check_proc()
             frame = tui.render()
             _write(TUI_HOME_CLEAR + frame)
             time.sleep(0.15)
     except KeyboardInterrupt:
         pass
     finally:
+        if tui.proc is not None:
+            tui.proc.terminate()
         _write(TUI_ALT_SCREEN_OFF + TUI_SHOW_CURSOR)
 
 
 if __name__ == "__main__":
-    p = Path(sys.argv[1]) if len(sys.argv) > 1 else None
-    run_tui(p)
+    import argparse
+    parser = argparse.ArgumentParser(prog="endgame-ai-tui")
+    parser.add_argument("goal", nargs="?", default="")
+    parser.add_argument("--backend", choices=["lmstudio", "acp"], default="lmstudio")
+    parser.add_argument("--event-budget", type=int, default=20)
+    parser.add_argument("--events", type=str, default="")
+    args = parser.parse_args()
+    ep = Path(args.events) if args.events else None
+    run_tui(path=ep, goal=args.goal, backend=args.backend, budget=args.event_budget)
