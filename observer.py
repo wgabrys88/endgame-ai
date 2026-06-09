@@ -42,13 +42,6 @@ POPUP_CLASSES = frozenset({
     "TaskListThumbnailWnd", "#32768", "ToolTipClass",
     "Windows.UI.Core.CoreWindow",
 })
-ROLE_SHORT = {
-    "Button": "Btn", "Hyperlink": "Lnk", "Edit": "Edt", "ComboBox": "Cmb",
-    "Slider": "Sld", "TabItem": "Tab", "ListItem": "Lst", "MenuItem": "Itm",
-    "CheckBox": "Chk", "RadioButton": "Rad", "ScrollBar": "Scr",
-    "SplitButton": "Spl", "DataItem": "Dat", "Document": "Doc", "TreeItem": "Tre",
-}
-
 
 @dataclass(slots=True)
 class BookEntry:
@@ -110,6 +103,11 @@ def observe() -> ObserveResult:
         for wnd in tree_windows:
             _tree_walk(tree_nodes, wnd["element"], str(wnd["name"]), int(wnd["hwnd"]),
                        TREE_WALK_TIMEOUT)
+    else:
+        for wnd in tree_windows:
+            if str(wnd["name"]) == "Taskbar":
+                _tree_walk(tree_nodes, wnd["element"], "Taskbar", int(wnd["hwnd"]),
+                           TREE_WALK_TIMEOUT)
 
     merged = _merge(tree_nodes, probe_nodes)
     classified = _classify(merged)
@@ -123,10 +121,12 @@ def observe() -> ObserveResult:
     content_hash = hashlib.md5(text.encode("utf-8", errors="surrogatepass")).hexdigest()
     semantic_hash = hashlib.md5(semantic_text.encode("utf-8", errors="surrogatepass")).hexdigest()
 
-    desktop_lines = [f"DESKTOP: {screen_w}x{screen_h} focused='{focused_title}'"]
-    for entry in z_order[:10]:
-        marker = "*" if entry["title"] == focused_title else " "
-        desktop_lines.append(f"  {marker} {entry['title']}")
+    desktop_lines = [f"Desktop ({screen_w}x{screen_h})"]
+    for i, entry in enumerate(z_order[:10]):
+        is_last = i == min(len(z_order), 10) - 1
+        connector = "└── " if is_last else "├── "
+        marker = " (focused)" if entry["title"] == focused_title else ""
+        desktop_lines.append(f"{connector}{entry['title']}{marker}")
 
     return ObserveResult(
         context_text=text, book=book, focused_title=focused_title,
@@ -468,46 +468,48 @@ def _classify(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _render(nodes: list[dict[str, Any]], target_wnd: set[str], focused_title: str) -> tuple[str, dict[str, BookEntry]]:
     book: dict[str, BookEntry] = {}
-    lines: list[str] = []
-    current_wnd = ""
-    seq = 0
+    wnd_groups: dict[str, list[dict[str, Any]]] = {}
     for n in nodes:
         wnd = n["wnd"]
         if target_wnd and wnd not in target_wnd and wnd != "Taskbar":
             continue
-        if n["action"] == "none" and not n.get("value"):
+        if n["action"] == "none":
+            continue
+        wnd_groups.setdefault(wnd, []).append(n)
+
+    lines: list[str] = []
+    seq = 0
+    wnd_list = sorted(wnd_groups.keys(), key=lambda w: (w != focused_title, w))
+    for i, wnd in enumerate(wnd_list):
+        is_last_wnd = i == len(wnd_list) - 1
+        prefix = "└── " if is_last_wnd else "├── "
+        focused = " (focused)" if wnd == focused_title else ""
+        lines.append(f"{prefix}{wnd}{focused}")
+        elements = wnd_groups[wnd]
+        child_prefix = "    " if is_last_wnd else "│   "
+        for j, n in enumerate(elements):
             seq += 1
-            book[str(seq)] = BookEntry(
-                id=str(seq), role=n["role"], name=n.get("name", ""),
+            nid = str(seq)
+            is_last_el = j == len(elements) - 1
+            connector = "└── " if is_last_el else "├── "
+            label = n.get("name", "")
+            if n.get("value") and n["action"] == "write":
+                val = _compact_display_value(str(n["value"]))
+                desc = f'[{nid}] "{label}" = "{val}"' if label else f'[{nid}] "{val}"'
+            elif label:
+                desc = f'[{nid}] "{label}"'
+            else:
+                desc = f'[{nid}] {n["role"]}'
+            if not n.get("enabled"):
+                desc += " (disabled)"
+            lines.append(f"{child_prefix}{connector}{desc}")
+            book[nid] = BookEntry(
+                id=nid, role=n["role"], name=label,
                 value=n.get("value", ""), hwnd=n["hwnd"], wnd=wnd,
                 px=n["x"], py=n["y"], pw=n["w"], ph=n["h"],
                 enabled=n.get("enabled", True), readonly=n.get("readonly", False),
                 action=n["action"],
             )
-            continue
-        if wnd != current_wnd:
-            current_wnd = wnd
-            marker = "*" if wnd == focused_title else ""
-            lines.append(f"[{wnd}]{marker}")
-        seq += 1
-        nid = str(seq)
-        act = {"click": "C", "write": "W"}.get(n["action"], ".")
-        typ = ROLE_SHORT.get(n["role"], n["role"])
-        line = f"[{nid}] {act} {typ}"
-        if n.get("name"):
-            line += f" '{n['name']}'"
-        if n.get("value"):
-            line += f" v='{_compact_display_value(str(n['value']))}'"
-        if not n.get("enabled"):
-            line += " -"
-        lines.append(line)
-        book[nid] = BookEntry(
-            id=nid, role=n["role"], name=n.get("name", ""),
-            value=n.get("value", ""), hwnd=n["hwnd"], wnd=wnd,
-            px=n["x"], py=n["y"], pw=n["w"], ph=n["h"],
-            enabled=n.get("enabled", True), readonly=n.get("readonly", False),
-            action=n["action"],
-        )
     return "\n".join(lines), book
 
 

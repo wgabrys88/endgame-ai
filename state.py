@@ -242,8 +242,15 @@ def _render(b: Board, field: str, instruction: str) -> str:
                 return ""
             lines = ["PLAN:"]
             for i, step in enumerate(b.plan_steps):
-                marker = ">>>" if i == b.plan_index else ("done" if i < b.plan_index else "   ")
-                lines.append(f"  [{i}] {marker} {step}")
+                is_last = i == len(b.plan_steps) - 1
+                connector = "└── " if is_last else "├── "
+                if i == b.plan_index:
+                    marker = ">>> "
+                elif i < b.plan_index:
+                    marker = "✓ "
+                else:
+                    marker = ""
+                lines.append(f"  {connector}{marker}{step}")
             return "\n".join(lines)
         case "history":
             recent = b.history[-8:]
@@ -251,9 +258,9 @@ def _render(b: Board, field: str, instruction: str) -> str:
                 return ""
             lines = ["HISTORY:"]
             for h in recent:
-                lines.append(f"  {h['verb']} {'ok' if h['ok'] else 'FAIL'}: {h['obs']}")
+                ok = "✓" if h["ok"] else "✗"
+                lines.append(f"  {ok} {h['verb']}: {h['obs']}")
             return "\n".join(lines)
-        case "budget":
             remaining = log.budget() - log.count()
             if remaining > log.budget() // 2:
                 return ""
