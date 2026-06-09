@@ -82,26 +82,32 @@ def observe() -> ObserveResult:
     windows = _enumerate_windows()
     z_order = _get_z_order()
 
+    probe_nodes: list[dict[str, Any]] = []
     regions = _probe_regions(windows, z_order, focused_hwnd, screen_w, screen_h)
     target_wnd = _target_windows(focused_title, regions)
+    saved = W.POINT()
+    user32.GetCursorPos(ctypes.byref(saved))
+    for x0, y0, x1, y1, wname, whwnd in regions:
+        if whwnd:
+            user32.SetForegroundWindow(W.HWND(whwnd))
+            time.sleep(PROBE_FOREGROUND_DELAY)
+        _probe_region(probe_nodes, PROBE_STEP_PX, x0, y0, x1, y1, wname, whwnd)
+    user32.SetCursorPos(saved.x, saved.y)
+
+    probe_decision = {"enabled": True, "reason": "primary_probe", "probe_actionable": _target_action_count(_classify(_clone_nodes(probe_nodes)), target_wnd)}
+    tree_decision = _tree_decision(probe_decision)
 
     tree_nodes: list[dict[str, Any]] = []
     tree_windows = _tree_windows(windows, target_wnd, regions)
-    for wnd in tree_windows:
-        _tree_walk(tree_nodes, wnd["element"], str(wnd["name"]), int(wnd["hwnd"]),
-                   TREE_WALK_TIMEOUT)
-
-    probe_nodes: list[dict[str, Any]] = []
-    tree_actionable = _target_action_count(_classify(_clone_nodes(tree_nodes)), target_wnd)
-    if tree_actionable < 3:
-        saved = W.POINT()
-        user32.GetCursorPos(ctypes.byref(saved))
-        for x0, y0, x1, y1, wname, whwnd in regions:
-            if whwnd:
-                user32.SetForegroundWindow(W.HWND(whwnd))
-                time.sleep(PROBE_FOREGROUND_DELAY)
-            _probe_region(probe_nodes, PROBE_STEP_PX, x0, y0, x1, y1, wname, whwnd)
-        user32.SetCursorPos(saved.x, saved.y)
+    if tree_decision["enabled"]:
+        for wnd in tree_windows:
+            _tree_walk(tree_nodes, wnd["element"], str(wnd["name"]), int(wnd["hwnd"]),
+                       TREE_WALK_TIMEOUT)
+    else:
+        for wnd in tree_windows:
+            if str(wnd["name"]) == "Taskbar":
+                _tree_walk(tree_nodes, wnd["element"], "Taskbar", int(wnd["hwnd"]),
+                           TREE_WALK_TIMEOUT)
 
     merged = _merge(tree_nodes, probe_nodes)
     classified = _classify(merged)
@@ -277,6 +283,12 @@ def _tree_windows(windows: list[dict[str, Any]], target_wnd: set[str], regions: 
 def _region_name(region: tuple[int, int, int, int, str, int]) -> str:
     return str(region[4])
 
+
+def _tree_decision(probe_decision: dict[str, Any]) -> dict[str, Any]:
+    action_count = int(probe_decision.get("probe_actionable", 0))
+    enabled = action_count < 1
+    reason = "probe_actionable_empty" if enabled else "probe_actionable_sufficient"
+    return {"enabled": enabled, "reason": reason, "probe_actionable": action_count}
 
 
 def _topmost_popup(z_order: list[dict[str, Any]]) -> bool:
@@ -456,7 +468,6 @@ def _classify(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _render(nodes: list[dict[str, Any]], target_wnd: set[str], focused_title: str) -> tuple[str, dict[str, BookEntry]]:
     book: dict[str, BookEntry] = {}
-    MAX_PER_WINDOW: int = 20
     wnd_groups: dict[str, list[dict[str, Any]]] = {}
     for n in nodes:
         wnd = n["wnd"]
@@ -464,16 +475,7 @@ def _render(nodes: list[dict[str, Any]], target_wnd: set[str], focused_title: st
             continue
         if n["action"] == "none":
             continue
-        name = n.get("name", "")
-        if len(name) < 2 and not n.get("value"):
-            continue
         wnd_groups.setdefault(wnd, []).append(n)
-    for wnd in wnd_groups:
-        els = wnd_groups[wnd]
-        if len(els) <= MAX_PER_WINDOW:
-            continue
-        els.sort(key=lambda e: (0 if len(e.get("name", "")) > 10 else 1, 0 if e["action"] == "write" else 1))
-        wnd_groups[wnd] = els[:MAX_PER_WINDOW]
 
     lines: list[str] = []
     seq = 0
