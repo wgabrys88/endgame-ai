@@ -2,7 +2,38 @@
 
 A self-regulating Windows desktop automation organism. Pure Python 3.13, zero dependencies, raw ctypes.
 
-Three mathematical pipelines (Lorenz, PID, Jacobian) govern behavior. LLMs provide intelligence. Mathematics provides stability and controlled chaos.
+Three mathematical pipelines (Lorenz, PID, Jacobian) govern behavior. LLMs provide intelligence. Mathematics provides controlled chaos — not stabilization.
+
+---
+
+## Current State (math-pulse branch)
+
+Working system. Proven on both cloud (ACP/Claude) and local (LM Studio/gemma-4-e2b-it, 2B params).
+
+### Proven Results (this session)
+
+| Test | LM Studio (2B) | ACP (Claude) |
+|------|-----------------|--------------|
+| write file | 10 events, COMPLETE | 9 events, COMPLETE |
+| open notepad + type hello world | 26 events, COMPLETE | 26 events, COMPLETE |
+| read README + write summary | 17 events, 1108b content | 11 events, 202b content |
+| describe screen to file | 15 events, COMPLETE | 9 events, 821b description |
+
+### Key Breakthrough
+
+The 2B local model now completes multi-step tasks. The fix: **plan-based execution**. Planner generates a plan ONCE. Python feeds steps to the actor sequentially without re-calling the planner LLM. The orchestrator IS the working memory that small models lack.
+
+```
+BEFORE: planner called every cycle → 2B repeats first step → stuck loop → halt
+AFTER:  planner called once → plan=[A,B,C,D] → Python feeds A,B,C,D → done
+```
+
+### Self-Evolution (active)
+
+- Tier 1: Lessons persist to lessons.txt across runs
+- Tier 2: Reflector mutates prompts at runtime (min 200 chars enforced)
+- Tier 3: Code modification — future
+- Tier 4: Resurrection — future
 
 ---
 
@@ -17,36 +48,106 @@ observe(screen) → math.decide_next_role() → dispatch(role) → loop
     (chaos replan)  (reflector gate)  (verb effectiveness)
 ```
 
-The **blackboard** (`Board` in state.py) holds all truth. The **context pipeline** (`CONTEXT_POLICY` in config.py) controls what each LLM role sees — a deterministic projection of the blackboard per role.
+The **blackboard** (`Board`) holds all truth. `CONTEXT_POLICY` controls what each role sees.
 
-Math decides WHO acts. LLMs decide WHAT to do. Each LLM has a `recipient` field to request who goes next. Math can override.
-
-### The Pulse
-
-```
-loop:
-  observe()                        # screen capture via UIA + cursor probe
-  role = board.decide_next_role()  # Lorenz/PID/recipient routing
-  dispatch(role)                   # call LLM, apply response to blackboard
-```
-
-Natural flow: `planner → actor → planner → actor ...`
-
-Interventions (math-only):
-- **Lorenz wing cross** → force planner with DIVERGE (clear plan, try different approach)
-- **PID > threshold** → inject reflector (diagnose stagnation)
-- **Stagnation sustained** → halt
+Math decides WHO acts. LLMs decide WHAT to do. Each LLM has a `recipient` field to request who goes next. Math can override via Lorenz fork or PID-triggered reflection.
 
 ### Roles
 
-| Role | Reads | Writes | Purpose |
-|------|-------|--------|---------|
-| Planner | goal, screen, plan, history, budget, failures, roles | plan_steps, next_action | Decides what to do next |
-| Actor | instruction, screen, roles | actions, observations | Executes GUI primitives |
-| Verifier | goal, screen, history, plan, roles | verdict | Confirms goal complete |
-| Reflector | goal, screen, plan, history, math, roles | diagnosis, lesson | Diagnoses stuck patterns |
+| Role | Purpose | LLM calls |
+|------|---------|-----------|
+| Planner | Generates multi-step plan | Once per plan (not per step) |
+| Actor | Executes one action per step | Once per step |
+| Verifier | Confirms goal complete | Once when plan exhausted |
+| Reflector | Diagnoses loops, writes lessons, mutates prompts | When PID > 0.5 |
 
-Each role sees what other roles last produced (mutual awareness via `roles` context field).
+---
+
+## Next Session: Tree-Based Screen Representation
+
+### Problem
+
+The current screen data injected into LLM requests is a mess. Shortened items with cryptic tags and numbers — confusing even for humans. The actor sees:
+
+```
+[1] W Btn 'Close' x=2050 y=10 w=50 h=40
+[2] W Edt 'File name:' x=1200 y=770 w=300 h=25
+[3] I Img '' x=100 y=50 w=32 h=32
+```
+
+This format requires cognitive parsing that wastes model capacity.
+
+### Hypothesis
+
+If the screen description uses a **tree** format — like the Linux `tree` command for directories — LLMs will understand it natively because that's a representation they were trained on extensively.
+
+### Proposed Changes
+
+**1. Tree-formatted screen output**
+
+```
+Desktop
+├── Notepad — *Untitled
+│   ├── [1] Edit "File name:" (editable)
+│   ├── [2] Button "Save"
+│   └── [3] Button "Cancel"
+├── Task Manager
+│   ├── [4] Tab "Performance"
+│   └── [5] Tab "Processes"
+└── Taskbar
+    ├── [6] Button "Start"
+    └── [7] Button "Task View"
+```
+
+- Windows are top-level nodes (like directories)
+- Elements inside windows are leaves (like files)
+- Only interactive elements shown (non-interactive filtered out in Python)
+- Element IDs in brackets for actor targeting
+- Role labels only where needed (editable, disabled)
+
+**2. Desktop as a window**
+
+Currently the probe scans only the focused window. The fix: treat the entire desktop as a scannable surface. Taskbar becomes a subtree. All visible windows appear in the tree. The planner sees the full picture; the actor sees the focused window's subtree.
+
+This unifies the scanning code (one tree-walk pattern for everything) and reduces edge cases.
+
+**3. Plan as a tree**
+
+Reuse the same tree representation for plans:
+
+```
+Goal: open notepad and type hello
+├── 1. hotkey win+r
+├── 2. write "notepad"
+├── 3. hotkey return
+├── 4. wait 2
+└── 5. write "hello world"
+```
+
+Same format, same parsing, same cognitive model for the LLM.
+
+**4. TUI rewrite — independent viewer**
+
+The TUI must be:
+- **Independent process** — stays open even when endgame-ai isn't running
+- **File-watching** — monitors events.jsonl in real-time, updates when new events appear
+- **Interactive** — keyboard controls:
+  - `Space` = pause/unpause display
+  - `Enter` = step forward one event
+  - `←/→` = scrub through event history
+  - `q` = quit
+  - `e` = expand selected element (show full LLM request/response)
+  - `s` = toggle screen view (full tree or collapsed)
+- **Expandable panels** — click/select on:
+  - Screen description → shows full tree the model received
+  - LLM response → shows full JSON the model returned
+  - Math state → shows Lorenz xyz, PID, stagnation, Jacobian
+- **Playback controls** — like a media player:
+  ```
+  [|◄] [◄◄] [▶/❚❚] [►►] [►|]   Event 14/38   [=====>------] 37%
+  ```
+
+This gives human operators full debuggability: see exactly what the model sees, what it responds, and what Python does with the response.
 
 ---
 
@@ -60,7 +161,44 @@ python tui.py events.jsonl
 ```
 
 `acp`: Claude via kiro-cli (fast, reliable).
-`lmstudio`: Local LLM at localhost:1234.
+`lmstudio`: Local LLM at localhost:1234 (slower, requires simpler prompts).
+
+---
+
+## Files
+
+```
+main.py           Entry point, CLI
+orchestrator.py   Math-driven loop, plan-based execution, role dispatch
+state.py          Blackboard (Board), 3 math pipelines, context rendering
+config.py         All constants, CONTEXT_POLICY
+observer.py       UIA tree walk + cursor probe, element classification
+actions.py        10 verb handlers (click, write, hotkey, press, scroll, wait, focus, read_file, write_file, cmd)
+dispatch.py       LLM call wrapper + JSON extraction
+llm.py            Backend transport (LM Studio HTTP / ACP JSON-RPC)
+acp_client.py     ACP protocol client
+win32.py          Raw ctypes: UIA COM, SendInput, window management
+log.py            JSONL event emitter + budget counter
+tui.py            Event viewer (to be rewritten as independent interactive TUI)
+analyze_run.py    Post-execution statistics
+prompts/          System prompts (mutable at runtime by reflector)
+schemas/          JSON schemas with recipient field
+```
+
+---
+
+## Design Rules
+
+1. One loop. Mathematics controls scheduling.
+2. No comments. No docstrings. This README is the documentation.
+3. No magic numbers outside config.py.
+4. No fallback modes. Dead code is wrong code.
+5. The three mathematical laws are non-negotiable.
+6. Prompts are mutable by the organism at runtime.
+7. The blackboard is the single source of truth.
+8. Fewer moving parts beats theatrical autonomy.
+9. Tree format everywhere: screen, plans, history.
+10. Events measure behavior — every `log.emit()` = 1 event toward budget.
 
 ---
 
@@ -68,119 +206,42 @@ python tui.py events.jsonl
 
 ### Lorenz Attractor (controlled chaos)
 
-Stagnation feeds into Lorenz ODE parameters. When the trajectory crosses wings (x changes sign), the system forces a completely different approach. This prevents loops — there is always a way forward.
+Stagnation feeds Lorenz ODE. When trajectory crosses wings (x sign change) AND stagnation > 0.4: force completely different approach. Prevents loops.
 
 ```
-rho_eff = 28 + stagnation * 1.5 * 28    # more stagnation = more chaos
-wing_cross → clear plan, inject DIVERGE
-attractor_energy → scales LLM temperature (stuck = more creative)
+rho_eff = 28 + stagnation * 1.5 * 28
+wing_cross + stag > 0.4 → clear plan, DIVERGE
+attractor_energy → scales LLM temperature
 ```
 
 ### PID Controller (reflection gate)
 
-Accumulates stagnation error. When output crosses threshold, promotes the reflector role. Anti-windup: integral resets on step advance.
-
-```
-error = stagnation_score
-pid_output = Kp*error + Ki*integral + Kd*slope
-pid > 0.5 → reflector fires
-```
+Accumulates stagnation error. Promotes reflector when output > 0.5. Integral resets on step advance.
 
 ### Jacobian (sensitivity analysis)
 
-Tracks which verbs cause screen changes: `∂(screen_change)/∂(action_type)`. Exponential moving average per verb. Exposed to reflector for informed diagnosis.
-
-```
-update_jacobian(verb, screen_changed: bool)
-# hotkey=0.875, write=1.0, click=0.25 (typical)
-```
+Tracks `∂(screen_change)/∂(verb)`. Exposed to reflector for diagnosis.
 
 ---
 
-## Files
+## Difference from main branch
 
-```
-main.py           Entry point, CLI, signal handling
-orchestrator.py   Math-driven loop, role dispatch, action execution
-state.py          Blackboard (Board), 3 math pipelines, context rendering
-config.py         All constants, CONTEXT_POLICY, no magic numbers elsewhere
-observer.py       UIA tree walk + cursor probe scan, element classification
-actions.py        10 verb handlers (click, write, hotkey, press, scroll, wait, focus, read_file, write_file, cmd)
-dispatch.py       LLM call wrapper + JSON extraction
-llm.py            Backend transport (LM Studio HTTP / ACP JSON-RPC)
-acp_client.py     ACP protocol client (Kiro CLI via WSL2)
-win32.py          Raw ctypes: UIA COM, SendInput, window management
-log.py            JSONL event emitter + budget counter
-tui.py            Event-driven TUI (watches events.jsonl live)
-analyze_run.py    Post-execution statistics (timing, math state, Jacobian)
-prompts/          System prompts (4 roles)
-schemas/          JSON schemas with recipient field (4 roles)
-```
+The `main` branch contains an older architecture (pre-math-pulse). This branch (`math-pulse`) is a complete rewrite:
 
----
+- main: mode-based state machine, fixed role ordering, no math
+- math-pulse: math-driven scheduling, plan-based execution, self-evolution, dual backend support
 
-## Design Rules
-
-1. One loop. Mathematics controls scheduling. No mode switching.
-2. No comments. No docstrings. This README is the documentation.
-3. No magic numbers outside config.py.
-4. No fallback modes. Dead code is wrong code.
-5. The three mathematical laws are non-negotiable.
-6. Prompts are mutable by the organism at runtime.
-7. The blackboard is the single source of truth. CONTEXT_POLICY controls projection.
-8. Fewer moving parts beats theatrical autonomy.
-9. Each LLM knows what other LLMs are (mutual awareness).
-10. Events are the measurement of behavior — every `log.emit()` = 1 event toward budget.
-
----
-
-## Evolution Roadmap
-
-### Current: v7 — Math-Pulse + Self-Evolution (this branch)
-
-Working system. Math schedules roles. LLMs route via recipient. Lorenz/PID/Jacobian all active.
-
-Self-evolution tiers active:
-- Tier 1: Lessons persist to lessons.txt across runs (active)
-- Tier 2: Reflector mutates prompts at runtime (active, min 200 chars enforced)
-- Tier 3: Code modification — future (git branch + test + swap)
-- Tier 4: Resurrection — future (scheduled task + self-termination)
-
-Proven results:
-- "emit done" → 6 events
-- "read README + write summary" → 13 events
-- "open notepad + type text" → 26 events
-- "open notepad + save file" → 38 events (13 actions, all ok)
-
-### Next: v8 — Event-Driven Blackboard
-
-Events become the communication substrate. Each LLM emits events that others consume. The event stream IS the blackboard truth. Python becomes minimal glue — math + event routing only.
-
-### Future: v9 — Code Self-Modification
-
-```
-git branch → modify source → run regression → swap if passing → self-restart
-```
-
-The organism modifies itself, tests the modification, and replaces itself with a better version. Decoupled resurrection ensures it cannot permanently die.
+The branches will be merged when the tree-based screen representation is proven and the TUI rewrite is complete.
 
 ---
 
 ## Development Protocol
 
-### Scientist Mode
-
-1. Before claiming behavior, state if tested-in-this-session or untested-prior.
-2. Untested-prior claims require a minimal falsification experiment.
-3. Never invent results.
-4. Treat counter-intuitive requests as hypotheses to test.
-5. When results arrive, update plainly.
-
-### After Implementation
-
 ```
 pyright (strict, 0/0/0)  →  run with simple goal  →  analyze_run.py  →  commit
 ```
+
+Scientist Mode: test before claiming. Treat counter-intuitive ideas as hypotheses. Update plainly when results contradict expectations.
 
 ---
 
