@@ -51,7 +51,7 @@ class SchedulerAgent:
             writes["pid_integral"] = 0.0
             writes["notes"] = ["DIVERGE: previous approach failed. Try a completely different method."]
             writes["requested_next"] = ""
-            return {"writes": writes, "next": "observer", "phase": "schedule", "data": {"reason": "wing_cross"}}
+            return {"writes": writes, "next": "planner", "phase": "schedule", "data": {"reason": "wing_cross"}}
 
         if not goal:
             return {"writes": writes, "next": "stagnation", "phase": "schedule", "data": {"reason": "idle"}}
@@ -61,19 +61,19 @@ class SchedulerAgent:
             return {"writes": writes, "next": requested, "phase": "schedule", "data": {"reason": "requested", "target": requested}}
 
         if total_calls == 0:
-            return {"writes": writes, "next": "observer", "phase": "schedule", "data": {"reason": "initial"}}
+            return {"writes": writes, "next": "planner", "phase": "schedule", "data": {"reason": "initial"}}
 
         if pid > REFLECT_THRESHOLD and role_calls.get("reflector", 0) < total_calls * 0.15:
             return {"writes": writes, "next": "reflector", "phase": "schedule", "data": {"reason": "pid_gate", "pid": pid}}
 
         if not instruction:
-            return {"writes": writes, "next": "observer", "phase": "schedule", "data": {"reason": "need_plan"}}
+            return {"writes": writes, "next": "planner", "phase": "schedule", "data": {"reason": "need_plan"}}
 
         if last_verb:
             screen_hash = str(ctx.get("screen_hash", ""))
             recent: list[str] = ctx.get("recent_hashes", [])
             if screen_hash and screen_hash not in recent[-SCREEN_STAGNATION_LOOKBACK:]:
                 writes["jacobian_update"] = last_verb
-            return {"writes": writes, "next": "observer", "phase": "schedule", "data": {"reason": "post_action"}}
+            return {"writes": writes, "next": "planner", "phase": "schedule", "data": {"reason": "post_action"}}
 
-        return {"writes": writes, "next": "observer", "phase": "schedule", "data": {"reason": "default"}}
+        return {"writes": writes, "next": "planner", "phase": "schedule", "data": {"reason": "default"}}

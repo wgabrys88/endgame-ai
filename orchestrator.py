@@ -31,6 +31,8 @@ AGENTS: dict[str, Any] = {
 
 def run(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
     log.emit("start", {"goal": board.get("goal", ""), "budget": log.budget()})
+    LLM_AGENTS = {"planner", "actor", "verifier", "reflector"}
+
     board["next"] = "stagnation"
 
     while board.get("next") not in ("done", "halt") and not log.exhausted() and not interrupted():
@@ -45,6 +47,13 @@ def run(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
             board["next"] = "stagnation"
             continue
 
+        if name in LLM_AGENTS:
+            obs = AGENTS["observer"]
+            obs_ctx = {k: board[k] for k in obs.reads if k in board}
+            obs_result: dict[str, Any] = obs.run(obs_ctx)
+            board.update(obs_result.get("writes", {}))
+            log.emit(obs_result.get("phase", "observe"), obs_result.get("data"))
+
         agent = AGENTS[name]
         ctx = {k: board[k] for k in agent.reads if k in board}
         result: dict[str, Any] = agent.run(ctx)
@@ -54,7 +63,7 @@ def run(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
         log.emit(result.get("phase", name), result.get("data"))
         _save(board)
 
-        if name in ("observer", "planner", "actor", "verifier", "reflector"):
+        if name in LLM_AGENTS:
             time.sleep(DELAY_BETWEEN_CYCLES)
 
     next_val = board.get("next", "")
