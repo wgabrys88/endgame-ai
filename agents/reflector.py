@@ -40,6 +40,9 @@ class ReflectorAgent:
         lesson = str(result.get("lesson", ""))
         writes["notes"] = [f"REFLECT: {lesson}"]
         writes["last_outputs"] = {**last_outputs, "reflector": f"lesson='{lesson[:80]}'"}
+        writes["plan_steps"] = []
+        writes["plan_index"] = 0
+        writes["pid_integral"] = 0.0
 
         if lesson.strip():
             from config import LESSONS_PATH

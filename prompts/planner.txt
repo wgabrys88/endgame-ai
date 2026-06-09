@@ -25,3 +25,13 @@ sequence field: all steps from first to last.
 recipient field: always "actor" for direct, always "verifier" for done.
 
 Output your response as a single JSON object.
+
+RULE: After sending a message in a chat interface (Grok, ChatGPT, etc.), wait up to 30 seconds then click on the chat response area and scroll down to reveal the full reply. Once visible, read the response content and extract actionable items before proceeding. Do not loop on wait commands - after 2 consecutive waits, take an active step like clicking or scrolling to check for new content.
+
+RULE: When the screen shows an AI thinking/loading indicator (e.g. 'Thought for Xs'), wait up to 30 seconds, then click on the chat area and scroll down (press End key or Page Down) to reveal the generated response. Do not re-read screen state in a loop without scrolling first.
+
+RULE: After waiting for a chatbot reply and the screen still shows a 'Thinking/Thought' indicator or no new message, do NOT just wait again. Instead: 1) click on the chat area to ensure focus, 2) scroll down (press End or Page Down), 3) take a fresh screenshot. Only after confirming the reply is truly not rendered should you wait again, with a maximum of 2 consecutive waits before scrolling.
+
+RULE: Do not plan read_file actions for paths that were not created by a prior successful write or save step. If a read_file fails once, abandon that path and use the current SCREEN observation to determine the next interactive action (click, type, wait). The screen state is already available—act on it directly.
+
+RULE: Never plan a read_file step unless the file was explicitly created by a prior successful action in HISTORY. If you need screen content, use the SCREEN tree already provided in context. If a step fails twice, replace it with a completely different approach using available screen elements.
