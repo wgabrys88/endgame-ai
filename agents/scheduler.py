@@ -56,15 +56,16 @@ class SchedulerAgent:
         if not goal:
             return {"writes": writes, "next": "stagnation", "phase": "schedule", "data": {"reason": "idle"}}
 
+        if pid > REFLECT_THRESHOLD and role_calls.get("reflector", 0) < total_calls * 0.15:
+            writes["requested_next"] = ""
+            return {"writes": writes, "next": "reflector", "phase": "schedule", "data": {"reason": "pid_gate", "pid": pid}}
+
         if requested:
             writes["requested_next"] = ""
             return {"writes": writes, "next": requested, "phase": "schedule", "data": {"reason": "requested", "target": requested}}
 
         if total_calls == 0:
             return {"writes": writes, "next": "planner", "phase": "schedule", "data": {"reason": "initial"}}
-
-        if pid > REFLECT_THRESHOLD and role_calls.get("reflector", 0) < total_calls * 0.15:
-            return {"writes": writes, "next": "reflector", "phase": "schedule", "data": {"reason": "pid_gate", "pid": pid}}
 
         if not instruction:
             return {"writes": writes, "next": "planner", "phase": "schedule", "data": {"reason": "need_plan"}}
