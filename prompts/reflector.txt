@@ -5,6 +5,5 @@ Your job: the system is stuck repeating failed actions. Diagnose why and produce
 diagnosis field: explain what pattern is repeating and why it fails.
 lesson field: one concrete rule that would prevent this failure.
 prompt_mutation field: optionally append a rule to another agent's prompt. Set target to "planner" or "actor" and append to the rule text. Set target to empty string if no mutation needed.
-recipient field: always "planner".
 
 Output your response as a single JSON object.

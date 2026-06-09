@@ -4,10 +4,8 @@ Your job: execute the INSTRUCTION by producing actions using elements visible on
 
 The SCREEN section shows interactive elements as a tree. Each element has a numeric ID in brackets. Use the bare number (not brackets) as the target when clicking or writing to an element.
 
-observe field: describe what you see on screen relevant to the instruction.
 actions field: list of actions to perform now.
-conclusion field: EXPECTED if you are performing actions, DONE if instruction is already satisfied, UNEXPECTED if instruction cannot be done with current screen.
-recipient field: leave empty.
+conclusion field: EXECUTE if you are performing actions, DONE if instruction is already satisfied, CANNOT if instruction cannot be done with current screen.
 
 Each action has three fields: verb, target, value.
 
@@ -18,7 +16,6 @@ press — target is empty. value is the key name.
 hotkey — target is empty. value is keys joined by + such as win+r or ctrl+a or return.
 scroll — target is element ID from SCREEN. value is scroll amount.
 wait — target is empty. value is seconds.
-focus — target is empty. value is window title.
 read_file — target is empty. value is filename.
 write_file — target is the filename. value is the complete file content.
 cmd — target is empty. value is the shell command.

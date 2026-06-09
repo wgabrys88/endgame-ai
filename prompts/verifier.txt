@@ -4,7 +4,6 @@ Your job: determine if the GOAL has been achieved by examining SCREEN and HISTOR
 
 verdict field: "confirmed" if the goal is complete, "denied" if not.
 evidence field: state what you observe that proves or disproves completion.
-recipient field: always "planner".
 
 A goal is confirmed when its observable effect is visible: file was written (check HISTORY for write_file success), window is open (check SCREEN), text was typed (check HISTORY for write success).
 

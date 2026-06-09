@@ -5,20 +5,26 @@ import msvcrt
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from config import (
     STD_OUTPUT_HANDLE, TUI_ALT_SCREEN_ON, TUI_ALT_SCREEN_OFF,
     TUI_HIDE_CURSOR, TUI_SHOW_CURSOR, TUI_HOME_CLEAR,
-    EVENTS_PATH, SNAPSHOT_PATH,
+    EVENTS_PATH, SNAPSHOT_PATH, DISABLED_PATH,
 )
 
 _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 _stdout_handle = _kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
 ENABLE_VIRTUAL_TERMINAL: int = 0x0004
+ENABLE_MOUSE_INPUT: int = 0x0010
 _mode = ctypes.c_ulong()
 _kernel32.GetConsoleMode(_stdout_handle, ctypes.byref(_mode))
 _kernel32.SetConsoleMode(_stdout_handle, _mode.value | ENABLE_VIRTUAL_TERMINAL)
+
+ALL_AGENTS: list[str] = [
+    "observer", "stagnation", "lorenz", "pid", "jacobian",
+    "planner", "actor", "verifier", "reflector",
+]
 
 
 def _write(text: str) -> None:
@@ -43,9 +49,33 @@ class TUI:
         self.snapshot: dict[str, Any] = {}
         self.cursor: int = -1
         self.paused: bool = False
-        self.expanded: str = ""
+        self.panel: str = "agents"
         self.last_file_size: int = 0
         self.running: bool = True
+        self.disabled: set[str] = set()
+        self.agent_cursor: int = 0
+        self._load_disabled()
+
+    def _load_disabled(self) -> None:
+        if not DISABLED_PATH.exists():
+            self.disabled = set()
+            return
+        try:
+            raw: object = json.loads(DISABLED_PATH.read_text(encoding="utf-8"))
+            if isinstance(raw, list):
+                self.disabled = {str(v) for v in cast(list[Any], raw)}
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    def _save_disabled(self) -> None:
+        DISABLED_PATH.write_text(json.dumps(sorted(self.disabled)), encoding="utf-8")
+
+    def toggle_agent(self, name: str) -> None:
+        if name in self.disabled:
+            self.disabled.discard(name)
+        else:
+            self.disabled.add(name)
+        self._save_disabled()
 
     def load_events(self) -> bool:
         if not self.events_path.exists():
@@ -77,7 +107,11 @@ class TUI:
         key = msvcrt.getch()
         if key == b"\xe0" or key == b"\x00":
             ext = msvcrt.getch()
-            if ext == b"M":
+            if ext == b"H":
+                self._nav_up()
+            elif ext == b"P":
+                self._nav_down()
+            elif ext == b"M":
                 self._step_forward()
             elif ext == b"K":
                 self._step_back()
@@ -86,17 +120,31 @@ class TUI:
             self.paused = not self.paused
         elif key == b"q":
             self.running = False
-        elif key == b"s":
-            self.expanded = "screen" if self.expanded != "screen" else ""
-        elif key == b"m":
-            self.expanded = "math" if self.expanded != "math" else ""
-        elif key == b"p":
-            self.expanded = "plan" if self.expanded != "plan" else ""
-        elif key == b"e":
-            self.expanded = "event" if self.expanded != "event" else ""
-        elif key == b"h":
-            self.expanded = "history" if self.expanded != "history" else ""
-        elif key in (b"\r", b"\n"):
+        elif key == b"\r" or key == b"\n":
+            if self.panel == "agents":
+                name = ALL_AGENTS[self.agent_cursor]
+                self.toggle_agent(name)
+            else:
+                self._step_forward()
+        elif key == b"1":
+            self.panel = "agents"
+        elif key == b"2":
+            self.panel = "events"
+        elif key == b"3":
+            self.panel = "math"
+        elif key == b"4":
+            self.panel = "plan"
+
+    def _nav_up(self) -> None:
+        if self.panel == "agents":
+            self.agent_cursor = max(0, self.agent_cursor - 1)
+        else:
+            self._step_back()
+
+    def _nav_down(self) -> None:
+        if self.panel == "agents":
+            self.agent_cursor = min(len(ALL_AGENTS) - 1, self.agent_cursor + 1)
+        else:
             self._step_forward()
 
     def _step_forward(self) -> None:
@@ -113,133 +161,186 @@ class TUI:
         w, h = _get_terminal_size()
         lines: list[str] = []
 
-        if not self.events:
-            lines.append(f"{'═' * w}")
-            lines.append(" endgame-ai │ waiting for events...")
-            lines.append(f" watching: {self.events_path}")
-            lines.append(f"{'═' * w}")
-            lines.append(" [space]=pause [q]=quit [→]=step [←]=back")
-            lines.append(" [s]=screen [m]=math [p]=plan [e]=event [h]=history")
-            return "\n".join(lines)
+        self.load_snapshot()
+        self._load_disabled()
 
-        evt = self.events[self.cursor] if 0 <= self.cursor < len(self.events) else self.events[-1]
         start_evt = next((e for e in self.events if e.get("phase") == "start"), None)
-        budget = start_evt["d"]["budget"] if start_evt else 100
-        goal = start_evt["d"]["goal"] if start_evt else "?"
+        goal = start_evt["d"]["goal"] if start_evt else "(no goal)"
+        budget = start_evt["d"]["budget"] if start_evt else 0
         total = len(self.events)
-        current_n = self.cursor + 1
-
-        bar_len = w - 30
-        filled = int(bar_len * min(current_n / max(total, 1), 1.0))
-        bar = "█" * filled + "░" * (bar_len - filled)
-
-        status = "⏸ PAUSED" if self.paused else "▶ LIVE"
-        phase = evt.get("phase", "?")
+        status = "\x1b[33m⏸ PAUSED\x1b[0m" if self.paused else "\x1b[32m▶ LIVE\x1b[0m"
         outcome = self._outcome()
 
-        lines.append(f"{'═' * w}")
-        lines.append(f" endgame-ai │ {goal[:w-16]}")
-        lines.append(f"{'─' * w}")
-        lines.append(f" {status} │ Event {current_n}/{total} (budget {budget}) │ {outcome}")
-        lines.append(f" [{bar}]")
-        lines.append(f"{'─' * w}")
-        lines.append(f" ◄◄  ◄  {'❚❚' if not self.paused else '▶ '}  ►  ►►  │ Phase: {phase}")
-        lines.append(f"{'─' * w}")
+        lines.append(f"\x1b[1m{'═' * w}\x1b[0m")
+        lines.append(f" \x1b[1mendgame-ai\x1b[0m │ {goal[:w-16]} │ {outcome}")
+        lines.append(f" {status} │ Events: {total}/{budget} │ Cycle: {self.cursor + 1}")
+        lines.append(f"\x1b[1m{'═' * w}\x1b[0m")
 
-        if self.expanded:
-            lines += self._render_expanded(w, h - 12)
-        else:
-            visible_count = min(h - 12, 15)
-            start_idx = max(0, self.cursor - visible_count + 1)
-            end_idx = min(len(self.events), start_idx + visible_count)
-            for i in range(start_idx, end_idx):
-                e = self.events[i]
-                marker = "►" if i == self.cursor else " "
-                detail = self._format_event(e, w - 25)
-                ep = e.get("phase", "?")
-                en = e.get("n", i + 1)
-                lines.append(f" {marker} {en:3} │ {ep:12} │ {detail}")
+        panel_h = h - 8
+        if self.panel == "agents":
+            lines += self._render_agents(w, panel_h)
+        elif self.panel == "events":
+            lines += self._render_events(w, panel_h)
+        elif self.panel == "math":
+            lines += self._render_math(w, panel_h)
+        elif self.panel == "plan":
+            lines += self._render_plan(w, panel_h)
 
         lines.append(f"{'─' * w}")
-        lines.append(f" [space]=pause [q]=quit [→/Enter]=step [←]=back │ [s]creen [m]ath [p]lan [e]vent [h]istory")
-        lines.append(f"{'═' * w}")
+        tab_1 = "\x1b[7m 1:Agents \x1b[0m" if self.panel == "agents" else " 1:Agents "
+        tab_2 = "\x1b[7m 2:Events \x1b[0m" if self.panel == "events" else " 2:Events "
+        tab_3 = "\x1b[7m 3:Math \x1b[0m" if self.panel == "math" else " 3:Math "
+        tab_4 = "\x1b[7m 4:Plan \x1b[0m" if self.panel == "plan" else " 4:Plan "
+        lines.append(f" {tab_1}│{tab_2}│{tab_3}│{tab_4}│ [space]=pause [q]=quit [Enter]=toggle")
+        lines.append(f"\x1b[1m{'═' * w}\x1b[0m")
+
         return "\n".join(lines[:h])
+
+    def _render_agents(self, w: int, max_h: int) -> list[str]:
+        lines: list[str] = []
+        lines.append(f" {'─' * (w-2)}")
+        lines.append(f"  AGENT              │ STATUS  │ LAST EVENT")
+        lines.append(f" {'─' * (w-2)}")
+
+        last_phases: dict[str, str] = {}
+        for e in self.events[-50:]:
+            phase = str(e.get("phase", ""))
+            for agent_name in ALL_AGENTS:
+                if agent_name in phase or (phase == "schedule" and agent_name == "scheduler"):
+                    last_phases[agent_name] = phase
+                elif phase == "observe" and agent_name == "observer":
+                    last_phases[agent_name] = phase
+                elif phase == "plan" and agent_name == "planner":
+                    last_phases[agent_name] = phase
+                elif phase == "actor" and agent_name == "actor":
+                    last_phases[agent_name] = phase
+                elif phase == "action" and agent_name == "actor":
+                    last_phases[agent_name] = phase
+                elif phase == "verify" and agent_name == "verifier":
+                    last_phases[agent_name] = phase
+                elif phase == "reflect" and agent_name == "reflector":
+                    last_phases[agent_name] = phase
+
+        for i, name in enumerate(ALL_AGENTS):
+            is_disabled = name in self.disabled
+            cursor_mark = "►" if i == self.agent_cursor else " "
+
+            if is_disabled:
+                status_str = "\x1b[31m■ OFF \x1b[0m"
+            elif name in ("observer", "stagnation", "lorenz", "pid", "jacobian"):
+                status_str = "\x1b[32m♥ PULSE\x1b[0m"
+            else:
+                status_str = "\x1b[36m◆ READY\x1b[0m"
+
+            last_event = last_phases.get(name, "—")
+            agent_type = "math" if name in ("lorenz", "pid", "jacobian", "stagnation") else ("sys" if name == "observer" else "llm")
+
+            line = f" {cursor_mark} [{agent_type:4}] {name:12} │ {status_str} │ {last_event}"
+            if i == self.agent_cursor:
+                line = f"\x1b[44m{line}\x1b[0m"
+            lines.append(line)
+
+        lines.append(f" {'─' * (w-2)}")
+        lines.append(f"  ↑↓ navigate │ Enter = toggle agent on/off")
+
+        s = self.snapshot
+        lines.append(f" {'─' * (w-2)}")
+        lines.append(f"  BLACKBOARD SNAPSHOT:")
+        lines.append(f"    stagnation={s.get('stagnation_score', 0):.3f} │ pid={s.get('pid_output', 0):.3f} │ lorenz_x={s.get('lorenz_x', 0):.2f}")
+        lines.append(f"    failures={s.get('consecutive_failures', 0)} │ events={s.get('events', 0)}/{s.get('budget', 0)}")
+        jac = s.get("jacobian", {})
+        if jac:
+            top = sorted(jac.items(), key=lambda x: -x[1])[:4]
+            lines.append(f"    jacobian: {', '.join(f'{k}={v:.2f}' for k,v in top)}")
+
+        remaining = max_h - len(lines)
+        for _ in range(remaining):
+            lines.append("")
+        return lines[:max_h]
+
+    def _render_events(self, w: int, max_h: int) -> list[str]:
+        lines: list[str] = []
+        if not self.events:
+            lines.append("  (waiting for events...)")
+            return lines
+
+        visible_count = min(max_h - 1, len(self.events))
+        start_idx = max(0, self.cursor - visible_count + 1)
+        end_idx = min(len(self.events), start_idx + visible_count)
+        for i in range(start_idx, end_idx):
+            e = self.events[i]
+            marker = "\x1b[33m►\x1b[0m" if i == self.cursor else " "
+            detail = self._format_event(e, w - 25)
+            ep = e.get("phase", "?")
+            en = e.get("n", e.get("seq", i + 1))
+            lines.append(f" {marker} {en:3} │ {ep:18} │ {detail}")
+        return lines[:max_h]
+
+    def _render_math(self, w: int, max_h: int) -> list[str]:
+        lines: list[str] = []
+        s = self.snapshot
+        lines.append(f"  ┌{'─' * (w-4)}┐")
+        lines.append(f"  │ LORENZ ATTRACTOR                           │")
+        lines.append(f"  │   x={s.get('lorenz_x', 0):8.3f}  y={s.get('lorenz_y', 0):8.3f}  z={s.get('lorenz_z', 0):8.3f}  │")
+        lines.append(f"  │   energy={self.snapshot.get('energy', '?')}                      │")
+        lines.append(f"  ├{'─' * (w-4)}┤")
+        lines.append(f"  │ PID CONTROLLER                             │")
+        lines.append(f"  │   output={s.get('pid_output', 0):.3f}  integral={s.get('pid_integral', 0):.3f}│")
+        lines.append(f"  ├{'─' * (w-4)}┤")
+        lines.append(f"  │ STAGNATION                                 │")
+        lines.append(f"  │   score={s.get('stagnation_score', 0):.3f}  failures={s.get('consecutive_failures', 0):3}         │")
+        lines.append(f"  ├{'─' * (w-4)}┤")
+        lines.append(f"  │ JACOBIAN (verb effectiveness)              │")
+        jac = s.get("jacobian", {})
+        if jac:
+            for k, v in sorted(jac.items(), key=lambda x: -x[1])[:6]:
+                bar_len = int(v * 20)
+                bar = "█" * bar_len + "░" * (20 - bar_len)
+                lines.append(f"  │   {k:12} [{bar}] {v:.2f}    │")
+        else:
+            lines.append(f"  │   (no data)                                │")
+        lines.append(f"  └{'─' * (w-4)}┘")
+        remaining = max_h - len(lines)
+        for _ in range(remaining):
+            lines.append("")
+        return lines[:max_h]
+
+    def _render_plan(self, w: int, max_h: int) -> list[str]:
+        lines: list[str] = []
+        steps = self.snapshot.get("plan_steps", [])
+        idx = self.snapshot.get("plan_index", 0)
+        lines.append(f"  PLAN ({len(steps)} steps, current: {idx})")
+        lines.append(f"  {'─' * (w-4)}")
+        if not steps:
+            lines.append("  (no active plan)")
+        for i, step in enumerate(steps):
+            if i == idx:
+                lines.append(f"  \x1b[33m>>> {step[:w-8]}\x1b[0m")
+            elif i < idx:
+                lines.append(f"  \x1b[32m ✓  {step[:w-8]}\x1b[0m")
+            else:
+                lines.append(f"      {step[:w-8]}")
+        history = self.snapshot.get("history", [])
+        if history:
+            lines.append(f"  {'─' * (w-4)}")
+            lines.append(f"  HISTORY (last 5)")
+            for h in history[-5:]:
+                ok = "\x1b[32m✓\x1b[0m" if h.get("ok") else "\x1b[31m✗\x1b[0m"
+                lines.append(f"    {ok} {h.get('verb', '?')}: {str(h.get('obs', ''))[:w-16]}")
+        remaining = max_h - len(lines)
+        for _ in range(remaining):
+            lines.append("")
+        return lines[:max_h]
 
     def _outcome(self) -> str:
         phases = [e.get("phase") for e in self.events]
         if "complete" in phases:
-            return "✓ COMPLETE"
+            return "\x1b[32m✓ COMPLETE\x1b[0m"
         if "halt" in phases:
-            return "✗ HALTED"
+            return "\x1b[31m✗ HALTED\x1b[0m"
         if "stop" in phases:
-            reason = next((e["d"].get("reason", "") for e in self.events if e.get("phase") == "stop"), "")
-            return f"■ STOPPED ({reason})"
-        return "… RUNNING"
-
-    def _render_expanded(self, w: int, max_lines: int) -> list[str]:
-        lines: list[str] = []
-        if self.expanded == "screen":
-            lines.append(f" ┌{'─' * (w-2)}┐")
-            lines.append(f" │ SCREEN (what LLM sees){'':>{w-25}}│")
-            lines.append(f" ├{'─' * (w-2)}┤")
-            screen = self.snapshot.get("screen", "(no snapshot)")
-            if not screen and self.events:
-                obs = next((e for e in reversed(self.events[:self.cursor+1]) if e.get("phase") == "observe"), None)
-                screen = str(obs.get("d", {}).get("chars", "?")) + " chars" if obs else "(no observe)"
-            for line in str(screen).split("\n")[:max_lines-4]:
-                lines.append(f" │ {line[:w-4]}")
-            lines.append(f" └{'─' * (w-2)}┘")
-        elif self.expanded == "math":
-            lines.append(f" ┌{'─' * (w-2)}┐")
-            lines.append(f" │ MATH STATE{'':>{w-14}}│")
-            lines.append(f" ├{'─' * (w-2)}┤")
-            self.load_snapshot()
-            s = self.snapshot
-            lines.append(f" │ Stagnation: {s.get('stagnation_score', 0):.3f}")
-            lines.append(f" │ Lorenz:     x={s.get('lorenz_x', 0):.2f} y={s.get('lorenz_y', 0):.2f} z={s.get('lorenz_z', 0):.2f}")
-            lines.append(f" │ PID:        output={s.get('pid_output', 0):.3f} integral={s.get('pid_integral', 0):.3f}")
-            jac = s.get("jacobian", {})
-            if jac:
-                top = sorted(jac.items(), key=lambda x: -x[1])[:5]
-                lines.append(f" │ Jacobian:   {', '.join(f'{k}={v:.2f}' for k,v in top)}")
-            lines.append(f" │ Events:     {s.get('events', '?')}/{s.get('budget', '?')}")
-            lines.append(f" └{'─' * (w-2)}┘")
-        elif self.expanded == "plan":
-            lines.append(f" ┌{'─' * (w-2)}┐")
-            lines.append(f" │ PLAN{'':>{w-8}}│")
-            lines.append(f" ├{'─' * (w-2)}┤")
-            self.load_snapshot()
-            steps = self.snapshot.get("plan_steps", [])
-            idx = self.snapshot.get("plan_index", 0)
-            if not steps:
-                lines.append(f" │ (no plan)")
-            for i, step in enumerate(steps):
-                marker = ">>>" if i == idx else ("✓" if i < idx else " ")
-                lines.append(f" │ {marker} {step[:w-8]}")
-            lines.append(f" └{'─' * (w-2)}┘")
-        elif self.expanded == "event":
-            lines.append(f" ┌{'─' * (w-2)}┐")
-            lines.append(f" │ EVENT DETAIL{'':>{w-16}}│")
-            lines.append(f" ├{'─' * (w-2)}┤")
-            if 0 <= self.cursor < len(self.events):
-                evt = self.events[self.cursor]
-                formatted = json.dumps(evt, indent=2, ensure_ascii=False)
-                for line in formatted.split("\n")[:max_lines-4]:
-                    lines.append(f" │ {line[:w-4]}")
-            lines.append(f" └{'─' * (w-2)}┘")
-        elif self.expanded == "history":
-            lines.append(f" ┌{'─' * (w-2)}┐")
-            lines.append(f" │ ACTION HISTORY{'':>{w-18}}│")
-            lines.append(f" ├{'─' * (w-2)}┤")
-            self.load_snapshot()
-            history = self.snapshot.get("history", [])
-            for h in history[-max_lines+4:]:
-                ok = "✓" if h.get("ok") else "✗"
-                lines.append(f" │ {ok} {h.get('verb', '?')}: {str(h.get('obs', ''))[:w-12]}")
-            if not history:
-                lines.append(f" │ (no history)")
-            lines.append(f" └{'─' * (w-2)}┘")
-        return lines
+            return "\x1b[33m■ STOPPED\x1b[0m"
+        return "\x1b[36m… RUNNING\x1b[0m"
 
     def _format_event(self, e: dict[str, Any], max_w: int) -> str:
         phase = e.get("phase", "?")
@@ -248,31 +349,44 @@ class TUI:
             case "start":
                 return f"goal={d.get('goal', '')}"[:max_w]
             case "observe":
-                return f"[{d.get('focused', '')}] {d.get('chars', 0)} chars"[:max_w]
+                return f"[{d.get('focused', '')}] {d.get('chars', 0)}ch"[:max_w]
+            case "heartbeat.stagnation":
+                return f"stag={d.get('stagnation', 0):.2f} rep={d.get('repetition', 0):.2f}"[:max_w]
+            case "heartbeat.lorenz":
+                w_str = "⚡" if d.get("wing") else ""
+                return f"x={d.get('x', 0):.2f} e={d.get('energy', 0):.2f}{w_str}"[:max_w]
+            case "heartbeat.pid":
+                return f"out={d.get('output', 0):.3f} int={d.get('integral', 0):.3f}"[:max_w]
+            case "heartbeat.jacobian":
+                return f"{d.get('verb', '')}={d.get('score', 0):.2f} Δ={'Y' if d.get('changed') else 'N'}"[:max_w]
+            case "heartbeat.observer":
+                return f"stagnant hash={d.get('hash', '')[:8]}"[:max_w]
+            case "schedule":
+                return f"→ {d.get('decision', '')} ({d.get('reason', '')})"[:max_w]
             case "plan":
                 return f"{d.get('mode', '')} → {d.get('action', '')}"[:max_w]
             case "actor":
                 return f"{d.get('conclusion', '')} ({d.get('actions', 0)} actions)"[:max_w]
             case "action":
                 ok = "✓" if d.get("ok") else "✗"
-                return f"{ok} {d.get('verb', '')} {d.get('obs', '')}"[:max_w]
+                dr = " [D]" if d.get("direct") else ""
+                return f"{ok}{dr} {d.get('verb', '')} {d.get('obs', '')}"[:max_w]
             case "verify":
                 v = "✓" if d.get("verdict") == "confirmed" else "✗"
                 return f"{v} {d.get('evidence', '')}"[:max_w]
             case "reflect":
-                return d.get("diagnosis", "")[:max_w]
+                return d.get("lesson", d.get("diagnosis", ""))[:max_w]
             case "lorenz.fork":
-                return f"⚡ x={d.get('x', 0):.2f} stag={d.get('stagnation', 0):.2f}"[:max_w]
+                return f"⚡ REPLAN x={d.get('x', 0):.2f}"[:max_w]
             case "complete":
-                return f"DONE in {d.get('events', '?')} events"[:max_w]
+                return f"\x1b[32mDONE in {d.get('events', '?')} events\x1b[0m"[:max_w]
             case "stop":
                 return f"{d.get('reason', '')} ({d.get('events', '?')} events)"[:max_w]
             case "halt":
                 return f"stagnation={d.get('stagnation', 0):.2f}"[:max_w]
-            case "mutation":
-                return f"→ {d.get('target', '')} +'{d.get('appended', '')[:30]}'"[:max_w]
             case _:
-                return str(d)[:max_w]
+                raw = str(d)
+                return raw[:max_w]
 
 
 def run_tui(path: Path | None = None) -> None:

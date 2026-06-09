@@ -5,7 +5,7 @@ import sys
 import types
 
 from config import PROCESS_DPI_AWARENESS_CONTEXT, SIGINT_EXIT_CODE
-from state import Board
+from board import Board
 from llm import set_backend, close_backend
 from orchestrator import run
 import log

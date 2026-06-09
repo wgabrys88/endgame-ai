@@ -7,6 +7,7 @@ SCHEMAS_DIR: pathlib.Path = BASE_DIR / "schemas"
 EVENTS_PATH: pathlib.Path = BASE_DIR / "events.jsonl"
 SNAPSHOT_PATH: pathlib.Path = BASE_DIR / "snapshot.json"
 LESSONS_PATH: pathlib.Path = BASE_DIR / "lessons.txt"
+DISABLED_PATH: pathlib.Path = BASE_DIR / "disabled.json"
 
 EVENT_BUDGET: int = 100
 
@@ -154,8 +155,8 @@ UIA_CONTROL_TYPE_MAP: dict[int, str] = {
 
 CONTEXT_POLICY: dict[str, list[str]] = {
     "planner": ["goal", "desktop", "screen", "plan", "history", "budget", "diverge", "failures", "lessons", "roles"],
-    "actor": ["instruction", "screen", "history", "lessons", "roles"],
-    "verifier": ["goal", "desktop", "screen", "history", "plan", "evidence", "roles"],
+    "actor": ["instruction", "screen", "history", "lessons"],
+    "verifier": ["goal", "desktop", "screen", "history", "plan", "evidence"],
     "reflector": ["goal", "desktop", "screen", "plan", "history", "math", "roles"],
 }
 

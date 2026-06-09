@@ -17,21 +17,11 @@
           "type": "string",
           "minLength": 100,
           "maxLength": 800
-        },
-        "recipient": {
-          "type": "string",
-          "enum": [
-            "planner",
-            "actor",
-            "reflector",
-            ""
-          ]
         }
       },
       "required": [
         "verdict",
-        "evidence",
-        "recipient"
+        "evidence"
       ],
       "additionalProperties": false
     }

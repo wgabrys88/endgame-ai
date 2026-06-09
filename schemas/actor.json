@@ -6,11 +6,6 @@
     "schema": {
       "type": "object",
       "properties": {
-        "observe": {
-          "type": "string",
-          "minLength": 100,
-          "maxLength": 2000
-        },
         "actions": {
           "type": "array",
           "minItems": 0,
@@ -27,7 +22,6 @@
                   "hotkey",
                   "scroll",
                   "wait",
-                  "focus",
                   "read_file",
                   "write_file",
                   "cmd"
@@ -55,26 +49,15 @@
         "conclusion": {
           "type": "string",
           "enum": [
+            "EXECUTE",
             "DONE",
-            "EXPECTED",
-            "UNEXPECTED"
-          ]
-        },
-        "recipient": {
-          "type": "string",
-          "enum": [
-            "planner",
-            "verifier",
-            "reflector",
-            ""
+            "CANNOT"
           ]
         }
       },
       "required": [
-        "observe",
         "actions",
-        "conclusion",
-        "recipient"
+        "conclusion"
       ],
       "additionalProperties": false
     }

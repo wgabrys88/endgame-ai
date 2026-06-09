@@ -39,22 +39,12 @@
             "append"
           ],
           "additionalProperties": false
-        },
-        "recipient": {
-          "type": "string",
-          "enum": [
-            "planner",
-            "actor",
-            "verifier",
-            ""
-          ]
         }
       },
       "required": [
         "diagnosis",
         "lesson",
-        "prompt_mutation",
-        "recipient"
+        "prompt_mutation"
       ],
       "additionalProperties": false
     }

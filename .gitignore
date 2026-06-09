@@ -18,3 +18,4 @@ output.txt
 runtime_artifacts/
 snapshot.json
 test_output.txt
+disabled.json
