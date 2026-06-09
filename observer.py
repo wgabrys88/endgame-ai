@@ -225,20 +225,6 @@ def _tree_walk(out: list[dict[str, Any]], el: Any, wnd_name: str, wnd_hwnd: int,
 
 
 def _probe_regions(windows: list[dict[str, Any]], z_order: list[dict[str, Any]], focused_hwnd: int, sw: int, sh: int) -> list[tuple[int, int, int, int, str, int]]:
-    if _topmost_popup(z_order):
-        return [(0, 0, sw, sh, "Desktop", 0)]
-    focused_region: tuple[int, int, int, int, str, int] | None = None
-    for wnd in windows:
-        if int(wnd["hwnd"]) == focused_hwnd:
-            focused_region = _window_region(wnd)
-            if not _is_desktop_window(focused_region):
-                return [focused_region]
-            break
-    top_region = _top_window_region(windows, z_order)
-    if top_region is not None:
-        return [top_region]
-    if focused_region is not None:
-        return [focused_region]
     return [(0, 0, sw, sh, "Desktop", 0)]
 
 
@@ -265,6 +251,8 @@ def _is_desktop_window(region: tuple[int, int, int, int, str, int]) -> bool:
 
 
 def _target_windows(focused_title: str, regions: list[tuple[int, int, int, int, str, int]]) -> set[str]:
+    if any(_is_desktop_window(r) for r in regions):
+        return set()
     region_titles = {_region_name(r) for r in regions if _region_name(r) and not _is_desktop_window(r)}
     if focused_title and (not region_titles or focused_title in region_titles):
         return {focused_title}

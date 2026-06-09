@@ -136,6 +136,10 @@ def _run_actor(board: Board) -> str:
         board.on_failure()
         return "continue"
 
+    direct = _try_direct_execute(instruction, board)
+    if direct is not None:
+        return direct
+
     context = board.context("actor", instruction)
     actor_out = _call_role("actor", context, board)
     if actor_out is None:
@@ -153,6 +157,7 @@ def _run_actor(board: Board) -> str:
         board.on_success()
         board.record_role_call("actor")
         board.advance_step()
+        log.emit("actor", {"conclusion": "DONE", "actions": 0})
         return "continue"
 
     if board.actor_conclusion == "UNEXPECTED":
@@ -249,6 +254,54 @@ def _call_role(role: str, context: str, board: Board) -> dict[str, Any] | None:
     except Exception as e:
         log.emit(f"{role}.error", {"type": type(e).__name__, "msg": str(e)[:200]})
         return None
+
+
+def _try_direct_execute(instruction: str, board: Board) -> str | None:
+    parts = instruction.split(None, 2)
+    if not parts:
+        return None
+    verb = parts[0].lower()
+    if verb not in VERBS:
+        return None
+    if verb in ("click", "write", "scroll") and len(parts) >= 2:
+        target = parts[1].strip("[]")
+        if not target.isdigit():
+            return None
+        value = parts[2] if len(parts) > 2 else ""
+    elif verb in ("hotkey", "press"):
+        value = parts[1] if len(parts) > 1 else ""
+        target = ""
+    elif verb == "wait":
+        target = parts[1] if len(parts) > 1 else "1"
+        value = ""
+    elif verb == "focus":
+        target = ""
+        value = " ".join(parts[1:]) if len(parts) > 1 else ""
+    elif verb == "cmd":
+        target = ""
+        value = " ".join(parts[1:]) if len(parts) > 1 else ""
+    elif verb == "write_file" and len(parts) >= 3:
+        target = parts[1]
+        value = parts[2]
+    elif verb == "read_file":
+        target = parts[1] if len(parts) > 1 else ""
+        value = ""
+    else:
+        return None
+    args = _build_args(verb, target, value)
+    result = execute_verb(verb, args, board.screen_elements, board)
+    board.record_action(verb, result.success, result.observation)
+    log.emit("action", {"verb": verb, "ok": result.success, "obs": result.observation[:100], "direct": True})
+    if result.success:
+        board.on_success()
+        board.advance_step()
+    else:
+        board.on_failure()
+    board.record_role_call("actor")
+    board.last_outputs["actor"] = f"direct={verb} ok={result.success}"
+    if not board.requested_next:
+        board.requested_next = "planner"
+    return "continue"
 
 
 def _build_args(verb: str, target: str, value: str) -> dict[str, Any]:

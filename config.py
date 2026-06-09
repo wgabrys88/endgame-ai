@@ -155,7 +155,7 @@ UIA_CONTROL_TYPE_MAP: dict[int, str] = {
 CONTEXT_POLICY: dict[str, list[str]] = {
     "planner": ["goal", "desktop", "screen", "plan", "history", "budget", "diverge", "failures", "lessons", "roles"],
     "actor": ["instruction", "screen", "history", "lessons", "roles"],
-    "verifier": ["goal", "desktop", "screen", "history", "plan", "roles"],
+    "verifier": ["goal", "desktop", "screen", "history", "plan", "evidence", "roles"],
     "reflector": ["goal", "desktop", "screen", "plan", "history", "math", "roles"],
 }
 

@@ -174,6 +174,12 @@ class _Pool:
                 if c.get("type") == "text" and sid and sid in self._flights:
                     self._flights[sid].chunks.append(c.get("text", ""))
         elif method is None and isinstance(mid, int):
+            if "error" in msg:
+                for f in self._flights.values():
+                    if f.request_id == mid:
+                        f.chunks.append(f"ERROR: {msg['error']}")
+                        f.done.set()
+                        break
             result: JsonMsg = msg.get("result") or {}
             if result.get("stopReason"):
                 for f in self._flights.values():

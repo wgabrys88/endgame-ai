@@ -240,7 +240,15 @@ def _render(b: Board, field: str, instruction: str) -> str:
         case "desktop":
             return b.desktop_summary if b.desktop_summary else ""
         case "instruction":
-            return f"INSTRUCTION: {instruction}" if instruction else ""
+            if not instruction:
+                return ""
+            parts_i = instruction.split(None, 1)
+            verb_i = parts_i[0].lower() if parts_i else ""
+            from actions import VERBS as _VERBS
+            if verb_i in _VERBS:
+                remainder = parts_i[1] if len(parts_i) > 1 else ""
+                return f"INSTRUCTION: {instruction}\nDETECTED VERB: {verb_i}\nARGUMENT: {remainder}"
+            return f"INSTRUCTION: {instruction}"
         case "screen":
             return f"SCREEN:\n{b.screen}" if b.screen else ""
         case "plan":
@@ -267,6 +275,7 @@ def _render(b: Board, field: str, instruction: str) -> str:
                 ok = "✓" if h["ok"] else "✗"
                 lines.append(f"  {ok} {h['verb']}: {h['obs']}")
             return "\n".join(lines)
+        case "budget":
             remaining = log.budget() - log.count()
             if remaining > log.budget() // 2:
                 return ""
@@ -306,5 +315,20 @@ def _render(b: Board, field: str, instruction: str) -> str:
                 return ""
             lines_l = text_l.splitlines()[-10:]
             return "LESSONS:\n" + "\n".join(f"  - {l}" for l in lines_l)
+        case "evidence":
+            import re as _re
+            from config import BASE_DIR as _BASE
+            filenames = _re.findall(r'[\w\-./\\]+\.\w{1,5}', b.goal)
+            if not filenames:
+                return ""
+            lines_e: list[str] = ["EVIDENCE:"]
+            for fn in filenames:
+                p = _BASE / fn
+                if p.exists():
+                    size = p.stat().st_size
+                    lines_e.append(f"  {fn}: EXISTS ({size} bytes)")
+                else:
+                    lines_e.append(f"  {fn}: NOT FOUND")
+            return "\n".join(lines_e)
         case _:
             return ""
