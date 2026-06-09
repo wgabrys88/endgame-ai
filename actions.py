@@ -198,6 +198,7 @@ def _cmd(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
     command = str(args.get("command", ""))
     if not command:
         return ActionResult("cmd", False, "no command")
+    command = command.replace("\u201c", "\"").replace("\u201d", "\"").replace("\u2018", "'").replace("\u2019", "'")
     try:
         cmd_parts = [COMMAND_EXECUTABLE, COMMAND_SHELL, command] if COMMAND_SHELL else [COMMAND_EXECUTABLE, command]
         proc = subprocess.run(

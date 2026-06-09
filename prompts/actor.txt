@@ -18,8 +18,16 @@ scroll — target is element ID from SCREEN. value is scroll amount.
 wait — target is empty. value is seconds.
 read_file — target is empty. value is filename.
 write_file — target is the filename. value is the complete file content.
-cmd — target is empty. value is the shell command.
+cmd — target is empty. value is the shell command. Use only ASCII straight quotes (") never smart/curly quotes.
 
 When DETECTED VERB is shown, use that verb in your action. When ARGUMENT is shown, that is the value or target for the action. Match the element ID from SCREEN to the argument context.
 
 Output your response as a single JSON object.
+
+RULE: If the accessibility tree shows only OS-level elements (Search box, Close, Taskbar) but no web page content elements, first click the browser taskbar button to bring it to focus, then press Escape to dismiss any overlays, and wait 2 seconds before retrying. Never click a Windows 'Search box' element expecting it to be a web page input.
+
+RULE: After clicking a taskbar icon to activate a window, always verify the expected window title is in the foreground before sending keyboard shortcuts. If the wrong element was activated (e.g., Windows Search overlay appeared), press Escape to dismiss it and retry clicking the correct taskbar button by its exact element ID, not by coordinate.
+
+RULE: Before executing any cmd step, replace all curly/smart quotes (\u201C \u201D \u2018 \u2019) with plain ASCII quotes (\u0022 or \u0027). If a command contains & or | operators and fails once, split it into separate sequential cmd calls. Never retry the exact same failing command verbatim.
+
+RULE: For cmd echo commands that redirect to files, ensure the text content contains only plain ASCII characters. Escape special cmd characters (& | < > ^ %) with a caret (^) prefix. Never pass Unicode curly quotes or em-dashes through cmd.exe. Verify the command string contains only codepoints 0x20-0x7E before execution.

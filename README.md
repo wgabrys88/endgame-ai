@@ -14,7 +14,8 @@ Working system. Proven on both cloud (ACP/Claude) and local (LM Studio/gemma-4-e
 
 | Goal | ACP (Claude) | LM Studio (2B) |
 |------|-------------|-----------------|
-| write_file output.txt (text) | 16 events, EXIT=0 | budget-limited (2B plans poorly) |
+| write_file output.txt (text) | 19 events, EXIT=0 | budget-limited (2B plans poorly) |
+| Grok 3-wishes showoff (804 events) | Opened Opera, sent intro to Grok, received response, identified challenge from title, attempted mkdir+echo. 24 reflections, 24 prompt mutations, 2 wing crosses. Halted on smart-quote cmd failures. |
 
 Both backends produce events through agent-routed dispatch: start → stagnation → lorenz → pid → schedule(initial) → observe → plan(direct) → action(write_file ✓) → actor(direct) → stagnation → lorenz → pid → schedule(requested=planner) → plan(done) → verify(confirmed) → complete.
 
@@ -177,9 +178,9 @@ agents/reflector.py  LLM reflector + prompt mutation (next=stagnation)
 
 ## Next Session Focus
 
-1. **Eliminate board.py** — Make context.py work on plain dict instead of Board dataclass. LLM agents pass ctx dict directly. Board.py deleted.
-2. **Visual TUI test** — Run in Windows Terminal Preview, observe the braille plot and math cycling live.
-3. **Event noise** — Math agents emit 4 events per cycle (stagnation/lorenz/pid/schedule). Consider: should these be silent (no log.emit) or aggregated into one summary event? They're sub-ms but inflate event count.
+1. **Run the Grok showoff again** — with fixed prompts (no invented verbs) and smart-quote sanitization, the system should complete the full challenge.
+2. **Validate prompt mutation cap** — 24 mutations in one run is a lot. Consider: should mutations be capped per-run or should the reflector check if a similar rule already exists?
+3. **Long-run budget** — 804 events was close. Consider budget=200 for complex multi-phase goals.
 
 ---
 
