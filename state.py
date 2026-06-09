@@ -73,7 +73,7 @@ class Board:
         self.last_verb = verb
         self.last_success = success
         self.last_observation = observation
-        self.history.append({"verb": verb, "ok": success, "obs": observation[:200]})
+        self.history.append({"verb": verb, "ok": success, "obs": observation[:1000]})
         if len(self.history) > MAX_HISTORY:
             self.history = self.history[-MAX_HISTORY:]
         self._update_signals(verb)
@@ -146,7 +146,7 @@ class Board:
             scale = LORENZ_MAG_CAP / mag
             x, y, z = x * scale, y * scale, z * scale
             mag = LORENZ_MAG_CAP
-        self.lorenz_wing_crossed = (prev_x > 0.0) != (x > 0.0) and self.stagnation_score > 0.0
+        self.lorenz_wing_crossed = (prev_x > 0.0) != (x > 0.0) and self.stagnation_score > 0.4
         self.lorenz_x, self.lorenz_y, self.lorenz_z = x, y, z
         eq_xy_sq = LORENZ_BETA * (LORENZ_RHO - LORENZ_EQUILIBRIUM_OFFSET)
         eq_mag = (eq_xy_sq + eq_xy_sq + (LORENZ_RHO - LORENZ_EQUILIBRIUM_OFFSET) ** 2) ** 0.5

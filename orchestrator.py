@@ -155,6 +155,15 @@ def _run_actor(board: Board) -> str:
         board.advance_step()
         return "continue"
 
+    if board.actor_conclusion == "UNEXPECTED":
+        board.on_failure()
+        board.record_role_call("actor")
+        board.plan_steps = []
+        board.plan_index = 0
+        board.requested_next = "planner"
+        log.emit("actor", {"conclusion": "UNEXPECTED", "actions": 0})
+        return "continue"
+
     log.emit("actor", {"conclusion": board.actor_conclusion, "actions": len(actions)})
 
     had_failure = False
