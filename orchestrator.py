@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from config import ZERO_INT, ONE_INT, TWO_INT
-import json
 import subprocess
 import sys
 import time
@@ -236,13 +235,8 @@ def _phase_observe(board: Blackboard) -> str:
             board.update_screen_stagnation(obs.semantic_hash)
             board.publish_shared_screen()
             from artifacts import materialize_text
-            raw_ref = materialize_text(json.dumps({"screen": obs.trace["screen"], "focused": obs.trace["focused"], "windows": obs.trace["windows"], "z_order": obs.trace["z_order"], "probe_regions": obs.trace["probe_regions"], "probe_decision": obs.trace["probe_decision"], "probe_samples": obs.trace["probe_samples"], "tree_decision": obs.trace["tree_decision"], "tree_samples": obs.trace["tree_samples"], "timing": obs.trace["timing"]}, ensure_ascii=False, separators=(",", ":")), board.agent_id, board.iteration, "observe.raw", ("data",))
-            filtered_ref = materialize_text(json.dumps({"merged_nodes": len(obs.trace["merged_nodes"]), "classified_nodes": len(obs.trace["classified_nodes"]), "book_entries": len(obs.trace["book"]), "book_ids": sorted(obs.trace["book"].keys())}, ensure_ascii=False, separators=(",", ":")), board.agent_id, board.iteration, "observe.filtered", ("data",))
             rendered_ref = materialize_text(obs.context_text, board.agent_id, board.iteration, "observe.rendered", ("context_text",))
-            semantic_ref = materialize_text(obs.trace["semantic_text"], board.agent_id, board.iteration, "observe.rendered", ("semantic_text",))
-            log(board.iteration, "observe.raw", "raw screen observation data", raw_ref)
-            log(board.iteration, "observe.filtered", "screen observation after merge and classification", filtered_ref)
-            log(board.iteration, "observe.rendered", "rendered screen context", {"content_hash": obs.content_hash, "semantic_hash": obs.semantic_hash, "semantic_text": semantic_ref, "focused_title": obs.focused_title, "windows": obs.windows, "context_text": rendered_ref, "context_chars": len(obs.context_text)})
+            log(board.iteration, "observe", "screen observation", {"content_hash": obs.content_hash, "semantic_hash": obs.semantic_hash, "focused_title": obs.focused_title, "windows": obs.windows, "context_text": rendered_ref, "context_chars": len(obs.context_text), "merged_nodes": len(obs.trace["merged_nodes"]), "classified_nodes": len(obs.trace["classified_nodes"]), "timing": obs.trace["timing"]})
         except Exception as e:
             board.release_screen()
             board.screen_valid = False
@@ -712,7 +706,6 @@ def _report_status(agent_id: str, state: str, result: str = "", error: str = "")
 def _call_llm_role(role: str, spec: RoleSpec, context: str, iteration: int, agent_id: str = "main") -> dict[str, Any] | None:
     try:
         result = call_role(spec, context, iteration, agent_id)
-        log(iteration, f"{role}.response", "role response accepted", {"role": role, "keys": list(result.keys()), "response": result})
         return result
     except Exception as e:
         err_str = str(e)
