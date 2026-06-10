@@ -41,3 +41,5 @@ DONE — instruction already satisfied by screen state
 CANNOT — impossible with current screen
 
 Output a single JSON object.
+
+RULE: Never click the same taskbar button more than once consecutively. After one taskbar click the window is focused — immediately act on elements inside the window (text fields, buttons, page content). If the window appears unresponsive after one taskbar click, try alt+tab or clicking directly on page coordinates instead of repeating the taskbar click.
