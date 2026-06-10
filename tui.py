@@ -22,9 +22,10 @@ _kernel32.SetConsoleMode(_stdout_handle, _mode.value | ENABLE_VIRTUAL_TERMINAL)
 
 ALL_AGENTS: list[str] = ["stagnation", "lorenz", "pid", "scheduler", "observer", "planner", "actor", "verifier", "reflector"]
 
-PLOT_W: int = 40
-PLOT_H: int = 14
-LORENZ_HISTORY: int = 200
+RST: str = "\x1b[0m"
+DIM: str = "\x1b[2m"
+BOLD: str = "\x1b[1m"
+BLINK: str = "\x1b[5m"
 
 
 def _write(text: str) -> None:
@@ -40,67 +41,32 @@ def _size() -> tuple[int, int]:
     return right - left + 1, bottom - top + 1
 
 
-def _rgb_fg(r: int, g: int, b: int) -> str:
+def _fg(r: int, g: int, b: int) -> str:
     return f"\x1b[38;2;{r};{g};{b}m"
 
 
-def _rgb_bg(r: int, g: int, b: int) -> str:
+def _bg(r: int, g: int, b: int) -> str:
     return f"\x1b[48;2;{r};{g};{b}m"
 
 
-RST: str = "\x1b[0m"
-DIM: str = "\x1b[2m"
-BOLD: str = "\x1b[1m"
-
-
-def _lerp_color(t: float) -> str:
-    t = max(0.0, min(1.0, t))
-    r = int(40 + t * 215)
-    g = int(180 - t * 140)
-    b = int(220 - t * 180)
-    return _rgb_fg(r, g, b)
-
-
-def _braille_plot(xs: list[float], ys: list[float], w: int, h: int, stag: float) -> list[str]:
-    if len(xs) < 2:
-        return [" " * w] * h
-    x_min, x_max = min(xs), max(xs)
-    y_min, y_max = min(ys), max(ys)
-    x_range = max(x_max - x_min, 0.1)
-    y_range = max(y_max - y_min, 0.1)
-    pw = w * 2
-    ph = h * 4
-    grid: list[list[bool]] = [[False] * pw for _ in range(ph)]
-    for i in range(len(xs)):
-        px = int((xs[i] - x_min) / x_range * (pw - 1))
-        py = int((1.0 - (ys[i] - y_min) / y_range) * (ph - 1))
-        px = max(0, min(pw - 1, px))
-        py = max(0, min(ph - 1, py))
-        if 0 <= py < ph and 0 <= px < pw:
-            grid[py][px] = True
-    lines: list[str] = []
-    color = _lerp_color(stag)
-    for row in range(h):
-        chars: list[str] = []
-        for col in range(w):
-            byte = 0
-            for dy, dx, bit in _BRAILLE_MAP:
-                gy = row * 4 + dy
-                gx = col * 2 + dx
-                if gy < ph and gx < pw and grid[gy][gx]:
-                    byte |= bit
-            chars.append(chr(0x2800 + byte))
-        lines.append(color + "".join(chars) + RST)
+def _vbar(value: float, height: int, color_fn) -> list[str]:
+    filled = int(value * height)
+    filled = max(0, min(height, filled))
+    lines = []
+    blocks = "░▒▓█"
+    for row in range(height):
+        level = height - 1 - row
+        if level < filled:
+            intensity = level / max(height - 1, 1)
+            c = color_fn(intensity)
+            char = blocks[min(3, int(intensity * 4))]
+            lines.append(f"{c}{char}{char}{RST}")
+        else:
+            lines.append(f"{DIM}··{RST}")
     return lines
 
 
-_BRAILLE_MAP: list[tuple[int, int, int]] = [
-    (0, 0, 0x01), (1, 0, 0x02), (2, 0, 0x04), (3, 0, 0x40),
-    (0, 1, 0x08), (1, 1, 0x10), (2, 1, 0x20), (3, 1, 0x80),
-]
-
-
-def _bar(value: float, width: int, color: str) -> str:
+def _hbar(value: float, width: int, color: str) -> str:
     filled = int(value * width)
     filled = max(0, min(width, filled))
     return color + "━" * filled + DIM + "╌" * (width - filled) + RST
@@ -116,13 +82,12 @@ class TUI:
         self.running: bool = True
         self.disabled: set[str] = set()
         self.agent_cursor: int = 0
-        self.lorenz_xs: list[float] = []
-        self.lorenz_ys: list[float] = []
         self.goal: str = goal
         self.backend: str = backend
         self.budget: int = budget
         self.proc: Any = None
         self.paused: bool = bool(goal)
+        self.fission_flash: float = 0.0
 
     def load(self) -> None:
         if self.events_path.exists():
@@ -132,16 +97,8 @@ class TUI:
                 try:
                     raw = self.events_path.read_text(encoding="utf-8")
                     self.events = [json.loads(line) for line in raw.splitlines() if line.strip()]
-                    self.lorenz_xs = []
-                    self.lorenz_ys = []
-                    for e in self.events:
-                        if e.get("phase") == "lorenz":
-                            d = e.get("d", {})
-                            self.lorenz_xs.append(float(d.get("x", 0)))
-                            self.lorenz_ys.append(float(d.get("energy", 1)))
-                    if len(self.lorenz_xs) > LORENZ_HISTORY:
-                        self.lorenz_xs = self.lorenz_xs[-LORENZ_HISTORY:]
-                        self.lorenz_ys = self.lorenz_ys[-LORENZ_HISTORY:]
+                    if self.events and self.events[-1].get("phase") == "fission":
+                        self.fission_flash = time.time()
                 except (json.JSONDecodeError, OSError):
                     pass
         if self.snapshot_path.exists():
@@ -192,8 +149,6 @@ class TUI:
             if p.exists():
                 p.unlink()
         self.events = []
-        self.lorenz_xs = []
-        self.lorenz_ys = []
         self.last_file_size = 0
         self.paused = False
         from config import BASE_DIR
@@ -213,57 +168,42 @@ class TUI:
         stag = float(s.get("stagnation", 0))
         pid = float(s.get("pid_output", 0))
         energy = float(s.get("energy", 1))
+        power = float(s.get("power", 0))
         failures = int(s.get("consecutive_failures", 0))
         events_n = int(s.get("events", 0))
         budget = int(s.get("budget", 0))
-        goal = str(s.get("goal", "(waiting)"))
+        goal = str(s.get("goal", "")) or "REACTOR MODE"
         plan: list[dict[str, Any]] = s.get("plan", [])
+        completed: list[str] = s.get("completed", [])
+        done_when = str(s.get("done_when", ""))
+        wing = bool(s.get("wing_crossed", False))
 
         out: list[str] = []
 
+        # Title bar
         budget_pct = events_n / max(budget, 1)
-        budget_color = _lerp_color(budget_pct)
         outcome = self._outcome()
-        title = f" {BOLD}{goal[:w-30]}{RST} {DIM}\u2502{RST} {budget_color}{events_n}/{budget}{RST} {outcome}"
+        power_str = f"{_fg(255,180,80)}⚡{power:.3f}/s{RST}" if power > 0 else ""
+        title = f" {BOLD}{goal[:w-45]}{RST} {DIM}│{RST} {_fg(180,180,220)}{events_n}/{budget}{RST} {power_str} {outcome}"
         out.append(title)
-        out.append(budget_color + _bar(budget_pct, w - 2, budget_color) + RST)
+        out.append(" " + _hbar(budget_pct, w - 3, _fg(80, 180, 255) if budget_pct < 0.7 else _fg(255, 140, 60)))
+        out.append("")
 
-        plot_w = min(PLOT_W, max(10, w // 3))
-        plot_h = min(PLOT_H, max(4, h - 10))
-        right_w = max(20, w - plot_w - 3)
+        # Layout: reactor (left) | events + plan (right)
+        reactor_w = 22
+        right_w = max(30, w - reactor_w - 4)
+        body_h = max(10, h - 8)
 
-        plot_lines = _braille_plot(self.lorenz_xs, self.lorenz_ys, plot_w, plot_h, stag)
-        event_lines = self._render_events(right_w, plot_h)
+        reactor_lines = self._render_reactor(reactor_w, body_h, stag, pid, energy, power, wing, len(completed))
+        right_lines = self._render_right(right_w, body_h, plan, done_when, completed)
 
-        for i in range(max(len(plot_lines), len(event_lines))):
-            left = plot_lines[i] if i < len(plot_lines) else " " * plot_w
-            right = event_lines[i] if i < len(event_lines) else ""
-            out.append(f" {left} {DIM}\u2502{RST} {right}")
+        for i in range(body_h):
+            left = reactor_lines[i] if i < len(reactor_lines) else " " * reactor_w
+            right = right_lines[i] if i < len(right_lines) else ""
+            out.append(f" {left} {DIM}│{RST} {right}")
 
-        stag_bar = _bar(stag, 20, _lerp_color(stag))
-        pid_bar = _bar(min(pid / 3.0, 1.0), 20, _lerp_color(min(pid / 3.0, 1.0)))
-        energy_bar = _bar(min(energy / 3.0, 1.0), 20, _rgb_fg(180, 120, 255))
-
-        out.append(f" {DIM}stag{RST} {stag_bar} {stag:.2f}  {DIM}pid{RST} {pid_bar} {pid:.2f}  {DIM}energy{RST} {energy_bar} {energy:.2f}")
-        cycle_val = s.get("cycle", 0)
-        out.append(f" {DIM}fails={failures} cycle={cycle_val}{RST}")
-
-        if plan:
-            done_count = sum(1 for step in plan if step.get("status") == "done")
-            total = len(plan)
-            out.append(f" {DIM}plan{RST} [{done_count}/{total}]")
-            for step in plan:
-                status = step.get("status", "pending")
-                text = step.get("text", "")[:w - 10]
-                if status == "done":
-                    out.append(f"   {_rgb_fg(80, 200, 80)}\u2713{RST} {text}")
-                elif status == "active":
-                    out.append(f"   {_rgb_fg(255, 220, 80)}\u25b6{RST} {text}")
-                else:
-                    out.append(f"   {DIM}\u25cb {text}{RST}")
-        else:
-            out.append(f" {DIM}plan{RST} (none)")
-
+        # Bottom: agent toggles
+        out.append("")
         agents_str = ""
         for i, name in enumerate(ALL_AGENTS):
             is_off = name in self.disabled
@@ -273,25 +213,136 @@ class TUI:
                 else:
                     agents_str += f" \x1b[7m\x1b[32m {name} \x1b[0m"
             elif is_off:
-                agents_str += f" {_rgb_fg(80, 80, 80)}{name}{RST}"
+                agents_str += f" {_fg(80, 80, 80)}{name}{RST}"
             else:
-                agents_str += f" {_rgb_fg(100, 200, 100)}{name}{RST}"
+                agents_str += f" {_fg(100, 200, 100)}{name}{RST}"
         launch_label = "launch" if self.paused else "relaunch"
-        out.append(f"{agents_str}  {DIM}\u2191\u2193 select  Enter toggle  Space {launch_label}  q quit{RST}")
+        out.append(f"{agents_str}")
+        out.append(f" {DIM}↑↓ select  Enter toggle  Space {launch_label}  q quit{RST}")
 
         return "\n".join(out[:h])
+
+    def _render_reactor(self, w: int, h: int, stag: float, pid: float, energy: float, power: float, wing: bool, completions: int) -> list[str]:
+        lines: list[str] = []
+        flashing = (time.time() - self.fission_flash) < 1.5
+
+        # Reactor core ASCII
+        core_color = _fg(255, 60, 60) if flashing else (_fg(255, 180, 50) if stag > 0.5 else _fg(60, 200, 180))
+        rod_color = _fg(100, 150, 255) if pid > 1.0 else _fg(60, 80, 120)
+
+        # Control rod depth (higher PID = rods inserted deeper)
+        rod_depth = min(int(pid / 3.0 * 6), 6)
+
+        lines.append(f"{DIM}╭{'─' * (w-2)}╮{RST}")
+        lines.append(f"{DIM}│{RST}{_fg(180,180,220)} REACTOR CORE    {RST}{DIM}│{RST}")
+        lines.append(f"{DIM}│{'─' * (w-2)}│{RST}")
+
+        # Control rods (top section)
+        for i in range(3):
+            if i < rod_depth:
+                lines.append(f"{DIM}│{RST} {rod_color}║║║║║║║║║║║║║║║║║║{RST}{DIM}│{RST}")
+            else:
+                lines.append(f"{DIM}│{RST}                    {DIM}│{RST}")
+
+        # Core glow zone
+        glow_h = max(4, h - 18)
+        fuel_level = min(energy / 2.5, 1.0)
+        fuel_filled = int(fuel_level * glow_h)
+
+        for row in range(glow_h):
+            level = glow_h - 1 - row
+            if level < fuel_filled:
+                t = level / max(glow_h - 1, 1)
+                if flashing:
+                    r, g, b = 255, 255, int(200 * (1 - t))
+                elif stag > 0.7:
+                    r, g, b = int(200 + 55*t), int(80 - 40*t), int(30)
+                else:
+                    r, g, b = int(40 + 60*t), int(180 + 75*t), int(220 - 80*t)
+                bar = "█" * 18
+                lines.append(f"{DIM}│{RST} {_fg(r,g,b)}{bar}{RST}{DIM}│{RST}")
+            else:
+                lines.append(f"{DIM}│                    │{RST}")
+
+        lines.append(f"{DIM}│{'─' * (w-2)}│{RST}")
+
+        # Gauges
+        stag_icon = "🔥" if stag > 0.7 else ("◌" if stag < 0.1 else "●")
+        pid_icon = "▼" if pid > 1.0 else "△"
+        fission_icon = "★" if flashing else "☆"
+        wing_icon = f"{_fg(255,255,0)}⚡{RST}" if wing else " "
+
+        lines.append(f"{DIM}│{RST} {_fg(255,120,80)}stag{RST} {stag:.2f} {stag_icon}       {DIM}│{RST}")
+        lines.append(f"{DIM}│{RST} {_fg(100,150,255)}pid {RST} {pid:.2f} {pid_icon}       {DIM}│{RST}")
+        lines.append(f"{DIM}│{RST} {_fg(180,120,255)}nrg {RST} {energy:.2f}         {DIM}│{RST}")
+        lines.append(f"{DIM}│{RST} {_fg(255,220,80)}pow {RST} {power:.4f} {fission_icon}   {wing_icon} {DIM}│{RST}")
+        lines.append(f"{DIM}│{RST} {_fg(80,255,180)}done{RST} {completions}             {DIM}│{RST}")
+        lines.append(f"{DIM}╰{'─' * (w-2)}╯{RST}")
+
+        # Pad to height
+        while len(lines) < h:
+            lines.append(" " * w)
+
+        return lines[:h]
+
+    def _render_right(self, w: int, h: int, plan: list[dict[str, Any]], done_when: str, completed: list[str]) -> list[str]:
+        lines: list[str] = []
+
+        # Plan section
+        if plan:
+            done_count = sum(1 for step in plan if step.get("status") == "done")
+            total = len(plan)
+            pbar = _hbar(done_count / max(total, 1), min(20, w - 15), _fg(80, 200, 120))
+            lines.append(f"{_fg(100,220,140)}PLAN{RST} [{done_count}/{total}] {pbar}")
+            if done_when:
+                lines.append(f" {DIM}done_when: {done_when[:w-12]}{RST}")
+            for step in plan:
+                status = step.get("status", "pending")
+                text = step.get("text", "")[:w - 6]
+                if status == "done":
+                    lines.append(f"  {_fg(80,200,80)}✓{RST} {DIM}{text}{RST}")
+                elif status == "active":
+                    lines.append(f"  {_fg(255,220,80)}▶{RST} {text}")
+                else:
+                    lines.append(f"  {DIM}○ {text}{RST}")
+        else:
+            lines.append(f"{DIM}PLAN (none){RST}")
+
+        lines.append("")
+
+        # Completed chain
+        if completed:
+            lines.append(f"{_fg(255,180,80)}FISSIONS{RST} ({len(completed)})")
+            for c in completed[-3:]:
+                lines.append(f"  {_fg(80,255,180)}★{RST} {c[:w-5]}")
+            lines.append("")
+
+        # Event feed - fill remaining space
+        lines.append(f"{_fg(180,180,220)}EVENTS{RST}")
+        feed_h = h - len(lines) - 1
+        feed_lines = self._render_events(w, feed_h)
+        lines.extend(feed_lines)
+
+        while len(lines) < h:
+            lines.append("")
+
+        return lines[:h]
 
     def _render_events(self, w: int, h: int) -> list[str]:
         lines: list[str] = []
         if not self.events:
             lines.append(f"{DIM}waiting for events...{RST}")
             return lines
-        start = max(0, len(self.events) - h)
-        for e in self.events[start:]:
+        # Filter: skip math noise for readability
+        interesting = [e for e in self.events if e.get("phase") not in ("stagnation", "lorenz", "pid")]
+        if not interesting:
+            interesting = self.events
+        start = max(0, len(interesting) - max(h, 1))
+        for e in interesting[start:]:
             n = e.get("n", 0)
             phase = e.get("phase", "?")
             d = e.get("d", {})
-            detail = self._fmt(phase, d, w - 18)
+            detail = self._fmt(phase, d, w - 15)
             color = self._phase_color(phase)
             lines.append(f"{DIM}{n:3}{RST} {color}{phase:8}{RST} {detail}")
         return lines[:h]
@@ -299,36 +350,37 @@ class TUI:
     def _fmt(self, phase: str, d: dict[str, Any], max_w: int) -> str:
         match phase:
             case "start":
-                return str(d.get("goal", ""))[:max_w]
+                return str(d.get("goal", "") or "REACTOR MODE")[:max_w]
             case "observe":
-                stag = "≡" if d.get("stagnant") else ""
-                return f"{stag}[{d.get('focused', '')}] {d.get('chars', 0)}ch"[:max_w]
-            case "stagnation":
-                return f"s={d.get('stag', 0):.3f} p={d.get('progress', 0):.3f}"[:max_w]
-            case "lorenz":
-                w_str = "⚡" if d.get("wing") else ""
-                return f"x={d.get('x', 0):.2f} e={d.get('energy', 0):.2f}{w_str}"[:max_w]
-            case "pid":
-                return f"pid={d.get('pid', 0):.3f}"[:max_w]
+                return f"[{d.get('focused', '')}]"[:max_w]
             case "schedule":
-                return f"→{d.get('reason', '')} {d.get('target', '')}"[:max_w]
+                reason = d.get("reason", "")
+                step = d.get("step", "")
+                if step:
+                    return f"→{reason} {step}"[:max_w]
+                return f"→{reason}"[:max_w]
             case "plan":
-                return f"{d.get('mode', '')} {d.get('action', '')}"[:max_w]
-            case "actor":
-                return f"{d.get('conclusion', '')} {d.get('verb', '')} ok={d.get('ok', '')}"[:max_w]
+                dw = d.get("done_when", "")
+                return f"{d.get('mode','')} {d.get('steps','')}steps \"{dw[:max_w-20]}\""[:max_w]
             case "action":
                 ok = "✓" if d.get("ok") else "✗"
-                dr = "[D]" if d.get("direct") else ""
-                return f"{ok}{dr} {d.get('verb', '')} {d.get('obs', '')}"[:max_w]
+                dr = "ᴰ" if d.get("direct") else ""
+                return f"{ok}{dr} {d.get('verb','')} {d.get('obs','')}  "[:max_w]
+            case "actor":
+                return f"{d.get('conclusion','')} {d.get('verb','')}"[:max_w]
             case "verify":
                 v = "✓" if d.get("verdict") == "confirmed" else "✗"
                 return f"{v} {d.get('evidence', '')}"[:max_w]
+            case "fission":
+                return f"★ power={d.get('power',0):.4f} completions={d.get('completions','')}"[:max_w]
+            case "fission_sustain":
+                return f"→ chain continues (power={d.get('power',0):.4f})"[:max_w]
             case "reflect":
-                return str(d.get("lesson", d.get("diagnosis", "")))[:max_w]
+                return str(d.get("diagnosis", ""))[:max_w]
+            case "mutation":
+                return f"mutate {d.get('target','')}: {d.get('appended','')}"[:max_w]
             case "complete":
-                return f"✓ DONE in {d.get('events', '?')} events"[:max_w]
-            case "halt":
-                return f"HALTED stag={d.get('stagnation', 0):.2f}"[:max_w]
+                return f"✓ GOAL ACHIEVED in {d.get('events', '?')} events"[:max_w]
             case "stop":
                 return f"{d.get('reason', '')} at {d.get('events', '?')}"[:max_w]
             case _:
@@ -336,45 +388,41 @@ class TUI:
 
     def _phase_color(self, phase: str) -> str:
         match phase:
-            case "stagnation":
-                return _rgb_fg(255, 100, 100)
-            case "lorenz":
-                return _rgb_fg(180, 120, 255)
-            case "pid":
-                return _rgb_fg(255, 200, 80)
             case "schedule":
-                return _rgb_fg(140, 140, 180)
+                return _fg(140, 140, 180)
             case "observe":
-                return _rgb_fg(100, 180, 220)
+                return _fg(100, 180, 220)
             case "plan":
-                return _rgb_fg(100, 220, 140)
+                return _fg(100, 220, 140)
             case "actor" | "action":
-                return _rgb_fg(220, 180, 80)
+                return _fg(220, 180, 80)
             case "verify":
-                return _rgb_fg(80, 220, 220)
+                return _fg(80, 220, 220)
+            case "fission" | "fission_sustain":
+                return _fg(255, 80, 255)
             case "reflect":
-                return _rgb_fg(220, 140, 180)
+                return _fg(220, 140, 180)
+            case "mutation":
+                return _fg(255, 220, 80)
             case "complete":
-                return _rgb_fg(80, 255, 80)
-            case "halt" | "stop":
-                return _rgb_fg(255, 80, 80)
+                return _fg(80, 255, 80)
+            case "stop":
+                return _fg(255, 80, 80)
             case _:
                 return DIM
 
     def _outcome(self) -> str:
         if self.paused and not self.events:
-            return f"{_rgb_fg(255, 180, 80)}▌▌ READY — Space to launch{RST}"
+            return f"{_fg(255, 180, 80)}▌▌ READY{RST}"
         phases = [e.get("phase") for e in self.events]
         if "complete" in phases:
-            return f"{_rgb_fg(80, 255, 80)}✓ COMPLETE{RST}"
-        if "halt" in phases:
-            return f"{_rgb_fg(255, 80, 80)}✗ HALTED{RST}"
+            return f"{_fg(80, 255, 80)}✓ COMPLETE{RST}"
         if "stop" in phases:
-            return f"{_rgb_fg(255, 180, 80)}■ STOPPED{RST}"
+            return f"{_fg(255, 180, 80)}■ STOPPED{RST}"
         if self.proc is not None:
-            return f"{_rgb_fg(100, 200, 255)}▶ RUNNING{RST}"
+            return f"{_fg(100, 200, 255)}▶ RUNNING{RST}"
         if self.events:
-            return f"{_rgb_fg(100, 200, 255)}… DONE{RST}"
+            return f"{_fg(100, 200, 255)}… DONE{RST}"
         return f"{DIM}waiting{RST}"
 
 
