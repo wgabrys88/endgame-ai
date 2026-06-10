@@ -270,6 +270,10 @@ def execute_python(code: str) -> ActionResult:
     def enable_gui() -> None:
         GUI_MODE_PATH.write_text("1", encoding="utf-8")
 
+    def pause_reactor() -> None:
+        import log
+        log.set_paused(True)
+
     namespace: dict[str, Any] = {
         "__builtins__": __builtins__,
         "__name__": "__exec__",
@@ -282,6 +286,7 @@ def execute_python(code: str) -> ActionResult:
         "subprocess": subprocess,
         "spawn_main": _spawn_main,
         "enable_gui": enable_gui,
+        "pause_reactor": pause_reactor,
     }
 
     stdout_buf = io.StringIO()

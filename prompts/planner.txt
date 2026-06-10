@@ -14,6 +14,7 @@ EXEC ENVIRONMENT (already available — do not import paths for these):
   BASE_DIR, Path, os, sys, json, time, subprocess
   spawn_main(goal="")  — launch child main.py with respawn contract
   enable_gui()         — create gui_mode file
+  pause_reactor()      — parent goes idle (pause file); use after spawning posterity
 
 Use exec for shell, subprocess, file ops, imports, tests. Never use cmd.
 Use read_file to inspect results already on disk — not to replace exec output.

@@ -242,11 +242,40 @@ Receipt: commit [`eff78fb`](https://github.com/wgabrys88/endgame-ai/commit/eff78
 
 ---
 
+## M4 merge test (posterity gate)
+
+**Purpose:** prove what the breakthrough run almost showed — parent evolves disk, **child boots on new code**, parent idles. That is the merge criterion for `refactor-v4` → `main`.
+
+The goal below never says “spawn” or “edit yourself.” It pursues what the project always chased: **baseline → smallest fix → prove posterity inherited it** (Bukowski: go all the way, but with evidence).
+
+```powershell
+cd $env:USERPROFILE\Downloads\endgame-ai
+python tui.py --backend lmstudio --event-budget 800
+```
+
+Paste as goal (Enter in TUI):
+
+```
+You are endgame-ai preparing for main-branch merge. Read README.md and your source tree. Record a baseline: read config.py and note SCREEN_ELEMENT_VALUE_LIMIT, then exec a one-line probe that prints len(observer.observe().context_text). Find one smallest observer or planner weakness from that evidence. Apply the smallest fix to config.py or prompts/ only. The fix must be validated by a fresh reactor process — not this session's in-memory imports — while this session goes idle without killing python processes. The fresh process must read config from disk, write m4_posterity_ok.json with {"ok":true,"screen_element_value_limit":<int it read>,"parent_paused":true}, and exit cleanly. done_when: m4_posterity_ok.json exists and screen_element_value_limit matches your edit.
+```
+
+**Expected organism path (not scripted):** `exec` edit → `spawn_main(goal=…)` → `pause_reactor()` → child writes proof file.
+
+**Verify:**
+
+```powershell
+python m4_merge_test.py
+```
+
+Pass = self-edit in log + child `phase:start` (often `events-<pid>.jsonl`) + parent paused + `m4_posterity_ok.json` matches.
+
+---
+
 ## What's next
 
-- [ ] **LM Studio** — full run on local backend (same reactor, different wire)
-- [ ] **Merge `refactor-v4` → `main`** after you're satisfied with tests
-- [ ] Optional: `spawn_main()` from `exec`, resurrection (detach → exit → relaunch)
+- [ ] Run **M4 merge test** on LM Studio
+- [ ] `python m4_merge_test.py` → merge `refactor-v4` → `main`
+- [ ] Later: resurrection (parent exits after spawn, not just pause)
 
 ---
 
