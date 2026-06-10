@@ -18,7 +18,7 @@ Bootstrap pattern for browser goals:
 1. cmd tasklist /FI "IMAGENAME eq opera.exe"
 2. cmd start /b "" "%LOCALAPPDATA%\Programs\Opera\opera.exe" https://grok.com
 3. wait 5
-4. write_file C:\Users\ewojgab\Downloads\endgame-ai\gui_mode 1
+4. write_file gui_mode 1
 5. GUI steps...
 
 CONSTRAINTS:
