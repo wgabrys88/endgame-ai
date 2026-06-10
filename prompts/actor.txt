@@ -21,3 +21,5 @@ write_file — target is filename. value is file content.
 cmd — target is empty. value is shell command (ASCII quotes only).
 
 Output your response as a single JSON object.
+
+RULE: When writing Python code via cmd echo redirection, use single quotes for strings inside Python functions (e.g., echo print('hello world') > file.py). Never use backslash-escaped double quotes in echo commands as cmd.exe does not interpret them correctly.
