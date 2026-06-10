@@ -40,7 +40,6 @@ WORK_PHASES = frozenset({
 })
 
 RST, DIM, BOLD = "\x1b[0m", "\x1b[2m", "\x1b[1m"
-SYNC_ON, SYNC_OFF = "\x1b[?2026h", "\x1b[?2026l"
 
 
 def _write(text: str) -> None:
@@ -130,7 +129,9 @@ class TUI:
         self.snapshot_path = snapshot_path
         self.events: list[dict[str, Any]] = []
         self.snapshot: dict[str, Any] = {}
-        self.last_size = 0
+        self._events_sig: tuple[str, int, float] = ("", 0, 0.0)
+        self._snapshot_mtime: float = 0.0
+        self._tick = 0
         self.running = True
         self.disabled: set[str] = set()
         self.goal = goal
@@ -160,23 +161,32 @@ class TUI:
         return self.goal
 
     def load(self) -> None:
-        if self.events_path.exists():
-            sz = self.events_path.stat().st_size
-            if sz != self.last_size:
-                self.last_size = sz
-                try:
-                    self.events = [json.loads(ln) for ln in self.events_path.read_text(encoding="utf-8").splitlines() if ln.strip()]
-                    if self.events:
-                        e = self.events[-1]
-                        self.last_phase = str(e.get("phase", ""))
-                        d = e.get("d", {})
-                        if self.last_phase == "schedule":
-                            self.last_reason = str(d.get("reason", ""))
-                except (json.JSONDecodeError, OSError):
-                    pass
+        self._tick += 1
+        path = log.active_events_path()
+        try:
+            st = path.stat()
+            sig = (str(path), st.st_size, st.st_mtime)
+        except OSError:
+            sig = ("", 0, 0.0)
+        if sig != self._events_sig:
+            self._events_sig = sig
+            self.events_path = path
+            try:
+                self.events = [json.loads(ln) for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+                if self.events:
+                    e = self.events[-1]
+                    self.last_phase = str(e.get("phase", ""))
+                    d = e.get("d", {})
+                    if self.last_phase == "schedule":
+                        self.last_reason = str(d.get("reason", ""))
+            except (json.JSONDecodeError, OSError):
+                pass
         if self.snapshot_path.exists():
             try:
-                self.snapshot = json.loads(self.snapshot_path.read_text(encoding="utf-8"))
+                mt = self.snapshot_path.stat().st_mtime
+                if mt != self._snapshot_mtime:
+                    self._snapshot_mtime = mt
+                    self.snapshot = json.loads(self.snapshot_path.read_text(encoding="utf-8"))
             except (json.JSONDecodeError, OSError):
                 pass
         file_goal = self._read_goal_file()
@@ -232,10 +242,11 @@ class TUI:
             return
         self.goal = goal
         self._write_goal_file(goal)
-        for p in (self.events_path, self.snapshot_path, DISABLED_PATH, GUI_MODE_PATH, PAUSE_PATH):
+        log.clean_stale_lock()
+        for p in (EVENTS_PATH, self.snapshot_path, DISABLED_PATH, GUI_MODE_PATH, PAUSE_PATH):
             if p.exists():
                 p.unlink()
-        self.events, self.last_size = [], 0
+        self.events, self._events_sig = [], ("", 0, 0.0)
         log.set_paused(False)
         self.proc = subprocess.Popen(
             [sys.executable, "main.py", goal, "--backend", self.backend, "--event-budget", str(self.budget)],
@@ -305,10 +316,14 @@ class TUI:
         lines.extend(_fit(_wrap(goal or "(type a goal below)", pw - 2), goal_h, pw - 2))
 
         lines.append(DIM + "─" * (pw - 1) + RST)
+        clock = time.strftime("%H:%M:%S")
+        src = self._events_sig[0]
+        src_name = Path(src).name if src else "—"
         lines.append(
-            f"{status_col}{status}{RST}  work {work}/{budget}  events {events_n}  fail {failures}"
+            f"{status_col}{status}{RST} {DIM}{clock}{RST}  work {work}/{budget}  events {events_n}  fail {failures}"
             + (f"  {_fg(255, 200, 0)}WING{RST}" if wing else "")
         )
+        lines.append(f"{DIM}log{RST} {src_name}")
         lines.append(f"{DIM}active{RST} {active}  {DIM}power{RST} {power:.4f}")
         if self.last_reason:
             lines.extend(_fit(_wrap(f"schedule: {self.last_reason}", pw - 2), 1, pw - 2))
@@ -447,8 +462,7 @@ class TUI:
         if not self._in_alt:
             _write(TUI_ALT_SCREEN_ON + (TUI_SHOW_CURSOR if self._input_active else TUI_HIDE_CURSOR))
             self._in_alt = True
-        buf = SYNC_ON + "\x1b[H" + "\n".join(rows) + SYNC_OFF
-        _write(buf)
+        _write("\x1b[H" + "\n".join(rows))
         if self._input_active:
             input_row = h - INPUT_ROWS + 2
             cursor_col = 2 + min(self._input_cursor, pw - 6)
@@ -469,7 +483,7 @@ class TUI:
             if self.proc:
                 self.proc.terminate()
             if self._in_alt:
-                _write(SYNC_OFF + TUI_ALT_SCREEN_OFF + TUI_SHOW_CURSOR)
+                _write(TUI_ALT_SCREEN_OFF + TUI_SHOW_CURSOR)
 
 
 def run_tui(path: Path | None = None, goal: str = "", backend: str = "lmstudio", budget: int = 20) -> None:
