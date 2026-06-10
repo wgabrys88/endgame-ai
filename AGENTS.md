@@ -48,7 +48,7 @@ GOAL BUS:          engine._poll_goal() reads goal.txt each cycle
 - Space → `log.set_paused()` · Enter → goal input → `goal.txt` · auto-launch if idle
 
 **Headless** (`actions.py`):
-- `cmd` via `cmd.exe /c` utf-8
+- headless via `exec` (real Python exec) — cmd removed
 - `read_file` / `write_file` / `wait` direct execution
 - Import gate on `.py` writes
 
@@ -89,7 +89,7 @@ agent-tools/  terminals/
 **Open:**
 - Resurrection (kill self → relaunch new code)
 - Push to origin (user approval)
-- Long-run stability (planner 90s timeouts on bloated context — use `read_file` not giant cmd)
+- Long-run stability (planner 90s timeouts on bloated context — use `read_file` not giant exec dumps)
 
 ---
 
@@ -98,7 +98,7 @@ agent-tools/  terminals/
 - Unified reactor: failure→replan, wing_cross keeps plan, reflector never clears plan
 - Prompt soul evolution from runtime evidence (zero `.py` in that run)
 - Code edits with import gate (reduce.py broke config — lesson #37)
-- Child spawn via actor cmd (backend mismatch killed child)
+- Child spawn via exec spawn_main() (backend mismatch killed child)
 - Hover probe + tree observer path
 - TUI vertical column, goal.txt hot-swap, pause bus
 - TUI freeze fix: stale lock + wrong events file + Win SYNC removed

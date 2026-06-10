@@ -20,7 +20,7 @@ The system plans, acts, verifies, reflects, and can edit its own prompts and Pyt
 | **Reflector** | Mutates prompt files from stagnation/failure |
 | **Observer** | Hover-probe + UIA tree → depth-indented SCREEN |
 
-Headless steps (`read_file`, `write_file`, `cmd`, `wait`) execute in Python without the actor LLM.
+Headless steps (`exec`, `read_file`, `write_file`, `wait`) execute in Python without the actor LLM. `exec` runs real Python in a reactor sandbox (`BASE_DIR`, `subprocess`, `spawn_main()`, `enable_gui()`).
 
 ---
 

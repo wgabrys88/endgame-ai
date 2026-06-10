@@ -272,14 +272,14 @@ class ActorAgent:
             history: list[dict[str, Any]] = list(ctx.get("history", []))
             result = execute_step(instruction)
             history.append({"verb": result.verb, "ok": result.success, "obs": result.observation})
-            log.emit("action", {"verb": result.verb, "ok": result.success, "obs": result.observation, "direct": True})
+            payload = {"conclusion": "python", "ok": result.success, "verb": result.verb, "obs": result.observation}
             if result.success:
                 active["status"] = "done"
                 _advance_plan(plan)
-                return {"writes": {"plan": plan, "history": history[-config.MAX_HISTORY:], "consecutive_failures": 0}, "next": "stagnation", "phase": "actor", "data": {"conclusion": "python", "ok": True}}
+                return {"writes": {"plan": plan, "history": history[-config.MAX_HISTORY:], "consecutive_failures": 0}, "next": "stagnation", "phase": "actor", "data": payload}
             active["status"] = "failed"
             failures = int(ctx.get("consecutive_failures", 0)) + 1
-            return {"writes": {"plan": plan, "history": history[-config.MAX_HISTORY:], "consecutive_failures": failures}, "next": "planner", "phase": "actor", "data": {"conclusion": "python", "ok": False}}
+            return {"writes": {"plan": plan, "history": history[-config.MAX_HISTORY:], "consecutive_failures": failures}, "next": "planner", "phase": "actor", "data": payload}
         context = _render_context(ctx, "actor", instruction)
         system = _load_prompt("actor")
         try:
@@ -437,8 +437,6 @@ def _build_args(verb: str, target: str, value: str) -> dict[str, Any]:
         return {"path": target or value}
     if verb == "write_file":
         return {"path": target, "content": value}
-    if verb == "cmd":
-        return {"command": value or target}
     return {}
 
 

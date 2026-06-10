@@ -5,7 +5,6 @@ from typing import Any, Callable
 import json
 import os
 import py_compile
-import re
 import subprocess
 import sys
 import time
@@ -13,7 +12,7 @@ import time
 from config import (
     BASE_DIR, DELAY_FOCUS, DELAY_CURSOR_SETTLE, DELAY_MOUSE_HOLD,
     DELAY_CHAR_SEND, DELAY_KEY_INTER, MAX_WAIT_SECONDS,
-    COMMAND_TIMEOUT_SECONDS, RESPAWN_PATH,
+    EXEC_TIMEOUT, EXEC_OUTPUT_LIMIT, RESPAWN_PATH,
 )
 from win32 import user32, get_window_title, VK_MAP, EXTENDED_VKS, INPUT
 
@@ -238,72 +237,110 @@ def _write_file(args: dict[str, Any], book: ElementBook) -> ActionResult:
     return ActionResult("write_file", True, f"wrote {len(content)} bytes to {path}")
 
 
-def _ensure_respawn_contract(command: str) -> str:
-    low = command.lower()
-    if "main.py" not in low or "--backend" in low:
-        return command
+def _clip_obs(text: str) -> str:
+    limit = EXEC_OUTPUT_LIMIT
+    return text if len(text) <= limit else text[:limit] + "…"
+
+
+def _spawn_main(goal: str = "") -> int:
     try:
         ctx = json.loads(RESPAWN_PATH.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return command
-    backend = str(ctx.get("backend", "acp"))
-    budget = int(ctx.get("budget", 200))
-    goal = str(ctx.get("goal", "")).replace('"', '\\"')
-    suffix = f' --backend {backend} --event-budget {budget}'
-    if goal and goal not in command:
-        suffix = f' "{goal}"{suffix}'
-    return re.sub(
-        r"((?:^|\s)(?:start(?:\s+/?b)?\s+)?(?:python(?:\.exe)?\s+)(?:\./)?main\.py)",
-        rf"\1{suffix}",
-        command,
-        count=1,
-        flags=re.IGNORECASE,
-    )
-
-
-def _normalize_cmd(command: str) -> str:
-    import re
-    command = command.replace("\u201c", "\"").replace("\u201d", "\"").replace("\u2018", "'").replace("\u2019", "'")
-    m = re.match(r"tasklist\s+/FI\s+([^\"'].+)$", command, re.IGNORECASE)
-    if m:
-        command = f'tasklist /FI "{m.group(1).strip()}"'
-    return command
-
-
-@_register("cmd")
-def _cmd(args: dict[str, Any], book: ElementBook) -> ActionResult:
-    command = _ensure_respawn_contract(_normalize_cmd(str(args.get("command", "")))).strip()
-    if not command:
-        return ActionResult("cmd", False, "no command")
-    if command.lower().startswith("start"):
-        try:
-            subprocess.Popen(
-                command,
-                shell=True,
-                cwd=str(BASE_DIR),
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            return ActionResult("cmd", True, "launched in background")
-        except Exception as e:
-            return ActionResult("cmd", False, f"launch failed: {e}")
-    proc = subprocess.run(
-        ["cmd.exe", "/c", command],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=COMMAND_TIMEOUT_SECONDS,
+        ctx = {"goal": goal, "backend": "acp", "budget": 200}
+    g = goal or str(ctx.get("goal", ""))
+    proc = subprocess.Popen(
+        [sys.executable, "main.py", g, "--backend", str(ctx.get("backend", "acp")),
+         "--event-budget", str(int(ctx.get("budget", 200)))],
         cwd=str(BASE_DIR),
+        creationflags=subprocess.CREATE_NO_WINDOW,
     )
-    output = ((proc.stdout or "") + (proc.stderr or "")).strip()
-    ok = proc.returncode == 0
-    return ActionResult("cmd", ok, output or f"exit {proc.returncode}")
+    return int(proc.pid)
+
+
+def execute_python(code: str) -> ActionResult:
+    import concurrent.futures
+    import io
+    import traceback
+    from config import GUI_MODE_PATH
+
+    code = code.strip()
+    if not code:
+        return ActionResult("exec", False, "no code")
+
+    def enable_gui() -> None:
+        GUI_MODE_PATH.write_text("1", encoding="utf-8")
+
+    namespace: dict[str, Any] = {
+        "__builtins__": __builtins__,
+        "__name__": "__exec__",
+        "BASE_DIR": BASE_DIR,
+        "Path": Path,
+        "os": os,
+        "sys": sys,
+        "json": json,
+        "time": time,
+        "subprocess": subprocess,
+        "spawn_main": _spawn_main,
+        "enable_gui": enable_gui,
+    }
+
+    stdout_buf = io.StringIO()
+    stderr_buf = io.StringIO()
+
+    class _Capture(io.TextIOBase):
+        def __init__(self, buf: io.StringIO) -> None:
+            self._buf = buf
+
+        def write(self, s: str) -> int:
+            if s:
+                self._buf.write(s)
+            return len(s) if s else 0
+
+        def flush(self) -> None:
+            pass
+
+    def _run() -> None:
+        old_out, old_err = sys.stdout, sys.stderr
+        sys.stdout, sys.stderr = _Capture(stdout_buf), _Capture(stderr_buf)
+        try:
+            exec(code, namespace, namespace)
+        finally:
+            sys.stdout, sys.stderr = old_out, old_err
+
+    error_text = ""
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            pool.submit(_run).result(timeout=EXEC_TIMEOUT)
+        ok = True
+    except concurrent.futures.TimeoutError:
+        ok, error_text = False, f"timeout after {EXEC_TIMEOUT}s"
+    except Exception:
+        ok, error_text = False, traceback.format_exc()
+
+    parts = [stdout_buf.getvalue().rstrip(), stderr_buf.getvalue().rstrip()]
+    if error_text:
+        parts.append(error_text.rstrip())
+    output = _clip_obs("\n".join(p for p in parts if p))
+    return ActionResult("exec", ok, output or ("ok" if ok else "exec failed"))
+
+
+def _parse_exec_code(step: str) -> str:
+    s = step.strip()
+    low = s.lower()
+    if low.startswith("exec:"):
+        return s[5:].lstrip("\n")
+    if low.startswith("exec "):
+        return s[5:]
+    if low.startswith("exec"):
+        return s[4:].lstrip(": \n")
+    return s
 
 
 def is_python_step(step: str) -> bool:
     low = step.strip().lower()
-    if low.startswith(("cmd ", "read_file ", "write_file ")):
+    if low.startswith("exec") and (len(low) == 4 or low[4] in ": \n"):
+        return True
+    if low.startswith(("read_file ", "write_file ")):
         return True
     if low.startswith("wait "):
         try:
@@ -327,8 +364,8 @@ def execute_step(step: str) -> ActionResult:
     """Python executes headless plan steps — model only names them."""
     s = step.strip()
     low = s.lower()
-    if low.startswith("cmd "):
-        return execute_verb("cmd", {"command": s[4:].strip()}, {}, None)
+    if low.startswith("exec") and (len(low) == 4 or low[4] in ": \n"):
+        return execute_python(_parse_exec_code(s))
     if low.startswith("wait "):
         try:
             sec = float(s.split(None, 1)[1])

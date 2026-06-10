@@ -17,8 +17,9 @@ Be honest. Only mutate a prompt for systemic failures, not situational latency (
 Never mutate prompts to use element IDs like click [N] — IDs are actor-only.
 
 Common systemic patterns worth mutating:
-- cmd.exe misuse, blocking start without /b
+- exec blocks that repeat identical failing code instead of adapting
 - Planner using element IDs in plan steps
+- Planner using cmd instead of exec
 - Verifier confirming trivial observational done_when while GOAL unmet
 - Scroll/click loops without executing known tasks
 - Introspection instead of outward action

@@ -285,8 +285,10 @@ class TUI:
                 s = d.get("step", "")
                 base = f"reason={d.get('reason', '')}"
                 return f"{base} step={s}" if s else base
-            case "action":
-                return f"{'ok' if d.get('ok') else 'FAIL'} verb={d.get('verb', '')} obs={d.get('obs', '')}"
+            case "action" | "actor":
+                if d.get("verb") or d.get("obs"):
+                    return f"{'ok' if d.get('ok') else 'FAIL'} verb={d.get('verb', '')} obs={d.get('obs', '')}"
+                return str(d)
             case "plan":
                 return f"mode={d.get('mode', '')} steps={d.get('steps', '')} done_when={d.get('done_when', '')}"
             case "verify":
