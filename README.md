@@ -1,78 +1,108 @@
 # endgame-ai
 
-A self-sustaining Windows desktop automation reactor built in pure Python 3.13 with zero dependencies.
+A self-sustaining Windows desktop automation reactor. Pure Python 3.13, zero dependencies, raw ctypes Win32.
 
-## What It Is
+No agent framework does this. No LangChain, no CrewAI, no AutoGen. This system:
+- Runs without a goal and discovers tasks autonomously
+- Verifies its own completions (only truth counts as power)
+- Self-evolves by mutating its own prompts at runtime
+- Uses nuclear reactor math (Lorenz chaos + PID control) to regulate behavior
+- Achieved autonomous fission: profiled its own environment without being told
 
-endgame-ai is a nuclear reactor analogy made real in software. Give it a goal and it plans, executes, verifies, and self-corrects. Give it nothing and it explores autonomously — each verified completion is a fission event that powers the next.
-
-No frameworks. No pip install. Just Python and raw ctypes talking to Win32.
-
-## How It Works
+## Architecture
 
 ```
-┌──────────────────────────────────────────────────────┐
-│ MATH THREAD (3s heartbeat, independent)              │
-│   Stagnation → Lorenz ODE → PID controller           │
-│   Writes continuous signals to blackboard             │
-└──────────────────────────────────────────────────────┘
-
-┌──────────────────────────────────────────────────────┐
-│ MAIN THREAD (reactive, event-driven)                 │
-│   Scheduler reads board → invokes agent → board      │
-│   mutates → scheduler reads again                    │
-│                                                      │
-│   Planner ──→ Actor ──→ Verifier ──→ ★ FISSION      │
-│       ↑                      │                       │
-│       └── denied ────────────┘                       │
-│                                                      │
-│   Reflector fires when PID pressure accumulates      │
-└──────────────────────────────────────────────────────┘
+          ┌─────────────────────────────────┐
+          │  MATH THREAD (3s heartbeat)     │
+          │  Stagnation → Lorenz → PID      │
+          └────────────┬────────────────────┘
+                       │ writes to blackboard
+          ┌────────────▼────────────────────┐
+          │  SCHEDULER (pure board state)   │
+          │  Routes to correct agent        │
+          └────────────┬────────────────────┘
+                       │
+    ┌──────────────────┼──────────────────────┐
+    ▼                  ▼                      ▼
+ PLANNER           ACTOR              REFLECTOR
+ (fuel)         (execution)         (evolution)
+    │                  │                      │
+    └───────► VERIFIER ◄──────────────────────┘
+              (fission = confirmed truth)
 ```
 
-### Reactor Concepts
+**Power** = verified completions / elapsed time. That's it. The only metric.
 
-| Reactor | endgame-ai |
-|---------|-----------|
+## What Makes This Different
+
+| Other agents | endgame-ai |
+|---|---|
+| Need a goal to start | Explores autonomously when goalless |
+| Trust their own output | Verifier cross-checks against original goal |
+| Static prompts | Reflector mutates prompts at runtime (self-evolution) |
+| Retry on failure | PID controller modulates reflection pressure |
+| Linear execution | Lorenz attractor creates chaotic replanning at wing crosses |
+| Screen-dependent | Headless-first; enables GUI only when needed |
+| Truncate context | Full observation fidelity — LLM sees everything |
+
+## Reactor Concepts
+
+| Reactor | Code |
+|---------|------|
 | Fuel rods | LLM agents (planner, actor) |
 | Fission | Verifier-confirmed completion |
-| Power | Verified completions / elapsed time |
+| Power | completions / elapsed seconds |
 | Prompt neutrons | Lorenz wing cross → immediate replan |
 | Delayed neutrons | Reflector lessons → prompt mutations |
 | Control rods | PID output → modulates reflection |
 | Fuel depletion | Completed list prevents repeats |
 | Chain reaction | Success → plan next → succeed → repeat |
 
-### Headless-First
-
-The system operates headless by default — no screen scanning, pure cmd/file operations. If a task needs GUI interaction, the planner creates a `gui_mode` file to enable Win32 screen scanning, then removes it when done.
-
 ## Usage
 
 ```
-python main.py "your goal here" --backend acp --event-budget 50
-python main.py --backend acp --event-budget 200        # goalless reactor mode
-python tui.py "goal" --backend acp --event-budget 100  # with live dashboard
+python main.py "your goal" --backend acp --event-budget 50
+python main.py --backend acp --event-budget 200          # reactor mode (no goal)
+python tui.py "goal" --backend acp --event-budget 100    # live reactor dashboard
+python debug_context.py planner --goal "text"            # inspect LLM context
 ```
 
-Backends:
-- `acp` — Kiro CLI / Claude (recommended)
-- `lmstudio` — local LM Studio server
+## Prompt Soul
 
-## Architecture
+Every agent opens with: *"You are sitting at a Windows desktop with full control of mouse, keyboard, and shell."*
+
+Then 2 sentences that give it purpose:
+- **Planner**: Think before you act. Never downgrade the success condition.
+- **Actor**: Understand what you see. Refuse doomed actions.
+- **Verifier**: A trivially true condition that doesn't prove the goal is a lie, not fission.
+- **Reflector**: Be honest. Only mutate for systemic failures, not noise.
+
+## Proven Results
+
+- **Goal mode**: "write file" → fission in 28 events, exit 0, zero screen scans
+- **Reactor mode**: autonomous fission at event 65 — system profiled its own environment, created discovery files, verified them, then immediately planned next task
+- **Self-evolution**: reflector mutated planner 3 times in single run, final mutation: "propose exploratory task to keep energy above zero"
+- **Self-correction**: hello.py escaping failure → reflector diagnosed → actor adapted → success
+
+## Current State
+
+Branch `refactor-v4`. Reactor architecture complete. Soul added. All truncation removed. Awaiting final integration test with the new prompt soul to validate that the 11-replan Grok failure (caused by context amnesia + soulless prompts) is resolved.
+
+## Files
 
 ```
-main.py          Entry point, board initialization
-engine.py        Reactor core: math thread + reactive main loop + fission logic
-agents.py        All agents: math (3), scheduler, observer, planner, actor, verifier, reflector
-config.py        All constants, no magic numbers elsewhere
-llm.py           LLM backend abstraction (LM Studio / ACP)
-actions.py       Verb execution (click, write, cmd, file ops)
-observer.py      Win32 UI Automation tree scanner
-win32.py         Raw ctypes Win32 bindings
-log.py           Event logger (events.jsonl)
-tui.py           Live terminal dashboard with Lorenz plot
-acp_client.py    Kiro CLI ACP protocol client
+main.py           Entry point, board init
+engine.py         Reactor core: math thread + main loop + fission
+agents.py         All agents + scheduler + context rendering
+config.py         All constants
+llm.py            LLM backend (ACP / LM Studio)
+actions.py        Verb execution
+observer.py       Win32 UI Automation screen scanner
+win32.py          Raw ctypes Win32 bindings
+log.py            Event logger
+tui.py            Live reactor dashboard
+acp_client.py     Kiro CLI ACP protocol
+debug_context.py  Context dump tool
 ```
 
 ## Requirements
@@ -80,7 +110,3 @@ acp_client.py    Kiro CLI ACP protocol client
 - Windows 11
 - Python 3.13
 - Nothing else
-
-## License
-
-MIT
