@@ -60,6 +60,8 @@ def main() -> None:
 
     log.init(config.EVENT_BUDGET)
 
+    config.GOAL_PATH.write_text(args.goal, encoding="utf-8")
+
     RESPAWN_PATH.write_text(
         json.dumps({"goal": args.goal, "backend": args.backend, "budget": config.EVENT_BUDGET}),
         encoding="utf-8",

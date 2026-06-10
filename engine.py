@@ -99,8 +99,25 @@ def _stop_satisfied(board: dict[str, Any]) -> bool:
     return True
 
 
+def _poll_goal(board: dict[str, Any]) -> None:
+    if not config.GOAL_PATH.exists():
+        return
+    try:
+        new_goal = config.GOAL_PATH.read_text(encoding="utf-8").strip()
+    except OSError:
+        return
+    old_goal = str(board.get("goal", ""))
+    if new_goal == old_goal:
+        return
+    board["goal"] = new_goal
+    board["plan"] = []
+    board["done_when"] = ""
+    log.emit("goal_change", {"from": old_goal, "to": new_goal})
+
+
 def _main_loop(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
     while not log.exhausted() and not interrupted():
+        _poll_goal(board)
         scheduler = AGENTS["scheduler"]
         ctx = {k: board[k] for k in scheduler.reads if k in board}
         result: dict[str, Any] = scheduler.run(ctx)

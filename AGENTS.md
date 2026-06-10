@@ -40,6 +40,7 @@ ARCHITECTURE (2026-06-10 refactor):
   wing_cross replans without wiping plan/done_when
   Reflector mutates prompts only — never clears plan
   observer: hover probe primary (mandatory), tree supplements depth; depth-indented SCREEN
+  tui: vertical 25% status column + event stream; goal.txt runtime input (engine polls)
   cmd via cmd.exe /c utf-8; prompts stripped to core (behavior in Python)
 
 OPEN:
