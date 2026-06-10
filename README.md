@@ -75,15 +75,16 @@ Requirements: Windows 11, Python 3.13, ACP or LM Studio backend.
 
 ---
 
-## What the system started but did not finish
+## Maturity gates (landed 2026-06-10)
 
-These are the next maturity steps — human or autonomous:
+| Gate | Behavior |
+|------|----------|
+| **Post-fission halt** | Planner `mode:done` with existing completions → `halt` → `stop reason=goal_satisfied` |
+| **Import gate** | Every `write_file` on `.py` runs `py_compile` + core import check before success |
+| **Respawn contract** | `main.py` writes `respawn.json`; bare `python main.py` spawns inherit backend, goal, budget |
+| **Single-writer logs** | `.endgame.lock` — second process writes to `events-{pid}.jsonl` instead of corrupting |
 
-1. **Post-fission halt** — planner `mode:done` loops after goal satisfied; engine needs clean stop.
-2. **Respawn contract** — child must inherit `--backend acp`, goal, and cwd; current spawn uses bare `main.py` → LM Studio errors.
-3. **Single-writer logs** — two processes appending `events.jsonl` corrupts the log (happened during spawn test).
-4. **Resurrection** — detach, kill self, relaunch new code (discussed, not built).
-5. **Import gate** — mandatory `python -c "import config; import engine; import agents"` after every `.py` edit.
+**Still open:** resurrection (detach → kill self → relaunch new code).
 
 ---
 
@@ -93,7 +94,7 @@ Repo path: `%USERPROFILE%\Downloads\endgame-ai`. Press Space in TUI to start.
 
 ```powershell
 cd $env:USERPROFILE\Downloads\endgame-ai
-python .\tui.py 'You are endgame-ai. Project root is %USERPROFILE%\Downloads\endgame-ai — stay inside it. Read README.md, events.jsonl, and lessons.txt. Finish what the last run started: post-fission halt, respawn with --backend acp and goal, import-check after self-edits. Spawn with start /b and Popen only. One focused .py fix, verify imports, finish working.' --backend acp --event-budget 200
+python .\tui.py 'You are endgame-ai. Project root is the directory containing main.py — stay inside it. Read README.md, events.jsonl, and lessons.txt. Prove M4: edit one .py file safely (import gate must pass), spawn a child with inherited backend, watch its log, finish working without idle loops after fission.' --backend acp --event-budget 200
 ```
 
 ---

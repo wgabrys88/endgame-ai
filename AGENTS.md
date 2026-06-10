@@ -31,10 +31,15 @@ PROVEN THIS SESSION:
   - Prompt self-evolution: read README + prompts + lessons + events → rewrite 4 prompts → verified
   - Code self-evolution (prior): reduce.py broke config — fixed manually; lesson #37 holds
 
+LANDED (2026-06-10 session):
+  1. Post-fission halt: planner mode:done + completed → halt → goal_satisfied stop
+  2. Import gate: write_file on .py runs py_compile + core imports before ok
+  3. Respawn contract: respawn.json + cmd injection for bare main.py spawns
+  4. Single-writer logs: .endgame.lock, twin writes to events-{pid}.jsonl
+
 OPEN ISSUES:
-  1. Post-fission idle: planner mode:done loops after goal satisfied (needs halt on done)
-  2. Post-edit syntax check: no import gate after write_file on .py files
-  3. Push review pending — 8 local commits on refactor-v4
+  1. Resurrection: detach, kill self, relaunch new code (discussed, not built)
+  2. Push review pending — local commits on refactor-v4 not pushed
 
 FILES:
   12 .py core + debug_context.py + acp_client.py

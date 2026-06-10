@@ -257,6 +257,8 @@ class PlannerAgent:
         if mode == "done" or not sequence:
             if str(ctx.get("goal", "")).strip() and not list(ctx.get("completed", [])):
                 return {"writes": {"consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1}, "next": "stagnation", "phase": "plan", "data": {"mode": "rejected", "reason": "cannot declare done before any GOAL progress"}}
+            if list(ctx.get("completed", [])):
+                return {"writes": {}, "next": "halt", "phase": "plan", "data": {"mode": "done", "reason": "goal_satisfied"}}
             return {"writes": {}, "next": "verifier", "phase": "plan", "data": {"mode": "done"}}
         steps: list[dict[str, str]] = []
         for i, s in enumerate(sequence[:config.MAX_PLAN_STEPS]):

@@ -8,6 +8,9 @@ blackboard_state.json
 blackboard_state.lock
 comms/
 events.jsonl
+events-*.jsonl
+.endgame.lock
+respawn.json
 evolution_ledger.json
 field_usage.json
 lessons.json

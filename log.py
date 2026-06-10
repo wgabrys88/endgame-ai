@@ -1,12 +1,16 @@
 from __future__ import annotations
+import atexit
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, TextIO
 
-from config import EVENTS_PATH
+from config import EVENTS_PATH, LOG_LOCK_PATH
 
 _handle: TextIO | None = None
+_events_path: Path = EVENTS_PATH
+_lock_fd: int | None = None
 _counter: int = 0
 _work: int = 0
 _budget: int = 20
@@ -15,14 +19,40 @@ _budget: int = 20
 _MATH_PHASES: frozenset[str] = frozenset({"stagnation", "lorenz", "pid"})
 
 
+def _release_log_lock() -> None:
+    global _lock_fd
+    if _lock_fd is not None:
+        try:
+            os.close(_lock_fd)
+        except OSError:
+            pass
+        _lock_fd = None
+    try:
+        LOG_LOCK_PATH.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _acquire_log_lock() -> Path:
+    global _events_path, _lock_fd
+    EVENTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        _lock_fd = os.open(str(LOG_LOCK_PATH), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        os.write(_lock_fd, str(os.getpid()).encode())
+        atexit.register(_release_log_lock)
+        return EVENTS_PATH
+    except FileExistsError:
+        return EVENTS_PATH.parent / f"events-{os.getpid()}.jsonl"
+
+
 def init(budget: int) -> Path:
-    global _handle, _counter, _work, _budget
+    global _handle, _counter, _work, _budget, _events_path
     _counter = 0
     _work = 0
     _budget = budget
-    EVENTS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    _handle = EVENTS_PATH.open("a", encoding="utf-8", newline="\n")
-    return EVENTS_PATH
+    _events_path = _acquire_log_lock()
+    _handle = _events_path.open("a", encoding="utf-8", newline="\n")
+    return _events_path
 
 
 def emit(phase: str, data: Any = None) -> int:
@@ -65,3 +95,4 @@ def close() -> None:
     if _handle:
         _handle.close()
         _handle = None
+    _release_log_lock()

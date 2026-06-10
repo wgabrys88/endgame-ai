@@ -1,12 +1,13 @@
 from __future__ import annotations
 import argparse
+import json
 import signal
 import time
 import sys
 import types
 from typing import Any
 
-from config import PROCESS_DPI_AWARENESS_CONTEXT, SIGINT_EXIT_CODE
+from config import PROCESS_DPI_AWARENESS_CONTEXT, RESPAWN_PATH, SIGINT_EXIT_CODE
 from llm import set_backend, close_backend
 from engine import run
 import log
@@ -58,6 +59,11 @@ def main() -> None:
     set_backend(args.backend)
 
     log.init(config.EVENT_BUDGET)
+
+    RESPAWN_PATH.write_text(
+        json.dumps({"goal": args.goal, "backend": args.backend, "budget": config.EVENT_BUDGET}),
+        encoding="utf-8",
+    )
 
     GOAL_MUTABLE = True
 

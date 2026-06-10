@@ -100,12 +100,32 @@ def _main_loop(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
         if target == "done":
             time.sleep(config.DELAY_BETWEEN_CYCLES)
             continue
-        if target in ("halt", "idle") or target not in AGENTS:
+        if target == "halt":
+            _save(board)
+            log.emit("stop", {
+                "reason": "goal_satisfied",
+                "events": log.count(),
+                "work": log.work_count(),
+                "power": board.get("power", 0.0),
+                "completions": len(board.get("completed", [])),
+            })
+            return True
+        if target in ("idle",) or target not in AGENTS:
             time.sleep(config.DELAY_BETWEEN_CYCLES)
             continue
 
         result = _run_agent(board, target)
         nxt = str(result.get("next", ""))
+        if nxt == "halt":
+            _save(board)
+            log.emit("stop", {
+                "reason": "goal_satisfied",
+                "events": log.count(),
+                "work": log.work_count(),
+                "power": board.get("power", 0.0),
+                "completions": len(board.get("completed", [])),
+            })
+            return True
         if nxt == "done":
             _fission(board)
             log.emit("fission_sustain", {"power": board.get("power", 0.0), "completions": len(board.get("completed", []))})

@@ -9,6 +9,8 @@ SNAPSHOT_PATH: pathlib.Path = BASE_DIR / "snapshot.json"
 LESSONS_PATH: pathlib.Path = BASE_DIR / "lessons.txt"
 DISABLED_PATH: pathlib.Path = BASE_DIR / "disabled.json"
 GUI_MODE_PATH: pathlib.Path = BASE_DIR / "gui_mode"
+RESPAWN_PATH: pathlib.Path = BASE_DIR / "respawn.json"
+LOG_LOCK_PATH: pathlib.Path = BASE_DIR / ".endgame.lock"
 
 EVENT_BUDGET: int = 20
 

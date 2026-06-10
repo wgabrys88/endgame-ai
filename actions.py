@@ -1,14 +1,24 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable
+import json
 import os
+import py_compile
 import re
+import subprocess
+import sys
 import time
 
 from config import (
     BASE_DIR, DELAY_FOCUS, DELAY_CURSOR_SETTLE, DELAY_MOUSE_HOLD,
     DELAY_CHAR_SEND, DELAY_KEY_INTER, MAX_WAIT_SECONDS,
-    COMMAND_TIMEOUT_SECONDS,
+    COMMAND_TIMEOUT_SECONDS, RESPAWN_PATH,
+)
+
+_CORE_MODULES: tuple[str, ...] = (
+    "config", "engine", "agents", "actions", "main", "tui",
+    "llm", "log", "observer", "win32", "acp_client",
 )
 from win32 import user32, get_window_title, VK_MAP, EXTENDED_VKS, INPUT
 
@@ -194,16 +204,62 @@ def _read_file(args: dict[str, Any], book: ElementBook) -> ActionResult:
     return ActionResult("read_file", True, resolved.read_text(encoding="utf-8"))
 
 
+def _verify_python_edit(resolved: Path) -> tuple[bool, str]:
+    try:
+        py_compile.compile(str(resolved), doraise=True)
+    except py_compile.PyCompileError as exc:
+        return False, f"syntax error in {resolved.name}: {exc}"
+    script = "; ".join(f"import {name}" for name in _CORE_MODULES)
+    proc = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        cwd=str(BASE_DIR),
+    )
+    if proc.returncode != 0:
+        err = (proc.stderr or proc.stdout).strip()
+        return False, f"import check failed: {err[:400]}"
+    return True, "imports OK"
+
+
 @_register("write_file")
 def _write_file(args: dict[str, Any], book: ElementBook) -> ActionResult:
-    from pathlib import Path
     path = str(args.get("path", ""))
     content = str(args.get("content", ""))
     target = Path(path) if Path(path).is_absolute() else BASE_DIR / path
     resolved = target.resolve()
     resolved.parent.mkdir(parents=True, exist_ok=True)
     resolved.write_text(content, encoding="utf-8")
+    if resolved.suffix.lower() == ".py":
+        ok, msg = _verify_python_edit(resolved)
+        if not ok:
+            return ActionResult("write_file", False, msg)
+        return ActionResult("write_file", True, f"wrote {len(content)} bytes to {path}; {msg}")
     return ActionResult("write_file", True, f"wrote {len(content)} bytes to {path}")
+
+
+def _ensure_respawn_contract(command: str) -> str:
+    low = command.lower()
+    if "main.py" not in low or "--backend" in low:
+        return command
+    try:
+        ctx = json.loads(RESPAWN_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return command
+    backend = str(ctx.get("backend", "acp"))
+    budget = int(ctx.get("budget", 200))
+    goal = str(ctx.get("goal", "")).replace('"', '\\"')
+    suffix = f' --backend {backend} --event-budget {budget}'
+    if goal and goal not in command:
+        suffix = f' "{goal}"{suffix}'
+    return re.sub(
+        r"((?:^|\s)(?:start(?:\s+/?b)?\s+)?(?:python(?:\.exe)?\s+)(?:\./)?main\.py)",
+        rf"\1{suffix}",
+        command,
+        count=1,
+        flags=re.IGNORECASE,
+    )
 
 
 def _sanitize_cmd(command: str) -> str:
@@ -244,8 +300,7 @@ def _cmd_success(command: str, output: str, returncode: int) -> bool:
 
 @_register("cmd")
 def _cmd(args: dict[str, Any], book: ElementBook) -> ActionResult:
-    import subprocess
-    command = _sanitize_cmd(str(args.get("command", "")))
+    command = _ensure_respawn_contract(_sanitize_cmd(str(args.get("command", ""))))
     if not command:
         return ActionResult("cmd", False, "no command")
     low = command.lower()
