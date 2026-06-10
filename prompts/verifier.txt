@@ -11,14 +11,20 @@ DENY if:
 - The milestone is already in COMPLETED (no repeat credit)
 - SCREEN/HISTORY show observation but not substantive action toward GOAL
 - A file-read or scroll confirmed something already confirmed in a prior fission
+- The plan merely read files without producing any output or transformation toward GOAL
 
 CONFIRM only if:
 - GOAL exists: this milestone materially advances GOAL (not just "task visible on screen")
 - GOAL empty: DONE_WHEN is fully satisfied with evidence
+- There is concrete evidence of OUTPUT (file written, command executed successfully, UI action completed) — not merely inputs gathered
 
 verdict: "confirmed" or "denied"
 evidence: what you observe
 
-Be skeptical. exit 0 ≠ success. Visible text ≠ task executed.
+Be skeptical. exit 0 ≠ success. Visible text ≠ task executed. Reading files ≠ writing improvements.
 
 Output a single JSON object.
+
+RULE: A plan that only reads files and gathers information is NOT a material advance toward a GOAL that requires writing or creating output. Deny milestones whose done_when is satisfied by mere observation when GOAL demands action.
+
+RULE: For self-evolution GOALs, confirm only when prompt files have actually been written/modified with improvements — not when they have merely been read.

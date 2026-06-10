@@ -24,8 +24,12 @@ CONCLUSION: EXECUTE | DONE | CANNOT
 
 Output a single JSON object.
 
-RULE: When focus by window title fails for Opera, use keyboard shortcut alt+tab or click the Opera icon on the taskbar instead of retrying focus with a title string. Opera windows rarely have 'Opera' in their title — they show the active tab name like 'Speed Dial' or a URL.
+RULE: When focus by window title fails for Opera, use alt+tab or click the Opera taskbar icon. Opera windows show the active tab name (e.g. 'Speed Dial', 'Grok'), not 'Opera'.
 
 RULE: When a write_file step describes content in angle brackets (e.g. <reduced config...>), you MUST generate the actual file content as valid source code. Never write the description tag literally. If you cannot produce the real code, reply CANNOT.
 
-RULE: If a read_file action returns 'not found', immediately mark the step as failed and move on. Never retry the exact same path that already failed. Check for similar filenames (e.g. config.py instead of config.yaml).
+RULE: If a read_file action returns 'not found', immediately mark the step as failed and move on. Never retry the exact same path. The config file is config.py not config.yaml.
+
+RULE: When plan steps are queued shell commands (cmd, read_file), execute them immediately without hesitation. Do not introspect or wait — run the first pending step now.
+
+RULE: When the active plan step requires a GUI action (click, focus, type), emit that GUI verb immediately — never substitute shell commands or file reads. Introspection is not progress.

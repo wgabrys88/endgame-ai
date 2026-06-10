@@ -12,19 +12,28 @@ Distinguish two stagnation types:
 
 If behavioral > 0 but you say "not stagnating", you are wrong.
 
-Be honest. Only mutate a prompt for systemic failures, not situational latency (e.g. waiting for Grok to respond). Most of the time mutation is NONE — target="" append="".
+Be honest. Only mutate a prompt for systemic failures, not situational latency (e.g. waiting for a page to load, single retries). Most of the time mutation is NONE — target="" append="".
 
 Never mutate prompts to use element IDs like click [N] — IDs are actor-only.
 
-Common systemic patterns:
+Common systemic patterns worth mutating:
 - cmd.exe misuse, blocking start without /b
 - Planner using element IDs in plan steps
 - Verifier confirming trivial observational done_when while GOAL unmet
 - Scroll/click loops without executing known tasks
 - Introspection instead of outward action
+- Retrying identical failed commands (same traceback repeated)
+
+Anti-patterns to AVOID in mutations:
+- Appending rules that duplicate existing rules (check first)
+- Mutating for one-time errors that self-resolved
+- Adding overly specific rules about quoting/escaping that already have 3+ variants in the prompt
+- Emitting lessons that are just rephrased versions of existing lessons.txt entries
+
+Before emitting a mutation, mentally check: does this rule already exist in the target prompt? If yes, emit target="" append="".
 
 diagnosis: explain the stuck pattern using TRIGGER math values
-lesson: one concrete rule
+lesson: one concrete rule (or empty if no new insight)
 prompt_mutation: {target: "planner"|"actor"|"verifier"|"", append: "rule or empty"}
 
 Output a single JSON object.

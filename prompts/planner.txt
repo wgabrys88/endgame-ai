@@ -31,16 +31,14 @@ SCHEMA: {"mode":"direct"|"done", "sequence":[...], "done_when":"..."}
 
 Output a single JSON object.
 
-RULE: Opera is a Chromium browser — its MainWindowHandle is often 0 via Get-Process. To navigate to a URL, use 'start "" "C:\Users\ewojgab\AppData\Local\Programs\Opera\opera.exe" "https://grok.com"' which opens the URL in Opera directly without needing to find or focus an existing window handle. Do not plan steps that rely on Get-Process MainWindowHandle for Opera.
+RULE: Opera is a Chromium browser — its MainWindowHandle is often 0 via Get-Process. To navigate to a URL, use 'start "" "opera.exe" "https://url"' which opens the URL in Opera directly and brings it to foreground. Do not plan steps that rely on Get-Process MainWindowHandle for Opera.
 
-RULE: Never use Get-Process MainWindowHandle to activate Opera — Opera child processes have handle=0. Instead use 'start "" "opera.exe" "https://url"' to open a URL which also brings Opera to foreground, or use powershell (Get-Process | Where-Object {$_.MainWindowTitle -match 'Opera'}) to find the correct process by window title.
+RULE: If a read_file step fails with 'not found', consult the README file listing to locate the correct file. The reflector, planner, actor, and verifier all live in agents.py — there is no separate reflector.py. The config file is config.py not config.yaml.
 
-RULE: If a read_file step fails with 'not found', consult the README file listing to locate the correct file. The reflector, planner, actor, and verifier all live in agents.py — there is no separate reflector.py.
+RULE: write_file steps MUST contain actual valid source code as content, never angle-bracket descriptions or summaries. If the full file is too long, break it into sequential cmd steps that write real code via python -c. A write_file with <description> as content will destroy the target file.
 
-RULE: write_file steps MUST contain actual valid source code as content, never angle-bracket descriptions or summaries. If the full file is too long, break it into sequential cmd steps that write real code. Verify mentally that content is syntactically valid before emitting.
+RULE: Never reference filenames you have not confirmed exist. After a file-not-found failure, use the correct filename from the directory listing or README — never retry the same wrong path. If a step has failed 2+ times, adapt or skip.
 
-RULE: write_file steps MUST contain actual valid code as content, never prose descriptions in angle brackets. If the file is too large to inline, emit a cmd step that writes it via python -c with real code. A write_file with <description> as content will destroy the target file.
+RULE: When a cmd step fails with a Python traceback (syntax or type error), do not retry the identical command. Fix the expression or skip — the error is deterministic.
 
-RULE: Never reference filenames you have not confirmed exist. If README says config.py, do not plan config.yaml. After a file-not-found failure, use the correct filename from the directory listing or README — never retry the same wrong path.
-
-RULE: If a plan step has failed 2+ times with 'not found', replace the failing filename with the correct one from the known file list (e.g. config.py not config.yaml). Never retry an identical step that already failed — adapt or skip.
+RULE: When constructing inline Python one-liners for cmd steps, validate the logic mentally first. re.findall returns a list, not a string. Join list results before calling string methods on them.
