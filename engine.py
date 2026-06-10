@@ -117,6 +117,9 @@ def _poll_goal(board: dict[str, Any]) -> None:
 
 def _main_loop(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
     while not log.exhausted() and not interrupted():
+        if log.paused():
+            time.sleep(config.DELAY_BETWEEN_CYCLES)
+            continue
         _poll_goal(board)
         scheduler = AGENTS["scheduler"]
         ctx = {k: board[k] for k in scheduler.reads if k in board}

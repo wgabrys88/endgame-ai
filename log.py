@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, TextIO
 
-from config import EVENTS_PATH, LOG_LOCK_PATH
+from config import EVENTS_PATH, LOG_LOCK_PATH, PAUSE_PATH
 
 _handle: TextIO | None = None
 _events_path: Path = EVENTS_PATH
@@ -17,6 +17,17 @@ _budget: int = 20
 
 # Math heartbeat is telemetry — does not consume work budget.
 _MATH_PHASES: frozenset[str] = frozenset({"stagnation", "lorenz", "pid"})
+
+
+def paused() -> bool:
+    return PAUSE_PATH.exists()
+
+
+def set_paused(on: bool) -> None:
+    if on:
+        PAUSE_PATH.write_text("", encoding="utf-8")
+    else:
+        PAUSE_PATH.unlink(missing_ok=True)
 
 
 def _release_log_lock() -> None:
@@ -56,7 +67,10 @@ def init(budget: int) -> Path:
 
 
 def emit(phase: str, data: Any = None) -> int:
+    """Single event bus. When paused, events sink to null — no write, no budget."""
     global _counter, _work
+    if paused():
+        return _counter
     _counter += 1
     if phase not in _MATH_PHASES:
         _work += 1

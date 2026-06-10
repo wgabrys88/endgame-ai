@@ -59,6 +59,7 @@ def main() -> None:
     set_backend(args.backend)
 
     log.init(config.EVENT_BUDGET)
+    log.set_paused(False)
 
     config.GOAL_PATH.write_text(args.goal, encoding="utf-8")
 

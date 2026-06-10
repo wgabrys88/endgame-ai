@@ -7,8 +7,9 @@ import time
 from pathlib import Path
 from typing import Any
 
+import log
 from config import (
-    EVENTS_PATH, SNAPSHOT_PATH, DISABLED_PATH, GUI_MODE_PATH, GOAL_PATH,
+    EVENTS_PATH, SNAPSHOT_PATH, DISABLED_PATH, GUI_MODE_PATH, GOAL_PATH, PAUSE_PATH,
 )
 
 STD_OUTPUT_HANDLE: int = -11
@@ -136,7 +137,6 @@ class TUI:
         self.backend = backend
         self.budget = budget
         self.proc: Any = None
-        self.paused = not bool(goal)
         self._in_alt = False
         self.last_phase = ""
         self.last_reason = ""
@@ -205,7 +205,7 @@ class TUI:
         elif ch.lower() == "q":
             self.running = False
         elif ch == " ":
-            self._launch()
+            log.set_paused(not log.paused())
 
     def _handle_input_key(self, ch: str) -> None:
         if ch in ("\r", "\n"):
@@ -232,11 +232,11 @@ class TUI:
             return
         self.goal = goal
         self._write_goal_file(goal)
-        for p in (self.events_path, self.snapshot_path, DISABLED_PATH, GUI_MODE_PATH):
+        for p in (self.events_path, self.snapshot_path, DISABLED_PATH, GUI_MODE_PATH, PAUSE_PATH):
             if p.exists():
                 p.unlink()
         self.events, self.last_size = [], 0
-        self.paused = False
+        log.set_paused(False)
         self.proc = subprocess.Popen(
             [sys.executable, "main.py", goal, "--backend", self.backend, "--event-budget", str(self.budget)],
             cwd=str(BASE_DIR), creationflags=subprocess.CREATE_NO_WINDOW,
@@ -291,8 +291,14 @@ class TUI:
         plan_h = max(4, body_h - goal_h - metrics_h - flow_h - done_h - 2)
 
         bar_w = pw - 16
-        status = "RUN" if self.proc else ("READY" if self.paused and not self.events else "LIVE")
-        status_col = _fg(80, 220, 120) if status == "RUN" else (_fg(255, 220, 80) if status == "LIVE" else _fg(140, 180, 255))
+        if log.paused():
+            status, status_col = "PAUSED", _fg(255, 180, 60)
+        elif self.proc:
+            status, status_col = "RUN", _fg(80, 220, 120)
+        elif not self.events:
+            status, status_col = "READY", _fg(140, 180, 255)
+        else:
+            status, status_col = "LIVE", _fg(255, 220, 80)
 
         lines: list[str] = []
         lines.append(f"{BOLD}{_fg(180, 210, 255)}GOAL{RST}")
@@ -366,7 +372,7 @@ class TUI:
         return _fit(lines, h, lw)
 
     def _render_input(self, pw: int) -> list[str]:
-        label = f"{BOLD}{_fg(180, 210, 255)}GOAL INPUT{RST}  {DIM}Enter send  Esc cancel  Space launch{RST}"
+        label = f"{BOLD}{_fg(180, 210, 255)}GOAL INPUT{RST}  {DIM}Enter send  Esc cancel  Space pause{RST}"
         field_w = pw - 4
         if self._input_active:
             shown = self._input_buf

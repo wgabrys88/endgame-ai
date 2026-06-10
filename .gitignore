@@ -23,6 +23,7 @@ test_output.txt
 disabled.json
 gui_mode
 goal.txt
+pause
 _debug_context_dump.txt
 agent-tools/
 terminals/

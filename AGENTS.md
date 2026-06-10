@@ -41,6 +41,7 @@ ARCHITECTURE (2026-06-10 refactor):
   Reflector mutates prompts only — never clears plan
   observer: hover probe primary (mandatory), tree supplements depth; depth-indented SCREEN
   tui: vertical 25% status column + event stream; goal.txt runtime input (engine polls)
+  pause: log.emit null-sink via pause file; Space toggles; in-flight cycle finishes
   cmd via cmd.exe /c utf-8; prompts stripped to core (behavior in Python)
 
 OPEN:

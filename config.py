@@ -10,6 +10,7 @@ LESSONS_PATH: pathlib.Path = BASE_DIR / "lessons.txt"
 DISABLED_PATH: pathlib.Path = BASE_DIR / "disabled.json"
 GUI_MODE_PATH: pathlib.Path = BASE_DIR / "gui_mode"
 GOAL_PATH: pathlib.Path = BASE_DIR / "goal.txt"
+PAUSE_PATH: pathlib.Path = BASE_DIR / "pause"
 RESPAWN_PATH: pathlib.Path = BASE_DIR / "respawn.json"
 LOG_LOCK_PATH: pathlib.Path = BASE_DIR / ".endgame.lock"
 
