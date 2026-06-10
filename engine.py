@@ -84,6 +84,7 @@ def _run_agent(board: dict[str, Any], name: str) -> dict[str, Any]:
     result = agent.run(ctx)
     board.update(result.get("writes", {}))
     log.emit(result.get("phase", name), result.get("data"))
+    _save(board)
     return result
 
 
@@ -126,6 +127,7 @@ def _main_loop(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
         result: dict[str, Any] = scheduler.run(ctx)
         board.update(result.get("writes", {}))
         log.emit(result.get("phase", "schedule"), result.get("data"))
+        _save(board)
 
         target = str(result.get("next", ""))
         if target == "halt":

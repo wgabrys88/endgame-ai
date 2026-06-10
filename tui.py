@@ -28,16 +28,39 @@ _mode = ctypes.c_ulong()
 _kernel32.GetConsoleMode(_stdout_handle, ctypes.byref(_mode))
 _kernel32.SetConsoleMode(_stdout_handle, _mode.value | 0x0004)
 
-MATH_CHAIN = ("stagnation", "lorenz", "pid", "scheduler")
+MATH_CHAIN = ("stagnation", "lorenz", "pid")
 AGENT_CHAIN = ("planner", "actor", "verifier", "fission")
 SIDE_AGENTS = ("observer", "reflector")
+MATH_PHASES = frozenset(MATH_CHAIN)
 LOOP_PHASES = frozenset({
     "schedule", "plan", "actor", "action", "observe", "verify",
     "reflect", "mutation", "fission", "fission_blocked", "goal_change",
     "planner.error", "actor.error", "verifier.error", "reflector.error",
 })
 REFLECT_SCHEDULE_REASONS = frozenset({"pid_gate", "chaos_gate", "stag_gate"})
+SCHEDULE_LOOP_AGENT: dict[str, str] = {
+    "execute": "actor",
+    "advance": "actor",
+    "need_plan": "planner",
+    "wing_cross": "planner",
+    "stuck": "planner",
+    "plan_complete": "verifier",
+}
+LOOP_PHASE_AGENT: dict[str, str] = {
+    "plan": "planner",
+    "planner.error": "planner",
+    "actor": "actor",
+    "action": "actor",
+    "actor.error": "actor",
+    "verify": "verifier",
+    "verifier.error": "verifier",
+    "fission": "fission",
+    "fission_sustain": "fission",
+    "fission_blocked": "fission",
+}
 WORK_PHASES = LOOP_PHASES | frozenset({"start", "stop"})
+ACTIVE_SCAN = 64
+REFRESH_SLEEP = 0.08
 
 RST, DIM, BOLD = "\x1b[0m", "\x1b[2m", "\x1b[1m"
 
@@ -126,6 +149,7 @@ class TUI:
         self.events: list[dict[str, Any]] = []
         self.snapshot: dict[str, Any] = {}
         self._events_sig: tuple[str, int, float] = ("", 0, 0.0)
+        self._event_offset: int = 0
         self._snapshot_mtime: float = 0.0
         self.running = True
         self.goal = goal
@@ -158,29 +182,54 @@ class TUI:
     def _reactor_live(self) -> bool:
         return self.proc is not None or log.reactor_running()
 
-    def load(self) -> None:
-        path = log.active_events_path()
+    def _load_events(self, path: Path) -> bool:
         try:
             st = path.stat()
-            sig = (str(path), st.st_size, st.st_mtime)
         except OSError:
-            sig = ("", 0, 0.0)
-        if sig != self._events_sig:
-            self._events_sig = sig
+            return False
+        sig = (str(path), st.st_size, st.st_mtime)
+        if str(path) != str(self.events_path) or st.st_size < self._event_offset:
             self.events_path = path
-            try:
-                self.events = [json.loads(ln) for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
-                self._refresh_active()
-            except (json.JSONDecodeError, OSError):
-                pass
-        if self.snapshot_path.exists():
-            try:
-                mt = self.snapshot_path.stat().st_mtime
-                if mt != self._snapshot_mtime:
-                    self._snapshot_mtime = mt
-                    self.snapshot = json.loads(self.snapshot_path.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError):
-                pass
+            self.events = []
+            self._event_offset = 0
+        if sig == self._events_sig and st.st_size == self._event_offset:
+            return False
+        self._events_sig = sig
+        try:
+            with path.open("r", encoding="utf-8") as handle:
+                handle.seek(self._event_offset)
+                for line in handle:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        self.events.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+                self._event_offset = handle.tell()
+        except OSError:
+            return False
+        self._refresh_active()
+        return True
+
+    def _load_snapshot(self) -> None:
+        if not self.snapshot_path.exists():
+            return
+        try:
+            mt = self.snapshot_path.stat().st_mtime
+            if mt == self._snapshot_mtime:
+                return
+            self._snapshot_mtime = mt
+            self.snapshot = json.loads(self.snapshot_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    def load(self) -> None:
+        events_changed = self._load_events(log.active_events_path())
+        if events_changed:
+            self._load_snapshot()
+        elif self._reactor_live():
+            self._load_snapshot()
         if not self._input_active:
             file_goal = self._read_goal_file()
             if file_goal:
@@ -191,21 +240,29 @@ class TUI:
         self._loop_active = "—"
         self._side_active = "—"
         self.last_reason = ""
-        for e in reversed(self.events):
+        for e in reversed(self.events[-ACTIVE_SCAN:]):
             p = str(e.get("phase", ""))
             d = e.get("d", {})
-            if self._loop_active == "—" and p in LOOP_PHASES:
-                self._loop_active = "actor" if p == "action" else p
-                if p == "schedule":
-                    self.last_reason = str(d.get("reason", ""))
+            if self._loop_active == "—":
+                if p in LOOP_PHASE_AGENT:
+                    self._loop_active = LOOP_PHASE_AGENT[p]
+                elif p == "schedule":
+                    reason = str(d.get("reason", ""))
+                    self.last_reason = reason
+                    if reason in SCHEDULE_LOOP_AGENT:
+                        self._loop_active = SCHEDULE_LOOP_AGENT[reason]
+                elif p in LOOP_PHASES:
+                    self._loop_active = "actor" if p == "action" else p
             if self._side_active == "—":
-                if p == "reflect":
+                if p in ("reflect", "reflector.error"):
                     self._side_active = "reflector"
                 elif p == "observe":
                     self._side_active = "observer"
+                elif p == "mutation":
+                    self._side_active = "reflector"
                 elif p == "schedule" and str(d.get("reason", "")) in REFLECT_SCHEDULE_REASONS:
                     self._side_active = "reflector"
-            if self._math_active == "—" and p in MATH_CHAIN:
+            if self._math_active == "—" and p in MATH_PHASES:
                 self._math_active = p
             if self._math_active != "—" and self._loop_active != "—":
                 break
@@ -267,7 +324,9 @@ class TUI:
         for p in (EVENTS_PATH, self.snapshot_path, DISABLED_PATH, GUI_MODE_PATH, PAUSE_PATH):
             if p.exists():
                 p.unlink()
-        self.events, self._events_sig = [], ("", 0, 0.0)
+        self.events, self._events_sig, self._event_offset = [], ("", 0, 0.0), 0
+        self._snapshot_mtime = 0.0
+        self.snapshot = {}
         log.set_paused(False)
         self.proc = subprocess.Popen(
             [sys.executable, "main.py", goal, "--backend", self.backend, "--event-budget", str(self.budget)],
@@ -302,6 +361,13 @@ class TUI:
                 return str(d)
             case "plan":
                 return f"mode={d.get('mode', '')} steps={d.get('steps', '')} done_when={d.get('done_when', '')}"
+            case "reflect":
+                lesson = str(d.get("lesson", ""))
+                return f"lesson={lesson[:120]}{'…' if len(lesson) > 120 else ''}"
+            case "observe":
+                return f"focused={d.get('focused', '')} chars={d.get('chars', '')}"
+            case p if p in MATH_PHASES:
+                return str(d) if d else ""
             case "verify":
                 return f"verdict={d.get('verdict', '')} evidence={d.get('evidence', '')}"
             case "goal_change":
@@ -338,22 +404,24 @@ class TUI:
         body_h = h - INPUT_ROWS - 2
 
         s = self.snapshot
-        stag = float(s.get("stagnation", 0))
-        pid = float(s.get("pid_output", 0))
-        energy = float(s.get("energy", 1))
-        lx = float(s.get("lorenz_x", 0))
+        trace: list[dict[str, Any]] = s.get("math_trace", [])
+        latest = trace[-1] if trace else {}
+        stag = float(latest.get("stag", s.get("stagnation", 0)))
+        pid = float(latest.get("pid", s.get("pid_output", 0)))
+        energy = float(latest.get("energy", s.get("energy", 1)))
+        lx = float(latest.get("x", s.get("lorenz_x", 0)))
         ly = float(s.get("lorenz_y", 0))
         lz = float(s.get("lorenz_z", 0))
         power = float(s.get("power", 0))
         work = int(s.get("work_events", 0))
-        events_n = int(s.get("events", len(self.events)))
+        events_n = max(int(s.get("events", 0)), len(self.events))
         budget = int(s.get("budget", self.budget))
         failures = int(s.get("consecutive_failures", 0))
         goal = str(s.get("goal", "") or self.goal or "")
         plan: list[dict[str, Any]] = s.get("plan", [])
         completed: list[str] = s.get("completed", [])
         done_when = str(s.get("done_when", ""))
-        wing = bool(s.get("wing_crossed", False))
+        wing = bool(latest.get("wing", s.get("wing_crossed", False)))
         focused = str(s.get("focused_window", ""))
         trigger = s.get("reflect_trigger", {})
 
@@ -467,7 +535,7 @@ class TUI:
                 self.handle_key()
                 self.check_proc()
                 self._paint(self.render())
-                time.sleep(0.12)
+                time.sleep(REFRESH_SLEEP)
         except KeyboardInterrupt:
             pass
         finally:
