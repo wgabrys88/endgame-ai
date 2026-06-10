@@ -45,6 +45,8 @@ Commit on disk: [`eff78fb`](https://github.com/wgabrys88/endgame-ai/commit/eff78
 
 That is why we call it M4. Not because it passed a linter gate. Because it **started** and **changed** in one living session.
 
+**Transparent:** that run has not yet logged old-instance → new-instance on evolved code (`spawn_main` / resurrection is next — one `phase:start`, zero spawns after #357) — but versus M3 (prompt patches only), M4 is still real: self-launch plus self-edit of actual `.py` on disk, same session, no crash.
+
 ---
 
 Most agent frameworks are a million lines of abstraction teaching a model to *pretend* it has hands. **endgame-ai threw that out.**
