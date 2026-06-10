@@ -54,9 +54,9 @@ class LorenzAgent:
     reads: list[str] = ["lorenz_x", "lorenz_y", "lorenz_z", "stagnation"]
 
     def run(self, ctx: dict[str, Any]) -> dict[str, Any]:
-        x = float(ctx.get("lorenz_x", 8.485))
-        y = float(ctx.get("lorenz_y", 8.485))
-        z = float(ctx.get("lorenz_z", 27.0))
+        x = float(ctx.get("lorenz_x", 1.0))
+        y = float(ctx.get("lorenz_y", 1.0))
+        z = float(ctx.get("lorenz_z", 1.0))
         stag = float(ctx.get("stagnation", 0))
         prev_x = x
         steps = 1 + int(stag * 4)
@@ -321,6 +321,8 @@ def _try_direct(instruction: str, ctx: dict[str, Any]) -> dict[str, Any] | None:
     if not parts:
         return None
     verb = parts[0].lower()
+    if verb in ("click", "write", "scroll"):
+        return None
     if verb not in VERBS:
         return None
     target, value = "", ""
