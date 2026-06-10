@@ -1,115 +1,103 @@
 # endgame-ai
 
-A self-sustaining Windows desktop automation reactor. Pure Python 3.13, zero dependencies, raw ctypes Win32.
+A self-sustaining Windows desktop automation reactor. Python 3.13, zero pip dependencies, raw ctypes Win32.
 
-No agent framework does this. No LangChain, no CrewAI, no AutoGen. This system:
-- Runs without a goal and discovers tasks autonomously
-- Verifies its own completions (only truth counts as power)
-- Self-evolves by mutating its own prompts at runtime
-- Uses nuclear reactor math (Lorenz chaos + PID control) to regulate behavior
-- Achieved autonomous fission: profiled its own environment without being told
+The system plans, acts, verifies, reflects, and **edits itself** — prompts and code — grounded in its own runtime logs.
+
+**Branch:** `refactor-v4` on GitHub. `main` is frozen.
+
+---
+
+## What actually works (proven 2026-06-10)
+
+| Run | Events | Result |
+|-----|--------|--------|
+| Goal mode (write file) | 28 | Fission, exit 0, headless |
+| Prompt self-evolution | 75 work | Read logs → rewrote all 4 prompts → 2 fissions, zero `.py` touched |
+| Code self-evolution | 228 work | Read source → `reduce.py` → broke config → human repair |
+| Spawn + patch run | 113 work | Read logs → patched `config.py` → **spawned child `main.py`** → died on wrong backend |
+
+**Milestone 3 (prompt self-evolution):** achieved.
+
+**Milestone 4 (code self-evolution + spawn + resurrect):** ~60%. Spawn is real. Clean death/rebirth and verifier confirmation are not.
+
+---
 
 ## Architecture
 
 ```
-          ┌─────────────────────────────────┐
-          │  MATH THREAD (3s heartbeat)     │
-          │  Stagnation → Lorenz → PID      │
-          └────────────┬────────────────────┘
-                       │ writes to blackboard
-          ┌────────────▼────────────────────┐
-          │  SCHEDULER (pure board state)   │
-          │  Routes to correct agent        │
-          └────────────┬────────────────────┘
-                       │
-    ┌──────────────────┼──────────────────────┐
-    ▼                  ▼                      ▼
- PLANNER           ACTOR              REFLECTOR
- (fuel)         (execution)         (evolution)
-    │                  │                      │
-    └───────► VERIFIER ◄──────────────────────┘
-              (fission = confirmed truth)
+MATH (3s thread):  stagnation → lorenz → pid
+                          ↓
+SCHEDULER → planner → actor → verifier → fission
+                ↓         ↓
+            reflector   observer (gui_mode only)
 ```
 
-**Power** = verified completions / elapsed time. That's it. The only metric.
+- **Headless-first:** `cmd`, `read_file`, `write_file`, `wait` run via Python without LLM.
+- **GUI:** actor resolves element IDs from screen when `gui_mode` file exists.
+- **Power:** verified completions / elapsed seconds. Only truth counts.
+- **Fission:** verifier-confirmed milestone. Chain reaction or stop.
 
-## What Makes This Different
-
-| Other agents | endgame-ai |
-|---|---|
-| Need a goal to start | Explores autonomously when goalless |
-| Trust their own output | Verifier cross-checks against original goal |
-| Static prompts | Reflector mutates prompts at runtime (self-evolution) |
-| Retry on failure | PID controller modulates reflection pressure |
-| Linear execution | Lorenz attractor creates chaotic replanning at wing crosses |
-| Screen-dependent | Headless-first; enables GUI only when needed |
-| Truncate context | Full observation fidelity — LLM sees everything |
-
-## Reactor Concepts
-
-| Reactor | Code |
-|---------|------|
-| Fuel rods | LLM agents (planner, actor) |
-| Fission | Verifier-confirmed completion |
-| Power | completions / elapsed seconds |
-| Prompt neutrons | Lorenz wing cross → immediate replan |
-| Delayed neutrons | Reflector lessons → prompt mutations |
-| Control rods | PID output → modulates reflection |
-| Fuel depletion | Completed list prevents repeats |
-| Chain reaction | Success → plan next → succeed → repeat |
-
-## Usage
-
-```
-python main.py "your goal" --backend acp --event-budget 50
-python main.py --backend acp --event-budget 200          # reactor mode (no goal)
-python tui.py "goal" --backend acp --event-budget 100    # live reactor dashboard
-python debug_context.py planner --goal "text"            # inspect LLM context
-```
-
-## Prompt Soul
-
-Every agent opens with: *"You are sitting at a Windows desktop with full control of mouse, keyboard, and shell."*
-
-Then 2 sentences that give it purpose:
-- **Planner**: Think before you act. Never downgrade the success condition.
-- **Actor**: Understand what you see. Refuse doomed actions.
-- **Verifier**: A trivially true condition that doesn't prove the goal is a lie, not fission.
-- **Reflector**: Be honest. Only mutate for systemic failures, not noise.
-
-## Proven Results
-
-- **Goal mode**: "write file" → fission in 28 events, exit 0, zero screen scans
-- **Reactor mode**: autonomous fission at event 65 — profiled environment without being told
-- **Prompt self-evolution**: read own logs → rewrote all 4 prompts → 2 fissions in 75 work events, no code touched
-- **Code self-evolution**: read own source → planned reduction → executed (syntax break caught and fixed)
-- **Self-correction**: hello.py escaping failure → reflector diagnosed → actor adapted → success
-
-## Current State
-
-Branch `refactor-v4`. Headless-first reactor with unified Python step execution, slim config, flow TUI, and autonomously evolved prompts grounded in runtime logs. Local branch is ahead of `origin/refactor-v4` — review before push.
+---
 
 ## Files
 
 ```
-main.py           Entry point, board init
-engine.py         Reactor core: math thread + main loop + fission
+main.py           Entry point
+engine.py         Reactor loop + math thread + fission
 agents.py         All agents + scheduler + context rendering
-config.py         Runtime-tunable constants and paths
-win32.py          ctypes Win32 + GUI/UIA constants
-actions.py        Verb execution + input constants
-observer.py       Win32 UI Automation screen scanner
-llm.py            LLM backend (ACP / LM Studio)
-log.py            Event logger (math phases excluded from work budget)
-tui.py            Live flow dashboard (MATH/LOOP/SIDE chains)
+actions.py        Verb execution (headless steps)
+config.py         Runtime constants (slim — GUI constants live in win32.py)
+win32.py          ctypes Win32 + UIA constants
+observer.py       Screen scanner
+llm.py            ACP / LM Studio backend
+log.py            Event logger (math phases free)
+tui.py            Live flow dashboard (MATH / LOOP / SIDE)
 acp_client.py     Kiro CLI ACP protocol
-debug_context.py  Context dump tool (dev)
-prompts/          Agent souls (planner, actor, verifier, reflector)
-schemas/          JSON output schemas per agent
+debug_context.py  LLM context dump tool
+prompts/          Agent souls (self-evolved)
+schemas/          JSON output schemas
 ```
 
-## Requirements
+Runtime (gitignored, created on run): `events.jsonl`, `snapshot.json`, `lessons.txt`, `gui_mode`
 
-- Windows 11
-- Python 3.13
-- Nothing else
+---
+
+## Usage
+
+```powershell
+python main.py "your goal" --backend acp --event-budget 100
+python tui.py "your goal" --backend acp --event-budget 100   # press Space to start
+python debug_context.py planner --goal "your goal"
+```
+
+Requirements: Windows 11, Python 3.13, ACP or LM Studio backend.
+
+---
+
+## What the system started but did not finish
+
+These are the next maturity steps — human or autonomous:
+
+1. **Post-fission halt** — planner `mode:done` loops after goal satisfied; engine needs clean stop.
+2. **Respawn contract** — child must inherit `--backend acp`, goal, and cwd; current spawn uses bare `main.py` → LM Studio errors.
+3. **Single-writer logs** — two processes appending `events.jsonl` corrupts the log (happened during spawn test).
+4. **Resurrection** — detach, kill self, relaunch new code (discussed, not built).
+5. **Import gate** — mandatory `python -c "import config; import engine; import agents"` after every `.py` edit.
+
+---
+
+## Handover prompt (next session)
+
+Repo path: `%USERPROFILE%\Downloads\endgame-ai`. Press Space in TUI to start.
+
+```powershell
+cd $env:USERPROFILE\Downloads\endgame-ai
+python .\tui.py 'You are endgame-ai. Project root is %USERPROFILE%\Downloads\endgame-ai — stay inside it. Read README.md, events.jsonl, and lessons.txt. Finish what the last run started: post-fission halt, respawn with --backend acp and goal, import-check after self-edits. Spawn with start /b and Popen only. One focused .py fix, verify imports, finish working.' --backend acp --event-budget 200
+```
+
+---
+
+## Today
+
+The shit is real. The organism read its logs, patched its config, spawned a copy of itself, and learned from failure. Not Milestone 4 — but the closest yet.

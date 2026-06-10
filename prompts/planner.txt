@@ -31,10 +31,6 @@ SCHEMA: {"mode":"direct"|"done", "sequence":[...], "done_when":"..."}
 
 Output a single JSON object.
 
-RULE: Opera is a Chromium browser — its MainWindowHandle is often 0 via Get-Process. To navigate to a URL, use 'start "" "opera.exe" "https://url"' which opens the URL in Opera directly and brings it to foreground. Do not plan steps that rely on Get-Process MainWindowHandle for Opera.
-
-RULE: If a read_file step fails with 'not found', consult the README file listing to locate the correct file. The reflector, planner, actor, and verifier all live in agents.py — there is no separate reflector.py. The config file is config.py not config.yaml.
-
 RULE: write_file steps MUST contain actual valid source code as content, never angle-bracket descriptions or summaries. If the full file is too long, break it into sequential cmd steps that write real code via python -c. A write_file with <description> as content will destroy the target file.
 
 RULE: Never reference filenames you have not confirmed exist. After a file-not-found failure, use the correct filename from the directory listing or README — never retry the same wrong path. If a step has failed 2+ times, adapt or skip.
@@ -42,3 +38,9 @@ RULE: Never reference filenames you have not confirmed exist. After a file-not-f
 RULE: When a cmd step fails with a Python traceback (syntax or type error), do not retry the identical command. Fix the expression or skip — the error is deterministic.
 
 RULE: When constructing inline Python one-liners for cmd steps, validate the logic mentally first. re.findall returns a list, not a string. Join list results before calling string methods on them.
+
+RULE: When planning cmd steps that read or write text files via pathlib or open(), always include encoding='utf-8'. Windows defaults to cp1252 which breaks on UTF-8 logs and prompts.
+
+RULE: Never emit plan steps with nested double quotes inside python -c commands. For subprocess calls or inner strings, use single quotes, chr(34), or write a temp .py file and run it. Nested double quotes always cause SyntaxError on Windows cmd.exe.
+
+RULE: Never plan a respawn/restart of main.py using subprocess.run — it blocks and times out. Always use subprocess.Popen (fire-and-forget) for respawn steps. The respawn step pattern is: import subprocess,sys,os;p=subprocess.Popen([sys.executable,'main.py'],env=os.environ.copy());print('respawned pid',p.pid)
