@@ -19,3 +19,4 @@ runtime_artifacts/
 snapshot.json
 test_output.txt
 disabled.json
+gui_mode

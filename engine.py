@@ -77,7 +77,7 @@ def _main_loop(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
             time.sleep(config.DELAY_BETWEEN_CYCLES)
             continue
 
-        if target in LLM_AGENTS:
+        if target in LLM_AGENTS and config.GUI_MODE_PATH.exists():
             obs = AGENTS["observer"]
             obs_ctx = {k: board[k] for k in obs.reads if k in board}
             obs_result: dict[str, Any] = obs.run(obs_ctx)

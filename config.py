@@ -8,6 +8,7 @@ EVENTS_PATH: pathlib.Path = BASE_DIR / "events.jsonl"
 SNAPSHOT_PATH: pathlib.Path = BASE_DIR / "snapshot.json"
 LESSONS_PATH: pathlib.Path = BASE_DIR / "lessons.txt"
 DISABLED_PATH: pathlib.Path = BASE_DIR / "disabled.json"
+GUI_MODE_PATH: pathlib.Path = BASE_DIR / "gui_mode"
 
 EVENT_BUDGET: int = 100
 
