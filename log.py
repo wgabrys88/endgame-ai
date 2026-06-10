@@ -19,17 +19,20 @@ _budget: int = 20
 # Math heartbeat is telemetry — does not consume work budget.
 _MATH_PHASES: frozenset[str] = frozenset({"stagnation", "lorenz", "pid"})
 
-_PROCESS_QUERY_LIMITED = 0x1000
+_STILL_ACTIVE = 259
+_PROCESS_SYNCHRONIZE = 0x00100000
 
 
 def _pid_alive(pid: int) -> bool:
     if pid <= 0:
         return False
-    handle = ctypes.windll.kernel32.OpenProcess(_PROCESS_QUERY_LIMITED, False, pid)
+    handle = ctypes.windll.kernel32.OpenProcess(_PROCESS_SYNCHRONIZE, False, pid)
     if not handle:
         return False
+    code = ctypes.c_ulong()
+    ok = ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
     ctypes.windll.kernel32.CloseHandle(handle)
-    return True
+    return bool(ok) and code.value == _STILL_ACTIVE
 
 
 def _lock_pid() -> int | None:
