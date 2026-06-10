@@ -22,7 +22,7 @@ Recent local commits:
 ## Architecture (current)
 
 ```
-MATH thread (3s):  stagnation → lorenz → pid  →  _save(snapshot)
+MATH thread (3s):  stagnation → lorenz  →  _save(snapshot)  (pid removed — chaos)
 MAIN loop:         scheduler → agent chain until halt/done/break
 EVENT BUS:         log.emit() — single choke point; pause = null
 GOAL BUS:          engine._poll_goal() reads goal.txt each cycle

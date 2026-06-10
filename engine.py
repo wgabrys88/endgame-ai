@@ -6,7 +6,7 @@ from typing import Any, Callable
 
 from actions import is_python_step
 from agents import (
-    StagnationAgent, LorenzAgent, PidAgent, SchedulerAgent,
+    StagnationAgent, LorenzAgent, SchedulerAgent,
     ObserverAgent, PlannerAgent, ActorAgent, VerifierAgent, ReflectorAgent,
     _similar_to_completed, _trivial_milestone,
 )
@@ -14,7 +14,7 @@ import config
 import log
 
 
-MATH_AGENTS: list[Any] = [StagnationAgent(), LorenzAgent(), PidAgent()]
+MATH_AGENTS: list[Any] = [StagnationAgent(), LorenzAgent()]
 
 AGENTS: dict[str, Any] = {
     "scheduler": SchedulerAgent(),
@@ -117,10 +117,10 @@ def _poll_goal(board: dict[str, Any]) -> None:
 
 def _main_loop(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
     while not log.exhausted() and not interrupted():
+        _poll_goal(board)
         if log.paused():
             time.sleep(config.DELAY_BETWEEN_CYCLES)
             continue
-        _poll_goal(board)
         scheduler = AGENTS["scheduler"]
         ctx = {k: board[k] for k in scheduler.reads if k in board}
         result: dict[str, Any] = scheduler.run(ctx)

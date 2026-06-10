@@ -69,6 +69,11 @@ def set_paused(on: bool) -> None:
         PAUSE_PATH.unlink(missing_ok=True)
 
 
+def reactor_running() -> bool:
+    pid = _lock_pid()
+    return pid is not None and _pid_alive(pid)
+
+
 def active_events_path() -> Path:
     """Resolve the events file the live reactor is writing."""
     clean_stale_lock()

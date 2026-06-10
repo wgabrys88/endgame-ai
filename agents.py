@@ -107,7 +107,7 @@ class LorenzAgent:
         energy = mag / max(eq * 2, 1.0)
         return {
             "writes": {"lorenz_x": x, "lorenz_y": y, "lorenz_z": z, "energy": energy, "wing_crossed": wing},
-            "next": "pid",
+            "next": "scheduler",
             "phase": "lorenz",
             "data": {"x": round(x, 2), "y": round(y, 2), "z": round(z, 2), "energy": round(energy, 2), "wing": wing},
         }
@@ -136,13 +136,13 @@ class PidAgent:
 class SchedulerAgent:
     name: str = "scheduler"
     reads: list[str] = [
-        "stagnation", "wing_crossed", "pid_output", "consecutive_failures",
+        "stagnation", "wing_crossed", "energy", "consecutive_failures",
         "plan", "goal", "last_reflect_time", "done_when",
     ]
 
     def run(self, ctx: dict[str, Any]) -> dict[str, Any]:
         wing = bool(ctx.get("wing_crossed", False))
-        pid = float(ctx.get("pid_output", 0))
+        energy = float(ctx.get("energy", 1))
         stag = float(ctx.get("stagnation", 0))
         failures = int(ctx.get("consecutive_failures", 0))
         plan: list[dict[str, Any]] = ctx.get("plan", [])
@@ -159,14 +159,11 @@ class SchedulerAgent:
             return {"writes": writes, "next": "planner", "phase": "schedule", "data": {"reason": "need_plan"}}
 
         reflect_due = (now - last_reflect) >= config.REFLECT_MIN_INTERVAL_SEC
-        progress = plan_progress(ctx)
-        pid_gate = pid > config.REFLECT_THRESHOLD
         stag_gate = stag >= config.REFLECT_STAG_THRESHOLD and failures >= 1
-        if pid_gate and progress > 0 and failures == 0:
-            pid_gate = False
-        if reflect_due and (pid_gate or stag_gate):
+        chaos_gate = energy >= 2.0 and failures >= 1
+        if reflect_due and (stag_gate or chaos_gate):
             writes["last_reflect_time"] = now
-            reason = "pid_gate" if pid_gate else "stag_gate"
+            reason = "chaos_gate" if chaos_gate and not stag_gate else "stag_gate"
             active = next((s for s in plan if s.get("status") == "active"), None)
             writes["reflect_trigger"] = {
                 "reason": reason,
@@ -175,7 +172,7 @@ class SchedulerAgent:
                 "failures": failures,
                 "step": str(active.get("text", "")) if active else "",
             }
-            return {"writes": writes, "next": "reflector", "phase": "schedule", "data": {"reason": reason, "pid": round(pid, 3), "stag": round(stag, 3)}}
+            return {"writes": writes, "next": "reflector", "phase": "schedule", "data": {"reason": reason, "energy": round(energy, 3), "stag": round(stag, 3)}}
 
         active = next((s for s in plan if s.get("status") == "active"), None)
         if active:

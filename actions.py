@@ -262,7 +262,12 @@ def _ensure_respawn_contract(command: str) -> str:
 
 
 def _normalize_cmd(command: str) -> str:
-    return command.replace("\u201c", "\"").replace("\u201d", "\"").replace("\u2018", "'").replace("\u2019", "'")
+    import re
+    command = command.replace("\u201c", "\"").replace("\u201d", "\"").replace("\u2018", "'").replace("\u2019", "'")
+    m = re.match(r"tasklist\s+/FI\s+([^\"'].+)$", command, re.IGNORECASE)
+    if m:
+        command = f'tasklist /FI "{m.group(1).strip()}"'
+    return command
 
 
 @_register("cmd")

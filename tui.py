@@ -17,12 +17,9 @@ TUI_ALT_SCREEN_ON: str = "\x1b[?1049h"
 TUI_ALT_SCREEN_OFF: str = "\x1b[?1049l"
 TUI_HIDE_CURSOR: str = "\x1b[?25l"
 TUI_SHOW_CURSOR: str = "\x1b[?25h"
-TUI_HOME_CLEAR: str = "\x1b[H\x1b[2J"
 
-PANEL_FRAC: float = 0.25
-PANEL_MIN_W: int = 48
-PANEL_MAX_W: int = 96
-INPUT_ROWS: int = 3
+INPUT_ROWS: int = 4
+EVENT_TAIL: int = 10
 
 _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 _stdout_handle = _kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
@@ -30,14 +27,15 @@ _mode = ctypes.c_ulong()
 _kernel32.GetConsoleMode(_stdout_handle, ctypes.byref(_mode))
 _kernel32.SetConsoleMode(_stdout_handle, _mode.value | 0x0004)
 
-MATH_CHAIN = ("stagnation", "lorenz", "pid", "scheduler")
+MATH_CHAIN = ("stagnation", "lorenz", "scheduler")
 AGENT_CHAIN = ("planner", "actor", "verifier", "fission")
 SIDE_AGENTS = ("observer", "reflector")
-WORK_PHASES = frozenset({
+LOOP_PHASES = frozenset({
     "schedule", "plan", "actor", "action", "observe", "verify",
     "reflect", "mutation", "fission", "fission_blocked", "goal_change",
-    "start", "stop",
+    "planner.error", "actor.error", "verifier.error", "reflector.error",
 })
+WORK_PHASES = LOOP_PHASES | frozenset({"start", "stop"})
 
 RST, DIM, BOLD = "\x1b[0m", "\x1b[2m", "\x1b[1m"
 
@@ -53,10 +51,6 @@ def _size() -> tuple[int, int]:
     _kernel32.GetConsoleScreenBufferInfo(_stdout_handle, buf)
     _, _, _, _, _, left, top, right, bottom, _, _ = struct.unpack("hhhhHhhhhhh", buf.raw)
     return right - left + 1, bottom - top + 1
-
-
-def _panel_w(total_w: int) -> int:
-    return max(PANEL_MIN_W, min(PANEL_MAX_W, int(total_w * PANEL_FRAC)))
 
 
 def _fg(r: int, g: int, b: int) -> str:
@@ -124,33 +118,31 @@ def _pad_visible(text: str, width: int) -> str:
 
 
 class TUI:
-    def __init__(self, events_path: Path, snapshot_path: Path, goal: str = "", backend: str = "lmstudio", budget: int = 20) -> None:
+    def __init__(self, events_path: Path, snapshot_path: Path, goal: str = "", backend: str = "lmstudio", budget: int = 20, autostart: bool = True) -> None:
         self.events_path = events_path
         self.snapshot_path = snapshot_path
         self.events: list[dict[str, Any]] = []
         self.snapshot: dict[str, Any] = {}
         self._events_sig: tuple[str, int, float] = ("", 0, 0.0)
         self._snapshot_mtime: float = 0.0
-        self._tick = 0
         self.running = True
-        self.disabled: set[str] = set()
         self.goal = goal
         self.backend = backend
         self.budget = budget
         self.proc: Any = None
         self._in_alt = False
-        self.last_phase = ""
         self.last_reason = ""
+        self._loop_active = "—"
+        self._math_active = "—"
         self._input_active = False
         self._input_buf = goal
         self._input_cursor = len(goal)
-        self._last_applied_goal = goal
+        self._autostart = autostart
         if goal:
             self._write_goal_file(goal)
 
     def _write_goal_file(self, text: str) -> None:
         GOAL_PATH.write_text(text, encoding="utf-8")
-        self._last_applied_goal = text
 
     def _read_goal_file(self) -> str:
         if GOAL_PATH.exists():
@@ -160,8 +152,10 @@ class TUI:
                 pass
         return self.goal
 
+    def _reactor_live(self) -> bool:
+        return self.proc is not None or log.reactor_running()
+
     def load(self) -> None:
-        self._tick += 1
         path = log.active_events_path()
         try:
             st = path.stat()
@@ -173,12 +167,7 @@ class TUI:
             self.events_path = path
             try:
                 self.events = [json.loads(ln) for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
-                if self.events:
-                    e = self.events[-1]
-                    self.last_phase = str(e.get("phase", ""))
-                    d = e.get("d", {})
-                    if self.last_phase == "schedule":
-                        self.last_reason = str(d.get("reason", ""))
+                self._refresh_active()
             except (json.JSONDecodeError, OSError):
                 pass
         if self.snapshot_path.exists():
@@ -189,16 +178,37 @@ class TUI:
                     self.snapshot = json.loads(self.snapshot_path.read_text(encoding="utf-8"))
             except (json.JSONDecodeError, OSError):
                 pass
-        file_goal = self._read_goal_file()
-        if file_goal and not self._input_active:
-            self.goal = file_goal
+        if not self._input_active:
+            file_goal = self._read_goal_file()
+            if file_goal:
+                self.goal = file_goal
+
+    def _refresh_active(self) -> None:
+        self._math_active = "—"
+        self._loop_active = "—"
+        self.last_reason = ""
+        for e in reversed(self.events):
+            p = str(e.get("phase", ""))
+            d = e.get("d", {})
+            if self._loop_active == "—" and p in LOOP_PHASES:
+                self._loop_active = "actor" if p == "action" else p
+                if p == "schedule":
+                    self.last_reason = str(d.get("reason", ""))
+            if self._math_active == "—" and p in MATH_CHAIN:
+                self._math_active = p
+            if self._math_active != "—" and self._loop_active != "—":
+                break
 
     def _submit_goal(self) -> None:
         text = self._input_buf.strip()
+        if not text:
+            self._input_active = False
+            return
         self.goal = text
         self._write_goal_file(text)
         self._input_active = False
-        if text and not self.proc:
+        log.set_paused(False)
+        if not self._reactor_live():
             self._launch()
 
     def handle_key(self) -> None:
@@ -238,7 +248,7 @@ class TUI:
         import subprocess
         from config import BASE_DIR
         goal = self.goal.strip() or self._read_goal_file()
-        if self.proc or not goal:
+        if self._reactor_live() or not goal:
             return
         self.goal = goal
         self._write_goal_file(goal)
@@ -257,13 +267,6 @@ class TUI:
         if self.proc and self.proc.poll() is not None:
             self.proc = None
 
-    def _active_phase(self) -> str:
-        for e in reversed(self.events):
-            p = str(e.get("phase", ""))
-            if p in MATH_CHAIN or p in AGENT_CHAIN or p in SIDE_AGENTS or p == "action":
-                return p
-        return self.last_phase or "—"
-
     def _work_events(self) -> list[dict[str, Any]]:
         return [e for e in self.events if e.get("phase") in WORK_PHASES]
 
@@ -274,144 +277,7 @@ class TUI:
             col = _fg(255, 220, 80) if on else DIM
             mark = "●" if on else "○"
             lines.append(f"  {col}{mark} {name}{RST}")
-        return _fit(lines, len(chain) + 1, width)
-
-    def _render_status(self, pw: int, h: int) -> list[str]:
-        s = self.snapshot
-        active = self._active_phase()
-        stag = float(s.get("stagnation", 0))
-        pid = float(s.get("pid_output", 0))
-        energy = float(s.get("energy", 1))
-        power = float(s.get("power", 0))
-        work = int(s.get("work_events", 0))
-        events_n = int(s.get("events", len(self.events)))
-        budget = int(s.get("budget", self.budget))
-        failures = int(s.get("consecutive_failures", 0))
-        goal = str(s.get("goal", "") or self.goal or "")
-        plan: list[dict[str, Any]] = s.get("plan", [])
-        completed: list[str] = s.get("completed", [])
-        done_when = str(s.get("done_when", ""))
-        wing = bool(s.get("wing_crossed", False))
-        focused = str(s.get("focused_window", ""))
-
-        body_h = h - INPUT_ROWS - 1
-        goal_h = max(3, body_h // 7)
-        metrics_h = 5
-        flow_h = 13
-        done_h = 3 if done_when else 0
-        plan_h = max(4, body_h - goal_h - metrics_h - flow_h - done_h - 2)
-
-        bar_w = pw - 16
-        if log.paused():
-            status, status_col = "PAUSED", _fg(255, 180, 60)
-        elif self.proc:
-            status, status_col = "RUN", _fg(80, 220, 120)
-        elif not self.events:
-            status, status_col = "READY", _fg(140, 180, 255)
-        else:
-            status, status_col = "LIVE", _fg(255, 220, 80)
-
-        lines: list[str] = []
-        lines.append(f"{BOLD}{_fg(180, 210, 255)}GOAL{RST}")
-        lines.extend(_fit(_wrap(goal or "(type a goal below)", pw - 2), goal_h, pw - 2))
-
-        lines.append(DIM + "─" * (pw - 1) + RST)
-        clock = time.strftime("%H:%M:%S")
-        src = self._events_sig[0]
-        src_name = Path(src).name if src else "—"
-        lines.append(
-            f"{status_col}{status}{RST} {DIM}{clock}{RST}  work {work}/{budget}  events {events_n}  fail {failures}"
-            + (f"  {_fg(255, 200, 0)}WING{RST}" if wing else "")
-        )
-        lines.append(f"{DIM}log{RST} {src_name}")
-        lines.append(f"{DIM}active{RST} {active}  {DIM}power{RST} {power:.4f}")
-        if self.last_reason:
-            lines.extend(_fit(_wrap(f"schedule: {self.last_reason}", pw - 2), 1, pw - 2))
-        if focused:
-            lines.extend(_fit(_wrap(f"focus: {focused}", pw - 2), 1, pw - 2))
-
-        lines.append(DIM + "─" * (pw - 1) + RST)
-        lines.append(f"{DIM}stagnation{RST} {_bar(stag, bar_w, _fg(255, 100, 80))}")
-        lines.append(f"{DIM}pid_output{RST} {_bar(min(pid / 4, 1), bar_w, _fg(80, 140, 255))}")
-        lines.append(f"{DIM}energy{RST}    {_bar(min(energy / 2, 1), bar_w, _fg(120, 220, 140))}")
-        lines.append(f"{DIM}values{RST}    stag={stag:.3f} pid={pid:.3f} energy={energy:.3f}")
-        while len(lines) < goal_h + 2 + metrics_h + 2:
-            lines.append("")
-
-        lines.append(DIM + "─" * (pw - 1) + RST)
-        math = self._vchain("MATH", MATH_CHAIN, active, pw - 2)
-        loop = self._vchain("LOOP", AGENT_CHAIN, active, pw - 2)
-        side = self._vchain("SIDE", SIDE_AGENTS, active, pw - 2)
-        flow_lines = math + [""] + loop + [""] + side
-        lines.extend(_fit(flow_lines, flow_h, pw - 2))
-
-        if done_when:
-            lines.append(DIM + "─" * (pw - 1) + RST)
-            lines.append(f"{BOLD}{_fg(200, 180, 255)}DONE WHEN{RST}")
-            lines.extend(_fit(_wrap(done_when, pw - 2), done_h, pw - 2))
-
-        lines.append(DIM + "─" * (pw - 1) + RST)
-        if plan:
-            done = sum(1 for p in plan if p.get("status") == "done")
-            lines.append(f"{BOLD}{_fg(200, 230, 255)}PLAN{RST} [{done}/{len(plan)}]")
-            plan_lines: list[str] = []
-            for step in plan:
-                st = step.get("status", "pending")
-                txt = str(step.get("text", ""))
-                mark = "✓" if st == "done" else ("►" if st == "active" else "·")
-                col = _fg(80, 220, 120) if st == "done" else (_fg(255, 220, 80) if st == "active" else DIM)
-                parts = _wrap(txt, pw - 6)
-                for i, part in enumerate(parts):
-                    prefix = f"  {col}{mark}{RST} " if i == 0 else "    "
-                    plan_lines.append(f"{prefix}{part}")
-            lines.extend(_fit(plan_lines, plan_h, pw - 2))
-        elif completed:
-            lines.append(f"{_fg(80, 255, 180)}COMPLETED{RST}")
-            lines.extend(_fit(_wrap(completed[-1], pw - 2), plan_h - 1, pw - 2))
-        else:
-            lines.append(f"{DIM}no active plan{RST}")
-            lines.extend([""] * (plan_h - 1))
-
-        return _fit(lines, body_h, pw)
-
-    def _render_log(self, lw: int, h: int) -> list[str]:
-        lines: list[str] = [f"{BOLD}{_fg(180, 210, 255)}EVENTS{RST}"]
-        for e in self._work_events():
-            n, ph = e.get("n", 0), str(e.get("phase", ""))
-            brief = self._brief(ph, e.get("d", {}))
-            header = f"{DIM}{n:>5}{RST} {BOLD}{ph}{RST}"
-            lines.append(header)
-            for part in _wrap(brief, lw - 2):
-                lines.append(f"  {part}")
-            lines.append("")
-        return _fit(lines, h, lw)
-
-    def _render_input(self, pw: int) -> list[str]:
-        label = f"{BOLD}{_fg(180, 210, 255)}GOAL INPUT{RST}  {DIM}Enter send  Esc cancel  Space pause{RST}"
-        field_w = pw - 4
-        if self._input_active:
-            shown = self._input_buf
-            cursor = self._input_cursor
-            before = shown[:cursor]
-            after = shown[cursor:]
-            caret = _fg(255, 255, 255) + (before[-1] if before else " ") + RST
-            if before:
-                field = before[:-1] + caret + after
-            else:
-                field = caret + after
-            border_col = _fg(100, 180, 255)
-        else:
-            field = self.goal or self._input_buf
-            border_col = DIM
-            if len(_plain(field)) > field_w:
-                field = field[-field_w:]
-        field_plain = _plain(field)
-        if len(field_plain) > field_w:
-            field = field[-field_w:]
-        box_top = f"{border_col}┌{'─' * field_w}┐{RST}"
-        box_mid = f"{border_col}│{RST} {_pad_visible(field, field_w - 1)}{border_col}│{RST}"
-        box_bot = f"{border_col}└{'─' * field_w}┘{RST}"
-        return _fit([label, box_top, box_mid, box_bot], INPUT_ROWS, pw)
+        return lines
 
     def _brief(self, phase: str, d: dict[str, Any]) -> str:
         match phase:
@@ -425,57 +291,167 @@ class TUI:
                 return f"mode={d.get('mode', '')} steps={d.get('steps', '')} done_when={d.get('done_when', '')}"
             case "verify":
                 return f"verdict={d.get('verdict', '')} evidence={d.get('evidence', '')}"
-            case "fission":
-                return f"power={d.get('power', 0):.4f} completions={d.get('completions', '')}"
-            case "reflect":
-                return str(d.get("diagnosis", ""))
             case "goal_change":
-                return f"from={d.get('from', '')} to={d.get('to', '')}"
+                return f"to={d.get('to', '')}"
             case "stop":
                 return f"reason={d.get('reason', '')} work={d.get('work', '')}"
+            case _ if phase.endswith(".error"):
+                return str(d.get("error", d))
             case _:
-                return str(d)
+                return str(d) if d else ""
 
-    def render(self) -> tuple[list[str], list[str]]:
-        w, h = _size()
-        w, h = max(100, w), max(30, h)
-        pw = _panel_w(w)
-        lw = w - pw - 1
-        status = self._render_status(pw, h)
-        log_lines = self._render_log(lw, h)
-        input_lines = self._render_input(pw)
-        status = status[: h - INPUT_ROWS] + input_lines
-        return status, log_lines
+    def _render_input(self, w: int) -> list[str]:
+        hint = f"{DIM}Enter submit  Esc cancel  Space pause  q quit{RST}"
+        field_w = w - 6
+        if self._input_active:
+            border_col = _fg(100, 180, 255)
+            field = self._input_buf
+        else:
+            border_col = DIM
+            field = self.goal or "(press Enter to type a goal)"
+        shown = _fit(_wrap(field, field_w - 1), INPUT_ROWS - 2, field_w - 1)
+        lines = [f"{BOLD}{_fg(180, 210, 255)}GOAL INPUT{RST}  {hint}"]
+        lines.append(f"{border_col}┌{'─' * field_w}┐{RST}")
+        for row in shown:
+            lines.append(f"{border_col}│{RST} {_pad_visible(row, field_w - 1)}{border_col}│{RST}")
+        while len(lines) < INPUT_ROWS:
+            lines.append(f"{border_col}│{RST}{' ' * field_w}{border_col}│{RST}")
+        lines.append(f"{border_col}└{'─' * field_w}┘{RST}")
+        return _fit(lines, INPUT_ROWS + 1, w)
 
-    def _paint(self, left: list[str], right: list[str]) -> None:
+    def render(self) -> list[str]:
         w, h = _size()
-        pw = _panel_w(max(100, w))
-        lw = max(20, w - pw - 1)
-        sep = DIM + "│" + RST
-        rows: list[str] = []
-        for y in range(h):
-            l = left[y] if y < len(left) else ""
-            r = right[y] if y < len(right) else ""
-            l = _pad_visible(l, pw)
-            r = _pad_visible(r, lw)
-            rows.append(l + sep + r)
+        w, h = max(80, w), max(28, h)
+        body_h = h - INPUT_ROWS - 2
+
+        s = self.snapshot
+        stag = float(s.get("stagnation", 0))
+        energy = float(s.get("energy", 1))
+        lx = float(s.get("lorenz_x", 0))
+        ly = float(s.get("lorenz_y", 0))
+        lz = float(s.get("lorenz_z", 0))
+        power = float(s.get("power", 0))
+        work = int(s.get("work_events", 0))
+        events_n = int(s.get("events", len(self.events)))
+        budget = int(s.get("budget", self.budget))
+        failures = int(s.get("consecutive_failures", 0))
+        goal = str(s.get("goal", "") or self.goal or "")
+        plan: list[dict[str, Any]] = s.get("plan", [])
+        completed: list[str] = s.get("completed", [])
+        done_when = str(s.get("done_when", ""))
+        wing = bool(s.get("wing_crossed", False))
+        focused = str(s.get("focused_window", ""))
+        trigger = s.get("reflect_trigger", {})
+
+        if log.paused():
+            status, status_col = "PAUSED", _fg(255, 180, 60)
+        elif self._reactor_live():
+            status, status_col = "RUN", _fg(80, 220, 120)
+        elif not self.events:
+            status, status_col = "READY", _fg(140, 180, 255)
+        else:
+            status, status_col = "LIVE", _fg(255, 220, 80)
+
+        bar_w = w - 18
+        lines: list[str] = []
+
+        lines.append(f"{BOLD}{_fg(180, 210, 255)}GOAL{RST}")
+        lines.extend(_fit(_wrap(goal or "—", w - 2), 4, w - 2))
+        lines.append(DIM + "─" * (w - 1) + RST)
+
+        clock = time.strftime("%H:%M:%S")
+        log_name = Path(self._events_sig[0]).name if self._events_sig[0] else "—"
+        lines.append(
+            f"{status_col}{status}{RST} {DIM}{clock}{RST}  "
+            f"work {work}/{budget}  events {events_n}  fail {failures}  power {power:.4f}"
+            + (f"  {_fg(255, 200, 0)}WING{RST}" if wing else "")
+        )
+        lines.append(
+            f"{DIM}log{RST} {log_name}  {DIM}loop{RST} {self._loop_active}  "
+            f"{DIM}math{RST} {self._math_active}"
+            + (f"  {DIM}sched{RST} {self.last_reason}" if self.last_reason else "")
+        )
+        if focused:
+            lines.extend(_fit(_wrap(f"focus: {focused}", w - 2), 1, w - 2))
+
+        lines.append(DIM + "─" * (w - 1) + RST)
+        lines.append(f"{DIM}stagnation{RST} {_bar(stag, bar_w, _fg(255, 100, 80))}")
+        lines.append(f"{DIM}energy{RST}    {_bar(min(energy / 3, 1), bar_w, _fg(120, 220, 140))}")
+        lines.append(
+            f"{DIM}lorenz{RST}   x={lx:.2f} y={ly:.2f} z={lz:.2f}  "
+            f"{DIM}stag{RST}={stag:.3f} {DIM}energy{RST}={energy:.3f}"
+        )
+        if trigger:
+            lines.extend(_fit(_wrap(f"reflect_trigger: {trigger}", w - 2), 2, w - 2))
+
+        lines.append(DIM + "─" * (w - 1) + RST)
+        flow_w = max(20, w // 3 - 2)
+        math = self._vchain("MATH", MATH_CHAIN, self._math_active, flow_w)
+        loop = self._vchain("LOOP", AGENT_CHAIN, self._loop_active, flow_w)
+        side = self._vchain("SIDE", SIDE_AGENTS, self._loop_active, flow_w)
+        flow_row = max(len(math), len(loop), len(side))
+        for i in range(flow_row):
+            a = _pad_visible(math[i] if i < len(math) else "", flow_w)
+            b = _pad_visible(loop[i] if i < len(loop) else "", flow_w)
+            c = _pad_visible(side[i] if i < len(side) else "", w - 2 * flow_w - 4)
+            lines.append(f"{a}  {b}  {c}")
+
+        if done_when:
+            lines.append(DIM + "─" * (w - 1) + RST)
+            lines.append(f"{BOLD}{_fg(200, 180, 255)}DONE WHEN{RST}")
+            lines.extend(_fit(_wrap(done_when, w - 2), 2, w - 2))
+
+        lines.append(DIM + "─" * (w - 1) + RST)
+        if plan:
+            done_n = sum(1 for p in plan if p.get("status") == "done")
+            lines.append(f"{BOLD}{_fg(200, 230, 255)}PLAN{RST} [{done_n}/{len(plan)}]")
+            for step in plan:
+                st = step.get("status", "pending")
+                txt = str(step.get("text", ""))
+                mark = "✓" if st == "done" else ("►" if st == "active" else "·")
+                col = _fg(80, 220, 120) if st == "done" else (_fg(255, 220, 80) if st == "active" else DIM)
+                parts = _wrap(txt, w - 4)
+                for i, part in enumerate(parts):
+                    prefix = f"{col}{mark}{RST} " if i == 0 else "  "
+                    lines.append(f"{prefix}{part}")
+        elif completed:
+            lines.append(f"{_fg(80, 255, 180)}COMPLETED{RST}")
+            lines.extend(_wrap(completed[-1], w - 2))
+        else:
+            lines.append(f"{DIM}no plan{RST}")
+
+        lines.append(DIM + "─" * (w - 1) + RST)
+        lines.append(f"{BOLD}{_fg(180, 210, 255)}RECENT EVENTS{RST}")
+        tail = self._work_events()[-EVENT_TAIL:]
+        for e in tail:
+            n, ph = e.get("n", 0), str(e.get("phase", ""))
+            brief = self._brief(ph, e.get("d", {}))
+            for i, part in enumerate(_wrap(f"{n} {ph} {brief}", w - 2)):
+                lines.append(f"{'  ' if i else ''}{part}")
+
+        panel = _fit(lines, body_h, w)
+        panel.extend(self._render_input(w))
+        return _fit(panel, h, w)
+
+    def _paint(self, lines: list[str]) -> None:
+        w, h = _size()
+        padded = [_pad_visible(ln, w) for ln in lines[:h]]
+        while len(padded) < h:
+            padded.append(" " * w)
         if not self._in_alt:
             _write(TUI_ALT_SCREEN_ON + (TUI_SHOW_CURSOR if self._input_active else TUI_HIDE_CURSOR))
             self._in_alt = True
-        _write("\x1b[H" + "\n".join(rows))
-        if self._input_active:
-            input_row = h - INPUT_ROWS + 2
-            cursor_col = 2 + min(self._input_cursor, pw - 6)
-            _write(f"\x1b[{input_row};{cursor_col}H")
+        _write("\x1b[H" + "\n".join(padded))
 
     def run_loop(self) -> None:
         try:
+            if self._autostart and self.goal.strip() and not self._reactor_live():
+                self._launch()
             while self.running:
                 self.load()
                 self.handle_key()
                 self.check_proc()
-                left, right = self.render()
-                self._paint(left, right)
+                self._paint(self.render())
                 time.sleep(0.12)
         except KeyboardInterrupt:
             pass
@@ -486,10 +462,10 @@ class TUI:
                 _write(TUI_ALT_SCREEN_OFF + TUI_SHOW_CURSOR)
 
 
-def run_tui(path: Path | None = None, goal: str = "", backend: str = "lmstudio", budget: int = 20) -> None:
+def run_tui(path: Path | None = None, goal: str = "", backend: str = "lmstudio", budget: int = 20, autostart: bool = True) -> None:
     if goal:
         GOAL_PATH.write_text(goal, encoding="utf-8")
-    TUI(path or EVENTS_PATH, SNAPSHOT_PATH, goal=goal, backend=backend, budget=budget).run_loop()
+    TUI(path or EVENTS_PATH, SNAPSHOT_PATH, goal=goal, backend=backend, budget=budget, autostart=autostart).run_loop()
 
 
 if __name__ == "__main__":
@@ -499,5 +475,10 @@ if __name__ == "__main__":
     p.add_argument("--backend", choices=["lmstudio", "acp"], default="lmstudio")
     p.add_argument("--event-budget", type=int, default=20)
     p.add_argument("--events", type=str, default="")
+    p.add_argument("--no-autostart", action="store_true")
     a = p.parse_args()
-    run_tui(path=Path(a.events) if a.events else None, goal=a.goal, backend=a.backend, budget=a.event_budget)
+    run_tui(
+        path=Path(a.events) if a.events else None,
+        goal=a.goal, backend=a.backend, budget=a.event_budget,
+        autostart=not a.no_autostart,
+    )
