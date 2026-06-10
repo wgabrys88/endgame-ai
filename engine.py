@@ -7,6 +7,7 @@ from typing import Any, Callable
 from agents import (
     StagnationAgent, LorenzAgent, PidAgent, SchedulerAgent,
     ObserverAgent, PlannerAgent, ActorAgent, VerifierAgent, ReflectorAgent,
+    _similar_to_completed, _trivial_milestone,
 )
 import config
 import log
@@ -33,6 +34,15 @@ def _math_loop(board: dict[str, Any], stop: threading.Event) -> None:
             result: dict[str, Any] = agent.run(ctx)
             board.update(result.get("writes", {}))
             log.emit(result.get("phase", agent.name), result.get("data"))
+        trace: list[dict[str, Any]] = list(board.get("math_trace", []))
+        trace.append({
+            "stag": round(float(board.get("stagnation", 0)), 3),
+            "pid": round(float(board.get("pid_output", 0)), 3),
+            "energy": round(float(board.get("energy", 1)), 3),
+            "wing": bool(board.get("wing_crossed", False)),
+            "x": round(float(board.get("lorenz_x", 0)), 2),
+        })
+        board["math_trace"] = trace[-config.MATH_TRACE_LEN:]
         _save(board)
         stop.wait(config.MATH_INTERVAL)
 
@@ -106,6 +116,18 @@ def _main_loop(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
 def _fission(board: dict[str, Any]) -> None:
     completed: list[str] = board.get("completed", [])
     done_when = str(board.get("done_when", ""))
+    goal = str(board.get("goal", ""))
+    if _similar_to_completed(done_when, completed):
+        log.emit("fission_blocked", {"reason": "repeat", "done_when": done_when})
+        board["plan"] = []
+        board["done_when"] = ""
+        return
+    if _trivial_milestone(goal, done_when):
+        log.emit("fission_blocked", {"reason": "trivial", "done_when": done_when})
+        board["plan"] = []
+        board["done_when"] = ""
+        board["consecutive_failures"] = int(board.get("consecutive_failures", 0)) + 1
+        return
     if done_when:
         completed.append(done_when)
     board["completed"] = completed[-50:]
@@ -135,6 +157,10 @@ def _save(board: dict[str, Any]) -> None:
         "energy": board.get("energy", 1),
         "pid_output": board.get("pid_output", 0),
         "pid_integral": board.get("pid_integral", 0),
+        "wing_crossed": board.get("wing_crossed", False),
+        "behavioral_stagnation": board.get("behavioral_stagnation", 0),
+        "reflect_trigger": board.get("reflect_trigger", {}),
+        "math_trace": board.get("math_trace", [])[-12:],
         "events": log.count(),
         "budget": log.budget(),
     }

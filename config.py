@@ -90,6 +90,9 @@ STAGNATION_CYCLES_WINDOW: int = 6
 REFLECT_THRESHOLD: float = 1.0
 REFLECT_MIN_INTERVAL_SEC: float = 12.0
 REFLECT_STAG_THRESHOLD: float = 0.85
+MATH_TRACE_LEN: int = 24
+PID_ROD_SCALE: float = 4.0
+COMPLETED_SIMILARITY_THRESHOLD: float = 0.55
 PROMPT_MAX_RULES: int = 8
 
 MAX_HISTORY: int = 100
@@ -148,8 +151,8 @@ UIA_CONTROL_TYPE_MAP: dict[int, str] = {
 CONTEXT_POLICY: dict[str, list[str]] = {
     "planner": ["goal", "desktop", "plan", "history", "completed", "budget", "failures", "lessons"],
     "actor": ["instruction", "screen", "history", "lessons"],
-    "verifier": ["goal", "done_when", "screen", "history", "plan"],
-    "reflector": ["goal", "screen", "plan", "history", "math", "completed"],
+    "verifier": ["goal", "done_when", "screen", "history", "plan", "completed"],
+    "reflector": ["goal", "plan", "history", "math", "trigger", "completed"],
 }
 
 GUID_DATA1_END: int = 4

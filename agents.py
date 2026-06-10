@@ -21,20 +21,87 @@ def plan_progress(ctx: dict[str, Any]) -> float:
     return done / len(steps)
 
 
+def _token_set(text: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z0-9]+", text.lower()) if len(w) > 3}
+
+
+def _similar_to_completed(done_when: str, completed: list[str]) -> bool:
+    if not done_when or not completed:
+        return False
+    dw = _token_set(done_when)
+    if not dw:
+        return False
+    for entry in completed:
+        ct = _token_set(str(entry))
+        if not ct:
+            continue
+        if len(dw & ct) / max(len(dw), 1) >= config.COMPLETED_SIMILARITY_THRESHOLD:
+            return True
+    return False
+
+
+def _trivial_milestone(goal: str, done_when: str) -> bool:
+    if not goal.strip():
+        return False
+    g = goal.lower()
+    d = done_when.lower()
+    observational = any(k in d for k in ("visible", "can be read", "readable", "on screen", "loaded", "showing"))
+    substantial = any(k in g for k in ("post", "x.com", "linkedin", "perform", "execute", "conversation", "rewrite"))
+    executed = any(k in d for k in ("posted", "created", "written", "sent", "exists and contains"))
+    return observational and substantial and not executed
+
+
+def _behavioral_stagnation(history: list[dict[str, Any]]) -> float:
+    recent = history[-10:]
+    if len(recent) < 3:
+        return 0.0
+    verbs = [str(h.get("verb", "")) for h in recent]
+    obs = [str(h.get("obs", ""))[:80] for h in recent]
+    boost = 0.0
+    if verbs.count("scroll") >= 3:
+        boost = max(boost, 0.4)
+    if verbs.count("click") >= 4:
+        boost = max(boost, 0.35)
+    if len(obs) >= 4 and len(set(obs[-4:])) == 1:
+        boost = max(boost, 0.5)
+    if sum(1 for h in recent if h.get("verb") == "focus" and not h.get("ok")) >= 2:
+        boost = max(boost, 0.3)
+    return boost
+
+
+def _is_headless_direct(instruction: str) -> bool:
+    s = instruction.strip()
+    low = s.lower()
+    if low.startswith("cmd "):
+        return True
+    if low.startswith("wait "):
+        try:
+            float(s.split(None, 1)[1])
+            return True
+        except (IndexError, ValueError):
+            return False
+    if low.startswith("read_file "):
+        return len(s.split(None, 1)) == 2
+    if low.startswith("write_file "):
+        return True
+    return False
+
+
 class StagnationAgent:
     name: str = "stagnation"
-    reads: list[str] = ["plan", "progress_history", "consecutive_failures"]
+    reads: list[str] = ["plan", "progress_history", "consecutive_failures", "history"]
 
     def run(self, ctx: dict[str, Any]) -> dict[str, Any]:
         plan: list[dict[str, Any]] = ctx.get("plan", [])
         active = next((s for s in plan if s.get("status") == "active"), None)
         if active and str(active.get("text", "")).strip().lower().startswith("wait"):
             history: list[float] = ctx.get("progress_history", [])
+            behavioral = _behavioral_stagnation(list(ctx.get("history", [])))
             return {
-                "writes": {"stagnation": 0.0, "progress_history": history},
+                "writes": {"stagnation": behavioral, "progress_history": history, "behavioral_stagnation": behavioral},
                 "next": "lorenz",
                 "phase": "stagnation",
-                "data": {"stag": 0.0, "progress": round(plan_progress(ctx), 3), "wait": True},
+                "data": {"stag": round(behavioral, 3), "progress": round(plan_progress(ctx), 3), "wait": True, "behavioral": round(behavioral, 3)},
             }
         progress = plan_progress(ctx)
         history = ctx.get("progress_history", [])
@@ -51,12 +118,14 @@ class StagnationAgent:
             else:
                 stag = 1.0
         failures = int(ctx.get("consecutive_failures", 0))
-        stag = min(1.0, stag + failures * 0.15)
+        behavioral = _behavioral_stagnation(list(ctx.get("history", [])))
+        plan_stag = min(1.0, stag + failures * 0.15)
+        stag = min(1.0, max(plan_stag, behavioral))
         return {
-            "writes": {"stagnation": stag, "progress_history": history},
+            "writes": {"stagnation": stag, "progress_history": history, "behavioral_stagnation": behavioral},
             "next": "lorenz",
             "phase": "stagnation",
-            "data": {"stag": round(stag, 3), "progress": round(progress, 3)},
+            "data": {"stag": round(stag, 3), "progress": round(progress, 3), "behavioral": round(behavioral, 3), "plan_stag": round(plan_stag, 3)},
         }
 
 
@@ -147,6 +216,15 @@ class SchedulerAgent:
         if reflect_due and (pid_gate or stag_gate):
             writes["last_reflect_time"] = now
             reason = "pid_gate" if pid_gate else "stag_gate"
+            active = next((s for s in plan if s.get("status") == "active"), None)
+            writes["reflect_trigger"] = {
+                "reason": reason,
+                "stag": round(stag, 3),
+                "pid": round(pid, 3),
+                "failures": failures,
+                "behavioral": round(float(ctx.get("behavioral_stagnation", 0)), 3),
+                "step": str(active.get("text", "")) if active else "",
+            }
             return {"writes": writes, "next": "reflector", "phase": "schedule", "data": {"reason": reason, "pid": round(pid, 3), "stag": round(stag, 3)}}
 
         active = next((s for s in plan if s.get("status") == "active"), None)
@@ -284,10 +362,27 @@ class ActorAgent:
 
 class VerifierAgent:
     name: str = "verifier"
-    reads: list[str] = ["goal", "screen", "history", "plan", "desktop_summary", "done_when"]
+    reads: list[str] = ["goal", "screen", "history", "plan", "desktop_summary", "done_when", "completed"]
 
     def run(self, ctx: dict[str, Any]) -> dict[str, Any]:
         from llm import call_llm
+        done_when = str(ctx.get("done_when", ""))
+        completed: list[str] = list(ctx.get("completed", []))
+        goal = str(ctx.get("goal", ""))
+        if _similar_to_completed(done_when, completed):
+            return {
+                "writes": {"plan": [], "done_when": "", "consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1},
+                "next": "stagnation",
+                "phase": "verify",
+                "data": {"verdict": "denied", "evidence": "done_when overlaps COMPLETED — no repeat fission credit"},
+            }
+        if _trivial_milestone(goal, done_when):
+            return {
+                "writes": {"plan": [], "done_when": "", "consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1},
+                "next": "stagnation",
+                "phase": "verify",
+                "data": {"verdict": "denied", "evidence": "done_when is observational only — GOAL requires substantive action (post, create, execute)"},
+            }
         context = _render_context(ctx, "verifier")
         system = _load_prompt("verifier")
         try:
@@ -304,7 +399,10 @@ class VerifierAgent:
 
 class ReflectorAgent:
     name: str = "reflector"
-    reads: list[str] = ["goal", "screen", "plan", "history", "stagnation", "pid_output", "energy"]
+    reads: list[str] = [
+        "goal", "plan", "history", "stagnation", "pid_output", "energy",
+        "behavioral_stagnation", "reflect_trigger", "completed",
+    ]
 
     def run(self, ctx: dict[str, Any]) -> dict[str, Any]:
         from llm import call_llm
@@ -335,12 +433,12 @@ class ReflectorAgent:
 
 def _try_direct(instruction: str, ctx: dict[str, Any]) -> dict[str, Any] | None:
     from actions import execute_verb, VERBS
+    if not _is_headless_direct(instruction):
+        return None
     parts = instruction.split(None, 2)
     if not parts:
         return None
     verb = parts[0].lower()
-    if verb in ("click", "write", "scroll"):
-        return None
     if verb not in VERBS:
         return None
     target, value = "", ""
@@ -482,8 +580,18 @@ def _render_field(ctx: dict[str, Any], field: str, instruction: str) -> str:
             lines_l = text.splitlines()[-8:]
             return "LESSONS:\n" + "\n".join(f"  - {l}" for l in lines_l)
         case "math":
-            return (f"MATH: stagnation={ctx.get('stagnation', 0):.2f} "
+            return (f"MATH NOW: stagnation={ctx.get('stagnation', 0):.2f} "
+                    f"plan_stag={max(0.0, float(ctx.get('stagnation', 0)) - float(ctx.get('behavioral_stagnation', 0))):.2f} "
+                    f"behavioral={ctx.get('behavioral_stagnation', 0):.2f} "
                     f"pid={ctx.get('pid_output', 0):.2f} energy={ctx.get('energy', 1):.2f}")
+        case "trigger":
+            trig = ctx.get("reflect_trigger", {})
+            if not isinstance(trig, dict) or not trig:
+                return ""
+            return (f"TRIGGER (why you were called): reason={trig.get('reason', '')} "
+                    f"stag={trig.get('stag', 0)} pid={trig.get('pid', 0)} "
+                    f"behavioral={trig.get('behavioral', 0)} failures={trig.get('failures', 0)} "
+                    f"step={trig.get('step', '')}")
         case "completed":
             completed: list[str] = ctx.get("completed", [])
             if not completed:
@@ -577,6 +685,9 @@ def _apply_mutation(target: str, append_text: str) -> None:
     if clean_text.upper().startswith("RULE:"):
         clean_text = clean_text[5:].strip()
     if not clean_text:
+        return
+    if _ELEMENT_ID_RE.search(clean_text) or re.search(r"click\s*\[", clean_text, re.I):
+        log.emit("mutation.rejected", {"target": target, "reason": "element_id_in_mutation"})
         return
     rules = [block.strip() for block in current.split("\n\n") if block.strip().startswith("RULE:")]
     if len(rules) >= config.PROMPT_MAX_RULES:

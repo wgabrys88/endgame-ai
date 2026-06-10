@@ -85,6 +85,9 @@ def main() -> None:
         "pid_integral": 0.0,
         "pid_prev": 0.0,
         "last_reflect_time": 0.0,
+        "reflect_trigger": {},
+        "behavioral_stagnation": 0.0,
+        "math_trace": [],
     }
 
     try:
