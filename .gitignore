@@ -34,3 +34,5 @@ task_log.md
 reduce.py
 fix_config.py
 self_test.py
+grok-handover.md
+*.handover.md

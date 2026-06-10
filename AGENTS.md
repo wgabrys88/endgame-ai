@@ -1,127 +1,107 @@
 AGENTS.md — Session state (2026-06-10)
 
-## Git
+## Git (push-ready workspace)
 
 | | |
 |---|---|
-| Branch | `refactor-v4` @ `7b2a9b3` |
-| Ahead of origin | 7 commits (not pushed — needs user approval) |
-| `main` | frozen @ `109173b` |
+| Branch | `refactor-v4` @ `bdc862e` |
+| Ahead of origin | 11 commits |
+| `main` | frozen |
+| User paths in tracked files | **none** (use `$env:USERPROFILE\Downloads\endgame-ai` in docs) |
+| Runtime artifacts | **cleared** — clean tree for breakthrough run |
 
-Recent local commits:
-- `7b2a9b3` stale lock fix (`GetExitCodeProcess`)
-- `7e63699` TUI frozen screen — live events path, drop Win sync output
-- `6812d39` pause via `log.emit` null-sink
-- `7870063` vertical TUI + `goal.txt` runtime input
-- `74af47a` hover probe restored as primary observer scan
-- `faae19e` unified reactor loop, slimmer core
-- `e7a45c5` maturity gates (halt, import gate, respawn, log lock)
+**Do not push until user approves after their run.**
+
+Recent commits (unpushed):
+- `bdc862e` exec replaces cmd — real Python environment
+- `0ea78c8` reflect_trigger NameError fix
+- `08cb59b` full-width TUI, PID removed, chaos gates
+- `e1fc39e` docs rewrite
+- `7b2a9b3` stale lock fix
+- `7e63699` TUI frozen screen fix
+- `6812d39` pause via log.emit
+- `7870063` goal.txt runtime input
+- `74af47a` hover probe primary
+- `faae19e` unified reactor loop
+- `e7a45c5` maturity gates
 
 ---
 
-## Architecture (current)
+## Architecture
 
 ```
-MATH thread (3s):  stagnation → lorenz  →  _save(snapshot)  (pid removed — chaos)
-MAIN loop:         scheduler → agent chain until halt/done/break
-EVENT BUS:         log.emit() — single choke point; pause = null
-GOAL BUS:          engine._poll_goal() reads goal.txt each cycle
+MATH (3s):     stagnation → lorenz → _save(snapshot)     [PID removed]
+MAIN:          scheduler → agent chain until halt/done
+EVENT BUS:     log.emit() — pause = null sink
+GOAL BUS:      goal.txt polled every cycle (even when paused)
+HEADLESS:      exec / read_file / write_file / wait
+GUI:           observer + actor (gui_mode required)
 ```
 
-**Engine chain** (`engine.py`):
-- `_main_loop`: if `log.paused()` → sleep, no new cycles
-- `_poll_goal`: goal.txt change → update board, clear plan/done_when, emit `goal_change`
-- `_run_agent`: observer first when `_needs_screen()` (gui_mode + non-headless actor step)
-- Failure anywhere → `failed` + `next: planner` (no headless retry)
-- `wing_cross` → reset math only, keep plan
-- Fission → verifier-confirmed milestone → power += 1/elapsed
+**Engine:** failure→replan · wing_cross keeps plan · reflector never clears plan · chaos_gate (energy≥2 + failures) + stag_gate → reflector
 
-**Observer** (`observer.py`):
-- Always hover-probe focused window first (mandatory — browsers/modern UI)
-- Always tree-walk after; `_merge` probe-primary
-- Depth-indented SCREEN: context nodes + `[id]` actionable
+**Observer:** hover probe mandatory → tree walk → merge → depth SCREEN
 
-**TUI** (`tui.py`):
-- Left ~25%: goal, status, metrics, vertical MATH/LOOP/SIDE, plan, goal input
-- Right ~75%: wrapped event stream
-- `log.active_events_path()` — never read stale `events.jsonl` when reactor uses alt file
-- Space → `log.set_paused()` · Enter → goal input → `goal.txt` · auto-launch if idle
+**TUI:** full-width panel · autostart on CLI goal · Space pause · Enter goal input · `log.reactor_running()` + `active_events_path()`
 
-**Headless** (`actions.py`):
-- headless via `exec` (real Python exec) — cmd removed
-- `read_file` / `write_file` / `wait` direct execution
-- Import gate on `.py` writes
+**Exec sandbox:** `BASE_DIR`, `subprocess`, `spawn_main()`, `enable_gui()` — no cmd.exe
 
-**Prompts** (stripped — behavior in Python):
-- `planner.txt` ~34 lines — headless syntax + GUI intentions
-- `actor.txt` ~26 lines — GUI only, ID resolution from SCREEN
+---
+
+## Breakthrough run
+
+```powershell
+cd $env:USERPROFILE\Downloads\endgame-ai
+python -c "import observer, engine, agents, actions, log, tui; print('OK')"
+python tui.py "YOUR GOAL" --backend acp --event-budget 500
+```
+
+Workspace must be clean (no stale `pause`, `.endgame.lock`, old `events.jsonl`).
+
+Suggested goal themes: self-understanding via README+logs, TUI polish, observer tree quality, Grok/Opera comparison before/after metrics.
 
 ---
 
 ## Runtime files (gitignored)
 
 ```
-events.jsonl          Primary log (lock holder)
-events-{pid}.jsonl    Fallback writer
-.endgame.lock         PID lock — clean_stale_lock() on start
-snapshot.json         Board snapshot (math + main loop)
-goal.txt              Runtime goal — engine polls
-pause                 Pause flag — log.emit null sink
-gui_mode              Enables observer + GUI actor
-lessons.txt           Reflector memory
-respawn.json          Child spawn contract
-disabled.json         Legacy
-_debug_context_dump.txt
-agent-tools/  terminals/
+events.jsonl  events-{pid}.jsonl  .endgame.lock  snapshot.json
+goal.txt  pause  gui_mode  lessons.txt  respawn.json  disabled.json
+_debug_context_dump.txt  agent-tools/  terminals/
 ```
 
 ---
 
 ## Milestones
 
-| # | Status | Notes |
-|---|--------|-------|
-| M3 prompt self-evolution | **done** | 4 prompts rewritten from logs, verified, 2 fissions |
-| M4 code evolution + spawn + resurrect | **~60%** | spawn works; resurrection not built; import gate catches bad edits |
-
-**Landed gates:** post-fission halt, import gate, respawn contract, log lock + stale cleanup
-
-**Open:**
-- Resurrection (kill self → relaunch new code)
-- Push to origin (user approval)
-- Long-run stability (planner 90s timeouts on bloated context — use `read_file` not giant exec dumps)
-
----
-
-## Proven this branch
-
-- Unified reactor: failure→replan, wing_cross keeps plan, reflector never clears plan
-- Prompt soul evolution from runtime evidence (zero `.py` in that run)
-- Code edits with import gate (reduce.py broke config — lesson #37)
-- Child spawn via exec spawn_main() (backend mismatch killed child)
-- Hover probe + tree observer path
-- TUI vertical column, goal.txt hot-swap, pause bus
-- TUI freeze fix: stale lock + wrong events file + Win SYNC removed
+| # | Status |
+|---|--------|
+| M3 prompt self-evolution | done |
+| M4 code evolution + spawn | partial — exec + spawn_main + import gate; no resurrection |
 
 ---
 
 ## Debug
 
 ```powershell
-python debug_context.py planner --goal "your goal"
-python debug_context.py actor --goal "your goal"
+python debug_context.py planner --goal "test"
+python debug_context.py actor --goal "test"
 ```
 
-Requires `gui_mode` for screen/desktop in context. Writes `_debug_context_dump.txt`.
+Requires `gui_mode` for screen in actor context.
 
-```powershell
-python -c "import observer, engine, agents, actions, log, tui; print('OK')"
-```
+---
+
+## Rules for agents
+
+- Never hardcode `ewojgab` or `C:\Users\...` in committed files — use `BASE_DIR` or `%USERPROFILE%` in docs only.
+- Do not mass-kill python when user TUI/reactor owns the terminal.
+- Do not push without user approval.
+- Planner must use `exec` not `cmd`.
+- `write_file gui_mode 1` before GUI steps.
 
 ---
 
 ## Files
 
 12 core `.py` + `debug_context.py` + `acp_client.py` · 4 prompts · 4 schemas · ~3000 LOC
-
-Do not push without user approval. Do not mass-kill python when endgame-ai TUI/reactor is the user's terminal session.
