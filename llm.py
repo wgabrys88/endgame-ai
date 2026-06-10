@@ -117,7 +117,7 @@ def _call_lmstudio(body: dict[str, Any]) -> str:
             payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
             time.sleep(LMS_ERROR_RETRY_DELAY)
             continue
-        raise RuntimeError(f"LLM error: {raw[:300]}")
+        raise RuntimeError(f"LLM error: {raw}")
     raise RuntimeError("LLM call failed after retries")
 
 

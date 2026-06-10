@@ -133,7 +133,7 @@ class SchedulerAgent:
 
         active = next((s for s in plan if s.get("status") == "active"), None)
         if active:
-            return {"writes": writes, "next": "actor", "phase": "schedule", "data": {"reason": "execute", "step": active.get("text", "")[:60]}}
+            return {"writes": writes, "next": "actor", "phase": "schedule", "data": {"reason": "execute", "step": active.get("text", "")}}
 
         all_done = all(s.get("status") == "done" for s in plan)
         if all_done:
@@ -142,7 +142,7 @@ class SchedulerAgent:
         pending = next((s for s in plan if s.get("status") == "pending"), None)
         if pending:
             pending["status"] = "active"
-            return {"writes": {"plan": plan}, "next": "actor", "phase": "schedule", "data": {"reason": "advance", "step": pending.get("text", "")[:60]}}
+            return {"writes": {"plan": plan}, "next": "actor", "phase": "schedule", "data": {"reason": "advance", "step": pending.get("text", "")}}
 
         return {"writes": writes, "next": "planner", "phase": "schedule", "data": {"reason": "stuck"}}
 
@@ -159,7 +159,7 @@ class ObserverAgent:
                 "writes": {},
                 "next": "scheduler",
                 "phase": "observe",
-                "data": {"error": str(e)[:200]},
+                "data": {"error": str(e)},
             }
         return {
             "writes": {
@@ -188,8 +188,8 @@ class PlannerAgent:
         try:
             raw = call_llm(system, context, "planner", max_tokens=config.BUDGET_PLANNER_OUT)
         except Exception as e:
-            log.emit("planner.error", {"error": str(e)[:200]})
-            return {"writes": {"consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1}, "next": "stagnation", "phase": "planner.error", "data": {"error": str(e)[:200]}}
+            log.emit("planner.error", {"error": str(e)})
+            return {"writes": {"consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1}, "next": "stagnation", "phase": "planner.error", "data": {"error": str(e)}}
         parsed = _extract_json(raw, ["mode", "sequence", "done_when"])
         mode = str(parsed.get("mode", "direct"))
         sequence: list[Any] = parsed.get("sequence", [])
@@ -203,7 +203,7 @@ class PlannerAgent:
             "writes": {"plan": steps, "done_when": done_when, "consecutive_failures": 0, "pid_integral": 0.0, "pid_output": 0.0, "progress_history": []},
             "next": "actor",
             "phase": "plan",
-            "data": {"mode": mode, "steps": len(steps), "done_when": done_when[:60]},
+            "data": {"mode": mode, "steps": len(steps), "done_when": done_when},
         }
 
 class ActorAgent:
@@ -229,8 +229,8 @@ class ActorAgent:
         try:
             raw = call_llm(system, context, "actor", max_tokens=config.BUDGET_ACTOR_OUT)
         except Exception as e:
-            log.emit("actor.error", {"error": str(e)[:200]})
-            return {"writes": {"consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1}, "next": "stagnation", "phase": "actor.error", "data": {"error": str(e)[:200]}}
+            log.emit("actor.error", {"error": str(e)})
+            return {"writes": {"consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1}, "next": "stagnation", "phase": "actor.error", "data": {"error": str(e)}}
         parsed = _extract_json(raw, ["actions", "conclusion"])
         conclusion = str(parsed.get("conclusion", "EXECUTE"))
         actions: list[dict[str, Any]] = parsed.get("actions", [])
@@ -253,8 +253,8 @@ class ActorAgent:
                 break
             args = _build_args(verb, target, value)
             result = execute_verb(verb, args, elements, None)
-            history.append({"verb": verb, "ok": result.success, "obs": result.observation[:200]})
-            log.emit("action", {"verb": verb, "ok": result.success, "obs": result.observation[:100]})
+            history.append({"verb": verb, "ok": result.success, "obs": result.observation})
+            log.emit("action", {"verb": verb, "ok": result.success, "obs": result.observation})
             if not result.success:
                 had_failure = True
                 break
@@ -275,14 +275,14 @@ class VerifierAgent:
         try:
             raw = call_llm(system, context, "verifier", max_tokens=config.BUDGET_VERIFIER_OUT)
         except Exception as e:
-            log.emit("verifier.error", {"error": str(e)[:200]})
-            return {"writes": {}, "next": "stagnation", "phase": "verifier.error", "data": {"error": str(e)[:200]}}
+            log.emit("verifier.error", {"error": str(e)})
+            return {"writes": {}, "next": "stagnation", "phase": "verifier.error", "data": {"error": str(e)}}
         parsed = _extract_json(raw, ["verdict"])
         verdict = str(parsed.get("verdict", "denied"))
         evidence = str(parsed.get("evidence", ""))
         if verdict == "confirmed":
-            return {"writes": {}, "next": "done", "phase": "verify", "data": {"verdict": "confirmed", "evidence": evidence[:200]}}
-        return {"writes": {"plan": [], "done_when": "", "consecutive_failures": 0, "progress_history": []}, "next": "stagnation", "phase": "verify", "data": {"verdict": "denied", "evidence": evidence[:200]}}
+            return {"writes": {}, "next": "done", "phase": "verify", "data": {"verdict": "confirmed", "evidence": evidence}}
+        return {"writes": {"plan": [], "done_when": "", "consecutive_failures": 0, "progress_history": []}, "next": "stagnation", "phase": "verify", "data": {"verdict": "denied", "evidence": evidence}}
 
 class ReflectorAgent:
     name: str = "reflector"
@@ -295,8 +295,8 @@ class ReflectorAgent:
         try:
             raw = call_llm(system, context, "reflector", max_tokens=config.BUDGET_REFLECTOR_OUT)
         except Exception as e:
-            log.emit("reflector.error", {"error": str(e)[:200]})
-            return {"writes": {}, "next": "stagnation", "phase": "reflector.error", "data": {"error": str(e)[:200]}}
+            log.emit("reflector.error", {"error": str(e)})
+            return {"writes": {}, "next": "stagnation", "phase": "reflector.error", "data": {"error": str(e)}}
         parsed = _extract_json(raw, ["diagnosis", "lesson"])
         lesson = str(parsed.get("lesson", ""))
         if lesson.strip():
@@ -311,7 +311,7 @@ class ReflectorAgent:
             "writes": {"plan": [], "pid_integral": 0.0, "consecutive_failures": 0, "progress_history": []},
             "next": "stagnation",
             "phase": "reflect",
-            "data": {"diagnosis": str(parsed.get("diagnosis", ""))[:200], "lesson": lesson[:200]},
+            "data": {"diagnosis": str(parsed.get("diagnosis", "")), "lesson": lesson},
         }
 
 
@@ -350,8 +350,8 @@ def _try_direct(instruction: str, ctx: dict[str, Any]) -> dict[str, Any] | None:
     plan: list[dict[str, Any]] = ctx.get("plan", [])
     active = next((s for s in plan if s.get("status") == "active"), None)
     history: list[dict[str, Any]] = list(ctx.get("history", []))
-    history.append({"verb": verb, "ok": result.success, "obs": result.observation[:200]})
-    log.emit("action", {"verb": verb, "ok": result.success, "obs": result.observation[:100], "direct": True})
+    history.append({"verb": verb, "ok": result.success, "obs": result.observation})
+    log.emit("action", {"verb": verb, "ok": result.success, "obs": result.observation, "direct": True})
     if result.success:
         if active:
             active["status"] = "done"
@@ -426,7 +426,7 @@ def _render_field(ctx: dict[str, Any], field: str, instruction: str) -> str:
                 lines.append(f"  {connector}{marker}{step.get('text', '')}")
             return "\n".join(lines)
         case "history":
-            recent: list[dict[str, Any]] = ctx.get("history", [])[-8:]
+            recent: list[dict[str, Any]] = ctx.get("history", [])[-40:]
             if not recent:
                 return ""
             lines = ["HISTORY:"]
@@ -519,7 +519,7 @@ def _extract_json(raw: str, required: list[str]) -> dict[str, Any]:
                 return cast(dict[str, Any], parsed)
         except json.JSONDecodeError:
             continue
-    raise ValueError(f"no JSON in response: {raw[:200]}")
+    raise ValueError(f"no JSON in response: {raw}")
 
 
 def _write_lesson(lesson: str) -> None:
@@ -544,4 +544,4 @@ def _apply_mutation(target: str, append_text: str) -> None:
         current = base + "\n\n" + "\n\n".join(kept)
     new_content = current.rstrip() + "\n\nRULE: " + clean_text + "\n"
     path.write_text(new_content, encoding="utf-8")
-    log.emit("mutation", {"target": target, "appended": clean_text[:100]})
+    log.emit("mutation", {"target": target, "appended": clean_text})
