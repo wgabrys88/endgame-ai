@@ -1,5 +1,5 @@
 from __future__ import annotations
-import hashlib, math, time
+import math, time
 from dataclasses import dataclass
 from typing import Any
 
@@ -388,10 +388,7 @@ def _is_tui_dashboard_line(line: str) -> bool:
 
 
 def _compact_display_value(value: str) -> str:
-    if len(value) <= SCREEN_ELEMENT_VALUE_LIMIT:
-        return value
-    digest = hashlib.sha256(value.encode("utf-8", errors="surrogatepass")).hexdigest()
-    return f"[chars={len(value)} sha256={digest[:16]}]"
+    return value
 
 
 def _merge(tree_nodes: list[dict[str, Any]], probe_nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
