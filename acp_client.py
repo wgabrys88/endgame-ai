@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from config import ZERO_INT, ONE_INT
+
 import atexit
 import io
 import json
@@ -16,9 +16,9 @@ from config import (
     ACP_PROTOCOL_VERSION, ACP_DEFAULT_TIMEOUT, ACP_REQUEST_TIMEOUT,
     ACP_WSL_MKDIR_TIMEOUT, ACP_SETTINGS_TIMEOUT, ACP_CLOSE_TIMEOUT,
     ACP_READ_CHUNK_SIZE, JSONRPC_METHOD_NOT_FOUND, ACP_WORKSPACE_BASE,
-    ACP_STOP_POLL_SECONDS,
+    ACP_STOP_POLL_SECONDS, ACP_SETUP_ATTEMPTS, ACP_SETUP_RETRY_DELAY,
+    BASE_DIR,
 )
-from stop_signal import stop_requested
 
 __all__ = ["ACPError", "prompt_once"]
 
@@ -39,7 +39,7 @@ class ACPError(RuntimeError):
 @dataclass
 class _Flight:
     session_id: str
-    request_id: int = -ONE_INT
+    request_id: int = -1
     chunks: list[str] = field(default_factory=lambda: list[str]())
     done: threading.Event = field(default_factory=threading.Event)
 
@@ -48,7 +48,7 @@ class _Pool:
     def __init__(self) -> None:
         self._proc: subprocess.Popen[bytes] | None = None
         self._lock = threading.Lock()
-        self._next_id: int = ZERO_INT
+        self._next_id: int = 0
         self._pending: dict[int, queue.Queue[JsonMsg]] = {}
         self._flights: dict[str, _Flight] = {}
         self._started: bool = False
@@ -62,11 +62,15 @@ class _Pool:
             return
         if self._proc is not None:
             self._proc.terminate()
-            self._proc.wait(timeout=ACP_CLOSE_TIMEOUT)
+            try:
+                self._proc.wait(timeout=ACP_CLOSE_TIMEOUT)
+            except subprocess.TimeoutExpired:
+                self._proc.kill()
+                self._proc.wait(timeout=ACP_CLOSE_TIMEOUT)
         self._started = False
         self._pending.clear()
         self._flights.clear()
-        self._next_id = ZERO_INT
+        self._next_id = 0
         _run_setup_command(
             ["wsl.exe", "-d", DISTRO, "--exec", "mkdir", "-p", WORKSPACE],
             ACP_WSL_MKDIR_TIMEOUT)
@@ -93,7 +97,7 @@ class _Pool:
             raise ACPError("no sessionId returned")
         flight = _Flight(session_id=sid)
         with self._lock:
-            self._next_id += ONE_INT
+            self._next_id += 1
             rid = self._next_id
             flight.request_id = rid
             self._pending[rid] = queue.Queue()
@@ -102,7 +106,7 @@ class _Pool:
                          "params": {"sessionId": sid, "prompt": [{"type": "text", "text": text}]}})
         deadline = time.monotonic() + timeout
         while not flight.done.wait(ACP_STOP_POLL_SECONDS):
-            if stop_requested():
+            if (BASE_DIR / "comms" / "stop.txt").exists():
                 self._flights.pop(sid, None)
                 raise ACPError("stop signal requested")
             if time.monotonic() >= deadline:
@@ -112,7 +116,7 @@ class _Pool:
         return "".join(flight.chunks)
 
     def _send(self, method: str, params: JsonMsg) -> int:
-        self._next_id += ONE_INT
+        self._next_id += 1
         rid = self._next_id
         self._pending[rid] = queue.Queue()
         self._write({"jsonrpc": "2.0", "id": rid, "method": method, "params": params})
@@ -147,9 +151,9 @@ class _Pool:
                 break
             buf = buf + chunk
             while b"\n" in buf:
-                parts: list[bytes] = buf.split(b"\n", ONE_INT)
-                line: bytes = parts[ZERO_INT]
-                buf = parts[ONE_INT]
+                parts: list[bytes] = buf.split(b"\n", 1)
+                line: bytes = parts[0]
+                buf = parts[1]
                 if line.strip():
                     try:
                         self._dispatch(json.loads(line.decode("utf-8")))
@@ -170,6 +174,12 @@ class _Pool:
                 if c.get("type") == "text" and sid and sid in self._flights:
                     self._flights[sid].chunks.append(c.get("text", ""))
         elif method is None and isinstance(mid, int):
+            if "error" in msg:
+                for f in self._flights.values():
+                    if f.request_id == mid:
+                        f.chunks.append(f"ERROR: {msg['error']}")
+                        f.done.set()
+                        break
             result: JsonMsg = msg.get("result") or {}
             if result.get("stopReason"):
                 for f in self._flights.values():
@@ -185,7 +195,7 @@ class _Pool:
             opts: list[JsonMsg] = cast(list[JsonMsg], raw_opts) if isinstance(raw_opts, list) else []
             chosen: str | None = next(
                 (str(o.get("optionId")) for o in opts if o.get("kind") == "allow_always"),
-                (str(opts[ZERO_INT].get("optionId")) if opts else None))
+                (str(opts[0].get("optionId")) if opts else None))
             self._write({"jsonrpc": "2.0", "id": mid,
                          "result": {"outcome": {"outcome": "selected", "optionId": chosen}}})
         elif isinstance(mid, int):
@@ -215,10 +225,20 @@ _pool_lock = threading.Lock()
 
 
 def _run_setup_command(cmd: list[str], timeout: float) -> None:
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-    if proc.returncode != ZERO_INT:
-        output = (proc.stdout + proc.stderr).strip()
-        raise ACPError(f"setup command failed: {cmd} exit={proc.returncode} output={output}")
+    last_error = ""
+    for attempt in range(1, ACP_SETUP_ATTEMPTS + 1):
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            last_error = f"timed out after {timeout}s"
+        else:
+            if proc.returncode == 0:
+                return
+            output = (proc.stdout + proc.stderr).strip()
+            last_error = f"exit={proc.returncode} output={output}"
+        if attempt < ACP_SETUP_ATTEMPTS:
+            time.sleep(ACP_SETUP_RETRY_DELAY)
+    raise ACPError(f"setup command failed after {ACP_SETUP_ATTEMPTS} attempts: {cmd} {last_error}")
 
 
 def prompt_once(text: str, timeout: float = DEFAULT_TIMEOUT) -> str:

@@ -1,14 +1,10 @@
 from __future__ import annotations
-from config import ZERO_INT, ONE_INT
-import hashlib
 import json
 from dataclasses import dataclass
 from typing import Any, cast
 
-from config import PROMPTS_DIR, SCHEMAS_DIR, LOG_NO_ITERATION
-from artifacts import materialize_text
+from config import PROMPTS_DIR, SCHEMAS_DIR
 from llm import call_llm
-from log import log
 
 __all__ = ["call_role", "RoleSpec"]
 
@@ -36,70 +32,58 @@ def _get_required_fields(role: str) -> list[str]:
     return fields
 
 
-def call_role(spec: RoleSpec, context: str, iteration: int = LOG_NO_ITERATION, agent_id: str = "main") -> dict[str, Any]:
+def call_role(spec: RoleSpec, context: str, temperature: float | None = None) -> dict[str, Any]:
     system = _load_prompt(spec.name)
-    context_ref = materialize_text(context, agent_id, iteration, "role.context", ("context",))
-    system_digest = hashlib.sha256(system.encode("utf-8", errors="surrogatepass")).hexdigest()
-    log(iteration, "role.context", "role context projection", {"role": spec.name, "system_chars": len(system), "system_sha256": system_digest, "context": context_ref})
-    raw = call_llm(system, context, spec.name, max_tokens=spec.max_output_tokens, iteration=iteration, context_ref=context_ref)
+    raw = call_llm(system, context, spec.name, max_tokens=spec.max_output_tokens, temperature=temperature)
     required = _get_required_fields(spec.name)
-    parsed = _extract_json(raw, required)
-    log(iteration, "role.response.parsed", "role parsed json", {"role": spec.name, "required_fields": required, "response": parsed})
-    return parsed
+    return _extract_json(raw, required)
 
 
 def _extract_json(raw: str, required_fields: list[str]) -> dict[str, Any]:
     stripped = raw.strip()
     if stripped.startswith("{"):
         try:
-            top_result: dict[str, Any] = json.loads(stripped)
-            if _matches_schema(top_result, required_fields):
-                return top_result
+            result: dict[str, Any] = json.loads(stripped)
+            if _matches(result, required_fields):
+                return result
         except json.JSONDecodeError:
             pass
+    depth = 0
+    start = -1
     candidates: list[tuple[int, str]] = []
-    depth = ZERO_INT
-    start = -ONE_INT
     for i, ch in enumerate(raw):
         if ch == "{":
-            if depth == ZERO_INT:
+            if depth == 0:
                 start = i
-            depth += ONE_INT
+            depth += 1
         elif ch == "}":
-            depth -= ONE_INT
-            if depth == ZERO_INT and start != -ONE_INT:
-                candidates.append((start, raw[start:i + ONE_INT]))
-                start = -ONE_INT
-    schema_match: tuple[int, dict[str, Any]] | None = None
-    actionable: tuple[int, dict[str, Any]] | None = None
-    last_valid: tuple[int, dict[str, Any]] | None = None
-    for pos, candidate in reversed(candidates):
+            depth -= 1
+            if depth == 0 and start != -1:
+                candidates.append((start, raw[start:i + 1]))
+                start = -1
+    for _, candidate in reversed(candidates):
         try:
             parsed: object = json.loads(candidate)
-            if not isinstance(parsed, dict):
-                continue
-            result: dict[str, Any] = cast(dict[str, Any], parsed)
-            if schema_match is None and _matches_schema(result, required_fields):
-                schema_match = (pos, result)
-                if result.get("mode") != "done":
-                    break
-            if actionable is None and result.get("mode") != "done":
-                actionable = (pos, result)
-            if last_valid is None:
-                last_valid = (pos, result)
+            if isinstance(parsed, dict):
+                result = cast(dict[str, Any], parsed)
+                if _matches(result, required_fields):
+                    return result
         except json.JSONDecodeError:
             continue
-    chosen = schema_match or actionable or last_valid
-    if chosen:
-        _, result = chosen
-        return result
-    raise ValueError(f"no JSON in response: {raw}")
+    for _, candidate in reversed(candidates):
+        try:
+            parsed = json.loads(candidate)
+            if isinstance(parsed, dict):
+                return cast(dict[str, Any], parsed)
+        except json.JSONDecodeError:
+            continue
+    raise ValueError(f"no JSON in response: {raw[:200]}")
 
 
-def _matches_schema(obj: dict[str, Any], required_fields: list[str]) -> bool:
-    if not required_fields:
+def _matches(obj: dict[str, Any], required: list[str]) -> bool:
+    if not required:
         return True
-    return all(field in obj for field in required_fields)
+    return all(f in obj for f in required)
 
 
 def _load_prompt(role: str) -> str:

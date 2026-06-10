@@ -6,55 +6,59 @@
     "schema": {
       "type": "object",
       "properties": {
-        "observe": {
-          "type": "string",
-          "minLength": 5,
-          "maxLength": 300,
-          "description": "Factual summary of current screen state relevant to the instruction."
-        },
-        "reason": {
-          "type": "string",
-          "minLength": 5,
-          "maxLength": 200,
-          "description": "Why these actions advance the instruction."
-        },
         "actions": {
           "type": "array",
           "minItems": 0,
-          "maxItems": 3,
-          "description": "Actions to execute in sequence.",
+          "maxItems": 5,
           "items": {
             "type": "object",
             "properties": {
               "verb": {
                 "type": "string",
-                "enum": ["click", "write", "press", "hotkey", "scroll", "wait", "focus", "read_file", "write_file", "spawn_agent", "cmd"]
+                "enum": [
+                  "click",
+                  "write",
+                  "press",
+                  "hotkey",
+                  "scroll",
+                  "wait",
+                  "read_file",
+                  "write_file",
+                  "cmd"
+                ]
               },
-              "target": { "type": "string", "minLength": 0, "maxLength": 100 },
-              "value": { "type": "string", "minLength": 0, "maxLength": 500 }
+              "target": {
+                "type": "string",
+                "minLength": 0,
+                "maxLength": 200
+              },
+              "value": {
+                "type": "string",
+                "minLength": 0,
+                "maxLength": 8000
+              }
             },
-            "required": ["verb", "target", "value"],
+            "required": [
+              "verb",
+              "target",
+              "value"
+            ],
             "additionalProperties": false
           }
         },
-        "expect": {
-          "type": "string",
-          "minLength": 5,
-          "maxLength": 200,
-          "description": "Observable outcome expected after actions."
-        },
         "conclusion": {
           "type": "string",
-          "enum": ["EXPECTED", "UNEXPECTED"],
-          "description": "Does current screen match what was expected last cycle?"
-        },
-        "used_fields": {
-          "type": "array",
-          "items": {"type": "string"},
-          "description": "List all blackboard fields you actually read and used to make this decision."
+          "enum": [
+            "EXECUTE",
+            "DONE",
+            "CANNOT"
+          ]
         }
       },
-      "required": ["observe", "reason", "actions", "expect", "conclusion", "used_fields"],
+      "required": [
+        "actions",
+        "conclusion"
+      ],
       "additionalProperties": false
     }
   }

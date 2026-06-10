@@ -3,5 +3,6 @@
   "pythonPlatform": "Windows",
   "typeCheckingMode": "strict",
   "include": ["*.py"],
-  "exclude": ["**/__pycache__"]
+  "exclude": ["**/__pycache__"],
+  "reportUnusedFunction": "none"
 }

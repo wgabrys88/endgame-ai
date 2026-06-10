@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from config import ZERO_INT, ONE_INT
+
 import ctypes
 import ctypes.wintypes as W
 import uuid
@@ -22,7 +22,7 @@ from config import (
     TEXT_RANGE_GET_TEXT_INDEX, WIN_CLASS_NAME_BUFFER, WIN_WINDOW_TEXT_BUFFER,
     POINT_PACK_SHIFT_BITS, UIA_CONTROL_TYPE_MAP, VIRTUAL_KEY_MAP,
     EXTENDED_VK_CODES, PROCESS_DPI_AWARENESS_CONTEXT, READ_TEXT_MAX_LENGTH,
-    PROCESS_TERMINATE_RIGHT, CHILD_TERMINATE_EXIT_CODE,
+    
 )
 
 __all__ = [
@@ -32,7 +32,7 @@ __all__ = [
     "init", "set_dpi_aware", "get_str", "get_int", "get_bool", "get_rect",
     "get_legacy_value", "get_legacy_readonly", "get_text_content", "element_from_point",
     "get_children", "get_hwnd", "get_runtime_id", "get_root",
-    "get_window_class", "get_window_title", "terminate_process",
+    "get_window_class", "get_window_title",
 ]
 
 ole32: ctypes.OleDLL = ctypes.OleDLL("ole32")
@@ -78,7 +78,7 @@ class SAFEARRAY_BOUND(ctypes.Structure):
 
 class SAFEARRAY(ctypes.Structure):
     _fields_ = [("cDims", W.USHORT), ("fFeatures", W.USHORT), ("cbElements", W.DWORD),
-                ("cLocks", W.DWORD), ("pvData", ctypes.c_void_p), ("rgsabound", SAFEARRAY_BOUND * ONE_INT)]
+                ("cLocks", W.DWORD), ("pvData", ctypes.c_void_p), ("rgsabound", SAFEARRAY_BOUND * 1)]
 
 
 class KEYBDINPUT(ctypes.Structure):
@@ -94,7 +94,7 @@ class INPUT(ctypes.Structure):
 
 def make_guid(s: str) -> GUID:
     b: bytes = uuid.UUID(s).bytes
-    return GUID(int.from_bytes(b[ZERO_INT:GUID_DATA1_END], "big"), int.from_bytes(b[GUID_DATA1_END:GUID_DATA2_END], "big"),
+    return GUID(int.from_bytes(b[0:GUID_DATA1_END], "big"), int.from_bytes(b[GUID_DATA1_END:GUID_DATA2_END], "big"),
                 int.from_bytes(b[GUID_DATA2_END:GUID_DATA3_END], "big"), (ctypes.c_ubyte * GUID_DATA4_LENGTH)(*b[GUID_DATA4_START:GUID_DATA4_END]))
 
 
@@ -108,7 +108,7 @@ _true_cond: ctypes.c_void_p = ctypes.c_void_p()
 
 
 def vt(this: ctypes.c_void_p, idx: int, proto_args: tuple[type, ...], *args: object) -> int:
-    vtable = ctypes.cast(this, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p)))[ZERO_INT]
+    vtable = ctypes.cast(this, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p)))[0]
     proto = ctypes.WINFUNCTYPE(ctypes.HRESULT, *proto_args)
     return proto(vtable[idx])(this, *args)
 
@@ -118,7 +118,7 @@ def release(ptr: ctypes.c_void_p) -> None:
     if ptr_value is None:
         return
     vt_ptr = ctypes.c_void_p(ptr_value)
-    vtable = ctypes.cast(vt_ptr, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p)))[ZERO_INT]
+    vtable = ctypes.cast(vt_ptr, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p)))[0]
     proto = ctypes.WINFUNCTYPE(ctypes.c_ulong, ctypes.c_void_p)
     proto(vtable[IUNKNOWN_RELEASE_INDEX])(vt_ptr)
 
@@ -157,7 +157,7 @@ def get_str(el: ctypes.c_void_p, prop_id: int) -> str:
 
 def get_int(el: ctypes.c_void_p, prop_id: int) -> int:
     var = _get_property(el, prop_id)
-    return int(var.val & DWORD_MASK) if var.vt == VT_I4 else ZERO_INT
+    return int(var.val & DWORD_MASK) if var.vt == VT_I4 else 0
 
 
 def get_bool(el: ctypes.c_void_p, prop_id: int) -> bool:
@@ -175,7 +175,7 @@ def get_rect(el: ctypes.c_void_p) -> tuple[int, int, int, int]:
         result = (rx, ry, rw, rh)
         oleaut32.SafeArrayDestroy(sa_ptr)
         return result
-    return (ZERO_INT, ZERO_INT, ZERO_INT, ZERO_INT)
+    return (0, 0, 0, 0)
 
 
 def _get_legacy_pattern(el: ctypes.c_void_p) -> ctypes.c_void_p | None:
@@ -183,7 +183,7 @@ def _get_legacy_pattern(el: ctypes.c_void_p) -> ctypes.c_void_p | None:
     hr = vt(el, UIA_GET_CURRENT_PATTERN_AS_INDEX,
             (ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(GUID), ctypes.POINTER(ctypes.c_void_p)),
             ctypes.c_int(UIA_LEGACY_IACCESSIBLE_PATTERN), ctypes.byref(IID_LegacyIAccessible), ctypes.byref(pattern))
-    return pattern if hr == ZERO_INT and pattern.value else None
+    return pattern if hr == 0 and pattern.value else None
 
 
 @contextmanager
@@ -202,7 +202,7 @@ def get_legacy_value(el: ctypes.c_void_p) -> str:
             return ""
         bstr = ctypes.c_wchar_p()
         hr = vt(pattern, LEGACY_GET_CURRENT_VALUE_INDEX, (ctypes.c_void_p, ctypes.POINTER(ctypes.c_wchar_p)), ctypes.byref(bstr))
-        return bstr.value or "" if hr == ZERO_INT else ""
+        return bstr.value or "" if hr == 0 else ""
 
 
 def get_legacy_readonly(el: ctypes.c_void_p) -> bool:
@@ -211,7 +211,7 @@ def get_legacy_readonly(el: ctypes.c_void_p) -> bool:
             return False
         var = VARIANT()
         hr = vt(pattern, LEGACY_GET_CURRENT_STATE_INDEX, (ctypes.c_void_p, ctypes.POINTER(VARIANT)), ctypes.byref(var))
-        return (var.val & VARIANT_TRUE_MASK) == VARIANT_TRUE_MASK if hr == ZERO_INT and var.vt == VT_BOOL else False
+        return (var.val & VARIANT_TRUE_MASK) == VARIANT_TRUE_MASK if hr == 0 and var.vt == VT_BOOL else False
 
 
 def get_text_content(el: ctypes.c_void_p, max_len: int = READ_TEXT_MAX_LENGTH) -> str:
@@ -219,17 +219,17 @@ def get_text_content(el: ctypes.c_void_p, max_len: int = READ_TEXT_MAX_LENGTH) -
     hr = vt(el, UIA_GET_CURRENT_PATTERN_AS_INDEX,
             (ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(GUID), ctypes.POINTER(ctypes.c_void_p)),
             ctypes.c_int(UIA_TEXT_PATTERN), ctypes.byref(IID_TextPattern), ctypes.byref(pattern))
-    if hr != ZERO_INT or not pattern.value:
+    if hr != 0 or not pattern.value:
         return ""
     doc_range = ctypes.c_void_p()
     hr2 = vt(pattern, TEXT_PATTERN_DOCUMENT_RANGE_INDEX, (ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)), ctypes.byref(doc_range))
-    if hr2 != ZERO_INT or not doc_range.value:
+    if hr2 != 0 or not doc_range.value:
         release(pattern)
         return ""
     bstr = ctypes.c_wchar_p()
     hr3 = vt(doc_range, TEXT_RANGE_GET_TEXT_INDEX, (ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_wchar_p)),
              ctypes.c_int(max_len), ctypes.byref(bstr))
-    text = bstr.value or "" if hr3 == ZERO_INT else ""
+    text = bstr.value or "" if hr3 == 0 else ""
     release(doc_range)
     release(pattern)
     return text
@@ -241,7 +241,7 @@ def element_from_point(px: int, py: int) -> ctypes.c_void_p | None:
     hr = vt(_uia, UIA_ELEMENT_FROM_POINT_INDEX,
             (ctypes.c_void_p, ctypes.c_int64, ctypes.POINTER(ctypes.c_void_p)),
             point_packed, ctypes.byref(found))
-    return found if hr == ZERO_INT and found.value else None
+    return found if hr == 0 and found.value else None
 
 
 def get_children(el: ctypes.c_void_p) -> list[ctypes.c_void_p]:
@@ -249,7 +249,7 @@ def get_children(el: ctypes.c_void_p) -> list[ctypes.c_void_p]:
     hr = vt(el, UIA_FIND_ALL_INDEX,
             (ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)),
             ctypes.c_int(TREE_SCOPE_CHILDREN), _true_cond, ctypes.byref(arr))
-    if hr != ZERO_INT or not arr.value:
+    if hr != 0 or not arr.value:
         return []
     length = ctypes.c_int()
     vt(arr, UIA_ELEMENT_ARRAY_LENGTH_INDEX, (ctypes.c_void_p, ctypes.POINTER(ctypes.c_int)), ctypes.byref(length))
@@ -266,18 +266,18 @@ def get_children(el: ctypes.c_void_p) -> list[ctypes.c_void_p]:
 
 def get_hwnd(el: ctypes.c_void_p) -> int:
     var = _get_property(el, UIA_NATIVE_WINDOW_HANDLE)
-    return int(var.val & DWORD_MASK) if var.vt == VT_I4 else ZERO_INT
+    return int(var.val & DWORD_MASK) if var.vt == VT_I4 else 0
 
 
 def get_runtime_id(el: ctypes.c_void_p) -> tuple[int, ...] | None:
     sa_ptr = ctypes.c_void_p()
     hr = vt(el, UIA_GET_RUNTIME_ID_INDEX, (ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)),
             ctypes.byref(sa_ptr))
-    if hr != ZERO_INT or not sa_ptr.value:
+    if hr != 0 or not sa_ptr.value:
         return None
     sa = ctypes.cast(sa_ptr, ctypes.POINTER(SAFEARRAY)).contents
-    count = sa.rgsabound[ZERO_INT].cElements
-    if count == ZERO_INT:
+    count = sa.rgsabound[0].cElements
+    if count == 0:
         oleaut32.SafeArrayDestroy(sa_ptr)
         return None
     data = (ctypes.c_int * count).from_address(sa.pvData)
@@ -304,15 +304,6 @@ def get_window_title(hwnd: int) -> str:
     user32.GetWindowTextW(W.HWND(hwnd), buf, WIN_WINDOW_TEXT_BUFFER)
     return buf.value
 
-
-def terminate_process(pid: int) -> bool:
-    handle = kernel32.OpenProcess(PROCESS_TERMINATE_RIGHT, False, pid)
-    if not handle:
-        return False
-    try:
-        return bool(kernel32.TerminateProcess(handle, CHILD_TERMINATE_EXIT_CODE))
-    finally:
-        kernel32.CloseHandle(handle)
 
 
 VK_MAP: dict[str, int] = VIRTUAL_KEY_MAP
