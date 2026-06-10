@@ -79,10 +79,11 @@ Requirements: Windows 11, Python 3.13, ACP or LM Studio backend.
 
 | Gate | Behavior |
 |------|----------|
-| **Post-fission halt** | Planner `mode:done` with existing completions → `halt` → `stop reason=goal_satisfied` |
-| **Import gate** | Every `write_file` on `.py` runs `py_compile` + core import check before success |
-| **Respawn contract** | `main.py` writes `respawn.json`; bare `python main.py` spawns inherit backend, goal, budget |
-| **Single-writer logs** | `.endgame.lock` — second process writes to `events-{pid}.jsonl` instead of corrupting |
+| **Post-fission halt** | Planner `mode:done` with completions → `halt` → `goal_satisfied` |
+| **Import gate** | `write_file` on `.py` → `py_compile` + core import check |
+| **Respawn contract** | `respawn.json` inherited by bare `main.py` spawns |
+| **Single-writer logs** | `.endgame.lock` — twin writes `events-{pid}.jsonl` |
+| **Unified loop** | Failure → replan; wing_cross keeps plan; headless steps never retry |
 
 **Still open:** resurrection (detach → kill self → relaunch new code).
 

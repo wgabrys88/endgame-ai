@@ -31,15 +31,19 @@ PROVEN THIS SESSION:
   - Prompt self-evolution: read README + prompts + lessons + events → rewrite 4 prompts → verified
   - Code self-evolution (prior): reduce.py broke config — fixed manually; lesson #37 holds
 
-LANDED (2026-06-10 session):
-  1. Post-fission halt: planner mode:done + completed → halt → goal_satisfied stop
-  2. Import gate: write_file on .py runs py_compile + core imports before ok
-  3. Respawn contract: respawn.json + cmd injection for bare main.py spawns
-  4. Single-writer logs: .endgame.lock, twin writes to events-{pid}.jsonl
+LANDED (2026-06-10):
+  Post-fission halt, import gate, respawn contract, log lock
 
-OPEN ISSUES:
-  1. Resurrection: detach, kill self, relaunch new code (discussed, not built)
-  2. Push review pending — local commits on refactor-v4 not pushed
+ARCHITECTURE (2026-06-10 refactor):
+  Unified agent chain in engine — planner→actor, failure→planner, no special-case wiring
+  Step failure marks failed + replans (never retries identical headless step)
+  wing_cross replans without wiping plan/done_when
+  Reflector mutates prompts only — never clears plan
+  observer: tree-walk only, depth-indented SCREEN, context nodes + actionable IDs
+  cmd via cmd.exe /c utf-8; prompts stripped to core (behavior in Python)
+
+OPEN:
+  Resurrection not built. Push pending user approval.
 
 FILES:
   12 .py core + debug_context.py + acp_client.py

@@ -57,16 +57,6 @@ class StagnationAgent:
     reads: list[str] = ["plan", "progress_history", "consecutive_failures"]
 
     def run(self, ctx: dict[str, Any]) -> dict[str, Any]:
-        plan: list[dict[str, Any]] = ctx.get("plan", [])
-        active = next((s for s in plan if s.get("status") == "active"), None)
-        if active and str(active.get("text", "")).strip().lower().startswith("wait"):
-            history: list[float] = ctx.get("progress_history", [])
-            return {
-                "writes": {"stagnation": 0.0, "progress_history": history},
-                "next": "lorenz",
-                "phase": "stagnation",
-                "data": {"stag": 0.0, "progress": round(plan_progress(ctx), 3), "wait": True},
-            }
         progress = plan_progress(ctx)
         history = ctx.get("progress_history", [])
         history = (history + [progress])[-config.STAGNATION_CYCLES_WINDOW:]
@@ -162,11 +152,7 @@ class SchedulerAgent:
 
         if wing:
             writes["wing_crossed"] = False
-            writes["plan"] = []
-            writes["done_when"] = ""
-            writes["consecutive_failures"] = 0
             writes["pid_integral"] = 0.0
-            writes["progress_history"] = []
             return {"writes": writes, "next": "planner", "phase": "schedule", "data": {"reason": "wing_cross"}}
 
         if not plan:
@@ -283,7 +269,7 @@ class ActorAgent:
         plan: list[dict[str, Any]] = ctx.get("plan", [])
         active = next((s for s in plan if s.get("status") == "active"), None)
         if not active:
-            return {"writes": {}, "next": "stagnation", "phase": "actor.error", "data": {"error": "no active step"}}
+            return {"writes": {}, "next": "planner", "phase": "actor.error", "data": {"error": "no active step"}}
         instruction = str(active.get("text", ""))
         if is_python_step(instruction):
             history: list[dict[str, Any]] = list(ctx.get("history", []))
@@ -294,30 +280,33 @@ class ActorAgent:
                 active["status"] = "done"
                 _advance_plan(plan)
                 return {"writes": {"plan": plan, "history": history[-config.MAX_HISTORY:], "consecutive_failures": 0}, "next": "stagnation", "phase": "actor", "data": {"conclusion": "python", "ok": True}}
-            return {"writes": {"history": history[-config.MAX_HISTORY:], "consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1}, "next": "stagnation", "phase": "actor", "data": {"conclusion": "python", "ok": False}}
+            active["status"] = "failed"
+            failures = int(ctx.get("consecutive_failures", 0)) + 1
+            return {"writes": {"plan": plan, "history": history[-config.MAX_HISTORY:], "consecutive_failures": failures}, "next": "planner", "phase": "actor", "data": {"conclusion": "python", "ok": False}}
         context = _render_context(ctx, "actor", instruction)
         system = _load_prompt("actor")
         try:
             raw = call_llm(system, context, "actor", max_tokens=config.BUDGET_ACTOR_OUT)
         except Exception as e:
             log.emit("actor.error", {"error": str(e)})
-            return {"writes": {"consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1}, "next": "stagnation", "phase": "actor.error", "data": {"error": str(e)}}
+            failures = int(ctx.get("consecutive_failures", 0)) + 1
+            return {"writes": {"consecutive_failures": failures}, "next": "planner", "phase": "actor.error", "data": {"error": str(e)}}
         parsed = _extract_json(raw, ["actions", "conclusion"])
         conclusion = str(parsed.get("conclusion", "EXECUTE"))
         actions: list[dict[str, Any]] = parsed.get("actions", [])
         actions = [a for a in actions if str(a.get("verb", "")) in {"click", "write", "press", "hotkey", "scroll", "focus"}]
         if conclusion == "EXECUTE" and not actions:
-            fallback = _gui_fallback_action(instruction)
-            if fallback:
-                actions = [fallback]
-            else:
-                return {"writes": {"consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1}, "next": "stagnation", "phase": "actor", "data": {"conclusion": "CANNOT", "error": "need GUI verb"}}
+            active["status"] = "failed"
+            failures = int(ctx.get("consecutive_failures", 0)) + 1
+            return {"writes": {"plan": plan, "consecutive_failures": failures}, "next": "planner", "phase": "actor", "data": {"conclusion": "CANNOT", "error": "need GUI verb"}}
         if conclusion == "DONE":
             active["status"] = "done"
+            _advance_plan(plan)
             return {"writes": {"plan": plan, "consecutive_failures": 0}, "next": "stagnation", "phase": "actor", "data": {"conclusion": "DONE"}}
         if conclusion == "CANNOT":
             active["status"] = "failed"
-            return {"writes": {"plan": plan, "consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1}, "next": "stagnation", "phase": "actor", "data": {"conclusion": "CANNOT"}}
+            failures = int(ctx.get("consecutive_failures", 0)) + 1
+            return {"writes": {"plan": plan, "consecutive_failures": failures}, "next": "planner", "phase": "actor", "data": {"conclusion": "CANNOT"}}
         elements: dict[str, Any] = ctx.get("screen_elements", {})
         history: list[dict[str, Any]] = list(ctx.get("history", []))
         had_failure = False
@@ -337,8 +326,11 @@ class ActorAgent:
                 had_failure = True
                 break
         if had_failure:
-            return {"writes": {"history": history[-config.MAX_HISTORY:], "consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1}, "next": "stagnation", "phase": "actor", "data": {"conclusion": conclusion, "ok": False}}
+            active["status"] = "failed"
+            failures = int(ctx.get("consecutive_failures", 0)) + 1
+            return {"writes": {"plan": plan, "history": history[-config.MAX_HISTORY:], "consecutive_failures": failures}, "next": "planner", "phase": "actor", "data": {"conclusion": conclusion, "ok": False}}
         active["status"] = "done"
+        _advance_plan(plan)
         return {"writes": {"plan": plan, "history": history[-config.MAX_HISTORY:], "consecutive_failures": 0}, "next": "stagnation", "phase": "actor", "data": {"conclusion": conclusion, "ok": True}}
 
 
@@ -406,41 +398,12 @@ class ReflectorAgent:
             if target and append_text:
                 _apply_mutation(target, append_text)
         diagnosis = str(parsed.get("diagnosis", ""))
-        writes: dict[str, Any] = {"pid_integral": 0.0, "consecutive_failures": 0}
-        if _should_clear_plan_on_reflect(ctx, diagnosis, lesson):
-            writes["plan"] = []
-            writes["done_when"] = ""
-            writes["progress_history"] = []
         return {
-            "writes": writes,
+            "writes": {"pid_integral": 0.0, "consecutive_failures": 0},
             "next": "stagnation",
             "phase": "reflect",
             "data": {"diagnosis": diagnosis, "lesson": lesson},
         }
-
-
-def _should_clear_plan_on_reflect(ctx: dict[str, Any], diagnosis: str, lesson: str) -> bool:
-    failures = int(ctx.get("consecutive_failures", 0))
-    progress = plan_progress(ctx)
-    low_d = diagnosis.lower()
-    low_l = lesson.lower()
-    if "no mutation needed" in low_l or "situational latency" in low_d:
-        return False
-    if failures <= 1 and progress >= 0.25:
-        return False
-    return True
-
-
-def _gui_fallback_action(instruction: str) -> dict[str, Any] | None:
-    low = instruction.lower()
-    if any(k in low for k in ("opera", "grok", "browser", "taskbar")):
-        title = "Grok" if "grok" in low else "Opera"
-        return {"verb": "focus", "target": "", "value": title}
-    if "chat" in low and ("type" in low or "input" in low or "message" in low):
-        return {"verb": "focus", "target": "", "value": "Grok"}
-    if "click" in low or "focus" in low:
-        return {"verb": "focus", "target": "", "value": "Opera"}
-    return None
 
 
 def _advance_plan(plan: list[dict[str, Any]]) -> None:

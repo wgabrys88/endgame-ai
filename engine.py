@@ -69,7 +69,6 @@ def _needs_screen(board: dict[str, Any], target: str) -> bool:
         active = next((s for s in board.get("plan", []) if s.get("status") == "active"), None)
         if active and is_python_step(str(active.get("text", ""))):
             return False
-        return config.GUI_MODE_PATH.exists()
     return config.GUI_MODE_PATH.exists()
 
 
@@ -88,6 +87,18 @@ def _run_agent(board: dict[str, Any], name: str) -> dict[str, Any]:
     return result
 
 
+def _stop_satisfied(board: dict[str, Any]) -> bool:
+    _save(board)
+    log.emit("stop", {
+        "reason": "goal_satisfied",
+        "events": log.count(),
+        "work": log.work_count(),
+        "power": board.get("power", 0.0),
+        "completions": len(board.get("completed", [])),
+    })
+    return True
+
+
 def _main_loop(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
     while not log.exhausted() and not interrupted():
         scheduler = AGENTS["scheduler"]
@@ -97,46 +108,30 @@ def _main_loop(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
         log.emit(result.get("phase", "schedule"), result.get("data"))
 
         target = str(result.get("next", ""))
+        if target == "halt":
+            return _stop_satisfied(board)
         if target == "done":
             time.sleep(config.DELAY_BETWEEN_CYCLES)
             continue
-        if target == "halt":
-            _save(board)
-            log.emit("stop", {
-                "reason": "goal_satisfied",
-                "events": log.count(),
-                "work": log.work_count(),
-                "power": board.get("power", 0.0),
-                "completions": len(board.get("completed", [])),
-            })
-            return True
-        if target in ("idle",) or target not in AGENTS:
+        if target not in AGENTS:
             time.sleep(config.DELAY_BETWEEN_CYCLES)
             continue
 
-        result = _run_agent(board, target)
-        nxt = str(result.get("next", ""))
-        if nxt == "halt":
-            _save(board)
-            log.emit("stop", {
-                "reason": "goal_satisfied",
-                "events": log.count(),
-                "work": log.work_count(),
-                "power": board.get("power", 0.0),
-                "completions": len(board.get("completed", [])),
-            })
-            return True
-        if nxt == "done":
-            _fission(board)
-            log.emit("fission_sustain", {"power": board.get("power", 0.0), "completions": len(board.get("completed", []))})
-        elif nxt == "actor" and target == "planner":
-            result = _run_agent(board, "actor")
-            if str(result.get("next", "")) == "done":
+        nxt = target
+        while nxt in AGENTS:
+            result = _run_agent(board, nxt)
+            nxt = str(result.get("next", ""))
+            if nxt == "halt":
+                return _stop_satisfied(board)
+            if nxt == "done":
                 _fission(board)
-        elif nxt == "planner" and target == "verifier":
-            result = _run_agent(board, "planner")
-            if str(result.get("next", "")) == "actor":
-                _run_agent(board, "actor")
+                log.emit("fission_sustain", {
+                    "power": board.get("power", 0.0),
+                    "completions": len(board.get("completed", [])),
+                })
+                break
+            if nxt not in AGENTS:
+                break
 
         _save(board)
         time.sleep(config.DELAY_BETWEEN_CYCLES)

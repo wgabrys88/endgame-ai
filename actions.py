@@ -15,12 +15,12 @@ from config import (
     DELAY_CHAR_SEND, DELAY_KEY_INTER, MAX_WAIT_SECONDS,
     COMMAND_TIMEOUT_SECONDS, RESPAWN_PATH,
 )
+from win32 import user32, get_window_title, VK_MAP, EXTENDED_VKS, INPUT
 
 _CORE_MODULES: tuple[str, ...] = (
     "config", "engine", "agents", "actions", "main", "tui",
     "llm", "log", "observer", "win32", "acp_client",
 )
-from win32 import user32, get_window_title, VK_MAP, EXTENDED_VKS, INPUT
 
 MOUSEEVENTF_LEFTDOWN: int = 0x0002
 MOUSEEVENTF_LEFTUP: int = 0x0004
@@ -192,7 +192,6 @@ def _focus(args: dict[str, Any], book: ElementBook) -> ActionResult:
 
 @_register("read_file")
 def _read_file(args: dict[str, Any], book: ElementBook) -> ActionResult:
-    from pathlib import Path
     path = str(args.get("path", ""))
     target = Path(path) if Path(path).is_absolute() else BASE_DIR / path
     resolved = target.resolve()
@@ -262,49 +261,16 @@ def _ensure_respawn_contract(command: str) -> str:
     )
 
 
-def _sanitize_cmd(command: str) -> str:
-    command = command.replace("\u201c", "\"").replace("\u201d", "\"").replace("\u2018", "'").replace("\u2019", "'")
-    low = command.lower().strip()
-    if "tasklist" in low and "/fi" in low:
-        if "opera" in low:
-            return r'tasklist /FI "IMAGENAME eq opera.exe"'
-        m = re.search(r"eq\s+(\S+\.exe)", low)
-        if m:
-            return f'tasklist /FI "IMAGENAME eq {m.group(1)}"'
-    local = os.environ.get("LOCALAPPDATA", "")
-    opera_glob = f"dir /s /b {local}\\Programs\\Opera\\opera.exe" if local else ""
-    if opera_glob and low.startswith("dir /s /b") and "opera" in low:
-        return opera_glob
-    if opera_glob and (low.startswith("where opera") or low == "where opera.exe"):
-        return opera_glob
-    return command
-
-
-def _cmd_success(command: str, output: str, returncode: int) -> bool:
-    if returncode == 0:
-        return True
-    low_cmd = command.lower()
-    low_out = output.lower()
-    if "where" in low_cmd and (".exe" in low_out or ":\\" in output):
-        return True
-    if "dir /s /b" in low_cmd and "opera.exe" in low_out:
-        return True
-    if "tasklist" in low_cmd and ("no tasks are running" in low_out or "opera.exe" in low_out):
-        return True
-    if "findstr" in low_cmd and "opera" in low_out:
-        return True
-    if "wmic" in low_cmd and ("processid" in low_out or "no instance" in low_out):
-        return True
-    return False
+def _normalize_cmd(command: str) -> str:
+    return command.replace("\u201c", "\"").replace("\u201d", "\"").replace("\u2018", "'").replace("\u2019", "'")
 
 
 @_register("cmd")
 def _cmd(args: dict[str, Any], book: ElementBook) -> ActionResult:
-    command = _ensure_respawn_contract(_sanitize_cmd(str(args.get("command", ""))))
+    command = _ensure_respawn_contract(_normalize_cmd(str(args.get("command", "")))).strip()
     if not command:
         return ActionResult("cmd", False, "no command")
-    low = command.lower()
-    if low.startswith("start"):
+    if command.lower().startswith("start"):
         try:
             subprocess.Popen(
                 command,
@@ -316,22 +282,18 @@ def _cmd(args: dict[str, Any], book: ElementBook) -> ActionResult:
             return ActionResult("cmd", True, "launched in background")
         except Exception as e:
             return ActionResult("cmd", False, f"launch failed: {e}")
-    try:
-        proc = subprocess.run(
-            command,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=COMMAND_TIMEOUT_SECONDS,
-            cwd=str(BASE_DIR),
-        )
-        output = (proc.stdout + proc.stderr).strip()
-        ok = _cmd_success(command, output, proc.returncode)
-        return ActionResult("cmd", ok, output or f"exit {proc.returncode}")
-    except subprocess.TimeoutExpired:
-        if "start" in low:
-            return ActionResult("cmd", True, "launched in background")
-        return ActionResult("cmd", False, f"timed out after {COMMAND_TIMEOUT_SECONDS}s")
+    proc = subprocess.run(
+        ["cmd.exe", "/c", command],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=COMMAND_TIMEOUT_SECONDS,
+        cwd=str(BASE_DIR),
+    )
+    output = ((proc.stdout or "") + (proc.stderr or "")).strip()
+    ok = proc.returncode == 0
+    return ActionResult("cmd", ok, output or f"exit {proc.returncode}")
 
 
 def is_python_step(step: str) -> bool:
@@ -348,7 +310,6 @@ def is_python_step(step: str) -> bool:
 
 
 def _resolve_write_path(path: str) -> str:
-    from pathlib import Path
     from config import GUI_MODE_PATH
     raw = path.strip().strip("\"'")
     if raw in ("gui_mode", "enabled"):
@@ -370,7 +331,6 @@ def execute_step(step: str) -> ActionResult:
             sec = 1.0
         return execute_verb("wait", {"seconds": sec}, {}, None)
     if low.startswith("read_file "):
-        from pathlib import Path
         path = s.split(None, 1)[1].strip().strip("\"'")
         base = Path(path).name.lower()
         if base in FILE_ALIASES:
