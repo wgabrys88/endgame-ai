@@ -1,7 +1,6 @@
 *.bak
 *.corrupt_*.json
 *.pyc
-AGENTS.md
 __pycache__/
 _run_test.bat
 blackboard_events.txt
@@ -29,3 +28,4 @@ refactor_plan.md
 task_log.md
 reduce.py
 fix_config.py
+self_test.py

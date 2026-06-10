@@ -80,13 +80,14 @@ Then 2 sentences that give it purpose:
 ## Proven Results
 
 - **Goal mode**: "write file" → fission in 28 events, exit 0, zero screen scans
-- **Reactor mode**: autonomous fission at event 65 — system profiled its own environment, created discovery files, verified them, then immediately planned next task
-- **Self-evolution**: reflector mutated planner 3 times in single run, final mutation: "propose exploratory task to keep energy above zero"
+- **Reactor mode**: autonomous fission at event 65 — profiled environment without being told
+- **Prompt self-evolution**: read own logs → rewrote all 4 prompts → 2 fissions in 75 work events, no code touched
+- **Code self-evolution**: read own source → planned reduction → executed (syntax break caught and fixed)
 - **Self-correction**: hello.py escaping failure → reflector diagnosed → actor adapted → success
 
 ## Current State
 
-Branch `refactor-v4`. Reactor architecture complete. Soul added. All truncation removed. Awaiting final integration test with the new prompt soul to validate that the 11-replan Grok failure (caused by context amnesia + soulless prompts) is resolved.
+Branch `refactor-v4`. Headless-first reactor with unified Python step execution, slim config, flow TUI, and autonomously evolved prompts grounded in runtime logs. Local branch is ahead of `origin/refactor-v4` — review before push.
 
 ## Files
 
@@ -94,15 +95,17 @@ Branch `refactor-v4`. Reactor architecture complete. Soul added. All truncation 
 main.py           Entry point, board init
 engine.py         Reactor core: math thread + main loop + fission
 agents.py         All agents + scheduler + context rendering
-config.py         All constants
-llm.py            LLM backend (ACP / LM Studio)
-actions.py        Verb execution
+config.py         Runtime-tunable constants and paths
+win32.py          ctypes Win32 + GUI/UIA constants
+actions.py        Verb execution + input constants
 observer.py       Win32 UI Automation screen scanner
-win32.py          Raw ctypes Win32 bindings
-log.py            Event logger
-tui.py            Live reactor dashboard
+llm.py            LLM backend (ACP / LM Studio)
+log.py            Event logger (math phases excluded from work budget)
+tui.py            Live flow dashboard (MATH/LOOP/SIDE chains)
 acp_client.py     Kiro CLI ACP protocol
-debug_context.py  Context dump tool
+debug_context.py  Context dump tool (dev)
+prompts/          Agent souls (planner, actor, verifier, reflector)
+schemas/          JSON output schemas per agent
 ```
 
 ## Requirements
