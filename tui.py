@@ -225,64 +225,67 @@ class TUI:
     def _render_reactor(self, w: int, h: int, stag: float, pid: float, energy: float, power: float, wing: bool, completions: int) -> list[str]:
         lines: list[str] = []
         flashing = (time.time() - self.fission_flash) < 1.5
-
-        # Reactor core ASCII
-        core_color = _fg(255, 60, 60) if flashing else (_fg(255, 180, 50) if stag > 0.5 else _fg(60, 200, 180))
-        rod_color = _fg(100, 150, 255) if pid > 1.0 else _fg(60, 80, 120)
-
-        # Control rod depth (higher PID = rods inserted deeper)
-        rod_depth = min(int(pid / 3.0 * 6), 6)
+        tick = int(time.time() * 2) % 4
 
         lines.append(f"{DIM}╭{'─' * (w-2)}╮{RST}")
         lines.append(f"{DIM}│{RST}{_fg(180,180,220)} REACTOR CORE    {RST}{DIM}│{RST}")
-        lines.append(f"{DIM}│{'─' * (w-2)}│{RST}")
+        lines.append(f"{DIM}├{'─' * (w-2)}┤{RST}")
 
-        # Control rods (top section)
-        for i in range(3):
-            if i < rod_depth:
-                lines.append(f"{DIM}│{RST} {rod_color}║║║║║║║║║║║║║║║║║║{RST}{DIM}│{RST}")
+        # Core zone height
+        core_h = max(6, h - 14)
+        rod_pct = min(pid / 3.0, 1.0)
+        rod_rows = int(rod_pct * core_h)
+        fuel_rows = core_h - rod_rows
+
+        for row in range(core_h):
+            if row < rod_rows:
+                # Control rods descending from top
+                rod_color = _fg(80, 130, 220) if pid < 2.0 else _fg(60, 100, 255)
+                rod_char = "┃" if (row + tick) % 2 == 0 else "│"
+                rods = f" {rod_char}  {rod_char}  {rod_char}  {rod_char}  {rod_char}  {rod_char} "
+                lines.append(f"{DIM}│{RST}{rod_color}{rods}{RST}{DIM}│{RST}")
             else:
-                lines.append(f"{DIM}│{RST}                    {DIM}│{RST}")
-
-        # Core glow zone
-        glow_h = max(4, h - 18)
-        fuel_level = min(energy / 2.5, 1.0)
-        fuel_filled = int(fuel_level * glow_h)
-
-        for row in range(glow_h):
-            level = glow_h - 1 - row
-            if level < fuel_filled:
-                t = level / max(glow_h - 1, 1)
+                # Fuel core
+                t = (row - rod_rows) / max(fuel_rows - 1, 1)
                 if flashing:
-                    r, g, b = 255, 255, int(200 * (1 - t))
+                    r, g, b = 255, int(255 - 80*t), int(100 + 100*t)
                 elif stag > 0.7:
-                    r, g, b = int(200 + 55*t), int(80 - 40*t), int(30)
+                    r, g, b = int(220 + 35*t), int(60 + 20*t), 20
+                elif stag > 0.3:
+                    r, g, b = int(180 + 40*t), int(140 - 40*t), int(40 + 20*t)
                 else:
-                    r, g, b = int(40 + 60*t), int(180 + 75*t), int(220 - 80*t)
-                bar = "█" * 18
+                    r, g, b = int(30 + 40*t), int(160 + 60*t), int(200 - 40*t)
+                chars = "░▒▓█"
+                intensity = min(energy / 2.5, 1.0)
+                ci = min(3, int(intensity * 3 + (0.5 if (row + tick) % 3 == 0 else 0)))
+                bar = chars[ci] * 18
                 lines.append(f"{DIM}│{RST} {_fg(r,g,b)}{bar}{RST}{DIM}│{RST}")
-            else:
-                lines.append(f"{DIM}│                    │{RST}")
 
-        lines.append(f"{DIM}│{'─' * (w-2)}│{RST}")
+        lines.append(f"{DIM}├{'─' * (w-2)}┤{RST}")
 
-        # Gauges
-        stag_icon = "🔥" if stag > 0.7 else ("◌" if stag < 0.1 else "●")
-        pid_icon = "▼" if pid > 1.0 else "△"
-        fission_icon = "★" if flashing else "☆"
-        wing_icon = f"{_fg(255,255,0)}⚡{RST}" if wing else " "
+        # Gauges - compact, readable
+        s_bar = "━" * int(stag * 10) + "╌" * (10 - int(stag * 10))
+        p_bar = "━" * int(min(pid/3,1) * 10) + "╌" * (10 - int(min(pid/3,1) * 10))
+        stag_c = _fg(255, 80, 60) if stag > 0.5 else _fg(100, 200, 150)
+        pid_c = _fg(80, 130, 255) if pid < 2.0 else _fg(255, 80, 80)
 
-        lines.append(f"{DIM}│{RST} {_fg(255,120,80)}stag{RST} {stag:.2f} {stag_icon}       {DIM}│{RST}")
-        lines.append(f"{DIM}│{RST} {_fg(100,150,255)}pid {RST} {pid:.2f} {pid_icon}       {DIM}│{RST}")
-        lines.append(f"{DIM}│{RST} {_fg(180,120,255)}nrg {RST} {energy:.2f}         {DIM}│{RST}")
-        lines.append(f"{DIM}│{RST} {_fg(255,220,80)}pow {RST} {power:.4f} {fission_icon}   {wing_icon} {DIM}│{RST}")
-        lines.append(f"{DIM}│{RST} {_fg(80,255,180)}done{RST} {completions}             {DIM}│{RST}")
+        lines.append(f"{DIM}│{RST} {stag_c}TEMP{RST} {stag_c}{s_bar}{RST} {stag:.1f}{DIM}│{RST}")
+        lines.append(f"{DIM}│{RST} {pid_c}RODS{RST} {pid_c}{p_bar}{RST} {pid:.1f}{DIM}│{RST}")
+
+        nrg_c = _fg(180, 120, 255)
+        lines.append(f"{DIM}│{RST} {nrg_c}NRG {RST} {energy:.2f}          {DIM}│{RST}")
+
+        pow_c = _fg(255, 220, 80) if power > 0 else DIM
+        fission_icon = f"{_fg(255,255,0)}★{RST}" if flashing else "☆"
+        wing_icon = f"{_fg(255,200,0)}⚡{RST}" if wing else " "
+        lines.append(f"{DIM}│{RST} {pow_c}PWR {RST} {power:.4f}/s {fission_icon} {wing_icon}{DIM}│{RST}")
+
+        done_c = _fg(80, 255, 180) if completions > 0 else DIM
+        lines.append(f"{DIM}│{RST} {done_c}DONE{RST} {completions} fissions     {DIM}│{RST}")
         lines.append(f"{DIM}╰{'─' * (w-2)}╯{RST}")
 
-        # Pad to height
         while len(lines) < h:
             lines.append(" " * w)
-
         return lines[:h]
 
     def _render_right(self, w: int, h: int, plan: list[dict[str, Any]], done_when: str, completed: list[str]) -> list[str]:
