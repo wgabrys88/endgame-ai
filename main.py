@@ -1,6 +1,7 @@
 from __future__ import annotations
 import argparse
 import signal
+import time
 import sys
 import types
 from typing import Any
@@ -51,7 +52,11 @@ def main() -> None:
     board: dict[str, Any] = {
         "goal": args.goal,
         "plan": [],
+        "done_when": "",
         "history": [],
+        "completed": [],
+        "power": 0.0,
+        "start_time": time.time(),
         "screen": "",
         "screen_elements": {},
         "desktop_summary": "",

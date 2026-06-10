@@ -19,9 +19,14 @@
             "minLength": 3,
             "maxLength": 300
           }
+        },
+        "done_when": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 200
         }
       },
-      "required": ["mode", "sequence"],
+      "required": ["mode", "sequence", "done_when"],
       "additionalProperties": false
     }
   }

@@ -60,12 +60,19 @@ def _main_loop(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
         log.emit(result.get("phase", "schedule"), result.get("data"))
 
         target = str(result.get("next", ""))
+
         if target == "done":
-            log.emit("complete", {"goal": board.get("goal", ""), "events": log.count()})
-            return True
+            time.sleep(config.DELAY_BETWEEN_CYCLES)
+            continue
+
         if target == "halt":
             log.emit("halt", {"events": log.count()})
             return False
+
+        if target == "idle":
+            time.sleep(config.DELAY_BETWEEN_CYCLES)
+            continue
+
         if target not in AGENTS:
             time.sleep(config.DELAY_BETWEEN_CYCLES)
             continue
@@ -82,20 +89,48 @@ def _main_loop(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
         result = agent.run(ctx)
         board.update(result.get("writes", {}))
         log.emit(result.get("phase", target), result.get("data"))
-        _save(board)
 
+        agent_next = str(result.get("next", ""))
+        if agent_next == "done":
+            _fission(board)
+            if board.get("goal"):
+                log.emit("complete", {"goal": board["goal"], "events": log.count(), "power": board.get("power", 0.0)})
+                _save(board)
+                return True
+            log.emit("fission_sustain", {"power": board.get("power", 0.0), "completions": len(board.get("completed", []))})
+
+        _save(board)
         time.sleep(config.DELAY_BETWEEN_CYCLES)
 
     reason = "budget" if log.exhausted() else "interrupted"
-    log.emit("stop", {"reason": reason, "events": log.count()})
+    log.emit("stop", {"reason": reason, "events": log.count(), "power": board.get("power", 0.0)})
     return False
+
+
+def _fission(board: dict[str, Any]) -> None:
+    completed: list[str] = board.get("completed", [])
+    done_when = str(board.get("done_when", ""))
+    if done_when:
+        completed.append(done_when)
+    board["completed"] = completed[-50:]
+    start_time = float(board.get("start_time", time.time()))
+    elapsed = max(1.0, time.time() - start_time)
+    board["power"] = len(completed) / elapsed
+    board["plan"] = []
+    board["done_when"] = ""
+    board["consecutive_failures"] = 0
+    board["progress_history"] = []
+    board["pid_integral"] = 0.0
+    log.emit("fission", {"power": board["power"], "completions": len(completed)})
 
 
 def _save(board: dict[str, Any]) -> None:
     data = {
         "goal": board.get("goal", ""),
         "plan": board.get("plan", []),
-        "history": board.get("history", [])[-20:],
+        "done_when": board.get("done_when", ""),
+        "completed": board.get("completed", [])[-10:],
+        "power": board.get("power", 0.0),
         "consecutive_failures": board.get("consecutive_failures", 0),
         "stagnation": board.get("stagnation", 0),
         "lorenz_x": board.get("lorenz_x", 0),
@@ -107,4 +142,4 @@ def _save(board: dict[str, Any]) -> None:
         "events": log.count(),
         "budget": log.budget(),
     }
-    config.SNAPSHOT_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    config.SNAPSHOT_PATH.write_text(json.dumps(data), encoding="utf-8")

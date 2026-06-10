@@ -142,10 +142,10 @@ UIA_CONTROL_TYPE_MAP: dict[int, str] = {
 }
 
 CONTEXT_POLICY: dict[str, list[str]] = {
-    "planner": ["goal", "screen", "plan", "history", "budget", "failures", "lessons"],
+    "planner": ["goal", "screen", "plan", "history", "completed", "budget", "failures", "lessons"],
     "actor": ["instruction", "screen", "history", "lessons"],
-    "verifier": ["goal", "screen", "history", "plan"],
-    "reflector": ["goal", "screen", "plan", "history", "math"],
+    "verifier": ["goal", "done_when", "screen", "history", "plan"],
+    "reflector": ["goal", "screen", "plan", "history", "math", "completed"],
 }
 
 GUID_DATA1_END: int = 4

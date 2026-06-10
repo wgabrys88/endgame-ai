@@ -104,36 +104,32 @@ class SchedulerAgent:
     name: str = "scheduler"
     reads: list[str] = [
         "stagnation", "wing_crossed", "pid_output",
-        "plan", "goal", "last_reflect_time",
+        "plan", "goal", "last_reflect_time", "done_when",
     ]
 
     def run(self, ctx: dict[str, Any]) -> dict[str, Any]:
-        stag = float(ctx.get("stagnation", 0))
         wing = bool(ctx.get("wing_crossed", False))
         pid = float(ctx.get("pid_output", 0))
         plan: list[dict[str, Any]] = ctx.get("plan", [])
-        goal = str(ctx.get("goal", ""))
         last_reflect = float(ctx.get("last_reflect_time", 0))
         writes: dict[str, Any] = {}
         now = time.time()
 
-        if not goal:
-            return {"writes": writes, "next": "idle", "phase": "schedule", "data": {"reason": "idle"}}
-
         if wing:
             writes["wing_crossed"] = False
             writes["plan"] = []
+            writes["done_when"] = ""
             writes["consecutive_failures"] = 0
             writes["pid_integral"] = 0.0
             writes["progress_history"] = []
             return {"writes": writes, "next": "planner", "phase": "schedule", "data": {"reason": "wing_cross"}}
 
+        if not plan:
+            return {"writes": writes, "next": "planner", "phase": "schedule", "data": {"reason": "need_plan"}}
+
         if pid > config.REFLECT_THRESHOLD and (now - last_reflect) >= config.REFLECT_MIN_INTERVAL_SEC:
             writes["last_reflect_time"] = now
             return {"writes": writes, "next": "reflector", "phase": "schedule", "data": {"reason": "pid_gate", "pid": round(pid, 3)}}
-
-        if not plan:
-            return {"writes": writes, "next": "planner", "phase": "schedule", "data": {"reason": "need_plan"}}
 
         active = next((s for s in plan if s.get("status") == "active"), None)
         if active:
@@ -182,7 +178,7 @@ class PlannerAgent:
     name: str = "planner"
     reads: list[str] = [
         "goal", "plan", "screen", "desktop_summary", "history",
-        "consecutive_failures", "stagnation", "energy",
+        "consecutive_failures", "stagnation", "energy", "completed",
     ]
 
     def run(self, ctx: dict[str, Any]) -> dict[str, Any]:
@@ -194,21 +190,21 @@ class PlannerAgent:
         except Exception as e:
             log.emit("planner.error", {"error": str(e)[:200]})
             return {"writes": {"consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1}, "next": "stagnation", "phase": "planner.error", "data": {"error": str(e)[:200]}}
-        parsed = _extract_json(raw, ["mode", "sequence"])
+        parsed = _extract_json(raw, ["mode", "sequence", "done_when"])
         mode = str(parsed.get("mode", "direct"))
         sequence: list[Any] = parsed.get("sequence", [])
+        done_when = str(parsed.get("done_when", ""))
         if mode == "done" or not sequence:
             return {"writes": {}, "next": "verifier", "phase": "plan", "data": {"mode": "done"}}
         steps: list[dict[str, str]] = []
         for i, s in enumerate(sequence[:config.MAX_PLAN_STEPS]):
             steps.append({"text": str(s), "status": "active" if i == 0 else "pending"})
         return {
-            "writes": {"plan": steps, "consecutive_failures": 0},
+            "writes": {"plan": steps, "done_when": done_when, "consecutive_failures": 0, "pid_integral": 0.0, "pid_output": 0.0, "progress_history": []},
             "next": "actor",
             "phase": "plan",
-            "data": {"mode": mode, "steps": len(steps)},
+            "data": {"mode": mode, "steps": len(steps), "done_when": done_when[:60]},
         }
-
 
 class ActorAgent:
     name: str = "actor"
@@ -270,7 +266,7 @@ class ActorAgent:
 
 class VerifierAgent:
     name: str = "verifier"
-    reads: list[str] = ["goal", "screen", "history", "plan", "desktop_summary"]
+    reads: list[str] = ["goal", "screen", "history", "plan", "desktop_summary", "done_when"]
 
     def run(self, ctx: dict[str, Any]) -> dict[str, Any]:
         from llm import call_llm
@@ -286,8 +282,7 @@ class VerifierAgent:
         evidence = str(parsed.get("evidence", ""))
         if verdict == "confirmed":
             return {"writes": {}, "next": "done", "phase": "verify", "data": {"verdict": "confirmed", "evidence": evidence[:200]}}
-        return {"writes": {"plan": [], "consecutive_failures": 0, "progress_history": []}, "next": "stagnation", "phase": "verify", "data": {"verdict": "denied", "evidence": evidence[:200]}}
-
+        return {"writes": {"plan": [], "done_when": "", "consecutive_failures": 0, "progress_history": []}, "next": "stagnation", "phase": "verify", "data": {"verdict": "denied", "evidence": evidence[:200]}}
 
 class ReflectorAgent:
     name: str = "reflector"
@@ -460,6 +455,19 @@ def _render_field(ctx: dict[str, Any], field: str, instruction: str) -> str:
         case "math":
             return (f"MATH: stagnation={ctx.get('stagnation', 0):.2f} "
                     f"pid={ctx.get('pid_output', 0):.2f} energy={ctx.get('energy', 1):.2f}")
+        case "completed":
+            completed: list[str] = ctx.get("completed", [])
+            if not completed:
+                return ""
+            lines = ["COMPLETED (no repeat credit):"]
+            for c in completed[-10:]:
+                lines.append(f"  - {c}")
+            return "\n".join(lines)
+        case "done_when":
+            dw = ctx.get("done_when", "")
+            if not dw:
+                return ""
+            return f"DONE_WHEN: {dw}"
         case _:
             return ""
 
