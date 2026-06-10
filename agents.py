@@ -168,7 +168,7 @@ class SchedulerAgent:
             writes["reflect_trigger"] = {
                 "reason": reason,
                 "stag": round(stag, 3),
-                "pid": round(pid, 3),
+                "energy": round(energy, 3),
                 "failures": failures,
                 "step": str(active.get("text", "")) if active else "",
             }
