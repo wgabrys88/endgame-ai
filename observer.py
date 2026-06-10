@@ -59,7 +59,6 @@ class BookEntry:
     readonly: bool
     action: str
 
-
 @dataclass(slots=True)
 class ObserveResult:
     context_text: str
@@ -67,7 +66,6 @@ class ObserveResult:
     focused_title: str
     windows: list[dict[str, Any]]
     desktop_summary: str
-
 
 def observe() -> ObserveResult:
     set_dpi_aware()
@@ -130,7 +128,6 @@ def observe() -> ObserveResult:
 
     )
 
-
 def _enumerate_windows() -> list[dict[str, Any]]:
     windows: list[dict[str, Any]] = []
     for top_el in get_children(get_root()):
@@ -149,7 +146,6 @@ def _enumerate_windows() -> list[dict[str, Any]]:
             continue
     return windows
 
-
 def _get_z_order() -> list[dict[str, Any]]:
     hwnd = user32.GetTopWindow(None)
     result: list[dict[str, Any]] = []
@@ -164,7 +160,6 @@ def _get_z_order() -> list[dict[str, Any]]:
                 z += 1
         hwnd = user32.GetWindow(hwnd, 2)
     return result
-
 
 def _tree_walk(out: list[dict[str, Any]], el: Any, wnd_name: str, wnd_hwnd: int, timeout: float) -> None:
     from collections import deque
@@ -218,32 +213,16 @@ def _tree_walk(out: list[dict[str, Any]], el: Any, wnd_name: str, wnd_hwnd: int,
         except OSError:
             pass
 
-
 def _probe_regions(windows: list[dict[str, Any]], z_order: list[dict[str, Any]], focused_hwnd: int, sw: int, sh: int) -> list[tuple[int, int, int, int, str, int]]:
     return [(0, 0, sw, sh, "Desktop", 0)]
-
 
 def _window_region(wnd: dict[str, Any]) -> tuple[int, int, int, int, str, int]:
     x = int(wnd["x"])
     y = int(wnd["y"])
     return (x, y, x + int(wnd["w"]), y + int(wnd["h"]), str(wnd["name"]), int(wnd["hwnd"]))
 
-
-def _top_window_region(windows: list[dict[str, Any]], z_order: list[dict[str, Any]]) -> tuple[int, int, int, int, str, int] | None:
-    by_hwnd = {int(wnd["hwnd"]): wnd for wnd in windows}
-    for entry in z_order:
-        wnd = by_hwnd.get(int(entry["hwnd"]))
-        if wnd is None:
-            continue
-        region = _window_region(wnd)
-        if not _is_desktop_window(region):
-            return region
-    return None
-
-
 def _is_desktop_window(region: tuple[int, int, int, int, str, int]) -> bool:
     return _region_name(region) in ("Desktop", "Program Manager")
-
 
 def _target_windows(focused_title: str, regions: list[tuple[int, int, int, int, str, int]]) -> set[str]:
     if any(_is_desktop_window(r) for r in regions):
@@ -253,7 +232,6 @@ def _target_windows(focused_title: str, regions: list[tuple[int, int, int, int, 
         return {focused_title}
     return region_titles
 
-
 def _tree_windows(windows: list[dict[str, Any]], target_wnd: set[str], regions: list[tuple[int, int, int, int, str, int]]) -> list[dict[str, Any]]:
     if not target_wnd or any(_is_desktop_window(region) for region in regions):
         return windows
@@ -262,23 +240,14 @@ def _tree_windows(windows: list[dict[str, Any]], target_wnd: set[str], regions: 
         return selected
     return windows
 
-
 def _region_name(region: tuple[int, int, int, int, str, int]) -> str:
     return str(region[4])
-
 
 def _tree_decision(probe_decision: dict[str, Any]) -> dict[str, Any]:
     action_count = int(probe_decision.get("probe_actionable", 0))
     enabled = action_count < 1
     reason = "probe_actionable_empty" if enabled else "probe_actionable_sufficient"
     return {"enabled": enabled, "reason": reason, "probe_actionable": action_count}
-
-
-def _topmost_popup(z_order: list[dict[str, Any]]) -> bool:
-    if not z_order:
-        return False
-    return get_window_class(int(z_order[0]["hwnd"])) in POPUP_CLASSES
-
 
 def _target_action_count(nodes: list[dict[str, Any]], target_wnd: set[str]) -> int:
     count = 0
@@ -289,7 +258,6 @@ def _target_action_count(nodes: list[dict[str, Any]], target_wnd: set[str]) -> i
         if n.get("action") != "none":
             count += 1
     return count
-
 
 def _probe_region(out: list[dict[str, Any]], step: int, x0: int, y0: int, x1: int, y1: int, wname: str, whwnd: int) -> None:
     seen_rids: set[Any] = set()
@@ -338,7 +306,6 @@ def _probe_region(out: list[dict[str, Any]], step: int, x0: int, y0: int, x1: in
             except OSError:
                 continue
 
-
 def _filter_terminal_text(raw: str) -> str:
     lines = raw.splitlines()
     stripped = [l.rstrip() for l in lines if l.rstrip()]
@@ -364,14 +331,12 @@ def _filter_terminal_text(raw: str) -> str:
         tail = tail[-TERMINAL_CONTEXT_TAIL_LINES:]
     return "\n".join(tail)
 
-
 def _is_runtime_log_line(line: str) -> bool:
     compact = line.strip()
     if not compact.startswith("{"):
         return False
     markers = ('"version":', '"phase":', '"agent_id":', '"timestamp_utc":')
     return all(marker in compact for marker in markers[:2])
-
 
 def _is_tui_dashboard_line(line: str) -> bool:
     compact = line.strip()
@@ -386,11 +351,6 @@ def _is_tui_dashboard_line(line: str) -> bool:
     prefixes = ("mode=", "goal:", "focus:", "plan[", "plan:", "action:", "result:", "children:", "lorenz:")
     return any(compact.startswith(prefix) for prefix in prefixes)
 
-
-def _compact_display_value(value: str) -> str:
-    return value
-
-
 def _merge(tree_nodes: list[dict[str, Any]], probe_nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     keys: set[tuple[Any, ...]] = set()
     merged: list[dict[str, Any]] = []
@@ -404,7 +364,6 @@ def _merge(tree_nodes: list[dict[str, Any]], probe_nodes: list[dict[str, Any]]) 
             merged.append(p)
             keys.add(k)
     return merged
-
 
 def _classify(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     tab_rects: list[tuple[int, int, int, int]] = []
@@ -444,7 +403,6 @@ def _classify(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
         n["action"] = action
         result.append(n)
     return result
-
 
 def _render(nodes: list[dict[str, Any]], target_wnd: set[str], focused_title: str) -> tuple[str, dict[str, BookEntry]]:
     book: dict[str, BookEntry] = {}
@@ -491,12 +449,4 @@ def _render(nodes: list[dict[str, Any]], target_wnd: set[str], focused_title: st
                 action=n["action"],
             )
     return "\n".join(lines), book
-
-
-
-def _clone_nodes(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [dict(n) for n in nodes]
-
-
-
 

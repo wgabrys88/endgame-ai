@@ -21,3 +21,11 @@ test_output.txt
 disabled.json
 gui_mode
 _debug_context_dump.txt
+agent-tools/
+terminals/
+evolve.txt
+evolve_plan.txt
+refactor_plan.md
+task_log.md
+reduce.py
+fix_config.py

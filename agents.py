@@ -5,6 +5,7 @@ from typing import Any, Protocol
 
 import config
 import log
+from actions import DEFAULT_SCROLL_AMOUNT
 
 
 class Agent(Protocol):
@@ -460,9 +461,9 @@ def _build_args(verb: str, target: str, value: str) -> dict[str, Any]:
         return {"keys": keys}
     if verb == "scroll":
         try:
-            return {"selector": target, "amount": int(value) if value else config.DEFAULT_SCROLL_AMOUNT}
+            return {"selector": target, "amount": int(value) if value else DEFAULT_SCROLL_AMOUNT}
         except ValueError:
-            return {"selector": target, "amount": config.DEFAULT_SCROLL_AMOUNT}
+            return {"selector": target, "amount": DEFAULT_SCROLL_AMOUNT}
     if verb == "wait":
         try:
             return {"seconds": float(target or value or "1.0")}
