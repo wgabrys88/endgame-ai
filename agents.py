@@ -143,7 +143,7 @@ class PidAgent:
 class SchedulerAgent:
     name: str = "scheduler"
     reads: list[str] = [
-        "stagnation", "wing_crossed", "energy", "consecutive_failures",
+        "stagnation", "wing_crossed", "energy", "pid_output", "consecutive_failures",
         "plan", "goal", "last_reflect_time", "done_when",
     ]
 
@@ -151,6 +151,7 @@ class SchedulerAgent:
         wing = bool(ctx.get("wing_crossed", False))
         energy = float(ctx.get("energy", 1))
         stag = float(ctx.get("stagnation", 0))
+        pid = float(ctx.get("pid_output", 0))
         failures = int(ctx.get("consecutive_failures", 0))
         plan: list[dict[str, Any]] = ctx.get("plan", [])
         last_reflect = float(ctx.get("last_reflect_time", 0))
@@ -166,21 +167,27 @@ class SchedulerAgent:
             return {"writes": writes, "next": "planner", "phase": "schedule", "data": {"reason": "need_plan"}}
 
         reflect_due = (now - last_reflect) >= config.REFLECT_MIN_INTERVAL_SEC
+        pid_gate = pid >= config.REFLECT_THRESHOLD
         stag_gate = stag >= config.REFLECT_STAG_THRESHOLD and failures >= 1
-        chaos_gate = energy >= 2.0 and failures >= 1
-        if reflect_due and (stag_gate or chaos_gate):
+        chaos_gate = energy >= 2.0 and stag >= config.REFLECT_STAG_THRESHOLD
+        if reflect_due and (pid_gate or stag_gate or chaos_gate):
             writes["last_reflect_time"] = now
-            reason = "chaos_gate" if chaos_gate and not stag_gate else "stag_gate"
+            if pid_gate:
+                reason = "pid_gate"
+            elif chaos_gate:
+                reason = "chaos_gate"
+            else:
+                reason = "stag_gate"
             active = next((s for s in plan if s.get("status") == "active"), None)
             writes["reflect_trigger"] = {
                 "reason": reason,
                 "stag": round(stag, 3),
-                "pid": round(float(ctx.get("pid_output", 0)), 3),
+                "pid": round(pid, 3),
                 "energy": round(energy, 3),
                 "failures": failures,
                 "step": str(active.get("text", "")) if active else "",
             }
-            return {"writes": writes, "next": "reflector", "phase": "schedule", "data": {"reason": reason, "energy": round(energy, 3), "stag": round(stag, 3)}}
+            return {"writes": writes, "next": "reflector", "phase": "schedule", "data": {"reason": reason, "pid": round(pid, 3), "energy": round(energy, 3), "stag": round(stag, 3)}}
 
         active = next((s for s in plan if s.get("status") == "active"), None)
         if active:

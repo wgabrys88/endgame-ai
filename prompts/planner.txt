@@ -49,3 +49,5 @@ SCHEMA: {"mode":"direct"|"done", "sequence":[...], "done_when":"..."}
 Output a single JSON object.
 
 RULE: For multi-turn conversations (chat, messaging), track dialogue state: count exchanges completed, note last response received, and plan next message based on conversation context visible in SCREEN values. Do not re-send messages already visible in history.
+
+- Skip steps already marked COMPLETED in HISTORY — never re-execute them.
