@@ -36,6 +36,7 @@ LOOP_PHASES = frozenset({
     "reflect", "mutation", "fission", "fission_blocked", "goal_change",
     "planner.error", "actor.error", "verifier.error", "reflector.error",
 })
+REFLECT_SCHEDULE_REASONS = frozenset({"pid_gate", "chaos_gate", "stag_gate"})
 WORK_PHASES = LOOP_PHASES | frozenset({"start", "stop"})
 
 RST, DIM, BOLD = "\x1b[0m", "\x1b[2m", "\x1b[1m"
@@ -134,6 +135,7 @@ class TUI:
         self._in_alt = False
         self.last_reason = ""
         self._loop_active = "—"
+        self._side_active = "—"
         self._math_active = "—"
         self._input_active = False
         self._input_buf = goal
@@ -187,6 +189,7 @@ class TUI:
     def _refresh_active(self) -> None:
         self._math_active = "—"
         self._loop_active = "—"
+        self._side_active = "—"
         self.last_reason = ""
         for e in reversed(self.events):
             p = str(e.get("phase", ""))
@@ -195,6 +198,13 @@ class TUI:
                 self._loop_active = "actor" if p == "action" else p
                 if p == "schedule":
                     self.last_reason = str(d.get("reason", ""))
+            if self._side_active == "—":
+                if p == "reflect":
+                    self._side_active = "reflector"
+                elif p == "observe":
+                    self._side_active = "observer"
+                elif p == "schedule" and str(d.get("reason", "")) in REFLECT_SCHEDULE_REASONS:
+                    self._side_active = "reflector"
             if self._math_active == "—" and p in MATH_CHAIN:
                 self._math_active = p
             if self._math_active != "—" and self._loop_active != "—":
@@ -393,7 +403,7 @@ class TUI:
         flow_w = max(20, w // 3 - 2)
         math = self._vchain("MATH", MATH_CHAIN, self._math_active, flow_w)
         loop = self._vchain("LOOP", AGENT_CHAIN, self._loop_active, flow_w)
-        side = self._vchain("SIDE", SIDE_AGENTS, self._loop_active, flow_w)
+        side = self._vchain("SIDE", SIDE_AGENTS, self._side_active, flow_w)
         flow_row = max(len(math), len(loop), len(side))
         for i in range(flow_row):
             a = _pad_visible(math[i] if i < len(math) else "", flow_w)

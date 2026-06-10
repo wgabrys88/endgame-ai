@@ -128,7 +128,10 @@ class PidAgent:
             }
         integral = float(ctx.get("pid_integral", 0))
         prev = float(ctx.get("pid_prev", 0))
-        integral = min(integral + stag, config.PID_INTEGRAL_MAX)
+        if stag <= config.PID_DEAD_ZONE:
+            integral = max(0.0, integral - config.PID_INTEGRAL_DECAY)
+        else:
+            integral = min(integral + stag, config.PID_INTEGRAL_MAX)
         slope = stag - prev
         d_term = config.PID_KD * slope if abs(slope) > config.PID_DEAD_ZONE else 0.0
         output = max(0.0, config.PID_KP * stag + config.PID_KI * integral + d_term)
@@ -166,11 +169,35 @@ class SchedulerAgent:
         if not plan:
             return {"writes": writes, "next": "planner", "phase": "schedule", "data": {"reason": "need_plan"}}
 
+        active = next((s for s in plan if s.get("status") == "active"), None)
+
         reflect_due = (now - last_reflect) >= config.REFLECT_MIN_INTERVAL_SEC
-        pid_gate = pid >= config.REFLECT_THRESHOLD
+        pid_gate = pid >= config.REFLECT_THRESHOLD and stag >= config.REFLECT_STAG_THRESHOLD
         stag_gate = stag >= config.REFLECT_STAG_THRESHOLD and failures >= 1
-        chaos_gate = energy >= 2.0 and stag >= config.REFLECT_STAG_THRESHOLD
-        if reflect_due and (pid_gate or stag_gate or chaos_gate):
+        chaos_gate = energy >= config.CHAOS_ENERGY_THRESHOLD and stag >= config.REFLECT_STAG_THRESHOLD
+        reflect_wanted = reflect_due and (pid_gate or stag_gate or chaos_gate)
+
+        if active:
+            if reflect_wanted and failures >= 1:
+                writes["last_reflect_time"] = now
+                if stag_gate:
+                    reason = "stag_gate"
+                elif pid_gate:
+                    reason = "pid_gate"
+                else:
+                    reason = "chaos_gate"
+                writes["reflect_trigger"] = {
+                    "reason": reason,
+                    "stag": round(stag, 3),
+                    "pid": round(pid, 3),
+                    "energy": round(energy, 3),
+                    "failures": failures,
+                    "step": str(active.get("text", "")),
+                }
+                return {"writes": writes, "next": "reflector", "phase": "schedule", "data": {"reason": reason, "pid": round(pid, 3), "energy": round(energy, 3), "stag": round(stag, 3)}}
+            return {"writes": writes, "next": "actor", "phase": "schedule", "data": {"reason": "execute", "step": active.get("text", "")}}
+
+        if reflect_wanted:
             writes["last_reflect_time"] = now
             if pid_gate:
                 reason = "pid_gate"
@@ -178,20 +205,15 @@ class SchedulerAgent:
                 reason = "chaos_gate"
             else:
                 reason = "stag_gate"
-            active = next((s for s in plan if s.get("status") == "active"), None)
             writes["reflect_trigger"] = {
                 "reason": reason,
                 "stag": round(stag, 3),
                 "pid": round(pid, 3),
                 "energy": round(energy, 3),
                 "failures": failures,
-                "step": str(active.get("text", "")) if active else "",
+                "step": "",
             }
             return {"writes": writes, "next": "reflector", "phase": "schedule", "data": {"reason": reason, "pid": round(pid, 3), "energy": round(energy, 3), "stag": round(stag, 3)}}
-
-        active = next((s for s in plan if s.get("status") == "active"), None)
-        if active:
-            return {"writes": writes, "next": "actor", "phase": "schedule", "data": {"reason": "execute", "step": active.get("text", "")}}
 
         all_done = all(s.get("status") == "done" for s in plan)
         if all_done:
@@ -410,9 +432,11 @@ class ReflectorAgent:
             if target and append_text:
                 _apply_mutation(target, append_text)
         diagnosis = str(parsed.get("diagnosis", ""))
+        plan_steps: list[dict[str, Any]] = ctx.get("plan", [])
+        retry = next((s for s in plan_steps if s.get("status") == "active"), None)
         return {
             "writes": {"pid_integral": 0.0, "consecutive_failures": 0},
-            "next": "stagnation",
+            "next": "actor" if retry else "stagnation",
             "phase": "reflect",
             "data": {"diagnosis": diagnosis, "lesson": lesson},
         }
