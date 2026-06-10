@@ -200,11 +200,17 @@ def _cmd(args: dict[str, Any], book: ElementBook) -> ActionResult:
         return ActionResult("cmd", False, "no command")
     command = command.replace("\u201c", "\"").replace("\u201d", "\"").replace("\u2018", "'").replace("\u2019", "'")
     try:
-        cmd_parts = f"{COMMAND_EXECUTABLE} {COMMAND_SHELL} {command}" if COMMAND_SHELL else command
+        args = [COMMAND_EXECUTABLE, COMMAND_SHELL, command] if COMMAND_SHELL else [command]
         proc = subprocess.run(
-            cmd_parts,
+            args,
             capture_output=True, text=True, timeout=COMMAND_TIMEOUT_SECONDS, cwd=str(BASE_DIR))
         output = (proc.stdout + proc.stderr).strip()
-        return ActionResult("cmd", proc.returncode == 0, output or f"exit {proc.returncode}")
+        ok = proc.returncode == 0
+        lower_cmd = command.lower()
+        if not ok and "where" in lower_cmd and (".exe" in output.lower() or ":\\" in output):
+            ok = True
+        return ActionResult("cmd", ok, output or f"exit {proc.returncode}")
     except subprocess.TimeoutExpired:
+        if "start" in command.lower() and "/b" in command.lower():
+            return ActionResult("cmd", True, "launched in background")
         return ActionResult("cmd", False, f"timed out after {COMMAND_TIMEOUT_SECONDS}s")

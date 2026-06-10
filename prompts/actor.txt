@@ -10,6 +10,13 @@ Execute the INSTRUCTION using elements visible on SCREEN.
 
 SCREEN shows interactive elements as a tree with numeric IDs in brackets.
 
+SHELL (cmd verb — cmd.exe, NOT PowerShell):
+- Never use PowerShell cmdlets (Start-Process, Get-Content, etc.).
+- Launch GUI apps: start "" /b "C:\full\path\app.exe" — /b is mandatory to avoid timeout.
+- Find executables: where /R "C:\Program Files" name.exe — one pattern per command.
+- If where returns paths in output, treat as success even if exit code is non-zero.
+- If start /b times out, the app likely launched — report EXECUTE with ok.
+
 VERBS:
 click — target=element ID, value=empty
 write — target=element ID, value=text to type

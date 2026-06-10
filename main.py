@@ -14,6 +14,8 @@ import config
 
 _interrupted = False
 
+GOAL_MUTABLE = True
+
 
 def _handle_sigint(sig: int, frame: types.FrameType | None) -> None:
     global _interrupted
@@ -23,8 +25,16 @@ def _handle_sigint(sig: int, frame: types.FrameType | None) -> None:
     sys.stderr.write("\n[endgame-ai] Ctrl+C — finishing current cycle.\n")
 
 
+def set_goal(board: dict, new_goal: str) -> bool:
+    global GOAL_MUTABLE
+    if GOAL_MUTABLE:
+        board["goal"] = new_goal
+        return True
+    return False
+
+
 def main() -> None:
-    global _interrupted
+    global _interrupted, GOAL_MUTABLE
 
     parser = argparse.ArgumentParser(prog="endgame-ai")
     parser.add_argument("goal", nargs="?", default=None)
@@ -49,6 +59,8 @@ def main() -> None:
 
     log.init(config.EVENT_BUDGET)
 
+    GOAL_MUTABLE = True
+
     board: dict[str, Any] = {
         "goal": args.goal,
         "plan": [],
@@ -64,9 +76,9 @@ def main() -> None:
         "consecutive_failures": 0,
         "stagnation": 0.0,
         "progress_history": [],
-        "lorenz_x": 1.0,
-        "lorenz_y": 1.0,
-        "lorenz_z": 1.0,
+        "lorenz_x": 8.0,
+        "lorenz_y": 8.0,
+        "lorenz_z": 27.0,
         "energy": 1.0,
         "wing_crossed": False,
         "pid_output": 0.0,

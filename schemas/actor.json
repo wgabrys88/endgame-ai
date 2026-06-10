@@ -24,6 +24,7 @@
                   "wait",
                   "read_file",
                   "write_file",
+                  "focus",
                   "cmd"
                 ]
               },

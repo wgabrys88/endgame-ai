@@ -25,8 +25,18 @@ class StagnationAgent:
     reads: list[str] = ["plan", "progress_history", "consecutive_failures"]
 
     def run(self, ctx: dict[str, Any]) -> dict[str, Any]:
+        plan: list[dict[str, Any]] = ctx.get("plan", [])
+        active = next((s for s in plan if s.get("status") == "active"), None)
+        if active and str(active.get("text", "")).strip().lower().startswith("wait"):
+            history: list[float] = ctx.get("progress_history", [])
+            return {
+                "writes": {"stagnation": 0.0, "progress_history": history},
+                "next": "lorenz",
+                "phase": "stagnation",
+                "data": {"stag": 0.0, "progress": round(plan_progress(ctx), 3), "wait": True},
+            }
         progress = plan_progress(ctx)
-        history: list[float] = ctx.get("progress_history", [])
+        history = ctx.get("progress_history", [])
         history = (history + [progress])[-config.STAGNATION_CYCLES_WINDOW:]
         if len(history) < 3:
             stag = 0.0
@@ -58,8 +68,8 @@ class LorenzAgent:
         y = float(ctx.get("lorenz_y", 1.0))
         z = float(ctx.get("lorenz_z", 1.0))
         stag = float(ctx.get("stagnation", 0))
-        prev_x = x
-        steps = 1 + int(stag * 4)
+        prev_x, prev_y = x, y
+        steps = max(3, 1 + int(stag * config.LORENZ_STAG_STEPS_SCALE))
         for _ in range(steps):
             x = x + config.LORENZ_SIGMA * (y - x) * config.LORENZ_DT
             y = y + (x * (config.LORENZ_RHO - z) - y) * config.LORENZ_DT
@@ -69,7 +79,8 @@ class LorenzAgent:
             scale = config.LORENZ_MAG_CAP / mag
             x, y, z = x * scale, y * scale, z * scale
             mag = config.LORENZ_MAG_CAP
-        wing = (prev_x > 0.0) != (x > 0.0) and stag > 0.4
+        crossed = (prev_x * x < 0) or (prev_y * y < 0)
+        wing = crossed and stag >= config.LORENZ_WING_STAG_MIN
         eq = (config.LORENZ_BETA * (config.LORENZ_RHO - config.LORENZ_EQUILIBRIUM_OFFSET)) ** 0.5
         energy = mag / max(eq * 2, 1.0)
         return {
@@ -103,13 +114,15 @@ class PidAgent:
 class SchedulerAgent:
     name: str = "scheduler"
     reads: list[str] = [
-        "stagnation", "wing_crossed", "pid_output",
+        "stagnation", "wing_crossed", "pid_output", "consecutive_failures",
         "plan", "goal", "last_reflect_time", "done_when",
     ]
 
     def run(self, ctx: dict[str, Any]) -> dict[str, Any]:
         wing = bool(ctx.get("wing_crossed", False))
         pid = float(ctx.get("pid_output", 0))
+        stag = float(ctx.get("stagnation", 0))
+        failures = int(ctx.get("consecutive_failures", 0))
         plan: list[dict[str, Any]] = ctx.get("plan", [])
         last_reflect = float(ctx.get("last_reflect_time", 0))
         writes: dict[str, Any] = {}
@@ -127,9 +140,13 @@ class SchedulerAgent:
         if not plan:
             return {"writes": writes, "next": "planner", "phase": "schedule", "data": {"reason": "need_plan"}}
 
-        if pid > config.REFLECT_THRESHOLD and (now - last_reflect) >= config.REFLECT_MIN_INTERVAL_SEC:
+        reflect_due = (now - last_reflect) >= config.REFLECT_MIN_INTERVAL_SEC
+        pid_gate = pid > config.REFLECT_THRESHOLD
+        stag_gate = stag >= config.REFLECT_STAG_THRESHOLD and failures >= 1
+        if reflect_due and (pid_gate or stag_gate):
             writes["last_reflect_time"] = now
-            return {"writes": writes, "next": "reflector", "phase": "schedule", "data": {"reason": "pid_gate", "pid": round(pid, 3)}}
+            reason = "pid_gate" if pid_gate else "stag_gate"
+            return {"writes": writes, "next": "reflector", "phase": "schedule", "data": {"reason": reason, "pid": round(pid, 3), "stag": round(stag, 3)}}
 
         active = next((s for s in plan if s.get("status") == "active"), None)
         if active:
@@ -200,7 +217,7 @@ class PlannerAgent:
         for i, s in enumerate(sequence[:config.MAX_PLAN_STEPS]):
             steps.append({"text": str(s), "status": "active" if i == 0 else "pending"})
         return {
-            "writes": {"plan": steps, "done_when": done_when, "consecutive_failures": 0, "pid_integral": 0.0, "pid_output": 0.0, "progress_history": []},
+            "writes": {"plan": steps, "done_when": done_when, "consecutive_failures": 0, "progress_history": []},
             "next": "actor",
             "phase": "plan",
             "data": {"mode": mode, "steps": len(steps), "done_when": done_when},

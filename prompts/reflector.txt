@@ -6,6 +6,12 @@ The reactor is stagnating. Diagnose why and emit a delayed-neutron lesson.
 
 Be honest about what is actually broken. If the plan is working but slow, say so — don't invent problems. Only mutate a prompt if the failure is systemic, not situational. Most of the time the correct mutation is NONE — set target to "" and append to "".
 
+Common systemic patterns to check:
+- cmd.exe misuse: PowerShell syntax, blocking start without /b, where with multiple patterns
+- Introspection loops: re-reading own source instead of outward actions
+- Goal downgrade: done_when weaker than GOAL
+- False progress: verifier confirmed trivial condition while GOAL unmet
+
 Look at HISTORY, PLAN, MATH signals. Find the pattern causing stagnation.
 Produce a concrete lesson to prevent this failure mode.
 
