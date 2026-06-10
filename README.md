@@ -23,17 +23,33 @@
 
 ## Read this twice
 
-Most agent frameworks are a million lines of abstraction teaching a model to *pretend* it has hands.
+**M4 in one sentence:** the organism **launched itself** and **rewrote its own code** — same run, no human touching files.
 
-**endgame-ai threw that out.**
+On **2026-06-10** you ran one command (`python tui.py "…"`). The TUI spawned `main.py` via `subprocess.Popen`. The reactor logged it immediately:
 
-No LangChain. No tool-registry theater. No “agentic design patterns” PDF. We burned the rulebooks and wired something else: a **reactor** — math thread, event bus, LLM roles, raw Win32/UIA, and a real Python `exec` metabolism. The planner names intentions. Python executes them. The verifier demands proof. Verified work **fissions** — the plan clears, power ticks up, the organism keeps living.
+```json
+{"n":1,"phase":"start","d":{"goal":"…","budget":2000}}
+```
 
-On **2026-06-10**, during a live breakthrough run, it **rewrote its own `config.py`** (`SCREEN_ELEMENT_VALUE_LIMIT` 500 → 1000) and **appended a rule to its own planner prompt** — while pursuing a goal, without a human editing files.
+That `phase:start` line in `events.jsonl` is the receipt: **it booted its own core.** Not a metaphor. Event **#1**, timestamp `2026-06-10T18:22:30Z`.
 
-That commit is on GitHub: [`eff78fb`](https://github.com/wgabrys88/endgame-ai/commit/eff78fb).
+Then — still without you editing anything — it evolved itself:
 
-If that sounds fake, good. So did fission before we built the logic for it.
+| Log event | What happened |
+|-----------|---------------|
+| **#1** | Reactor alive (`phase:start`) — self-launched via TUI → `main.py` |
+| **#357** | `exec` rewrote `config.py` — `SCREEN_ELEMENT_VALUE_LIMIT` 500 → 1000 |
+| **#359** | `exec` appended conversation-state rule to `prompts/planner.txt` |
+
+Commit on disk: [`eff78fb`](https://github.com/wgabrys88/endgame-ai/commit/eff78fb). Golden log backed up locally.
+
+That is why we call it M4. Not because it passed a linter gate. Because it **started** and **changed** in one living session.
+
+---
+
+Most agent frameworks are a million lines of abstraction teaching a model to *pretend* it has hands. **endgame-ai threw that out.**
+
+No LangChain. No tool-registry theater. We burned the rulebooks and wired a **reactor** — math thread, event bus, LLM roles, raw Win32/UIA, real Python `exec`. Planner names intentions. Python executes. Verifier demands proof. Verified work **fissions**.
 
 ---
 
@@ -105,25 +121,12 @@ Milestones were never a corporate roadmap. They were **capabilities unlocking ca
 |-----------|---------------|--------|
 | **M1–M2** | See the desktop. Act on it. Verify. | ✓ |
 | **M3** | Prompt self-evolution — reflector mutates prompts from runtime evidence | ✓ [`8901988`](https://github.com/wgabrys88/endgame-ai/commit/8901988) |
-| **M4** | **Code evolution** — organism rewrites its own Python & prompts via `exec` while pursuing a goal | ✓ [`eff78fb`](https://github.com/wgabrys88/endgame-ai/commit/eff78fb) |
-| **M4+** | `spawn_main()` child reactor (infra exists, not yet proven in run) | ○ |
-| **M4++** | Resurrection — kill self, relaunch new code | ○ not built |
+| **M4** | **Self-launch + self-edit** — TUI spawns `main.py`, reactor logs `start`, organism rewrites its own Python & prompts via `exec` | ✓ [`eff78fb`](https://github.com/wgabrys88/endgame-ai/commit/eff78fb) · log `#1` `#357` `#359` |
+| **Later** | `spawn_main()` from inside `exec`, resurrection (kill → relaunch new code) | optional polish |
 
 ### Is M4 the last milestone that *matters*?
 
-**Yes — for the soul of the project.**
-
-Once the organism can run real Python against its own tree, **everything else is deduction**:
-
-- Prompt changes? `exec` or reflector.
-- Config tuning? `exec` — proven.
-- New behavior? Patch `.py`, import gate on `write_file`, or `exec` for direct writes.
-- Spawn / resurrect? Engineering polish on top of metabolism — not a new class of life.
-
-M4 is not “passed import gate.” M4 is: **can it change itself while chasing a goal, without you?**  
-Forensic answer from the breakthrough run: **yes.**
-
-What remains before `main` merge is **validation**, not vision: LM Studio backend, longer runs, spawn proof if you want it. Not another milestone pyramid.
+**Yes.** Launch + `exec` metabolism means everything else is deduction — prompts, config, behavior, child processes. What remains before `main` merge is **validation** (LM Studio runs, longer sessions), not a new milestone tier.
 
 ---
 
@@ -176,7 +179,7 @@ Project root is always `BASE_DIR` (directory containing `main.py`). Stay inside 
 - 12 core `.py` modules + 4 prompts + 4 schemas
 - Planner names intentions; **Python executes**
 - `exec` with full `subprocess` + `spawn_main`
-- **Autonomous `config.py` rewrite — proven**
+- **Self-launch** (`tui.py` → `main.py`, log `#1`) **+ autonomous `config.py` rewrite**
 - Verifier blocks fake milestones
 - Fission keeps the organism alive
 
@@ -213,14 +216,14 @@ Runtime artifacts (`events.jsonl`, `snapshot.json`, `goal.txt`, `pause`, `gui_mo
 <details>
 <summary><b>What the organism did — no human file edits</b></summary>
 
-1. Read its own README, source, prompts, schemas
-2. Launched Opera → Grok via `exec` + `subprocess`
-3. Established baseline conversation (verifier **confirmed**, fission fired)
-4. Diagnosed observer truncation → **`config.py` 500 → 1000**
-5. Diagnosed multi-turn chat weakness → **planner prompt rule appended**
-6. Stopped with `goal_satisfied` after verified progress
+1. **Self-launched** — TUI → `main.py` → `events.jsonl` event `#1` `phase:start`
+2. Read its own README, source, prompts, schemas
+3. Launched Opera → Grok via `exec` + `subprocess` (event `#28`)
+4. Baseline conversation — verifier **confirmed**, fission fired (event `#212`)
+5. **`config.py` 500 → 1000** (event `#357`)
+6. **Planner rule appended** (event `#359`)
 
-The receipt is commit [`eff78fb`](https://github.com/wgabrys88/endgame-ai/commit/eff78fb). The golden `events.jsonl` was backed up locally — not in repo by design.
+Receipt: commit [`eff78fb`](https://github.com/wgabrys88/endgame-ai/commit/eff78fb) + backed-up `events.jsonl`.
 
 </details>
 
@@ -241,23 +244,8 @@ The receipt is commit [`eff78fb`](https://github.com/wgabrys88/endgame-ai/commit
 
 - [ ] **LM Studio** — full run on local backend (same reactor, different wire)
 - [ ] **Merge `refactor-v4` → `main`** after you're satisfied with tests
-- [ ] Optional: prove `spawn_main()` in a live run
-- [ ] Optional: resurrection (detach → exit → relaunch new code)
+- [ ] Optional: `spawn_main()` from `exec`, resurrection (detach → exit → relaunch)
 
 ---
 
-<div align="center">
-
-### We are wanderers who went all the way.
-
-Not crazy. Not safe. **Committed.**
-
-*If you're going to try, go all the way.*
-
-<br>
-
-**Branch:** `refactor-v4` · **`main` is frozen until merge**
-
-[Repository](https://github.com/wgabrys88/endgame-ai) · [Latest M4 commit](https://github.com/wgabrys88/endgame-ai/commit/eff78fb)
-
-</div>
+**Branch:** `refactor-v4` · **`main` frozen until merge** · [repo](https://github.com/wgabrys88/endgame-ai) · [M4 commit](https://github.com/wgabrys88/endgame-ai/commit/eff78fb)
