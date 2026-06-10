@@ -1,5 +1,5 @@
 from __future__ import annotations
-import hashlib, math, re, time
+import hashlib, math, time
 from dataclasses import dataclass
 from typing import Any
 
@@ -67,8 +67,6 @@ class ObserveResult:
     focused_title: str
     windows: list[dict[str, Any]]
     desktop_summary: str
-    content_hash: str
-    semantic_hash: str
 
 
 def observe() -> ObserveResult:
@@ -117,9 +115,6 @@ def observe() -> ObserveResult:
     classified.sort(key=lambda n: (wnd_rank.get(n["wnd"], 999), n["depth"], n["y"], n["x"]))
 
     text, book = _render(classified, target_wnd, focused_title)
-    semantic_text = _semantic_render(classified, target_wnd, focused_title)
-    content_hash = hashlib.md5(text.encode("utf-8", errors="surrogatepass")).hexdigest()
-    semantic_hash = hashlib.md5(semantic_text.encode("utf-8", errors="surrogatepass")).hexdigest()
 
     desktop_lines = [f"Desktop ({screen_w}x{screen_h})"]
     for i, entry in enumerate(z_order[:10]):
@@ -132,7 +127,7 @@ def observe() -> ObserveResult:
         context_text=text, book=book, focused_title=focused_title,
         windows=[{"name": w["name"], "hwnd": w["hwnd"]} for w in windows],
         desktop_summary="\n".join(desktop_lines),
-        content_hash=content_hash, semantic_hash=semantic_hash,
+
     )
 
 
@@ -500,40 +495,6 @@ def _render(nodes: list[dict[str, Any]], target_wnd: set[str], focused_title: st
             )
     return "\n".join(lines), book
 
-
-_DYNAMIC_TEXT_PATTERNS = (
-    r"\b\d+:\d+(?::\d+)?\s*(?:am|pm)?\b",
-    r"\b\d+(?:\.\d+)?\s*(?:%|bps|kbps|mbps|gbps|hz|khz|mhz|ghz|kb|mb|gb|tb|ms|sec|s)\b",
-    r"\b[\da-f]+(?::[\da-f]*)+%?\w*\b",
-    r"\b\d+(?:\.\d+)?\b",
-)
-
-
-def _semantic_render(nodes: list[dict[str, Any]], target_wnd: set[str], focused_title: str) -> str:
-    lines: list[str] = []
-    for n in nodes:
-        wnd = str(n["wnd"])
-        if target_wnd and wnd not in target_wnd and wnd != "Taskbar":
-            continue
-        parts = [
-            _normalize_dynamic_text(wnd),
-            "focused" if wnd == focused_title else "",
-            str(n["role"]),
-            str(n["action"]),
-            _normalize_dynamic_text(str(n.get("name", ""))),
-            _normalize_dynamic_text(str(n.get("value", ""))),
-            "enabled" if n.get("enabled", True) else "disabled",
-            "readonly" if n.get("readonly", False) else "editable",
-        ]
-        lines.append("|".join(parts))
-    return "\n".join(lines)
-
-
-def _normalize_dynamic_text(text: str) -> str:
-    normalized = " ".join(text.casefold().split())
-    for pattern in _DYNAMIC_TEXT_PATTERNS:
-        normalized = re.sub(pattern, "<dynamic>", normalized, flags=re.IGNORECASE)
-    return normalized
 
 
 def _clone_nodes(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:

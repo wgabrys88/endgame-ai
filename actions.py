@@ -17,7 +17,7 @@ from win32 import user32, get_window_title, VK_MAP, EXTENDED_VKS, INPUT
 __all__ = ["execute_verb", "ActionResult", "VERBS"]
 
 type ElementBook = dict[str, Any]
-type VerbFn = Callable[[dict[str, Any], ElementBook, Any], ActionResult]
+type VerbFn = Callable[[dict[str, Any], ElementBook], ActionResult]
 
 
 @dataclass(slots=True)
@@ -31,13 +31,13 @@ class ActionResult:
 VERBS: dict[str, VerbFn] = {}
 
 
-def execute_verb(verb: str, args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
+def execute_verb(verb: str, args: dict[str, Any], book: ElementBook, _state: Any) -> ActionResult:
     handler = VERBS.get(verb)
     if not handler:
         return ActionResult(verb=verb, success=False,
                             observation=f"unknown verb: {verb}. Valid: {', '.join(sorted(VERBS))}")
     try:
-        return handler(args, book, state)
+        return handler(args, book)
     except Exception as e:
         return ActionResult(verb=verb, success=False, observation=f"ERROR: {type(e).__name__}: {e}")
 
@@ -50,7 +50,7 @@ def _register(name: str) -> Callable[[VerbFn], VerbFn]:
 
 
 @_register("click")
-def _click(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
+def _click(args: dict[str, Any], book: ElementBook) -> ActionResult:
     selector = str(args.get("selector", ""))
     if selector not in book:
         return ActionResult("click", False, f"selector {selector} not in book")
@@ -67,7 +67,7 @@ def _click(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
 
 
 @_register("write")
-def _write(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
+def _write(args: dict[str, Any], book: ElementBook) -> ActionResult:
     import ctypes
     selector = str(args.get("selector", ""))
     text = str(args.get("text", ""))
@@ -92,7 +92,7 @@ def _write(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
 
 
 @_register("press")
-def _press(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
+def _press(args: dict[str, Any], book: ElementBook) -> ActionResult:
     key = str(args.get("key", "")).lower()
     if not key:
         return ActionResult("press", False, "key is empty")
@@ -107,7 +107,7 @@ def _press(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
 
 
 @_register("hotkey")
-def _hotkey(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
+def _hotkey(args: dict[str, Any], book: ElementBook) -> ActionResult:
     keys: list[str] = args.get("keys", [])
     if not keys:
         return ActionResult("hotkey", False, "keys is empty")
@@ -127,7 +127,7 @@ def _hotkey(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult
 
 
 @_register("scroll")
-def _scroll(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
+def _scroll(args: dict[str, Any], book: ElementBook) -> ActionResult:
     selector = str(args.get("selector", ""))
     amount = int(args.get("amount", DEFAULT_SCROLL_AMOUNT))
     if selector not in book:
@@ -143,14 +143,14 @@ def _scroll(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult
 
 
 @_register("wait")
-def _wait(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
+def _wait(args: dict[str, Any], book: ElementBook) -> ActionResult:
     seconds = min(float(args.get("seconds", 1.0)), MAX_WAIT_SECONDS)
     time.sleep(seconds)
     return ActionResult("wait", True, f"waited {seconds}s")
 
 
 @_register("focus")
-def _focus(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
+def _focus(args: dict[str, Any], book: ElementBook) -> ActionResult:
     title = str(args.get("window_title", ""))
     if not title:
         return ActionResult("focus", False, "no window_title")
@@ -167,7 +167,7 @@ def _focus(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
 
 
 @_register("read_file")
-def _read_file(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
+def _read_file(args: dict[str, Any], book: ElementBook) -> ActionResult:
     from pathlib import Path
     path = str(args.get("path", ""))
     target = Path(path) if Path(path).is_absolute() else BASE_DIR / path
@@ -181,7 +181,7 @@ def _read_file(args: dict[str, Any], book: ElementBook, state: Any) -> ActionRes
 
 
 @_register("write_file")
-def _write_file(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
+def _write_file(args: dict[str, Any], book: ElementBook) -> ActionResult:
     from pathlib import Path
     path = str(args.get("path", ""))
     content = str(args.get("content", ""))
@@ -193,7 +193,7 @@ def _write_file(args: dict[str, Any], book: ElementBook, state: Any) -> ActionRe
 
 
 @_register("cmd")
-def _cmd(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
+def _cmd(args: dict[str, Any], book: ElementBook) -> ActionResult:
     import subprocess
     command = str(args.get("command", ""))
     if not command:

@@ -8,15 +8,7 @@
       "properties": {
         "mode": {
           "type": "string",
-          "enum": [
-            "direct",
-            "done"
-          ]
-        },
-        "next_action": {
-          "type": "string",
-          "minLength": 0,
-          "maxLength": 2000
+          "enum": ["direct", "done"]
         },
         "sequence": {
           "type": "array",
@@ -27,23 +19,9 @@
             "minLength": 3,
             "maxLength": 300
           }
-        },
-        "recipient": {
-          "type": "string",
-          "enum": [
-            "actor",
-            "verifier",
-            "reflector",
-            ""
-          ]
         }
       },
-      "required": [
-        "mode",
-        "next_action",
-        "sequence",
-        "recipient"
-      ],
+      "required": ["mode", "sequence"],
       "additionalProperties": false
     }
   }

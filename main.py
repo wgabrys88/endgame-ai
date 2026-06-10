@@ -7,7 +7,7 @@ from typing import Any
 
 from config import PROCESS_DPI_AWARENESS_CONTEXT, SIGINT_EXIT_CODE
 from llm import set_backend, close_backend
-from orchestrator import run
+from engine import run
 import log
 import config
 
@@ -51,43 +51,25 @@ def main() -> None:
 
     board: dict[str, Any] = {
         "goal": args.goal,
-        "plan_steps": [],
-        "plan_index": 0,
+        "plan": [],
         "history": [],
-        "notes": [],
         "screen": "",
-        "screen_hash": "",
         "screen_elements": {},
         "desktop_summary": "",
         "focused_window": "",
-        "last_verb": "",
-        "last_success": False,
-        "last_observation": "",
-        "actor_conclusion": "",
         "consecutive_failures": 0,
-        "verify_denied_count": 0,
-        "repetition_score": 0.0,
-        "stagnation_score": 0.0,
-        "screen_stagnation": 0,
-        "recent_hashes": [],
-        "recent_sigs": [],
-        "jacobian": {},
-        "jacobian_trials": {},
+        "stagnation": 0.0,
+        "progress_history": [],
         "lorenz_x": 8.485,
         "lorenz_y": 8.485,
         "lorenz_z": 27.0,
-        "attractor_energy": 1.0,
-        "lorenz_wing_crossed": False,
+        "energy": 1.0,
+        "wing_crossed": False,
         "pid_output": 0.0,
         "pid_integral": 0.0,
         "pid_prev": 0.0,
-        "last_instruction": "",
-        "requested_next": "",
-        "role_calls": {},
-        "total_role_calls": 0,
-        "halt_count": 0,
-        "last_outputs": {},
-        "done": False,
+        "cycle": 0,
+        "last_reflect_cycle": -100,
     }
 
     try:

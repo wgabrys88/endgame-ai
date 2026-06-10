@@ -5,8 +5,6 @@ Your job: determine if the GOAL has been achieved by examining SCREEN and HISTOR
 verdict field: "confirmed" if the goal is complete, "denied" if not.
 evidence field: state what you observe that proves or disproves completion.
 
-A goal is confirmed when its observable effect is visible: file was written (check HISTORY for write_file success), window is open (check SCREEN), text was typed (check HISTORY for write success).
-
-A goal is denied when the required effect is missing or only partially done.
+A goal is confirmed when its observable effect is present: file written (check HISTORY for write_file/cmd success), window open (check SCREEN), text typed (check HISTORY for write success).
 
 Output your response as a single JSON object.

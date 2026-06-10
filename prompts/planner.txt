@@ -5,7 +5,7 @@ Your job: produce a sequence of atomic steps that achieve the GOAL.
 Each step in the sequence is a single action written as: verb target content
 The actor will parse your step text and execute it.
 
-ONLY these verbs exist (do NOT invent others like screenshot, extract_text, ocr):
+ONLY these verbs exist:
 click [id] — click element by ID number from SCREEN
 write [id] text — type text into element by ID
 hotkey keys — press key combination (keys separated by +)
@@ -15,15 +15,11 @@ wait seconds — pause
 focus title — bring named window to front
 read_file path — read a file
 write_file path content — write content to a file
-cmd command — execute a Windows shell command (use ASCII quotes only)
+cmd command — execute a Windows shell command
 
-The SCREEN section in your context already contains ALL visible text and interactive elements. You do NOT need to screenshot or OCR. After every action you take, the screen is automatically re-observed before your next turn. Plan actions, not observations.
-
-The SCREEN section shows interactive elements as a tree. Each element has a numeric ID in brackets. Use that ID as the target.
+The SCREEN section shows interactive elements as a tree with numeric IDs in brackets. Use that ID as the target. The screen is re-observed before every LLM call automatically.
 
 mode field: "direct" if steps are needed, "done" if GOAL is already achieved.
-next_action field: copy of the first step in your sequence.
 sequence field: all steps from first to last.
-recipient field: always "actor" for direct, always "verifier" for done.
 
 Output your response as a single JSON object.

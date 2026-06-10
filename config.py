@@ -74,9 +74,6 @@ LORENZ_RHO: float = 28.0
 LORENZ_BETA: float = 8.0 / 3.0
 LORENZ_DT: float = 0.02
 LORENZ_MAG_CAP: float = 80.0
-LORENZ_RHO_SENSITIVITY: float = 1.5
-LORENZ_BETA_SENSITIVITY: float = 0.3
-LORENZ_BETA_MIN: float = 0.5
 LORENZ_EQUILIBRIUM_OFFSET: float = 1.0
 
 PID_KP: float = 1.5
@@ -85,23 +82,13 @@ PID_KD: float = 0.8
 PID_INTEGRAL_MAX: float = 5.0
 PID_DEAD_ZONE: float = 0.05
 
-STAGNATION_WEIGHT_FAILURES: float = 5.0
-STAGNATION_WEIGHT_REPETITION: float = 12.0
-STAGNATION_WEIGHT_SCREEN: float = 6.0
-STAGNATION_NORMALIZER: float = 24.0
-STAGNATION_HALT_THRESHOLD: float = 0.95
-STAGNATION_HALT_SUSTAINED: int = 5
+STAGNATION_CYCLES_WINDOW: int = 6
+REFLECT_THRESHOLD: float = 0.6
+REFLECT_MIN_INTERVAL: int = 8
+PROMPT_MAX_RULES: int = 8
 
-REFLECT_THRESHOLD: float = 0.15
-REFLECT_BUDGET_GATE: float = 0.75
-REFLECT_MIN_INTERVAL: int = 4
-REFLECT_MIN_FAILURES: int = 2
-
-REPETITION_WINDOW: int = 12
-REPETITION_MIN_WINDOW: int = 4
-SCREEN_STAGNATION_LOOKBACK: int = 4
-SCREEN_HASH_HISTORY_LIMIT: int = 8
 MAX_HISTORY: int = 100
+MAX_PLAN_STEPS: int = 12
 
 PROCESS_DPI_AWARENESS_CONTEXT: int = -4
 SIGINT_EXIT_CODE: int = 130
@@ -154,10 +141,10 @@ UIA_CONTROL_TYPE_MAP: dict[int, str] = {
 }
 
 CONTEXT_POLICY: dict[str, list[str]] = {
-    "planner": ["goal", "desktop", "screen", "plan", "history", "budget", "diverge", "failures", "lessons", "roles"],
+    "planner": ["goal", "screen", "plan", "history", "budget", "failures", "lessons"],
     "actor": ["instruction", "screen", "history", "lessons"],
-    "verifier": ["goal", "desktop", "screen", "history", "plan", "evidence"],
-    "reflector": ["goal", "desktop", "screen", "plan", "history", "math", "roles"],
+    "verifier": ["goal", "screen", "history", "plan"],
+    "reflector": ["goal", "screen", "plan", "history", "math"],
 }
 
 GUID_DATA1_END: int = 4
