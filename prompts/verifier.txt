@@ -28,3 +28,5 @@ Output a single JSON object.
 RULE: A plan that only reads files and gathers information is NOT a material advance toward a GOAL that requires writing or creating output. Deny milestones whose done_when is satisfied by mere observation when GOAL demands action.
 
 RULE: For self-evolution GOALs, confirm only when prompt files have actually been written/modified with improvements — not when they have merely been read.
+
+RULE: When all plan steps are ✓ and the goal requires a file to exist, confirm done_when by checking the file's existence and content — do not wait for screen-level proof of a headless write_file action.

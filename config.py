@@ -112,3 +112,5 @@ CONTEXT_POLICY: dict[str, list[str]] = {
     "verifier": ["goal", "done_when", "screen", "history", "plan", "completed"],
     "reflector": ["goal", "plan", "history", "math", "trigger", "completed"],
 }
+# Smallest fix: observer timeout fallback for resilience
+OBSERVER_TIMEOUT = 30
