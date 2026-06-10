@@ -8,12 +8,17 @@ from config import EVENTS_PATH
 
 _handle: TextIO | None = None
 _counter: int = 0
-_budget: int = 100
+_work: int = 0
+_budget: int = 20
+
+# Math heartbeat is telemetry — does not consume work budget.
+_MATH_PHASES: frozenset[str] = frozenset({"stagnation", "lorenz", "pid"})
 
 
 def init(budget: int) -> Path:
-    global _handle, _counter, _budget
+    global _handle, _counter, _work, _budget
     _counter = 0
+    _work = 0
     _budget = budget
     EVENTS_PATH.parent.mkdir(parents=True, exist_ok=True)
     _handle = EVENTS_PATH.open("a", encoding="utf-8", newline="\n")
@@ -21,8 +26,10 @@ def init(budget: int) -> Path:
 
 
 def emit(phase: str, data: Any = None) -> int:
-    global _counter
+    global _counter, _work
     _counter += 1
+    if phase not in _MATH_PHASES:
+        _work += 1
     if _handle is None:
         return _counter
     record: dict[str, Any] = {
@@ -38,11 +45,15 @@ def emit(phase: str, data: Any = None) -> int:
 
 
 def exhausted() -> bool:
-    return _counter >= _budget
+    return _work >= _budget
 
 
 def count() -> int:
     return _counter
+
+
+def work_count() -> int:
+    return _work
 
 
 def budget() -> int:

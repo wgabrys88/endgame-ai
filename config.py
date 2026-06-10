@@ -10,7 +10,7 @@ LESSONS_PATH: pathlib.Path = BASE_DIR / "lessons.txt"
 DISABLED_PATH: pathlib.Path = BASE_DIR / "disabled.json"
 GUI_MODE_PATH: pathlib.Path = BASE_DIR / "gui_mode"
 
-EVENT_BUDGET: int = 100
+EVENT_BUDGET: int = 20
 
 LMS_HOSTS: list[str] = ["http://localhost:1234"]
 LMS_TIMEOUT: float = 300.0

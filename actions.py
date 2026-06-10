@@ -1,6 +1,8 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable
+import os
+import re
 import time
 
 from config import (
@@ -14,7 +16,9 @@ from config import (
 )
 from win32 import user32, get_window_title, VK_MAP, EXTENDED_VKS, INPUT
 
-__all__ = ["execute_verb", "ActionResult", "VERBS"]
+__all__ = ["execute_verb", "execute_step", "is_python_step", "ActionResult", "VERBS"]
+
+FILE_ALIASES: dict[str, str] = {"reactor.py": "engine.py", "planner.py": "agents.py"}
 
 type ElementBook = dict[str, Any]
 type VerbFn = Callable[[dict[str, Any], ElementBook], ActionResult]
@@ -192,25 +196,128 @@ def _write_file(args: dict[str, Any], book: ElementBook) -> ActionResult:
     return ActionResult("write_file", True, f"wrote {len(content)} bytes to {path}")
 
 
+def _sanitize_cmd(command: str) -> str:
+    command = command.replace("\u201c", "\"").replace("\u201d", "\"").replace("\u2018", "'").replace("\u2019", "'")
+    low = command.lower().strip()
+    if "tasklist" in low and "/fi" in low:
+        if "opera" in low:
+            return r'tasklist /FI "IMAGENAME eq opera.exe"'
+        m = re.search(r"eq\s+(\S+\.exe)", low)
+        if m:
+            return f'tasklist /FI "IMAGENAME eq {m.group(1)}"'
+    local = os.environ.get("LOCALAPPDATA", "")
+    opera_glob = f"dir /s /b {local}\\Programs\\Opera\\opera.exe" if local else ""
+    if opera_glob and low.startswith("dir /s /b") and "opera" in low:
+        return opera_glob
+    if opera_glob and (low.startswith("where opera") or low == "where opera.exe"):
+        return opera_glob
+    return command
+
+
+def _cmd_success(command: str, output: str, returncode: int) -> bool:
+    if returncode == 0:
+        return True
+    low_cmd = command.lower()
+    low_out = output.lower()
+    if "where" in low_cmd and (".exe" in low_out or ":\\" in output):
+        return True
+    if "dir /s /b" in low_cmd and "opera.exe" in low_out:
+        return True
+    if "tasklist" in low_cmd and ("no tasks are running" in low_out or "opera.exe" in low_out):
+        return True
+    if "findstr" in low_cmd and "opera" in low_out:
+        return True
+    if "wmic" in low_cmd and ("processid" in low_out or "no instance" in low_out):
+        return True
+    return False
+
+
 @_register("cmd")
 def _cmd(args: dict[str, Any], book: ElementBook) -> ActionResult:
     import subprocess
-    command = str(args.get("command", ""))
+    command = _sanitize_cmd(str(args.get("command", "")))
     if not command:
         return ActionResult("cmd", False, "no command")
-    command = command.replace("\u201c", "\"").replace("\u201d", "\"").replace("\u2018", "'").replace("\u2019", "'")
+    low = command.lower()
+    if low.startswith("start"):
+        try:
+            subprocess.Popen(
+                command,
+                shell=True,
+                cwd=str(BASE_DIR),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return ActionResult("cmd", True, "launched in background")
+        except Exception as e:
+            return ActionResult("cmd", False, f"launch failed: {e}")
     try:
-        args = [COMMAND_EXECUTABLE, COMMAND_SHELL, command] if COMMAND_SHELL else [command]
         proc = subprocess.run(
-            args,
-            capture_output=True, text=True, timeout=COMMAND_TIMEOUT_SECONDS, cwd=str(BASE_DIR))
+            command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=COMMAND_TIMEOUT_SECONDS,
+            cwd=str(BASE_DIR),
+        )
         output = (proc.stdout + proc.stderr).strip()
-        ok = proc.returncode == 0
-        lower_cmd = command.lower()
-        if not ok and "where" in lower_cmd and (".exe" in output.lower() or ":\\" in output):
-            ok = True
+        ok = _cmd_success(command, output, proc.returncode)
         return ActionResult("cmd", ok, output or f"exit {proc.returncode}")
     except subprocess.TimeoutExpired:
-        if "start" in command.lower() and "/b" in command.lower():
+        if "start" in low:
             return ActionResult("cmd", True, "launched in background")
         return ActionResult("cmd", False, f"timed out after {COMMAND_TIMEOUT_SECONDS}s")
+
+
+def is_python_step(step: str) -> bool:
+    low = step.strip().lower()
+    if low.startswith(("cmd ", "read_file ", "write_file ")):
+        return True
+    if low.startswith("wait "):
+        try:
+            float(step.split(None, 1)[1])
+            return True
+        except (IndexError, ValueError):
+            return False
+    return False
+
+
+def _resolve_write_path(path: str) -> str:
+    from pathlib import Path
+    from config import GUI_MODE_PATH
+    raw = path.strip().strip("\"'")
+    if raw in ("gui_mode", "enabled"):
+        return str(GUI_MODE_PATH)
+    p = Path(raw)
+    return str(p) if p.is_absolute() else str((BASE_DIR / raw).resolve())
+
+
+def execute_step(step: str) -> ActionResult:
+    """Python executes headless plan steps — model only names them."""
+    s = step.strip()
+    low = s.lower()
+    if low.startswith("cmd "):
+        return execute_verb("cmd", {"command": s[4:].strip()}, {}, None)
+    if low.startswith("wait "):
+        try:
+            sec = float(s.split(None, 1)[1])
+        except (IndexError, ValueError):
+            sec = 1.0
+        return execute_verb("wait", {"seconds": sec}, {}, None)
+    if low.startswith("read_file "):
+        from pathlib import Path
+        path = s.split(None, 1)[1].strip().strip("\"'")
+        base = Path(path).name.lower()
+        if base in FILE_ALIASES:
+            path = FILE_ALIASES[base]
+        return execute_verb("read_file", {"path": path}, {}, None)
+    if low.startswith("write_file "):
+        parts = s.split(None, 2)
+        if len(parts) < 2:
+            return ActionResult("write_file", False, "need path and content")
+        path = _resolve_write_path(parts[1])
+        content = parts[2] if len(parts) > 2 else "1"
+        if content in ("enabled", "enable"):
+            content = "1"
+        return execute_verb("write_file", {"path": path, "content": content}, {}, None)
+    return ActionResult("step", False, f"not a python step: {step}")

@@ -4,6 +4,7 @@ import threading
 import time
 from typing import Any, Callable
 
+from actions import is_python_step
 from agents import (
     StagnationAgent, LorenzAgent, PidAgent, SchedulerAgent,
     ObserverAgent, PlannerAgent, ActorAgent, VerifierAgent, ReflectorAgent,
@@ -61,6 +62,32 @@ def run(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
         math_thread.join(timeout=5)
 
 
+def _needs_screen(board: dict[str, Any], target: str) -> bool:
+    if target not in LLM_AGENTS or target == "planner":
+        return False
+    if target == "actor":
+        active = next((s for s in board.get("plan", []) if s.get("status") == "active"), None)
+        if active and is_python_step(str(active.get("text", ""))):
+            return False
+        return config.GUI_MODE_PATH.exists()
+    return config.GUI_MODE_PATH.exists()
+
+
+def _run_agent(board: dict[str, Any], name: str) -> dict[str, Any]:
+    if _needs_screen(board, name):
+        obs = AGENTS["observer"]
+        obs_ctx = {k: board[k] for k in obs.reads if k in board}
+        obs_result = obs.run(obs_ctx)
+        board.update(obs_result.get("writes", {}))
+        log.emit(obs_result.get("phase", "observe"), obs_result.get("data"))
+    agent = AGENTS[name]
+    ctx = {k: board[k] for k in agent.reads if k in board}
+    result = agent.run(ctx)
+    board.update(result.get("writes", {}))
+    log.emit(result.get("phase", name), result.get("data"))
+    return result
+
+
 def _main_loop(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
     while not log.exhausted() and not interrupted():
         scheduler = AGENTS["scheduler"]
@@ -70,46 +97,32 @@ def _main_loop(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
         log.emit(result.get("phase", "schedule"), result.get("data"))
 
         target = str(result.get("next", ""))
-
         if target == "done":
             time.sleep(config.DELAY_BETWEEN_CYCLES)
             continue
-
-        if target == "halt":
-            log.emit("halt", {"events": log.count()})
-            return False
-
-        if target == "idle":
+        if target in ("halt", "idle") or target not in AGENTS:
             time.sleep(config.DELAY_BETWEEN_CYCLES)
             continue
 
-        if target not in AGENTS:
-            time.sleep(config.DELAY_BETWEEN_CYCLES)
-            continue
-
-        if target in LLM_AGENTS and config.GUI_MODE_PATH.exists():
-            obs = AGENTS["observer"]
-            obs_ctx = {k: board[k] for k in obs.reads if k in board}
-            obs_result: dict[str, Any] = obs.run(obs_ctx)
-            board.update(obs_result.get("writes", {}))
-            log.emit(obs_result.get("phase", "observe"), obs_result.get("data"))
-
-        agent = AGENTS[target]
-        ctx = {k: board[k] for k in agent.reads if k in board}
-        result = agent.run(ctx)
-        board.update(result.get("writes", {}))
-        log.emit(result.get("phase", target), result.get("data"))
-
-        agent_next = str(result.get("next", ""))
-        if agent_next == "done":
+        result = _run_agent(board, target)
+        nxt = str(result.get("next", ""))
+        if nxt == "done":
             _fission(board)
             log.emit("fission_sustain", {"power": board.get("power", 0.0), "completions": len(board.get("completed", []))})
+        elif nxt == "actor" and target == "planner":
+            result = _run_agent(board, "actor")
+            if str(result.get("next", "")) == "done":
+                _fission(board)
+        elif nxt == "planner" and target == "verifier":
+            result = _run_agent(board, "planner")
+            if str(result.get("next", "")) == "actor":
+                _run_agent(board, "actor")
 
         _save(board)
         time.sleep(config.DELAY_BETWEEN_CYCLES)
 
     reason = "budget" if log.exhausted() else "interrupted"
-    log.emit("stop", {"reason": reason, "events": log.count(), "power": board.get("power", 0.0)})
+    log.emit("stop", {"reason": reason, "events": log.count(), "work": log.work_count(), "power": board.get("power", 0.0)})
     return False
 
 
@@ -158,10 +171,11 @@ def _save(board: dict[str, Any]) -> None:
         "pid_output": board.get("pid_output", 0),
         "pid_integral": board.get("pid_integral", 0),
         "wing_crossed": board.get("wing_crossed", False),
-        "behavioral_stagnation": board.get("behavioral_stagnation", 0),
         "reflect_trigger": board.get("reflect_trigger", {}),
+        "focused_window": board.get("focused_window", ""),
         "math_trace": board.get("math_trace", [])[-12:],
         "events": log.count(),
+        "work_events": log.work_count(),
         "budget": log.budget(),
     }
     config.SNAPSHOT_PATH.write_text(json.dumps(data), encoding="utf-8")

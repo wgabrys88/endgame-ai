@@ -51,57 +51,20 @@ def _trivial_milestone(goal: str, done_when: str) -> bool:
     return observational and substantial and not executed
 
 
-def _behavioral_stagnation(history: list[dict[str, Any]]) -> float:
-    recent = history[-10:]
-    if len(recent) < 3:
-        return 0.0
-    verbs = [str(h.get("verb", "")) for h in recent]
-    obs = [str(h.get("obs", ""))[:80] for h in recent]
-    boost = 0.0
-    if verbs.count("scroll") >= 3:
-        boost = max(boost, 0.4)
-    if verbs.count("click") >= 4:
-        boost = max(boost, 0.35)
-    if len(obs) >= 4 and len(set(obs[-4:])) == 1:
-        boost = max(boost, 0.5)
-    if sum(1 for h in recent if h.get("verb") == "focus" and not h.get("ok")) >= 2:
-        boost = max(boost, 0.3)
-    return boost
-
-
-def _is_headless_direct(instruction: str) -> bool:
-    s = instruction.strip()
-    low = s.lower()
-    if low.startswith("cmd "):
-        return True
-    if low.startswith("wait "):
-        try:
-            float(s.split(None, 1)[1])
-            return True
-        except (IndexError, ValueError):
-            return False
-    if low.startswith("read_file "):
-        return len(s.split(None, 1)) == 2
-    if low.startswith("write_file "):
-        return True
-    return False
-
-
 class StagnationAgent:
     name: str = "stagnation"
-    reads: list[str] = ["plan", "progress_history", "consecutive_failures", "history"]
+    reads: list[str] = ["plan", "progress_history", "consecutive_failures"]
 
     def run(self, ctx: dict[str, Any]) -> dict[str, Any]:
         plan: list[dict[str, Any]] = ctx.get("plan", [])
         active = next((s for s in plan if s.get("status") == "active"), None)
         if active and str(active.get("text", "")).strip().lower().startswith("wait"):
             history: list[float] = ctx.get("progress_history", [])
-            behavioral = _behavioral_stagnation(list(ctx.get("history", [])))
             return {
-                "writes": {"stagnation": behavioral, "progress_history": history, "behavioral_stagnation": behavioral},
+                "writes": {"stagnation": 0.0, "progress_history": history},
                 "next": "lorenz",
                 "phase": "stagnation",
-                "data": {"stag": round(behavioral, 3), "progress": round(plan_progress(ctx), 3), "wait": True, "behavioral": round(behavioral, 3)},
+                "data": {"stag": 0.0, "progress": round(plan_progress(ctx), 3), "wait": True},
             }
         progress = plan_progress(ctx)
         history = ctx.get("progress_history", [])
@@ -118,14 +81,12 @@ class StagnationAgent:
             else:
                 stag = 1.0
         failures = int(ctx.get("consecutive_failures", 0))
-        behavioral = _behavioral_stagnation(list(ctx.get("history", [])))
-        plan_stag = min(1.0, stag + failures * 0.15)
-        stag = min(1.0, max(plan_stag, behavioral))
+        stag = min(1.0, stag + failures * 0.15)
         return {
-            "writes": {"stagnation": stag, "progress_history": history, "behavioral_stagnation": behavioral},
+            "writes": {"stagnation": stag, "progress_history": history},
             "next": "lorenz",
             "phase": "stagnation",
-            "data": {"stag": round(stag, 3), "progress": round(progress, 3), "behavioral": round(behavioral, 3), "plan_stag": round(plan_stag, 3)},
+            "data": {"stag": round(stag, 3), "progress": round(progress, 3)},
         }
 
 
@@ -157,7 +118,7 @@ class LorenzAgent:
             "writes": {"lorenz_x": x, "lorenz_y": y, "lorenz_z": z, "energy": energy, "wing_crossed": wing},
             "next": "pid",
             "phase": "lorenz",
-            "data": {"x": round(x, 2), "energy": round(energy, 2), "wing": wing},
+            "data": {"x": round(x, 2), "y": round(y, 2), "z": round(z, 2), "energy": round(energy, 2), "wing": wing},
         }
 
 
@@ -211,8 +172,11 @@ class SchedulerAgent:
             return {"writes": writes, "next": "planner", "phase": "schedule", "data": {"reason": "need_plan"}}
 
         reflect_due = (now - last_reflect) >= config.REFLECT_MIN_INTERVAL_SEC
+        progress = plan_progress(ctx)
         pid_gate = pid > config.REFLECT_THRESHOLD
         stag_gate = stag >= config.REFLECT_STAG_THRESHOLD and failures >= 1
+        if pid_gate and progress > 0 and failures == 0:
+            pid_gate = False
         if reflect_due and (pid_gate or stag_gate):
             writes["last_reflect_time"] = now
             reason = "pid_gate" if pid_gate else "stag_gate"
@@ -222,7 +186,6 @@ class SchedulerAgent:
                 "stag": round(stag, 3),
                 "pid": round(pid, 3),
                 "failures": failures,
-                "behavioral": round(float(ctx.get("behavioral_stagnation", 0)), 3),
                 "step": str(active.get("text", "")) if active else "",
             }
             return {"writes": writes, "next": "reflector", "phase": "schedule", "data": {"reason": reason, "pid": round(pid, 3), "stag": round(stag, 3)}}
@@ -291,6 +254,8 @@ class PlannerAgent:
         sequence: list[Any] = parsed.get("sequence", [])
         done_when = str(parsed.get("done_when", ""))
         if mode == "done" or not sequence:
+            if str(ctx.get("goal", "")).strip() and not list(ctx.get("completed", [])):
+                return {"writes": {"consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1}, "next": "stagnation", "phase": "plan", "data": {"mode": "rejected", "reason": "cannot declare done before any GOAL progress"}}
             return {"writes": {}, "next": "verifier", "phase": "plan", "data": {"mode": "done"}}
         steps: list[dict[str, str]] = []
         for i, s in enumerate(sequence[:config.MAX_PLAN_STEPS]):
@@ -310,16 +275,23 @@ class ActorAgent:
     ]
 
     def run(self, ctx: dict[str, Any]) -> dict[str, Any]:
-        from actions import execute_verb, VERBS
+        from actions import execute_step, execute_verb, is_python_step, VERBS
         from llm import call_llm
         plan: list[dict[str, Any]] = ctx.get("plan", [])
         active = next((s for s in plan if s.get("status") == "active"), None)
         if not active:
             return {"writes": {}, "next": "stagnation", "phase": "actor.error", "data": {"error": "no active step"}}
         instruction = str(active.get("text", ""))
-        direct_result = _try_direct(instruction, ctx)
-        if direct_result is not None:
-            return direct_result
+        if is_python_step(instruction):
+            history: list[dict[str, Any]] = list(ctx.get("history", []))
+            result = execute_step(instruction)
+            history.append({"verb": result.verb, "ok": result.success, "obs": result.observation})
+            log.emit("action", {"verb": result.verb, "ok": result.success, "obs": result.observation, "direct": True})
+            if result.success:
+                active["status"] = "done"
+                _advance_plan(plan)
+                return {"writes": {"plan": plan, "history": history[-config.MAX_HISTORY:], "consecutive_failures": 0}, "next": "stagnation", "phase": "actor", "data": {"conclusion": "python", "ok": True}}
+            return {"writes": {"history": history[-config.MAX_HISTORY:], "consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1}, "next": "stagnation", "phase": "actor", "data": {"conclusion": "python", "ok": False}}
         context = _render_context(ctx, "actor", instruction)
         system = _load_prompt("actor")
         try:
@@ -330,6 +302,13 @@ class ActorAgent:
         parsed = _extract_json(raw, ["actions", "conclusion"])
         conclusion = str(parsed.get("conclusion", "EXECUTE"))
         actions: list[dict[str, Any]] = parsed.get("actions", [])
+        actions = [a for a in actions if str(a.get("verb", "")) in {"click", "write", "press", "hotkey", "scroll", "focus"}]
+        if conclusion == "EXECUTE" and not actions:
+            fallback = _gui_fallback_action(instruction)
+            if fallback:
+                actions = [fallback]
+            else:
+                return {"writes": {"consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1}, "next": "stagnation", "phase": "actor", "data": {"conclusion": "CANNOT", "error": "need GUI verb"}}
         if conclusion == "DONE":
             active["status"] = "done"
             return {"writes": {"plan": plan, "consecutive_failures": 0}, "next": "stagnation", "phase": "actor", "data": {"conclusion": "DONE"}}
@@ -395,13 +374,13 @@ class VerifierAgent:
         evidence = str(parsed.get("evidence", ""))
         if verdict == "confirmed":
             return {"writes": {}, "next": "done", "phase": "verify", "data": {"verdict": "confirmed", "evidence": evidence}}
-        return {"writes": {"plan": [], "done_when": "", "consecutive_failures": 0, "progress_history": []}, "next": "stagnation", "phase": "verify", "data": {"verdict": "denied", "evidence": evidence}}
+        return {"writes": {"plan": [], "done_when": "", "consecutive_failures": 0, "progress_history": []}, "next": "planner", "phase": "verify", "data": {"verdict": "denied", "evidence": evidence}}
 
 class ReflectorAgent:
     name: str = "reflector"
     reads: list[str] = [
         "goal", "plan", "history", "stagnation", "pid_output", "energy",
-        "behavioral_stagnation", "reflect_trigger", "completed",
+        "reflect_trigger", "completed",
     ]
 
     def run(self, ctx: dict[str, Any]) -> dict[str, Any]:
@@ -423,58 +402,48 @@ class ReflectorAgent:
             append_text = str(mutation.get("append", ""))
             if target and append_text:
                 _apply_mutation(target, append_text)
+        diagnosis = str(parsed.get("diagnosis", ""))
+        writes: dict[str, Any] = {"pid_integral": 0.0, "consecutive_failures": 0}
+        if _should_clear_plan_on_reflect(ctx, diagnosis, lesson):
+            writes["plan"] = []
+            writes["done_when"] = ""
+            writes["progress_history"] = []
         return {
-            "writes": {"plan": [], "pid_integral": 0.0, "consecutive_failures": 0, "progress_history": []},
+            "writes": writes,
             "next": "stagnation",
             "phase": "reflect",
-            "data": {"diagnosis": str(parsed.get("diagnosis", "")), "lesson": lesson},
+            "data": {"diagnosis": diagnosis, "lesson": lesson},
         }
 
 
-def _try_direct(instruction: str, ctx: dict[str, Any]) -> dict[str, Any] | None:
-    from actions import execute_verb, VERBS
-    if not _is_headless_direct(instruction):
-        return None
-    parts = instruction.split(None, 2)
-    if not parts:
-        return None
-    verb = parts[0].lower()
-    if verb not in VERBS:
-        return None
-    target, value = "", ""
-    if verb in ("click", "write", "scroll") and len(parts) >= 2:
-        target = parts[1].strip("[]")
-        if not target.isdigit():
-            return None
-        value = parts[2] if len(parts) > 2 else ""
-    elif verb in ("hotkey", "press"):
-        value = parts[1] if len(parts) > 1 else ""
-    elif verb == "wait":
-        target = parts[1] if len(parts) > 1 else "1"
-    elif verb == "focus":
-        value = " ".join(parts[1:]) if len(parts) > 1 else ""
-    elif verb == "cmd":
-        value = " ".join(parts[1:]) if len(parts) > 1 else ""
-    elif verb == "write_file" and len(parts) >= 3:
-        target = parts[1]
-        value = parts[2]
-    elif verb == "read_file":
-        target = parts[1] if len(parts) > 1 else ""
-    else:
-        return None
-    args = _build_args(verb, target, value)
-    elements: dict[str, Any] = ctx.get("screen_elements", {})
-    result = execute_verb(verb, args, elements, None)
-    plan: list[dict[str, Any]] = ctx.get("plan", [])
-    active = next((s for s in plan if s.get("status") == "active"), None)
-    history: list[dict[str, Any]] = list(ctx.get("history", []))
-    history.append({"verb": verb, "ok": result.success, "obs": result.observation})
-    log.emit("action", {"verb": verb, "ok": result.success, "obs": result.observation, "direct": True})
-    if result.success:
-        if active:
-            active["status"] = "done"
-        return {"writes": {"plan": plan, "history": history[-config.MAX_HISTORY:], "consecutive_failures": 0}, "next": "stagnation", "phase": "actor", "data": {"conclusion": "direct", "verb": verb, "ok": True}}
-    return {"writes": {"history": history[-config.MAX_HISTORY:], "consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1}, "next": "stagnation", "phase": "actor", "data": {"conclusion": "direct", "verb": verb, "ok": False}}
+def _should_clear_plan_on_reflect(ctx: dict[str, Any], diagnosis: str, lesson: str) -> bool:
+    failures = int(ctx.get("consecutive_failures", 0))
+    progress = plan_progress(ctx)
+    low_d = diagnosis.lower()
+    low_l = lesson.lower()
+    if "no mutation needed" in low_l or "situational latency" in low_d:
+        return False
+    if failures <= 1 and progress >= 0.25:
+        return False
+    return True
+
+
+def _gui_fallback_action(instruction: str) -> dict[str, Any] | None:
+    low = instruction.lower()
+    if any(k in low for k in ("opera", "grok", "browser", "taskbar")):
+        title = "Grok" if "grok" in low else "Opera"
+        return {"verb": "focus", "target": "", "value": title}
+    if "chat" in low and ("type" in low or "input" in low or "message" in low):
+        return {"verb": "focus", "target": "", "value": "Grok"}
+    if "click" in low or "focus" in low:
+        return {"verb": "focus", "target": "", "value": "Opera"}
+    return None
+
+
+def _advance_plan(plan: list[dict[str, Any]]) -> None:
+    pending = next((s for s in plan if s.get("status") == "pending"), None)
+    if pending:
+        pending["status"] = "active"
 
 
 def _build_args(verb: str, target: str, value: str) -> dict[str, Any]:
@@ -562,7 +531,7 @@ def _render_field(ctx: dict[str, Any], field: str, instruction: str) -> str:
                 lines.append(f"  {ok} {h.get('verb', '')}: {h.get('obs', '')}")
             return "\n".join(lines)
         case "budget":
-            remaining = log.budget() - log.count()
+            remaining = log.budget() - log.work_count()
             if remaining > log.budget() // 2:
                 return ""
             return f"BUDGET: {remaining} events remaining."
@@ -581,8 +550,6 @@ def _render_field(ctx: dict[str, Any], field: str, instruction: str) -> str:
             return "LESSONS:\n" + "\n".join(f"  - {l}" for l in lines_l)
         case "math":
             return (f"MATH NOW: stagnation={ctx.get('stagnation', 0):.2f} "
-                    f"plan_stag={max(0.0, float(ctx.get('stagnation', 0)) - float(ctx.get('behavioral_stagnation', 0))):.2f} "
-                    f"behavioral={ctx.get('behavioral_stagnation', 0):.2f} "
                     f"pid={ctx.get('pid_output', 0):.2f} energy={ctx.get('energy', 1):.2f}")
         case "trigger":
             trig = ctx.get("reflect_trigger", {})
@@ -590,8 +557,7 @@ def _render_field(ctx: dict[str, Any], field: str, instruction: str) -> str:
                 return ""
             return (f"TRIGGER (why you were called): reason={trig.get('reason', '')} "
                     f"stag={trig.get('stag', 0)} pid={trig.get('pid', 0)} "
-                    f"behavioral={trig.get('behavioral', 0)} failures={trig.get('failures', 0)} "
-                    f"step={trig.get('step', '')}")
+                    f"failures={trig.get('failures', 0)} step={trig.get('step', '')}")
         case "completed":
             completed: list[str] = ctx.get("completed", [])
             if not completed:
