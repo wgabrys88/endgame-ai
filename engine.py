@@ -93,10 +93,6 @@ def _main_loop(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
         agent_next = str(result.get("next", ""))
         if agent_next == "done":
             _fission(board)
-            if board.get("goal"):
-                log.emit("complete", {"goal": board["goal"], "events": log.count(), "power": board.get("power", 0.0)})
-                _save(board)
-                return True
             log.emit("fission_sustain", {"power": board.get("power", 0.0), "completions": len(board.get("completed", []))})
 
         _save(board)
