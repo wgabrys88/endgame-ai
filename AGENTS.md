@@ -39,7 +39,7 @@ ARCHITECTURE (2026-06-10 refactor):
   Step failure marks failed + replans (never retries identical headless step)
   wing_cross replans without wiping plan/done_when
   Reflector mutates prompts only — never clears plan
-  observer: tree-walk only, depth-indented SCREEN, context nodes + actionable IDs
+  observer: hover probe primary (mandatory), tree supplements depth; depth-indented SCREEN
   cmd via cmd.exe /c utf-8; prompts stripped to core (behavior in Python)
 
 OPEN:

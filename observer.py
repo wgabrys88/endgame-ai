@@ -1,17 +1,21 @@
 from __future__ import annotations
+import ctypes
+import ctypes.wintypes as W
+import math
 import time
 from dataclasses import dataclass
 from typing import Any
 
 from config import (
-    TREE_WALK_TIMEOUT, READ_TEXT_MAX_LENGTH,
-    SCREEN_ELEMENT_VALUE_LIMIT, TERMINAL_CONTEXT_TAIL_LINES,
+    TREE_WALK_TIMEOUT, PROBE_STEP_PX, PROBE_FOREGROUND_DELAY, PROBE_SAMPLE_DELAY,
+    PROBE_SINE_AMPLITUDE_RATIO, PROBE_SINE_PERIOD_STEPS,
+    READ_TEXT_MAX_LENGTH, SCREEN_ELEMENT_VALUE_LIMIT, TERMINAL_CONTEXT_TAIL_LINES,
 )
 from win32 import (
     user32, init, set_dpi_aware,
     get_str, get_int, get_bool, get_rect,
-    get_legacy_value, get_legacy_readonly, get_text_content,
-    get_children, get_hwnd, get_root,
+    get_legacy_value, get_legacy_readonly, get_text_content, element_from_point,
+    get_children, get_hwnd, get_runtime_id, get_root,
     get_window_class, get_window_title,
     UIA_CONTROL_TYPE, UIA_NAME, UIA_IS_ENABLED,
     UIA_IS_OFFSCREEN, CONTROL_TYPE_MAP,
@@ -69,17 +73,26 @@ def observe() -> ObserveResult:
 
     windows = _enumerate_windows()
     z_order = _get_z_order()
-    scan = [w for w in windows if w["name"] == focused_title] if focused_title else windows
-    if not scan:
-        scan = windows
+    regions = _probe_regions(windows, focused_title, focused_hwnd, screen_w, screen_h)
 
-    nodes: list[dict[str, Any]] = []
-    for wnd in scan:
-        _tree_walk(nodes, wnd["element"], str(wnd["name"]), int(wnd["hwnd"]), TREE_WALK_TIMEOUT)
+    probe_nodes: list[dict[str, Any]] = []
+    saved = W.POINT()
+    user32.GetCursorPos(ctypes.byref(saved))
+    for x0, y0, x1, y1, wname, whwnd in regions:
+        if whwnd:
+            user32.SetForegroundWindow(W.HWND(whwnd))
+            time.sleep(PROBE_FOREGROUND_DELAY)
+        _probe_region(probe_nodes, PROBE_STEP_PX, x0, y0, x1, y1, wname, whwnd)
+    user32.SetCursorPos(saved.x, saved.y)
 
+    tree_nodes: list[dict[str, Any]] = []
+    for wnd in _tree_targets(windows, focused_title):
+        _tree_walk(tree_nodes, wnd["element"], str(wnd["name"]), int(wnd["hwnd"]), TREE_WALK_TIMEOUT)
+
+    merged = _merge(probe_nodes, tree_nodes)
     z_titles = [str(e["title"]) for e in z_order]
     wnd_rank = {t: i for i, t in enumerate(z_titles)}
-    classified = _classify(nodes)
+    classified = _classify(merged)
     classified.sort(key=lambda n: (wnd_rank.get(n["wnd"], 999), n["depth"], n["y"], n["x"]))
 
     text, book = _render(classified, focused_title)
@@ -130,6 +143,74 @@ def _get_z_order() -> list[dict[str, Any]]:
         hwnd = user32.GetWindow(hwnd, 2)
     return result
 
+def _probe_regions(
+    windows: list[dict[str, Any]], focused_title: str, focused_hwnd: int, sw: int, sh: int,
+) -> list[tuple[int, int, int, int, str, int]]:
+    for wnd in windows:
+        if str(wnd["name"]) == focused_title or int(wnd["hwnd"]) == focused_hwnd:
+            x, y, ww, wh = int(wnd["x"]), int(wnd["y"]), int(wnd["w"]), int(wnd["h"])
+            return [(x, y, x + ww, y + wh, str(wnd["name"]), int(wnd["hwnd"]))]
+    return [(0, 0, sw, sh, focused_title or "Desktop", focused_hwnd)]
+
+def _tree_targets(windows: list[dict[str, Any]], focused_title: str) -> list[dict[str, Any]]:
+    if focused_title:
+        matched = [w for w in windows if str(w["name"]) == focused_title]
+        if matched:
+            return matched
+    return windows
+
+def _probe_region(
+    out: list[dict[str, Any]], step: int,
+    x0: int, y0: int, x1: int, y1: int, wname: str, whwnd: int,
+) -> None:
+    seen_rids: set[Any] = set()
+    amp = step * PROBE_SINE_AMPLITUDE_RATIO
+    freq = 2 * math.pi / (step * PROBE_SINE_PERIOD_STEPS)
+    for y in range(y0 + step // 2, y1, step):
+        for x in range(x0 + step // 2, x1, step):
+            py = max(y0, min(y1 - 1, y + int(amp * math.sin(freq * x))))
+            user32.SetCursorPos(x, py)
+            time.sleep(PROBE_SAMPLE_DELAY)
+            try:
+                el = element_from_point(x, py)
+            except OSError:
+                continue
+            if not el:
+                continue
+            try:
+                rid = get_runtime_id(el)
+                if rid and rid in seen_rids:
+                    continue
+                if rid:
+                    seen_rids.add(rid)
+                ct = get_int(el, UIA_CONTROL_TYPE)
+                role = CONTROL_TYPE_MAP.get(ct, "")
+                if not role:
+                    continue
+                name = get_str(el, UIA_NAME)
+                value = get_legacy_value(el)
+                has_text_pattern = False
+                if not value:
+                    text_content = get_text_content(el, READ_TEXT_MAX_LENGTH)
+                    if text_content:
+                        value = _filter_terminal_text(text_content)
+                        has_text_pattern = True
+                rx, ry, rw, rh = get_rect(el)
+                if not name and not value:
+                    continue
+                out.append({
+                    "wnd": wname, "hwnd": whwnd, "depth": 0,
+                    "role": role, "name": name,
+                    "x": rx, "y": ry, "w": rw, "h": rh,
+                    "enabled": get_bool(el, UIA_IS_ENABLED),
+                    "value": value,
+                    "readonly": get_legacy_readonly(el),
+                    "offscreen": get_bool(el, UIA_IS_OFFSCREEN),
+                    "has_text_pattern": has_text_pattern,
+                })
+            except OSError:
+                continue
+
 def _tree_walk(out: list[dict[str, Any]], el: Any, wnd_name: str, wnd_hwnd: int, timeout: float) -> None:
     from collections import deque
     start = time.perf_counter()
@@ -179,16 +260,33 @@ def _tree_walk(out: list[dict[str, Any]], el: Any, wnd_name: str, wnd_hwnd: int,
         except OSError:
             pass
 
+def _node_key(n: dict[str, Any]) -> tuple[Any, ...]:
+    return (n["role"], n.get("name", ""), n["x"], n["y"], n["w"], n["h"])
+
+def _merge(probe_nodes: list[dict[str, Any]], tree_nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Probe is primary — hover discoveries land first; tree adds depth and gaps."""
+    index: dict[tuple[Any, ...], int] = {}
+    merged: list[dict[str, Any]] = []
+    for node in probe_nodes:
+        key = _node_key(node)
+        index[key] = len(merged)
+        merged.append(node)
+    for node in tree_nodes:
+        key = _node_key(node)
+        if key in index:
+            hit = merged[index[key]]
+            hit["depth"] = max(int(hit.get("depth", 0)), int(node.get("depth", 0)))
+            hit["has_text_pattern"] = hit.get("has_text_pattern") or node.get("has_text_pattern")
+        else:
+            merged.append(node)
+    return merged
+
 def _filter_terminal_text(raw: str) -> str:
     lines = raw.splitlines()
     stripped = [l.rstrip() for l in lines if l.rstrip()]
     if not stripped:
         return ""
-    kept: list[str] = []
-    for line in stripped:
-        if _is_runtime_log_line(line) or _is_tui_dashboard_line(line):
-            continue
-        kept.append(line)
+    kept = [l for l in stripped if not _is_runtime_log_line(l) and not _is_tui_dashboard_line(l)]
     if not kept:
         kept = stripped
     last_sep = -1
@@ -207,9 +305,7 @@ def _is_runtime_log_line(line: str) -> bool:
 
 def _is_tui_dashboard_line(line: str) -> bool:
     compact = line.strip()
-    if not compact:
-        return False
-    return "\x1bP" in compact or compact.startswith("endgame-ai |")
+    return bool(compact) and ("\x1bP" in compact or compact.startswith("endgame-ai |"))
 
 def _classify(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     tab_rects: list[tuple[int, int, int, int]] = []
