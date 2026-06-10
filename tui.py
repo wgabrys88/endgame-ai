@@ -22,6 +22,15 @@ _kernel32.SetConsoleMode(_stdout_handle, _mode.value | ENABLE_VIRTUAL_TERMINAL)
 
 ALL_AGENTS: list[str] = ["stagnation", "lorenz", "pid", "scheduler", "observer", "planner", "actor", "verifier", "reflector"]
 
+PLOT_W: int = 40
+PLOT_H: int = 14
+LORENZ_HISTORY: int = 200
+
+_BRAILLE_MAP: list[tuple[int, int, int]] = [
+    (0, 0, 0x01), (1, 0, 0x02), (2, 0, 0x04), (3, 0, 0x40),
+    (0, 1, 0x08), (1, 1, 0x10), (2, 1, 0x20), (3, 1, 0x80),
+]
+
 RST: str = "\x1b[0m"
 DIM: str = "\x1b[2m"
 BOLD: str = "\x1b[1m"
@@ -70,6 +79,42 @@ def _hbar(value: float, width: int, color: str) -> str:
     filled = int(value * width)
     filled = max(0, min(width, filled))
     return color + "━" * filled + DIM + "╌" * (width - filled) + RST
+
+
+def _lerp_color(t: float) -> str:
+    t = max(0.0, min(1.0, t))
+    return _fg(int(40 + t * 215), int(180 - t * 140), int(220 - t * 180))
+
+
+def _braille_plot(xs: list[float], ys: list[float], w: int, h: int, stag: float) -> list[str]:
+    if len(xs) < 2:
+        empty = DIM + "·" * w + RST
+        return [empty] * h
+    x_min, x_max = min(xs), max(xs)
+    y_min, y_max = min(ys), max(ys)
+    x_range = max(x_max - x_min, 0.1)
+    y_range = max(y_max - y_min, 0.1)
+    pw, ph = w * 2, h * 4
+    grid: list[list[bool]] = [[False] * pw for _ in range(ph)]
+    for i in range(len(xs)):
+        px = int((xs[i] - x_min) / x_range * (pw - 1))
+        py = int((1.0 - (ys[i] - y_min) / y_range) * (ph - 1))
+        px = max(0, min(pw - 1, px))
+        py = max(0, min(ph - 1, py))
+        grid[py][px] = True
+    color = _lerp_color(stag)
+    lines: list[str] = []
+    for row in range(h):
+        chars: list[str] = []
+        for col in range(w):
+            byte = 0
+            for dy, dx, bit in _BRAILLE_MAP:
+                gy, gx = row * 4 + dy, col * 2 + dx
+                if gy < ph and gx < pw and grid[gy][gx]:
+                    byte |= bit
+            chars.append(chr(0x2800 + byte))
+        lines.append(color + "".join(chars) + RST)
+    return lines
 
 
 def _sparkline(values: list[float], width: int, *, peak: float = 1.0) -> str:
@@ -181,6 +226,8 @@ class TUI:
         pid_hist: list[float] = []
         energy_hist: list[float] = []
         behavioral_hist: list[float] = []
+        lorenz_xs: list[float] = []
+        lorenz_ys: list[float] = []
         wing = False
         lorenz_x = 0.0
         for e in self.events:
@@ -192,9 +239,14 @@ class TUI:
             elif phase == "pid":
                 pid_hist.append(float(d.get("pid", 0)))
             elif phase == "lorenz":
+                lorenz_xs.append(float(d.get("x", 0)))
+                lorenz_ys.append(float(d.get("energy", 1)))
                 energy_hist.append(float(d.get("energy", 0)))
                 lorenz_x = float(d.get("x", 0))
                 wing = bool(d.get("wing", False))
+        if len(lorenz_xs) > LORENZ_HISTORY:
+            lorenz_xs = lorenz_xs[-LORENZ_HISTORY:]
+            lorenz_ys = lorenz_ys[-LORENZ_HISTORY:]
         s = self.snapshot
         return {
             "stag": stag_hist[-1] if stag_hist else float(s.get("stagnation", 0)),
@@ -204,6 +256,8 @@ class TUI:
             "stag_hist": stag_hist[-24:],
             "pid_hist": pid_hist[-24:],
             "energy_hist": energy_hist[-24:],
+            "lorenz_xs": lorenz_xs,
+            "lorenz_ys": lorenz_ys,
             "wing": wing or bool(s.get("wing_crossed", False)),
             "lorenz_x": lorenz_x if lorenz_x else float(s.get("lorenz_x", 0)),
         }
@@ -236,23 +290,27 @@ class TUI:
         out.append(" " + _hbar(budget_pct, w - 3, _fg(80, 180, 255) if budget_pct < 0.7 else _fg(255, 140, 60)))
         out.append("")
 
-        # Layout: reactor (left) | events + plan (right)
-        reactor_w = 22
-        right_w = max(30, w - reactor_w - 4)
-        body_h = max(10, h - 8)
+        # Layout: Lorenz chaos (left) | plan + events (right), gauges below
+        plot_w = min(PLOT_W, max(18, w // 3))
+        plot_h = min(PLOT_H, max(8, h - 16))
+        right_w = max(28, w - plot_w - 4)
 
-        reactor_lines = self._render_reactor(
-            reactor_w, body_h, stag, pid, energy, behavioral, power, wing,
-            len(completed), math["stag_hist"], math["pid_hist"], float(math["lorenz_x"]),
+        chaos_lines = self._render_chaos(
+            plot_w, plot_h, math["lorenz_xs"], math["lorenz_ys"], stag, float(math["lorenz_x"]),
         )
-        right_lines = self._render_right(right_w, body_h, plan, done_when, completed)
+        right_lines = self._render_right(right_w, plot_h, plan, done_when, completed)
 
-        for i in range(body_h):
-            left = reactor_lines[i] if i < len(reactor_lines) else " " * reactor_w
+        for i in range(plot_h):
+            left = chaos_lines[i] if i < len(chaos_lines) else " " * plot_w
             right = right_lines[i] if i < len(right_lines) else ""
             out.append(f" {left} {DIM}│{RST} {right}")
 
-        # Bottom: agent toggles
+        for gauge_line in self._render_gauges(
+            w - 2, stag, pid, energy, behavioral, power, wing,
+            len(completed), math["stag_hist"], math["pid_hist"], float(math["lorenz_x"]),
+        ):
+            out.append(f" {gauge_line}")
+
         out.append("")
         agents_str = ""
         for i, name in enumerate(ALL_AGENTS):
@@ -272,63 +330,47 @@ class TUI:
 
         return "\n".join(out[:h])
 
-    def _render_reactor(
-        self, w: int, h: int, stag: float, pid: float, energy: float, behavioral: float,
-        power: float, wing: bool, completions: int,
-        stag_hist: list[float], pid_hist: list[float], lorenz_x: float,
+    def _render_chaos(
+        self, w: int, h: int, xs: list[float], ys: list[float], stag: float, lorenz_x: float,
     ) -> list[str]:
         lines: list[str] = []
-        flashing = (time.time() - self.fission_flash) < 1.5
-        spark_w = max(8, w - 8)
-
-        lines.append(f"{DIM}╭{'─' * (w-2)}╮{RST}")
-        lines.append(f"{DIM}│{RST}{_fg(180,180,220)} REACTOR (events){RST}{DIM}│{RST}")
-        lines.append(f"{DIM}├{'─' * (w-2)}┤{RST}")
-
-        core_h = max(4, h - 16)
-        rod_pct = min(pid / PID_ROD_SCALE, 1.0)
-        rod_rows = int(rod_pct * core_h)
-        fuel_rows = max(1, core_h - rod_rows)
-        for row in range(core_h):
-            if row < rod_rows:
-                rod_c = _fg(80, 130, 255) if pid < PID_ROD_SCALE * 0.7 else _fg(255, 90, 90)
-                lines.append(f"{DIM}│{RST}{rod_c} ███ RODS ███ {RST}{DIM}│{RST}")
-            else:
-                t = (row - rod_rows) / max(fuel_rows - 1, 1)
-                if flashing:
-                    r, g, b = 255, int(200 - 60*t), int(80 + 80*t)
-                elif stag > 0.7 or behavioral > 0.35:
-                    r, g, b = 240, int(80 + 40*t), 30
-                elif stag > 0.3:
-                    r, g, b = 200, int(120 - 30*t), 40
-                else:
-                    r, g, b = 40, int(150 + 50*t), int(200 - 30*t)
-                ci = min(3, int(min(energy / 3.0, 1.0) * 3))
-                bar = ("░▒▓█")[ci] * max(10, w - 6)
-                lines.append(f"{DIM}│{RST}{_fg(r,g,b)}{bar[:w-4]}{RST}{DIM}│{RST}")
-
-        lines.append(f"{DIM}├{'─' * (w-2)}┤{RST}")
-
-        stag_c = _fg(255, 80, 60) if stag > 0.5 else _fg(100, 200, 150)
-        pid_c = _fg(80, 130, 255) if pid < PID_ROD_SCALE * 0.7 else _fg(255, 80, 80)
-        beh_c = _fg(255, 140, 60) if behavioral > 0.3 else DIM
-
-        lines.append(f"{DIM}│{RST}{stag_c}STAG{RST} {_sparkline(stag_hist, spark_w, peak=1.0)} {stag:.2f}{DIM}│{RST}")
-        lines.append(f"{DIM}│{RST}{beh_c}BEH {RST} {behavioral:.2f}{' !' if behavioral > 0.3 else '  '}{DIM}│{RST}")
-        lines.append(f"{DIM}│{RST}{pid_c}RODS{RST} {_sparkline(pid_hist, spark_w, peak=PID_ROD_SCALE)} {pid:.2f}{DIM}│{RST}")
-        lines.append(f"{DIM}│{RST}{_fg(180,120,255)}NRG {RST} {energy:.2f} x={lorenz_x:+.1f}{DIM}│{RST}")
-
-        pow_c = _fg(255, 220, 80) if power > 0 else DIM
-        fission_icon = f"{_fg(255,255,0)}★{RST}" if flashing else "☆"
-        wing_icon = f"{_fg(255,200,0)}⚡{RST}" if wing else " "
-        lines.append(f"{DIM}│{RST}{pow_c}PWR{RST} {power:.4f}/s {fission_icon}{wing_icon}{DIM}│{RST}")
-        done_c = _fg(80, 255, 180) if completions > 0 else DIM
-        lines.append(f"{DIM}│{RST}{done_c}FISS{RST} {completions}{DIM}│{RST}")
-        lines.append(f"{DIM}╰{'─' * (w-2)}╯{RST}")
-
+        pts = len(xs)
+        wing_hint = f" {_fg(255,200,0)}⚡{RST}" if pts > 1 and abs(xs[-1]) < 1.0 else ""
+        label = f"{_fg(180,120,255)}LORENZ{RST} x×E {DIM}n={pts}{RST}{wing_hint}"
+        lines.append(label[:w])
+        plot_lines = _braille_plot(xs, ys, w, max(1, h - 1), stag)
+        lines.extend(plot_lines[: max(1, h - 1)])
+        if pts >= 2:
+            footer = f"{DIM}x={lorenz_x:+.1f} E={ys[-1]:.2f}{RST}"
+            if len(lines) < h:
+                lines.append(footer[:w])
         while len(lines) < h:
             lines.append(" " * w)
         return lines[:h]
+
+    def _render_gauges(
+        self, w: int, stag: float, pid: float, energy: float, behavioral: float,
+        power: float, wing: bool, completions: int,
+        stag_hist: list[float], pid_hist: list[float], lorenz_x: float,
+    ) -> list[str]:
+        flashing = (time.time() - self.fission_flash) < 1.5
+        spark_w = max(10, min(24, (w - 30) // 2))
+        stag_c = _fg(255, 80, 60) if stag > 0.5 else _fg(100, 200, 150)
+        pid_c = _fg(80, 130, 255) if pid < PID_ROD_SCALE * 0.7 else _fg(255, 80, 80)
+        beh_c = _fg(255, 140, 60) if behavioral > 0.3 else DIM
+        pow_c = _fg(255, 220, 80) if power > 0 else DIM
+        fission_icon = f"{_fg(255,255,0)}★{RST}" if flashing else "☆"
+        wing_icon = f"{_fg(255,200,0)}⚡{RST}" if wing else " "
+        done_c = _fg(80, 255, 180) if completions > 0 else DIM
+        return [
+            DIM + "─" * w + RST,
+            (f"{stag_c}STAG{RST} {_sparkline(stag_hist, spark_w, peak=1.0)} {stag:.2f}  "
+             f"{beh_c}BEH{RST} {behavioral:.2f}  "
+             f"{pid_c}RODS{RST} {_sparkline(pid_hist, spark_w, peak=PID_ROD_SCALE)} {pid:.2f}")[:w],
+            (f"{_fg(180,120,255)}NRG{RST} {energy:.2f} x={lorenz_x:+.1f}  "
+             f"{pow_c}PWR{RST} {power:.4f}/s {fission_icon}{wing_icon}  "
+             f"{done_c}FISS{RST} {completions}")[:w],
+        ]
 
     def _render_right(self, w: int, h: int, plan: list[dict[str, Any]], done_when: str, completed: list[str]) -> list[str]:
         lines: list[str] = []
