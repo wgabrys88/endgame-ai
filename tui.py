@@ -10,6 +10,7 @@ from typing import Any
 import log
 from config import (
     EVENTS_PATH, SNAPSHOT_PATH, DISABLED_PATH, GUI_MODE_PATH, GOAL_PATH, PAUSE_PATH,
+    PID_ROD_SCALE,
 )
 
 STD_OUTPUT_HANDLE: int = -11
@@ -27,7 +28,7 @@ _mode = ctypes.c_ulong()
 _kernel32.GetConsoleMode(_stdout_handle, ctypes.byref(_mode))
 _kernel32.SetConsoleMode(_stdout_handle, _mode.value | 0x0004)
 
-MATH_CHAIN = ("stagnation", "lorenz", "scheduler")
+MATH_CHAIN = ("stagnation", "lorenz", "pid", "scheduler")
 AGENT_CHAIN = ("planner", "actor", "verifier", "fission")
 SIDE_AGENTS = ("observer", "reflector")
 LOOP_PHASES = frozenset({
@@ -328,6 +329,7 @@ class TUI:
 
         s = self.snapshot
         stag = float(s.get("stagnation", 0))
+        pid = float(s.get("pid_output", 0))
         energy = float(s.get("energy", 1))
         lx = float(s.get("lorenz_x", 0))
         ly = float(s.get("lorenz_y", 0))
@@ -378,10 +380,11 @@ class TUI:
 
         lines.append(DIM + "─" * (w - 1) + RST)
         lines.append(f"{DIM}stagnation{RST} {_bar(stag, bar_w, _fg(255, 100, 80))}")
+        lines.append(f"{DIM}pid_output{RST} {_bar(min(pid / PID_ROD_SCALE, 1), bar_w, _fg(80, 140, 255))}")
         lines.append(f"{DIM}energy{RST}    {_bar(min(energy / 3, 1), bar_w, _fg(120, 220, 140))}")
         lines.append(
             f"{DIM}lorenz{RST}   x={lx:.2f} y={ly:.2f} z={lz:.2f}  "
-            f"{DIM}stag{RST}={stag:.3f} {DIM}energy{RST}={energy:.3f}"
+            f"{DIM}stag{RST}={stag:.3f} {DIM}pid{RST}={pid:.3f} {DIM}energy{RST}={energy:.3f}"
         )
         if trigger:
             lines.extend(_fit(_wrap(f"reflect_trigger: {trigger}", w - 2), 2, w - 2))

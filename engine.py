@@ -6,7 +6,7 @@ from typing import Any, Callable
 
 from actions import is_python_step
 from agents import (
-    StagnationAgent, LorenzAgent, SchedulerAgent,
+    StagnationAgent, LorenzAgent, PidAgent, SchedulerAgent,
     ObserverAgent, PlannerAgent, ActorAgent, VerifierAgent, ReflectorAgent,
     _similar_to_completed, _trivial_milestone,
 )
@@ -14,7 +14,7 @@ import config
 import log
 
 
-MATH_AGENTS: list[Any] = [StagnationAgent(), LorenzAgent()]
+MATH_AGENTS: list[Any] = [StagnationAgent(), LorenzAgent(), PidAgent()]
 
 AGENTS: dict[str, Any] = {
     "scheduler": SchedulerAgent(),

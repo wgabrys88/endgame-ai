@@ -119,6 +119,13 @@ class PidAgent:
 
     def run(self, ctx: dict[str, Any]) -> dict[str, Any]:
         stag = float(ctx.get("stagnation", 0))
+        if config.PID_KP == 0 and config.PID_KI == 0 and config.PID_KD == 0:
+            return {
+                "writes": {"pid_output": 0.0, "pid_prev": stag},
+                "next": "scheduler",
+                "phase": "pid",
+                "data": {"pid": 0.0},
+            }
         integral = float(ctx.get("pid_integral", 0))
         prev = float(ctx.get("pid_prev", 0))
         integral = min(integral + stag, config.PID_INTEGRAL_MAX)
@@ -168,6 +175,7 @@ class SchedulerAgent:
             writes["reflect_trigger"] = {
                 "reason": reason,
                 "stag": round(stag, 3),
+                "pid": round(float(ctx.get("pid_output", 0)), 3),
                 "energy": round(energy, 3),
                 "failures": failures,
                 "step": str(active.get("text", "")) if active else "",

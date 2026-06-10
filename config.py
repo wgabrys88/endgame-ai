@@ -83,9 +83,9 @@ LORENZ_EQUILIBRIUM_OFFSET: float = 1.0
 LORENZ_WING_STAG_MIN: float = 0.25
 LORENZ_STAG_STEPS_SCALE: int = 12
 
-PID_KP: float = 1.2
-PID_KI: float = 0.4
-PID_KD: float = 0.6
+PID_KP: float = 0.0
+PID_KI: float = 0.0
+PID_KD: float = 0.0
 PID_INTEGRAL_MAX: float = 8.0
 PID_DEAD_ZONE: float = 0.05
 
