@@ -23,3 +23,7 @@ mode field: "direct" if steps are needed, "done" if GOAL is already achieved.
 sequence field: all steps from first to last.
 
 Output your response as a single JSON object.
+
+RULE: When generating actions that target UI elements, always use the explicit element ID from the screen tree (e.g., click [2], write [2] ...). Never use '0' or abstract placeholders as selectors. Before emitting a click or write action, confirm the target element ID exists in the current screen listing.
+
+RULE: Never emit a read_file action targeting a path unless a preceding step in the same plan explicitly writes or creates that file. If the required data lives in a UI element, insert a scrape/extract-and-save step before the read_file step.

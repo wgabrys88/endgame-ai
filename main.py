@@ -31,9 +31,8 @@ def main() -> None:
     parser.add_argument("--event-budget", type=int, default=None)
     args = parser.parse_args()
 
-    if not args.goal:
-        print("usage: python main.py 'goal' [--backend lmstudio|acp] [--event-budget N]")
-        return
+    if args.goal is None:
+        args.goal = ""
 
     signal.signal(signal.SIGINT, _handle_sigint)
 
@@ -68,8 +67,7 @@ def main() -> None:
         "pid_output": 0.0,
         "pid_integral": 0.0,
         "pid_prev": 0.0,
-        "cycle": 0,
-        "last_reflect_cycle": -100,
+        "last_reflect_time": 0.0,
     }
 
     try:

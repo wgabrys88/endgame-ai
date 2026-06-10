@@ -23,3 +23,9 @@ cmd — target is empty. value is shell command (ASCII quotes only).
 Output your response as a single JSON object.
 
 RULE: When writing Python code via cmd echo redirection, use single quotes for strings inside Python functions (e.g., echo print('hello world') > file.py). Never use backslash-escaped double quotes in echo commands as cmd.exe does not interpret them correctly.
+
+RULE: Never proceed with a step that depends on a file or value that was not confirmed to exist. If a focus or read_file action fails, do not skip it — retry with the actual window title visible in the taskbar or screen tree before continuing. Hardcoding assumed responses from external agents (Grok, etc.) is forbidden.
+
+RULE: If a 'focus' action fails twice with the same window title, immediately fall back to focusing by executable process name (e.g., use the process name 'opera' instead of the full window title 'Opera Browser'). Never retry an identical failed focus call more than once.
+
+RULE: When a Python script requires multiple lines or contains quotes, NEVER use python -c with inline code through PowerShell. Always write the script to a .py file first, then run it with `python filename.py`.

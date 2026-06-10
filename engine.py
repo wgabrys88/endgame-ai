@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+import threading
 import time
 from typing import Any, Callable
 
@@ -11,10 +12,9 @@ import config
 import log
 
 
+MATH_AGENTS: list[Any] = [StagnationAgent(), LorenzAgent(), PidAgent()]
+
 AGENTS: dict[str, Any] = {
-    "stagnation": StagnationAgent(),
-    "lorenz": LorenzAgent(),
-    "pid": PidAgent(),
     "scheduler": SchedulerAgent(),
     "observer": ObserverAgent(),
     "planner": PlannerAgent(),
@@ -26,43 +26,66 @@ AGENTS: dict[str, Any] = {
 LLM_AGENTS: frozenset[str] = frozenset({"planner", "actor", "verifier", "reflector"})
 
 
+def _math_loop(board: dict[str, Any], stop: threading.Event) -> None:
+    while not stop.is_set():
+        for agent in MATH_AGENTS:
+            ctx = {k: board[k] for k in agent.reads if k in board}
+            result: dict[str, Any] = agent.run(ctx)
+            board.update(result.get("writes", {}))
+            log.emit(result.get("phase", agent.name), result.get("data"))
+        _save(board)
+        stop.wait(config.MATH_INTERVAL)
+
+
 def run(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
     log.emit("start", {"goal": board.get("goal", ""), "budget": log.budget()})
-    board["next"] = "stagnation"
-    board["cycle"] = 0
 
-    while board.get("next") not in ("done", "halt") and not log.exhausted() and not interrupted():
-        name = str(board["next"])
-        if name not in AGENTS:
-            board["next"] = "stagnation"
+    stop = threading.Event()
+    math_thread = threading.Thread(target=_math_loop, args=(board, stop), daemon=True)
+    math_thread.start()
+
+    try:
+        return _main_loop(board, interrupted)
+    finally:
+        stop.set()
+        math_thread.join(timeout=5)
+
+
+def _main_loop(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
+    while not log.exhausted() and not interrupted():
+        scheduler = AGENTS["scheduler"]
+        ctx = {k: board[k] for k in scheduler.reads if k in board}
+        result: dict[str, Any] = scheduler.run(ctx)
+        board.update(result.get("writes", {}))
+        log.emit(result.get("phase", "schedule"), result.get("data"))
+
+        target = str(result.get("next", ""))
+        if target == "done":
+            log.emit("complete", {"goal": board.get("goal", ""), "events": log.count()})
+            return True
+        if target == "halt":
+            log.emit("halt", {"events": log.count()})
+            return False
+        if target not in AGENTS:
+            time.sleep(config.DELAY_BETWEEN_CYCLES)
             continue
 
-        if name in LLM_AGENTS:
+        if target in LLM_AGENTS:
             obs = AGENTS["observer"]
             obs_ctx = {k: board[k] for k in obs.reads if k in board}
             obs_result: dict[str, Any] = obs.run(obs_ctx)
             board.update(obs_result.get("writes", {}))
             log.emit(obs_result.get("phase", "observe"), obs_result.get("data"))
 
-        agent = AGENTS[name]
+        agent = AGENTS[target]
         ctx = {k: board[k] for k in agent.reads if k in board}
-        result: dict[str, Any] = agent.run(ctx)
+        result = agent.run(ctx)
         board.update(result.get("writes", {}))
-        board["next"] = result.get("next", "stagnation")
-        log.emit(result.get("phase", name), result.get("data"))
-        board["cycle"] = board.get("cycle", 0) + 1
+        log.emit(result.get("phase", target), result.get("data"))
         _save(board)
 
-        if name in LLM_AGENTS:
-            time.sleep(config.DELAY_BETWEEN_CYCLES)
+        time.sleep(config.DELAY_BETWEEN_CYCLES)
 
-    final = board.get("next", "")
-    if final == "done":
-        log.emit("complete", {"goal": board.get("goal", ""), "events": log.count()})
-        return True
-    if final == "halt":
-        log.emit("halt", {"events": log.count()})
-        return False
     reason = "budget" if log.exhausted() else "interrupted"
     log.emit("stop", {"reason": reason, "events": log.count()})
     return False
@@ -81,7 +104,6 @@ def _save(board: dict[str, Any]) -> None:
         "energy": board.get("energy", 1),
         "pid_output": board.get("pid_output", 0),
         "pid_integral": board.get("pid_integral", 0),
-        "cycle": board.get("cycle", 0),
         "events": log.count(),
         "budget": log.budget(),
     }

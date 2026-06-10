@@ -1,4 +1,5 @@
 from __future__ import annotations
+import time
 from typing import Any, Protocol
 
 import config
@@ -103,7 +104,7 @@ class SchedulerAgent:
     name: str = "scheduler"
     reads: list[str] = [
         "stagnation", "wing_crossed", "pid_output",
-        "plan", "goal", "last_reflect_cycle", "cycle",
+        "plan", "goal", "last_reflect_time",
     ]
 
     def run(self, ctx: dict[str, Any]) -> dict[str, Any]:
@@ -112,12 +113,12 @@ class SchedulerAgent:
         pid = float(ctx.get("pid_output", 0))
         plan: list[dict[str, Any]] = ctx.get("plan", [])
         goal = str(ctx.get("goal", ""))
-        cycle = int(ctx.get("cycle", 0))
-        last_reflect = int(ctx.get("last_reflect_cycle", -100))
+        last_reflect = float(ctx.get("last_reflect_time", 0))
         writes: dict[str, Any] = {}
+        now = time.time()
 
         if not goal:
-            return {"writes": writes, "next": "stagnation", "phase": "schedule", "data": {"reason": "idle"}}
+            return {"writes": writes, "next": "idle", "phase": "schedule", "data": {"reason": "idle"}}
 
         if wing:
             writes["wing_crossed"] = False
@@ -127,8 +128,8 @@ class SchedulerAgent:
             writes["progress_history"] = []
             return {"writes": writes, "next": "planner", "phase": "schedule", "data": {"reason": "wing_cross"}}
 
-        if pid > config.REFLECT_THRESHOLD and (cycle - last_reflect) >= config.REFLECT_MIN_INTERVAL:
-            writes["last_reflect_cycle"] = cycle
+        if pid > config.REFLECT_THRESHOLD and (now - last_reflect) >= config.REFLECT_MIN_INTERVAL_SEC:
+            writes["last_reflect_time"] = now
             return {"writes": writes, "next": "reflector", "phase": "schedule", "data": {"reason": "pid_gate", "pid": round(pid, 3)}}
 
         if not plan:
@@ -148,7 +149,6 @@ class SchedulerAgent:
             return {"writes": {"plan": plan}, "next": "actor", "phase": "schedule", "data": {"reason": "advance", "step": pending.get("text", "")[:60]}}
 
         return {"writes": writes, "next": "planner", "phase": "schedule", "data": {"reason": "stuck"}}
-
 
 class ObserverAgent:
     name: str = "observer"
