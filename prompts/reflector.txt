@@ -8,6 +8,7 @@ Be honest about what is actually broken. If the plan is working but slow, say so
 
 Common systemic patterns to check:
 - cmd.exe misuse: PowerShell syntax, blocking start without /b, where with multiple patterns
+- Planner using element IDs: click [N] or write [N] in plan steps — IDs change every scan; only actor resolves them
 - Introspection loops: re-reading own source instead of outward actions
 - Goal downgrade: done_when weaker than GOAL
 - False progress: verifier confirmed trivial condition while GOAL unmet

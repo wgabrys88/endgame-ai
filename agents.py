@@ -1,4 +1,5 @@
 from __future__ import annotations
+import re
 import time
 from typing import Any, Protocol
 
@@ -194,7 +195,7 @@ class ObserverAgent:
 class PlannerAgent:
     name: str = "planner"
     reads: list[str] = [
-        "goal", "plan", "screen", "desktop_summary", "history",
+        "goal", "plan", "desktop_summary", "focused_window", "history",
         "consecutive_failures", "stagnation", "energy", "completed",
     ]
 
@@ -215,7 +216,7 @@ class PlannerAgent:
             return {"writes": {}, "next": "verifier", "phase": "plan", "data": {"mode": "done"}}
         steps: list[dict[str, str]] = []
         for i, s in enumerate(sequence[:config.MAX_PLAN_STEPS]):
-            steps.append({"text": str(s), "status": "active" if i == 0 else "pending"})
+            steps.append({"text": _sanitize_plan_step(str(s)), "status": "active" if i == 0 else "pending"})
         return {
             "writes": {"plan": steps, "done_when": done_when, "consecutive_failures": 0, "progress_history": []},
             "next": "actor",
@@ -428,6 +429,15 @@ def _render_field(ctx: dict[str, Any], field: str, instruction: str) -> str:
         case "screen":
             s = ctx.get("screen", "")
             return f"SCREEN:\n{s}" if s else ""
+        case "desktop":
+            parts: list[str] = []
+            fw = str(ctx.get("focused_window", "")).strip()
+            if fw:
+                parts.append(f"FOCUSED WINDOW: {fw}")
+            ds = str(ctx.get("desktop_summary", "")).strip()
+            if ds:
+                parts.append(f"DESKTOP:\n{ds}")
+            return "\n\n".join(parts)
         case "instruction":
             if not instruction:
                 return ""
@@ -489,6 +499,18 @@ def _render_field(ctx: dict[str, Any], field: str, instruction: str) -> str:
             return f"DONE_WHEN: {dw}"
         case _:
             return ""
+
+
+_ELEMENT_ID_RE = re.compile(r"\[\d+\]")
+
+
+def _sanitize_plan_step(step: str) -> str:
+    if not _ELEMENT_ID_RE.search(step):
+        return step
+    cleaned = _ELEMENT_ID_RE.sub("", step)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    log.emit("plan.sanitize", {"original": step, "cleaned": cleaned})
+    return cleaned or step
 
 
 def _load_prompt(role: str) -> str:
