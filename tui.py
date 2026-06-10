@@ -210,25 +210,21 @@ class TUI:
     def render(self) -> str:
         w, h = _size()
         s = self.snapshot
-        stag = float(s.get("stagnation_score", 0))
+        stag = float(s.get("stagnation", 0))
         pid = float(s.get("pid_output", 0))
-        energy = float(s.get("attractor_energy", 1))
-        rep = float(s.get("repetition_score", 0))
+        energy = float(s.get("energy", 1))
         failures = int(s.get("consecutive_failures", 0))
         events_n = int(s.get("events", 0))
         budget = int(s.get("budget", 0))
         goal = str(s.get("goal", "(waiting)"))
-        plan_steps: list[str] = s.get("plan_steps", [])
-        plan_idx = int(s.get("plan_index", 0))
-        wing = bool(s.get("lorenz_wing_crossed", False))
-        focused = str(s.get("focused_window", ""))
+        plan: list[dict[str, Any]] = s.get("plan", [])
 
         out: list[str] = []
 
         budget_pct = events_n / max(budget, 1)
         budget_color = _lerp_color(budget_pct)
         outcome = self._outcome()
-        title = f" {BOLD}{goal[:w-30]}{RST} {DIM}│{RST} {budget_color}{events_n}/{budget}{RST} {outcome}"
+        title = f" {BOLD}{goal[:w-30]}{RST} {DIM}\u2502{RST} {budget_color}{events_n}/{budget}{RST} {outcome}"
         out.append(title)
         out.append(budget_color + _bar(budget_pct, w - 2, budget_color) + RST)
 
@@ -237,31 +233,36 @@ class TUI:
         right_w = max(20, w - plot_w - 3)
 
         plot_lines = _braille_plot(self.lorenz_xs, self.lorenz_ys, plot_w, plot_h, stag)
-
         event_lines = self._render_events(right_w, plot_h)
 
         for i in range(max(len(plot_lines), len(event_lines))):
             left = plot_lines[i] if i < len(plot_lines) else " " * plot_w
             right = event_lines[i] if i < len(event_lines) else ""
-            out.append(f" {left} {DIM}│{RST} {right}")
+            out.append(f" {left} {DIM}\u2502{RST} {right}")
 
         stag_bar = _bar(stag, 20, _lerp_color(stag))
         pid_bar = _bar(min(pid / 3.0, 1.0), 20, _lerp_color(min(pid / 3.0, 1.0)))
         energy_bar = _bar(min(energy / 3.0, 1.0), 20, _rgb_fg(180, 120, 255))
-        wing_str = f" {_rgb_fg(255, 255, 0)}⚡ WING CROSS{RST}" if wing else ""
 
-        out.append(f" {DIM}stag{RST} {stag_bar} {stag:.2f}  {DIM}pid{RST} {pid_bar} {pid:.2f}  {DIM}energy{RST} {energy_bar} {energy:.2f}{wing_str}")
-        out.append(f" {DIM}rep={rep:.2f} fails={failures} screen_stag={s.get('screen_stagnation', 0)} halt={s.get('halt_count', 0)}{RST}  {DIM}focus: {focused[:30]}{RST}")
+        out.append(f" {DIM}stag{RST} {stag_bar} {stag:.2f}  {DIM}pid{RST} {pid_bar} {pid:.2f}  {DIM}energy{RST} {energy_bar} {energy:.2f}")
+        cycle_val = s.get("cycle", 0)
+        out.append(f" {DIM}fails={failures} cycle={cycle_val}{RST}")
 
-        plan_line = ""
-        if plan_steps:
-            total = len(plan_steps)
-            current = plan_steps[plan_idx] if plan_idx < total else "(done)"
-            done_count = min(plan_idx, total)
-            plan_line = f" {DIM}plan{RST} [{done_count}/{total}] {_rgb_fg(100, 220, 180)}{current[:w-20]}{RST}"
+        if plan:
+            done_count = sum(1 for step in plan if step.get("status") == "done")
+            total = len(plan)
+            out.append(f" {DIM}plan{RST} [{done_count}/{total}]")
+            for step in plan:
+                status = step.get("status", "pending")
+                text = step.get("text", "")[:w - 10]
+                if status == "done":
+                    out.append(f"   {_rgb_fg(80, 200, 80)}\u2713{RST} {text}")
+                elif status == "active":
+                    out.append(f"   {_rgb_fg(255, 220, 80)}\u25b6{RST} {text}")
+                else:
+                    out.append(f"   {DIM}\u25cb {text}{RST}")
         else:
-            plan_line = f" {DIM}plan{RST} (none)"
-        out.append(plan_line)
+            out.append(f" {DIM}plan{RST} (none)")
 
         agents_str = ""
         for i, name in enumerate(ALL_AGENTS):
@@ -275,7 +276,8 @@ class TUI:
                 agents_str += f" {_rgb_fg(80, 80, 80)}{name}{RST}"
             else:
                 agents_str += f" {_rgb_fg(100, 200, 100)}{name}{RST}"
-        out.append(f"{agents_str}  {DIM}↑↓ select  Enter toggle  Space {'launch' if self.paused else 'relaunch'}  q quit{RST}")
+        launch_label = "launch" if self.paused else "relaunch"
+        out.append(f"{agents_str}  {DIM}\u2191\u2193 select  Enter toggle  Space {launch_label}  q quit{RST}")
 
         return "\n".join(out[:h])
 
@@ -302,7 +304,7 @@ class TUI:
                 stag = "≡" if d.get("stagnant") else ""
                 return f"{stag}[{d.get('focused', '')}] {d.get('chars', 0)}ch"[:max_w]
             case "stagnation":
-                return f"s={d.get('stag', 0):.3f} rep={d.get('rep', 0):.3f}"[:max_w]
+                return f"s={d.get('stag', 0):.3f} p={d.get('progress', 0):.3f}"[:max_w]
             case "lorenz":
                 w_str = "⚡" if d.get("wing") else ""
                 return f"x={d.get('x', 0):.2f} e={d.get('energy', 0):.2f}{w_str}"[:max_w]
