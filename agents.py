@@ -27,13 +27,19 @@ class StagnationAgent:
         progress = plan_progress(ctx)
         history: list[float] = ctx.get("progress_history", [])
         history = (history + [progress])[-config.STAGNATION_CYCLES_WINDOW:]
-        if len(history) < 2:
+        if len(history) < 3:
             stag = 0.0
         else:
-            delta = history[-1] - history[0]
-            stag = max(0.0, min(1.0, 1.0 - delta)) if delta >= 0.0 else 1.0
+            recent_delta = history[-1] - history[-2]
+            window_delta = history[-1] - history[0]
+            if recent_delta > 0.01:
+                stag = 0.0
+            elif window_delta > 0.01:
+                stag = 0.3
+            else:
+                stag = 1.0
         failures = int(ctx.get("consecutive_failures", 0))
-        stag = min(1.0, stag + failures * 0.1)
+        stag = min(1.0, stag + failures * 0.15)
         return {
             "writes": {"stagnation": stag, "progress_history": history},
             "next": "lorenz",
@@ -518,11 +524,16 @@ def _apply_mutation(target: str, append_text: str) -> None:
     if not path.exists():
         return
     current = path.read_text(encoding="utf-8")
+    clean_text = append_text.strip()
+    if clean_text.upper().startswith("RULE:"):
+        clean_text = clean_text[5:].strip()
+    if not clean_text:
+        return
     rules = [block.strip() for block in current.split("\n\n") if block.strip().startswith("RULE:")]
     if len(rules) >= config.PROMPT_MAX_RULES:
         base = current.split("RULE:")[0].rstrip()
         kept = rules[-(config.PROMPT_MAX_RULES - 1):]
         current = base + "\n\n" + "\n\n".join(kept)
-    new_content = current.rstrip() + "\n\nRULE: " + append_text.strip() + "\n"
+    new_content = current.rstrip() + "\n\nRULE: " + clean_text + "\n"
     path.write_text(new_content, encoding="utf-8")
-    log.emit("mutation", {"target": target, "appended": append_text[:100]})
+    log.emit("mutation", {"target": target, "appended": clean_text[:100]})
