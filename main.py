@@ -1,17 +1,21 @@
 from __future__ import annotations
 import argparse
+import json
 import signal
+import time
 import sys
 import types
 from typing import Any
 
-from config import PROCESS_DPI_AWARENESS_CONTEXT, SIGINT_EXIT_CODE
+from config import PROCESS_DPI_AWARENESS_CONTEXT, RESPAWN_PATH, SIGINT_EXIT_CODE
 from llm import set_backend, close_backend
-from orchestrator import run
+from engine import run
 import log
 import config
 
 _interrupted = False
+
+GOAL_MUTABLE = True
 
 
 def _handle_sigint(sig: int, frame: types.FrameType | None) -> None:
@@ -22,8 +26,16 @@ def _handle_sigint(sig: int, frame: types.FrameType | None) -> None:
     sys.stderr.write("\n[endgame-ai] Ctrl+C — finishing current cycle.\n")
 
 
+def set_goal(board: dict, new_goal: str) -> bool:
+    global GOAL_MUTABLE
+    if GOAL_MUTABLE:
+        board["goal"] = new_goal
+        return True
+    return False
+
+
 def main() -> None:
-    global _interrupted
+    global _interrupted, GOAL_MUTABLE
 
     parser = argparse.ArgumentParser(prog="endgame-ai")
     parser.add_argument("goal", nargs="?", default=None)
@@ -31,9 +43,8 @@ def main() -> None:
     parser.add_argument("--event-budget", type=int, default=None)
     args = parser.parse_args()
 
-    if not args.goal:
-        print("usage: python main.py 'goal' [--backend lmstudio|acp] [--event-budget N]")
-        return
+    if args.goal is None:
+        args.goal = ""
 
     signal.signal(signal.SIGINT, _handle_sigint)
 
@@ -48,46 +59,43 @@ def main() -> None:
     set_backend(args.backend)
 
     log.init(config.EVENT_BUDGET)
+    log.set_paused(False)
+
+    config.GOAL_PATH.write_text(args.goal, encoding="utf-8")
+
+    RESPAWN_PATH.write_text(
+        json.dumps({"goal": args.goal, "backend": args.backend, "budget": config.EVENT_BUDGET}),
+        encoding="utf-8",
+    )
+
+    GOAL_MUTABLE = True
 
     board: dict[str, Any] = {
         "goal": args.goal,
-        "plan_steps": [],
-        "plan_index": 0,
+        "plan": [],
+        "done_when": "",
         "history": [],
-        "notes": [],
+        "completed": [],
+        "power": 0.0,
+        "start_time": time.time(),
         "screen": "",
-        "screen_hash": "",
         "screen_elements": {},
         "desktop_summary": "",
         "focused_window": "",
-        "last_verb": "",
-        "last_success": False,
-        "last_observation": "",
-        "actor_conclusion": "",
         "consecutive_failures": 0,
-        "verify_denied_count": 0,
-        "repetition_score": 0.0,
-        "stagnation_score": 0.0,
-        "screen_stagnation": 0,
-        "recent_hashes": [],
-        "recent_sigs": [],
-        "jacobian": {},
-        "jacobian_trials": {},
-        "lorenz_x": 8.485,
-        "lorenz_y": 8.485,
+        "stagnation": 0.0,
+        "progress_history": [],
+        "lorenz_x": 8.0,
+        "lorenz_y": 8.0,
         "lorenz_z": 27.0,
-        "attractor_energy": 1.0,
-        "lorenz_wing_crossed": False,
+        "energy": 1.0,
+        "wing_crossed": False,
         "pid_output": 0.0,
         "pid_integral": 0.0,
         "pid_prev": 0.0,
-        "last_instruction": "",
-        "requested_next": "",
-        "role_calls": {},
-        "total_role_calls": 0,
-        "halt_count": 0,
-        "last_outputs": {},
-        "done": False,
+        "last_reflect_time": 0.0,
+        "reflect_trigger": {},
+        "math_trace": [],
     }
 
     try:
@@ -96,7 +104,7 @@ def main() -> None:
         close_backend()
         log.close()
 
-    sys.exit(0 if success else 1)
+    sys.exit(0)
 
 
 if __name__ == "__main__":

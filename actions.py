@@ -1,23 +1,46 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable
+import json
+import os
+import py_compile
+import subprocess
+import sys
 import time
 
 from config import (
     BASE_DIR, DELAY_FOCUS, DELAY_CURSOR_SETTLE, DELAY_MOUSE_HOLD,
     DELAY_CHAR_SEND, DELAY_KEY_INTER, MAX_WAIT_SECONDS,
-    COMMAND_TIMEOUT_SECONDS, COMMAND_EXECUTABLE, COMMAND_SHELL,
-    MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_WHEEL,
-    WHEEL_DELTA, INPUT_KEYBOARD, KEYEVENTF_EXTENDEDKEY,
-    KEYEVENTF_KEYUP, KEYEVENTF_UNICODE, KEYEVENTF_UNICODE_KEYUP,
-    DEFAULT_SCROLL_AMOUNT,
+    EXEC_TIMEOUT, EXEC_OUTPUT_LIMIT, RESPAWN_PATH,
 )
 from win32 import user32, get_window_title, VK_MAP, EXTENDED_VKS, INPUT
 
-__all__ = ["execute_verb", "ActionResult", "VERBS"]
+_CORE_MODULES: tuple[str, ...] = (
+    "config", "engine", "agents", "actions", "main", "tui",
+    "llm", "log", "observer", "win32", "acp_client",
+)
+
+MOUSEEVENTF_LEFTDOWN: int = 0x0002
+MOUSEEVENTF_LEFTUP: int = 0x0004
+MOUSEEVENTF_WHEEL: int = 0x0800
+WHEEL_DELTA: int = 120
+INPUT_KEYBOARD: int = 1
+KEYEVENTF_EXTENDEDKEY: int = 0x0001
+KEYEVENTF_KEYUP: int = 0x0002
+KEYEVENTF_UNICODE: int = 0x0004
+KEYEVENTF_UNICODE_KEYUP: int = 0x0006
+DEFAULT_SCROLL_AMOUNT: int = 3
+
+__all__ = [
+    "execute_verb", "execute_step", "is_python_step", "ActionResult", "VERBS",
+    "DEFAULT_SCROLL_AMOUNT",
+]
+
+FILE_ALIASES: dict[str, str] = {"reactor.py": "engine.py", "planner.py": "agents.py"}
 
 type ElementBook = dict[str, Any]
-type VerbFn = Callable[[dict[str, Any], ElementBook, Any], ActionResult]
+type VerbFn = Callable[[dict[str, Any], ElementBook], ActionResult]
 
 
 @dataclass(slots=True)
@@ -31,13 +54,13 @@ class ActionResult:
 VERBS: dict[str, VerbFn] = {}
 
 
-def execute_verb(verb: str, args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
+def execute_verb(verb: str, args: dict[str, Any], book: ElementBook, _state: Any) -> ActionResult:
     handler = VERBS.get(verb)
     if not handler:
         return ActionResult(verb=verb, success=False,
                             observation=f"unknown verb: {verb}. Valid: {', '.join(sorted(VERBS))}")
     try:
-        return handler(args, book, state)
+        return handler(args, book)
     except Exception as e:
         return ActionResult(verb=verb, success=False, observation=f"ERROR: {type(e).__name__}: {e}")
 
@@ -50,7 +73,7 @@ def _register(name: str) -> Callable[[VerbFn], VerbFn]:
 
 
 @_register("click")
-def _click(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
+def _click(args: dict[str, Any], book: ElementBook) -> ActionResult:
     selector = str(args.get("selector", ""))
     if selector not in book:
         return ActionResult("click", False, f"selector {selector} not in book")
@@ -67,7 +90,7 @@ def _click(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
 
 
 @_register("write")
-def _write(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
+def _write(args: dict[str, Any], book: ElementBook) -> ActionResult:
     import ctypes
     selector = str(args.get("selector", ""))
     text = str(args.get("text", ""))
@@ -92,7 +115,7 @@ def _write(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
 
 
 @_register("press")
-def _press(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
+def _press(args: dict[str, Any], book: ElementBook) -> ActionResult:
     key = str(args.get("key", "")).lower()
     if not key:
         return ActionResult("press", False, "key is empty")
@@ -107,7 +130,7 @@ def _press(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
 
 
 @_register("hotkey")
-def _hotkey(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
+def _hotkey(args: dict[str, Any], book: ElementBook) -> ActionResult:
     keys: list[str] = args.get("keys", [])
     if not keys:
         return ActionResult("hotkey", False, "keys is empty")
@@ -127,7 +150,7 @@ def _hotkey(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult
 
 
 @_register("scroll")
-def _scroll(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
+def _scroll(args: dict[str, Any], book: ElementBook) -> ActionResult:
     selector = str(args.get("selector", ""))
     amount = int(args.get("amount", DEFAULT_SCROLL_AMOUNT))
     if selector not in book:
@@ -143,14 +166,14 @@ def _scroll(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult
 
 
 @_register("wait")
-def _wait(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
+def _wait(args: dict[str, Any], book: ElementBook) -> ActionResult:
     seconds = min(float(args.get("seconds", 1.0)), MAX_WAIT_SECONDS)
     time.sleep(seconds)
     return ActionResult("wait", True, f"waited {seconds}s")
 
 
 @_register("focus")
-def _focus(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
+def _focus(args: dict[str, Any], book: ElementBook) -> ActionResult:
     title = str(args.get("window_title", ""))
     if not title:
         return ActionResult("focus", False, "no window_title")
@@ -167,8 +190,7 @@ def _focus(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
 
 
 @_register("read_file")
-def _read_file(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
-    from pathlib import Path
+def _read_file(args: dict[str, Any], book: ElementBook) -> ActionResult:
     path = str(args.get("path", ""))
     target = Path(path) if Path(path).is_absolute() else BASE_DIR / path
     resolved = target.resolve()
@@ -180,31 +202,194 @@ def _read_file(args: dict[str, Any], book: ElementBook, state: Any) -> ActionRes
     return ActionResult("read_file", True, resolved.read_text(encoding="utf-8"))
 
 
+def _verify_python_edit(resolved: Path) -> tuple[bool, str]:
+    try:
+        py_compile.compile(str(resolved), doraise=True)
+    except py_compile.PyCompileError as exc:
+        return False, f"syntax error in {resolved.name}: {exc}"
+    script = "; ".join(f"import {name}" for name in _CORE_MODULES)
+    proc = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        cwd=str(BASE_DIR),
+    )
+    if proc.returncode != 0:
+        err = (proc.stderr or proc.stdout).strip()
+        return False, f"import check failed: {err[:400]}"
+    return True, "imports OK"
+
+
 @_register("write_file")
-def _write_file(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
-    from pathlib import Path
+def _write_file(args: dict[str, Any], book: ElementBook) -> ActionResult:
     path = str(args.get("path", ""))
     content = str(args.get("content", ""))
     target = Path(path) if Path(path).is_absolute() else BASE_DIR / path
     resolved = target.resolve()
     resolved.parent.mkdir(parents=True, exist_ok=True)
     resolved.write_text(content, encoding="utf-8")
+    if resolved.suffix.lower() == ".py":
+        ok, msg = _verify_python_edit(resolved)
+        if not ok:
+            return ActionResult("write_file", False, msg)
+        return ActionResult("write_file", True, f"wrote {len(content)} bytes to {path}; {msg}")
     return ActionResult("write_file", True, f"wrote {len(content)} bytes to {path}")
 
 
-@_register("cmd")
-def _cmd(args: dict[str, Any], book: ElementBook, state: Any) -> ActionResult:
-    import subprocess
-    command = str(args.get("command", ""))
-    if not command:
-        return ActionResult("cmd", False, "no command")
-    command = command.replace("\u201c", "\"").replace("\u201d", "\"").replace("\u2018", "'").replace("\u2019", "'")
+def _clip_obs(text: str) -> str:
+    limit = EXEC_OUTPUT_LIMIT
+    return text if len(text) <= limit else text[:limit] + "…"
+
+
+def _spawn_main(goal: str = "") -> int:
     try:
-        cmd_parts = [COMMAND_EXECUTABLE, COMMAND_SHELL, command] if COMMAND_SHELL else [COMMAND_EXECUTABLE, command]
-        proc = subprocess.run(
-            cmd_parts,
-            capture_output=True, text=True, timeout=COMMAND_TIMEOUT_SECONDS, cwd=str(BASE_DIR))
-        output = (proc.stdout + proc.stderr).strip()
-        return ActionResult("cmd", proc.returncode == 0, output or f"exit {proc.returncode}")
-    except subprocess.TimeoutExpired:
-        return ActionResult("cmd", False, f"timed out after {COMMAND_TIMEOUT_SECONDS}s")
+        ctx = json.loads(RESPAWN_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        ctx = {"goal": goal, "backend": "acp", "budget": 200}
+    g = goal or str(ctx.get("goal", ""))
+    proc = subprocess.Popen(
+        [sys.executable, "main.py", g, "--backend", str(ctx.get("backend", "acp")),
+         "--event-budget", str(int(ctx.get("budget", 200)))],
+        cwd=str(BASE_DIR),
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+    return int(proc.pid)
+
+
+def execute_python(code: str) -> ActionResult:
+    import concurrent.futures
+    import io
+    import traceback
+    from config import GUI_MODE_PATH
+
+    code = code.strip()
+    if not code:
+        return ActionResult("exec", False, "no code")
+
+    def enable_gui() -> None:
+        GUI_MODE_PATH.write_text("1", encoding="utf-8")
+
+    def pause_reactor() -> None:
+        import log
+        log.set_paused(True)
+
+    namespace: dict[str, Any] = {
+        "__builtins__": __builtins__,
+        "__name__": "__exec__",
+        "BASE_DIR": BASE_DIR,
+        "Path": Path,
+        "os": os,
+        "sys": sys,
+        "json": json,
+        "time": time,
+        "subprocess": subprocess,
+        "spawn_main": _spawn_main,
+        "enable_gui": enable_gui,
+        "pause_reactor": pause_reactor,
+    }
+
+    stdout_buf = io.StringIO()
+    stderr_buf = io.StringIO()
+
+    class _Capture(io.TextIOBase):
+        def __init__(self, buf: io.StringIO) -> None:
+            self._buf = buf
+
+        def write(self, s: str) -> int:
+            if s:
+                self._buf.write(s)
+            return len(s) if s else 0
+
+        def flush(self) -> None:
+            pass
+
+    def _run() -> None:
+        old_out, old_err = sys.stdout, sys.stderr
+        sys.stdout, sys.stderr = _Capture(stdout_buf), _Capture(stderr_buf)
+        try:
+            exec(code, namespace, namespace)
+        finally:
+            sys.stdout, sys.stderr = old_out, old_err
+
+    error_text = ""
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            pool.submit(_run).result(timeout=EXEC_TIMEOUT)
+        ok = True
+    except concurrent.futures.TimeoutError:
+        ok, error_text = False, f"timeout after {EXEC_TIMEOUT}s"
+    except Exception:
+        ok, error_text = False, traceback.format_exc()
+
+    parts = [stdout_buf.getvalue().rstrip(), stderr_buf.getvalue().rstrip()]
+    if error_text:
+        parts.append(error_text.rstrip())
+    output = _clip_obs("\n".join(p for p in parts if p))
+    return ActionResult("exec", ok, output or ("ok" if ok else "exec failed"))
+
+
+def _parse_exec_code(step: str) -> str:
+    s = step.strip()
+    low = s.lower()
+    if low.startswith("exec:"):
+        return s[5:].lstrip("\n")
+    if low.startswith("exec "):
+        return s[5:]
+    if low.startswith("exec"):
+        return s[4:].lstrip(": \n")
+    return s
+
+
+def is_python_step(step: str) -> bool:
+    low = step.strip().lower()
+    if low.startswith("exec") and (len(low) == 4 or low[4] in ": \n"):
+        return True
+    if low.startswith(("read_file ", "write_file ")):
+        return True
+    if low.startswith("wait "):
+        try:
+            float(step.split(None, 1)[1])
+            return True
+        except (IndexError, ValueError):
+            return False
+    return False
+
+
+def _resolve_write_path(path: str) -> str:
+    from config import GUI_MODE_PATH
+    raw = path.strip().strip("\"'")
+    if raw in ("gui_mode", "enabled"):
+        return str(GUI_MODE_PATH)
+    p = Path(raw)
+    return str(p) if p.is_absolute() else str((BASE_DIR / raw).resolve())
+
+
+def execute_step(step: str) -> ActionResult:
+    """Python executes headless plan steps — model only names them."""
+    s = step.strip()
+    low = s.lower()
+    if low.startswith("exec") and (len(low) == 4 or low[4] in ": \n"):
+        return execute_python(_parse_exec_code(s))
+    if low.startswith("wait "):
+        try:
+            sec = float(s.split(None, 1)[1])
+        except (IndexError, ValueError):
+            sec = 1.0
+        return execute_verb("wait", {"seconds": sec}, {}, None)
+    if low.startswith("read_file "):
+        path = s.split(None, 1)[1].strip().strip("\"'")
+        base = Path(path).name.lower()
+        if base in FILE_ALIASES:
+            path = FILE_ALIASES[base]
+        return execute_verb("read_file", {"path": path}, {}, None)
+    if low.startswith("write_file "):
+        parts = s.split(None, 2)
+        if len(parts) < 2:
+            return ActionResult("write_file", False, "need path and content")
+        path = _resolve_write_path(parts[1])
+        content = parts[2] if len(parts) > 2 else "1"
+        if content in ("enabled", "enable"):
+            content = "1"
+        return execute_verb("write_file", {"path": path, "content": content}, {}, None)
+    return ActionResult("step", False, f"not a python step: {step}")

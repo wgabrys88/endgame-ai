@@ -8,15 +8,7 @@
       "properties": {
         "mode": {
           "type": "string",
-          "enum": [
-            "direct",
-            "done"
-          ]
-        },
-        "next_action": {
-          "type": "string",
-          "minLength": 0,
-          "maxLength": 2000
+          "enum": ["direct", "done"]
         },
         "sequence": {
           "type": "array",
@@ -25,25 +17,18 @@
           "items": {
             "type": "string",
             "minLength": 3,
-            "maxLength": 300
+            "maxLength": 300,
+            "pattern": "^(?!.*\\[\\d+\\]).+$",
+            "description": "Semantic intention or headless verb. Never contain [element_id] — IDs are resolved by the actor at execution time."
           }
         },
-        "recipient": {
+        "done_when": {
           "type": "string",
-          "enum": [
-            "actor",
-            "verifier",
-            "reflector",
-            ""
-          ]
+          "minLength": 5,
+          "maxLength": 200
         }
       },
-      "required": [
-        "mode",
-        "next_action",
-        "sequence",
-        "recipient"
-      ],
+      "required": ["mode", "sequence", "done_when"],
       "additionalProperties": false
     }
   }

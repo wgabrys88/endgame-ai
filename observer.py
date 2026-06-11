@@ -1,13 +1,15 @@
 from __future__ import annotations
-import hashlib, math, re, time
+import ctypes
+import ctypes.wintypes as W
+import math
+import time
 from dataclasses import dataclass
 from typing import Any
 
 from config import (
     TREE_WALK_TIMEOUT, PROBE_STEP_PX, PROBE_FOREGROUND_DELAY, PROBE_SAMPLE_DELAY,
     PROBE_SINE_AMPLITUDE_RATIO, PROBE_SINE_PERIOD_STEPS,
-    READ_TEXT_MAX_LENGTH, SCREEN_ELEMENT_VALUE_LIMIT,
-    TERMINAL_CONTEXT_TAIL_LINES,
+    READ_TEXT_MAX_LENGTH, SCREEN_ELEMENT_VALUE_LIMIT, TERMINAL_CONTEXT_TAIL_LINES,
 )
 from win32 import (
     user32, init, set_dpi_aware,
@@ -18,8 +20,6 @@ from win32 import (
     UIA_CONTROL_TYPE, UIA_NAME, UIA_IS_ENABLED,
     UIA_IS_OFFSCREEN, CONTROL_TYPE_MAP,
 )
-import ctypes
-import ctypes.wintypes as W
 
 __all__ = ["observe", "ObserveResult", "BookEntry"]
 
@@ -38,10 +38,6 @@ SKIP_NAMELESS = frozenset({
     "Pane", "Group", "Custom", "Image", "Separator", "Thumb",
     "ProgressBar", "Header", "HeaderItem",
 })
-POPUP_CLASSES = frozenset({
-    "TaskListThumbnailWnd", "#32768", "ToolTipClass",
-    "Windows.UI.Core.CoreWindow",
-})
 
 @dataclass(slots=True)
 class BookEntry:
@@ -59,7 +55,6 @@ class BookEntry:
     readonly: bool
     action: str
 
-
 @dataclass(slots=True)
 class ObserveResult:
     context_text: str
@@ -67,9 +62,6 @@ class ObserveResult:
     focused_title: str
     windows: list[dict[str, Any]]
     desktop_summary: str
-    content_hash: str
-    semantic_hash: str
-
 
 def observe() -> ObserveResult:
     set_dpi_aware()
@@ -81,10 +73,9 @@ def observe() -> ObserveResult:
 
     windows = _enumerate_windows()
     z_order = _get_z_order()
+    regions = _probe_regions(windows, focused_title, focused_hwnd, screen_w, screen_h)
 
     probe_nodes: list[dict[str, Any]] = []
-    regions = _probe_regions(windows, z_order, focused_hwnd, screen_w, screen_h)
-    target_wnd = _target_windows(focused_title, regions)
     saved = W.POINT()
     user32.GetCursorPos(ctypes.byref(saved))
     for x0, y0, x1, y1, wname, whwnd in regions:
@@ -94,32 +85,17 @@ def observe() -> ObserveResult:
         _probe_region(probe_nodes, PROBE_STEP_PX, x0, y0, x1, y1, wname, whwnd)
     user32.SetCursorPos(saved.x, saved.y)
 
-    probe_decision = {"enabled": True, "reason": "primary_probe", "probe_actionable": _target_action_count(_classify(_clone_nodes(probe_nodes)), target_wnd)}
-    tree_decision = _tree_decision(probe_decision)
-
     tree_nodes: list[dict[str, Any]] = []
-    tree_windows = _tree_windows(windows, target_wnd, regions)
-    if tree_decision["enabled"]:
-        for wnd in tree_windows:
-            _tree_walk(tree_nodes, wnd["element"], str(wnd["name"]), int(wnd["hwnd"]),
-                       TREE_WALK_TIMEOUT)
-    else:
-        for wnd in tree_windows:
-            if str(wnd["name"]) == "Taskbar":
-                _tree_walk(tree_nodes, wnd["element"], "Taskbar", int(wnd["hwnd"]),
-                           TREE_WALK_TIMEOUT)
+    for wnd in _tree_targets(windows, focused_title):
+        _tree_walk(tree_nodes, wnd["element"], str(wnd["name"]), int(wnd["hwnd"]), TREE_WALK_TIMEOUT)
 
-    merged = _merge(tree_nodes, probe_nodes)
-    classified = _classify(merged)
-
+    merged = _merge(probe_nodes, tree_nodes)
     z_titles = [str(e["title"]) for e in z_order]
     wnd_rank = {t: i for i, t in enumerate(z_titles)}
+    classified = _classify(merged)
     classified.sort(key=lambda n: (wnd_rank.get(n["wnd"], 999), n["depth"], n["y"], n["x"]))
 
-    text, book = _render(classified, target_wnd, focused_title)
-    semantic_text = _semantic_render(classified, target_wnd, focused_title)
-    content_hash = hashlib.md5(text.encode("utf-8", errors="surrogatepass")).hexdigest()
-    semantic_hash = hashlib.md5(semantic_text.encode("utf-8", errors="surrogatepass")).hexdigest()
+    text, book = _render(classified, focused_title)
 
     desktop_lines = [f"Desktop ({screen_w}x{screen_h})"]
     for i, entry in enumerate(z_order[:10]):
@@ -132,9 +108,7 @@ def observe() -> ObserveResult:
         context_text=text, book=book, focused_title=focused_title,
         windows=[{"name": w["name"], "hwnd": w["hwnd"]} for w in windows],
         desktop_summary="\n".join(desktop_lines),
-        content_hash=content_hash, semantic_hash=semantic_hash,
     )
-
 
 def _enumerate_windows() -> list[dict[str, Any]]:
     windows: list[dict[str, Any]] = []
@@ -154,7 +128,6 @@ def _enumerate_windows() -> list[dict[str, Any]]:
             continue
     return windows
 
-
 def _get_z_order() -> list[dict[str, Any]]:
     hwnd = user32.GetTopWindow(None)
     result: list[dict[str, Any]] = []
@@ -170,133 +143,26 @@ def _get_z_order() -> list[dict[str, Any]]:
         hwnd = user32.GetWindow(hwnd, 2)
     return result
 
+def _probe_regions(
+    windows: list[dict[str, Any]], focused_title: str, focused_hwnd: int, sw: int, sh: int,
+) -> list[tuple[int, int, int, int, str, int]]:
+    for wnd in windows:
+        if str(wnd["name"]) == focused_title or int(wnd["hwnd"]) == focused_hwnd:
+            x, y, ww, wh = int(wnd["x"]), int(wnd["y"]), int(wnd["w"]), int(wnd["h"])
+            return [(x, y, x + ww, y + wh, str(wnd["name"]), int(wnd["hwnd"]))]
+    return [(0, 0, sw, sh, focused_title or "Desktop", focused_hwnd)]
 
-def _tree_walk(out: list[dict[str, Any]], el: Any, wnd_name: str, wnd_hwnd: int, timeout: float) -> None:
-    from collections import deque
-    start = time.perf_counter()
-    queue: deque[tuple[Any, int]] = deque()
-    for child in get_children(el):
-        queue.append((child, 1))
-    while queue:
-        if time.perf_counter() - start > timeout:
-            break
-        raw_el, depth = queue.popleft()
-        try:
-            x, y, w, h = get_rect(raw_el)
-            ct = get_int(raw_el, UIA_CONTROL_TYPE)
-        except OSError:
-            continue
-        role = CONTROL_TYPE_MAP.get(ct, "")
-        if not role:
-            try:
-                for c in get_children(raw_el):
-                    queue.append((c, depth))
-            except OSError:
-                pass
-            continue
-        try:
-            value = get_legacy_value(raw_el) if role in ACTIONABLE_ROLES else ""
-            if not value and role in ("Text", "Document", "Edit", "Pane"):
-                tc = get_text_content(raw_el, READ_TEXT_MAX_LENGTH)
-                if tc:
-                    value = _filter_terminal_text(tc)
-                    has_text_pattern = True
-                else:
-                    has_text_pattern = False
-            else:
-                has_text_pattern = False
-            out.append({
-                "wnd": wnd_name, "hwnd": wnd_hwnd, "depth": depth,
-                "role": role, "name": get_str(raw_el, UIA_NAME),
-                "x": x, "y": y, "w": w, "h": h,
-                "enabled": get_bool(raw_el, UIA_IS_ENABLED),
-                "value": value,
-                "readonly": get_legacy_readonly(raw_el) if role in ACTIONABLE_ROLES else False,
-                "offscreen": get_bool(raw_el, UIA_IS_OFFSCREEN),
-                "has_text_pattern": has_text_pattern,
-            })
-        except OSError:
-            continue
-        try:
-            for c in get_children(raw_el):
-                queue.append((c, depth + 1))
-        except OSError:
-            pass
-
-
-def _probe_regions(windows: list[dict[str, Any]], z_order: list[dict[str, Any]], focused_hwnd: int, sw: int, sh: int) -> list[tuple[int, int, int, int, str, int]]:
-    return [(0, 0, sw, sh, "Desktop", 0)]
-
-
-def _window_region(wnd: dict[str, Any]) -> tuple[int, int, int, int, str, int]:
-    x = int(wnd["x"])
-    y = int(wnd["y"])
-    return (x, y, x + int(wnd["w"]), y + int(wnd["h"]), str(wnd["name"]), int(wnd["hwnd"]))
-
-
-def _top_window_region(windows: list[dict[str, Any]], z_order: list[dict[str, Any]]) -> tuple[int, int, int, int, str, int] | None:
-    by_hwnd = {int(wnd["hwnd"]): wnd for wnd in windows}
-    for entry in z_order:
-        wnd = by_hwnd.get(int(entry["hwnd"]))
-        if wnd is None:
-            continue
-        region = _window_region(wnd)
-        if not _is_desktop_window(region):
-            return region
-    return None
-
-
-def _is_desktop_window(region: tuple[int, int, int, int, str, int]) -> bool:
-    return _region_name(region) in ("Desktop", "Program Manager")
-
-
-def _target_windows(focused_title: str, regions: list[tuple[int, int, int, int, str, int]]) -> set[str]:
-    if any(_is_desktop_window(r) for r in regions):
-        return set()
-    region_titles = {_region_name(r) for r in regions if _region_name(r) and not _is_desktop_window(r)}
-    if focused_title and (not region_titles or focused_title in region_titles):
-        return {focused_title}
-    return region_titles
-
-
-def _tree_windows(windows: list[dict[str, Any]], target_wnd: set[str], regions: list[tuple[int, int, int, int, str, int]]) -> list[dict[str, Any]]:
-    if not target_wnd or any(_is_desktop_window(region) for region in regions):
-        return windows
-    selected = [wnd for wnd in windows if str(wnd["name"]) in target_wnd or str(wnd["name"]) == "Taskbar"]
-    if selected:
-        return selected
+def _tree_targets(windows: list[dict[str, Any]], focused_title: str) -> list[dict[str, Any]]:
+    if focused_title:
+        matched = [w for w in windows if str(w["name"]) == focused_title]
+        if matched:
+            return matched
     return windows
 
-
-def _region_name(region: tuple[int, int, int, int, str, int]) -> str:
-    return str(region[4])
-
-
-def _tree_decision(probe_decision: dict[str, Any]) -> dict[str, Any]:
-    action_count = int(probe_decision.get("probe_actionable", 0))
-    enabled = action_count < 1
-    reason = "probe_actionable_empty" if enabled else "probe_actionable_sufficient"
-    return {"enabled": enabled, "reason": reason, "probe_actionable": action_count}
-
-
-def _topmost_popup(z_order: list[dict[str, Any]]) -> bool:
-    if not z_order:
-        return False
-    return get_window_class(int(z_order[0]["hwnd"])) in POPUP_CLASSES
-
-
-def _target_action_count(nodes: list[dict[str, Any]], target_wnd: set[str]) -> int:
-    count = 0
-    for n in nodes:
-        wnd = str(n.get("wnd", ""))
-        if target_wnd and wnd not in target_wnd and wnd != "Taskbar":
-            continue
-        if n.get("action") != "none":
-            count += 1
-    return count
-
-
-def _probe_region(out: list[dict[str, Any]], step: int, x0: int, y0: int, x1: int, y1: int, wname: str, whwnd: int) -> None:
+def _probe_region(
+    out: list[dict[str, Any]], step: int,
+    x0: int, y0: int, x1: int, y1: int, wname: str, whwnd: int,
+) -> None:
     seen_rids: set[Any] = set()
     amp = step * PROBE_SINE_AMPLITUDE_RATIO
     freq = 2 * math.pi / (step * PROBE_SINE_PERIOD_STEPS)
@@ -323,14 +189,15 @@ def _probe_region(out: list[dict[str, Any]], step: int, x0: int, y0: int, x1: in
                     continue
                 name = get_str(el, UIA_NAME)
                 value = get_legacy_value(el)
+                has_text_pattern = False
                 if not value:
                     text_content = get_text_content(el, READ_TEXT_MAX_LENGTH)
                     if text_content:
                         value = _filter_terminal_text(text_content)
-                r = get_rect(el)
+                        has_text_pattern = True
+                rx, ry, rw, rh = get_rect(el)
                 if not name and not value:
                     continue
-                rx, ry, rw, rh = r
                 out.append({
                     "wnd": wname, "hwnd": whwnd, "depth": 0,
                     "role": role, "name": name,
@@ -339,21 +206,87 @@ def _probe_region(out: list[dict[str, Any]], step: int, x0: int, y0: int, x1: in
                     "value": value,
                     "readonly": get_legacy_readonly(el),
                     "offscreen": get_bool(el, UIA_IS_OFFSCREEN),
+                    "has_text_pattern": has_text_pattern,
                 })
             except OSError:
                 continue
 
+def _tree_walk(out: list[dict[str, Any]], el: Any, wnd_name: str, wnd_hwnd: int, timeout: float) -> None:
+    from collections import deque
+    start = time.perf_counter()
+    queue: deque[tuple[Any, int]] = deque()
+    for child in get_children(el):
+        queue.append((child, 1))
+    while queue:
+        if time.perf_counter() - start > timeout:
+            break
+        raw_el, depth = queue.popleft()
+        try:
+            x, y, w, h = get_rect(raw_el)
+            ct = get_int(raw_el, UIA_CONTROL_TYPE)
+        except OSError:
+            continue
+        role = CONTROL_TYPE_MAP.get(ct, "")
+        if not role:
+            try:
+                for c in get_children(raw_el):
+                    queue.append((c, depth))
+            except OSError:
+                pass
+            continue
+        try:
+            value = get_legacy_value(raw_el) if role in ACTIONABLE_ROLES else ""
+            has_text_pattern = False
+            if not value and role in ("Text", "Document", "Edit", "Pane"):
+                tc = get_text_content(raw_el, READ_TEXT_MAX_LENGTH)
+                if tc:
+                    value = _filter_terminal_text(tc)
+                    has_text_pattern = True
+            out.append({
+                "wnd": wnd_name, "hwnd": wnd_hwnd, "depth": depth,
+                "role": role, "name": get_str(raw_el, UIA_NAME),
+                "x": x, "y": y, "w": w, "h": h,
+                "enabled": get_bool(raw_el, UIA_IS_ENABLED),
+                "value": value,
+                "readonly": get_legacy_readonly(raw_el) if role in ACTIONABLE_ROLES else False,
+                "offscreen": get_bool(raw_el, UIA_IS_OFFSCREEN),
+                "has_text_pattern": has_text_pattern,
+            })
+        except OSError:
+            continue
+        try:
+            for c in get_children(raw_el):
+                queue.append((c, depth + 1))
+        except OSError:
+            pass
+
+def _node_key(n: dict[str, Any]) -> tuple[Any, ...]:
+    return (n["role"], n.get("name", ""), n["x"], n["y"], n["w"], n["h"])
+
+def _merge(probe_nodes: list[dict[str, Any]], tree_nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Probe is primary — hover discoveries land first; tree adds depth and gaps."""
+    index: dict[tuple[Any, ...], int] = {}
+    merged: list[dict[str, Any]] = []
+    for node in probe_nodes:
+        key = _node_key(node)
+        index[key] = len(merged)
+        merged.append(node)
+    for node in tree_nodes:
+        key = _node_key(node)
+        if key in index:
+            hit = merged[index[key]]
+            hit["depth"] = max(int(hit.get("depth", 0)), int(node.get("depth", 0)))
+            hit["has_text_pattern"] = hit.get("has_text_pattern") or node.get("has_text_pattern")
+        else:
+            merged.append(node)
+    return merged
 
 def _filter_terminal_text(raw: str) -> str:
     lines = raw.splitlines()
     stripped = [l.rstrip() for l in lines if l.rstrip()]
     if not stripped:
         return ""
-    kept: list[str] = []
-    for line in stripped:
-        if _is_runtime_log_line(line) or _is_tui_dashboard_line(line):
-            continue
-        kept.append(line)
+    kept = [l for l in stripped if not _is_runtime_log_line(l) and not _is_tui_dashboard_line(l)]
     if not kept:
         kept = stripped
     last_sep = -1
@@ -361,58 +294,18 @@ def _filter_terminal_text(raw: str) -> str:
         if " - Completed in " in kept[i]:
             last_sep = i
             break
-    if last_sep >= 0 and last_sep < len(kept) - 1:
-        tail = kept[last_sep + 1:]
-    else:
-        tail = kept
+    tail = kept[last_sep + 1:] if last_sep >= 0 and last_sep < len(kept) - 1 else kept
     if len(tail) > TERMINAL_CONTEXT_TAIL_LINES:
         tail = tail[-TERMINAL_CONTEXT_TAIL_LINES:]
     return "\n".join(tail)
 
-
 def _is_runtime_log_line(line: str) -> bool:
     compact = line.strip()
-    if not compact.startswith("{"):
-        return False
-    markers = ('"version":', '"phase":', '"agent_id":', '"timestamp_utc":')
-    return all(marker in compact for marker in markers[:2])
-
+    return compact.startswith("{") and '"phase":' in compact
 
 def _is_tui_dashboard_line(line: str) -> bool:
     compact = line.strip()
-    if not compact:
-        return False
-    if "\x1bP" in compact:
-        return True
-    if compact.startswith("endgame-ai |"):
-        return True
-    if compact in ("LORENZ", "STAGNATION"):
-        return True
-    prefixes = ("mode=", "goal:", "focus:", "plan[", "plan:", "action:", "result:", "children:", "lorenz:")
-    return any(compact.startswith(prefix) for prefix in prefixes)
-
-
-def _compact_display_value(value: str) -> str:
-    if len(value) <= SCREEN_ELEMENT_VALUE_LIMIT:
-        return value
-    digest = hashlib.sha256(value.encode("utf-8", errors="surrogatepass")).hexdigest()
-    return f"[chars={len(value)} sha256={digest[:16]}]"
-
-
-def _merge(tree_nodes: list[dict[str, Any]], probe_nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    keys: set[tuple[Any, ...]] = set()
-    merged: list[dict[str, Any]] = []
-    for n in tree_nodes:
-        k = (n["role"], n["name"], n["x"], n["y"], n["w"], n["h"])
-        keys.add(k)
-        merged.append(n)
-    for p in probe_nodes:
-        k = (p["role"], p["name"], p["x"], p["y"], p["w"], p["h"])
-        if k not in keys:
-            merged.append(p)
-            keys.add(k)
-    return merged
-
+    return bool(compact) and ("\x1bP" in compact or compact.startswith("endgame-ai |"))
 
 def _classify(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     tab_rects: list[tuple[int, int, int, int]] = []
@@ -453,92 +346,57 @@ def _classify(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
         result.append(n)
     return result
 
+def _clip_value(value: str) -> str:
+    limit = SCREEN_ELEMENT_VALUE_LIMIT
+    return value if len(value) <= limit else value[:limit] + "…"
 
-def _render(nodes: list[dict[str, Any]], target_wnd: set[str], focused_title: str) -> tuple[str, dict[str, BookEntry]]:
+def _render(nodes: list[dict[str, Any]], focused_title: str) -> tuple[str, dict[str, BookEntry]]:
     book: dict[str, BookEntry] = {}
     wnd_groups: dict[str, list[dict[str, Any]]] = {}
     for n in nodes:
-        wnd = n["wnd"]
-        if target_wnd and wnd not in target_wnd and wnd != "Taskbar":
-            continue
-        if n["action"] == "none":
-            continue
-        wnd_groups.setdefault(wnd, []).append(n)
+        wnd_groups.setdefault(n["wnd"], []).append(n)
 
     lines: list[str] = []
     seq = 0
     wnd_list = sorted(wnd_groups.keys(), key=lambda w: (w != focused_title, w))
     for i, wnd in enumerate(wnd_list):
         is_last_wnd = i == len(wnd_list) - 1
-        prefix = "└── " if is_last_wnd else "├── "
+        branch = "    " if is_last_wnd else "│   "
         focused = " (focused)" if wnd == focused_title else ""
-        lines.append(f"{prefix}{wnd}{focused}")
-        elements = wnd_groups[wnd]
-        child_prefix = "    " if is_last_wnd else "│   "
-        for j, n in enumerate(elements):
-            seq += 1
-            nid = str(seq)
-            is_last_el = j == len(elements) - 1
-            connector = "└── " if is_last_el else "├── "
-            label = n.get("name", "")
-            if n.get("value") and n["action"] == "write":
-                val = _compact_display_value(str(n["value"]))
-                desc = f'[{nid}] "{label}" = "{val}"' if label else f'[{nid}] "{val}"'
-            elif label:
-                desc = f'[{nid}] "{label}"'
+        lines.append(f"{'└── ' if is_last_wnd else '├── '}{wnd}{focused}")
+        for n in wnd_groups[wnd]:
+            depth = max(1, int(n.get("depth", 1)))
+            indent = branch + ("│   " * (depth - 1))
+            label = str(n.get("name", ""))
+            role = str(n.get("role", ""))
+            if n.get("action") != "none":
+                seq += 1
+                nid = str(seq)
+                if n.get("value") and n["action"] == "write":
+                    val = _clip_value(str(n["value"]))
+                    desc = f'[{nid}] {role} "{label}" = "{val}"' if label else f'[{nid}] {role} "{val}"'
+                elif label:
+                    desc = f'[{nid}] {role} "{label}"'
+                else:
+                    desc = f'[{nid}] {role}'
+                if not n.get("enabled"):
+                    desc += " (disabled)"
+                book[nid] = BookEntry(
+                    id=nid, role=role, name=label,
+                    value=str(n.get("value", "")), hwnd=n["hwnd"], wnd=wnd,
+                    px=n["x"], py=n["y"], pw=n["w"], ph=n["h"],
+                    enabled=n.get("enabled", True), readonly=n.get("readonly", False),
+                    action=n["action"],
+                )
             else:
-                desc = f'[{nid}] {n["role"]}'
-            if not n.get("enabled"):
-                desc += " (disabled)"
-            lines.append(f"{child_prefix}{connector}{desc}")
-            book[nid] = BookEntry(
-                id=nid, role=n["role"], name=label,
-                value=n.get("value", ""), hwnd=n["hwnd"], wnd=wnd,
-                px=n["x"], py=n["y"], pw=n["w"], ph=n["h"],
-                enabled=n.get("enabled", True), readonly=n.get("readonly", False),
-                action=n["action"],
-            )
+                val = _clip_value(str(n.get("value", ""))) if n.get("value") else ""
+                if label and val:
+                    desc = f'{role} "{label}" = "{val}"'
+                elif label:
+                    desc = f'{role} "{label}"'
+                elif val:
+                    desc = f'{role} "{val}"'
+                else:
+                    desc = role
+            lines.append(f"{indent}├── {desc}")
     return "\n".join(lines), book
-
-
-_DYNAMIC_TEXT_PATTERNS = (
-    r"\b\d+:\d+(?::\d+)?\s*(?:am|pm)?\b",
-    r"\b\d+(?:\.\d+)?\s*(?:%|bps|kbps|mbps|gbps|hz|khz|mhz|ghz|kb|mb|gb|tb|ms|sec|s)\b",
-    r"\b[\da-f]+(?::[\da-f]*)+%?\w*\b",
-    r"\b\d+(?:\.\d+)?\b",
-)
-
-
-def _semantic_render(nodes: list[dict[str, Any]], target_wnd: set[str], focused_title: str) -> str:
-    lines: list[str] = []
-    for n in nodes:
-        wnd = str(n["wnd"])
-        if target_wnd and wnd not in target_wnd and wnd != "Taskbar":
-            continue
-        parts = [
-            _normalize_dynamic_text(wnd),
-            "focused" if wnd == focused_title else "",
-            str(n["role"]),
-            str(n["action"]),
-            _normalize_dynamic_text(str(n.get("name", ""))),
-            _normalize_dynamic_text(str(n.get("value", ""))),
-            "enabled" if n.get("enabled", True) else "disabled",
-            "readonly" if n.get("readonly", False) else "editable",
-        ]
-        lines.append("|".join(parts))
-    return "\n".join(lines)
-
-
-def _normalize_dynamic_text(text: str) -> str:
-    normalized = " ".join(text.casefold().split())
-    for pattern in _DYNAMIC_TEXT_PATTERNS:
-        normalized = re.sub(pattern, "<dynamic>", normalized, flags=re.IGNORECASE)
-    return normalized
-
-
-def _clone_nodes(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [dict(n) for n in nodes]
-
-
-
-

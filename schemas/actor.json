@@ -22,9 +22,7 @@
                   "hotkey",
                   "scroll",
                   "wait",
-                  "read_file",
-                  "write_file",
-                  "cmd"
+                  "focus"
                 ]
               },
               "target": {

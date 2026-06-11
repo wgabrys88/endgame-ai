@@ -36,7 +36,7 @@ def close_backend() -> None:
 
 
 def call_llm(system: str, user: str, role: str, *, max_tokens: int = LLM_MAX_TOKENS, temperature: float | None = None) -> str:
-    schema: dict[str, Any] = _load_schema(role)
+    schema = _load_schema(role)
     temp = temperature if temperature is not None else LLM_TEMPERATURE
     body: dict[str, Any] = {
         "messages": [
@@ -117,7 +117,7 @@ def _call_lmstudio(body: dict[str, Any]) -> str:
             payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
             time.sleep(LMS_ERROR_RETRY_DELAY)
             continue
-        raise RuntimeError(f"LLM error: {raw[:300]}")
+        raise RuntimeError(f"LLM error: {raw}")
     raise RuntimeError("LLM call failed after retries")
 
 
