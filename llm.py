@@ -148,7 +148,6 @@ def _call_llm_reply_with_retry(system: str, user: str, role: str, *, max_tokens:
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
-        "response_format": schema,
         "temperature": temp,
         "top_p": config.LLM_TOP_P,
         "top_k": config.LLM_TOP_K,
@@ -161,6 +160,8 @@ def _call_llm_reply_with_retry(system: str, user: str, role: str, *, max_tokens:
         "repeat_penalty": config.LLM_REPEAT_PENALTY,
         "seed": config.LLM_SEED,
     }
+    if _backend != "lmstudio" and schema:
+        body["response_format"] = schema
     started = time.time()
     max_retries = getattr(config, "LLM_RETRY_ATTEMPTS", 3)
     text, usage = "", {}

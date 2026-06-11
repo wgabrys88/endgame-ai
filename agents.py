@@ -584,10 +584,13 @@ def _normalize_step(s: Any) -> str:
     if isinstance(s, dict):
         if "code" in s:
             return f"exec {s['code']}"
+        if "exec" in s:
+            return f"exec {s['exec']}"
         if "text" in s:
             return str(s["text"])
-        if "step" in s and "args" in s:
-            return f"{s['step']} {s['args']}"
+        if "step" in s:
+            rest = s.get("args", s.get("code", s.get("value", "")))
+            return f"{s['step']} {rest}".strip()
         return " ".join(str(v) for v in s.values())
     return str(s)
 
