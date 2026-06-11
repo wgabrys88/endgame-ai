@@ -416,6 +416,7 @@ class ReflectorAgent:
         from llm import call_llm
         context = _render_context(ctx, "reflector")
         system = _load_prompt("reflector")
+        failures = int(ctx.get("consecutive_failures", 0))
         try:
             raw = call_llm(system, context, "reflector", max_tokens=config.BUDGET_REFLECTOR_OUT)
         except Exception as e:
@@ -434,6 +435,14 @@ class ReflectorAgent:
         diagnosis = str(parsed.get("diagnosis", ""))
         plan_steps: list[dict[str, Any]] = ctx.get("plan", [])
         retry = next((s for s in plan_steps if s.get("status") == "active"), None)
+        # Escalate to mutator if repeated reflections haven't helped
+        if failures >= config.MUTATOR_ESCALATION_FAILURES:
+            return {
+                "writes": {"pid_integral": 0.0},
+                "next": "mutator",
+                "phase": "reflect",
+                "data": {"diagnosis": diagnosis, "lesson": lesson, "escalate": "mutator"},
+            }
         return {
             "writes": {"pid_integral": 0.0, "consecutive_failures": 0},
             "next": "actor" if retry else "stagnation",
@@ -541,13 +550,14 @@ def _render_field(ctx: dict[str, Any], field: str, instruction: str) -> str:
                 return ""
             return f"FAILURES: {f_count} consecutive. Try different approach."
         case "lessons":
-            if not config.LESSONS_PATH.exists():
-                return ""
-            text = config.LESSONS_PATH.read_text(encoding="utf-8").strip()
-            if not text:
-                return ""
-            lines_l = text.splitlines()
-            return "LESSONS:\n" + "\n".join(f"  - {l}" for l in lines_l)
+            import lessons
+            step = ""
+            plan = ctx.get("plan", [])
+            if isinstance(plan, list):
+                active = next((s for s in plan if isinstance(s, dict) and s.get("status") == "active"), None)
+                if active:
+                    step = str(active.get("text", ""))
+            return lessons.format_for_context(keyword=step)
         case "math":
             return (f"MATH NOW: stagnation={ctx.get('stagnation', 0):.2f} "
                     f"pid={ctx.get('pid_output', 0):.2f} energy={ctx.get('energy', 1):.2f}")
@@ -638,8 +648,8 @@ def _extract_json(raw: str, required: list[str]) -> dict[str, Any]:
 
 
 def _write_lesson(lesson: str) -> None:
-    with config.LESSONS_PATH.open("a", encoding="utf-8") as f:
-        f.write(lesson.strip() + "\n")
+    import lessons
+    lessons.record(lesson)
 
 
 def _apply_mutation(target: str, append_text: str) -> None:

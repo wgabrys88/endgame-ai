@@ -2,80 +2,69 @@ from __future__ import annotations
 import ctypes
 import json
 import msvcrt
+import struct
 import sys
 import time
 from pathlib import Path
 from typing import Any
 
 import log
-from config import (
-    EVENTS_PATH, SNAPSHOT_PATH, DISABLED_PATH, GUI_MODE_PATH, GOAL_PATH, PAUSE_PATH,
-    PID_ROD_SCALE,
-)
+import config
 
 STD_OUTPUT_HANDLE: int = -11
-TUI_ALT_SCREEN_ON: str = "\x1b[?1049h"
-TUI_ALT_SCREEN_OFF: str = "\x1b[?1049l"
-TUI_HIDE_CURSOR: str = "\x1b[?25l"
-TUI_SHOW_CURSOR: str = "\x1b[?25h"
+ALT_ON = "\x1b[?1049h"
+ALT_OFF = "\x1b[?1049l"
+HIDE_CUR = "\x1b[?25l"
+SHOW_CUR = "\x1b[?25h"
 
-INPUT_ROWS: int = 4
-EVENT_TAIL: int = 10
+EVENT_TAIL: int = 12
+LESSONS_TAIL: int = 3
 
-_kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-_stdout_handle = _kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
-_mode = ctypes.c_ulong()
-_kernel32.GetConsoleMode(_stdout_handle, ctypes.byref(_mode))
-_kernel32.SetConsoleMode(_stdout_handle, _mode.value | 0x0004)
+_k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+_hout = _k32.GetStdHandle(STD_OUTPUT_HANDLE)
+_m = ctypes.c_ulong()
+_k32.GetConsoleMode(_hout, ctypes.byref(_m))
+_k32.SetConsoleMode(_hout, _m.value | 0x0004)
 
 MATH_CHAIN = ("stagnation", "lorenz", "pid")
 AGENT_CHAIN = ("planner", "actor", "verifier", "fission")
-SIDE_AGENTS = ("observer", "reflector")
+SIDE_AGENTS = ("observer", "reflector", "mutator")
 MATH_PHASES = frozenset(MATH_CHAIN)
 LOOP_PHASES = frozenset({
     "schedule", "plan", "actor", "action", "observe", "verify",
     "reflect", "mutation", "fission", "fission_blocked", "goal_change",
     "planner.error", "actor.error", "verifier.error", "reflector.error",
 })
-REFLECT_SCHEDULE_REASONS = frozenset({"pid_gate", "chaos_gate", "stag_gate"})
-SCHEDULE_LOOP_AGENT: dict[str, str] = {
-    "execute": "actor",
-    "advance": "actor",
-    "need_plan": "planner",
-    "wing_cross": "planner",
-    "stuck": "planner",
-    "plan_complete": "verifier",
+REFLECT_REASONS = frozenset({"pid_gate", "chaos_gate", "stag_gate"})
+SCHEDULE_AGENT: dict[str, str] = {
+    "execute": "actor", "advance": "actor", "need_plan": "planner",
+    "wing_cross": "planner", "stuck": "planner", "plan_complete": "verifier",
 }
-LOOP_PHASE_AGENT: dict[str, str] = {
-    "plan": "planner",
-    "planner.error": "planner",
-    "actor": "actor",
-    "action": "actor",
-    "actor.error": "actor",
-    "verify": "verifier",
-    "verifier.error": "verifier",
-    "fission": "fission",
-    "fission_sustain": "fission",
-    "fission_blocked": "fission",
+PHASE_AGENT: dict[str, str] = {
+    "plan": "planner", "planner.error": "planner",
+    "actor": "actor", "action": "actor", "actor.error": "actor",
+    "verify": "verifier", "verifier.error": "verifier",
+    "fission": "fission", "fission_sustain": "fission", "fission_blocked": "fission",
+    "reflect": "reflector", "reflector.error": "reflector",
+    "mutation": "mutator", "observe": "observer",
 }
-WORK_PHASES = LOOP_PHASES | frozenset({"start", "stop"})
+WORK_PHASES = LOOP_PHASES | frozenset({"start", "stop", "fission", "token_usage", "token_warning", "mutator", "mutator.error", "mutator.rejected", "plugin.lessons_decay", "plugin.web_sentinel"})
 ACTIVE_SCAN = 64
-REFRESH_SLEEP = 0.08
+REFRESH = 0.08
 
 RST, DIM, BOLD = "\x1b[0m", "\x1b[2m", "\x1b[1m"
 
 
-def _write(text: str) -> None:
+def _write(t: str) -> None:
     n = ctypes.c_ulong()
-    _kernel32.WriteConsoleW(_stdout_handle, text, len(text), ctypes.byref(n), None)
+    _k32.WriteConsoleW(_hout, t, len(t), ctypes.byref(n), None)
 
 
 def _size() -> tuple[int, int]:
-    import struct
     buf = ctypes.create_string_buffer(22)
-    _kernel32.GetConsoleScreenBufferInfo(_stdout_handle, buf)
-    _, _, _, _, _, left, top, right, bottom, _, _ = struct.unpack("hhhhHhhhhhh", buf.raw)
-    return right - left + 1, bottom - top + 1
+    _k32.GetConsoleScreenBufferInfo(_hout, buf)
+    _, _, _, _, _, l, t, r, b, _, _ = struct.unpack("hhhhHhhhhhh", buf.raw)
+    return r - l + 1, b - t + 1
 
 
 def _fg(r: int, g: int, b: int) -> str:
@@ -88,327 +77,270 @@ def _bar(v: float, w: int, color: str) -> str:
     return color + "█" * f + DIM + "░" * (w - f) + RST
 
 
-def _wrap(text: str, width: int) -> list[str]:
-    if width < 4:
-        return [text[:width]]
-    words = text.replace("\n", " ").split()
-    if not words:
-        return [""]
-    lines: list[str] = []
-    cur = words[0]
-    for word in words[1:]:
-        if len(cur) + 1 + len(word) <= width:
-            cur += " " + word
-        else:
-            lines.append(cur)
-            cur = word
-    lines.append(cur)
-    return lines
-
-
-def _fit(lines: list[str], height: int, width: int) -> list[str]:
-    out: list[str] = []
-    for ln in lines:
-        for part in _wrap(ln, width):
-            out.append(part)
-            if len(out) >= height:
-                return out[:height]
-    while len(out) < height:
-        out.append("")
-    return out[:height]
-
-
 def _plain(s: str) -> str:
-    out: list[str] = []
-    i, n = 0, len(s)
+    out, i, n = [], 0, len(s)
     while i < n:
         if s[i] == "\x1b" and i + 1 < n and s[i + 1] == "[":
             j = i + 2
             while j < n and s[j] not in "ABCDEFGHJKSTfmnsulh":
                 j += 1
-            if j < n:
-                j += 1
-            i = j
-            continue
-        out.append(s[i])
-        i += 1
+            i = j + 1 if j < n else j
+        else:
+            out.append(s[i])
+            i += 1
     return "".join(out)
 
 
-def _pad_visible(text: str, width: int) -> str:
-    plain = _plain(text)
-    if len(plain) >= width:
+def _pad(text: str, w: int) -> str:
+    vl = len(_plain(text))
+    return text + " " * max(0, w - vl) if vl < w else text
+
+
+def _trunc(text: str, w: int) -> str:
+    if len(text) <= w:
         return text
-    return text + " " * (width - len(plain))
+    return text[:w - 1] + "…"
+
+
+def _elapsed(start: float) -> str:
+    if not start:
+        return "—"
+    d = time.time() - start
+    if d < 60:
+        return f"{d:.0f}s"
+    if d < 3600:
+        return f"{d/60:.1f}m"
+    return f"{d/3600:.1f}h"
 
 
 class TUI:
-    def __init__(self, events_path: Path, snapshot_path: Path, goal: str = "", backend: str = "lmstudio", budget: int = 20, autostart: bool = True) -> None:
-        self.events_path = events_path
-        self.snapshot_path = snapshot_path
-        self.events: list[dict[str, Any]] = []
+    def __init__(self, goal: str = "", backend: str = "lmstudio", budget: int = 20, autostart: bool = True):
+        self.events: list[dict] = []
         self.snapshot: dict[str, Any] = {}
-        self._events_sig: tuple[str, int, float] = ("", 0, 0.0)
-        self._event_offset: int = 0
-        self._snapshot_mtime: float = 0.0
+        self._ev_sig: tuple[str, int, float] = ("", 0, 0.0)
+        self._ev_offset: int = 0
+        self._snap_mt: float = 0.0
         self.running = True
         self.goal = goal
         self.backend = backend
         self.budget = budget
         self.proc: Any = None
         self._in_alt = False
-        self.last_reason = ""
-        self._loop_active = "—"
-        self._side_active = "—"
-        self._math_active = "—"
         self._input_active = False
         self._input_buf = goal
-        self._input_cursor = len(goal)
+        self._input_cur = len(goal)
         self._autostart = autostart
+        self._loop = "—"
+        self._side = "—"
+        self._math = "—"
+        self._reason = ""
+        self._start_time: float = 0.0
         if goal:
-            self._write_goal_file(goal)
-
-    def _write_goal_file(self, text: str) -> None:
-        GOAL_PATH.write_text(text, encoding="utf-8")
-
-    def _read_goal_file(self) -> str:
-        if GOAL_PATH.exists():
-            try:
-                return GOAL_PATH.read_text(encoding="utf-8").strip()
-            except OSError:
-                pass
-        return self.goal
+            config.GOAL_PATH.write_text(goal, encoding="utf-8")
 
     def _reactor_live(self) -> bool:
         return self.proc is not None or log.reactor_running()
 
-    def _load_events(self, path: Path) -> bool:
+    def _load_events(self) -> bool:
+        path = log.active_events_path()
         try:
             st = path.stat()
         except OSError:
             return False
         sig = (str(path), st.st_size, st.st_mtime)
-        if str(path) != str(self.events_path) or st.st_size < self._event_offset:
-            self.events_path = path
-            self.events = []
-            self._event_offset = 0
-        if sig == self._events_sig and st.st_size == self._event_offset:
+        if sig[0] != self._ev_sig[0] or st.st_size < self._ev_offset:
+            self.events, self._ev_offset = [], 0
+        if sig == self._ev_sig and st.st_size == self._ev_offset:
             return False
-        self._events_sig = sig
+        self._ev_sig = sig
         try:
-            with path.open("r", encoding="utf-8") as handle:
-                handle.seek(self._event_offset)
-                for line in handle:
+            with path.open("r", encoding="utf-8") as f:
+                f.seek(self._ev_offset)
+                for line in f:
                     line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        self.events.append(json.loads(line))
-                    except json.JSONDecodeError:
-                        continue
-                self._event_offset = handle.tell()
+                    if line:
+                        try:
+                            self.events.append(json.loads(line))
+                        except json.JSONDecodeError:
+                            pass
+                self._ev_offset = f.tell()
         except OSError:
             return False
         self._refresh_active()
         return True
 
     def _load_snapshot(self) -> None:
-        if not self.snapshot_path.exists():
+        p = config.SNAPSHOT_PATH
+        if not p.exists():
             return
         try:
-            mt = self.snapshot_path.stat().st_mtime
-            if mt == self._snapshot_mtime:
+            mt = p.stat().st_mtime
+            if mt == self._snap_mt:
                 return
-            self._snapshot_mtime = mt
-            self.snapshot = json.loads(self.snapshot_path.read_text(encoding="utf-8"))
+            self._snap_mt = mt
+            self.snapshot = json.loads(p.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             pass
 
     def load(self) -> None:
-        events_changed = self._load_events(log.active_events_path())
-        if events_changed:
-            self._load_snapshot()
-        elif self._reactor_live():
+        changed = self._load_events()
+        if changed or self._reactor_live():
             self._load_snapshot()
         if not self._input_active:
-            file_goal = self._read_goal_file()
-            if file_goal:
-                self.goal = file_goal
+            if config.GOAL_PATH.exists():
+                try:
+                    g = config.GOAL_PATH.read_text(encoding="utf-8").strip()
+                    if g:
+                        self.goal = g
+                except OSError:
+                    pass
+        if self.events and not self._start_time:
+            first = self.events[0]
+            self._start_time = first.get("t", 0)
 
     def _refresh_active(self) -> None:
-        self._math_active = "—"
-        self._loop_active = "—"
-        self._side_active = "—"
-        self.last_reason = ""
+        self._math = self._loop = self._side = "—"
+        self._reason = ""
         for e in reversed(self.events[-ACTIVE_SCAN:]):
             p = str(e.get("phase", ""))
             d = e.get("d", {})
-            if self._loop_active == "—":
-                if p in LOOP_PHASE_AGENT:
-                    self._loop_active = LOOP_PHASE_AGENT[p]
-                elif p == "schedule":
-                    reason = str(d.get("reason", ""))
-                    self.last_reason = reason
-                    if reason in SCHEDULE_LOOP_AGENT:
-                        self._loop_active = SCHEDULE_LOOP_AGENT[reason]
-                elif p in LOOP_PHASES:
-                    self._loop_active = "actor" if p == "action" else p
-            if self._side_active == "—":
-                if p in ("reflect", "reflector.error"):
-                    self._side_active = "reflector"
-                elif p == "observe":
-                    self._side_active = "observer"
-                elif p == "mutation":
-                    self._side_active = "reflector"
-                elif p == "schedule" and str(d.get("reason", "")) in REFLECT_SCHEDULE_REASONS:
-                    self._side_active = "reflector"
-            if self._math_active == "—" and p in MATH_PHASES:
-                self._math_active = p
-            if self._math_active != "—" and self._loop_active != "—":
+            if p in PHASE_AGENT:
+                agent = PHASE_AGENT[p]
+                if agent in ("observer", "reflector", "mutator"):
+                    if self._side == "—":
+                        self._side = agent
+                elif self._loop == "—":
+                    self._loop = agent
+            elif p == "schedule" and self._loop == "—":
+                r = str(d.get("reason", ""))
+                self._reason = r
+                if r in SCHEDULE_AGENT:
+                    self._loop = SCHEDULE_AGENT[r]
+                if r in REFLECT_REASONS and self._side == "—":
+                    self._side = "reflector"
+            if p in MATH_PHASES and self._math == "—":
+                self._math = p
+            if self._math != "—" and self._loop != "—" and self._side != "—":
                 break
-
-    def _submit_goal(self) -> None:
-        text = self._input_buf.strip()
-        if not text:
-            self._input_active = False
-            return
-        self.goal = text
-        self._write_goal_file(text)
-        self._input_active = False
-        log.set_paused(False)
-        if not self._reactor_live():
-            self._launch()
 
     def handle_key(self) -> None:
         if not msvcrt.kbhit():
             return
         ch = msvcrt.getwch()
         if self._input_active:
-            self._handle_input_key(ch)
+            if ch in ("\r", "\n"):
+                self._submit()
+            elif ch == "\x1b":
+                self._input_active = False
+            elif ch in ("\x08", "\x7f"):
+                if self._input_cur > 0:
+                    self._input_buf = self._input_buf[:self._input_cur - 1] + self._input_buf[self._input_cur:]
+                    self._input_cur -= 1
+            elif ch == "\x03":
+                self._input_active = False
+            elif len(ch) == 1 and ch >= " ":
+                self._input_buf = self._input_buf[:self._input_cur] + ch + self._input_buf[self._input_cur:]
+                self._input_cur += 1
             return
         if ch in ("\r", "\n"):
             self._input_active = True
             self._input_buf = self.goal
-            self._input_cursor = len(self._input_buf)
+            self._input_cur = len(self.goal)
         elif ch.lower() == "q":
             self.running = False
         elif ch == " ":
             log.set_paused(not log.paused())
+        elif ch.lower() == "r" and not self._reactor_live():
+            self._launch()
 
-    def _handle_input_key(self, ch: str) -> None:
-        if ch in ("\r", "\n"):
-            self._submit_goal()
-        elif ch == "\x1b":
-            self._input_active = False
-            self._input_buf = self.goal
-            self._input_cursor = len(self._input_buf)
-        elif ch in ("\x08", "\x7f"):
-            if self._input_cursor > 0:
-                self._input_buf = self._input_buf[: self._input_cursor - 1] + self._input_buf[self._input_cursor :]
-                self._input_cursor -= 1
-        elif ch == "\x03":
-            self._input_active = False
-        elif len(ch) == 1 and ch >= " ":
-            self._input_buf = self._input_buf[: self._input_cursor] + ch + self._input_buf[self._input_cursor :]
-            self._input_cursor += 1
+    def _submit(self) -> None:
+        text = self._input_buf.strip()
+        self._input_active = False
+        if not text:
+            return
+        self.goal = text
+        config.GOAL_PATH.write_text(text, encoding="utf-8")
+        log.set_paused(False)
+        if not self._reactor_live():
+            self._launch()
 
     def _launch(self) -> None:
         import subprocess
-        from config import BASE_DIR
-        goal = self.goal.strip() or self._read_goal_file()
+        goal = self.goal.strip()
         if self._reactor_live() or not goal:
             return
-        self.goal = goal
-        self._write_goal_file(goal)
+        config.GOAL_PATH.write_text(goal, encoding="utf-8")
         log.clean_stale_lock()
-        for p in (EVENTS_PATH, self.snapshot_path, DISABLED_PATH, GUI_MODE_PATH, PAUSE_PATH):
+        for p in (config.EVENTS_PATH, config.SNAPSHOT_PATH, config.DISABLED_PATH, config.GUI_MODE_PATH, config.PAUSE_PATH):
             if p.exists():
                 p.unlink()
-        self.events, self._events_sig, self._event_offset = [], ("", 0, 0.0), 0
-        self._snapshot_mtime = 0.0
-        self.snapshot = {}
+        self.events, self._ev_sig, self._ev_offset = [], ("", 0, 0.0), 0
+        self._snap_mt, self.snapshot, self._start_time = 0.0, {}, 0.0
         log.set_paused(False)
         self.proc = subprocess.Popen(
             [sys.executable, "main.py", goal, "--backend", self.backend, "--event-budget", str(self.budget)],
-            cwd=str(BASE_DIR), creationflags=subprocess.CREATE_NO_WINDOW,
+            cwd=str(config.BASE_DIR), creationflags=subprocess.CREATE_NO_WINDOW,
         )
 
     def check_proc(self) -> None:
         if self.proc and self.proc.poll() is not None:
             self.proc = None
 
-    def _work_events(self) -> list[dict[str, Any]]:
-        return [e for e in self.events if e.get("phase") in WORK_PHASES]
+    def _lessons(self) -> list[str]:
+        import lessons
+        items = lessons.recent(LESSONS_TAIL)
+        return [f"[{e.get('score',5)}/10] {e.get('result','')}" for e in items]
 
-    def _vchain(self, title: str, chain: tuple[str, ...], active: str, width: int) -> list[str]:
-        lines = [f"{BOLD}{title}{RST}"]
-        for name in chain:
-            on = name == active or (name == "fission" and active == "fission_sustain")
-            col = _fg(255, 220, 80) if on else DIM
-            mark = "●" if on else "○"
-            lines.append(f"  {col}{mark} {name}{RST}")
-        return lines
-
-    def _brief(self, phase: str, d: dict[str, Any]) -> str:
+    def _brief(self, phase: str, d: dict) -> str:
         match phase:
             case "schedule":
                 s = d.get("step", "")
-                base = f"reason={d.get('reason', '')}"
-                return f"{base} step={s}" if s else base
+                return f"reason={d.get('reason','')}" + (f" step={s}" if s else "")
             case "action" | "actor":
-                if d.get("verb") or d.get("obs"):
-                    return f"{'ok' if d.get('ok') else 'FAIL'} verb={d.get('verb', '')} obs={d.get('obs', '')}"
-                return str(d)
+                return f"{'ok' if d.get('ok') else 'FAIL'} {d.get('verb','')} {d.get('obs','')}" if d.get("verb") or d.get("obs") else str(d)[:80]
             case "plan":
-                return f"mode={d.get('mode', '')} steps={d.get('steps', '')} done_when={d.get('done_when', '')}"
+                return f"mode={d.get('mode','')} steps={d.get('steps','')} done={d.get('done_when','')[:40]}"
             case "reflect":
-                lesson = str(d.get("lesson", ""))
-                return f"lesson={lesson[:120]}{'…' if len(lesson) > 120 else ''}"
+                esc = f" →{d.get('escalate','')}" if d.get("escalate") else ""
+                return f"lesson={str(d.get('lesson',''))[:80]}{esc}"
             case "observe":
-                return f"focused={d.get('focused', '')} chars={d.get('chars', '')}"
-            case p if p in MATH_PHASES:
-                return str(d) if d else ""
+                return f"focused={d.get('focused','')} chars={d.get('chars','')}"
             case "verify":
-                return f"verdict={d.get('verdict', '')} evidence={d.get('evidence', '')}"
-            case "goal_change":
-                return f"to={d.get('to', '')}"
+                return f"{d.get('verdict','')} {d.get('evidence','')[:60]}"
+            case "fission":
+                return f"power={d.get('power','')} completions={d.get('completions','')}"
+            case "mutator" | "mutator.rejected":
+                return f"action={d.get('action','')} file={d.get('filename','')} {d.get('reason','')}"
             case "stop":
-                return f"reason={d.get('reason', '')} work={d.get('work', '')}"
+                return f"reason={d.get('reason','')} work={d.get('work','')}"
             case "token_usage":
-                return f"role={d.get('role', '')} total≈{d.get('total_est', '')} actual={d.get('total_actual', '')}"
+                return f"{d.get('role','')} total≈{d.get('total_est','')}"
             case "token_warning":
-                return f"role={d.get('role', '')} {d.get('warning', '')}"
+                return f"{d.get('role','')} {d.get('warning','')}"
+            case _ if phase.startswith("plugin."):
+                return f"decayed={d.get('decayed','')}" if "decay" in phase else f"ok={d.get('ok','')}"
             case _ if phase.endswith(".error"):
-                return str(d.get("error", d))
+                return str(d.get("error", d))[:80]
             case _:
-                return str(d) if d else ""
+                return str(d)[:80] if d else ""
 
-    def _render_input(self, w: int) -> list[str]:
-        hint = f"{DIM}Enter submit  Esc cancel  Space pause  q quit{RST}"
-        field_w = w - 6
-        if self._input_active:
-            border_col = _fg(100, 180, 255)
-            field = self._input_buf
-        else:
-            border_col = DIM
-            field = self.goal or "(press Enter to type a goal)"
-        shown = _fit(_wrap(field, field_w - 1), INPUT_ROWS - 2, field_w - 1)
-        lines = [f"{BOLD}{_fg(180, 210, 255)}GOAL INPUT{RST}  {hint}"]
-        lines.append(f"{border_col}┌{'─' * field_w}┐{RST}")
-        for row in shown:
-            lines.append(f"{border_col}│{RST} {_pad_visible(row, field_w - 1)}{border_col}│{RST}")
-        while len(lines) < INPUT_ROWS:
-            lines.append(f"{border_col}│{RST}{' ' * field_w}{border_col}│{RST}")
-        lines.append(f"{border_col}└{'─' * field_w}┘{RST}")
-        return _fit(lines, INPUT_ROWS + 1, w)
-
-    def render(self) -> list[str]:
+    def render(self) -> str:
         w, h = _size()
-        w, h = max(80, w), max(28, h)
-        body_h = h - INPUT_ROWS - 2
-
+        w, h = max(80, w), max(24, h)
         s = self.snapshot
-        trace: list[dict[str, Any]] = s.get("math_trace", [])
+        out: list[str] = []
+
+        # --- Header ---
+        if log.paused():
+            st, sc = "▐▐ PAUSED", _fg(255, 180, 60)
+        elif self._reactor_live():
+            st, sc = "● RUNNING", _fg(80, 220, 120)
+        elif self.events:
+            st, sc = "■ STOPPED", _fg(255, 90, 90)
+        else:
+            st, sc = "○ READY", _fg(140, 180, 255)
+
+        trace = s.get("math_trace", [])
         latest = trace[-1] if trace else {}
         stag = float(latest.get("stag", s.get("stagnation", 0)))
         pid = float(latest.get("pid", s.get("pid_output", 0)))
@@ -418,130 +350,142 @@ class TUI:
         lz = float(s.get("lorenz_z", 0))
         power = float(s.get("power", 0))
         work = int(s.get("work_events", 0))
-        events_n = max(int(s.get("events", 0)), len(self.events))
+        ev_n = max(int(s.get("events", 0)), len(self.events))
         budget = int(s.get("budget", self.budget))
         failures = int(s.get("consecutive_failures", 0))
-        goal = str(s.get("goal", "") or self.goal or "")
-        plan: list[dict[str, Any]] = s.get("plan", [])
-        completed: list[str] = s.get("completed", [])
+        completed = s.get("completed", [])
+        fissions = len(completed)
+        plan = s.get("plan", [])
         done_when = str(s.get("done_when", ""))
         wing = bool(latest.get("wing", s.get("wing_crossed", False)))
         focused = str(s.get("focused_window", ""))
-        trigger = s.get("reflect_trigger", {})
-        token_state = s.get("token_state", {}) if isinstance(s.get("token_state", {}), dict) else {}
-        token_total = int(token_state.get("cumulative_total_est", 0) or 0)
-        token_last = int(token_state.get("last_total_est", 0) or 0)
-        token_role = str(token_state.get("last_role", "") or "—")
-        token_burn = float(token_state.get("burn_rate_tpm", 0.0) or 0.0)
-        token_warn = str(token_state.get("last_warning", "") or "")
+        ts = s.get("token_state", {}) if isinstance(s.get("token_state"), dict) else {}
+        tok_total = int(ts.get("cumulative_total_est", 0) or 0)
+        tok_burn = float(ts.get("burn_rate_tpm", 0) or 0)
+        tok_calls = int(ts.get("calls", 0) or 0)
 
-        if log.paused():
-            status, status_col = "PAUSED", _fg(255, 180, 60)
-        elif self._reactor_live():
-            status, status_col = "RUN", _fg(80, 220, 120)
-        elif not self.events:
-            status, status_col = "READY", _fg(140, 180, 255)
-        else:
-            status, status_col = "LIVE", _fg(255, 220, 80)
+        elapsed = _elapsed(self._start_time)
+        goal = str(s.get("goal", "") or self.goal or "—")
 
-        bar_w = w - 18
-        lines: list[str] = []
+        # Title + status
+        title = f"{BOLD}{_fg(180, 210, 255)}ENDGAME-AI{RST}  {sc}{st}{RST}  {DIM}{time.strftime('%H:%M:%S')}{RST}  elapsed {elapsed}"
+        out.append(_trunc(title, w + 40))  # extra for ANSI
+        out.append(f"{DIM}{'─' * (w - 1)}{RST}")
 
-        lines.append(f"{BOLD}{_fg(180, 210, 255)}GOAL{RST}")
-        lines.extend(_fit(_wrap(goal or "—", w - 2), 4, w - 2))
-        lines.append(DIM + "─" * (w - 1) + RST)
+        # Goal
+        out.append(f"{BOLD}{_fg(200, 230, 255)}GOAL{RST} {_trunc(goal, w - 6)}")
 
-        clock = time.strftime("%H:%M:%S")
-        log_name = Path(self._events_sig[0]).name if self._events_sig[0] else "—"
-        lines.append(
-            f"{status_col}{status}{RST} {DIM}{clock}{RST}  "
-            f"work {work}/{budget}  events {events_n}  fail {failures}  power {power:.4f}"
-            + (f"  {_fg(255, 200, 0)}WING{RST}" if wing else "")
+        # Metrics row
+        wing_s = f"  {_fg(255, 200, 0)}WING✦{RST}" if wing else ""
+        metrics = (
+            f"fissions {_fg(80,255,180)}{fissions}{RST}  "
+            f"power {power:.4f}  work {work}/{budget}  "
+            f"fails {failures}  events {ev_n}"
+            f"{wing_s}"
         )
-        lines.append(
-            f"{DIM}log{RST} {log_name}  {DIM}loop{RST} {self._loop_active}  "
-            f"{DIM}math{RST} {self._math_active}"
-            + (f"  {DIM}sched{RST} {self.last_reason}" if self.last_reason else "")
-        )
-        token_line = (
-            f"{DIM}tokens{RST} total≈{token_total} last≈{token_last} "
-            f"role={token_role} burn≈{token_burn:.1f}/min"
-        )
-        if token_warn:
-            token_line += f"  {_fg(255, 190, 80)}WARN {token_warn}{RST}"
-        lines.extend(_fit(_wrap(token_line, w - 2), 2, w - 2))
+        out.append(metrics)
+
+        # Token row
+        tok = f"{DIM}tokens{RST} calls={tok_calls} total≈{tok_total} burn≈{tok_burn:.1f}/min"
         if focused:
-            lines.extend(_fit(_wrap(f"focus: {focused}", w - 2), 1, w - 2))
+            tok += f"  {DIM}focus{RST}={_trunc(focused, 30)}"
+        out.append(tok)
+        out.append(f"{DIM}{'─' * (w - 1)}{RST}")
 
-        lines.append(DIM + "─" * (w - 1) + RST)
-        lines.append(f"{DIM}stagnation{RST} {_bar(stag, bar_w, _fg(255, 100, 80))}")
-        lines.append(f"{DIM}pid_output{RST} {_bar(min(pid / PID_ROD_SCALE, 1), bar_w, _fg(80, 140, 255))}")
-        lines.append(f"{DIM}energy{RST}    {_bar(min(energy / 3, 1), bar_w, _fg(120, 220, 140))}")
-        lines.append(
-            f"{DIM}lorenz{RST}   x={lx:.2f} y={ly:.2f} z={lz:.2f}  "
-            f"{DIM}stag{RST}={stag:.3f} {DIM}pid{RST}={pid:.3f} {DIM}energy{RST}={energy:.3f}"
-        )
-        if trigger:
-            lines.extend(_fit(_wrap(f"reflect_trigger: {trigger}", w - 2), 2, w - 2))
+        # Math gauges
+        bar_w = w - 14
+        out.append(f"{DIM}stag {RST}{_bar(stag, bar_w, _fg(255, 100, 80))} {stag:.3f}")
+        out.append(f"{DIM}pid  {RST}{_bar(min(pid / config.PID_ROD_SCALE, 1), bar_w, _fg(80, 140, 255))} {pid:.3f}")
+        out.append(f"{DIM}nrg  {RST}{_bar(min(energy / 3, 1), bar_w, _fg(120, 220, 140))} {energy:.3f}")
+        lorenz_s = f"{DIM}lorenz{RST} x={lx:+.2f} y={ly:+.2f} z={lz:+.2f}"
+        out.append(lorenz_s)
+        out.append(f"{DIM}{'─' * (w - 1)}{RST}")
 
-        lines.append(DIM + "─" * (w - 1) + RST)
-        flow_w = max(20, w // 3 - 2)
-        math = self._vchain("MATH", MATH_CHAIN, self._math_active, flow_w)
-        loop = self._vchain("LOOP", AGENT_CHAIN, self._loop_active, flow_w)
-        side = self._vchain("SIDE", SIDE_AGENTS, self._side_active, flow_w)
-        flow_row = max(len(math), len(loop), len(side))
-        for i in range(flow_row):
-            a = _pad_visible(math[i] if i < len(math) else "", flow_w)
-            b = _pad_visible(loop[i] if i < len(loop) else "", flow_w)
-            c = _pad_visible(side[i] if i < len(side) else "", w - 2 * flow_w - 4)
-            lines.append(f"{a}  {b}  {c}")
+        # Agent chains (horizontal)
+        def _chain_row(label: str, chain: tuple[str, ...], active: str) -> str:
+            parts = [f"{DIM}{label}{RST} "]
+            for name in chain:
+                on = name == active
+                if on:
+                    parts.append(f"{_fg(255, 220, 80)}●{name}{RST} ")
+                else:
+                    parts.append(f"{DIM}○{name}{RST} ")
+            return "".join(parts)
 
-        if done_when:
-            lines.append(DIM + "─" * (w - 1) + RST)
-            lines.append(f"{BOLD}{_fg(200, 180, 255)}DONE WHEN{RST}")
-            lines.extend(_fit(_wrap(done_when, w - 2), 2, w - 2))
+        out.append(_chain_row("math", MATH_CHAIN, self._math))
+        out.append(_chain_row("loop", AGENT_CHAIN, self._loop))
+        out.append(_chain_row("side", SIDE_AGENTS, self._side))
+        if self._reason:
+            out.append(f"{DIM}  sched_reason={RST}{self._reason}")
+        out.append(f"{DIM}{'─' * (w - 1)}{RST}")
 
-        lines.append(DIM + "─" * (w - 1) + RST)
+        # Plan
         if plan:
             done_n = sum(1 for p in plan if p.get("status") == "done")
-            lines.append(f"{BOLD}{_fg(200, 230, 255)}PLAN{RST} [{done_n}/{len(plan)}]")
-            for step in plan:
-                st = step.get("status", "pending")
+            out.append(f"{BOLD}{_fg(200, 230, 255)}PLAN{RST} [{done_n}/{len(plan)}]  {DIM}done_when={RST}{_trunc(done_when, w - 30)}")
+            max_steps = min(len(plan), max(3, (h - len(out) - EVENT_TAIL - 8)))
+            for step in plan[:max_steps]:
+                st_s = step.get("status", "pending")
                 txt = str(step.get("text", ""))
-                mark = "✓" if st == "done" else ("►" if st == "active" else "·")
-                col = _fg(80, 220, 120) if st == "done" else (_fg(255, 220, 80) if st == "active" else DIM)
-                parts = _wrap(txt, w - 4)
-                for i, part in enumerate(parts):
-                    prefix = f"{col}{mark}{RST} " if i == 0 else "  "
-                    lines.append(f"{prefix}{part}")
-        elif completed:
-            lines.append(f"{_fg(80, 255, 180)}COMPLETED{RST}")
-            lines.extend(_wrap(completed[-1], w - 2))
+                if st_s == "done":
+                    mark, col = "✓", _fg(80, 220, 120)
+                elif st_s == "active":
+                    mark, col = "►", _fg(255, 220, 80)
+                else:
+                    mark, col = "·", DIM
+                out.append(f" {col}{mark}{RST} {_trunc(txt, w - 5)}")
+            if len(plan) > max_steps:
+                out.append(f"   {DIM}…+{len(plan) - max_steps} more{RST}")
         else:
-            lines.append(f"{DIM}no plan{RST}")
+            out.append(f"{DIM}no plan{RST}")
 
-        lines.append(DIM + "─" * (w - 1) + RST)
-        lines.append(f"{BOLD}{_fg(180, 210, 255)}RECENT EVENTS{RST}")
-        tail = self._work_events()[-EVENT_TAIL:]
+        if completed:
+            out.append(f"{DIM}last fission:{RST} {_trunc(completed[-1], w - 15)}")
+        out.append(f"{DIM}{'─' * (w - 1)}{RST}")
+
+        # Events
+        out.append(f"{BOLD}{_fg(180, 210, 255)}EVENTS{RST} (last {EVENT_TAIL})")
+        tail = [e for e in self.events if e.get("phase") in WORK_PHASES][-EVENT_TAIL:]
         for e in tail:
             n, ph = e.get("n", 0), str(e.get("phase", ""))
             brief = self._brief(ph, e.get("d", {}))
-            for i, part in enumerate(_wrap(f"{n} {ph} {brief}", w - 2)):
-                lines.append(f"{'  ' if i else ''}{part}")
+            line = f" {DIM}{n:>4}{RST} {ph:<18} {brief}"
+            out.append(_trunc(line, w))
+        out.append(f"{DIM}{'─' * (w - 1)}{RST}")
 
-        panel = _fit(lines, body_h, w)
-        panel.extend(self._render_input(w))
-        return _fit(panel, h, w)
+        # Lessons
+        lessons = self._lessons()
+        if lessons:
+            out.append(f"{BOLD}{_fg(180, 200, 160)}LESSONS{RST} (last {len(lessons)})")
+            for ln in lessons:
+                out.append(f" {DIM}{_trunc(ln, w - 3)}{RST}")
+            out.append(f"{DIM}{'─' * (w - 1)}{RST}")
 
-    def _paint(self, lines: list[str]) -> None:
-        w, h = _size()
-        padded = [_pad_visible(ln, w) for ln in lines[:h]]
-        while len(padded) < h:
-            padded.append(" " * w)
+        # Input field
+        if self._input_active:
+            bc = _fg(100, 180, 255)
+            field = self._input_buf + "▌"
+        else:
+            bc = DIM
+            field = self.goal or "(press Enter to set goal)"
+        out.append(f"{bc}┌{'─' * (w - 3)}┐{RST}")
+        out.append(f"{bc}│{RST} {_trunc(field, w - 5)} {bc}│{RST}")
+        out.append(f"{bc}└{'─' * (w - 3)}┘{RST}")
+
+        # Keybind bar
+        keys = f"{DIM}Enter{RST}=goal  {DIM}Space{RST}=pause  {DIM}r{RST}=restart  {DIM}q{RST}=quit"
+        out.append(keys)
+
+        # Pad to height
+        while len(out) < h:
+            out.append("")
+        return "\n".join(_pad(line, w) for line in out[:h])
+
+    def _paint(self, frame: str) -> None:
         if not self._in_alt:
-            _write(TUI_ALT_SCREEN_ON + (TUI_SHOW_CURSOR if self._input_active else TUI_HIDE_CURSOR))
+            _write(ALT_ON + (SHOW_CUR if self._input_active else HIDE_CUR))
             self._in_alt = True
-        _write("\x1b[H" + "\n".join(padded))
+        _write(f"\x1b[H{frame}")
 
     def run_loop(self) -> None:
         try:
@@ -552,33 +496,26 @@ class TUI:
                 self.handle_key()
                 self.check_proc()
                 self._paint(self.render())
-                time.sleep(REFRESH_SLEEP)
+                time.sleep(REFRESH)
         except KeyboardInterrupt:
             pass
         finally:
             if self.proc:
                 self.proc.terminate()
             if self._in_alt:
-                _write(TUI_ALT_SCREEN_OFF + TUI_SHOW_CURSOR)
+                _write(ALT_OFF + SHOW_CUR)
 
 
-def run_tui(path: Path | None = None, goal: str = "", backend: str = "lmstudio", budget: int = 20, autostart: bool = True) -> None:
-    if goal:
-        GOAL_PATH.write_text(goal, encoding="utf-8")
-    TUI(path or EVENTS_PATH, SNAPSHOT_PATH, goal=goal, backend=backend, budget=budget, autostart=autostart).run_loop()
+def run_tui(goal: str = "", backend: str = "lmstudio", budget: int = 20, autostart: bool = True) -> None:
+    TUI(goal=goal, backend=backend, budget=budget, autostart=autostart).run_loop()
 
 
 if __name__ == "__main__":
     import argparse
-    p = argparse.ArgumentParser(prog="endgame-ai-tui")
+    p = argparse.ArgumentParser(prog="endgame-ai")
     p.add_argument("goal", nargs="?", default="")
     p.add_argument("--backend", choices=["lmstudio", "acp"], default="lmstudio")
     p.add_argument("--event-budget", type=int, default=20)
-    p.add_argument("--events", type=str, default="")
     p.add_argument("--no-autostart", action="store_true")
     a = p.parse_args()
-    run_tui(
-        path=Path(a.events) if a.events else None,
-        goal=a.goal, backend=a.backend, budget=a.event_budget,
-        autostart=not a.no_autostart,
-    )
+    run_tui(goal=a.goal, backend=a.backend, budget=a.event_budget, autostart=not a.no_autostart)

@@ -3,6 +3,8 @@
 !.gitattributes
 !AGENTS.md
 !README.md
+!LICENSE
+!CONTRIBUTING.md
 !*.py
 !prompts/
 !prompts/**
@@ -10,5 +12,3 @@
 !schemas/**
 !plugins/
 !plugins/**
-!evolved-organism-code/
-!evolved-organism-code/**

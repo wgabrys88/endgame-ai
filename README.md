@@ -56,9 +56,6 @@ python tui.py "Your goal here" --backend lmstudio --event-budget 500
 # Headless (no TUI):
 python main.py "Your goal" --backend lmstudio --event-budget 200
 
-# GDI transparent overlay HUD:
-python hud.py
-
 # Verify import health:
 python -c "import config,engine,agents,actions,log,llm,observer,win32,acp_client,tui;print('OK')"
 ```
@@ -104,7 +101,7 @@ endgame-ai/
 ├── win32.py             Raw ctypes COM/UIA (no pywin32)
 ├── acp_client.py        Kiro CLI ACP JSON-RPC over WSL2
 ├── tui.py               VT100 terminal dashboard
-├── hud.py               GDI transparent overlay HUD
+├── token_state.py       Token usage accounting
 ├── prompts/             LLM system prompts (5 agents)
 ├── schemas/             JSON output schemas (5 agents)
 ├── plugins/             Hot-loaded plugins (run each cycle)
