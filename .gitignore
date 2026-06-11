@@ -2,10 +2,13 @@
 !.gitignore
 !.gitattributes
 !AGENTS.md
+!README.md
 !*.py
 !prompts/
 !prompts/**
 !schemas/
 !schemas/**
+!plugins/
+!plugins/**
 !evolved-organism-code/
 !evolved-organism-code/**

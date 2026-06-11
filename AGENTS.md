@@ -1,7 +1,6 @@
 # AGENTS.md — Authoritative Project Map
 # endgame-ai | Windows desktop automation reactor
-# Verified: 2026-06-11 | Method: full source read + md5 hash cross-reference
-# Confidence: 100% — every claim below cites file:line or hash evidence
+# Verified: 2026-06-11 | Branch: evolution-m4
 # Purpose: hand this to ANY coding agent as ground truth before modification
 
 ================================================================================
@@ -9,47 +8,52 @@
 ================================================================================
 
 endgame-ai is a self-sustaining Windows 11 desktop automation reactor.
-Two threads. One shared board dict. Four LLM agents + three math agents +
-one scheduler + one observer. Zero pip dependencies. ~2,900 LOC Python 3.13.
+Two threads. One shared board dict. Five LLM agents + three math agents +
+one scheduler + one observer. Zero pip dependencies. ~5,300 LOC Python 3.13.
 
 It plans, sees, acts, verifies. Verified work = fission. Fission sustains the
-reactor. Stagnation triggers reflection. Reflection mutates prompts. The organism
-rewrites its own behavior while running.
+reactor. Stagnation triggers reflection. Reflection mutates prompts. The mutator
+evolves plugins. The organism rewrites its own behavior while running.
 
 Proven M4 (2026-06-10): self-launch, self-edit config.py, spawn child process
 on evolved disk, child ran on parent-modified code. Two stop events, two logs.
 
 ================================================================================
-## 2. FILE INVENTORY (production root — 12 .py + 4 prompts + 4 schemas)
+## 2. FILE INVENTORY
 ================================================================================
 
-FILE            LINES  DOES
-─────────────── ─────  ─────────────────────────────────────────────────────────
-main.py          101   Entry point. Argparse, SIGINT, board init, calls engine.run()
-engine.py        172   Reactor loop + math thread + fission + _save snapshot
-agents.py        665   All 9 agent classes + context rendering + mutation logic
-actions.py       394   exec engine + GUI verbs + spawn_main + write_file + verify
-observer.py      401   Hover probe + UIA tree walk + merge → SCREEN text
-config.py        116   ALL constants, paths, tuning. Single source of truth
-log.py           174   Event bus. Lock file. Pause sink. Budget counter
-llm.py           137   LM Studio + ACP backends. Schema loading. HTTP/JSON-RPC
-win32.py         366   Raw ctypes COM/UIA bindings. No pywin32. No pip
-acp_client.py    ~90   Kiro CLI ACP protocol over WSL2 stdin/stdout pipes
-tui.py           566   Full-width VT100 dashboard. Subprocess launcher
-debug_context.py  ~50  Dev tool: dumps agent context to file for inspection
-m4_merge_test.py  ~80  Merge gate: validates M4 proof criteria from event logs
+FILE              LINES  DOES
+────────────────  ─────  ─────────────────────────────────────────────────────────
+main.py            111   Entry point. Argparse, SIGINT, board init, calls engine.run()
+engine.py          264   Reactor loop + math thread + plugin loader + fission + _save
+agents.py          742   All 10 agent classes + context rendering + mutation logic
+actions.py         388   exec engine + GUI verbs + spawn_main + write_file + verify
+observer.py        398   Hover probe + UIA tree walk + merge → SCREEN text
+config.py          118   ALL constants, paths, tuning. Single source of truth
+log.py             174   Event bus. Lock file. Pause sink. Budget counter
+llm.py             137   LM Studio + ACP backends. Schema loading. HTTP/JSON-RPC
+win32.py           366   Raw ctypes COM/UIA bindings. No pywin32. No pip
+acp_client.py      252   Kiro CLI ACP protocol over WSL2 stdin/stdout pipes
+tui.py             566   Full-width VT100 dashboard. Subprocess launcher
+hud.py            1608   GDI transparent overlay HUD. Reads snapshot.json
+debug_context.py    54   Dev tool: dumps agent context to file for inspection
+m4_merge_test.py   132   Merge gate: validates M4 proof criteria from event logs
 
-prompts/planner.txt    53 lines — LLM system prompt for PlannerAgent
-prompts/actor.txt      24 lines — LLM system prompt for ActorAgent
-prompts/verifier.txt   34 lines — LLM system prompt for VerifierAgent
-prompts/reflector.txt  47 lines — LLM system prompt for ReflectorAgent
+prompts/planner.txt    LLM system prompt for PlannerAgent
+prompts/actor.txt      LLM system prompt for ActorAgent
+prompts/verifier.txt   LLM system prompt for VerifierAgent
+prompts/reflector.txt  LLM system prompt for ReflectorAgent
+prompts/mutator.txt    LLM system prompt for MutatorAgent
 
 schemas/planner.json   strict JSON schema: mode, sequence[], done_when
 schemas/actor.json     strict JSON schema: actions[], conclusion
 schemas/verifier.json  strict JSON schema: verdict, evidence
 schemas/reflector.json strict JSON schema: diagnosis, lesson, prompt_mutation
+schemas/mutator.json   strict JSON schema: diagnosis, action, filename, content
 
-TOTAL PRODUCTION: 2,903 lines Python + 158 lines prompts + 4 schemas
+plugins/web_sentinel.py  First plugin — connectivity sentinel (UTC time fetch)
+
+evolved-organism-code/   10 archived files from organism's own M4 evolution
 
 ================================================================================
 ## 3. DEPENDENCY GRAPH (verified from import statements)
@@ -64,48 +68,50 @@ main.py
   └── import config
 
 engine.py
+  ├── import importlib.util
   ├── from actions import is_python_step
   ├── from agents import (StagnationAgent, LorenzAgent, PidAgent, SchedulerAgent,
   │       ObserverAgent, PlannerAgent, ActorAgent, VerifierAgent, ReflectorAgent,
-  │       _similar_to_completed, _trivial_milestone)
-  ├── import config          ← LIVE MUTABLE (config.X pattern)
+  │       MutatorAgent, _similar_to_completed, _trivial_milestone)
+  ├── import config          ← LIVE MUTABLE
   └── import log
 
 agents.py
-  ├── import config          ← LIVE MUTABLE (config.X pattern)
+  ├── import config          ← LIVE MUTABLE
   ├── import log
   └── from actions import DEFAULT_SCROLL_AMOUNT
 
 actions.py
-  ├── from config import (BASE_DIR, DELAY_FOCUS, ...)  ← FROZEN at import
-  ├── from win32 import (user32, get_window_title, VK_MAP, EXTENDED_VKS, INPUT)
-  └── (no other project imports)
+  ├── import config          ← LIVE MUTABLE
+  └── from win32 import (user32, get_window_title, VK_MAP, EXTENDED_VKS, INPUT)
 
 observer.py
-  ├── from config import (SCREEN_ELEMENT_VALUE_LIMIT, ...)  ← FROZEN at import
+  ├── import config          ← LIVE MUTABLE
+  ├── from config import BASE_DIR  (Path reference only)
   └── from win32 import (...)
 
 log.py
-  └── from config import (BASE_DIR, EVENTS_PATH, LOG_LOCK_PATH, PAUSE_PATH)  ← FROZEN
+  └── import config          ← LIVE MUTABLE
+
+acp_client.py
+  └── import config          ← LIVE MUTABLE
 
 llm.py
   └── import config          ← LIVE MUTABLE
-  └── (uses config.SCHEMAS_DIR, config.LMS_*, config.LLM_*, config.ACP_*)
 
 win32.py
   └── (no project imports — pure ctypes stdlib)
 
 tui.py
-  └── import log
+  ├── import log
   └── import config
-  └── (subprocess.Popen for launching main.py)
 ```
 
-HOT-SWAP IMPLICATION:
-  Files using `import config` then `config.X` → see runtime mutations immediately
-  Files using `from config import X` → FROZEN copy, need process restart
-  Frozen: actions.py, observer.py, log.py
-  Live: agents.py, engine.py, llm.py, tui.py
+HOT-SWAP STATUS:
+  ALL production modules now use `import config` + `config.X` pattern.
+  This means every config value is live-mutable at runtime via:
+    exec("import config; config.SCREEN_ELEMENT_VALUE_LIMIT = 2000")
+  No child spawn needed to change any tuning parameter.
 
 ================================================================================
 ## 4. THE BOARD DICT (single mutable state — passed by reference)
@@ -124,23 +130,21 @@ screen              observer               actor, verifier
 screen_elements     observer               actor (element book for GUI verbs)
 desktop_summary     observer               planner
 focused_window      observer               planner, _save
-consecutive_failures fission, _trivial     scheduler, stagnation
-stagnation          StagnationAgent        LorenzAgent, PidAgent, scheduler
+consecutive_failures fission, _trivial     scheduler, stagnation, mutator
+stagnation          StagnationAgent        LorenzAgent, PidAgent, scheduler, mutator
 progress_history    StagnationAgent        StagnationAgent
 lorenz_x/y/z        LorenzAgent            LorenzAgent, _save
-energy              LorenzAgent            scheduler, _save
+energy              LorenzAgent            scheduler, _save, mutator
 wing_crossed        LorenzAgent, scheduler scheduler
 pid_output          PidAgent               scheduler, _save
 pid_integral        PidAgent, fission      PidAgent, _save
 pid_prev            PidAgent               PidAgent
 last_reflect_time   scheduler              scheduler
 reflect_trigger     scheduler              reflector
-math_trace          _math_loop             _save (last 12 snapshots)
-
-Source: engine.py main.py board init (line 75-100), engine._save() (line 155-172)
+math_trace          _math_loop             _save (last N snapshots)
 
 ================================================================================
-## 5. AGENT ROSTER (9 agents, 4 use LLM, 5 are pure Python)
+## 5. AGENT ROSTER (10 agents: 5 LLM, 3 math, 1 scheduler, 1 observer)
 ================================================================================
 
 AGENT           TYPE      READS                           OUTPUT
@@ -154,8 +158,9 @@ PlannerAgent    LLM       goal,desktop,plan,history,...    plan[], done_when
 ActorAgent      LLM       instruction, screen, history    actions[] (GUI verbs)
 VerifierAgent   LLM       goal,done_when,screen,history   verdict: confirmed|denied
 ReflectorAgent  LLM       goal,plan,history,math,trigger  diagnosis, lesson, mutation
+MutatorAgent    LLM       goal,plan,history,stag,energy   writes plugins/*.py
 
-SCHEDULING LOGIC (agents.py SchedulerAgent.run, line 147-210):
+SCHEDULING LOGIC (agents.py SchedulerAgent.run):
   1. wing_crossed=True → fire planner (force replan)
   2. no plan → fire planner
   3. active step + reflect_wanted + failures≥1 → fire reflector
@@ -169,15 +174,45 @@ REFLECT GATES (must ALL be true):
   - time since last reflect ≥ 6s (REFLECT_MIN_INTERVAL_SEC)
   - at least one of: pid≥0.6+stag≥0.5, stag≥0.5+failures≥1, energy≥2.0+stag≥0.5
 
+MUTATOR TRIGGER: the scheduler does not yet auto-fire the mutator. It must be
+invoked explicitly or wired into the scheduler based on plugin.error accumulation.
+
 ================================================================================
-## 6. EXECUTION MODEL (how plan steps become actions)
+## 6. PLUGIN SYSTEM (engine.py _run_plugins)
+================================================================================
+
+The plugin loader runs EVERY cycle, before the scheduler:
+
+  1. Scan plugins/*.py (sorted alphabetically)
+  2. Track file mtime per path
+  3. On new/changed file: importlib.util.spec_from_file_location → exec_module
+  4. Call plugin.run(board) → expect dict with optional {writes, phase, data}
+  5. Merge writes into board, emit phase event
+  6. Isolate exceptions — one broken plugin cannot crash the reactor
+  7. Emit plugin.load on successful hot-load, plugin.error on failure
+
+PLUGIN CONTRACT:
+  - File: plugins/<name>.py where name matches [a-z0-9_]+
+  - Must define: def run(board) -> dict | None
+  - Return format: {"writes": {key: value}, "phase": "plugin.name", "data": {...}}
+  - Allowed imports: stdlib only (json, time, os, pathlib, urllib, etc.)
+  - FORBIDDEN: importing from reactor core (engine, agents, actions, log, win32)
+  - FORBIDDEN: pip packages
+
+HOT-SWAP BEHAVIOR:
+  - Drop a .py file in plugins/ → loaded next cycle (~0.15s)
+  - Edit an existing plugin → reloaded on mtime change
+  - Delete a plugin file → stops running (module stays cached but path gone)
+
+================================================================================
+## 7. EXECUTION MODEL (how plan steps become actions)
 ================================================================================
 
 Plan steps are TEXT STRINGS. The planner outputs mode:"direct" with sequence[].
 engine._run_agent("actor") is called. But FIRST, actions.is_python_step() checks
 if the step is headless:
 
-  HEADLESS (actions.py execute_step, line 350-394):
+  HEADLESS (actions.py execute_step):
     "exec <code>"       → execute_python(code) in sandboxed namespace
     "exec:\n<multiline>" → same, multiline
     "read_file <path>"  → reads file from disk, returns content
@@ -189,22 +224,21 @@ if the step is headless:
     Emits: click, write, press, hotkey, scroll, focus, wait
     Each verb calls raw Win32 ctypes (user32.SetCursorPos, SendInput, etc.)
 
-EXEC NAMESPACE (actions.py execute_python, line 275-320):
+EXEC NAMESPACE (actions.py execute_python):
   Available without import: BASE_DIR, Path, os, sys, json, time, subprocess
   Available as functions: spawn_main(goal), enable_gui(), pause_reactor()
 
-SAFETY GATE (actions.py _verify_python_edit, line 202-216):
+SAFETY GATE (actions.py _verify_python_edit):
   After ANY .py file write:
     1. py_compile.compile(file) — catches syntax errors
-    2. subprocess.run([python, -c, "import config; import engine; ..."]) — catches import errors
+    2. subprocess.run([python, -c, "import config; import engine; ..."]) — import check
   If either fails → write_file returns failure, organism retries
 
 ================================================================================
-## 7. FISSION MECHANICS (engine.py _fission, line 132-155)
+## 8. FISSION MECHANICS (engine.py _fission)
 ================================================================================
 
 Triggered when: verifier returns verdict="confirmed"
-                engine._main_loop receives next="done" from _run_agent chain
 
 FISSION STEPS:
   1. Check _similar_to_completed(done_when, completed) — reject repeats
@@ -218,168 +252,89 @@ ANTI-REPEAT: _similar_to_completed uses token-set overlap ≥ 0.55 threshold
 ANTI-TRIVIAL: rejects "visible/showing/readable" milestones when goal requires action
 
 ================================================================================
-## 8. SELF-EVOLUTION MECHANISMS (verified, ranked by immediacy)
+## 9. SELF-EVOLUTION MECHANISMS (ranked by immediacy)
 ================================================================================
 
-MECHANISM                    LATENCY    EVIDENCE
+MECHANISM                    LATENCY    HOW
 ───────────────────────────  ─────────  ────────────────────────────────────────
-1. Prompt file read          instant    agents.py _load_prompt() line 591: reads
-                                        from disk on EVERY LLM call, no cache
-2. Lessons append            instant    agents.py _render_field "lessons": reads
-                                        last 8 lines from lessons.txt every call
-3. Goal hot-swap             0.15s      engine._poll_goal(): reads goal.txt each
-                                        cycle, clears plan on change
-4. Pause/resume toggle       0.15s      log.paused(): PAUSE_PATH.exists() check
-5. GUI mode toggle           0.15s      engine._needs_screen(): GUI_MODE_PATH.exists()
+1. Prompt file read          instant    agents._load_prompt() reads from disk on
+                                        EVERY LLM call, no cache
+2. Lessons append            instant    reads last 8 lines from lessons.txt every call
+3. Goal hot-swap             0.15s      engine._poll_goal(): reads goal.txt each cycle
+4. Pause/resume toggle       0.15s      log.paused(): config.PAUSE_PATH.exists() check
+5. GUI mode toggle           0.15s      engine._needs_screen(): config.GUI_MODE_PATH.exists()
 6. config.X runtime patch    instant    exec("import config; config.X = Y")
-                                        — only for modules using `import config`
-7. Prompt mutation            instant    agents._apply_mutation(): appends RULE to
+                                        ALL modules use live import config pattern
+7. Prompt mutation           instant    agents._apply_mutation(): appends RULE to
                                         prompts/<target>.txt, respects MAX_RULES=8
-8. Disk edit + child spawn   ~2-5s      actions._spawn_main(): Popen(main.py)
+8. Plugin hot-load           0.15s      Drop .py in plugins/ → engine._run_plugins
+                                        loads it next cycle via importlib.util
+9. Plugin mutation           ~5-10s     MutatorAgent writes new plugin to disk →
+                                        plugin loader picks it up next cycle
+10. Disk edit + child spawn  ~2-5s      actions._spawn_main(): Popen(main.py)
                                         child reads modified .py from disk fresh
 
-WHAT CANNOT BE HOT-SWAPPED without child spawn:
-  - observer.py constants (SCREEN_ELEMENT_VALUE_LIMIT, PROBE_STEP_PX, etc.)
-  - actions.py timing constants (DELAY_FOCUS, EXEC_TIMEOUT, etc.)
-  - log.py paths (EVENTS_PATH, PAUSE_PATH — frozen at import)
-  - Any structural code change (new function, new class, new verb)
+WHAT CAN BE HOT-SWAPPED (no restart, no spawn):
+  - Any config.py value (all modules read config.X live)
+  - All prompts (read from disk each LLM call)
+  - Goals (polled each cycle)
+  - Capabilities (via new plugins)
 
-WHAT DOES NOT EXIST (verified — grep found zero matches):
-  - importlib.reload() — not called anywhere
-  - plugins/ directory — does not exist
-  - File mtime scanning — not implemented
-  - Dynamic verb registration at runtime — VERBS dict built at import only
+WHAT REQUIRES CHILD SPAWN:
+  - Structural code changes to core .py files (new function, new class, new verb)
+  - Changes to import-time constants in win32.py or tui.py
 
 ================================================================================
-## 9. EVOLVED-ORGANISM-CODE/ (what remains after deduplication)
+## 10. WHAT TO DO NEXT (ordered by value)
 ================================================================================
 
-After verified deduplication (2026-06-11), 10 files remain:
+PRIORITY 1: Wire MutatorAgent into scheduler trigger logic
+  CONDITION: fire mutator when board["consecutive_failures"] > 3 OR
+    when plugin.error events exceed 2 in recent cycles
+  WHERE: agents.py SchedulerAgent.run — add mutator routing rule
+  WHY: mutator exists but has no automatic trigger yet
 
-FILE                STATUS         VERDICT
-──────────────────  ─────────────  ─────────────────────────────────────────────
-prompts/planner.txt DIVERGED       8 rules re: plan-exhaustion stagnation
-                                   Different content from root (root has 2 rules)
-                                   WHY KEEP: contains solutions to a real problem
-                                   (plan all-done but goal unmet) not in root
-                                   ACTION: manually merge best rules into root
+PRIORITY 2: Multi-instance TUI columns
+  WHY: the organism spawns children (proven M4). Side-by-side view needed.
+  DEPENDS ON: instance_comm.py pattern (in evolved-organism-code/)
 
-prompts/verifier.txt DIVERGED      8 near-duplicate "emit done=true" rules
-                                   Shows reflector meltdown (same lesson 8×)
-                                   WHY KEEP: evidence of failure mode
-                                   ACTION: root version's 3 rules are better,
-                                   keep root, use evolved as cautionary reference
+PRIORITY 3: Plugin unload mechanism
+  WHY: if a plugin file is deleted, its cached module still exists in
+    _plugin_modules. Add cleanup when path disappears from disk scan.
 
-agent_worker.py     PROTOTYPE      20 lines. Threaded worker calling bb.post_event()
-                                   but Blackboard defines post() — API MISMATCH
-                                   WHY NOT PROMOTE: broken, would raise AttributeError
-                                   ACTION: reference only, delete when plugins exist
+PRIORITY 4: Merge evolved prompts rules
+  WHERE: evolved-organism-code/prompts/planner.txt has 8 rules about
+    plan-exhaustion stagnation that are absent from root prompts/planner.txt.
+  ACTION: manually merge the best rules into production prompts.
 
-blackboard.py       PROTOTYPE      38 lines. Thread-safe deque(maxlen=200) bus
-                                   Has post(sender, text), subscribe(), get_recent()
-                                   WHY KEEP: sound pattern for multi-instance comms
-                                   ACTION: promote after API fix (post→post_event or
-                                   fix agent_worker to call post)
-
-endgame_tui.py      VIOLATION      29 lines. Requires `textual` pip package
-                                   VIOLATES zero-dep rule. Cannot run in production
-                                   ACTION: delete (reference only)
-
-evolved_reactor.py  DEMO           94 lines. tkinter + random.choice fake tasks
-                                   Capability injection concept is valid
-                                   ACTION: delete (concept lives in plugin spec)
-
-instance_comm.py    PROTOTYPE      18 lines. File-based IPC via comms/ directory
-                                   Clean, zero deps, works
-                                   WHY KEEP: useful for multi-instance TUI
-                                   ACTION: promote when multi-instance TUI built
-
-reactor_demo.py     DEMO           146 lines. tkinter status display
-                                   ACTION: delete (production TUI replaces this)
-
-reflect.py          ALTERNATIVE    30 lines. JSON lesson store with scoring
-                                   Production uses lessons.txt (simpler, works)
-                                   ACTION: defer (promote if scoring needed later)
-
-web_sentinel.py     STANDALONE     62 lines. urllib HN + time API fetcher
-                                   Zero deps. Works. Not wired to production
-                                   ACTION: promote as first plugin when plugins/ exists
+PRIORITY 5: Clean up evolved-organism-code/
+  Delete: endgame_tui.py (pip dep violation), reactor_demo.py (superseded by hud.py),
+    evolved_reactor.py (superseded by plugin system)
+  Promote: instance_comm.py (when multi-instance TUI is built)
+  Keep as reference: reflect.py, blackboard.py, agent_worker.py
 
 ================================================================================
-## 10. WHAT TO DO NEXT (ordered by value, with reasoning)
-================================================================================
-
-PRIORITY 1: Fix `from config import` → `import config` pattern
-  WHERE: observer.py (line 9-12), actions.py (line 12-17), log.py (line 11)
-  WHY: makes ALL config values live-mutable via exec without child spawn
-  WHY NOT skip: the organism's FIRST mutation was SCREEN_ELEMENT_VALUE_LIMIT
-    which is frozen in observer.py — the very file that uses it. This defeats
-    the organism's ability to tune its own vision without spawning a child.
-  RISK: low — mechanical find/replace, verified by import check
-  TEST: python -c "import observer, actions, log; print('OK')"
-
-PRIORITY 2: Create plugins/ directory + PluginLoader in engine.py
-  WHY: the organism can already write files via exec. If plugins/ existed with
-    a scanner, the organism could add capabilities (web fetch, file watcher, etc.)
-    without spawn_main. This is the "missing wire" identified by HOT-SWAP-EXPLAINED.md
-  IMPLEMENTATION: ~40 lines in engine.py:
-    - scan plugins/*.py each cycle
-    - track mtime per file
-    - importlib.util.spec_from_file_location on new/changed
-    - call plugin.run(board) → merge writes
-    - isolate exceptions (one broken plugin can't crash reactor)
-  WHY NOT skip: without this, adding any new capability requires editing
-    actions.py + restarting (or spawn_main). The organism cannot evolve its
-    capabilities, only its prompts and config values.
-  RISK: low — additive, doesn't modify existing loop logic
-
-PRIORITY 3: Promote web_sentinel.py as first plugin
-  WHY: proves the plugin system works end-to-end
-  HOW: move to plugins/web_sentinel.py, add def run(board) wrapper
-  TEST: start reactor, observe plugin event in log
-
-PRIORITY 4: Add MutatorAgent (code evolution equivalent of ReflectorAgent)
-  WHY: the reflector mutates prompts when stagnating. The mutator would mutate
-    plugins when a plugin is failing. Completes the self-evolution story.
-  CONSTRAINTS: only writes to plugins/ and config.py. Never touches engine/log/win32.
-  WHY NOT NOW: depends on Priority 2 (plugins/ must exist first)
-  RISK: medium — needs careful constraint prompting to prevent destructive mutations
-
-PRIORITY 5: Multi-instance TUI columns
-  WHY: the organism already spawns children (proven in M4 evening run). Currently
-    you can only see one instance at a time. Side-by-side columns would show
-    parent + child(ren) simultaneously.
-  DEPENDS ON: instance_comm.py (promote from evolved-organism-code)
-  WHY NOT NOW: cosmetic, not capability. Reactor works fine with single view.
-
-================================================================================
-## 11. THINGS TO NOT DO (failure modes from existing evidence)
+## 11. THINGS TO NOT DO
 ================================================================================
 
 DO NOT add pip dependencies. The zero-dep rule is load-bearing: the organism
-  can exec("import X") only if X is stdlib or in-tree. Adding pip deps means
-  the organism cannot self-install capabilities at runtime.
+  can exec("import X") only if X is stdlib or in-tree.
 
 DO NOT use importlib.reload() on core modules (engine, agents, actions, log).
-  Reload is fragile with stateful modules. The plugin pattern (new files, fresh
-  import) is safer. Core modules stay fixed; behavior lives in prompts+plugins.
+  The plugin pattern (new files, fresh importlib.util load) is safer.
 
 DO NOT change events.jsonl format {n, t, phase, d}. The TUI, m4_merge_test.py,
-  and forensic analysis all parse this format. Breaking it loses traceability.
+  and forensic analysis all parse this format.
 
 DO NOT rename board dict keys. snapshot.json and event logs reference them by
   name. Renaming breaks backward compatibility with saved sessions.
 
 DO NOT remove _verify_python_edit from actions.py. This is the organism's
-  immune system — it prevents self-written syntax errors from persisting.
-  Without it, one bad exec could corrupt the codebase permanently.
+  immune system — prevents self-written syntax errors from persisting.
 
 DO NOT let the reflector mutate the same prompt more than PROMPT_MAX_RULES=8
   times. The evening M4 run proved what happens: 24 reflect cycles appending
-  near-identical rules = reflector meltdown. The cap is correct and essential.
-
-DO NOT add docstrings. The codebase is intentionally comment-minimal.
-  Self-documenting names + this AGENTS.md = the documentation layer.
+  near-identical rules = meltdown. The cap is essential.
 
 ================================================================================
 ## 12. RUNTIME ARTIFACTS (gitignored, created on run)
@@ -389,7 +344,7 @@ FILE                CREATED BY       PURPOSE
 ──────────────────  ─────────────    ──────────────────────────────────────────
 events.jsonl        log.init()       Primary event log (append-only)
 events-<pid>.jsonl  log._acquire     Child instance log (when lock held)
-snapshot.json       engine._save()   Board state for TUI reading
+snapshot.json       engine._save()   Board state for TUI/HUD reading
 goal.txt            main.py/TUI      Current goal (polled every 0.15s)
 pause               log.set_paused   Existence = reactor paused
 gui_mode            enable_gui()     Existence = observer scans screen
@@ -397,15 +352,15 @@ lessons.txt         _write_lesson    Append-only reflector knowledge
 disabled.json       TUI              Agent enable/disable toggles
 .endgame.lock       log._acquire     Lock file (PID of log owner)
 respawn.json        main.py          Contract for child spawn params
-m4_posterity_ok.json organism exec   Proof artifact from M4 posterity run
+hud_design.json     (user-created)   Hot-swap HUD design overrides
 
 ================================================================================
-## 13. CONFIG REFERENCE (config.py — all 116 lines, grouped)
+## 13. CONFIG REFERENCE (config.py — 118 lines, grouped)
 ================================================================================
 
-PATHS: BASE_DIR, PROMPTS_DIR, SCHEMAS_DIR, EVENTS_PATH, SNAPSHOT_PATH,
-  LESSONS_PATH, DISABLED_PATH, GUI_MODE_PATH, GOAL_PATH, PAUSE_PATH,
-  RESPAWN_PATH, LOG_LOCK_PATH
+PATHS: BASE_DIR, PROMPTS_DIR, SCHEMAS_DIR, PLUGINS_DIR, EVENTS_PATH,
+  SNAPSHOT_PATH, LESSONS_PATH, DISABLED_PATH, GUI_MODE_PATH, GOAL_PATH,
+  PAUSE_PATH, RESPAWN_PATH, LOG_LOCK_PATH
 
 BUDGET: EVENT_BUDGET=20 (override via --event-budget)
 
@@ -441,6 +396,7 @@ CONTEXT_POLICY (which fields each LLM agent sees):
   actor:     instruction, screen, history, lessons
   verifier:  goal, done_when, screen, history, plan, completed
   reflector: goal, plan, history, math, trigger, completed
+  mutator:   goal, plan, history, math, trigger, completed
 
 ================================================================================
 ## 14. SCHEMA CONTRACTS (what each LLM agent MUST output)
@@ -465,29 +421,33 @@ REFLECTOR (schemas/reflector.json):
     prompt_mutation: {target: "planner"|"actor"|"verifier"|"", append: string[0..500]} }
   Empty target+append = no mutation (most common case)
 
+MUTATOR (schemas/mutator.json):
+  { diagnosis: string[50..500], action: "write_plugin"|"patch_plugin"|"none",
+    filename: string[0..100], content: string[0..4000] }
+  Filename must match [a-z0-9_]+.py. Content must contain def run(board).
+
 ================================================================================
-## 15. PROVEN CAPABILITIES (from M4 event logs — not theoretical)
+## 15. PROVEN CAPABILITIES (from M4 event logs)
 ================================================================================
 
-PROVEN (commit eff78fb + local evening logs):
+PROVEN (M4 run 2026-06-10):
   ✓ Self-launch: TUI → subprocess.Popen(main.py) → event #1 phase:start
-  ✓ Self-edit config: exec rewrote SCREEN_ELEMENT_VALUE_LIMIT 500→1000 (event #357)
-  ✓ Prompt mutation: reflector appended RULE to planner.txt (event #359)
-  ✓ Spawn child: exec spawn_main(posterity_goal) (event #213)
-  ✓ Pause self: exec pause_reactor() (event #215)
-  ✓ Child inheritance: child booted on parent-modified disk (events-1960.jsonl #1)
-  ✓ Child fission: child verified milestone, fissioned (events-1960.jsonl #662-663)
-  ✓ Dual stop: parent #427, child #667 — two independent completions
+  ✓ Self-edit config: exec rewrote SCREEN_ELEMENT_VALUE_LIMIT 500→1000
+  ✓ Prompt mutation: reflector appended RULE to planner.txt
+  ✓ Spawn child: exec spawn_main(posterity_goal)
+  ✓ Pause self: exec pause_reactor()
+  ✓ Child inheritance: child booted on parent-modified disk
+  ✓ Child fission: child verified milestone, fissioned
+  ✓ Dual stop: parent + child — two independent completions
   ✓ Hot goal swap: goal.txt modified → reactor pivoted immediately
   ✓ GUI automation: Opera browser, LinkedIn post, X.com interaction
   ✓ Safety gate: py_compile + import check prevented bad .py writes
 
-NOT YET PROVEN:
-  ✗ importlib.reload on any module (not implemented)
-  ✗ Plugin loading from plugins/ directory (not implemented)
-  ✗ Code mutation by MutatorAgent (agent doesn't exist yet)
-  ✗ Multi-instance TUI display (not implemented)
-  ✗ Resurrection (parent exits, not just pauses, after spawn)
+NOT YET PROVEN (implemented but untested in live run):
+  ○ Plugin hot-loading from plugins/ directory
+  ○ MutatorAgent writing a new plugin
+  ○ Multi-instance TUI display
+  ○ Runtime config mutation affecting live observer/actions behavior
 
 ================================================================================
 ## 16. ENTRY POINTS (how to run)
@@ -498,6 +458,9 @@ python tui.py "Your goal here" --backend lmstudio --event-budget 500
 
 # Headless launch (no TUI, direct reactor):
 python main.py "Your goal" --backend lmstudio --event-budget 200
+
+# GDI overlay HUD (reads snapshot.json, renders transparent overlay):
+python hud.py
 
 # Debug context dump (see what an agent would receive):
 python debug_context.py planner --goal "test goal"
@@ -520,10 +483,32 @@ Before modifying this codebase:
   3. Never add pip dependencies
   4. Never change events.jsonl format or board dict key names
   5. prompts/*.txt are the "program" — edit freely, effect is immediate
-  6. config.py values using `import config; config.X` pattern are live-mutable
-  7. config.py values using `from config import X` are FROZEN — need restart/spawn
+  6. config.py values are live-mutable (all modules use import config pattern)
+  7. Plugins in plugins/*.py are hot-loaded each cycle — drop a file to extend
   8. The organism can write files via exec — don't rely on paths being constant
   9. Test with: python main.py "simple goal" --event-budget 5 (minimal run)
+  10. MutatorAgent only writes to plugins/ — never let it touch core files
+
+================================================================================
+## 18. HUD OVERLAY (hud.py — 1608 lines)
+================================================================================
+
+A standalone GDI-based transparent overlay that visualizes reactor state:
+
+LAUNCH: python hud.py (reads snapshot.json in a polling loop)
+
+FEATURES:
+  - WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_TRANSPARENT (click-through)
+  - Two layout modes: "dashboard" (full panels) and "column" (compact sidebar)
+  - Hot-swap design via hud_design.json (same directory, polled each frame)
+  - Math trace curves (Catmull-Rom smoothed), Lorenz attractor plot
+  - Agent state visualization, plan display, metric cards
+  - Zero pip deps — pure ctypes GDI32/User32
+
+DESIGN OVERRIDE (hud_design.json):
+  Optional JSON file with any subset of design keys. Applied on mtime change.
+  Keys: layout, scale_w_pct, scale_h_pct, align, font_name, font_size,
+    font_weight, backdrop_*, panel_*, plot_*, c_*_r/g/b, right_panel_w_ratio, etc.
 
 ================================================================================
 END OF AGENTS.md

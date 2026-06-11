@@ -663,3 +663,80 @@ def _apply_mutation(target: str, append_text: str) -> None:
     new_content = current.rstrip() + "\n\nRULE: " + clean_text + "\n"
     path.write_text(new_content, encoding="utf-8")
     log.emit("mutation", {"target": target, "appended": clean_text})
+
+
+# --- MutatorAgent (code evolution — writes to plugins/ only) ---
+
+_PLUGIN_FILENAME_RE = re.compile(r"^[a-z0-9_]+\.py$")
+
+
+class MutatorAgent:
+    name: str = "mutator"
+    reads: list[str] = [
+        "goal", "plan", "history", "stagnation", "energy",
+        "consecutive_failures", "completed",
+    ]
+
+    def run(self, ctx: dict[str, Any]) -> dict[str, Any]:
+        from llm import call_llm
+        import py_compile
+        context = _render_context(ctx, "reflector")  # reuse reflector context policy
+        # Add plugin error context
+        plugin_errors = self._recent_plugin_errors()
+        if plugin_errors:
+            context += "\n\nPLUGIN ERRORS:\n" + "\n".join(f"  - {e}" for e in plugin_errors)
+        system = _load_prompt("mutator")
+        if not system:
+            return {"writes": {}, "next": "stagnation", "phase": "mutator.skip",
+                    "data": {"reason": "no prompt"}}
+        try:
+            raw = call_llm(system, context, "mutator", max_tokens=config.BUDGET_REFLECTOR_OUT)
+        except Exception as e:
+            log.emit("mutator.error", {"error": str(e)})
+            return {"writes": {}, "next": "stagnation", "phase": "mutator.error",
+                    "data": {"error": str(e)}}
+        parsed = _extract_json(raw, ["diagnosis", "action", "filename", "content"])
+        action = str(parsed.get("action", "none"))
+        filename = str(parsed.get("filename", ""))
+        content = str(parsed.get("content", ""))
+        diagnosis = str(parsed.get("diagnosis", ""))
+        if action == "none" or not filename or not content:
+            return {"writes": {}, "next": "stagnation", "phase": "mutator",
+                    "data": {"action": "none", "diagnosis": diagnosis}}
+        if not _PLUGIN_FILENAME_RE.match(filename):
+            log.emit("mutator.rejected", {"reason": "invalid filename", "filename": filename})
+            return {"writes": {}, "next": "stagnation", "phase": "mutator",
+                    "data": {"action": "rejected", "reason": "invalid filename"}}
+        if "def run(" not in content:
+            log.emit("mutator.rejected", {"reason": "missing run()", "filename": filename})
+            return {"writes": {}, "next": "stagnation", "phase": "mutator",
+                    "data": {"action": "rejected", "reason": "no run() def"}}
+        target = config.PLUGINS_DIR / filename
+        config.PLUGINS_DIR.mkdir(exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+        try:
+            py_compile.compile(str(target), doraise=True)
+        except py_compile.PyCompileError as e:
+            target.unlink(missing_ok=True)
+            log.emit("mutator.rejected", {"reason": "syntax error", "error": str(e)[:200]})
+            return {"writes": {}, "next": "stagnation", "phase": "mutator",
+                    "data": {"action": "rejected", "reason": "syntax error"}}
+        log.emit("mutator", {"action": action, "filename": filename, "diagnosis": diagnosis})
+        return {"writes": {}, "next": "stagnation", "phase": "mutator",
+                "data": {"action": action, "filename": filename}}
+
+    @staticmethod
+    def _recent_plugin_errors() -> list[str]:
+        """Read last few plugin errors from events log."""
+        path = config.EVENTS_PATH
+        if not path.exists():
+            return []
+        errors: list[str] = []
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()[-100:]
+            for line in lines:
+                if "plugin.error" in line:
+                    errors.append(line.strip()[-200:])
+        except OSError:
+            pass
+        return errors[-5:]

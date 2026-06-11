@@ -12,22 +12,16 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, cast
 
-from config import (
-    ACP_PROTOCOL_VERSION, ACP_DEFAULT_TIMEOUT, ACP_REQUEST_TIMEOUT,
-    ACP_WSL_MKDIR_TIMEOUT, ACP_SETTINGS_TIMEOUT, ACP_CLOSE_TIMEOUT,
-    ACP_READ_CHUNK_SIZE, JSONRPC_METHOD_NOT_FOUND, ACP_WORKSPACE_BASE,
-    ACP_STOP_POLL_SECONDS, ACP_SETUP_ATTEMPTS, ACP_SETUP_RETRY_DELAY,
-    BASE_DIR,
-)
+import config
 
 __all__ = ["ACPError", "prompt_once"]
 
 DISTRO: str = "Ubuntu-24.04"
 KIRO_CLI: str = "/usr/bin/kiro-cli"
-WORKSPACE: str = f"{ACP_WORKSPACE_BASE}-{os.getpid()}"
+WORKSPACE: str = f"{config.ACP_WORKSPACE_BASE}-{os.getpid()}"
 MODEL: str = "claude-opus-4.7"
-PROTOCOL_VERSION: int = ACP_PROTOCOL_VERSION
-DEFAULT_TIMEOUT: float = ACP_DEFAULT_TIMEOUT
+PROTOCOL_VERSION: int = config.ACP_PROTOCOL_VERSION
+DEFAULT_TIMEOUT: float = config.ACP_DEFAULT_TIMEOUT
 
 type JsonMsg = dict[str, Any]
 
@@ -63,21 +57,21 @@ class _Pool:
         if self._proc is not None:
             self._proc.terminate()
             try:
-                self._proc.wait(timeout=ACP_CLOSE_TIMEOUT)
+                self._proc.wait(timeout=config.ACP_CLOSE_TIMEOUT)
             except subprocess.TimeoutExpired:
                 self._proc.kill()
-                self._proc.wait(timeout=ACP_CLOSE_TIMEOUT)
+                self._proc.wait(timeout=config.ACP_CLOSE_TIMEOUT)
         self._started = False
         self._pending.clear()
         self._flights.clear()
         self._next_id = 0
         _run_setup_command(
             ["wsl.exe", "-d", DISTRO, "--exec", "mkdir", "-p", WORKSPACE],
-            ACP_WSL_MKDIR_TIMEOUT)
+            config.ACP_WSL_MKDIR_TIMEOUT)
         _run_setup_command(
             ["wsl.exe", "-d", DISTRO, "--cd", WORKSPACE, "--exec",
              KIRO_CLI, "settings", "chat.defaultModel", MODEL, "--workspace"],
-            ACP_SETTINGS_TIMEOUT)
+            config.ACP_SETTINGS_TIMEOUT)
         self._proc = subprocess.Popen(
             ["wsl.exe", "-d", DISTRO, "--cd", WORKSPACE, "--exec", KIRO_CLI, "acp"],
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -105,8 +99,8 @@ class _Pool:
             self._write({"jsonrpc": "2.0", "id": rid, "method": "session/prompt",
                          "params": {"sessionId": sid, "prompt": [{"type": "text", "text": text}]}})
         deadline = time.monotonic() + timeout
-        while not flight.done.wait(ACP_STOP_POLL_SECONDS):
-            if (BASE_DIR / "comms" / "stop.txt").exists():
+        while not flight.done.wait(config.ACP_STOP_POLL_SECONDS):
+            if (config.BASE_DIR / "comms" / "stop.txt").exists():
                 self._flights.pop(sid, None)
                 raise ACPError("stop signal requested")
             if time.monotonic() >= deadline:
@@ -122,7 +116,7 @@ class _Pool:
         self._write({"jsonrpc": "2.0", "id": rid, "method": method, "params": params})
         return rid
 
-    def _request(self, method: str, params: JsonMsg, timeout: float = ACP_REQUEST_TIMEOUT) -> JsonMsg:
+    def _request(self, method: str, params: JsonMsg, timeout: float = config.ACP_REQUEST_TIMEOUT) -> JsonMsg:
         with self._lock:
             rid = self._send(method, params)
         try:
@@ -146,7 +140,7 @@ class _Pool:
             if self._proc is None or self._proc.stdout is None:
                 break
             reader = cast(io.BufferedReader, self._proc.stdout)
-            chunk: bytes = reader.read1(ACP_READ_CHUNK_SIZE)
+            chunk: bytes = reader.read1(config.ACP_READ_CHUNK_SIZE)
             if not chunk:
                 break
             buf = buf + chunk
@@ -200,7 +194,7 @@ class _Pool:
                          "result": {"outcome": {"outcome": "selected", "optionId": chosen}}})
         elif isinstance(mid, int):
             self._write({"jsonrpc": "2.0", "id": mid,
-                         "error": {"code": JSONRPC_METHOD_NOT_FOUND, "message": "not implemented"}})
+                         "error": {"code": config.JSONRPC_METHOD_NOT_FOUND, "message": "not implemented"}})
 
     def close(self) -> None:
         if self._proc is None:
@@ -214,10 +208,10 @@ class _Pool:
             f.done.set()
         p.terminate()
         try:
-            p.wait(timeout=ACP_CLOSE_TIMEOUT)
+            p.wait(timeout=config.ACP_CLOSE_TIMEOUT)
         except subprocess.TimeoutExpired:
             p.kill()
-            p.wait(timeout=ACP_CLOSE_TIMEOUT)
+            p.wait(timeout=config.ACP_CLOSE_TIMEOUT)
 
 
 _pool: _Pool | None = None
@@ -226,7 +220,7 @@ _pool_lock = threading.Lock()
 
 def _run_setup_command(cmd: list[str], timeout: float) -> None:
     last_error = ""
-    for attempt in range(1, ACP_SETUP_ATTEMPTS + 1):
+    for attempt in range(1, config.ACP_SETUP_ATTEMPTS + 1):
         try:
             proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
         except subprocess.TimeoutExpired:
@@ -236,9 +230,9 @@ def _run_setup_command(cmd: list[str], timeout: float) -> None:
                 return
             output = (proc.stdout + proc.stderr).strip()
             last_error = f"exit={proc.returncode} output={output}"
-        if attempt < ACP_SETUP_ATTEMPTS:
-            time.sleep(ACP_SETUP_RETRY_DELAY)
-    raise ACPError(f"setup command failed after {ACP_SETUP_ATTEMPTS} attempts: {cmd} {last_error}")
+        if attempt < config.ACP_SETUP_ATTEMPTS:
+            time.sleep(config.ACP_SETUP_RETRY_DELAY)
+    raise ACPError(f"setup command failed after {config.ACP_SETUP_ATTEMPTS} attempts: {cmd} {last_error}")
 
 
 def prompt_once(text: str, timeout: float = DEFAULT_TIMEOUT) -> str:

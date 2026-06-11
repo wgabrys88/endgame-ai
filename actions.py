@@ -9,11 +9,7 @@ import subprocess
 import sys
 import time
 
-from config import (
-    BASE_DIR, DELAY_FOCUS, DELAY_CURSOR_SETTLE, DELAY_MOUSE_HOLD,
-    DELAY_CHAR_SEND, DELAY_KEY_INTER, MAX_WAIT_SECONDS,
-    EXEC_TIMEOUT, EXEC_OUTPUT_LIMIT, RESPAWN_PATH,
-)
+import config
 from win32 import user32, get_window_title, VK_MAP, EXTENDED_VKS, INPUT
 
 _CORE_MODULES: tuple[str, ...] = (
@@ -80,11 +76,11 @@ def _click(args: dict[str, Any], book: ElementBook) -> ActionResult:
     entry = book[selector]
     px, py = entry.px + entry.pw // 2, entry.py + entry.ph // 2
     user32.SetForegroundWindow(entry.hwnd)
-    time.sleep(DELAY_FOCUS)
+    time.sleep(config.DELAY_FOCUS)
     user32.SetCursorPos(px, py)
-    time.sleep(DELAY_CURSOR_SETTLE)
+    time.sleep(config.DELAY_CURSOR_SETTLE)
     user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-    time.sleep(DELAY_MOUSE_HOLD)
+    time.sleep(config.DELAY_MOUSE_HOLD)
     user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
     return ActionResult("click", True, f"clicked {entry.role} '{entry.name}' at ({px},{py})")
 
@@ -99,7 +95,7 @@ def _write(args: dict[str, Any], book: ElementBook) -> ActionResult:
     if selector and selector in book:
         entry = book[selector]
         user32.SetForegroundWindow(entry.hwnd)
-        time.sleep(DELAY_FOCUS)
+        time.sleep(config.DELAY_FOCUS)
     for char in text:
         code = ord(char)
         inputs = (INPUT * 2)()
@@ -110,7 +106,7 @@ def _write(args: dict[str, Any], book: ElementBook) -> ActionResult:
         inputs[1].u.ki.wScan = code
         inputs[1].u.ki.dwFlags = KEYEVENTF_UNICODE_KEYUP
         user32.SendInput(2, ctypes.byref(inputs), ctypes.sizeof(INPUT))
-        time.sleep(DELAY_CHAR_SEND)
+        time.sleep(config.DELAY_CHAR_SEND)
     return ActionResult("write", True, f"typed {len(text)} chars")
 
 
@@ -124,7 +120,7 @@ def _press(args: dict[str, Any], book: ElementBook) -> ActionResult:
     vk = VK_MAP[key]
     flags = KEYEVENTF_EXTENDEDKEY if vk in EXTENDED_VKS else 0
     user32.keybd_event(vk, 0, flags, None)
-    time.sleep(DELAY_KEY_INTER)
+    time.sleep(config.DELAY_KEY_INTER)
     user32.keybd_event(vk, 0, KEYEVENTF_KEYUP | flags, None)
     return ActionResult("press", True, f"pressed {key}")
 
@@ -142,10 +138,10 @@ def _hotkey(args: dict[str, Any], book: ElementBook) -> ActionResult:
         vks.append(VK_MAP[k])
     for vk in vks:
         user32.keybd_event(vk, 0, KEYEVENTF_EXTENDEDKEY if vk in EXTENDED_VKS else 0, None)
-        time.sleep(DELAY_KEY_INTER)
+        time.sleep(config.DELAY_KEY_INTER)
     for vk in reversed(vks):
         user32.keybd_event(vk, 0, KEYEVENTF_KEYUP | (KEYEVENTF_EXTENDEDKEY if vk in EXTENDED_VKS else 0), None)
-        time.sleep(DELAY_KEY_INTER)
+        time.sleep(config.DELAY_KEY_INTER)
     return ActionResult("hotkey", True, f"pressed {'+'.join(keys)}")
 
 
@@ -158,16 +154,16 @@ def _scroll(args: dict[str, Any], book: ElementBook) -> ActionResult:
     entry = book[selector]
     px, py = entry.px + entry.pw // 2, entry.py + entry.ph // 2
     user32.SetForegroundWindow(entry.hwnd)
-    time.sleep(DELAY_FOCUS)
+    time.sleep(config.DELAY_FOCUS)
     user32.SetCursorPos(px, py)
-    time.sleep(DELAY_CURSOR_SETTLE)
+    time.sleep(config.DELAY_CURSOR_SETTLE)
     user32.mouse_event(MOUSEEVENTF_WHEEL, 0, 0, amount * WHEEL_DELTA, 0)
     return ActionResult("scroll", True, f"scrolled {amount} at ({px},{py})")
 
 
 @_register("wait")
 def _wait(args: dict[str, Any], book: ElementBook) -> ActionResult:
-    seconds = min(float(args.get("seconds", 1.0)), MAX_WAIT_SECONDS)
+    seconds = min(float(args.get("seconds", 1.0)), config.MAX_WAIT_SECONDS)
     time.sleep(seconds)
     return ActionResult("wait", True, f"waited {seconds}s")
 
@@ -183,7 +179,7 @@ def _focus(args: dict[str, Any], book: ElementBook) -> ActionResult:
             wt = get_window_title(int(hwnd))
             if title.lower() in wt.lower():
                 user32.SetForegroundWindow(hwnd)
-                time.sleep(DELAY_FOCUS)
+                time.sleep(config.DELAY_FOCUS)
                 return ActionResult("focus", True, f"focused '{wt}'")
         hwnd = user32.GetWindow(hwnd, 2)
     return ActionResult("focus", False, f"no window matching '{title}'")
@@ -192,7 +188,7 @@ def _focus(args: dict[str, Any], book: ElementBook) -> ActionResult:
 @_register("read_file")
 def _read_file(args: dict[str, Any], book: ElementBook) -> ActionResult:
     path = str(args.get("path", ""))
-    target = Path(path) if Path(path).is_absolute() else BASE_DIR / path
+    target = Path(path) if Path(path).is_absolute() else config.BASE_DIR / path
     resolved = target.resolve()
     if not resolved.exists():
         return ActionResult("read_file", False, f"not found: {path}")
@@ -213,7 +209,7 @@ def _verify_python_edit(resolved: Path) -> tuple[bool, str]:
         capture_output=True,
         text=True,
         timeout=30,
-        cwd=str(BASE_DIR),
+        cwd=str(config.BASE_DIR),
     )
     if proc.returncode != 0:
         err = (proc.stderr or proc.stdout).strip()
@@ -225,7 +221,7 @@ def _verify_python_edit(resolved: Path) -> tuple[bool, str]:
 def _write_file(args: dict[str, Any], book: ElementBook) -> ActionResult:
     path = str(args.get("path", ""))
     content = str(args.get("content", ""))
-    target = Path(path) if Path(path).is_absolute() else BASE_DIR / path
+    target = Path(path) if Path(path).is_absolute() else config.BASE_DIR / path
     resolved = target.resolve()
     resolved.parent.mkdir(parents=True, exist_ok=True)
     resolved.write_text(content, encoding="utf-8")
@@ -238,20 +234,20 @@ def _write_file(args: dict[str, Any], book: ElementBook) -> ActionResult:
 
 
 def _clip_obs(text: str) -> str:
-    limit = EXEC_OUTPUT_LIMIT
+    limit = config.EXEC_OUTPUT_LIMIT
     return text if len(text) <= limit else text[:limit] + "…"
 
 
 def _spawn_main(goal: str = "") -> int:
     try:
-        ctx = json.loads(RESPAWN_PATH.read_text(encoding="utf-8"))
+        ctx = json.loads(config.RESPAWN_PATH.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         ctx = {"goal": goal, "backend": "acp", "budget": 200}
     g = goal or str(ctx.get("goal", ""))
     proc = subprocess.Popen(
         [sys.executable, "main.py", g, "--backend", str(ctx.get("backend", "acp")),
          "--event-budget", str(int(ctx.get("budget", 200)))],
-        cwd=str(BASE_DIR),
+        cwd=str(config.BASE_DIR),
         creationflags=subprocess.CREATE_NO_WINDOW,
     )
     return int(proc.pid)
@@ -261,14 +257,13 @@ def execute_python(code: str) -> ActionResult:
     import concurrent.futures
     import io
     import traceback
-    from config import GUI_MODE_PATH
 
     code = code.strip()
     if not code:
         return ActionResult("exec", False, "no code")
 
     def enable_gui() -> None:
-        GUI_MODE_PATH.write_text("1", encoding="utf-8")
+        config.GUI_MODE_PATH.write_text("1", encoding="utf-8")
 
     def pause_reactor() -> None:
         import log
@@ -277,7 +272,7 @@ def execute_python(code: str) -> ActionResult:
     namespace: dict[str, Any] = {
         "__builtins__": __builtins__,
         "__name__": "__exec__",
-        "BASE_DIR": BASE_DIR,
+        "BASE_DIR": config.BASE_DIR,
         "Path": Path,
         "os": os,
         "sys": sys,
@@ -315,10 +310,10 @@ def execute_python(code: str) -> ActionResult:
     error_text = ""
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            pool.submit(_run).result(timeout=EXEC_TIMEOUT)
+            pool.submit(_run).result(timeout=config.EXEC_TIMEOUT)
         ok = True
     except concurrent.futures.TimeoutError:
-        ok, error_text = False, f"timeout after {EXEC_TIMEOUT}s"
+        ok, error_text = False, f"timeout after {config.EXEC_TIMEOUT}s"
     except Exception:
         ok, error_text = False, traceback.format_exc()
 
@@ -357,12 +352,11 @@ def is_python_step(step: str) -> bool:
 
 
 def _resolve_write_path(path: str) -> str:
-    from config import GUI_MODE_PATH
     raw = path.strip().strip("\"'")
     if raw in ("gui_mode", "enabled"):
-        return str(GUI_MODE_PATH)
+        return str(config.GUI_MODE_PATH)
     p = Path(raw)
-    return str(p) if p.is_absolute() else str((BASE_DIR / raw).resolve())
+    return str(p) if p.is_absolute() else str((config.BASE_DIR / raw).resolve())
 
 
 def execute_step(step: str) -> ActionResult:

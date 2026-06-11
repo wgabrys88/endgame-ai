@@ -1,17 +1,62 @@
 from __future__ import annotations
+import importlib.util
 import json
 import threading
 import time
+from pathlib import Path
 from typing import Any, Callable
 
 from actions import is_python_step
 from agents import (
     StagnationAgent, LorenzAgent, PidAgent, SchedulerAgent,
     ObserverAgent, PlannerAgent, ActorAgent, VerifierAgent, ReflectorAgent,
+    MutatorAgent,
     _similar_to_completed, _trivial_milestone,
 )
 import config
 import log
+
+
+# --- Plugin Loader -----------------------------------------------------------
+
+_plugin_mtimes: dict[str, float] = {}
+_plugin_modules: dict[str, Any] = {}
+
+
+def _run_plugins(board: dict[str, Any]) -> None:
+    """Scan plugins/*.py, hot-load new/changed, call run(board), isolate errors."""
+    if not config.PLUGINS_DIR.exists():
+        return
+    for path in sorted(config.PLUGINS_DIR.glob("*.py")):
+        key = str(path)
+        try:
+            mt = path.stat().st_mtime
+        except OSError:
+            continue
+        if key in _plugin_mtimes and _plugin_mtimes[key] == mt:
+            mod = _plugin_modules.get(key)
+        else:
+            try:
+                spec = importlib.util.spec_from_file_location(path.stem, path)
+                if spec is None or spec.loader is None:
+                    continue
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                _plugin_modules[key] = mod
+                _plugin_mtimes[key] = mt
+                log.emit("plugin.load", {"file": path.name})
+            except Exception as e:
+                log.emit("plugin.error", {"file": path.name, "error": str(e)[:200]})
+                continue
+        if mod and hasattr(mod, "run"):
+            try:
+                result = mod.run(board)
+                if isinstance(result, dict):
+                    board.update(result.get("writes", {}))
+                    if result.get("phase"):
+                        log.emit(result["phase"], result.get("data"))
+            except Exception as e:
+                log.emit("plugin.error", {"file": path.name, "error": str(e)[:200]})
 
 
 MATH_AGENTS: list[Any] = [StagnationAgent(), LorenzAgent(), PidAgent()]
@@ -23,9 +68,10 @@ AGENTS: dict[str, Any] = {
     "actor": ActorAgent(),
     "verifier": VerifierAgent(),
     "reflector": ReflectorAgent(),
+    "mutator": MutatorAgent(),
 }
 
-LLM_AGENTS: frozenset[str] = frozenset({"planner", "actor", "verifier", "reflector"})
+LLM_AGENTS: frozenset[str] = frozenset({"planner", "actor", "verifier", "reflector", "mutator"})
 
 
 def _math_loop(board: dict[str, Any], stop: threading.Event) -> None:
@@ -122,6 +168,7 @@ def _main_loop(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
         if log.paused():
             time.sleep(config.DELAY_BETWEEN_CYCLES)
             continue
+        _run_plugins(board)
         scheduler = AGENTS["scheduler"]
         ctx = {k: board[k] for k in scheduler.reads if k in board}
         result: dict[str, Any] = scheduler.run(ctx)

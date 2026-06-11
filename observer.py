@@ -6,11 +6,8 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from config import (
-    TREE_WALK_TIMEOUT, PROBE_STEP_PX, PROBE_FOREGROUND_DELAY, PROBE_SAMPLE_DELAY,
-    PROBE_SINE_AMPLITUDE_RATIO, PROBE_SINE_PERIOD_STEPS,
-    READ_TEXT_MAX_LENGTH, SCREEN_ELEMENT_VALUE_LIMIT, TERMINAL_CONTEXT_TAIL_LINES,
-)
+import config
+from config import BASE_DIR  # only for Path reference, all tunables use config.X
 from win32 import (
     user32, init, set_dpi_aware,
     get_str, get_int, get_bool, get_rect,
@@ -81,13 +78,13 @@ def observe() -> ObserveResult:
     for x0, y0, x1, y1, wname, whwnd in regions:
         if whwnd:
             user32.SetForegroundWindow(W.HWND(whwnd))
-            time.sleep(PROBE_FOREGROUND_DELAY)
-        _probe_region(probe_nodes, PROBE_STEP_PX, x0, y0, x1, y1, wname, whwnd)
+            time.sleep(config.PROBE_FOREGROUND_DELAY)
+        _probe_region(probe_nodes, config.PROBE_STEP_PX, x0, y0, x1, y1, wname, whwnd)
     user32.SetCursorPos(saved.x, saved.y)
 
     tree_nodes: list[dict[str, Any]] = []
     for wnd in _tree_targets(windows, focused_title):
-        _tree_walk(tree_nodes, wnd["element"], str(wnd["name"]), int(wnd["hwnd"]), TREE_WALK_TIMEOUT)
+        _tree_walk(tree_nodes, wnd["element"], str(wnd["name"]), int(wnd["hwnd"]), config.TREE_WALK_TIMEOUT)
 
     merged = _merge(probe_nodes, tree_nodes)
     z_titles = [str(e["title"]) for e in z_order]
@@ -164,13 +161,13 @@ def _probe_region(
     x0: int, y0: int, x1: int, y1: int, wname: str, whwnd: int,
 ) -> None:
     seen_rids: set[Any] = set()
-    amp = step * PROBE_SINE_AMPLITUDE_RATIO
-    freq = 2 * math.pi / (step * PROBE_SINE_PERIOD_STEPS)
+    amp = step * config.PROBE_SINE_AMPLITUDE_RATIO
+    freq = 2 * math.pi / (step * config.PROBE_SINE_PERIOD_STEPS)
     for y in range(y0 + step // 2, y1, step):
         for x in range(x0 + step // 2, x1, step):
             py = max(y0, min(y1 - 1, y + int(amp * math.sin(freq * x))))
             user32.SetCursorPos(x, py)
-            time.sleep(PROBE_SAMPLE_DELAY)
+            time.sleep(config.PROBE_SAMPLE_DELAY)
             try:
                 el = element_from_point(x, py)
             except OSError:
@@ -191,7 +188,7 @@ def _probe_region(
                 value = get_legacy_value(el)
                 has_text_pattern = False
                 if not value:
-                    text_content = get_text_content(el, READ_TEXT_MAX_LENGTH)
+                    text_content = get_text_content(el, config.READ_TEXT_MAX_LENGTH)
                     if text_content:
                         value = _filter_terminal_text(text_content)
                         has_text_pattern = True
@@ -238,7 +235,7 @@ def _tree_walk(out: list[dict[str, Any]], el: Any, wnd_name: str, wnd_hwnd: int,
             value = get_legacy_value(raw_el) if role in ACTIONABLE_ROLES else ""
             has_text_pattern = False
             if not value and role in ("Text", "Document", "Edit", "Pane"):
-                tc = get_text_content(raw_el, READ_TEXT_MAX_LENGTH)
+                tc = get_text_content(raw_el, config.READ_TEXT_MAX_LENGTH)
                 if tc:
                     value = _filter_terminal_text(tc)
                     has_text_pattern = True
@@ -295,8 +292,8 @@ def _filter_terminal_text(raw: str) -> str:
             last_sep = i
             break
     tail = kept[last_sep + 1:] if last_sep >= 0 and last_sep < len(kept) - 1 else kept
-    if len(tail) > TERMINAL_CONTEXT_TAIL_LINES:
-        tail = tail[-TERMINAL_CONTEXT_TAIL_LINES:]
+    if len(tail) > config.TERMINAL_CONTEXT_TAIL_LINES:
+        tail = tail[-config.TERMINAL_CONTEXT_TAIL_LINES:]
     return "\n".join(tail)
 
 def _is_runtime_log_line(line: str) -> bool:
@@ -347,7 +344,7 @@ def _classify(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return result
 
 def _clip_value(value: str) -> str:
-    limit = SCREEN_ELEMENT_VALUE_LIMIT
+    limit = config.SCREEN_ELEMENT_VALUE_LIMIT
     return value if len(value) <= limit else value[:limit] + "…"
 
 def _render(nodes: list[dict[str, Any]], focused_title: str) -> tuple[str, dict[str, BookEntry]]:

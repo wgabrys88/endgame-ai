@@ -4,6 +4,7 @@ import pathlib
 BASE_DIR: pathlib.Path = pathlib.Path(__file__).parent.resolve()
 PROMPTS_DIR: pathlib.Path = BASE_DIR / "prompts"
 SCHEMAS_DIR: pathlib.Path = BASE_DIR / "schemas"
+PLUGINS_DIR: pathlib.Path = BASE_DIR / "plugins"
 EVENTS_PATH: pathlib.Path = BASE_DIR / "events.jsonl"
 SNAPSHOT_PATH: pathlib.Path = BASE_DIR / "snapshot.json"
 LESSONS_PATH: pathlib.Path = BASE_DIR / "lessons.txt"
@@ -111,6 +112,7 @@ CONTEXT_POLICY: dict[str, list[str]] = {
     "actor": ["instruction", "screen", "history", "lessons"],
     "verifier": ["goal", "done_when", "screen", "history", "plan", "completed"],
     "reflector": ["goal", "plan", "history", "math", "trigger", "completed"],
+    "mutator": ["goal", "plan", "history", "math", "trigger", "completed"],
 }
 # Smallest fix: observer timeout fallback for resilience
 OBSERVER_TIMEOUT = 30
