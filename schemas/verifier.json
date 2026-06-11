@@ -15,8 +15,8 @@
         },
         "evidence": {
           "type": "string",
-          "minLength": 100,
-          "maxLength": 800
+          "minLength": 20,
+          "maxLength": 240
         }
       },
       "required": [

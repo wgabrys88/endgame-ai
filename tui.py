@@ -374,6 +374,10 @@ class TUI:
                 return f"to={d.get('to', '')}"
             case "stop":
                 return f"reason={d.get('reason', '')} work={d.get('work', '')}"
+            case "token_usage":
+                return f"role={d.get('role', '')} total≈{d.get('total_est', '')} actual={d.get('total_actual', '')}"
+            case "token_warning":
+                return f"role={d.get('role', '')} {d.get('warning', '')}"
             case _ if phase.endswith(".error"):
                 return str(d.get("error", d))
             case _:
@@ -424,6 +428,12 @@ class TUI:
         wing = bool(latest.get("wing", s.get("wing_crossed", False)))
         focused = str(s.get("focused_window", ""))
         trigger = s.get("reflect_trigger", {})
+        token_state = s.get("token_state", {}) if isinstance(s.get("token_state", {}), dict) else {}
+        token_total = int(token_state.get("cumulative_total_est", 0) or 0)
+        token_last = int(token_state.get("last_total_est", 0) or 0)
+        token_role = str(token_state.get("last_role", "") or "—")
+        token_burn = float(token_state.get("burn_rate_tpm", 0.0) or 0.0)
+        token_warn = str(token_state.get("last_warning", "") or "")
 
         if log.paused():
             status, status_col = "PAUSED", _fg(255, 180, 60)
@@ -453,6 +463,13 @@ class TUI:
             f"{DIM}math{RST} {self._math_active}"
             + (f"  {DIM}sched{RST} {self.last_reason}" if self.last_reason else "")
         )
+        token_line = (
+            f"{DIM}tokens{RST} total≈{token_total} last≈{token_last} "
+            f"role={token_role} burn≈{token_burn:.1f}/min"
+        )
+        if token_warn:
+            token_line += f"  {_fg(255, 190, 80)}WARN {token_warn}{RST}"
+        lines.extend(_fit(_wrap(token_line, w - 2), 2, w - 2))
         if focused:
             lines.extend(_fit(_wrap(f"focus: {focused}", w - 2), 1, w - 2))
 

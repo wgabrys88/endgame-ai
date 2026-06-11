@@ -15,6 +15,8 @@ from agents import (
 )
 import config
 import log
+from llm import consume_last_reply
+from token_state import record_reply, snapshot as token_snapshot
 
 
 # --- Plugin Loader -----------------------------------------------------------
@@ -128,7 +130,23 @@ def _run_agent(board: dict[str, Any], name: str) -> dict[str, Any]:
     agent = AGENTS[name]
     ctx = {k: board[k] for k in agent.reads if k in board}
     result = agent.run(ctx)
-    board.update(result.get("writes", {}))
+    writes = dict(result.get("writes", {}))
+    data = result.get("data")
+    if name in LLM_AGENTS:
+        reply = consume_last_reply()
+        if reply is not None:
+            writes["token_state"] = record_reply(board.get("token_state"), reply)
+            if isinstance(data, dict):
+                data = dict(data)
+                data["tokens"] = {
+                    "prompt_est": reply.prompt_tokens_est,
+                    "completion_est": reply.completion_tokens_est,
+                    "total_est": reply.total_tokens_est,
+                    "actual_total": reply.total_tokens_actual,
+                }
+                result["data"] = data
+    result["writes"] = writes
+    board.update(writes)
     log.emit(result.get("phase", name), result.get("data"))
     _save(board)
     return result
@@ -227,7 +245,7 @@ def _fission(board: dict[str, Any]) -> None:
         return
     if done_when:
         completed.append(done_when)
-    board["completed"] = completed[-50:]
+    board["completed"] = completed
     start_time = float(board.get("start_time", time.time()))
     elapsed = max(1.0, time.time() - start_time)
     board["power"] = len(completed) / elapsed
@@ -262,4 +280,8 @@ def _save(board: dict[str, Any]) -> None:
         "work_events": log.work_count(),
         "budget": log.budget(),
     }
+    tokens = token_snapshot(board.get("token_state"))
+    data["token_state"] = tokens
+    data["token_trace"] = tokens.get("trace", [])[-config.TOKEN_TRACE_LEN:]
+    data["token_warnings"] = tokens.get("warnings", [])[-config.TOKEN_WARNING_TRACE_LEN:]
     config.SNAPSHOT_PATH.write_text(json.dumps(data), encoding="utf-8")

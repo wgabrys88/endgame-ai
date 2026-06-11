@@ -1,20 +1,20 @@
 {
   "type": "json_schema",
   "json_schema": {
-    "name": "self_reflection",
+    "name": "reflector_output",
     "strict": true,
     "schema": {
       "type": "object",
       "properties": {
         "diagnosis": {
           "type": "string",
-          "minLength": 100,
-          "maxLength": 500
+          "minLength": 30,
+          "maxLength": 240
         },
         "lesson": {
           "type": "string",
-          "minLength": 50,
-          "maxLength": 300
+          "minLength": 0,
+          "maxLength": 140
         },
         "prompt_mutation": {
           "type": "object",
@@ -31,7 +31,7 @@
             "append": {
               "type": "string",
               "minLength": 0,
-              "maxLength": 500
+              "maxLength": 160
             }
           },
           "required": [

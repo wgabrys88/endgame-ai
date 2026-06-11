@@ -360,6 +360,8 @@ _design: dict[str, Any] = dict(_DESIGN_DEFAULTS)
 _design_mtime = 0.0
 math_hist: deque[dict[str, float]] = deque(maxlen=60)
 lorenz_hist: deque[tuple[float, float]] = deque(maxlen=60)
+token_hist: deque[dict[str, float]] = deque(maxlen=60)
+event_tail: deque[dict[str, Any]] = deque(maxlen=12)
 math_active = "—"
 loop_active = "—"
 side_active = "—"
@@ -693,7 +695,10 @@ def _present(hwnd: int, screen_dc: int) -> None:
             _draw_header(mem_dc)
             _draw_metrics(mem_dc)
             _draw_agents(mem_dc, lay["left_x"], lay["body_y"], lay["left_w"], lay["body_h"])
-            _draw_plan(mem_dc, lay["center_x"], lay["body_y"], lay["center_w"], lay["body_h"])
+            plan_h = int(lay["body_h"] * 0.62)
+            events_h = lay["body_h"] - plan_h - GAP_PANEL
+            _draw_plan(mem_dc, lay["center_x"], lay["body_y"], lay["center_w"], plan_h)
+            _draw_events(mem_dc, lay["center_x"], lay["body_y"] + plan_h + GAP_PANEL, lay["center_w"], events_h)
             _draw_plots(mem_dc, lay["right_x"], lay["body_y"], lay["right_w"], lay["body_h"])
         _fix_layer_alpha(bits)
         pt_dst = POINT(dst_x, dst_y)
@@ -853,9 +858,12 @@ def _draw_header_column(hdc: int, x: int, y: int, wd: int, h: int) -> None:
     budget = int(snapshot.get("budget", 20))
     events_n = int(snapshot.get("events", 0))
     failures = int(snapshot.get("consecutive_failures", 0))
-    stats = f"ev {events_n}  fail {failures}  {work}/{budget}"
+    total_t, last_t, token_role, burn_t, warn_t = _token_summary()
+    stats = f"ev {events_n}  fail {failures}  {work}/{budget}  tok≈{total_t} last≈{last_t} {token_role}"
     if snapshot.get("wing_crossed"):
         stats += "  WING"
+    if warn_t:
+        stats += "  TOKEN"
     _text(hdc, x + pad, ty + LINE_H * 2, stats, C_DIM, max_w=x + wd - pad)
     goal = str(snapshot.get("goal", "") or "—")
     if len(goal) > 48:
@@ -1013,10 +1021,27 @@ def _draw_lorenz_curve(hdc: int, x: int, y: int, wd: int, h: int) -> None:
     )
 
 
+def _draw_token_curves(hdc: int, x: int, y: int, wd: int, h: int) -> None:
+    px, py, pw, ph = _plot_area(hdc, x, y, wd, h, "TOKENS")
+    _grid(hdc, px, py, pw, ph, PLOT_GRID_COLS_TRACE, PLOT_GRID_ROWS_TRACE)
+    data = list(token_hist)
+    if len(data) < 2:
+        _text(hdc, px + PAD_INSET, py + ph // 2, "collecting…", C_DIM, bg=C_PLOT_INNER)
+        return
+    prompts = [d["prompt"] for d in data]
+    completions = [d["completion"] for d in data]
+    totals = [d["total"] for d in data]
+    hi = max(max(prompts), max(completions), max(totals), 1.0)
+    for vals, col, lbl in ((prompts, C_PID, "in"), (completions, C_DONE, "out"), (totals, C_ACTIVE, "tot")):
+        _draw_curve_series(hdc, vals, px, py, pw, ph, 0.0, hi, col, lbl)
+
+
 def _draw_column_plots(hdc: int, x: int, y: int, wd: int, h: int) -> None:
-    trace_h = int(h * 0.58)
+    trace_h = int(h * 0.36)
+    token_h = int(h * 0.30)
     _draw_trace_curves(hdc, x, y, wd, trace_h)
-    _draw_lorenz_curve(hdc, x, y + trace_h, wd, h - trace_h)
+    _draw_token_curves(hdc, x, y + trace_h, wd, token_h)
+    _draw_lorenz_curve(hdc, x, y + trace_h + token_h, wd, h - trace_h - token_h)
 
 
 def _draw_column_edge(hdc: int) -> None:
@@ -1133,7 +1158,7 @@ def _progress(hdc: int, x: int, y: int, wd: int, h: int, frac: float, color: int
 
 
 def _parse_events() -> None:
-    global math_active, loop_active, side_active
+    global math_active, loop_active, side_active, event_tail
     math_active = "—"
     loop_active = "—"
     side_active = "—"
@@ -1153,6 +1178,9 @@ def _parse_events() -> None:
             events.append(json.loads(line))
         except json.JSONDecodeError:
             continue
+    event_tail.clear()
+    for e in events[-event_tail.maxlen:]:
+        event_tail.append(e)
     for e in reversed(events):
         p = str(e.get("phase", ""))
         d = e.get("d", {})
@@ -1198,6 +1226,31 @@ def _update_history(data: dict[str, Any]) -> None:
     ly = float(data.get("lorenz_y", 0))
     if not lorenz_hist or lorenz_hist[-1] != (lx, ly):
         lorenz_hist.append((lx, ly))
+    token_trace = data.get("token_trace", [])
+    if isinstance(token_trace, list):
+        token_hist.clear()
+        for row in token_trace[-PLOT_HISTORY_LEN:]:
+            if isinstance(row, dict):
+                token_hist.append({
+                    "prompt": float(row.get("prompt", 0) or 0),
+                    "completion": float(row.get("completion", 0) or 0),
+                    "total": float(row.get("total", 0) or 0),
+                })
+
+
+def _token_state() -> dict[str, Any]:
+    ts = snapshot.get("token_state", {})
+    return ts if isinstance(ts, dict) else {}
+
+
+def _token_summary() -> tuple[int, int, str, float, str]:
+    ts = _token_state()
+    total = int(ts.get("cumulative_total_est", 0) or 0)
+    last = int(ts.get("last_total_est", 0) or 0)
+    role = str(ts.get("last_role", "") or "—")
+    burn = float(ts.get("burn_rate_tpm", 0.0) or 0.0)
+    warning = str(ts.get("last_warning", "") or "")
+    return total, last, role, burn, warning
 
 
 def read_snapshot() -> bool:
@@ -1266,9 +1319,15 @@ def _draw_header(hdc: int, x: int | None = None, y: int | None = None, wd: int |
     events_n = int(snapshot.get("events", 0))
     failures = int(snapshot.get("consecutive_failures", 0))
     power = float(snapshot.get("power", 0))
-    stats = f"work {work}/{budget}   events {events_n}   fail {failures}   power {power:.4f}"
+    total_t, last_t, token_role, burn_t, warn_t = _token_summary()
+    stats = (
+        f"work {work}/{budget}   events {events_n}   fail {failures}   power {power:.4f}   "
+        f"tok≈{total_t} last≈{last_t} {token_role} {burn_t:.0f}/m"
+    )
     if snapshot.get("wing_crossed"):
         stats += "   WING"
+    if warn_t:
+        stats += "   TOKEN WARN"
     sy = ty + LINE_H * 2
     _text(hdc, x + PAD_PANEL, sy, stats, C_DIM, max_w=x + wd - HEADER_CLOCK_W - PAD_PANEL)
     _text(hdc, x + wd - HEADER_CLOCK_W, sy, time.strftime("%H:%M:%S"), C_DIM)
@@ -1494,10 +1553,65 @@ def _draw_lorenz(hdc: int, x: int, y: int, wd: int, h: int) -> None:
     _text(hdc, px + PAD_PLOT_INNER, py + ph - LINE_H, f"x={lx:.1f}  y={ly:.1f}", C_DIM)
 
 
+def _draw_token_plot(hdc: int, x: int, y: int, wd: int, h: int) -> None:
+    px, py, pw, ph = _draw_plot_frame(hdc, x, y, wd, h, "TOKEN BURN")
+    _grid(hdc, px, py, pw, ph, PLOT_GRID_COLS_TRACE, PLOT_GRID_ROWS_TRACE)
+    data = list(token_hist)
+    if len(data) < 2:
+        _text(hdc, px + PAD_PLOT_INNER, py + ph // 2 - 6, "collecting…", C_DIM)
+        return
+    prompts = [d["prompt"] for d in data]
+    completions = [d["completion"] for d in data]
+    totals = [d["total"] for d in data]
+    hi = max(max(prompts), max(completions), max(totals), 1.0)
+    series = ((prompts, C_PID, "in"), (completions, C_DONE, "out"), (totals, C_ACTIVE, "tot"))
+    for vals, col, _ in series:
+        _polyline(hdc, _series_points(vals, px, py, pw, ph, 0.0, hi), col, PLOT_LINE_THICK)
+    leg_x = px + PAD_PLOT_INNER
+    for _vals, col, lbl in series:
+        _roundbox(hdc, leg_x, py + 6, LEGEND_SIZE, LEGEND_SIZE, RADIUS_LEGEND, col, col, LEGEND_FILL_THICK)
+        _text(hdc, leg_x + LEGEND_LABEL_OFF, py + 4, lbl, C_DIM)
+        leg_x += LEGEND_GAP
+
+
+def _brief_event(e: dict[str, Any]) -> str:
+    phase = str(e.get("phase", ""))
+    d = e.get("d", {}) if isinstance(e.get("d", {}), dict) else {}
+    if phase == "token_usage":
+        return f"token {d.get('role', '')} total≈{d.get('total_est', '')}"
+    if phase == "token_warning":
+        return f"TOKEN WARN {d.get('role', '')} {d.get('warning', '')}"
+    if phase == "schedule":
+        return f"schedule {d.get('reason', '')} {d.get('step', '')}"
+    if phase in ("actor", "action"):
+        return f"{phase} {'ok' if d.get('ok') else 'fail'} {d.get('verb', '')} {d.get('obs', '')}"
+    if phase == "verify":
+        return f"verify {d.get('verdict', '')} {d.get('evidence', '')}"
+    if phase == "plan":
+        return f"plan {d.get('mode', '')} steps={d.get('steps', '')}"
+    if phase.endswith(".error"):
+        return f"{phase} {d.get('error', '')}"
+    return f"{phase} {d}"
+
+
+def _draw_events(hdc: int, x: int, y: int, wd: int, h: int) -> None:
+    _roundbox(hdc, x, y, wd, h, RADIUS_PANEL, C_PANEL)
+    _text(hdc, x + PAD_PANEL, y + PAD_PANEL, "RECENT EVENTS", C_ACCENT)
+    cy = y + PAD_PANEL + LINE_H
+    max_lines = max(0, (h - PAD_PANEL * 2 - LINE_H) // LINE_H)
+    for e in list(event_tail)[-max_lines:]:
+        n = e.get("n", "")
+        text = f"{n} {_brief_event(e)}"
+        col = C_WING if str(e.get("phase", "")) == "token_warning" else C_DIM
+        _text(hdc, x + PAD_PANEL, cy, text, col, max_w=x + wd - PAD_PANEL)
+        cy += LINE_H
+
+
 def _draw_plots(hdc: int, x: int, y: int, wd: int, h: int) -> None:
-    plot_h = (h - GAP_PANEL) // 2
+    plot_h = (h - GAP_PANEL * 2) // 3
     _draw_math_trace(hdc, x, y, wd, plot_h)
-    _draw_lorenz(hdc, x, y + plot_h + GAP_PANEL, wd, h - plot_h - GAP_PANEL)
+    _draw_token_plot(hdc, x, y + plot_h + GAP_PANEL, wd, plot_h)
+    _draw_lorenz(hdc, x, y + (plot_h + GAP_PANEL) * 2, wd, h - (plot_h + GAP_PANEL) * 2)
 
 
 def _draw_empty(hdc: int) -> None:

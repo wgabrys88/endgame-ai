@@ -313,10 +313,10 @@ class ActorAgent:
             if result.success:
                 active["status"] = "done"
                 _advance_plan(plan)
-                return {"writes": {"plan": plan, "history": history[-config.MAX_HISTORY:], "consecutive_failures": 0}, "next": "stagnation", "phase": "actor", "data": payload}
+                return {"writes": {"plan": plan, "history": history, "consecutive_failures": 0}, "next": "stagnation", "phase": "actor", "data": payload}
             active["status"] = "failed"
             failures = int(ctx.get("consecutive_failures", 0)) + 1
-            return {"writes": {"plan": plan, "history": history[-config.MAX_HISTORY:], "consecutive_failures": failures}, "next": "planner", "phase": "actor", "data": payload}
+            return {"writes": {"plan": plan, "history": history, "consecutive_failures": failures}, "next": "planner", "phase": "actor", "data": payload}
         context = _render_context(ctx, "actor", instruction)
         system = _load_prompt("actor")
         try:
@@ -362,10 +362,10 @@ class ActorAgent:
         if had_failure:
             active["status"] = "failed"
             failures = int(ctx.get("consecutive_failures", 0)) + 1
-            return {"writes": {"plan": plan, "history": history[-config.MAX_HISTORY:], "consecutive_failures": failures}, "next": "planner", "phase": "actor", "data": {"conclusion": conclusion, "ok": False}}
+            return {"writes": {"plan": plan, "history": history, "consecutive_failures": failures}, "next": "planner", "phase": "actor", "data": {"conclusion": conclusion, "ok": False}}
         active["status"] = "done"
         _advance_plan(plan)
-        return {"writes": {"plan": plan, "history": history[-config.MAX_HISTORY:], "consecutive_failures": 0}, "next": "stagnation", "phase": "actor", "data": {"conclusion": conclusion, "ok": True}}
+        return {"writes": {"plan": plan, "history": history, "consecutive_failures": 0}, "next": "stagnation", "phase": "actor", "data": {"conclusion": conclusion, "ok": True}}
 
 
 class VerifierAgent:
@@ -522,7 +522,7 @@ def _render_field(ctx: dict[str, Any], field: str, instruction: str) -> str:
                 lines.append(f"  {connector}{marker}{step.get('text', '')}")
             return "\n".join(lines)
         case "history":
-            recent: list[dict[str, Any]] = ctx.get("history", [])[-40:]
+            recent: list[dict[str, Any]] = list(ctx.get("history", []))
             if not recent:
                 return ""
             lines = ["HISTORY:"]
@@ -546,7 +546,7 @@ def _render_field(ctx: dict[str, Any], field: str, instruction: str) -> str:
             text = config.LESSONS_PATH.read_text(encoding="utf-8").strip()
             if not text:
                 return ""
-            lines_l = text.splitlines()[-8:]
+            lines_l = text.splitlines()
             return "LESSONS:\n" + "\n".join(f"  - {l}" for l in lines_l)
         case "math":
             return (f"MATH NOW: stagnation={ctx.get('stagnation', 0):.2f} "
@@ -563,7 +563,7 @@ def _render_field(ctx: dict[str, Any], field: str, instruction: str) -> str:
             if not completed:
                 return ""
             lines = ["COMPLETED (no repeat credit):"]
-            for c in completed[-10:]:
+            for c in completed:
                 lines.append(f"  - {c}")
             return "\n".join(lines)
         case "done_when":
@@ -690,7 +690,7 @@ class MutatorAgent:
             return {"writes": {}, "next": "stagnation", "phase": "mutator.skip",
                     "data": {"reason": "no prompt"}}
         try:
-            raw = call_llm(system, context, "mutator", max_tokens=config.BUDGET_REFLECTOR_OUT)
+            raw = call_llm(system, context, "mutator", max_tokens=getattr(config, "BUDGET_MUTATOR_OUT", config.BUDGET_REFLECTOR_OUT))
         except Exception as e:
             log.emit("mutator.error", {"error": str(e)})
             return {"writes": {}, "next": "stagnation", "phase": "mutator.error",

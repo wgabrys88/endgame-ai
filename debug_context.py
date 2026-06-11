@@ -6,6 +6,7 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, '.')
 
 import config, log
+from token_state import initial_state
 from agents import ObserverAgent, _render_field
 
 def main():
@@ -23,6 +24,7 @@ def main():
         "lorenz_x": 8.48, "lorenz_y": 8.48, "lorenz_z": 27.0, "energy": 1.74, "wing_crossed": False,
         "pid_output": 0.0, "pid_integral": 0.0, "pid_prev": 0.0,
         "last_reflect_time": 0.0,
+        "token_state": initial_state(),
     }
 
     if config.GUI_MODE_PATH.exists():

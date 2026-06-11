@@ -8,12 +8,16 @@
       "properties": {
         "diagnosis": {
           "type": "string",
-          "minLength": 50,
-          "maxLength": 500
+          "minLength": 20,
+          "maxLength": 320
         },
         "action": {
           "type": "string",
-          "enum": ["write_plugin", "patch_plugin", "none"]
+          "enum": [
+            "write_plugin",
+            "patch_plugin",
+            "none"
+          ]
         },
         "filename": {
           "type": "string",
@@ -26,7 +30,12 @@
           "maxLength": 4000
         }
       },
-      "required": ["diagnosis", "action", "filename", "content"],
+      "required": [
+        "diagnosis",
+        "action",
+        "filename",
+        "content"
+      ],
       "additionalProperties": false
     }
   }

@@ -18,6 +18,8 @@ LOG_LOCK_PATH: pathlib.Path = BASE_DIR / ".endgame.lock"
 EVENT_BUDGET: int = 20
 
 LMS_HOSTS: list[str] = ["http://localhost:1234"]
+# Optional substring/exact id preference for LM Studio /v1/models. Empty = first loaded model.
+LMS_PREFERRED_MODEL: str = ""
 LMS_TIMEOUT: float = 300.0
 LMS_MODEL_LIST_TIMEOUT: float = 10.0
 LMS_REQUEST_ATTEMPTS: int = 3
@@ -38,21 +40,34 @@ ACP_READ_CHUNK_SIZE: int = 65536
 JSONRPC_METHOD_NOT_FOUND: int = -32601
 ACP_WORKSPACE_BASE: str = "/tmp/poke-acp"
 
-LLM_TEMPERATURE: float = 0.30
-LLM_TOP_P: float = 0.95
-LLM_TOP_K: int = 64
-LLM_REPEAT_PENALTY: float = 1.05
+LLM_TEMPERATURE: float = 0.15
+LLM_TOP_P: float = 0.90
+LLM_TOP_K: int = 40
+LLM_REPEAT_PENALTY: float = 1.07
 LLM_PRESENCE_PENALTY: float = 0.0
 LLM_FREQUENCY_PENALTY: float = 0.0
 LLM_SEED: int | None = 3407
-LLM_MAX_TOKENS: int = 200000
+LLM_MAX_TOKENS: int = 128000
 LLM_STOP: list[str] = []
 LLM_LOGIT_BIAS: dict[str, float] = {}
 
-BUDGET_PLANNER_OUT: int = 4000
-BUDGET_ACTOR_OUT: int = 4000
-BUDGET_VERIFIER_OUT: int = 4000
-BUDGET_REFLECTOR_OUT: int = 8000
+BUDGET_PLANNER_OUT: int = 1200
+BUDGET_ACTOR_OUT: int = 1800
+BUDGET_VERIFIER_OUT: int = 700
+BUDGET_REFLECTOR_OUT: int = 900
+BUDGET_MUTATOR_OUT: int = 1800
+
+# Token telemetry / admission control. These values are read through config.X
+# so self-evolution and hot-swap edits remain visible without a full respawn.
+TOKEN_EST_CHARS_PER_TOKEN: float = 3.8
+TOKEN_EST_WORDS_MULTIPLIER: float = 1.35
+TOKEN_CONTEXT_SAFETY_MARGIN: int = 2048
+TOKEN_MIN_COMPLETION: int = 128
+TOKEN_WARNING_PCT: float = 0.85
+TOKEN_TRACE_LEN: int = 120
+TOKEN_WARNING_TRACE_LEN: int = 20
+TOKEN_BURN_WINDOW_SEC: float = 300.0
+TOKEN_SESSION_BUDGET_EST: int = 0
 
 DELAY_BETWEEN_CYCLES: float = 0.15
 MATH_INTERVAL: float = 3.0
@@ -72,8 +87,8 @@ PROBE_SAMPLE_DELAY: float = 0.001
 PROBE_SINE_AMPLITUDE_RATIO: float = 0.4
 PROBE_SINE_PERIOD_STEPS: float = 6.0
 READ_TEXT_MAX_LENGTH: int = -1
-SCREEN_ELEMENT_VALUE_LIMIT: int = 1000
-TERMINAL_CONTEXT_TAIL_LINES: int = 8
+SCREEN_ELEMENT_VALUE_LIMIT: int = -1
+TERMINAL_CONTEXT_TAIL_LINES: int = -1
 
 LORENZ_SIGMA: float = 10.0
 LORENZ_RHO: float = 28.0

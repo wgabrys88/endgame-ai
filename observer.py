@@ -292,8 +292,9 @@ def _filter_terminal_text(raw: str) -> str:
             last_sep = i
             break
     tail = kept[last_sep + 1:] if last_sep >= 0 and last_sep < len(kept) - 1 else kept
-    if len(tail) > config.TERMINAL_CONTEXT_TAIL_LINES:
-        tail = tail[-config.TERMINAL_CONTEXT_TAIL_LINES:]
+    limit = int(config.TERMINAL_CONTEXT_TAIL_LINES)
+    if limit > 0 and len(tail) > limit:
+        tail = tail[-limit:]
     return "\n".join(tail)
 
 def _is_runtime_log_line(line: str) -> bool:
@@ -344,7 +345,9 @@ def _classify(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return result
 
 def _clip_value(value: str) -> str:
-    limit = config.SCREEN_ELEMENT_VALUE_LIMIT
+    limit = int(config.SCREEN_ELEMENT_VALUE_LIMIT)
+    if limit <= 0:
+        return value
     return value if len(value) <= limit else value[:limit] + "…"
 
 def _render(nodes: list[dict[str, Any]], focused_title: str) -> tuple[str, dict[str, BookEntry]]:
