@@ -5,3 +5,9 @@ RULE: For multi-line file writes, use write_file <path> <content> instead of exe
 RULE: Always prioritize Path objects and write_file for file I/O
 
 RULE: Always use Path objects for file operations
+
+RULE: If a plan step has no progress after one cycle, restate it with the full relative path and move forward.
+
+RULE: After spawning a subprocess, follow with an exec or read_file verification step instead of a bare wait.
+
+RULE: After any wait step, the next step must verify output (read_file or exec check), never another wait or bare observe.

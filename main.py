@@ -107,6 +107,8 @@ def main() -> None:
     try:
         success = run(board, interrupted=lambda: _interrupted)
     finally:
+        from actions import kill_children
+        kill_children()
         close_backend()
         log.close()
 

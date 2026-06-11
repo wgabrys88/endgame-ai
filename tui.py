@@ -525,9 +525,16 @@ class TUI:
             pass
         finally:
             if self.proc:
-                self.proc.terminate()
+                self._kill_tree(self.proc.pid)
             if self._in_alt:
                 _write(ALT_OFF + SHOW_CUR)
+
+    @staticmethod
+    def _kill_tree(pid: int) -> None:
+        import subprocess
+        subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
+                       creationflags=subprocess.CREATE_NO_WINDOW,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def run_tui(goal: str = "", backend: str = "lmstudio", budget: int = 20, autostart: bool = True) -> None:

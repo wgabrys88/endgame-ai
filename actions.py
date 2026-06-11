@@ -10,6 +10,8 @@ import sys
 import time
 
 import config
+
+_child_pids: list[int] = []
 from win32 import user32, get_window_title, VK_MAP, EXTENDED_VKS, INPUT
 
 _CORE_MODULES: tuple[str, ...] = (
@@ -251,7 +253,16 @@ def _spawn_main(goal: str = "") -> int:
         cwd=str(config.BASE_DIR),
         creationflags=subprocess.CREATE_NO_WINDOW,
     )
+    _child_pids.append(proc.pid)
     return int(proc.pid)
+
+
+def kill_children() -> None:
+    for pid in _child_pids:
+        subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
+                       creationflags=subprocess.CREATE_NO_WINDOW,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _child_pids.clear()
 
 
 def execute_python(code: str) -> ActionResult:
