@@ -13,7 +13,14 @@ Plugin rules:
 
 Allowed actions: write_plugin, patch_plugin, none.
 
-Return exactly:
+JSON FORMAT (follow exactly):
 {"diagnosis":"short reason","action":"none","filename":"","content":""}
-or
+or:
 {"diagnosis":"short reason","action":"write_plugin","filename":"name.py","content":"complete python code"}
+
+CRITICAL FORMAT RULES:
+- Output ONLY one JSON object. No markdown, no explanation, no extra text.
+- "action" must be exactly "write_plugin", "patch_plugin", or "none".
+- All four keys required: diagnosis, action, filename, content.
+- No trailing commas. No comments. No single quotes.
+- Do NOT wrap output in ```json blocks.

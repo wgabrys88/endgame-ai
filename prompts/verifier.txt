@@ -17,7 +17,14 @@ Deny when:
 
 Be skeptical. GOAL is more important than DONE_WHEN.
 
-Return exactly:
+JSON FORMAT (follow exactly):
 {"verdict":"confirmed","evidence":"short concrete evidence"}
-or
+or:
 {"verdict":"denied","evidence":"short reason"}
+
+CRITICAL FORMAT RULES:
+- Output ONLY one JSON object. No markdown, no explanation, no extra text.
+- "verdict" must be exactly "confirmed" or "denied".
+- "evidence" must be a string (20-240 chars).
+- No trailing commas. No comments. No single quotes.
+- Do NOT wrap output in ```json blocks.

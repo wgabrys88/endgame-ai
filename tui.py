@@ -95,13 +95,29 @@ def _plain(s: str) -> str:
 
 def _pad(text: str, w: int) -> str:
     vl = len(_plain(text))
-    return text + " " * max(0, w - vl) if vl < w else text
+    return text + " " * max(0, w - vl) + "\x1b[K" if vl < w else text + "\x1b[K"
 
 
 def _trunc(text: str, w: int) -> str:
-    if len(text) <= w:
+    vl = len(_plain(text))
+    if vl <= w:
         return text
-    return text[:w - 1] + "…"
+    # Strip from end, accounting for ANSI sequences
+    out = []
+    visible = 0
+    i = 0
+    while i < len(text) and visible < w - 1:
+        if text[i] == "\x1b":
+            j = text.find("m", i)
+            if j != -1:
+                out.append(text[i:j + 1])
+                i = j + 1
+                continue
+        out.append(text[i])
+        visible += 1
+        i += 1
+    out.append("…")
+    return "".join(out)
 
 
 def _elapsed(start: float) -> str:
@@ -401,7 +417,7 @@ class TUI:
         half = (h - 4) // 2  # reserve 4 for input + keybind
 
         title = f"{BOLD}{_fg(180, 210, 255)}PARENT{RST} ({self.backend})  {sc}{st}{RST}  {DIM}{time.strftime('%H:%M:%S')}{RST}  {elapsed}"
-        out.append(_trunc(title, w + 40))
+        out.append(_trunc(title, w))
         out.append(f"{_fg(200, 230, 255)}GOAL{RST} {_trunc(goal, w - 6)}")
 
         # Metrics + math
@@ -459,7 +475,7 @@ class TUI:
                     c_pid = float(e.get("d", {}).get("pid", 0))
                     break
             c_title = f"{BOLD}{_fg(180, 160, 255)}CHILD{RST} (lmstudio)  events={len(self._child_events)} work={c_work}"
-            out.append(_trunc(c_title, w + 40))
+            out.append(_trunc(c_title, w))
             out.append(
                 f"stag{_bar(c_stag, bar_w, _fg(255, 100, 80))}"
                 f"pid{_bar(min(c_pid / config.PID_ROD_SCALE, 1), bar_w, _fg(80, 140, 255))}"
