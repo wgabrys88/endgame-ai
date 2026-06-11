@@ -88,6 +88,7 @@ def main() -> None:
         "focused_window": "",
         "consecutive_failures": 0,
         "stagnation": 0.0,
+        "activity_events": 0,
         "progress_history": [],
         "lorenz_x": 8.0,
         "lorenz_y": 8.0,

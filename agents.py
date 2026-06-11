@@ -54,10 +54,11 @@ def _trivial_milestone(goal: str, done_when: str) -> bool:
 
 class StagnationAgent:
     name: str = "stagnation"
-    reads: list[str] = ["plan", "progress_history", "consecutive_failures"]
+    reads: list[str] = ["plan", "progress_history", "consecutive_failures", "activity_events"]
 
     def run(self, ctx: dict[str, Any]) -> dict[str, Any]:
         progress = plan_progress(ctx)
+        activity = int(ctx.get("activity_events", 0))
         history = ctx.get("progress_history", [])
         history = (history + [progress])[-config.STAGNATION_CYCLES_WINDOW:]
         if len(history) < 3:
@@ -73,8 +74,11 @@ class StagnationAgent:
                 stag = 1.0
         failures = int(ctx.get("consecutive_failures", 0))
         stag = min(1.0, stag + failures * 0.15)
+        # Activity dampens stagnation — mutations, reflections, plugin writes count
+        if activity > 0:
+            stag = max(0.0, stag - activity * 0.2)
         return {
-            "writes": {"stagnation": stag, "progress_history": history},
+            "writes": {"stagnation": stag, "progress_history": history, "activity_events": 0},
             "next": "lorenz",
             "phase": "stagnation",
             "data": {"stag": round(stag, 3), "progress": round(progress, 3)},
@@ -424,13 +428,13 @@ class ReflectorAgent:
         # Escalate to mutator if repeated reflections haven't helped
         if failures >= config.MUTATOR_ESCALATION_FAILURES:
             return {
-                "writes": {"pid_integral": 0.0},
+                "writes": {"pid_integral": 0.0, "activity_events": 1},
                 "next": "mutator",
                 "phase": "reflect",
                 "data": {"diagnosis": diagnosis, "lesson": lesson, "escalate": "mutator"},
             }
         return {
-            "writes": {"pid_integral": 0.0, "consecutive_failures": 0},
+            "writes": {"pid_integral": 0.0, "consecutive_failures": 0, "activity_events": 1},
             "next": "actor" if retry else "stagnation",
             "phase": "reflect",
             "data": {"diagnosis": diagnosis, "lesson": lesson},
@@ -718,7 +722,7 @@ class MutatorAgent:
             return {"writes": {}, "next": "stagnation", "phase": "mutator",
                     "data": {"action": "rejected", "reason": "syntax error"}}
         log.emit("mutator", {"action": action, "filename": filename, "diagnosis": diagnosis})
-        return {"writes": {}, "next": "stagnation", "phase": "mutator",
+        return {"writes": {"activity_events": 1}, "next": "stagnation", "phase": "mutator",
                 "data": {"action": action, "filename": filename}}
 
     @staticmethod
