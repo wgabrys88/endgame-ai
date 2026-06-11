@@ -1,6 +1,6 @@
 # AGENTS.md — Authoritative Project Map
 # endgame-ai | Windows desktop automation reactor
-# Updated: 2026-06-11 | Post-cleanup session
+# Updated: 2026-06-12 | Post-scheduler-fix session
 # Purpose: hand this to ANY coding agent as ground truth before modification
 
 ================================================================================
@@ -8,15 +8,23 @@
 ================================================================================
 
 endgame-ai is a self-sustaining Windows 11 desktop automation reactor.
-Two threads. One shared board dict. Four LLM agents + three math agents +
-one scheduler + one observer + one mutator. Zero pip dependencies.
+Two threads. One shared board dict. Five LLM agents + three math agents +
+one scheduler + one observer. Zero pip dependencies.
 ~3,900 LOC Python 3.13. It plans, sees, acts, verifies.
 Verified work = fission. Fission sustains the reactor.
 Stagnation triggers reflection. Reflection mutates prompts.
+When reflection fails, the mutator writes new code (plugins).
 The organism rewrites its own behavior while running.
+
+DESIGN PRINCIPLE: Math is the environment. LLMs are agents inside it.
+LLMs never see math values or knobs. Fish don't tune water pressure.
+Math decides WHEN agents fire. LLMs decide WHAT to do when called.
 
 Proven M4 (2026-06-10): self-launch, self-edit config.py, spawn child process
 on evolved disk, child ran on parent-modified code. Two stop events, two logs.
+
+Proven M4+ (2026-06-12): scheduler priority inversion fixed, math gates fire
+correctly, 4 reflections + 2 fissions in 529 events, activity dampening works.
 
 ================================================================================
 ## 2. FILE INVENTORY (production root — 12 .py + 5 prompts + 5 schemas)
@@ -24,19 +32,19 @@ on evolved disk, child ran on parent-modified code. Two stop events, two logs.
 
 FILE            LINES  DOES
 ───────────────  ─────  ─────────────────────────────────────────────────────────
-main.py           113  Entry point. Argparse, SIGINT, board init, calls engine.run()
+main.py           114  Entry point. Argparse, SIGINT, board init, calls engine.run()
 engine.py         286  Reactor loop + math thread + plugin loading + fission + _save
-agents.py         752  All agent classes + context rendering + mutation logic
+agents.py         740  All agent classes + context rendering + mutation logic
 actions.py        388  exec engine + GUI verbs + spawn_main + write_file + verify
 observer.py       401  Hover probe + UIA tree walk + merge → SCREEN text
-config.py         134  ALL constants, paths, tuning. Single source of truth
+config.py         135  ALL constants, paths, tuning. Single source of truth
 log.py            174  Event bus. Lock file. Pause sink. Budget counter
 llm.py            300  LM Studio + ACP backends. Schema loading. LLMReply + token est
 token_state.py    194  Token accounting reducer (burn rate, per-agent, trace)
 lessons.py         84  Scored JSON lesson store with keyword retrieval + decay
 win32.py          366  Raw ctypes COM/UIA bindings. No pywin32. No pip
 acp_client.py     252  Kiro CLI ACP protocol over WSL2 stdin/stdout pipes
-tui.py            516  Full-width VT100 dashboard. Subprocess launcher
+tui.py            540  VT100 two-panel dashboard (parent upper / child lower)
 
 prompts/planner.txt    LLM system prompt for PlannerAgent
 prompts/actor.txt      LLM system prompt for ActorAgent
@@ -53,7 +61,7 @@ schemas/mutator.json   strict JSON schema: diagnosis, action, filename, content
 plugins/web_sentinel.py  UTC time API heartbeat (connectivity proof)
 plugins/lessons_decay.py Periodic score decay for old lessons
 
-TOTAL PRODUCTION: 4,024 lines Python + prompts + schemas
+TOTAL PRODUCTION: ~3,980 lines Python + prompts + schemas
 
 ================================================================================
 ## 3. DEPENDENCY GRAPH (verified from import statements, 2026-06-11)
@@ -139,7 +147,8 @@ screen              observer                 actor, verifier
 screen_elements     observer                 actor (element book for GUI verbs)
 desktop_summary     observer                 planner
 focused_window      observer                 planner, _save
-consecutive_failures fission, _trivial       scheduler, stagnation
+consecutive_failures fission, _trivial       scheduler, stagnation, reflector
+activity_events     reflector, mutator       stagnation (dampens signal, resets to 0)
 stagnation          StagnationAgent          LorenzAgent, PidAgent, scheduler
 progress_history    StagnationAgent          StagnationAgent
 lorenz_x/y/z       LorenzAgent              LorenzAgent, _save
@@ -159,7 +168,8 @@ token_state         engine._run_agent        _save, tui
 
 AGENT             TYPE     READS                          OUTPUT
 ──────────────    ────────  ──────────────────────────────  ────────────────────────
-StagnationAgent   math     plan, progress_history, fails   stagnation (0.0-1.0)
+StagnationAgent   math     plan, progress_history, fails,  stagnation (0.0-1.0)
+                           activity_events                 (resets activity to 0)
 LorenzAgent       math     lorenz_x/y/z, stagnation        energy, wing_crossed
 PidAgent          math     stagnation, pid_integral, prev  pid_output
 SchedulerAgent    routing  stag,wing,energy,pid,plan,goal  next agent to fire
@@ -167,12 +177,25 @@ ObserverAgent     sensing  screen                          screen, elements, win
 PlannerAgent      LLM      goal,desktop,plan,history,...    plan[], done_when
 ActorAgent        LLM      instruction, screen, history    actions[] (GUI verbs)
 VerifierAgent     LLM      goal,done_when,screen,history   verdict: confirmed|denied
-ReflectorAgent    LLM      goal,plan,history,math,trigger  diagnosis, lesson, mutation
-MutatorAgent      LLM      goal,plan,history,failures      diagnosis, action, filename, content
+ReflectorAgent    LLM      goal,plan,history,trigger       diagnosis, lesson, mutation
+MutatorAgent      LLM      goal,plan,history,trigger       diagnosis, action, filename, content
 
 ESCALATION PATH:
-  scheduler → reflector (1st-order: prompt mutation)
+  scheduler → reflector (1st-order: prompt mutation, when math gates fire)
   reflector → mutator   (2nd-order: code generation, after ≥3 failures persist)
+
+SCHEDULER PRIORITY (evaluated in this order):
+  1. Reflection gates — stag+pid/stag+failures/energy+stag thresholds met → reflector
+  2. Wing cross — Lorenz regime change → replan
+  3. No plan → planner
+  4. Active step → actor
+  5. All done → verifier
+  6. Fallback → planner
+
+ACTIVITY DAMPENING:
+  Reflections and mutations emit activity_events=1
+  StagnationAgent subtracts 0.2/event then resets to 0
+  Prevents infinite reflect/mutate loops — gives work loop a window
 
 ================================================================================
 ## 6. EXECUTION MODEL
@@ -220,14 +243,15 @@ STEPS:
 MECHANISM                   LATENCY    STATUS
 ───────────────────────────  ─────────  ──────
 1. Prompt file read          instant    LIVE (reads from disk every LLM call)
-2. Lessons append            instant    LIVE (last N lines from lessons.txt)
+2. Lessons append            instant    LIVE (scored store with keyword retrieval)
 3. Goal hot-swap             0.15s      LIVE (goal.txt polled each cycle)
 4. Pause/resume toggle       0.15s      LIVE (PAUSE_PATH.exists())
 5. GUI mode toggle           0.15s      LIVE (GUI_MODE_PATH.exists())
 6. config.X runtime patch    instant    LIVE — ALL modules see changes immediately
 7. Prompt mutation           instant    LIVE (reflector appends RULE)
 8. Plugin hot-load           per-cycle  LIVE (engine scans plugins/ each cycle)
-9. Disk edit + child spawn   ~2-5s      LIVE (actions._spawn_main)
+9. Plugin mutation           ~5-10s     LIVE (mutator writes new .py to plugins/)
+10. Disk edit + child spawn  ~2-5s      LIVE (actions._spawn_main)
 
 ALL CONFIG VALUES ARE NOW LIVE-MUTABLE without child spawn.
 The frozen-import problem documented in earlier AGENTS.md versions is FIXED.
@@ -276,31 +300,55 @@ Old noise decays to score=1 and gets evicted on overflow.
 - DO NOT remove _verify_python_edit from actions.py
 - DO NOT let reflector exceed PROMPT_MAX_RULES=8 mutations per prompt
 - DO NOT add docstrings (self-documenting names + this file = docs)
+- DO NOT expose math values to LLMs (math is environment, not cognitive load)
+- DO NOT add ewojgab or personal paths to committed code
 
 ================================================================================
-## 12. RUNTIME ARTIFACTS (gitignored, created on run)
+## 12. PARENT-CHILD ARCHITECTURE
+================================================================================
+
+Parent (ACP, smart model) supervises child (LM Studio, local model).
+
+LAUNCH:
+  python tui.py --backend acp --event-budget 1000 "goal"
+  Parent spawns child via: spawn_main(goal)
+  → python main.py goal --backend lmstudio --event-budget 200 --events-path events-child.jsonl
+
+ISOLATION:
+  - main.py --events-path patches config.EVENTS_PATH before log.init()
+  - Child writes to events-child.jsonl, parent writes to events.jsonl
+  - TUI reads both: upper half = parent, lower half = child
+
+PARENT DUTIES:
+  - Monitor child progress via events-child.jsonl
+  - Rewrite child's goal.txt when stuck
+  - Harvest child lessons into parent lessons store
+  - Spawn progressively harder children until system runs on local models alone
+
+================================================================================
+## 13. RUNTIME ARTIFACTS (gitignored, created on run)
 ================================================================================
 
 FILE               CREATED BY     PURPOSE
 ────────────────── ─────────────  ────────────────────────────────────────
 events.jsonl       log.init()     Primary event log (append-only)
-events-<pid>.jsonl log._acquire   Child instance log
+events-child.jsonl child process  Child instance event log
 snapshot.json      engine._save() Board state for TUI reading
 goal.txt           main.py/TUI    Current goal (polled every 0.15s)
 pause              log.set_paused Existence = reactor paused
 gui_mode           enable_gui()   Existence = observer scans screen
-lessons.txt        _write_lesson  Append-only reflector knowledge
+lessons.jsonl      lessons.record Scored lesson entries (JSONL)
 disabled.json      TUI            Agent enable/disable toggles
 .endgame.lock      log._acquire   Lock file (PID of log owner)
 respawn.json       main.py        Contract for child spawn params
 
 ================================================================================
-## 13. CONFIG REFERENCE (config.py — 133 lines)
+## 14. CONFIG REFERENCE (config.py — 135 lines)
 ================================================================================
 
-PATHS: BASE_DIR, PROMPTS_DIR, SCHEMAS_DIR, EVENTS_PATH, SNAPSHOT_PATH,
-       LESSONS_PATH, DISABLED_PATH, GUI_MODE_PATH, GOAL_PATH, PAUSE_PATH,
-       RESPAWN_PATH, LOG_LOCK_PATH
+PATHS: BASE_DIR, PROMPTS_DIR, SCHEMAS_DIR, PLUGINS_DIR, EVENTS_PATH,
+       SNAPSHOT_PATH, LESSONS_PATH, DISABLED_PATH, GUI_MODE_PATH, GOAL_PATH,
+       PAUSE_PATH, RESPAWN_PATH, LOG_LOCK_PATH, CHILD_EVENTS_PATH
 
 BUDGET: EVENT_BUDGET=20 (override via --event-budget)
 
@@ -318,14 +366,20 @@ OBSERVER: TREE_WALK_TIMEOUT=5s, PROBE_STEP_PX=90,
 
 LORENZ: sigma=10, rho=28, beta=8/3, dt=0.05, mag_cap=80
 PID: Kp=1.2, Ki=0.4, Kd=0.6, integral_max=8
-SCHEDULING: REFLECT_MIN_INTERVAL_SEC=6s, PROMPT_MAX_RULES=8
+SCHEDULING: REFLECT_MIN_INTERVAL_SEC=6s, REFLECT_THRESHOLD=0.6 (pid gate),
+            REFLECT_STAG_THRESHOLD=0.5, CHAOS_ENERGY_THRESHOLD=2.0,
+            MUTATOR_ESCALATION_FAILURES=3, PROMPT_MAX_RULES=8
 LIMITS: MAX_HISTORY=100, MAX_PLAN_STEPS=12
 
 CONTEXT_POLICY (which fields each LLM agent sees):
   planner:   goal, desktop, plan, history, completed, budget, failures, lessons
   actor:     instruction, screen, history, lessons
   verifier:  goal, done_when, screen, history, plan, completed
-  reflector: goal, plan, history, math, trigger, completed
+  reflector: goal, plan, history, trigger, completed, lessons
+  mutator:   goal, plan, history, trigger, completed
+
+NOTE: Math values are NEVER shown to LLMs. Math is the environment,
+not a tuning target. LLMs get "trigger" (reason + failures + step) only.
 
 ================================================================================
 ## 14. SCHEMA CONTRACTS
