@@ -240,15 +240,11 @@ def _clip_obs(text: str) -> str:
     return text if len(text) <= limit else text[:limit] + "…"
 
 
-def _spawn_main(goal: str = "") -> int:
-    try:
-        ctx = json.loads(config.RESPAWN_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        ctx = {"goal": goal, "backend": "lmstudio", "budget": 200}
-    g = goal or str(ctx.get("goal", ""))
+def _spawn_main(goal: str = "", backend: str = "lmstudio", budget: int = 20) -> int:
+    g = goal or "exec print('hello world')"
     proc = subprocess.Popen(
-        [sys.executable, "main.py", g, "--backend", str(ctx.get("backend", "lmstudio")),
-         "--event-budget", str(int(ctx.get("budget", 200))),
+        [sys.executable, "main.py", g, "--backend", backend,
+         "--event-budget", str(budget),
          "--events-path", config.CHILD_EVENTS_PATH.name],
         cwd=str(config.BASE_DIR),
         creationflags=subprocess.CREATE_NO_WINDOW,

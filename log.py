@@ -114,9 +114,9 @@ def _acquire_log_lock() -> Path:
         _lock_fd = os.open(str(config.LOG_LOCK_PATH), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         os.write(_lock_fd, str(os.getpid()).encode())
         atexit.register(_release_log_lock)
-        return config.EVENTS_PATH
     except FileExistsError:
-        return config.EVENTS_PATH.parent / f"events-{os.getpid()}.jsonl"
+        pass
+    return config.EVENTS_PATH
 
 
 def init(budget: int) -> Path:
