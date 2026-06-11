@@ -42,6 +42,7 @@ def main() -> None:
     parser.add_argument("goal", nargs="?", default=None)
     parser.add_argument("--backend", choices=["lmstudio", "acp"], default="lmstudio")
     parser.add_argument("--event-budget", type=int, default=None)
+    parser.add_argument("--events-path", type=str, default=None)
     args = parser.parse_args()
 
     if args.goal is None:
@@ -57,6 +58,8 @@ def main() -> None:
 
     if args.event_budget is not None:
         config.EVENT_BUDGET = args.event_budget
+    if args.events_path:
+        config.EVENTS_PATH = config.BASE_DIR / args.events_path
     set_backend(args.backend)
 
     log.init(config.EVENT_BUDGET)

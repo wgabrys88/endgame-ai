@@ -20,6 +20,8 @@ SHOW_CUR = "\x1b[?25h"
 EVENT_TAIL: int = 12
 LESSONS_TAIL: int = 3
 
+CHILD_TAIL: int = 4
+
 _k32 = ctypes.WinDLL("kernel32", use_last_error=True)
 _hout = _k32.GetStdHandle(STD_OUTPUT_HANDLE)
 _m = ctypes.c_ulong()
@@ -105,7 +107,7 @@ def _trunc(text: str, w: int) -> str:
 def _elapsed(start: float) -> str:
     if not start:
         return "—"
-    d = time.time() - start
+    d = time.time() - float(start)
     if d < 60:
         return f"{d:.0f}s"
     if d < 3600:
@@ -135,6 +137,9 @@ class TUI:
         self._math = "—"
         self._reason = ""
         self._start_time: float = 0.0
+        self._child_events: list[dict] = []
+        self._child_sig: tuple[str, int, float] = ("", 0, 0.0)
+        self._child_offset: int = 0
         if goal:
             config.GOAL_PATH.write_text(goal, encoding="utf-8")
 
@@ -186,6 +191,7 @@ class TUI:
         changed = self._load_events()
         if changed or self._reactor_live():
             self._load_snapshot()
+        self._load_child_events()
         if not self._input_active:
             if config.GOAL_PATH.exists():
                 try:
@@ -196,7 +202,34 @@ class TUI:
                     pass
         if self.events and not self._start_time:
             first = self.events[0]
-            self._start_time = first.get("t", 0)
+            t = first.get("t", 0)
+            self._start_time = float(t) if t else 0.0
+
+    def _load_child_events(self) -> None:
+        path = config.CHILD_EVENTS_PATH
+        try:
+            st = path.stat()
+        except OSError:
+            return
+        sig = (str(path), st.st_size, st.st_mtime)
+        if sig[0] != self._child_sig[0] or st.st_size < self._child_offset:
+            self._child_events, self._child_offset = [], 0
+        if sig == self._child_sig and st.st_size == self._child_offset:
+            return
+        self._child_sig = sig
+        try:
+            with path.open("r", encoding="utf-8") as f:
+                f.seek(self._child_offset)
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        try:
+                            self._child_events.append(json.loads(line))
+                        except json.JSONDecodeError:
+                            pass
+                self._child_offset = f.tell()
+        except OSError:
+            pass
 
     def _refresh_active(self) -> None:
         self._math = self._loop = self._side = "—"
@@ -459,6 +492,16 @@ class TUI:
             out.append(f"{BOLD}{_fg(180, 200, 160)}LESSONS{RST} (last {len(lessons)})")
             for ln in lessons:
                 out.append(f" {DIM}{_trunc(ln, w - 3)}{RST}")
+            out.append(f"{DIM}{'─' * (w - 1)}{RST}")
+
+        # Child panel
+        if self._child_events:
+            out.append(f"{BOLD}{_fg(180, 160, 255)}CHILD{RST} (lmstudio)  events={len(self._child_events)}")
+            ctail = [e for e in self._child_events if e.get("phase") in WORK_PHASES][-CHILD_TAIL:]
+            for e in ctail:
+                ph = str(e.get("phase", ""))
+                brief = self._brief(ph, e.get("d", {}))
+                out.append(f" {DIM}child{RST} {ph:<16} {_trunc(brief, w - 24)}")
             out.append(f"{DIM}{'─' * (w - 1)}{RST}")
 
         # Input field

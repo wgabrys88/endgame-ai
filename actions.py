@@ -242,11 +242,12 @@ def _spawn_main(goal: str = "") -> int:
     try:
         ctx = json.loads(config.RESPAWN_PATH.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        ctx = {"goal": goal, "backend": "acp", "budget": 200}
+        ctx = {"goal": goal, "backend": "lmstudio", "budget": 200}
     g = goal or str(ctx.get("goal", ""))
     proc = subprocess.Popen(
-        [sys.executable, "main.py", g, "--backend", str(ctx.get("backend", "acp")),
-         "--event-budget", str(int(ctx.get("budget", 200)))],
+        [sys.executable, "main.py", g, "--backend", str(ctx.get("backend", "lmstudio")),
+         "--event-budget", str(int(ctx.get("budget", 200))),
+         "--events-path", config.CHILD_EVENTS_PATH.name],
         cwd=str(config.BASE_DIR),
         creationflags=subprocess.CREATE_NO_WINDOW,
     )

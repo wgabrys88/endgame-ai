@@ -12,3 +12,4 @@
 !schemas/**
 !plugins/
 !plugins/**
+__pycache__/
