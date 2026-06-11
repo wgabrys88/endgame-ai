@@ -586,12 +586,19 @@ def _normalize_step(s: Any) -> str:
             return f"exec {s['code']}"
         if "exec" in s:
             return f"exec {s['exec']}"
+        if "wait" in s:
+            return f"wait {s['wait']}"
+        if "read_file" in s:
+            return f"read_file {s['read_file']}"
+        if "write_file" in s:
+            return f"write_file {s['write_file']} {s.get('content','')}"
         if "text" in s:
             return str(s["text"])
         if "step" in s:
             rest = s.get("args", s.get("code", s.get("value", "")))
             return f"{s['step']} {rest}".strip()
-        return " ".join(str(v) for v in s.values())
+        k, v = next(iter(s.items()))
+        return f"{k} {v}"
     return str(s)
 
 

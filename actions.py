@@ -242,10 +242,11 @@ def _clip_obs(text: str) -> str:
 
 def _spawn_main(goal: str = "", backend: str = "lmstudio", budget: int = 20) -> int:
     g = goal or "exec print('hello world')"
+    child_events = f"events-child-{os.getpid()}.jsonl"
     proc = subprocess.Popen(
         [sys.executable, "main.py", g, "--backend", backend,
          "--event-budget", str(budget),
-         "--events-path", config.CHILD_EVENTS_PATH.name],
+         "--events-path", child_events],
         cwd=str(config.BASE_DIR),
         creationflags=subprocess.CREATE_NO_WINDOW,
     )
