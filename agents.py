@@ -272,7 +272,8 @@ class PlannerAgent:
             return {"writes": {}, "next": "verifier", "phase": "plan", "data": {"mode": "done"}}
         steps: list[dict[str, str]] = []
         for i, s in enumerate(sequence[:config.MAX_PLAN_STEPS]):
-            steps.append({"text": _sanitize_plan_step(str(s)), "status": "active" if i == 0 else "pending"})
+            text = _normalize_step(s)
+            steps.append({"text": _sanitize_plan_step(text), "status": "active" if i == 0 else "pending"})
         return {
             "writes": {"plan": steps, "done_when": done_when, "consecutive_failures": 0, "progress_history": []},
             "next": "actor",
@@ -575,6 +576,20 @@ def _render_field(ctx: dict[str, Any], field: str, instruction: str) -> str:
 
 
 _ELEMENT_ID_RE = re.compile(r"\[\d+\]")
+
+
+def _normalize_step(s: Any) -> str:
+    if isinstance(s, str):
+        return s
+    if isinstance(s, dict):
+        if "code" in s:
+            return f"exec {s['code']}"
+        if "text" in s:
+            return str(s["text"])
+        if "step" in s and "args" in s:
+            return f"{s['step']} {s['args']}"
+        return " ".join(str(v) for v in s.values())
+    return str(s)
 
 
 def _sanitize_plan_step(step: str) -> str:
