@@ -21,17 +21,3 @@ or
 {"actions":[],"conclusion":"DONE"}
 or
 {"actions":[],"conclusion":"CANNOT"}
-
-RULE: stop if goal achieved
-
-RULE: stop if goal achieved
-
-RULE: stop if goal achieved
-
-RULE: stop if goal achieved
-
-RULE: stop if goal achieved
-
-RULE: stop if goal achieved
-
-RULE: stop if goal achieved
