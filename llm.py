@@ -125,6 +125,11 @@ def call_llm(system: str, user: str, role: str, *, max_tokens: int = config.LLM_
 
 def call_llm_reply(system: str, user: str, role: str, *, max_tokens: int = config.LLM_MAX_TOKENS,
                    temperature: float | None = None) -> LLMReply:
+    return _call_llm_reply_with_retry(system, user, role, max_tokens=max_tokens, temperature=temperature)
+
+
+def _call_llm_reply_with_retry(system: str, user: str, role: str, *, max_tokens: int = config.LLM_MAX_TOKENS,
+                               temperature: float | None = None) -> LLMReply:
     global _last_reply
     schema = _load_schema(role)
     prompt_est = _estimate_request_tokens(system, user, schema)
@@ -157,12 +162,25 @@ def call_llm_reply(system: str, user: str, role: str, *, max_tokens: int = confi
         "seed": config.LLM_SEED,
     }
     started = time.time()
-    if _backend == "lmstudio":
-        text, usage = _call_lmstudio(body)
-    elif _backend == "acp":
-        text, usage = _call_acp(body), {}
-    else:
-        raise ValueError(f"unknown backend: {_backend}")
+    max_retries = getattr(config, "LLM_RETRY_ATTEMPTS", 3)
+    text, usage = "", {}
+    for _retry_i in range(max_retries):
+        try:
+            if _backend == "lmstudio":
+                text, usage = _call_lmstudio(body)
+            elif _backend == "acp":
+                text, usage = _call_acp(body), {}
+            else:
+                raise ValueError(f"unknown backend: {_backend}")
+            break
+        except (RuntimeError, ConnectionError, TimeoutError, OSError) as _err:
+            log.emit("llm_retry", {"attempt": _retry_i + 1, "error": str(_err)[:200]})
+            if _retry_i >= max_retries - 1:
+                log.emit("llm_fallback", {"error": str(_err)[:200]})
+                text = json.dumps({"mode": "done", "sequence": [], "done_when": "LLM unavailable – fallback"})
+                usage = {}
+                break
+            time.sleep(min(2 ** _retry_i, 10))
 
     completion_est = estimate_tokens(text)
     usage_prompt, usage_completion, usage_total = _usage_numbers(usage)

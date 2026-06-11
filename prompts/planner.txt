@@ -25,3 +25,7 @@ Return exactly one JSON object:
 {"mode":"direct","sequence":["step"],"done_when":"concrete success condition"}
 or
 {"mode":"done","sequence":[],"done_when":""}
+
+RULE: When every plan step is marked complete and verification passed, emit mode=done in the next response rather than producing an empty plan.
+
+RULE: When all plan steps are complete and output is verified, emit done=true to halt the loop instead of re-polling.

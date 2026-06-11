@@ -21,3 +21,5 @@ or
 {"actions":[],"conclusion":"DONE"}
 or
 {"actions":[],"conclusion":"CANNOT"}
+
+RULE: After any file write, immediately verify the file is valid (e.g. python -c 'import ast; ast.parse(open(f).read())'). If invalid, fix before proceeding.

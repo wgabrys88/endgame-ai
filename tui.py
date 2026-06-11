@@ -202,8 +202,16 @@ class TUI:
                     pass
         if self.events and not self._start_time:
             first = self.events[0]
-            t = first.get("t", 0)
-            self._start_time = float(t) if t else 0.0
+            t = first.get("t", "")
+            if t:
+                try:
+                    from datetime import datetime, timezone
+                    self._start_time = datetime.fromisoformat(str(t)).timestamp()
+                except (ValueError, TypeError):
+                    try:
+                        self._start_time = float(t)
+                    except (ValueError, TypeError):
+                        self._start_time = time.time()
 
     def _load_child_events(self) -> None:
         path = config.CHILD_EVENTS_PATH
@@ -363,7 +371,7 @@ class TUI:
         s = self.snapshot
         out: list[str] = []
 
-        # --- Header ---
+        # --- Status ---
         if log.paused():
             st, sc = "▐▐ PAUSED", _fg(255, 180, 60)
         elif self._reactor_live():
@@ -373,155 +381,112 @@ class TUI:
         else:
             st, sc = "○ READY", _fg(140, 180, 255)
 
+        # --- Math from snapshot ---
         trace = s.get("math_trace", [])
         latest = trace[-1] if trace else {}
         stag = float(latest.get("stag", s.get("stagnation", 0)))
         pid = float(latest.get("pid", s.get("pid_output", 0)))
         energy = float(latest.get("energy", s.get("energy", 1)))
-        lx = float(latest.get("x", s.get("lorenz_x", 0)))
-        ly = float(s.get("lorenz_y", 0))
-        lz = float(s.get("lorenz_z", 0))
         power = float(s.get("power", 0))
         work = int(s.get("work_events", 0))
         ev_n = max(int(s.get("events", 0)), len(self.events))
         budget = int(s.get("budget", self.budget))
         failures = int(s.get("consecutive_failures", 0))
-        completed = s.get("completed", [])
-        fissions = len(completed)
-        plan = s.get("plan", [])
-        done_when = str(s.get("done_when", ""))
+        fissions = len(s.get("completed", []))
         wing = bool(latest.get("wing", s.get("wing_crossed", False)))
-        focused = str(s.get("focused_window", ""))
-        ts = s.get("token_state", {}) if isinstance(s.get("token_state"), dict) else {}
-        tok_total = int(ts.get("cumulative_total_est", 0) or 0)
-        tok_burn = float(ts.get("burn_rate_tpm", 0) or 0)
-        tok_calls = int(ts.get("calls", 0) or 0)
-
         elapsed = _elapsed(self._start_time)
         goal = str(s.get("goal", "") or self.goal or "—")
 
-        # Title + status
-        title = f"{BOLD}{_fg(180, 210, 255)}ENDGAME-AI{RST}  {sc}{st}{RST}  {DIM}{time.strftime('%H:%M:%S')}{RST}  elapsed {elapsed}"
-        out.append(_trunc(title, w + 40))  # extra for ANSI
-        out.append(f"{DIM}{'─' * (w - 1)}{RST}")
+        # === UPPER HALF: PARENT ===
+        half = (h - 4) // 2  # reserve 4 for input + keybind
 
-        # Goal
-        out.append(f"{BOLD}{_fg(200, 230, 255)}GOAL{RST} {_trunc(goal, w - 6)}")
+        title = f"{BOLD}{_fg(180, 210, 255)}PARENT{RST} ({self.backend})  {sc}{st}{RST}  {DIM}{time.strftime('%H:%M:%S')}{RST}  {elapsed}"
+        out.append(_trunc(title, w + 40))
+        out.append(f"{_fg(200, 230, 255)}GOAL{RST} {_trunc(goal, w - 6)}")
 
-        # Metrics row
-        wing_s = f"  {_fg(255, 200, 0)}WING✦{RST}" if wing else ""
+        # Metrics + math
+        wing_s = f" {_fg(255, 200, 0)}WING✦{RST}" if wing else ""
+        bar_w = (w - 30) // 3
         metrics = (
-            f"fissions {_fg(80,255,180)}{fissions}{RST}  "
-            f"power {power:.4f}  work {work}/{budget}  "
-            f"fails {failures}  events {ev_n}"
-            f"{wing_s}"
+            f"fiss {_fg(80,255,180)}{fissions}{RST} "
+            f"fail {failures} "
+            f"work {work}/{budget}{wing_s}  "
+            f"stag{_bar(stag, bar_w, _fg(255, 100, 80))}"
+            f"pid{_bar(min(pid / config.PID_ROD_SCALE, 1), bar_w, _fg(80, 140, 255))}"
+            f"nrg{_bar(min(energy / 3, 1), bar_w, _fg(120, 220, 140))}"
         )
         out.append(metrics)
 
-        # Token row
-        tok = f"{DIM}tokens{RST} calls={tok_calls} total≈{tok_total} burn≈{tok_burn:.1f}/min"
-        if focused:
-            tok += f"  {DIM}focus{RST}={_trunc(focused, 30)}"
-        out.append(tok)
-        out.append(f"{DIM}{'─' * (w - 1)}{RST}")
-
-        # Math gauges
-        bar_w = w - 14
-        out.append(f"{DIM}stag {RST}{_bar(stag, bar_w, _fg(255, 100, 80))} {stag:.3f}")
-        out.append(f"{DIM}pid  {RST}{_bar(min(pid / config.PID_ROD_SCALE, 1), bar_w, _fg(80, 140, 255))} {pid:.3f}")
-        out.append(f"{DIM}nrg  {RST}{_bar(min(energy / 3, 1), bar_w, _fg(120, 220, 140))} {energy:.3f}")
-        lorenz_s = f"{DIM}lorenz{RST} x={lx:+.2f} y={ly:+.2f} z={lz:+.2f}"
-        out.append(lorenz_s)
-        out.append(f"{DIM}{'─' * (w - 1)}{RST}")
-
-        # Agent chains (horizontal)
-        def _chain_row(label: str, chain: tuple[str, ...], active: str) -> str:
+        # Agent chains
+        def _chain(label: str, chain: tuple, active: str) -> str:
             parts = [f"{DIM}{label}{RST} "]
             for name in chain:
-                on = name == active
-                if on:
+                if name == active:
                     parts.append(f"{_fg(255, 220, 80)}●{name}{RST} ")
                 else:
                     parts.append(f"{DIM}○{name}{RST} ")
             return "".join(parts)
 
-        out.append(_chain_row("math", MATH_CHAIN, self._math))
-        out.append(_chain_row("loop", AGENT_CHAIN, self._loop))
-        out.append(_chain_row("side", SIDE_AGENTS, self._side))
-        if self._reason:
-            out.append(f"{DIM}  sched_reason={RST}{self._reason}")
+        out.append(_chain("math", MATH_CHAIN, self._math) + "  " + _chain("loop", AGENT_CHAIN, self._loop) + "  " + _chain("side", SIDE_AGENTS, self._side))
         out.append(f"{DIM}{'─' * (w - 1)}{RST}")
 
-        # Plan
-        if plan:
-            done_n = sum(1 for p in plan if p.get("status") == "done")
-            out.append(f"{BOLD}{_fg(200, 230, 255)}PLAN{RST} [{done_n}/{len(plan)}]  {DIM}done_when={RST}{_trunc(done_when, w - 30)}")
-            max_steps = min(len(plan), max(3, (h - len(out) - EVENT_TAIL - 8)))
-            for step in plan[:max_steps]:
-                st_s = step.get("status", "pending")
-                txt = str(step.get("text", ""))
-                if st_s == "done":
-                    mark, col = "✓", _fg(80, 220, 120)
-                elif st_s == "active":
-                    mark, col = "►", _fg(255, 220, 80)
-                else:
-                    mark, col = "·", DIM
-                out.append(f" {col}{mark}{RST} {_trunc(txt, w - 5)}")
-            if len(plan) > max_steps:
-                out.append(f"   {DIM}…+{len(plan) - max_steps} more{RST}")
-        else:
-            out.append(f"{DIM}no plan{RST}")
-
-        if completed:
-            out.append(f"{DIM}last fission:{RST} {_trunc(completed[-1], w - 15)}")
-        out.append(f"{DIM}{'─' * (w - 1)}{RST}")
-
-        # Events
-        out.append(f"{BOLD}{_fg(180, 210, 255)}EVENTS{RST} (last {EVENT_TAIL})")
-        tail = [e for e in self.events if e.get("phase") in WORK_PHASES][-EVENT_TAIL:]
+        # Parent events
+        ev_rows = half - len(out) - 1
+        tail = [e for e in self.events if e.get("phase") in WORK_PHASES][-ev_rows:]
         for e in tail:
-            n, ph = e.get("n", 0), str(e.get("phase", ""))
+            ph = str(e.get("phase", ""))
             brief = self._brief(ph, e.get("d", {}))
-            line = f" {DIM}{n:>4}{RST} {ph:<18} {brief}"
-            out.append(_trunc(line, w))
-        out.append(f"{DIM}{'─' * (w - 1)}{RST}")
+            out.append(_trunc(f" {DIM}{e.get('n',0):>4}{RST} {ph:<16} {brief}", w))
 
-        # Lessons
-        lessons = self._lessons()
-        if lessons:
-            out.append(f"{BOLD}{_fg(180, 200, 160)}LESSONS{RST} (last {len(lessons)})")
-            for ln in lessons:
-                out.append(f" {DIM}{_trunc(ln, w - 3)}{RST}")
-            out.append(f"{DIM}{'─' * (w - 1)}{RST}")
+        # Pad upper half
+        while len(out) < half:
+            out.append("")
+        out.append(f"{BOLD}{_fg(100, 100, 140)}{'═' * (w - 1)}{RST}")
 
-        # Child panel
+        # === LOWER HALF: CHILD ===
+        child_rows = h - half - 5
         if self._child_events:
-            out.append(f"{BOLD}{_fg(180, 160, 255)}CHILD{RST} (lmstudio)  events={len(self._child_events)}")
-            ctail = [e for e in self._child_events if e.get("phase") in WORK_PHASES][-CHILD_TAIL:]
+            c_work = len([e for e in self._child_events if e.get("phase") in WORK_PHASES])
+            c_last = self._child_events[-1] if self._child_events else {}
+            c_stag = 0.0
+            c_pid = 0.0
+            for e in reversed(self._child_events[-30:]):
+                if e.get("phase") == "stagnation":
+                    c_stag = float(e.get("d", {}).get("stag", 0))
+                    break
+            for e in reversed(self._child_events[-30:]):
+                if e.get("phase") == "pid":
+                    c_pid = float(e.get("d", {}).get("pid", 0))
+                    break
+            c_title = f"{BOLD}{_fg(180, 160, 255)}CHILD{RST} (lmstudio)  events={len(self._child_events)} work={c_work}"
+            out.append(_trunc(c_title, w + 40))
+            out.append(
+                f"stag{_bar(c_stag, bar_w, _fg(255, 100, 80))}"
+                f"pid{_bar(min(c_pid / config.PID_ROD_SCALE, 1), bar_w, _fg(80, 140, 255))}"
+            )
+            ctail = [e for e in self._child_events if e.get("phase") in WORK_PHASES][-(child_rows - 2):]
             for e in ctail:
                 ph = str(e.get("phase", ""))
                 brief = self._brief(ph, e.get("d", {}))
-                out.append(f" {DIM}child{RST} {ph:<16} {_trunc(brief, w - 24)}")
-            out.append(f"{DIM}{'─' * (w - 1)}{RST}")
+                out.append(_trunc(f" {DIM}{e.get('n',0):>4}{RST} {ph:<16} {brief}", w))
+        else:
+            out.append(f"{DIM}CHILD (no events yet){RST}")
 
-        # Input field
+        # Pad lower half
+        while len(out) < h - 4:
+            out.append("")
+
+        # --- Input + keybind ---
+        out.append(f"{DIM}{'─' * (w - 1)}{RST}")
         if self._input_active:
             bc = _fg(100, 180, 255)
             field = self._input_buf + "▌"
         else:
+            field = self.goal or "(Enter to set goal)"
             bc = DIM
-            field = self.goal or "(press Enter to set goal)"
-        out.append(f"{bc}┌{'─' * (w - 3)}┐{RST}")
-        out.append(f"{bc}│{RST} {_trunc(field, w - 5)} {bc}│{RST}")
-        out.append(f"{bc}└{'─' * (w - 3)}┘{RST}")
+        out.append(f"{bc}▸{RST} {_trunc(field, w - 4)}")
+        out.append(f"{DIM}Enter{RST}=goal  {DIM}Space{RST}=pause  {DIM}r{RST}=restart  {DIM}q{RST}=quit")
 
-        # Keybind bar
-        keys = f"{DIM}Enter{RST}=goal  {DIM}Space{RST}=pause  {DIM}r{RST}=restart  {DIM}q{RST}=quit"
-        out.append(keys)
-
-        # Pad to height
-        while len(out) < h:
-            out.append("")
         return "\n".join(_pad(line, w) for line in out[:h])
 
     def _paint(self, frame: str) -> None:
