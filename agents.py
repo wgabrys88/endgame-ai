@@ -555,8 +555,7 @@ def _render_field(ctx: dict[str, Any], field: str, instruction: str) -> str:
             trig = ctx.get("reflect_trigger", {})
             if not isinstance(trig, dict) or not trig:
                 return ""
-            return (f"TRIGGER (why you were called): reason={trig.get('reason', '')} "
-                    f"stag={trig.get('stag', 0)} pid={trig.get('pid', 0)} "
+            return (f"TRIGGER (why you were called): {trig.get('reason', 'stagnation')} "
                     f"failures={trig.get('failures', 0)} step={trig.get('step', '')}")
         case "completed":
             completed: list[str] = ctx.get("completed", [])

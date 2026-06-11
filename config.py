@@ -128,8 +128,8 @@ CONTEXT_POLICY: dict[str, list[str]] = {
     "planner": ["goal", "desktop", "plan", "history", "completed", "budget", "failures", "lessons"],
     "actor": ["instruction", "screen", "history", "lessons"],
     "verifier": ["goal", "done_when", "screen", "history", "plan", "completed"],
-    "reflector": ["goal", "plan", "history", "math", "trigger", "completed"],
-    "mutator": ["goal", "plan", "history", "math", "trigger", "completed"],
+    "reflector": ["goal", "plan", "history", "trigger", "completed", "lessons"],
+    "mutator": ["goal", "plan", "history", "trigger", "completed"],
 }
 # Smallest fix: observer timeout fallback for resilience
 OBSERVER_TIMEOUT = 30
