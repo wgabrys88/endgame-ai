@@ -311,12 +311,16 @@ Parent (ACP, smart model) supervises child (LM Studio, local model).
 
 LAUNCH:
   python tui.py --backend acp --event-budget 1000 "goal"
-  Parent spawns child via: spawn_main(goal)
-  → python main.py goal --backend lmstudio --event-budget 200 --events-path events-child.jsonl
+  Parent spawns child via: spawn_main(goal, backend='lmstudio', budget=20)
+  → python main.py goal --backend lmstudio --event-budget 20 --events-path events-child.jsonl
+
+spawn_main() SIGNATURE (available in exec namespace):
+  spawn_main(goal: str, backend: str = "lmstudio", budget: int = 20) -> int
+  Returns child PID. Child always writes to events-child.jsonl.
 
 ISOLATION:
   - main.py --events-path patches config.EVENTS_PATH before log.init()
-  - Child writes to events-child.jsonl, parent writes to events.jsonl
+  - Child writes to events-child.jsonl (lock-independent, no PID fallback)
   - TUI reads both: upper half = parent, lower half = child
 
 PARENT DUTIES:
@@ -324,6 +328,12 @@ PARENT DUTIES:
   - Rewrite child's goal.txt when stuck
   - Harvest child lessons into parent lessons store
   - Spawn progressively harder children until system runs on local models alone
+  - PARENT MUST NOT DO THE CHILD'S WORK — only teach and monitor
+
+KNOWN ISSUES (2026-06-12):
+  - Parent tends to "cheat" by executing the goal itself instead of forcing child
+  - Verifier doesn't check WHETHER child did the work vs parent
+  - lmstudio child needs very simple goals (1 exec step) to succeed
 
 ================================================================================
 ## 13. RUNTIME ARTIFACTS (gitignored, created on run)
@@ -332,7 +342,7 @@ PARENT DUTIES:
 FILE               CREATED BY     PURPOSE
 ────────────────── ─────────────  ────────────────────────────────────────
 events.jsonl       log.init()     Primary event log (append-only)
-events-child.jsonl child process  Child instance event log
+events-child.jsonl child process  Child instance event log (always this name)
 snapshot.json      engine._save() Board state for TUI reading
 goal.txt           main.py/TUI    Current goal (polled every 0.15s)
 pause              log.set_paused Existence = reactor paused
@@ -340,7 +350,7 @@ gui_mode           enable_gui()   Existence = observer scans screen
 lessons.jsonl      lessons.record Scored lesson entries (JSONL)
 disabled.json      TUI            Agent enable/disable toggles
 .endgame.lock      log._acquire   Lock file (PID of log owner)
-respawn.json       main.py        Contract for child spawn params
+respawn.json       main.py        Parent's own restart params (NOT used by child)
 
 ================================================================================
 ## 14. CONFIG REFERENCE (config.py — 135 lines)
