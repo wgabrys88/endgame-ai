@@ -50,14 +50,17 @@ Verified work = **fission**. The reactor sustains itself through fission events.
 ## Quick start
 
 ```bash
-# Standard launch with TUI dashboard:
-python tui.py "Your goal here" --backend lmstudio --event-budget 500
+# Parent (ACP) watching child (LM Studio):
+python tui.py --backend acp --event-budget 1000 "Your goal here"
+
+# Standard launch:
+python tui.py "Your goal" --backend lmstudio --event-budget 500
 
 # Headless (no TUI):
 python main.py "Your goal" --backend lmstudio --event-budget 200
 
 # Verify import health:
-python -c "import config,engine,agents,actions,log,llm,observer,win32,acp_client,tui;print('OK')"
+python -c "import config,engine,agents,actions,log,llm,observer,win32,acp_client,tui,token_state,lessons;print('OK')"
 ```
 
 ## How it evolves
@@ -67,12 +70,33 @@ The organism has multiple self-evolution mechanisms, ordered by immediacy:
 | Mechanism | Latency | What changes |
 |-----------|---------|--------------|
 | Prompt file read | instant | prompts/*.txt read on every LLM call |
-| config.X patch | instant | `exec("import config; config.X = Y")` |
 | Prompt mutation | instant | Reflector appends RULE to prompt files |
 | Plugin hot-load | ~0.15s | New .py in plugins/ loaded next cycle |
 | Plugin mutation | ~5-10s | MutatorAgent writes new plugin to disk |
 | Goal hot-swap | ~0.15s | Edit goal.txt → reactor pivots |
 | Disk edit + spawn | ~2-5s | Write code + spawn_main() for new process |
+
+## Math-driven scheduling
+
+Math is the environment. LLMs are agents inside it. The LLMs never see math values.
+
+```
+StagnationAgent → neutron flux (0.0-1.0, rises when nothing succeeds)
+LorenzAgent     → chaotic attractor (energy, wing_cross = regime change)
+PidAgent        → integral pressure (accumulates when stag stays high)
+
+Scheduler priority:
+  1. Reflection gates (stag+pid/energy high → reflector)
+  2. Wing cross (Lorenz regime change → replan)
+  3. Normal routing (actor executes plan steps)
+
+Escalation:
+  reflector (prompt mutation) → mutator (code generation, after ≥3 persistent failures)
+
+Activity dampening:
+  mutations/reflections produce activity_events → stagnation drops 0.2/event
+  prevents infinite reflect/mutate loops — gives work loop a window to retry
+```
 
 ## Proven milestones (M4)
 
@@ -100,21 +124,22 @@ endgame-ai/
 ├── llm.py               LM Studio + ACP backends
 ├── win32.py             Raw ctypes COM/UIA (no pywin32)
 ├── acp_client.py        Kiro CLI ACP JSON-RPC over WSL2
-├── tui.py               VT100 terminal dashboard
+├── tui.py               VT100 terminal dashboard (parent/child split)
 ├── token_state.py       Token usage accounting
+├── lessons.py           Scored lesson store with keyword retrieval
 ├── prompts/             LLM system prompts (5 agents)
 ├── schemas/             JSON output schemas (5 agents)
 ├── plugins/             Hot-loaded plugins (run each cycle)
-├── evolved-organism-code/  Archived organism evolution artifacts
 └── AGENTS.md            Authoritative technical map (for coding agents)
 ```
 
 ## Key constraints
 
-- **Zero pip dependencies** — the organism must be able to self-install capabilities
-- **events.jsonl format is frozen** — `{n, t, phase, d}` is parsed by TUI and tests
+- **Zero pip dependencies** — stdlib + ctypes only
+- **events.jsonl format is frozen** — `{n, t, phase, d}` parsed by TUI
 - **Board dict keys never rename** — snapshot.json and logs reference them
-- **_verify_python_edit is sacred** — the organism's immune system against bad code
+- **Math is the environment** — LLMs never see or tune math knobs
+- **Self-modification is intentional** — the system can rewrite itself
 - **PROMPT_MAX_RULES = 8** — prevents reflector meltdown (proven failure mode)
 
 ## For coding agents
@@ -123,4 +148,4 @@ Read `AGENTS.md` before modifying anything. It contains the full technical map: 
 
 ## License
 
-Private.
+MIT (c) 2026 wgabrys88
