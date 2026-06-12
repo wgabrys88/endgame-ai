@@ -76,24 +76,22 @@ def _trivial_milestone(goal: str, done_when: str) -> bool:
     if not goal.strip():
         return False
     d = done_when.lower()
-    # Trivial if done_when is purely observational (no creation/mutation)
-    trivial_markers = ("listed", "shown", "visible", "printed", "displayed", "can be read",
-                       "readable", "on screen", "loaded", "showing", "status shown",
-                       "checked", "observed", "confirmed exists", "confirmed to exist",
-                       "directory exists", "dir exists", "folder exists", "already exists",
-                       "is present", "is ensured", "no output printed", "is read",
-                       "reading ", "read and", "loaded into", "gathered", "for processing")
-    setup_markers = ("directory created", "dir created", "folder created", "makedirs",
-                     "directory structure", "comms directory")
-    existence_markers = (".exists()", "is_dir()", " path(", "path('", 'path("')
-    production_markers = ("created", "written", "committed", "pushed", "modified",
-                          "compiled", "sent", "saved", "fixed", "installed",
-                          "updated", "appended", "contains", "posted", "message")
-    if any(k in d for k in setup_markers):
-        return True
-    is_trivial = any(k in d for k in trivial_markers) or any(k in d for k in existence_markers)
-    is_productive = any(k in d for k in production_markers)
-    return is_trivial and not is_productive
+    production_markers = (
+        "created", "written", "committed", "pushed", "modified", "compiled", "sent", "saved",
+        "fixed", "installed", "updated", "appended", "contains", "posted", "message",
+        "documented", "documentation", "refactor", "refactored", "improved", "experiment",
+        "minor", "tweak", "edited", "noted", "commented", "clarified", "formatted",
+        "cleaned", "adjusted", "explored", "tested", "logged", "reported", "added",
+    )
+    if any(k in d for k in production_markers):
+        return False
+    # Only block pure no-op observation with zero artifact change
+    trivial_markers = (
+        "only listed", "only shown", "only visible", "only displayed", "can be read",
+        "readable only", "on screen only", "status shown only", "no output printed",
+        "already exists unchanged", "confirmed exists only", "nothing changed",
+    )
+    return any(k in d for k in trivial_markers)
 
 
 DENIAL_DECAY_SECS = 120.0  # blocked plans decay after 2 minutes
