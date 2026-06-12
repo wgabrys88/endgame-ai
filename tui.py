@@ -109,6 +109,20 @@ def _vlen(s: str) -> int:
     return n
 
 
+def _display_input(buf: str) -> str:
+    """Show spaces as middle dots so typed gaps are visible in the prompt."""
+    return buf.replace(" ", "\u00b7")
+
+
+def _compose_lr(left: str, right: str, inner: int, right_w: int) -> str:
+    """Fixed left/right columns — right strip never overlaps event text."""
+    left_w = max(8, inner - right_w - 1)
+    lv = _trunc(left, left_w)
+    rv = _trunc(right, right_w)
+    gap = max(1, left_w - _vlen(lv))
+    return f"{lv}{' ' * gap}{rv}"
+
+
 def _trunc(s: str, w: int, suffix: str = "…") -> str:
     if w <= 0:
         return ""
@@ -451,6 +465,9 @@ class TUI:
             self.running = False
             return True
         if ch == " ":
+            if self._input_buf:
+                self._input_buf += " "
+                return True
             pause_path = BASE_DIR / "pause"
             if pause_path.exists():
                 pause_path.unlink(missing_ok=True)
@@ -515,38 +532,38 @@ class TUI:
         lines.append(f"{bc}{BOX_ML}{BOX_H * (W - 2)}{BOX_MR}{RST}")
 
         val_w = 5
-        text_w = max(18, inner - spec_w - val_w - 3 - PHASE_WIDTH)
+        right_col_w = spec_w + val_w + 1
+        bar_w = 3 if W < 110 else BAR_WIDTH
+        brief_w = max(12, inner - right_col_w - PHASE_WIDTH - 4)
 
         for idx, agent in enumerate(agents):
             adot = f"{_fg(*CLR_ALIVE)}●{RST}" if agent.alive else f"{_fg(*CLR_DEAD)}○{RST}"
             pers = agent.personality[:PERSONALITY_WIDTH].ljust(PERSONALITY_WIDTH)
-            stag_b = f"s{_bar(agent.stag, BAR_WIDTH, CLR_STAG)}"
-            nrg_b = f"n{_bar(min(agent.energy / NRG_MAX, 1), BAR_WIDTH, CLR_NRG)}"
-            pid_b = f"p{_bar(min(abs(agent.pid_val) / PID_MAX, 1), BAR_WIDTH, CLR_PID)}"
+            stag_b = f"s{_bar(agent.stag, bar_w, CLR_STAG)}"
+            nrg_b = f"n{_bar(min(agent.energy / NRG_MAX, 1), bar_w, CLR_NRG)}"
+            pid_b = f"p{_bar(min(abs(agent.pid_val) / PID_MAX, 1), bar_w, CLR_PID)}"
             fiss = f"{_fg(*CLR_FISSION)}F={agent.fissions}{RST}"
-            lines.append(row(f"{pers} {adot} {stag_b} {nrg_b} {pid_b} {fiss}"))
+            lines.append(row(_trunc(f"{pers} {adot} {stag_b} {nrg_b} {pid_b} {fiss}", inner)))
 
             recent = agent.recent_work(event_rows)
             s_strip = _spec_row(agent.hist_stag, spec_w, RAMP_STAG)
             n_strip = _spec_row(agent.hist_nrg, spec_w, RAMP_NRG)
             p_strip = _spec_row(agent.hist_pid, spec_w, RAMP_PID)
             specs = [
-                f"{s_strip} {_fg(*CLR_STAG)}{agent.stag:4.2f}{RST}",
-                f"{n_strip} {_fg(*CLR_NRG)}{agent.energy:4.1f}{RST}",
-                f"{p_strip} {_fg(*CLR_PID)}{agent.pid_val:4.1f}{RST}",
+                f"{s_strip}{_fg(*CLR_STAG)}{agent.stag:4.2f}{RST}",
+                f"{n_strip}{_fg(*CLR_NRG)}{agent.energy:4.1f}{RST}",
+                f"{p_strip}{_fg(*CLR_PID)}{agent.pid_val:4.1f}{RST}",
             ]
             for i in range(event_rows):
                 if i < len(recent):
                     ph = recent[i].get("phase", "")
-                    brief = self._brief(ph, recent[i].get("d", {}), text_w)
+                    brief = self._brief(ph, recent[i].get("d", {}), brief_w)
                     phase = _trunc(ph, PHASE_WIDTH).ljust(PHASE_WIDTH)
                     left = f" {_fg(*CLR_PHASE)}{phase}{RST} {_fg(*CLR_DATA)}{brief}{RST}"
                 else:
                     left = ""
-                left_trunc = _trunc(left, text_w + PHASE_WIDTH + 2)
-                pad = max(0, inner - spec_w - val_w - 2 - _vlen(left_trunc))
                 right = specs[i] if i < len(specs) else ""
-                lines.append(row(f"{left_trunc}{' ' * pad} {right}"))
+                lines.append(row(_compose_lr(left, right, inner, right_col_w)))
             if idx < len(agents) - 1:
                 lines.append(f"{bc}{BOX_SL}{BOX_SH * (W - 2)}{BOX_SR}{RST}")
 
@@ -568,10 +585,11 @@ class TUI:
 
         lines.append(f"{bc}{BOX_ML}{BOX_H * (W - 2)}{BOX_MR}{RST}")
         role = comms.ROLES.get(self._input_from, "colony")
-        prompt = f"@{self._input_from} ({role})> {self._input_buf}"
-        cursor = "▌" if int(time.time() * 2) % 2 else " "
+        shown = _display_input(self._input_buf)
+        prompt = f"@{self._input_from} ({role})> {shown}"
+        cursor = "\u258c" if int(time.time() * 2) % 2 else " "
         lines.append(row(f"{_fg(*CLR_INPUT)}{_trunc(prompt, inner - 1)}{cursor}{RST}"))
-        lines.append(row(f"{_fg(*CLR_DIM)}Enter send · Tab human/grok · @Human @grok ping · Space LIVE · q quit{RST}"))
+        lines.append(row(f"{_fg(*CLR_DIM)}Enter send · Tab human/grok · space=chars (·) · Space empty=LIVE · q quit{RST}"))
 
         lines.append(f"{bc}{BOX_BL}{BOX_H * (W - 2)}{BOX_BR}{RST}")
         while len(lines) < H:
