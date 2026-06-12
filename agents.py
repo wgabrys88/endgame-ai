@@ -408,7 +408,7 @@ class ObserverAgent:
 class PlannerAgent:
     name: str = "planner"
     reads: list[str] = [
-        "goal", "plan", "desktop_summary", "focused_window", "history",
+        "goal", "plan", "screen", "desktop_summary", "focused_window", "history",
         "consecutive_failures", "stagnation", "energy", "completed", "last_observation", "denied_goals",
     ]
 
@@ -557,8 +557,8 @@ class VerifierAgent:
 class ReflectorAgent:
     name: str = "reflector"
     reads: list[str] = [
-        "goal", "plan", "history", "stagnation", "pid_output", "energy",
-        "reflect_trigger", "completed", "last_observation",
+        "goal", "plan", "screen", "desktop_summary", "focused_window", "history",
+        "stagnation", "pid_output", "energy", "reflect_trigger", "completed", "last_observation",
     ]
 
     def run(self, ctx: dict[str, Any]) -> dict[str, Any]:
@@ -649,6 +649,9 @@ def _render_field(ctx: dict[str, Any], field: str, instruction: str) -> str:
             ds = str(ctx.get("desktop_summary", "")).strip()
             if ds:
                 parts.append(f"DESKTOP:\n{ds}")
+            screen = str(ctx.get("screen", "")).strip()
+            if screen:
+                parts.append(f"SCREEN ELEMENTS:\n{_clip_context(screen, config.CONTEXT_OBS_MAX)}")
             return "\n\n".join(parts)
         case "instruction":
             if not instruction:

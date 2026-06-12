@@ -8,10 +8,14 @@
       "properties": {
         "actions": {
           "type": "array",
+          "description": "Legacy schema. Actor runs planner Python via desktop.py helpers instead.",
           "items": {
             "type": "object",
             "properties": {
-              "verb": {"type": "string", "enum": ["click", "write", "press", "hotkey", "scroll", "wait", "focus"]},
+              "verb": {
+                "type": "string",
+                "enum": ["click", "write", "press", "hotkey", "scroll", "wait", "focus", "read_file", "write_file"]
+              },
               "target": {"type": "string"},
               "value": {"type": "string"}
             },

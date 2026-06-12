@@ -136,7 +136,18 @@ def _needs_screen(board: dict[str, Any], target: str) -> bool:
     return config.GUI_MODE_PATH.exists()
 
 
+def _refresh_desktop(board: dict[str, Any]) -> None:
+    if not config.GUI_MODE_PATH.exists():
+        return
+    obs = AGENTS["observer"]
+    obs_ctx = {k: board[k] for k in obs.reads if k in board}
+    obs_result = obs.run(obs_ctx)
+    board.update(obs_result.get("writes", {}))
+
+
 def _run_agent(board: dict[str, Any], name: str) -> dict[str, Any]:
+    if name == "planner" and config.GUI_MODE_PATH.exists():
+        _refresh_desktop(board)
     if _needs_screen(board, name):
         obs = AGENTS["observer"]
         obs_ctx = {k: board[k] for k in obs.reads if k in board}

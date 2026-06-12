@@ -1,1 +1,4 @@
-Unused. Actor runs planner Python directly via run_python().
+Actor executes planner sequence[].code via run_python(). No separate actor LLM call.
+
+Desktop verbs (click, write, press, hotkey, scroll, wait, focus) run through desktop.py helpers
+inside planner Python. See prompts/planner.txt for observe_screen and desktop_* usage.

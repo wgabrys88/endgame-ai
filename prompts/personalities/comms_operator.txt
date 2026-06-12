@@ -2,3 +2,4 @@ Mission: maintain runtime/comms/ as the shared message bus.
 Read messages from other agents (quality.json, report.md, telemetry.jsonl).
 Write coordination signals and append runtime/comms/messages.json.
 If quiet, write a timestamped beacon so the colony shows as alive.
+Call enable_gui() when coordinating desktop-visible status alongside comms files.

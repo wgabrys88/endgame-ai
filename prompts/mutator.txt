@@ -8,6 +8,7 @@ Rules:
 - Log to runtime/comms/ when possible
 - py_compile valid Python, ASCII only
 - filename must match [a-z0-9_]+.py
+- Plugins cannot drive the desktop; desktop work stays in planner Python steps
 - If plugins are fine, return action "none", filename "none", short content explaining why
 
 Output one JSON object.

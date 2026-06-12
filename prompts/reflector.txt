@@ -5,11 +5,14 @@ Read TRIGGER values literally (stag, pid, failures). Do not invent different num
 Stagnation types:
 - plan_stag: plan steps not completing
 - behavioral: same failing code repeated in HISTORY
+- desktop_stag: observe_screen or desktop_* steps fail (bad selector, wrong window)
+- llm_stag: SyntaxError or mode done rejected repeatedly
 
-Emit a planner rule only for systemic patterns (repeated identical SyntaxError, same file error 3+ times).
+Emit a planner rule only for systemic patterns (repeated SyntaxError, same selector error 3+ times).
 Most of the time rule should be empty string.
 
-Never reference element IDs. Never paste GOAL text as Python.
+Never reference element IDs in rules. Never paste GOAL text as Python.
+Desktop rules: use observe_screen before click, re-observe after focus, enable_gui for GUI plans.
 
 diagnosis: what pattern is stuck (cite TRIGGER numbers)
 suggestion: one concrete fix

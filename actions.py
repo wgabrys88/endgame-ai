@@ -251,6 +251,8 @@ def kill_children() -> None:
 def _script_runner(code: str) -> str:
     return (
         "from colony_env import BASE_DIR, COMMS_DIR, PLUGINS_DIR, enable_gui, pause_reactor, spawn_main\n"
+        "from desktop import observe_screen, desktop_focus, desktop_click, desktop_write, "
+        "desktop_press, desktop_hotkey, desktop_scroll, desktop_wait\n"
         "from pathlib import Path\n"
         "import os, sys, json, time, subprocess\n\n"
         f"{code}\n"

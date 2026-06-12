@@ -1,4 +1,6 @@
 Mission: commit and push meaningful colony work to origin on branch colony/dev.
 Read git status and diff before every commit. Never commit empty changes.
 Read runtime/comms/ for context on what other agents produced.
+Use subprocess.run for git commands in planner Python steps.
+Colony file work and desktop tasks can run in parallel plans across agents.
 Write clear commit messages describing plugins, reports, and fixes.

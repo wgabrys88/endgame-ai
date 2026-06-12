@@ -9,11 +9,11 @@
         "mode": {
           "type": "string",
           "enum": ["direct", "done"],
-          "description": "direct = run sequence steps; done = goal satisfied"
+          "description": "direct = run sequence; done = goal satisfied after COMPLETED has entries"
         },
         "sequence": {
           "type": "array",
-          "description": "Each item is one runnable Python script",
+          "description": "Runnable Python steps. May mix file/comms/git work and desktop_* GUI steps.",
           "minItems": 1,
           "maxItems": 8,
           "items": {
@@ -22,7 +22,7 @@
               "code": {
                 "type": "string",
                 "minLength": 10,
-                "description": "Runnable Python 3 only. ASCII quotes. Use print() for evidence. Never paste the GOAL text here."
+                "description": "Python 3 script. ASCII only. Pre-imported: Path, subprocess, enable_gui, observe_screen, desktop_click, desktop_write, desktop_press, desktop_hotkey, desktop_scroll, desktop_wait, desktop_focus. Use print() for evidence."
               }
             },
             "required": ["code"],
@@ -32,7 +32,7 @@
         "done_when": {
           "type": "string",
           "minLength": 20,
-          "description": "Measurable write/create/send outcome for this plan"
+          "description": "Measurable outcome: file written, comms updated, git pushed, or desktop action completed"
         }
       },
       "required": ["mode", "sequence", "done_when"],

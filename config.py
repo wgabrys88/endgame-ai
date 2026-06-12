@@ -69,7 +69,7 @@ else:
 # Reactor probes this list and load-balances across hosts that respond.
 LMS_CANDIDATE_HOSTS: list[str] = list(_candidate_hosts)
 # Optional substring/exact id preference for LM Studio /v1/models. Empty = first loaded model.
-LMS_PREFERRED_MODEL: str = ""
+LMS_PREFERRED_MODEL: str = _os.environ.get("ENDGAME_LMS_MODEL", "gemma")
 LMS_TIMEOUT: float = 300.0
 LMS_MODEL_LIST_TIMEOUT: float = 10.0
 LMS_REQUEST_ATTEMPTS: int = 3
@@ -184,10 +184,10 @@ PROCESS_DPI_AWARENESS_CONTEXT: int = -4
 SIGINT_EXIT_CODE: int = 130
 
 CONTEXT_POLICY: dict[str, list[str]] = {
-    "planner": ["goal", "plan", "last_observation", "history", "completed", "hints", "denied_goals"],
+    "planner": ["goal", "plan", "last_observation", "history", "completed", "desktop", "hints", "denied_goals"],
     "actor": ["instruction", "history"],
-    "verifier": ["goal", "done_when", "last_observation", "completed"],
-    "reflector": ["goal", "last_observation", "history", "failures", "trigger"],
+    "verifier": ["goal", "done_when", "last_observation", "completed", "desktop"],
+    "reflector": ["goal", "last_observation", "history", "failures", "trigger", "desktop"],
     "mutator": ["goal", "last_observation", "completed"],
 }
 # Smallest fix: observer timeout fallback for resilience

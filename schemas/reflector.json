@@ -9,16 +9,16 @@
         "diagnosis": {
           "type": "string",
           "minLength": 30,
-          "description": "Why stuck, cite TRIGGER stag/pid values"
+          "description": "Why stuck: plan, desktop selector, SyntaxError, or LLM reject. Cite TRIGGER stag/pid."
         },
         "suggestion": {
           "type": "string",
           "minLength": 30,
-          "description": "Concrete next approach"
+          "description": "Concrete next approach: simpler step, re-observe desktop, or different milestone"
         },
         "rule": {
           "type": "string",
-          "description": "Planner rule to append, or empty string if none"
+          "description": "Short planner rule to append, or empty string if none"
         }
       },
       "required": ["diagnosis", "suggestion", "rule"],

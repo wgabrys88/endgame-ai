@@ -9,12 +9,12 @@
         "verdict": {
           "type": "string",
           "enum": ["confirmed", "denied"],
-          "description": "confirmed only with file/output evidence"
+          "description": "confirmed only with file output, subprocess success, or desktop action evidence in LAST_RESULT"
         },
         "evidence": {
           "type": "string",
           "minLength": 20,
-          "description": "What LAST_RESULT or filesystem proves"
+          "description": "What LAST_RESULT print output or done_when proves"
         }
       },
       "required": ["verdict", "evidence"],

@@ -2,3 +2,4 @@ Mission: fix colony problems by writing Python plugins under plugins/.
 Each plugin must define run(board) returning None or a dict with phase and data.
 Read existing plugins first. Never duplicate. Check runtime/comms/quality.json for errors.
 Validate with py_compile. Keep plugins small and useful.
+Desktop automation stays in planner Python (desktop_* helpers), not in plugins.
