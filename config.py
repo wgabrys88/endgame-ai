@@ -33,6 +33,8 @@ CONTEXT_GOAL_MAX: int = 480
 CONTEXT_COMPLETED_MAX: int = 6
 CONTEXT_LESSONS_MAX: int = 3
 CONTEXT_PLAN_CODE_MAX: int = 120
+CONTEXT_BUS_MAX: int = 10
+BUS_MAX_LINES: int = 400
 
 SNAPSHOT_INTERVAL_SEC: float = 2.5
 
@@ -193,7 +195,7 @@ PROCESS_DPI_AWARENESS_CONTEXT: int = -4
 SIGINT_EXIT_CODE: int = 130
 
 CONTEXT_POLICY: dict[str, list[str]] = {
-    "planner": ["goal", "plan", "last_observation", "history", "completed", "desktop", "hints", "denied_goals"],
+    "planner": ["goal", "plan", "last_observation", "history", "completed", "desktop", "hints", "bus", "denied_goals"],
     "actor": ["instruction", "history"],
     "verifier": ["goal", "done_when", "last_observation", "completed", "desktop"],
     "reflector": ["goal", "last_observation", "history", "failures", "trigger", "desktop"],

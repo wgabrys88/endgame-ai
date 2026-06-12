@@ -216,6 +216,11 @@ def _poll_goal(board: dict[str, Any]) -> None:
 
 def _main_loop(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
     while not log.exhausted() and not interrupted():
+        try:
+            import comms
+            comms.drain_inject()
+        except Exception:
+            pass
         _poll_goal(board)
         if board.get("plan") and any(
             isinstance(s, dict) and s.get("status") == "active"

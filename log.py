@@ -154,8 +154,8 @@ def cleanup_runtime(*, kill_reactor: bool = True) -> None:
     (base / "runtime" / "comms").mkdir(parents=True, exist_ok=True)
     comms = base / "runtime" / "comms"
     for seed_name, seed_content in (
-        ("human.txt", "Colony active. Write here to communicate.\n"),
         ("messages.json", "[]\n"),
+        ("inject.jsonl", ""),
     ):
         seed = comms / seed_name
         seed.write_text(seed_content, encoding="utf-8")
@@ -366,6 +366,11 @@ def emit(phase: str, data: Any = None) -> int:
     _handle.flush()
     _file_lines += 1
     _maybe_trim()
+    try:
+        import comms
+        comms.mirror_event(phase, compact if compact is not None else data, source=comms.agent_id())
+    except Exception:
+        pass
     return _counter
 
 

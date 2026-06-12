@@ -69,14 +69,6 @@ def _milestone_hints(ctx: dict[str, Any]) -> str:
         path = config.BASE_DIR / rel
         if not path.exists() or path.stat().st_size == 0:
             lines.append(f"  - {milestone}")
-    human = comms / "human.txt"
-    if human.exists():
-        try:
-            body = human.read_text(encoding="utf-8").strip()
-        except OSError:
-            body = ""
-        if len(body) < 80:
-            lines.append("  - runtime/comms/human.txt appended with colony status line")
     if not lines:
         return ""
     return "SUGGESTED MILESTONES (missing artifacts — pick one):\n" + "\n".join(lines[:4])
@@ -871,6 +863,9 @@ def _render_field(ctx: dict[str, Any], field: str, instruction: str) -> str:
             return "\n".join(lines)
         case "hints":
             return _milestone_hints(ctx)
+        case "bus":
+            from comms import format_bus_context
+            return format_bus_context(config.CONTEXT_BUS_MAX)
         case "done_when":
             dw = ctx.get("done_when", "")
             if not dw:

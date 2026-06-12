@@ -14,6 +14,8 @@ PLUGINS_DIR: Path = BASE_DIR / "plugins"
 COMMS_DIR.mkdir(parents=True, exist_ok=True)
 PLUGINS_DIR.mkdir(exist_ok=True)
 
+from comms import post as bus_post, agent_id as bus_id  # noqa: E402
+
 _spawn_counter = 0
 
 

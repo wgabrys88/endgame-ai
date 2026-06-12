@@ -1,5 +1,11 @@
-import json,os,time
+from comms import agent_id, post
+
+
 def run(board):
-    os.makedirs("runtime/comms",exist_ok=True)
-    open(f"runtime/comms/beacon-{os.getpid()}.json","w").write(json.dumps({"pid":os.getpid(),"ts":time.time()}))
+    post(
+        agent_id(),
+        "colony",
+        f"beacon stag={float(board.get('stagnation', 0)):.2f} power={float(board.get('power', 0)):.3f}",
+        kind="beacon",
+    )
     return None

@@ -60,6 +60,7 @@ COMMS milestones:
 - runtime/comms/report.md agent status
 - runtime/comms/quality.json plugin audit
 - runtime/comms/messages.json coordination message
-- runtime/comms/human.txt status append
+- MESSAGE BUS: bus_post("slot", "colony", "text") or read COMMS_DIR / messages.json
+- Respond to @human and @grok bus peers as fellow endgame-ai instances
 
 Output one JSON object matching the schema.

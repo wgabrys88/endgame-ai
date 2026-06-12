@@ -1,4 +1,4 @@
-"""Multi-agent reactor TUI — bars + events + spectrogram for Windows Terminal Preview."""
+"""Reactor TUI + message bus console for Windows Terminal Preview."""
 from __future__ import annotations
 
 import ctypes
@@ -10,30 +10,25 @@ import time
 from pathlib import Path
 from typing import Any
 
-# ╔══════════════════════════════════════════════════════════════════════════════╗
-# ║ CONFIGURATION — tune layout and behavior here only                         ║
-# ╚══════════════════════════════════════════════════════════════════════════════╝
+import comms
 
-# Paths
 BASE_DIR = Path(os.path.dirname(os.path.abspath(__file__)))
 EVENTS_GLOB = "events-child-*.jsonl"
 MAIN_EVENTS = "events.jsonl"
 
-# Layout — 2x zoom-out on 1080p gives ~108×86 usable
 PANEL_WIDTH = 106
-PERSONALITY_WIDTH = 16
+PERSONALITY_WIDTH = 14
 BAR_WIDTH = 4
-AGENT_EVENT_ROWS = 5                       # recent work events shown (includes mutator)
-HISTORY_LEN = 90                           # spectrogram samples (fills width)
-SPEC_WIDTH = 14                            # spectrogram strip (narrower = more event text)
-PHASE_WIDTH = 14
+AGENT_EVENT_ROWS = 3
+BUS_ROWS = 6
+HISTORY_LEN = 90
+SPEC_WIDTH = 12
+PHASE_WIDTH = 12
 
-# Timing
-REFRESH_INTERVAL = 0.12
+REFRESH_INTERVAL = 0.10
 SCAN_INTERVAL = 2.0
 MAX_EVENTS_BUFFER = 600
 
-# Reactor roster — keep in sync with reactor.py
 ROSTER: dict[str, str] = {
     "n1": "git_expert",
     "n2": "implementor",
@@ -42,7 +37,6 @@ ROSTER: dict[str, str] = {
     "n5": "quality_critic",
 }
 
-# Phases considered "work"
 WORK_PHASES = frozenset({
     "schedule", "plan", "actor", "action", "observe", "verify", "fission_judge", "reflect",
     "mutation", "personality.evolve", "fission", "fission_blocked", "fission_sustain", "goal_change",
@@ -50,25 +44,14 @@ WORK_PHASES = frozenset({
     "planner.error", "actor.error", "verifier.error", "fission_judge.error", "reflector.error",
 })
 
-# Spectrogram color ramps (5 intensity levels, low → high)
-RAMP_STAG = [
-    (20, 20, 30), (80, 30, 30), (160, 50, 30), (220, 70, 30), (255, 100, 60),
-]
-RAMP_NRG = [
-    (20, 20, 30), (30, 80, 40), (40, 140, 60), (50, 200, 80), (80, 255, 120),
-]
-RAMP_PID = [
-    (20, 20, 30), (30, 40, 100), (50, 70, 170), (70, 100, 220), (100, 140, 255),
-]
+RAMP_STAG = [(20, 20, 30), (80, 30, 30), (160, 50, 30), (220, 70, 30), (255, 100, 60)]
+RAMP_NRG = [(20, 20, 30), (30, 80, 40), (40, 140, 60), (50, 200, 80), (80, 255, 120)]
+RAMP_PID = [(20, 20, 30), (30, 40, 100), (50, 70, 170), (70, 100, 220), (100, 140, 255)]
 
-SPEC_CHARS = " ·:+#"
-
-# Normalization
 STAG_MAX = 1.0
 NRG_MAX = 3.0
 PID_MAX = 5.0
 
-# UI colors
 CLR_ALIVE = (80, 220, 120)
 CLR_DEAD = (255, 80, 80)
 CLR_STAG = (255, 100, 80)
@@ -77,23 +60,19 @@ CLR_PID = (80, 140, 255)
 CLR_FISSION = (100, 255, 180)
 CLR_DIM = (80, 80, 100)
 CLR_HEADER = (200, 220, 255)
-CLR_BORDER = (60, 60, 80)
+CLR_BORDER = (55, 58, 78)
 CLR_PHASE = (140, 170, 200)
 CLR_DATA = (180, 180, 200)
+CLR_BUS = (160, 190, 230)
+CLR_BUS_HUMAN = (255, 200, 120)
+CLR_BUS_GROK = (190, 140, 255)
+CLR_BUS_EVENT = (110, 150, 190)
+CLR_INPUT = (255, 240, 200)
 
-# Box drawing
-BOX_TL, BOX_TR = "+", "+"
-BOX_BL, BOX_BR = "+", "+"
-BOX_H, BOX_V = "-", "|"
-BOX_ML, BOX_MR = "+", "+"
-BOX_SL, BOX_SR = "+", "+"
-BOX_SH = "-"
+BOX_TL, BOX_TR, BOX_BL, BOX_BR = "╔", "╗", "╚", "╝"
+BOX_H, BOX_V = "═", "║"
+BOX_ML, BOX_MR, BOX_SL, BOX_SR, BOX_SH = "╠", "╣", "╟", "╢", "─"
 
-# ╔══════════════════════════════════════════════════════════════════════════════╗
-# ║ END CONFIGURATION                                                          ║
-# ╚══════════════════════════════════════════════════════════════════════════════╝
-
-# Win32 console setup
 _k32 = ctypes.WinDLL("kernel32", use_last_error=True)
 _hout = _k32.GetStdHandle(-11)
 _m = ctypes.c_ulong()
@@ -102,6 +81,8 @@ _k32.SetConsoleMode(_hout, _m.value | 0x0004 | 0x0008)
 
 RST = "\x1b[0m"
 BOLD = "\x1b[1m"
+SYNC_ON = "\x1b[?2026h"
+SYNC_OFF = "\x1b[?2026l"
 
 
 def _w(t: str) -> None:
@@ -169,14 +150,14 @@ def _console_width() -> int:
     csbi = _CSBI()
     if _k32.GetConsoleScreenBufferInfo(_hout, ctypes.byref(csbi)):
         width = csbi.srWindow.Right - csbi.srWindow.Left + 1
-        return max(PANEL_WIDTH, min(width, 140))
+        return max(PANEL_WIDTH, min(width, 160))
     return PANEL_WIDTH
 
 
 def _bar(v: float, w: int, color: tuple[int, int, int]) -> str:
     w = max(2, w)
     f = max(0, min(w, int(v * w)))
-    return _fg(*color) + "=" * f + _fg(*CLR_DIM) + "-" * (w - f) + RST
+    return _fg(*color) + "█" * f + _fg(*CLR_DIM) + "░" * (w - f) + RST
 
 
 def _spec_cell(value: float, ramp: list[tuple[int, int, int]]) -> str:
@@ -192,8 +173,6 @@ def _spec_row(history: list[float], width: int, ramp: list[tuple[int, int, int]]
         data = [0.0] * (width - len(history)) + history
     return "".join(_spec_cell(v, ramp) for v in data) + RST
 
-
-# ─── Agent tracking ──────────────────────────────────────────────────────────
 
 class Agent:
     __slots__ = ("path", "personality", "events", "_off", "_mt",
@@ -300,14 +279,9 @@ class Agent:
                 self.hist_nrg = self.hist_nrg[-HISTORY_LEN:]
 
     def recent_work(self, n: int) -> list[dict]:
-        work = [
-            e for e in self.events
-            if e.get("phase") in WORK_PHASES and not self._is_cooldown(e)
-        ]
+        work = [e for e in self.events if e.get("phase") in WORK_PHASES and not self._is_cooldown(e)]
         return work[-n:]
 
-
-# ─── TUI ─────────────────────────────────────────────────────────────────────
 
 class TUI:
     def __init__(self):
@@ -315,6 +289,10 @@ class TUI:
         self.running = True
         self._last_scan = 0.0
         self._start = time.time()
+        self._input_buf = ""
+        self._input_from = "human"
+        self._bus_cache: list[dict[str, Any]] = []
+        self._reactor_proc = None
 
     def _scan(self) -> None:
         now = time.time()
@@ -332,6 +310,8 @@ class TUI:
             self.agents[main] = Agent(Path(main), "main")
 
     def _poll(self) -> None:
+        comms.drain_inject()
+        self._bus_cache = comms.read_bus(BUS_ROWS + 4)
         for a in self.agents.values():
             a.poll()
 
@@ -343,10 +323,7 @@ class TUI:
             return ""
         match ph:
             case "schedule":
-                if d.get("reason") == "plan_cooldown":
-                    text = f"cooldown {d.get('wait', '')}s"
-                else:
-                    text = f"reason={d.get('reason', '')}"
+                text = f"cooldown {d.get('wait', '')}s" if d.get("reason") == "plan_cooldown" else f"reason={d.get('reason', '')}"
             case "action" | "actor":
                 ok = "ok" if d.get("ok") else "FAIL"
                 v = d.get("verb", d.get("conclusion", ""))
@@ -354,10 +331,7 @@ class TUI:
                 text = f"{ok} {v} {o}".strip() if v or o else str(d)
             case "plan":
                 reason = d.get("reason", "")
-                if d.get("mode") == "rejected" and reason:
-                    text = f"rejected {reason[:72]}"
-                else:
-                    text = f"mode={d.get('mode', '')} steps={d.get('steps', '')} {d.get('done_when', '')}"
+                text = f"rejected {reason[:72]}" if d.get("mode") == "rejected" and reason else f"mode={d.get('mode', '')} steps={d.get('steps', '')} {d.get('done_when', '')}"
             case "verify":
                 text = f"{d.get('verdict', '')} {d.get('evidence', '')}"
             case "fission_judge":
@@ -380,6 +354,59 @@ class TUI:
                 text = str(d)
         return _trunc(text, max_w) if max_w > 0 else text
 
+    def _bus_color(self, from_id: str, kind: str) -> tuple[int, int, int]:
+        if from_id == "human":
+            return CLR_BUS_HUMAN
+        if from_id == "grok":
+            return CLR_BUS_GROK
+        if kind == "event":
+            return CLR_BUS_EVENT
+        return CLR_BUS
+
+    def _bus_line(self, entry: dict[str, Any], width: int) -> str:
+        fid = str(entry.get("from", "?"))
+        kind = str(entry.get("kind", "message"))[:5]
+        text = str(entry.get("text", "")).replace("\n", " ")
+        color = self._bus_color(fid, kind)
+        body = f"@{fid:<14} [{kind}] {text}"
+        return f"{_fg(*color)}{_trunc(body, width)}{RST}"
+
+    def _post_input(self) -> None:
+        text = self._input_buf.strip()
+        if not text:
+            return
+        role = comms.ROLES.get(self._input_from, "colony")
+        comms.post(self._input_from, role, text, kind="message")
+        self._input_buf = ""
+        self._bus_cache = comms.read_bus(BUS_ROWS + 4)
+
+    def _handle_key(self, ch: str) -> bool:
+        if ch in ("\r", "\n"):
+            self._post_input()
+            return True
+        if ch == "\x08":
+            self._input_buf = self._input_buf[:-1]
+            return True
+        if ch == "\x1b":
+            return True
+        if ch == "\t":
+            self._input_from = "grok" if self._input_from == "human" else "human"
+            return True
+        if ch in ("q", "Q", "\x03"):
+            self.running = False
+            return True
+        if ch == " ":
+            pause_path = BASE_DIR / "pause"
+            if pause_path.exists():
+                pause_path.unlink(missing_ok=True)
+            else:
+                pause_path.write_text("", encoding="utf-8")
+            return True
+        if len(ch) == 1 and ch.isprintable():
+            self._input_buf += ch
+            return True
+        return False
+
     def render(self) -> str:
         W = _console_width()
         inner = W - 4
@@ -392,11 +419,8 @@ class TUI:
             return f"{bc}{BOX_V}{RST} {t}{' ' * gap} {bc}{BOX_V}{RST}"
 
         lines: list[str] = []
-
-        # Top border
         lines.append(f"{bc}{BOX_TL}{BOX_H * (W - 2)}{BOX_TR}{RST}")
 
-        # Header
         alive = sum(1 for a in agents if a.alive)
         total = len(agents)
         total_f = sum(a.fissions for a in agents)
@@ -404,51 +428,40 @@ class TUI:
         fpm = total_f * 60.0 / max(elapsed, 1)
         k = total_f / max(alive, 1)
         avg_stag = sum(a.stag for a in agents) / max(total, 1)
-
-        dot_c = _fg(*CLR_ALIVE) if alive else _fg(*CLR_DEAD)
-        dot = "*" if alive else "x"
         paused = (BASE_DIR / "pause").exists()
         mode = f"{_fg(*CLR_STAG)}MATH-ONLY{RST}" if paused else f"{_fg(*CLR_ALIVE)}LIVE{RST}"
+        dot_c = _fg(*CLR_ALIVE) if alive else _fg(*CLR_DEAD)
+        dot = "●" if alive else "○"
         hdr = (
-            f"{BOLD}{_fg(*CLR_HEADER)}REACTOR{RST} "
-            f"{dot_c}{dot} {alive}/{total}{RST}  "
-            f"[{mode}]  "
-            f"k={k:.1f}  "
-            f"{_fg(*CLR_FISSION)}F={total_f}{RST}  "
-            f"{fpm:.1f}/m  "
-            f"avg_stag={avg_stag:.2f}  "
-            f"{self._elapsed(elapsed)}  "
-            f"{time.strftime('%H:%M:%S')}"
+            f"{BOLD}{_fg(*CLR_HEADER)}REACTOR{RST} {dot_c}{dot}{RST} {alive}/{total}  "
+            f"[{mode}]  k={k:.1f}  {_fg(*CLR_FISSION)}F={total_f}{RST}  {fpm:.1f}/m  "
+            f"stag={avg_stag:.2f}  {self._elapsed(elapsed)}  {time.strftime('%H:%M:%S')}"
         )
         lines.append(row(hdr))
         lines.append(f"{bc}{BOX_ML}{BOX_H * (W - 2)}{BOX_MR}{RST}")
 
-        # Each agent
+        spec_w = SPEC_WIDTH
+        val_w = 5
+        text_w = max(20, inner - spec_w - val_w - 3 - PHASE_WIDTH)
+
         for idx, agent in enumerate(agents):
-            # Row 1: identity + bars + fission
-            adot = f"{_fg(*CLR_ALIVE)}*{RST}" if agent.alive else f"{_fg(*CLR_DEAD)}x{RST}"
+            adot = f"{_fg(*CLR_ALIVE)}●{RST}" if agent.alive else f"{_fg(*CLR_DEAD)}○{RST}"
             pers = agent.personality[:PERSONALITY_WIDTH].ljust(PERSONALITY_WIDTH)
             stag_b = f"s{_bar(agent.stag, BAR_WIDTH, CLR_STAG)}"
             nrg_b = f"n{_bar(min(agent.energy / NRG_MAX, 1), BAR_WIDTH, CLR_NRG)}"
             pid_b = f"p{_bar(min(abs(agent.pid_val) / PID_MAX, 1), BAR_WIDTH, CLR_PID)}"
             fiss = f"{_fg(*CLR_FISSION)}F={agent.fissions}{RST}"
-
             lines.append(row(f"{pers} {adot} {stag_b} {nrg_b} {pid_b} {fiss}"))
 
-            # Rows 2+: events (left) + spectrogram (right)
-            spec_w = SPEC_WIDTH
-            val_w = 5
-            text_w = max(24, inner - spec_w - val_w - 3 - PHASE_WIDTH)
             recent = agent.recent_work(AGENT_EVENT_ROWS)
-
             s_strip = _spec_row(agent.hist_stag, spec_w, RAMP_STAG)
             n_strip = _spec_row(agent.hist_nrg, spec_w, RAMP_NRG)
             p_strip = _spec_row(agent.hist_pid, spec_w, RAMP_PID)
-            s_val = f"{_fg(*CLR_STAG)}{agent.stag:4.2f}{RST}"
-            n_val = f"{_fg(*CLR_NRG)}{agent.energy:4.1f}{RST}"
-            p_val = f"{_fg(*CLR_PID)}{agent.pid_val:4.1f}{RST}"
-            specs = [f"{s_strip} {s_val}", f"{n_strip} {n_val}", f"{p_strip} {p_val}"]
-
+            specs = [
+                f"{s_strip} {_fg(*CLR_STAG)}{agent.stag:4.2f}{RST}",
+                f"{n_strip} {_fg(*CLR_NRG)}{agent.energy:4.1f}{RST}",
+                f"{p_strip} {_fg(*CLR_PID)}{agent.pid_val:4.1f}{RST}",
+            ]
             for i in range(AGENT_EVENT_ROWS):
                 if i < len(recent):
                     ph = recent[i].get("phase", "")
@@ -460,24 +473,27 @@ class TUI:
                 left_trunc = _trunc(left, text_w + PHASE_WIDTH + 2)
                 pad = max(0, inner - spec_w - val_w - 2 - _vlen(left_trunc))
                 right = specs[i] if i < len(specs) else ""
-                lines.append(row(f"{left_trunc}{chr(32) * pad} {right}"))
-
-            # Separator
+                lines.append(row(f"{left_trunc}{' ' * pad} {right}"))
             if idx < len(agents) - 1:
                 lines.append(f"{bc}{BOX_SL}{BOX_SH * (W - 2)}{BOX_SR}{RST}")
 
-        # Footer
         lines.append(f"{bc}{BOX_ML}{BOX_H * (W - 2)}{BOX_MR}{RST}")
-        foot = (
-            f"avg_stag={avg_stag:.2f}  "
-            f"k={k:.2f}  "
-            f"{fpm:.1f}F/m  "
-            f"{alive}/{total} alive  "
-            f"uptime={self._elapsed(elapsed)}"
-        )
-        lines.append(row(foot))
-        lines.append(f"{bc}{BOX_BL}{BOX_H * (W - 2)}{BOX_BR}{RST}")
+        lines.append(row(f"{BOLD}{_fg(*CLR_BUS)}MESSAGE BUS{RST}  peers: human · grok · colony"))
+        bus_entries = self._bus_cache[-BUS_ROWS:]
+        for i in range(BUS_ROWS):
+            if i < len(bus_entries):
+                lines.append(row(self._bus_line(bus_entries[i], inner)))
+            else:
+                lines.append(row(""))
 
+        lines.append(f"{bc}{BOX_ML}{BOX_H * (W - 2)}{BOX_MR}{RST}")
+        role = comms.ROLES.get(self._input_from, "colony")
+        prompt = f"@{self._input_from} ({role})> {self._input_buf}"
+        cursor = "▌" if int(time.time() * 2) % 2 else " "
+        lines.append(row(f"{_fg(*CLR_INPUT)}{_trunc(prompt, inner - 1)}{cursor}{RST}"))
+        lines.append(row(f"{_fg(*CLR_DIM)}Enter send · Tab human/grok · Space LIVE · q quit · python comms.py post grok \"msg\"{RST}"))
+
+        lines.append(f"{bc}{BOX_BL}{BOX_H * (W - 2)}{BOX_BR}{RST}")
         return "\x1b[H" + "\r\n".join(ln + "\x1b[K" for ln in lines) + "\x1b[J"
 
     @staticmethod
@@ -490,39 +506,31 @@ class TUI:
 
     def run(self) -> None:
         import log
-        import subprocess, sys
+        import subprocess
+        import sys
+
         log.cleanup_runtime()
-        _w("\x1b[?1049h\x1b[?25l")
-        _w("\x1b]0;endgame-ai reactor\x07")
+        _w("\x1b[?1049h\x1b[?25l\x1b[?2004h\x1b[5 q")
+        _w("\x1b]0;endgame-ai · reactor + bus\x07")
         pause_path = BASE_DIR / "pause"
-        # Start in paused/math-only mode
         pause_path.write_text("", encoding="utf-8")
-        # Launch reactor
-        if True:  # always launch reactor
-            env = os.environ.copy()
-            env["ENDGAME_BOOTSTRAPPED"] = "1"
-            self._reactor_proc = subprocess.Popen(
-                [sys.executable, "reactor.py"],
-                cwd=str(BASE_DIR),
-                env=env,
-                creationflags=0x08000000,
-            )
-        else:
-            self._reactor_proc = None
+        comms.post("tui", "console", "TUI online — message bus active. Human and Grok are colony peers.", kind="beacon")
+
+        env = os.environ.copy()
+        env["ENDGAME_BOOTSTRAPPED"] = "1"
+        self._reactor_proc = subprocess.Popen(
+            [sys.executable, "reactor.py"],
+            cwd=str(BASE_DIR),
+            env=env,
+            creationflags=0x08000000,
+        )
         try:
             while self.running:
                 self._scan()
                 self._poll()
                 if msvcrt.kbhit():
-                    ch = msvcrt.getwch()
-                    if ch in ("q", "Q", "\x03"):
-                        break
-                    elif ch == " ":
-                        if pause_path.exists():
-                            pause_path.unlink(missing_ok=True)
-                        else:
-                            pause_path.write_text("", encoding="utf-8")
-                _w(self.render())
+                    self._handle_key(msvcrt.getwch())
+                _w(SYNC_ON + self.render() + SYNC_OFF)
                 agents = self._sorted()
                 alive = sum(1 for a in agents if a.alive)
                 total = len(agents) or 1
@@ -531,10 +539,8 @@ class TUI:
         except KeyboardInterrupt:
             pass
         finally:
-            _w("\x1b]9;4;0;0\x07")
-            _w("\x1b[?1049l\x1b[?25h")
+            _w("\x1b]9;4;0;0\x07\x1b[?2004l\x1b[?1049l\x1b[?25h")
             if self._reactor_proc and self._reactor_proc.poll() is None:
-                # Kill entire process tree (reactor + its children)
                 os.system(f"taskkill /F /T /PID {self._reactor_proc.pid} >nul 2>&1")
 
 
