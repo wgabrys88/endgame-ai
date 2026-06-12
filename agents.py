@@ -865,8 +865,8 @@ def _render_field(ctx: dict[str, Any], field: str, instruction: str) -> str:
         case "hints":
             return _milestone_hints(ctx)
         case "bus":
-            from comms import format_bus_context
-            return format_bus_context(config.CONTEXT_BUS_MAX)
+            from comms import agent_id, format_bus_context
+            return format_bus_context(config.CONTEXT_BUS_MAX, for_agent=agent_id())
         case "done_when":
             dw = ctx.get("done_when", "")
             if not dw:

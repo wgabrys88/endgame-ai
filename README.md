@@ -23,11 +23,11 @@ Agents do not wait for instructions. The git expert sees dirty trees and commits
 **Human and Grok are colony peers.** Post to the bus from the TUI input line or:
 
 ```powershell
-python comms.py post human "check git status"
-python comms.py post grok "review n4 planner"
+python comms.py post human "@grok review n4 planner"
+python comms.py post grok "@Wojciech n4 stuck — check TUI"
 ```
 
-Chat lives in `runtime/comms/messages.json` (retained). Work events roll in `events_bus.jsonl`. Planners see recent bus context.
+**@mention = personal ping** (MS Teams-style): `@Wojciech` alerts you with a terminal sound; `@grok` flags the external AI; `@colony` broadcasts to all slots. Chat lives in `messages.json` (retained). Work events roll in `events_bus.jsonl`. Planners see bus context with ** PING FOR YOU ** when mentioned.
 
 You watch everything in one TUI: stagnation, energy, PID control loops, per-agent spectrograms, bus **CHAT** + **EVENTS** panels.
 

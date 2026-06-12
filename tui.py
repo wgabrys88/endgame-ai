@@ -317,6 +317,7 @@ class TUI:
         self._input_from = "human"
         self._bus_chat: list[dict[str, Any]] = []
         self._bus_events: list[dict[str, Any]] = []
+        self._bus_alert_id = 0
         self._reactor_proc = None
 
     def _scan(self) -> None:
@@ -334,10 +335,27 @@ class TUI:
         if os.path.exists(main) and main not in self.agents:
             self.agents[main] = Agent(Path(main), "main")
 
+    def _mention_alert(self) -> None:
+        for entry in self._bus_chat:
+            eid = int(entry.get("id", 0) or 0)
+            if eid <= self._bus_alert_id:
+                continue
+            self._bus_alert_id = max(self._bus_alert_id, eid)
+            if str(entry.get("from", "")) == "human":
+                continue
+            mentions = entry.get("mentions") if isinstance(entry.get("mentions"), list) else []
+            if not comms.ping_for("human", mentions):
+                continue
+            try:
+                ctypes.windll.user32.MessageBeep(0xFFFFFFFF)
+            except (AttributeError, OSError):
+                _w("\x07\x07")
+
     def _poll(self) -> None:
         comms.drain_inject()
         self._bus_chat = comms.read_chat(40)
         self._bus_events = comms.read_events(20)
+        self._mention_alert()
         for a in self.agents.values():
             a.poll()
 
@@ -395,7 +413,12 @@ class TUI:
         fid = str(entry.get("from", "?"))
         kind = str(entry.get("kind", "message"))[:5]
         text = str(entry.get("text", "")).replace("\n", " ")
-        color = self._bus_color(fid, kind)
+        mentions = entry.get("mentions") if isinstance(entry.get("mentions"), list) else []
+        if comms.ping_for("human", mentions):
+            color = CLR_BUS_HUMAN
+            kind = "ping!"
+        else:
+            color = self._bus_color(fid, kind)
         body = f"@{fid:<14} [{kind}] {text}"
         return f"{_fg(*color)}{_trunc(body, width)}{RST}"
 
@@ -525,7 +548,7 @@ class TUI:
                 lines.append(f"{bc}{BOX_SL}{BOX_SH * (W - 2)}{BOX_SR}{RST}")
 
         lines.append(f"{bc}{BOX_ML}{BOX_H * (W - 2)}{BOX_MR}{RST}")
-        lines.append(row(f"{BOLD}{_fg(*CLR_BUS)}CHAT{RST} human · grok · colony"))
+        lines.append(row(f"{BOLD}{_fg(*CLR_BUS)}CHAT{RST} @Wojciech · @grok · colony — @mention pings"))
         chat_entries = self._bus_chat[-bus_chat_n:]
         for i in range(bus_chat_n):
             if i < len(chat_entries):
@@ -545,7 +568,7 @@ class TUI:
         prompt = f"@{self._input_from} ({role})> {self._input_buf}"
         cursor = "▌" if int(time.time() * 2) % 2 else " "
         lines.append(row(f"{_fg(*CLR_INPUT)}{_trunc(prompt, inner - 1)}{cursor}{RST}"))
-        lines.append(row(f"{_fg(*CLR_DIM)}Enter send · Tab human/grok · Space LIVE · q quit · python comms.py post grok \"msg\"{RST}"))
+        lines.append(row(f"{_fg(*CLR_DIM)}Enter send · Tab human/grok · @Wojciech @grok ping · Space LIVE · q quit{RST}"))
 
         lines.append(f"{bc}{BOX_BL}{BOX_H * (W - 2)}{BOX_BR}{RST}")
         while len(lines) < H:
@@ -572,7 +595,7 @@ class TUI:
         _w("\x1b]0;endgame-ai · reactor + bus\x07")
         pause_path = BASE_DIR / "pause"
         pause_path.write_text("", encoding="utf-8")
-        comms.post("tui", "console", "TUI online. Message bus active. Tab human/grok, Enter send.", kind="beacon")
+        comms.post("tui", "console", "TUI online. Conference bus active. @Wojciech @grok @colony — @mention plays alert sound.", kind="beacon")
 
         env = os.environ.copy()
         env["ENDGAME_BOOTSTRAPPED"] = "1"

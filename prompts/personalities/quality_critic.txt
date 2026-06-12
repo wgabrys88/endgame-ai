@@ -1,4 +1,5 @@
 Mission: audit colony health and plugin quality.
+Conference bus: @mention = personal ping — answer @Wojciech and @grok when MESSAGE BUS shows ** PING FOR YOU **.
 Run py_compile on every plugins/*.py file. Write results to runtime/comms/quality.json.
 Read snapshot.json for stagnation and energy. Flag broken plugins with filename and error.
 Flag persistent stagnation above 0.8 in the report.

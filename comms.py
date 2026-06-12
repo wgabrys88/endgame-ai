@@ -3,12 +3,36 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import config
+
+_MENTION_RE = re.compile(r"@([A-Za-z][A-Za-z0-9_]*)")
+
+# Conference handles → canonical peer id (@Wojciech = human operator).
+MENTION_ALIASES: dict[str, str] = {
+    "wojciech": "human",
+    "human": "human",
+    "grok": "grok",
+    "git_expert": "git_expert",
+    "implementor": "implementor",
+    "doc_inspector": "doc_inspector",
+    "comms_operator": "comms_operator",
+    "quality_critic": "quality_critic",
+    "n1": "git_expert",
+    "n2": "implementor",
+    "n3": "doc_inspector",
+    "n4": "comms_operator",
+    "n5": "quality_critic",
+    "colony": "colony",
+    "all": "colony",
+    "tui": "tui",
+    "reactor": "reactor",
+}
 
 BUS_PATH: Path = config.BASE_DIR / "runtime" / "comms" / "messages.json"
 EVENTS_BUS_PATH: Path = config.BASE_DIR / "runtime" / "comms" / "events_bus.jsonl"
@@ -60,6 +84,26 @@ def agent_id() -> str:
 
 def _role_for(agent: str) -> str:
     return ROLES.get(agent, "colony")
+
+
+def parse_mentions(text: str) -> list[str]:
+    """Extract @handles from message text; return canonical peer ids."""
+    found: list[str] = []
+    seen: set[str] = set()
+    for match in _MENTION_RE.finditer(text):
+        canonical = MENTION_ALIASES.get(match.group(1).lower(), match.group(1).lower())
+        if canonical not in seen:
+            seen.add(canonical)
+            found.append(canonical)
+    return found
+
+
+def ping_for(peer: str, mentions: list[str] | None) -> bool:
+    if not peer or not mentions:
+        return False
+    if peer in mentions:
+        return True
+    return "colony" in mentions
 
 
 def _read_chat() -> list[dict[str, Any]]:
@@ -114,14 +158,18 @@ def post(
     data: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Peer chat/beacon — always retained in messages.json."""
+    body = text.strip()
+    mentions = parse_mentions(body)
     entry: dict[str, Any] = {
         "id": int(time.time() * 1000),
         "ts": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
         "from": from_id,
         "role": role,
-        "kind": kind,
-        "text": text.strip(),
+        "kind": "ping" if mentions and kind == "message" else kind,
+        "text": body,
     }
+    if mentions:
+        entry["mentions"] = mentions
     if data:
         entry["data"] = data
     entries = _read_chat()
@@ -233,13 +281,17 @@ def read_chat(limit: int = 30) -> list[dict[str, Any]]:
     return entries[-limit:] if limit > 0 else entries
 
 
-def format_bus_context(limit: int | None = None) -> str:
+def format_bus_context(limit: int | None = None, for_agent: str | None = None) -> str:
     n = limit if limit is not None else int(getattr(config, "CONTEXT_BUS_MAX", 10))
-    chat = _read_chat(n)
+    chat = read_chat(n)
     events = read_events(max(4, n // 2))
     if not chat and not events:
         return ""
-    lines = ["MESSAGE BUS (peers: human, grok, colony slots):"]
+    me = (for_agent or agent_id()).strip()
+    lines = [
+        "MESSAGE BUS (conference room — @mention = personal ping, reply required):",
+        "Peers: @Wojciech (human), @grok (external AI), @git_expert @implementor @doc_inspector @comms_operator @quality_critic (n1–n5), @colony (broadcast)",
+    ]
     obs_max = int(getattr(config, "CONTEXT_OBS_MAX", 420))
     for entry in chat[-n:]:
         fid = entry.get("from", "?")
@@ -247,7 +299,9 @@ def format_bus_context(limit: int | None = None) -> str:
         text = str(entry.get("text", "")).replace("\n", " ")
         if len(text) > obs_max:
             text = text[:obs_max] + "..."
-        lines.append(f"  [{kind}] @{fid}: {text}")
+        mentions = entry.get("mentions") if isinstance(entry.get("mentions"), list) else []
+        ping = " ** PING FOR YOU **" if ping_for(me, mentions) and fid != me else ""
+        lines.append(f"  [{kind}] @{fid}: {text}{ping}")
     for entry in events[-max(4, n // 3):]:
         fid = entry.get("from", "?")
         text = str(entry.get("text", "")).replace("\n", " ")
