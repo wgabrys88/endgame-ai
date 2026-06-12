@@ -18,9 +18,18 @@ Requires [LM Studio](https://lmstudio.ai/) with a loaded model (tested with **Ge
 
 Imagine a small reactor core with five fuel rods. Each rod is an LLM agent loop: **plan → run Python → verify → repeat**. When an agent finishes real work (writes a file, pushes git, clicks a button), that counts as **fission** — progress the colony can measure.
 
-Agents do not wait for instructions. The git expert sees dirty trees and commits. The implementor sees errors and writes plugins. The doc inspector reads logs and writes `runtime/comms/report.md`. They coordinate through `runtime/comms/` like a message bus.
+Agents do not wait for instructions. The git expert sees dirty trees and commits. The implementor sees errors and writes plugins. The doc inspector reads logs and writes `runtime/comms/report.md`. They coordinate through a **message bus** — and so can you.
 
-You watch everything in one TUI: stagnation, energy, PID control loops, and recent events per agent.
+**Human and Grok are colony peers.** Post to the bus from the TUI input line or:
+
+```powershell
+python comms.py post human "check git status"
+python comms.py post grok "review n4 planner"
+```
+
+Chat lives in `runtime/comms/messages.json` (retained). Work events roll in `events_bus.jsonl`. Planners see recent bus context.
+
+You watch everything in one TUI: stagnation, energy, PID control loops, per-agent spectrograms, bus **CHAT** + **EVENTS** panels.
 
 ---
 
@@ -67,7 +76,7 @@ python tui.py
 | n1 | git_expert | status → add → commit → push `colony/dev` |
 | n2 | implementor | reads errors, writes `plugins/*.py` |
 | n3 | doc_inspector | reads events, writes `runtime/comms/report.md` |
-| n4 | comms_operator | beacons, `messages.json`, coordination |
+| n4 | comms_operator | message bus, beacons, coordination |
 | n5 | quality_critic | `py_compile` audit → `quality.json` |
 
 ---
@@ -77,15 +86,16 @@ python tui.py
 ```
 tui.py
   └── reactor.py          spawn 5 agents, respawn dead rods, measure k
-        └── main.py ×5    plan → python actor → verify → reflect
+        └── main.py ×5    plan → python actor → verify → fission_judge → fission
               ├── engine.py      scheduler, plugin hot-swap
-              ├── agents.py      planner, verifier, reflector, mutator
+              ├── agents.py      planner, verifier, fission_judge, reflector, mutator
+              ├── comms.py       message bus (chat + events split)
               ├── desktop.py     mouse/keyboard/UIA for planner scripts
               ├── llm.py         LM Studio + strict JSON schemas
               └── log.py         JSONL event bus (math bypasses pause)
 ```
 
-**Runtime** (`runtime/comms/`, `events-child-*.jsonl`, `snapshot.json`) is gitignored and recreated on boot.
+**Runtime** (`runtime/comms/`, `events-child-*.jsonl`, `snapshot.json`) is gitignored and recreated on boot via `log.cleanup_runtime()`.
 
 ---
 
@@ -114,9 +124,11 @@ colony/dev            Agent-autonomous target (git_expert pushes here)
 
 | Variable | Purpose |
 |----------|---------|
-| `ENDGAME_LMS_HOSTS` | Comma-separated LM Studio URLs to probe |
+| `ENDGAME_LMS_HOSTS` | Comma-separated LM Studio URLs to probe (default: localhost + `192.168.16.31:1234`) |
 | `ENDGAME_LMS_HOST` | Preferred host per child (reactor sets this) |
 | `ENDGAME_LMS_MODEL` | Model id substring (default: `gemma`) |
+| `ENDGAME_PERSONALITY` | Personality name per slot (reactor sets) |
+| `ENDGAME_SLOT` | Slot id 1–5 (reactor sets) |
 
 Tune constants in `config.py`. Agent map in `AGENTS.md`. Grok/Cursor handoff in `GROK.md`.
 

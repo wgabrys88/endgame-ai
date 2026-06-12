@@ -6,29 +6,30 @@
 python tui.py
 ```
 
-Launches reactor, renders spectrogram, starts **paused**. Space = toggle live. q = kill all (`taskkill /F /T`).
+Launches reactor, renders spectrogram + message bus panels, starts **paused**. Space = toggle live. q = kill all (`taskkill /F /T`).
 
 ## File map
 
 ### Core
 | File | Role |
 |------|------|
-| tui.py | Spectrogram TUI. Auto-launches reactor. Spacebar pause. |
-| reactor.py | Breeder. 5 slots, LM host probe + load-balance, k~1.0. |
-| main.py | Single fuel rod. Args, engine loop, personality env. |
-| engine.py | Scheduler chain, plugin hot-swap, desktop refresh before planner. |
-| agents.py | planner, actor (run_python), verifier, reflector, mutator, math agents. |
-| actions.py | GUI verbs + run_python subprocess runner. |
-| desktop.py | observe_screen, desktop_click/write/press/hotkey/scroll/focus/wait. |
-| colony_env.py | BASE_DIR, COMMS_DIR, PLUGINS_DIR, enable_gui, spawn_main. |
-| python_code.py | Sanitize/validate planner Python (ASCII, no prose-as-code). |
-| config.py | Paths, math tuning, CONTEXT_POLICY, LMS hosts. |
-| llm.py | LM Studio API, schema enforcement, host failover. |
-| log.py | JSONL bus, cleanup_runtime, pause gate. |
-| observer.py | UIA desktop scan → element book `[n]` ids. |
-| win32.py | ctypes user32, SendInput, VK map. |
-| token_state.py | Token telemetry. |
-| lessons.py | Persistent lesson store. |
+| tui.py | Spectrogram TUI, bus CHAT/EVENTS panels, inject drain, spacebar pause |
+| reactor.py | Breeder. 5 slots, LM host probe + load-balance (max 2 slots/host) |
+| main.py | Single fuel rod. Args, engine loop, personality env |
+| engine.py | Scheduler chain, plugin hot-swap, desktop refresh before planner |
+| agents.py | planner, actor (run_python), verifier, fission_judge, reflector, mutator, math |
+| actions.py | GUI verbs + run_python subprocess runner |
+| desktop.py | observe_screen, desktop_click/write/press/hotkey/scroll/focus/wait |
+| colony_env.py | BASE_DIR, COMMS_DIR, PLUGINS_DIR, bus_post, bus_id, enable_gui, spawn_main |
+| comms.py | Message bus — chat in messages.json, work events in events_bus.jsonl |
+| python_code.py | Planner Python syntax validation (ASCII, no prose-as-code) |
+| config.py | Paths, math tuning, CONTEXT_POLICY, LMS hosts, bus caps |
+| llm.py | LM Studio API, schema enforcement, host failover |
+| log.py | JSONL bus, cleanup_runtime, pause gate, comms.mirror_event for work phases |
+| observer.py | UIA desktop scan → element book `[n]` ids |
+| win32.py | ctypes user32, SendInput, VK map |
+| token_state.py | Token telemetry |
+| lessons.py | Persistent lesson store |
 
 ### Personalities (`prompts/personalities/`)
 | File | Identity |
@@ -36,7 +37,7 @@ Launches reactor, renders spectrogram, starts **paused**. Space = toggle live. q
 | git_expert.txt | Commits/pushes colony/dev |
 | implementor.txt | Writes plugins |
 | doc_inspector.txt | report.md from logs |
-| comms_operator.txt | messages.json, beacons |
+| comms_operator.txt | messages.json bus, beacons, coordination |
 | quality_critic.txt | quality.json plugin audit |
 
 One personality per slot (n1–n5). Reflector can append `EVOLVE:` lines to personality files.
@@ -46,6 +47,7 @@ One personality per slot (n1–n5). Reflector can append `EVOLVE:` lines to pers
 |--------|--------|
 | planner.json | `{mode, sequence[{code}], done_when}` — Python in `code` |
 | verifier.json | `{verdict, evidence}` |
+| fission_judge.json | `{approve, reason}` — LLM gate before fission credit |
 | reflector.json | `{diagnosis, suggestion, rule}` |
 | mutator.json | `{action, filename, content}` |
 | actor.json | Legacy; actor runs planner Python directly |
@@ -53,9 +55,14 @@ One personality per slot (n1–n5). Reflector can append `EVOLVE:` lines to pers
 ### Plugins (`plugins/`)
 Hot-loaded every tick. `def run(board) -> dict | None`. Errors → `plugin.error`, never crash.
 
-### Runtime (gitignored, bootstrapped)
-`runtime/comms/` — human.txt, messages.json, report.md, quality.json, beacons, telemetry.
-`events-child-n*.jsonl` — per-agent log. `snapshot.json` — board snapshot.
+### Runtime (gitignored, bootstrapped by `log.cleanup_runtime`)
+`runtime/comms/`:
+- `messages.json` — peer chat/beacon only (human, grok, colony slots); capped `BUS_CHAT_MAX`
+- `events_bus.jsonl` — rolling work events for TUI (math/plugin spam not mirrored)
+- `inject.jsonl` — external posts drained by engine/TUI
+- `report.md`, `quality.json`, beacons, telemetry
+
+Per-agent: `events-child-n*.jsonl`. Board: `snapshot.json`.
 
 ## Process tree
 
@@ -63,15 +70,33 @@ Hot-loaded every tick. `def run(board) -> dict | None`. Errors → `plugin.error
 tui.py → reactor.py → main.py ×5
 ```
 
-Shared working directory. Only git_expert does git ops.
+Shared working directory. Only git_expert does git ops. Reactor sets `ENDGAME_PERSONALITY` + `ENDGAME_SLOT` per child.
 
 ## Planner → actor path
 
 1. Planner LLM returns `sequence[].code` (plain Python).
-2. ActorAgent calls `actions.run_python()` — temp script with colony_env + desktop imports.
-3. Verifier confirms LAST_RESULT; fission on success.
+2. ActorAgent calls `actions.run_python()` — full plan sequence in one subprocess with colony_env + desktop imports.
+3. Verifier confirms LAST_RESULT.
+4. FissionJudgeAgent (reflector prompt + fission_judge schema) approves or blocks fission.
+5. Fission on approval.
 
 **Desktop:** `enable_gui()` creates `gui_mode` file; engine refreshes screen before planner; code uses `desktop_*` helpers.
+
+## Message bus
+
+| Path | Content |
+|------|---------|
+| `runtime/comms/messages.json` | Chat/beacon — retained, not evicted by work spam |
+| `runtime/comms/events_bus.jsonl` | Work phases mirrored from `log.emit` (rolling 200 lines) |
+| `runtime/comms/inject.jsonl` | Drained inject queue for TUI + engine |
+
+CLI (human/grok as colony peers):
+```bash
+python comms.py post human "message"
+python comms.py post grok "message"
+```
+
+Planner context includes `bus` via `format_bus_context()`. Agents use `bus_post(from_id, role, text)` from colony_env.
 
 ## Scheduler priorities
 
@@ -85,10 +110,12 @@ Plan reject: history + LAST_RESULT feedback, 10s cooldown, stagnation-capped fai
 
 ## LM Studio hosts
 
-- `ENDGAME_LMS_HOSTS` — candidate list (comma-separated).
+- `ENDGAME_LMS_HOSTS` — candidate list (comma-separated). Default: localhost + `192.168.16.31:1234`.
 - Reactor probes `/v1/models`, assigns least-loaded healthy host per slot.
+- `LMS_MAX_SLOTS_PER_HOST` = 2 — caps concurrent slots per GPU.
 - Child gets `ENDGAME_LMS_HOST` + full fallback list; `llm.py` fails over on error.
 - `LMS_PREFERRED_MODEL` default `gemma` (override: `ENDGAME_LMS_MODEL`).
+- `LMS_TIMEOUT` = 90s.
 
 ## Pause architecture
 
@@ -113,6 +140,10 @@ main                    Stable single-agent release
 | PLAN_REJECT_COOLDOWN_SEC | 10 | anti spam |
 | REFLECT_MIN_INTERVAL_SEC | 12 | |
 | LMS_PREFERRED_MODEL | gemma | env override |
+| LMS_TIMEOUT | 90 | seconds |
+| LMS_MAX_SLOTS_PER_HOST | 2 | load balance cap |
+| BUS_CHAT_MAX | 120 | chat retention |
+| BUS_EVENTS_MAX_LINES | 200 | events bus rolling window |
 
 ## Rules
 

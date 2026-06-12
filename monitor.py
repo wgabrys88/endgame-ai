@@ -77,7 +77,7 @@ def deduce(state):
     learning = [(n,s) for n,s in state.items() if s["reflects"] > 0]
 
     if producers:
-        lines.append(f"**Productive:** {', '.join(f'{n}({s[\"fissions\"]}F)' for n,s in producers)}")
+        lines.append("**Productive:** " + ", ".join(f"{n}({s['fissions']}F)" for n, s in producers))
     if stuck:
         lines.append(f"**Stuck:** {', '.join(n for n,_ in stuck)} — no successful execs")
     if total_to > 0:

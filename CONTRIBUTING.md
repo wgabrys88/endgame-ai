@@ -13,15 +13,17 @@
 ## Before you commit
 
 1. `git status` — no runtime artifacts, no personal paths in tracked files.
-2. `python -m compileall -q .`
-3. Read `AGENTS.md` and `GROK.md` if you touch architecture.
+2. `python -c "import log; log.cleanup_runtime()"` — fresh runtime seed.
+3. `python -m compileall -q .`
+4. Read `AGENTS.md` and `GROK.md` if you touch architecture.
 
 ## What must stay out of git
 
-See `.gitignore`. Runtime is bootstrapped by `log.cleanup_runtime()` when TUI starts:
+See `.gitignore` (whitelist: `!*.py`, `!prompts/**`, `!schemas/**`, `!plugins/**`, docs). Runtime is bootstrapped by `log.cleanup_runtime()` when TUI starts:
 
-- `runtime/`, `events*.jsonl`, `snapshot.json`, `lessons.jsonl`
-- `pause`, `gui_mode`, `*.lock`, `tmp*.py`
+- `runtime/` (includes `comms/messages.json`, `events_bus.jsonl`, `inject.jsonl`)
+- `events*.jsonl`, `snapshot.json`, `lessons.jsonl`
+- `pause`, `gui_mode`, `*.lock`, `tmp*.py`, `report.md` (repo root), `session-log.md`
 
 ## Code conventions
 
