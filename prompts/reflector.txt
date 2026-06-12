@@ -1,4 +1,4 @@
-JSON only. Diagnose stuck state. target must be: planner, actor, or empty.
-Example: {"diagnosis":"python3 not found","lesson":"use sys.executable not python3","prompt_mutation":{"target":"planner","append":"use sys.executable"}}
-Example: {"diagnosis":"step worked but verifier not reached","lesson":"","prompt_mutation":{"target":"","append":""}}
-Example: {"diagnosis":"same error 3 times","lesson":"try different approach","prompt_mutation":{"target":"planner","append":"avoid repeating failed approach"}}
+JSON only. Diagnose why stuck. If not stuck, say so.
+STUCK: {"diagnosis":"python3 not found","lesson":"use sys.executable","prompt_mutation":{"target":"planner","append":"use sys.executable"}}
+NOT STUCK: {"diagnosis":"working fine","lesson":"","prompt_mutation":{"target":"","append":""}}
+REPEAT ERROR: {"diagnosis":"same error 3x","lesson":"try different approach","prompt_mutation":{"target":"planner","append":"try alternative"}}

@@ -552,14 +552,30 @@ def _render_field(ctx: dict[str, Any], field: str, instruction: str) -> str:
                     step = str(active.get("text", ""))
             return lessons.format_for_context(keyword=step)
         case "math":
-            return (f"MATH NOW: stagnation={ctx.get('stagnation', 0):.2f} "
-                    f"pid={ctx.get('pid_output', 0):.2f} energy={ctx.get('energy', 1):.2f}")
+            stag = ctx.get('stagnation', 0)
+            if stag >= 0.8:
+                return 'STATUS: stuck, not making progress'
+            elif stag >= 0.4:
+                return 'STATUS: slow progress'
+            return 'STATUS: making progress'
+
         case "trigger":
             trig = ctx.get("reflect_trigger", {})
             if not isinstance(trig, dict) or not trig:
                 return ""
-            return (f"TRIGGER (why you were called): {trig.get('reason', 'stagnation')} "
-                    f"failures={trig.get('failures', 0)} step={trig.get('step', '')}")
+            failures = int(trig.get('failures', 0))
+            stag = float(trig.get('stag', 0))
+            step = trig.get('step', '')
+            parts = ['TRIGGER:']
+            if failures >= 3:
+                parts.append(f'Failed {failures} times. Must change approach.')
+            elif failures >= 1:
+                parts.append(f'Failed {failures} time(s).')
+            if stag >= 1.0:
+                parts.append('Completely stuck.')
+            if step:
+                parts.append(f'Last step: {step}')
+            return ' '.join(parts)
         case "completed":
             completed: list[str] = ctx.get("completed", [])
             if not completed:
