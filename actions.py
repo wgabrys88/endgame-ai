@@ -294,6 +294,8 @@ def run_python(code: str) -> ActionResult:
             cwd=str(config.BASE_DIR),
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=config.EXEC_TIMEOUT,
             creationflags=subprocess.CREATE_NO_WINDOW,
         )

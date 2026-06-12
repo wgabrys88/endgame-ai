@@ -16,19 +16,27 @@ __all__ = [
 ]
 
 
+def _safe_print(text: str) -> None:
+    import sys
+    out = text.encode(sys.stdout.encoding or "utf-8", errors="replace").decode(
+        sys.stdout.encoding or "utf-8", errors="replace"
+    )
+    print(out)
+
+
 def observe_screen(*, print_screen: bool = True) -> tuple[dict, str, str]:
     """Scan desktop UI. Returns (element_book, context_text, focused_window)."""
     obs = observe()
     if print_screen:
         if obs.context_text:
-            print(obs.context_text[:4000])
-        print(f"FOCUSED: {obs.focused_title}")
+            _safe_print(obs.context_text[:4000])
+        _safe_print(f"FOCUSED: {obs.focused_title}")
     return obs.book, obs.context_text, obs.focused_title
 
 
 def _act(verb: str, args: dict, book: dict) -> ActionResult:
     result = execute_verb(verb, args, book, None)
-    print(result.observation)
+    _safe_print(result.observation)
     if not result.success:
         raise RuntimeError(result.observation)
     return result

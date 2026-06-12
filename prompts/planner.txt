@@ -40,3 +40,5 @@ CONFERENCE BUS:
 - Reply when MESSAGE BUS shows ** PING FOR YOU **
 
 Output one JSON object matching the schema.
+
+RULE: credit
