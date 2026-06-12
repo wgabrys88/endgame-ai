@@ -20,7 +20,7 @@ EVENTS_GLOB = "events-child-*.jsonl"
 MAIN_EVENTS = "events.jsonl"
 
 # Layout — 2x zoom-out on 1080p gives ~108×86 usable
-PANEL_WIDTH = 108
+PANEL_WIDTH = 96
 PERSONALITY_WIDTH = 14
 BAR_WIDTH = 4
 AGENT_EVENT_ROWS = 4                       # recent work events shown (includes mutator)
@@ -358,29 +358,31 @@ class TUI:
 
             lines.append(row(f"{pers} {adot} {stag_b} {nrg_b} {pid_b} {fiss}"))
 
-            # Rows 2+: recent work events
-            recent = agent.recent_work(AGENT_EVENT_ROWS)
-            for ev in recent:
-                ph = ev.get("phase", "")
-                brief = self._brief(ph, ev.get("d", {}))
-                lines.append(row(f" {_fg(*CLR_PHASE)}{ph:<14}{RST} {_fg(*CLR_DATA)}{brief}{RST}"))
-            for _ in range(AGENT_EVENT_ROWS - len(recent)):
-                lines.append(row(""))
-
-            # Spectrogram rows (3 strips: stag/nrg/pid history)
+            # Rows 2+: events (left) + spectrogram (right)
+            spec_w = 20
             val_w = 5
-            spec_w = inner - val_w
+            text_w = inner - spec_w - val_w - 2
+            recent = agent.recent_work(AGENT_EVENT_ROWS)
+
             s_strip = _spec_row(agent.hist_stag, spec_w, RAMP_STAG)
             n_strip = _spec_row(agent.hist_nrg, spec_w, RAMP_NRG)
             p_strip = _spec_row(agent.hist_pid, spec_w, RAMP_PID)
-
             s_val = f"{_fg(*CLR_STAG)}{agent.stag:4.2f}{RST}"
             n_val = f"{_fg(*CLR_NRG)}{agent.energy:4.1f}{RST}"
             p_val = f"{_fg(*CLR_PID)}{agent.pid_val:4.1f}{RST}"
+            specs = [f"{s_strip} {s_val}", f"{n_strip} {n_val}", f"{p_strip} {p_val}"]
 
-            lines.append(row(f"{s_strip} {s_val}"))
-            lines.append(row(f"{n_strip} {n_val}"))
-            lines.append(row(f"{p_strip} {p_val}"))
+            for i in range(AGENT_EVENT_ROWS):
+                if i < len(recent):
+                    ph = recent[i].get("phase", "")
+                    brief = self._brief(ph, recent[i].get("d", {}))
+                    left = f" {_fg(*CLR_PHASE)}{ph:<14}{RST} {_fg(*CLR_DATA)}{brief}{RST}"
+                else:
+                    left = ""
+                left_trunc = _trunc(left, text_w)
+                pad = max(0, text_w - _vlen(left_trunc))
+                right = specs[i] if i < len(specs) else ""
+                lines.append(row(f"{left_trunc}{chr(32) * pad} {right}"))
 
             # Separator
             if idx < len(agents) - 1:
