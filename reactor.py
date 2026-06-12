@@ -14,10 +14,10 @@ LOCAL = "http://localhost:1234"
 # 2 git experts, 2 doc inspectors, 1 implementor, 1 comms, 1 critic, 1 wild
 ROSTER = {
     1: "git_expert",
-    2: "git_expert",
-    3: "doc_inspector",
+    2: "implementor",
+    3: "implementor",
     4: "doc_inspector",
-    5: "implementor",
+    5: "quality_critic",
     6: "comms_operator",
     7: "quality_critic",
     8: None,  # wild — empty goal, pure planner personality
