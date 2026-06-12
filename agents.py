@@ -44,12 +44,16 @@ def _similar_to_completed(done_when: str, completed: list[str]) -> bool:
 def _trivial_milestone(goal: str, done_when: str) -> bool:
     if not goal.strip():
         return False
-    g = goal.lower()
     d = done_when.lower()
-    observational = any(k in d for k in ("visible", "can be read", "readable", "on screen", "loaded", "showing"))
-    substantial = any(k in g for k in ("post", "x.com", "linkedin", "perform", "execute", "conversation", "rewrite"))
-    executed = any(k in d for k in ("posted", "created", "written", "sent", "exists and contains"))
-    return observational and substantial and not executed
+    # Trivial if done_when is purely observational (no creation/mutation)
+    trivial_markers = ("listed", "shown", "visible", "printed", "displayed", "can be read",
+                       "readable", "on screen", "loaded", "showing", "status shown",
+                       "checked", "observed", "confirmed exists")
+    production_markers = ("created", "written", "committed", "pushed", "modified",
+                          "compiled", "sent", "saved", "fixed", "installed")
+    is_trivial = any(k in d for k in trivial_markers)
+    is_productive = any(k in d for k in production_markers)
+    return is_trivial and not is_productive
 
 
 class StagnationAgent:
@@ -169,7 +173,10 @@ class SchedulerAgent:
         pid_gate = pid >= config.REFLECT_THRESHOLD and stag >= config.REFLECT_STAG_THRESHOLD
         stag_gate = stag >= config.REFLECT_STAG_THRESHOLD and failures >= 1
         chaos_gate = energy >= config.CHAOS_ENERGY_THRESHOLD and stag >= config.REFLECT_STAG_THRESHOLD
-        reflect_wanted = reflect_due and (pid_gate or stag_gate or chaos_gate)
+        # Periodic reflect every 5 completions even without stagnation
+        completions = len(ctx.get("completed", []))
+        periodic_gate = completions > 0 and completions % 5 == 0
+        reflect_wanted = reflect_due and (pid_gate or stag_gate or chaos_gate or periodic_gate)
 
         # Plan completion takes priority — verify before reflecting
         all_done = plan and all(s.get("status") == "done" for s in plan)
