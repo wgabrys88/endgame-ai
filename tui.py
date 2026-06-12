@@ -44,10 +44,10 @@ ROSTER: dict[str, str] = {
 
 # Phases considered "work"
 WORK_PHASES = frozenset({
-    "schedule", "plan", "actor", "action", "observe", "verify", "reflect",
+    "schedule", "plan", "actor", "action", "observe", "verify", "fission_judge", "reflect",
     "mutation", "personality.evolve", "fission", "fission_blocked", "fission_sustain", "goal_change",
     "start", "stop", "mutator", "mutator.error", "mutator.rejected",
-    "planner.error", "actor.error", "verifier.error", "reflector.error",
+    "planner.error", "actor.error", "verifier.error", "fission_judge.error", "reflector.error",
 })
 
 # Spectrogram color ramps (5 intensity levels, low → high)
@@ -360,6 +360,8 @@ class TUI:
                     text = f"mode={d.get('mode', '')} steps={d.get('steps', '')} {d.get('done_when', '')}"
             case "verify":
                 text = f"{d.get('verdict', '')} {d.get('evidence', '')}"
+            case "fission_judge":
+                text = f"{d.get('verdict', '')} {d.get('diagnosis', '')}"
             case "fission":
                 text = f"power={d.get('power', '')} completions={d.get('completions', '')}"
             case "reflect":

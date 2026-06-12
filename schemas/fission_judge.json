@@ -1,0 +1,33 @@
+{
+  "type": "json_schema",
+  "json_schema": {
+    "name": "fission_judge_output",
+    "strict": true,
+    "schema": {
+      "type": "object",
+      "properties": {
+        "verdict": {
+          "type": "string",
+          "enum": ["credit", "deny"],
+          "description": "credit awards fission progress; deny blocks repeat or no-value work"
+        },
+        "diagnosis": {
+          "type": "string",
+          "minLength": 20,
+          "description": "Why this milestone deserves or does not deserve fission credit"
+        },
+        "suggestion": {
+          "type": "string",
+          "minLength": 10,
+          "description": "Next step if denied, or encouragement if credited"
+        },
+        "rule": {
+          "type": "string",
+          "description": "Optional short planner rule, usually empty for fission review"
+        }
+      },
+      "required": ["verdict", "diagnosis", "suggestion", "rule"],
+      "additionalProperties": false
+    }
+  }
+}

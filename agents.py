@@ -27,19 +27,29 @@ def _token_set(text: str) -> set[str]:
     return {w for w in re.findall(r"[a-z0-9]+", text.lower()) if len(w) > 3}
 
 
-def _similar_to_completed(done_when: str, completed: list[str]) -> bool:
+def _max_similarity_score(done_when: str, completed: list[str]) -> float:
     if not done_when or not completed:
-        return False
+        return 0.0
     dw = _token_set(done_when)
     if not dw:
-        return False
+        return 0.0
+    best = 0.0
     for entry in completed:
         ct = _token_set(str(entry))
         if not ct:
             continue
-        if len(dw & ct) / max(len(dw), 1) >= config.COMPLETED_SIMILARITY_THRESHOLD:
-            return True
-    return False
+        best = max(best, len(dw & ct) / max(len(dw), 1))
+    return best
+
+
+def _similarity_hint(done_when: str, completed: list[str]) -> str:
+    score = _max_similarity_score(done_when, completed)
+    flagged = score >= config.COMPLETED_SIMILARITY_THRESHOLD
+    status = "possible repeat — use judgment" if flagged else "distinct enough — lean credit if valuable"
+    return (
+        f"SIMILARITY: {score:.2f} vs threshold {config.COMPLETED_SIMILARITY_THRESHOLD} ({status}). "
+        "This is advisory only; you decide fission credit."
+    )
 
 
 _COMMS_ARTIFACTS: tuple[tuple[str, str], ...] = (
@@ -70,28 +80,6 @@ def _milestone_hints(ctx: dict[str, Any]) -> str:
     if not lines:
         return ""
     return "SUGGESTED MILESTONES (missing artifacts — pick one):\n" + "\n".join(lines[:4])
-
-
-def _trivial_milestone(goal: str, done_when: str) -> bool:
-    if not goal.strip():
-        return False
-    d = done_when.lower()
-    production_markers = (
-        "created", "written", "committed", "pushed", "modified", "compiled", "sent", "saved",
-        "fixed", "installed", "updated", "appended", "contains", "posted", "message",
-        "documented", "documentation", "refactor", "refactored", "improved", "experiment",
-        "minor", "tweak", "edited", "noted", "commented", "clarified", "formatted",
-        "cleaned", "adjusted", "explored", "tested", "logged", "reported", "added",
-    )
-    if any(k in d for k in production_markers):
-        return False
-    # Only block pure no-op observation with zero artifact change
-    trivial_markers = (
-        "only listed", "only shown", "only visible", "only displayed", "can be read",
-        "readable only", "on screen only", "status shown only", "no output printed",
-        "already exists unchanged", "confirmed exists only", "nothing changed",
-    )
-    return any(k in d for k in trivial_markers)
 
 
 DENIAL_DECAY_SECS = 120.0  # blocked plans decay after 2 minutes
@@ -487,12 +475,6 @@ class PlannerAgent:
         denied_goals: list[dict[str, Any]] = list(ctx.get("denied_goals", []))
         completed: list[str] = list(ctx.get("completed", []))
         goal = str(ctx.get("goal", ""))
-        if done_when and _similar_to_completed(done_when, completed):
-            reason = "done_when overlaps COMPLETED - propose a new write/create/send milestone"
-            return _reject_plan(ctx, reason)
-        if done_when and _trivial_milestone(goal, done_when):
-            reason = "done_when is observational only - propose a write/create/send milestone"
-            return _reject_plan(ctx, reason)
         if done_when and _is_blocked(denied_goals, done_when):
             log.emit("plan.blocked", {"done_when": done_when[:80]})
             return _reject_plan(ctx, "done_when denied too many times - try something different", event="plan.blocked")
@@ -563,22 +545,6 @@ class VerifierAgent:
         completed: list[str] = list(ctx.get("completed", []))
         goal = str(ctx.get("goal", ""))
         denied_goals: list[dict[str, Any]] = list(ctx.get("denied_goals", []))
-        if _similar_to_completed(done_when, completed):
-            denied_goals = _add_denial(denied_goals, done_when)
-            return {
-                "writes": {"plan": [], "done_when": "", "consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1, "denied_goals": denied_goals},
-                "next": "stagnation",
-                "phase": "verify",
-                "data": {"verdict": "denied", "evidence": "done_when overlaps COMPLETED — no repeat fission credit"},
-            }
-        if _trivial_milestone(goal, done_when):
-            denied_goals = _add_denial(denied_goals, done_when)
-            return {
-                "writes": {"plan": [], "done_when": "", "consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1, "denied_goals": denied_goals},
-                "next": "stagnation",
-                "phase": "verify",
-                "data": {"verdict": "denied", "evidence": "done_when is observational only — GOAL requires substantive action (post, create, execute)"},
-            }
         missing = _missing_artifacts(done_when)
         if missing:
             denied_goals = _add_denial(denied_goals, done_when)
@@ -608,9 +574,70 @@ class VerifierAgent:
                     "phase": "verify",
                     "data": {"verdict": "denied", "evidence": f"LLM confirmed but artifact(s) missing: {', '.join(missing)}"},
                 }
-            return {"writes": {"denied_goals": denied_goals}, "next": "done", "phase": "verify", "data": {"verdict": "confirmed", "evidence": evidence}}
+            return {"writes": {"denied_goals": denied_goals, "fission_approved": False}, "next": "fission_judge", "phase": "verify", "data": {"verdict": "confirmed", "evidence": evidence}}
         denied_goals = _add_denial(denied_goals, done_when)
         return {"writes": {"plan": [], "done_when": "", "consecutive_failures": 0, "progress_history": [], "denied_goals": denied_goals}, "next": "planner", "phase": "verify", "data": {"verdict": "denied", "evidence": evidence}}
+
+class FissionJudgeAgent:
+    name: str = "fission_judge"
+    reads: list[str] = [
+        "goal", "done_when", "last_observation", "history", "completed",
+        "consecutive_failures", "denied_goals",
+    ]
+
+    def run(self, ctx: dict[str, Any]) -> dict[str, Any]:
+        from llm import call_llm
+        done_when = str(ctx.get("done_when", ""))
+        completed: list[str] = list(ctx.get("completed", []))
+        denied_goals: list[dict[str, Any]] = list(ctx.get("denied_goals", []))
+        failures = int(ctx.get("consecutive_failures", 0))
+        context = "MODE: FISSION_REVIEW\n\n" + _render_context(ctx, "fission_judge")
+        context += "\n\n" + _similarity_hint(done_when, completed)
+        system = _load_prompt("reflector")
+        try:
+            raw = call_llm(
+                system, context, "fission_judge",
+                max_tokens=getattr(config, "BUDGET_FISSION_JUDGE_OUT", config.BUDGET_VERIFIER_OUT),
+            )
+        except Exception as e:
+            log.emit("fission_judge.error", {"error": str(e)})
+            return {"writes": {}, "next": "stagnation", "phase": "fission_judge.error", "data": {"error": str(e)}}
+        parsed = _extract_json(raw, ["verdict", "diagnosis", "suggestion", "rule"])
+        verdict = str(parsed.get("verdict", "deny")).lower()
+        diagnosis = str(parsed.get("diagnosis", ""))
+        suggestion = str(parsed.get("suggestion", ""))
+        rule = str(parsed.get("rule", ""))
+        payload = {
+            "verdict": verdict,
+            "diagnosis": diagnosis[:200],
+            "suggestion": suggestion[:200],
+            "rule": rule[:120],
+        }
+        if rule.strip():
+            _apply_mutation("planner", rule)
+            _write_lesson(rule)
+        if verdict == "credit":
+            return {
+                "writes": {"fission_approved": True, "activity_events": 1},
+                "next": "done",
+                "phase": "fission_judge",
+                "data": payload,
+            }
+        denied_goals = _add_denial(denied_goals, done_when)
+        log.emit("fission_blocked", {"reason": "llm_deny", "diagnosis": diagnosis[:160]})
+        return {
+            "writes": {
+                "plan": [],
+                "done_when": "",
+                "fission_approved": False,
+                "consecutive_failures": failures + 1,
+                "denied_goals": denied_goals,
+            },
+            "next": "stagnation",
+            "phase": "fission_judge",
+            "data": payload,
+        }
+
 
 class ReflectorAgent:
     name: str = "reflector"
@@ -621,7 +648,7 @@ class ReflectorAgent:
 
     def run(self, ctx: dict[str, Any]) -> dict[str, Any]:
         from llm import call_llm
-        context = _render_context(ctx, "reflector")
+        context = "MODE: STAGNATION_REFLECT\n\n" + _render_context(ctx, "reflector")
         system = _load_prompt("reflector")
         failures = int(ctx.get("consecutive_failures", 0))
         try:
@@ -797,6 +824,12 @@ def _render_field(ctx: dict[str, Any], field: str, instruction: str) -> str:
         case "lessons":
             import lessons
             return lessons.format_for_context(n=config.CONTEXT_LESSONS_MAX)
+        case "similarity":
+            done_when = str(ctx.get("done_when", ""))
+            completed = list(ctx.get("completed", []))
+            if not done_when:
+                return ""
+            return _similarity_hint(done_when, completed)
         case "math":
             stag = ctx.get('stagnation', 0)
             if stag >= 0.8:

@@ -9,9 +9,8 @@ from typing import Any, Callable
 
 from agents import (
     StagnationAgent, LorenzAgent, PidAgent, SchedulerAgent,
-    ObserverAgent, PlannerAgent, ActorAgent, VerifierAgent, ReflectorAgent,
-    MutatorAgent,
-    _similar_to_completed, _trivial_milestone,
+    ObserverAgent, PlannerAgent, ActorAgent, VerifierAgent, FissionJudgeAgent,
+    ReflectorAgent, MutatorAgent,
 )
 import config
 import log
@@ -87,10 +86,11 @@ AGENTS: dict[str, Any] = {
     "actor": ActorAgent(),
     "verifier": VerifierAgent(),
     "reflector": ReflectorAgent(),
+    "fission_judge": FissionJudgeAgent(),
     "mutator": MutatorAgent(),
 }
 
-LLM_AGENTS: frozenset[str] = frozenset({"planner", "verifier", "reflector", "mutator"})
+LLM_AGENTS: frozenset[str] = frozenset({"planner", "verifier", "reflector", "fission_judge", "mutator"})
 
 
 def _math_loop(board: dict[str, Any], stop: threading.Event) -> None:
@@ -279,17 +279,10 @@ def _main_loop(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
 def _fission(board: dict[str, Any]) -> None:
     completed: list[str] = board.get("completed", [])
     done_when = str(board.get("done_when", ""))
-    goal = str(board.get("goal", ""))
-    if _similar_to_completed(done_when, completed):
-        log.emit("fission_blocked", {"reason": "repeat", "done_when": done_when})
+    if not board.pop("fission_approved", False):
+        log.emit("fission_blocked", {"reason": "no_llm_credit", "done_when": done_when[:120]})
         board["plan"] = []
         board["done_when"] = ""
-        return
-    if _trivial_milestone(goal, done_when):
-        log.emit("fission_blocked", {"reason": "trivial", "done_when": done_when})
-        board["plan"] = []
-        board["done_when"] = ""
-        board["consecutive_failures"] = int(board.get("consecutive_failures", 0)) + 1
         return
     if done_when:
         completed.append(done_when)

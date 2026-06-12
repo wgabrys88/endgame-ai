@@ -108,6 +108,7 @@ BUDGET_PLANNER_OUT: int = 1200
 BUDGET_ACTOR_OUT: int = 1800
 BUDGET_VERIFIER_OUT: int = 700
 BUDGET_REFLECTOR_OUT: int = 900
+BUDGET_FISSION_JUDGE_OUT: int = 700
 BUDGET_MUTATOR_OUT: int = 8000
 
 # Token telemetry / admission control. These values are read through config.X
@@ -196,6 +197,7 @@ CONTEXT_POLICY: dict[str, list[str]] = {
     "actor": ["instruction", "history"],
     "verifier": ["goal", "done_when", "last_observation", "completed", "desktop"],
     "reflector": ["goal", "last_observation", "history", "failures", "trigger", "desktop"],
+    "fission_judge": ["goal", "done_when", "last_observation", "history", "completed", "similarity"],
     "mutator": ["goal", "last_observation", "history", "failures", "completed", "trigger"],
 }
 # Smallest fix: observer timeout fallback for resilience
