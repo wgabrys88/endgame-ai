@@ -54,3 +54,5 @@ RULE: desktop_action_completed
 RULE: continue_development
 
 RULE: bus_post(bus_id(), "colony", "@requester done: GUI interaction step completed.")
+
+RULE: desktop action completed
