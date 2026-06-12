@@ -246,7 +246,10 @@ def _resolve_host_model() -> tuple[str, str]:
     if _cached_host and _cached_model:
         return _cached_host, _cached_model
     preferred = str(getattr(config, "LMS_PREFERRED_MODEL", "")).strip().lower()
-    for host in config.LMS_HOSTS:
+    import random
+    hosts = list(config.LMS_HOSTS)
+    random.shuffle(hosts)
+    for host in hosts:
         try:
             req = Request(f"{host}/v1/models", method="GET")
             with urlopen(req, timeout=config.LMS_MODEL_LIST_TIMEOUT) as resp:

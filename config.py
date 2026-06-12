@@ -18,7 +18,7 @@ LOG_LOCK_PATH: pathlib.Path = BASE_DIR / ".endgame.lock"
 
 EVENT_BUDGET: int = 20
 
-LMS_HOSTS: list[str] = ["http://localhost:1234"]
+LMS_HOSTS: list[str] = ["http://localhost:1234", "http://192.168.16.31:1234"]
 # Optional substring/exact id preference for LM Studio /v1/models. Empty = first loaded model.
 LMS_PREFERRED_MODEL: str = ""
 LMS_TIMEOUT: float = 300.0

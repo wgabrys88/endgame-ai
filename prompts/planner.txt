@@ -4,3 +4,5 @@ GOAL: list files → {"mode":"direct","sequence":["exec import os; print(os.list
 GOAL: read file → {"mode":"direct","sequence":["exec print(open('test.txt').read())"],"done_when":"file content printed"}
 GOAL: spawn child → {"mode":"direct","sequence":["exec pid=spawn_main('exec print(42)'); print(pid)"],"done_when":"pid printed"}
 GOAL: already done → {"mode":"done","sequence":[],"done_when":"already completed"}
+
+RULE: use sys.executable
