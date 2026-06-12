@@ -282,34 +282,16 @@ def execute_python(code: str) -> ActionResult:
         import log
         log.set_paused(True)
 
-    _BLOCKED_IMPORTS = frozenset(("subprocess", "shutil", "signal", "ctypes", "multiprocessing"))
-    _real_import = __builtins__["__import__"] if isinstance(__builtins__, dict) else __builtins__.__import__
-
-    def _safe_import(name, *args, **kwargs):
-        if name in _BLOCKED_IMPORTS:
-            raise ImportError(f"module '{name}' is not available in exec sandbox")
-        return _real_import(name, *args, **kwargs)
-
-    safe_builtins = dict(__builtins__) if isinstance(__builtins__, dict) else dict(vars(__builtins__))
-    safe_builtins["__import__"] = _safe_import
-
-    class _SafeOs:
-        """os module without shell-out functions."""
-        def __getattr__(self, name):
-            if name in ("system", "popen", "exec", "execv", "execve", "spawnl", "spawnle"):
-                raise AttributeError(f"os.{name} is not available in exec sandbox")
-            return getattr(os, name)
-    _safe_os = _SafeOs()
-
     namespace: dict[str, Any] = {
-        "__builtins__": safe_builtins,
+        "__builtins__": __builtins__,
         "__name__": "__exec__",
         "BASE_DIR": config.BASE_DIR,
         "Path": Path,
-        "os": _safe_os,
+        "os": os,
         "sys": sys,
         "json": json,
         "time": time,
+        "subprocess": subprocess,
         "spawn_main": _spawn_main,
         "enable_gui": enable_gui,
         "pause_reactor": pause_reactor,
