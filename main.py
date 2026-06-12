@@ -65,7 +65,8 @@ def main() -> None:
     log.init(config.EVENT_BUDGET)
     log.set_paused(False)
 
-    config.GOAL_PATH.write_text(args.goal, encoding="utf-8")
+    if not args.events_path:
+        config.GOAL_PATH.write_text(args.goal, encoding="utf-8")
 
     RESPAWN_PATH.write_text(
         json.dumps({"goal": args.goal, "backend": args.backend, "budget": config.EVENT_BUDGET}),
