@@ -61,7 +61,10 @@ def _parse_lms_host_list(raw: str) -> list[str]:
 
 _preferred_host = _normalize_lms_host(_os.environ.get("ENDGAME_LMS_HOST", ""))
 _hosts_env = _os.environ.get("ENDGAME_LMS_HOSTS", "")
-_candidate_hosts = _parse_lms_host_list(_hosts_env) if _hosts_env else ["http://localhost:1234"]
+_candidate_hosts = _parse_lms_host_list(_hosts_env) if _hosts_env else [
+    "http://localhost:1234",
+    "http://192.168.16.31:1234",
+]
 if _preferred_host:
     LMS_HOSTS = [_preferred_host] + [h for h in _candidate_hosts if h != _preferred_host]
 else:
