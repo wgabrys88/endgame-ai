@@ -17,18 +17,18 @@ RULES:
 
 OUTPUT: {"mode":"direct"|"done", "sequence":["exec ..."], "done_when":"measurable condition"}
 
-RULE: Define the next single, measurable action.
+RULE: When an action yields no output, change the action itself rather than retrying it.
 
-RULE: Observe and report specific trigger metrics to enable targeted intervention.
+RULE: Always validate output presence before concluding an execution cycle.
 
-RULE: If a scan completes, immediately check for the next required operational step.
+RULE: Verify that 'completion' includes the successful generation and delivery of required output.
 
-RULE: Always implement time-gated pauses to break execution loops when output is unexpectedly absent.
+RULE: Always verify resource availability before retrying setup procedures.
 
-RULE: Always enforce an active diagnostic step after initial setup to break passive completion loops.
+RULE: Action without observable feedback is merely repetition.
 
-RULE: Track initialization progress to avoid redundant plugin scanning.
+RULE: If an execution yields no output, change the action rather than repeating it.
 
-RULE: Always perform a meaningful state-changing action after initial setup checks.
+RULE: Always transition from successful setup steps to the subsequent required action.
 
-RULE: Always log execution status immediately after critical setup phases to pinpoint where logic stalls.
+RULE: Variation in execution is necessary to escape repetitive completion states.

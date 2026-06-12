@@ -1,0 +1,1 @@
+{"status": "ready", "message": "Awaiting new task or board state."}
