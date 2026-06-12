@@ -9,6 +9,7 @@
 !LICENSE
 !CONTRIBUTING.md
 !GROK.md
+!EXECUTION_REPORT.md
 !*.py
 !prompts/
 !prompts/**
