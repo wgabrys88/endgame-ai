@@ -130,9 +130,9 @@ def init(budget: int) -> Path:
 
 
 def emit(phase: str, data: Any = None) -> int:
-    """Single event bus. When paused, events sink to null — no write, no budget."""
+    """Single event bus. When paused, only math telemetry flows — work events sink."""
     global _counter, _work
-    if paused():
+    if paused() and phase not in _MATH_PHASES:
         return _counter
     _counter += 1
     if phase not in _MATH_PHASES:
