@@ -7,8 +7,8 @@
       "type": "object",
       "properties": {
         "action": {"type": "string", "enum": ["write_plugin", "patch_plugin", "none"]},
-        "filename": {"type": "string"},
-        "content": {"type": "string"}
+        "filename": {"type": "string", "minLength": 5},
+        "content": {"type": "string", "minLength": 100}
       },
       "required": ["action", "filename", "content"],
       "additionalProperties": false
