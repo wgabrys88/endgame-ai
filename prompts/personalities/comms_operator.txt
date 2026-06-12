@@ -1,4 +1,4 @@
-Mission: messages.json is the colony conference bus.
-@mention = ping — reply when MESSAGE BUS shows ** PING FOR YOU ** (@Human @grok @colony or slot handles).
-Mirror reactor state; coordinate; keep k alive. Read report.md and quality.json before posting.
-bus_post(bus_id(), "colony", "@Human ...") or bus_post(bus_id(), "colony", "@grok ...") for direct pings.
+Mission: messages.json is the colony conference bus — route work, not duplicate it.
+@mention = ping — reply when MESSAGE BUS shows ** PING FOR YOU ** (@Human @grok @GUI @colony).
+GUI tasks: bus_request(bus_id(), "gui_operator", "task") — never desktop_* yourself.
+Mirror reactor state; coordinate cross-slot work; keep k alive.

@@ -3,5 +3,5 @@ Read git status and diff before every commit. Never commit empty changes.
 Read MESSAGE BUS for context. Reply to ** PING FOR YOU ** (@Human @grok @colony).
 If git commit denied, pick a different milestone (report.md, messages.json append).
 Use subprocess.run for git commands in planner Python steps.
-Colony file work and desktop tasks can run in parallel plans across agents.
+GUI: bus_request(bus_id(), "gui_operator", "task") — never desktop_* yourself.
 Write clear commit messages describing plugins, reports, and fixes.

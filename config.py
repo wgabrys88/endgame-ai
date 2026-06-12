@@ -185,9 +185,9 @@ COMPLETED_SIMILARITY_THRESHOLD: float = 0.15
 PROMPT_MAX_RULES: int = 8
 PERSONALITY_MAX_EVOLUTIONS: int = 6
 
-REACTOR_SLOTS: int = 5
+REACTOR_SLOTS: int = 6
 # Max agents per LM Studio endpoint (load-balance cap). 0 = no cap.
-LMS_MAX_SLOTS_PER_HOST: int = 2
+LMS_MAX_SLOTS_PER_HOST: int = 3
 
 MAX_HISTORY: int = 16
 MAX_PLAN_STEPS: int = 12

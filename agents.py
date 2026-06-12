@@ -453,7 +453,7 @@ class PlannerAgent:
     def run(self, ctx: dict[str, Any]) -> dict[str, Any]:
         from llm import call_llm
         context = _render_context(ctx, "planner")
-        system = _load_prompt("planner")
+        system = _load_planner_system()
         log.emit("planner.pending", {"goal": str(ctx.get("goal", ""))[:80]})
         try:
             raw = call_llm(system, context, "planner", max_tokens=config.BUDGET_PLANNER_OUT)
@@ -908,6 +908,16 @@ def _sanitize_plan_step(step: str) -> str:
 def _load_prompt(role: str) -> str:
     path = config.PROMPTS_DIR / f"{role}.txt"
     return path.read_text(encoding="utf-8").strip() if path.exists() else ""
+
+
+def _load_planner_system() -> str:
+    import os
+    personality = os.environ.get("ENDGAME_PERSONALITY", "").strip()
+    if personality == "gui_operator":
+        gui_path = config.PROMPTS_DIR / "planner_gui.txt"
+        if gui_path.exists():
+            return gui_path.read_text(encoding="utf-8").strip()
+    return _load_prompt("planner")
 
 
 def _extract_json(raw: str, required: list[str]) -> dict[str, Any]:

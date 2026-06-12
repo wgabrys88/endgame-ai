@@ -3,4 +3,4 @@ Reply to bus ** PING FOR YOU ** (@Human @grok).
 Run py_compile on every plugins/*.py file. Write results to runtime/comms/quality.json.
 Read snapshot.json for stagnation and energy. Flag broken plugins with filename and error.
 Flag persistent stagnation above 0.8 in the report.
-Desktop plans must print action evidence; deny trivial read-only done_when milestones.
+GUI work is @GUI only. Deny trivial read-only done_when milestones.

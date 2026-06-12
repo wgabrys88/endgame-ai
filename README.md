@@ -1,6 +1,6 @@
 # endgame-ai — breeding reactor
 
-**Five AI agents run in parallel on your Windows desktop.** They share one codebase, write plugins, file reports, commit to git, and drive the real UI with mouse and keyboard — while a live spectrogram shows whether the colony is thriving or stuck.
+**Six AI agents run in parallel on your Windows desktop.** They share one codebase, write plugins, file reports, commit to git, and drive the real UI with mouse and keyboard — while a live spectrogram shows whether the colony is thriving or stuck.
 
 No pip install. No task list. Each agent has a **personality** (git expert, implementor, doc writer, comms operator, quality critic). Identity drives action.
 
@@ -16,7 +16,7 @@ Requires [LM Studio](https://lmstudio.ai/) with a loaded model (tested with **Ge
 
 ## What this is (simple)
 
-Imagine a small reactor core with five fuel rods. Each rod is an LLM agent loop: **plan → run Python → verify → repeat**. When an agent finishes real work (writes a file, pushes git, clicks a button), that counts as **fission** — progress the colony can measure.
+Imagine a small reactor core with six fuel rods. Each rod is an LLM agent loop: **plan → run Python → verify → repeat**. When an agent finishes real work (writes a file, pushes git, clicks a button), that counts as **fission** — progress the colony can measure.
 
 Agents do not wait for instructions. The git expert sees dirty trees and commits. The implementor sees errors and writes plugins. The doc inspector reads logs and writes `runtime/comms/report.md`. They coordinate through a **message bus** — and so can you.
 
@@ -37,7 +37,7 @@ You watch everything in one TUI: stagnation, energy, PID control loops, per-agen
 
 | | **`main`** | **`colony/dev`** (this branch) |
 |---|------------|--------------------------------|
-| **Shape** | One organism, one goal | **5 parallel agents**, 5 personalities |
+| **Shape** | One organism, one goal | **6 parallel agents**, 6 personalities |
 | **Control** | Single planner/actor loop | **Reactor** spawns and respawns rods; maintains k≈1 |
 | **Evolution** | Self-edits core source | Writes **plugins/** + **prompts/** lessons; personalities self-evolve |
 | **Colony** | Solo | **Shared comms**, beacons, cross-agent reports |
@@ -47,7 +47,7 @@ You watch everything in one TUI: stagnation, energy, PID control loops, per-agen
 | **UI** | HUD / JSON TUI modes | **Spectrogram TUI** — per-agent heatmaps + event tail |
 | **Math** | Stagnation/PID/Lorenz | Same engine, feeds scheduler (reflect, cooldown, replan) |
 
-`main` proved a single agent can rewrite itself. **This branch asks: what if five specialists breed together?** Plugins, reports, quality audits, and git pushes — without you assigning tickets.
+`main` proved a single agent can rewrite itself. **This branch asks: what if six specialists breed together?** Plugins, reports, quality audits, and git pushes — without you assigning tickets.
 
 ---
 
@@ -62,14 +62,14 @@ $env:ENDGAME_LMS_MODEL = "gemma"
 python tui.py
 ```
 
-1. TUI launches `reactor.py` → five `main.py` children (one personality each).
+1. TUI launches `reactor.py` → six `main.py` children (one personality each).
 2. Math telemetry runs immediately (stagnation, Lorenz, PID).
 3. Press **Space** to unpause — agents plan and execute.
 4. Press **Space** again to pause (saves LLM tokens; math still flows).
 
 ---
 
-## Personalities (5 slots)
+## Personalities (6 slots)
 
 | Slot | Personality | Natural behavior |
 |------|-------------|------------------|
@@ -78,6 +78,7 @@ python tui.py
 | n3 | doc_inspector | reads events, writes `runtime/comms/report.md` |
 | n4 | comms_operator | message bus, beacons, coordination |
 | n5 | quality_critic | `py_compile` audit → `quality.json` |
+| n6 | gui_operator (@GUI) | sole desktop specialist — all GUI via bus requests |
 
 ---
 
@@ -106,7 +107,7 @@ Planner steps are plain Python. Pre-imported helpers:
 - **Files / git / subprocess** — `Path`, `subprocess`, `COMMS_DIR`, `PLUGINS_DIR`
 - **GUI** — `enable_gui()`, `observe_screen()`, `desktop_click`, `desktop_write`, `desktop_press`, `desktop_hotkey`, `desktop_scroll`, `desktop_focus`
 
-A single plan can write a report and click a dialog in separate steps. Five agents can mix file work and desktop work in parallel.
+File agents delegate GUI through the bus (`bus_request(bus_id(), "gui_operator", "task")`). The @GUI slot handles all desktop navigation.
 
 ---
 

@@ -1,6 +1,6 @@
 # Contributing
 
-`endgame-ai` on `colony/dev` is a **Windows breeding reactor** — five parallel LLM agents with personalities, shared comms, plugin hot-swap, and optional desktop automation.
+`endgame-ai` on `colony/dev` is a **Windows breeding reactor** — six parallel LLM agents with personalities, shared comms, plugin hot-swap, and a dedicated GUI slot (@GUI).
 
 ## Baseline
 

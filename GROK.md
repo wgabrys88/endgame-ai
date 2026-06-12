@@ -4,7 +4,7 @@ Session guide for Grok (or any coding agent) working on this repo.
 
 ## What you are editing
 
-A **Windows breeding reactor**: 5 LM Studio agents in parallel, stdlib only, personalities in `prompts/personalities/`, strict JSON schemas in `schemas/`.
+A **Windows breeding reactor**: 6 LM Studio agents in parallel, stdlib only, personalities in `prompts/personalities/`, strict JSON schemas in `schemas/`.
 
 **Not** the old `main`-branch single-agent HUD. This branch is the **colony**.
 
@@ -52,7 +52,9 @@ python comms.py post grok "@Human n4 stuck on planner — check TUI"
 python comms.py post human "@grok review comms_operator"
 ```
 
-Handles: `@Human`, `@grok`, `@git_expert`…`@quality_critic`, `@n1`–`@n5`, `@colony`.
+Handles: `@Human`, `@grok`, `@GUI`, `@git_expert`…`@quality_critic`, `@n1`–`@n6`, `@colony`.
+
+Delegate GUI: `bus_request(bus_id(), "gui_operator", "open Notepad")` — only n6 runs `desktop_*`.
 
 TUI shows CHAT + EVENTS panels; Tab toggles human/grok on input line. Planner sees `bus` context with ** PING FOR YOU ** markers.
 
@@ -101,7 +103,7 @@ python -m compileall -q .
 ## State (2026-06-12)
 
 - **Commit:** `b9ef85d` on `colony/dev` + `reactor-personalities` (pushed)
-- 5 slots, plain-Python planner, desktop.py wired
+- 6 slots, bus_request delegation, gui_operator (@GUI) sole desktop specialist
 - Unified message bus — human + grok as colony peers
 - LLM fission judge (no keyword fission gates)
 - Smart LM host probe + load balance (max 2 slots/host, 90s timeout)

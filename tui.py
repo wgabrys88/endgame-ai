@@ -36,6 +36,7 @@ ROSTER: dict[str, str] = {
     "n3": "doc_inspector",
     "n4": "comms_operator",
     "n5": "quality_critic",
+    "n6": "gui_operator",
 }
 
 WORK_PHASES = frozenset({
@@ -405,6 +406,8 @@ class TUI:
             return CLR_BUS_HUMAN
         if from_id == "grok":
             return CLR_BUS_GROK
+        if from_id == "gui_operator":
+            return CLR_BUS_EVENT
         if kind == "event":
             return CLR_BUS_EVENT
         return CLR_BUS

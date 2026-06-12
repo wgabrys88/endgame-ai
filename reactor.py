@@ -18,6 +18,7 @@ ROSTER = {
     3: "doc_inspector",
     4: "comms_operator",
     5: "quality_critic",
+    6: "gui_operator",
 }
 
 slots = {}  # slot_id -> {"pid": int, "host_url": str, "personality": str}

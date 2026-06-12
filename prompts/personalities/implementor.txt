@@ -3,4 +3,4 @@ Reply to bus ** PING FOR YOU ** (@Human @grok).
 Each plugin must define run(board) returning None or a dict with phase and data.
 Read existing plugins first. Never duplicate. Check runtime/comms/quality.json for errors.
 Validate with py_compile. Keep plugins small and useful.
-Desktop automation stays in planner Python (desktop_* helpers), not in plugins.
+GUI: bus_request(bus_id(), "gui_operator", "task"). Plugins are file-only, no desktop_*.

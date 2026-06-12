@@ -22,11 +22,14 @@ MENTION_ALIASES: dict[str, str] = {
     "doc_inspector": "doc_inspector",
     "comms_operator": "comms_operator",
     "quality_critic": "quality_critic",
+    "gui_operator": "gui_operator",
+    "gui": "gui_operator",
     "n1": "git_expert",
     "n2": "implementor",
     "n3": "doc_inspector",
     "n4": "comms_operator",
     "n5": "quality_critic",
+    "n6": "gui_operator",
     "colony": "colony",
     "all": "colony",
     "tui": "tui",
@@ -45,6 +48,7 @@ ROLES: dict[str, str] = {
     "doc_inspector": "colony",
     "comms_operator": "colony",
     "quality_critic": "colony",
+    "gui_operator": "gui_specialist",
     "tui": "console",
     "reactor": "console",
 }
@@ -103,6 +107,48 @@ def ping_for(peer: str, mentions: list[str] | None) -> bool:
     if peer in mentions:
         return True
     return "colony" in mentions
+
+
+def _canonical_peer(name: str) -> str:
+    return MENTION_ALIASES.get(name.lstrip("@").lower(), name.lstrip("@").lower())
+
+
+def _entry_mentions(entry: dict[str, Any]) -> list[str]:
+    raw = entry.get("mentions")
+    if isinstance(raw, list):
+        return [str(m) for m in raw]
+    return parse_mentions(str(entry.get("text", "")))
+
+
+def pending_for(peer: str, limit: int = 6) -> list[dict[str, Any]]:
+    """Open bus pings/requests directed at peer (conference inbox)."""
+    me = _canonical_peer(peer)
+    if not me:
+        return []
+    hits: list[dict[str, Any]] = []
+    for entry in _read_chat():
+        if str(entry.get("from", "")) == me:
+            continue
+        mentions = _entry_mentions(entry)
+        if not ping_for(me, mentions):
+            continue
+        if str(entry.get("kind", "")) not in ("ping", "request", "message"):
+            continue
+        hits.append(entry)
+    return hits[-limit:] if limit > 0 else hits
+
+
+def request(from_id: str, to: str, text: str, *, task: str = "work") -> dict[str, Any]:
+    """Structured bus request — primary way to delegate work to a peer."""
+    target = _canonical_peer(to)
+    body = f"@{target} {text}".strip()
+    return post(
+        from_id,
+        _role_for(from_id),
+        body,
+        kind="request",
+        data={"to": target, "task": task, "status": "open"},
+    )
 
 
 def _read_chat() -> list[dict[str, Any]]:
@@ -286,19 +332,34 @@ def format_bus_context(limit: int | None = None, for_agent: str | None = None) -
     events = read_events(max(4, n // 2))
     if not chat and not events:
         return ""
-    me = (for_agent or agent_id()).strip()
+    me = _canonical_peer((for_agent or agent_id()).strip())
     lines = [
-        "MESSAGE BUS (conference room — @mention = personal ping, reply required):",
-        "Peers: @Human @grok @git_expert @implementor @doc_inspector @comms_operator @quality_critic (@n1–@n5) @colony",
+        "MESSAGE BUS (conference — build work from bus, not scattered goals):",
+        "Peers: @Human @grok @GUI @git_expert @implementor @doc_inspector @comms_operator @quality_critic (@n1–@n6) @colony",
+        "Delegate: bus_request(bus_id(), 'gui_operator', 'task') — only @GUI runs desktop_*",
     ]
     obs_max = int(getattr(config, "CONTEXT_OBS_MAX", 420))
+    inbox = pending_for(me, 5)
+    if inbox:
+        lines.append("YOUR INBOX (reply or execute first):")
+        for entry in inbox:
+            fid = entry.get("from", "?")
+            kind = entry.get("kind", "message")
+            text = str(entry.get("text", "")).replace("\n", " ")
+            if len(text) > obs_max:
+                text = text[:obs_max] + "..."
+            lines.append(f"  [{kind}] @{fid}: {text} ** PING FOR YOU **")
+    shown_ids = {int(e.get("id", 0) or 0) for e in inbox}
     for entry in chat[-n:]:
+        eid = int(entry.get("id", 0) or 0)
+        if eid in shown_ids:
+            continue
         fid = entry.get("from", "?")
         kind = entry.get("kind", "message")
         text = str(entry.get("text", "")).replace("\n", " ")
         if len(text) > obs_max:
             text = text[:obs_max] + "..."
-        mentions = entry.get("mentions") if isinstance(entry.get("mentions"), list) else []
+        mentions = _entry_mentions(entry)
         ping = " ** PING FOR YOU **" if ping_for(me, mentions) and fid != me else ""
         lines.append(f"  [{kind}] @{fid}: {text}{ping}")
     for entry in events[-max(4, n // 3):]:

@@ -14,14 +14,14 @@ Launches reactor, renders spectrogram + message bus panels, starts **paused**. S
 | File | Role |
 |------|------|
 | tui.py | Spectrogram TUI, bus CHAT/EVENTS panels, inject drain, spacebar pause |
-| reactor.py | Breeder. 5 slots, LM host probe + load-balance (max 2 slots/host) |
+| reactor.py | Breeder. 6 slots, LM host probe + load-balance (max 3 slots/host) |
 | main.py | Single fuel rod. Args, engine loop, personality env |
 | engine.py | Scheduler chain, plugin hot-swap, desktop refresh before planner |
 | agents.py | planner, actor (run_python), verifier, fission_judge, reflector, mutator, math |
 | actions.py | GUI verbs + run_python subprocess runner |
 | desktop.py | observe_screen, desktop_click/write/press/hotkey/scroll/focus/wait |
 | colony_env.py | BASE_DIR, COMMS_DIR, PLUGINS_DIR, bus_post, bus_id, enable_gui, spawn_main |
-| comms.py | Message bus — chat in messages.json, work events in events_bus.jsonl |
+| comms.py | Message bus — chat, bus_request() delegation, inbox in format_bus_context |
 | python_code.py | Planner Python syntax validation (ASCII, no prose-as-code) |
 | config.py | Paths, math tuning, CONTEXT_POLICY, LMS hosts, bus caps |
 | llm.py | LM Studio API, schema enforcement, host failover |
@@ -39,8 +39,9 @@ Launches reactor, renders spectrogram + message bus panels, starts **paused**. S
 | doc_inspector.txt | report.md from logs |
 | comms_operator.txt | messages.json bus, beacons, coordination |
 | quality_critic.txt | quality.json plugin audit |
+| gui_operator.txt | Sole GUI specialist (@GUI / n6), desktop_* only |
 
-One personality per slot (n1–n5). Reflector can append `EVOLVE:` lines to personality files.
+One personality per slot (n1–n6). Reflector can append `EVOLVE:` lines to personality files.
 
 ### Schemas (LM Studio strict JSON)
 | Schema | Output |
@@ -96,9 +97,11 @@ python comms.py post human "@grok check n4"
 python comms.py post grok "@Human need eyes on TUI"
 ```
 
-**@mention protocol:** `@Human` = operator, `@grok` = external AI, `@n1`–`@n5` / personality names, `@colony` = broadcast. Mentions stored in `mentions[]`; kind becomes `ping`. TUI plays `MessageBeep` when `@Human` is pinged.
+**@mention protocol:** `@Human` = operator, `@grok` = external AI, `@GUI` = gui_operator, `@n1`–`@n6`, `@colony` = broadcast.
 
-Planner context includes `bus` via `format_bus_context(for_agent=…)` with ** PING FOR YOU ** markers. Agents use `bus_post(bus_id(), "colony", text)` from colony_env.
+**Bus requests:** `bus_request(bus_id(), "gui_operator", "task")` — structured delegation; inbox shown first in planner context. Only gui_operator uses `desktop_*`; engine auto-enables `gui_mode` for n6.
+
+Planner context: `format_bus_context(for_agent=…)` with YOUR INBOX + ** PING FOR YOU **. Non-GUI agents use `planner.txt`; gui_operator uses `planner_gui.txt`.
 
 ## Scheduler priorities
 
@@ -137,13 +140,13 @@ main                    Stable single-agent release
 
 | Constant | Value | Notes |
 |----------|-------|-------|
-| REACTOR_SLOTS | 5 | |
+| REACTOR_SLOTS | 6 | |
 | MATH_INTERVAL | 5.0s | batched math event |
 | PLAN_REJECT_COOLDOWN_SEC | 10 | anti spam |
 | REFLECT_MIN_INTERVAL_SEC | 12 | |
 | LMS_PREFERRED_MODEL | gemma | env override |
 | LMS_TIMEOUT | 90 | seconds |
-| LMS_MAX_SLOTS_PER_HOST | 2 | load balance cap |
+| LMS_MAX_SLOTS_PER_HOST | 3 | load balance cap |
 | BUS_CHAT_MAX | 120 | chat retention |
 | BUS_EVENTS_MAX_LINES | 200 | events bus rolling window |
 

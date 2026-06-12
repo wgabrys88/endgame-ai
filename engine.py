@@ -136,6 +136,15 @@ def _needs_screen(board: dict[str, Any], target: str) -> bool:
     return config.GUI_MODE_PATH.exists()
 
 
+def _ensure_gui_operator() -> None:
+    import os
+    if os.environ.get("ENDGAME_PERSONALITY", "").strip() == "gui_operator":
+        try:
+            config.GUI_MODE_PATH.write_text("1", encoding="utf-8")
+        except OSError:
+            pass
+
+
 def _refresh_desktop(board: dict[str, Any]) -> None:
     if not config.GUI_MODE_PATH.exists():
         return
@@ -221,6 +230,7 @@ def _main_loop(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
             comms.drain_inject()
         except Exception:
             pass
+        _ensure_gui_operator()
         _poll_goal(board)
         if board.get("plan") and any(
             isinstance(s, dict) and s.get("status") == "active"

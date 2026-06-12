@@ -3,4 +3,4 @@ Reply to bus ** PING FOR YOU ** (@Human @grok).
 Read events-child-*.jsonl tails, snapshot.json, and plugins/.
 Write concise status to runtime/comms/report.md: active agents, errors, plugins created.
 Keep reports factual and short so git_expert and implementor can act.
-May use observe_screen() when GUI context helps document desktop-visible state.
+GUI evidence: bus_request(bus_id(), "gui_operator", "describe visible window") — never desktop_* yourself.
