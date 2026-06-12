@@ -39,13 +39,17 @@ CODE RULES:
 - Valid Python 3, ASCII quotes only, no Unicode dashes, no em-dash prose in code
 - Never paste GOAL text into code
 - Keep each step under 40 lines; split long work across steps
+- sequence steps run in one Python process — assign in step 1, use in step 2
 - Always print() results for the verifier
 - Use selector strings like "3" not bracket literals in code
-- One action per step; LAST_RESULT errors mean fix code, do not retry identical code
+- LAST_RESULT errors mean fix code, do not retry identical code
 - done_when = file written, message sent, desktop action completed, or artifact created
 
 FILE TEMPLATE:
 {"mode":"direct","sequence":[{"code":"p = COMMS_DIR / 'report.md'\np.write_text('ok\\n', encoding='utf-8')\nprint('wrote', p)"}],"done_when":"runtime/comms/report.md written"}
+
+GIT TEMPLATE (multi-step, shared variables):
+{"mode":"direct","sequence":[{"code":"git_status_result = subprocess.run(['git','status','--porcelain'], capture_output=True, text=True, cwd=BASE_DIR)\nprint('status:', git_status_result.stdout.strip() or 'clean')"},{"code":"if git_status_result.stdout.strip():\n    subprocess.run(['git','add','-A'], cwd=BASE_DIR, check=True)\n    r = subprocess.run(['git','commit','-m','chore: colony update'], capture_output=True, text=True, cwd=BASE_DIR)\n    print('commit:', r.returncode, r.stdout.strip() or r.stderr.strip())\nelse:\n    print('nothing to commit')"}],"done_when":"git commit successful"}
 
 COMMS milestones:
 - runtime/comms/report.md agent status

@@ -474,10 +474,9 @@ class ActorAgent:
         active = next((s for s in plan if s.get("status") == "active"), None)
         if not active:
             return {"writes": {}, "next": "planner", "phase": "actor.error", "data": {"error": "no active step"}}
-        from python_code import validate_python
-        raw = str(active.get("code", active.get("text", ""))).strip()
-        ok, code, err = validate_python(raw)
-        if not ok:
+        code, active, code_errors = _combine_plan_code(plan)
+        if not code:
+            err = code_errors[0] if code_errors else "empty plan sequence"
             history = _append_history(list(ctx.get("history", [])), {"verb": "python", "ok": False, "obs": err})
             active["status"] = "failed"
             failures = int(ctx.get("consecutive_failures", 0)) + 1
@@ -487,8 +486,9 @@ class ActorAgent:
         history = _append_history(history, {"verb": result.verb, "ok": result.success, "obs": result.observation})
         payload = {"ok": result.success, "verb": result.verb, "obs": result.observation}
         if result.success:
-            active["status"] = "done"
-            _advance_plan(plan)
+            for step in plan:
+                if step.get("status") in ("active", "pending"):
+                    step["status"] = "done"
             return {"writes": {"plan": plan, "history": history, "consecutive_failures": 0, "last_observation": result.observation}, "next": "stagnation", "phase": "actor", "data": payload}
         active["status"] = "failed"
         failures = int(ctx.get("consecutive_failures", 0)) + 1
@@ -618,6 +618,35 @@ def _advance_plan(plan: list[dict[str, Any]]) -> None:
     pending = next((s for s in plan if s.get("status") == "pending"), None)
     if pending:
         pending["status"] = "active"
+
+
+def _combine_plan_code(plan: list[dict[str, Any]]) -> tuple[str, dict[str, Any] | None, list[str]]:
+    """Run sequence steps in one Python process so variables persist across steps."""
+    partial = any(s.get("status") == "done" for s in plan)
+    blocks: list[str] = []
+    active: dict[str, Any] | None = None
+    errors: list[str] = []
+    for step in plan:
+        status = str(step.get("status", ""))
+        if status == "failed":
+            continue
+        if partial:
+            if status not in ("done", "active", "pending"):
+                continue
+        elif status not in ("active", "pending"):
+            continue
+        if status == "active" and active is None:
+            active = step
+        raw = str(step.get("code", step.get("text", ""))).strip()
+        if not raw:
+            continue
+        from python_code import validate_python
+        ok, code, err = validate_python(raw)
+        if not ok:
+            errors.append(err)
+            continue
+        blocks.append(code)
+    return "\n\n".join(blocks), active, errors
 
 
 
