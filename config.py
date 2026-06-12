@@ -20,7 +20,7 @@ EVENT_BUDGET: int = 20
 
 import os as _os
 _host_override = _os.environ.get("ENDGAME_LMS_HOST", "")
-LMS_HOSTS: list[str] = [_host_override] if _host_override else ["http://192.168.16.31:1234"]
+LMS_HOSTS: list[str] = [_host_override] if _host_override else ["http://localhost:1234"]
 # Optional substring/exact id preference for LM Studio /v1/models. Empty = first loaded model.
 LMS_PREFERRED_MODEL: str = ""
 LMS_TIMEOUT: float = 300.0

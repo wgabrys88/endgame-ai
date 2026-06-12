@@ -13,3 +13,13 @@
 !plugins/
 !plugins/**
 __pycache__/
+
+spawn*.py
+runtime/
+events*.jsonl
+*.lock
+snapshot.json
+lessons.jsonl
+child_pids.json
+goal.txt
+respawn.json
