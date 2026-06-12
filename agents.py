@@ -263,7 +263,7 @@ class PlannerAgent:
     name: str = "planner"
     reads: list[str] = [
         "goal", "plan", "desktop_summary", "focused_window", "history",
-        "consecutive_failures", "stagnation", "energy", "completed",
+        "consecutive_failures", "stagnation", "energy", "completed", "last_observation",
     ]
 
     def run(self, ctx: dict[str, Any]) -> dict[str, Any]:
@@ -320,10 +320,10 @@ class ActorAgent:
             if result.success:
                 active["status"] = "done"
                 _advance_plan(plan)
-                return {"writes": {"plan": plan, "history": history, "consecutive_failures": 0}, "next": "stagnation", "phase": "actor", "data": payload}
+                return {"writes": {"plan": plan, "history": history, "consecutive_failures": 0, "last_observation": result.observation}, "next": "stagnation", "phase": "actor", "data": payload}
             active["status"] = "failed"
             failures = int(ctx.get("consecutive_failures", 0)) + 1
-            return {"writes": {"plan": plan, "history": history, "consecutive_failures": failures}, "next": "planner", "phase": "actor", "data": payload}
+            return {"writes": {"plan": plan, "history": history, "consecutive_failures": failures, "last_observation": result.observation}, "next": "planner", "phase": "actor", "data": payload}
         context = _render_context(ctx, "actor", instruction)
         system = _load_prompt("actor")
         try:
@@ -377,7 +377,7 @@ class ActorAgent:
 
 class VerifierAgent:
     name: str = "verifier"
-    reads: list[str] = ["goal", "screen", "history", "plan", "desktop_summary", "done_when", "completed"]
+    reads: list[str] = ["goal", "screen", "history", "plan", "desktop_summary", "done_when", "completed", "last_observation"]
 
     def run(self, ctx: dict[str, Any]) -> dict[str, Any]:
         from llm import call_llm
@@ -416,7 +416,7 @@ class ReflectorAgent:
     name: str = "reflector"
     reads: list[str] = [
         "goal", "plan", "history", "stagnation", "pid_output", "energy",
-        "reflect_trigger", "completed",
+        "reflect_trigger", "completed", "last_observation",
     ]
 
     def run(self, ctx: dict[str, Any]) -> dict[str, Any]:
@@ -556,6 +556,11 @@ def _render_field(ctx: dict[str, Any], field: str, instruction: str) -> str:
             if f_count == 0:
                 return ""
             return f"FAILURES: {f_count} consecutive. Try different approach."
+        case "last_observation":
+            obs = str(ctx.get("last_observation", ""))
+            if not obs:
+                return ""
+            return f"LAST_RESULT: {obs}"
         case "lessons":
             import lessons
             step = ""
