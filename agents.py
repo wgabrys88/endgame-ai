@@ -173,7 +173,7 @@ class StagnationAgent:
             else:
                 stag = 1.0
         failures = int(ctx.get("consecutive_failures", 0))
-        stag = min(1.0, stag + failures * config.STAGNATION_FAILURE_WEIGHT)
+        stag = min(1.0, stag + min(failures * config.STAGNATION_FAILURE_WEIGHT, config.STAGNATION_FAILURE_CAP))
         # Activity dampens stagnation - mutations, reflections, plugin writes count
         if activity > 0:
             stag = max(0.0, stag - activity * 0.2)
@@ -247,11 +247,29 @@ class PidAgent:
         }
 
 
+def _reject_plan(ctx: dict[str, Any], reason: str, *, event: str = "plan.rejected") -> dict[str, Any]:
+    log.emit(event, {"reason": reason[:120]})
+    history = _append_history(list(ctx.get("history", [])), {"verb": "plan", "ok": False, "obs": f"REJECTED: {reason}"})
+    return {
+        "writes": {
+            "consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1,
+            "last_observation": f"PLAN REJECTED: {reason}",
+            "history": history,
+            "plan": [],
+            "done_when": "",
+            "last_plan_reject_at": time.time(),
+        },
+        "next": "stagnation",
+        "phase": "plan",
+        "data": {"mode": "rejected", "reason": reason},
+    }
+
+
 class SchedulerAgent:
     name: str = "scheduler"
     reads: list[str] = [
         "stagnation", "wing_crossed", "energy", "pid_output", "consecutive_failures",
-        "plan", "goal", "last_reflect_time", "done_when",
+        "plan", "goal", "last_reflect_time", "done_when", "last_plan_reject_at",
     ]
 
     def run(self, ctx: dict[str, Any]) -> dict[str, Any]:
@@ -274,8 +292,36 @@ class SchedulerAgent:
         periodic_gate = completions > 0 and completions % 5 == 0
         reflect_wanted = reflect_due and (pid_gate or stag_gate or chaos_gate or periodic_gate)
 
-        # No plan = must plan first. Can't reflect on nothing.
         if not plan:
+            replan_stuck = failures >= config.PLAN_REJECT_FAILURE_MIN and stag >= config.REFLECT_STAG_THRESHOLD
+            if reflect_due and (reflect_wanted or replan_stuck):
+                if pid_gate:
+                    reason = "pid_gate"
+                elif stag_gate or replan_stuck:
+                    reason = "stag_gate"
+                else:
+                    reason = "chaos_gate"
+                writes["last_reflect_time"] = now
+                if wing:
+                    writes["wing_crossed"] = False
+                writes["reflect_trigger"] = {
+                    "reason": reason,
+                    "stag": round(stag, 3),
+                    "pid": round(pid, 3),
+                    "energy": round(energy, 3),
+                    "failures": failures,
+                    "step": "",
+                }
+                return {
+                    "writes": writes,
+                    "next": "reflector",
+                    "phase": "schedule",
+                    "data": {"reason": reason, "pid": round(pid, 3), "energy": round(energy, 3), "stag": round(stag, 3)},
+                }
+            last_reject = float(ctx.get("last_plan_reject_at", 0))
+            if last_reject and (now - last_reject) < config.PLAN_REJECT_COOLDOWN_SEC:
+                wait = round(config.PLAN_REJECT_COOLDOWN_SEC - (now - last_reject), 1)
+                return {"writes": writes, "next": "done", "phase": "schedule", "data": {"reason": "plan_cooldown", "wait": wait}}
             return {"writes": writes, "next": "planner", "phase": "schedule", "data": {"reason": "need_plan"}}
 
         # Plan completion takes priority — verify before reflecting
@@ -385,38 +431,16 @@ class PlannerAgent:
         goal = str(ctx.get("goal", ""))
         if done_when and _similar_to_completed(done_when, completed):
             reason = "done_when overlaps COMPLETED - propose a new write/create/send milestone"
-            log.emit("plan.rejected", {"reason": "repeat_completed", "done_when": done_when[:80]})
-            history = _append_history(list(ctx.get("history", [])), {"verb": "plan", "ok": False, "obs": f"REJECTED: {reason}"})
-            return {
-                "writes": {
-                    "consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1,
-                    "last_observation": f"PLAN REJECTED: {reason}",
-                    "history": history,
-                },
-                "next": "stagnation",
-                "phase": "plan",
-                "data": {"mode": "rejected", "reason": reason},
-            }
+            return _reject_plan(ctx, reason)
         if done_when and _trivial_milestone(goal, done_when):
             reason = "done_when is observational only - propose a write/create/send milestone"
-            log.emit("plan.rejected", {"reason": "trivial", "done_when": done_when[:80]})
-            history = _append_history(list(ctx.get("history", [])), {"verb": "plan", "ok": False, "obs": f"REJECTED: {reason}"})
-            return {
-                "writes": {
-                    "consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1,
-                    "last_observation": f"PLAN REJECTED: {reason}",
-                    "history": history,
-                },
-                "next": "stagnation",
-                "phase": "plan",
-                "data": {"mode": "rejected", "reason": reason},
-            }
+            return _reject_plan(ctx, reason)
         if done_when and _is_blocked(denied_goals, done_when):
             log.emit("plan.blocked", {"done_when": done_when[:80]})
-            return {"writes": {"consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1}, "next": "stagnation", "phase": "plan", "data": {"mode": "blocked", "reason": "done_when denied too many times — try something different"}}
+            return _reject_plan(ctx, "done_when denied too many times - try something different", event="plan.blocked")
         if mode == "done" or not sequence:
             if str(ctx.get("goal", "")).strip() and not list(ctx.get("completed", [])):
-                return {"writes": {"consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1}, "next": "stagnation", "phase": "plan", "data": {"mode": "rejected", "reason": "cannot declare done before any GOAL progress"}}
+                return _reject_plan(ctx, "cannot declare done before any GOAL progress - use mode direct with Python steps")
             if list(ctx.get("completed", [])):
                 return {"writes": {}, "next": "halt", "phase": "plan", "data": {"mode": "done", "reason": "goal_satisfied"}}
             return {"writes": {}, "next": "verifier", "phase": "plan", "data": {"mode": "done"}}
@@ -432,7 +456,7 @@ class PlannerAgent:
             steps.append({"code": code, "status": "active" if i == 0 else "pending"})
         if not steps:
             reason = code_errors[0] if code_errors else "empty sequence - each step needs valid Python in code field"
-            return {"writes": {"consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1}, "next": "stagnation", "phase": "plan", "data": {"mode": "rejected", "reason": reason}}
+            return _reject_plan(ctx, reason)
         return {
             "writes": {"plan": steps, "done_when": done_when, "consecutive_failures": 0, "progress_history": []},
             "next": "actor",

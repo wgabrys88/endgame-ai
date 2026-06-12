@@ -6,8 +6,10 @@ PRE-IMPORTED in every script (do not repeat these imports):
   BASE_DIR, COMMS_DIR, PLUGINS_DIR, enable_gui, pause_reactor, spawn_main, Path, os, sys, json, time, subprocess
 
 CODE RULES:
+- Use mode direct until COMPLETED has at least one entry; never mode done on first plan
 - sequence[].code must be valid Python 3, ASCII quotes only, no Unicode dashes
 - Never paste GOAL text into code
+- Keep each step short (under 40 lines); split long scripts across steps
 - Always print() results for the verifier
 - Paths: COMMS_DIR / "file.json" or BASE_DIR / "plugins/foo.py"
 - One action per step; errors in LAST_RESULT mean fix the code, do not retry identical code

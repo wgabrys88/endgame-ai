@@ -328,14 +328,21 @@ class TUI:
             return ""
         match ph:
             case "schedule":
-                text = f"reason={d.get('reason', '')}"
+                if d.get("reason") == "plan_cooldown":
+                    text = f"cooldown {d.get('wait', '')}s"
+                else:
+                    text = f"reason={d.get('reason', '')}"
             case "action" | "actor":
                 ok = "ok" if d.get("ok") else "FAIL"
                 v = d.get("verb", d.get("conclusion", ""))
                 o = d.get("obs", "")
                 text = f"{ok} {v} {o}".strip() if v or o else str(d)
             case "plan":
-                text = f"mode={d.get('mode', '')} steps={d.get('steps', '')} {d.get('done_when', '')}"
+                reason = d.get("reason", "")
+                if d.get("mode") == "rejected" and reason:
+                    text = f"rejected {reason[:72]}"
+                else:
+                    text = f"mode={d.get('mode', '')} steps={d.get('steps', '')} {d.get('done_when', '')}"
             case "verify":
                 text = f"{d.get('verdict', '')} {d.get('evidence', '')}"
             case "fission":
