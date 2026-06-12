@@ -16,7 +16,7 @@ PAUSE_PATH: pathlib.Path = BASE_DIR / "pause"
 RESPAWN_PATH: pathlib.Path = BASE_DIR / "respawn.json"
 LOG_LOCK_PATH: pathlib.Path = BASE_DIR / ".endgame.lock"
 
-EVENT_BUDGET: int = 20
+EVENT_BUDGET: int = 200
 
 import os as _os
 _host_override = _os.environ.get("ENDGAME_LMS_HOST", "")
