@@ -496,7 +496,13 @@ def _render_context(ctx: dict[str, Any], role: str, instruction: str = "") -> st
 def _render_field(ctx: dict[str, Any], field: str, instruction: str) -> str:
     match field:
         case "goal":
-            return f"GOAL: {ctx.get('goal', '')}"
+            goal = ctx.get("goal", "")
+            hist = list(ctx.get("history", []))
+            if hist:
+                last = str(hist[-1].get("obs", ""))[:40]
+                return "GOAL: " + goal + "\nLAST: " + last
+            return "GOAL: " + goal
+            return f'GOAL: {goal}' 
         case "screen":
             s = ctx.get("screen", "")
             return f"SCREEN:\n{s}" if s else ""

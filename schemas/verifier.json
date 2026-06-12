@@ -7,7 +7,7 @@
       "type": "object",
       "properties": {
         "verdict": {"type": "string", "enum": ["confirmed", "denied"]},
-        "evidence": {"type": "string", "minLength": 100}
+        "evidence": {"type": "string", "minLength": 1000}
       },
       "required": ["verdict", "evidence"],
       "additionalProperties": false

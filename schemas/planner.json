@@ -7,8 +7,8 @@
       "type": "object",
       "properties": {
         "mode": {"type": "string", "enum": ["direct", "done"]},
-        "sequence": {"type": "array", "items": {"type": "string", "minLength": 30}, "minItems": 1},
-        "done_when": {"type": "string", "minLength": 200}
+        "sequence": {"type": "array", "items": {"type": "string", "minLength": 200}, "minItems": 1},
+        "done_when": {"type": "string", "minLength": 1000}
       },
       "required": ["mode", "sequence", "done_when"],
       "additionalProperties": false

@@ -6,7 +6,7 @@ CONTROL_INTERVAL = 10
 MAX_SLOTS = 8
 REMOTE_SLOTS = 6
 LOCAL_SLOTS = 2
-BUDGET = 500
+BUDGET = 999999  # effectively unlimited
 REMOTE = "http://192.168.16.31:1234"
 LOCAL = "http://localhost:1234"
 
