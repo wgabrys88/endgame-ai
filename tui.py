@@ -398,7 +398,7 @@ class TUI:
         lines.append(row(foot))
         lines.append(f"{bc}{BOX_BL}{BOX_H * (W - 2)}{BOX_BR}{RST}")
 
-        return "\x1b[H" + "\n".join(lines) + "\x1b[J"
+        return "\x1b[H" + "\r\n".join(ln + "\x1b[K" for ln in lines) + "\x1b[J"
 
     @staticmethod
     def _elapsed(s: float) -> str:
