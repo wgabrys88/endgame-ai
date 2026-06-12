@@ -22,7 +22,9 @@
 __pycache__/
 *.pyc
 
-# --- Runtime session artifacts (created by tui.py / log.cleanup_runtime) ---
+# --- Runtime session artifacts (NEVER commit — preserve locally) ---
+# Created by tui.py / log.cleanup_runtime(). Restarting TUI WIPES these.
+# Archive before reboot: python forensic_collect.py
 runtime/
 events*.jsonl
 snapshot.json
@@ -34,6 +36,19 @@ pause
 gui_mode
 *.lock
 tmp*.py
+report.md
+messages.json
+mission.json
+temp_work_file.txt
+disabled.json
+status.log
+monitor.log
+colony_snapshot.json
+events_log_files.txt
+
+# --- Forensic archives (local evidence bundles — never ship) ---
+forensic_bundle/
+forensic_matrix_escape*.zip
 
 # --- Agent spawn scripts at repo root only (not plugins/spawn_coord.py) ---
 /spawn*.py
