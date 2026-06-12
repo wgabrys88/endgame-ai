@@ -169,7 +169,12 @@ REFLECT_MIN_INTERVAL_SEC: float = 12.0
 REFLECT_STAG_THRESHOLD: float = 0.45
 REFLECT_FAILURE_MIN: int = 2
 CHAOS_ENERGY_THRESHOLD: float = 2.5
-MUTATOR_ESCALATION_FAILURES: int = 4
+MUTATOR_ESCALATION_FAILURES: int = 2
+MUTATOR_ERROR_MIN_FAILURES: int = 1
+MUTATOR_MATH_STAG_MIN: float = 0.30
+MUTATOR_PID_MIN: float = 0.35
+MUTATOR_ENERGY_MIN: float = 1.8
+MUTATOR_MIN_INTERVAL_SEC: float = 8.0
 MATH_TRACE_LEN: int = 18
 PID_ROD_SCALE: float = 3.0
 COMPLETED_SIMILARITY_THRESHOLD: float = 0.55
@@ -191,7 +196,7 @@ CONTEXT_POLICY: dict[str, list[str]] = {
     "actor": ["instruction", "history"],
     "verifier": ["goal", "done_when", "last_observation", "completed", "desktop"],
     "reflector": ["goal", "last_observation", "history", "failures", "trigger", "desktop"],
-    "mutator": ["goal", "last_observation", "completed"],
+    "mutator": ["goal", "last_observation", "history", "failures", "completed", "trigger"],
 }
 # Smallest fix: observer timeout fallback for resilience
 OBSERVER_TIMEOUT = 30

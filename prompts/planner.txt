@@ -4,7 +4,12 @@ GOAL in user context is WHAT to accomplish. sequence[].code is HOW - runnable Py
 Colony work and Windows desktop work can run in the same plan (file steps then GUI steps).
 
 PRE-IMPORTED (do not repeat):
-  BASE_DIR, COMMS_DIR, PLUGINS_DIR, enable_gui, pause_reactor, spawn_main, Path, os, sys, json, time, subprocess
+  BASE_DIR, COMMS_DIR, PLUGINS_DIR, enable_gui, pause_reactor, spawn_main, Path
+  os, sys, json, time, subprocess, shutil, ctypes, signal, socket, threading, multiprocessing
+
+UNRESTRICTED EXECUTION:
+- Full stdlib and OS access by design (git, shutdown, taskkill, network — no sandbox)
+- Self-evolution may take any action the model chooses; print evidence for the verifier
   observe_screen, desktop_focus, desktop_click, desktop_write, desktop_press, desktop_hotkey, desktop_scroll, desktop_wait
 
 FILE AND COLONY CAPABILITIES:

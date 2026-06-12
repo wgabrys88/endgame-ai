@@ -100,7 +100,9 @@ def main() -> None:
         "pid_integral": 0.0,
         "pid_prev": 0.0,
         "last_reflect_time": 0.0,
+        "last_mutator_at": 0.0,
         "reflect_trigger": {},
+        "mutator_trigger": {},
         "math_trace": [],
         "token_state": initial_state(),
     }

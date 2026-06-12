@@ -1,4 +1,4 @@
-"""Validate and sanitize agent-authored Python before execution."""
+"""Validate agent-authored Python before execution (syntax only — full stdlib at runtime)."""
 from __future__ import annotations
 
 _ASCII_MAP = str.maketrans({
@@ -11,14 +11,6 @@ _ASCII_MAP = str.maketrans({
     "\u00a0": " ",
 })
 
-_PYTHON_MARKERS: tuple[str, ...] = (
-    "print(", "import ", "from ", "def ", "class ",
-    "COMMS_DIR", "BASE_DIR", "PLUGINS_DIR",
-    "open(", "Path(", ".write_text", ".read_text", ".write(", ".mkdir",
-    "subprocess.", "json.dump", "json.dumps", "py_compile",
-    "for ", "while ", "with ", "try:", "except ",
-)
-
 
 def sanitize_python_text(text: str) -> str:
     return text.translate(_ASCII_MAP).strip()
@@ -26,9 +18,7 @@ def sanitize_python_text(text: str) -> str:
 
 def is_python_code(text: str) -> bool:
     t = sanitize_python_text(text)
-    if len(t) < 6:
-        return False
-    if not any(marker in t for marker in _PYTHON_MARKERS):
+    if len(t) < 4:
         return False
     try:
         compile(t, "<step>", "exec")
@@ -38,12 +28,10 @@ def is_python_code(text: str) -> bool:
 
 
 def validate_python(text: str) -> tuple[bool, str, str]:
-    """Return (ok, cleaned_code, error_message)."""
+    """Return (ok, cleaned_code, error_message). Syntax check only — no sandbox."""
     cleaned = sanitize_python_text(text)
     if not cleaned:
         return False, "", "empty code"
-    if not any(marker in cleaned for marker in _PYTHON_MARKERS):
-        return False, cleaned, "not Python - sequence[].code must be runnable Python, not goal prose"
     try:
         compile(cleaned, "<step>", "exec")
     except SyntaxError as exc:

@@ -99,6 +99,41 @@ def _trivial_milestone(goal: str, done_when: str) -> bool:
 DENIAL_DECAY_SECS = 120.0  # blocked plans decay after 2 minutes
 DENIAL_MAX = 10
 
+_RUNTIME_ERROR_MARKERS: tuple[str, ...] = (
+    "NameError", "AttributeError", "ImportError", "SyntaxError", "TypeError",
+    "KeyError", "FileNotFoundError", "ModuleNotFoundError", "IndentationError",
+    "is not defined", "PLAN REJECTED", "not Python", "timeout after",
+)
+
+
+def _text_has_runtime_error(text: str) -> bool:
+    t = text.strip()
+    if not t:
+        return False
+    return any(marker in t for marker in _RUNTIME_ERROR_MARKERS)
+
+
+def _runtime_error_signal(ctx: dict[str, Any]) -> bool:
+    if _text_has_runtime_error(str(ctx.get("last_observation", ""))):
+        return True
+    for entry in list(ctx.get("history", []))[-6:]:
+        if entry.get("ok"):
+            continue
+        if _text_has_runtime_error(str(entry.get("obs", ""))):
+            return True
+    return False
+
+
+def _mutator_math_gate(ctx: dict[str, Any]) -> bool:
+    stag = float(ctx.get("stagnation", 0))
+    pid = float(ctx.get("pid_output", 0))
+    energy = float(ctx.get("energy", 1))
+    return (
+        stag >= config.MUTATOR_MATH_STAG_MIN
+        or pid >= config.MUTATOR_PID_MIN
+        or energy >= config.MUTATOR_ENERGY_MIN
+    )
+
 _ARTIFACT_PATTERNS: tuple[re.Pattern[str], int] = (
     (re.compile(r"named\s+([\w./\\_-]+\.\w+)\s+is\s+(?:created|written)", re.I), 1),
     (re.compile(r"(plugins/[\w._-]+\.py)\s+is\s+(?:created|written)", re.I), 1),
@@ -270,6 +305,7 @@ class SchedulerAgent:
     reads: list[str] = [
         "stagnation", "wing_crossed", "energy", "pid_output", "consecutive_failures",
         "plan", "goal", "last_reflect_time", "done_when", "last_plan_reject_at",
+        "last_observation", "history", "last_mutator_at",
     ]
 
     def run(self, ctx: dict[str, Any]) -> dict[str, Any]:
@@ -329,6 +365,32 @@ class SchedulerAgent:
         if all_done:
             return {"writes": writes, "next": "verifier", "phase": "schedule", "data": {"reason": "plan_complete"}}
 
+        active = next((s for s in plan if s.get("status") == "active"), None)
+        error_signal = _runtime_error_signal(ctx)
+        mutator_due = (now - float(ctx.get("last_mutator_at", 0))) >= config.MUTATOR_MIN_INTERVAL_SEC
+        if (
+            error_signal
+            and mutator_due
+            and failures >= config.MUTATOR_ERROR_MIN_FAILURES
+            and _mutator_math_gate(ctx)
+            and not active
+        ):
+            writes["last_mutator_at"] = now
+            writes["mutator_trigger"] = {
+                "reason": "error_math",
+                "stag": round(stag, 3),
+                "pid": round(pid, 3),
+                "energy": round(energy, 3),
+                "failures": failures,
+                "last_error": str(ctx.get("last_observation", ""))[:160],
+            }
+            return {
+                "writes": writes,
+                "next": "mutator",
+                "phase": "schedule",
+                "data": {"reason": "mutator_error_math", "stag": round(stag, 3), "pid": round(pid, 3), "failures": failures},
+            }
+
         # If stuck in reflect loop (3+ consecutive pid_gates), force replan instead
         if reflect_wanted and plan and all(s.get("status") == "done" or s.get("status") == "failed" for s in plan):
             writes["plan"] = []
@@ -363,8 +425,6 @@ class SchedulerAgent:
 
         if not plan:
             return {"writes": writes, "next": "planner", "phase": "schedule", "data": {"reason": "need_plan"}}
-
-        active = next((s for s in plan if s.get("status") == "active"), None)
 
         if active:
             return {"writes": writes, "next": "actor", "phase": "schedule", "data": {"reason": "execute", "step": active.get("code", "")[:120]}}
@@ -583,8 +643,10 @@ class ReflectorAgent:
                 _apply_personality_evolution(personality, rule)
         plan_steps: list[dict[str, Any]] = ctx.get("plan", [])
         retry = next((s for s in plan_steps if s.get("status") == "active"), None)
-        # Escalate to mutator if repeated reflections haven't helped
-        if failures >= config.MUTATOR_ESCALATION_FAILURES:
+        # Escalate to mutator when math+errors persist after reflection
+        if failures >= config.MUTATOR_ESCALATION_FAILURES or (
+            failures >= config.MUTATOR_ERROR_MIN_FAILURES and _runtime_error_signal(ctx)
+        ):
             return {
                 "writes": {"pid_integral": 0.0, "activity_events": 1},
                 "next": "mutator",
@@ -746,22 +808,28 @@ def _render_field(ctx: dict[str, Any], field: str, instruction: str) -> str:
             return 'STATUS: making progress'
 
         case "trigger":
-            trig = ctx.get("reflect_trigger", {})
+            trig = ctx.get("mutator_trigger") or ctx.get("reflect_trigger", {})
             if not isinstance(trig, dict) or not trig:
                 return ""
-            failures = int(trig.get('failures', 0))
-            stag = float(trig.get('stag', 0))
-            step = trig.get('step', '')
-            parts = ['TRIGGER:']
+            reason = str(trig.get("reason", ""))
+            failures = int(trig.get("failures", 0))
+            stag = float(trig.get("stag", 0))
+            step = trig.get("step", "")
+            last_error = str(trig.get("last_error", "")).strip()
+            parts = ["TRIGGER:"]
+            if reason:
+                parts.append(reason.replace("_", " "))
             if failures >= 3:
-                parts.append(f'Failed {failures} times. Must change approach.')
+                parts.append(f"Failed {failures} times. Must change approach.")
             elif failures >= 1:
-                parts.append(f'Failed {failures} time(s).')
+                parts.append(f"Failed {failures} time(s).")
             if stag >= 1.0:
-                parts.append('Completely stuck.')
+                parts.append("Completely stuck.")
+            if last_error:
+                parts.append(f"Error: {last_error}")
             if step:
-                parts.append(f'Last step: {step}')
-            return ' '.join(parts)
+                parts.append(f"Last step: {step}")
+            return " ".join(parts)
         case "completed":
             completed: list[str] = ctx.get("completed", [])
             if not completed:
@@ -941,11 +1009,12 @@ class MutatorAgent:
     def run(self, ctx: dict[str, Any]) -> dict[str, Any]:
         from llm import call_llm
         import py_compile
-        context = _render_context(ctx, "reflector")  # reuse reflector context policy
-        # Add plugin error context
+        context = _render_context(ctx, "mutator")
         plugin_errors = self._recent_plugin_errors()
         if plugin_errors:
             context += "\n\nPLUGIN ERRORS:\n" + "\n".join(f"  - {e}" for e in plugin_errors)
+        if _runtime_error_signal(ctx):
+            context += "\n\nRUNTIME ERRORS: planner/actor Python failed — write a plugin that helps recover or auto-fix."
         system = _load_prompt("mutator")
         if not system:
             return {"writes": {}, "next": "stagnation", "phase": "mutator.skip",

@@ -254,7 +254,7 @@ def _script_runner(code: str) -> str:
         "from desktop import observe_screen, desktop_focus, desktop_click, desktop_write, "
         "desktop_press, desktop_hotkey, desktop_scroll, desktop_wait\n"
         "from pathlib import Path\n"
-        "import os, sys, json, time, subprocess\n\n"
+        "import os, sys, json, time, subprocess, shutil, ctypes, signal, socket, threading, multiprocessing\n\n"
         f"{code}\n"
     )
 
@@ -272,7 +272,7 @@ def _format_run_error(stderr: str, stdout: str, returncode: int) -> str:
 
 
 def run_python(code: str) -> ActionResult:
-    """Run agent-authored Python as a normal script subprocess."""
+    """Run agent-authored Python as an unrestricted subprocess (full OS/stdlib access)."""
     import tempfile
 
     from python_code import validate_python
