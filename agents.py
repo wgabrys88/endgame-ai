@@ -176,6 +176,12 @@ class SchedulerAgent:
         if all_done:
             return {"writes": writes, "next": "verifier", "phase": "schedule", "data": {"reason": "plan_complete"}}
 
+        # If stuck in reflect loop (3+ consecutive pid_gates), force replan instead
+        if reflect_wanted and plan and all(s.get("status") == "done" or s.get("status") == "failed" for s in plan):
+            writes["plan"] = []
+            writes["last_reflect_time"] = now
+            return {"writes": writes, "next": "planner", "phase": "schedule", "data": {"reason": "need_plan"}}
+
         # Reflection takes priority when system is stuck — even over replan/wing
         if reflect_wanted:
             if pid_gate:
@@ -262,7 +268,8 @@ class PlannerAgent:
         except Exception as e:
             log.emit("planner.error", {"error": str(e)})
             return {"writes": {"consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1}, "next": "stagnation", "phase": "planner.error", "data": {"error": str(e)}}
-        parsed = _extract_json(raw, ["mode", "sequence", "done_when"])
+        parsed = _extract_json(raw, ["mode", "sequence"])
+        parsed.setdefault("done_when", "output produced")
         mode = str(parsed.get("mode", "direct"))
         sequence: list[Any] = parsed.get("sequence", [])
         done_when = str(parsed.get("done_when", ""))
