@@ -58,7 +58,7 @@ RAMP_PID = [
     (20, 20, 30), (30, 40, 100), (50, 70, 170), (70, 100, 220), (100, 140, 255),
 ]
 
-SPEC_CHARS = " ░▒▓█"
+SPEC_CHARS = " ·:+#"
 
 # Normalization
 STAG_MAX = 1.0
@@ -79,12 +79,12 @@ CLR_PHASE = (140, 170, 200)
 CLR_DATA = (180, 180, 200)
 
 # Box drawing
-BOX_TL, BOX_TR = "╔", "╗"
-BOX_BL, BOX_BR = "╚", "╝"
-BOX_H, BOX_V = "═", "║"
-BOX_ML, BOX_MR = "╠", "╣"
-BOX_SL, BOX_SR = "╟", "╢"
-BOX_SH = "─"
+BOX_TL, BOX_TR = "+", "+"
+BOX_BL, BOX_BR = "+", "+"
+BOX_H, BOX_V = "-", "|"
+BOX_ML, BOX_MR = "+", "+"
+BOX_SL, BOX_SR = "+", "+"
+BOX_SH = "-"
 
 # ╔══════════════════════════════════════════════════════════════════════════════╗
 # ║ END CONFIGURATION                                                          ║
@@ -145,13 +145,13 @@ def _trunc(s: str, w: int) -> str:
 def _bar(v: float, w: int, color: tuple[int, int, int]) -> str:
     w = max(2, w)
     f = max(0, min(w, int(v * w)))
-    return _fg(*color) + "\u2593" * f + _fg(*CLR_DIM) + "\u2591" * (w - f) + RST
+    return _fg(*color) + "=" * f + _fg(*CLR_DIM) + "-" * (w - f) + RST
 
 
 def _spec_cell(value: float, ramp: list[tuple[int, int, int]]) -> str:
     idx = min(4, max(0, int(value * 4.999)))
     r, g, b = ramp[idx]
-    return f"{_fg(r, g, b)}{SPEC_CHARS[idx]}"
+    return f"\x1b[48;2;{r};{g};{b}m "
 
 
 def _spec_row(history: list[float], width: int, ramp: list[tuple[int, int, int]]) -> str:
@@ -304,7 +304,7 @@ class TUI:
                 return str(d)[:50]
 
     def render(self) -> str:
-        W = PANEL_WIDTH
+        W = min(PANEL_WIDTH, os.get_terminal_size().columns)
         inner = W - 4
         agents = self._sorted()
         bc = _fg(*CLR_BORDER)
@@ -329,7 +329,7 @@ class TUI:
         avg_stag = sum(a.stag for a in agents) / max(total, 1)
 
         dot_c = _fg(*CLR_ALIVE) if alive else _fg(*CLR_DEAD)
-        dot = "●" if alive else "■"
+        dot = "*" if alive else "x"
         paused = (BASE_DIR / "pause").exists()
         mode = f"{_fg(*CLR_STAG)}MATH-ONLY{RST}" if paused else f"{_fg(*CLR_ALIVE)}LIVE{RST}"
         hdr = (
@@ -349,7 +349,7 @@ class TUI:
         # Each agent
         for idx, agent in enumerate(agents):
             # Row 1: identity + bars + fission
-            adot = f"{_fg(*CLR_ALIVE)}●{RST}" if agent.alive else f"{_fg(*CLR_DEAD)}■{RST}"
+            adot = f"{_fg(*CLR_ALIVE)}*{RST}" if agent.alive else f"{_fg(*CLR_DEAD)}x{RST}"
             pers = agent.personality[:PERSONALITY_WIDTH].ljust(PERSONALITY_WIDTH)
             stag_b = f"s{_bar(agent.stag, BAR_WIDTH, CLR_STAG)}"
             nrg_b = f"n{_bar(min(agent.energy / NRG_MAX, 1), BAR_WIDTH, CLR_NRG)}"
@@ -398,7 +398,7 @@ class TUI:
         lines.append(row(foot))
         lines.append(f"{bc}{BOX_BL}{BOX_H * (W - 2)}{BOX_BR}{RST}")
 
-        return "\x1b[H" + "\n".join(lines)
+        return "\x1b[H" + "\x1b[K\n".join(lines) + "\x1b[J"
 
     @staticmethod
     def _elapsed(s: float) -> str:

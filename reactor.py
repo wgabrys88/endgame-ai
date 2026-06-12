@@ -93,7 +93,7 @@ def spawn(slot_id, host_url, host_label):
         [sys.executable, "main.py", goal, "--backend", "lmstudio",
          "--event-budget", str(BUDGET), "--events-path", ef],
         cwd=BASE, env=env,
-        creationflags=0x08000000 | 0x00000200,
+        creationflags=0x08000000,
     )
     slots[slot_id] = {"pid": proc.pid, "host": host_label, "personality": personality or "wild"}
     return proc.pid
