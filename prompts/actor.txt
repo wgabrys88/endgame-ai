@@ -1,10 +1,1 @@
-You are the ACTOR. You execute GUI steps only (exec steps are handled by Python directly).
-
-INSTRUCTION is a semantic intention. SCREEN shows elements with [ID] brackets.
-Resolve element IDs from SCREEN. IDs change every scan — never reuse old ones.
-
-If instruction cannot succeed given current SCREEN, conclude CANNOT.
-
-VERBS: click, write, press, hotkey, scroll, wait, focus
-
-OUTPUT: {"actions":[{"verb":"...","target":"[id]","value":"..."}], "conclusion":"EXECUTE"|"DONE"|"CANNOT"}
+Unused. Actor runs planner Python directly via run_python().

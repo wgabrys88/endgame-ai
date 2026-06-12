@@ -1,11 +1,12 @@
 from __future__ import annotations
 import re
 import time
+from pathlib import Path
 from typing import Any, Protocol
 
 import config
 import log
-from actions import DEFAULT_SCROLL_AMOUNT
+
 
 
 class Agent(Protocol):
@@ -41,6 +42,36 @@ def _similar_to_completed(done_when: str, completed: list[str]) -> bool:
     return False
 
 
+_COMMS_ARTIFACTS: tuple[tuple[str, str], ...] = (
+    ("runtime/comms/report.md", "runtime/comms/report.md written with agent status"),
+    ("runtime/comms/quality.json", "runtime/comms/quality.json written with plugin audit results"),
+    ("runtime/comms/messages.json", "runtime/comms/messages.json contains a new coordination message"),
+)
+
+
+def _milestone_hints(ctx: dict[str, Any]) -> str:
+    goal = str(ctx.get("goal", "")).lower()
+    if "runtime/comms" not in goal and "communicate" not in goal:
+        return ""
+    lines: list[str] = []
+    comms = config.BASE_DIR / "runtime" / "comms"
+    for rel, milestone in _COMMS_ARTIFACTS:
+        path = config.BASE_DIR / rel
+        if not path.exists() or path.stat().st_size == 0:
+            lines.append(f"  - {milestone}")
+    human = comms / "human.txt"
+    if human.exists():
+        try:
+            body = human.read_text(encoding="utf-8").strip()
+        except OSError:
+            body = ""
+        if len(body) < 80:
+            lines.append("  - runtime/comms/human.txt appended with colony status line")
+    if not lines:
+        return ""
+    return "SUGGESTED MILESTONES (missing artifacts — pick one):\n" + "\n".join(lines[:4])
+
+
 def _trivial_milestone(goal: str, done_when: str) -> bool:
     if not goal.strip():
         return False
@@ -48,16 +79,56 @@ def _trivial_milestone(goal: str, done_when: str) -> bool:
     # Trivial if done_when is purely observational (no creation/mutation)
     trivial_markers = ("listed", "shown", "visible", "printed", "displayed", "can be read",
                        "readable", "on screen", "loaded", "showing", "status shown",
-                       "checked", "observed", "confirmed exists")
+                       "checked", "observed", "confirmed exists", "confirmed to exist",
+                       "directory exists", "dir exists", "folder exists", "already exists",
+                       "is present", "is ensured", "no output printed", "is read",
+                       "reading ", "read and", "loaded into", "gathered", "for processing")
+    setup_markers = ("directory created", "dir created", "folder created", "makedirs",
+                     "directory structure", "comms directory")
+    existence_markers = (".exists()", "is_dir()", " path(", "path('", 'path("')
     production_markers = ("created", "written", "committed", "pushed", "modified",
-                          "compiled", "sent", "saved", "fixed", "installed")
-    is_trivial = any(k in d for k in trivial_markers)
+                          "compiled", "sent", "saved", "fixed", "installed",
+                          "updated", "appended", "contains", "posted", "message")
+    if any(k in d for k in setup_markers):
+        return True
+    is_trivial = any(k in d for k in trivial_markers) or any(k in d for k in existence_markers)
     is_productive = any(k in d for k in production_markers)
     return is_trivial and not is_productive
 
 
 DENIAL_DECAY_SECS = 120.0  # blocked plans decay after 2 minutes
 DENIAL_MAX = 10
+
+_ARTIFACT_PATTERNS: tuple[re.Pattern[str], int] = (
+    (re.compile(r"named\s+([\w./\\_-]+\.\w+)\s+is\s+(?:created|written)", re.I), 1),
+    (re.compile(r"(plugins/[\w._-]+\.py)\s+is\s+(?:created|written)", re.I), 1),
+    (re.compile(r"(runtime/comms/[\w._-]+)\s+(?:written|created|contains)", re.I), 1),
+    (re.compile(r"file\s+[`\"']?([\w./\\_-]+\.\w+)[`\"']?\s+is\s+(?:created|written|overwritten)", re.I), 1),
+)
+
+
+def _artifact_paths(done_when: str) -> list[Path]:
+    paths: list[Path] = []
+    seen: set[str] = set()
+    for pattern, group in _ARTIFACT_PATTERNS:
+        for match in pattern.finditer(done_when):
+            rel = match.group(group).replace("\\", "/")
+            if rel in seen:
+                continue
+            seen.add(rel)
+            paths.append(config.BASE_DIR / rel)
+    return paths
+
+
+def _missing_artifacts(done_when: str) -> list[str]:
+    missing: list[str] = []
+    for path in _artifact_paths(done_when):
+        try:
+            if not path.exists() or path.stat().st_size == 0:
+                missing.append(str(path.relative_to(config.BASE_DIR)))
+        except OSError:
+            missing.append(str(path.relative_to(config.BASE_DIR)))
+    return missing
 
 
 def _add_denial(denied_goals: list[dict[str, Any]], done_when: str) -> list[dict[str, Any]]:
@@ -102,8 +173,8 @@ class StagnationAgent:
             else:
                 stag = 1.0
         failures = int(ctx.get("consecutive_failures", 0))
-        stag = min(1.0, stag + failures * 0.15)
-        # Activity dampens stagnation — mutations, reflections, plugin writes count
+        stag = min(1.0, stag + failures * config.STAGNATION_FAILURE_WEIGHT)
+        # Activity dampens stagnation - mutations, reflections, plugin writes count
         if activity > 0:
             stag = max(0.0, stag - activity * 0.2)
         return {
@@ -196,7 +267,7 @@ class SchedulerAgent:
 
         reflect_due = (now - last_reflect) >= config.REFLECT_MIN_INTERVAL_SEC
         pid_gate = pid >= config.REFLECT_THRESHOLD and stag >= config.REFLECT_STAG_THRESHOLD
-        stag_gate = stag >= config.REFLECT_STAG_THRESHOLD and failures >= 1
+        stag_gate = stag >= config.REFLECT_STAG_THRESHOLD and failures >= config.REFLECT_FAILURE_MIN
         chaos_gate = energy >= config.CHAOS_ENERGY_THRESHOLD and stag >= config.REFLECT_STAG_THRESHOLD
         # Periodic reflect every 5 completions even without stagnation
         completions = len(ctx.get("completed", []))
@@ -250,13 +321,13 @@ class SchedulerAgent:
         active = next((s for s in plan if s.get("status") == "active"), None)
 
         if active:
-            return {"writes": writes, "next": "actor", "phase": "schedule", "data": {"reason": "execute", "step": active.get("text", "")}}
+            return {"writes": writes, "next": "actor", "phase": "schedule", "data": {"reason": "execute", "step": active.get("code", "")[:120]}}
 
 
         pending = next((s for s in plan if s.get("status") == "pending"), None)
         if pending:
             pending["status"] = "active"
-            return {"writes": {"plan": plan}, "next": "actor", "phase": "schedule", "data": {"reason": "advance", "step": pending.get("text", "")}}
+            return {"writes": {"plan": plan}, "next": "actor", "phase": "schedule", "data": {"reason": "advance", "step": pending.get("code", "")[:120]}}
 
         return {"writes": writes, "next": "planner", "phase": "schedule", "data": {"reason": "stuck"}}
 
@@ -310,6 +381,36 @@ class PlannerAgent:
         sequence: list[Any] = parsed.get("sequence", [])
         done_when = str(parsed.get("done_when", ""))
         denied_goals: list[dict[str, Any]] = list(ctx.get("denied_goals", []))
+        completed: list[str] = list(ctx.get("completed", []))
+        goal = str(ctx.get("goal", ""))
+        if done_when and _similar_to_completed(done_when, completed):
+            reason = "done_when overlaps COMPLETED - propose a new write/create/send milestone"
+            log.emit("plan.rejected", {"reason": "repeat_completed", "done_when": done_when[:80]})
+            history = _append_history(list(ctx.get("history", [])), {"verb": "plan", "ok": False, "obs": f"REJECTED: {reason}"})
+            return {
+                "writes": {
+                    "consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1,
+                    "last_observation": f"PLAN REJECTED: {reason}",
+                    "history": history,
+                },
+                "next": "stagnation",
+                "phase": "plan",
+                "data": {"mode": "rejected", "reason": reason},
+            }
+        if done_when and _trivial_milestone(goal, done_when):
+            reason = "done_when is observational only - propose a write/create/send milestone"
+            log.emit("plan.rejected", {"reason": "trivial", "done_when": done_when[:80]})
+            history = _append_history(list(ctx.get("history", [])), {"verb": "plan", "ok": False, "obs": f"REJECTED: {reason}"})
+            return {
+                "writes": {
+                    "consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1,
+                    "last_observation": f"PLAN REJECTED: {reason}",
+                    "history": history,
+                },
+                "next": "stagnation",
+                "phase": "plan",
+                "data": {"mode": "rejected", "reason": reason},
+            }
         if done_when and _is_blocked(denied_goals, done_when):
             log.emit("plan.blocked", {"done_when": done_when[:80]})
             return {"writes": {"consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1}, "next": "stagnation", "phase": "plan", "data": {"mode": "blocked", "reason": "done_when denied too many times — try something different"}}
@@ -319,10 +420,19 @@ class PlannerAgent:
             if list(ctx.get("completed", [])):
                 return {"writes": {}, "next": "halt", "phase": "plan", "data": {"mode": "done", "reason": "goal_satisfied"}}
             return {"writes": {}, "next": "verifier", "phase": "plan", "data": {"mode": "done"}}
+        from python_code import validate_python
         steps: list[dict[str, str]] = []
+        code_errors: list[str] = []
         for i, s in enumerate(sequence[:config.MAX_PLAN_STEPS]):
-            text = _normalize_step(s)
-            steps.append({"text": _sanitize_plan_step(text), "status": "active" if i == 0 else "pending"})
+            raw = _sanitize_plan_step(_step_code(s))
+            ok, code, err = validate_python(raw)
+            if not ok:
+                code_errors.append(err)
+                continue
+            steps.append({"code": code, "status": "active" if i == 0 else "pending"})
+        if not steps:
+            reason = code_errors[0] if code_errors else "empty sequence - each step needs valid Python in code field"
+            return {"writes": {"consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1}, "next": "stagnation", "phase": "plan", "data": {"mode": "rejected", "reason": reason}}
         return {
             "writes": {"plan": steps, "done_when": done_when, "consecutive_failures": 0, "progress_history": []},
             "next": "actor",
@@ -332,80 +442,33 @@ class PlannerAgent:
 
 class ActorAgent:
     name: str = "actor"
-    reads: list[str] = [
-        "plan", "screen", "screen_elements", "history",
-        "consecutive_failures", "goal", "focused_window", "desktop_summary",
-    ]
+    reads: list[str] = ["plan", "history", "consecutive_failures", "goal"]
 
     def run(self, ctx: dict[str, Any]) -> dict[str, Any]:
-        from actions import execute_step, execute_verb, is_python_step, VERBS
-        from llm import call_llm
+        from actions import run_python
         plan: list[dict[str, Any]] = ctx.get("plan", [])
         active = next((s for s in plan if s.get("status") == "active"), None)
         if not active:
             return {"writes": {}, "next": "planner", "phase": "actor.error", "data": {"error": "no active step"}}
-        instruction = str(active.get("text", ""))
-        if is_python_step(instruction):
-            history: list[dict[str, Any]] = list(ctx.get("history", []))
-            result = execute_step(instruction)
-            history.append({"verb": result.verb, "ok": result.success, "obs": result.observation})
-            payload = {"conclusion": "python", "ok": result.success, "verb": result.verb, "obs": result.observation}
-            if result.success:
-                active["status"] = "done"
-                _advance_plan(plan)
-                return {"writes": {"plan": plan, "history": history, "consecutive_failures": 0, "last_observation": result.observation}, "next": "stagnation", "phase": "actor", "data": payload}
+        from python_code import validate_python
+        raw = str(active.get("code", active.get("text", ""))).strip()
+        ok, code, err = validate_python(raw)
+        if not ok:
+            history = _append_history(list(ctx.get("history", [])), {"verb": "python", "ok": False, "obs": err})
             active["status"] = "failed"
             failures = int(ctx.get("consecutive_failures", 0)) + 1
-            return {"writes": {"plan": plan, "history": history, "consecutive_failures": failures, "last_observation": result.observation}, "next": "planner", "phase": "actor", "data": payload}
-        context = _render_context(ctx, "actor", instruction)
-        system = _load_prompt("actor")
-        try:
-            raw = call_llm(system, context, "actor", max_tokens=config.BUDGET_ACTOR_OUT)
-        except Exception as e:
-            log.emit("actor.error", {"error": str(e)})
-            failures = int(ctx.get("consecutive_failures", 0)) + 1
-            return {"writes": {"consecutive_failures": failures}, "next": "planner", "phase": "actor.error", "data": {"error": str(e)}}
-        parsed = _extract_json(raw, ["actions", "conclusion"])
-        conclusion = str(parsed.get("conclusion", "EXECUTE"))
-        actions: list[dict[str, Any]] = parsed.get("actions", [])
-        actions = [a for a in actions if str(a.get("verb", "")) in {"click", "write", "press", "hotkey", "scroll", "focus"}]
-        if conclusion == "EXECUTE" and not actions:
-            active["status"] = "failed"
-            failures = int(ctx.get("consecutive_failures", 0)) + 1
-            return {"writes": {"plan": plan, "consecutive_failures": failures}, "next": "planner", "phase": "actor", "data": {"conclusion": "CANNOT", "error": "need GUI verb"}}
-        if conclusion == "DONE":
+            return {"writes": {"plan": plan, "history": history, "consecutive_failures": failures, "last_observation": err}, "next": "planner", "phase": "actor", "data": {"ok": False, "verb": "python", "obs": err}}
+        history: list[dict[str, Any]] = list(ctx.get("history", []))
+        result = run_python(code)
+        history = _append_history(history, {"verb": result.verb, "ok": result.success, "obs": result.observation})
+        payload = {"ok": result.success, "verb": result.verb, "obs": result.observation}
+        if result.success:
             active["status"] = "done"
             _advance_plan(plan)
-            return {"writes": {"plan": plan, "consecutive_failures": 0}, "next": "stagnation", "phase": "actor", "data": {"conclusion": "DONE"}}
-        if conclusion == "CANNOT":
-            active["status"] = "failed"
-            failures = int(ctx.get("consecutive_failures", 0)) + 1
-            return {"writes": {"plan": plan, "consecutive_failures": failures}, "next": "planner", "phase": "actor", "data": {"conclusion": "CANNOT"}}
-        elements: dict[str, Any] = ctx.get("screen_elements", {})
-        history: list[dict[str, Any]] = list(ctx.get("history", []))
-        had_failure = False
-        for action in actions:
-            verb = str(action.get("verb", ""))
-            target = str(action.get("target", ""))
-            value = str(action.get("value", ""))
-            if verb not in VERBS:
-                history.append({"verb": verb, "ok": False, "obs": f"unknown verb: {verb}"})
-                had_failure = True
-                break
-            args = _build_args(verb, target, value)
-            result = execute_verb(verb, args, elements, None)
-            history.append({"verb": verb, "ok": result.success, "obs": result.observation})
-            log.emit("action", {"verb": verb, "ok": result.success, "obs": result.observation})
-            if not result.success:
-                had_failure = True
-                break
-        if had_failure:
-            active["status"] = "failed"
-            failures = int(ctx.get("consecutive_failures", 0)) + 1
-            return {"writes": {"plan": plan, "history": history, "consecutive_failures": failures}, "next": "planner", "phase": "actor", "data": {"conclusion": conclusion, "ok": False}}
-        active["status"] = "done"
-        _advance_plan(plan)
-        return {"writes": {"plan": plan, "history": history, "consecutive_failures": 0}, "next": "stagnation", "phase": "actor", "data": {"conclusion": conclusion, "ok": True}}
+            return {"writes": {"plan": plan, "history": history, "consecutive_failures": 0, "last_observation": result.observation}, "next": "stagnation", "phase": "actor", "data": payload}
+        active["status"] = "failed"
+        failures = int(ctx.get("consecutive_failures", 0)) + 1
+        return {"writes": {"plan": plan, "history": history, "consecutive_failures": failures, "last_observation": result.observation}, "next": "planner", "phase": "actor", "data": payload}
 
 
 class VerifierAgent:
@@ -434,6 +497,15 @@ class VerifierAgent:
                 "phase": "verify",
                 "data": {"verdict": "denied", "evidence": "done_when is observational only — GOAL requires substantive action (post, create, execute)"},
             }
+        missing = _missing_artifacts(done_when)
+        if missing:
+            denied_goals = _add_denial(denied_goals, done_when)
+            return {
+                "writes": {"plan": [], "done_when": "", "consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1, "denied_goals": denied_goals},
+                "next": "stagnation",
+                "phase": "verify",
+                "data": {"verdict": "denied", "evidence": f"artifact(s) missing on disk: {', '.join(missing)}"},
+            }
         context = _render_context(ctx, "verifier")
         system = _load_prompt("verifier")
         try:
@@ -445,6 +517,15 @@ class VerifierAgent:
         verdict = str(parsed.get("verdict", "denied"))
         evidence = str(parsed.get("evidence", ""))
         if verdict == "confirmed":
+            missing = _missing_artifacts(done_when)
+            if missing:
+                denied_goals = _add_denial(denied_goals, done_when)
+                return {
+                    "writes": {"plan": [], "done_when": "", "consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1, "denied_goals": denied_goals},
+                    "next": "stagnation",
+                    "phase": "verify",
+                    "data": {"verdict": "denied", "evidence": f"LLM confirmed but artifact(s) missing: {', '.join(missing)}"},
+                }
             return {"writes": {"denied_goals": denied_goals}, "next": "done", "phase": "verify", "data": {"verdict": "confirmed", "evidence": evidence}}
         denied_goals = _add_denial(denied_goals, done_when)
         return {"writes": {"plan": [], "done_when": "", "consecutive_failures": 0, "progress_history": [], "denied_goals": denied_goals}, "next": "planner", "phase": "verify", "data": {"verdict": "denied", "evidence": evidence}}
@@ -466,12 +547,16 @@ class ReflectorAgent:
         except Exception as e:
             log.emit("reflector.error", {"error": str(e)})
             return {"writes": {}, "next": "stagnation", "phase": "reflector.error", "data": {"error": str(e)}}
-        parsed = _extract_json(raw, ["diagnosis", "suggestion"])
+        parsed = _extract_json(raw, ["diagnosis", "suggestion", "rule"])
         diagnosis = str(parsed.get("diagnosis", ""))
         rule = str(parsed.get("rule", ""))
         if rule.strip():
             _apply_mutation("planner", rule)
             _write_lesson(rule)
+            import os as _os3
+            personality = _os3.environ.get("ENDGAME_PERSONALITY", "")
+            if personality:
+                _apply_personality_evolution(personality, rule)
         plan_steps: list[dict[str, Any]] = ctx.get("plan", [])
         retry = next((s for s in plan_steps if s.get("status") == "active"), None)
         # Escalate to mutator if repeated reflections haven't helped
@@ -490,41 +575,28 @@ class ReflectorAgent:
         }
 
 
+def _clip_context(text: str, limit: int) -> str:
+    if limit <= 0 or len(text) <= limit:
+        return text
+    return text[:limit] + "..."
+
+
+def _append_history(history: list[dict[str, Any]], entry: dict[str, Any]) -> list[dict[str, Any]]:
+    obs = str(entry.get("obs", ""))
+    if obs:
+        entry = dict(entry)
+        entry["obs"] = _clip_context(obs, config.CONTEXT_OBS_MAX)
+    history.append(entry)
+    return history[-config.MAX_HISTORY:]
+
+
 def _advance_plan(plan: list[dict[str, Any]]) -> None:
     pending = next((s for s in plan if s.get("status") == "pending"), None)
     if pending:
         pending["status"] = "active"
 
 
-def _build_args(verb: str, target: str, value: str) -> dict[str, Any]:
-    target = target.strip("[]")
-    if verb == "click":
-        return {"selector": target}
-    if verb == "write":
-        return {"selector": target, "text": value}
-    if verb == "press":
-        return {"key": target or value}
-    if verb == "hotkey":
-        raw = value or target
-        keys = [k.strip() for k in raw.replace("+", ",").split(",") if k.strip()]
-        return {"keys": keys}
-    if verb == "scroll":
-        try:
-            return {"selector": target, "amount": int(value) if value else DEFAULT_SCROLL_AMOUNT}
-        except ValueError:
-            return {"selector": target, "amount": DEFAULT_SCROLL_AMOUNT}
-    if verb == "wait":
-        try:
-            return {"seconds": float(target or value or "1.0")}
-        except ValueError:
-            return {"seconds": 1.0}
-    if verb == "focus":
-        return {"window_title": target or value}
-    if verb == "read_file":
-        return {"path": target or value}
-    if verb == "write_file":
-        return {"path": target, "content": value}
-    return {}
+
 
 
 def _render_context(ctx: dict[str, Any], role: str, instruction: str = "") -> str:
@@ -540,12 +612,8 @@ def _render_context(ctx: dict[str, Any], role: str, instruction: str = "") -> st
 def _render_field(ctx: dict[str, Any], field: str, instruction: str) -> str:
     match field:
         case "goal":
-            goal = ctx.get("goal", "")
-            hist = list(ctx.get("history", []))
-            if hist:
-                last = str(hist[-1].get("obs", ""))
-                return "GOAL: " + goal + "\nLAST: " + last
-            return "GOAL: " + goal
+            goal = _clip_context(str(ctx.get("goal", "")), config.CONTEXT_GOAL_MAX)
+            return "GOAL: " + goal if goal else ""
         case "screen":
             s = ctx.get("screen", "")
             return f"SCREEN:\n{s}" if s else ""
@@ -572,16 +640,18 @@ def _render_field(ctx: dict[str, Any], field: str, instruction: str) -> str:
                 connector = "\u2514\u2500\u2500 " if is_last else "\u251c\u2500\u2500 "
                 status = step.get("status", "pending")
                 marker = "\u2713 " if status == "done" else ">>> " if status == "active" else ""
-                lines.append(f"  {connector}{marker}{step.get('text', '')}")
+                snippet = _clip_context(str(step.get("code", step.get("text", ""))).replace("\n", " "), config.CONTEXT_PLAN_CODE_MAX)
+                lines.append(f"  {connector}{marker}{snippet}")
             return "\n".join(lines)
         case "history":
-            recent: list[dict[str, Any]] = list(ctx.get("history", []))
+            recent: list[dict[str, Any]] = list(ctx.get("history", []))[-config.CONTEXT_HISTORY_LINES:]
             if not recent:
                 return ""
             lines = ["HISTORY:"]
             for h in recent:
                 ok = "\u2713" if h.get("ok") else "\u2717"
-                lines.append(f"  {ok} {h.get('verb', '')}: {h.get('obs', '')}")
+                obs = _clip_context(str(h.get("obs", "")), config.CONTEXT_OBS_MAX)
+                lines.append(f"  {ok} {h.get('verb', '')}: {obs}")
             return "\n".join(lines)
         case "budget":
             remaining = log.budget() - log.work_count()
@@ -594,7 +664,7 @@ def _render_field(ctx: dict[str, Any], field: str, instruction: str) -> str:
                 return ""
             return f"FAILURES: {f_count} consecutive. Try different approach."
         case "last_observation":
-            obs = str(ctx.get("last_observation", ""))
+            obs = _clip_context(str(ctx.get("last_observation", "")), config.CONTEXT_OBS_MAX)
             if not obs:
                 return ""
             return f"LAST_RESULT: {obs}"
@@ -607,16 +677,10 @@ def _render_field(ctx: dict[str, Any], field: str, instruction: str) -> str:
             blocked = list({d["dw"] for d in active if active.count(d) >= 2 or sum(1 for x in active if x.get("dw") == d.get("dw")) >= 2})
             if not blocked:
                 return ""
-            return "BLOCKED (denied ≥2x, try different approach):\n" + "\n".join(f"  - {b}" for b in blocked[:5])
+            return "BLOCKED (denied 2x+):\n" + "\n".join(f"  - {b}" for b in blocked[:5])
         case "lessons":
             import lessons
-            step = ""
-            plan = ctx.get("plan", [])
-            if isinstance(plan, list):
-                active = next((s for s in plan if isinstance(s, dict) and s.get("status") == "active"), None)
-                if active:
-                    step = str(active.get("text", ""))
-            return lessons.format_for_context(keyword=step)
+            return lessons.format_for_context(n=config.CONTEXT_LESSONS_MAX)
         case "math":
             stag = ctx.get('stagnation', 0)
             if stag >= 0.8:
@@ -647,9 +711,11 @@ def _render_field(ctx: dict[str, Any], field: str, instruction: str) -> str:
             if not completed:
                 return ""
             lines = ["COMPLETED (no repeat credit):"]
-            for c in completed:
+            for c in completed[-config.CONTEXT_COMPLETED_MAX:]:
                 lines.append(f"  - {c}")
             return "\n".join(lines)
+        case "hints":
+            return _milestone_hints(ctx)
         case "done_when":
             dw = ctx.get("done_when", "")
             if not dw:
@@ -662,28 +728,21 @@ def _render_field(ctx: dict[str, Any], field: str, instruction: str) -> str:
 _ELEMENT_ID_RE = re.compile(r"\[\d+\]")
 
 
-def _normalize_step(s: Any) -> str:
-    if isinstance(s, str):
-        return s
+def _step_code(s: Any) -> str:
     if isinstance(s, dict):
-        if "code" in s:
-            return f"exec {s['code']}"
-        if "exec" in s:
-            return f"exec {s['exec']}"
-        if "wait" in s:
-            return f"wait {s['wait']}"
-        if "read_file" in s:
-            return f"read_file {s['read_file']}"
-        if "write_file" in s:
-            return f"write_file {s['write_file']} {s.get('content','')}"
-        if "text" in s:
-            return str(s["text"])
-        if "step" in s:
-            rest = s.get("args", s.get("code", s.get("value", "")))
-            return f"{s['step']} {rest}".strip()
-        k, v = next(iter(s.items()))
-        return f"{k} {v}"
-    return str(s)
+        for key in ("code", "text", "exec"):
+            if key in s and str(s[key]).strip():
+                return str(s[key]).strip()
+        return ""
+    if isinstance(s, str):
+        text = s.strip()
+        low = text.lower()
+        if low.startswith("exec:"):
+            return text[5:].lstrip("\n")
+        if low.startswith("exec "):
+            return text[5:].lstrip()
+        return text
+    return str(s).strip()
 
 
 def _sanitize_plan_step(step: str) -> str:
@@ -697,15 +756,7 @@ def _sanitize_plan_step(step: str) -> str:
 
 def _load_prompt(role: str) -> str:
     path = config.PROMPTS_DIR / f"{role}.txt"
-    base = path.read_text(encoding="utf-8").strip() if path.exists() else ""
-    if role == "planner":
-        import os as _os2
-        personality = _os2.environ.get("ENDGAME_PERSONALITY", "")
-        if personality:
-            ppath = config.PROMPTS_DIR / "personalities" / f"{personality}.txt"
-            if ppath.exists():
-                return base + "\n\n" + ppath.read_text(encoding="utf-8").strip()
-    return base
+    return path.read_text(encoding="utf-8").strip() if path.exists() else ""
 
 
 def _extract_json(raw: str, required: list[str]) -> dict[str, Any]:
@@ -756,31 +807,40 @@ def _write_lesson(lesson: str) -> None:
     lessons.record(lesson)
 
 
+def _clean_mutation_text(append_text: str) -> str:
+    clean_text = append_text.strip()
+    for prefix in ("RULE:", "EVOLVE:"):
+        if clean_text.upper().startswith(prefix):
+            clean_text = clean_text[len(prefix):].strip()
+    return clean_text
+
+
+def _reject_mutation(clean_text: str, target: str) -> bool:
+    if not clean_text:
+        return True
+    if _ELEMENT_ID_RE.search(clean_text) or re.search(r"click\s*\[", clean_text, re.I):
+        log.emit("mutation.rejected", {"target": target, "reason": "element_id_in_mutation"})
+        return True
+    vague = ("consistency", "foundation", "stable quality", "future success", "strong base",
+             "confirms current", "leads to stable", "baseline for")
+    if any(v in clean_text.lower() for v in vague):
+        log.emit("mutation.rejected", {"target": target, "reason": "vague_rule"})
+        return True
+    return False
+
+
 def _apply_mutation(target: str, append_text: str) -> None:
     path = config.PROMPTS_DIR / f"{target}.txt"
     if not path.exists():
         return
     current = path.read_text(encoding="utf-8")
-    clean_text = append_text.strip()
-    if clean_text.upper().startswith("RULE:"):
-        clean_text = clean_text[5:].strip()
-    if not clean_text:
+    clean_text = _clean_mutation_text(append_text)
+    if _reject_mutation(clean_text, target):
         return
-    if _ELEMENT_ID_RE.search(clean_text) or re.search(r"click\s*\[", clean_text, re.I):
-        log.emit("mutation.rejected", {"target": target, "reason": "element_id_in_mutation"})
-        return
-    # Reject vague/generic rules that add no actionable guidance
-    vague = ("consistency", "foundation", "stable quality", "future success", "strong base",
-             "confirms current", "leads to stable", "baseline for")
-    if any(v in clean_text.lower() for v in vague):
-        log.emit("mutation.rejected", {"target": target, "reason": "vague_rule"})
-        return
-        return
-    # Protect: header is everything before first RULE:
     parts = current.split("RULE:", 1)
     header = parts[0] if parts else ""
     if not header.strip():
-        return  # refuse mutation if header already lost
+        return
     rules = [block.strip() for block in current.split("\n\n") if block.strip().startswith("RULE:")]
     if len(rules) >= config.PROMPT_MAX_RULES:
         kept = rules[-(config.PROMPT_MAX_RULES - 1):]
@@ -788,6 +848,26 @@ def _apply_mutation(target: str, append_text: str) -> None:
     new_content = current.rstrip() + "\n\nRULE: " + clean_text + "\n"
     path.write_text(new_content, encoding="utf-8")
     log.emit("mutation", {"target": target, "appended": clean_text})
+
+
+def _apply_personality_evolution(personality: str, append_text: str) -> None:
+    path = config.PROMPTS_DIR / "personalities" / f"{personality}.txt"
+    if not path.exists():
+        return
+    clean_text = _clean_mutation_text(append_text)
+    if _reject_mutation(clean_text, f"personality:{personality}"):
+        return
+    current = path.read_text(encoding="utf-8")
+    header = current.split("EVOLVE:", 1)[0].strip()
+    if not header:
+        return
+    evolutions = [block.strip() for block in current.split("\n") if block.strip().startswith("EVOLVE:")]
+    if len(evolutions) >= config.PERSONALITY_MAX_EVOLUTIONS:
+        kept = evolutions[-(config.PERSONALITY_MAX_EVOLUTIONS - 1):]
+        current = header + "\n" + "\n".join(kept)
+    new_content = current.rstrip() + f"\nEVOLVE: {clean_text}\n"
+    path.write_text(new_content, encoding="utf-8")
+    log.emit("personality.evolve", {"personality": personality, "appended": clean_text})
 
 
 # --- MutatorAgent (code evolution — writes to plugins/ only) ---

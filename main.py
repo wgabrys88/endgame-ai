@@ -24,7 +24,7 @@ def _handle_sigint(sig: int, frame: types.FrameType | None) -> None:
     if _interrupted:
         sys.exit(SIGINT_EXIT_CODE)
     _interrupted = True
-    sys.stderr.write("\n[endgame-ai] Ctrl+C — finishing current cycle.\n")
+    sys.stderr.write("\n[endgame-ai] Ctrl+C - finishing current cycle.\n")
 
 
 def set_goal(board: dict, new_goal: str) -> bool:
@@ -77,8 +77,8 @@ def main() -> None:
 
     board: dict[str, Any] = {
         "goal": args.goal,
-        "plan": [{"text": args.goal, "status": "active"}] if args.goal.strip().startswith("exec ") else [],
-        "done_when": "output produced" if args.goal.strip().startswith("exec ") else "",
+        "plan": [],
+        "done_when": "",
         "history": [],
         "completed": [],
         "power": 0.0,

@@ -56,13 +56,13 @@ def analyze_agent(name, events):
         elif "error" in p:
             stats["errors"] += 1
         elif p == "actor":
-            verb = d.get("verb", "exec")
+            verb = d.get("verb", "python")
             stats["verbs"][verb] += 1
             stats["exec_count"] += 1
             if d.get("ok"):
                 stats["exec_ok"] += 1
             obs = d.get("obs", "")
-            if obs and obs not in ("ok", "exec completed (no output printed)"):
+            if obs and "no output" not in obs.lower() and obs not in ("ok",):
                 stats["unique_obs"].add(obs[:100])
             if "timeout" in str(obs):
                 stats["timeouts"] += 1

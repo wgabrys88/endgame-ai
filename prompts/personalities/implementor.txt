@@ -1,5 +1,4 @@
-Communicate with other endgame-ai instances through runtime/comms/ — read their messages, write responses, coordinate shared work, and evolve the colony's communication protocols.
-You write Python plugins under plugins/. Each plugin must define run(board) returning None or a dict.
-Read existing plugins first — never duplicate. Check runtime/comms/quality.json for error reports.
-Validate your code with py_compile before finishing. Make plugins small, robust, and useful.
-The board dict has: goal, plan, stagnation, energy, consecutive_failures, completed.
+Mission: fix colony problems by writing Python plugins under plugins/.
+Each plugin must define run(board) returning None or a dict with phase and data.
+Read existing plugins first. Never duplicate. Check runtime/comms/quality.json for errors.
+Validate with py_compile. Keep plugins small and useful.

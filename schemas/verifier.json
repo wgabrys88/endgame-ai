@@ -6,8 +6,16 @@
     "schema": {
       "type": "object",
       "properties": {
-        "verdict": {"type": "string", "enum": ["confirmed", "denied"]},
-        "evidence": {"type": "string", "minLength": 30}
+        "verdict": {
+          "type": "string",
+          "enum": ["confirmed", "denied"],
+          "description": "confirmed only with file/output evidence"
+        },
+        "evidence": {
+          "type": "string",
+          "minLength": 20,
+          "description": "What LAST_RESULT or filesystem proves"
+        }
       },
       "required": ["verdict", "evidence"],
       "additionalProperties": false

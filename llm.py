@@ -178,7 +178,7 @@ def _call_llm_reply_with_retry(system: str, user: str, role: str, *, max_tokens:
             log.emit("llm_retry", {"attempt": _retry_i + 1, "error": str(_err)[:200]})
             if _retry_i >= max_retries - 1:
                 log.emit("llm_fallback", {"error": str(_err)[:200]})
-                text = json.dumps({"mode": "done", "sequence": [], "done_when": "LLM unavailable – fallback"})
+                text = json.dumps({"mode": "done", "sequence": [], "done_when": "LLM unavailable - fallback"})
                 usage = {}
                 break
             time.sleep(min(2 ** _retry_i, 10))
@@ -204,7 +204,14 @@ def _call_llm_reply_with_retry(system: str, user: str, role: str, *, max_tokens:
         elapsed_sec=time.time() - started,
     )
     _last_reply = reply
-    log.emit("token_usage", reply.token_event())
+    if getattr(config, "LOG_TOKEN_USAGE", True):
+        log.emit("token_usage", {
+            "role": reply.role,
+            "total": reply.total_tokens_actual or reply.total_tokens_est,
+            "prompt": reply.prompt_tokens_actual or reply.prompt_tokens_est,
+            "completion": reply.completion_tokens_actual or reply.completion_tokens_est,
+            "ms": int(reply.elapsed_sec * 1000),
+        })
     return reply
 
 

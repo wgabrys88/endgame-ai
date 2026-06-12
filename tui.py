@@ -20,29 +20,32 @@ EVENTS_GLOB = "events-child-*.jsonl"
 MAIN_EVENTS = "events.jsonl"
 
 # Layout — 2x zoom-out on 1080p gives ~108×86 usable
-PANEL_WIDTH = 96
-PERSONALITY_WIDTH = 14
+PANEL_WIDTH = 106
+PERSONALITY_WIDTH = 16
 BAR_WIDTH = 4
-AGENT_EVENT_ROWS = 4                       # recent work events shown (includes mutator)
+AGENT_EVENT_ROWS = 5                       # recent work events shown (includes mutator)
 HISTORY_LEN = 90                           # spectrogram samples (fills width)
+SPEC_WIDTH = 14                            # spectrogram strip (narrower = more event text)
+PHASE_WIDTH = 14
 
 # Timing
 REFRESH_INTERVAL = 0.12
 SCAN_INTERVAL = 2.0
 MAX_EVENTS_BUFFER = 600
 
-# Reactor roster
+# Reactor roster — keep in sync with reactor.py
 ROSTER: dict[str, str] = {
-    "n1": "git_expert", "n2": "git_expert",
-    "n3": "doc_inspector", "n4": "doc_inspector",
-    "n5": "implementor", "n6": "comms_operator",
-    "n7": "quality_critic", "n8": "wild",
+    "n1": "git_expert",
+    "n2": "implementor",
+    "n3": "doc_inspector",
+    "n4": "comms_operator",
+    "n5": "quality_critic",
 }
 
 # Phases considered "work"
 WORK_PHASES = frozenset({
     "schedule", "plan", "actor", "action", "observe", "verify", "reflect",
-    "mutation", "fission", "fission_blocked", "fission_sustain", "goal_change",
+    "mutation", "personality.evolve", "fission", "fission_blocked", "fission_sustain", "goal_change",
     "start", "stop", "mutator", "mutator.error", "mutator.rejected",
     "planner.error", "actor.error", "verifier.error", "reflector.error",
 })
@@ -123,7 +126,9 @@ def _vlen(s: str) -> int:
     return n
 
 
-def _trunc(s: str, w: int) -> str:
+def _trunc(s: str, w: int, suffix: str = "…") -> str:
+    if w <= 0:
+        return ""
     vis = 0
     out: list[str] = []
     i = 0
@@ -135,11 +140,37 @@ def _trunc(s: str, w: int) -> str:
                 i = j + 1
                 continue
         if vis >= w:
+            if suffix and vis >= w:
+                out.append(suffix)
             break
         out.append(s[i])
         vis += 1
         i += 1
     return "".join(out)
+
+
+def _console_width() -> int:
+    class _COORD(ctypes.Structure):
+        _fields_ = [("X", ctypes.c_short), ("Y", ctypes.c_short)]
+
+    class _SMALL_RECT(ctypes.Structure):
+        _fields_ = [
+            ("Left", ctypes.c_short), ("Top", ctypes.c_short),
+            ("Right", ctypes.c_short), ("Bottom", ctypes.c_short),
+        ]
+
+    class _CSBI(ctypes.Structure):
+        _fields_ = [
+            ("dwSize", _COORD), ("dwCursorPosition", _COORD),
+            ("wAttributes", ctypes.c_ushort), ("srWindow", _SMALL_RECT),
+            ("dwMaximumWindowSize", _COORD),
+        ]
+
+    csbi = _CSBI()
+    if _k32.GetConsoleScreenBufferInfo(_hout, ctypes.byref(csbi)):
+        width = csbi.srWindow.Right - csbi.srWindow.Left + 1
+        return max(PANEL_WIDTH, min(width, 140))
+    return PANEL_WIDTH
 
 
 def _bar(v: float, w: int, color: tuple[int, int, int]) -> str:
@@ -193,6 +224,8 @@ class Agent:
         if st.st_mtime == self._mt and st.st_size == self._off:
             return
         self._mt = st.st_mtime
+        if st.st_size < self._off:
+            self._off = 0
         try:
             with self.path.open("r", encoding="utf-8") as f:
                 f.seek(self._off)
@@ -235,6 +268,25 @@ class Agent:
             self.hist_nrg.append(min(1.0, self.energy / NRG_MAX))
             if len(self.hist_nrg) > HISTORY_LEN * 2:
                 self.hist_nrg = self.hist_nrg[-HISTORY_LEN:]
+        elif ph == "math" and isinstance(d, dict):
+            stag = d.get("stagnation", {})
+            lorenz = d.get("lorenz", {})
+            pid = d.get("pid", {})
+            if isinstance(stag, dict) and "stag" in stag:
+                self.stag = float(stag.get("stag", self.stag))
+                self.hist_stag.append(min(1.0, self.stag / STAG_MAX))
+            if isinstance(pid, dict) and "pid" in pid:
+                self.pid_val = float(pid.get("pid", self.pid_val))
+                self.hist_pid.append(min(1.0, self.pid_val / PID_MAX))
+            if isinstance(lorenz, dict) and "energy" in lorenz:
+                self.energy = float(lorenz.get("energy", self.energy))
+                self.hist_nrg.append(min(1.0, self.energy / NRG_MAX))
+            if len(self.hist_stag) > HISTORY_LEN * 2:
+                self.hist_stag = self.hist_stag[-HISTORY_LEN:]
+            if len(self.hist_pid) > HISTORY_LEN * 2:
+                self.hist_pid = self.hist_pid[-HISTORY_LEN:]
+            if len(self.hist_nrg) > HISTORY_LEN * 2:
+                self.hist_nrg = self.hist_nrg[-HISTORY_LEN:]
 
     def recent_work(self, n: int) -> list[dict]:
         return [e for e in self.events if e.get("phase") in WORK_PHASES][-n:]
@@ -271,40 +323,41 @@ class TUI:
     def _sorted(self) -> list[Agent]:
         return sorted(self.agents.values(), key=lambda a: (not a.alive, a.personality))
 
-    def _brief(self, ph: str, d: dict) -> str:
+    def _brief(self, ph: str, d: dict, max_w: int = 0) -> str:
         if not d:
             return ""
         match ph:
             case "schedule":
-                return f"reason={d.get('reason', '')}"
+                text = f"reason={d.get('reason', '')}"
             case "action" | "actor":
                 ok = "ok" if d.get("ok") else "FAIL"
-                v = d.get("verb", "")
+                v = d.get("verb", d.get("conclusion", ""))
                 o = d.get("obs", "")
-                return f"{ok} {v} {o}".strip() if v or o else str(d)[:50]
+                text = f"{ok} {v} {o}".strip() if v or o else str(d)
             case "plan":
-                return f"mode={d.get('mode', '')} steps={d.get('steps', '')}"
+                text = f"mode={d.get('mode', '')} steps={d.get('steps', '')} {d.get('done_when', '')}"
             case "verify":
-                return f"{d.get('verdict', '')} {d.get('evidence', '')[:40]}"
+                text = f"{d.get('verdict', '')} {d.get('evidence', '')}"
             case "fission":
-                return f"power={d.get('power', '')}"
+                text = f"power={d.get('power', '')} completions={d.get('completions', '')}"
             case "reflect":
-                return f"lesson={str(d.get('lesson', ''))[:40]}"
-            case "mutation" | "mutator":
-                return f"{d.get('action', '')} {d.get('filename', '')}"
+                text = f"{d.get('diagnosis', d.get('rule', ''))}"
+            case "mutation" | "mutator" | "personality.evolve":
+                text = f"{d.get('action', d.get('personality', ''))} {d.get('filename', d.get('appended', d.get('target', '')))}"
             case "mutator.rejected":
-                return f"rejected {d.get('filename', '')} {d.get('reason', '')}"
+                text = f"rejected {d.get('filename', '')} {d.get('reason', '')}"
             case "mutator.error":
-                return f"error {str(d.get('error', ''))[:40]}"
+                text = f"error {d.get('error', '')}"
             case "stop":
-                return f"reason={d.get('reason', '')}"
+                text = f"reason={d.get('reason', '')}"
             case _ if ph.endswith(".error"):
-                return str(d.get("error", d))[:50]
+                text = str(d.get("error", d))
             case _:
-                return str(d)[:50]
+                text = str(d)
+        return _trunc(text, max_w) if max_w > 0 else text
 
     def render(self) -> str:
-        W = PANEL_WIDTH
+        W = _console_width()
         inner = W - 4
         agents = self._sorted()
         bc = _fg(*CLR_BORDER)
@@ -359,9 +412,9 @@ class TUI:
             lines.append(row(f"{pers} {adot} {stag_b} {nrg_b} {pid_b} {fiss}"))
 
             # Rows 2+: events (left) + spectrogram (right)
-            spec_w = 20
+            spec_w = SPEC_WIDTH
             val_w = 5
-            text_w = inner - spec_w - val_w - 2
+            text_w = max(24, inner - spec_w - val_w - 3 - PHASE_WIDTH)
             recent = agent.recent_work(AGENT_EVENT_ROWS)
 
             s_strip = _spec_row(agent.hist_stag, spec_w, RAMP_STAG)
@@ -375,12 +428,13 @@ class TUI:
             for i in range(AGENT_EVENT_ROWS):
                 if i < len(recent):
                     ph = recent[i].get("phase", "")
-                    brief = self._brief(ph, recent[i].get("d", {}))
-                    left = f" {_fg(*CLR_PHASE)}{ph:<14}{RST} {_fg(*CLR_DATA)}{brief}{RST}"
+                    brief = self._brief(ph, recent[i].get("d", {}), text_w)
+                    phase = _trunc(ph, PHASE_WIDTH).ljust(PHASE_WIDTH)
+                    left = f" {_fg(*CLR_PHASE)}{phase}{RST} {_fg(*CLR_DATA)}{brief}{RST}"
                 else:
                     left = ""
-                left_trunc = _trunc(left, text_w)
-                pad = max(0, text_w - _vlen(left_trunc))
+                left_trunc = _trunc(left, text_w + PHASE_WIDTH + 2)
+                pad = max(0, inner - spec_w - val_w - 2 - _vlen(left_trunc))
                 right = specs[i] if i < len(specs) else ""
                 lines.append(row(f"{left_trunc}{chr(32) * pad} {right}"))
 
@@ -411,17 +465,22 @@ class TUI:
         return f"{s / 3600:.1f}h"
 
     def run(self) -> None:
+        import log
+        import subprocess, sys
+        log.cleanup_runtime()
         _w("\x1b[?1049h\x1b[?25l")
         _w("\x1b]0;endgame-ai reactor\x07")
         pause_path = BASE_DIR / "pause"
         # Start in paused/math-only mode
         pause_path.write_text("", encoding="utf-8")
-        # Launch reactor if no agents running
-        import subprocess, sys
+        # Launch reactor
         if True:  # always launch reactor
+            env = os.environ.copy()
+            env["ENDGAME_BOOTSTRAPPED"] = "1"
             self._reactor_proc = subprocess.Popen(
                 [sys.executable, "reactor.py"],
                 cwd=str(BASE_DIR),
+                env=env,
                 creationflags=0x08000000,
             )
         else:

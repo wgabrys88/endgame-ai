@@ -48,7 +48,7 @@ def analyze():
                 if d.get("ok"): s["exec_ok"] += 1
                 obs = d.get("obs","")
                 if "timeout" in obs: s["timeouts"] += 1
-                elif obs and obs not in ("ok","exec completed (no output printed)"):
+                elif obs and "no output" not in obs.lower() and obs not in ("ok",):
                     s["obs_set"].add(obs[:100])
             elif p == "plan":
                 dw = d.get("done_when","")

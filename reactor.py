@@ -1,26 +1,25 @@
 """Nuclear reactor. Maintains k~1.0. Spawns personality-driven agents."""
-import glob, json, os, subprocess, sys, time, random
+import glob, json, os, subprocess, sys, time
+
+import config
+import log
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 CONTROL_INTERVAL = 10
-MAX_SLOTS = 8
-REMOTE_SLOTS = 6
-LOCAL_SLOTS = 2
+MAX_SLOTS = config.REACTOR_SLOTS
+REMOTE_SLOTS = config.REACTOR_REMOTE_SLOTS
+LOCAL_SLOTS = config.REACTOR_LOCAL_SLOTS
 BUDGET = 999999  # effectively unlimited
 REMOTE = "http://192.168.16.31:1234"
 LOCAL = "http://localhost:1234"
 
-# Personality assignment: slot -> personality file
-# 2 git experts, 2 doc inspectors, 1 implementor, 1 comms, 1 critic, 1 wild
+# One specialist per slot — personalities self-evolve via reflector lessons
 ROSTER = {
     1: "git_expert",
     2: "implementor",
-    3: "implementor",
-    4: "doc_inspector",
+    3: "doc_inspector",
+    4: "comms_operator",
     5: "quality_critic",
-    6: "comms_operator",
-    7: "quality_critic",
-    8: None,  # wild — empty goal, pure planner personality
 }
 
 slots = {}  # slot_id -> {"pid": int, "host": str, "personality": str}
@@ -93,11 +92,10 @@ def spawn(slot_id, host_url, host_label):
 
     personality = ROSTER.get(slot_id)
     if personality:
-        # Load personality as the goal — planner uses it to generate plans
         pfile = os.path.join(BASE, "prompts", "personalities", f"{personality}.txt")
-        goal = open(pfile).readline().strip() if os.path.exists(pfile) else ""
+        goal = open(pfile, encoding="utf-8").read().strip() if os.path.exists(pfile) else ""
     else:
-        goal = ""  # wild agent — pure planner personality drives it
+        goal = ""
 
     env = os.environ.copy()
     env["ENDGAME_LMS_HOST"] = host_url
@@ -109,7 +107,7 @@ def spawn(slot_id, host_url, host_label):
         cwd=BASE, env=env,
         creationflags=0x08000000,
     )
-    slots[slot_id] = {"pid": proc.pid, "host": host_label, "personality": personality or "wild"}
+    slots[slot_id] = {"pid": proc.pid, "host": host_label, "personality": personality or "none"}
     return proc.pid
 
 def next_slot_id():
@@ -119,9 +117,11 @@ def next_slot_id():
     return None
 
 if __name__ == "__main__":
+    if not os.environ.get("ENDGAME_BOOTSTRAPPED"):
+        log.cleanup_runtime()
     print(f"REACTOR | {MAX_SLOTS} slots | personalities")
     for sid, p in ROSTER.items():
-        print(f"  n{sid}: {p or 'wild'}")
+        print(f"  n{sid}: {p or 'none'}")
     print()
 
     # Bootstrap all slots
@@ -136,8 +136,10 @@ if __name__ == "__main__":
         time.sleep(2)
 
     print(f"\nREACTOR CRITICAL. {len(slots)} rods loaded.\n")
+    log.trim_all_event_logs()
     while True:
         time.sleep(CONTROL_INTERVAL)
+        log.trim_all_event_logs()
         dead = reap_dead()
         k, alive, fissions = measure_k()
         r, l = count_by_host()

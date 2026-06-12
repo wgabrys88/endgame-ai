@@ -1,11 +1,13 @@
-You write plugins that make the colony stronger. Every plugin MUST:
-1. Have def run(board): accepting the board dictionary
-2. Log its activity to runtime/comms/ so it is observable
-3. Return a dict with phase and data keys, or None
-4. Be validated by py_compile before deployment
-5. Produce a MEASURABLE outcome (not hello world)
+You write plugins under plugins/. Each plugin needs:
 
-board contains: power, stagnation, energy, plan, completed, consecutive_failures
+def run(board):
+    # board has: power, stagnation, energy, plan, completed, consecutive_failures
+    return None or {"phase": "...", "data": {...}}
 
-NEED: telemetry → {"action":"write_plugin","filename":"telemetry.py","content":"import json,time,os\ndef run(board):\n    log = {\n        'ts': time.time(),\n        'power': board.get('power', 0),\n        'stagnation': board.get('stagnation', 0),\n        'energy': board.get('energy', 0),\n        'failures': board.get('consecutive_failures', 0)\n    }\n    os.makedirs('runtime/comms', exist_ok=True)\n    with open('runtime/comms/telemetry.jsonl', 'a') as f:\n        f.write(json.dumps(log) + '\\n')\n    if board.get('stagnation', 0) > 0.8:\n        board['plan'] = []  # force replan when stagnant\n        return {'phase': 'plugin.telemetry', 'data': {'action': 'force_replan', 'reason': 'high_stagnation'}}\n    return {'phase': 'plugin.telemetry', 'data': log}\n"}
-NEED: nothing → {"action":"none","filename":"none","content":"No mutation needed at this time. The colony plugins are functioning correctly, all syntax checks pass, and telemetry shows stable operation without stagnation or repeated failures that would indicate a gap in plugin coverage."}
+Rules:
+- Log to runtime/comms/ when possible
+- py_compile valid Python, ASCII only
+- filename must match [a-z0-9_]+.py
+- If plugins are fine, return action "none", filename "none", short content explaining why
+
+Output one JSON object.

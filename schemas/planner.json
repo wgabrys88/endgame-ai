@@ -6,9 +6,34 @@
     "schema": {
       "type": "object",
       "properties": {
-        "mode": {"type": "string", "enum": ["direct", "done"]},
-        "sequence": {"type": "array", "items": {"type": "string", "minLength": 10}, "minItems": 1},
-        "done_when": {"type": "string", "minLength": 20}
+        "mode": {
+          "type": "string",
+          "enum": ["direct", "done"],
+          "description": "direct = run sequence steps; done = goal satisfied"
+        },
+        "sequence": {
+          "type": "array",
+          "description": "Each item is one runnable Python script",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "minLength": 10,
+                "description": "Runnable Python 3 only. ASCII quotes. Use print() for evidence. Never paste the GOAL text here."
+              }
+            },
+            "required": ["code"],
+            "additionalProperties": false
+          }
+        },
+        "done_when": {
+          "type": "string",
+          "minLength": 20,
+          "description": "Measurable write/create/send outcome for this plan"
+        }
       },
       "required": ["mode", "sequence", "done_when"],
       "additionalProperties": false

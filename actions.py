@@ -15,7 +15,7 @@ _child_pids: list[int] = []
 from win32 import user32, get_window_title, VK_MAP, EXTENDED_VKS, INPUT
 
 _CORE_MODULES: tuple[str, ...] = (
-    "config", "engine", "agents", "actions", "main", "tui",
+    "config", "colony_env", "engine", "agents", "actions", "main", "tui",
     "llm", "log", "observer", "win32", "acp_client",
 )
 
@@ -31,7 +31,7 @@ KEYEVENTF_UNICODE_KEYUP: int = 0x0006
 DEFAULT_SCROLL_AMOUNT: int = 3
 
 __all__ = [
-    "execute_verb", "execute_step", "is_python_step", "ActionResult", "VERBS",
+    "execute_verb", "run_python", "ActionResult", "VERBS",
     "DEFAULT_SCROLL_AMOUNT",
 ]
 
@@ -240,24 +240,6 @@ def _clip_obs(text: str) -> str:
     return text if len(text) <= limit else text[:limit] + "…"
 
 
-_spawn_counter = 0
-
-def _spawn_main(goal: str = "", backend: str = "lmstudio", budget: int = 20) -> int:
-    global _spawn_counter
-    _spawn_counter += 1
-    g = goal or "exec print('hello world')"
-    child_events = f"events-child-{os.getpid()}-{_spawn_counter}.jsonl"
-    proc = subprocess.Popen(
-        [sys.executable, "main.py", g, "--backend", backend,
-         "--event-budget", str(budget),
-         "--events-path", child_events],
-        cwd=str(config.BASE_DIR),
-        creationflags=subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP,
-    )
-    _child_pids.append(proc.pid)
-    return int(proc.pid)
-
-
 def kill_children() -> None:
     for pid in _child_pids:
         subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
@@ -266,140 +248,68 @@ def kill_children() -> None:
     _child_pids.clear()
 
 
-def execute_python(code: str) -> ActionResult:
-    import concurrent.futures
-    import io
-    import traceback
+def _script_runner(code: str) -> str:
+    return (
+        "from colony_env import BASE_DIR, COMMS_DIR, PLUGINS_DIR, enable_gui, pause_reactor, spawn_main\n"
+        "from pathlib import Path\n"
+        "import os, sys, json, time, subprocess\n\n"
+        f"{code}\n"
+    )
 
-    code = code.strip()
-    if not code:
-        return ActionResult("exec", False, "no code")
 
-    def enable_gui() -> None:
-        config.GUI_MODE_PATH.write_text("1", encoding="utf-8")
+def _format_run_error(stderr: str, stdout: str, returncode: int) -> str:
+    text = (stderr or stdout).strip()
+    if not text:
+        return f"exit {returncode}"
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    for ln in reversed(lines):
+        if ln.startswith(("Traceback", "  File ", "    ")):
+            continue
+        return ln
+    return lines[-1] if lines else f"exit {returncode}"
 
-    def pause_reactor() -> None:
-        import log
-        log.set_paused(True)
 
-    namespace: dict[str, Any] = {
-        "__builtins__": __builtins__,
-        "__name__": "__exec__",
-        "BASE_DIR": config.BASE_DIR,
-        "Path": Path,
-        "os": os,
-        "sys": sys,
-        "json": json,
-        "time": time,
-        "subprocess": subprocess,
-        "spawn_main": _spawn_main,
-        "enable_gui": enable_gui,
-        "pause_reactor": pause_reactor,
-    }
+def run_python(code: str) -> ActionResult:
+    """Run agent-authored Python as a normal script subprocess."""
+    import tempfile
 
-    stdout_buf = io.StringIO()
-    stderr_buf = io.StringIO()
+    from python_code import validate_python
 
-    class _Capture(io.TextIOBase):
-        def __init__(self, buf: io.StringIO) -> None:
-            self._buf = buf
+    ok, code, err = validate_python(code)
+    if not ok:
+        return ActionResult("python", False, err)
 
-        def write(self, s: str) -> int:
-            if s:
-                self._buf.write(s)
-            return len(s) if s else 0
-
-        def flush(self) -> None:
-            pass
-
-    def _run() -> None:
-        old_out, old_err = sys.stdout, sys.stderr
-        sys.stdout, sys.stderr = _Capture(stdout_buf), _Capture(stderr_buf)
-        try:
-            exec(code, namespace, namespace)
-        finally:
-            sys.stdout, sys.stderr = old_out, old_err
-
-    error_text = ""
+    script = _script_runner(code)
+    path = ""
     try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            pool.submit(_run).result(timeout=config.EXEC_TIMEOUT)
-        ok = True
-    except concurrent.futures.TimeoutError:
-        ok, error_text = False, f"timeout after {config.EXEC_TIMEOUT}s"
-    except Exception:
-        ok, error_text = False, traceback.format_exc()
+        with tempfile.NamedTemporaryFile(
+            mode="w", prefix="tmp", suffix=".py", delete=False, encoding="utf-8", dir=str(config.BASE_DIR),
+        ) as fh:
+            fh.write(script)
+            path = fh.name
+        proc = subprocess.run(
+            [sys.executable, path],
+            cwd=str(config.BASE_DIR),
+            capture_output=True,
+            text=True,
+            timeout=config.EXEC_TIMEOUT,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+    except subprocess.TimeoutExpired:
+        return ActionResult("python", False, f"timeout after {config.EXEC_TIMEOUT}s")
+    finally:
+        if path:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
 
-    parts = [stdout_buf.getvalue().rstrip(), stderr_buf.getvalue().rstrip()]
-    if error_text:
-        parts.append(error_text.rstrip())
-    output = _clip_obs("\n".join(p for p in parts if p))
-    if ok and not output:
-        # Summarize side effects so verifier sees what happened
-        output = "exec completed (no output printed)"
-    return ActionResult("exec", ok, output or "exec failed")
+    out = (proc.stdout or "").rstrip()
+    err = (proc.stderr or "").rstrip()
+    if proc.returncode != 0:
+        return ActionResult("python", False, _clip_obs(_format_run_error(err, out, proc.returncode)))
 
-
-def _parse_exec_code(step: str) -> str:
-    s = step.strip()
-    low = s.lower()
-    if low.startswith("exec:"):
-        return s[5:].lstrip("\n")
-    if low.startswith("exec "):
-        return s[5:]
-    if low.startswith("exec"):
-        return s[4:].lstrip(": \n")
-    return s
-
-
-def is_python_step(step: str) -> bool:
-    low = step.strip().lower()
-    if low.startswith("exec") and (len(low) == 4 or low[4] in ": \n"):
-        return True
-    if low.startswith(("read_file ", "write_file ")):
-        return True
-    if low.startswith("wait "):
-        try:
-            float(step.split(None, 1)[1])
-            return True
-        except (IndexError, ValueError):
-            return False
-    return False
-
-
-def _resolve_write_path(path: str) -> str:
-    raw = path.strip().strip("\"'")
-    if raw in ("gui_mode", "enabled"):
-        return str(config.GUI_MODE_PATH)
-    p = Path(raw)
-    return str(p) if p.is_absolute() else str((config.BASE_DIR / raw).resolve())
-
-
-def execute_step(step: str) -> ActionResult:
-    """Python executes headless plan steps — model only names them."""
-    s = step.strip()
-    low = s.lower()
-    if low.startswith("exec") and (len(low) == 4 or low[4] in ": \n"):
-        return execute_python(_parse_exec_code(s))
-    if low.startswith("wait "):
-        try:
-            sec = float(s.split(None, 1)[1])
-        except (IndexError, ValueError):
-            sec = 1.0
-        return execute_verb("wait", {"seconds": sec}, {}, None)
-    if low.startswith("read_file "):
-        path = s.split(None, 1)[1].strip().strip("\"'")
-        base = Path(path).name.lower()
-        if base in FILE_ALIASES:
-            path = FILE_ALIASES[base]
-        return execute_verb("read_file", {"path": path}, {}, None)
-    if low.startswith("write_file "):
-        parts = s.split(None, 2)
-        if len(parts) < 2:
-            return ActionResult("write_file", False, "need path and content")
-        path = _resolve_write_path(parts[1])
-        content = parts[2] if len(parts) > 2 else "1"
-        if content in ("enabled", "enable"):
-            content = "1"
-        return execute_verb("write_file", {"path": path, "content": content}, {}, None)
-    return ActionResult("step", False, f"not a python step: {step}")
+    output = _clip_obs("\n".join(p for p in (out, err) if p))
+    if not output:
+        output = "ok (no output - use print() for verifier evidence)"
+    return ActionResult("python", True, output)
