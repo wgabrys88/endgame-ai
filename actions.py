@@ -240,9 +240,13 @@ def _clip_obs(text: str) -> str:
     return text if len(text) <= limit else text[:limit] + "…"
 
 
+_spawn_counter = 0
+
 def _spawn_main(goal: str = "", backend: str = "lmstudio", budget: int = 20) -> int:
+    global _spawn_counter
+    _spawn_counter += 1
     g = goal or "exec print('hello world')"
-    child_events = f"events-child-{os.getpid()}.jsonl"
+    child_events = f"events-child-{os.getpid()}-{_spawn_counter}.jsonl"
     proc = subprocess.Popen(
         [sys.executable, "main.py", g, "--backend", backend,
          "--event-budget", str(budget),
