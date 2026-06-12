@@ -37,8 +37,37 @@ CONTEXT_PLAN_CODE_MAX: int = 120
 SNAPSHOT_INTERVAL_SEC: float = 2.5
 
 import os as _os
-_host_override = _os.environ.get("ENDGAME_LMS_HOST", "")
-LMS_HOSTS: list[str] = [_host_override] if _host_override else ["http://localhost:1234"]
+
+
+def _normalize_lms_host(url: str) -> str:
+    u = url.strip().rstrip("/")
+    if not u:
+        return ""
+    if not u.startswith(("http://", "https://")):
+        u = "http://" + u
+    return u
+
+
+def _parse_lms_host_list(raw: str) -> list[str]:
+    hosts: list[str] = []
+    seen: set[str] = set()
+    for part in raw.split(","):
+        host = _normalize_lms_host(part)
+        if host and host not in seen:
+            hosts.append(host)
+            seen.add(host)
+    return hosts
+
+
+_preferred_host = _normalize_lms_host(_os.environ.get("ENDGAME_LMS_HOST", ""))
+_hosts_env = _os.environ.get("ENDGAME_LMS_HOSTS", "")
+_candidate_hosts = _parse_lms_host_list(_hosts_env) if _hosts_env else ["http://localhost:1234"]
+if _preferred_host:
+    LMS_HOSTS = [_preferred_host] + [h for h in _candidate_hosts if h != _preferred_host]
+else:
+    LMS_HOSTS = list(_candidate_hosts)
+# Reactor probes this list and load-balances across hosts that respond.
+LMS_CANDIDATE_HOSTS: list[str] = list(_candidate_hosts)
 # Optional substring/exact id preference for LM Studio /v1/models. Empty = first loaded model.
 LMS_PREFERRED_MODEL: str = ""
 LMS_TIMEOUT: float = 300.0
@@ -145,8 +174,8 @@ PROMPT_MAX_RULES: int = 8
 PERSONALITY_MAX_EVOLUTIONS: int = 6
 
 REACTOR_SLOTS: int = 5
-REACTOR_REMOTE_SLOTS: int = 3
-REACTOR_LOCAL_SLOTS: int = 2
+# Max agents per LM Studio endpoint (load-balance cap). 0 = no cap.
+LMS_MAX_SLOTS_PER_HOST: int = 0
 
 MAX_HISTORY: int = 16
 MAX_PLAN_STEPS: int = 12

@@ -230,7 +230,12 @@ def _main_loop(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
         if target == "halt":
             return _stop_satisfied(board)
         if target == "done":
-            time.sleep(config.DELAY_BETWEEN_CYCLES)
+            data = result.get("data") if isinstance(result.get("data"), dict) else {}
+            if data.get("reason") == "plan_cooldown":
+                wait = float(data.get("wait", config.PLAN_REJECT_COOLDOWN_SEC))
+                time.sleep(max(0.5, wait))
+            else:
+                time.sleep(config.DELAY_BETWEEN_CYCLES)
             continue
         if target not in AGENTS:
             time.sleep(config.DELAY_BETWEEN_CYCLES)

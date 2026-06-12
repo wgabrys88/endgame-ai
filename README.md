@@ -100,13 +100,13 @@ tui.py (user-facing)
 
 ## Configuration
 
-Edit top of `reactor.py`:
-```python
-REMOTE = "http://192.168.16.31:1234"  # Remote LM Studio
-LOCAL = "http://localhost:1234"        # Local LM Studio
-REMOTE_SLOTS = 6
-LOCAL_SLOTS = 2
+Set LM Studio endpoints before launch (comma-separated, probed at boot):
+```powershell
+$env:ENDGAME_LMS_HOSTS = "http://localhost:1234,http://192.168.x.x:1234"
+python tui.py
 ```
+
+Reactor load-balances slots across healthy hosts. Each agent tries its assigned host first, then falls back to the rest.
 
 Edit `config.py` for paths and math interval.
 

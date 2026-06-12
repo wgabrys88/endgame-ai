@@ -22,6 +22,8 @@ _emits_since_trim: int = 0
 
 # Math heartbeat is telemetry - does not consume work budget.
 _MATH_PHASES: frozenset[str] = frozenset({"math", "stagnation", "lorenz", "pid"})
+# Scheduler cooldown ticks are idle waits, not work.
+_QUIET_SCHEDULE_REASONS: frozenset[str] = frozenset({"plan_cooldown"})
 
 _DROP_LOG_KEYS: frozenset[str] = frozenset({"tokens"})
 
@@ -85,6 +87,14 @@ _RUNTIME_FILES: tuple[str, ...] = (
     "monitor.log",
     "colony_snapshot.json",
     "respawn.json",
+    "disabled.json",
+    "child_pids.json",
+    "goal.txt",
+)
+
+_RUNTIME_DIRS: tuple[str, ...] = (
+    "reactor_colony_data",
+    "terminals",
 )
 
 _LESSONS_KEEP: int = 60
@@ -117,28 +127,6 @@ def cleanup_runtime(*, kill_reactor: bool = True) -> None:
             flag.unlink(missing_ok=True)
         except OSError:
             pass
-    comms = base / "runtime" / "comms"
-    if comms.is_dir():
-        for child in comms.iterdir():
-            try:
-                if child.is_file():
-                    child.unlink(missing_ok=True)
-                else:
-                    shutil.rmtree(child, ignore_errors=True)
-            except OSError:
-                pass
-    comms.mkdir(parents=True, exist_ok=True)
-    for child in comms.glob("beacon-*.json"):
-        try:
-            child.unlink(missing_ok=True)
-        except OSError:
-            pass
-    for seed_name, seed_content in (
-        ("human.txt", "Colony active. Write here to communicate.\n"),
-        ("messages.json", "[]\n"),
-    ):
-        seed = comms / seed_name
-        seed.write_text(seed_content, encoding="utf-8")
     lessons = base / "lessons.jsonl"
     if lessons.exists():
         try:
@@ -152,6 +140,25 @@ def cleanup_runtime(*, kill_reactor: bool = True) -> None:
             tmp.unlink(missing_ok=True)
         except OSError:
             pass
+    for dirname in _RUNTIME_DIRS:
+        path = base / dirname
+        if path.is_dir():
+            shutil.rmtree(path, ignore_errors=True)
+    try:
+        config.LOG_LOCK_PATH.unlink(missing_ok=True)
+    except OSError:
+        pass
+    runtime = base / "runtime"
+    if runtime.is_dir():
+        shutil.rmtree(runtime, ignore_errors=True)
+    (base / "runtime" / "comms").mkdir(parents=True, exist_ok=True)
+    comms = base / "runtime" / "comms"
+    for seed_name, seed_content in (
+        ("human.txt", "Colony active. Write here to communicate.\n"),
+        ("messages.json", "[]\n"),
+    ):
+        seed = comms / seed_name
+        seed.write_text(seed_content, encoding="utf-8")
     time.sleep(0.1)
 
 
@@ -334,6 +341,12 @@ def _compact_data(phase: str, data: Any) -> Any:
 def emit(phase: str, data: Any = None) -> int:
     """Single event bus. When paused, only math telemetry flows - work events sink."""
     global _counter, _work, _file_lines
+    if (
+        phase == "schedule"
+        and isinstance(data, dict)
+        and str(data.get("reason", "")) in _QUIET_SCHEDULE_REASONS
+    ):
+        return _counter
     if paused() and phase not in _MATH_PHASES:
         return _counter
     _counter += 1

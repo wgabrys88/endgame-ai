@@ -216,6 +216,16 @@ class Agent:
         self.hist_nrg: list[float] = []
         self.hist_pid: list[float] = []
 
+    @staticmethod
+    def _is_cooldown(ev: dict) -> bool:
+        return ev.get("phase") == "schedule" and (ev.get("d") or {}).get("reason") == "plan_cooldown"
+
+    def _should_append(self, ev: dict) -> bool:
+        if self._is_cooldown(ev) and self.events and self._is_cooldown(self.events[-1]):
+            self.events[-1] = ev
+            return False
+        return True
+
     def poll(self) -> None:
         try:
             st = self.path.stat()
@@ -237,7 +247,8 @@ class Agent:
                         ev = json.loads(line)
                     except json.JSONDecodeError:
                         continue
-                    self.events.append(ev)
+                    if self._should_append(ev):
+                        self.events.append(ev)
                     self._ingest(ev)
                 self._off = f.tell()
         except OSError:
@@ -289,7 +300,11 @@ class Agent:
                 self.hist_nrg = self.hist_nrg[-HISTORY_LEN:]
 
     def recent_work(self, n: int) -> list[dict]:
-        return [e for e in self.events if e.get("phase") in WORK_PHASES][-n:]
+        work = [
+            e for e in self.events
+            if e.get("phase") in WORK_PHASES and not self._is_cooldown(e)
+        ]
+        return work[-n:]
 
 
 # ─── TUI ─────────────────────────────────────────────────────────────────────

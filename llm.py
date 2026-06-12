@@ -14,6 +14,7 @@ __all__ = [
     "LLMReply", "call_llm", "call_llm_reply", "estimate_tokens",
     "effective_completion_cap", "set_backend", "get_backend", "close_backend",
     "get_last_reply", "consume_last_reply",
+    "probe_host", "discover_hosts", "invalidate_host_cache",
 ]
 
 _backend: str = "lmstudio"
@@ -248,66 +249,115 @@ def _load_schema(role: str) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def invalidate_host_cache(host: str | None = None) -> None:
+    global _cached_host, _cached_model
+    if host is None or _cached_host == host.rstrip("/"):
+        _cached_host, _cached_model = None, None
+
+
+def _pick_model(models: list[str]) -> str:
+    preferred = str(getattr(config, "LMS_PREFERRED_MODEL", "")).strip().lower()
+    if not models:
+        return ""
+    model_id = models[0]
+    if preferred:
+        exact = next((m for m in models if m.lower() == preferred), "")
+        partial = next((m for m in models if preferred in m.lower()), "")
+        model_id = exact or partial or model_id
+    return model_id
+
+
+def _fetch_model_for_host(host: str) -> str | None:
+    host = host.rstrip("/")
+    try:
+        req = Request(f"{host}/v1/models", method="GET")
+        with urlopen(req, timeout=config.LMS_MODEL_LIST_TIMEOUT) as resp:
+            data: dict[str, Any] = json.loads(resp.read().decode("utf-8"))
+        raw_models = data.get("data", [])
+        if not isinstance(raw_models, list) or not raw_models:
+            return None
+        models = [str(cast(dict[str, Any], m).get("id", "")) for m in raw_models if isinstance(m, dict)]
+        models = [m for m in models if m]
+        return _pick_model(models) or None
+    except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError, KeyError, IndexError):
+        return None
+
+
+def probe_host(host: str) -> str | None:
+    """Return loaded model id when host responds, else None."""
+    return _fetch_model_for_host(host)
+
+
+def discover_hosts(hosts: list[str] | None = None) -> list[str]:
+    """Hosts that respond to /v1/models, in candidate order."""
+    healthy: list[str] = []
+    for host in hosts or config.LMS_HOSTS:
+        if probe_host(host):
+            healthy.append(host.rstrip("/"))
+    return healthy
+
+
 def _resolve_host_model() -> tuple[str, str]:
     global _cached_host, _cached_model
     if _cached_host and _cached_model:
         return _cached_host, _cached_model
-    preferred = str(getattr(config, "LMS_PREFERRED_MODEL", "")).strip().lower()
     for host in config.LMS_HOSTS:
-        try:
-            req = Request(f"{host}/v1/models", method="GET")
-            with urlopen(req, timeout=config.LMS_MODEL_LIST_TIMEOUT) as resp:
-                data: dict[str, Any] = json.loads(resp.read().decode("utf-8"))
-            raw_models = data.get("data", [])
-            if not isinstance(raw_models, list) or not raw_models:
-                continue
-            models = [str(cast(dict[str, Any], m).get("id", "")) for m in raw_models if isinstance(m, dict)]
-            models = [m for m in models if m]
-            if not models:
-                continue
-            model_id = models[0]
-            if preferred:
-                exact = next((m for m in models if m.lower() == preferred), "")
-                partial = next((m for m in models if preferred in m.lower()), "")
-                model_id = exact or partial or model_id
-            _cached_host, _cached_model = host, model_id
-            return host, model_id
-        except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError, KeyError, IndexError):
-            continue
+        model_id = _fetch_model_for_host(host)
+        if model_id:
+            _cached_host, _cached_model = host.rstrip("/"), model_id
+            return _cached_host, _cached_model
     raise ConnectionError("no LM Studio host reachable")
 
 
 def _call_lmstudio(body: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-    global _cached_host, _cached_model
-    host, model = _resolve_host_model()
-    body["model"] = model
-    payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
-    for attempt in range(config.LMS_REQUEST_ATTEMPTS):
-        try:
-            req = Request(f"{host}/v1/chat/completions", data=payload,
-                          headers={"Content-Type": "application/json"}, method="POST")
-            with urlopen(req, timeout=config.LMS_TIMEOUT) as resp:
-                raw = resp.read().decode("utf-8")
-        except (HTTPError, URLError, TimeoutError, OSError) as e:
-            if attempt < config.LMS_REQUEST_ATTEMPTS - 1:
-                time.sleep(config.LMS_RETRY_DELAY)
-                continue
-            raise RuntimeError(str(e)) from e
-        result: dict[str, Any] = json.loads(raw)
-        choices = result.get("choices")
-        if choices and isinstance(choices, list):
-            text = str(cast(list[Any], choices)[0]["message"]["content"])
-            usage = result.get("usage") if isinstance(result.get("usage"), dict) else {}
-            return text, cast(dict[str, Any], usage)
-        if attempt < config.LMS_REQUEST_ATTEMPTS - 1:
-            _cached_host, _cached_model = None, None
-            host, model = _resolve_host_model()
-            body["model"] = model
-            payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
-            time.sleep(config.LMS_ERROR_RETRY_DELAY)
+    hosts_tried: set[str] = set()
+    last_error = "no LM Studio host reachable"
+    while len(hosts_tried) < max(1, len(config.LMS_HOSTS)):
+        host, model = _resolve_host_model()
+        host = host.rstrip("/")
+        if host in hosts_tried:
+            invalidate_host_cache(host)
+            if len(hosts_tried) >= len(config.LMS_HOSTS):
+                break
             continue
-        raise RuntimeError(f"LLM error: {raw}")
-    raise RuntimeError("LLM call failed after retries")
+        hosts_tried.add(host)
+        body["model"] = model
+        payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
+        for attempt in range(config.LMS_REQUEST_ATTEMPTS):
+            try:
+                req = Request(
+                    f"{host}/v1/chat/completions",
+                    data=payload,
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urlopen(req, timeout=config.LMS_TIMEOUT) as resp:
+                    raw = resp.read().decode("utf-8")
+            except (HTTPError, URLError, TimeoutError, OSError) as e:
+                last_error = str(e)
+                if attempt < config.LMS_REQUEST_ATTEMPTS - 1:
+                    time.sleep(config.LMS_RETRY_DELAY)
+                    continue
+                invalidate_host_cache(host)
+                break
+            result: dict[str, Any] = json.loads(raw)
+            choices = result.get("choices")
+            if choices and isinstance(choices, list):
+                text = str(cast(list[Any], choices)[0]["message"]["content"])
+                usage = result.get("usage") if isinstance(result.get("usage"), dict) else {}
+                return text, cast(dict[str, Any], usage)
+            last_error = f"LLM error: {raw[:200]}"
+            if attempt < config.LMS_REQUEST_ATTEMPTS - 1:
+                invalidate_host_cache(host)
+                host, model = _resolve_host_model()
+                host = host.rstrip("/")
+                body["model"] = model
+                payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
+                time.sleep(config.LMS_ERROR_RETRY_DELAY)
+                continue
+            invalidate_host_cache(host)
+            break
+    raise RuntimeError(last_error)
 
 
 def _call_acp(body: dict[str, Any]) -> str:
