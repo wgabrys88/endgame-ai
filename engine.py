@@ -262,7 +262,7 @@ def _save(board: dict[str, Any]) -> None:
         "goal": board.get("goal", ""),
         "plan": board.get("plan", []),
         "done_when": board.get("done_when", ""),
-        "completed": board.get("completed", [])[-10:],
+        "completed": board.get("completed", []),
         "power": board.get("power", 0.0),
         "consecutive_failures": board.get("consecutive_failures", 0),
         "stagnation": board.get("stagnation", 0),

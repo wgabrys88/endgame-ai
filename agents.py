@@ -499,10 +499,9 @@ def _render_field(ctx: dict[str, Any], field: str, instruction: str) -> str:
             goal = ctx.get("goal", "")
             hist = list(ctx.get("history", []))
             if hist:
-                last = str(hist[-1].get("obs", ""))[:40]
+                last = str(hist[-1].get("obs", ""))
                 return "GOAL: " + goal + "\nLAST: " + last
             return "GOAL: " + goal
-            return f'GOAL: {goal}' 
         case "screen":
             s = ctx.get("screen", "")
             return f"SCREEN:\n{s}" if s else ""
