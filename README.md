@@ -102,3 +102,9 @@ These gaps are intentional. The colony will fill them. That's the point.
 ## License
 
 MIT
+
+## Performance: KV cache trick
+
+LM Studio caches the KV state of the system prompt. If the system prompt stays constant (personality file) and only the user message changes (context), inference accelerates on every call — the model only processes the new tokens. This is why personalities are SYSTEM prompts and observations are USER messages. The reactor gets faster the longer it runs.
+
+This also means: never mutate the personality files during runtime. The reflector appends rules only to planner.txt (user context), never to the personality (system prompt). KV cache stays hot.
