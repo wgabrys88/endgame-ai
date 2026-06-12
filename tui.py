@@ -416,7 +416,7 @@ class TUI:
         pause_path.write_text("", encoding="utf-8")
         # Launch reactor if no agents running
         import subprocess, sys
-        if not glob.glob(str(BASE_DIR / EVENTS_GLOB)):
+        if True:  # always launch reactor
             self._reactor_proc = subprocess.Popen(
                 [sys.executable, "reactor.py"],
                 cwd=str(BASE_DIR),
