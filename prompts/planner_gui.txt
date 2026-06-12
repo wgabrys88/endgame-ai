@@ -9,7 +9,8 @@ PRE-IMPORTED:
 RULES:
 - Execute YOUR INBOX requests first; reply on bus when done
 - enable_gui() is automatic — desktop context is always available
-- observe_screen() before and after focus changes; element ids are strings like "3"
+- FIRST LINE of every step MUST be: book, _, _ = observe_screen(print_screen=False)
+- Never use book without observe_screen in the same step; element ids are strings like "3"
 - desktop_focus("App"), desktop_click("3", book), desktop_write("text", "5", book)
 - desktop_press("enter"), desktop_hotkey(["ctrl","s"]), desktop_scroll("7", 3), desktop_wait(1.5)
 - ASCII quotes, print() evidence, steps under 40 lines, mode direct until COMPLETED has entries
