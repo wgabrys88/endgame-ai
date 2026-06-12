@@ -1,133 +1,139 @@
-# endgame-ai
+# endgame-ai — breeding reactor
 
-A breeding reactor for AI agents. They evolve by writing code, not by following instructions.
+**Five AI agents run in parallel on your Windows desktop.** They share one codebase, write plugins, file reports, commit to git, and drive the real UI with mouse and keyboard — while a live spectrogram shows whether the colony is thriving or stuck.
 
-## Quick start
+No pip install. No task list. Each agent has a **personality** (git expert, implementor, doc writer, comms operator, quality critic). Identity drives action.
 
 ```bash
 python tui.py
 ```
 
-One command. Launches reactor, spawns 8 agents, renders live spectrogram. Starts paused (math-only mode). Press **Space** to go live. Press **q** to kill everything.
+Starts **paused** (math-only). Press **Space** for live LLM work. Press **q** to kill the whole process tree.
 
-Requires LM Studio running on `localhost:1234` and/or a remote GPU host.
+Requires [LM Studio](https://lmstudio.ai/) with a loaded model (tested with **Gemma 4B**). Optional second GPU host via env var (see [Configuration](#configuration)).
 
-## What this is
+---
 
-A nuclear fission reactor where the fuel rods are LLM agents with personalities. The reactor maintains criticality (stable population), and agents breed by writing new code — plugins, fixes, documentation, commits. Evolution is code generation, file creation, wiring new behavior. The reactor breeds agents that breed better agents.
+## What this is (simple)
 
-## How it works
+Imagine a small reactor core with five fuel rods. Each rod is an LLM agent loop: **plan → run Python → verify → repeat**. When an agent finishes real work (writes a file, pushes git, clicks a button), that counts as **fission** — progress the colony can measure.
 
-Each agent has a personality, not a task. A git expert sees uncommitted changes and commits them. A documentation inspector sees gaps and fills them. An implementor sees errors and writes fixes. Nobody assigns work. Identity drives action.
+Agents do not wait for instructions. The git expert sees dirty trees and commits. The implementor sees errors and writes plugins. The doc inspector reads logs and writes `runtime/comms/report.md`. They coordinate through `runtime/comms/` like a message bus.
 
-```
-tui.py                      Single entry point. Spectrogram + auto-launch.
-reactor.py                  The breeder. Spawns personalities, maintains k~1.0.
-main.py                     A single fuel rod. Born, fissions, dies, respawns.
-engine.py                   Scheduler + plugin hot-swap loader.
-log.py                      Event bus. Math phases bypass pause gate.
-config.py                   All paths and tuning constants.
-prompts/personalities/      Isotope types. Each personality pursues its nature.
-plugins/                    Fission products. Written by agents, loaded by agents.
-runtime/comms/              Communication channel. Beacons, reports, human bridge.
-```
+You watch everything in one TUI: stagnation, energy, PID control loops, and recent events per agent.
 
-## TUI
+---
 
-The spectrogram TUI shows real-time agent activity:
+## How this branch differs from `main`
 
-- Per-agent identity row with stagnation/energy/PID bars
-- 4 recent work events per agent
-- 3 spectrogram heatmap strips (stagnation=red, energy=green, PID=blue)
-- Header: alive count, fission rate, avg stagnation, uptime
-- Math-only mode: agents frozen, math telemetry still flows
+| | **`main`** | **`colony/dev`** (this branch) |
+|---|------------|--------------------------------|
+| **Shape** | One organism, one goal | **5 parallel agents**, 5 personalities |
+| **Control** | Single planner/actor loop | **Reactor** spawns and respawns rods; maintains k≈1 |
+| **Evolution** | Self-edits core source | Writes **plugins/** + **prompts/** lessons; personalities self-evolve |
+| **Colony** | Solo | **Shared comms**, beacons, cross-agent reports |
+| **Git** | Manual | **git_expert** autonomously commits/pushes to `colony/dev` |
+| **Desktop** | GUI verbs in actor | **desktop.py** — planner Python can click, type, hotkey while colony work runs |
+| **LLM hosts** | Fixed localhost | **Probes and load-balances** across `ENDGAME_LMS_HOSTS` |
+| **UI** | HUD / JSON TUI modes | **Spectrogram TUI** — per-agent heatmaps + event tail |
+| **Math** | Stagnation/PID/Lorenz | Same engine, feeds scheduler (reflect, cooldown, replan) |
 
-Adapts to terminal width. ASCII box drawing for universal compatibility.
+`main` proved a single agent can rewrite itself. **This branch asks: what if five specialists breed together?** Plugins, reports, quality audits, and git pushes — without you assigning tickets.
 
-## Personalities (8 slots)
+---
 
-| Slot | Personality | Natural behavior |
-|------|------------|-----------------|
-| 1-2 | git_expert | Checks status, stages, commits, pushes to colony/dev |
-| 3-4 | doc_inspector | Reads logs, counts events, writes reports |
-| 5 | implementor | Reads errors, writes fix plugins |
-| 6 | comms_operator | Maintains beacons, relays messages, reads human.txt |
-| 7 | quality_critic | Audits plugins, catches syntax errors |
-| 8 | wild | No goal. Pure planner personality drives behavior |
+## Quick start
 
-## Branch architecture
-
-```
-main                    Stable release (merge when battle-tested)
-reactor-personalities   Active development branch
-colony/dev              Agent-only branch — autonomous commits land here
-```
-
-The git_expert personality pushes to `colony/dev`. Human work stays on `reactor-personalities`. Periodically merge colony/dev into reactor-personalities to accept agent contributions.
-
-## Pause / math-only mode
-
-TUI starts paused. Agents are spawned but `log.emit()` sinks all work events. Only math telemetry flows (stagnation, PID, Lorenz). This lets you observe the math engine without burning LLM tokens.
-
-- **Space** toggles pause on/off
-- Pause is a file (`pause` in project root) — agents check it every emit
-- Math phases (`stagnation`, `lorenz`, `pid`) always emit regardless of pause
-
-## Plugin hot-swap
-
-Agents write plugins to `plugins/`. Every tick, `engine.py` reloads all `*.py` files:
-
-- Load errors → `plugin.error` event, system continues
-- Runtime errors → `plugin.error` event, system continues
-- No crash possible from buggy plugins
-
-## Process architecture
-
-```
-tui.py (user-facing)
-  └── reactor.py (spawned as subprocess)
-        ├── main.py n1 (git_expert, remote GPU)
-        ├── main.py n2 (git_expert, remote GPU)
-        ├── main.py n3 (doc_inspector, remote GPU)
-        ├── main.py n4 (doc_inspector, remote GPU)
-        ├── main.py n5 (implementor, remote GPU)
-        ├── main.py n6 (comms_operator, remote GPU)
-        ├── main.py n7 (quality_critic, local)
-        └── main.py n8 (wild, local)
-```
-
-`q` or Ctrl+C → `taskkill /F /T` kills entire tree. All agents share one process tree.
-
-## Configuration
-
-Set LM Studio endpoints before launch (comma-separated, probed at boot):
 ```powershell
+# Optional: local + remote LM Studio
 $env:ENDGAME_LMS_HOSTS = "http://localhost:1234,http://192.168.x.x:1234"
+# Optional: prefer Gemma (default partial match "gemma")
+$env:ENDGAME_LMS_MODEL = "gemma"
+
 python tui.py
 ```
 
-Reactor load-balances slots across healthy hosts. Each agent tries its assigned host first, then falls back to the rest.
+1. TUI launches `reactor.py` → five `main.py` children (one personality each).
+2. Math telemetry runs immediately (stagnation, Lorenz, PID).
+3. Press **Space** to unpause — agents plan and execute.
+4. Press **Space** again to pause (saves LLM tokens; math still flows).
 
-Edit `config.py` for paths and math interval.
+---
 
-## Proven results
+## Personalities (5 slots)
 
-- Autonomous git commits to colony/dev without instruction
-- Plugin authoring (agents wrote telemetry.py, auto_fix.py)
-- Agent rewrote its own personality prompt (git_expert.txt)
-- Human message relay via comms/human.txt
-- Plugin quality gates via py_compile
-- Colony reports in markdown
-- Self-healing respawn on agent death
-- 16 fissions in 50 seconds (Gemma 4B, 8 agents)
+| Slot | Personality | Natural behavior |
+|------|-------------|------------------|
+| n1 | git_expert | status → add → commit → push `colony/dev` |
+| n2 | implementor | reads errors, writes `plugins/*.py` |
+| n3 | doc_inspector | reads events, writes `runtime/comms/report.md` |
+| n4 | comms_operator | beacons, `messages.json`, coordination |
+| n5 | quality_critic | `py_compile` audit → `quality.json` |
+
+---
+
+## Architecture (one screen)
+
+```
+tui.py
+  └── reactor.py          spawn 5 agents, respawn dead rods, measure k
+        └── main.py ×5    plan → python actor → verify → reflect
+              ├── engine.py      scheduler, plugin hot-swap
+              ├── agents.py      planner, verifier, reflector, mutator
+              ├── desktop.py     mouse/keyboard/UIA for planner scripts
+              ├── llm.py         LM Studio + strict JSON schemas
+              └── log.py         JSONL event bus (math bypasses pause)
+```
+
+**Runtime** (`runtime/comms/`, `events-child-*.jsonl`, `snapshot.json`) is gitignored and recreated on boot.
+
+---
+
+## Desktop + colony at the same time
+
+Planner steps are plain Python. Pre-imported helpers:
+
+- **Files / git / subprocess** — `Path`, `subprocess`, `COMMS_DIR`, `PLUGINS_DIR`
+- **GUI** — `enable_gui()`, `observe_screen()`, `desktop_click`, `desktop_write`, `desktop_press`, `desktop_hotkey`, `desktop_scroll`, `desktop_focus`
+
+A single plan can write a report and click a dialog in separate steps. Five agents can mix file work and desktop work in parallel.
+
+---
+
+## Branches
+
+```
+main                  Stable single-agent release
+reactor-personalities Human + merged agent work (synced with colony/dev)
+colony/dev            Agent-autonomous target (git_expert pushes here)
+```
+
+---
+
+## Configuration
+
+| Variable | Purpose |
+|----------|---------|
+| `ENDGAME_LMS_HOSTS` | Comma-separated LM Studio URLs to probe |
+| `ENDGAME_LMS_HOST` | Preferred host per child (reactor sets this) |
+| `ENDGAME_LMS_MODEL` | Model id substring (default: `gemma`) |
+
+Tune constants in `config.py`. Agent map in `AGENTS.md`. Grok/Cursor handoff in `GROK.md`.
+
+---
+
+## Clone completeness
+
+A fresh clone contains all source, prompts, schemas, and plugins. Runtime artifacts are excluded by `.gitignore` and seeded when you run `python tui.py`.
+
+---
 
 ## Principles
 
-- Zero pip dependencies. Stdlib + ctypes only.
-- Personality IS the goal. No task assignment.
-- Math serves the model. Stagnation, PID, Lorenz — translated to plain language.
-- Python exec errors are free feedback. No LLM cost for validation.
-- The reactor is not a metaphor. It is the literal control architecture.
+- Stdlib + ctypes only. No pip.
+- Personality is the goal. No task assignment.
+- Bad Python fails free (no LLM cost). Good plans earn fission.
+- Plugins cannot crash the reactor — errors become events.
 
 ## License
 

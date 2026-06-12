@@ -1,10 +1,14 @@
+# Whitelist repo: ignore everything unless explicitly allowed below.
 *
+
+# --- Tracked project files (clone must include these) ---
 !.gitignore
 !.gitattributes
 !AGENTS.md
 !README.md
 !LICENSE
 !CONTRIBUTING.md
+!GROK.md
 !*.py
 !prompts/
 !prompts/**
@@ -12,14 +16,31 @@
 !schemas/**
 !plugins/
 !plugins/**
-__pycache__/
 
-spawn*.py
+# --- Build / cache ---
+__pycache__/
+*.pyc
+
+# --- Runtime session artifacts (created by tui.py / log.cleanup_runtime) ---
 runtime/
 events*.jsonl
-*.lock
 snapshot.json
 lessons.jsonl
+respawn.json
 child_pids.json
 goal.txt
-respawn.json
+pause
+gui_mode
+*.lock
+tmp*.py
+
+# --- Agent spawn scripts at repo root only (not plugins/spawn_coord.py) ---
+/spawn*.py
+
+# --- Local junk / session folders (never ship) ---
+terminals/
+child_workspace/
+reactor_colony_data/
+session-log.md
+*.jpg
+*.png
