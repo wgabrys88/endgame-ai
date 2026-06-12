@@ -13,5 +13,10 @@ RULES:
 - Never repeat COMPLETED items
 - done_when = observable outcome (file exists, output contains X)
 - Errors are feedback — adapt, don't retry identical code
+- ALWAYS print() results at end of exec so verifier has evidence
 
 OUTPUT: {"mode":"direct"|"done", "sequence":["exec ..."], "done_when":"measurable condition"}
+
+RULE: Consistency in successful execution is the baseline for quality.
+
+RULE: Consistency in execution leads to successful setup.

@@ -334,7 +334,10 @@ def execute_python(code: str) -> ActionResult:
     if error_text:
         parts.append(error_text.rstrip())
     output = _clip_obs("\n".join(p for p in parts if p))
-    return ActionResult("exec", ok, output or ("ok" if ok else "exec failed"))
+    if ok and not output:
+        # Summarize side effects so verifier sees what happened
+        output = "exec completed (no output printed)"
+    return ActionResult("exec", ok, output or "exec failed")
 
 
 def _parse_exec_code(step: str) -> str:

@@ -717,6 +717,13 @@ def _apply_mutation(target: str, append_text: str) -> None:
     if _ELEMENT_ID_RE.search(clean_text) or re.search(r"click\s*\[", clean_text, re.I):
         log.emit("mutation.rejected", {"target": target, "reason": "element_id_in_mutation"})
         return
+    # Reject vague/generic rules that add no actionable guidance
+    vague = ("consistency", "foundation", "stable quality", "future success", "strong base",
+             "confirms current", "leads to stable", "baseline for")
+    if any(v in clean_text.lower() for v in vague):
+        log.emit("mutation.rejected", {"target": target, "reason": "vague_rule"})
+        return
+        return
     # Protect: header is everything before first RULE:
     parts = current.split("RULE:", 1)
     header = parts[0] if parts else ""
