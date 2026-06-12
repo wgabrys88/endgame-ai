@@ -43,10 +43,24 @@ def is_alive(slot_id):
     if not os.path.exists(ef):
         return False
     try:
-        events = [json.loads(l) for l in open(ef) if l.strip()]
-        return not any(e.get("phase") == "stop" for e in events)
+        with open(ef, "rb") as fh:
+            fh.seek(0, 2)
+            size = fh.tell()
+            fh.seek(max(0, size - 4096))
+            tail = fh.read().decode("utf-8", errors="ignore")
+        for line in reversed(tail.splitlines()):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                e = json.loads(line)
+                if e.get("phase") == "stop":
+                    return False
+            except:
+                continue
+        return True
     except:
-        return False
+        return True  # assume alive if we can't read
 
 def reap_dead():
     dead = []
