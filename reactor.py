@@ -12,15 +12,16 @@ WINDOW = 60
 REMOTE = "http://192.168.16.31:1234"
 LOCAL = "http://localhost:1234"
 
-MUTATIONS = [
+# Neutron goals: mix of exec (instant) and personality (planner decides)
+GOALS = [
+    "",  # empty goal = planner personality decides
+    "explore",  # vague = planner interprets
+    "mutate",  # vague = planner interprets
     "exec import os,glob; print('genome:',len(glob.glob('plugins/*.py')),'plugins')",
-    "exec import os,time; os.makedirs('runtime/comms',exist_ok=True); open('runtime/comms/beacon-'+str(os.getpid())+'.json','w').write(str(time.time())); print('beacon')",
-    "exec import glob; print('slots:',len(glob.glob('events-child-*.jsonl')))",
-    "exec import os; open('plugins/neutron_'+str(os.getpid())+'.py','w').write('def run(board):'+chr(10)+'    return None'+chr(10)); print('mutated')",
-    "exec import glob,os; evts=sum(1 for f in glob.glob('events-child-*.jsonl') for l in open(f)); print('total_events:',evts)",
-    "exec import os; print('pid',os.getpid(),'alive')",
-    "exec import os,json; os.makedirs('runtime/comms',exist_ok=True); open('runtime/comms/census.json','w').write(json.dumps({'ts':__import__('time').time()})); print('census')",
-    "exec print('neutron')",
+    "exec import os; open('plugins/n'+str(os.getpid())+'.py','w').write('def run(board):'+chr(10)+'    return None'+chr(10)); print('mutated')",
+    "exec import glob; print('colony:',len(glob.glob('events-child-*.jsonl')),'slots')",
+    "exec import os,time; os.makedirs('runtime/comms',exist_ok=True); open('runtime/comms/pulse-'+str(os.getpid())+'.json','w').write(str(time.time())); print('pulse')",
+    "exec print('alive')",
 ]
 
 # Track which host each slot uses: slot -> "remote" | "local"
@@ -82,7 +83,7 @@ def spawn(slot_id, host_url, host_label):
         pass
     env = os.environ.copy()
     env["ENDGAME_LMS_HOST"] = host_url
-    goal = random.choice(MUTATIONS)
+    goal = random.choice(GOALS)
     proc = subprocess.Popen(
         [sys.executable, "main.py", goal, "--backend", "lmstudio",
          "--event-budget", str(BUDGET), "--events-path", ef],

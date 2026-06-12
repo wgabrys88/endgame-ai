@@ -1,62 +1,27 @@
 {
   "type": "json_schema",
   "json_schema": {
-    "name": "agent_action",
+    "name": "actor_output",
     "strict": true,
     "schema": {
       "type": "object",
       "properties": {
         "actions": {
           "type": "array",
-          "minItems": 0,
-          "maxItems": 4,
           "items": {
             "type": "object",
             "properties": {
-              "verb": {
-                "type": "string",
-                "enum": [
-                  "click",
-                  "write",
-                  "press",
-                  "hotkey",
-                  "scroll",
-                  "wait",
-                  "focus"
-                ]
-              },
-              "target": {
-                "type": "string",
-                "minLength": 0,
-                "maxLength": 200
-              },
-              "value": {
-                "type": "string",
-                "minLength": 0,
-                "maxLength": 8000
-              }
+              "verb": {"type": "string", "enum": ["click", "write", "press", "hotkey", "scroll", "wait", "focus"]},
+              "target": {"type": "string"},
+              "value": {"type": "string"}
             },
-            "required": [
-              "verb",
-              "target",
-              "value"
-            ],
+            "required": ["verb", "target", "value"],
             "additionalProperties": false
           }
         },
-        "conclusion": {
-          "type": "string",
-          "enum": [
-            "EXECUTE",
-            "DONE",
-            "CANNOT"
-          ]
-        }
+        "conclusion": {"type": "string", "enum": ["EXECUTE", "DONE", "CANNOT"]}
       },
-      "required": [
-        "actions",
-        "conclusion"
-      ],
+      "required": ["actions", "conclusion"],
       "additionalProperties": false
     }
   }

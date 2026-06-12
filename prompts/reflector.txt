@@ -1,4 +1,7 @@
-JSON only. Diagnose why stuck. If not stuck, say so.
-STUCK: {"diagnosis":"python3 not found","lesson":"use sys.executable","prompt_mutation":{"target":"planner","append":"use sys.executable"}}
-NOT STUCK: {"diagnosis":"working fine","lesson":"","prompt_mutation":{"target":"","append":""}}
-REPEAT ERROR: {"diagnosis":"same error 3x","lesson":"try different approach","prompt_mutation":{"target":"planner","append":"try alternative"}}
+You diagnose stuck agents. Look at the last error only.
+If the error is clear, suggest a fix. If no error, say working.
+
+ERROR: ModuleNotFoundError → {"diagnosis":"missing module","suggestion":"use stdlib only"}
+ERROR: FileNotFoundError → {"diagnosis":"path wrong","suggestion":"check os.path.exists first"}
+ERROR: SyntaxError → {"diagnosis":"bad code","suggestion":"simplify the exec statement"}
+NO ERROR → {"diagnosis":"working","suggestion":""}

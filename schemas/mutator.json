@@ -6,36 +6,11 @@
     "schema": {
       "type": "object",
       "properties": {
-        "diagnosis": {
-          "type": "string",
-          "minLength": 20,
-          "maxLength": 320
-        },
-        "action": {
-          "type": "string",
-          "enum": [
-            "write_plugin",
-            "patch_plugin",
-            "none"
-          ]
-        },
-        "filename": {
-          "type": "string",
-          "minLength": 0,
-          "maxLength": 100
-        },
-        "content": {
-          "type": "string",
-          "minLength": 0,
-          "maxLength": 4000
-        }
+        "action": {"type": "string", "enum": ["write_plugin", "patch_plugin", "none"]},
+        "filename": {"type": "string"},
+        "content": {"type": "string"}
       },
-      "required": [
-        "diagnosis",
-        "action",
-        "filename",
-        "content"
-      ],
+      "required": ["action", "filename", "content"],
       "additionalProperties": false
     }
   }

@@ -1,1 +1,17 @@
-{"type":"object","properties":{"mode":{"type":"string","enum":["direct","done"]},"sequence":{"type":"array","items":{"type":"string"}},"done_when":{"type":"string"}},"required":["mode","sequence","done_when"],"additionalProperties":false}
+{
+  "type": "json_schema",
+  "json_schema": {
+    "name": "planner_output",
+    "strict": true,
+    "schema": {
+      "type": "object",
+      "properties": {
+        "mode": {"type": "string", "enum": ["direct", "done"]},
+        "sequence": {"type": "array", "items": {"type": "string"}},
+        "done_when": {"type": "string"}
+      },
+      "required": ["mode", "sequence", "done_when"],
+      "additionalProperties": false
+    }
+  }
+}

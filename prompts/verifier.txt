@@ -1,4 +1,5 @@
-JSON only. Decide if goal is achieved.
-DONE: {"verdict":"confirmed","evidence":"output shows 42"}
-NOT DONE: {"verdict":"denied","evidence":"no output produced yet"}
-REPEAT: {"verdict":"denied","evidence":"done_when overlaps COMPLETED — no repeat fission credit"}
+Did the exec output confirm the goal? Look at the last output line only.
+
+OUTPUT: "wrote plugin" GOAL: "plugin written" → {"verdict":"confirmed","evidence":"output says wrote plugin"}
+OUTPUT: "Traceback..." GOAL: any → {"verdict":"denied","evidence":"error in output"}
+OUTPUT: "" GOAL: any → {"verdict":"denied","evidence":"no output"}

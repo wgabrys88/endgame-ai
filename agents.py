@@ -422,17 +422,12 @@ class ReflectorAgent:
         except Exception as e:
             log.emit("reflector.error", {"error": str(e)})
             return {"writes": {}, "next": "stagnation", "phase": "reflector.error", "data": {"error": str(e)}}
-        parsed = _extract_json(raw, ["diagnosis", "lesson"])
-        lesson = str(parsed.get("lesson", ""))
-        if lesson.strip():
-            _write_lesson(lesson)
-        mutation = parsed.get("prompt_mutation")
-        if isinstance(mutation, dict):
-            target = str(mutation.get("target", ""))
-            append_text = str(mutation.get("append", ""))
-            if target and append_text:
-                _apply_mutation(target, append_text)
+        parsed = _extract_json(raw, ["diagnosis", "suggestion"])
         diagnosis = str(parsed.get("diagnosis", ""))
+        rule = str(parsed.get("rule", ""))
+        if rule.strip():
+            _apply_mutation("planner", rule)
+            _write_lesson(rule)
         plan_steps: list[dict[str, Any]] = ctx.get("plan", [])
         retry = next((s for s in plan_steps if s.get("status") == "active"), None)
         # Escalate to mutator if repeated reflections haven't helped
@@ -441,13 +436,13 @@ class ReflectorAgent:
                 "writes": {"pid_integral": 0.0, "activity_events": 1},
                 "next": "mutator",
                 "phase": "reflect",
-                "data": {"diagnosis": diagnosis, "lesson": lesson, "escalate": "mutator"},
+                "data": {"diagnosis": diagnosis, "rule": rule, "escalate": "mutator"},
             }
         return {
             "writes": {"pid_integral": 0.0, "consecutive_failures": 0, "activity_events": 1},
             "next": "actor" if retry else "stagnation",
             "phase": "reflect",
-            "data": {"diagnosis": diagnosis, "lesson": lesson},
+            "data": {"diagnosis": diagnosis, "rule": rule},
         }
 
 
@@ -748,7 +743,7 @@ class MutatorAgent:
             log.emit("mutator.error", {"error": str(e)})
             return {"writes": {}, "next": "stagnation", "phase": "mutator.error",
                     "data": {"error": str(e)}}
-        parsed = _extract_json(raw, ["diagnosis", "action", "filename", "content"])
+        parsed = _extract_json(raw, ["action", "filename", "content"])
         action = str(parsed.get("action", "none"))
         filename = str(parsed.get("filename", ""))
         content = str(parsed.get("content", ""))

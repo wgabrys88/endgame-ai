@@ -160,7 +160,7 @@ def _call_llm_reply_with_retry(system: str, user: str, role: str, *, max_tokens:
         "repeat_penalty": config.LLM_REPEAT_PENALTY,
         "seed": config.LLM_SEED,
     }
-    if _backend != "lmstudio" and schema:
+    if schema:
         body["response_format"] = schema
     started = time.time()
     max_retries = getattr(config, "LLM_RETRY_ATTEMPTS", 3)

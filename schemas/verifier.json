@@ -6,23 +6,10 @@
     "schema": {
       "type": "object",
       "properties": {
-        "verdict": {
-          "type": "string",
-          "enum": [
-            "confirmed",
-            "denied"
-          ]
-        },
-        "evidence": {
-          "type": "string",
-          "minLength": 20,
-          "maxLength": 240
-        }
+        "verdict": {"type": "string", "enum": ["confirmed", "denied"]},
+        "evidence": {"type": "string"}
       },
-      "required": [
-        "verdict",
-        "evidence"
-      ],
+      "required": ["verdict", "evidence"],
       "additionalProperties": false
     }
   }

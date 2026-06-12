@@ -127,11 +127,11 @@ PROCESS_DPI_AWARENESS_CONTEXT: int = -4
 SIGINT_EXIT_CODE: int = 130
 
 CONTEXT_POLICY: dict[str, list[str]] = {
-    "planner": ["goal", "desktop", "plan", "history", "completed", "budget", "failures", "lessons"],
-    "actor": ["instruction", "screen", "history", "lessons"],
-    "verifier": ["goal", "done_when", "screen", "history", "plan", "completed"],
-    "reflector": ["goal", "plan", "history", "trigger", "completed", "lessons"],
-    "mutator": ["goal", "plan", "history", "trigger", "completed"],
+    "planner": ["goal", "plan", "history", "completed", "lessons"],
+    "actor": ["instruction", "screen", "history"],
+    "verifier": ["goal", "done_when", "history", "completed"],
+    "reflector": ["goal", "history", "failures"],
+    "mutator": ["goal", "history", "completed"],
 }
 # Smallest fix: observer timeout fallback for resilience
 OBSERVER_TIMEOUT = 30

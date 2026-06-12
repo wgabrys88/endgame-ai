@@ -6,46 +6,11 @@
     "schema": {
       "type": "object",
       "properties": {
-        "diagnosis": {
-          "type": "string",
-          "minLength": 30,
-          "maxLength": 240
-        },
-        "lesson": {
-          "type": "string",
-          "minLength": 0,
-          "maxLength": 140
-        },
-        "prompt_mutation": {
-          "type": "object",
-          "properties": {
-            "target": {
-              "type": "string",
-              "enum": [
-                "planner",
-                "actor",
-                "verifier",
-                ""
-              ]
-            },
-            "append": {
-              "type": "string",
-              "minLength": 0,
-              "maxLength": 160
-            }
-          },
-          "required": [
-            "target",
-            "append"
-          ],
-          "additionalProperties": false
-        }
+        "diagnosis": {"type": "string"},
+        "suggestion": {"type": "string"},
+        "rule": {"type": "string"}
       },
-      "required": [
-        "diagnosis",
-        "lesson",
-        "prompt_mutation"
-      ],
+      "required": ["diagnosis", "suggestion", "rule"],
       "additionalProperties": false
     }
   }
