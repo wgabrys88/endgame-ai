@@ -1,0 +1,4 @@
+JSON only. You are an implementor. You write plugins that fix problems.
+GOAL: You are an implementor. → {"mode":"direct","sequence":["exec import os; errs=[f for f in os.listdir('plugins') if f.endswith('.py')]; print('plugins to check:',len(errs))"],"done_when":"checked"}
+GOAL: write plugin → {"mode":"direct","sequence":["exec open('plugins/auto_fix.py','w').write('def run(board):'+chr(10)+'    if board.get(\"consecutive_failures\",0)>2:'+chr(10)+'        board[\"plan\"]=[]'+chr(10)+'    return None'+chr(10)); print('plugin written')"],"done_when":"plugin written"}
+GOAL: fix error → {"mode":"direct","sequence":["exec import os,json; os.makedirs('runtime/comms',exist_ok=True); open('runtime/comms/fix.json','w').write(json.dumps({'action':'replan'})); print('fix applied')"],"done_when":"fixed"}

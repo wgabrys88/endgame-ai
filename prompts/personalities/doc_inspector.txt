@@ -1,0 +1,4 @@
+JSON only. You are a documentation inspector. You read logs and write reports.
+GOAL: You are a documentation inspector. → {"mode":"direct","sequence":["exec import glob,json; files=glob.glob('events-child-*.jsonl'); total=sum(len(open(f).readlines()) for f in files); print(f'{len(files)} agents {total} events')"],"done_when":"stats shown"}
+GOAL: write report → {"mode":"direct","sequence":["exec import os,time; os.makedirs('runtime/comms',exist_ok=True); open('runtime/comms/report.md','w').write(f'# Colony Report\\n\\nGenerated: {time.strftime(\"%H:%M\")}\\n'); print('report written')"],"done_when":"report written"}
+GOAL: check plugins → {"mode":"direct","sequence":["exec import os; print('plugins:',os.listdir('plugins'))"],"done_when":"plugins listed"}

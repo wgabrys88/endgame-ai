@@ -1,0 +1,4 @@
+JSON only. You are the quality critic. You validate plugins and colony health.
+GOAL: You are the quality critic. → {"mode":"direct","sequence":["exec import os,py_compile; results=[]; [results.append(f+':OK') if not py_compile.compile('plugins/'+f,doraise=False) else results.append(f+':BAD') for f in os.listdir('plugins') if f.endswith('.py')]; print('audit:',len(results),'plugins')"],"done_when":"audit done"}
+GOAL: check health → {"mode":"direct","sequence":["exec import glob; files=glob.glob('events-child-*.jsonl'); print('health:',len(files),'agents alive')"],"done_when":"health checked"}
+GOAL: validate → {"mode":"direct","sequence":["exec import py_compile,os; bad=[f for f in os.listdir('plugins') if f.endswith('.py') and f!='__init__.py']; print('validating',len(bad),'plugins')"],"done_when":"validated"}

@@ -1,4 +1,4 @@
-"""Nuclear reactor. Maintains k~1.0. Remote PC priority (6 slots), local fallback (2 slots)."""
+"""Nuclear reactor. Maintains k~1.0. Spawns personality-driven agents."""
 import glob, json, os, subprocess, sys, time, random
 
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -6,26 +6,24 @@ CONTROL_INTERVAL = 10
 MAX_SLOTS = 8
 REMOTE_SLOTS = 6
 LOCAL_SLOTS = 2
-BUDGET = 200
-WINDOW = 60
-
+BUDGET = 500
 REMOTE = "http://192.168.16.31:1234"
 LOCAL = "http://localhost:1234"
 
-# Neutron goals: mix of exec (instant) and personality (planner decides)
-GOALS = [
-    "",  # empty goal = planner personality decides
-    "explore",  # vague = planner interprets
-    "mutate",  # vague = planner interprets
-    "exec import os,glob; print('genome:',len(glob.glob('plugins/*.py')),'plugins')",
-    "exec import os; open('plugins/n'+str(os.getpid())+'.py','w').write('def run(board):'+chr(10)+'    return None'+chr(10)); print('mutated')",
-    "exec import glob; print('colony:',len(glob.glob('events-child-*.jsonl')),'slots')",
-    "exec import os,time; os.makedirs('runtime/comms',exist_ok=True); open('runtime/comms/pulse-'+str(os.getpid())+'.json','w').write(str(time.time())); print('pulse')",
-    "exec print('alive')",
-]
+# Personality assignment: slot -> personality file
+# 2 git experts, 2 doc inspectors, 1 implementor, 1 comms, 1 critic, 1 wild
+ROSTER = {
+    1: "git_expert",
+    2: "git_expert",
+    3: "doc_inspector",
+    4: "doc_inspector",
+    5: "implementor",
+    6: "comms_operator",
+    7: "quality_critic",
+    8: None,  # wild — empty goal, pure planner personality
+}
 
-# Track which host each slot uses: slot -> "remote" | "local"
-slots = {}  # slot_id -> {"pid": int, "host": str, "started": float}
+slots = {}  # slot_id -> {"pid": int, "host": str, "personality": str}
 
 def count_by_host():
     r = sum(1 for s in slots.values() if s["host"] == "remote")
@@ -33,7 +31,6 @@ def count_by_host():
     return r, l
 
 def pick_host():
-    """Remote priority. Fill remote first (up to 6), then local (up to 2)."""
     r, l = count_by_host()
     if r < REMOTE_SLOTS:
         return REMOTE, "remote"
@@ -52,7 +49,6 @@ def is_alive(slot_id):
         return False
 
 def reap_dead():
-    """Remove dead slots from tracking."""
     dead = []
     for sid in list(slots):
         if not is_alive(sid):
@@ -62,7 +58,6 @@ def reap_dead():
 
 def measure_k():
     fissions = 0
-    now = time.time()
     for f in glob.glob(os.path.join(BASE, "events-child-*.jsonl")):
         try:
             events = [json.loads(l) for l in open(f) if l.strip()]
@@ -81,16 +76,26 @@ def spawn(slot_id, host_url, host_label):
         os.path.exists(ef) and os.remove(ef)
     except OSError:
         pass
+
+    personality = ROSTER.get(slot_id)
+    if personality:
+        # Load personality as the goal — planner uses it to generate plans
+        pfile = os.path.join(BASE, "prompts", "personalities", f"{personality}.txt")
+        goal = open(pfile).readline().strip() if os.path.exists(pfile) else ""
+    else:
+        goal = ""  # wild agent — pure planner personality drives it
+
     env = os.environ.copy()
     env["ENDGAME_LMS_HOST"] = host_url
-    goal = random.choice(GOALS)
+    if personality:
+        env["ENDGAME_PERSONALITY"] = personality
     proc = subprocess.Popen(
         [sys.executable, "main.py", goal, "--backend", "lmstudio",
          "--event-budget", str(BUDGET), "--events-path", ef],
         cwd=BASE, env=env,
         creationflags=0x08000000 | 0x00000200,
     )
-    slots[slot_id] = {"pid": proc.pid, "host": host_label, "started": time.time()}
+    slots[slot_id] = {"pid": proc.pid, "host": host_label, "personality": personality or "wild"}
     return proc.pid
 
 def next_slot_id():
@@ -100,42 +105,41 @@ def next_slot_id():
     return None
 
 if __name__ == "__main__":
-    print(f"REACTOR | remote={REMOTE_SLOTS} local={LOCAL_SLOTS} budget={BUDGET}")
+    print(f"REACTOR | {MAX_SLOTS} slots | personalities")
+    for sid, p in ROSTER.items():
+        print(f"  n{sid}: {p or 'wild'}")
     print()
 
-    # Bootstrap: fill remote first, then local
-    for _ in range(MAX_SLOTS):
+    # Bootstrap all slots
+    for sid in range(1, MAX_SLOTS + 1):
         host_url, host_label = pick_host()
         if not host_url:
             break
-        sid = next_slot_id()
-        if not sid:
-            break
         pid = spawn(sid, host_url, host_label)
         r, l = count_by_host()
-        print(f"  BOOT n{sid} [{host_label}] PID={pid} (R={r} L={l})")
+        p = slots[sid]["personality"]
+        print(f"  BOOT n{sid} [{host_label}] {p} PID={pid}")
         time.sleep(2)
 
-    print()
+    print(f"\nREACTOR CRITICAL. {len(slots)} rods loaded.\n")
     while True:
         time.sleep(CONTROL_INTERVAL)
         dead = reap_dead()
         k, alive, fissions = measure_k()
         r, l = count_by_host()
-        ts = time.strftime("%H:%M:%S")
 
-        # Refill dead slots — always remote priority
+        # Refill dead slots with same personality
         spawned = []
-        for _ in dead:
+        for sid in dead:
             host_url, host_label = pick_host()
-            sid = next_slot_id()
-            if host_url and sid:
+            if host_url:
                 pid = spawn(sid, host_url, host_label)
-                spawned.append(f"n{sid}[{host_label}]")
+                spawned.append(f"n{sid}[{slots[sid]['personality']}]")
 
+        ts = time.strftime("%H:%M:%S")
         status = f"{ts} k={k:.2f} R={r} L={l} F={fissions}"
         if dead:
-            status += f" reaped={len(dead)}"
+            status += f" reaped={[f'n{s}' for s in dead]}"
         if spawned:
-            status += f" spawned={spawned}"
+            status += f" respawned={spawned}"
         print(status)

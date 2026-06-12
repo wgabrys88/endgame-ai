@@ -632,6 +632,14 @@ def _sanitize_plan_step(step: str) -> str:
 
 
 def _load_prompt(role: str) -> str:
+    # Personality override for planner: use personality file as system prompt
+    if role == "planner":
+        import os as _os2
+        personality = _os2.environ.get("ENDGAME_PERSONALITY", "")
+        if personality:
+            ppath = config.PROMPTS_DIR / "personalities" / f"{personality}.txt"
+            if ppath.exists():
+                return ppath.read_text(encoding="utf-8").strip()
     path = config.PROMPTS_DIR / f"{role}.txt"
     if not path.exists():
         return ""
