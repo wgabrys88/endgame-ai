@@ -203,6 +203,10 @@ class SchedulerAgent:
         periodic_gate = completions > 0 and completions % 5 == 0
         reflect_wanted = reflect_due and (pid_gate or stag_gate or chaos_gate or periodic_gate)
 
+        # No plan = must plan first. Can't reflect on nothing.
+        if not plan:
+            return {"writes": writes, "next": "planner", "phase": "schedule", "data": {"reason": "need_plan"}}
+
         # Plan completion takes priority — verify before reflecting
         all_done = plan and all(s.get("status") == "done" for s in plan)
         if all_done:
