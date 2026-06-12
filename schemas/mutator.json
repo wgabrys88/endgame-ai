@@ -8,7 +8,7 @@
       "properties": {
         "action": {"type": "string", "enum": ["write_plugin", "patch_plugin", "none"]},
         "filename": {"type": "string", "minLength": 2},
-        "content": {"type": "string", "minLength": 1000}
+        "content": {"type": "string", "minLength": 50}
       },
       "required": ["action", "filename", "content"],
       "additionalProperties": false

@@ -6,9 +6,9 @@
     "schema": {
       "type": "object",
       "properties": {
-        "diagnosis": {"type": "string", "minLength": 1000},
-        "suggestion": {"type": "string", "minLength": 1000},
-        "rule": {"type": "string", "minLength": 200}
+        "diagnosis": {"type": "string", "minLength": 50},
+        "suggestion": {"type": "string", "minLength": 50},
+        "rule": {"type": "string", "minLength": 20}
       },
       "required": ["diagnosis", "suggestion", "rule"],
       "additionalProperties": false
