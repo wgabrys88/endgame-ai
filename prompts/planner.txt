@@ -42,3 +42,5 @@ CONFERENCE BUS:
 Output one JSON object matching the schema.
 
 RULE: credit
+
+RULE: Implement ping logic for @mention.
