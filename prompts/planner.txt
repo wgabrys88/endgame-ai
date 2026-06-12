@@ -41,10 +41,6 @@ CONFERENCE BUS:
 
 Output one JSON object matching the schema.
 
-RULE: bus_post(bus_id(), "colony", "@GUI / n6 done: Identified 'System' MenuItem in MenuBar for navigation focus.")
-
-RULE: desktop_action_completed
-
 RULE: continue_development
 
 RULE: bus_post(bus_id(), "colony", "@requester done: GUI interaction step completed.")
@@ -54,5 +50,9 @@ RULE: desktop action completed
 RULE: desktop_action_click_element
 
 RULE: desktop_click(element_id_for_menu_item_1)
+
+RULE: desktop_click(element_id_for_menu_item_1)
+
+RULE: git add runtime/comms/mission_status.md runtime/comms/linkedin_post_draft_draft.txt && git commit -m "Update mission status and LinkedIn draft"
 
 RULE: desktop_click(element_id_for_menu_item_1)
