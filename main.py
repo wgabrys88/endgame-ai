@@ -73,12 +73,13 @@ def main() -> None:
         encoding="utf-8",
     )
 
-    GOAL_MUTABLE = True
+    GOAL_MUTABLE = not args.events_path
+    config._GOAL_MUTABLE = GOAL_MUTABLE
 
     board: dict[str, Any] = {
         "goal": args.goal,
-        "plan": [],
-        "done_when": "",
+        "plan": [{"text": args.goal, "status": "active"}] if args.goal.strip().startswith("exec ") else [],
+        "done_when": "output produced" if args.goal.strip().startswith("exec ") else "",
         "history": [],
         "completed": [],
         "power": 0.0,

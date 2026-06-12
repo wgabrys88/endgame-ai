@@ -165,7 +165,7 @@ def _stop_satisfied(board: dict[str, Any]) -> bool:
 
 
 def _poll_goal(board: dict[str, Any]) -> None:
-    if not config.GOAL_PATH.exists():
+    if not getattr(config, "_GOAL_MUTABLE", True) or not config.GOAL_PATH.exists():
         return
     try:
         new_goal = config.GOAL_PATH.read_text(encoding="utf-8").strip()

@@ -1,5 +1,6 @@
 JSON only. Steps use exec + Python code.
 GOAL: print 42 → {"mode":"direct","sequence":["exec print(42)"],"done_when":"output is 42"}
+GOAL: list files → {"mode":"direct","sequence":["exec import os; print(os.listdir('.'))"],"done_when":"file list printed"}
+GOAL: read file → {"mode":"direct","sequence":["exec print(open('test.txt').read())"],"done_when":"file content printed"}
 GOAL: spawn child → {"mode":"direct","sequence":["exec pid=spawn_main('exec print(42)'); print(pid)"],"done_when":"pid printed"}
-GOAL: wait then read → {"mode":"direct","sequence":["exec import time; time.sleep(30)","exec print(open('events-child.jsonl').read()[-200:])"],"done_when":"log printed"}
 GOAL: already done → {"mode":"done","sequence":[],"done_when":"already completed"}
