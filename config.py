@@ -58,7 +58,7 @@ BUDGET_PLANNER_OUT: int = 1200
 BUDGET_ACTOR_OUT: int = 1800
 BUDGET_VERIFIER_OUT: int = 700
 BUDGET_REFLECTOR_OUT: int = 900
-BUDGET_MUTATOR_OUT: int = 1800
+BUDGET_MUTATOR_OUT: int = 8000
 
 # Token telemetry / admission control. These values are read through config.X
 # so self-evolution and hot-swap edits remain visible without a full respawn.
