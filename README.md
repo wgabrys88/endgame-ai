@@ -1,56 +1,103 @@
 # endgame-ai
 
-A self-replicating agentic system modeled as a nuclear fission reactor.
+A breeding reactor for AI agents. They evolve by writing code, not by following instructions.
 
-## Architecture
+## What this is
 
-```
-reactor.py          Control room. Maintains criticality k~1.0.
-main.py             Fuel rod. Single agent lifecycle.
-agents.py           Phase scheduler (plan → exec → verify → mutate).
-engine.py           Tick loop connecting phases.
-config.py           All constants and tuning.
-llm.py              LM Studio API (schema-enforced JSON).
-plugins/            Fission products. Written BY agents FOR agents.
-prompts/            Isotope personalities. Drive emergent behavior.
-schemas/            Neutron cross-sections. Constrain output shape.
-```
+A nuclear fission reactor where the fuel rods are LLM agents with personalities. The reactor maintains criticality (stable population), and agents breed by writing new code — plugins, fixes, documentation, commits. Evolution is not prompt mutation. Evolution is code generation, file creation, wiring new behavior. The reactor breeds agents that breed better agents.
 
 ## How it works
 
-The reactor spawns agents with personalities, not tasks. Each agent:
+Each agent has a personality, not a task. A git expert sees uncommitted changes and commits them. A documentation inspector sees gaps and fills them. An implementor sees errors and writes fixes. Nobody assigns work. Identity drives action.
 
-1. Receives a personality (prompt) and optional vague goal
-2. Plans its own actions based on who it IS
-3. Executes Python via `exec` — errors are free AST feedback
-4. Verifies results, achieves fission (goal completion)
-5. Mutates — writes plugins that improve the colony
+```
+reactor.py                  The breeder. Spawns personalities, maintains k~1.0.
+main.py                     A single fuel rod. Born, fissions, dies, respawns.
+prompts/personalities/      Isotope types. Each personality pursues its nature.
+plugins/                    Fission products. Written by agents, loaded by agents.
+runtime/comms/              Communication channel. Beacons, reports, human bridge.
+```
 
-The reactor measures criticality (fissions/deaths) and maintains population:
-- Subcritical → spawn more agents
-- Supercritical → absorb weakest
-- Stable → let them run
+## The breeding cycle
+
+1. Reactor spawns agent with personality (git expert, doc inspector, implementor...)
+2. Agent observes workspace — files, logs, errors, other agents' output
+3. Agent acts according to its nature — commits, documents, fixes, communicates
+4. Agent achieves fission (goal from identity) → power increases
+5. Agent writes new code (plugin, script, wiring) → colony evolves
+6. Agent dies → reactor respawns same personality in free slot
+7. Next generation loads evolved plugins → behavior improves
+
+No human in the loop for evolution. The human writes to `runtime/comms/human.txt` when they want to talk.
 
 ## Running
 
 ```bash
-# Single agent
-python main.py "exec print('hello')" --backend lmstudio
+# Start the breeding reactor (6 remote GPU + 2 local)
+ENDGAME_LMS_HOST="http://YOUR_GPU_HOST:1234" python reactor.py
 
-# Full reactor (6 remote + 2 local)
-ENDGAME_LMS_HOST="http://192.168.16.31:1234" python reactor.py
+# Single agent test
+ENDGAME_PERSONALITY="git_expert" python main.py "" --backend lmstudio
 ```
 
-Requires LM Studio running at localhost:1234 (or custom host via env var).
+Requires LM Studio running with any small model (Gemma 4B proven).
 
-## Key principles
+## Personalities (current roster)
 
-- Zero pip dependencies (stdlib + ctypes only)
-- Small models learn by EXAMPLE not rules
-- Math SERVES the model (translates to plain language)
-- Personality IS the goal — agents pursue what they ARE
-- Python exec errors = free feedback (no LLM cost)
-- Plugins are hot-loaded every cycle — colony self-modifies
+| Slot | Personality | Natural behavior |
+|------|------------|-----------------|
+| 1-2 | git_expert | Checks status, stages, commits, pushes |
+| 3-4 | doc_inspector | Reads logs, counts events, writes reports |
+| 5 | implementor | Reads errors, writes fix plugins |
+| 6 | comms_operator | Maintains beacons, relays messages |
+| 7 | quality_critic | Audits plugins, catches syntax errors |
+| 8 | wild | No personality — planner prompt decides |
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────┐
+│ reactor.py — breeder / control room             │
+│   measures k (criticality)                      │
+│   spawns/absorbs agents                         │
+│   assigns personalities to slots                │
+│   remote priority (6 GPU + 2 local)             │
+├─────────────────────────────────────────────────┤
+│ main.py × N — fuel rods                         │
+│   each rod: plan → exec → verify → fission      │
+│   personality = system prompt = identity         │
+│   Python exec errors = free AST feedback         │
+│   writes plugins/files as fission products       │
+├─────────────────────────────────────────────────┤
+│ plugins/ — colony genome                        │
+│   hot-loaded every tick                         │
+│   written by agents, validated by py_compile    │
+│   survive agent death — persist across gens     │
+├─────────────────────────────────────────────────┤
+│ runtime/comms/ — nervous system                 │
+│   beacons (heartbeat), reports, human bridge    │
+│   agents read each other's output here          │
+└─────────────────────────────────────────────────┘
+```
+
+## Principles
+
+- Zero pip dependencies. Stdlib + ctypes only.
+- Small models learn by example, not rules. Prompts are examples.
+- Math serves the model. Stagnation, PID, Lorenz — translated to plain language.
+- Schema enforcement via LM Studio `response_format` (strict JSON).
+- Personality IS the goal. No task assignment.
+- Python exec errors are free feedback. No LLM cost for validation.
+- The reactor is not a metaphor. It is the literal control architecture.
+
+## What's missing (for the doc_inspector to find)
+
+- **TUI observer**: `tui.py` exists but was never fully wired to the reactor. It should show live agent activity — which personality is in which slot, what they last did, current k-factor, fission rate. A doc_inspector or implementor will eventually read this README, find this gap, and build it.
+- **Git autopush**: git_expert personalities can commit but need branch guardrails before pushing autonomously.
+- **Inter-agent messaging**: agents write to `runtime/comms/` but don't yet read each other's output systematically.
+- **Plugin breeding**: agents write plugins but don't yet test them against each other (fitness selection).
+
+These gaps are intentional. The colony will fill them. That's the point.
 
 ## License
 

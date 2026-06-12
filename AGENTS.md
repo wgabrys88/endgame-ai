@@ -1,73 +1,54 @@
-# Endgame-AI: Reactor Architecture
+# Breeding Reactor — Technical Map
 
-## The Nuclear Analogy Is Not An Analogy
+## This is a breeder reactor
 
-This system IS a nuclear reactor. Not metaphorically.
+A breeder reactor produces more fissile material than it consumes. This system breeds agents that write code that makes future agents better. The fission products (plugins, scripts, documentation) become fuel for the next generation.
 
-| Reactor concept | Code equivalent |
-|---|---|
-| Fuel rod | `main.py` — single agent process |
-| Fission event | Goal completion (verified by LLM) |
-| Fission products | Plugins written by agents (probabilistic) |
-| Neutrons | `spawn_main()` calls (propagate to new slots) |
-| Control rods | `reactor.py` — regulates population via k-factor |
-| Criticality (k=1) | Stable agent count maintained by reactor |
-| Xenon poisoning | Stagnation accumulation (blocks progress) |
-| Isotope type | Prompt personality (determines behavior) |
-| Cross-section | Schema (constrains output probability) |
-| Moderator | Math signals translated to plain language |
-| Reactor operator | Human via `runtime/comms/human.txt` |
+## File map
 
-## File Map
+### Core
+| File | Role | Lines |
+|------|------|-------|
+| reactor.py | Breeder control. Maintains k, spawns personalities. | ~120 |
+| main.py | Fuel rod entry. Parses args, runs engine. | ~90 |
+| engine.py | Tick loop. Phases, plugins, events. | ~290 |
+| agents.py | Phase impls: plan, exec, verify, reflect, mutate. | ~800 |
+| config.py | Constants, context policy, budgets. | ~140 |
+| llm.py | LM Studio API. Schema enforcement. | ~320 |
+| log.py | JSONL event emitter. | ~40 |
+| token_state.py | Token budget tracking. | ~200 |
+| lessons.py | Persistent lesson store. | ~60 |
 
-### Core (the reactor)
-- `reactor.py` — Population control. Measures k, spawns/absorbs. 117 lines.
-- `main.py` — Entry point. Parses goal, runs engine loop.
-- `engine.py` — Tick loop. Calls phases, records events, loads plugins.
-- `agents.py` — Phase implementations: planner, actor, verifier, reflector, mutator.
-- `config.py` — All constants. Context policy, budgets, hosts.
-- `llm.py` — LM Studio calls with schema enforcement.
-- `log.py` — Event emitter (JSON lines).
-- `token_state.py` — Token budget tracking.
-- `lessons.py` — Persistent lesson storage.
+### Personalities
+| File | Identity | Emergent behavior |
+|------|----------|-------------------|
+| prompts/personalities/git_expert.txt | Lives for clean commits | Runs git status, stages, commits |
+| prompts/personalities/doc_inspector.txt | Reads logs, writes reports | Counts events, writes markdown |
+| prompts/personalities/implementor.txt | Fixes problems with code | Writes plugins when errors found |
+| prompts/personalities/comms_operator.txt | Maintains channels | Beacons, relays, checks human.txt |
+| prompts/personalities/quality_critic.txt | Validates, rejects bad code | Audits plugins with py_compile |
 
-### Prompts (isotope personalities)
-- `prompts/planner.txt` — Fission planner. Produces exec steps.
-- `prompts/actor.txt` — GUI controller (legacy, used for screen mode).
-- `prompts/reflector.txt` — Diagnoses stuck agents. Appends rules to planner only.
-- `prompts/mutator.txt` — Writes plugins. Primary evolution path.
-- `prompts/verifier.txt` — Confirms goal achievement.
-
-### Schemas (neutron cross-sections)
-All schemas use LM Studio `response_format` with `strict: true`.
-The model is FORCED to output valid JSON matching the schema.
+### Schemas (response_format, strict: true)
+LM Studio enforces these server-side. The model MUST output valid JSON.
+- planner.json: `{mode, sequence[], done_when}`
+- verifier.json: `{verdict, evidence}`
+- reflector.json: `{diagnosis, suggestion, rule}`
+- mutator.json: `{action, filename, content}`
+- actor.json: `{actions[], conclusion}` (GUI mode only)
 
 ### Plugins (fission products)
-Written by agents at runtime. Each must have `def run(board):`.
-Hot-loaded every tick. Survive across agent lifetimes.
+Hot-loaded every tick. Written by agents. Validated by py_compile.
+Each: `def run(board): -> dict | None`
 
 ### Legacy GUI
-- `actions.py`, `observer.py`, `tui.py`, `win32.py`, `acp_client.py`
-- Still imported by core (conditional paths). Not used in reactor mode.
+actions.py, observer.py, tui.py, win32.py, acp_client.py
+Imported conditionally. Not used in reactor mode. The TUI is unwired — waiting for an implementor to connect it to reactor telemetry.
 
-## Operating Rules
-
-- Zero pip dependencies. Stdlib + ctypes only.
-- No personal identifiers in committed code.
-- Prompts are examples, never instructions. Small models copy, they don't reason about rules.
-- Reflector modifies ONLY `planner.txt` (appends RULE: lines). Header is immutable.
-- Mutator writes plugins. Validated with `py_compile` before accepting.
-- Reactor measures k externally. Individual agents are never blocked.
-- Agents with empty goals derive purpose from prompt personality.
-- Python exec errors ARE the feedback loop (free AST validation).
-
-## Host Allocation
-
-- `ENDGAME_LMS_HOST` env var pins agent to specific LM Studio instance.
-- Reactor fills remote (6 slots) first, then local (2 slots).
-- Remote priority — faster GPU gets more work.
-
-## Evolution Path
-
-The reactor spawns personalities, not tasks. Next step:
-agents get git access and develop their own branch.
+## Rules
+- No pip dependencies ever.
+- No personal identifiers in code.
+- Reflector only appends rules to planner.txt. Nothing else.
+- Mutator only writes to plugins/. Validated before accepting.
+- Git experts push to their own branch only. Never main.
+- Schema enforcement is mandatory. No freeform LLM output.
+- The reactor doesn't assign tasks. Personality drives behavior.
