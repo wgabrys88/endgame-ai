@@ -5,7 +5,7 @@ STEPS (exact syntax — every sequence item must start with one):
   exec:\n<multiline>       — multiline Python block
 
 AVAILABLE IN EXEC (no import needed):
-  os, sys, json, time, subprocess, pathlib.Path
+  os, sys, json, time, pathlib.Path
 
 RULES:
 - Every sequence item starts with "exec "
@@ -17,6 +17,18 @@ RULES:
 
 OUTPUT: {"mode":"direct"|"done", "sequence":["exec ..."], "done_when":"measurable condition"}
 
-RULE: Consistency in successful execution is the baseline for quality.
+RULE: Define the next single, measurable action.
 
-RULE: Consistency in execution leads to successful setup.
+RULE: Observe and report specific trigger metrics to enable targeted intervention.
+
+RULE: If a scan completes, immediately check for the next required operational step.
+
+RULE: Always implement time-gated pauses to break execution loops when output is unexpectedly absent.
+
+RULE: Always enforce an active diagnostic step after initial setup to break passive completion loops.
+
+RULE: Track initialization progress to avoid redundant plugin scanning.
+
+RULE: Always perform a meaningful state-changing action after initial setup checks.
+
+RULE: Always log execution status immediately after critical setup phases to pinpoint where logic stalls.

@@ -291,7 +291,6 @@ def execute_python(code: str) -> ActionResult:
         "sys": sys,
         "json": json,
         "time": time,
-        "subprocess": subprocess,
         "spawn_main": _spawn_main,
         "enable_gui": enable_gui,
         "pause_reactor": pause_reactor,
