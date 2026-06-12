@@ -170,12 +170,12 @@ def format_bus_context(limit: int | None = None) -> str:
 
 
 def bus_post_cli(argv: list[str]) -> int:
-    if len(argv) < 3:
-        print("usage: python comms.py post <human|grok|slot> <message>")
+    if len(argv) < 4 or argv[1] != "post":
+        print("usage: python comms.py post <human|grok> <message>")
         return 1
-    from_id = argv[1]
+    from_id = argv[2]
     role = _role_for(from_id)
-    text = " ".join(argv[2:])
+    text = " ".join(argv[3:])
     if from_id in ("grok", "human"):
         INJECT_PATH.parent.mkdir(parents=True, exist_ok=True)
         INJECT_PATH.open("a", encoding="utf-8").write(
