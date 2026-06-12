@@ -1,54 +1,85 @@
 # Breeding Reactor — Technical Map
 
-## This is a breeder reactor
+## Entry point
 
-A breeder reactor produces more fissile material than it consumes. This system breeds agents that write code that makes future agents better. The fission products (plugins, scripts, documentation) become fuel for the next generation.
+```bash
+python tui.py
+```
+
+Launches reactor, renders spectrogram, starts paused. Space = toggle live. q = kill all.
 
 ## File map
 
 ### Core
-| File | Role | Lines |
-|------|------|-------|
-| reactor.py | Breeder control. Maintains k, spawns personalities. | ~120 |
-| main.py | Fuel rod entry. Parses args, runs engine. | ~90 |
-| engine.py | Tick loop. Phases, plugins, events. | ~290 |
-| agents.py | Phase impls: plan, exec, verify, reflect, mutate. | ~800 |
-| config.py | Constants, context policy, budgets. | ~140 |
-| llm.py | LM Studio API. Schema enforcement. | ~320 |
-| log.py | JSONL event emitter. | ~40 |
-| token_state.py | Token budget tracking. | ~200 |
-| lessons.py | Persistent lesson store. | ~60 |
+| File | Role |
+|------|------|
+| tui.py | Spectrogram TUI. Auto-launches reactor. Spacebar pause. |
+| reactor.py | Breeder. Spawns 8 personalities, maintains k~1.0. |
+| main.py | Single fuel rod. Parses args, runs engine loop. |
+| engine.py | Tick loop. Phases, plugin hot-swap, events. |
+| agents.py | Phase implementations: plan, exec, verify, reflect, mutate. |
+| config.py | Constants, paths, budgets. PAUSE_PATH, MATH_INTERVAL. |
+| llm.py | LM Studio API. Schema enforcement. |
+| log.py | JSONL event bus. Math bypasses pause gate. |
+| token_state.py | Token budget tracking. |
+| lessons.py | Persistent lesson store. |
 
-### Personalities
+### Personalities (prompts/personalities/)
 | File | Identity | Emergent behavior |
 |------|----------|-------------------|
-| prompts/personalities/git_expert.txt | Lives for clean commits | Runs git status, stages, commits |
-| prompts/personalities/doc_inspector.txt | Reads logs, writes reports | Counts events, writes markdown |
-| prompts/personalities/implementor.txt | Fixes problems with code | Writes plugins when errors found |
-| prompts/personalities/comms_operator.txt | Maintains channels | Beacons, relays, checks human.txt |
-| prompts/personalities/quality_critic.txt | Validates, rejects bad code | Audits plugins with py_compile |
+| git_expert.txt | Commits to colony/dev | git status → add → commit → push |
+| doc_inspector.txt | Reads logs, writes reports | Counts events, writes markdown |
+| implementor.txt | Fixes problems with code | Writes plugins when errors found |
+| comms_operator.txt | Maintains channels | Beacons, relays, checks human.txt |
+| quality_critic.txt | Validates code quality | Audits plugins with py_compile |
 
-### Schemas (response_format, strict: true)
-LM Studio enforces these server-side. The model MUST output valid JSON.
+Slot 8 has no personality file (wild agent — pure planner drives it).
+
+### Schemas (LM Studio strict JSON)
 - planner.json: `{mode, sequence[], done_when}`
 - verifier.json: `{verdict, evidence}`
 - reflector.json: `{diagnosis, suggestion, rule}`
 - mutator.json: `{action, filename, content}`
-- actor.json: `{actions[], conclusion}` (GUI mode only)
 
-### Plugins (fission products)
-Hot-loaded every tick. Written by agents. Validated by py_compile.
-Each: `def run(board): -> dict | None`
+### Plugins (plugins/)
+Hot-loaded every tick by engine.py. Written by agents. Each: `def run(board): -> dict | None`
+Load or runtime errors emit `plugin.error` — never crash.
 
-### Legacy GUI
-actions.py, observer.py, tui.py, win32.py, acp_client.py
-Imported conditionally. Not used in reactor mode. The TUI is unwired — waiting for an implementor to connect it to reactor telemetry.
+### Runtime (runtime/comms/)
+Beacons (heartbeat), telemetry, fission log, human bridge, reports.
+Agents read each other's output here.
+
+## Process tree
+
+```
+tui.py → reactor.py → main.py ×8 (all same process tree)
+```
+
+taskkill /F /T on reactor PID kills everything. No orphans.
+
+## Pause architecture
+
+- File: `pause` in project root (presence = paused)
+- TUI creates on start, spacebar toggles
+- log.py line 135: `if paused() and phase not in _MATH_PHASES: return`
+- Math phases always flow: stagnation, lorenz, pid
+- Work phases sink when paused: plan, exec, verify, reflect, etc.
+
+## Branch architecture
+
+```
+reactor-personalities   Active dev (human + merged agent work)
+colony/dev              Agent-only (git_expert pushes here autonomously)
+main                    Stable (merge when battle-tested)
+```
+
+## Key constants (config.py)
+- MATH_INTERVAL = 3.0s (stagnation/PID/Lorenz tick rate)
+- EVENT_BUDGET = 999999 (effectively unlimited)
+- CONTROL_INTERVAL = 10s (reactor respawn check)
 
 ## Rules
-- No pip dependencies ever.
+- No pip dependencies. Stdlib + ctypes only.
 - No personal identifiers in code.
-- Reflector only appends rules to planner.txt. Nothing else.
-- Mutator only writes to plugins/. Validated before accepting.
-- Git experts push to their own branch only. Never main.
-- Schema enforcement is mandatory. No freeform LLM output.
-- The reactor doesn't assign tasks. Personality drives behavior.
+- Personality IS the goal. No task assignment.
+- Agents share working directory. Only git_expert does git ops.
