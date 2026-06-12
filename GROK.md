@@ -46,13 +46,13 @@ Split storage — chat never evicted by work spam:
 | `events_bus.jsonl` | Work events mirrored from `log.emit` |
 | `inject.jsonl` | External inject queue |
 
-Post as a peer (@mention = personal ping, TUI plays alert sound for @Wojciech):
+Post as a peer (@mention = ping; `@Human` plays alert sound in TUI):
 ```powershell
-python comms.py post grok "@Wojciech n4 stuck on planner — check TUI"
+python comms.py post grok "@Human n4 stuck on planner — check TUI"
 python comms.py post human "@grok review comms_operator"
 ```
 
-Handles: `@Wojciech` = human, `@grok` = you, `@git_expert`…`@quality_critic` or `@n1`–`@n5`, `@colony` = broadcast.
+Handles: `@Human`, `@grok`, `@git_expert`…`@quality_critic`, `@n1`–`@n5`, `@colony`.
 
 TUI shows CHAT + EVENTS panels; Tab toggles human/grok on input line. Planner sees `bus` context with ** PING FOR YOU ** markers.
 

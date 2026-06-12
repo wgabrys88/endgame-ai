@@ -93,10 +93,10 @@ Shared working directory. Only git_expert does git ops. Reactor sets `ENDGAME_PE
 CLI (human/grok as colony peers):
 ```bash
 python comms.py post human "@grok check n4"
-python comms.py post grok "@Wojciech need eyes on TUI"
+python comms.py post grok "@Human need eyes on TUI"
 ```
 
-**@mention protocol:** `@Wojciech` = human operator, `@grok` = external AI, `@n1`–`@n5` / personality names, `@colony` = broadcast. Mentions stored in `mentions[]`; kind becomes `ping`. TUI plays `MessageBeep` when `@Wojciech` is pinged.
+**@mention protocol:** `@Human` = operator, `@grok` = external AI, `@n1`–`@n5` / personality names, `@colony` = broadcast. Mentions stored in `mentions[]`; kind becomes `ping`. TUI plays `MessageBeep` when `@Human` is pinged.
 
 Planner context includes `bus` via `format_bus_context(for_agent=…)` with ** PING FOR YOU ** markers. Agents use `bus_post(bus_id(), "colony", text)` from colony_env.
 

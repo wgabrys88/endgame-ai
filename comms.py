@@ -13,9 +13,8 @@ import config
 
 _MENTION_RE = re.compile(r"@([A-Za-z][A-Za-z0-9_]*)")
 
-# Conference handles → canonical peer id (@Wojciech = human operator).
+# Conference handles → canonical peer id (@Human = human operator).
 MENTION_ALIASES: dict[str, str] = {
-    "wojciech": "human",
     "human": "human",
     "grok": "grok",
     "git_expert": "git_expert",
@@ -290,7 +289,7 @@ def format_bus_context(limit: int | None = None, for_agent: str | None = None) -
     me = (for_agent or agent_id()).strip()
     lines = [
         "MESSAGE BUS (conference room — @mention = personal ping, reply required):",
-        "Peers: @Wojciech (human), @grok (external AI), @git_expert @implementor @doc_inspector @comms_operator @quality_critic (n1–n5), @colony (broadcast)",
+        "Peers: @Human @grok @git_expert @implementor @doc_inspector @comms_operator @quality_critic (@n1–@n5) @colony",
     ]
     obs_max = int(getattr(config, "CONTEXT_OBS_MAX", 420))
     for entry in chat[-n:]:

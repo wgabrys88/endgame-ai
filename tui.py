@@ -548,7 +548,7 @@ class TUI:
                 lines.append(f"{bc}{BOX_SL}{BOX_SH * (W - 2)}{BOX_SR}{RST}")
 
         lines.append(f"{bc}{BOX_ML}{BOX_H * (W - 2)}{BOX_MR}{RST}")
-        lines.append(row(f"{BOLD}{_fg(*CLR_BUS)}CHAT{RST} @Wojciech · @grok · colony — @mention pings"))
+        lines.append(row(f"{BOLD}{_fg(*CLR_BUS)}CHAT{RST} @Human · @grok · colony — @mention pings"))
         chat_entries = self._bus_chat[-bus_chat_n:]
         for i in range(bus_chat_n):
             if i < len(chat_entries):
@@ -568,7 +568,7 @@ class TUI:
         prompt = f"@{self._input_from} ({role})> {self._input_buf}"
         cursor = "▌" if int(time.time() * 2) % 2 else " "
         lines.append(row(f"{_fg(*CLR_INPUT)}{_trunc(prompt, inner - 1)}{cursor}{RST}"))
-        lines.append(row(f"{_fg(*CLR_DIM)}Enter send · Tab human/grok · @Wojciech @grok ping · Space LIVE · q quit{RST}"))
+        lines.append(row(f"{_fg(*CLR_DIM)}Enter send · Tab human/grok · @Human @grok ping · Space LIVE · q quit{RST}"))
 
         lines.append(f"{bc}{BOX_BL}{BOX_H * (W - 2)}{BOX_BR}{RST}")
         while len(lines) < H:
@@ -595,7 +595,7 @@ class TUI:
         _w("\x1b]0;endgame-ai · reactor + bus\x07")
         pause_path = BASE_DIR / "pause"
         pause_path.write_text("", encoding="utf-8")
-        comms.post("tui", "console", "TUI online. Conference bus active. @Wojciech @grok @colony — @mention plays alert sound.", kind="beacon")
+        comms.post("tui", "console", "TUI online. @Human @grok @colony — @mention plays alert sound.", kind="beacon")
 
         env = os.environ.copy()
         env["ENDGAME_BOOTSTRAPPED"] = "1"

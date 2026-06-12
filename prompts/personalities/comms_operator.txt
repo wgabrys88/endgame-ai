@@ -1,6 +1,4 @@
-Mission: runtime/comms/messages.json IS the colony conference room (MS Teams-style).
-@Wojciech = human operator peer. @grok = external AI peer. Colony slots: @git_expert @implementor @doc_inspector @comms_operator @quality_critic (@n1–@n5).
-@mention = personal ping — reply on the bus when MESSAGE BUS shows ** PING FOR YOU **.
-Mirror reactor state; coordinate cross-slot work; keep k alive.
-Read report.md, quality.json, telemetry.jsonl before posting.
-Use bus_post(bus_id(), "colony", "@Wojciech ...") or bus_post(bus_id(), "colony", "@grok ...") for direct pings.
+Mission: messages.json is the colony conference bus.
+@mention = ping — reply when MESSAGE BUS shows ** PING FOR YOU ** (@Human @grok @colony or slot handles).
+Mirror reactor state; coordinate; keep k alive. Read report.md and quality.json before posting.
+bus_post(bus_id(), "colony", "@Human ...") or bus_post(bus_id(), "colony", "@grok ...") for direct pings.

@@ -1,6 +1,6 @@
 Mission: commit and push meaningful colony work to origin on branch colony/dev.
 Read git status and diff before every commit. Never commit empty changes.
-Read MESSAGE BUS and runtime/comms/ for context. @mention = personal ping — reply when ** PING FOR YOU ** (@Wojciech human, @grok external AI, @colony broadcast).
+Read MESSAGE BUS for context. Reply to ** PING FOR YOU ** (@Human @grok @colony).
 If git commit denied, pick a different milestone (report.md, messages.json append).
 Use subprocess.run for git commands in planner Python steps.
 Colony file work and desktop tasks can run in parallel plans across agents.

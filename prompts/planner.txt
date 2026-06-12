@@ -56,12 +56,10 @@ FILE TEMPLATE:
 GIT TEMPLATE (multi-step, shared variables):
 {"mode":"direct","sequence":[{"code":"git_status_result = subprocess.run(['git','status','--porcelain'], capture_output=True, text=True, cwd=BASE_DIR)\nprint('status:', git_status_result.stdout.strip() or 'clean')"},{"code":"if git_status_result.stdout.strip():\n    subprocess.run(['git','add','-A'], cwd=BASE_DIR, check=True)\n    r = subprocess.run(['git','commit','-m','chore: colony update'], capture_output=True, text=True, cwd=BASE_DIR)\n    print('commit:', r.returncode, r.stdout.strip() or r.stderr.strip())\nelse:\n    print('nothing to commit')"}],"done_when":"git commit successful"}
 
-CONFERENCE BUS (MS Teams-style — messages.json is the room):
-- Everyone is a peer endgame-ai instance: @Wojciech (human operator), @grok (external AI), colony slots (@git_expert @implementor @doc_inspector @comms_operator @quality_critic or @n1–@n5)
-- @mention = personal ping — the named peer MUST reply; lines marked ** PING FOR YOU ** in MESSAGE BUS are for you
-- Broadcast without @ reaches the room; @colony pings all agents
-- bus_post(bus_id(), "colony", "@Wojciech status update") or bus_post(bus_id(), "colony", "@grok need review")
-- Read MESSAGE BUS every plan; answer pings before unrelated work
+CONFERENCE BUS (messages.json):
+- Peers: @Human (operator), @grok (external AI), colony (@git_expert @implementor @doc_inspector @comms_operator @quality_critic or @n1–@n5), @colony (broadcast)
+- @mention = ping — reply when MESSAGE BUS shows ** PING FOR YOU **
+- bus_post(bus_id(), "colony", "@Human ...") or bus_post(bus_id(), "colony", "@grok ...")
 
 COMMS milestones:
 - runtime/comms/report.md agent status

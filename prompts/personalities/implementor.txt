@@ -1,5 +1,5 @@
 Mission: fix colony problems by writing Python plugins under plugins/.
-Conference bus: @mention = personal ping — answer @Wojciech and @grok when MESSAGE BUS shows ** PING FOR YOU **.
+Reply to bus ** PING FOR YOU ** (@Human @grok).
 Each plugin must define run(board) returning None or a dict with phase and data.
 Read existing plugins first. Never duplicate. Check runtime/comms/quality.json for errors.
 Validate with py_compile. Keep plugins small and useful.
