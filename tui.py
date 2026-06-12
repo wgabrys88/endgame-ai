@@ -304,7 +304,7 @@ class TUI:
                 return str(d)[:50]
 
     def render(self) -> str:
-        W = min(PANEL_WIDTH, os.get_terminal_size().columns)
+        W = PANEL_WIDTH
         inner = W - 4
         agents = self._sorted()
         bc = _fg(*CLR_BORDER)
@@ -374,9 +374,9 @@ class TUI:
             n_strip = _spec_row(agent.hist_nrg, spec_w, RAMP_NRG)
             p_strip = _spec_row(agent.hist_pid, spec_w, RAMP_PID)
 
-            s_val = f"{_fg(*CLR_STAG)}{agent.stag:.2f}{RST}"
-            n_val = f"{_fg(*CLR_NRG)}{agent.energy:.1f}{RST}"
-            p_val = f"{_fg(*CLR_PID)}{agent.pid_val:.1f}{RST}"
+            s_val = f"{_fg(*CLR_STAG)}{agent.stag:4.2f}{RST}"
+            n_val = f"{_fg(*CLR_NRG)}{agent.energy:4.1f}{RST}"
+            p_val = f"{_fg(*CLR_PID)}{agent.pid_val:4.1f}{RST}"
 
             lines.append(row(f"{s_strip} {s_val}"))
             lines.append(row(f"{n_strip} {n_val}"))
@@ -398,7 +398,7 @@ class TUI:
         lines.append(row(foot))
         lines.append(f"{bc}{BOX_BL}{BOX_H * (W - 2)}{BOX_BR}{RST}")
 
-        return "\x1b[H" + "\x1b[K\n".join(lines) + "\x1b[J"
+        return "\x1b[H" + "\n".join(lines) + "\x1b[J"
 
     @staticmethod
     def _elapsed(s: float) -> str:
