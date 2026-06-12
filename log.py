@@ -155,6 +155,7 @@ def cleanup_runtime(*, kill_reactor: bool = True) -> None:
     comms = base / "runtime" / "comms"
     for seed_name, seed_content in (
         ("messages.json", "[]\n"),
+        ("events_bus.jsonl", ""),
         ("inject.jsonl", ""),
     ):
         seed = comms / seed_name

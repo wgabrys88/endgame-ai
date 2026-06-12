@@ -74,7 +74,7 @@ def _milestone_hints(ctx: dict[str, Any]) -> str:
     return "SUGGESTED MILESTONES (missing artifacts — pick one):\n" + "\n".join(lines[:4])
 
 
-DENIAL_DECAY_SECS = 120.0  # blocked plans decay after 2 minutes
+DENIAL_DECAY_SECS = 60.0
 DENIAL_MAX = 10
 
 _RUNTIME_ERROR_MARKERS: tuple[str, ...] = (
@@ -454,6 +454,7 @@ class PlannerAgent:
         from llm import call_llm
         context = _render_context(ctx, "planner")
         system = _load_prompt("planner")
+        log.emit("planner.pending", {"goal": str(ctx.get("goal", ""))[:80]})
         try:
             raw = call_llm(system, context, "planner", max_tokens=config.BUDGET_PLANNER_OUT)
         except Exception as e:

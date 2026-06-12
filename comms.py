@@ -1,4 +1,4 @@
-"""Unified colony message bus — runtime/comms/messages.json."""
+"""Unified colony message bus — chat in messages.json, events in events_bus.jsonl."""
 from __future__ import annotations
 
 import json
@@ -11,6 +11,7 @@ from typing import Any
 import config
 
 BUS_PATH: Path = config.BASE_DIR / "runtime" / "comms" / "messages.json"
+EVENTS_BUS_PATH: Path = config.BASE_DIR / "runtime" / "comms" / "events_bus.jsonl"
 INJECT_PATH: Path = config.BASE_DIR / "runtime" / "comms" / "inject.jsonl"
 
 ROLES: dict[str, str] = {
@@ -25,14 +26,26 @@ ROLES: dict[str, str] = {
     "reactor": "console",
 }
 
-_SKIP_BUS_PHASES: frozenset[str] = frozenset({"schedule"})
+_SKIP_BUS_PHASES: frozenset[str] = frozenset({
+    "math", "stagnation", "lorenz", "pid", "schedule", "token_usage",
+    "plugin.load", "plugin.telemetry", "fission_sustain",
+})
 _SKIP_BUS_REASONS: frozenset[str] = frozenset({"plan_cooldown"})
+_WORK_BUS_PHASES: frozenset[str] = frozenset({
+    "start", "stop", "plan", "plan.rejected", "plan.blocked", "actor", "action",
+    "verify", "fission_judge", "fission", "fission_blocked", "reflect", "mutator",
+    "mutation", "personality.evolve", "goal_change", "planner.error", "actor.error",
+    "verifier.error", "reflector.error", "fission_judge.error", "mutator.error",
+    "llm_retry", "llm_fallback", "planner.pending", "plugin.web_sentinel",
+})
 
 
 def _ensure() -> None:
     BUS_PATH.parent.mkdir(parents=True, exist_ok=True)
     if not BUS_PATH.exists():
         BUS_PATH.write_text("[]\n", encoding="utf-8")
+    if not EVENTS_BUS_PATH.exists():
+        EVENTS_BUS_PATH.write_text("", encoding="utf-8")
 
 
 def agent_id() -> str:
@@ -49,7 +62,7 @@ def _role_for(agent: str) -> str:
     return ROLES.get(agent, "colony")
 
 
-def _read_bus() -> list[dict[str, Any]]:
+def _read_chat() -> list[dict[str, Any]]:
     _ensure()
     try:
         raw = BUS_PATH.read_text(encoding="utf-8").strip()
@@ -59,11 +72,37 @@ def _read_bus() -> list[dict[str, Any]]:
         return []
 
 
-def _write_bus(entries: list[dict[str, Any]]) -> None:
+def _write_chat(entries: list[dict[str, Any]]) -> None:
     _ensure()
-    cap = int(getattr(config, "BUS_MAX_LINES", 400))
+    cap = int(getattr(config, "BUS_CHAT_MAX", 120))
     trimmed = entries[-cap:] if cap > 0 else entries
     BUS_PATH.write_text(json.dumps(trimmed, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def _trim_events_bus() -> None:
+    cap = int(getattr(config, "BUS_EVENTS_MAX_LINES", 200))
+    if cap <= 0 or not EVENTS_BUS_PATH.exists():
+        return
+    try:
+        lines = [ln for ln in EVENTS_BUS_PATH.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    except OSError:
+        return
+    if len(lines) <= cap:
+        return
+    try:
+        EVENTS_BUS_PATH.write_text("\n".join(lines[-cap:]) + "\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _append_event_entry(entry: dict[str, Any]) -> None:
+    _ensure()
+    try:
+        with EVENTS_BUS_PATH.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry, ensure_ascii=False, separators=(",", ":")) + "\n")
+    except OSError:
+        return
+    _trim_events_bus()
 
 
 def post(
@@ -74,7 +113,7 @@ def post(
     kind: str = "message",
     data: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Append a bus message. Human, grok, and colony slots are peers on one bus."""
+    """Peer chat/beacon — always retained in messages.json."""
     entry: dict[str, Any] = {
         "id": int(time.time() * 1000),
         "ts": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
@@ -85,42 +124,55 @@ def post(
     }
     if data:
         entry["data"] = data
-    entries = _read_bus()
+    entries = _read_chat()
     entries.append(entry)
-    _write_bus(entries)
+    _write_chat(entries)
     return entry
 
 
 def mirror_event(phase: str, data: Any = None, *, source: str | None = None) -> None:
-    """Mirror colony events onto the bus so human/grok see the full stream."""
+    """Mirror work events to events_bus.jsonl (rolling). Chat stays in messages.json."""
     if phase in _SKIP_BUS_PHASES:
         return
     if phase == "schedule" and isinstance(data, dict) and str(data.get("reason", "")) in _SKIP_BUS_REASONS:
         return
+    if phase not in _WORK_BUS_PHASES and not phase.endswith(".error"):
+        return
     src = source or agent_id()
-    brief = phase
-    if isinstance(data, dict) and data:
-        if phase in ("actor", "action"):
-            brief = f"{phase} {'ok' if data.get('ok') else 'FAIL'} {data.get('verb', '')} {str(data.get('obs', ''))[:120]}"
-        elif phase == "plan":
-            brief = f"plan {data.get('mode', '')} steps={data.get('steps', '')} {str(data.get('done_when', ''))[:80]}"
-        elif phase == "verify":
-            brief = f"verify {data.get('verdict', '')} {str(data.get('evidence', ''))[:80]}"
-        elif phase == "fission_judge":
-            brief = f"judge {data.get('verdict', '')} {str(data.get('diagnosis', ''))[:80]}"
-        elif phase == "fission":
-            brief = f"fission power={data.get('power', '')} n={data.get('completions', '')}"
-        elif phase == "reflect":
-            brief = f"reflect {str(data.get('diagnosis', data.get('rule', '')))[:100]}"
-        elif phase == "mutator":
-            brief = f"mutator {data.get('action', '')} {data.get('filename', '')}"
-        else:
-            brief = f"{phase} {str(data)[:120]}"
-    post(src, _role_for(src), brief, kind="event", data={"phase": phase, "payload": data})
+    brief = _brief_event(phase, data)
+    entry: dict[str, Any] = {
+        "id": int(time.time() * 1000),
+        "ts": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+        "from": src,
+        "role": _role_for(src),
+        "kind": "event",
+        "text": brief,
+        "data": {"phase": phase, "payload": data},
+    }
+    _append_event_entry(entry)
+
+
+def _brief_event(phase: str, data: Any) -> str:
+    if not isinstance(data, dict) or not data:
+        return phase
+    if phase in ("actor", "action"):
+        return f"{phase} {'ok' if data.get('ok') else 'FAIL'} {data.get('verb', '')} {str(data.get('obs', ''))[:120]}"
+    if phase == "plan":
+        return f"plan {data.get('mode', '')} steps={data.get('steps', '')} {str(data.get('done_when', ''))[:80]}"
+    if phase == "verify":
+        return f"verify {data.get('verdict', '')} {str(data.get('evidence', ''))[:80]}"
+    if phase == "fission_judge":
+        return f"judge {data.get('verdict', '')} {str(data.get('diagnosis', ''))[:80]}"
+    if phase == "fission":
+        return f"fission power={data.get('power', '')} n={data.get('completions', '')}"
+    if phase == "reflect":
+        return f"reflect {str(data.get('diagnosis', data.get('rule', '')))[:100]}"
+    if phase == "mutator":
+        return f"mutator {data.get('action', '')} {data.get('filename', '')}"
+    return f"{phase} {str(data)[:120]}"
 
 
 def drain_inject() -> int:
-    """Drain inject.jsonl (external grok/human CLI) into the bus."""
     if not INJECT_PATH.exists():
         return 0
     try:
@@ -148,24 +200,60 @@ def drain_inject() -> int:
     return count
 
 
+def read_events(limit: int = 20) -> list[dict[str, Any]]:
+    _ensure()
+    if not EVENTS_BUS_PATH.exists():
+        return []
+    try:
+        lines = [ln for ln in EVENTS_BUS_PATH.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    except OSError:
+        return []
+    out: list[dict[str, Any]] = []
+    for line in lines[-limit:]:
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, dict):
+            out.append(obj)
+    return out
+
+
 def read_bus(limit: int = 50) -> list[dict[str, Any]]:
-    entries = _read_bus()
+    """Combined feed for TUI: chat messages + recent work events."""
+    chat = _read_chat()
+    events = read_events(max(10, limit // 2))
+    merged = chat[-max(10, limit // 2):] + events
+    merged.sort(key=lambda e: str(e.get("ts", "")))
+    return merged[-limit:] if limit > 0 else merged
+
+
+def read_chat(limit: int = 30) -> list[dict[str, Any]]:
+    entries = _read_chat()
     return entries[-limit:] if limit > 0 else entries
 
 
 def format_bus_context(limit: int | None = None) -> str:
     n = limit if limit is not None else int(getattr(config, "CONTEXT_BUS_MAX", 10))
-    entries = read_bus(n)
-    if not entries:
+    chat = _read_chat(n)
+    events = read_events(max(4, n // 2))
+    if not chat and not events:
         return ""
     lines = ["MESSAGE BUS (peers: human, grok, colony slots):"]
-    for entry in entries:
+    obs_max = int(getattr(config, "CONTEXT_OBS_MAX", 420))
+    for entry in chat[-n:]:
         fid = entry.get("from", "?")
         kind = entry.get("kind", "message")
         text = str(entry.get("text", "")).replace("\n", " ")
-        if len(text) > int(getattr(config, "CONTEXT_OBS_MAX", 420)):
-            text = text[: int(getattr(config, "CONTEXT_OBS_MAX", 420))] + "..."
+        if len(text) > obs_max:
+            text = text[:obs_max] + "..."
         lines.append(f"  [{kind}] @{fid}: {text}")
+    for entry in events[-max(4, n // 3):]:
+        fid = entry.get("from", "?")
+        text = str(entry.get("text", "")).replace("\n", " ")
+        if len(text) > obs_max:
+            text = text[:obs_max] + "..."
+        lines.append(f"  [event] @{fid}: {text}")
     return "\n".join(lines)
 
 
@@ -178,9 +266,8 @@ def bus_post_cli(argv: list[str]) -> int:
     text = " ".join(argv[3:])
     if from_id in ("grok", "human"):
         INJECT_PATH.parent.mkdir(parents=True, exist_ok=True)
-        INJECT_PATH.open("a", encoding="utf-8").write(
-            json.dumps({"from": from_id, "role": role, "text": text, "kind": "message"}, ensure_ascii=False) + "\n"
-        )
+        with INJECT_PATH.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"from": from_id, "role": role, "text": text, "kind": "message"}, ensure_ascii=False) + "\n")
         drain_inject()
     else:
         post(from_id, role, text)

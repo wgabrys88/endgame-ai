@@ -130,6 +130,7 @@ def spawn(slot_id, host_url):
     env["ENDGAME_LMS_HOSTS"] = ",".join(_candidate_hosts())
     if personality:
         env["ENDGAME_PERSONALITY"] = personality
+    env["ENDGAME_SLOT"] = str(slot_id)
     proc = subprocess.Popen(
         [sys.executable, "main.py", goal, "--backend", "lmstudio",
          "--event-budget", str(BUDGET), "--events-path", ef],

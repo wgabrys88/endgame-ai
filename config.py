@@ -34,7 +34,8 @@ CONTEXT_COMPLETED_MAX: int = 6
 CONTEXT_LESSONS_MAX: int = 3
 CONTEXT_PLAN_CODE_MAX: int = 120
 CONTEXT_BUS_MAX: int = 10
-BUS_MAX_LINES: int = 400
+BUS_CHAT_MAX: int = 120
+BUS_EVENTS_MAX_LINES: int = 200
 
 SNAPSHOT_INTERVAL_SEC: float = 2.5
 
@@ -75,7 +76,7 @@ else:
 LMS_CANDIDATE_HOSTS: list[str] = list(_candidate_hosts)
 # Optional substring/exact id preference for LM Studio /v1/models. Empty = first loaded model.
 LMS_PREFERRED_MODEL: str = _os.environ.get("ENDGAME_LMS_MODEL", "gemma")
-LMS_TIMEOUT: float = 300.0
+LMS_TIMEOUT: float = 90.0
 LMS_MODEL_LIST_TIMEOUT: float = 10.0
 LMS_REQUEST_ATTEMPTS: int = 3
 LMS_RETRY_DELAY: float = 2.0
@@ -186,7 +187,7 @@ PERSONALITY_MAX_EVOLUTIONS: int = 6
 
 REACTOR_SLOTS: int = 5
 # Max agents per LM Studio endpoint (load-balance cap). 0 = no cap.
-LMS_MAX_SLOTS_PER_HOST: int = 0
+LMS_MAX_SLOTS_PER_HOST: int = 2
 
 MAX_HISTORY: int = 16
 MAX_PLAN_STEPS: int = 12

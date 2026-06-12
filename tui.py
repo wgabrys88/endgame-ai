@@ -20,7 +20,8 @@ PANEL_WIDTH = 106
 PERSONALITY_WIDTH = 14
 BAR_WIDTH = 4
 AGENT_EVENT_ROWS = 3
-BUS_ROWS = 6
+BUS_CHAT_ROWS = 4
+BUS_EVENT_ROWS = 2
 HISTORY_LEN = 90
 SPEC_WIDTH = 12
 PHASE_WIDTH = 12
@@ -41,7 +42,7 @@ WORK_PHASES = frozenset({
     "schedule", "plan", "actor", "action", "observe", "verify", "fission_judge", "reflect",
     "mutation", "personality.evolve", "fission", "fission_blocked", "fission_sustain", "goal_change",
     "start", "stop", "mutator", "mutator.error", "mutator.rejected",
-    "planner.error", "actor.error", "verifier.error", "fission_judge.error", "reflector.error",
+    "planner.error", "planner.pending", "actor.error", "verifier.error", "fission_judge.error", "reflector.error",
 })
 
 RAMP_STAG = [(20, 20, 30), (80, 30, 30), (160, 50, 30), (220, 70, 30), (255, 100, 60)]
@@ -128,6 +129,29 @@ def _trunc(s: str, w: int, suffix: str = "…") -> str:
         vis += 1
         i += 1
     return "".join(out)
+
+
+def _console_height() -> int:
+    class _COORD(ctypes.Structure):
+        _fields_ = [("X", ctypes.c_short), ("Y", ctypes.c_short)]
+
+    class _SMALL_RECT(ctypes.Structure):
+        _fields_ = [
+            ("Left", ctypes.c_short), ("Top", ctypes.c_short),
+            ("Right", ctypes.c_short), ("Bottom", ctypes.c_short),
+        ]
+
+    class _CSBI(ctypes.Structure):
+        _fields_ = [
+            ("dwSize", _COORD), ("dwCursorPosition", _COORD),
+            ("wAttributes", ctypes.c_ushort), ("srWindow", _SMALL_RECT),
+            ("dwMaximumWindowSize", _COORD),
+        ]
+
+    csbi = _CSBI()
+    if _k32.GetConsoleScreenBufferInfo(_hout, ctypes.byref(csbi)):
+        return max(24, csbi.srWindow.Bottom - csbi.srWindow.Top + 1)
+    return 40
 
 
 def _console_width() -> int:
@@ -291,7 +315,8 @@ class TUI:
         self._start = time.time()
         self._input_buf = ""
         self._input_from = "human"
-        self._bus_cache: list[dict[str, Any]] = []
+        self._bus_chat: list[dict[str, Any]] = []
+        self._bus_events: list[dict[str, Any]] = []
         self._reactor_proc = None
 
     def _scan(self) -> None:
@@ -311,7 +336,8 @@ class TUI:
 
     def _poll(self) -> None:
         comms.drain_inject()
-        self._bus_cache = comms.read_bus(BUS_ROWS + 4)
+        self._bus_chat = comms.read_chat(40)
+        self._bus_events = comms.read_events(20)
         for a in self.agents.values():
             a.poll()
 
@@ -329,6 +355,8 @@ class TUI:
                 v = d.get("verb", d.get("conclusion", ""))
                 o = d.get("obs", "")
                 text = f"{ok} {v} {o}".strip() if v or o else str(d)
+            case "planner.pending":
+                text = "waiting LLM..."
             case "plan":
                 reason = d.get("reason", "")
                 text = f"rejected {reason[:72]}" if d.get("mode") == "rejected" and reason else f"mode={d.get('mode', '')} steps={d.get('steps', '')} {d.get('done_when', '')}"
@@ -378,7 +406,8 @@ class TUI:
         role = comms.ROLES.get(self._input_from, "colony")
         comms.post(self._input_from, role, text, kind="message")
         self._input_buf = ""
-        self._bus_cache = comms.read_bus(BUS_ROWS + 4)
+        self._bus_chat = comms.read_chat(40)
+        self._bus_events = comms.read_events(20)
 
     def _handle_key(self, ch: str) -> bool:
         if ch in ("\r", "\n"):
@@ -407,10 +436,29 @@ class TUI:
             return True
         return False
 
+    def _layout(self, agent_count: int) -> tuple[int, int, int, int]:
+        """Return event_rows, bus_chat_rows, bus_event_rows, spec_width."""
+        h = _console_height()
+        w = _console_width()
+        spec_w = 10 if w < 100 else SPEC_WIDTH
+        overhead = 10 + BUS_CHAT_ROWS + BUS_EVENT_ROWS + 3
+        per_agent = 1 + AGENT_EVENT_ROWS + 1
+        if agent_count * per_agent + overhead > h:
+            event_rows = 2
+            bus_chat = 3
+            bus_event = 2
+        else:
+            event_rows = AGENT_EVENT_ROWS
+            bus_chat = BUS_CHAT_ROWS
+            bus_event = BUS_EVENT_ROWS
+        return event_rows, bus_chat, bus_event, spec_w
+
     def render(self) -> str:
         W = _console_width()
+        H = _console_height()
         inner = W - 4
         agents = self._sorted()
+        event_rows, bus_chat_n, bus_event_n, spec_w = self._layout(len(agents))
         bc = _fg(*CLR_BORDER)
 
         def row(content: str) -> str:
@@ -440,9 +488,8 @@ class TUI:
         lines.append(row(hdr))
         lines.append(f"{bc}{BOX_ML}{BOX_H * (W - 2)}{BOX_MR}{RST}")
 
-        spec_w = SPEC_WIDTH
         val_w = 5
-        text_w = max(20, inner - spec_w - val_w - 3 - PHASE_WIDTH)
+        text_w = max(18, inner - spec_w - val_w - 3 - PHASE_WIDTH)
 
         for idx, agent in enumerate(agents):
             adot = f"{_fg(*CLR_ALIVE)}●{RST}" if agent.alive else f"{_fg(*CLR_DEAD)}○{RST}"
@@ -453,7 +500,7 @@ class TUI:
             fiss = f"{_fg(*CLR_FISSION)}F={agent.fissions}{RST}"
             lines.append(row(f"{pers} {adot} {stag_b} {nrg_b} {pid_b} {fiss}"))
 
-            recent = agent.recent_work(AGENT_EVENT_ROWS)
+            recent = agent.recent_work(event_rows)
             s_strip = _spec_row(agent.hist_stag, spec_w, RAMP_STAG)
             n_strip = _spec_row(agent.hist_nrg, spec_w, RAMP_NRG)
             p_strip = _spec_row(agent.hist_pid, spec_w, RAMP_PID)
@@ -462,7 +509,7 @@ class TUI:
                 f"{n_strip} {_fg(*CLR_NRG)}{agent.energy:4.1f}{RST}",
                 f"{p_strip} {_fg(*CLR_PID)}{agent.pid_val:4.1f}{RST}",
             ]
-            for i in range(AGENT_EVENT_ROWS):
+            for i in range(event_rows):
                 if i < len(recent):
                     ph = recent[i].get("phase", "")
                     brief = self._brief(ph, recent[i].get("d", {}), text_w)
@@ -478,11 +525,18 @@ class TUI:
                 lines.append(f"{bc}{BOX_SL}{BOX_SH * (W - 2)}{BOX_SR}{RST}")
 
         lines.append(f"{bc}{BOX_ML}{BOX_H * (W - 2)}{BOX_MR}{RST}")
-        lines.append(row(f"{BOLD}{_fg(*CLR_BUS)}MESSAGE BUS{RST}  peers: human · grok · colony"))
-        bus_entries = self._bus_cache[-BUS_ROWS:]
-        for i in range(BUS_ROWS):
-            if i < len(bus_entries):
-                lines.append(row(self._bus_line(bus_entries[i], inner)))
+        lines.append(row(f"{BOLD}{_fg(*CLR_BUS)}CHAT{RST} human · grok · colony"))
+        chat_entries = self._bus_chat[-bus_chat_n:]
+        for i in range(bus_chat_n):
+            if i < len(chat_entries):
+                lines.append(row(self._bus_line(chat_entries[i], inner)))
+            else:
+                lines.append(row(""))
+        lines.append(row(f"{BOLD}{_fg(*CLR_BUS)}EVENTS{RST}"))
+        ev_entries = self._bus_events[-bus_event_n:]
+        for i in range(bus_event_n):
+            if i < len(ev_entries):
+                lines.append(row(self._bus_line(ev_entries[i], inner)))
             else:
                 lines.append(row(""))
 
@@ -494,7 +548,11 @@ class TUI:
         lines.append(row(f"{_fg(*CLR_DIM)}Enter send · Tab human/grok · Space LIVE · q quit · python comms.py post grok \"msg\"{RST}"))
 
         lines.append(f"{bc}{BOX_BL}{BOX_H * (W - 2)}{BOX_BR}{RST}")
-        return "\x1b[H" + "\r\n".join(ln + "\x1b[K" for ln in lines) + "\x1b[J"
+        while len(lines) < H:
+            lines.append("\x1b[K")
+        if len(lines) > H:
+            lines = lines[:H]
+        return "\x1b[H" + "\r\n".join(ln + "\x1b[K" if not ln.startswith("\x1b[K") else ln for ln in lines)
 
     @staticmethod
     def _elapsed(s: float) -> str:
@@ -514,7 +572,7 @@ class TUI:
         _w("\x1b]0;endgame-ai · reactor + bus\x07")
         pause_path = BASE_DIR / "pause"
         pause_path.write_text("", encoding="utf-8")
-        comms.post("tui", "console", "TUI online — message bus active. Human and Grok are colony peers.", kind="beacon")
+        comms.post("tui", "console", "TUI online. Message bus active. Tab human/grok, Enter send.", kind="beacon")
 
         env = os.environ.copy()
         env["ENDGAME_BOOTSTRAPPED"] = "1"
