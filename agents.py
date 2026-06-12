@@ -171,6 +171,11 @@ class SchedulerAgent:
         chaos_gate = energy >= config.CHAOS_ENERGY_THRESHOLD and stag >= config.REFLECT_STAG_THRESHOLD
         reflect_wanted = reflect_due and (pid_gate or stag_gate or chaos_gate)
 
+        # Plan completion takes priority — verify before reflecting
+        all_done = plan and all(s.get("status") == "done" for s in plan)
+        if all_done:
+            return {"writes": writes, "next": "verifier", "phase": "schedule", "data": {"reason": "plan_complete"}}
+
         # Reflection takes priority when system is stuck — even over replan/wing
         if reflect_wanted:
             if pid_gate:
@@ -205,9 +210,6 @@ class SchedulerAgent:
         if active:
             return {"writes": writes, "next": "actor", "phase": "schedule", "data": {"reason": "execute", "step": active.get("text", "")}}
 
-        all_done = all(s.get("status") == "done" for s in plan)
-        if all_done:
-            return {"writes": writes, "next": "verifier", "phase": "schedule", "data": {"reason": "plan_complete"}}
 
         pending = next((s for s in plan if s.get("status") == "pending"), None)
         if pending:
@@ -679,11 +681,15 @@ def _apply_mutation(target: str, append_text: str) -> None:
     if _ELEMENT_ID_RE.search(clean_text) or re.search(r"click\s*\[", clean_text, re.I):
         log.emit("mutation.rejected", {"target": target, "reason": "element_id_in_mutation"})
         return
+    # Protect: header is everything before first RULE:
+    parts = current.split("RULE:", 1)
+    header = parts[0] if parts else ""
+    if not header.strip():
+        return  # refuse mutation if header already lost
     rules = [block.strip() for block in current.split("\n\n") if block.strip().startswith("RULE:")]
     if len(rules) >= config.PROMPT_MAX_RULES:
-        base = current.split("RULE:")[0].rstrip()
         kept = rules[-(config.PROMPT_MAX_RULES - 1):]
-        current = base + "\n\n" + "\n\n".join(kept)
+        current = header.rstrip() + "\n\n" + "\n\n".join(kept)
     new_content = current.rstrip() + "\n\nRULE: " + clean_text + "\n"
     path.write_text(new_content, encoding="utf-8")
     log.emit("mutation", {"target": target, "appended": clean_text})

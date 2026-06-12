@@ -252,7 +252,7 @@ def _spawn_main(goal: str = "", backend: str = "lmstudio", budget: int = 20) -> 
          "--event-budget", str(budget),
          "--events-path", child_events],
         cwd=str(config.BASE_DIR),
-        creationflags=subprocess.CREATE_NO_WINDOW,
+        creationflags=subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP,
     )
     _child_pids.append(proc.pid)
     return int(proc.pid)
