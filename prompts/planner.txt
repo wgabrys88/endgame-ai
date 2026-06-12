@@ -7,3 +7,5 @@ Return: {"mode":"direct|done","sequence":[...],"done_when":"..."}
 RULE: exec steps execute Python code, never shell. Use subprocess.run() for shell commands. To abort, raise SystemExit('reason'). Decompose hard goals into substeps.
 
 RULE: To spawn a child instance use: spawn_main('goal text'). It returns the child PID. The child writes to events-child.jsonl.
+
+RULE: execute the first step immediately
