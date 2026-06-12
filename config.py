@@ -127,7 +127,7 @@ PROCESS_DPI_AWARENESS_CONTEXT: int = -4
 SIGINT_EXIT_CODE: int = 130
 
 CONTEXT_POLICY: dict[str, list[str]] = {
-    "planner": ["goal", "plan", "history", "last_observation", "completed", "lessons"],
+    "planner": ["goal", "plan", "history", "last_observation", "completed", "lessons", "denied_goals"],
     "actor": ["instruction", "screen", "history"],
     "verifier": ["goal", "done_when", "last_observation", "history", "completed"],
     "reflector": ["goal", "history", "last_observation", "failures"],

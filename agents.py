@@ -56,6 +56,31 @@ def _trivial_milestone(goal: str, done_when: str) -> bool:
     return is_trivial and not is_productive
 
 
+DENIAL_DECAY_SECS = 120.0  # blocked plans decay after 2 minutes
+DENIAL_MAX = 10
+
+
+def _add_denial(denied_goals: list[dict[str, Any]], done_when: str) -> list[dict[str, Any]]:
+    """Track denied done_when strings with timestamp for decay."""
+    import time as _t
+    now = _t.time()
+    # Decay old entries
+    active = [d for d in denied_goals if now - d.get("ts", 0) < DENIAL_DECAY_SECS]
+    active.append({"dw": done_when[:120], "ts": now})
+    return active[-DENIAL_MAX:]
+
+
+def _is_blocked(denied_goals: list[dict[str, Any]], done_when: str) -> bool:
+    """Return True if this done_when was denied >=2 times and hasn't decayed."""
+    import time as _t
+    now = _t.time()
+    dw_low = done_when.lower()[:120]
+    count = sum(1 for d in denied_goals
+                if now - d.get("ts", 0) < DENIAL_DECAY_SECS
+                and d.get("dw", "").lower() == dw_low)
+    return count >= 2
+
+
 class StagnationAgent:
     name: str = "stagnation"
     reads: list[str] = ["plan", "progress_history", "consecutive_failures", "activity_events"]
@@ -263,7 +288,7 @@ class PlannerAgent:
     name: str = "planner"
     reads: list[str] = [
         "goal", "plan", "desktop_summary", "focused_window", "history",
-        "consecutive_failures", "stagnation", "energy", "completed", "last_observation",
+        "consecutive_failures", "stagnation", "energy", "completed", "last_observation", "denied_goals",
     ]
 
     def run(self, ctx: dict[str, Any]) -> dict[str, Any]:
@@ -280,6 +305,10 @@ class PlannerAgent:
         mode = str(parsed.get("mode", "direct"))
         sequence: list[Any] = parsed.get("sequence", [])
         done_when = str(parsed.get("done_when", ""))
+        denied_goals: list[dict[str, Any]] = list(ctx.get("denied_goals", []))
+        if done_when and _is_blocked(denied_goals, done_when):
+            log.emit("plan.blocked", {"done_when": done_when[:80]})
+            return {"writes": {"consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1}, "next": "stagnation", "phase": "plan", "data": {"mode": "blocked", "reason": "done_when denied too many times — try something different"}}
         if mode == "done" or not sequence:
             if str(ctx.get("goal", "")).strip() and not list(ctx.get("completed", [])):
                 return {"writes": {"consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1}, "next": "stagnation", "phase": "plan", "data": {"mode": "rejected", "reason": "cannot declare done before any GOAL progress"}}
@@ -377,23 +406,26 @@ class ActorAgent:
 
 class VerifierAgent:
     name: str = "verifier"
-    reads: list[str] = ["goal", "screen", "history", "plan", "desktop_summary", "done_when", "completed", "last_observation"]
+    reads: list[str] = ["goal", "screen", "history", "plan", "desktop_summary", "done_when", "completed", "last_observation", "denied_goals"]
 
     def run(self, ctx: dict[str, Any]) -> dict[str, Any]:
         from llm import call_llm
         done_when = str(ctx.get("done_when", ""))
         completed: list[str] = list(ctx.get("completed", []))
         goal = str(ctx.get("goal", ""))
+        denied_goals: list[dict[str, Any]] = list(ctx.get("denied_goals", []))
         if _similar_to_completed(done_when, completed):
+            denied_goals = _add_denial(denied_goals, done_when)
             return {
-                "writes": {"plan": [], "done_when": "", "consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1},
+                "writes": {"plan": [], "done_when": "", "consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1, "denied_goals": denied_goals},
                 "next": "stagnation",
                 "phase": "verify",
                 "data": {"verdict": "denied", "evidence": "done_when overlaps COMPLETED — no repeat fission credit"},
             }
         if _trivial_milestone(goal, done_when):
+            denied_goals = _add_denial(denied_goals, done_when)
             return {
-                "writes": {"plan": [], "done_when": "", "consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1},
+                "writes": {"plan": [], "done_when": "", "consecutive_failures": int(ctx.get("consecutive_failures", 0)) + 1, "denied_goals": denied_goals},
                 "next": "stagnation",
                 "phase": "verify",
                 "data": {"verdict": "denied", "evidence": "done_when is observational only — GOAL requires substantive action (post, create, execute)"},
@@ -409,8 +441,9 @@ class VerifierAgent:
         verdict = str(parsed.get("verdict", "denied"))
         evidence = str(parsed.get("evidence", ""))
         if verdict == "confirmed":
-            return {"writes": {}, "next": "done", "phase": "verify", "data": {"verdict": "confirmed", "evidence": evidence}}
-        return {"writes": {"plan": [], "done_when": "", "consecutive_failures": 0, "progress_history": []}, "next": "planner", "phase": "verify", "data": {"verdict": "denied", "evidence": evidence}}
+            return {"writes": {"denied_goals": denied_goals}, "next": "done", "phase": "verify", "data": {"verdict": "confirmed", "evidence": evidence}}
+        denied_goals = _add_denial(denied_goals, done_when)
+        return {"writes": {"plan": [], "done_when": "", "consecutive_failures": 0, "progress_history": [], "denied_goals": denied_goals}, "next": "planner", "phase": "verify", "data": {"verdict": "denied", "evidence": evidence}}
 
 class ReflectorAgent:
     name: str = "reflector"
@@ -561,6 +594,16 @@ def _render_field(ctx: dict[str, Any], field: str, instruction: str) -> str:
             if not obs:
                 return ""
             return f"LAST_RESULT: {obs}"
+        case "denied_goals":
+            import time as _t2
+            now = _t2.time()
+            active = [d for d in ctx.get("denied_goals", []) if now - d.get("ts", 0) < DENIAL_DECAY_SECS]
+            if not active:
+                return ""
+            blocked = list({d["dw"] for d in active if active.count(d) >= 2 or sum(1 for x in active if x.get("dw") == d.get("dw")) >= 2})
+            if not blocked:
+                return ""
+            return "BLOCKED (denied ≥2x, try different approach):\n" + "\n".join(f"  - {b}" for b in blocked[:5])
         case "lessons":
             import lessons
             step = ""
