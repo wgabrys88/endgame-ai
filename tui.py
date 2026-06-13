@@ -1,4 +1,4 @@
-"""TUI — fixed 45-line display for Windows Terminal."""
+"""TUI — fixed 45-line display. Shows personas with their internal agents."""
 from __future__ import annotations
 import ctypes
 import glob
@@ -13,11 +13,13 @@ import comms
 import config
 
 BASE_DIR = config.BASE_DIR
-EVENTS_GLOB = "events-child-s*.jsonl"
 TARGET_HEIGHT = 45
 REFRESH_INTERVAL = 0.10
 SCAN_INTERVAL = 2.0
 MAX_EVENTS = 300
+
+# Internal agents each persona contains
+INTERNAL_AGENTS = ["scheduler", "planner", "actor", "verifier", "fission_judge"]
 
 CLR_ALIVE = (80, 220, 120)
 CLR_DEAD = (255, 80, 80)
@@ -29,6 +31,8 @@ CLR_BUS = (160, 190, 230)
 CLR_DIM = (80, 80, 100)
 CLR_INPUT = (255, 240, 200)
 CLR_PRI = (255, 180, 80)
+CLR_STAG = (255, 100, 80)
+CLR_FISSION = (100, 255, 180)
 
 BOX_TL, BOX_TR, BOX_BL, BOX_BR = "╔", "╗", "╚", "╝"
 BOX_H, BOX_V = "═", "║"
@@ -68,8 +72,7 @@ def _vlen(s: str) -> int:
 def _trunc(s: str, w: int) -> str:
     if w <= 0:
         return ""
-    vis = 0
-    i = 0
+    vis = i = 0
     while i < len(s):
         if s[i] == "\x1b":
             j = s.find("m", i)
@@ -77,12 +80,9 @@ def _trunc(s: str, w: int) -> str:
                 i = j + 1
                 continue
         vis += 1
-        if vis > w:
-            break
         i += 1
     if vis <= w:
         return s
-    # Truncate
     vis = 0
     out: list[str] = []
     i = 0
@@ -118,10 +118,18 @@ def _console_width() -> int:
     return 120
 
 
+def _bar(v: float, w: int, clr: tuple) -> str:
+    w = max(2, w)
+    f = max(0, min(w, int(v * w)))
+    return _fg(*clr) + "█" * f + _fg(*CLR_DIM) + "░" * (w - f) + RST
+
+
 # --- Slot view ---
 
 class Slot:
-    __slots__ = ("path", "slot_id", "persona", "events", "_off", "_mt", "alive", "fissions", "last_phase", "priority")
+    __slots__ = ("path", "slot_id", "persona", "events", "_off", "_mt",
+                 "alive", "fissions", "last_phase", "priority", "stagnation",
+                 "agent_states")
 
     def __init__(self, path: Path, slot_id: int):
         self.path = path
@@ -134,6 +142,9 @@ class Slot:
         self.fissions = 0
         self.last_phase = ""
         self.priority = 0
+        self.stagnation = 0.0
+        # Track which agents have fired
+        self.agent_states: dict[str, str] = {a: "idle" for a in INTERNAL_AGENTS}
 
     def poll(self) -> None:
         try:
@@ -170,17 +181,29 @@ class Slot:
         self.last_phase = ph
         if ph == "start":
             self.persona = str(d.get("personality", self.persona))
-            self.priority = int(d.get("priority", 0) if "priority" in d else 0)
         elif ph == "fission":
             self.fissions += 1
+            self.agent_states["fission_judge"] = "✓"
         elif ph == "stop":
             self.alive = False
         elif ph == "interrupt":
             self.priority = int(d.get("pri", self.priority))
-
-    def recent(self, n: int) -> list[dict]:
-        work = [e for e in self.events if e.get("phase") not in ("start",)]
-        return work[-n:]
+        elif ph == "pressure":
+            self.stagnation = float(d.get("stagnation", 0))
+        # Update agent states
+        if ph == "schedule":
+            self.agent_states = {a: "idle" for a in INTERNAL_AGENTS}
+            self.agent_states["scheduler"] = "✓"
+        elif ph.startswith("planner"):
+            self.agent_states["planner"] = "⟳" if "pending" in ph else ("✗" if "error" in ph else "✓")
+        elif ph in ("actor", "action"):
+            ok = (d.get("ok", True)) if d else True
+            self.agent_states["actor"] = "✓" if ok else "✗"
+        elif ph.startswith("verif") or ph == "verify":
+            v = d.get("verdict", "")
+            self.agent_states["verifier"] = "✓" if v == "confirmed" else "✗"
+        elif ph.startswith("fission"):
+            self.agent_states["fission_judge"] = "✓" if ph == "fission" else "–"
 
     @property
     def active_agent(self) -> str:
@@ -191,15 +214,35 @@ class Slot:
             return "planner"
         if ph in ("actor", "action"):
             return "actor"
-        if ph.startswith("verif"):
+        if ph.startswith("verif") or ph == "verify":
             return "verifier"
         if ph.startswith("fission"):
             return "fission"
         if ph == "interrupt":
             return "INTERRUPT"
-        if ph == "llm_retry":
+        if ph == "pressure":
+            return "math"
+        if ph == "llm_retry" or ph == "llm_fail":
             return "llm…"
+        if ph == "schedule":
+            return "scheduler"
         return ph[:10]
+
+    def agent_bar(self) -> str:
+        """Compact display of all internal agent states."""
+        parts = []
+        for a in INTERNAL_AGENTS:
+            st = self.agent_states.get(a, "idle")
+            short = a[0].upper()  # S P A V F
+            if st == "✓":
+                parts.append(f"{_fg(*CLR_ALIVE)}{short}{RST}")
+            elif st == "⟳":
+                parts.append(f"{_fg(*CLR_PRI)}{short}{RST}")
+            elif st == "✗":
+                parts.append(f"{_fg(*CLR_DEAD)}{short}{RST}")
+            else:
+                parts.append(f"{_fg(*CLR_DIM)}{short}{RST}")
+        return "".join(parts)
 
 
 # --- TUI ---
@@ -214,17 +257,23 @@ class TUI:
         self._bus_chat: list[dict] = []
         self._bus_events: list[dict] = []
         self._reactor_proc = None
+        self._session_dir: str = ""
 
     def _scan(self) -> None:
         now = time.time()
         if now - self._last_scan < SCAN_INTERVAL:
             return
         self._last_scan = now
-        for fp in glob.glob(str(BASE_DIR / EVENTS_GLOB)):
-            if fp not in self.slots:
-                p = Path(fp)
-                sid = int(p.stem.replace("events-child-s", ""))
-                self.slots[fp] = Slot(p, sid)
+        # Find session dir (most recent)
+        sessions = sorted(glob.glob(str(BASE_DIR / "sessions" / "*")))
+        if sessions:
+            sd = sessions[-1]
+            self._session_dir = sd
+            for fp in glob.glob(os.path.join(sd, "events-child-s*.jsonl")):
+                if fp not in self.slots:
+                    p = Path(fp)
+                    sid = int(p.stem.replace("events-child-s", ""))
+                    self.slots[fp] = Slot(p, sid)
 
     def _poll(self) -> None:
         try:
@@ -245,6 +294,12 @@ class TUI:
         slots = self._sorted()
         bc = _fg(*CLR_BORDER)
 
+        # Ensure 5 display slots (even if empty)
+        display_slots: list[Slot | None] = [None] * 5
+        for s in slots:
+            if 1 <= s.slot_id <= 5:
+                display_slots[s.slot_id - 1] = s
+
         def row(content: str) -> str:
             t = _trunc(content, inner)
             gap = max(0, inner - _vlen(t))
@@ -253,55 +308,65 @@ class TUI:
         lines: list[str] = []
         lines.append(f"{bc}{BOX_TL}{BOX_H * (W - 2)}{BOX_TR}{RST}")
 
-        # Header
+        # Header (line 2)
         alive = sum(1 for s in slots if s.alive)
         total_f = sum(s.fissions for s in slots)
         elapsed = time.time() - self._start
-        paused = (BASE_DIR / "pause").exists()
-        mode = f"{_fg(*CLR_PRI)}PAUSED{RST}" if paused else f"{_fg(*CLR_ALIVE)}LIVE{RST}"
-        hdr = (f"{BOLD}{_fg(*CLR_HEADER)}REACTOR{RST} {alive}/{len(slots)} slots  "
-               f"[{mode}]  {_fg(*CLR_ALIVE)}F={total_f}{RST}  "
+        hdr = (f"{BOLD}{_fg(*CLR_HEADER)}REACTOR{RST} {alive}/5 slots  "
+               f"{_fg(*CLR_FISSION)}F={total_f}{RST}  "
                f"{self._elapsed(elapsed)}  {time.strftime('%H:%M:%S')}")
         lines.append(row(hdr))
         lines.append(f"{bc}{BOX_ML}{BOX_H * (W - 2)}{BOX_MR}{RST}")
 
-        # Slots: 5 slots × 4 lines = 20 lines + 4 separators = 24
-        event_rows = 3
-        for idx, slot in enumerate(slots):
-            dot = f"{_fg(*CLR_ALIVE)}●{RST}" if slot.alive else f"{_fg(*CLR_DEAD)}○{RST}"
-            persona = (slot.persona or "?")[:14].ljust(14)
-            agent = slot.active_agent
-            pri_tag = f" P{slot.priority}" if slot.priority > 0 else ""
-            fiss = f"F={slot.fissions}" if slot.fissions else ""
-            header = f"s{slot.slot_id} {persona} {dot} [{_fg(*CLR_PHASE)}{agent}{RST}]{pri_tag} {_fg(*CLR_ALIVE)}{fiss}{RST}"
-            lines.append(row(_trunc(header, inner)))
+        # Personas: 5 slots × 5 lines each (header + 2 events + agents + separator) = 25-29
+        # Actually: header + agent_bar + 2 events = 4 lines per slot, + 4 separators = 24 lines
+        for idx, slot in enumerate(display_slots):
+            if slot is None:
+                # Empty slot
+                lines.append(row(f"{_fg(*CLR_DIM)}s{idx+1} {'(empty)':14} ○{RST}"))
+                lines.append(row(f" {_fg(*CLR_DIM)}S P A V F{RST}"))
+                lines.append(row(""))
+                lines.append(row(""))
+            else:
+                # Header line
+                dot = f"{_fg(*CLR_ALIVE)}●{RST}" if slot.alive else f"{_fg(*CLR_DEAD)}○{RST}"
+                persona = (slot.persona or "?")[:14].ljust(14)
+                stag_bar = _bar(slot.stagnation, 4, CLR_STAG)
+                pri = f"P{slot.priority}" if slot.priority > 0 else "  "
+                active = slot.active_agent
+                fiss = f"{_fg(*CLR_FISSION)}F={slot.fissions}{RST}" if slot.fissions else ""
+                header = f"s{slot.slot_id} {persona} {dot} [{_fg(*CLR_PHASE)}{active:10}{RST}] {stag_bar} {pri} {fiss}"
+                lines.append(row(_trunc(header, inner)))
 
-            recent = slot.recent(event_rows)
-            for i in range(event_rows):
-                if i < len(recent):
-                    ev = recent[i]
-                    ph = ev.get("phase", "")[:12].ljust(12)
-                    d = ev.get("d") or {}
-                    brief = self._brief(ev.get("phase", ""), d, inner - 16)
-                    lines.append(row(f" {_fg(*CLR_PHASE)}{ph}{RST} {_fg(*CLR_DATA)}{brief}{RST}"))
-                else:
-                    lines.append(row(""))
-            if idx < len(slots) - 1:
+                # Agent pipeline bar
+                lines.append(row(f" {slot.agent_bar()} {_fg(*CLR_DIM)}stag={slot.stagnation:.2f}{RST}"))
+
+                # 2 recent events
+                recent = slot.recent(2)
+                for i in range(2):
+                    if i < len(recent):
+                        ev = recent[i]
+                        ph = ev.get("phase", "")[:12].ljust(12)
+                        brief = self._brief(ev.get("phase", ""), ev.get("d") or {}, inner - 16)
+                        lines.append(row(f" {_fg(*CLR_PHASE)}{ph}{RST} {_fg(*CLR_DATA)}{brief}{RST}"))
+                    else:
+                        lines.append(row(""))
+
+            if idx < 4:
                 lines.append(f"{bc}{BOX_SL}{BOX_SH * (W - 2)}{BOX_SR}{RST}")
 
-        # Bus section
+        # Bus (6 lines: header + 5 messages)
         lines.append(f"{bc}{BOX_ML}{BOX_H * (W - 2)}{BOX_MR}{RST}")
-        lines.append(row(f"{BOLD}{_fg(*CLR_BUS)}BUS{RST} @human · @colony"))
-        bus_rows = 6
-        chat = self._bus_chat[-bus_rows:]
-        for i in range(bus_rows):
+        lines.append(row(f"{BOLD}{_fg(*CLR_BUS)}BUS{RST}"))
+        chat = self._bus_chat[-5:]
+        for i in range(5):
             if i < len(chat):
                 e = chat[i]
                 lines.append(row(f"{_fg(*CLR_BUS)}@{str(e.get('from', '?'))[:12]:12} {str(e.get('text', ''))[:inner-16]}{RST}"))
             else:
                 lines.append(row(""))
 
-        # Input
+        # Input (3 lines: separator + prompt + help)
         lines.append(f"{bc}{BOX_ML}{BOX_H * (W - 2)}{BOX_MR}{RST}")
         cursor = "▌" if int(time.time() * 2) % 2 else " "
         lines.append(row(f"{_fg(*CLR_INPUT)}@human> {self._input_buf}{cursor}{RST}"))
@@ -314,6 +379,10 @@ class TUI:
         lines = lines[:TARGET_HEIGHT]
         return "\x1b[H" + "\r\n".join(ln + "\x1b[K" for ln in lines)
 
+    def recent(self, slot: Slot, n: int) -> list[dict]:
+        """Get last n non-trivial events."""
+        return [e for e in slot.events if e.get("phase") not in ("start", "pressure")][-n:]
+
     def _brief(self, ph: str, d: dict, max_w: int) -> str:
         if not d:
             return ""
@@ -325,15 +394,17 @@ class TUI:
             case "verify":
                 t = f"{d.get('verdict', '')} {d.get('evidence', '')}"
             case "interrupt":
-                t = f"⚡ from @{d.get('from', '?')} pri={d.get('pri', '')} {d.get('text', '')}"
+                t = f"⚡ @{d.get('from', '?')} pri={d.get('pri', '')} {d.get('text', '')}"
             case "planner.pending":
                 t = "waiting LLM..."
             case "llm_retry":
-                t = f"attempt {d.get('attempt', '')} {d.get('error', '')}"
+                t = f"retry #{d.get('attempt', '')} {d.get('error', '')}"
             case "fission":
-                t = f"fissions={d.get('fissions', '')}"
+                t = f"fissions={d.get('fissions', '')} {d.get('completed', '')}"
             case "start":
                 t = f"{d.get('personality', '')} [{d.get('profile', '')}]"
+            case "schedule":
+                t = f"→ {d.get('next', '')} ({d.get('reason', '')})"
             case _:
                 t = str(d)[:max_w]
         return _trunc(t.replace("\n", " "), max_w)

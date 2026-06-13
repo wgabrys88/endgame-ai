@@ -14,6 +14,7 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 CONTROL_INTERVAL = 5
 slots: dict[int, dict[str, Any]] = {}
 _model_profile: str = ""
+_session_dir: str = ""
 
 
 def spawn(slot_id: int, persona: str, goal: str = "", priority: int = config.PRI_MAINTENANCE) -> int:
@@ -30,6 +31,7 @@ def spawn(slot_id: int, persona: str, goal: str = "", priority: int = config.PRI
     env = os.environ.copy()
     env["ENDGAME_PERSONALITY"] = persona
     env["ENDGAME_SLOT"] = str(slot_id)
+    env["ENDGAME_SESSION_DIR"] = _session_dir
     cmd = [sys.executable, "main.py", goal, "--backend", env.get("ENDGAME_BACKEND", "lmstudio"),
            "--event-budget", "999999", "--events-path", ef, "--priority", str(priority)]
     if _model_profile:
@@ -89,7 +91,10 @@ if __name__ == "__main__":
     if not os.environ.get("ENDGAME_BOOTSTRAPPED"):
         log.cleanup_runtime()
 
+    # Create session directory for this run
+    _session_dir = str(log.session_dir())
     print(f"REACTOR | {config.SLOTS} slots | profile={_model_profile or 'auto'}")
+    print(f"  session: {_session_dir}")
 
     # Slot 1: comms_operator (always)
     pid = spawn(1, "comms_operator", priority=config.PRI_NORMAL)
