@@ -9,9 +9,9 @@
 | `README.md` | Human quick start only — do not duplicate here |
 
 **Integration trunk:** `unify-rewrite` · tip `ef30bc7`  
-**Active work branch:** `codex-dev` · tip `5933ad3` (AgentBreeder scaffold + human file fix)  
-**Grok branch:** `grok-dev` · tip `ef30bc7` — **13 commits behind codex-dev**  
-**Milestone:** Colony Alpha ~82% — infra + breeding loop live-tested 2026-06-14  
+**Active work branch:** `grok-dev` · tip `5ae74ea` (merged from codex-dev + breed.improve evidence)  
+**Codex branch:** `codex-dev` · tip `0bb182f` — merge into grok-dev complete  
+**Milestone:** Colony Alpha ~85% — `breed.improve` logged live 2026-06-14
 **Parallel lineage:** `main` is a different architecture (organism M4) — not parent/child of unify-rewrite
 
 ---
@@ -146,7 +146,7 @@ Bus observation also mirrors `kind=evolve` and reactor `breed.*` status events.
 | Orchestrator pattern | ~82% | idle workers, 1 LLM gate, human yield |
 | Pressure fields (Rodriguez 2026) | ~70% | core math; escalation wired |
 | MoE (Bause 2026) | ~78% | closed loop + yield on human |
-| AgentBreeder (Oxford 2026) | ~45% | evolve writer, reflector, mutator, elites, trials — **no breed.improve yet** |
+| AgentBreeder (Oxford 2026) | ~55% | evolve, reflector, mutator, elites, trials — **`breed.improve` live 2026-06-14** |
 
 ---
 
@@ -177,7 +177,7 @@ Infrastructure PASS; GUI notepad FAIL → fixed in `afe87ac`.
 - 18 `moe.route` (~20s cadence); 0 false respawn
 - Full pipeline on s2/s3: `plan`→`actor`→`verify`→`reflect`→`mutate`
 - Bus evidence: `evolve` evict/patch_plugin, `breed.elite`, `breed.evict`
-- **Gap:** no `breed.improve` in 6min window (mutation trials need longer runs or better patches)
+- **Gap (fixed):** first 6min had no `breed.improve`; trial evaluator + safe telemetry fallback now produce it
 - **Noise:** `plugin.error` spam on s1/s4/s5 (web_sentinel connectivity)
 
 ### Human retest (codex-dev `502947b`)
@@ -202,7 +202,7 @@ Infrastructure PASS; GUI notepad FAIL → fixed in `afe87ac`.
 
 ## Not built yet (do not claim done)
 
-- `breed.improve` from live multi-cycle runs (GOAL blocker)
+- Consistent multi-cycle `breed.improve` across runs (one event proven; GOAL needs repetition)
 - LLM fission_judge (deterministic +1 only)
 - Desktop observer agent (win32 UIA — port from `main` when needed)
 - Long-run MAP-Elites fitness convergence
@@ -238,8 +238,8 @@ python tui.py --model-profile nemotron
 
 ## Suggested next work (priority order)
 
-1. **Merge `codex-dev` → `grok-dev`** (human approval) — forward Grok branch to breeding state
-2. **Produce `breed.improve` evidence** — longer runs + safer mutation targets
+1. **Repeat `breed.improve`** across multiple live cycles (MAP-Elites convergence)
+2. Reduce mutator harm to `comms_beacon` (protected) and tune LLM patch quality
 3. Fix `plugin.error` / web_sentinel noise on idle slots
 4. Port desktop observer from `main` when GUI mode needs screen context
 5. MAP-Elites fitness from fission + stagnation history
