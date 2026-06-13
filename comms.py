@@ -181,6 +181,15 @@ def _append_event(entry: dict[str, Any]) -> None:
     _trim_events()
 
 
+def _mirror_breeder_observation(entry: dict[str, Any]) -> None:
+    kind = str(entry.get("kind", ""))
+    payload = entry.get("payload") if isinstance(entry.get("payload"), dict) else {}
+    if kind == KIND_EVOLVE:
+        _append_event(entry)
+    elif kind == KIND_STATUS and str(payload.get("action", "")).startswith("breed."):
+        _append_event(entry)
+
+
 # --- Intent layer (messages.json) ---
 
 def _read_chat() -> list[dict[str, Any]]:
@@ -219,6 +228,7 @@ def post(from_id: str, role: str, text: str, *, kind: str = KIND_MESSAGE,
     entries = _read_chat()
     entries.append(entry)
     _write_chat(entries)
+    _mirror_breeder_observation(entry)
     return entry
 
 
@@ -311,6 +321,7 @@ def post_evolve(
     entries = _read_chat()
     entries.append(entry)
     _write_chat(entries)
+    _mirror_breeder_observation(entry)
     return entry
 
 
