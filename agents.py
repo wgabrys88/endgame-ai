@@ -197,6 +197,7 @@ class VerifierAgent:
                         "next": "fission_judge"}
             board["plan"] = []
             board.setdefault("history", []).append({"denied": done_when, "reason": evidence})
+            _post_failure_candidate(board, done_when, evidence)
             return {"phase": "verify", "data": {"verdict": "denied", "evidence": evidence}}
         plan = board.get("plan", [])
         results = [str(s.get("result", ""))[:200] for s in plan if isinstance(s, dict)]
@@ -220,8 +221,10 @@ class VerifierAgent:
                     "next": "fission_judge"}
         # Denied — clear plan, will replan
         board["plan"] = []
-        board.setdefault("history", []).append({"denied": done_when, "reason": parsed.get("evidence", "")})
-        return {"phase": "verify", "data": {"verdict": "denied", "evidence": parsed.get("evidence", "")}}
+        evidence = str(parsed.get("evidence", ""))
+        board.setdefault("history", []).append({"denied": done_when, "reason": evidence})
+        _post_failure_candidate(board, done_when, evidence)
+        return {"phase": "verify", "data": {"verdict": "denied", "evidence": evidence}}
 
 
 class FissionJudgeAgent:
@@ -370,6 +373,37 @@ def _post_evolution_candidate(board: dict[str, Any], fissions: int, completed: s
                 "stagnation": round(float(pressure.get("stagnation", board.get("stagnation", 0.0)) or 0.0), 4),
                 "power": round(float(board.get("power", 0.0) or 0.0), 4),
                 "velocity": round(float(pressure.get("velocity", board.get("velocity", 0.0)) or 0.0), 4),
+            },
+        )
+    except Exception:
+        pass
+
+
+def _failure_fitness(board: dict[str, Any]) -> float:
+    pressure = board.get("_pressure", {})
+    stagnation = float(pressure.get("stagnation", board.get("stagnation", 0.0)) or 0.0)
+    failures = int(pressure.get("failures", 0) or 0)
+    denials = int(board.get("_human_denials", 0) or 0)
+    score = 0.35 - (stagnation * 0.25) - min(0.2, failures * 0.04) - min(0.2, denials * 0.06)
+    return round(max(0.0, min(0.49, score)), 4)
+
+
+def _post_failure_candidate(board: dict[str, Any], done_when: str, evidence: str) -> None:
+    try:
+        import comms
+        pressure = board.get("_pressure", {})
+        comms.post_evolve(
+            comms.agent_id(),
+            comms.agent_id(),
+            "evict",
+            fitness=_failure_fitness(board),
+            completed=str(done_when),
+            reason="verify denied",
+            data={
+                "evidence": str(evidence)[:200],
+                "stagnation": round(float(pressure.get("stagnation", board.get("stagnation", 0.0)) or 0.0), 4),
+                "failures": int(pressure.get("failures", 0) or 0),
+                "human_denials": int(board.get("_human_denials", 0) or 0),
             },
         )
     except Exception:
