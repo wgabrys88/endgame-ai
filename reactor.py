@@ -50,6 +50,10 @@ def kill_slot(slot_id: int) -> None:
         os.system(f"taskkill /F /T /PID {info['pid']} >nul 2>&1")
 
 
+_STILL_ACTIVE = 259
+_PROCESS_QUERY = 0x1000  # PROCESS_QUERY_LIMITED_INFORMATION
+
+
 def is_alive(slot_id: int) -> bool:
     info = slots.get(slot_id)
     if not info:
@@ -57,13 +61,13 @@ def is_alive(slot_id: int) -> bool:
     pid = info["pid"]
     try:
         import ctypes
-        handle = ctypes.windll.kernel32.OpenProcess(0x00100000, False, pid)
+        handle = ctypes.windll.kernel32.OpenProcess(_PROCESS_QUERY, False, pid)
         if not handle:
             return False
         code = ctypes.c_ulong()
         ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
         ctypes.windll.kernel32.CloseHandle(handle)
-        return code.value == 259
+        return code.value == _STILL_ACTIVE
     except (OSError, AttributeError):
         return False
 
@@ -107,6 +111,7 @@ if __name__ == "__main__":
     for i, persona in enumerate(defaults, 2):
         pid = spawn(i, persona, priority=config.PRI_MAINTENANCE)
         print(f"  s{i}: {persona} PID={pid}")
+        time.sleep(1.0)  # stagger — avoid 4 parallel LLM cold-starts
 
     print(f"\nREACTOR ONLINE. {len(slots)} slots loaded.\n")
 

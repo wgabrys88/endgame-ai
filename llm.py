@@ -2,6 +2,8 @@
 from __future__ import annotations
 import json
 import os
+import re
+import threading
 import time
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -13,6 +15,10 @@ import log
 _backend: str = "lmstudio"
 _cached_host: str | None = None
 _cached_model: str | None = None
+_llm_gate = threading.Semaphore(max(1, config.LLM_MAX_CONCURRENT))
+
+_THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+_JSON_RE = re.compile(r"\{[\s\S]*\}")
 
 
 def set_backend(name: str) -> None:
@@ -26,9 +32,18 @@ def close_backend() -> None:
         close_pool()
 
 
+def extract_json(raw: str) -> str:
+    """Strip Nemotron thinking traces and return the JSON payload."""
+    text = _THINK_RE.sub("", raw).strip()
+    if text.startswith("{"):
+        return text
+    m = _JSON_RE.search(text)
+    return m.group(0) if m else text
+
+
 def call_llm(system: str, user: str, role: str, *, max_tokens: int = 0,
              temperature: float | None = None, schema: dict | None = None) -> str:
-    """Call LLM and return text response."""
+    """Call LLM and return text response (JSON when schema given)."""
     temp = temperature if temperature is not None else config.LLM_TEMPERATURE
     body: dict[str, Any] = {
         "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
@@ -42,16 +57,22 @@ def call_llm(system: str, user: str, role: str, *, max_tokens: int = 0,
     }
     if schema:
         body["response_format"] = schema
+    if config.LLM_THINKING_ENABLED:
+        body["enable_thinking"] = True
+        if config.LLM_THINKING_BUDGET > 0:
+            body["thinking_budget"] = config.LLM_THINKING_BUDGET
 
     for attempt in range(3):
         try:
-            match _backend:
-                case "lmstudio":
-                    return _call_lmstudio(body)
-                case "acp":
-                    return _call_acp(body)
-                case _:
-                    raise ValueError(f"unknown backend: {_backend}")
+            with _llm_gate:
+                match _backend:
+                    case "lmstudio":
+                        raw = _call_lmstudio(body)
+                    case "acp":
+                        raw = _call_acp(body)
+                    case _:
+                        raise ValueError(f"unknown backend: {_backend}")
+            return extract_json(raw) if schema else raw
         except (RuntimeError, ConnectionError, TimeoutError, OSError) as err:
             log.emit("llm_retry", {"attempt": attempt + 1, "error": str(err)[:200]})
             if attempt >= 2:

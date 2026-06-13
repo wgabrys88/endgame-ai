@@ -1,6 +1,8 @@
 """Agents — pipeline stages. Each: run(board) → {phase, data, writes, next}."""
 from __future__ import annotations
 import json
+import os
+import time
 from typing import Any
 
 import config
@@ -9,12 +11,31 @@ from llm import call_llm
 from python_code import is_python_code
 
 
+def _persona() -> str:
+    return os.environ.get("ENDGAME_PERSONALITY", "").strip()
+
+
 class SchedulerAgent:
     """Decides what to do next: plan, continue, or idle."""
 
     def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
+        # Orchestrator: workers idle until comms_operator assigns work via bus
+        if _persona() != "comms_operator":
+            pri = board.get("priority", config.PRI_MAINTENANCE)
+            if pri <= config.PRI_MAINTENANCE and not board.get("plan"):
+                try:
+                    import comms
+                    if not comms.pending_for(comms.agent_id(), 1):
+                        return None
+                except Exception:
+                    return None
+
         plan = board.get("plan", [])
         if not plan:
+            if _persona() == "comms_operator":
+                last = float(board.get("_last_route", 0))
+                if time.time() - last < config.COMMS_ROUTE_INTERVAL:
+                    return None
             return {"next": "planner", "data": {"reason": "need_plan"}}
         active = [s for s in plan if isinstance(s, dict) and s.get("status") == "active"]
         if active:
@@ -36,14 +57,23 @@ class PlannerAgent:
             return None
         log.emit("planner.pending", {"goal": goal[:80]})
         system = _load_prompt("planner")
+        persona = _persona()
+        if persona:
+            pfile = config.PROMPTS_DIR / "personalities" / f"{persona}.txt"
+            if pfile.exists():
+                system += f"\n\nPERSONA ({persona}):\n{pfile.read_text(encoding='utf-8').strip()}"
         history_ctx = _format_history(board.get("history", []))
         bus_ctx = ""
         try:
             import comms
-            bus_ctx = comms.format_bus_context(6)
+            bus_ctx = comms.format_bus_context(10 if persona == "comms_operator" else 6,
+                                                for_agent=persona or None)
         except Exception:
             pass
-        user = f"GOAL: {goal}\n\n{history_ctx}\n{bus_ctx}\n\nPlan JSON:"
+        stag = board.get("stagnation", board.get("_pressure", {}).get("stagnation", 0))
+        pwr = board.get("power", 1.0 - float(stag))
+        user = (f"GOAL: {goal}\n\nPRESSURE: stagnation={stag:.3f} power={pwr:.3f}\n"
+                f"{history_ctx}\n{bus_ctx}\n\nPlan JSON:")
         schema = _load_schema("planner")
         raw = call_llm(system, user, "planner", schema=schema)
         try:
@@ -61,10 +91,13 @@ class PlannerAgent:
         for i, s in enumerate(steps):
             s["status"] = "active" if i == 0 else "pending"
         done_when = parsed.get("done_when", "")
+        writes: dict[str, Any] = {"plan": steps, "done_when": done_when}
+        if _persona() == "comms_operator":
+            writes["_last_route"] = time.time()
         return {
             "phase": "plan", "next": "actor",
             "data": {"mode": mode, "steps": len(steps), "done_when": done_when},
-            "writes": {"plan": steps, "done_when": done_when},
+            "writes": writes,
         }
 
 

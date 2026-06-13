@@ -132,11 +132,14 @@ def _update_pressure(board: dict[str, Any]) -> None:
     # Combined: weighted average
     stag = min(1.0, fail_pressure * 0.6 + time_pressure * 0.4)
     p["stagnation"] = stag
+    # MoE confidence signal: power = inverse stagnation (feeds comms_operator routing)
+    board["stagnation"] = stag
+    board["power"] = round(1.0 - stag, 3)
 
     # Emit periodically (every 10 cycles ~ 20s)
     if p["cycles"] % 10 == 0:
-        log.emit("pressure", {"stagnation": round(stag, 3), "failures": failures,
-                               "cycles": p["cycles"]})
+        log.emit("pressure", {"stagnation": round(stag, 3), "power": board["power"],
+                               "failures": failures, "cycles": p["cycles"]})
 
 
 # --- Priority Interrupt ---

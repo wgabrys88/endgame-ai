@@ -11,6 +11,7 @@ BUS_CHAT_PATH: Path = BUS_DIR / "messages.json"
 BUS_EVENTS_PATH: Path = BUS_DIR / "events_bus.jsonl"
 BUS_INJECT_PATH: Path = BUS_DIR / "inject.jsonl"
 EVENTS_PATH: Path = BASE_DIR / "events.jsonl"
+LESSONS_PATH: Path = BASE_DIR / "lessons.jsonl"
 PROMPTS_DIR: Path = BASE_DIR / "prompts"
 SCHEMAS_DIR: Path = BASE_DIR / "schemas"
 PLUGINS_DIR: Path = BASE_DIR / "plugins"
@@ -59,6 +60,9 @@ LLM_FREQUENCY_PENALTY: float = 0.0
 LLM_LOGIT_BIAS: dict[str, float] = {}
 LLM_REPEAT_PENALTY: float = 1.05
 LLM_SEED: int = -1
+LLM_MAX_CONCURRENT: int = 1  # orchestrator: 1 LLM call at a time (nemotron-safe)
+LLM_THINKING_ENABLED: bool = True
+LLM_THINKING_BUDGET: int = 4096  # cap reasoning tokens — keeps latency predictable
 
 BUDGET: dict[str, int] = {
     "planner": 2048, "verifier": 512, "reflector": 1024,
@@ -69,16 +73,19 @@ BUDGET: dict[str, int] = {
 MODEL_PROFILES: dict[str, dict[str, Any]] = {
     "nemotron": {
         "LLM_TEMPERATURE": 1.0, "LLM_TOP_P": 1.0, "LLM_TOP_K": 20,
-        "LLM_REPEAT_PENALTY": 1.05, "LLM_PRESENCE_PENALTY": 0.0,
+        "LLM_REPEAT_PENALTY": 1.0, "LLM_PRESENCE_PENALTY": 0.0,
         "LLM_FREQUENCY_PENALTY": 0.0, "LLM_SEED": -1,
         "LLM_MAX_TOKENS": 128000, "LLM_STOP": [], "LLM_LOGIT_BIAS": {},
-        "BUDGET": {"planner": 8192, "verifier": 4096, "reflector": 4096, "fission_judge": 4096, "mutator": 8192},
+        "LLM_MAX_CONCURRENT": 1, "LLM_THINKING_ENABLED": True, "LLM_THINKING_BUDGET": 8192,
+        "LMS_TIMEOUT": 600,
+        "BUDGET": {"planner": 8192, "verifier": 2048, "reflector": 4096, "fission_judge": 1024, "mutator": 8192},
     },
     "gemma": {
         "LLM_TEMPERATURE": 0.60, "LLM_TOP_P": 0.90, "LLM_TOP_K": 40,
         "LLM_REPEAT_PENALTY": 1.07, "LLM_PRESENCE_PENALTY": 0.0,
         "LLM_FREQUENCY_PENALTY": 0.0, "LLM_SEED": 3407,
         "LLM_MAX_TOKENS": 128000, "LLM_STOP": [], "LLM_LOGIT_BIAS": {},
+        "LLM_MAX_CONCURRENT": 2, "LLM_THINKING_ENABLED": False, "LLM_THINKING_BUDGET": 0,
         "BUDGET": {"planner": 1200, "verifier": 700, "reflector": 900, "fission_judge": 700, "mutator": 8000},
     },
 }
@@ -111,6 +118,7 @@ def active_model_profile() -> str:
 # --- Timing ---
 DELAY_BETWEEN_CYCLES: float = 2.0
 BUS_POLL_INTERVAL: float = 3.0  # check bus for priority interrupts
+COMMS_ROUTE_INTERVAL: float = 20.0  # comms_operator MoE routing cadence (seconds)
 
 # --- Bus limits ---
 BUS_CHAT_MAX: int = 200
@@ -119,6 +127,21 @@ BUS_EVENTS_MAX: int = 500
 # --- Context rendering ---
 CONTEXT_BUS_MAX: int = 8
 CONTEXT_OBS_MAX: int = 600
+TERMINAL_CONTEXT_TAIL_LINES: int = -1
+
+# --- ACP (sequential backend via WSL/Kiro) ---
+ACP_WORKSPACE_BASE: str = "/tmp/endgame-acp"
+ACP_PROTOCOL_VERSION: int = 1
+ACP_DEFAULT_TIMEOUT: float = 300.0
+ACP_REQUEST_TIMEOUT: float = 60.0
+ACP_CLOSE_TIMEOUT: float = 5.0
+ACP_WSL_MKDIR_TIMEOUT: float = 10.0
+ACP_SETTINGS_TIMEOUT: float = 15.0
+ACP_SETUP_ATTEMPTS: int = 3
+ACP_SETUP_RETRY_DELAY: float = 2.0
+ACP_STOP_POLL_SECONDS: float = 1.0
+ACP_READ_CHUNK_SIZE: int = 4096
+JSONRPC_METHOD_NOT_FOUND: int = -32601
 
 # --- Plans ---
 MAX_PLAN_STEPS: int = 6
