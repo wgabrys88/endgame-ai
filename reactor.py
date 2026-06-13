@@ -231,21 +231,43 @@ def evaluate_mutation_trials() -> None:
         if now - float(trial.get("started", 0.0) or 0.0) < config.BREED_TRIAL_EVAL_SECONDS:
             continue
         current = colony.get(target, {})
-        if not current:
-            continue
         base_stag = float(trial.get("baseline_stagnation", 0.0) or 0.0)
         base_power = float(trial.get("baseline_power", 0.0) or 0.0)
         base_fissions = int(trial.get("baseline_fissions", 0) or 0)
+        if not current:
+            _post_breed_status(
+                "regress",
+                target,
+                int(trial.get("slot", 0) or 0),
+                float(trial.get("fitness", 0.0) or 0.0),
+                niche=str(trial.get("niche", "")),
+                detail={
+                    "source": "mutation_trial",
+                    "reason": "telemetry_missing",
+                    "filename": str(trial.get("filename", ""))[:120],
+                    "baseline_stagnation": round(base_stag, 4),
+                    "baseline_power": round(base_power, 4),
+                },
+            )
+            _mutation_trials.pop(target, None)
+            continue
         cur_stag = float(current.get("stagnation", 0.0) or 0.0)
         cur_power = float(current.get("power", 0.0) or 0.0)
         cur_fissions = int(current.get("fissions", 0) or 0)
         stag_drop = round(base_stag - cur_stag, 4)
         power_gain = round(cur_power - base_power, 4)
         fission_gain = cur_fissions - base_fissions
+        stable_patch = (
+            stag_drop >= 0
+            and power_gain >= 0
+            and fission_gain >= 0
+            and str(trial.get("filename", "")).startswith("plugins/")
+        )
         improved = (
             fission_gain > 0
             or stag_drop >= config.BREED_IMPROVE_MIN_DELTA
             or power_gain >= config.BREED_IMPROVE_MIN_DELTA
+            or stable_patch
         )
         regressed = (
             stag_drop <= -config.BREED_IMPROVE_MIN_DELTA

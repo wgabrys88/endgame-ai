@@ -40,6 +40,7 @@ _MUTATOR_BLOCKED_ATTRS = frozenset({
 })
 _MUTATOR_BLOCKED_BOARD_METHODS = frozenset({"clear", "pop", "popitem", "setdefault", "update"})
 _MUTATOR_WRITE_PREFIX = "_plugin_"
+_PROTECTED_PLUGINS = frozenset({"comms_beacon.py", "web_sentinel.py"})
 
 
 def _persona() -> str:
@@ -835,6 +836,8 @@ def _apply_plugin_mutation(filename: str, content: str) -> tuple[bool, str, str]
     path = _resolve_existing_plugin(filename)
     if path is None:
         return False, "filename must be an existing plugins/[a-z0-9_]+.py file", ""
+    if path.name in _PROTECTED_PLUGINS:
+        return False, f"plugins/{path.name} is protected from mutation", ""
 
     ok, cleaned, err = validate_python(_strip_code_fence(content))
     if not ok:
