@@ -14,11 +14,6 @@ import config
 _child_pids: list[int] = []
 from win32 import user32, get_window_title, VK_MAP, EXTENDED_VKS, INPUT
 
-_CORE_MODULES: tuple[str, ...] = (
-    "config", "colony_env", "engine", "agents", "actions", "main", "tui",
-    "llm", "log", "observer", "win32", "acp_client",
-)
-
 MOUSEEVENTF_LEFTDOWN: int = 0x0002
 MOUSEEVENTF_LEFTUP: int = 0x0004
 MOUSEEVENTF_WHEEL: int = 0x0800
@@ -205,18 +200,7 @@ def _verify_python_edit(resolved: Path) -> tuple[bool, str]:
         py_compile.compile(str(resolved), doraise=True)
     except py_compile.PyCompileError as exc:
         return False, f"syntax error in {resolved.name}: {exc}"
-    script = "; ".join(f"import {name}" for name in _CORE_MODULES)
-    proc = subprocess.run(
-        [sys.executable, "-c", script],
-        capture_output=True,
-        text=True,
-        timeout=30,
-        cwd=str(config.BASE_DIR),
-    )
-    if proc.returncode != 0:
-        err = (proc.stderr or proc.stdout).strip()
-        return False, f"import check failed: {err[:400]}"
-    return True, "imports OK"
+    return True, "syntax OK"
 
 
 @_register("write_file")

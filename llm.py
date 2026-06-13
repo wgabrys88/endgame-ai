@@ -10,29 +10,21 @@ import config
 import log
 
 __all__ = [
-    "call_llm", "set_backend", "get_backend", "close_backend",
+    "call_llm", "set_backend", "close_backend",
     "consume_last_reply", "probe_host", "discover_hosts", "invalidate_host_cache",
 ]
 
-_backend: str = "lmstudio"
 _cached_host: str | None = None
 _cached_model: str | None = None
 _last_reply: Any = None
 
 
 def set_backend(name: str) -> None:
-    global _backend
-    _backend = name
-
-
-def get_backend() -> str:
-    return _backend
+    pass
 
 
 def close_backend() -> None:
-    if _backend == "acp":
-        from acp_client import close_pool
-        close_pool()
+    pass
 
 
 def consume_last_reply() -> Any:
@@ -87,18 +79,7 @@ def call_llm(system: str, user: str, role: str, *, max_tokens: int = 0,
     text = ""
     for attempt in range(config.LMS_REQUEST_ATTEMPTS):
         try:
-            if _backend == "lmstudio":
-                text, usage = _call_lmstudio(body)
-            elif _backend == "acp":
-                from acp_client import prompt_once
-                msgs = body.get("messages", [])
-                sys_c = next((m["content"] for m in msgs if m["role"] == "system"), "")
-                usr_c = next((m["content"] for m in msgs if m["role"] == "user"), "")
-                schema_def = json.dumps(schema.get("json_schema", {}).get("schema", {}), indent=2) if schema else "{}"
-                text = prompt_once(f"{sys_c}\n\nOutput ONLY valid JSON matching:\n{schema_def}\n\n---\n{usr_c}\n---\nJSON only.")
-                usage = {}
-            else:
-                raise ValueError(f"unknown backend: {_backend}")
+            text, usage = _call_lmstudio(body)
             break
         except (RuntimeError, ConnectionError, TimeoutError, OSError) as err:
             log.emit("llm_retry", {"attempt": attempt + 1, "error": str(err)[:200]})

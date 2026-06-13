@@ -8,7 +8,7 @@ import types
 from typing import Any
 
 from config import PROCESS_DPI_AWARENESS_CONTEXT, RESPAWN_PATH, SIGINT_EXIT_CODE
-from llm import set_backend, close_backend
+from llm import close_backend
 from engine import run
 import log
 import config
@@ -39,7 +39,6 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(prog="endgame-ai")
     parser.add_argument("goal", nargs="?", default=None)
-    parser.add_argument("--backend", choices=["lmstudio", "acp"], default="lmstudio")
     parser.add_argument("--event-budget", type=int, default=None)
     parser.add_argument("--events-path", type=str, default=None)
     args = parser.parse_args()
@@ -59,7 +58,6 @@ def main() -> None:
         config.EVENT_BUDGET = args.event_budget
     if args.events_path:
         config.EVENTS_PATH = config.BASE_DIR / args.events_path
-    set_backend(args.backend)
 
     log.init(config.EVENT_BUDGET)
 
@@ -67,7 +65,7 @@ def main() -> None:
         config.GOAL_PATH.write_text(args.goal, encoding="utf-8")
 
     RESPAWN_PATH.write_text(
-        json.dumps({"goal": args.goal, "backend": args.backend, "budget": config.EVENT_BUDGET}),
+        json.dumps({"goal": args.goal, "budget": config.EVENT_BUDGET}),
         encoding="utf-8",
     )
 
