@@ -23,6 +23,7 @@ Kinds (closed set):
 MoE: power = confidence, stagnation = 1-power. route.scores maps persona→telemetry.
 """
 from __future__ import annotations
+from collections import Counter
 import json
 import os
 import re
@@ -646,6 +647,77 @@ def _brief(phase: str, data: Any) -> str:
             return f"{phase} {str(data)[:120]}"
 
 
+def _count_text(counts: Counter[str]) -> str:
+    if not counts:
+        return "none"
+    return " ".join(f"{name}={count}" for name, count in sorted(counts.items()))
+
+
+def format_breeder_evidence(limit: int | None = None) -> str:
+    """Summarize AgentBreeder evidence mirrored to the observation bus."""
+    n = limit or config.BUS_EVENTS_MAX
+    events = read_events(n)
+    breeder: list[dict[str, Any]] = []
+    evolve_counts: Counter[str] = Counter()
+    breed_counts: Counter[str] = Counter()
+    niches: set[str] = set()
+    for entry in events:
+        kind = str(entry.get("kind", ""))
+        payload = entry.get("payload") if isinstance(entry.get("payload"), dict) else {}
+        action = str(payload.get("action", ""))
+        if kind == KIND_EVOLVE:
+            breeder.append(entry)
+            evolve_counts[action or "unknown"] += 1
+        elif kind == KIND_STATUS and action.startswith("breed."):
+            breeder.append(entry)
+            breed_counts[action] += 1
+        else:
+            continue
+        niche = str(payload.get("niche", ""))
+        if niche:
+            niches.add(niche[:80])
+
+    if not breeder:
+        return "BREEDER EVIDENCE: none in observation bus"
+
+    lines = [f"BREEDER EVIDENCE (last {n} observation events)"]
+    lines.append(f"  evolve: {sum(evolve_counts.values())} {_count_text(evolve_counts)}")
+    lines.append(f"  breed: {sum(breed_counts.values())} {_count_text(breed_counts)}")
+    if niches:
+        lines.append(f"  niches: {len(niches)} " + " ".join(sorted(niches)[:8]))
+
+    outcomes = [
+        e for e in breeder
+        if str((e.get("payload") or {}).get("action", "")) in ("breed.improve", "breed.regress", "breed.neutral")
+    ]
+    if outcomes:
+        best_stag = max(float((e.get("payload") or {}).get("stagnation_delta", 0.0) or 0.0) for e in outcomes)
+        best_power = max(float((e.get("payload") or {}).get("power_delta", 0.0) or 0.0) for e in outcomes)
+        total_fissions = sum(int((e.get("payload") or {}).get("fission_delta", 0) or 0) for e in outcomes)
+        lines.append(
+            f"  mutation outcomes: {len(outcomes)} "
+            f"best_stagnation_delta={best_stag:.4f} best_power_delta={best_power:.4f} "
+            f"fission_delta_total={total_fissions}"
+        )
+
+    lines.append("  latest:")
+    for entry in breeder[-8:]:
+        payload = entry.get("payload") if isinstance(entry.get("payload"), dict) else {}
+        kind = str(entry.get("kind", ""))
+        action = str(payload.get("action", ""))
+        target = str(payload.get("target") or entry.get("to") or "")
+        fitness = payload.get("fitness", "")
+        fit = f" fit={float(fitness):.3f}" if isinstance(fitness, (int, float)) else ""
+        niche = f" niche={str(payload.get('niche', ''))[:60]}" if payload.get("niche") else ""
+        deltas = []
+        for key in ("stagnation_delta", "power_delta", "fission_delta"):
+            if key in payload:
+                deltas.append(f"{key}={payload.get(key)}")
+        delta = " " + " ".join(deltas) if deltas else ""
+        lines.append(f"    #{entry.get('id')} {kind} {action} @{target}{fit}{niche}{delta}")
+    return "\n".join(lines)
+
+
 # --- CLI ---
 
 if __name__ == "__main__":
@@ -661,5 +733,11 @@ if __name__ == "__main__":
     elif len(sys.argv) >= 2 and sys.argv[1] == "state":
         for who, st in colony_state().items():
             print(f"@{who}: {st}")
+    elif len(sys.argv) >= 2 and sys.argv[1] == "breeder":
+        try:
+            event_limit = int(sys.argv[2]) if len(sys.argv) >= 3 else config.BUS_EVENTS_MAX
+        except ValueError:
+            event_limit = config.BUS_EVENTS_MAX
+        print(format_breeder_evidence(event_limit))
     else:
         print(format_bus_context(15) or "(bus empty)")
