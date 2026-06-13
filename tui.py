@@ -342,7 +342,7 @@ class TUI:
                 lines.append(row(f" {slot.agent_bar()} {_fg(*CLR_DIM)}stag={slot.stagnation:.2f}{RST}"))
 
                 # 2 recent events
-                recent = slot.recent(2)
+                recent = self.recent(slot, 2)
                 for i in range(2):
                     if i < len(recent):
                         ev = recent[i]
