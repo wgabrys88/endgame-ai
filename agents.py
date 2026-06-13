@@ -39,6 +39,7 @@ _MUTATOR_BLOCKED_ATTRS = frozenset({
     "write", "write_text", "writelines",
 })
 _MUTATOR_BLOCKED_BOARD_METHODS = frozenset({"clear", "pop", "popitem", "setdefault", "update"})
+_MUTATOR_WRITE_PREFIX = "_plugin_"
 
 
 def _persona() -> str:
@@ -736,6 +737,32 @@ def _call_name(node: ast.AST) -> tuple[str, str]:
     return "", ""
 
 
+def _literal_str_key(node: ast.AST | None) -> str | None:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
+
+
+def _plugin_return_is_safe(node: ast.AST | None) -> tuple[bool, str]:
+    if node is None or (isinstance(node, ast.Constant) and node.value is None):
+        return True, ""
+    if not isinstance(node, ast.Dict):
+        return False, "plugin returns must be literal None or dict values"
+    for key_node, value_node in zip(node.keys, node.values):
+        key = _literal_str_key(key_node)
+        if not key:
+            return False, "plugin return dict keys must be literal strings"
+        if key != "writes":
+            continue
+        if not isinstance(value_node, ast.Dict):
+            return False, "plugin writes must be a literal dict"
+        for write_key_node in value_node.keys:
+            write_key = _literal_str_key(write_key_node)
+            if not write_key or not write_key.startswith(_MUTATOR_WRITE_PREFIX):
+                return False, "plugin writes may only target _plugin_* state keys"
+    return True, ""
+
+
 def _plugin_mutation_is_safe(source: str) -> tuple[bool, str]:
     try:
         tree = ast.parse(source)
@@ -777,6 +804,10 @@ def _plugin_mutation_is_safe(source: str) -> tuple[bool, str]:
             return False, "while loops are blocked in plugin mutations"
         elif isinstance(node, (ast.Global, ast.Nonlocal, ast.Delete)):
             return False, f"{type(node).__name__} is blocked in plugin mutations"
+        elif isinstance(node, ast.Return):
+            ok, err = _plugin_return_is_safe(node.value)
+            if not ok:
+                return False, err
         elif isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
             targets = list(getattr(node, "targets", []) or [])
             target = getattr(node, "target", None)
