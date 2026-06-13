@@ -11,15 +11,28 @@ CONTROL_INTERVAL = 10
 MAX_SLOTS = config.REACTOR_SLOTS
 BUDGET = 999999  # effectively unlimited
 
+def _load_roster() -> dict[int, str]:
+    """Load roster from env ENDGAME_ROSTER JSON or use default six-slot roster."""
+    raw = os.environ.get("ENDGAME_ROSTER", "").strip()
+    if raw:
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                return {int(k): str(v) for k, v in parsed.items()}
+        except (json.JSONDecodeError, ValueError):
+            pass
+    return {
+        1: "git_expert",
+        2: "implementor",
+        3: "doc_inspector",
+        4: "comms_operator",
+        5: "quality_critic",
+        6: "gui_operator",
+    }
+
+
 # One specialist per slot — personalities self-evolve via reflector lessons
-ROSTER = {
-    1: "git_expert",
-    2: "implementor",
-    3: "doc_inspector",
-    4: "comms_operator",
-    5: "quality_critic",
-    6: "gui_operator",
-}
+ROSTER = _load_roster()
 
 slots = {}  # slot_id -> {"pid": int, "host_url": str, "personality": str}
 

@@ -1,0 +1,1 @@
+Write the current timestamp to runtime/comms/test_alpha.txt and print the file path.

@@ -225,6 +225,23 @@ def _poll_goal(board: dict[str, Any]) -> None:
     log.emit("goal_change", {"from": old_goal, "to": new_goal})
 
 
+def _plan_has_valid_active_step(plan: list[Any]) -> bool:
+    """Return False only when an active step exists but is invalid/missing."""
+    if not plan:
+        return True
+    active = next((s for s in plan if isinstance(s, dict) and s.get("status") == "active"), None)
+    if active is None:
+        return True  # no active step; scheduler will advance or verify
+    snippet = str(active.get("code", active.get("text", ""))).strip()
+    return bool(snippet) and is_python_code(snippet)
+
+
+def _reset_invalid_plan(board: dict[str, Any], reason: str) -> None:
+    board["plan"] = []
+    board["done_when"] = ""
+    log.emit("plan.reset", {"reason": reason})
+
+
 def _main_loop(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
     while not log.exhausted() and not interrupted():
         try:
@@ -234,15 +251,8 @@ def _main_loop(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
             pass
         _ensure_gui_operator()
         _poll_goal(board)
-        if board.get("plan") and any(
-            isinstance(s, dict) and s.get("status") == "active"
-            and (snippet := str(s.get("code", s.get("text", ""))).strip())
-            and not is_python_code(snippet)
-            for s in board.get("plan", [])
-        ):
-            board["plan"] = []
-            board["done_when"] = ""
-            log.emit("plan.reset", {"reason": "invalid active step - not Python"})
+        if board.get("plan") and not _plan_has_valid_active_step(board.get("plan", [])):
+            _reset_invalid_plan(board, "invalid active step - not Python or missing")
         if log.paused():
             time.sleep(config.DELAY_BETWEEN_CYCLES)
             continue
@@ -271,6 +281,9 @@ def _main_loop(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
 
         nxt = target
         while nxt in AGENTS:
+            if nxt == "actor" and board.get("plan") and not _plan_has_valid_active_step(board.get("plan", [])):
+                _reset_invalid_plan(board, "actor saw invalid/missing active step")
+                break
             result = _run_agent(board, nxt)
             nxt = str(result.get("next", ""))
             if nxt == "halt":
