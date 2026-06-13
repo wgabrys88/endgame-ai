@@ -27,17 +27,15 @@ def _healthy_hosts() -> list[str]:
     return discover_hosts(list(config.LMS_CANDIDATE_HOSTS)) or list(config.LMS_CANDIDATE_HOSTS)
 
 
-_cached_healthy: list[str] = []
-_cached_healthy_at: float = 0.0
+# Resolved once at startup — never re-probe
+_resolved_hosts: list[str] = []
 
 
 def pick_host() -> str | None:
-    global _cached_healthy, _cached_healthy_at
-    now = time.time()
-    if not _cached_healthy or now - _cached_healthy_at > 60:
-        _cached_healthy = _healthy_hosts()
-        _cached_healthy_at = now
-    healthy = _cached_healthy
+    global _resolved_hosts
+    if not _resolved_hosts:
+        _resolved_hosts = _healthy_hosts()
+    healthy = _resolved_hosts
     if not healthy:
         return None
     counts = {h: 0 for h in healthy}
@@ -117,7 +115,6 @@ if __name__ == "__main__":
             break
         pid = spawn(sid, host)
         print(f"  BOOT n{sid} [{_host_label(host)}] {config.ROSTER.get(sid, '')} PID={pid}")
-        time.sleep(2)
 
     print(f"\nREACTOR CRITICAL. {len(slots)} rods loaded.\n")
     while True:

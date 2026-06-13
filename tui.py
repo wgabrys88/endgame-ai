@@ -405,6 +405,8 @@ class TUI:
                 text = f"{ok} {v} {o}".strip() if v or o else str(d)
             case "planner.pending":
                 text = "waiting LLM..."
+            case "wake":
+                text = f"⚡ woken by @{d.get('from', '?')}: {d.get('text', '')}"
             case "plan":
                 reason = d.get("reason", "")
                 text = f"rejected {reason[:72]}" if d.get("mode") == "rejected" and reason else f"mode={d.get('mode', '')} steps={d.get('steps', '')} {d.get('done_when', '')}"

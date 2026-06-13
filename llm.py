@@ -36,9 +36,8 @@ def consume_last_reply() -> str | None:
 
 
 def invalidate_host_cache(host: str | None = None) -> None:
-    global _cached_host, _cached_model
-    if host is None or _cached_host == host.rstrip("/"):
-        _cached_host = _cached_model = None
+    """No-op — host is resolved once at startup."""
+    pass
 
 
 def probe_host(host: str) -> str | None:
@@ -93,19 +92,18 @@ def call_llm(system: str, user: str, role: str, *, max_tokens: int = 0, temperat
 
 def _resolve_host_model() -> tuple[str, str]:
     global _cached_host, _cached_model
-    if _cached_host and _cached_model:
-        return _cached_host, _cached_model
+    if _cached_host is not None:
+        return _cached_host, _cached_model or ""
+    # Resolve once — never re-probe
     for host in config.LMS_HOSTS:
         model = _fetch_model(host)
         if model:
             _cached_host, _cached_model = host.rstrip("/"), model
             return _cached_host, _cached_model
-    # Fallback: use first host without model discovery (skip GET)
-    if config.LMS_HOSTS:
-        _cached_host = config.LMS_HOSTS[0].rstrip("/")
-        _cached_model = ""
-        return _cached_host, _cached_model
-    raise ConnectionError("no LM Studio host configured")
+    # Host configured but model list failed — use it anyway (LM Studio may not have loaded yet)
+    _cached_host = config.LMS_HOSTS[0].rstrip("/") if config.LMS_HOSTS else ""
+    _cached_model = ""
+    return _cached_host, _cached_model
 
 
 def _fetch_model(host: str) -> str | None:

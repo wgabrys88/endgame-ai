@@ -101,14 +101,34 @@ def _run_agent(board: dict[str, Any], name: str) -> dict[str, Any]:
 
 
 def _main_loop(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
+    import os
+    import comms
+    personality = os.environ.get("ENDGAME_PERSONALITY", "")
+    always_active = personality == "comms_operator"
+    _last_wake_id: int = 0
+
     while not log.exhausted() and not interrupted():
         try:
-            import comms
             comms.drain_inject()
         except Exception:
             pass
-        # Poll goal from personality file
         _poll_goal(board)
+
+        # Sleep/wake gate: non-comms agents sleep unless they have work or are @mentioned
+        if not always_active and not board.get("plan"):
+            me = comms.agent_id()
+            inbox = comms.pending_for(me, 3)
+            # Filter out already-seen messages
+            new_msgs = [m for m in inbox if int(m.get("id", 0)) > _last_wake_id]
+            if not new_msgs:
+                time.sleep(config.SLEEP_POLL_INTERVAL)
+                continue
+            # Woken by mention
+            _last_wake_id = int(new_msgs[-1].get("id", 0))
+            wake_msg = str(new_msgs[-1].get("text", ""))
+            board["wake_request"] = wake_msg
+            log.emit("wake", {"from": new_msgs[-1].get("from", "?"), "text": wake_msg[:120]})
+
         # Validate active plan step is Python
         plan = board.get("plan", [])
         if plan and any(isinstance(s, dict) and s.get("status") == "active" and not is_python_code(str(s.get("code", ""))) for s in plan):

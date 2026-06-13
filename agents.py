@@ -269,7 +269,7 @@ class ObserverAgent:
 
 class PlannerAgent:
     name = "planner"
-    reads = ["goal", "plan", "screen", "desktop_summary", "focused_window", "history",
+    reads = ["goal", "wake_request", "plan", "screen", "desktop_summary", "focused_window", "history",
              "consecutive_failures", "stagnation", "energy", "completed", "last_observation", "denied_goals"]
 
     def run(self, ctx: dict[str, Any]) -> dict[str, Any]:
@@ -302,7 +302,7 @@ class PlannerAgent:
                 steps.append({"code": code, "status": "active" if i == 0 else "pending"})
         if not steps:
             return _reject_plan(ctx, "no valid Python steps")
-        return {"writes": {"plan": steps, "done_when": done_when, "consecutive_failures": 0, "progress_history": []},
+        return {"writes": {"plan": steps, "done_when": done_when, "consecutive_failures": 0, "progress_history": [], "wake_request": ""},
                 "next": "actor", "phase": "plan", "data": {"mode": "direct", "steps": len(steps), "done_when": done_when}}
 
 
@@ -474,7 +474,7 @@ class MutatorAgent:
 # --- Context rendering (unified, no branching per field — match statement) ---
 
 CONTEXT_POLICY: dict[str, list[str]] = {
-    "planner": ["goal", "plan", "last_observation", "history", "completed", "bus", "denied_goals"],
+    "planner": ["goal", "wake_request", "plan", "last_observation", "history", "completed", "bus", "denied_goals"],
     "verifier": ["goal", "done_when", "last_observation", "completed"],
     "reflector": ["goal", "last_observation", "history", "trigger", "completed"],
     "fission_judge": ["goal", "done_when", "last_observation", "history", "completed"],
@@ -491,6 +491,9 @@ def _render_field(ctx: dict[str, Any], field: str) -> str:
         case "goal":
             g = str(ctx.get("goal", ""))[:config.CONTEXT_GOAL_MAX]
             return f"GOAL: {g}" if g else ""
+        case "wake_request":
+            w = str(ctx.get("wake_request", "")).strip()
+            return f"WAKE REQUEST (do this now): {w}" if w else ""
         case "plan":
             plan = ctx.get("plan", [])
             if not plan:

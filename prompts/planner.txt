@@ -41,3 +41,5 @@ Use mode "direct" until COMPLETED has entries. Never mode "done" on first plan.
 done_when = concrete artifact: file modified, git pushed, bus message posted, audit written.
 
 Output one JSON object matching the schema.
+
+RULE: read main.py and suggest a minimal logging change

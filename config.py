@@ -92,6 +92,7 @@ JSONRPC_METHOD_NOT_FOUND: int = -32601
 # --- Timing (tuned for slow local LLM — 20-60s per response) ---
 MATH_INTERVAL: float = 12.0           # was 8 — give LLM time to respond before next math tick
 DELAY_BETWEEN_CYCLES: float = 3.0     # was 2 — breathing room between agent chains
+SLEEP_POLL_INTERVAL: float = 10.0     # idle agents poll bus this often (no LLM calls while sleeping)
 SNAPSHOT_INTERVAL_SEC: float = 10.0
 PLAN_REJECT_COOLDOWN_SEC: float = 45.0  # was 30 — longer cooldown for slow models
 
