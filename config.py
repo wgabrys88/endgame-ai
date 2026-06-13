@@ -74,6 +74,64 @@ BUDGET: dict[str, int] = {
     "mutator": 2048,
 }
 
+# --- Model profiles (full hyperparameter sets per local model) ---
+from typing import Any
+MODEL_PROFILES: dict[str, dict[str, Any]] = {
+    "nemotron": {
+        "LLM_TEMPERATURE": 1.0,
+        "LLM_TOP_P": 1.0,
+        "LLM_TOP_K": 20,
+        "LLM_REPEAT_PENALTY": 1.05,
+        "LLM_PRESENCE_PENALTY": 0.0,
+        "LLM_FREQUENCY_PENALTY": 0.0,
+        "LLM_SEED": -1,
+        "LLM_MAX_TOKENS": 128000,
+        "LLM_STOP": [],
+        "LLM_LOGIT_BIAS": {},
+        "BUDGET": {"planner": 8192, "verifier": 4096, "reflector": 4096, "fission_judge": 4096, "mutator": 8192},
+    },
+    "gemma": {
+        "LLM_TEMPERATURE": 0.60,
+        "LLM_TOP_P": 0.90,
+        "LLM_TOP_K": 40,
+        "LLM_REPEAT_PENALTY": 1.07,
+        "LLM_PRESENCE_PENALTY": 0.0,
+        "LLM_FREQUENCY_PENALTY": 0.0,
+        "LLM_SEED": 3407,
+        "LLM_MAX_TOKENS": 128000,
+        "LLM_STOP": [],
+        "LLM_LOGIT_BIAS": {},
+        "BUDGET": {"planner": 1200, "verifier": 700, "reflector": 900, "fission_judge": 700, "mutator": 8000},
+    },
+}
+
+_active_profile: str = ""
+
+
+def apply_model_profile(profile_or_model: str) -> tuple[str, bool]:
+    """Apply a model profile by name or auto-detect from model id.
+    Returns (profile_key, changed).
+    """
+    global _active_profile
+    normalized = profile_or_model.lower()
+    key = ""
+    for candidate in MODEL_PROFILES:
+        if candidate == normalized or candidate in normalized:
+            key = candidate
+            break
+    if not key or key == _active_profile:
+        return key or _active_profile, False
+    profile = MODEL_PROFILES[key]
+    for name, value in profile.items():
+        if name in globals():
+            globals()[name] = value
+    _active_profile = key
+    return key, True
+
+
+def active_model_profile() -> str:
+    return _active_profile
+
 # --- ACP ---
 ACP_TIMEOUT: int = 120
 ACP_WORKSPACE_BASE: str = "/tmp/endgame-acp"

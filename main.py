@@ -31,6 +31,8 @@ def main() -> None:
     parser.add_argument("--backend", choices=["lmstudio", "acp"], default="lmstudio")
     parser.add_argument("--event-budget", type=int, default=None)
     parser.add_argument("--events-path", type=str, default=None)
+    parser.add_argument("--model-profile", type=str, default=None,
+                        help="Model profile to apply (e.g. nemotron, gemma)")
     args = parser.parse_args()
 
     signal.signal(signal.SIGINT, _handle_sigint)
@@ -44,6 +46,10 @@ def main() -> None:
         config.EVENT_BUDGET = args.event_budget
     if args.events_path:
         config.EVENTS_PATH = config.BASE_DIR / args.events_path
+    if args.model_profile:
+        activated, _ = config.apply_model_profile(args.model_profile)
+        if activated:
+            print(f"  [profile] {activated}")
     set_backend(args.backend)
     log.init(config.EVENT_BUDGET)
 

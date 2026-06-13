@@ -127,6 +127,10 @@ def _call_lmstudio(body: dict[str, Any]) -> str:
     host, model = _resolve_host_model()
     if model:
         body["model"] = model
+        if not config.active_model_profile():
+            activated, changed = config.apply_model_profile(model)
+            if changed:
+                log.emit("model_profile", {"model": model, "profile": activated})
     payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
     for i in range(config.LMS_REQUEST_ATTEMPTS):
         try:

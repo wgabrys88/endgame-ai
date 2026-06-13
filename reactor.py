@@ -16,6 +16,7 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 CONTROL_INTERVAL = 10
 BUDGET = 999999
 slots: dict[int, dict[str, Any]] = {}
+_model_profile: str = ""
 
 
 def _host_label(url: str) -> str:
@@ -91,14 +92,23 @@ def spawn(slot_id: int, host_url: str) -> int:
     env["ENDGAME_PERSONALITY"] = personality
     env["ENDGAME_SLOT"] = str(slot_id)
     backend = os.environ.get("ENDGAME_BACKEND", "lmstudio")
-    proc = subprocess.Popen(
-        [sys.executable, "main.py", goal, "--backend", backend, "--event-budget", str(BUDGET), "--events-path", ef],
-        cwd=BASE, env=env, creationflags=0x08000000)
+    cmd = [sys.executable, "main.py", goal, "--backend", backend, "--event-budget", str(BUDGET), "--events-path", ef]
+    if _model_profile:
+        cmd += ["--model-profile", _model_profile]
+    proc = subprocess.Popen(cmd, cwd=BASE, env=env, creationflags=0x08000000)
     slots[slot_id] = {"pid": proc.pid, "host_url": host_url, "personality": personality}
     return proc.pid
 
 
 if __name__ == "__main__":
+    # Parse --model-profile from CLI
+    for i, arg in enumerate(sys.argv[1:], 1):
+        if arg == "--model-profile" and i < len(sys.argv) - 1:
+            _model_profile = sys.argv[i + 1]
+        elif arg.startswith("--model-profile="):
+            _model_profile = arg.split("=", 1)[1]
+    if _model_profile:
+        config.apply_model_profile(_model_profile)
     if not os.environ.get("ENDGAME_BOOTSTRAPPED"):
         log.cleanup_runtime()
     healthy = _healthy_hosts()

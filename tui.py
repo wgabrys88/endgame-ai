@@ -631,8 +631,11 @@ class TUI:
 
         env = os.environ.copy()
         env["ENDGAME_BOOTSTRAPPED"] = "1"
+        reactor_cmd = [sys.executable, "reactor.py"]
+        if os.environ.get("_ENDGAME_MODEL_PROFILE"):
+            reactor_cmd += ["--model-profile", os.environ["_ENDGAME_MODEL_PROFILE"]]
         self._reactor_proc = subprocess.Popen(
-            [sys.executable, "reactor.py"],
+            reactor_cmd,
             cwd=str(BASE_DIR),
             env=env,
             creationflags=0x08000000,
@@ -661,6 +664,10 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--backend", choices=["lmstudio", "acp"], default="lmstudio")
+    parser.add_argument("--model-profile", type=str, default=None,
+                        help="Model profile (e.g. nemotron, gemma)")
     args = parser.parse_args()
     os.environ["ENDGAME_BACKEND"] = args.backend
+    if args.model_profile:
+        os.environ["_ENDGAME_MODEL_PROFILE"] = args.model_profile
     TUI().run()
