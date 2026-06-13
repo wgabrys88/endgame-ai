@@ -129,6 +129,7 @@ MODEL_PROFILES: dict[str, dict[str, Any]] = {
         "LLM_MAX_TOKENS": 128000,
         "LLM_STOP": [],
         "LLM_LOGIT_BIAS": {},
+        "LMS_TIMEOUT": 300.0,
         "BUDGET_PLANNER_OUT": 8192,
         "BUDGET_ACTOR_OUT": 4096,
         "BUDGET_VERIFIER_OUT": 4096,

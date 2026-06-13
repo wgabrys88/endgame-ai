@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import msvcrt
+import os
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, cast
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -309,6 +312,36 @@ def _resolve_host_model() -> tuple[str, str]:
     raise ConnectionError("no LM Studio host reachable")
 
 
+def _host_lock_path(host: str) -> Path:
+    safe = host.rstrip("/").replace("://", "_").replace(":", "_").replace("/", "_")
+    return config.BASE_DIR / "runtime" / f"llm_lock_{safe}.lock"
+
+
+def _acquire_host_lock(host: str, timeout: float) -> Any:
+    """Acquire an advisory per-host lock so only one process talks to the LLM at a time."""
+    path = _host_lock_path(host)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(str(path), os.O_CREAT | os.O_RDWR)
+    start = time.time()
+    while True:
+        try:
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+            return fd
+        except OSError:
+            if time.time() - start > timeout:
+                os.close(fd)
+                raise TimeoutError(f"could not acquire LLM lock for {host}")
+            time.sleep(0.25)
+
+
+def _release_host_lock(fd: Any) -> None:
+    try:
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+    except OSError:
+        pass
+    os.close(fd)
+
+
 def _call_lmstudio(body: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     hosts_tried: set[str] = set()
     last_error = "no LM Studio host reachable"
@@ -326,16 +359,22 @@ def _call_lmstudio(body: dict[str, Any]) -> tuple[str, dict[str, Any]]:
         hosts_tried.add(host)
         body["model"] = model
         payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
+        lock_fd: Any = None
         for attempt in range(config.LMS_REQUEST_ATTEMPTS):
             try:
-                req = Request(
-                    f"{host}/v1/chat/completions",
-                    data=payload,
-                    headers={"Content-Type": "application/json"},
-                    method="POST",
-                )
-                with urlopen(req, timeout=config.LMS_TIMEOUT) as resp:
-                    raw = resp.read().decode("utf-8")
+                lock_fd = _acquire_host_lock(host, timeout=config.LMS_TIMEOUT)
+                try:
+                    req = Request(
+                        f"{host}/v1/chat/completions",
+                        data=payload,
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    with urlopen(req, timeout=config.LMS_TIMEOUT) as resp:
+                        raw = resp.read().decode("utf-8")
+                finally:
+                    _release_host_lock(lock_fd)
+                    lock_fd = None
             except (HTTPError, URLError, TimeoutError, OSError) as e:
                 last_error = str(e)
                 if attempt < config.LMS_REQUEST_ATTEMPTS - 1:
