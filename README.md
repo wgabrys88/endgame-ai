@@ -1,100 +1,113 @@
 # endgame-ai — self-reviewing breeding reactor
 
-**Six AI agents reviewing and improving their own codebase.** They share one message bus, modify code (never add files), commit to specialized branches, and self-correct through reflection and mutation — while a live spectrogram shows colony health.
+**Six AI personas running their own agent pipeline in parallel.** Each persona plans, executes Python, verifies results, and earns fission credits — while a live TUI shows colony health through spectrograms and a message bus console.
 
 ```bash
-python tui.py                  # LM Studio backend (default)
-python tui.py --backend acp    # ACP/Kiro backend (sequential)
+python tui.py --model-profile nemotron    # Nemotron (reasoning model)
+python tui.py --model-profile gemma       # Gemma (fast, creative)
+python tui.py                             # auto-detect from LM Studio
+python tui.py --backend acp              # ACP/Kiro backend (sequential)
 ```
 
-Starts **paused**. **Space** = LIVE. **q** = stop. **Restart wipes session data.**
+Starts **paused**. **Space** = LIVE. **q** = stop.
 
-Requires [LM Studio](https://lmstudio.ai/) (any model) or ACP (`kiro-cli acp` via WSL).
+Requires [LM Studio](https://lmstudio.ai/) with any loaded model, or ACP (`kiro-cli acp` via WSL).
 
 ---
 
 ## Architecture
 
-A reactor core with six fuel rods. Each rod: **plan → run Python → verify → fission judge → fission**. Finished work (code modified, git pushed, bus coordination) earns **fission** — measurable colony progress.
+A reactor core with six fuel rods (personas). Each persona runs the same agent pipeline: **plan → run Python → verify → fission judge → fission**. Finished work earns **fission** — measurable colony progress.
 
-### Math Engine (threaded)
+### Terminology
+- **Persona** = named process (architect, implementor, reviewer, comms_operator, devops, quality_critic)
+- **Agent** = pipeline stage inside a persona (scheduler, planner, actor, verifier, reflector, mutator)
+
+### Math Engine (threaded, per persona)
 - **Stagnation** — ramps 0→1 based on lack of progress + failures
 - **Lorenz attractor** — chaotic exploration signal; wing-crossing triggers replanning
 - **PID controller** — integrates stagnation, triggers reflection/mutation
 
-### Agent Roster
+### Event-Driven Colony
+- `comms_operator` is always active — it routes work via @mentions
+- Other 5 personas run one cycle on boot, then **sleep** until @mentioned
+- Sleeping personas poll the bus every 10s — zero LLM calls while idle
+- LM Studio handles parallel requests natively — no staggering needed
 
-| Slot | Role | Mission |
-|------|------|---------|
+### Persona Roster
+
+| Slot | Persona | Mission |
+|------|---------|---------|
 | n1 | architect | Design refactors, plan code structure changes |
 | n2 | implementor | Execute code modifications, fix bugs |
 | n3 | reviewer | Review changes, catch regressions |
 | n4 | comms_operator | Route work via bus, post status |
-| n5 | devops | Git ops, branch management, deployment |
+| n5 | devops | Git ops, branch management |
 | n6 | quality_critic | Audit health, enforce standards |
 
-### Colony Rules
-1. **Never create new .py files** — modify existing only
-2. Each agent commits to `colony/{personality}` branch
-3. `py_compile` required before every commit
-4. Bus `@mentions` for cross-agent coordination
-5. Agents read their own logs and self-correct
+---
+
+## Model Profiles
+
+Full hyperparameter sets per local model. Selected via `--model-profile`:
+
+| Profile | Temperature | Top-K | Repeat Penalty | Planner Budget |
+|---------|-------------|-------|----------------|----------------|
+| nemotron | 1.0 | 20 | 1.05 | 8192 tokens |
+| gemma | 0.6 | 40 | 1.07 | 1200 tokens |
+
+Auto-detected from the LM Studio model name if not specified. Add more profiles in `config.py MODEL_PROFILES`.
 
 ---
 
 ## Message Bus
 
 The bus (`runtime/comms/messages.json`) is the colony's nervous system:
-- `@mention` = ping — activates the target agent
-- `bus_post(bus_id(), "colony", "@agent task")` — broadcast
-- `bus_request(bus_id(), "agent", "task")` — structured delegation
+- `@mention` = ping — activates the target persona
 - Human posts via TUI input line
+- `comms_operator` routes work to specialist personas
 
 ---
 
 ## Backends
 
 ### LM Studio (default)
-- 6 parallel agents, each hitting the local HTTP API
-- Tested with Gemma 4B, works with any OpenAI-compatible model
-- Set `ENDGAME_LMS_HOSTS=http://host1:1234,http://host2:1234` for multi-GPU
+- 6 parallel personas, each hitting the local HTTP API
+- Set hosts in `.env`: `ENDGAME_LMS_HOSTS=http://host:1234`
+- Tested with Nemotron 4B, Gemma 4B
 
 ### ACP (sequential)
-- All 6 agents share one `kiro-cli acp` session via WSL
+- All 6 personas share one `kiro-cli acp` session via WSL
 - Cross-process file lock ensures one call at a time
-- Agents context-switch like a single-core CPU — slower but works
-- `python tui.py --backend acp` or `ENDGAME_BACKEND=acp python reactor.py`
+- `python tui.py --backend acp`
 
 ---
 
-## Config Tuning (slow models)
+## TUI
 
-Defaults are tuned for local LLMs with 20-60s response times:
-- `MATH_INTERVAL=12s` — gives LLM time to respond between math ticks
-- `STAGNATION_FAILURE_WEIGHT=0.12` — single timeout doesn't spike stagnation
-- `REFLECT_MIN_INTERVAL=90s` — reflections are expensive LLM calls
-- `PID gains lowered` — slow responses don't trigger premature escalation
-
-Stagnation ramp: 1 failure=0.12, 3 failures=0.86, 6 failures=1.0 (maxed)
+Fixed 45-line layout showing:
+- Per-persona: active agent, stagnation/energy/PID bars + spectrograms, recent events
+- Chat panel: human and agent @mentions
+- Events panel: LLM retries, fissions, errors
 
 ---
 
 ## Files
 
 ```
-main.py          — entry point (single agent)
-reactor.py       — spawns 6 agents, monitors liveness, respawns dead
-tui.py           — spectrogram + bus console (launches reactor)
-engine.py        — pipeline loop, plugin hot-swap, snapshots
-agents.py        — unified protocol: plan/act/verify/reflect/mutate
+main.py          — entry point (single persona process)
+reactor.py       — spawns 6 personas, monitors liveness, respawns dead
+tui.py           — fixed 45-line TUI (launches reactor)
+engine.py        — agent pipeline loop, plugin hot-swap, snapshots
+agents.py        — all agents: plan/act/verify/reflect/mutate/math
 llm.py           — LM Studio + ACP backends with retries
 comms.py         — message bus: post/read/pending/@mention
 log.py           — append-only JSONL events, bus mirroring
-config.py        — all tunables, paths, roster
-actions.py       — Python subprocess runner + desktop verbs
+config.py        — all tunables, paths, roster, model profiles
+actions.py       — Python subprocess runner
 acp_client.py    — kiro-cli ACP JSON-RPC session manager
 plugins/         — hot-swappable colony behaviors
-prompts/         — system prompts + personalities
+prompts/         — system prompts + personality files
 schemas/         — JSON schemas for structured LLM output
 run_test.py      — test harness with timeout + kill
 ```
@@ -104,25 +117,19 @@ run_test.py      — test harness with timeout + kill
 ## Quick Start
 
 ```bash
-# 1. Start LM Studio, load any model
+# 1. Start LM Studio, load a model (Nemotron recommended)
 # 2. Run
-python tui.py
+python tui.py --model-profile nemotron
 # 3. Press Space to go LIVE
-# 4. Watch agents work. Type @mentions to interact.
+# 4. Watch personas work. Type @mentions to interact.
 # 5. q to stop
-```
-
-For ACP:
-```bash
-python tui.py --backend acp
 ```
 
 ---
 
 ## Self-Evolution
 
-Agents mutate their own prompts:
-- **Reflector** appends `RULE:` lines to `prompts/planner.txt`
-- **Personality evolution** appends `EVOLVE:` lines to personality files
+Personas mutate their own prompts:
+- **Reflector** appends `RULE:` lines to `prompts/planner.txt` (max 6)
+- **Personality evolution** appends `EVOLVE:` lines to personality files (max 4)
 - **Mutator** writes plugins under `plugins/` to fix runtime errors
-- Rules cap at 6, evolutions cap at 4 — prevents prompt pollution

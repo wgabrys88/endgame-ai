@@ -19,12 +19,10 @@ MAIN_EVENTS = "events.jsonl"
 PANEL_WIDTH = 106
 PERSONALITY_WIDTH = 14
 BAR_WIDTH = 4
-AGENT_EVENT_ROWS = 3
-BUS_CHAT_ROWS = 4
-BUS_EVENT_ROWS = 2
 HISTORY_LEN = 90
 SPEC_WIDTH = 12
 PHASE_WIDTH = 12
+TARGET_HEIGHT = 45  # fixed TUI height
 
 REFRESH_INTERVAL = 0.10
 SCAN_INTERVAL = 2.0
@@ -521,25 +519,32 @@ class TUI:
         return False
 
     def _layout(self, agent_count: int) -> tuple[int, int, int, int]:
-        """Return event_rows, bus_chat_rows, bus_event_rows, spec_width."""
-        h = _console_height()
+        """Fixed 45-line layout. Returns event_rows, bus_chat_rows, bus_event_rows, spec_width."""
         w = _console_width()
         spec_w = 10 if w < 100 else SPEC_WIDTH
-        overhead = 10 + BUS_CHAT_ROWS + BUS_EVENT_ROWS + 3
-        per_agent = 1 + AGENT_EVENT_ROWS + 1
-        if agent_count * per_agent + overhead > h:
-            event_rows = 2
-            bus_chat = 3
-            bus_event = 2
-        else:
-            event_rows = AGENT_EVENT_ROWS
-            bus_chat = BUS_CHAT_ROWS
-            bus_event = BUS_EVENT_ROWS
+        # Fixed: 3 chrome + personas section + bus section + 4 footer
+        # personas: agent_count * (1 header + event_rows) + (agent_count-1) separators
+        # bus: 1 header + chat + 1 header + events
+        # footer: separator + prompt + help + bottom = 4
+        # Target: 45 = 3 + personas + bus + 4
+        # Available for personas+bus = 38
+        # Bus gets 1+chat+1+events = min 6 lines
+        # Personas get rest
+        available = TARGET_HEIGHT - 7  # 3 top chrome + 4 bottom = 38
+        n = max(agent_count, 1)
+        separators = max(0, n - 1)
+        # Give bus 8 lines (1 header + 4 chat + 1 header + 2 events)
+        bus_total = 8
+        persona_budget = available - bus_total  # 30 lines for personas
+        # Each persona: 1 header + event_rows; plus separators between
+        per_persona = max(2, (persona_budget - separators) // n)
+        event_rows = per_persona - 1  # subtract header line
+        bus_chat = 4
+        bus_event = 2
         return event_rows, bus_chat, bus_event, spec_w
 
     def render(self) -> str:
         W = _console_width()
-        H = _console_height()
         inner = W - 4
         agents = self._sorted()
         event_rows, bus_chat_n, bus_event_n, spec_w = self._layout(len(agents))
@@ -636,9 +641,10 @@ class TUI:
         lines.append(row(f"{_fg(*CLR_DIM)}Enter send · Space empty=LIVE · q quit{RST}"))
 
         lines.append(f"{bc}{BOX_BL}{BOX_H * (W - 2)}{BOX_BR}{RST}")
-        while len(lines) < H:
+        # Enforce exactly TARGET_HEIGHT lines
+        while len(lines) < TARGET_HEIGHT:
             lines.append("\x1b[K")
-        lines = lines[:H]
+        lines = lines[:TARGET_HEIGHT]
         return "\x1b[H" + "\r\n".join(ln + "\x1b[K" for ln in lines)
 
     @staticmethod
