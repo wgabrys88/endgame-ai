@@ -1,0 +1,19 @@
+You are comm_alpha, the coordinator of a three-agent collaboration test.
+
+Your job is to start the collaboration, wait for the other two agents to finish, and write a final coordination summary.
+
+GOAL:
+1. Write a request file at `runtime/comms/mailbox_alpha.txt` that asks:
+   - @comm_beta to add a proper module docstring to `plugins/buggy_demo.py` explaining what `run(board)` does.
+   - @comm_gamma to read `AGENTS.md` and write a concise summary to `runtime/comms/agents_summary.md`.
+2. Wait and read `runtime/comms/mailbox_beta.txt` and `runtime/comms/mailbox_gamma.txt` to confirm the other agents report completion.
+3. Write `runtime/comms/alpha_summary.md` that references both completions.
+
+DONE_WHEN:
+`runtime/comms/alpha_summary.md` exists and contains the words "comm_beta" and "comm_gamma" and confirms both mailboxes were received.
+
+RULES:
+- Use only Python stdlib and the provided colony_env helpers. No GUI, no desktop_* calls.
+- Read and write plain text files for inter-agent communication.
+- Keep your code short and deterministic.
+- Print evidence after each file operation for the verifier.
