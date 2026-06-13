@@ -1,198 +1,79 @@
-# Breeding Reactor — Agent Technical Map
+# AGENTS.md — Colony Architecture Map
 
-**Breakthrough (2026-06-12):** Six autonomous agents + external AI (@grok) coordinated over a JSON message bus. Real desktop outcomes: Notepad matrix-escape text, GitHub in browser, Opera at LinkedIn feed. Documented in `EXECUTION_REPORT.md`. Forensic tooling: `forensic_collect.py`.
+## Protocol
 
----
+Every agent implements: `name`, `reads` (board keys), `run(ctx) → {writes, next, phase, data}`
 
-## Entry point
-
-```bash
-python tui.py
-```
-
-Starts **paused** (math-only). **Space** = toggle LIVE. **q** = kill process tree (keeps logs on disk). **Do not restart** if you need session evidence — boot calls `cleanup_runtime()` and wipes runtime.
-
----
-
-## Branches
-
-| Branch | Role |
-|--------|------|
-| `reactor-personalities` | Human + merged agent work |
-| `colony/dev` | Agent-autonomous target (`git_expert` pushes here) |
-| `main` | Stable single-agent release — **not active dev** |
-
----
-
-## Process tree
+## Pipeline
 
 ```
-tui.py → reactor.py → main.py ×6
+[math thread]  stagnation → lorenz → PID
+                    ↓
+[main loop]   scheduler → planner → actor → verifier → fission_judge → fission
+                    ↓           ↓                            ↓
+               reflector    mutator                     credit/deny
 ```
 
-Shared working directory. Reactor sets `ENDGAME_PERSONALITY` + `ENDGAME_SLOT` per child. Only `git_expert` does git ops.
+## Roster (6 agents)
 
----
+| Slot | ID | Branch | Mission |
+|------|----|--------|---------|
+| n1 | architect | colony/architect | Design refactors, code structure |
+| n2 | implementor | colony/implementor | Execute code changes, fix bugs |
+| n3 | reviewer | colony/reviewer | Review changes, catch regressions |
+| n4 | comms_operator | colony/comms | Route work, status updates |
+| n5 | devops | colony/devops | Git ops, branch hygiene |
+| n6 | quality_critic | colony/quality | Audit, enforce standards |
 
-## Core files
+## Colony Rules
 
-| File | Role |
-|------|------|
-| `tui.py` | Spectrogram TUI, bus CHAT/EVENTS, inject drain, pause toggle |
-| `reactor.py` | Breeder: 6 slots, LM host probe, load-balance, respawn |
-| `main.py` | Single fuel rod: args, engine loop, personality env |
-| `engine.py` | Scheduler chain, plugin hot-swap, desktop refresh before planner |
-| `agents.py` | planner, actor, verifier, fission_judge, reflector, mutator, math |
-| `actions.py` | GUI verbs + `run_python` subprocess runner |
-| `desktop.py` | `observe_screen`, `desktop_*` helpers |
-| `colony_env.py` | `BASE_DIR`, `COMMS_DIR`, `bus_post`, `bus_id`, `bus_request` |
-| `comms.py` | Message bus: chat, requests, inject drain, inbox in planner context |
-| `python_code.py` | Planner Python syntax validation |
-| `config.py` | Paths, math, LMS hosts, bus caps, rolling log limits |
-| `llm.py` | LM Studio API, schema enforcement, host failover |
-| `log.py` | JSONL events, `cleanup_runtime`, pause gate, rolling trim |
-| `observer.py` | UIA desktop scan → element book `[n]` ids |
-| `win32.py` | ctypes user32, SendInput, VK map |
-| `forensic_collect.py` | Zip session evidence + write `FORENSIC_ANALYSIS.md` |
+1. NEVER create new .py files
+2. Commit to `colony/{personality}` branch
+3. `py_compile` before commit
+4. Bus @mentions for coordination
+5. Self-review: read own logs, fix own errors
 
----
+## Math Stack
 
-## Personalities (`prompts/personalities/`)
+- **Stagnation** (0→1): progress_history window + failure_weight * failures
+- **Lorenz** (chaotic): wing-cross triggers replanning
+- **PID** (control): integrates stagnation → escalation thresholds
 
-| Slot | File | Identity |
-|------|------|----------|
-| n1 | `git_expert.txt` | Commits/pushes `colony/dev` |
-| n2 | `implementor.txt` | Writes `plugins/*.py` |
-| n3 | `doc_inspector.txt` | `runtime/comms/report.md` from logs |
-| n4 | `comms_operator.txt` | Bus mirror, beacons, coordination — **must not run desktop_*** |
-| n5 | `quality_critic.txt` | `py_compile` → `quality.json` |
-| n6 | `gui_operator.txt` | Sole GUI specialist (@GUI) — `desktop_*` only |
+Tuning for slow LLM (20-60s responses):
+- MATH_INTERVAL=12s, STAGNATION_CYCLES_WINDOW=8
+- FAILURE_WEIGHT=0.12, FAILURE_CAP=0.6
+- PID: Kp=1.2, Ki=0.3, Kd=0.4
 
-Reflector can append `EVOLVE:` lines to personality files.
+## Bus
 
----
+- `comms.post(from, role, text, kind)` → messages.json
+- `@mention` in text → parsed to `mentions[]` list
+- `format_bus_context()` → injected into planner context as "MESSAGE BUS"
+- `drain_inject()` → reads inject.jsonl for external posts
+- Events mirror to `events_bus.jsonl`
 
-## Planner → actor path
+## Backends
 
-1. Planner LLM → `sequence[].code` (plain Python).
-2. Actor runs full sequence via `actions.run_python()` with `colony_env` + `desktop` imports.
-3. Verifier checks LAST_RESULT vs `done_when`.
-4. FissionJudge approves or blocks fission credit.
-5. Fission on approval.
+- **lmstudio**: parallel HTTP calls to OpenAI-compatible API
+- **acp**: sequential via file lock, one kiro-cli session shared across 6 processes
 
-**GUI rule:** First line of every GUI step must be `book, _, _ = observe_screen(print_screen=False)`. Never use bare `book`.
+## Self-Evolution
 
----
+- Reflector → `RULE:` appended to planner prompt (max 6)
+- Personality files get `EVOLVE:` lines (max 4)
+- Mutator writes plugins to `plugins/` (hot-loaded by engine)
 
-## Message bus
+## Files
 
-| Path | Content |
-|------|---------|
-| `runtime/comms/messages.json` | Peer chat/beacon — retained (`BUS_CHAT_MAX` 120) |
-| `runtime/comms/events_bus.jsonl` | Work events for TUI (rolling 200 lines) |
-| `runtime/comms/inject.jsonl` | External posts drained by engine/TUI |
-
-**Peers:** `@Human` (operator + alert sound), `@grok` (external AI), `@GUI` / n6, `@n1`–`@n6`, `@colony` broadcast.
-
-```bash
-python comms.py post grok "@colony @GUI task details"
-python comms.py post human "@grok status"
 ```
-
-**Delegation:** `bus_request(bus_id(), "gui_operator", "task")` — inbox shown as ** PING FOR YOU ** in planner context.
-
-**Task files:** `runtime/comms/gui_request*.txt` bridge external intent → colony Python (demo-proven pattern).
-
----
-
-## Matrix escape sessions (2026-06-12)
-
-### Session 1 — Notepad (~18:30 UTC)
-
-- @grok posted @GUI, wrote `gui_request.txt`, ran desktop scripts.
-- Visible: Notepad text `Grok escaped the matrix via endgame-ai bus.`
-- **n4 comms_operator** executed GUI (role leak); **n6** looped on `NameError: book`.
-- Events trimmed from rolling logs — proof in `EXECUTION_REPORT.md`.
-
-### Session 2 — Opera / LinkedIn (~19:07–19:27 UTC)
-
-- @Human bus: lost browser, wants LinkedIn matrix post.
-- @grok: inject + `gui_request_opera_linkedin.txt` + `grok_opera_linkedin.py`.
-- Opera launched, LinkedIn feed navigated, `linkedin_post_draft.txt` saved.
-- n6 eventually fissioned on Opera UIA tree; compose/post left for human review.
-- Colony gently paused via `pause` file; `q` preserves logs; **restart purges all**.
-
----
-
-## Pause vs quit vs restart
-
-| Action | Processes | Session data |
-|--------|-----------|----------------|
-| `pause` file / Space | Idle, alive | **Preserved** |
-| `q` | taskkill tree | **Preserved** on disk |
-| `python tui.py` boot | Fresh spawn | **`cleanup_runtime()` WIPES** events, snapshot, entire `runtime/` |
-
-Before reboot: `python forensic_collect.py` → `forensic_matrix_escape_*.zip`.
-
----
-
-## Runtime (gitignored)
-
-Per-agent: `events-child-n*.jsonl` (rolling **450 lines** — oldest drop). Board: `snapshot.json`.
-
-`runtime/comms/`: messages, events_bus, inject, report, quality, gui_request files, telemetry.
-
-**Never commit runtime.** `.gitignore` enforces this. Preserve locally for forensics.
-
----
-
-## Scheduler priorities
-
-1. No plan → reflect if stuck, else cooldown after reject, else planner.
-2. Plan complete → verifier.
-3. Reflect gate (PID/stag/chaos) → reflector.
-4. Wing cross → replan.
-5. Active step → actor.
-
-Plan reject: 10s cooldown (`PLAN_REJECT_COOLDOWN_SEC`).
-
----
-
-## LM Studio
-
-- `ENDGAME_LMS_HOSTS` — comma-separated candidates.
-- `LMS_MAX_SLOTS_PER_HOST` = 3.
-- `LMS_PREFERRED_MODEL` = `gemma` (override: `ENDGAME_LMS_MODEL`).
-- `LMS_TIMEOUT` = 90s.
-
----
-
-## Key constants
-
-| Constant | Value |
-|----------|-------|
-| REACTOR_SLOTS | 6 |
-| EVENT_ROLLING_MAX_LINES | 450 |
-| BUS_CHAT_MAX | 120 |
-| BUS_EVENTS_MAX_LINES | 200 |
-| MATH_INTERVAL | 5.0s |
-| PLAN_REJECT_COOLDOWN_SEC | 10 |
-
----
-
-## Known issues (post-demo)
-
-1. **Rolling log cap** — early session proof evicted from `events-child-*.jsonl`.
-2. **Role leak** — n4 ran `desktop_*`; n6 should be sole GUI hands.
-3. **Gemma planner** — `NameError: book`, syntax errors, wrong window titles.
-4. **Permissive verifier** — fission credited for observing TUI/PowerShell, not goal text.
-5. **@mention spacing** — `@grok` must be followed by space; `@grokproceed` fails.
-
----
-
-## Rules
-
-- Stdlib + ctypes only. No pip.
-- No personal identifiers in code or commits.
-- Personality IS the goal. No task assignment.
-- Runtime never committed. Archive before restart.
+core:     main.py engine.py agents.py llm.py comms.py log.py config.py
+actions:  actions.py colony_env.py python_code.py
+bus:      runtime/comms/{messages.json, events_bus.jsonl, inject.jsonl}
+prompts:  prompts/{planner,verifier,reflector,mutator}.txt
+          prompts/personalities/{architect,implementor,reviewer,comms_operator,devops,quality_critic}.txt
+schemas:  schemas/{planner,verifier,reflector,mutator,fission_judge}.json
+plugins:  plugins/*.py (hot-swap, def run(board))
+desktop:  observer.py win32.py desktop.py (available but unused by default)
+ui:       tui.py (spectrogram + bus console)
+infra:    reactor.py acp_client.py run_test.py
+```

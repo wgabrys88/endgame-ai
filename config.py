@@ -66,6 +66,18 @@ BUDGET: dict[str, int] = {
 
 # --- ACP ---
 ACP_TIMEOUT: int = 120
+ACP_WORKSPACE_BASE: str = "/tmp/endgame-acp"
+ACP_PROTOCOL_VERSION: int = 1
+ACP_DEFAULT_TIMEOUT: float = 120.0
+ACP_REQUEST_TIMEOUT: float = 30.0
+ACP_CLOSE_TIMEOUT: float = 5.0
+ACP_WSL_MKDIR_TIMEOUT: float = 10.0
+ACP_SETTINGS_TIMEOUT: float = 15.0
+ACP_SETUP_ATTEMPTS: int = 3
+ACP_SETUP_RETRY_DELAY: float = 2.0
+ACP_STOP_POLL_SECONDS: float = 1.0
+ACP_READ_CHUNK_SIZE: int = 4096
+JSONRPC_METHOD_NOT_FOUND: int = -32601
 
 # --- Timing (tuned for slow local LLM — 20-60s per response) ---
 MATH_INTERVAL: float = 12.0           # was 8 — give LLM time to respond before next math tick

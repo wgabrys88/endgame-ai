@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from typing import Any, cast
 from urllib.error import HTTPError, URLError
@@ -148,16 +149,37 @@ def _call_lmstudio(body: dict[str, Any]) -> str:
     raise RuntimeError(last_err)
 
 
-# --- ACP ---
+# --- ACP (sequential — one call at a time across all agent processes) ---
+
+_acp_lock_path = config.BASE_DIR / ".acp.lock"
+
 
 def _call_acp(body: dict[str, Any]) -> str:
+    import msvcrt
     from acp_client import prompt_once
     msgs = body.get("messages", [])
     sys_c = next((m["content"] for m in msgs if m["role"] == "system"), "")
     usr_c = next((m["content"] for m in msgs if m["role"] == "user"), "")
     schema = body.get("response_format", {})
     schema_def = json.dumps(schema.get("json_schema", {}).get("schema", {}), indent=2) if schema else "{}"
-    return prompt_once(f"{sys_c}\n\nOutput ONLY valid JSON matching:\n{schema_def}\n\n---\n{usr_c}\n---\nJSON only.", timeout=config.ACP_TIMEOUT)
+    prompt = f"{sys_c}\n\nOutput ONLY valid JSON matching:\n{schema_def}\n\n---\n{usr_c}\n---\nJSON only."
+    # Cross-process sequential lock — only one ACP call at a time
+    _acp_lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(_acp_lock_path, "a+") as lf:
+        while True:
+            try:
+                msvcrt.locking(lf.fileno(), msvcrt.LK_NBLCK, 1)
+                break
+            except (OSError, IOError):
+                time.sleep(0.5 + (hash(os.getpid()) % 10) * 0.1)
+        try:
+            return prompt_once(prompt, timeout=config.ACP_TIMEOUT)
+        finally:
+            try:
+                lf.seek(0)
+                msvcrt.locking(lf.fileno(), msvcrt.LK_UNLCK, 1)
+            except (OSError, IOError):
+                pass
 
 
 def _load_schema(role: str) -> dict[str, Any]:

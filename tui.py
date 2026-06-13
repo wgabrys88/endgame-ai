@@ -641,4 +641,9 @@ class TUI:
 
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--backend", choices=["lmstudio", "acp"], default="lmstudio")
+    args = parser.parse_args()
+    os.environ["ENDGAME_BACKEND"] = args.backend
     TUI().run()

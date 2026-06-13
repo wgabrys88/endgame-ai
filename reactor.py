@@ -83,8 +83,9 @@ def spawn(slot_id: int, host_url: str) -> int:
     env["ENDGAME_LMS_HOSTS"] = ",".join(config.LMS_CANDIDATE_HOSTS)
     env["ENDGAME_PERSONALITY"] = personality
     env["ENDGAME_SLOT"] = str(slot_id)
+    backend = os.environ.get("ENDGAME_BACKEND", "lmstudio")
     proc = subprocess.Popen(
-        [sys.executable, "main.py", goal, "--backend", "lmstudio", "--event-budget", str(BUDGET), "--events-path", ef],
+        [sys.executable, "main.py", goal, "--backend", backend, "--event-budget", str(BUDGET), "--events-path", ef],
         cwd=BASE, env=env, creationflags=0x08000000)
     slots[slot_id] = {"pid": proc.pid, "host_url": host_url, "personality": personality}
     return proc.pid

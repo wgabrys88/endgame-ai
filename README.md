@@ -1,152 +1,128 @@
-# endgame-ai — breeding reactor
+# endgame-ai — self-reviewing breeding reactor
 
-**Six AI agents on your Windows desktop.** They share one codebase, write plugins, file reports, commit to git, and drive the real UI — while a live spectrogram shows whether the colony is thriving or stuck.
-
-**2026-06-12 breakthrough:** An external AI (@grok) joined the colony message bus as a peer and orchestrated a real **matrix escape** — Notepad typed on your machine, browser opened, Opera navigated to LinkedIn — without you assigning tickets. See `EXECUTION_REPORT.md`.
+**Six AI agents reviewing and improving their own codebase.** They share one message bus, modify code (never add files), commit to specialized branches, and self-correct through reflection and mutation — while a live spectrogram shows colony health.
 
 ```bash
-python tui.py
+python tui.py                  # LM Studio backend (default)
+python tui.py --backend acp    # ACP/Kiro backend (sequential)
 ```
 
-Starts **paused**. **Space** = LIVE. **q** = stop (keeps logs). **Restart wipes session data.**
+Starts **paused**. **Space** = LIVE. **q** = stop. **Restart wipes session data.**
 
-Requires [LM Studio](https://lmstudio.ai/) (tested: **Gemma 4B**).
-
----
-
-## What happened today
-
-| Session | Outcome |
-|---------|---------|
-| **1 — Notepad escape** | Notepad opened with: *"Grok escaped the matrix via endgame-ai bus."* GitHub repo in Chrome. Human + grok + colony on one bus wire. |
-| **2 — Opera / LinkedIn** | @grok delegated via bus + task files. Opera launched, LinkedIn feed loaded, draft saved to `runtime/comms/linkedin_post_draft.txt`. |
-| **Forensics** | `python forensic_collect.py` zips evidence + writes analysis. Rolling 450-line log cap ate Session 1 events — zip before reboot. |
-
-**Lesson learned:** Pause or `q` preserves data. Running `python tui.py` again calls `cleanup_runtime()` and **deletes all runtime logs and bus history**.
-
----
-
-## What this is
-
-A reactor core with six fuel rods. Each rod: **plan → run Python → verify → fission**. Finished work (file written, git push, desktop action) earns **fission** — measurable colony progress.
-
-Agents are not ticket workers. Personalities drive behavior:
-
-| Slot | Role |
-|------|------|
-| n1 | git_expert — commits/pushes `colony/dev` |
-| n2 | implementor — plugins |
-| n3 | doc_inspector — status reports |
-| n4 | comms_operator — message bus coordination |
-| n5 | quality_critic — plugin audits |
-| n6 | gui_operator (@GUI) — sole desktop hands |
-
-**You and Grok are colony peers.**
-
-```powershell
-python comms.py post human "@grok check n4"
-python comms.py post grok "@colony @GUI open Notepad"
-```
-
-`@Human` plays an alert sound in the TUI. `@mention` = ping. Planners see ** PING FOR YOU ** when tagged.
-
----
-
-## Message bus
-
-The nervous system. Chat in `runtime/comms/messages.json`. Work events in `events_bus.jsonl`. External posts via `inject.jsonl` (drained every tick).
-
-Demo-proven patterns:
-
-- **@mentions** — route work to slots
-- **`bus_request()`** — structured delegation to @GUI
-- **Task files** — `runtime/comms/gui_request*.txt` carry multi-step desktop missions
-- **External orchestration** — @grok posts + scripts when colony planner stalls
-
----
-
-## vs `main`
-
-| | `main` | `colony/dev` / `reactor-personalities` |
-|---|--------|----------------------------------------|
-| Agents | 1 | **6 parallel personalities** |
-| Control | Single loop | Reactor spawn/respawn, k≈1 |
-| Evolution | Self-edits core | Plugins + personality `EVOLVE:` |
-| Git | Manual | git_expert autonomous push |
-| Desktop | Actor verbs | `desktop.py` + @GUI slot |
-| UI | Basic TUI | Spectrogram + bus panels |
-| Peers | — | **Human + @grok on the bus** |
-
-`main` proved one agent can rewrite itself. This branch asks: **what if six specialists breed together — and an external AI conducts from the bus?**
-
----
-
-## Quick start
-
-```powershell
-$env:ENDGAME_LMS_HOSTS = "http://localhost:1234,http://192.168.x.x:1234"
-python tui.py
-```
-
-1. TUI boots paused → reactor spawns 6 children.
-2. Space = LIVE (LLM work). Space again = pause (saves tokens).
-3. q = shutdown. **Do not restart** if you need today's logs.
-
-### Preserve session evidence
-
-```powershell
-python forensic_collect.py
-```
-
-Creates `forensic_matrix_escape_*.zip` + `forensic_bundle/FORENSIC_ANALYSIS.md`. Runtime stays gitignored on disk.
+Requires [LM Studio](https://lmstudio.ai/) (any model) or ACP (`kiro-cli acp` via WSL).
 
 ---
 
 ## Architecture
 
+A reactor core with six fuel rods. Each rod: **plan → run Python → verify → fission judge → fission**. Finished work (code modified, git pushed, bus coordination) earns **fission** — measurable colony progress.
+
+### Math Engine (threaded)
+- **Stagnation** — ramps 0→1 based on lack of progress + failures
+- **Lorenz attractor** — chaotic exploration signal; wing-crossing triggers replanning
+- **PID controller** — integrates stagnation, triggers reflection/mutation
+
+### Agent Roster
+
+| Slot | Role | Mission |
+|------|------|---------|
+| n1 | architect | Design refactors, plan code structure changes |
+| n2 | implementor | Execute code modifications, fix bugs |
+| n3 | reviewer | Review changes, catch regressions |
+| n4 | comms_operator | Route work via bus, post status |
+| n5 | devops | Git ops, branch management, deployment |
+| n6 | quality_critic | Audit health, enforce standards |
+
+### Colony Rules
+1. **Never create new .py files** — modify existing only
+2. Each agent commits to `colony/{personality}` branch
+3. `py_compile` required before every commit
+4. Bus `@mentions` for cross-agent coordination
+5. Agents read their own logs and self-correct
+
+---
+
+## Message Bus
+
+The bus (`runtime/comms/messages.json`) is the colony's nervous system:
+- `@mention` = ping — activates the target agent
+- `bus_post(bus_id(), "colony", "@agent task")` — broadcast
+- `bus_request(bus_id(), "agent", "task")` — structured delegation
+- Human posts via TUI input line
+
+---
+
+## Backends
+
+### LM Studio (default)
+- 6 parallel agents, each hitting the local HTTP API
+- Tested with Gemma 4B, works with any OpenAI-compatible model
+- Set `ENDGAME_LMS_HOSTS=http://host1:1234,http://host2:1234` for multi-GPU
+
+### ACP (sequential)
+- All 6 agents share one `kiro-cli acp` session via WSL
+- Cross-process file lock ensures one call at a time
+- Agents context-switch like a single-core CPU — slower but works
+- `python tui.py --backend acp` or `ENDGAME_BACKEND=acp python reactor.py`
+
+---
+
+## Config Tuning (slow models)
+
+Defaults are tuned for local LLMs with 20-60s response times:
+- `MATH_INTERVAL=12s` — gives LLM time to respond between math ticks
+- `STAGNATION_FAILURE_WEIGHT=0.12` — single timeout doesn't spike stagnation
+- `REFLECT_MIN_INTERVAL=90s` — reflections are expensive LLM calls
+- `PID gains lowered` — slow responses don't trigger premature escalation
+
+Stagnation ramp: 1 failure=0.12, 3 failures=0.86, 6 failures=1.0 (maxed)
+
+---
+
+## Files
+
 ```
-tui.py
-  └── reactor.py
-        └── main.py ×6
-              ├── engine.py    scheduler, plugins
-              ├── agents.py    planner, verifier, fission_judge
-              ├── comms.py     message bus
-              ├── desktop.py   mouse, keyboard, UIA
-              └── log.py       events, pause, cleanup_runtime
+main.py          — entry point (single agent)
+reactor.py       — spawns 6 agents, monitors liveness, respawns dead
+tui.py           — spectrogram + bus console (launches reactor)
+engine.py        — pipeline loop, plugin hot-swap, snapshots
+agents.py        — unified protocol: plan/act/verify/reflect/mutate
+llm.py           — LM Studio + ACP backends with retries
+comms.py         — message bus: post/read/pending/@mention
+log.py           — append-only JSONL events, bus mirroring
+config.py        — all tunables, paths, roster
+actions.py       — Python subprocess runner + desktop verbs
+acp_client.py    — kiro-cli ACP JSON-RPC session manager
+plugins/         — hot-swappable colony behaviors
+prompts/         — system prompts + personalities
+schemas/         — JSON schemas for structured LLM output
+run_test.py      — test harness with timeout + kill
 ```
 
 ---
 
-## Branches
+## Quick Start
 
+```bash
+# 1. Start LM Studio, load any model
+# 2. Run
+python tui.py
+# 3. Press Space to go LIVE
+# 4. Watch agents work. Type @mentions to interact.
+# 5. q to stop
 ```
-main                  Stable single-agent
-reactor-personalities Active human + agent dev
-colony/dev            Agent-autonomous push target
+
+For ACP:
+```bash
+python tui.py --backend acp
 ```
 
 ---
 
-## Configuration
+## Self-Evolution
 
-| Variable | Purpose |
-|----------|---------|
-| `ENDGAME_LMS_HOSTS` | LM Studio URLs to probe |
-| `ENDGAME_LMS_MODEL` | Model substring (default: `gemma`) |
-| `ENDGAME_PERSONALITY` | Set by reactor per slot |
-| `ENDGAME_SLOT` | 1–6, set by reactor |
-
-Details: `AGENTS.md`. Grok handoff: `GROK.md`. Demo report: `EXECUTION_REPORT.md`.
-
----
-
-## Principles
-
-- Stdlib + ctypes only.
-- Personality is the goal.
-- Runtime never committed — archive locally.
-- Plugins cannot crash the reactor.
-
-## License
-
-MIT
+Agents mutate their own prompts:
+- **Reflector** appends `RULE:` lines to `prompts/planner.txt`
+- **Personality evolution** appends `EVOLVE:` lines to personality files
+- **Mutator** writes plugins under `plugins/` to fix runtime errors
+- Rules cap at 6, evolutions cap at 4 — prevents prompt pollution
