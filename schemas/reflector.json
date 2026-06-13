@@ -9,12 +9,12 @@
         "diagnosis": {
           "type": "string",
           "minLength": 30,
-          "description": "Why stuck: plan, desktop selector, SyntaxError, or LLM reject. Cite TRIGGER stag/pid."
+          "description": "Why stuck: what pattern is stuck and why — cite failures and stagnation"
         },
         "suggestion": {
           "type": "string",
           "minLength": 30,
-          "description": "Concrete next approach: simpler step, re-observe desktop, or different milestone"
+          "description": "Concrete next approach: simpler step, different file, or ask for help"
         },
         "rule": {
           "type": "string",

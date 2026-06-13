@@ -9,7 +9,7 @@
         "verdict": {
           "type": "string",
           "enum": ["confirmed", "denied"],
-          "description": "confirmed only with file output, subprocess success, or desktop action evidence in LAST_RESULT"
+          "description": "confirmed only with file output or subprocess success evidence in LAST_RESULT"
         },
         "evidence": {
           "type": "string",
