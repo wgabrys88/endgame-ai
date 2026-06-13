@@ -22,7 +22,7 @@
               "code": {
                 "type": "string",
                 "minLength": 10,
-                "description": "Python 3 script. ASCII only. Pre-imported: Path, subprocess, bus_post, bus_id, bus_request, os, sys, json, time. Use print() for evidence."
+                "description": "Python 3 script. ASCII only. Pre-imported: Path, subprocess, bus_post, bus_id, bus_request, bus_route, os, sys, json, time. Use print() for evidence. comms_operator: prefer bus_route() over bus_post for MoE assignments."
               }
             },
             "required": ["code"],

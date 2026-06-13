@@ -4,36 +4,19 @@
 
 5 parallel **slots**. Each slot runs one **persona** — a process with a goal and a personality.
 
-- **Slot 1** = `comms_operator` (always, never swapped) — routes work, assigns priority
-- **Slots 2-5** = dynamic — comms_operator decides which persona runs where
+- **Slot 1** = `comms_operator` (always, never swapped) — MoE softmax router
+- **Slots 2-5** = dynamic — comms_operator assigns via blackboard `route` + reactor `reassign`
 
-**Personas** are the pool of available identities: `architect`, `implementor`, `reviewer`, `devops`, `quality_critic`. Only 4 can be active at once (slots 2-5). comms_operator picks who's needed.
+**Personas**: `comms_operator`, `architect`, `implementor`, `reviewer`, `devops`, `quality_critic`
 
 ## Priority Interrupt
 
-Every cycle, each persona checks the bus for higher-priority messages. If one arrives:
-- Current task is abandoned
-- Goal switches to the new request
-- Persona continues working on the new goal
-
-Priority levels:
 | Level | Name | Meaning |
 |-------|------|---------|
-| 3 | HUMAN | Human typed a message — always highest |
-| 2 | CRITICAL | Blocking other personas, urgent |
-| 1 | NORMAL | Assigned work from comms_operator |
-| 0 | MAINTENANCE | Self-assigned, always interruptible |
-
-## Lifecycle
-
-```
-1. comms_operator spawns persona with GOAL + PRIORITY
-2. persona works: plan → act → verify → fission
-3. Outcomes:
-   a) GOAL COMPLETE → self-assigns maintenance (pri=0)
-   b) INTERRUPTED → higher-pri message arrives, goal switches
-   c) EVICTED → comms_operator kills slot, respawns different persona
-```
+| 3 | HUMAN | Human typed a message |
+| 2 | CRITICAL | MoE escalation / blocking |
+| 1 | NORMAL | Routed work from comms_operator |
+| 0 | MAINTENANCE | Idle until inbox |
 
 ## Pipeline (inside each persona)
 
@@ -41,51 +24,46 @@ Priority levels:
 scheduler → planner → actor → verifier → fission_judge
 ```
 
-No math thread. No stagnation. No reflector/mutator (removed — add back as plugins if needed).
+comms_operator: deterministic `engine._moe_route()` every 20s (no LLM). LLM planner only on human interrupt (pri=3).
+
+Workers: idle until `route`/`request`/`ping` in inbox. One LLM call colony-wide (`LLM_MAX_CONCURRENT=1` for nemotron).
+
+## Blackboard v1 (`comms.py`)
+
+- Intent: `runtime/comms/messages.json`
+- Observation: `runtime/comms/events_bus.jsonl`
+- Control: `runtime/comms/control.jsonl` (reactor reassign)
+- Schema: `schemas/bus_v1.json` — see `KNOWLEDGE.md`
+
+## Pressure / MoE
+
+- `stagnation` 0→1 stuck, `power` = 1−stagnation (confidence), `velocity` = Δstagnation
+- Stuck 5 ticks at stag≥0.7 → `moe.escalate` + slot reassign
+- Full map: `KNOWLEDGE.md`
 
 ## Process Tree
 
 ```
 python tui.py --model-profile nemotron
-  └── reactor.py --model-profile nemotron
-        ├── main.py [s1 comms_operator] pri=1
-        ├── main.py [s2 architect]      pri=0
-        ├── main.py [s3 implementor]    pri=0
-        ├── main.py [s4 reviewer]       pri=0
-        └── main.py [s5 devops]         pri=0
+  └── reactor.py
+        ├── main.py [s1 comms_operator]
+        ├── main.py [s2 architect]
+        ├── main.py [s3 implementor]
+        ├── main.py [s4 reviewer]
+        └── main.py [s5 devops]
 ```
 
-## Model Profiles
-
-```bash
-python tui.py --model-profile nemotron    # nvidia nemotron (reasoning)
-python tui.py --model-profile gemma       # google gemma (fast)
-python tui.py                             # auto-detect from LM Studio
-```
-
-## Files (core only)
+## Files
 
 ```
-main.py      — entry point per persona
-engine.py    — pipeline loop + priority interrupt
-agents.py    — scheduler/planner/actor/verifier/fission_judge
-reactor.py   — 5 slots, respawn dead
-tui.py       — fixed 45-line display
-llm.py       — LM Studio + ACP backend
-comms.py     — message bus with priority
-log.py       — JSONL events per process
-config.py    — slots, personas, profiles, priorities
+main.py engine.py agents.py reactor.py tui.py llm.py comms.py log.py config.py
+prompts/ schemas/ plugins/
+KNOWLEDGE.md  CHECKLIST.md
 ```
-
-## Bus
-
-- `comms.post(from, role, text, priority=N)` — post with priority
-- `comms.request(from, to, text, priority=N)` — routed request
-- `@mention` in text → activates target persona
-- Human messages auto-get priority 3
 
 ## Rules
 
 1. Never create new .py files
 2. No env vars for runtime config — CLI only
 3. Personas communicate via bus, not shared state
+4. Test with `CHECKLIST.md` on `grok-dev`

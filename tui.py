@@ -211,6 +211,8 @@ class Slot:
             self.priority = int(d.get("pri", self.priority))
         elif ph == "pressure":
             self.stagnation = float(d.get("stagnation", 0))
+        elif ph in ("moe.route", "moe.escalate"):
+            self.last_phase = ph
         # Update agent states
         if ph == "schedule":
             self.agent_states = {a: "idle" for a in INTERNAL_AGENTS}
@@ -241,6 +243,8 @@ class Slot:
             return "fission"
         if ph == "interrupt":
             return "INTERRUPT"
+        if ph.startswith("moe."):
+            return "moe"
         if ph == "pressure":
             return "math"
         if ph == "llm_retry" or ph == "llm_fail":
@@ -438,6 +442,10 @@ class TUI:
                 t = "waiting LLM..."
             case "llm_retry":
                 t = f"retry #{d.get('attempt', '')} {d.get('error', '')}"
+            case "moe.route":
+                t = f"gate -> @{d.get('to', '')} w={d.get('weight', '')}"
+            case "moe.escalate":
+                t = f"ESCALATE @{d.get('from', '')} -> @{d.get('to', '')} s{d.get('slot', '')}"
             case "fission":
                 t = f"fissions={d.get('fissions', '')} {d.get('completed', '')}"
             case "start":

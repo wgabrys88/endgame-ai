@@ -33,8 +33,9 @@ class SchedulerAgent:
         plan = board.get("plan", [])
         if not plan:
             if _persona() == "comms_operator":
-                last = float(board.get("_last_route", 0))
-                if time.time() - last < config.COMMS_ROUTE_INTERVAL:
+                # Deterministic MoE in engine._moe_route handles normal cycles.
+                # LLM planner only when human (pri=3) interrupted this persona.
+                if board.get("priority", config.PRI_MAINTENANCE) < config.PRI_HUMAN:
                     return None
             return {"next": "planner", "data": {"reason": "need_plan"}}
         active = [s for s in plan if isinstance(s, dict) and s.get("status") == "active"]

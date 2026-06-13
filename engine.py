@@ -29,6 +29,7 @@ def run(board: dict[str, Any], interrupted: Callable[[], bool]) -> None:
     """Main loop: work on goal, check bus for priority interrupts each cycle."""
     board.setdefault("_pressure", {"stagnation": 0.0, "velocity": 0.0, "cycles": 0,
                                     "failures": 0, "last_fission": 0, "prev_stag": 0.0})
+    board.setdefault("_moe", {"stuck_ticks": {}})
 
     while not log.exhausted() and not interrupted():
         # --- Priority interrupt check ---
@@ -39,6 +40,11 @@ def run(board: dict[str, Any], interrupted: Callable[[], bool]) -> None:
 
         # --- Pressure math (per cycle, not during LLM wait) ---
         _update_pressure(board)
+
+        # --- MoE gate (comms_operator only, deterministic, no LLM) ---
+        if _moe_route(board):
+            time.sleep(config.DELAY_BETWEEN_CYCLES)
+            continue
 
         # --- Pipeline ---
         scheduler = AGENTS["scheduler"]
@@ -57,6 +63,7 @@ def run(board: dict[str, Any], interrupted: Callable[[], bool]) -> None:
             if result:
                 phase = result.get("phase", nxt)
                 log.emit(phase, result.get("data"))
+                board["_last_phase"] = phase
                 # Apply writes to board
                 for k, v in (result.get("writes") or {}).items():
                     board[k] = v
@@ -145,6 +152,78 @@ def _update_pressure(board: dict[str, Any]) -> None:
                                "velocity": velocity, "failures": failures, "cycles": p["cycles"]})
 
 
+# --- MoE Gating (Bause 2026) — comms_operator softmax router ---
+
+def _pick_alternate(persona: str) -> str:
+    """Escalation target when a worker is stuck."""
+    pool = [p for p in config.WORKER_PERSONAS if p != persona]
+    if "quality_critic" in pool:
+        return "quality_critic"
+    return pool[0] if pool else "implementor"
+
+
+def _moe_route(board: dict[str, Any]) -> bool:
+    """Deterministic MoE routing cycle. Returns True if a route/escalation fired."""
+    if os.environ.get("ENDGAME_PERSONALITY", "") != "comms_operator":
+        return False
+    if time.time() - float(board.get("_last_moe", 0)) < config.COMMS_ROUTE_INTERVAL:
+        return False
+
+    colony = comms.colony_state()
+    workers = {k: v for k, v in colony.items()
+               if k in config.WORKER_PERSONAS and k != "comms_operator"}
+    if not workers:
+        return False
+
+    moe = board["_moe"]
+    stuck_ticks: dict[str, int] = moe.setdefault("stuck_ticks", {})
+    escalations: list[tuple[str, dict[str, Any]]] = []
+
+    for who, st in workers.items():
+        stag = float(st.get("stagnation", 0))
+        vel = float(st.get("velocity", 0))
+        if stag >= config.STAG_ESCALATE and abs(vel) <= config.VEL_STUCK:
+            stuck_ticks[who] = stuck_ticks.get(who, 0) + 1
+        else:
+            stuck_ticks[who] = 0
+        if stuck_ticks.get(who, 0) >= config.STUCK_TICKS_ESCALATE:
+            escalations.append((who, st))
+
+    powers = {who: float(st.get("power", 0)) for who, st in workers.items()}
+    ranked = comms.softmax_route(powers)
+    gate_weights = {w: round(p, 3) for w, p in ranked}
+    board["_last_moe"] = time.time()
+
+    if escalations:
+        for who, st in escalations:
+            alt = _pick_alternate(who)
+            slot = int(st.get("slot", 0) or config.PERSONA_SLOTS.get(who, 0) or 0)
+            ticks = stuck_ticks.get(who, 0)
+            reason = (f"escalate @{who} stag={st.get('stagnation', 0):.2f} "
+                      f"vel={st.get('velocity', 0):.2f} stuck={ticks}t")
+            comms.route("comms_operator", alt, reason, priority=config.PRI_CRITICAL,
+                        scores=gate_weights, goal=f"Unblock work stalled at @{who}",
+                        escalate=True, slot=slot)
+            if slot >= 2:
+                comms.post_control("reassign", slot=slot, persona=alt,
+                                   from_persona=who, reason=reason,
+                                   priority=config.PRI_CRITICAL)
+            stuck_ticks[who] = 0
+            log.emit("moe.escalate", {"from": who, "to": alt, "slot": slot,
+                                       "stagnation": st.get("stagnation"), "ticks": ticks})
+        return True
+
+    if ranked and ranked[0][1] >= config.MOE_GATE_MIN:
+        target, weight = ranked[0]
+        reason = f"MoE gate={weight:.2f} — assign maintenance scan"
+        comms.route("comms_operator", target, reason, priority=config.PRI_NORMAL,
+                    scores=gate_weights, goal="Colony maintenance: audit and report on bus")
+        log.emit("moe.route", {"to": target, "weight": round(weight, 3), "scores": gate_weights})
+        return True
+
+    return False
+
+
 # --- Priority Interrupt ---
 
 def _check_interrupt(board: dict[str, Any]) -> bool:
@@ -161,11 +240,13 @@ def _check_interrupt(board: dict[str, Any]) -> bool:
         msg_id = int(msg.get("id", 0))
         if msg_id <= board.get("_last_msg_id", 0):
             continue
-        msg_pri = _msg_priority(msg)
+        msg_pri = comms.msg_priority(msg)
         if msg_pri > current_pri:
             # INTERRUPT: switch goal
             board["_last_msg_id"] = msg_id
-            board["goal"] = str(msg.get("text", ""))
+            payload = msg.get("payload") or msg.get("data") or {}
+            goal_text = str(payload.get("goal", "")) if isinstance(payload, dict) else ""
+            board["goal"] = goal_text or str(msg.get("text", ""))
             board["priority"] = msg_pri
             board["plan"] = []
             board["history"] = []
@@ -174,15 +255,3 @@ def _check_interrupt(board: dict[str, Any]) -> bool:
             return True
         board["_last_msg_id"] = msg_id
     return False
-
-
-def _msg_priority(msg: dict) -> int:
-    """Determine priority from message metadata."""
-    data = msg.get("data") or {}
-    if isinstance(data, dict) and "priority" in data:
-        return int(data["priority"])
-    if str(msg.get("from", "")) == "human":
-        return config.PRI_HUMAN
-    if str(msg.get("kind", "")) == "request":
-        return config.PRI_NORMAL
-    return config.PRI_MAINTENANCE

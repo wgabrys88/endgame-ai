@@ -1,0 +1,20 @@
+{
+  "type": "json_schema",
+  "json_schema": {
+    "name": "telemetry_payload",
+    "strict": true,
+    "schema": {
+      "type": "object",
+      "description": "Pressure field snapshot — Rodriguez 2026 / MoE confidence",
+      "properties": {
+        "stagnation": { "type": "number", "minimum": 0, "maximum": 1 },
+        "power": { "type": "number", "minimum": 0, "maximum": 1 },
+        "velocity": { "type": "number", "description": "delta stagnation per cycle; positive = improving" },
+        "fissions": { "type": "integer", "minimum": 0 },
+        "phase": { "type": "string" },
+        "cycles": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["stagnation", "power", "velocity", "fissions", "phase", "cycles"]
+    }
+  }
+}

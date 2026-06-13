@@ -240,7 +240,8 @@ def request(from_id: str, to: str, text: str, *, priority: int = config.PRI_NORM
 
 
 def route(from_id: str, to: str, reason: str, *, priority: int = config.PRI_NORMAL,
-          scores: dict[str, Any] | None = None, goal: str = "") -> dict[str, Any]:
+          scores: dict[str, Any] | None = None, goal: str = "",
+          escalate: bool = False, slot: int = 0) -> dict[str, Any]:
     """MoE gating decision — comms_operator assigns work to an expert."""
     target = canonical(to)
     payload: dict[str, Any] = {"to": target, "reason": reason[:200], "status": "open"}
@@ -248,6 +249,10 @@ def route(from_id: str, to: str, reason: str, *, priority: int = config.PRI_NORM
         payload["scores"] = scores
     if goal:
         payload["goal"] = goal[:200]
+    if escalate:
+        payload["escalate"] = True
+    if slot:
+        payload["slot"] = int(slot)
     text = f"@{target} {reason}".strip()
     entry = envelope(
         from_id, KIND_ROUTE, text=text, pri=priority, to=target, payload=payload,
@@ -378,6 +383,59 @@ def colony_state() -> dict[str, dict[str, Any]]:
     return state
 
 
+def post_control(action: str, **fields: Any) -> dict[str, Any]:
+    """Reactor control channel — reassign/evict commands from comms_operator."""
+    _ensure()
+    pri = int(fields.pop("priority", config.PRI_NORMAL))
+    payload = {"action": action, **fields}
+    entry = envelope("comms_operator", KIND_STATUS, text=f"control:{action}",
+                     pri=pri, payload=payload)
+    try:
+        with config.BUS_CONTROL_PATH.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry, ensure_ascii=False, separators=(",", ":")) + "\n")
+    except OSError:
+        pass
+    return entry
+
+
+def drain_control(limit: int = 20) -> list[dict[str, Any]]:
+    """Reactor reads and clears pending control commands."""
+    if not config.BUS_CONTROL_PATH.exists():
+        return []
+    try:
+        lines = [ln.strip() for ln in config.BUS_CONTROL_PATH.read_text(encoding="utf-8").splitlines() if ln.strip()]
+        config.BUS_CONTROL_PATH.write_text("", encoding="utf-8")
+    except OSError:
+        return []
+    out = []
+    for line in lines[-limit:]:
+        try:
+            e = _normalize(json.loads(line))
+            p = e.get("payload") if isinstance(e.get("payload"), dict) else {}
+            if p.get("action"):
+                out.append(p)
+        except json.JSONDecodeError:
+            pass
+    return out
+
+
+def msg_priority(msg: dict[str, Any]) -> int:
+    """Resolve priority from v1 entry (pri field) or legacy data.priority."""
+    if "pri" in msg:
+        return int(msg["pri"])
+    data = msg.get("data") or msg.get("payload") or {}
+    if isinstance(data, dict) and "priority" in data:
+        return int(data["priority"])
+    if str(msg.get("from", "")) == "human":
+        return config.PRI_HUMAN
+    kind = str(msg.get("kind", ""))
+    if kind in (KIND_REQUEST, KIND_ROUTE):
+        return config.PRI_NORMAL
+    if kind == KIND_PING:
+        return config.PRI_NORMAL
+    return config.PRI_MAINTENANCE
+
+
 def softmax_route(scores: dict[str, float]) -> list[tuple[str, float]]:
     """MoE gate weights from power scores (Bause 2026)."""
     if not scores:
@@ -472,6 +530,10 @@ def _brief(phase: str, data: Any) -> str:
             return f"INTERRUPT pri={data.get('pri')} from @{data.get('from', '?')}"
         case "pressure":
             return f"pressure stag={data.get('stagnation')} pwr={data.get('power', '')}"
+        case "moe.route":
+            return f"route ->@{data.get('to', '')} w={data.get('weight', '')}"
+        case "moe.escalate":
+            return f"ESCALATE @{data.get('from', '')} ->@{data.get('to', '')} s{data.get('slot', '')}"
         case _:
             return f"{phase} {str(data)[:120]}"
 

@@ -1,0 +1,28 @@
+{
+  "type": "json_schema",
+  "json_schema": {
+    "name": "blackboard_entry_v1",
+    "strict": true,
+    "schema": {
+      "type": "object",
+      "description": "Canonical blackboard envelope — see KNOWLEDGE.md",
+      "properties": {
+        "v": { "type": "integer", "enum": [1] },
+        "id": { "type": "integer" },
+        "ts": { "type": "string" },
+        "from": { "type": "string" },
+        "slot": { "type": "integer", "minimum": 0, "maximum": 5 },
+        "kind": {
+          "type": "string",
+          "enum": ["message", "ping", "request", "route", "telemetry", "event", "beacon", "evolve", "verdict", "status"]
+        },
+        "pri": { "type": "integer", "minimum": 0, "maximum": 3 },
+        "mentions": { "type": "array", "items": { "type": "string" } },
+        "to": { "type": "string" },
+        "text": { "type": "string" },
+        "payload": { "type": "object" }
+      },
+      "required": ["v", "id", "ts", "from", "slot", "kind", "pri", "text", "payload"]
+    }
+  }
+}

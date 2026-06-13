@@ -8,18 +8,20 @@ python tui.py --model-profile gemma       # Gemma (fast)
 python tui.py --backend acp              # ACP/Kiro (sequential)
 ```
 
-Space = pause/unpause. q = quit. Type to talk to the colony.
+Space = pause/unpause. q = quit. Type `@persona message` to talk to the colony.
+
+**Active branch:** `grok-dev` — see `KNOWLEDGE.md` and `CHECKLIST.md` before testing.
 
 ---
 
 ## How It Works
 
-- **5 slots** run in parallel — each slot holds one persona process
-- **Slot 1** = `comms_operator` (fixed) — routes work, assigns priority, bridges human
-- **Slots 2-5** = dynamic — currently: architect, implementor, reviewer, devops
-- Each persona **always works** — either on assigned tasks or self-maintenance
-- **Priority interrupt**: if a higher-priority message arrives, persona drops current task and switches
-- **Pressure math**: stagnation field per persona (0=productive, 1=stuck) — feeds routing decisions
+- **5 slots** — each holds one persona process
+- **Slot 1** = `comms_operator` — deterministic MoE router (`engine._moe_route` every 20s)
+- **Slots 2-5** = workers — **idle until routed** via blackboard `kind=route`
+- **Orchestrator**: `LLM_MAX_CONCURRENT=1` (nemotron) — one LLM call colony-wide
+- **Blackboard v1**: structured `messages.json` + `events_bus.jsonl` — see `schemas/bus_v1.json`
+- **Pressure**: stagnation, power (=1−stag), velocity — escalation → slot reassign
 
 ## Priority Levels
 
@@ -51,9 +53,11 @@ agents.py    — scheduler/planner/actor/verifier/fission_judge
 reactor.py   — 5 slots, respawn dead
 tui.py       — 45-line fixed display with agent pipeline bars
 llm.py       — LM Studio + ACP backend
-comms.py     — message bus with priority
+comms.py     — blackboard v1 (route, telemetry, control)
 log.py       — JSONL events, session-based folders
-config.py    — slots, personas, profiles, priorities
+config.py    — slots, personas, profiles, MoE thresholds
+KNOWLEDGE.md — architecture + protocol reference
+CHECKLIST.md — test procedure for grok-dev
 ```
 
 ---
@@ -115,7 +119,6 @@ The LLM is NOT the agent. The LLM is a subroutine inside a deterministic state m
 
 ### Branches
 
-- `unify-rewrite` — canonical development branch (this code)
+- `grok-dev` — **active development** (TUI + orchestrator + bus v1 + MoE loop)
+- `unify-rewrite` — architectural rewrite base
 - `main` — stable (behind, update via PR)
-- `colony/nemotron-run` — contains HANDOVER.md with runtime forensics
-- Other branches (`simplify-reduce`, `reactor-personalities`, `colony/dev`) — superseded, contain salvageable test harnesses and plugins

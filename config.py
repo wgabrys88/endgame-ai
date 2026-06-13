@@ -10,6 +10,7 @@ BUS_DIR: Path = BASE_DIR / "runtime" / "comms"
 BUS_CHAT_PATH: Path = BUS_DIR / "messages.json"
 BUS_EVENTS_PATH: Path = BUS_DIR / "events_bus.jsonl"
 BUS_INJECT_PATH: Path = BUS_DIR / "inject.jsonl"
+BUS_CONTROL_PATH: Path = BUS_DIR / "control.jsonl"
 EVENTS_PATH: Path = BASE_DIR / "events.jsonl"
 LESSONS_PATH: Path = BASE_DIR / "lessons.jsonl"
 PROMPTS_DIR: Path = BASE_DIR / "prompts"
@@ -33,6 +34,11 @@ PERSONAS: list[str] = [
     "comms_operator", "architect", "implementor", "reviewer",
     "devops", "quality_critic",
 ]
+
+# Worker pool (slots 2-5) — comms_operator MoE experts
+WORKER_PERSONAS: list[str] = ["architect", "implementor", "reviewer", "devops", "quality_critic"]
+SLOT_DEFAULTS: dict[int, str] = {2: "architect", 3: "implementor", 4: "reviewer", 5: "devops"}
+PERSONA_SLOTS: dict[str, int] = {v: k for k, v in SLOT_DEFAULTS.items()}
 
 # --- Priority levels ---
 PRI_MAINTENANCE: int = 0
@@ -119,6 +125,12 @@ def active_model_profile() -> str:
 DELAY_BETWEEN_CYCLES: float = 2.0
 BUS_POLL_INTERVAL: float = 3.0  # check bus for priority interrupts
 COMMS_ROUTE_INTERVAL: float = 20.0  # comms_operator MoE routing cadence (seconds)
+
+# --- Pressure / MoE escalation (Rodriguez 2026) ---
+STAG_ESCALATE: float = 0.7       # stagnation threshold for band escalation
+VEL_STUCK: float = 0.01          # |velocity| below this = no progress
+STUCK_TICKS_ESCALATE: int = 5    # consecutive stuck telemetry readings before reassign
+MOE_GATE_MIN: float = 0.10       # minimum softmax weight to route maintenance work
 
 # --- Bus limits ---
 BUS_CHAT_MAX: int = 200

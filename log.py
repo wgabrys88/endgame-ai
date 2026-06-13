@@ -82,3 +82,5 @@ def cleanup_runtime() -> None:
         config.BUS_EVENTS_PATH.write_text("", encoding="utf-8")
     if config.BUS_INJECT_PATH.exists():
         config.BUS_INJECT_PATH.write_text("", encoding="utf-8")
+    if config.BUS_CONTROL_PATH.exists():
+        config.BUS_CONTROL_PATH.write_text("", encoding="utf-8")

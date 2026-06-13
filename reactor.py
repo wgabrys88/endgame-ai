@@ -8,6 +8,7 @@ import time
 from typing import Any
 
 import config
+import comms
 import log
 
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -115,11 +116,28 @@ if __name__ == "__main__":
 
     print(f"\nREACTOR ONLINE. {len(slots)} slots loaded.\n")
 
-    # Control loop: respawn dead slots
+    # Control loop: MoE reassign + respawn dead slots
     while True:
         time.sleep(CONTROL_INTERVAL)
+        for cmd in comms.drain_control():
+            action = str(cmd.get("action", ""))
+            if action == "reassign":
+                sid = int(cmd.get("slot", 0) or 0)
+                persona = str(cmd.get("persona", ""))
+                if sid < 2 and persona:
+                    for s, info in slots.items():
+                        if info.get("persona") == str(cmd.get("from_persona", "")):
+                            sid = s
+                            break
+                if sid >= 2 and sid <= config.SLOTS and persona in config.WORKER_PERSONAS:
+                    pri = int(cmd.get("priority", config.PRI_NORMAL))
+                    print(f"  MOE REASSIGN s{sid} -> {persona} ({cmd.get('reason', '')[:60]})")
+                    reassign(sid, persona, priority=pri)
         for sid in list(slots):
             if not is_alive(sid):
                 info = slots.pop(sid)
-                print(f"  RESPAWN s{sid} ({info['persona']})")
-                spawn(sid, info["persona"], info.get("goal", ""), info.get("priority", 0))
+                persona = info["persona"]
+                if sid >= 2:
+                    persona = config.SLOT_DEFAULTS.get(sid, persona)
+                print(f"  RESPAWN s{sid} ({persona})")
+                spawn(sid, persona, info.get("goal", ""), info.get("priority", 0))
