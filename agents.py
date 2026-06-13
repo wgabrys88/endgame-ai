@@ -2,6 +2,8 @@
 from __future__ import annotations
 import json
 import os
+from pathlib import Path
+import re
 import time
 from typing import Any
 
@@ -9,6 +11,12 @@ import config
 import log
 from llm import call_llm
 from python_code import goal_needs_gui, is_python_code
+
+_SIMPLE_FILE_DONE_PREFIX = "file_equals "
+_CREATE_FILE_RE = re.compile(
+    r"^(?:@[A-Za-z][A-Za-z0-9_]*\s+)?create\s+([^\s]+)\s+with\s+(.+?)\s*$",
+    re.IGNORECASE | re.DOTALL,
+)
 
 
 def _persona() -> str:
@@ -94,6 +102,9 @@ class PlannerAgent:
             return None
         if goal_needs_gui(goal):
             return _gui_decline_plan(board, goal)
+        simple_file_plan = _simple_file_plan(goal)
+        if simple_file_plan:
+            return simple_file_plan
         log.emit("planner.pending", {"goal": goal[:80]})
         system = _load_prompt("planner")
         persona = _persona()
@@ -172,6 +183,21 @@ class VerifierAgent:
         done_when = board.get("done_when", "")
         if not done_when:
             return {"phase": "verify", "data": {"verdict": "confirmed", "evidence": "no done_when set"}}
+        simple_file_result = _verify_simple_file_done(done_when)
+        if simple_file_result:
+            ok, evidence = simple_file_result
+            if ok:
+                board["plan"] = []
+                board.setdefault("completed", []).append(done_when)
+                if board.get("priority", config.PRI_MAINTENANCE) >= config.PRI_HUMAN:
+                    board["priority"] = config.PRI_MAINTENANCE
+                    board["goal"] = ""
+                    board["_human_denials"] = 0
+                return {"phase": "verify", "data": {"verdict": "confirmed", "evidence": evidence},
+                        "next": "fission_judge"}
+            board["plan"] = []
+            board.setdefault("history", []).append({"denied": done_when, "reason": evidence})
+            return {"phase": "verify", "data": {"verdict": "denied", "evidence": evidence}}
         plan = board.get("plan", [])
         results = [str(s.get("result", ""))[:200] for s in plan if isinstance(s, dict)]
         system = _load_prompt("verifier")
@@ -243,6 +269,72 @@ def _gui_decline_plan(board: dict[str, Any], goal: str) -> dict[str, Any]:
         "data": {"mode": "direct", "steps": 1, "done_when": done_when},
         "writes": {"plan": [{"status": "active", "code": code}], "done_when": done_when},
     }
+
+
+def _simple_file_plan(goal: str) -> dict[str, Any] | None:
+    parsed = _parse_simple_file_goal(goal)
+    if not parsed:
+        return None
+    rel_path, content = parsed
+    done_when = _SIMPLE_FILE_DONE_PREFIX + json.dumps(
+        {"path": rel_path, "content": content},
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    code = (
+        f"target = Path({json.dumps(rel_path)})\n"
+        "target.parent.mkdir(parents=True, exist_ok=True)\n"
+        f"target.write_text({json.dumps(content)}, encoding='utf-8')\n"
+        "actual = target.read_text(encoding='utf-8')\n"
+        "print(f'verified {target.as_posix()} == {actual!r}')"
+    )
+    return {
+        "phase": "plan", "next": "actor",
+        "data": {"mode": "direct", "steps": 1, "done_when": done_when},
+        "writes": {"plan": [{"status": "active", "code": code}], "done_when": done_when},
+    }
+
+
+def _parse_simple_file_goal(goal: str) -> tuple[str, str] | None:
+    match = _CREATE_FILE_RE.match(str(goal).strip())
+    if not match:
+        return None
+    rel_path = match.group(1).strip("'\"")
+    content = _strip_matching_quotes(match.group(2).strip())
+    path = Path(rel_path)
+    if path.is_absolute() or path.suffix.lower() == ".py" or any(part in ("", "..") for part in path.parts):
+        return None
+    return rel_path, content
+
+
+def _strip_matching_quotes(text: str) -> str:
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in ("'", '"'):
+        return text[1:-1]
+    return text
+
+
+def _verify_simple_file_done(done_when: str) -> tuple[bool, str] | None:
+    if not str(done_when).startswith(_SIMPLE_FILE_DONE_PREFIX):
+        return None
+    try:
+        spec = json.loads(str(done_when)[len(_SIMPLE_FILE_DONE_PREFIX):])
+        rel_path = str(spec["path"])
+        expected = str(spec["content"])
+    except (KeyError, TypeError, json.JSONDecodeError):
+        return False, "invalid file verification target"
+    target = (config.BASE_DIR / rel_path).resolve()
+    try:
+        target.relative_to(config.BASE_DIR.resolve())
+    except ValueError:
+        return False, f"{rel_path} resolves outside workspace"
+    if not target.exists():
+        return False, f"{rel_path} not found"
+    if target.is_dir():
+        return False, f"{rel_path} is a directory"
+    actual = target.read_text(encoding="utf-8")
+    if actual != expected:
+        return False, f"{rel_path} content mismatch: {actual!r}"
+    return True, f"{rel_path} contains expected content"
 
 
 def _load_prompt(role: str) -> str:
