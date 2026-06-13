@@ -77,6 +77,8 @@ else:
 LMS_CANDIDATE_HOSTS: list[str] = list(_candidate_hosts)
 # Optional substring/exact id preference for LM Studio /v1/models. Empty = first loaded model.
 LMS_PREFERRED_MODEL: str = _os.environ.get("ENDGAME_LMS_MODEL", "gemma")
+# Branch that git_expert and autonomous agents target. Override to switch sandbox branches.
+TARGET_BRANCH: str = _os.environ.get("ENDGAME_TARGET_BRANCH", "colony/nemotron-run")
 LMS_MODEL_LIST_TIMEOUT: float = 10.0
 LMS_REQUEST_ATTEMPTS: int = 3
 LMS_RETRY_DELAY: float = 2.0

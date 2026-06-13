@@ -21,7 +21,8 @@ Starts **paused** (math-only). **Space** = toggle LIVE. **q** = kill process tre
 | Branch | Role |
 |--------|------|
 | `reactor-personalities` | Human + merged agent work |
-| `colony/dev` | Agent-autonomous target (`git_expert` pushes here) |
+| `colony/dev` | Agent-autonomous target (legacy) |
+| `colony/nemotron-run` | **Current autonomous Nemotron run branch** — `git_expert` pushes here only |
 | `main` | Stable single-agent release — **not active dev** |
 
 ---

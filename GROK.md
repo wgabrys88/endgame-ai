@@ -20,8 +20,9 @@ Space = live/pause. q = kill tree. Starts **paused** — math only until Space.
 
 ## Branches to push
 
-- `colony/dev` — agent autonomous target
-- `reactor-personalities` — keep in sync with colony/dev for human dev
+- `colony/nemotron-run` — **current autonomous Nemotron run branch**; `git_expert` pushes here only
+- `reactor-personalities` — human + merged work; keep in sync with colony/nemotron-run for handover
+- `colony/dev` — legacy agent autonomous target
 
 Never commit: `runtime/`, `events*.jsonl`, `snapshot.json`, `pause`, `gui_mode`, `*.lock`, `tmp*.py`, `terminals/`, usernames in paths.
 
