@@ -68,7 +68,8 @@ Schema: `schemas/bus_v1.json`
 1. `colony_state()` — latest telemetry per persona
 2. Increment stuck ticks per worker; reset when improving
 3. If stuck ≥ 5 ticks → `route(escalate=True)` + `post_control(reassign)`
-4. Else → `route()` to highest softmax-power worker (if weight ≥ `MOE_GATE_MIN`)
+4. If `human_task_active()` → skip maintenance route (`moe.yield`); human pri=3 yields LLM + bus
+5. Else → `route()` to highest softmax-power worker (if weight ≥ `MOE_GATE_MIN`)
 
 Workers wake via `pending_for()` on `route`, `request`, `ping`.
 
@@ -106,6 +107,10 @@ Pre-imported in `run_python()`:
 
 `bus_post`, `bus_id`, `bus_request`, `bus_route`, `Path`, `subprocess`, `os`, `sys`, `json`, `time`
 
+**GUI blocked** (`python_code.validate_python`): `notepad`, `calc`, `mspaint`, `os.startfile`, `pyautogui`, etc. Colony has no GUI agent — planner must decline GUI goals via `bus_post` or `goal_needs_gui()` short-circuit in `agents.py`.
+
+Actor timeout: `actions.run_python` runs `taskkill /F /T` on runner PID to kill orphan GUI children.
+
 ## Config knobs (`config.py`)
 
 | Key | Default | Meaning |
@@ -118,6 +123,8 @@ Pre-imported in `run_python()`:
 | `LLM_MAX_CONCURRENT` | 1 | Orchestrator LLM gate (nemotron) |
 | `DELAY_BETWEEN_CYCLES` | 2.0s | Persona tick |
 | `BUS_POLL_INTERVAL` | 3.0s | Inbox poll |
+| `HUMAN_GOAL_MAX_DENIALS` | 3 | Stop replanning human pri=3 after N failures |
+| `PLANNER_ERROR_RAW_MAX` | 2000 | Session log cap for `planner.error` raw LLM |
 
 ## Model profiles
 
@@ -129,11 +136,26 @@ python tui.py --backend acp              # sequential WSL/Kiro lock
 
 ## Event phases (session JSONL)
 
-Per-slot: `sessions/*/events-child-sN.jsonl`
+Per-slot: `sessions/<timestamp>/events-child-sN.jsonl`  
+Operator slot: `events-child-s1.jsonl` holds `moe.route` / `moe.yield` / `moe.escalate`.
 
-`start`, `schedule`, `planner.pending`, `plan`, `actor`, `verify`, `fission`, `pressure`, `moe.route`, `moe.escalate`, `interrupt`, `stop`
+### Log tiers (vision vs debug noise)
 
-Mirrored to `events_bus.jsonl` as `kind=event`.
+| Tier | Phases | Keep? | Where |
+|------|--------|-------|-------|
+| **Pillar** | `moe.route`, `moe.yield`, `moe.escalate`, `pressure`, `interrupt`, `plan`, `actor`, `verify`, `fission` | **Yes** — proves MoE + pressure + pipeline | Session JSONL; pillar phases also on `events_bus.jsonl` |
+| **Pipeline** | `schedule`, `planner.pending`, `planner.error`, `human.decline` | Yes for debugging | Session JSONL; `schedule` skipped on bus |
+| **Noise** | `plugin.web_sentinel`, `plugin.telemetry` | Optional — not pillar-critical | Session only (`_SKIP_PHASES` — not mirrored to bus) |
+
+`moe.route` every ~20s on s1 and `pressure` every ~10 cycles (~20s) are **intentional**: live-test pass criteria and Rodriguez/Bause telemetry. Noisy for humans, required for proving the math loop.
+
+`plugin.web_sentinel` (~30s/slot) is connectivity hygiene only — safe to throttle further later; does not affect bus or MoE.
+
+### Phase list
+
+`start`, `schedule`, `planner.pending`, `planner.error`, `plan`, `actor`, `verify`, `fission`, `pressure`, `moe.route`, `moe.yield`, `moe.escalate`, `interrupt`, `human.decline`, `stop`
+
+Bus mirror skips: `schedule`, `plugin.telemetry`, `plugin.web_sentinel` (`comms._SKIP_PHASES`).
 
 ## Not built yet
 

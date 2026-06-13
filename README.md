@@ -63,9 +63,17 @@ Expect: `5/5 slots` in the header, no respawn every 5s, one `moe.route` in slot-
 python comms.py state    # structured telemetry per persona
 ```
 
-Human interrupt test: `@implementor read config.py and summarize`
+Human interrupt test (file — should confirm):
+
+```
+@implementor create hello.txt with 'hello world' and print confirmation
+```
+
+GUI tasks are **declined** (no desktop agent): `@devops open notepad` should post "not supported" — no Notepad windows.
 
 Automated smoke test: `python run_test.py 120`
+
+**Logs:** Session JSONL (`sessions/`) includes `moe.route` + `pressure` every ~20s by design (MoE/pressure pillars). `plugin.web_sentinel` is optional noise — not on the bus. See `KNOWLEDGE.md` log tiers.
 
 ---
 

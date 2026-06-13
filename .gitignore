@@ -30,6 +30,9 @@ respawn.json
 goal.txt
 pause
 *.lock
+tmp*.py
+audit.py
+audit.txt
 
 # --- Local / personal (never commit) ---
 vision/

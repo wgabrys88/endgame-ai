@@ -8,8 +8,8 @@
 | `KNOWLEDGE.md` | Protocol and architecture reference (cite when editing comms/engine) |
 | `README.md` | Human quick start only — do not duplicate here |
 
-**Branch:** `grok-dev` · tip `894e72c` (MoE closed loop + blackboard docs)  
-**Milestone:** Colony Alpha ~72% — ready for human live test, not AgentBreeder-complete  
+**Branch:** `grok-dev` · tip `afe87ac` (GUI guard + human cap + MoE yield + token diet)  
+**Milestone:** Colony Alpha ~78% — infra live-tested; human→verifiable-action retest pending  
 **Merge:** `unify-rewrite` is the likely integration target later; `main` is a parallel lineage — do not assume parent/child
 
 ---
@@ -19,6 +19,8 @@
 Five parallel **slots** (OS processes). Each slot runs one **persona** with an internal agent pipeline. Coordination is **blackboard-only** (`comms.py`). Routing is **MoE softmax** on pressure telemetry (`engine._moe_route`). One LLM at a time for Nemotron (`LLM_MAX_CONCURRENT=1`).
 
 **Core insight:** The LLM is a subroutine inside a deterministic Python loop. Math (pressure, priority, MoE) runs every cycle regardless of LLM state.
+
+**Vision (papers):** Blackboard (CAS 2025) + Pressure fields (Rodriguez 2026) + MoE gating (Bause 2026) + Orchestrator pattern + AgentBreeder scaffold (Oxford 2026, ~5% wired). Full vision text lives in Grok memory / local `vision/` — not in git.
 
 ---
 
@@ -61,11 +63,11 @@ scheduler → planner → actor → verifier → fission_judge
 |-------|------|-------|
 | scheduler | No | Workers return `None` if no inbox and pri≤0 |
 | planner | Yes | JSON plan; nemotron thinking via `extract_json()` |
-| actor | No | `run_python()` with `colony_env` sandbox |
+| actor | No | `run_python()` with `colony_env` sandbox; GUI blocked |
 | verifier | Yes | Posts `kind=verdict` |
 | fission_judge | Partial | Deterministic +1 today |
 
-comms_operator: `_moe_route()` every 20s — **no LLM**. Planner only when `pri >= 3` (human interrupt).
+comms_operator: `_moe_route()` every 20s — **no LLM**. Yields maintenance when `comms.human_task_active()`.
 
 ---
 
@@ -84,9 +86,26 @@ Envelope: `v, id, ts, from, slot, kind, pri, text, payload`
 
 Key kinds: `message`, `ping`, `request`, `route`, `telemetry`, `event`, `evolve` (reserved), `verdict`, `status`
 
-MoE APIs: `colony_state()`, `softmax_route()`, `route()`, `post_control()`, `post_telemetry()`
+MoE APIs: `colony_state()`, `softmax_route()`, `route()`, `post_control()`, `post_telemetry()`, `human_task_active()`
 
 Full kind table and payloads: `KNOWLEDGE.md`
+
+---
+
+## Session logs — what must appear (vision)
+
+Per-slot JSONL under `sessions/<timestamp>/events-child-sN.jsonl`.
+
+| Phase | Slot | Required for vision? | Notes |
+|-------|------|---------------------|-------|
+| `moe.route` | s1 | **Yes** | ~every 20s; proves Bause MoE closed loop |
+| `pressure` | all | **Yes** | ~every 10 cycles; Rodriguez stagnation/power |
+| `interrupt` | target | **Yes** | Human pri=3 wake |
+| `plan` / `actor` / `verify` / `fission` | worker | **Yes** | Pipeline proof |
+| `moe.yield` | s1 | **Yes** | MoE paused during human task (`afe87ac`+) |
+| `plugin.web_sentinel` | all | **No** | Session noise only; skipped on bus |
+
+**Debugging:** Session JSONL is verbose by design. Bus (`events_bus.jsonl`) is leaner — plugins and `schedule` are filtered. See log tiers in `KNOWLEDGE.md`.
 
 ---
 
@@ -96,9 +115,11 @@ Full kind table and payloads: `KNOWLEDGE.md`
 |---------|------|--------|
 | Stagnation math | `engine.py` | `_update_pressure()` |
 | MoE cycle | `engine.py` | `_moe_route()` |
+| Human yield | `engine.py` + `comms.py` | `human_task_active()` |
 | Telemetry | `plugins/comms_beacon.py` | → `post_telemetry()` |
 | Softmax gate | `comms.py` | `softmax_route(powers)` — `exp(power*3)` |
 | Reassign | `reactor.py` | `drain_control()` → `reassign()` |
+| GUI guard | `python_code.py` | `validate_python()`, `goal_needs_gui()` |
 | Thresholds | `config.py` | `STAG_ESCALATE=0.7`, `VEL_STUCK=0.01`, `STUCK_TICKS_ESCALATE=5` |
 
 **Stuck:** `stag >= 0.7` AND `|velocity| <= 0.01` for 5 consecutive MoE cycles → escalate + swap slot persona.
@@ -111,10 +132,10 @@ Full kind table and payloads: `KNOWLEDGE.md`
 
 | Pillar | Score | Status |
 |--------|-------|--------|
-| Blackboard (CAS 2025) | ~85% | v1 envelope live |
-| Orchestrator pattern | ~75% | idle workers, 1 LLM gate |
-| Pressure fields (Rodriguez 2026) | ~60% | core math; escalation wired |
-| MoE (Bause 2026) | ~70% | closed loop on grok-dev |
+| Blackboard (CAS 2025) | ~88% | v1 envelope live; human on bus |
+| Orchestrator pattern | ~80% | idle workers, 1 LLM gate, human yield |
+| Pressure fields (Rodriguez 2026) | ~65% | core math; escalation wired |
+| MoE (Bause 2026) | ~75% | closed loop + yield on human |
 | AgentBreeder (Oxford 2026) | ~5% | `evolve` reserved; mutator/reflector not in pipeline |
 
 ---
@@ -127,38 +148,49 @@ Full kind table and payloads: `KNOWLEDGE.md`
 4. **Do not add markdown files to the repo** — only `README.md`, `KNOWLEDGE.md`, `AGENTS.md`
 5. **Test on `grok-dev`** before claiming stability fixes
 6. Every Python change must pass `python -m py_compile <file>`
+7. **No GUI agent** — never launch desktop apps; file I/O + bus only
 
 ---
 
-## What works (verified in code, pending full human test)
+## Live test results (2026-06-13, session `20260613_164412`)
+
+### Infrastructure PASS
+- 5 slots stable >8 min, 0 false respawn
+- 40+ `moe.route` on s1
+- Human `@devops` → `interrupt` pri=3 on s5 (~2s)
+- MoE escalation fired (reviewer/architect → quality_critic)
+- Bus plugin spam fixed (`plugin.*` not on `events_bus`)
+
+### Behavior FAIL (fixed in `afe87ac`)
+- GUI task (`open notepad`) → actor spawned Notepad, 60s timeouts, orphan windows
+- Planner ignored GUI limitation; deny→replan loop
+- Architect `planner.error` ~8k tokens (nemotron budget too high) — budget reduced
+- MoE kept routing maintenance during human task — now `moe.yield`
+
+### Retest criteria (next session)
+1. `@devops open notepad` → instant decline, **zero** Notepad, `human.decline` or bus "not supported"
+2. `@implementor create hello.txt with hello world` → interrupt → actor → `verify: confirmed`
+
+---
+
+## What works (verified)
 
 - 5 slots without false respawn (`is_alive` fix)
 - Structured `kind=telemetry` on blackboard
-- `_moe_route` posts `kind=route` every 20s to highest-power worker
-- Escalation path: `moe.escalate` → `post_control` → reactor `MOE REASSIGN`
-- Human `@mention` → pri=3 wake
-- TUI: session slot reset, sync output, CHAT/EVENTS panels
-- Plugin hot-swap by mtime in `engine._run_plugins()`
-
----
-
-## Post live-test fixes (`894e72c`+)
-
-- `colony_env.py` — forgiving `bus_post` / `bus_id` / `bus_route` shims
-- `engine._run_plugins` — apply plugin `writes` (30s throttle works)
-- `plugins/telemetry.py` — disabled (use comms_beacon)
-- Human preemption — `_apply_human_goal` + stronger `_check_interrupt`
-- `comms.format_bus_context` — human first, cap route spam
-- `tui.py` — staggered slot scan (5/5 display)
+- `_moe_route` posts `kind=route` every 20s; yields on human task
+- Escalation: `moe.escalate` → `post_control` → reactor `MOE REASSIGN`
+- Human `@mention` → pri=3 wake + preemption
+- GUI guard + human retry cap (3 denials)
+- TUI: 5/5 slots, session JSONL per slot
+- Plugin hot-swap; `web_sentinel` session-only
 
 ## Not built yet (do not claim done)
 
 - `kind=evolve` writer (AgentBreeder loop)
 - reflector / mutator in live pipeline (schemas + prompts exist)
 - LLM fission_judge (deterministic +1 only)
-- `quality_critic` as default slot (available via escalation reassign)
+- GUI / desktop observer agent (port from `main` when requested)
 - Long-run breeding / MAP-Elites fitness
-- Desktop observer port from `main` lineage
 
 ---
 
@@ -166,9 +198,10 @@ Full kind table and payloads: `KNOWLEDGE.md`
 
 **Before start**
 
-- [ ] `git checkout grok-dev`
+- [ ] `git checkout grok-dev && git pull`
 - [ ] LM Studio + nemotron, or `--backend acp`
-- [ ] No stale tui/reactor processes
+- [ ] No stale tui/reactor/notepad processes
+- [ ] `runtime/comms/` empty or fresh (TUI wipes on start)
 
 **Launch**
 
@@ -176,18 +209,25 @@ Full kind table and payloads: `KNOWLEDGE.md`
 python tui.py --model-profile nemotron
 ```
 
-- [ ] TUI 45 lines, no flicker; header `5/5 slots` (not 10/5)
-- [ ] Slots alive > 30s — no restart every 5s
-- [ ] Session JSONL: one `start` per slot, not 10+
-- [ ] Workers idle until ~20s then `moe.route` on s1
-- [ ] `python comms.py state` — `pwr`, `stag`, `vel`, `slot` per persona
-- [ ] `@implementor read config.py` — wakes s3, pri=3
-
-**Pass (minimum):** stable slots, idle workers, one `moe.route`/20s, structured telemetry.
-
-**Pass (full):** escalation reassigns stuck slot to `quality_critic`, human interrupt works, TUI clean.
+- [ ] TUI 45 lines; header `5/5 slots`
+- [ ] Slots alive > 30s
+- [ ] s1: `moe.route` ~every 20s; `pressure` ~every 20s
+- [ ] `python comms.py state` — telemetry per persona
+- [ ] Human GUI test: decline, no desktop spawn
+- [ ] Human file test: `@implementor` → confirmed fission
 
 **Smoke:** `python run_test.py 120`
+
+---
+
+## Suggested next work (priority order)
+
+1. **Retest** human file task on `grok-dev` after `afe87ac`
+2. Wire **reflector** after verifier failure
+3. Wire **mutator** + `kind=evolve` for AgentBreeder scaffold
+4. Optional: throttle `plugin.web_sentinel` further (vision does not require it)
+5. MAP-Elites fitness from fission + stagnation history
+6. Merge `grok-dev` → `unify-rewrite` when human decides
 
 ---
 
@@ -197,6 +237,7 @@ python tui.py --model-profile nemotron
 |-----------|-------|
 | MoE gate | `engine.py`, `comms.py` |
 | Pressure | `engine.py`, `plugins/comms_beacon.py` |
+| Human cap / GUI | `agents.py`, `python_code.py`, `actions.py` |
 | Reactor | `reactor.py` |
 | Orchestrator scheduler | `agents.py` |
 | TUI | `tui.py` |
@@ -206,39 +247,22 @@ python tui.py --model-profile nemotron
 
 ---
 
-## Suggested next work (priority order)
-
-1. Human live test on `grok-dev`; fix regressions from test
-2. Wire **reflector** after verifier failure (plugin or pipeline stage)
-3. Wire **mutator** + `kind=evolve` for AgentBreeder scaffold
-4. MAP-Elites fitness from fission + stagnation history
-5. Port desktop observer patterns from `main` when user requests
-6. Merge `grok-dev` → `unify-rewrite` when user decides (not yet)
-
----
-
 ## Session history (grok-dev)
 
 | Commit | Summary |
 |--------|---------|
+| `afe87ac` | GUI guard, human cap, MoE yield, token diet |
+| `2bac993` | Harden sandbox + human preemption |
 | `894e72c` | MoE closed loop + docs |
 | `6906eac` | Blackboard protocol v1 |
 | `ad4e70f` | False respawn fix + orchestrator + Nemotron |
-| `4bbf8c9` | TUI stability |
-
-Consolidated from deleted `fix/tui-stability` and `fix/orchestrator-nemotron`.
 
 ---
 
 ## External session memory (not in git)
 
-Grok project memory index:
-
-```
-C:\Users\ewojgab\.grok\memory\endgame-ai-3448e172\
-```
-
-Session interval notes and vision context live there. Do not commit handover/checklist/vision markdown into the repo.
+Grok project memory: `C:\Users\ewojgab\.grok\memory\endgame-ai-3448e172\`  
+Live test report: `sessions/2026-06-13-live-test-report.md` (in memory, not git)
 
 ---
 
@@ -248,6 +272,6 @@ Session interval notes and vision context live there. Do not commit handover/che
 |--------|-------|
 | `grok-dev` | **Work here** |
 | `unify-rewrite` | Rewrite base; merge target TBD |
-| `main` | refactor-v4 organism M4; self-rewrite proven; different architecture |
+| `main` | refactor-v4 organism M4; parallel species |
 
 `main` and `grok-dev` are **parallel species**, not linear history.
