@@ -1,7 +1,10 @@
-"""Engine — runs the agent pipeline with priority interrupts and pressure math."""
+"""Engine — runs the agent pipeline with priority interrupts, pressure math, plugin hot-swap."""
 from __future__ import annotations
+import importlib.util
 import json
+import os
 import time
+from pathlib import Path
 from typing import Any, Callable
 
 from agents import SchedulerAgent, PlannerAgent, ActorAgent, VerifierAgent, FissionJudgeAgent
@@ -18,6 +21,9 @@ AGENTS: dict[str, Any] = {
     "fission_judge": FissionJudgeAgent(),
 }
 
+_plugin_modules: dict[str, Any] = {}
+_plugin_mtimes: dict[str, float] = {}
+
 
 def run(board: dict[str, Any], interrupted: Callable[[], bool]) -> None:
     """Main loop: work on goal, check bus for priority interrupts each cycle."""
@@ -26,6 +32,9 @@ def run(board: dict[str, Any], interrupted: Callable[[], bool]) -> None:
     while not log.exhausted() and not interrupted():
         # --- Priority interrupt check ---
         _check_interrupt(board)
+
+        # --- Plugin hot-swap ---
+        _run_plugins(board)
 
         # --- Pressure math (per cycle, not during LLM wait) ---
         _update_pressure(board)
@@ -65,6 +74,40 @@ def run(board: dict[str, Any], interrupted: Callable[[], bool]) -> None:
                 break
 
         time.sleep(config.DELAY_BETWEEN_CYCLES)
+
+
+# --- Plugin Hot-Swap ---
+# Personas can write plugins/ that take effect next cycle without restart.
+
+def _run_plugins(board: dict[str, Any]) -> None:
+    """Load/reload plugins from plugins/ dir, run each."""
+    if not config.PLUGINS_DIR.exists():
+        return
+    for path in sorted(config.PLUGINS_DIR.glob("*.py")):
+        name = path.stem
+        try:
+            mt = path.stat().st_mtime
+        except OSError:
+            continue
+        if name not in _plugin_modules or _plugin_mtimes.get(name) != mt:
+            # Load or reload
+            try:
+                spec = importlib.util.spec_from_file_location(f"plugin_{name}", str(path))
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                _plugin_modules[name] = mod
+                _plugin_mtimes[name] = mt
+            except Exception as e:
+                log.emit("plugin.error", {"name": name, "error": str(e)[:120]})
+                continue
+        mod = _plugin_modules.get(name)
+        if mod and hasattr(mod, "run"):
+            try:
+                result = mod.run(board)
+                if isinstance(result, dict) and result.get("phase"):
+                    log.emit(result["phase"], result.get("data"))
+            except Exception as e:
+                log.emit("plugin.error", {"name": name, "error": str(e)[:120]})
 
 
 # --- Pressure Math ---

@@ -84,9 +84,9 @@ class ActorAgent:
         from actions import run_python
         result = run_python(code)
         active["status"] = "done"
-        active["result"] = result.output[:config.EXEC_OUTPUT_LIMIT]
-        ok = result.ok
-        obs = result.output[:200]
+        active["result"] = result.observation[:config.EXEC_OUTPUT_LIMIT]
+        ok = result.success
+        obs = result.observation[:200]
         if not ok:
             board.setdefault("history", []).append({"step": code[:100], "ok": False, "obs": obs})
         return {"phase": "actor", "data": {"ok": ok, "obs": obs}, "next": "verifier" if ok else None}
