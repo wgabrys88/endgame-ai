@@ -352,7 +352,13 @@ class TUI:
         total_f = sum(s.fissions for s in active)
         elapsed = time.time() - self._start
         sess = Path(self._session_dir).name[-15:] if self._session_dir else "waiting…"
+        try:
+            from python_code import gui_mode_enabled
+            gui_tag = f"{_fg(*CLR_PRI)}GUI{RST}" if gui_mode_enabled() else f"{_fg(*CLR_DIM)}safe{RST}"
+        except Exception:
+            gui_tag = f"{_fg(*CLR_DIM)}safe{RST}"
         hdr = (f"{BOLD}{_fg(*CLR_HEADER)}REACTOR{RST} {alive}/5 slots  "
+               f"{gui_tag}  "
                f"{_fg(*CLR_FISSION)}F={total_f}{RST}  "
                f"{_fg(*CLR_DIM)}{sess}{RST}  "
                f"{self._elapsed(elapsed)}  {time.strftime('%H:%M:%S')}")
@@ -487,17 +493,32 @@ class TUI:
             else:
                 p.write_text("", encoding="utf-8")
             return True
+        if ch in ("g", "G") and not self._input_buf:
+            from colony_env import disable_gui, enable_gui
+            from python_code import gui_mode_enabled
+            if gui_mode_enabled():
+                disable_gui()
+                comms.post("tui", "tui", "GUI mode OFF — desktop safeguards active.", kind="status")
+            else:
+                enable_gui()
+                comms.post("tui", "tui", "GUI mode ON — desktop automation allowed.", kind="status")
+            return True
         if len(ch) == 1 and ch.isprintable():
             self._input_buf += ch
             return True
         return False
 
-    def run(self) -> None:
+    def run(self, gui: bool = False) -> None:
         import log
         import subprocess
         import sys
+        from colony_env import disable_gui, enable_gui
 
         log.cleanup_runtime()
+        if gui:
+            enable_gui()
+        else:
+            disable_gui()
         _w("\x1b[?1049h\x1b[?25l")
         _w("\x1b]0;endgame-ai · reactor\x07")
 
@@ -531,8 +552,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--backend", choices=["lmstudio", "acp"], default="lmstudio")
     parser.add_argument("--model-profile", type=str, default=None)
+    parser.add_argument("--gui", action="store_true", help="Enable desktop/GUI automation (no safeguards)")
     args = parser.parse_args()
     os.environ["ENDGAME_BACKEND"] = args.backend
     if args.model_profile:
         os.environ["_ENDGAME_MODEL_PROFILE"] = args.model_profile
-    TUI().run()
+    TUI().run(gui=args.gui)

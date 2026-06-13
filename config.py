@@ -16,6 +16,7 @@ LESSONS_PATH: Path = BASE_DIR / "lessons.jsonl"
 PROMPTS_DIR: Path = BASE_DIR / "prompts"
 SCHEMAS_DIR: Path = BASE_DIR / "schemas"
 PLUGINS_DIR: Path = BASE_DIR / "plugins"
+GUI_MODE_PATH: Path = BASE_DIR / "gui_mode"
 
 # --- .env loader ---
 _dotenv = BASE_DIR / ".env"

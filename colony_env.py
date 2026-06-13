@@ -105,7 +105,16 @@ def bus_route(from_id: Any = None, to: str = "", reason: str = "",
 
 
 def enable_gui() -> None:
-    (BASE_DIR / "gui_mode").write_text("1", encoding="utf-8")
+    import config
+    config.GUI_MODE_PATH.write_text("1", encoding="utf-8")
+
+
+def disable_gui() -> None:
+    import config
+    try:
+        config.GUI_MODE_PATH.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def pause_reactor() -> None:

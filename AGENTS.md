@@ -8,10 +8,10 @@
 | `KNOWLEDGE.md` | Protocol and architecture reference (cite when editing comms/engine) |
 | `README.md` | Human quick start only — do not duplicate here |
 
-**Integration trunk:** `unify-rewrite` · tip `79cd254` (grok-dev merged 2026-06-13)  
-**Grok branch:** `grok-dev` · same tip — Grok continues here  
-**Codex branch:** `codex-dev` — **create from `unify-rewrite`**, do not commit to `grok-dev`  
-**Milestone:** Colony Alpha ~78% — infra live-tested; human→verifiable-action retest pending  
+**Integration trunk:** `unify-rewrite` · tip `ef30bc7`  
+**Active work branch:** `codex-dev` · tip `5933ad3` (AgentBreeder scaffold + human file fix)  
+**Grok branch:** `grok-dev` · tip `ef30bc7` — **13 commits behind codex-dev**  
+**Milestone:** Colony Alpha ~82% — infra + breeding loop live-tested 2026-06-14  
 **Parallel lineage:** `main` is a different architecture (organism M4) — not parent/child of unify-rewrite
 
 ---
@@ -22,14 +22,16 @@ Five parallel **slots** (OS processes). Each slot runs one **persona** with an i
 
 **Core insight:** The LLM is a subroutine inside a deterministic Python loop. Math (pressure, priority, MoE) runs every cycle regardless of LLM state.
 
-**Vision (papers):** Blackboard (CAS 2025) + Pressure fields (Rodriguez 2026) + MoE gating (Bause 2026) + Orchestrator pattern + AgentBreeder scaffold (Oxford 2026, ~5% wired). Full vision text lives in Grok memory / local `vision/` — not in git.
+**Vision (papers):** Blackboard (CAS 2025) + Pressure fields (Rodriguez 2026) + MoE gating (Bause 2026) + Orchestrator pattern + AgentBreeder (Oxford 2026, ~45% wired on codex-dev). Full vision text: `ENDGAME_VISION.html` (local, not in git) + `Codex-log.md` session transcript.
+
+**Endgame GOAL:** Self-evolving colony on consumer hardware. Breeding reactor (fission retain + evict + reflector + mutator plugin patches) must produce **logged, multi-cycle improvement evidence** (`breed.improve` with pressure/fission deltas). Not complete until live runs show measurable improvement — not just `evolve`/`breed.elite` events.
 
 ---
 
 ## Process tree
 
 ```
-python tui.py --model-profile nemotron
+python tui.py --model-profile nemotron [--gui]
   └── reactor.py
         ├── main.py [s1 comms_operator]  — MoE router, never reassigned
         ├── main.py [s2 architect]
@@ -58,16 +60,18 @@ Workers wake on inbox kinds: `route`, `request`, `ping` (`comms.pending_for()`).
 ## Pipeline (per persona)
 
 ```
-scheduler → planner → actor → verifier → fission_judge
+scheduler → planner → actor → verifier → fission_judge → [reflector → mutator]
 ```
 
 | Stage | LLM? | Notes |
 |-------|------|-------|
 | scheduler | No | Workers return `None` if no inbox and pri≤0 |
 | planner | Yes | JSON plan; nemotron thinking via `extract_json()` |
-| actor | No | `run_python()` with `colony_env` sandbox; GUI blocked |
+| actor | No | `run_python()` with `colony_env` sandbox |
 | verifier | Yes | Posts `kind=verdict` |
-| fission_judge | Partial | Deterministic +1 today |
+| fission_judge | Partial | Deterministic +1; publishes `evolve` retain/evict |
+| reflector | Yes | After verifier denial (wired codex-dev) |
+| mutator | Yes | Safe `patch_plugin` after failures (wired codex-dev) |
 
 comms_operator: `_moe_route()` every 20s — **no LLM**. Yields maintenance when `comms.human_task_active()`.
 
@@ -79,16 +83,18 @@ Schema: `schemas/bus_v1.json`
 
 | Store | Path | Role |
 |-------|------|------|
-| Intent | `runtime/comms/messages.json` | chat, route, request |
-| Observation | `runtime/comms/events_bus.jsonl` | telemetry, mirrored events |
+| Intent | `runtime/comms/messages.json` | chat, route, request, evolve |
+| Observation | `runtime/comms/events_bus.jsonl` | telemetry, mirrored events, breeder evidence |
 | Control | `runtime/comms/control.jsonl` | reactor `reassign` (drain every 5s) |
 | Inject | `runtime/comms/inject.jsonl` | human/TUI input |
 
 Envelope: `v, id, ts, from, slot, kind, pri, text, payload`
 
-Key kinds: `message`, `ping`, `request`, `route`, `telemetry`, `event`, `evolve` (reserved), `verdict`, `status`
+Key kinds: `message`, `ping`, `request`, `route`, `telemetry`, `event`, `evolve`, `verdict`, `status`
 
 MoE APIs: `colony_state()`, `softmax_route()`, `route()`, `post_control()`, `post_telemetry()`, `human_task_active()`
+
+Breeder audit: `python comms.py breeder` — summarizes `evolve` + `breed.*` from observation bus.
 
 Full kind table and payloads: `KNOWLEDGE.md`
 
@@ -104,10 +110,11 @@ Per-slot JSONL under `sessions/<timestamp>/events-child-sN.jsonl`.
 | `pressure` | all | **Yes** | ~every 10 cycles; Rodriguez stagnation/power |
 | `interrupt` | target | **Yes** | Human pri=3 wake |
 | `plan` / `actor` / `verify` / `fission` | worker | **Yes** | Pipeline proof |
-| `moe.yield` | s1 | **Yes** | MoE paused during human task (`afe87ac`+) |
+| `reflect` / `mutate` | worker | **Yes** | AgentBreeder denial loop |
+| `moe.yield` | s1 | **Yes** | MoE paused during human task |
 | `plugin.web_sentinel` | all | **No** | Session noise only; skipped on bus |
 
-**Debugging:** Session JSONL is verbose by design. Bus (`events_bus.jsonl`) is leaner — plugins and `schedule` are filtered. See log tiers in `KNOWLEDGE.md`.
+Bus observation also mirrors `kind=evolve` and reactor `breed.*` status events.
 
 ---
 
@@ -121,7 +128,8 @@ Per-slot JSONL under `sessions/<timestamp>/events-child-sN.jsonl`.
 | Telemetry | `plugins/comms_beacon.py` | → `post_telemetry()` |
 | Softmax gate | `comms.py` | `softmax_route(powers)` — `exp(power*3)` |
 | Reassign | `reactor.py` | `drain_control()` → `reassign()` |
-| GUI guard | `python_code.py` | `validate_python()`, `goal_needs_gui()` |
+| GUI mode | `python_code.py`, `tui.py` | `gui_mode` file; `--gui` or `g` key |
+| Breeding | `reactor.py`, `agents.py` | elites, evict, mutation trials |
 | Thresholds | `config.py` | `STAG_ESCALATE=0.7`, `VEL_STUCK=0.01`, `STUCK_TICKS_ESCALATE=5` |
 
 **Stuck:** `stag >= 0.7` AND `|velocity| <= 0.01` for 5 consecutive MoE cycles → escalate + swap slot persona.
@@ -130,15 +138,15 @@ Per-slot JSONL under `sessions/<timestamp>/events-child-sN.jsonl`.
 
 ---
 
-## Research pillars → code (honest scores)
+## Research pillars → code (honest scores, codex-dev)
 
 | Pillar | Score | Status |
 |--------|-------|--------|
-| Blackboard (CAS 2025) | ~88% | v1 envelope live; human on bus |
-| Orchestrator pattern | ~80% | idle workers, 1 LLM gate, human yield |
-| Pressure fields (Rodriguez 2026) | ~65% | core math; escalation wired |
-| MoE (Bause 2026) | ~75% | closed loop + yield on human |
-| AgentBreeder (Oxford 2026) | ~5% | `evolve` reserved; mutator/reflector not in pipeline |
+| Blackboard (CAS 2025) | ~90% | v1 envelope live; human + evolve on bus |
+| Orchestrator pattern | ~82% | idle workers, 1 LLM gate, human yield |
+| Pressure fields (Rodriguez 2026) | ~70% | core math; escalation wired |
+| MoE (Bause 2026) | ~78% | closed loop + yield on human |
+| AgentBreeder (Oxford 2026) | ~45% | evolve writer, reflector, mutator, elites, trials — **no breed.improve yet** |
 
 ---
 
@@ -148,51 +156,56 @@ Per-slot JSONL under `sessions/<timestamp>/events-child-sN.jsonl`.
 2. **No env vars for runtime colony config** — CLI args and `config.py` only (`.env` for LMS hosts is OK)
 3. **Personas coordinate via bus only** — no shared mutable state between processes
 4. **Do not add markdown files to the repo** — only `README.md`, `KNOWLEDGE.md`, `AGENTS.md`
-5. **Test on `grok-dev`** before claiming stability fixes
+5. **Test on `codex-dev` or `grok-dev`** before claiming stability fixes
 6. Every Python change must pass `python -m py_compile <file>`
-7. **No GUI agent** — never launch desktop apps; file I/O + bus only
+7. **GUI default OFF** — use `python tui.py --gui` or press `g` to allow desktop automation; default still declines GUI goals
 
 ---
 
-## Live test results (2026-06-13, session `20260613_164412`)
+## Live test results
 
-### Infrastructure PASS
-- 5 slots stable >8 min, 0 false respawn
-- 40+ `moe.route` on s1
-- Human `@devops` → `interrupt` pri=3 on s5 (~2s)
-- MoE escalation fired (reviewer/architect → quality_critic)
-- Bus plugin spam fixed (`plugin.*` not on `events_bus`)
+### 2026-06-13 (grok-dev, session `20260613_164412`)
 
-### Behavior FAIL (fixed in `afe87ac`)
-- GUI task (`open notepad`) → actor spawned Notepad, 60s timeouts, orphan windows
-- Planner ignored GUI limitation; deny→replan loop
-- Architect `planner.error` ~8k tokens (nemotron budget too high) — budget reduced
-- MoE kept routing maintenance during human task — now `moe.yield`
+Infrastructure PASS; GUI notepad FAIL → fixed in `afe87ac`.
 
-### Retest criteria (next session)
-1. `@devops open notepad` → instant decline, **zero** Notepad, `human.decline` or bus "not supported"
-2. `@implementor create hello.txt with hello world` → interrupt → actor → `verify: confirmed`
+### 2026-06-14 (codex-dev, Grok validation)
+
+**60s smoke PASS**
+- 5/5 slots alive; 3 `moe.route`; 9 `pressure`; 33 bus events
+
+**360s behavior PASS**
+- 18 `moe.route` (~20s cadence); 0 false respawn
+- Full pipeline on s2/s3: `plan`→`actor`→`verify`→`reflect`→`mutate`
+- Bus evidence: `evolve` evict/patch_plugin, `breed.elite`, `breed.evict`
+- **Gap:** no `breed.improve` in 6min window (mutation trials need longer runs or better patches)
+- **Noise:** `plugin.error` spam on s1/s4/s5 (web_sentinel connectivity)
+
+### Human retest (codex-dev `502947b`)
+
+- `@devops open notepad` → decline, zero Notepad (default safe mode)
+- `@implementor create hello.txt with hello world` → deterministic verify path → confirmed fission
 
 ---
 
-## What works (verified)
+## What works (verified codex-dev)
 
-- 5 slots without false respawn (`is_alive` fix)
-- Structured `kind=telemetry` on blackboard
-- `_moe_route` posts `kind=route` every 20s; yields on human task
-- Escalation: `moe.escalate` → `post_control` → reactor `MOE REASSIGN`
-- Human `@mention` → pri=3 wake + preemption
-- GUI guard + human retry cap (3 denials)
-- TUI: 5/5 slots, session JSONL per slot
-- Plugin hot-swap; `web_sentinel` session-only
+- 5 slots without false respawn
+- MoE closed loop + human yield
+- Human file task deterministic path
+- Reflector after verifier denial
+- Mutator safe `patch_plugin` with write-prefix guard
+- Fission → `evolve` retain/evict; reactor `breed.elite` / `breed.evict`
+- Elite archive + respawn selection
+- Mutation trial evaluator (60s window)
+- `python comms.py breeder` audit command
+- GUI mode opt-in (`--gui`, `g` toggle, header shows `GUI`/`safe`)
 
 ## Not built yet (do not claim done)
 
-- `kind=evolve` writer (AgentBreeder loop)
-- reflector / mutator in live pipeline (schemas + prompts exist)
+- `breed.improve` from live multi-cycle runs (GOAL blocker)
 - LLM fission_judge (deterministic +1 only)
-- GUI / desktop observer agent (port from `main` when requested)
-- Long-run breeding / MAP-Elites fitness
+- Desktop observer agent (win32 UIA — port from `main` when needed)
+- Long-run MAP-Elites fitness convergence
 
 ---
 
@@ -200,7 +213,7 @@ Per-slot JSONL under `sessions/<timestamp>/events-child-sN.jsonl`.
 
 **Before start**
 
-- [ ] `git checkout grok-dev && git pull`
+- [ ] `git checkout codex-dev && git pull` (or `grok-dev` after merge)
 - [ ] LM Studio + nemotron, or `--backend acp`
 - [ ] No stale tui/reactor/notepad processes
 - [ ] `runtime/comms/` empty or fresh (TUI wipes on start)
@@ -215,8 +228,9 @@ python tui.py --model-profile nemotron
 - [ ] Slots alive > 30s
 - [ ] s1: `moe.route` ~every 20s; `pressure` ~every 20s
 - [ ] `python comms.py state` — telemetry per persona
-- [ ] Human GUI test: decline, no desktop spawn
+- [ ] Human GUI test (safe mode): decline, no Notepad
 - [ ] Human file test: `@implementor` → confirmed fission
+- [ ] `python comms.py breeder` — evolve/breed evidence after 6+ min run
 
 **Smoke:** `python run_test.py 120`
 
@@ -224,12 +238,12 @@ python tui.py --model-profile nemotron
 
 ## Suggested next work (priority order)
 
-1. **Retest** human file task on `grok-dev` after `afe87ac`
-2. Wire **reflector** after verifier failure
-3. Wire **mutator** + `kind=evolve` for AgentBreeder scaffold
-4. Optional: throttle `plugin.web_sentinel` further (vision does not require it)
+1. **Merge `codex-dev` → `grok-dev`** (human approval) — forward Grok branch to breeding state
+2. **Produce `breed.improve` evidence** — longer runs + safer mutation targets
+3. Fix `plugin.error` / web_sentinel noise on idle slots
+4. Port desktop observer from `main` when GUI mode needs screen context
 5. MAP-Elites fitness from fission + stagnation history
-6. Merge `grok-dev` → `unify-rewrite` when human decides
+6. Merge stable branch → `unify-rewrite` when human decides
 
 ---
 
@@ -239,52 +253,65 @@ python tui.py --model-profile nemotron
 |-----------|-------|
 | MoE gate | `engine.py`, `comms.py` |
 | Pressure | `engine.py`, `plugins/comms_beacon.py` |
-| Human cap / GUI | `agents.py`, `python_code.py`, `actions.py` |
+| Human cap / GUI | `agents.py`, `python_code.py`, `actions.py`, `tui.py` |
+| Breeding | `reactor.py`, `agents.py`, `comms.py` |
 | Reactor | `reactor.py` |
 | Orchestrator scheduler | `agents.py` |
 | TUI | `tui.py` |
 | Config | `config.py` |
-| Prompts | `prompts/planner.txt`, `prompts/personalities/*.txt` |
+| Prompts | `prompts/planner.txt`, `prompts/mutator.txt`, `prompts/reflector.txt`, `prompts/personalities/*.txt` |
 | Schemas | `schemas/bus_v1.json`, `route.json`, `telemetry.json`, `planner.json` |
 
 ---
 
-## Session history (grok-dev)
+## Session history
+
+### grok-dev (through `afe87ac`)
 
 | Commit | Summary |
 |--------|---------|
 | `afe87ac` | GUI guard, human cap, MoE yield, token diet |
-| `2bac993` | Harden sandbox + human preemption |
 | `894e72c` | MoE closed loop + docs |
 | `6906eac` | Blackboard protocol v1 |
-| `ad4e70f` | False respawn fix + orchestrator + Nemotron |
+
+### codex-dev (13 commits ahead)
+
+| Commit | Summary |
+|--------|---------|
+| `5933ad3` | Plugins mutator update |
+| `23b94e0` | `comms.py breeder` audit command |
+| `54870ea` | Mirror breeder evidence to observation bus |
+| `3d9a024` | Mutation trial scoring from telemetry |
+| `b45b631` | Elite respawn selection |
+| `502947b` | Deterministic human file tasks |
 
 ---
 
-## External session memory (not in git)
+## Grok Build knowledgebase (session memory)
 
-Grok project memory: `C:\Users\ewojgab\.grok\memory\endgame-ai-3448e172\`  
-Live test report: `sessions/2026-06-13-live-test-report.md` (in memory, not git)
+**Branch model:** Work on `codex-dev` until merged to `grok-dev`. Do not commit to both without coordination.
+
+**Codex transcript:** `Codex-log.md` — full chat from bootstrap through AgentBreeder wiring. Read GOAL section at end.
+
+**Vision trailer:** `ENDGAME_VISION.html` — inception layers, paper map, milestone scores (update grok-dev % to ~82% when editing).
+
+**Validation 2026-06-14:** 60s + 360s TUI runs on `codex-dev` both PASS. Merge codex→grok recommended.
+
+**GUI mode:** User requested "hui/GUI mode" for self-evolving organism — opt-in via `--gui` or `g` key; removes planner/actor safeguards. Default safe mode unchanged.
+
+**Python path (this machine):** `C:\Users\px-wjt\AppData\Local\Python\bin\python.exe` if `python` not on PATH.
 
 ---
 
-## Multi-agent branching (track who did what)
+## Multi-agent branching
 
 ```
-unify-rewrite          ← integration trunk (merge agent branches here when stable)
-├── grok-dev           ← Grok / Cursor sessions
-├── codex-dev          ← Codex / ChatGPT sessions (create this)
-└── (future)-dev       ← other agents fork from unify-rewrite
-main                   ← parallel species (organism M4), do not merge blindly
+unify-rewrite          ← integration trunk
+├── grok-dev           ← Grok (behind codex-dev by 13 commits)
+├── codex-dev          ← Codex + Grok continuation (ACTIVE)
+└── main               ← parallel species (organism M4)
 ```
 
-| Branch | Owner | Rule |
-|--------|-------|------|
-| `unify-rewrite` | **Integration** | Receives fast-forward merges from agent branches after human review |
-| `grok-dev` | Grok | Active Grok work; merge → `unify-rewrite` when milestone passes |
-| `codex-dev` | Codex | `git checkout unify-rewrite && git pull && git checkout -b codex-dev` |
-| `main` | Legacy | Different architecture — port patterns only when requested |
-
-**Codex bootstrap:** read `AGENTS.md`, branch from `unify-rewrite`, push `codex-dev`, PR/merge to `unify-rewrite` after retest pass.
+**Merge recommendation (2026-06-14):** Fast-forward `grok-dev` to `codex-dev` after human approval. All infra tests pass; codex adds breeding loop without regressing MoE/pressure.
 
 **Do not** have two agents commit to the same branch without coordination.

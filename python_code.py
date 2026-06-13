@@ -2,6 +2,8 @@
 from __future__ import annotations
 import re
 
+import config
+
 _ASCII_MAP = str.maketrans({
     "\u2014": "-",
     "\u2013": "-",
@@ -36,7 +38,13 @@ def sanitize_python_text(text: str) -> str:
     return text.translate(_ASCII_MAP).strip()
 
 
+def gui_mode_enabled() -> bool:
+    return config.GUI_MODE_PATH.is_file()
+
+
 def goal_needs_gui(text: str) -> bool:
+    if gui_mode_enabled():
+        return False
     g = sanitize_python_text(text).lower()
     return any(word in g for word in _GUI_GOAL_WORDS)
 
@@ -57,7 +65,7 @@ def validate_python(text: str) -> tuple[bool, str, str]:
     cleaned = sanitize_python_text(text)
     if not cleaned:
         return False, "", "empty code"
-    if _GUI_BLOCK_RE.search(cleaned):
+    if not gui_mode_enabled() and _GUI_BLOCK_RE.search(cleaned):
         return False, cleaned, "blocked: GUI/desktop automation not supported (no GUI agent)"
     try:
         compile(cleaned, "<step>", "exec")
