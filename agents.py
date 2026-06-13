@@ -211,6 +211,9 @@ class VerifierAgent:
             if ok:
                 board["plan"] = []
                 board.setdefault("completed", []).append(done_when)
+                board["_last_verified_goal"] = str(board.get("goal", ""))[:400]
+                board["_last_verified_priority"] = board.get("priority", config.PRI_MAINTENANCE)
+                board["_last_verifier_evidence"] = evidence[:400]
                 if board.get("priority", config.PRI_MAINTENANCE) >= config.PRI_HUMAN:
                     board["priority"] = config.PRI_MAINTENANCE
                     board["goal"] = ""
@@ -236,11 +239,15 @@ class VerifierAgent:
         if verdict == "confirmed":
             board["plan"] = []
             board.setdefault("completed", []).append(done_when)
+            evidence = str(parsed.get("evidence", ""))
+            board["_last_verified_goal"] = str(board.get("goal", ""))[:400]
+            board["_last_verified_priority"] = board.get("priority", config.PRI_MAINTENANCE)
+            board["_last_verifier_evidence"] = evidence[:400]
             if board.get("priority", config.PRI_MAINTENANCE) >= config.PRI_HUMAN:
                 board["priority"] = config.PRI_MAINTENANCE
                 board["goal"] = ""
                 board["_human_denials"] = 0
-            return {"phase": "verify", "data": {"verdict": "confirmed", "evidence": parsed.get("evidence", "")},
+            return {"phase": "verify", "data": {"verdict": "confirmed", "evidence": evidence},
                     "next": "fission_judge"}
         # Denied — clear plan, will replan
         board["plan"] = []
@@ -252,21 +259,45 @@ class VerifierAgent:
 
 
 class FissionJudgeAgent:
-    """Awards fission credit for confirmed work."""
+    """Awards fission credit for confirmed, useful work."""
 
     def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
         completed = board.get("completed", [])
         if not completed:
             return None
+        latest = str(completed[-1])
+        review = _fission_review(board, latest)
+        if review.get("verdict") != "credit":
+            reason = str(review.get("diagnosis", "fission judge denied credit"))[:300]
+            if not board.get("goal") and board.get("_last_verified_goal"):
+                board["goal"] = str(board.get("_last_verified_goal", ""))
+                board["priority"] = int(board.get("_last_verified_priority", config.PRI_NORMAL) or config.PRI_NORMAL)
+            history = board.setdefault("history", [])
+            history.append({"denied": latest, "reason": reason, "stage": "fission_judge"})
+            _post_failure_candidate(board, latest, reason,
+                                    behavior="fission_denial", reason="fission denied")
+            return {
+                "phase": "fission.deny",
+                "data": {
+                    "completed": latest,
+                    "verdict": "deny",
+                    "diagnosis": reason,
+                    "suggestion": str(review.get("suggestion", ""))[:220],
+                    "rule": str(review.get("rule", ""))[:160],
+                },
+                "writes": {"history": history},
+                "next": "reflector",
+            }
         fissions = board.get("fissions", 0) + 1
         board["fissions"] = fissions
-        latest = str(completed[-1])
+        board.setdefault("fission_credited", []).append(latest)
         fitness = _evolution_fitness(board, fissions)
-        _post_evolution_candidate(board, fissions, latest, fitness)
+        _post_evolution_candidate(board, fissions, latest, fitness, review)
         return {"phase": "fission", "data": {
             "fissions": fissions,
             "completed": latest,
             "fitness": fitness,
+            "diagnosis": str(review.get("diagnosis", ""))[:220],
         }}
 
 
@@ -476,6 +507,50 @@ def _verify_simple_file_done(done_when: str) -> tuple[bool, str] | None:
     return True, f"{rel_path} contains expected content"
 
 
+def _fission_review(board: dict[str, Any], completed: str) -> dict[str, str]:
+    credited = [str(item) for item in board.get("fission_credited", [])]
+    if str(completed) in credited:
+        return {
+            "verdict": "deny",
+            "diagnosis": "This milestone repeats an already credited completion and should not receive new fission credit.",
+            "suggestion": "Plan a new verifiable milestone or improve pressure before requesting more credit.",
+            "rule": "Do not award fission credit for duplicate completed milestones.",
+        }
+    pressure = board.get("_pressure", {})
+    user = (
+        f"GOAL: {str(board.get('_last_verified_goal') or board.get('goal', ''))[:500]}\n"
+        f"COMPLETED: {str(completed)[:500]}\n"
+        f"VERIFIER_EVIDENCE: {str(board.get('_last_verifier_evidence', ''))[:600]}\n"
+        f"PRESSURE: stagnation={float(pressure.get('stagnation', board.get('stagnation', 0.0)) or 0.0):.3f} "
+        f"power={float(board.get('power', 0.0) or 0.0):.3f} "
+        f"failures={int(pressure.get('failures', 0) or 0)} "
+        f"fissions={int(board.get('fissions', 0) or 0)}\n"
+        f"{_format_history(board.get('history', []))}\n"
+        "Fission judge JSON:"
+    )
+    raw = call_llm(_load_prompt("fission_judge"), user, "fission_judge", schema=_load_schema("fission_judge"))
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        parsed = {}
+    verdict = str(parsed.get("verdict", "credit"))
+    if verdict not in {"credit", "deny"}:
+        verdict = "credit"
+    diagnosis = str(parsed.get("diagnosis", "")).strip()
+    suggestion = str(parsed.get("suggestion", "")).strip()
+    rule = str(parsed.get("rule", "")).strip()
+    if not diagnosis:
+        diagnosis = "Verifier supplied concrete completion evidence, so deterministic fallback awards fission credit."
+    if not suggestion:
+        suggestion = "Use this credited completion as selection evidence for the breeding reactor."
+    return {
+        "verdict": verdict,
+        "diagnosis": diagnosis[:400],
+        "suggestion": suggestion[:300],
+        "rule": rule[:180],
+    }
+
+
 def _evolution_fitness(board: dict[str, Any], fissions: int) -> float:
     pressure = board.get("_pressure", {})
     stagnation = float(pressure.get("stagnation", board.get("stagnation", 0.0)) or 0.0)
@@ -525,12 +600,22 @@ def _pressure_evolve_fields(board: dict[str, Any], behavior: str) -> dict[str, A
     }
 
 
-def _post_evolution_candidate(board: dict[str, Any], fissions: int, completed: str, fitness: float) -> None:
+def _post_evolution_candidate(
+    board: dict[str, Any],
+    fissions: int,
+    completed: str,
+    fitness: float,
+    review: dict[str, str] | None = None,
+) -> None:
     try:
         import comms
         behavior = _completion_behavior(completed)
         data = _pressure_evolve_fields(board, behavior)
         data["fissions"] = fissions
+        if review:
+            data["judge"] = str(review.get("verdict", ""))[:20]
+            data["diagnosis"] = str(review.get("diagnosis", ""))[:200]
+            data["suggestion"] = str(review.get("suggestion", ""))[:160]
         comms.post_evolve(
             comms.agent_id(),
             comms.agent_id(),
@@ -553,10 +638,17 @@ def _failure_fitness(board: dict[str, Any]) -> float:
     return round(max(0.0, min(0.49, score)), 4)
 
 
-def _post_failure_candidate(board: dict[str, Any], done_when: str, evidence: str) -> None:
+def _post_failure_candidate(
+    board: dict[str, Any],
+    done_when: str,
+    evidence: str,
+    *,
+    behavior: str = "verify_denial",
+    reason: str = "verify denied",
+) -> None:
     try:
         import comms
-        data = _pressure_evolve_fields(board, "verify_denial")
+        data = _pressure_evolve_fields(board, behavior)
         data.update({
             "evidence": str(evidence)[:200],
             "human_denials": int(board.get("_human_denials", 0) or 0),
@@ -567,7 +659,7 @@ def _post_failure_candidate(board: dict[str, Any], done_when: str, evidence: str
             "evict",
             fitness=_failure_fitness(board),
             completed=str(done_when),
-            reason="verify denied",
+            reason=reason,
             data=data,
         )
     except Exception:

@@ -81,7 +81,7 @@ def run(board: dict[str, Any], interrupted: Callable[[], bool]) -> None:
                 if phase == "fission":
                     board["_pressure"]["last_fission"] = time.time()
                     board["_pressure"]["failures"] = 0
-                elif phase in ("planner.error", "actor.error", "verifier.error") or \
+                elif phase in ("planner.error", "actor.error", "verifier.error", "fission.deny") or \
                      (phase == "verify" and (result.get("data") or {}).get("verdict") == "denied") or \
                      (phase == "actor" and not (result.get("data") or {}).get("ok", True)):
                     board["_pressure"]["failures"] += 1
