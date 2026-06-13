@@ -320,6 +320,9 @@ def _call_lmstudio(body: dict[str, Any]) -> tuple[str, dict[str, Any]]:
             if len(hosts_tried) >= len(config.LMS_HOSTS):
                 break
             continue
+        activated, changed = config.apply_model_profile(model)
+        if changed:
+            log.emit("model_profile", {"model": model, "profile": activated})
         hosts_tried.add(host)
         body["model"] = model
         payload = json.dumps(body, ensure_ascii=False).encode("utf-8")

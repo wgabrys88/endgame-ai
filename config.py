@@ -1,5 +1,6 @@
 from __future__ import annotations
 import pathlib
+from typing import Any
 
 BASE_DIR: pathlib.Path = pathlib.Path(__file__).parent.resolve()
 PROMPTS_DIR: pathlib.Path = BASE_DIR / "prompts"
@@ -113,6 +114,76 @@ BUDGET_VERIFIER_OUT: int = 700
 BUDGET_REFLECTOR_OUT: int = 900
 BUDGET_FISSION_JUDGE_OUT: int = 700
 BUDGET_MUTATOR_OUT: int = 8000
+
+# Model-specific overrides. Applied at request time based on the resolved model id.
+# Keys are lowercase substrings matched against the loaded model id.
+MODEL_PROFILES: dict[str, dict[str, Any]] = {
+    "nemotron": {
+        "LLM_TEMPERATURE": 1.0,
+        "LLM_TOP_P": 1.0,
+        "LLM_TOP_K": 20,
+        "LLM_REPEAT_PENALTY": 1.05,
+        "LLM_PRESENCE_PENALTY": 0.0,
+        "LLM_FREQUENCY_PENALTY": 0.0,
+        "LLM_SEED": None,
+        "LLM_MAX_TOKENS": 128000,
+        "LLM_STOP": [],
+        "LLM_LOGIT_BIAS": {},
+        "BUDGET_PLANNER_OUT": 8192,
+        "BUDGET_ACTOR_OUT": 4096,
+        "BUDGET_VERIFIER_OUT": 4096,
+        "BUDGET_REFLECTOR_OUT": 4096,
+        "BUDGET_FISSION_JUDGE_OUT": 4096,
+        "BUDGET_MUTATOR_OUT": 8192,
+    },
+    # gemma defaults are the module-level values above; listed explicitly for clarity.
+    "gemma": {
+        "LLM_TEMPERATURE": 0.60,
+        "LLM_TOP_P": 0.90,
+        "LLM_TOP_K": 40,
+        "LLM_REPEAT_PENALTY": 1.07,
+        "LLM_PRESENCE_PENALTY": 0.0,
+        "LLM_FREQUENCY_PENALTY": 0.0,
+        "LLM_SEED": 3407,
+        "LLM_MAX_TOKENS": 128000,
+        "LLM_STOP": [],
+        "LLM_LOGIT_BIAS": {},
+        "BUDGET_PLANNER_OUT": 1200,
+        "BUDGET_ACTOR_OUT": 1800,
+        "BUDGET_VERIFIER_OUT": 700,
+        "BUDGET_REFLECTOR_OUT": 900,
+        "BUDGET_FISSION_JUDGE_OUT": 700,
+        "BUDGET_MUTATOR_OUT": 8000,
+    },
+}
+
+_active_profile: str = "gemma"
+
+
+def apply_model_profile(model_id: str) -> tuple[str, bool]:
+    """Apply generation/budget overrides for the resolved model id.
+
+    Returns (profile_key, changed).
+    """
+    global _active_profile
+    normalized = str(model_id).lower()
+    key = "gemma"
+    for candidate in MODEL_PROFILES:
+        if candidate in normalized:
+            key = candidate
+            break
+    if key == _active_profile:
+        return key, False
+    profile = MODEL_PROFILES[key]
+    for name, value in profile.items():
+        if name in globals():
+            globals()[name] = value
+    _active_profile = key
+    return key, True
+
+
+def active_model_profile() -> str:
+    return _active_profile
 
 # Token telemetry / admission control. These values are read through config.X
 # so self-evolution and hot-swap edits remain visible without a full respawn.
