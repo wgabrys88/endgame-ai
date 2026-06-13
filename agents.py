@@ -21,6 +21,24 @@ _CREATE_FILE_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 _PLUGIN_NAME_RE = re.compile(r"^[a-z0-9_]+\.py$")
+_MUTATOR_ALLOWED_IMPORTS = frozenset({"time", "json", "math", "statistics", "collections", "datetime"})
+_MUTATOR_ALLOWED_FROM_IMPORTS = {
+    "comms": frozenset({"agent_id", "post", "post_evolve", "post_telemetry"}),
+}
+_MUTATOR_BLOCKED_ROOTS = frozenset({
+    "builtins", "ctypes", "os", "pathlib", "requests", "shutil", "socket", "subprocess",
+    "sys", "urllib", "winreg",
+})
+_MUTATOR_BLOCKED_CALLS = frozenset({
+    "__import__", "breakpoint", "compile", "eval", "exec", "getattr", "globals", "input",
+    "locals", "open", "setattr", "vars",
+})
+_MUTATOR_BLOCKED_ATTRS = frozenset({
+    "call", "connect", "mkdir", "open", "popen", "read", "read_text", "remove", "rename",
+    "replace", "request", "rmdir", "run", "startfile", "system", "unlink", "urlopen",
+    "write", "write_text", "writelines",
+})
+_MUTATOR_BLOCKED_BOARD_METHODS = frozenset({"clear", "pop", "popitem", "setdefault", "update"})
 
 
 def _persona() -> str:
@@ -571,6 +589,78 @@ def _plugin_defines_run(source: str) -> tuple[bool, str]:
     return False, "plugin must define def run(board)"
 
 
+def _node_root_name(node: ast.AST) -> str:
+    current = node
+    while isinstance(current, (ast.Attribute, ast.Subscript)):
+        current = current.value
+    if isinstance(current, ast.Call):
+        return _node_root_name(current.func)
+    if isinstance(current, ast.Name):
+        return current.id
+    return ""
+
+
+def _call_name(node: ast.AST) -> tuple[str, str]:
+    if isinstance(node, ast.Name):
+        return node.id, node.id
+    if isinstance(node, ast.Attribute):
+        root = _node_root_name(node)
+        return root, node.attr
+    return "", ""
+
+
+def _plugin_mutation_is_safe(source: str) -> tuple[bool, str]:
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        where = f"line {exc.lineno}" if exc.lineno else "module"
+        return False, f"SyntaxError: {exc.msg} ({where})"
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                root = alias.name.split(".", 1)[0]
+                if root not in _MUTATOR_ALLOWED_IMPORTS:
+                    return False, f"unsafe plugin import blocked: {alias.name}"
+        elif isinstance(node, ast.ImportFrom):
+            if node.level:
+                return False, "relative imports are blocked in plugin mutations"
+            module = str(node.module or "").split(".", 1)[0]
+            allowed = _MUTATOR_ALLOWED_FROM_IMPORTS.get(module)
+            if not allowed:
+                return False, f"unsafe plugin import blocked: {node.module or ''}"
+            for alias in node.names:
+                if alias.name not in allowed:
+                    return False, f"unsafe import from {module} blocked: {alias.name}"
+        elif isinstance(node, ast.Call):
+            root, name = _call_name(node.func)
+            if root in _MUTATOR_BLOCKED_ROOTS or name in _MUTATOR_BLOCKED_CALLS or name in _MUTATOR_BLOCKED_ATTRS:
+                called = f"{root}.{name}" if root and root != name else name
+                return False, f"unsafe plugin call blocked: {called}"
+            if root == "board" and name in _MUTATOR_BLOCKED_BOARD_METHODS:
+                return False, f"direct board mutation is blocked: board.{name}"
+        elif isinstance(node, ast.Attribute):
+            root = _node_root_name(node)
+            if root in _MUTATOR_BLOCKED_ROOTS or node.attr.startswith("__"):
+                return False, f"unsafe plugin attribute blocked: {root}.{node.attr}"
+        elif isinstance(node, ast.Name):
+            if node.id.startswith("__") or node.id in _MUTATOR_BLOCKED_ROOTS:
+                return False, f"unsafe plugin name blocked: {node.id}"
+        elif isinstance(node, ast.While):
+            return False, "while loops are blocked in plugin mutations"
+        elif isinstance(node, (ast.Global, ast.Nonlocal, ast.Delete)):
+            return False, f"{type(node).__name__} is blocked in plugin mutations"
+        elif isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+            targets = list(getattr(node, "targets", []) or [])
+            target = getattr(node, "target", None)
+            if target is not None:
+                targets.append(target)
+            for assignment_target in targets:
+                if isinstance(assignment_target, ast.Subscript) and _node_root_name(assignment_target) == "board":
+                    return False, "direct board[...] assignment is blocked; return writes instead"
+    return True, ""
+
+
 def _mutation_diff(filename: str, before: str, after: str) -> str:
     diff = difflib.unified_diff(
         before.splitlines(),
@@ -595,6 +685,9 @@ def _apply_plugin_mutation(filename: str, content: str) -> tuple[bool, str, str]
     has_run, run_err = _plugin_defines_run(cleaned)
     if not has_run:
         return False, run_err, ""
+    is_safe, safety_err = _plugin_mutation_is_safe(cleaned)
+    if not is_safe:
+        return False, safety_err, ""
 
     try:
         before = path.read_text(encoding="utf-8")

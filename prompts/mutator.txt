@@ -11,6 +11,9 @@ Rules:
 - py_compile valid Python only
 - Filename: plugins/[a-z0-9_]+.py and it must already exist
 - NEVER create new source files
+- Generated plugins may import only time/json/math/statistics/collections/datetime, or selected comms helpers.
+- Do not use filesystem, network, subprocess, os/sys/shutil/pathlib, dynamic import/eval/exec, or direct board[...] assignment.
+- Persist plugin state only by returning {"writes": {...}}.
 - If no existing plugin clearly fixes the failure, choose none
 
 Output JSON: {"action": "patch_plugin"|"none", "filename": "plugins/x.py"|"none", "content": "..."}
