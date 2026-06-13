@@ -82,9 +82,9 @@ MODEL_PROFILES: dict[str, dict[str, Any]] = {
         "LLM_REPEAT_PENALTY": 1.0, "LLM_PRESENCE_PENALTY": 0.0,
         "LLM_FREQUENCY_PENALTY": 0.0, "LLM_SEED": -1,
         "LLM_MAX_TOKENS": 128000, "LLM_STOP": [], "LLM_LOGIT_BIAS": {},
-        "LLM_MAX_CONCURRENT": 1, "LLM_THINKING_ENABLED": True, "LLM_THINKING_BUDGET": 8192,
+        "LLM_MAX_CONCURRENT": 1, "LLM_THINKING_ENABLED": True, "LLM_THINKING_BUDGET": 1024,
         "LMS_TIMEOUT": 600,
-        "BUDGET": {"planner": 8192, "verifier": 2048, "reflector": 4096, "fission_judge": 1024, "mutator": 8192},
+        "BUDGET": {"planner": 1024, "verifier": 1024, "reflector": 2048, "fission_judge": 1024, "mutator": 4096},
     },
     "gemma": {
         "LLM_TEMPERATURE": 0.60, "LLM_TOP_P": 0.90, "LLM_TOP_K": 40,
@@ -131,6 +131,8 @@ STAG_ESCALATE: float = 0.7       # stagnation threshold for band escalation
 VEL_STUCK: float = 0.01          # |velocity| below this = no progress
 STUCK_TICKS_ESCALATE: int = 5    # consecutive stuck telemetry readings before reassign
 MOE_GATE_MIN: float = 0.10       # minimum softmax weight to route maintenance work
+HUMAN_GOAL_MAX_DENIALS: int = 3  # stop replanning human pri=3 goals after N verify denials
+PLANNER_ERROR_RAW_MAX: int = 2000  # session log cap for planner.error LLM raw
 
 # --- Bus limits ---
 BUS_CHAT_MAX: int = 200

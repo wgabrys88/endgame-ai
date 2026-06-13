@@ -351,6 +351,28 @@ def read_events(limit: int = 20) -> list[dict[str, Any]]:
     return out
 
 
+def human_task_active() -> bool:
+    """True while the latest human pri=3 message has no colony completion reply."""
+    chat = read_chat(40)
+    human_msgs = [
+        e for e in chat
+        if str(e.get("from", "")) == "human"
+        and int(e.get("pri", 0) or 0) >= config.PRI_HUMAN
+    ]
+    if not human_msgs:
+        return False
+    latest = human_msgs[-1]
+    hid = int(latest.get("id", 0) or 0)
+    for e in reversed(chat):
+        eid = int(e.get("id", 0) or 0)
+        if eid <= hid:
+            break
+        text = str(e.get("text", "")).lower()
+        if any(tag in text for tag in ("cannot complete", "not supported", "confirmed", "completed", "declined")):
+            return False
+    return True
+
+
 def colony_state() -> dict[str, dict[str, Any]]:
     """Latest telemetry per persona — MoE gating input for comms_operator."""
     state: dict[str, dict[str, Any]] = {}
@@ -546,6 +568,10 @@ def _brief(phase: str, data: Any) -> str:
             return f"route ->@{data.get('to', '')} w={data.get('weight', '')}"
         case "moe.escalate":
             return f"ESCALATE @{data.get('from', '')} ->@{data.get('to', '')} s{data.get('slot', '')}"
+        case "moe.yield":
+            return f"moe.yield {str(data.get('reason', ''))[:80]}"
+        case "human.decline":
+            return f"human.decline {str(data.get('reason', ''))[:80]}"
         case _:
             return f"{phase} {str(data)[:120]}"
 

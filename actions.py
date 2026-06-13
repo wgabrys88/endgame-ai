@@ -231,7 +231,13 @@ def run_python(code: str) -> ActionResult:
             [sys.executable, path], cwd=str(config.BASE_DIR),
             capture_output=True, text=True, encoding="utf-8", errors="replace",
             timeout=config.EXEC_TIMEOUT, creationflags=subprocess.CREATE_NO_WINDOW)
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
+        pid = getattr(getattr(exc, "process", None), "pid", None)
+        if pid:
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(pid)],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return ActionResult("python", False, f"timeout after {config.EXEC_TIMEOUT}s")
     finally:
         if path:

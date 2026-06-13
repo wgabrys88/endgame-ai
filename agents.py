@@ -8,7 +8,7 @@ from typing import Any
 import config
 import log
 from llm import call_llm
-from python_code import is_python_code
+from python_code import goal_needs_gui, is_python_code
 
 
 def _persona() -> str:
@@ -34,6 +34,7 @@ def _apply_human_goal(board: dict[str, Any]) -> bool:
             board["priority"] = config.PRI_HUMAN
             board["plan"] = []
             board["history"] = []
+            board["_human_denials"] = 0
             board.get("_pressure", {}).update(failures=0)
             log.emit("interrupt", {"from": "human", "pri": config.PRI_HUMAN,
                                   "text": str(msg.get("text", ""))[:120]})
@@ -63,6 +64,10 @@ class SchedulerAgent:
 
         plan = board.get("plan", [])
         if not plan:
+            if board.get("priority", config.PRI_MAINTENANCE) >= config.PRI_HUMAN:
+                if board.get("_human_denials", 0) >= config.HUMAN_GOAL_MAX_DENIALS:
+                    _decline_human_goal(board, "max retries exceeded")
+                    return None
             if _persona() == "comms_operator":
                 # Deterministic MoE in engine._moe_route handles normal cycles.
                 # LLM planner only when human (pri=3) interrupted this persona.
@@ -87,6 +92,8 @@ class PlannerAgent:
         goal = board.get("goal", "")
         if not goal:
             return None
+        if goal_needs_gui(goal):
+            return _gui_decline_plan(board, goal)
         log.emit("planner.pending", {"goal": goal[:80]})
         system = _load_prompt("planner")
         persona = _persona()
@@ -111,7 +118,8 @@ class PlannerAgent:
         try:
             parsed = json.loads(raw)
         except (json.JSONDecodeError, TypeError):
-            return {"phase": "planner.error", "data": {"error": "invalid JSON", "raw": str(raw)[:200]}}
+            return {"phase": "planner.error", "data": {"error": "invalid JSON",
+                    "raw": str(raw)[:config.PLANNER_ERROR_RAW_MAX]}}
         mode = parsed.get("mode", "direct")
         if mode == "done":
             board["plan"] = []
@@ -178,6 +186,10 @@ class VerifierAgent:
         if verdict == "confirmed":
             board["plan"] = []
             board.setdefault("completed", []).append(done_when)
+            if board.get("priority", config.PRI_MAINTENANCE) >= config.PRI_HUMAN:
+                board["priority"] = config.PRI_MAINTENANCE
+                board["goal"] = ""
+                board["_human_denials"] = 0
             return {"phase": "verify", "data": {"verdict": "confirmed", "evidence": parsed.get("evidence", "")},
                     "next": "fission_judge"}
         # Denied — clear plan, will replan
@@ -199,6 +211,39 @@ class FissionJudgeAgent:
 
 
 # --- Helpers ---
+
+def _decline_human_goal(board: dict[str, Any], reason: str) -> None:
+    goal = str(board.get("goal", ""))[:120]
+    try:
+        import comms
+        comms.post(
+            comms.agent_id(), "colony",
+            f"@human cannot complete: {reason}. Goal: {goal}",
+            priority=config.PRI_HUMAN,
+        )
+    except Exception:
+        pass
+    board["plan"] = []
+    board["goal"] = ""
+    board["priority"] = config.PRI_MAINTENANCE
+    board["_human_denials"] = 0
+    log.emit("human.decline", {"reason": reason, "goal": goal[:80]})
+
+
+def _gui_decline_plan(board: dict[str, Any], goal: str) -> dict[str, Any]:
+    code = (
+        "bus_post(bus_id(), 'colony', "
+        "'@human GUI/desktop tasks not supported — colony has no GUI agent. "
+        "Try: write hello.txt with Path.write_text', priority=3)\n"
+        "print('declined: GUI task not supported')"
+    )
+    done_when = "decline posted to bus"
+    return {
+        "phase": "plan", "next": "actor",
+        "data": {"mode": "direct", "steps": 1, "done_when": done_when},
+        "writes": {"plan": [{"status": "active", "code": code}], "done_when": done_when},
+    }
+
 
 def _load_prompt(role: str) -> str:
     path = config.PROMPTS_DIR / f"{role}.txt"

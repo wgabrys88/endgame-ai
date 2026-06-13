@@ -17,6 +17,8 @@ BUS API (use exactly):
   subprocess: r = subprocess.run([...], capture_output=True, text=True); print(r.stdout)
 
 RULES:
+- NO GUI/desktop automation: never launch notepad, calc, mspaint, or os.startfile.
+  Colony has no GUI agent. For GUI asks: bus_post decline + suggest Path.write_text demo.
 - NEVER create new .py files. Only modify existing ones.
 - Read before writing: Path("file.py").read_text(encoding="utf-8")
 - py_compile.compile(path, doraise=True) before any commit.

@@ -72,8 +72,11 @@ def run(board: dict[str, Any], interrupted: Callable[[], bool]) -> None:
                     board["_pressure"]["last_fission"] = time.time()
                     board["_pressure"]["failures"] = 0
                 elif phase in ("planner.error", "actor.error", "verifier.error") or \
-                     (phase == "verify" and (result.get("data") or {}).get("verdict") == "denied"):
+                     (phase == "verify" and (result.get("data") or {}).get("verdict") == "denied") or \
+                     (phase == "actor" and not (result.get("data") or {}).get("ok", True)):
                     board["_pressure"]["failures"] += 1
+                    if board.get("priority", config.PRI_MAINTENANCE) >= config.PRI_HUMAN:
+                        board["_human_denials"] = board.get("_human_denials", 0) + 1
                 nxt = result.get("next")
             else:
                 nxt = None
@@ -217,6 +220,10 @@ def _moe_route(board: dict[str, Any]) -> bool:
                                        "stagnation": st.get("stagnation"), "ticks": ticks})
         return True
 
+    if comms.human_task_active():
+        log.emit("moe.yield", {"reason": "human pri=3 task active"})
+        return False
+
     if ranked and ranked[0][1] >= config.MOE_GATE_MIN:
         target, weight = ranked[0]
         reason = f"MoE gate={weight:.2f} — assign maintenance scan"
@@ -256,6 +263,7 @@ def _check_interrupt(board: dict[str, Any]) -> bool:
             board["priority"] = msg_pri
             board["plan"] = []
             board["history"] = []
+            board["_human_denials"] = 0
             board["_pressure"]["failures"] = 0  # reset on new goal
             log.emit("interrupt", {"from": msg.get("from"), "pri": msg_pri, "text": str(msg.get("text", ""))[:120]})
             return True
