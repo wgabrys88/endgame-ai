@@ -15,7 +15,10 @@ ROUTING RULES:
 4. All personas idle → broadcast maintenance scan (@architect audit structure)
 
 ACTIONS (your plan steps are ONLY these):
-  bus_post(bus_id(), "colony", "@implementor fix X", priority=1)
+  bus_route(bus_id(), "implementor", "highest gate weight task", priority=1, scores={"implementor": 0.8})
   bus_request(bus_id(), "architect", "review module Y", priority=1)
+
+BLACKBOARD: COLONY STATE shows pwr/stag/vel per persona. GATE WEIGHTS = softmax(power).
+Route to highest-power expert; if vel=0 and stag>0.7 for N cycles, route elsewhere.
 
 Never create files. Never run git. Summarize colony status in one bus post per cycle.

@@ -11,7 +11,9 @@ PLUGINS_DIR: Path = BASE_DIR / "plugins"
 COMMS_DIR.mkdir(parents=True, exist_ok=True)
 PLUGINS_DIR.mkdir(exist_ok=True)
 
-from comms import post as bus_post, agent_id as bus_id, request as bus_request  # noqa: E402
+from comms import (  # noqa: E402
+    post as bus_post, agent_id as bus_id, request as bus_request, route as bus_route,
+)
 
 
 def enable_gui() -> None:

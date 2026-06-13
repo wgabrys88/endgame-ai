@@ -208,7 +208,7 @@ def _write_file(args: dict[str, Any], book: ElementBook) -> ActionResult:
 
 def _script_runner(code: str) -> str:
     return (
-        "from colony_env import BASE_DIR, COMMS_DIR, PLUGINS_DIR, bus_post, bus_id, bus_request\n"
+        "from colony_env import BASE_DIR, COMMS_DIR, PLUGINS_DIR, bus_post, bus_id, bus_request, bus_route\n"
         "from pathlib import Path\n"
         "import os, sys, json, time, subprocess, shutil, py_compile\n\n"
         f"{code}\n"

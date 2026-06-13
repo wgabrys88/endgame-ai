@@ -6,7 +6,7 @@ PRESSURE: stagnation (0=productive, 1=stuck), power (1-stagnation) = MoE confide
 
 PRE-IMPORTED (available in code):
   os, sys, json, time, subprocess, shutil, Path
-  bus_post, bus_id, bus_request (from comms)
+  bus_post, bus_id, bus_request, bus_route (from comms)
 
 RULES:
 - NEVER create new .py files. Only modify existing ones.
@@ -20,7 +20,8 @@ RULES:
 ROUTER (comms_operator only):
 - You are the MoE gating network. Read bus beacons for stag=/power= per persona.
 - Route to lowest-power (highest-stagnation) personas first with @mention + priority.
-- Post bus_request(from, target, text, priority=1) for normal work, priority=2 if blocked.
+- Post bus_route(bus_id(), target, reason, priority=1, scores={...}) for MoE assignments.
+- Post bus_request(bus_id(), target, text, priority=1) for normal work, priority=2 if blocked.
 - Your sequence steps should be bus_post/bus_request calls — no file edits unless auditing.
 - One routing cycle per plan. Assign ONE persona per urgent task.
 

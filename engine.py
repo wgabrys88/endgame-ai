@@ -27,7 +27,8 @@ _plugin_mtimes: dict[str, float] = {}
 
 def run(board: dict[str, Any], interrupted: Callable[[], bool]) -> None:
     """Main loop: work on goal, check bus for priority interrupts each cycle."""
-    board.setdefault("_pressure", {"stagnation": 0.0, "cycles": 0, "failures": 0, "last_fission": 0})
+    board.setdefault("_pressure", {"stagnation": 0.0, "velocity": 0.0, "cycles": 0,
+                                    "failures": 0, "last_fission": 0, "prev_stag": 0.0})
 
     while not log.exhausted() and not interrupted():
         # --- Priority interrupt check ---
@@ -131,15 +132,17 @@ def _update_pressure(board: dict[str, Any]) -> None:
 
     # Combined: weighted average
     stag = min(1.0, fail_pressure * 0.6 + time_pressure * 0.4)
+    velocity = round(p.get("prev_stag", stag) - stag, 4)  # positive = improving
+    p["prev_stag"] = stag
     p["stagnation"] = stag
-    # MoE confidence signal: power = inverse stagnation (feeds comms_operator routing)
+    p["velocity"] = velocity
     board["stagnation"] = stag
+    board["velocity"] = velocity
     board["power"] = round(1.0 - stag, 3)
 
-    # Emit periodically (every 10 cycles ~ 20s)
     if p["cycles"] % 10 == 0:
         log.emit("pressure", {"stagnation": round(stag, 3), "power": board["power"],
-                               "failures": failures, "cycles": p["cycles"]})
+                               "velocity": velocity, "failures": failures, "cycles": p["cycles"]})
 
 
 # --- Priority Interrupt ---
