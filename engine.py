@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from agents import SchedulerAgent, PlannerAgent, ActorAgent, VerifierAgent, FissionJudgeAgent
+from agents import SchedulerAgent, PlannerAgent, ActorAgent, VerifierAgent, ReflectorAgent, FissionJudgeAgent
 import config
 import comms
 import log
@@ -18,6 +18,7 @@ AGENTS: dict[str, Any] = {
     "planner": PlannerAgent(),
     "actor": ActorAgent(),
     "verifier": VerifierAgent(),
+    "reflector": ReflectorAgent(),
     "fission_judge": FissionJudgeAgent(),
 }
 

@@ -198,7 +198,8 @@ class VerifierAgent:
             board["plan"] = []
             board.setdefault("history", []).append({"denied": done_when, "reason": evidence})
             _post_failure_candidate(board, done_when, evidence)
-            return {"phase": "verify", "data": {"verdict": "denied", "evidence": evidence}}
+            return {"phase": "verify", "data": {"verdict": "denied", "evidence": evidence},
+                    "next": "reflector"}
         plan = board.get("plan", [])
         results = [str(s.get("result", ""))[:200] for s in plan if isinstance(s, dict)]
         system = _load_prompt("verifier")
@@ -224,7 +225,8 @@ class VerifierAgent:
         evidence = str(parsed.get("evidence", ""))
         board.setdefault("history", []).append({"denied": done_when, "reason": evidence})
         _post_failure_candidate(board, done_when, evidence)
-        return {"phase": "verify", "data": {"verdict": "denied", "evidence": evidence}}
+        return {"phase": "verify", "data": {"verdict": "denied", "evidence": evidence},
+                "next": "reflector"}
 
 
 class FissionJudgeAgent:
@@ -244,6 +246,44 @@ class FissionJudgeAgent:
             "completed": latest,
             "fitness": fitness,
         }}
+
+
+class ReflectorAgent:
+    """Diagnoses verifier denials and feeds a simpler rule back to planning."""
+
+    def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
+        history = board.get("history", [])
+        last_denial = next((h for h in reversed(history)
+                            if isinstance(h, dict) and h.get("denied")), {})
+        pressure = board.get("_pressure", {})
+        failures = int(pressure.get("failures", 0) or 0)
+        stagnation = float(pressure.get("stagnation", board.get("stagnation", 0.0)) or 0.0)
+        user = (
+            f"GOAL: {str(board.get('goal', ''))[:400]}\n"
+            f"TRIGGER: stagnation={stagnation:.3f} failures={failures} "
+            f"human_denials={int(board.get('_human_denials', 0) or 0)}\n"
+            f"DENIED_DONE_WHEN: {str(last_denial.get('denied', ''))[:400]}\n"
+            f"EVIDENCE: {str(last_denial.get('reason', ''))[:600]}\n"
+            "Reflect JSON:"
+        )
+        raw = call_llm(_load_prompt("reflector"), user, "reflector", schema=_load_schema("reflector"))
+        try:
+            parsed = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            parsed = _fallback_reflection(last_denial, failures, stagnation)
+        reflection = {
+            "diagnosis": str(parsed.get("diagnosis", ""))[:300],
+            "suggestion": str(parsed.get("suggestion", ""))[:300],
+            "rule": str(parsed.get("rule", ""))[:180],
+        }
+        if not reflection["diagnosis"] or not reflection["suggestion"]:
+            reflection = _fallback_reflection(last_denial, failures, stagnation)
+        writes = {
+            "plan": [],
+            "history": history[-config.MAX_HISTORY:] + [{"reflection": reflection}],
+            "reflection": reflection,
+        }
+        return {"phase": "reflect", "data": reflection, "writes": writes, "next": "planner"}
 
 
 # --- Helpers ---
@@ -408,6 +448,22 @@ def _post_failure_candidate(board: dict[str, Any], done_when: str, evidence: str
         )
     except Exception:
         pass
+
+
+def _fallback_reflection(last_denial: dict[str, Any], failures: int, stagnation: float) -> dict[str, str]:
+    denied = str(last_denial.get("denied", "the milestone"))[:120]
+    reason = str(last_denial.get("reason", "evidence did not satisfy verifier"))[:160]
+    return {
+        "diagnosis": (
+            f"Verifier denied {denied}; evidence gap was: {reason}. "
+            f"Pressure shows failures={failures}, stagnation={stagnation:.2f}."
+        ),
+        "suggestion": (
+            "Plan one smaller Python step that prints concrete evidence, then verify only "
+            "that evidence before attempting broader coordination."
+        ),
+        "rule": "Print exact evidence for the smallest done_when before verification.",
+    }
 
 
 def _load_prompt(role: str) -> str:
