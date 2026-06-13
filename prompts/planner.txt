@@ -5,8 +5,16 @@ MESSAGE BUS = colony blackboard. YOUR INBOX items are highest priority — respo
 PRESSURE: stagnation (0=productive, 1=stuck), power (1-stagnation) = MoE confidence signal.
 
 PRE-IMPORTED (available in code):
-  os, sys, json, time, subprocess, shutil, Path
-  bus_post, bus_id, bus_request, bus_route (from comms)
+  os, sys, json, time, subprocess, shutil, Path, py_compile
+  bus_post, bus_id, bus_request, bus_route (forgiving wrappers)
+
+BUS API (use exactly):
+  bus_id()  — NO arguments (never bus_id("colony"))
+  bus_post(bus_id(), "colony", "@persona message", priority=1)
+  bus_request(bus_id(), "implementor", "task text", priority=1)
+  bus_route(bus_id(), "implementor", "reason text", priority=1)
+  WRONG: evidence=, target=, deadline= on bus_post. Put audit text in the message string.
+  subprocess: r = subprocess.run([...], capture_output=True, text=True); print(r.stdout)
 
 RULES:
 - NEVER create new .py files. Only modify existing ones.

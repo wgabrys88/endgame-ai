@@ -112,7 +112,11 @@ def _run_plugins(board: dict[str, Any]) -> None:
         if mod and hasattr(mod, "run"):
             try:
                 result = mod.run(board)
-                if isinstance(result, dict) and result.get("phase"):
+                if not isinstance(result, dict):
+                    continue
+                for k, v in (result.get("writes") or {}).items():
+                    board[k] = v
+                if result.get("phase"):
                     log.emit(result["phase"], result.get("data"))
             except Exception as e:
                 log.emit("plugin.error", {"name": name, "error": str(e)[:120]})
@@ -236,12 +240,14 @@ def _check_interrupt(board: dict[str, Any]) -> bool:
     inbox = comms.pending_for(me, 3)
     current_pri = board.get("priority", config.PRI_MAINTENANCE)
 
+    inbox = sorted(inbox, key=lambda m: (-comms.msg_priority(m), -int(m.get("id", 0) or 0)))
     for msg in inbox:
         msg_id = int(msg.get("id", 0))
         if msg_id <= board.get("_last_msg_id", 0):
             continue
         msg_pri = comms.msg_priority(msg)
-        if msg_pri > current_pri:
+        is_human = str(msg.get("from", "")) == "human"
+        if is_human or msg_pri >= config.PRI_HUMAN or msg_pri > current_pri:
             # INTERRUPT: switch goal
             board["_last_msg_id"] = msg_id
             payload = msg.get("payload") or msg.get("data") or {}

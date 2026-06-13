@@ -142,6 +142,15 @@ Full kind table and payloads: `KNOWLEDGE.md`
 
 ---
 
+## Post live-test fixes (`894e72c`+)
+
+- `colony_env.py` — forgiving `bus_post` / `bus_id` / `bus_route` shims
+- `engine._run_plugins` — apply plugin `writes` (30s throttle works)
+- `plugins/telemetry.py` — disabled (use comms_beacon)
+- Human preemption — `_apply_human_goal` + stronger `_check_interrupt`
+- `comms.format_bus_context` — human first, cap route spam
+- `tui.py` — staggered slot scan (5/5 display)
+
 ## Not built yet (do not claim done)
 
 - `kind=evolve` writer (AgentBreeder loop)

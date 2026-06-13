@@ -64,7 +64,9 @@ ROLES: dict[str, str] = {
     **{name: name for name in config.PERSONAS},
 }
 
-_SKIP_PHASES: frozenset[str] = frozenset({"schedule"})
+_SKIP_PHASES: frozenset[str] = frozenset({
+    "schedule", "plugin.telemetry", "plugin.web_sentinel",
+})
 
 
 def _ensure() -> None:
@@ -496,21 +498,31 @@ def format_bus_context(limit: int | None = None, for_agent: str | None = None) -
             if ranked:
                 lines.append("GATE WEIGHTS: " + " ".join(f"{w}={p:.2f}" for w, p in ranked[:5]))
 
-    if not chat and len(lines) == 1:
-        return ""
     inbox = pending_for(me, 5)
+    shown_ids: set[int] = set()
     if inbox:
         lines.append("YOUR INBOX (respond to these):")
-        for e in inbox:
+        for e in sorted(inbox, key=lambda x: (-int(x.get("pri", 0) or 0), -int(x.get("id", 0) or 0))):
+            shown_ids.add(int(e.get("id", 0) or 0))
             pri = e.get("pri", e.get("data", {}).get("priority", ""))
             pri_tag = f" [PRI={pri}]" if pri != "" else ""
             lines.append(f"  @{e.get('from')}: {str(e.get('text', ''))[:200]}{pri_tag}")
-    shown_ids = {int(e.get("id", 0) or 0) for e in inbox}
-    for entry in chat[-n:]:
-        if int(entry.get("id", 0) or 0) in shown_ids:
+    if not chat and len(lines) == 1 and not inbox:
+        return ""
+    human_lines: list[str] = []
+    other_lines: list[str] = []
+    for entry in chat[-n * 2:]:
+        eid = int(entry.get("id", 0) or 0)
+        if eid in shown_ids:
             continue
         kind = str(entry.get("kind", ""))[:6]
-        lines.append(f"  @{entry.get('from', '?')} [{kind}] {str(entry.get('text', ''))[:200]}")
+        line = f"  @{entry.get('from', '?')} [{kind}] {str(entry.get('text', ''))[:200]}"
+        if str(entry.get("from", "")) == "human" or int(entry.get("pri", 0) or 0) >= config.PRI_HUMAN:
+            human_lines.append(line)
+        elif kind != "route" or len(other_lines) < 3:
+            other_lines.append(line)
+    for line in human_lines + other_lines[-3:]:
+        lines.append(line)
     return "\n".join(lines)
 
 

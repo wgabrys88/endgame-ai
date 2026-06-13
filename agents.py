@@ -15,10 +15,41 @@ def _persona() -> str:
     return os.environ.get("ENDGAME_PERSONALITY", "").strip()
 
 
+def _apply_human_goal(board: dict[str, Any]) -> bool:
+    """Preempt maintenance with human @mention before planner runs."""
+    try:
+        import comms
+        me = comms.agent_id()
+        for msg in sorted(comms.pending_for(me, 6),
+                          key=lambda m: (-comms.msg_priority(m), -int(m.get("id", 0) or 0))):
+            msg_id = int(msg.get("id", 0))
+            if msg_id <= board.get("_last_msg_id", 0):
+                continue
+            if str(msg.get("from", "")) != "human" and comms.msg_priority(msg) < config.PRI_HUMAN:
+                continue
+            board["_last_msg_id"] = msg_id
+            payload = msg.get("payload") or msg.get("data") or {}
+            goal_text = str(payload.get("goal", "")) if isinstance(payload, dict) else ""
+            board["goal"] = goal_text or str(msg.get("text", ""))
+            board["priority"] = config.PRI_HUMAN
+            board["plan"] = []
+            board["history"] = []
+            board.get("_pressure", {}).update(failures=0)
+            log.emit("interrupt", {"from": "human", "pri": config.PRI_HUMAN,
+                                  "text": str(msg.get("text", ""))[:120]})
+            return True
+    except Exception:
+        pass
+    return False
+
+
 class SchedulerAgent:
     """Decides what to do next: plan, continue, or idle."""
 
     def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
+        if _apply_human_goal(board):
+            return {"next": "planner", "data": {"reason": "human_goal"}}
+
         # Orchestrator: workers idle until comms_operator assigns work via bus
         if _persona() != "comms_operator":
             pri = board.get("priority", config.PRI_MAINTENANCE)

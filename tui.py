@@ -296,10 +296,13 @@ class TUI:
         if sd != self._session_dir:
             self._session_dir = sd
             self.slots.clear()
-            for fp in glob.glob(os.path.join(sd, "events-child-s*.jsonl")):
-                p = Path(fp)
-                sid = int(p.stem.replace("events-child-s", ""))
-                self.slots[fp] = Slot(p, sid)
+        # Pick up staggered spawns: s4/s5 files appear seconds after session start
+        for fp in glob.glob(os.path.join(sd, "events-child-s*.jsonl")):
+            if fp in self.slots:
+                continue
+            p = Path(fp)
+            sid = int(p.stem.replace("events-child-s", ""))
+            self.slots[fp] = Slot(p, sid)
 
     def _poll(self) -> None:
         try:
