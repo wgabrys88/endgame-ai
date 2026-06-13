@@ -486,10 +486,51 @@ def _evolution_fitness(board: dict[str, Any], fissions: int) -> float:
     return round(max(0.0, min(1.0, score)), 4)
 
 
+def _pressure_band(board: dict[str, Any]) -> str:
+    pressure = board.get("_pressure", {})
+    stagnation = float(pressure.get("stagnation", board.get("stagnation", 0.0)) or 0.0)
+    if stagnation >= config.STAG_ESCALATE:
+        return "high_pressure"
+    if stagnation >= 0.3:
+        return "mid_pressure"
+    return "low_pressure"
+
+
+def _completion_behavior(completed: str) -> str:
+    done = str(completed)
+    if done.startswith(_SIMPLE_FILE_DONE_PREFIX):
+        return "file_task"
+    if "decline" in done.lower():
+        return "decline_task"
+    if "plugin" in done.lower():
+        return "plugin_task"
+    return "general_task"
+
+
+def _behavior_niche(board: dict[str, Any], behavior: str) -> str:
+    safe_behavior = re.sub(r"[^a-z0-9_]+", "_", behavior.lower()).strip("_") or "general_task"
+    return f"{safe_behavior}:{_pressure_band(board)}"
+
+
+def _pressure_evolve_fields(board: dict[str, Any], behavior: str) -> dict[str, Any]:
+    pressure = board.get("_pressure", {})
+    return {
+        "behavior": behavior,
+        "pressure_band": _pressure_band(board),
+        "niche": _behavior_niche(board, behavior),
+        "stagnation": round(float(pressure.get("stagnation", board.get("stagnation", 0.0)) or 0.0), 4),
+        "power": round(float(board.get("power", 0.0) or 0.0), 4),
+        "velocity": round(float(pressure.get("velocity", board.get("velocity", 0.0)) or 0.0), 4),
+        "failures": int(pressure.get("failures", 0) or 0),
+    }
+
+
 def _post_evolution_candidate(board: dict[str, Any], fissions: int, completed: str, fitness: float) -> None:
     try:
         import comms
-        pressure = board.get("_pressure", {})
+        behavior = _completion_behavior(completed)
+        data = _pressure_evolve_fields(board, behavior)
+        data["fissions"] = fissions
         comms.post_evolve(
             comms.agent_id(),
             comms.agent_id(),
@@ -497,12 +538,7 @@ def _post_evolution_candidate(board: dict[str, Any], fissions: int, completed: s
             fitness=fitness,
             completed=completed,
             reason="fission credit",
-            data={
-                "fissions": fissions,
-                "stagnation": round(float(pressure.get("stagnation", board.get("stagnation", 0.0)) or 0.0), 4),
-                "power": round(float(board.get("power", 0.0) or 0.0), 4),
-                "velocity": round(float(pressure.get("velocity", board.get("velocity", 0.0)) or 0.0), 4),
-            },
+            data=data,
         )
     except Exception:
         pass
@@ -520,7 +556,11 @@ def _failure_fitness(board: dict[str, Any]) -> float:
 def _post_failure_candidate(board: dict[str, Any], done_when: str, evidence: str) -> None:
     try:
         import comms
-        pressure = board.get("_pressure", {})
+        data = _pressure_evolve_fields(board, "verify_denial")
+        data.update({
+            "evidence": str(evidence)[:200],
+            "human_denials": int(board.get("_human_denials", 0) or 0),
+        })
         comms.post_evolve(
             comms.agent_id(),
             comms.agent_id(),
@@ -528,12 +568,7 @@ def _post_failure_candidate(board: dict[str, Any], done_when: str, evidence: str
             fitness=_failure_fitness(board),
             completed=str(done_when),
             reason="verify denied",
-            data={
-                "evidence": str(evidence)[:200],
-                "stagnation": round(float(pressure.get("stagnation", board.get("stagnation", 0.0)) or 0.0), 4),
-                "failures": int(pressure.get("failures", 0) or 0),
-                "human_denials": int(board.get("_human_denials", 0) or 0),
-            },
+            data=data,
         )
     except Exception:
         pass
@@ -721,9 +756,14 @@ def _mutation_fitness(board: dict[str, Any]) -> float:
 def _post_mutation_candidate(board: dict[str, Any], filename: str, diff: str, obs: str) -> None:
     try:
         import comms
-        pressure = board.get("_pressure", {})
         path = _resolve_existing_plugin(filename)
         display = f"plugins/{path.name}" if path else str(filename)[:80]
+        data = _pressure_evolve_fields(board, "plugin_patch")
+        data.update({
+            "filename": display,
+            "evidence": str(obs)[:200],
+            "human_denials": int(board.get("_human_denials", 0) or 0),
+        })
         comms.post_evolve(
             comms.agent_id(),
             comms.agent_id(),
@@ -732,13 +772,7 @@ def _post_mutation_candidate(board: dict[str, Any], filename: str, diff: str, ob
             completed=display,
             reason="mutator patch",
             diff=diff,
-            data={
-                "filename": display,
-                "evidence": str(obs)[:200],
-                "stagnation": round(float(pressure.get("stagnation", board.get("stagnation", 0.0)) or 0.0), 4),
-                "failures": int(pressure.get("failures", 0) or 0),
-                "human_denials": int(board.get("_human_denials", 0) or 0),
-            },
+            data=data,
         )
     except Exception:
         pass

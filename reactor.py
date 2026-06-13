@@ -19,6 +19,7 @@ _session_dir: str = ""
 _last_evolve_id: int = 0
 _breed_scores: dict[str, dict[str, Any]] = {}
 _slot_survivors: dict[int, str] = {}
+_elite_archive: dict[str, dict[str, Any]] = {}
 
 
 def spawn(slot_id: int, persona: str, goal: str = "", priority: int = config.PRI_MAINTENANCE) -> int:
@@ -108,22 +109,93 @@ def _candidate_fitness(payload: dict[str, Any]) -> float:
         return 0.0
 
 
-def _post_breed_status(action: str, target: str, slot_id: int, fitness: float) -> None:
+def _post_breed_status(
+    action: str,
+    target: str,
+    slot_id: int,
+    fitness: float,
+    *,
+    niche: str = "",
+    detail: dict[str, Any] | None = None,
+) -> None:
     try:
+        data = {
+            "action": f"breed.{action}",
+            "target": target,
+            "slot": slot_id,
+            "fitness": round(fitness, 4),
+        }
+        if niche:
+            data["niche"] = niche[:80]
+            data["elite_count"] = len(_elite_archive)
+        if detail:
+            data.update(detail)
         comms.post(
             "reactor",
             "reactor",
-            f"breed {action} @{target} s{slot_id} fitness={fitness:.3f}",
+            f"breed {action} @{target} s{slot_id} fitness={fitness:.3f}"
+            + (f" niche={niche[:80]}" if niche else ""),
             kind=comms.KIND_STATUS,
-            data={
-                "action": f"breed.{action}",
-                "target": target,
-                "slot": slot_id,
-                "fitness": round(fitness, 4),
-            },
+            data=data,
         )
     except Exception:
         pass
+
+
+def _candidate_niche(payload: dict[str, Any], action: str) -> str:
+    niche = str(payload.get("niche", "")).strip()[:80]
+    if niche:
+        return niche
+    behavior = str(payload.get("behavior", "")).strip()
+    band = str(payload.get("pressure_band", "")).strip()
+    if behavior and band:
+        return f"{behavior[:40]}:{band[:30]}"
+    if action == "patch_plugin":
+        return "plugin_patch:unknown_pressure"
+    if action == "evict":
+        return "verify_denial:unknown_pressure"
+    return "general_task:unknown_pressure"
+
+
+def _trim_elite_archive() -> None:
+    while len(_elite_archive) > config.BREED_ELITE_MAX_NICHES:
+        worst = min(
+            _elite_archive,
+            key=lambda n: float(_elite_archive[n].get("fitness", 0.0) or 0.0),
+        )
+        _elite_archive.pop(worst, None)
+
+
+def _evict_elites_for(target: str) -> None:
+    for niche, elite in list(_elite_archive.items()):
+        if elite.get("target") == target:
+            _elite_archive.pop(niche, None)
+
+
+def _update_elite_archive(
+    target: str,
+    action: str,
+    slot_id: int,
+    fitness: float,
+    payload: dict[str, Any],
+) -> tuple[bool, str]:
+    niche = _candidate_niche(payload, action)
+    previous = _elite_archive.get(niche)
+    prev_fit = float(previous.get("fitness", -1.0) or -1.0) if previous else -1.0
+    if previous and fitness < prev_fit + config.BREED_ELITE_MIN_DELTA:
+        return False, niche
+    _elite_archive[niche] = {
+        "target": target,
+        "action": action,
+        "slot": slot_id,
+        "fitness": fitness,
+        "completed": str(payload.get("completed", ""))[:120],
+        "behavior": str(payload.get("behavior", ""))[:60],
+        "pressure_band": str(payload.get("pressure_band", ""))[:40],
+        "ts": time.time(),
+    }
+    _trim_elite_archive()
+    return True, niche
 
 
 def process_evolve_candidates() -> None:
@@ -142,14 +214,26 @@ def process_evolve_candidates() -> None:
 
         if action == "evict":
             _breed_scores.pop(target, None)
+            _evict_elites_for(target)
             for sid, persona in list(_slot_survivors.items()):
                 if persona == target:
                     _slot_survivors.pop(sid, None)
-            _post_breed_status("evict", target, slot_id, fitness)
+            _post_breed_status("evict", target, slot_id, fitness,
+                               niche=_candidate_niche(payload, action))
+            continue
+        if action == "patch_plugin":
+            is_elite, niche = _update_elite_archive(target, action, slot_id, fitness, payload)
+            if is_elite:
+                _post_breed_status("elite", target, slot_id, fitness, niche=niche,
+                                   detail={"elite_action": action})
             continue
         if action != "retain":
             continue
 
+        is_elite, niche = _update_elite_archive(target, action, slot_id, fitness, payload)
+        if is_elite:
+            _post_breed_status("elite", target, slot_id, fitness, niche=niche,
+                               detail={"elite_action": action})
         previous = _breed_scores.get(target, {})
         if previous and fitness < float(previous.get("fitness", 0.0) or 0.0):
             continue
@@ -165,7 +249,7 @@ def process_evolve_candidates() -> None:
             if fitness >= incumbent_fit:
                 _slot_survivors[slot_id] = target
                 print(f"  BREED RETAIN s{slot_id} -> {target} fitness={fitness:.3f}")
-                _post_breed_status("retain", target, slot_id, fitness)
+                _post_breed_status("retain", target, slot_id, fitness, niche=niche)
 
 
 def select_respawn_persona(slot_id: int, fallback: str) -> str:
