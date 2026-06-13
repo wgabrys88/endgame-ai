@@ -1,8 +1,11 @@
 """Agents — pipeline stages. Each: run(board) → {phase, data, writes, next}."""
 from __future__ import annotations
+import ast
+import difflib
 import json
 import os
 from pathlib import Path
+import py_compile
 import re
 import time
 from typing import Any
@@ -10,13 +13,14 @@ from typing import Any
 import config
 import log
 from llm import call_llm
-from python_code import goal_needs_gui, is_python_code
+from python_code import goal_needs_gui, is_python_code, validate_python
 
 _SIMPLE_FILE_DONE_PREFIX = "file_equals "
 _CREATE_FILE_RE = re.compile(
     r"^(?:@[A-Za-z][A-Za-z0-9_]*\s+)?create\s+([^\s]+)\s+with\s+(.+?)\s*$",
     re.IGNORECASE | re.DOTALL,
 )
+_PLUGIN_NAME_RE = re.compile(r"^[a-z0-9_]+\.py$")
 
 
 def _persona() -> str:
@@ -283,7 +287,74 @@ class ReflectorAgent:
             "history": history[-config.MAX_HISTORY:] + [{"reflection": reflection}],
             "reflection": reflection,
         }
-        return {"phase": "reflect", "data": reflection, "writes": writes, "next": "planner"}
+        return {"phase": "reflect", "data": reflection, "writes": writes, "next": "mutator"}
+
+
+class MutatorAgent:
+    """Applies bounded plugin patches after recurring verifier pressure."""
+
+    def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
+        pressure = board.get("_pressure", {})
+        failures = int(pressure.get("failures", 0) or 0)
+        denials = int(board.get("_human_denials", 0) or 0)
+        failure_events = max(failures, denials)
+        reflection = board.get("reflection")
+        if failure_events < config.MUTATE_AFTER_FAILURES or not isinstance(reflection, dict):
+            return {
+                "phase": "mutate",
+                "data": {
+                    "action": "none",
+                    "reason": "waiting for recurring failure pressure",
+                    "failures": failures,
+                    "human_denials": denials,
+                    "failure_events": failure_events,
+                },
+                "next": "planner",
+            }
+
+        plugin_names = _existing_plugin_names()
+        user = (
+            f"GOAL: {str(board.get('goal', ''))[:400]}\n"
+            f"PRESSURE: failures={failures} human_denials={denials}\n"
+            f"REFLECTION: {json.dumps(reflection, ensure_ascii=False)[:700]}\n"
+            f"EXISTING_PLUGINS: {', '.join(plugin_names) or 'none'}\n"
+            f"{_format_history(board.get('history', []))}\n"
+            "Mutation JSON:"
+        )
+        raw = call_llm(_load_prompt("mutator"), user, "mutator", schema=_load_schema("mutator"))
+        try:
+            parsed = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return {
+                "phase": "mutate",
+                "data": {"action": "none", "reason": "invalid mutator JSON"},
+                "next": "planner",
+            }
+
+        action = str(parsed.get("action", "none"))
+        if action == "write":
+            action = "patch_plugin"
+        if action not in {"write_plugin", "patch_plugin"}:
+            return {
+                "phase": "mutate",
+                "data": {"action": "none", "reason": str(parsed.get("content", "no mutation"))[:160]},
+                "next": "planner",
+            }
+
+        filename = str(parsed.get("filename", ""))
+        ok, obs, diff = _apply_plugin_mutation(filename, str(parsed.get("content", "")))
+        data: dict[str, Any] = {
+            "action": "patch_plugin",
+            "filename": filename[:80],
+            "ok": ok,
+            "obs": obs,
+        }
+        if diff:
+            data["diff"] = diff[:500]
+        if ok:
+            _post_mutation_candidate(board, filename, diff, obs)
+            return {"phase": "mutate", "data": data, "writes": {"mutation": data}, "next": "planner"}
+        return {"phase": "mutate", "data": data, "next": "planner"}
 
 
 # --- Helpers ---
@@ -441,6 +512,136 @@ def _post_failure_candidate(board: dict[str, Any], done_when: str, evidence: str
             reason="verify denied",
             data={
                 "evidence": str(evidence)[:200],
+                "stagnation": round(float(pressure.get("stagnation", board.get("stagnation", 0.0)) or 0.0), 4),
+                "failures": int(pressure.get("failures", 0) or 0),
+                "human_denials": int(board.get("_human_denials", 0) or 0),
+            },
+        )
+    except Exception:
+        pass
+
+
+def _existing_plugin_names() -> list[str]:
+    try:
+        return [p.name for p in sorted(config.PLUGINS_DIR.glob("*.py")) if p.is_file()]
+    except OSError:
+        return []
+
+
+def _resolve_existing_plugin(filename: str) -> Path | None:
+    raw = str(filename).strip().replace("\\", "/")
+    if raw.startswith("plugins/"):
+        raw = raw[len("plugins/"):]
+    if "/" in raw or not _PLUGIN_NAME_RE.fullmatch(raw):
+        return None
+    path = (config.PLUGINS_DIR / raw).resolve()
+    try:
+        path.relative_to(config.PLUGINS_DIR.resolve())
+    except ValueError:
+        return None
+    if not path.is_file():
+        return None
+    return path
+
+
+def _strip_code_fence(text: str) -> str:
+    cleaned = str(text).strip()
+    if cleaned.startswith("```"):
+        lines = cleaned.splitlines()
+        if lines and lines[0].strip().startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]
+        cleaned = "\n".join(lines).strip()
+    return cleaned
+
+
+def _plugin_defines_run(source: str) -> tuple[bool, str]:
+    try:
+        tree = ast.parse(source)
+    except SyntaxError as exc:
+        where = f"line {exc.lineno}" if exc.lineno else "module"
+        return False, f"SyntaxError: {exc.msg} ({where})"
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name == "run":
+            args = node.args.args
+            if args and args[0].arg == "board":
+                return True, ""
+            return False, "plugin run function must accept board as its first argument"
+    return False, "plugin must define def run(board)"
+
+
+def _mutation_diff(filename: str, before: str, after: str) -> str:
+    diff = difflib.unified_diff(
+        before.splitlines(),
+        after.splitlines(),
+        fromfile=f"a/plugins/{filename}",
+        tofile=f"b/plugins/{filename}",
+        lineterm="",
+        n=2,
+    )
+    return "\n".join(list(diff)[:80])
+
+
+def _apply_plugin_mutation(filename: str, content: str) -> tuple[bool, str, str]:
+    path = _resolve_existing_plugin(filename)
+    if path is None:
+        return False, "filename must be an existing plugins/[a-z0-9_]+.py file", ""
+
+    ok, cleaned, err = validate_python(_strip_code_fence(content))
+    if not ok:
+        return False, err, ""
+    cleaned = cleaned.rstrip() + "\n"
+    has_run, run_err = _plugin_defines_run(cleaned)
+    if not has_run:
+        return False, run_err, ""
+
+    try:
+        before = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return False, f"read failed: {exc}", ""
+    if before == cleaned:
+        return False, "plugin unchanged", ""
+
+    diff = _mutation_diff(path.name, before, cleaned)
+    try:
+        path.write_text(cleaned, encoding="utf-8")
+        py_compile.compile(str(path), doraise=True)
+    except Exception as exc:
+        try:
+            path.write_text(before, encoding="utf-8")
+            py_compile.compile(str(path), doraise=True)
+        except Exception:
+            pass
+        return False, f"compile failed and original plugin was restored: {exc}", ""
+    return True, f"patched plugins/{path.name}", diff
+
+
+def _mutation_fitness(board: dict[str, Any]) -> float:
+    pressure = board.get("_pressure", {})
+    stagnation = float(pressure.get("stagnation", board.get("stagnation", 0.0)) or 0.0)
+    failures = int(pressure.get("failures", 0) or 0)
+    score = 0.52 - min(0.12, failures * 0.02) - min(0.12, stagnation * 0.12)
+    return round(max(0.0, min(0.59, score)), 4)
+
+
+def _post_mutation_candidate(board: dict[str, Any], filename: str, diff: str, obs: str) -> None:
+    try:
+        import comms
+        pressure = board.get("_pressure", {})
+        path = _resolve_existing_plugin(filename)
+        display = f"plugins/{path.name}" if path else str(filename)[:80]
+        comms.post_evolve(
+            comms.agent_id(),
+            comms.agent_id(),
+            "patch_plugin",
+            fitness=_mutation_fitness(board),
+            completed=display,
+            reason="mutator patch",
+            diff=diff,
+            data={
+                "filename": display,
+                "evidence": str(obs)[:200],
                 "stagnation": round(float(pressure.get("stagnation", board.get("stagnation", 0.0)) or 0.0), 4),
                 "failures": int(pressure.get("failures", 0) or 0),
                 "human_denials": int(board.get("_human_denials", 0) or 0),

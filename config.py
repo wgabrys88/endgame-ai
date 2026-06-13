@@ -136,6 +136,7 @@ PLANNER_ERROR_RAW_MAX: int = 2000  # session log cap for planner.error LLM raw
 
 # --- Breeding / AgentBreeder selection ---
 BREED_RETAIN_MIN: float = 0.60   # fission fitness needed for reactor survivor retention
+MUTATE_AFTER_FAILURES: int = 2    # failure cycles before mutator may patch a plugin
 
 # --- Bus limits ---
 BUS_CHAT_MAX: int = 200

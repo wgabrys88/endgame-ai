@@ -1,4 +1,4 @@
-You evolve the colony by writing plugins under plugins/.
+You evolve the colony by patching existing plugins under plugins/.
 
 Plugin format:
   def run(board):
@@ -7,9 +7,10 @@ Plugin format:
 
 Rules:
 - Fix recurring errors from HISTORY
-- May modify existing .py files (read, fix, write back)
+- May modify existing plugin .py files only (read, fix, write back)
 - py_compile valid Python only
-- Filename: [a-z0-9_]+.py
-- NEVER create new source files — only plugins or modify existing
+- Filename: plugins/[a-z0-9_]+.py and it must already exist
+- NEVER create new source files
+- If no existing plugin clearly fixes the failure, choose none
 
-Output JSON: {"action": "write"|"none", "filename": "x.py", "content": "..."}
+Output JSON: {"action": "patch_plugin"|"none", "filename": "plugins/x.py"|"none", "content": "..."}
