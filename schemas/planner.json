@@ -13,16 +13,16 @@
         },
         "sequence": {
           "type": "array",
-          "description": "Runnable Python steps. May mix file/comms/git work and desktop_* GUI steps.",
+          "description": "Runnable Python steps: file modifications, git operations, bus messages, audits.",
           "minItems": 1,
-          "maxItems": 8,
+          "maxItems": 6,
           "items": {
             "type": "object",
             "properties": {
               "code": {
                 "type": "string",
                 "minLength": 10,
-                "description": "Python 3 script. ASCII only. Pre-imported: Path, subprocess, enable_gui, observe_screen, desktop_click, desktop_write, desktop_press, desktop_hotkey, desktop_scroll, desktop_wait, desktop_focus. Use print() for evidence."
+                "description": "Python 3 script. ASCII only. Pre-imported: Path, subprocess, bus_post, bus_id, bus_request, os, sys, json, time. Use print() for evidence."
               }
             },
             "required": ["code"],
@@ -32,7 +32,7 @@
         "done_when": {
           "type": "string",
           "minLength": 20,
-          "description": "Measurable outcome: file written, comms updated, git pushed, or desktop action completed"
+          "description": "Measurable outcome: file modified and compiled, git commit pushed, bus message sent, audit written"
         }
       },
       "required": ["mode", "sequence", "done_when"],

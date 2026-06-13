@@ -31,12 +31,12 @@ SCAN_INTERVAL = 2.0
 MAX_EVENTS_BUFFER = 600
 
 ROSTER: dict[str, str] = {
-    "n1": "git_expert",
+    "n1": "architect",
     "n2": "implementor",
-    "n3": "doc_inspector",
+    "n3": "reviewer",
     "n4": "comms_operator",
-    "n5": "quality_critic",
-    "n6": "gui_operator",
+    "n5": "devops",
+    "n6": "quality_critic",
 }
 
 WORK_PHASES = frozenset({
@@ -413,15 +413,11 @@ class TUI:
                 text = str(d.get("error", d))
             case _:
                 text = str(d)
-        return _trunc(text, max_w) if max_w > 0 else text
+        return _trunc(text.replace("\n", " ").replace("\r", ""), max_w) if max_w > 0 else text.replace("\n", " ").replace("\r", "")
 
     def _bus_color(self, from_id: str, kind: str) -> tuple[int, int, int]:
         if from_id == "human":
             return CLR_BUS_HUMAN
-        if from_id == "grok":
-            return CLR_BUS_GROK
-        if from_id == "gui_operator":
-            return CLR_BUS_EVENT
         if kind == "event":
             return CLR_BUS_EVENT
         return CLR_BUS
@@ -459,7 +455,6 @@ class TUI:
         if ch == "\x1b":
             return True
         if ch == "\t":
-            self._input_from = "grok" if self._input_from == "human" else "human"
             return True
         if ch in ("q", "Q", "\x03"):
             self.running = False
@@ -568,7 +563,7 @@ class TUI:
                 lines.append(f"{bc}{BOX_SL}{BOX_SH * (W - 2)}{BOX_SR}{RST}")
 
         lines.append(f"{bc}{BOX_ML}{BOX_H * (W - 2)}{BOX_MR}{RST}")
-        lines.append(row(f"{BOLD}{_fg(*CLR_BUS)}CHAT{RST} @Human · @grok · colony — @mention pings"))
+        lines.append(row(f"{BOLD}{_fg(*CLR_BUS)}CHAT{RST} @Human · colony — @mention pings"))
         chat_entries = self._bus_chat[-bus_chat_n:]
         for i in range(bus_chat_n):
             if i < len(chat_entries):
@@ -589,14 +584,13 @@ class TUI:
         prompt = f"@{self._input_from} ({role})> {shown}"
         cursor = "\u258c" if int(time.time() * 2) % 2 else " "
         lines.append(row(f"{_fg(*CLR_INPUT)}{_trunc(prompt, inner - 1)}{cursor}{RST}"))
-        lines.append(row(f"{_fg(*CLR_DIM)}Enter send · Tab human/grok · space=chars (·) · Space empty=LIVE · q quit{RST}"))
+        lines.append(row(f"{_fg(*CLR_DIM)}Enter send · Space empty=LIVE · q quit{RST}"))
 
         lines.append(f"{bc}{BOX_BL}{BOX_H * (W - 2)}{BOX_BR}{RST}")
         while len(lines) < H:
             lines.append("\x1b[K")
-        if len(lines) > H:
-            lines = lines[:H]
-        return "\x1b[H" + "\r\n".join(ln + "\x1b[K" if not ln.startswith("\x1b[K") else ln for ln in lines)
+        lines = lines[:H]
+        return "\x1b[H" + "\r\n".join(ln + "\x1b[K" for ln in lines)
 
     @staticmethod
     def _elapsed(s: float) -> str:
@@ -616,7 +610,7 @@ class TUI:
         _w("\x1b]0;endgame-ai · reactor + bus\x07")
         pause_path = BASE_DIR / "pause"
         pause_path.write_text("", encoding="utf-8")
-        comms.post("tui", "console", "TUI online. @Human @grok @colony — @mention plays alert sound.", kind="beacon")
+        comms.post("tui", "console", "TUI online. @Human @colony — @mention plays alert sound.", kind="beacon")
 
         env = os.environ.copy()
         env["ENDGAME_BOOTSTRAPPED"] = "1"

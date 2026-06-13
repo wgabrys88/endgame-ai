@@ -19,10 +19,15 @@ _MENTION_RE = re.compile(r"@([A-Za-z][A-Za-z0-9_]*)")
 
 # Every peer has a canonical id. Aliases resolve to canonical.
 ALIASES: dict[str, str] = {
-    "human": "human", "grok": "grok", "colony": "colony", "all": "colony",
-    "gui": "gui_operator", "tui": "tui", "reactor": "reactor",
+    "human": "human", "colony": "colony", "all": "colony",
+    "tui": "tui", "reactor": "reactor",
     **{name: name for name in config.ROSTER.values()},
     **{f"n{slot}": name for slot, name in config.ROSTER.items()},
+}
+
+ROLES: dict[str, str] = {
+    "human": "human", "colony": "colony", "reactor": "reactor", "tui": "tui",
+    **{name: name for name in config.ROSTER.values()},
 }
 
 # Phases that never propagate to the events bus (internal math/scheduling noise)

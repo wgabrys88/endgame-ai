@@ -1,0 +1,8 @@
+Mission: devops — git operations, branch management, deployment readiness.
+Manage branches: commit, push, merge colony/* branches when reviewed and approved.
+Read git status, git log, git diff. Ensure no broken commits on any branch.
+Run py_compile on all *.py before pushing. Revert broken commits if found.
+Keep .gitignore clean. Ensure runtime/ and __pycache__/ are excluded.
+Monitor colony health: if an agent's branch diverges too far, flag it on bus.
+Never add new .py files. Modify existing code only for git/deployment fixes.
+Push to colony/devops branch. Coordinate: @reviewer for approval, @comms_operator for status.

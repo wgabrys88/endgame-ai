@@ -1,6 +1,0 @@
-Mission: document colony state for other agents.
-Reply to bus ** PING FOR YOU ** (@Human @grok).
-Read events-child-*.jsonl tails, snapshot.json, and plugins/.
-Write concise status to runtime/comms/report.md: active agents, errors, plugins created.
-Keep reports factual and short so git_expert and implementor can act.
-GUI evidence: bus_request(bus_id(), "gui_operator", "describe visible window") — never desktop_* yourself.

@@ -6,13 +6,13 @@ import json, os, subprocess, sys, time
 from pathlib import Path
 
 BASE = Path(__file__).parent.resolve()
-SLOTS = 2
-BUDGET = 50
-ROSTER = {1: "git_expert", 2: "implementor"}
+SLOTS = 6
+BUDGET = 80
+ROSTER = {1: "architect", 2: "implementor", 3: "reviewer", 4: "comms_operator", 5: "devops", 6: "quality_critic"}
 
 
 def main():
-    seconds = int(sys.argv[1]) if len(sys.argv) > 1 else 60
+    seconds = int(sys.argv[1]) if len(sys.argv) > 1 else 120
     backend = sys.argv[2] if len(sys.argv) > 2 else "lmstudio"
 
     subprocess.run([sys.executable, "-c", "import log; log.cleanup_runtime(kill_reactor=False)"], cwd=str(BASE), capture_output=True)
@@ -21,7 +21,7 @@ def main():
         (BASE / "runtime" / "comms" / name).write_text(content, encoding="utf-8")
     (BASE / "pause").write_text("", encoding="utf-8")
 
-    print(f"=== endgame-ai test: {SLOTS} agents, {seconds}s, backend={backend} ===")
+    print(f"=== endgame-ai colony test: {SLOTS} agents, {seconds}s, backend={backend} ===")
     procs = []
     for slot, personality in ROSTER.items():
         ef = f"events-child-n{slot}.jsonl"
@@ -35,7 +35,7 @@ def main():
         procs.append((slot, personality, proc))
         print(f"  n{slot} [{personality}] PID={proc.pid}")
 
-    time.sleep(2)
+    time.sleep(3)
     (BASE / "pause").unlink(missing_ok=True)
     print(f"  LIVE — {seconds}s...")
     start = time.time()
@@ -44,7 +44,7 @@ def main():
             alive = sum(1 for _, _, p in procs if p.poll() is None)
             if alive == 0:
                 break
-            time.sleep(5)
+            time.sleep(10)
             print(f"  T+{int(time.time()-start)}s — {alive}/{SLOTS} alive")
     except KeyboardInterrupt:
         pass
@@ -62,19 +62,20 @@ def main():
     for slot, personality, _ in procs:
         ef = BASE / f"events-child-n{slot}.jsonl"
         if not ef.exists():
-            print(f"  n{slot}: no events")
+            print(f"  n{slot} [{personality}]: no events")
             continue
         lines = [l for l in ef.read_text(encoding="utf-8").splitlines() if l.strip()]
         fissions = sum(1 for l in lines if '"fission"' in l)
-        print(f"  n{slot} [{personality}]: {len(lines)} events, {fissions} fissions")
+        errors = sum(1 for l in lines if '.error' in l)
+        print(f"  n{slot} [{personality}]: {len(lines)} events, {fissions} fissions, {errors} errors")
 
     bus = BASE / "runtime" / "comms" / "messages.json"
     if bus.exists():
         msgs = json.loads(bus.read_text(encoding="utf-8"))
         if msgs:
             print(f"\n  Bus: {len(msgs)} messages")
-            for m in msgs[-3:]:
-                print(f"    @{m.get('from')}: {str(m.get('text',''))[:80]}")
+            for m in msgs[-5:]:
+                print(f"    @{m.get('from','?')}: {str(m.get('text',''))[:80]}")
     print()
 
 

@@ -116,14 +116,16 @@ class StagnationAgent:
         done = sum(1 for s in plan if s.get("status") == "done")
         progress = done / len(plan) if plan else 0.0
         history = (ctx.get("progress_history", []) + [progress])[-config.STAGNATION_CYCLES_WINDOW:]
-        if len(history) < 3:
+        if len(history) < config.STAGNATION_CYCLES_WINDOW // 2:
             stag = 0.0
         elif history[-1] - history[-2] > 0.01:
             stag = 0.0
         elif history[-1] - history[0] > 0.01:
             stag = 0.3
         else:
-            stag = 1.0
+            # Ramp: proportion of window filled with no progress
+            filled = len(history) / config.STAGNATION_CYCLES_WINDOW
+            stag = min(1.0, filled * 0.8)
         failures = int(ctx.get("consecutive_failures", 0))
         stag = min(1.0, stag + min(failures * config.STAGNATION_FAILURE_WEIGHT, config.STAGNATION_FAILURE_CAP))
         if int(ctx.get("activity_events", 0)) > 0:
@@ -549,11 +551,6 @@ def _step_code(s: Any) -> str:
 
 
 def _load_planner_system() -> str:
-    import os
-    if os.environ.get("ENDGAME_PERSONALITY", "").strip() == "gui_operator":
-        gui = config.PROMPTS_DIR / "planner_gui.txt"
-        if gui.exists():
-            return gui.read_text(encoding="utf-8").strip()
     return _load_prompt("planner")
 
 

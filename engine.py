@@ -8,7 +8,7 @@ import time
 from typing import Any, Callable
 
 from agents import (StagnationAgent, LorenzAgent, PidAgent, SchedulerAgent,
-                    ObserverAgent, PlannerAgent, ActorAgent, VerifierAgent,
+                    PlannerAgent, ActorAgent, VerifierAgent,
                     FissionJudgeAgent, ReflectorAgent, MutatorAgent)
 import config
 import log
@@ -20,7 +20,7 @@ _last_snapshot_at: float = 0.0
 
 MATH_AGENTS = [StagnationAgent(), LorenzAgent(), PidAgent()]
 AGENTS: dict[str, Any] = {
-    "scheduler": SchedulerAgent(), "observer": ObserverAgent(),
+    "scheduler": SchedulerAgent(),
     "planner": PlannerAgent(), "actor": ActorAgent(),
     "verifier": VerifierAgent(), "reflector": ReflectorAgent(),
     "fission_judge": FissionJudgeAgent(), "mutator": MutatorAgent(),
@@ -91,10 +91,6 @@ def run(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
 
 
 def _run_agent(board: dict[str, Any], name: str) -> dict[str, Any]:
-    # Auto-observe for GUI planner
-    if name == "planner" and config.GUI_MODE_PATH.exists():
-        obs = AGENTS["observer"]
-        board.update(obs.run({k: board[k] for k in obs.reads if k in board}).get("writes", {}))
     agent = AGENTS[name]
     ctx = {k: board[k] for k in agent.reads if k in board}
     result = agent.run(ctx)
@@ -111,10 +107,6 @@ def _main_loop(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
             comms.drain_inject()
         except Exception:
             pass
-        # Auto-enable GUI mode for gui_operator
-        import os
-        if os.environ.get("ENDGAME_PERSONALITY", "") == "gui_operator":
-            config.GUI_MODE_PATH.write_text("1", encoding="utf-8")
         # Poll goal from personality file
         _poll_goal(board)
         # Validate active plan step is Python

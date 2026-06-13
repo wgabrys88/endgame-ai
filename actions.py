@@ -13,7 +13,12 @@ import time
 import config
 
 _child_pids: list[int] = []
-from win32 import user32, get_window_title, VK_MAP, EXTENDED_VKS, INPUT
+
+try:
+    from win32 import user32, get_window_title, VK_MAP, EXTENDED_VKS, INPUT
+    _HAS_WIN32 = True
+except (ImportError, OSError):
+    _HAS_WIN32 = False
 
 MOUSEEVENTF_LEFTDOWN = 0x0002
 MOUSEEVENTF_LEFTUP = 0x0004
