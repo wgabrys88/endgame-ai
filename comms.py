@@ -318,6 +318,18 @@ def read_chat(limit: int = 30) -> list[dict[str, Any]]:
     return _read_chat()[-limit:]
 
 
+def evolve_candidates(after_id: int = 0, limit: int = 20) -> list[dict[str, Any]]:
+    """Return recent AgentBreeder candidates without removing blackboard history."""
+    out = []
+    for entry in _read_chat():
+        if str(entry.get("kind", "")) != KIND_EVOLVE:
+            continue
+        eid = int(entry.get("id", 0) or 0)
+        if eid > after_id:
+            out.append(entry)
+    return out[-limit:]
+
+
 def pending_for(peer: str, limit: int = 6) -> list[dict[str, Any]]:
     me = canonical(peer)
     hits = []

@@ -16,6 +16,9 @@ CONTROL_INTERVAL = 5
 slots: dict[int, dict[str, Any]] = {}
 _model_profile: str = ""
 _session_dir: str = ""
+_last_evolve_id: int = 0
+_breed_scores: dict[str, dict[str, Any]] = {}
+_slot_survivors: dict[int, str] = {}
 
 
 def spawn(slot_id: int, persona: str, goal: str = "", priority: int = config.PRI_MAINTENANCE) -> int:
@@ -85,6 +88,100 @@ def status() -> dict[int, dict[str, Any]]:
     return {sid: {**info, "alive": is_alive(sid)} for sid, info in slots.items()}
 
 
+def _candidate_slot(entry: dict[str, Any], payload: dict[str, Any], target: str) -> int:
+    try:
+        sid = int(payload.get("slot", entry.get("slot", 0)) or 0)
+    except (TypeError, ValueError):
+        sid = 0
+    if 2 <= sid <= config.SLOTS:
+        return sid
+    for slot_id, info in slots.items():
+        if info.get("persona") == target:
+            return slot_id
+    return int(config.PERSONA_SLOTS.get(target, 0) or 0)
+
+
+def _candidate_fitness(payload: dict[str, Any]) -> float:
+    try:
+        return max(0.0, min(1.0, float(payload.get("fitness", 0.0) or 0.0)))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _post_breed_status(action: str, target: str, slot_id: int, fitness: float) -> None:
+    try:
+        comms.post(
+            "reactor",
+            "reactor",
+            f"breed {action} @{target} s{slot_id} fitness={fitness:.3f}",
+            kind=comms.KIND_STATUS,
+            data={
+                "action": f"breed.{action}",
+                "target": target,
+                "slot": slot_id,
+                "fitness": round(fitness, 4),
+            },
+        )
+    except Exception:
+        pass
+
+
+def process_evolve_candidates() -> None:
+    """Select retained personas from fission-backed AgentBreeder candidates."""
+    global _last_evolve_id
+    for entry in comms.evolve_candidates(after_id=_last_evolve_id, limit=50):
+        eid = int(entry.get("id", 0) or 0)
+        _last_evolve_id = max(_last_evolve_id, eid)
+        payload = entry.get("payload") if isinstance(entry.get("payload"), dict) else {}
+        target = comms.canonical(str(payload.get("target") or entry.get("to") or entry.get("from", "")))
+        if target not in config.WORKER_PERSONAS:
+            continue
+        action = str(payload.get("action", "")).lower()
+        slot_id = _candidate_slot(entry, payload, target)
+        fitness = _candidate_fitness(payload)
+
+        if action == "evict":
+            _breed_scores.pop(target, None)
+            for sid, persona in list(_slot_survivors.items()):
+                if persona == target:
+                    _slot_survivors.pop(sid, None)
+            _post_breed_status("evict", target, slot_id, fitness)
+            continue
+        if action != "retain":
+            continue
+
+        previous = _breed_scores.get(target, {})
+        if previous and fitness < float(previous.get("fitness", 0.0) or 0.0):
+            continue
+        _breed_scores[target] = {
+            "fitness": fitness,
+            "slot": slot_id,
+            "completed": str(payload.get("completed", ""))[:120],
+            "fissions": int(payload.get("fissions", 0) or 0),
+        }
+        if 2 <= slot_id <= config.SLOTS and fitness >= config.BREED_RETAIN_MIN:
+            incumbent = _slot_survivors.get(slot_id, "")
+            incumbent_fit = float(_breed_scores.get(incumbent, {}).get("fitness", -1.0) or -1.0)
+            if fitness >= incumbent_fit:
+                _slot_survivors[slot_id] = target
+                print(f"  BREED RETAIN s{slot_id} -> {target} fitness={fitness:.3f}")
+                _post_breed_status("retain", target, slot_id, fitness)
+
+
+def select_respawn_persona(slot_id: int, fallback: str) -> str:
+    """Choose the persona that survives into a worker respawn."""
+    if slot_id < 2:
+        return fallback
+    retained = _slot_survivors.get(slot_id, "")
+    if retained in config.WORKER_PERSONAS:
+        fitness = float(_breed_scores.get(retained, {}).get("fitness", 0.0) or 0.0)
+        if fitness >= config.BREED_RETAIN_MIN:
+            return retained
+    if fallback in config.WORKER_PERSONAS:
+        return fallback
+    return config.SLOT_DEFAULTS.get(slot_id, fallback)
+
+
 if __name__ == "__main__":
     # Parse CLI
     for i, arg in enumerate(sys.argv[1:], 1):
@@ -119,6 +216,7 @@ if __name__ == "__main__":
     # Control loop: MoE reassign + respawn dead slots
     while True:
         time.sleep(CONTROL_INTERVAL)
+        process_evolve_candidates()
         for cmd in comms.drain_control():
             action = str(cmd.get("action", ""))
             if action == "reassign":
@@ -136,8 +234,6 @@ if __name__ == "__main__":
         for sid in list(slots):
             if not is_alive(sid):
                 info = slots.pop(sid)
-                persona = info["persona"]
-                if sid >= 2:
-                    persona = config.SLOT_DEFAULTS.get(sid, persona)
+                persona = select_respawn_persona(sid, str(info.get("persona", "")))
                 print(f"  RESPAWN s{sid} ({persona})")
                 spawn(sid, persona, info.get("goal", ""), info.get("priority", 0))

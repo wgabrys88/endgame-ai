@@ -134,6 +134,9 @@ MOE_GATE_MIN: float = 0.10       # minimum softmax weight to route maintenance w
 HUMAN_GOAL_MAX_DENIALS: int = 3  # stop replanning human pri=3 goals after N verify denials
 PLANNER_ERROR_RAW_MAX: int = 2000  # session log cap for planner.error LLM raw
 
+# --- Breeding / AgentBreeder selection ---
+BREED_RETAIN_MIN: float = 0.60   # fission fitness needed for reactor survivor retention
+
 # --- Bus limits ---
 BUS_CHAT_MAX: int = 200
 BUS_EVENTS_MAX: int = 500
