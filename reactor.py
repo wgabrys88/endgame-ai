@@ -20,10 +20,12 @@ _session_dir: str = ""
 def spawn(slot_id: int, persona: str, goal: str = "", priority: int = config.PRI_MAINTENANCE) -> int:
     """Spawn a persona in a slot. Returns PID."""
     ef = os.path.join(BASE, f"events-child-s{slot_id}.jsonl")
-    try:
-        os.remove(ef)
-    except OSError:
-        pass
+    for path in (ef, os.path.join(_session_dir, f"events-child-s{slot_id}.jsonl") if _session_dir else ""):
+        if path:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
     if not goal:
         pfile = os.path.join(BASE, "prompts", "personalities", f"{persona}.txt")
         if os.path.exists(pfile):

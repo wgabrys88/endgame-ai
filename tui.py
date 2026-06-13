@@ -46,6 +46,8 @@ _k32.SetConsoleMode(_hout, _m.value | 0x0004 | 0x0008)
 
 RST = "\x1b[0m"
 BOLD = "\x1b[1m"
+SYNC_ON = "\x1b[?2026h"
+SYNC_OFF = "\x1b[?2026l"
 
 
 def _w(t: str) -> None:
@@ -129,7 +131,7 @@ def _bar(v: float, w: int, clr: tuple) -> str:
 class Slot:
     __slots__ = ("path", "slot_id", "persona", "events", "_off", "_mt",
                  "alive", "fissions", "last_phase", "priority", "stagnation",
-                 "agent_states")
+                 "agent_states", "_last_n")
 
     def __init__(self, path: Path, slot_id: int):
         self.path = path
@@ -143,8 +145,21 @@ class Slot:
         self.last_phase = ""
         self.priority = 0
         self.stagnation = 0.0
-        # Track which agents have fired
+        self._last_n = 0
         self.agent_states: dict[str, str] = {a: "idle" for a in INTERNAL_AGENTS}
+
+    def _reset(self) -> None:
+        """Fresh state when persona respawns in this slot."""
+        self.events = []
+        self._off = 0
+        self._mt = 0.0
+        self.alive = True
+        self.fissions = 0
+        self.last_phase = ""
+        self.priority = 0
+        self.stagnation = 0.0
+        self._last_n = 0
+        self.agent_states = {a: "idle" for a in INTERNAL_AGENTS}
 
     def poll(self) -> None:
         try:
@@ -178,9 +193,15 @@ class Slot:
     def _ingest(self, ev: dict) -> None:
         ph = ev.get("phase", "")
         d = ev.get("d") or {}
+        n = int(ev.get("n", 0) or 0)
+        if ph == "start" and n == 1 and self._last_n > 1:
+            self._reset()
+        if n:
+            self._last_n = n
         self.last_phase = ph
         if ph == "start":
             self.persona = str(d.get("personality", self.persona))
+            self.alive = True
         elif ph == "fission":
             self.fissions += 1
             self.agent_states["fission_judge"] = "✓"
@@ -261,19 +282,20 @@ class TUI:
 
     def _scan(self) -> None:
         now = time.time()
-        if now - self._last_scan < SCAN_INTERVAL:
+        if self._session_dir and now - self._last_scan < SCAN_INTERVAL:
             return
         self._last_scan = now
-        # Find session dir (most recent)
         sessions = sorted(glob.glob(str(BASE_DIR / "sessions" / "*")))
-        if sessions:
-            sd = sessions[-1]
+        if not sessions:
+            return
+        sd = sessions[-1]
+        if sd != self._session_dir:
             self._session_dir = sd
+            self.slots.clear()
             for fp in glob.glob(os.path.join(sd, "events-child-s*.jsonl")):
-                if fp not in self.slots:
-                    p = Path(fp)
-                    sid = int(p.stem.replace("events-child-s", ""))
-                    self.slots[fp] = Slot(p, sid)
+                p = Path(fp)
+                sid = int(p.stem.replace("events-child-s", ""))
+                self.slots[fp] = Slot(p, sid)
 
     def _poll(self) -> None:
         try:
@@ -288,17 +310,27 @@ class TUI:
     def _sorted(self) -> list[Slot]:
         return sorted(self.slots.values(), key=lambda s: s.slot_id)
 
+    def _display_slots(self) -> list[Slot | None]:
+        """Map slot_id 1-5 to the current session's Slot (or None)."""
+        display: list[Slot | None] = [None] * 5
+        for s in self._sorted():
+            if 1 <= s.slot_id <= 5:
+                display[s.slot_id - 1] = s
+        return display
+
+    def _bus_line(self, entry: dict[str, Any], width: int) -> str:
+        fid = str(entry.get("from", "?"))[:12].ljust(12)
+        kind = str(entry.get("kind", "message"))[:5]
+        text = str(entry.get("text", "")).replace("\n", " ")
+        body = f"@{fid} [{kind}] {text}"
+        return f"{_fg(*CLR_BUS)}{_trunc(body, width)}{RST}"
+
     def render(self) -> str:
         W = _console_width()
         inner = W - 4
-        slots = self._sorted()
+        display_slots = self._display_slots()
+        active = [s for s in display_slots if s is not None]
         bc = _fg(*CLR_BORDER)
-
-        # Ensure 5 display slots (even if empty)
-        display_slots: list[Slot | None] = [None] * 5
-        for s in slots:
-            if 1 <= s.slot_id <= 5:
-                display_slots[s.slot_id - 1] = s
 
         def row(content: str) -> str:
             t = _trunc(content, inner)
@@ -309,11 +341,13 @@ class TUI:
         lines.append(f"{bc}{BOX_TL}{BOX_H * (W - 2)}{BOX_TR}{RST}")
 
         # Header (line 2)
-        alive = sum(1 for s in slots if s.alive)
-        total_f = sum(s.fissions for s in slots)
+        alive = sum(1 for s in active if s.alive)
+        total_f = sum(s.fissions for s in active)
         elapsed = time.time() - self._start
+        sess = Path(self._session_dir).name[-15:] if self._session_dir else "waiting…"
         hdr = (f"{BOLD}{_fg(*CLR_HEADER)}REACTOR{RST} {alive}/5 slots  "
                f"{_fg(*CLR_FISSION)}F={total_f}{RST}  "
+               f"{_fg(*CLR_DIM)}{sess}{RST}  "
                f"{self._elapsed(elapsed)}  {time.strftime('%H:%M:%S')}")
         lines.append(row(hdr))
         lines.append(f"{bc}{BOX_ML}{BOX_H * (W - 2)}{BOX_MR}{RST}")
@@ -355,14 +389,20 @@ class TUI:
             if idx < 4:
                 lines.append(f"{bc}{BOX_SL}{BOX_SH * (W - 2)}{BOX_SR}{RST}")
 
-        # Bus (6 lines: header + 5 messages)
+        # Bus: CHAT (4) + EVENTS (3) = 7 lines → fills layout to TARGET_HEIGHT
         lines.append(f"{bc}{BOX_ML}{BOX_H * (W - 2)}{BOX_MR}{RST}")
-        lines.append(row(f"{BOLD}{_fg(*CLR_BUS)}BUS{RST}"))
-        chat = self._bus_chat[-5:]
-        for i in range(5):
+        lines.append(row(f"{BOLD}{_fg(*CLR_BUS)}CHAT{RST} @mention pings"))
+        chat = self._bus_chat[-3:]
+        for i in range(3):
             if i < len(chat):
-                e = chat[i]
-                lines.append(row(f"{_fg(*CLR_BUS)}@{str(e.get('from', '?'))[:12]:12} {str(e.get('text', ''))[:inner-16]}{RST}"))
+                lines.append(row(self._bus_line(chat[i], inner)))
+            else:
+                lines.append(row(""))
+        lines.append(row(f"{BOLD}{_fg(*CLR_BUS)}EVENTS{RST}"))
+        events = self._bus_events[-2:]
+        for i in range(2):
+            if i < len(events):
+                lines.append(row(self._bus_line(events[i], inner)))
             else:
                 lines.append(row(""))
 
@@ -373,11 +413,10 @@ class TUI:
         lines.append(row(f"{_fg(*CLR_DIM)}Enter=send  Space=pause  q=quit{RST}"))
         lines.append(f"{bc}{BOX_BL}{BOX_H * (W - 2)}{BOX_BR}{RST}")
 
-        # Enforce TARGET_HEIGHT
         while len(lines) < TARGET_HEIGHT:
-            lines.append("\x1b[K")
+            lines.append(row(""))
         lines = lines[:TARGET_HEIGHT]
-        return "\x1b[H" + "\r\n".join(ln + "\x1b[K" for ln in lines)
+        return "\x1b[H" + "\r\n".join(ln + "\x1b[K" for ln in lines) + "\x1b[J"
 
     def recent(self, slot: Slot, n: int) -> list[dict]:
         """Get last n non-trivial events."""
@@ -466,7 +505,7 @@ class TUI:
                 self._poll()
                 if msvcrt.kbhit():
                     self._handle_key(msvcrt.getwch())
-                _w(self.render())
+                _w(SYNC_ON + self.render() + SYNC_OFF)
                 time.sleep(REFRESH_INTERVAL)
         except KeyboardInterrupt:
             pass
