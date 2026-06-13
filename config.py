@@ -138,6 +138,7 @@ PLANNER_ERROR_RAW_MAX: int = 2000  # session log cap for planner.error LLM raw
 BREED_RETAIN_MIN: float = 0.60   # fission fitness needed for reactor survivor retention
 BREED_ELITE_MIN_DELTA: float = 0.01  # fitness gain needed to replace an elite niche
 BREED_ELITE_MAX_NICHES: int = 24  # bounded in-memory quality-diversity archive
+BREED_ELITE_RESPAWN_MIN: float = 0.60  # elite fitness needed to repopulate a dead slot
 MUTATE_AFTER_FAILURES: int = 2    # failure cycles before mutator may patch a plugin
 
 # --- Bus limits ---

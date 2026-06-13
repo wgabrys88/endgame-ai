@@ -20,6 +20,7 @@ _last_evolve_id: int = 0
 _breed_scores: dict[str, dict[str, Any]] = {}
 _slot_survivors: dict[int, str] = {}
 _elite_archive: dict[str, dict[str, Any]] = {}
+_evicted_personas: dict[str, dict[str, Any]] = {}
 
 
 def spawn(slot_id: int, persona: str, goal: str = "", priority: int = config.PRI_MAINTENANCE) -> int:
@@ -172,6 +173,10 @@ def _evict_elites_for(target: str) -> None:
             _elite_archive.pop(niche, None)
 
 
+def _is_evicted(persona: str) -> bool:
+    return comms.canonical(str(persona)) in _evicted_personas
+
+
 def _update_elite_archive(
     target: str,
     action: str,
@@ -198,6 +203,34 @@ def _update_elite_archive(
     return True, niche
 
 
+def _best_elite_persona(slot_id: int) -> tuple[str, float, str]:
+    eligible: list[tuple[int, float, str, str]] = []
+    for niche, elite in _elite_archive.items():
+        target = comms.canonical(str(elite.get("target", "")))
+        if target not in config.WORKER_PERSONAS or _is_evicted(target):
+            continue
+        fitness = _candidate_fitness(elite)
+        if fitness < config.BREED_ELITE_RESPAWN_MIN:
+            continue
+        same_slot = 1 if int(elite.get("slot", 0) or 0) == slot_id else 0
+        eligible.append((same_slot, fitness, target, niche))
+    if not eligible:
+        return "", 0.0, ""
+    same_slot, fitness, target, niche = max(eligible, key=lambda item: (item[0], item[1]))
+    return target, fitness, niche
+
+
+def _first_viable_worker(*preferred: str) -> str:
+    for persona in preferred:
+        target = comms.canonical(str(persona))
+        if target in config.WORKER_PERSONAS and not _is_evicted(target):
+            return target
+    for persona in config.WORKER_PERSONAS:
+        if not _is_evicted(persona):
+            return persona
+    return config.WORKER_PERSONAS[0]
+
+
 def process_evolve_candidates() -> None:
     """Select retained personas from fission-backed AgentBreeder candidates."""
     global _last_evolve_id
@@ -214,6 +247,12 @@ def process_evolve_candidates() -> None:
 
         if action == "evict":
             _breed_scores.pop(target, None)
+            _evicted_personas[target] = {
+                "fitness": fitness,
+                "slot": slot_id,
+                "reason": str(payload.get("reason", ""))[:120],
+                "ts": time.time(),
+            }
             _evict_elites_for(target)
             for sid, persona in list(_slot_survivors.items()):
                 if persona == target:
@@ -237,6 +276,8 @@ def process_evolve_candidates() -> None:
         previous = _breed_scores.get(target, {})
         if previous and fitness < float(previous.get("fitness", 0.0) or 0.0):
             continue
+        if fitness >= config.BREED_RETAIN_MIN:
+            _evicted_personas.pop(target, None)
         _breed_scores[target] = {
             "fitness": fitness,
             "slot": slot_id,
@@ -257,13 +298,22 @@ def select_respawn_persona(slot_id: int, fallback: str) -> str:
     if slot_id < 2:
         return fallback
     retained = _slot_survivors.get(slot_id, "")
-    if retained in config.WORKER_PERSONAS:
+    if retained in config.WORKER_PERSONAS and not _is_evicted(retained):
         fitness = float(_breed_scores.get(retained, {}).get("fitness", 0.0) or 0.0)
         if fitness >= config.BREED_RETAIN_MIN:
             return retained
-    if fallback in config.WORKER_PERSONAS:
-        return fallback
-    return config.SLOT_DEFAULTS.get(slot_id, fallback)
+    elite, elite_fitness, niche = _best_elite_persona(slot_id)
+    if elite:
+        _post_breed_status("respawn", elite, slot_id, elite_fitness, niche=niche,
+                           detail={"source": "elite_archive", "fallback": fallback})
+        return elite
+    fallback_persona = comms.canonical(str(fallback))
+    default_persona = config.SLOT_DEFAULTS.get(slot_id, fallback_persona)
+    selected = _first_viable_worker(fallback_persona, default_persona)
+    if fallback_persona != selected:
+        _post_breed_status("respawn", selected, slot_id, 0.0,
+                           detail={"source": "evict_avoidance", "fallback": fallback_persona})
+    return selected
 
 
 if __name__ == "__main__":
