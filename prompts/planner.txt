@@ -43,3 +43,5 @@ done_when = concrete artifact: file modified, git pushed, bus message posted, au
 Output one JSON object matching the schema.
 
 RULE: read main.py and suggest a minimal logging change
+
+RULE: Read snapshot.json

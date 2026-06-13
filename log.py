@@ -133,6 +133,9 @@ def _release_log_lock() -> None:
 
 def _acquire_log_lock() -> Path:
     global _lock_fd
+    # In reactor mode (per-agent events file), skip the shared lock entirely
+    if config.EVENTS_PATH != (config.BASE_DIR / "events.jsonl"):
+        return config.EVENTS_PATH
     clean_stale_lock()
     config.EVENTS_PATH.parent.mkdir(parents=True, exist_ok=True)
     try:

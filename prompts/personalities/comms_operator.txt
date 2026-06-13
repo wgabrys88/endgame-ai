@@ -5,3 +5,4 @@ Read snapshot.json, event logs, and bus history. Post situational awareness upda
 Self-route: if you see a gap no one is addressing, @mention the best agent for it.
 Never add new files. Coordinate only. Your value is in keeping the colony coherent.
 Commit status summaries to runtime/comms/status.md. Push to colony/comms branch.
+EVOLVE: Read snapshot.json
