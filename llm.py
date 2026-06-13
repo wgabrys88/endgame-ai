@@ -100,7 +100,12 @@ def _resolve_host_model() -> tuple[str, str]:
         if model:
             _cached_host, _cached_model = host.rstrip("/"), model
             return _cached_host, _cached_model
-    raise ConnectionError("no LM Studio host reachable")
+    # Fallback: use first host without model discovery (skip GET)
+    if config.LMS_HOSTS:
+        _cached_host = config.LMS_HOSTS[0].rstrip("/")
+        _cached_model = ""
+        return _cached_host, _cached_model
+    raise ConnectionError("no LM Studio host configured")
 
 
 def _fetch_model(host: str) -> str | None:
@@ -120,32 +125,24 @@ def _fetch_model(host: str) -> str | None:
 
 
 def _call_lmstudio(body: dict[str, Any]) -> str:
-    tried: set[str] = set()
     last_err = "no host"
-    while len(tried) < len(config.LMS_HOSTS):
-        host, model = _resolve_host_model()
-        if host in tried:
-            invalidate_host_cache(host)
-            continue
-        tried.add(host)
+    host, model = _resolve_host_model()
+    if model:
         body["model"] = model
-        payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
-        for i in range(config.LMS_REQUEST_ATTEMPTS):
-            try:
-                req = Request(f"{host}/v1/chat/completions", data=payload, headers={"Content-Type": "application/json"}, method="POST")
-                with urlopen(req, timeout=config.LMS_TIMEOUT) as resp:
-                    result = json.loads(resp.read().decode("utf-8"))
-                choices = result.get("choices")
-                if choices and isinstance(choices, list):
-                    return str(choices[0]["message"]["content"])
-                last_err = f"no choices: {str(result)[:200]}"
-            except (HTTPError, URLError, TimeoutError, OSError) as e:
-                last_err = str(e)
-                if i < config.LMS_REQUEST_ATTEMPTS - 1:
-                    time.sleep(config.LMS_RETRY_DELAY)
-                    continue
-                invalidate_host_cache(host)
-                break
+    payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
+    for i in range(config.LMS_REQUEST_ATTEMPTS):
+        try:
+            req = Request(f"{host}/v1/chat/completions", data=payload, headers={"Content-Type": "application/json"}, method="POST")
+            with urlopen(req, timeout=config.LMS_TIMEOUT) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+            choices = result.get("choices")
+            if choices and isinstance(choices, list):
+                return str(choices[0]["message"]["content"])
+            last_err = f"no choices: {str(result)[:200]}"
+        except (HTTPError, URLError, TimeoutError, OSError) as e:
+            last_err = str(e)
+            if i < config.LMS_REQUEST_ATTEMPTS - 1:
+                time.sleep(config.LMS_RETRY_DELAY)
     raise RuntimeError(last_err)
 
 

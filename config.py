@@ -33,6 +33,16 @@ ROSTER: dict[int, str] = {
 }
 
 # --- LM Studio ---
+# --- LM Studio hosts ---
+# Load .env if present (ENDGAME_LMS_HOSTS=http://host:port,...)
+_dotenv = BASE_DIR / ".env"
+if _dotenv.exists():
+    for _line in _dotenv.read_text(encoding="utf-8").splitlines():
+        _line = _line.strip()
+        if _line and not _line.startswith("#") and "=" in _line:
+            _k, _v = _line.split("=", 1)
+            os.environ.setdefault(_k.strip(), _v.strip())
+
 _env_hosts = os.environ.get("ENDGAME_LMS_HOSTS", "").strip()
 _env_host = os.environ.get("ENDGAME_LMS_HOST", "").strip()
 LMS_CANDIDATE_HOSTS: tuple[str, ...] = tuple(h.strip() for h in _env_hosts.split(",") if h.strip()) if _env_hosts else ("http://localhost:1234",)

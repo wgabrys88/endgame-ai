@@ -27,8 +27,17 @@ def _healthy_hosts() -> list[str]:
     return discover_hosts(list(config.LMS_CANDIDATE_HOSTS)) or list(config.LMS_CANDIDATE_HOSTS)
 
 
+_cached_healthy: list[str] = []
+_cached_healthy_at: float = 0.0
+
+
 def pick_host() -> str | None:
-    healthy = _healthy_hosts()
+    global _cached_healthy, _cached_healthy_at
+    now = time.time()
+    if not _cached_healthy or now - _cached_healthy_at > 60:
+        _cached_healthy = _healthy_hosts()
+        _cached_healthy_at = now
+    healthy = _cached_healthy
     if not healthy:
         return None
     counts = {h: 0 for h in healthy}

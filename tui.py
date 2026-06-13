@@ -126,6 +126,21 @@ def _compose_lr(left: str, right: str, inner: int, right_w: int) -> str:
 def _trunc(s: str, w: int, suffix: str = "…") -> str:
     if w <= 0:
         return ""
+    # First pass: measure visible length
+    vis_total = 0
+    i = 0
+    while i < len(s):
+        if s[i] == "\x1b":
+            j = s.find("m", i)
+            if j != -1:
+                i = j + 1
+                continue
+        vis_total += 1
+        i += 1
+    if vis_total <= w:
+        return s
+    # Needs truncation: take w-1 chars + suffix
+    limit = w - 1 if suffix else w
     vis = 0
     out: list[str] = []
     i = 0
@@ -136,13 +151,13 @@ def _trunc(s: str, w: int, suffix: str = "…") -> str:
                 out.append(s[i:j + 1])
                 i = j + 1
                 continue
-        if vis >= w:
-            if suffix and vis >= w:
-                out.append(suffix)
+        if vis >= limit:
             break
         out.append(s[i])
         vis += 1
         i += 1
+    if suffix:
+        out.append(suffix)
     return "".join(out)
 
 

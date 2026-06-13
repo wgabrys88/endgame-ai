@@ -47,6 +47,12 @@ def main() -> None:
     set_backend(args.backend)
     log.init(config.EVENT_BUDGET)
 
+    # Stagger first LLM call by slot to avoid thundering herd on single LM Studio
+    import os
+    slot = int(os.environ.get("ENDGAME_SLOT", "1"))
+    if slot > 1:
+        time.sleep((slot - 1) * 3)
+
     if not args.events_path:
         config.GOAL_PATH.write_text(args.goal, encoding="utf-8")
     RESPAWN_PATH.write_text(json.dumps({"goal": args.goal, "backend": args.backend, "budget": config.EVENT_BUDGET}), encoding="utf-8")
