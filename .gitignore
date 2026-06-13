@@ -1,15 +1,14 @@
-# Whitelist repo: ignore everything unless explicitly allowed below.
+# Whitelist repo: ignore everything unless explicitly allowed.
 *
 
-# --- Tracked project files (clone must include these) ---
+# --- Tracked project files ---
 !.gitignore
 !.gitattributes
+!.env
 !AGENTS.md
 !README.md
 !LICENSE
 !CONTRIBUTING.md
-!GROK.md
-!EXECUTION_REPORT.md
 !*.py
 !prompts/
 !prompts/**
@@ -22,41 +21,12 @@
 __pycache__/
 *.pyc
 
-# --- Runtime session artifacts (NEVER commit — preserve locally) ---
-# Created by tui.py / log.cleanup_runtime(). Restarting TUI WIPES these.
-# Archive before reboot: python forensic_collect.py
+# --- Runtime (never commit) ---
 runtime/
+sessions/
 events*.jsonl
 snapshot.json
-lessons.jsonl
 respawn.json
-child_pids.json
 goal.txt
 pause
-gui_mode
 *.lock
-tmp*.py
-report.md
-messages.json
-mission.json
-temp_work_file.txt
-disabled.json
-status.log
-monitor.log
-colony_snapshot.json
-events_log_files.txt
-
-# --- Forensic archives (local evidence bundles — never ship) ---
-forensic_bundle/
-forensic_matrix_escape*.zip
-
-# --- Agent spawn scripts at repo root only (not plugins/spawn_coord.py) ---
-/spawn*.py
-
-# --- Local junk / session folders (never ship) ---
-terminals/
-child_workspace/
-reactor_colony_data/
-session-log.md
-*.jpg
-*.pngsessions/
