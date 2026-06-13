@@ -30,3 +30,4 @@ respawn.json
 goal.txt
 pause
 *.lock
+!HANDOVER.md
