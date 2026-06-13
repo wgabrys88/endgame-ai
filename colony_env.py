@@ -14,12 +14,20 @@ PLUGINS_DIR: Path = BASE_DIR / "plugins"
 COMMS_DIR.mkdir(parents=True, exist_ok=True)
 PLUGINS_DIR.mkdir(exist_ok=True)
 
+from config import is_gui_operator  # noqa: E402
 from comms import post as bus_post, agent_id as bus_id, request as bus_request  # noqa: E402
 
 _spawn_counter = 0
 
+_GUI_DENIED_MSG = (
+    "ROLE VIOLATION: only gui_operator (n6 / @GUI) may enable GUI mode. "
+    "Other personalities must delegate via bus_request(bus_id(), 'gui_operator', '...')."
+)
+
 
 def enable_gui() -> None:
+    if not is_gui_operator():
+        raise RuntimeError(_GUI_DENIED_MSG)
     (BASE_DIR / "gui_mode").write_text("1", encoding="utf-8")
 
 

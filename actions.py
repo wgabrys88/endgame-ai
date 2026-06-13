@@ -10,6 +10,12 @@ import sys
 import time
 
 import config
+from config import is_gui_operator
+
+_GUI_DENIED_MSG = (
+    "ROLE VIOLATION: only gui_operator (n6 / @GUI) may run GUI verbs. "
+    "Delegate via bus_request(bus_id(), 'gui_operator', '...')."
+)
 
 _child_pids: list[int] = []
 from win32 import user32, get_window_title, VK_MAP, EXTENDED_VKS, INPUT
@@ -52,11 +58,16 @@ class ActionResult:
 VERBS: dict[str, VerbFn] = {}
 
 
+_GUI_VERBS: frozenset[str] = frozenset({"click", "write", "press", "hotkey", "scroll", "wait", "focus"})
+
+
 def execute_verb(verb: str, args: dict[str, Any], book: ElementBook, _state: Any) -> ActionResult:
     handler = VERBS.get(verb)
     if not handler:
         return ActionResult(verb=verb, success=False,
                             observation=f"unknown verb: {verb}. Valid: {', '.join(sorted(VERBS))}")
+    if verb in _GUI_VERBS and not is_gui_operator():
+        return ActionResult(verb=verb, success=False, observation=_GUI_DENIED_MSG)
     try:
         return handler(args, book)
     except Exception as e:

@@ -18,7 +18,7 @@ LOG_LOCK_PATH: pathlib.Path = BASE_DIR / ".endgame.lock"
 
 EVENT_BUDGET: int = 200
 # Rolling window for events-*.jsonl (per agent). Oldest lines drop when exceeded.
-EVENT_ROLLING_MAX_LINES: int = 450
+EVENT_ROLLING_MAX_LINES: int = 2000
 EVENT_ROLLING_TRIM_CHECK: int = 40
 
 # Event log payload limits (clip verbose fields, not whole events)
@@ -205,3 +205,13 @@ CONTEXT_POLICY: dict[str, list[str]] = {
 }
 # Smallest fix: observer timeout fallback for resilience
 OBSERVER_TIMEOUT = 30
+
+
+def is_gui_operator() -> bool:
+    """Return True only for the dedicated GUI slot/personality."""
+    import os as _os
+    personality = _os.environ.get("ENDGAME_PERSONALITY", "").strip()
+    if personality == "gui_operator":
+        return True
+    slot = _os.environ.get("ENDGAME_SLOT", "").strip()
+    return slot == "6"

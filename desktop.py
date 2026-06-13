@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from actions import ActionResult, execute_verb
+from config import is_gui_operator
 from observer import observe
 
 __all__ = [
@@ -14,6 +15,16 @@ __all__ = [
     "desktop_scroll",
     "desktop_wait",
 ]
+
+_GUI_DENIED_MSG = (
+    "ROLE VIOLATION: only gui_operator (n6 / @GUI) may use desktop_* helpers. "
+    "Other personalities must delegate via bus_request(bus_id(), 'gui_operator', '...')."
+)
+
+
+def _require_gui_operator() -> None:
+    if not is_gui_operator():
+        raise RuntimeError(_GUI_DENIED_MSG)
 
 
 def _safe_print(text: str) -> None:
@@ -43,6 +54,7 @@ def _act(verb: str, args: dict, book: dict) -> ActionResult:
 
 
 def desktop_focus(window_title: str, book: dict | None = None) -> dict:
+    _require_gui_operator()
     if book is None:
         book, _, _ = observe_screen(print_screen=False)
     _act("focus", {"window_title": window_title}, book)
@@ -50,6 +62,7 @@ def desktop_focus(window_title: str, book: dict | None = None) -> dict:
 
 
 def desktop_click(selector: str, book: dict | None = None) -> dict:
+    _require_gui_operator()
     if book is None:
         book, _, _ = observe_screen(print_screen=False)
     _act("click", {"selector": str(selector)}, book)
@@ -57,6 +70,7 @@ def desktop_click(selector: str, book: dict | None = None) -> dict:
 
 
 def desktop_write(text: str, selector: str = "", book: dict | None = None) -> dict:
+    _require_gui_operator()
     if book is None:
         book, _, _ = observe_screen(print_screen=False)
     args: dict = {"text": text}
@@ -67,6 +81,7 @@ def desktop_write(text: str, selector: str = "", book: dict | None = None) -> di
 
 
 def desktop_press(key: str, book: dict | None = None) -> dict:
+    _require_gui_operator()
     if book is None:
         book, _, _ = observe_screen(print_screen=False)
     _act("press", {"key": key}, book)
@@ -74,6 +89,7 @@ def desktop_press(key: str, book: dict | None = None) -> dict:
 
 
 def desktop_hotkey(keys: list[str], book: dict | None = None) -> dict:
+    _require_gui_operator()
     if book is None:
         book, _, _ = observe_screen(print_screen=False)
     _act("hotkey", {"keys": keys}, book)
@@ -81,6 +97,7 @@ def desktop_hotkey(keys: list[str], book: dict | None = None) -> dict:
 
 
 def desktop_scroll(selector: str, amount: int = 3, book: dict | None = None) -> dict:
+    _require_gui_operator()
     if book is None:
         book, _, _ = observe_screen(print_screen=False)
     _act("scroll", {"selector": str(selector), "amount": int(amount)}, book)
@@ -88,6 +105,7 @@ def desktop_scroll(selector: str, amount: int = 3, book: dict | None = None) -> 
 
 
 def desktop_wait(seconds: float = 1.0, book: dict | None = None) -> dict:
+    _require_gui_operator()
     if book is None:
         book, _, _ = observe_screen(print_screen=False)
     _act("wait", {"seconds": float(seconds)}, book)

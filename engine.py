@@ -148,6 +148,8 @@ def _ensure_gui_operator() -> None:
 def _refresh_desktop(board: dict[str, Any]) -> None:
     if not config.GUI_MODE_PATH.exists():
         return
+    if not config.is_gui_operator():
+        return
     obs = AGENTS["observer"]
     obs_ctx = {k: board[k] for k in obs.reads if k in board}
     obs_result = obs.run(obs_ctx)

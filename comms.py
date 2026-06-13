@@ -11,7 +11,7 @@ from typing import Any
 
 import config
 
-_MENTION_RE = re.compile(r"@([A-Za-z][A-Za-z0-9_]*)")
+_MENTION_RE = re.compile(r"@([A-Za-z][A-Za-z0-9_]*)\b")
 
 # Conference handles → canonical peer id (@Human = human operator).
 MENTION_ALIASES: dict[str, str] = {

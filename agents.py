@@ -8,6 +8,8 @@ import config
 import log
 
 
+_DESKTOP_FN_RE = re.compile(r"\bdesktop_\w+\s*\(")
+
 
 class Agent(Protocol):
     name: str
@@ -89,6 +91,11 @@ def _text_has_runtime_error(text: str) -> bool:
     if not t:
         return False
     return any(marker in t for marker in _RUNTIME_ERROR_MARKERS)
+
+
+def _contains_desktop_call(text: str) -> bool:
+    """Return True if code text contains a desktop_* function call."""
+    return bool(_DESKTOP_FN_RE.search(text))
 
 
 def _runtime_error_signal(ctx: dict[str, Any]) -> bool:
@@ -468,6 +475,11 @@ class PlannerAgent:
         denied_goals: list[dict[str, Any]] = list(ctx.get("denied_goals", []))
         completed: list[str] = list(ctx.get("completed", []))
         goal = str(ctx.get("goal", ""))
+        if not config.is_gui_operator():
+            for s in sequence:
+                if _contains_desktop_call(_step_code(s)):
+                    log.emit("plan.role_violation", {"reason": "non-gui planner emitted desktop_* code"})
+                    return _reject_plan(ctx, "only gui_operator may plan desktop_* actions — delegate via bus_request to gui_operator")
         if done_when and _is_blocked(denied_goals, done_when):
             log.emit("plan.blocked", {"done_when": done_when[:80]})
             return _reject_plan(ctx, "done_when denied too many times - try something different", event="plan.blocked")
