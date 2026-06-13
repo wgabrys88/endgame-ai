@@ -17,6 +17,8 @@
 !schemas/**
 !plugins/
 !plugins/**
+!.opencode/
+!.opencode/**
 
 # --- Build / cache ---
 __pycache__/
