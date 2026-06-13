@@ -77,11 +77,12 @@ else:
 LMS_CANDIDATE_HOSTS: list[str] = list(_candidate_hosts)
 # Optional substring/exact id preference for LM Studio /v1/models. Empty = first loaded model.
 LMS_PREFERRED_MODEL: str = _os.environ.get("ENDGAME_LMS_MODEL", "gemma")
-LMS_TIMEOUT: float = 90.0
 LMS_MODEL_LIST_TIMEOUT: float = 10.0
 LMS_REQUEST_ATTEMPTS: int = 3
 LMS_RETRY_DELAY: float = 2.0
 LMS_ERROR_RETRY_DELAY: float = 3.0
+# None = no timeout. LM Studio may queue jobs for many minutes; do not abort early.
+LMS_TIMEOUT: float | None = None
 
 ACP_TIMEOUT: float = 90.0
 ACP_PROTOCOL_VERSION: int = 1
@@ -129,7 +130,6 @@ MODEL_PROFILES: dict[str, dict[str, Any]] = {
         "LLM_MAX_TOKENS": 128000,
         "LLM_STOP": [],
         "LLM_LOGIT_BIAS": {},
-        "LMS_TIMEOUT": 300.0,
         "BUDGET_PLANNER_OUT": 8192,
         "BUDGET_ACTOR_OUT": 4096,
         "BUDGET_VERIFIER_OUT": 4096,

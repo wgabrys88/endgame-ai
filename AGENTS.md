@@ -2,6 +2,8 @@
 
 **Breakthrough (2026-06-12):** Six autonomous agents + external AI (@grok) coordinated over a JSON message bus. Real desktop outcomes: Notepad matrix-escape text, GitHub in browser, Opera at LinkedIn feed. Documented in `EXECUTION_REPORT.md`. Forensic tooling: `forensic_collect.py`.
 
+**Current focus (2026-06-13):** Harden the full 6-slot colony on Nemotron, make it event-driven via the message bus, and prepare the codebase for handover to any AI coding assistant.
+
 ---
 
 ## Entry point
@@ -48,8 +50,8 @@ Shared working directory. Reactor sets `ENDGAME_PERSONALITY` + `ENDGAME_SLOT` pe
 | `colony_env.py` | `BASE_DIR`, `COMMS_DIR`, `bus_post`, `bus_id`, `bus_request` |
 | `comms.py` | Message bus: chat, requests, inject drain, inbox in planner context |
 | `python_code.py` | Planner Python syntax validation |
-| `config.py` | Paths, math, LMS hosts, bus caps, rolling log limits |
-| `llm.py` | LM Studio API, schema enforcement, host failover |
+| `config.py` | Paths, math, LMS hosts, bus caps, rolling log limits, model profiles |
+| `llm.py` | LM Studio API, schema enforcement, host failover, model-profile switching |
 | `log.py` | JSONL events, `cleanup_runtime`, pause gate, rolling trim |
 | `observer.py` | UIA desktop scan → element book `[n]` ids |
 | `win32.py` | ctypes user32, SendInput, VK map |
@@ -61,7 +63,7 @@ Shared working directory. Reactor sets `ENDGAME_PERSONALITY` + `ENDGAME_SLOT` pe
 
 | Slot | File | Identity |
 |------|------|----------|
-| n1 | `git_expert.txt` | Commits/pushes `colony/dev` |
+| n1 | `git_expert.txt` | Commits/pushes `reactor-personalities` / `colony/dev` |
 | n2 | `implementor.txt` | Writes `plugins/*.py` |
 | n3 | `doc_inspector.txt` | `runtime/comms/report.md` from logs |
 | n4 | `comms_operator.txt` | Bus mirror, beacons, coordination — **must not run desktop_*** |
@@ -138,7 +140,7 @@ Before reboot: `python forensic_collect.py` → `forensic_matrix_escape_*.zip`.
 
 ## Runtime (gitignored)
 
-Per-agent: `events-child-n*.jsonl` (rolling **450 lines** — oldest drop). Board: `snapshot.json`.
+Per-agent: `events-child-n*.jsonl` (rolling **2000 lines** — oldest drop). Board: `snapshot.json`.
 
 `runtime/comms/`: messages, events_bus, inject, report, quality, gui_request files, telemetry.
 
@@ -161,9 +163,18 @@ Plan reject: 10s cooldown (`PLAN_REJECT_COOLDOWN_SEC`).
 ## LM Studio
 
 - `ENDGAME_LMS_HOSTS` — comma-separated candidates.
-- `LMS_MAX_SLOTS_PER_HOST` = 3.
+- `LMS_MAX_SLOTS_PER_HOST` = 3 (spawn-time cap only; LM Studio handles its own request queue).
 - `LMS_PREFERRED_MODEL` = `gemma` (override: `ENDGAME_LMS_MODEL`).
-- `LMS_TIMEOUT` = 90s.
+- `LMS_TIMEOUT` = `None` (no client-side timeout; LM Studio may queue jobs for many minutes).
+
+### Model profiles (`config.MODEL_PROFILES`)
+
+Applied automatically when a model is resolved. Add new models here without touching the default path.
+
+| Profile | Key trigger | Notable overrides |
+|---------|-------------|-------------------|
+| `gemma` | default | temperature 0.60, budgets ~1K tokens |
+| `nemotron` | model id contains `nemotron` | temperature 1.0, top_k 20, budgets 4K–8K tokens |
 
 ---
 
@@ -172,7 +183,7 @@ Plan reject: 10s cooldown (`PLAN_REJECT_COOLDOWN_SEC`).
 | Constant | Value |
 |----------|-------|
 | REACTOR_SLOTS | 6 |
-| EVENT_ROLLING_MAX_LINES | 450 |
+| EVENT_ROLLING_MAX_LINES | 2000 |
 | BUS_CHAT_MAX | 120 |
 | BUS_EVENTS_MAX_LINES | 200 |
 | MATH_INTERVAL | 5.0s |
@@ -182,11 +193,59 @@ Plan reject: 10s cooldown (`PLAN_REJECT_COOLDOWN_SEC`).
 
 ## Known issues (post-demo)
 
-1. **Rolling log cap** — early session proof evicted from `events-child-*.jsonl`.
-2. **Role leak** — n4 ran `desktop_*`; n6 should be sole GUI hands.
-3. **Gemma planner** — `NameError: book`, syntax errors, wrong window titles.
-4. **Permissive verifier** — fission credited for observing TUI/PowerShell, not goal text.
-5. **@mention spacing** — `@grok` must be followed by space; `@grokproceed` fails.
+1. **Rolling log cap** — early session proof evicted from `events-child-*.jsonl`. *(Mitigated: raised to 2000 + archive_logs plugin.)*
+2. **Role leak** — n4 ran `desktop_*`; n6 should be sole GUI hands. *(Mitigated: `is_gui_operator()` enforced in `desktop.py`, `actions.py`, `engine.py`, `agents.py`.)*
+3. **Gemma planner** — `NameError: book`, syntax errors, wrong window titles. *(Mitigated: observe-first rule, exact titles in prompts.)*
+4. **Permissive verifier** — fission credited for observing TUI/PowerShell, not goal text. *(Mitigated: tightened verifier prompt.)*
+5. **@mention spacing** — `@grok` must be followed by space; `@grokproceed` fails. *(Fixed in `comms.py`.)*
+
+---
+
+## Handover checklist — for Claude Code / Kiro / Grok Build / any AI coding assistant
+
+This section is the single source of truth for the current state of `reactor-personalities` and what to do next.
+
+### Proven (do not break)
+
+- [ ] `python tui.py` boots the 6-slot colony paused; Space goes live; `q` kills cleanly.
+- [ ] `python test_reactor.py [seconds] --model=nemotron` runs 2 test agents and reports.
+- [ ] `python test_reactor_collab.py [seconds] --model=nemotron` runs 3 collaborative agents.
+- [ ] `python test_reactor_full.py [seconds] --model=nemotron` runs the full 6-slot roster.
+- [ ] Model profiles auto-switch generation parameters when a model is resolved.
+- [ ] `is_gui_operator()` blocks non-n6 agents from emitting `desktop_*` code.
+- [ ] `@mention` regex requires a word boundary after the handle.
+- [ ] `engine.py` plan validation only resets plans with invalid/missing active steps.
+- [ ] `LMS_TIMEOUT = None` — the client never aborts LM Studio; the server queues requests.
+- [ ] Git ops are restricted to `git_expert`; runtime artifacts are gitignored.
+- [ ] Personality prompt evolution is appended as `EVOLVE:` lines; cap with `PERSONALITY_MAX_EVOLUTIONS`.
+
+### Unproven / follow-up (prioritized)
+
+- [ ] **Unified agent model.** Replace per-slot hard-coded roles with a single `Agent` class whose behavior is driven by the bus inbox + personality object. Treat `@Human`, `@grok`, and dynamically spawned agents as peers.
+- [ ] **Bus-first event loop.** Make every LLM call a reaction to a bus event (mention, request, beacon). The orchestrator should schedule work by posting messages, not by slot number.
+- [ ] **Prompt size diet.** LM Studio logs show prompts 1.1K–1.4K tokens (no truncation, but heavy). Compress context: move long instructions to schemas/system prompts, keep user context to facts only.
+- [ ] **Planner code quality.** Many actor failures come from the planner hallucinating variables (`write_status`, `Path('BASE_DIR')`, nested `COMMS_DIR / 'runtime' / 'comms'`). Add a static analyzer or few-shot repair step before actor execution.
+- [ ] **Verifier consistency.** Nemotron verifier is stricter than Gemma. Standardize evidence format (e.g., `print(f'ARTIFACT: {path} size={len(text)}')`) so verifier can parse reliably.
+- [ ] **Fission pipeline coverage.** In 360s Nemotron runs, plans complete and actors run, but verifier/fission rarely fires. Investigate whether scheduler advances correctly after actor success or gets stuck in math/reflect loops.
+- [ ] **Self-evolution safety.** Reflector/mutator can edit code and personalities. Add a sandboxed diff-review step before applying mutations to tracked files.
+- [ ] **Human-as-agent.** The TUI input line and `comms.py post human "..."` should be first-class peers, not special cases.
+- [ ] **Simplify-reduce branch review.** `origin/simplify-reduce` removed ~30% of code (token telemetry, bus integration, GUI hardening). Do **not** merge it wholesale, but cherry-pick any clean refactors that do not drop event-driven or self-evolution features.
+- [ ] **LM Studio log analysis.** `C:\Users\px-wjt\.lmstudio\server-logs\2026-06\2026-06-13.1.log` shows `cancel task` bursts when the test harness kills the tree and no actual prompt truncation. Use this log after every long run to distinguish server-side queueing from client-side bugs.
+
+### Architectural vision
+
+The colony should become a **single event bus with generic agents**, not six special-cased slots:
+
+```
+Bus (messages.json)
+  ├─ Human peer
+  ├─ Grok peer
+  ├─ GUI peer
+  └─ N agent peers (personality + inbox)
+         └─ Planner → Actor → Verifier → FissionJudge
+```
+
+In Python 3.13 terms: an `Agent` dataclass, a `Personality` object, and a `BusMessage` object. Specialized behavior comes from the personality text and the inbox, not from branching code in `agents.py` or `engine.py`. This is the path to both code reduction and dynamic scaling.
 
 ---
 
