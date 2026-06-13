@@ -187,10 +187,8 @@ if __name__ == "__main__":
         time.sleep(2)
 
     print(f"\nREACTOR CRITICAL. {len(slots)} rods loaded.\n")
-    log.trim_all_event_logs()
     while True:
         time.sleep(CONTROL_INTERVAL)
-        log.trim_all_event_logs()
         dead = reap_dead()
         k, alive, fissions = measure_k()
 

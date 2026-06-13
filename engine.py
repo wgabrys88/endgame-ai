@@ -6,7 +6,6 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-
 from agents import (
     StagnationAgent, LorenzAgent, PidAgent, SchedulerAgent,
     ObserverAgent, PlannerAgent, ActorAgent, VerifierAgent, FissionJudgeAgent,
@@ -16,21 +15,17 @@ import config
 import log
 from llm import consume_last_reply
 from python_code import is_python_code
-from token_state import record_reply, snapshot as token_snapshot
 
 
-# --- Plugin Loader -----------------------------------------------------------
+# --- Plugin Loader ---
 
 _plugin_mtimes: dict[str, float] = {}
 _plugin_modules: dict[str, Any] = {}
 _plugins_logged: set[str] = set()
-_last_telemetry_stag: float | None = None
 _last_snapshot_at: float = 0.0
 
 
 def _run_plugins(board: dict[str, Any]) -> None:
-    """Scan plugins/*.py, hot-load new/changed, call run(board), isolate errors."""
-    global _last_telemetry_stag
     if not config.PLUGINS_DIR.exists():
         return
     for path in sorted(config.PLUGINS_DIR.glob("*.py")):
@@ -63,16 +58,7 @@ def _run_plugins(board: dict[str, Any]) -> None:
                     board.update(result.get("writes", {}))
                     phase = result.get("phase")
                     if phase:
-                        data = result.get("data")
-                        skip_log = False
-                        if phase == "plugin.telemetry" and isinstance(data, dict):
-                            stag = float(data.get("stagnation", -1))
-                            if _last_telemetry_stag is not None and abs(stag - _last_telemetry_stag) < 0.05:
-                                skip_log = True
-                            else:
-                                _last_telemetry_stag = stag
-                        if not skip_log:
-                            log.emit(phase, data)
+                        log.emit(phase, result.get("data"))
             except Exception as e:
                 log.emit("plugin.error", {"file": path.name, "error": str(e)[:200]})
 
@@ -95,14 +81,14 @@ LLM_AGENTS: frozenset[str] = frozenset({"planner", "verifier", "reflector", "fis
 
 def _math_loop(board: dict[str, Any], stop: threading.Event) -> None:
     while not stop.is_set():
-        math_payload: dict[str, Any] = {}
+        payload: dict[str, Any] = {}
         for agent in MATH_AGENTS:
             ctx = {k: board[k] for k in agent.reads if k in board}
-            result: dict[str, Any] = agent.run(ctx)
+            result = agent.run(ctx)
             board.update(result.get("writes", {}))
-            math_payload[agent.name] = result.get("data", {})
-        log.emit("math", math_payload)
-        trace: list[dict[str, Any]] = list(board.get("math_trace", []))
+            payload[agent.name] = result.get("data", {})
+        log.emit("math", payload)
+        trace = list(board.get("math_trace", []))
         trace.append({
             "stag": round(float(board.get("stagnation", 0)), 3),
             "pid": round(float(board.get("pid_output", 0)), 3),
@@ -117,7 +103,7 @@ def _math_loop(board: dict[str, Any], stop: threading.Event) -> None:
 
 def run(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
     goal = str(board.get("goal", ""))
-    log.emit("start", {"goal": goal[:config.LOG_GOAL_MAX], "budget": log.budget()})
+    log.emit("start", {"goal": goal, "budget": log.budget()})
 
     stop = threading.Event()
     math_thread = threading.Thread(target=_math_loop, args=(board, stop), daemon=True)
@@ -167,12 +153,8 @@ def _run_agent(board: dict[str, Any], name: str) -> dict[str, Any]:
     ctx = {k: board[k] for k in agent.reads if k in board}
     result = agent.run(ctx)
     writes = dict(result.get("writes", {}))
-    data = result.get("data")
     if name in LLM_AGENTS:
-        reply = consume_last_reply()
-        if reply is not None:
-            writes["token_state"] = record_reply(board.get("token_state"), reply)
-    result["writes"] = writes
+        consume_last_reply()
     board.update(writes)
     log.emit(result.get("phase", name), result.get("data"))
     _save(board, force=True)
@@ -181,13 +163,7 @@ def _run_agent(board: dict[str, Any], name: str) -> dict[str, Any]:
 
 def _stop_satisfied(board: dict[str, Any]) -> bool:
     _save(board)
-    log.emit("stop", {
-        "reason": "goal_satisfied",
-        "events": log.count(),
-        "work": log.work_count(),
-        "power": board.get("power", 0.0),
-        "completions": len(board.get("completed", [])),
-    })
+    log.emit("stop", {"reason": "goal_satisfied", "events": log.count(), "power": board.get("power", 0.0)})
     return True
 
 
@@ -206,7 +182,7 @@ def _poll_goal(board: dict[str, Any]) -> None:
                 board["goal"] = new_goal
                 board["plan"] = []
                 board["done_when"] = ""
-                log.emit("goal_change", {"from": old_goal[:80], "to": new_goal[:80], "source": "personality"})
+                log.emit("goal_change", {"source": "personality"})
             return
     if not getattr(config, "_GOAL_MUTABLE", True) or not config.GOAL_PATH.exists():
         return
@@ -214,13 +190,11 @@ def _poll_goal(board: dict[str, Any]) -> None:
         new_goal = config.GOAL_PATH.read_text(encoding="utf-8").strip()
     except OSError:
         return
-    old_goal = str(board.get("goal", ""))
-    if new_goal == old_goal:
-        return
-    board["goal"] = new_goal
-    board["plan"] = []
-    board["done_when"] = ""
-    log.emit("goal_change", {"from": old_goal, "to": new_goal})
+    if new_goal != str(board.get("goal", "")):
+        board["goal"] = new_goal
+        board["plan"] = []
+        board["done_when"] = ""
+        log.emit("goal_change", {"source": "file"})
 
 
 def _main_loop(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
@@ -232,22 +206,22 @@ def _main_loop(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
             pass
         _ensure_gui_operator()
         _poll_goal(board)
+        # Reset plan if active step isn't valid Python
         if board.get("plan") and any(
             isinstance(s, dict) and s.get("status") == "active"
-            and (snippet := str(s.get("code", s.get("text", ""))).strip())
-            and not is_python_code(snippet)
+            and not is_python_code(str(s.get("code", "")).strip())
             for s in board.get("plan", [])
         ):
             board["plan"] = []
             board["done_when"] = ""
-            log.emit("plan.reset", {"reason": "invalid active step - not Python"})
+            log.emit("plan.reset", {"reason": "invalid active step"})
         if log.paused():
             time.sleep(config.DELAY_BETWEEN_CYCLES)
             continue
         _run_plugins(board)
         scheduler = AGENTS["scheduler"]
         ctx = {k: board[k] for k in scheduler.reads if k in board}
-        result: dict[str, Any] = scheduler.run(ctx)
+        result = scheduler.run(ctx)
         board.update(result.get("writes", {}))
         log.emit(result.get("phase", "schedule"), result.get("data"))
         _save(board)
@@ -258,8 +232,7 @@ def _main_loop(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
         if target == "done":
             data = result.get("data") if isinstance(result.get("data"), dict) else {}
             if data.get("reason") == "plan_cooldown":
-                wait = float(data.get("wait", config.PLAN_REJECT_COOLDOWN_SEC))
-                time.sleep(max(0.5, wait))
+                time.sleep(max(0.5, float(data.get("wait", config.PLAN_REJECT_COOLDOWN_SEC))))
             else:
                 time.sleep(config.DELAY_BETWEEN_CYCLES)
             continue
@@ -275,10 +248,7 @@ def _main_loop(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
                 return _stop_satisfied(board)
             if nxt == "done":
                 _fission(board)
-                log.emit("fission_sustain", {
-                    "power": board.get("power", 0.0),
-                    "completions": len(board.get("completed", [])),
-                })
+                log.emit("fission_sustain", {"power": board.get("power", 0.0)})
                 break
             if nxt not in AGENTS:
                 break
@@ -287,7 +257,7 @@ def _main_loop(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
         time.sleep(config.DELAY_BETWEEN_CYCLES)
 
     reason = "budget" if log.exhausted() else "interrupted"
-    log.emit("stop", {"reason": reason, "events": log.count(), "work": log.work_count(), "power": board.get("power", 0.0)})
+    log.emit("stop", {"reason": reason, "events": log.count(), "power": board.get("power", 0.0)})
     return False
 
 
@@ -341,8 +311,4 @@ def _save(board: dict[str, Any], *, force: bool = False) -> None:
         "work_events": log.work_count(),
         "budget": log.budget(),
     }
-    tokens = token_snapshot(board.get("token_state"))
-    data["token_state"] = tokens
-    data["token_trace"] = tokens.get("trace", [])[-config.TOKEN_TRACE_LEN:]
-    data["token_warnings"] = tokens.get("warnings", [])[-config.TOKEN_WARNING_TRACE_LEN:]
     config.SNAPSHOT_PATH.write_text(json.dumps(data), encoding="utf-8")

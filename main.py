@@ -10,7 +10,6 @@ from typing import Any
 from config import PROCESS_DPI_AWARENESS_CONTEXT, RESPAWN_PATH, SIGINT_EXIT_CODE
 from llm import set_backend, close_backend
 from engine import run
-from token_state import initial_state
 import log
 import config
 
@@ -104,7 +103,6 @@ def main() -> None:
         "reflect_trigger": {},
         "mutator_trigger": {},
         "math_trace": [],
-        "token_state": initial_state(),
     }
 
     try:
