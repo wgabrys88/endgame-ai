@@ -139,6 +139,8 @@ BREED_RETAIN_MIN: float = 0.60   # fission fitness needed for reactor survivor r
 BREED_ELITE_MIN_DELTA: float = 0.01  # fitness gain needed to replace an elite niche
 BREED_ELITE_MAX_NICHES: int = 24  # bounded in-memory quality-diversity archive
 BREED_ELITE_RESPAWN_MIN: float = 0.60  # elite fitness needed to repopulate a dead slot
+BREED_TRIAL_EVAL_SECONDS: float = 60.0  # wait for telemetry after plugin mutation before scoring
+BREED_IMPROVE_MIN_DELTA: float = 0.05  # pressure/power delta needed for mutation improvement evidence
 MUTATE_AFTER_FAILURES: int = 2    # failure cycles before mutator may patch a plugin
 
 # --- Bus limits ---

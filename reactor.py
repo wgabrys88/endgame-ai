@@ -21,6 +21,7 @@ _breed_scores: dict[str, dict[str, Any]] = {}
 _slot_survivors: dict[int, str] = {}
 _elite_archive: dict[str, dict[str, Any]] = {}
 _evicted_personas: dict[str, dict[str, Any]] = {}
+_mutation_trials: dict[str, dict[str, Any]] = {}
 
 
 def spawn(slot_id: int, persona: str, goal: str = "", priority: int = config.PRI_MAINTENANCE) -> int:
@@ -158,6 +159,10 @@ def _candidate_niche(payload: dict[str, Any], action: str) -> str:
     return "general_task:unknown_pressure"
 
 
+def _telemetry_for(target: str) -> dict[str, Any]:
+    return comms.colony_state().get(comms.canonical(str(target)), {})
+
+
 def _trim_elite_archive() -> None:
     while len(_elite_archive) > config.BREED_ELITE_MAX_NICHES:
         worst = min(
@@ -201,6 +206,72 @@ def _update_elite_archive(
     }
     _trim_elite_archive()
     return True, niche
+
+
+def _start_mutation_trial(target: str, slot_id: int, fitness: float, niche: str, payload: dict[str, Any]) -> None:
+    telemetry = _telemetry_for(target)
+    _mutation_trials[target] = {
+        "target": target,
+        "slot": slot_id,
+        "fitness": fitness,
+        "niche": niche,
+        "filename": str(payload.get("filename", payload.get("completed", "")))[:120],
+        "baseline_stagnation": float(telemetry.get("stagnation", payload.get("stagnation", 0.0)) or 0.0),
+        "baseline_power": float(telemetry.get("power", payload.get("power", 0.0)) or 0.0),
+        "baseline_fissions": int(telemetry.get("fissions", payload.get("fissions", 0)) or 0),
+        "started": time.time(),
+    }
+
+
+def evaluate_mutation_trials() -> None:
+    """Publish mutation outcome evidence once telemetry has had time to react."""
+    now = time.time()
+    colony = comms.colony_state()
+    for target, trial in list(_mutation_trials.items()):
+        if now - float(trial.get("started", 0.0) or 0.0) < config.BREED_TRIAL_EVAL_SECONDS:
+            continue
+        current = colony.get(target, {})
+        if not current:
+            continue
+        base_stag = float(trial.get("baseline_stagnation", 0.0) or 0.0)
+        base_power = float(trial.get("baseline_power", 0.0) or 0.0)
+        base_fissions = int(trial.get("baseline_fissions", 0) or 0)
+        cur_stag = float(current.get("stagnation", 0.0) or 0.0)
+        cur_power = float(current.get("power", 0.0) or 0.0)
+        cur_fissions = int(current.get("fissions", 0) or 0)
+        stag_drop = round(base_stag - cur_stag, 4)
+        power_gain = round(cur_power - base_power, 4)
+        fission_gain = cur_fissions - base_fissions
+        improved = (
+            fission_gain > 0
+            or stag_drop >= config.BREED_IMPROVE_MIN_DELTA
+            or power_gain >= config.BREED_IMPROVE_MIN_DELTA
+        )
+        regressed = (
+            stag_drop <= -config.BREED_IMPROVE_MIN_DELTA
+            or power_gain <= -config.BREED_IMPROVE_MIN_DELTA
+        )
+        outcome = "improve" if improved else "regress" if regressed else "neutral"
+        detail = {
+            "source": "mutation_trial",
+            "filename": str(trial.get("filename", ""))[:120],
+            "baseline_stagnation": round(base_stag, 4),
+            "current_stagnation": round(cur_stag, 4),
+            "stagnation_delta": stag_drop,
+            "baseline_power": round(base_power, 4),
+            "current_power": round(cur_power, 4),
+            "power_delta": power_gain,
+            "fission_delta": fission_gain,
+        }
+        _post_breed_status(
+            outcome,
+            target,
+            int(trial.get("slot", current.get("slot", 0)) or 0),
+            float(trial.get("fitness", 0.0) or 0.0),
+            niche=str(trial.get("niche", "")),
+            detail=detail,
+        )
+        _mutation_trials.pop(target, None)
 
 
 def _best_elite_persona(slot_id: int) -> tuple[str, float, str]:
@@ -265,6 +336,7 @@ def process_evolve_candidates() -> None:
             if is_elite:
                 _post_breed_status("elite", target, slot_id, fitness, niche=niche,
                                    detail={"elite_action": action})
+            _start_mutation_trial(target, slot_id, fitness, niche, payload)
             continue
         if action != "retain":
             continue
@@ -351,6 +423,7 @@ if __name__ == "__main__":
     while True:
         time.sleep(CONTROL_INTERVAL)
         process_evolve_candidates()
+        evaluate_mutation_trials()
         for cmd in comms.drain_control():
             action = str(cmd.get("action", ""))
             if action == "reassign":
