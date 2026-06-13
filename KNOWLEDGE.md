@@ -1,6 +1,6 @@
 # KNOWLEDGE — endgame-ai Colony
 
-Architecture and protocol reference for `grok-dev`. Humans: start with `README.md`. AI tools: read `AGENTS.md` first, then use this file when editing `comms.py`, `engine.py`, or schemas.
+Architecture and protocol reference for the colony rewrite (`unify-rewrite` trunk, agent branches `grok-dev` / `codex-dev`). Humans: start with `README.md`. AI tools: read `AGENTS.md` first, then use this file when editing `comms.py`, `engine.py`, or schemas.
 
 ## Process tree
 

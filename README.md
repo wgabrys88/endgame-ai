@@ -81,9 +81,10 @@ Automated smoke test: `python run_test.py 120`
 
 | Branch | Role |
 |--------|------|
-| `grok-dev` | **Active** — colony rewrite, bus v1, MoE loop |
-| `unify-rewrite` | Architectural base; likely merge target later |
-| `main` | Separate lineage (organism M4, self-rewrite proven) — parallel species, not parent of grok-dev |
+| `unify-rewrite` | **Integration trunk** — Colony Alpha (grok-dev merged here) |
+| `grok-dev` | Grok agent work branch |
+| `codex-dev` | Codex/ChatGPT branch — create from `unify-rewrite` |
+| `main` | Separate lineage (organism M4) — parallel species, not merged with unify-rewrite |
 
 ---
 

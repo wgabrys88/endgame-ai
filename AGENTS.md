@@ -8,9 +8,11 @@
 | `KNOWLEDGE.md` | Protocol and architecture reference (cite when editing comms/engine) |
 | `README.md` | Human quick start only — do not duplicate here |
 
-**Branch:** `grok-dev` · tip `afe87ac` (GUI guard + human cap + MoE yield + token diet)  
+**Integration trunk:** `unify-rewrite` · tip `79cd254` (grok-dev merged 2026-06-13)  
+**Grok branch:** `grok-dev` · same tip — Grok continues here  
+**Codex branch:** `codex-dev` — **create from `unify-rewrite`**, do not commit to `grok-dev`  
 **Milestone:** Colony Alpha ~78% — infra live-tested; human→verifiable-action retest pending  
-**Merge:** `unify-rewrite` is the likely integration target later; `main` is a parallel lineage — do not assume parent/child
+**Parallel lineage:** `main` is a different architecture (organism M4) — not parent/child of unify-rewrite
 
 ---
 
@@ -266,12 +268,23 @@ Live test report: `sessions/2026-06-13-live-test-report.md` (in memory, not git)
 
 ---
 
-## Branches reference
+## Multi-agent branching (track who did what)
 
-| Branch | Notes |
-|--------|-------|
-| `grok-dev` | **Work here** |
-| `unify-rewrite` | Rewrite base; merge target TBD |
-| `main` | refactor-v4 organism M4; parallel species |
+```
+unify-rewrite          ← integration trunk (merge agent branches here when stable)
+├── grok-dev           ← Grok / Cursor sessions
+├── codex-dev          ← Codex / ChatGPT sessions (create this)
+└── (future)-dev       ← other agents fork from unify-rewrite
+main                   ← parallel species (organism M4), do not merge blindly
+```
 
-`main` and `grok-dev` are **parallel species**, not linear history.
+| Branch | Owner | Rule |
+|--------|-------|------|
+| `unify-rewrite` | **Integration** | Receives fast-forward merges from agent branches after human review |
+| `grok-dev` | Grok | Active Grok work; merge → `unify-rewrite` when milestone passes |
+| `codex-dev` | Codex | `git checkout unify-rewrite && git pull && git checkout -b codex-dev` |
+| `main` | Legacy | Different architecture — port patterns only when requested |
+
+**Codex bootstrap:** read `AGENTS.md`, branch from `unify-rewrite`, push `codex-dev`, PR/merge to `unify-rewrite` after retest pass.
+
+**Do not** have two agents commit to the same branch without coordination.
