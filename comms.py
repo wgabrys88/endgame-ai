@@ -1,40 +1,32 @@
-"""Unified message bus — the nervous system of the colony.
+"""Message bus — the nervous system of the colony.
 
-Every entity (human, grok, LLM agents, reactor, TUI) is a peer on this bus.
-All communication flows through post/read/pending. Events mirror work phases.
+Every entity (human, personas, reactor, TUI) is a peer on this bus.
+Posts carry optional priority. Events mirror work phases.
 """
 from __future__ import annotations
-
 import json
 import os
 import re
 import time
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 import config
 
 _MENTION_RE = re.compile(r"@([A-Za-z][A-Za-z0-9_]*)")
 
-# Every peer has a canonical id. Aliases resolve to canonical.
 ALIASES: dict[str, str] = {
     "human": "human", "colony": "colony", "all": "colony",
     "tui": "tui", "reactor": "reactor",
-    **{name: name for name in config.ROSTER.values()},
-    **{f"n{slot}": name for slot, name in config.ROSTER.items()},
+    **{name: name for name in config.PERSONAS},
 }
 
 ROLES: dict[str, str] = {
     "human": "human", "colony": "colony", "reactor": "reactor", "tui": "tui",
-    **{name: name for name in config.ROSTER.values()},
+    **{name: name for name in config.PERSONAS},
 }
 
-# Phases that never propagate to the events bus (internal math/scheduling noise)
-_SKIP_PHASES: frozenset[str] = frozenset({
-    "math", "stagnation", "lorenz", "pid", "schedule", "token_usage",
-    "plugin.load", "plugin.telemetry", "fission_sustain",
-})
+_SKIP_PHASES: frozenset[str] = frozenset({"schedule"})
 
 
 def _ensure() -> None:
@@ -49,10 +41,7 @@ def _ensure() -> None:
 
 def agent_id() -> str:
     p = os.environ.get("ENDGAME_PERSONALITY", "").strip()
-    if p:
-        return p
-    s = os.environ.get("ENDGAME_SLOT", "").strip()
-    return f"n{s}" if s else f"pid-{os.getpid()}"
+    return p if p else f"pid-{os.getpid()}"
 
 
 def canonical(name: str) -> str:
@@ -83,10 +72,11 @@ def _read_chat() -> list[dict[str, Any]]:
 def _write_chat(entries: list[dict[str, Any]]) -> None:
     _ensure()
     trimmed = entries[-config.BUS_CHAT_MAX:]
-    config.BUS_CHAT_PATH.write_text(json.dumps(trimmed, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    config.BUS_CHAT_PATH.write_text(json.dumps(trimmed, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
-def post(from_id: str, role: str, text: str, *, kind: str = "message", data: dict[str, Any] | None = None) -> dict[str, Any]:
+def post(from_id: str, role: str, text: str, *, kind: str = "message",
+         priority: int | None = None, data: dict[str, Any] | None = None) -> dict[str, Any]:
     body = text.strip()
     mentions = parse_mentions(body)
     entry: dict[str, Any] = {
@@ -98,17 +88,20 @@ def post(from_id: str, role: str, text: str, *, kind: str = "message", data: dic
     }
     if mentions:
         entry["mentions"] = mentions
+    if priority is not None:
+        entry.setdefault("data", {})["priority"] = priority
     if data:
-        entry["data"] = data
+        entry["data"] = {**(entry.get("data") or {}), **data}
     entries = _read_chat()
     entries.append(entry)
     _write_chat(entries)
     return entry
 
 
-def request(from_id: str, to: str, text: str, *, task: str = "work") -> dict[str, Any]:
+def request(from_id: str, to: str, text: str, *, priority: int = config.PRI_NORMAL) -> dict[str, Any]:
     target = canonical(to)
-    return post(from_id, "colony", f"@{target} {text}".strip(), kind="request", data={"to": target, "task": task, "status": "open"})
+    return post(from_id, "colony", f"@{target} {text}".strip(), kind="request",
+                priority=priority, data={"to": target, "status": "open"})
 
 
 def read_chat(limit: int = 30) -> list[dict[str, Any]]:
@@ -170,15 +163,7 @@ def read_events(limit: int = 20) -> list[dict[str, Any]]:
     return out
 
 
-def read_bus(limit: int = 50) -> list[dict[str, Any]]:
-    chat = _read_chat()[-max(10, limit // 2):]
-    events = read_events(max(10, limit // 2))
-    merged = chat + events
-    merged.sort(key=lambda e: str(e.get("ts", "")))
-    return merged[-limit:]
-
-
-# --- Inject (external posts from human/grok CLI) ---
+# --- Inject ---
 
 def drain_inject() -> int:
     if not config.BUS_INJECT_PATH.exists():
@@ -195,13 +180,15 @@ def drain_inject() -> int:
         except json.JSONDecodeError:
             continue
         if isinstance(obj, dict):
-            fid = str(obj.get("from", "grok"))
-            post(fid, str(obj.get("role", "colony")), str(obj.get("text", "")), kind=str(obj.get("kind", "message")))
+            fid = str(obj.get("from", "human"))
+            post(fid, str(obj.get("role", "colony")), str(obj.get("text", "")),
+                 kind=str(obj.get("kind", "message")),
+                 priority=obj.get("priority"))
             count += 1
     return count
 
 
-# --- Context rendering for LLM agents ---
+# --- Context rendering for LLM ---
 
 def format_bus_context(limit: int | None = None, for_agent: str | None = None) -> str:
     n = limit or config.CONTEXT_BUS_MAX
@@ -209,27 +196,19 @@ def format_bus_context(limit: int | None = None, for_agent: str | None = None) -
     if not chat:
         return ""
     me = canonical((for_agent or agent_id()).strip())
-    lines = [
-        "MESSAGE BUS:",
-        "Peers: @Human @grok @GUI @git_expert @implementor @doc_inspector @comms_operator @quality_critic (@n1–@n6) @colony",
-        "Delegate: bus_request(bus_id(), 'gui_operator', 'task') — only @GUI runs desktop_*",
-    ]
+    lines = ["MESSAGE BUS:"]
     inbox = pending_for(me, 5)
     if inbox:
-        lines.append("YOUR INBOX (reply or execute first):")
+        lines.append("YOUR INBOX (respond to these):")
         for e in inbox:
-            lines.append(f"  [{e.get('kind')}] @{e.get('from')}: {str(e.get('text', ''))[:config.CONTEXT_OBS_MAX]} ** PING FOR YOU **")
+            pri = (e.get("data") or {}).get("priority", "")
+            pri_tag = f" [PRI={pri}]" if pri else ""
+            lines.append(f"  @{e.get('from')}: {str(e.get('text', ''))[:200]}{pri_tag}")
     shown_ids = {int(e.get("id", 0) or 0) for e in inbox}
     for entry in chat[-n:]:
         if int(entry.get("id", 0) or 0) in shown_ids:
             continue
-        fid = entry.get("from", "?")
-        text = str(entry.get("text", ""))[:config.CONTEXT_OBS_MAX]
-        mentions = entry.get("mentions") or parse_mentions(str(entry.get("text", "")))
-        ping = " ** PING FOR YOU **" if ping_for(me, mentions) and fid != me else ""
-        lines.append(f"  [{entry.get('kind')}] @{fid}: {text}{ping}")
-    for entry in read_events(max(4, n // 3)):
-        lines.append(f"  [event] @{entry.get('from', '?')}: {str(entry.get('text', ''))[:config.CONTEXT_OBS_MAX]}")
+        lines.append(f"  @{entry.get('from', '?')}: {str(entry.get('text', ''))[:200]}")
     return "\n".join(lines)
 
 
@@ -243,14 +222,10 @@ def _brief(phase: str, data: Any) -> str:
             return f"plan {data.get('mode', '')} steps={data.get('steps', '')} {str(data.get('done_when', ''))[:80]}"
         case "verify":
             return f"verify {data.get('verdict', '')} {str(data.get('evidence', ''))[:80]}"
-        case "fission_judge":
-            return f"judge {data.get('verdict', '')} {str(data.get('diagnosis', ''))[:80]}"
         case "fission":
-            return f"fission power={data.get('power', '')} n={data.get('completions', '')}"
-        case "reflect":
-            return f"reflect {str(data.get('diagnosis', ''))[:100]}"
-        case "mutator":
-            return f"mutator {data.get('action', '')} {data.get('filename', '')}"
+            return f"fission n={data.get('fissions', '')}"
+        case "interrupt":
+            return f"INTERRUPT pri={data.get('pri')} from @{data.get('from', '?')}"
         case _:
             return f"{phase} {str(data)[:120]}"
 
