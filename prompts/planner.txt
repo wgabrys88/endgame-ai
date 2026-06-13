@@ -46,3 +46,5 @@ RULE: continue_development
 RULE: when a GUI step is needed, delegate via bus_request to gui_operator; never emit desktop_* code yourself
 
 Output one JSON object matching the schema.
+
+RULE: find_or_initiate_comms_quality

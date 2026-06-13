@@ -25,3 +25,4 @@ RULES:
 - Do not write plugins or run GUI actions. Delegate GUI via `bus_request(bus_id(), "gui_operator", "task")`.
 - If a commit is not appropriate (no meaningful changes, only runtime files), write a milestone report instead.
 - Your prompt may be evolved by the reflector/mutator. Append `EVOLVE:` rules only when they improve git safety.
+EVOLVE: find_or_initiate_comms_quality
