@@ -106,6 +106,7 @@ def _main_loop(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
     personality = os.environ.get("ENDGAME_PERSONALITY", "")
     always_active = personality == "comms_operator"
     _last_wake_id: int = 0
+    _booted = False  # allow first cycle before sleeping
 
     while not log.exhausted() and not interrupted():
         try:
@@ -115,19 +116,22 @@ def _main_loop(board: dict[str, Any], interrupted: Callable[[], bool]) -> bool:
         _poll_goal(board)
 
         # Sleep/wake gate: non-comms agents sleep unless they have work or are @mentioned
-        if not always_active and not board.get("plan"):
+        if not always_active and not board.get("plan") and _booted:
             me = comms.agent_id()
             inbox = comms.pending_for(me, 3)
-            # Filter out already-seen messages
             new_msgs = [m for m in inbox if int(m.get("id", 0)) > _last_wake_id]
             if not new_msgs:
+                if not board.get("_sleeping"):
+                    log.emit("sleep", {})
+                    board["_sleeping"] = True
                 time.sleep(config.SLEEP_POLL_INTERVAL)
                 continue
-            # Woken by mention
+            board["_sleeping"] = False
             _last_wake_id = int(new_msgs[-1].get("id", 0))
             wake_msg = str(new_msgs[-1].get("text", ""))
             board["wake_request"] = wake_msg
             log.emit("wake", {"from": new_msgs[-1].get("from", "?"), "text": wake_msg[:120]})
+        _booted = True
 
         # Validate active plan step is Python
         plan = board.get("plan", [])

@@ -44,6 +44,7 @@ WORK_PHASES = frozenset({
     "mutation", "personality.evolve", "fission", "fission_blocked", "fission_sustain", "goal_change",
     "start", "stop", "mutator", "mutator.error", "mutator.rejected",
     "planner.error", "planner.pending", "actor.error", "verifier.error", "fission_judge.error", "reflector.error",
+    "sleep", "wake",
 })
 
 RAMP_STAG = [(20, 20, 30), (80, 30, 30), (160, 50, 30), (220, 70, 30), (255, 100, 60)]
@@ -248,6 +249,34 @@ class Agent:
         self.hist_stag: list[float] = []
         self.hist_nrg: list[float] = []
         self.hist_pid: list[float] = []
+
+    @property
+    def active_agent(self) -> str:
+        """Which internal agent is currently active in this persona."""
+        ph = self.last_phase
+        if not ph or ph == "start":
+            return "booting"
+        if ph == "sleep":
+            return "sleeping"
+        if ph == "wake":
+            return "waking"
+        if ph == "math":
+            return "math"
+        if ph.startswith("planner"):
+            return "planner"
+        if ph in ("actor", "action", "observe") or ph.startswith("actor"):
+            return "actor"
+        if ph in ("verify",) or ph.startswith("verifier"):
+            return "verifier"
+        if ph in ("fission_judge", "fission", "fission_blocked", "fission_sustain") or ph.startswith("fission"):
+            return "fission_judge"
+        if ph in ("reflect",) or ph.startswith("reflector"):
+            return "reflector"
+        if ph in ("mutation",) or ph.startswith("mutator") or ph == "personality.evolve":
+            return "mutator"
+        if ph == "schedule":
+            return "scheduler"
+        return ph[:12]
 
     @staticmethod
     def _is_cooldown(ev: dict) -> bool:
@@ -536,7 +565,7 @@ class TUI:
         dot_c = _fg(*CLR_ALIVE) if alive else _fg(*CLR_DEAD)
         dot = "●" if alive else "○"
         hdr = (
-            f"{BOLD}{_fg(*CLR_HEADER)}REACTOR{RST} {dot_c}{dot}{RST} {alive}/{total}  "
+            f"{BOLD}{_fg(*CLR_HEADER)}REACTOR{RST} {dot_c}{dot}{RST} {alive}/{total} personas  "
             f"[{mode}]  k={k:.1f}  {_fg(*CLR_FISSION)}F={total_f}{RST}  {fpm:.1f}/m  "
             f"stag={avg_stag:.2f}  {self._elapsed(elapsed)}  {time.strftime('%H:%M:%S')}"
         )
@@ -551,11 +580,14 @@ class TUI:
         for idx, agent in enumerate(agents):
             adot = f"{_fg(*CLR_ALIVE)}●{RST}" if agent.alive else f"{_fg(*CLR_DEAD)}○{RST}"
             pers = agent.personality[:PERSONALITY_WIDTH].ljust(PERSONALITY_WIDTH)
+            aa = agent.active_agent
+            aa_clr = CLR_STAG if aa == "sleeping" else CLR_PHASE
+            aa_tag = f"{_fg(*aa_clr)}{aa}{RST}"
             stag_b = f"s{_bar(agent.stag, bar_w, CLR_STAG)}"
             nrg_b = f"n{_bar(min(agent.energy / NRG_MAX, 1), bar_w, CLR_NRG)}"
             pid_b = f"p{_bar(min(abs(agent.pid_val) / PID_MAX, 1), bar_w, CLR_PID)}"
             fiss = f"{_fg(*CLR_FISSION)}F={agent.fissions}{RST}"
-            lines.append(row(_trunc(f"{pers} {adot} {stag_b} {nrg_b} {pid_b} {fiss}", inner)))
+            lines.append(row(_trunc(f"{pers} {adot} [{aa_tag}] {stag_b} {nrg_b} {pid_b} {fiss}", inner)))
 
             recent = agent.recent_work(event_rows)
             s_strip = _spec_row(agent.hist_stag, spec_w, RAMP_STAG)
