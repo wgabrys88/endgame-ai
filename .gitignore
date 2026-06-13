@@ -7,10 +7,8 @@
 !.env
 !AGENTS.md
 !README.md
-!LICENSE
-!CONTRIBUTING.md
 !KNOWLEDGE.md
-!CHECKLIST.md
+!LICENSE
 !*.py
 !prompts/
 !prompts/**
@@ -32,4 +30,10 @@ respawn.json
 goal.txt
 pause
 *.lock
-!HANDOVER.md
+
+# --- Local / personal (never commit) ---
+vision/
+*.md
+!README.md
+!KNOWLEDGE.md
+!AGENTS.md

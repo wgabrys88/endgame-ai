@@ -1,124 +1,111 @@
-# endgame-ai — slot-based AI colony with priority interrupts
+# endgame-ai
 
-**5 parallel AI personas** working on goals, interruptible by priority. A router persona (`comms_operator`) decides who works on what.
+A **5-slot AI colony** on your machine: parallel persona processes coordinated through a shared blackboard, steered by deterministic math, with a local LLM used only when planning or verification is needed.
+
+**Active branch:** `grok-dev` — Colony Alpha (stable slots, blackboard v1, MoE routing, orchestrator).
 
 ```bash
-python tui.py --model-profile nemotron    # Nemotron (reasoning)
-python tui.py --model-profile gemma       # Gemma (fast)
-python tui.py --backend acp              # ACP/Kiro (sequential)
+git checkout grok-dev
+python tui.py --model-profile nemotron
 ```
 
-Space = pause/unpause. q = quit. Type `@persona message` to talk to the colony.
+| Profile | Use |
+|---------|-----|
+| `nemotron` | Reasoning model, 1 concurrent LLM (recommended) |
+| `gemma` | Faster, 2 concurrent |
+| `--backend acp` | Sequential WSL/Kiro backend |
 
-**Active branch:** `grok-dev` — see `KNOWLEDGE.md` and `CHECKLIST.md` before testing.
+**Controls:** Space = pause/unpause · `q` = quit · `@persona message` = talk to the colony
 
 ---
 
-## How It Works
+## What you see
 
-- **5 slots** — each holds one persona process
-- **Slot 1** = `comms_operator` — deterministic MoE router (`engine._moe_route` every 20s)
-- **Slots 2-5** = workers — **idle until routed** via blackboard `kind=route`
-- **Orchestrator**: `LLM_MAX_CONCURRENT=1` (nemotron) — one LLM call colony-wide
-- **Blackboard v1**: structured `messages.json` + `events_bus.jsonl` — see `schemas/bus_v1.json`
-- **Pressure**: stagnation, power (=1−stag), velocity — escalation → slot reassign
+- **5 slots** — each is an OS process running one persona
+- **Slot 1** — `comms_operator` routes work every 20s (no LLM for routing)
+- **Slots 2–5** — workers stay **idle until routed** via the blackboard
+- **TUI** — 45-line display; pipeline bars per slot: `S·P·A·V·F`
 
-## Priority Levels
+```
+scheduler → planner → actor → verifier → fission_judge   (inside each persona)
+```
+
+The LLM is not the organism. It is a subroutine inside a Python control loop.
+
+---
+
+## Priority
 
 | Level | Name | When |
 |-------|------|------|
-| 3 | HUMAN | Human typed a message |
-| 2 | CRITICAL | Blocking other personas |
-| 1 | NORMAL | Assigned by comms_operator |
-| 0 | MAINTENANCE | Self-directed (default) |
-
-## Pipeline (inside each persona)
-
-```
-scheduler → planner → actor → verifier → fission_judge
-```
-
-Each persona contains these agents internally. The TUI shows their state as `S·P·A·V·F`.
-
-## Session Logging
-
-Every run creates `sessions/YYYYMMDD_HHMMSS/` — all event files go there. Previous sessions preserved. Workspace root stays clean.
-
-## Files
-
-```
-main.py      — persona entry point
-engine.py    — pipeline + priority interrupt + pressure math
-agents.py    — scheduler/planner/actor/verifier/fission_judge
-reactor.py   — 5 slots, respawn dead
-tui.py       — 45-line fixed display with agent pipeline bars
-llm.py       — LM Studio + ACP backend
-comms.py     — blackboard v1 (route, telemetry, control)
-log.py       — JSONL events, session-based folders
-config.py    — slots, personas, profiles, MoE thresholds
-KNOWLEDGE.md — architecture + protocol reference
-CHECKLIST.md — test procedure for grok-dev
-```
+| 3 | HUMAN | You typed a message |
+| 2 | CRITICAL | MoE escalation (stuck worker) |
+| 1 | NORMAL | comms_operator assigned work |
+| 0 | MAINTENANCE | Idle until inbox |
 
 ---
 
-## Handover — Theoretical Foundation
+## Before you run
 
-This system maps directly to cutting-edge multi-agent research (2025-2026). Any AI coder continuing this work should understand these connections:
+1. LM Studio with nemotron loaded at `localhost:1234`, or use `--backend acp`
+2. Close any stale `tui.py` / `reactor.py` processes
+3. `runtime/comms/` is wiped on TUI start (session logs in `sessions/` are kept)
 
-### 1. Mixture of Experts (MoE)
+### Quick sanity check
 
-The paper "Multi-Agent Systems are Mixtures of Experts" (Bause et al., CISPA, 2026 — arxiv.org/html/2605.25929v1) formally proves that multi-agent LLM deliberation IS a Mixture of Experts.
+```bash
+python tui.py --model-profile nemotron
+```
 
-In endgame-ai:
-- `comms_operator` = the softmax gating network
-- It routes based on **relative confidence** of each persona
-- The **stagnation metric is the confidence signal inverted** — high stagnation = low confidence = route work elsewhere
-- comms_operator reads ALL personas' pressure fields to make routing decisions
+Expect: `5/5 slots` in the header, no respawn every 5s, one `moe.route` in slot-1 events after ~20s.
 
-### 2. Blackboard Architecture
+```bash
+python comms.py state    # structured telemetry per persona
+```
 
-The paper "Exploring Advanced LLM Multi-Agent Systems Based on Blackboard Architecture" (CAS, 2025 — arxiv.org/html/2507.01701v1):
+Human interrupt test: `@implementor read config.py and summarize`
 
-In endgame-ai:
-- The message bus (`runtime/comms/messages.json` + `events_bus.jsonl`) IS the shared blackboard
-- NO direct persona-to-persona communication — all coordination through the bus
-- `comms_operator` = the "control unit" that reads the blackboard and selects which persona acts
-- Result: best average performance while spending fewer tokens (their finding)
+Automated smoke test: `python run_test.py 120`
 
-### 3. Pressure Fields (Control Theory)
+---
 
-The paper "Emergent Coordination via Pressure Fields and Temporal Decay" (Rodriguez, 2026 — arxiv.org/html/2601.08129v2, github.com/Govcraft/pressure-field-experiment):
+## Branches
 
-In endgame-ai:
-- `stagnation` = their "pressure function" — measures gaps in progress
-- Failure pressure (0.15/fail) + time pressure (ramps after 60s without fission)
-- Resets on fission or goal switch = their "temporal decay"
-- Stagnation plateau → comms_operator evicts/reassigns = their "band escalation"
-- Their result: **48.5% solve rate vs 1.5% hierarchical, 12.6% conversation-based**
+| Branch | Role |
+|--------|------|
+| `grok-dev` | **Active** — colony rewrite, bus v1, MoE loop |
+| `unify-rewrite` | Architectural base; likely merge target later |
+| `main` | Separate lineage (organism M4, self-rewrite proven) — parallel species, not parent of grok-dev |
 
-### 4. AgentBreeder (Evolutionary)
+---
 
-The paper "AgentBreeder" (Oxford, 2026 — arxiv.org/html/2502.00757, github.com/jrosseruk/AgentBreeder):
+## Docs in this repo
 
-Literally a "breeding reactor" for agent scaffolds. MAP-Elites + evolution. The reflector/mutator agents (currently removed, can return as plugins) ARE this mechanism — they mutate prompts and evolve persona behavior over time.
+| File | Audience |
+|------|----------|
+| `README.md` | You — quick start and orientation |
+| `KNOWLEDGE.md` | Architecture, blackboard protocol, research map |
+| `AGENTS.md` | AI coding tools (Codex, Cursor, Grok) — session handover rules |
 
-### 5. Orchestrator Pattern
+Session notes and vision docs live outside the repo (Grok memory index), not in git.
 
-Instead of 5 personas ALL calling LLM simultaneously (causing timeouts):
-- `comms_operator` makes ONE routing decision: "who works on what?"
-- Assigns goals to slots via bus messages with priority
-- Personas execute deterministically (Python code) — only call LLM when they NEED a plan
-- This reduces 5 parallel LLM calls to 1-2 at a time
+---
 
-Reference: "Beyond the Agentic Loop: The Orchestrator Pattern" (stackademic.com/blog/beyond-the-agentic-loop-the-orchestrator-pattern-for-multi-agent-systems)
+## Core files
 
-### 6. Key Insight for Continuation
+```
+tui.py       — display and human input
+reactor.py   — 5 slots, spawn/kill/reassign
+main.py      — persona entry point
+engine.py    — pipeline, pressure math, MoE routing
+agents.py    — scheduler / planner / actor / verifier
+comms.py     — blackboard v1
+config.py    — slots, personas, thresholds
+llm.py       — LM Studio + ACP
+log.py       — session JSONL under sessions/
+prompts/     — planner, verifier, personalities
+schemas/     — JSON schemas (bus, route, telemetry, planner, …)
+plugins/     — hot-swappable (comms_beacon, …)
+```
 
-The LLM is NOT the agent. The LLM is a subroutine inside a deterministic state machine (CoALA framework, openreview.net/forum?id=1i6ZCvflQJ). Each persona is a control loop that occasionally consults the LLM for planning — but the loop itself is pure Python. This is "Flow Engineering" — explicit state transitions with the LLM filling in local decisions.
-
-### Branches
-
-- `grok-dev` — **active development** (TUI + orchestrator + bus v1 + MoE loop)
-- `unify-rewrite` — architectural rewrite base
-- `main` — stable (behind, update via PR)
+Deep reference: `KNOWLEDGE.md`. AI continuation: `AGENTS.md`.
