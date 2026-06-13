@@ -233,7 +233,14 @@ class FissionJudgeAgent:
             return None
         fissions = board.get("fissions", 0) + 1
         board["fissions"] = fissions
-        return {"phase": "fission", "data": {"fissions": fissions, "completed": completed[-1]}}
+        latest = str(completed[-1])
+        fitness = _evolution_fitness(board, fissions)
+        _post_evolution_candidate(board, fissions, latest, fitness)
+        return {"phase": "fission", "data": {
+            "fissions": fissions,
+            "completed": latest,
+            "fitness": fitness,
+        }}
 
 
 # --- Helpers ---
@@ -335,6 +342,38 @@ def _verify_simple_file_done(done_when: str) -> tuple[bool, str] | None:
     if actual != expected:
         return False, f"{rel_path} content mismatch: {actual!r}"
     return True, f"{rel_path} contains expected content"
+
+
+def _evolution_fitness(board: dict[str, Any], fissions: int) -> float:
+    pressure = board.get("_pressure", {})
+    stagnation = float(pressure.get("stagnation", board.get("stagnation", 0.0)) or 0.0)
+    power = float(board.get("power", 1.0 - stagnation) or 0.0)
+    failures = int(pressure.get("failures", 0) or 0)
+    credit = min(0.2, fissions * 0.02)
+    score = 0.55 + (power * 0.35) + credit - (stagnation * 0.25) - min(0.2, failures * 0.04)
+    return round(max(0.0, min(1.0, score)), 4)
+
+
+def _post_evolution_candidate(board: dict[str, Any], fissions: int, completed: str, fitness: float) -> None:
+    try:
+        import comms
+        pressure = board.get("_pressure", {})
+        comms.post_evolve(
+            comms.agent_id(),
+            comms.agent_id(),
+            "retain",
+            fitness=fitness,
+            completed=completed,
+            reason="fission credit",
+            data={
+                "fissions": fissions,
+                "stagnation": round(float(pressure.get("stagnation", board.get("stagnation", 0.0)) or 0.0), 4),
+                "power": round(float(board.get("power", 0.0) or 0.0), 4),
+                "velocity": round(float(pressure.get("velocity", board.get("velocity", 0.0)) or 0.0), 4),
+            },
+        )
+    except Exception:
+        pass
 
 
 def _load_prompt(role: str) -> str:
