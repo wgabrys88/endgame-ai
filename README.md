@@ -8,13 +8,13 @@ Five Python processes, one local model (nemotron-3-nano-4B), a blackboard, press
 |--------|-------|-------|------------|
 | **`bare-metal`** | **42** | **~7k** | Current colony — MoE, bus, breeding |
 | `unify-rewrite` | 49 | ~8k+ | Backup before bare-metal strip |
-| `main` | 24 | ~3.6k | **Legacy** single-process (no reactor/comms/breed) |
+| `main` | 24 | ~3.6k | **Same organism, 1 instance** (GUI actor; no bus/breed) |
 
 ```bash
 git checkout bare-metal
 ```
 
-`main` is smaller on disk because it is an **older, simpler organism** — not a subset of bare-metal.
+`main` is one instance of the same `main.py` → `engine.run` path. Colony is 5× that plus bus and reactor. Colony actor currently regressed to `run_python` only — see `RULES.md` capability table.
 
 ## Run
 

@@ -8,79 +8,49 @@ Humans: read `README.md`.
 
 ## COLD-START HANDOVER PROMPT
 
-**Last updated:** 2026-06-14 · **Branch:** `bare-metal` (**42 files**, ~6971 lines) · **Backup:** `unify-rewrite` (49) · **MILESTONE:** `dev-milestone-20260614` → `5ca4ee8` · **HEAD:** `0d14ad4`
+**Last updated:** 2026-06-14 · **Branch:** `bare-metal` (**42 files**, ~7162 lines) · **Backup:** `unify-rewrite` (49) · **MILESTONE:** `dev-milestone-20260614` → `5ca4ee8`
 
-Copy the fenced block into any new AI session.
+Copy **RULES.md § SYSTEM CORE** fenced block first (papers, same-arch, bloat ledger). Then this supplement:
 
 ```text
 PROJECT: endgame-ai — self-evolving multi-agent colony on consumer hardware.
-Branch: bare-metal (42 files, ~6971 lines). Backup: unify-rewrite. Legacy: main (24 files, different arch).
-Model: nvidia-nemotron-3-nano-4b, profile nemotron_parallel (LM Studio MC=5).
+Branch: bare-metal (42 files, ~7162 lines). main = same organism, 1 instance (not a fork).
+
+PAPERS (open before changing behavior):
+  Bause MoE:      https://arxiv.org/abs/2605.25929  → comms.softmax_route, engine._moe_route
+  Rodriguez pressure: https://arxiv.org/abs/2601.08129 → engine._update_pressure
+  MAP-Elites:     https://arxiv.org/abs/1504.04909  → reactor.Breeder
+  ReAct loop:     https://arxiv.org/abs/2210.03629  → agents pipeline (conceptual)
+
+SAME ARCHITECTURE:
+  One instance = main.py → engine.run(board) → agent pipeline.
+  Colony = 5× that + comms blackboard + reactor parent. NOT two organisms.
+
+CAPABILITY REGRESSION (see RULES.md table):
+  main: GUI actor (execute_verb), ObserverAgent, YouTube/Notepad worked.
+  colony now: ActorAgent → run_python only; planner AST blocks non-python; _gui_decline_plan.
+  Desktop stack exists but unwired. FIX: unified actor path (next code pass).
 
 READ ORDER:
-1. RULES.md § SYSTEM CORE — deterministic diagram + bloat ledger (COPY THAT BLOCK FIRST)
+1. RULES.md § SYSTEM CORE — COPY THAT BLOCK FIRST (arxiv links + bloat ledger)
 2. OBSERVATIONS.md — session log + forensics below
 3. README.md — human run command
-4. Code path: comms.py → engine.py → agents.py (pipeline) → reactor.py → main.py
+4. Code: comms.py, engine.py, agents.py, reactor.py, main.py
 
-MINIMAL CORE (42 files):
-  Entry(3): tui.py, reactor.py, main.py
-  Pipeline(3): engine.py, agents.py, comms.py (+ actor sandbox bus_* API)
-  Infra(4): config.py, log.py, llm.py (runtime only), python_code.py
-  Desktop(3): actions.py (+ desktop helpers), observer.py, win32.py
-  Backend(1): acp_client.py
-  Plugins(4) · Prompts(10) · Schemas(5) · Meta(8)
-
-IDENTITY (OoO): config.Personality + engine.AgentContext(board).
-  main.py sets board.personality/slot; engine.ensure_context() binds object.
-  agents._personality(board) reads board first; reactor.Breeder holds archive state.
-
-STRIPPED: lessons.py, run_test.py, 3 schemas; colony_env→comms; desktop→actions; llm benchmark ~970 lines.
-
-ORGANISM (deterministic, not the LLM):
-  pressure → MoE (s1) → blackboard → scheduler → planner → actor → verifier
-  → fission_judge → reflector → mutator → breeder (reactor.py)
+Model: nvidia-nemotron-3-nano-4b, profile nemotron_parallel (LM Studio MC=5).
 
 RUN:
   python tui.py "long-term goal sentence"
-  python tui.py --safe "goal"   # guarded mode
-  LM Studio localhost:1234, nemotron-3-nano-4B loaded.
+  python tui.py --safe "goal"
   Fresh disk: python -c "import log; log.cleanup_runtime(deep=True)"
 
-GOALS (Codex /goal):
-  CLI trailing words → LONG_TERM_GOAL (runtime/colony_goal.txt, gitignored).
-  MoE assigns work toward it. TUI Enter = pri=3 ACTIVE_TASK override until verified.
-  No goal → maintenance audits → idle.
-
-ARCHITECTURE: 5 slots — comms_operator + 4 workers. Bus-only via comms.py.
-
-HARD RULES (RULES.md):
-  - No new .py files
-  - Never commit runtime/, sessions/, golden artifacts
-  - py_compile changed Python; do not weaken verifier/fission gates
-
-KEY FILES:
-  Bus: comms.py (inbox_match, apply_interrupt, set_colony_goal)
-  Loop: engine.py, agents.py, prompts/*.txt, schemas/*.json
-  Ops: tui.py, reactor.py, config.py
-  Breeder: reactor.py, plugins/fission_log.py (protected)
-
-SMOKE (no LLM):
-  python agents.py --fission-smoke
-  python agents.py --git-verify-smoke
-  python reactor.py --archive-smoke
-  python reactor.py --breed-improve-smoke
-
-MILESTONE: git checkout dev-milestone-20260614  # pins 5ca4ee8 DEV_BASELINE_20260614
-BRANCHES: bare-metal = forward dev (minimal). unify-rewrite = backup (pre-cleanup).
-STATE: bare-metal cleanup branch created. Session 20260614_201915 forensics in § Session log.
 CURRENT PRIORITY:
-  1. Shrink agents.py in-place (validators block, JsonRoleAgent) — no new .py files
-  2. Prove breed.improve elite survives restart
-  3. Fix s2/s4 need_plan idle spin
-  DONE: AgentContext, Breeder class, _verify_outcome, format_phase_brief, Personality on board
+  1. Delete ~half per RULES bloat ledger (agents AST/smokes, comms mirrors, tui display)
+  2. Restore main-style ActorAgent in colony (one code path)
+  3. Prove breed.improve elite survives restart
+  DONE: AgentContext, Breeder, _verify_outcome, Personality, SYSTEM CORE docs
 
-NOT IN GIT: runtime/, sessions/*.jsonl — keep locally only.
+NOT IN GIT: runtime/, sessions/*.jsonl
 ```
 
 ---
@@ -92,14 +62,16 @@ NOT IN GIT: runtime/, sessions/*.jsonl — keep locally only.
 | | `main` | `bare-metal` (now) |
 |--|--------|-------------------|
 | **Files** | 24 | **42** |
-| **Lines** | ~3,656 | **~6,971** |
+| **Lines** | ~3,656 | **~7,162** |
+| **Instances** | 1× `main.py` + `engine.run` | 5× same + reactor |
 | **Processes** | 1 (+ math thread) | 5 slots + reactor |
 | **Bus** | snapshot.json | comms blackboard |
 | **Breeding** | none | reactor MAP-Elites |
-| **Agents** | stagnation/lorenz/pid math | fission_judge + mutator + MoE |
-| **llm.py** | 118 lines | 358 lines (was 1280 before benchmark strip) |
+| **Actor** | execute_verb + GUI | run_python only (**regression**) |
+| **Agents** | stagnation/lorenz/pid + Observer | fission_judge + mutator + MoE |
+| **llm.py** | 118 lines | 358 lines |
 
-**main is not a subset** — it is a legacy single-agent loop. Bare-metal is ~2× lines because the **working wiring** (multi-process, bus, breed, fission) is real code.
+**Same architecture, scale=1 vs scale=5.** Bare-metal is ~2× lines for multi-process wiring plus ~2.5k bloat (see RULES bloat ledger). Actor capability regressed despite desktop files still present.
 
 ### Traceback from `python tui.py` (critical path)
 

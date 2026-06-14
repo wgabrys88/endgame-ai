@@ -1,58 +1,116 @@
 # RULES.md — Repository contract
 
-**Branch:** `bare-metal` (forward dev). **Legacy:** `main` (single-process demo, not a subset).
+**Branch:** `bare-metal` (forward dev). **`main`** = same organism, **one** instance (no bus/reactor).
 
 ---
 
 ## SYSTEM CORE — copy this entire section into any AI session
 
 ```text
-DETERMINISTIC BRIEFING: endgame-ai colony (bare-metal branch)
+DETERMINISTIC BRIEFING: endgame-ai (bare-metal branch)
 
-WHAT WE BUILT (from papers → code):
-  1. Blackboard bus (protocol v1) — shared JSON state + event log. All coordination here.
-  2. Mixture-of-Experts router (Bause 2026) — comms_operator reads telemetry, softmax_route(power), posts route@worker. Deterministic, no LLM.
-  3. Pressure field (Rodriguez 2026) — stagnation/power per slot from failures + time-since-fission. Feeds MoE + TUI.
-  4. Per-slot pipeline (same code every slot) — scheduler→planner→actor→verifier→fission_judge→reflector→mutator. LLM is a subroutine.
-  5. AgentBreeder / MAP-Elites (reactor parent) — evolve candidates on bus; archive elites; respawn personas. Parent process only.
-  6. Personality = ONE main.py process + ONE prompt file. NOT separate Python classes. architect/implementor/reviewer are labels + .txt missions.
+SAME ARCHITECTURE — NOT TWO ORGANISMS:
+  One endgame-ai instance = main.py → engine.run(board) → agent pipeline.
+  main branch:     ONE instance, ONE process (no comms bus, no reactor, no breeding).
+  bare-metal:      FIVE identical instances (slots 1–5) + comms blackboard + reactor parent.
+  Colony is N× the same code path, not a rewrite. main could run YouTube/Notepad via GUI actor;
+  colony currently regressed to run_python-only (see Capability regression).
+
+PAPERS → CODE (read these, then grep the module):
+  1. Blackboard / stigmergy (bus protocol v1)
+     Repo: comms.py (post, inbox_match, events_bus.jsonl), engine._apply_bus_interrupt
+     No single canonical paper — pattern is classical blackboard MAS.
+
+  2. Mixture-of-Experts routing — Bause 2026
+     Paper: https://arxiv.org/abs/2605.25929
+     Read: softmax gating over agent capabilities; route work to specialist.
+     Repo: comms.softmax_route, engine._moe_route (slot 1 comms_operator only).
+     Grep: "Bause 2026", softmax_route, _moe_route
+
+  3. Pressure field / temporal decay — Rodriguez 2026
+     Paper: https://arxiv.org/abs/2601.08129
+     Read: stagnation pressure, time-since-event escalation.
+     Repo: engine._update_pressure, config.STAG_ESCALATE, board["_pressure"].
+     Grep: "Rodriguez 2026", stagnation, power
+
+  4. Quality-diversity elites — MAP-Elites
+     Paper: https://arxiv.org/abs/1504.04909
+     Read: archive niches, mutate, retain elites across behavioral dimensions.
+     Repo: reactor.Breeder, breed_archive.json, comms.post_evolve.
+     Grep: Breeder, MAP-Elites, breed_archive
+
+  5. Planner–actor–verifier loop — ReAct (conceptual)
+     Paper: https://arxiv.org/abs/2210.03629
+     Read: reason → act → observe; we add verifier + fission_judge + mutator.
+     Repo: agents.py pipeline classes, prompts/planner.txt, schemas/*.json.
+     Grep: PlannerAgent, ActorAgent, VerifierAgent, FissionJudgeAgent
+
+WHAT WE BUILT (papers → modules):
+  1. Blackboard bus — shared JSON + event log; all inter-slot coordination.
+  2. MoE router (Bause) — comms_operator softmax_route(power) → route@worker. Deterministic.
+  3. Pressure field (Rodriguez) — per-slot stagnation/power → MoE + TUI.
+  4. Per-slot pipeline — scheduler→planner→actor→verifier→fission_judge→reflector→mutator.
+     LLM is a subroutine (llm.py), not the organism.
+  5. Breeder / MAP-Elites — reactor parent evolves candidates, archives elites, respawns slots.
+  6. Personality = ONE main.py process + ONE prompt file. NOT Python subclasses.
+     config.Personality(name, slot, mission) + prompts/personalities/{name}.txt
 
 WHAT IS NOT THE ORGANISM:
-  - The LLM (nemotron) — replaceable backend in llm.py
-  - Desktop stack (observer.py, win32.py, actions.py) — copied from legacy main; ~950 lines; enables Notepad/Chrome when GUI on. Same capability main had in 3.6k total lines.
-  - TUI (tui.py) — human display only
+  - LLM backend (nemotron via LM Studio) — llm.py, swappable
+  - Desktop stack (observer.py, win32.py, actions.py) — ~950 lines, present but UNWIRED in colony actor
+  - TUI (tui.py) — human display + keyboard inject only
   - prompts/*.txt, schemas/*.json — data, not logic
 
+CAPABILITY REGRESSION (main vs bare-metal — SAME desktop code, different actor path):
+  | Capability              | main (1 instance)              | bare-metal colony (now)        |
+  |-------------------------|--------------------------------|--------------------------------|
+  | Actor execution         | execute_step + execute_verb    | run_python(code) only          |
+  | GUI verbs               | click, write, press, hotkey…   | none — skipped if not python   |
+  | Screen context          | ObserverAgent → screen_*     | not in pipeline                |
+  | Planner steps           | text + python (is_python_step) | code field only, AST validated |
+  | GUI goals               | runs when gui_mode on        | _gui_decline_plan unless --unconstrained |
+  | Multi-app (Notepad etc) | worked in sessions           | desktop files exist, actor can't call them |
+  FIX (next code pass): restore main-style ActorAgent path inside colony — one code path, not duplicate 7k mess.
+
 HONEST SIZE COMPARISON:
-  main branch:     24 files, ~3,656 lines — 1 process, desktop+YouTube, NO bus, NO breeding, NO 5-slot colony
-  bare-metal now:  42 files, ~7,028 lines — 5 slots + reactor, full bus+breed, SAME desktop stack bolted on
-  → We doubled line count for multi-process wiring. We also duplicated validators, mutation AST, smokes, TUI formatting.
+  main branch:     24 files, ~3,656 lines — 1× instance, GUI actor, no bus/breed
+  bare-metal now:  42 files, ~7,162 lines — 5× instance + reactor + bus + breed + bloat
+  → ~2× lines for real multi-process wiring PLUS ~2,500 lines accidental duplication (ledger below).
+
+CODE MINIMALISM (laws — apply when deleting):
+  L1. One instance = main.py + engine.run. Colony adds only comms + reactor wrapper.
+  L2. No new .py files — merge inward into existing modules.
+  L3. Delete before adding — net line count must shrink each slimming pass.
+  L4. One JsonRoleAgent pattern for all LLM roles; no AST zoo for planner/actor guards.
+  L5. Smokes and CLI mirrors are dev-only; not shipped in organism path.
+  L6. Desktop is optional module (~950 lines); organism core must run without it.
+  L7. Personality = dataclass + .txt prompt, never subclasses.
 
 TRUE MINIMAL WIRING (target, not current):
-  comms bus core ............... ~400 lines (post, route, inbox, telemetry, interrupt)
-  engine loop .................. ~260 lines (plugins, pressure, MoE gate, pipeline walk)
-  main.py entry ................ ~70 lines (Personality.from_env → engine.run)
-  reactor spawn+control+breed .. ~500 lines (5 Popen, archive, trial scoring)
-  agents pipeline (7 steps) .... ~600 lines (one JsonRoleAgent pattern, no AST zoo)
+  comms bus core ............... ~400 lines
+  engine loop .................. ~260 lines
+  main.py entry ................ ~70 lines
+  reactor spawn+control+breed .. ~500 lines
+  agents pipeline (7 steps) .... ~600 lines (unified actor: python OR gui verbs)
   llm + config + log ........... ~500 lines
-  SUBTOTAL ORGANISM ............ ~2,300 lines (deterministic + LLM calls, no desktop)
-  desktop (optional) ........... ~950 lines (observer+win32+actions — keep or fork)
-  CURRENT BLOAT TO DELETE ...... ~2,500 lines (see Bloat ledger below)
+  SUBTOTAL ORGANISM ............ ~2,300 lines (no desktop)
+  desktop (optional) ........... ~950 lines
+  DELETE NEXT .................. ~2,500 lines (bloat ledger)
 
-RUNTIME TOPOLOGY (5 processes + 1 parent):
+RUNTIME TOPOLOGY (5 child processes + 1 parent):
   tui.py → subprocess reactor.py
     reactor: slot1=comms_operator (fixed), slots2-5=workers (breedable)
-    each slot: subprocess main.py → engine.run(board) in a loop
+    each slot: subprocess main.py → engine.run(board) — IDENTICAL binary/code
     board + runtime/comms/messages.json = blackboard
     NO direct calls between slots — only comms.py
 
-ONE CYCLE (worker process):
+ONE CYCLE (any slot — same engine.run):
   1. comms.apply_interrupt(board)     # human pri=3 overrides goal
   2. plugins/*.py hot-swap
   3. pressure math → post_telemetry
   4. [comms_operator only] MoE route or escalate stuck worker
   5. scheduler → planner|actor|verifier|fission|reflect|mutate chain
-  6. actor runs Python subprocess (actions.run_python) with comms bus_* injected
+  6. actor: CURRENTLY run_python only — TARGET: python OR execute_verb like main
 
 ONE CYCLE (reactor parent):
   1. respawn dead slots
@@ -62,8 +120,8 @@ ONE CYCLE (reactor parent):
 
 PERSONALITY TRUTH:
   config.Personality(name, slot, mission) — dataclass only
-  prompts/personalities/{name}.txt — mission text (the ONLY per-persona difference in code path)
-  prompts/planner.txt etc. — role prompts (same for all slots)
+  prompts/personalities/{name}.txt — mission (only per-persona difference in code path)
+  prompts/planner.txt etc. — role prompts (shared across slots)
   engine.AgentContext — binds personality to board per process
 
 HARD INVARIANTS (do not break when slimming):
@@ -74,16 +132,17 @@ HARD INVARIANTS (do not break when slimming):
   - Never commit runtime/ or sessions/
 
 BLOAT LEDGER (delete next, ~half the repo):
-  agents.py smokes ...................... ~200 lines (move to dev-only or delete)
+  agents.py smokes ...................... ~200 lines
   agents.py plugin mutation AST ........... ~335 lines
   agents.py planner AST validators ........ ~200 lines (keep minimal guards only)
   reactor.py smokes ....................... ~250 lines
   comms.py CLI + mirror formatters ........ ~200 lines
-  tui.py display ........................ ~300 lines (keep 45-line core)
+  tui.py display ........................ ~300 lines (keep ~45-line core)
   acp_client.py (if lmstudio-only) ........ ~223 lines
 
-READ ORDER: RULES.md (this) → OBSERVATIONS.md session log → README.md run command
-CODE PATH: comms.py, engine.py, agents.py (pipeline only), reactor.py, main.py, tui.py
+READ ORDER: RULES.md (this block) → OBSERVATIONS.md session log → README.md
+CODE PATH: comms.py, engine.py, agents.py, reactor.py, main.py, tui.py
+RESEARCH: open arxiv links above before changing pressure/MoE/breed/actor behavior
 ```
 
 ---
@@ -164,14 +223,36 @@ ASCII equivalent:
 
 ## Scientific mapping (papers → modules)
 
-| Idea | Paper ref in code | Module | Deterministic? |
-|------|-------------------|--------|----------------|
-| Blackboard / stigmergy | bus v1 protocol | `comms.py` | Yes |
-| MoE gate / softmax routing | Bause 2026 | `engine._moe_route`, `comms.softmax_route` | Yes |
-| Pressure / stagnation escalation | Rodriguez 2026 | `engine._update_pressure`, `config.STAG_ESCALATE` | Yes |
-| Quality-diversity elites | MAP-Elites pattern | `reactor.Breeder` | Yes |
-| LLM planner-actor-verifier | classical agent loop | `agents.py` pipeline classes | No (LLM) |
+| Idea | Paper | Module | Deterministic? |
+|------|-------|--------|----------------|
+| Blackboard / stigmergy | (classical MAS) | `comms.py` | Yes |
+| MoE gate / softmax routing | [Bause 2026](https://arxiv.org/abs/2605.25929) | `engine._moe_route`, `comms.softmax_route` | Yes |
+| Pressure / stagnation escalation | [Rodriguez 2026](https://arxiv.org/abs/2601.08129) | `engine._update_pressure`, `config.STAG_ESCALATE` | Yes |
+| Quality-diversity elites | [MAP-Elites](https://arxiv.org/abs/1504.04909) | `reactor.Breeder` | Yes |
+| Planner–actor–verifier loop | [ReAct](https://arxiv.org/abs/2210.03629) (conceptual) | `agents.py` pipeline classes | No (LLM) |
 | Fission credit / evolution | project-specific | `FissionJudgeAgent`, `comms.post_evolve` | LLM judge, deterministic post |
+
+## Capability regression (main vs colony)
+
+| Capability | `main` (1 instance) | `bare-metal` colony (now) |
+|------------|---------------------|---------------------------|
+| **Architecture** | `main.py` → `engine.run` | Same — 5× `main.py` + `comms` + `reactor` |
+| **Actor** | `execute_step` + `execute_verb` (GUI verbs) | `run_python(code)` only |
+| **Observer** | `ObserverAgent` in pipeline | Not wired |
+| **Planner steps** | `text` field + `is_python_step` | `code` field only; `_validate_planner_contract` |
+| **GUI goals** | Runs with `gui_mode` | `_gui_decline_plan` unless `--unconstrained` |
+| **Desktop files** | Used by actor | Present (`actions.py`, `observer.py`, `win32.py`) but actor ignores them |
+
+**Fix target:** one unified `ActorAgent` — python subprocess OR GUI verbs — shared by single-instance and colony modes.
+
+## Code minimalism
+
+1. **Same instance code** — colony is a wrapper, not a fork. `engine.run` and `agents.py` must not diverge per mode.
+2. **Delete before add** — each slimming pass must reduce net lines (see bloat ledger in § SYSTEM CORE).
+3. **No new `.py` files** — merge into `agents.py`, `comms.py`, `reactor.py`, etc.
+4. **Organism without desktop** — core ~2.3k lines must run with `actions.py` GUI path optional.
+5. **Personality = instance** — `config.Personality` + prompt `.txt`; never role subclasses.
+6. **Research before changing** — read linked papers when touching pressure, MoE, breeding, or actor routing.
 
 ---
 
@@ -188,9 +269,9 @@ ASCII equivalent:
 | `llm.py` | ~358 | **yes** | LM Studio path only |
 | `main.py` | ~70 | **yes** | One Personality instance |
 | prompts+schemas+plugins | ~200 | data | Not code paths |
-| **Total** | **~7028** | | **Target after halving: ~3500** (or ~2500 lmstudio-only, no desktop) |
+| **Total** | **~7162** | | **Target after halving: ~3500** (or ~2500 lmstudio-only, no desktop) |
 
-**main branch** (`git checkout main`): 24 files, ~3656 lines — single `engine.run` + math agents (stagnation/lorenz/pid) + desktop. Could play YouTube. **No colony, no bus, no breeding.** Not a smaller version of bare-metal.
+**`main` branch** (`git checkout main`): 24 files, ~3656 lines — **one** `main.py` + `engine.run` instance with GUI actor + `ObserverAgent`. No bus, no reactor, no breeding. **Same architecture, scale=1** — not a different organism.
 
 ---
 
