@@ -1,156 +1,161 @@
 # AGENTS.md — AI session handover (endgame-ai)
 
-**Read this first** if you are Codex, Cursor, Grok, OpenCode, or any AI continuing work on this repo.
+**Read this first** if you are any AI continuing work on this repo (Codex, Cursor, Grok, OpenCode, or other).
 
 | Doc | Purpose |
 |-----|---------|
-| `AGENTS.md` | **You** — rules, state, handoff, test procedure |
+| `AGENTS.md` | **You** — vision, distance-to-goal, rules, handover prompt |
 | `KNOWLEDGE.md` | Protocol and architecture (cite when editing comms/engine/llm) |
 | `README.md` | Human quick start only |
 
-**Grok Build memory index:** `~/.grok/memory/wgabrys88-endgame-ai/MEMORY.md` (workspace knowledge, not in git)
-
-**Integration trunk:** `unify-rewrite`  
-**Active work branch:** `grok-dev` — tip updates on each session commit  
-**Codex branch:** `codex-dev` — merged into `grok-dev` 2026-06-14  
-**Future branch:** `open-code-dev` — **does not exist yet**; if the human creates it for OpenCode development, branch from current `grok-dev` tip and develop there; merge back when stable  
-**Parallel lineage:** `main` (organism M4) — not parent/child of `unify-rewrite`
-
-**Milestone:** Colony Alpha ~90% — KV-stable prompts, reasoning capture live, `breed.improve` proven once (GOAL: repeat across cycles)
+**Trunk branch:** `unify-rewrite` @ `2b20732` (2026-06-14)  
+**Grok workspace memory:** `~/.grok/memory/wgabrys88-endgame-ai/MEMORY.md` (not in git)  
+**Human vision doc:** `ENDGAME_VISION.html` (local, not in git — read for paper refs and inception layers)
 
 ---
 
-## Handoff for the next agent
+## The endgame vision
 
-### If you are **Codex**
+**Endgame:** Self-evolving colony on consumer hardware. Small models. Real actions. Breeding reactor selects what lives.
 
-1. `git fetch && git checkout grok-dev && git pull`
-2. Read this file + `KNOWLEDGE.md` LLM layer section
-3. Do **not** recreate work on `codex-dev` unless coordinating a parallel experiment — `grok-dev` is integration point for this lineage
-4. Run test procedure below before claiming stability
-5. One agent commits per branch at a time
+### Core insight
 
-### If you are **OpenCode** (future `open-code-dev`)
+The LLM is **not** the organism. It is a subroutine inside a deterministic Python control loop. Pressure math, MoE routing, and priority run every cycle regardless of LLM state. Math agents are the immune system — chaos with guardrails.
 
-1. Human may create `open-code-dev` from `grok-dev` — if absent, ask before creating
-2. Same hard rules as below; no new `.py` files
-3. Document your tip in this file's session history when merging
-4. Do not fork architecture toward `main` without explicit human direction
+### Why this architecture (not the usual patterns)
 
-### If you are **Grok**
+| Not this | Because |
+|----------|---------|
+| RAG memory | Blackboard is alive — decays, evicts, routes. Not frozen embeddings. |
+| One big agent | Small model cannot run 5 planners; orchestrator gates one LLM at a time (or MC=5 burst). |
+| Provider agents | Full Python on local machine: git, files, subprocess. No cage. |
+| Manager/worker hierarchy | Pressure fields outperform hierarchy (Rodriguez 2026: 48.5% vs 1.5%). |
 
-- Workspace memory: `~/.grok/memory/wgabrys88-endgame-ai/MEMORY.md`
-- Local vision: `ENDGAME_VISION.html`, transcript: `Codex-log.md` (not in git)
+### Five papers → your code
+
+| Paper | Concept | Code |
+|-------|---------|------|
+| Bause 2026 — MAS as MoE | Softmax gating on confidence | `engine._moe_route()`, `comms.softmax_route()` |
+| Han & Zhang CAS 2025 — Blackboard | Shared coordination, no direct agent talk | `comms.py` v1 (`messages.json`, `events_bus.jsonl`) |
+| Rodriguez 2026 — Pressure fields | Stagnation, velocity, escalation | `engine._update_pressure()` |
+| Oxford 2026 — AgentBreeder | MAP-Elites evolution scaffold | `reactor.py` elites/trials; reflector/mutator pipeline |
+| Orchestrator pattern 2025 | Workers idle until routed | `LLM_MAX_CONCURRENT` + `runtime/.lmstudio.lock` |
+
+### Inception layers (outside → inside)
+
+```
+L0 Vision        → living organism on consumer hardware
+L1 Reactor       → reactor.py keeps 5 slots alive; breeding chamber
+L2 Blackboard    → comms.py v1 intent + observation stores
+L3 MoE gate      → comms_operator routes by softmax(power)
+L4 Pressure math → stagnation/velocity every cycle; escalation at stag≥0.7
+L5 Orchestrator  → LLM gated; workers idle until inbox has work
+L6 Pipeline      → scheduler→planner→actor→verifier→fission→[reflect→mutate]
+L7 Future        → consistent breed.improve; MAP-Elites convergence; plugin hot-swap
+```
 
 ---
 
-## What this project is
+## How far from the endgame
 
-Five parallel **slots** (OS processes). Each slot runs one **persona** with an internal agent pipeline. Coordination is **blackboard-only** (`comms.py`). Routing is **MoE softmax** on pressure telemetry (`engine._moe_route`). Default Nemotron: `nemotron` profile (MC=1 + global lock). Burst: `nemotron_parallel` (MC=5, lock off, LM Studio MC=5 + Unified KV).
+Honest scorecard (2026-06-14, post branch consolidation):
 
-**Core insight:** The LLM is a subroutine inside a deterministic Python loop. Math (pressure, priority, MoE) runs every cycle regardless of LLM state.
+| Layer | Status | ~% |
+|-------|--------|-----|
+| Colony skeleton (5 slots, reactor, no false respawn) | **Done** | 95 |
+| Blackboard v1 + MoE closed loop | **Done** | 90 |
+| Pressure + escalation + human yield | **Done** | 85 |
+| Orchestrator + KV-stable prompts + reasoning capture | **Done** | 85 |
+| Live Nemotron validation (MC=1 + MC=5 burst) | **Validated** | 80 |
+| AgentBreeder scaffold (reflect/mutate/evolve/trials) | **Wired** | 70 |
+| `breed.improve` multi-cycle evidence | **Once only** | 35 |
+| MAP-Elites / persistent elites / long-run convergence | **Not proven** | 15 |
 
-**Endgame GOAL:** Self-evolving colony on consumer hardware. Breeding reactor must produce **logged, multi-cycle** `breed.improve` evidence (pressure/fission deltas). One event proven — needs repetition.
+**Colony Alpha milestone:** ~**88%** — runnable, testable, papers mapped to code.  
+**Endgame vision milestone:** ~**55%** — breeding must produce repeatable logged improvement, not one-off events.
+
+### What works (verified `unify-rewrite` 2026-06-14)
+
+- 5 slots without false respawn; MoE closed loop + human yield
+- KV-stable planner/verifier; reasoning in session JSONL
+- `nemotron` (MC=1) + `nemotron_parallel` (MC=5, validated `sessions/20260614_032059`)
+- AgentBreeder: reflector, mutator, evolve, elites, trials; `breed.improve` ≥1 historical run
+- GUI opt-in; `python llm.py bench`, `python comms.py breeder`
+
+### Not built / not proven (do not claim done)
+
+- **GOAL:** Consistent multi-cycle `breed.improve` with pressure/fission deltas
+- Unified KV policy with A/B evidence for MC=1
+- LLM-only fission_judge (deterministic fallback exists)
+- MAP-Elites convergence over long runs
+- Persistent elite archive across reactor restarts
 
 ---
 
-## Process tree
+## Branch model
+
+```
+REMOTE (GitHub):
+
+    main ─────────────► a439a0d  (GitHub default label)
+         |
+         |  +152 commits colony work
+         v
+    unify-rewrite ────► 2b20732  ★ WORK HERE ★
+
+    grok-dev, codex-dev  → deleted (2026-06-14 consolidation)
+```
+
+**Rules**
+
+- Daily work and commits: **`unify-rewrite`**
+- Tool-specific session: `git checkout -b <name>` from `unify-rewrite` tip
+- One AI agent commits at a time on the shared branch
+- Do **not** merge colony work into `main` without explicit human direction
+- Ask human before creating long-lived parallel branches
+
+---
+
+## What this project is (runtime)
+
+Five parallel **slots** (OS processes). Each slot runs one **persona** with an internal agent pipeline. Coordination is **blackboard-only** (`comms.py`). Routing is **MoE softmax** on pressure telemetry (`engine._moe_route`).
 
 ```
 python tui.py --model-profile nemotron [--gui]
   └── reactor.py
-        ├── main.py [s1 comms_operator]  — MoE router, never reassigned
-        ├── main.py [s2 architect]
-        ├── main.py [s3 implementor]
-        ├── main.py [s4 reviewer]
-        └── main.py [s5 devops]
-```
-
----
-
-## Pipeline (per persona)
-
-```
-scheduler → planner → actor → verifier → fission_judge → [reflector → mutator]
+        ├── s1 comms_operator  — MoE router, never reassigned
+        ├── s2 architect
+        ├── s3 implementor
+        ├── s4 reviewer
+        └── s5 devops
 ```
 
 | Stage | LLM? | Notes |
 |-------|------|-------|
 | planner | Yes | Stable system prompt; schema + persona in **user** message |
-| verifier | Yes | Same pattern; reasoning logged on `verify` |
+| verifier | Yes | Same pattern; reasoning logged |
 | reflector / mutator | Yes | After verifier denial |
 | actor | No | `run_python()` sandbox |
 | fission_judge | Partial | LLM review + deterministic fallback |
-| comms_operator MoE | No | `_moe_route()` every 20s; yields on human task |
+| comms_operator MoE | No | `_moe_route()` ~every 20s; yields on human task |
 
 ---
 
-## LLM / KV / reasoning (2026-06-14 — implemented, partly open)
-
-### Done
+## LLM / KV / reasoning (2026-06-14)
 
 | Item | Where |
 |------|-------|
 | Stable system prompt per role | `agents._stable_system()` |
-| JSON schema contract in user message | `_user_with_schema()`, `_SCHEMA_USER_HEADERS` |
+| JSON schema in user message | `_user_with_schema()`, `_SCHEMA_USER_HEADERS` |
 | Cross-process LLM lock | `llm._global_llm_lock()` → `runtime/.lmstudio.lock` |
-| Reasoning capture | `llm.LLMResult`, `llm.response`, phase `reasoning` field |
-| `LLM_API_SCHEMA=false` on nemotron | Schema in user only — enables `reasoning_content` from LM Studio |
-| LM Studio: reasoning stripping off | User setting — required for API reasoning field |
+| Reasoning capture | `llm.LLMResult`, phase `reasoning` field |
+| `LLM_API_SCHEMA=false` | Enables `reasoning_content` from LM Studio |
 
-### Validated single-flight (`sessions/20260614_024645`, 2 min)
+**Validated MC=5** (`sessions/20260614_032059`): 29 `llm.request`, 26/26 reasoning, 0 `planner.error`, 9 plans, 3 verify confirmed, 2 fissions, actor 5 ok / 3 fail.
 
-- 10/10 `llm.response` with reasoning; 0 errors
+**Open questions:** reasoning in TUI/bus mirror? Unified KV for MC=1? API schema vs JSON error rate? Nemotron hybrid full-reprocess rate (see `lm-studio-server-log.md`).
 
-### Validated parallel MC=5 (`sessions/20260614_032059`, 4 min + 5 human injects)
-
-- 29 `llm.request`, 26 `llm.response` (26/26 reasoning), **0 planner errors**
-- All 5 slots used LLM; 5 interrupts; 9 plans; 3 verify confirmed; **2 fissions**
-- Actor: 5 ok / 3 fail (2 `not python` — down from prior runs after planner.txt fix)
-- Planner `THINKING_BUDGET=1536` under parallel — no budget-truncation empty JSON
-
-### Open questions (do not claim resolved)
-
-1. **Reasoning everywhere?** Currently all LLM roles log reasoning to session JSONL. Unknown if bus mirror / TUI should show it, or if some roles should omit it for noise.
-2. **Unified KV Cache:** Human **disabled** Unified KV. Hypothesis: Unified KV mainly helps **parallel** slots (MC>1), not single-flight MC=1 orchestrator. **Not A/B tested** — needs LM Studio log comparison (restore vs shallow prefix) on identical prompt series.
-3. **API schema vs user schema:** `LLM_API_SCHEMA=false` trades constrained decoding for reasoning. Occasional `planner.error` on malformed JSON — monitor rate before re-enabling API schema.
-4. **Nemotron hybrid architecture:** Partial KV reuse expected even when tuned (LM Studio "full reprocess" on hybrid memory).
-
-### LM Studio load (human, 2026-06-14)
-
-- Max Concurrent Predictions: **1**
-- Unified KV Cache: **off** (user choice — see open question #2)
-- Reasoning stripping: **off**
-- Reference screenshot: `image-options.jpg` (local, not in git)
-
----
-
-## Blackboard v1 (`comms.py`)
-
-| Store | Path |
-|-------|------|
-| Intent | `runtime/comms/messages.json` |
-| Observation | `runtime/comms/events_bus.jsonl` |
-| Control | `runtime/comms/control.jsonl` |
-| Inject | `runtime/comms/inject.jsonl` |
-
-Breeder audit: `python comms.py breeder`
-
-Full kind table: `KNOWLEDGE.md`
-
----
-
-## Session logs — required phases
-
-Per-slot: `sessions/<timestamp>/events-child-sN.jsonl`
-
-| Phase | Required? |
-|-------|-----------|
-| `moe.route`, `pressure` | Yes |
-| `llm.response` with `reasoning` | Yes (debug / adaptation) |
-| `plan`, `actor`, `verify`, `fission` | Yes |
-| `reflect`, `mutate` | Yes (breeder loop) |
-| `plugin.web_sentinel` | No (noise) |
+**LM Studio default:** MC=1, reasoning stripping off. **Burst:** MC=5 + Unified KV on for `nemotron_parallel`.
 
 ---
 
@@ -162,41 +167,13 @@ Per-slot: `sessions/<timestamp>/events-child-sN.jsonl`
 4. **Do not add markdown to repo** — only `README.md`, `KNOWLEDGE.md`, `AGENTS.md`
 5. **`python -m py_compile <file>`** after Python changes
 6. **GUI default OFF** — `--gui` or `g` key
-7. **`reactor.is_alive()`** uses `OpenProcess(0x1000)` — do not regress to `0x00100000`
-
----
-
-## What works (verified grok-dev 2026-06-14)
-
-- 5 slots without false respawn
-- MoE closed loop + human yield
-- KV-stable planner/verifier system prompts (1 fingerprint per role)
-- Reasoning in session logs (`reasoning_content` + phase events)
-- `nemotron` single-flight + `nemotron_parallel` MC=5 burst mode
-- AgentBreeder: reflector, mutator, evolve, elites, trials, `breed.improve` (≥1 run)
-- GUI opt-in; human file task deterministic path
-- `python llm.py bench`, `python comms.py breeder`
-
-## Not built / not proven
-
-- Consistent multi-cycle `breed.improve`
-- Unified KV / reasoning policy decision with evidence
-- LLM fission_judge only (fallback exists)
-- Long-run MAP-Elites convergence
-- Merge `grok-dev` → `unify-rewrite` (human decides)
+7. **`reactor.is_alive()`** uses `OpenProcess(0x1000)` — do not regress
 
 ---
 
 ## Test procedure
 
-**Before start**
-
-- [ ] `git checkout grok-dev && git pull`
-- [ ] LM Studio: nemotron loaded, MC=1, reasoning stripping off
-- [ ] No stale tui/reactor processes
-- [ ] Fresh `runtime/comms/` (TUI wipes on start)
-
-**Launch**
+**Before start:** `git checkout unify-rewrite && git pull` · LM Studio nemotron MC=1 · no stale processes · fresh `runtime/comms/`
 
 ```bash
 python tui.py --model-profile nemotron
@@ -204,30 +181,42 @@ python tui.py --model-profile nemotron
 
 - [ ] `5/5 slots` > 30s
 - [ ] `moe.route` ~every 20s on s1
-- [ ] Session JSONL: `llm.response` with `has_reasoning: true` after planner runs
+- [ ] Session JSONL: `llm.response` with `has_reasoning: true`
 - [ ] `python comms.py breeder` after 6+ min
 
-**Smoke:** `python run_test.py 120`  
-**Reactor 2 min:** `python reactor.py --model-profile nemotron`  
-**Parallel burst 4 min:** `python reactor.py --model-profile nemotron_parallel` + inject 5 `@persona` tasks via `comms.post(..., priority=PRI_HUMAN)`; inspect `sessions/<ts>/events-child-s*.jsonl` for `llm.request` overlap across slots
-
-**Behavioral analysis checklist**
-
-- [ ] `llm.request`: `concurrent_gate` matches profile; `global_lock` false for parallel
-- [ ] `llm.response`: `has_reasoning: true`, `reasoning_tokens` > 0
-- [ ] `plan` events include `reasoning_chars`; actor `ok` not mostly `not python`
-- [ ] `planner.error` count = 0 under load
-- [ ] TUI header shows profile tag; slot lines show `think=N` on plan / `llm.response`
+Smoke: `python run_test.py 120` · Parallel: `nemotron_parallel` + 5 `@persona` injects · inspect `sessions/<ts>/events-child-s*.jsonl`
 
 ---
 
-## Suggested next work
+## Provider-agnostic handover prompt (copy-paste)
 
-1. A/B Unified KV on/off with MC=1 — same prompt series, compare LM Studio checkpoint logs
-2. Repeat `breed.improve` across multiple live cycles
-3. Tune `LLM_API_SCHEMA` / JSON error rate vs reasoning visibility
-4. Reduce `web_sentinel` / `plugin.error` noise on idle slots
-5. Merge stable `grok-dev` → `unify-rewrite` when human decides
+Use as the **first user message** in any new AI session. Replace `<TIP>` with `git rev-parse --short HEAD` after pull.
+
+```
+You are continuing endgame-ai on branch unify-rewrite (tip <TIP>).
+
+VISION: Self-evolving colony on consumer hardware. Small models. Real actions.
+Breeding reactor selects what lives. The LLM is a subroutine inside deterministic
+Python loops (pressure, MoE, blackboard) — not the organism.
+
+Read in order: AGENTS.md → KNOWLEDGE.md → README.md.
+Optional local context (not in git): ENDGAME_VISION.html, lm-studio-server-log.md,
+sessions/20260614_032059 (MC=5 validation).
+
+WHERE WE ARE: Colony Alpha ~88% (runnable, validated). Endgame ~55%.
+Infrastructure works. GOAL: repeat breed.improve across multiple live cycles
+with logged pressure/fission deltas — proven once, not yet consistent.
+
+HARD RULES: no new .py files; only README/KNOWLEDGE/AGENTS markdown;
+bus-only coordination; commit to unify-rewrite (or human-approved session branch).
+
+LLM: nemotron (MC=1 maintenance) or nemotron_parallel (MC=5 burst).
+Preserve: stable system prompts, schema in user message, LLM_API_SCHEMA=false.
+
+Before claiming done: py_compile changed files; reactor 2–4 min; sessions JSONL
+must show has_reasoning and planner.error=0. Execute yourself — do not tell
+the human what to run.
+```
 
 ---
 
@@ -243,75 +232,12 @@ python tui.py --model-profile nemotron
 
 ---
 
-## Multi-agent branching
-
-```
-unify-rewrite
-├── grok-dev           ← ACTIVE (this session)
-├── codex-dev          ← merged into grok-dev
-├── open-code-dev      ← create when human starts OpenCode work
-└── main               ← parallel species
-```
-
-**Do not** have two agents commit to the same branch without coordination.
-
----
-
-## Session history (grok-dev)
+## Session history (`unify-rewrite`)
 
 | Date | Summary |
 |------|---------|
-| 2026-06-14 | Merge codex-dev; GUI mode; breed.improve; KV research |
-| 2026-06-14 | Stable system + user schema; global LLM lock; `llm.py bench` |
-| 2026-06-14 | Reasoning capture; parallel MC=5 validated; TUI LLM visibility; planner code rules |
-| 2026-06-14 | `52b47a0` planner budget + TUI; `c9a7655` MC=5 profile; `b83db59` reasoning prompts |
+| 2026-06-14 | Fast-forward unify-rewrite; delete grok-dev/codex-dev; rewrite handover docs |
+| 2026-06-14 | MC=5 validated; reasoning capture; KV-stable prompts; breed.improve once |
+| 2026-06-14 | GUI mode; global LLM lock; comms breeder audit |
 
 **Python on this machine:** `C:\Users\px-wjt\AppData\Local\Python\bin\python.exe` if `python` not on PATH.
-
----
-
-## Provider handover meta-prompts (copy-paste)
-
-Use these as the **first user message** when starting a new session. Replace `<TIP>` with `git rev-parse --short HEAD` after pull.
-
-### Grok → branch `grok-dev`
-
-```
-You are continuing endgame-ai on branch grok-dev (tip <TIP>).
-Read AGENTS.md, KNOWLEDGE.md, ~/.grok/memory/wgabrys88-endgame-ai/MEMORY.md.
-Hard rules: no new .py files; only README/KNOWLEDGE/AGENTS markdown; bus-only coordination.
-LLM: nemotron (MC=1 maintenance) or nemotron_parallel (MC=5 burst). Reasoning in llm.response + plan events.
-Test before claiming done: py_compile changed files; reactor 2–4 min; check sessions JSONL for reasoning + planner.error=0.
-Execute yourself — do not tell the human what to run. GOAL: repeat breed.improve across cycles.
-```
-
-### Codex → branch `grok-dev` (codex-dev merged; do not fork unless coordinated)
-
-```
-You are Codex continuing endgame-ai. Work on grok-dev (codex-dev already merged).
-Read AGENTS.md + KNOWLEDGE.md first. Cite comms.py/engine.py/llm.py when editing protocol code.
-Never add .py files. Commit only to grok-dev unless human explicitly revives codex-dev for an experiment.
-Validation: python -m py_compile <file>; python reactor.py --model-profile nemotron_parallel for parallel work;
-inspect sessions/*/events-child-s*.jsonl — llm.response must show has_reasoning.
-Preserve: stable system prompts, schema in user message, LLM_API_SCHEMA=false for reasoning.
-```
-
-### OpenCode → branch `open-code-dev` (create from grok-dev tip when human approves)
-
-```
-You are OpenCode on endgame-ai. Branch: open-code-dev (create from grok-dev if missing).
-Read AGENTS.md + KNOWLEDGE.md. Same architecture as grok-dev — blackboard colony, no cross-process shared state.
-Hard rules identical to AGENTS.md. Push to open-code-dev only; merge to grok-dev via human review.
-Test methodology: behavioral runs with comms.post human pri=3 injects; document session IDs in AGENTS session history.
-Do not merge toward main (organism M4) — that is a parallel species.
-```
-
-### Branch consolidation (human decision — pending)
-
-| Target | Action when approved |
-|--------|---------------------|
-| `unify-rewrite` | Fast-forward or merge `grok-dev` → integration trunk |
-| `codex-dev` | Archive or reset to `grok-dev` tip (already superseded) |
-| `open-code-dev` | `git checkout -b open-code-dev grok-dev` for OpenCode-only work |
-
-**Ask the human** before any merge to `unify-rewrite` or creating `open-code-dev`.

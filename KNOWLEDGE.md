@@ -2,7 +2,7 @@
 
 Architecture and protocol reference. Humans: `README.md`. AI tools: **`AGENTS.md` first**, then this file when editing `comms.py`, `engine.py`, `llm.py`, or schemas.
 
-**Tip:** `grok-dev` @ reasoning + KV-stable prompts (2026-06-14).
+**Tip:** `unify-rewrite` @ `2b20732` — reasoning + KV-stable prompts (2026-06-14).
 
 ## Process tree
 

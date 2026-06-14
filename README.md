@@ -1,25 +1,33 @@
 # endgame-ai
 
-A **5-slot AI colony** on your machine: parallel persona processes coordinated through a shared blackboard, steered by deterministic math, with a local LLM used only when planning or verification is needed.
+A **living digital organism** on your machine — not a chatbot wrapper.
 
-**Active branch:** `grok-dev` — Colony Alpha + AgentBreeder + KV-stable prompts + reasoning capture (2026-06-14).
+Five persona processes run in parallel, coordinated through a shared blackboard, steered by deterministic math (pressure, MoE routing). A small local LLM is called only when planning or verification is needed. The breeding reactor decides what survives.
+
+**Branch:** `unify-rewrite` @ `2b20732` — Colony Alpha (2026-06-14).
 
 ```bash
-git checkout grok-dev
+git checkout unify-rewrite && git pull
 python tui.py --model-profile nemotron
 ```
 
 | Profile | Use |
 |---------|-----|
-| `nemotron` | Reasoning model, 1 concurrent LLM, schema in user message (recommended) |
-| `nemotron_parallel` | Experimental: 5 concurrent LLM calls — LM Studio MC=5 + Unified KV on |
+| `nemotron` | Default: 1 concurrent LLM, reasoning on, schema in user message |
+| `nemotron_parallel` | Burst: 5 concurrent LLM — LM Studio MC=5 + Unified KV on |
 | `gemma` | Faster, 2 concurrent, no thinking |
 | `--backend acp` | Sequential WSL/Kiro backend |
-| `--gui` | Desktop/GUI automation (default: blocked) |
+| `--gui` | Desktop automation (default: blocked) |
 
 **Controls:** Enter = send · `g` = GUI/safe · Space = pause · `q` = quit · `@persona message` = talk to the colony
 
-TUI header shows model profile (`nemotron` / `nemotron_parallel`), GUI/safe mode, and per-slot `think=N` on LLM events.
+---
+
+## The vision (one paragraph)
+
+**Endgame:** Self-evolving colony on consumer hardware. Small models. Real actions. Breeding reactor selects what lives.
+
+You built the same shapes research papers describe — by building under pressure. Math agents are the immune system; the LLM is an expensive subroutine inside a cheap deterministic loop, not the organism itself. Read `ENDGAME_VISION.html` (local, not in git) for the full visual breakdown and paper references.
 
 ---
 
@@ -27,23 +35,21 @@ TUI header shows model profile (`nemotron` / `nemotron_parallel`), GUI/safe mode
 
 - **5 slots** — each is an OS process running one persona
 - **Slot 1** — `comms_operator` routes work every 20s (no LLM for routing)
-- **Slots 2–5** — workers stay **idle until routed** via the blackboard
-- **TUI** — 45-line display; pipeline bars per slot: `S·P·A·V·F`; header shows `GUI` or `safe`
+- **Slots 2–5** — workers idle until routed via the blackboard
+- **TUI** — pipeline bars per slot: `S·P·A·V·F`; header shows profile + `think=N` on LLM events
 
 ```
 scheduler → planner → actor → verifier → fission_judge → reflector → mutator
 ```
 
-The LLM is not the organism. It is a subroutine inside a Python control loop.
-
 ---
 
 ## Before you run
 
-1. LM Studio with nemotron loaded at `localhost:1234`, or use `--backend acp`
-2. **Load settings:** Max Concurrent Predictions **1**; reasoning stripping **off** (so `reasoning_content` appears in API responses)
+1. LM Studio with nemotron at `localhost:1234`, or `--backend acp`
+2. **Default load:** Max Concurrent Predictions **1**; reasoning stripping **off**
 3. Close stale `tui.py` / `reactor.py` processes
-4. `runtime/comms/` is wiped on TUI start (session logs in `sessions/` are kept)
+4. `runtime/comms/` is wiped on TUI start (`sessions/` kept)
 
 ### Quick sanity check
 
@@ -51,40 +57,35 @@ The LLM is not the organism. It is a subroutine inside a Python control loop.
 python tui.py --model-profile nemotron
 ```
 
-Expect: `5/5 slots`, no 5s respawn loop, `moe.route` in slot-1 events after ~20s.
+Expect: `5/5 slots`, no respawn loop, `moe.route` on slot 1 after ~20s.
 
 ```bash
 python comms.py state
 python comms.py breeder
 ```
 
-Human file test (should confirm):
+Human file test:
 
 ```
 @implementor create hello.txt with hello world
 ```
 
-GUI in **safe mode** (default): `@devops open notepad` is declined.
-
-```bash
-python tui.py --model-profile nemotron --gui   # or press g
-```
-
 Smoke: `python run_test.py 120` · LLM bench: `python llm.py bench`
-
-**Reasoning in logs:** `sessions/<timestamp>/events-child-sN.jsonl` — look for `llm.response` and `plan` events with `reasoning` field.
 
 ---
 
-## Branches
+## Branches (remote)
 
-| Branch | Role |
-|--------|------|
-| `grok-dev` | **Active** — reasoning capture, KV prompts, breeding loop |
-| `codex-dev` | Codex lineage (merged into grok-dev) |
-| `open-code-dev` | *Not created yet* — future OpenCode development branch |
-| `unify-rewrite` | Integration trunk |
-| `main` | Separate lineage (organism M4) |
+```
+unify-rewrite  ← THE work branch (all colony code lives here)
+main           ← older label on same history; GitHub default pointer
+```
+
+Need a tool-specific session? Branch from `unify-rewrite`:
+
+```bash
+git checkout -b my-session
+```
 
 ---
 
@@ -93,9 +94,7 @@ Smoke: `python run_test.py 120` · LLM bench: `python llm.py bench`
 | File | Audience |
 |------|----------|
 | `README.md` | You — quick start |
-| `KNOWLEDGE.md` | Architecture, blackboard, LLM/KV layer |
-| `AGENTS.md` | AI handover — rules, tests, open questions, next agent |
+| `KNOWLEDGE.md` | Architecture, blackboard, LLM layer |
+| `AGENTS.md` | **AI handover** — vision, rules, tests, copy-paste prompt |
 
-Local only (not in git): `Codex-log.md`, `ENDGAME_VISION.html`
-
-Grok Build workspace memory: `~/.grok/memory/wgabrys88-endgame-ai/MEMORY.md`
+Local only (not in git): `ENDGAME_VISION.html`, `Codex-log.md`, `lm-studio-server-log.md`
