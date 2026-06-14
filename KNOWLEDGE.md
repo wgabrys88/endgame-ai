@@ -122,6 +122,7 @@ Audit command:
 python comms.py breeder
 python agents.py --fission-smoke
 python reactor.py --archive-smoke
+python reactor.py --breed-improve-smoke
 ```
 
 The archive is not a persona coordination channel. Personas still communicate through `comms.py`; the reactor uses `runtime/breed_archive.json` only to preserve selection state across reactor restarts and to choose elite-backed respawns.
@@ -129,6 +130,8 @@ The archive is not a persona coordination channel. Personas still communicate th
 `python reactor.py --archive-smoke` is a deterministic save/load/respawn-selection check using a temporary archive. It proves archive mechanics without starting a long autonomous run.
 
 `python agents.py --fission-smoke` exercises simple-file planning, actor execution, verifier confirmation, fission credit, and AgentBreeder retain posting with a controlled fission judge response. It proves the file-milestone credit path without calling the LLM.
+
+`python reactor.py --breed-improve-smoke` creates an isolated selection trial, posts improved telemetry, and verifies `breed.improve` plus archive feedback. It proves scoring mechanics, not long-run MAP-Elites convergence.
 
 ### Golden run proof (`sessions/20260614_132940`, tag `golden-run-20260614`)
 
@@ -237,7 +240,7 @@ Mutation safety:
 ## Still Not Proven
 
 - Restart-to-restart archive survival under a long autonomous run. The deterministic archive smoke check covers mechanics only.
-- Long-run MAP-Elites convergence.
+- Long-run MAP-Elites convergence. The deterministic `breed.improve` smoke covers scoring mechanics only.
 - Reflection now fails closed with `reflect.error` when reflector JSON is invalid or incomplete.
 - Fission credit fallback was removed after the 10-minute run: invalid fission-judge JSON denies credit.
 - LLM transport failure no longer fabricates planner `done` JSON.

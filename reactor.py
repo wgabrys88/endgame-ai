@@ -866,9 +866,90 @@ def archive_restart_smoke() -> dict[str, Any]:
         _restore_breed_state(snapshot)
 
 
+def breed_improve_smoke() -> dict[str, Any]:
+    """Deterministically prove trial telemetry can emit breed.improve and update archive state."""
+    snapshot = _breed_state_snapshot()
+    old_eval_seconds = config.BREED_TRIAL_EVAL_SECONDS
+    runtime_dir = config.BASE_DIR / "runtime"
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        with tempfile.TemporaryDirectory(prefix="breed-improve-smoke-", dir=str(runtime_dir)) as tmp:
+            smoke_dir = Path(tmp)
+            config.BREED_ARCHIVE_PATH = smoke_dir / "breed_archive.json"
+            config.BUS_DIR = smoke_dir / "comms"
+            config.BUS_CHAT_PATH = config.BUS_DIR / "messages.json"
+            config.BUS_EVENTS_PATH = config.BUS_DIR / "events_bus.jsonl"
+            config.BUS_INJECT_PATH = config.BUS_DIR / "inject.jsonl"
+            config.BUS_CONTROL_PATH = config.BUS_DIR / "control.jsonl"
+            config.BREED_TRIAL_EVAL_SECONDS = 0.0
+            _clear_breed_state()
+
+            target = "reviewer"
+            niche = "breed_improve_smoke:low_pressure"
+            trial_id = "breed-improve-smoke"
+            payload = {
+                "trial_id": trial_id,
+                "completed": "breed improve smoke retained reviewer",
+                "behavior": "breed_improve_smoke",
+                "pressure_band": "low_pressure",
+                "stagnation": 0.7,
+                "power": 0.3,
+                "fissions": 0,
+            }
+            comms.post_telemetry(
+                target,
+                stagnation=0.7,
+                power=0.3,
+                velocity=0.0,
+                fissions=0,
+                phase="baseline",
+                cycles=1,
+            )
+            _start_selection_trial("retain", target, 4, 0.72, niche, payload, entry_id=0)
+            comms.post_telemetry(
+                target,
+                stagnation=0.58,
+                power=0.42,
+                velocity=0.12,
+                fissions=1,
+                phase="improved",
+                cycles=2,
+            )
+            evaluate_mutation_trials()
+
+            events = [
+                e for e in comms.read_events(config.BUS_EVENTS_MAX)
+                if (e.get("payload") or {}).get("action") == "breed.improve"
+            ]
+            score = _breed_scores.get(target, {})
+            archive_exists = config.BREED_ARCHIVE_PATH.is_file()
+            ok = (
+                bool(events)
+                and archive_exists
+                and float(score.get("fitness", 0.0) or 0.0) > 0.72
+                and _slot_survivors.get(4) == target
+            )
+            latest = events[-1].get("payload", {}) if events else {}
+            return {
+                "ok": ok,
+                "outcome": latest.get("action", ""),
+                "target": target,
+                "fitness": score.get("fitness", 0.0),
+                "slot_survivor": _slot_survivors.get(4, ""),
+                "stagnation_delta": latest.get("stagnation_delta"),
+                "power_delta": latest.get("power_delta"),
+                "fission_delta": latest.get("fission_delta"),
+                "archive_written": archive_exists,
+            }
+    finally:
+        config.BREED_TRIAL_EVAL_SECONDS = old_eval_seconds
+        _restore_breed_state(snapshot)
+
+
 if __name__ == "__main__":
     # Parse CLI
     run_archive_smoke = False
+    run_breed_improve_smoke = False
     for i, arg in enumerate(sys.argv[1:], 1):
         if arg == "--model-profile" and i < len(sys.argv) - 1:
             _model_profile = sys.argv[i + 1]
@@ -876,10 +957,16 @@ if __name__ == "__main__":
             _model_profile = arg.split("=", 1)[1]
         elif arg == "--archive-smoke":
             run_archive_smoke = True
+        elif arg == "--breed-improve-smoke":
+            run_breed_improve_smoke = True
     if _model_profile:
         config.apply_model_profile(_model_profile)
     if run_archive_smoke:
         result = archive_restart_smoke()
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+        sys.exit(0 if result.get("ok") else 1)
+    if run_breed_improve_smoke:
+        result = breed_improve_smoke()
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
         sys.exit(0 if result.get("ok") else 1)
 

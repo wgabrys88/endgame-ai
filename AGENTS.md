@@ -201,7 +201,7 @@ Implement in this order. Each item lists **component impact**.
 - **FR-6 implemented:** reactor semantic scoring immediately marks telemetry-removing plugin patch diffs as `breed.regress`.
 - **FR-7 implemented:** TUI supports `all`/`verify`/`breed`/`human`/`error` filters and shows active human goal plus last fission-deny/human-decline summaries.
 
-**Still not proven:** no post-fix long autonomous run has reproduced breed.improve + restart survival. Do not claim MAP-Elites convergence or production readiness.
+**Still not proven:** deterministic smoke tests cover fission credit, archive mechanics, and `breed.improve` scoring, but no post-fix long autonomous run has reproduced improve + restart survival. Do not claim MAP-Elites convergence or production readiness.
 
 ---
 
@@ -252,6 +252,7 @@ Hard rules:
 python -m py_compile reactor.py agents.py comms.py colony_env.py engine.py tui.py plugins/fission_log.py
 python agents.py --fission-smoke
 python reactor.py --archive-smoke
+python reactor.py --breed-improve-smoke
 python tui.py --model-profile nemotron
 python comms.py state
 python comms.py breeder
