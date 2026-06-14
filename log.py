@@ -98,11 +98,7 @@ def cleanup_runtime(*, deep: bool = True) -> None:
             pass
     if not deep:
         return
-    _runtime_keep = frozenset({
-        "comms",
-        "BENCH_CAMPAIGN_20260614.md",
-        "bench_profiles.example.json",
-    })
+    _runtime_keep = frozenset({"comms"})
     runtime = config.BASE_DIR / "runtime"
     if runtime.is_dir():
         for path in runtime.iterdir():

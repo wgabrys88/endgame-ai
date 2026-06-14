@@ -1,14 +1,14 @@
-# Whitelist repo: ignore everything unless explicitly allowed.
+# Whitelist: only essential run + docs (see RULES.md)
 *
 
-# --- Tracked project files ---
 !.gitignore
 !.gitattributes
 !.env
-!AGENTS.md
-!README.md
-!KNOWLEDGE.md
 !LICENSE
+!README.md
+!OBSERVATIONS.md
+!RULES.md
+!CONTRIBUTING.md
 !*.py
 !prompts/
 !prompts/**
@@ -17,11 +17,11 @@
 !plugins/
 !plugins/**
 
-# --- Build / cache ---
+# Build
 __pycache__/
 *.pyc
 
-# --- Runtime (never commit) ---
+# Runtime — never commit
 runtime/
 sessions/
 events*.jsonl
@@ -31,35 +31,19 @@ respawn.json
 goal.txt
 pause
 gui_mode
+unconstrained_mode
 *.lock
 .acp.lock
 tmp*.py
-audit.py
-audit.txt
-lessons.jsonl
 
-# --- Local run artifacts ---
+# Run artifacts — never commit
+benchmark.txt
+Colony_Demo/
 colony_*.txt
 devnull.txt
 hello.txt
+audit.py
+audit.txt
+lessons.jsonl
 terminals/
-
-# --- Golden run evidence (tracked) ---
-!ENDGAME_GOLDEN_RUN.html
-!ENDGAME_VISION_ADVANCED.html
-!sessions/
-!sessions/20260614_132940/
-!sessions/20260614_132940/README.md
-!sessions/20260614_185239/
-!sessions/20260614_185239/OBSERVATIONS.md
-
-# --- Local / personal (never commit) ---
-vision/
-*.md
-!README.md
-!KNOWLEDGE.md
-!AGENTS.md
-!OBSERVATIONS.md
-!benchmark.txt
-!Colony_Demo/
-!Colony_Demo/**
+ENDGAME_*.html

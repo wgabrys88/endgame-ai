@@ -179,12 +179,10 @@ def _repo_manifest_context() -> str:
         top_py = [p for p in config.BASE_DIR.glob("*.py") if p.is_file()]
         plugin_py = [p for p in config.PLUGINS_DIR.glob("*.py") if p.is_file()]
         docs = [
-            config.BASE_DIR / "AGENTS.md",
-            config.BASE_DIR / "KNOWLEDGE.md",
             config.BASE_DIR / "README.md",
-            config.BASE_DIR / "sessions" / "20260614_132940" / "README.md",
-            config.BASE_DIR / "ENDGAME_GOLDEN_RUN.html",
-            config.BASE_DIR / "ENDGAME_VISION_ADVANCED.html",
+            config.BASE_DIR / "OBSERVATIONS.md",
+            config.BASE_DIR / "RULES.md",
+            config.BASE_DIR / "CONTRIBUTING.md",
         ]
         docs = [p for p in docs if p.is_file()]
     except OSError:

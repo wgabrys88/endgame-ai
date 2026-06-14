@@ -1,1 +1,0 @@
-four sections Architect Implementor Reviewer DevOps each summarizing one plugins folder py file in one sentence

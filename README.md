@@ -1,149 +1,60 @@
 # endgame-ai
 
-A local multi-agent colony: five Python processes, one local small model, a blackboard, pressure math, and a breeding reactor that decides which behaviors survive.
+Five Python processes, one local model (nemotron-3-nano-4B), a blackboard, pressure math, and a breeding reactor. The LLM is a subroutine; the deterministic loop is the organism.
 
-The LLM is not the organism. The deterministic Python loop is the organism: pressure updates, MoE routing, blackboard state, plugin execution, verification, and breeder scoring run outside the model.
+Branch: `unify-rewrite`.
 
-Current work branch: `unify-rewrite`.
-
-## Quick Start
-
-Codex-style: one command, optional long-term goal as trailing words. GUI + unconstrained are **on by default**.
+## Run
 
 ```bash
-git checkout unify-rewrite && git pull
+python tui.py "Your long-term goal in one sentence"
+```
+
+Examples:
+
+```bash
 python tui.py "Evolve plugins until breed.improve survives restart"
-```
-
-With explicit profile (default is `nemotron_parallel` for nemotron-3-nano 4B @ MC=5):
-
-```bash
-python tui.py --model-profile nemotron_parallel "Audit colony health and improve fission_log telemetry"
-```
-
-Safer mode (no GUI, planner decline gates active):
-
-```bash
 python tui.py --safe "Colony maintenance only"
 ```
 
-Profiles:
+**Defaults:** GUI + unconstrained on, profile `nemotron_parallel` (LM Studio MC=5).  
+**Requires:** LM Studio at `http://localhost:1234` with nemotron-3-nano-4B loaded.
 
-| Profile | Use |
-|---|---|
-| `nemotron_parallel` | **Default** — nemotron-3-nano 4B, LM Studio MC=5 |
-| `nemotron` | Single-flight, MC=1 |
-| `gemma` | Faster alternate without thinking |
-| `--backend acp` | Sequential ACP backend |
-| `--safe` | Disables default GUI + unconstrained |
-| `--no-gui` / `--no-unconstrained` | Toggle individual defaults |
+| Flag | Effect |
+|------|--------|
+| `--safe` | Disable default GUI + unconstrained |
+| `--model-profile nemotron` | Single-flight MC=1 |
+| `--backend acp` | ACP backend |
 
-**Goal model (like Codex `/goal`):**
-- Trailing words set `LONG_TERM_GOAL` in `runtime/colony_goal.txt` and on the bus.
-- MoE routes workers toward it when no human pri=3 task is active.
-- With no goal: maintenance audits, then idle (same as golden runs).
-- TUI Enter posts pri=3 **ACTIVE_TASK** — overrides long-term goal until verified, then colony returns to LONG_TERM_GOAL.
+**Goals (Codex-style):** trailing words = persistent long-term goal. TUI Enter = temporary pri=3 task. No goal = maintenance, then idle.
 
-TUI controls: Enter=human message, `f`=filter, `1`-`5`=presets, `g`=toggle GUI file, Space=pause, `q`=quit.
+**TUI:** Enter=send, `f`=filter, `g`=GUI toggle, Space=pause, `q`=quit.
 
 ## Architecture
 
 ```text
-python tui.py "long-term goal here"
-  -> reactor.py
-       s1 comms_operator  fixed MoE router
-       s2 architect       worker
-       s3 implementor     worker
-       s4 reviewer        worker
-       s5 devops          worker
+tui.py → reactor.py (5 slots)
+  s1 comms_operator   MoE router
+  s2–s5 workers       architect, implementor, reviewer, devops
+Pipeline: scheduler → planner → actor → verifier → fission_judge → reflector → mutator
 ```
 
-Worker pipeline:
-
-```text
-scheduler -> planner -> actor -> verifier -> fission_judge -> reflector -> mutator
-```
-
-Coordination is blackboard-only through `comms.py`. Personas do not call each other directly. The comms operator routes with softmax over live pressure telemetry; workers idle until routed or interrupted by a human message.
-
-## Research Map
-
-| Source | Project interpretation |
-|---|---|
-| Multi-Agent Systems are Mixtures of Experts, Bause et al., arXiv:2605.25929, https://arxiv.org/abs/2605.25929 | Route work by observable confidence/power instead of static roles |
-| Exploring Advanced LLM Multi-Agent Systems Based on Blackboard Architecture, Han and Zhang, arXiv:2507.01701, https://arxiv.org/abs/2507.01701 | Shared blackboard, repeated selection/execution, no direct agent chat |
-| Emergent Coordination in Multi-Agent Systems via Pressure Fields and Temporal Decay, Rodriguez, arXiv:2601.08129, https://arxiv.org/abs/2601.08129 | Pressure gradients and temporal decay replace manager hierarchy |
-| AgentBreeder, Rosser and Foerster, arXiv:2502.00757, https://arxiv.org/abs/2502.00757 | Evolutionary scaffold search with safety/capability tradeoffs |
-| Engineering Robustness into Personal Agents with the AI Workflow Store, arXiv:2605.10907, https://arxiv.org/abs/2605.10907 | Real agents need hardened workflows, tests, and traceable reusable behavior instead of only on-the-fly plans |
-
-Note: the requested "Oxford 2026 AgentBreeder" and exact "Beyond the Agentic Loop 2025" labels were not verified on arXiv during the 2026-06-14 review. The verified AgentBreeder paper is arXiv:2502.00757.
-
-## Golden Run (primary evidence)
-
-**Session `20260614_132940`** — 1h49m live human-steered run. Tag: `golden-run-20260614`.
-
-| Item | Result |
-|---|---|
-| Baseline commit | `c897385` |
-| Profile | `nemotron_parallel`, MC=5 |
-| Events | 4,137 |
-| Verify confirmed | 32 |
-| Fission credit | 0 (31 deny — fail-closed) |
-| Breeder | 91 evict, 13 trial, 23 neutral, 6 regress |
-| Human interrupts | 10 (pri=3) |
-
-**Documentation:** `OBSERVATIONS.md` (cold-start handover + session forensics), `sessions/20260614_132940/README.md` (golden forensic), `AGENTS.md` (vision + constraints).
-
-## Current Validation (10-minute smoke)
-
-Prior 10-minute validation:
-
-| Item | Result |
-|---|---|
-| Baseline commit before autonomous run | `8cd57b6` (`Remove dead mutator fallback shims`) |
-| Mode | `nemotron_parallel`, GUI mode enabled, LM Studio at `localhost:1234` |
-| Model observed | `nvidia-nemotron-3-nano-4b@q6_k_xl` |
-| Session | `sessions/20260614_112843` |
-| Session events | 728 |
-| LLM responses with reasoning | 46/46 |
-| Planner errors | 1 |
-| Plans | 16 |
-| Confirmed verifications | 7 |
-| Fissions | 5 |
-| Actor ok/fail | 11 ok / 4 fail |
-| MoE routing | 29 routes, 1 escalation |
-| Breeder outcomes | 8 selection outcomes: 4 improve, 3 neutral, 1 regress |
-| Breeder audit | `closed_loop: yes` |
-
-The run also proved selection pressure can reject bad self-modification. The colony patched `plugins/telemetry.py` into a no-op during the run; review removed that dead plugin afterward and kept `plugins/comms_beacon.py` as the protected telemetry source.
-
-Follow-up architecture work on 2026-06-14 added persistent breeder memory in `runtime/breed_archive.json`. The reactor now loads elite niches, survivor scores, slot survivors, and evictions at boot, saves them after selection feedback, and mirrors archive load/save as `breed.archive` bus evidence.
-
-## Useful Commands
+## Smoke tests
 
 ```bash
-python comms.py state
-python comms.py breeder
+python -m py_compile reactor.py agents.py comms.py engine.py tui.py
 python agents.py --fission-smoke
 python agents.py --git-verify-smoke
 python reactor.py --archive-smoke
-python reactor.py --breed-improve-smoke
-python -m py_compile reactor.py agents.py comms.py colony_env.py config.py actions.py tui.py
 ```
 
-If `python` is not on PATH on this machine, use:
+## Docs
 
-```powershell
-& "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" -m py_compile reactor.py agents.py comms.py colony_env.py config.py actions.py tui.py
-```
+| File | For |
+|------|-----|
+| `README.md` | You (human) |
+| `OBSERVATIONS.md` | AI tools — copy § COLD-START HANDOVER into new sessions |
+| `RULES.md` | What git tracks + required updates per commit |
+| `CONTRIBUTING.md` | License + commit checklist |
 
-## Known Bottlenecks
-
-- Persistent elite archive is implemented; restart survival and long-run MAP-Elites convergence are still not proven by a long autonomous run.
-- `python agents.py --fission-smoke` deterministically checks the verifier -> fission -> breeder retain path for a durable file milestone without calling the LLM.
-- `python reactor.py --archive-smoke` deterministically checks archive save/load/respawn selection, but it is not a substitute for restart survival under a long autonomous run.
-- `python reactor.py --breed-improve-smoke` deterministically checks `breed.improve` scoring from improved telemetry, but it is not a substitute for long-run MAP-Elites convergence.
-- Reflection now fails closed with `reflect.error` when reflector JSON is invalid or incomplete.
-- Fission credit now fails closed: invalid fission-judge JSON denies credit instead of retaining behavior.
-- LLM transport failure now returns empty output instead of a fabricated planner `done` response.
-- Browser plugin startup is currently blocked in this Windows sandbox with `CreateProcessAsUserW failed: 5`; GUI validation was performed through `gui_mode` and `observer.py`, not through the in-app Browser surface.
+Fresh local state: `python -c "import log; log.cleanup_runtime(deep=True)"`
