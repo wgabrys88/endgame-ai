@@ -8,7 +8,7 @@ Humans: read `README.md`.
 
 ## COLD-START HANDOVER PROMPT
 
-**Last updated:** 2026-06-14 · **Branch:** `unify-rewrite` · **HEAD:** `3a30c9a`
+**Last updated:** 2026-06-14 · **Branch:** `unify-rewrite` · **HEAD:** `870f498`
 
 Copy the fenced block into any new AI session.
 
