@@ -51,7 +51,7 @@ PRI_HUMAN: int = 3
 _env_hosts = os.environ.get("ENDGAME_LMS_HOSTS", "").strip()
 _env_host = os.environ.get("ENDGAME_LMS_HOST", "").strip()
 LMS_HOSTS: list[str] = [_env_host] if _env_host else ([h.strip() for h in _env_hosts.split(",") if h.strip()] or ["http://localhost:1234"])
-LMS_TIMEOUT: int = 300  # 5min — nemotron is slow with 5 parallel
+LMS_TIMEOUT: int = 300  # per-request HTTP timeout (nemotron profile overrides to 600)
 LMS_MODEL_LIST_TIMEOUT: int = 8
 LMS_REQUEST_ATTEMPTS: int = 2
 LMS_RETRY_DELAY: float = 3.0
@@ -72,6 +72,8 @@ LMS_GLOBAL_LOCK_PATH: Path = BASE_DIR / "runtime" / ".lmstudio.lock"
 LMS_TRACE_PROMPTS: bool = True
 LLM_THINKING_ENABLED: bool = True
 LLM_THINKING_BUDGET: int = 4096  # cap reasoning tokens — keeps latency predictable
+LLM_REASONING_LOG_MAX: int = 12000  # session log cap for captured reasoning text
+LLM_API_SCHEMA: bool = True  # API response_format; off allows Nemotron reasoning traces
 
 BUDGET: dict[str, int] = {
     "planner": 2048, "verifier": 512, "reflector": 1024,
@@ -86,6 +88,7 @@ MODEL_PROFILES: dict[str, dict[str, Any]] = {
         "LLM_FREQUENCY_PENALTY": 0.0, "LLM_SEED": 3407,
         "LLM_MAX_TOKENS": 1536, "LLM_STOP": [], "LLM_LOGIT_BIAS": {},
         "LLM_MAX_CONCURRENT": 1, "LLM_THINKING_ENABLED": True, "LLM_THINKING_BUDGET": 1536,
+        "LLM_API_SCHEMA": False,
         "LMS_TIMEOUT": 600,
         "BUDGET": {"planner": 1400, "verifier": 320, "reflector": 768, "fission_judge": 256, "mutator": 1536},
     },

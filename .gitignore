@@ -25,14 +25,24 @@ __pycache__/
 runtime/
 sessions/
 events*.jsonl
+events-child-s*.jsonl
 snapshot.json
 respawn.json
 goal.txt
 pause
+gui_mode
 *.lock
+.acp.lock
 tmp*.py
 audit.py
 audit.txt
+lessons.jsonl
+
+# --- Local run artifacts ---
+colony_*.txt
+devnull.txt
+hello.txt
+terminals/
 
 # --- Local / personal (never commit) ---
 vision/

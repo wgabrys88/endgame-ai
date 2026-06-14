@@ -2,21 +2,21 @@
 
 A **5-slot AI colony** on your machine: parallel persona processes coordinated through a shared blackboard, steered by deterministic math, with a local LLM used only when planning or verification is needed.
 
-**Active branch:** `codex-dev` — Colony Alpha + AgentBreeder scaffold (~82% vision). `grok-dev` is 13 commits behind; merge pending human approval.
+**Active branch:** `grok-dev` — Colony Alpha + AgentBreeder + KV-stable prompts + reasoning capture (2026-06-14).
 
 ```bash
-git checkout codex-dev
+git checkout grok-dev
 python tui.py --model-profile nemotron
 ```
 
 | Profile | Use |
 |---------|-----|
-| `nemotron` | Reasoning model, 1 concurrent LLM (recommended) |
-| `gemma` | Faster, 2 concurrent |
+| `nemotron` | Reasoning model, 1 concurrent LLM, schema in user message (recommended) |
+| `gemma` | Faster, 2 concurrent, no thinking |
 | `--backend acp` | Sequential WSL/Kiro backend |
-| `--gui` | Enable desktop/GUI automation (default: blocked) |
+| `--gui` | Desktop/GUI automation (default: blocked) |
 
-**Controls:** Space = pause/unpause · `g` = toggle GUI/safe mode · `q` = quit · `@persona message` = talk to the colony
+**Controls:** Space = pause/unpause · `g` = toggle GUI/safe · `q` = quit · `@persona message` = talk to the colony
 
 ---
 
@@ -35,22 +35,12 @@ The LLM is not the organism. It is a subroutine inside a Python control loop.
 
 ---
 
-## Priority
-
-| Level | Name | When |
-|-------|------|------|
-| 3 | HUMAN | You typed a message |
-| 2 | CRITICAL | MoE escalation (stuck worker) |
-| 1 | NORMAL | comms_operator assigned work |
-| 0 | MAINTENANCE | Idle until inbox |
-
----
-
 ## Before you run
 
 1. LM Studio with nemotron loaded at `localhost:1234`, or use `--backend acp`
-2. Close any stale `tui.py` / `reactor.py` processes
-3. `runtime/comms/` is wiped on TUI start (session logs in `sessions/` are kept)
+2. **Load settings:** Max Concurrent Predictions **1**; reasoning stripping **off** (so `reasoning_content` appears in API responses)
+3. Close stale `tui.py` / `reactor.py` processes
+4. `runtime/comms/` is wiped on TUI start (session logs in `sessions/` are kept)
 
 ### Quick sanity check
 
@@ -58,36 +48,28 @@ The LLM is not the organism. It is a subroutine inside a Python control loop.
 python tui.py --model-profile nemotron
 ```
 
-Expect: `5/5 slots` in the header, no respawn every 5s, one `moe.route` in slot-1 events after ~20s.
+Expect: `5/5 slots`, no 5s respawn loop, `moe.route` in slot-1 events after ~20s.
 
 ```bash
-python comms.py state      # structured telemetry per persona
-python comms.py breeder    # evolve / breed.* evidence from observation bus
+python comms.py state
+python comms.py breeder
 ```
 
-Human interrupt test (file — should confirm):
+Human file test (should confirm):
 
 ```
 @implementor create hello.txt with hello world
 ```
 
-GUI tasks in **safe mode** (default) are declined: `@devops open notepad` posts "not supported" — no Notepad windows.
-
-For desktop automation (self-evolving organism mode):
+GUI in **safe mode** (default): `@devops open notepad` is declined.
 
 ```bash
-python tui.py --model-profile nemotron --gui
+python tui.py --model-profile nemotron --gui   # or press g
 ```
 
-Or press `g` during a run to toggle. Header shows `GUI` when safeguards are off.
+Smoke: `python run_test.py 120` · LLM bench: `python llm.py bench`
 
-Automated smoke test: `python run_test.py 120`
-
-LLM tuning benchmark: `python llm.py bench` (compares legacy vs optimized nemotron)
-
-**LM Studio:** load nemotron with Max Concurrent Predictions **1** and Unified KV Cache **on** — the colony also uses a cross-process lock so only one slot hits the server at a time.
-
-**Logs:** Session JSONL (`sessions/`) includes `moe.route` + `pressure` every ~20s by design. After 6+ minutes you should see `reflect`, `mutate`, and `evolve` on the bus. See `KNOWLEDGE.md` log tiers.
+**Reasoning in logs:** `sessions/<timestamp>/events-child-sN.jsonl` — look for `llm.response` and `plan` events with `reasoning` field.
 
 ---
 
@@ -95,40 +77,22 @@ LLM tuning benchmark: `python llm.py bench` (compares legacy vs optimized nemotr
 
 | Branch | Role |
 |--------|------|
-| `codex-dev` | **Active** — breeding loop, human file fix, breeder audit |
-| `grok-dev` | Grok agent branch (behind codex-dev) |
+| `grok-dev` | **Active** — reasoning capture, KV prompts, breeding loop |
+| `codex-dev` | Codex lineage (merged into grok-dev) |
+| `open-code-dev` | *Not created yet* — future OpenCode development branch |
 | `unify-rewrite` | Integration trunk |
-| `main` | Separate lineage (organism M4) — parallel species |
+| `main` | Separate lineage (organism M4) |
 
 ---
 
-## Docs in this repo
+## Docs
 
 | File | Audience |
 |------|----------|
-| `README.md` | You — quick start and orientation |
-| `KNOWLEDGE.md` | Architecture, blackboard protocol, research map |
-| `AGENTS.md` | AI coding tools — session handover, test results, GOAL |
+| `README.md` | You — quick start |
+| `KNOWLEDGE.md` | Architecture, blackboard, LLM/KV layer |
+| `AGENTS.md` | AI handover — rules, tests, open questions, next agent |
 
-Local handover (not in git policy): `Codex-log.md`, `ENDGAME_VISION.html`
+Local only (not in git): `Codex-log.md`, `ENDGAME_VISION.html`
 
----
-
-## Core files
-
-```
-tui.py       — display and human input (--gui)
-reactor.py   — 5 slots, spawn/kill/reassign, breeding reactor
-main.py      — persona entry point
-engine.py    — pipeline, pressure math, MoE routing
-agents.py    — scheduler / planner / actor / verifier / reflector / mutator
-comms.py     — blackboard v1 + breeder audit CLI
-config.py    — slots, personas, thresholds, breeding knobs
-llm.py       — LM Studio + ACP
-log.py       — session JSONL under sessions/
-prompts/     — planner, verifier, reflector, mutator, personalities
-schemas/     — JSON schemas (bus, route, telemetry, planner, …)
-plugins/     — hot-swappable (comms_beacon, …)
-```
-
-Deep reference: `KNOWLEDGE.md`. AI continuation: `AGENTS.md`.
+Grok Build workspace memory: `~/.grok/memory/wgabrys88-endgame-ai/MEMORY.md`

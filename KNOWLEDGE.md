@@ -1,16 +1,16 @@
 # KNOWLEDGE — endgame-ai Colony
 
-Architecture and protocol reference for the colony rewrite (`unify-rewrite` trunk, agent branches `grok-dev` / `codex-dev`). Humans: start with `README.md`. AI tools: read `AGENTS.md` first, then use this file when editing `comms.py`, `engine.py`, or schemas.
+Architecture and protocol reference. Humans: `README.md`. AI tools: **`AGENTS.md` first**, then this file when editing `comms.py`, `engine.py`, `llm.py`, or schemas.
 
-**Current tip:** `codex-dev` @ `5933ad3` — AgentBreeder scaffold live-tested 2026-06-14.
+**Tip:** `grok-dev` @ reasoning + KV-stable prompts (2026-06-14).
 
 ## Process tree
 
 ```
 python tui.py --model-profile nemotron [--gui]
   └── reactor.py
-        ├── s1 comms_operator  (MoE router)
-        ├── s2 architect         (idle until routed)
+        ├── s1 comms_operator  (MoE router, fixed)
+        ├── s2 architect
         ├── s3 implementor
         ├── s4 reviewer
         └── s5 devops
@@ -20,64 +20,65 @@ python tui.py --model-profile nemotron [--gui]
 
 | Paper | Concept | Implementation |
 |-------|---------|----------------|
-| MoE (Bause 2026) | Softmax gating | `engine._moe_route()` + `comms.softmax_route()` + `comms.route()` |
-| Blackboard (CAS 2025) | Shared coordination | `comms.py` v1, `messages.json` + `events_bus.jsonl` |
-| Pressure fields (Rodriguez 2026) | Stagnation, escalation | `engine._update_pressure()` → `moe.escalate` |
-| AgentBreeder (Oxford 2026) | Evolution scaffold | `post_evolve()`, reflector, mutator, reactor elites/trials |
-| Orchestrator pattern | One LLM gate | `LLM_MAX_CONCURRENT=1`, workers idle until inbox |
+| MoE (Bause 2026) | Softmax gating | `engine._moe_route()` + `comms.softmax_route()` |
+| Blackboard (CAS 2025) | Shared coordination | `comms.py` v1 |
+| Pressure fields (Rodriguez 2026) | Stagnation, escalation | `engine._update_pressure()` |
+| AgentBreeder (Oxford 2026) | Evolution scaffold | reflector, mutator, reactor elites/trials |
+| Orchestrator pattern | One LLM gate | `LLM_MAX_CONCURRENT=1` + `runtime/.lmstudio.lock` |
+
+## LLM layer (`llm.py`, `agents.py`, `config.py`)
+
+### Prompt shape (KV-stable)
+
+| Message | Contents | Must NOT contain |
+|---------|----------|------------------|
+| **system** | Static role prompt (`prompts/<role>.txt`) | Persona, bus, goal, JSON schema |
+| **user** | Schema contract header + task state | — |
+
+Helpers: `_stable_system()`, `_user_with_schema()`, `_SCHEMA_USER_HEADERS` in `agents.py`.
+
+### Reasoning capture
+
+- `call_llm()` returns `LLMResult(text, reasoning, reasoning_tokens, …)`
+- Sources: API `reasoning_content`, `` blocks, JSON preamble before `{`
+- Logged: `llm.request`, `llm.response`, and phase events (`plan`, `verify`, `reflect`, `mutate`, `fission`) via `_llm_event_data()`
+- Cap: `LLM_REASONING_LOG_MAX` (default 12000 chars in session JSONL)
+
+### Nemotron profile flags
+
+| Key | Value | Notes |
+|-----|-------|-------|
+| `LLM_API_SCHEMA` | `false` | Schema contract in user message; API `response_format` off so Nemotron emits `reasoning_content` |
+| `LLM_THINKING_ENABLED` | `true` | `enable_thinking` + `thinking_budget` in API body |
+| `LLM_MAX_CONCURRENT` | `1` | Thread gate + cross-process file lock |
+| `LMS_GLOBAL_LOCK_PATH` | `runtime/.lmstudio.lock` | Serializes all 5 slot processes |
+
+**Open (not settled):** Whether to enable API schema for stricter JSON at the cost of empty reasoning; whether every pipeline stage should attach full reasoning to bus mirror; whether Unified KV Cache helps when MC=1 (user disabled it — hypothesis: Unified KV mainly helps parallel slots).
+
+### JSON extraction
+
+`extract_json()` strips thinking, then `json.JSONDecoder().raw_decode()` for first object (handles preamble + trailing prose).
 
 ## Blackboard protocol v1
 
-**Envelope** (every entry):
-
-```
-v, id, ts, from, slot, kind, pri, mentions?, to?, text, payload
-```
-
-Schema: `schemas/bus_v1.json`
+**Envelope:** `v, id, ts, from, slot, kind, pri, text, payload` — schema `schemas/bus_v1.json`
 
 ### Stores
 
 | File | Layer | Trim |
 |------|-------|------|
-| `runtime/comms/messages.json` | Intent | 200 entries |
-| `runtime/comms/events_bus.jsonl` | Observation | 500 lines |
-| `runtime/comms/control.jsonl` | Reactor commands | drained each 5s |
-| `runtime/comms/inject.jsonl` | Human/TUI inject | drained each cycle |
+| `runtime/comms/messages.json` | Intent | 200 |
+| `runtime/comms/events_bus.jsonl` | Observation | 500 |
+| `runtime/comms/control.jsonl` | Reactor commands | drained 5s |
+| `runtime/comms/inject.jsonl` | Human/TUI | drained each cycle |
 
-### Kinds
+### Key kinds
 
-| kind | Writer | Payload | Purpose |
-|------|--------|---------|---------|
-| `message` | anyone | free | chat |
-| `ping` | @mention | — | wake persona |
-| `request` | comms, actors | `{to, status, goal?}` | assign task |
-| `route` | comms_operator | `schemas/route.json` | MoE decision |
-| `telemetry` | beacon plugin | `schemas/telemetry.json` | pressure snapshot |
-| `event` | log.mirror | `{phase, ...}` | pipeline mirror |
-| `evolve` | fission_judge, mutator | `{target, action, fitness?, diff?}` | AgentBreeder |
-| `verdict` | verifier | `{verdict, evidence}` | audit |
-| `status` | reactor/tui | `{action, ...}` | control + `breed.*` outcomes |
+`message`, `ping`, `request`, `route`, `telemetry`, `event`, `evolve`, `verdict`, `status`
 
-### MoE signals
+MoE: `colony_state()`, `softmax_route()`, `route()`, `post_control()`, `human_task_active()`
 
-- **power** = `1 - stagnation` (confidence)
-- **velocity** = `prev_stag - stag` (positive = improving)
-- **stuck** = `stag >= 0.7` AND `|vel| <= 0.01` for 5 consecutive readings
-
-### MoE cycle (`engine._moe_route`, every 20s)
-
-1. `colony_state()` — latest telemetry per persona
-2. Increment stuck ticks per worker; reset when improving
-3. If stuck ≥ 5 ticks → `route(escalate=True)` + `post_control(reassign)`
-4. If `human_task_active()` → skip maintenance route (`moe.yield`); human pri=3 yields LLM + bus
-5. Else → `route()` to highest softmax-power worker (if weight ≥ `MOE_GATE_MIN`)
-
-Workers wake via `pending_for()` on `route`, `request`, `ping`.
-
-## Pressure math (`engine._update_pressure`)
-
-Per cycle (not during LLM waits):
+## Pressure math
 
 ```
 fail_pressure = min(1.0, failures * 0.15)
@@ -87,130 +88,63 @@ velocity = prev_stag - stagnation
 power = 1.0 - stagnation
 ```
 
-Resets on fission or goal switch (temporal decay).
+**Stuck:** `stag >= 0.7` AND `|vel| <= 0.01` for 5 MoE cycles → escalate + reassign.
 
-## AgentBreeder loop (codex-dev)
+## AgentBreeder loop
 
 ```
-verifier denial → reflector → mutator (after MUTATE_AFTER_FAILURES)
-  → safe patch_plugin → post_evolve
-  → reactor: breed.elite / breed.evict / mutation trial
+verifier denial → reflector → mutator (≥ MUTATE_AFTER_FAILURES)
+  → patch_plugin → post_evolve → reactor breed.elite / breed.evict / trial
   → after BREED_TRIAL_EVAL_SECONDS: breed.improve | breed.regress | breed.neutral
 ```
 
-**Fitness niches:** `behavior:pressure_band` (e.g. `verify_denial:low_pressure`, `plugin_patch:low_pressure`)
+Audit: `python comms.py breeder`
 
-**Elite archive:** in-memory MAP-Elites-style; `select_respawn_persona()` prefers same-slot elites on worker death.
+## Prompt ↔ schema
 
-**Audit:** `python comms.py breeder` — read-only summary from `events_bus.jsonl`.
-
-**Mutation safety:** generated plugins may only return writes with `_plugin_*` keys — cannot spoof `_pressure`, `fissions`, `goal`.
-
-## Prompt ↔ schema traceability
-
-| Stage | Prompt | Schema |
-|-------|--------|--------|
+| Stage | Prompt | Schema (user header + optional API) |
+|-------|--------|-------------------------------------|
 | planner | `prompts/planner.txt` | `schemas/planner.json` |
 | verifier | `prompts/verifier.txt` | `schemas/verifier.json` |
 | reflector | `prompts/reflector.txt` | `schemas/reflector.json` |
 | mutator | `prompts/mutator.txt` | `schemas/mutator.json` |
-| fission_judge | — | `schemas/fission_judge.json` |
-| route | comms_operator personality | `schemas/route.json` |
-| telemetry | — | `schemas/telemetry.json` |
+| fission_judge | `prompts/fission_judge.txt` | `schemas/fission_judge.json` |
 
-Persona overlays: `prompts/personalities/*.txt`
+Personas: `prompts/personalities/*.txt` — in **user** message only.
 
-## Actor sandbox (`colony_env.py`)
+## Event phases (session JSONL)
 
-Pre-imported in `run_python()`:
+Path: `sessions/<timestamp>/events-child-sN.jsonl`
 
-`bus_post`, `bus_id`, `bus_request`, `bus_route`, `Path`, `subprocess`, `os`, `sys`, `json`, `time`, `enable_gui`, `disable_gui`
+| Tier | Phases |
+|------|--------|
+| Pillar | `moe.route`, `pressure`, `plan`, `actor`, `verify`, `fission`, `reflect`, `mutate` |
+| LLM debug | `llm.request`, `llm.response`, `prompt_signature`, `prompt_drift` |
+| Breeder | `evolve` (bus), reactor `breed.*` |
 
-### GUI modes
-
-| Mode | Trigger | Behavior |
-|------|---------|----------|
-| **Safe** (default) | no `gui_mode` file | `goal_needs_gui()` declines; `validate_python()` blocks notepad/os.startfile/pyautogui |
-| **GUI** | `--gui` flag, `g` key, or `enable_gui()` | `gui_mode` file present; desktop automation allowed in actor code |
-
-TUI header shows `GUI` (amber) or `safe` (dim). `log.cleanup_runtime()` removes `gui_mode` on fresh start unless `--gui` passed.
-
-Actor timeout: `actions.run_python` runs `taskkill /F /T` on runner PID to kill orphan children.
-
-## Config knobs (`config.py`)
-
-| Key | Default | Meaning |
-|-----|---------|---------|
-| `COMMS_ROUTE_INTERVAL` | 20s | MoE cadence |
-| `STAG_ESCALATE` | 0.7 | Escalation threshold |
-| `VEL_STUCK` | 0.01 | Zero-progress velocity |
-| `STUCK_TICKS_ESCALATE` | 5 | Stuck readings before reassign |
-| `MOE_GATE_MIN` | 0.10 | Min softmax weight to route |
-| `LLM_MAX_CONCURRENT` | 1 | Orchestrator LLM gate (nemotron) |
-| `HUMAN_GOAL_MAX_DENIALS` | 3 | Stop replanning human pri=3 after N failures |
-| `BREED_RETAIN_MIN` | 0.60 | Fission fitness for reactor survivor retention |
-| `BREED_TRIAL_EVAL_SECONDS` | 60 | Wait before scoring mutation outcome |
-| `BREED_IMPROVE_MIN_DELTA` | 0.05 | Min pressure/power delta for `breed.improve` |
-| `MUTATE_AFTER_FAILURES` | 2 | Failure cycles before mutator may patch |
+Bus mirror skips: `schedule`, `plugin.telemetry`, `plugin.web_sentinel`
 
 ## Model profiles
 
 ```bash
-python tui.py --model-profile nemotron   # thinking on, 1 concurrent, 600s timeout
-python tui.py --model-profile gemma      # thinking off, 2 concurrent
-python tui.py --backend acp              # sequential WSL/Kiro lock
-python tui.py --model-profile nemotron --gui  # desktop automation + UIA observer
-python llm.py bench                      # A/B legacy vs optimized nemotron params
+python tui.py --model-profile nemotron
+python llm.py bench
 ```
 
-### Nemotron tuning (validated 2026-06-14)
+**nemotron (optimized):** temp 0.15, seed 3407, thinking_budget 1536, `LLM_API_SCHEMA=false`, role budgets in `config.BUDGET`.
 
-Cross-persona benchmark (`python llm.py bench`, 4 personas × 2 profiles):
+**LM Studio (manual):** MC=1, reasoning stripping off; Unified KV — user choice (see open questions above).
 
-| Profile | JSON ok | Avg latency | System prompt fingerprints |
-|---------|---------|-------------|--------------------------|
-| `nemotron_legacy` (temp 1.0, persona in system) | 2/4 | 28.2s | 4 (one per persona — hurts KV reuse) |
-| `nemotron` (temp 0.15, persona in user) | 3/4 | 20.3s | 1 (stable planner system prompt) |
+## GUI mode
 
-**Optimized `nemotron` defaults:** temp 0.15, top_p 0.90, top_k 40, seed 3407, thinking_budget 1536, role budgets planner 1400 / verifier 320 / reflector 768 / mutator 1536.
-
-**Colony-wide LLM gate:** `runtime/.lmstudio.lock` — cross-process file lock in `llm.py` so `LLM_MAX_CONCURRENT=1` applies across all 5 slot processes (thread semaphore alone was insufficient; caused 2–5 parallel LM Studio slots).
-
-**LM Studio load settings (manual):** Max Concurrent Predictions **1**, Unified KV Cache **true**, context ~16k for single-flight. Enable Thinking **on** for planner/reflector; verifier uses smaller max_tokens.
-
-**Internet cross-check:** NVIDIA/LM Studio docs recommend reasoning toggle on for complex agentic tasks; lower temperature (0.0–0.3) for structured JSON. Matches our optimized profile. Nemotron hybrid Mamba/Transformer architecture still forces partial prompt re-processing — expect shallow cache reuse even when tuned.
-
-### GUI desktop observer
-
-When `gui_mode` active (`--gui` or `g` key):
-
-- `PlannerAgent` injects `DESKTOP_FOCUSED` / `DESKTOP_ELEMENTS` into planner user message
-- Actor sandbox imports `desktop.observe_screen`, `desktop_click`, `desktop_write`, etc.
-- `observer.py` + `win32.py` UIA scan (ported constants in `config.py`)
-
-## Event phases (session JSONL)
-
-Per-slot: `sessions/<timestamp>/events-child-sN.jsonl`  
-Operator slot: `events-child-s1.jsonl` holds `moe.route` / `moe.yield` / `moe.escalate`.
-
-### Log tiers (vision vs debug noise)
-
-| Tier | Phases | Keep? | Where |
-|------|--------|-------|-------|
-| **Pillar** | `moe.route`, `moe.yield`, `moe.escalate`, `pressure`, `interrupt`, `plan`, `actor`, `verify`, `fission`, `reflect`, `mutate` | **Yes** | Session JSONL; pillar phases on bus |
-| **Breeder** | `evolve` (kind), reactor `breed.*` (status) | **Yes** | Bus via `_mirror_breeder_observation` |
-| **Pipeline** | `schedule`, `planner.pending`, `planner.error`, `human.decline` | Debug | Session JSONL; `schedule` skipped on bus |
-| **Noise** | `plugin.web_sentinel`, `plugin.error` | Optional | Session only |
-
-### Phase list
-
-`start`, `schedule`, `planner.pending`, `planner.error`, `plan`, `actor`, `verify`, `reflect`, `mutate`, `fission`, `fission.deny`, `pressure`, `moe.route`, `moe.yield`, `moe.escalate`, `interrupt`, `human.decline`, `stop`
-
-Bus mirror skips: `schedule`, `plugin.telemetry`, `plugin.web_sentinel` (`comms._SKIP_PHASES`).
+| Mode | Trigger | Behavior |
+|------|---------|----------|
+| Safe (default) | no `gui_mode` file | Declines GUI goals |
+| GUI | `--gui`, `g`, or `enable_gui()` | `observer.py` context in planner user message |
 
 ## Not built yet
 
-- Consistent `breed.improve` from live multi-cycle runs (GOAL)
-- LLM fission_judge
-- Desktop observer (win32 UIA) for GUI-mode screen context
+- Consistent multi-cycle `breed.improve` (GOAL)
+- LLM fission_judge (deterministic fallback only)
+- KV/Unified-KV A/B evidence for MC=1 workload
 - Persistent elite archive across reactor restarts

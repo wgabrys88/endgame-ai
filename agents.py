@@ -12,7 +12,7 @@ from typing import Any
 
 import config
 import log
-from llm import call_llm
+from llm import LLMResult, call_llm
 from python_code import goal_needs_gui, gui_mode_enabled, is_python_code, validate_python
 
 _SIMPLE_FILE_DONE_PREFIX = "file_equals "
@@ -94,6 +94,21 @@ _SCHEMA_USER_HEADERS: dict[str, str] = {
 
 def _persona() -> str:
     return os.environ.get("ENDGAME_PERSONALITY", "").strip()
+
+
+def _llm_event_data(result: LLMResult, extra: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Attach captured reasoning trace to pipeline phase events."""
+    data: dict[str, Any] = {
+        "has_reasoning": bool(result.reasoning),
+        "reasoning_chars": len(result.reasoning),
+        "reasoning_tokens": result.reasoning_tokens,
+    }
+    if result.reasoning:
+        limit = int(config.LLM_REASONING_LOG_MAX)
+        data["reasoning"] = result.reasoning if limit <= 0 else result.reasoning[:limit]
+    if extra:
+        data.update(extra)
+    return data
 
 
 def _stable_system(role: str) -> str:
@@ -263,20 +278,23 @@ class PlannerAgent:
         log.emit("planner.pending", {"goal": goal[:80]})
         system, user = _planner_messages(board)
         schema = _load_schema("planner")
-        raw = call_llm(system, user, "planner", schema=schema, cache_key="planner")
+        llm_out = call_llm(system, user, "planner", schema=schema, cache_key="planner")
         try:
-            parsed = json.loads(raw)
+            parsed = json.loads(llm_out.text)
         except (json.JSONDecodeError, TypeError):
-            return {"phase": "planner.error", "data": {"error": "invalid JSON",
-                    "raw": str(raw)[:config.PLANNER_ERROR_RAW_MAX]}}
+            return {"phase": "planner.error", "data": _llm_event_data(llm_out, {
+                "error": "invalid JSON",
+                "raw": str(llm_out.text)[:config.PLANNER_ERROR_RAW_MAX],
+            })}
         mode = parsed.get("mode", "direct")
         if mode == "done":
             board["plan"] = []
-            return {"phase": "plan", "data": {"mode": "done", "done_when": parsed.get("done_when", "")},
-                    "writes": {"plan": []}}
+            return {"phase": "plan", "data": _llm_event_data(llm_out, {
+                "mode": "done", "done_when": parsed.get("done_when", ""),
+            }), "writes": {"plan": []}}
         steps = parsed.get("sequence", [])
         if not steps:
-            return {"phase": "planner.error", "data": {"error": "empty sequence"}}
+            return {"phase": "planner.error", "data": _llm_event_data(llm_out, {"error": "empty sequence"})}
         for i, s in enumerate(steps):
             s["status"] = "active" if i == 0 else "pending"
         done_when = parsed.get("done_when", "")
@@ -285,7 +303,9 @@ class PlannerAgent:
             writes["_last_route"] = time.time()
         return {
             "phase": "plan", "next": "actor",
-            "data": {"mode": mode, "steps": len(steps), "done_when": done_when},
+            "data": _llm_event_data(llm_out, {
+                "mode": mode, "steps": len(steps), "done_when": done_when,
+            }),
             "writes": writes,
         }
 
@@ -349,11 +369,11 @@ class VerifierAgent:
             f"DONE_WHEN: {done_when}\n\nSTEP RESULTS:\n" + "\n".join(results),
         )
         schema = _load_schema("verifier")
-        raw = call_llm(system, user, "verifier", schema=schema, cache_key="verifier")
+        llm_out = call_llm(system, user, "verifier", schema=schema, cache_key="verifier")
         try:
-            parsed = json.loads(raw)
+            parsed = json.loads(llm_out.text)
         except (json.JSONDecodeError, TypeError):
-            return {"phase": "verifier.error", "data": {"error": "invalid JSON"}}
+            return {"phase": "verifier.error", "data": _llm_event_data(llm_out, {"error": "invalid JSON"})}
         verdict = parsed.get("verdict", "denied")
         if verdict == "confirmed":
             board["plan"] = []
@@ -366,15 +386,17 @@ class VerifierAgent:
                 board["priority"] = config.PRI_MAINTENANCE
                 board["goal"] = ""
                 board["_human_denials"] = 0
-            return {"phase": "verify", "data": {"verdict": "confirmed", "evidence": evidence},
-                    "next": "fission_judge"}
+            return {"phase": "verify", "data": _llm_event_data(llm_out, {
+                "verdict": "confirmed", "evidence": evidence,
+            }), "next": "fission_judge"}
         # Denied — clear plan, will replan
         board["plan"] = []
         evidence = str(parsed.get("evidence", ""))
         board.setdefault("history", []).append({"denied": done_when, "reason": evidence})
         _post_failure_candidate(board, done_when, evidence)
-        return {"phase": "verify", "data": {"verdict": "denied", "evidence": evidence},
-                "next": "reflector"}
+        return {"phase": "verify", "data": _llm_event_data(llm_out, {
+            "verdict": "denied", "evidence": evidence,
+        }), "next": "reflector"}
 
 
 class FissionJudgeAgent:
@@ -395,15 +417,19 @@ class FissionJudgeAgent:
             history.append({"denied": latest, "reason": reason, "stage": "fission_judge"})
             _post_failure_candidate(board, latest, reason,
                                     behavior="fission_denial", reason="fission denied")
+            llm_meta = review.pop("_llm", None) if isinstance(review.get("_llm"), dict) else None
+            deny_data = {
+                "completed": latest,
+                "verdict": "deny",
+                "diagnosis": reason,
+                "suggestion": str(review.get("suggestion", "")),
+                "rule": str(review.get("rule", "")),
+            }
+            if llm_meta:
+                deny_data.update(llm_meta)
             return {
                 "phase": "fission.deny",
-                "data": {
-                    "completed": latest,
-                    "verdict": "deny",
-                    "diagnosis": reason,
-                    "suggestion": str(review.get("suggestion", ""))[:220],
-                    "rule": str(review.get("rule", ""))[:160],
-                },
+                "data": deny_data,
                 "writes": {"history": history},
                 "next": "reflector",
             }
@@ -412,12 +438,16 @@ class FissionJudgeAgent:
         board.setdefault("fission_credited", []).append(latest)
         fitness = _evolution_fitness(board, fissions)
         _post_evolution_candidate(board, fissions, latest, fitness, review)
-        return {"phase": "fission", "data": {
+        llm_meta = review.pop("_llm", None) if isinstance(review.get("_llm"), dict) else None
+        fission_data = {
             "fissions": fissions,
             "completed": latest,
             "fitness": fitness,
-            "diagnosis": str(review.get("diagnosis", ""))[:220],
-        }}
+            "diagnosis": str(review.get("diagnosis", "")),
+        }
+        if llm_meta:
+            fission_data.update(llm_meta)
+        return {"phase": "fission", "data": fission_data}
 
 
 class ReflectorAgent:
@@ -441,16 +471,16 @@ class ReflectorAgent:
                 "Reflect JSON:"
             ),
         )
-        raw = call_llm(_stable_system("reflector"), user, "reflector",
-                         schema=_load_schema("reflector"), cache_key="reflector")
+        llm_out = call_llm(_stable_system("reflector"), user, "reflector",
+                           schema=_load_schema("reflector"), cache_key="reflector")
         try:
-            parsed = json.loads(raw)
+            parsed = json.loads(llm_out.text)
         except (json.JSONDecodeError, TypeError):
             parsed = _fallback_reflection(last_denial, failures, stagnation)
         reflection = {
-            "diagnosis": str(parsed.get("diagnosis", ""))[:300],
-            "suggestion": str(parsed.get("suggestion", ""))[:300],
-            "rule": str(parsed.get("rule", ""))[:180],
+            "diagnosis": str(parsed.get("diagnosis", "")),
+            "suggestion": str(parsed.get("suggestion", "")),
+            "rule": str(parsed.get("rule", "")),
         }
         if not reflection["diagnosis"] or not reflection["suggestion"]:
             reflection = _fallback_reflection(last_denial, failures, stagnation)
@@ -459,7 +489,8 @@ class ReflectorAgent:
             "history": history[-config.MAX_HISTORY:] + [{"reflection": reflection}],
             "reflection": reflection,
         }
-        return {"phase": "reflect", "data": reflection, "writes": writes, "next": "mutator"}
+        return {"phase": "reflect", "data": _llm_event_data(llm_out, reflection),
+                "writes": writes, "next": "mutator"}
 
 
 class MutatorAgent:
@@ -518,14 +549,14 @@ class MutatorAgent:
                 "Mutation JSON:"
             ),
         )
-        raw = call_llm(_stable_system("mutator"), user, "mutator",
-                         schema=_load_schema("mutator"), cache_key="mutator")
+        llm_out = call_llm(_stable_system("mutator"), user, "mutator",
+                           schema=_load_schema("mutator"), cache_key="mutator")
         try:
-            parsed = json.loads(raw)
+            parsed = json.loads(llm_out.text)
         except (json.JSONDecodeError, TypeError):
             return {
                 "phase": "mutate",
-                "data": {"action": "none", "reason": "invalid mutator JSON"},
+                "data": _llm_event_data(llm_out, {"action": "none", "reason": "invalid mutator JSON"}),
                 "next": "planner",
             }
 
@@ -535,7 +566,10 @@ class MutatorAgent:
         if action not in {"write_plugin", "patch_plugin"}:
             return {
                 "phase": "mutate",
-                "data": {"action": "none", "reason": str(parsed.get("content", "no mutation"))[:160]},
+                "data": _llm_event_data(llm_out, {
+                    "action": "none",
+                    "reason": str(parsed.get("content", "no mutation")),
+                }),
                 "next": "planner",
             }
 
@@ -549,10 +583,11 @@ class MutatorAgent:
         }
         if diff:
             data["diff"] = diff[:500]
+        event_data = _llm_event_data(llm_out, data)
         if ok:
             _post_mutation_candidate(board, filename, diff, obs)
-            return {"phase": "mutate", "data": data, "writes": {"mutation": data}, "next": "planner"}
-        return {"phase": "mutate", "data": data, "next": "planner"}
+            return {"phase": "mutate", "data": event_data, "writes": {"mutation": data}, "next": "planner"}
+        return {"phase": "mutate", "data": event_data, "next": "planner"}
 
 
 # --- Helpers ---
@@ -680,10 +715,10 @@ def _fission_review(board: dict[str, Any], completed: str) -> dict[str, str]:
             "Fission judge JSON:"
         ),
     )
-    raw = call_llm(_stable_system("fission_judge"), user, "fission_judge",
-                     schema=_load_schema("fission_judge"), cache_key="fission_judge")
+    llm_out = call_llm(_stable_system("fission_judge"), user, "fission_judge",
+                       schema=_load_schema("fission_judge"), cache_key="fission_judge")
     try:
-        parsed = json.loads(raw)
+        parsed = json.loads(llm_out.text)
     except (json.JSONDecodeError, TypeError):
         parsed = {}
     verdict = str(parsed.get("verdict", "credit"))
@@ -696,12 +731,14 @@ def _fission_review(board: dict[str, Any], completed: str) -> dict[str, str]:
         diagnosis = "Verifier supplied concrete completion evidence, so deterministic fallback awards fission credit."
     if not suggestion:
         suggestion = "Use this credited completion as selection evidence for the breeding reactor."
-    return {
+    review = {
         "verdict": verdict,
-        "diagnosis": diagnosis[:400],
-        "suggestion": suggestion[:300],
-        "rule": rule[:180],
+        "diagnosis": diagnosis,
+        "suggestion": suggestion,
+        "rule": rule,
     }
+    review["_llm"] = _llm_event_data(llm_out)
+    return review
 
 
 def _evolution_fitness(board: dict[str, Any], fissions: int) -> float:
@@ -1095,5 +1132,5 @@ def _format_history(history: list) -> str:
     lines = ["RECENT HISTORY:"]
     for h in history[-config.MAX_HISTORY:]:
         if isinstance(h, dict):
-            lines.append(f"  {json.dumps(h, ensure_ascii=False)[:120]}")
+            lines.append(f"  {json.dumps(h, ensure_ascii=False)[:400]}")
     return "\n".join(lines)
