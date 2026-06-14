@@ -92,7 +92,7 @@ Note: the requested "Oxford 2026 AgentBreeder" and exact "Beyond the Agentic Loo
 | Breeder | 91 evict, 13 trial, 23 neutral, 6 regress |
 | Human interrupts | 10 (pri=3) |
 
-**Documentation:** `sessions/20260614_132940/README.md` (forensic), `ENDGAME_GOLDEN_RUN.html` (interactive), `AGENTS.md` (handover + fix roadmap).
+**Documentation:** `OBSERVATIONS.md` (cold-start handover + session forensics), `sessions/20260614_132940/README.md` (golden forensic), `AGENTS.md` (vision + constraints).
 
 ## Current Validation (10-minute smoke)
 

@@ -74,17 +74,50 @@ def exhausted() -> bool:
     return _counter >= _budget
 
 
-def cleanup_runtime() -> None:
-    """Wipe runtime data for fresh start (bus only, sessions preserved)."""
+def cleanup_runtime(*, deep: bool = True) -> None:
+    """Wipe runtime state for a fresh colony start."""
     config.BUS_DIR.mkdir(parents=True, exist_ok=True)
     config.BUS_CHAT_PATH.write_text("[]\n", encoding="utf-8")
-    if config.BUS_EVENTS_PATH.exists():
-        config.BUS_EVENTS_PATH.write_text("", encoding="utf-8")
-    if config.BUS_INJECT_PATH.exists():
-        config.BUS_INJECT_PATH.write_text("", encoding="utf-8")
-    if config.BUS_CONTROL_PATH.exists():
-        config.BUS_CONTROL_PATH.write_text("", encoding="utf-8")
+    for path in (
+        config.BUS_EVENTS_PATH,
+        config.BUS_INJECT_PATH,
+        config.BUS_CONTROL_PATH,
+    ):
+        if path.exists():
+            path.write_text("", encoding="utf-8")
+    for flag in (
+        config.GUI_MODE_PATH,
+        config.UNCONSTRAINED_MODE_PATH,
+        config.COLONY_GOAL_PATH,
+        config.BASE_DIR / "pause",
+        config.LMS_GLOBAL_LOCK_PATH,
+    ):
+        try:
+            flag.unlink(missing_ok=True)
+        except OSError:
+            pass
+    if not deep:
+        return
+    runtime = config.BASE_DIR / "runtime"
+    if runtime.is_dir():
+        for path in runtime.iterdir():
+            if path.name == "comms":
+                continue
+            try:
+                if path.is_file():
+                    path.unlink(missing_ok=True)
+                elif path.is_dir():
+                    import shutil
+                    shutil.rmtree(path, ignore_errors=True)
+            except OSError:
+                pass
     try:
-        config.GUI_MODE_PATH.unlink(missing_ok=True)
+        config.BREED_ARCHIVE_PATH.unlink(missing_ok=True)
     except OSError:
         pass
+    for pattern in ("events*.jsonl", "events-reactor.jsonl"):
+        for path in glob.glob(str(config.BASE_DIR / pattern)):
+            try:
+                os.remove(path)
+            except OSError:
+                pass

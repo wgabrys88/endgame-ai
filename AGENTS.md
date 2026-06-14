@@ -4,10 +4,10 @@
 
 | File | Purpose |
 |---|---|
-| `AGENTS.md` | Vision, golden-run proof, fix roadmap, handover prompt |
+| `OBSERVATIONS.md` | **Cold-start handover prompt (top of file)** + session forensics (append-only) |
+| `AGENTS.md` | Vision, golden-run proof, fix roadmap, constraints |
 | `KNOWLEDGE.md` | Protocol, pressure math, breeder loop, file map |
 | `README.md` | Human quick start |
-| `OBSERVATIONS.md` | **Session tracking** — observation method + multi-perspective forensic per run (append-only) |
 | `sessions/20260614_132940/README.md` | Full forensic log (~1200 lines) of the golden run |
 | `ENDGAME_GOLDEN_RUN.html` | Interactive golden-run dashboard (open in browser) |
 | `ENDGAME_VISION_ADVANCED.html` | Architecture vision v2 (10-min proof era) |
@@ -302,35 +302,10 @@ Disposable: `__pycache__/`, `gui_mode`, empty validation logs.
 
 ---
 
-## Handover Prompt (copy into any AI session)
+## Handover Prompt
 
-```text
-You are continuing endgame-ai on branch unify-rewrite.
-
-READ ORDER:
-1. AGENTS.md (this file) — vision + golden run + fix roadmap
-2. OBSERVATIONS.md — session observation method + latest forensic analysis
-3. KNOWLEDGE.md — protocols
-4. README.md — quick start
-5. sessions/20260614_132940/README.md OR ENDGAME_GOLDEN_RUN.html — golden evidence
-
-VISION: Self-evolving colony on consumer hardware. Small models. Real actions.
-The LLM is a subroutine inside deterministic loops (pressure, MoE, breeder).
-
-GOLDEN PROOF: Session 20260614_132940 ran 1h49m with 4137 events, 32 verify
-confirms, 0 fission credits (fail-closed), 91 breeder evictions, 10 human
-interrupts. Code baseline was c897385. Tag: golden-run-20260614.
-
-YOUR PRIORITY: Implement fix roadmap FR-1 through FR-3 before long runs.
-Restore fission_log.py telemetry if mutated. Never disable verifier/fission
-fail-closed. Do not claim MAP-Elites convergence until breed.improve + restart
-trial is proven.
-
-HARD RULES: No new .py files. Bus-only coordination. py_compile changed Python.
-Commit before autonomous runs.
-
-External archive: operator has full workspace snapshot on external drive post-run.
-```
+**Canonical copy-paste prompt:** `OBSERVATIONS.md` → **§ COLD-START HANDOVER PROMPT** (top of file).  
+That section must stay current (HEAD SHA, run command, priorities). This file holds vision and constraints; do not duplicate the full handover here.
 
 ---
 
@@ -346,4 +321,4 @@ External archive: operator has full workspace snapshot on external drive post-ru
 
 ---
 
-*Last updated: golden-run handover 2026-06-14. Supersedes 10-minute-only proof in prior AGENTS.md.*
+*Last updated: 2026-06-14 — handover canonical in OBSERVATIONS.md § COLD-START HANDOVER PROMPT.*

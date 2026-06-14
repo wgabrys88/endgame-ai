@@ -1,15 +1,101 @@
 # OBSERVATIONS.md — Colony session evidence and methodology
 
-**Tracked in git.** Append-only living document for human operators and AI coding tools.
-
-Complements golden-run forensic (`sessions/20260614_132940/README.md`) with a **repeatable observation method** and **multi-perspective session analysis**. Raw telemetry stays gitignored under `sessions/<id>/events-*.jsonl` (archive externally).
+**Tracked in git.** Append-only session forensics below. **The section immediately under this header is the single cold-start handover** — keep it current after every meaningful change (other AI tools have zero prior context).
 
 | Related | Role |
 |---------|------|
-| `AGENTS.md` | Vision, fix roadmap, constraints |
+| **§ COLD-START HANDOVER PROMPT (below)** | **Copy-paste into any new AI session** |
+| `AGENTS.md` | Vision, architecture, constraints, smoke commands |
 | `KNOWLEDGE.md` | Protocol and file map |
+| `README.md` | Human quick start |
 | `sessions/20260614_132940/README.md` | Golden run forensic (109 min) |
-| **This file** | Observation method + per-session analysis |
+
+---
+
+## COLD-START HANDOVER PROMPT
+
+**Last updated:** 2026-06-14 · **Branch:** `unify-rewrite` · **HEAD:** `4547c35`  
+**Operator model:** nvidia-nemotron-3-nano-4b via LM Studio · **Profile:** `nemotron_parallel` (MC=5)
+
+Copy everything inside the fence into a new AI coding session (Codex, Claude, Grok, Cursor, etc.). You have **no** conversation history — treat this as the only briefing.
+
+```text
+PROJECT: endgame-ai — a self-evolving multi-agent colony on consumer hardware.
+Repo: C:/Users/px-wjt/Downloads/endgame-ai (or operator clone). Branch: unify-rewrite.
+The LLM is a subroutine. The organism is deterministic Python: pressure → MoE → blackboard
+→ scheduler → planner → actor → verifier → fission_judge → reflector → mutator → breeder.
+
+YOU HAVE ZERO PRIOR CONTEXT. Read in this order before changing code:
+1. OBSERVATIONS.md (this file) — methodology + session forensics + THIS prompt (keep updated)
+2. AGENTS.md — vision, golden-run proof, hard rules, smoke commands
+3. KNOWLEDGE.md — bus protocol, pressure math, file map
+4. README.md — how to run (one-line startup)
+5. sessions/20260614_132940/README.md — golden forensic (109 min, 4137 events)
+6. sessions/20260614_185239 section below — post-fix steering run (51 min, 5104 events)
+
+HOW TO RUN (Codex-style — GUI + unconstrained ON by default):
+  python tui.py "Your long-term goal as one sentence"
+  Example: python tui.py "Evolve plugins until breed.improve survives restart"
+  Safer: python tui.py --safe "Colony maintenance only"
+  LM Studio must be up at localhost:1234 with nemotron-3-nano-4b loaded.
+
+GOAL MODEL (like Codex /goal):
+  Trailing words → LONG_TERM_GOAL in runtime/colony_goal.txt (gitignored) + bus.
+  MoE routes workers toward it when no human pri=3 task. No goal → maintenance then idle.
+  TUI Enter = pri=3 ACTIVE_TASK override; after verify, colony returns to LONG_TERM_GOAL.
+
+ARCHITECTURE (5 slots):
+  s1 comms_operator (fixed MoE router, no LLM for routing)
+  s2-5 architect / implementor / reviewer / devops (workers)
+  Coordination ONLY via comms.py blackboard — personas never call each other.
+
+PROVEN (log evidence):
+  Golden 20260614_132940: 109 min survival, 32 verify confirms, 0 fission (fail-closed OK).
+  Session 20260614_185239: 38 breed.improve, 0 LLM empty, 0 plugin.error post-FR fixes.
+  Wiring landed: inbox_match, apply_interrupt, decline pri=0, progress TUI, git verify smoke.
+
+NOT PROVEN (do not claim):
+  MAP-Elites convergence, restart-persistent elite survival, long run under Codex startup.
+
+IMPLEMENTED POST-GOLDEN (do not re-break):
+  FR-1..FR-7 planner gates, FR-2 fission fail-closed, FR-3 fission_log protected,
+  colony goal at startup, default open mode, nemotron 4B prompt rewrite.
+
+HARD RULES:
+  - Never create new .py files
+  - Only README.md, KNOWLEDGE.md, AGENTS.md, OBSERVATIONS.md as editable markdown
+  - Bus-only coordination; py_compile changed Python before long runs
+  - Do not disable verifier/fission fail-closed to "make demos work"
+  - Commit + push regularly; update OBSERVATIONS § COLD-START HANDOVER after material changes
+
+KEY FILES TO TOUCH TOGETHER:
+  Bus/human: comms.py (inbox_match, apply_interrupt, set_colony_goal), engine.py (_moe_route)
+  Pipeline: agents.py, prompts/*.txt, schemas/*.json
+  Operator: tui.py, reactor.py, config.py
+  Breeder: reactor.py, plugins/fission_log.py (protected)
+
+SMOKE (no LM Studio required):
+  python -m py_compile reactor.py agents.py comms.py engine.py tui.py
+  python agents.py --fission-smoke
+  python agents.py --git-verify-smoke
+  python reactor.py --archive-smoke
+  python reactor.py --breed-improve-smoke
+
+CURRENT PRIORITY FOR NEXT SESSION:
+  1. Operator runs: python tui.py "<goal>" with LM Studio live
+  2. Append new session forensics to OBSERVATIONS.md (do not delete prior sessions)
+  3. Prove breed.improve + restart survival on post-4547c35 wiring
+  4. Keep § COLD-START HANDOVER PROMPT current (commit SHA, priorities, run command)
+
+RAW TELEMETRY: sessions/<id>/events-*.jsonl and runtime/ are gitignored — archive externally.
+Git tracks: OBSERVATIONS.md, session README forensics, benchmark.txt, Colony_Demo/ artifacts.
+
+FRESH START (wipe local runtime before a test):
+  python -c "import log; log.cleanup_runtime(deep=True)"
+  Clears bus, mode flags, colony_goal.txt, breed_archive, runtime/_* snapshots; preserves sessions/README forensics in git.
+```
+
+**Maintainer rule:** After each commit that changes behavior, update HEAD SHA, priorities, and "IMPLEMENTED" lines in this section. Session forensics append below — never delete old sessions.
 
 ---
 
@@ -410,16 +496,11 @@ MAP-Elites restart; GUI fission; git push; unconstrained safety.
 
 ---
 
-## 14. Next-session handover
+## 14. Session close note (20260614_185239)
 
-```text
-READ OBSERVATIONS.md + AGENTS.md. Session 20260614_185239: 5104 events, 38 breed.improve.
-P0 wiring landed: inbox_match, apply_interrupt, decline pri=0, --unconstrained.
-Next: long run to repro improve+restart under new wiring.
-JSONL on external archive.
-```
+Forensic detail for this run is in sections 1–13 above. **Canonical handover for the next AI is § COLD-START HANDOVER PROMPT at file top** (always keep that block current).
 
-*Forensic handover complete. JSONL: s1:914 s2:856 s3:962 s4:1132 s5:928 reactor:312.*
+*Forensic JSONL (external archive): s1:914 s2:856 s3:962 s4:1132 s5:928 reactor:312.*
 
 ---
 
