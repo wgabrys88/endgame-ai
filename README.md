@@ -57,9 +57,25 @@ Coordination is blackboard-only through `comms.py`. Personas do not call each ot
 
 Note: the requested "Oxford 2026 AgentBreeder" and exact "Beyond the Agentic Loop 2025" labels were not verified on arXiv during the 2026-06-14 review. The verified AgentBreeder paper is arXiv:2502.00757.
 
-## Current Validation
+## Golden Run (primary evidence)
 
-Latest 10-minute validation:
+**Session `20260614_132940`** — 1h49m live human-steered run. Tag: `golden-run-20260614`.
+
+| Item | Result |
+|---|---|
+| Baseline commit | `c897385` |
+| Profile | `nemotron_parallel`, MC=5 |
+| Events | 4,137 |
+| Verify confirmed | 32 |
+| Fission credit | 0 (31 deny — fail-closed) |
+| Breeder | 91 evict, 13 trial, 23 neutral, 6 regress |
+| Human interrupts | 10 (pri=3) |
+
+**Documentation:** `sessions/20260614_132940/README.md` (forensic), `ENDGAME_GOLDEN_RUN.html` (interactive), `AGENTS.md` (handover + fix roadmap).
+
+## Current Validation (10-minute smoke)
+
+Prior 10-minute validation:
 
 | Item | Result |
 |---|---|

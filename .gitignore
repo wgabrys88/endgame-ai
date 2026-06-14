@@ -44,6 +44,13 @@ devnull.txt
 hello.txt
 terminals/
 
+# --- Golden run evidence (tracked) ---
+!ENDGAME_GOLDEN_RUN.html
+!ENDGAME_VISION_ADVANCED.html
+!sessions/
+!sessions/20260614_132940/
+!sessions/20260614_132940/README.md
+
 # --- Local / personal (never commit) ---
 vision/
 *.md

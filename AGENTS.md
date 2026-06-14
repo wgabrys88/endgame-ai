@@ -1,20 +1,147 @@
-# AGENTS.md - AI session handover for endgame-ai
+# AGENTS.md — AI session handover for endgame-ai
 
-Read this first when continuing the repo.
+**Read this file first.** It is provider-agnostic: Codex, OpenCode, Grok, Claude, or any coding agent should treat it as the single source of truth for vision, evidence, constraints, and next work.
 
 | File | Purpose |
 |---|---|
-| `AGENTS.md` | AI handover, current state, rules, validation record |
-| `KNOWLEDGE.md` | Protocol and architecture details |
+| `AGENTS.md` | Vision, golden-run proof, fix roadmap, handover prompt |
+| `KNOWLEDGE.md` | Protocol, pressure math, breeder loop, file map |
 | `README.md` | Human quick start |
+| `sessions/20260614_132940/README.md` | Full forensic log (~1200 lines) of the golden run |
+| `ENDGAME_GOLDEN_RUN.html` | Interactive golden-run dashboard (open in browser) |
+| `ENDGAME_VISION_ADVANCED.html` | Architecture vision v2 (10-min proof era) |
 
-Work branch: `unify-rewrite`.
+Work branch: `unify-rewrite`.  
+Golden-run tag: `golden-run-20260614` (session `20260614_132940`, baseline commit `c897385`).
 
-## Vision
+---
 
-Endgame: self-evolving colony on consumer hardware. Small models. Real actions. A breeding reactor selects what survives.
+## Vision (unchanged)
 
-The LLM is a subroutine, not the organism. The organism is the deterministic Python control loop: pressure fields, MoE routing, blackboard state, process slots, plugin hot-swap, verification, and breeder scoring.
+Endgame is a **self-evolving colony on consumer hardware**. Small local models. Real actions on the real machine. A breeding reactor selects what survives.
+
+**The LLM is a subroutine, not the organism.** The organism is the deterministic Python control loop:
+
+```text
+pressure fields → MoE routing → blackboard → scheduler → planner → actor
+  → verifier → fission_judge → reflector → mutator → reactor breeder
+```
+
+Personas never call each other directly. All coordination is through `comms.py` (blackboard v1).
+
+---
+
+## Golden Run — Primary Proof (2026-06-14)
+
+Session **`20260614_132940`** is the **GOLDEN RUN**: first ~**1h49m** autonomous colony session under **live human steering** on real hardware, not a lab smoke test.
+
+| Metric | Golden (`132940`) | Prior 10-min (`112843`) |
+|--------|-------------------|-------------------------|
+| Duration | 1:49:01 | ~10 min |
+| Events | 4,137 | 728 |
+| Plans | 104 | 16 |
+| Verify confirmed | **32** | 7 |
+| Fission credit | **0** (31 deny) | 5 |
+| MoE routes / escalate | 79 / 5 | 29 / 1 |
+| Breeder evict / trial / neutral | 91 / 13 / 23 | 8 outcomes (4 improve) |
+| Human pri=3 interrupts | 10 | controlled inject |
+| Plugin patches (fission_log) | 17 attempted | 1 (telemetry no-op, removed) |
+| LLM reasoning traces | 427/427 | 46/46 |
+
+**Profile:** `nemotron_parallel` (MC=5). **Baseline code:** `c897385` (Persist breeder selection archive).
+
+### What the golden run proved
+
+1. **Organism survives human timescale** — pressure, plugins, breeder archive, MoE ran 109 minutes without stopping.
+2. **Closed-loop learning** — actor fail → reflect → mutate → breed.trial is live (97 reflect, 94 mutate, 13 trials).
+3. **Fail-closed gates work** — 32 verifier confirms but **0 fission credits**; invalid JSON and cosmetic bus posts do not breed.
+4. **Protected plugins hold** — `comms_beacon.py` / `web_sentinel.py` mutation blocked every attempt.
+5. **Real artifacts** — `Colony_Demo/`, `errors.txt`, `audit_report.txt`, `runtime/breed_archive.json` written during run.
+6. **Honest limits** — GUI/Chrome/notepad goals declined per planner rules; human "forget constraints" did not disable schemas.
+
+### What the golden run did NOT prove
+
+- MAP-Elites convergence or `breed.improve` on long horizons (0 improve in golden run).
+- Restart-persistent elite survival (archive writes yes; restart trial not done).
+- GUI/Chrome automation (blocked by design + sandbox).
+- Human prompt override without worker restart.
+
+**Do not claim convergence or production readiness until a post-fix long run reproduces improve + restart survival.**
+
+---
+
+## Recurring Failure Patterns (from JSONL + prompts)
+
+These appeared **many times** across slots. Fixes should target prompts/schemas/engine, not one-off patches.
+
+| Pattern | Symptom in logs | Root cause | Files to change |
+|---------|-----------------|------------|-----------------|
+| **P1: `import Path`** | `ModuleNotFoundError: No module named 'Path'` | Model emits `import Path`; actor pre-imports `Path` from pathlib | `prompts/planner.txt`, actor context in `agents.py` |
+| **P2: JSON in plan code** | `planner.error` invalid JSON (7×) | Nested quotes in `sequence[].code` strings | `prompts/planner.txt`, stricter post-parse in `agents.py` |
+| **P3: Bundled done_when** | Verify denied after partial actor ok | Plan merges file + bus post; actor stops early | `prompts/planner.txt`, `schemas/planner.json` done_when guidance |
+| **P4: Bus-post milestones** | Verify confirmed, fission deny (31×) | Fission judge rejects "posted"/"routed" as non-milestone | `prompts/fission_judge.txt`, `prompts/planner.txt` milestone rules |
+| **P5: fission_log mutation sink** | 204 `plugin.error`, `name 'true' is not defined` | Mutator patches unprotected plugin with invalid Python | `agents.py` mutator validation; consider protecting `fission_log.py` or restore-only policy |
+| **P6: Phantom files** | `colony.py`, `endgame_ai.py`, `event.log` not found | Planner invents paths not in repo manifest | Inject repo file list into planner user message (`agents.py`) |
+| **P7: GUI vs human** | Human wants Chrome/notepad; colony declines | Correct per `planner.txt` L27-28; human expectation mismatch | `README.md`, TUI help text, optional `comms.py` human ack |
+| **P8: Human override ignored** | "HUMAN APPROVES EVERYTHING" — schemas still enforced | Prompts loaded at worker boot; no hot reload | `engine.py` / `reactor.py` reload hook OR document limitation in TUI |
+| **P9: Neutral = bad patch** | `breed.neutral` on no-op plugin gutting | Short-window telemetry unchanged | `reactor.py` semantic scoring, py_compile + behavior probes |
+| **P10: TUI visibility** | Operator cannot see reasoning/fission deny easily | TUI renders phases but dense on long runs | `tui.py` — golden-run phase filters, human.decline banner |
+
+---
+
+## Fix Roadmap (priority order)
+
+Implement in this order. Each item lists **component impact**.
+
+### FR-1 — Planner sandbox contract (P1, P2, P3)
+
+**Change:** Strengthen `prompts/planner.txt`: NEVER `import Path`; one measurable outcome per plan; escape rules for embedded quotes. Optionally add planner user-message block: `AVAILABLE_FILES=[...]` from repo walk.
+
+**Affects:** `agents.py` (PlannerAgent user assembly), `schemas/planner.json` (optional max steps), all worker slots.
+
+**Acceptance:** 0 `ModuleNotFoundError: Path` in 30-min run; planner.error rate &lt; 1 per 20 plans.
+
+### FR-2 — Fission–verifier alignment (P4)
+
+**Change:** `prompts/planner.txt` + `prompts/fission_judge.txt`: define fission-worthy milestones (file written + py_compile, git commit hash in output, plugin patch with trial improve). Bus-only posts = verify-ok, fission-deny by design.
+
+**Affects:** `agents.py` FissionJudgeAgent, `reactor.py` niche labels (`fission_denial:*` should decrease for real work).
+
+**Acceptance:** At least one legitimate `fission` credit on file/git milestone in controlled run.
+
+### FR-3 — Mutator guardrails (P5)
+
+**Change:** After golden run, **`plugins/fission_log.py` restored** to `c897385` telemetry implementation. Add mutator apply gate: reject patches that don't `py_compile` or that empty plugin telemetry returns.
+
+**Affects:** `agents.py` MutatorAgent, `plugins/fission_log.py`, `reactor.py` trial scoring (fewer `telemetry_missing` regress).
+
+**Acceptance:** 0 `plugin.error` from fission_log over 30 min post-restore.
+
+### FR-4 — Repo manifest in planner context (P6)
+
+**Change:** `agents.py` inject top-level `*.py`, `plugins/*.py`, tracked docs into planner user message.
+
+**Affects:** planner only; reduces FileNotFoundError plans.
+
+### FR-5 — Human steering UX (P7, P8)
+
+**Change:** TUI: on `human.decline`, print reason + suggested rephrase. Document that pri=3 changes **goal** not **schema**. Optional: `comms.py post` flag for "acknowledged, constraint X blocks."
+
+**Affects:** `tui.py`, `comms.py`, `README.md`.
+
+### FR-6 — Breeder semantic scoring (P9)
+
+**Change:** `reactor.py`: treat plugin patch that removes telemetry emission as regress immediately (not neutral).
+
+**Affects:** breeder only; archive quality.
+
+### FR-7 — TUI golden visibility (P10)
+
+**Change:** `tui.py`: filter presets (`verify`, `breed`, `human`, `error`); show last fission deny diagnosis; show active human goal.
+
+**Affects:** operator experience only.
+
+---
 
 ## Architecture Summary
 
@@ -23,160 +150,105 @@ reactor.py
   s1 comms_operator  fixed, deterministic MoE router
   s2 architect       worker
   s3 implementor     worker
-  s4 reviewer        worker
+  s4 reviewer        worker (may escalate to quality_critic)
   s5 devops          worker
 ```
 
-Worker pipeline:
+Pipeline: `scheduler → planner → actor → verifier → fission_judge → reflector → mutator`
 
-```text
-scheduler -> planner -> actor -> verifier -> fission_judge -> reflector -> mutator
-```
+Hard rules:
 
-Rules:
+1. Never create new `.py` files.
+2. Only `README.md`, `KNOWLEDGE.md`, `AGENTS.md` may be edited as Markdown docs (session README and HTML are special-cased in `.gitignore`).
+3. Runtime config via CLI + `config.py`; `.env` only for LM Studio host.
+4. Bus-only coordination.
+5. `python -m py_compile` on changed Python.
+6. GUI off by default (`--gui`, TUI `g`, or `enable_gui()`).
+7. `reactor.is_alive()` keeps `OpenProcess(0x1000)`.
+8. Commit before long autonomous runs.
 
-- Blackboard-only coordination through `comms.py`.
-- Workers idle until routed or human-interrupted.
-- `engine._update_pressure()` runs every cycle.
-- `engine._moe_route()` routes from `comms_operator` without LLM calls.
-- Reactor consumes `evolve` candidates and emits `breed.*` outcomes.
+---
 
-## Research Sources Verified 2026-06-14
-
-| Source | Confirmed fact | Code |
-|---|---|---|
-| Bause et al., arXiv:2605.25929, https://arxiv.org/abs/2605.25929 | Multi-agent deliberation can be viewed as input-dependent MoE; competence is observed through proxies such as confidence | `comms.softmax_route()`, `engine._moe_route()` |
-| Han and Zhang, arXiv:2507.01701, https://arxiv.org/abs/2507.01701 | Blackboard MAS shares all role messages, selects acting agents from blackboard content, repeats selection/execution | `comms.py` v1 |
-| Rodriguez, arXiv:2601.08129, https://arxiv.org/abs/2601.08129 | Pressure fields beat hierarchy in cited benchmark: 48.5% vs 1.5% aggregate solve rate | `engine._update_pressure()` |
-| Rosser and Foerster, arXiv:2502.00757, https://arxiv.org/abs/2502.00757 | AgentBreeder evolves scaffolds and exposes safety/capability tradeoffs | `reactor.py`, `agents.MutatorAgent` |
-| arXiv:2605.10907, https://arxiv.org/abs/2605.10907 | Robust agents need hardened workflows and traceable reusable behavior beyond ad hoc loops | schemas, py_compile, session JSONL |
-
-Unverified label corrections:
-
-- "Oxford 2026 AgentBreeder" was not verified; public arXiv result is AgentBreeder arXiv:2502.00757.
-- Exact "Beyond the Agentic Loop 2025" was not found; the closest verified source used for documentation is arXiv:2605.10907.
-
-## Current Status
-
-Colony Alpha is runnable and selection-loop evidence exists.
-
-Latest important commits:
-
-| Commit | Meaning |
-|---|---|
-| `0a5b128` | Closed breeder selection trial loop |
-| `8cd57b6` | Removed dead mutator fallback shims before 10-minute autonomous run |
-| `Fail closed on fission and LLM outages` | Fission credit and LLM transport fail closed instead of fabricating success |
-
-10-minute validation after `8cd57b6`:
-
-| Item | Result |
-|---|---|
-| Profile | `nemotron_parallel` |
-| GUI mode | on |
-| LM Studio model | `nvidia-nemotron-3-nano-4b@q6_k_xl` |
-| Session | `sessions/20260614_112843` |
-| Child session events | 728 |
-| LLM reasoning | 46/46 `llm.response` events had reasoning |
-| Planner errors | 1 |
-| Plans | 16 |
-| Confirmed verifies | 7 |
-| Fissions | 5 |
-| MoE | 29 routes, 1 escalation |
-| Breeder | 8 selection outcomes: 4 improve, 3 neutral, 1 regress |
-| Audit | `python comms.py breeder` -> `closed_loop: yes` |
-
-Important observation: the autonomous run patched `plugins/telemetry.py` into a no-op. That mutation was not kept. The dead secondary telemetry plugin was deleted after the run; `plugins/comms_beacon.py` remains the protected telemetry source.
-
-## Current Files That Matter
+## Key Files
 
 | Layer | Files |
 |---|---|
-| LLM and reasoning | `llm.py`, `config.py` |
-| Agents and prompts | `agents.py`, `prompts/*.txt`, `prompts/personalities/*.txt`, `schemas/*.json` |
+| LLM | `llm.py`, `config.py` |
+| Agents / prompts | `agents.py`, `prompts/*.txt`, `prompts/personalities/*.txt`, `schemas/*.json` |
 | Blackboard | `comms.py`, `runtime/comms/*` |
-| Pressure and MoE | `engine.py`, `plugins/comms_beacon.py` |
-| Breeding | `reactor.py`, `agents.py`, `plugins/fission_log.py`, `runtime/breed_archive.json` |
-| GUI | `tui.py`, `observer.py`, `actions.py`, `desktop.py`, `python_code.py`, `colony_env.py` |
+| Pressure / MoE | `engine.py`, `plugins/comms_beacon.py` |
+| Breeding | `reactor.py`, `plugins/fission_log.py`, `runtime/breed_archive.json` |
+| Operator | `tui.py`, `observer.py`, `actions.py`, `desktop.py` |
 
-## Hard Rules
+**Protected from mutation:** `plugins/comms_beacon.py`, `plugins/web_sentinel.py` (see `agents.py`).
 
-1. Never create new `.py` files.
-2. Only `README.md`, `KNOWLEDGE.md`, and `AGENTS.md` may be added or edited as Markdown tracked docs.
-3. Runtime colony configuration belongs in CLI flags and `config.py`; `.env` is only for local LM Studio hosts.
-4. Personas coordinate via the bus only.
-5. After Python changes, run `python -m py_compile <changed files>`.
-6. GUI default is off; use `--gui`, TUI `g`, or `enable_gui()`.
-7. `reactor.is_alive()` must keep using `OpenProcess(0x1000)`.
-8. Commit before long autonomous colony runs; the colony can execute real code by design.
+---
 
 ## Validation Commands
 
-Default smoke:
-
 ```bash
+python -m py_compile reactor.py agents.py comms.py engine.py tui.py plugins/fission_log.py
 python tui.py --model-profile nemotron
 python comms.py state
 python comms.py breeder
 ```
 
-Parallel GUI validation shape used on 2026-06-14:
+Golden evidence audit (local; sessions not required on CI):
 
-```powershell
-& "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" -c "import log; log.cleanup_runtime()"
-Set-Content -LiteralPath gui_mode -Value 1
-$env:ENDGAME_BOOTSTRAPPED='1'
-$env:ENDGAME_BACKEND='lmstudio'
-& "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" reactor.py --model-profile nemotron_parallel
+```bash
+# After a run, compare phase counts to golden baseline in sessions/20260614_132940/README.md
 ```
 
-For controlled validation, start reactor hidden, inject `@architect`, `@implementor`, `@reviewer`, and `@devops` tasks through `comms.py post`, wait 10 minutes, then stop the reactor process tree.
+---
 
 ## Cleanup Policy
 
-Disposable:
+Keep: `sessions/20260614_132940/`, `ENDGAME_GOLDEN_RUN.html`, `runtime/comms/` immediately after runs.  
+Disposable: `__pycache__/`, `gui_mode`, empty validation logs.
 
-- `__pycache__/`
-- `plugins/__pycache__/`
-- `gui_mode`
-- empty `validation-*.out` / `validation-*.err`
+---
 
-Keep unless intentionally archiving or rotating evidence:
-
-- `sessions/`
-- `runtime/comms/` immediately after validation
-- `ENDGAME_VISION.html`
-- `lm-studio-server-log.md`
-- local research/log markdown files not tracked by git
-
-## Remaining Bottlenecks
-
-- Persistent elite archive exists in `runtime/breed_archive.json`; restart survival still needs a long autonomous run.
-- Long-run MAP-Elites convergence.
-- Better semantic mutation scoring: a no-op plugin patch can be neutral over short windows and still be architecturally bad.
-- Reflection now fails closed with `reflect.error` for invalid or incomplete reflector JSON.
-- Fission credit now fails closed on invalid fission-judge JSON.
-- LLM transport failure now returns empty output instead of fabricated planner `done` JSON.
-- Browser plugin startup is blocked in this Windows sandbox (`CreateProcessAsUserW failed: 5`), so Browser-surface validation is not complete even though GUI mode validation is.
-
-## Handover Prompt
+## Handover Prompt (copy into any AI session)
 
 ```text
 You are continuing endgame-ai on branch unify-rewrite.
 
-Vision: self-evolving colony on consumer hardware. Small models. Real actions.
-Breeding reactor selects what lives. The LLM is a subroutine inside deterministic
-loops, not the organism.
+READ ORDER:
+1. AGENTS.md (this file) — vision + golden run + fix roadmap
+2. KNOWLEDGE.md — protocols
+3. README.md — quick start
+4. sessions/20260614_132940/README.md OR ENDGAME_GOLDEN_RUN.html — golden evidence
 
-Read AGENTS.md, then KNOWLEDGE.md, then README.md.
+VISION: Self-evolving colony on consumer hardware. Small models. Real actions.
+The LLM is a subroutine inside deterministic loops (pressure, MoE, breeder).
 
-Current proof: session 20260614_112843 was a 10-minute nemotron_parallel GUI run
-after commit 8cd57b6. It produced 728 child events, 46/46 LLM reasoning traces,
-5 fissions, 29 MoE routes, 1 escalation, and breeder closed_loop=yes with
-8 selection outcomes. The run also exposed and removed a dead telemetry plugin.
+GOLDEN PROOF: Session 20260614_132940 ran 1h49m with 4137 events, 32 verify
+confirms, 0 fission credits (fail-closed), 91 breeder evictions, 10 human
+interrupts. Code baseline was c897385. Tag: golden-run-20260614.
 
-Hard rules: no new .py files, bus-only coordination, config via config.py/CLI,
-py_compile changed Python, commit before long autonomous runs.
+YOUR PRIORITY: Implement fix roadmap FR-1 through FR-3 before long runs.
+Restore fission_log.py telemetry if mutated. Never disable verifier/fission
+fail-closed. Do not claim MAP-Elites convergence until breed.improve + restart
+trial is proven.
 
-Do not claim MAP-Elites convergence or restart-persistent selection pressure until proven by a long run.
+HARD RULES: No new .py files. Bus-only coordination. py_compile changed Python.
+Commit before autonomous runs.
+
+External archive: operator has full workspace snapshot on external drive post-run.
 ```
+
+---
+
+## Research Sources (verified 2026-06-14)
+
+| Source | Code mapping |
+|---|---|
+| Bause et al. arXiv:2605.25929 | `comms.softmax_route()`, `engine._moe_route()` |
+| Han/Zhang arXiv:2507.01701 | `comms.py` blackboard |
+| Rodriguez arXiv:2601.08129 | `engine._update_pressure()` |
+| AgentBreeder arXiv:2502.00757 | `reactor.py`, `MutatorAgent` |
+| arXiv:2605.10907 | schemas, session JSONL, py_compile |
+
+---
+
+*Last updated: golden-run handover 2026-06-14. Supersedes 10-minute-only proof in prior AGENTS.md.*

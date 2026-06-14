@@ -124,7 +124,20 @@ python comms.py breeder
 
 The archive is not a persona coordination channel. Personas still communicate through `comms.py`; the reactor uses `runtime/breed_archive.json` only to preserve selection state across reactor restarts and to choose elite-backed respawns.
 
-Current proof from `runtime/comms/events_bus.jsonl` after `sessions/20260614_112843`:
+### Golden run proof (`sessions/20260614_132940`, tag `golden-run-20260614`)
+
+Long-run evidence (1h49m, 4,137 JSONL events, baseline `c897385`):
+
+```text
+plans: 104          verify confirmed: 32    fission credit: 0
+fission.deny: 31    breed.evict: 91         breed.trial: 13
+breed.neutral: 23   breed.regress: 6        moe.route: 79
+human interrupts: 10 (pri=3)               plugin.error: 204 (fission_log mutation era)
+```
+
+Full analysis: `sessions/20260614_132940/README.md`. Interactive: `ENDGAME_GOLDEN_RUN.html`. Fix priorities: `AGENTS.md` FR-1–FR-7.
+
+Current proof from `runtime/comms/events_bus.jsonl` after `sessions/20260614_112843` (10-minute smoke):
 
 ```text
 evolve: 8 evict=5 retain=3
