@@ -2,7 +2,7 @@
 
 **Only tracked doc.** Provider-agnostic handover for any AI with zero prior context (Grok, Codex, OpenCode, Cursor, etc.).
 
-**Repo:** `unify-rewrite` (trunk) · **`main`** = scale-1 reference only · update **HEAD** line on every behavior-changing commit.
+**Repo:** `unify-rewrite` (trunk) · **HEAD:** `31ac4bd` · **`main`** = scale-1 reference only
 
 ---
 
