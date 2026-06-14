@@ -154,7 +154,7 @@ Keep unless intentionally archiving or rotating evidence:
 - Persistent elite archive across reactor restarts.
 - Long-run MAP-Elites convergence.
 - Better semantic mutation scoring: a no-op plugin patch can be neutral over short windows and still be architecturally bad.
-- Reflection still includes a deterministic fallback diagnosis for invalid reflector JSON.
+- Reflection now fails closed with `reflect.error` for invalid or incomplete reflector JSON.
 - Fission credit now fails closed on invalid fission-judge JSON.
 - LLM transport failure now returns empty output instead of fabricated planner `done` JSON.
 - Browser plugin startup is blocked in this Windows sandbox (`CreateProcessAsUserW failed: 5`), so Browser-surface validation is not complete even though GUI mode validation is.

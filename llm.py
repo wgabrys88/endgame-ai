@@ -386,7 +386,7 @@ def _bench_parse(raw: str) -> tuple[bool, str]:
     if not isinstance(parsed, dict):
         return False, "not_object"
     if parsed.get("mode") == "done":
-        return False, "done_fallback"
+        return False, "done_response"
     if parsed.get("mode") == "direct" and parsed.get("sequence"):
         return True, "ok"
     return False, "missing_sequence"

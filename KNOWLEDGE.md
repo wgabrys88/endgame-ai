@@ -214,7 +214,7 @@ Mutation safety:
 
 - Persistent elite archive across reactor restarts.
 - Long-run MAP-Elites convergence.
-- Reflection still has a deterministic fallback diagnosis when reflector JSON is invalid.
+- Reflection now fails closed with `reflect.error` when reflector JSON is invalid or incomplete.
 - Fission credit fallback was removed after the 10-minute run: invalid fission-judge JSON denies credit.
 - LLM transport failure no longer fabricates planner `done` JSON.
 - Browser-plugin validation in this desktop sandbox.

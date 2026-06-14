@@ -464,14 +464,46 @@ class ReflectorAgent:
         try:
             parsed = json.loads(llm_out.text)
         except (json.JSONDecodeError, TypeError):
-            parsed = _fallback_reflection(last_denial, failures, stagnation)
+            writes = {"plan": [], "history": history[-config.MAX_HISTORY:]}
+            return {
+                "phase": "reflect.error",
+                "data": _llm_event_data(llm_out, {
+                    "error": "invalid JSON",
+                    "failures": failures,
+                    "stagnation": round(stagnation, 4),
+                }),
+                "writes": writes,
+                "next": "planner",
+            }
+        if not isinstance(parsed, dict):
+            writes = {"plan": [], "history": history[-config.MAX_HISTORY:]}
+            return {
+                "phase": "reflect.error",
+                "data": _llm_event_data(llm_out, {
+                    "error": "not object",
+                    "failures": failures,
+                    "stagnation": round(stagnation, 4),
+                }),
+                "writes": writes,
+                "next": "planner",
+            }
         reflection = {
             "diagnosis": str(parsed.get("diagnosis", "")),
             "suggestion": str(parsed.get("suggestion", "")),
             "rule": str(parsed.get("rule", "")),
         }
         if not reflection["diagnosis"] or not reflection["suggestion"]:
-            reflection = _fallback_reflection(last_denial, failures, stagnation)
+            writes = {"plan": [], "history": history[-config.MAX_HISTORY:]}
+            return {
+                "phase": "reflect.error",
+                "data": _llm_event_data(llm_out, {
+                    "error": "missing diagnosis or suggestion",
+                    "failures": failures,
+                    "stagnation": round(stagnation, 4),
+                }),
+                "writes": writes,
+                "next": "planner",
+            }
         writes = {
             "plan": [],
             "history": history[-config.MAX_HISTORY:] + [{"reflection": reflection}],
@@ -1070,22 +1102,6 @@ def _post_mutation_candidate(board: dict[str, Any], filename: str, diff: str, ob
         )
     except Exception:
         pass
-
-
-def _fallback_reflection(last_denial: dict[str, Any], failures: int, stagnation: float) -> dict[str, str]:
-    denied = str(last_denial.get("denied", "the milestone"))[:120]
-    reason = str(last_denial.get("reason", "evidence did not satisfy verifier"))[:160]
-    return {
-        "diagnosis": (
-            f"Verifier denied {denied}; evidence gap was: {reason}. "
-            f"Pressure shows failures={failures}, stagnation={stagnation:.2f}."
-        ),
-        "suggestion": (
-            "Plan one smaller Python step that prints concrete evidence, then verify only "
-            "that evidence before attempting broader coordination."
-        ),
-        "rule": "Print exact evidence for the smallest done_when before verification.",
-    }
 
 
 def _load_prompt(role: str) -> str:
