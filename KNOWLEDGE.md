@@ -120,12 +120,15 @@ Audit command:
 
 ```bash
 python comms.py breeder
+python agents.py --fission-smoke
 python reactor.py --archive-smoke
 ```
 
 The archive is not a persona coordination channel. Personas still communicate through `comms.py`; the reactor uses `runtime/breed_archive.json` only to preserve selection state across reactor restarts and to choose elite-backed respawns.
 
 `python reactor.py --archive-smoke` is a deterministic save/load/respawn-selection check using a temporary archive. It proves archive mechanics without starting a long autonomous run.
+
+`python agents.py --fission-smoke` exercises simple-file planning, actor execution, verifier confirmation, fission credit, and AgentBreeder retain posting with a controlled fission judge response. It proves the file-milestone credit path without calling the LLM.
 
 ### Golden run proof (`sessions/20260614_132940`, tag `golden-run-20260614`)
 

@@ -194,7 +194,7 @@ Implement in this order. Each item lists **component impact**.
 ### Roadmap implementation status (post-golden fixes)
 
 - **FR-1 implemented:** planner prompt/schema and `agents.py` reject `import Path`, actor-side fission judge calls, non-Python code, bundled bus+artifact `done_when`, and oversized plans before actor execution.
-- **FR-2 implemented:** planner/fission prompts define durable fission milestones; bus-only coordination remains verify-ok but fission-deny by design.
+- **FR-2 implemented:** planner/fission prompts define durable fission milestones; bus-only coordination remains verify-ok but fission-deny by design. `python agents.py --fission-smoke` proves the controlled file-milestone credit path.
 - **FR-3 implemented:** `fission_log.py` remains restored telemetry, is protected from mutation, and plugin mutation now py_compiles/probes before apply.
 - **FR-4 implemented:** planner context now includes `AVAILABLE_FILES` with top-level Python, plugin Python, and tracked handover docs to reduce phantom paths.
 - **FR-5 implemented:** human declines carry reason + suggested rephrase in bus/log data; TUI and README document that pri=3 changes goals, not schemas or safety gates.
@@ -250,6 +250,7 @@ Hard rules:
 
 ```bash
 python -m py_compile reactor.py agents.py comms.py colony_env.py engine.py tui.py plugins/fission_log.py
+python agents.py --fission-smoke
 python reactor.py --archive-smoke
 python tui.py --model-profile nemotron
 python comms.py state

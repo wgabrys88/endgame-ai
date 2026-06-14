@@ -827,6 +827,103 @@ def _verify_simple_file_done(done_when: str) -> tuple[bool, str] | None:
     return True, f"{rel_path} contains expected content"
 
 
+def _bus_config_snapshot() -> dict[str, Path]:
+    return {
+        "BUS_DIR": config.BUS_DIR,
+        "BUS_CHAT_PATH": config.BUS_CHAT_PATH,
+        "BUS_EVENTS_PATH": config.BUS_EVENTS_PATH,
+        "BUS_INJECT_PATH": config.BUS_INJECT_PATH,
+        "BUS_CONTROL_PATH": config.BUS_CONTROL_PATH,
+    }
+
+
+def _restore_bus_config(snapshot: dict[str, Path]) -> None:
+    config.BUS_DIR = snapshot["BUS_DIR"]
+    config.BUS_CHAT_PATH = snapshot["BUS_CHAT_PATH"]
+    config.BUS_EVENTS_PATH = snapshot["BUS_EVENTS_PATH"]
+    config.BUS_INJECT_PATH = snapshot["BUS_INJECT_PATH"]
+    config.BUS_CONTROL_PATH = snapshot["BUS_CONTROL_PATH"]
+
+
+def fission_credit_smoke() -> dict[str, Any]:
+    """Exercise verifier -> fission -> breeder credit on a durable file milestone."""
+    import comms
+
+    runtime_dir = config.BASE_DIR / "runtime"
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+    bus_snapshot = _bus_config_snapshot()
+    old_call_llm = globals()["call_llm"]
+    try:
+        with tempfile.TemporaryDirectory(prefix="fission-credit-smoke-", dir=str(runtime_dir)) as tmp:
+            smoke_dir = Path(tmp)
+            config.BUS_DIR = smoke_dir / "comms"
+            config.BUS_CHAT_PATH = config.BUS_DIR / "messages.json"
+            config.BUS_EVENTS_PATH = config.BUS_DIR / "events_bus.jsonl"
+            config.BUS_INJECT_PATH = config.BUS_DIR / "inject.jsonl"
+            config.BUS_CONTROL_PATH = config.BUS_DIR / "control.jsonl"
+
+            proof = smoke_dir / "proof.txt"
+            proof.write_text("before\n", encoding="utf-8")
+            rel_path = proof.relative_to(config.BASE_DIR).as_posix()
+            content = "fission smoke durable milestone\n"
+
+            def fake_call_llm(*_args: Any, **_kwargs: Any) -> LLMResult:
+                return LLMResult(text=json.dumps({
+                    "verdict": "credit",
+                    "diagnosis": "Controlled smoke verified a durable file milestone with external file evidence.",
+                    "suggestion": "Credit path is wired; continue with real long-run validation separately.",
+                    "rule": "Credit durable file milestones with verifier evidence.",
+                }))
+
+            globals()["call_llm"] = fake_call_llm
+            board: dict[str, Any] = {
+                "goal": f"create {rel_path} with {json.dumps(content)}",
+                "plan": [],
+                "completed": [],
+                "history": [],
+                "fissions": 0,
+                "priority": config.PRI_NORMAL,
+                "power": 0.9,
+                "stagnation": 0.1,
+                "_pressure": {"stagnation": 0.1, "velocity": 0.0, "failures": 0},
+            }
+
+            plan_result = _simple_file_plan(str(board["goal"]))
+            if not plan_result:
+                return {"ok": False, "stage": "plan", "error": "simple file plan did not match"}
+            for key, value in (plan_result.get("writes") or {}).items():
+                board[key] = value
+
+            actor_result = ActorAgent().run(board) or {}
+            if not (actor_result.get("data") or {}).get("ok"):
+                return {"ok": False, "stage": "actor", "actor": actor_result.get("data", {})}
+
+            verify_result = VerifierAgent().run(board) or {}
+            if (verify_result.get("data") or {}).get("verdict") != "confirmed":
+                return {"ok": False, "stage": "verify", "verify": verify_result.get("data", {})}
+
+            fission_result = FissionJudgeAgent().run(board) or {}
+            candidates = comms.evolve_candidates(limit=5)
+            ok = (
+                fission_result.get("phase") == "fission"
+                and int(board.get("fissions", 0) or 0) == 1
+                and bool(candidates)
+                and candidates[-1].get("payload", {}).get("action") == "retain"
+            )
+            return {
+                "ok": ok,
+                "actor": actor_result.get("data", {}),
+                "verify": verify_result.get("data", {}),
+                "fission": fission_result.get("data", {}),
+                "evolve_action": candidates[-1].get("payload", {}).get("action") if candidates else "",
+                "evolve_behavior": candidates[-1].get("payload", {}).get("behavior") if candidates else "",
+                "proof_path": rel_path,
+            }
+    finally:
+        globals()["call_llm"] = old_call_llm
+        _restore_bus_config(bus_snapshot)
+
+
 def _fission_review(board: dict[str, Any], completed: str) -> dict[str, str]:
     credited = [str(item) for item in board.get("fission_credited", [])]
     if str(completed) in credited:
@@ -1369,3 +1466,12 @@ def _format_history(history: list) -> str:
         if isinstance(h, dict):
             lines.append(f"  {json.dumps(h, ensure_ascii=False)[:400]}")
     return "\n".join(lines)
+
+
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) >= 2 and sys.argv[1] == "--fission-smoke":
+        result = fission_credit_smoke()
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+        sys.exit(0 if result.get("ok") else 1)
+    print("usage: python agents.py --fission-smoke")
