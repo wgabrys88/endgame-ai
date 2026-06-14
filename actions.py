@@ -207,8 +207,16 @@ def _write_file(args: dict[str, Any], book: ElementBook) -> ActionResult:
 # --- Python subprocess runner ---
 
 def _script_runner(code: str) -> str:
+    from python_code import gui_mode_enabled
+    desktop_import = ""
+    if gui_mode_enabled():
+        desktop_import = (
+            "from desktop import observe_screen, desktop_focus, desktop_click, desktop_write, "
+            "desktop_press, desktop_hotkey, desktop_scroll, desktop_wait\n"
+        )
     return (
         "from colony_env import BASE_DIR, COMMS_DIR, PLUGINS_DIR, bus_post, bus_id, bus_request, bus_route\n"
+        f"{desktop_import}"
         "from pathlib import Path\n"
         "import os, sys, json, time, subprocess, shutil, py_compile\n\n"
         f"{code}\n"

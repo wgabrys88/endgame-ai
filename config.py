@@ -68,6 +68,8 @@ LLM_LOGIT_BIAS: dict[str, float] = {}
 LLM_REPEAT_PENALTY: float = 1.05
 LLM_SEED: int = -1
 LLM_MAX_CONCURRENT: int = 1  # orchestrator: 1 LLM call at a time (nemotron-safe)
+LMS_GLOBAL_LOCK_PATH: Path = BASE_DIR / "runtime" / ".lmstudio.lock"
+LMS_TRACE_PROMPTS: bool = True
 LLM_THINKING_ENABLED: bool = True
 LLM_THINKING_BUDGET: int = 4096  # cap reasoning tokens — keeps latency predictable
 
@@ -79,6 +81,15 @@ BUDGET: dict[str, int] = {
 # --- Model profiles ---
 MODEL_PROFILES: dict[str, dict[str, Any]] = {
     "nemotron": {
+        "LLM_TEMPERATURE": 0.15, "LLM_TOP_P": 0.90, "LLM_TOP_K": 40,
+        "LLM_REPEAT_PENALTY": 1.05, "LLM_PRESENCE_PENALTY": 0.0,
+        "LLM_FREQUENCY_PENALTY": 0.0, "LLM_SEED": 3407,
+        "LLM_MAX_TOKENS": 1536, "LLM_STOP": [], "LLM_LOGIT_BIAS": {},
+        "LLM_MAX_CONCURRENT": 1, "LLM_THINKING_ENABLED": True, "LLM_THINKING_BUDGET": 1536,
+        "LMS_TIMEOUT": 600,
+        "BUDGET": {"planner": 1400, "verifier": 320, "reflector": 768, "fission_judge": 256, "mutator": 1536},
+    },
+    "nemotron_legacy": {
         "LLM_TEMPERATURE": 1.0, "LLM_TOP_P": 1.0, "LLM_TOP_K": 20,
         "LLM_REPEAT_PENALTY": 1.0, "LLM_PRESENCE_PENALTY": 0.0,
         "LLM_FREQUENCY_PENALTY": 0.0, "LLM_SEED": -1,
@@ -100,16 +111,19 @@ MODEL_PROFILES: dict[str, dict[str, Any]] = {
 _active_profile: str = ""
 
 
-def apply_model_profile(profile_or_model: str) -> tuple[str, bool]:
+def apply_model_profile(profile_or_model: str, *, force: bool = False) -> tuple[str, bool]:
     """Apply a model profile by name or auto-detect from model id."""
     global _active_profile
     normalized = profile_or_model.lower()
-    key = ""
-    for candidate in MODEL_PROFILES:
-        if candidate == normalized or candidate in normalized:
-            key = candidate
-            break
-    if not key or key == _active_profile:
+    if normalized in MODEL_PROFILES:
+        key = normalized
+    else:
+        key = ""
+        for candidate in MODEL_PROFILES:
+            if candidate in normalized:
+                key = candidate
+                break
+    if not key or (key == _active_profile and not force):
         return key or _active_profile, False
     profile = MODEL_PROFILES[key]
     for name, value in profile.items():
@@ -174,4 +188,20 @@ MAX_HISTORY: int = 12
 # --- Execution ---
 EXEC_TIMEOUT: int = 60
 EXEC_OUTPUT_LIMIT: int = 2000
+
+# --- Desktop observer (ported from main) ---
+PROCESS_DPI_AWARENESS_CONTEXT: int = -4
+DELAY_FOCUS: float = 0.5
+DELAY_CURSOR_SETTLE: float = 0.05
+DELAY_MOUSE_HOLD: float = 0.05
+DELAY_KEY_INTER: float = 0.03
+DELAY_CHAR_SEND: float = 0.03
+TREE_WALK_TIMEOUT: float = 5.0
+PROBE_STEP_PX: int = 90
+PROBE_FOREGROUND_DELAY: float = 0.3
+PROBE_SAMPLE_DELAY: float = 0.001
+PROBE_SINE_AMPLITUDE_RATIO: float = 0.4
+PROBE_SINE_PERIOD_STEPS: float = 6.0
+READ_TEXT_MAX_LENGTH: int = 200
+SCREEN_ELEMENT_VALUE_LIMIT: int = 1000
 EVENT_BUDGET: int = 999999

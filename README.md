@@ -83,6 +83,10 @@ Or press `g` during a run to toggle. Header shows `GUI` when safeguards are off.
 
 Automated smoke test: `python run_test.py 120`
 
+LLM tuning benchmark: `python llm.py bench` (compares legacy vs optimized nemotron)
+
+**LM Studio:** load nemotron with Max Concurrent Predictions **1** and Unified KV Cache **on** — the colony also uses a cross-process lock so only one slot hits the server at a time.
+
 **Logs:** Session JSONL (`sessions/`) includes `moe.route` + `pressure` every ~20s by design. After 6+ minutes you should see `reflect`, `mutate`, and `evolve` on the bus. See `KNOWLEDGE.md` log tiers.
 
 ---

@@ -159,8 +159,34 @@ Actor timeout: `actions.run_python` runs `taskkill /F /T` on runner PID to kill 
 python tui.py --model-profile nemotron   # thinking on, 1 concurrent, 600s timeout
 python tui.py --model-profile gemma      # thinking off, 2 concurrent
 python tui.py --backend acp              # sequential WSL/Kiro lock
-python tui.py --model-profile nemotron --gui  # desktop automation enabled
+python tui.py --model-profile nemotron --gui  # desktop automation + UIA observer
+python llm.py bench                      # A/B legacy vs optimized nemotron params
 ```
+
+### Nemotron tuning (validated 2026-06-14)
+
+Cross-persona benchmark (`python llm.py bench`, 4 personas × 2 profiles):
+
+| Profile | JSON ok | Avg latency | System prompt fingerprints |
+|---------|---------|-------------|--------------------------|
+| `nemotron_legacy` (temp 1.0, persona in system) | 2/4 | 28.2s | 4 (one per persona — hurts KV reuse) |
+| `nemotron` (temp 0.15, persona in user) | 3/4 | 20.3s | 1 (stable planner system prompt) |
+
+**Optimized `nemotron` defaults:** temp 0.15, top_p 0.90, top_k 40, seed 3407, thinking_budget 1536, role budgets planner 1400 / verifier 320 / reflector 768 / mutator 1536.
+
+**Colony-wide LLM gate:** `runtime/.lmstudio.lock` — cross-process file lock in `llm.py` so `LLM_MAX_CONCURRENT=1` applies across all 5 slot processes (thread semaphore alone was insufficient; caused 2–5 parallel LM Studio slots).
+
+**LM Studio load settings (manual):** Max Concurrent Predictions **1**, Unified KV Cache **true**, context ~16k for single-flight. Enable Thinking **on** for planner/reflector; verifier uses smaller max_tokens.
+
+**Internet cross-check:** NVIDIA/LM Studio docs recommend reasoning toggle on for complex agentic tasks; lower temperature (0.0–0.3) for structured JSON. Matches our optimized profile. Nemotron hybrid Mamba/Transformer architecture still forces partial prompt re-processing — expect shallow cache reuse even when tuned.
+
+### GUI desktop observer
+
+When `gui_mode` active (`--gui` or `g` key):
+
+- `PlannerAgent` injects `DESKTOP_FOCUSED` / `DESKTOP_ELEMENTS` into planner user message
+- Actor sandbox imports `desktop.observe_screen`, `desktop_click`, `desktop_write`, etc.
+- `observer.py` + `win32.py` UIA scan (ported constants in `config.py`)
 
 ## Event phases (session JSONL)
 

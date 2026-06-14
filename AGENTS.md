@@ -11,7 +11,7 @@
 **Integration trunk:** `unify-rewrite` · tip `ef30bc7`  
 **Active work branch:** `grok-dev` · tip `5ae74ea` (merged from codex-dev + breed.improve evidence)  
 **Codex branch:** `codex-dev` · tip `0bb182f` — merge into grok-dev complete  
-**Milestone:** Colony Alpha ~85% — `breed.improve` logged live 2026-06-14
+**Milestone:** Colony Alpha ~88% — LLM tuning + desktop observer + `breed.improve` live
 **Parallel lineage:** `main` is a different architecture (organism M4) — not parent/child of unify-rewrite
 
 ---
@@ -167,6 +167,15 @@ Bus observation also mirrors `kind=evolve` and reactor `breed.*` status events.
 ### 2026-06-13 (grok-dev, session `20260613_164412`)
 
 Infrastructure PASS; GUI notepad FAIL → fixed in `afe87ac`.
+
+### 2026-06-14 LLM A/B (`python llm.py bench`)
+
+| Profile | JSON ok | Avg s | System FPS |
+|---------|---------|-------|------------|
+| nemotron_legacy | 2/4 | 28.2 | 4 |
+| nemotron (optimized) | 3/4 | 20.3 | 1 |
+
+Optimized wins JSON reliability and KV-stable planner system prompt. Legacy persona-in-system caused 4 distinct system fingerprints. **LM Studio:** set Max Concurrent Predictions=1 manually — colony now enforces single-flight via `runtime/.lmstudio.lock`.
 
 ### 2026-06-14 (codex-dev, Grok validation)
 

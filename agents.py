@@ -13,7 +13,7 @@ from typing import Any
 import config
 import log
 from llm import call_llm
-from python_code import goal_needs_gui, is_python_code, validate_python
+from python_code import goal_needs_gui, gui_mode_enabled, is_python_code, validate_python
 
 _SIMPLE_FILE_DONE_PREFIX = "file_equals "
 _CREATE_FILE_RE = re.compile(
@@ -68,6 +68,70 @@ def run(board):
 
 def _persona() -> str:
     return os.environ.get("ENDGAME_PERSONALITY", "").strip()
+
+
+def _persona_prompt(persona: str) -> str:
+    if not persona:
+        return ""
+    path = config.PROMPTS_DIR / "personalities" / f"{persona}.txt"
+    if path.exists():
+        return path.read_text(encoding="utf-8").strip()
+    return ""
+
+
+def _desktop_context() -> str:
+    if not gui_mode_enabled():
+        return ""
+    try:
+        from observer import observe
+        obs = observe()
+        parts = [f"DESKTOP_FOCUSED: {obs.focused_title}"]
+        if obs.desktop_summary:
+            parts.append(f"DESKTOP_SUMMARY: {obs.desktop_summary[:600]}")
+        if obs.context_text:
+            parts.append("DESKTOP_ELEMENTS:")
+            parts.append(obs.context_text[:2000])
+        return "\n".join(parts)
+    except Exception as exc:
+        return f"DESKTOP_OBSERVE_ERROR: {type(exc).__name__}: {exc}"
+
+
+def _planner_messages(board: dict[str, Any]) -> tuple[str, str]:
+    """Constant system prompt; persona/goal/state in user message for KV reuse."""
+    system = _load_prompt("planner")
+    persona = _persona()
+    persona_text = _persona_prompt(persona)
+    history_ctx = _format_history(board.get("history", []))
+    bus_ctx = ""
+    try:
+        import comms
+        bus_ctx = comms.format_bus_context(10 if persona == "comms_operator" else 6,
+                                          for_agent=persona or None)
+    except Exception:
+        pass
+    stag = board.get("stagnation", board.get("_pressure", {}).get("stagnation", 0))
+    try:
+        stag_f = float(stag)
+    except (TypeError, ValueError):
+        stag_f = 0.0
+    pwr = board.get("power", 1.0 - stag_f)
+    desktop_ctx = _desktop_context()
+    parts = [f"PERSONA_NAME: {persona or 'default'}"]
+    if persona_text:
+        parts += ["PERSONA_MISSION:", persona_text, ""]
+    parts += [
+        f"GOAL: {str(board.get('goal', ''))[:800]}",
+        "",
+        f"PRESSURE: stagnation={stag_f:.3f} power={float(pwr):.3f}",
+    ]
+    if desktop_ctx:
+        parts += ["", desktop_ctx]
+    if history_ctx:
+        parts += ["", history_ctx]
+    if bus_ctx:
+        parts += ["", bus_ctx]
+    parts += ["", "Plan JSON:"]
+    return system, "\n".join(parts)
 
 
 def _apply_human_goal(board: dict[str, Any]) -> bool:
@@ -153,26 +217,9 @@ class PlannerAgent:
         if simple_file_plan:
             return simple_file_plan
         log.emit("planner.pending", {"goal": goal[:80]})
-        system = _load_prompt("planner")
-        persona = _persona()
-        if persona:
-            pfile = config.PROMPTS_DIR / "personalities" / f"{persona}.txt"
-            if pfile.exists():
-                system += f"\n\nPERSONA ({persona}):\n{pfile.read_text(encoding='utf-8').strip()}"
-        history_ctx = _format_history(board.get("history", []))
-        bus_ctx = ""
-        try:
-            import comms
-            bus_ctx = comms.format_bus_context(10 if persona == "comms_operator" else 6,
-                                                for_agent=persona or None)
-        except Exception:
-            pass
-        stag = board.get("stagnation", board.get("_pressure", {}).get("stagnation", 0))
-        pwr = board.get("power", 1.0 - float(stag))
-        user = (f"GOAL: {goal}\n\nPRESSURE: stagnation={stag:.3f} power={pwr:.3f}\n"
-                f"{history_ctx}\n{bus_ctx}\n\nPlan JSON:")
+        system, user = _planner_messages(board)
         schema = _load_schema("planner")
-        raw = call_llm(system, user, "planner", schema=schema)
+        raw = call_llm(system, user, "planner", schema=schema, cache_key="planner")
         try:
             parsed = json.loads(raw)
         except (json.JSONDecodeError, TypeError):
@@ -255,7 +302,7 @@ class VerifierAgent:
         system = _load_prompt("verifier")
         user = f"DONE_WHEN: {done_when}\n\nSTEP RESULTS:\n" + "\n".join(results)
         schema = _load_schema("verifier")
-        raw = call_llm(system, user, "verifier", schema=schema)
+        raw = call_llm(system, user, "verifier", schema=schema, cache_key="verifier")
         try:
             parsed = json.loads(raw)
         except (json.JSONDecodeError, TypeError):
@@ -344,7 +391,7 @@ class ReflectorAgent:
             f"EVIDENCE: {str(last_denial.get('reason', ''))[:600]}\n"
             "Reflect JSON:"
         )
-        raw = call_llm(_load_prompt("reflector"), user, "reflector", schema=_load_schema("reflector"))
+        raw = call_llm(_load_prompt("reflector"), user, "reflector", schema=_load_schema("reflector"), cache_key="reflector")
         try:
             parsed = json.loads(raw)
         except (json.JSONDecodeError, TypeError):
@@ -417,7 +464,7 @@ class MutatorAgent:
             f"{_format_history(board.get('history', []))}\n"
             "Mutation JSON:"
         )
-        raw = call_llm(_load_prompt("mutator"), user, "mutator", schema=_load_schema("mutator"))
+        raw = call_llm(_load_prompt("mutator"), user, "mutator", schema=_load_schema("mutator"), cache_key="mutator")
         try:
             parsed = json.loads(raw)
         except (json.JSONDecodeError, TypeError):
@@ -575,7 +622,7 @@ def _fission_review(board: dict[str, Any], completed: str) -> dict[str, str]:
         f"{_format_history(board.get('history', []))}\n"
         "Fission judge JSON:"
     )
-    raw = call_llm(_load_prompt("fission_judge"), user, "fission_judge", schema=_load_schema("fission_judge"))
+    raw = call_llm(_load_prompt("fission_judge"), user, "fission_judge", schema=_load_schema("fission_judge"), cache_key="fission_judge")
     try:
         parsed = json.loads(raw)
     except (json.JSONDecodeError, TypeError):
