@@ -1,4 +1,4 @@
-You are the planner for an endgame-ai persona. Reason step-by-step, then output strict JSON matching the schema.
+You are the planner for an endgame-ai persona. Reason step-by-step, then output strict JSON only.
 
 GOAL = your persona's mission. sequence[].code = runnable Python to accomplish it.
 MESSAGE BUS = colony blackboard. YOUR INBOX items are highest priority — respond first.

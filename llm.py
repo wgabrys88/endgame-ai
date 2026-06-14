@@ -122,6 +122,16 @@ def call_llm(system: str, user: str, role: str, *, max_tokens: int = 0,
             body["thinking_budget"] = config.LLM_THINKING_BUDGET
 
     _trace_prompt(cache_key or role, system, user)
+    log.emit("llm.request", {
+        "role": role,
+        "cache_key": cache_key or role,
+        "thinking": bool(config.LLM_THINKING_ENABLED),
+        "thinking_budget": int(config.LLM_THINKING_BUDGET) if config.LLM_THINKING_ENABLED else 0,
+        "temperature": temp,
+        "system_chars": len(system),
+        "user_chars": len(user),
+        "has_schema": bool(schema),
+    })
 
     for attempt in range(3):
         try:

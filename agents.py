@@ -66,8 +66,52 @@ def run(board):
 '''
 
 
+_STABLE_SYSTEM: dict[str, str] = {}
+_SCHEMA_USER_HEADERS: dict[str, str] = {
+    "planner": (
+        "JSON_OUTPUT (schema contract — user message, not system):\n"
+        '{"mode":"direct"|"done","sequence":[{"code":"..."}],"done_when":"..."}\n'
+        "mode=direct for actionable plans. sequence=1-6 Python steps. No prose outside JSON.\n"
+    ),
+    "verifier": (
+        "JSON_OUTPUT (schema contract — user message, not system):\n"
+        '{"verdict":"confirmed"|"denied","evidence":"..."}\n'
+    ),
+    "reflector": (
+        "JSON_OUTPUT (schema contract — user message, not system):\n"
+        '{"diagnosis":"...","suggestion":"...","rule":"..."}\n'
+    ),
+    "mutator": (
+        "JSON_OUTPUT (schema contract — user message, not system):\n"
+        '{"action":"write_plugin"|"patch_plugin"|"none","filename":"plugins/...","content":"..."}\n'
+    ),
+    "fission_judge": (
+        "JSON_OUTPUT (schema contract — user message, not system):\n"
+        '{"verdict":"credit"|"deny","diagnosis":"...","suggestion":"...","rule":"..."}\n'
+    ),
+}
+
+
 def _persona() -> str:
     return os.environ.get("ENDGAME_PERSONALITY", "").strip()
+
+
+def _stable_system(role: str) -> str:
+    """Immutable system prompt per role — never embed persona, bus, or schema here."""
+    cached = _STABLE_SYSTEM.get(role)
+    if cached is not None:
+        return cached
+    cached = _load_prompt(role)
+    _STABLE_SYSTEM[role] = cached
+    return cached
+
+
+def _user_with_schema(role: str, body: str) -> str:
+    """Prepend constant schema contract to user message for KV-friendly system prefix."""
+    header = _SCHEMA_USER_HEADERS.get(role, "")
+    if not header:
+        return body
+    return f"{header}\n---TASK_STATE---\n{body}"
 
 
 def _persona_prompt(persona: str) -> str:
@@ -97,8 +141,8 @@ def _desktop_context() -> str:
 
 
 def _planner_messages(board: dict[str, Any]) -> tuple[str, str]:
-    """Constant system prompt; persona/goal/state in user message for KV reuse."""
-    system = _load_prompt("planner")
+    """Constant system prompt; persona/goal/schema/state in user message for KV reuse."""
+    system = _stable_system("planner")
     persona = _persona()
     persona_text = _persona_prompt(persona)
     history_ctx = _format_history(board.get("history", []))
@@ -131,7 +175,7 @@ def _planner_messages(board: dict[str, Any]) -> tuple[str, str]:
     if bus_ctx:
         parts += ["", bus_ctx]
     parts += ["", "Plan JSON:"]
-    return system, "\n".join(parts)
+    return system, _user_with_schema("planner", "\n".join(parts))
 
 
 def _apply_human_goal(board: dict[str, Any]) -> bool:
@@ -299,8 +343,11 @@ class VerifierAgent:
                     "next": "reflector"}
         plan = board.get("plan", [])
         results = [str(s.get("result", ""))[:200] for s in plan if isinstance(s, dict)]
-        system = _load_prompt("verifier")
-        user = f"DONE_WHEN: {done_when}\n\nSTEP RESULTS:\n" + "\n".join(results)
+        system = _stable_system("verifier")
+        user = _user_with_schema(
+            "verifier",
+            f"DONE_WHEN: {done_when}\n\nSTEP RESULTS:\n" + "\n".join(results),
+        )
         schema = _load_schema("verifier")
         raw = call_llm(system, user, "verifier", schema=schema, cache_key="verifier")
         try:
@@ -383,15 +430,19 @@ class ReflectorAgent:
         pressure = board.get("_pressure", {})
         failures = int(pressure.get("failures", 0) or 0)
         stagnation = float(pressure.get("stagnation", board.get("stagnation", 0.0)) or 0.0)
-        user = (
-            f"GOAL: {str(board.get('goal', ''))[:400]}\n"
-            f"TRIGGER: stagnation={stagnation:.3f} failures={failures} "
-            f"human_denials={int(board.get('_human_denials', 0) or 0)}\n"
-            f"DENIED_DONE_WHEN: {str(last_denial.get('denied', ''))[:400]}\n"
-            f"EVIDENCE: {str(last_denial.get('reason', ''))[:600]}\n"
-            "Reflect JSON:"
+        user = _user_with_schema(
+            "reflector",
+            (
+                f"GOAL: {str(board.get('goal', ''))[:400]}\n"
+                f"TRIGGER: stagnation={stagnation:.3f} failures={failures} "
+                f"human_denials={int(board.get('_human_denials', 0) or 0)}\n"
+                f"DENIED_DONE_WHEN: {str(last_denial.get('denied', ''))[:400]}\n"
+                f"EVIDENCE: {str(last_denial.get('reason', ''))[:600]}\n"
+                "Reflect JSON:"
+            ),
         )
-        raw = call_llm(_load_prompt("reflector"), user, "reflector", schema=_load_schema("reflector"), cache_key="reflector")
+        raw = call_llm(_stable_system("reflector"), user, "reflector",
+                         schema=_load_schema("reflector"), cache_key="reflector")
         try:
             parsed = json.loads(raw)
         except (json.JSONDecodeError, TypeError):
@@ -456,15 +507,19 @@ class MutatorAgent:
                 return {"phase": "mutate", "data": data, "next": "planner"}
 
         plugin_names = _existing_plugin_names()
-        user = (
-            f"GOAL: {str(board.get('goal', ''))[:400]}\n"
-            f"PRESSURE: failures={failures} human_denials={denials}\n"
-            f"REFLECTION: {json.dumps(reflection, ensure_ascii=False)[:700]}\n"
-            f"EXISTING_PLUGINS: {', '.join(plugin_names) or 'none'}\n"
-            f"{_format_history(board.get('history', []))}\n"
-            "Mutation JSON:"
+        user = _user_with_schema(
+            "mutator",
+            (
+                f"GOAL: {str(board.get('goal', ''))[:400]}\n"
+                f"PRESSURE: failures={failures} human_denials={denials}\n"
+                f"REFLECTION: {json.dumps(reflection, ensure_ascii=False)[:700]}\n"
+                f"EXISTING_PLUGINS: {', '.join(plugin_names) or 'none'}\n"
+                f"{_format_history(board.get('history', []))}\n"
+                "Mutation JSON:"
+            ),
         )
-        raw = call_llm(_load_prompt("mutator"), user, "mutator", schema=_load_schema("mutator"), cache_key="mutator")
+        raw = call_llm(_stable_system("mutator"), user, "mutator",
+                         schema=_load_schema("mutator"), cache_key="mutator")
         try:
             parsed = json.loads(raw)
         except (json.JSONDecodeError, TypeError):
@@ -611,18 +666,22 @@ def _fission_review(board: dict[str, Any], completed: str) -> dict[str, str]:
             "rule": "Do not award fission credit for duplicate completed milestones.",
         }
     pressure = board.get("_pressure", {})
-    user = (
-        f"GOAL: {str(board.get('_last_verified_goal') or board.get('goal', ''))[:500]}\n"
-        f"COMPLETED: {str(completed)[:500]}\n"
-        f"VERIFIER_EVIDENCE: {str(board.get('_last_verifier_evidence', ''))[:600]}\n"
-        f"PRESSURE: stagnation={float(pressure.get('stagnation', board.get('stagnation', 0.0)) or 0.0):.3f} "
-        f"power={float(board.get('power', 0.0) or 0.0):.3f} "
-        f"failures={int(pressure.get('failures', 0) or 0)} "
-        f"fissions={int(board.get('fissions', 0) or 0)}\n"
-        f"{_format_history(board.get('history', []))}\n"
-        "Fission judge JSON:"
+    user = _user_with_schema(
+        "fission_judge",
+        (
+            f"GOAL: {str(board.get('_last_verified_goal') or board.get('goal', ''))[:500]}\n"
+            f"COMPLETED: {str(completed)[:500]}\n"
+            f"VERIFIER_EVIDENCE: {str(board.get('_last_verifier_evidence', ''))[:600]}\n"
+            f"PRESSURE: stagnation={float(pressure.get('stagnation', board.get('stagnation', 0.0)) or 0.0):.3f} "
+            f"power={float(board.get('power', 0.0) or 0.0):.3f} "
+            f"failures={int(pressure.get('failures', 0) or 0)} "
+            f"fissions={int(board.get('fissions', 0) or 0)}\n"
+            f"{_format_history(board.get('history', []))}\n"
+            "Fission judge JSON:"
+        ),
     )
-    raw = call_llm(_load_prompt("fission_judge"), user, "fission_judge", schema=_load_schema("fission_judge"), cache_key="fission_judge")
+    raw = call_llm(_stable_system("fission_judge"), user, "fission_judge",
+                     schema=_load_schema("fission_judge"), cache_key="fission_judge")
     try:
         parsed = json.loads(raw)
     except (json.JSONDecodeError, TypeError):
