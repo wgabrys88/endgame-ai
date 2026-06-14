@@ -1,6 +1,7 @@
 # OBSERVATIONS.md — AI handover (only tracked doc)
 
-**Branch:** `bare-metal` · **HEAD:** `42fb0c9` · **Tags:** `unify-cut-0` → `unify-cut-1` → `unify-cut-2`
+**Branch:** `unify-rewrite` (trunk) · **HEAD:** `9421cbd` · **`main`** = scale-1 reference only
+**Tags:** `unify-cut-0` → `unify-cut-1` → `unify-cut-2` · `archive/unify-pre-slim` = pre-FF unify tip
 
 ---
 
@@ -32,7 +33,9 @@ Boot command used: `python reactor.py --goal "maintenance: print ok on bus"` (pr
 | `schemas/` | 7 files | **deleted** |
 | Docs in git | README/RULES/CONTRIBUTING | **OBSERVATIONS only** |
 
-**Tomorrow (Codex / OpenCode / any zero-context tool):** copy handover block below; continue slimming toward ~3.5k LOC — `tui.py`, `comms.py` shims, optional `acp_client.py`. Do not re-add strict schemas, smokes, or immune-system guards.
+**Branch consolidation (2026-06-14):** `unify-rewrite` fast-forwarded from `bare-metal`; `bare-metal` branch removed. Work on `unify-rewrite` only.
+
+**Next (Codex / OpenCode):** copy handover block below; continue slimming toward ~3.5k LOC — `tui.py`, `comms.py` shims, optional `acp_client.py`. Do not re-add strict schemas, smokes, or immune-system guards.
 
 ---
 
@@ -48,8 +51,9 @@ We are building a LIVING ORGANISM on Windows — not an agent framework.
 Brain metaphor: simple specialized areas (observe, reason, act) wired together.
 Intelligence emerges from wiring + goal, not from one clever module or Python guards.
 
+BRANCH: unify-rewrite (trunk). main = scale-1 reference only — do not develop there.
 STATUS (2026-06-14): LIVE BOOT VERIFIED. Unify passes landed. ~5,404 Python LOC.
-Rollback tags: unify-cut-0 (pre-slim), unify-cut-1 (schemas gone), unify-cut-2 (docs slim).
+Rollback: unify-cut-0/1/2, archive/unify-pre-slim (pre-FF unify tip).
 
 YOUR JOB: shrink code toward ~3.5k LOC while keeping the science and desktop organ.
 Each paper = one or two equations → a few lines of deterministic Python.
