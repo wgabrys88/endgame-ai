@@ -1,19 +1,20 @@
 # endgame-ai
 
-Five Python processes, one local model (nemotron-3-nano-4B), a blackboard, pressure math, and a breeding reactor. The LLM is a subroutine; the deterministic loop is the organism.
+Five Python processes, one local model (nemotron-3-nano-4B), a blackboard, pressure math, and a breeding reactor.
 
-## Branches
+## Branches (file count matters)
 
-| Branch | Files | Use |
-|--------|-------|-----|
-| **`bare-metal`** | **44** | Minimal runnable core — recommended for forward dev |
-| `unify-rewrite` | 49 | Full history; kept as backup |
-| tag `dev-milestone-20260614` | — | Pin to `5ca4ee8` dev baseline |
+| Branch | Files | Lines | What it is |
+|--------|-------|-------|------------|
+| **`bare-metal`** | **42** | **~7k** | Current colony — MoE, bus, breeding |
+| `unify-rewrite` | 49 | ~8k+ | Backup before bare-metal strip |
+| `main` | 24 | ~3.6k | **Legacy** single-process (no reactor/comms/breed) |
 
 ```bash
-git checkout bare-metal    # minimal core
-git checkout unify-rewrite # full branch (backup)
+git checkout bare-metal
 ```
+
+`main` is smaller on disk because it is an **older, simpler organism** — not a subset of bare-metal.
 
 ## Run
 
@@ -21,54 +22,40 @@ git checkout unify-rewrite # full branch (backup)
 python tui.py "Your long-term goal in one sentence"
 ```
 
-Examples:
-
-```bash
-python tui.py "Evolve plugins until breed.improve survives restart"
-python tui.py --safe "Colony maintenance only"
-```
-
-**Defaults:** GUI + unconstrained on, profile `nemotron_parallel` (LM Studio MC=5).  
-**Requires:** LM Studio at `http://localhost:1234` with nemotron-3-nano-4B loaded.
+**Requires:** LM Studio at `http://localhost:1234`, nemotron-3-nano-4B.
 
 | Flag | Effect |
 |------|--------|
 | `--safe` | Disable default GUI + unconstrained |
 | `--model-profile nemotron` | Single-flight MC=1 |
-| `--backend acp` | ACP backend |
+| `--backend acp` | ACP backend (needs `acp_client.py`) |
 
-**Goals (Codex-style):** trailing words = persistent long-term goal. TUI Enter = temporary pri=3 task. No goal = maintenance, then idle.
+Each slot is a `config.Personality` instance (name + slot + mission). TUI Enter = pri=3 override.
 
-**TUI:** Enter=send, `f`=filter, `g`=GUI toggle, Space=pause, `q`=quit.
-
-## Architecture (minimal 44-file core)
+## Architecture (42 files)
 
 ```text
-tui.py → reactor.py → main.py × 5 slots
-  s1 comms_operator   MoE router
-  s2–s5 workers       architect, implementor, reviewer, devops
+tui.py → reactor.py → main.py × 5 (Personality per slot)
 Pipeline: scheduler → planner → actor → verifier → fission_judge → reflector → mutator
+Bus: comms.py (includes actor sandbox + GUI toggle)
 ```
 
-20 Python modules (16 root + 4 plugins) · 10 prompts · 5 schemas · 8 meta/docs.
+18 Python modules · 10 prompts · 5 schemas · 8 meta/docs.
 
 ## Smoke tests
 
 ```bash
-python -m py_compile tui.py reactor.py main.py engine.py agents.py comms.py
+python -m py_compile tui.py reactor.py main.py engine.py agents.py comms.py llm.py
 python agents.py --fission-smoke
-python agents.py --git-verify-smoke
 python reactor.py --archive-smoke
-python reactor.py --breed-improve-smoke
 ```
 
 ## Docs
 
-| File | For |
-|------|-----|
-| `README.md` | You (human) |
-| `OBSERVATIONS.md` | AI tools — copy § COLD-START HANDOVER into new sessions |
-| `RULES.md` | What git tracks + 44-file inventory + required updates per commit |
-| `CONTRIBUTING.md` | License + commit checklist |
+| File | Audience |
+|------|----------|
+| `README.md` | Humans |
+| `OBSERVATIONS.md` | AI — § COLD-START HANDOVER |
+| `RULES.md` | Git contract + 42-file inventory |
 
-Fresh local state: `python -c "import log; log.cleanup_runtime(deep=True)"`
+Fresh disk: `python -c "import log; log.cleanup_runtime(deep=True)"`

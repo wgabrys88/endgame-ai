@@ -638,7 +638,7 @@ class TUI:
                 p.write_text("", encoding="utf-8")
             return True
         if ch in ("g", "G") and not self._input_buf:
-            from colony_env import disable_gui, enable_gui
+            from comms import disable_gui, enable_gui
             from python_code import gui_mode_enabled
             if gui_mode_enabled():
                 disable_gui()
@@ -662,7 +662,7 @@ class TUI:
         import log
         import subprocess
         import sys
-        from colony_env import disable_gui, enable_gui
+        from comms import disable_gui, enable_gui
 
         log.cleanup_runtime()
         if unconstrained:

@@ -53,7 +53,7 @@ _MUTATOR_WRITE_PREFIX = "_plugin_"
 _PROTECTED_PLUGINS = frozenset({"comms_beacon.py", "web_sentinel.py", "fission_log.py"})
 _PROTECTED_ACTOR_FILES = frozenset({
     "log.py", "comms.py", "reactor.py", "agents.py", "config.py", "llm.py",
-    "engine.py", "tui.py", "actions.py", "colony_env.py", "python_code.py",
+    "engine.py", "tui.py", "actions.py", "python_code.py",
 })
 _BUS_ONLY_FISSION_TOKENS = frozenset({
     "bus", "bus_post", "bus_route", "bus_request", "posted", "routed", "assigned", "message",

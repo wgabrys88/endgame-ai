@@ -78,10 +78,8 @@ def spawn(slot_id: int, persona: str, goal: str = "", priority: int = config.PRI
                 os.remove(path)
             except OSError:
                 pass
-    if not goal:
-        pfile = os.path.join(BASE, "prompts", "personalities", f"{persona}.txt")
-        if os.path.exists(pfile):
-            goal = open(pfile, encoding="utf-8").read().strip()
+    loaded = config.Personality.load(persona, slot_id, goal)
+    goal = loaded.mission
     env = os.environ.copy()
     env["ENDGAME_PERSONALITY"] = persona
     env["ENDGAME_SLOT"] = str(slot_id)

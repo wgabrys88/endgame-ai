@@ -211,11 +211,11 @@ def _script_runner(code: str) -> str:
     desktop_import = ""
     if gui_mode_enabled():
         desktop_import = (
-            "from desktop import observe_screen, desktop_focus, desktop_click, desktop_write, "
+            "from actions import observe_screen, desktop_focus, desktop_click, desktop_write, "
             "desktop_press, desktop_hotkey, desktop_scroll, desktop_wait\n"
         )
     return (
-        "from colony_env import BASE_DIR, COMMS_DIR, PLUGINS_DIR, bus_post, bus_id, bus_request, bus_route\n"
+        "from comms import BASE_DIR, COMMS_DIR, PLUGINS_DIR, bus_post, bus_id, bus_request, bus_route\n"
         f"{desktop_import}"
         "from pathlib import Path\n"
         "import os, sys, json, time, subprocess, shutil, py_compile\n\n"
@@ -264,7 +264,80 @@ def run_python(code: str) -> ActionResult:
     return ActionResult("python", True, output or "ok (no output)")
 
 
-def kill_children() -> None:
-    for pid in _child_pids:
-        subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], creationflags=subprocess.CREATE_NO_WINDOW, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    _child_pids.clear()
+# --- Desktop helpers (injected into actor Python when GUI mode on) ---
+
+def _desktop_safe_print(text: str) -> None:
+    out = text.encode(sys.stdout.encoding or "utf-8", errors="replace").decode(
+        sys.stdout.encoding or "utf-8", errors="replace"
+    )
+    print(out)
+
+
+def observe_screen(*, print_screen: bool = True) -> tuple[dict, str, str]:
+    from observer import observe
+    obs = observe()
+    if print_screen:
+        if obs.context_text:
+            _desktop_safe_print(obs.context_text[:4000])
+        _desktop_safe_print(f"FOCUSED: {obs.focused_title}")
+    return obs.book, obs.context_text, obs.focused_title
+
+
+def _desktop_act(verb: str, args: dict, book: dict) -> ActionResult:
+    result = execute_verb(verb, args, book, None)
+    _desktop_safe_print(result.observation)
+    if not result.success:
+        raise RuntimeError(result.observation)
+    return result
+
+
+def desktop_focus(window_title: str, book: dict | None = None) -> dict:
+    if book is None:
+        book, _, _ = observe_screen(print_screen=False)
+    _desktop_act("focus", {"window_title": window_title}, book)
+    return book
+
+
+def desktop_click(selector: str, book: dict | None = None) -> dict:
+    if book is None:
+        book, _, _ = observe_screen(print_screen=False)
+    _desktop_act("click", {"selector": str(selector)}, book)
+    return book
+
+
+def desktop_write(text: str, selector: str = "", book: dict | None = None) -> dict:
+    if book is None:
+        book, _, _ = observe_screen(print_screen=False)
+    args: dict = {"text": text}
+    if selector:
+        args["selector"] = str(selector)
+    _desktop_act("write", args, book)
+    return book
+
+
+def desktop_press(key: str, book: dict | None = None) -> dict:
+    if book is None:
+        book, _, _ = observe_screen(print_screen=False)
+    _desktop_act("press", {"key": key}, book)
+    return book
+
+
+def desktop_hotkey(keys: list[str], book: dict | None = None) -> dict:
+    if book is None:
+        book, _, _ = observe_screen(print_screen=False)
+    _desktop_act("hotkey", {"keys": keys}, book)
+    return book
+
+
+def desktop_scroll(selector: str, amount: int = 3, book: dict | None = None) -> dict:
+    if book is None:
+        book, _, _ = observe_screen(print_screen=False)
+    _desktop_act("scroll", {"selector": str(selector), "amount": int(amount)}, book)
+    return book
+
+
+def desktop_wait(seconds: float = 1.0, book: dict | None = None) -> dict:
+    if book is None:
+        book, _, _ = observe_screen(print_screen=False)
+    _desktop_act("wait", {"seconds": float(seconds)}, book)
+    return book

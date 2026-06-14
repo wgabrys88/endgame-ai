@@ -8,32 +8,34 @@ Humans: read `README.md`.
 
 ## COLD-START HANDOVER PROMPT
 
-**Last updated:** 2026-06-14 · **Branch:** `bare-metal` (44 files) · **Backup:** `unify-rewrite` (49) · **MILESTONE:** `dev-milestone-20260614` → `5ca4ee8` · **BARE_METAL:** `0d713b1` · **HEAD:** `55baaf3`
+**Last updated:** 2026-06-14 · **Branch:** `bare-metal` (**42 files**, ~6971 lines) · **Backup:** `unify-rewrite` (49) · **MILESTONE:** `dev-milestone-20260614` → `5ca4ee8` · **HEAD:** *(commit tip)*
 
 Copy the fenced block into any new AI session.
 
 ```text
 PROJECT: endgame-ai — self-evolving multi-agent colony on consumer hardware.
-Branch: bare-metal (44 tracked files — minimal runnable core). Backup: unify-rewrite.
+Branch: bare-metal (42 files, ~6971 lines). Backup: unify-rewrite. Legacy: main (24 files, different arch).
 Model: nvidia-nemotron-3-nano-4b, profile nemotron_parallel (LM Studio MC=5).
 
-READ ORDER (zero prior context):
-1. RULES.md — 44-file inventory, what git tracks, required doc updates
-2. OBSERVATIONS.md — this prompt + methodology + session log below
+READ ORDER:
+1. RULES.md — 42-file inventory + traceback methodology
+2. OBSERVATIONS.md — this prompt + § Traceback audit below
 3. README.md — human run command
 4. Code: comms.py, engine.py, agents.py, reactor.py, tui.py, config.py
 
-MINIMAL CORE (44 files — all required for python tui.py):
+MINIMAL CORE (42 files):
   Entry(3): tui.py, reactor.py, main.py
-  Pipeline(3): engine.py, agents.py, comms.py
-  Infra(4): config.py, log.py, llm.py, python_code.py
-  Desktop(5): colony_env.py, actions.py, desktop.py, observer.py, win32.py
+  Pipeline(3): engine.py, agents.py, comms.py (+ actor sandbox bus_* API)
+  Infra(4): config.py, log.py, llm.py (runtime only), python_code.py
+  Desktop(3): actions.py (+ desktop helpers), observer.py, win32.py
   Backend(1): acp_client.py
-  Plugins(4): comms_beacon, fission_log, lessons_decay, web_sentinel
-  Prompts(10): 5 role *.txt + 5 personalities/*
-  Schemas(5): planner, verifier, reflector, mutator, fission_judge
-  Meta(8): .env, .gitignore, .gitattributes, LICENSE, CONTRIBUTING, README, OBSERVATIONS, RULES
-  REMOVED (dead): lessons.py, run_test.py, schemas/bus_v1|route|telemetry.json
+  Plugins(4) · Prompts(10) · Schemas(5) · Meta(8)
+
+IDENTITY (OoO): config.Personality(name, slot, mission) — one instance per main.py process.
+  main.py: Personality.from_env(); reactor.spawn: Personality.load().
+  Next: inject Personality into engine/agents; deprecate agents._persona() env reads.
+
+STRIPPED: lessons.py, run_test.py, 3 schemas; colony_env→comms; desktop→actions; llm benchmark ~970 lines.
 
 ORGANISM (deterministic, not the LLM):
   pressure → MoE (s1) → blackboard → scheduler → planner → actor → verifier
@@ -73,13 +75,72 @@ MILESTONE: git checkout dev-milestone-20260614  # pins 5ca4ee8 DEV_BASELINE_2026
 BRANCHES: bare-metal = forward dev (minimal). unify-rewrite = backup (pre-cleanup).
 STATE: bare-metal cleanup branch created. Session 20260614_201915 forensics in § Session log.
 CURRENT PRIORITY:
-  1. Develop on bare-metal only; keep unify-rewrite as rollback
-  2. Narrow goals: one plugin patch + py_compile + git hash
+  1. Shrink agents.py + reactor.py in-place (validators, Breeder class) — no new .py files
+  2. Personality injected through engine pipeline (AgentContext)
   3. Prove breed.improve elite survives restart
-  4. Fix s2/s4 need_plan idle spin (scheduling gap)
+  4. Fix s2/s4 need_plan idle spin
 
 NOT IN GIT: runtime/, sessions/*.jsonl — keep locally only.
 ```
+
+---
+
+## Traceback audit: main vs bare-metal (2026-06-14)
+
+### Why bare-metal feels "enormous" vs main
+
+| | `main` | `bare-metal` (now) |
+|--|--------|-------------------|
+| **Files** | 24 | **42** |
+| **Lines** | ~3,656 | **~6,971** |
+| **Processes** | 1 (+ math thread) | 5 slots + reactor |
+| **Bus** | snapshot.json | comms blackboard |
+| **Breeding** | none | reactor MAP-Elites |
+| **Agents** | stagnation/lorenz/pid math | fission_judge + mutator + MoE |
+| **llm.py** | 118 lines | 358 lines (was 1280 before benchmark strip) |
+
+**main is not a subset** — it is a legacy single-agent loop. Bare-metal is ~2× lines because the **working wiring** (multi-process, bus, breed, fission) is real code.
+
+### Traceback from `python tui.py` (critical path)
+
+```text
+tui.py ──subprocess──► reactor.py ──spawn×5──► main.py
+                                              └── Personality.from_env()
+                                              └── engine.run(board)
+                                                    └── agents.* (1524 lines — bloat #1)
+                                                    └── comms bus
+                                                    └── plugins/*
+llm.py ◄── agents (358 lines after strip — was 68% benchmark dead weight)
+```
+
+### Dead weight removed this pass
+
+| Item | Savings |
+|------|---------|
+| `llm.py` benchmark block | ~970 lines |
+| `colony_env.py` → `comms.py` | 1 file |
+| `desktop.py` → `actions.py` | 1 file |
+| Dead functions (`kill_children`, `gui_default_enabled`, …) | small |
+
+### Remaining bloat (in-file, next passes)
+
+| Module | Lines | Issue |
+|--------|------:|-------|
+| `agents.py` | 1524 | Monolith: validators + mutation + smokes + 7 agent classes |
+| `reactor.py` | 950 | Breeding + spawn + smokes in one module |
+| `comms.py` | 888 | Bus + mirror + actor sandbox + CLI |
+| `tui.py` + `comms.py` | — | Duplicate `_brief()` formatting |
+
+### OOP target (no new .py files per RULES)
+
+```text
+config.Personality     — done (dataclass slots=True)
+engine.AgentContext    — personality + board, passed to pipeline steps
+reactor.Breeder        — class inside reactor.py (archive, trials, evolve)
+agents.Pipeline        — optional: collapse JsonRoleAgent pattern for 4 roles
+```
+
+Personalities stay **prompt files + Personality instance** — not six subclasses. Slot = process boundary; Personality = identity object inside process.
 
 ---
 
@@ -131,7 +192,8 @@ Append only. No golden archives in git — summaries live here.
 | `dev-milestone-20260614` | — | — | **DEV BASELINE** | Slim repo, Codex goal startup, RULES.md, OBSERVATIONS handover |
 | *(flush 2026-06-14)* | — | — | Repo slimmed `3a30c9a` | Golden artifacts removed from git |
 | `20260614_201915` | ~23m | ~2250 | **Partial win, elite wipe** | Killed 20:43. See forensics below. |
-| `bare-metal` branch | — | 44 files | **Minimal core** | Removed lessons.py, run_test.py, 3 unused schemas |
+| `bare-metal` v1 | — | 44→42 | **File strip** | lessons, run_test, 3 schemas |
+| `bare-metal` v2 | — | 42 / ~7k lines | **Code strip** | llm benchmark, colony_env+desktop merge, Personality OoO |
 
 ### Session `20260614_201915` forensics (2026-06-14, killed by operator)
 
@@ -197,7 +259,8 @@ Single measurable artifact + git hash. No meta pri=3. Wait ≥2 min after plan b
 - s2/s4 need_plan idle spin is a scheduling gap when only s3 has routed work.
 - Unproven: MAP-Elites convergence, restart-persistent elites (mid-run elite existed, archive empty at kill).
 - Golden session forensic value now lives in `llm.py` replay tasks only — not in repo tree.
-- **bare-metal** = 44 files; `unify-rewrite` preserved at 49 files for rollback.
+- **bare-metal** = 42 files / ~7k lines; main (24 files) is legacy — not comparable.
+- `Personality` dataclass is first OoO step; agents/reactor monoliths are next shrink targets.
 
 ---
 

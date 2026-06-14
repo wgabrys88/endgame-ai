@@ -41,17 +41,13 @@ def main() -> None:
     set_backend(args.backend)
     log.init(args.events_path, args.event_budget)
 
-    # Load personality goal if not given directly
-    goal = args.goal
-    if not goal:
-        personality = os.environ.get("ENDGAME_PERSONALITY", "")
-        if personality:
-            pfile = config.PROMPTS_DIR / "personalities" / f"{personality}.txt"
-            if pfile.exists():
-                goal = pfile.read_text(encoding="utf-8").strip()
+    personality = config.Personality.from_env(args.goal)
+    goal = personality.mission
 
     board: dict[str, Any] = {
         "goal": goal,
+        "personality": personality.name,
+        "slot": personality.slot,
         "priority": args.priority,
         "plan": [],
         "history": [],
@@ -60,7 +56,7 @@ def main() -> None:
         "_last_msg_id": 0,
     }
 
-    log.emit("start", {"goal": goal[:120], "personality": os.environ.get("ENDGAME_PERSONALITY", ""),
+    log.emit("start", {"goal": goal[:120], "personality": personality.name, "slot": personality.slot,
                         "profile": config.active_model_profile()})
 
     run(board, lambda: _interrupted)

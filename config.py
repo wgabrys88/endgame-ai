@@ -1,5 +1,6 @@
 """Colony configuration — slots, personas, model profiles."""
 from __future__ import annotations
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 import os
@@ -44,6 +45,41 @@ PERSONAS: list[str] = [
 WORKER_PERSONAS: list[str] = ["architect", "implementor", "reviewer", "devops", "quality_critic"]
 SLOT_DEFAULTS: dict[int, str] = {2: "architect", 3: "implementor", 4: "reviewer", 5: "devops"}
 PERSONA_SLOTS: dict[str, int] = {v: k for k, v in SLOT_DEFAULTS.items()}
+
+
+@dataclass(frozen=True, slots=True)
+class Personality:
+    """One endgame-ai slot instance — name, slot, mission (OoO identity object)."""
+    name: str
+    slot: int
+    mission: str
+
+    @classmethod
+    def load(cls, name: str, slot: int = 0, mission: str = "") -> Personality:
+        text = mission.strip()
+        if not text and name:
+            pfile = PROMPTS_DIR / "personalities" / f"{name}.txt"
+            if pfile.exists():
+                text = pfile.read_text(encoding="utf-8").strip()
+        return cls(name=name, slot=slot, mission=text)
+
+    @classmethod
+    def from_env(cls, mission_override: str = "") -> Personality:
+        name = os.environ.get("ENDGAME_PERSONALITY", "").strip()
+        slot = int(os.environ.get("ENDGAME_SLOT", "0") or 0)
+        return cls.load(name, slot, mission_override)
+
+    @property
+    def is_orchestrator(self) -> bool:
+        return self.name == "comms_operator"
+
+    @property
+    def is_worker(self) -> bool:
+        return self.name in WORKER_PERSONAS
+
+    def bus_context_depth(self) -> int:
+        return 10 if self.is_orchestrator else 6
+
 
 # --- Priority levels ---
 PRI_MAINTENANCE: int = 0
@@ -171,12 +207,6 @@ def unconstrained_enabled() -> bool:
         return True
     return True  # default on; use --safe / ENDGAME_UNCONSTRAINED=0 to disable
 
-
-def gui_default_enabled() -> bool:
-    flag = os.environ.get("ENDGAME_GUI", "").strip().lower()
-    if flag in ("0", "false", "no"):
-        return False
-    return True
 
 # --- Timing ---
 DELAY_BETWEEN_CYCLES: float = 2.0
