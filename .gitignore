@@ -50,6 +50,8 @@ terminals/
 !sessions/
 !sessions/20260614_132940/
 !sessions/20260614_132940/README.md
+!sessions/20260614_185239/
+!sessions/20260614_185239/OBSERVATIONS.md
 
 # --- Local / personal (never commit) ---
 vision/
@@ -57,3 +59,7 @@ vision/
 !README.md
 !KNOWLEDGE.md
 !AGENTS.md
+!OBSERVATIONS.md
+!benchmark.txt
+!Colony_Demo/
+!Colony_Demo/**

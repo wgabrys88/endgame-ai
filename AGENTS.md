@@ -7,6 +7,7 @@
 | `AGENTS.md` | Vision, golden-run proof, fix roadmap, handover prompt |
 | `KNOWLEDGE.md` | Protocol, pressure math, breeder loop, file map |
 | `README.md` | Human quick start |
+| `OBSERVATIONS.md` | **Session tracking** — observation method + multi-perspective forensic per run (append-only) |
 | `sessions/20260614_132940/README.md` | Full forensic log (~1200 lines) of the golden run |
 | `ENDGAME_GOLDEN_RUN.html` | Interactive golden-run dashboard (open in browser) |
 | `ENDGAME_VISION_ADVANCED.html` | Architecture vision v2 (10-min proof era) |
@@ -28,7 +29,7 @@ Session `20260614_132940` ran ~1h49m on code at/near `c897385`. Post-run commits
 
 - `sessions/20260614_132940/README.md` — forensic analysis (~1200 lines)
 - `ENDGAME_GOLDEN_RUN.html`, `ENDGAME_VISION_ADVANCED.html`
-- `AGENTS.md`, `KNOWLEDGE.md`, `README.md`
+- `AGENTS.md`, `KNOWLEDGE.md`, `README.md`, `OBSERVATIONS.md`
 - `file.py` — git-status snapshot from run era
 
 **Gitignored by design (keep on your external drive archive):**
@@ -280,9 +281,10 @@ You are continuing endgame-ai on branch unify-rewrite.
 
 READ ORDER:
 1. AGENTS.md (this file) — vision + golden run + fix roadmap
-2. KNOWLEDGE.md — protocols
-3. README.md — quick start
-4. sessions/20260614_132940/README.md OR ENDGAME_GOLDEN_RUN.html — golden evidence
+2. OBSERVATIONS.md — session observation method + latest forensic analysis
+3. KNOWLEDGE.md — protocols
+4. README.md — quick start
+5. sessions/20260614_132940/README.md OR ENDGAME_GOLDEN_RUN.html — golden evidence
 
 VISION: Self-evolving colony on consumer hardware. Small models. Real actions.
 The LLM is a subroutine inside deterministic loops (pressure, MoE, breeder).
