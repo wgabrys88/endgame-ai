@@ -1,0 +1,27 @@
+[
+  {
+    "id": "parallel_baseline",
+    "label": "nemotron_parallel baseline (schema off, role budgets)",
+    "overrides": { "api_schema": false }
+  },
+  {
+    "id": "api_schema_on",
+    "label": "API response_format enforced",
+    "overrides": { "api_schema": true }
+  },
+  {
+    "id": "low_thinking_high_output",
+    "label": "low thinking / high max_tokens",
+    "overrides": { "api_schema": false, "thinking_budget": 64, "max_tokens": 768 }
+  },
+  {
+    "id": "high_thinking_low_output",
+    "label": "high thinking / low max_tokens (empty JSON risk)",
+    "overrides": { "api_schema": false, "thinking_budget": 512, "max_tokens": 224 }
+  },
+  {
+    "id": "nemotron_serial",
+    "label": "nemotron serial profile",
+    "overrides": { "api_schema": false, "max_tokens": 640, "thinking_budget": 384, "temperature": 0.12 }
+  }
+]
