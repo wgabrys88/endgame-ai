@@ -1,6 +1,6 @@
 # OBSERVATIONS.md — AI handover (only tracked doc)
 
-**Branch:** `bare-metal` · **HEAD:** `f88f8bb` · **Tags:** `unify-cut-0` → `unify-cut-1` → `unify-cut-2`
+**Branch:** `bare-metal` · **HEAD:** `63f7cce` · **Tags:** `unify-cut-0` → `unify-cut-1` → `unify-cut-2`
 
 Copy everything inside the block below into a zero-context AI session (Codex, etc.).
 
