@@ -70,7 +70,7 @@ DESKTOP IS THE ORGANISM (main vision — Bukowski spec):
   observer.py + win32.py + actions.py (~950 lines) = see, act, verify on real Windows.
   main proved M4: self-launch, exec metabolism, Notepad/Opera/LinkedIn, spawn_main posterity.
   Colony must keep the SAME desktop path — not optional, not a fork.
-  Desktop organ always on at boot (config.desktop_enabled). --safe is lab-only, not normal life.
+  Desktop + metabolism always on — no safe/sandbox toggles (removed).
   planner_gui + actor LLM + ObserverAgent = movement + observation circuits.
 
 ACTOR PATHS (unified — one ActorAgent):
@@ -211,7 +211,7 @@ Like a neural network: input, bias, softmax, output — repeated. The **neuron c
 
 ### Desktop and metabolism are core organs
 
-Desktop (see + act) and full metabolism (`unconstrained` / exec / git / mutation) are **not feature flags**. They are **organs**. `--safe` exists for lab debugging only — a sedated organism, not normal operation.
+Desktop (see + act) and full metabolism (exec / git / mutation) are **organs** — always on. Safe/sandbox toggles removed (~180 lines deleted).
 
 TUI is accepted extra code — beautiful human-facing cortex; not the organism, but we keep it.
 

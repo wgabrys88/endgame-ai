@@ -21,8 +21,6 @@ from actions import is_python_step
 import config
 import comms
 import log
-from python_code import gui_mode_enabled
-
 _OBSERVER = ObserverAgent()
 _SCREEN_AGENTS = frozenset({"actor", "verifier"})
 
@@ -141,7 +139,7 @@ def run(board: dict[str, Any], interrupted: Callable[[], bool]) -> None:
 # --- Desktop observe (GUI mode) ---
 
 def _needs_screen(board: dict[str, Any], target: str) -> bool:
-    if not gui_mode_enabled() or target not in _SCREEN_AGENTS:
+    if target not in _SCREEN_AGENTS:
         return False
     if target == "actor":
         active = next(

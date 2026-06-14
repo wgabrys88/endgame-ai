@@ -983,17 +983,6 @@ def bus_route(from_id: Any = None, to: str = "", reason: str = "",
                  scores=scores, goal=goal)
 
 
-def enable_gui() -> None:
-    config.GUI_MODE_PATH.write_text("1", encoding="utf-8")
-
-
-def disable_gui() -> None:
-    try:
-        config.GUI_MODE_PATH.unlink(missing_ok=True)
-    except OSError:
-        pass
-
-
 # --- CLI ---
 
 if __name__ == "__main__":

@@ -16,7 +16,7 @@ from typing import Any
 import config
 import log
 from llm import LLMResult, call_llm
-from python_code import goal_needs_gui, gui_mode_enabled, is_python_code, validate_python
+from python_code import goal_prefers_gui, is_python_code, validate_python
 
 _SIMPLE_FILE_DONE_PREFIX = "file_equals "
 _GIT_DONE_PREFIX = "git_equals "
@@ -157,8 +157,6 @@ def _llm_user(circuit: str, body: str) -> str:
 
 
 def _desktop_context() -> str:
-    if not gui_mode_enabled():
-        return ""
     try:
         from observer import observe
         obs = observe()
@@ -405,12 +403,10 @@ class PlannerAgent:
         goal = board.get("goal", "")
         if not goal:
             return None
-        if goal_needs_gui(goal) and not config.unconstrained_enabled():
-            return _gui_decline_plan(board, goal)
         simple_file_plan = _simple_file_plan(goal)
         if simple_file_plan:
             return simple_file_plan
-        if gui_mode_enabled():
+        if goal_prefers_gui(goal):
             return self._run_gui_planner(board, goal)
         log.emit("planner.pending", {"goal": goal[:80]})
         schema = _load_schema("planner")
@@ -516,11 +512,6 @@ class ActorAgent:
                 "data": {"ok": False, "verb": result.verb, "obs": result.observation[:200]},
                 "writes": {"plan": plan, "history": history[-config.MAX_HISTORY:]},
             }
-
-        if not gui_mode_enabled():
-            active["status"] = "done"
-            active["result"] = "skipped: GUI step without gui_mode"
-            return {"phase": "actor", "data": {"ok": False, "obs": "GUI step requires gui_mode"}}
 
         llm_out = call_llm(
             _personality_system(board),
@@ -1008,29 +999,6 @@ def _decline_human_goal(board: dict[str, Any], reason: str) -> None:
         "goal": goal[:80],
         "suggested_rephrase": suggestion,
     })
-
-
-def _gui_decline_plan(board: dict[str, Any], goal: str) -> dict[str, Any]:
-    reason = "GUI/desktop tasks not supported"
-    suggestion = _human_rephrase_suggestion(reason)
-    log.emit("human.decline", {
-        "reason": reason,
-        "goal": str(goal)[:80],
-        "suggested_rephrase": suggestion,
-    })
-    code = (
-        "bus_post(bus_id(), 'colony', "
-        "'@human GUI/desktop tasks not supported — colony has no GUI agent. "
-        f"Suggested rephrase: {suggestion}', priority=0, human_ack=True, "
-        f"blocked_by='{reason}', suggested_rephrase='{suggestion}')\n"
-        "print('declined: GUI task not supported')"
-    )
-    done_when = "decline posted to bus"
-    return {
-        "phase": "plan", "next": "actor",
-        "data": {"mode": "direct", "steps": 1, "done_when": done_when},
-        "writes": {"plan": [{"status": "active", "code": code}], "done_when": done_when},
-    }
 
 
 def _simple_file_plan(goal: str) -> dict[str, Any] | None:

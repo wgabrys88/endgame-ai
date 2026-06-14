@@ -26,7 +26,6 @@ python tui.py "Your long-term goal in one sentence"
 
 | Flag | Effect |
 |------|--------|
-| `--safe` | Lab only — sedated organism (disables desktop + full metabolism) |
 | `--model-profile nemotron` | Single-flight MC=1 |
 | `--backend acp` | ACP backend (needs `acp_client.py`) |
 

@@ -87,7 +87,6 @@ def cleanup_runtime(*, deep: bool = True) -> None:
             path.write_text("", encoding="utf-8")
     for flag in (
         config.GUI_MODE_PATH,
-        config.UNCONSTRAINED_MODE_PATH,
         config.COLONY_GOAL_PATH,
         config.BASE_DIR / "pause",
         config.LMS_GLOBAL_LOCK_PATH,

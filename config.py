@@ -18,8 +18,7 @@ LESSONS_PATH: Path = BASE_DIR / "lessons.jsonl"
 PROMPTS_DIR: Path = BASE_DIR / "prompts"
 SCHEMAS_DIR: Path = BASE_DIR / "schemas"
 PLUGINS_DIR: Path = BASE_DIR / "plugins"
-GUI_MODE_PATH: Path = BASE_DIR / "gui_mode"
-UNCONSTRAINED_MODE_PATH: Path = BASE_DIR / "unconstrained_mode"
+GUI_MODE_PATH: Path = BASE_DIR / "gui_mode"  # legacy exec target only (write_file gui_mode)
 COLONY_GOAL_PATH: Path = BASE_DIR / "runtime" / "colony_goal.txt"
 DEFAULT_MODEL_PROFILE: str = "nemotron_parallel"
 
@@ -196,27 +195,6 @@ def apply_model_profile(profile_or_model: str, *, force: bool = False) -> tuple[
 
 def active_model_profile() -> str:
     return _active_profile
-
-
-def unconstrained_enabled() -> bool:
-    """Full metabolism — core organism mode, not a safety toggle (default on)."""
-    flag = os.environ.get("ENDGAME_UNCONSTRAINED", "").strip().lower()
-    if flag in ("0", "false", "no"):
-        return False
-    if flag in ("1", "true", "yes") or UNCONSTRAINED_MODE_PATH.is_file():
-        return True
-    return True  # lab/debug only: --safe or ENDGAME_UNCONSTRAINED=0
-
-
-def desktop_enabled() -> bool:
-    """Eyes + hands organ — observer/win32/actions wired by default when organism boots."""
-    if os.environ.get("ENDGAME_DESKTOP", "").strip().lower() in ("0", "false", "no"):
-        return False
-    if GUI_MODE_PATH.is_file():
-        return True
-    if os.environ.get("ENDGAME_BOOTSTRAPPED", "").strip() == "1":
-        return True
-    return unconstrained_enabled()
 
 
 # --- Timing ---

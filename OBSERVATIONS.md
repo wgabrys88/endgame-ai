@@ -8,7 +8,7 @@ Humans: read `README.md`.
 
 ## COLD-START HANDOVER PROMPT
 
-**Last updated:** 2026-06-14 · **Branch:** `bare-metal` · **Vision:** RULES.md § VISION · **HEAD:** personality-as-system-prompt
+**Last updated:** 2026-06-14 · **Branch:** `bare-metal` · **Vision:** RULES.md § VISION · **HEAD:** sandbox strip (~131 LOC)
 
 Copy **RULES.md § SYSTEM CORE** + **§ VISION**. Then this handover:
 
@@ -30,7 +30,7 @@ together. Intelligence emerges from wiring, not from one clever module.
   • Deterministic Python = connective tissue: MoE softmax, pressure math, routing.
     Papers describe 1–2 equations each → a few lines of code (we bloated the wrapper).
   • Desktop (observer/win32/actions) = eyes + hands — CORE organ, always on at boot.
-  • Full metabolism (exec, git, mutation) = CORE — --safe is lab-only sedation.
+  • Full metabolism (exec, git, mutation) = CORE — always on, no sandbox flags.
   • TUI = beautiful human face (accepted extra code).
   • Breeder/MAP-Elites = plasticity — keep elites, respawn better personas.
 

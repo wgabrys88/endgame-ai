@@ -379,22 +379,12 @@ class TUI:
         total_f = sum(s.fissions for s in active)
         elapsed = time.time() - self._start
         sess = Path(self._session_dir).name[-15:] if self._session_dir else "waiting…"
-        try:
-            from python_code import gui_mode_enabled
-            if config.unconstrained_enabled():
-                gui_tag = f"{_fg(*CLR_PRI)}open{RST}"
-            elif gui_mode_enabled():
-                gui_tag = f"{_fg(*CLR_PRI)}GUI{RST}"
-            else:
-                gui_tag = f"{_fg(*CLR_DIM)}safe{RST}"
-        except Exception:
-            gui_tag = f"{_fg(*CLR_DIM)}safe{RST}"
         prof = self._model_profile[:12]
         prof_tag = (f"{_fg(*CLR_PRI)}{prof}{RST}" if "parallel" in prof
                     else f"{_fg(*CLR_DIM)}{prof}{RST}")
         filter_tag = f"{_fg(*CLR_PRI)}filter={self._phase_filter}{RST}" if self._phase_filter != "all" else f"{_fg(*CLR_DIM)}filter=all{RST}"
         hdr = (f"{BOLD}{_fg(*CLR_HEADER)}REACTOR{RST} {alive}/5 slots  "
-               f"{prof_tag}  {gui_tag}  "
+               f"{prof_tag}  "
                f"{filter_tag}  "
                f"{_fg(*CLR_FISSION)}F={total_f}{RST}  "
                f"{_fg(*CLR_DIM)}{sess}{RST}  "
@@ -469,7 +459,7 @@ class TUI:
         lines.append(f"{bc}{BOX_ML}{BOX_H * (W - 2)}{BOX_MR}{RST}")
         cursor = "▌" if int(time.time() * 2) % 2 else " "
         lines.append(row(f"{_fg(*CLR_INPUT)}@human> {self._input_buf}{cursor}{RST}"))
-        lines.append(row(f"{_fg(*CLR_DIM)}Enter=send  f=filter  1-5=presets  g=GUI  Space=pause  q=quit{RST}"))
+        lines.append(row(f"{_fg(*CLR_DIM)}Enter=send  f=filter  1-5=presets  Space=pause  q=quit{RST}"))
         lines.append(f"{bc}{BOX_BL}{BOX_H * (W - 2)}{BOX_BR}{RST}")
 
         while len(lines) < TARGET_HEIGHT:
@@ -611,42 +601,17 @@ class TUI:
             else:
                 p.write_text("", encoding="utf-8")
             return True
-        if ch in ("g", "G") and not self._input_buf:
-            from comms import disable_gui, enable_gui
-            from python_code import gui_mode_enabled
-            if gui_mode_enabled():
-                disable_gui()
-                comms.post("tui", "tui", "GUI mode OFF — desktop safeguards active.", kind="status")
-            else:
-                enable_gui()
-                comms.post("tui", "tui", "GUI mode ON — desktop automation allowed.", kind="status")
-            return True
         if len(ch) == 1 and ch.isprintable():
             self._input_buf += ch
             return True
         return False
 
-    def run(
-        self,
-        *,
-        gui: bool = True,
-        unconstrained: bool = True,
-        colony_goal: str = "",
-    ) -> None:
+    def run(self, *, colony_goal: str = "") -> None:
         import log
         import subprocess
         import sys
-        from comms import disable_gui, enable_gui
 
         log.cleanup_runtime()
-        if unconstrained:
-            config.UNCONSTRAINED_MODE_PATH.write_text("1", encoding="utf-8")
-            os.environ["ENDGAME_UNCONSTRAINED"] = "1"
-            enable_gui()
-        elif gui:
-            enable_gui()
-        else:
-            disable_gui()
         if colony_goal.strip():
             comms.set_colony_goal(colony_goal.strip(), source="human")
         _w("\x1b[?1049h\x1b[?25l")
@@ -661,15 +626,9 @@ class TUI:
         env["ENDGAME_BOOTSTRAPPED"] = "1"
         if colony_goal.strip():
             env["ENDGAME_COLONY_GOAL"] = colony_goal.strip()
-        if unconstrained:
-            env["ENDGAME_UNCONSTRAINED"] = "1"
-        if gui or unconstrained:
-            env["ENDGAME_GUI"] = "1"
         reactor_cmd = [sys.executable, "reactor.py"]
         if os.environ.get("_ENDGAME_MODEL_PROFILE"):
             reactor_cmd += ["--model-profile", os.environ["_ENDGAME_MODEL_PROFILE"]]
-        if unconstrained:
-            reactor_cmd.append("--unconstrained")
         if colony_goal.strip():
             reactor_cmd += ["--goal", colony_goal.strip()]
         self._reactor_proc = subprocess.Popen(reactor_cmd, cwd=str(BASE_DIR), env=env, creationflags=0x08000000)
@@ -708,13 +667,8 @@ if __name__ == "__main__":
         default=config.DEFAULT_MODEL_PROFILE,
         help=f"LM Studio profile (default: {config.DEFAULT_MODEL_PROFILE})",
     )
-    parser.add_argument("--safe", action="store_true", help="Disable default GUI + unconstrained mode")
-    parser.add_argument("--no-gui", action="store_true", help="Disable desktop/GUI (implies safer planner gates)")
-    parser.add_argument("--no-unconstrained", action="store_true", help="Disable unconstrained operator mode")
     args = parser.parse_args()
     os.environ["ENDGAME_BACKEND"] = args.backend
     os.environ["_ENDGAME_MODEL_PROFILE"] = args.model_profile
     colony_goal = " ".join(args.goal).strip()
-    unconstrained = not args.safe and not args.no_unconstrained
-    gui = not args.safe and not args.no_gui
-    TUI().run(gui=gui, unconstrained=unconstrained, colony_goal=colony_goal)
+    TUI().run(colony_goal=colony_goal)

@@ -966,12 +966,6 @@ def breed_improve_smoke() -> dict[str, Any]:
         _restore_breed_state(snapshot)
 
 
-def _enable_unconstrained() -> None:
-    config.UNCONSTRAINED_MODE_PATH.write_text("1", encoding="utf-8")
-    config.GUI_MODE_PATH.write_text("1", encoding="utf-8")
-    os.environ["ENDGAME_UNCONSTRAINED"] = "1"
-
-
 if __name__ == "__main__":
     # Parse CLI
     run_archive_smoke = False
@@ -991,8 +985,6 @@ if __name__ == "__main__":
             run_archive_smoke = True
         elif arg == "--breed-improve-smoke":
             run_breed_improve_smoke = True
-        elif arg == "--unconstrained":
-            _enable_unconstrained()
         elif arg == "--goal" and i + 1 < len(argv):
             _colony_goal = argv[i + 1].strip()
             i += 2
