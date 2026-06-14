@@ -120,9 +120,12 @@ Audit command:
 
 ```bash
 python comms.py breeder
+python reactor.py --archive-smoke
 ```
 
 The archive is not a persona coordination channel. Personas still communicate through `comms.py`; the reactor uses `runtime/breed_archive.json` only to preserve selection state across reactor restarts and to choose elite-backed respawns.
+
+`python reactor.py --archive-smoke` is a deterministic save/load/respawn-selection check using a temporary archive. It proves archive mechanics without starting a long autonomous run.
 
 ### Golden run proof (`sessions/20260614_132940`, tag `golden-run-20260614`)
 
@@ -230,7 +233,7 @@ Mutation safety:
 
 ## Still Not Proven
 
-- Restart-to-restart archive survival under a long autonomous run.
+- Restart-to-restart archive survival under a long autonomous run. The deterministic archive smoke check covers mechanics only.
 - Long-run MAP-Elites convergence.
 - Reflection now fails closed with `reflect.error` when reflector JSON is invalid or incomplete.
 - Fission credit fallback was removed after the 10-minute run: invalid fission-judge JSON denies credit.

@@ -250,6 +250,7 @@ Hard rules:
 
 ```bash
 python -m py_compile reactor.py agents.py comms.py colony_env.py engine.py tui.py plugins/fission_log.py
+python reactor.py --archive-smoke
 python tui.py --model-profile nemotron
 python comms.py state
 python comms.py breeder

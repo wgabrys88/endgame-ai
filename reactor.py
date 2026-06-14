@@ -2,8 +2,10 @@
 from __future__ import annotations
 import json
 import os
+from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import time
 from typing import Any
 
@@ -22,6 +24,49 @@ _slot_survivors: dict[int, str] = {}
 _elite_archive: dict[str, dict[str, Any]] = {}
 _evicted_personas: dict[str, dict[str, Any]] = {}
 _mutation_trials: dict[str, dict[str, Any]] = {}
+
+
+def _clear_breed_state() -> None:
+    _breed_scores.clear()
+    _slot_survivors.clear()
+    _elite_archive.clear()
+    _evicted_personas.clear()
+    _mutation_trials.clear()
+
+
+def _breed_state_snapshot() -> dict[str, Any]:
+    return {
+        "archive_path": config.BREED_ARCHIVE_PATH,
+        "bus_dir": config.BUS_DIR,
+        "bus_chat_path": config.BUS_CHAT_PATH,
+        "bus_events_path": config.BUS_EVENTS_PATH,
+        "bus_inject_path": config.BUS_INJECT_PATH,
+        "bus_control_path": config.BUS_CONTROL_PATH,
+        "breed_scores": json.loads(json.dumps(_breed_scores, ensure_ascii=False)),
+        "slot_survivors": json.loads(json.dumps(_slot_survivors, ensure_ascii=False)),
+        "elite_archive": json.loads(json.dumps(_elite_archive, ensure_ascii=False)),
+        "evicted_personas": json.loads(json.dumps(_evicted_personas, ensure_ascii=False)),
+        "mutation_trials": json.loads(json.dumps(_mutation_trials, ensure_ascii=False)),
+    }
+
+
+def _restore_breed_state(snapshot: dict[str, Any]) -> None:
+    config.BREED_ARCHIVE_PATH = snapshot["archive_path"]
+    config.BUS_DIR = snapshot["bus_dir"]
+    config.BUS_CHAT_PATH = snapshot["bus_chat_path"]
+    config.BUS_EVENTS_PATH = snapshot["bus_events_path"]
+    config.BUS_INJECT_PATH = snapshot["bus_inject_path"]
+    config.BUS_CONTROL_PATH = snapshot["bus_control_path"]
+    _breed_scores.clear()
+    _breed_scores.update(snapshot.get("breed_scores", {}))
+    _slot_survivors.clear()
+    _slot_survivors.update({int(k): v for k, v in snapshot.get("slot_survivors", {}).items()})
+    _elite_archive.clear()
+    _elite_archive.update(snapshot.get("elite_archive", {}))
+    _evicted_personas.clear()
+    _evicted_personas.update(snapshot.get("evicted_personas", {}))
+    _mutation_trials.clear()
+    _mutation_trials.update(snapshot.get("mutation_trials", {}))
 
 
 def spawn(slot_id: int, persona: str, goal: str = "", priority: int = config.PRI_MAINTENANCE) -> int:
@@ -747,15 +792,96 @@ def select_respawn_persona(slot_id: int, fallback: str) -> str:
     return selected
 
 
+def archive_restart_smoke() -> dict[str, Any]:
+    """Deterministically prove archive save/load can drive restart respawn choice."""
+    snapshot = _breed_state_snapshot()
+    runtime_dir = config.BASE_DIR / "runtime"
+    runtime_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        with tempfile.TemporaryDirectory(prefix="breed-archive-smoke-", dir=str(runtime_dir)) as tmp:
+            smoke_dir = Path(tmp)
+            config.BREED_ARCHIVE_PATH = smoke_dir / "breed_archive.json"
+            config.BUS_DIR = smoke_dir / "comms"
+            config.BUS_CHAT_PATH = config.BUS_DIR / "messages.json"
+            config.BUS_EVENTS_PATH = config.BUS_DIR / "events_bus.jsonl"
+            config.BUS_INJECT_PATH = config.BUS_DIR / "inject.jsonl"
+            config.BUS_CONTROL_PATH = config.BUS_DIR / "control.jsonl"
+            _clear_breed_state()
+
+            target = "reviewer"
+            fallback = "devops"
+            niche = "archive_smoke:low_pressure"
+            _elite_archive[niche] = {
+                "target": target,
+                "action": "retain",
+                "slot": 4,
+                "fitness": 0.82,
+                "completed": "archive smoke retained reviewer",
+                "behavior": "archive_smoke",
+                "pressure_band": "low_pressure",
+                "ts": time.time(),
+            }
+            _breed_scores[target] = {
+                "fitness": 0.82,
+                "slot": 4,
+                "completed": "archive smoke retained reviewer",
+                "fissions": 2,
+                "trial_id": "archive-smoke",
+            }
+            _slot_survivors[4] = target
+            _evicted_personas[fallback] = {
+                "fitness": 0.1,
+                "slot": 5,
+                "reason": "archive smoke fallback evicted",
+                "ts": time.time(),
+            }
+
+            _save_breed_archive("archive_smoke.write")
+            archive_exists = config.BREED_ARCHIVE_PATH.is_file()
+            saved = json.loads(config.BREED_ARCHIVE_PATH.read_text(encoding="utf-8"))
+
+            _clear_breed_state()
+            _load_breed_archive()
+            selected = select_respawn_persona(4, fallback)
+
+            ok = (
+                archive_exists
+                and selected == target
+                and _slot_survivors.get(4) == target
+                and target in _breed_scores
+                and niche in _elite_archive
+                and fallback in _evicted_personas
+            )
+            return {
+                "ok": ok,
+                "archive_version": saved.get("version"),
+                "selected": selected,
+                "expected": target,
+                "slot_survivor": _slot_survivors.get(4, ""),
+                "elite_niches": sorted(_elite_archive.keys()),
+                "breed_scores": sorted(_breed_scores.keys()),
+                "evicted": sorted(_evicted_personas.keys()),
+            }
+    finally:
+        _restore_breed_state(snapshot)
+
+
 if __name__ == "__main__":
     # Parse CLI
+    run_archive_smoke = False
     for i, arg in enumerate(sys.argv[1:], 1):
         if arg == "--model-profile" and i < len(sys.argv) - 1:
             _model_profile = sys.argv[i + 1]
         elif arg.startswith("--model-profile="):
             _model_profile = arg.split("=", 1)[1]
+        elif arg == "--archive-smoke":
+            run_archive_smoke = True
     if _model_profile:
         config.apply_model_profile(_model_profile)
+    if run_archive_smoke:
+        result = archive_restart_smoke()
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+        sys.exit(0 if result.get("ok") else 1)
 
     if not os.environ.get("ENDGAME_BOOTSTRAPPED"):
         log.cleanup_runtime()

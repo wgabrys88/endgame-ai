@@ -1,4 +1,4 @@
-"""Run N endgame-ai agents with timeout, kill, report.
+"""Run one five-slot endgame-ai colony test with timeout, kill, report.
 
 Usage: python run_test.py [seconds] [backend]
 """
@@ -6,16 +6,16 @@ import json, os, subprocess, sys, time
 from pathlib import Path
 
 BASE = Path(__file__).parent.resolve()
-SLOTS = 6
+SLOTS = 5
 BUDGET = 80
-ROSTER = {1: "architect", 2: "implementor", 3: "reviewer", 4: "comms_operator", 5: "devops", 6: "quality_critic"}
+ROSTER = {1: "comms_operator", 2: "architect", 3: "implementor", 4: "reviewer", 5: "devops"}
 
 
 def main():
     seconds = int(sys.argv[1]) if len(sys.argv) > 1 else 120
     backend = sys.argv[2] if len(sys.argv) > 2 else "lmstudio"
 
-    subprocess.run([sys.executable, "-c", "import log; log.cleanup_runtime(kill_reactor=False)"], cwd=str(BASE), capture_output=True)
+    subprocess.run([sys.executable, "-c", "import log; log.cleanup_runtime()"], cwd=str(BASE), capture_output=True)
     (BASE / "runtime" / "comms").mkdir(parents=True, exist_ok=True)
     for name, content in [("messages.json", "[]\n"), ("events_bus.jsonl", ""), ("inject.jsonl", "")]:
         (BASE / "runtime" / "comms" / name).write_text(content, encoding="utf-8")
@@ -24,7 +24,7 @@ def main():
     print(f"=== endgame-ai colony test: {SLOTS} agents, {seconds}s, backend={backend} ===")
     procs = []
     for slot, personality in ROSTER.items():
-        ef = f"events-child-n{slot}.jsonl"
+        ef = f"events-child-s{slot}.jsonl"
         pfile = BASE / "prompts" / "personalities" / f"{personality}.txt"
         goal = pfile.read_text(encoding="utf-8").strip() if pfile.exists() else ""
         env = os.environ.copy()
@@ -33,7 +33,7 @@ def main():
         proc = subprocess.Popen([sys.executable, "main.py", goal, "--backend", backend, "--event-budget", str(BUDGET), "--events-path", ef],
                                 cwd=str(BASE), env=env, creationflags=0x08000000)
         procs.append((slot, personality, proc))
-        print(f"  n{slot} [{personality}] PID={proc.pid}")
+        print(f"  s{slot} [{personality}] PID={proc.pid}")
 
     time.sleep(3)
     (BASE / "pause").unlink(missing_ok=True)
@@ -60,14 +60,14 @@ def main():
 
     print(f"\n{'='*50}\nRESULTS\n{'='*50}")
     for slot, personality, _ in procs:
-        ef = BASE / f"events-child-n{slot}.jsonl"
+        ef = BASE / f"events-child-s{slot}.jsonl"
         if not ef.exists():
-            print(f"  n{slot} [{personality}]: no events")
+            print(f"  s{slot} [{personality}]: no events")
             continue
         lines = [l for l in ef.read_text(encoding="utf-8").splitlines() if l.strip()]
-        fissions = sum(1 for l in lines if '"fission"' in l)
+        fissions = sum(1 for l in lines if '"phase":"fission"' in l)
         errors = sum(1 for l in lines if '.error' in l)
-        print(f"  n{slot} [{personality}]: {len(lines)} events, {fissions} fissions, {errors} errors")
+        print(f"  s{slot} [{personality}]: {len(lines)} events, {fissions} fissions, {errors} errors")
 
     bus = BASE / "runtime" / "comms" / "messages.json"
     if bus.exists():

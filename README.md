@@ -105,6 +105,7 @@ Follow-up architecture work on 2026-06-14 added persistent breeder memory in `ru
 ```bash
 python comms.py state
 python comms.py breeder
+python reactor.py --archive-smoke
 python -m py_compile reactor.py agents.py comms.py colony_env.py config.py actions.py tui.py
 ```
 
@@ -117,6 +118,7 @@ If `python` is not on PATH on this machine, use:
 ## Known Bottlenecks
 
 - Persistent elite archive is implemented; restart survival and long-run MAP-Elites convergence are still not proven by a long autonomous run.
+- `python reactor.py --archive-smoke` deterministically checks archive save/load/respawn selection, but it is not a substitute for restart survival under a long autonomous run.
 - Reflection now fails closed with `reflect.error` when reflector JSON is invalid or incomplete.
 - Fission credit now fails closed: invalid fission-judge JSON denies credit instead of retaining behavior.
 - LLM transport failure now returns empty output instead of a fabricated planner `done` response.
