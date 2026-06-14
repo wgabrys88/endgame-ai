@@ -14,7 +14,7 @@
 
 ## COLD-START HANDOVER PROMPT
 
-**Last updated:** 2026-06-14 · **Branch:** `unify-rewrite` · **HEAD:** `4547c35`  
+**Last updated:** 2026-06-14 · **Branch:** `unify-rewrite` · **HEAD:** `7f76124`
 **Operator model:** nvidia-nemotron-3-nano-4b via LM Studio · **Profile:** `nemotron_parallel` (MC=5)
 
 Copy everything inside the fence into a new AI coding session (Codex, Claude, Grok, Cursor, etc.). You have **no** conversation history — treat this as the only briefing.
@@ -84,7 +84,7 @@ SMOKE (no LM Studio required):
 CURRENT PRIORITY FOR NEXT SESSION:
   1. Operator runs: python tui.py "<goal>" with LM Studio live
   2. Append new session forensics to OBSERVATIONS.md (do not delete prior sessions)
-  3. Prove breed.improve + restart survival on post-4547c35 wiring
+  3. Prove breed.improve + restart survival on post-7f76124 wiring
   4. Keep § COLD-START HANDOVER PROMPT current (commit SHA, priorities, run command)
 
 RAW TELEMETRY: sessions/<id>/events-*.jsonl and runtime/ are gitignored — archive externally.
