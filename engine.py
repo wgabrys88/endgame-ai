@@ -238,9 +238,10 @@ def _moe_route(board: dict[str, Any]) -> bool:
 
     if ranked and ranked[0][1] >= config.MOE_GATE_MIN:
         target, weight = ranked[0]
-        reason = f"MoE gate={weight:.2f} — assign maintenance scan"
+        mgoal = comms.maintenance_goal_text()
+        reason = f"MoE gate={weight:.2f} — assign work"
         comms.route("comms_operator", target, reason, priority=config.PRI_NORMAL,
-                    scores=gate_weights, goal="Colony maintenance: audit and report on bus")
+                    scores=gate_weights, goal=mgoal)
         log.emit("moe.route", {"to": target, "weight": round(weight, 3), "scores": gate_weights})
         return True
 

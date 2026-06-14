@@ -956,10 +956,16 @@ if __name__ == "__main__":
     # Parse CLI
     run_archive_smoke = False
     run_breed_improve_smoke = False
-    for i, arg in enumerate(sys.argv[1:], 1):
-        if arg == "--model-profile" and i < len(sys.argv) - 1:
-            _model_profile = sys.argv[i + 1]
-        elif arg.startswith("--model-profile="):
+    _colony_goal = os.environ.get("ENDGAME_COLONY_GOAL", "").strip()
+    argv = sys.argv[1:]
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg == "--model-profile" and i + 1 < len(argv):
+            _model_profile = argv[i + 1]
+            i += 2
+            continue
+        if arg.startswith("--model-profile="):
             _model_profile = arg.split("=", 1)[1]
         elif arg == "--archive-smoke":
             run_archive_smoke = True
@@ -967,6 +973,13 @@ if __name__ == "__main__":
             run_breed_improve_smoke = True
         elif arg == "--unconstrained":
             _enable_unconstrained()
+        elif arg == "--goal" and i + 1 < len(argv):
+            _colony_goal = argv[i + 1].strip()
+            i += 2
+            continue
+        elif arg.startswith("--goal="):
+            _colony_goal = arg.split("=", 1)[1].strip()
+        i += 1
     if _model_profile:
         config.apply_model_profile(_model_profile)
     if run_archive_smoke:
@@ -984,9 +997,17 @@ if __name__ == "__main__":
     # Create session directory for this run
     _session_dir = str(log.session_dir())
     log.init("events-reactor.jsonl", config.EVENT_BUDGET)
-    log.emit("reactor.start", {"slots": config.SLOTS, "profile": _model_profile or "auto"})
+    if _colony_goal:
+        comms.set_colony_goal(_colony_goal, source="reactor")
+    log.emit("reactor.start", {
+        "slots": config.SLOTS,
+        "profile": _model_profile or "auto",
+        "colony_goal": _colony_goal[:120] if _colony_goal else "",
+    })
     _load_breed_archive()
     print(f"REACTOR | {config.SLOTS} slots | profile={_model_profile or 'auto'}")
+    if _colony_goal:
+        print(f"  goal: {_colony_goal[:100]}")
     print(f"  session: {_session_dir}")
 
     # Slot 1: comms_operator (always)

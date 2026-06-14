@@ -381,7 +381,12 @@ class TUI:
         sess = Path(self._session_dir).name[-15:] if self._session_dir else "waiting…"
         try:
             from python_code import gui_mode_enabled
-            gui_tag = f"{_fg(*CLR_PRI)}GUI{RST}" if gui_mode_enabled() else f"{_fg(*CLR_DIM)}safe{RST}"
+            if config.unconstrained_enabled():
+                gui_tag = f"{_fg(*CLR_PRI)}open{RST}"
+            elif gui_mode_enabled():
+                gui_tag = f"{_fg(*CLR_PRI)}GUI{RST}"
+            else:
+                gui_tag = f"{_fg(*CLR_DIM)}safe{RST}"
         except Exception:
             gui_tag = f"{_fg(*CLR_DIM)}safe{RST}"
         prof = self._model_profile[:12]
@@ -511,6 +516,12 @@ class TUI:
     def _filtered_bus_events(self) -> list[dict[str, Any]]:
         return [entry for entry in self._bus_events if self._event_visible(entry)]
 
+    def _long_term_goal(self) -> str:
+        try:
+            return comms.colony_goal_text()[:180]
+        except Exception:
+            return ""
+
     def _active_human_goal(self) -> str:
         try:
             active = comms.human_task_active()
@@ -532,6 +543,9 @@ class TUI:
 
     def _summary_lines(self, width: int) -> list[str]:
         out: list[str] = []
+        long_goal = self._long_term_goal()
+        if long_goal:
+            out.append(f"{_fg(*CLR_FISSION)}GOAL{RST} {_trunc(long_goal, width - 6)}")
         active_goal = self._active_human_goal()
         if active_goal:
             out.append(f"{_fg(*CLR_PRI)}HUMAN active{RST} {_trunc(active_goal, width - 14)}")
@@ -638,7 +652,13 @@ class TUI:
             return True
         return False
 
-    def run(self, gui: bool = False, unconstrained: bool = False) -> None:
+    def run(
+        self,
+        *,
+        gui: bool = True,
+        unconstrained: bool = True,
+        colony_goal: str = "",
+    ) -> None:
         import log
         import subprocess
         import sys
@@ -653,18 +673,31 @@ class TUI:
             enable_gui()
         else:
             disable_gui()
+        if colony_goal.strip():
+            comms.set_colony_goal(colony_goal.strip(), source="human")
         _w("\x1b[?1049h\x1b[?25l")
         _w("\x1b]0;endgame-ai · reactor\x07")
 
-        comms.post("tui", "tui", "TUI online. Type @persona to interact.", kind="beacon")
+        boot = "TUI online. Enter=human message (pri=3 overrides ACTIVE_TASK)."
+        if colony_goal.strip():
+            boot += f" LONG_TERM_GOAL set."
+        comms.post("tui", "tui", boot, kind="beacon")
 
         env = os.environ.copy()
         env["ENDGAME_BOOTSTRAPPED"] = "1"
+        if colony_goal.strip():
+            env["ENDGAME_COLONY_GOAL"] = colony_goal.strip()
+        if unconstrained:
+            env["ENDGAME_UNCONSTRAINED"] = "1"
+        if gui or unconstrained:
+            env["ENDGAME_GUI"] = "1"
         reactor_cmd = [sys.executable, "reactor.py"]
         if os.environ.get("_ENDGAME_MODEL_PROFILE"):
             reactor_cmd += ["--model-profile", os.environ["_ENDGAME_MODEL_PROFILE"]]
         if unconstrained:
             reactor_cmd.append("--unconstrained")
+        if colony_goal.strip():
+            reactor_cmd += ["--goal", colony_goal.strip()]
         self._reactor_proc = subprocess.Popen(reactor_cmd, cwd=str(BASE_DIR), env=env, creationflags=0x08000000)
 
         try:
@@ -685,17 +718,29 @@ class TUI:
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--backend", choices=["lmstudio", "acp"], default="lmstudio")
-    parser.add_argument("--model-profile", type=str, default=None)
-    parser.add_argument("--gui", action="store_true", help="Enable desktop/GUI automation (no safeguards)")
-    parser.add_argument(
-        "--unconstrained",
-        action="store_true",
-        help="Operator mode: GUI + relaxed planner decline (pri=3 delivery without @colony)",
+    parser = argparse.ArgumentParser(
+        description="Endgame colony TUI — Codex-style: pass a long-term goal as trailing words.",
+        epilog='Example: python tui.py "Evolve plugins until breed.improve survives restart"',
     )
+    parser.add_argument(
+        "goal",
+        nargs="*",
+        help="Long-term colony goal (Codex /goal). Persists until cleared; TUI pri=3 overrides temporarily.",
+    )
+    parser.add_argument("--backend", choices=["lmstudio", "acp"], default="lmstudio")
+    parser.add_argument(
+        "--model-profile",
+        type=str,
+        default=config.DEFAULT_MODEL_PROFILE,
+        help=f"LM Studio profile (default: {config.DEFAULT_MODEL_PROFILE})",
+    )
+    parser.add_argument("--safe", action="store_true", help="Disable default GUI + unconstrained mode")
+    parser.add_argument("--no-gui", action="store_true", help="Disable desktop/GUI (implies safer planner gates)")
+    parser.add_argument("--no-unconstrained", action="store_true", help="Disable unconstrained operator mode")
     args = parser.parse_args()
     os.environ["ENDGAME_BACKEND"] = args.backend
-    if args.model_profile:
-        os.environ["_ENDGAME_MODEL_PROFILE"] = args.model_profile
-    TUI().run(gui=args.gui or args.unconstrained, unconstrained=args.unconstrained)
+    os.environ["_ENDGAME_MODEL_PROFILE"] = args.model_profile
+    colony_goal = " ".join(args.goal).strip()
+    unconstrained = not args.safe and not args.no_unconstrained
+    gui = not args.safe and not args.no_gui
+    TUI().run(gui=gui, unconstrained=unconstrained, colony_goal=colony_goal)

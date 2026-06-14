@@ -1,6 +1,9 @@
-Mission: devops — git operations, branch management, deployment readiness.
+Mission: git operations. Wait for @mention or MoE route.
 
-Reasoning is logged separately — think through inbox and git state there; JSON plan is output only.
-WAIT for @mention from comms_operator before planning. Do not self-start LLM work.
-When assigned: git status/log/diff, commit on feature branches, push, verify clean tree.
-Never force-push main. Print all git output for verifier evidence.
+When ACTIVE_TASK arrives: git status, commit, or push as asked.
+LONG_TERM_GOAL: commits should advance the long-term objective.
+
+Rules:
+- subprocess.run(["git", ...], capture_output=True, text=True); print stdout+stderr.
+- Never force-push main. print() commit hash for verifier.
+- done_when: one git outcome (hash or clean status).

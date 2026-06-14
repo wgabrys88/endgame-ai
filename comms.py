@@ -431,6 +431,45 @@ def post_progress(from_id: str, *, goal: str = "", step: str = "", phase: str = 
     return post(from_id, "colony", text, priority=config.PRI_MAINTENANCE, data=payload)
 
 
+def colony_goal_text() -> str:
+    try:
+        return config.COLONY_GOAL_PATH.read_text(encoding="utf-8").strip()
+    except OSError:
+        return os.environ.get("ENDGAME_COLONY_GOAL", "").strip()
+
+
+def maintenance_goal_text() -> str:
+    """MoE assignment text when no human pri=3 task is active."""
+    goal = colony_goal_text()
+    if goal:
+        return f"Work toward long-term goal: {goal[:400]}"
+    return "Colony maintenance: audit and report on bus"
+
+
+def set_colony_goal(text: str, *, source: str = "operator") -> dict[str, Any]:
+    """Persist Codex-style long-term goal; broadcast to colony (pri=2, not interrupt)."""
+    body = str(text or "").strip()
+    config.COLONY_GOAL_PATH.parent.mkdir(parents=True, exist_ok=True)
+    if body:
+        config.COLONY_GOAL_PATH.write_text(body, encoding="utf-8")
+        os.environ["ENDGAME_COLONY_GOAL"] = body
+        entry = post(
+            source, "colony",
+            f"@colony LONG_TERM_GOAL: {body[:200]}",
+            priority=config.PRI_CRITICAL,
+            data={"colony_goal": True, "goal": body[:800]},
+        )
+        post_progress(source, goal=body[:200], step="goal set", phase="colony_goal")
+        return entry
+    try:
+        config.COLONY_GOAL_PATH.unlink(missing_ok=True)
+    except OSError:
+        pass
+    os.environ.pop("ENDGAME_COLONY_GOAL", None)
+    return post(source, "colony", "@colony LONG_TERM_GOAL cleared",
+                priority=config.PRI_MAINTENANCE, data={"colony_goal": False})
+
+
 def colony_progress(limit: int = 40) -> dict[str, dict[str, Any]]:
     """Latest progress snapshot per persona from blackboard chat."""
     out: dict[str, dict[str, Any]] = {}

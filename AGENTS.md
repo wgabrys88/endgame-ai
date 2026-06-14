@@ -222,6 +222,16 @@ From `OBSERVATIONS.md` session `20260614_185239` — **implemented** (reduce dup
 
 **Still open:** long-run repro of improve + restart under post-`185239` wiring.
 
+### Codex-style startup (2026-06-14)
+
+| Feature | Implementation |
+|---------|----------------|
+| Default GUI + unconstrained | `tui.py` defaults; `--safe` to disable |
+| Long-term goal at startup | `python tui.py "goal words"` → `comms.set_colony_goal`, `runtime/colony_goal.txt` |
+| MoE pursues goal | `engine._moe_route` → `comms.maintenance_goal_text()` |
+| Human override | pri=3 ACTIVE_TASK; `_restore_after_human_task` returns to idle → MoE → LONG_TERM_GOAL |
+| Nemotron 4B prompts | Rewritten `prompts/*.txt` + personalities — 1-step plans, short JSON |
+
 ---
 
 ## Architecture Summary

@@ -8,30 +8,48 @@ Current work branch: `unify-rewrite`.
 
 ## Quick Start
 
+Codex-style: one command, optional long-term goal as trailing words. GUI + unconstrained are **on by default**.
+
 ```bash
 git checkout unify-rewrite && git pull
-python tui.py --model-profile nemotron
+python tui.py "Evolve plugins until breed.improve survives restart"
+```
+
+With explicit profile (default is `nemotron_parallel` for nemotron-3-nano 4B @ MC=5):
+
+```bash
+python tui.py --model-profile nemotron_parallel "Audit colony health and improve fission_log telemetry"
+```
+
+Safer mode (no GUI, planner decline gates active):
+
+```bash
+python tui.py --safe "Colony maintenance only"
 ```
 
 Profiles:
 
 | Profile | Use |
 |---|---|
-| `nemotron` | Default maintenance, LM Studio max concurrent predictions = 1 |
-| `nemotron_parallel` | Burst validation, LM Studio max concurrent predictions = 5 |
-| `gemma` | Faster alternate profile without thinking |
+| `nemotron_parallel` | **Default** — nemotron-3-nano 4B, LM Studio MC=5 |
+| `nemotron` | Single-flight, MC=1 |
+| `gemma` | Faster alternate without thinking |
 | `--backend acp` | Sequential ACP backend |
-| `--gui` | Enables desktop observation/actions by writing `gui_mode` |
-| `--unconstrained` | Operator mode: GUI + relaxed planner decline; pri=3 human delivery without `@colony` |
+| `--safe` | Disables default GUI + unconstrained |
+| `--no-gui` / `--no-unconstrained` | Toggle individual defaults |
 
-TUI controls: Enter sends a human message, `f` cycles phase filters, `1`-`5` select `all`/`verify`/`breed`/`human`/`error`, `g` toggles GUI mode, Space toggles pause, `q` exits, `@persona message` targets a worker.
+**Goal model (like Codex `/goal`):**
+- Trailing words set `LONG_TERM_GOAL` in `runtime/colony_goal.txt` and on the bus.
+- MoE routes workers toward it when no human pri=3 task is active.
+- With no goal: maintenance audits, then idle (same as golden runs).
+- TUI Enter posts pri=3 **ACTIVE_TASK** — overrides long-term goal until verified, then colony returns to LONG_TERM_GOAL.
 
-Human steering: TUI posts `from=human`, pri=3. Workers receive human goals via `comms.inbox_match` (mention, `@colony`, or pri=3 broadcast). `@colony` still helps routing clarity but is no longer required for delivery. Declines and max-retry exhaustion post at pri=0 with `human_ack` so they do not re-interrupt the colony. Pri=3 changes the active goal, not schemas, verifier/fission gates, or file rules unless `--unconstrained` is on. See `OBSERVATIONS.md` for session evidence.
+TUI controls: Enter=human message, `f`=filter, `1`-`5`=presets, `g`=toggle GUI file, Space=pause, `q`=quit.
 
 ## Architecture
 
 ```text
-python tui.py --model-profile nemotron_parallel --gui
+python tui.py "long-term goal here"
   -> reactor.py
        s1 comms_operator  fixed MoE router
        s2 architect       worker

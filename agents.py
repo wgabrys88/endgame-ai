@@ -221,11 +221,23 @@ def _planner_messages(board: dict[str, Any]) -> tuple[str, str]:
     parts = [f"PERSONA_NAME: {persona or 'default'}"]
     if persona_text:
         parts += ["PERSONA_MISSION:", persona_text, ""]
-    parts += [
-        f"GOAL: {str(board.get('goal', ''))[:800]}",
-        "",
-        f"PRESSURE: stagnation={stag_f:.3f} power={float(pwr):.3f}",
-    ]
+    active_goal = str(board.get("goal", ""))[:800]
+    long_term = ""
+    try:
+        import comms
+        long_term = comms.colony_goal_text()[:600]
+    except Exception:
+        pass
+    parts += [f"ACTIVE_TASK: {active_goal or '(idle — wait for MoE route or human interrupt)'}"]
+    if long_term:
+        parts += [
+            f"LONG_TERM_GOAL (persistent, Codex /goal): {long_term}",
+            "Make ACTIVE_TASK one small step toward LONG_TERM_GOAL when assigned.",
+            "",
+        ]
+    else:
+        parts += [""]
+    parts += [f"PRESSURE: stagnation={stag_f:.3f} power={float(pwr):.3f}"]
     if manifest_ctx:
         parts += ["", manifest_ctx]
     if desktop_ctx:
@@ -372,9 +384,7 @@ class VerifierAgent:
                 board["_last_verified_priority"] = board.get("priority", config.PRI_MAINTENANCE)
                 board["_last_verifier_evidence"] = evidence[:400]
                 if board.get("priority", config.PRI_MAINTENANCE) >= config.PRI_HUMAN:
-                    board["priority"] = config.PRI_MAINTENANCE
-                    board["goal"] = ""
-                    board["_human_denials"] = 0
+                    _restore_after_human_task(board)
                 return {"phase": "verify", "data": {"verdict": "confirmed", "evidence": evidence},
                         "next": "fission_judge"}
             board["plan"] = []
@@ -392,9 +402,7 @@ class VerifierAgent:
                 board["_last_verified_priority"] = board.get("priority", config.PRI_MAINTENANCE)
                 board["_last_verifier_evidence"] = evidence[:400]
                 if board.get("priority", config.PRI_MAINTENANCE) >= config.PRI_HUMAN:
-                    board["priority"] = config.PRI_MAINTENANCE
-                    board["goal"] = ""
-                    board["_human_denials"] = 0
+                    _restore_after_human_task(board)
                 return {"phase": "verify", "data": {"verdict": "confirmed", "evidence": evidence},
                         "next": "fission_judge"}
             board["plan"] = []
@@ -422,9 +430,7 @@ class VerifierAgent:
             board["_last_verified_priority"] = board.get("priority", config.PRI_MAINTENANCE)
             board["_last_verifier_evidence"] = evidence[:400]
             if board.get("priority", config.PRI_MAINTENANCE) >= config.PRI_HUMAN:
-                board["priority"] = config.PRI_MAINTENANCE
-                board["goal"] = ""
-                board["_human_denials"] = 0
+                _restore_after_human_task(board)
             return {"phase": "verify", "data": _llm_event_data(llm_out, {
                 "verdict": "confirmed", "evidence": evidence,
             }), "next": "fission_judge"}
@@ -766,6 +772,14 @@ def _is_bus_only_fission_milestone(completed: str, evidence: str) -> bool:
     has_bus = any(token in text for token in _BUS_ONLY_FISSION_TOKENS)
     has_durable = any(token in text for token in _DURABLE_FISSION_TOKENS)
     return has_bus and not has_durable
+
+
+def _restore_after_human_task(board: dict[str, Any]) -> None:
+    """Clear human interrupt; idle until MoE routes maintenance or long-term goal."""
+    board["priority"] = config.PRI_MAINTENANCE
+    board["goal"] = ""
+    board["plan"] = []
+    board["_human_denials"] = 0
 
 
 def _human_rephrase_suggestion(reason: str) -> str:

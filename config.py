@@ -19,6 +19,8 @@ SCHEMAS_DIR: Path = BASE_DIR / "schemas"
 PLUGINS_DIR: Path = BASE_DIR / "plugins"
 GUI_MODE_PATH: Path = BASE_DIR / "gui_mode"
 UNCONSTRAINED_MODE_PATH: Path = BASE_DIR / "unconstrained_mode"
+COLONY_GOAL_PATH: Path = BASE_DIR / "runtime" / "colony_goal.txt"
+DEFAULT_MODEL_PROFILE: str = "nemotron_parallel"
 
 # --- .env loader ---
 _dotenv = BASE_DIR / ".env"
@@ -161,11 +163,20 @@ def active_model_profile() -> str:
 
 
 def unconstrained_enabled() -> bool:
-    """Operator mode: relax GUI decline and planner guardrails."""
+    """Operator mode: relax GUI decline and planner guardrails (default on)."""
     flag = os.environ.get("ENDGAME_UNCONSTRAINED", "").strip().lower()
-    if flag in ("1", "true", "yes"):
+    if flag in ("0", "false", "no"):
+        return False
+    if flag in ("1", "true", "yes") or UNCONSTRAINED_MODE_PATH.is_file():
         return True
-    return UNCONSTRAINED_MODE_PATH.is_file()
+    return True  # default on; use --safe / ENDGAME_UNCONSTRAINED=0 to disable
+
+
+def gui_default_enabled() -> bool:
+    flag = os.environ.get("ENDGAME_GUI", "").strip().lower()
+    if flag in ("0", "false", "no"):
+        return False
+    return True
 
 # --- Timing ---
 DELAY_BETWEEN_CYCLES: float = 2.0

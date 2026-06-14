@@ -423,6 +423,13 @@ JSONL on external archive.
 
 ---
 
+## Codex-style startup (2026-06-14)
+
+- **Default:** `python tui.py "your long-term goal"` — GUI + unconstrained on, profile `nemotron_parallel`.
+- **LONG_TERM_GOAL** persists in `runtime/colony_goal.txt`; MoE routes toward it; maintenance when empty.
+- **TUI pri=3** = ACTIVE_TASK override; after verify, idle until MoE resumes long-term work.
+- **`--safe`** restores guarded planner behavior.
+
 ## Post-fix implementation log (2026-06-14)
 
 Wiring unified per operator request (less code, one interrupt path):
