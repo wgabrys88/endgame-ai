@@ -214,5 +214,7 @@ Mutation safety:
 
 - Persistent elite archive across reactor restarts.
 - Long-run MAP-Elites convergence.
-- Full removal of all deterministic LLM-output fallbacks; fission/reflection still retain safety fallbacks.
+- Reflection still has a deterministic fallback diagnosis when reflector JSON is invalid.
+- Fission credit fallback was removed after the 10-minute run: invalid fission-judge JSON denies credit.
+- LLM transport failure no longer fabricates planner `done` JSON.
 - Browser-plugin validation in this desktop sandbox.

@@ -98,5 +98,7 @@ If `python` is not on PATH on this machine, use:
 
 - Persistent elite archive across reactor restarts is still not implemented.
 - Long-run MAP-Elites convergence is still not proven.
-- Fission judge still has deterministic fallback behavior when LLM output is empty or invalid.
+- Reflection still has a deterministic fallback diagnosis when reflector JSON is invalid.
+- Fission credit now fails closed: invalid fission-judge JSON denies credit instead of retaining behavior.
+- LLM transport failure now returns empty output instead of a fabricated planner `done` response.
 - Browser plugin startup is currently blocked in this Windows sandbox with `CreateProcessAsUserW failed: 5`; GUI validation was performed through `gui_mode` and `observer.py`, not through the in-app Browser surface.

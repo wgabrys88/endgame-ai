@@ -66,6 +66,7 @@ Latest important commits:
 |---|---|
 | `0a5b128` | Closed breeder selection trial loop |
 | `8cd57b6` | Removed dead mutator fallback shims before 10-minute autonomous run |
+| `Fail closed on fission and LLM outages` | Fission credit and LLM transport fail closed instead of fabricating success |
 
 10-minute validation after `8cd57b6`:
 
@@ -153,7 +154,9 @@ Keep unless intentionally archiving or rotating evidence:
 - Persistent elite archive across reactor restarts.
 - Long-run MAP-Elites convergence.
 - Better semantic mutation scoring: a no-op plugin patch can be neutral over short windows and still be architecturally bad.
-- Fission/reflection still include deterministic fallbacks for invalid or empty LLM output.
+- Reflection still includes a deterministic fallback diagnosis for invalid reflector JSON.
+- Fission credit now fails closed on invalid fission-judge JSON.
+- LLM transport failure now returns empty output instead of fabricated planner `done` JSON.
 - Browser plugin startup is blocked in this Windows sandbox (`CreateProcessAsUserW failed: 5`), so Browser-surface validation is not complete even though GUI mode validation is.
 
 ## Handover Prompt

@@ -684,17 +684,33 @@ def _fission_review(board: dict[str, Any], completed: str) -> dict[str, str]:
     try:
         parsed = json.loads(llm_out.text)
     except (json.JSONDecodeError, TypeError):
-        parsed = {}
-    verdict = str(parsed.get("verdict", "credit"))
+        return {
+            "verdict": "deny",
+            "diagnosis": "Fission judge did not return valid JSON, so the reactor must not award selection credit.",
+            "suggestion": "Retry with a smaller verifiable milestone and require a valid fission judge verdict.",
+            "rule": "No fission credit without a valid fission judge JSON verdict.",
+            "_llm": _llm_event_data(llm_out, {"judge_error": "invalid_json"}),
+        }
+    if not isinstance(parsed, dict):
+        return {
+            "verdict": "deny",
+            "diagnosis": "Fission judge output was not a JSON object, so credit is withheld.",
+            "suggestion": "Return the required fission judge object before selection can retain this behavior.",
+            "rule": "Fission judge output must be a JSON object.",
+            "_llm": _llm_event_data(llm_out, {"judge_error": "not_object"}),
+        }
+    verdict = str(parsed.get("verdict", "deny"))
     if verdict not in {"credit", "deny"}:
-        verdict = "credit"
+        verdict = "deny"
     diagnosis = str(parsed.get("diagnosis", "")).strip()
     suggestion = str(parsed.get("suggestion", "")).strip()
     rule = str(parsed.get("rule", "")).strip()
     if not diagnosis:
-        diagnosis = "Verifier supplied concrete completion evidence, so deterministic fallback awards fission credit."
+        diagnosis = "Fission judge omitted a diagnosis, so the selection reactor cannot justify credit."
+        verdict = "deny"
     if not suggestion:
-        suggestion = "Use this credited completion as selection evidence for the breeding reactor."
+        suggestion = "Return a complete fission judge verdict with evidence-grounded rationale."
+        verdict = "deny"
     review = {
         "verdict": verdict,
         "diagnosis": diagnosis,

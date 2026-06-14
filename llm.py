@@ -255,8 +255,7 @@ def call_llm(system: str, user: str, role: str, *, max_tokens: int = 0,
             log.emit("llm_retry", {"attempt": attempt + 1, "error": str(err)[:200]})
             if attempt >= 2:
                 log.emit("llm_fail", {"error": str(err)[:200]})
-                fallback = json.dumps({"mode": "done", "sequence": [], "done_when": "LLM unavailable"})
-                return LLMResult(text=fallback)
+                return LLMResult(text="", reasoning=f"LLM unavailable: {str(err)[:200]}")
             time.sleep(min(2 ** attempt, 10))
     return LLMResult(text="")
 
