@@ -39,13 +39,3 @@ def validate_python(text: str) -> tuple[bool, str, str]:
         return False, cleaned, f"SyntaxError: {exc.msg} ({where})"
     return True, cleaned, ""
 
-
-def goal_prefers_gui(text: str) -> bool:
-    """Route to GUI planner circuit when goal clearly needs desktop hands."""
-    g = sanitize_python_text(text).lower()
-    hints = (
-        "notepad", "calculator", "mspaint", "wordpad", "chrome", "youtube",
-        "opera", "linkedin", "desktop", "open app", "open the", "click",
-        "type ", "window", "gui", "notepad.exe", "calc.exe",
-    )
-    return any(h in g for h in hints)

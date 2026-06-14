@@ -45,8 +45,7 @@ Bus: comms.py (includes actor sandbox + GUI toggle)
 
 ```bash
 python -m py_compile tui.py reactor.py main.py engine.py agents.py comms.py llm.py
-python agents.py --fission-smoke
-python reactor.py --archive-smoke
+python -m py_compile agents.py reactor.py comms.py engine.py tui.py main.py
 ```
 
 ## Docs

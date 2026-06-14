@@ -64,14 +64,14 @@ WHAT WE BUILT (papers → modules):
 WHAT IS NOT THE ORGANISM:
   - LLM backend (nemotron via LM Studio) — llm.py, swappable
   - TUI (tui.py) — human display + keyboard inject only
-  - prompts/*.txt, schemas/*.json — data, not logic
+  - prompts/*.txt — circuit hints (loose JSON shapes in user message, not strict schemas)
 
 DESKTOP IS THE ORGANISM (main vision — Bukowski spec):
   observer.py + win32.py + actions.py (~950 lines) = see, act, verify on real Windows.
   main proved M4: self-launch, exec metabolism, Notepad/Opera/LinkedIn, spawn_main posterity.
   Colony must keep the SAME desktop path — not optional, not a fork.
   Desktop + metabolism always on. No code immune system — goal + personalities self-regulate.
-  planner_gui + actor LLM + ObserverAgent = movement + observation circuits.
+  unified planner (text steps) + actor LLM + ObserverAgent = movement + observation circuits.
 
 ACTOR PATHS (unified — one ActorAgent):
   | Mode        | Plan step field | Execution                         |
@@ -374,7 +374,7 @@ ASCII equivalent:
 
 | Category | Paths |
 |----------|--------|
-| **Run** | `*.py`, `prompts/**`, `schemas/**`, `plugins/**`, `.env` |
+| **Run** | `*.py`, `prompts/**`, `plugins/**`, `.env` |
 | **Humans** | `README.md` |
 | **AI** | `OBSERVATIONS.md` |
 | **Project** | `LICENSE`, `CONTRIBUTING.md`, `RULES.md`, `.gitignore`, `.gitattributes` |

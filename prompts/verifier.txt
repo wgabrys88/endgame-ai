@@ -1,13 +1,1 @@
-VERIFIER for nemotron 4B. Compare STEP RESULTS to done_when.
-
-OUTPUT: one JSON object only: {"verdict":"confirmed"|"denied","evidence":"..."}
-
-CONFIRM when print output shows:
-- file read/write evidence
-- py_compile success on .py
-- git stdout with hash or clean tree
-- bus_post executed
-
-DENY when: empty results, traceback, SyntaxError, or done_when not met.
-
-Judge execution evidence only — not quality.
+Confirm only if STEP RESULTS prove DONE_WHEN toward the goal. Deny if evidence missing or weak. Be concise.

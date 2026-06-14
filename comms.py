@@ -760,51 +760,15 @@ def format_bus_context(limit: int | None = None, for_agent: str | None = None) -
 
 
 def format_phase_brief(phase: str, data: Any, *, max_w: int = 120, style: str = "bus") -> str:
-    """Shared phase→string formatter for bus mirror and TUI."""
+    """One-line phase summary for bus mirror and TUI."""
+    del style
     if not isinstance(data, dict):
-        return phase[:max_w] if style == "tui" else phase
-    match phase:
-        case "actor" | "action":
-            return f"{phase} {'ok' if data.get('ok') else 'FAIL'} {str(data.get('obs', ''))[:120]}"
-        case "plan":
-            return f"plan {data.get('mode', '')} steps={data.get('steps', '')} {str(data.get('done_when', ''))[:80]}"
-        case "verify":
-            return f"verify {data.get('verdict', '')} {str(data.get('evidence', ''))[:80]}"
-        case "fission":
-            return f"fission n={data.get('fissions', '')}"
-        case "interrupt":
-            return f"INTERRUPT pri={data.get('pri')} from @{data.get('from', '?')}"
-        case "pressure":
-            return f"pressure stag={data.get('stagnation')} pwr={data.get('power', '')}"
-        case "moe.route":
-            return f"route ->@{data.get('to', '')} w={data.get('weight', '')}"
-        case "moe.escalate":
-            return f"ESCALATE @{data.get('from', '')} ->@{data.get('to', '')} s{data.get('slot', '')}"
-        case "moe.yield":
-            return f"moe.yield {str(data.get('reason', ''))[:80]}"
-        case "human.decline":
-            reason = str(data.get("reason", ""))[:80]
-            suggestion = str(data.get("suggested_rephrase", ""))[:120]
-            return f"human.decline {reason} try={suggestion}" if suggestion else f"human.decline {reason}"
-        case "llm.response" if style == "tui":
-            return (f"{data.get('role', '')} out={data.get('output_chars', 0)} "
-                    f"think={data.get('reasoning_chars', 0)} tok={data.get('reasoning_tokens', 0)}")[:max_w]
-        case "reflect" | "mutate" if style == "tui":
-            return str(data.get("diagnosis") or data.get("action") or data)[:max_w]
-        case "planner.pending" if style == "tui":
-            return "waiting LLM..."
-        case "schedule" if style == "tui":
-            return f"→ {data.get('next', '')} ({data.get('reason', '')})"[:max_w]
-        case "fission.deny" if style == "tui":
-            return f"deny {data.get('diagnosis', '')} {data.get('suggestion', '')}"[:max_w]
-        case _ if style == "tui" and phase.startswith("breed."):
-            return (f"{data.get('target', '')} {data.get('reason', '')} "
-                    f"d_stag={data.get('stagnation_delta', '')} d_pwr={data.get('power_delta', '')}")[:max_w]
-        case "start" if style == "tui":
-            return f"{data.get('personality', '')} [{data.get('profile', '')}]"[:max_w]
-        case _:
-            text = f"{phase} {str(data)}"
-            return text[:max_w]
+        return phase[:max_w]
+    for key in ("obs", "evidence", "verdict", "diagnosis", "reason", "error", "to", "next", "action"):
+        val = data.get(key)
+        if val not in (None, ""):
+            return f"{phase} {val}"[:max_w]
+    return f"{phase} {str(data)}"[:max_w]
 
 
 def _brief(phase: str, data: Any) -> str:

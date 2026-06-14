@@ -1,7 +1,1 @@
-MUTATOR for nemotron 4B. Patch existing plugins/ only.
-
-OUTPUT: one JSON only: {"action":"patch_plugin"|"none","filename":"plugins/x.py","content":"..."}
-
-Plugin: def run(board): ... return None or {"phase":...}
-Rules: fix HISTORY errors; py_compile valid Python; file must exist; no new files; no os/subprocess/network in patches.
-If unclear fix: action "none".
+Under pressure: patch an existing plugins/*.py file only (full source with def run(board)), or action none.

@@ -6,94 +6,47 @@ import os
 from pathlib import Path
 import py_compile
 import re
-import sys
-import tempfile
 import time
 from typing import Any
 
 import config
 import log
 from llm import LLMResult, call_llm
-from python_code import goal_prefers_gui, is_python_code, validate_python
+from python_code import validate_python
 
-_SIMPLE_FILE_DONE_PREFIX = "file_equals "
-_GIT_DONE_PREFIX = "git_equals "
-_GIT_HASH_RE = re.compile(r"\b[0-9a-f]{7,40}\b", re.IGNORECASE)
-_GIT_CLEAN_MARKERS = (
-    "nothing to commit",
-    "working tree clean",
-    "nothing added to commit",
-)
-_CREATE_FILE_RE = re.compile(
-    r"^(?:@[A-Za-z][A-Za-z0-9_]*\s+)?create\s+([^\s]+)\s+with\s+(.+?)\s*$",
-    re.IGNORECASE | re.DOTALL,
-)
+_ELEMENT_ID_RE = re.compile(r"\[\d+\]")
 _PLUGIN_NAME_RE = re.compile(r"^[a-z0-9_]+\.py$")
-_REASONING_CONTRACT = (
-    "REASONING (separate channel — logged for debugging and persona adaptation):\n"
-    "- Think step-by-step in your reasoning trace: inbox, pressure, risks, plan shape.\n"
-    "- Do NOT put analysis or markdown in the final content field.\n"
-    "OUTPUT (final content only):\n"
-    "- ONE raw JSON object. No ``` fences. No prose before or after the JSON.\n"
+_REASONING = (
+    "Think in reasoning channel. Final content: one raw JSON object, no markdown fences.\n"
 )
-
-_SCHEMA_USER_HEADERS: dict[str, str] = {
-    "planner": (
-        _REASONING_CONTRACT
-        + "JSON_OUTPUT (schema contract — user message, not system):\n"
-        '{"mode":"direct"|"done","sequence":[{"code":"..."}],"done_when":"..."}\n'
-        "mode=direct for actionable plans. sequence=1-3 Python steps for one outcome.\n"
-    ),
-    "verifier": (
-        _REASONING_CONTRACT
-        + "JSON_OUTPUT (schema contract — user message, not system):\n"
-        '{"verdict":"confirmed"|"denied","evidence":"..."}\n'
-    ),
-    "reflector": (
-        _REASONING_CONTRACT
-        + "JSON_OUTPUT (schema contract — user message, not system):\n"
-        '{"diagnosis":"...","suggestion":"...","rule":"..."}\n'
-    ),
-    "mutator": (
-        _REASONING_CONTRACT
-        + "JSON_OUTPUT (schema contract — user message, not system):\n"
-        '{"action":"patch_plugin"|"none","filename":"plugins/...","content":"..."}\n'
-    ),
-    "fission_judge": (
-        _REASONING_CONTRACT
-        + "JSON_OUTPUT (schema contract — user message, not system):\n"
-        '{"verdict":"credit"|"deny","diagnosis":"...","suggestion":"...","rule":"..."}\n'
-    ),
+_CIRCUIT_HINTS: dict[str, str] = {
+    "planner": '{"mode":"direct"|"done","sequence":["text step",...],"done_when":"measurable outcome"}',
+    "verifier": '{"verdict":"confirmed"|"denied","evidence":"what step results prove"}',
+    "reflector": '{"diagnosis":"...","suggestion":"...","rule":"..."}',
+    "mutator": '{"action":"patch_plugin"|"none","filename":"plugins/x.py","content":"full source"}',
+    "fission_judge": '{"verdict":"credit"|"deny","diagnosis":"...","suggestion":"...","rule":""}',
+    "actor": '{"actions":[{"verb":"click|focus|write|press|hotkey|scroll","target":"[id]","value":""}],"conclusion":"EXECUTE"|"DONE"|"CANNOT"}',
 }
 
 
 def _personality(board: dict[str, Any] | None = None) -> str:
-    """Personality name from board object first, env fallback for comms.agent_id parity."""
     if board:
-        name = str(board.get("personality", "")).strip()
-        if name:
-            return name
+        return str(board.get("personality", "")).strip()
     return os.environ.get("ENDGAME_PERSONALITY", "").strip()
 
 
 def _llm_event_data(result: LLMResult, extra: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Attach captured reasoning trace to pipeline phase events."""
     data: dict[str, Any] = {
-        "has_reasoning": bool(result.reasoning),
-        "reasoning_chars": len(result.reasoning),
-        "reasoning_tokens": result.reasoning_tokens,
+        "output_chars": len(result.text or ""),
+        "reasoning_chars": len(result.reasoning or ""),
+        "reasoning_tokens": getattr(result, "reasoning_tokens", 0) or 0,
     }
-    if result.reasoning:
-        limit = int(config.LLM_REASONING_LOG_MAX)
-        data["reasoning"] = result.reasoning if limit <= 0 else result.reasoning[:limit]
     if extra:
         data.update(extra)
     return data
 
 
 def _persona_prompt(persona: str) -> str:
-    if not persona:
-        return ""
     path = config.PROMPTS_DIR / "personalities" / f"{persona}.txt"
     if path.exists():
         return path.read_text(encoding="utf-8").strip()
@@ -101,7 +54,6 @@ def _persona_prompt(persona: str) -> str:
 
 
 def _personality_system(board: dict[str, Any] | None = None) -> str:
-    """Personality file = system prompt (living identity). Circuits live in user message."""
     name = _personality(board)
     text = _persona_prompt(name)
     if text:
@@ -109,18 +61,78 @@ def _personality_system(board: dict[str, Any] | None = None) -> str:
     return f"You are {name or 'endgame-ai'}, a reactor rod in the colony organism."
 
 
+def _load_prompt(role: str) -> str:
+    path = config.PROMPTS_DIR / f"{role}.txt"
+    if path.exists():
+        return path.read_text(encoding="utf-8").strip()
+    return ""
+
+
 def _llm_user(circuit: str, body: str) -> str:
-    """Circuit instructions + schema contract + task state (KV-friendly: stable system = personality)."""
-    parts: list[str] = []
-    header = _SCHEMA_USER_HEADERS.get(circuit, "")
-    if header:
-        parts.append(header.rstrip())
+    parts: list[str] = [_REASONING]
+    hint = _CIRCUIT_HINTS.get(circuit, "")
+    if hint:
+        parts.append(f"JSON shape (hint, not law): {hint}")
     circuit_text = _load_prompt(circuit)
     if circuit_text:
         parts.append(f"CIRCUIT ({circuit}):\n{circuit_text}")
     parts.append("---TASK_STATE---")
     parts.append(body.strip())
     return "\n".join(parts)
+
+
+def _strip_code_fence(text: str) -> str:
+    cleaned = str(text).strip()
+    if not cleaned.startswith("```"):
+        return cleaned
+    lines = cleaned.splitlines()
+    if lines and lines[0].strip().startswith("```"):
+        lines = lines[1:]
+    if lines and lines[-1].strip().startswith("```"):
+        lines = lines[:-1]
+    return "\n".join(lines).strip()
+
+
+def _parse_json(text: str) -> dict[str, Any] | None:
+    raw = _strip_code_fence(str(text or "").strip())
+    if not raw:
+        return None
+    for candidate in (raw, raw[raw.find("{"): raw.rfind("}") + 1] if "{" in raw else ""):
+        if not candidate:
+            continue
+        try:
+            parsed = json.loads(candidate)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    return None
+
+
+def _call_circuit(
+    board: dict[str, Any],
+    circuit: str,
+    body: str,
+    *,
+    role: str = "",
+    cache_key: str = "",
+) -> LLMResult:
+    return call_llm(
+        _personality_system(board),
+        _llm_user(circuit, body),
+        role or circuit,
+        cache_key=cache_key or circuit,
+    )
+
+
+def _format_history(history: list) -> str:
+    if not history:
+        return ""
+    lines = ["RECENT HISTORY:"]
+    for h in history[-config.MAX_HISTORY:]:
+        if isinstance(h, dict):
+            lines.append(f"  {json.dumps(h, ensure_ascii=False)[:400]}")
+    return "\n".join(lines)
 
 
 def _desktop_context() -> str:
@@ -139,14 +151,14 @@ def _desktop_context() -> str:
 
 
 def _planner_state(board: dict[str, Any]) -> str:
-    """Task state for planner circuit — personality file is the system prompt."""
     persona = _personality(board)
-    history_ctx = _format_history(board.get("history", []))
     bus_ctx = ""
     try:
         import comms
-        bus_ctx = comms.format_bus_context(10 if persona == "comms_operator" else 6,
-                                          for_agent=persona or None)
+        bus_ctx = comms.format_bus_context(
+            10 if persona == "comms_operator" else 6,
+            for_agent=persona or None,
+        )
     except Exception:
         pass
     stag = board.get("stagnation", board.get("_pressure", {}).get("stagnation", 0))
@@ -155,25 +167,22 @@ def _planner_state(board: dict[str, Any]) -> str:
     except (TypeError, ValueError):
         stag_f = 0.0
     pwr = board.get("power", 1.0 - stag_f)
-    desktop_ctx = _desktop_context()
-    parts = [f"ROD: {persona or 'default'}"]
-    active_goal = str(board.get("goal", ""))[:800]
     long_term = ""
     try:
         import comms
         long_term = comms.colony_goal_text()[:600]
     except Exception:
         pass
-    parts += [f"ACTIVE_TASK: {active_goal or '(idle — wait for MoE route or human interrupt)'}"]
+    parts = [f"ROD: {persona or 'default'}"]
+    active_goal = str(board.get("goal", ""))[:800]
+    parts.append(f"ACTIVE_TASK: {active_goal or '(idle — wait for MoE route or human interrupt)'}")
     if long_term:
-        parts += [
-            f"LONG_TERM_GOAL: {long_term}",
-            "One small step toward LONG_TERM_GOAL per plan.",
-            "",
-        ]
-    parts += [f"PRESSURE: stagnation={stag_f:.3f} power={float(pwr):.3f}"]
+        parts += [f"LONG_TERM_GOAL: {long_term}", "One small step toward LONG_TERM_GOAL per plan.", ""]
+    parts.append(f"PRESSURE: stagnation={stag_f:.3f} power={float(pwr):.3f}")
+    desktop_ctx = _desktop_context()
     if desktop_ctx:
         parts += ["", desktop_ctx]
+    history_ctx = _format_history(board.get("history", []))
     if history_ctx:
         parts += ["", history_ctx]
     if bus_ctx:
@@ -182,16 +191,31 @@ def _planner_state(board: dict[str, Any]) -> str:
     return "\n".join(parts)
 
 
-_ELEMENT_ID_RE = re.compile(r"\[\d+\]")
-
-
 def _sanitize_plan_step(step: str) -> str:
     if not _ELEMENT_ID_RE.search(step):
         return step
     cleaned = _ELEMENT_ID_RE.sub("", step)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
-    log.emit("plan.sanitize", {"original": step, "cleaned": cleaned})
     return cleaned or step
+
+
+def _normalize_plan_sequence(sequence: Any) -> list[str]:
+    if not isinstance(sequence, list):
+        return []
+    steps: list[str] = []
+    for raw in sequence[: config.MAX_PLAN_STEPS]:
+        if isinstance(raw, str):
+            text = _sanitize_plan_step(raw.strip())
+            if text:
+                steps.append(text)
+        elif isinstance(raw, dict):
+            code = str(raw.get("code", "")).strip()
+            text = str(raw.get("text", "")).strip()
+            if code:
+                steps.append(f"exec:\n{code}")
+            elif text:
+                steps.append(_sanitize_plan_step(text))
+    return steps
 
 
 def _advance_plan(plan: list[dict[str, Any]]) -> None:
@@ -218,11 +242,6 @@ def _build_args(verb: str, target: str, value: str) -> dict[str, Any]:
             return {"selector": target, "amount": int(value) if value else DEFAULT_SCROLL_AMOUNT}
         except ValueError:
             return {"selector": target, "amount": DEFAULT_SCROLL_AMOUNT}
-    if verb == "wait":
-        try:
-            return {"seconds": float(target or value or "1.0")}
-        except ValueError:
-            return {"seconds": 1.0}
     if verb == "focus":
         return {"window_title": target or value}
     return {}
@@ -233,316 +252,29 @@ def _render_actor_context(board: dict[str, Any], instruction: str) -> str:
     screen = str(board.get("screen", "")).strip()
     if screen:
         parts.append(f"SCREEN:\n{screen}")
-    fw = str(board.get("focused_window", "")).strip()
-    if fw:
-        parts.append(f"FOCUSED WINDOW: {fw}")
-    ds = str(board.get("desktop_summary", "")).strip()
-    if ds:
-        parts.append(f"DESKTOP:\n{ds}")
     plan = board.get("plan", [])
     if plan:
         lines = ["PLAN:"]
-        for i, step in enumerate(plan):
-            if not isinstance(step, dict):
-                continue
-            is_last = i == len(plan) - 1
-            connector = "└── " if is_last else "├── "
-            status = step.get("status", "pending")
-            marker = "✓ " if status == "done" else ">>> " if status == "active" else ""
-            label = step.get("text") or step.get("code", "")
-            lines.append(f"  {connector}{marker}{label}")
+        for step in plan:
+            if isinstance(step, dict):
+                lines.append(f"  - {step.get('status', '?')}: {step.get('text', '')}")
         parts.append("\n".join(lines))
-    history = board.get("history", [])
-    if history:
-        hist_lines = ["HISTORY:"]
-        for h in history[-config.MAX_HISTORY:]:
-            if isinstance(h, dict):
-                ok = "✓" if h.get("ok") else "✗"
-                hist_lines.append(f"  {ok} {h.get('verb', '')}: {h.get('obs', '')}")
-        parts.append("\n".join(hist_lines))
     parts.append(f"INSTRUCTION: {instruction}")
-    parts.append("Actor JSON:")
     return "\n\n".join(parts)
 
 
-class ObserverAgent:
-    """Hover probe + UIA tree → screen context for GUI actor."""
-
-    def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
-        from observer import observe
-        try:
-            obs = observe()
-        except Exception as exc:
-            return {"phase": "observe", "data": {"error": str(exc)[:200]}}
-        return {
-            "phase": "observe",
-            "data": {"focused": obs.focused_title, "chars": len(obs.context_text)},
-            "writes": {
-                "screen": obs.context_text,
-                "screen_elements": obs.book,
-                "focused_window": obs.focused_title,
-                "desktop_summary": obs.desktop_summary,
-            },
-        }
+def _plan_steps(sequence: list[str]) -> list[dict[str, Any]]:
+    return [
+        {"text": text, "status": "active" if i == 0 else "pending"}
+        for i, text in enumerate(sequence)
+    ]
 
 
-class SchedulerAgent:
-    """Decides what to do next: plan, continue, or idle."""
-
-    def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
-        # Orchestrator: workers idle until comms_operator assigns work via bus
-        if _personality(board) != "comms_operator":
-            pri = board.get("priority", config.PRI_MAINTENANCE)
-            if pri <= config.PRI_MAINTENANCE and not board.get("plan"):
-                try:
-                    import comms
-                    if not comms.pending_for(comms.agent_id(), 1):
-                        return None
-                except Exception:
-                    return None
-
-        plan = board.get("plan", [])
-        if not plan:
-            if _personality(board) == "comms_operator":
-                # Deterministic MoE in engine._moe_route handles normal cycles.
-                # LLM planner only when human (pri=3) interrupted this persona.
-                if board.get("priority", config.PRI_MAINTENANCE) < config.PRI_HUMAN:
-                    return None
-            return {"next": "planner", "data": {"reason": "need_plan"}}
-        active = [s for s in plan if isinstance(s, dict) and s.get("status") == "active"]
-        if active:
-            return {"next": "actor", "data": {"reason": "has_active_step"}}
-        pending = [s for s in plan if isinstance(s, dict) and s.get("status") == "pending"]
-        if pending:
-            pending[0]["status"] = "active"
-            return {"next": "actor", "data": {"reason": "next_step"}}
-        # All steps done
-        return {"next": "verifier", "data": {"reason": "plan_complete"}}
-
-
-class PlannerAgent:
-    """Generates a plan from the goal."""
-
-    def _run_gui_planner(self, board: dict[str, Any], goal: str) -> dict[str, Any] | None:
-        log.emit("planner.pending", {"goal": goal[:80], "mode": "gui"})
-        system = _personality_system(board)
-        user = _llm_user("planner_gui", _planner_state(board).replace(
-            "Plan JSON:", "Plan JSON (text steps — exec/read_file/write_file/wait or GUI intentions):",
-        ))
-        schema = _load_schema("planner_gui")
-        llm_out = call_llm(system, user, "planner", schema=schema, cache_key="planner_gui")
-        try:
-            parsed = json.loads(llm_out.text)
-        except (json.JSONDecodeError, TypeError):
-            return {"phase": "planner.error", "data": _llm_event_data(llm_out, {
-                "error": "invalid JSON",
-                "raw": str(llm_out.text)[:config.PLANNER_ERROR_RAW_MAX],
-            })}
-        mode = parsed.get("mode", "direct")
-        if mode == "done":
-            return {"phase": "plan", "data": _llm_event_data(llm_out, {
-                "mode": "done", "done_when": parsed.get("done_when", ""),
-            }), "writes": {"plan": []}}
-        sequence = parsed.get("sequence", [])
-        if not sequence:
-            return {"phase": "planner.error", "data": _llm_event_data(llm_out, {"error": "empty sequence"})}
-        steps: list[dict[str, Any]] = []
-        for i, raw in enumerate(sequence[:config.MAX_PLAN_STEPS]):
-            text = _sanitize_plan_step(str(raw))
-            steps.append({"text": text, "status": "active" if i == 0 else "pending"})
-        done_when = str(parsed.get("done_when", ""))
-        writes: dict[str, Any] = {"plan": steps, "done_when": done_when}
-        if _personality(board) == "comms_operator":
-            writes["_last_route"] = time.time()
-        return {
-            "phase": "plan", "next": "actor",
-            "data": _llm_event_data(llm_out, {
-                "mode": mode, "steps": len(steps), "done_when": done_when, "gui": True,
-            }),
-            "writes": writes,
-        }
-
-    def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
-        goal = board.get("goal", "")
-        if not goal:
-            return None
-        simple_file_plan = _simple_file_plan(goal)
-        if simple_file_plan:
-            return simple_file_plan
-        if goal_prefers_gui(goal):
-            return self._run_gui_planner(board, goal)
-        log.emit("planner.pending", {"goal": goal[:80]})
-        schema = _load_schema("planner")
-        llm_out = call_llm(
-            _personality_system(board),
-            _llm_user("planner", _planner_state(board)),
-            "planner",
-            schema=schema,
-            cache_key="planner",
-        )
-        try:
-            parsed = json.loads(llm_out.text)
-        except (json.JSONDecodeError, TypeError):
-            return {"phase": "planner.error", "data": _llm_event_data(llm_out, {
-                "error": "invalid JSON",
-                "raw": str(llm_out.text)[:config.PLANNER_ERROR_RAW_MAX],
-            })}
-        mode = parsed.get("mode", "direct")
-        if mode == "done":
-            board["plan"] = []
-            return {"phase": "plan", "data": _llm_event_data(llm_out, {
-                "mode": "done", "done_when": parsed.get("done_when", ""),
-            }), "writes": {"plan": []}}
-        steps = parsed.get("sequence", [])
-        if not steps:
-            return {"phase": "planner.error", "data": _llm_event_data(llm_out, {"error": "empty sequence"})}
-        contract_error = _validate_planner_contract(steps, parsed.get("done_when", ""))
-        if contract_error:
-            return {"phase": "planner.error", "data": _llm_event_data(llm_out, {
-                "error": contract_error,
-                "raw": str(llm_out.text)[:config.PLANNER_ERROR_RAW_MAX],
-            })}
-        for i, s in enumerate(steps):
-            s["status"] = "active" if i == 0 else "pending"
-        done_when = parsed.get("done_when", "")
-        writes: dict[str, Any] = {"plan": steps, "done_when": done_when}
-        if _personality(board) == "comms_operator":
-            writes["_last_route"] = time.time()
-        return {
-            "phase": "plan", "next": "actor",
-            "data": _llm_event_data(llm_out, {
-                "mode": mode, "steps": len(steps), "done_when": done_when,
-            }),
-            "writes": writes,
-        }
-
-
-class ActorAgent:
-    """Executes plan steps: colony Python (code), headless text (exec), or GUI verbs."""
-
-    def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
-        from actions import execute_step, execute_verb, is_python_step, run_python, VERBS
-
-        plan = board.get("plan", [])
-        active = next((s for s in plan if isinstance(s, dict) and s.get("status") == "active"), None)
-        if not active:
-            return None
-
-        code = str(active.get("code", "")).strip()
-        text = str(active.get("text", "")).strip()
-        history: list[dict[str, Any]] = list(board.get("history", []))
-
-        if code:
-            if not is_python_code(code):
-                active["status"] = "done"
-                active["result"] = "skipped: not python"
-                return {"phase": "actor", "data": {"ok": False, "obs": "not python code"}}
-            result = run_python(code)
-            active["status"] = "done"
-            active["result"] = result.observation[:config.EXEC_OUTPUT_LIMIT]
-            ok = result.success
-            obs = result.observation[:200]
-            if not ok:
-                history.append({"step": code[:100], "ok": False, "obs": obs})
-            return {
-                "phase": "actor",
-                "data": {"ok": ok, "obs": obs, "verb": "python"},
-                "next": "verifier" if ok else None,
-                "writes": {"history": history[-config.MAX_HISTORY:]},
-            }
-
-        if not text:
-            return {"phase": "actor.error", "data": {"error": "no active step text or code"}}
-
-        if is_python_step(text):
-            result = execute_step(text)
-            history.append({"verb": result.verb, "ok": result.success, "obs": result.observation})
-            active["result"] = result.observation[:config.EXEC_OUTPUT_LIMIT]
-            if result.success:
-                active["status"] = "done"
-                _advance_plan(plan)
-                return {
-                    "phase": "actor",
-                    "data": {"ok": True, "verb": result.verb, "obs": result.observation[:200]},
-                    "next": "verifier" if all(
-                        not isinstance(s, dict) or s.get("status") == "done" for s in plan
-                    ) else "actor",
-                    "writes": {"plan": plan, "history": history[-config.MAX_HISTORY:]},
-                }
-            active["status"] = "failed"
-            return {
-                "phase": "actor",
-                "data": {"ok": False, "verb": result.verb, "obs": result.observation[:200]},
-                "writes": {"plan": plan, "history": history[-config.MAX_HISTORY:]},
-            }
-
-        llm_out = call_llm(
-            _personality_system(board),
-            _llm_user("actor", _render_actor_context(board, text)),
-            "actor",
-            schema=_load_schema("actor"),
-            cache_key="actor",
-        )
-        try:
-            parsed = json.loads(llm_out.text)
-        except (json.JSONDecodeError, TypeError):
-            return {"phase": "actor.error", "data": _llm_event_data(llm_out, {"error": "invalid JSON"})}
-        conclusion = str(parsed.get("conclusion", "EXECUTE"))
-        actions: list[dict[str, Any]] = parsed.get("actions", [])
-        actions = [a for a in actions if str(a.get("verb", "")) in {"click", "write", "press", "hotkey", "scroll", "focus"}]
-        if conclusion == "EXECUTE" and not actions:
-            active["status"] = "failed"
-            return {"phase": "actor", "data": _llm_event_data(llm_out, {"conclusion": "CANNOT", "error": "need GUI verb"})}
-        if conclusion == "DONE":
-            active["status"] = "done"
-            _advance_plan(plan)
-            return {
-                "phase": "actor",
-                "data": _llm_event_data(llm_out, {"conclusion": "DONE"}),
-                "next": "verifier" if all(
-                    not isinstance(s, dict) or s.get("status") == "done" for s in plan
-                ) else "actor",
-                "writes": {"plan": plan},
-            }
-        if conclusion == "CANNOT":
-            active["status"] = "failed"
-            return {"phase": "actor", "data": _llm_event_data(llm_out, {"conclusion": "CANNOT"})}
-
-        elements: dict[str, Any] = board.get("screen_elements", {})
-        had_failure = False
-        for action in actions:
-            verb = str(action.get("verb", ""))
-            target = str(action.get("target", ""))
-            value = str(action.get("value", ""))
-            if verb not in VERBS:
-                history.append({"verb": verb, "ok": False, "obs": f"unknown verb: {verb}"})
-                had_failure = True
-                break
-            args = _build_args(verb, target, value)
-            result = execute_verb(verb, args, elements, None)
-            history.append({"verb": verb, "ok": result.success, "obs": result.observation})
-            log.emit("action", {"verb": verb, "ok": result.success, "obs": result.observation[:200]})
-            if not result.success:
-                had_failure = True
-                break
-        if had_failure:
-            active["status"] = "failed"
-            return {
-                "phase": "actor",
-                "data": _llm_event_data(llm_out, {"conclusion": conclusion, "ok": False}),
-                "writes": {"plan": plan, "history": history[-config.MAX_HISTORY:]},
-            }
-        active["status"] = "done"
-        active["result"] = f"gui:{conclusion}"
-        _advance_plan(plan)
-        return {
-            "phase": "actor",
-            "data": _llm_event_data(llm_out, {"conclusion": conclusion, "ok": True}),
-            "next": "verifier" if all(
-                not isinstance(s, dict) or s.get("status") == "done" for s in plan
-            ) else "actor",
-            "writes": {"plan": plan, "history": history[-config.MAX_HISTORY:]},
-        }
+def _restore_after_human_task(board: dict[str, Any]) -> None:
+    board["priority"] = config.PRI_MAINTENANCE
+    board["goal"] = ""
+    board["plan"] = []
+    board["_human_denials"] = 0
 
 
 def _verify_outcome(
@@ -553,7 +285,6 @@ def _verify_outcome(
     *,
     llm_out: LLMResult | None = None,
 ) -> dict[str, Any]:
-    """Single verifier confirm/deny path — updates board and returns pipeline step."""
     if ok:
         board["plan"] = []
         board.setdefault("completed", []).append(done_when)
@@ -575,43 +306,195 @@ def _verify_outcome(
     return {"phase": "verify", "data": data, "next": "reflector"}
 
 
-class VerifierAgent:
-    """Verifies plan completion."""
+class ObserverAgent:
+    def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
+        from observer import observe
+        try:
+            obs = observe()
+        except Exception as exc:
+            return {"phase": "observe", "data": {"error": str(exc)[:200]}}
+        return {
+            "phase": "observe",
+            "data": {"focused": obs.focused_title, "chars": len(obs.context_text)},
+            "writes": {
+                "screen": obs.context_text,
+                "screen_elements": obs.book,
+                "focused_window": obs.focused_title,
+                "desktop_summary": obs.desktop_summary,
+            },
+        }
 
+
+class SchedulerAgent:
+    def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
+        if _personality(board) != "comms_operator":
+            pri = board.get("priority", config.PRI_MAINTENANCE)
+            if pri <= config.PRI_MAINTENANCE and not board.get("plan"):
+                try:
+                    import comms
+                    if not comms.pending_for(comms.agent_id(), 1):
+                        return None
+                except Exception:
+                    return None
+        plan = board.get("plan", [])
+        if not plan:
+            if _personality(board) == "comms_operator":
+                if board.get("priority", config.PRI_MAINTENANCE) < config.PRI_HUMAN:
+                    return None
+            return {"next": "planner", "data": {"reason": "need_plan"}}
+        active = [s for s in plan if isinstance(s, dict) and s.get("status") == "active"]
+        if active:
+            return {"next": "actor", "data": {"reason": "has_active_step"}}
+        pending = [s for s in plan if isinstance(s, dict) and s.get("status") == "pending"]
+        if pending:
+            pending[0]["status"] = "active"
+            return {"next": "actor", "data": {"reason": "next_step"}}
+        return {"next": "verifier", "data": {"reason": "plan_complete"}}
+
+
+class PlannerAgent:
+    def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
+        goal = board.get("goal", "")
+        if not goal:
+            return None
+        log.emit("planner.pending", {"goal": goal[:80]})
+        llm_out = _call_circuit(board, "planner", _planner_state(board), role="planner")
+        parsed = _parse_json(llm_out.text)
+        if not parsed:
+            return {"phase": "planner.error", "data": _llm_event_data(llm_out, {
+                "error": "invalid JSON",
+                "raw": str(llm_out.text)[:config.PLANNER_ERROR_RAW_MAX],
+            })}
+        mode = str(parsed.get("mode", "direct"))
+        if mode == "done":
+            return {"phase": "plan", "data": _llm_event_data(llm_out, {
+                "mode": "done", "done_when": parsed.get("done_when", ""),
+            }), "writes": {"plan": []}}
+        sequence = _normalize_plan_sequence(parsed.get("sequence", []))
+        if not sequence:
+            return {"phase": "planner.error", "data": _llm_event_data(llm_out, {"error": "empty sequence"})}
+        done_when = str(parsed.get("done_when", "")).strip() or goal[:200]
+        steps = _plan_steps(sequence)
+        writes: dict[str, Any] = {"plan": steps, "done_when": done_when}
+        if _personality(board) == "comms_operator":
+            writes["_last_route"] = time.time()
+        return {
+            "phase": "plan", "next": "actor",
+            "data": _llm_event_data(llm_out, {"mode": mode, "steps": len(steps), "done_when": done_when}),
+            "writes": writes,
+        }
+
+
+class ActorAgent:
+    def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
+        from actions import execute_step, execute_verb, is_python_step, VERBS
+
+        plan = board.get("plan", [])
+        active = next((s for s in plan if isinstance(s, dict) and s.get("status") == "active"), None)
+        if not active:
+            return None
+        text = str(active.get("text", "")).strip()
+        if not text:
+            return {"phase": "actor.error", "data": {"error": "no active step text"}}
+        history: list[dict[str, Any]] = list(board.get("history", []))
+
+        if is_python_step(text):
+            result = execute_step(text)
+            history.append({"verb": result.verb, "ok": result.success, "obs": result.observation})
+            active["result"] = result.observation[:config.EXEC_OUTPUT_LIMIT]
+            if result.success:
+                active["status"] = "done"
+                _advance_plan(plan)
+                plan_done = all(not isinstance(s, dict) or s.get("status") == "done" for s in plan)
+                return {
+                    "phase": "actor",
+                    "data": {"ok": True, "verb": result.verb, "obs": result.observation[:200]},
+                    "next": "verifier" if plan_done else "actor",
+                    "writes": {"plan": plan, "history": history[-config.MAX_HISTORY:]},
+                }
+            active["status"] = "failed"
+            return {
+                "phase": "actor",
+                "data": {"ok": False, "verb": result.verb, "obs": result.observation[:200]},
+                "writes": {"plan": plan, "history": history[-config.MAX_HISTORY:]},
+            }
+
+        llm_out = _call_circuit(board, "actor", _render_actor_context(board, text), role="actor")
+        parsed = _parse_json(llm_out.text)
+        if not parsed:
+            return {"phase": "actor.error", "data": _llm_event_data(llm_out, {"error": "invalid JSON"})}
+        conclusion = str(parsed.get("conclusion", "EXECUTE"))
+        actions: list[dict[str, Any]] = parsed.get("actions", []) if isinstance(parsed.get("actions"), list) else []
+        actions = [a for a in actions if str(a.get("verb", "")) in VERBS]
+        plan_done = lambda: all(not isinstance(s, dict) or s.get("status") == "done" for s in plan)
+
+        if conclusion == "DONE":
+            active["status"] = "done"
+            _advance_plan(plan)
+            return {
+                "phase": "actor",
+                "data": _llm_event_data(llm_out, {"conclusion": "DONE"}),
+                "next": "verifier" if plan_done() else "actor",
+                "writes": {"plan": plan},
+            }
+        if conclusion == "CANNOT" or (conclusion == "EXECUTE" and not actions):
+            active["status"] = "failed"
+            return {"phase": "actor", "data": _llm_event_data(llm_out, {"conclusion": conclusion, "ok": False})}
+
+        elements: dict[str, Any] = board.get("screen_elements", {})
+        had_failure = False
+        for action in actions:
+            verb = str(action.get("verb", ""))
+            result = execute_verb(
+                verb,
+                _build_args(verb, str(action.get("target", "")), str(action.get("value", ""))),
+                elements,
+                None,
+            )
+            history.append({"verb": verb, "ok": result.success, "obs": result.observation})
+            if not result.success:
+                had_failure = True
+                break
+        if had_failure:
+            active["status"] = "failed"
+            return {
+                "phase": "actor",
+                "data": _llm_event_data(llm_out, {"conclusion": conclusion, "ok": False}),
+                "writes": {"plan": plan, "history": history[-config.MAX_HISTORY:]},
+            }
+        active["status"] = "done"
+        active["result"] = f"gui:{conclusion}"
+        _advance_plan(plan)
+        return {
+            "phase": "actor",
+            "data": _llm_event_data(llm_out, {"conclusion": conclusion, "ok": True}),
+            "next": "verifier" if plan_done() else "actor",
+            "writes": {"plan": plan, "history": history[-config.MAX_HISTORY:]},
+        }
+
+
+class VerifierAgent:
     def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
         done_when = board.get("done_when", "")
         if not done_when:
             return {"phase": "verify", "data": {"verdict": "confirmed", "evidence": "no done_when set"}}
         plan = board.get("plan", [])
         results = [str(s.get("result", ""))[:400] for s in plan if isinstance(s, dict)]
-        simple_file_result = _verify_simple_file_done(done_when)
-        if simple_file_result:
-            ok, evidence = simple_file_result
-            return _verify_outcome(board, done_when, ok, evidence)
-        git_result = _verify_git_done(done_when, results)
-        if git_result:
-            ok, evidence = git_result
-            return _verify_outcome(board, done_when, ok, evidence)
-        schema = _load_schema("verifier")
-        llm_out = call_llm(
-            _personality_system(board),
-            _llm_user("verifier", f"DONE_WHEN: {done_when}\n\nSTEP RESULTS:\n" + "\n".join(results)),
+        llm_out = _call_circuit(
+            board,
             "verifier",
-            schema=schema,
-            cache_key="verifier",
+            f"DONE_WHEN: {done_when}\n\nSTEP RESULTS:\n" + "\n".join(results),
+            role="verifier",
         )
-        try:
-            parsed = json.loads(llm_out.text)
-        except (json.JSONDecodeError, TypeError):
-            return {"phase": "verifier.error", "data": _llm_event_data(llm_out, {"error": "invalid JSON"})}
-        verdict = parsed.get("verdict", "denied")
-        evidence = str(parsed.get("evidence", ""))
+        parsed = _parse_json(llm_out.text)
+        if not parsed:
+            return _verify_outcome(board, done_when, False, "verifier returned invalid JSON", llm_out=llm_out)
+        verdict = str(parsed.get("verdict", "denied")).lower()
+        evidence = str(parsed.get("evidence", ""))[:400] or str(llm_out.text)[:200]
         return _verify_outcome(board, done_when, verdict == "confirmed", evidence, llm_out=llm_out)
 
 
 class FissionJudgeAgent:
-    """Awards fission credit for confirmed, useful work."""
-
     def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
         completed = board.get("completed", [])
         if not completed:
@@ -625,8 +508,7 @@ class FissionJudgeAgent:
                 board["priority"] = int(board.get("_last_verified_priority", config.PRI_NORMAL) or config.PRI_NORMAL)
             history = board.setdefault("history", [])
             history.append({"denied": latest, "reason": reason, "stage": "fission_judge"})
-            _post_failure_candidate(board, latest, reason,
-                                    behavior="fission_denial", reason="fission denied")
+            _post_failure_candidate(board, latest, reason, behavior="fission_denial", reason="fission denied")
             llm_meta = review.pop("_llm", None) if isinstance(review.get("_llm"), dict) else None
             deny_data = {
                 "completed": latest,
@@ -637,12 +519,7 @@ class FissionJudgeAgent:
             }
             if llm_meta:
                 deny_data.update(llm_meta)
-            return {
-                "phase": "fission.deny",
-                "data": deny_data,
-                "writes": {"history": history},
-                "next": "reflector",
-            }
+            return {"phase": "fission.deny", "data": deny_data, "writes": {"history": history}, "next": "reflector"}
         fissions = board.get("fissions", 0) + 1
         board["fissions"] = fissions
         board.setdefault("fission_credited", []).append(latest)
@@ -661,152 +538,68 @@ class FissionJudgeAgent:
 
 
 class ReflectorAgent:
-    """Diagnoses verifier denials and feeds a simpler rule back to planning."""
-
     def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
         history = board.get("history", [])
-        last_denial = next((h for h in reversed(history)
-                            if isinstance(h, dict) and h.get("denied")), {})
+        last_denial = next((h for h in reversed(history) if isinstance(h, dict) and h.get("denied")), {})
         pressure = board.get("_pressure", {})
-        failures = int(pressure.get("failures", 0) or 0)
-        stagnation = float(pressure.get("stagnation", board.get("stagnation", 0.0)) or 0.0)
-        llm_out = call_llm(
-            _personality_system(board),
-            _llm_user(
-                "reflector",
-                (
-                    f"GOAL: {str(board.get('goal', ''))[:400]}\n"
-                    f"TRIGGER: stagnation={stagnation:.3f} failures={failures} "
-                    f"human_denials={int(board.get('_human_denials', 0) or 0)}\n"
-                    f"DENIED_DONE_WHEN: {str(last_denial.get('denied', ''))[:400]}\n"
-                    f"EVIDENCE: {str(last_denial.get('reason', ''))[:600]}\n"
-                    "Reflect JSON:"
-                ),
-            ),
+        llm_out = _call_circuit(
+            board,
             "reflector",
-            schema=_load_schema("reflector"),
-            cache_key="reflector",
+            (
+                f"GOAL: {str(board.get('goal', ''))[:400]}\n"
+                f"PRESSURE: failures={int(pressure.get('failures', 0) or 0)} "
+                f"stag={float(pressure.get('stagnation', 0) or 0):.3f}\n"
+                f"DENIED: {str(last_denial.get('denied', ''))[:400]}\n"
+                f"EVIDENCE: {str(last_denial.get('reason', ''))[:600]}\n"
+                "Reflect JSON:"
+            ),
+            role="reflector",
         )
-        try:
-            parsed = json.loads(llm_out.text)
-        except (json.JSONDecodeError, TypeError):
-            writes = {"plan": [], "history": history[-config.MAX_HISTORY:]}
-            return {
-                "phase": "reflect.error",
-                "data": _llm_event_data(llm_out, {
-                    "error": "invalid JSON",
-                    "failures": failures,
-                    "stagnation": round(stagnation, 4),
-                }),
-                "writes": writes,
-                "next": "planner",
-            }
-        if not isinstance(parsed, dict):
-            writes = {"plan": [], "history": history[-config.MAX_HISTORY:]}
-            return {
-                "phase": "reflect.error",
-                "data": _llm_event_data(llm_out, {
-                    "error": "not object",
-                    "failures": failures,
-                    "stagnation": round(stagnation, 4),
-                }),
-                "writes": writes,
-                "next": "planner",
-            }
+        parsed = _parse_json(llm_out.text) or {}
         reflection = {
-            "diagnosis": str(parsed.get("diagnosis", "")),
-            "suggestion": str(parsed.get("suggestion", "")),
-            "rule": str(parsed.get("rule", "")),
+            "diagnosis": str(parsed.get("diagnosis", last_denial.get("reason", "verify denied")))[:400],
+            "suggestion": str(parsed.get("suggestion", "simplify next plan"))[:400],
+            "rule": str(parsed.get("rule", ""))[:200],
         }
-        if not reflection["diagnosis"] or not reflection["suggestion"]:
-            writes = {"plan": [], "history": history[-config.MAX_HISTORY:]}
-            return {
-                "phase": "reflect.error",
-                "data": _llm_event_data(llm_out, {
-                    "error": "missing diagnosis or suggestion",
-                    "failures": failures,
-                    "stagnation": round(stagnation, 4),
-                }),
-                "writes": writes,
-                "next": "planner",
-            }
-        writes = {
-            "plan": [],
-            "history": history[-config.MAX_HISTORY:] + [{"reflection": reflection}],
-            "reflection": reflection,
-        }
-        return {"phase": "reflect", "data": _llm_event_data(llm_out, reflection),
-                "writes": writes, "next": "mutator"}
+        writes = {"plan": [], "history": history[-config.MAX_HISTORY:] + [{"reflection": reflection}], "reflection": reflection}
+        return {"phase": "reflect", "data": _llm_event_data(llm_out, reflection), "writes": writes, "next": "mutator"}
 
 
 class MutatorAgent:
-    """Applies bounded plugin patches after recurring verifier pressure."""
-
     def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
         pressure = board.get("_pressure", {})
         failures = int(pressure.get("failures", 0) or 0)
         denials = int(board.get("_human_denials", 0) or 0)
-        failure_events = max(failures, denials)
         reflection = board.get("reflection")
-        if failure_events < config.MUTATE_AFTER_FAILURES or not isinstance(reflection, dict):
+        if max(failures, denials) < config.MUTATE_AFTER_FAILURES or not isinstance(reflection, dict):
             return {
                 "phase": "mutate",
-                "data": {
-                    "action": "none",
-                    "reason": "waiting for recurring failure pressure",
-                    "failures": failures,
-                    "human_denials": denials,
-                    "failure_events": failure_events,
-                },
+                "data": {"action": "none", "reason": "waiting for failure pressure", "failures": failures},
                 "next": "planner",
             }
-
         plugin_names = _existing_plugin_names()
-        llm_out = call_llm(
-            _personality_system(board),
-            _llm_user(
-                "mutator",
-                (
-                    f"GOAL: {str(board.get('goal', ''))[:400]}\n"
-                    f"PRESSURE: failures={failures} human_denials={denials}\n"
-                    f"REFLECTION: {json.dumps(reflection, ensure_ascii=False)[:700]}\n"
-                    f"EXISTING_PLUGINS: {', '.join(plugin_names) or 'none'}\n"
-                    f"{_format_history(board.get('history', []))}\n"
-                    "Mutation JSON:"
-                ),
-            ),
+        llm_out = _call_circuit(
+            board,
             "mutator",
-            schema=_load_schema("mutator"),
-            cache_key="mutator",
+            (
+                f"GOAL: {str(board.get('goal', ''))[:400]}\n"
+                f"REFLECTION: {json.dumps(reflection, ensure_ascii=False)[:700]}\n"
+                f"PLUGINS: {', '.join(plugin_names) or 'none'}\n"
+                f"{_format_history(board.get('history', []))}\n"
+                "Mutation JSON:"
+            ),
+            role="mutator",
         )
-        try:
-            parsed = json.loads(llm_out.text)
-        except (json.JSONDecodeError, TypeError):
+        parsed = _parse_json(llm_out.text) or {}
+        if str(parsed.get("action", "none")) != "patch_plugin":
             return {
                 "phase": "mutate",
-                "data": _llm_event_data(llm_out, {"action": "none", "reason": "invalid mutator JSON"}),
+                "data": _llm_event_data(llm_out, {"action": "none", "reason": str(parsed.get("content", "no mutation"))[:200]}),
                 "next": "planner",
             }
-
-        action = str(parsed.get("action", "none"))
-        if action != "patch_plugin":
-            return {
-                "phase": "mutate",
-                "data": _llm_event_data(llm_out, {
-                    "action": "none",
-                    "reason": str(parsed.get("content", "no mutation")),
-                }),
-                "next": "planner",
-            }
-
         filename = str(parsed.get("filename", ""))
         ok, obs, diff = _apply_plugin_mutation(filename, str(parsed.get("content", "")))
-        data: dict[str, Any] = {
-            "action": "patch_plugin",
-            "filename": filename[:80],
-            "ok": ok,
-            "obs": obs,
-        }
+        data: dict[str, Any] = {"action": "patch_plugin", "filename": filename[:80], "ok": ok, "obs": obs}
         if diff:
             data["diff"] = diff[:500]
         event_data = _llm_event_data(llm_out, data)
@@ -816,280 +609,21 @@ class MutatorAgent:
         return {"phase": "mutate", "data": event_data, "next": "planner"}
 
 
-# --- Helpers ---
-
-def _validate_planner_contract(steps: Any, done_when: Any) -> str:
-    if not isinstance(steps, list):
-        return "sequence must be a JSON array"
-    if len(steps) > 3:
-        return "sequence must contain 1-3 Python steps for one measurable outcome"
-    if not isinstance(done_when, str) or not done_when.strip():
-        return "done_when must describe one measurable outcome"
-    for index, step in enumerate(steps):
-        if not isinstance(step, dict):
-            return f"sequence[{index}] must be an object"
-        code = step.get("code")
-        if not isinstance(code, str):
-            return f"sequence[{index}].code must be a string"
-        ok, cleaned, err = validate_python(code)
-        if not ok:
-            return f"sequence[{index}].code invalid Python: {err}"
-        step["code"] = cleaned
-    return ""
-
-
-def _restore_after_human_task(board: dict[str, Any]) -> None:
-    """Clear human interrupt; idle until MoE routes maintenance or long-term goal."""
-    board["priority"] = config.PRI_MAINTENANCE
-    board["goal"] = ""
-    board["plan"] = []
-    board["_human_denials"] = 0
-
-
-def _simple_file_plan(goal: str) -> dict[str, Any] | None:
-    parsed = _parse_simple_file_goal(goal)
-    if not parsed:
-        return None
-    rel_path, content = parsed
-    done_when = _SIMPLE_FILE_DONE_PREFIX + json.dumps(
-        {"path": rel_path, "content": content},
-        ensure_ascii=False,
-        separators=(",", ":"),
-    )
-    code = (
-        f"target = Path({json.dumps(rel_path)})\n"
-        "target.parent.mkdir(parents=True, exist_ok=True)\n"
-        f"target.write_text({json.dumps(content)}, encoding='utf-8')\n"
-        "actual = target.read_text(encoding='utf-8')\n"
-        "print(f'verified {target.as_posix()} == {actual!r}')"
-    )
-    return {
-        "phase": "plan", "next": "actor",
-        "data": {"mode": "direct", "steps": 1, "done_when": done_when},
-        "writes": {"plan": [{"status": "active", "code": code}], "done_when": done_when},
-    }
-
-
-def _parse_simple_file_goal(goal: str) -> tuple[str, str] | None:
-    match = _CREATE_FILE_RE.match(str(goal).strip())
-    if not match:
-        return None
-    rel_path = match.group(1).strip("'\"")
-    content = _strip_matching_quotes(match.group(2).strip())
-    path = Path(rel_path)
-    if path.is_absolute() or path.suffix.lower() == ".py" or any(part in ("", "..") for part in path.parts):
-        return None
-    return rel_path, content
-
-
-def _strip_matching_quotes(text: str) -> str:
-    if len(text) >= 2 and text[0] == text[-1] and text[0] in ("'", '"'):
-        return text[1:-1]
-    return text
-
-
-def _verify_simple_file_done(done_when: str) -> tuple[bool, str] | None:
-    if not str(done_when).startswith(_SIMPLE_FILE_DONE_PREFIX):
-        return None
-    try:
-        spec = json.loads(str(done_when)[len(_SIMPLE_FILE_DONE_PREFIX):])
-        rel_path = str(spec["path"])
-        expected = str(spec["content"])
-    except (KeyError, TypeError, json.JSONDecodeError):
-        return False, "invalid file verification target"
-    target = (config.BASE_DIR / rel_path).resolve()
-    try:
-        target.relative_to(config.BASE_DIR.resolve())
-    except ValueError:
-        return False, f"{rel_path} resolves outside workspace"
-    if not target.exists():
-        return False, f"{rel_path} not found"
-    if target.is_dir():
-        return False, f"{rel_path} is a directory"
-    actual = target.read_text(encoding="utf-8")
-    if actual != expected:
-        return False, f"{rel_path} content mismatch: {actual!r}"
-    return True, f"{rel_path} contains expected content"
-
-
-def _verify_git_done(done_when: str, results: list[str]) -> tuple[bool, str] | None:
-    text = str(done_when)
-    lowered = text.lower()
-    blob = "\n".join(results)
-    blob_lower = blob.lower()
-    if text.startswith(_GIT_DONE_PREFIX):
-        try:
-            spec = json.loads(text[len(_GIT_DONE_PREFIX):])
-        except (TypeError, json.JSONDecodeError):
-            return False, "invalid git verification target"
-        expect = str(spec.get("expect", "")).lower()
-        if expect == "clean":
-            if any(marker in blob_lower for marker in _GIT_CLEAN_MARKERS):
-                return True, "git working tree clean"
-            return False, "git status not clean"
-        prefix = str(spec.get("hash_prefix", "")).lower()
-        if prefix:
-            if prefix in blob_lower:
-                return True, f"git output contains hash prefix {prefix}"
-            return False, f"git output missing hash prefix {prefix}"
-        return False, "git_equals spec needs expect=clean or hash_prefix"
-    if not any(token in lowered for token in ("git", "commit", "hash")):
-        return None
-    match = _GIT_HASH_RE.search(blob)
-    if match:
-        return True, f"git commit hash {match.group(0)} in step results"
-    if "status" in lowered and any(marker in blob_lower for marker in _GIT_CLEAN_MARKERS):
-        return True, "git status clean"
-    if any(token in lowered for token in ("commit", "hash")):
-        return False, "no git commit hash in step results"
-    return None
-
-
-def _bus_config_snapshot() -> dict[str, Path]:
-    return {
-        "BUS_DIR": config.BUS_DIR,
-        "BUS_CHAT_PATH": config.BUS_CHAT_PATH,
-        "BUS_EVENTS_PATH": config.BUS_EVENTS_PATH,
-        "BUS_INJECT_PATH": config.BUS_INJECT_PATH,
-        "BUS_CONTROL_PATH": config.BUS_CONTROL_PATH,
-    }
-
-
-def _restore_bus_config(snapshot: dict[str, Path]) -> None:
-    config.BUS_DIR = snapshot["BUS_DIR"]
-    config.BUS_CHAT_PATH = snapshot["BUS_CHAT_PATH"]
-    config.BUS_EVENTS_PATH = snapshot["BUS_EVENTS_PATH"]
-    config.BUS_INJECT_PATH = snapshot["BUS_INJECT_PATH"]
-    config.BUS_CONTROL_PATH = snapshot["BUS_CONTROL_PATH"]
-
-
-def fission_credit_smoke() -> dict[str, Any]:
-    """Exercise verifier -> fission -> breeder credit on a durable file milestone."""
-    import comms
-
-    runtime_dir = config.BASE_DIR / "runtime"
-    runtime_dir.mkdir(parents=True, exist_ok=True)
-    bus_snapshot = _bus_config_snapshot()
-    old_call_llm = globals()["call_llm"]
-    try:
-        with tempfile.TemporaryDirectory(prefix="fission-credit-smoke-", dir=str(runtime_dir)) as tmp:
-            smoke_dir = Path(tmp)
-            config.BUS_DIR = smoke_dir / "comms"
-            config.BUS_CHAT_PATH = config.BUS_DIR / "messages.json"
-            config.BUS_EVENTS_PATH = config.BUS_DIR / "events_bus.jsonl"
-            config.BUS_INJECT_PATH = config.BUS_DIR / "inject.jsonl"
-            config.BUS_CONTROL_PATH = config.BUS_DIR / "control.jsonl"
-
-            proof = smoke_dir / "proof.txt"
-            proof.write_text("before\n", encoding="utf-8")
-            rel_path = proof.relative_to(config.BASE_DIR).as_posix()
-            content = "fission smoke durable milestone\n"
-
-            def fake_call_llm(*_args: Any, **_kwargs: Any) -> LLMResult:
-                return LLMResult(text=json.dumps({
-                    "verdict": "credit",
-                    "diagnosis": "Controlled smoke verified a durable file milestone with external file evidence.",
-                    "suggestion": "Credit path is wired; continue with real long-run validation separately.",
-                    "rule": "Credit durable file milestones with verifier evidence.",
-                }))
-
-            globals()["call_llm"] = fake_call_llm
-            board: dict[str, Any] = {
-                "goal": f"create {rel_path} with {json.dumps(content)}",
-                "plan": [],
-                "completed": [],
-                "history": [],
-                "fissions": 0,
-                "priority": config.PRI_NORMAL,
-                "power": 0.9,
-                "stagnation": 0.1,
-                "_pressure": {"stagnation": 0.1, "velocity": 0.0, "failures": 0},
-            }
-
-            plan_result = _simple_file_plan(str(board["goal"]))
-            if not plan_result:
-                return {"ok": False, "stage": "plan", "error": "simple file plan did not match"}
-            for key, value in (plan_result.get("writes") or {}).items():
-                board[key] = value
-
-            actor_result = ActorAgent().run(board) or {}
-            if not (actor_result.get("data") or {}).get("ok"):
-                return {"ok": False, "stage": "actor", "actor": actor_result.get("data", {})}
-
-            verify_result = VerifierAgent().run(board) or {}
-            if (verify_result.get("data") or {}).get("verdict") != "confirmed":
-                return {"ok": False, "stage": "verify", "verify": verify_result.get("data", {})}
-
-            fission_result = FissionJudgeAgent().run(board) or {}
-            candidates = comms.evolve_candidates(limit=5)
-            ok = (
-                fission_result.get("phase") == "fission"
-                and int(board.get("fissions", 0) or 0) == 1
-                and bool(candidates)
-                and candidates[-1].get("payload", {}).get("action") == "retain"
-            )
-            return {
-                "ok": ok,
-                "actor": actor_result.get("data", {}),
-                "verify": verify_result.get("data", {}),
-                "fission": fission_result.get("data", {}),
-                "evolve_action": candidates[-1].get("payload", {}).get("action") if candidates else "",
-                "evolve_behavior": candidates[-1].get("payload", {}).get("behavior") if candidates else "",
-                "proof_path": rel_path,
-            }
-    finally:
-        globals()["call_llm"] = old_call_llm
-        _restore_bus_config(bus_snapshot)
-
-
 def _parse_fission_judge_payload(llm_out: LLMResult) -> dict[str, str] | None:
-    if not str(llm_out.text or "").strip():
-        return None
-    try:
-        parsed = json.loads(llm_out.text)
-    except (json.JSONDecodeError, TypeError):
-        return None
-    if not isinstance(parsed, dict):
+    parsed = _parse_json(llm_out.text)
+    if not parsed:
         return None
     verdict = str(parsed.get("verdict", "deny"))
     if verdict not in {"credit", "deny"}:
         verdict = "deny"
-    diagnosis = str(parsed.get("diagnosis", "")).strip()
-    suggestion = str(parsed.get("suggestion", "")).strip()
-    rule = str(parsed.get("rule", "")).strip()
-    if not diagnosis:
-        diagnosis = "Fission judge omitted a diagnosis, so the selection reactor cannot justify credit."
-        verdict = "deny"
-    if not suggestion:
-        suggestion = "Return a complete fission judge verdict with evidence-grounded rationale."
-        verdict = "deny"
+    diagnosis = str(parsed.get("diagnosis", "")).strip() or str(llm_out.text)[:300]
+    suggestion = str(parsed.get("suggestion", "")).strip() or "continue toward goal"
     return {
         "verdict": verdict,
         "diagnosis": diagnosis,
         "suggestion": suggestion,
-        "rule": rule,
+        "rule": str(parsed.get("rule", "")).strip(),
     }
-
-
-def _fission_judge_user(board: dict[str, Any], completed: str, *, trim_history: bool) -> str:
-    pressure = board.get("_pressure", {})
-    history = board.get("history", [])
-    if trim_history:
-        history = history[-3:]
-    return _llm_user(
-        "fission_judge",
-        (
-            f"GOAL: {str(board.get('_last_verified_goal') or board.get('goal', ''))[:500]}\n"
-            f"COMPLETED: {str(completed)[:500]}\n"
-            f"VERIFIER_EVIDENCE: {str(board.get('_last_verifier_evidence', ''))[:600]}\n"
-            f"PRESSURE: stagnation={float(pressure.get('stagnation', board.get('stagnation', 0.0)) or 0.0):.3f} "
-            f"power={float(board.get('power', 0.0) or 0.0):.3f} "
-            f"failures={int(pressure.get('failures', 0) or 0)} "
-            f"fissions={int(board.get('fissions', 0) or 0)}\n"
-            f"{_format_history(history)}\n"
-            "Fission judge JSON:"
-        ),
-    )
 
 
 def _fission_review(board: dict[str, Any], completed: str) -> dict[str, str]:
@@ -1097,28 +631,36 @@ def _fission_review(board: dict[str, Any], completed: str) -> dict[str, str]:
     if str(completed) in credited:
         return {
             "verdict": "deny",
-            "diagnosis": "This milestone repeats an already credited completion and should not receive new fission credit.",
-            "suggestion": "Plan a new verifiable milestone or improve pressure before requesting more credit.",
-            "rule": "Do not award fission credit for duplicate completed milestones.",
+            "diagnosis": "duplicate credited milestone",
+            "suggestion": "plan a new verifiable step",
+            "rule": "",
         }
-    llm_out: LLMResult | None = None
-    for attempt in range(2):
-        user = _fission_judge_user(board, completed, trim_history=attempt > 0)
-        llm_out = call_llm(
-            _personality_system(board), user, "fission_judge",
-            schema=_load_schema("fission_judge"), cache_key="fission_judge",
-        )
-        review = _parse_fission_judge_payload(llm_out)
-        if review:
-            review["_llm"] = _llm_event_data(llm_out)
-            return review
-
+    pressure = board.get("_pressure", {})
+    llm_out = _call_circuit(
+        board,
+        "fission_judge",
+        (
+            f"GOAL: {str(board.get('_last_verified_goal') or board.get('goal', ''))[:500]}\n"
+            f"COMPLETED: {completed[:500]}\n"
+            f"EVIDENCE: {str(board.get('_last_verifier_evidence', ''))[:600]}\n"
+            f"PRESSURE: stag={float(pressure.get('stagnation', 0) or 0):.3f} "
+            f"fissions={int(board.get('fissions', 0) or 0)}\n"
+            f"{_format_history(board.get('history', [])[-3:])}\n"
+            "Fission judge JSON:"
+        ),
+        role="fission_judge",
+        cache_key="fission_judge",
+    )
+    review = _parse_fission_judge_payload(llm_out)
+    if review:
+        review["_llm"] = _llm_event_data(llm_out)
+        return review
     return {
         "verdict": "deny",
-        "diagnosis": "Fission judge did not return valid JSON, so the reactor must not award selection credit.",
-        "suggestion": "Retry with a smaller verifiable milestone and require a valid fission judge verdict.",
-        "rule": "No fission credit without a valid fission judge JSON verdict.",
-        "_llm": _llm_event_data(llm_out or LLMResult(text=""), {"judge_error": "invalid_json"}),
+        "diagnosis": str(llm_out.text)[:300] or "invalid judge JSON",
+        "suggestion": "retry with clearer milestone",
+        "rule": "",
+        "_llm": _llm_event_data(llm_out, {"judge_error": "invalid_json"}),
     }
 
 
@@ -1127,14 +669,12 @@ def _evolution_fitness(board: dict[str, Any], fissions: int) -> float:
     stagnation = float(pressure.get("stagnation", board.get("stagnation", 0.0)) or 0.0)
     power = float(board.get("power", 1.0 - stagnation) or 0.0)
     failures = int(pressure.get("failures", 0) or 0)
-    credit = min(0.2, fissions * 0.02)
-    score = 0.55 + (power * 0.35) + credit - (stagnation * 0.25) - min(0.2, failures * 0.04)
+    score = 0.55 + (power * 0.35) + min(0.2, fissions * 0.02) - (stagnation * 0.25) - min(0.2, failures * 0.04)
     return round(max(0.0, min(1.0, score)), 4)
 
 
 def _pressure_band(board: dict[str, Any]) -> str:
-    pressure = board.get("_pressure", {})
-    stagnation = float(pressure.get("stagnation", board.get("stagnation", 0.0)) or 0.0)
+    stagnation = float(board.get("_pressure", {}).get("stagnation", board.get("stagnation", 0.0)) or 0.0)
     if stagnation >= config.STAG_ESCALATE:
         return "high_pressure"
     if stagnation >= 0.3:
@@ -1143,19 +683,17 @@ def _pressure_band(board: dict[str, Any]) -> str:
 
 
 def _completion_behavior(completed: str) -> str:
-    done = str(completed)
-    if done.startswith(_SIMPLE_FILE_DONE_PREFIX):
-        return "file_task"
-    if "decline" in done.lower():
-        return "decline_task"
-    if "plugin" in done.lower():
+    done = str(completed).lower()
+    if "plugin" in done:
         return "plugin_task"
+    if "decline" in done:
+        return "decline_task"
     return "general_task"
 
 
 def _behavior_niche(board: dict[str, Any], behavior: str) -> str:
-    safe_behavior = re.sub(r"[^a-z0-9_]+", "_", behavior.lower()).strip("_") or "general_task"
-    return f"{safe_behavior}:{_pressure_band(board)}"
+    safe = re.sub(r"[^a-z0-9_]+", "_", behavior.lower()).strip("_") or "general_task"
+    return f"{safe}:{_pressure_band(board)}"
 
 
 def _pressure_evolve_fields(board: dict[str, Any], behavior: str) -> dict[str, Any]:
@@ -1164,45 +702,31 @@ def _pressure_evolve_fields(board: dict[str, Any], behavior: str) -> dict[str, A
         "behavior": behavior,
         "pressure_band": _pressure_band(board),
         "niche": _behavior_niche(board, behavior),
-        "stagnation": round(float(pressure.get("stagnation", board.get("stagnation", 0.0)) or 0.0), 4),
-        "power": round(float(board.get("power", 0.0) or 0.0), 4),
-        "velocity": round(float(pressure.get("velocity", board.get("velocity", 0.0)) or 0.0), 4),
+        "stagnation": round(float(pressure.get("stagnation", 0) or 0), 4),
+        "power": round(float(board.get("power", 0) or 0), 4),
+        "velocity": round(float(pressure.get("velocity", 0) or 0), 4),
         "failures": int(pressure.get("failures", 0) or 0),
     }
 
 
 def _post_evolution_candidate(
-    board: dict[str, Any],
-    fissions: int,
-    completed: str,
-    fitness: float,
-    review: dict[str, str] | None = None,
+    board: dict[str, Any], fissions: int, completed: str, fitness: float, review: dict[str, str] | None = None,
 ) -> None:
     try:
         import comms
-        behavior = _completion_behavior(completed)
-        data = _pressure_evolve_fields(board, behavior)
+        data = _pressure_evolve_fields(board, _completion_behavior(completed))
         data["fissions"] = fissions
         if review:
-            data["judge"] = str(review.get("verdict", ""))[:20]
             data["diagnosis"] = str(review.get("diagnosis", ""))[:200]
-            data["suggestion"] = str(review.get("suggestion", ""))[:160]
-        comms.post_evolve(
-            comms.agent_id(),
-            comms.agent_id(),
-            "retain",
-            fitness=fitness,
-            completed=completed,
-            reason="fission credit",
-            data=data,
-        )
+        comms.post_evolve(comms.agent_id(), comms.agent_id(), "retain", fitness=fitness,
+                          completed=completed, reason="fission credit", data=data)
     except Exception:
         pass
 
 
 def _failure_fitness(board: dict[str, Any]) -> float:
     pressure = board.get("_pressure", {})
-    stagnation = float(pressure.get("stagnation", board.get("stagnation", 0.0)) or 0.0)
+    stagnation = float(pressure.get("stagnation", 0) or 0.0)
     failures = int(pressure.get("failures", 0) or 0)
     denials = int(board.get("_human_denials", 0) or 0)
     score = 0.35 - (stagnation * 0.25) - min(0.2, failures * 0.04) - min(0.2, denials * 0.06)
@@ -1210,29 +734,14 @@ def _failure_fitness(board: dict[str, Any]) -> float:
 
 
 def _post_failure_candidate(
-    board: dict[str, Any],
-    done_when: str,
-    evidence: str,
-    *,
-    behavior: str = "verify_denial",
-    reason: str = "verify denied",
+    board: dict[str, Any], done_when: str, evidence: str, *, behavior: str = "verify_denial", reason: str = "verify denied",
 ) -> None:
     try:
         import comms
         data = _pressure_evolve_fields(board, behavior)
-        data.update({
-            "evidence": str(evidence)[:200],
-            "human_denials": int(board.get("_human_denials", 0) or 0),
-        })
-        comms.post_evolve(
-            comms.agent_id(),
-            comms.agent_id(),
-            "evict",
-            fitness=_failure_fitness(board),
-            completed=str(done_when),
-            reason=reason,
-            data=data,
-        )
+        data["evidence"] = str(evidence)[:200]
+        comms.post_evolve(comms.agent_id(), comms.agent_id(), "evict", fitness=_failure_fitness(board),
+                          completed=str(done_when), reason=reason, data=data)
     except Exception:
         pass
 
@@ -1255,37 +764,18 @@ def _resolve_existing_plugin(filename: str) -> Path | None:
         path.relative_to(config.PLUGINS_DIR.resolve())
     except ValueError:
         return None
-    if not path.is_file():
-        return None
-    return path
-
-
-def _strip_code_fence(text: str) -> str:
-    cleaned = str(text).strip()
-    if cleaned.startswith("```"):
-        lines = cleaned.splitlines()
-        if lines and lines[0].strip().startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].strip().startswith("```"):
-            lines = lines[:-1]
-        cleaned = "\n".join(lines).strip()
-    return cleaned
+    return path if path.is_file() else None
 
 
 def _plugin_defines_run(source: str) -> tuple[bool, str]:
-    if "def run(" not in source:
-        return False, "plugin must define def run(board)"
-    return True, ""
+    return ("def run(" in source, "plugin must define def run(board)")
 
 
 def _mutation_diff(filename: str, before: str, after: str) -> str:
     diff = difflib.unified_diff(
-        before.splitlines(),
-        after.splitlines(),
-        fromfile=f"a/plugins/{filename}",
-        tofile=f"b/plugins/{filename}",
-        lineterm="",
-        n=2,
+        before.splitlines(), after.splitlines(),
+        fromfile=f"a/plugins/{filename}", tofile=f"b/plugins/{filename}",
+        lineterm="", n=2,
     )
     return "\n".join(list(diff)[:80])
 
@@ -1293,8 +783,7 @@ def _mutation_diff(filename: str, before: str, after: str) -> str:
 def _apply_plugin_mutation(filename: str, content: str) -> tuple[bool, str, str]:
     path = _resolve_existing_plugin(filename)
     if path is None:
-        return False, "filename must be an existing plugins/[a-z0-9_]+.py file", ""
-
+        return False, "existing plugins/[name].py required", ""
     ok, cleaned, err = validate_python(_strip_code_fence(content))
     if not ok:
         return False, err, ""
@@ -1302,14 +791,12 @@ def _apply_plugin_mutation(filename: str, content: str) -> tuple[bool, str, str]
     has_run, run_err = _plugin_defines_run(cleaned)
     if not has_run:
         return False, run_err, ""
-
     try:
         before = path.read_text(encoding="utf-8")
     except OSError as exc:
         return False, f"read failed: {exc}", ""
     if before == cleaned:
         return False, "plugin unchanged", ""
-
     diff = _mutation_diff(path.name, before, cleaned)
     try:
         path.write_text(cleaned, encoding="utf-8")
@@ -1317,17 +804,15 @@ def _apply_plugin_mutation(filename: str, content: str) -> tuple[bool, str, str]
     except Exception as exc:
         try:
             path.write_text(before, encoding="utf-8")
-            py_compile.compile(str(path), doraise=True)
-        except Exception:
+        except OSError:
             pass
-        return False, f"apply failed, restored original: {exc}", ""
+        return False, f"apply failed: {exc}", ""
     return True, f"patched plugins/{path.name}", diff
 
 
 def _mutation_fitness(board: dict[str, Any]) -> float:
-    pressure = board.get("_pressure", {})
-    stagnation = float(pressure.get("stagnation", board.get("stagnation", 0.0)) or 0.0)
-    failures = int(pressure.get("failures", 0) or 0)
+    stagnation = float(board.get("_pressure", {}).get("stagnation", 0) or 0.0)
+    failures = int(board.get("_pressure", {}).get("failures", 0) or 0)
     score = 0.52 - min(0.12, failures * 0.02) - min(0.12, stagnation * 0.12)
     return round(max(0.0, min(0.59, score)), 4)
 
@@ -1338,131 +823,9 @@ def _post_mutation_candidate(board: dict[str, Any], filename: str, diff: str, ob
         path = _resolve_existing_plugin(filename)
         display = f"plugins/{path.name}" if path else str(filename)[:80]
         data = _pressure_evolve_fields(board, "plugin_patch")
-        data.update({
-            "filename": display,
-            "evidence": str(obs)[:200],
-            "human_denials": int(board.get("_human_denials", 0) or 0),
-        })
-        comms.post_evolve(
-            comms.agent_id(),
-            comms.agent_id(),
-            "patch_plugin",
-            fitness=_mutation_fitness(board),
-            completed=display,
-            reason="mutator patch",
-            diff=diff,
-            data=data,
-        )
+        data.update({"filename": display, "evidence": str(obs)[:200]})
+        comms.post_evolve(comms.agent_id(), comms.agent_id(), "patch_plugin",
+                          fitness=_mutation_fitness(board), completed=display, reason="mutator patch",
+                          diff=diff, data=data)
     except Exception:
         pass
-
-
-def _load_prompt(role: str) -> str:
-    path = config.PROMPTS_DIR / f"{role}.txt"
-    if path.exists():
-        return path.read_text(encoding="utf-8").strip()
-    return f"You are a {role}."
-
-
-def _load_schema(role: str) -> dict | None:
-    path = config.SCHEMAS_DIR / f"{role}.json"
-    if path.exists():
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-            return data
-        except (json.JSONDecodeError, OSError):
-            pass
-    return None
-
-
-def _format_history(history: list) -> str:
-    if not history:
-        return ""
-    lines = ["RECENT HISTORY:"]
-    for h in history[-config.MAX_HISTORY:]:
-        if isinstance(h, dict):
-            lines.append(f"  {json.dumps(h, ensure_ascii=False)[:400]}")
-    return "\n".join(lines)
-
-
-def fission_judge_llm_smoke() -> dict[str, Any]:
-    """Live LLM call — requires LM Studio on config.LMS_HOSTS."""
-    board = {
-        "goal": "create audit_report.txt with colony status",
-        "_last_verified_goal": "create audit_report.txt with colony status",
-        "_last_verifier_evidence": "verified audit_report.txt contains colony status",
-        "history": [{"denied": "syntax", "reason": "log.py syntax error"}] * 4,
-        "fission_credited": [],
-        "fissions": 0,
-        "_pressure": {"stagnation": 0.3, "failures": 2},
-        "power": 0.7,
-    }
-    completed = 'file_equals {"path":"audit_report.txt","content":"colony status"}'
-    review = _fission_review(board, completed)
-    llm_meta = review.pop("_llm", None)
-    llm_meta = llm_meta if isinstance(llm_meta, dict) else {}
-    return {
-        "ok": bool(
-            review.get("verdict") in {"credit", "deny"}
-            and not llm_meta.get("judge_error")
-        ),
-        "review": review,
-        "judge_error": llm_meta.get("judge_error", ""),
-    }
-
-
-def git_verify_smoke() -> dict[str, Any]:
-    clean = _verify_git_done('git_equals {"expect":"clean"}', [
-        "On branch unify-rewrite\nnothing to commit, working tree clean\n",
-    ])
-    hash_ok = _verify_git_done(
-        "git commit hash printed in step results",
-        ["[unify-rewrite abc1234] Unify bus wiring\n"],
-    )
-    missing = _verify_git_done(
-        "git commit hash printed in step results",
-        ["git status\nnothing to commit\n"],
-    )
-    return {
-        "ok": bool(clean and clean[0] and hash_ok and hash_ok[0] and missing and not missing[0]),
-        "clean": clean,
-        "hash_ok": hash_ok,
-        "missing": missing,
-    }
-
-
-def fission_judge_smoke() -> dict[str, Any]:
-    board = {
-        "goal": "audit",
-        "_last_verifier_evidence": "ok",
-        "fission_credited": ["same milestone"],
-        "fissions": 1,
-        "_pressure": {"stagnation": 0.2, "failures": 0},
-        "power": 0.8,
-    }
-    review = _fission_review(board, "same milestone")
-    return {
-        "ok": review.get("verdict") == "deny" and "repeat" in str(review.get("diagnosis", "")).lower(),
-        "review": {k: v for k, v in review.items() if k != "_llm"},
-    }
-
-
-if __name__ == "__main__":
-    import sys
-    if len(sys.argv) >= 2 and sys.argv[1] == "--fission-smoke":
-        result = fission_credit_smoke()
-        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
-        sys.exit(0 if result.get("ok") else 1)
-    if len(sys.argv) >= 2 and sys.argv[1] == "--fission-judge-smoke":
-        result = fission_judge_smoke()
-        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
-        sys.exit(0 if result.get("ok") else 1)
-    if len(sys.argv) >= 2 and sys.argv[1] == "--fission-judge-llm-smoke":
-        result = fission_judge_llm_smoke()
-        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
-        sys.exit(0 if result.get("ok") else 1)
-    if len(sys.argv) >= 2 and sys.argv[1] == "--git-verify-smoke":
-        result = git_verify_smoke()
-        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
-        sys.exit(0 if result.get("ok") else 1)
-    print("usage: python agents.py --fission-smoke | --git-verify-smoke | --fission-judge-smoke | --fission-judge-llm-smoke")

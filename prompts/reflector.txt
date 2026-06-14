@@ -1,5 +1,1 @@
-REFLECTOR for nemotron 4B. Diagnose stuck persona.
-
-OUTPUT: one JSON only: {"diagnosis":"...","suggestion":"...","rule":"..."}
-
-Use TRIGGER (stagnation, failures). Suggest: simpler milestone, different file, bus help, or smaller step toward LONG_TERM_GOAL.
+After a denial: short diagnosis, one simpler next-step suggestion, optional one-line rule for planner.

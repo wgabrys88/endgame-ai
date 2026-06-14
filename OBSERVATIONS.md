@@ -8,7 +8,7 @@ Humans: read `README.md`.
 
 ## COLD-START HANDOVER PROMPT
 
-**Last updated:** 2026-06-14 · **Branch:** `bare-metal` · **Vision:** RULES.md § VISION · **HEAD:** `9c89792` immune system strip (~409 LOC)
+**Last updated:** 2026-06-14 · **Branch:** `bare-metal` · **Vision:** RULES.md § VISION · **HEAD:** unify-cut-1 — schemas gone, agents unified
 
 Copy **RULES.md § SYSTEM CORE** + **§ VISION**. Then this handover:
 
@@ -53,10 +53,8 @@ RUN (human — full system):
 
 Requires: LM Studio localhost:1234, nemotron-3-nano-4B, profile nemotron_parallel.
 
-SMOKE (no LLM):
+COMPILE (no LLM):
   python -m py_compile tui.py reactor.py main.py engine.py agents.py comms.py
-  python agents.py --fission-smoke
-  python reactor.py --archive-smoke
 
 CODE PATH: comms.py → engine.py → agents.py → reactor.py → main.py → tui.py
 
@@ -180,6 +178,7 @@ Append only. No golden archives in git — summaries live here.
 | `bare-metal` v4 | ~45s | ~80 bus | **Vision + live boot** | RULES § VISION; desktop organ; reactor 5 slots OK; LLM 400 (no model) |
 | `bare-metal` v5 | — | — | **Sandbox + immune strip** | `0d0411c` safe flags; `9c89792` protected-file/mutation gates removed |
 | *(flush 2026-06-14)* | — | — | **Runtime clean, ready to run** | `cleanup_runtime(deep=True)`; handover synced; no Python procs |
+| `bare-metal` v6 | — | — | **Unify slim pass 1** | schemas deleted; one planner; loose JSON; smokes removed; agents ~800 LOC |
 
 ### Session `20260614_vision_boot` (2026-06-14, agent solo boot)
 

@@ -148,8 +148,6 @@ def _needs_screen(board: dict[str, Any], target: str) -> bool:
         )
         if not active:
             return False
-        if active.get("code"):
-            return False
         if is_python_step(str(active.get("text", ""))):
             return False
     return True

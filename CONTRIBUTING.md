@@ -12,7 +12,7 @@ Work on `unify-rewrite` (or successor main). Pull before you start.
 2. Update [OBSERVATIONS.md](OBSERVATIONS.md) § COLD-START HANDOVER if behavior changed.
 3. Update [README.md](README.md) if the human run path changed.
 4. `python -m py_compile` on changed Python.
-5. Smoke: `python agents.py --fission-smoke` when touching pipeline/breeder.
+5. Compile: `python -m py_compile agents.py reactor.py comms.py engine.py` when touching pipeline/breeder.
 
 ## Docs split
 

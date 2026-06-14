@@ -16,7 +16,7 @@ BREED_ARCHIVE_PATH: Path = BASE_DIR / "runtime" / "breed_archive.json"
 EVENTS_PATH: Path = BASE_DIR / "events.jsonl"
 LESSONS_PATH: Path = BASE_DIR / "lessons.jsonl"
 PROMPTS_DIR: Path = BASE_DIR / "prompts"
-SCHEMAS_DIR: Path = BASE_DIR / "schemas"
+
 PLUGINS_DIR: Path = BASE_DIR / "plugins"
 GUI_MODE_PATH: Path = BASE_DIR / "gui_mode"  # legacy exec target only (write_file gui_mode)
 COLONY_GOAL_PATH: Path = BASE_DIR / "runtime" / "colony_goal.txt"
@@ -113,7 +113,7 @@ LMS_TRACE_PROMPTS: bool = True
 LLM_THINKING_ENABLED: bool = True
 LLM_THINKING_BUDGET: int = 4096  # default reasoning cap when role not in THINKING_BUDGET
 LLM_REASONING_LOG_MAX: int = 12000  # session log cap for captured reasoning text
-LLM_API_SCHEMA: bool = True  # API response_format; off allows Nemotron reasoning traces
+LLM_API_SCHEMA: bool = False  # loose JSON hints in prompts; no strict response_format
 
 BUDGET: dict[str, int] = {
     "planner": 2048, "verifier": 512, "reflector": 1024,

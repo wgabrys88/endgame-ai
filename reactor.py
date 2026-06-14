@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 import subprocess
 import sys
-import tempfile
+
 import time
 from typing import Any
 
@@ -812,164 +812,8 @@ def select_respawn_persona(slot_id: int, fallback: str) -> str:
     return selected
 
 
-def archive_restart_smoke() -> dict[str, Any]:
-    """Deterministically prove archive save/load can drive restart respawn choice."""
-    snapshot = _breed_state_snapshot()
-    runtime_dir = config.BASE_DIR / "runtime"
-    runtime_dir.mkdir(parents=True, exist_ok=True)
-    try:
-        with tempfile.TemporaryDirectory(prefix="breed-archive-smoke-", dir=str(runtime_dir)) as tmp:
-            smoke_dir = Path(tmp)
-            config.BREED_ARCHIVE_PATH = smoke_dir / "breed_archive.json"
-            config.BUS_DIR = smoke_dir / "comms"
-            config.BUS_CHAT_PATH = config.BUS_DIR / "messages.json"
-            config.BUS_EVENTS_PATH = config.BUS_DIR / "events_bus.jsonl"
-            config.BUS_INJECT_PATH = config.BUS_DIR / "inject.jsonl"
-            config.BUS_CONTROL_PATH = config.BUS_DIR / "control.jsonl"
-            _clear_breed_state()
-
-            target = "reviewer"
-            fallback = "devops"
-            niche = "archive_smoke:low_pressure"
-            _breeder.elite_archive[niche] = {
-                "target": target,
-                "action": "retain",
-                "slot": 4,
-                "fitness": 0.82,
-                "completed": "archive smoke retained reviewer",
-                "behavior": "archive_smoke",
-                "pressure_band": "low_pressure",
-                "ts": time.time(),
-            }
-            _breeder.scores[target] = {
-                "fitness": 0.82,
-                "slot": 4,
-                "completed": "archive smoke retained reviewer",
-                "fissions": 2,
-                "trial_id": "archive-smoke",
-            }
-            _breeder.slot_survivors[4] = target
-            _breeder.evicted_personas[fallback] = {
-                "fitness": 0.1,
-                "slot": 5,
-                "reason": "archive smoke fallback evicted",
-                "ts": time.time(),
-            }
-
-            _save_breed_archive("archive_smoke.write")
-            archive_exists = config.BREED_ARCHIVE_PATH.is_file()
-            saved = json.loads(config.BREED_ARCHIVE_PATH.read_text(encoding="utf-8"))
-
-            _clear_breed_state()
-            _load_breed_archive()
-            selected = select_respawn_persona(4, fallback)
-
-            ok = (
-                archive_exists
-                and selected == target
-                and _breeder.slot_survivors.get(4) == target
-                and target in _breeder.scores
-                and niche in _breeder.elite_archive
-                and fallback in _breeder.evicted_personas
-            )
-            return {
-                "ok": ok,
-                "archive_version": saved.get("version"),
-                "selected": selected,
-                "expected": target,
-                "slot_survivor": _breeder.slot_survivors.get(4, ""),
-                "elite_niches": sorted(_breeder.elite_archive.keys()),
-                "breed_scores": sorted(_breeder.scores.keys()),
-                "evicted": sorted(_breeder.evicted_personas.keys()),
-            }
-    finally:
-        _restore_breed_state(snapshot)
-
-
-def breed_improve_smoke() -> dict[str, Any]:
-    """Deterministically prove trial telemetry can emit breed.improve and update archive state."""
-    snapshot = _breed_state_snapshot()
-    old_eval_seconds = config.BREED_TRIAL_EVAL_SECONDS
-    runtime_dir = config.BASE_DIR / "runtime"
-    runtime_dir.mkdir(parents=True, exist_ok=True)
-    try:
-        with tempfile.TemporaryDirectory(prefix="breed-improve-smoke-", dir=str(runtime_dir)) as tmp:
-            smoke_dir = Path(tmp)
-            config.BREED_ARCHIVE_PATH = smoke_dir / "breed_archive.json"
-            config.BUS_DIR = smoke_dir / "comms"
-            config.BUS_CHAT_PATH = config.BUS_DIR / "messages.json"
-            config.BUS_EVENTS_PATH = config.BUS_DIR / "events_bus.jsonl"
-            config.BUS_INJECT_PATH = config.BUS_DIR / "inject.jsonl"
-            config.BUS_CONTROL_PATH = config.BUS_DIR / "control.jsonl"
-            config.BREED_TRIAL_EVAL_SECONDS = 0.0
-            _clear_breed_state()
-
-            target = "reviewer"
-            niche = "breed_improve_smoke:low_pressure"
-            trial_id = "breed-improve-smoke"
-            payload = {
-                "trial_id": trial_id,
-                "completed": "breed improve smoke retained reviewer",
-                "behavior": "breed_improve_smoke",
-                "pressure_band": "low_pressure",
-                "stagnation": 0.7,
-                "power": 0.3,
-                "fissions": 0,
-            }
-            comms.post_telemetry(
-                target,
-                stagnation=0.7,
-                power=0.3,
-                velocity=0.0,
-                fissions=0,
-                phase="baseline",
-                cycles=1,
-            )
-            _start_selection_trial("retain", target, 4, 0.72, niche, payload, entry_id=0)
-            comms.post_telemetry(
-                target,
-                stagnation=0.58,
-                power=0.42,
-                velocity=0.12,
-                fissions=1,
-                phase="improved",
-                cycles=2,
-            )
-            evaluate_mutation_trials()
-
-            events = [
-                e for e in comms.read_events(config.BUS_EVENTS_MAX)
-                if (e.get("payload") or {}).get("action") == "breed.improve"
-            ]
-            score = _breeder.scores.get(target, {})
-            archive_exists = config.BREED_ARCHIVE_PATH.is_file()
-            ok = (
-                bool(events)
-                and archive_exists
-                and float(score.get("fitness", 0.0) or 0.0) > 0.72
-                and _breeder.slot_survivors.get(4) == target
-            )
-            latest = events[-1].get("payload", {}) if events else {}
-            return {
-                "ok": ok,
-                "outcome": latest.get("action", ""),
-                "target": target,
-                "fitness": score.get("fitness", 0.0),
-                "slot_survivor": _breeder.slot_survivors.get(4, ""),
-                "stagnation_delta": latest.get("stagnation_delta"),
-                "power_delta": latest.get("power_delta"),
-                "fission_delta": latest.get("fission_delta"),
-                "archive_written": archive_exists,
-            }
-    finally:
-        config.BREED_TRIAL_EVAL_SECONDS = old_eval_seconds
-        _restore_breed_state(snapshot)
-
-
 if __name__ == "__main__":
-    # Parse CLI
-    run_archive_smoke = False
-    run_breed_improve_smoke = False
+    _model_profile = ""
     _colony_goal = os.environ.get("ENDGAME_COLONY_GOAL", "").strip()
     argv = sys.argv[1:]
     i = 0
@@ -981,10 +825,6 @@ if __name__ == "__main__":
             continue
         if arg.startswith("--model-profile="):
             _model_profile = arg.split("=", 1)[1]
-        elif arg == "--archive-smoke":
-            run_archive_smoke = True
-        elif arg == "--breed-improve-smoke":
-            run_breed_improve_smoke = True
         elif arg == "--goal" and i + 1 < len(argv):
             _colony_goal = argv[i + 1].strip()
             i += 2
@@ -994,14 +834,6 @@ if __name__ == "__main__":
         i += 1
     if _model_profile:
         config.apply_model_profile(_model_profile)
-    if run_archive_smoke:
-        result = archive_restart_smoke()
-        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
-        sys.exit(0 if result.get("ok") else 1)
-    if run_breed_improve_smoke:
-        result = breed_improve_smoke()
-        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
-        sys.exit(0 if result.get("ok") else 1)
 
     if not os.environ.get("ENDGAME_BOOTSTRAPPED"):
         log.cleanup_runtime()
