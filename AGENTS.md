@@ -96,7 +96,7 @@ Important observation: the autonomous run patched `plugins/telemetry.py` into a 
 | Agents and prompts | `agents.py`, `prompts/*.txt`, `prompts/personalities/*.txt`, `schemas/*.json` |
 | Blackboard | `comms.py`, `runtime/comms/*` |
 | Pressure and MoE | `engine.py`, `plugins/comms_beacon.py` |
-| Breeding | `reactor.py`, `agents.py`, `plugins/fission_log.py` |
+| Breeding | `reactor.py`, `agents.py`, `plugins/fission_log.py`, `runtime/breed_archive.json` |
 | GUI | `tui.py`, `observer.py`, `actions.py`, `desktop.py`, `python_code.py`, `colony_env.py` |
 
 ## Hard Rules
@@ -151,7 +151,7 @@ Keep unless intentionally archiving or rotating evidence:
 
 ## Remaining Bottlenecks
 
-- Persistent elite archive across reactor restarts.
+- Persistent elite archive exists in `runtime/breed_archive.json`; restart survival still needs a long autonomous run.
 - Long-run MAP-Elites convergence.
 - Better semantic mutation scoring: a no-op plugin patch can be neutral over short windows and still be architecturally bad.
 - Reflection now fails closed with `reflect.error` for invalid or incomplete reflector JSON.
@@ -178,5 +178,5 @@ after commit 8cd57b6. It produced 728 child events, 46/46 LLM reasoning traces,
 Hard rules: no new .py files, bus-only coordination, config via config.py/CLI,
 py_compile changed Python, commit before long autonomous runs.
 
-Do not claim MAP-Elites convergence or persistent elite archive until proven.
+Do not claim MAP-Elites convergence or restart-persistent selection pressure until proven by a long run.
 ```

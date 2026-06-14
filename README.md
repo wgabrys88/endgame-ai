@@ -80,6 +80,8 @@ Latest 10-minute validation:
 
 The run also proved selection pressure can reject bad self-modification. The colony patched `plugins/telemetry.py` into a no-op during the run; review removed that dead plugin afterward and kept `plugins/comms_beacon.py` as the protected telemetry source.
 
+Follow-up architecture work on 2026-06-14 added persistent breeder memory in `runtime/breed_archive.json`. The reactor now loads elite niches, survivor scores, slot survivors, and evictions at boot, saves them after selection feedback, and mirrors archive load/save as `breed.archive` bus evidence.
+
 ## Useful Commands
 
 ```bash
@@ -96,8 +98,7 @@ If `python` is not on PATH on this machine, use:
 
 ## Known Bottlenecks
 
-- Persistent elite archive across reactor restarts is still not implemented.
-- Long-run MAP-Elites convergence is still not proven.
+- Persistent elite archive is implemented; restart survival and long-run MAP-Elites convergence are still not proven by a long autonomous run.
 - Reflection now fails closed with `reflect.error` when reflector JSON is invalid or incomplete.
 - Fission credit now fails closed: invalid fission-judge JSON denies credit instead of retaining behavior.
 - LLM transport failure now returns empty output instead of a fabricated planner `done` response.

@@ -62,6 +62,7 @@ Stores:
 | `runtime/comms/events_bus.jsonl` | Observation: telemetry and mirrored phase events |
 | `runtime/comms/control.jsonl` | Reactor commands |
 | `runtime/comms/inject.jsonl` | Human/TUI injection |
+| `runtime/breed_archive.json` | Reactor-owned persisted selection memory: elite niches, survivor scores, slot survivors, evictions |
 
 Important kinds:
 
@@ -103,6 +104,7 @@ evolve retain/evict/patch_plugin
   -> sample telemetry after BREED_TRIAL_EVAL_SECONDS
   -> emit breed.improve / breed.regress / breed.neutral
   -> feed outcome back into survivor fitness
+  -> persist selection memory to runtime/breed_archive.json
 ```
 
 Current scoring fields on outcome events:
@@ -119,6 +121,8 @@ Audit command:
 ```bash
 python comms.py breeder
 ```
+
+The archive is not a persona coordination channel. Personas still communicate through `comms.py`; the reactor uses `runtime/breed_archive.json` only to preserve selection state across reactor restarts and to choose elite-backed respawns.
 
 Current proof from `runtime/comms/events_bus.jsonl` after `sessions/20260614_112843`:
 
@@ -212,7 +216,7 @@ Mutation safety:
 
 ## Still Not Proven
 
-- Persistent elite archive across reactor restarts.
+- Restart-to-restart archive survival under a long autonomous run.
 - Long-run MAP-Elites convergence.
 - Reflection now fails closed with `reflect.error` when reflector JSON is invalid or incomplete.
 - Fission credit fallback was removed after the 10-minute run: invalid fission-judge JSON denies credit.

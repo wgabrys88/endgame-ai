@@ -111,6 +111,163 @@ def _candidate_fitness(payload: dict[str, Any]) -> float:
         return 0.0
 
 
+def _archive_slot(value: Any, target: str = "") -> int:
+    try:
+        slot_id = int(value or 0)
+    except (TypeError, ValueError):
+        slot_id = 0
+    if 2 <= slot_id <= config.SLOTS:
+        return slot_id
+    return int(config.PERSONA_SLOTS.get(target, 0) or 0)
+
+
+def _archive_ts(value: Any) -> float:
+    try:
+        return float(value or time.time())
+    except (TypeError, ValueError):
+        return time.time()
+
+
+def _post_archive_status(event: str, detail: dict[str, Any] | None = None) -> None:
+    data = {
+        "action": "breed.archive",
+        "event": event,
+        "path": str(config.BREED_ARCHIVE_PATH.relative_to(config.BASE_DIR)),
+        "elites": len(_elite_archive),
+        "scores": len(_breed_scores),
+        "survivors": len(_slot_survivors),
+        "evicted": len(_evicted_personas),
+    }
+    if detail:
+        data.update(detail)
+    try:
+        comms.post(
+            "reactor",
+            "reactor",
+            f"breed archive {event} elites={data['elites']} survivors={data['survivors']}",
+            kind=comms.KIND_STATUS,
+            data=data,
+        )
+        log.emit("breed.archive", data)
+    except Exception:
+        pass
+
+
+def _archive_payload() -> dict[str, Any]:
+    return {
+        "version": 1,
+        "saved_at": time.time(),
+        "elite_archive": _elite_archive,
+        "breed_scores": _breed_scores,
+        "slot_survivors": {str(slot): persona for slot, persona in _slot_survivors.items()},
+        "evicted_personas": _evicted_personas,
+    }
+
+
+def _save_breed_archive(reason: str) -> None:
+    path = config.BREED_ARCHIVE_PATH
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(
+            json.dumps(_archive_payload(), ensure_ascii=False, separators=(",", ":")) + "\n",
+            encoding="utf-8",
+        )
+        tmp.replace(path)
+        _post_archive_status("save", {"reason": reason})
+    except Exception as exc:
+        _post_archive_status("error", {"reason": reason, "error": str(exc)[:160]})
+
+
+def _load_breed_archive() -> None:
+    path = config.BREED_ARCHIVE_PATH
+    if not path.exists():
+        return
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        _post_archive_status("error", {"reason": "load", "error": str(exc)[:160]})
+        return
+    try:
+        version = int(data.get("version", 0) or 0) if isinstance(data, dict) else 0
+    except (TypeError, ValueError):
+        version = 0
+    if version != 1:
+        _post_archive_status("skip", {"reason": "unsupported_version"})
+        return
+
+    _elite_archive.clear()
+    raw_elites = data.get("elite_archive") if isinstance(data.get("elite_archive"), dict) else {}
+    for raw_niche, raw_elite in raw_elites.items():
+        if not isinstance(raw_elite, dict):
+            continue
+        target = comms.canonical(str(raw_elite.get("target", "")))
+        if target not in config.WORKER_PERSONAS:
+            continue
+        niche = str(raw_niche).strip()[:80]
+        if not niche:
+            continue
+        _elite_archive[niche] = {
+            "target": target,
+            "action": str(raw_elite.get("action", ""))[:40],
+            "slot": _archive_slot(raw_elite.get("slot", 0), target),
+            "fitness": _candidate_fitness(raw_elite),
+            "completed": str(raw_elite.get("completed", ""))[:120],
+            "behavior": str(raw_elite.get("behavior", ""))[:60],
+            "pressure_band": str(raw_elite.get("pressure_band", ""))[:40],
+            "ts": _archive_ts(raw_elite.get("ts")),
+        }
+    _trim_elite_archive()
+
+    _breed_scores.clear()
+    raw_scores = data.get("breed_scores") if isinstance(data.get("breed_scores"), dict) else {}
+    for raw_target, raw_score in raw_scores.items():
+        if not isinstance(raw_score, dict):
+            continue
+        target = comms.canonical(str(raw_target))
+        if target not in config.WORKER_PERSONAS:
+            continue
+        fitness = _candidate_fitness(raw_score)
+        if fitness <= 0:
+            continue
+        _breed_scores[target] = {
+            "fitness": fitness,
+            "slot": _archive_slot(raw_score.get("slot", 0), target),
+            "completed": str(raw_score.get("completed", ""))[:120],
+            "fissions": int(raw_score.get("fissions", 0) or 0),
+            "trial_id": str(raw_score.get("trial_id", ""))[:80],
+        }
+
+    _evicted_personas.clear()
+    raw_evicted = data.get("evicted_personas") if isinstance(data.get("evicted_personas"), dict) else {}
+    for raw_target, raw_record in raw_evicted.items():
+        if not isinstance(raw_record, dict):
+            continue
+        target = comms.canonical(str(raw_target))
+        if target not in config.WORKER_PERSONAS:
+            continue
+        _evicted_personas[target] = {
+            "fitness": _candidate_fitness(raw_record),
+            "slot": _archive_slot(raw_record.get("slot", 0), target),
+            "reason": str(raw_record.get("reason", ""))[:120],
+            "ts": _archive_ts(raw_record.get("ts")),
+        }
+        _evict_elites_for(target)
+
+    _slot_survivors.clear()
+    raw_survivors = data.get("slot_survivors") if isinstance(data.get("slot_survivors"), dict) else {}
+    for raw_slot, raw_persona in raw_survivors.items():
+        target = comms.canonical(str(raw_persona))
+        if target not in config.WORKER_PERSONAS or _is_evicted(target):
+            continue
+        slot_id = _archive_slot(raw_slot, target)
+        fitness = float(_breed_scores.get(target, {}).get("fitness", 0.0) or 0.0)
+        if 2 <= slot_id <= config.SLOTS and fitness >= config.BREED_RETAIN_MIN:
+            _slot_survivors[slot_id] = target
+
+    _post_archive_status("load")
+
+
 def _post_breed_status(
     action: str,
     target: str,
@@ -273,6 +430,7 @@ def _apply_trial_feedback(outcome: str, target: str, trial: dict[str, Any], deta
     fitness = float(trial.get("fitness", 0.0) or 0.0)
     previous = _breed_scores.get(target, {})
     prev_fit = float(previous.get("fitness", 0.0) or 0.0)
+    changed = False
     if outcome == "improve":
         gain = max(0.0, float(detail.get("power_delta", 0.0) or 0.0))
         gain += max(0.0, float(detail.get("stagnation_delta", 0.0) or 0.0))
@@ -285,6 +443,7 @@ def _apply_trial_feedback(outcome: str, target: str, trial: dict[str, Any], deta
             "fissions": int(detail.get("current_fissions", 0) or 0),
             "trial_id": str(trial.get("trial_id", "")),
         }
+        changed = True
         if 2 <= slot_id <= config.SLOTS and next_fit >= config.BREED_RETAIN_MIN:
             _evicted_personas.pop(target, None)
             _slot_survivors[slot_id] = target
@@ -298,6 +457,9 @@ def _apply_trial_feedback(outcome: str, target: str, trial: dict[str, Any], deta
         for sid, persona in list(_slot_survivors.items()):
             if persona == target and next_fit < config.BREED_RETAIN_MIN:
                 _slot_survivors.pop(sid, None)
+        changed = True
+    if changed:
+        _save_breed_archive(f"trial.{outcome}")
 
 
 def evaluate_mutation_trials() -> None:
@@ -440,12 +602,14 @@ def process_evolve_candidates() -> None:
                     _slot_survivors.pop(sid, None)
             _post_breed_status("evict", target, slot_id, fitness,
                                niche=_candidate_niche(payload, action))
+            _save_breed_archive("evict")
             continue
         if action == "patch_plugin":
             is_elite, niche = _update_elite_archive(target, action, slot_id, fitness, payload)
             if is_elite:
                 _post_breed_status("elite", target, slot_id, fitness, niche=niche,
                                    detail={"elite_action": action})
+                _save_breed_archive("patch_plugin.elite")
             _start_selection_trial(action, target, slot_id, fitness, niche, payload, entry_id=eid)
             continue
         if action != "retain":
@@ -455,6 +619,7 @@ def process_evolve_candidates() -> None:
         if is_elite:
             _post_breed_status("elite", target, slot_id, fitness, niche=niche,
                                detail={"elite_action": action})
+            _save_breed_archive("retain.elite")
         previous = _breed_scores.get(target, {})
         if previous and fitness < float(previous.get("fitness", 0.0) or 0.0):
             continue
@@ -466,6 +631,7 @@ def process_evolve_candidates() -> None:
             "completed": str(payload.get("completed", ""))[:120],
             "fissions": int(payload.get("fissions", 0) or 0),
         }
+        saved_score = False
         if 2 <= slot_id <= config.SLOTS and fitness >= config.BREED_RETAIN_MIN:
             incumbent = _slot_survivors.get(slot_id, "")
             incumbent_fit = float(_breed_scores.get(incumbent, {}).get("fitness", -1.0) or -1.0)
@@ -474,6 +640,10 @@ def process_evolve_candidates() -> None:
                 print(f"  BREED RETAIN s{slot_id} -> {target} fitness={fitness:.3f}")
                 _post_breed_status("retain", target, slot_id, fitness, niche=niche)
                 _start_selection_trial(action, target, slot_id, fitness, niche, payload, entry_id=eid)
+                _save_breed_archive("retain")
+                saved_score = True
+        if not saved_score:
+            _save_breed_archive("retain.score")
 
 
 def select_respawn_persona(slot_id: int, fallback: str) -> str:
@@ -487,8 +657,19 @@ def select_respawn_persona(slot_id: int, fallback: str) -> str:
             return retained
     elite, elite_fitness, niche = _best_elite_persona(slot_id)
     if elite:
+        previous = _breed_scores.get(elite, {})
+        prev_fit = float(previous.get("fitness", 0.0) or 0.0)
+        if elite_fitness >= prev_fit:
+            _breed_scores[elite] = {
+                "fitness": elite_fitness,
+                "slot": slot_id,
+                "completed": f"elite:{niche}"[:120],
+                "fissions": int(previous.get("fissions", 0) or 0),
+            }
+        _slot_survivors[slot_id] = elite
         _post_breed_status("respawn", elite, slot_id, elite_fitness, niche=niche,
                            detail={"source": "elite_archive", "fallback": fallback})
+        _save_breed_archive("elite_respawn")
         return elite
     fallback_persona = comms.canonical(str(fallback))
     default_persona = config.SLOT_DEFAULTS.get(slot_id, fallback_persona)
@@ -516,6 +697,7 @@ if __name__ == "__main__":
     _session_dir = str(log.session_dir())
     log.init("events-reactor.jsonl", config.EVENT_BUDGET)
     log.emit("reactor.start", {"slots": config.SLOTS, "profile": _model_profile or "auto"})
+    _load_breed_archive()
     print(f"REACTOR | {config.SLOTS} slots | profile={_model_profile or 'auto'}")
     print(f"  session: {_session_dir}")
 
