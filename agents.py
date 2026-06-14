@@ -62,7 +62,6 @@ _DURABLE_FISSION_TOKENS = frozenset({
     "py_compile", "compiled", "commit", "hash", "modified", "plugin", "patch",
     "audit written", "wrote", "file changed",
 })
-_STABLE_SYSTEM: dict[str, str] = {}
 _REASONING_CONTRACT = (
     "REASONING (separate channel — logged for debugging and persona adaptation):\n"
     "- Think step-by-step in your reasoning trace: inbox, pressure, risks, plan shape.\n"
@@ -125,24 +124,6 @@ def _llm_event_data(result: LLMResult, extra: dict[str, Any] | None = None) -> d
     return data
 
 
-def _stable_system(role: str) -> str:
-    """Immutable system prompt per role — never embed persona, bus, or schema here."""
-    cached = _STABLE_SYSTEM.get(role)
-    if cached is not None:
-        return cached
-    cached = _load_prompt(role)
-    _STABLE_SYSTEM[role] = cached
-    return cached
-
-
-def _user_with_schema(role: str, body: str) -> str:
-    """Prepend constant schema contract to user message for KV-friendly system prefix."""
-    header = _SCHEMA_USER_HEADERS.get(role, "")
-    if not header:
-        return body
-    return f"{header}\n---TASK_STATE---\n{body}"
-
-
 def _persona_prompt(persona: str) -> str:
     if not persona:
         return ""
@@ -150,6 +131,29 @@ def _persona_prompt(persona: str) -> str:
     if path.exists():
         return path.read_text(encoding="utf-8").strip()
     return ""
+
+
+def _personality_system(board: dict[str, Any] | None = None) -> str:
+    """Personality file = system prompt (living identity). Circuits live in user message."""
+    name = _personality(board)
+    text = _persona_prompt(name)
+    if text:
+        return text
+    return f"You are {name or 'endgame-ai'}, a reactor rod in the colony organism."
+
+
+def _llm_user(circuit: str, body: str) -> str:
+    """Circuit instructions + schema contract + task state (KV-friendly: stable system = personality)."""
+    parts: list[str] = []
+    header = _SCHEMA_USER_HEADERS.get(circuit, "")
+    if header:
+        parts.append(header.rstrip())
+    circuit_text = _load_prompt(circuit)
+    if circuit_text:
+        parts.append(f"CIRCUIT ({circuit}):\n{circuit_text}")
+    parts.append("---TASK_STATE---")
+    parts.append(body.strip())
+    return "\n".join(parts)
 
 
 def _desktop_context() -> str:
@@ -169,42 +173,9 @@ def _desktop_context() -> str:
         return f"DESKTOP_OBSERVE_ERROR: {type(exc).__name__}: {exc}"
 
 
-def _relative_manifest(paths: list[Path]) -> str:
-    out: list[str] = []
-    for path in sorted(paths, key=lambda item: str(item).lower()):
-        try:
-            out.append(path.relative_to(config.BASE_DIR).as_posix())
-        except ValueError:
-            continue
-    return ", ".join(out) if out else "none"
-
-
-def _repo_manifest_context() -> str:
-    try:
-        top_py = [p for p in config.BASE_DIR.glob("*.py") if p.is_file()]
-        plugin_py = [p for p in config.PLUGINS_DIR.glob("*.py") if p.is_file()]
-        docs = [
-            config.BASE_DIR / "README.md",
-            config.BASE_DIR / "OBSERVATIONS.md",
-            config.BASE_DIR / "RULES.md",
-            config.BASE_DIR / "CONTRIBUTING.md",
-        ]
-        docs = [p for p in docs if p.is_file()]
-    except OSError:
-        return ""
-    return "\n".join([
-        "AVAILABLE_FILES (use exact paths; do not invent colony.py, endgame_ai.py, event.log, or other phantom files):",
-        f"  TOP_LEVEL_PY: {_relative_manifest(top_py)}",
-        f"  PLUGIN_PY: {_relative_manifest(plugin_py)}",
-        f"  TRACKED_DOCS: {_relative_manifest(docs)}",
-    ])
-
-
-def _planner_messages(board: dict[str, Any]) -> tuple[str, str]:
-    """Constant system prompt; persona/goal/schema/state in user message for KV reuse."""
-    system = _stable_system("planner")
+def _planner_state(board: dict[str, Any]) -> str:
+    """Task state for planner circuit — personality file is the system prompt."""
     persona = _personality(board)
-    persona_text = _persona_prompt(persona)
     history_ctx = _format_history(board.get("history", []))
     bus_ctx = ""
     try:
@@ -220,10 +191,7 @@ def _planner_messages(board: dict[str, Any]) -> tuple[str, str]:
         stag_f = 0.0
     pwr = board.get("power", 1.0 - stag_f)
     desktop_ctx = _desktop_context()
-    manifest_ctx = _repo_manifest_context()
-    parts = [f"PERSONA_NAME: {persona or 'default'}"]
-    if persona_text:
-        parts += ["PERSONA_MISSION:", persona_text, ""]
+    parts = [f"ROD: {persona or 'default'}"]
     active_goal = str(board.get("goal", ""))[:800]
     long_term = ""
     try:
@@ -234,15 +202,11 @@ def _planner_messages(board: dict[str, Any]) -> tuple[str, str]:
     parts += [f"ACTIVE_TASK: {active_goal or '(idle — wait for MoE route or human interrupt)'}"]
     if long_term:
         parts += [
-            f"LONG_TERM_GOAL (persistent, Codex /goal): {long_term}",
-            "Make ACTIVE_TASK one small step toward LONG_TERM_GOAL when assigned.",
+            f"LONG_TERM_GOAL: {long_term}",
+            "One small step toward LONG_TERM_GOAL per plan.",
             "",
         ]
-    else:
-        parts += [""]
     parts += [f"PRESSURE: stagnation={stag_f:.3f} power={float(pwr):.3f}"]
-    if manifest_ctx:
-        parts += ["", manifest_ctx]
     if desktop_ctx:
         parts += ["", desktop_ctx]
     if history_ctx:
@@ -250,7 +214,7 @@ def _planner_messages(board: dict[str, Any]) -> tuple[str, str]:
     if bus_ctx:
         parts += ["", bus_ctx]
     parts += ["", "Plan JSON:"]
-    return system, _user_with_schema("planner", "\n".join(parts))
+    return "\n".join(parts)
 
 
 _ELEMENT_ID_RE = re.compile(r"\[\d+\]")
@@ -400,9 +364,10 @@ class PlannerAgent:
 
     def _run_gui_planner(self, board: dict[str, Any], goal: str) -> dict[str, Any] | None:
         log.emit("planner.pending", {"goal": goal[:80], "mode": "gui"})
-        system = _stable_system("planner_gui")
-        _, user_base = _planner_messages(board)
-        user = user_base.replace("Plan JSON:", "Plan JSON (text sequence — exec/read_file/write_file/wait or GUI intentions):")
+        system = _personality_system(board)
+        user = _llm_user("planner_gui", _planner_state(board).replace(
+            "Plan JSON:", "Plan JSON (text steps — exec/read_file/write_file/wait or GUI intentions):",
+        ))
         schema = _load_schema("planner_gui")
         llm_out = call_llm(system, user, "planner", schema=schema, cache_key="planner_gui")
         try:
@@ -448,9 +413,14 @@ class PlannerAgent:
         if gui_mode_enabled():
             return self._run_gui_planner(board, goal)
         log.emit("planner.pending", {"goal": goal[:80]})
-        system, user = _planner_messages(board)
         schema = _load_schema("planner")
-        llm_out = call_llm(system, user, "planner", schema=schema, cache_key="planner")
+        llm_out = call_llm(
+            _personality_system(board),
+            _llm_user("planner", _planner_state(board)),
+            "planner",
+            schema=schema,
+            cache_key="planner",
+        )
         try:
             parsed = json.loads(llm_out.text)
         except (json.JSONDecodeError, TypeError):
@@ -553,8 +523,8 @@ class ActorAgent:
             return {"phase": "actor", "data": {"ok": False, "obs": "GUI step requires gui_mode"}}
 
         llm_out = call_llm(
-            _stable_system("actor"),
-            _render_actor_context(board, text),
+            _personality_system(board),
+            _llm_user("actor", _render_actor_context(board, text)),
             "actor",
             schema=_load_schema("actor"),
             cache_key="actor",
@@ -668,13 +638,14 @@ class VerifierAgent:
         if git_result:
             ok, evidence = git_result
             return _verify_outcome(board, done_when, ok, evidence)
-        system = _stable_system("verifier")
-        user = _user_with_schema(
-            "verifier",
-            f"DONE_WHEN: {done_when}\n\nSTEP RESULTS:\n" + "\n".join(results),
-        )
         schema = _load_schema("verifier")
-        llm_out = call_llm(system, user, "verifier", schema=schema, cache_key="verifier")
+        llm_out = call_llm(
+            _personality_system(board),
+            _llm_user("verifier", f"DONE_WHEN: {done_when}\n\nSTEP RESULTS:\n" + "\n".join(results)),
+            "verifier",
+            schema=schema,
+            cache_key="verifier",
+        )
         try:
             parsed = json.loads(llm_out.text)
         except (json.JSONDecodeError, TypeError):
@@ -745,19 +716,23 @@ class ReflectorAgent:
         pressure = board.get("_pressure", {})
         failures = int(pressure.get("failures", 0) or 0)
         stagnation = float(pressure.get("stagnation", board.get("stagnation", 0.0)) or 0.0)
-        user = _user_with_schema(
-            "reflector",
-            (
-                f"GOAL: {str(board.get('goal', ''))[:400]}\n"
-                f"TRIGGER: stagnation={stagnation:.3f} failures={failures} "
-                f"human_denials={int(board.get('_human_denials', 0) or 0)}\n"
-                f"DENIED_DONE_WHEN: {str(last_denial.get('denied', ''))[:400]}\n"
-                f"EVIDENCE: {str(last_denial.get('reason', ''))[:600]}\n"
-                "Reflect JSON:"
+        llm_out = call_llm(
+            _personality_system(board),
+            _llm_user(
+                "reflector",
+                (
+                    f"GOAL: {str(board.get('goal', ''))[:400]}\n"
+                    f"TRIGGER: stagnation={stagnation:.3f} failures={failures} "
+                    f"human_denials={int(board.get('_human_denials', 0) or 0)}\n"
+                    f"DENIED_DONE_WHEN: {str(last_denial.get('denied', ''))[:400]}\n"
+                    f"EVIDENCE: {str(last_denial.get('reason', ''))[:600]}\n"
+                    "Reflect JSON:"
+                ),
             ),
+            "reflector",
+            schema=_load_schema("reflector"),
+            cache_key="reflector",
         )
-        llm_out = call_llm(_stable_system("reflector"), user, "reflector",
-                           schema=_load_schema("reflector"), cache_key="reflector")
         try:
             parsed = json.loads(llm_out.text)
         except (json.JSONDecodeError, TypeError):
@@ -833,19 +808,23 @@ class MutatorAgent:
             }
 
         plugin_names = _existing_plugin_names()
-        user = _user_with_schema(
-            "mutator",
-            (
-                f"GOAL: {str(board.get('goal', ''))[:400]}\n"
-                f"PRESSURE: failures={failures} human_denials={denials}\n"
-                f"REFLECTION: {json.dumps(reflection, ensure_ascii=False)[:700]}\n"
-                f"EXISTING_PLUGINS: {', '.join(plugin_names) or 'none'}\n"
-                f"{_format_history(board.get('history', []))}\n"
-                "Mutation JSON:"
+        llm_out = call_llm(
+            _personality_system(board),
+            _llm_user(
+                "mutator",
+                (
+                    f"GOAL: {str(board.get('goal', ''))[:400]}\n"
+                    f"PRESSURE: failures={failures} human_denials={denials}\n"
+                    f"REFLECTION: {json.dumps(reflection, ensure_ascii=False)[:700]}\n"
+                    f"EXISTING_PLUGINS: {', '.join(plugin_names) or 'none'}\n"
+                    f"{_format_history(board.get('history', []))}\n"
+                    "Mutation JSON:"
+                ),
             ),
+            "mutator",
+            schema=_load_schema("mutator"),
+            cache_key="mutator",
         )
-        llm_out = call_llm(_stable_system("mutator"), user, "mutator",
-                           schema=_load_schema("mutator"), cache_key="mutator")
         try:
             parsed = json.loads(llm_out.text)
         except (json.JSONDecodeError, TypeError):
@@ -929,39 +908,13 @@ def _done_when_contract_error(done_when: str) -> str:
 
 
 def _plan_code_contract_error(code: str) -> str:
-    try:
-        tree = ast.parse(code)
-    except SyntaxError as exc:
-        where = f"line {exc.lineno}" if exc.lineno else "step"
-        return f"must be runnable Python ({exc.msg}, {where})"
-
-    has_print = False
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                if alias.name == "Path" or alias.name.split(".", 1)[0] == "Path":
-                    return "must not import Path; Path is already pre-imported from pathlib"
-        elif isinstance(node, ast.ImportFrom):
-            if node.module and node.module.split(".", 1)[0] == "Path":
-                return "must not import Path; Path is already pre-imported from pathlib"
-            for alias in node.names:
-                if alias.name == "Path":
-                    return "must not import Path; Path is already pre-imported from pathlib"
-        elif isinstance(node, ast.Call):
-            root, name = _call_name(node.func)
-            if root == "fission_judge" or name == "fission_judge":
-                return "must not call fission_judge(); the pipeline runs fission judging after verification"
-            if root == "py_compile" and name == "compile" and node.args:
-                target = _literal_str_key(node.args[0])
-                if target and not target.lower().endswith(".py"):
-                    return f"must not py_compile non-Python file {target}; use Path.write_text for markdown"
-            if name == "print":
-                has_print = True
-    if not has_print:
+    if "fission_judge" in code:
+        return "must not call fission_judge(); pipeline runs fission judging after verification"
+    low = code.lower()
+    if "import path" in low or "from path" in low:
+        return "must not import Path; Path is pre-imported from pathlib"
+    if "print(" not in code:
         return "must call print() with verifier evidence"
-    write_err = _actor_protected_write_error(code)
-    if write_err:
-        return write_err
     return ""
 
 
@@ -1310,7 +1263,7 @@ def _fission_judge_user(board: dict[str, Any], completed: str, *, trim_history: 
     history = board.get("history", [])
     if trim_history:
         history = history[-3:]
-    return _user_with_schema(
+    return _llm_user(
         "fission_judge",
         (
             f"GOAL: {str(board.get('_last_verified_goal') or board.get('goal', ''))[:500]}\n"
@@ -1348,7 +1301,7 @@ def _fission_review(board: dict[str, Any], completed: str) -> dict[str, str]:
     for attempt in range(2):
         user = _fission_judge_user(board, completed, trim_history=attempt > 0)
         llm_out = call_llm(
-            _stable_system("fission_judge"), user, "fission_judge",
+            _personality_system(board), user, "fission_judge",
             schema=_load_schema("fission_judge"), cache_key="fission_judge",
         )
         review = _parse_fission_judge_payload(llm_out)

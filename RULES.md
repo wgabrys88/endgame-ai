@@ -9,6 +9,11 @@
 ```text
 DETERMINISTIC BRIEFING: endgame-ai (bare-metal branch)
 
+PROJECT GOAL: Living organism on Windows — brain-like wiring, not agent framework.
+  Rods = personalities (system prompt files). Bus = wiring not memory.
+  Desktop + metabolism = core organs. Papers = few lines of math each.
+  Target ~3.5k LOC. Read RULES.md § VISION for full goal.
+
 SAME ARCHITECTURE — NOT TWO ORGANISMS:
   One endgame-ai instance = main.py → engine.run(board) → agent pipeline.
   main branch:     ONE instance, ONE process (no comms bus, no reactor, no breeding).
@@ -122,10 +127,11 @@ ONE CYCLE (reactor parent):
   3. evaluate_mutation_trials()
   4. save breed_archive.json
 
-PERSONALITY TRUTH:
-  config.Personality(name, slot, mission) — dataclass only
-  prompts/personalities/{name}.txt — mission (only per-persona difference in code path)
-  prompts/planner.txt etc. — role prompts (shared across slots)
+PERSONALITY TRUTH (OoO — one system prompt per rod):
+  prompts/personalities/{name}.txt = SYSTEM PROMPT (living identity, full file)
+  prompts/planner.txt etc. = CIRCUIT instructions (user message only)
+  config.Personality(name, slot, mission) — dataclass; loads personality file
+  Personality evaluates goals — may decline "not my expertise" via bus
   engine.AgentContext — binds personality to board per process
 
 HARD INVARIANTS (do not break when slimming):

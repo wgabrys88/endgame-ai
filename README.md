@@ -1,6 +1,6 @@
 # endgame-ai
 
-Five Python processes, one local model (nemotron-3-nano-4B), a blackboard, pressure math, and a breeding reactor.
+A living organism on Windows: five reactor rods, one local model (nemotron-3-nano-4B), bus wiring, pressure math, desktop hands, and a breeding reactor. See `RULES.md § VISION`.
 
 ## Branches (file count matters)
 

@@ -8,52 +8,57 @@ Humans: read `README.md`.
 
 ## COLD-START HANDOVER PROMPT
 
-**Last updated:** 2026-06-14 · **Branch:** `bare-metal` (**46 files**, ~7300 lines) · **Vision:** RULES.md § VISION · **Backup:** `unify-rewrite` (49) · **MILESTONE:** `dev-milestone-20260614` → `5ca4ee8`
+**Last updated:** 2026-06-14 · **Branch:** `bare-metal` · **Vision:** RULES.md § VISION · **HEAD:** personality-as-system-prompt
 
-Copy **RULES.md § SYSTEM CORE** + **§ VISION** (organism/brain metaphor). Then this supplement:
+Copy **RULES.md § SYSTEM CORE** + **§ VISION**. Then this handover:
 
 ```text
-PROJECT: endgame-ai — self-evolving multi-agent colony on consumer hardware.
-Branch: bare-metal (42 files, ~7162 lines). main = same organism, 1 instance (not a fork).
+═══════════════════════════════════════════════════════════════════
+ PROJECT GOAL — what we are building (read this first)
+═══════════════════════════════════════════════════════════════════
 
-PAPERS (open before changing behavior):
-  Bause MoE:      https://arxiv.org/abs/2605.25929  → comms.softmax_route, engine._moe_route
-  Rodriguez pressure: https://arxiv.org/abs/2601.08129 → engine._update_pressure
-  MAP-Elites:     https://arxiv.org/abs/1504.04909  → reactor.Breeder
-  ReAct loop:     https://arxiv.org/abs/2210.03629  → agents pipeline (conceptual)
+endgame-ai is a LIVING ORGANISM on Windows — not an agent framework.
 
-SAME ARCHITECTURE:
-  One instance = main.py → engine.run(board) → agent pipeline.
-  Colony = 5× that + comms blackboard + reactor parent. NOT two organisms.
+Like a brain: simple specialized areas (observation, reasoning, hands) wired
+together. Intelligence emerges from wiring, not from one clever module.
 
-VISION (RULES.md § VISION — read whole section):
-  Living organism, not agent framework. Bus = wiring not memory. Personalities = LLM
-  identities that evaluate goals. MoE/pressure = few lines of math. Desktop + metabolism
-  = core organs (--safe is lab-only). Target: unified OoO, ~3.5k LOC, keep science.
+  • Reactor rods = main.py instances, each running ONE personality (system prompt).
+  • Personalities are LLM identities — they evaluate goals, not just execute them.
+    A goal may be "not my job"; they say so on the bus and wait.
+  • Bus (comms.py) is WIRING between areas — event-driven pathways, NOT memory.
+    Rods never call each other; they post/read. Human pri=3 visible to all rods.
+  • Deterministic Python = connective tissue: MoE softmax, pressure math, routing.
+    Papers describe 1–2 equations each → a few lines of code (we bloated the wrapper).
+  • Desktop (observer/win32/actions) = eyes + hands — CORE organ, always on at boot.
+  • Full metabolism (exec, git, mutation) = CORE — --safe is lab-only sedation.
+  • TUI = beautiful human face (accepted extra code).
+  • Breeder/MAP-Elites = plasticity — keep elites, respawn better personas.
 
-DESKTOP RECOVERY (2026-06-14):
-  ObserverAgent + unified ActorAgent + planner_gui. config.desktop_enabled() = core organ.
+Colony = 5 rods + comms_operator (thalamus/MoE) + reactor parent.
+main branch = same organism, scale=1.
 
-READ ORDER:
-1. RULES.md § SYSTEM CORE — COPY THAT BLOCK FIRST (arxiv links + bloat ledger)
-2. OBSERVATIONS.md — session log + forensics below
-3. README.md — human run command
-4. Code: comms.py, engine.py, agents.py, reactor.py, main.py
+Personality = prompts/personalities/{name}.txt (entire system prompt).
+Circuits (planner/actor/verifier) = user-message instructions only.
 
-Model: nvidia-nemotron-3-nano-4b, profile nemotron_parallel (LM Studio MC=5).
+Target: ~3.5k LOC unified OoO. Delete bloat, keep science + desktop + bus.
 
-RUN:
-  python tui.py "long-term goal sentence"
-  python tui.py --safe "goal"
-  Fresh disk: python -c "import log; log.cleanup_runtime(deep=True)"
+PAPERS: Bause https://arxiv.org/abs/2605.25929 | Rodriguez https://arxiv.org/abs/2601.08129
+        MAP-Elites https://arxiv.org/abs/1504.04909 | ReAct https://arxiv.org/abs/2210.03629
 
-CURRENT PRIORITY:
-  1. Delete ~half per RULES bloat ledger (agents AST/smokes, comms mirrors, tui display)
-  2. Live test: python tui.py --gui "open notepad and type hello"
-  3. Prove breed.improve elite survives restart
-  DONE: desktop recovery, AgentContext, Breeder, SYSTEM CORE docs
+RUN (human — full system):
+  python -c "import log; log.cleanup_runtime(deep=True)"
+  python tui.py "Your long-term goal in one sentence"
 
-NOT IN GIT: runtime/, sessions/*.jsonl
+Requires: LM Studio localhost:1234, nemotron-3-nano-4B, profile nemotron_parallel.
+
+SMOKE (no LLM):
+  python -m py_compile tui.py reactor.py main.py engine.py agents.py comms.py
+  python agents.py --fission-smoke
+  python reactor.py --archive-smoke
+
+CODE PATH: comms.py → engine.py → agents.py → reactor.py → main.py → tui.py
+
+NOT IN GIT: runtime/, sessions/
 ```
 
 ---
@@ -70,7 +75,7 @@ NOT IN GIT: runtime/, sessions/*.jsonl
 | **Processes** | 1 (+ math thread) | 5 slots + reactor |
 | **Bus** | snapshot.json | comms blackboard |
 | **Breeding** | none | reactor MAP-Elites |
-| **Actor** | execute_verb + GUI | run_python only (**regression**) |
+| **Actor** | execute_verb + GUI | unified code/text/GUI (**recovered**) |
 | **Agents** | stagnation/lorenz/pid + Observer | fission_judge + mutator + MoE |
 | **llm.py** | 118 lines | 358 lines |
 
