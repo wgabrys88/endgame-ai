@@ -60,7 +60,8 @@ sequence[].code RULES (actor runs this as Python — invalid code fails immediat
 - JSON safety: the final answer is JSON, so newlines inside code strings must be \\n, and literal double quotes inside code must be escaped or replaced with single quotes.
 - Avoid quote-heavy f-strings in code strings. Build dictionaries/lists in Python and use json.dumps() instead of hand-written nested JSON text.
 - Bad: "post message to bus" or "bus_post(...)" alone without print evidence.
-- Good bus step: bus_post(bus_id(), "colony", "@implementor scan plugins", priority=1); print("routed")
+- Bad: print("routed") when done_when says "posted message to colony bus" — print text must match done_when.
+- Good bus step: bus_post(bus_id(), "colony", "@implementor scan plugins", priority=1); print("posted message to colony bus")
 
 FISSION-WORTHY MILESTONES:
 - file milestone: existing file changed AND py_compile evidence printed for Python files.

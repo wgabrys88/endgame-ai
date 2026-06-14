@@ -44,6 +44,17 @@ _MUTATOR_BLOCKED_ATTRS = frozenset({
 _MUTATOR_BLOCKED_BOARD_METHODS = frozenset({"clear", "pop", "popitem", "setdefault", "update"})
 _MUTATOR_WRITE_PREFIX = "_plugin_"
 _PROTECTED_PLUGINS = frozenset({"comms_beacon.py", "web_sentinel.py", "fission_log.py"})
+_PROTECTED_ACTOR_FILES = frozenset({
+    "log.py", "comms.py", "reactor.py", "agents.py", "config.py", "llm.py",
+    "engine.py", "tui.py", "actions.py", "colony_env.py", "python_code.py",
+})
+_BUS_ONLY_FISSION_TOKENS = frozenset({
+    "bus", "bus_post", "bus_route", "bus_request", "posted", "routed", "assigned", "message",
+})
+_DURABLE_FISSION_TOKENS = frozenset({
+    "py_compile", "compiled", "commit", "hash", "modified", "plugin", "patch",
+    "audit written", "wrote", "file changed",
+})
 _STABLE_SYSTEM: dict[str, str] = {}
 _REASONING_CONTRACT = (
     "REASONING (separate channel — logged for debugging and persona adaptation):\n"
@@ -655,6 +666,9 @@ def _validate_planner_contract(steps: Any, done_when: Any) -> str:
         code_err = _plan_code_contract_error(cleaned)
         if code_err:
             return f"sequence[{index}].code {code_err}"
+        write_err = _actor_protected_write_error(cleaned)
+        if write_err:
+            return f"sequence[{index}].code {write_err}"
         step["code"] = cleaned
     return ""
 
@@ -700,7 +714,59 @@ def _plan_code_contract_error(code: str) -> str:
                 has_print = True
     if not has_print:
         return "must call print() with verifier evidence"
+    write_err = _actor_protected_write_error(code)
+    if write_err:
+        return write_err
     return ""
+
+
+def _path_target_literal(node: ast.AST | None) -> str | None:
+    if node is None:
+        return None
+    if isinstance(node, ast.Call):
+        _root, name = _call_name(node.func)
+        if name == "Path" and node.args:
+            return _literal_str_key(node.args[0])
+    return _literal_str_key(node)
+
+
+def _normalize_actor_path(path: str) -> str:
+    cleaned = path.strip().replace("\\", "/")
+    while cleaned.startswith("./"):
+        cleaned = cleaned[2:]
+    return cleaned.split("/")[-1] if "/" not in cleaned else cleaned
+
+
+def _actor_protected_write_error(code: str) -> str:
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return ""
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        root, name = _call_name(node.func)
+        target: str | None = None
+        if name in {"write_text", "write", "writelines"} and isinstance(node.func, ast.Attribute):
+            target = _path_target_literal(node.func.value)
+        elif name == "open" and node.args:
+            target = _path_target_literal(node.args[0])
+            mode = _literal_str_key(node.args[1]) if len(node.args) > 1 else ""
+            if mode and "w" not in mode and "+" not in mode:
+                continue
+        if not target:
+            continue
+        normalized = _normalize_actor_path(target)
+        if normalized in _PROTECTED_ACTOR_FILES:
+            return f"must not modify protected infrastructure file {normalized}"
+    return ""
+
+
+def _is_bus_only_fission_milestone(completed: str, evidence: str) -> bool:
+    text = f"{completed} {evidence}".lower()
+    has_bus = any(token in text for token in _BUS_ONLY_FISSION_TOKENS)
+    has_durable = any(token in text for token in _DURABLE_FISSION_TOKENS)
+    return has_bus and not has_durable
 
 
 def _human_rephrase_suggestion(reason: str) -> str:
@@ -924,50 +990,15 @@ def fission_credit_smoke() -> dict[str, Any]:
         _restore_bus_config(bus_snapshot)
 
 
-def _fission_review(board: dict[str, Any], completed: str) -> dict[str, str]:
-    credited = [str(item) for item in board.get("fission_credited", [])]
-    if str(completed) in credited:
-        return {
-            "verdict": "deny",
-            "diagnosis": "This milestone repeats an already credited completion and should not receive new fission credit.",
-            "suggestion": "Plan a new verifiable milestone or improve pressure before requesting more credit.",
-            "rule": "Do not award fission credit for duplicate completed milestones.",
-        }
-    pressure = board.get("_pressure", {})
-    user = _user_with_schema(
-        "fission_judge",
-        (
-            f"GOAL: {str(board.get('_last_verified_goal') or board.get('goal', ''))[:500]}\n"
-            f"COMPLETED: {str(completed)[:500]}\n"
-            f"VERIFIER_EVIDENCE: {str(board.get('_last_verifier_evidence', ''))[:600]}\n"
-            f"PRESSURE: stagnation={float(pressure.get('stagnation', board.get('stagnation', 0.0)) or 0.0):.3f} "
-            f"power={float(board.get('power', 0.0) or 0.0):.3f} "
-            f"failures={int(pressure.get('failures', 0) or 0)} "
-            f"fissions={int(board.get('fissions', 0) or 0)}\n"
-            f"{_format_history(board.get('history', []))}\n"
-            "Fission judge JSON:"
-        ),
-    )
-    llm_out = call_llm(_stable_system("fission_judge"), user, "fission_judge",
-                       schema=_load_schema("fission_judge"), cache_key="fission_judge")
+def _parse_fission_judge_payload(llm_out: LLMResult) -> dict[str, str] | None:
+    if not str(llm_out.text or "").strip():
+        return None
     try:
         parsed = json.loads(llm_out.text)
     except (json.JSONDecodeError, TypeError):
-        return {
-            "verdict": "deny",
-            "diagnosis": "Fission judge did not return valid JSON, so the reactor must not award selection credit.",
-            "suggestion": "Retry with a smaller verifiable milestone and require a valid fission judge verdict.",
-            "rule": "No fission credit without a valid fission judge JSON verdict.",
-            "_llm": _llm_event_data(llm_out, {"judge_error": "invalid_json"}),
-        }
+        return None
     if not isinstance(parsed, dict):
-        return {
-            "verdict": "deny",
-            "diagnosis": "Fission judge output was not a JSON object, so credit is withheld.",
-            "suggestion": "Return the required fission judge object before selection can retain this behavior.",
-            "rule": "Fission judge output must be a JSON object.",
-            "_llm": _llm_event_data(llm_out, {"judge_error": "not_object"}),
-        }
+        return None
     verdict = str(parsed.get("verdict", "deny"))
     if verdict not in {"credit", "deny"}:
         verdict = "deny"
@@ -980,14 +1011,72 @@ def _fission_review(board: dict[str, Any], completed: str) -> dict[str, str]:
     if not suggestion:
         suggestion = "Return a complete fission judge verdict with evidence-grounded rationale."
         verdict = "deny"
-    review = {
+    return {
         "verdict": verdict,
         "diagnosis": diagnosis,
         "suggestion": suggestion,
         "rule": rule,
     }
-    review["_llm"] = _llm_event_data(llm_out)
-    return review
+
+
+def _fission_judge_user(board: dict[str, Any], completed: str, *, trim_history: bool) -> str:
+    pressure = board.get("_pressure", {})
+    history = board.get("history", [])
+    if trim_history:
+        history = history[-3:]
+    return _user_with_schema(
+        "fission_judge",
+        (
+            f"GOAL: {str(board.get('_last_verified_goal') or board.get('goal', ''))[:500]}\n"
+            f"COMPLETED: {str(completed)[:500]}\n"
+            f"VERIFIER_EVIDENCE: {str(board.get('_last_verifier_evidence', ''))[:600]}\n"
+            f"PRESSURE: stagnation={float(pressure.get('stagnation', board.get('stagnation', 0.0)) or 0.0):.3f} "
+            f"power={float(board.get('power', 0.0) or 0.0):.3f} "
+            f"failures={int(pressure.get('failures', 0) or 0)} "
+            f"fissions={int(board.get('fissions', 0) or 0)}\n"
+            f"{_format_history(history)}\n"
+            "Fission judge JSON:"
+        ),
+    )
+
+
+def _fission_review(board: dict[str, Any], completed: str) -> dict[str, str]:
+    credited = [str(item) for item in board.get("fission_credited", [])]
+    if str(completed) in credited:
+        return {
+            "verdict": "deny",
+            "diagnosis": "This milestone repeats an already credited completion and should not receive new fission credit.",
+            "suggestion": "Plan a new verifiable milestone or improve pressure before requesting more credit.",
+            "rule": "Do not award fission credit for duplicate completed milestones.",
+        }
+    evidence = str(board.get("_last_verifier_evidence", ""))
+    if _is_bus_only_fission_milestone(completed, evidence):
+        return {
+            "verdict": "deny",
+            "diagnosis": "Bus-only coordination was verified but is not a durable fission milestone.",
+            "suggestion": "Plan a file, git, or plugin milestone with py_compile or commit evidence.",
+            "rule": "Bus posts satisfy verifier only; durable file/git/plugin work earns fission credit.",
+        }
+
+    llm_out: LLMResult | None = None
+    for attempt in range(2):
+        user = _fission_judge_user(board, completed, trim_history=attempt > 0)
+        llm_out = call_llm(
+            _stable_system("fission_judge"), user, "fission_judge",
+            schema=_load_schema("fission_judge"), cache_key="fission_judge",
+        )
+        review = _parse_fission_judge_payload(llm_out)
+        if review:
+            review["_llm"] = _llm_event_data(llm_out)
+            return review
+
+    return {
+        "verdict": "deny",
+        "diagnosis": "Fission judge did not return valid JSON, so the reactor must not award selection credit.",
+        "suggestion": "Retry with a smaller verifiable milestone and require a valid fission judge verdict.",
+        "rule": "No fission credit without a valid fission judge JSON verdict.",
+        "_llm": _llm_event_data(llm_out or LLMResult(text=""), {"judge_error": "invalid_json"}),
+    }
 
 
 def _evolution_fitness(board: dict[str, Any], fissions: int) -> float:
@@ -1468,10 +1557,75 @@ def _format_history(history: list) -> str:
     return "\n".join(lines)
 
 
+def fission_judge_llm_smoke() -> dict[str, Any]:
+    """Live LLM call — requires LM Studio on config.LMS_HOSTS."""
+    board = {
+        "goal": "create audit_report.txt with colony status",
+        "_last_verified_goal": "create audit_report.txt with colony status",
+        "_last_verifier_evidence": "verified audit_report.txt contains colony status",
+        "history": [{"denied": "syntax", "reason": "log.py syntax error"}] * 4,
+        "fission_credited": [],
+        "fissions": 0,
+        "_pressure": {"stagnation": 0.3, "failures": 2},
+        "power": 0.7,
+    }
+    completed = 'file_equals {"path":"audit_report.txt","content":"colony status"}'
+    review = _fission_review(board, completed)
+    llm_meta = review.pop("_llm", None)
+    llm_meta = llm_meta if isinstance(llm_meta, dict) else {}
+    return {
+        "ok": bool(
+            review.get("verdict") in {"credit", "deny"}
+            and not llm_meta.get("judge_error")
+        ),
+        "review": review,
+        "judge_error": llm_meta.get("judge_error", ""),
+    }
+
+
+def fission_judge_smoke() -> dict[str, Any]:
+    board = {
+        "goal": "Colony maintenance: audit and report on bus",
+        "_last_verified_goal": "Colony maintenance: audit and report on bus",
+        "_last_verifier_evidence": "posted message: maintenance scan completed",
+        "history": [],
+        "fission_credited": [],
+        "fissions": 0,
+        "_pressure": {"stagnation": 0.6, "failures": 12},
+        "power": 0.4,
+    }
+    review = _fission_review(board, "bus message posted to colony about maintenance scan completed")
+    protected_err = _actor_protected_write_error(
+        "Path('log.py').write_text('audit added', encoding='utf-8'); print('wrote log.py')"
+    )
+    bad_log_plan = [{"code": "Path('log.py').write_text('x', encoding='utf-8'); print('wrote')"}]
+    log_plan_err = _validate_planner_contract(bad_log_plan, "Modified log.py")
+    return {
+        "ok": (
+            review.get("verdict") == "deny"
+            and "bus-only" in str(review.get("diagnosis", "")).lower()
+            and bool(protected_err)
+            and "log.py" in protected_err
+            and bool(log_plan_err)
+        ),
+        "review": {k: v for k, v in review.items() if k != "_llm"},
+        "protected_err": protected_err,
+        "log_plan_err": log_plan_err,
+    }
+
+
 if __name__ == "__main__":
     import sys
     if len(sys.argv) >= 2 and sys.argv[1] == "--fission-smoke":
         result = fission_credit_smoke()
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
         sys.exit(0 if result.get("ok") else 1)
-    print("usage: python agents.py --fission-smoke")
+    if len(sys.argv) >= 2 and sys.argv[1] == "--fission-judge-smoke":
+        result = fission_judge_smoke()
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+        sys.exit(0 if result.get("ok") else 1)
+    if len(sys.argv) >= 2 and sys.argv[1] == "--fission-judge-llm-smoke":
+        result = fission_judge_llm_smoke()
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+        sys.exit(0 if result.get("ok") else 1)
+    print("usage: python agents.py --fission-smoke | --fission-judge-smoke | --fission-judge-llm-smoke")
