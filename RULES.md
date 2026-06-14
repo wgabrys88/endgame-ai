@@ -33,7 +33,7 @@ Every commit must respect this file. No exceptions.
 | **Schemas** | 5 | planner, verifier, reflector, mutator, fission_judge |
 | **Meta** | 8 | dotfiles + LICENSE + CONTRIBUTING + README + OBSERVATIONS + RULES |
 
-**Identity model:** `config.Personality` dataclass — one instance per slot (`name`, `slot`, `mission`). Env vars still set for subprocess spawn; object is source of truth in `main.py`.
+**Identity model:** `config.Personality` + `engine.AgentContext` — one object per `main.py` process. `reactor.Breeder` encapsulates MAP-Elites state. `comms.format_phase_brief` shared with TUI.
 
 **Stripped (not missing — merged or deleted):**
 - `lessons.py`, `run_test.py`, unused schemas — dead files

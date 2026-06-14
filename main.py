@@ -48,6 +48,7 @@ def main() -> None:
         "goal": goal,
         "personality": personality.name,
         "slot": personality.slot,
+        "_personality_mission": personality.mission[:200],
         "priority": args.priority,
         "plan": [],
         "history": [],

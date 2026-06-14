@@ -560,46 +560,20 @@ class TUI:
     def _brief(self, ph: str, d: dict, max_w: int) -> str:
         if not d:
             return ""
-        match ph:
-            case "plan":
-                rc = d.get("reasoning_chars", 0)
-                extra = f" think={rc}" if rc else ""
-                t = f"mode={d.get('mode', '')} steps={d.get('steps', '')}{extra} {d.get('done_when', '')}"
-            case "llm.response":
-                t = (f"{d.get('role', '')} out={d.get('output_chars', 0)} "
-                     f"think={d.get('reasoning_chars', 0)} tok={d.get('reasoning_tokens', 0)}")
-            case "reflect" | "mutate":
-                t = str(d.get("diagnosis") or d.get("action") or d)[:max_w]
-            case "actor" | "action":
-                t = f"{'ok' if d.get('ok') else 'FAIL'} {d.get('obs', '')}"
-            case "verify":
-                t = f"{d.get('verdict', '')} {d.get('evidence', '')}"
-            case "verifier.error" | "planner.error" | "reflect.error":
-                t = f"{d.get('error', '')} {d.get('raw', '')}"
-            case "interrupt":
-                t = f"⚡ @{d.get('from', '?')} pri={d.get('pri', '')} {d.get('text', '')}"
-            case "planner.pending":
-                t = "waiting LLM..."
-            case "human.decline":
-                t = f"{d.get('reason', '')} try: {d.get('suggested_rephrase', '')}"
-            case "llm_retry":
-                t = f"retry #{d.get('attempt', '')} {d.get('error', '')}"
-            case "moe.route":
-                t = f"gate -> @{d.get('to', '')} w={d.get('weight', '')}"
-            case "moe.escalate":
-                t = f"ESCALATE @{d.get('from', '')} -> @{d.get('to', '')} s{d.get('slot', '')}"
-            case "fission":
-                t = f"fissions={d.get('fissions', '')} {d.get('completed', '')}"
-            case "fission.deny":
-                t = f"deny {d.get('diagnosis', '')} {d.get('suggestion', '')}"
-            case _ if ph.startswith("breed."):
-                t = f"{d.get('target', '')} {d.get('reason', '')} d_stag={d.get('stagnation_delta', '')} d_pwr={d.get('power_delta', '')}"
-            case "start":
-                t = f"{d.get('personality', '')} [{d.get('profile', '')}]"
-            case "schedule":
-                t = f"→ {d.get('next', '')} ({d.get('reason', '')})"
-            case _:
-                t = str(d)[:max_w]
+        if ph == "plan":
+            rc = d.get("reasoning_chars", 0)
+            extra = f" think={rc}" if rc else ""
+            t = f"mode={d.get('mode', '')} steps={d.get('steps', '')}{extra} {d.get('done_when', '')}"
+        elif ph in ("verifier.error", "planner.error", "reflect.error"):
+            t = f"{d.get('error', '')} {d.get('raw', '')}"
+        elif ph == "interrupt":
+            t = f"⚡ @{d.get('from', '?')} pri={d.get('pri', '')} {d.get('text', '')}"
+        elif ph == "llm_retry":
+            t = f"retry #{d.get('attempt', '')} {d.get('error', '')}"
+        elif ph == "fission":
+            t = f"fissions={d.get('fissions', '')} {d.get('completed', '')}"
+        else:
+            t = comms.format_phase_brief(ph, d, max_w=max_w, style="tui")
         return _trunc(t.replace("\n", " "), max_w)
 
     @staticmethod

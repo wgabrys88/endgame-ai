@@ -101,7 +101,12 @@ _SCHEMA_USER_HEADERS: dict[str, str] = {
 }
 
 
-def _persona() -> str:
+def _personality(board: dict[str, Any] | None = None) -> str:
+    """Personality name from board object first, env fallback for comms.agent_id parity."""
+    if board:
+        name = str(board.get("personality", "")).strip()
+        if name:
+            return name
     return os.environ.get("ENDGAME_PERSONALITY", "").strip()
 
 
@@ -198,7 +203,7 @@ def _repo_manifest_context() -> str:
 def _planner_messages(board: dict[str, Any]) -> tuple[str, str]:
     """Constant system prompt; persona/goal/schema/state in user message for KV reuse."""
     system = _stable_system("planner")
-    persona = _persona()
+    persona = _personality(board)
     persona_text = _persona_prompt(persona)
     history_ctx = _format_history(board.get("history", []))
     bus_ctx = ""
@@ -253,7 +258,7 @@ class SchedulerAgent:
 
     def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
         # Orchestrator: workers idle until comms_operator assigns work via bus
-        if _persona() != "comms_operator":
+        if _personality(board) != "comms_operator":
             pri = board.get("priority", config.PRI_MAINTENANCE)
             if pri <= config.PRI_MAINTENANCE and not board.get("plan"):
                 try:
@@ -269,7 +274,7 @@ class SchedulerAgent:
                 if board.get("_human_denials", 0) >= config.HUMAN_GOAL_MAX_DENIALS:
                     _decline_human_goal(board, "max retries exceeded")
                     return None
-            if _persona() == "comms_operator":
+            if _personality(board) == "comms_operator":
                 # Deterministic MoE in engine._moe_route handles normal cycles.
                 # LLM planner only when human (pri=3) interrupted this persona.
                 if board.get("priority", config.PRI_MAINTENANCE) < config.PRI_HUMAN:
@@ -328,7 +333,7 @@ class PlannerAgent:
             s["status"] = "active" if i == 0 else "pending"
         done_when = parsed.get("done_when", "")
         writes: dict[str, Any] = {"plan": steps, "done_when": done_when}
-        if _persona() == "comms_operator":
+        if _personality(board) == "comms_operator":
             writes["_last_route"] = time.time()
         return {
             "phase": "plan", "next": "actor",
@@ -363,6 +368,36 @@ class ActorAgent:
         return {"phase": "actor", "data": {"ok": ok, "obs": obs}, "next": "verifier" if ok else None}
 
 
+def _verify_outcome(
+    board: dict[str, Any],
+    done_when: str,
+    ok: bool,
+    evidence: str,
+    *,
+    llm_out: LLMResult | None = None,
+) -> dict[str, Any]:
+    """Single verifier confirm/deny path — updates board and returns pipeline step."""
+    if ok:
+        board["plan"] = []
+        board.setdefault("completed", []).append(done_when)
+        board["_last_verified_goal"] = str(board.get("goal", ""))[:400]
+        board["_last_verified_priority"] = board.get("priority", config.PRI_MAINTENANCE)
+        board["_last_verifier_evidence"] = evidence[:400]
+        if board.get("priority", config.PRI_MAINTENANCE) >= config.PRI_HUMAN:
+            _restore_after_human_task(board)
+        data: dict[str, Any] = {"verdict": "confirmed", "evidence": evidence}
+        if llm_out is not None:
+            data = _llm_event_data(llm_out, data)
+        return {"phase": "verify", "data": data, "next": "fission_judge"}
+    board["plan"] = []
+    board.setdefault("history", []).append({"denied": done_when, "reason": evidence})
+    _post_failure_candidate(board, done_when, evidence)
+    data = {"verdict": "denied", "evidence": evidence}
+    if llm_out is not None:
+        data = _llm_event_data(llm_out, data)
+    return {"phase": "verify", "data": data, "next": "reflector"}
+
+
 class VerifierAgent:
     """Verifies plan completion."""
 
@@ -375,39 +410,11 @@ class VerifierAgent:
         simple_file_result = _verify_simple_file_done(done_when)
         if simple_file_result:
             ok, evidence = simple_file_result
-            if ok:
-                board["plan"] = []
-                board.setdefault("completed", []).append(done_when)
-                board["_last_verified_goal"] = str(board.get("goal", ""))[:400]
-                board["_last_verified_priority"] = board.get("priority", config.PRI_MAINTENANCE)
-                board["_last_verifier_evidence"] = evidence[:400]
-                if board.get("priority", config.PRI_MAINTENANCE) >= config.PRI_HUMAN:
-                    _restore_after_human_task(board)
-                return {"phase": "verify", "data": {"verdict": "confirmed", "evidence": evidence},
-                        "next": "fission_judge"}
-            board["plan"] = []
-            board.setdefault("history", []).append({"denied": done_when, "reason": evidence})
-            _post_failure_candidate(board, done_when, evidence)
-            return {"phase": "verify", "data": {"verdict": "denied", "evidence": evidence},
-                    "next": "reflector"}
+            return _verify_outcome(board, done_when, ok, evidence)
         git_result = _verify_git_done(done_when, results)
         if git_result:
             ok, evidence = git_result
-            if ok:
-                board["plan"] = []
-                board.setdefault("completed", []).append(done_when)
-                board["_last_verified_goal"] = str(board.get("goal", ""))[:400]
-                board["_last_verified_priority"] = board.get("priority", config.PRI_MAINTENANCE)
-                board["_last_verifier_evidence"] = evidence[:400]
-                if board.get("priority", config.PRI_MAINTENANCE) >= config.PRI_HUMAN:
-                    _restore_after_human_task(board)
-                return {"phase": "verify", "data": {"verdict": "confirmed", "evidence": evidence},
-                        "next": "fission_judge"}
-            board["plan"] = []
-            board.setdefault("history", []).append({"denied": done_when, "reason": evidence})
-            _post_failure_candidate(board, done_when, evidence)
-            return {"phase": "verify", "data": {"verdict": "denied", "evidence": evidence},
-                    "next": "reflector"}
+            return _verify_outcome(board, done_when, ok, evidence)
         system = _stable_system("verifier")
         user = _user_with_schema(
             "verifier",
@@ -420,26 +427,8 @@ class VerifierAgent:
         except (json.JSONDecodeError, TypeError):
             return {"phase": "verifier.error", "data": _llm_event_data(llm_out, {"error": "invalid JSON"})}
         verdict = parsed.get("verdict", "denied")
-        if verdict == "confirmed":
-            board["plan"] = []
-            board.setdefault("completed", []).append(done_when)
-            evidence = str(parsed.get("evidence", ""))
-            board["_last_verified_goal"] = str(board.get("goal", ""))[:400]
-            board["_last_verified_priority"] = board.get("priority", config.PRI_MAINTENANCE)
-            board["_last_verifier_evidence"] = evidence[:400]
-            if board.get("priority", config.PRI_MAINTENANCE) >= config.PRI_HUMAN:
-                _restore_after_human_task(board)
-            return {"phase": "verify", "data": _llm_event_data(llm_out, {
-                "verdict": "confirmed", "evidence": evidence,
-            }), "next": "fission_judge"}
-        # Denied — clear plan, will replan
-        board["plan"] = []
         evidence = str(parsed.get("evidence", ""))
-        board.setdefault("history", []).append({"denied": done_when, "reason": evidence})
-        _post_failure_candidate(board, done_when, evidence)
-        return {"phase": "verify", "data": _llm_event_data(llm_out, {
-            "verdict": "denied", "evidence": evidence,
-        }), "next": "reflector"}
+        return _verify_outcome(board, done_when, verdict == "confirmed", evidence, llm_out=llm_out)
 
 
 class FissionJudgeAgent:

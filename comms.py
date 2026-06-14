@@ -759,9 +759,10 @@ def format_bus_context(limit: int | None = None, for_agent: str | None = None) -
     return "\n".join(lines)
 
 
-def _brief(phase: str, data: Any) -> str:
+def format_phase_brief(phase: str, data: Any, *, max_w: int = 120, style: str = "bus") -> str:
+    """Shared phase→string formatter for bus mirror and TUI."""
     if not isinstance(data, dict):
-        return phase
+        return phase[:max_w] if style == "tui" else phase
     match phase:
         case "actor" | "action":
             return f"{phase} {'ok' if data.get('ok') else 'FAIL'} {str(data.get('obs', ''))[:120]}"
@@ -785,8 +786,29 @@ def _brief(phase: str, data: Any) -> str:
             reason = str(data.get("reason", ""))[:80]
             suggestion = str(data.get("suggested_rephrase", ""))[:120]
             return f"human.decline {reason} try={suggestion}" if suggestion else f"human.decline {reason}"
+        case "llm.response" if style == "tui":
+            return (f"{data.get('role', '')} out={data.get('output_chars', 0)} "
+                    f"think={data.get('reasoning_chars', 0)} tok={data.get('reasoning_tokens', 0)}")[:max_w]
+        case "reflect" | "mutate" if style == "tui":
+            return str(data.get("diagnosis") or data.get("action") or data)[:max_w]
+        case "planner.pending" if style == "tui":
+            return "waiting LLM..."
+        case "schedule" if style == "tui":
+            return f"→ {data.get('next', '')} ({data.get('reason', '')})"[:max_w]
+        case "fission.deny" if style == "tui":
+            return f"deny {data.get('diagnosis', '')} {data.get('suggestion', '')}"[:max_w]
+        case _ if style == "tui" and phase.startswith("breed."):
+            return (f"{data.get('target', '')} {data.get('reason', '')} "
+                    f"d_stag={data.get('stagnation_delta', '')} d_pwr={data.get('power_delta', '')}")[:max_w]
+        case "start" if style == "tui":
+            return f"{data.get('personality', '')} [{data.get('profile', '')}]"[:max_w]
         case _:
-            return f"{phase} {str(data)[:120]}"
+            text = f"{phase} {str(data)}"
+            return text[:max_w]
+
+
+def _brief(phase: str, data: Any) -> str:
+    return format_phase_brief(phase, data, style="bus")
 
 
 def _count_text(counts: Counter[str]) -> str:

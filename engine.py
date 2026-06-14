@@ -2,8 +2,8 @@
 from __future__ import annotations
 import importlib.util
 import json
-import os
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
@@ -35,11 +35,42 @@ _plugin_modules: dict[str, Any] = {}
 _plugin_mtimes: dict[str, float] = {}
 
 
+@dataclass(slots=True)
+class AgentContext:
+    """Runtime identity for one main.py process — personality instance + board."""
+    personality: config.Personality
+    board: dict[str, Any]
+
+    @property
+    def name(self) -> str:
+        return self.personality.name
+
+    @property
+    def is_orchestrator(self) -> bool:
+        return self.personality.is_orchestrator
+
+
+def ensure_context(board: dict[str, Any]) -> AgentContext:
+    """Bind board to a Personality object (env fallback for legacy paths)."""
+    name = str(board.get("personality", "")).strip()
+    slot = int(board.get("slot", 0) or 0)
+    mission = str(board.get("goal", ""))
+    if name:
+        personality = config.Personality(name, slot, mission)
+    else:
+        personality = config.Personality.from_env(mission)
+        board["personality"] = personality.name
+        board["slot"] = personality.slot
+    return AgentContext(personality=personality, board=board)
+
+
 def run(board: dict[str, Any], interrupted: Callable[[], bool]) -> None:
     """Main loop: work on goal, check bus for priority interrupts each cycle."""
+    ctx = ensure_context(board)
     board.setdefault("_pressure", {"stagnation": 0.0, "velocity": 0.0, "cycles": 0,
                                     "failures": 0, "last_fission": 0, "prev_stag": 0.0})
     board.setdefault("_moe", {"stuck_ticks": {}})
+    board["_ctx"] = ctx
 
     while not log.exhausted() and not interrupted():
         # --- Priority interrupt check ---
@@ -52,7 +83,7 @@ def run(board: dict[str, Any], interrupted: Callable[[], bool]) -> None:
         _update_pressure(board)
 
         # --- MoE gate (comms_operator only, deterministic, no LLM) ---
-        if _moe_route(board):
+        if _moe_route(ctx):
             time.sleep(config.DELAY_BETWEEN_CYCLES)
             continue
 
@@ -181,9 +212,10 @@ def _pick_alternate(persona: str) -> str:
     return pool[0] if pool else "implementor"
 
 
-def _moe_route(board: dict[str, Any]) -> bool:
+def _moe_route(ctx: AgentContext) -> bool:
     """Deterministic MoE routing cycle. Returns True if a route/escalation fired."""
-    if os.environ.get("ENDGAME_PERSONALITY", "") != "comms_operator":
+    board = ctx.board
+    if not ctx.is_orchestrator:
         return False
     if time.time() - float(board.get("_last_moe", 0)) < config.COMMS_ROUTE_INTERVAL:
         return False

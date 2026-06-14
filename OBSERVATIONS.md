@@ -31,9 +31,9 @@ MINIMAL CORE (42 files):
   Backend(1): acp_client.py
   Plugins(4) · Prompts(10) · Schemas(5) · Meta(8)
 
-IDENTITY (OoO): config.Personality(name, slot, mission) — one instance per main.py process.
-  main.py: Personality.from_env(); reactor.spawn: Personality.load().
-  Next: inject Personality into engine/agents; deprecate agents._persona() env reads.
+IDENTITY (OoO): config.Personality + engine.AgentContext(board).
+  main.py sets board.personality/slot; engine.ensure_context() binds object.
+  agents._personality(board) reads board first; reactor.Breeder holds archive state.
 
 STRIPPED: lessons.py, run_test.py, 3 schemas; colony_env→comms; desktop→actions; llm benchmark ~970 lines.
 
@@ -75,10 +75,10 @@ MILESTONE: git checkout dev-milestone-20260614  # pins 5ca4ee8 DEV_BASELINE_2026
 BRANCHES: bare-metal = forward dev (minimal). unify-rewrite = backup (pre-cleanup).
 STATE: bare-metal cleanup branch created. Session 20260614_201915 forensics in § Session log.
 CURRENT PRIORITY:
-  1. Shrink agents.py + reactor.py in-place (validators, Breeder class) — no new .py files
-  2. Personality injected through engine pipeline (AgentContext)
-  3. Prove breed.improve elite survives restart
-  4. Fix s2/s4 need_plan idle spin
+  1. Shrink agents.py in-place (validators block, JsonRoleAgent) — no new .py files
+  2. Prove breed.improve elite survives restart
+  3. Fix s2/s4 need_plan idle spin
+  DONE: AgentContext, Breeder class, _verify_outcome, format_phase_brief, Personality on board
 
 NOT IN GIT: runtime/, sessions/*.jsonl — keep locally only.
 ```
@@ -194,6 +194,7 @@ Append only. No golden archives in git — summaries live here.
 | `20260614_201915` | ~23m | ~2250 | **Partial win, elite wipe** | Killed 20:43. See forensics below. |
 | `bare-metal` v1 | — | 44→42 | **File strip** | lessons, run_test, 3 schemas |
 | `bare-metal` v2 | — | 42 / ~7k lines | **Code strip** | llm benchmark, colony_env+desktop merge, Personality OoO |
+| `bare-metal` v3 | — | 42 files | **OoO refactor** | AgentContext, Breeder, verifier dedup, shared _brief |
 
 ### Session `20260614_201915` forensics (2026-06-14, killed by operator)
 

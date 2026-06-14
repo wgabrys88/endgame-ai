@@ -2,6 +2,7 @@
 from __future__ import annotations
 import json
 import os
+from dataclasses import dataclass, field
 from pathlib import Path
 import subprocess
 import sys
@@ -19,54 +20,71 @@ slots: dict[int, dict[str, Any]] = {}
 _model_profile: str = ""
 _session_dir: str = ""
 _last_evolve_id: int = 0
-_breed_scores: dict[str, dict[str, Any]] = {}
-_slot_survivors: dict[int, str] = {}
-_elite_archive: dict[str, dict[str, Any]] = {}
-_evicted_personas: dict[str, dict[str, Any]] = {}
-_mutation_trials: dict[str, dict[str, Any]] = {}
+
+
+@dataclass
+class Breeder:
+    """MAP-Elites archive + trial state for reactor (single parent-process object)."""
+    scores: dict[str, dict[str, Any]] = field(default_factory=dict)
+    slot_survivors: dict[int, str] = field(default_factory=dict)
+    elite_archive: dict[str, dict[str, Any]] = field(default_factory=dict)
+    evicted_personas: dict[str, dict[str, Any]] = field(default_factory=dict)
+    mutation_trials: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+    def clear(self) -> None:
+        self.scores.clear()
+        self.slot_survivors.clear()
+        self.elite_archive.clear()
+        self.evicted_personas.clear()
+        self.mutation_trials.clear()
+
+    def snapshot(self) -> dict[str, Any]:
+        return {
+            "archive_path": config.BREED_ARCHIVE_PATH,
+            "bus_dir": config.BUS_DIR,
+            "bus_chat_path": config.BUS_CHAT_PATH,
+            "bus_events_path": config.BUS_EVENTS_PATH,
+            "bus_inject_path": config.BUS_INJECT_PATH,
+            "bus_control_path": config.BUS_CONTROL_PATH,
+            "breed_scores": json.loads(json.dumps(self.scores, ensure_ascii=False)),
+            "slot_survivors": json.loads(json.dumps(self.slot_survivors, ensure_ascii=False)),
+            "elite_archive": json.loads(json.dumps(self.elite_archive, ensure_ascii=False)),
+            "evicted_personas": json.loads(json.dumps(self.evicted_personas, ensure_ascii=False)),
+            "mutation_trials": json.loads(json.dumps(self.mutation_trials, ensure_ascii=False)),
+        }
+
+    def restore(self, snapshot: dict[str, Any]) -> None:
+        config.BREED_ARCHIVE_PATH = snapshot["archive_path"]
+        config.BUS_DIR = snapshot["bus_dir"]
+        config.BUS_CHAT_PATH = snapshot["bus_chat_path"]
+        config.BUS_EVENTS_PATH = snapshot["bus_events_path"]
+        config.BUS_INJECT_PATH = snapshot["bus_inject_path"]
+        config.BUS_CONTROL_PATH = snapshot["bus_control_path"]
+        self.scores.clear()
+        self.scores.update(snapshot.get("breed_scores", {}))
+        self.slot_survivors.clear()
+        self.slot_survivors.update({int(k): v for k, v in snapshot.get("slot_survivors", {}).items()})
+        self.elite_archive.clear()
+        self.elite_archive.update(snapshot.get("elite_archive", {}))
+        self.evicted_personas.clear()
+        self.evicted_personas.update(snapshot.get("evicted_personas", {}))
+        self.mutation_trials.clear()
+        self.mutation_trials.update(snapshot.get("mutation_trials", {}))
+
+
+_breeder = Breeder()
 
 
 def _clear_breed_state() -> None:
-    _breed_scores.clear()
-    _slot_survivors.clear()
-    _elite_archive.clear()
-    _evicted_personas.clear()
-    _mutation_trials.clear()
+    _breeder.clear()
 
 
 def _breed_state_snapshot() -> dict[str, Any]:
-    return {
-        "archive_path": config.BREED_ARCHIVE_PATH,
-        "bus_dir": config.BUS_DIR,
-        "bus_chat_path": config.BUS_CHAT_PATH,
-        "bus_events_path": config.BUS_EVENTS_PATH,
-        "bus_inject_path": config.BUS_INJECT_PATH,
-        "bus_control_path": config.BUS_CONTROL_PATH,
-        "breed_scores": json.loads(json.dumps(_breed_scores, ensure_ascii=False)),
-        "slot_survivors": json.loads(json.dumps(_slot_survivors, ensure_ascii=False)),
-        "elite_archive": json.loads(json.dumps(_elite_archive, ensure_ascii=False)),
-        "evicted_personas": json.loads(json.dumps(_evicted_personas, ensure_ascii=False)),
-        "mutation_trials": json.loads(json.dumps(_mutation_trials, ensure_ascii=False)),
-    }
+    return _breeder.snapshot()
 
 
 def _restore_breed_state(snapshot: dict[str, Any]) -> None:
-    config.BREED_ARCHIVE_PATH = snapshot["archive_path"]
-    config.BUS_DIR = snapshot["bus_dir"]
-    config.BUS_CHAT_PATH = snapshot["bus_chat_path"]
-    config.BUS_EVENTS_PATH = snapshot["bus_events_path"]
-    config.BUS_INJECT_PATH = snapshot["bus_inject_path"]
-    config.BUS_CONTROL_PATH = snapshot["bus_control_path"]
-    _breed_scores.clear()
-    _breed_scores.update(snapshot.get("breed_scores", {}))
-    _slot_survivors.clear()
-    _slot_survivors.update({int(k): v for k, v in snapshot.get("slot_survivors", {}).items()})
-    _elite_archive.clear()
-    _elite_archive.update(snapshot.get("elite_archive", {}))
-    _evicted_personas.clear()
-    _evicted_personas.update(snapshot.get("evicted_personas", {}))
-    _mutation_trials.clear()
-    _mutation_trials.update(snapshot.get("mutation_trials", {}))
+    _breeder.restore(snapshot)
 
 
 def spawn(slot_id: int, persona: str, goal: str = "", priority: int = config.PRI_MAINTENANCE) -> int:
@@ -134,16 +152,30 @@ def status() -> dict[int, dict[str, Any]]:
     return {sid: {**info, "alive": is_alive(sid)} for sid, info in slots.items()}
 
 
-def _candidate_slot(entry: dict[str, Any], payload: dict[str, Any], target: str) -> int:
-    try:
-        sid = int(payload.get("slot", entry.get("slot", 0)) or 0)
-    except (TypeError, ValueError):
-        sid = 0
-    if 2 <= sid <= config.SLOTS:
-        return sid
-    for slot_id, info in slots.items():
-        if info.get("persona") == target:
+def _resolve_slot(
+    value: Any,
+    *,
+    target: str = "",
+    payload: dict[str, Any] | None = None,
+    entry: dict[str, Any] | None = None,
+) -> int:
+    if payload is not None and entry is not None:
+        try:
+            slot_id = int(payload.get("slot", entry.get("slot", 0)) or 0)
+        except (TypeError, ValueError):
+            slot_id = 0
+        if 2 <= slot_id <= config.SLOTS:
             return slot_id
+        for slot_id, info in slots.items():
+            if info.get("persona") == target:
+                return slot_id
+        return int(config.PERSONA_SLOTS.get(target, 0) or 0)
+    try:
+        slot_id = int(value or 0)
+    except (TypeError, ValueError):
+        slot_id = 0
+    if 2 <= slot_id <= config.SLOTS:
+        return slot_id
     return int(config.PERSONA_SLOTS.get(target, 0) or 0)
 
 
@@ -152,16 +184,6 @@ def _candidate_fitness(payload: dict[str, Any]) -> float:
         return max(0.0, min(1.0, float(payload.get("fitness", 0.0) or 0.0)))
     except (TypeError, ValueError):
         return 0.0
-
-
-def _archive_slot(value: Any, target: str = "") -> int:
-    try:
-        slot_id = int(value or 0)
-    except (TypeError, ValueError):
-        slot_id = 0
-    if 2 <= slot_id <= config.SLOTS:
-        return slot_id
-    return int(config.PERSONA_SLOTS.get(target, 0) or 0)
 
 
 def _archive_ts(value: Any) -> float:
@@ -176,10 +198,10 @@ def _post_archive_status(event: str, detail: dict[str, Any] | None = None) -> No
         "action": "breed.archive",
         "event": event,
         "path": str(config.BREED_ARCHIVE_PATH.relative_to(config.BASE_DIR)),
-        "elites": len(_elite_archive),
-        "scores": len(_breed_scores),
-        "survivors": len(_slot_survivors),
-        "evicted": len(_evicted_personas),
+        "elites": len(_breeder.elite_archive),
+        "scores": len(_breeder.scores),
+        "survivors": len(_breeder.slot_survivors),
+        "evicted": len(_breeder.evicted_personas),
     }
     if detail:
         data.update(detail)
@@ -200,10 +222,10 @@ def _archive_payload() -> dict[str, Any]:
     return {
         "version": 1,
         "saved_at": time.time(),
-        "elite_archive": _elite_archive,
-        "breed_scores": _breed_scores,
-        "slot_survivors": {str(slot): persona for slot, persona in _slot_survivors.items()},
-        "evicted_personas": _evicted_personas,
+        "elite_archive": _breeder.elite_archive,
+        "breed_scores": _breeder.scores,
+        "slot_survivors": {str(slot): persona for slot, persona in _breeder.slot_survivors.items()},
+        "evicted_personas": _breeder.evicted_personas,
     }
 
 
@@ -239,7 +261,7 @@ def _load_breed_archive() -> None:
         _post_archive_status("skip", {"reason": "unsupported_version"})
         return
 
-    _elite_archive.clear()
+    _breeder.elite_archive.clear()
     raw_elites = data.get("elite_archive") if isinstance(data.get("elite_archive"), dict) else {}
     for raw_niche, raw_elite in raw_elites.items():
         if not isinstance(raw_elite, dict):
@@ -250,10 +272,10 @@ def _load_breed_archive() -> None:
         niche = str(raw_niche).strip()[:80]
         if not niche:
             continue
-        _elite_archive[niche] = {
+        _breeder.elite_archive[niche] = {
             "target": target,
             "action": str(raw_elite.get("action", ""))[:40],
-            "slot": _archive_slot(raw_elite.get("slot", 0), target),
+            "slot": _resolve_slot(raw_elite.get("slot", 0), target=target),
             "fitness": _candidate_fitness(raw_elite),
             "completed": str(raw_elite.get("completed", ""))[:120],
             "behavior": str(raw_elite.get("behavior", ""))[:60],
@@ -262,7 +284,7 @@ def _load_breed_archive() -> None:
         }
     _trim_elite_archive()
 
-    _breed_scores.clear()
+    _breeder.scores.clear()
     raw_scores = data.get("breed_scores") if isinstance(data.get("breed_scores"), dict) else {}
     for raw_target, raw_score in raw_scores.items():
         if not isinstance(raw_score, dict):
@@ -273,15 +295,15 @@ def _load_breed_archive() -> None:
         fitness = _candidate_fitness(raw_score)
         if fitness <= 0:
             continue
-        _breed_scores[target] = {
+        _breeder.scores[target] = {
             "fitness": fitness,
-            "slot": _archive_slot(raw_score.get("slot", 0), target),
+            "slot": _resolve_slot(raw_score.get("slot", 0), target=target),
             "completed": str(raw_score.get("completed", ""))[:120],
             "fissions": int(raw_score.get("fissions", 0) or 0),
             "trial_id": str(raw_score.get("trial_id", ""))[:80],
         }
 
-    _evicted_personas.clear()
+    _breeder.evicted_personas.clear()
     raw_evicted = data.get("evicted_personas") if isinstance(data.get("evicted_personas"), dict) else {}
     for raw_target, raw_record in raw_evicted.items():
         if not isinstance(raw_record, dict):
@@ -289,24 +311,24 @@ def _load_breed_archive() -> None:
         target = comms.canonical(str(raw_target))
         if target not in config.WORKER_PERSONAS:
             continue
-        _evicted_personas[target] = {
+        _breeder.evicted_personas[target] = {
             "fitness": _candidate_fitness(raw_record),
-            "slot": _archive_slot(raw_record.get("slot", 0), target),
+            "slot": _resolve_slot(raw_record.get("slot", 0), target=target),
             "reason": str(raw_record.get("reason", ""))[:120],
             "ts": _archive_ts(raw_record.get("ts")),
         }
         _evict_elites_for(target)
 
-    _slot_survivors.clear()
+    _breeder.slot_survivors.clear()
     raw_survivors = data.get("slot_survivors") if isinstance(data.get("slot_survivors"), dict) else {}
     for raw_slot, raw_persona in raw_survivors.items():
         target = comms.canonical(str(raw_persona))
         if target not in config.WORKER_PERSONAS or _is_evicted(target):
             continue
-        slot_id = _archive_slot(raw_slot, target)
-        fitness = float(_breed_scores.get(target, {}).get("fitness", 0.0) or 0.0)
+        slot_id = _resolve_slot(raw_slot, target=target)
+        fitness = float(_breeder.scores.get(target, {}).get("fitness", 0.0) or 0.0)
         if 2 <= slot_id <= config.SLOTS and fitness >= config.BREED_RETAIN_MIN:
-            _slot_survivors[slot_id] = target
+            _breeder.slot_survivors[slot_id] = target
 
     _post_archive_status("load")
 
@@ -329,7 +351,7 @@ def _post_breed_status(
         }
         if niche:
             data["niche"] = niche[:80]
-            data["elite_count"] = len(_elite_archive)
+            data["elite_count"] = len(_breeder.elite_archive)
         if detail:
             data.update(detail)
         comms.post(
@@ -421,22 +443,22 @@ def _telemetry_for(target: str) -> dict[str, Any]:
 
 
 def _trim_elite_archive() -> None:
-    while len(_elite_archive) > config.BREED_ELITE_MAX_NICHES:
+    while len(_breeder.elite_archive) > config.BREED_ELITE_MAX_NICHES:
         worst = min(
-            _elite_archive,
-            key=lambda n: float(_elite_archive[n].get("fitness", 0.0) or 0.0),
+            _breeder.elite_archive,
+            key=lambda n: float(_breeder.elite_archive[n].get("fitness", 0.0) or 0.0),
         )
-        _elite_archive.pop(worst, None)
+        _breeder.elite_archive.pop(worst, None)
 
 
 def _evict_elites_for(target: str) -> None:
-    for niche, elite in list(_elite_archive.items()):
+    for niche, elite in list(_breeder.elite_archive.items()):
         if elite.get("target") == target:
-            _elite_archive.pop(niche, None)
+            _breeder.elite_archive.pop(niche, None)
 
 
 def _is_evicted(persona: str) -> bool:
-    return comms.canonical(str(persona)) in _evicted_personas
+    return comms.canonical(str(persona)) in _breeder.evicted_personas
 
 
 def _update_elite_archive(
@@ -447,11 +469,11 @@ def _update_elite_archive(
     payload: dict[str, Any],
 ) -> tuple[bool, str]:
     niche = _candidate_niche(payload, action)
-    previous = _elite_archive.get(niche)
+    previous = _breeder.elite_archive.get(niche)
     prev_fit = float(previous.get("fitness", -1.0) or -1.0) if previous else -1.0
     if previous and fitness < prev_fit + config.BREED_ELITE_MIN_DELTA:
         return False, niche
-    _elite_archive[niche] = {
+    _breeder.elite_archive[niche] = {
         "target": target,
         "action": action,
         "slot": slot_id,
@@ -489,7 +511,7 @@ def _start_selection_trial(
     base_power = float(telemetry.get("power", payload.get("power", 0.0)) or 0.0)
     base_fissions = int(telemetry.get("fissions", payload.get("fissions", 0)) or 0)
     now = time.time()
-    _mutation_trials[trial_id] = {
+    _breeder.mutation_trials[trial_id] = {
         "trial_id": trial_id,
         "action": action,
         "target": target,
@@ -527,7 +549,7 @@ def _apply_trial_feedback(outcome: str, target: str, trial: dict[str, Any], deta
     target = comms.canonical(target)
     slot_id = int(trial.get("slot", 0) or 0)
     fitness = float(trial.get("fitness", 0.0) or 0.0)
-    previous = _breed_scores.get(target, {})
+    previous = _breeder.scores.get(target, {})
     prev_fit = float(previous.get("fitness", 0.0) or 0.0)
     changed = False
     if outcome == "improve":
@@ -535,7 +557,7 @@ def _apply_trial_feedback(outcome: str, target: str, trial: dict[str, Any], deta
         gain += max(0.0, float(detail.get("stagnation_delta", 0.0) or 0.0))
         gain += max(0, int(detail.get("fission_delta", 0) or 0)) * 0.05
         next_fit = round(min(1.0, max(prev_fit, fitness) + min(0.08, gain)), 4)
-        _breed_scores[target] = {
+        _breeder.scores[target] = {
             "fitness": next_fit,
             "slot": slot_id,
             "completed": str(trial.get("filename") or trial.get("action", ""))[:120],
@@ -544,18 +566,18 @@ def _apply_trial_feedback(outcome: str, target: str, trial: dict[str, Any], deta
         }
         changed = True
         if 2 <= slot_id <= config.SLOTS and next_fit >= config.BREED_RETAIN_MIN:
-            _evicted_personas.pop(target, None)
-            _slot_survivors[slot_id] = target
+            _breeder.evicted_personas.pop(target, None)
+            _breeder.slot_survivors[slot_id] = target
     elif outcome == "regress" and previous:
         next_fit = round(max(0.0, prev_fit - config.BREED_IMPROVE_MIN_DELTA), 4)
         if next_fit > 0:
             previous["fitness"] = next_fit
-            _breed_scores[target] = previous
+            _breeder.scores[target] = previous
         else:
-            _breed_scores.pop(target, None)
-        for sid, persona in list(_slot_survivors.items()):
+            _breeder.scores.pop(target, None)
+        for sid, persona in list(_breeder.slot_survivors.items()):
             if persona == target and next_fit < config.BREED_RETAIN_MIN:
-                _slot_survivors.pop(sid, None)
+                _breeder.slot_survivors.pop(sid, None)
         changed = True
     if changed:
         _save_breed_archive(f"trial.{outcome}")
@@ -565,7 +587,7 @@ def evaluate_mutation_trials() -> None:
     """Publish repeated selection outcome evidence once telemetry has reacted."""
     now = time.time()
     colony = comms.colony_state()
-    for trial_id, trial in list(_mutation_trials.items()):
+    for trial_id, trial in list(_breeder.mutation_trials.items()):
         if now - float(trial.get("last_eval", trial.get("started", 0.0)) or 0.0) < config.BREED_TRIAL_EVAL_SECONDS:
             continue
         target = comms.canonical(str(trial.get("target", "")))
@@ -593,7 +615,7 @@ def evaluate_mutation_trials() -> None:
                     "baseline_fissions": base_fissions,
                 },
             )
-            _mutation_trials.pop(trial_id, None)
+            _breeder.mutation_trials.pop(trial_id, None)
             continue
         cur_stag = float(current.get("stagnation", 0.0) or 0.0)
         cur_power = float(current.get("power", 0.0) or 0.0)
@@ -639,7 +661,7 @@ def evaluate_mutation_trials() -> None:
             detail=detail,
         )
         if outcome == "regress" or samples >= int(config.BREED_TRIAL_SAMPLES):
-            _mutation_trials.pop(trial_id, None)
+            _breeder.mutation_trials.pop(trial_id, None)
         else:
             trial["samples"] = samples
             trial["last_eval"] = now
@@ -647,7 +669,7 @@ def evaluate_mutation_trials() -> None:
 
 def _best_elite_persona(slot_id: int) -> tuple[str, float, str]:
     eligible: list[tuple[int, float, str, str]] = []
-    for niche, elite in _elite_archive.items():
+    for niche, elite in _breeder.elite_archive.items():
         target = comms.canonical(str(elite.get("target", "")))
         if target not in config.WORKER_PERSONAS or _is_evicted(target):
             continue
@@ -684,21 +706,21 @@ def process_evolve_candidates() -> None:
         if target not in config.WORKER_PERSONAS:
             continue
         action = str(payload.get("action", "")).lower()
-        slot_id = _candidate_slot(entry, payload, target)
+        slot_id = _resolve_slot(0, payload=payload, entry=entry, target=target)
         fitness = _candidate_fitness(payload)
 
         if action == "evict":
-            _breed_scores.pop(target, None)
-            _evicted_personas[target] = {
+            _breeder.scores.pop(target, None)
+            _breeder.evicted_personas[target] = {
                 "fitness": fitness,
                 "slot": slot_id,
                 "reason": str(payload.get("reason", ""))[:120],
                 "ts": time.time(),
             }
             _evict_elites_for(target)
-            for sid, persona in list(_slot_survivors.items()):
+            for sid, persona in list(_breeder.slot_survivors.items()):
                 if persona == target:
-                    _slot_survivors.pop(sid, None)
+                    _breeder.slot_survivors.pop(sid, None)
             _post_breed_status("evict", target, slot_id, fitness,
                                niche=_candidate_niche(payload, action))
             _save_breed_archive("evict")
@@ -730,12 +752,12 @@ def process_evolve_candidates() -> None:
             _post_breed_status("elite", target, slot_id, fitness, niche=niche,
                                detail={"elite_action": action})
             _save_breed_archive("retain.elite")
-        previous = _breed_scores.get(target, {})
+        previous = _breeder.scores.get(target, {})
         if previous and fitness < float(previous.get("fitness", 0.0) or 0.0):
             continue
         if fitness >= config.BREED_RETAIN_MIN:
-            _evicted_personas.pop(target, None)
-        _breed_scores[target] = {
+            _breeder.evicted_personas.pop(target, None)
+        _breeder.scores[target] = {
             "fitness": fitness,
             "slot": slot_id,
             "completed": str(payload.get("completed", ""))[:120],
@@ -743,10 +765,10 @@ def process_evolve_candidates() -> None:
         }
         saved_score = False
         if 2 <= slot_id <= config.SLOTS and fitness >= config.BREED_RETAIN_MIN:
-            incumbent = _slot_survivors.get(slot_id, "")
-            incumbent_fit = float(_breed_scores.get(incumbent, {}).get("fitness", -1.0) or -1.0)
+            incumbent = _breeder.slot_survivors.get(slot_id, "")
+            incumbent_fit = float(_breeder.scores.get(incumbent, {}).get("fitness", -1.0) or -1.0)
             if fitness >= incumbent_fit:
-                _slot_survivors[slot_id] = target
+                _breeder.slot_survivors[slot_id] = target
                 print(f"  BREED RETAIN s{slot_id} -> {target} fitness={fitness:.3f}")
                 _post_breed_status("retain", target, slot_id, fitness, niche=niche)
                 _start_selection_trial(action, target, slot_id, fitness, niche, payload, entry_id=eid)
@@ -760,23 +782,23 @@ def select_respawn_persona(slot_id: int, fallback: str) -> str:
     """Choose the persona that survives into a worker respawn."""
     if slot_id < 2:
         return fallback
-    retained = _slot_survivors.get(slot_id, "")
+    retained = _breeder.slot_survivors.get(slot_id, "")
     if retained in config.WORKER_PERSONAS and not _is_evicted(retained):
-        fitness = float(_breed_scores.get(retained, {}).get("fitness", 0.0) or 0.0)
+        fitness = float(_breeder.scores.get(retained, {}).get("fitness", 0.0) or 0.0)
         if fitness >= config.BREED_RETAIN_MIN:
             return retained
     elite, elite_fitness, niche = _best_elite_persona(slot_id)
     if elite:
-        previous = _breed_scores.get(elite, {})
+        previous = _breeder.scores.get(elite, {})
         prev_fit = float(previous.get("fitness", 0.0) or 0.0)
         if elite_fitness >= prev_fit:
-            _breed_scores[elite] = {
+            _breeder.scores[elite] = {
                 "fitness": elite_fitness,
                 "slot": slot_id,
                 "completed": f"elite:{niche}"[:120],
                 "fissions": int(previous.get("fissions", 0) or 0),
             }
-        _slot_survivors[slot_id] = elite
+        _breeder.slot_survivors[slot_id] = elite
         _post_breed_status("respawn", elite, slot_id, elite_fitness, niche=niche,
                            detail={"source": "elite_archive", "fallback": fallback})
         _save_breed_archive("elite_respawn")
@@ -809,7 +831,7 @@ def archive_restart_smoke() -> dict[str, Any]:
             target = "reviewer"
             fallback = "devops"
             niche = "archive_smoke:low_pressure"
-            _elite_archive[niche] = {
+            _breeder.elite_archive[niche] = {
                 "target": target,
                 "action": "retain",
                 "slot": 4,
@@ -819,15 +841,15 @@ def archive_restart_smoke() -> dict[str, Any]:
                 "pressure_band": "low_pressure",
                 "ts": time.time(),
             }
-            _breed_scores[target] = {
+            _breeder.scores[target] = {
                 "fitness": 0.82,
                 "slot": 4,
                 "completed": "archive smoke retained reviewer",
                 "fissions": 2,
                 "trial_id": "archive-smoke",
             }
-            _slot_survivors[4] = target
-            _evicted_personas[fallback] = {
+            _breeder.slot_survivors[4] = target
+            _breeder.evicted_personas[fallback] = {
                 "fitness": 0.1,
                 "slot": 5,
                 "reason": "archive smoke fallback evicted",
@@ -845,20 +867,20 @@ def archive_restart_smoke() -> dict[str, Any]:
             ok = (
                 archive_exists
                 and selected == target
-                and _slot_survivors.get(4) == target
-                and target in _breed_scores
-                and niche in _elite_archive
-                and fallback in _evicted_personas
+                and _breeder.slot_survivors.get(4) == target
+                and target in _breeder.scores
+                and niche in _breeder.elite_archive
+                and fallback in _breeder.evicted_personas
             )
             return {
                 "ok": ok,
                 "archive_version": saved.get("version"),
                 "selected": selected,
                 "expected": target,
-                "slot_survivor": _slot_survivors.get(4, ""),
-                "elite_niches": sorted(_elite_archive.keys()),
-                "breed_scores": sorted(_breed_scores.keys()),
-                "evicted": sorted(_evicted_personas.keys()),
+                "slot_survivor": _breeder.slot_survivors.get(4, ""),
+                "elite_niches": sorted(_breeder.elite_archive.keys()),
+                "breed_scores": sorted(_breeder.scores.keys()),
+                "evicted": sorted(_breeder.evicted_personas.keys()),
             }
     finally:
         _restore_breed_state(snapshot)
@@ -919,13 +941,13 @@ def breed_improve_smoke() -> dict[str, Any]:
                 e for e in comms.read_events(config.BUS_EVENTS_MAX)
                 if (e.get("payload") or {}).get("action") == "breed.improve"
             ]
-            score = _breed_scores.get(target, {})
+            score = _breeder.scores.get(target, {})
             archive_exists = config.BREED_ARCHIVE_PATH.is_file()
             ok = (
                 bool(events)
                 and archive_exists
                 and float(score.get("fitness", 0.0) or 0.0) > 0.72
-                and _slot_survivors.get(4) == target
+                and _breeder.slot_survivors.get(4) == target
             )
             latest = events[-1].get("payload", {}) if events else {}
             return {
@@ -933,7 +955,7 @@ def breed_improve_smoke() -> dict[str, Any]:
                 "outcome": latest.get("action", ""),
                 "target": target,
                 "fitness": score.get("fitness", 0.0),
-                "slot_survivor": _slot_survivors.get(4, ""),
+                "slot_survivor": _breeder.slot_survivors.get(4, ""),
                 "stagnation_delta": latest.get("stagnation_delta"),
                 "power_delta": latest.get("power_delta"),
                 "fission_delta": latest.get("fission_delta"),
