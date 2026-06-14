@@ -2,7 +2,7 @@
 
 Five Python processes, one local model (nemotron-3-nano-4B), a blackboard, pressure math, and a breeding reactor. The LLM is a subroutine; the deterministic loop is the organism.
 
-Branch: `unify-rewrite`.
+Branch: `unify-rewrite`. **Dev milestone:** git tag `dev-milestone-20260614`.
 
 ## Run
 

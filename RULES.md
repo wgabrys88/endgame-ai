@@ -1,5 +1,7 @@
 # RULES.md — Repository contract
 
+**Development milestone:** `dev-milestone-20260614` — pin with `git checkout dev-milestone-20260614` to return to this forward-only baseline.
+
 Every commit must respect this file. No exceptions.
 
 ## What git tracks (only)
