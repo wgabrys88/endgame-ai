@@ -80,7 +80,7 @@ Logged on `llm.request`: temperature, top_p, top_k, max_tokens, thinking_budget,
 | `LLM_THINKING_ENABLED` | `true` | Per-role `THINKING_BUDGET` |
 | `LLM_MAX_CONCURRENT` | `1` | Match LM Studio Max Concurrent Predictions |
 | `LMS_USE_GLOBAL_LOCK` | `true` | Cross-process lock at `runtime/.lmstudio.lock` |
-| `nemotron_parallel` | MC=3, lock off | **Experimental** — see below |
+| `nemotron_parallel` | MC=5, lock off | **Experimental** — validated 2026-06-14 |
 
 **Open (not settled):** Whether to enable API schema for stricter JSON at the cost of empty reasoning; whether every pipeline stage should attach full reasoning to bus mirror; whether Unified KV Cache helps when MC=1 (user disabled it — hypothesis: Unified KV mainly helps parallel slots).
 
@@ -174,11 +174,11 @@ python tui.py --model-profile nemotron_parallel
 
 | Colony | LM Studio (required) |
 |--------|----------------------|
-| `LLM_MAX_CONCURRENT=3` | Max Concurrent Predictions **3** |
+| `LLM_MAX_CONCURRENT=5` | Max Concurrent Predictions **5** |
 | `LMS_USE_GLOBAL_LOCK=false` | Unified KV Cache **on** (recommended for MC>1) |
 | Lower per-role `BUDGET` / `THINKING_BUDGET` | More VRAM per slot |
 
-**Trade-offs:** Throughput up when 2+ slots have LLM work; KV reuse per-slot shallower; Nemotron hybrid may full-reprocess more often. Not A/B validated vs MC=1 on this hardware.
+**Validated** (`sessions/20260614_031018`): 5 human injects → 27 `llm.request`, all 5 slots, max 5 concurrent within 60s. Use for multi-`@persona` bursts; `nemotron` (MC=1) for idle maintenance.
 
 ## GUI mode
 
