@@ -14,7 +14,7 @@
 
 ## COLD-START HANDOVER PROMPT
 
-**Last updated:** 2026-06-14 · **Branch:** `unify-rewrite` · **HEAD:** `7f76124`
+**Last updated:** 2026-06-14 · **Branch:** `unify-rewrite` · **HEAD:** `5ff4a6c`
 **Operator model:** nvidia-nemotron-3-nano-4b via LM Studio · **Profile:** `nemotron_parallel` (MC=5)
 
 Copy everything inside the fence into a new AI coding session (Codex, Claude, Grok, Cursor, etc.). You have **no** conversation history — treat this as the only briefing.
