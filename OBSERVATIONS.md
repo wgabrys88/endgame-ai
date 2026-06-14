@@ -8,7 +8,7 @@ Humans: read `README.md`.
 
 ## COLD-START HANDOVER PROMPT
 
-**Last updated:** 2026-06-14 · **Branch:** `unify-rewrite` · **MILESTONE:** `dev-milestone-20260614` · **HEAD:** `5ca4ee8`
+**Last updated:** 2026-06-14 · **Branch:** `unify-rewrite` · **MILESTONE:** tag `dev-milestone-20260614` → `5ca4ee8` · **HEAD:** `54d8176`
 
 Copy the fenced block into any new AI session.
 
@@ -56,7 +56,7 @@ SMOKE (no LLM):
   python reactor.py --archive-smoke
   python reactor.py --breed-improve-smoke
 
-MILESTONE: git tag dev-milestone-20260614 — forward-only dev baseline (slim repo, no golden in git).
+MILESTONE: git checkout dev-milestone-20260614  # pins commit 5ca4ee8 DEV_BASELINE_20260614
 STATE: Ready to run. Runtime/sessions gitignored. 49 essential files tracked.
 CURRENT PRIORITY:
   1. python tui.py "<goal>" with LM Studio live
