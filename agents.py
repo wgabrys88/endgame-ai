@@ -7,7 +7,10 @@ import os
 from pathlib import Path
 import py_compile
 import re
+import sys
+import tempfile
 import time
+import types
 from typing import Any
 
 import config
@@ -40,7 +43,7 @@ _MUTATOR_BLOCKED_ATTRS = frozenset({
 })
 _MUTATOR_BLOCKED_BOARD_METHODS = frozenset({"clear", "pop", "popitem", "setdefault", "update"})
 _MUTATOR_WRITE_PREFIX = "_plugin_"
-_PROTECTED_PLUGINS = frozenset({"comms_beacon.py", "web_sentinel.py"})
+_PROTECTED_PLUGINS = frozenset({"comms_beacon.py", "web_sentinel.py", "fission_log.py"})
 _STABLE_SYSTEM: dict[str, str] = {}
 _REASONING_CONTRACT = (
     "REASONING (separate channel — logged for debugging and persona adaptation):\n"
@@ -55,7 +58,7 @@ _SCHEMA_USER_HEADERS: dict[str, str] = {
         _REASONING_CONTRACT
         + "JSON_OUTPUT (schema contract — user message, not system):\n"
         '{"mode":"direct"|"done","sequence":[{"code":"..."}],"done_when":"..."}\n'
-        "mode=direct for actionable plans. sequence=1-6 Python steps.\n"
+        "mode=direct for actionable plans. sequence=1-3 Python steps for one outcome.\n"
     ),
     "verifier": (
         _REASONING_CONTRACT
@@ -283,6 +286,12 @@ class PlannerAgent:
         steps = parsed.get("sequence", [])
         if not steps:
             return {"phase": "planner.error", "data": _llm_event_data(llm_out, {"error": "empty sequence"})}
+        contract_error = _validate_planner_contract(steps, parsed.get("done_when", ""))
+        if contract_error:
+            return {"phase": "planner.error", "data": _llm_event_data(llm_out, {
+                "error": contract_error,
+                "raw": str(llm_out.text)[:config.PLANNER_ERROR_RAW_MAX],
+            })}
         for i, s in enumerate(steps):
             s["status"] = "active" if i == 0 else "pending"
         done_when = parsed.get("done_when", "")
@@ -587,6 +596,76 @@ class MutatorAgent:
 
 
 # --- Helpers ---
+
+def _validate_planner_contract(steps: Any, done_when: Any) -> str:
+    if not isinstance(steps, list):
+        return "sequence must be a JSON array"
+    if len(steps) > 3:
+        return "sequence must contain 1-3 Python steps for one measurable outcome"
+    if not isinstance(done_when, str) or not done_when.strip():
+        return "done_when must describe one measurable outcome"
+    done_err = _done_when_contract_error(done_when)
+    if done_err:
+        return done_err
+    for index, step in enumerate(steps):
+        if not isinstance(step, dict):
+            return f"sequence[{index}] must be an object"
+        code = step.get("code")
+        if not isinstance(code, str):
+            return f"sequence[{index}].code must be a string"
+        ok, cleaned, err = validate_python(code)
+        if not ok:
+            return f"sequence[{index}].code invalid Python: {err}"
+        code_err = _plan_code_contract_error(cleaned)
+        if code_err:
+            return f"sequence[{index}].code {code_err}"
+        step["code"] = cleaned
+    return ""
+
+
+def _done_when_contract_error(done_when: str) -> str:
+    text = done_when.lower()
+    bus = any(token in text for token in (
+        "bus", "bus_post", "bus_route", "bus_request", "message", "posted", "routed", "assigned",
+    ))
+    artifact = any(token in text for token in (
+        "file", "py_compile", "compile", "git", "commit", "hash", "plugin",
+        "patch", "audit", "written", "modified", "created", "wrote",
+    ))
+    if bus and artifact:
+        return "done_when bundles bus coordination with artifact work; use one measurable outcome"
+    return ""
+
+
+def _plan_code_contract_error(code: str) -> str:
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as exc:
+        where = f"line {exc.lineno}" if exc.lineno else "step"
+        return f"must be runnable Python ({exc.msg}, {where})"
+
+    has_print = False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "Path" or alias.name.split(".", 1)[0] == "Path":
+                    return "must not import Path; Path is already pre-imported from pathlib"
+        elif isinstance(node, ast.ImportFrom):
+            if node.module and node.module.split(".", 1)[0] == "Path":
+                return "must not import Path; Path is already pre-imported from pathlib"
+            for alias in node.names:
+                if alias.name == "Path":
+                    return "must not import Path; Path is already pre-imported from pathlib"
+        elif isinstance(node, ast.Call):
+            root, name = _call_name(node.func)
+            if root == "fission_judge" or name == "fission_judge":
+                return "must not call fission_judge(); the pipeline runs fission judging after verification"
+            if name == "print":
+                has_print = True
+    if not has_print:
+        return "must call print() with verifier evidence"
+    return ""
+
 
 def _decline_human_goal(board: dict[str, Any], reason: str) -> None:
     goal = str(board.get("goal", ""))[:120]
@@ -1049,6 +1128,9 @@ def _apply_plugin_mutation(filename: str, content: str) -> tuple[bool, str, str]
     is_safe, safety_err = _plugin_mutation_is_safe(cleaned)
     if not is_safe:
         return False, safety_err, ""
+    compiled, compile_err = _py_compile_plugin_source(path.name, cleaned)
+    if not compiled:
+        return False, compile_err, ""
 
     try:
         before = path.read_text(encoding="utf-8")
@@ -1056,6 +1138,13 @@ def _apply_plugin_mutation(filename: str, content: str) -> tuple[bool, str, str]
         return False, f"read failed: {exc}", ""
     if before == cleaned:
         return False, "plugin unchanged", ""
+
+    before_ok, _, before_result = _probe_plugin_source(before)
+    after_ok, after_obs, after_result = _probe_plugin_source(cleaned)
+    if not after_ok:
+        return False, f"plugin behavior probe failed before apply: {after_obs}", ""
+    if before_ok and _plugin_result_has_telemetry(before_result) and not _plugin_result_has_telemetry(after_result):
+        return False, "plugin telemetry regression: existing phase/data telemetry would be removed", ""
 
     diff = _mutation_diff(path.name, before, cleaned)
     try:
@@ -1069,6 +1158,95 @@ def _apply_plugin_mutation(filename: str, content: str) -> tuple[bool, str, str]
             pass
         return False, f"compile failed and original plugin was restored: {exc}", ""
     return True, f"patched plugins/{path.name}", diff
+
+
+def _py_compile_plugin_source(filename: str, source: str) -> tuple[bool, str]:
+    temp_path = ""
+    cfile = ""
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            prefix="endgame_plugin_",
+            suffix=f"_{filename}",
+            delete=False,
+            encoding="utf-8",
+        ) as handle:
+            temp_path = handle.name
+            handle.write(source)
+        cfile = f"{temp_path}c"
+        py_compile.compile(temp_path, cfile=cfile, doraise=True)
+        return True, ""
+    except Exception as exc:
+        return False, f"py_compile failed before apply: {exc}"
+    finally:
+        for candidate in (cfile, temp_path):
+            if candidate:
+                try:
+                    Path(candidate).unlink(missing_ok=True)
+                except OSError:
+                    pass
+
+
+def _plugin_probe_board() -> dict[str, Any]:
+    return {
+        "goal": "plugin behavior probe",
+        "plan": [],
+        "history": [],
+        "completed": [],
+        "fissions": 1,
+        "priority": config.PRI_MAINTENANCE,
+        "stagnation": 0.25,
+        "power": 0.75,
+        "velocity": 0.1,
+        "_last_phase": "probe",
+        "_pressure": {"stagnation": 0.25, "failures": 0, "cycles": 1},
+        "_plugin_fission_log": {"last_fissions": 0},
+    }
+
+
+def _fake_comms_module() -> types.ModuleType:
+    module = types.ModuleType("comms")
+
+    def _noop(*args: Any, **kwargs: Any) -> None:
+        return None
+
+    module.agent_id = lambda: "plugin_probe"  # type: ignore[attr-defined]
+    module.post = _noop  # type: ignore[attr-defined]
+    module.post_evolve = _noop  # type: ignore[attr-defined]
+    module.post_telemetry = _noop  # type: ignore[attr-defined]
+    return module
+
+
+def _probe_plugin_source(source: str) -> tuple[bool, str, Any]:
+    had_comms = "comms" in sys.modules
+    previous_comms = sys.modules.get("comms")
+    sys.modules["comms"] = _fake_comms_module()
+    try:
+        namespace: dict[str, Any] = {"__name__": "_endgame_plugin_probe"}
+        exec(compile(source, "<plugin-probe>", "exec"), namespace)
+        run = namespace.get("run")
+        if not callable(run):
+            return False, "plugin must define callable run(board)", None
+        result = run(_plugin_probe_board())
+        if result is not None and not isinstance(result, dict):
+            return False, f"run(board) returned {type(result).__name__}, expected dict or None", result
+        return True, "probe ok", result
+    except Exception as exc:
+        return False, f"{type(exc).__name__}: {exc}", None
+    finally:
+        if had_comms and previous_comms is not None:
+            sys.modules["comms"] = previous_comms
+        else:
+            sys.modules.pop("comms", None)
+
+
+def _plugin_result_has_telemetry(result: Any) -> bool:
+    return (
+        isinstance(result, dict)
+        and isinstance(result.get("phase"), str)
+        and bool(result.get("phase"))
+        and isinstance(result.get("data"), dict)
+    )
 
 
 def _mutation_fitness(board: dict[str, Any]) -> float:
