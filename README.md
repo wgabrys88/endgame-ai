@@ -54,8 +54,8 @@ python reactor.py --archive-smoke
 
 | File | Audience |
 |------|----------|
-| `README.md` | Humans |
-| `OBSERVATIONS.md` | AI — § COLD-START HANDOVER |
-| `RULES.md` | Git contract + 42-file inventory |
+| `README.md` | Humans — how to run |
+| `RULES.md` | **Any AI** — § SYSTEM CORE (diagram, papers, bloat ledger, copy-paste prompt) |
+| `OBSERVATIONS.md` | AI — session log + forensics |
 
 Fresh disk: `python -c "import log; log.cleanup_runtime(deep=True)"`

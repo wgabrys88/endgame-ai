@@ -18,10 +18,10 @@ Branch: bare-metal (42 files, ~6971 lines). Backup: unify-rewrite. Legacy: main 
 Model: nvidia-nemotron-3-nano-4b, profile nemotron_parallel (LM Studio MC=5).
 
 READ ORDER:
-1. RULES.md — 42-file inventory + traceback methodology
-2. OBSERVATIONS.md — this prompt + § Traceback audit below
+1. RULES.md § SYSTEM CORE — deterministic diagram + bloat ledger (COPY THAT BLOCK FIRST)
+2. OBSERVATIONS.md — session log + forensics below
 3. README.md — human run command
-4. Code: comms.py, engine.py, agents.py, reactor.py, tui.py, config.py
+4. Code path: comms.py → engine.py → agents.py (pipeline) → reactor.py → main.py
 
 MINIMAL CORE (42 files):
   Entry(3): tui.py, reactor.py, main.py
