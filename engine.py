@@ -9,6 +9,7 @@ from typing import Any, Callable
 
 from agents import (
     SchedulerAgent,
+    ObserverAgent,
     PlannerAgent,
     ActorAgent,
     VerifierAgent,
@@ -16,9 +17,14 @@ from agents import (
     MutatorAgent,
     FissionJudgeAgent,
 )
+from actions import is_python_step
 import config
 import comms
 import log
+from python_code import gui_mode_enabled
+
+_OBSERVER = ObserverAgent()
+_SCREEN_AGENTS = frozenset({"actor", "verifier"})
 
 
 AGENTS: dict[str, Any] = {
@@ -100,6 +106,8 @@ def run(board: dict[str, Any], interrupted: Callable[[], bool]) -> None:
 
         # Walk the pipeline chain
         while nxt and nxt in AGENTS and not interrupted():
+            if _needs_screen(board, nxt):
+                _run_observer(board)
             agent = AGENTS[nxt]
             result = agent.run(board)
             if result:
@@ -128,6 +136,34 @@ def run(board: dict[str, Any], interrupted: Callable[[], bool]) -> None:
                 break
 
         time.sleep(config.DELAY_BETWEEN_CYCLES)
+
+
+# --- Desktop observe (GUI mode) ---
+
+def _needs_screen(board: dict[str, Any], target: str) -> bool:
+    if not gui_mode_enabled() or target not in _SCREEN_AGENTS:
+        return False
+    if target == "actor":
+        active = next(
+            (s for s in board.get("plan", []) if isinstance(s, dict) and s.get("status") == "active"),
+            None,
+        )
+        if not active:
+            return False
+        if active.get("code"):
+            return False
+        if is_python_step(str(active.get("text", ""))):
+            return False
+    return True
+
+
+def _run_observer(board: dict[str, Any]) -> None:
+    result = _OBSERVER.run(board)
+    if not result:
+        return
+    log.emit(result.get("phase", "observe"), result.get("data"))
+    for key, value in (result.get("writes") or {}).items():
+        board[key] = value
 
 
 # --- Plugin Hot-Swap ---

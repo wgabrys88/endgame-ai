@@ -26,10 +26,11 @@ SAME ARCHITECTURE:
   One instance = main.py → engine.run(board) → agent pipeline.
   Colony = 5× that + comms blackboard + reactor parent. NOT two organisms.
 
-CAPABILITY REGRESSION (see RULES.md table):
-  main: GUI actor (execute_verb), ObserverAgent, YouTube/Notepad worked.
-  colony now: ActorAgent → run_python only; planner AST blocks non-python; _gui_decline_plan.
-  Desktop stack exists but unwired. FIX: unified actor path (next code pass).
+DESKTOP RECOVERY (2026-06-14):
+  Desktop IS the organism (main README vision: M4, exec, see/act/verify).
+  Restored: ObserverAgent, unified ActorAgent (code/text/GUI), planner_gui schema,
+  execute_step + execute_verb, engine._run_observer when gui_mode.
+  Colony bus tasks still use sequence[].code; GUI uses sequence[].text like main.
 
 READ ORDER:
 1. RULES.md § SYSTEM CORE — COPY THAT BLOCK FIRST (arxiv links + bloat ledger)
@@ -46,9 +47,9 @@ RUN:
 
 CURRENT PRIORITY:
   1. Delete ~half per RULES bloat ledger (agents AST/smokes, comms mirrors, tui display)
-  2. Restore main-style ActorAgent in colony (one code path)
+  2. Live test: python tui.py --gui "open notepad and type hello"
   3. Prove breed.improve elite survives restart
-  DONE: AgentContext, Breeder, _verify_outcome, Personality, SYSTEM CORE docs
+  DONE: desktop recovery, AgentContext, Breeder, SYSTEM CORE docs
 
 NOT IN GIT: runtime/, sessions/*.jsonl
 ```

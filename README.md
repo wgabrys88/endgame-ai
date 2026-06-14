@@ -14,7 +14,7 @@ Five Python processes, one local model (nemotron-3-nano-4B), a blackboard, press
 git checkout bare-metal
 ```
 
-`main` is one instance of the same `main.py` → `engine.run` path. Colony is 5× that plus bus and reactor. Colony actor currently regressed to `run_python` only — see `RULES.md` capability table.
+`main` is one instance of the same `main.py` → `engine.run` path. Colony is 5× that plus bus and reactor. Desktop (observer + win32 + actions) is core — see main README vision (M4, exec, see/act/verify).
 
 ## Run
 

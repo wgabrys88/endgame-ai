@@ -253,6 +253,110 @@ def _planner_messages(board: dict[str, Any]) -> tuple[str, str]:
     return system, _user_with_schema("planner", "\n".join(parts))
 
 
+_ELEMENT_ID_RE = re.compile(r"\[\d+\]")
+
+
+def _sanitize_plan_step(step: str) -> str:
+    if not _ELEMENT_ID_RE.search(step):
+        return step
+    cleaned = _ELEMENT_ID_RE.sub("", step)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    log.emit("plan.sanitize", {"original": step, "cleaned": cleaned})
+    return cleaned or step
+
+
+def _advance_plan(plan: list[dict[str, Any]]) -> None:
+    pending = next((s for s in plan if isinstance(s, dict) and s.get("status") == "pending"), None)
+    if pending:
+        pending["status"] = "active"
+
+
+def _build_args(verb: str, target: str, value: str) -> dict[str, Any]:
+    from actions import DEFAULT_SCROLL_AMOUNT
+    target = target.strip("[]")
+    if verb == "click":
+        return {"selector": target}
+    if verb == "write":
+        return {"selector": target, "text": value}
+    if verb == "press":
+        return {"key": target or value}
+    if verb == "hotkey":
+        raw = value or target
+        keys = [k.strip() for k in raw.replace("+", ",").split(",") if k.strip()]
+        return {"keys": keys}
+    if verb == "scroll":
+        try:
+            return {"selector": target, "amount": int(value) if value else DEFAULT_SCROLL_AMOUNT}
+        except ValueError:
+            return {"selector": target, "amount": DEFAULT_SCROLL_AMOUNT}
+    if verb == "wait":
+        try:
+            return {"seconds": float(target or value or "1.0")}
+        except ValueError:
+            return {"seconds": 1.0}
+    if verb == "focus":
+        return {"window_title": target or value}
+    return {}
+
+
+def _render_actor_context(board: dict[str, Any], instruction: str) -> str:
+    parts: list[str] = [f"GOAL: {board.get('goal', '')}"]
+    screen = str(board.get("screen", "")).strip()
+    if screen:
+        parts.append(f"SCREEN:\n{screen}")
+    fw = str(board.get("focused_window", "")).strip()
+    if fw:
+        parts.append(f"FOCUSED WINDOW: {fw}")
+    ds = str(board.get("desktop_summary", "")).strip()
+    if ds:
+        parts.append(f"DESKTOP:\n{ds}")
+    plan = board.get("plan", [])
+    if plan:
+        lines = ["PLAN:"]
+        for i, step in enumerate(plan):
+            if not isinstance(step, dict):
+                continue
+            is_last = i == len(plan) - 1
+            connector = "└── " if is_last else "├── "
+            status = step.get("status", "pending")
+            marker = "✓ " if status == "done" else ">>> " if status == "active" else ""
+            label = step.get("text") or step.get("code", "")
+            lines.append(f"  {connector}{marker}{label}")
+        parts.append("\n".join(lines))
+    history = board.get("history", [])
+    if history:
+        hist_lines = ["HISTORY:"]
+        for h in history[-config.MAX_HISTORY:]:
+            if isinstance(h, dict):
+                ok = "✓" if h.get("ok") else "✗"
+                hist_lines.append(f"  {ok} {h.get('verb', '')}: {h.get('obs', '')}")
+        parts.append("\n".join(hist_lines))
+    parts.append(f"INSTRUCTION: {instruction}")
+    parts.append("Actor JSON:")
+    return "\n\n".join(parts)
+
+
+class ObserverAgent:
+    """Hover probe + UIA tree → screen context for GUI actor."""
+
+    def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
+        from observer import observe
+        try:
+            obs = observe()
+        except Exception as exc:
+            return {"phase": "observe", "data": {"error": str(exc)[:200]}}
+        return {
+            "phase": "observe",
+            "data": {"focused": obs.focused_title, "chars": len(obs.context_text)},
+            "writes": {
+                "screen": obs.context_text,
+                "screen_elements": obs.book,
+                "focused_window": obs.focused_title,
+                "desktop_summary": obs.desktop_summary,
+            },
+        }
+
+
 class SchedulerAgent:
     """Decides what to do next: plan, continue, or idle."""
 
@@ -294,6 +398,44 @@ class SchedulerAgent:
 class PlannerAgent:
     """Generates a plan from the goal."""
 
+    def _run_gui_planner(self, board: dict[str, Any], goal: str) -> dict[str, Any] | None:
+        log.emit("planner.pending", {"goal": goal[:80], "mode": "gui"})
+        system = _stable_system("planner_gui")
+        _, user_base = _planner_messages(board)
+        user = user_base.replace("Plan JSON:", "Plan JSON (text sequence — exec/read_file/write_file/wait or GUI intentions):")
+        schema = _load_schema("planner_gui")
+        llm_out = call_llm(system, user, "planner", schema=schema, cache_key="planner_gui")
+        try:
+            parsed = json.loads(llm_out.text)
+        except (json.JSONDecodeError, TypeError):
+            return {"phase": "planner.error", "data": _llm_event_data(llm_out, {
+                "error": "invalid JSON",
+                "raw": str(llm_out.text)[:config.PLANNER_ERROR_RAW_MAX],
+            })}
+        mode = parsed.get("mode", "direct")
+        if mode == "done":
+            return {"phase": "plan", "data": _llm_event_data(llm_out, {
+                "mode": "done", "done_when": parsed.get("done_when", ""),
+            }), "writes": {"plan": []}}
+        sequence = parsed.get("sequence", [])
+        if not sequence:
+            return {"phase": "planner.error", "data": _llm_event_data(llm_out, {"error": "empty sequence"})}
+        steps: list[dict[str, Any]] = []
+        for i, raw in enumerate(sequence[:config.MAX_PLAN_STEPS]):
+            text = _sanitize_plan_step(str(raw))
+            steps.append({"text": text, "status": "active" if i == 0 else "pending"})
+        done_when = str(parsed.get("done_when", ""))
+        writes: dict[str, Any] = {"plan": steps, "done_when": done_when}
+        if _personality(board) == "comms_operator":
+            writes["_last_route"] = time.time()
+        return {
+            "phase": "plan", "next": "actor",
+            "data": _llm_event_data(llm_out, {
+                "mode": mode, "steps": len(steps), "done_when": done_when, "gui": True,
+            }),
+            "writes": writes,
+        }
+
     def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
         goal = board.get("goal", "")
         if not goal:
@@ -303,6 +445,8 @@ class PlannerAgent:
         simple_file_plan = _simple_file_plan(goal)
         if simple_file_plan:
             return simple_file_plan
+        if gui_mode_enabled():
+            return self._run_gui_planner(board, goal)
         log.emit("planner.pending", {"goal": goal[:80]})
         system, user = _planner_messages(board)
         schema = _load_schema("planner")
@@ -345,27 +489,136 @@ class PlannerAgent:
 
 
 class ActorAgent:
-    """Executes the active plan step (Python code)."""
+    """Executes plan steps: colony Python (code), headless text (exec), or GUI verbs."""
 
     def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
+        from actions import execute_step, execute_verb, is_python_step, run_python, VERBS
+
         plan = board.get("plan", [])
         active = next((s for s in plan if isinstance(s, dict) and s.get("status") == "active"), None)
         if not active:
             return None
-        code = str(active.get("code", ""))
-        if not is_python_code(code):
+
+        code = str(active.get("code", "")).strip()
+        text = str(active.get("text", "")).strip()
+        history: list[dict[str, Any]] = list(board.get("history", []))
+
+        if code:
+            if not is_python_code(code):
+                active["status"] = "done"
+                active["result"] = "skipped: not python"
+                return {"phase": "actor", "data": {"ok": False, "obs": "not python code"}}
+            result = run_python(code)
             active["status"] = "done"
-            active["result"] = "skipped: not python"
-            return {"phase": "actor", "data": {"ok": False, "obs": "not python code"}}
-        from actions import run_python
-        result = run_python(code)
+            active["result"] = result.observation[:config.EXEC_OUTPUT_LIMIT]
+            ok = result.success
+            obs = result.observation[:200]
+            if not ok:
+                history.append({"step": code[:100], "ok": False, "obs": obs})
+            return {
+                "phase": "actor",
+                "data": {"ok": ok, "obs": obs, "verb": "python"},
+                "next": "verifier" if ok else None,
+                "writes": {"history": history[-config.MAX_HISTORY:]},
+            }
+
+        if not text:
+            return {"phase": "actor.error", "data": {"error": "no active step text or code"}}
+
+        if is_python_step(text):
+            result = execute_step(text)
+            history.append({"verb": result.verb, "ok": result.success, "obs": result.observation})
+            active["result"] = result.observation[:config.EXEC_OUTPUT_LIMIT]
+            if result.success:
+                active["status"] = "done"
+                _advance_plan(plan)
+                return {
+                    "phase": "actor",
+                    "data": {"ok": True, "verb": result.verb, "obs": result.observation[:200]},
+                    "next": "verifier" if all(
+                        not isinstance(s, dict) or s.get("status") == "done" for s in plan
+                    ) else "actor",
+                    "writes": {"plan": plan, "history": history[-config.MAX_HISTORY:]},
+                }
+            active["status"] = "failed"
+            return {
+                "phase": "actor",
+                "data": {"ok": False, "verb": result.verb, "obs": result.observation[:200]},
+                "writes": {"plan": plan, "history": history[-config.MAX_HISTORY:]},
+            }
+
+        if not gui_mode_enabled():
+            active["status"] = "done"
+            active["result"] = "skipped: GUI step without gui_mode"
+            return {"phase": "actor", "data": {"ok": False, "obs": "GUI step requires gui_mode"}}
+
+        llm_out = call_llm(
+            _stable_system("actor"),
+            _render_actor_context(board, text),
+            "actor",
+            schema=_load_schema("actor"),
+            cache_key="actor",
+        )
+        try:
+            parsed = json.loads(llm_out.text)
+        except (json.JSONDecodeError, TypeError):
+            return {"phase": "actor.error", "data": _llm_event_data(llm_out, {"error": "invalid JSON"})}
+        conclusion = str(parsed.get("conclusion", "EXECUTE"))
+        actions: list[dict[str, Any]] = parsed.get("actions", [])
+        actions = [a for a in actions if str(a.get("verb", "")) in {"click", "write", "press", "hotkey", "scroll", "focus"}]
+        if conclusion == "EXECUTE" and not actions:
+            active["status"] = "failed"
+            return {"phase": "actor", "data": _llm_event_data(llm_out, {"conclusion": "CANNOT", "error": "need GUI verb"})}
+        if conclusion == "DONE":
+            active["status"] = "done"
+            _advance_plan(plan)
+            return {
+                "phase": "actor",
+                "data": _llm_event_data(llm_out, {"conclusion": "DONE"}),
+                "next": "verifier" if all(
+                    not isinstance(s, dict) or s.get("status") == "done" for s in plan
+                ) else "actor",
+                "writes": {"plan": plan},
+            }
+        if conclusion == "CANNOT":
+            active["status"] = "failed"
+            return {"phase": "actor", "data": _llm_event_data(llm_out, {"conclusion": "CANNOT"})}
+
+        elements: dict[str, Any] = board.get("screen_elements", {})
+        had_failure = False
+        for action in actions:
+            verb = str(action.get("verb", ""))
+            target = str(action.get("target", ""))
+            value = str(action.get("value", ""))
+            if verb not in VERBS:
+                history.append({"verb": verb, "ok": False, "obs": f"unknown verb: {verb}"})
+                had_failure = True
+                break
+            args = _build_args(verb, target, value)
+            result = execute_verb(verb, args, elements, None)
+            history.append({"verb": verb, "ok": result.success, "obs": result.observation})
+            log.emit("action", {"verb": verb, "ok": result.success, "obs": result.observation[:200]})
+            if not result.success:
+                had_failure = True
+                break
+        if had_failure:
+            active["status"] = "failed"
+            return {
+                "phase": "actor",
+                "data": _llm_event_data(llm_out, {"conclusion": conclusion, "ok": False}),
+                "writes": {"plan": plan, "history": history[-config.MAX_HISTORY:]},
+            }
         active["status"] = "done"
-        active["result"] = result.observation[:config.EXEC_OUTPUT_LIMIT]
-        ok = result.success
-        obs = result.observation[:200]
-        if not ok:
-            board.setdefault("history", []).append({"step": code[:100], "ok": False, "obs": obs})
-        return {"phase": "actor", "data": {"ok": ok, "obs": obs}, "next": "verifier" if ok else None}
+        active["result"] = f"gui:{conclusion}"
+        _advance_plan(plan)
+        return {
+            "phase": "actor",
+            "data": _llm_event_data(llm_out, {"conclusion": conclusion, "ok": True}),
+            "next": "verifier" if all(
+                not isinstance(s, dict) or s.get("status") == "done" for s in plan
+            ) else "actor",
+            "writes": {"plan": plan, "history": history[-config.MAX_HISTORY:]},
+        }
 
 
 def _verify_outcome(

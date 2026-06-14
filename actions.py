@@ -11,6 +11,7 @@ import sys
 import time
 
 import config
+import log
 
 _child_pids: list[int] = []
 
@@ -30,7 +31,13 @@ KEYEVENTF_KEYUP = 0x0002
 KEYEVENTF_UNICODE = 0x0004
 KEYEVENTF_UNICODE_KEYUP = 0x0006
 
-__all__ = ["execute_verb", "run_python", "ActionResult", "VERBS"]
+DEFAULT_SCROLL_AMOUNT: int = 3
+FILE_ALIASES: dict[str, str] = {"reactor.py": "engine.py", "planner.py": "agents.py"}
+
+__all__ = [
+    "execute_verb", "execute_step", "is_python_step", "run_python",
+    "ActionResult", "VERBS", "DEFAULT_SCROLL_AMOUNT",
+]
 
 type ElementBook = dict[str, Any]
 type VerbFn = Callable[[dict[str, Any], ElementBook], "ActionResult"]
@@ -204,7 +211,157 @@ def _write_file(args: dict[str, Any], book: ElementBook) -> ActionResult:
     return ActionResult("write_file", True, f"wrote {len(content)} bytes to {path}")
 
 
-# --- Python subprocess runner ---
+# --- Headless plan steps (main-style exec / read_file / write_file / wait) ---
+
+def _clip_obs(text: str) -> str:
+    limit = config.EXEC_OUTPUT_LIMIT
+    return text if len(text) <= limit else text[:limit] + "…"
+
+
+def _parse_exec_code(step: str) -> str:
+    s = step.strip()
+    low = s.lower()
+    if low.startswith("exec:"):
+        return s[5:].lstrip("\n")
+    if low.startswith("exec "):
+        return s[5:]
+    if low.startswith("exec"):
+        return s[4:].lstrip(": \n")
+    return s
+
+
+def is_python_step(step: str) -> bool:
+    low = step.strip().lower()
+    if low.startswith("exec") and (len(low) == 4 or low[4] in ": \n"):
+        return True
+    if low.startswith(("read_file ", "write_file ")):
+        return True
+    if low.startswith("wait "):
+        try:
+            float(step.split(None, 1)[1])
+            return True
+        except (IndexError, ValueError):
+            return False
+    return False
+
+
+def _resolve_write_path(path: str) -> str:
+    raw = path.strip().strip("\"'")
+    if raw in ("gui_mode", "enabled"):
+        return str(config.GUI_MODE_PATH)
+    p = Path(raw)
+    return str(p) if p.is_absolute() else str((config.BASE_DIR / raw).resolve())
+
+
+def execute_python(code: str) -> ActionResult:
+    import concurrent.futures
+    import io
+    import traceback
+
+    code = code.strip()
+    if not code:
+        return ActionResult("exec", False, "no code")
+
+    def enable_gui() -> None:
+        config.GUI_MODE_PATH.write_text("1", encoding="utf-8")
+
+    def pause_reactor() -> None:
+        log.set_paused(True)
+
+    namespace: dict[str, Any] = {
+        "__builtins__": __builtins__,
+        "__name__": "__exec__",
+        "BASE_DIR": config.BASE_DIR,
+        "Path": Path,
+        "os": os,
+        "sys": sys,
+        "json": json,
+        "time": time,
+        "subprocess": subprocess,
+        "py_compile": py_compile,
+        "enable_gui": enable_gui,
+        "pause_reactor": pause_reactor,
+    }
+    try:
+        from comms import bus_post, bus_id, bus_request, bus_route
+        namespace.update({
+            "bus_post": bus_post, "bus_id": bus_id,
+            "bus_request": bus_request, "bus_route": bus_route,
+        })
+    except ImportError:
+        pass
+
+    stdout_buf = io.StringIO()
+    stderr_buf = io.StringIO()
+
+    class _Capture(io.TextIOBase):
+        def __init__(self, buf: io.StringIO) -> None:
+            self._buf = buf
+
+        def write(self, s: str) -> int:
+            if s:
+                self._buf.write(s)
+            return len(s) if s else 0
+
+        def flush(self) -> None:
+            pass
+
+    def _run() -> None:
+        old_out, old_err = sys.stdout, sys.stderr
+        sys.stdout, sys.stderr = _Capture(stdout_buf), _Capture(stderr_buf)
+        try:
+            exec(code, namespace, namespace)
+        finally:
+            sys.stdout, sys.stderr = old_out, old_err
+
+    error_text = ""
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            pool.submit(_run).result(timeout=config.EXEC_TIMEOUT)
+        ok = True
+    except concurrent.futures.TimeoutError:
+        ok, error_text = False, f"timeout after {config.EXEC_TIMEOUT}s"
+    except Exception:
+        ok, error_text = False, traceback.format_exc()
+
+    parts = [stdout_buf.getvalue().rstrip(), stderr_buf.getvalue().rstrip()]
+    if error_text:
+        parts.append(error_text.rstrip())
+    output = _clip_obs("\n".join(p for p in parts if p))
+    return ActionResult("exec", ok, output or ("ok" if ok else "exec failed"))
+
+
+def execute_step(step: str) -> ActionResult:
+    """Python executes headless plan steps — model only names them."""
+    s = step.strip()
+    low = s.lower()
+    if low.startswith("exec") and (len(low) == 4 or low[4] in ": \n"):
+        return execute_python(_parse_exec_code(s))
+    if low.startswith("wait "):
+        try:
+            sec = float(s.split(None, 1)[1])
+        except (IndexError, ValueError):
+            sec = 1.0
+        return execute_verb("wait", {"seconds": sec}, {}, None)
+    if low.startswith("read_file "):
+        path = s.split(None, 1)[1].strip().strip("\"'")
+        base = Path(path).name.lower()
+        if base in FILE_ALIASES:
+            path = FILE_ALIASES[base]
+        return execute_verb("read_file", {"path": path}, {}, None)
+    if low.startswith("write_file "):
+        parts = s.split(None, 2)
+        if len(parts) < 2:
+            return ActionResult("write_file", False, "need path and content")
+        path = _resolve_write_path(parts[1])
+        content = parts[2] if len(parts) > 2 else "1"
+        if content in ("enabled", "enable"):
+            content = "1"
+        return execute_verb("write_file", {"path": path, "content": content}, {}, None)
+    return ActionResult("step", False, f"not a python step: {step}")
+
+
+# --- Python subprocess runner (colony bus sandbox) ---
 
 def _script_runner(code: str) -> str:
     from python_code import gui_mode_enabled

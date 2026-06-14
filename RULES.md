@@ -57,20 +57,21 @@ WHAT WE BUILT (papers → modules):
 
 WHAT IS NOT THE ORGANISM:
   - LLM backend (nemotron via LM Studio) — llm.py, swappable
-  - Desktop stack (observer.py, win32.py, actions.py) — ~950 lines, present but UNWIRED in colony actor
   - TUI (tui.py) — human display + keyboard inject only
   - prompts/*.txt, schemas/*.json — data, not logic
 
-CAPABILITY REGRESSION (main vs bare-metal — SAME desktop code, different actor path):
-  | Capability              | main (1 instance)              | bare-metal colony (now)        |
-  |-------------------------|--------------------------------|--------------------------------|
-  | Actor execution         | execute_step + execute_verb    | run_python(code) only          |
-  | GUI verbs               | click, write, press, hotkey…   | none — skipped if not python   |
-  | Screen context          | ObserverAgent → screen_*     | not in pipeline                |
-  | Planner steps           | text + python (is_python_step) | code field only, AST validated |
-  | GUI goals               | runs when gui_mode on        | _gui_decline_plan unless --unconstrained |
-  | Multi-app (Notepad etc) | worked in sessions           | desktop files exist, actor can't call them |
-  FIX (next code pass): restore main-style ActorAgent path inside colony — one code path, not duplicate 7k mess.
+DESKTOP IS THE ORGANISM (main vision — Bukowski spec):
+  observer.py + win32.py + actions.py (~950 lines) = see, act, verify on real Windows.
+  main proved M4: self-launch, exec metabolism, Notepad/Opera/LinkedIn, spawn_main posterity.
+  Colony must keep the SAME desktop path — not optional, not a fork.
+  GUI mode: gui_mode file on disk (default ON via tui.py). planner_gui + actor LLM + ObserverAgent.
+
+ACTOR PATHS (unified — one ActorAgent):
+  | Mode        | Plan step field | Execution                         |
+  |-------------|-----------------|-----------------------------------|
+  | Colony bus  | code            | run_python (bus_* injected)       |
+  | Headless    | text            | execute_step (exec/read/write)    |
+  | GUI         | text            | ObserverAgent → actor LLM → verbs |
 
 HONEST SIZE COMPARISON:
   main branch:     24 files, ~3,656 lines — 1× instance, GUI actor, no bus/breed
@@ -83,7 +84,7 @@ CODE MINIMALISM (laws — apply when deleting):
   L3. Delete before adding — net line count must shrink each slimming pass.
   L4. One JsonRoleAgent pattern for all LLM roles; no AST zoo for planner/actor guards.
   L5. Smokes and CLI mirrors are dev-only; not shipped in organism path.
-  L6. Desktop is optional module (~950 lines); organism core must run without it.
+  L6. Desktop stack is core (~950 lines) — observer + win32 + actions; colony keeps main's see/act path.
   L7. Personality = dataclass + .txt prompt, never subclasses.
 
 TRUE MINIMAL WIRING (target, not current):
@@ -93,8 +94,9 @@ TRUE MINIMAL WIRING (target, not current):
   reactor spawn+control+breed .. ~500 lines
   agents pipeline (7 steps) .... ~600 lines (unified actor: python OR gui verbs)
   llm + config + log ........... ~500 lines
-  SUBTOTAL ORGANISM ............ ~2,300 lines (no desktop)
-  desktop (optional) ........... ~950 lines
+  SUBTOTAL wiring .............. ~2,300 lines (bus + engine + reactor + pipeline)
+  desktop (core) ............... ~950 lines (observer + win32 + actions — THE POINT)
+  TARGET TOTAL ................. ~3,500 lines (main proved ~2.9k + colony wrapper)
   DELETE NEXT .................. ~2,500 lines (bloat ledger)
 
 RUNTIME TOPOLOGY (5 child processes + 1 parent):
@@ -110,7 +112,7 @@ ONE CYCLE (any slot — same engine.run):
   3. pressure math → post_telemetry
   4. [comms_operator only] MoE route or escalate stuck worker
   5. scheduler → planner|actor|verifier|fission|reflect|mutate chain
-  6. actor: CURRENTLY run_python only — TARGET: python OR execute_verb like main
+  6. actor: code→run_python | text→execute_step | GUI text→execute_verb (when gui_mode)
 
 ONE CYCLE (reactor parent):
   1. respawn dead slots
@@ -232,25 +234,23 @@ ASCII equivalent:
 | Planner–actor–verifier loop | [ReAct](https://arxiv.org/abs/2210.03629) (conceptual) | `agents.py` pipeline classes | No (LLM) |
 | Fission credit / evolution | project-specific | `FissionJudgeAgent`, `comms.post_evolve` | LLM judge, deterministic post |
 
-## Capability regression (main vs colony)
+## Desktop recovery (main vision → colony)
 
-| Capability | `main` (1 instance) | `bare-metal` colony (now) |
-|------------|---------------------|---------------------------|
+| Capability | `main` (1 instance) | `bare-metal` colony (recovered) |
+|------------|---------------------|----------------------------------|
 | **Architecture** | `main.py` → `engine.run` | Same — 5× `main.py` + `comms` + `reactor` |
-| **Actor** | `execute_step` + `execute_verb` (GUI verbs) | `run_python(code)` only |
-| **Observer** | `ObserverAgent` in pipeline | Not wired |
-| **Planner steps** | `text` field + `is_python_step` | `code` field only; `_validate_planner_contract` |
-| **GUI goals** | Runs with `gui_mode` | `_gui_decline_plan` unless `--unconstrained` |
-| **Desktop files** | Used by actor | Present (`actions.py`, `observer.py`, `win32.py`) but actor ignores them |
-
-**Fix target:** one unified `ActorAgent` — python subprocess OR GUI verbs — shared by single-instance and colony modes.
+| **Desktop** | observer + win32 + actions | Same modules, wired in pipeline |
+| **Observer** | before actor/verifier | `engine._run_observer` when `gui_mode` |
+| **Actor** | execute_step + execute_verb | Unified: `code` / `text` / GUI paths |
+| **Planner** | text sequence (main schema) | `planner_gui` when `gui_mode`; `code` schema otherwise |
+| **Vision** | M4 self-edit, YouTube, Notepad | Recoverable — same actor code path per slot |
 
 ## Code minimalism
 
 1. **Same instance code** — colony is a wrapper, not a fork. `engine.run` and `agents.py` must not diverge per mode.
 2. **Delete before add** — each slimming pass must reduce net lines (see bloat ledger in § SYSTEM CORE).
 3. **No new `.py` files** — merge into `agents.py`, `comms.py`, `reactor.py`, etc.
-4. **Organism without desktop** — core ~2.3k lines must run with `actions.py` GUI path optional.
+4. **Desktop is core** — observer + win32 + actions stay; shrink bloat elsewhere, not the hands.
 5. **Personality = instance** — `config.Personality` + prompt `.txt`; never role subclasses.
 6. **Research before changing** — read linked papers when touching pressure, MoE, breeding, or actor routing.
 
@@ -264,12 +264,12 @@ ASCII equivalent:
 | `reactor.py` | ~1070 | **partial** | ~500 spawn/breed/control; **~250 smokes** |
 | `comms.py` | ~1041 | **partial** | ~400 bus protocol; rest mirror/TUI/actor-sandbox/CLI |
 | `tui.py` | ~651 | display | Not organism |
-| `observer+win32+actions` | ~951 | desktop | **Same as main had** — Notepad, Chrome, UIA |
+| `observer+win32+actions` | ~951 | **core** | **THE POINT** — see/act/verify; main M4 proved this |
 | `engine.py` | ~263 | **yes** | Core loop |
 | `llm.py` | ~358 | **yes** | LM Studio path only |
 | `main.py` | ~70 | **yes** | One Personality instance |
 | prompts+schemas+plugins | ~200 | data | Not code paths |
-| **Total** | **~7162** | | **Target after halving: ~3500** (or ~2500 lmstudio-only, no desktop) |
+| **Total** | **~7162** | | **Target: ~3500** (main ~2900 + colony wrapper; keep desktop) |
 
 **`main` branch** (`git checkout main`): 24 files, ~3656 lines — **one** `main.py` + `engine.run` instance with GUI actor + `ObserverAgent`. No bus, no reactor, no breeding. **Same architecture, scale=1** — not a different organism.
 
