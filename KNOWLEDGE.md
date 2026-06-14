@@ -190,7 +190,7 @@ Current tracked plugins:
 | Plugin | Role |
 |---|---|
 | `plugins/comms_beacon.py` | Protected telemetry beacon, posts pressure snapshots |
-| `plugins/fission_log.py` | Plugin-local fission memory, no file writes |
+| `plugins/fission_log.py` | Protected plugin-local fission memory, no file writes |
 | `plugins/lessons_decay.py` | Lessons aging |
 | `plugins/web_sentinel.py` | Protected connectivity sentinel |
 
@@ -202,8 +202,9 @@ Mutation safety:
 
 - Mutator schema allows only `patch_plugin` or `none`.
 - Plugin creation is not allowed.
-- Existing plugin patches are AST checked, py_compile checked, and restricted to plugin-local writes.
-- Protected plugins: `comms_beacon.py`, `web_sentinel.py`.
+- Existing plugin patches are AST checked, py_compile checked before apply, behavior-probed, and restricted to plugin-local writes.
+- Protected plugins: `comms_beacon.py`, `fission_log.py`, `web_sentinel.py`.
+- Reactor semantic scoring immediately emits `breed.regress` for plugin patches whose diff removes telemetry emission instead of waiting for a neutral trial.
 
 ## Validation Record
 

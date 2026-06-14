@@ -191,6 +191,18 @@ Implement in this order. Each item lists **component impact**.
 
 **Affects:** operator experience only.
 
+### Roadmap implementation status (post-golden fixes)
+
+- **FR-1 implemented:** planner prompt/schema and `agents.py` reject `import Path`, actor-side fission judge calls, non-Python code, bundled bus+artifact `done_when`, and oversized plans before actor execution.
+- **FR-2 implemented:** planner/fission prompts define durable fission milestones; bus-only coordination remains verify-ok but fission-deny by design.
+- **FR-3 implemented:** `fission_log.py` remains restored telemetry, is protected from mutation, and plugin mutation now py_compiles/probes before apply.
+- **FR-4 implemented:** planner context now includes `AVAILABLE_FILES` with top-level Python, plugin Python, and tracked handover docs to reduce phantom paths.
+- **FR-5 implemented:** human declines carry reason + suggested rephrase in bus/log data; TUI and README document that pri=3 changes goals, not schemas or safety gates.
+- **FR-6 implemented:** reactor semantic scoring immediately marks telemetry-removing plugin patch diffs as `breed.regress`.
+- **FR-7 implemented:** TUI supports `all`/`verify`/`breed`/`human`/`error` filters and shows active human goal plus last fission-deny/human-decline summaries.
+
+**Still not proven:** no post-fix long autonomous run has reproduced breed.improve + restart survival. Do not claim MAP-Elites convergence or production readiness.
+
 ---
 
 ## Architecture Summary
@@ -230,14 +242,14 @@ Hard rules:
 | Breeding | `reactor.py`, `plugins/fission_log.py`, `runtime/breed_archive.json` |
 | Operator | `tui.py`, `observer.py`, `actions.py`, `desktop.py` |
 
-**Protected from mutation:** `plugins/comms_beacon.py`, `plugins/web_sentinel.py` (see `agents.py`).
+**Protected from mutation:** `plugins/comms_beacon.py`, `plugins/fission_log.py`, `plugins/web_sentinel.py` (see `agents.py`).
 
 ---
 
 ## Validation Commands
 
 ```bash
-python -m py_compile reactor.py agents.py comms.py engine.py tui.py plugins/fission_log.py
+python -m py_compile reactor.py agents.py comms.py colony_env.py engine.py tui.py plugins/fission_log.py
 python tui.py --model-profile nemotron
 python comms.py state
 python comms.py breeder

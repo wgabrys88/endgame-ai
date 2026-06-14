@@ -23,7 +23,9 @@ Profiles:
 | `--backend acp` | Sequential ACP backend |
 | `--gui` | Enables desktop observation/actions by writing `gui_mode` |
 
-TUI controls: Enter sends a human message, `g` toggles GUI mode, Space toggles pause, `q` exits, `@persona message` targets a worker.
+TUI controls: Enter sends a human message, `f` cycles phase filters, `1`-`5` select `all`/`verify`/`breed`/`human`/`error`, `g` toggles GUI mode, Space toggles pause, `q` exits, `@persona message` targets a worker.
+
+Human steering: pri=3 human messages replace the active worker goal and wake the colony, but they do not override schemas, verifier/fission gates, file rules, or GUI safeguards. If a task is blocked, the TUI shows the decline reason and a suggested file-backed rephrase.
 
 ## Architecture
 
@@ -103,13 +105,13 @@ Follow-up architecture work on 2026-06-14 added persistent breeder memory in `ru
 ```bash
 python comms.py state
 python comms.py breeder
-python -m py_compile reactor.py agents.py comms.py config.py actions.py tui.py
+python -m py_compile reactor.py agents.py comms.py colony_env.py config.py actions.py tui.py
 ```
 
 If `python` is not on PATH on this machine, use:
 
 ```powershell
-& "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" -m py_compile reactor.py agents.py comms.py config.py actions.py tui.py
+& "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" -m py_compile reactor.py agents.py comms.py colony_env.py config.py actions.py tui.py
 ```
 
 ## Known Bottlenecks
