@@ -24,7 +24,8 @@ def _merge_data(kwargs: dict[str, Any]) -> dict[str, Any] | None:
     data = kwargs.pop("data", None)
     if not isinstance(data, dict):
         data = {}
-    for key in ("evidence", "deadline", "target", "ok", "goal"):
+    for key in ("evidence", "deadline", "target", "ok", "goal",
+                "human_ack", "blocked_by", "suggested_rephrase"):
         if key in kwargs:
             data[key] = kwargs.pop(key)
     return data or None

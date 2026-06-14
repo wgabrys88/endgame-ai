@@ -146,6 +146,39 @@ def _desktop_context() -> str:
         return f"DESKTOP_OBSERVE_ERROR: {type(exc).__name__}: {exc}"
 
 
+def _relative_manifest(paths: list[Path]) -> str:
+    out: list[str] = []
+    for path in sorted(paths, key=lambda item: str(item).lower()):
+        try:
+            out.append(path.relative_to(config.BASE_DIR).as_posix())
+        except ValueError:
+            continue
+    return ", ".join(out) if out else "none"
+
+
+def _repo_manifest_context() -> str:
+    try:
+        top_py = [p for p in config.BASE_DIR.glob("*.py") if p.is_file()]
+        plugin_py = [p for p in config.PLUGINS_DIR.glob("*.py") if p.is_file()]
+        docs = [
+            config.BASE_DIR / "AGENTS.md",
+            config.BASE_DIR / "KNOWLEDGE.md",
+            config.BASE_DIR / "README.md",
+            config.BASE_DIR / "sessions" / "20260614_132940" / "README.md",
+            config.BASE_DIR / "ENDGAME_GOLDEN_RUN.html",
+            config.BASE_DIR / "ENDGAME_VISION_ADVANCED.html",
+        ]
+        docs = [p for p in docs if p.is_file()]
+    except OSError:
+        return ""
+    return "\n".join([
+        "AVAILABLE_FILES (use exact paths; do not invent colony.py, endgame_ai.py, event.log, or other phantom files):",
+        f"  TOP_LEVEL_PY: {_relative_manifest(top_py)}",
+        f"  PLUGIN_PY: {_relative_manifest(plugin_py)}",
+        f"  TRACKED_DOCS: {_relative_manifest(docs)}",
+    ])
+
+
 def _planner_messages(board: dict[str, Any]) -> tuple[str, str]:
     """Constant system prompt; persona/goal/schema/state in user message for KV reuse."""
     system = _stable_system("planner")
@@ -166,6 +199,7 @@ def _planner_messages(board: dict[str, Any]) -> tuple[str, str]:
         stag_f = 0.0
     pwr = board.get("power", 1.0 - stag_f)
     desktop_ctx = _desktop_context()
+    manifest_ctx = _repo_manifest_context()
     parts = [f"PERSONA_NAME: {persona or 'default'}"]
     if persona_text:
         parts += ["PERSONA_MISSION:", persona_text, ""]
@@ -174,6 +208,8 @@ def _planner_messages(board: dict[str, Any]) -> tuple[str, str]:
         "",
         f"PRESSURE: stagnation={stag_f:.3f} power={float(pwr):.3f}",
     ]
+    if manifest_ctx:
+        parts += ["", manifest_ctx]
     if desktop_ctx:
         parts += ["", desktop_ctx]
     if history_ctx:
@@ -667,14 +703,27 @@ def _plan_code_contract_error(code: str) -> str:
     return ""
 
 
+def _human_rephrase_suggestion(reason: str) -> str:
+    lowered = reason.lower()
+    if "gui" in lowered or "desktop" in lowered or "not supported" in lowered:
+        return "Ask for a file-backed task, for example: create hello.txt with hello from colony"
+    if "max retries" in lowered:
+        return "Ask for one measurable file, audit, or bus task with verifier evidence"
+    return "Ask for one measurable file, audit, git, or bus task that fits the planner schema"
+
+
 def _decline_human_goal(board: dict[str, Any], reason: str) -> None:
     goal = str(board.get("goal", ""))[:120]
+    suggestion = _human_rephrase_suggestion(reason)
     try:
         import comms
         comms.post(
             comms.agent_id(), "colony",
-            f"@human cannot complete: {reason}. Goal: {goal}",
+            f"@human cannot complete: {reason}. Goal: {goal}. Suggested rephrase: {suggestion}",
             priority=config.PRI_HUMAN,
+            human_ack=True,
+            blocked_by=reason,
+            suggested_rephrase=suggestion,
         )
     except Exception:
         pass
@@ -682,14 +731,26 @@ def _decline_human_goal(board: dict[str, Any], reason: str) -> None:
     board["goal"] = ""
     board["priority"] = config.PRI_MAINTENANCE
     board["_human_denials"] = 0
-    log.emit("human.decline", {"reason": reason, "goal": goal[:80]})
+    log.emit("human.decline", {
+        "reason": reason,
+        "goal": goal[:80],
+        "suggested_rephrase": suggestion,
+    })
 
 
 def _gui_decline_plan(board: dict[str, Any], goal: str) -> dict[str, Any]:
+    reason = "GUI/desktop tasks not supported"
+    suggestion = _human_rephrase_suggestion(reason)
+    log.emit("human.decline", {
+        "reason": reason,
+        "goal": str(goal)[:80],
+        "suggested_rephrase": suggestion,
+    })
     code = (
         "bus_post(bus_id(), 'colony', "
         "'@human GUI/desktop tasks not supported — colony has no GUI agent. "
-        "Try: write hello.txt with Path.write_text', priority=3)\n"
+        f"Suggested rephrase: {suggestion}', priority=3, human_ack=True, "
+        f"blocked_by='{reason}', suggested_rephrase='{suggestion}')\n"
         "print('declined: GUI task not supported')"
     )
     done_when = "decline posted to bus"

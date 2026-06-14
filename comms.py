@@ -210,13 +210,21 @@ def _write_chat(entries: list[dict[str, Any]]) -> None:
 
 
 def post(from_id: str, role: str, text: str, *, kind: str = KIND_MESSAGE,
-         priority: int | None = None, data: dict[str, Any] | None = None) -> dict[str, Any]:
+         priority: int | None = None, data: dict[str, Any] | None = None,
+         human_ack: bool = False, blocked_by: str = "",
+         suggested_rephrase: str = "") -> dict[str, Any]:
     body = text.strip()
     mentions = parse_mentions(body)
     resolved_kind = KIND_PING if mentions and kind == KIND_MESSAGE else kind
     payload = dict(data or {})
     if priority is not None and "priority" not in payload:
         payload["priority"] = priority
+    if human_ack:
+        payload["human_ack"] = True
+    if blocked_by:
+        payload["blocked_by"] = blocked_by[:200]
+    if suggested_rephrase:
+        payload["suggested_rephrase"] = suggested_rephrase[:240]
     entry = envelope(
         from_id, resolved_kind, text=body,
         pri=priority, mentions=mentions,
@@ -439,6 +447,9 @@ def human_task_active() -> bool:
         if eid <= hid:
             break
         text = str(e.get("text", "")).lower()
+        payload = e.get("payload") if isinstance(e.get("payload"), dict) else {}
+        if payload.get("human_ack"):
+            return False
         if any(tag in text for tag in ("cannot complete", "not supported", "confirmed", "completed", "declined")):
             return False
     return True
@@ -560,9 +571,11 @@ def drain_inject() -> int:
             continue
         if isinstance(obj, dict):
             fid = str(obj.get("from", "human"))
+            data = obj.get("data") if isinstance(obj.get("data"), dict) else None
             post(fid, str(obj.get("role", "colony")), str(obj.get("text", "")),
                  kind=str(obj.get("kind", KIND_MESSAGE)),
-                 priority=obj.get("priority"))
+                 priority=obj.get("priority"),
+                 data=data)
             count += 1
     return count
 
@@ -642,7 +655,9 @@ def _brief(phase: str, data: Any) -> str:
         case "moe.yield":
             return f"moe.yield {str(data.get('reason', ''))[:80]}"
         case "human.decline":
-            return f"human.decline {str(data.get('reason', ''))[:80]}"
+            reason = str(data.get("reason", ""))[:80]
+            suggestion = str(data.get("suggested_rephrase", ""))[:120]
+            return f"human.decline {reason} try={suggestion}" if suggestion else f"human.decline {reason}"
         case _:
             return f"{phase} {str(data)[:120]}"
 
@@ -735,10 +750,32 @@ if __name__ == "__main__":
     import sys
     if len(sys.argv) >= 4 and sys.argv[1] == "post":
         from_id = sys.argv[2]
-        text = " ".join(sys.argv[3:])
+        data: dict[str, Any] = {}
+        text_parts: list[str] = []
+        args = sys.argv[3:]
+        i = 0
+        while i < len(args):
+            arg = args[i]
+            if arg == "--ack":
+                data["human_ack"] = True
+            elif arg == "--blocked-by" and i + 1 < len(args):
+                i += 1
+                data["blocked_by"] = args[i][:200]
+            elif arg == "--suggest" and i + 1 < len(args):
+                i += 1
+                data["suggested_rephrase"] = args[i][:240]
+            else:
+                text_parts.append(arg)
+            i += 1
+        text = " ".join(text_parts)
         config.BUS_INJECT_PATH.parent.mkdir(parents=True, exist_ok=True)
         with config.BUS_INJECT_PATH.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps({"from": from_id, "text": text, "kind": KIND_MESSAGE}, ensure_ascii=False) + "\n")
+            fh.write(json.dumps({
+                "from": from_id,
+                "text": text,
+                "kind": KIND_MESSAGE,
+                "data": data,
+            }, ensure_ascii=False) + "\n")
         drain_inject()
         print(f"bus @{from_id}: {text[:120]}")
     elif len(sys.argv) >= 2 and sys.argv[1] == "state":
