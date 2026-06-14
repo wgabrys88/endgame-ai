@@ -661,6 +661,7 @@ def format_breeder_evidence(limit: int | None = None) -> str:
     evolve_counts: Counter[str] = Counter()
     breed_counts: Counter[str] = Counter()
     niches: set[str] = set()
+    trial_ids: set[str] = set()
     for entry in events:
         kind = str(entry.get("kind", ""))
         payload = entry.get("payload") if isinstance(entry.get("payload"), dict) else {}
@@ -676,6 +677,9 @@ def format_breeder_evidence(limit: int | None = None) -> str:
         niche = str(payload.get("niche", ""))
         if niche:
             niches.add(niche[:80])
+        trial_id = str(payload.get("trial_id", ""))
+        if trial_id:
+            trial_ids.add(trial_id[:80])
 
     if not breeder:
         return "BREEDER EVIDENCE: none in observation bus"
@@ -685,20 +689,27 @@ def format_breeder_evidence(limit: int | None = None) -> str:
     lines.append(f"  breed: {sum(breed_counts.values())} {_count_text(breed_counts)}")
     if niches:
         lines.append(f"  niches: {len(niches)} " + " ".join(sorted(niches)[:8]))
+    if trial_ids:
+        lines.append(f"  trials: {len(trial_ids)} " + " ".join(sorted(trial_ids)[:6]))
 
     outcomes = [
         e for e in breeder
         if str((e.get("payload") or {}).get("action", "")) in ("breed.improve", "breed.regress", "breed.neutral")
     ]
     if outcomes:
+        outcome_counts = Counter(str((e.get("payload") or {}).get("action", "")) for e in outcomes)
         best_stag = max(float((e.get("payload") or {}).get("stagnation_delta", 0.0) or 0.0) for e in outcomes)
         best_power = max(float((e.get("payload") or {}).get("power_delta", 0.0) or 0.0) for e in outcomes)
         total_fissions = sum(int((e.get("payload") or {}).get("fission_delta", 0) or 0) for e in outcomes)
+        repeated = sum(1 for e in outcomes if int((e.get("payload") or {}).get("sample", 0) or 0) > 1)
         lines.append(
-            f"  mutation outcomes: {len(outcomes)} "
+            f"  selection outcomes: {len(outcomes)} {_count_text(outcome_counts)} "
             f"best_stagnation_delta={best_stag:.4f} best_power_delta={best_power:.4f} "
-            f"fission_delta_total={total_fissions}"
+            f"fission_delta_total={total_fissions} repeated_samples={repeated}"
         )
+        lines.append("  closed_loop: yes")
+    else:
+        lines.append("  closed_loop: waiting_for_selection_outcome")
 
     lines.append("  latest:")
     for entry in breeder[-8:]:
@@ -710,7 +721,7 @@ def format_breeder_evidence(limit: int | None = None) -> str:
         fit = f" fit={float(fitness):.3f}" if isinstance(fitness, (int, float)) else ""
         niche = f" niche={str(payload.get('niche', ''))[:60]}" if payload.get("niche") else ""
         deltas = []
-        for key in ("stagnation_delta", "power_delta", "fission_delta"):
+        for key in ("trial_id", "sample", "stagnation_delta", "power_delta", "fission_delta"):
             if key in payload:
                 deltas.append(f"{key}={payload.get(key)}")
         delta = " " + " ".join(deltas) if deltas else ""

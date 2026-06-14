@@ -8,8 +8,8 @@
       "properties": {
         "action": {
           "type": "string",
-          "enum": ["write_plugin", "patch_plugin", "none"],
-          "description": "write_plugin to create/replace a plugin file"
+          "enum": ["patch_plugin", "none"],
+          "description": "patch_plugin may replace the content of an existing plugins/*.py file only"
         },
         "filename": {
           "type": "string",

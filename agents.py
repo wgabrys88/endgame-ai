@@ -65,6 +65,34 @@ def run(board):
     return {"writes": {"_plugin_telemetry": {"last": now}}}
 '''
 
+_SAFE_FISSION_LOG_PATCH = '''"""Fission memory - plugin-local state only."""
+
+
+def run(board):
+    fissions = int(board.get("fissions", 0) or 0)
+    state = board.get("_plugin_fission_log", {})
+    previous = int(state.get("last_fissions", -1) or -1)
+    if fissions <= previous:
+        return None
+    power = float(board.get("power", 0) or 0)
+    stagnation = float(board.get("stagnation", 0) or 0)
+    return {
+        "writes": {
+            "_plugin_fission_log": {
+                "last_fissions": fissions,
+                "power": power,
+                "stagnation": stagnation,
+            }
+        },
+        "phase": "plugin.fission_log",
+        "data": {
+            "fissions": fissions,
+            "power": round(power, 4),
+            "stagnation": round(stagnation, 4),
+        },
+    }
+'''
+
 
 _STABLE_SYSTEM: dict[str, str] = {}
 _REASONING_CONTRACT = (
@@ -95,7 +123,7 @@ _SCHEMA_USER_HEADERS: dict[str, str] = {
     "mutator": (
         _REASONING_CONTRACT
         + "JSON_OUTPUT (schema contract — user message, not system):\n"
-        '{"action":"write_plugin"|"patch_plugin"|"none","filename":"plugins/...","content":"..."}\n'
+        '{"action":"patch_plugin"|"none","filename":"plugins/...","content":"..."}\n'
     ),
     "fission_judge": (
         _REASONING_CONTRACT
@@ -550,6 +578,24 @@ class MutatorAgent:
                     return {"phase": "mutate", "data": data, "writes": {"mutation": data}, "next": "planner"}
                 return {"phase": "mutate", "data": data, "next": "planner"}
 
+        deterministic = _deterministic_plugin_mutation()
+        if deterministic:
+            filename, content, source = deterministic
+            ok, obs, diff = _apply_plugin_mutation(filename, content)
+            data = {
+                "action": "patch_plugin",
+                "filename": filename,
+                "ok": ok,
+                "obs": obs,
+                "source": source,
+            }
+            if diff:
+                data["diff"] = diff[:500]
+            if ok:
+                _post_mutation_candidate(board, filename, diff, obs)
+                return {"phase": "mutate", "data": data, "writes": {"mutation": data}, "next": "planner"}
+            return {"phase": "mutate", "data": data, "next": "planner"}
+
         plugin_names = _existing_plugin_names()
         user = _user_with_schema(
             "mutator",
@@ -574,9 +620,9 @@ class MutatorAgent:
             }
 
         action = str(parsed.get("action", "none"))
-        if action == "write":
+        if action in {"write", "write_plugin"}:
             action = "patch_plugin"
-        if action not in {"write_plugin", "patch_plugin"}:
+        if action != "patch_plugin":
             return {
                 "phase": "mutate",
                 "data": _llm_event_data(llm_out, {
@@ -874,6 +920,19 @@ def _existing_plugin_names() -> list[str]:
         return [p.name for p in sorted(config.PLUGINS_DIR.glob("*.py")) if p.is_file()]
     except OSError:
         return []
+
+
+def _deterministic_plugin_mutation() -> tuple[str, str, str] | None:
+    path = _resolve_existing_plugin("plugins/fission_log.py")
+    if path is None:
+        return None
+    try:
+        source = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    if "runtime/comms/fission.jsonl" in source or "os.makedirs" in source:
+        return "plugins/fission_log.py", _SAFE_FISSION_LOG_PATCH, "deterministic_fission_memory"
+    return None
 
 
 def _resolve_existing_plugin(filename: str) -> Path | None:

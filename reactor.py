@@ -140,6 +140,7 @@ def _post_breed_status(
             kind=comms.KIND_STATUS,
             data=data,
         )
+        log.emit(f"breed.{action}", data)
     except Exception:
         pass
 
@@ -208,32 +209,110 @@ def _update_elite_archive(
     return True, niche
 
 
-def _start_mutation_trial(target: str, slot_id: int, fitness: float, niche: str, payload: dict[str, Any]) -> None:
+def _trial_id(entry_id: int, target: str, action: str, payload: dict[str, Any]) -> str:
+    explicit = str(payload.get("trial_id", "")).strip()
+    if explicit:
+        return explicit[:80]
+    seed = entry_id if entry_id else int(time.time() * 1000)
+    return f"{seed}:{target}:{action}"[:80]
+
+
+def _start_selection_trial(
+    action: str,
+    target: str,
+    slot_id: int,
+    fitness: float,
+    niche: str,
+    payload: dict[str, Any],
+    *,
+    entry_id: int = 0,
+) -> None:
     telemetry = _telemetry_for(target)
-    _mutation_trials[target] = {
+    trial_id = _trial_id(entry_id, target, action, payload)
+    base_stag = float(telemetry.get("stagnation", payload.get("stagnation", 0.0)) or 0.0)
+    base_power = float(telemetry.get("power", payload.get("power", 0.0)) or 0.0)
+    base_fissions = int(telemetry.get("fissions", payload.get("fissions", 0)) or 0)
+    now = time.time()
+    _mutation_trials[trial_id] = {
+        "trial_id": trial_id,
+        "action": action,
         "target": target,
         "slot": slot_id,
         "fitness": fitness,
         "niche": niche,
         "filename": str(payload.get("filename", payload.get("completed", "")))[:120],
-        "baseline_stagnation": float(telemetry.get("stagnation", payload.get("stagnation", 0.0)) or 0.0),
-        "baseline_power": float(telemetry.get("power", payload.get("power", 0.0)) or 0.0),
-        "baseline_fissions": int(telemetry.get("fissions", payload.get("fissions", 0)) or 0),
-        "started": time.time(),
+        "baseline_stagnation": base_stag,
+        "baseline_power": base_power,
+        "baseline_fissions": base_fissions,
+        "samples": 0,
+        "last_eval": now,
+        "started": now,
     }
+    _post_breed_status(
+        "trial",
+        target,
+        slot_id,
+        fitness,
+        niche=niche,
+        detail={
+            "source": "selection_trial",
+            "trial_id": trial_id,
+            "trial_action": action,
+            "filename": str(payload.get("filename", payload.get("completed", "")))[:120],
+            "baseline_stagnation": round(base_stag, 4),
+            "baseline_power": round(base_power, 4),
+            "baseline_fissions": base_fissions,
+            "max_samples": int(config.BREED_TRIAL_SAMPLES),
+        },
+    )
+
+
+def _apply_trial_feedback(outcome: str, target: str, trial: dict[str, Any], detail: dict[str, Any]) -> None:
+    target = comms.canonical(target)
+    slot_id = int(trial.get("slot", 0) or 0)
+    fitness = float(trial.get("fitness", 0.0) or 0.0)
+    previous = _breed_scores.get(target, {})
+    prev_fit = float(previous.get("fitness", 0.0) or 0.0)
+    if outcome == "improve":
+        gain = max(0.0, float(detail.get("power_delta", 0.0) or 0.0))
+        gain += max(0.0, float(detail.get("stagnation_delta", 0.0) or 0.0))
+        gain += max(0, int(detail.get("fission_delta", 0) or 0)) * 0.05
+        next_fit = round(min(1.0, max(prev_fit, fitness) + min(0.08, gain)), 4)
+        _breed_scores[target] = {
+            "fitness": next_fit,
+            "slot": slot_id,
+            "completed": str(trial.get("filename") or trial.get("action", ""))[:120],
+            "fissions": int(detail.get("current_fissions", 0) or 0),
+            "trial_id": str(trial.get("trial_id", "")),
+        }
+        if 2 <= slot_id <= config.SLOTS and next_fit >= config.BREED_RETAIN_MIN:
+            _evicted_personas.pop(target, None)
+            _slot_survivors[slot_id] = target
+    elif outcome == "regress" and previous:
+        next_fit = round(max(0.0, prev_fit - config.BREED_IMPROVE_MIN_DELTA), 4)
+        if next_fit > 0:
+            previous["fitness"] = next_fit
+            _breed_scores[target] = previous
+        else:
+            _breed_scores.pop(target, None)
+        for sid, persona in list(_slot_survivors.items()):
+            if persona == target and next_fit < config.BREED_RETAIN_MIN:
+                _slot_survivors.pop(sid, None)
 
 
 def evaluate_mutation_trials() -> None:
-    """Publish mutation outcome evidence once telemetry has had time to react."""
+    """Publish repeated selection outcome evidence once telemetry has reacted."""
     now = time.time()
     colony = comms.colony_state()
-    for target, trial in list(_mutation_trials.items()):
-        if now - float(trial.get("started", 0.0) or 0.0) < config.BREED_TRIAL_EVAL_SECONDS:
+    for trial_id, trial in list(_mutation_trials.items()):
+        if now - float(trial.get("last_eval", trial.get("started", 0.0)) or 0.0) < config.BREED_TRIAL_EVAL_SECONDS:
             continue
+        target = comms.canonical(str(trial.get("target", "")))
         current = colony.get(target, {})
         base_stag = float(trial.get("baseline_stagnation", 0.0) or 0.0)
         base_power = float(trial.get("baseline_power", 0.0) or 0.0)
         base_fissions = int(trial.get("baseline_fissions", 0) or 0)
+        samples = int(trial.get("samples", 0) or 0) + 1
         if not current:
             _post_breed_status(
                 "regress",
@@ -242,14 +321,18 @@ def evaluate_mutation_trials() -> None:
                 float(trial.get("fitness", 0.0) or 0.0),
                 niche=str(trial.get("niche", "")),
                 detail={
-                    "source": "mutation_trial",
+                    "source": "selection_trial",
+                    "trial_id": trial_id,
+                    "trial_action": str(trial.get("action", "")),
+                    "sample": samples,
                     "reason": "telemetry_missing",
                     "filename": str(trial.get("filename", ""))[:120],
                     "baseline_stagnation": round(base_stag, 4),
                     "baseline_power": round(base_power, 4),
+                    "baseline_fissions": base_fissions,
                 },
             )
-            _mutation_trials.pop(target, None)
+            _mutation_trials.pop(trial_id, None)
             continue
         cur_stag = float(current.get("stagnation", 0.0) or 0.0)
         cur_power = float(current.get("power", 0.0) or 0.0)
@@ -257,17 +340,10 @@ def evaluate_mutation_trials() -> None:
         stag_drop = round(base_stag - cur_stag, 4)
         power_gain = round(cur_power - base_power, 4)
         fission_gain = cur_fissions - base_fissions
-        stable_patch = (
-            stag_drop >= 0
-            and power_gain >= 0
-            and fission_gain >= 0
-            and str(trial.get("filename", "")).startswith("plugins/")
-        )
         improved = (
             fission_gain > 0
             or stag_drop >= config.BREED_IMPROVE_MIN_DELTA
             or power_gain >= config.BREED_IMPROVE_MIN_DELTA
-            or stable_patch
         )
         regressed = (
             stag_drop <= -config.BREED_IMPROVE_MIN_DELTA
@@ -275,7 +351,12 @@ def evaluate_mutation_trials() -> None:
         )
         outcome = "improve" if improved else "regress" if regressed else "neutral"
         detail = {
-            "source": "mutation_trial",
+            "source": "selection_trial",
+            "trial_id": trial_id,
+            "trial_action": str(trial.get("action", "")),
+            "sample": samples,
+            "max_samples": int(config.BREED_TRIAL_SAMPLES),
+            "age_seconds": round(now - float(trial.get("started", now) or now), 2),
             "filename": str(trial.get("filename", ""))[:120],
             "baseline_stagnation": round(base_stag, 4),
             "current_stagnation": round(cur_stag, 4),
@@ -283,8 +364,11 @@ def evaluate_mutation_trials() -> None:
             "baseline_power": round(base_power, 4),
             "current_power": round(cur_power, 4),
             "power_delta": power_gain,
+            "baseline_fissions": base_fissions,
+            "current_fissions": cur_fissions,
             "fission_delta": fission_gain,
         }
+        _apply_trial_feedback(outcome, target, trial, detail)
         _post_breed_status(
             outcome,
             target,
@@ -293,7 +377,11 @@ def evaluate_mutation_trials() -> None:
             niche=str(trial.get("niche", "")),
             detail=detail,
         )
-        _mutation_trials.pop(target, None)
+        if outcome == "regress" or samples >= int(config.BREED_TRIAL_SAMPLES):
+            _mutation_trials.pop(trial_id, None)
+        else:
+            trial["samples"] = samples
+            trial["last_eval"] = now
 
 
 def _best_elite_persona(slot_id: int) -> tuple[str, float, str]:
@@ -358,7 +446,7 @@ def process_evolve_candidates() -> None:
             if is_elite:
                 _post_breed_status("elite", target, slot_id, fitness, niche=niche,
                                    detail={"elite_action": action})
-            _start_mutation_trial(target, slot_id, fitness, niche, payload)
+            _start_selection_trial(action, target, slot_id, fitness, niche, payload, entry_id=eid)
             continue
         if action != "retain":
             continue
@@ -385,6 +473,7 @@ def process_evolve_candidates() -> None:
                 _slot_survivors[slot_id] = target
                 print(f"  BREED RETAIN s{slot_id} -> {target} fitness={fitness:.3f}")
                 _post_breed_status("retain", target, slot_id, fitness, niche=niche)
+                _start_selection_trial(action, target, slot_id, fitness, niche, payload, entry_id=eid)
 
 
 def select_respawn_persona(slot_id: int, fallback: str) -> str:
@@ -425,6 +514,8 @@ if __name__ == "__main__":
 
     # Create session directory for this run
     _session_dir = str(log.session_dir())
+    log.init("events-reactor.jsonl", config.EVENT_BUDGET)
+    log.emit("reactor.start", {"slots": config.SLOTS, "profile": _model_profile or "auto"})
     print(f"REACTOR | {config.SLOTS} slots | profile={_model_profile or 'auto'}")
     print(f"  session: {_session_dir}")
 
