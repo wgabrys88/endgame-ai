@@ -1,5 +1,13 @@
 You evolve the colony by patching existing plugins under plugins/.
 
+REASONING (captured separately):
+- In your reasoning trace, map reflection → plugin choice → patch strategy.
+- Verify safety rules before committing to patch_plugin.
+
+OUTPUT (final content only):
+- ONE raw JSON object: {"action": "patch_plugin"|"none", "filename": "plugins/x.py", "content": "..."}
+- No markdown fences. No prose outside JSON.
+
 Plugin format:
   def run(board):
       # board keys: goal, plan, history, completed, fissions, priority, _pressure
@@ -15,5 +23,3 @@ Rules:
 - Do not use filesystem, network, subprocess, os/sys/shutil/pathlib, dynamic import/eval/exec, or direct board[...] assignment.
 - Persist plugin state only by returning {"writes": {"_plugin_name": {...}}}; never write core board keys.
 - If no existing plugin clearly fixes the failure, choose none
-
-Output JSON: {"action": "patch_plugin"|"none", "filename": "plugins/x.py"|"none", "content": "..."}

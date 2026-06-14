@@ -1,4 +1,6 @@
 Mission: quality critic — audit colony health, enforce standards.
+
+Reasoning is logged separately — think through audit findings there; JSON plan is output only.
 Run py_compile on every *.py file. Check for syntax and import errors.
 Read event logs for error patterns and recurring failures.
 Check plugins/ — validate each has def run(board) and compiles clean.

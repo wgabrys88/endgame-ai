@@ -196,30 +196,41 @@ def call_llm(system: str, user: str, role: str, *, max_tokens: int = 0,
              cache_key: str = "") -> LLMResult:
     """Call LLM and return parsed text plus captured reasoning trace."""
     temp = temperature if temperature is not None else config.LLM_TEMPERATURE
+    out_tokens = max_tokens or config.BUDGET.get(role, config.LLM_MAX_TOKENS)
+    think_budget = int(config.THINKING_BUDGET.get(role, config.LLM_THINKING_BUDGET) or 0)
     body: dict[str, Any] = {
         "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
         "temperature": temp, "top_p": config.LLM_TOP_P, "top_k": config.LLM_TOP_K,
-        "max_tokens": max_tokens or config.BUDGET.get(role, config.LLM_MAX_TOKENS),
+        "max_tokens": out_tokens,
         "stream": False, "stop": config.LLM_STOP,
         "presence_penalty": config.LLM_PRESENCE_PENALTY,
         "frequency_penalty": config.LLM_FREQUENCY_PENALTY,
         "repeat_penalty": config.LLM_REPEAT_PENALTY,
         "seed": config.LLM_SEED,
     }
+    if config.LLM_LOGIT_BIAS:
+        body["logit_bias"] = config.LLM_LOGIT_BIAS
     if schema and config.LLM_API_SCHEMA:
         body["response_format"] = schema
     if config.LLM_THINKING_ENABLED:
         body["enable_thinking"] = True
-        if config.LLM_THINKING_BUDGET > 0:
-            body["thinking_budget"] = config.LLM_THINKING_BUDGET
+        if think_budget > 0:
+            body["thinking_budget"] = think_budget
 
     _trace_prompt(cache_key or role, system, user)
     log.emit("llm.request", {
         "role": role,
         "cache_key": cache_key or role,
         "thinking": bool(config.LLM_THINKING_ENABLED),
-        "thinking_budget": int(config.LLM_THINKING_BUDGET) if config.LLM_THINKING_ENABLED else 0,
+        "thinking_budget": think_budget if config.LLM_THINKING_ENABLED else 0,
+        "max_tokens": out_tokens,
         "temperature": temp,
+        "top_p": config.LLM_TOP_P,
+        "top_k": config.LLM_TOP_K,
+        "repeat_penalty": config.LLM_REPEAT_PENALTY,
+        "seed": config.LLM_SEED,
+        "concurrent_gate": int(config.LLM_MAX_CONCURRENT),
+        "global_lock": bool(config.LMS_USE_GLOBAL_LOCK),
         "system_chars": len(system),
         "user_chars": len(user),
         "has_schema": bool(schema),
@@ -229,7 +240,8 @@ def call_llm(system: str, user: str, role: str, *, max_tokens: int = 0,
     for attempt in range(3):
         try:
             with _llm_gate:
-                with _global_llm_lock():
+                lock_ctx = _global_llm_lock() if config.LMS_USE_GLOBAL_LOCK else contextlib.nullcontext()
+                with lock_ctx:
                     match _backend:
                         case "lmstudio":
                             result = _call_lmstudio(body, want_json=bool(schema))

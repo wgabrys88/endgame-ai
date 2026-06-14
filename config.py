@@ -67,11 +67,12 @@ LLM_FREQUENCY_PENALTY: float = 0.0
 LLM_LOGIT_BIAS: dict[str, float] = {}
 LLM_REPEAT_PENALTY: float = 1.05
 LLM_SEED: int = -1
-LLM_MAX_CONCURRENT: int = 1  # orchestrator: 1 LLM call at a time (nemotron-safe)
+LLM_MAX_CONCURRENT: int = 1  # thread gate; match LM Studio Max Concurrent Predictions
 LMS_GLOBAL_LOCK_PATH: Path = BASE_DIR / "runtime" / ".lmstudio.lock"
+LMS_USE_GLOBAL_LOCK: bool = True  # False when LM Studio MC>1 and LLM_MAX_CONCURRENT>1
 LMS_TRACE_PROMPTS: bool = True
 LLM_THINKING_ENABLED: bool = True
-LLM_THINKING_BUDGET: int = 4096  # cap reasoning tokens — keeps latency predictable
+LLM_THINKING_BUDGET: int = 4096  # default reasoning cap when role not in THINKING_BUDGET
 LLM_REASONING_LOG_MAX: int = 12000  # session log cap for captured reasoning text
 LLM_API_SCHEMA: bool = True  # API response_format; off allows Nemotron reasoning traces
 
@@ -79,18 +80,36 @@ BUDGET: dict[str, int] = {
     "planner": 2048, "verifier": 512, "reflector": 1024,
     "fission_judge": 1024, "mutator": 2048,
 }
+THINKING_BUDGET: dict[str, int] = {
+    "planner": 1536, "verifier": 256, "reflector": 512,
+    "fission_judge": 256, "mutator": 1024,
+}
 
 # --- Model profiles ---
 MODEL_PROFILES: dict[str, dict[str, Any]] = {
     "nemotron": {
-        "LLM_TEMPERATURE": 0.15, "LLM_TOP_P": 0.90, "LLM_TOP_K": 40,
-        "LLM_REPEAT_PENALTY": 1.05, "LLM_PRESENCE_PENALTY": 0.0,
+        "LLM_TEMPERATURE": 0.12, "LLM_TOP_P": 0.88, "LLM_TOP_K": 40,
+        "LLM_REPEAT_PENALTY": 1.06, "LLM_PRESENCE_PENALTY": 0.0,
         "LLM_FREQUENCY_PENALTY": 0.0, "LLM_SEED": 3407,
         "LLM_MAX_TOKENS": 1536, "LLM_STOP": [], "LLM_LOGIT_BIAS": {},
-        "LLM_MAX_CONCURRENT": 1, "LLM_THINKING_ENABLED": True, "LLM_THINKING_BUDGET": 1536,
+        "LLM_MAX_CONCURRENT": 1, "LMS_USE_GLOBAL_LOCK": True,
+        "LLM_THINKING_ENABLED": True, "LLM_THINKING_BUDGET": 1536,
         "LLM_API_SCHEMA": False,
         "LMS_TIMEOUT": 600,
-        "BUDGET": {"planner": 1400, "verifier": 320, "reflector": 768, "fission_judge": 256, "mutator": 1536},
+        "BUDGET": {"planner": 1400, "verifier": 384, "reflector": 640, "fission_judge": 320, "mutator": 1280},
+        "THINKING_BUDGET": {"planner": 1536, "verifier": 256, "reflector": 512, "fission_judge": 256, "mutator": 1024},
+    },
+    "nemotron_parallel": {
+        "LLM_TEMPERATURE": 0.12, "LLM_TOP_P": 0.88, "LLM_TOP_K": 40,
+        "LLM_REPEAT_PENALTY": 1.06, "LLM_PRESENCE_PENALTY": 0.0,
+        "LLM_FREQUENCY_PENALTY": 0.0, "LLM_SEED": 3407,
+        "LLM_MAX_TOKENS": 1536, "LLM_STOP": [], "LLM_LOGIT_BIAS": {},
+        "LLM_MAX_CONCURRENT": 3, "LMS_USE_GLOBAL_LOCK": False,
+        "LLM_THINKING_ENABLED": True, "LLM_THINKING_BUDGET": 1024,
+        "LLM_API_SCHEMA": False,
+        "LMS_TIMEOUT": 600,
+        "BUDGET": {"planner": 1280, "verifier": 320, "reflector": 512, "fission_judge": 256, "mutator": 1024},
+        "THINKING_BUDGET": {"planner": 1024, "verifier": 192, "reflector": 384, "fission_judge": 192, "mutator": 768},
     },
     "nemotron_legacy": {
         "LLM_TEMPERATURE": 1.0, "LLM_TOP_P": 1.0, "LLM_TOP_K": 20,
@@ -122,10 +141,9 @@ def apply_model_profile(profile_or_model: str, *, force: bool = False) -> tuple[
         key = normalized
     else:
         key = ""
-        for candidate in MODEL_PROFILES:
-            if candidate in normalized:
-                key = candidate
-                break
+        matches = [c for c in MODEL_PROFILES if c in normalized]
+        if matches:
+            key = max(matches, key=len)
     if not key or (key == _active_profile and not force):
         return key or _active_profile, False
     profile = MODEL_PROFILES[key]

@@ -12,6 +12,7 @@ python tui.py --model-profile nemotron
 | Profile | Use |
 |---------|-----|
 | `nemotron` | Reasoning model, 1 concurrent LLM, schema in user message (recommended) |
+| `nemotron_parallel` | Experimental: 3 concurrent LLM calls — LM Studio MC=3 + Unified KV on |
 | `gemma` | Faster, 2 concurrent, no thinking |
 | `--backend acp` | Sequential WSL/Kiro backend |
 | `--gui` | Desktop/GUI automation (default: blocked) |

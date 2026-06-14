@@ -44,14 +44,43 @@ Helpers: `_stable_system()`, `_user_with_schema()`, `_SCHEMA_USER_HEADERS` in `a
 - Logged: `llm.request`, `llm.response`, and phase events (`plan`, `verify`, `reflect`, `mutate`, `fission`) via `_llm_event_data()`
 - Cap: `LLM_REASONING_LOG_MAX` (default 12000 chars in session JSONL)
 
+### Reasoning-aware prompts
+
+- **System** (`prompts/<role>.txt`): role rules + "reasoning trace vs JSON output" split
+- **User** (`_user_with_schema`): `_REASONING_CONTRACT` + schema header + task state
+- **Personas** (`prompts/personalities/*.txt`): one line — reasoning logged, JSON is output only
+
+### LM Studio API parameters (all wired in `llm.call_llm`)
+
+| Parameter | nemotron | Purpose | Tuning note |
+|-----------|----------|---------|-------------|
+| `messages` | system + user | KV-stable system; dynamic user | — |
+| `temperature` | 0.12 | JSON reliability | Lower = more deterministic; avoid >0.3 for structured work |
+| `top_p` | 0.88 | nucleus sampling | Slightly below 1.0 reduces rambling |
+| `top_k` | 40 | tail cutoff | 20–40 typical for Nemotron |
+| `max_tokens` | role `BUDGET` | Output cap | Separate from `thinking_budget` |
+| `thinking_budget` | role `THINKING_BUDGET` | Reasoning tokens | Planner highest; verifier lowest |
+| `enable_thinking` | true | Reasoning channel | Requires LM Studio reasoning stripping **off** |
+| `stream` | false | Full response parse | Must stay false for colony |
+| `stop` | `[]` | Early stop sequences | Empty — JSON schema handles shape |
+| `presence_penalty` | 0.0 | Repeat topic penalty | Keep 0 — JSON keys repeat legitimately |
+| `frequency_penalty` | 0.0 | Repeat token penalty | Keep 0 for JSON |
+| `repeat_penalty` | 1.06 | llama.cpp anti-loop | 1.05–1.08 sweet spot |
+| `seed` | 3407 | Reproducibility | -1 = random per call |
+| `logit_bias` | `{}` | Token forcing | Unused; reserve for emergency token suppression |
+| `response_format` | off (`LLM_API_SCHEMA=false`) | Constrained JSON | On = faster JSON, kills `reasoning_content` |
+
+Logged on `llm.request`: temperature, top_p, top_k, max_tokens, thinking_budget, seed, concurrent_gate, global_lock.
+
 ### Nemotron profile flags
 
 | Key | Value | Notes |
 |-----|-------|-------|
-| `LLM_API_SCHEMA` | `false` | Schema contract in user message; API `response_format` off so Nemotron emits `reasoning_content` |
-| `LLM_THINKING_ENABLED` | `true` | `enable_thinking` + `thinking_budget` in API body |
-| `LLM_MAX_CONCURRENT` | `1` | Thread gate + cross-process file lock |
-| `LMS_GLOBAL_LOCK_PATH` | `runtime/.lmstudio.lock` | Serializes all 5 slot processes |
+| `LLM_API_SCHEMA` | `false` | Schema in user message; reasoning in `reasoning_content` |
+| `LLM_THINKING_ENABLED` | `true` | Per-role `THINKING_BUDGET` |
+| `LLM_MAX_CONCURRENT` | `1` | Match LM Studio Max Concurrent Predictions |
+| `LMS_USE_GLOBAL_LOCK` | `true` | Cross-process lock at `runtime/.lmstudio.lock` |
+| `nemotron_parallel` | MC=3, lock off | **Experimental** — see below |
 
 **Open (not settled):** Whether to enable API schema for stricter JSON at the cost of empty reasoning; whether every pipeline stage should attach full reasoning to bus mirror; whether Unified KV Cache helps when MC=1 (user disabled it — hypothesis: Unified KV mainly helps parallel slots).
 
@@ -133,7 +162,23 @@ python llm.py bench
 
 **nemotron (optimized):** temp 0.15, seed 3407, thinking_budget 1536, `LLM_API_SCHEMA=false`, role budgets in `config.BUDGET`.
 
-**LM Studio (manual):** MC=1, reasoning stripping off; Unified KV — user choice (see open questions above).
+**LM Studio (manual):** MC=1 + reasoning stripping off for default `nemotron`.
+
+### Parallel LLM (experimental `nemotron_parallel`)
+
+The blackboard makes parallel inference plausible: slots wake on independent inbox messages.
+
+```bash
+python tui.py --model-profile nemotron_parallel
+```
+
+| Colony | LM Studio (required) |
+|--------|----------------------|
+| `LLM_MAX_CONCURRENT=3` | Max Concurrent Predictions **3** |
+| `LMS_USE_GLOBAL_LOCK=false` | Unified KV Cache **on** (recommended for MC>1) |
+| Lower per-role `BUDGET` / `THINKING_BUDGET` | More VRAM per slot |
+
+**Trade-offs:** Throughput up when 2+ slots have LLM work; KV reuse per-slot shallower; Nemotron hybrid may full-reprocess more often. Not A/B validated vs MC=1 on this hardware.
 
 ## GUI mode
 

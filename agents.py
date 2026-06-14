@@ -67,26 +67,39 @@ def run(board):
 
 
 _STABLE_SYSTEM: dict[str, str] = {}
+_REASONING_CONTRACT = (
+    "REASONING (separate channel — logged for debugging and persona adaptation):\n"
+    "- Think step-by-step in your reasoning trace: inbox, pressure, risks, plan shape.\n"
+    "- Do NOT put analysis or markdown in the final content field.\n"
+    "OUTPUT (final content only):\n"
+    "- ONE raw JSON object. No ``` fences. No prose before or after the JSON.\n"
+)
+
 _SCHEMA_USER_HEADERS: dict[str, str] = {
     "planner": (
-        "JSON_OUTPUT (schema contract — user message, not system):\n"
+        _REASONING_CONTRACT
+        + "JSON_OUTPUT (schema contract — user message, not system):\n"
         '{"mode":"direct"|"done","sequence":[{"code":"..."}],"done_when":"..."}\n'
-        "mode=direct for actionable plans. sequence=1-6 Python steps. No prose outside JSON.\n"
+        "mode=direct for actionable plans. sequence=1-6 Python steps.\n"
     ),
     "verifier": (
-        "JSON_OUTPUT (schema contract — user message, not system):\n"
+        _REASONING_CONTRACT
+        + "JSON_OUTPUT (schema contract — user message, not system):\n"
         '{"verdict":"confirmed"|"denied","evidence":"..."}\n'
     ),
     "reflector": (
-        "JSON_OUTPUT (schema contract — user message, not system):\n"
+        _REASONING_CONTRACT
+        + "JSON_OUTPUT (schema contract — user message, not system):\n"
         '{"diagnosis":"...","suggestion":"...","rule":"..."}\n'
     ),
     "mutator": (
-        "JSON_OUTPUT (schema contract — user message, not system):\n"
+        _REASONING_CONTRACT
+        + "JSON_OUTPUT (schema contract — user message, not system):\n"
         '{"action":"write_plugin"|"patch_plugin"|"none","filename":"plugins/...","content":"..."}\n'
     ),
     "fission_judge": (
-        "JSON_OUTPUT (schema contract — user message, not system):\n"
+        _REASONING_CONTRACT
+        + "JSON_OUTPUT (schema contract — user message, not system):\n"
         '{"verdict":"credit"|"deny","diagnosis":"...","suggestion":"...","rule":"..."}\n'
     ),
 }
