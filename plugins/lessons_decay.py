@@ -1,3 +1,4 @@
 def run(board):
-    # placeholder for audit.py
-    pass
+    if board.get('progress', '').strip():
+        return {'phase': 'progress_written'}
+    return None
