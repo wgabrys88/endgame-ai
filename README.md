@@ -26,7 +26,7 @@ python tui.py "Your long-term goal in one sentence"
 
 | Flag | Effect |
 |------|--------|
-| `--safe` | Disable default GUI + unconstrained |
+| `--safe` | Lab only — sedated organism (disables desktop + full metabolism) |
 | `--model-profile nemotron` | Single-flight MC=1 |
 | `--backend acp` | ACP backend (needs `acp_client.py`) |
 
@@ -55,7 +55,7 @@ python reactor.py --archive-smoke
 | File | Audience |
 |------|----------|
 | `README.md` | Humans — how to run |
-| `RULES.md` | **Any AI** — § SYSTEM CORE (diagram, papers, bloat ledger, copy-paste prompt) |
+| `RULES.md` | **Any AI** — § SYSTEM CORE + § VISION (organism, papers, bloat ledger) |
 | `OBSERVATIONS.md` | AI — session log + forensics |
 
 Fresh disk: `python -c "import log; log.cleanup_runtime(deep=True)"`

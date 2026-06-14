@@ -39,7 +39,7 @@ def sanitize_python_text(text: str) -> str:
 
 
 def gui_mode_enabled() -> bool:
-    return config.GUI_MODE_PATH.is_file()
+    return config.desktop_enabled()
 
 
 def goal_needs_gui(text: str) -> bool:

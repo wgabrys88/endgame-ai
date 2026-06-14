@@ -199,13 +199,24 @@ def active_model_profile() -> str:
 
 
 def unconstrained_enabled() -> bool:
-    """Operator mode: relax GUI decline and planner guardrails (default on)."""
+    """Full metabolism — core organism mode, not a safety toggle (default on)."""
     flag = os.environ.get("ENDGAME_UNCONSTRAINED", "").strip().lower()
     if flag in ("0", "false", "no"):
         return False
     if flag in ("1", "true", "yes") or UNCONSTRAINED_MODE_PATH.is_file():
         return True
-    return True  # default on; use --safe / ENDGAME_UNCONSTRAINED=0 to disable
+    return True  # lab/debug only: --safe or ENDGAME_UNCONSTRAINED=0
+
+
+def desktop_enabled() -> bool:
+    """Eyes + hands organ — observer/win32/actions wired by default when organism boots."""
+    if os.environ.get("ENDGAME_DESKTOP", "").strip().lower() in ("0", "false", "no"):
+        return False
+    if GUI_MODE_PATH.is_file():
+        return True
+    if os.environ.get("ENDGAME_BOOTSTRAPPED", "").strip() == "1":
+        return True
+    return unconstrained_enabled()
 
 
 # --- Timing ---

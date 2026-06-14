@@ -8,9 +8,9 @@ Humans: read `README.md`.
 
 ## COLD-START HANDOVER PROMPT
 
-**Last updated:** 2026-06-14 · **Branch:** `bare-metal` (**42 files**, ~7162 lines) · **Backup:** `unify-rewrite` (49) · **MILESTONE:** `dev-milestone-20260614` → `5ca4ee8`
+**Last updated:** 2026-06-14 · **Branch:** `bare-metal` (**46 files**, ~7300 lines) · **Vision:** RULES.md § VISION · **Backup:** `unify-rewrite` (49) · **MILESTONE:** `dev-milestone-20260614` → `5ca4ee8`
 
-Copy **RULES.md § SYSTEM CORE** fenced block first (papers, same-arch, bloat ledger). Then this supplement:
+Copy **RULES.md § SYSTEM CORE** + **§ VISION** (organism/brain metaphor). Then this supplement:
 
 ```text
 PROJECT: endgame-ai — self-evolving multi-agent colony on consumer hardware.
@@ -26,11 +26,13 @@ SAME ARCHITECTURE:
   One instance = main.py → engine.run(board) → agent pipeline.
   Colony = 5× that + comms blackboard + reactor parent. NOT two organisms.
 
+VISION (RULES.md § VISION — read whole section):
+  Living organism, not agent framework. Bus = wiring not memory. Personalities = LLM
+  identities that evaluate goals. MoE/pressure = few lines of math. Desktop + metabolism
+  = core organs (--safe is lab-only). Target: unified OoO, ~3.5k LOC, keep science.
+
 DESKTOP RECOVERY (2026-06-14):
-  Desktop IS the organism (main README vision: M4, exec, see/act/verify).
-  Restored: ObserverAgent, unified ActorAgent (code/text/GUI), planner_gui schema,
-  execute_step + execute_verb, engine._run_observer when gui_mode.
-  Colony bus tasks still use sequence[].code; GUI uses sequence[].text like main.
+  ObserverAgent + unified ActorAgent + planner_gui. config.desktop_enabled() = core organ.
 
 READ ORDER:
 1. RULES.md § SYSTEM CORE — COPY THAT BLOCK FIRST (arxiv links + bloat ledger)
@@ -168,6 +170,17 @@ Append only. No golden archives in git — summaries live here.
 | `bare-metal` v1 | — | 44→42 | **File strip** | lessons, run_test, 3 schemas |
 | `bare-metal` v2 | — | 42 / ~7k lines | **Code strip** | llm benchmark, colony_env+desktop merge, Personality OoO |
 | `bare-metal` v3 | — | 42 files | **OoO refactor** | AgentContext, Breeder, verifier dedup, shared _brief |
+| `bare-metal` v4 | ~45s | ~80 bus | **Vision + live boot** | RULES § VISION; desktop organ; reactor 5 slots OK; LLM 400 (no model) |
+
+### Session `20260614_vision_boot` (2026-06-14, agent solo boot)
+
+**Command:** `reactor.py --unconstrained --goal "maintenance: print ok on bus"` after `cleanup_runtime`.
+
+**Wiring OK:** reactor posted colony_goal; all 5 slots booted; comms_operator MoE routed `@architect`; workers reached `schedule→planner`; `planner.pending mode=gui` on architect (desktop organ active).
+
+**Blocked:** `llm_fail HTTP 400` on all slots — LM Studio unreachable or wrong model/schema. Deterministic layer (bus, spawn, pressure telemetry, MoE) healthy without LLM.
+
+**Next:** slim bloat ledger; unify JsonRoleAgent; personality-as-single-system-prompt merge.
 
 ### Session `20260614_201915` forensics (2026-06-14, killed by operator)
 

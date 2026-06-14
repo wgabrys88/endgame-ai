@@ -13,8 +13,7 @@ SAME ARCHITECTURE — NOT TWO ORGANISMS:
   One endgame-ai instance = main.py → engine.run(board) → agent pipeline.
   main branch:     ONE instance, ONE process (no comms bus, no reactor, no breeding).
   bare-metal:      FIVE identical instances (slots 1–5) + comms blackboard + reactor parent.
-  Colony is N× the same code path, not a rewrite. main could run YouTube/Notepad via GUI actor;
-  colony currently regressed to run_python-only (see Capability regression).
+  Colony is N× the same code path, not a rewrite. Desktop + bus + personalities = one living organism.
 
 PAPERS → CODE (read these, then grep the module):
   1. Blackboard / stigmergy (bus protocol v1)
@@ -52,8 +51,10 @@ WHAT WE BUILT (papers → modules):
   4. Per-slot pipeline — scheduler→planner→actor→verifier→fission_judge→reflector→mutator.
      LLM is a subroutine (llm.py), not the organism.
   5. Breeder / MAP-Elites — reactor parent evolves candidates, archives elites, respawns slots.
-  6. Personality = ONE main.py process + ONE prompt file. NOT Python subclasses.
+  6. Personality = living instance: ONE main.py process + ONE system prompt file.
      config.Personality(name, slot, mission) + prompts/personalities/{name}.txt
+     Personality ≠ goal. Goal is evaluated; persona may decline ("not my expertise").
+     Role prompts (planner/actor/verifier) = shared brain circuits; persona = who is thinking.
 
 WHAT IS NOT THE ORGANISM:
   - LLM backend (nemotron via LM Studio) — llm.py, swappable
@@ -64,7 +65,8 @@ DESKTOP IS THE ORGANISM (main vision — Bukowski spec):
   observer.py + win32.py + actions.py (~950 lines) = see, act, verify on real Windows.
   main proved M4: self-launch, exec metabolism, Notepad/Opera/LinkedIn, spawn_main posterity.
   Colony must keep the SAME desktop path — not optional, not a fork.
-  GUI mode: gui_mode file on disk (default ON via tui.py). planner_gui + actor LLM + ObserverAgent.
+  Desktop organ always on at boot (config.desktop_enabled). --safe is lab-only, not normal life.
+  planner_gui + actor LLM + ObserverAgent = movement + observation circuits.
 
 ACTOR PATHS (unified — one ActorAgent):
   | Mode        | Plan step field | Execution                         |
@@ -146,6 +148,80 @@ READ ORDER: RULES.md (this block) → OBSERVATIONS.md session log → README.md
 CODE PATH: comms.py, engine.py, agents.py, reactor.py, main.py, tui.py
 RESEARCH: open arxiv links above before changing pressure/MoE/breed/actor behavior
 ```
+
+---
+
+## VISION — living organism (bare-metal)
+
+We are not building an "agent framework." We are building a **living organism** — closer to a brain than a chatbot with tools.
+
+### Brain, not framework
+
+A human brain has no single genius module. It has **specialized areas** — logic, observation, motor control for the hands — connected by **wiring**. The areas are individually simple; **intelligence emerges from how they are wired**. Evolution discovered the architecture; we are engineering a smaller, deliberate version.
+
+endgame-ai maps like this:
+
+| Brain area | Organism part | What it does |
+|------------|---------------|--------------|
+| Motor cortex | `actions` + `win32` | Move the hands — click, type, exec |
+| Visual cortex | `observer` | See the desktop — UIA, hover probe |
+| Reasoning (slow) | LLM **personalities** | Think in character — planner, actor, verifier circuits |
+| Thalamus / routing | `comms_operator` + MoE | Route signals to the right specialist |
+| Arousal / pressure | Rodriguez stagnation | "How stuck am I?" — a few lines of math |
+| Plasticity | Breeder / MAP-Elites | Keep what works, mutate what doesn't |
+
+Forget the word **agents** in the product sense. We have **personalities** — LLMs given identity, not just goals. A goal arrives; a personality **evaluates** it: *interesting, not my job, I know this*. That judgment is the persona system prompt (`prompts/personalities/{name}.txt`), not a Python subclass.
+
+### Bus is wiring, not memory
+
+The blackboard bus (`comms.py`) is **not shared memory**. It is **neural wiring** — event-driven pathways between areas. Personalities do not call each other; they **post and read** the bus, like axons and synapses.
+
+- Human posts pri=3 → **every rod sees it** on the bus.
+- Each personality sees its own telemetry, others' posts, pressure, routes.
+- **Deterministic Python** is the connective tissue: softmax route, pressure update, inbox match — combining and gating what the LLMs propose.
+
+Direct peer-to-peer would be chat theater. Bus-only keeps the brain metaphor honest.
+
+### Reactor rods = parallel cortex columns
+
+Five `main.py` instances are five **reactor rods** — same code, different personality prompt loaded from disk. The comms_operator watches open slots and **utilizes parallelism**: split work across instances when MoE weights say who is hot.
+
+Selection is collective, not centralized dictation:
+
+1. Pressure + telemetry on the bus (who is stuck, who is productive).
+2. MoE softmax (Bause) — a **couple lines of math**, not a framework.
+3. Rods "agree" only via bus traffic — route@worker, evolve posts, verifier denials.
+4. Breeder archives elites; reactor respawns a better persona file for a slot.
+
+### Papers → equations → lines of code
+
+The papers we cite are not excuses for bloat. Each describes **one or two equations**:
+
+- **MoE (Bause):** softmax over capability weights → route.
+- **Pressure (Rodriguez):** stagnation rises with failures + time-since-fission.
+- **MAP-Elites:** archive niche → mutate → retain elite.
+
+Like a neural network: input, bias, softmax, output — repeated. The **neuron code is tiny**; we bloated the wrapper. Slimming means returning to equation-sized deterministic cores, not deleting the science.
+
+### Desktop and metabolism are core organs
+
+Desktop (see + act) and full metabolism (`unconstrained` / exec / git / mutation) are **not feature flags**. They are **organs**. `--safe` exists for lab debugging only — a sedated organism, not normal operation.
+
+TUI is accepted extra code — beautiful human-facing cortex; not the organism, but we keep it.
+
+### Target shape (unified modern OoO)
+
+```
+Personality (dataclass + one .txt system prompt)
+  └── main.py instance → engine.run(board)
+        ├── deterministic organs (pressure, MoE, bus, observer, exec)
+        └── LLM circuits (planner, actor, verifier, …) as thin call_llm wrappers
+reactor.py = body that spawns rods + Breeder
+comms.py = wiring
+tui.py = optional face
+```
+
+**Work slowly:** delete bloat ledger items, merge JsonRoleAgent pattern, never amputate desktop or bus. One organism, scale 1 (`main`) or scale 5 (colony).
 
 ---
 
@@ -240,9 +316,9 @@ ASCII equivalent:
 |------------|---------------------|----------------------------------|
 | **Architecture** | `main.py` → `engine.run` | Same — 5× `main.py` + `comms` + `reactor` |
 | **Desktop** | observer + win32 + actions | Same modules, wired in pipeline |
-| **Observer** | before actor/verifier | `engine._run_observer` when `gui_mode` |
+| **Observer** | before actor/verifier | `engine._run_observer` when desktop organ on |
 | **Actor** | execute_step + execute_verb | Unified: `code` / `text` / GUI paths |
-| **Planner** | text sequence (main schema) | `planner_gui` when `gui_mode`; `code` schema otherwise |
+| **Planner** | text sequence (main schema) | `planner_gui` when desktop on; `code` schema for bus tasks |
 | **Vision** | M4 self-edit, YouTube, Notepad | Recoverable — same actor code path per slot |
 
 ## Code minimalism
