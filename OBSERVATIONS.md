@@ -8,7 +8,7 @@ Humans: read `README.md`.
 
 ## COLD-START HANDOVER PROMPT
 
-**Last updated:** 2026-06-14 · **Branch:** `bare-metal` · **Vision:** RULES.md § VISION · **HEAD:** sandbox strip (~131 LOC)
+**Last updated:** 2026-06-14 · **Branch:** `bare-metal` · **Vision:** RULES.md § VISION · **HEAD:** `9c89792` immune system strip (~409 LOC)
 
 Copy **RULES.md § SYSTEM CORE** + **§ VISION**. Then this handover:
 
@@ -178,6 +178,8 @@ Append only. No golden archives in git — summaries live here.
 | `bare-metal` v2 | — | 42 / ~7k lines | **Code strip** | llm benchmark, colony_env+desktop merge, Personality OoO |
 | `bare-metal` v3 | — | 42 files | **OoO refactor** | AgentContext, Breeder, verifier dedup, shared _brief |
 | `bare-metal` v4 | ~45s | ~80 bus | **Vision + live boot** | RULES § VISION; desktop organ; reactor 5 slots OK; LLM 400 (no model) |
+| `bare-metal` v5 | — | — | **Sandbox + immune strip** | `0d0411c` safe flags; `9c89792` protected-file/mutation gates removed |
+| *(flush 2026-06-14)* | — | — | **Runtime clean, ready to run** | `cleanup_runtime(deep=True)`; handover synced; no Python procs |
 
 ### Session `20260614_vision_boot` (2026-06-14, agent solo boot)
 
@@ -240,7 +242,7 @@ Golden budgets are **benchmark replay only** (`GOLDEN_SESSION_BUDGETS` in `llm.p
 
 ```text
 python -c "import log; log.cleanup_runtime(deep=True)"
-python tui.py --safe "Patch plugins/lessons_decay.py: add one-line docstring, py_compile, git commit"
+python tui.py "Patch plugins/lessons_decay.py: add one-line docstring, py_compile, git commit"
 ```
 
 Single measurable artifact + git hash. No meta pri=3. Wait ≥2 min after plan before judging stall.
