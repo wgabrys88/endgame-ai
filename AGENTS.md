@@ -46,7 +46,7 @@
 
 ## What this project is
 
-Five parallel **slots** (OS processes). Each slot runs one **persona** with an internal agent pipeline. Coordination is **blackboard-only** (`comms.py`). Routing is **MoE softmax** on pressure telemetry (`engine._moe_route`). One LLM at a time for Nemotron (`LLM_MAX_CONCURRENT=1` + `runtime/.lmstudio.lock`).
+Five parallel **slots** (OS processes). Each slot runs one **persona** with an internal agent pipeline. Coordination is **blackboard-only** (`comms.py`). Routing is **MoE softmax** on pressure telemetry (`engine._moe_route`). Default Nemotron: `nemotron` profile (MC=1 + global lock). Burst: `nemotron_parallel` (MC=5, lock off, LM Studio MC=5 + Unified KV).
 
 **Core insight:** The LLM is a subroutine inside a deterministic Python loop. Math (pressure, priority, MoE) runs every cycle regardless of LLM state.
 
@@ -98,11 +98,16 @@ scheduler → planner → actor → verifier → fission_judge → [reflector �
 | `LLM_API_SCHEMA=false` on nemotron | Schema in user only — enables `reasoning_content` from LM Studio |
 | LM Studio: reasoning stripping off | User setting — required for API reasoning field |
 
-### Validated (`sessions/20260614_024645`, 2 min reactor)
+### Validated single-flight (`sessions/20260614_024645`, 2 min)
 
-- 10/10 `llm.response` with reasoning (~1266 chars avg, ~298 `reasoning_tokens`)
-- 0 planner/LLM errors; pipeline through verify → reflect → mutate
-- 5 slots, 9 `moe.route`, 28 `pressure`
+- 10/10 `llm.response` with reasoning; 0 errors
+
+### Validated parallel MC=5 (`sessions/20260614_032059`, 4 min + 5 human injects)
+
+- 29 `llm.request`, 26 `llm.response` (26/26 reasoning), **0 planner errors**
+- All 5 slots used LLM; 5 interrupts; 9 plans; 3 verify confirmed; **2 fissions**
+- Actor: 5 ok / 3 fail (2 `not python` — down from prior runs after planner.txt fix)
+- Planner `THINKING_BUDGET=1536` under parallel — no budget-truncation empty JSON
 
 ### Open questions (do not claim resolved)
 
@@ -167,7 +172,7 @@ Per-slot: `sessions/<timestamp>/events-child-sN.jsonl`
 - MoE closed loop + human yield
 - KV-stable planner/verifier system prompts (1 fingerprint per role)
 - Reasoning in session logs (`reasoning_content` + phase events)
-- Global LLM single-flight across processes
+- `nemotron` single-flight + `nemotron_parallel` MC=5 burst mode
 - AgentBreeder: reflector, mutator, evolve, elites, trials, `breed.improve` (≥1 run)
 - GUI opt-in; human file task deterministic path
 - `python llm.py bench`, `python comms.py breeder`
@@ -203,7 +208,16 @@ python tui.py --model-profile nemotron
 - [ ] `python comms.py breeder` after 6+ min
 
 **Smoke:** `python run_test.py 120`  
-**Reactor-only 2 min:** `python reactor.py --model-profile nemotron`
+**Reactor 2 min:** `python reactor.py --model-profile nemotron`  
+**Parallel burst 4 min:** `python reactor.py --model-profile nemotron_parallel` + inject 5 `@persona` tasks via `comms.post(..., priority=PRI_HUMAN)`; inspect `sessions/<ts>/events-child-s*.jsonl` for `llm.request` overlap across slots
+
+**Behavioral analysis checklist**
+
+- [ ] `llm.request`: `concurrent_gate` matches profile; `global_lock` false for parallel
+- [ ] `llm.response`: `has_reasoning: true`, `reasoning_tokens` > 0
+- [ ] `plan` events include `reasoning_chars`; actor `ok` not mostly `not python`
+- [ ] `planner.error` count = 0 under load
+- [ ] TUI header shows profile tag; slot lines show `think=N` on plan / `llm.response`
 
 ---
 
@@ -249,6 +263,55 @@ unify-rewrite
 |------|---------|
 | 2026-06-14 | Merge codex-dev; GUI mode; breed.improve; KV research |
 | 2026-06-14 | Stable system + user schema; global LLM lock; `llm.py bench` |
-| 2026-06-14 | Reasoning capture (`LLMResult`, `llm.response`); `LLM_API_SCHEMA=false`; docs + handoff rewrite |
+| 2026-06-14 | Reasoning capture; parallel MC=5 validated; TUI LLM visibility; planner code rules |
+| 2026-06-14 | `52b47a0` planner budget + TUI; `c9a7655` MC=5 profile; `b83db59` reasoning prompts |
 
 **Python on this machine:** `C:\Users\px-wjt\AppData\Local\Python\bin\python.exe` if `python` not on PATH.
+
+---
+
+## Provider handover meta-prompts (copy-paste)
+
+Use these as the **first user message** when starting a new session. Replace `<TIP>` with `git rev-parse --short HEAD` after pull.
+
+### Grok → branch `grok-dev`
+
+```
+You are continuing endgame-ai on branch grok-dev (tip <TIP>).
+Read AGENTS.md, KNOWLEDGE.md, ~/.grok/memory/wgabrys88-endgame-ai/MEMORY.md.
+Hard rules: no new .py files; only README/KNOWLEDGE/AGENTS markdown; bus-only coordination.
+LLM: nemotron (MC=1 maintenance) or nemotron_parallel (MC=5 burst). Reasoning in llm.response + plan events.
+Test before claiming done: py_compile changed files; reactor 2–4 min; check sessions JSONL for reasoning + planner.error=0.
+Execute yourself — do not tell the human what to run. GOAL: repeat breed.improve across cycles.
+```
+
+### Codex → branch `grok-dev` (codex-dev merged; do not fork unless coordinated)
+
+```
+You are Codex continuing endgame-ai. Work on grok-dev (codex-dev already merged).
+Read AGENTS.md + KNOWLEDGE.md first. Cite comms.py/engine.py/llm.py when editing protocol code.
+Never add .py files. Commit only to grok-dev unless human explicitly revives codex-dev for an experiment.
+Validation: python -m py_compile <file>; python reactor.py --model-profile nemotron_parallel for parallel work;
+inspect sessions/*/events-child-s*.jsonl — llm.response must show has_reasoning.
+Preserve: stable system prompts, schema in user message, LLM_API_SCHEMA=false for reasoning.
+```
+
+### OpenCode → branch `open-code-dev` (create from grok-dev tip when human approves)
+
+```
+You are OpenCode on endgame-ai. Branch: open-code-dev (create from grok-dev if missing).
+Read AGENTS.md + KNOWLEDGE.md. Same architecture as grok-dev — blackboard colony, no cross-process shared state.
+Hard rules identical to AGENTS.md. Push to open-code-dev only; merge to grok-dev via human review.
+Test methodology: behavioral runs with comms.post human pri=3 injects; document session IDs in AGENTS session history.
+Do not merge toward main (organism M4) — that is a parallel species.
+```
+
+### Branch consolidation (human decision — pending)
+
+| Target | Action when approved |
+|--------|---------------------|
+| `unify-rewrite` | Fast-forward or merge `grok-dev` → integration trunk |
+| `codex-dev` | Archive or reset to `grok-dev` tip (already superseded) |
+| `open-code-dev` | `git checkout -b open-code-dev grok-dev` for OpenCode-only work |
+
+**Ask the human** before any merge to `unify-rewrite` or creating `open-code-dev`.

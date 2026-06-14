@@ -17,7 +17,9 @@ python tui.py --model-profile nemotron
 | `--backend acp` | Sequential WSL/Kiro backend |
 | `--gui` | Desktop/GUI automation (default: blocked) |
 
-**Controls:** Space = pause/unpause · `g` = toggle GUI/safe · `q` = quit · `@persona message` = talk to the colony
+**Controls:** Enter = send · `g` = GUI/safe · Space = pause · `q` = quit · `@persona message` = talk to the colony
+
+TUI header shows model profile (`nemotron` / `nemotron_parallel`), GUI/safe mode, and per-slot `think=N` on LLM events.
 
 ---
 

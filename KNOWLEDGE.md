@@ -178,7 +178,9 @@ python tui.py --model-profile nemotron_parallel
 | `LMS_USE_GLOBAL_LOCK=false` | Unified KV Cache **on** (recommended for MC>1) |
 | Lower per-role `BUDGET` / `THINKING_BUDGET` | More VRAM per slot |
 
-**Validated** (`sessions/20260614_031018`): 5 human injects → 27 `llm.request`, all 5 slots, max 5 concurrent within 60s. Use for multi-`@persona` bursts; `nemotron` (MC=1) for idle maintenance.
+**Validated** (`sessions/20260614_032059`, tip `52b47a0+`): 4 min, 5 human injects → 29 `llm.request`, 26/26 reasoning, **0 planner errors**, 3 verify confirmed, 2 fissions, all 5 slots. Planner `THINKING_BUDGET=1536` + strict `sequence[].code` Python rules. TUI shows profile tag + `think=N` on plan/llm.response.
+
+Use `nemotron_parallel` for multi-`@persona` bursts; `nemotron` (MC=1) for idle maintenance.
 
 ## GUI mode
 
