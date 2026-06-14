@@ -8,7 +8,7 @@ Humans: read `README.md`.
 
 ## COLD-START HANDOVER PROMPT
 
-**Last updated:** 2026-06-14 · **Branch:** `bare-metal` · **Vision:** RULES.md § VISION · **HEAD:** unify-cut-1 — schemas gone, agents unified
+**Last updated:** 2026-06-14 · **Branch:** `bare-metal` · **Vision:** RULES.md § VISION · **HEAD:** `79832c4` unify-cut-1 — schemas gone, agents unified
 
 Copy **RULES.md § SYSTEM CORE** + **§ VISION**. Then this handover:
 
