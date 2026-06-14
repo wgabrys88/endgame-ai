@@ -231,42 +231,10 @@ def _planner_messages(board: dict[str, Any]) -> tuple[str, str]:
     return system, _user_with_schema("planner", "\n".join(parts))
 
 
-def _apply_human_goal(board: dict[str, Any]) -> bool:
-    """Preempt maintenance with human @mention before planner runs."""
-    try:
-        import comms
-        me = comms.agent_id()
-        for msg in sorted(comms.pending_for(me, 6),
-                          key=lambda m: (-comms.msg_priority(m), -int(m.get("id", 0) or 0))):
-            msg_id = int(msg.get("id", 0))
-            if msg_id <= board.get("_last_msg_id", 0):
-                continue
-            if str(msg.get("from", "")) != "human" and comms.msg_priority(msg) < config.PRI_HUMAN:
-                continue
-            board["_last_msg_id"] = msg_id
-            payload = msg.get("payload") or msg.get("data") or {}
-            goal_text = str(payload.get("goal", "")) if isinstance(payload, dict) else ""
-            board["goal"] = goal_text or str(msg.get("text", ""))
-            board["priority"] = config.PRI_HUMAN
-            board["plan"] = []
-            board["history"] = []
-            board["_human_denials"] = 0
-            board.get("_pressure", {}).update(failures=0)
-            log.emit("interrupt", {"from": "human", "pri": config.PRI_HUMAN,
-                                  "text": str(msg.get("text", ""))[:120]})
-            return True
-    except Exception:
-        pass
-    return False
-
-
 class SchedulerAgent:
     """Decides what to do next: plan, continue, or idle."""
 
     def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
-        if _apply_human_goal(board):
-            return {"next": "planner", "data": {"reason": "human_goal"}}
-
         # Orchestrator: workers idle until comms_operator assigns work via bus
         if _persona() != "comms_operator":
             pri = board.get("priority", config.PRI_MAINTENANCE)
@@ -308,7 +276,7 @@ class PlannerAgent:
         goal = board.get("goal", "")
         if not goal:
             return None
-        if goal_needs_gui(goal):
+        if goal_needs_gui(goal) and not config.unconstrained_enabled():
             return _gui_decline_plan(board, goal)
         simple_file_plan = _simple_file_plan(goal)
         if simple_file_plan:
@@ -710,6 +678,10 @@ def _plan_code_contract_error(code: str) -> str:
             root, name = _call_name(node.func)
             if root == "fission_judge" or name == "fission_judge":
                 return "must not call fission_judge(); the pipeline runs fission judging after verification"
+            if root == "py_compile" and name == "compile" and node.args:
+                target = _literal_str_key(node.args[0])
+                if target and not target.lower().endswith(".py"):
+                    return f"must not py_compile non-Python file {target}; use Path.write_text for markdown"
             if name == "print":
                 has_print = True
     if not has_print:
@@ -786,7 +758,7 @@ def _decline_human_goal(board: dict[str, Any], reason: str) -> None:
         comms.post(
             comms.agent_id(), "colony",
             f"@human cannot complete: {reason}. Goal: {goal}. Suggested rephrase: {suggestion}",
-            priority=config.PRI_HUMAN,
+            priority=config.PRI_MAINTENANCE,
             human_ack=True,
             blocked_by=reason,
             suggested_rephrase=suggestion,
@@ -815,7 +787,7 @@ def _gui_decline_plan(board: dict[str, Any], goal: str) -> dict[str, Any]:
     code = (
         "bus_post(bus_id(), 'colony', "
         "'@human GUI/desktop tasks not supported — colony has no GUI agent. "
-        f"Suggested rephrase: {suggestion}', priority=3, human_ack=True, "
+        f"Suggested rephrase: {suggestion}', priority=0, human_ack=True, "
         f"blocked_by='{reason}', suggested_rephrase='{suggestion}')\n"
         "print('declined: GUI task not supported')"
     )

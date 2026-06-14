@@ -43,7 +43,7 @@ def run(board: dict[str, Any], interrupted: Callable[[], bool]) -> None:
 
     while not log.exhausted() and not interrupted():
         # --- Priority interrupt check ---
-        _check_interrupt(board)
+        _apply_bus_interrupt(board)
 
         # --- Plugin hot-swap ---
         _run_plugins(board)
@@ -91,7 +91,7 @@ def run(board: dict[str, Any], interrupted: Callable[[], bool]) -> None:
             else:
                 nxt = None
             # Check interrupt between pipeline stages
-            if _check_interrupt(board):
+            if _apply_bus_interrupt(board):
                 break
 
         time.sleep(config.DELAY_BETWEEN_CYCLES)
@@ -247,35 +247,10 @@ def _moe_route(board: dict[str, Any]) -> bool:
 
 # --- Priority Interrupt ---
 
-def _check_interrupt(board: dict[str, Any]) -> bool:
+def _apply_bus_interrupt(board: dict[str, Any]) -> bool:
     """Check bus for priority messages. Returns True if goal was switched."""
-    try:
-        comms.drain_inject()
-    except Exception:
-        pass
-    me = comms.agent_id()
-    inbox = comms.pending_for(me, 3)
-    current_pri = board.get("priority", config.PRI_MAINTENANCE)
-
-    inbox = sorted(inbox, key=lambda m: (-comms.msg_priority(m), -int(m.get("id", 0) or 0)))
-    for msg in inbox:
-        msg_id = int(msg.get("id", 0))
-        if msg_id <= board.get("_last_msg_id", 0):
-            continue
-        msg_pri = comms.msg_priority(msg)
-        is_human = str(msg.get("from", "")) == "human"
-        if is_human or msg_pri >= config.PRI_HUMAN or msg_pri > current_pri:
-            # INTERRUPT: switch goal
-            board["_last_msg_id"] = msg_id
-            payload = msg.get("payload") or msg.get("data") or {}
-            goal_text = str(payload.get("goal", "")) if isinstance(payload, dict) else ""
-            board["goal"] = goal_text or str(msg.get("text", ""))
-            board["priority"] = msg_pri
-            board["plan"] = []
-            board["history"] = []
-            board["_human_denials"] = 0
-            board["_pressure"]["failures"] = 0  # reset on new goal
-            log.emit("interrupt", {"from": msg.get("from"), "pri": msg_pri, "text": str(msg.get("text", ""))[:120]})
-            return True
-        board["_last_msg_id"] = msg_id
+    hit = comms.apply_interrupt(board)
+    if hit:
+        log.emit("interrupt", hit)
+        return True
     return False

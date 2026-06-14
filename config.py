@@ -18,6 +18,7 @@ PROMPTS_DIR: Path = BASE_DIR / "prompts"
 SCHEMAS_DIR: Path = BASE_DIR / "schemas"
 PLUGINS_DIR: Path = BASE_DIR / "plugins"
 GUI_MODE_PATH: Path = BASE_DIR / "gui_mode"
+UNCONSTRAINED_MODE_PATH: Path = BASE_DIR / "unconstrained_mode"
 
 # --- .env loader ---
 _dotenv = BASE_DIR / ".env"
@@ -157,6 +158,14 @@ def apply_model_profile(profile_or_model: str, *, force: bool = False) -> tuple[
 
 def active_model_profile() -> str:
     return _active_profile
+
+
+def unconstrained_enabled() -> bool:
+    """Operator mode: relax GUI decline and planner guardrails."""
+    flag = os.environ.get("ENDGAME_UNCONSTRAINED", "").strip().lower()
+    if flag in ("1", "true", "yes"):
+        return True
+    return UNCONSTRAINED_MODE_PATH.is_file()
 
 # --- Timing ---
 DELAY_BETWEEN_CYCLES: float = 2.0

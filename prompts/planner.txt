@@ -29,7 +29,7 @@ RULES:
   Colony has no GUI agent. For GUI asks: bus_post decline + suggest Path.write_text demo.
 - NEVER create new .py files. Only modify existing ones.
 - Read before writing: Path("file.py").read_text(encoding="utf-8")
-- py_compile.compile(path, doraise=True) before any commit.
+- py_compile.compile(path, doraise=True) only for .py files before any commit. Never py_compile .md or other text files; use Path.write_text for markdown.
 - print() all evidence for the verifier.
 - bus_post(bus_id(), "colony", "@persona message", priority=N) to coordinate.
 - Use subprocess.run(["git", ...], capture_output=True, text=True) for git.

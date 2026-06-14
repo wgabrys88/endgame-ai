@@ -43,7 +43,7 @@ def gui_mode_enabled() -> bool:
 
 
 def goal_needs_gui(text: str) -> bool:
-    if gui_mode_enabled():
+    if gui_mode_enabled() or config.unconstrained_enabled():
         return False
     g = sanitize_python_text(text).lower()
     return any(word in g for word in _GUI_GOAL_WORDS)

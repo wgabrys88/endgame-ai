@@ -66,11 +66,12 @@ Capture per poll: event count, last_ts, plans/verify/fission, slot_last phase, h
 - Add `## Session <id>` + `### FORENSIC HANDOVER` section.
 - Raw JSONL never committed; reference path + external archive.
 
-### 5. Human message rules (proven)
+### 5. Human message rules
 
 - TUI posts `from=human`, `pri=3` — do not type `@human` in body.
-- **`@colony` required** for `comms.pending_for()` (`ping_for` in `comms.py`).
-- Without `@colony`: `human_task_active()` blocks MoE but zero interrupts → deadlock.
+- **Post-fix (session `185239` wiring):** pri=3 human messages deliver to all colony peers via `comms.inbox_match` without requiring `@colony`. `@colony` / `@persona` still preferred for explicit routing.
+- Declines and max-retry exhaustion must post **pri=0** + `human_ack=True` (not pri=3) to avoid bus echo loops.
+- Pre-fix deadlock (proven in `185239`): without `@colony`, `human_task_active()` blocked MoE but `pending_for` was empty.
 
 ### 6. Paste patterns that worked
 
@@ -383,17 +384,17 @@ Interrupt sources (65 total): human 30, comms_operator 15, reviewer 6, architect
 
 ## 11. Fix roadmap (P0–P3)
 
-| Pri | Issue | Files |
-|-----|-------|-------|
-| P0 | pri=3 without `@colony` deadlock | `comms.py`, `engine.py` |
-| P0 | Retry as pri=3 bus pollution | `agents.py`, `comms.py`, `tui.py` |
-| P0 | `--unconstrained` operator mode | `config.py`, `agents.py`, `prompts/` |
-| P1 | py_compile on `.md` | `agents.py`, `prompts/planner.txt` |
-| P1 | GUI planner templates | `agents.py`, `desktop.py` |
-| P1 | Colony progress bus | `comms.py`, `tui.py` |
-| P2 | Stub file_equals quality | `agents.py`, `prompts/verifier.txt` |
-| P2 | Phantom paths | `agents.py` |
-| P3 | Git milestone schema | `prompts/planner.txt` |
+| Pri | Issue | Files | Status |
+|-----|-------|-------|--------|
+| P0 | pri=3 without `@colony` deadlock | `comms.py`, `engine.py` | **Done** — `inbox_match`, `apply_interrupt` |
+| P0 | Retry as pri=3 bus pollution | `agents.py`, `comms.py` | **Done** — pri=0 + `human_ack` |
+| P0 | `--unconstrained` operator mode | `config.py`, `agents.py`, `tui.py`, `reactor.py` | **Done** |
+| P1 | py_compile on `.md` | `agents.py`, `prompts/planner.txt` | **Done** — planner contract AST guard |
+| P1 | GUI planner templates | `agents.py`, `desktop.py` | Open (use `--unconstrained` / `--gui`) |
+| P1 | Colony progress bus | `comms.py`, `tui.py` | Open — `post_progress` stub only |
+| P2 | Stub file_equals quality | `agents.py`, `prompts/verifier.txt` | Open |
+| P2 | Phantom paths | `agents.py` | Partial (FR-4 manifest) |
+| P3 | Git milestone schema | `prompts/planner.txt` | Open |
 
 ---
 
@@ -413,7 +414,22 @@ MAP-Elites restart; GUI fission; git push; unconstrained safety.
 
 ```text
 READ OBSERVATIONS.md + AGENTS.md. Session 20260614_185239: 5104 events, 38 breed.improve.
-P0: @colony deadlock, retry bus, --unconstrained. JSONL on external archive.
+P0 wiring landed: inbox_match, apply_interrupt, decline pri=0, --unconstrained.
+Next: long run to repro improve+restart; P1 progress TUI; git milestone schema.
+JSONL on external archive.
 ```
 
 *Forensic handover complete. JSONL: s1:914 s2:856 s3:962 s4:1132 s5:928 reactor:312.*
+
+---
+
+## Post-fix implementation log (2026-06-14)
+
+Wiring unified per operator request (less code, one interrupt path):
+
+- `comms.inbox_match` / `pending_for` — pri=3 human broadcasts to colony peers; `human_ack` entries excluded from inbox.
+- `comms.apply_interrupt` — single interrupt handler; `engine._apply_bus_interrupt` only; removed `agents._apply_human_goal`.
+- `human_task_active` — clears on `human_ack`; orphan human (no mentions, empty inbox) no longer blocks MoE.
+- `_decline_human_goal` / GUI decline actor code — pri=0, not pri=3.
+- `config.unconstrained_enabled()` + `--unconstrained` on `tui.py` / `reactor.py`.
+- Planner rejects `py_compile` on non-`.py` paths at plan-parse time.

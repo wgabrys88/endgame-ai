@@ -49,6 +49,7 @@ KIND_STATUS = "status"
 INTENT_KINDS = frozenset({KIND_MESSAGE, KIND_PING, KIND_REQUEST, KIND_ROUTE, KIND_BEACON, KIND_EVOLVE, KIND_VERDICT, KIND_STATUS})
 OBSERVE_KINDS = frozenset({KIND_TELEMETRY, KIND_EVENT})
 INBOX_KINDS = frozenset({KIND_PING, KIND_REQUEST, KIND_MESSAGE, KIND_ROUTE})
+_COLONY_PEERS = frozenset(config.WORKER_PERSONAS) | frozenset({"comms_operator"})
 
 _MENTION_RE = re.compile(r"@([A-Za-z][A-Za-z0-9_]*)")
 _BEACON_STAG_RE = re.compile(r"stag=([0-9.]+)")
@@ -103,6 +104,36 @@ def parse_mentions(text: str) -> list[str]:
 
 def ping_for(peer: str, mentions: list[str]) -> bool:
     return bool(peer and mentions and (peer in mentions or "colony" in mentions))
+
+
+def _entry_payload(entry: dict[str, Any]) -> dict[str, Any]:
+    payload = entry.get("payload")
+    if isinstance(payload, dict):
+        return payload
+    data = entry.get("data")
+    return data if isinstance(data, dict) else {}
+
+
+def inbox_match(peer: str, entry: dict[str, Any]) -> bool:
+    """Whether a blackboard entry belongs in peer's actionable inbox."""
+    me = canonical(peer)
+    if not me or str(entry.get("from", "")) == me:
+        return False
+    if str(entry.get("kind", "")) not in INBOX_KINDS:
+        return False
+    payload = _entry_payload(entry)
+    if payload.get("human_ack"):
+        return False
+    ments = entry.get("mentions") or parse_mentions(str(entry.get("text", "")))
+    if ping_for(me, ments) or canonical(str(entry.get("to", ""))) == me:
+        return True
+    if (
+        str(entry.get("from", "")) == "human"
+        and int(entry.get("pri", 0) or 0) >= config.PRI_HUMAN
+        and me in _COLONY_PEERS
+    ):
+        return True
+    return False
 
 
 def _now_id() -> tuple[str, int]:
@@ -351,17 +382,53 @@ def evolve_candidates(after_id: int = 0, limit: int = 20) -> list[dict[str, Any]
 
 
 def pending_for(peer: str, limit: int = 6) -> list[dict[str, Any]]:
-    me = canonical(peer)
-    hits = []
-    for e in _read_chat():
-        if str(e.get("from", "")) == me:
-            continue
-        if str(e.get("kind", "")) not in INBOX_KINDS:
-            continue
-        ments = e.get("mentions") or parse_mentions(str(e.get("text", "")))
-        if ping_for(me, ments) or canonical(str(e.get("to", ""))) == me:
-            hits.append(e)
+    hits = [e for e in _read_chat() if inbox_match(peer, e)]
     return hits[-limit:]
+
+
+def apply_interrupt(board: dict[str, Any]) -> dict[str, Any] | None:
+    """Apply highest-priority bus message to board. Returns interrupt metadata if switched."""
+    try:
+        drain_inject()
+    except Exception:
+        pass
+    me = agent_id()
+    current_pri = int(board.get("priority", config.PRI_MAINTENANCE) or config.PRI_MAINTENANCE)
+    inbox = sorted(
+        pending_for(me, 6),
+        key=lambda m: (-msg_priority(m), -int(m.get("id", 0) or 0)),
+    )
+    for msg in inbox:
+        msg_id = int(msg.get("id", 0) or 0)
+        if msg_id <= int(board.get("_last_msg_id", 0) or 0):
+            continue
+        payload = _entry_payload(msg)
+        if payload.get("human_ack"):
+            board["_last_msg_id"] = msg_id
+            continue
+        msg_pri = msg_priority(msg)
+        is_human = str(msg.get("from", "")) == "human"
+        if is_human or msg_pri >= config.PRI_HUMAN or msg_pri > current_pri:
+            board["_last_msg_id"] = msg_id
+            goal_text = str(payload.get("goal", "")) if payload else ""
+            board["goal"] = goal_text or str(msg.get("text", ""))
+            board["priority"] = config.PRI_HUMAN if is_human else msg_pri
+            board["plan"] = []
+            board["history"] = []
+            board["_human_denials"] = 0
+            board.setdefault("_pressure", {}).update(failures=0)
+            return {"from": msg.get("from"), "pri": msg_pri, "text": str(msg.get("text", ""))[:120]}
+        board["_last_msg_id"] = msg_id
+    return None
+
+
+def post_progress(from_id: str, *, goal: str = "", step: str = "", phase: str = "") -> dict[str, Any]:
+    """Colony-wide progress snapshot (pri=0, not an interrupt)."""
+    payload = {"progress": True, "goal": goal[:200], "step": step[:200], "phase": phase[:32]}
+    text = f"progress {phase or step or 'update'}"
+    if goal:
+        text += f" goal={goal[:80]}"
+    return post(from_id, "colony", text, priority=config.PRI_MAINTENANCE, data=payload)
 
 
 # --- Observation layer (events_bus.jsonl) ---
@@ -446,12 +513,14 @@ def human_task_active() -> bool:
         eid = int(e.get("id", 0) or 0)
         if eid <= hid:
             break
-        text = str(e.get("text", "")).lower()
-        payload = e.get("payload") if isinstance(e.get("payload"), dict) else {}
-        if payload.get("human_ack"):
+        if _entry_payload(e).get("human_ack"):
             return False
+        text = str(e.get("text", "")).lower()
         if any(tag in text for tag in ("cannot complete", "not supported", "confirmed", "completed", "declined")):
             return False
+    ments = latest.get("mentions") or parse_mentions(str(latest.get("text", "")))
+    if not ments and not pending_for("comms_operator", 1):
+        return False
     return True
 
 

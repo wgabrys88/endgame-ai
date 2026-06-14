@@ -22,10 +22,11 @@ Profiles:
 | `gemma` | Faster alternate profile without thinking |
 | `--backend acp` | Sequential ACP backend |
 | `--gui` | Enables desktop observation/actions by writing `gui_mode` |
+| `--unconstrained` | Operator mode: GUI + relaxed planner decline; pri=3 human delivery without `@colony` |
 
 TUI controls: Enter sends a human message, `f` cycles phase filters, `1`-`5` select `all`/`verify`/`breed`/`human`/`error`, `g` toggles GUI mode, Space toggles pause, `q` exits, `@persona message` targets a worker.
 
-Human steering: pri=3 human messages replace the active worker goal and wake the colony, but they do not override schemas, verifier/fission gates, file rules, or GUI safeguards. If a task is blocked, the TUI shows the decline reason and a suggested file-backed rephrase.
+Human steering: TUI posts `from=human`, pri=3. Workers receive human goals via `comms.inbox_match` (mention, `@colony`, or pri=3 broadcast). `@colony` still helps routing clarity but is no longer required for delivery. Declines and max-retry exhaustion post at pri=0 with `human_ack` so they do not re-interrupt the colony. Pri=3 changes the active goal, not schemas, verifier/fission gates, or file rules unless `--unconstrained` is on. See `OBSERVATIONS.md` for session evidence.
 
 ## Architecture
 

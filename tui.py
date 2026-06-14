@@ -626,14 +626,18 @@ class TUI:
             return True
         return False
 
-    def run(self, gui: bool = False) -> None:
+    def run(self, gui: bool = False, unconstrained: bool = False) -> None:
         import log
         import subprocess
         import sys
         from colony_env import disable_gui, enable_gui
 
         log.cleanup_runtime()
-        if gui:
+        if unconstrained:
+            config.UNCONSTRAINED_MODE_PATH.write_text("1", encoding="utf-8")
+            os.environ["ENDGAME_UNCONSTRAINED"] = "1"
+            enable_gui()
+        elif gui:
             enable_gui()
         else:
             disable_gui()
@@ -647,6 +651,8 @@ class TUI:
         reactor_cmd = [sys.executable, "reactor.py"]
         if os.environ.get("_ENDGAME_MODEL_PROFILE"):
             reactor_cmd += ["--model-profile", os.environ["_ENDGAME_MODEL_PROFILE"]]
+        if unconstrained:
+            reactor_cmd.append("--unconstrained")
         self._reactor_proc = subprocess.Popen(reactor_cmd, cwd=str(BASE_DIR), env=env, creationflags=0x08000000)
 
         try:
@@ -671,8 +677,13 @@ if __name__ == "__main__":
     parser.add_argument("--backend", choices=["lmstudio", "acp"], default="lmstudio")
     parser.add_argument("--model-profile", type=str, default=None)
     parser.add_argument("--gui", action="store_true", help="Enable desktop/GUI automation (no safeguards)")
+    parser.add_argument(
+        "--unconstrained",
+        action="store_true",
+        help="Operator mode: GUI + relaxed planner decline (pri=3 delivery without @colony)",
+    )
     args = parser.parse_args()
     os.environ["ENDGAME_BACKEND"] = args.backend
     if args.model_profile:
         os.environ["_ENDGAME_MODEL_PROFILE"] = args.model_profile
-    TUI().run(gui=args.gui)
+    TUI().run(gui=args.gui or args.unconstrained, unconstrained=args.unconstrained)

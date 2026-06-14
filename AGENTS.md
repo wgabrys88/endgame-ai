@@ -204,6 +204,21 @@ Implement in this order. Each item lists **component impact**.
 
 **Still not proven:** deterministic smoke tests cover fission credit, archive mechanics, and `breed.improve` scoring, but no post-fix long autonomous run has reproduced improve + restart survival. Do not claim MAP-Elites convergence or production readiness.
 
+### Post-session `185239` wiring (unify-rewrite)
+
+From `OBSERVATIONS.md` session `20260614_185239` — **implemented** (reduce duplication, not new branches):
+
+| ID | Fix | Status |
+|----|-----|--------|
+| M1 | pri=3 human delivers without `@colony` | `comms.inbox_match` + `pending_for` |
+| M2 | Max-retry / decline posts use pri=0 + `human_ack` | `agents._decline_human_goal`, `_gui_decline_plan` |
+| M3 | MoE unblocks when human goal undeliverable | `comms.human_task_active` orphan check |
+| — | Single interrupt path | `comms.apply_interrupt` (engine only; removed `agents._apply_human_goal`) |
+| P0 | `--unconstrained` operator mode | `config.unconstrained_enabled`, `tui.py`, `reactor.py` |
+| P1 | Block `py_compile` on non-`.py` in planner contract | `agents._plan_code_contract_error`, `prompts/planner.txt` |
+
+**Still open from `185239`:** colony-wide `kind=progress` TUI board (P1), git milestone schema (P3), long-run repro of improve + restart.
+
 ---
 
 ## Architecture Summary
