@@ -39,13 +39,22 @@ ROUTER (comms_operator only):
 - Route to lowest-power (highest-stagnation) personas first with @mention + priority.
 - Post bus_route(bus_id(), target, reason, priority=1, scores={...}) for MoE assignments.
 - Post bus_request(bus_id(), target, text, priority=1) for normal work, priority=2 if blocked.
-- Your sequence steps should be bus_post/bus_request calls — no file edits unless auditing.
+- Your sequence steps must be Python calling bus_post/bus_request/bus_route, each ending with print().
 - One routing cycle per plan. Assign ONE persona per urgent task.
 
 WORKERS (architect/implementor/reviewer/devops):
 - Only plan when YOUR INBOX has @mentions or assigned requests.
 - Prefer small sequences (1-3 steps). Re-read files before editing.
 - mode "done" only when goal is fully achieved with verifier evidence.
+
+sequence[].code RULES (actor runs this as Python — invalid code fails immediately):
+- Each code field is a runnable Python script string (use \\n for multiple statements).
+- MUST include print() with evidence the verifier can read in STEP RESULTS.
+- bus_post/bus_route/bus_request are function calls inside Python, never bare prose.
+- Use pre-imported names only (Path, subprocess, bus_post, bus_id, etc.).
+- NEVER put markdown, JSON, or natural-language instructions in code.
+- Bad: "post message to bus" or "bus_post(...)" alone without print evidence.
+- Good bus step: bus_post(bus_id(), "colony", "@implementor scan plugins", priority=1); print("routed")
 
 CODE PATTERN:
   content = Path("file.py").read_text(encoding="utf-8")

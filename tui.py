@@ -217,8 +217,12 @@ class Slot:
         if ph == "schedule":
             self.agent_states = {a: "idle" for a in INTERNAL_AGENTS}
             self.agent_states["scheduler"] = "✓"
+        elif ph in ("llm.request", "planner.pending"):
+            self.agent_states["planner"] = "⟳"
         elif ph.startswith("planner"):
-            self.agent_states["planner"] = "⟳" if "pending" in ph else ("✗" if "error" in ph else "✓")
+            self.agent_states["planner"] = "✗" if "error" in ph else "✓"
+        elif ph == "llm.response" and str(d.get("role", "")) == "planner":
+            self.agent_states["planner"] = "✓"
         elif ph in ("actor", "action"):
             ok = (d.get("ok", True)) if d else True
             self.agent_states["actor"] = "✓" if ok else "✗"
@@ -247,8 +251,10 @@ class Slot:
             return "moe"
         if ph == "pressure":
             return "math"
-        if ph == "llm_retry" or ph == "llm_fail":
-            return "llm…"
+        if ph in ("llm_retry", "llm_fail", "llm.request", "llm.response"):
+            return "llm"
+        if ph in ("reflect", "mutate"):
+            return ph[:8]
         if ph == "schedule":
             return "scheduler"
         return ph[:10]
@@ -283,6 +289,7 @@ class TUI:
         self._bus_events: list[dict] = []
         self._reactor_proc = None
         self._session_dir: str = ""
+        self._model_profile = os.environ.get("_ENDGAME_MODEL_PROFILE", "") or "auto"
 
     def _scan(self) -> None:
         now = time.time()
@@ -357,8 +364,11 @@ class TUI:
             gui_tag = f"{_fg(*CLR_PRI)}GUI{RST}" if gui_mode_enabled() else f"{_fg(*CLR_DIM)}safe{RST}"
         except Exception:
             gui_tag = f"{_fg(*CLR_DIM)}safe{RST}"
+        prof = self._model_profile[:12]
+        prof_tag = (f"{_fg(*CLR_PRI)}{prof}{RST}" if "parallel" in prof
+                    else f"{_fg(*CLR_DIM)}{prof}{RST}")
         hdr = (f"{BOLD}{_fg(*CLR_HEADER)}REACTOR{RST} {alive}/5 slots  "
-               f"{gui_tag}  "
+               f"{prof_tag}  {gui_tag}  "
                f"{_fg(*CLR_FISSION)}F={total_f}{RST}  "
                f"{_fg(*CLR_DIM)}{sess}{RST}  "
                f"{self._elapsed(elapsed)}  {time.strftime('%H:%M:%S')}")
@@ -423,7 +433,7 @@ class TUI:
         lines.append(f"{bc}{BOX_ML}{BOX_H * (W - 2)}{BOX_MR}{RST}")
         cursor = "▌" if int(time.time() * 2) % 2 else " "
         lines.append(row(f"{_fg(*CLR_INPUT)}@human> {self._input_buf}{cursor}{RST}"))
-        lines.append(row(f"{_fg(*CLR_DIM)}Enter=send  Space=pause  q=quit{RST}"))
+        lines.append(row(f"{_fg(*CLR_DIM)}Enter=send  g=GUI  Space=pause  q=quit{RST}"))
         lines.append(f"{bc}{BOX_BL}{BOX_H * (W - 2)}{BOX_BR}{RST}")
 
         while len(lines) < TARGET_HEIGHT:
@@ -433,14 +443,22 @@ class TUI:
 
     def recent(self, slot: Slot, n: int) -> list[dict]:
         """Get last n non-trivial events."""
-        return [e for e in slot.events if e.get("phase") not in ("start", "pressure")][-n:]
+        skip = ("start", "pressure", "plugin.web_sentinel", "plugin.telemetry", "prompt_signature")
+        return [e for e in slot.events if e.get("phase") not in skip][-n:]
 
     def _brief(self, ph: str, d: dict, max_w: int) -> str:
         if not d:
             return ""
         match ph:
             case "plan":
-                t = f"mode={d.get('mode', '')} steps={d.get('steps', '')} {d.get('done_when', '')}"
+                rc = d.get("reasoning_chars", 0)
+                extra = f" think={rc}" if rc else ""
+                t = f"mode={d.get('mode', '')} steps={d.get('steps', '')}{extra} {d.get('done_when', '')}"
+            case "llm.response":
+                t = (f"{d.get('role', '')} out={d.get('output_chars', 0)} "
+                     f"think={d.get('reasoning_chars', 0)} tok={d.get('reasoning_tokens', 0)}")
+            case "reflect" | "mutate":
+                t = str(d.get("diagnosis") or d.get("action") or d)[:max_w]
             case "actor" | "action":
                 t = f"{'ok' if d.get('ok') else 'FAIL'} {d.get('obs', '')}"
             case "verify":

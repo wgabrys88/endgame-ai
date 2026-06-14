@@ -108,8 +108,8 @@ MODEL_PROFILES: dict[str, dict[str, Any]] = {
         "LLM_THINKING_ENABLED": True, "LLM_THINKING_BUDGET": 768,
         "LLM_API_SCHEMA": False,
         "LMS_TIMEOUT": 600,
-        "BUDGET": {"planner": 1024, "verifier": 288, "reflector": 448, "fission_judge": 224, "mutator": 896},
-        "THINKING_BUDGET": {"planner": 768, "verifier": 160, "reflector": 320, "fission_judge": 160, "mutator": 640},
+        "BUDGET": {"planner": 1152, "verifier": 288, "reflector": 448, "fission_judge": 224, "mutator": 896},
+        "THINKING_BUDGET": {"planner": 1536, "verifier": 192, "reflector": 384, "fission_judge": 192, "mutator": 640},
     },
     "nemotron_legacy": {
         "LLM_TEMPERATURE": 1.0, "LLM_TOP_P": 1.0, "LLM_TOP_K": 20,
