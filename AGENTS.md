@@ -12,7 +12,31 @@
 | `ENDGAME_VISION_ADVANCED.html` | Architecture vision v2 (10-min proof era) |
 
 Work branch: `unify-rewrite`.  
-Golden-run tag: `golden-run-20260614` (session `20260614_132940`, baseline commit `c897385`).
+
+### Golden milestone tags (two commits, one session)
+
+| Tag | Commit | What it pins |
+|-----|--------|----------------|
+| `golden-run-20260614` | `de850cf` | **Evidence handover** — AGENTS/KNOWLEDGE/README, session forensic README, HTML dashboards, `fission_log.py` restored |
+| `golden-run-code-c897385` | `c897385` | **Code that was running** when session `20260614_132940` started (pre-mutation) |
+
+Session `20260614_132940` ran ~1h49m on code at/near `c897385`. Post-run commits `f99e12f` (maintenance) and `de850cf` (handover) are **after** the run.
+
+### What is in git vs external archive
+
+**In git (milestone documentation, not raw telemetry):**
+
+- `sessions/20260614_132940/README.md` — forensic analysis (~1200 lines)
+- `ENDGAME_GOLDEN_RUN.html`, `ENDGAME_VISION_ADVANCED.html`
+- `AGENTS.md`, `KNOWLEDGE.md`, `README.md`
+- `file.py` — git-status snapshot from run era
+
+**Gitignored by design (keep on your external drive archive):**
+
+- `sessions/20260614_132940/events-*.jsonl` — **4,137 raw events (~1.86 MB)** — the actual golden telemetry
+- `runtime/comms/` from run time, `errors.txt`, `Colony_Demo/`, `audit_report.txt`
+
+The milestone is **having this data at all** (documented + archived). Git carries the map; external archive carries the territory.
 
 ---
 
@@ -86,6 +110,32 @@ These appeared **many times** across slots. Fixes should target prompts/schemas/
 | **P8: Human override ignored** | "HUMAN APPROVES EVERYTHING" — schemas still enforced | Prompts loaded at worker boot; no hot reload | `engine.py` / `reactor.py` reload hook OR document limitation in TUI |
 | **P9: Neutral = bad patch** | `breed.neutral` on no-op plugin gutting | Short-window telemetry unchanged | `reactor.py` semantic scoring, py_compile + behavior probes |
 | **P10: TUI visibility** | Operator cannot see reasoning/fission deny easily | TUI renders phases but dense on long runs | `tui.py` — golden-run phase filters, human.decline banner |
+| **P11: `fission_judge()` in actor code** | 10× `error` phase: `name 'fission_judge' is not defined` | Planner puts judge call inside `sequence[].code`; actor has no such symbol | `prompts/planner.txt` — judge runs only in pipeline, never in actor |
+| **P12: Non-Python in code field** | 16× actor fail: `not python code` | Model emits prose/markdown/JSON in `sequence[].code` | `prompts/planner.txt`, pre-actor syntax sniff in `agents.py` |
+| **P13: Empty LLM completions** | 15× `llm.response` with `output_chars: 0` | Partial transport/model failure; fail-closed paths triggered | `llm.py`, `agents.py`; monitor ratio (427 req / 15 empty ≈ 3.5%) |
+| **P14: MoE yield under human load** | 7× `moe.yield` — `human pri=3 task active` | Correct: routing pauses while human goal owns comms_operator | Document in TUI; not a bug |
+
+### Complete meta-problem counts (session JSONL audit)
+
+| Phase / symptom | Count | In handover? |
+|-----------------|------:|--------------|
+| `plugin.error` | 204 | P5 |
+| `fission.deny` | 31 | P4 |
+| Actor fail (all) | 49 | P1,P6,P11,P12 + below |
+| → `not python code` | 16 | P12 |
+| → `FileNotFoundError` | 13 | P6 |
+| → `ModuleNotFoundError: Path` | 7 | P1 |
+| `planner.error` | 7 | P2 |
+| `moe.yield` | 7 | P14 |
+| `moe.escalate` | 5 | timeline/README |
+| `breed.regress` | 6 | P5,P9 (telemetry_missing + lessons_decay delta) |
+| `error` (engine) | 10 | P11 |
+| `verifier.error` | 2 | P2 (invalid verifier JSON) |
+| `human.decline` | 2 | H1,H5 |
+| `reflect.error` | 0 | path exists (d4d6703), not triggered this run |
+| Mutate blocked protected | 34 | comms_beacon 27, web_sentinel 7 |
+| Mutate SyntaxError | 1 | unmatched `}` in fission_log patch |
+| Mutate unsafe subprocess | 1 | plugin sandbox |
 
 ---
 
@@ -93,7 +143,7 @@ These appeared **many times** across slots. Fixes should target prompts/schemas/
 
 Implement in this order. Each item lists **component impact**.
 
-### FR-1 — Planner sandbox contract (P1, P2, P3)
+### FR-1 — Planner sandbox contract (P1, P2, P3, P11, P12)
 
 **Change:** Strengthen `prompts/planner.txt`: NEVER `import Path`; one measurable outcome per plan; escape rules for embedded quotes. Optionally add planner user-message block: `AVAILABLE_FILES=[...]` from repo walk.
 
