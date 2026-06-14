@@ -443,7 +443,7 @@ class TUI:
 
     def recent(self, slot: Slot, n: int) -> list[dict]:
         """Get last n non-trivial events."""
-        skip = ("start", "pressure", "plugin.web_sentinel", "plugin.telemetry", "prompt_signature")
+        skip = ("start", "pressure", "plugin.web_sentinel", "prompt_signature")
         return [e for e in slot.events if e.get("phase") not in skip][-n:]
 
     def _brief(self, ph: str, d: dict, max_w: int) -> str:

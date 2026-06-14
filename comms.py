@@ -66,7 +66,7 @@ ROLES: dict[str, str] = {
 }
 
 _SKIP_PHASES: frozenset[str] = frozenset({
-    "schedule", "plugin.telemetry", "plugin.web_sentinel",
+    "schedule", "plugin.web_sentinel",
 })
 
 

@@ -1,100 +1,102 @@
 # endgame-ai
 
-A **living digital organism** on your machine — not a chatbot wrapper.
+A local multi-agent colony: five Python processes, one local small model, a blackboard, pressure math, and a breeding reactor that decides which behaviors survive.
 
-Five persona processes run in parallel, coordinated through a shared blackboard, steered by deterministic math (pressure, MoE routing). A small local LLM is called only when planning or verification is needed. The breeding reactor decides what survives.
+The LLM is not the organism. The deterministic Python loop is the organism: pressure updates, MoE routing, blackboard state, plugin execution, verification, and breeder scoring run outside the model.
 
-**Branch:** `unify-rewrite` @ `2b20732` — Colony Alpha (2026-06-14).
+Current work branch: `unify-rewrite`.
+
+## Quick Start
 
 ```bash
 git checkout unify-rewrite && git pull
 python tui.py --model-profile nemotron
 ```
 
+Profiles:
+
 | Profile | Use |
-|---------|-----|
-| `nemotron` | Default: 1 concurrent LLM, reasoning on, schema in user message |
-| `nemotron_parallel` | Burst: 5 concurrent LLM — LM Studio MC=5 + Unified KV on |
-| `gemma` | Faster, 2 concurrent, no thinking |
-| `--backend acp` | Sequential WSL/Kiro backend |
-| `--gui` | Desktop automation (default: blocked) |
+|---|---|
+| `nemotron` | Default maintenance, LM Studio max concurrent predictions = 1 |
+| `nemotron_parallel` | Burst validation, LM Studio max concurrent predictions = 5 |
+| `gemma` | Faster fallback profile without thinking |
+| `--backend acp` | Sequential ACP backend |
+| `--gui` | Enables desktop observation/actions by writing `gui_mode` |
 
-**Controls:** Enter = send · `g` = GUI/safe · Space = pause · `q` = quit · `@persona message` = talk to the colony
+TUI controls: Enter sends a human message, `g` toggles GUI mode, Space toggles pause, `q` exits, `@persona message` targets a worker.
 
----
+## Architecture
 
-## The vision (one paragraph)
-
-**Endgame:** Self-evolving colony on consumer hardware. Small models. Real actions. Breeding reactor selects what lives.
-
-You built the same shapes research papers describe — by building under pressure. Math agents are the immune system; the LLM is an expensive subroutine inside a cheap deterministic loop, not the organism itself. Read `ENDGAME_VISION.html` (local, not in git) for the full visual breakdown and paper references.
-
----
-
-## What you see
-
-- **5 slots** — each is an OS process running one persona
-- **Slot 1** — `comms_operator` routes work every 20s (no LLM for routing)
-- **Slots 2–5** — workers idle until routed via the blackboard
-- **TUI** — pipeline bars per slot: `S·P·A·V·F`; header shows profile + `think=N` on LLM events
-
-```
-scheduler → planner → actor → verifier → fission_judge → reflector → mutator
+```text
+python tui.py --model-profile nemotron_parallel --gui
+  -> reactor.py
+       s1 comms_operator  fixed MoE router
+       s2 architect       worker
+       s3 implementor     worker
+       s4 reviewer        worker
+       s5 devops          worker
 ```
 
----
+Worker pipeline:
 
-## Before you run
-
-1. LM Studio with nemotron at `localhost:1234`, or `--backend acp`
-2. **Default load:** Max Concurrent Predictions **1**; reasoning stripping **off**
-3. Close stale `tui.py` / `reactor.py` processes
-4. `runtime/comms/` is wiped on TUI start (`sessions/` kept)
-
-### Quick sanity check
-
-```bash
-python tui.py --model-profile nemotron
+```text
+scheduler -> planner -> actor -> verifier -> fission_judge -> reflector -> mutator
 ```
 
-Expect: `5/5 slots`, no respawn loop, `moe.route` on slot 1 after ~20s.
+Coordination is blackboard-only through `comms.py`. Personas do not call each other directly. The comms operator routes with softmax over live pressure telemetry; workers idle until routed or interrupted by a human message.
+
+## Research Map
+
+| Source | Project interpretation |
+|---|---|
+| Multi-Agent Systems are Mixtures of Experts, Bause et al., arXiv:2605.25929, https://arxiv.org/abs/2605.25929 | Route work by observable confidence/power instead of static roles |
+| Exploring Advanced LLM Multi-Agent Systems Based on Blackboard Architecture, Han and Zhang, arXiv:2507.01701, https://arxiv.org/abs/2507.01701 | Shared blackboard, repeated selection/execution, no direct agent chat |
+| Emergent Coordination in Multi-Agent Systems via Pressure Fields and Temporal Decay, Rodriguez, arXiv:2601.08129, https://arxiv.org/abs/2601.08129 | Pressure gradients and temporal decay replace manager hierarchy |
+| AgentBreeder, Rosser and Foerster, arXiv:2502.00757, https://arxiv.org/abs/2502.00757 | Evolutionary scaffold search with safety/capability tradeoffs |
+| Engineering Robustness into Personal Agents with the AI Workflow Store, arXiv:2605.10907, https://arxiv.org/abs/2605.10907 | Real agents need hardened workflows, tests, and traceable reusable behavior instead of only on-the-fly plans |
+
+Note: the requested "Oxford 2026 AgentBreeder" and exact "Beyond the Agentic Loop 2025" labels were not verified on arXiv during the 2026-06-14 review. The verified AgentBreeder paper is arXiv:2502.00757.
+
+## Current Validation
+
+Latest 10-minute validation:
+
+| Item | Result |
+|---|---|
+| Baseline commit before autonomous run | `8cd57b6` (`Remove dead mutator fallback shims`) |
+| Mode | `nemotron_parallel`, GUI mode enabled, LM Studio at `localhost:1234` |
+| Model observed | `nvidia-nemotron-3-nano-4b@q6_k_xl` |
+| Session | `sessions/20260614_112843` |
+| Session events | 728 |
+| LLM responses with reasoning | 46/46 |
+| Planner errors | 1 |
+| Plans | 16 |
+| Confirmed verifications | 7 |
+| Fissions | 5 |
+| Actor ok/fail | 11 ok / 4 fail |
+| MoE routing | 29 routes, 1 escalation |
+| Breeder outcomes | 8 selection outcomes: 4 improve, 3 neutral, 1 regress |
+| Breeder audit | `closed_loop: yes` |
+
+The run also proved selection pressure can reject bad self-modification. The colony patched `plugins/telemetry.py` into a no-op during the run; review removed that dead plugin afterward and kept `plugins/comms_beacon.py` as the protected telemetry source.
+
+## Useful Commands
 
 ```bash
 python comms.py state
 python comms.py breeder
+python -m py_compile reactor.py agents.py comms.py config.py actions.py tui.py
 ```
 
-Human file test:
+If `python` is not on PATH on this machine, use:
 
-```
-@implementor create hello.txt with hello world
-```
-
-Smoke: `python run_test.py 120` · LLM bench: `python llm.py bench`
-
----
-
-## Branches (remote)
-
-```
-unify-rewrite  ← THE work branch (all colony code lives here)
-main           ← older label on same history; GitHub default pointer
+```powershell
+& "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" -m py_compile reactor.py agents.py comms.py config.py actions.py tui.py
 ```
 
-Need a tool-specific session? Branch from `unify-rewrite`:
+## Known Bottlenecks
 
-```bash
-git checkout -b my-session
-```
-
----
-
-## Docs
-
-| File | Audience |
-|------|----------|
-| `README.md` | You — quick start |
-| `KNOWLEDGE.md` | Architecture, blackboard, LLM layer |
-| `AGENTS.md` | **AI handover** — vision, rules, tests, copy-paste prompt |
-
-Local only (not in git): `ENDGAME_VISION.html`, `Codex-log.md`, `lm-studio-server-log.md`
+- Persistent elite archive across reactor restarts is still not implemented.
+- Long-run MAP-Elites convergence is still not proven.
+- Fission judge still has deterministic fallback behavior when LLM output is empty or invalid.
+- Browser plugin startup is currently blocked in this Windows sandbox with `CreateProcessAsUserW failed: 5`; GUI validation was performed through `gui_mode` and `observer.py`, not through the in-app Browser surface.

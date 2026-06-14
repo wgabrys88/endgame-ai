@@ -1,115 +1,79 @@
-# KNOWLEDGE — endgame-ai Colony
+# KNOWLEDGE - endgame-ai Colony
 
-Architecture and protocol reference. Humans: `README.md`. AI tools: **`AGENTS.md` first**, then this file when editing `comms.py`, `engine.py`, `llm.py`, or schemas.
+Technical reference for agents editing the colony. Read `AGENTS.md` first, then this file when touching `comms.py`, `engine.py`, `agents.py`, `reactor.py`, `llm.py`, prompts, schemas, or plugins.
 
-**Tip:** `unify-rewrite` @ `2b20732` — reasoning + KV-stable prompts (2026-06-14).
+## Verified Research Inputs
 
-## Process tree
+The 2026-06-14 web review found these authoritative or closest matching sources:
 
+| Source | Mechanism | Code mapping |
+|---|---|---|
+| arXiv:2605.25929, https://arxiv.org/abs/2605.25929, "Multi-Agent Systems are Mixtures of Experts: Who Becomes an Influencer?" | Multi-agent deliberation behaves like input-dependent MoE; routing should reflect observable competence/confidence | `comms.softmax_route()`, `engine._moe_route()` |
+| arXiv:2507.01701, https://arxiv.org/abs/2507.01701, "Exploring Advanced LLM Multi-Agent Systems Based on Blackboard Architecture" | Agents share state through a blackboard; action selection is based on blackboard contents and repeats until consensus | `comms.py`, `runtime/comms/messages.json`, `runtime/comms/events_bus.jsonl` |
+| arXiv:2601.08129, https://arxiv.org/abs/2601.08129, "Emergent Coordination in Multi-Agent Systems via Pressure Fields and Temporal Decay" | Pressure gradients outperform hierarchy in the cited meeting-room benchmark: 48.5% vs 1.5% aggregate solve rate | `engine._update_pressure()`, pressure fields in telemetry payloads |
+| arXiv:2502.00757, https://arxiv.org/abs/2502.00757, "AgentBreeder" | Multi-objective self-improving evolutionary search over scaffolds; safety and capability both matter | `agents.MutatorAgent`, `reactor.process_evolve_candidates()`, selection trials |
+| arXiv:2605.10907, https://arxiv.org/abs/2605.10907, "Engineering Robustness into Personal Agents with the AI Workflow Store" | Robust agents need hardened workflows, reusable behavior, deterministic checks, and traceability | py_compile gates, schemas, session JSONL, breeder evidence |
+
+The exact labels "Oxford 2026 AgentBreeder" and "Beyond the Agentic Loop 2025" were not verified from the public web search; docs should use the verified arXiv facts above.
+
+## Process Tree
+
+```text
+python tui.py --model-profile nemotron_parallel --gui
+  -> reactor.py
+       s1 comms_operator  fixed MoE router
+       s2 architect       worker slot
+       s3 implementor     worker slot
+       s4 reviewer        worker slot
+       s5 devops          worker slot
 ```
-python tui.py --model-profile nemotron [--gui]
-  └── reactor.py
-        ├── s1 comms_operator  (MoE router, fixed)
-        ├── s2 architect
-        ├── s3 implementor
-        ├── s4 reviewer
-        └── s5 devops
+
+Slot 1 is never reassigned. Slots 2-5 can respawn or be reassigned by MoE escalation.
+
+## Control Loop
+
+`engine.run()` owns the persona loop:
+
+```text
+interrupt check
+plugin hot-swap
+pressure update
+MoE route if comms_operator
+scheduler -> planner -> actor -> verifier -> fission_judge -> reflector -> mutator
 ```
 
-## Five research pillars → code
+The model is called only by planner, verifier, fission judge, reflector, and mutator. Routing, pressure, plugin execution, breeder scoring, bus persistence, and process management are deterministic Python.
 
-| Paper | Concept | Implementation |
-|-------|---------|----------------|
-| MoE (Bause 2026) | Softmax gating | `engine._moe_route()` + `comms.softmax_route()` |
-| Blackboard (CAS 2025) | Shared coordination | `comms.py` v1 |
-| Pressure fields (Rodriguez 2026) | Stagnation, escalation | `engine._update_pressure()` |
-| AgentBreeder (Oxford 2026) | Evolution scaffold | reflector, mutator, reactor elites/trials |
-| Orchestrator pattern | One LLM gate | `LLM_MAX_CONCURRENT=1` + `runtime/.lmstudio.lock` |
+## Blackboard Protocol
 
-## LLM layer (`llm.py`, `agents.py`, `config.py`)
+Protocol version: v1.
 
-### Prompt shape (KV-stable)
+Envelope fields:
 
-| Message | Contents | Must NOT contain |
-|---------|----------|------------------|
-| **system** | Static role prompt (`prompts/<role>.txt`) | Persona, bus, goal, JSON schema |
-| **user** | Schema contract header + task state | — |
-
-Helpers: `_stable_system()`, `_user_with_schema()`, `_SCHEMA_USER_HEADERS` in `agents.py`.
-
-### Reasoning capture
-
-- `call_llm()` returns `LLMResult(text, reasoning, reasoning_tokens, …)`
-- Sources: API `reasoning_content`, `` blocks, JSON preamble before `{`
-- Logged: `llm.request`, `llm.response`, and phase events (`plan`, `verify`, `reflect`, `mutate`, `fission`) via `_llm_event_data()`
-- Cap: `LLM_REASONING_LOG_MAX` (default 12000 chars in session JSONL)
-
-### Reasoning-aware prompts
-
-- **System** (`prompts/<role>.txt`): role rules + "reasoning trace vs JSON output" split
-- **User** (`_user_with_schema`): `_REASONING_CONTRACT` + schema header + task state
-- **Personas** (`prompts/personalities/*.txt`): one line — reasoning logged, JSON is output only
-
-### LM Studio API parameters (all wired in `llm.call_llm`)
-
-| Parameter | nemotron | Purpose | Tuning note |
-|-----------|----------|---------|-------------|
-| `messages` | system + user | KV-stable system; dynamic user | — |
-| `temperature` | 0.12 | JSON reliability | Lower = more deterministic; avoid >0.3 for structured work |
-| `top_p` | 0.88 | nucleus sampling | Slightly below 1.0 reduces rambling |
-| `top_k` | 40 | tail cutoff | 20–40 typical for Nemotron |
-| `max_tokens` | role `BUDGET` | Output cap | Separate from `thinking_budget` |
-| `thinking_budget` | role `THINKING_BUDGET` | Reasoning tokens | Planner highest; verifier lowest |
-| `enable_thinking` | true | Reasoning channel | Requires LM Studio reasoning stripping **off** |
-| `stream` | false | Full response parse | Must stay false for colony |
-| `stop` | `[]` | Early stop sequences | Empty — JSON schema handles shape |
-| `presence_penalty` | 0.0 | Repeat topic penalty | Keep 0 — JSON keys repeat legitimately |
-| `frequency_penalty` | 0.0 | Repeat token penalty | Keep 0 for JSON |
-| `repeat_penalty` | 1.06 | llama.cpp anti-loop | 1.05–1.08 sweet spot |
-| `seed` | 3407 | Reproducibility | -1 = random per call |
-| `logit_bias` | `{}` | Token forcing | Unused; reserve for emergency token suppression |
-| `response_format` | off (`LLM_API_SCHEMA=false`) | Constrained JSON | On = faster JSON, kills `reasoning_content` |
-
-Logged on `llm.request`: temperature, top_p, top_k, max_tokens, thinking_budget, seed, concurrent_gate, global_lock.
-
-### Nemotron profile flags
-
-| Key | Value | Notes |
-|-----|-------|-------|
-| `LLM_API_SCHEMA` | `false` | Schema in user message; reasoning in `reasoning_content` |
-| `LLM_THINKING_ENABLED` | `true` | Per-role `THINKING_BUDGET` |
-| `LLM_MAX_CONCURRENT` | `1` | Match LM Studio Max Concurrent Predictions |
-| `LMS_USE_GLOBAL_LOCK` | `true` | Cross-process lock at `runtime/.lmstudio.lock` |
-| `nemotron_parallel` | MC=5, lock off | **Experimental** — validated 2026-06-14 |
-
-**Open (not settled):** Whether to enable API schema for stricter JSON at the cost of empty reasoning; whether every pipeline stage should attach full reasoning to bus mirror; whether Unified KV Cache helps when MC=1 (user disabled it — hypothesis: Unified KV mainly helps parallel slots).
-
-### JSON extraction
-
-`extract_json()` strips thinking, then `json.JSONDecoder().raw_decode()` for first object (handles preamble + trailing prose).
-
-## Blackboard protocol v1
-
-**Envelope:** `v, id, ts, from, slot, kind, pri, text, payload` — schema `schemas/bus_v1.json`
-
-### Stores
-
-| File | Layer | Trim |
-|------|-------|------|
-| `runtime/comms/messages.json` | Intent | 200 |
-| `runtime/comms/events_bus.jsonl` | Observation | 500 |
-| `runtime/comms/control.jsonl` | Reactor commands | drained 5s |
-| `runtime/comms/inject.jsonl` | Human/TUI | drained each cycle |
-
-### Key kinds
-
-`message`, `ping`, `request`, `route`, `telemetry`, `event`, `evolve`, `verdict`, `status`
-
-MoE: `colony_state()`, `softmax_route()`, `route()`, `post_control()`, `human_task_active()`
-
-## Pressure math
-
+```text
+v, id, ts, from, slot, kind, pri, text, payload, optional mentions, optional to
 ```
+
+Stores:
+
+| File | Meaning |
+|---|---|
+| `runtime/comms/messages.json` | Intent: messages, requests, routes, evolve candidates, status |
+| `runtime/comms/events_bus.jsonl` | Observation: telemetry and mirrored phase events |
+| `runtime/comms/control.jsonl` | Reactor commands |
+| `runtime/comms/inject.jsonl` | Human/TUI injection |
+
+Important kinds:
+
+```text
+message, ping, request, route, telemetry, event, beacon, evolve, verdict, status
+```
+
+## Pressure Math
+
+Implemented in `engine._update_pressure()`:
+
+```text
 fail_pressure = min(1.0, failures * 0.15)
 time_pressure = min(1.0, max(0, since_fission - 60) / 240)
 stagnation = min(1.0, fail_pressure * 0.6 + time_pressure * 0.4)
@@ -117,81 +81,138 @@ velocity = prev_stag - stagnation
 power = 1.0 - stagnation
 ```
 
-**Stuck:** `stag >= 0.7` AND `|vel| <= 0.01` for 5 MoE cycles → escalate + reassign.
+Escalation condition:
 
-## AgentBreeder loop
-
-```
-verifier denial → reflector → mutator (≥ MUTATE_AFTER_FAILURES)
-  → patch_plugin → post_evolve → reactor breed.elite / breed.evict / trial
-  → after BREED_TRIAL_EVAL_SECONDS: breed.improve | breed.regress | breed.neutral
+```text
+stagnation >= STAG_ESCALATE
+and abs(velocity) <= VEL_STUCK
+for STUCK_TICKS_ESCALATE MoE cycles
 ```
 
-Audit: `python comms.py breeder`
+## Breeder Loop
 
-## Prompt ↔ schema
+Verifier/fission/mutation events produce `evolve` entries through `comms.post_evolve()`.
 
-| Stage | Prompt | Schema (user header + optional API) |
-|-------|--------|-------------------------------------|
-| planner | `prompts/planner.txt` | `schemas/planner.json` |
-| verifier | `prompts/verifier.txt` | `schemas/verifier.json` |
-| reflector | `prompts/reflector.txt` | `schemas/reflector.json` |
-| mutator | `prompts/mutator.txt` | `schemas/mutator.json` |
-| fission_judge | `prompts/fission_judge.txt` | `schemas/fission_judge.json` |
+Reactor behavior:
 
-Personas: `prompts/personalities/*.txt` — in **user** message only.
+```text
+evolve retain/evict/patch_plugin
+  -> update elite archive
+  -> retain/evict survivor state
+  -> start selection trial for retain and patch_plugin
+  -> sample telemetry after BREED_TRIAL_EVAL_SECONDS
+  -> emit breed.improve / breed.regress / breed.neutral
+  -> feed outcome back into survivor fitness
+```
 
-## Event phases (session JSONL)
+Current scoring fields on outcome events:
 
-Path: `sessions/<timestamp>/events-child-sN.jsonl`
+```text
+trial_id, trial_action, sample, max_samples,
+baseline_stagnation, current_stagnation, stagnation_delta,
+baseline_power, current_power, power_delta,
+baseline_fissions, current_fissions, fission_delta
+```
 
-| Tier | Phases |
-|------|--------|
-| Pillar | `moe.route`, `pressure`, `plan`, `actor`, `verify`, `fission`, `reflect`, `mutate` |
-| LLM debug | `llm.request`, `llm.response`, `prompt_signature`, `prompt_drift` |
-| Breeder | `evolve` (bus), reactor `breed.*` |
-
-Bus mirror skips: `schedule`, `plugin.telemetry`, `plugin.web_sentinel`
-
-## Model profiles
+Audit command:
 
 ```bash
-python tui.py --model-profile nemotron
-python llm.py bench
+python comms.py breeder
 ```
 
-**nemotron (optimized):** temp 0.15, seed 3407, thinking_budget 1536, `LLM_API_SCHEMA=false`, role budgets in `config.BUDGET`.
+Current proof from `runtime/comms/events_bus.jsonl` after `sessions/20260614_112843`:
 
-**LM Studio (manual):** MC=1 + reasoning stripping off for default `nemotron`.
-
-### Parallel LLM (experimental `nemotron_parallel`)
-
-The blackboard makes parallel inference plausible: slots wake on independent inbox messages.
-
-```bash
-python tui.py --model-profile nemotron_parallel
+```text
+evolve: 8 evict=5 retain=3
+breed: 21
+selection outcomes: 8 breed.improve=4 breed.neutral=3 breed.regress=1
+best_stagnation_delta=0.0900
+best_power_delta=0.0900
+fission_delta_total=5
+repeated_samples=6
+closed_loop: yes
 ```
 
-| Colony | LM Studio (required) |
-|--------|----------------------|
-| `LLM_MAX_CONCURRENT=5` | Max Concurrent Predictions **5** |
-| `LMS_USE_GLOBAL_LOCK=false` | Unified KV Cache **on** (recommended for MC>1) |
-| Lower per-role `BUDGET` / `THINKING_BUDGET` | More VRAM per slot |
+## LLM Layer
 
-**Validated** (`sessions/20260614_032059`, tip `52b47a0+`): 4 min, 5 human injects → 29 `llm.request`, 26/26 reasoning, **0 planner errors**, 3 verify confirmed, 2 fissions, all 5 slots. Planner `THINKING_BUDGET=1536` + strict `sequence[].code` Python rules. TUI shows profile tag + `think=N` on plan/llm.response.
+Stable system prompts are loaded by role from `prompts/*.txt`. Persona text, goal, schema contract, pressure, GUI observation, history, and bus context go in the user message.
 
-Use `nemotron_parallel` for multi-`@persona` bursts; `nemotron` (MC=1) for idle maintenance.
+Key files:
 
-## GUI mode
+| Concern | File |
+|---|---|
+| Backend, reasoning capture, LM Studio/ACP | `llm.py` |
+| Prompt assembly and pipeline agents | `agents.py` |
+| Model profiles and budgets | `config.py` |
 
-| Mode | Trigger | Behavior |
-|------|---------|----------|
-| Safe (default) | no `gui_mode` file | Declines GUI goals |
-| GUI | `--gui`, `g`, or `enable_gui()` | `observer.py` context in planner user message |
+Important profile facts:
 
-## Not built yet
+| Profile | Concurrency | Lock | Schema mode |
+|---|---:|---|---|
+| `nemotron` | 1 | global lock on | schema in user message, API schema off |
+| `nemotron_parallel` | 5 | global lock off | schema in user message, API schema off |
 
-- Consistent multi-cycle `breed.improve` (GOAL)
-- LLM fission_judge (deterministic fallback only)
-- KV/Unified-KV A/B evidence for MC=1 workload
-- Persistent elite archive across reactor restarts
+Reasoning is captured in `LLMResult.reasoning` and mirrored in session JSONL phase data. The 10-minute run produced 46 `llm.response` events and all 46 had reasoning.
+
+## GUI Mode
+
+Default is safe mode: no `gui_mode` file. GUI mode is enabled by `--gui`, `g` in TUI, or `enable_gui()`.
+
+When GUI mode is enabled:
+
+- `agents._desktop_context()` calls `observer.observe()`.
+- planner user messages receive focused window and UI element context.
+- `actions.py` can use desktop verbs through `desktop.py`.
+
+The Browser plugin was attempted during the 2026-06-14 continuation but the in-app Browser runtime could not start in this Windows sandbox (`CreateProcessAsUserW failed: 5`). The 10-minute GUI validation still used the project GUI path through `gui_mode` and `observer.py`.
+
+## Plugins
+
+Current tracked plugins:
+
+| Plugin | Role |
+|---|---|
+| `plugins/comms_beacon.py` | Protected telemetry beacon, posts pressure snapshots |
+| `plugins/fission_log.py` | Plugin-local fission memory, no file writes |
+| `plugins/lessons_decay.py` | Lessons aging |
+| `plugins/web_sentinel.py` | Protected connectivity sentinel |
+
+Removed after validation:
+
+- `plugins/telemetry.py`: the autonomous run patched it into a no-op; it was removed as a dead secondary telemetry path because `comms_beacon.py` is the real telemetry source.
+
+Mutation safety:
+
+- Mutator schema allows only `patch_plugin` or `none`.
+- Plugin creation is not allowed.
+- Existing plugin patches are AST checked, py_compile checked, and restricted to plugin-local writes.
+- Protected plugins: `comms_beacon.py`, `web_sentinel.py`.
+
+## Validation Record
+
+10-minute run on 2026-06-14:
+
+| Metric | Value |
+|---|---:|
+| Baseline commit before run | `8cd57b6` |
+| Profile | `nemotron_parallel` |
+| GUI mode | on |
+| LM Studio model | `nvidia-nemotron-3-nano-4b@q6_k_xl` |
+| Session | `sessions/20260614_112843` |
+| Total child events | 728 |
+| Planner errors | 1 |
+| LLM responses | 46 |
+| LLM responses with reasoning | 46 |
+| Plans | 16 |
+| Confirmed verifies | 7 |
+| Fissions | 5 |
+| Actor results | 11 ok / 4 fail |
+| MoE routes/escalations | 29 / 1 |
+| Breeder selection outcomes | 8 |
+
+## Still Not Proven
+
+- Persistent elite archive across reactor restarts.
+- Long-run MAP-Elites convergence.
+- Full removal of all deterministic LLM-output fallbacks; fission/reflection still retain safety fallbacks.
+- Browser-plugin validation in this desktop sandbox.
