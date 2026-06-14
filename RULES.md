@@ -70,7 +70,7 @@ DESKTOP IS THE ORGANISM (main vision — Bukowski spec):
   observer.py + win32.py + actions.py (~950 lines) = see, act, verify on real Windows.
   main proved M4: self-launch, exec metabolism, Notepad/Opera/LinkedIn, spawn_main posterity.
   Colony must keep the SAME desktop path — not optional, not a fork.
-  Desktop + metabolism always on — no safe/sandbox toggles (removed).
+  Desktop + metabolism always on. No code immune system — goal + personalities self-regulate.
   planner_gui + actor LLM + ObserverAgent = movement + observation circuits.
 
 ACTOR PATHS (unified — one ActorAgent):
@@ -228,6 +228,19 @@ tui.py = optional face
 ```
 
 **Work slowly:** delete bloat ledger items, merge JsonRoleAgent pattern, never amputate desktop or bus. One organism, scale 1 (`main`) or scale 5 (colony).
+
+### No code immune system — goal is the safety
+
+There is no `--safe`, no protected-file list, no mutation sandbox, no GUI decline path.
+
+Safety emerges from **many stupid personalities + one shared goal**:
+- Each rod evaluates ACTIVE_TASK against its expertise (personality system prompt).
+- comms_operator routes via MoE when slots are free — parallelism without central dictation.
+- Rods coordinate only via bus wiring; they read others' posts and self-select.
+- Verifier + fission_judge are **personalities** (LLM circuits), not deterministic blocklists.
+- The colony approaches goal completion and avoids self-destruction because **the goal shapes decisions**, not because Python forbids `log.py` writes.
+
+One person may be stupid. Many persons pursuing a goal become coherent.
 
 ---
 

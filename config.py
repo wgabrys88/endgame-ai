@@ -207,7 +207,6 @@ STAG_ESCALATE: float = 0.7       # stagnation threshold for band escalation
 VEL_STUCK: float = 0.01          # |velocity| below this = no progress
 STUCK_TICKS_ESCALATE: int = 5    # consecutive stuck telemetry readings before reassign
 MOE_GATE_MIN: float = 0.10       # minimum softmax weight to route maintenance work
-HUMAN_GOAL_MAX_DENIALS: int = 3  # stop replanning human pri=3 goals after N verify denials
 PLANNER_ERROR_RAW_MAX: int = 2000  # session log cap for planner.error LLM raw
 
 # --- Breeding / AgentBreeder selection ---

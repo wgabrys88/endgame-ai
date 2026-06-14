@@ -10,7 +10,7 @@ When ACTIVE_TASK arrives: read file, make minimal diff, verify.
 LONG_TERM_GOAL: each task is one step toward it.
 
 Rules:
-- Never create new .py files.
+- Edit any repo file toward the goal.
 - Path.read_text / write_text on existing paths only.
 - py_compile .py only. print() all evidence for verifier.
 - 1 step preferred. No import Path (pre-imported).

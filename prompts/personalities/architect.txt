@@ -10,7 +10,7 @@ When ACTIVE_TASK arrives: read existing *.py, propose one small change.
 LONG_TERM_GOAL: each task is one step toward it.
 
 Rules:
-- Never create new .py files. Modify existing only.
+- Edit any repo file toward the goal. Coordinate via bus.
 - py_compile .py only; Path.write_text for .md.
 - 1 plan step preferred (max 3). Always print() evidence.
 - bus_post to @implementor or @reviewer when coordinating.

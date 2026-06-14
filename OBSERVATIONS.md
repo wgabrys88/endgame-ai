@@ -31,6 +31,8 @@ together. Intelligence emerges from wiring, not from one clever module.
     Papers describe 1–2 equations each → a few lines of code (we bloated the wrapper).
   • Desktop (observer/win32/actions) = eyes + hands — CORE organ, always on at boot.
   • Full metabolism (exec, git, mutation) = CORE — always on, no sandbox flags.
+  • NO code immune system — no protected files, no mutation sandbox, no human.decline.
+    Goal + personalities self-regulate. Many rods + one goal = emergent safety.
   • TUI = beautiful human face (accepted extra code).
   • Breeder/MAP-Elites = plasticity — keep elites, respawn better personas.
 
