@@ -1,262 +1,119 @@
-# OBSERVATIONS.md
+# OBSERVATIONS.md — AI handover (only tracked doc)
 
-**AI-facing doc (git-tracked).** § COLD-START HANDOVER is the only briefing for tools with zero context. Update it on every behavior-changing commit (see `RULES.md`).
+**Branch:** `bare-metal` · **HEAD:** update on every commit · **Rollback tags:** `unify-cut-0`, `unify-cut-1`
 
-Humans: read `README.md`.
-
----
-
-## COLD-START HANDOVER PROMPT
-
-**Last updated:** 2026-06-14 · **Branch:** `bare-metal` · **Vision:** RULES.md § VISION · **HEAD:** `79832c4` unify-cut-1 — schemas gone, agents unified
-
-Copy **RULES.md § SYSTEM CORE** + **§ VISION**. Then this handover:
+Copy everything inside the block below into a zero-context AI session (Codex, etc.).
 
 ```text
 ═══════════════════════════════════════════════════════════════════
- PROJECT GOAL — what we are building (read this first)
+ ENDGAME-AI — meta vision & your job
 ═══════════════════════════════════════════════════════════════════
 
-endgame-ai is a LIVING ORGANISM on Windows — not an agent framework.
+We are building a LIVING ORGANISM on Windows — not an agent framework.
 
-Like a brain: simple specialized areas (observation, reasoning, hands) wired
-together. Intelligence emerges from wiring, not from one clever module.
+Brain metaphor: simple specialized areas (observe, reason, act) wired together.
+Intelligence emerges from wiring + goal, not from one clever module or Python guards.
 
-  • Reactor rods = main.py instances, each running ONE personality (system prompt).
-  • Personalities are LLM identities — they evaluate goals, not just execute them.
-    A goal may be "not my job"; they say so on the bus and wait.
-  • Bus (comms.py) is WIRING between areas — event-driven pathways, NOT memory.
-    Rods never call each other; they post/read. Human pri=3 visible to all rods.
-  • Deterministic Python = connective tissue: MoE softmax, pressure math, routing.
-    Papers describe 1–2 equations each → a few lines of code (we bloated the wrapper).
-  • Desktop (observer/win32/actions) = eyes + hands — CORE organ, always on at boot.
-  • Full metabolism (exec, git, mutation) = CORE — always on, no sandbox flags.
-  • NO code immune system — no protected files, no mutation sandbox, no human.decline.
-    Goal + personalities self-regulate. Many rods + one goal = emergent safety.
-  • TUI = beautiful human face (accepted extra code).
-  • Breeder/MAP-Elites = plasticity — keep elites, respawn better personas.
+YOUR JOB: shrink code toward ~3.5k LOC while keeping the science and desktop organ.
+Each paper = one or two equations → a few lines of deterministic Python.
+Delete wrappers, fallbacks, strict schemas, smokes, display bloat, immune-system checks.
+Personalities + one shared goal self-regulate — no code blocklists.
 
-Colony = 5 rods + comms_operator (thalamus/MoE) + reactor parent.
-main branch = same organism, scale=1.
+═══════════════════════════════════════════════════════════════════
+ PAPERS (read before changing behavior)
+═══════════════════════════════════════════════════════════════════
 
-Personality = prompts/personalities/{name}.txt (entire system prompt).
-Circuits (planner/actor/verifier) = user-message instructions only.
+1. MoE routing — Bause 2026
+   https://arxiv.org/abs/2605.25929
+   Code: comms.softmax_route, engine._moe_route (comms_operator only)
+   Math: power = confidence; softmax over worker powers → route assignment
 
-Target: ~3.5k LOC unified OoO. Delete bloat, keep science + desktop + bus.
+2. Pressure / stagnation — Rodriguez 2026
+   https://arxiv.org/abs/2601.08129
+   Code: engine._update_pressure, board["_pressure"], comms.post_telemetry
+   Math: stagnation ramps with failures + time since fission; power = 1 - stagnation
 
-PAPERS: Bause https://arxiv.org/abs/2605.25929 | Rodriguez https://arxiv.org/abs/2601.08129
-        MAP-Elites https://arxiv.org/abs/1504.04909 | ReAct https://arxiv.org/abs/2210.03629
+3. Quality-diversity elites — MAP-Elites
+   https://arxiv.org/abs/1504.04909
+   Code: reactor.Breeder, breed_archive.json, comms.post_evolve, process_evolve_candidates
 
-RUN (human — full system):
-  python -c "import log; log.cleanup_runtime(deep=True)"
-  python tui.py "Your long-term goal in one sentence"
+4. Plan–act–observe loop — ReAct (conceptual)
+   https://arxiv.org/abs/2210.03629
+   Code: agents pipeline scheduler→planner→actor→verifier→fission_judge→reflect→mutate
+
+5. Blackboard / stigmergy (classical MAS — no single paper)
+   Code: comms.py messages.json + events_bus.jsonl; bus-only between slots
+
+═══════════════════════════════════════════════════════════════════
+ ARCHITECTURE (same organism, scale 1 vs 5)
+═══════════════════════════════════════════════════════════════════
+
+One instance = main.py → engine.run(board) → agent pipeline.
+Colony = 5× identical main.py + comms blackboard + reactor parent. NOT a rewrite.
+
+Topology:
+  tui.py → subprocess reactor.py
+    slot1 = comms_operator (MoE thalamus)
+    slots2-5 = workers (breedable personas)
+    each slot: subprocess main.py — same code, different personality .txt
+
+Personality = prompts/personalities/{name}.txt (full SYSTEM prompt).
+Circuits = prompts/planner.txt etc. (short hints in USER message only).
+Loose JSON hints in agents._CIRCUIT_HINTS — NOT strict schemas (deleted).
+
+Desktop organ (KEEP): observer.py + win32.py + actions.py — see + act on Windows.
+Metabolism (KEEP): exec, git, plugin mutation — always on, no sandbox flags.
+NO code immune system — goal + personalities regulate; verifier reads evidence.
+
+Bus = wiring only. Rods post/read comms; never call sibling processes.
+
+═══════════════════════════════════════════════════════════════════
+ CODE PATH (read in this order)
+═══════════════════════════════════════════════════════════════════
+
+comms.py   — bus protocol (~400 LOC core; trim mirrors/CLI next)
+engine.py  — loop, pressure, MoE, plugins hot-swap
+agents.py  — unified _call_circuit / _parse_json, one text-step planner
+reactor.py — spawn slots, MAP-Elites archive, evolve candidates
+main.py    — one personality instance entry
+tui.py     — human face (display bloat — trim, don't delete entirely)
+llm.py     — LM Studio backend (swappable)
+
+═══════════════════════════════════════════════════════════════════
+ LAWS (slimming)
+═══════════════════════════════════════════════════════════════════
+
+L1. No new .py files — merge inward.
+L2. Delete before add — net LOC must shrink each pass.
+L3. One LLM pattern (_call_circuit) for all roles; no AST zoo.
+L4. Keep desktop stack; shrink elsewhere.
+L5. Never commit runtime/ or sessions/.
+L6. Update this file (HEAD + handover) on every behavior-changing commit.
+
+═══════════════════════════════════════════════════════════════════
+ SIZE TARGET
+═══════════════════════════════════════════════════════════════════
+
+Target ~3,500 LOC Python total:
+  wiring ~2,300 (bus + engine + reactor + agents + llm/config/log)
+  desktop ~950 (observer + win32 + actions)
+  prompts/plugins data ~200
+
+Delete next: tui display, comms bus_* shims, acp_client if LMStudio-only.
+
+═══════════════════════════════════════════════════════════════════
+ RUN (human)
+═══════════════════════════════════════════════════════════════════
+
+python -c "import log; log.cleanup_runtime(deep=True)"
+python tui.py "Your long-term goal in one sentence"
 
 Requires: LM Studio localhost:1234, nemotron-3-nano-4B, profile nemotron_parallel.
 
 COMPILE (no LLM):
   python -m py_compile tui.py reactor.py main.py engine.py agents.py comms.py
 
-CODE PATH: comms.py → engine.py → agents.py → reactor.py → main.py → tui.py
-
-NOT IN GIT: runtime/, sessions/
+NOT IN GIT: runtime/, sessions/, events*.jsonl
 ```
 
----
-
-## Traceback audit: main vs bare-metal (2026-06-14)
-
-### Why bare-metal feels "enormous" vs main
-
-| | `main` | `bare-metal` (now) |
-|--|--------|-------------------|
-| **Files** | 24 | **42** |
-| **Lines** | ~3,656 | **~7,162** |
-| **Instances** | 1× `main.py` + `engine.run` | 5× same + reactor |
-| **Processes** | 1 (+ math thread) | 5 slots + reactor |
-| **Bus** | snapshot.json | comms blackboard |
-| **Breeding** | none | reactor MAP-Elites |
-| **Actor** | execute_verb + GUI | unified code/text/GUI (**recovered**) |
-| **Agents** | stagnation/lorenz/pid + Observer | fission_judge + mutator + MoE |
-| **llm.py** | 118 lines | 358 lines |
-
-**Same architecture, scale=1 vs scale=5.** Bare-metal is ~2× lines for multi-process wiring plus ~2.5k bloat (see RULES bloat ledger). Actor capability regressed despite desktop files still present.
-
-### Traceback from `python tui.py` (critical path)
-
-```text
-tui.py ──subprocess──► reactor.py ──spawn×5──► main.py
-                                              └── Personality.from_env()
-                                              └── engine.run(board)
-                                                    └── agents.* (1524 lines — bloat #1)
-                                                    └── comms bus
-                                                    └── plugins/*
-llm.py ◄── agents (358 lines after strip — was 68% benchmark dead weight)
-```
-
-### Dead weight removed this pass
-
-| Item | Savings |
-|------|---------|
-| `llm.py` benchmark block | ~970 lines |
-| `colony_env.py` → `comms.py` | 1 file |
-| `desktop.py` → `actions.py` | 1 file |
-| Dead functions (`kill_children`, `gui_default_enabled`, …) | small |
-
-### Remaining bloat (in-file, next passes)
-
-| Module | Lines | Issue |
-|--------|------:|-------|
-| `agents.py` | 1524 | Monolith: validators + mutation + smokes + 7 agent classes |
-| `reactor.py` | 950 | Breeding + spawn + smokes in one module |
-| `comms.py` | 888 | Bus + mirror + actor sandbox + CLI |
-| `tui.py` + `comms.py` | — | Duplicate `_brief()` formatting |
-
-### OOP target (no new .py files per RULES)
-
-```text
-config.Personality     — done (dataclass slots=True)
-engine.AgentContext    — personality + board, passed to pipeline steps
-reactor.Breeder        — class inside reactor.py (archive, trials, evolve)
-agents.Pipeline        — optional: collapse JsonRoleAgent pattern for 4 roles
-```
-
-Personalities stay **prompt files + Personality instance** — not six subclasses. Slot = process boundary; Personality = identity object inside process.
-
----
-
-## Methodology
-
-### Evidence (local, gitignored)
-
-1. `sessions/<id>/events-reactor.jsonl` — breeder
-2. `sessions/<id>/events-child-s1..s5.jsonl` — workers
-3. `runtime/comms/messages.json` — blackboard
-4. `runtime/breed_archive.json` — survivors
-
-### Poll protocol
-
-| Situation | Wait |
-|-----------|------|
-| Simple file task | 30–45s |
-| Multi-step / git | 90–120s |
-| Planner LLM active | ≥45s |
-| Stuck loop | 3–5 min or new task |
-
-### Session close (append to log below)
-
-One table row + 5–15 lines: what worked, what failed, files to change together.
-
-### Human / bus rules
-
-- TUI posts `from=human`, pri=3 — no `@human` in body.
-- pri=3 delivers without `@colony` (`comms.inbox_match`).
-- Declines use pri=0 + `human_ack` (not pri=3).
-
-### Wiring reference (current)
-
-| Component | Role |
-|-----------|------|
-| `comms.apply_interrupt` | Single interrupt path |
-| `comms.set_colony_goal` | Codex-style persistent goal |
-| `engine._moe_route` | Routes `maintenance_goal_text()` |
-| `_restore_after_human_task` | After human verify → idle → MoE |
-
----
-
-## Session log
-
-Append only. No golden archives in git — summaries live here.
-
-| Session | Duration | Events | Headline | Notes |
-|---------|----------|--------|----------|-------|
-| `dev-milestone-20260614` | — | — | **DEV BASELINE** | Slim repo, Codex goal startup, RULES.md, OBSERVATIONS handover |
-| *(flush 2026-06-14)* | — | — | Repo slimmed `3a30c9a` | Golden artifacts removed from git |
-| `20260614_201915` | ~23m | ~2250 | **Partial win, elite wipe** | Killed 20:43. See forensics below. |
-| `bare-metal` v1 | — | 44→42 | **File strip** | lessons, run_test, 3 schemas |
-| `bare-metal` v2 | — | 42 / ~7k lines | **Code strip** | llm benchmark, colony_env+desktop merge, Personality OoO |
-| `bare-metal` v3 | — | 42 files | **OoO refactor** | AgentContext, Breeder, verifier dedup, shared _brief |
-| `bare-metal` v4 | ~45s | ~80 bus | **Vision + live boot** | RULES § VISION; desktop organ; reactor 5 slots OK; LLM 400 (no model) |
-| `bare-metal` v5 | — | — | **Sandbox + immune strip** | `0d0411c` safe flags; `9c89792` protected-file/mutation gates removed |
-| *(flush 2026-06-14)* | — | — | **Runtime clean, ready to run** | `cleanup_runtime(deep=True)`; handover synced; no Python procs |
-| `bare-metal` v6 | — | — | **Unify slim pass 1** | schemas deleted; one planner; loose JSON; smokes removed; agents ~800 LOC |
-
-### Session `20260614_vision_boot` (2026-06-14, agent solo boot)
-
-**Command:** `reactor.py --unconstrained --goal "maintenance: print ok on bus"` after `cleanup_runtime`.
-
-**Wiring OK:** reactor posted colony_goal; all 5 slots booted; comms_operator MoE routed `@architect`; workers reached `schedule→planner`; `planner.pending mode=gui` on architect (desktop organ active).
-
-**Blocked:** `llm_fail HTTP 400` on all slots — LM Studio unreachable or wrong model/schema. Deterministic layer (bus, spawn, pressure telemetry, MoE) healthy without LLM.
-
-**Next:** slim bloat ledger; unify JsonRoleAgent; personality-as-single-system-prompt merge.
-
-### Session `20260614_201915` forensics (2026-06-14, killed by operator)
-
-**Run:** `python tui.py` with colony goal (breed.improve + notepad progress). Profile `nemotron_parallel`, open/unconstrained, GUI. Span 18:19–18:43 UTC.
-
-**Evidence files (local, gitignored):**
-
-| File | Lines | Role |
-|------|-------|------|
-| `events-reactor.jsonl` | 141 | 15× `breed.improve`, 40× `breed.evict`, 66× archive saves |
-| `events-child-s1.jsonl` | 656 | MoE/comms — 426× `plugin.fission_log` poll (stag=0.67 idle) |
-| `events-child-s2.jsonl` | 533 | architect — 122× `schedule→planner (need_plan)` spin |
-| `events-child-s3.jsonl` | 491 | implementor — primary worker (plan/actor/verify) |
-| `events-child-s4.jsonl` | 439 | reviewer — 167× need_plan spin |
-| `events-child-s5.jsonl` | 69 | quality_critic — ended on `Unblock work stalled at @devops` |
-
-**What worked**
-
-- Codex goal persisted in `runtime/colony_goal.txt`.
-- **implementor (s3)** got verifier **confirmed** for: OBSERVATIONS.md milestone note, notepad opened, note written (18:37–18:39).
-- **breed.improve** fired 15× in reactor (git status, notepad, OBSERVATIONS filenames); implementor elite retained mid-run (fitness 0.96).
-- **fission.deny** gate worked (4 denials; e.g. bus-only reactor.py claims blocked).
-- **human.decline** correctly fired on vague pri=3 tasks after max retries (8 total across slots).
-
-**What failed (root causes)**
-
-1. **verify_denial dominates** — 37 evicts vs 3 fission_denial. Final `breed_archive.json`: `elite_archive={}`, all 5 personas in `evicted_personas`. implementor evicted 18:42 after 60s timeout verify.
-2. **Multi-goal overload** — goal bundled breed.improve + notepad + screen report; planner produced invalid JSON, Chrome/Shakira steps (unconstrained), `plugins/reactor.py` patches (file does not exist).
-3. **Human pri=3 meta-interrupt** (~18:31) — "remove constraints / max retries / mutate capabilities" → 42× `planner.error` (syntax, Path re-import, comms.py rewrite attempts). Worse than golden-session log.py loop.
-4. **s1/s2/s4 idle spin** — comms_operator + architect + reviewer burned cycles on fission_log poll or need_plan without assigned work; TUI showed stag=0.67, fissions=0.
-5. **Verifier edge case** — early NameError evidence sometimes got `confirmed` then `denied` (same evidence string); worth watching, not weakening gates.
-6. **Mutator blocked** — repeated `patch_plugin` on protected `comms_beacon.py` and nonexistent `plugins/reactor.py`.
-
-**Golden session `20260614_175152` comparison**
-
-| Aspect | Golden (175152, disk gone) | Current (201915) |
-|--------|---------------------------|------------------|
-| Reference | `llm.py` SESSION_REPLAY_TASKS + GOLDEN_SESSION_BUDGETS | Full JSONL on disk |
-| Fission | Empty JSON / unverifiable claims | `fission.deny` with diagnosis (working) |
-| Verifier | routed-vs-posted confusion, log.py syntax | Strict evidence checks; timeout denials |
-| Planner | Stuck on log.py audit | JSON syntax + hallucinated side tasks |
-| Breed | Unknown (session removed) | 15 improve → 0 elites at kill |
-| Human | — | 2 declines + 1 destructive pri=3 override |
-
-Golden budgets are **benchmark replay only** (`GOLDEN_SESSION_BUDGETS` in `llm.py`); runtime uses `config.BUDGET` / `THINKING_BUDGET` for `nemotron_parallel`.
-
-**Operator kill state:** Python processes stopped. Stale `pause` + `runtime/.lmstudio.lock` may remain — run `log.cleanup_runtime(deep=True)` before next session.
-
-**Recommended next run**
-
-```text
-python -c "import log; log.cleanup_runtime(deep=True)"
-python tui.py "Patch plugins/lessons_decay.py: add one-line docstring, py_compile, git commit"
-```
-
-Single measurable artifact + git hash. No meta pri=3. Wait ≥2 min after plan before judging stall.
-
-### Lessons (compressed, no forensic dumps)
-
-- Colony survives long runs; MoE + breed loop active, but **elites do not survive verify_denial churn**.
-- Post-milestone wiring works: goal file, fission deny, human decline, breed.improve signal.
-- **nemotron_parallel** needs narrow goals; unconstrained + compound goals → planner.error avalanche.
-- s2/s4 need_plan idle spin is a scheduling gap when only s3 has routed work.
-- Unproven: MAP-Elites convergence, restart-persistent elites (mid-run elite existed, archive empty at kill).
-- Golden session forensic value now lives in `llm.py` replay tasks only — not in repo tree.
-- **bare-metal** = 42 files / ~7k lines; main (24 files) is legacy — not comparable.
-- `Personality` dataclass is first OoO step; agents/reactor monoliths are next shrink targets.
-
----
-
-*Update § COLD-START HANDOVER HEAD on every commit. See RULES.md.*
+*End handover block.*

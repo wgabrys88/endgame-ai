@@ -1,19 +1,14 @@
-# Whitelist: only essential run + docs (see RULES.md)
+# Whitelist: essential run code + OBSERVATIONS handover only
 *
 
 !.gitignore
 !.gitattributes
 !.env
 !LICENSE
-!README.md
 !OBSERVATIONS.md
-!RULES.md
-!CONTRIBUTING.md
 !*.py
 !prompts/
 !prompts/**
-!schemas/
-!schemas/**
 !plugins/
 !plugins/**
 

@@ -382,62 +382,6 @@ def _candidate_niche(payload: dict[str, Any], action: str) -> str:
     return "general_task:unknown_pressure"
 
 
-def _plugin_patch_semantic_regression(payload: dict[str, Any]) -> str:
-    diff = str(payload.get("diff", ""))
-    if not diff:
-        return ""
-    removed: list[str] = []
-    added: list[str] = []
-    for line in diff.splitlines():
-        if line.startswith("---") or line.startswith("+++"):
-            continue
-        if line.startswith("-"):
-            removed.append(line[1:].lower())
-        elif line.startswith("+"):
-            added.append(line[1:].lower())
-
-    telemetry_tokens = (
-        "post_telemetry", "'phase'", '"phase"', "'data'", '"data"',
-        "plugin.", "kind_telemetry",
-    )
-    removed_telemetry = any(
-        any(token in line for token in telemetry_tokens)
-        for line in removed
-    )
-    added_telemetry = any(
-        any(token in line for token in telemetry_tokens)
-        for line in added
-    )
-    added_noop = any("return none" in line or "pass" == line.strip() for line in added)
-    if removed_telemetry and (added_noop or not added_telemetry):
-        return "telemetry_removed"
-    return ""
-
-
-def _record_semantic_regress(
-    target: str,
-    slot_id: int,
-    fitness: float,
-    niche: str,
-    payload: dict[str, Any],
-    reason: str,
-) -> None:
-    detail = {
-        "source": "semantic_scoring",
-        "reason": reason,
-        "trial_action": str(payload.get("action", "patch_plugin")),
-        "filename": str(payload.get("filename", payload.get("completed", "")))[:120],
-    }
-    _apply_trial_feedback("regress", target, {
-        "slot": slot_id,
-        "fitness": fitness,
-        "trial_id": f"semantic:{target}:{reason}"[:80],
-        "filename": str(payload.get("filename", payload.get("completed", "")))[:120],
-    }, detail)
-    _post_breed_status("regress", target, slot_id, fitness, niche=niche, detail=detail)
-    _save_breed_archive(f"semantic.{reason}")
-
-
 def _telemetry_for(target: str) -> dict[str, Any]:
     return comms.colony_state().get(comms.canonical(str(target)), {})
 
@@ -726,17 +670,6 @@ def process_evolve_candidates() -> None:
             _save_breed_archive("evict")
             continue
         if action == "patch_plugin":
-            semantic_reason = _plugin_patch_semantic_regression(payload)
-            if semantic_reason:
-                _record_semantic_regress(
-                    target,
-                    slot_id,
-                    fitness,
-                    _candidate_niche(payload, action),
-                    payload,
-                    semantic_reason,
-                )
-                continue
             is_elite, niche = _update_elite_archive(target, action, slot_id, fitness, payload)
             if is_elite:
                 _post_breed_status("elite", target, slot_id, fitness, niche=niche,
