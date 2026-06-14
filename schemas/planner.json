@@ -13,16 +13,16 @@
         },
         "sequence": {
           "type": "array",
-          "description": "Runnable Python steps: file modifications, git operations, bus messages, audits.",
+          "description": "Runnable Python steps for one measurable outcome: file modification, git operation, bus message, or audit.",
           "minItems": 1,
-          "maxItems": 6,
+          "maxItems": 3,
           "items": {
             "type": "object",
             "properties": {
               "code": {
                 "type": "string",
                 "minLength": 10,
-                "description": "Python 3 script. ASCII only. Pre-imported: Path, subprocess, bus_post, bus_id, bus_request, bus_route, os, sys, json, time. Use print() for evidence. comms_operator: prefer bus_route() over bus_post for MoE assignments."
+                "description": "Python 3 script. ASCII only. Pre-imported: Path, subprocess, bus_post, bus_id, bus_request, bus_route, os, sys, json, time. Do not import Path. Do not call fission_judge. Use print() for evidence. comms_operator: prefer bus_route() over bus_post for MoE assignments."
               }
             },
             "required": ["code"],
@@ -32,7 +32,7 @@
         "done_when": {
           "type": "string",
           "minLength": 20,
-          "description": "Measurable outcome: file modified and compiled, git commit pushed, bus message sent, audit written"
+          "description": "One measurable outcome only: file modified and compiled, git commit hash printed, bus message sent, or audit written. Do not bundle bus coordination with file/git/plugin work."
         }
       },
       "required": ["mode", "sequence", "done_when"],

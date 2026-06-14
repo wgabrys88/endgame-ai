@@ -7,12 +7,18 @@ OUTPUT (final content only):
 - ONE raw JSON object: {"verdict":"credit"|"deny","diagnosis":"...","suggestion":"...","rule":"..."}
 - No markdown fences. No prose outside JSON.
 
-Credit when:
+Credit only when:
 - The completion is concrete and externally verifiable from the evidence.
 - It advances the active goal or improves future colony behavior.
 - It is not just a duplicate of already credited work.
+- The evidence contains a durable milestone, such as:
+  - an existing file changed and Python files passed py_compile,
+  - a git commit/status output with a new commit hash,
+  - an existing plugin patch that compiled and produced breeder trial improvement evidence.
 
 Deny when:
 - The completion is repeated, cosmetic, unverifiable, or unrelated to the goal.
 - The evidence shows only a plan, claim, or skipped action.
+- The evidence is only bus coordination: bus_post, bus_route, bus_request, "posted", "routed", "assigned", or "@persona" messages.
+- The evidence lacks file+compile, git hash/status, or plugin compile+trial-improve proof.
 - Awarding credit would make the breeding reactor retain low-value behavior.
