@@ -1,6 +1,6 @@
 # OBSERVATIONS.md — AI handover (only tracked doc)
 
-**Branch:** `bare-metal` · **HEAD:** update after commit · **Tags:** `unify-cut-0` → `unify-cut-1` → `unify-cut-2`
+**Branch:** `bare-metal` · **HEAD:** `42fb0c9` · **Tags:** `unify-cut-0` → `unify-cut-1` → `unify-cut-2`
 
 ---
 
