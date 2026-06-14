@@ -1,161 +1,121 @@
-# OBSERVATIONS.md — AI handover (only tracked doc)
+# OBSERVATIONS.md
 
-**Branch:** `unify-rewrite` (trunk) · **HEAD:** `ba74eed` · **`main`** = scale-1 reference only
-**Tags:** `unify-cut-0` → `unify-cut-1` → `unify-cut-2` · `archive/unify-pre-slim` = pre-FF unify tip
+**Only tracked doc.** Provider-agnostic handover for any AI with zero prior context (Grok, Codex, OpenCode, Cursor, etc.).
 
----
-
-## Last observation (2026-06-14 — live boot OK)
-
-Operator ran the colony after unify slim passes. **It works.**
-
-| Check | Result |
-|-------|--------|
-| Reactor + 5 slots | All PIDs alive |
-| Bus | Colony goal posted; MoE routed `@architect` |
-| LLM | Nemotron via LM Studio responded (`api_schema: false`) |
-| Pipeline | planner → actor → verifier on routed slot |
-| Plugins | fission_log, web_sentinel ran |
-| Desktop | observer UIA scan fired |
-
-Boot command used: `python reactor.py --goal "maintenance: print ok on bus"` (profile `auto` → `nemotron`).
-
-**Parallel LLM:** processes are parallel (6 PIDs); inference is **serialized** unless you use `--model-profile nemotron_parallel` and LM Studio Max Concurrent ≥ 5 (`LLM_MAX_CONCURRENT=5`, global lock off).
-
-**Code reduced (this session):**
-
-| | Before (`unify-cut-0`) | Now |
-|--|------------------------|-----|
-| Python LOC | ~6,257 | **~5,404** (−853) |
-| Git-tracked files | 46 | **35** |
-| `agents.py` | 1,318 | **734** |
-| `reactor.py` | 961 | **740** |
-| `schemas/` | 7 files | **deleted** |
-| Docs in git | README/RULES/CONTRIBUTING | **OBSERVATIONS only** |
-
-**Branch consolidation (2026-06-14):** `unify-rewrite` fast-forwarded from `bare-metal`; `bare-metal` branch removed. Work on `unify-rewrite` only.
-
-**Next (Codex / OpenCode):** copy handover block below; continue slimming toward ~3.5k LOC — `tui.py`, `comms.py` shims, optional `acp_client.py`. Do not re-add strict schemas, smokes, or immune-system guards.
+**Repo:** `unify-rewrite` (trunk) · **`main`** = scale-1 reference only · update **HEAD** line on every behavior-changing commit.
 
 ---
 
-Copy everything inside the block below into a zero-context AI session.
+## How to use
+
+1. `git checkout unify-rewrite && git pull`
+2. Copy the **META PROMPT** block below into the assistant session (system or first user message).
+3. User says **"continue with endgame-ai"** → read this file, execute handover, keep slimming.
+
+**Rollback tags:** `unify-cut-0` · `unify-cut-1` · `unify-cut-2` · `archive/unify-pre-slim`
+
+**Session pin (2026-06-14):** Live boot OK. ~5,404 Python LOC (was ~6,257). Schemas/smokes/immune guards removed. `bare-metal` merged into `unify-rewrite` and deleted.
+
+---
+
+## META PROMPT — copy from here
 
 ```text
 ═══════════════════════════════════════════════════════════════════
- ENDGAME-AI — meta vision & your job
+ ENDGAME-AI — zero-context handover (any AI provider)
 ═══════════════════════════════════════════════════════════════════
 
-We are building a LIVING ORGANISM on Windows — not an agent framework.
+You have no prior context. This block is the full briefing.
 
-Brain metaphor: simple specialized areas (observe, reason, act) wired together.
-Intelligence emerges from wiring + goal, not from one clever module or Python guards.
+TRIGGER: User says "continue with endgame-ai" → checkout branch unify-rewrite,
+read OBSERVATIONS.md, shrink code toward ~3.5k LOC. Do not re-add strict schemas,
+smokes, sandbox flags, or code immune-system guards.
 
-BRANCH: unify-rewrite (trunk). main = scale-1 reference only — do not develop there.
-STATUS (2026-06-14): LIVE BOOT VERIFIED. Unify passes landed. ~5,404 Python LOC.
-Rollback: unify-cut-0/1/2, archive/unify-pre-slim (pre-FF unify tip).
+VISION: LIVING ORGANISM on Windows — not an agent framework.
+Brain metaphor: simple areas (observe, reason, act) wired by a bus.
+Intelligence = wiring + shared goal + personalities — not Python blocklists.
+Papers = one or two equations each → few lines of deterministic code.
+Delete wrappers, fallbacks, display bloat. Keep desktop organ + bus science.
 
-YOUR JOB: shrink code toward ~3.5k LOC while keeping the science and desktop organ.
-Each paper = one or two equations → a few lines of deterministic Python.
-Delete wrappers, fallbacks, strict schemas, smokes, display bloat, immune-system checks.
-Personalities + one shared goal self-regulate — no code blocklists.
-
-═══════════════════════════════════════════════════════════════════
- PAPERS (read before changing behavior)
-═══════════════════════════════════════════════════════════════════
-
-1. MoE routing — Bause 2026
-   https://arxiv.org/abs/2605.25929
-   Code: comms.softmax_route, engine._moe_route (comms_operator only)
-   Math: power = confidence; softmax over worker powers → route assignment
-
-2. Pressure / stagnation — Rodriguez 2026
-   https://arxiv.org/abs/2601.08129
-   Code: engine._update_pressure, board["_pressure"], comms.post_telemetry
-   Math: stagnation ramps with failures + time since fission; power = 1 - stagnation
-
-3. Quality-diversity elites — MAP-Elites
-   https://arxiv.org/abs/1504.04909
-   Code: reactor.Breeder, breed_archive.json, comms.post_evolve, process_evolve_candidates
-
-4. Plan–act–observe loop — ReAct (conceptual)
-   https://arxiv.org/abs/2210.03629
-   Code: agents pipeline scheduler→planner→actor→verifier→fission_judge→reflect→mutate
-
-5. Blackboard / stigmergy (classical MAS — no single paper)
-   Code: comms.py messages.json + events_bus.jsonl; bus-only between slots
+REPO: github.com/wgabrys88/endgame-ai
+BRANCH: unify-rewrite (trunk). main = scale-1 reference — do not develop there.
+STATUS: live boot verified 2026-06-14 · ~5,404 Python LOC · 35 git files
+TARGET: ~3,500 LOC total
 
 ═══════════════════════════════════════════════════════════════════
- ARCHITECTURE (same organism, scale 1 vs 5)
+ PAPERS — read before changing routing/pressure/breed/actor
 ═══════════════════════════════════════════════════════════════════
 
-One instance = main.py → engine.run(board) → agent pipeline.
-Colony = 5× identical main.py + comms blackboard + reactor parent. NOT a rewrite.
+MoE routing (Bause 2026)
+  https://arxiv.org/abs/2605.25929
+  comms.softmax_route · engine._moe_route · comms_operator only
 
-Topology:
-  tui.py → subprocess reactor.py
-    slot1 = comms_operator (MoE thalamus)
-    slots2-5 = workers (breedable personas)
-    each slot: subprocess main.py — same code, different personality .txt
+Pressure / stagnation (Rodriguez 2026)
+  https://arxiv.org/abs/2601.08129
+  engine._update_pressure · board["_pressure"] · comms.post_telemetry
 
-Personality = prompts/personalities/{name}.txt (full SYSTEM prompt).
-Circuits = prompts/planner.txt etc. (short hints in USER message only).
-Loose JSON hints in agents._CIRCUIT_HINTS — NOT strict schemas (deleted).
+MAP-Elites elites (quality-diversity)
+  https://arxiv.org/abs/1504.04909
+  reactor.Breeder · breed_archive.json · comms.post_evolve
 
-Desktop organ (KEEP): observer.py + win32.py + actions.py — see + act on Windows.
-Metabolism (KEEP): exec, git, plugin mutation — always on, no sandbox flags.
-NO code immune system — goal + personalities regulate; verifier reads evidence.
+ReAct plan-act-observe (conceptual)
+  https://arxiv.org/abs/2210.03629
+  scheduler→planner→actor→verifier→fission_judge→reflect→mutator
 
-Bus = wiring only. Rods post/read comms; never call sibling processes.
-
-═══════════════════════════════════════════════════════════════════
- CODE PATH (read in this order)
-═══════════════════════════════════════════════════════════════════
-
-comms.py   — bus protocol (~400 LOC core; trim mirrors/CLI next)
-engine.py  — loop, pressure, MoE, plugins hot-swap
-agents.py  — unified _call_circuit / _parse_json, one text-step planner (~734 LOC)
-reactor.py — spawn slots, MAP-Elites archive (~740 LOC)
-main.py    — one personality instance entry
-tui.py     — human face (display bloat — trim next, ~605 LOC)
-llm.py     — LM Studio backend (swappable)
+Blackboard / stigmergy (classical MAS)
+  comms.py messages.json + events_bus.jsonl · bus-only between slots
 
 ═══════════════════════════════════════════════════════════════════
- LAWS (slimming)
+ ARCHITECTURE
 ═══════════════════════════════════════════════════════════════════
 
-L1. No new .py files — merge inward.
-L2. Delete before add — net LOC must shrink each pass.
-L3. One LLM pattern (_call_circuit) for all roles; no AST zoo.
-L4. Keep desktop stack; shrink elsewhere.
-L5. Never commit runtime/ or sessions/.
-L6. Update OBSERVATIONS.md on every behavior-changing commit.
+One rod = main.py → engine.run(board) → agent pipeline.
+Colony = 5× same main.py + comms blackboard + reactor parent.
+
+  tui.py → reactor.py → 5× main.py (slots)
+  slot1 = comms_operator (MoE router)
+  slots2-5 = workers (breedable personas)
+
+Personality = prompts/personalities/{name}.txt (full system prompt).
+Circuits = prompts/*.txt (short user-message hints).
+LLM output = loose JSON via agents._call_circuit / _parse_json (no strict schemas).
+
+KEEP: observer + win32 + actions (desktop organ).
+KEEP: exec, git, plugin mutation — always on.
+NO: protected-file lists, mutation sandbox, semantic regression diff guards.
 
 ═══════════════════════════════════════════════════════════════════
- SIZE (measured)
+ CODE PATH
 ═══════════════════════════════════════════════════════════════════
 
-Now: ~5,404 Python LOC · 35 git files.
-Target: ~3,500 LOC (wiring ~2,300 + desktop ~950 + prompts ~200).
+comms.py → engine.py → agents.py → reactor.py → main.py → tui.py
+llm.py = LM Studio backend (swappable)
 
-Delete next: tui display, comms bus_* shims, acp_client if LMStudio-only.
+DELETE NEXT: tui display bloat, comms bus_* shims, acp_client if LMStudio-only.
 
-Already removed: schemas/, dual planner, smokes, semantic regression guard, README/RULES/CONTRIBUTING.
+ALREADY REMOVED: schemas/, dual planner, smokes, README/RULES/CONTRIBUTING.
 
 ═══════════════════════════════════════════════════════════════════
- RUN (human)
+ LAWS
+═══════════════════════════════════════════════════════════════════
+
+L1 No new .py files — merge inward.
+L2 Delete before add — net LOC shrinks each pass.
+L3 One LLM pattern (_call_circuit) — no AST zoo.
+L4 Keep desktop stack.
+L5 Never commit runtime/ or sessions/.
+L6 Update OBSERVATIONS.md HEAD on behavior-changing commits.
+
+═══════════════════════════════════════════════════════════════════
+ RUN
 ═══════════════════════════════════════════════════════════════════
 
 python -c "import log; log.cleanup_runtime(deep=True)"
-python tui.py --model-profile nemotron_parallel "Your long-term goal in one sentence"
+python tui.py --model-profile nemotron_parallel "goal sentence"
 
-Requires: LM Studio localhost:1234, nemotron-3-nano-4B.
-Parallel rods: nemotron_parallel profile + LM Studio Max Concurrent ≥ 5.
+LM Studio localhost:1234 · nemotron-3-nano-4B · Max Concurrent ≥ 5 for parallel rods.
 
-COMPILE (no LLM):
-  python -m py_compile tui.py reactor.py main.py engine.py agents.py comms.py
-
-NOT IN GIT: runtime/, sessions/, events*.jsonl
+COMPILE: python -m py_compile tui.py reactor.py main.py engine.py agents.py comms.py
 ```
 
-*End handover block.*
+*End META PROMPT.*
