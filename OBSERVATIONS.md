@@ -1,6 +1,6 @@
 # OBSERVATIONS.md — AI handover (only tracked doc)
 
-**Branch:** `unify-rewrite` (trunk) · **HEAD:** `9421cbd` · **`main`** = scale-1 reference only
+**Branch:** `unify-rewrite` (trunk) · **HEAD:** `ba74eed` · **`main`** = scale-1 reference only
 **Tags:** `unify-cut-0` → `unify-cut-1` → `unify-cut-2` · `archive/unify-pre-slim` = pre-FF unify tip
 
 ---
