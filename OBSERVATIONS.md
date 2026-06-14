@@ -8,7 +8,7 @@ Humans: read `README.md`.
 
 ## COLD-START HANDOVER PROMPT
 
-**Last updated:** 2026-06-14 · **Branch:** `unify-rewrite` · **HEAD:** `3c0c245`
+**Last updated:** 2026-06-14 (flush) · **Branch:** `unify-rewrite` · **HEAD:** `398afa5`
 
 Copy the fenced block into any new AI session.
 
@@ -56,10 +56,11 @@ SMOKE (no LLM):
   python reactor.py --archive-smoke
   python reactor.py --breed-improve-smoke
 
+STATE: Flushed — runtime/sessions cleared locally; git slim (52 files). Ready to run.
 CURRENT PRIORITY:
-  1. Live run: python tui.py "<goal>" and append session log below
-  2. Prove breed.improve + restart survival on current wiring
-  3. Update this handover (HEAD SHA) on every commit
+  1. python tui.py "<goal>" with LM Studio live
+  2. Append first post-slim session row to § Session log
+  3. Prove breed.improve + restart survival
 
 NOT IN GIT: runtime/, sessions/*.jsonl — keep locally only.
 ```
@@ -111,6 +112,7 @@ Append only. No golden archives in git — summaries live here.
 
 | Session | Duration | Events | Headline | Notes |
 |---------|----------|--------|----------|-------|
+| *(flush 2026-06-14)* | — | — | Repo slimmed `3a30c9a` | Golden artifacts removed from git; RULES.md live |
 | *(next run)* | | | | |
 
 ### Lessons (compressed, no forensic dumps)
