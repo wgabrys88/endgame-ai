@@ -107,6 +107,7 @@ Follow-up architecture work on 2026-06-14 added persistent breeder memory in `ru
 python comms.py state
 python comms.py breeder
 python agents.py --fission-smoke
+python agents.py --git-verify-smoke
 python reactor.py --archive-smoke
 python reactor.py --breed-improve-smoke
 python -m py_compile reactor.py agents.py comms.py colony_env.py config.py actions.py tui.py

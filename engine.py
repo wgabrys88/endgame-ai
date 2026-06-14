@@ -65,6 +65,7 @@ def run(board: dict[str, Any], interrupted: Callable[[], bool]) -> None:
             continue
 
         log.emit("schedule", {"next": nxt, "reason": result.get("data", {}).get("reason", "")})
+        _maybe_post_progress(board, "schedule", nxt)
 
         # Walk the pipeline chain
         while nxt and nxt in AGENTS and not interrupted():
@@ -73,6 +74,7 @@ def run(board: dict[str, Any], interrupted: Callable[[], bool]) -> None:
             if result:
                 phase = result.get("phase", nxt)
                 log.emit(phase, result.get("data"))
+                _maybe_post_progress(board, phase)
                 board["_last_phase"] = phase
                 # Apply writes to board
                 for k, v in (result.get("writes") or {}).items():
@@ -252,5 +254,26 @@ def _apply_bus_interrupt(board: dict[str, Any]) -> bool:
     hit = comms.apply_interrupt(board)
     if hit:
         log.emit("interrupt", hit)
+        _maybe_post_progress(board, "interrupt")
         return True
     return False
+
+
+def _maybe_post_progress(board: dict[str, Any], phase: str, step: str = "") -> None:
+    """Publish throttled colony progress for TUI (pri=0, not an interrupt)."""
+    now = time.time()
+    last_ts = float(board.get("_last_progress_ts", 0) or 0)
+    last_phase = str(board.get("_last_progress_phase", ""))
+    if phase == last_phase and now - last_ts < 20.0:
+        return
+    try:
+        comms.post_progress(
+            comms.agent_id(),
+            goal=str(board.get("goal", ""))[:200],
+            step=step or str(board.get("goal", ""))[:80],
+            phase=phase[:32],
+        )
+        board["_last_progress_ts"] = now
+        board["_last_progress_phase"] = phase
+    except Exception:
+        pass

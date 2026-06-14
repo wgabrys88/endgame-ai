@@ -305,6 +305,7 @@ class TUI:
         self._session_dir: str = ""
         self._model_profile = os.environ.get("_ENDGAME_MODEL_PROFILE", "") or "auto"
         self._phase_filter = "all"
+        self._colony_progress: dict[str, dict[str, Any]] = {}
 
     def _scan(self) -> None:
         now = time.time()
@@ -333,6 +334,10 @@ class TUI:
             pass
         self._bus_chat = comms.read_chat(40)
         self._bus_events = comms.read_events(80)
+        try:
+            self._colony_progress = comms.colony_progress(40)
+        except Exception:
+            self._colony_progress = {}
         for s in self.slots.values():
             s.poll()
 
@@ -409,7 +414,14 @@ class TUI:
                 pri = f"P{slot.priority}" if slot.priority > 0 else "  "
                 active = slot.active_agent
                 fiss = f"{_fg(*CLR_FISSION)}F={slot.fissions}{RST}" if slot.fissions else ""
-                header = f"s{slot.slot_id} {persona} {dot} [{_fg(*CLR_PHASE)}{active:10}{RST}] {stag_bar} {pri} {fiss}"
+                prog = self._colony_progress.get(slot.persona or "", {})
+                prog_tag = ""
+                if prog:
+                    prog_phase = str(prog.get("phase", ""))[:10]
+                    prog_goal = str(prog.get("goal", ""))[:28]
+                    if prog_phase or prog_goal:
+                        prog_tag = f" {_fg(*CLR_DATA)}{prog_phase}:{prog_goal}{RST}"
+                header = f"s{slot.slot_id} {persona} {dot} [{_fg(*CLR_PHASE)}{active:10}{RST}]{prog_tag} {stag_bar} {pri} {fiss}"
                 lines.append(row(_trunc(header, inner)))
 
                 # Agent pipeline bar

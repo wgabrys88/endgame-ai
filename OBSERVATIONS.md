@@ -391,10 +391,10 @@ Interrupt sources (65 total): human 30, comms_operator 15, reviewer 6, architect
 | P0 | `--unconstrained` operator mode | `config.py`, `agents.py`, `tui.py`, `reactor.py` | **Done** |
 | P1 | py_compile on `.md` | `agents.py`, `prompts/planner.txt` | **Done** — planner contract AST guard |
 | P1 | GUI planner templates | `agents.py`, `desktop.py` | Open (use `--unconstrained` / `--gui`) |
-| P1 | Colony progress bus | `comms.py`, `tui.py` | Open — `post_progress` stub only |
+| P1 | Colony progress bus | `comms.py`, `tui.py`, `engine.py` | **Done** — `post_progress`, `colony_progress`, TUI slot header |
 | P2 | Stub file_equals quality | `agents.py`, `prompts/verifier.txt` | Open |
 | P2 | Phantom paths | `agents.py` | Partial (FR-4 manifest) |
-| P3 | Git milestone schema | `prompts/planner.txt` | Open |
+| P3 | Git milestone schema | `prompts/planner.txt`, `agents.py` | **Done** — `_verify_git_done`, `--git-verify-smoke` |
 
 ---
 
@@ -415,7 +415,7 @@ MAP-Elites restart; GUI fission; git push; unconstrained safety.
 ```text
 READ OBSERVATIONS.md + AGENTS.md. Session 20260614_185239: 5104 events, 38 breed.improve.
 P0 wiring landed: inbox_match, apply_interrupt, decline pri=0, --unconstrained.
-Next: long run to repro improve+restart; P1 progress TUI; git milestone schema.
+Next: long run to repro improve+restart under new wiring.
 JSONL on external archive.
 ```
 

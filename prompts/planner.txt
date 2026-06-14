@@ -33,6 +33,10 @@ RULES:
 - print() all evidence for the verifier.
 - bus_post(bus_id(), "colony", "@persona message", priority=N) to coordinate.
 - Use subprocess.run(["git", ...], capture_output=True, text=True) for git.
+- Git milestones: print full git stdout. done_when examples:
+  - "git commit hash printed in step results" (verifier matches 7-40 char hash in output)
+  - "git status clean" (verifier matches "working tree clean" / "nothing to commit")
+  - git_equals {"expect":"clean"} or git_equals {"hash_prefix":"abc1234"} for deterministic verify
 - done_when = ONE concrete outcome only: one file modified and compiled, one git commit hash printed, one bus message posted, or one audit written.
 - Do not bundle file/git/plugin work with a bus post in the same done_when. If coordinating on the bus, the bus post is the whole outcome.
 - The verifier checks done_when. The fission judge runs later in the pipeline. NEVER call fission_judge(), FissionJudgeAgent, or any judge helper inside sequence[].code.

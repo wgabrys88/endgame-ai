@@ -431,6 +431,25 @@ def post_progress(from_id: str, *, goal: str = "", step: str = "", phase: str = 
     return post(from_id, "colony", text, priority=config.PRI_MAINTENANCE, data=payload)
 
 
+def colony_progress(limit: int = 40) -> dict[str, dict[str, Any]]:
+    """Latest progress snapshot per persona from blackboard chat."""
+    out: dict[str, dict[str, Any]] = {}
+    for entry in read_chat(limit):
+        payload = _entry_payload(entry)
+        if not payload.get("progress"):
+            continue
+        who = str(entry.get("from", ""))
+        if not who:
+            continue
+        out[who] = {
+            "goal": str(payload.get("goal", ""))[:120],
+            "step": str(payload.get("step", ""))[:80],
+            "phase": str(payload.get("phase", ""))[:32],
+            "ts": str(entry.get("ts", "")),
+        }
+    return out
+
+
 # --- Observation layer (events_bus.jsonl) ---
 
 def post_telemetry(

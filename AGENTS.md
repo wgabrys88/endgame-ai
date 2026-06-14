@@ -217,7 +217,10 @@ From `OBSERVATIONS.md` session `20260614_185239` — **implemented** (reduce dup
 | P0 | `--unconstrained` operator mode | `config.unconstrained_enabled`, `tui.py`, `reactor.py` |
 | P1 | Block `py_compile` on non-`.py` in planner contract | `agents._plan_code_contract_error`, `prompts/planner.txt` |
 
-**Still open from `185239`:** colony-wide `kind=progress` TUI board (P1), git milestone schema (P3), long-run repro of improve + restart.
+| P1 progress | `post_progress` + `colony_progress` + TUI slot header | **Done** |
+| P3 git verify | `_verify_git_done` + `prompts/planner.txt` + `--git-verify-smoke` | **Done** |
+
+**Still open:** long-run repro of improve + restart under post-`185239` wiring.
 
 ---
 

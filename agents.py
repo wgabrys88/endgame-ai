@@ -19,6 +19,13 @@ from llm import LLMResult, call_llm
 from python_code import goal_needs_gui, gui_mode_enabled, is_python_code, validate_python
 
 _SIMPLE_FILE_DONE_PREFIX = "file_equals "
+_GIT_DONE_PREFIX = "git_equals "
+_GIT_HASH_RE = re.compile(r"\b[0-9a-f]{7,40}\b", re.IGNORECASE)
+_GIT_CLEAN_MARKERS = (
+    "nothing to commit",
+    "working tree clean",
+    "nothing added to commit",
+)
 _CREATE_FILE_RE = re.compile(
     r"^(?:@[A-Za-z][A-Za-z0-9_]*\s+)?create\s+([^\s]+)\s+with\s+(.+?)\s*$",
     re.IGNORECASE | re.DOTALL,
@@ -353,6 +360,8 @@ class VerifierAgent:
         done_when = board.get("done_when", "")
         if not done_when:
             return {"phase": "verify", "data": {"verdict": "confirmed", "evidence": "no done_when set"}}
+        plan = board.get("plan", [])
+        results = [str(s.get("result", ""))[:400] for s in plan if isinstance(s, dict)]
         simple_file_result = _verify_simple_file_done(done_when)
         if simple_file_result:
             ok, evidence = simple_file_result
@@ -373,8 +382,26 @@ class VerifierAgent:
             _post_failure_candidate(board, done_when, evidence)
             return {"phase": "verify", "data": {"verdict": "denied", "evidence": evidence},
                     "next": "reflector"}
-        plan = board.get("plan", [])
-        results = [str(s.get("result", ""))[:200] for s in plan if isinstance(s, dict)]
+        git_result = _verify_git_done(done_when, results)
+        if git_result:
+            ok, evidence = git_result
+            if ok:
+                board["plan"] = []
+                board.setdefault("completed", []).append(done_when)
+                board["_last_verified_goal"] = str(board.get("goal", ""))[:400]
+                board["_last_verified_priority"] = board.get("priority", config.PRI_MAINTENANCE)
+                board["_last_verifier_evidence"] = evidence[:400]
+                if board.get("priority", config.PRI_MAINTENANCE) >= config.PRI_HUMAN:
+                    board["priority"] = config.PRI_MAINTENANCE
+                    board["goal"] = ""
+                    board["_human_denials"] = 0
+                return {"phase": "verify", "data": {"verdict": "confirmed", "evidence": evidence},
+                        "next": "fission_judge"}
+            board["plan"] = []
+            board.setdefault("history", []).append({"denied": done_when, "reason": evidence})
+            _post_failure_candidate(board, done_when, evidence)
+            return {"phase": "verify", "data": {"verdict": "denied", "evidence": evidence},
+                    "next": "reflector"}
         system = _stable_system("verifier")
         user = _user_with_schema(
             "verifier",
@@ -863,6 +890,39 @@ def _verify_simple_file_done(done_when: str) -> tuple[bool, str] | None:
     if actual != expected:
         return False, f"{rel_path} content mismatch: {actual!r}"
     return True, f"{rel_path} contains expected content"
+
+
+def _verify_git_done(done_when: str, results: list[str]) -> tuple[bool, str] | None:
+    text = str(done_when)
+    lowered = text.lower()
+    blob = "\n".join(results)
+    blob_lower = blob.lower()
+    if text.startswith(_GIT_DONE_PREFIX):
+        try:
+            spec = json.loads(text[len(_GIT_DONE_PREFIX):])
+        except (TypeError, json.JSONDecodeError):
+            return False, "invalid git verification target"
+        expect = str(spec.get("expect", "")).lower()
+        if expect == "clean":
+            if any(marker in blob_lower for marker in _GIT_CLEAN_MARKERS):
+                return True, "git working tree clean"
+            return False, "git status not clean"
+        prefix = str(spec.get("hash_prefix", "")).lower()
+        if prefix:
+            if prefix in blob_lower:
+                return True, f"git output contains hash prefix {prefix}"
+            return False, f"git output missing hash prefix {prefix}"
+        return False, "git_equals spec needs expect=clean or hash_prefix"
+    if not any(token in lowered for token in ("git", "commit", "hash")):
+        return None
+    match = _GIT_HASH_RE.search(blob)
+    if match:
+        return True, f"git commit hash {match.group(0)} in step results"
+    if "status" in lowered and any(marker in blob_lower for marker in _GIT_CLEAN_MARKERS):
+        return True, "git status clean"
+    if any(token in lowered for token in ("commit", "hash")):
+        return False, "no git commit hash in step results"
+    return None
 
 
 def _bus_config_snapshot() -> dict[str, Path]:
@@ -1555,6 +1615,26 @@ def fission_judge_llm_smoke() -> dict[str, Any]:
     }
 
 
+def git_verify_smoke() -> dict[str, Any]:
+    clean = _verify_git_done('git_equals {"expect":"clean"}', [
+        "On branch unify-rewrite\nnothing to commit, working tree clean\n",
+    ])
+    hash_ok = _verify_git_done(
+        "git commit hash printed in step results",
+        ["[unify-rewrite abc1234] Unify bus wiring\n"],
+    )
+    missing = _verify_git_done(
+        "git commit hash printed in step results",
+        ["git status\nnothing to commit\n"],
+    )
+    return {
+        "ok": bool(clean and clean[0] and hash_ok and hash_ok[0] and missing and not missing[0]),
+        "clean": clean,
+        "hash_ok": hash_ok,
+        "missing": missing,
+    }
+
+
 def fission_judge_smoke() -> dict[str, Any]:
     board = {
         "goal": "Colony maintenance: audit and report on bus",
@@ -1600,4 +1680,8 @@ if __name__ == "__main__":
         result = fission_judge_llm_smoke()
         print(json.dumps(result, ensure_ascii=False, sort_keys=True))
         sys.exit(0 if result.get("ok") else 1)
-    print("usage: python agents.py --fission-smoke | --fission-judge-smoke | --fission-judge-llm-smoke")
+    if len(sys.argv) >= 2 and sys.argv[1] == "--git-verify-smoke":
+        result = git_verify_smoke()
+        print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+        sys.exit(0 if result.get("ok") else 1)
+    print("usage: python agents.py --fission-smoke | --git-verify-smoke | --fission-judge-smoke | --fission-judge-llm-smoke")
