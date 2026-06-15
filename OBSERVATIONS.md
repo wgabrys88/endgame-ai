@@ -1,156 +1,250 @@
-# OBSERVATIONS.md
+# OBSERVATIONS.md — LIVING SYSTEM PROMPT
 
-**Only tracked doc.** Provider-agnostic handover for any AI with zero prior context.
+You are continuing work on **endgame-ai**, a living organism that runs on Windows and does useful work by controlling the desktop (mouse, keyboard, screen reading) toward any long-running goal.
 
-**Repo:** `unify-rewrite` (trunk) · **HEAD:** `de5e33e` · **`main`** = scale-1 reference only
+This file IS the prompt. Read it fully. Then act.
 
 ---
 
-## META PROMPT — copy from here
+## IDENTITY
 
-```text
-═══════════════════════════════════════════════════════════════════
- ENDGAME-AI — zero-context handover (any AI provider)
-═══════════════════════════════════════════════════════════════════
+```
+REPO:     github.com/wgabrys88/endgame-ai
+BRANCH:   unify-rewrite (the only development branch — never use main)
+PATH:     C:\Users\ewojgab\Downloads\endgame-ai
+HEAD:     3b39409
+LOC:      4,443 Python (target: under 2,000)
+```
 
-You have no prior context. This block is the full briefing.
+**What this is:** A self-evolving organism that decomposes any goal into parallel subtasks, assigns them to specialized workers based on expertise and fitness, executes them on the Windows desktop (keyboard, mouse, screen), verifies outcomes, and breeds better workers over time.
 
-TRIGGER: User says "continue with endgame-ai" → checkout branch unify-rewrite,
-read OBSERVATIONS.md, work toward the NEXT ACTIONS below.
+**What this is NOT:** An agent framework. Not a chatbot wrapper. Not a pipeline that runs once.
 
-VISION: LIVING ORGANISM on Windows — not an agent framework.
-Brain metaphor: simple areas (observe, reason, act) wired by a bus.
-Intelligence = wiring + shared goal + personalities — not Python blocklists.
-Papers = one or two equations each → few lines of deterministic code.
+---
 
-REPO: github.com/wgabrys88/endgame-ai
-BRANCH: unify-rewrite (trunk). main = scale-1 reference — do not develop there.
+## YOUR WORKFLOW (mandatory for every session)
 
-═══════════════════════════════════════════════════════════════════
- PAPERS — DO NOT BREAK these equations in code
-═══════════════════════════════════════════════════════════════════
+1. Read this file and the code (`*.py`, `prompts/`, `plugins/`)
+2. Research the papers below (fetch abstracts, understand the math)
+3. Deduce your own implementation plan based on current code vs. paper intent
+4. Implement changes — no half-measures, no feature flags, no fallback paths
+5. Compile check: `python -m py_compile *.py plugins/*.py`
+6. **Rewrite this file** (not append) reflecting new state after each milestone
+7. Commit and push: `git add -A && git commit -m "description" && git push origin unify-rewrite`
+8. Repeat from step 3 until goal is achieved
 
-MoE routing (Bause 2026) — arxiv.org/abs/2605.25929
-  π_j = exp(β·C_j) / Σ exp(β·C_l)   β=3.0, C=power=confidence
-  Code: comms.softmax_route + engine._moe_route
+**Rules:**
+- Never create new .py files — merge inward, delete outward
+- Net LOC must decrease or stay flat with each commit
+- One LLM calling pattern only (`_call_circuit`)
+- Prompts are code — evaluate and rewrite them as part of implementation
+- No branching logic for "old vs new" — replace completely
+- Update this file after every behavioral change
+- Run from Windows PowerShell only (never WSL — deadlocks on file locks)
+- Never commit `runtime/` or `sessions/`
+- Use `git push origin unify-rewrite` (Windows credential via git.exe if in WSL)
 
-Pressure fields (Rodriguez 2026) — arxiv.org/abs/2601.08129
-  P = Σ w_j·φ_j(signals), f(t+1) = f(t)·e^(-λ)
-  Stagnation = weighted(failures*0.6 + time_pressure*0.4)
-  Code: engine._update_pressure
+---
 
-MAP-Elites (Mouret 2015) — arxiv.org/abs/1504.04909
-  archive[niche] = (solution, fitness)
-  Replace if new_fitness > current. Selection = uniform random.
-  Code: reactor.Breeder
+## THE VISION
 
-ReAct (Yao 2022) — arxiv.org/abs/2210.03629
-  thought → action → observation → repeat
-  Pipeline: planner→actor→verifier→fission_judge→[reflector→mutator]
+Five cheap local LLMs (nemotron on LM Studio, $0 cost) running in parallel. Each too stupid to solve complex problems alone. But wired together with deterministic math — softmax routing, pressure fields, evolutionary selection — they become a colony organism that:
 
-═══════════════════════════════════════════════════════════════════
- ARCHITECTURE
-═══════════════════════════════════════════════════════════════════
+1. **Decomposes** any goal into expertise-matched subtasks
+2. **Claims** work to avoid duplication (bus coordination)
+3. **Executes** on the real desktop (files, git, GUI, keyboard, mouse)
+4. **Verifies** outcomes via screen observation and print evidence
+5. **Breeds** better workers — the fittest personas get more slots
+6. **Evolves** its own prompts and plugins under failure pressure
+7. **Runs indefinitely** toward a long-term goal, replanning on every failure
 
-  tui.py → reactor.py → 5× main.py (slots)
-  slot1 = comms_operator (MoE router, no LLM)
-  slots2-5 = workers (breedable personas)
+The system must be **useful for any task**: writing code, managing files, browsing the web, filling forms, running builds, deploying software — anything a human does at a desktop.
 
-Pipeline per rod: scheduler → planner → actor → verifier → fission_judge → [reflector → mutator]
-Personality = prompts/personalities/{name}.txt (system prompt).
-Circuits = prompts/*.txt (user-message hints per pipeline stage).
-LLM output = loose JSON via agents._call_circuit / _parse_json.
+---
 
-KEEP: observer + win32 + actions (desktop organ), acp_client (Kiro backend).
-KEEP: exec, git, plugin mutation — always on.
+## PAPERS — THE MATHEMATICAL FOUNDATION
 
-═══════════════════════════════════════════════════════════════════
- LAWS
-═══════════════════════════════════════════════════════════════════
+You MUST research these papers, understand the equations, and ensure the code implements them faithfully. Do not approximate. Do not skip.
 
-L1 No new .py files — merge inward.
-L2 Delete before add — net LOC shrinks each pass.
-L3 One LLM pattern (_call_circuit) — no AST zoo.
-L4 Keep desktop stack (win32, observer, actions).
-L5 Never commit runtime/ or sessions/.
-L6 Update OBSERVATIONS.md on behavior-changing commits.
-L7 Always run from WINDOWS native python (WSL deadlocks on file locks).
-L8 Commit clean before any live run (the system may self-modify files).
+### 1. Mixture of Experts routing (Bause 2026)
+- **Paper:** arxiv.org/abs/2605.25929
+- **Equation:** `π_j = exp(β·C_j) / Σ_l exp(β·C_l)` where β=3.0, C=confidence=power
+- **Intent:** Given an input (goal/task), route EXCLUSIVELY to the best expert. Winner-take-all or top-k with load balancing.
+- **Current code:** `comms.softmax_route()` + `engine._moe_route()`
+- **GAP:** Routing calculates weights but ALL workers grab the goal simultaneously. The gate result must ENFORCE exclusive assignment. Workers without assignment must stay idle or do maintenance.
 
-═══════════════════════════════════════════════════════════════════
- RUN (Windows PowerShell native — NEVER WSL)
-═══════════════════════════════════════════════════════════════════
+### 2. Pressure Fields (Rodriguez 2026)
+- **Paper:** arxiv.org/abs/2601.08129
+- **Equation:** `P = Σ w_j·φ_j(signals)`, decay `f(t+1) = f(t)·e^(-λ)`
+- **Intent:** Environmental pressure drives behavioral adaptation. High pressure = change strategy.
+- **Current code:** `engine._update_pressure()` — stagnation = failures×0.6 + time_pressure×0.4
+- **STATUS:** ✅ Working. Drives escalation and mutation triggers.
 
+### 3. MAP-Elites evolutionary selection (Mouret 2015)
+- **Paper:** arxiv.org/abs/1504.04909
+- **Equation:** `archive[niche] = (solution, fitness)` — replace if `new_fitness > current`
+- **Intent:** Maintain a DIVERSE archive of high-quality solutions across behavioral niches. Mutate solutions to explore. The "solution" being evolved should be the BEHAVIOR (personality prompt), not just a fixed label.
+- **Current code:** `reactor.Breeder`
+- **GAP:** Solution space is only 5 fixed persona names. True MAP-Elites requires evolving the personality PROMPTS themselves as solutions. The mutator currently patches plugins but never creates new behavioral variants.
+
+### 4. ReAct reasoning loop (Yao 2022)
+- **Paper:** arxiv.org/abs/2210.03629
+- **Equation:** `thought → action → observation → repeat`
+- **Intent:** Interleave reasoning with environment interaction. Each cycle produces observable evidence.
+- **Current code:** `planner(think) → actor(act) → observer(see) → verifier(judge)`
+- **STATUS:** ✅ Working end-to-end. Most faithful implementation.
+
+---
+
+## ARCHITECTURE (current)
+
+```
+tui.py → reactor.py → 5× main.py (slots)
+  slot 1 = comms_operator (MoE router, deterministic, no LLM)
+  slots 2-5 = workers (breedable personas)
+
+Per worker pipeline (ReAct):
+  scheduler → planner → actor → verifier → fission_judge → [reflector → mutator]
+
+Bus: runtime/comms/messages.json (blackboard, all slots read/write)
+Pressure: per-cycle stagnation/velocity tracking
+Breeding: reactor reads evolve messages, maintains MAP-Elites archive
+Desktop: observer.py (UIA screen reading) + actions.py (keyboard/mouse/exec)
+```
+
+---
+
+## WHAT MUST CHANGE — THE ARCHITECTURAL REWRITE
+
+The code is 4,443 LOC. Target is under 2,000. This requires OoO (Out-of-Order) programming: eliminate branching, eliminate defensive fallbacks, let the event-driven loop handle everything.
+
+### Critical Fixes (in order)
+
+**1. MoE must ENFORCE routing, not just calculate it**
+- Human goal → ONLY comms_operator receives it
+- comms_operator decomposes into subtasks via LLM (it currently doesn't use LLM — it should for decomposition)
+- Each subtask routed to ONE worker via softmax gate
+- Workers only plan goals explicitly assigned to them
+- Unassigned workers do maintenance (self-improvement, cleanup)
+
+**2. Workers must CLAIM and COORDINATE**
+- Before planning, worker reads bus for other workers' claims
+- Posts claim: "I am working on [subtask]"
+- Planner prompt instructs: "filter through your expertise, avoid duplicating others"
+- Natural stagger: personality-based delay (0-2s) so first worker's claim is visible to others
+
+**3. MAP-Elites must evolve PROMPTS, not just swap labels**
+- The "solution" in the archive should be the personality prompt TEXT
+- Mutator creates variations of personality prompts under pressure
+- Fission credit → store the winning prompt in archive[niche]
+- On respawn → select best prompt from archive for that niche
+- This gives genuine behavioral diversity and evolution
+
+**4. Fission must flow (the fitness signal)**
+- Fission = verified novel progress. It's the ONLY fitness signal for breeding.
+- Judge must credit any confirmed work with evidence (loosened — done)
+- "retain" evolve message → reactor archives it → breeding activates
+- Without fissions, the organism cannot evolve. This is the heartbeat.
+
+**5. Code unification — OoO event-driven**
+- One event loop, one message format, one LLM call pattern
+- Eliminate: duplicate state tracking, defensive try/except chains, fallback paths
+- Every action is an event. Every response is an event. The loop processes events.
+- Target: each file under 200 LOC. Total system under 2,000 LOC.
+
+**6. Prompts are code — evaluate and evolve them**
+- `prompts/*.txt` are not static config — they're executable behavior
+- The planner prompt determines what the LLM does. A bad prompt = a bug.
+- Evaluate prompt quality by fission rate (confirmed work / total cycles)
+- Under pressure: mutator rewrites prompts (not just plugins)
+- Store winning prompts in MAP-Elites archive as the "solution"
+
+---
+
+## CAPABILITIES (what the system can do NOW)
+
+- **exec**: Run any Python code in the worker process (files, git, subprocess, network)
+- **read_file / write_file**: Direct filesystem access
+- **GUI**: Open applications, click elements, type text (via win32.py UIA bindings)
+- **Screen reading**: Observe active window, read UI elements, parse text
+- **Git**: Commit, push, branch, diff (via subprocess)
+- **Bus communication**: Workers coordinate via shared blackboard
+- **Self-modification**: Mutator can patch plugins and (should) evolve prompts
+- **Breeding**: Fittest workers get more slots over time (when fission flows)
+
+This means the system can do ANY desktop task: code, browse, fill forms, manage files, deploy, test, write documents, control other applications.
+
+---
+
+## RUN COMMANDS
+
+```powershell
+# Always from Windows PowerShell (never WSL)
+cd C:\Users\ewojgab\Downloads\endgame-ai
+
+# Clean runtime
 python -c "import log; log.cleanup_runtime(deep=True)"
-python tui.py --model-profile nemotron_parallel
-python tui.py --backend acp
 
-LM Studio http://192.168.16.31:1234 · nemotron · Max Concurrent ≥ 5.
-CRITICAL: Run from WINDOWS python only. WSL causes fcntl deadlock.
+# Run with local LLM (LM Studio must be running at 192.168.16.31:1234)
+python tui.py --model-profile nemotron_parallel "your goal here"
 
-COMPILE: python -m py_compile tui.py reactor.py main.py engine.py agents.py comms.py
+# Run with Kiro CLI backend (ACP mode)
+python tui.py --backend acp "your goal here"
+
+# Compile check (do this after every change)
+python -m py_compile tui.py reactor.py main.py engine.py agents.py comms.py llm.py
 ```
-
-*End META PROMPT.*
 
 ---
 
-## STATUS (2026-06-15 09:12)
+## FILE MAP
 
-4,443 Python LOC across 18 files (was 6,175 at start of session, -28%).
-
-### Fixes applied this session (all committed and pushed):
-1. ✅ fission_log.py restored from mutator corruption
-2. ✅ Idle goal shortened (was full personality text → now "Self-directed {persona} maintenance")
-3. ✅ fission_judge prompt loosened (credit any confirmed work with evidence)
-4. ✅ Mutator validation: trial `exec()` catches import/name errors before writing
-5. ✅ WSL lock guard: skips fcntl.flock on /mnt/ paths to prevent EDEADLK
-6. ✅ Verifier prompt: pragmatic — accept any print evidence, deny only empty results
-7. ✅ All worker personalities: self-directed when idle (no more "wait for MoE route")
-8. ✅ Planner prompt: CRITICAL section emphasizing print() in every exec step
-
-### Verified behavior from two runs:
-- MoE routing works: softmax gate weights 0.25→0.65, proper escalation
-- Pipeline cycles: plan→actor→verify→reflect→mutate (full loop)
-- Bus communication: 138 messages, @mention routing, cross-slot coordination
-- comms_operator: 23 MoE routes in 8 min, no LLM needed
-- Verifier confirmed 2 tasks (first run) — fission_judge denied both (too strict, now fixed)
-- Mutator attempted plugin evolution (produced garbage, now blocked by exec validation)
-
-### Known remaining issues:
-- No ACP run tested yet (Kiro CLI backend via acp_client.py)
-- Breeder selection (MAP-Elites) has not triggered — needs multiple fissions first
-- Long-term goal not set in test runs — comms_operator defaults to maintenance routing
+```
+main.py        69   entry point per worker slot
+engine.py     320   main loop + pressure + MoE gate + plugins
+agents.py     672   all pipeline agents (scheduler/planner/actor/verifier/fission/reflector/mutator)
+reactor.py    237   5 slots + MAP-Elites breeder + respawn
+tui.py        300   terminal UI for colony display
+comms.py      721   blackboard bus + softmax routing + message protocol
+llm.py        250   LM Studio HTTP + ACP backend + lock guard
+log.py        123   JSONL event logging + session management
+config.py     250   all constants, personas, profiles, thresholds
+actions.py    362   desktop verbs (exec, read, write, GUI)
+observer.py   401   Windows UIA screen observation
+win32.py      366   ctypes UIA bindings
+acp_client.py 252   Kiro CLI sequential prompting backend
+python_code.py 41   syntax validation
+plugins/       81   4 hot-swappable runtime plugins
+prompts/       ~20  circuit hints + personality system prompts
+```
 
 ---
 
-## NEXT ACTIONS
+## DONE (this session, 2026-06-15)
 
-1. Run live 5 min from Windows PowerShell (command below) — verify fixes work
-2. If fissions happen: observe breeder selection in reactor events
-3. If fissions still fail: analyze fission_judge responses, adjust prompt
-4. Test ACP backend: `python tui.py --backend acp "improve self"`
-5. Set a real LONG_TERM_GOAL and observe whether colony converges toward it
+- Codebase slimmed from 6,175 → 4,443 LOC (-28%)
+- fission_log.py restored from mutator corruption
+- Fission judge loosened (credit confirmed work)
+- Mutator validation: trial exec() catches broken imports
+- WSL lock guard (skip fcntl on /mnt/ paths)
+- Worker personalities made self-directed when idle
+- Planner prompt: print() evidence requirement emphasized
+- Verifier prompt: pragmatic (accept any evidence)
 
 ---
 
-## FILE INVENTORY (4,443 LOC)
+## NEXT MILESTONE
 
-```
-main.py       69   — entry point per persona
-engine.py    320   — pipeline + pressure math + MoE gate + plugins
-agents.py    672   — scheduler/planner/actor/verifier/fission/reflector/mutator
-reactor.py   237   — 5 slots + MAP-Elites breeder
-tui.py       300   — compact colony display
-comms.py     721   — blackboard bus protocol + softmax route
-llm.py       250   — LM Studio + ACP backend + WSL lock guard
-log.py       123   — JSONL events, session folders
-config.py    250   — slots, personas, profiles, priorities
-actions.py   362   — desktop verbs + python exec
-observer.py  401   — Windows UIA screen observation
-win32.py     366   — ctypes UIA bindings
-acp_client.py 252  — Kiro CLI sequential backend
-python_code.py 41  — syntax validation
-plugins/ (4)  81   — hot-swappable runtime plugins
-prompts/      ~20  — circuit + personality text files
-```
+The system must complete ONE full cycle in a live run:
+1. Human posts goal
+2. comms_operator decomposes and routes subtasks (NOT broadcast)
+3. Each worker plans its OWN subtask (not duplicate)
+4. Workers execute, verify, earn fission credit
+5. Reactor archives fitness → breeding activates
+6. On next goal: fitter workers get priority
+
+**When this works, the organism is alive.**
+
+Then: reduce to under 2,000 LOC via OoO unification.
+Then: evolve prompts as MAP-Elites solutions.
+Then: long-running autonomous operation toward any goal.
