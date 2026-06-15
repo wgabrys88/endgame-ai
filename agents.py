@@ -27,14 +27,10 @@ _CIRCUIT_HINTS: dict[str, str] = {
     "fission_judge": '{"verdict":"credit"|"deny","diagnosis":"...","suggestion":"...","rule":""}',
     "actor": '{"actions":[{"verb":"click|focus|write|press|hotkey|scroll","target":"[id]","value":""}],"conclusion":"EXECUTE"|"DONE"|"CANNOT"}',
 }
-
-
 def _personality(board: dict[str, Any] | None = None) -> str:
     if board:
         return str(board.get("personality", "")).strip()
     return os.environ.get("ENDGAME_PERSONALITY", "").strip()
-
-
 def _llm_event_data(result: LLMResult, extra: dict[str, Any] | None = None) -> dict[str, Any]:
     data: dict[str, Any] = {
         "output_chars": len(result.text or ""),
@@ -44,30 +40,22 @@ def _llm_event_data(result: LLMResult, extra: dict[str, Any] | None = None) -> d
     if extra:
         data.update(extra)
     return data
-
-
 def _persona_prompt(persona: str) -> str:
     path = config.PROMPTS_DIR / "personalities" / f"{persona}.txt"
     if path.exists():
         return path.read_text(encoding="utf-8").strip()
     return ""
-
-
 def _personality_system(board: dict[str, Any] | None = None) -> str:
     name = _personality(board)
     text = _persona_prompt(name)
     if text:
         return text
     return f"You are {name or 'endgame-ai'}, a reactor rod in the colony organism."
-
-
 def _load_prompt(role: str) -> str:
     path = config.PROMPTS_DIR / f"{role}.txt"
     if path.exists():
         return path.read_text(encoding="utf-8").strip()
     return ""
-
-
 def _llm_user(circuit: str, body: str) -> str:
     parts: list[str] = [_REASONING]
     hint = _CIRCUIT_HINTS.get(circuit, "")
@@ -79,8 +67,6 @@ def _llm_user(circuit: str, body: str) -> str:
     parts.append("---TASK_STATE---")
     parts.append(body.strip())
     return "\n".join(parts)
-
-
 def _strip_code_fence(text: str) -> str:
     cleaned = str(text).strip()
     if not cleaned.startswith("```"):
@@ -91,8 +77,6 @@ def _strip_code_fence(text: str) -> str:
     if lines and lines[-1].strip().startswith("```"):
         lines = lines[:-1]
     return "\n".join(lines).strip()
-
-
 def _parse_json(text: str) -> dict[str, Any] | None:
     raw = _strip_code_fence(str(text or "").strip())
     if not raw:
@@ -107,8 +91,6 @@ def _parse_json(text: str) -> dict[str, Any] | None:
         if isinstance(parsed, dict):
             return parsed
     return None
-
-
 def _call_circuit(
     board: dict[str, Any],
     circuit: str,
@@ -123,8 +105,6 @@ def _call_circuit(
         role or circuit,
         cache_key=cache_key or circuit,
     )
-
-
 def _format_history(history: list) -> str:
     if not history:
         return ""
@@ -133,8 +113,6 @@ def _format_history(history: list) -> str:
         if isinstance(h, dict):
             lines.append(f"  {json.dumps(h, ensure_ascii=False)[:400]}")
     return "\n".join(lines)
-
-
 def _desktop_context() -> str:
     try:
         from observer import observe
@@ -148,8 +126,6 @@ def _desktop_context() -> str:
         return "\n".join(parts)
     except Exception as exc:
         return f"DESKTOP_OBSERVE_ERROR: {type(exc).__name__}: {exc}"
-
-
 def _planner_state(board: dict[str, Any]) -> str:
     persona = _personality(board)
     bus_ctx = ""
@@ -189,16 +165,12 @@ def _planner_state(board: dict[str, Any]) -> str:
         parts += ["", bus_ctx]
     parts += ["", "Plan JSON:"]
     return "\n".join(parts)
-
-
 def _sanitize_plan_step(step: str) -> str:
     if not _ELEMENT_ID_RE.search(step):
         return step
     cleaned = _ELEMENT_ID_RE.sub("", step)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
     return cleaned or step
-
-
 def _normalize_plan_sequence(sequence: Any) -> list[str]:
     if not isinstance(sequence, list):
         return []
@@ -216,14 +188,10 @@ def _normalize_plan_sequence(sequence: Any) -> list[str]:
             elif text:
                 steps.append(_sanitize_plan_step(text))
     return steps
-
-
 def _advance_plan(plan: list[dict[str, Any]]) -> None:
     pending = next((s for s in plan if isinstance(s, dict) and s.get("status") == "pending"), None)
     if pending:
         pending["status"] = "active"
-
-
 def _build_args(verb: str, target: str, value: str) -> dict[str, Any]:
     from actions import DEFAULT_SCROLL_AMOUNT
     target = target.strip("[]")
@@ -245,8 +213,6 @@ def _build_args(verb: str, target: str, value: str) -> dict[str, Any]:
     if verb == "focus":
         return {"window_title": target or value}
     return {}
-
-
 def _render_actor_context(board: dict[str, Any], instruction: str) -> str:
     parts: list[str] = [f"GOAL: {board.get('goal', '')}"]
     screen = str(board.get("screen", "")).strip()
@@ -261,22 +227,16 @@ def _render_actor_context(board: dict[str, Any], instruction: str) -> str:
         parts.append("\n".join(lines))
     parts.append(f"INSTRUCTION: {instruction}")
     return "\n\n".join(parts)
-
-
 def _plan_steps(sequence: list[str]) -> list[dict[str, Any]]:
     return [
         {"text": text, "status": "active" if i == 0 else "pending"}
         for i, text in enumerate(sequence)
     ]
-
-
 def _restore_after_human_task(board: dict[str, Any]) -> None:
     board["priority"] = config.PRI_MAINTENANCE
     board["goal"] = ""
     board["plan"] = []
     board["_human_denials"] = 0
-
-
 def _verify_outcome(
     board: dict[str, Any],
     done_when: str,
@@ -304,8 +264,6 @@ def _verify_outcome(
     if llm_out is not None:
         data = _llm_event_data(llm_out, data)
     return {"phase": "verify", "data": data, "next": "reflector"}
-
-
 class ObserverAgent:
     def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
         from observer import observe
@@ -323,8 +281,6 @@ class ObserverAgent:
                 "desktop_summary": obs.desktop_summary,
             },
         }
-
-
 class SchedulerAgent:
     def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
         if _personality(board) != "comms_operator":
@@ -350,8 +306,6 @@ class SchedulerAgent:
             pending[0]["status"] = "active"
             return {"next": "actor", "data": {"reason": "next_step"}}
         return {"next": "verifier", "data": {"reason": "plan_complete"}}
-
-
 class PlannerAgent:
     def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
         goal = board.get("goal", "")
@@ -383,8 +337,6 @@ class PlannerAgent:
             "data": _llm_event_data(llm_out, {"mode": mode, "steps": len(steps), "done_when": done_when}),
             "writes": writes,
         }
-
-
 class ActorAgent:
     def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
         from actions import execute_step, execute_verb, is_python_step, VERBS
@@ -471,8 +423,6 @@ class ActorAgent:
             "next": "verifier" if plan_done() else "actor",
             "writes": {"plan": plan, "history": history[-config.MAX_HISTORY:]},
         }
-
-
 class VerifierAgent:
     def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
         done_when = board.get("done_when", "")
@@ -492,8 +442,6 @@ class VerifierAgent:
         verdict = str(parsed.get("verdict", "denied")).lower()
         evidence = str(parsed.get("evidence", ""))[:400] or str(llm_out.text)[:200]
         return _verify_outcome(board, done_when, verdict == "confirmed", evidence, llm_out=llm_out)
-
-
 class FissionJudgeAgent:
     def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
         completed = board.get("completed", [])
@@ -535,8 +483,6 @@ class FissionJudgeAgent:
         if llm_meta:
             fission_data.update(llm_meta)
         return {"phase": "fission", "data": fission_data}
-
-
 class ReflectorAgent:
     def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
         history = board.get("history", [])
@@ -563,8 +509,6 @@ class ReflectorAgent:
         }
         writes = {"plan": [], "history": history[-config.MAX_HISTORY:] + [{"reflection": reflection}], "reflection": reflection}
         return {"phase": "reflect", "data": _llm_event_data(llm_out, reflection), "writes": writes, "next": "mutator"}
-
-
 class MutatorAgent:
     def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
         pressure = board.get("_pressure", {})
@@ -607,8 +551,6 @@ class MutatorAgent:
             _post_mutation_candidate(board, filename, diff, obs)
             return {"phase": "mutate", "data": event_data, "writes": {"mutation": data}, "next": "planner"}
         return {"phase": "mutate", "data": event_data, "next": "planner"}
-
-
 def _parse_fission_judge_payload(llm_out: LLMResult) -> dict[str, str] | None:
     parsed = _parse_json(llm_out.text)
     if not parsed:
@@ -624,8 +566,6 @@ def _parse_fission_judge_payload(llm_out: LLMResult) -> dict[str, str] | None:
         "suggestion": suggestion,
         "rule": str(parsed.get("rule", "")).strip(),
     }
-
-
 def _fission_review(board: dict[str, Any], completed: str) -> dict[str, str]:
     credited = [str(item) for item in board.get("fission_credited", [])]
     if str(completed) in credited:
@@ -663,22 +603,16 @@ def _fission_review(board: dict[str, Any], completed: str) -> dict[str, str]:
         "_llm": _llm_event_data(llm_out, {"judge_error": "invalid_json"}),
     }
 
-
-
 def _fitness(board: dict[str, Any], fissions: int) -> float:
     """MAP-Elites fitness: power + fission bonus - stagnation penalty."""
     stag = float(board.get("_pressure", {}).get("stagnation", 0) or 0)
     power = float(board.get("power", 1.0 - stag) or 0)
     return round(max(0.0, min(1.0, 0.55 + power * 0.35 + min(0.2, fissions * 0.02) - stag * 0.25)), 4)
-
-
 def _niche(board: dict[str, Any], behavior: str) -> str:
     stag = float(board.get("_pressure", {}).get("stagnation", 0) or 0)
     band = "high" if stag >= config.STAG_ESCALATE else "mid" if stag >= 0.3 else "low"
     safe = re.sub(r"[^a-z0-9_]+", "_", behavior.lower()).strip("_") or "general"
     return f"{safe}:{band}"
-
-
 def _post_evolution_candidate(board: dict[str, Any], fissions: int, completed: str, fitness: float, review: dict[str, str] | None = None) -> None:
     try:
         import comms
@@ -687,8 +621,6 @@ def _post_evolution_candidate(board: dict[str, Any], fissions: int, completed: s
                           data={"niche": _niche(board, "general_task"), "fissions": fissions})
     except Exception:
         pass
-
-
 def _post_failure_candidate(board: dict[str, Any], done_when: str, evidence: str, **_kw: Any) -> None:
     try:
         import comms
@@ -699,15 +631,11 @@ def _post_failure_candidate(board: dict[str, Any], done_when: str, evidence: str
                           data={"niche": _niche(board, "denial"), "evidence": str(evidence)[:200]})
     except Exception:
         pass
-
-
 def _existing_plugin_names() -> list[str]:
     try:
         return [p.name for p in sorted(config.PLUGINS_DIR.glob("*.py")) if p.is_file()]
     except OSError:
         return []
-
-
 def _resolve_existing_plugin(filename: str) -> Path | None:
     raw = str(filename).strip().replace("\\", "/")
     if raw.startswith("plugins/"):
@@ -720,8 +648,6 @@ def _resolve_existing_plugin(filename: str) -> Path | None:
     except ValueError:
         return None
     return path if path.is_file() else None
-
-
 def _apply_plugin_mutation(filename: str, content: str) -> tuple[bool, str, str]:
     path = _resolve_existing_plugin(filename)
     if path is None:
@@ -751,8 +677,6 @@ def _apply_plugin_mutation(filename: str, content: str) -> tuple[bool, str, str]
             pass
         return False, f"apply failed: {exc}", ""
     return True, f"patched plugins/{path.name}", diff
-
-
 def _post_mutation_candidate(board: dict[str, Any], filename: str, diff: str, obs: str) -> None:
     try:
         import comms

@@ -23,8 +23,6 @@ import comms
 import log
 _OBSERVER = ObserverAgent()
 _SCREEN_AGENTS = frozenset({"actor", "verifier"})
-
-
 AGENTS: dict[str, Any] = {
     "scheduler": SchedulerAgent(),
     "planner": PlannerAgent(),
@@ -37,8 +35,6 @@ AGENTS: dict[str, Any] = {
 
 _plugin_modules: dict[str, Any] = {}
 _plugin_mtimes: dict[str, float] = {}
-
-
 @dataclass(slots=True)
 class AgentContext:
     """Runtime identity for one main.py process — personality instance + board."""
@@ -52,8 +48,6 @@ class AgentContext:
     @property
     def is_orchestrator(self) -> bool:
         return self.personality.is_orchestrator
-
-
 def ensure_context(board: dict[str, Any]) -> AgentContext:
     """Bind board to a Personality object (env fallback for legacy paths)."""
     name = str(board.get("personality", "")).strip()
@@ -66,8 +60,6 @@ def ensure_context(board: dict[str, Any]) -> AgentContext:
         board["personality"] = personality.name
         board["slot"] = personality.slot
     return AgentContext(personality=personality, board=board)
-
-
 def run(board: dict[str, Any], interrupted: Callable[[], bool]) -> None:
     """Main loop: work on goal, check bus for priority interrupts each cycle."""
     ctx = ensure_context(board)
@@ -134,8 +126,6 @@ def run(board: dict[str, Any], interrupted: Callable[[], bool]) -> None:
                 break
 
         time.sleep(config.DELAY_BETWEEN_CYCLES)
-
-
 # --- Desktop observe (GUI mode) ---
 
 def _needs_screen(board: dict[str, Any], target: str) -> bool:
@@ -151,8 +141,6 @@ def _needs_screen(board: dict[str, Any], target: str) -> bool:
         if is_python_step(str(active.get("text", ""))):
             return False
     return True
-
-
 def _run_observer(board: dict[str, Any]) -> None:
     result = _OBSERVER.run(board)
     if not result:
@@ -160,8 +148,6 @@ def _run_observer(board: dict[str, Any]) -> None:
     log.emit(result.get("phase", "observe"), result.get("data"))
     for key, value in (result.get("writes") or {}).items():
         board[key] = value
-
-
 # --- Plugin Hot-Swap ---
 # Personas can write plugins/ that take effect next cycle without restart.
 
@@ -198,8 +184,6 @@ def _run_plugins(board: dict[str, Any]) -> None:
                     log.emit(result["phase"], result.get("data"))
             except Exception as e:
                 log.emit("plugin.error", {"name": name, "error": str(e)[:120]})
-
-
 # --- Pressure Math ---
 # Stagnation = how stuck this persona is (0.0 = productive, 1.0 = completely stuck)
 # This feeds into comms_operator's routing decisions and TUI display.
@@ -232,8 +216,6 @@ def _update_pressure(board: dict[str, Any]) -> None:
     if p["cycles"] % 10 == 0:
         log.emit("pressure", {"stagnation": round(stag, 3), "power": board["power"],
                                "velocity": velocity, "failures": failures, "cycles": p["cycles"]})
-
-
 # --- MoE Gating (Bause 2026) — comms_operator softmax router ---
 
 def _pick_alternate(persona: str) -> str:
@@ -242,8 +224,6 @@ def _pick_alternate(persona: str) -> str:
     if "quality_critic" in pool:
         return "quality_critic"
     return pool[0] if pool else "implementor"
-
-
 def _moe_route(ctx: AgentContext) -> bool:
     """Deterministic MoE routing cycle. Returns True if a route/escalation fired."""
     board = ctx.board
@@ -310,8 +290,6 @@ def _moe_route(ctx: AgentContext) -> bool:
         return True
 
     return False
-
-
 # --- Priority Interrupt ---
 
 def _apply_bus_interrupt(board: dict[str, Any]) -> bool:
@@ -322,8 +300,6 @@ def _apply_bus_interrupt(board: dict[str, Any]) -> bool:
         _maybe_post_progress(board, "interrupt")
         return True
     return False
-
-
 def _maybe_post_progress(board: dict[str, Any], phase: str, step: str = "") -> None:
     """Publish throttled colony progress for TUI (pri=0, not an interrupt)."""
     now = time.time()

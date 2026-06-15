@@ -44,8 +44,6 @@ PERSONAS: list[str] = [
 WORKER_PERSONAS: list[str] = ["architect", "implementor", "reviewer", "devops", "quality_critic"]
 SLOT_DEFAULTS: dict[int, str] = {2: "architect", 3: "implementor", 4: "reviewer", 5: "devops"}
 PERSONA_SLOTS: dict[str, int] = {v: k for k, v in SLOT_DEFAULTS.items()}
-
-
 @dataclass(frozen=True, slots=True)
 class Personality:
     """One endgame-ai slot instance — name, slot, mission (OoO identity object)."""
@@ -78,8 +76,6 @@ class Personality:
 
     def bus_context_depth(self) -> int:
         return 10 if self.is_orchestrator else 6
-
-
 # --- Priority levels ---
 PRI_MAINTENANCE: int = 0
 PRI_NORMAL: int = 1
@@ -161,8 +157,6 @@ MODEL_PROFILES: dict[str, dict[str, Any]] = {
 }
 
 _active_profile: str = ""
-
-
 def apply_model_profile(profile_or_model: str, *, force: bool = False) -> tuple[str, bool]:
     """Apply a model profile by name or auto-detect from model id."""
     global _active_profile
@@ -182,12 +176,8 @@ def apply_model_profile(profile_or_model: str, *, force: bool = False) -> tuple[
             globals()[name] = value
     _active_profile = key
     return key, True
-
-
 def active_model_profile() -> str:
     return _active_profile
-
-
 # --- Timing ---
 DELAY_BETWEEN_CYCLES: float = 2.0
 BUS_POLL_INTERVAL: float = 3.0  # check bus for priority interrupts

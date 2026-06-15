@@ -41,19 +41,13 @@ __all__ = [
 
 type ElementBook = dict[str, Any]
 type VerbFn = Callable[[dict[str, Any], ElementBook], "ActionResult"]
-
-
 @dataclass(slots=True)
 class ActionResult:
     verb: str
     success: bool
     observation: str
     data: dict[str, Any] = field(default_factory=dict)
-
-
 VERBS: dict[str, VerbFn] = {}
-
-
 def execute_verb(verb: str, args: dict[str, Any], book: ElementBook, _state: Any) -> ActionResult:
     handler = VERBS.get(verb)
     if not handler:
@@ -62,15 +56,11 @@ def execute_verb(verb: str, args: dict[str, Any], book: ElementBook, _state: Any
         return handler(args, book)
     except Exception as e:
         return ActionResult(verb, False, f"ERROR: {type(e).__name__}: {e}")
-
-
 def _register(name: str):
     def dec(fn: VerbFn) -> VerbFn:
         VERBS[name] = fn
         return fn
     return dec
-
-
 @_register("click")
 def _click(args: dict[str, Any], book: ElementBook) -> ActionResult:
     selector = str(args.get("selector", ""))
@@ -86,8 +76,6 @@ def _click(args: dict[str, Any], book: ElementBook) -> ActionResult:
     time.sleep(config.DELAY_MOUSE_HOLD)
     user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
     return ActionResult("click", True, f"clicked '{entry.name}' at ({px},{py})")
-
-
 @_register("write")
 def _write(args: dict[str, Any], book: ElementBook) -> ActionResult:
     import ctypes
@@ -109,8 +97,6 @@ def _write(args: dict[str, Any], book: ElementBook) -> ActionResult:
         user32.SendInput(2, ctypes.byref(inputs), ctypes.sizeof(INPUT))
         time.sleep(config.DELAY_CHAR_SEND)
     return ActionResult("write", True, f"typed {len(text)} chars")
-
-
 @_register("press")
 def _press(args: dict[str, Any], book: ElementBook) -> ActionResult:
     key = str(args.get("key", "")).lower()
@@ -122,8 +108,6 @@ def _press(args: dict[str, Any], book: ElementBook) -> ActionResult:
     time.sleep(config.DELAY_KEY_INTER)
     user32.keybd_event(vk, 0, KEYEVENTF_KEYUP | flags, None)
     return ActionResult("press", True, f"pressed {key}")
-
-
 @_register("hotkey")
 def _hotkey(args: dict[str, Any], book: ElementBook) -> ActionResult:
     keys = args.get("keys", [])
@@ -141,8 +125,6 @@ def _hotkey(args: dict[str, Any], book: ElementBook) -> ActionResult:
         user32.keybd_event(vk, 0, KEYEVENTF_KEYUP | (KEYEVENTF_EXTENDEDKEY if vk in EXTENDED_VKS else 0), None)
         time.sleep(config.DELAY_KEY_INTER)
     return ActionResult("hotkey", True, f"pressed {'+'.join(keys)}")
-
-
 @_register("scroll")
 def _scroll(args: dict[str, Any], book: ElementBook) -> ActionResult:
     selector = str(args.get("selector", ""))
@@ -157,15 +139,11 @@ def _scroll(args: dict[str, Any], book: ElementBook) -> ActionResult:
     time.sleep(config.DELAY_CURSOR_SETTLE)
     user32.mouse_event(MOUSEEVENTF_WHEEL, 0, 0, amount * WHEEL_DELTA, 0)
     return ActionResult("scroll", True, f"scrolled {amount}")
-
-
 @_register("wait")
 def _wait(args: dict[str, Any], book: ElementBook) -> ActionResult:
     seconds = min(float(args.get("seconds", 1.0)), config.MAX_WAIT_SECONDS)
     time.sleep(seconds)
     return ActionResult("wait", True, f"waited {seconds}s")
-
-
 @_register("focus")
 def _focus(args: dict[str, Any], book: ElementBook) -> ActionResult:
     title = str(args.get("window_title", ""))
@@ -181,8 +159,6 @@ def _focus(args: dict[str, Any], book: ElementBook) -> ActionResult:
                 return ActionResult("focus", True, f"focused '{wt}'")
         hwnd = user32.GetWindow(hwnd, 2)
     return ActionResult("focus", False, f"no window matching '{title}'")
-
-
 @_register("read_file")
 def _read_file(args: dict[str, Any], book: ElementBook) -> ActionResult:
     path = str(args.get("path", ""))
@@ -193,8 +169,6 @@ def _read_file(args: dict[str, Any], book: ElementBook) -> ActionResult:
     if resolved.is_dir():
         return ActionResult("read_file", True, "\n".join(f.name for f in sorted(resolved.iterdir())))
     return ActionResult("read_file", True, resolved.read_text(encoding="utf-8"))
-
-
 @_register("write_file")
 def _write_file(args: dict[str, Any], book: ElementBook) -> ActionResult:
     path = str(args.get("path", ""))
@@ -209,15 +183,11 @@ def _write_file(args: dict[str, Any], book: ElementBook) -> ActionResult:
         except py_compile.PyCompileError as exc:
             return ActionResult("write_file", False, f"syntax error: {exc}")
     return ActionResult("write_file", True, f"wrote {len(content)} bytes to {path}")
-
-
 # --- Headless plan steps (main-style exec / read_file / write_file / wait) ---
 
 def _clip_obs(text: str) -> str:
     limit = config.EXEC_OUTPUT_LIMIT
     return text if len(text) <= limit else text[:limit] + "…"
-
-
 def _parse_exec_code(step: str) -> str:
     s = step.strip()
     low = s.lower()
@@ -228,8 +198,6 @@ def _parse_exec_code(step: str) -> str:
     if low.startswith("exec"):
         return s[4:].lstrip(": \n")
     return s
-
-
 def is_python_step(step: str) -> bool:
     low = step.strip().lower()
     if low.startswith("exec") and (len(low) == 4 or low[4] in ": \n"):
@@ -243,16 +211,12 @@ def is_python_step(step: str) -> bool:
         except (IndexError, ValueError):
             return False
     return False
-
-
 def _resolve_write_path(path: str) -> str:
     raw = path.strip().strip("\"'")
     if raw in ("gui_mode", "enabled"):
         return str(config.GUI_MODE_PATH)
     p = Path(raw)
     return str(p) if p.is_absolute() else str((config.BASE_DIR / raw).resolve())
-
-
 def execute_python(code: str) -> ActionResult:
     import concurrent.futures
     import io
@@ -329,8 +293,6 @@ def execute_python(code: str) -> ActionResult:
         parts.append(error_text.rstrip())
     output = _clip_obs("\n".join(p for p in parts if p))
     return ActionResult("exec", ok, output or ("ok" if ok else "exec failed"))
-
-
 def execute_step(step: str) -> ActionResult:
     """Python executes headless plan steps — model only names them."""
     s = step.strip()
@@ -359,8 +321,6 @@ def execute_step(step: str) -> ActionResult:
             content = "1"
         return execute_verb("write_file", {"path": path, "content": content}, {}, None)
     return ActionResult("step", False, f"not a python step: {step}")
-
-
 # --- Python subprocess runner (colony bus sandbox) ---
 
 def _script_runner(code: str) -> str:
@@ -375,8 +335,6 @@ def _script_runner(code: str) -> str:
         "import os, sys, json, time, subprocess, shutil, py_compile\n\n"
         f"{code}\n"
     )
-
-
 def run_python(code: str) -> ActionResult:
     import tempfile
     from python_code import validate_python
@@ -416,8 +374,6 @@ def run_python(code: str) -> ActionResult:
         return ActionResult("python", False, msg[:config.EXEC_OUTPUT_LIMIT])
     output = "\n".join(p for p in (out, err_out) if p)[:config.EXEC_OUTPUT_LIMIT]
     return ActionResult("python", True, output or "ok (no output)")
-
-
 # --- Desktop helpers (injected into actor Python when GUI mode on) ---
 
 def _desktop_safe_print(text: str) -> None:
@@ -425,8 +381,6 @@ def _desktop_safe_print(text: str) -> None:
         sys.stdout.encoding or "utf-8", errors="replace"
     )
     print(out)
-
-
 def observe_screen(*, print_screen: bool = True) -> tuple[dict, str, str]:
     from observer import observe
     obs = observe()
@@ -435,30 +389,22 @@ def observe_screen(*, print_screen: bool = True) -> tuple[dict, str, str]:
             _desktop_safe_print(obs.context_text[:4000])
         _desktop_safe_print(f"FOCUSED: {obs.focused_title}")
     return obs.book, obs.context_text, obs.focused_title
-
-
 def _desktop_act(verb: str, args: dict, book: dict) -> ActionResult:
     result = execute_verb(verb, args, book, None)
     _desktop_safe_print(result.observation)
     if not result.success:
         raise RuntimeError(result.observation)
     return result
-
-
 def desktop_focus(window_title: str, book: dict | None = None) -> dict:
     if book is None:
         book, _, _ = observe_screen(print_screen=False)
     _desktop_act("focus", {"window_title": window_title}, book)
     return book
-
-
 def desktop_click(selector: str, book: dict | None = None) -> dict:
     if book is None:
         book, _, _ = observe_screen(print_screen=False)
     _desktop_act("click", {"selector": str(selector)}, book)
     return book
-
-
 def desktop_write(text: str, selector: str = "", book: dict | None = None) -> dict:
     if book is None:
         book, _, _ = observe_screen(print_screen=False)
@@ -467,29 +413,21 @@ def desktop_write(text: str, selector: str = "", book: dict | None = None) -> di
         args["selector"] = str(selector)
     _desktop_act("write", args, book)
     return book
-
-
 def desktop_press(key: str, book: dict | None = None) -> dict:
     if book is None:
         book, _, _ = observe_screen(print_screen=False)
     _desktop_act("press", {"key": key}, book)
     return book
-
-
 def desktop_hotkey(keys: list[str], book: dict | None = None) -> dict:
     if book is None:
         book, _, _ = observe_screen(print_screen=False)
     _desktop_act("hotkey", {"keys": keys}, book)
     return book
-
-
 def desktop_scroll(selector: str, amount: int = 3, book: dict | None = None) -> dict:
     if book is None:
         book, _, _ = observe_screen(print_screen=False)
     _desktop_act("scroll", {"selector": str(selector), "amount": int(amount)}, book)
     return book
-
-
 def desktop_wait(seconds: float = 1.0, book: dict | None = None) -> dict:
     if book is None:
         book, _, _ = observe_screen(print_screen=False)

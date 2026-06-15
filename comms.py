@@ -69,8 +69,6 @@ ROLES: dict[str, str] = {
 _SKIP_PHASES: frozenset[str] = frozenset({
     "schedule", "plugin.web_sentinel",
 })
-
-
 def _ensure() -> None:
     config.BUS_DIR.mkdir(parents=True, exist_ok=True)
     if not config.BUS_CHAT_PATH.exists():
@@ -79,41 +77,27 @@ def _ensure() -> None:
         config.BUS_EVENTS_PATH.write_text("", encoding="utf-8")
     if not config.BUS_INJECT_PATH.exists():
         config.BUS_INJECT_PATH.write_text("", encoding="utf-8")
-
-
 def agent_id() -> str:
     p = os.environ.get("ENDGAME_PERSONALITY", "").strip()
     return p if p else f"pid-{os.getpid()}"
-
-
 def slot_id() -> int:
     try:
         return int(os.environ.get("ENDGAME_SLOT", "0") or 0)
     except ValueError:
         return 0
-
-
 def canonical(name: str) -> str:
     return ALIASES.get(name.lstrip("@").lower(), name.lstrip("@").lower())
-
-
 def parse_mentions(text: str) -> list[str]:
     seen: set[str] = set()
     return [c for m in _MENTION_RE.finditer(text) if (c := canonical(m.group(1))) not in seen and not seen.add(c)]
-
-
 def ping_for(peer: str, mentions: list[str]) -> bool:
     return bool(peer and mentions and (peer in mentions or "colony" in mentions))
-
-
 def _entry_payload(entry: dict[str, Any]) -> dict[str, Any]:
     payload = entry.get("payload")
     if isinstance(payload, dict):
         return payload
     data = entry.get("data")
     return data if isinstance(data, dict) else {}
-
-
 def inbox_match(peer: str, entry: dict[str, Any]) -> bool:
     """Whether a blackboard entry belongs in peer's actionable inbox."""
     me = canonical(peer)
@@ -134,12 +118,8 @@ def inbox_match(peer: str, entry: dict[str, Any]) -> bool:
     ):
         return True
     return False
-
-
 def _now_id() -> tuple[str, int]:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds"), int(time.time() * 1000)
-
-
 def _normalize(entry: dict[str, Any]) -> dict[str, Any]:
     """Upgrade legacy entries to v1 shape in-memory."""
     e = dict(entry)
@@ -168,8 +148,6 @@ def _normalize(entry: dict[str, Any]) -> dict[str, Any]:
     if "to" not in e and isinstance(data, dict) and data.get("to"):
         e["to"] = data["to"]
     return e
-
-
 def envelope(
     from_id: str,
     kind: str,
@@ -201,8 +179,6 @@ def envelope(
     if to:
         entry["to"] = canonical(to)
     return entry
-
-
 def _append_event(entry: dict[str, Any]) -> None:
     _ensure()
     try:
@@ -211,8 +187,6 @@ def _append_event(entry: dict[str, Any]) -> None:
     except OSError:
         return
     _trim_events()
-
-
 def _mirror_breeder_observation(entry: dict[str, Any]) -> None:
     kind = str(entry.get("kind", ""))
     payload = entry.get("payload") if isinstance(entry.get("payload"), dict) else {}
@@ -220,8 +194,6 @@ def _mirror_breeder_observation(entry: dict[str, Any]) -> None:
         _append_event(entry)
     elif kind == KIND_STATUS and str(payload.get("action", "")).startswith("breed."):
         _append_event(entry)
-
-
 # --- Intent layer (messages.json) ---
 
 def _read_chat() -> list[dict[str, Any]]:
@@ -232,14 +204,10 @@ def _read_chat() -> list[dict[str, Any]]:
         return [_normalize(e) for e in data] if isinstance(data, list) else []
     except (OSError, json.JSONDecodeError):
         return []
-
-
 def _write_chat(entries: list[dict[str, Any]]) -> None:
     _ensure()
     trimmed = entries[-config.BUS_CHAT_MAX:]
     config.BUS_CHAT_PATH.write_text(json.dumps(trimmed, ensure_ascii=False) + "\n", encoding="utf-8")
-
-
 def post(from_id: str, role: str, text: str, *, kind: str = KIND_MESSAGE,
          priority: int | None = None, data: dict[str, Any] | None = None,
          human_ack: bool = False, blocked_by: str = "",
@@ -270,8 +238,6 @@ def post(from_id: str, role: str, text: str, *, kind: str = KIND_MESSAGE,
     _write_chat(entries)
     _mirror_breeder_observation(entry)
     return entry
-
-
 def request(from_id: str, to: str, text: str, *, priority: int = config.PRI_NORMAL,
             goal: str = "") -> dict[str, Any]:
     target = canonical(to)
@@ -289,8 +255,6 @@ def request(from_id: str, to: str, text: str, *, priority: int = config.PRI_NORM
     entries.append(entry)
     _write_chat(entries)
     return entry
-
-
 def route(from_id: str, to: str, reason: str, *, priority: int = config.PRI_NORMAL,
           scores: dict[str, Any] | None = None, goal: str = "",
           escalate: bool = False, slot: int = 0) -> dict[str, Any]:
@@ -315,8 +279,6 @@ def route(from_id: str, to: str, reason: str, *, priority: int = config.PRI_NORM
     entries.append(entry)
     _write_chat(entries)
     return entry
-
-
 def post_evolve(
     from_id: str,
     target: str,
@@ -363,12 +325,8 @@ def post_evolve(
     _write_chat(entries)
     _mirror_breeder_observation(entry)
     return entry
-
-
 def read_chat(limit: int = 30) -> list[dict[str, Any]]:
     return _read_chat()[-limit:]
-
-
 def evolve_candidates(after_id: int = 0, limit: int = 20) -> list[dict[str, Any]]:
     """Return recent AgentBreeder candidates without removing blackboard history."""
     out = []
@@ -379,13 +337,9 @@ def evolve_candidates(after_id: int = 0, limit: int = 20) -> list[dict[str, Any]
         if eid > after_id:
             out.append(entry)
     return out[-limit:]
-
-
 def pending_for(peer: str, limit: int = 6) -> list[dict[str, Any]]:
     hits = [e for e in _read_chat() if inbox_match(peer, e)]
     return hits[-limit:]
-
-
 def apply_interrupt(board: dict[str, Any]) -> dict[str, Any] | None:
     """Apply highest-priority bus message to board. Returns interrupt metadata if switched."""
     try:
@@ -420,8 +374,6 @@ def apply_interrupt(board: dict[str, Any]) -> dict[str, Any] | None:
             return {"from": msg.get("from"), "pri": msg_pri, "text": str(msg.get("text", ""))[:120]}
         board["_last_msg_id"] = msg_id
     return None
-
-
 def post_progress(from_id: str, *, goal: str = "", step: str = "", phase: str = "") -> dict[str, Any]:
     """Colony-wide progress snapshot (pri=0, not an interrupt)."""
     payload = {"progress": True, "goal": goal[:200], "step": step[:200], "phase": phase[:32]}
@@ -429,23 +381,17 @@ def post_progress(from_id: str, *, goal: str = "", step: str = "", phase: str = 
     if goal:
         text += f" goal={goal[:80]}"
     return post(from_id, "colony", text, priority=config.PRI_MAINTENANCE, data=payload)
-
-
 def colony_goal_text() -> str:
     try:
         return config.COLONY_GOAL_PATH.read_text(encoding="utf-8").strip()
     except OSError:
         return os.environ.get("ENDGAME_COLONY_GOAL", "").strip()
-
-
 def maintenance_goal_text() -> str:
     """MoE assignment text when no human pri=3 task is active."""
     goal = colony_goal_text()
     if goal:
         return f"Work toward long-term goal: {goal[:400]}"
     return "Colony maintenance: audit and report on bus"
-
-
 def set_colony_goal(text: str, *, source: str = "operator") -> dict[str, Any]:
     """Persist Codex-style long-term goal; broadcast to colony (pri=2, not interrupt)."""
     body = str(text or "").strip()
@@ -468,28 +414,6 @@ def set_colony_goal(text: str, *, source: str = "operator") -> dict[str, Any]:
     os.environ.pop("ENDGAME_COLONY_GOAL", None)
     return post(source, "colony", "@colony LONG_TERM_GOAL cleared",
                 priority=config.PRI_MAINTENANCE, data={"colony_goal": False})
-
-
-def colony_progress(limit: int = 40) -> dict[str, dict[str, Any]]:
-    """Latest progress snapshot per persona from blackboard chat."""
-    out: dict[str, dict[str, Any]] = {}
-    for entry in read_chat(limit):
-        payload = _entry_payload(entry)
-        if not payload.get("progress"):
-            continue
-        who = str(entry.get("from", ""))
-        if not who:
-            continue
-        out[who] = {
-            "goal": str(payload.get("goal", ""))[:120],
-            "step": str(payload.get("step", ""))[:80],
-            "phase": str(payload.get("phase", ""))[:32],
-            "ts": str(entry.get("ts", "")),
-        }
-    return out
-
-
-# --- Observation layer (events_bus.jsonl) ---
 
 def post_telemetry(
     from_id: str,
@@ -516,8 +440,6 @@ def post_telemetry(
     entry = envelope(from_id, KIND_TELEMETRY, text=text, payload=payload)
     _append_event(entry)
     return entry
-
-
 def mirror_event(phase: str, data: Any = None, *, source: str | None = None) -> None:
     if phase in _SKIP_PHASES:
         return
@@ -529,8 +451,6 @@ def mirror_event(phase: str, data: Any = None, *, source: str | None = None) -> 
         payload["raw"] = data
     entry = envelope(src, KIND_EVENT, text=_brief(phase, data), payload=payload)
     _append_event(entry)
-
-
 def _trim_events() -> None:
     try:
         lines = [ln for ln in config.BUS_EVENTS_PATH.read_text(encoding="utf-8").splitlines() if ln.strip()]
@@ -538,8 +458,6 @@ def _trim_events() -> None:
         return
     if len(lines) > config.BUS_EVENTS_MAX:
         config.BUS_EVENTS_PATH.write_text("\n".join(lines[-config.BUS_EVENTS_MAX:]) + "\n", encoding="utf-8")
-
-
 def read_events(limit: int = 20) -> list[dict[str, Any]]:
     _ensure()
     try:
@@ -553,8 +471,6 @@ def read_events(limit: int = 20) -> list[dict[str, Any]]:
         except json.JSONDecodeError:
             pass
     return out
-
-
 def human_task_active() -> bool:
     """True while the latest human pri=3 message has no colony completion reply."""
     chat = read_chat(40)
@@ -580,8 +496,6 @@ def human_task_active() -> bool:
     if not ments and not pending_for("comms_operator", 1):
         return False
     return True
-
-
 def colony_state() -> dict[str, dict[str, Any]]:
     """Latest telemetry per persona — MoE gating input for comms_operator."""
     state: dict[str, dict[str, Any]] = {}
@@ -614,8 +528,6 @@ def colony_state() -> dict[str, dict[str, Any]]:
             "cycles": int(p.get("cycles", 0)),
         }
     return state
-
-
 def post_control(action: str, **fields: Any) -> dict[str, Any]:
     """Reactor control channel — reassign/evict commands from comms_operator."""
     _ensure()
@@ -629,8 +541,6 @@ def post_control(action: str, **fields: Any) -> dict[str, Any]:
     except OSError:
         pass
     return entry
-
-
 def drain_control(limit: int = 20) -> list[dict[str, Any]]:
     """Reactor reads and clears pending control commands."""
     if not config.BUS_CONTROL_PATH.exists():
@@ -650,8 +560,6 @@ def drain_control(limit: int = 20) -> list[dict[str, Any]]:
         except json.JSONDecodeError:
             pass
     return out
-
-
 def msg_priority(msg: dict[str, Any]) -> int:
     """Resolve priority from v1 entry (pri field) or legacy data.priority."""
     if "pri" in msg:
@@ -667,8 +575,6 @@ def msg_priority(msg: dict[str, Any]) -> int:
     if kind == KIND_PING:
         return config.PRI_NORMAL
     return config.PRI_MAINTENANCE
-
-
 def softmax_route(scores: dict[str, float]) -> list[tuple[str, float]]:
     """MoE gate weights from power scores (Bause 2026)."""
     if not scores:
@@ -678,8 +584,6 @@ def softmax_route(scores: dict[str, float]) -> list[tuple[str, float]]:
     total = sum(exp.values()) or 1.0
     ranked = sorted(((k, exp[k] / total) for k in exp), key=lambda x: x[1], reverse=True)
     return ranked
-
-
 # --- Inject ---
 
 def drain_inject() -> int:
@@ -705,8 +609,6 @@ def drain_inject() -> int:
                  data=data)
             count += 1
     return count
-
-
 # --- Context rendering for LLM ---
 
 def format_bus_context(limit: int | None = None, for_agent: str | None = None) -> str:
@@ -758,8 +660,6 @@ def format_bus_context(limit: int | None = None, for_agent: str | None = None) -
         lines.append(line)
     return "\n".join(lines)
 
-
-
 def format_phase_brief(phase: str, data: Any, *, max_w: int = 120, style: str = "bus") -> str:
     """One-line phase summary for bus mirror and TUI."""
     if not isinstance(data, dict):
@@ -769,23 +669,15 @@ def format_phase_brief(phase: str, data: Any, *, max_w: int = 120, style: str = 
         if val not in (None, ""):
             return f"{phase} {val}"[:max_w]
     return f"{phase} {str(data)}"[:max_w]
-
-
 def _brief(phase: str, data: Any) -> str:
     return format_phase_brief(phase, data)
-
-
 # --- Actor sandbox API (injected into planner Python subprocesses) ---
 
 BASE_DIR = config.BASE_DIR
 COMMS_DIR = config.BUS_DIR
 PLUGINS_DIR = config.PLUGINS_DIR
-
-
 def bus_id(*_args: Any, **_kwargs: Any) -> str:
     return agent_id()
-
-
 def bus_post(from_id: Any = None, role: str = "colony", text: str = "",
              *args: Any, **kwargs: Any) -> dict[str, Any]:
     if from_id is None or (isinstance(from_id, str) and from_id.startswith("@")):
@@ -808,8 +700,6 @@ def bus_post(from_id: Any = None, role: str = "colony", text: str = "",
     return post(str(from_id), str(role), str(text),
                 priority=int(pri) if pri is not None else None,
                 data=data or None)
-
-
 def bus_request(from_id: Any = None, to: str = "", text: str = "",
                 *args: Any, **kwargs: Any) -> dict[str, Any]:
     if from_id is None:
@@ -825,8 +715,6 @@ def bus_request(from_id: Any = None, to: str = "", text: str = "",
     pri = kwargs.pop("priority", kwargs.pop("pri", 1))
     goal = str(kwargs.pop("goal", "") or "")
     return request(str(from_id), str(to), str(text), priority=int(pri), goal=goal)
-
-
 def bus_route(from_id: Any = None, to: str = "", reason: str = "",
               *args: Any, **kwargs: Any) -> dict[str, Any]:
     if from_id is None:
@@ -844,8 +732,6 @@ def bus_route(from_id: Any = None, to: str = "", reason: str = "",
     goal = str(kwargs.pop("goal", "") or "")
     return route(str(from_id), str(to), str(kwargs.pop("reason", reason) or reason),
                  priority=int(pri), scores=scores, goal=goal)
-
-
 # --- CLI ---
 
 if __name__ == "__main__":
