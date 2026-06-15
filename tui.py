@@ -13,7 +13,7 @@ import comms
 import config
 
 BASE_DIR = config.BASE_DIR
-TARGET_HEIGHT = 40
+TARGET_HEIGHT = 80
 REFRESH_INTERVAL = 0.12
 SCAN_INTERVAL = 2.0
 MAX_EVENTS = 200
@@ -44,8 +44,19 @@ def _console_width() -> int:
         _fields_ = [("sz", ctypes.c_short * 2), ("cp", ctypes.c_short * 2), ("a", ctypes.c_ushort), ("w", _SR), ("mx", ctypes.c_short * 2)]
     csbi = _CSBI()
     if _k32.GetConsoleScreenBufferInfo(_hout, ctypes.byref(csbi)):
-        return max(80, min(csbi.w.R - csbi.w.L + 1, 160))
+        return max(80, csbi.w.R - csbi.w.L + 1)
     return 120
+
+
+def _console_height() -> int:
+    class _SR(ctypes.Structure):
+        _fields_ = [("L", ctypes.c_short), ("T", ctypes.c_short), ("R", ctypes.c_short), ("B", ctypes.c_short)]
+    class _CSBI(ctypes.Structure):
+        _fields_ = [("sz", ctypes.c_short * 2), ("cp", ctypes.c_short * 2), ("a", ctypes.c_ushort), ("w", _SR), ("mx", ctypes.c_short * 2)]
+    csbi = _CSBI()
+    if _k32.GetConsoleScreenBufferInfo(_hout, ctypes.byref(csbi)):
+        return max(20, csbi.w.B - csbi.w.T + 1)
+    return 50
 
 
 def _trunc(s: str, w: int) -> str:
@@ -175,6 +186,7 @@ class TUI:
 
     def render(self) -> str:
         W = _console_width()
+        H = _console_height()
         inner = W - 4
         CLR_A = _fg(80, 220, 120)
         CLR_D = _fg(255, 80, 80)
@@ -182,10 +194,10 @@ class TUI:
         CLR_B = _fg(55, 58, 78)
         CLR_DIM = _fg(80, 80, 100)
         CLR_F = _fg(100, 255, 180)
+        CLR_GOAL = _fg(255, 200, 100)
 
         def row(c: str) -> str:
-            t = _trunc(c, inner)
-            return f"{CLR_B}│{RST} {t}{' ' * max(0, inner - len(t) + 20)}"[:W]
+            return f"{CLR_B}│{RST} {_trunc(c, inner)}"
 
         lines: list[str] = []
         alive = sum(1 for s in self.slots.values() if s.alive)
@@ -196,29 +208,36 @@ class TUI:
         lines.append(row(hdr))
         lines.append(f"{CLR_B}├{'─' * (W - 2)}┤{RST}")
 
+        # Slots — each gets header + up to 4 recent event lines
         for s in sorted(self.slots.values(), key=lambda x: x.slot_id):
             dot = f"{CLR_A}●{RST}" if s.alive else f"{CLR_D}○{RST}"
-            persona = (s.persona or "?")[:14].ljust(14)
+            persona = (s.persona or "?")[:16].ljust(16)
             stag = f"stag={s.stagnation:.2f}"
-            ph = s.last_phase[:12] if s.last_phase else "idle"
-            fiss = f"F={s.fissions}" if s.fissions else ""
-            lines.append(row(f"s{s.slot_id} {persona} {dot} {ph:12} {stag} {fiss}"))
-            # Last 2 events
+            ph = s.last_phase[:20] if s.last_phase else "idle"
+            fiss = f"{CLR_F}F={s.fissions}{RST}" if s.fissions else ""
+            lines.append(row(f"s{s.slot_id} {dot} {persona} {ph:20} {stag}  {fiss}"))
+            # Recent events — full width, truncated at terminal edge
             skip = {"start", "pressure", "plugin.web_sentinel", "prompt_signature", "schedule"}
-            recent = [e for e in s.events if e.get("phase") not in skip][-2:]
+            recent = [e for e in s.events if e.get("phase") not in skip][-4:]
             for ev in recent:
-                ph_e = str(ev.get("phase", ""))[:10]
+                ph_e = str(ev.get("phase", ""))[:14]
                 d = ev.get("d") or {}
-                brief = comms.format_phase_brief(ph_e, d, max_w=inner - 14)
-                lines.append(row(f"  {CLR_DIM}{ph_e:10} {brief}{RST}"))
+                brief = comms.format_phase_brief(ph_e, d, max_w=inner - 18)
+                lines.append(row(f"    {CLR_DIM}{ph_e:14} {brief}{RST}"))
+            lines.append(row(""))
 
         lines.append(f"{CLR_B}├{'─' * (W - 2)}┤{RST}")
-        # Bus chat (last 4)
-        chat = comms.read_chat(4)
+
+        # Bus chat — use remaining space, at least 6 lines
+        bus_rows = max(6, H - len(lines) - 6)
+        chat = comms.read_chat(bus_rows)
         for entry in chat:
-            fid = str(entry.get("from", "?"))[:10]
-            text = str(entry.get("text", "")).replace("\n", " ")[:inner - 14]
-            lines.append(row(f"  @{fid}: {text}"))
+            fid = str(entry.get("from", "?"))[:12]
+            kind = str(entry.get("kind", ""))[:6]
+            text = str(entry.get("text", "")).replace("\n", " ")
+            pri = int(entry.get("pri", 0) or 0)
+            color = CLR_GOAL if pri >= 3 else CLR_DIM if pri == 0 else RST
+            lines.append(row(f"  {color}@{fid:12} [{kind:6}] {text}{RST}"))
         if not chat:
             lines.append(row(f"  {CLR_DIM}(bus empty){RST}"))
 
@@ -228,9 +247,10 @@ class TUI:
         lines.append(row(f"{CLR_DIM}Enter=send  Space=pause  q=quit{RST}"))
         lines.append(f"{CLR_B}└{'─' * (W - 2)}┘{RST}")
 
-        while len(lines) < TARGET_HEIGHT:
+        # Fill to terminal height
+        while len(lines) < H:
             lines.append(row(""))
-        return "\x1b[H" + "\r\n".join(ln + "\x1b[K" for ln in lines[:TARGET_HEIGHT]) + "\x1b[J"
+        return "\x1b[H" + "\r\n".join(ln + "\x1b[K" for ln in lines[:H]) + "\x1b[J"
 
     def _handle_key(self, ch: str) -> None:
         if ch in ("\r", "\n"):
