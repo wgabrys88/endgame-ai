@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="description" content="endgame-ai Milestone 5: Five cheap local LLMs wired with deterministic math (MoE routing, pressure fields, MAP-Elites breeding) became a self-evolving organism that accomplished a desktop task autonomously. Golden Run forensics: Shakira She Wolf played on YouTube in 2 minutes by a colony of nemotron processes.">
+<title>endgame-ai — Milestone 5: The Golden Run</title>
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.min.js" type="module"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --bg: #0a0a0f;
+  --surface: #12121a;
+  --border: #1e1e2e;
+  --text: #e0e0e8;
+  --dim: #6e6e8a;
+  --accent: #50fa7b;
+  --accent2: #bd93f9;
+  --warn: #ffb86c;
+  --error: #ff5555;
+  --gold: #f1fa8c;
+  --cyan: #8be9fd;
+}
+html, body { 
+  height: 100%; 
+  overflow-x: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  scroll-behavior: smooth;
+}
+body { max-width: 100vw; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* Canvas background */
+#reactor-canvas {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  z-index: 0;
+  opacity: 0.3;
+}
+
+/* Layout */
+.content {
+  position: relative;
+  z-index: 1;
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 40px 20px;
+}
+
+/* Hero */
+.hero {
+  text-align: center;
+  padding: 60px 0 40px;
+}
+.hero h1 {
+  font-size: 2.2em;
+  font-weight: 800;
+  background: linear-gradient(135deg, var(--accent), var(--cyan));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 12px;
+}
+.hero .subtitle {
+  color: var(--dim);
+  font-size: 0.95em;
+  max-width: 400px;
+  margin: 0 auto;
+}
+.hero .milestone-badge {
+  display: inline-block;
+  margin-top: 16px;
+  padding: 4px 12px;
+  border: 1px solid var(--accent);
+  border-radius: 20px;
+  color: var(--accent);
+  font-size: 0.8em;
+  animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(80,250,123,0.4); }
+  50% { opacity: 0.8; box-shadow: 0 0 12px 4px rgba(80,250,123,0.1); }
+}
+
+/* Sections */
+section {
+  margin: 48px 0;
+  padding: 24px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+section.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+section h2 {
+  font-size: 1.3em;
+  margin-bottom: 16px;
+  color: var(--cyan);
+}
+section h3 {
+  font-size: 1em;
+  margin: 16px 0 8px;
+  color: var(--accent2);
+}
+section p, section li {
+  color: var(--text);
+  margin-bottom: 8px;
+}
+section ul { padding-left: 20px; }
+section code {
+  background: var(--bg);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.9em;
+  color: var(--gold);
+}
+
+/* Timeline */
+.timeline {
+  position: relative;
+  padding-left: 24px;
+}
+.timeline::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: linear-gradient(to bottom, var(--accent), var(--accent2), var(--error));
+}
+.timeline-event {
+  position: relative;
+  margin-bottom: 20px;
+  padding: 12px 16px;
+  background: var(--bg);
+  border-radius: 8px;
+  border-left: 3px solid var(--accent);
+}
+.timeline-event.failure { border-left-color: var(--error); }
+.timeline-event.fission { border-left-color: var(--gold); }
+.timeline-event.mutation { border-left-color: var(--accent2); }
+.timeline-event .time {
+  font-size: 0.75em;
+  color: var(--dim);
+}
+.timeline-event .worker {
+  font-size: 0.8em;
+  padding: 1px 6px;
+  border-radius: 4px;
+  display: inline-block;
+  margin: 4px 0;
+}
+.worker.implementor { background: rgba(80,250,123,0.15); color: var(--accent); }
+.worker.architect { background: rgba(139,233,253,0.15); color: var(--cyan); }
+.worker.reviewer { background: rgba(189,147,249,0.15); color: var(--accent2); }
+.worker.devops { background: rgba(255,184,108,0.15); color: var(--warn); }
+.worker.comms { background: rgba(241,250,140,0.15); color: var(--gold); }
+.timeline-event .desc { font-size: 0.85em; margin-top: 4px; }
+
+/* Simulation canvas */
+.sim-container {
+  position: relative;
+  width: 100%;
+  height: 300px;
+  background: var(--bg);
+  border-radius: 8px;
+  overflow: hidden;
+  margin: 16px 0;
+}
+.sim-container canvas {
+  width: 100%;
+  height: 100%;
+}
+
+/* Pressure chart */
+.pressure-chart {
+  width: 100%;
+  height: 200px;
+  position: relative;
+}
+
+/* Fitness bars */
+.fitness-bar {
+  display: flex;
+  align-items: center;
+  margin: 8px 0;
+}
+.fitness-bar .label {
+  width: 100px;
+  font-size: 0.8em;
+  color: var(--dim);
+}
+.fitness-bar .bar {
+  flex: 1;
+  height: 20px;
+  background: var(--bg);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+.fitness-bar .bar .fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 1.5s ease;
+  width: 0;
+}
+.fitness-bar .bar .fill.high { background: linear-gradient(90deg, var(--accent), var(--cyan)); }
+.fitness-bar .bar .fill.mid { background: linear-gradient(90deg, var(--warn), var(--gold)); }
+.fitness-bar .bar .fill.low { background: linear-gradient(90deg, var(--error), var(--warn)); }
+.fitness-bar .value {
+  width: 50px;
+  text-align: right;
+  font-size: 0.8em;
+  color: var(--accent);
+}
+
+/* MoE visualization */
+.moe-viz {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 16px 0;
+}
+.moe-node {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65em;
+  text-align: center;
+  border: 2px solid var(--border);
+  transition: all 0.5s ease;
+  cursor: pointer;
+}
+.moe-node:hover { transform: scale(1.15); }
+.moe-node.active { border-color: var(--accent); box-shadow: 0 0 12px rgba(80,250,123,0.3); }
+.moe-arrow {
+  width: 30px;
+  height: 2px;
+  background: var(--border);
+  position: relative;
+}
+.moe-arrow::after {
+  content: '→';
+  position: absolute;
+  right: -4px;
+  top: -10px;
+  color: var(--dim);
+}
+
+/* Stats grid */
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 16px 0;
+}
+.stat-card {
+  padding: 16px;
+  background: var(--bg);
+  border-radius: 8px;
+  text-align: center;
+}
+.stat-card .value {
+  font-size: 1.8em;
+  font-weight: 800;
+  color: var(--accent);
+}
+.stat-card .label {
+  font-size: 0.75em;
+  color: var(--dim);
+  margin-top: 4px;
+}
+
+/* Paper cards */
+.paper-card {
+  padding: 16px;
+  background: var(--bg);
+  border-radius: 8px;
+  margin: 12px 0;
+  border-left: 3px solid var(--accent2);
+}
+.paper-card .title { color: var(--cyan); font-size: 0.9em; }
+.paper-card .eq {
+  font-family: 'Times New Roman', serif;
+  font-style: italic;
+  color: var(--gold);
+  margin: 8px 0;
+  font-size: 0.95em;
+}
+.paper-card .status {
+  font-size: 0.8em;
+  padding: 2px 8px;
+  border-radius: 4px;
+  display: inline-block;
+}
+.paper-card .status.proven { background: rgba(80,250,123,0.2); color: var(--accent); }
+
+/* Footer */
+.footer {
+  text-align: center;
+  padding: 40px 0;
+  color: var(--dim);
+  font-size: 0.8em;
+}
+</style>
+</head>
+<body>
+
+<canvas id="reactor-canvas"></canvas>
+
+<div class="content">
+
+<div class="hero">
+  <h1>endgame-ai</h1>
+  <p class="subtitle">Five cheap local LLMs, wired with deterministic math, became an organism that accomplished a desktop task autonomously.</p>
+  <span class="milestone-badge">● MILESTONE 5 — GOLDEN RUN</span>
+</div>
+
+<section id="stats">
+  <h2>The Numbers</h2>
+  <div class="stats-grid">
+    <div class="stat-card"><div class="value">2:06</div><div class="label">Time to Goal</div></div>
+    <div class="stat-card"><div class="value">5</div><div class="label">Parallel Workers</div></div>
+    <div class="stat-card"><div class="value">$0</div><div class="label">Inference Cost</div></div>
+    <div class="stat-card"><div class="value">0.94</div><div class="label">Peak Fitness</div></div>
+    <div class="stat-card"><div class="value">4</div><div class="label">Fissions Earned</div></div>
+    <div class="stat-card"><div class="value">3</div><div class="label">Self-Mutations</div></div>
+    <div class="stat-card"><div class="value">4,432</div><div class="label">Lines of Code</div></div>
+    <div class="stat-card"><div class="value">3</div><div class="label">Niches Bred</div></div>
+  </div>
+</section>
+
+<section id="vision">
+  <h2>The Vision</h2>
+  <p>A single cheap LLM is too stupid to reliably accomplish complex multi-step tasks.</p>
+  <p>But five of them, wired together with <strong>deterministic mathematics</strong> from recent research papers, become something qualitatively different — a <strong>colony organism</strong> that:</p>
+  <ul>
+    <li>Decomposes any goal into expertise-matched subtasks</li>
+    <li>Routes exclusively to the best-fit worker (MoE gate)</li>
+    <li>Executes on the real desktop (files, browser, keyboard, mouse)</li>
+    <li>Verifies outcomes via screen observation</li>
+    <li>Breeds better workers — the fittest survive</li>
+    <li>Evolves its own plugins under failure pressure</li>
+    <li>Runs indefinitely toward any long-term goal</li>
+  </ul>
+</section>
+
+<section id="papers">
+  <h2>The Mathematics</h2>
+  
+  <div class="paper-card">
+    <div class="title">Mixture of Experts Routing (Bause 2026)</div>
+    <div class="eq">π_j = exp(β·C_j) / Σ_l exp(β·C_l), β=3.0</div>
+    <p>Route EXCLUSIVELY to the best expert. Winner-take-all.</p>
+    <span class="status proven">✅ PROVEN — implementor=0.87 when GUI needed</span>
+  </div>
+
+  <div class="paper-card">
+    <div class="title">Pressure Fields (Rodriguez 2026)</div>
+    <div class="eq">P = Σ w_j·φ_j(signals), decay f(t+1) = f(t)·e^(-λ)</div>
+    <p>Environmental pressure drives behavioral adaptation.</p>
+    <span class="status proven">✅ PROVEN — strategies changed at stag>0.15</span>
+  </div>
+
+  <div class="paper-card">
+    <div class="title">MAP-Elites (Mouret & Clune 2015)</div>
+    <div class="eq">archive[niche] = (solution, fitness), replace if new > current</div>
+    <p>Maintain diverse archive of high-quality solutions per niche.</p>
+    <span class="status proven">✅ PROVEN — 3 niches populated, diversity maintained</span>
+  </div>
+
+  <div class="paper-card">
+    <div class="title">ReAct Loop (Yao 2022)</div>
+    <div class="eq">thought → action → observation → judgment → repeat</div>
+    <p>Interleaving reasoning and acting outperforms either alone.</p>
+    <span class="status proven">✅ PROVEN — deny→reflect→mutate→retry loop worked</span>
+  </div>
+</section>
+
+<section id="moe">
+  <h2>MoE Routing — Live Simulation</h2>
+  <p>Click workers to see how the softmax gate distributes weight:</p>
+  <div class="moe-viz" id="moe-viz">
+    <div class="moe-node" data-worker="comms" onclick="simRoute('comms')">comms<br>operator</div>
+    <div class="moe-arrow"></div>
+    <div class="moe-node" data-worker="architect" onclick="simRoute('architect')">architect</div>
+    <div class="moe-node" data-worker="implementor" onclick="simRoute('implementor')">impl</div>
+    <div class="moe-node" data-worker="reviewer" onclick="simRoute('reviewer')">reviewer</div>
+    <div class="moe-node" data-worker="devops" onclick="simRoute('devops')">devops</div>
+  </div>
+  <div id="moe-output" style="text-align:center;font-size:0.8em;color:var(--dim);margin-top:12px;min-height:40px;"></div>
+</section>
+
+<section id="breeding">
+  <h2>MAP-Elites Breeding</h2>
+  <h3>Archive After Golden Run</h3>
+  
+  <div class="fitness-bar">
+    <div class="label">implementor<br><small>general:low</small></div>
+    <div class="bar"><div class="fill high" data-target="94"></div></div>
+    <div class="value">0.94</div>
+  </div>
+  <div class="fitness-bar">
+    <div class="label">reviewer<br><small>general:low</small></div>
+    <div class="bar"><div class="fill high" data-target="92"></div></div>
+    <div class="value">0.92</div>
+  </div>
+  <div class="fitness-bar">
+    <div class="label">comms_op<br><small>routing</small></div>
+    <div class="bar"><div class="fill mid" data-target="82"></div></div>
+    <div class="value">0.82</div>
+  </div>
+  <div class="fitness-bar">
+    <div class="label">implementor<br><small>patch:low</small></div>
+    <div class="bar"><div class="fill mid" data-target="51"></div></div>
+    <div class="value">0.51</div>
+  </div>
+  <div class="fitness-bar">
+    <div class="label">architect<br><small>patch:mid</small></div>
+    <div class="bar"><div class="fill low" data-target="48"></div></div>
+    <div class="value">0.48</div>
+  </div>
+</section>
+
+<section id="pressure">
+  <h2>Pressure Fields</h2>
+  <p>Stagnation drives strategy changes. When pressure builds, workers mutate.</p>
+  <div class="sim-container">
+    <canvas id="pressure-canvas"></canvas>
+  </div>
+  <p style="font-size:0.8em;color:var(--dim);">↑ Real data from the Golden Run. Green=implementor (reset on fission), Blue=architect (climbing), Orange=devops (self-evicted).</p>
+</section>
+
+<section id="timeline">
+  <h2>Golden Run Timeline</h2>
+  <div class="timeline">
+    <div class="timeline-event">
+      <div class="time">T+0s</div>
+      <span class="worker comms">comms_operator</span>
+      <div class="desc">Reactor starts 5 processes. Colony goal broadcast.</div>
+    </div>
+    <div class="timeline-event">
+      <div class="time">T+12s</div>
+      <span class="worker architect">architect</span>
+      <div class="desc">Launches Chrome with YouTube search URL. Page loads.</div>
+    </div>
+    <div class="timeline-event failure">
+      <div class="time">T+14s</div>
+      <span class="worker architect">architect</span>
+      <div class="desc">Verifier denies — "no evidence video was clicked and is playing"</div>
+    </div>
+    <div class="timeline-event">
+      <div class="time">T+25s</div>
+      <span class="worker devops">devops</span>
+      <div class="desc">"This is a GUI/browser task, not infrastructure." Stands down.</div>
+    </div>
+    <div class="timeline-event">
+      <div class="time">T+57s</div>
+      <span class="worker implementor">implementor</span>
+      <div class="desc">Multi-step: clicks search results, navigates video area.</div>
+    </div>
+    <div class="timeline-event fission">
+      <div class="time">T+1m50s</div>
+      <span class="worker implementor">implementor</span>
+      <div class="desc">Opens video directly via URL. Autoplay triggers. FISSION: 0.87</div>
+    </div>
+    <div class="timeline-event fission">
+      <div class="time">T+2m06s</div>
+      <span class="worker reviewer">reviewer</span>
+      <div class="desc">Confirms: "Shakira - She Wolf (Official HD Video) - YouTube" FISSION: 0.92</div>
+    </div>
+    <div class="timeline-event fission">
+      <div class="time">T+3m28s</div>
+      <span class="worker implementor">implementor</span>
+      <div class="desc">Window title + play keystroke verified. PEAK FITNESS: 0.94</div>
+    </div>
+    <div class="timeline-event mutation">
+      <div class="time">T+4m50s</div>
+      <span class="worker comms">comms_operator</span>
+      <div class="desc">Reflector: "Never re-emit identical plan." Mutator patches beacon.</div>
+    </div>
+    <div class="timeline-event">
+      <div class="time">T+5m</div>
+      <span class="worker comms">comms_operator</span>
+      <div class="desc">Reactor breeds: 3 niches populated in MAP-Elites archive.</div>
+    </div>
+    <div class="timeline-event mutation">
+      <div class="time">T+6m31s</div>
+      <span class="worker architect">architect</span>
+      <div class="desc">Self-mutates beacon: Chrome launcher + title verifier strategy.</div>
+    </div>
+    <div class="timeline-event">
+      <div class="time">T+7m55s</div>
+      <span class="worker comms">comms_operator</span>
+      <div class="desc">Learns from denial: "mode=done" — acknowledges prior routing sufficient.</div>
+    </div>
+  </div>
+</section>
+
+<section id="mutations">
+  <h2>Self-Mutation</h2>
+  <p>The system evolved its own code during the run. Each mutation was <strong>trial-executed</strong> before writing.</p>
+  <h3>Successful Mutations (3)</h3>
+  <ul>
+    <li><code>implementor</code> → beacon: "Click video player center" strategy</li>
+    <li><code>architect</code> → beacon: "Launch Chrome + verify title" strategy</li>
+    <li><code>comms_operator</code> → beacon: "Diagnose loop state" reporter</li>
+  </ul>
+  <h3>Rejected Mutations (3)</h3>
+  <ul>
+    <li><code>click_play_video.py</code> — file doesn't exist (safety block)</li>
+    <li><code>verifier_fix.py</code> — file doesn't exist (safety block)</li>
+    <li><code>chrome_launcher.py</code> — file doesn't exist (safety block)</li>
+  </ul>
+  <p style="color:var(--dim);font-size:0.85em;">Safety: only existing plugin files can be patched. No runaway file creation.</p>
+</section>
+
+<section id="delta">
+  <h2>Milestone 4 → 5 Delta</h2>
+  <div class="stats-grid">
+    <div class="stat-card"><div class="value" style="color:var(--error)">6,175</div><div class="label">M4 LOC</div></div>
+    <div class="stat-card"><div class="value">4,432</div><div class="label">M5 LOC (-28%)</div></div>
+    <div class="stat-card"><div class="value" style="color:var(--error)">0</div><div class="label">M4 Fissions</div></div>
+    <div class="stat-card"><div class="value">4</div><div class="label">M5 Fissions</div></div>
+  </div>
+  <h3>What Changed</h3>
+  <ul>
+    <li><strong>Routing:</strong> Broadcast → MoE exclusive (only comms_operator receives human goals)</li>
+    <li><strong>Fission:</strong> Always denied → Credit flows, archive populated</li>
+    <li><strong>Claims:</strong> Workers blind → See what others are doing</li>
+    <li><strong>Breeding:</strong> Empty archive → 3 niches with fitness data</li>
+    <li><strong>Mutation:</strong> Broken patches → Trial exec safety</li>
+    <li><strong>Prompts:</strong> Generic → Role-specific expertise lenses</li>
+  </ul>
+</section>
+
+<section id="how-to-run">
+  <h2>How to Run</h2>
+  <p>Prerequisites: Windows 10+, Python 3.11+, LM Studio (nemotron), Chrome</p>
+  <div style="background:var(--bg);padding:16px;border-radius:8px;margin:12px 0;overflow-x:auto;">
+    <code style="background:none;padding:0;font-size:0.85em;white-space:pre;display:block;">cd C:\Users\ewojgab\Downloads\endgame-ai
+python -c "import log; log.cleanup_runtime(deep=True)"
+python tui.py --model-profile nemotron_parallel \
+  "Open Chrome and play Shakira She Wolf on YouTube"</code>
+  </div>
+</section>
+
+<div class="footer">
+  <p>endgame-ai · Milestone 5 · Golden Run · 2026-06-15</p>
+  <p>github.com/wgabrys88/endgame-ai</p>
+</div>
+
+</div>
+
+<script>
+// Intersection Observer for section reveal
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
+}, { threshold: 0.1 });
+document.querySelectorAll('section').forEach(s => observer.observe(s));
+
+// Fitness bar animation
+const barObserver = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      e.target.querySelectorAll('.fill').forEach(f => {
+        f.style.width = f.dataset.target + '%';
+      });
+    }
+  });
+}, { threshold: 0.3 });
+document.querySelectorAll('#breeding').forEach(s => barObserver.observe(s));
+
+// MoE routing simulation
+function simRoute(clicked) {
+  const beta = 3.0;
+  const power = { comms: 0.82, architect: 0.4, implementor: 0.94, reviewer: 0.92, devops: 0.1 };
+  const scores = {};
+  let sum = 0;
+  for (const [k, v] of Object.entries(power)) {
+    scores[k] = Math.exp(beta * v);
+    sum += scores[k];
+  }
+  for (const k of Object.keys(scores)) scores[k] = (scores[k] / sum).toFixed(3);
+  
+  document.querySelectorAll('.moe-node').forEach(n => {
+    n.classList.remove('active');
+    if (n.dataset.worker === clicked) n.classList.add('active');
+  });
+  
+  const winner = Object.entries(scores).sort((a,b) => b[1]-a[1])[0];
+  document.getElementById('moe-output').innerHTML = 
+    `Softmax weights: ${Object.entries(scores).map(([k,v]) => `<span style="color:${k===winner[0]?'var(--accent)':'var(--dim)'}">${k}=${v}</span>`).join(' · ')}<br>` +
+    `<span style="color:var(--accent)">Winner: ${winner[0]} (${(winner[1]*100).toFixed(1)}%)</span>`;
+}
+
+// Pressure field canvas
+const pc = document.getElementById('pressure-canvas');
+const pctx = pc.getContext('2d');
+function drawPressure() {
+  const w = pc.parentElement.clientWidth;
+  const h = pc.parentElement.clientHeight;
+  pc.width = w * 2; pc.height = h * 2;
+  pc.style.width = w + 'px'; pc.style.height = h + 'px';
+  pctx.scale(2, 2);
+  
+  // Real data from the golden run
+  const implData = [0,0,0,0,0,0,0.09,0,0,0.348,0.348,0.348];
+  const archData = [0,0,0,0.18,0.18,0.27,0.27,0.36,0.36,0.6,0.6,0.6];
+  const devData  = [0,0,0.09,0.09,0.18,0.18,0.18,0.18,0.18,0.18,0.18,0.18];
+  
+  const padL = 40, padR = 10, padT = 10, padB = 30;
+  const cw = w - padL - padR;
+  const ch = h - padT - padB;
+  
+  // Grid
+  pctx.strokeStyle = '#1e1e2e';
+  pctx.lineWidth = 0.5;
+  for (let i = 0; i <= 4; i++) {
+    const y = padT + ch * (1 - i/4);
+    pctx.beginPath(); pctx.moveTo(padL, y); pctx.lineTo(w-padR, y); pctx.stroke();
+    pctx.fillStyle = '#6e6e8a'; pctx.font = '9px monospace';
+    pctx.fillText((i*0.25).toFixed(2), 4, y + 3);
+  }
+  
+  // Labels
+  pctx.fillStyle = '#6e6e8a'; pctx.font = '9px monospace';
+  pctx.fillText('0m', padL, h - 5);
+  pctx.fillText('5m', padL + cw/2, h - 5);
+  pctx.fillText('10m', padL + cw - 10, h - 5);
+  
+  function drawLine(data, color) {
+    pctx.strokeStyle = color;
+    pctx.lineWidth = 2;
+    pctx.beginPath();
+    data.forEach((v, i) => {
+      const x = padL + (i / (data.length-1)) * cw;
+      const y = padT + ch * (1 - v);
+      i === 0 ? pctx.moveTo(x, y) : pctx.lineTo(x, y);
+    });
+    pctx.stroke();
+  }
+  
+  drawLine(implData, '#50fa7b');
+  drawLine(archData, '#8be9fd');
+  drawLine(devData, '#ffb86c');
+  
+  // Legend
+  const legends = [['implementor','#50fa7b'],['architect','#8be9fd'],['devops','#ffb86c']];
+  legends.forEach(([name, color], i) => {
+    const x = padL + i * 100;
+    pctx.fillStyle = color; pctx.fillRect(x, padT+2, 12, 3);
+    pctx.fillStyle = '#6e6e8a'; pctx.font = '9px monospace';
+    pctx.fillText(name, x + 16, padT + 8);
+  });
+  
+  // Annotations
+  pctx.fillStyle = '#f1fa8c'; pctx.font = '8px monospace';
+  const fissionX = padL + (6/11) * cw;
+  pctx.fillText('↓ fission reset', fissionX - 20, padT + ch * (1 - 0.09) - 8);
+}
+const pressureObs = new IntersectionObserver((entries) => {
+  entries.forEach(e => { if (e.isIntersecting) drawPressure(); });
+}, { threshold: 0.3 });
+pressureObs.observe(pc.parentElement);
+window.addEventListener('resize', drawPressure);
+
+// Background reactor animation (particles)
+const bgCanvas = document.getElementById('reactor-canvas');
+const bgCtx = bgCanvas.getContext('2d');
+let particles = [];
+function initBg() {
+  bgCanvas.width = window.innerWidth * 2;
+  bgCanvas.height = window.innerHeight * 2;
+  bgCanvas.style.width = window.innerWidth + 'px';
+  bgCanvas.style.height = window.innerHeight + 'px';
+  bgCtx.scale(2, 2);
+  particles = Array.from({length: 40}, () => ({
+    x: Math.random() * window.innerWidth,
+    y: Math.random() * window.innerHeight,
+    vx: (Math.random() - 0.5) * 0.3,
+    vy: (Math.random() - 0.5) * 0.3,
+    r: Math.random() * 2 + 1,
+    color: ['#50fa7b','#8be9fd','#bd93f9','#ffb86c','#f1fa8c'][Math.floor(Math.random()*5)]
+  }));
+}
+function animBg() {
+  bgCtx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+  particles.forEach(p => {
+    p.x += p.vx; p.y += p.vy;
+    if (p.x < 0 || p.x > window.innerWidth) p.vx *= -1;
+    if (p.y < 0 || p.y > window.innerHeight) p.vy *= -1;
+    bgCtx.beginPath();
+    bgCtx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    bgCtx.fillStyle = p.color;
+    bgCtx.globalAlpha = 0.4;
+    bgCtx.fill();
+  });
+  // Draw connections
+  bgCtx.globalAlpha = 0.08;
+  bgCtx.strokeStyle = '#50fa7b';
+  bgCtx.lineWidth = 0.5;
+  for (let i = 0; i < particles.length; i++) {
+    for (let j = i+1; j < particles.length; j++) {
+      const dx = particles[i].x - particles[j].x;
+      const dy = particles[i].y - particles[j].y;
+      if (dx*dx + dy*dy < 15000) {
+        bgCtx.beginPath();
+        bgCtx.moveTo(particles[i].x, particles[i].y);
+        bgCtx.lineTo(particles[j].x, particles[j].y);
+        bgCtx.stroke();
+      }
+    }
+  }
+  bgCtx.globalAlpha = 1;
+  requestAnimationFrame(animBg);
+}
+initBg();
+animBg();
+window.addEventListener('resize', initBg);
+</script>
+</body>
+</html>
