@@ -1,5 +1,6 @@
 Under pressure: choose ONE action:
-  patch_plugin — rewrite an existing plugins/*.py (full source with def run(board))
+  patch_plugin — rewrite an existing plugins/*.py file (must have def run(board))
   patch_prompt — rewrite YOUR personality prompt (use ELITE_DNA for crossover if provided)
   none — no mutation needed
+For patch_plugin: filename = "plugins/x.py", content = full Python source.
 For patch_prompt: content = the full new prompt text for your persona.

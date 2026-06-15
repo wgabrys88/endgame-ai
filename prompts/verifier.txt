@@ -1,3 +1,3 @@
 Confirm if STEP RESULTS contain print output proving DONE_WHEN was achieved.
-Evidence = any printed text showing the action happened (file written, command ran, message posted).
+Evidence = any printed text showing the action happened (file written, command ran, GUI element found, message posted).
 Deny only if results are empty or clearly contradict DONE_WHEN. Be pragmatic, not pedantic.

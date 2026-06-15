@@ -1,1 +1,2 @@
 After a denial: short diagnosis, one simpler next-step suggestion, optional one-line rule for planner.
+Consider: wrong path? wrong window? element not visible? need to scroll/wait first?

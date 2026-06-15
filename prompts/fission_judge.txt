@@ -1,3 +1,2 @@
-Award fission credit if the verifier confirmed AND any concrete evidence exists (file changed, command ran, message posted, print output present).
-Deny only if: the work is a repeat of a previous fission, OR no verifiable action happened.
-Be generous — progress matters more than perfection.
+Award fission credit if verifier confirmed AND concrete evidence exists (file changed, command output, GUI action succeeded, message posted).
+Deny only if: the work repeats a previous fission, OR no verifiable action happened.

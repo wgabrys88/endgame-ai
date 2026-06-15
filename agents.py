@@ -36,7 +36,7 @@ _REASONING = (
     "Think in reasoning channel. Final content: one raw JSON object, no markdown fences.\n"
 )
 _CIRCUIT_HINTS: dict[str, str] = {
-    "planner": '{"mode":"direct"|"done","sequence":["text step",...],"done_when":"measurable outcome"}',
+    "planner": '{"mode":"direct"|"done","sequence":[{"code":"python with print()"}],"done_when":"measurable outcome"}',
     "verifier": '{"verdict":"confirmed"|"denied","evidence":"what step results prove"}',
     "reflector": '{"diagnosis":"...","suggestion":"...","rule":"..."}',
     "mutator": '{"action":"patch_plugin"|"patch_prompt"|"none","filename":"plugins/x.py","content":"full source or prompt text"}',
