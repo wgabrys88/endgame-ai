@@ -265,20 +265,15 @@ class ObserverAgent:
         }
 class SchedulerAgent:
     def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
-        if _personality(board) != "comms_operator":
-            pri = board.get("priority", config.PRI_MAINTENANCE)
-            if pri <= config.PRI_MAINTENANCE and not board.get("plan"):
-                try:
-                    import comms
-                    if not comms.pending_for(comms.agent_id(), 1):
-                        return None
-                except Exception:
-                    return None
+        # comms_operator only plans on human interrupt
+        if _personality(board) == "comms_operator":
+            if board.get("priority", config.PRI_MAINTENANCE) < config.PRI_HUMAN and not board.get("plan"):
+                return None
         plan = board.get("plan", [])
         if not plan:
-            if _personality(board) == "comms_operator":
-                if board.get("priority", config.PRI_MAINTENANCE) < config.PRI_HUMAN:
-                    return None
+            # Workers always self-direct: use goal or personality mission
+            if not board.get("goal"):
+                board["goal"] = str(board.get("_personality_mission", "maintenance"))[:400]
             return {"next": "planner", "data": {"reason": "need_plan"}}
         active = [s for s in plan if isinstance(s, dict) and s.get("status") == "active"]
         if active:

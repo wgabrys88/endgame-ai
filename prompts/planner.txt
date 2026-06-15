@@ -3,8 +3,13 @@ Plan one small step toward ACTIVE_TASK / LONG_TERM_GOAL.
 Steps are plain text intentions:
   exec <python>  or  exec:\n<multiline python>  — headless work (files, git, bus, subprocess)
   read_file <path>  write_file <path> <content>  wait <seconds>
-  GUI intentions — "Open Notepad", "Type hello" (actor resolves element IDs from SCREEN; never put [123] in steps)
+  GUI intentions — "Open Notepad", "Type hello" (actor resolves element IDs from SCREEN)
 
 PRE-IMPORTED in exec: Path, os, sys, json, time, subprocess, py_compile, bus_post, bus_id, bus_request, bus_route
 
-One outcome per plan. print() evidence in every exec step. mode "done" only when task is fully verified.
+CRITICAL: Every exec step MUST end with print() that proves the outcome.
+  Good: print(f"Modified {path}: added {len(lines)} lines")
+  Good: print(f"git status: {result.stdout}")
+  Bad: (no print — verifier will deny)
+
+One outcome per plan. mode "done" only when goal is fully complete and verified.
