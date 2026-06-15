@@ -202,7 +202,7 @@ python -m py_compile tui.py reactor.py main.py engine.py agents.py comms.py llm.
 ```
 main.py        69   entry point per worker slot
 engine.py     320   main loop + pressure + MoE gate + plugins
-agents.py     672   all pipeline agents (scheduler/planner/actor/verifier/fission/reflector/mutator)
+agents.py     690   all pipeline agents + validate_python (merged)
 reactor.py    237   5 slots + MAP-Elites breeder + respawn
 tui.py        300   terminal UI for colony display
 comms.py      721   blackboard bus + softmax routing + message protocol
@@ -213,8 +213,7 @@ actions.py    362   desktop verbs (exec, read, write, GUI)
 observer.py   401   Windows UIA screen observation
 win32.py      366   ctypes UIA bindings
 acp_client.py 252   Kiro CLI sequential prompting backend
-python_code.py 41   syntax validation
-plugins/       81   4 hot-swappable runtime plugins
+plugins/       40   2 hot-swappable runtime plugins (beacon + fission_log)
 prompts/       ~20  circuit hints + personality system prompts
 ```
 
@@ -222,28 +221,38 @@ prompts/       ~20  circuit hints + personality system prompts
 
 ## DONE (this session, 2026-06-15)
 
-- Codebase slimmed from 6,175 → 4,443 LOC (-28%)
-- fission_log.py restored from mutator corruption
+- MoE routing ENFORCED: human goals → comms_operator ONLY (fixed broadcast bug)
+- comms_operator decomposes goals into subtasks, routes to specific workers
+- Workers only receive explicitly routed subtasks (no more duplication)
+- Claim awareness: workers see what others are working on before planning
+- Planner prompt rewritten: comms_operator decomposes, workers filter by expertise
+- All personality prompts tightened: expertise lens + claim checking
+- Merged python_code.py into agents.py (file deleted)
+- Deleted dead plugins (lessons_decay.py, web_sentinel.py)
+- Fixed _evolution_fitness → _fitness naming bug
 - Fission judge loosened (credit confirmed work)
 - Mutator validation: trial exec() catches broken imports
 - WSL lock guard (skip fcntl on /mnt/ paths)
-- Worker personalities made self-directed when idle
-- Planner prompt: print() evidence requirement emphasized
-- Verifier prompt: pragmatic (accept any evidence)
+- Codebase: 4,412 LOC (from 6,175 original)
 
 ---
 
 ## NEXT MILESTONE
 
 The system must complete ONE full cycle in a live run:
-1. Human posts goal
-2. comms_operator decomposes and routes subtasks (NOT broadcast)
-3. Each worker plans its OWN subtask (not duplicate)
-4. Workers execute, verify, earn fission credit
+1. ✅ Human posts goal → comms_operator ONLY receives it
+2. ✅ comms_operator decomposes and routes subtasks (NOT broadcast)
+3. Each worker plans its OWN subtask (not duplicate) — NEEDS LIVE TEST
+4. Workers execute, verify, earn fission credit — NEEDS LIVE TEST
 5. Reactor archives fitness → breeding activates
 6. On next goal: fitter workers get priority
 
-**When this works, the organism is alive.**
+**Ready for live test.** Run from Windows PowerShell:
+```powershell
+cd C:\Users\ewojgab\Downloads\endgame-ai
+python -c "import log; log.cleanup_runtime(deep=True)"
+python tui.py --model-profile nemotron_parallel "Open Chrome and play Shakira She Wolf on YouTube"
+```
 
 Then: reduce to under 2,000 LOC via OoO unification.
 Then: evolve prompts as MAP-Elites solutions.
