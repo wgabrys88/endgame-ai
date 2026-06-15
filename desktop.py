@@ -368,6 +368,15 @@ EXTENDED_VKS: frozenset[int] = EXTENDED_VK_CODES
 
 # --- Observer (merged from observer.py) ---
 
+from dataclasses import dataclass
+from typing import Any
+import math
+import time
+
+import config
+
+
+
 __all__ = ["observe", "ObserveResult", "BookEntry"]
 
 ACTIONABLE_ROLES = frozenset({
@@ -698,6 +707,7 @@ def _clip_value(value: str) -> str:
     limit = int(config.SCREEN_ELEMENT_VALUE_LIMIT)
     if limit <= 0:
         return value
+    return value[:limit]
     return value if len(value) <= limit else value[:limit] + "â€¦"
 
 def _render(nodes: list[dict[str, Any]], focused_title: str) -> tuple[str, dict[str, BookEntry]]:

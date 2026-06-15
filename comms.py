@@ -614,20 +614,14 @@ def format_bus_context(limit: int | None = None, for_agent: str | None = None) -
             lines.append(f"  @{e.get('from')}: {str(e.get('text', ''))[:200]}{pri_tag}")
     if not chat and len(lines) == 1 and not inbox:
         return ""
-    human_lines: list[str] = []
-    other_lines: list[str] = []
     for entry in chat[-n * 2:]:
         eid = int(entry.get("id", 0) or 0)
         if eid in shown_ids:
             continue
         kind = str(entry.get("kind", ""))[:6]
-        line = f"  @{entry.get('from', '?')} [{kind}] {str(entry.get('text', ''))[:200]}"
-        if str(entry.get("from", "")) == "human" or int(entry.get("pri", 0) or 0) >= config.PRI_HUMAN:
-            human_lines.append(line)
-        elif kind != "route" or len(other_lines) < 3:
-            other_lines.append(line)
-    for line in human_lines + other_lines[-3:]:
-        lines.append(line)
+        lines.append(f"  @{entry.get('from', '?')} [{kind}] {str(entry.get('text', ''))[:200]}")
+        if len(lines) > n * 3:
+            break
     return "\n".join(lines)
 
 def format_phase_brief(phase: str, data: Any, *, max_w: int = 120, style: str = "bus") -> str:
@@ -651,57 +645,33 @@ def bus_id(*_args: Any, **_kwargs: Any) -> str:
 def bus_post(from_id: Any = None, role: str = "colony", text: str = "",
              *args: Any, **kwargs: Any) -> dict[str, Any]:
     if from_id is None or (isinstance(from_id, str) and from_id.startswith("@")):
-        if isinstance(from_id, str) and from_id.startswith("@") and not text:
-            text = from_id
+        text = text or (from_id if isinstance(from_id, str) and from_id.startswith("@") else "")
         from_id = agent_id()
     if isinstance(role, str) and role.startswith("@"):
-        if not text:
-            text = role
-        role = "colony"
-    if args and not text:
-        text = str(args[0])
+        text = text or role; role = "colony"
+    text = text or (str(args[0]) if args else "")
     pri = kwargs.pop("priority", kwargs.pop("pri", kwargs.pop("prio", None)))
-    data = kwargs.pop("data", None)
-    if not isinstance(data, dict):
-        data = {}
+    data = kwargs.pop("data", None) if isinstance(kwargs.get("data"), dict) else {}
     for key in ("evidence", "target", "ok", "goal", "human_ack", "blocked_by", "suggested_rephrase"):
-        if key in kwargs:
-            data[key] = kwargs.pop(key)
+        if key in kwargs: data[key] = kwargs.pop(key)
     return post(str(from_id), str(role), str(text),
-                priority=int(pri) if pri is not None else None,
-                data=data or None)
+                priority=int(pri) if pri is not None else None, data=data or None)
 def bus_request(from_id: Any = None, to: str = "", text: str = "",
                 *args: Any, **kwargs: Any) -> dict[str, Any]:
-    if from_id is None:
-        from_id = agent_id()
-    if args:
-        if not to:
-            to = str(args[0])
-        elif not text:
-            text = str(args[0])
-    target = kwargs.pop("target", None)
-    if target:
-        to = str(target)
-    pri = kwargs.pop("priority", kwargs.pop("pri", 1))
-    goal = str(kwargs.pop("goal", "") or "")
-    return request(str(from_id), str(to), str(text), priority=int(pri), goal=goal)
+    from_id = from_id or agent_id()
+    if args: to, text = (to or str(args[0])), (text or (str(args[0]) if to else ""))
+    to = str(kwargs.pop("target", None) or to)
+    return request(str(from_id), str(to), str(text),
+                   priority=int(kwargs.pop("priority", kwargs.pop("pri", 1))),
+                   goal=str(kwargs.pop("goal", "") or ""))
 def bus_route(from_id: Any = None, to: str = "", reason: str = "",
               *args: Any, **kwargs: Any) -> dict[str, Any]:
-    if from_id is None:
-        from_id = agent_id()
-    if args:
-        if not to:
-            to = str(args[0])
-        elif not reason:
-            reason = str(args[0])
-    target = kwargs.pop("target", None)
-    if target:
-        to = str(target)
-    pri = kwargs.pop("priority", kwargs.pop("pri", 1))
-    scores = kwargs.pop("scores", None)
-    goal = str(kwargs.pop("goal", "") or "")
+    from_id = from_id or agent_id()
+    if args: to, reason = (to or str(args[0])), (reason or (str(args[0]) if to else ""))
+    to = str(kwargs.pop("target", None) or to)
     return route(str(from_id), str(to), str(kwargs.pop("reason", reason) or reason),
-                 priority=int(pri), scores=scores, goal=goal)
+                 priority=int(kwargs.pop("priority", kwargs.pop("pri", 1))),
+                 scores=kwargs.pop("scores", None), goal=str(kwargs.pop("goal", "") or ""))
 # --- CLI ---
 
 if __name__ == "__main__":

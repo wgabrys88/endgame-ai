@@ -140,57 +140,39 @@ def _desktop_context() -> str:
     except Exception as exc:
         return f"DESKTOP_ERROR: {exc}"
 def _active_claims() -> str:
-    """Extract what other workers are currently working on from bus."""
     try:
         import comms
-        chat = comms.read_chat(30)
         claims: dict[str, str] = {}
-        for e in chat:
-            kind = str(e.get("kind", ""))
+        for e in comms.read_chat(30):
+            kind, payload = str(e.get("kind", "")), e.get("payload") if isinstance(e.get("payload"), dict) else {}
             if kind == comms.KIND_ROUTE and str(e.get("from", "")) == "comms_operator":
-                target = str(e.get("to", ""))
-                payload = e.get("payload") if isinstance(e.get("payload"), dict) else {}
-                goal = str(payload.get("goal", "")) or str(e.get("text", ""))
-                if target and goal:
-                    claims[target] = goal[:120]
-            elif kind == comms.KIND_EVENT:
-                payload = e.get("payload") if isinstance(e.get("payload"), dict) else {}
-                if payload.get("phase") == "plan" and str(e.get("from", "")):
-                    who = str(e.get("from", ""))
-                    claims[who] = str(payload.get("done_when", ""))[:120] or claims.get(who, "")
-        if not claims:
-            return ""
-        lines = ["OTHERS WORKING ON (do not duplicate):"]
-        for who, task in claims.items():
-            lines.append(f"  @{who}: {task}")
-        return "\n".join(lines)
+                t = str(e.get("to", ""))
+                if t: claims[t] = (str(payload.get("goal", "")) or str(e.get("text", "")))[:120]
+            elif kind == comms.KIND_EVENT and payload.get("phase") == "plan":
+                who = str(e.get("from", ""))
+                if who: claims[who] = str(payload.get("done_when", ""))[:120] or claims.get(who, "")
+        if not claims: return ""
+        return "OTHERS WORKING ON (do not duplicate):\n" + "\n".join(f"  @{w}: {t}" for w, t in claims.items())
     except Exception:
         return ""
 
 def _planner_state(board: dict[str, Any]) -> str:
     persona = _personality(board)
-    bus_ctx = ""
-    try:
-        import comms
-        bus_ctx = comms.format_bus_context(10 if persona == "comms_operator" else 6, for_agent=persona)
-    except Exception: pass
     stag = float(board.get("stagnation", board.get("_pressure", {}).get("stagnation", 0)) or 0)
-    pwr = float(board.get("power", 1.0 - stag) or 0)
-    long_term = ""
-    try:
-        import comms
-        long_term = comms.colony_goal_text()[:600]
-    except Exception: pass
     parts = [f"ROD: {persona or 'default'}", f"ACTIVE_TASK: {str(board.get('goal', ''))[:800] or '(idle)'}"]
-    if long_term: parts.append(f"LONG_TERM_GOAL: {long_term}")
-    parts.append(f"PRESSURE: stag={stag:.3f} pwr={pwr:.3f}")
+    try:
+        lt = __import__("comms").colony_goal_text()[:600]
+        if lt: parts.append(f"LONG_TERM_GOAL: {lt}")
+    except Exception: pass
+    parts.append(f"PRESSURE: stag={stag:.3f} pwr={float(board.get('power', 1.0 - stag) or 0):.3f}")
     claims = _active_claims()
     if claims and persona != "comms_operator": parts.append(claims)
     desktop_ctx = _desktop_context()
     if desktop_ctx: parts.append(desktop_ctx)
     history_ctx = _format_history(board.get("history", []))
     if history_ctx: parts.append(history_ctx)
-    if bus_ctx: parts.append(bus_ctx)
+    try: parts.append(__import__("comms").format_bus_context(10 if persona == "comms_operator" else 6, for_agent=persona))
+    except Exception: pass
     parts.append("Plan JSON:")
     return "\n".join(parts)
 def _sanitize_plan_step(step: str) -> str:
