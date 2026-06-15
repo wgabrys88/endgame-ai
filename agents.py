@@ -1,4 +1,4 @@
-﻿"""Agents â€” pipeline stages. Each: run(board) â†’ {phase, data, writes, next}."""
+"""Agents â€” pipeline stages. Each: run(board) â†’ {phase, data, writes, next}."""
 from __future__ import annotations
 import difflib
 import json
@@ -41,7 +41,7 @@ _CIRCUIT_HINTS: dict[str, str] = {
     "reflector": '{"diagnosis":"...","suggestion":"...","rule":"..."}',
     "mutator": '{"action":"patch_plugin"|"patch_prompt"|"none","filename":"plugins/x.py","content":"full source or prompt text"}',
     "fission_judge": '{"verdict":"credit"|"deny","diagnosis":"...","suggestion":"...","rule":""}',
-    "actor": '{"actions":[{"verb":"click|focus|write|press|hotkey|scroll","target":"[id]","value":""}],"conclusion":"EXECUTE"|"DONE"|"CANNOT"}',
+    "actor": '{"code":"python code with print()"} or {"conclusion":"DONE"|"CANNOT"}',
 }
 def _personality(board: dict[str, Any] | None = None) -> str:
     if board:
@@ -202,27 +202,6 @@ def _advance_plan(plan: list[dict[str, Any]]) -> None:
     pending = next((s for s in plan if isinstance(s, dict) and s.get("status") == "pending"), None)
     if pending:
         pending["status"] = "active"
-def _build_args(verb: str, target: str, value: str) -> dict[str, Any]:
-    from actions import DEFAULT_SCROLL_AMOUNT
-    target = target.strip("[]")
-    if verb == "click":
-        return {"selector": target}
-    if verb == "write":
-        return {"selector": target, "text": value}
-    if verb == "press":
-        return {"key": target or value}
-    if verb == "hotkey":
-        raw = value or target
-        keys = [k.strip() for k in raw.replace("+", ",").split(",") if k.strip()]
-        return {"keys": keys}
-    if verb == "scroll":
-        try:
-            return {"selector": target, "amount": int(value) if value else DEFAULT_SCROLL_AMOUNT}
-        except ValueError:
-            return {"selector": target, "amount": DEFAULT_SCROLL_AMOUNT}
-    if verb == "focus":
-        return {"window_title": target or value}
-    return {}
 def _render_actor_context(board: dict[str, Any], instruction: str) -> str:
     parts: list[str] = [f"GOAL: {board.get('goal', '')}"]
     screen = str(board.get("screen", "")).strip()
@@ -343,9 +322,38 @@ class PlannerAgent:
             "data": _llm_event_data(llm_out, {"mode": mode, "steps": len(steps), "done_when": done_when}),
             "writes": writes,
         }
+def _extract_actor_code(text: str) -> str:
+    """Extract Python code from actor LLM response. Handles raw code, json {code:...}, or fenced blocks."""
+    t = (text or "").strip()
+    if not t:
+        return ""
+    # Try JSON with "code" key
+    parsed = _parse_json(t)
+    if parsed and "code" in parsed:
+        return str(parsed["code"]).strip()
+    # Try fenced code block
+    if "```" in t:
+        parts = t.split("```")
+        for i in range(1, len(parts), 2):
+            block = parts[i]
+            if block.startswith("python\n"):
+                block = block[7:]
+            elif block[0:1] == "\n":
+                block = block[1:]
+            if block.strip():
+                return block.strip()
+    # Raw code (if it looks like Python)
+    if any(t.startswith(kw) for kw in ("import ", "from ", "desktop_", "subprocess", "print(", "observe_", "time.", "os.", "Path(")):
+        return t
+    # JSON conclusion without code = done/cannot
+    if parsed and parsed.get("conclusion") in ("DONE", "CANNOT"):
+        return ""
+    return t
+
+
 class ActorAgent:
     def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
-        from actions import execute_step, execute_verb, is_python_step, VERBS
+        from actions import execute_step, is_python_step
 
         plan = board.get("plan", [])
         active = next((s for s in plan if isinstance(s, dict) and s.get("status") == "active"), None)
@@ -378,50 +386,22 @@ class ActorAgent:
             }
 
         llm_out = _call_circuit(board, "actor", _render_actor_context(board, text), role="actor")
-        parsed = _parse_json(llm_out.text)
-        if not parsed:
-            return {"phase": "actor.error", "data": _llm_event_data(llm_out, {"error": "invalid JSON"})}
-        conclusion = str(parsed.get("conclusion", "EXECUTE"))
-        actions: list[dict[str, Any]] = parsed.get("actions", []) if isinstance(parsed.get("actions"), list) else []
-        actions = [a for a in actions if str(a.get("verb", "")) in VERBS]
-        plan_done = lambda: all(not isinstance(s, dict) or s.get("status") == "done" for s in plan)
-
-        if conclusion == "DONE":
-            active["status"] = "done"
-            _advance_plan(plan)
-            return {
-                "phase": "actor",
-                "data": _llm_event_data(llm_out, {"conclusion": "DONE"}),
-                "next": "verifier" if plan_done() else "actor",
-                "writes": {"plan": plan},
-            }
-        if conclusion == "CANNOT" or (conclusion == "EXECUTE" and not actions):
+        actor_code = _extract_actor_code(llm_out.text)
+        if not actor_code:
             active["status"] = "failed"
-            return {"phase": "actor", "data": _llm_event_data(llm_out, {"conclusion": conclusion, "ok": False})}
-
-        elements: dict[str, Any] = board.get("screen_elements", {})
-        had_failure = False
-        for action in actions:
-            verb = str(action.get("verb", ""))
-            result = execute_verb(
-                verb,
-                _build_args(verb, str(action.get("target", "")), str(action.get("value", ""))),
-                elements,
-                None,
-            )
-            history.append({"verb": verb, "ok": result.success, "obs": result.observation})
-            if not result.success:
-                had_failure = True
-                break
-        if had_failure:
+            return {"phase": "actor", "data": _llm_event_data(llm_out, {"ok": False, "error": "no code"})}
+        from actions import run_python
+        result = run_python(actor_code)
+        history.append({"verb": "python", "ok": result.success, "obs": result.observation})
+        if not result.success:
             active["status"] = "failed"
             return {
                 "phase": "actor",
-                "data": _llm_event_data(llm_out, {"conclusion": conclusion, "ok": False}),
+                "data": _llm_event_data(llm_out, {"ok": False, "obs": result.observation[:200]}),
                 "writes": {"plan": plan, "history": history[-config.MAX_HISTORY:]},
             }
         active["status"] = "done"
-        active["result"] = f"gui:{conclusion}"
+        active["result"] = result.observation[:config.EXEC_OUTPUT_LIMIT]
         _advance_plan(plan)
         return {
             "phase": "actor",
