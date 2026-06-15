@@ -150,15 +150,6 @@ MODEL_PROFILES: dict[str, dict[str, Any]] = {
         "BUDGET": {"planner": 1152, "verifier": 288, "reflector": 448, "fission_judge": 448, "mutator": 896},
         "THINKING_BUDGET": {"planner": 1536, "verifier": 192, "reflector": 384, "fission_judge": 128, "mutator": 640},
     },
-    "nemotron_legacy": {
-        "LLM_TEMPERATURE": 1.0, "LLM_TOP_P": 1.0, "LLM_TOP_K": 20,
-        "LLM_REPEAT_PENALTY": 1.0, "LLM_PRESENCE_PENALTY": 0.0,
-        "LLM_FREQUENCY_PENALTY": 0.0, "LLM_SEED": -1,
-        "LLM_MAX_TOKENS": 128000, "LLM_STOP": [], "LLM_LOGIT_BIAS": {},
-        "LLM_MAX_CONCURRENT": 1, "LLM_THINKING_ENABLED": True, "LLM_THINKING_BUDGET": 1024,
-        "LMS_TIMEOUT": 600,
-        "BUDGET": {"planner": 1024, "verifier": 1024, "reflector": 2048, "fission_judge": 1024, "mutator": 4096},
-    },
     "gemma": {
         "LLM_TEMPERATURE": 0.60, "LLM_TOP_P": 0.90, "LLM_TOP_K": 40,
         "LLM_REPEAT_PENALTY": 1.07, "LLM_PRESENCE_PENALTY": 0.0,
