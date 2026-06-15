@@ -180,6 +180,8 @@ def active_model_profile() -> str:
     return _active_profile
 # --- Timing ---
 DELAY_BETWEEN_CYCLES: float = 2.0
+DELAY_SATISFIED: float = 15.0        # cycle delay when goal satisfied (reduced metabolism)
+SATISFIED_VERIFICATIONS: int = 2      # N consecutive verifications before entering satisfied state
 BUS_POLL_INTERVAL: float = 3.0  # check bus for priority interrupts
 COMMS_ROUTE_INTERVAL: float = 20.0  # comms_operator MoE routing cadence (seconds)
 

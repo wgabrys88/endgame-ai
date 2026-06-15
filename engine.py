@@ -79,6 +79,11 @@ def run(board: dict[str, Any], interrupted: Callable[[], bool]) -> None:
         # --- Pressure math (per cycle, not during LLM wait) ---
         _update_pressure(board)
 
+        # --- Satisfied state: reduced metabolism when goal complete ---
+        if _is_satisfied(board):
+            time.sleep(config.DELAY_SATISFIED)
+            continue
+
         # --- MoE gate (comms_operator only, deterministic, no LLM) ---
         if _moe_route(ctx):
             time.sleep(config.DELAY_BETWEEN_CYCLES)
@@ -113,6 +118,7 @@ def run(board: dict[str, Any], interrupted: Callable[[], bool]) -> None:
                 if phase == "fission":
                     board["_pressure"]["last_fission"] = time.time()
                     board["_pressure"]["failures"] = 0
+                    board["_satisfied_count"] = int(board.get("_satisfied_count", 0) or 0) + 1
                 elif phase in ("planner.error", "actor.error", "verifier.error", "fission.deny") or \
                      (phase == "verify" and (result.get("data") or {}).get("verdict") == "denied") or \
                      (phase == "actor" and not (result.get("data") or {}).get("ok", True)):
@@ -142,6 +148,30 @@ def _needs_screen(board: dict[str, Any], target: str) -> bool:
         if is_python_step(str(active.get("text", ""))):
             return False
     return True
+def _is_satisfied(board: dict[str, Any]) -> bool:
+    """Satisfied = goal verified, no pending inbox, low priority. Reduced metabolism."""
+    if board.get("priority", config.PRI_MAINTENANCE) >= config.PRI_HUMAN:
+        return False
+    if board.get("plan"):
+        return False
+    satisfied_count = int(board.get("_satisfied_count", 0) or 0)
+    if satisfied_count < config.SATISFIED_VERIFICATIONS:
+        return False
+    # Check bus for new work
+    try:
+        me = comms.agent_id()
+        if comms.pending_for(me, 1):
+            board["_satisfied_count"] = 0
+            return False
+    except Exception:
+        pass
+    # Emit satisfied telemetry (throttled)
+    if not board.get("_satisfied_logged"):
+        log.emit("satisfied", {"count": satisfied_count, "goal": str(board.get("goal", ""))[:80]})
+        board["_satisfied_logged"] = True
+    return True
+
+
 def _update_observe_focus(board: dict[str, Any]) -> None:
     goal = str(board.get(goal, )).lower()
     try:
@@ -228,8 +258,16 @@ def _update_pressure(board: dict[str, Any]) -> None:
     board["power"] = round(1.0 - stag, 3)
 
     if p["cycles"] % 10 == 0:
+        phase = "satisfied" if board.get("_satisfied_count", 0) >= config.SATISFIED_VERIFICATIONS else ""
         log.emit("pressure", {"stagnation": round(stag, 3), "power": board["power"],
                                "velocity": velocity, "failures": failures, "cycles": p["cycles"]})
+        try:
+            comms.post_telemetry(
+                comms.agent_id(), stagnation=stag, power=board["power"],
+                velocity=velocity, fissions=int(board.get("fissions", 0) or 0),
+                phase=phase, cycles=p["cycles"])
+        except Exception:
+            pass
 # --- MoE Gating (Bause 2026) â€” comms_operator softmax router ---
 
 def _pick_alternate(persona: str) -> str:
@@ -257,6 +295,9 @@ def _moe_route(ctx: AgentContext) -> bool:
     escalations: list[tuple[str, dict[str, Any]]] = []
 
     for who, st in workers.items():
+        if str(st.get("phase", "")) == "satisfied":
+            stuck_ticks[who] = 0
+            continue
         stag = float(st.get("stagnation", 0))
         vel = float(st.get("velocity", 0))
         if stag >= config.STAG_ESCALATE and abs(vel) <= config.VEL_STUCK:
