@@ -1,44 +1,8 @@
-# Whitelist: essential run code + OBSERVATIONS handover only
-*
-
-!.gitignore
-!.gitattributes
-!.env
-!LICENSE
-!OBSERVATIONS.md
-!*.py
-!prompts/
-!prompts/**
-!plugins/
-!plugins/**
-
-# Build
 __pycache__/
 *.pyc
-
-# Runtime — never commit
 runtime/
 sessions/
-events*.jsonl
-events-child-s*.jsonl
-snapshot.json
-respawn.json
-goal.txt
-pause
-gui_mode
-unconstrained_mode
-*.lock
+test.txt
 .acp.lock
-tmp*.py
-
-# Run artifacts — never commit
-benchmark.txt
-Colony_Demo/
-colony_*.txt
-devnull.txt
-hello.txt
-audit.py
-audit.txt
-lessons.jsonl
-terminals/
-ENDGAME_*.html
+pause
+*.log
