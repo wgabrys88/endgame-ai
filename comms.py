@@ -279,50 +279,20 @@ def route(from_id: str, to: str, reason: str, *, priority: int = config.PRI_NORM
     entries.append(entry)
     _write_chat(entries)
     return entry
-def post_evolve(
-    from_id: str,
-    target: str,
-    action: str,
-    *,
-    fitness: float | None = None,
-    completed: str = "",
-    reason: str = "",
-    diff: str = "",
-    priority: int = config.PRI_MAINTENANCE,
-    data: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Publish an AgentBreeder selection candidate on the blackboard."""
+def post_evolve(from_id: str, target: str, action: str, *, fitness: float | None = None,
+               completed: str = "", reason: str = "", diff: str = "",
+               priority: int = config.PRI_MAINTENANCE, data: dict[str, Any] | None = None) -> dict[str, Any]:
     target_id = canonical(target)
     payload: dict[str, Any] = {"target": target_id, "action": action[:32]}
-    if fitness is not None:
-        payload["fitness"] = round(max(0.0, min(1.0, float(fitness))), 4)
-    if completed:
-        payload["completed"] = completed[:200]
-    if reason:
-        payload["reason"] = reason[:200]
-    if diff:
-        payload["diff"] = diff[:2000]
-    if data:
-        payload.update(data)
-    text = f"evolve @{target_id} {payload['action']}"
-    if "fitness" in payload:
-        text += f" fitness={payload['fitness']:.3f}"
-    if reason:
-        text += f" {reason[:80]}"
-    entry = envelope(
-        from_id,
-        KIND_EVOLVE,
-        text=text,
-        pri=priority,
-        mentions=parse_mentions(text),
-        to=target_id,
-        payload=payload,
-    )
-    entry["role"] = "colony"
-    entry["data"] = payload
-    entries = _read_chat()
-    entries.append(entry)
-    _write_chat(entries)
+    if fitness is not None: payload["fitness"] = round(max(0.0, min(1.0, float(fitness))), 4)
+    if completed: payload["completed"] = completed[:200]
+    if reason: payload["reason"] = reason[:200]
+    if diff: payload["diff"] = diff[:2000]
+    if data: payload.update(data)
+    text = f"evolve @{target_id} {action[:32]}"
+    entry = envelope(from_id, KIND_EVOLVE, text=text, pri=priority, to=target_id, payload=payload)
+    entry["role"] = "colony"; entry["data"] = payload
+    entries = _read_chat(); entries.append(entry); _write_chat(entries)
     _mirror_breeder_observation(entry)
     return entry
 def read_chat(limit: int = 30) -> list[dict[str, Any]]:

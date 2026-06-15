@@ -118,52 +118,34 @@ def _desktop_context() -> str:
         from observer import observe
         obs = observe()
         parts = [f"DESKTOP_FOCUSED: {obs.focused_title}"]
-        if obs.desktop_summary:
-            parts.append(f"DESKTOP_SUMMARY: {obs.desktop_summary[:600]}")
-        if obs.context_text:
-            parts.append("DESKTOP_ELEMENTS:")
-            parts.append(obs.context_text[:2000])
+        if obs.desktop_summary: parts.append(f"DESKTOP_SUMMARY: {obs.desktop_summary[:600]}")
+        if obs.context_text: parts.append(obs.context_text[:2000])
         return "\n".join(parts)
     except Exception as exc:
-        return f"DESKTOP_OBSERVE_ERROR: {type(exc).__name__}: {exc}"
+        return f"DESKTOP_ERROR: {exc}"
 def _planner_state(board: dict[str, Any]) -> str:
     persona = _personality(board)
     bus_ctx = ""
     try:
         import comms
-        bus_ctx = comms.format_bus_context(
-            10 if persona == "comms_operator" else 6,
-            for_agent=persona or None,
-        )
-    except Exception:
-        pass
-    stag = board.get("stagnation", board.get("_pressure", {}).get("stagnation", 0))
-    try:
-        stag_f = float(stag)
-    except (TypeError, ValueError):
-        stag_f = 0.0
-    pwr = board.get("power", 1.0 - stag_f)
+        bus_ctx = comms.format_bus_context(10 if persona == "comms_operator" else 6, for_agent=persona)
+    except Exception: pass
+    stag = float(board.get("stagnation", board.get("_pressure", {}).get("stagnation", 0)) or 0)
+    pwr = float(board.get("power", 1.0 - stag) or 0)
     long_term = ""
     try:
         import comms
         long_term = comms.colony_goal_text()[:600]
-    except Exception:
-        pass
-    parts = [f"ROD: {persona or 'default'}"]
-    active_goal = str(board.get("goal", ""))[:800]
-    parts.append(f"ACTIVE_TASK: {active_goal or '(idle — wait for MoE route or human interrupt)'}")
-    if long_term:
-        parts += [f"LONG_TERM_GOAL: {long_term}", "One small step toward LONG_TERM_GOAL per plan.", ""]
-    parts.append(f"PRESSURE: stagnation={stag_f:.3f} power={float(pwr):.3f}")
+    except Exception: pass
+    parts = [f"ROD: {persona or 'default'}", f"ACTIVE_TASK: {str(board.get('goal', ''))[:800] or '(idle)'}"]
+    if long_term: parts.append(f"LONG_TERM_GOAL: {long_term}")
+    parts.append(f"PRESSURE: stag={stag:.3f} pwr={pwr:.3f}")
     desktop_ctx = _desktop_context()
-    if desktop_ctx:
-        parts += ["", desktop_ctx]
+    if desktop_ctx: parts.append(desktop_ctx)
     history_ctx = _format_history(board.get("history", []))
-    if history_ctx:
-        parts += ["", history_ctx]
-    if bus_ctx:
-        parts += ["", bus_ctx]
-    parts += ["", "Plan JSON:"]
+    if history_ctx: parts.append(history_ctx)
+    if bus_ctx: parts.append(bus_ctx)
+    parts.append("Plan JSON:")
     return "\n".join(parts)
 def _sanitize_plan_step(step: str) -> str:
     if not _ELEMENT_ID_RE.search(step):

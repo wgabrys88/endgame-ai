@@ -218,81 +218,8 @@ def _resolve_write_path(path: str) -> str:
     p = Path(raw)
     return str(p) if p.is_absolute() else str((config.BASE_DIR / raw).resolve())
 def execute_python(code: str) -> ActionResult:
-    import concurrent.futures
-    import io
-    import traceback
-
-    code = code.strip()
-    if not code:
-        return ActionResult("exec", False, "no code")
-
-    def enable_gui() -> None:
-        config.GUI_MODE_PATH.write_text("1", encoding="utf-8")
-
-    def pause_reactor() -> None:
-        log.set_paused(True)
-
-    namespace: dict[str, Any] = {
-        "__builtins__": __builtins__,
-        "__name__": "__exec__",
-        "BASE_DIR": config.BASE_DIR,
-        "Path": Path,
-        "os": os,
-        "sys": sys,
-        "json": json,
-        "time": time,
-        "subprocess": subprocess,
-        "py_compile": py_compile,
-        "enable_gui": enable_gui,
-        "pause_reactor": pause_reactor,
-    }
-    try:
-        from comms import bus_post, bus_id, bus_request, bus_route
-        namespace.update({
-            "bus_post": bus_post, "bus_id": bus_id,
-            "bus_request": bus_request, "bus_route": bus_route,
-        })
-    except ImportError:
-        pass
-
-    stdout_buf = io.StringIO()
-    stderr_buf = io.StringIO()
-
-    class _Capture(io.TextIOBase):
-        def __init__(self, buf: io.StringIO) -> None:
-            self._buf = buf
-
-        def write(self, s: str) -> int:
-            if s:
-                self._buf.write(s)
-            return len(s) if s else 0
-
-        def flush(self) -> None:
-            pass
-
-    def _run() -> None:
-        old_out, old_err = sys.stdout, sys.stderr
-        sys.stdout, sys.stderr = _Capture(stdout_buf), _Capture(stderr_buf)
-        try:
-            exec(code, namespace, namespace)
-        finally:
-            sys.stdout, sys.stderr = old_out, old_err
-
-    error_text = ""
-    try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            pool.submit(_run).result(timeout=config.EXEC_TIMEOUT)
-        ok = True
-    except concurrent.futures.TimeoutError:
-        ok, error_text = False, f"timeout after {config.EXEC_TIMEOUT}s"
-    except Exception:
-        ok, error_text = False, traceback.format_exc()
-
-    parts = [stdout_buf.getvalue().rstrip(), stderr_buf.getvalue().rstrip()]
-    if error_text:
-        parts.append(error_text.rstrip())
-    output = _clip_obs("\n".join(p for p in parts if p))
-    return ActionResult("exec", ok, output or ("ok" if ok else "exec failed"))
+    """Run Python code as subprocess (same as run_python)."""
+    return run_python(code)
 def execute_step(step: str) -> ActionResult:
     """Python executes headless plan steps — model only names them."""
     s = step.strip()
