@@ -2,167 +2,142 @@
 
 A living organism that controls your Windows desktop. Not an agent framework — an evolving colony of specialized rods that plans, acts, verifies, and mutates under pressure.
 
-## What It Is
+## Philosophy
 
-Traditional agents: task → done → exit → dead.
-This organism: task → fission → evolve → what next? → never stop.
+- Agents: task -> done -> exit -> dead
+- Organism: task -> fission -> evolve -> what next? -> never stop
 
-Five concurrent worker processes coordinate through a shared bus, each with a distinct personality. A MAP-Elites breeder ensures the fittest survive. Prompts are DNA — they evolve under pressure.
+**Everything is Python.** Every LLM response is Python code executed directly. No JSON schemas, no verb DSLs, no structural constraints. The LLM is a Python programmer working on a computer. The organism self-regulates through pressure and natural selection.
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│  TUI (tui.py) — terminal dashboard                  │
-│    └── Reactor (reactor.py) — process supervisor    │
-│          ├── Slot 1: comms_operator (thalamus)      │
-│          ├── Slot 2: architect (frontal cortex)     │
-│          ├── Slot 3: implementor (motor cortex)     │
-│          ├── Slot 4: reviewer (quality)             │
-│          └── Slot 5: devops (infrastructure)        │
-└─────────────────────────────────────────────────────┘
-         │                    │
-    ┌────▼────┐         ┌────▼────┐
-    │ Bus/MoE │         │LM Studio│
-    │(comms.py)│        │ (local) │
-    └─────────┘         └─────────┘
+Human goal
+    |
+    v
+TUI (tui.py) -> Reactor (reactor.py) -> 5 slots
+    |               |
+    v               v
+Colony Bus    MAP-Elites Breeder
+(comms.py)    (fitness archive)
+```
+
+Each slot runs the engine loop:
+```
+Plan (Python) -> Execute (Python) -> Verify (Python) -> Fission/Reflect -> Evolve
+```
+
+### The Universal Execution Model
+
+Every LLM call returns Python code. The engine executes it. Signal functions communicate intent:
+
+```python
+# Planner outputs:
+add_step("subprocess.run(['cmd','/c','start notepad']); print('opened')")
+add_step("desktop_write('hello'); print('typed')")
+set_done_when("Notepad contains hello")
+
+# Verifier outputs:
+confirm("typed 5 chars, Notepad window title shows hello")
+
+# Fission judge outputs:
+credit("Novel work: opened notepad and wrote text")
+
+# Mutator outputs:
+patch_file("plugins/smarter.py", "def run(board):\n    ...")
 ```
 
 ### Biological Mapping
 
-| Component | Biology | File |
+| Component | Biology | Role |
 |-----------|---------|------|
-| Thalamus | All stimuli enter here | comms_operator persona |
-| Frontal cortex | Planning, strategy | architect persona |
-| Motor cortex | Direct execution | implementor persona |
-| Visual cortex | Screen observation | desktop.py |
-| Autonomic | Pressure fields | engine.py |
-| Immune | Diagnose & patch | reflector + mutator |
-| Reproductive | MAP-Elites breeder | reactor.py |
-| Endocrine | Satisfied/metabolism | engine.py |
+| comms_operator | Thalamus | Routes all human stimuli to workers |
+| architect | Frontal cortex | Plans, designs, navigates |
+| implementor | Motor cortex | Executes, clicks, types, writes files |
+| reviewer | Quality | Verifies, audits, tests |
+| devops | Infrastructure | Git, deployment, system health |
+| engine.py | Autonomic | Pressure fields, metabolism |
+| reactor.py | Reproductive | MAP-Elites breeder, fission |
 
 ## Requirements
 
 - Windows 11
 - Python 3.11+
 - [LM Studio](https://lmstudio.ai/) running locally with a model loaded
-- Model recommendation: Nemotron or similar reasoning model
 
 ## Quick Start
 
 ```powershell
-# Clone and enter
 git clone https://github.com/wgabrys88/endgame-ai.git
 cd endgame-ai
 
-# Configure (edit .env if LM Studio is on a different host)
-# Default: http://localhost:1234
-
-# Run
+# Default: LM Studio at localhost:1234
 python tui.py "Open notepad and write hello" --model-profile nemotron_parallel
 ```
 
 ## Configuration
 
-### `.env`
+`.env`:
 ```
 ENDGAME_LMS_HOSTS=http://localhost:1234
 ```
 
-### Model Profiles
+Model profiles: `nemotron` (single, safe) or `nemotron_parallel` (5 concurrent).
 
-- `nemotron` — Single slot, global lock, safe (default)
-- `nemotron_parallel` — 5 concurrent slots, no lock, fast
+## How It Works
+
+1. **Human goal** -> comms_operator decomposes into subtasks
+2. **Planner** writes Python: `add_step("code")`, `set_done_when("criteria")`
+3. **Actor** executes each step as Python subprocess
+4. **Verifier** writes Python: `confirm("evidence")` or `deny("reason")`
+5. **Fission** awards credit for novel work (natural selection)
+6. **Pressure builds** on stagnation -> triggers mutation
+7. **Mutator** writes Python: `patch_file("path", "new code")` -> evolves prompts/plugins
+8. **Satisfied state** -> reduced metabolism when goal verified (not death, dormancy)
+
+## Key Design Principles
+
+1. **Everything is Python** — LLMs output Python. No JSON schemas. No DSLs.
+2. **Never exit** — Satisfied state is dormancy, not death.
+3. **Unconstrained** — No guardrails on what code the organism can write. Self-regulation via pressure.
+4. **Prompts are DNA** — They evolve under pressure via mutator crossover.
+5. **Python writes Python** — The mutator rewrites its own code. Turtles all the way down.
+
+## Tools
+
+### bench.py — LLM Benchmark (30 scenarios)
+```powershell
+python bench.py --list                    # List scenarios
+python bench.py --concurrent 5            # Run all parallel
+python bench.py --temperature 0.5         # Test different params
+```
+
+### replay.py — Session Replay
+```powershell
+python replay.py                          # Browse latest session
+python replay.py sessions\20260615_134357  # Specific session
+# Controls: arrows=navigate, SPACE=re-fire, s=save, q=quit
+```
 
 ## File Structure
 
 ```
-main.py         Entry point for single worker process
-engine.py       Main organism loop (plan → act → verify → fission)
-reactor.py      Multi-process supervisor, MAP-Elites breeder
-tui.py          Terminal dashboard (launches reactor)
-agents.py       All agent classes (planner, actor, verifier, etc.)
-comms.py        Bus/blackboard communication layer
-llm.py          LM Studio HTTP client + ACP backend
-config.py       Configuration, model profiles, personas
-desktop.py      Windows UI Automation (observe + control)
-actions.py      Desktop action execution (click, write, press, etc.)
-log.py          Event logging
-bench.py        LLM benchmark (30 scenarios)
-replay.py       Interactive session replay/comparison tool
-plugins/        Hot-swappable plugins (auto-loaded each cycle)
-prompts/        Prompt DNA (system prompts for each circuit and persona)
+main.py      Single worker entry point
+engine.py    Organism loop (plan->act->verify->fission)
+reactor.py   Multi-process supervisor + MAP-Elites
+tui.py       Terminal dashboard
+agents.py    All agent classes
+comms.py     Bus/blackboard communication
+llm.py       LM Studio client + request tracing
+config.py    Configuration + model profiles
+desktop.py   Windows UI Automation (observe + control)
+actions.py   Python execution sandbox + desktop helpers
+log.py       Event logging
+bench.py     LLM benchmark tool
+replay.py    Session replay tool
+plugins/     Hot-loaded plugins (def run(board))
+prompts/     Prompt DNA (evolves under pressure)
 ```
-
-## How It Works
-
-1. **Human says goal** → comms_operator decomposes into subtasks
-2. **Workers plan** → each rod plans one step through its expertise lens
-3. **Actor executes** → desktop automation (click, type, scroll) or Python exec
-4. **Verifier confirms** → checks print output against done_when criteria
-5. **Fission judge** → awards credit for novel completed work
-6. **Pressure builds** → stagnation increases, triggers mutation
-7. **Mutator evolves** → patches plugins or rewrites personality prompts
-8. **Breeder selects** → MAP-Elites archive preserves fittest DNA
-9. **Satisfied state** → reduced metabolism when goal verified (not death)
-
-## Tools
-
-### bench.py — LLM Benchmark
-
-Test 30 real-world scenarios against any model/params:
-
-```powershell
-# List all scenarios
-python bench.py --list
-
-# Run all with defaults
-python bench.py
-
-# Test specific scenarios with custom params
-python bench.py --scenarios actor_click_edit,plan_open_notepad --temperature 0.5 --concurrent 3
-
-# Output goes to test.txt
-python bench.py --output results_modelA.txt
-```
-
-### replay.py — Session Replay
-
-Browse past LLM requests and re-fire them to compare models:
-
-```powershell
-# Browse latest session
-python replay.py
-
-# Browse specific session
-python replay.py sessions\20260615_134357
-
-# Controls:
-#   ↑↓     Navigate requests
-#   SPACE   Re-fire selected request to LM Studio
-#   s       Save comparison to test.txt
-#   q       Quit
-```
-
-### Plugins
-
-Drop a `.py` file in `plugins/` with `def run(board): ...` — it's hot-loaded every cycle.
-
-```python
-# plugins/my_plugin.py
-def run(board):
-    """Called every engine cycle."""
-    if board.get("fissions", 0) > 3:
-        print("3 fissions reached!")
-```
-
-## Key Design Principles
-
-1. **Never exit** — The organism has no exit conditions. It rests (satisfied state), it never dies.
-2. **Pressure drives evolution** — Stagnation → mutation → adaptation. No hand-holding.
-3. **Prompts are DNA** — They evolve. The mutator can rewrite personality prompts using elite DNA crossover.
-4. **No broadcast** — All messages route through MoE (Mixture of Experts). Targeted, not sprayed.
-5. **Fission = reproduction** — Novel completed work earns credit. Repeated work is denied.
 
 ## License
 
