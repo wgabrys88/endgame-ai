@@ -374,6 +374,17 @@ def _write_json(path: Path, data: Any) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def _trim_trailing_blank_lines(path: Path) -> None:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return
+    lines = text.splitlines()
+    while lines and not lines[-1].strip():
+        lines.pop()
+    path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8", newline="\n")
+
+
 def _load_manifest(raw_run_dir: Path | None) -> dict[str, Any]:
     if not raw_run_dir:
         return {}
@@ -460,7 +471,6 @@ def _run_markdown(record: dict[str, Any]) -> str:
         "",
         f"- raw_session_dir: `{record.get('raw_session_dir', '')}`",
         f"- raw_ablation_dir: `{record.get('raw_ablation_dir', '')}`",
-        "",
     ]) + "\n"
 
 
@@ -536,6 +546,8 @@ def run_once(
             stop_reason = "timeout"
             stop_detail = _stop_process_tree(proc, grace_seconds)
             returncode = proc.poll()
+    _trim_trailing_blank_lines(stdout_path)
+    _trim_trailing_blank_lines(stderr_path)
     finished = time.time()
 
     raw_session_dir = _newest_dir(config.BASE_DIR / "sessions", before_sessions)

@@ -1,0 +1,19 @@
+{"n":1,"t":"2026-06-15T19:29:46.228+00:00","phase":"start","d":{"goal":"open calculator, add two numbers, and get the result copied from the calculator into the notepad, save file on desktop.","personality":"generalist","slot":1,"profile":"nemotron","run_mode":"unicore","ablation_run_id":"20260615_192946_unicore_phase0-calc-notepad"}}
+{"n":2,"t":"2026-06-15T19:29:46.247+00:00","phase":"interrupt","d":{"from":"reactor","pri":2,"text":"@colony LONG_TERM_GOAL: open calculator, add two numbers, and get the result copied from the calculator into the notepad"}}
+{"n":3,"t":"2026-06-15T19:29:46.258+00:00","phase":"plugin.fission_log","d":{"fissions":0,"power":0.0,"stagnation":0.0}}
+{"n":4,"t":"2026-06-15T19:29:46.267+00:00","phase":"schedule","d":{"next":"planner","reason":"need_plan"}}
+{"n":5,"t":"2026-06-15T19:29:46.276+00:00","phase":"planner.pending","d":{"goal":"open calculator, add two numbers, and get the result copied from the calculator "}}
+{"n":6,"t":"2026-06-15T19:29:48.220+00:00","phase":"llm.request","d":{"role":"planner","max_tokens":1400,"temperature":0.12}}
+{"n":7,"t":"2026-06-15T19:30:13.468+00:00","phase":"llm.response","d":{"role":"planner","output_chars":163,"reasoning_chars":1555,"reasoning_tokens":333,"completion_tokens":382,"latency_ms":25234}}
+{"n":8,"t":"2026-06-15T19:30:13.480+00:00","phase":"plan","d":{"output_chars":163,"reasoning_chars":1555,"reasoning_tokens":333,"mode":"direct","steps":1,"done_when":"Calculator opened"}}
+{"n":9,"t":"2026-06-15T19:30:15.563+00:00","phase":"actor","d":{"ok":false,"verb":"python","obs":"RuntimeError: selector Calculator not in book"}}
+{"n":10,"t":"2026-06-15T19:30:17.585+00:00","phase":"plugin.fission_log","d":{"fissions":0,"power":1.0,"stagnation":0.0}}
+{"n":11,"t":"2026-06-15T19:30:17.594+00:00","phase":"schedule","d":{"next":"verifier","reason":"plan_complete"}}
+{"n":12,"t":"2026-06-15T19:30:19.685+00:00","phase":"observe","d":{"focused":"Program Manager","chars":2356}}
+{"n":13,"t":"2026-06-15T19:30:19.704+00:00","phase":"llm.request","d":{"role":"verifier","max_tokens":384,"temperature":0.12}}
+{"n":14,"t":"2026-06-15T19:30:26.259+00:00","phase":"llm.response","d":{"role":"verifier","output_chars":79,"reasoning_chars":288,"reasoning_tokens":59,"completion_tokens":81,"latency_ms":6546}}
+{"n":15,"t":"2026-06-15T19:30:26.282+00:00","phase":"verify","d":{"output_chars":79,"reasoning_chars":288,"reasoning_tokens":59,"verdict":"denied","evidence":"RuntimeError: selector Calculator not in book"}}
+{"n":16,"t":"2026-06-15T19:30:26.316+00:00","phase":"llm.request","d":{"role":"reflector","max_tokens":640,"temperature":0.12}}
+{"n":17,"t":"2026-06-15T19:30:33.176+00:00","phase":"llm.response","d":{"role":"reflector","output_chars":182,"reasoning_chars":279,"reasoning_tokens":57,"completion_tokens":96,"latency_ms":6852}}
+{"n":18,"t":"2026-06-15T19:30:33.188+00:00","phase":"reflect","d":{"output_chars":182,"reasoning_chars":279,"reasoning_tokens":57,"diagnosis":"Calculator window not visible or not found","suggestion":"Scroll down to ensure calculator is visible","rule":"If element not visible, scroll until visible then click"}}
+{"n":19,"t":"2026-06-15T19:30:33.219+00:00","phase":"llm.request","d":{"role":"mutator","max_tokens":1280,"temperature":0.12}}
