@@ -31,11 +31,17 @@ def main() -> None:
     parser.add_argument("--event-budget", type=int, default=config.EVENT_BUDGET)
     parser.add_argument("--events-path", type=str, default=None)
     parser.add_argument("--model-profile", type=str, default=None)
+    parser.add_argument("--persona", type=str, default=None)
+    parser.add_argument("--slot", type=int, default=None)
     parser.add_argument("--priority", type=int, default=config.PRI_MAINTENANCE)
     args = parser.parse_args()
 
     signal.signal(signal.SIGINT, _handle_sigint)
 
+    if args.persona:
+        os.environ["ENDGAME_PERSONALITY"] = args.persona.strip()
+    if args.slot is not None:
+        os.environ["ENDGAME_SLOT"] = str(args.slot)
     if args.model_profile:
         config.apply_model_profile(args.model_profile)
     set_backend(args.backend)
@@ -61,7 +67,9 @@ def main() -> None:
     }
 
     log.emit("start", {"goal": goal[:120], "personality": personality.name, "slot": personality.slot,
-                        "profile": config.active_model_profile()})
+                        "profile": config.active_model_profile(),
+                        "run_mode": os.environ.get("ENDGAME_RUN_MODE", "single"),
+                        "ablation_run_id": os.environ.get("ENDGAME_ABLATION_RUN_ID", "")})
 
     run(board, lambda: _interrupted)
 

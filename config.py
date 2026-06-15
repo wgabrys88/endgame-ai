@@ -13,6 +13,7 @@ BUS_EVENTS_PATH: Path = BUS_DIR / "events_bus.jsonl"
 BUS_INJECT_PATH: Path = BUS_DIR / "inject.jsonl"
 BUS_CONTROL_PATH: Path = BUS_DIR / "control.jsonl"
 BREED_ARCHIVE_PATH: Path = BASE_DIR / "runtime" / "breed_archive.json"
+ABLATION_DIR: Path = BASE_DIR / "runtime" / "ablation"
 EVENTS_PATH: Path = BASE_DIR / "events.jsonl"
 LESSONS_PATH: Path = BASE_DIR / "lessons.jsonl"
 PROMPTS_DIR: Path = BASE_DIR / "prompts"
@@ -20,7 +21,13 @@ PROMPTS_DIR: Path = BASE_DIR / "prompts"
 PLUGINS_DIR: Path = BASE_DIR / "plugins"
 GUI_MODE_PATH: Path = BASE_DIR / "gui_mode"  # legacy exec target only (write_file gui_mode)
 COLONY_GOAL_PATH: Path = BASE_DIR / "runtime" / "colony_goal.txt"
-DEFAULT_MODEL_PROFILE: str = "nemotron_parallel"
+RUN_MODES: tuple[str, ...] = ("unicore", "colony")
+DEFAULT_RUN_MODE: str = "colony"
+DEFAULT_UNICORE_MODEL_PROFILE: str = "nemotron"
+DEFAULT_COLONY_MODEL_PROFILE: str = "nemotron_parallel"
+DEFAULT_MODEL_PROFILE: str = DEFAULT_COLONY_MODEL_PROFILE
+UNICORE_DEFAULT_PERSONA: str = "generalist"
+UNICORE_BASELINE_PERSONAS: tuple[str, ...] = ("implementor", "generalist")
 
 # --- .env loader ---
 _dotenv = BASE_DIR / ".env"
@@ -37,7 +44,7 @@ SLOTS: int = 5  # total parallel processes (slot 1 = comms_operator, 2-5 = dynam
 # --- Persona pool (available personalities) ---
 PERSONAS: list[str] = [
     "comms_operator", "architect", "implementor", "reviewer",
-    "devops", "quality_critic",
+    "devops", "quality_critic", "generalist",
 ]
 
 # Worker pool (slots 2-5) — comms_operator MoE experts
@@ -173,6 +180,13 @@ def apply_model_profile(profile_or_model: str, *, force: bool = False) -> tuple[
     return key, True
 def active_model_profile() -> str:
     return _active_profile
+def normalize_run_mode(mode: str | None) -> str:
+    value = (mode or DEFAULT_RUN_MODE).strip().lower()
+    if value not in RUN_MODES:
+        raise ValueError(f"invalid run mode {mode!r}; expected one of {', '.join(RUN_MODES)}")
+    return value
+def default_model_profile_for_mode(mode: str | None) -> str:
+    return DEFAULT_UNICORE_MODEL_PROFILE if normalize_run_mode(mode) == "unicore" else DEFAULT_COLONY_MODEL_PROFILE
 # --- Timing ---
 DELAY_BETWEEN_CYCLES: float = 2.0
 DELAY_SATISFIED: float = 15.0        # cycle delay when goal satisfied (reduced metabolism)

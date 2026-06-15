@@ -1521,6 +1521,8 @@ Where should the **dedicated planner-mutator persona** run?
 
 **Owner answer:**
 
+D - Defer until ablation C beats baseline A. Do not add live planner-mutator topology until the colony has earned it.
+
 ---
 
 ## O.2 — Reviewer independence enforcement
@@ -1536,6 +1538,8 @@ How strictly should reviewer be verify-only?
 | **C** | Hybrid — prompt now; RBAC in Phase 4 after ablation shows false-positive problem |
 
 **Owner answer:**
+
+C - Hybrid. Keep prompt discipline now; enforce runtime RBAC in Phase 4 unless false-positive review behavior blocks earlier measurement.
 
 ---
 
@@ -1554,6 +1558,8 @@ What is the **strongest unicore baseline** for fair comparison against the colon
 
 **Owner answer:**
 
+D - Best-of. Phase 0 may compare `implementor`, new `generalist`, and current no-persona fallback, then use the winner as the fair unicore baseline.
+
 ---
 
 ## O.4 — Planner-mutator edit scope
@@ -1571,6 +1577,8 @@ What may the planner-mutator persona change when it proposes patches?
 | **E** | A + B + `comms_operator` routing prompts only (no config code) |
 
 **Owner answer:**
+
+A - `prompts/personalities/*.txt` only when planner-mutator work eventually starts. Keep config/code thresholds out of the slow prompt mutator at first.
 
 ---
 
@@ -1591,6 +1599,8 @@ If **A**, specify: N = ___% , M = ___× tokens, minimum task count = ___
 
 **Owner answer:**
 
+C - Unicore-first merge if colony fails to beat baseline. If colony does win, merge criteria should be success-adjusted cost from Phase 0/1 evidence before `merge-prep` goes to `main`.
+
 ---
 
 ## O.6 — Pure-Python signal API (`experiment-pure-python-20260615`)
@@ -1607,6 +1617,8 @@ When should JSON circuits migrate to Python signal functions (`route`, `add_step
 | **D** | Never — keep JSON circuits permanently |
 
 **Owner answer:**
+
+A - Stay archived until ablation Phase 0-1 complete. Do not migrate JSON circuits just because the archived experiment exists.
 
 ---
 
@@ -1625,6 +1637,8 @@ What should `tui.py` default to for daily use?
 
 **Owner answer:**
 
+B - Colony-first for current daily behavior, preserving the existing `tui.py` default. Unicore is explicit via `--mode unicore` during Phase 0.
+
 ---
 
 ## O.8 — Long-horizon colony goal ownership
@@ -1641,6 +1655,8 @@ Who may write or update `runtime/colony_goal.txt`?
 | **D** | A now; consider B or C after ablation |
 
 **Owner answer:**
+
+D - Human-owned now; consider comms/operator or planner-mutator updates only after ablation evidence.
 
 ---
 
@@ -1659,16 +1675,12 @@ Example format:
 
 **Owner answer:**
 
-1.
-2.
-3.
-4.
-5.
-6. *(optional)*
-7. *(optional)*
-8. *(optional)*
-9. *(optional)*
-10. *(optional)*
+1. open calculator, add two numbers, and get the result copied from the calculator into the notepad, save file on desktop.
+2. open chrome and play on youtube shakira waka waka
+3. open chrome and use grok.com ai to provide to him the single source code file of the endgame-ai workspace and asking what endgame is why it is asking and asking for code review, then when the grok instructions are provided, the endgame-ai system must validate if they can be implemented and the implementation must happen and then system must find a way, to validate the changes, that the entire system will benefit from them, this actually must be explained via multiturn conversation with grok, so endgame-ai asks grok for review of file and then follows the grok suggestion and asks grok if needed for clarifications and treat grok as an persona that the endgame-ai system must be aware of , its a large remote ai model that can act as part of the system on demand of the system, the realization of that by the endgame-ai itself will be a succes
+4. post on x.com and linkedin.com usin chrome an updates about endgame-ai evolution process and self maintenance on behalf of owners account
+
+First implementation pass uses exactly these four accepted tasks.
 
 ---
 
@@ -1687,6 +1699,8 @@ How should models be assigned across slots?
 
 **Owner answer:**
 
+C - Design for per-slot models later, but do not implement model heterogeneity in Phase 0.
+
 ---
 
 ## O.11 — `quality_critic` persona role
@@ -1703,6 +1717,8 @@ How should models be assigned across slots?
 | **D** | Promote to default slot 6 as meta-reviewer |
 
 **Owner answer:**
+
+A - Escalation-only. Keep current MoE behavior for `quality_critic` until measurements show it should change.
 
 ---
 
@@ -1721,6 +1737,8 @@ While migrating to planner-only bus, what is acceptable interim behavior?
 
 **Owner answer:**
 
+B - Gradual. Prompt contract first, runtime enforcement after measurement shows the chatter cost and failure modes.
+
 ---
 
 ## O.13 — Human interrupt behavior during evolution
@@ -1737,6 +1755,8 @@ When a human injects a new goal while mutator/planner-mutator is mid-patch, what
 | **D** | Unsure — recommend default in implementation plan |
 
 **Owner answer:**
+
+A - Human goal always wins; discard in-flight mutation for now. Planner-mutator is deferred anyway.
 
 ---
 
@@ -1755,6 +1775,8 @@ When answers above are filled, how should the next session deliver the plan?
 
 **Owner answer:**
 
+B - Separate `PHASE0_ABLATION.md` / implementation-plan style files, with README preserving doctrine and decisions.
+
 ---
 
 ## O.15 — Anything else
@@ -1765,16 +1787,18 @@ Free text: constraints, fears, non-negotiables, or things the README still gets 
 
 **Owner answer:**
 
+No extra constraints beyond the accepted tasks, Part 1.0 production doctrine, and preserving unicore plus multicore support.
+
 ---
 
 ### Questionnaire status
 
 | Section | Status |
 |---------|--------|
-| O.1 – O.15 | ☐ unanswered — fill `Owner answer:` lines |
+| O.1 – O.15 | ☑ answered for Phase 0 implementation |
 | Part 34 (prior decisions) | ☑ recorded |
 | Part 1.0 (production doctrine) | ☑ recorded |
-| Ready for implementation plan | ☐ after O.1–O.15 answered (O.9 required minimum) |
+| Ready for implementation plan | ☑ O.9 filled with accepted owner tasks; Phase 0 implementation may proceed on `codex-dev-full` |
 
 ---
 

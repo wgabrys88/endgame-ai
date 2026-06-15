@@ -147,6 +147,7 @@ def call_llm(system: str, user: str, role: str, *, max_tokens: int = 0,
     log.emit("llm.request", {"role": role, "max_tokens": tokens, "temperature": temp})
 
     for attempt in range(3):
+        t0 = time.time()
         try:
             with _llm_gate:
                 lock = _global_lock() if config.LMS_USE_GLOBAL_LOCK else contextlib.nullcontext()
@@ -156,7 +157,10 @@ def call_llm(system: str, user: str, role: str, *, max_tokens: int = 0,
                     else:
                         result = _call_lmstudio(body, want_json=bool(schema))
             log.emit("llm.response", {"role": role, "output_chars": len(result.text),
-                                       "reasoning_chars": len(result.reasoning)})
+                                       "reasoning_chars": len(result.reasoning),
+                                       "reasoning_tokens": result.reasoning_tokens,
+                                       "completion_tokens": result.completion_tokens,
+                                       "latency_ms": int((time.time() - t0) * 1000)})
             return result
         except (RuntimeError, ConnectionError, TimeoutError, OSError) as err:
             log.emit("llm_retry", {"attempt": attempt + 1, "error": str(err)[:200]})

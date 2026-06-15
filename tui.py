@@ -148,7 +148,14 @@ class Slot:
 # --- TUI ---
 
 class TUI:
-    def __init__(self):
+    def __init__(
+        self,
+        *,
+        mode: str = config.DEFAULT_RUN_MODE,
+        model_profile: str = "",
+        unicore_persona: str = config.UNICORE_DEFAULT_PERSONA,
+        ablation_task_id: str = "",
+    ):
         self.slots: dict[str, Slot] = {}
         self.running = True
         self._last_scan = 0.0
@@ -156,7 +163,11 @@ class TUI:
         self._input_buf = ""
         self._session_dir = ""
         self._reactor_proc = None
-        self._model_profile = os.environ.get("_ENDGAME_MODEL_PROFILE", "") or "auto"
+        self._mode = config.normalize_run_mode(mode)
+        self._model_profile = model_profile or config.default_model_profile_for_mode(self._mode)
+        self._unicore_persona = unicore_persona.strip() or config.UNICORE_DEFAULT_PERSONA
+        self._ablation_task_id = ablation_task_id.strip()
+        self._expected_slots = 1 if self._mode == "unicore" else config.SLOTS
 
     def _scan(self) -> None:
         now = time.time()
@@ -203,7 +214,8 @@ class TUI:
         alive = sum(1 for s in self.slots.values() if s.alive)
         total_f = sum(s.fissions for s in self.slots.values())
         elapsed = time.time() - self._start
-        hdr = f"{BOLD}{CLR_H}REACTOR{RST} {alive}/5  {CLR_F}F={total_f}{RST}  {CLR_DIM}{self._model_profile}{RST}  {elapsed:.0f}s"
+        hdr = (f"{BOLD}{CLR_H}REACTOR{RST} {alive}/{self._expected_slots} "
+               f"{CLR_F}F={total_f}{RST}  {CLR_DIM}{self._mode}:{self._model_profile}{RST}  {elapsed:.0f}s")
         lines.append(f"{CLR_B}┌{'─' * (W - 2)}┐{RST}")
         lines.append(row(hdr))
         lines.append(f"{CLR_B}├{'─' * (W - 2)}┤{RST}")
@@ -256,7 +268,10 @@ class TUI:
         if ch in ("\r", "\n"):
             text = self._input_buf.strip()
             if text:
-                comms.post("human", "human", text, kind="message", priority=config.PRI_HUMAN)
+                if self._mode == "unicore":
+                    comms.request("human", self._unicore_persona, text, priority=config.PRI_HUMAN, goal=text)
+                else:
+                    comms.post("human", "human", text, kind="message", priority=config.PRI_HUMAN)
             self._input_buf = ""
         elif ch == "\x08":
             self._input_buf = self._input_buf[:-1]
@@ -285,8 +300,11 @@ class TUI:
         if colony_goal.strip():
             env["ENDGAME_COLONY_GOAL"] = colony_goal.strip()
         reactor_cmd = [sys.executable, "reactor.py"]
-        if os.environ.get("_ENDGAME_MODEL_PROFILE"):
-            reactor_cmd += ["--model-profile", os.environ["_ENDGAME_MODEL_PROFILE"]]
+        reactor_cmd += ["--mode", self._mode, "--model-profile", self._model_profile]
+        if self._mode == "unicore":
+            reactor_cmd += ["--unicore-persona", self._unicore_persona]
+        if self._ablation_task_id:
+            reactor_cmd += ["--ablation-task-id", self._ablation_task_id]
         if colony_goal.strip():
             reactor_cmd += ["--goal", colony_goal.strip()]
         self._reactor_proc = sp.Popen(reactor_cmd, cwd=str(BASE_DIR), env=env, creationflags=0x08000000)
@@ -313,8 +331,19 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("goal", nargs="*")
     parser.add_argument("--backend", choices=["lmstudio", "acp"], default="lmstudio")
-    parser.add_argument("--model-profile", type=str, default=config.DEFAULT_MODEL_PROFILE)
+    parser.add_argument("--mode", choices=config.RUN_MODES, default=config.DEFAULT_RUN_MODE)
+    parser.add_argument("--model-profile", type=str, default=None)
+    parser.add_argument("--unicore-persona", type=str, default=config.UNICORE_DEFAULT_PERSONA)
+    parser.add_argument("--ablation-task-id", type=str, default="")
     args = parser.parse_args()
+    model_profile = args.model_profile or config.default_model_profile_for_mode(args.mode)
     os.environ["ENDGAME_BACKEND"] = args.backend
-    os.environ["_ENDGAME_MODEL_PROFILE"] = args.model_profile
-    TUI().run(colony_goal=" ".join(args.goal).strip())
+    os.environ["_ENDGAME_MODEL_PROFILE"] = model_profile
+    os.environ["_ENDGAME_RUN_MODE"] = args.mode
+    os.environ["_ENDGAME_UNICORE_PERSONA"] = args.unicore_persona
+    TUI(
+        mode=args.mode,
+        model_profile=model_profile,
+        unicore_persona=args.unicore_persona,
+        ablation_task_id=args.ablation_task_id,
+    ).run(colony_goal=" ".join(args.goal).strip())

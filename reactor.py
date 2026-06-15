@@ -1,5 +1,6 @@
 ﻿"""Reactor â€” keeps 5 slots alive. MAP-Elites breeder for persona selection."""
 from __future__ import annotations
+import argparse
 import json
 import os
 from dataclasses import dataclass, field
@@ -12,13 +13,18 @@ from typing import Any
 import config
 import comms
 import log
+import ablation
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 CONTROL_INTERVAL = 5
+ABLATION_SUMMARY_INTERVAL = 30
 slots: dict[int, dict[str, Any]] = {}
 _model_profile: str = ""
 _session_dir: str = ""
+_run_mode: str = config.DEFAULT_RUN_MODE
+_ablation_run_dir: str = ""
 _last_evolve_id: int = 0
+_last_ablation_summary: float = 0.0
 
 
 # --- MAP-Elites (Mouret 2015): archive[niche] = best solution per niche ---
@@ -95,6 +101,9 @@ def spawn(slot_id: int, persona: str, goal: str = "", priority: int = config.PRI
     env["ENDGAME_PERSONALITY"] = persona
     env["ENDGAME_SLOT"] = str(slot_id)
     env["ENDGAME_SESSION_DIR"] = _session_dir
+    env["ENDGAME_RUN_MODE"] = _run_mode
+    if _ablation_run_dir:
+        env["ENDGAME_ABLATION_DIR"] = _ablation_run_dir
     cmd = [sys.executable, "main.py", goal, "--backend", env.get("ENDGAME_BACKEND", "lmstudio"),
            "--event-budget", "999999", "--events-path", ef, "--priority", str(priority)]
     if _model_profile:
@@ -203,20 +212,17 @@ def _restore_elite_dna(slot_id: int, target: str) -> None:
 # --- Main ---
 
 if __name__ == "__main__":
-    _colony_goal = os.environ.get("ENDGAME_COLONY_GOAL", "").strip()
-    argv = sys.argv[1:]
-    i = 0
-    while i < len(argv):
-        arg = argv[i]
-        if arg == "--model-profile" and i + 1 < len(argv):
-            _model_profile = argv[i + 1]; i += 2; continue
-        elif arg.startswith("--model-profile="):
-            _model_profile = arg.split("=", 1)[1]
-        elif arg == "--goal" and i + 1 < len(argv):
-            _colony_goal = argv[i + 1].strip(); i += 2; continue
-        elif arg.startswith("--goal="):
-            _colony_goal = arg.split("=", 1)[1].strip()
-        i += 1
+    parser = argparse.ArgumentParser(description="endgame-ai reactor supervisor")
+    parser.add_argument("--mode", choices=config.RUN_MODES, default=config.DEFAULT_RUN_MODE)
+    parser.add_argument("--model-profile", type=str, default=None)
+    parser.add_argument("--goal", type=str, default=os.environ.get("ENDGAME_COLONY_GOAL", "").strip())
+    parser.add_argument("--unicore-persona", type=str, default=config.UNICORE_DEFAULT_PERSONA)
+    parser.add_argument("--ablation-task-id", type=str, default="")
+    args = parser.parse_args()
+
+    _run_mode = config.normalize_run_mode(args.mode)
+    _colony_goal = ablation.task_goal(args.ablation_task_id, args.goal.strip())
+    _model_profile = args.model_profile or config.default_model_profile_for_mode(_run_mode)
     if _model_profile:
         config.apply_model_profile(_model_profile)
 
@@ -228,37 +234,69 @@ if __name__ == "__main__":
     if _colony_goal:
         comms.set_colony_goal(_colony_goal, source="reactor")
     _breeder.load()
-    log.emit("reactor.start", {"slots": config.SLOTS, "profile": _model_profile or "auto"})
-    print(f"REACTOR | {config.SLOTS} slots | profile={_model_profile or 'auto'}")
+    slots_expected = 1 if _run_mode == "unicore" else config.SLOTS
+    baseline_persona = args.unicore_persona.strip() or config.UNICORE_DEFAULT_PERSONA
+    run = ablation.start_run(
+        mode=_run_mode,
+        goal=_colony_goal,
+        model_profile=_model_profile,
+        session_dir=_session_dir,
+        persona=baseline_persona if _run_mode == "unicore" else "colony",
+        task_id=args.ablation_task_id.strip(),
+        slots_expected=slots_expected,
+    )
+    _ablation_run_dir = str(run["run_dir"])
+    os.environ["ENDGAME_ABLATION_RUN_ID"] = str(run["run_id"])
+    os.environ["ENDGAME_ABLATION_DIR"] = _ablation_run_dir
+    log.emit("reactor.start", {"mode": _run_mode, "slots": slots_expected,
+                                "profile": _model_profile or "auto",
+                                "ablation_run_id": run["run_id"]})
+    print(f"REACTOR | mode={_run_mode} | {slots_expected} slot(s) | profile={_model_profile or 'auto'}")
     if _colony_goal:
         print(f"  goal: {_colony_goal[:100]}")
     print(f"  session: {_session_dir}")
+    print(f"  ablation: {_ablation_run_dir}")
 
-    pid = spawn(1, "comms_operator", priority=config.PRI_NORMAL)
-    print(f"  s1: comms_operator PID={pid}")
+    if _run_mode == "unicore":
+        pid = spawn(1, baseline_persona, _colony_goal, priority=config.PRI_NORMAL)
+        print(f"  s1: {baseline_persona} PID={pid}")
+    else:
+        pid = spawn(1, "comms_operator", priority=config.PRI_NORMAL)
+        print(f"  s1: comms_operator PID={pid}")
 
-    defaults = ["architect", "implementor", "reviewer", "devops"]
-    for i, persona in enumerate(defaults, 2):
-        pid = spawn(i, persona, priority=config.PRI_MAINTENANCE)
-        print(f"  s{i}: {persona} PID={pid}")
-        time.sleep(1.0)
+        defaults = ["architect", "implementor", "reviewer", "devops"]
+        for i, persona in enumerate(defaults, 2):
+            pid = spawn(i, persona, priority=config.PRI_MAINTENANCE)
+            print(f"  s{i}: {persona} PID={pid}")
+            time.sleep(1.0)
 
     print(f"\nREACTOR ONLINE. {len(slots)} slots loaded.\n")
 
     while True:
         time.sleep(CONTROL_INTERVAL)
         process_evolve_candidates()
-        for cmd in comms.drain_control():
-            action = str(cmd.get("action", ""))
-            if action == "reassign":
-                sid = int(cmd.get("slot", 0) or 0)
-                persona = str(cmd.get("persona", ""))
-                if sid >= 2 and sid <= config.SLOTS and persona in config.WORKER_PERSONAS:
-                    print(f"  MOE REASSIGN s{sid} -> {persona}")
-                    reassign(sid, persona, priority=int(cmd.get("priority", config.PRI_NORMAL)))
+        if time.time() - _last_ablation_summary >= ABLATION_SUMMARY_INTERVAL:
+            _last_ablation_summary = time.time()
+            try:
+                ablation.summarize_session(_session_dir, run_dir=_ablation_run_dir, status="running")
+            except Exception as exc:
+                log.emit("ablation.summary_error", {"error": str(exc)[:200]})
+        if _run_mode == "colony":
+            for cmd in comms.drain_control():
+                action = str(cmd.get("action", ""))
+                if action == "reassign":
+                    sid = int(cmd.get("slot", 0) or 0)
+                    persona = str(cmd.get("persona", ""))
+                    if sid >= 2 and sid <= config.SLOTS and persona in config.WORKER_PERSONAS:
+                        print(f"  MOE REASSIGN s{sid} -> {persona}")
+                        reassign(sid, persona, priority=int(cmd.get("priority", config.PRI_NORMAL)))
         for sid in list(slots):
             if not is_alive(sid):
                 info = slots.pop(sid)
-                persona = select_respawn_persona(sid, str(info.get("persona", "")))
+                if _run_mode == "unicore":
+                    persona = str(info.get("persona", "")) or baseline_persona
+                else:
+                    persona = select_respawn_persona(sid, str(info.get("persona", "")))
                 print(f"  RESPAWN s{sid} ({persona})")
+                log.emit("reactor.respawn", {"slot": sid, "persona": persona, "mode": _run_mode})
                 spawn(sid, persona, info.get("goal", ""), info.get("priority", 0))
