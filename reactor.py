@@ -1,4 +1,4 @@
-"""Reactor — keeps 5 slots alive. MAP-Elites breeder for persona selection."""
+﻿"""Reactor â€” keeps 5 slots alive. MAP-Elites breeder for persona selection."""
 from __future__ import annotations
 import json
 import os
@@ -32,7 +32,15 @@ class Breeder:
         prev = self.archive.get(niche)
         if prev and fitness <= float(prev.get("fitness", 0)):
             return False
-        self.archive[niche] = {"target": target, "fitness": fitness, "slot": slot, "ts": time.time()}
+        prompt_dna = ""
+        try:
+            pfile = config.PROMPTS_DIR / "personalities" / f"{target}.txt"
+            if pfile.exists():
+                prompt_dna = pfile.read_text(encoding="utf-8").strip()[:2000]
+        except OSError:
+            pass
+        self.archive[niche] = {"target": target, "fitness": fitness, "slot": slot,
+                               "ts": time.time(), "prompt_dna": prompt_dna}
         while len(self.archive) > config.BREED_ELITE_MAX_NICHES:
             worst = min(self.archive, key=lambda n: self.archive[n]["fitness"])
             self.archive.pop(worst)
@@ -166,11 +174,30 @@ def process_evolve_candidates() -> None:
 def select_respawn_persona(slot_id: int, fallback: str) -> str:
     target, fitness = _breeder.best_for_slot(slot_id)
     if target and fitness >= config.BREED_RETAIN_MIN:
+        _restore_elite_dna(slot_id, target)
         return target
     fb = comms.canonical(fallback)
     if fb in config.WORKER_PERSONAS:
         return fb
     return config.SLOT_DEFAULTS.get(slot_id, config.WORKER_PERSONAS[0])
+
+
+def _restore_elite_dna(slot_id: int, target: str) -> None:
+    for elite in _breeder.archive.values():
+        if elite.get("target") == target and int(elite.get("slot", 0)) == slot_id:
+            dna = str(elite.get("prompt_dna", "")).strip()
+            if not dna:
+                return
+            pfile = config.PROMPTS_DIR / "personalities" / f"{target}.txt"
+            try:
+                current = pfile.read_text(encoding="utf-8").strip() if pfile.exists() else ""
+                if current != dna:
+                    pfile.write_text(dna, encoding="utf-8")
+                    log.emit("breed.restore_dna", {"target": target, "slot": slot_id, "chars": len(dna)})
+            except OSError:
+                pass
+            return
+
 
 
 # --- Main ---

@@ -1,4 +1,4 @@
-"""Actions — verb registry + Python subprocess runner."""
+﻿"""Actions â€” verb registry + Python subprocess runner."""
 from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -16,7 +16,7 @@ import log
 _child_pids: list[int] = []
 
 try:
-    from win32 import user32, get_window_title, VK_MAP, EXTENDED_VKS, INPUT
+    from desktop import user32, get_window_title, VK_MAP, EXTENDED_VKS, INPUT
     _HAS_WIN32 = True
 except (ImportError, OSError):
     _HAS_WIN32 = False
@@ -187,7 +187,7 @@ def _write_file(args: dict[str, Any], book: ElementBook) -> ActionResult:
 
 def _clip_obs(text: str) -> str:
     limit = config.EXEC_OUTPUT_LIMIT
-    return text if len(text) <= limit else text[:limit] + "…"
+    return text if len(text) <= limit else text[:limit] + "â€¦"
 def _parse_exec_code(step: str) -> str:
     s = step.strip()
     low = s.lower()
@@ -221,7 +221,7 @@ def execute_python(code: str) -> ActionResult:
     """Run Python code as subprocess (same as run_python)."""
     return run_python(code)
 def execute_step(step: str) -> ActionResult:
-    """Python executes headless plan steps — model only names them."""
+    """Python executes headless plan steps â€” model only names them."""
     s = step.strip()
     low = s.lower()
     if low.startswith("exec") and (len(low) == 4 or low[4] in ": \n"):
@@ -309,7 +309,7 @@ def _desktop_safe_print(text: str) -> None:
     )
     print(out)
 def observe_screen(*, print_screen: bool = True) -> tuple[dict, str, str]:
-    from observer import observe
+    from desktop import observe
     obs = observe()
     if print_screen:
         if obs.context_text:

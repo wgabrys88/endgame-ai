@@ -1,4 +1,4 @@
-"""Agents — pipeline stages. Each: run(board) → {phase, data, writes, next}."""
+﻿"""Agents â€” pipeline stages. Each: run(board) â†’ {phase, data, writes, next}."""
 from __future__ import annotations
 import difflib
 import json
@@ -131,7 +131,7 @@ def _format_history(history: list) -> str:
     return "\n".join(lines)
 def _desktop_context() -> str:
     try:
-        from observer import observe
+        from desktop import observe
         obs = observe()
         parts = [f"DESKTOP_FOCUSED: {obs.focused_title}"]
         if obs.desktop_summary: parts.append(f"DESKTOP_SUMMARY: {obs.desktop_summary[:600]}")
@@ -294,7 +294,7 @@ def _verify_outcome(
     return {"phase": "verify", "data": data, "next": "reflector"}
 class ObserverAgent:
     def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
-        from observer import observe
+        from desktop import observe
         try:
             obs = observe()
         except Exception as exc:

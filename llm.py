@@ -1,4 +1,4 @@
-"""LLM backend — LM Studio + ACP."""
+﻿"""LLM backend â€” LM Studio + ACP."""
 from __future__ import annotations
 import contextlib
 import json
@@ -225,26 +225,129 @@ def _call_lmstudio(body: dict[str, Any], *, want_json: bool) -> LLMResult:
 # --- ACP ---
 
 def _call_acp(body: dict[str, Any], *, want_json: bool) -> LLMResult:
-    from acp_client import prompt_once
+    import atexit, io, queue, subprocess as sp
+    from typing import cast
+
+    global _acp_pool
+    if "_acp_pool" not in globals():
+        globals()["_acp_pool"] = None
+
+    class _Flight:
+        def __init__(self, sid): self.session_id = sid; self.request_id = -1; self.chunks = []; self.done = threading.Event()
+
+    class _Pool:
+        def __init__(self):
+            self._proc = None; self._lock = threading.Lock(); self._next_id = 0
+            self._pending = {}; self._flights = {}; self._started = False
+            atexit.register(self.close)
+        def _alive(self): return self._proc is not None and self._proc.poll() is None
+        def _start(self):
+            if self._alive() and self._started: return
+            if self._proc:
+                self._proc.terminate()
+                try: self._proc.wait(timeout=5)
+                except: self._proc.kill(); self._proc.wait(5)
+            self._started = False; self._pending.clear(); self._flights.clear(); self._next_id = 0
+            ws = f"{config.ACP_WORKSPACE_BASE}-{os.getpid()}"
+            distro, cli = "Ubuntu-24.04", "/usr/bin/kiro-cli"
+            for cmd, t in [
+                (["wsl.exe", "-d", distro, "--exec", "mkdir", "-p", ws], config.ACP_WSL_MKDIR_TIMEOUT),
+                (["wsl.exe", "-d", distro, "--cd", ws, "--exec", cli, "settings", "chat.defaultModel", "claude-opus-4.7", "--workspace"], config.ACP_SETTINGS_TIMEOUT),
+            ]:
+                for _ in range(config.ACP_SETUP_ATTEMPTS):
+                    r = sp.run(cmd, capture_output=True, text=True, timeout=t)
+                    if r.returncode == 0: break
+                    time.sleep(config.ACP_SETUP_RETRY_DELAY)
+            self._proc = sp.Popen(["wsl.exe", "-d", distro, "--cd", ws, "--exec", cli, "acp"],
+                                   stdin=sp.PIPE, stdout=sp.PIPE, stderr=sp.PIPE)
+            threading.Thread(target=self._reader, daemon=True).start()
+            resp = self._request("initialize", {"protocolVersion": config.ACP_PROTOCOL_VERSION,
+                "clientCapabilities": {"fs": {"readTextFile": True, "writeTextFile": True}, "terminal": True}})
+            if resp.get("protocolVersion") != config.ACP_PROTOCOL_VERSION:
+                raise RuntimeError("ACP protocol mismatch")
+            self._started = True
+        def prompt(self, text_in, tout):
+            self._start()
+            sid = self._request("session/new", {"cwd": f"{config.ACP_WORKSPACE_BASE}-{os.getpid()}", "mcpServers": []}).get("sessionId")
+            if not isinstance(sid, str): raise RuntimeError("no sessionId")
+            flight = _Flight(sid)
+            with self._lock:
+                self._next_id += 1; rid = self._next_id; flight.request_id = rid
+                self._pending[rid] = queue.Queue(); self._flights[sid] = flight
+                self._write({"jsonrpc": "2.0", "id": rid, "method": "session/prompt",
+                             "params": {"sessionId": sid, "prompt": [{"type": "text", "text": text_in}]}})
+            deadline = time.monotonic() + tout
+            while not flight.done.wait(1.0):
+                if time.monotonic() >= deadline: self._flights.pop(sid, None); raise RuntimeError(f"ACP timeout {tout}s")
+            self._flights.pop(sid, None)
+            return "".join(flight.chunks)
+        def _request(self, method, params, timeout=60.0):
+            with self._lock:
+                self._next_id += 1; rid = self._next_id
+                self._pending[rid] = queue.Queue()
+                self._write({"jsonrpc": "2.0", "id": rid, "method": method, "params": params})
+            msg = self._pending[rid].get(timeout=timeout); self._pending.pop(rid, None)
+            if "error" in msg: raise RuntimeError(str(msg["error"]))
+            return msg.get("result") or {}
+        def _write(self, msg):
+            if not self._alive(): raise RuntimeError("ACP not running")
+            self._proc.stdin.write(json.dumps(msg, separators=(",", ":")).encode() + b"\n"); self._proc.stdin.flush()
+        def _reader(self):
+            buf = b""
+            while self._alive():
+                if not self._proc or not self._proc.stdout: break
+                chunk = cast(io.BufferedReader, self._proc.stdout).read1(4096)
+                if not chunk: break
+                buf += chunk
+                while b"\n" in buf:
+                    line, buf = buf.split(b"\n", 1)
+                    if line.strip():
+                        try: self._dispatch(json.loads(line.decode()))
+                        except: pass
+            for f in self._flights.values(): f.done.set()
+        def _dispatch(self, msg):
+            method, mid = msg.get("method"), msg.get("id")
+            if method == "session/update":
+                p = msg.get("params") or {}; up = p.get("update") or {}
+                if up.get("sessionUpdate") == "agent_message_chunk":
+                    c = up.get("content") or {}; sid = p.get("sessionId")
+                    if c.get("type") == "text" and sid and sid in self._flights:
+                        self._flights[sid].chunks.append(c.get("text", ""))
+            elif method is None and isinstance(mid, int):
+                if "error" in msg:
+                    for f in self._flights.values():
+                        if f.request_id == mid: f.chunks.append(f"ERROR: {msg['error']}"); f.done.set(); break
+                if (msg.get("result") or {}).get("stopReason"):
+                    for f in self._flights.values():
+                        if f.request_id == mid: f.done.set(); break
+                q = self._pending.get(mid)
+                if q: q.put(msg)
+            elif method == "session/request_permission" and isinstance(mid, int):
+                opts = (msg.get("params") or {}).get("options") or []
+                chosen = next((str(o.get("optionId")) for o in opts if o.get("kind") == "allow_always"),
+                              str(opts[0].get("optionId")) if opts else None)
+                self._write({"jsonrpc": "2.0", "id": mid, "result": {"outcome": {"outcome": "selected", "optionId": chosen}}})
+            elif isinstance(mid, int):
+                self._write({"jsonrpc": "2.0", "id": mid, "error": {"code": -32601, "message": "not implemented"}})
+        def close(self):
+            if not self._proc: return
+            p = self._proc; self._proc = None; self._started = False
+            for f in self._flights.values(): f.done.set()
+            p.terminate()
+            try: p.wait(5)
+            except: p.kill(); p.wait(5)
+
+    pool = globals().get("_acp_pool")
+    if pool is None:
+        pool = _Pool(); globals()["_acp_pool"] = pool
+
     msgs = body.get("messages", [])
     sys_c = next((m["content"] for m in msgs if m["role"] == "system"), "")
     usr_c = next((m["content"] for m in msgs if m["role"] == "user"), "")
     schema = body.get("response_format", {})
     schema_def = json.dumps(schema.get("json_schema", {}).get("schema", {}), indent=2) if schema else "{}"
     prompt = f"{sys_c}\n\nOutput ONLY valid JSON matching:\n{schema_def}\n\n---\n{usr_c}\n---\nJSON only."
-
-    import msvcrt
-    lock_path = config.BASE_DIR / ".acp.lock"
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR)
-    try:
-        msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
-        try:
-            raw = prompt_once(prompt)
-        finally:
-            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
-    finally:
-        os.close(fd)
+    raw = pool.prompt(prompt, config.ACP_DEFAULT_TIMEOUT)
     text, reasoning = extract_thinking(raw)
     if want_json:
         text = extract_json(text if text else raw)

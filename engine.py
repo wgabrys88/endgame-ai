@@ -1,4 +1,4 @@
-"""Engine — runs the agent pipeline with priority interrupts, pressure math, plugin hot-swap."""
+﻿"""Engine â€” runs the agent pipeline with priority interrupts, pressure math, plugin hot-swap."""
 from __future__ import annotations
 import importlib.util
 import json
@@ -37,7 +37,7 @@ _plugin_modules: dict[str, Any] = {}
 _plugin_mtimes: dict[str, float] = {}
 @dataclass(slots=True)
 class AgentContext:
-    """Runtime identity for one main.py process — personality instance + board."""
+    """Runtime identity for one main.py process â€” personality instance + board."""
     personality: config.Personality
     board: dict[str, Any]
 
@@ -68,6 +68,7 @@ def run(board: dict[str, Any], interrupted: Callable[[], bool]) -> None:
     board.setdefault("_moe", {"stuck_ticks": {}})
     board["_ctx"] = ctx
 
+    _update_observe_focus(board)
     while not log.exhausted() and not interrupted():
         # --- Priority interrupt check ---
         _apply_bus_interrupt(board)
@@ -141,6 +142,19 @@ def _needs_screen(board: dict[str, Any], target: str) -> bool:
         if is_python_step(str(active.get("text", ""))):
             return False
     return True
+def _update_observe_focus(board: dict[str, Any]) -> None:
+    goal = str(board.get(goal, )).lower()
+    try:
+        from desktop import set_observe_focus
+        if any(k in goal for k in ("chrome", "browser", "youtube", "firefox", "edge")):
+            set_observe_focus("Chrome" if "chrome" in goal or "youtube" in goal else "Firefox" if "firefox" in goal else "Edge")
+        elif any(k in goal for k in ("notepad", "file explorer", "explorer")):
+            set_observe_focus("Notepad" if "notepad" in goal else "Explorer")
+        else:
+            set_observe_focus("")
+    except Exception:
+        pass
+
 def _run_observer(board: dict[str, Any]) -> None:
     result = _OBSERVER.run(board)
     if not result:
@@ -216,7 +230,7 @@ def _update_pressure(board: dict[str, Any]) -> None:
     if p["cycles"] % 10 == 0:
         log.emit("pressure", {"stagnation": round(stag, 3), "power": board["power"],
                                "velocity": velocity, "failures": failures, "cycles": p["cycles"]})
-# --- MoE Gating (Bause 2026) — comms_operator softmax router ---
+# --- MoE Gating (Bause 2026) â€” comms_operator softmax router ---
 
 def _pick_alternate(persona: str) -> str:
     """Escalation target when a worker is stuck."""
@@ -283,7 +297,7 @@ def _moe_route(ctx: AgentContext) -> bool:
     if ranked and ranked[0][1] >= config.MOE_GATE_MIN:
         target, weight = ranked[0]
         mgoal = comms.maintenance_goal_text()
-        reason = f"MoE gate={weight:.2f} — assign work"
+        reason = f"MoE gate={weight:.2f} â€” assign work"
         comms.route("comms_operator", target, reason, priority=config.PRI_NORMAL,
                     scores=gate_weights, goal=mgoal)
         log.emit("moe.route", {"to": target, "weight": round(weight, 3), "scores": gate_weights})
