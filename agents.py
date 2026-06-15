@@ -12,7 +12,23 @@ from typing import Any
 import config
 import log
 from llm import LLMResult, call_llm
-from python_code import validate_python
+
+_ASCII_MAP = str.maketrans({
+    "\u2014": "-", "\u2013": "-", "\u2018": "'", "\u2019": "'",
+    "\u201c": '"', "\u201d": '"', "\u00a0": " ",
+})
+
+def validate_python(text: str) -> tuple[bool, str, str]:
+    """Syntax check only. Return (ok, cleaned_code, error_message)."""
+    cleaned = text.translate(_ASCII_MAP).strip()
+    if not cleaned:
+        return False, "", "empty code"
+    try:
+        compile(cleaned, "<step>", "exec")
+    except SyntaxError as exc:
+        where = f"line {exc.lineno}" if exc.lineno else "step"
+        return False, cleaned, f"SyntaxError: {exc.msg} ({where})"
+    return True, cleaned, ""
 
 _ELEMENT_ID_RE = re.compile(r"\[\d+\]")
 _PLUGIN_NAME_RE = re.compile(r"^[a-z0-9_]+\.py$")
@@ -123,6 +139,34 @@ def _desktop_context() -> str:
         return "\n".join(parts)
     except Exception as exc:
         return f"DESKTOP_ERROR: {exc}"
+def _active_claims() -> str:
+    """Extract what other workers are currently working on from bus."""
+    try:
+        import comms
+        chat = comms.read_chat(30)
+        claims: dict[str, str] = {}
+        for e in chat:
+            kind = str(e.get("kind", ""))
+            if kind == comms.KIND_ROUTE and str(e.get("from", "")) == "comms_operator":
+                target = str(e.get("to", ""))
+                payload = e.get("payload") if isinstance(e.get("payload"), dict) else {}
+                goal = str(payload.get("goal", "")) or str(e.get("text", ""))
+                if target and goal:
+                    claims[target] = goal[:120]
+            elif kind == comms.KIND_EVENT:
+                payload = e.get("payload") if isinstance(e.get("payload"), dict) else {}
+                if payload.get("phase") == "plan" and str(e.get("from", "")):
+                    who = str(e.get("from", ""))
+                    claims[who] = str(payload.get("done_when", ""))[:120] or claims.get(who, "")
+        if not claims:
+            return ""
+        lines = ["OTHERS WORKING ON (do not duplicate):"]
+        for who, task in claims.items():
+            lines.append(f"  @{who}: {task}")
+        return "\n".join(lines)
+    except Exception:
+        return ""
+
 def _planner_state(board: dict[str, Any]) -> str:
     persona = _personality(board)
     bus_ctx = ""
@@ -140,6 +184,8 @@ def _planner_state(board: dict[str, Any]) -> str:
     parts = [f"ROD: {persona or 'default'}", f"ACTIVE_TASK: {str(board.get('goal', ''))[:800] or '(idle)'}"]
     if long_term: parts.append(f"LONG_TERM_GOAL: {long_term}")
     parts.append(f"PRESSURE: stag={stag:.3f} pwr={pwr:.3f}")
+    claims = _active_claims()
+    if claims and persona != "comms_operator": parts.append(claims)
     desktop_ctx = _desktop_context()
     if desktop_ctx: parts.append(desktop_ctx)
     history_ctx = _format_history(board.get("history", []))
@@ -449,7 +495,7 @@ class FissionJudgeAgent:
         fissions = board.get("fissions", 0) + 1
         board["fissions"] = fissions
         board.setdefault("fission_credited", []).append(latest)
-        fitness = _evolution_fitness(board, fissions)
+        fitness = _fitness(board, fissions)
         _post_evolution_candidate(board, fissions, latest, fitness, review)
         llm_meta = review.pop("_llm", None) if isinstance(review.get("_llm"), dict) else None
         fission_data = {

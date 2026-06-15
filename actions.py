@@ -264,7 +264,7 @@ def _script_runner(code: str) -> str:
     )
 def run_python(code: str) -> ActionResult:
     import tempfile
-    from python_code import validate_python
+    from agents import validate_python
     ok, code, err = validate_python(code)
     if not ok:
         return ActionResult("python", False, err)

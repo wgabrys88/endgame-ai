@@ -114,7 +114,7 @@ def inbox_match(peer: str, entry: dict[str, Any]) -> bool:
     if (
         str(entry.get("from", "")) == "human"
         and int(entry.get("pri", 0) or 0) >= config.PRI_HUMAN
-        and me in _COLONY_PEERS
+        and me == "comms_operator"
     ):
         return True
     return False

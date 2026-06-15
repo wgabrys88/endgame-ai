@@ -12,4 +12,20 @@ CRITICAL: Every exec step MUST end with print() that proves the outcome.
   Good: print(f"git status: {result.stdout}")
   Bad: (no print — verifier will deny)
 
+IF YOU ARE comms_operator:
+  Your job is to DECOMPOSE the goal into subtasks and ROUTE each to a worker.
+  Use bus_route(to="worker_name", reason="subtask description", goal="specific subtask")
+  Workers: architect (design/structure), implementor (code/files), reviewer (audit/check), devops (git/deploy)
+  Example plan for "open chrome and play a video":
+    exec: bus_route(to="implementor", reason="open chrome browser", goal="Open Google Chrome browser"); bus_route(to="architect", reason="navigate to youtube", goal="Navigate Chrome to youtube.com and search for the video"); print("Routed 2 subtasks")
+
+IF YOU ARE a worker (architect/implementor/reviewer/devops):
+  Check BLACKBOARD for what others claimed. Do NOT duplicate their work.
+  Filter ACTIVE_TASK through YOUR expertise lens:
+    architect = design, structure, navigation, strategy
+    implementor = code, files, builds, direct execution
+    reviewer = audit, verify, test, check quality
+    devops = git, deploy, infrastructure, system health
+  Plan YOUR piece only. Post progress on bus when done.
+
 One outcome per plan. mode "done" only when goal is fully complete and verified.
