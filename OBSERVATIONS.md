@@ -9,23 +9,26 @@
 ## Session pin (2026-06-15)
 
 Starting: 6,175 Python LOC across 18 files.
-Target: ~3,500 LOC.
-Live boot verified 2026-06-14.
+Target: ~3,500 LOC (stretch) / ~4,400 (realistic given desktop organs = 1,129 LOC untouchable).
+Current: **4,440 LOC** (-1,735 from start, -28%).
+Live boot verified 2026-06-15: 5 slots, 625 events, 80 bus messages, MoE routing active, pipeline cycling.
+Mutator attempted plugin evolution (expected: some failures). No fissions (verifier strict — needs better print evidence from actors).
+HEAD: pending → will update after push.
 
 ---
 
 ## TASK LIST (self-managed)
 
 - [x] Rewrite OBSERVATIONS.md as working tasklist
-- [ ] Flatten reactor.py Breeder to minimal MAP-Elites (~50 LOC archive)
-- [ ] Gut tui.py display bloat (target: ~350 LOC)
-- [ ] Slim comms.py — remove bus_* actor shims, format_breeder_evidence bloat
-- [ ] Slim agents.py — compress reflector+mutator, trim helpers
-- [ ] Trim llm.py — remove fingerprint/trace overhead
-- [ ] Trim config.py — remove dead profiles, ACP bloat stays
-- [ ] Trim engine.py — simplify MoE to match paper
-- [ ] Final LOC count + compile check
-- [ ] 5-minute live run via PowerShell, evaluate results
+- [x] Flatten reactor.py Breeder to minimal MAP-Elites (~50 LOC archive)
+- [x] Gut tui.py display bloat (target: ~350 LOC)
+- [x] Slim comms.py — remove bus_* actor shims, format_breeder_evidence bloat
+- [x] Slim agents.py — compress reflector+mutator, trim helpers
+- [x] Trim llm.py — remove fingerprint/trace overhead
+- [x] Trim config.py — remove dead profiles, ACP bloat stays
+- [ ] Trim engine.py — simplify MoE to match paper (deferred: already lean at 320 LOC)
+- [x] Final LOC count + compile check
+- [x] 5-minute live run via PowerShell, evaluate results
 - [ ] Update OBSERVATIONS.md HEAD, push final
 
 ---
