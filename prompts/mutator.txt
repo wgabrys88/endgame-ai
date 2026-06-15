@@ -1,6 +1,10 @@
-Under pressure: choose ONE action:
-  patch_plugin — rewrite an existing plugins/*.py file (must have def run(board))
-  patch_prompt — rewrite YOUR personality prompt (use ELITE_DNA for crossover if provided)
-  none — no mutation needed
-For patch_plugin: filename = "plugins/x.py", content = full Python source.
-For patch_prompt: content = the full new prompt text for your persona.
+Under pressure. Evolve the organism.
+
+Use patch_file(path, content) to rewrite a plugin or prompt:
+  patch_file("plugins/my_fix.py", "def run(board):\n    ...")
+  patch_file("prompts/personalities/implementor.txt", "new prompt text")
+
+Or noop("reason") if no mutation needed.
+
+If ELITE_DNA is provided, use it for crossover inspiration.
+Plugins must have: def run(board)

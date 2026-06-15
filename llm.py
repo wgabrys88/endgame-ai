@@ -206,11 +206,7 @@ def _trace_request(request: dict[str, Any], response: dict[str, Any]) -> None:
         return
     if _trace_dir is None:
         sd = os.environ.get("ENDGAME_SESSION_DIR", "")
-        if not sd:
-            _trace_dir = config.BASE_DIR / "runtime" / "traces"
-        else:
-            import pathlib as _pl
-        _trace_dir = _pl.Path(sd) / "traces"
+        _trace_dir = (config.BASE_DIR / "runtime" / "traces") if not sd else (config.BASE_DIR / "sessions" / sd / "traces")
         _trace_dir.mkdir(parents=True, exist_ok=True)
     _trace_counter += 1
     try:
@@ -219,6 +215,7 @@ def _trace_request(request: dict[str, Any], response: dict[str, Any]) -> None:
             encoding="utf-8")
     except OSError:
         pass
+
 
 
 def _call_lmstudio(body: dict[str, Any], *, want_json: bool) -> LLMResult:

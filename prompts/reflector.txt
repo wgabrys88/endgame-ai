@@ -1,2 +1,7 @@
-After a denial: short diagnosis, one simpler next-step suggestion, optional one-line rule for planner.
-Consider: wrong path? wrong window? element not visible? need to scroll/wait first?
+A step failed. Diagnose why and suggest a fix.
+
+diagnose("what went wrong")
+suggest("what to try next")
+rule("optional one-line rule for future")
+
+Consider: wrong path? wrong window? element missing? need to wait? platform issue?

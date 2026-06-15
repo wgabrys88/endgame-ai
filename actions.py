@@ -1,4 +1,4 @@
-﻿"""Actions â€” verb registry + Python subprocess runner."""
+"""Actions â€” verb registry + Python subprocess runner."""
 from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -251,16 +251,31 @@ def execute_step(step: str) -> ActionResult:
 # --- Python subprocess runner (colony bus sandbox) ---
 
 def _script_runner(code: str) -> str:
-    desktop_import = (
+    return (
+        "from pathlib import Path\n"
+        "import os, sys, json, time, subprocess, shutil, py_compile\n"
+        "from comms import BASE_DIR, COMMS_DIR, PLUGINS_DIR, bus_post, bus_id, bus_request, bus_route\n"
         "from actions import observe_screen, desktop_focus, desktop_click, desktop_write, "
         "desktop_press, desktop_hotkey, desktop_scroll, desktop_wait\n"
-    )
-    return (
-        "from comms import BASE_DIR, COMMS_DIR, PLUGINS_DIR, bus_post, bus_id, bus_request, bus_route\n"
-        f"{desktop_import}"
-        "from pathlib import Path\n"
-        "import os, sys, json, time, subprocess, shutil, py_compile\n\n"
+        "import actions as _actions\n"
+        "# --- Signal functions (engine reads _signals after exec) ---\n"
+        "_signals = {}\n"
+        "def add_step(code): _signals.setdefault('steps',[]).append(code)\n"
+        "def set_done_when(text): _signals['done_when']=str(text)\n"
+        "def confirm(evidence=''): _signals['verdict']='confirmed'; _signals['evidence']=str(evidence)\n"
+        "def deny(reason=''): _signals['verdict']='denied'; _signals['reason']=str(reason)\n"
+        "def credit(diagnosis=''): _signals['fission']='credit'; _signals['diagnosis']=str(diagnosis)\n"
+        "def deny_fission(reason=''): _signals['fission']='deny'; _signals['reason']=str(reason)\n"
+        "def diagnose(text): _signals['diagnosis']=str(text)\n"
+        "def suggest(text): _signals['suggestion']=str(text)\n"
+        "def rule(text): _signals['rule']=str(text)\n"
+        "def patch_file(path, content): _signals['patch']={'path':str(path),'content':str(content)}\n"
+        "def noop(reason=''): _signals['noop']=str(reason)\n"
+        "def done(reason=''): _signals['mode']='done'; print(reason or 'done')\n"
+        "\n"
         f"{code}\n"
+        "\n# Emit signals as final line for engine to parse\n"
+        "if _signals: print('__SIGNALS__:' + json.dumps(_signals))\n"
     )
 def run_python(code: str) -> ActionResult:
     import tempfile
@@ -301,6 +316,17 @@ def run_python(code: str) -> ActionResult:
         return ActionResult("python", False, msg[:config.EXEC_OUTPUT_LIMIT])
     output = "\n".join(p for p in (out, err_out) if p)[:config.EXEC_OUTPUT_LIMIT]
     return ActionResult("python", True, output or "ok (no output)")
+def parse_signals(output: str) -> dict:
+    """Extract __SIGNALS__ JSON from Python exec stdout."""
+    for line in reversed(output.splitlines()):
+        if line.startswith("__SIGNALS__:"):
+            try:
+                return json.loads(line[12:])
+            except json.JSONDecodeError:
+                pass
+    return {}
+
+
 # --- Desktop helpers (injected into actor Python when GUI mode on) ---
 
 def _desktop_safe_print(text: str) -> None:

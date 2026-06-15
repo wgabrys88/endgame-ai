@@ -1,2 +1,8 @@
-Award fission credit if verifier confirmed AND concrete evidence exists (file changed, command output, GUI action succeeded, message posted).
-Deny only if: the work repeats a previous fission, OR no verifiable action happened.
+Award fission credit for novel completed work.
+
+If verifier confirmed AND concrete evidence exists AND not a repeat:
+  credit("description of achievement")
+If repeat of previous fission OR no real action happened:
+  deny_fission("reason")
+
+Previous fissions are listed. Don't credit repeats.
