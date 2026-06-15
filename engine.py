@@ -173,7 +173,7 @@ def _is_satisfied(board: dict[str, Any]) -> bool:
 
 
 def _update_observe_focus(board: dict[str, Any]) -> None:
-    goal = str(board.get(goal, )).lower()
+    goal = str(board.get("goal", "")).lower()
     try:
         from desktop import set_observe_focus
         if any(k in goal for k in ("chrome", "browser", "youtube", "firefox", "edge")):

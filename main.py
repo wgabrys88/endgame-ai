@@ -43,6 +43,9 @@ def main() -> None:
 
     personality = config.Personality.from_env(args.goal)
     goal = personality.mission
+    if not goal:
+        import comms
+        goal = comms.colony_goal_text()
 
     board: dict[str, Any] = {
         "goal": goal,

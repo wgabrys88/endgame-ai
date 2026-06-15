@@ -53,12 +53,7 @@ class Personality:
 
     @classmethod
     def load(cls, name: str, slot: int = 0, mission: str = "") -> Personality:
-        text = mission.strip()
-        if not text and name:
-            pfile = PROMPTS_DIR / "personalities" / f"{name}.txt"
-            if pfile.exists():
-                text = pfile.read_text(encoding="utf-8").strip()
-        return cls(name=name, slot=slot, mission=text)
+        return cls(name=name, slot=slot, mission=mission.strip())
 
     @classmethod
     def from_env(cls, mission_override: str = "") -> Personality:
