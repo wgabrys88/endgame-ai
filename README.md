@@ -1461,4 +1461,255 @@ All circuits receive `_personality_system(board)` as LLM system prompt — the c
 
 ---
 
-*This README merges the architecture research synthesis (formerly `deep-research-report.md`), honest code audit of `merge-prep`, and owner decisions into one bootstrap document. All mermaid diagrams from the research report are preserved in Parts 6, 9, 14. When in doubt, run ablation first.*
+# Part 38 — Appendix O: Open decisions (owner questionnaire)
+
+**Purpose:** The README above is sufficient for orientation and research context. A precise **implementation plan** requires your choices on the forks below. Fill in the `Owner answer:` lines (edit this file directly, or reply in a session and ask an agent to record answers here).
+
+**Already decided — do not re-answer** (see Part 34): both desktop + repo mission; unicore + multicore required; eternal organism; ablation before faith; hierarchical mutator direction; experiment tag archived.
+
+**After you answer:** Next session should read this appendix + your answers and produce a concrete implementation plan (Phase 0–5 tasks, ordered, with acceptance criteria).
+
+---
+
+## O.1 — Planner-mutator slot topology
+
+Where should the **dedicated planner-mutator persona** run?
+
+| Option | Description |
+|--------|-------------|
+| **A** | New slot 6 — always-on separate process |
+| **B** | Time-share slot 1 with `comms_operator` when no human pri=3 task |
+| **C** | No extra slot — planner-mutator runs offline via script (`bench.py` / batch), not live in colony |
+| **D** | Defer until ablation C beats baseline A |
+
+**Owner answer:**
+
+---
+
+## O.2 — Reviewer independence enforcement
+
+How strictly should reviewer be verify-only?
+
+| Option | Description |
+|--------|-------------|
+| **A** | Prompt-only — trust `reviewer.txt`; no code enforcement yet |
+| **B** | Runtime RBAC — reviewer slot skips actor phase; verifier + bus publish only |
+| **C** | Hybrid — prompt now; RBAC in Phase 4 after ablation shows false-positive problem |
+
+**Owner answer:**
+
+---
+
+## O.3 — Single-rod baseline persona (ablation A)
+
+What is the **strongest unicore baseline** for fair comparison against the colony?
+
+| Option | Description |
+|--------|-------------|
+| **A** | `implementor` persona — execution-focused generalist |
+| **B** | New `generalist` persona — written explicitly as do-everything rod |
+| **C** | No persona file — `planner.txt` circuit only, empty system prompt |
+| **D** | Best-of — run A + B + C in Phase 0, pick winner as baseline |
+
+**Owner answer:**
+
+---
+
+## O.4 — Planner-mutator edit scope
+
+What may the planner-mutator persona change when it proposes patches?
+
+| Option | Description |
+|--------|-------------|
+| **A** | `prompts/personalities/*.txt` only (per-role SOP) |
+| **B** | `prompts/planner.txt` only (shared circuit) |
+| **C** | Both A and B |
+| **D** | A + B + routing thresholds in `config.py` (e.g. `STAG_ESCALATE`, `MOE_GATE_MIN`) |
+| **E** | A + B + `comms_operator` routing prompts only (no config code) |
+
+**Owner answer:**
+
+---
+
+## O.5 — Merge to `main` success criterion
+
+When is `merge-prep` ready to merge into `main`?
+
+| Option | Description |
+|--------|-------------|
+| **A** | Quantitative — colony beats unicore baseline on ≥N% task success at ≤M× tokens (specify N, M below) |
+| **B** | Qualitative first — “reliable on my daily tasks” for 2 weeks, metrics informal |
+| **C** | Unicore-first merge — ship best unicore to `main`; colony stays on `merge-prep` until C beats A |
+| **D** | Dual ship — `main` gets unicore subset; colony remains parallel branch indefinitely |
+
+If **A**, specify: N = ___% , M = ___× tokens, minimum task count = ___
+
+**Owner answer:**
+
+---
+
+## O.6 — Pure-Python signal API (`experiment-pure-python-20260615`)
+
+When should JSON circuits migrate to Python signal functions (`route`, `add_step`, …)?
+
+| Option | Description |
+|--------|-------------|
+| **A** | Stay archived until ablation Phase 0–1 complete |
+| **B** | Migrate after hierarchical mutators land (Phase 1–2) |
+| **C** | Migrate in parallel with Phase 0 if JSON parse errors are frequent in logs |
+| **D** | Never — keep JSON circuits permanently |
+
+**Owner answer:**
+
+---
+
+## O.7 — Default production mode
+
+What should `tui.py` default to for daily use?
+
+| Option | Description |
+|--------|-------------|
+| **A** | Unicore-first — `nemotron` profile, 1 rod (colony opt-in via flag) |
+| **B** | Colony-first — current 5-slot `nemotron_parallel` (unicore via `main.py`) |
+| **C** | Auto-detect — unicore if LM Studio max concurrent = 1, else colony |
+| **D** | Always ask / always require explicit `--model-profile` |
+
+**Owner answer:**
+
+---
+
+## O.8 — Long-horizon colony goal ownership
+
+Who may write or update `runtime/colony_goal.txt`?
+
+| Option | Description |
+|--------|-------------|
+| **A** | Human only (TUI / manual file edit) |
+| **B** | `comms_operator` when idle and no human task |
+| **C** | Planner-mutator after shadow-evaluated “drift proposals” |
+| **D** | A now; consider B or C after ablation |
+
+**Owner answer:**
+
+---
+
+## O.9 — Phase 0 ablation task list (your real work)
+
+List **5–10 tasks you actually do on this computer** that Phase 0 must test. Be specific (app names, file paths, habits). These become the primary holdout — more important than OSWorld.
+
+Example format:
+```
+1. Open Notepad, write X, verify
+2. git status in endgame-ai, report
+3. ...
+```
+
+**Owner answer:**
+
+1.
+2.
+3.
+4.
+5.
+6. *(optional)*
+7. *(optional)*
+8. *(optional)*
+9. *(optional)*
+10. *(optional)*
+
+---
+
+## O.10 — Model strategy (4B Nemotron class)
+
+How should models be assigned across slots?
+
+| Option | Description |
+|--------|-------------|
+| **A** | Same ~4B model all slots, all times |
+| **B** | Unicore may use one larger model; colony stays 4B per slot |
+| **C** | Per-slot models allowed later (reactor spawns with different `--model-profile`) — design for it now |
+| **D** | One model for planner circuits, same or different for actor/verifier — future split |
+
+**Owner answer:**
+
+---
+
+## O.11 — `quality_critic` persona role
+
+`quality_critic` exists in pool but is not a default slot. What is its long-term role?
+
+| Option | Description |
+|--------|-------------|
+| **A** | Escalation-only (keep current MoE behavior) |
+| **B** | Replace `reviewer` on slot 4 |
+| **C** | Merge into `reviewer` prompts and remove from pool |
+| **D** | Promote to default slot 6 as meta-reviewer |
+
+**Owner answer:**
+
+---
+
+## O.12 — Bus verbosity during transition
+
+While migrating to planner-only bus, what is acceptable interim behavior?
+
+| Option | Description |
+|--------|-------------|
+| **A** | Hard cut — enforce planner-only immediately when Phase 2 starts |
+| **B** | Gradual — prompt contract first, RBAC one sprint later |
+| **C** | Logging-only — record what actors would have posted, do not block yet |
+| **D** | Keep current broad bus until ablation C proves planner-only helps |
+
+**Owner answer:**
+
+---
+
+## O.13 — Human interrupt behavior during evolution
+
+When a human injects a new goal while mutator/planner-mutator is mid-patch, what should happen?
+
+| Option | Description |
+|--------|-------------|
+| **A** | Discard in-flight mutation; human goal always wins (current behavior) |
+| **B** | Queue mutation; apply after human task completes |
+| **C** | Fork mutation to shadow branch; never apply without eval anyway |
+| **D** | Unsure — recommend default in implementation plan |
+
+**Owner answer:**
+
+---
+
+## O.14 — Implementation plan output format (next session)
+
+When answers above are filled, how should the next session deliver the plan?
+
+| Option | Description |
+|--------|-------------|
+| **A** | New section appended to this README (Part 39: Implementation plan) |
+| **B** | Separate `IMPLEMENTATION_PLAN.md` file |
+| **C** | GitHub Issues / milestone list only |
+| **D** | Part 39 in README + checkbox tracking in Part 14.2 |
+
+**Owner answer:**
+
+---
+
+## O.15 — Anything else
+
+Free text: constraints, fears, non-negotiables, or things the README still gets wrong.
+
+**Owner answer:**
+
+---
+
+### Questionnaire status
+
+| Section | Status |
+|---------|--------|
+| O.1 – O.14 | ☐ unanswered — fill `Owner answer:` lines |
+| Part 34 (prior decisions) | ☑ recorded |
+| Ready for implementation plan | ☐ after O.1–O.14 answered (O.9 required minimum) |
+
+---
+
+*This README merges the architecture research synthesis (formerly `deep-research-report.md`), honest code audit of `merge-prep`, and owner decisions into one bootstrap document. All mermaid diagrams from the research report are preserved in Parts 6, 9, 14. Open decisions: Appendix O. When in doubt, run ablation first.*
