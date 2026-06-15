@@ -39,7 +39,7 @@ _CIRCUIT_HINTS: dict[str, str] = {
     "planner": '{"mode":"direct"|"done","sequence":["text step",...],"done_when":"measurable outcome"}',
     "verifier": '{"verdict":"confirmed"|"denied","evidence":"what step results prove"}',
     "reflector": '{"diagnosis":"...","suggestion":"...","rule":"..."}',
-    "mutator": '{"action":"patch_plugin"|"none","filename":"plugins/x.py","content":"full source"}',
+    "mutator": '{"action":"patch_plugin"|"patch_prompt"|"none","filename":"plugins/x.py","content":"full source or prompt text"}',
     "fission_judge": '{"verdict":"credit"|"deny","diagnosis":"...","suggestion":"...","rule":""}',
     "actor": '{"actions":[{"verb":"click|focus|write|press|hotkey|scroll","target":"[id]","value":""}],"conclusion":"EXECUTE"|"DONE"|"CANNOT"}',
 }
@@ -546,6 +546,7 @@ class MutatorAgent:
                 "next": "planner",
             }
         plugin_names = _existing_plugin_names()
+        elite_dna = _get_elite_dna_context(_personality(board))
         llm_out = _call_circuit(
             board,
             "mutator",
@@ -553,13 +554,22 @@ class MutatorAgent:
                 f"GOAL: {str(board.get('goal', ''))[:400]}\n"
                 f"REFLECTION: {json.dumps(reflection, ensure_ascii=False)[:700]}\n"
                 f"PLUGINS: {', '.join(plugin_names) or 'none'}\n"
+                f"{elite_dna}"
                 f"{_format_history(board.get('history', []))}\n"
                 "Mutation JSON:"
             ),
             role="mutator",
         )
         parsed = _parse_json(llm_out.text) or {}
-        if str(parsed.get("action", "none")) != "patch_plugin":
+        action = str(parsed.get("action", "none"))
+        if action == "patch_prompt":
+            ok, obs = _apply_prompt_mutation(board, str(parsed.get("content", "")))
+            data: dict[str, Any] = {"action": "patch_prompt", "ok": ok, "obs": obs}
+            event_data = _llm_event_data(llm_out, data)
+            if ok:
+                _post_mutation_candidate(board, f"prompts/personalities/{_personality(board)}.txt", obs, obs)
+            return {"phase": "mutate", "data": event_data, "next": "planner"}
+        if action != "patch_plugin":
             return {
                 "phase": "mutate",
                 "data": _llm_event_data(llm_out, {"action": "none", "reason": str(parsed.get("content", "no mutation"))[:200]}),
@@ -567,7 +577,7 @@ class MutatorAgent:
             }
         filename = str(parsed.get("filename", ""))
         ok, obs, diff = _apply_plugin_mutation(filename, str(parsed.get("content", "")))
-        data: dict[str, Any] = {"action": "patch_plugin", "filename": filename[:80], "ok": ok, "obs": obs}
+        data = {"action": "patch_plugin", "filename": filename[:80], "ok": ok, "obs": obs}
         if diff:
             data["diff"] = diff[:500]
         event_data = _llm_event_data(llm_out, data)
@@ -655,6 +665,51 @@ def _post_failure_candidate(board: dict[str, Any], done_when: str, evidence: str
                           data={"niche": _niche(board, "denial"), "evidence": str(evidence)[:200]})
     except Exception:
         pass
+def _get_elite_dna_context(persona: str) -> str:
+    """Pull best prompt DNA from breed archive for crossover context."""
+    try:
+        import json as _json
+        archive_path = config.PROMPTS_DIR.parent / "runtime" / "breed_archive.json"
+        if not archive_path.exists():
+            return ""
+        data = _json.loads(archive_path.read_text(encoding="utf-8"))
+        archive = data.get("archive", {}) if isinstance(data, dict) else {}
+        best_dna, best_fit = "", 0.0
+        for elite in archive.values():
+            if not isinstance(elite, dict):
+                continue
+            fit = float(elite.get("fitness", 0) or 0)
+            dna = str(elite.get("prompt_dna", "")).strip()
+            if dna and fit > best_fit and elite.get("target") != persona:
+                best_dna, best_fit = dna, fit
+        if best_dna:
+            return f"ELITE_DNA (fitness={best_fit:.2f}, use for crossover):\n{best_dna[:800]}\n"
+    except Exception:
+        pass
+    return ""
+
+
+def _apply_prompt_mutation(board: dict[str, Any], new_prompt: str) -> tuple[bool, str]:
+    """Mutate the current persona's prompt file with new DNA."""
+    persona = _personality(board)
+    if not persona:
+        return False, "no persona"
+    cleaned = new_prompt.strip()
+    if len(cleaned) < 20:
+        return False, "prompt too short"
+    if len(cleaned) > 2000:
+        cleaned = cleaned[:2000]
+    pfile = config.PROMPTS_DIR / "personalities" / f"{persona}.txt"
+    try:
+        before = pfile.read_text(encoding="utf-8").strip() if pfile.exists() else ""
+    except OSError:
+        return False, "read failed"
+    if before == cleaned:
+        return False, "unchanged"
+    pfile.write_text(cleaned, encoding="utf-8")
+    return True, f"patched {persona}.txt ({len(cleaned)} chars)"
+
+
 def _existing_plugin_names() -> list[str]:
     try:
         return [p.name for p in sorted(config.PLUGINS_DIR.glob("*.py")) if p.is_file()]
