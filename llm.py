@@ -197,6 +197,30 @@ def _fetch_model(host: str) -> str | None:
         return None
 
 
+_trace_counter = 0
+_trace_dir: Path | None = None
+
+def _trace_request(request: dict[str, Any], response: dict[str, Any]) -> None:
+    global _trace_counter, _trace_dir
+    if not config.LMS_TRACE_PROMPTS:
+        return
+    if _trace_dir is None:
+        sd = os.environ.get("ENDGAME_SESSION_DIR", "")
+        if not sd:
+            _trace_dir = config.BASE_DIR / "runtime" / "traces"
+        else:
+            import pathlib as _pl
+        _trace_dir = _pl.Path(sd) / "traces"
+        _trace_dir.mkdir(parents=True, exist_ok=True)
+    _trace_counter += 1
+    try:
+        (_trace_dir / f"{_trace_counter:04d}.json").write_text(
+            json.dumps({"request": request, "response": response}, ensure_ascii=False, indent=1),
+            encoding="utf-8")
+    except OSError:
+        pass
+
+
 def _call_lmstudio(body: dict[str, Any], *, want_json: bool) -> LLMResult:
     host, model = _resolve_host_model()
     if model:
@@ -212,6 +236,7 @@ def _call_lmstudio(body: dict[str, Any], *, want_json: bool) -> LLMResult:
             if choices and isinstance(choices, list):
                 msg = choices[0].get("message") or {}
                 if isinstance(msg, dict):
+                    _trace_request(body, result)
                     return _parse_message(msg, result.get("usage"), want_json=want_json)
             raise RuntimeError(f"no choices: {str(result)[:200]}")
         except (HTTPError, URLError, TimeoutError, OSError) as e:
