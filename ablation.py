@@ -4,13 +4,18 @@ from __future__ import annotations
 import argparse
 import glob
 import json
+import os
+import shutil
 import statistics
+import subprocess
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import config
+import log
 
 
 PHASE0_TASKS: list[dict[str, str]] = [
@@ -50,6 +55,10 @@ CORE_METRIC_FIELDS: tuple[str, ...] = (
     "regression_rate",
     "crash_recovery_rate",
 )
+
+COMMITTED_RUNS_DIR: Path = config.BASE_DIR / "ablation_runs"
+CREATE_NEW_PROCESS_GROUP = 0x00000200
+CREATE_NO_WINDOW = 0x08000000
 
 
 def task_by_id(task_id: str) -> dict[str, str] | None:
@@ -264,6 +273,372 @@ def summarize_session(
     return summary
 
 
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def _run_shell(args: list[str]) -> dict[str, Any]:
+    try:
+        proc = subprocess.run(
+            args,
+            cwd=str(config.BASE_DIR),
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return {
+            "ok": proc.returncode == 0,
+            "returncode": proc.returncode,
+            "stdout": proc.stdout.strip()[:12000],
+            "stderr": proc.stderr.strip()[:12000],
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:1000], "stdout": "", "stderr": ""}
+
+
+def _git_snapshot() -> dict[str, Any]:
+    return {
+        "head": _run_shell(["git", "rev-parse", "--short", "HEAD"]),
+        "branch": _run_shell(["git", "branch", "--show-current"]),
+        "status": _run_shell(["git", "status", "--short"]),
+        "diff_stat": _run_shell(["git", "diff", "--stat"]),
+        "diff_name_status": _run_shell(["git", "diff", "--name-status"]),
+    }
+
+
+def _taskkill_tree(pid: int, *, force: bool) -> dict[str, Any]:
+    if os.name != "nt":
+        return {"ok": False, "reason": "taskkill only used on Windows"}
+    cmd = ["taskkill"]
+    if force:
+        cmd.append("/F")
+    cmd += ["/T", "/PID", str(pid)]
+    return _run_shell(cmd)
+
+
+def _stop_process_tree(proc: subprocess.Popen[Any], grace_seconds: float) -> dict[str, Any]:
+    if proc.poll() is not None:
+        return {"method": "already_exited", "returncode": proc.returncode}
+    first = _taskkill_tree(proc.pid, force=False)
+    deadline = time.time() + max(0.0, grace_seconds)
+    while time.time() < deadline:
+        if proc.poll() is not None:
+            return {"method": "taskkill_tree", "returncode": proc.returncode, "first": first}
+        time.sleep(0.25)
+    second = _taskkill_tree(proc.pid, force=True)
+    try:
+        proc.wait(timeout=max(1.0, grace_seconds))
+    except subprocess.TimeoutExpired:
+        pass
+    return {
+        "method": "taskkill_tree_force",
+        "returncode": proc.poll(),
+        "first": first,
+        "second": second,
+    }
+
+
+def _newest_dir(parent: Path, before: set[str]) -> Path | None:
+    if not parent.exists():
+        return None
+    candidates = [p for p in parent.iterdir() if p.is_dir() and p.name not in before]
+    if not candidates:
+        candidates = [p for p in parent.iterdir() if p.is_dir()]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda p: p.stat().st_mtime)
+
+
+def _copy_logs(session_dir: Path | None, raw_run_dir: Path | None, export_dir: Path) -> None:
+    logs_dir = export_dir / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    if session_dir and session_dir.exists():
+        session_out = logs_dir / "session"
+        session_out.mkdir(parents=True, exist_ok=True)
+        for path in sorted(session_dir.glob("*.jsonl")):
+            shutil.copy2(path, session_out / path.name)
+    if raw_run_dir and raw_run_dir.exists():
+        raw_out = logs_dir / "runtime_ablation"
+        raw_out.mkdir(parents=True, exist_ok=True)
+        for path in sorted(raw_run_dir.glob("*.json")):
+            shutil.copy2(path, raw_out / path.name)
+
+
+def _write_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8", newline="\n")
+
+
+def _write_json(path: Path, data: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _load_manifest(raw_run_dir: Path | None) -> dict[str, Any]:
+    if not raw_run_dir:
+        return {}
+    path = raw_run_dir / "manifest.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _dict_field(container: dict[str, Any], key: str) -> dict[str, Any]:
+    value = container.get(key)
+    return value if isinstance(value, dict) else {}
+
+
+def _auto_evaluation(summary: dict[str, Any], stop_reason: str, returncode: int | None) -> dict[str, str]:
+    evidence = _dict_field(summary, "evidence")
+    confirmed = int(evidence.get("verify_confirmed", 0) or 0)
+    denied = int(evidence.get("verify_denied", 0) or 0)
+    fissions = int(evidence.get("fissions", 0) or 0)
+    errors = int(evidence.get("errors", 0) or 0)
+    if confirmed or fissions:
+        verdict = "success_evidence_present"
+    elif denied or errors:
+        verdict = "failure_evidence_present"
+    elif stop_reason == "timeout":
+        verdict = "timeout_no_verified_outcome"
+    elif returncode not in (0, None):
+        verdict = "process_failed_no_verified_outcome"
+    else:
+        verdict = "no_verified_outcome"
+    return {
+        "evaluator": "ablation_runner",
+        "verdict": verdict,
+        "note": (
+            f"stop_reason={stop_reason}; returncode={returncode}; "
+            f"confirmed={confirmed}; denied={denied}; fissions={fissions}; errors={errors}"
+        ),
+    }
+
+
+def _run_markdown(record: dict[str, Any]) -> str:
+    manifest = _dict_field(record, "manifest")
+    summary = _dict_field(record, "summary")
+    evidence = _dict_field(summary, "evidence")
+    evaluation = _dict_field(record, "evaluation")
+    cmd = " ".join(record.get("command", []))
+    return "\n".join([
+        f"# {record.get('run_label', 'ablation run')}",
+        "",
+        f"- run_id: `{record.get('run_id', '')}`",
+        f"- batch_id: `{record.get('batch_id', '')}`",
+        f"- sequence: `{record.get('sequence', '')}`",
+        f"- mode: `{record.get('mode', '')}`",
+        f"- task_id: `{record.get('task_id', '')}`",
+        f"- model_profile: `{record.get('model_profile', '')}`",
+        f"- timeout_seconds: `{record.get('timeout_seconds', '')}`",
+        f"- stop_reason: `{record.get('stop_reason', '')}`",
+        f"- returncode: `{record.get('returncode', '')}`",
+        f"- evaluator: `{evaluation.get('evaluator', '')}`",
+        f"- verdict: `{evaluation.get('verdict', '')}`",
+        f"- note: {evaluation.get('note', '')}",
+        "",
+        "## Goal",
+        "",
+        str(manifest.get("goal") or record.get("goal", "")),
+        "",
+        "## Command",
+        "",
+        f"```powershell\n{cmd}\n```",
+        "",
+        "## Evidence",
+        "",
+        f"- events: `{summary.get('events', 0)}`",
+        f"- verify_confirmed: `{evidence.get('verify_confirmed', 0)}`",
+        f"- verify_denied: `{evidence.get('verify_denied', 0)}`",
+        f"- fissions: `{evidence.get('fissions', 0)}`",
+        f"- errors: `{evidence.get('errors', 0)}`",
+        f"- mutations: `{evidence.get('mutations', 0)}`",
+        f"- respawns: `{evidence.get('respawns', 0)}`",
+        "",
+        "## Paths",
+        "",
+        f"- raw_session_dir: `{record.get('raw_session_dir', '')}`",
+        f"- raw_ablation_dir: `{record.get('raw_ablation_dir', '')}`",
+        "",
+    ]) + "\n"
+
+
+def run_once(
+    *,
+    mode: str,
+    task_id: str = "",
+    goal: str = "",
+    timeout_seconds: int,
+    model_profile: str = "",
+    backend: str = "lmstudio",
+    unicore_persona: str = config.UNICORE_DEFAULT_PERSONA,
+    batch_id: str = "",
+    sequence: int = 1,
+    records_dir: Path = COMMITTED_RUNS_DIR,
+    evaluator: str = "codex",
+    evaluator_verdict: str = "unreviewed",
+    evaluator_note: str = "",
+    grace_seconds: float = 5.0,
+) -> dict[str, Any]:
+    run_mode = config.normalize_run_mode(mode)
+    resolved_profile = model_profile or config.default_model_profile_for_mode(run_mode)
+    resolved_goal = task_goal(task_id, goal)
+    if not resolved_goal:
+        raise ValueError("run requires --task-id or --goal")
+
+    batch = batch_id.strip() or datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    run_label = f"{sequence:03d}_{run_mode}_{_safe_slug(task_id or resolved_goal)}"
+    export_dir = records_dir / batch / run_label
+    export_dir.mkdir(parents=True, exist_ok=True)
+
+    stdout_path = export_dir / "stdout.txt"
+    stderr_path = export_dir / "stderr.txt"
+    before_sessions = {p.name for p in (config.BASE_DIR / "sessions").glob("*") if p.is_dir()}
+    before_runs = {p.name for p in config.ABLATION_DIR.glob("*") if p.is_dir()} if config.ABLATION_DIR.exists() else set()
+    before_git = _git_snapshot()
+
+    log.cleanup_runtime(deep=False)
+    env = os.environ.copy()
+    env["ENDGAME_BOOTSTRAPPED"] = "1"
+    env["ENDGAME_BACKEND"] = backend
+    env["PYTHONUNBUFFERED"] = "1"
+    cmd = [
+        sys.executable,
+        "reactor.py",
+        "--mode",
+        run_mode,
+        "--model-profile",
+        resolved_profile,
+    ]
+    if task_id:
+        cmd += ["--ablation-task-id", task_id]
+    if goal:
+        cmd += ["--goal", goal]
+    if run_mode == "unicore":
+        cmd += ["--unicore-persona", unicore_persona]
+
+    started = time.time()
+    stop_reason = "completed"
+    stop_detail: dict[str, Any] = {}
+    with stdout_path.open("w", encoding="utf-8", newline="\n") as stdout, stderr_path.open("w", encoding="utf-8", newline="\n") as stderr:
+        proc = subprocess.Popen(
+            cmd,
+            cwd=str(config.BASE_DIR),
+            env=env,
+            stdout=stdout,
+            stderr=stderr,
+            creationflags=CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW if os.name == "nt" else 0,
+        )
+        try:
+            returncode = proc.wait(timeout=timeout_seconds)
+        except subprocess.TimeoutExpired:
+            stop_reason = "timeout"
+            stop_detail = _stop_process_tree(proc, grace_seconds)
+            returncode = proc.poll()
+    finished = time.time()
+
+    raw_session_dir = _newest_dir(config.BASE_DIR / "sessions", before_sessions)
+    raw_run_dir = _newest_dir(config.ABLATION_DIR, before_runs)
+    summary = summarize_session(raw_session_dir, run_dir=raw_run_dir, status=stop_reason) if raw_session_dir else {
+        "v": 1,
+        "status": "no_session",
+        "events": 0,
+        "evidence": {},
+        "core_metrics": {},
+    }
+    manifest = _load_manifest(raw_run_dir)
+    auto_eval = _auto_evaluation(summary, stop_reason, returncode)
+    human_or_agent_eval = {
+        "evaluator": evaluator,
+        "verdict": evaluator_verdict,
+        "note": evaluator_note,
+    }
+    after_git = _git_snapshot()
+    record: dict[str, Any] = {
+        "v": 1,
+        "batch_id": batch,
+        "run_label": run_label,
+        "sequence": sequence,
+        "run_id": manifest.get("run_id", ""),
+        "started_utc": datetime.fromtimestamp(started, timezone.utc).isoformat(timespec="seconds"),
+        "finished_utc": datetime.fromtimestamp(finished, timezone.utc).isoformat(timespec="seconds"),
+        "elapsed_seconds": round(finished - started, 3),
+        "mode": run_mode,
+        "task_id": task_id,
+        "goal": resolved_goal,
+        "model_profile": resolved_profile,
+        "backend": backend,
+        "unicore_persona": unicore_persona if run_mode == "unicore" else "",
+        "timeout_seconds": timeout_seconds,
+        "grace_seconds": grace_seconds,
+        "command": cmd,
+        "returncode": returncode,
+        "stop_reason": stop_reason,
+        "stop_detail": stop_detail,
+        "raw_session_dir": str(raw_session_dir) if raw_session_dir else "",
+        "raw_ablation_dir": str(raw_run_dir) if raw_run_dir else "",
+        "manifest": manifest,
+        "summary": summary,
+        "evaluation": auto_eval,
+        "submitted_evaluation": human_or_agent_eval,
+        "git_before": before_git,
+        "git_after": after_git,
+    }
+    _copy_logs(raw_session_dir, raw_run_dir, export_dir)
+    _write_json(export_dir / "record.json", record)
+    _write_json(export_dir / "summary.json", summary)
+    _write_json(export_dir / "evaluation.json", {"automatic": auto_eval, "submitted": human_or_agent_eval})
+    _write_text(export_dir / "RUN.md", _run_markdown(record))
+    return record
+
+
+def run_repeated(args: argparse.Namespace) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    batch = args.batch_id.strip() or datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    records_dir = Path(args.records_dir).resolve() if args.records_dir else COMMITTED_RUNS_DIR
+    for idx in range(1, args.repeat + 1):
+        record = run_once(
+            mode=args.mode,
+            task_id=args.task_id,
+            goal=args.goal,
+            timeout_seconds=args.timeout,
+            model_profile=args.model_profile,
+            backend=args.backend,
+            unicore_persona=args.unicore_persona,
+            batch_id=batch,
+            sequence=idx,
+            records_dir=records_dir,
+            evaluator=args.evaluator,
+            evaluator_verdict=args.verdict,
+            evaluator_note=args.note,
+            grace_seconds=args.grace_seconds,
+        )
+        records.append(record)
+        evaluation = _dict_field(record, "evaluation")
+        print(f"{idx}/{args.repeat} {record['run_label']} {record['stop_reason']} {evaluation.get('verdict', '')}")
+    batch_dir = records_dir / batch
+    _write_json(batch_dir / "batch.json", {"v": 1, "batch_id": batch, "runs": records})
+    _write_text(batch_dir / "README.md", _batch_markdown(batch, records))
+    return records
+
+
+def _batch_markdown(batch_id: str, records: list[dict[str, Any]]) -> str:
+    lines = [f"# Ablation Batch {batch_id}", ""]
+    for record in records:
+        evaluation = _dict_field(record, "evaluation")
+        summary = _dict_field(record, "summary")
+        evidence = _dict_field(summary, "evidence")
+        lines.append(
+            f"- `{record.get('run_label')}` mode=`{record.get('mode')}` task=`{record.get('task_id')}` "
+            f"stop=`{record.get('stop_reason')}` verdict=`{evaluation.get('verdict')}` "
+            f"confirmed=`{evidence.get('verify_confirmed', 0)}` denied=`{evidence.get('verify_denied', 0)}` "
+            f"fissions=`{evidence.get('fissions', 0)}` errors=`{evidence.get('errors', 0)}`"
+        )
+    lines.append("")
+    return "\n".join(lines)
+
+
 def latest_session() -> Path | None:
     sessions = sorted((config.BASE_DIR / "sessions").glob("*"))
     return sessions[-1] if sessions else None
@@ -273,6 +648,21 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Phase 0 ablation helpers")
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("list-tasks")
+    p_run = sub.add_parser("run", help="Run a finite reactor ablation and export committed records")
+    p_run.add_argument("--mode", choices=config.RUN_MODES, required=True)
+    p_run.add_argument("--task-id", default="")
+    p_run.add_argument("--goal", default="")
+    p_run.add_argument("--timeout", type=int, required=True, help="Seconds before stopping the run")
+    p_run.add_argument("--repeat", type=int, default=1)
+    p_run.add_argument("--model-profile", default="")
+    p_run.add_argument("--backend", choices=["lmstudio", "acp"], default="lmstudio")
+    p_run.add_argument("--unicore-persona", default=config.UNICORE_DEFAULT_PERSONA)
+    p_run.add_argument("--batch-id", default="")
+    p_run.add_argument("--records-dir", default=str(COMMITTED_RUNS_DIR))
+    p_run.add_argument("--evaluator", default="codex")
+    p_run.add_argument("--verdict", default="unreviewed")
+    p_run.add_argument("--note", default="")
+    p_run.add_argument("--grace-seconds", type=float, default=5.0)
     p_sum = sub.add_parser("summarize")
     p_sum.add_argument("--session", default="latest")
     p_sum.add_argument("--run-dir", default="")
@@ -289,6 +679,14 @@ def main() -> None:
             raise SystemExit("No sessions found")
         summary = summarize_session(session, run_dir=args.run_dir or None, status=args.status)
         print(json.dumps(summary, ensure_ascii=False, indent=2))
+        return
+    if args.cmd == "run":
+        if args.repeat < 1:
+            raise SystemExit("--repeat must be >= 1")
+        if not args.task_id and not args.goal:
+            raise SystemExit("run requires --task-id or --goal")
+        run_repeated(args)
+        return
 
 
 if __name__ == "__main__":
