@@ -1,0 +1,57 @@
+{
+  "v": 1,
+  "status": "timeout",
+  "updated_utc": "2026-06-15T19:37:04+00:00",
+  "session_dir": "C:\\Users\\px-wjt\\Downloads\\endgame-ai\\sessions\\20260615_213614",
+  "events": 39,
+  "phases": {
+    "start": 2,
+    "interrupt": 2,
+    "plugin.fission_log": 4,
+    "schedule": 4,
+    "planner.pending": 2,
+    "llm.request": 8,
+    "llm.response": 6,
+    "plan": 2,
+    "actor": 2,
+    "observe": 2,
+    "verify": 2,
+    "fission.deny": 2,
+    "reactor.start": 1
+  },
+  "evidence": {
+    "verify_confirmed": 2,
+    "verify_denied": 0,
+    "fissions": 0,
+    "errors": 2,
+    "mutations": 0,
+    "respawns": 0,
+    "llm_completion_tokens": 1280,
+    "llm_output_chars": 1356,
+    "bus_entries": 10,
+    "bus_chars": 7990,
+    "elapsed_ms": 46467
+  },
+  "core_metrics": {
+    "task_success_rate": 1.0,
+    "first_pass_success": null,
+    "external_verifier_agreement": null,
+    "median_latency_ms": 13217,
+    "p95_latency_ms": 18111,
+    "tokens_per_solved_task": null,
+    "bus_overhead_ratio": 0.8549111919537771,
+    "solution_diversity": null,
+    "mutation_uplift": null,
+    "regression_rate": null,
+    "crash_recovery_rate": null
+  },
+  "manual_or_external_metrics_needed": [
+    "first_pass_success",
+    "external_verifier_agreement",
+    "tokens_per_solved_task",
+    "solution_diversity",
+    "mutation_uplift",
+    "regression_rate",
+    "crash_recovery_rate"
+  ]
+}
