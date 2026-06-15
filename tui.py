@@ -1,4 +1,4 @@
-"""TUI — fixed 45-line display. Shows personas with their internal agents."""
+"""TUI — compact colony display. Spawns reactor, shows slot state + bus."""
 from __future__ import annotations
 import ctypes
 import glob
@@ -13,31 +13,10 @@ import comms
 import config
 
 BASE_DIR = config.BASE_DIR
-TARGET_HEIGHT = 45
-REFRESH_INTERVAL = 0.10
+TARGET_HEIGHT = 40
+REFRESH_INTERVAL = 0.12
 SCAN_INTERVAL = 2.0
-MAX_EVENTS = 300
-FILTER_PRESETS = ("all", "verify", "breed", "human", "error")
-
-# Internal agents each persona contains
-INTERNAL_AGENTS = ["scheduler", "planner", "actor", "verifier", "fission_judge"]
-
-CLR_ALIVE = (80, 220, 120)
-CLR_DEAD = (255, 80, 80)
-CLR_HEADER = (200, 220, 255)
-CLR_BORDER = (55, 58, 78)
-CLR_PHASE = (140, 170, 200)
-CLR_DATA = (180, 180, 200)
-CLR_BUS = (160, 190, 230)
-CLR_DIM = (80, 80, 100)
-CLR_INPUT = (255, 240, 200)
-CLR_PRI = (255, 180, 80)
-CLR_STAG = (255, 100, 80)
-CLR_FISSION = (100, 255, 180)
-
-BOX_TL, BOX_TR, BOX_BL, BOX_BR = "╔", "╗", "╚", "╝"
-BOX_H, BOX_V = "═", "║"
-BOX_ML, BOX_MR, BOX_SL, BOX_SR, BOX_SH = "╠", "╣", "╟", "╢", "─"
+MAX_EVENTS = 200
 
 _k32 = ctypes.WinDLL("kernel32", use_last_error=True)
 _hout = _k32.GetStdHandle(-11)
@@ -47,8 +26,6 @@ _k32.SetConsoleMode(_hout, _m.value | 0x0004 | 0x0008)
 
 RST = "\x1b[0m"
 BOLD = "\x1b[1m"
-SYNC_ON = "\x1b[?2026h"
-SYNC_OFF = "\x1b[?2026l"
 
 
 def _w(t: str) -> None:
@@ -60,80 +37,46 @@ def _fg(r: int, g: int, b: int) -> str:
     return f"\x1b[38;2;{r};{g};{b}m"
 
 
-def _vlen(s: str) -> int:
-    n = i = 0
-    while i < len(s):
-        if s[i] == "\x1b":
-            j = s.find("m", i)
-            i = (j + 1) if j != -1 else i + 1
-        else:
-            n += 1
-            i += 1
-    return n
-
-
-def _trunc(s: str, w: int) -> str:
-    if w <= 0:
-        return ""
-    vis = i = 0
-    while i < len(s):
-        if s[i] == "\x1b":
-            j = s.find("m", i)
-            if j != -1:
-                i = j + 1
-                continue
-        vis += 1
-        i += 1
-    if vis <= w:
-        return s
-    vis = 0
-    out: list[str] = []
-    i = 0
-    while i < len(s):
-        if s[i] == "\x1b":
-            j = s.find("m", i)
-            if j != -1:
-                out.append(s[i:j + 1])
-                i = j + 1
-                continue
-        if vis >= w - 1:
-            break
-        out.append(s[i])
-        vis += 1
-        i += 1
-    out.append("…")
-    return "".join(out)
-
-
 def _console_width() -> int:
-    class _COORD(ctypes.Structure):
-        _fields_ = [("X", ctypes.c_short), ("Y", ctypes.c_short)]
-
     class _SR(ctypes.Structure):
         _fields_ = [("L", ctypes.c_short), ("T", ctypes.c_short), ("R", ctypes.c_short), ("B", ctypes.c_short)]
-
     class _CSBI(ctypes.Structure):
-        _fields_ = [("sz", _COORD), ("cp", _COORD), ("a", ctypes.c_ushort), ("w", _SR), ("mx", _COORD)]
-
+        _fields_ = [("sz", ctypes.c_short * 2), ("cp", ctypes.c_short * 2), ("a", ctypes.c_ushort), ("w", _SR), ("mx", ctypes.c_short * 2)]
     csbi = _CSBI()
     if _k32.GetConsoleScreenBufferInfo(_hout, ctypes.byref(csbi)):
         return max(80, min(csbi.w.R - csbi.w.L + 1, 160))
     return 120
 
 
-def _bar(v: float, w: int, clr: tuple) -> str:
-    w = max(2, w)
-    f = max(0, min(w, int(v * w)))
-    return _fg(*clr) + "█" * f + _fg(*CLR_DIM) + "░" * (w - f) + RST
+def _trunc(s: str, w: int) -> str:
+    vis = i = 0
+    while i < len(s):
+        if s[i] == "\x1b":
+            j = s.find("m", i)
+            i = (j + 1) if j != -1 else i + 1
+        else:
+            vis += 1; i += 1
+    if vis <= w:
+        return s
+    vis = 0; out = []
+    i = 0
+    while i < len(s):
+        if s[i] == "\x1b":
+            j = s.find("m", i)
+            if j != -1:
+                out.append(s[i:j + 1]); i = j + 1; continue
+        if vis >= w - 1:
+            break
+        out.append(s[i]); vis += 1; i += 1
+    out.append("…")
+    return "".join(out)
 
 
-# --- Slot view ---
+# --- Slot tracking ---
 
 class Slot:
     __slots__ = ("path", "slot_id", "persona", "events", "_off", "_mt",
-                 "alive", "fissions", "last_phase", "priority", "stagnation",
-                 "agent_states", "_last_n", "last_fission_deny",
-                 "last_human_decline")
+                 "alive", "fissions", "last_phase", "stagnation")
 
     def __init__(self, path: Path, slot_id: int):
         self.path = path
@@ -145,27 +88,7 @@ class Slot:
         self.alive = True
         self.fissions = 0
         self.last_phase = ""
-        self.priority = 0
         self.stagnation = 0.0
-        self._last_n = 0
-        self.last_fission_deny = ""
-        self.last_human_decline = ""
-        self.agent_states: dict[str, str] = {a: "idle" for a in INTERNAL_AGENTS}
-
-    def _reset(self) -> None:
-        """Fresh state when persona respawns in this slot."""
-        self.events = []
-        self._off = 0
-        self._mt = 0.0
-        self.alive = True
-        self.fissions = 0
-        self.last_phase = ""
-        self.priority = 0
-        self.stagnation = 0.0
-        self._last_n = 0
-        self.last_fission_deny = ""
-        self.last_human_decline = ""
-        self.agent_states = {a: "idle" for a in INTERNAL_AGENTS}
 
     def poll(self) -> None:
         try:
@@ -199,95 +122,16 @@ class Slot:
     def _ingest(self, ev: dict) -> None:
         ph = ev.get("phase", "")
         d = ev.get("d") or {}
-        n = int(ev.get("n", 0) or 0)
-        if ph == "start" and n == 1 and self._last_n > 1:
-            self._reset()
-        if n:
-            self._last_n = n
         self.last_phase = ph
         if ph == "start":
             self.persona = str(d.get("personality", self.persona))
             self.alive = True
         elif ph == "fission":
             self.fissions += 1
-            self.agent_states["fission_judge"] = "✓"
         elif ph == "stop":
             self.alive = False
-        elif ph == "interrupt":
-            self.priority = int(d.get("pri", self.priority))
         elif ph == "pressure":
             self.stagnation = float(d.get("stagnation", 0))
-        elif ph in ("moe.route", "moe.escalate"):
-            self.last_phase = ph
-        elif ph == "fission.deny":
-            diagnosis = str(d.get("diagnosis", ""))[:160]
-            suggestion = str(d.get("suggestion", ""))[:120]
-            self.last_fission_deny = f"{diagnosis} -> {suggestion}" if suggestion else diagnosis
-        elif ph == "human.decline":
-            reason = str(d.get("reason", ""))[:120]
-            suggestion = str(d.get("suggested_rephrase", ""))[:120]
-            self.last_human_decline = f"{reason} | try: {suggestion}" if suggestion else reason
-        # Update agent states
-        if ph == "schedule":
-            self.agent_states = {a: "idle" for a in INTERNAL_AGENTS}
-            self.agent_states["scheduler"] = "✓"
-        elif ph in ("llm.request", "planner.pending"):
-            self.agent_states["planner"] = "⟳"
-        elif ph.startswith("planner"):
-            self.agent_states["planner"] = "✗" if "error" in ph else "✓"
-        elif ph == "llm.response" and str(d.get("role", "")) == "planner":
-            self.agent_states["planner"] = "✓"
-        elif ph in ("actor", "action"):
-            ok = (d.get("ok", True)) if d else True
-            self.agent_states["actor"] = "✓" if ok else "✗"
-        elif ph.startswith("verif") or ph == "verify":
-            v = d.get("verdict", "")
-            self.agent_states["verifier"] = "✓" if v == "confirmed" else "✗"
-        elif ph.startswith("fission"):
-            self.agent_states["fission_judge"] = "✓" if ph == "fission" else "–"
-
-    @property
-    def active_agent(self) -> str:
-        ph = self.last_phase
-        if not ph or ph == "start":
-            return "booting"
-        if ph.startswith("planner"):
-            return "planner"
-        if ph in ("actor", "action"):
-            return "actor"
-        if ph.startswith("verif") or ph == "verify":
-            return "verifier"
-        if ph.startswith("fission"):
-            return "fission"
-        if ph == "interrupt":
-            return "INTERRUPT"
-        if ph.startswith("moe."):
-            return "moe"
-        if ph == "pressure":
-            return "math"
-        if ph in ("llm_retry", "llm_fail", "llm.request", "llm.response"):
-            return "llm"
-        if ph in ("reflect", "mutate"):
-            return ph[:8]
-        if ph == "schedule":
-            return "scheduler"
-        return ph[:10]
-
-    def agent_bar(self) -> str:
-        """Compact display of all internal agent states."""
-        parts = []
-        for a in INTERNAL_AGENTS:
-            st = self.agent_states.get(a, "idle")
-            short = a[0].upper()  # S P A V F
-            if st == "✓":
-                parts.append(f"{_fg(*CLR_ALIVE)}{short}{RST}")
-            elif st == "⟳":
-                parts.append(f"{_fg(*CLR_PRI)}{short}{RST}")
-            elif st == "✗":
-                parts.append(f"{_fg(*CLR_DEAD)}{short}{RST}")
-            else:
-                parts.append(f"{_fg(*CLR_DIM)}{short}{RST}")
-        return "".join(parts)
 
 
 # --- TUI ---
@@ -299,13 +143,9 @@ class TUI:
         self._last_scan = 0.0
         self._start = time.time()
         self._input_buf = ""
-        self._bus_chat: list[dict] = []
-        self._bus_events: list[dict] = []
+        self._session_dir = ""
         self._reactor_proc = None
-        self._session_dir: str = ""
         self._model_profile = os.environ.get("_ENDGAME_MODEL_PROFILE", "") or "auto"
-        self._phase_filter = "all"
-        self._colony_progress: dict[str, dict[str, Any]] = {}
 
     def _scan(self) -> None:
         now = time.time()
@@ -319,308 +159,106 @@ class TUI:
         if sd != self._session_dir:
             self._session_dir = sd
             self.slots.clear()
-        # Pick up staggered spawns: s4/s5 files appear seconds after session start
         for fp in glob.glob(os.path.join(sd, "events-child-s*.jsonl")):
-            if fp in self.slots:
-                continue
-            p = Path(fp)
-            sid = int(p.stem.replace("events-child-s", ""))
-            self.slots[fp] = Slot(p, sid)
+            if fp not in self.slots:
+                p = Path(fp)
+                sid = int(p.stem.replace("events-child-s", ""))
+                self.slots[fp] = Slot(p, sid)
 
     def _poll(self) -> None:
         try:
             comms.drain_inject()
         except Exception:
             pass
-        self._bus_chat = comms.read_chat(40)
-        self._bus_events = comms.read_events(80)
-        try:
-            self._colony_progress = comms.colony_progress(40)
-        except Exception:
-            self._colony_progress = {}
         for s in self.slots.values():
             s.poll()
-
-    def _sorted(self) -> list[Slot]:
-        return sorted(self.slots.values(), key=lambda s: s.slot_id)
-
-    def _display_slots(self) -> list[Slot | None]:
-        """Map slot_id 1-5 to the current session's Slot (or None)."""
-        display: list[Slot | None] = [None] * 5
-        for s in self._sorted():
-            if 1 <= s.slot_id <= 5:
-                display[s.slot_id - 1] = s
-        return display
-
-    def _bus_line(self, entry: dict[str, Any], width: int) -> str:
-        fid = str(entry.get("from", "?"))[:12].ljust(12)
-        kind = str(entry.get("kind", "message"))[:5]
-        text = str(entry.get("text", "")).replace("\n", " ")
-        body = f"@{fid} [{kind}] {text}"
-        return f"{_fg(*CLR_BUS)}{_trunc(body, width)}{RST}"
 
     def render(self) -> str:
         W = _console_width()
         inner = W - 4
-        display_slots = self._display_slots()
-        active = [s for s in display_slots if s is not None]
-        bc = _fg(*CLR_BORDER)
+        CLR_A = _fg(80, 220, 120)
+        CLR_D = _fg(255, 80, 80)
+        CLR_H = _fg(200, 220, 255)
+        CLR_B = _fg(55, 58, 78)
+        CLR_DIM = _fg(80, 80, 100)
+        CLR_F = _fg(100, 255, 180)
 
-        def row(content: str) -> str:
-            t = _trunc(content, inner)
-            gap = max(0, inner - _vlen(t))
-            return f"{bc}{BOX_V}{RST} {t}{' ' * gap} {bc}{BOX_V}{RST}"
+        def row(c: str) -> str:
+            t = _trunc(c, inner)
+            return f"{CLR_B}│{RST} {t}{' ' * max(0, inner - len(t) + 20)}"[:W]
 
         lines: list[str] = []
-        lines.append(f"{bc}{BOX_TL}{BOX_H * (W - 2)}{BOX_TR}{RST}")
-
-        # Header (line 2)
-        alive = sum(1 for s in active if s.alive)
-        total_f = sum(s.fissions for s in active)
+        alive = sum(1 for s in self.slots.values() if s.alive)
+        total_f = sum(s.fissions for s in self.slots.values())
         elapsed = time.time() - self._start
-        sess = Path(self._session_dir).name[-15:] if self._session_dir else "waiting…"
-        prof = self._model_profile[:12]
-        prof_tag = (f"{_fg(*CLR_PRI)}{prof}{RST}" if "parallel" in prof
-                    else f"{_fg(*CLR_DIM)}{prof}{RST}")
-        filter_tag = f"{_fg(*CLR_PRI)}filter={self._phase_filter}{RST}" if self._phase_filter != "all" else f"{_fg(*CLR_DIM)}filter=all{RST}"
-        hdr = (f"{BOLD}{_fg(*CLR_HEADER)}REACTOR{RST} {alive}/5 slots  "
-               f"{prof_tag}  "
-               f"{filter_tag}  "
-               f"{_fg(*CLR_FISSION)}F={total_f}{RST}  "
-               f"{_fg(*CLR_DIM)}{sess}{RST}  "
-               f"{self._elapsed(elapsed)}  {time.strftime('%H:%M:%S')}")
+        hdr = f"{BOLD}{CLR_H}REACTOR{RST} {alive}/5  {CLR_F}F={total_f}{RST}  {CLR_DIM}{self._model_profile}{RST}  {elapsed:.0f}s"
+        lines.append(f"{CLR_B}┌{'─' * (W - 2)}┐{RST}")
         lines.append(row(hdr))
-        lines.append(f"{bc}{BOX_ML}{BOX_H * (W - 2)}{BOX_MR}{RST}")
+        lines.append(f"{CLR_B}├{'─' * (W - 2)}┤{RST}")
 
-        # Personas: 5 slots × 5 lines each (header + 2 events + agents + separator) = 25-29
-        # Actually: header + agent_bar + 2 events = 4 lines per slot, + 4 separators = 24 lines
-        for idx, slot in enumerate(display_slots):
-            if slot is None:
-                # Empty slot
-                lines.append(row(f"{_fg(*CLR_DIM)}s{idx+1} {'(empty)':14} ○{RST}"))
-                lines.append(row(f" {_fg(*CLR_DIM)}S P A V F{RST}"))
-                lines.append(row(""))
-                lines.append(row(""))
-            else:
-                # Header line
-                dot = f"{_fg(*CLR_ALIVE)}●{RST}" if slot.alive else f"{_fg(*CLR_DEAD)}○{RST}"
-                persona = (slot.persona or "?")[:14].ljust(14)
-                stag_bar = _bar(slot.stagnation, 4, CLR_STAG)
-                pri = f"P{slot.priority}" if slot.priority > 0 else "  "
-                active = slot.active_agent
-                fiss = f"{_fg(*CLR_FISSION)}F={slot.fissions}{RST}" if slot.fissions else ""
-                prog = self._colony_progress.get(slot.persona or "", {})
-                prog_tag = ""
-                if prog:
-                    prog_phase = str(prog.get("phase", ""))[:10]
-                    prog_goal = str(prog.get("goal", ""))[:28]
-                    if prog_phase or prog_goal:
-                        prog_tag = f" {_fg(*CLR_DATA)}{prog_phase}:{prog_goal}{RST}"
-                header = f"s{slot.slot_id} {persona} {dot} [{_fg(*CLR_PHASE)}{active:10}{RST}]{prog_tag} {stag_bar} {pri} {fiss}"
-                lines.append(row(_trunc(header, inner)))
+        for s in sorted(self.slots.values(), key=lambda x: x.slot_id):
+            dot = f"{CLR_A}●{RST}" if s.alive else f"{CLR_D}○{RST}"
+            persona = (s.persona or "?")[:14].ljust(14)
+            stag = f"stag={s.stagnation:.2f}"
+            ph = s.last_phase[:12] if s.last_phase else "idle"
+            fiss = f"F={s.fissions}" if s.fissions else ""
+            lines.append(row(f"s{s.slot_id} {persona} {dot} {ph:12} {stag} {fiss}"))
+            # Last 2 events
+            skip = {"start", "pressure", "plugin.web_sentinel", "prompt_signature", "schedule"}
+            recent = [e for e in s.events if e.get("phase") not in skip][-2:]
+            for ev in recent:
+                ph_e = str(ev.get("phase", ""))[:10]
+                d = ev.get("d") or {}
+                brief = comms.format_phase_brief(ph_e, d, max_w=inner - 14)
+                lines.append(row(f"  {CLR_DIM}{ph_e:10} {brief}{RST}"))
 
-                # Agent pipeline bar
-                lines.append(row(f" {slot.agent_bar()} {_fg(*CLR_DIM)}stag={slot.stagnation:.2f}{RST}"))
+        lines.append(f"{CLR_B}├{'─' * (W - 2)}┤{RST}")
+        # Bus chat (last 4)
+        chat = comms.read_chat(4)
+        for entry in chat:
+            fid = str(entry.get("from", "?"))[:10]
+            text = str(entry.get("text", "")).replace("\n", " ")[:inner - 14]
+            lines.append(row(f"  @{fid}: {text}"))
+        if not chat:
+            lines.append(row(f"  {CLR_DIM}(bus empty){RST}"))
 
-                # 2 recent events
-                recent = self.recent(slot, 2)
-                for i in range(2):
-                    if i < len(recent):
-                        ev = recent[i]
-                        ph = ev.get("phase", "")[:12].ljust(12)
-                        brief = self._brief(ev.get("phase", ""), ev.get("d") or {}, inner - 16)
-                        lines.append(row(f" {_fg(*CLR_PHASE)}{ph}{RST} {_fg(*CLR_DATA)}{brief}{RST}"))
-                    else:
-                        lines.append(row(""))
-
-            if idx < 4:
-                lines.append(f"{bc}{BOX_SL}{BOX_SH * (W - 2)}{BOX_SR}{RST}")
-
-        # Bus: CHAT (4) + EVENTS (3) = 7 lines → fills layout to TARGET_HEIGHT
-        lines.append(f"{bc}{BOX_ML}{BOX_H * (W - 2)}{BOX_MR}{RST}")
-        lines.append(row(f"{BOLD}{_fg(*CLR_BUS)}CHAT{RST} @mention pings"))
-        chat = self._bus_chat[-3:]
-        for i in range(3):
-            if i < len(chat):
-                lines.append(row(self._bus_line(chat[i], inner)))
-            else:
-                lines.append(row(""))
-        lines.append(row(f"{BOLD}{_fg(*CLR_BUS)}EVENTS{RST}"))
-        events = self._filtered_bus_events()[-2:]
-        for i in range(2):
-            if i < len(events):
-                lines.append(row(self._bus_line(events[i], inner)))
-            else:
-                lines.append(row(""))
-        for summary in self._summary_lines(inner):
-            lines.append(row(summary))
-
-        # Input (3 lines: separator + prompt + help)
-        lines.append(f"{bc}{BOX_ML}{BOX_H * (W - 2)}{BOX_MR}{RST}")
+        lines.append(f"{CLR_B}├{'─' * (W - 2)}┤{RST}")
         cursor = "▌" if int(time.time() * 2) % 2 else " "
-        lines.append(row(f"{_fg(*CLR_INPUT)}@human> {self._input_buf}{cursor}{RST}"))
-        lines.append(row(f"{_fg(*CLR_DIM)}Enter=send  f=filter  1-5=presets  Space=pause  q=quit{RST}"))
-        lines.append(f"{bc}{BOX_BL}{BOX_H * (W - 2)}{BOX_BR}{RST}")
+        lines.append(row(f"{_fg(255, 240, 200)}@human> {self._input_buf}{cursor}{RST}"))
+        lines.append(row(f"{CLR_DIM}Enter=send  Space=pause  q=quit{RST}"))
+        lines.append(f"{CLR_B}└{'─' * (W - 2)}┘{RST}")
 
         while len(lines) < TARGET_HEIGHT:
             lines.append(row(""))
-        lines = lines[:TARGET_HEIGHT]
-        return "\x1b[H" + "\r\n".join(ln + "\x1b[K" for ln in lines) + "\x1b[J"
+        return "\x1b[H" + "\r\n".join(ln + "\x1b[K" for ln in lines[:TARGET_HEIGHT]) + "\x1b[J"
 
-    def recent(self, slot: Slot, n: int) -> list[dict]:
-        """Get last n non-trivial events."""
-        skip = ("start", "pressure", "plugin.web_sentinel", "prompt_signature")
-        return [e for e in slot.events if e.get("phase") not in skip and self._event_visible(e)][-n:]
-
-    def _event_phase(self, ev: dict[str, Any]) -> str:
-        payload = ev.get("payload") if isinstance(ev.get("payload"), dict) else {}
-        return str(ev.get("phase") or payload.get("phase") or payload.get("action") or ev.get("kind", ""))
-
-    def _event_data(self, ev: dict[str, Any]) -> dict[str, Any]:
-        if isinstance(ev.get("d"), dict):
-            return ev["d"]
-        payload = ev.get("payload") if isinstance(ev.get("payload"), dict) else {}
-        return payload
-
-    def _event_visible(self, ev: dict[str, Any]) -> bool:
-        mode = self._phase_filter
-        if mode == "all":
-            return True
-        ph = self._event_phase(ev)
-        d = self._event_data(ev)
-        if mode == "verify":
-            return ph in ("verify", "verifier.error", "fission", "fission.deny")
-        if mode == "breed":
-            return ph.startswith("breed.") or ph in ("mutate", "evolve")
-        if mode == "human":
-            return ph in ("interrupt", "human.decline", "moe.yield") or str(ev.get("from", "")) == "human"
-        if mode == "error":
-            return (
-                "error" in ph
-                or ph == "fission.deny"
-                or (ph in ("actor", "action") and not d.get("ok", True))
-                or (ph == "verify" and d.get("verdict") == "denied")
-            )
-        return True
-
-    def _filtered_bus_events(self) -> list[dict[str, Any]]:
-        return [entry for entry in self._bus_events if self._event_visible(entry)]
-
-    def _long_term_goal(self) -> str:
-        try:
-            return comms.colony_goal_text()[:180]
-        except Exception:
-            return ""
-
-    def _active_human_goal(self) -> str:
-        try:
-            active = comms.human_task_active()
-        except Exception:
-            active = False
-        if not active:
-            return ""
-        for entry in reversed(self._bus_chat):
-            if str(entry.get("from", "")) == "human" and int(entry.get("pri", 0) or 0) >= config.PRI_HUMAN:
-                return str(entry.get("text", ""))[:180]
-        return ""
-
-    def _latest_slot_note(self, attr: str) -> str:
-        for slot in sorted(self.slots.values(), key=lambda s: s._last_n, reverse=True):
-            value = str(getattr(slot, attr, "") or "")
-            if value:
-                return value
-        return ""
-
-    def _summary_lines(self, width: int) -> list[str]:
-        out: list[str] = []
-        long_goal = self._long_term_goal()
-        if long_goal:
-            out.append(f"{_fg(*CLR_FISSION)}GOAL{RST} {_trunc(long_goal, width - 6)}")
-        active_goal = self._active_human_goal()
-        if active_goal:
-            out.append(f"{_fg(*CLR_PRI)}HUMAN active{RST} {_trunc(active_goal, width - 14)}")
-        decline = self._latest_slot_note("last_human_decline")
-        if decline:
-            out.append(f"{_fg(*CLR_PRI)}HUMAN decline{RST} {_trunc(decline, width - 15)}")
-        fission = self._latest_slot_note("last_fission_deny")
-        if fission:
-            out.append(f"{_fg(*CLR_FISSION)}FISSION deny{RST} {_trunc(fission, width - 15)}")
-        return out[-3:]
-
-    def _brief(self, ph: str, d: dict, max_w: int) -> str:
-        if not d:
-            return ""
-        if ph == "plan":
-            rc = d.get("reasoning_chars", 0)
-            extra = f" think={rc}" if rc else ""
-            t = f"mode={d.get('mode', '')} steps={d.get('steps', '')}{extra} {d.get('done_when', '')}"
-        elif ph in ("verifier.error", "planner.error", "reflect.error"):
-            t = f"{d.get('error', '')} {d.get('raw', '')}"
-        elif ph == "interrupt":
-            t = f"⚡ @{d.get('from', '?')} pri={d.get('pri', '')} {d.get('text', '')}"
-        elif ph == "llm_retry":
-            t = f"retry #{d.get('attempt', '')} {d.get('error', '')}"
-        elif ph == "fission":
-            t = f"fissions={d.get('fissions', '')} {d.get('completed', '')}"
-        else:
-            t = comms.format_phase_brief(ph, d, max_w=max_w, style="tui")
-        return _trunc(t.replace("\n", " "), max_w)
-
-    @staticmethod
-    def _elapsed(s: float) -> str:
-        if s < 60:
-            return f"{s:.0f}s"
-        if s < 3600:
-            return f"{s / 60:.1f}m"
-        return f"{s / 3600:.1f}h"
-
-    def _handle_key(self, ch: str) -> bool:
+    def _handle_key(self, ch: str) -> None:
         if ch in ("\r", "\n"):
             text = self._input_buf.strip()
             if text:
                 comms.post("human", "human", text, kind="message", priority=config.PRI_HUMAN)
             self._input_buf = ""
-            return True
-        if ch == "\x08":
+        elif ch == "\x08":
             self._input_buf = self._input_buf[:-1]
-            return True
-        if ch in ("q", "Q", "\x03"):
+        elif ch in ("q", "Q", "\x03"):
             self.running = False
-            return True
-        if ch in ("f", "F") and not self._input_buf:
-            idx = (FILTER_PRESETS.index(self._phase_filter) + 1) % len(FILTER_PRESETS)
-            self._phase_filter = FILTER_PRESETS[idx]
-            return True
-        if ch in ("1", "2", "3", "4", "5") and not self._input_buf:
-            self._phase_filter = FILTER_PRESETS[int(ch) - 1]
-            return True
-        if ch == " " and not self._input_buf:
+        elif ch == " " and not self._input_buf:
             p = BASE_DIR / "pause"
             if p.exists():
                 p.unlink(missing_ok=True)
             else:
                 p.write_text("", encoding="utf-8")
-            return True
-        if len(ch) == 1 and ch.isprintable():
+        elif len(ch) == 1 and ch.isprintable():
             self._input_buf += ch
-            return True
-        return False
 
     def run(self, *, colony_goal: str = "") -> None:
         import log
-        import subprocess
-        import sys
-
+        import subprocess as sp
         log.cleanup_runtime()
         if colony_goal.strip():
             comms.set_colony_goal(colony_goal.strip(), source="human")
-        _w("\x1b[?1049h\x1b[?25l")
-        _w("\x1b]0;endgame-ai · reactor\x07")
-
-        boot = "TUI online. Enter=human message (pri=3 overrides ACTIVE_TASK)."
-        if colony_goal.strip():
-            boot += f" LONG_TERM_GOAL set."
-        comms.post("tui", "tui", boot, kind="beacon")
+        _w("\x1b[?1049h\x1b[?25l\x1b]0;endgame-ai\x07")
+        comms.post("tui", "tui", "TUI online.", kind="beacon")
 
         env = os.environ.copy()
         env["ENDGAME_BOOTSTRAPPED"] = "1"
@@ -631,7 +269,7 @@ class TUI:
             reactor_cmd += ["--model-profile", os.environ["_ENDGAME_MODEL_PROFILE"]]
         if colony_goal.strip():
             reactor_cmd += ["--goal", colony_goal.strip()]
-        self._reactor_proc = subprocess.Popen(reactor_cmd, cwd=str(BASE_DIR), env=env, creationflags=0x08000000)
+        self._reactor_proc = sp.Popen(reactor_cmd, cwd=str(BASE_DIR), env=env, creationflags=0x08000000)
 
         try:
             while self.running:
@@ -639,7 +277,7 @@ class TUI:
                 self._poll()
                 if msvcrt.kbhit():
                     self._handle_key(msvcrt.getwch())
-                _w(SYNC_ON + self.render() + SYNC_OFF)
+                _w(self.render())
                 time.sleep(REFRESH_INTERVAL)
         except KeyboardInterrupt:
             pass
@@ -651,24 +289,12 @@ class TUI:
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(
-        description="Endgame colony TUI — Codex-style: pass a long-term goal as trailing words.",
-        epilog='Example: python tui.py "Evolve plugins until breed.improve survives restart"',
-    )
-    parser.add_argument(
-        "goal",
-        nargs="*",
-        help="Long-term colony goal (Codex /goal). Persists until cleared; TUI pri=3 overrides temporarily.",
-    )
+    import sys
+    parser = argparse.ArgumentParser()
+    parser.add_argument("goal", nargs="*")
     parser.add_argument("--backend", choices=["lmstudio", "acp"], default="lmstudio")
-    parser.add_argument(
-        "--model-profile",
-        type=str,
-        default=config.DEFAULT_MODEL_PROFILE,
-        help=f"LM Studio profile (default: {config.DEFAULT_MODEL_PROFILE})",
-    )
+    parser.add_argument("--model-profile", type=str, default=config.DEFAULT_MODEL_PROFILE)
     args = parser.parse_args()
     os.environ["ENDGAME_BACKEND"] = args.backend
     os.environ["_ENDGAME_MODEL_PROFILE"] = args.model_profile
-    colony_goal = " ".join(args.goal).strip()
-    TUI().run(colony_goal=colony_goal)
+    TUI().run(colony_goal=" ".join(args.goal).strip())

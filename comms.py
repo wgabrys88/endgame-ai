@@ -759,9 +759,9 @@ def format_bus_context(limit: int | None = None, for_agent: str | None = None) -
     return "\n".join(lines)
 
 
+
 def format_phase_brief(phase: str, data: Any, *, max_w: int = 120, style: str = "bus") -> str:
     """One-line phase summary for bus mirror and TUI."""
-    del style
     if not isinstance(data, dict):
         return phase[:max_w]
     for key in ("obs", "evidence", "verdict", "diagnosis", "reason", "error", "to", "next", "action"):
@@ -772,89 +772,7 @@ def format_phase_brief(phase: str, data: Any, *, max_w: int = 120, style: str = 
 
 
 def _brief(phase: str, data: Any) -> str:
-    return format_phase_brief(phase, data, style="bus")
-
-
-def _count_text(counts: Counter[str]) -> str:
-    if not counts:
-        return "none"
-    return " ".join(f"{name}={count}" for name, count in sorted(counts.items()))
-
-
-def format_breeder_evidence(limit: int | None = None) -> str:
-    """Summarize AgentBreeder evidence mirrored to the observation bus."""
-    n = limit or config.BUS_EVENTS_MAX
-    events = read_events(n)
-    breeder: list[dict[str, Any]] = []
-    evolve_counts: Counter[str] = Counter()
-    breed_counts: Counter[str] = Counter()
-    niches: set[str] = set()
-    trial_ids: set[str] = set()
-    for entry in events:
-        kind = str(entry.get("kind", ""))
-        payload = entry.get("payload") if isinstance(entry.get("payload"), dict) else {}
-        action = str(payload.get("action", ""))
-        if kind == KIND_EVOLVE:
-            breeder.append(entry)
-            evolve_counts[action or "unknown"] += 1
-        elif kind == KIND_STATUS and action.startswith("breed."):
-            breeder.append(entry)
-            breed_counts[action] += 1
-        else:
-            continue
-        niche = str(payload.get("niche", ""))
-        if niche:
-            niches.add(niche[:80])
-        trial_id = str(payload.get("trial_id", ""))
-        if trial_id:
-            trial_ids.add(trial_id[:80])
-
-    if not breeder:
-        return "BREEDER EVIDENCE: none in observation bus"
-
-    lines = [f"BREEDER EVIDENCE (last {n} observation events)"]
-    lines.append(f"  evolve: {sum(evolve_counts.values())} {_count_text(evolve_counts)}")
-    lines.append(f"  breed: {sum(breed_counts.values())} {_count_text(breed_counts)}")
-    if niches:
-        lines.append(f"  niches: {len(niches)} " + " ".join(sorted(niches)[:8]))
-    if trial_ids:
-        lines.append(f"  trials: {len(trial_ids)} " + " ".join(sorted(trial_ids)[:6]))
-
-    outcomes = [
-        e for e in breeder
-        if str((e.get("payload") or {}).get("action", "")) in ("breed.improve", "breed.regress", "breed.neutral")
-    ]
-    if outcomes:
-        outcome_counts = Counter(str((e.get("payload") or {}).get("action", "")) for e in outcomes)
-        best_stag = max(float((e.get("payload") or {}).get("stagnation_delta", 0.0) or 0.0) for e in outcomes)
-        best_power = max(float((e.get("payload") or {}).get("power_delta", 0.0) or 0.0) for e in outcomes)
-        total_fissions = sum(int((e.get("payload") or {}).get("fission_delta", 0) or 0) for e in outcomes)
-        repeated = sum(1 for e in outcomes if int((e.get("payload") or {}).get("sample", 0) or 0) > 1)
-        lines.append(
-            f"  selection outcomes: {len(outcomes)} {_count_text(outcome_counts)} "
-            f"best_stagnation_delta={best_stag:.4f} best_power_delta={best_power:.4f} "
-            f"fission_delta_total={total_fissions} repeated_samples={repeated}"
-        )
-        lines.append("  closed_loop: yes")
-    else:
-        lines.append("  closed_loop: waiting_for_selection_outcome")
-
-    lines.append("  latest:")
-    for entry in breeder[-8:]:
-        payload = entry.get("payload") if isinstance(entry.get("payload"), dict) else {}
-        kind = str(entry.get("kind", ""))
-        action = str(payload.get("action", ""))
-        target = str(payload.get("target") or entry.get("to") or "")
-        fitness = payload.get("fitness", "")
-        fit = f" fit={float(fitness):.3f}" if isinstance(fitness, (int, float)) else ""
-        niche = f" niche={str(payload.get('niche', ''))[:60]}" if payload.get("niche") else ""
-        deltas = []
-        for key in ("trial_id", "sample", "stagnation_delta", "power_delta", "fission_delta"):
-            if key in payload:
-                deltas.append(f"{key}={payload.get(key)}")
-        delta = " " + " ".join(deltas) if deltas else ""
-        lines.append(f"    #{entry.get('id')} {kind} {action} @{target}{fit}{niche}{delta}")
-    return "\n".join(lines)
+    return format_phase_brief(phase, data)
 
 
 # --- Actor sandbox API (injected into planner Python subprocesses) ---
@@ -864,35 +782,15 @@ COMMS_DIR = config.BUS_DIR
 PLUGINS_DIR = config.PLUGINS_DIR
 
 
-def _actor_merge_data(kwargs: dict[str, Any]) -> dict[str, Any] | None:
-    data = kwargs.pop("data", None)
-    if not isinstance(data, dict):
-        data = {}
-    for key in ("evidence", "deadline", "target", "ok", "goal",
-                "human_ack", "blocked_by", "suggested_rephrase"):
-        if key in kwargs:
-            data[key] = kwargs.pop(key)
-    return data or None
-
-
-def _actor_normalize_priority(kwargs: dict[str, Any]) -> int | None:
-    for alias in ("priorit", "prio", "pri"):
-        if alias in kwargs:
-            kwargs["priority"] = kwargs.pop(alias)
-            break
-    pri = kwargs.pop("priority", None)
-    return int(pri) if pri is not None else None
-
-
 def bus_id(*_args: Any, **_kwargs: Any) -> str:
     return agent_id()
 
 
 def bus_post(from_id: Any = None, role: str = "colony", text: str = "",
              *args: Any, **kwargs: Any) -> dict[str, Any]:
-    if isinstance(from_id, str) and from_id.startswith("@") and not text:
-        text, from_id = from_id, agent_id()
-    elif from_id is None:
+    if from_id is None or (isinstance(from_id, str) and from_id.startswith("@")):
+        if isinstance(from_id, str) and from_id.startswith("@") and not text:
+            text = from_id
         from_id = agent_id()
     if isinstance(role, str) and role.startswith("@"):
         if not text:
@@ -900,12 +798,16 @@ def bus_post(from_id: Any = None, role: str = "colony", text: str = "",
         role = "colony"
     if args and not text:
         text = str(args[0])
-    target = kwargs.pop("target", None)
-    if target and not text:
-        text = f"@{target}"
-    priority = _actor_normalize_priority(kwargs)
-    data = _actor_merge_data(kwargs)
-    return post(str(from_id), str(role), str(text), priority=priority, data=data)
+    pri = kwargs.pop("priority", kwargs.pop("pri", kwargs.pop("prio", None)))
+    data = kwargs.pop("data", None)
+    if not isinstance(data, dict):
+        data = {}
+    for key in ("evidence", "target", "ok", "goal", "human_ack", "blocked_by", "suggested_rephrase"):
+        if key in kwargs:
+            data[key] = kwargs.pop(key)
+    return post(str(from_id), str(role), str(text),
+                priority=int(pri) if pri is not None else None,
+                data=data or None)
 
 
 def bus_request(from_id: Any = None, to: str = "", text: str = "",
@@ -920,18 +822,15 @@ def bus_request(from_id: Any = None, to: str = "", text: str = "",
     target = kwargs.pop("target", None)
     if target:
         to = str(target)
-    priority = _actor_normalize_priority(kwargs) or 1
+    pri = kwargs.pop("priority", kwargs.pop("pri", 1))
     goal = str(kwargs.pop("goal", "") or "")
-    return request(str(from_id), str(to), str(text), priority=priority, goal=goal)
+    return request(str(from_id), str(to), str(text), priority=int(pri), goal=goal)
 
 
 def bus_route(from_id: Any = None, to: str = "", reason: str = "",
               *args: Any, **kwargs: Any) -> dict[str, Any]:
     if from_id is None:
         from_id = agent_id()
-    kw_reason = kwargs.pop("reason", None)
-    if kw_reason and not reason:
-        reason = str(kw_reason)
     if args:
         if not to:
             to = str(args[0])
@@ -940,11 +839,11 @@ def bus_route(from_id: Any = None, to: str = "", reason: str = "",
     target = kwargs.pop("target", None)
     if target:
         to = str(target)
-    priority = _actor_normalize_priority(kwargs) or 1
+    pri = kwargs.pop("priority", kwargs.pop("pri", 1))
     scores = kwargs.pop("scores", None)
     goal = str(kwargs.pop("goal", "") or "")
-    return route(str(from_id), str(to), str(reason), priority=priority,
-                 scores=scores, goal=goal)
+    return route(str(from_id), str(to), str(kwargs.pop("reason", reason) or reason),
+                 priority=int(pri), scores=scores, goal=goal)
 
 
 # --- CLI ---
@@ -953,42 +852,14 @@ if __name__ == "__main__":
     import sys
     if len(sys.argv) >= 4 and sys.argv[1] == "post":
         from_id = sys.argv[2]
-        data: dict[str, Any] = {}
-        text_parts: list[str] = []
-        args = sys.argv[3:]
-        i = 0
-        while i < len(args):
-            arg = args[i]
-            if arg == "--ack":
-                data["human_ack"] = True
-            elif arg == "--blocked-by" and i + 1 < len(args):
-                i += 1
-                data["blocked_by"] = args[i][:200]
-            elif arg == "--suggest" and i + 1 < len(args):
-                i += 1
-                data["suggested_rephrase"] = args[i][:240]
-            else:
-                text_parts.append(arg)
-            i += 1
-        text = " ".join(text_parts)
+        text = " ".join(sys.argv[3:])
         config.BUS_INJECT_PATH.parent.mkdir(parents=True, exist_ok=True)
         with config.BUS_INJECT_PATH.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps({
-                "from": from_id,
-                "text": text,
-                "kind": KIND_MESSAGE,
-                "data": data,
-            }, ensure_ascii=False) + "\n")
+            fh.write(json.dumps({"from": from_id, "text": text, "kind": KIND_MESSAGE}, ensure_ascii=False) + "\n")
         drain_inject()
         print(f"bus @{from_id}: {text[:120]}")
     elif len(sys.argv) >= 2 and sys.argv[1] == "state":
         for who, st in colony_state().items():
             print(f"@{who}: {st}")
-    elif len(sys.argv) >= 2 and sys.argv[1] == "breeder":
-        try:
-            event_limit = int(sys.argv[2]) if len(sys.argv) >= 3 else config.BUS_EVENTS_MAX
-        except ValueError:
-            event_limit = config.BUS_EVENTS_MAX
-        print(format_breeder_evidence(event_limit))
     else:
         print(format_bus_context(15) or "(bus empty)")
