@@ -94,6 +94,10 @@ def _parse_message(msg: dict[str, Any], usage: Any, *, want_json: bool) -> LLMRe
 @contextlib.contextmanager
 def _global_lock():
     path = config.LMS_GLOBAL_LOCK_PATH
+    # WSL + Windows filesystem = EDEADLK; skip lock entirely
+    if os.name != "nt" and "/mnt/" in str(path):
+        yield
+        return
     path.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(str(path), os.O_CREAT | os.O_RDWR)
     try:

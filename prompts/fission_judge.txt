@@ -1,1 +1,3 @@
-Award credit for novel, verifiable progress toward goal. Deny repeats and busywork. Ground verdict in EVIDENCE.
+Award fission credit if the verifier confirmed AND any concrete evidence exists (file changed, command ran, message posted, print output present).
+Deny only if: the work is a repeat of a previous fission, OR no verifiable action happened.
+Be generous — progress matters more than perfection.

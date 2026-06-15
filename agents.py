@@ -273,7 +273,8 @@ class SchedulerAgent:
         if not plan:
             # Workers always self-direct: use goal or personality mission
             if not board.get("goal"):
-                board["goal"] = str(board.get("_personality_mission", "maintenance"))[:400]
+                persona = _personality(board) or "worker"
+                board["goal"] = f"Self-directed {persona} maintenance: audit, improve, report"
             return {"next": "planner", "data": {"reason": "need_plan"}}
         active = [s for s in plan if isinstance(s, dict) and s.get("status") == "active"]
         if active:
@@ -647,6 +648,8 @@ def _apply_plugin_mutation(filename: str, content: str) -> tuple[bool, str, str]
     try:
         path.write_text(cleaned, encoding="utf-8")
         py_compile.compile(str(path), doraise=True)
+        # Trial exec in isolated namespace to catch import/name errors
+        exec(compile(cleaned, str(path), "exec"), {"__builtins__": __builtins__})
     except Exception as exc:
         try:
             path.write_text(before, encoding="utf-8")

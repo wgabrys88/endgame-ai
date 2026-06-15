@@ -1,10 +1,26 @@
-import datetime
-from .comms_beacon import send_comm
+"""Fission memory - plugin-local state only."""
+
+
 def run(board):
-    if board.state == "active":
-        fission_log(board)
-        audit_results = {"diagnosis": "Audit completed", "suggestion": "Provide step results", "rule": "Audit must be completed before reporting"}
-        with open("audit_log.txt","a") as f:
-            f.write(f"{datetime.datetime.now()}: {audit_results}\n")
-    else:
-        send_comm(board, "idle")
+    fissions = int(board.get("fissions", 0) or 0)
+    state = board.get("_plugin_fission_log", {})
+    previous = int(state.get("last_fissions", -1) or -1)
+    if fissions <= previous:
+        return None
+    power = float(board.get("power", 0) or 0)
+    stagnation = float(board.get("stagnation", 0) or 0)
+    return {
+        "writes": {
+            "_plugin_fission_log": {
+                "last_fissions": fissions,
+                "power": power,
+                "stagnation": stagnation,
+            }
+        },
+        "phase": "plugin.fission_log",
+        "data": {
+            "fissions": fissions,
+            "power": round(power, 4),
+            "stagnation": round(stagnation, 4),
+        },
+    }
