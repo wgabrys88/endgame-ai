@@ -2,7 +2,7 @@
 
 **Only tracked doc.** Provider-agnostic handover for any AI with zero prior context.
 
-**Repo:** `unify-rewrite` (trunk) · **HEAD:** `pending` · **`main`** = scale-1 reference only
+**Repo:** `unify-rewrite` (trunk) · **HEAD:** `5fc1a92` · **`main`** = scale-1 reference only
 
 ---
 
@@ -29,7 +29,7 @@ HEAD: pending → will update after push.
 - [ ] Trim engine.py — simplify MoE to match paper (deferred: already lean at 320 LOC)
 - [x] Final LOC count + compile check
 - [x] 5-minute live run via PowerShell, evaluate results
-- [ ] Update OBSERVATIONS.md HEAD, push final
+- [x] Update OBSERVATIONS.md HEAD, push final
 
 ---
 
