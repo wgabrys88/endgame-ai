@@ -1,0 +1,7 @@
+REACTOR | mode=unicore | 1 slot(s) | profile=nemotron
+  goal: open calculator, add two numbers, and get the result copied from the calculator into the notepad, sa
+  session: C:\Users\px-wjt\Downloads\endgame-ai\sessions\20260615_214236
+  ablation: C:\Users\px-wjt\Downloads\endgame-ai\runtime\ablation\20260615_194236_unicore_phase0-calc-notepad
+  s1: generalist PID=10864
+
+REACTOR ONLINE. 1 slots loaded.
