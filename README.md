@@ -34,6 +34,8 @@ Read this table before touching code.
 4. **Do not merge personality mutation with planner mutation** — hierarchical mutators are the target (Part 11).
 5. **Preserve mermaid diagrams** when editing this file.
 6. **Ask before force-pushing** or rewriting git history.
+7. **Part 1.0 is law** — unconstrained production organism on end-user machines; never defang into a toy.
+8. **New sessions** — human pastes Appendix P first message before any work.
 
 ## Owner mission (confirmed 2026-06-15)
 
@@ -46,6 +48,34 @@ Read this table before touching code.
 | **CPU analogy** | Must work unicore (one rod / time-sliced) **and** multicore (colony parallel); parallel is nice-to-have, unicore is mandatory |
 | **Evolution unconstrained** | System may evict personas, respawn with different models — allow both implementations |
 | **Prove by science** | Ablation before scaling; simplify if colony loses to strong single-rod baseline |
+| **Production organism** | Not a lab toy — software that **lives on end-user machines** and does **real work** (see Part 1.0) |
+| **Unconstrained by design** | No artificial safety cage inside the organism; user accepts full machine control when they install it |
+
+---
+
+# Part 1.0 — Production doctrine (non-negotiable)
+
+endgame-ai is **not** an experiment to admire and abandon. It is being built to **ship to real users** who knowingly accept an **unconstrained** desktop organism on their own computer.
+
+## What “unconstrained” means in practice
+
+- The organism can use **mouse, keyboard, filesystem, shell, git, and its own source code** — the same powers you have at the desk.
+- There is **no internal policy layer** pretending to be morality or “helpful refusal.” The constraint model is: **the human installed it; the human is responsible.**
+- Think **business operations** or **military command system**, not chatbot demo: long-running, mission-oriented, pressure-driven, self-healing, self-modifying.
+- “Because of no constraints” is intentional: constraints would turn it into a toy. Power is the product.
+
+## What “real work” means in practice
+
+- Open apps, fill forms, manage files, commit code, fix its own bugs, run for hours/days without hand-holding.
+- Runs on **user hardware** with **local LM Studio** (e.g. ~4B Nemotron) — slow but free, no cloud rent.
+- Must be **reliable enough to trust on a daily machine**, not only impressive in a screen recording.
+
+## What this does NOT mean
+
+- Ablation and README discipline are still required — science is how we avoid shipping **useless** complexity, not how we defang the organism.
+- Unconstrained ≠ sloppy engineering. Slots, bus, verifier, and breeder exist to make **unconstrained power survivable**, not to revoke it.
+
+**Every human and AI contributor must follow this doctrine.** If a proposed change makes the system more “safe” by making it unable to do real desktop/repo work, it violates the spec.
 
 ---
 
@@ -1038,6 +1068,7 @@ def run(board):
 6. **Unicore always works** — multicore is feature
 7. **Prove or simplify** — ablation before faith
 8. **Eternal re-planning** — completion is input to next cycle, not termination
+9. **Unconstrained production** — real user machine, real work; no toy safety theater (Part 1.0)
 
 ---
 
@@ -1405,6 +1436,8 @@ When starting a new session:
 | Mutator split? | Local = actor/verifier; global = planner-mutator persona |
 | Experiment branch? | Tag preserved; not active line |
 | README role? | Single bootstrap doc merging report + audit + decisions |
+| Production vs toy? | **Production** — lives on end-user PCs; unconstrained by design (Part 1.0) |
+| User accepts risk? | Yes — install = user responsibility; no internal refusal cage |
 
 ---
 
@@ -1465,13 +1498,17 @@ All circuits receive `_personality_system(board)` as LLM system prompt — the c
 
 **Purpose:** The README above is sufficient for orientation and research context. A precise **implementation plan** requires your choices on the forks below. Fill in the `Owner answer:` lines (edit this file directly, or reply in a session and ask an agent to record answers here).
 
-**Already decided — do not re-answer** (see Part 34): both desktop + repo mission; unicore + multicore required; eternal organism; ablation before faith; hierarchical mutator direction; experiment tag archived.
+**Already decided — do not re-answer** (see Part 34 + Part 1.0): both desktop + repo mission; unicore + multicore required; eternal organism; ablation before faith; hierarchical mutator direction; experiment tag archived; **production unconstrained organism on end-user machines**.
 
 **After you answer:** Next session should read this appendix + your answers and produce a concrete implementation plan (Phase 0–5 tasks, ordered, with acceptance criteria).
+
+Each question has an **In practice** line — plain language for what you are actually choosing.
 
 ---
 
 ## O.1 — Planner-mutator slot topology
+
+**In practice:** When the system wants to evolve *how roles think* (planner prompts), should that run as another always-on background process, share time with the human-facing operator, or only run as an offline “breeding session” you trigger manually?
 
 Where should the **dedicated planner-mutator persona** run?
 
@@ -1488,6 +1525,8 @@ Where should the **dedicated planner-mutator persona** run?
 
 ## O.2 — Reviewer independence enforcement
 
+**In practice:** Today the “reviewer” rod can still click and edit like implementor — only the prompt says not to. Do you want honor-system prompts only, or hard code that **blocks** reviewer from executing fixes (so false “I fixed it” successes are impossible)?
+
 How strictly should reviewer be verify-only?
 
 | Option | Description |
@@ -1501,6 +1540,8 @@ How strictly should reviewer be verify-only?
 ---
 
 ## O.3 — Single-rod baseline persona (ablation A)
+
+**In practice:** Before claiming “5 rods are better,” we need one strong **solo** setup to compare against. Which single-rod personality/prompt setup is the fairest “one CPU core” champion — the implementor, a new generalist, or bare planner with no persona?
 
 What is the **strongest unicore baseline** for fair comparison against the colony?
 
@@ -1517,6 +1558,8 @@ What is the **strongest unicore baseline** for fair comparison against the colon
 
 ## O.4 — Planner-mutator edit scope
 
+**In practice:** When the slow “evolve how planners think” loop runs, what files is it allowed to touch — only per-role personality text, the shared planner instructions everyone inherits, routing numbers in config, or some combination?
+
 What may the planner-mutator persona change when it proposes patches?
 
 | Option | Description |
@@ -1532,6 +1575,8 @@ What may the planner-mutator persona change when it proposes patches?
 ---
 
 ## O.5 — Merge to `main` success criterion
+
+**In practice:** What counts as “ready for real users on `main`” — a spreadsheet of benchmark percentages, your gut feeling after two weeks of daily use, ship unicore first and colony later, or run two product lines forever?
 
 When is `merge-prep` ready to merge into `main`?
 
@@ -1550,6 +1595,8 @@ If **A**, specify: N = ___% , M = ___× tokens, minimum task count = ___
 
 ## O.6 — Pure-Python signal API (`experiment-pure-python-20260615`)
 
+**In practice:** Right now rods speak JSON (`{"mode":"direct","sequence":[...]}`). The archived experiment had them emit Python function calls instead (`route()`, `add_step()`). When — if ever — should we switch the live product to that style?
+
 When should JSON circuits migrate to Python signal functions (`route`, `add_step`, …)?
 
 | Option | Description |
@@ -1564,6 +1611,8 @@ When should JSON circuits migrate to Python signal functions (`route`, `add_step
 ---
 
 ## O.7 — Default production mode
+
+**In practice:** When a normal user double-clicks or runs `python tui.py "..."` with no extra flags, should they get **one rod** (simpler, one LLM) or **five rods** (colony, five LLMs)? This sets the “factory default” experience on end-user machines.
 
 What should `tui.py` default to for daily use?
 
@@ -1580,6 +1629,8 @@ What should `tui.py` default to for daily use?
 
 ## O.8 — Long-horizon colony goal ownership
 
+**In practice:** Besides your immediate commands, the colony can follow a long-term direction stored in `colony_goal.txt` (e.g. “keep repo healthy”). Who is allowed to change that file — only you, the comms operator when bored, or the planner-mutator after testing a proposed change?
+
 Who may write or update `runtime/colony_goal.txt`?
 
 | Option | Description |
@@ -1594,6 +1645,8 @@ Who may write or update `runtime/colony_goal.txt`?
 ---
 
 ## O.9 — Phase 0 ablation task list (your real work)
+
+**In practice:** Forget academic benchmarks for a moment — list real chores you do weekly on this PC (email apps, Excel, games, git, backups, whatever). Phase 0 success means the organism handles **your** list, because that is what “production on end-user machine” means for you first.
 
 List **5–10 tasks you actually do on this computer** that Phase 0 must test. Be specific (app names, file paths, habits). These become the primary holdout — more important than OSWorld.
 
@@ -1621,6 +1674,8 @@ Example format:
 
 ## O.10 — Model strategy (4B Nemotron class)
 
+**In practice:** LM Studio might load one small model or several. Should every slot use the same ~4B weights, allow one bigger model when running unicore, or plan for different models per slot (architect gets smarter model, devops gets tiny one, etc.)?
+
 How should models be assigned across slots?
 
 | Option | Description |
@@ -1635,6 +1690,8 @@ How should models be assigned across slots?
 ---
 
 ## O.11 — `quality_critic` persona role
+
+**In practice:** When a rod is stuck, the system sometimes escalates to `quality_critic` — a sixth personality that exists in code but does not have its own permanent desk (slot). Should it stay as emergency backup, replace reviewer, merge into reviewer, or become a full-time sixth rod?
 
 `quality_critic` exists in pool but is not a default slot. What is its long-term role?
 
@@ -1651,6 +1708,8 @@ How should models be assigned across slots?
 
 ## O.12 — Bus verbosity during transition
 
+**In practice:** The target is “only planners post on the blackboard,” but today everyone chatters. When we tighten that, do you want an instant hard rule, a gentle two-step rollout, log-only rehearsal first, or wait until tests prove chatter hurts?
+
 While migrating to planner-only bus, what is acceptable interim behavior?
 
 | Option | Description |
@@ -1665,6 +1724,8 @@ While migrating to planner-only bus, what is acceptable interim behavior?
 ---
 
 ## O.13 — Human interrupt behavior during evolution
+
+**In practice:** You type a new urgent task while the system is halfway through rewriting a prompt or plugin. Should it drop the rewrite immediately (today’s behavior), finish rewrite in the background, or always sandbox rewrites so interrupts do not matter?
 
 When a human injects a new goal while mutator/planner-mutator is mid-patch, what should happen?
 
@@ -1681,6 +1742,8 @@ When a human injects a new goal while mutator/planner-mutator is mid-patch, what
 
 ## O.14 — Implementation plan output format (next session)
 
+**In practice:** After you fill Appendix O, where do you want the step-by-step build schedule written — new section in this README, separate file, GitHub issues, or README section plus checkboxes in the roadmap?
+
 When answers above are filled, how should the next session deliver the plan?
 
 | Option | Description |
@@ -1696,6 +1759,8 @@ When answers above are filled, how should the next session deliver the plan?
 
 ## O.15 — Anything else
 
+**In practice:** Anything the questionnaire missed — fears about unconstrained deployment, install experience, “never touch X,” legal worries, performance floors, or README errors.
+
 Free text: constraints, fears, non-negotiables, or things the README still gets wrong.
 
 **Owner answer:**
@@ -1706,10 +1771,89 @@ Free text: constraints, fears, non-negotiables, or things the README still gets 
 
 | Section | Status |
 |---------|--------|
-| O.1 – O.14 | ☐ unanswered — fill `Owner answer:` lines |
+| O.1 – O.15 | ☐ unanswered — fill `Owner answer:` lines |
 | Part 34 (prior decisions) | ☑ recorded |
-| Ready for implementation plan | ☐ after O.1–O.14 answered (O.9 required minimum) |
+| Part 1.0 (production doctrine) | ☑ recorded |
+| Ready for implementation plan | ☐ after O.1–O.15 answered (O.9 required minimum) |
 
 ---
 
-*This README merges the architecture research synthesis (formerly `deep-research-report.md`), honest code audit of `merge-prep`, and owner decisions into one bootstrap document. All mermaid diagrams from the research report are preserved in Parts 6, 9, 14. Open decisions: Appendix O. When in doubt, run ablation first.*
+# Part 39 — Appendix P: First message to paste into any AI coding agent
+
+Copy everything inside the fenced block below as your **first message** in a new session (Cursor, Claude Code, Copilot, etc.). It forces full README ingestion before any code changes.
+
+**How to use:**
+
+1. Open new agent session in the `endgame-ai` repo on branch `merge-prep`.
+2. Paste the entire block verbatim.
+3. Wait until the agent completes the **Readiness checklist** without skipping items.
+4. If Appendix O is still empty, answer questions yourself or tell the agent your choices — then ask it to write **Part 40: Implementation plan**.
+
+---
+
+```text
+You are joining the endgame-ai project. STOP — do not write or change code yet.
+
+═══════════════════════════════════════════════════════════════
+MANDATORY BOOTSTRAP PROTOCOL
+═══════════════════════════════════════════════════════════════
+
+STEP 1 — READ README.md IN FULL (no shortcuts)
+• Open README.md at the repository root.
+• This file is ~1,700+ lines. You MUST read ALL of it.
+• Read in order: Part 0 through Part 39, including every appendix.
+• If your context window is limited, read in chunks (Part 0–10, 11–20, 21–30, 31–39) and merge mentally — do NOT skip appendices.
+• Also skim deep-research-report.md only if README references something you need in more detail.
+
+STEP 2 — VERIFY YOU ACTUALLY READ IT (prove comprehension)
+Before any implementation, output a "Readiness checklist" with ALL items below answered in your own words (not copy-paste). Each item must cite README Part number(s).
+
+[ ] Part 1.0 — State the production doctrine in one paragraph: unconstrained, end-user machine, real work, not a toy.
+[ ] Part 0 — Active branch, tags, top 3 rules for agents.
+[ ] Part 2 — Why colony is NOT assumed superior; what ablation ladder means.
+[ ] Part 3 — Name the #1 mutator gap in current code (file/function level).
+[ ] Part 6 — What "planner-only bus" means in practice.
+[ ] Part 9 — Fast vs slow adaptation loops (which papers map to which).
+[ ] Part 11 — List all known gaps from the audit table (at least 6).
+[ ] Part 14 — Phase 0 checklist items.
+[ ] Part 21 — All immutable design principles (including #9).
+[ ] Part 34 + Appendix O — Which decisions are already made vs still open.
+[ ] Appendix O — If Owner answer fields are blank, STOP and ask the human to fill O.9 minimum before an implementation plan.
+
+STEP 3 — INTERNET / CODE (only after Step 2)
+• Use web search ONLY to verify papers or tools README cites — not to redesign architecture.
+• Read actual code files README names for the task you are given — do not trust README alone for line-level truth.
+• Branch must be merge-prep unless human says otherwise.
+
+STEP 4 — NON-NEGOTIABLE DOCTRINE (repeat back to human)
+Confirm you will follow:
+1. endgame-ai is an UNCONSTRAINED production organism for REAL USER machines — not a sandboxed demo.
+2. Unicore AND multicore must both remain supported (CPU analogy).
+3. Colony must EARN its keep via ablation — no faith-based parallelism.
+4. Hierarchical mutators: local = actor/verifier only; global = planner-mutator persona.
+5. Do not add safety cages that prevent real desktop/repo work — engineering discipline ≠ defanging.
+
+STEP 5 — WHAT YOU MAY DO AFTER CHECKLIST
+• If human asked for implementation plan: produce Part 40 outline from README + filled Appendix O answers.
+• If human asked for code: only tasks aligned with Phase 0–5 in Part 14, respecting gaps in Part 11.
+• If human asked to edit README: preserve mermaid diagrams; keep Part 1.0 and Appendix P intact.
+
+FORBIDDEN BEFORE CHECKLIST COMPLETE:
+✗ Writing code
+✗ Proposing architecture that ignores Part 1.0
+✗ Assuming 5-slot colony is better than unicore
+✗ Merging patch_prompt personality changes as "fix"
+✗ Summarizing README from memory without reading it this session
+
+Begin now with STEP 1. When finished reading, output STEP 2 Readiness checklist only. Wait for human confirmation before coding.
+```
+
+---
+
+### Why this prompt exists
+
+Long READMEs are often skimmed or hallucinated from training data. Appendix P requires **chunked full read**, **comprehension proof**, and **explicit doctrine repeat-back** before any code — matching how the owner wants every future session to start.
+
+---
+
+*This README merges the architecture research synthesis (formerly `deep-research-report.md`), honest code audit of `merge-prep`, and owner decisions into one bootstrap document. All mermaid diagrams from the research report are preserved in Parts 6, 9, 14. Open decisions: Appendix O. First agent message: Appendix P. Production doctrine: Part 1.0. When in doubt, run ablation first.*
