@@ -243,7 +243,7 @@ def request(from_id: str, to: str, text: str, *, priority: int = config.PRI_NORM
     target = canonical(to)
     payload: dict[str, Any] = {"to": target, "status": "open"}
     if goal:
-        payload["goal"] = goal[:200]
+        payload["goal"] = goal[:config.GOAL_TEXT_MAX]
     entry = envelope(
         from_id, KIND_REQUEST,
         text=f"@{target} {text}".strip(),
@@ -264,7 +264,7 @@ def route(from_id: str, to: str, reason: str, *, priority: int = config.PRI_NORM
     if scores:
         payload["scores"] = scores
     if goal:
-        payload["goal"] = goal[:200]
+        payload["goal"] = goal[:config.GOAL_TEXT_MAX]
     if escalate:
         payload["escalate"] = True
     if slot:
@@ -346,7 +346,7 @@ def apply_interrupt(board: dict[str, Any]) -> dict[str, Any] | None:
     return None
 def post_progress(from_id: str, *, goal: str = "", step: str = "", phase: str = "") -> dict[str, Any]:
     """Colony-wide progress snapshot (pri=0, not an interrupt)."""
-    payload = {"progress": True, "goal": goal[:200], "step": step[:200], "phase": phase[:32]}
+    payload = {"progress": True, "goal": goal[:config.GOAL_TEXT_MAX], "step": step[:200], "phase": phase[:32]}
     text = f"progress {phase or step or 'update'}"
     if goal:
         text += f" goal={goal[:80]}"
@@ -360,7 +360,7 @@ def maintenance_goal_text() -> str:
     """MoE assignment text when no human pri=3 task is active."""
     goal = colony_goal_text()
     if goal:
-        return f"Work toward long-term goal: {goal[:400]}"
+        return f"Work toward long-term goal: {goal[:config.GOAL_TEXT_MAX]}"
     return "Colony maintenance: audit and report on bus"
 def set_colony_goal(text: str, *, source: str = "operator") -> dict[str, Any]:
     """Persist Codex-style long-term goal; broadcast to colony (pri=2, not interrupt)."""
@@ -373,7 +373,7 @@ def set_colony_goal(text: str, *, source: str = "operator") -> dict[str, Any]:
             source, "colony",
             f"@colony LONG_TERM_GOAL: {body[:200]}",
             priority=config.PRI_CRITICAL,
-            data={"colony_goal": True, "goal": body[:800]},
+            data={"colony_goal": True, "goal": body[:config.GOAL_TEXT_MAX]},
         )
         post_progress(source, goal=body[:200], step="goal set", phase="colony_goal")
         return entry

@@ -1,6 +1,7 @@
 Under pressure: choose ONE action:
   patch_plugin — rewrite an existing plugins/*.py file (must have def run(board))
-  patch_prompt — rewrite YOUR personality prompt (use ELITE_DNA for crossover if provided)
+  patch_prompt — disabled during Phase 0 measurement unless config explicitly allows it
   none — no mutation needed
-For patch_plugin: filename = "plugins/x.py", content = full Python source.
-For patch_prompt: content = the full new prompt text for your persona.
+For patch_plugin: filename must be one of the PLUGINS listed in TASK_STATE, content = full Python source.
+Never invent placeholder or new plugin filenames during a task run.
+For patch_prompt: return none during Phase 0; planner/persona prompt evolution is a later hierarchical mutator task.

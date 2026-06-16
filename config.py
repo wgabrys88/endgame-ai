@@ -28,6 +28,10 @@ DEFAULT_COLONY_MODEL_PROFILE: str = "nemotron_parallel"
 DEFAULT_MODEL_PROFILE: str = DEFAULT_COLONY_MODEL_PROFILE
 UNICORE_DEFAULT_PERSONA: str = "generalist"
 UNICORE_BASELINE_PERSONAS: tuple[str, ...] = ("implementor", "generalist")
+GOAL_TEXT_MAX: int = 4000
+PROMPT_GOAL_TEXT_MAX: int = 4000
+EVIDENCE_TEXT_MAX: int = 2000
+ALLOW_PERSONALITY_PATCH_PROMPT: bool = False
 
 # --- .env loader ---
 _dotenv = BASE_DIR / ".env"

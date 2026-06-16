@@ -264,6 +264,12 @@ def _script_runner(code: str) -> str:
         f"ENDGAME_WORKSPACE = Path(r'{workspace}')\n"
         "ENDGAME_USER_HOME = Path(os.environ.get('USERPROFILE') or Path.home())\n"
         "ENDGAME_DESKTOP = ENDGAME_USER_HOME / 'Desktop'\n\n"
+        "def endgame_open_app(command):\n"
+        "    return subprocess.Popen(str(command), shell=True)\n\n"
+        "def endgame_set_clipboard(text):\n"
+        "    subprocess.run(['powershell', '-NoProfile', '-Command', 'Set-Clipboard -Value ([Console]::In.ReadToEnd())'], input=str(text), text=True, check=True)\n\n"
+        "def endgame_get_clipboard():\n"
+        "    return subprocess.run(['powershell', '-NoProfile', '-Command', 'Get-Clipboard'], capture_output=True, text=True, check=True).stdout.rstrip('\\n')\n\n"
         f"{code}\n"
     )
 def run_python(code: str) -> ActionResult:

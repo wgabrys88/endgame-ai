@@ -40,7 +40,7 @@ _CIRCUIT_HINTS: dict[str, str] = {
     "planner": '{"mode":"direct"|"done","sequence":[{"code":"python with print()"}],"done_when":"measurable outcome"}',
     "verifier": '{"verdict":"confirmed"|"denied","evidence":"what step results prove"}',
     "reflector": '{"diagnosis":"...","suggestion":"...","rule":"..."}',
-    "mutator": '{"action":"patch_plugin"|"patch_prompt"|"none","filename":"plugins/x.py","content":"full source or prompt text"}',
+    "mutator": '{"action":"patch_plugin"|"patch_prompt"|"none","filename":"plugins/existing_name.py","content":"full source or prompt text"}',
     "fission_judge": '{"verdict":"credit"|"deny","diagnosis":"...","suggestion":"...","rule":""}',
     "actor": '{"actions":[{"verb":"click|focus|write|press|hotkey|scroll","target":"[id]","value":""}],"conclusion":"EXECUTE"|"DONE"|"CANNOT"}',
 }
@@ -192,10 +192,10 @@ def _active_claims() -> str:
             kind, payload = str(e.get("kind", "")), e.get("payload") if isinstance(e.get("payload"), dict) else {}
             if kind == comms.KIND_ROUTE and str(e.get("from", "")) == "comms_operator":
                 t = str(e.get("to", ""))
-                if t: claims[t] = (str(payload.get("goal", "")) or str(e.get("text", "")))[:120]
+                if t: claims[t] = (str(payload.get("goal", "")) or str(e.get("text", "")))[:500]
             elif kind == comms.KIND_EVENT and payload.get("phase") == "plan":
                 who = str(e.get("from", ""))
-                if who: claims[who] = str(payload.get("done_when", ""))[:120] or claims.get(who, "")
+                if who: claims[who] = str(payload.get("done_when", ""))[:500] or claims.get(who, "")
         if not claims: return ""
         return "OTHERS WORKING ON (do not duplicate):\n" + "\n".join(f"  @{w}: {t}" for w, t in claims.items())
     except Exception:
@@ -204,9 +204,10 @@ def _active_claims() -> str:
 def _planner_state(board: dict[str, Any]) -> str:
     persona = _personality(board)
     stag = float(board.get("stagnation", board.get("_pressure", {}).get("stagnation", 0)) or 0)
-    parts = [f"ROD: {persona or 'default'}", f"ACTIVE_TASK: {str(board.get('goal', ''))[:800] or '(idle)'}"]
+    goal_text = str(board.get("goal", ""))
+    parts = [f"ROD: {persona or 'default'}", f"ACTIVE_TASK: {goal_text[:config.PROMPT_GOAL_TEXT_MAX] or '(idle)'}"]
     try:
-        lt = __import__("comms").colony_goal_text()[:600]
+        lt = __import__("comms").colony_goal_text()[:config.PROMPT_GOAL_TEXT_MAX]
         if lt: parts.append(f"LONG_TERM_GOAL: {lt}")
     except Exception: pass
     parts.append(f"PRESSURE: stag={stag:.3f} pwr={float(board.get('power', 1.0 - stag) or 0):.3f}")
@@ -304,9 +305,9 @@ def _verify_outcome(
     if ok:
         board["plan"] = []
         board.setdefault("completed", []).append(done_when)
-        board["_last_verified_goal"] = str(board.get("goal", ""))[:400]
+        board["_last_verified_goal"] = str(board.get("goal", ""))[:config.PROMPT_GOAL_TEXT_MAX]
         board["_last_verified_priority"] = board.get("priority", config.PRI_MAINTENANCE)
-        board["_last_verifier_evidence"] = evidence[:400]
+        board["_last_verifier_evidence"] = evidence[:config.EVIDENCE_TEXT_MAX]
         if board.get("priority", config.PRI_MAINTENANCE) >= config.PRI_HUMAN:
             _restore_after_human_task(board)
         data: dict[str, Any] = {"verdict": "confirmed", "evidence": evidence}
@@ -379,7 +380,7 @@ class PlannerAgent:
         sequence = _normalize_plan_sequence(parsed.get("sequence", []))
         if not sequence:
             return {"phase": "planner.error", "data": _llm_event_data(llm_out, {"error": "empty sequence"})}
-        done_when = str(parsed.get("done_when", "")).strip() or goal[:200]
+        done_when = str(parsed.get("done_when", "")).strip() or goal[:1000]
         steps = _plan_steps(sequence)
         writes: dict[str, Any] = {"plan": steps, "done_when": done_when}
         if _personality(board) == "comms_operator":
@@ -481,7 +482,7 @@ class VerifierAgent:
         if not done_when:
             return {"phase": "verify", "data": {"verdict": "confirmed", "evidence": "no done_when set"}}
         plan = board.get("plan", [])
-        results = [str(s.get("result", ""))[:400] for s in plan if isinstance(s, dict)]
+        results = [str(s.get("result", ""))[:config.EVIDENCE_TEXT_MAX] for s in plan if isinstance(s, dict)]
         llm_out = _call_circuit(
             board,
             "verifier",
@@ -492,7 +493,7 @@ class VerifierAgent:
         if not parsed:
             return _verify_outcome(board, done_when, False, "verifier returned invalid JSON", llm_out=llm_out)
         verdict = str(parsed.get("verdict", "denied")).lower()
-        evidence = str(parsed.get("evidence", ""))[:400] or str(llm_out.text)[:200]
+        evidence = str(parsed.get("evidence", ""))[:config.EVIDENCE_TEXT_MAX] or str(llm_out.text)[:config.EVIDENCE_TEXT_MAX]
         return _verify_outcome(board, done_when, verdict == "confirmed", evidence, llm_out=llm_out)
 class FissionJudgeAgent:
     def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
@@ -544,19 +545,19 @@ class ReflectorAgent:
             board,
             "reflector",
             (
-                f"GOAL: {str(board.get('goal', ''))[:400]}\n"
+                f"GOAL: {str(board.get('goal', ''))[:config.PROMPT_GOAL_TEXT_MAX]}\n"
                 f"PRESSURE: failures={int(pressure.get('failures', 0) or 0)} "
                 f"stag={float(pressure.get('stagnation', 0) or 0):.3f}\n"
-                f"DENIED: {str(last_denial.get('denied', ''))[:400]}\n"
-                f"EVIDENCE: {str(last_denial.get('reason', ''))[:600]}\n"
+                f"DENIED: {str(last_denial.get('denied', ''))[:config.EVIDENCE_TEXT_MAX]}\n"
+                f"EVIDENCE: {str(last_denial.get('reason', ''))[:config.EVIDENCE_TEXT_MAX]}\n"
                 "Reflect JSON:"
             ),
             role="reflector",
         )
         parsed = _parse_json(llm_out.text) or {}
         reflection = {
-            "diagnosis": str(parsed.get("diagnosis", last_denial.get("reason", "verify denied")))[:400],
-            "suggestion": str(parsed.get("suggestion", "simplify next plan"))[:400],
+            "diagnosis": str(parsed.get("diagnosis", last_denial.get("reason", "verify denied")))[:config.EVIDENCE_TEXT_MAX],
+            "suggestion": str(parsed.get("suggestion", "simplify next plan"))[:config.EVIDENCE_TEXT_MAX],
             "rule": str(parsed.get("rule", ""))[:200],
         }
         writes = {"plan": [], "history": history[-config.MAX_HISTORY:] + [{"reflection": reflection}], "reflection": reflection}
@@ -579,8 +580,8 @@ class MutatorAgent:
             board,
             "mutator",
             (
-                f"GOAL: {str(board.get('goal', ''))[:400]}\n"
-                f"REFLECTION: {json.dumps(reflection, ensure_ascii=False)[:700]}\n"
+                f"GOAL: {str(board.get('goal', ''))[:config.PROMPT_GOAL_TEXT_MAX]}\n"
+                f"REFLECTION: {json.dumps(reflection, ensure_ascii=False)[:config.EVIDENCE_TEXT_MAX]}\n"
                 f"PLUGINS: {', '.join(plugin_names) or 'none'}\n"
                 f"{elite_dna}"
                 f"{_format_history(board.get('history', []))}\n"
@@ -591,6 +592,15 @@ class MutatorAgent:
         parsed = _parse_json(llm_out.text) or {}
         action = str(parsed.get("action", "none"))
         if action == "patch_prompt":
+            if not config.ALLOW_PERSONALITY_PATCH_PROMPT:
+                return {
+                    "phase": "mutate",
+                    "data": _llm_event_data(llm_out, {
+                        "action": "none",
+                        "reason": "patch_prompt disabled during Phase 0 measurement",
+                    }),
+                    "next": "planner",
+                }
             ok, obs = _apply_prompt_mutation(board, str(parsed.get("content", "")))
             data: dict[str, Any] = {"action": "patch_prompt", "ok": ok, "obs": obs}
             event_data = _llm_event_data(llm_out, data)
@@ -650,9 +660,9 @@ def _fission_review(board: dict[str, Any], completed: str) -> dict[str, str]:
         board,
         "fission_judge",
         (
-            f"GOAL: {str(board.get('_last_verified_goal') or board.get('goal', ''))[:500]}\n"
-            f"COMPLETED: {completed[:500]}\n"
-            f"EVIDENCE: {str(board.get('_last_verifier_evidence', ''))[:600]}\n"
+            f"GOAL: {str(board.get('_last_verified_goal') or board.get('goal', ''))[:config.PROMPT_GOAL_TEXT_MAX]}\n"
+            f"COMPLETED: {completed[:config.EVIDENCE_TEXT_MAX]}\n"
+            f"EVIDENCE: {str(board.get('_last_verifier_evidence', ''))[:config.EVIDENCE_TEXT_MAX]}\n"
             f"PRESSURE: stag={float(pressure.get('stagnation', 0) or 0):.3f} "
             f"fissions={int(board.get('fissions', 0) or 0)}\n"
             f"{_format_history(board.get('history', [])[-3:])}\n"

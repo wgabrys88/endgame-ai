@@ -5,7 +5,7 @@
 This README is the **single source of truth** for the project. It merges:
 
 1. The architecture research synthesis (formerly `deep-research-report.md`)
-2. A code audit of what exists on branch `merge-prep` today
+2. A code audit of what exists on branch `merge-prep` / the current Phase 0 implementation branch today
 3. Owner decisions about mission, CPU-style unicore/multicore execution, and eternal operation
 
 Future human and AI coding sessions **must start here**. Length is intentional.
@@ -18,7 +18,7 @@ Read this table before touching code.
 
 | Item | Value |
 |------|-------|
-| **Active branch** | `merge-prep` |
+| **Active branch** | `codex-dev-full` for current Phase 0 implementation; based on `merge-prep` |
 | **Latest bootstrap commit** | See `git log -1 README.md` |
 | **Sanitized baseline tag** | `sanitize-ready-20260615` → `9102d0a` |
 | **Archived experiment tag** | `experiment-pure-python-20260615` → 4 commits ahead; pure-Python signal API experiment; **not active direction** unless ablation proves it |
@@ -36,6 +36,7 @@ Read this table before touching code.
 6. **Ask before force-pushing** or rewriting git history.
 7. **Part 1.0 is law** — unconstrained production organism on end-user machines; never defang into a toy.
 8. **New sessions** — human pastes Appendix P first message before any work.
+9. **Phase 0 runs** — real ablation tests use exactly `--timeout 1200`; inspect full-goal propagation and external evidence before repeating batches.
 
 ## Owner mission (confirmed 2026-06-15)
 
@@ -238,7 +239,7 @@ MoE routing: `comms_operator` reads colony telemetry (`stagnation`, `power`, `ve
 - Merges probe discoveries with UIA accessibility tree
 - Probe-first because browsers lie to static trees
 
-Actor uses element IDs; verifier checks `print()` evidence. **Owner confirms this works “not that bad today.”**
+Actor uses element IDs or Python exec helpers; verifier checks printed evidence but durable file/Desktop outcomes now require external proof: actual resolved path, `exists=True`, and readback/content or metadata. A deterministic fission gate denies placeholder username paths and weak self-certification for file/Desktop tasks.
 
 ## 3.4 Model profiles (unicore + multicore exist)
 
@@ -254,11 +255,11 @@ Actor uses element IDs; verifier checks `print()` evidence. **Owner confirms thi
 | Action | Target | Problem |
 |--------|--------|---------|
 | `patch_plugin` | `plugins/*.py` | OK for local adaptation |
-| `patch_prompt` | `prompts/personalities/{persona}.txt` | **Rewrites entire persona used as system prompt for ALL circuits** (planner + actor + verifier + mutator) |
+| `patch_prompt` | `prompts/personalities/{persona}.txt` | Code path exists but is disabled by default for Phase 0 via `config.ALLOW_PERSONALITY_PATCH_PROMPT = False`; when enabled it rewrites the entire persona used as system prompt for ALL circuits |
 
-`prompts/mutator.txt` explicitly allows `patch_prompt` with ELITE_DNA crossover.
+`prompts/mutator.txt` now tells rods that `patch_prompt` is disabled during Phase 0 measurement. This preserves measurement discipline; it does not cancel the target hierarchical mutator design.
 
-**This violates the hierarchical mutator design.** A local failure can rewrite planner identity.
+**The remaining design gap:** the code path still exists and must be replaced with a split local/global mutator design in Phase 1. A local failure must not rewrite planner identity.
 
 ## 3.6 No planner-mutator persona (GAP)
 
@@ -274,11 +275,11 @@ Today: all rods run full pipeline; exec steps in plans call `bus_route()` / `bus
 
 `reviewer.txt` says verify-only at prompt level, but runtime runs full `planner → actor → verifier` like implementor. No RBAC preventing “fix while reviewing.”
 
-## 3.9 No ablation config modes (GAP)
+## 3.9 Ablation config modes and finite runner (implemented, still expanding)
 
-`reactor.py` always spawns 5 slots. No `unicore` / `colony` / `planner-only-bus` flags.
+`reactor.py`, `tui.py`, and `ablation.py` now support explicit `unicore` / `colony` modes. The finite runner exports records under `ablation_runs/<batch_id>/` and real Phase 0 runs use exactly `--timeout 1200`.
 
-`bench.py` has 30 isolated LLM circuit scenarios—useful but not end-to-end colony ablation.
+Remaining gap: no planner-only-bus ablation mode yet, and no broad scripted external verifier suite. `bench.py` still has 30 isolated LLM circuit scenarios—useful but not sufficient for end-to-end colony ablation.
 
 ## 3.10 Prompt layer confusion (GAP)
 
@@ -288,6 +289,8 @@ Today: all rods run full pipeline; exec steps in plans call `bus_route()` / `bus
 | Persona | `prompts/personalities/{name}.txt` | System prompt for **every** circuit in that rod |
 
 Target needs three evolvable layers with **separate mutator permissions**.
+
+Phase 0 correction: planner/persona prompts now receive runtime path context (`WORKSPACE_DIR`, `USER_HOME`, `DESKTOP_DIR`, `ENDGAME_*`) instead of hardcoded placeholder paths. This was required after 1200-second calc/notepad runs showed path drift into fake user folders.
 
 ## 3.11 What already aligns well
 
@@ -748,12 +751,12 @@ Add rule:
 
 | # | Gap | Current (`merge-prep`) | Target | Priority |
 |---|-----|------------------------|--------|----------|
-| 1 | Hierarchical mutators | `patch_prompt` → full personality | Local: actor/verifier/plugins; Global: planner-mutator | P0 |
+| 1 | Hierarchical mutators | `patch_prompt` full-personality path exists but disabled for Phase 0 | Local: actor/verifier/plugins; Global: planner-mutator | P0 |
 | 2 | Planner-mutator persona | Missing | Dedicated slot or time-shared | P1 |
 | 3 | Planner-only bus | All phases post | Planners publish; compact schema | P1 |
 | 4 | Reviewer independence | Prompt-only | Runtime RBAC | P1 |
-| 5 | Ablation modes | Always 5 slots | unicore / colony / bus variants | P0 |
-| 6 | End-to-end eval | `bench.py` circuits only | Colony runs + external verifier | P0 |
+| 5 | Ablation modes | `unicore` / `colony` finite runner exists | Add planner-only-bus variants and enough task coverage | P0 |
+| 6 | End-to-end eval | Finite runner + internal evidence + manual LM-log review | Scriptable external verifier suite | P0 |
 | 7 | Prompt layer split | Personality = all circuits | circuit vs SOP vs registry | P1 |
 | 8 | Signal API | JSON circuits | Python signals (post-ablation) | P2 |
 | 9 | Per-slot model assignment | One profile per reactor | Evict/respawn different LLMs | P3 |
@@ -885,11 +888,13 @@ gantt
 
 ### Phase 0 — Measurement (NOW)
 
-- [ ] Reactor flag: `--mode unicore|colony`
-- [ ] Document single-rod generalist baseline prompts
+- [x] Reactor flag: `--mode unicore|colony`
+- [x] Document single-rod generalist baseline prompts
 - [ ] Run ablation A vs C on 10 desktop + 10 repo tasks
-- [ ] Use exactly `--timeout 1200` for real Phase 0 ablation tests so LM Studio has time to plan, act, verify, and fission
-- [ ] Log all core metrics to `runtime/ablation/`
+- [x] Use exactly `--timeout 1200` for real Phase 0 ablation tests so LM Studio has time to plan, act, verify, and fission
+- [x] Log all core metrics to `runtime/ablation/`
+- [x] Add pre-run gates for full-goal propagation, real path context, subprocess sanity, and external evidence before fission credit
+- [x] Disable `patch_prompt` during Phase 0 measurement so local failures do not rewrite full persona DNA
 
 ### Phase 1 — Split mutators
 
@@ -987,7 +992,7 @@ Circuit prompts (shared): `prompts/planner.txt`, `actor.txt`, `verifier.txt`, `r
 ```powershell
 git clone https://github.com/wgabrys88/endgame-ai.git
 cd endgame-ai
-git checkout merge-prep
+git checkout codex-dev-full
 
 # .env optional:
 # ENDGAME_LMS_HOSTS=http://localhost:1234
@@ -1044,6 +1049,8 @@ def run(board):
 | `runtime/comms/` | Live bus |
 | `runtime/breed_archive.json` | Elite archive |
 | `deep-research-report.md` | Original ChatGPT report (archival) |
+| `PHASE0_ABLATION.md` | Current Phase 0 run strategy, commands, gates, and owner tasks |
+| `ablation_runs/` | Committed finite-run evidence and analysis |
 
 ---
 
@@ -1052,6 +1059,7 @@ def run(board):
 | Ref | Purpose |
 |-----|---------|
 | `merge-prep` | Active development |
+| `codex-dev-full` | Current owner-approved Phase 0 implementation/testing branch |
 | `main` | Older single-process line |
 | `sanitize-ready-20260615` | Frozen sanitized snapshot |
 | `experiment-pure-python-20260615` | Archived pure-Python experiment |
@@ -1220,6 +1228,10 @@ Compact claims replace raw trace dumping per research report.
 | `MAX_PLAN_STEPS` | 6 | config.py | Plan length cap |
 | `MAX_HISTORY` | 12 | config.py | History tail in prompts |
 | `EXEC_TIMEOUT` | 60s | config.py | Python subprocess timeout |
+| `GOAL_TEXT_MAX` | 4000 chars | config.py | Bus payload cap for full owner task propagation |
+| `PROMPT_GOAL_TEXT_MAX` | 4000 chars | config.py | Planner/reflector/fission goal context cap |
+| `EVIDENCE_TEXT_MAX` | 2000 chars | config.py | Verifier/fission evidence cap |
+| `ALLOW_PERSONALITY_PATCH_PROMPT` | false | config.py | Keeps Phase 0 measurement from rewriting whole persona prompts |
 
 ---
 
@@ -1413,7 +1425,7 @@ Actor JSON mode uses `[id]` selectors from book. Python exec mode uses `desktop_
 
 When starting a new session:
 
-1. `git branch --show-current` → expect `merge-prep`
+1. `git branch --show-current` → expect owner-designated current branch (`codex-dev-full` for current Phase 0 work; `merge-prep` for base integration unless human says otherwise)
 2. Read this README Part 0 and Part 11 (gaps)
 3. Read `git log -5 --oneline`
 4. Do NOT checkout `experiment-pure-python-20260615` unless explicitly asked
@@ -1449,13 +1461,13 @@ From `prompts/mutator.txt`:
 ```
 Under pressure: choose ONE action:
   patch_plugin — rewrite an existing plugins/*.py file (must have def run(board))
-  patch_prompt — rewrite YOUR personality prompt (use ELITE_DNA for crossover if provided)
+  patch_prompt — disabled during Phase 0 measurement unless config explicitly allows it
   none — no mutation needed
 ```
 
-From `agents.MutatorAgent.run` — `patch_prompt` calls `_apply_prompt_mutation` → writes `prompts/personalities/{persona}.txt`.
+From `agents.MutatorAgent.run` — `patch_prompt` is blocked unless `config.ALLOW_PERSONALITY_PATCH_PROMPT` is true. The old `_apply_prompt_mutation` path still exists and remains the #1 Phase 1 design gap.
 
-**This is the #1 code change target for Phase 1.**
+**This remains the #1 code change target for Phase 1.**
 
 ---
 
@@ -1809,7 +1821,7 @@ Copy everything inside the fenced block below as your **first message** in a new
 
 **How to use:**
 
-1. Open new agent session in the `endgame-ai` repo on branch `merge-prep`.
+1. Open new agent session in the `endgame-ai` repo on the owner-designated current branch (`codex-dev-full` for current Phase 0 work; `merge-prep` for base integration unless human says otherwise).
 2. Paste the entire block verbatim.
 3. Wait until the agent completes the **Readiness checklist** without skipping items.
 4. If Appendix O is still empty, answer questions yourself or tell the agent your choices — then ask it to write **Part 40: Implementation plan**.
@@ -1848,7 +1860,7 @@ Before any implementation, output a "Readiness checklist" with ALL items below a
 STEP 3 — INTERNET / CODE (only after Step 2)
 • Use web search ONLY to verify papers or tools README cites — not to redesign architecture.
 • Read actual code files README names for the task you are given — do not trust README alone for line-level truth.
-• Branch must be merge-prep unless human says otherwise.
+• Branch must be the owner-designated current branch (`codex-dev-full` for current Phase 0 work; `merge-prep` for base integration unless human says otherwise).
 
 STEP 4 — NON-NEGOTIABLE DOCTRINE (repeat back to human)
 Confirm you will follow:
@@ -1861,7 +1873,7 @@ Confirm you will follow:
 STEP 5 — WHAT YOU MAY DO AFTER CHECKLIST
 • If human asked for implementation plan: produce Part 40 outline from README + filled Appendix O answers.
 • If human asked for code: only tasks aligned with Phase 0–5 in Part 14, respecting gaps in Part 11.
-• If human asked to edit README: preserve mermaid diagrams; keep Part 1.0 and Appendix P intact.
+• If human asked to edit README: preserve mermaid diagrams; keep Part 1.0 intact; update Appendix P when it is obsolete so future sessions bootstrap correctly.
 
 FORBIDDEN BEFORE CHECKLIST COMPLETE:
 ✗ Writing code

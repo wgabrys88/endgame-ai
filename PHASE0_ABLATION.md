@@ -1,6 +1,24 @@
 # Phase 0 Ablation
 
-Phase 0 measures whether the colony earns its keep before mutator or bus rewrites.
+Phase 0 measures whether the colony earns its keep before mutator or bus rewrites. Real runs use exactly `--timeout 1200`; shorter runs are smoke tests only and do not count as Phase 0 evidence.
+
+## Current Status
+
+- Two proper 1200-second unicore calc/notepad runs have been recorded under `ablation_runs/`.
+- The old 45-second runs and any 120-second examples are obsolete.
+- The first 1200-second reruns exposed harness defects before they proved task success: placeholder path drift, weak verifier/fission evidence, and avoidable Python subprocess mistakes.
+- Testing is paused until the pre-run gates below pass, then resumes with exactly `--timeout 1200`.
+
+## Pre-Run Gates
+
+Before starting another real ablation run:
+
+1. Confirm the full task text reaches the LLM request. For long tasks, check LM Studio traces/logs for the complete `ACTIVE_TASK`, not just the first clause.
+2. Confirm path context is real: prompts must use `WORKSPACE_DIR`, `USER_HOME`, `DESKTOP_DIR`, or `ENDGAME_*` constants, not placeholder username paths.
+3. Confirm file/Desktop fission requires external evidence: actual resolved path, `exists=True`, and readback/content or metadata.
+4. Confirm Python subprocess guidance is valid on Windows: do not use bare `subprocess.run(["start", ...])`, do not import `pyperclip`, and use raw strings/`Path` for Windows paths.
+5. Confirm Phase 0 measurement does not rewrite whole personality prompts: `patch_prompt` remains disabled unless explicitly re-enabled after the mutator split.
+6. Commit and push all fixes before running the next 1200-second test.
 
 ## Run Modes
 
@@ -69,7 +87,10 @@ Run repeated finite ablations:
 
 ```powershell
 python ablation.py run --mode unicore --task-id phase0_calc_notepad --timeout 1200 --repeat 8 --batch-id phase0-calc-unicore
+python ablation.py run --mode colony --task-id phase0_calc_notepad --timeout 1200 --repeat 8 --batch-id phase0-calc-colony
 ```
+
+Do not use `--repeat` blindly after a new failure mode appears. Inspect each new 1200-second run, compare the LM Studio request/response log with exported `ablation_runs/<batch_id>/`, and continue only if the failure is not a harness defect.
 
 The finite runner:
 
@@ -83,6 +104,19 @@ AI coding tools can record their verdict with:
 
 ```powershell
 python ablation.py run --mode unicore --task-id phase0_calc_notepad --timeout 1200 --evaluator codex --verdict unreviewed --note "Codex will inspect the run record after completion"
+```
+
+Run all four accepted task fixtures with the same timeout:
+
+```powershell
+python ablation.py run --mode unicore --task-id phase0_calc_notepad --timeout 1200 --batch-id phase0-calc-unicore-1200
+python ablation.py run --mode unicore --task-id phase0_youtube_waka_waka --timeout 1200 --batch-id phase0-youtube-unicore-1200
+python ablation.py run --mode unicore --task-id phase0_grok_code_review --timeout 1200 --batch-id phase0-grok-unicore-1200
+python ablation.py run --mode unicore --task-id phase0_social_updates --timeout 1200 --batch-id phase0-social-unicore-1200
+python ablation.py run --mode colony --task-id phase0_calc_notepad --timeout 1200 --batch-id phase0-calc-colony-1200
+python ablation.py run --mode colony --task-id phase0_youtube_waka_waka --timeout 1200 --batch-id phase0-youtube-colony-1200
+python ablation.py run --mode colony --task-id phase0_grok_code_review --timeout 1200 --batch-id phase0-grok-colony-1200
+python ablation.py run --mode colony --task-id phase0_social_updates --timeout 1200 --batch-id phase0-social-colony-1200
 ```
 
 ## Metrics

@@ -7,6 +7,7 @@ Plan one small step toward ACTIVE_TASK / LONG_TERM_GOAL.
 PRE-IMPORTED in exec:
   Path, os, sys, json, time, subprocess, py_compile
   ENDGAME_WORKSPACE, ENDGAME_USER_HOME, ENDGAME_DESKTOP
+  endgame_open_app(command), endgame_set_clipboard(text), endgame_get_clipboard()
   bus_post, bus_id, bus_request, bus_route
   observe_screen() -> (book, context_text, focused_title)
   desktop_click(selector), desktop_write(text, selector="")
@@ -17,7 +18,11 @@ PRE-IMPORTED in exec:
 All file paths are Windows. Use TASK_STATE path values or ENDGAME_* constants.
 Never use placeholder username paths.
 For Desktop files, use ENDGAME_DESKTOP / "filename.txt" and print the resolved path, exists=True, and readback/content.
-subprocess calls use Windows commands (cmd.exe, powershell, start, etc.)
+Use raw strings or Path objects for Windows paths; never write "C:\..." in a normal Python string.
+To open Windows apps, prefer endgame_open_app("calc.exe") or endgame_open_app("notepad.exe").
+If you call start directly, use cmd.exe form: subprocess.run(["cmd", "/c", "start", "", "notepad.exe"]).
+Do not call subprocess.run(["start", ...]); start is a cmd.exe builtin, not an executable.
+Do not import pyperclip; use endgame_set_clipboard() / endgame_get_clipboard() or desktop hotkeys.
 
 CRITICAL: Every exec step MUST end with print() proving the outcome.
 
