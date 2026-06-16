@@ -72,9 +72,6 @@ TRACE_REQUEST_PATTERNS: dict[str, str] = {
     "fake_workspace_path": r"C:\\endgame-ai",
     "plugins_x": "plugins/x.py",
     "unknown_key": "unknown key:",
-    "notepad_missing": "no window matching 'Notepad'",
-    "calculator_expression_22": "Expression is 22=",
-    "calculator_display_22": "Display is 22",
 }
 TRACE_RESPONSE_PATTERNS: dict[str, str] = {
     "pyperclip": "pyperclip",
@@ -409,8 +406,9 @@ def summarize_session(
         if ts is not None:
             times.append(ts)
 
-    verify_confirmed = 0
-    verify_denied = 0
+    verify_done = 0
+    verify_not_done = 0
+    verify_unknown = 0
     fissions = 0
     errors = 0
     mutations = 0
@@ -424,11 +422,13 @@ def summarize_session(
         raw_data = ev.get("d")
         data: dict[str, Any] = raw_data if isinstance(raw_data, dict) else {}
         if phase == "verify":
-            verdict = str(data.get("verdict", ""))
-            if verdict == "confirmed":
-                verify_confirmed += 1
-            elif verdict == "denied":
-                verify_denied += 1
+            verdict = str(data.get("verdict", "")).upper()
+            if verdict == "DONE":
+                verify_done += 1
+            elif verdict == "NOT_DONE":
+                verify_not_done += 1
+            elif verdict == "UNKNOWN":
+                verify_unknown += 1
         if phase == "fission":
             fissions += 1
         if phase in {"planner.error", "actor.error", "verifier.error", "fission.deny", "llm_fail"}:
@@ -451,12 +451,12 @@ def summarize_session(
         bus_entries = []
 
     elapsed_ms = int((max(times) - min(times)) * 1000) if len(times) >= 2 else None
-    verifier_total = verify_confirmed + verify_denied
-    internal_success = (verify_confirmed / verifier_total) if verifier_total else None
+    verifier_total = verify_done + verify_not_done + verify_unknown
+    internal_success = (verify_done / verifier_total) if verifier_total else None
     solved = max(fissions, 0)
     first_pass = None
     if solved:
-        first_pass = 1.0 if verify_denied == 0 and errors == 0 and mutations == 0 else 0.0
+        first_pass = 1.0 if verify_not_done == 0 and errors == 0 and mutations == 0 else 0.0
     bus_denom = bus_chars + llm_output_chars
 
     core_metrics: dict[str, Any] = {
@@ -481,8 +481,9 @@ def summarize_session(
         "events": len(events),
         "phases": phases,
         "evidence": {
-            "verify_confirmed": verify_confirmed,
-            "verify_denied": verify_denied,
+            "verify_done": verify_done,
+            "verify_not_done": verify_not_done,
+            "verify_unknown": verify_unknown,
             "fissions": fissions,
             "errors": errors,
             "mutations": mutations,
@@ -639,13 +640,14 @@ def _dict_field(container: dict[str, Any], key: str) -> dict[str, Any]:
 
 def _auto_evaluation(summary: dict[str, Any], stop_reason: str, returncode: int | None) -> dict[str, str]:
     evidence = _dict_field(summary, "evidence")
-    confirmed = int(evidence.get("verify_confirmed", 0) or 0)
-    denied = int(evidence.get("verify_denied", 0) or 0)
+    done = int(evidence.get("verify_done", 0) or 0)
+    not_done = int(evidence.get("verify_not_done", 0) or 0)
+    unknown = int(evidence.get("verify_unknown", 0) or 0)
     fissions = int(evidence.get("fissions", 0) or 0)
     errors = int(evidence.get("errors", 0) or 0)
-    if confirmed or fissions:
+    if done or fissions:
         verdict = "success_evidence_present"
-    elif denied or errors:
+    elif not_done or unknown or errors:
         verdict = "failure_evidence_present"
     elif stop_reason == "timeout":
         verdict = "timeout_no_verified_outcome"
@@ -658,7 +660,7 @@ def _auto_evaluation(summary: dict[str, Any], stop_reason: str, returncode: int 
         "verdict": verdict,
         "note": (
             f"stop_reason={stop_reason}; returncode={returncode}; "
-            f"confirmed={confirmed}; denied={denied}; fissions={fissions}; errors={errors}"
+            f"DONE={done}; NOT_DONE={not_done}; UNKNOWN={unknown}; fissions={fissions}; errors={errors}"
         ),
     }
 
@@ -696,8 +698,9 @@ def _run_markdown(record: dict[str, Any]) -> str:
         "## Evidence",
         "",
         f"- events: `{summary.get('events', 0)}`",
-        f"- verify_confirmed: `{evidence.get('verify_confirmed', 0)}`",
-        f"- verify_denied: `{evidence.get('verify_denied', 0)}`",
+        f"- verify_done: `{evidence.get('verify_done', 0)}`",
+        f"- verify_not_done: `{evidence.get('verify_not_done', 0)}`",
+        f"- verify_unknown: `{evidence.get('verify_unknown', 0)}`",
         f"- fissions: `{evidence.get('fissions', 0)}`",
         f"- errors: `{evidence.get('errors', 0)}`",
         f"- mutations: `{evidence.get('mutations', 0)}`",
@@ -880,7 +883,7 @@ def _batch_markdown(batch_id: str, records: list[dict[str, Any]]) -> str:
         lines.append(
             f"- `{record.get('run_label')}` mode=`{record.get('mode')}` task=`{record.get('task_id')}` "
             f"stop=`{record.get('stop_reason')}` verdict=`{evaluation.get('verdict')}` "
-            f"confirmed=`{evidence.get('verify_confirmed', 0)}` denied=`{evidence.get('verify_denied', 0)}` "
+            f"DONE=`{evidence.get('verify_done', 0)}` NOT_DONE=`{evidence.get('verify_not_done', 0)}` UNKNOWN=`{evidence.get('verify_unknown', 0)}` "
             f"fissions=`{evidence.get('fissions', 0)}` errors=`{evidence.get('errors', 0)}`"
         )
     lines.append("")

@@ -7,6 +7,7 @@ from pathlib import Path
 import py_compile
 import re
 import time
+from datetime import datetime, timezone
 from typing import Any
 
 import config
@@ -30,15 +31,13 @@ def validate_python(text: str) -> tuple[bool, str, str]:
         return False, cleaned, f"SyntaxError: {exc.msg} ({where})"
     return True, cleaned, ""
 
-_ELEMENT_ID_RE = re.compile(r"\[\d+\]")
 _PLUGIN_NAME_RE = re.compile(r"^[a-z0-9_]+\.py$")
-_PLACEHOLDER_USER_PATH_RE = re.compile(r"c:\\+users\\+user\\+", re.IGNORECASE)
 _REASONING = (
     "Think in reasoning channel. Final content: one raw JSON object, no markdown fences.\n"
 )
 _CIRCUIT_HINTS: dict[str, str] = {
-    "planner": '{"mode":"direct"|"done","sequence":[{"code":"python with print()"}],"done_when":"measurable outcome"}',
-    "verifier": '{"verdict":"confirmed"|"denied","evidence":"what step results prove"}',
+    "planner": '{"records":[{"schema_version":"contract-bus.v1","record_type":"task|contract","data":{}}]}',
+    "verifier": '{"id":"...","task_id":"...","contract_id":"...","contract_version":1,"verdict":"DONE|NOT_DONE|UNKNOWN","confidence":0.0,"because":"...","condition_results":[],"evidence_used":[],"evidence_rejected":[],"actor_claim_trusted_as_primary":false,"next_recommendation":"continue|gather_evidence|replan|ask_user|stop"}',
     "reflector": '{"diagnosis":"...","suggestion":"...","rule":"..."}',
     "mutator": '{"action":"patch_plugin"|"patch_prompt"|"none","filename":"plugins/existing_name.py","content":"full source or prompt text"}',
     "fission_judge": '{"verdict":"credit"|"deny","diagnosis":"...","suggestion":"...","rule":""}',
@@ -140,40 +139,6 @@ def _filesystem_context() -> str:
         f"DESKTOP_DIR: {_desktop_dir()}",
         "PATH_RULE: Never use placeholder username paths; use the paths above or ENDGAME_* constants and print resolved path evidence.",
     ])
-def _normalized_path_text(text: str) -> str:
-    return text.lower().replace("\\\\", "\\")
-def _has_placeholder_user_path(text: str) -> bool:
-    return bool(_PLACEHOLDER_USER_PATH_RE.search(_normalized_path_text(text)))
-def _goal_requires_file_artifact(goal: str) -> bool:
-    low = goal.lower()
-    return any(term in low for term in ("save file", "saved file", "desktop", "notepad", "write file", "file exists"))
-def _has_actual_file_artifact_evidence(text: str) -> bool:
-    normalized = _normalized_path_text(text)
-    if any(marker in normalized for marker in ("filenotfounderror", "syntaxerror", "traceback", "does not exist")):
-        return False
-    desktop = _normalized_path_text(str(_desktop_dir()))
-    if desktop not in normalized:
-        return False
-    return any(marker in normalized for marker in (
-        "exists=true",
-        "exists: true",
-        "exists true",
-        "readback",
-        "content=",
-        "contains",
-        "length=",
-        "size=",
-        "bytes=",
-    ))
-def _fission_evidence_gate(board: dict[str, Any], completed: str) -> str:
-    goal = str(board.get("_last_verified_goal") or board.get("goal", ""))
-    evidence = str(board.get("_last_verifier_evidence", ""))
-    combined = "\n".join([goal, completed, evidence, _format_history(board.get("history", [])[-3:])])
-    if _has_placeholder_user_path(combined):
-        return "placeholder username path is not valid evidence on this machine"
-    if _goal_requires_file_artifact(goal) and not _has_actual_file_artifact_evidence(combined):
-        return f"missing actual file evidence under {_desktop_dir()}; print resolved path, exists=True, and readback/content before fission credit"
-    return ""
 def _desktop_context() -> str:
     try:
         from desktop import observe
@@ -201,11 +166,322 @@ def _active_claims() -> str:
     except Exception:
         return ""
 
+CONTRACT_SCHEMA = "contract-bus.v1"
+VERIFICATION_PACKET_SCHEMA = "verification-packet.v1"
+TASK_STATUSES = frozenset({"proposed", "active", "blocked", "claimed_done", "verified_done", "rejected", "superseded"})
+STATUS_TRANSITIONS = frozenset({
+    ("proposed", "active"), ("active", "claimed_done"), ("claimed_done", "verified_done"),
+    ("active", "verified_done"), ("active", "blocked"), ("active", "rejected"),
+    ("claimed_done", "rejected"), ("claimed_done", "active"), ("active", "active"),
+    ("blocked", "active"), ("rejected", "active"), ("active", "superseded"),
+})
+VERDICTS = frozenset({"DONE", "NOT_DONE", "UNKNOWN"})
+ROLE_CAPABILITIES: dict[str, dict[str, bool]] = {
+    "planner": {"can_plan": True, "can_act": False, "can_observe": True, "can_verify": False,
+                "can_publish_claim": True, "can_publish_verdict": False, "can_mutate_ui": False,
+                "can_mutate_artifacts": False, "can_execute_commands": False, "can_read_artifacts": True},
+    "actor": {"can_plan": False, "can_act": True, "can_observe": True, "can_verify": False,
+              "can_publish_claim": True, "can_publish_verdict": False, "can_mutate_ui": True,
+              "can_mutate_artifacts": True, "can_execute_commands": True, "can_read_artifacts": True},
+    "observer": {"can_plan": False, "can_act": False, "can_observe": True, "can_verify": False,
+                 "can_publish_claim": False, "can_publish_verdict": False, "can_mutate_ui": False,
+                 "can_mutate_artifacts": False, "can_execute_commands": False, "can_read_artifacts": True},
+    "verifier": {"can_plan": False, "can_act": False, "can_observe": True, "can_verify": True,
+                 "can_publish_claim": False, "can_publish_verdict": True, "can_mutate_ui": False,
+                 "can_mutate_artifacts": False, "can_execute_commands": False, "can_read_artifacts": True},
+    "reviewer": {"can_plan": False, "can_act": False, "can_observe": True, "can_verify": True,
+                 "can_publish_claim": True, "can_publish_verdict": True, "can_mutate_ui": False,
+                 "can_mutate_artifacts": False, "can_execute_commands": False, "can_read_artifacts": True},
+    "runtime": {"can_plan": False, "can_act": False, "can_observe": True, "can_verify": False,
+                "can_publish_claim": True, "can_publish_verdict": False, "can_mutate_ui": False,
+                "can_mutate_artifacts": False, "can_execute_commands": False, "can_read_artifacts": True},
+    "tool": {"can_plan": False, "can_act": False, "can_observe": True, "can_verify": False,
+             "can_publish_claim": True, "can_publish_verdict": False, "can_mutate_ui": False,
+             "can_mutate_artifacts": False, "can_execute_commands": False, "can_read_artifacts": True},
+}
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+def _new_id(board: dict[str, Any], prefix: str) -> str:
+    seq = int(board.get("_record_seq", 0) or 0) + 1
+    board["_record_seq"] = seq
+    return f"{prefix}-{int(time.time() * 1000)}-{seq}"
+def _cycle_id(board: dict[str, Any]) -> str:
+    cycles = int(board.get("_pressure", {}).get("cycles", 0) or 0)
+    return f"cycle-{cycles}"
+def _root_task_id(board: dict[str, Any]) -> str:
+    root = str(board.get("root_task_id", "")).strip()
+    if not root:
+        root = _new_id(board, "task-root")
+        board["root_task_id"] = root
+    return root
+def _effective_role(board: dict[str, Any], role: str) -> str:
+    return "reviewer" if _personality(board) == "reviewer" and role in {"actor", "verifier", "observer"} else role
+def _capability(role: str) -> dict[str, bool]:
+    return dict(ROLE_CAPABILITIES.get(role, ROLE_CAPABILITIES["runtime"]))
+def _confidence(value: Any, default: float = 0.0) -> float:
+    try:
+        return max(0.0, min(1.0, float(value)))
+    except (TypeError, ValueError):
+        return default
+def _make_record(
+    board: dict[str, Any],
+    record_type: str,
+    role: str,
+    data: dict[str, Any],
+    *,
+    task_id: str | None = None,
+    parent_task_id: str | None = None,
+) -> dict[str, Any]:
+    return {
+        "schema_version": CONTRACT_SCHEMA,
+        "record_id": _new_id(board, record_type),
+        "record_type": record_type,
+        "created_at": _now_iso(),
+        "cycle_id": _cycle_id(board),
+        "root_task_id": _root_task_id(board),
+        "parent_task_id": parent_task_id,
+        "task_id": task_id,
+        "role": role,
+        "agent_id": _personality(board) or None,
+        "data": data,
+    }
+def _publish_record(board: dict[str, Any], record: dict[str, Any]) -> dict[str, Any]:
+    records = board.setdefault("bus_records", [])
+    records.append(record)
+    if len(records) > 240:
+        del records[:-240]
+    try:
+        import comms
+        comms.post_record(record)
+    except Exception:
+        pass
+    return record
+def _runtime_event(
+    board: dict[str, Any],
+    event_type: str,
+    summary: str,
+    *,
+    task_id: str | None = None,
+    related_record_ids: list[str] | None = None,
+    severity: str = "info",
+) -> dict[str, Any]:
+    data = {
+        "id": _new_id(board, "runtime-event"),
+        "event_type": event_type,
+        "task_id": task_id,
+        "related_record_ids": related_record_ids or [],
+        "summary": summary[:500],
+        "severity": severity,
+    }
+    return _publish_record(board, _make_record(board, "runtime_event", "runtime", data, task_id=task_id))
+def _permission_denied(board: dict[str, Any], role: str, operation: str, task_id: str | None, summary: str) -> dict[str, Any]:
+    return _runtime_event(board, "permission_denied", f"{role} cannot {operation}: {summary}", task_id=task_id, severity="warning")
+def _require_capability(board: dict[str, Any], role: str, flag: str, operation: str, task_id: str | None, summary: str) -> bool:
+    if _capability(role).get(flag, False):
+        return True
+    _permission_denied(board, role, operation, task_id, summary)
+    return False
+def _proof_requirement(classes: list[str] | None = None) -> dict[str, Any]:
+    return {
+        "required_evidence_classes": classes or [
+            "direct_observation", "external_readback", "tool_result",
+            "state_snapshot", "artifact_inspection", "execution_trace",
+            "prior_verified_contract",
+        ],
+        "min_independent_sources": 1,
+        "actor_claim_allowed_as_primary": False,
+        "allow_inference": True,
+        "max_age_cycles": 3,
+    }
+def _default_contract(task: dict[str, Any]) -> dict[str, Any]:
+    done_when = str(task.get("description", "")).strip()
+    return {
+        "id": str(task.get("contract_id") or f"contract-{task['id']}-v1"),
+        "task_id": task["id"],
+        "version": 1,
+        "done_when": done_when,
+        "success_conditions": [{
+            "id": "sc-1",
+            "description": done_when,
+            "required": True,
+            "proof_requirement": _proof_requirement(),
+        }],
+        "failure_conditions": [{"id": "fc-contradiction", "description": "Evidence contradicts completion."}],
+        "forbidden_primary_evidence_classes": ["actor_self_report", "keyword_match_only", "planner_intent_only"],
+        "uncertainty_policy": {
+            "missing_required_evidence": "UNKNOWN",
+            "contradictory_evidence": "NOT_DONE",
+            "stale_evidence": "UNKNOWN",
+        },
+    }
+def _tasks(board: dict[str, Any]) -> list[dict[str, Any]]:
+    return [t for t in board.get("tasks", []) if isinstance(t, dict)]
+def _contracts(board: dict[str, Any]) -> list[dict[str, Any]]:
+    return [c for c in board.get("contracts", []) if isinstance(c, dict)]
+def _task_by_id(board: dict[str, Any], task_id: str | None) -> dict[str, Any] | None:
+    return next((t for t in _tasks(board) if t.get("id") == task_id), None)
+def _contract_for_task(board: dict[str, Any], task: dict[str, Any]) -> dict[str, Any]:
+    cid = str(task.get("contract_id", ""))
+    contract = next((c for c in _contracts(board) if c.get("id") == cid or c.get("task_id") == task.get("id")), None)
+    if contract:
+        return contract
+    contract = _default_contract(task)
+    board.setdefault("contracts", []).append(contract)
+    _publish_record(board, _make_record(board, "contract", "planner", contract, task_id=task["id"], parent_task_id=task.get("parent_id")))
+    return contract
+def _sync_plan(board: dict[str, Any]) -> None:
+    root = board.get("root_task_id")
+    board["plan"] = [t for t in _tasks(board) if t.get("id") != root]
+def _ensure_root_records(board: dict[str, Any]) -> None:
+    root_id = _root_task_id(board)
+    if _task_by_id(board, root_id):
+        return
+    root = {
+        "id": root_id,
+        "parent_id": None,
+        "root_id": root_id,
+        "description": str(board.get("goal", "") or "root mission"),
+        "intent": "mission_context",
+        "status": "active",
+        "depends_on": [],
+        "contract_id": f"contract-{root_id}-v1",
+        "version": 1,
+    }
+    contract = _default_contract(root)
+    board["tasks"] = [root] + _tasks(board)
+    board["contracts"] = [contract] + _contracts(board)
+    _publish_record(board, _make_record(board, "task", "runtime", root, task_id=root_id))
+    _publish_record(board, _make_record(board, "contract", "runtime", contract, task_id=root_id))
+    if not board.get("_capabilities_published"):
+        for role, caps in ROLE_CAPABILITIES.items():
+            _publish_record(board, _make_record(board, "capability", "runtime", {"role": role, **caps}, task_id=root_id))
+        board["_capabilities_published"] = True
+def _set_task_status(board: dict[str, Any], task: dict[str, Any], status: str, role: str, related: list[str] | None = None) -> None:
+    old = str(task.get("status", "proposed"))
+    if status not in TASK_STATUSES:
+        status = "blocked"
+    if old != status and (old, status) not in STATUS_TRANSITIONS:
+        _runtime_event(board, "task_status_changed", f"blocked invalid transition {task['id']} {old}->{status}", task_id=task["id"], severity="warning")
+        status = "blocked"
+    task["status"] = status
+    if status == "active":
+        board["active_task_id"] = task["id"]
+        board["done_when"] = str(_contract_for_task(board, task).get("done_when", task.get("description", "")))
+    elif board.get("active_task_id") == task.get("id") and status in {"verified_done", "rejected", "blocked", "superseded"}:
+        board["active_task_id"] = ""
+    _sync_plan(board)
+    _runtime_event(board, "task_status_changed", f"{task['id']} {old}->{status} by {role}", task_id=task["id"], related_record_ids=related)
+def _active_task(board: dict[str, Any]) -> dict[str, Any] | None:
+    task = _task_by_id(board, str(board.get("active_task_id", "")))
+    if task and task.get("status") in {"active", "claimed_done"}:
+        return task
+    return next((t for t in _tasks(board) if t.get("status") in {"active", "claimed_done"} and t.get("id") != board.get("root_task_id")), None)
+def _activate_next_task(board: dict[str, Any]) -> dict[str, Any] | None:
+    if _active_task(board):
+        return _active_task(board)
+    done = {t.get("id") for t in _tasks(board) if t.get("status") == "verified_done"}
+    for task in _tasks(board):
+        if task.get("id") == board.get("root_task_id") or task.get("status") != "proposed":
+            continue
+        deps = [str(d) for d in task.get("depends_on", []) if str(d)]
+        if all(dep in done for dep in deps):
+            _set_task_status(board, task, "active", "runtime")
+            return task
+    return None
+def _normalize_task_data(board: dict[str, Any], raw: dict[str, Any], index: int) -> dict[str, Any]:
+    data = raw.get("data") if str(raw.get("record_type", "")) == "task" and isinstance(raw.get("data"), dict) else raw
+    root = _root_task_id(board)
+    task_id = str(data.get("id") or _new_id(board, f"task-{index}"))
+    status = str(data.get("status", "proposed"))
+    return {
+        "id": task_id,
+        "parent_id": data.get("parent_id") if data.get("parent_id") is not None else root,
+        "root_id": str(data.get("root_id") or root),
+        "description": str(data.get("description", "")).strip(),
+        "intent": str(data.get("intent", "")).strip() or "execute_subtask",
+        "status": status if status in TASK_STATUSES else "proposed",
+        "depends_on": [str(v) for v in data.get("depends_on", [])] if isinstance(data.get("depends_on"), list) else [],
+        "contract_id": str(data.get("contract_id") or f"contract-{task_id}-v1"),
+        "version": int(data.get("version", 1) or 1),
+    }
+def _normalize_contract_data(raw: dict[str, Any], task: dict[str, Any]) -> dict[str, Any]:
+    data = raw.get("data") if str(raw.get("record_type", "")) == "contract" and isinstance(raw.get("data"), dict) else raw
+    contract = _default_contract(task)
+    contract.update({k: v for k, v in data.items() if k in contract})
+    contract["id"] = str(data.get("id") or task["contract_id"])
+    contract["task_id"] = task["id"]
+    contract["version"] = int(data.get("version", 1) or 1)
+    if not isinstance(contract.get("success_conditions"), list) or not contract["success_conditions"]:
+        contract["success_conditions"] = _default_contract(task)["success_conditions"]
+    return contract
+def _planner_record_sources(parsed: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    records = parsed.get("records") if isinstance(parsed.get("records"), list) else []
+    tasks: list[dict[str, Any]] = []
+    contracts: list[dict[str, Any]] = []
+    for item in records:
+        if not isinstance(item, dict):
+            continue
+        rtype = str(item.get("record_type", ""))
+        data = item.get("data") if isinstance(item.get("data"), dict) else item
+        if rtype == "task" or ("description" in data and "contract_id" in data):
+            tasks.append(item)
+        elif rtype == "contract" or ("done_when" in data and "success_conditions" in data):
+            contracts.append(item)
+    for key in ("task", "tasks"):
+        value = parsed.get(key)
+        items = value if isinstance(value, list) else [value] if isinstance(value, dict) else []
+        tasks.extend(items)
+    for key in ("contract", "contracts"):
+        value = parsed.get(key)
+        items = value if isinstance(value, list) else [value] if isinstance(value, dict) else []
+        contracts.extend(items)
+    return tasks, contracts
+def _install_planner_records(board: dict[str, Any], parsed: dict[str, Any]) -> tuple[bool, str, dict[str, Any]]:
+    _ensure_root_records(board)
+    raw_tasks, raw_contracts = _planner_record_sources(parsed)
+    tasks = [_normalize_task_data(board, raw, i + 1) for i, raw in enumerate(raw_tasks)]
+    tasks = [task for task in tasks if task["description"]]
+    if not tasks:
+        return False, "planner produced no task records", {}
+    contract_by_task: dict[str, dict[str, Any]] = {}
+    for raw in raw_contracts:
+        data = raw.get("data") if isinstance(raw.get("data"), dict) else raw
+        tid = str(data.get("task_id", ""))
+        task = next((t for t in tasks if t["id"] == tid or t["contract_id"] == str(data.get("id", ""))), None)
+        if task:
+            contract_by_task[task["id"]] = _normalize_contract_data(raw, task)
+    root = _task_by_id(board, _root_task_id(board))
+    root_contract = _contract_for_task(board, root) if root else None
+    board["tasks"] = ([root] if root else []) + tasks
+    contracts = ([root_contract] if root_contract else [])
+    for task in tasks:
+        contract = contract_by_task.get(task["id"]) or _default_contract(task)
+        task["contract_id"] = contract["id"]
+        contracts.append(contract)
+    board["contracts"] = contracts
+    record_ids: list[str] = []
+    for task in tasks:
+        record_ids.append(_publish_record(
+            board, _make_record(board, "task", "planner", task, task_id=task["id"], parent_task_id=task.get("parent_id"))
+        )["record_id"])
+        contract = _contract_for_task(board, task)
+        record_ids.append(_publish_record(
+            board, _make_record(board, "contract", "planner", contract, task_id=task["id"], parent_task_id=task.get("parent_id"))
+        )["record_id"])
+    active = _activate_next_task(board)
+    data = {"tasks": len(tasks), "contracts": len(contracts) - (1 if root_contract else 0), "active_task_id": active.get("id") if active else ""}
+    return True, "", {"record_ids": record_ids, **data}
+
 def _planner_state(board: dict[str, Any]) -> str:
     persona = _personality(board)
     stag = float(board.get("stagnation", board.get("_pressure", {}).get("stagnation", 0)) or 0)
     goal_text = str(board.get("goal", ""))
-    parts = [f"ROD: {persona or 'default'}", f"ACTIVE_TASK: {goal_text[:config.PROMPT_GOAL_TEXT_MAX] or '(idle)'}"]
+    parts = [
+        f"ROD: {persona or 'default'}",
+        f"ROOT_TASK_ID: {_root_task_id(board)}",
+        f"ACTIVE_TASK: {goal_text[:config.PROMPT_GOAL_TEXT_MAX] or '(idle)'}",
+    ]
     try:
         lt = __import__("comms").colony_goal_text()[:config.PROMPT_GOAL_TEXT_MAX]
         if lt: parts.append(f"LONG_TERM_GOAL: {lt}")
@@ -218,46 +494,17 @@ def _planner_state(board: dict[str, Any]) -> str:
     if desktop_ctx: parts.append(desktop_ctx)
     history_ctx = _format_history(board.get("history", []))
     if history_ctx: parts.append(history_ctx)
+    records = board.get("bus_records", [])
+    if records:
+        compact = [
+            {"record_type": r.get("record_type"), "task_id": r.get("task_id"), "data": r.get("data")}
+            for r in records[-8:] if isinstance(r, dict)
+        ]
+        parts.append("RECENT CONTRACT BUS RECORDS:\n" + json.dumps(compact, ensure_ascii=False)[:2400])
     try: parts.append(__import__("comms").format_bus_context(10 if persona == "comms_operator" else 6, for_agent=persona))
     except Exception: pass
-    parts.append("Plan JSON:")
+    parts.append("Planner must return contract-bus task and contract records JSON:")
     return "\n".join(parts)
-def _sanitize_plan_step(step: str) -> str:
-    if not _ELEMENT_ID_RE.search(step):
-        return step
-    cleaned = _ELEMENT_ID_RE.sub("", step)
-    cleaned = re.sub(r"\s+", " ", cleaned).strip()
-    return cleaned or step
-def _normalize_plan_sequence(sequence: Any) -> list[str]:
-    if not isinstance(sequence, list):
-        return []
-    steps: list[str] = []
-    for raw in sequence[: config.MAX_PLAN_STEPS]:
-        if isinstance(raw, str):
-            text = _sanitize_plan_step(raw.strip())
-            if text:
-                steps.append(text)
-        elif isinstance(raw, dict):
-            code = str(raw.get("code", "")).strip()
-            text = str(raw.get("text", "")).strip()
-            if code:
-                steps.append(f"exec:\n{code}")
-            elif text:
-                steps.append(_sanitize_plan_step(text))
-    return steps
-def _advance_plan(plan: list[dict[str, Any]]) -> None:
-    pending = next((s for s in plan if isinstance(s, dict) and s.get("status") == "pending"), None)
-    if pending:
-        pending["status"] = "active"
-
-
-def _abort_plan_after_failure(plan: list[dict[str, Any]], reason: str) -> None:
-    for step in plan:
-        if isinstance(step, dict) and step.get("status") == "pending":
-            step["status"] = "skipped_after_failure"
-            step["result"] = f"SKIPPED after failed step: {reason[:config.EVIDENCE_TEXT_MAX]}"
-
-
 def _build_args(verb: str, target: str, value: str) -> dict[str, Any]:
     from actions import DEFAULT_SCROLL_AMOUNT
     target = target.strip("[]")
@@ -279,6 +526,106 @@ def _build_args(verb: str, target: str, value: str) -> dict[str, Any]:
     if verb == "focus":
         return {"window_title": target or value}
     return {}
+def _step_policy(step: str) -> tuple[str, str, bool, str]:
+    low = step.strip().lower()
+    if low.startswith("read_file "):
+        return "read", "artifact", False, "can_read_artifacts"
+    if low.startswith("write_file "):
+        return "write", "artifact", True, "can_mutate_artifacts"
+    if low.startswith("wait "):
+        return "wait", "unknown", False, "can_observe"
+    return "execute", "command", True, "can_execute_commands"
+def _verb_policy(verb: str) -> tuple[str, str, bool, str]:
+    if verb == "wait":
+        return "wait", "unknown", False, "can_observe"
+    return (
+        {"write": "write", "click": "click", "focus": "other", "press": "other", "hotkey": "other", "scroll": "other"}.get(verb, "other"),
+        "ui_surface",
+        True,
+        "can_mutate_ui",
+    )
+def _source_for_action(operation: str, target_kind: str, result_verb: str, success: bool) -> tuple[str, str, str]:
+    if result_verb == "read_file":
+        return "external_readback", "read", "primary"
+    if operation == "execute":
+        return "tool_result", "execute", "primary" if success else "supporting"
+    if target_kind == "ui_surface":
+        return "execution_trace", operation, "weak"
+    return "execution_trace", operation, "supporting"
+def _target_data(kind: str, identifier: str = "", label: str = "") -> dict[str, Any]:
+    return {"kind": kind or "unknown", "identifier": identifier or None, "human_label": label or None}
+def _publish_action_result(
+    board: dict[str, Any],
+    task: dict[str, Any],
+    role: str,
+    *,
+    operation: str,
+    target_kind: str,
+    input_summary: str,
+    result: Any,
+    mutates_state: bool,
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    task_id = task["id"]
+    success = bool(getattr(result, "success", False))
+    obs = str(getattr(result, "observation", ""))[:config.EVIDENCE_TEXT_MAX]
+    source_class, evidence_operation, strength = _source_for_action(operation, target_kind, str(getattr(result, "verb", "")), success)
+    evidence: dict[str, Any] | None = None
+    evidence_record_id = ""
+    if obs:
+        evidence = {
+            "id": _new_id(board, "evidence"),
+            "task_id": task_id,
+            "produced_by_role": "tool" if source_class in {"tool_result", "external_readback"} else role,
+            "source_class": source_class,
+            "source_name": str(getattr(result, "verb", "tool")),
+            "operation": evidence_operation,
+            "target": _target_data(target_kind, input_summary[:200], input_summary[:200]),
+            "observed": {"summary": obs, "text": obs, "structured": getattr(result, "data", {}) or {}, "artifact_refs": []},
+            "claim": {"statement": "", "supports_condition_ids": [], "contradicts_condition_ids": [], "confidence": 0.0},
+            "trust": {
+                "independence": "independent" if source_class in {"tool_result", "external_readback"} else "derived",
+                "mutability": "mutating" if mutates_state else "read_only",
+                "strength": strength,
+                "freshness_cycle": int(board.get("_pressure", {}).get("cycles", 0) or 0),
+            },
+        }
+        evidence_record_id = _publish_record(board, _make_record(board, "evidence", evidence["produced_by_role"], evidence, task_id=task_id, parent_task_id=task.get("parent_id")))["record_id"]
+    action = {
+        "id": _new_id(board, "action"),
+        "task_id": task_id,
+        "actor_role": role if role in {"actor", "runtime", "tool"} else "actor",
+        "operation": operation if operation in {"click", "type", "hotkey", "write", "execute", "open", "wait", "other"} else "other",
+        "target": _target_data(target_kind, input_summary[:200], input_summary[:200]),
+        "input_summary": input_summary[:500],
+        "result_summary": obs,
+        "success_reported_by_tool": success,
+        "created_evidence_ids": [evidence["id"]] if evidence else [],
+        "mutates_state": mutates_state,
+    }
+    action_record = _publish_record(board, _make_record(board, "action", role, action, task_id=task_id, parent_task_id=task.get("parent_id")))
+    if evidence_record_id:
+        _runtime_event(board, "evidence_created", f"evidence {evidence['id']} from {source_class}", task_id=task_id, related_record_ids=[evidence_record_id])
+    return action_record, evidence
+def _publish_claim(board: dict[str, Any], task: dict[str, Any], role: str, statement: str, evidence_ids: list[str] | None = None, confidence: float = 0.0) -> dict[str, Any]:
+    claim = {
+        "id": _new_id(board, "claim"),
+        "task_id": task["id"],
+        "made_by_role": role if role in {"planner", "actor", "observer", "verifier", "reviewer", "runtime", "tool"} else "runtime",
+        "statement": statement[:800],
+        "about_condition_ids": [str(c.get("id", "")) for c in _contract_for_task(board, task).get("success_conditions", []) if isinstance(c, dict)],
+        "confidence": _confidence(confidence),
+        "evidence_ids": evidence_ids or [],
+    }
+    record = _publish_record(board, _make_record(board, "claim", role, claim, task_id=task["id"], parent_task_id=task.get("parent_id")))
+    _runtime_event(board, "claim_created", claim["statement"], task_id=task["id"], related_record_ids=[record["record_id"]])
+    return record
+def _claim_task_done(board: dict[str, Any], task: dict[str, Any], role: str, statement: str, evidence_ids: list[str] | None = None) -> None:
+    record = _publish_claim(board, task, role, statement, evidence_ids=evidence_ids, confidence=0.35)
+    _set_task_status(board, task, "claimed_done", role, [record["record_id"]])
+def _block_task(board: dict[str, Any], task: dict[str, Any], reason: str) -> None:
+    history = board.setdefault("history", [])
+    history.append({"blocked": task.get("description", ""), "reason": reason[:config.EVIDENCE_TEXT_MAX]})
+    _set_task_status(board, task, "blocked", "runtime")
 def _render_actor_context(board: dict[str, Any], instruction: str) -> str:
     parts: list[str] = [f"GOAL: {board.get('goal', '')}"]
     screen = str(board.get("screen", "")).strip()
@@ -289,57 +636,50 @@ def _render_actor_context(board: dict[str, Any], instruction: str) -> str:
         lines = ["PLAN:"]
         for step in plan:
             if isinstance(step, dict):
-                lines.append(f"  - {step.get('status', '?')}: {step.get('text', '')}")
+                lines.append(f"  - {step.get('status', '?')} {step.get('id', '')}: {step.get('description', '')}")
         parts.append("\n".join(lines))
+    task = _active_task(board)
+    if task:
+        parts.append("ACTIVE_CONTRACT:\n" + json.dumps(_contract_for_task(board, task), ensure_ascii=False)[:2000])
     parts.append(f"INSTRUCTION: {instruction}")
     return "\n\n".join(parts)
-def _plan_steps(sequence: list[str]) -> list[dict[str, Any]]:
-    return [
-        {"text": text, "status": "active" if i == 0 else "pending"}
-        for i, text in enumerate(sequence)
-    ]
 def _restore_after_human_task(board: dict[str, Any]) -> None:
     board["priority"] = config.PRI_MAINTENANCE
     board["goal"] = ""
     board["plan"] = []
     board["_human_denials"] = 0
-def _verify_outcome(
-    board: dict[str, Any],
-    done_when: str,
-    ok: bool,
-    evidence: str,
-    *,
-    llm_out: LLMResult | None = None,
-) -> dict[str, Any]:
-    if ok:
-        board["plan"] = []
-        board.setdefault("completed", []).append(done_when)
-        board["_last_verified_goal"] = str(board.get("goal", ""))[:config.PROMPT_GOAL_TEXT_MAX]
-        board["_last_verified_priority"] = board.get("priority", config.PRI_MAINTENANCE)
-        board["_last_verifier_evidence"] = evidence[:config.EVIDENCE_TEXT_MAX]
-        if board.get("priority", config.PRI_MAINTENANCE) >= config.PRI_HUMAN:
-            _restore_after_human_task(board)
-        data: dict[str, Any] = {"verdict": "confirmed", "evidence": evidence}
-        if llm_out is not None:
-            data = _llm_event_data(llm_out, data)
-        return {"phase": "verify", "data": data, "next": "fission_judge"}
-    board["plan"] = []
-    board.setdefault("history", []).append({"denied": done_when, "reason": evidence})
-    _post_failure_candidate(board, done_when, evidence)
-    data = {"verdict": "denied", "evidence": evidence}
-    if llm_out is not None:
-        data = _llm_event_data(llm_out, data)
-    return {"phase": "verify", "data": data, "next": "reflector"}
 class ObserverAgent:
     def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
         from desktop import observe
+        role = _effective_role(board, "observer")
+        if not _require_capability(board, role, "can_observe", "observe", board.get("active_task_id"), "desktop observation"):
+            return {"phase": "observe", "data": {"error": "permission_denied"}}
         try:
             obs = observe()
         except Exception as exc:
             return {"phase": "observe", "data": {"error": str(exc)[:200]}}
+        task_id = str(board.get("active_task_id", "")) or None
+        evidence = {
+            "id": _new_id(board, "evidence"),
+            "task_id": task_id,
+            "produced_by_role": role,
+            "source_class": "direct_observation",
+            "source_name": "desktop.observe",
+            "operation": "observe",
+            "target": {"kind": "ui_surface", "identifier": obs.focused_title or None, "human_label": obs.focused_title or None},
+            "observed": {
+                "summary": obs.desktop_summary[:500],
+                "text": obs.context_text[:config.EVIDENCE_TEXT_MAX] or None,
+                "structured": {"focused": obs.focused_title, "chars": len(obs.context_text), "windows": obs.windows[:10]},
+                "artifact_refs": [],
+            },
+            "claim": {"statement": "", "supports_condition_ids": [], "contradicts_condition_ids": [], "confidence": 0.0},
+            "trust": {"independence": "independent", "mutability": "read_only", "strength": "primary", "freshness_cycle": int(board.get("_pressure", {}).get("cycles", 0) or 0)},
+        }
+        record = _publish_record(board, _make_record(board, "evidence", role, evidence, task_id=task_id))
         return {
             "phase": "observe",
-            "data": {"focused": obs.focused_title, "chars": len(obs.context_text)},
+            "data": {"focused": obs.focused_title, "chars": len(obs.context_text), "record_id": record["record_id"], "evidence_id": evidence["id"]},
             "writes": {
                 "screen": obs.context_text,
                 "screen_elements": obs.book,
@@ -353,26 +693,29 @@ class SchedulerAgent:
         if _personality(board) == "comms_operator":
             if board.get("priority", config.PRI_MAINTENANCE) < config.PRI_HUMAN and not board.get("plan"):
                 return None
-        plan = board.get("plan", [])
-        if not plan:
+        _ensure_root_records(board)
+        active = _active_task(board)
+        if active:
+            return {"next": "verifier" if active.get("status") == "claimed_done" else "actor",
+                    "data": {"reason": active.get("status"), "task_id": active.get("id")}}
+        if _activate_next_task(board):
+            return {"next": "actor", "data": {"reason": "task_activated", "task_id": board.get("active_task_id", "")}}
+        if not [t for t in _tasks(board) if t.get("id") != board.get("root_task_id")]:
             # Workers always self-direct: use goal or personality mission
             if not board.get("goal"):
                 persona = _personality(board) or "worker"
                 board["goal"] = f"Self-directed {persona} maintenance: audit, improve, report"
             return {"next": "planner", "data": {"reason": "need_plan"}}
-        active = [s for s in plan if isinstance(s, dict) and s.get("status") == "active"]
-        if active:
-            return {"next": "actor", "data": {"reason": "has_active_step"}}
-        pending = [s for s in plan if isinstance(s, dict) and s.get("status") == "pending"]
-        if pending:
-            pending[0]["status"] = "active"
-            return {"next": "actor", "data": {"reason": "next_step"}}
-        return {"next": "verifier", "data": {"reason": "plan_complete"}}
+        if any(t.get("status") == "blocked" for t in _tasks(board)):
+            return {"next": "reflector", "data": {"reason": "task_blocked"}}
+        return {"next": "planner", "data": {"reason": "no_active_task"}}
 class PlannerAgent:
     def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
         goal = board.get("goal", "")
         if not goal:
             return None
+        if not _require_capability(board, "planner", "can_plan", "plan", None, "create task and contract records"):
+            return {"phase": "planner.error", "data": {"error": "permission_denied"}}
         log.emit("planner.pending", {"goal": goal[:config.GOAL_TEXT_MAX]})
         llm_out = _call_circuit(board, "planner", _planner_state(board), role="planner")
         parsed = _parse_json(llm_out.text)
@@ -381,58 +724,62 @@ class PlannerAgent:
                 "error": "invalid JSON",
                 "raw": str(llm_out.text)[:config.PLANNER_ERROR_RAW_MAX],
             })}
-        mode = str(parsed.get("mode", "direct"))
-        if mode == "done":
-            return {"phase": "plan", "data": _llm_event_data(llm_out, {
-                "mode": "done", "done_when": parsed.get("done_when", ""),
-            }), "writes": {"plan": []}}
-        sequence = _normalize_plan_sequence(parsed.get("sequence", []))
-        if not sequence:
-            return {"phase": "planner.error", "data": _llm_event_data(llm_out, {"error": "empty sequence"})}
-        done_when = str(parsed.get("done_when", "")).strip() or goal[:1000]
-        steps = _plan_steps(sequence)
-        writes: dict[str, Any] = {"plan": steps, "done_when": done_when}
+        ok, error, install_data = _install_planner_records(board, parsed)
+        if not ok:
+            return {"phase": "planner.error", "data": _llm_event_data(llm_out, {"error": error})}
+        writes: dict[str, Any] = {
+            "tasks": board.get("tasks", []),
+            "contracts": board.get("contracts", []),
+            "plan": board.get("plan", []),
+            "active_task_id": board.get("active_task_id", ""),
+            "done_when": board.get("done_when", ""),
+        }
         if _personality(board) == "comms_operator":
             writes["_last_route"] = time.time()
         return {
             "phase": "plan", "next": "actor",
-            "data": _llm_event_data(llm_out, {"mode": mode, "steps": len(steps), "done_when": done_when}),
+            "data": _llm_event_data(llm_out, install_data),
             "writes": writes,
         }
 class ActorAgent:
     def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
         from actions import execute_step, execute_verb, is_python_step, VERBS
 
-        plan = board.get("plan", [])
-        active = next((s for s in plan if isinstance(s, dict) and s.get("status") == "active"), None)
-        if not active:
+        task = _active_task(board)
+        if not task or task.get("status") != "active":
             return None
-        text = str(active.get("text", "")).strip()
+        role = _effective_role(board, "actor")
+        text = str(task.get("description", "")).strip()
         if not text:
-            return {"phase": "actor.error", "data": {"error": "no active step text"}}
+            _block_task(board, task, "no active task description")
+            return {"phase": "actor.error", "data": {"error": "no active task description"}, "next": "reflector"}
         history: list[dict[str, Any]] = list(board.get("history", []))
 
         if is_python_step(text):
+            operation, target_kind, mutates_state, flag = _step_policy(text)
+            if not _require_capability(board, role, flag, operation, task["id"], text[:200]):
+                return {"phase": "actor", "data": {"ok": False, "permission_denied": True, "task_id": task["id"]}, "next": "verifier"}
             result = execute_step(text)
-            history.append({"verb": result.verb, "ok": result.success, "obs": result.observation})
-            active["result"] = result.observation[:config.EXEC_OUTPUT_LIMIT]
+            action_record, evidence = _publish_action_result(
+                board, task, role, operation=operation, target_kind=target_kind,
+                input_summary=text, result=result, mutates_state=mutates_state,
+            )
+            evidence_ids = [evidence["id"]] if evidence else []
+            history.append({"verb": result.verb, "ok": result.success, "obs": result.observation, "task_id": task["id"]})
             if result.success:
-                active["status"] = "done"
-                _advance_plan(plan)
-                plan_done = all(not isinstance(s, dict) or s.get("status") == "done" for s in plan)
+                _claim_task_done(board, task, role, f"Actor reports task completed after {result.verb}.", evidence_ids)
                 return {
                     "phase": "actor",
-                    "data": {"ok": True, "verb": result.verb, "obs": result.observation[:200]},
-                    "next": "verifier" if plan_done else "actor",
-                    "writes": {"plan": plan, "history": history[-config.MAX_HISTORY:]},
+                    "data": {"ok": True, "verb": result.verb, "obs": result.observation[:200], "task_status": "claimed_done", "record_id": action_record["record_id"]},
+                    "next": "verifier",
+                    "writes": {"plan": board.get("plan", []), "tasks": board.get("tasks", []), "history": history[-config.MAX_HISTORY:]},
                 }
-            active["status"] = "failed"
-            _abort_plan_after_failure(plan, result.observation)
+            _block_task(board, task, result.observation)
             return {
                 "phase": "actor",
                 "data": {"ok": False, "verb": result.verb, "obs": result.observation[:200]},
-                "next": "verifier",
-                "writes": {"plan": plan, "history": history[-config.MAX_HISTORY:]},
+                "next": "reflector",
+                "writes": {"plan": board.get("plan", []), "tasks": board.get("tasks", []), "history": history[-config.MAX_HISTORY:]},
             }
 
         llm_out = _call_circuit(board, "actor", _render_actor_context(board, text), role="actor")
@@ -442,73 +789,178 @@ class ActorAgent:
         conclusion = str(parsed.get("conclusion", "EXECUTE"))
         actions: list[dict[str, Any]] = parsed.get("actions", []) if isinstance(parsed.get("actions"), list) else []
         actions = [a for a in actions if str(a.get("verb", "")) in VERBS]
-        plan_done = lambda: all(not isinstance(s, dict) or s.get("status") == "done" for s in plan)
 
         if conclusion == "DONE":
-            active["status"] = "done"
-            _advance_plan(plan)
+            _claim_task_done(board, task, role, "Actor self-reports task completion.", [])
             return {
                 "phase": "actor",
-                "data": _llm_event_data(llm_out, {"conclusion": "DONE"}),
-                "next": "verifier" if plan_done() else "actor",
-                "writes": {"plan": plan},
+                "data": _llm_event_data(llm_out, {"conclusion": "DONE", "task_status": "claimed_done"}),
+                "next": "verifier",
+                "writes": {"plan": board.get("plan", []), "tasks": board.get("tasks", [])},
             }
         if conclusion == "CANNOT" or (conclusion == "EXECUTE" and not actions):
-            active["status"] = "failed"
-            return {"phase": "actor", "data": _llm_event_data(llm_out, {"conclusion": conclusion, "ok": False})}
+            _block_task(board, task, conclusion)
+            return {"phase": "actor", "data": _llm_event_data(llm_out, {"conclusion": conclusion, "ok": False}), "next": "reflector"}
 
         elements: dict[str, Any] = board.get("screen_elements", {})
-        had_failure = False
+        evidence_ids: list[str] = []
+        action_ids: list[str] = []
         for action in actions:
             verb = str(action.get("verb", ""))
+            operation, target_kind, mutates_state, flag = _verb_policy(verb)
+            summary = f"{verb} target={action.get('target', '')} value={action.get('value', '')}"
+            if not _require_capability(board, role, flag, operation, task["id"], summary):
+                return {"phase": "actor", "data": _llm_event_data(llm_out, {"ok": False, "permission_denied": True}), "next": "verifier"}
             result = execute_verb(
                 verb,
                 _build_args(verb, str(action.get("target", "")), str(action.get("value", ""))),
                 elements,
                 None,
             )
-            history.append({"verb": verb, "ok": result.success, "obs": result.observation})
+            action_record, evidence = _publish_action_result(
+                board, task, role, operation=operation, target_kind=target_kind,
+                input_summary=summary, result=result, mutates_state=mutates_state,
+            )
+            action_ids.append(action_record["record_id"])
+            if evidence:
+                evidence_ids.append(evidence["id"])
+            history.append({"verb": verb, "ok": result.success, "obs": result.observation, "task_id": task["id"]})
             if not result.success:
-                had_failure = True
-                active["result"] = result.observation[:config.EXEC_OUTPUT_LIMIT]
-                break
-        if had_failure:
-            active["status"] = "failed"
-            _abort_plan_after_failure(plan, str(active.get("result", "")))
-            return {
-                "phase": "actor",
-                "data": _llm_event_data(llm_out, {"conclusion": conclusion, "ok": False}),
-                "next": "verifier",
-                "writes": {"plan": plan, "history": history[-config.MAX_HISTORY:]},
-            }
-        active["status"] = "done"
-        active["result"] = f"gui:{conclusion}"
-        _advance_plan(plan)
+                _block_task(board, task, result.observation)
+                return {
+                    "phase": "actor",
+                    "data": _llm_event_data(llm_out, {"conclusion": conclusion, "ok": False, "record_ids": action_ids}),
+                    "next": "reflector",
+                    "writes": {"plan": board.get("plan", []), "tasks": board.get("tasks", []), "history": history[-config.MAX_HISTORY:]},
+                }
+        _claim_task_done(board, task, role, f"Actor reports GUI actions completed for task.", evidence_ids)
         return {
             "phase": "actor",
-            "data": _llm_event_data(llm_out, {"conclusion": conclusion, "ok": True}),
-            "next": "verifier" if plan_done() else "actor",
-            "writes": {"plan": plan, "history": history[-config.MAX_HISTORY:]},
+            "data": _llm_event_data(llm_out, {"conclusion": conclusion, "ok": True, "record_ids": action_ids, "task_status": "claimed_done"}),
+            "next": "verifier",
+            "writes": {"plan": board.get("plan", []), "tasks": board.get("tasks", []), "history": history[-config.MAX_HISTORY:]},
         }
+def _records_for_task(board: dict[str, Any], task_id: str) -> dict[str, list[dict[str, Any]]]:
+    grouped = {"actions": [], "evidence": [], "claims": [], "prior_verdicts": [], "runtime_events": []}
+    for record in board.get("bus_records", []):
+        if not isinstance(record, dict):
+            continue
+        rtype = str(record.get("record_type", ""))
+        rid = record.get("task_id")
+        if rid not in (task_id, None, "") and record.get("root_task_id") != board.get("root_task_id"):
+            continue
+        if rtype == "action":
+            grouped["actions"].append(record)
+        elif rtype == "evidence":
+            grouped["evidence"].append(record)
+        elif rtype == "claim":
+            grouped["claims"].append(record)
+        elif rtype == "verdict":
+            grouped["prior_verdicts"].append(record)
+        elif rtype == "runtime_event":
+            grouped["runtime_events"].append(record)
+    return grouped
+def _verification_packet(board: dict[str, Any], role: str, task: dict[str, Any], contract: dict[str, Any]) -> dict[str, Any]:
+    root = _task_by_id(board, _root_task_id(board)) or {}
+    return {
+        "schema_version": VERIFICATION_PACKET_SCHEMA,
+        "root_task": root,
+        "active_task": task,
+        "active_contract": contract,
+        "records": _records_for_task(board, task["id"]),
+        "verifier_capability": {"role": role, **_capability(role)},
+    }
+def _normalize_condition_results(parsed: dict[str, Any], contract: dict[str, Any]) -> list[dict[str, Any]]:
+    raw = parsed.get("condition_results")
+    if isinstance(raw, list) and raw:
+        out = []
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            status = str(item.get("status", "unknown")).lower()
+            out.append({
+                "condition_id": str(item.get("condition_id", "")),
+                "status": status if status in {"satisfied", "unsatisfied", "unknown"} else "unknown",
+                "evidence_used": [str(v) for v in item.get("evidence_used", [])] if isinstance(item.get("evidence_used"), list) else [],
+                "missing_evidence": [str(v) for v in item.get("missing_evidence", [])] if isinstance(item.get("missing_evidence"), list) else [],
+                "reason": str(item.get("reason", ""))[:500],
+            })
+        if out:
+            return out
+    return [{
+        "condition_id": str(cond.get("id", "")),
+        "status": "unknown",
+        "evidence_used": [],
+        "missing_evidence": ["verifier did not return a condition result"],
+        "reason": "Missing verifier condition result.",
+    } for cond in contract.get("success_conditions", []) if isinstance(cond, dict)]
+def _normalize_verdict_data(board: dict[str, Any], parsed: dict[str, Any] | None, task: dict[str, Any], contract: dict[str, Any], raw_text: str) -> dict[str, Any]:
+    parsed = parsed or {}
+    verdict = str(parsed.get("verdict", "UNKNOWN")).upper()
+    if verdict not in VERDICTS:
+        verdict = "UNKNOWN"
+    rejected_raw = parsed.get("evidence_rejected", [])
+    rejected = []
+    if isinstance(rejected_raw, list):
+        for item in rejected_raw:
+            if isinstance(item, dict):
+                rejected.append({"evidence_id": str(item.get("evidence_id", "")), "reason": str(item.get("reason", ""))[:500]})
+    return {
+        "id": _new_id(board, "verdict"),
+        "task_id": task["id"],
+        "contract_id": contract["id"],
+        "contract_version": int(contract.get("version", 1) or 1),
+        "verdict": verdict,
+        "confidence": _confidence(parsed.get("confidence", 0.0)),
+        "because": str(parsed.get("because", "") or raw_text or "verifier returned no explanation")[:config.EVIDENCE_TEXT_MAX],
+        "condition_results": _normalize_condition_results(parsed, contract),
+        "evidence_used": [str(v) for v in parsed.get("evidence_used", [])] if isinstance(parsed.get("evidence_used"), list) else [],
+        "evidence_rejected": rejected,
+        "actor_claim_trusted_as_primary": False,
+        "next_recommendation": str(parsed.get("next_recommendation", "gather_evidence")) if str(parsed.get("next_recommendation", "gather_evidence")) in {"continue", "gather_evidence", "replan", "ask_user", "stop"} else "gather_evidence",
+    }
+def _apply_verdict(board: dict[str, Any], task: dict[str, Any], verdict_record: dict[str, Any], llm_out: LLMResult) -> dict[str, Any]:
+    verdict = verdict_record["data"]["verdict"]
+    because = str(verdict_record["data"].get("because", ""))[:config.EVIDENCE_TEXT_MAX]
+    if verdict == "DONE":
+        _set_task_status(board, task, "verified_done", "verifier", [verdict_record["record_id"]])
+        board.setdefault("completed", []).append(str(task.get("description", "")))
+        board["_last_verified_goal"] = str(board.get("goal", ""))[:config.PROMPT_GOAL_TEXT_MAX]
+        board["_last_verified_priority"] = board.get("priority", config.PRI_MAINTENANCE)
+        board["_last_verifier_evidence"] = because
+        if board.get("priority", config.PRI_MAINTENANCE) >= config.PRI_HUMAN and not any(t.get("status") in {"proposed", "active", "claimed_done"} for t in _tasks(board) if t.get("id") != board.get("root_task_id")):
+            _restore_after_human_task(board)
+        return {"phase": "verify", "data": _llm_event_data(llm_out, {"verdict": "DONE", "because": because, "record_id": verdict_record["record_id"]}), "next": "fission_judge"}
+    if verdict == "NOT_DONE":
+        _set_task_status(board, task, "rejected", "verifier", [verdict_record["record_id"]])
+        board.setdefault("history", []).append({"denied": task.get("description", ""), "reason": because})
+        _post_failure_candidate(board, str(task.get("description", "")), because)
+        return {"phase": "verify", "data": _llm_event_data(llm_out, {"verdict": "NOT_DONE", "because": because, "record_id": verdict_record["record_id"]}), "next": "reflector"}
+    _set_task_status(board, task, "active", "verifier", [verdict_record["record_id"]])
+    return {"phase": "verify", "data": _llm_event_data(llm_out, {"verdict": "UNKNOWN", "because": because, "record_id": verdict_record["record_id"]}), "next": "actor"}
 class VerifierAgent:
     def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
-        done_when = board.get("done_when", "")
-        if not done_when:
-            return {"phase": "verify", "data": {"verdict": "confirmed", "evidence": "no done_when set"}}
-        plan = board.get("plan", [])
-        results = [str(s.get("result", ""))[:config.EVIDENCE_TEXT_MAX] for s in plan if isinstance(s, dict)]
+        task = _active_task(board)
+        if not task:
+            return None
+        role = _effective_role(board, "verifier")
+        if not _require_capability(board, role, "can_verify", "verify", task["id"], "contract-bus packet"):
+            return {"phase": "verifier.error", "data": {"error": "permission_denied"}}
+        if not _require_capability(board, role, "can_publish_verdict", "publish_verdict", task["id"], "verifier verdict"):
+            return {"phase": "verifier.error", "data": {"error": "permission_denied"}}
+        contract = _contract_for_task(board, task)
+        packet = _verification_packet(board, role, task, contract)
         llm_out = _call_circuit(
             board,
             "verifier",
-            f"DONE_WHEN: {done_when}\n\nSTEP RESULTS:\n" + "\n".join(results),
+            json.dumps(packet, ensure_ascii=False, separators=(",", ":")),
             role="verifier",
         )
         parsed = _parse_json(llm_out.text)
-        if not parsed:
-            return _verify_outcome(board, done_when, False, "verifier returned invalid JSON", llm_out=llm_out)
-        verdict = str(parsed.get("verdict", "denied")).lower()
-        evidence = str(parsed.get("evidence", ""))[:config.EVIDENCE_TEXT_MAX] or str(llm_out.text)[:config.EVIDENCE_TEXT_MAX]
-        return _verify_outcome(board, done_when, verdict == "confirmed", evidence, llm_out=llm_out)
+        verdict = _normalize_verdict_data(board, parsed, task, contract, str(llm_out.text)[:config.EVIDENCE_TEXT_MAX])
+        record = _publish_record(board, _make_record(board, "verdict", role, verdict, task_id=task["id"], parent_task_id=task.get("parent_id")))
+        _runtime_event(board, "verdict_created", f"{verdict['verdict']} for {task['id']}", task_id=task["id"], related_record_ids=[record["record_id"]])
+        return _apply_verdict(board, task, record, llm_out)
 class FissionJudgeAgent:
     def run(self, board: dict[str, Any]) -> dict[str, Any] | None:
         completed = board.get("completed", [])
@@ -660,14 +1112,6 @@ def _fission_review(board: dict[str, Any], completed: str) -> dict[str, str]:
             "diagnosis": "duplicate credited milestone",
             "suggestion": "plan a new verifiable step",
             "rule": "",
-        }
-    gate = _fission_evidence_gate(board, completed)
-    if gate:
-        return {
-            "verdict": "deny",
-            "diagnosis": gate,
-            "suggestion": "produce external evidence from the actual Desktop path, then verify again",
-            "rule": "fission requires real path/readback evidence for file/Desktop tasks",
         }
     pressure = board.get("_pressure", {})
     llm_out = _call_circuit(

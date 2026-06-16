@@ -68,7 +68,6 @@ def run(board: dict[str, Any], interrupted: Callable[[], bool]) -> None:
     board.setdefault("_moe", {"stuck_ticks": {}})
     board["_ctx"] = ctx
 
-    _update_observe_focus(board)
     while not log.exhausted() and not interrupted():
         # --- Priority interrupt check ---
         _apply_bus_interrupt(board)
@@ -120,7 +119,7 @@ def run(board: dict[str, Any], interrupted: Callable[[], bool]) -> None:
                     board["_pressure"]["failures"] = 0
                     board["_satisfied_count"] = int(board.get("_satisfied_count", 0) or 0) + 1
                 elif phase in ("planner.error", "actor.error", "verifier.error", "fission.deny") or \
-                     (phase == "verify" and (result.get("data") or {}).get("verdict") == "denied") or \
+                     (phase == "verify" and (result.get("data") or {}).get("verdict") == "NOT_DONE") or \
                      (phase == "actor" and not (result.get("data") or {}).get("ok", True)):
                     board["_pressure"]["failures"] += 1
                     if board.get("priority", config.PRI_MAINTENANCE) >= config.PRI_HUMAN:
@@ -145,7 +144,7 @@ def _needs_screen(board: dict[str, Any], target: str) -> bool:
         )
         if not active:
             return False
-        if is_python_step(str(active.get("text", ""))):
+        if is_python_step(str(active.get("description", ""))):
             return False
     return True
 def _is_satisfied(board: dict[str, Any]) -> bool:
@@ -171,19 +170,6 @@ def _is_satisfied(board: dict[str, Any]) -> bool:
         board["_satisfied_logged"] = True
     return True
 
-
-def _update_observe_focus(board: dict[str, Any]) -> None:
-    goal = str(board.get("goal", "")).lower()
-    try:
-        from desktop import set_observe_focus
-        if any(k in goal for k in ("chrome", "browser", "youtube", "firefox", "edge")):
-            set_observe_focus("Chrome" if "chrome" in goal or "youtube" in goal else "Firefox" if "firefox" in goal else "Edge")
-        elif any(k in goal for k in ("notepad", "file explorer", "explorer")):
-            set_observe_focus("Notepad" if "notepad" in goal else "Explorer")
-        else:
-            set_observe_focus("")
-    except Exception:
-        pass
 
 def _run_observer(board: dict[str, Any]) -> None:
     result = _OBSERVER.run(board)

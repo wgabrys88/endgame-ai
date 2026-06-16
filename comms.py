@@ -1,26 +1,7 @@
-"""Message bus — the colony blackboard (protocol v1).
+"""Contract-bus blackboard.
 
-Two stores, one envelope:
-  messages.json    — intent (coordinate, route, assign)
-  events_bus.jsonl — observation (telemetry, pipeline phases)
-
-Every entry shares the v1 envelope:
-
-  v, id, ts, from, slot, kind, pri, mentions?, to?, text, payload
-
-Kinds (closed set):
-  message   — chat (human/colony)
-  ping      — @mention wake-up
-  request   — assigned task  payload: {to, status, goal?}
-  route     — MoE gate decision payload: {to, slot?, pri, reason, scores?}
-  telemetry — pressure snapshot payload: {stagnation, power, velocity, fissions, phase, cycles}
-  event     — pipeline phase   payload: {phase, ...}
-  beacon    — system online    payload: {status}
-  evolve    — AgentBreeder     payload: {target, action, fitness?, diff?}
-  verdict   — verify/fission   payload: {verdict, evidence}
-  status    — reactor/tui      payload: {state, detail?}
-
-MoE: power = confidence, stagnation = 1-power. route.scores maps persona→telemetry.
+messages.json and events_bus.jsonl store the same contract-bus.v1 envelope.
+Legacy readers receive id/kind/text/payload as an in-memory projection only.
 """
 from __future__ import annotations
 from collections import Counter
@@ -34,6 +15,12 @@ from typing import Any
 import config
 
 BUS_VERSION = 1
+CONTRACT_SCHEMA = "contract-bus.v1"
+_RECORD_FIELDS = (
+    "schema_version", "record_id", "record_type", "created_at", "cycle_id",
+    "root_task_id", "parent_task_id", "task_id", "role", "agent_id", "data",
+)
+_BUS_ROLES = frozenset({"planner", "actor", "observer", "verifier", "reviewer", "runtime", "tool"})
 
 KIND_MESSAGE = "message"
 KIND_PING = "ping"
@@ -92,12 +79,47 @@ def parse_mentions(text: str) -> list[str]:
     return [c for m in _MENTION_RE.finditer(text) if (c := canonical(m.group(1))) not in seen and not seen.add(c)]
 def ping_for(peer: str, mentions: list[str]) -> bool:
     return bool(peer and mentions and (peer in mentions or "colony" in mentions))
+def _is_contract_record(entry: dict[str, Any]) -> bool:
+    return str(entry.get("schema_version", "")) == CONTRACT_SCHEMA
+def _record_data(entry: dict[str, Any]) -> dict[str, Any]:
+    data = entry.get("data")
+    return data if isinstance(data, dict) else {}
 def _entry_payload(entry: dict[str, Any]) -> dict[str, Any]:
+    if _is_contract_record(entry):
+        data = _record_data(entry)
+        payload = data.get("payload")
+        return payload if isinstance(payload, dict) else data
     payload = entry.get("payload")
     if isinstance(payload, dict):
         return payload
     data = entry.get("data")
     return data if isinstance(data, dict) else {}
+def _legacy_int(record_id: Any) -> int:
+    digits = "".join(ch for ch in str(record_id) if ch.isdigit())
+    return int(digits[-15:] or 0)
+def _record_role(role: str) -> str:
+    value = role.strip().lower()
+    return value if value in _BUS_ROLES else "runtime"
+def _record_kind(record_type: str, data: dict[str, Any]) -> str:
+    kind = str(data.get("kind", "")).strip()
+    if kind:
+        return kind
+    return KIND_VERDICT if record_type == "verdict" else KIND_EVENT
+def _storage_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    if _is_contract_record(entry):
+        return {field: entry.get(field) for field in _RECORD_FIELDS}
+    payload = _entry_payload(entry)
+    return envelope(
+        str(entry.get("from", agent_id())),
+        str(entry.get("kind", KIND_EVENT)),
+        text=str(entry.get("text", "")),
+        pri=int(entry.get("pri", payload.get("priority", config.PRI_MAINTENANCE)) or 0),
+        mentions=entry.get("mentions") if isinstance(entry.get("mentions"), list) else None,
+        to=str(entry.get("to", "")) or None,
+        payload=payload,
+        slot=int(entry.get("slot", 0) or 0),
+        role=str(entry.get("role", "runtime")),
+    )
 def inbox_match(peer: str, entry: dict[str, Any]) -> bool:
     """Whether a blackboard entry belongs in peer's actionable inbox."""
     me = canonical(peer)
@@ -121,8 +143,25 @@ def inbox_match(peer: str, entry: dict[str, Any]) -> bool:
 def _now_id() -> tuple[str, int]:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds"), int(time.time() * 1000)
 def _normalize(entry: dict[str, Any]) -> dict[str, Any]:
-    """Upgrade legacy entries to v1 shape in-memory."""
+    """Upgrade stored entries to the compatibility view readers expect."""
     e = dict(entry)
+    if _is_contract_record(e):
+        data = _record_data(e)
+        payload = data.get("payload") if isinstance(data.get("payload"), dict) else data
+        e["v"] = BUS_VERSION
+        e["id"] = int(data.get("legacy_id") or _legacy_int(e.get("record_id")))
+        e["ts"] = e.get("created_at", "")
+        e["from"] = str(e.get("agent_id") or e.get("role") or "")
+        e["slot"] = int(data.get("slot", 0) or 0)
+        e["kind"] = _record_kind(str(e.get("record_type", "")), data)
+        e["pri"] = int(data.get("priority", payload.get("priority", config.PRI_MAINTENANCE)) or 0)
+        e["text"] = str(data.get("text") or data.get("summary") or data.get("because") or "")
+        e["payload"] = payload if isinstance(payload, dict) else {}
+        if data.get("mentions"):
+            e["mentions"] = data["mentions"]
+        if data.get("to"):
+            e["to"] = canonical(str(data["to"]))
+        return e
     if "v" not in e:
         e["v"] = 0
     data = e.get("data") if isinstance(e.get("data"), dict) else {}
@@ -158,36 +197,48 @@ def envelope(
     to: str | None = None,
     payload: dict[str, Any] | None = None,
     slot: int | None = None,
+    role: str = "runtime",
 ) -> dict[str, Any]:
-    """Build a v1 blackboard entry."""
+    """Build a contract-bus record for blackboard intent or telemetry."""
     ts, eid = _now_id()
     body = text.strip()
     ments = mentions if mentions is not None else parse_mentions(body)
-    entry: dict[str, Any] = {
-        "v": BUS_VERSION,
-        "id": eid,
-        "ts": ts,
-        "from": from_id,
-        "slot": slot if slot is not None else slot_id(),
+    payload = payload or {}
+    data: dict[str, Any] = {
+        "legacy_id": eid,
         "kind": kind,
-        "pri": pri if pri is not None else config.PRI_MAINTENANCE,
         "text": body,
-        "payload": payload or {},
+        "priority": pri if pri is not None else config.PRI_MAINTENANCE,
+        "slot": slot if slot is not None else slot_id(),
+        "payload": payload,
     }
     if ments:
-        entry["mentions"] = ments
+        data["mentions"] = ments
     if to:
-        entry["to"] = canonical(to)
-    return entry
+        data["to"] = canonical(to)
+    return {
+        "schema_version": CONTRACT_SCHEMA,
+        "record_id": f"runtime-{eid}",
+        "record_type": "runtime_event",
+        "created_at": ts,
+        "cycle_id": str(payload.get("cycle_id", "")),
+        "root_task_id": str(payload.get("root_task_id", "")),
+        "parent_task_id": payload.get("parent_task_id"),
+        "task_id": payload.get("task_id"),
+        "role": _record_role(role),
+        "agent_id": from_id or None,
+        "data": data,
+    }
 def _append_event(entry: dict[str, Any]) -> None:
     _ensure()
     try:
         with config.BUS_EVENTS_PATH.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(entry, ensure_ascii=False, separators=(",", ":")) + "\n")
+            fh.write(json.dumps(_storage_entry(entry), ensure_ascii=False, separators=(",", ":")) + "\n")
     except OSError:
         return
     _trim_events()
 def _mirror_breeder_observation(entry: dict[str, Any]) -> None:
+    entry = _normalize(entry)
     kind = str(entry.get("kind", ""))
     payload = entry.get("payload") if isinstance(entry.get("payload"), dict) else {}
     if kind == KIND_EVOLVE:
@@ -206,7 +257,7 @@ def _read_chat() -> list[dict[str, Any]]:
         return []
 def _write_chat(entries: list[dict[str, Any]]) -> None:
     _ensure()
-    trimmed = entries[-config.BUS_CHAT_MAX:]
+    trimmed = [_storage_entry(e) for e in entries[-config.BUS_CHAT_MAX:]]
     config.BUS_CHAT_PATH.write_text(json.dumps(trimmed, ensure_ascii=False) + "\n", encoding="utf-8")
 def post(from_id: str, role: str, text: str, *, kind: str = KIND_MESSAGE,
          priority: int | None = None, data: dict[str, Any] | None = None,
@@ -228,11 +279,8 @@ def post(from_id: str, role: str, text: str, *, kind: str = KIND_MESSAGE,
         from_id, resolved_kind, text=body,
         pri=priority, mentions=mentions,
         to=str(payload.get("to", "")) or None,
-        payload=payload,
+        payload=payload, role=role,
     )
-    # Legacy compat: keep role + data fields readers may expect
-    entry["role"] = role
-    entry["data"] = payload
     entries = _read_chat()
     entries.append(entry)
     _write_chat(entries)
@@ -247,10 +295,8 @@ def request(from_id: str, to: str, text: str, *, priority: int = config.PRI_NORM
     entry = envelope(
         from_id, KIND_REQUEST,
         text=f"@{target} {text}".strip(),
-        pri=priority, to=target, payload=payload,
+        pri=priority, to=target, payload=payload, role="runtime",
     )
-    entry["role"] = "colony"
-    entry["data"] = payload
     entries = _read_chat()
     entries.append(entry)
     _write_chat(entries)
@@ -271,10 +317,8 @@ def route(from_id: str, to: str, reason: str, *, priority: int = config.PRI_NORM
         payload["slot"] = int(slot)
     text = f"@{target} {reason}".strip()
     entry = envelope(
-        from_id, KIND_ROUTE, text=text, pri=priority, to=target, payload=payload,
+        from_id, KIND_ROUTE, text=text, pri=priority, to=target, payload=payload, role="runtime",
     )
-    entry["role"] = "colony"
-    entry["data"] = payload
     entries = _read_chat()
     entries.append(entry)
     _write_chat(entries)
@@ -290,11 +334,16 @@ def post_evolve(from_id: str, target: str, action: str, *, fitness: float | None
     if diff: payload["diff"] = diff[:2000]
     if data: payload.update(data)
     text = f"evolve @{target_id} {action[:32]}"
-    entry = envelope(from_id, KIND_EVOLVE, text=text, pri=priority, to=target_id, payload=payload)
-    entry["role"] = "colony"; entry["data"] = payload
+    entry = envelope(from_id, KIND_EVOLVE, text=text, pri=priority, to=target_id, payload=payload, role="runtime")
     entries = _read_chat(); entries.append(entry); _write_chat(entries)
     _mirror_breeder_observation(entry)
     return entry
+def post_record(record: dict[str, Any]) -> dict[str, Any]:
+    """Append an already-normalized contract-bus task/action/evidence/verdict record."""
+    if not _is_contract_record(record):
+        raise ValueError("contract-bus record required")
+    _append_event(record)
+    return record
 def read_chat(limit: int = 30) -> list[dict[str, Any]]:
     return _read_chat()[-limit:]
 def evolve_candidates(after_id: int = 0, limit: int = 20) -> list[dict[str, Any]]:
@@ -460,7 +509,7 @@ def human_task_active() -> bool:
         if _entry_payload(e).get("human_ack"):
             return False
         text = str(e.get("text", "")).lower()
-        if any(tag in text for tag in ("cannot complete", "not supported", "confirmed", "completed", "declined")):
+        if any(tag in text for tag in ("cannot complete", "not supported", "verified", "completed", "declined")):
             return False
     ments = latest.get("mentions") or parse_mentions(str(latest.get("text", "")))
     if not ments and not pending_for("comms_operator", 1):
@@ -531,7 +580,7 @@ def drain_control(limit: int = 20) -> list[dict[str, Any]]:
             pass
     return out
 def msg_priority(msg: dict[str, Any]) -> int:
-    """Resolve priority from v1 entry (pri field) or legacy data.priority."""
+    """Resolve priority from the compatibility projection."""
     if "pri" in msg:
         return int(msg["pri"])
     data = msg.get("data") or msg.get("payload") or {}
@@ -585,7 +634,7 @@ def format_bus_context(limit: int | None = None, for_agent: str | None = None) -
     n = limit or config.CONTEXT_BUS_MAX
     chat = read_chat(n)
     me = canonical((for_agent or agent_id()).strip())
-    lines = ["BLACKBOARD v1:"]
+    lines = ["BLACKBOARD contract-bus.v1:"]
 
     if me == "comms_operator":
         colony = colony_state()
@@ -628,7 +677,7 @@ def format_phase_brief(phase: str, data: Any, *, max_w: int = 120, style: str = 
     """One-line phase summary for bus mirror and TUI."""
     if not isinstance(data, dict):
         return phase[:max_w]
-    for key in ("obs", "evidence", "verdict", "diagnosis", "reason", "error", "to", "next", "action"):
+    for key in ("verdict", "task_status", "because", "obs", "record_id", "diagnosis", "reason", "error", "to", "next", "action"):
         val = data.get(key)
         if val not in (None, ""):
             return f"{phase} {val}"[:max_w]

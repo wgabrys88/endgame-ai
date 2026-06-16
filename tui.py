@@ -214,7 +214,7 @@ class TUI:
         alive = sum(1 for s in self.slots.values() if s.alive)
         total_f = sum(s.fissions for s in self.slots.values())
         elapsed = time.time() - self._start
-        hdr = (f"{BOLD}{CLR_H}REACTOR{RST} {alive}/{self._expected_slots} "
+        hdr = (f"{BOLD}{CLR_H}CONTRACT BUS{RST} {alive}/{self._expected_slots} "
                f"{CLR_F}F={total_f}{RST}  {CLR_DIM}{self._mode}:{self._model_profile}{RST}  {elapsed:.0f}s")
         lines.append(f"{CLR_B}┌{'─' * (W - 2)}┐{RST}")
         lines.append(row(hdr))
