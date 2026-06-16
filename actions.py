@@ -101,6 +101,11 @@ def _write(args: dict[str, Any], book: ElementBook) -> ActionResult:
 def _press(args: dict[str, Any], book: ElementBook) -> ActionResult:
     key = str(args.get("key", "")).lower()
     if key not in VK_MAP:
+        if "+" in key and key != "+":
+            keys = [part.strip() for part in key.split("+") if part.strip()]
+            return _hotkey({"keys": keys}, book)
+        if len(key) == 1 and key.isprintable():
+            return _write({"text": key}, book)
         return ActionResult("press", False, f"unknown key: {key}")
     vk = VK_MAP[key]
     flags = KEYEVENTF_EXTENDEDKEY if vk in EXTENDED_VKS else 0
@@ -113,6 +118,10 @@ def _hotkey(args: dict[str, Any], book: ElementBook) -> ActionResult:
     keys = args.get("keys", [])
     if not keys:
         return ActionResult("hotkey", False, "keys empty")
+    if len(keys) == 1:
+        key = str(keys[0])
+        if key.lower() not in VK_MAP and len(key) == 1 and key.isprintable():
+            return _write({"text": key}, book)
     vks = []
     for k in keys:
         if k.lower() not in VK_MAP:

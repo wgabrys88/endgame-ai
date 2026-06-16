@@ -249,6 +249,15 @@ def _advance_plan(plan: list[dict[str, Any]]) -> None:
     pending = next((s for s in plan if isinstance(s, dict) and s.get("status") == "pending"), None)
     if pending:
         pending["status"] = "active"
+
+
+def _abort_plan_after_failure(plan: list[dict[str, Any]], reason: str) -> None:
+    for step in plan:
+        if isinstance(step, dict) and step.get("status") == "pending":
+            step["status"] = "skipped_after_failure"
+            step["result"] = f"SKIPPED after failed step: {reason[:config.EVIDENCE_TEXT_MAX]}"
+
+
 def _build_args(verb: str, target: str, value: str) -> dict[str, Any]:
     from actions import DEFAULT_SCROLL_AMOUNT
     target = target.strip("[]")
@@ -260,7 +269,7 @@ def _build_args(verb: str, target: str, value: str) -> dict[str, Any]:
         return {"key": target or value}
     if verb == "hotkey":
         raw = value or target
-        keys = [k.strip() for k in raw.replace("+", ",").split(",") if k.strip()]
+        keys = ["+"] if raw.strip() == "+" else [k.strip() for k in raw.replace("+", ",").split(",") if k.strip()]
         return {"keys": keys}
     if verb == "scroll":
         try:
@@ -418,9 +427,11 @@ class ActorAgent:
                     "writes": {"plan": plan, "history": history[-config.MAX_HISTORY:]},
                 }
             active["status"] = "failed"
+            _abort_plan_after_failure(plan, result.observation)
             return {
                 "phase": "actor",
                 "data": {"ok": False, "verb": result.verb, "obs": result.observation[:200]},
+                "next": "verifier",
                 "writes": {"plan": plan, "history": history[-config.MAX_HISTORY:]},
             }
 
@@ -459,12 +470,15 @@ class ActorAgent:
             history.append({"verb": verb, "ok": result.success, "obs": result.observation})
             if not result.success:
                 had_failure = True
+                active["result"] = result.observation[:config.EXEC_OUTPUT_LIMIT]
                 break
         if had_failure:
             active["status"] = "failed"
+            _abort_plan_after_failure(plan, str(active.get("result", "")))
             return {
                 "phase": "actor",
                 "data": _llm_event_data(llm_out, {"conclusion": conclusion, "ok": False}),
+                "next": "verifier",
                 "writes": {"plan": plan, "history": history[-config.MAX_HISTORY:]},
             }
         active["status"] = "done"
