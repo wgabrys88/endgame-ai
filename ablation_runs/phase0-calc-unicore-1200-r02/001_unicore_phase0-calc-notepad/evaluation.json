@@ -1,0 +1,12 @@
+{
+  "automatic": {
+    "evaluator": "ablation_runner",
+    "verdict": "success_evidence_present",
+    "note": "stop_reason=timeout; returncode=1; confirmed=12; denied=18; fissions=6; errors=12"
+  },
+  "submitted": {
+    "evaluator": "codex",
+    "verdict": "unreviewed",
+    "note": "1200-second Phase 0 rerun; Codex will inspect the committed run evidence after completion."
+  }
+}

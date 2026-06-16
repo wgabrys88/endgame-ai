@@ -1,110 +1,79 @@
+"""Entry point for a single persona process."""
 from __future__ import annotations
 import argparse
 import json
+import os
 import signal
-import time
 import sys
+import time
 import types
 from typing import Any
 
-from config import PROCESS_DPI_AWARENESS_CONTEXT, RESPAWN_PATH, SIGINT_EXIT_CODE
-from llm import set_backend, close_backend
-from engine import run
-import log
 import config
+import log
+from llm import set_backend
+from engine import run
 
 _interrupted = False
-
-GOAL_MUTABLE = True
 
 
 def _handle_sigint(sig: int, frame: types.FrameType | None) -> None:
     global _interrupted
     if _interrupted:
-        sys.exit(SIGINT_EXIT_CODE)
+        sys.exit(130)
     _interrupted = True
-    sys.stderr.write("\n[endgame-ai] Ctrl+C — finishing current cycle.\n")
-
-
-def set_goal(board: dict, new_goal: str) -> bool:
-    global GOAL_MUTABLE
-    if GOAL_MUTABLE:
-        board["goal"] = new_goal
-        return True
-    return False
 
 
 def main() -> None:
-    global _interrupted, GOAL_MUTABLE
-
     parser = argparse.ArgumentParser(prog="endgame-ai")
-    parser.add_argument("goal", nargs="?", default=None)
+    parser.add_argument("goal", nargs="?", default="")
     parser.add_argument("--backend", choices=["lmstudio", "acp"], default="lmstudio")
-    parser.add_argument("--event-budget", type=int, default=None)
+    parser.add_argument("--event-budget", type=int, default=config.EVENT_BUDGET)
+    parser.add_argument("--events-path", type=str, default=None)
+    parser.add_argument("--model-profile", type=str, default=None)
+    parser.add_argument("--persona", type=str, default=None)
+    parser.add_argument("--slot", type=int, default=None)
+    parser.add_argument("--priority", type=int, default=config.PRI_MAINTENANCE)
     args = parser.parse_args()
-
-    if args.goal is None:
-        args.goal = ""
 
     signal.signal(signal.SIGINT, _handle_sigint)
 
-    try:
-        import ctypes
-        ctypes.WinDLL("user32").SetProcessDpiAwarenessContext(ctypes.c_void_p(PROCESS_DPI_AWARENESS_CONTEXT))
-    except (OSError, AttributeError):
-        pass
-
-    if args.event_budget is not None:
-        config.EVENT_BUDGET = args.event_budget
+    if args.persona:
+        os.environ["ENDGAME_PERSONALITY"] = args.persona.strip()
+    if args.slot is not None:
+        os.environ["ENDGAME_SLOT"] = str(args.slot)
+    if args.model_profile:
+        config.apply_model_profile(args.model_profile)
     set_backend(args.backend)
+    log.init(args.events_path, args.event_budget)
 
-    log.init(config.EVENT_BUDGET)
-    log.set_paused(False)
-
-    config.GOAL_PATH.write_text(args.goal, encoding="utf-8")
-
-    RESPAWN_PATH.write_text(
-        json.dumps({"goal": args.goal, "backend": args.backend, "budget": config.EVENT_BUDGET}),
-        encoding="utf-8",
-    )
-
-    GOAL_MUTABLE = True
+    personality = config.Personality.from_env(args.goal)
+    goal = personality.mission
+    if not goal:
+        import comms
+        goal = comms.colony_goal_text()
 
     board: dict[str, Any] = {
-        "goal": args.goal,
+        "goal": goal,
+        "personality": personality.name,
+        "slot": personality.slot,
+        "_personality_mission": personality.mission[:200],
+        "priority": args.priority,
         "plan": [],
-        "done_when": "",
         "history": [],
         "completed": [],
-        "power": 0.0,
-        "start_time": time.time(),
-        "screen": "",
-        "screen_elements": {},
-        "desktop_summary": "",
-        "focused_window": "",
-        "consecutive_failures": 0,
-        "stagnation": 0.0,
-        "progress_history": [],
-        "lorenz_x": 8.0,
-        "lorenz_y": 8.0,
-        "lorenz_z": 27.0,
-        "energy": 1.0,
-        "wing_crossed": False,
-        "pid_output": 0.0,
-        "pid_integral": 0.0,
-        "pid_prev": 0.0,
-        "last_reflect_time": 0.0,
-        "reflect_trigger": {},
-        "math_trace": [],
+        "fissions": 0,
+        "_last_msg_id": 0,
     }
 
-    try:
-        success = run(board, interrupted=lambda: _interrupted)
-    finally:
-        close_backend()
-        log.close()
+    log.emit("start", {"goal": goal[:120], "personality": personality.name, "slot": personality.slot,
+                        "profile": config.active_model_profile(),
+                        "run_mode": os.environ.get("ENDGAME_RUN_MODE", "single"),
+                        "ablation_run_id": os.environ.get("ENDGAME_ABLATION_RUN_ID", "")})
 
-    sys.exit(0)
+    run(board, lambda: _interrupted)
+
+    log.emit("stop", {"fissions": board.get("fissions", 0)})
 
 
 if __name__ == "__main__":

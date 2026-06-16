@@ -1,0 +1,233 @@
+{
+  "v": 1,
+  "batch_id": "phase0-calc-unicore-r04",
+  "run_label": "001_unicore_phase0-calc-notepad",
+  "sequence": 1,
+  "run_id": "20260615_193614_unicore_phase0-calc-notepad",
+  "started_utc": "2026-06-15T19:36:14+00:00",
+  "finished_utc": "2026-06-15T19:37:04+00:00",
+  "elapsed_seconds": 50.248,
+  "mode": "unicore",
+  "task_id": "phase0_calc_notepad",
+  "goal": "open calculator, add two numbers, and get the result copied from the calculator into the notepad, save file on desktop.",
+  "model_profile": "nemotron",
+  "backend": "lmstudio",
+  "unicore_persona": "generalist",
+  "timeout_seconds": 45,
+  "grace_seconds": 5.0,
+  "command": [
+    "C:\\Users\\px-wjt\\AppData\\Local\\Python\\pythoncore-3.13-64\\python.exe",
+    "reactor.py",
+    "--mode",
+    "unicore",
+    "--model-profile",
+    "nemotron",
+    "--ablation-task-id",
+    "phase0_calc_notepad",
+    "--unicore-persona",
+    "generalist"
+  ],
+  "returncode": 1,
+  "stop_reason": "timeout",
+  "stop_detail": {
+    "method": "taskkill_tree_force",
+    "returncode": 1,
+    "first": {
+      "ok": false,
+      "returncode": 128,
+      "stdout": "",
+      "stderr": "ERROR: The process with PID 12252 (child process of PID 7792) could not be terminated.\nReason: This process can only be terminated forcefully (with /F option).\nERROR: The process with PID 4272 (child process of PID 3552) could not be terminated.\nReason: This process can only be terminated forcefully (with /F option).\nERROR: The process with PID 7792 (child process of PID 3552) could not be terminated.\nReason: One or more child processes of this process were still running.\nERROR: The process with PID 3552 (child process of PID 784) could not be terminated.\nReason: One or more child processes of this process were still running."
+    },
+    "second": {
+      "ok": true,
+      "returncode": 0,
+      "stdout": "SUCCESS: The process with PID 12252 (child process of PID 7792) has been terminated.\nSUCCESS: The process with PID 4272 (child process of PID 3552) has been terminated.\nSUCCESS: The process with PID 7792 (child process of PID 3552) has been terminated.\nSUCCESS: The process with PID 3552 (child process of PID 784) has been terminated.",
+      "stderr": ""
+    }
+  },
+  "raw_session_dir": "C:\\Users\\px-wjt\\Downloads\\endgame-ai\\sessions\\20260615_213614",
+  "raw_ablation_dir": "C:\\Users\\px-wjt\\Downloads\\endgame-ai\\runtime\\ablation\\20260615_193614_unicore_phase0-calc-notepad",
+  "manifest": {
+    "v": 1,
+    "run_id": "20260615_193614_unicore_phase0-calc-notepad",
+    "created_utc": "2026-06-15T19:36:14+00:00",
+    "mode": "unicore",
+    "goal": "open calculator, add two numbers, and get the result copied from the calculator into the notepad, save file on desktop.",
+    "task_id": "phase0_calc_notepad",
+    "task": {
+      "id": "phase0_calc_notepad",
+      "family": "desktop",
+      "text": "open calculator, add two numbers, and get the result copied from the calculator into the notepad, save file on desktop."
+    },
+    "model_profile": "nemotron",
+    "persona": "generalist",
+    "slots_expected": 1,
+    "session_dir": "C:\\Users\\px-wjt\\Downloads\\endgame-ai\\sessions\\20260615_213614",
+    "phase0_tasks": [
+      {
+        "id": "phase0_calc_notepad",
+        "family": "desktop",
+        "text": "open calculator, add two numbers, and get the result copied from the calculator into the notepad, save file on desktop."
+      },
+      {
+        "id": "phase0_youtube_waka_waka",
+        "family": "browser",
+        "text": "open chrome and play on youtube shakira waka waka"
+      },
+      {
+        "id": "phase0_grok_code_review",
+        "family": "external_ai",
+        "text": "open chrome and use grok.com ai to provide to him the single source code file of the endgame-ai workspace and asking what endgame is why it is asking and asking for code review, then when the grok instructions are provided, the endgame-ai system must validate if they can be implemented and the implementation must happen and then system must find a way, to validate the changes, that the entire system will benefit from them, this actually must be explained via multiturn conversation with grok, so endgame-ai asks grok for review of file and then follows the grok suggestion and asks grok if needed for clarifications and treat grok as an persona that the endgame-ai system must be aware of , its a large remote ai model that can act as part of the system on demand of the system, the realization of that by the endgame-ai itself will be a succes"
+      },
+      {
+        "id": "phase0_social_updates",
+        "family": "browser",
+        "text": "post on x.com and linkedin.com usin chrome an updates about endgame-ai evolution process and self maintenance on behalf of owners account"
+      }
+    ],
+    "core_metric_fields": [
+      "task_success_rate",
+      "first_pass_success",
+      "external_verifier_agreement",
+      "median_latency_ms",
+      "p95_latency_ms",
+      "tokens_per_solved_task",
+      "bus_overhead_ratio",
+      "solution_diversity",
+      "mutation_uplift",
+      "regression_rate",
+      "crash_recovery_rate"
+    ]
+  },
+  "summary": {
+    "v": 1,
+    "status": "timeout",
+    "updated_utc": "2026-06-15T19:37:04+00:00",
+    "session_dir": "C:\\Users\\px-wjt\\Downloads\\endgame-ai\\sessions\\20260615_213614",
+    "events": 39,
+    "phases": {
+      "start": 2,
+      "interrupt": 2,
+      "plugin.fission_log": 4,
+      "schedule": 4,
+      "planner.pending": 2,
+      "llm.request": 8,
+      "llm.response": 6,
+      "plan": 2,
+      "actor": 2,
+      "observe": 2,
+      "verify": 2,
+      "fission.deny": 2,
+      "reactor.start": 1
+    },
+    "evidence": {
+      "verify_confirmed": 2,
+      "verify_denied": 0,
+      "fissions": 0,
+      "errors": 2,
+      "mutations": 0,
+      "respawns": 0,
+      "llm_completion_tokens": 1280,
+      "llm_output_chars": 1356,
+      "bus_entries": 10,
+      "bus_chars": 7990,
+      "elapsed_ms": 46467
+    },
+    "core_metrics": {
+      "task_success_rate": 1.0,
+      "first_pass_success": null,
+      "external_verifier_agreement": null,
+      "median_latency_ms": 13217,
+      "p95_latency_ms": 18111,
+      "tokens_per_solved_task": null,
+      "bus_overhead_ratio": 0.8549111919537771,
+      "solution_diversity": null,
+      "mutation_uplift": null,
+      "regression_rate": null,
+      "crash_recovery_rate": null
+    },
+    "manual_or_external_metrics_needed": [
+      "first_pass_success",
+      "external_verifier_agreement",
+      "tokens_per_solved_task",
+      "solution_diversity",
+      "mutation_uplift",
+      "regression_rate",
+      "crash_recovery_rate"
+    ]
+  },
+  "evaluation": {
+    "evaluator": "ablation_runner",
+    "verdict": "success_evidence_present",
+    "note": "stop_reason=timeout; returncode=1; confirmed=2; denied=0; fissions=0; errors=2"
+  },
+  "submitted_evaluation": {
+    "evaluator": "codex",
+    "verdict": "unreviewed",
+    "note": "Codex will inspect committed run evidence after completion."
+  },
+  "git_before": {
+    "head": {
+      "ok": true,
+      "returncode": 0,
+      "stdout": "051e13d",
+      "stderr": ""
+    },
+    "branch": {
+      "ok": true,
+      "returncode": 0,
+      "stdout": "codex-dev-full",
+      "stderr": ""
+    },
+    "status": {
+      "ok": true,
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    "diff_stat": {
+      "ok": true,
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    "diff_name_status": {
+      "ok": true,
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  },
+  "git_after": {
+    "head": {
+      "ok": true,
+      "returncode": 0,
+      "stdout": "051e13d",
+      "stderr": ""
+    },
+    "branch": {
+      "ok": true,
+      "returncode": 0,
+      "stdout": "codex-dev-full",
+      "stderr": ""
+    },
+    "status": {
+      "ok": true,
+      "returncode": 0,
+      "stdout": "?? ablation_runs/phase0-calc-unicore-r04/",
+      "stderr": ""
+    },
+    "diff_stat": {
+      "ok": true,
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    "diff_name_status": {
+      "ok": true,
+      "returncode": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  }
+}

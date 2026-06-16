@@ -1,9 +1,8 @@
-*
-!.gitignore
-!.gitattributes
-!README.md
-!*.py
-!prompts/
-!prompts/**
-!schemas/
-!schemas/**
+__pycache__/
+*.pyc
+runtime/
+sessions/
+test.txt
+.acp.lock
+pause
+*.log

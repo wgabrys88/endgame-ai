@@ -1,0 +1,19 @@
+{"n":1,"t":"2026-06-15T19:38:04.890+00:00","phase":"start","d":{"goal":"open calculator, add two numbers, and get the result copied from the calculator into the notepad, save file on desktop.","personality":"generalist","slot":1,"profile":"nemotron","run_mode":"unicore","ablation_run_id":"20260615_193804_unicore_phase0-calc-notepad"}}
+{"n":2,"t":"2026-06-15T19:38:04.907+00:00","phase":"interrupt","d":{"from":"reactor","pri":2,"text":"@colony LONG_TERM_GOAL: open calculator, add two numbers, and get the result copied from the calculator into the notepad"}}
+{"n":3,"t":"2026-06-15T19:38:04.917+00:00","phase":"plugin.fission_log","d":{"fissions":0,"power":0.0,"stagnation":0.0}}
+{"n":4,"t":"2026-06-15T19:38:04.926+00:00","phase":"schedule","d":{"next":"planner","reason":"need_plan"}}
+{"n":5,"t":"2026-06-15T19:38:04.934+00:00","phase":"planner.pending","d":{"goal":"open calculator, add two numbers, and get the result copied from the calculator "}}
+{"n":6,"t":"2026-06-15T19:38:05.668+00:00","phase":"llm.request","d":{"role":"planner","max_tokens":1400,"temperature":0.12}}
+{"n":7,"t":"2026-06-15T19:38:28.218+00:00","phase":"llm.response","d":{"role":"planner","output_chars":159,"reasoning_chars":1308,"reasoning_tokens":299,"completion_tokens":351,"latency_ms":22541}}
+{"n":8,"t":"2026-06-15T19:38:28.229+00:00","phase":"plan","d":{"output_chars":159,"reasoning_chars":1308,"reasoning_tokens":299,"mode":"direct","steps":1,"done_when":"measurable outcome"}}
+{"n":9,"t":"2026-06-15T19:38:28.434+00:00","phase":"actor","d":{"ok":true,"verb":"python","obs":"Calculator window is focused and ready."}}
+{"n":10,"t":"2026-06-15T19:38:29.167+00:00","phase":"observe","d":{"focused":"Calculator","chars":2726}}
+{"n":11,"t":"2026-06-15T19:38:29.177+00:00","phase":"llm.request","d":{"role":"verifier","max_tokens":384,"temperature":0.12}}
+{"n":12,"t":"2026-06-15T19:38:40.450+00:00","phase":"llm.response","d":{"role":"verifier","output_chars":124,"reasoning_chars":797,"reasoning_tokens":174,"completion_tokens":203,"latency_ms":11264}}
+{"n":13,"t":"2026-06-15T19:38:40.470+00:00","phase":"verify","d":{"output_chars":124,"reasoning_chars":797,"reasoning_tokens":174,"verdict":"denied","evidence":"No printed output confirming the calculator window is focused; step results lack evidence."}}
+{"n":14,"t":"2026-06-15T19:38:40.513+00:00","phase":"llm.request","d":{"role":"reflector","max_tokens":640,"temperature":0.12}}
+{"n":15,"t":"2026-06-15T19:38:47.100+00:00","phase":"llm.response","d":{"role":"reflector","output_chars":135,"reasoning_chars":252,"reasoning_tokens":55,"completion_tokens":91,"latency_ms":6574}}
+{"n":16,"t":"2026-06-15T19:38:47.113+00:00","phase":"reflect","d":{"output_chars":135,"reasoning_chars":252,"reasoning_tokens":55,"diagnosis":"Calculator window is not focused","suggestion":"desktop_focus('calc')","rule":"If focus fails, wait 2 seconds and retry"}}
+{"n":17,"t":"2026-06-15T19:38:47.140+00:00","phase":"mutate","d":{"action":"none","reason":"waiting for failure pressure","failures":1}}
+{"n":18,"t":"2026-06-15T19:38:47.162+00:00","phase":"planner.pending","d":{"goal":"open calculator, add two numbers, and get the result copied from the calculator "}}
+{"n":19,"t":"2026-06-15T19:38:47.845+00:00","phase":"llm.request","d":{"role":"planner","max_tokens":1400,"temperature":0.12}}

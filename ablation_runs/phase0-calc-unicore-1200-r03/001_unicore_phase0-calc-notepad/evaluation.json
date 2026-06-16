@@ -1,0 +1,12 @@
+{
+  "automatic": {
+    "evaluator": "ablation_runner",
+    "verdict": "success_evidence_present",
+    "note": "stop_reason=timeout; returncode=1; confirmed=4; denied=20; fissions=0; errors=4"
+  },
+  "submitted": {
+    "evaluator": "codex",
+    "verdict": "unreviewed",
+    "note": "Post-fix 1200-second Phase 0 calc/notepad run; inspect full-goal/path/subprocess/fission evidence before continuing."
+  }
+}

@@ -1,0 +1,3 @@
+Award fission credit only if verifier confirmed AND concrete non-placeholder evidence proves useful work.
+For file/Desktop/Notepad tasks, credit requires the actual resolved path plus exists=True and readback/content or file metadata.
+Deny placeholder username paths, generic printed claims, duplicate milestones, or substeps that do not complete the real task.
