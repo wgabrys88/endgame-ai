@@ -364,7 +364,7 @@ class PlannerAgent:
         goal = board.get("goal", "")
         if not goal:
             return None
-        log.emit("planner.pending", {"goal": goal[:80]})
+        log.emit("planner.pending", {"goal": goal[:config.GOAL_TEXT_MAX]})
         llm_out = _call_circuit(board, "planner", _planner_state(board), role="planner")
         parsed = _parse_json(llm_out.text)
         if not parsed:
@@ -758,14 +758,19 @@ def _apply_prompt_mutation(board: dict[str, Any], new_prompt: str) -> tuple[bool
 
 def _existing_plugin_names() -> list[str]:
     try:
-        return [p.name for p in sorted(config.PLUGINS_DIR.glob("*.py")) if p.is_file()]
+        deny = set(config.PHASE0_PLUGIN_MUTATION_DENYLIST)
+        return [p.name for p in sorted(config.PLUGINS_DIR.glob("*.py")) if p.is_file() and p.name not in deny]
     except OSError:
         return []
+
+
 def _resolve_existing_plugin(filename: str) -> Path | None:
     raw = str(filename).strip().replace("\\", "/")
     if raw.startswith("plugins/"):
         raw = raw[len("plugins/"):]
     if "/" in raw or not _PLUGIN_NAME_RE.fullmatch(raw):
+        return None
+    if raw in config.PHASE0_PLUGIN_MUTATION_DENYLIST:
         return None
     path = (config.PLUGINS_DIR / raw).resolve()
     try:
@@ -776,7 +781,7 @@ def _resolve_existing_plugin(filename: str) -> Path | None:
 def _apply_plugin_mutation(filename: str, content: str) -> tuple[bool, str, str]:
     path = _resolve_existing_plugin(filename)
     if path is None:
-        return False, "existing plugins/[name].py required", ""
+        return False, "mutable existing plugins/[name].py required", ""
     ok, cleaned, err = validate_python(_strip_code_fence(content))
     if not ok:
         return False, err, ""

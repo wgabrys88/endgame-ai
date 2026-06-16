@@ -375,7 +375,7 @@ def set_colony_goal(text: str, *, source: str = "operator") -> dict[str, Any]:
             priority=config.PRI_CRITICAL,
             data={"colony_goal": True, "goal": body[:config.GOAL_TEXT_MAX]},
         )
-        post_progress(source, goal=body[:200], step="goal set", phase="colony_goal")
+        post_progress(source, goal=body, step="goal set", phase="colony_goal")
         return entry
     try:
         config.COLONY_GOAL_PATH.unlink(missing_ok=True)

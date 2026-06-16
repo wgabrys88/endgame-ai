@@ -254,12 +254,14 @@ Actor uses element IDs or Python exec helpers; verifier checks printed evidence 
 
 | Action | Target | Problem |
 |--------|--------|---------|
-| `patch_plugin` | `plugins/*.py` | OK for local adaptation |
+| `patch_plugin` | mutable `plugins/*.py` | OK for local adaptation only when the target is not core instrumentation/control; Phase 0 denies mutation of `comms_beacon.py` and `fission_log.py` |
 | `patch_prompt` | `prompts/personalities/{persona}.txt` | Code path exists but is disabled by default for Phase 0 via `config.ALLOW_PERSONALITY_PATCH_PROMPT = False`; when enabled it rewrites the entire persona used as system prompt for ALL circuits |
 
 `prompts/mutator.txt` now tells rods that `patch_prompt` is disabled during Phase 0 measurement. This preserves measurement discipline; it does not cancel the target hierarchical mutator design.
 
-**The remaining design gap:** the code path still exists and must be replaced with a split local/global mutator design in Phase 1. A local failure must not rewrite planner identity.
+After the third 1200-second calc/notepad run, `agents._existing_plugin_names` / `_resolve_existing_plugin` also deny Phase 0 mutations against `comms_beacon.py` and `fission_log.py`. Those files are experiment measurement/control surfaces, not task scratchpads.
+
+**The remaining design gap:** the code path still exists and must be replaced with a split local/global mutator design in Phase 1. A local failure must not rewrite planner identity, and local plugin mutation needs an explicit task-plugin allowlist rather than open access to every plugin.
 
 ## 3.6 No planner-mutator persona (GAP)
 
@@ -751,7 +753,7 @@ Add rule:
 
 | # | Gap | Current (`merge-prep`) | Target | Priority |
 |---|-----|------------------------|--------|----------|
-| 1 | Hierarchical mutators | `patch_prompt` full-personality path exists but disabled for Phase 0 | Local: actor/verifier/plugins; Global: planner-mutator | P0 |
+| 1 | Hierarchical mutators | `patch_prompt` full-personality path exists but disabled for Phase 0; core instrumentation plugins are denylisted after r03 | Local: actor/verifier/task plugins; Global: planner-mutator | P0 |
 | 2 | Planner-mutator persona | Missing | Dedicated slot or time-shared | P1 |
 | 3 | Planner-only bus | All phases post | Planners publish; compact schema | P1 |
 | 4 | Reviewer independence | Prompt-only | Runtime RBAC | P1 |
@@ -895,6 +897,7 @@ gantt
 - [x] Log all core metrics to `runtime/ablation/`
 - [x] Add pre-run gates for full-goal propagation, real path context, subprocess sanity, and external evidence before fission credit
 - [x] Disable `patch_prompt` during Phase 0 measurement so local failures do not rewrite full persona DNA
+- [x] Deny Phase 0 task mutation against core instrumentation/control plugins after r03 showed `comms_beacon.py` and `fission_log.py` can be corrupted by task pressure
 
 ### Phase 1 — Split mutators
 
@@ -1232,6 +1235,7 @@ Compact claims replace raw trace dumping per research report.
 | `PROMPT_GOAL_TEXT_MAX` | 4000 chars | config.py | Planner/reflector/fission goal context cap |
 | `EVIDENCE_TEXT_MAX` | 2000 chars | config.py | Verifier/fission evidence cap |
 | `ALLOW_PERSONALITY_PATCH_PROMPT` | false | config.py | Keeps Phase 0 measurement from rewriting whole persona prompts |
+| `PHASE0_PLUGIN_MUTATION_DENYLIST` | `comms_beacon.py`, `fission_log.py` | config.py | Keeps Phase 0 task pressure from rewriting measurement/control plugins |
 
 ---
 
@@ -1465,7 +1469,9 @@ Under pressure: choose ONE action:
   none — no mutation needed
 ```
 
-From `agents.MutatorAgent.run` — `patch_prompt` is blocked unless `config.ALLOW_PERSONALITY_PATCH_PROMPT` is true. The old `_apply_prompt_mutation` path still exists and remains the #1 Phase 1 design gap.
+From `agents.MutatorAgent.run` — `patch_prompt` is blocked unless `config.ALLOW_PERSONALITY_PATCH_PROMPT` is true. `patch_plugin` sees only mutable existing plugin names; `agents._resolve_existing_plugin` rejects names in `config.PHASE0_PLUGIN_MUTATION_DENYLIST`.
+
+The old `_apply_prompt_mutation` path still exists and remains the #1 Phase 1 design gap.
 
 **This remains the #1 code change target for Phase 1.**
 
@@ -1861,6 +1867,7 @@ STEP 3 — INTERNET / CODE (only after Step 2)
 • Use web search ONLY to verify papers or tools README cites — not to redesign architecture.
 • Read actual code files README names for the task you are given — do not trust README alone for line-level truth.
 • Branch must be the owner-designated current branch (`codex-dev-full` for current Phase 0 work; `merge-prep` for base integration unless human says otherwise).
+• Before continuing Phase 0 runs, inspect the latest LM Studio traces/logs and exported `ablation_runs/` record for full goal text, Python subprocess failures, false-positive fission, and task pressure mutating core plugins.
 
 STEP 4 — NON-NEGOTIABLE DOCTRINE (repeat back to human)
 Confirm you will follow:
@@ -1893,4 +1900,4 @@ Long READMEs are often skimmed or hallucinated from training data. Appendix P re
 
 ---
 
-*This README merges the architecture research synthesis (formerly `deep-research-report.md`), honest code audit of `merge-prep`, and owner decisions into one bootstrap document. All mermaid diagrams from the research report are preserved in Parts 6, 9, 14. Open decisions: Appendix O. First agent message: Appendix P. Production doctrine: Part 1.0. When in doubt, run ablation first.*
+*This README merges the architecture research synthesis (formerly `deep-research-report.md`), honest code audit of `merge-prep`, and owner decisions into one bootstrap document. All mermaid diagrams from the research report are preserved in Parts 6, 9, 14. Owner decisions for Phase 0 are recorded in Appendix O. First agent message: Appendix P. Production doctrine: Part 1.0. When in doubt, run ablation first, then inspect the actual logs before repeating batches.*

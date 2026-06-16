@@ -32,6 +32,7 @@ GOAL_TEXT_MAX: int = 4000
 PROMPT_GOAL_TEXT_MAX: int = 4000
 EVIDENCE_TEXT_MAX: int = 2000
 ALLOW_PERSONALITY_PATCH_PROMPT: bool = False
+PHASE0_PLUGIN_MUTATION_DENYLIST: tuple[str, ...] = ("comms_beacon.py", "fission_log.py")
 
 # --- .env loader ---
 _dotenv = BASE_DIR / ".env"

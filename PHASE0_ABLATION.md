@@ -4,9 +4,10 @@ Phase 0 measures whether the colony earns its keep before mutator or bus rewrite
 
 ## Current Status
 
-- Two proper 1200-second unicore calc/notepad runs have been recorded under `ablation_runs/`.
+- Three proper 1200-second unicore calc/notepad runs have been recorded under `ablation_runs/`.
 - The old 45-second runs and any 120-second examples are obsolete.
 - The first 1200-second reruns exposed harness defects before they proved task success: placeholder path drift, weak verifier/fission evidence, and avoidable Python subprocess mistakes.
+- The third 1200-second run confirmed the stricter file/Desktop fission gate works, but exposed a mutator-scope defect: task pressure rewrote core instrumentation plugins (`comms_beacon.py`, `fission_log.py`) instead of task-local behavior.
 - Testing is paused until the pre-run gates below pass, then resumes with exactly `--timeout 1200`.
 
 ## Pre-Run Gates
@@ -18,7 +19,8 @@ Before starting another real ablation run:
 3. Confirm file/Desktop fission requires external evidence: actual resolved path, `exists=True`, and readback/content or metadata.
 4. Confirm Python subprocess guidance is valid on Windows: do not use bare `subprocess.run(["start", ...])`, do not import `pyperclip`, and use raw strings/`Path` for Windows paths.
 5. Confirm Phase 0 measurement does not rewrite whole personality prompts: `patch_prompt` remains disabled unless explicitly re-enabled after the mutator split.
-6. Commit and push all fixes before running the next 1200-second test.
+6. Confirm Phase 0 task mutation cannot rewrite core instrumentation/control plugins. `comms_beacon.py` and `fission_log.py` are measurement/control surfaces, not task scratchpads.
+7. Commit and push all fixes before running the next 1200-second test.
 
 ## Run Modes
 
