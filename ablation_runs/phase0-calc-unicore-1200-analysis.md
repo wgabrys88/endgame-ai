@@ -26,3 +26,5 @@ Root cause candidate:
 - `prompts/personalities/architect.txt` and `prompts/personalities/implementor.txt` also contain `C:\Users\user\Downloads\...`
 
 Recommendation: pause repeated 1200-second testing here. Continuing more runs before fixing the path prompt and final external evidence check will mostly measure prompt-path drift and verifier self-certification, not real desktop task completion.
+
+Follow-up fix direction accepted by owner: stop repeated tests, correct real path guidance, and require actual Desktop path/readback evidence before fission credit on file/Desktop tasks. The next run after this fix should still use exactly `--timeout 1200`.

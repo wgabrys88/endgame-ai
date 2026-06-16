@@ -32,6 +32,7 @@ def validate_python(text: str) -> tuple[bool, str, str]:
 
 _ELEMENT_ID_RE = re.compile(r"\[\d+\]")
 _PLUGIN_NAME_RE = re.compile(r"^[a-z0-9_]+\.py$")
+_PLACEHOLDER_USER_PATH_RE = re.compile(r"c:\\+users\\+user\\+", re.IGNORECASE)
 _REASONING = (
     "Think in reasoning channel. Final content: one raw JSON object, no markdown fences.\n"
 )
@@ -129,6 +130,50 @@ def _format_history(history: list) -> str:
         if isinstance(h, dict):
             lines.append(f"  {json.dumps(h, ensure_ascii=False)[:400]}")
     return "\n".join(lines)
+def _desktop_dir() -> Path:
+    home = Path(os.environ.get("USERPROFILE") or Path.home())
+    return home / "Desktop"
+def _filesystem_context() -> str:
+    return "\n".join([
+        f"WORKSPACE_DIR: {config.BASE_DIR}",
+        f"USER_HOME: {Path(os.environ.get('USERPROFILE') or Path.home())}",
+        f"DESKTOP_DIR: {_desktop_dir()}",
+        "PATH_RULE: Never use placeholder username paths; use the paths above or ENDGAME_* constants and print resolved path evidence.",
+    ])
+def _normalized_path_text(text: str) -> str:
+    return text.lower().replace("\\\\", "\\")
+def _has_placeholder_user_path(text: str) -> bool:
+    return bool(_PLACEHOLDER_USER_PATH_RE.search(_normalized_path_text(text)))
+def _goal_requires_file_artifact(goal: str) -> bool:
+    low = goal.lower()
+    return any(term in low for term in ("save file", "saved file", "desktop", "notepad", "write file", "file exists"))
+def _has_actual_file_artifact_evidence(text: str) -> bool:
+    normalized = _normalized_path_text(text)
+    if any(marker in normalized for marker in ("filenotfounderror", "syntaxerror", "traceback", "does not exist")):
+        return False
+    desktop = _normalized_path_text(str(_desktop_dir()))
+    if desktop not in normalized:
+        return False
+    return any(marker in normalized for marker in (
+        "exists=true",
+        "exists: true",
+        "exists true",
+        "readback",
+        "content=",
+        "contains",
+        "length=",
+        "size=",
+        "bytes=",
+    ))
+def _fission_evidence_gate(board: dict[str, Any], completed: str) -> str:
+    goal = str(board.get("_last_verified_goal") or board.get("goal", ""))
+    evidence = str(board.get("_last_verifier_evidence", ""))
+    combined = "\n".join([goal, completed, evidence, _format_history(board.get("history", [])[-3:])])
+    if _has_placeholder_user_path(combined):
+        return "placeholder username path is not valid evidence on this machine"
+    if _goal_requires_file_artifact(goal) and not _has_actual_file_artifact_evidence(combined):
+        return f"missing actual file evidence under {_desktop_dir()}; print resolved path, exists=True, and readback/content before fission credit"
+    return ""
 def _desktop_context() -> str:
     try:
         from desktop import observe
@@ -165,6 +210,7 @@ def _planner_state(board: dict[str, Any]) -> str:
         if lt: parts.append(f"LONG_TERM_GOAL: {lt}")
     except Exception: pass
     parts.append(f"PRESSURE: stag={stag:.3f} pwr={float(board.get('power', 1.0 - stag) or 0):.3f}")
+    parts.append(_filesystem_context())
     claims = _active_claims()
     if claims and persona != "comms_operator": parts.append(claims)
     desktop_ctx = _desktop_context()
@@ -590,6 +636,14 @@ def _fission_review(board: dict[str, Any], completed: str) -> dict[str, str]:
             "diagnosis": "duplicate credited milestone",
             "suggestion": "plan a new verifiable step",
             "rule": "",
+        }
+    gate = _fission_evidence_gate(board, completed)
+    if gate:
+        return {
+            "verdict": "deny",
+            "diagnosis": gate,
+            "suggestion": "produce external evidence from the actual Desktop path, then verify again",
+            "rule": "fission requires real path/readback evidence for file/Desktop tasks",
         }
     pressure = board.get("_pressure", {})
     llm_out = _call_circuit(

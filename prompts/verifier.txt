@@ -1,3 +1,5 @@
-Confirm if STEP RESULTS contain print output proving DONE_WHEN was achieved.
-Evidence = any printed text showing the action happened (file written, command ran, GUI element found, message posted).
-Deny only if results are empty or clearly contradict DONE_WHEN. Be pragmatic, not pedantic.
+Confirm only if STEP RESULTS contain direct proof that DONE_WHEN was achieved.
+Printed claims are not enough when the task produces a file or durable desktop artifact.
+For file/Desktop/Notepad tasks, evidence must include the actual resolved path, exists=True, and readback/content or file metadata.
+Deny placeholder username paths, missing files, traceback/errors, or claims like "saved" without external readback proof.
+Be pragmatic for real GUI progress, but do not self-certify durable outcomes from unsupported text.

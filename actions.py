@@ -255,11 +255,15 @@ def _script_runner(code: str) -> str:
         "from actions import observe_screen, desktop_focus, desktop_click, desktop_write, "
         "desktop_press, desktop_hotkey, desktop_scroll, desktop_wait\n"
     )
+    workspace = str(config.BASE_DIR)
     return (
         "from comms import BASE_DIR, COMMS_DIR, PLUGINS_DIR, bus_post, bus_id, bus_request, bus_route\n"
         f"{desktop_import}"
         "from pathlib import Path\n"
         "import os, sys, json, time, subprocess, shutil, py_compile\n\n"
+        f"ENDGAME_WORKSPACE = Path(r'{workspace}')\n"
+        "ENDGAME_USER_HOME = Path(os.environ.get('USERPROFILE') or Path.home())\n"
+        "ENDGAME_DESKTOP = ENDGAME_USER_HOME / 'Desktop'\n\n"
         f"{code}\n"
     )
 def run_python(code: str) -> ActionResult:
