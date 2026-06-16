@@ -145,3 +145,16 @@ Summarize the latest session manually:
 ```powershell
 python ablation.py summarize --session latest
 ```
+
+Watch a human-driven TUI run from a second terminal:
+
+```powershell
+python ablation.py summarize --session latest --watch --interval 5
+```
+
+The summary now includes diagnostics for local runtime failures and prompt/log propagation:
+
+- actor failures such as `unknown key`, Python subprocess timeout, missing window, syntax/path errors, and plugin runtime errors
+- whether execution continued after a failed actor step before verifier saw the failure
+- trace-level `ACTIVE_TASK` lengths and stale prompt patterns such as placeholder paths or `pyperclip`
+- LM Studio control-log events inside the session time window, including expected timeout cancellations or real backend errors

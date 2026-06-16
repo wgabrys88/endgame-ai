@@ -4,9 +4,11 @@ Status after three proper 1200-second unicore runs on `phase0_calc_notepad`:
 
 | Run | Events | Verified confirmed | Verified denied | Fissions | Errors | Internal success rate |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `phase0-calc-unicore-1200-r01` | 585 | 2 | 30 | 0 | 4 | 0.0625 |
-| `phase0-calc-unicore-1200-r02` | 573 | 12 | 18 | 6 | 12 | 0.4 |
-| `phase0-calc-unicore-1200-r03` | 459 | 4 | 20 | 0 | 4 | 0.1667 |
+| `phase0-calc-unicore-1200-r01` | 293 | 1 | 15 | 0 | 2 | 0.0625 |
+| `phase0-calc-unicore-1200-r02` | 287 | 6 | 9 | 3 | 6 | 0.4 |
+| `phase0-calc-unicore-1200-r03` | 230 | 2 | 10 | 0 | 2 | 0.1667 |
+
+The earlier exported summaries counted `events-child-s*.jsonl` twice because the summarizer globbed both `events*.jsonl` and `events-child-s*.jsonl`. Current `ablation.py summarize` deduplicates event files; the table above uses the corrected unique-event counts.
 
 Run 2 looks better than run 1 by internal metrics, but LM Studio server-log evidence shows the apparent improvement is unreliable. The model repeatedly plans and verifies against placeholder paths such as `C:\\Users\\user\\Desktop` instead of the actual user desktop, then accepts printed claims like "Result copied to Notepad" or "Saved file on Desktop" as proof.
 

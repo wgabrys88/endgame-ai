@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import glob
 import json
 import os
+import re
 import shutil
 import statistics
 import subprocess
@@ -59,6 +61,27 @@ CORE_METRIC_FIELDS: tuple[str, ...] = (
 COMMITTED_RUNS_DIR: Path = config.BASE_DIR / "ablation_runs"
 CREATE_NEW_PROCESS_GROUP = 0x00000200
 CREATE_NO_WINDOW = 0x08000000
+LMSTUDIO_TS_RE = re.compile(r"^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\]")
+LMSTUDIO_CONTROL_RE = re.compile(
+    r"(ERROR|WARN|stop: cancel task|timeout|Timeout|abort|Abort|socket|ECONN|queue|concurrent)",
+    re.IGNORECASE,
+)
+ACTIVE_TASK_RE = re.compile(r"ACTIVE_TASK:\s*(.*)")
+TRACE_REQUEST_PATTERNS: dict[str, str] = {
+    "placeholder_user_path": r"C:\\Users\\user",
+    "fake_workspace_path": r"C:\\endgame-ai",
+    "plugins_x": "plugins/x.py",
+    "unknown_key": "unknown key:",
+    "notepad_missing": "no window matching 'Notepad'",
+    "calculator_expression_22": "Expression is 22=",
+    "calculator_display_22": "Display is 22",
+}
+TRACE_RESPONSE_PATTERNS: dict[str, str] = {
+    "pyperclip": "pyperclip",
+    "bare_start_call": 'subprocess.run(["start"',
+    "desktop_hotkey_plus": "desktop_hotkey(['+'])",
+    "desktop_press_plus": "desktop_press('+')",
+}
 
 
 def task_by_id(task_id: str) -> dict[str, str] | None:
@@ -148,9 +171,14 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
 
 def _session_events(session_dir: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
+    seen: set[Path] = set()
     for pattern in ("events*.jsonl", "events-child-s*.jsonl"):
         for raw in glob.glob(str(session_dir / pattern)):
-            rows.extend(_read_jsonl(Path(raw)))
+            path = Path(raw).resolve()
+            if path in seen:
+                continue
+            seen.add(path)
+            rows.extend(_read_jsonl(path))
     return rows
 
 
@@ -162,11 +190,213 @@ def _percentile(values: list[int], pct: float) -> int | None:
     return ordered[idx]
 
 
+def _event_time(ev: dict[str, Any]) -> float:
+    return _parse_time(str(ev.get("t", ""))) or 0.0
+
+
+def _sorted_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(events, key=lambda ev: (_event_time(ev), str(ev.get("_source_file", "")), int(ev.get("n", 0) or 0)))
+
+
+def _short(text: str, limit: int = 240) -> str:
+    clean = " ".join(str(text).split())
+    return clean[:limit]
+
+
+def _event_data(ev: dict[str, Any]) -> dict[str, Any]:
+    raw = ev.get("d")
+    return raw if isinstance(raw, dict) else {}
+
+
+def _diagnose_session_events(events: list[dict[str, Any]]) -> dict[str, Any]:
+    counts: Counter[str] = Counter()
+    actor_failures: Counter[str] = Counter()
+    plugin_errors: Counter[str] = Counter()
+    continued_after_failure: list[dict[str, Any]] = []
+    failed_actor: dict[str, Any] | None = None
+    last_phase = ""
+
+    for ev in _sorted_events(events):
+        phase = str(ev.get("phase", ""))
+        data = _event_data(ev)
+        text = json.dumps(data, ensure_ascii=False)
+        last_phase = phase or last_phase
+
+        if phase == "plugin.error":
+            counts["plugin_error"] += 1
+            plugin_errors[_short(f"{data.get('name', '')}: {data.get('error', '')}")] += 1
+        if "unknown key:" in text:
+            counts["unknown_key"] += 1
+        if "timeout after" in text:
+            counts["python_timeout"] += 1
+        if "ModuleNotFoundError" in text:
+            counts["module_missing"] += 1
+        if "SyntaxError" in text:
+            counts["syntax_error"] += 1
+        if "unicodeescape" in text:
+            counts["unicodeescape"] += 1
+        if "FileNotFoundError" in text:
+            counts["file_not_found"] += 1
+        if "no window matching" in text:
+            counts["no_window_matching"] += 1
+        if "skipped_after_failure" in text or "SKIPPED after failed step" in text:
+            counts["skipped_after_failure"] += 1
+
+        if phase == "actor":
+            ok = bool(data.get("ok", True))
+            if not ok:
+                failed_actor = ev
+                actor_failures[_short(str(data.get("obs", "")))] += 1
+            elif failed_actor is not None:
+                continued_after_failure.append({
+                    "failed_event": int(failed_actor.get("n", 0) or 0),
+                    "continued_event": int(ev.get("n", 0) or 0),
+                    "continued_obs": _short(str(data.get("obs", ""))),
+                })
+        elif phase in {"verify", "reflect", "planner.pending", "plan"}:
+            failed_actor = None
+
+    return {
+        "last_phase": last_phase,
+        "counts": dict(sorted(counts.items())),
+        "top_actor_failures": [{"obs": obs, "count": count} for obs, count in actor_failures.most_common(8)],
+        "top_plugin_errors": [{"error": err, "count": count} for err, count in plugin_errors.most_common(8)],
+        "continued_after_actor_failure_before_verify": continued_after_failure[:12],
+    }
+
+
+def _goal_from_events(events: list[dict[str, Any]]) -> str:
+    for ev in _sorted_events(events):
+        data = _event_data(ev)
+        goal = str(data.get("goal", "")).strip()
+        if goal:
+            return goal
+    return ""
+
+
+def _diagnose_traces(session_path: Path, goal: str) -> dict[str, Any]:
+    trace_dir = session_path / "traces"
+    files = sorted(trace_dir.glob("*.json")) if trace_dir.exists() else []
+    request_pattern_counts: Counter[str] = Counter()
+    response_pattern_counts: Counter[str] = Counter()
+    exact_goal_hits = 0
+    active_task_lengths: list[int] = []
+    active_task_samples: Counter[str] = Counter()
+    planner_outputs: Counter[str] = Counter()
+    for path in files:
+        try:
+            raw = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if goal and goal in raw:
+            exact_goal_hits += 1
+        for name, pattern in TRACE_REQUEST_PATTERNS.items():
+            if pattern in raw:
+                request_pattern_counts[name] += 1
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        request = data.get("request") if isinstance(data, dict) else {}
+        messages = request.get("messages") if isinstance(request, dict) else []
+        if isinstance(messages, list):
+            for msg in messages:
+                if not isinstance(msg, dict):
+                    continue
+                content = str(msg.get("content", ""))
+                for line in content.splitlines():
+                    match = ACTIVE_TASK_RE.match(line)
+                    if match:
+                        task = match.group(1).strip()
+                        active_task_lengths.append(len(task))
+                        active_task_samples[_short(task, 320)] += 1
+        response = data.get("response") if isinstance(data, dict) else {}
+        choices = response.get("choices") if isinstance(response, dict) else []
+        if choices and isinstance(choices, list):
+            message = (choices[0] or {}).get("message") if isinstance(choices[0], dict) else {}
+            content = str((message or {}).get("content", "")).strip()
+            for name, pattern in TRACE_RESPONSE_PATTERNS.items():
+                if pattern in content:
+                    response_pattern_counts[name] += 1
+            if "desktop_press" in content or "desktop_hotkey" in content or "desktop_write" in content:
+                planner_outputs[_short(content, 320)] += 1
+    return {
+        "trace_dir": str(trace_dir) if trace_dir.exists() else "",
+        "trace_files": len(files),
+        "exact_goal_hits": exact_goal_hits,
+        "active_task_lengths": {
+            "min": min(active_task_lengths) if active_task_lengths else None,
+            "max": max(active_task_lengths) if active_task_lengths else None,
+            "samples": len(active_task_lengths),
+        },
+        "active_task_samples": [{"text": text, "count": count} for text, count in active_task_samples.most_common(3)],
+        "request_pattern_counts": dict(sorted(request_pattern_counts.items())),
+        "response_pattern_counts": dict(sorted(response_pattern_counts.items())),
+        "gui_plan_samples": [{"text": text, "count": count} for text, count in planner_outputs.most_common(5)],
+    }
+
+
+def _default_lmstudio_log() -> Path | None:
+    root = Path.home() / ".lmstudio" / "server-logs"
+    if not root.exists():
+        return None
+    candidates = [p for p in root.glob("*/*.log") if p.is_file()]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda p: p.stat().st_mtime)
+
+
+def _parse_lmstudio_ts(line: str) -> float | None:
+    m = LMSTUDIO_TS_RE.match(line)
+    if not m:
+        return None
+    try:
+        dt = datetime.strptime(m.group(1), "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return None
+    return dt.timestamp()
+
+
+def _diagnose_lmstudio_log(events: list[dict[str, Any]], lm_log_path: str | Path | None) -> dict[str, Any]:
+    if lm_log_path is None:
+        return {"enabled": False}
+    path = _default_lmstudio_log() if str(lm_log_path) == "auto" else Path(lm_log_path)
+    if path is None:
+        return {"enabled": True, "log_path": "", "error": "LM Studio log not found"}
+    times = [_event_time(ev) for ev in events if _event_time(ev)]
+    if not times:
+        return {"enabled": True, "log_path": str(path), "error": "session has no timestamps"}
+    start = min(times) - 60.0
+    end = max(times) + 60.0
+    matches: list[dict[str, Any]] = []
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as fh:
+            for line_no, line in enumerate(fh, 1):
+                ts = _parse_lmstudio_ts(line)
+                if ts is None or ts < start or ts > end:
+                    continue
+                if LMSTUDIO_CONTROL_RE.search(line):
+                    matches.append({"line": line_no, "text": line.strip()[:500]})
+    except OSError as exc:
+        return {"enabled": True, "log_path": str(path), "error": str(exc)}
+    return {
+        "enabled": True,
+        "log_path": str(path),
+        "window_local": {
+            "start": datetime.fromtimestamp(start).isoformat(timespec="seconds"),
+            "end": datetime.fromtimestamp(end).isoformat(timespec="seconds"),
+        },
+        "control_event_count": len(matches),
+        "control_events": matches[-40:],
+    }
+
+
 def summarize_session(
     session_dir: str | Path,
     *,
     run_dir: str | Path | None = None,
     status: str = "running",
+    lm_log_path: str | Path | None = "auto",
 ) -> dict[str, Any]:
     session_path = Path(session_dir)
     events = _session_events(session_path)
@@ -265,6 +495,12 @@ def summarize_session(
         },
         "core_metrics": core_metrics,
         "manual_or_external_metrics_needed": missing,
+    }
+    goal = _goal_from_events(events)
+    summary["diagnostics"] = {
+        "session": _diagnose_session_events(events),
+        "traces": _diagnose_traces(session_path, goal),
+        "lmstudio": _diagnose_lmstudio_log(events, lm_log_path),
     }
     if run_dir:
         out_dir = Path(run_dir)
@@ -656,6 +892,27 @@ def latest_session() -> Path | None:
     return sessions[-1] if sessions else None
 
 
+def _resolve_session_arg(value: str) -> Path | None:
+    return latest_session() if value == "latest" else Path(value)
+
+
+def _watch_line(summary: dict[str, Any]) -> str:
+    diag = _dict_field(_dict_field(summary, "diagnostics"), "session")
+    counts = _dict_field(diag, "counts")
+    lmstudio = _dict_field(_dict_field(summary, "diagnostics"), "lmstudio")
+    fields = [
+        f"events={summary.get('events', 0)}",
+        f"last={diag.get('last_phase', '')}",
+        f"unknown_key={counts.get('unknown_key', 0)}",
+        f"continued_after_failure={len(diag.get('continued_after_actor_failure_before_verify', []) or [])}",
+        f"py_timeout={counts.get('python_timeout', 0)}",
+        f"no_window={counts.get('no_window_matching', 0)}",
+        f"plugin_error={counts.get('plugin_error', 0)}",
+        f"lm_control={lmstudio.get('control_event_count', 0)}",
+    ]
+    return " | ".join(fields)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Phase 0 ablation helpers")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -679,6 +936,9 @@ def main() -> None:
     p_sum.add_argument("--session", default="latest")
     p_sum.add_argument("--run-dir", default="")
     p_sum.add_argument("--status", default="manual")
+    p_sum.add_argument("--lm-log", default="auto", help="LM Studio server log path, 'auto', or 'none'")
+    p_sum.add_argument("--watch", action="store_true", help="Refresh a compact diagnostic line until interrupted")
+    p_sum.add_argument("--interval", type=float, default=5.0)
     args = parser.parse_args()
 
     if args.cmd == "list-tasks":
@@ -686,10 +946,23 @@ def main() -> None:
             print(f"{task['id']}: {task['text']}")
         return
     if args.cmd == "summarize":
-        session = latest_session() if args.session == "latest" else Path(args.session)
+        lm_log_path = None if args.lm_log == "none" else args.lm_log
+        if args.watch:
+            try:
+                while True:
+                    session = _resolve_session_arg(args.session)
+                    if session is None:
+                        print("No sessions found")
+                    else:
+                        summary = summarize_session(session, run_dir=args.run_dir or None, status=args.status, lm_log_path=lm_log_path)
+                        print(f"{datetime.now().isoformat(timespec='seconds')} | {session.name} | {_watch_line(summary)}", flush=True)
+                    time.sleep(max(1.0, float(args.interval)))
+            except KeyboardInterrupt:
+                return
+        session = _resolve_session_arg(args.session)
         if session is None:
             raise SystemExit("No sessions found")
-        summary = summarize_session(session, run_dir=args.run_dir or None, status=args.status)
+        summary = summarize_session(session, run_dir=args.run_dir or None, status=args.status, lm_log_path=lm_log_path)
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         return
     if args.cmd == "run":
