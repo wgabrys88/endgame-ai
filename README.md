@@ -888,6 +888,7 @@ gantt
 - [ ] Reactor flag: `--mode unicore|colony`
 - [ ] Document single-rod generalist baseline prompts
 - [ ] Run ablation A vs C on 10 desktop + 10 repo tasks
+- [ ] Use exactly `--timeout 1200` for real Phase 0 ablation tests so LM Studio has time to plan, act, verify, and fission
 - [ ] Log all core metrics to `runtime/ablation/`
 
 ### Phase 1 — Split mutators

@@ -61,20 +61,20 @@ python tui.py --mode colony --ablation-task-id phase0_calc_notepad
 Run a finite ablation without the TUI:
 
 ```powershell
-python ablation.py run --mode unicore --task-id phase0_calc_notepad --timeout 120
-python ablation.py run --mode colony --task-id phase0_calc_notepad --timeout 120
+python ablation.py run --mode unicore --task-id phase0_calc_notepad --timeout 1200
+python ablation.py run --mode colony --task-id phase0_calc_notepad --timeout 1200
 ```
 
 Run repeated finite ablations:
 
 ```powershell
-python ablation.py run --mode unicore --task-id phase0_calc_notepad --timeout 120 --repeat 8 --batch-id phase0-calc-unicore
+python ablation.py run --mode unicore --task-id phase0_calc_notepad --timeout 1200 --repeat 8 --batch-id phase0-calc-unicore
 ```
 
 The finite runner:
 
 - starts `reactor.py` with the selected mode and task fixture
-- stops the process tree after `--timeout`
+- stops the process tree after `--timeout`; real Phase 0 ablation tests use exactly `1200` seconds
 - preserves runtime summaries under `runtime/ablation/`
 - exports committed records under `ablation_runs/<batch_id>/`
 - records stdout, stderr, copied session event logs, summary metrics, git state before/after, and evaluator verdict metadata
@@ -82,7 +82,7 @@ The finite runner:
 AI coding tools can record their verdict with:
 
 ```powershell
-python ablation.py run --mode unicore --task-id phase0_calc_notepad --timeout 120 --evaluator codex --verdict unreviewed --note "Codex will inspect the run record after completion"
+python ablation.py run --mode unicore --task-id phase0_calc_notepad --timeout 1200 --evaluator codex --verdict unreviewed --note "Codex will inspect the run record after completion"
 ```
 
 ## Metrics

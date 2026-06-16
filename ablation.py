@@ -664,7 +664,7 @@ def main() -> None:
     p_run.add_argument("--mode", choices=config.RUN_MODES, required=True)
     p_run.add_argument("--task-id", default="")
     p_run.add_argument("--goal", default="")
-    p_run.add_argument("--timeout", type=int, required=True, help="Seconds before stopping the run")
+    p_run.add_argument("--timeout", type=int, required=True, help="Seconds before stopping the run; real Phase 0 tests use exactly 1200")
     p_run.add_argument("--repeat", type=int, default=1)
     p_run.add_argument("--model-profile", default="")
     p_run.add_argument("--backend", choices=["lmstudio", "acp"], default="lmstudio")
