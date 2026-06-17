@@ -153,6 +153,9 @@ class Circuit:
                     tasks.append(Task(id=str(t.get("id", f"t{i+1}")), description=desc,
                                       contract=str(t.get("contract", ""))))
         if not tasks:
+            # Empty plan after verified work = goal complete
+            if state.fissions > 0 or any(h.get("verified") for h in state.history if isinstance(h, dict)):
+                return {"event": "goal_complete"}
             return {"event": "planner_error", "error": "no tasks"}
         state.tasks = tasks
         state.tasks[0].status = "active"
@@ -299,12 +302,31 @@ class Slot:
             self.state.phase = "planner"
             circuit = self.circuits["planner"]
         result = circuit.run(self.state, self.llm, self.bus)
-        # Transition
+        # Handle goal_complete: mark route done, clear goal, go idle
         event = result.get("event", "")
+        if event == "goal_complete":
+            self._complete_goal()
+            result["phase"] = "planner"
+            return result
+        # Transition
         next_phase = self._transitions.get(event, "planner")
         self.state.phase = next_phase
         result["phase"] = circuit.name
         return result
+
+    def _complete_goal(self):
+        """Goal achieved. Mark route done on bus, clear state, go idle."""
+        for r in self.bus.records:
+            if (r.record_type == "route" and r.data.get("to") == self.name
+                    and r.data.get("goal") == self.state.goal and r.data.get("status") == "accepted"):
+                seq = r.data.get("seq")
+                if seq is not None:
+                    self.bus.mark_route_done(seq)
+                r.data["status"] = "verified_done"
+                break
+        self.state.goal = ""
+        self.state.tasks = []
+        self.state.phase = "planner"
 
     def _exec_task(self, task: Task) -> dict[str, Any]:
         code = task.description

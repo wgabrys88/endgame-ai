@@ -82,7 +82,8 @@
     "verify_unknown": "actor",
     "reflect_done": "mutator",
     "mutate_done": "actor",
-    "execute_acted": "actor"
+    "execute_acted": "actor",
+    "goal_complete": "idle"
   },
   "verbs": {
     "click": {
