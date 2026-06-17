@@ -28,9 +28,23 @@ class ActionExecutor:
         except Exception as e:
             return ActionResult(verb, False, f"{type(e).__name__}: {e}")
 
+    def _resolve(self, target: str, elements: dict[str, Element]) -> Element | None:
+        """Resolve target: try as element ID first, then name match."""
+        if target in elements:
+            return elements[target]
+        # Try stripping non-numeric chars (LLM might say "13" or "[13]")
+        digits = ''.join(c for c in target if c.isdigit())
+        if digits and digits in elements:
+            return elements[digits]
+        # Last resort: match by name substring
+        for el in elements.values():
+            if el.name and el.name in target:
+                return el
+        return None
+
     def _do_click(self, args: dict[str, Any], elements: dict[str, Element]) -> ActionResult:
         target = str(args.get("target", ""))
-        el = elements.get(target)
+        el = self._resolve(target, elements)
         if not el:
             return ActionResult("click", False, f"element {target} not found")
         px = el.px + el.pw // 2
@@ -43,9 +57,10 @@ class ActionExecutor:
         if not text:
             return ActionResult("write", False, "empty text")
         target = str(args.get("target", ""))
-        if target and target in elements:
-            el = elements[target]
-            self._desktop.click(el.px + el.pw // 2, el.py + el.ph // 2, el.hwnd)
+        if target:
+            el = self._resolve(target, elements)
+            if el:
+                self._desktop.click(el.px + el.pw // 2, el.py + el.ph // 2, el.hwnd)
         self._desktop.type_text(text)
         return ActionResult("write", True, f"typed {len(text)} chars")
 
@@ -67,7 +82,7 @@ class ActionExecutor:
     def _do_scroll(self, args: dict[str, Any], elements: dict[str, Element]) -> ActionResult:
         target = str(args.get("target", ""))
         amount = int(args.get("value", 3) or 3)
-        el = elements.get(target)
+        el = self._resolve(target, elements)
         if not el:
             return ActionResult("scroll", False, f"element {target} not found")
         self._desktop.scroll(el.px + el.pw // 2, el.py + el.ph // 2, amount)

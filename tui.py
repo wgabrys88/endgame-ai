@@ -90,6 +90,8 @@ class TUI:
             result = self._actions.execute(verb, action, elements)
             self._log.append(f"  [{slot_name}] {verb}: {result.observation[:60]}")
             if slot:
+                if not result.success:
+                    slot.state.last_action_error = f"{verb}: {result.observation[:200]}"
                 self.colony.bus.publish("evidence", "tool", slot.state.active_task_id or "",
                                         {"verb": verb, "success": result.success, "obs": result.observation[:200]})
 

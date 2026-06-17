@@ -37,6 +37,7 @@ class SlotState:
     fissions: int = 0
     last_phase: str = ""
     diagnosis: str = ""
+    last_action_error: str = ""
 
 
 def run_script(code: str, workspace: Path, timeout: int = 60) -> tuple[bool, str]:
@@ -120,9 +121,11 @@ class Actor(Circuit):
         task.attempts += 1
         if task.attempts > MAX_TASK_ATTEMPTS:
             task.status = "blocked"
-            state.history.append({"blocked": task.description, "reason": f"exceeded {MAX_TASK_ATTEMPTS} attempts"})
-            bus.publish("runtime_event", "runtime", task.id, {"event": "task_abandoned"})
-            return {"phase": "actor", "ok": False, "reason": "max_attempts", "next": "planner"}
+            errors = state.last_action_error or f"failed {MAX_TASK_ATTEMPTS} times"
+            state.history.append({"blocked": task.description, "reason": errors})
+            state.diagnosis = f"Task '{task.description}' failed after {MAX_TASK_ATTEMPTS} attempts: {errors}"
+            bus.publish("runtime_event", "runtime", task.id, {"event": "task_abandoned", "diagnosis": errors})
+            return {"phase": "actor", "ok": False, "reason": "max_attempts", "next": "reflector"}
         if task.description.strip().lower().startswith("exec"):
             code = task.description
             for prefix in ("exec:", "exec "):
@@ -141,6 +144,9 @@ class Actor(Circuit):
         parts = [f"GOAL: {state.goal}", f"TASK: {task.description}"]
         if task.contract:
             parts.append(f"CONTRACT: {task.contract}")
+        if state.last_action_error:
+            parts.append(f"LAST ERROR: {state.last_action_error}")
+            state.last_action_error = ""
         if state.screen:
             parts.append(f"SCREEN:\n{state.screen[:2000]}")
         rtype, data = _parse(llm.call(self._prompt or "You are an actor.", "\n".join(parts)))
