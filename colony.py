@@ -38,17 +38,18 @@ class CommsOperator:
             "  reviewer = verification, quality audits\n"
             "  devops = git, deployment, system health\n\n"
             "Decompose the goal into sub-goals. Assign each to ONE slot.\n"
-            'Return JSON: {"routes":[{"to":"slot_name","goal":"specific sub-goal"}]}'
+            'Return record_type "route" with data containing routes array: [{"to":"slot_name","goal":"sub-goal"}]'
         )
         result = self._llm.call(
             "You are a comms_operator. Decompose goals and route to worker slots.",
-            context, raw=True,
+            context,
         )
         try:
             parsed = json.loads(result.text)
         except (json.JSONDecodeError, TypeError):
             parsed = {}
-        routes = parsed.get("routes", [])
+        data = parsed.get("data", parsed)
+        routes = data.get("routes", [])
         if not isinstance(routes, list) or not routes:
             self._bus.publish("route", "comms_operator", "",
                              {"to": "implementor", "goal": goal, "status": "open"})
@@ -95,14 +96,20 @@ class GlobalMutator:
         context = (
             f"STRUGGLING SLOTS: {json.dumps(denials)}\n"
             f"BUS CONTEXT:\n{self._bus.format_context(limit=10)}\n"
-            "Suggest planner prompt improvements for the struggling slots."
+            "Suggest planner prompt improvements for the struggling slots.\n"
+            'Return record_type "mutation" with data containing targets array and suggestion string.'
         )
         result = self._llm.call(
             "You are a global mutator. Analyze cross-slot failures and suggest planner improvements.",
-            context, max_tokens=512, raw=True,
+            context, max_tokens=512,
         )
+        try:
+            parsed = json.loads(result.text)
+            data = parsed.get("data", parsed)
+        except (json.JSONDecodeError, TypeError):
+            data = {"suggestion": result.text[:500]}
         self._bus.publish("global_mutation", "global_mutator", "",
-                          {"targets": list(denials.keys()), "suggestion": result.text[:500]})
+                          {"targets": list(denials.keys()), "suggestion": str(data.get("suggestion", ""))[:500]})
         return {"phase": "global_mutate", "targets": list(denials.keys()), "suggestion": result.text[:200]}
 
 

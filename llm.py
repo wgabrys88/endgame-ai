@@ -46,7 +46,7 @@ class LLMClient:
             self._model = ""
         return self._model or ""
 
-    def call(self, system: str, user: str, *, max_tokens: int = 0, raw: bool = False) -> LLMResult:
+    def call(self, system: str, user: str, *, max_tokens: int = 0) -> LLMResult:
         body: dict[str, Any] = {
             "messages": [
                 {"role": "system", "content": system},
@@ -59,7 +59,7 @@ class LLMClient:
         model = self._resolve_model()
         if model:
             body["model"] = model
-        if not raw and self._schema:
+        if self._schema:
             body["response_format"] = self._schema
         payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
         for attempt in range(3):

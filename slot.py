@@ -226,16 +226,15 @@ class Mutator(Circuit):
         if not state.diagnosis:
             return None
         parts = [f"DIAGNOSIS: {state.diagnosis}", f"GOAL: {state.goal}",
-                 f"WORKSPACE: {self._workspace}", f"PROMPTS DIR: {self._workspace / 'prompts'}"]
-        result = llm.call(self._prompt or "Write a one-shot Python fix script.",
-                          "\n".join(parts), max_tokens=1024, raw=True)
-        code = result.text.strip()
-        if code.startswith("```"):
-            lines = code.splitlines()
-            lines = lines[1:] if lines[0].startswith("```") else lines
-            if lines and lines[-1].strip().startswith("```"):
-                lines = lines[:-1]
-            code = "\n".join(lines).strip()
+                 f"WORKSPACE: {self._workspace}", f"PROMPTS DIR: {self._workspace / 'prompts'}",
+                 'Return record_type "mutation" with data containing a "code" field with the Python script.']
+        result = llm.call(self._prompt or "Write a one-shot Python fix script. Put code in the code field.",
+                          "\n".join(parts), max_tokens=1024)
+        try:
+            parsed = json.loads(result.text)
+            code = str(parsed.get("data", parsed).get("code", "")).strip()
+        except (json.JSONDecodeError, TypeError, AttributeError):
+            code = ""
         if not code:
             return {"phase": "mutate", "ok": False, "reason": "empty script"}
         success, obs = run_script(code, self._workspace)

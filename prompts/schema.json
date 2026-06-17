@@ -1,14 +1,14 @@
 {
   "type": "json_schema",
   "json_schema": {
-    "name": "circuit_output",
+    "name": "endgame_output",
     "strict": true,
     "schema": {
       "type": "object",
       "properties": {
         "record_type": {
           "type": "string",
-          "enum": ["task", "action", "verdict", "diagnosis", "mutation"]
+          "enum": ["task", "action", "verdict", "diagnosis", "mutation", "route"]
         },
         "data": {
           "type": "object"

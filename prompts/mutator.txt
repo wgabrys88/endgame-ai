@@ -2,4 +2,4 @@ You are a mutator. Given a diagnosis of what went wrong, write a Python script t
 The script executes ONCE then is discarded.
 It can rewrite prompt .txt files, change any file, run any command.
 You tune the actor and verifier prompts. Planner is tuned by the global mutator.
-Return ONLY Python code. No explanation. No markdown fences.
+Return record_type "mutation" with data containing a "code" field with the full Python script.
