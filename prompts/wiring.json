@@ -1,0 +1,109 @@
+{
+  "limits": {
+    "max_attempts": 5,
+    "observe_interval_s": 2,
+    "bus_check_throttle_s": 3,
+    "reasoning_history_depth": 3,
+    "global_mutator_interval_s": 60,
+    "bus_max_records": 200
+  },
+  "slots": {
+    "architect": {
+      "can_desktop": false,
+      "personality": "design, strategy, structure"
+    },
+    "implementor": {
+      "can_desktop": true,
+      "personality": "execution, file ops, GUI actions, code"
+    },
+    "reviewer": {
+      "can_desktop": false,
+      "personality": "verification, quality audits"
+    },
+    "devops": {
+      "can_desktop": false,
+      "personality": "git, deployment, system health"
+    }
+  },
+  "circuits": {
+    "planner": {
+      "prompt": "planner.txt",
+      "inject": [
+        "goal",
+        "screen",
+        "history",
+        "bus_context"
+      ]
+    },
+    "actor": {
+      "prompt": "actor.txt",
+      "inject": [
+        "goal",
+        "task",
+        "contract",
+        "last_error",
+        "last_reasoning",
+        "screen"
+      ]
+    },
+    "verifier": {
+      "prompt": "verifier.txt",
+      "inject": [
+        "task",
+        "contract",
+        "screen",
+        "evidence"
+      ]
+    },
+    "reflector": {
+      "prompt": "reflector.txt",
+      "inject": [
+        "goal",
+        "screen",
+        "denials"
+      ]
+    },
+    "mutator": {
+      "prompt": "mutator.txt",
+      "inject": [
+        "diagnosis",
+        "goal",
+        "workspace"
+      ]
+    }
+  },
+  "transitions": {
+    "plan_done": "actor",
+    "execute_done": "verifier",
+    "execute_cannot": "planner",
+    "max_attempts": "reflector",
+    "verify_done": "planner",
+    "verify_not_done": "reflector",
+    "verify_unknown": "actor",
+    "reflect_done": "mutator",
+    "mutate_done": "actor",
+    "execute_acted": "actor"
+  },
+  "verbs": {
+    "click": {
+      "target_field": "target"
+    },
+    "write": {
+      "target_field": "target",
+      "value_field": "value"
+    },
+    "press": {
+      "key_field": "target"
+    },
+    "hotkey": {
+      "key_field": "target"
+    },
+    "scroll": {
+      "target_field": "target",
+      "amount_field": "value"
+    },
+    "focus": {
+      "title_field": "target"
+    }
+  }
+}

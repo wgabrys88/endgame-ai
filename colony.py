@@ -9,41 +9,31 @@ from llm import LLMClient
 from bus import Bus
 from slot import Slot
 
-SLOT_CONFIGS: dict[str, dict[str, Any]] = {
-    "architect": {"can_act_desktop": False},
-    "implementor": {"can_act_desktop": True},
-    "reviewer": {"can_act_desktop": False},
-    "devops": {"can_act_desktop": False},
-}
-
 
 class CommsOperator:
     """Decomposes user goals into sub-goals and routes them to slots via bus."""
 
-    def __init__(self, llm: LLMClient, bus: Bus, slot_names: list[str]):
+    def __init__(self, llm: LLMClient, bus: Bus, slot_configs: dict[str, dict]):
         self._llm = llm
         self._bus = bus
-        self._slot_names = slot_names
+        self._slot_names = list(slot_configs.keys())
+        self._slot_configs = slot_configs
         self._last_goal: str = ""
 
     def route(self, goal: str) -> dict[str, Any]:
         if goal == self._last_goal:
-            return {"phase": "comms", "action": "skip", "reason": "same goal"}
+            return {"phase": "comms", "action": "skip"}
         self._last_goal = goal
+        slot_desc = "\n".join(f"  {n} = {c.get('personality', '')}" for n, c in self._slot_configs.items())
         context = (
             f"GOAL: {goal}\n"
-            f"AVAILABLE SLOTS: {', '.join(self._slot_names)}\n"
-            "  architect = design, strategy, structure\n"
-            "  implementor = execution, file ops, GUI actions, code\n"
-            "  reviewer = verification, quality audits\n"
-            "  devops = git, deployment, system health\n\n"
-            "Decompose the goal into sub-goals. Assign each to ONE slot.\n"
-            'Return record_type "route" with data containing routes array: [{"to":"slot_name","goal":"sub-goal"}]'
+            f"AVAILABLE SLOTS: {', '.join(self._slot_names)}\n{slot_desc}\n\n"
+            "Decompose the goal into sequential sub-goals. Assign each to ONE slot.\n"
+            "Add seq (1,2,3...) for ordering. If a sub-goal depends on a prior one, add \"after\": N.\n"
+            'Return record_type "route" with data containing routes array: '
+            '[{"to":"slot_name","goal":"sub-goal","seq":1},{"to":"slot_name","goal":"...","seq":2,"after":1}]'
         )
-        result = self._llm.call(
-            "You are a comms_operator. Decompose goals and route to worker slots.",
-            context,
-        )
+        result = self._llm.call("You are a comms_operator. Decompose goals and route to worker slots.", context)
         try:
             parsed = json.loads(result.text)
         except (json.JSONDecodeError, TypeError):
@@ -52,20 +42,24 @@ class CommsOperator:
         routes = data.get("routes", [])
         if not isinstance(routes, list) or not routes:
             self._bus.publish("route", "comms_operator", "",
-                             {"to": "implementor", "goal": goal, "status": "open"})
+                             {"to": "implementor", "goal": goal, "status": "open", "seq": 1})
             return {"phase": "comms", "routed": 1, "fallback": True}
         count = 0
-        for r in routes:
+        for i, r in enumerate(routes):
             if not isinstance(r, dict):
                 continue
             to = str(r.get("to", "")).strip()
             sub_goal = str(r.get("goal", "")).strip()
             if to in self._slot_names and sub_goal:
-                self._bus.publish("route", "comms_operator", "", {"to": to, "goal": sub_goal, "status": "open"})
+                seq = r.get("seq", i + 1)
+                route_data: dict[str, Any] = {"to": to, "goal": sub_goal, "status": "open", "seq": seq}
+                if "after" in r:
+                    route_data["after"] = r["after"]
+                self._bus.publish("route", "comms_operator", "", route_data)
                 count += 1
         if count == 0:
             self._bus.publish("route", "comms_operator", "",
-                             {"to": "implementor", "goal": goal, "status": "open"})
+                             {"to": "implementor", "goal": goal, "status": "open", "seq": 1})
             count = 1
         return {"phase": "comms", "routed": count}
 
@@ -73,12 +67,12 @@ class CommsOperator:
 class GlobalMutator:
     """Reads cross-slot denial patterns, proposes planner prompt patches."""
 
-    def __init__(self, llm: LLMClient, bus: Bus, slots: dict[str, Slot]):
+    def __init__(self, llm: LLMClient, bus: Bus, slots: dict[str, Slot], interval: float = 60.0):
         self._llm = llm
         self._bus = bus
         self._slots = slots
         self._last_run: float = 0
-        self._interval: float = 60.0
+        self._interval = interval
 
     def step(self) -> dict[str, Any] | None:
         now = time.time()
@@ -87,8 +81,7 @@ class GlobalMutator:
         self._last_run = now
         denials: dict[str, int] = {}
         for name, slot in self._slots.items():
-            count = sum(1 for h in slot.state.history[-10:]
-                        if isinstance(h, dict) and h.get("denied"))
+            count = sum(1 for h in slot.state.history[-10:] if isinstance(h, dict) and h.get("denied"))
             if count >= 3:
                 denials[name] = count
         if not denials:
@@ -96,41 +89,39 @@ class GlobalMutator:
         context = (
             f"STRUGGLING SLOTS: {json.dumps(denials)}\n"
             f"BUS CONTEXT:\n{self._bus.format_context(limit=10)}\n"
-            "Suggest planner prompt improvements for the struggling slots.\n"
-            'Return record_type "mutation" with data containing targets array and suggestion string.'
+            "Suggest planner prompt improvements.\n"
+            'Return record_type "mutation" with data containing suggestion string.'
         )
-        result = self._llm.call(
-            "You are a global mutator. Analyze cross-slot failures and suggest planner improvements.",
-            context, max_tokens=512,
-        )
+        result = self._llm.call("You are a global mutator. Analyze failures and suggest improvements.",
+                                context, max_tokens=512)
         try:
-            parsed = json.loads(result.text)
-            data = parsed.get("data", parsed)
+            data = json.loads(result.text).get("data", {})
         except (json.JSONDecodeError, TypeError):
-            data = {"suggestion": result.text[:500]}
+            data = {}
         self._bus.publish("global_mutation", "global_mutator", "",
                           {"targets": list(denials.keys()), "suggestion": str(data.get("suggestion", ""))[:500]})
-        return {"phase": "global_mutate", "targets": list(denials.keys()), "suggestion": result.text[:200]}
+        return {"phase": "global_mutate", "targets": list(denials.keys())}
 
 
 class Colony:
-    """Multi-slot orchestrator. Reusable as a component in larger systems."""
+    """Multi-slot orchestrator. Wiring-driven."""
 
-    def __init__(self, llm: LLMClient, bus: Bus, prompts_dir: Path, workspace: Path):
+    def __init__(self, llm: LLMClient, bus: Bus, prompts_dir: Path, workspace: Path, wiring: dict[str, Any]):
         self.llm = llm
         self.bus = bus
+        self._wiring = wiring
+        slot_configs = wiring["slots"]
         self.all_slots: dict[str, Slot] = {}
         self.active_slots: dict[str, Slot] = {}
-        for name, cfg in SLOT_CONFIGS.items():
-            slot_prompts = prompts_dir / name
-            if not slot_prompts.exists():
-                slot_prompts = prompts_dir
-            slot = Slot(name=name, llm=llm, bus=bus, prompts_dir=slot_prompts,
-                        workspace=workspace, can_act_desktop=cfg["can_act_desktop"])
+        for name, cfg in slot_configs.items():
+            slot_prompts = prompts_dir / name if (prompts_dir / name).exists() else prompts_dir
+            slot = Slot(name=name, llm=llm, bus=bus, prompts_dir=slot_prompts, workspace=workspace,
+                        wiring=wiring, can_act_desktop=cfg.get("can_desktop", False))
             self.all_slots[name] = slot
             self.active_slots[name] = slot
-        self.comms = CommsOperator(llm, bus, list(SLOT_CONFIGS.keys()))
-        self.global_mutator = GlobalMutator(llm, bus, self.all_slots)
+        self.comms = CommsOperator(llm, bus, slot_configs)
+        self.global_mutator = GlobalMutator(llm, bus, self.all_slots,
+                                            interval=wiring["limits"].get("global_mutator_interval_s", 60))
         self._actor_lock: str = ""
 
     def set_goal(self, goal: str):
@@ -152,12 +143,12 @@ class Colony:
         if not self._actor_lock or self._actor_lock == name:
             self._actor_lock = name
             return True
-        if not self.all_slots.get(self._actor_lock, None):
+        holder = self.all_slots.get(self._actor_lock)
+        if not holder:
             self._actor_lock = name
             return True
-        holder = self.all_slots[self._actor_lock]
-        active_task = next((t for t in holder.state.tasks if t.status == "active"), None)
-        if not active_task:
+        active = next((t for t in holder.state.tasks if t.status == "active"), None)
+        if not active:
             self._actor_lock = name
             return True
         return False

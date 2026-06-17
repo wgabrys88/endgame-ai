@@ -48,10 +48,7 @@ class LLMClient:
 
     def call(self, system: str, user: str, *, max_tokens: int = 0) -> LLMResult:
         body: dict[str, Any] = {
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
+            "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
             **self._config,
         }
         if max_tokens:
@@ -71,9 +68,14 @@ class LLMClient:
                         result = json.loads(resp.read().decode("utf-8"))
                 choices = result.get("choices", [])
                 if choices:
-                    content = str(choices[0].get("message", {}).get("content", ""))
-                    text, reasoning = self._extract_thinking(content)
-                    return LLMResult(text=text, reasoning=reasoning)
+                    msg = choices[0].get("message", {})
+                    content = str(msg.get("content", ""))
+                    # LM Studio exposes reasoning_content for thinking models (gemma-4, etc.)
+                    reasoning = str(msg.get("reasoning_content", ""))
+                    # Fallback: extract <think> tags if reasoning_content not present
+                    if not reasoning:
+                        content, reasoning = self._extract_thinking(content)
+                    return LLMResult(text=content, reasoning=reasoning)
                 raise RuntimeError("no choices")
             except (HTTPError, URLError, TimeoutError, OSError) as e:
                 if attempt >= 2:

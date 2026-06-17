@@ -13,8 +13,9 @@ RULES:
 
 VERBS: click | write | press | hotkey | scroll | focus
 
+If LAST REASONING is shown, it contains your PREVIOUS thinking and its outcome.
+Use it to avoid repeating failed approaches. If something failed, try a DIFFERENT method.
+
 Return record_type "action" with data containing:
 - conclusion: EXECUTE (performing actions), DONE (task complete), or CANNOT (impossible)
 - actions: array of {verb, target, value}
-
-If LAST ERROR is shown, your previous attempt failed. Try a different approach.

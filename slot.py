@@ -1,18 +1,15 @@
-"""Slot - the planner/actor/verifier/reflector/mutator loop. Unified record schema."""
+"""Slot - generic Circuit + data-driven state machine. All wiring from config."""
 from __future__ import annotations
 import json
 import subprocess
 import sys
 import time
-from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from llm import LLMClient, LLMResult
-from bus import Bus, Record
-
-MAX_TASK_ATTEMPTS = 5
+from bus import Bus
 
 
 @dataclass
@@ -35,17 +32,15 @@ class SlotState:
     screen_elements: dict[str, Any] = field(default_factory=dict)
     cycles: int = 0
     fissions: int = 0
-    last_phase: str = ""
+    phase: str = "planner"
     diagnosis: str = ""
     last_action_error: str = ""
+    reasoning_history: list[dict[str, str]] = field(default_factory=list)
 
 
 def run_script(code: str, workspace: Path, timeout: int = 60) -> tuple[bool, str]:
-    """Execute a Python script once."""
     try:
-        kwargs: dict[str, Any] = {
-            "cwd": str(workspace), "capture_output": True, "text": True, "timeout": timeout,
-        }
+        kwargs: dict[str, Any] = {"cwd": str(workspace), "capture_output": True, "text": True, "timeout": timeout}
         if sys.platform == "win32":
             kwargs["creationflags"] = 0x08000000
         proc = subprocess.run([sys.executable, "-c", code], **kwargs)
@@ -58,42 +53,99 @@ def run_script(code: str, workspace: Path, timeout: int = 60) -> tuple[bool, str
         return False, str(e)[:500]
 
 
-def _parse(result: LLMResult) -> tuple[str, dict[str, Any]]:
-    """Parse schema-enforced LLM output. Returns (record_type, data)."""
-    try:
-        record = json.loads(result.text)
-        return str(record["record_type"]), record["data"]
-    except (json.JSONDecodeError, KeyError, TypeError):
-        return "", {}
+class Circuit:
+    """Generic circuit driven by wiring config. Resolves context, calls LLM, interprets result."""
 
+    def __init__(self, name: str, wiring: dict[str, Any], prompts_dir: Path, workspace: Path):
+        self.name = name
+        self._wiring = wiring
+        self._workspace = workspace
+        cfg = wiring["circuits"][name]
+        self._inject = cfg["inject"]
+        prompt_path = prompts_dir / cfg["prompt"]
+        self._prompt = prompt_path.read_text(encoding="utf-8").strip() if prompt_path.exists() else f"You are a {name}."
+        self._max_attempts = wiring["limits"]["max_attempts"]
+        self._reasoning_depth = wiring["limits"]["reasoning_history_depth"]
 
-class Circuit(ABC):
-    @abstractmethod
-    def run(self, state: SlotState, llm: LLMClient, bus: Bus) -> dict[str, Any] | None:
-        ...
+    def _resolve_context(self, state: SlotState, bus: Bus) -> str:
+        parts: list[str] = []
+        task = next((t for t in state.tasks if t.status in ("active", "claimed_done")), None)
+        for field_name in self._inject:
+            val = self._get_field(field_name, state, task, bus)
+            if val:
+                parts.append(f"{field_name.upper().replace('_', ' ')}: {val}")
+        return "\n".join(parts)
 
+    def _get_field(self, name: str, state: SlotState, task: Task | None, bus: Bus) -> str:
+        if name == "goal":
+            return state.goal
+        if name == "screen":
+            return state.screen[:2000] if state.screen else ""
+        if name == "task":
+            return task.description if task else ""
+        if name == "contract":
+            return task.contract if task else ""
+        if name == "last_error":
+            err = state.last_action_error
+            if err:
+                state.last_action_error = ""
+            return err
+        if name == "last_reasoning":
+            if not state.reasoning_history:
+                return ""
+            entries = state.reasoning_history[-self._reasoning_depth:]
+            return "\n".join(f"[attempt] {e.get('reasoning','')[:300]} → {e.get('outcome','')[:100]}" for e in entries)
+        if name == "history":
+            if not state.history:
+                return ""
+            return "\n".join(f"  {json.dumps(h, ensure_ascii=False)[:200]}" for h in state.history[-6:])
+        if name == "bus_context":
+            return bus.format_context(limit=6)
+        if name == "evidence":
+            if not task:
+                return ""
+            evidence = bus.query(record_type="evidence", task_id=task.id, limit=5)
+            parts = [f"  {json.dumps(r.data, ensure_ascii=False)[:300]}" for r in evidence]
+            if task.evidence:
+                parts += [f"  {e[:300]}" for e in task.evidence[-3:]]
+            return "\n".join(parts) if parts else ""
+        if name == "denials":
+            denials = [h for h in state.history[-6:] if isinstance(h, dict) and h.get("denied")]
+            return "\n".join(f"  {json.dumps(d, ensure_ascii=False)[:200]}" for d in denials[-3:]) if denials else ""
+        if name == "diagnosis":
+            return state.diagnosis
+        if name == "workspace":
+            return f"{self._workspace}\nPROMPTS DIR: {self._workspace / 'prompts'}"
+        return ""
 
-class Planner(Circuit):
-    def __init__(self, prompt_path: Path):
-        self._prompt = prompt_path.read_text(encoding="utf-8").strip() if prompt_path.exists() else ""
+    def run(self, state: SlotState, llm: LLMClient, bus: Bus) -> dict[str, Any]:
+        ctx = self._resolve_context(state, bus)
+        max_tok = 512 if self.name in ("verifier", "reflector") else (1024 if self.name == "mutator" else 0)
+        result = llm.call(self._prompt, ctx, max_tokens=max_tok) if ctx else LLMResult(text="")
+        return self._interpret(result, state, bus)
 
-    def run(self, state: SlotState, llm: LLMClient, bus: Bus) -> dict[str, Any] | None:
-        if not state.goal:
-            return None
-        parts = [f"GOAL: {state.goal}"]
-        if state.screen:
-            parts.append(f"SCREEN:\n{state.screen[:2000]}")
-        if state.history:
-            parts.append("HISTORY:\n" + "\n".join(
-                f"  {json.dumps(h, ensure_ascii=False)[:200]}" for h in state.history[-6:]))
-        bus_ctx = bus.format_context(limit=6)
-        if bus_ctx:
-            parts.append(bus_ctx)
-        rtype, data = _parse(llm.call(self._prompt or "You are a planner.", "\n".join(parts)))
-        if rtype != "task":
-            return {"phase": "planner.error", "error": "invalid response"}
+    def _interpret(self, result: LLMResult, state: SlotState, bus: Bus) -> dict[str, Any]:
+        try:
+            record = json.loads(result.text)
+            rtype, data = str(record["record_type"]), record["data"]
+        except (json.JSONDecodeError, KeyError, TypeError):
+            return {"event": f"{self.name}_error", "error": "parse_failed"}
+
+        if self.name == "planner":
+            return self._interpret_plan(data, state, bus)
+        if self.name == "actor":
+            return self._interpret_action(data, result, state, bus)
+        if self.name == "verifier":
+            return self._interpret_verdict(data, state, bus)
+        if self.name == "reflector":
+            return self._interpret_reflect(data, state, bus)
+        if self.name == "mutator":
+            return self._interpret_mutate(data, result, state, bus)
+        return {"event": f"{self.name}_error"}
+
+    def _interpret_plan(self, data: dict, state: SlotState, bus: Bus) -> dict[str, Any]:
         raw = data.get("tasks", [])
-        tasks = []
+        tasks: list[Task] = []
         for i, t in enumerate(raw[:6] if isinstance(raw, list) else []):
             if isinstance(t, dict):
                 desc = str(t.get("description", ""))
@@ -101,90 +153,42 @@ class Planner(Circuit):
                     tasks.append(Task(id=str(t.get("id", f"t{i+1}")), description=desc,
                                       contract=str(t.get("contract", ""))))
         if not tasks:
-            return {"phase": "planner.error", "error": "no tasks"}
+            return {"event": "planner_error", "error": "no tasks"}
         state.tasks = tasks
         state.tasks[0].status = "active"
-        state.active_task_id = state.tasks[0].id
+        state.active_task_id = tasks[0].id
+        state.reasoning_history = []
         bus.publish("task", "planner", state.active_task_id, data)
-        return {"phase": "plan", "tasks": len(tasks), "next": "actor"}
+        return {"event": "plan_done", "tasks": len(tasks), "next": "actor"}
 
-
-class Actor(Circuit):
-    def __init__(self, prompt_path: Path, workspace: Path):
-        self._prompt = prompt_path.read_text(encoding="utf-8").strip() if prompt_path.exists() else ""
-        self._workspace = workspace
-
-    def run(self, state: SlotState, llm: LLMClient, bus: Bus) -> dict[str, Any] | None:
+    def _interpret_action(self, data: dict, result: LLMResult, state: SlotState, bus: Bus) -> dict[str, Any]:
         task = next((t for t in state.tasks if t.status == "active"), None)
         if not task:
-            return None
-        task.attempts += 1
-        if task.attempts > MAX_TASK_ATTEMPTS:
-            task.status = "blocked"
-            errors = state.last_action_error or f"failed {MAX_TASK_ATTEMPTS} times"
-            state.history.append({"blocked": task.description, "reason": errors})
-            state.diagnosis = f"Task '{task.description}' failed after {MAX_TASK_ATTEMPTS} attempts: {errors}"
-            bus.publish("runtime_event", "runtime", task.id, {"event": "task_abandoned", "diagnosis": errors})
-            return {"phase": "actor", "ok": False, "reason": "max_attempts", "next": "reflector"}
-        if task.description.strip().lower().startswith("exec"):
-            code = task.description
-            for prefix in ("exec:", "exec "):
-                if code.lower().startswith(prefix):
-                    code = code[len(prefix):].strip()
-                    break
-            success, obs = run_script(code, self._workspace)
-            task.evidence.append(obs)
-            bus.publish("evidence", "tool", task.id, {"output": obs, "success": success})
-            state.history.append({"exec": task.description[:100], "ok": success, "obs": obs[:200]})
-            if success:
-                task.status = "claimed_done"
-                return {"phase": "actor", "ok": True, "obs": obs[:200], "next": "verifier"}
-            task.status = "blocked"
-            return {"phase": "actor", "ok": False, "obs": obs[:200], "next": "planner"}
-        parts = [f"GOAL: {state.goal}", f"TASK: {task.description}"]
-        if task.contract:
-            parts.append(f"CONTRACT: {task.contract}")
-        if state.last_action_error:
-            parts.append(f"LAST ERROR: {state.last_action_error}")
-            state.last_action_error = ""
-        if state.screen:
-            parts.append(f"SCREEN:\n{state.screen[:2000]}")
-        rtype, data = _parse(llm.call(self._prompt or "You are an actor.", "\n".join(parts)))
-        if rtype != "action":
-            return {"phase": "actor.error", "error": "invalid response"}
+            return {"event": "execute_cannot"}
+        # Store reasoning for feedback loop
+        reasoning_entry = {"reasoning": result.reasoning[:500], "outcome": ""}
         conclusion = str(data.get("conclusion", "EXECUTE"))
         if conclusion == "DONE":
             task.status = "claimed_done"
+            reasoning_entry["outcome"] = "claimed done"
+            state.reasoning_history.append(reasoning_entry)
             bus.publish("claim", "actor", task.id, data)
-            return {"phase": "actor", "conclusion": "DONE", "next": "verifier"}
+            return {"event": "execute_done", "conclusion": "DONE", "next": "verifier"}
         if conclusion == "CANNOT":
             task.status = "blocked"
             state.history.append({"blocked": task.description, "reason": "cannot"})
-            return {"phase": "actor", "conclusion": "CANNOT", "next": "planner"}
+            reasoning_entry["outcome"] = "cannot"
+            state.reasoning_history.append(reasoning_entry)
+            return {"event": "execute_cannot", "conclusion": "CANNOT", "next": "planner"}
+        # EXECUTE — actions for TUI to run, then re-run actor for next observation
         bus.publish("action", "actor", task.id, data)
-        return {"phase": "actor", "conclusion": "EXECUTE", "actions": data.get("actions", []), "next": "verifier"}
+        return {"event": "execute_acted", "conclusion": "EXECUTE",
+                "actions": data.get("actions", []), "reasoning_entry": reasoning_entry}
 
-
-class Verifier(Circuit):
-    def __init__(self, prompt_path: Path):
-        self._prompt = prompt_path.read_text(encoding="utf-8").strip() if prompt_path.exists() else ""
-
-    def run(self, state: SlotState, llm: LLMClient, bus: Bus) -> dict[str, Any] | None:
+    def _interpret_verdict(self, data: dict, state: SlotState, bus: Bus) -> dict[str, Any]:
         task = next((t for t in state.tasks if t.status == "claimed_done"), None)
         if not task:
-            return None
-        parts = [f"TASK: {task.description}", f"CONTRACT: {task.contract}"]
-        if state.screen:
-            parts.append(f"SCREEN:\n{state.screen[:1500]}")
-        evidence = bus.query(record_type="evidence", task_id=task.id, limit=5)
-        if evidence:
-            parts.append("EVIDENCE:\n" + "\n".join(
-                f"  {json.dumps(r.data, ensure_ascii=False)[:300]}" for r in evidence))
-        if task.evidence:
-            parts.append("TASK OUTPUT:\n" + "\n".join(f"  {e[:300]}" for e in task.evidence[-3:]))
-        rtype, data = _parse(llm.call(self._prompt or "You are a verifier.", "\n".join(parts), max_tokens=512))
-        if rtype != "verdict":
-            return {"phase": "verify", "verdict": "UNKNOWN", "because": "invalid response", "next": "actor"}
+            return {"event": "verify_unknown"}
         verdict = str(data.get("verdict", "UNKNOWN")).upper()
         because = str(data.get("because", ""))[:300]
         bus.publish("verdict", "verifier", task.id, data)
@@ -193,85 +197,51 @@ class Verifier(Circuit):
             state.fissions += 1
             state.active_task_id = ""
             state.history.append({"verified": task.description, "verdict": "DONE"})
-            return {"phase": "verify", "verdict": "DONE", "next": "planner"}
+            state.reasoning_history = []
+            return {"event": "verify_done", "verdict": "DONE", "next": "planner"}
         if verdict == "NOT_DONE":
             task.status = "active"
             state.history.append({"denied": task.description, "reason": because})
-            return {"phase": "verify", "verdict": "NOT_DONE", "because": because, "next": "reflector"}
+            return {"event": "verify_not_done", "verdict": "NOT_DONE", "because": because}
         task.status = "active"
-        return {"phase": "verify", "verdict": "UNKNOWN", "next": "actor"}
+        return {"event": "verify_unknown", "verdict": "UNKNOWN"}
 
-
-class Reflector(Circuit):
-    def __init__(self, prompt_path: Path):
-        self._prompt = prompt_path.read_text(encoding="utf-8").strip() if prompt_path.exists() else ""
-
-    def run(self, state: SlotState, llm: LLMClient, bus: Bus) -> dict[str, Any] | None:
-        denials = [h for h in state.history[-6:] if isinstance(h, dict) and h.get("denied")]
-        if not denials:
-            return None
-        parts = [f"GOAL: {state.goal}",
-                 "DENIALS:\n" + "\n".join(f"  {json.dumps(d, ensure_ascii=False)[:200]}" for d in denials[-3:])]
-        if state.screen:
-            parts.append(f"SCREEN:\n{state.screen[:800]}")
-        rtype, data = _parse(llm.call(self._prompt or "Diagnose the root cause.", "\n".join(parts), max_tokens=512))
-        diagnosis = str(data.get("diagnosis", ""))[:500] if rtype == "diagnosis" else ""
-        if not diagnosis:
-            diagnosis = "unknown failure"
+    def _interpret_reflect(self, data: dict, state: SlotState, bus: Bus) -> dict[str, Any]:
+        diagnosis = str(data.get("diagnosis", ""))[:500] or "unknown failure"
         state.diagnosis = diagnosis
         bus.publish("diagnosis", "reflector", state.active_task_id or "", {"diagnosis": diagnosis})
-        return {"phase": "reflect", "diagnosis": diagnosis[:200], "next": "mutator"}
+        return {"event": "reflect_done", "diagnosis": diagnosis[:200], "next": "mutator"}
 
-
-class Mutator(Circuit):
-    def __init__(self, prompt_path: Path, workspace: Path):
-        self._prompt = prompt_path.read_text(encoding="utf-8").strip() if prompt_path.exists() else ""
-        self._workspace = workspace
-
-    def run(self, state: SlotState, llm: LLMClient, bus: Bus) -> dict[str, Any] | None:
-        if not state.diagnosis:
-            return None
-        parts = [f"DIAGNOSIS: {state.diagnosis}", f"GOAL: {state.goal}",
-                 f"WORKSPACE: {self._workspace}", f"PROMPTS DIR: {self._workspace / 'prompts'}",
-                 'Return record_type "mutation" with data containing a "code" field with the Python script.']
-        result = llm.call(self._prompt or "Write a one-shot Python fix script. Put code in the code field.",
-                          "\n".join(parts), max_tokens=1024)
-        try:
-            parsed = json.loads(result.text)
-            code = str(parsed.get("data", parsed).get("code", "")).strip()
-        except (json.JSONDecodeError, TypeError, AttributeError):
-            code = ""
+    def _interpret_mutate(self, data: dict, result: LLMResult, state: SlotState, bus: Bus) -> dict[str, Any]:
+        code = str(data.get("code", "")).strip()
         if not code:
-            return {"phase": "mutate", "ok": False, "reason": "empty script"}
+            state.diagnosis = ""
+            return {"event": "mutate_done", "ok": False, "reason": "empty script"}
         success, obs = run_script(code, self._workspace)
         bus.publish("mutation", "mutator", state.active_task_id or "",
                     {"code": code[:500], "success": success, "output": obs[:300]})
         state.diagnosis = ""
-        return {"phase": "mutate", "ok": success, "obs": obs[:200]}
+        return {"event": "mutate_done", "ok": success, "obs": obs[:200]}
 
 
 class Slot:
+    """Data-driven state machine. Phase transitions from wiring.json."""
+
     def __init__(self, name: str, llm: LLMClient, bus: Bus, prompts_dir: Path, workspace: Path,
-                 *, can_act_desktop: bool = True):
+                 wiring: dict[str, Any], *, can_act_desktop: bool = True):
         self.name = name
         self.llm = llm
         self.bus = bus
         self.state = SlotState()
         self.can_act_desktop = can_act_desktop
-        self._workspace = workspace
-        self._personality = self._load_personality(prompts_dir, name)
-        self.planner = Planner(prompts_dir / "planner.txt")
-        self.actor = Actor(prompts_dir / "actor.txt", workspace)
-        self.verifier = Verifier(prompts_dir / "verifier.txt")
-        self.reflector = Reflector(prompts_dir / "reflector.txt")
-        self.mutator = Mutator(prompts_dir / "mutator.txt", workspace)
+        self._wiring = wiring
+        self._transitions = wiring["transitions"]
+        self._max_attempts = wiring["limits"]["max_attempts"]
+        self._bus_throttle = wiring["limits"]["bus_check_throttle_s"]
         self._last_bus_check: float = 0
-
-    def _load_personality(self, prompts_dir: Path, name: str) -> str:
-        for path in (prompts_dir / name / "personality.txt", prompts_dir / "personalities" / f"{name}.txt"):
-            if path.exists():
-                return path.read_text(encoding="utf-8").strip()
-        return ""
+        self.circuits: dict[str, Circuit] = {
+            n: Circuit(n, wiring, prompts_dir, workspace) for n in wiring["circuits"]
+        }
 
     def set_goal(self, goal: str):
         self.state.goal = goal
@@ -279,19 +249,29 @@ class Slot:
         self.state.active_task_id = ""
         self.state.history = []
         self.state.diagnosis = ""
+        self.state.phase = "planner"
+        self.state.reasoning_history = []
 
     def check_bus(self) -> bool:
         now = time.time()
-        if now - self._last_bus_check < 3.0:
+        if now - self._last_bus_check < self._bus_throttle:
             return False
         self._last_bus_check = now
         for r in reversed(self.bus.query(record_type="route", limit=10)):
-            if r.data.get("to") == self.name and r.data.get("status") == "open":
-                goal = str(r.data.get("goal", ""))
-                if goal and goal != self.state.goal:
-                    self.set_goal(goal)
-                    r.data["status"] = "accepted"
-                    return True
+            if r.data.get("to") != self.name or r.data.get("status") != "open":
+                continue
+            # Check dependency: if "after" is set, prerequisite must be verified_done
+            after = r.data.get("after")
+            if after is not None:
+                prereq = next((pr for pr in self.bus.records
+                               if pr.record_type == "route" and pr.data.get("seq") == after), None)
+                if not prereq or prereq.data.get("status") != "verified_done":
+                    continue
+            goal = str(r.data.get("goal", ""))
+            if goal and goal != self.state.goal:
+                self.set_goal(goal)
+                r.data["status"] = "accepted"
+                return True
         return False
 
     def step(self) -> dict[str, Any] | None:
@@ -299,18 +279,50 @@ class Slot:
         if not self.state.goal:
             return None
         self.state.cycles += 1
-        if self.state.diagnosis:
-            return self.mutator.run(self.state, self.llm, self.bus)
-        claimed = next((t for t in self.state.tasks if t.status == "claimed_done"), None)
-        if claimed:
-            result = self.verifier.run(self.state, self.llm, self.bus)
-            if result and result.get("next") == "reflector":
-                return self.reflector.run(self.state, self.llm, self.bus) or result
-            return result
-        active = next((t for t in self.state.tasks if t.status == "active"), None)
-        if active:
-            return self.actor.run(self.state, self.llm, self.bus)
-        return self.planner.run(self.state, self.llm, self.bus)
+        # Check max attempts before actor runs
+        task = next((t for t in self.state.tasks if t.status == "active"), None)
+        if task and self.state.phase == "actor":
+            task.attempts += 1
+            if task.attempts > self._max_attempts:
+                task.status = "blocked"
+                state = self.state
+                state.diagnosis = f"Task '{task.description}' failed after {self._max_attempts} attempts"
+                state.history.append({"blocked": task.description, "reason": state.diagnosis})
+                self.state.phase = "reflector"
+                return {"event": "max_attempts", "phase": "actor", "ok": False, "reason": "max_attempts", "next": "reflector"}
+        # Handle exec: tasks directly (no LLM call)
+        if task and self.state.phase == "actor" and task.description.strip().lower().startswith("exec"):
+            return self._exec_task(task)
+        # Run current circuit
+        circuit = self.circuits.get(self.state.phase)
+        if not circuit:
+            self.state.phase = "planner"
+            circuit = self.circuits["planner"]
+        result = circuit.run(self.state, self.llm, self.bus)
+        # Transition
+        event = result.get("event", "")
+        next_phase = self._transitions.get(event, "planner")
+        self.state.phase = next_phase
+        result["phase"] = circuit.name
+        return result
+
+    def _exec_task(self, task: Task) -> dict[str, Any]:
+        code = task.description
+        for prefix in ("exec:", "exec "):
+            if code.lower().startswith(prefix):
+                code = code[len(prefix):].strip()
+                break
+        success, obs = run_script(code, self._wiring.get("_workspace", Path(".")))
+        task.evidence.append(obs)
+        self.bus.publish("evidence", "tool", task.id, {"output": obs, "success": success})
+        self.state.history.append({"exec": task.description[:100], "ok": success, "obs": obs[:200]})
+        if success:
+            task.status = "claimed_done"
+            self.state.phase = "verifier"
+            return {"phase": "actor", "event": "execute_done", "ok": True, "obs": obs[:200], "next": "verifier"}
+        task.status = "blocked"
+        self.state.phase = "planner"
+        return {"phase": "actor", "event": "execute_cannot", "ok": False, "obs": obs[:200], "next": "planner"}
 
     def observe(self, screen: str, elements: dict[str, Any]):
         self.state.screen = screen
