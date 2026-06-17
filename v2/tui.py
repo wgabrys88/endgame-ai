@@ -1,0 +1,208 @@
+"""TUI - single entry point for endgame-ai v2."""
+from __future__ import annotations
+import argparse
+import ctypes
+import json
+import sys
+import time
+from pathlib import Path
+from typing import Any
+
+from llm import LLMClient
+from bus import Bus
+from slot import Slot
+
+BASE_DIR = Path(__file__).parent.resolve()
+PROMPTS_DIR = BASE_DIR / "prompts"
+REFRESH_INTERVAL = 0.15
+
+
+def _setup_console():
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    hout = k32.GetStdHandle(-11)
+    m = ctypes.c_ulong()
+    k32.GetConsoleMode(hout, ctypes.byref(m))
+    k32.SetConsoleMode(hout, m.value | 0x0004 | 0x0008)
+    return k32, hout
+
+
+def _write_console(k32, hout, text: str):
+    n = ctypes.c_ulong()
+    k32.WriteConsoleW(hout, text, len(text), ctypes.byref(n), None)
+
+
+def _console_size(k32, hout) -> tuple[int, int]:
+    class _SR(ctypes.Structure):
+        _fields_ = [("L", ctypes.c_short), ("T", ctypes.c_short), ("R", ctypes.c_short), ("B", ctypes.c_short)]
+
+    class _CSBI(ctypes.Structure):
+        _fields_ = [("sz", ctypes.c_short * 2), ("cp", ctypes.c_short * 2),
+                    ("a", ctypes.c_ushort), ("w", _SR), ("mx", ctypes.c_short * 2)]
+
+    csbi = _CSBI()
+    if k32.GetConsoleScreenBufferInfo(hout, ctypes.byref(csbi)):
+        return max(80, csbi.w.R - csbi.w.L + 1), max(20, csbi.w.B - csbi.w.T + 1)
+    return 120, 40
+
+
+class TUI:
+    def __init__(self, slot: Slot, desktop_enabled: bool = True):
+        self.slot = slot
+        self.desktop_enabled = desktop_enabled
+        self._desktop = None
+        self._actions = None
+        self._running = True
+        self._input_buf = ""
+        self._log: list[str] = []
+        self._start = time.time()
+
+    def _init_desktop(self):
+        if self.desktop_enabled and self._desktop is None:
+            try:
+                from desktop import Desktop
+                from actions import ActionExecutor
+                self._desktop = Desktop()
+                self._actions = ActionExecutor(self._desktop)
+            except (ImportError, OSError) as e:
+                self._log.append(f"Desktop unavailable: {e}")
+                self.desktop_enabled = False
+
+    def _observe(self):
+        if not self._desktop:
+            return
+        try:
+            obs = self._desktop.observe()
+            self.slot.observe(obs.context_text, obs.elements)
+        except Exception as e:
+            self._log.append(f"Observe error: {e}")
+
+    def _execute_actions(self, actions: list[dict[str, Any]]):
+        if not self._actions:
+            return
+        elements = self.slot.state.screen_elements
+        for action in actions:
+            verb = str(action.get("verb", ""))
+            result = self._actions.execute(verb, action, elements)
+            self._log.append(f"  {verb}: {result.observation[:80]}")
+            self.slot.bus.publish("evidence", "tool", self.slot.state.active_task_id or "",
+                                 {"verb": verb, "success": result.success, "obs": result.observation[:200]})
+
+    def render(self, w: int, h: int) -> str:
+        RST = "\x1b[0m"
+        BOLD = "\x1b[1m"
+        DIM = "\x1b[2m"
+        GREEN = "\x1b[32m"
+        YELLOW = "\x1b[33m"
+        CYAN = "\x1b[36m"
+
+        lines: list[str] = []
+        elapsed = time.time() - self._start
+        state = self.slot.state
+        lines.append(f"{BOLD}{CYAN}ENDGAME-AI v2{RST}  F={state.fissions}  cycles={state.cycles}  {elapsed:.0f}s")
+        lines.append(f"{DIM}{'=' * (w - 1)}{RST}")
+        lines.append(f"GOAL: {state.goal[:w-6] if state.goal else '(none)'}")
+
+        if state.tasks:
+            lines.append(f"{BOLD}TASKS:{RST}")
+            for t in state.tasks[:6]:
+                status_color = GREEN if t.status == "verified_done" else YELLOW if t.status == "active" else DIM
+                lines.append(f"  {status_color}{t.status:14}{RST} {t.description[:w-18]}")
+
+        lines.append(f"{DIM}{'-' * (w - 1)}{RST}")
+        log_space = max(4, h - len(lines) - 4)
+        for entry in self._log[-log_space:]:
+            lines.append(f"  {DIM}{entry[:w-4]}{RST}")
+
+        while len(lines) < h - 3:
+            lines.append("")
+
+        lines.append(f"{DIM}{'-' * (w - 1)}{RST}")
+        cursor = "|" if int(time.time() * 2) % 2 else " "
+        lines.append(f"@human> {self._input_buf}{cursor}")
+        lines.append(f"{DIM}Enter=send  q=quit{RST}")
+
+        return "\x1b[H" + "\r\n".join(ln + "\x1b[K" for ln in lines[:h]) + "\x1b[J"
+
+    def _handle_key(self, ch: str):
+        if ch in ("\r", "\n"):
+            text = self._input_buf.strip()
+            if text:
+                self.slot.set_goal(text)
+                self._log.append(f"GOAL SET: {text}")
+            self._input_buf = ""
+        elif ch == "\x08":
+            self._input_buf = self._input_buf[:-1]
+        elif ch in ("q", "Q", "\x03") and not self._input_buf:
+            self._running = False
+        elif len(ch) == 1 and ch.isprintable():
+            self._input_buf += ch
+
+    def run(self, goal: str = ""):
+        import msvcrt
+        k32, hout = _setup_console()
+
+        self._init_desktop()
+        if goal:
+            self.slot.set_goal(goal)
+            self._log.append(f"GOAL: {goal}")
+
+        _write_console(k32, hout, "\x1b[?1049h\x1b[?25l\x1b]0;endgame-ai v2\x07")
+        try:
+            while self._running:
+                if msvcrt.kbhit():
+                    self._handle_key(msvcrt.getwch())
+
+                w, h = _console_size(k32, hout)
+                _write_console(k32, hout, self.render(w, h))
+
+                if not self.slot.state.goal:
+                    time.sleep(REFRESH_INTERVAL)
+                    continue
+
+                if self.desktop_enabled:
+                    self._observe()
+
+                self._log.append(f"cycle {self.slot.state.cycles + 1}...")
+                result = self.slot.step()
+                if result:
+                    phase = result.get("phase", "?")
+                    self.slot.state.last_phase = phase
+                    self._log.append(f"  [{phase}] {json.dumps({k: v for k, v in result.items() if k != 'phase'}, ensure_ascii=False)[:100]}")
+                    if result.get("actions"):
+                        self._execute_actions(result["actions"])
+
+                time.sleep(2.0)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            _write_console(k32, hout, "\x1b[?1049l\x1b[?25h")
+
+
+def main():
+    parser = argparse.ArgumentParser(prog="endgame-ai", description="Endgame-AI v2 runtime")
+    parser.add_argument("goal", nargs="*", help="Initial goal")
+    parser.add_argument("--host", default="http://localhost:1234", help="LM Studio URL")
+    parser.add_argument("--timeout", type=int, default=600, help="LLM request timeout")
+    parser.add_argument("--temperature", type=float, default=0.12, help="LLM temperature")
+    parser.add_argument("--max-tokens", type=int, default=1536, help="LLM max tokens")
+    parser.add_argument("--no-desktop", action="store_true", help="Disable desktop observation")
+    parser.add_argument("--workspace", type=str, default=None, help="Working directory")
+    parser.add_argument("--bus-file", type=str, default=None, help="Bus persistence file")
+    args = parser.parse_args()
+
+    workspace = Path(args.workspace) if args.workspace else BASE_DIR.parent
+    bus_path = Path(args.bus_file) if args.bus_file else None
+    llm = LLMClient(
+        host=args.host,
+        timeout=args.timeout,
+        temperature=args.temperature,
+        max_tokens=args.max_tokens,
+    )
+    bus = Bus(persist_path=bus_path)
+    slot = Slot(llm=llm, bus=bus, prompts_dir=PROMPTS_DIR, workspace=workspace)
+    tui = TUI(slot=slot, desktop_enabled=not args.no_desktop)
+    tui.run(goal=" ".join(args.goal).strip())
+
+
+if __name__ == "__main__":
+    main()
