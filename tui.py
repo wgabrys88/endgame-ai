@@ -1,4 +1,4 @@
-"""TUI - single entry point for endgame-ai. Wiring-driven. Non-blocking."""
+"""TUI - single entry point for endgame-ai. Shows full LLM request/response."""
 from __future__ import annotations
 import argparse
 import ctypes
@@ -24,6 +24,21 @@ _LOGS_DIR.mkdir(exist_ok=True)
 logging.basicConfig(filename=str(_LOGS_DIR / f"{datetime.now():%Y%m%d_%H%M%S}.txt"),
                     level=logging.DEBUG, format="%(asctime)s %(message)s")
 
+
+def _load_wiring() -> dict[str, Any]:
+    path = PROMPTS_DIR / "wiring.json"
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+
+def _setup_console():
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    hout = k32.GetStdHandle(-11)
+    m = ctypes.c_ulong()
+    k32.GetConsoleMode(hout, ctypes.byref(m))
+    k32.SetConsoleMode(hout, m.value | 0x0004 | 0x0008)
+    return k32, hout
+
+
 def _console_size(k32, hout) -> tuple[int, int]:
     class _CSBI(ctypes.Structure):
         _fields_ = [("sz", ctypes.c_short * 2), ("cp", ctypes.c_short * 2),
@@ -37,29 +52,6 @@ def _console_size(k32, hout) -> tuple[int, int]:
     return 120, 35
 
 
-W, H = 120, 35
-
-
-def _load_wiring() -> dict[str, Any]:
-    path = PROMPTS_DIR / "wiring.json"
-    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-
-
-def _setup_console():
-    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    hout = k32.GetStdHandle(-11)
-    hin = k32.GetStdHandle(-10)
-    m = ctypes.c_ulong()
-    k32.GetConsoleMode(hout, ctypes.byref(m))
-    k32.SetConsoleMode(hout, m.value | 0x0004 | 0x0008)
-    return k32, hout
-
-
-def _write(k32, hout, text: str):
-    n = ctypes.c_ulong()
-    k32.WriteConsoleW(text, len(text), ctypes.byref(n), None)
-
-
 class TUI:
     def __init__(self, colony: Colony, wiring: dict[str, Any], desktop_enabled: bool = True):
         self.colony = colony
@@ -70,15 +62,14 @@ class TUI:
         self._running = True
         self._input_buf = ""
         self._log: list[str] = []
+        self._scroll_offset = 0
         self._start = time.time()
         self._slot_keys = {str(i+1): name for i, name in enumerate(wiring.get("slots", {}).keys())}
         self._result_q: queue.Queue = queue.Queue()
         self._thinking = False
         self._think_start: float = 0
-        self._last_llm_summary = ""
-        self._last_request = ""
-        self._last_response = ""
-        self._worker_thread: threading.Thread | None = None
+        self._w = 120
+        self._h = 35
 
     def _init_desktop(self):
         if self.desktop_enabled and self._desktop is None:
@@ -88,8 +79,21 @@ class TUI:
                 self._desktop = Desktop()
                 self._actions = ActionExecutor(self._desktop, self._wiring)
             except (ImportError, OSError) as e:
-                self._log.append(f"[!] Desktop unavailable: {e}")
+                self._log_line(f"[!] Desktop unavailable: {e}")
                 self.desktop_enabled = False
+
+    def _log_line(self, text: str):
+        """Add a line to the log. No truncation."""
+        self._log.append(text)
+        # Auto-scroll to bottom
+        self._scroll_offset = 0
+
+    def _log_block(self, title: str, content: str):
+        """Add a multi-line block to log with full content."""
+        self._log_line(f"{'─' * 40} {title} {'─' * 40}")
+        for line in content.split("\n"):
+            self._log_line(f"  {line}")
+        self._log_line("")
 
     def _observe(self):
         if not self._desktop:
@@ -100,7 +104,7 @@ class TUI:
                 if slot.can_act_desktop:
                     slot.observe(obs.context_text, obs.elements)
         except Exception as e:
-            self._log.append(f"[!] Observe: {e}")
+            self._log_line(f"[!] Observe: {e}")
 
     def _execute_actions(self, slot_name: str, actions: list[dict[str, Any]], reasoning_entry: dict | None = None):
         if not self._actions:
@@ -111,7 +115,7 @@ class TUI:
         for action in actions:
             verb = str(action.get("verb", ""))
             result = self._actions.execute(verb, action, elements)
-            self._log.append(f"  {verb}: {result.observation}")
+            self._log_line(f"  ▶ {verb}: {result.observation}")
             outcomes.append(f"{verb}: {'OK' if result.success else result.observation}")
             if slot:
                 if not result.success:
@@ -126,7 +130,7 @@ class TUI:
                 slot.state.reasoning_history = slot.state.reasoning_history[-depth:]
 
     def _worker(self):
-        """Background: observe → step → queue results. Never blocks TUI."""
+        """Background: observe → step → queue results."""
         while self._running:
             has_work = (any(s.state.goal for s in self.colony.active_slots.values())
                         or self.colony.bus.has_pending_routes())
@@ -152,33 +156,26 @@ class TUI:
                 break
             phase = result.get("phase", "?")
             ts = datetime.now().strftime("%H:%M:%S")
-            # Build log line — NO truncation
             event = result.get("event", "")
             conclusion = result.get("conclusion", "")
             actions = result.get("actions", [])
-            self._log.append(f"[{ts}] {name}:{phase} {event} {conclusion}".rstrip())
+            self._log_line(f"[{ts}] {name}:{phase} → {event} {conclusion}".rstrip())
             if actions:
                 for a in actions:
-                    self._log.append(f"  → {a.get('verb','')} {a.get('target','')} {a.get('value','')}")
+                    self._log_line(f"  → {a.get('verb','')} target={a.get('target','')} value={a.get('value','')}")
                 self._execute_actions(name, actions, result.get("reasoning_entry"))
-            # LLM summary for status bar
-            if event:
-                self._last_llm_summary = f"{name}:{phase} → {event}"
 
     def _render(self) -> str:
-        RST, BOLD, DIM, GREEN, RED, CYAN, YEL = (
-            "\x1b[0m", "\x1b[1m", "\x1b[2m", "\x1b[32m", "\x1b[31m", "\x1b[36m", "\x1b[33m")
+        RST, BOLD, DIM, GREEN, CYAN, YEL = (
+            "\x1b[0m", "\x1b[1m", "\x1b[2m", "\x1b[32m", "\x1b[36m", "\x1b[33m")
+        w, h = self._w, self._h
         lines: list[str] = []
         elapsed = time.time() - self._start
         total_f = sum(s.state.fissions for s in self.colony.all_slots.values())
         total_c = sum(s.state.cycles for s in self.colony.all_slots.values())
-        # Thinking indicator
-        think_str = ""
-        if self._thinking:
-            think_str = f"  {YEL}[THINKING {time.time() - self._think_start:.0f}s...]{RST}"
+        think_str = f"  {YEL}[THINKING {time.time() - self._think_start:.0f}s...]{RST}" if self._thinking else ""
         lines.append(f"{BOLD}{CYAN}ENDGAME-AI{RST}  slots={len(self.colony.active_slots)}/{len(self.colony.all_slots)}  F={total_f}  cycles={total_c}  {elapsed:.0f}s{think_str}")
-        lines.append(f"{DIM}{'═' * (W - 1)}{RST}")
-        # Slot status
+        lines.append(f"{DIM}{'═' * (w - 1)}{RST}")
         for key, name in self._slot_keys.items():
             slot = self.colony.all_slots[name]
             active = self.colony.is_active(name)
@@ -186,51 +183,46 @@ class TUI:
             phase = slot.state.phase
             goal = slot.state.goal if slot.state.goal else f"{DIM}(idle){RST}"
             lines.append(f"  {key}) {dot} {name:13} F={slot.state.fissions} {phase:12} {goal}")
-        lines.append(f"{DIM}{'─' * (W - 1)}{RST}")
-        # Log area — fill available space
-        header_lines = len(lines)  # lines used so far
-        footer_lines = 4  # summary + separator + input + help
-        log_space = H - header_lines - footer_lines
-        visible_log = self._log[-log_space:] if log_space > 0 else []
-        for entry in visible_log:
-            lines.append(f"  {entry[:W - 4]}")
-        while len(lines) < H - footer_lines:
+        lines.append(f"{DIM}{'─' * (w - 1)}{RST}")
+        # Log area: all remaining space minus 2 footer lines
+        header_count = len(lines)
+        log_space = h - header_count - 2
+        # Apply scroll offset
+        end = len(self._log) - self._scroll_offset
+        start = max(0, end - log_space)
+        visible = self._log[start:end] if end > 0 else []
+        for entry in visible:
+            lines.append(f"  {entry[:w - 4]}")
+        while len(lines) < h - 2:
             lines.append("")
-        # LLM summary bar
-        lines.append(f"{DIM}{'─' * (W - 1)}{RST}")
-        lines.append(f"  {DIM}LLM: {self._last_llm_summary}{RST}")
-        # Input
+        # Input line
         cursor = "│" if int(time.time() * 2) % 2 else " "
         lines.append(f"@human> {self._input_buf}{cursor}")
-        lines.append(f"{DIM}Enter=send  1-{len(self._slot_keys)}=toggle  q=quit  r=last req  R=last resp{RST}")
-        return "\x1b[H" + "\r\n".join(ln + "\x1b[K" for ln in lines[:H]) + "\x1b[J"
+        lines.append(f"{DIM}Enter=send  1-{len(self._slot_keys)}=toggle  PgUp/PgDn=scroll  q=quit{RST}")
+        return "\x1b[H" + "\r\n".join(ln + "\x1b[K" for ln in lines[:h]) + "\x1b[J"
 
     def _handle_key(self, ch: str):
         if ch in ("\r", "\n"):
             text = self._input_buf.strip()
             if text:
                 self.colony.set_goal(text)
-                self._log.append(f"GOAL: {text}")
+                self._log_line(f"GOAL: {text}")
             self._input_buf = ""
         elif ch == "\x08":
             self._input_buf = self._input_buf[:-1]
+        elif ch == "\x00" or ch == "\xe0":
+            # Extended key — read next char
+            import msvcrt
+            ext = msvcrt.getwch()
+            if ext == "I":  # PgUp
+                self._scroll_offset = min(self._scroll_offset + 10, max(0, len(self._log) - 5))
+            elif ext == "Q":  # PgDn
+                self._scroll_offset = max(0, self._scroll_offset - 10)
         elif ch in self._slot_keys and not self._input_buf:
             name = self._slot_keys[ch]
             self.colony.toggle_slot(name)
             status = "ON" if self.colony.is_active(name) else "OFF"
-            self._log.append(f"SLOT {name}: {status}")
-        elif ch == "r" and not self._input_buf:
-            if self._last_request:
-                for line in self._last_request.split("\n"):
-                    self._log.append(f"  REQ| {line}")
-            else:
-                self._log.append("  (no request yet)")
-        elif ch == "R" and not self._input_buf:
-            if self._last_response:
-                for line in self._last_response.split("\n"):
-                    self._log.append(f"  RSP| {line}")
-            else:
-                self._log.append("  (no response yet)")
+            self._log_line(f"SLOT {name}: {status}")
         elif ch in ("q", "Q", "\x03") and not self._input_buf:
             self._running = False
         elif len(ch) == 1 and ch.isprintable():
@@ -239,24 +231,28 @@ class TUI:
     def run(self, goal: str = ""):
         import msvcrt
         k32, hout = _setup_console()
-        global W, H
-        W, H = _console_size(k32, hout)
+        self._w, self._h = _console_size(k32, hout)
         self._init_desktop()
-        # Hook LLM client to capture last request/response for 'r'/'R' keys
+        # Hook LLM to show full request/response in log
         orig_call = self.colony.llm.call
         def _hooked_call(system, user, **kw):
-            self._last_request = f"SYSTEM: {system}\n\nUSER: {user}"
+            self._log_block("REQUEST", f"SYSTEM:\n{system}\n\nUSER:\n{user}")
+            self._thinking = True
+            self._think_start = time.time()
             r = orig_call(system, user, **kw)
-            self._last_response = f"TEXT: {r.text}\n\nREASONING: {r.reasoning}"
+            elapsed = time.time() - self._think_start
+            resp_parts = [f"CONTENT:\n{r.text}"]
+            if r.reasoning:
+                resp_parts.append(f"\nREASONING:\n{r.reasoning}")
+            self._log_block(f"RESPONSE [{elapsed:.1f}s]", "\n".join(resp_parts))
             return r
         self.colony.llm.call = _hooked_call
 
         if goal:
             self.colony.set_goal(goal)
-            self._log.append(f"GOAL: {goal}")
-        # Start worker thread
-        self._worker_thread = threading.Thread(target=self._worker, daemon=True)
-        self._worker_thread.start()
+            self._log_line(f"GOAL: {goal}")
+        # Start worker
+        threading.Thread(target=self._worker, daemon=True).start()
         n = ctypes.c_ulong()
         def _w(t):
             k32.WriteConsoleW(hout, t, len(t), ctypes.byref(n), None)
