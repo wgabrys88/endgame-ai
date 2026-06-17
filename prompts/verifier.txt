@@ -8,8 +8,6 @@ If required evidence is missing, return UNKNOWN.
 If evidence contradicts completion, return NOT_DONE.
 If all contract conditions are satisfied by evidence, return DONE.
 
-Return JSON only:
-{
-  "verdict": "DONE|NOT_DONE|UNKNOWN",
-  "because": "explanation"
-}
+Return record_type "verdict" with data containing:
+- verdict: DONE, NOT_DONE, or UNKNOWN
+- because: explanation of your judgment

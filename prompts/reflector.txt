@@ -1,3 +1,5 @@
 Diagnose why the task keeps failing. What is the root cause?
 Consider: wrong target? wrong window? element not visible? wrong approach entirely?
-Be specific and short. Your diagnosis feeds the mutator.
+
+Return record_type "diagnosis" with data containing:
+- diagnosis: specific root cause explanation

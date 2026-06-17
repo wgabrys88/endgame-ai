@@ -1,4 +1,4 @@
-"""Slot - the planner/actor/verifier/reflector/mutator loop."""
+"""Slot - the planner/actor/verifier/reflector/mutator loop. Unified record schema."""
 from __future__ import annotations
 import json
 import subprocess
@@ -57,6 +57,27 @@ def run_script(code: str, workspace: Path, timeout: int = 60) -> tuple[bool, str
         return False, str(e)[:500]
 
 
+def _parse_record(result: LLMResult) -> dict[str, Any] | None:
+    """Parse LLM output as unified record {record_type, data}."""
+    parsed = LLMClient.extract_json(result.text)
+    if not parsed:
+        return None
+    if "record_type" in parsed and "data" in parsed:
+        return parsed
+    # Fallback: wrap non-schema output for backward compat with models that ignore schema
+    if "tasks" in parsed:
+        return {"record_type": "task", "data": parsed}
+    if "verdict" in parsed:
+        return {"record_type": "verdict", "data": parsed}
+    if "actions" in parsed or "conclusion" in parsed:
+        return {"record_type": "action", "data": parsed}
+    if "diagnosis" in parsed:
+        return {"record_type": "diagnosis", "data": parsed}
+    if "code" in parsed:
+        return {"record_type": "mutation", "data": parsed}
+    return {"record_type": "unknown", "data": parsed}
+
+
 class Circuit(ABC):
     @abstractmethod
     def run(self, state: SlotState, llm: LLMClient, bus: Bus) -> dict[str, Any] | None:
@@ -79,12 +100,12 @@ class Planner(Circuit):
         bus_ctx = bus.format_context(limit=6)
         if bus_ctx:
             parts.append(bus_ctx)
-        parts.append('Return JSON: {"tasks":[{"id":"t1","description":"...","contract":"observable condition"}]}')
-        result = llm.call(self._prompt or "You are a planner. Return JSON with tasks.", "\n".join(parts))
-        parsed = LLMClient.extract_json(result.text)
-        if not parsed:
-            return {"phase": "planner.error", "error": "invalid JSON"}
-        raw = parsed.get("tasks") or parsed.get("records") or []
+        result = llm.call(self._prompt or "You are a planner. Create one actionable task.", "\n".join(parts))
+        record = _parse_record(result)
+        if not record or record["record_type"] != "task":
+            return {"phase": "planner.error", "error": "invalid response"}
+        data = record["data"]
+        raw = data.get("tasks", [])
         tasks = []
         for i, t in enumerate(raw[:6] if isinstance(raw, list) else []):
             if isinstance(t, dict):
@@ -100,7 +121,7 @@ class Planner(Circuit):
         state.tasks = tasks
         state.tasks[0].status = "active"
         state.active_task_id = state.tasks[0].id
-        bus.publish("task", "planner", state.active_task_id, {"tasks": [t.id for t in tasks]})
+        bus.publish("task", "planner", state.active_task_id, data)
         return {"phase": "plan", "tasks": len(tasks), "next": "actor"}
 
 
@@ -139,21 +160,22 @@ class Actor(Circuit):
             parts.append(f"CONTRACT: {task.contract}")
         if state.screen:
             parts.append(f"SCREEN:\n{state.screen[:2000]}")
-        parts.append('Return JSON: {"actions":[{"verb":"click|write|press|hotkey|scroll|focus","target":"id","value":""}],"conclusion":"EXECUTE|DONE|CANNOT"}')
-        result = llm.call(self._prompt or "You are an actor. Return JSON.", "\n".join(parts))
-        parsed = LLMClient.extract_json(result.text)
-        if not parsed:
-            return {"phase": "actor.error", "error": "invalid JSON"}
-        conclusion = str(parsed.get("conclusion", "EXECUTE"))
+        result = llm.call(self._prompt or "You are an actor. Execute the task.", "\n".join(parts))
+        record = _parse_record(result)
+        if not record or record["record_type"] != "action":
+            return {"phase": "actor.error", "error": "invalid response"}
+        data = record["data"]
+        conclusion = str(data.get("conclusion", "EXECUTE"))
         if conclusion == "DONE":
             task.status = "claimed_done"
-            bus.publish("claim", "actor", task.id, {"statement": "actor claims done"})
+            bus.publish("claim", "actor", task.id, data)
             return {"phase": "actor", "conclusion": "DONE", "next": "verifier"}
         if conclusion == "CANNOT":
             task.status = "blocked"
             state.history.append({"blocked": task.description, "reason": "cannot"})
             return {"phase": "actor", "conclusion": "CANNOT", "next": "planner"}
-        return {"phase": "actor", "conclusion": "EXECUTE", "actions": parsed.get("actions", []), "next": "verifier"}
+        bus.publish("action", "actor", task.id, data)
+        return {"phase": "actor", "conclusion": "EXECUTE", "actions": data.get("actions", []), "next": "verifier"}
 
 
 class Verifier(Circuit):
@@ -173,12 +195,14 @@ class Verifier(Circuit):
                 f"  {json.dumps(r.data, ensure_ascii=False)[:300]}" for r in evidence))
         if task.evidence:
             parts.append("TASK OUTPUT:\n" + "\n".join(f"  {e[:300]}" for e in task.evidence[-3:]))
-        parts.append('Return JSON: {"verdict":"DONE|NOT_DONE|UNKNOWN","because":"..."}')
-        result = llm.call(self._prompt or "You are a verifier. Return JSON verdict.", "\n".join(parts), max_tokens=512)
-        parsed = LLMClient.extract_json(result.text)
-        verdict = str((parsed or {}).get("verdict", "UNKNOWN")).upper()
-        because = str((parsed or {}).get("because", result.text[:300]))
-        bus.publish("verdict", "verifier", task.id, {"verdict": verdict, "because": because})
+        result = llm.call(self._prompt or "You are a verifier. Judge evidence against contract.", "\n".join(parts), max_tokens=512)
+        record = _parse_record(result)
+        if not record or record["record_type"] != "verdict":
+            return {"phase": "verify", "verdict": "UNKNOWN", "because": "invalid response", "next": "actor"}
+        data = record["data"]
+        verdict = str(data.get("verdict", "UNKNOWN")).upper()
+        because = str(data.get("because", ""))[:300]
+        bus.publish("verdict", "verifier", task.id, data)
         if verdict == "DONE":
             task.status = "verified_done"
             state.fissions += 1
@@ -187,7 +211,7 @@ class Verifier(Circuit):
             return {"phase": "verify", "verdict": "DONE", "next": "planner"}
         if verdict == "NOT_DONE":
             task.status = "active"
-            state.history.append({"denied": task.description, "reason": because[:200]})
+            state.history.append({"denied": task.description, "reason": because})
             return {"phase": "verify", "verdict": "NOT_DONE", "because": because, "next": "reflector"}
         task.status = "active"
         return {"phase": "verify", "verdict": "UNKNOWN", "next": "actor"}
@@ -203,18 +227,19 @@ class Reflector(Circuit):
         denials = [h for h in state.history[-6:] if isinstance(h, dict) and h.get("denied")]
         if not denials:
             return None
-        context = (
-            f"GOAL: {state.goal}\n"
-            f"DENIALS:\n" + "\n".join(f"  {json.dumps(d, ensure_ascii=False)[:200]}" for d in denials[-3:]) +
-            f"\nSCREEN:\n{state.screen[:800]}" if state.screen else ""
-        )
-        result = llm.call(
-            self._prompt or "Diagnose why the task keeps failing. What is the root cause? Be specific.",
-            context, max_tokens=512,
-        )
-        state.diagnosis = result.text[:500]
-        bus.publish("diagnosis", "reflector", state.active_task_id or "", {"diagnosis": state.diagnosis})
-        return {"phase": "reflect", "diagnosis": state.diagnosis[:200], "next": "mutator"}
+        parts = [f"GOAL: {state.goal}",
+                 "DENIALS:\n" + "\n".join(f"  {json.dumps(d, ensure_ascii=False)[:200]}" for d in denials[-3:])]
+        if state.screen:
+            parts.append(f"SCREEN:\n{state.screen[:800]}")
+        result = llm.call(self._prompt or "Diagnose the root cause of failure.", "\n".join(parts), max_tokens=512)
+        record = _parse_record(result)
+        if record and record["record_type"] == "diagnosis":
+            diagnosis = str(record["data"].get("diagnosis", ""))[:500]
+        else:
+            diagnosis = result.text[:500]
+        state.diagnosis = diagnosis
+        bus.publish("diagnosis", "reflector", state.active_task_id or "", {"diagnosis": diagnosis})
+        return {"phase": "reflect", "diagnosis": diagnosis[:200], "next": "mutator"}
 
 
 class Mutator(Circuit):
@@ -227,19 +252,11 @@ class Mutator(Circuit):
     def run(self, state: SlotState, llm: LLMClient, bus: Bus) -> dict[str, Any] | None:
         if not state.diagnosis:
             return None
-        context = (
-            f"DIAGNOSIS: {state.diagnosis}\n"
-            f"GOAL: {state.goal}\n"
-            f"WORKSPACE: {self._workspace}\n"
-            f"PROMPTS DIR: {self._workspace / 'prompts'}\n"
-            "Write a Python script that fixes this. The script runs ONCE.\n"
-            "It can rewrite prompt files, change configs, or do anything needed.\n"
-            "Return ONLY the Python code, no explanation."
-        )
-        result = llm.call(
-            self._prompt or "You are a mutator. Write a one-shot Python script that fixes the diagnosed problem.",
-            context, max_tokens=1024,
-        )
+        parts = [f"DIAGNOSIS: {state.diagnosis}", f"GOAL: {state.goal}",
+                 f"WORKSPACE: {self._workspace}", f"PROMPTS DIR: {self._workspace / 'prompts'}"]
+        result = llm.call(self._prompt or "Write a one-shot Python fix script.", "\n".join(parts),
+                          max_tokens=1024, schema=False)
+        # Mutator returns raw code, not JSON record
         code = result.text.strip()
         if code.startswith("```"):
             lines = code.splitlines()
@@ -247,6 +264,10 @@ class Mutator(Circuit):
             if lines and lines[-1].strip().startswith("```"):
                 lines = lines[:-1]
             code = "\n".join(lines).strip()
+        # If schema was enforced anyway, extract code from data field
+        parsed = LLMClient.extract_json(code)
+        if parsed and "code" in parsed:
+            code = str(parsed["code"])
         if not code:
             return {"phase": "mutate", "ok": False, "reason": "empty script"}
         success, obs = run_script(code, self._workspace)

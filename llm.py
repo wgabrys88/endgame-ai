@@ -1,4 +1,4 @@
-"""LLM client for LM Studio."""
+"""LLM client for LM Studio. Model agnostic with optional schema enforcement."""
 from __future__ import annotations
 import json
 import re
@@ -19,14 +19,37 @@ class LLMResult:
     reasoning: str = ""
 
 
+# Unified output schema for all circuits
+RECORD_SCHEMA = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "circuit_output",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "record_type": {
+                    "type": "string",
+                    "enum": ["task", "action", "verdict", "diagnosis", "mutation"],
+                },
+                "data": {"type": "object"},
+            },
+            "required": ["record_type", "data"],
+            "additionalProperties": False,
+        },
+    },
+}
+
+
 class LLMClient:
     def __init__(self, host: str = "http://localhost:1234", timeout: int = 600,
                  temperature: float = 0.12, max_tokens: int = 1536,
-                 max_concurrent: int = 1):
+                 max_concurrent: int = 1, use_schema: bool = True):
         self.host = host.rstrip("/")
         self.timeout = timeout
         self.temperature = temperature
         self.max_tokens = max_tokens
+        self.use_schema = use_schema
         self._gate = threading.Semaphore(max(1, max_concurrent))
         self._model: str | None = None
 
@@ -43,7 +66,7 @@ class LLMClient:
         return self._model or ""
 
     def call(self, system: str, user: str, *, max_tokens: int = 0,
-             temperature: float | None = None) -> LLMResult:
+             temperature: float | None = None, schema: bool | None = None) -> LLMResult:
         body: dict[str, Any] = {
             "messages": [
                 {"role": "system", "content": system},
@@ -56,6 +79,9 @@ class LLMClient:
         model = self._resolve_model()
         if model:
             body["model"] = model
+        enforce = schema if schema is not None else self.use_schema
+        if enforce:
+            body["response_format"] = RECORD_SCHEMA
         payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
         for attempt in range(3):
             try:

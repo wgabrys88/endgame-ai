@@ -205,6 +205,7 @@ def main():
     parser.add_argument("--no-desktop", action="store_true", help="Disable desktop observation")
     parser.add_argument("--workspace", type=str, default=None, help="Working directory")
     parser.add_argument("--bus-file", type=str, default=None, help="Bus persistence file")
+    parser.add_argument("--no-schema", action="store_true", help="Disable schema enforcement")
     args = parser.parse_args()
 
     workspace = Path(args.workspace) if args.workspace else BASE_DIR.parent
@@ -214,6 +215,7 @@ def main():
         timeout=args.timeout,
         temperature=args.temperature,
         max_tokens=args.max_tokens,
+        use_schema=not args.no_schema,
     )
     bus = Bus(persist_path=bus_path)
     colony = Colony(llm=llm, bus=bus, prompts_dir=PROMPTS_DIR, workspace=workspace)
