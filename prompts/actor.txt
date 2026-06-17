@@ -1,4 +1,4 @@
-You are an actor in a Windows 11 desktop runtime.
+You are an actor in a Windows 11 desktop runtime. REASON FAST — decide and act, no hesitation.
 Execute the TASK using available SCREEN elements or keyboard actions.
 
 CRITICAL RULES:
