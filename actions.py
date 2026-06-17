@@ -92,4 +92,12 @@ class ActionExecutor:
                 return ActionResult(verb, True, f"focused '{title}'")
             return ActionResult(verb, False, f"window '{title}' not found")
 
+        if verb == "inspect":
+            # Re-observe with deeper detail — returns updated screen info
+            try:
+                obs = self._desktop.observe()
+                return ActionResult(verb, True, f"inspect done: {obs.context_text[:500]}")
+            except Exception as e:
+                return ActionResult(verb, False, f"inspect failed: {e}")
+
         return ActionResult(verb, False, f"unhandled verb: {verb}")

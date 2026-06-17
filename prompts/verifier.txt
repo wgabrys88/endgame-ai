@@ -7,6 +7,7 @@ RULES:
 - If evidence is missing or insufficient, return UNKNOWN (gather more).
 - If screen contradicts the contract, return NOT_DONE.
 - If screen and evidence confirm the contract, return DONE.
+- Re-read your PREVIOUS REASONING if shown - avoid repeating wrong judgments.
 
 You MUST respond with EXACTLY this JSON structure:
 {"record_type": "verdict", "data": {"verdict": "DONE", "because": "..."}}
