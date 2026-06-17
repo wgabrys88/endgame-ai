@@ -40,7 +40,7 @@ class SlotState:
 
 
 def run_script(code: str, workspace: Path, timeout: int = 60) -> tuple[bool, str]:
-    """Execute a Python script once. Returns (success, output)."""
+    """Execute a Python script once."""
     try:
         kwargs: dict[str, Any] = {
             "cwd": str(workspace), "capture_output": True, "text": True, "timeout": timeout,
@@ -57,25 +57,13 @@ def run_script(code: str, workspace: Path, timeout: int = 60) -> tuple[bool, str
         return False, str(e)[:500]
 
 
-def _parse_record(result: LLMResult) -> dict[str, Any] | None:
-    """Parse LLM output as unified record {record_type, data}."""
-    parsed = LLMClient.extract_json(result.text)
-    if not parsed:
-        return None
-    if "record_type" in parsed and "data" in parsed:
-        return parsed
-    # Fallback: wrap non-schema output for backward compat with models that ignore schema
-    if "tasks" in parsed:
-        return {"record_type": "task", "data": parsed}
-    if "verdict" in parsed:
-        return {"record_type": "verdict", "data": parsed}
-    if "actions" in parsed or "conclusion" in parsed:
-        return {"record_type": "action", "data": parsed}
-    if "diagnosis" in parsed:
-        return {"record_type": "diagnosis", "data": parsed}
-    if "code" in parsed:
-        return {"record_type": "mutation", "data": parsed}
-    return {"record_type": "unknown", "data": parsed}
+def _parse(result: LLMResult) -> tuple[str, dict[str, Any]]:
+    """Parse schema-enforced LLM output. Returns (record_type, data)."""
+    try:
+        record = json.loads(result.text)
+        return str(record["record_type"]), record["data"]
+    except (json.JSONDecodeError, KeyError, TypeError):
+        return "", {}
 
 
 class Circuit(ABC):
@@ -100,22 +88,17 @@ class Planner(Circuit):
         bus_ctx = bus.format_context(limit=6)
         if bus_ctx:
             parts.append(bus_ctx)
-        result = llm.call(self._prompt or "You are a planner. Create one actionable task.", "\n".join(parts))
-        record = _parse_record(result)
-        if not record or record["record_type"] != "task":
+        rtype, data = _parse(llm.call(self._prompt or "You are a planner.", "\n".join(parts)))
+        if rtype != "task":
             return {"phase": "planner.error", "error": "invalid response"}
-        data = record["data"]
         raw = data.get("tasks", [])
         tasks = []
         for i, t in enumerate(raw[:6] if isinstance(raw, list) else []):
             if isinstance(t, dict):
-                d = t.get("data", t)
-                desc = str(d.get("description", ""))
+                desc = str(t.get("description", ""))
                 if desc:
-                    tasks.append(Task(
-                        id=str(d.get("id", f"t{i+1}")), description=desc,
-                        contract=str(d.get("contract", d.get("done_when", ""))),
-                    ))
+                    tasks.append(Task(id=str(t.get("id", f"t{i+1}")), description=desc,
+                                      contract=str(t.get("contract", ""))))
         if not tasks:
             return {"phase": "planner.error", "error": "no tasks"}
         state.tasks = tasks
@@ -160,11 +143,9 @@ class Actor(Circuit):
             parts.append(f"CONTRACT: {task.contract}")
         if state.screen:
             parts.append(f"SCREEN:\n{state.screen[:2000]}")
-        result = llm.call(self._prompt or "You are an actor. Execute the task.", "\n".join(parts))
-        record = _parse_record(result)
-        if not record or record["record_type"] != "action":
+        rtype, data = _parse(llm.call(self._prompt or "You are an actor.", "\n".join(parts)))
+        if rtype != "action":
             return {"phase": "actor.error", "error": "invalid response"}
-        data = record["data"]
         conclusion = str(data.get("conclusion", "EXECUTE"))
         if conclusion == "DONE":
             task.status = "claimed_done"
@@ -195,11 +176,9 @@ class Verifier(Circuit):
                 f"  {json.dumps(r.data, ensure_ascii=False)[:300]}" for r in evidence))
         if task.evidence:
             parts.append("TASK OUTPUT:\n" + "\n".join(f"  {e[:300]}" for e in task.evidence[-3:]))
-        result = llm.call(self._prompt or "You are a verifier. Judge evidence against contract.", "\n".join(parts), max_tokens=512)
-        record = _parse_record(result)
-        if not record or record["record_type"] != "verdict":
+        rtype, data = _parse(llm.call(self._prompt or "You are a verifier.", "\n".join(parts), max_tokens=512))
+        if rtype != "verdict":
             return {"phase": "verify", "verdict": "UNKNOWN", "because": "invalid response", "next": "actor"}
-        data = record["data"]
         verdict = str(data.get("verdict", "UNKNOWN")).upper()
         because = str(data.get("because", ""))[:300]
         bus.publish("verdict", "verifier", task.id, data)
@@ -218,8 +197,6 @@ class Verifier(Circuit):
 
 
 class Reflector(Circuit):
-    """Diagnoses what went wrong. Feeds diagnosis to Mutator."""
-
     def __init__(self, prompt_path: Path):
         self._prompt = prompt_path.read_text(encoding="utf-8").strip() if prompt_path.exists() else ""
 
@@ -231,20 +208,16 @@ class Reflector(Circuit):
                  "DENIALS:\n" + "\n".join(f"  {json.dumps(d, ensure_ascii=False)[:200]}" for d in denials[-3:])]
         if state.screen:
             parts.append(f"SCREEN:\n{state.screen[:800]}")
-        result = llm.call(self._prompt or "Diagnose the root cause of failure.", "\n".join(parts), max_tokens=512)
-        record = _parse_record(result)
-        if record and record["record_type"] == "diagnosis":
-            diagnosis = str(record["data"].get("diagnosis", ""))[:500]
-        else:
-            diagnosis = result.text[:500]
+        rtype, data = _parse(llm.call(self._prompt or "Diagnose the root cause.", "\n".join(parts), max_tokens=512))
+        diagnosis = str(data.get("diagnosis", ""))[:500] if rtype == "diagnosis" else ""
+        if not diagnosis:
+            diagnosis = "unknown failure"
         state.diagnosis = diagnosis
         bus.publish("diagnosis", "reflector", state.active_task_id or "", {"diagnosis": diagnosis})
         return {"phase": "reflect", "diagnosis": diagnosis[:200], "next": "mutator"}
 
 
 class Mutator(Circuit):
-    """Writes and executes a one-shot mutation script based on reflector diagnosis."""
-
     def __init__(self, prompt_path: Path, workspace: Path):
         self._prompt = prompt_path.read_text(encoding="utf-8").strip() if prompt_path.exists() else ""
         self._workspace = workspace
@@ -254,9 +227,8 @@ class Mutator(Circuit):
             return None
         parts = [f"DIAGNOSIS: {state.diagnosis}", f"GOAL: {state.goal}",
                  f"WORKSPACE: {self._workspace}", f"PROMPTS DIR: {self._workspace / 'prompts'}"]
-        result = llm.call(self._prompt or "Write a one-shot Python fix script.", "\n".join(parts),
-                          max_tokens=1024, schema=False)
-        # Mutator returns raw code, not JSON record
+        result = llm.call(self._prompt or "Write a one-shot Python fix script.",
+                          "\n".join(parts), max_tokens=1024, raw=True)
         code = result.text.strip()
         if code.startswith("```"):
             lines = code.splitlines()
@@ -264,10 +236,6 @@ class Mutator(Circuit):
             if lines and lines[-1].strip().startswith("```"):
                 lines = lines[:-1]
             code = "\n".join(lines).strip()
-        # If schema was enforced anyway, extract code from data field
-        parsed = LLMClient.extract_json(code)
-        if parsed and "code" in parsed:
-            code = str(parsed["code"])
         if not code:
             return {"phase": "mutate", "ok": False, "reason": "empty script"}
         success, obs = run_script(code, self._workspace)
@@ -278,8 +246,6 @@ class Mutator(Circuit):
 
 
 class Slot:
-    """One autonomous planner->actor->verifier->reflector->mutator loop."""
-
     def __init__(self, name: str, llm: LLMClient, bus: Bus, prompts_dir: Path, workspace: Path,
                  *, can_act_desktop: bool = True):
         self.name = name

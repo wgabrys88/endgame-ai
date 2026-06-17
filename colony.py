@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from llm import LLMClient, LLMResult
+from llm import LLMClient
 from bus import Bus
 from slot import Slot
 
@@ -42,10 +42,13 @@ class CommsOperator:
         )
         result = self._llm.call(
             "You are a comms_operator. Decompose goals and route to worker slots.",
-            context,
+            context, raw=True,
         )
-        parsed = LLMClient.extract_json(result.text)
-        routes = (parsed or {}).get("routes", [])
+        try:
+            parsed = json.loads(result.text)
+        except (json.JSONDecodeError, TypeError):
+            parsed = {}
+        routes = parsed.get("routes", [])
         if not isinstance(routes, list) or not routes:
             self._bus.publish("route", "comms_operator", "",
                              {"to": "implementor", "goal": goal, "status": "open"})
@@ -96,7 +99,7 @@ class GlobalMutator:
         )
         result = self._llm.call(
             "You are a global mutator. Analyze cross-slot failures and suggest planner improvements.",
-            context, max_tokens=512,
+            context, max_tokens=512, raw=True,
         )
         self._bus.publish("global_mutation", "global_mutator", "",
                           {"targets": list(denials.keys()), "suggestion": result.text[:500]})

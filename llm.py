@@ -1,4 +1,4 @@
-"""LLM client for LM Studio. Model agnostic with optional schema enforcement."""
+"""LLM client for LM Studio with schema enforcement."""
 from __future__ import annotations
 import json
 import re
@@ -10,16 +10,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 _THINK_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL | re.IGNORECASE)
-_JSON_RE = re.compile(r"\{[\s\S]*\}")
 
-
-@dataclass(frozen=True)
-class LLMResult:
-    text: str
-    reasoning: str = ""
-
-
-# Unified output schema for all circuits
 RECORD_SCHEMA = {
     "type": "json_schema",
     "json_schema": {
@@ -41,15 +32,20 @@ RECORD_SCHEMA = {
 }
 
 
+@dataclass(frozen=True)
+class LLMResult:
+    text: str
+    reasoning: str = ""
+
+
 class LLMClient:
     def __init__(self, host: str = "http://localhost:1234", timeout: int = 600,
                  temperature: float = 0.12, max_tokens: int = 1536,
-                 max_concurrent: int = 1, use_schema: bool = True):
+                 max_concurrent: int = 1):
         self.host = host.rstrip("/")
         self.timeout = timeout
         self.temperature = temperature
         self.max_tokens = max_tokens
-        self.use_schema = use_schema
         self._gate = threading.Semaphore(max(1, max_concurrent))
         self._model: str | None = None
 
@@ -66,7 +62,7 @@ class LLMClient:
         return self._model or ""
 
     def call(self, system: str, user: str, *, max_tokens: int = 0,
-             temperature: float | None = None, schema: bool | None = None) -> LLMResult:
+             temperature: float | None = None, raw: bool = False) -> LLMResult:
         body: dict[str, Any] = {
             "messages": [
                 {"role": "system", "content": system},
@@ -79,8 +75,7 @@ class LLMClient:
         model = self._resolve_model()
         if model:
             body["model"] = model
-        enforce = schema if schema is not None else self.use_schema
-        if enforce:
+        if not raw:
             body["response_format"] = RECORD_SCHEMA
         payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
         for attempt in range(3):
@@ -92,8 +87,8 @@ class LLMClient:
                         result = json.loads(resp.read().decode("utf-8"))
                 choices = result.get("choices", [])
                 if choices:
-                    raw = str(choices[0].get("message", {}).get("content", ""))
-                    text, reasoning = self._extract_thinking(raw)
+                    content = str(choices[0].get("message", {}).get("content", ""))
+                    text, reasoning = self._extract_thinking(content)
                     return LLMResult(text=text, reasoning=reasoning)
                 raise RuntimeError("no choices")
             except (HTTPError, URLError, TimeoutError, OSError) as e:
@@ -113,26 +108,3 @@ class LLMClient:
         text = _THINK_RE.sub(_cap, raw).strip()
         reasoning = "\n\n".join(t for t in thinks if t)
         return text, reasoning
-
-    @staticmethod
-    def extract_json(raw: str) -> dict[str, Any] | None:
-        text = raw.strip()
-        if text.startswith("```"):
-            lines = text.splitlines()
-            if lines[0].startswith("```"):
-                lines = lines[1:]
-            if lines and lines[-1].strip().startswith("```"):
-                lines = lines[:-1]
-            text = "\n".join(lines).strip()
-        if text.startswith("{"):
-            try:
-                return json.loads(text)
-            except json.JSONDecodeError:
-                pass
-        m = _JSON_RE.search(text)
-        if m:
-            try:
-                return json.loads(m.group(0))
-            except json.JSONDecodeError:
-                pass
-        return None
