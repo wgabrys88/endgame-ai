@@ -3,8 +3,10 @@ from __future__ import annotations
 import argparse
 import ctypes
 import json
+import logging
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +17,11 @@ from colony import Colony
 BASE_DIR = Path(__file__).parent.resolve()
 PROMPTS_DIR = BASE_DIR / "prompts"
 REFRESH_INTERVAL = 0.15
+
+_LOGS_DIR = BASE_DIR / "logs"
+_LOGS_DIR.mkdir(exist_ok=True)
+logging.basicConfig(filename=str(_LOGS_DIR / f"{datetime.now():%Y%m%d_%H%M%S}.txt"),
+                    level=logging.DEBUG, format="%(asctime)s %(message)s")
 
 
 def _load_wiring() -> dict[str, Any]:

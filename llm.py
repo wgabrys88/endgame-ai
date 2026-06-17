@@ -1,6 +1,7 @@
 """LLM client for LM Studio. Config from prompts/model.json, schema from prompts/schema.json."""
 from __future__ import annotations
 import json
+import logging
 import re
 import threading
 import time
@@ -9,6 +10,8 @@ from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+
+_log = logging.getLogger("endgame.llm")
 
 _THINK_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL | re.IGNORECASE)
 
@@ -59,13 +62,17 @@ class LLMClient:
         if self._schema:
             body["response_format"] = self._schema
         payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
+        _log.debug(">>> REQUEST\n%s", json.dumps(body, indent=2, ensure_ascii=False))
         for attempt in range(3):
             try:
                 with self._gate:
+                    _t0 = time.time()
                     req = Request(f"{self._host}/v1/chat/completions", data=payload,
                                   headers={"Content-Type": "application/json"}, method="POST")
                     with urlopen(req, timeout=self._timeout) as resp:
-                        result = json.loads(resp.read().decode("utf-8"))
+                        raw_bytes = resp.read()
+                        result = json.loads(raw_bytes.decode("utf-8"))
+                _log.debug("<<< RESPONSE [%.1fs]\n%s", time.time() - _t0, raw_bytes.decode("utf-8", errors="replace"))
                 choices = result.get("choices", [])
                 if choices:
                     msg = choices[0].get("message", {})
