@@ -1,35 +1,16 @@
-"""LLM client for LM Studio with schema enforcement."""
+"""LLM client for LM Studio. Config from prompts/model.json, schema from prompts/schema.json."""
 from __future__ import annotations
 import json
 import re
 import threading
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 _THINK_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL | re.IGNORECASE)
-
-RECORD_SCHEMA = {
-    "type": "json_schema",
-    "json_schema": {
-        "name": "circuit_output",
-        "strict": True,
-        "schema": {
-            "type": "object",
-            "properties": {
-                "record_type": {
-                    "type": "string",
-                    "enum": ["task", "action", "verdict", "diagnosis", "mutation"],
-                },
-                "data": {"type": "object"},
-            },
-            "required": ["record_type", "data"],
-            "additionalProperties": False,
-        },
-    },
-}
 
 
 @dataclass(frozen=True)
@@ -39,21 +20,25 @@ class LLMResult:
 
 
 class LLMClient:
-    def __init__(self, host: str = "http://localhost:1234", timeout: int = 600,
-                 temperature: float = 0.12, max_tokens: int = 1536,
-                 max_concurrent: int = 1):
-        self.host = host.rstrip("/")
-        self.timeout = timeout
-        self.temperature = temperature
-        self.max_tokens = max_tokens
-        self._gate = threading.Semaphore(max(1, max_concurrent))
+    def __init__(self, prompts_dir: Path):
+        self._config = self._load_json(prompts_dir / "model.json")
+        self._schema = self._load_json(prompts_dir / "schema.json")
+        self._host = str(self._config.pop("host", "http://localhost:1234")).rstrip("/")
+        self._timeout = int(self._config.pop("timeout", 600))
+        self._gate = threading.Semaphore(1)
         self._model: str | None = None
+
+    @staticmethod
+    def _load_json(path: Path) -> dict[str, Any]:
+        if path.exists():
+            return json.loads(path.read_text(encoding="utf-8"))
+        return {}
 
     def _resolve_model(self) -> str:
         if self._model:
             return self._model
         try:
-            req = Request(f"{self.host}/v1/models", method="GET")
+            req = Request(f"{self._host}/v1/models", method="GET")
             with urlopen(req, timeout=8) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
             self._model = next((m["id"] for m in data.get("data", []) if "id" in m), "")
@@ -61,29 +46,28 @@ class LLMClient:
             self._model = ""
         return self._model or ""
 
-    def call(self, system: str, user: str, *, max_tokens: int = 0,
-             temperature: float | None = None, raw: bool = False) -> LLMResult:
+    def call(self, system: str, user: str, *, max_tokens: int = 0, raw: bool = False) -> LLMResult:
         body: dict[str, Any] = {
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-            "temperature": temperature if temperature is not None else self.temperature,
-            "max_tokens": max_tokens or self.max_tokens,
-            "stream": False,
+            **self._config,
         }
+        if max_tokens:
+            body["max_tokens"] = max_tokens
         model = self._resolve_model()
         if model:
             body["model"] = model
-        if not raw:
-            body["response_format"] = RECORD_SCHEMA
+        if not raw and self._schema:
+            body["response_format"] = self._schema
         payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
         for attempt in range(3):
             try:
                 with self._gate:
-                    req = Request(f"{self.host}/v1/chat/completions", data=payload,
+                    req = Request(f"{self._host}/v1/chat/completions", data=payload,
                                   headers={"Content-Type": "application/json"}, method="POST")
-                    with urlopen(req, timeout=self.timeout) as resp:
+                    with urlopen(req, timeout=self._timeout) as resp:
                         result = json.loads(resp.read().decode("utf-8"))
                 choices = result.get("choices", [])
                 if choices:

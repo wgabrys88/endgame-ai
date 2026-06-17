@@ -10,7 +10,6 @@ from typing import Any
 
 from llm import LLMClient
 from bus import Bus
-from slot import Slot
 from colony import Colony
 
 BASE_DIR = Path(__file__).parent.resolve()
@@ -99,7 +98,6 @@ class TUI:
         BOLD = "\x1b[1m"
         DIM = "\x1b[2m"
         GREEN = "\x1b[32m"
-        YELLOW = "\x1b[33m"
         RED = "\x1b[31m"
         CYAN = "\x1b[36m"
 
@@ -111,7 +109,7 @@ class TUI:
         lines.append(f"{BOLD}{CYAN}ENDGAME-AI{RST}  slots={active_count}/4  F={total_f}  cycles={total_c}  {elapsed:.0f}s")
         lines.append(f"{DIM}{'=' * (w - 1)}{RST}")
 
-        for i, (key, name) in enumerate(self.SLOT_KEYS.items()):
+        for key, name in self.SLOT_KEYS.items():
             slot = self.colony.all_slots[name]
             active = self.colony.is_active(name)
             dot = f"{GREEN}*{RST}" if active else f"{RED}x{RST}"
@@ -196,26 +194,14 @@ class TUI:
 
 
 def main():
-    parser = argparse.ArgumentParser(prog="endgame-ai", description="Endgame-AI runtime")
-    parser.add_argument("goal", nargs="*", help="Initial goal")
-    parser.add_argument("--host", default="http://localhost:1234", help="LM Studio URL")
-    parser.add_argument("--timeout", type=int, default=600, help="LLM request timeout")
-    parser.add_argument("--temperature", type=float, default=0.12, help="LLM temperature")
-    parser.add_argument("--max-tokens", type=int, default=1536, help="LLM max tokens")
-    parser.add_argument("--no-desktop", action="store_true", help="Disable desktop observation")
-    parser.add_argument("--workspace", type=str, default=None, help="Working directory")
-    parser.add_argument("--bus-file", type=str, default=None, help="Bus persistence file")
+    parser = argparse.ArgumentParser(prog="endgame-ai")
+    parser.add_argument("goal", nargs="*", help="Goal")
+    parser.add_argument("--no-desktop", action="store_true", help="Skip screen observation")
     args = parser.parse_args()
 
-    workspace = Path(args.workspace) if args.workspace else BASE_DIR.parent
-    bus_path = Path(args.bus_file) if args.bus_file else None
-    llm = LLMClient(
-        host=args.host,
-        timeout=args.timeout,
-        temperature=args.temperature,
-        max_tokens=args.max_tokens,
-    )
-    bus = Bus(persist_path=bus_path)
+    workspace = BASE_DIR
+    bus = Bus()
+    llm = LLMClient(prompts_dir=PROMPTS_DIR)
     colony = Colony(llm=llm, bus=bus, prompts_dir=PROMPTS_DIR, workspace=workspace)
     tui = TUI(colony=colony, desktop_enabled=not args.no_desktop)
     tui.run(goal=" ".join(args.goal).strip())

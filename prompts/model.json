@@ -1,0 +1,15 @@
+{
+  "host": "http://localhost:1234",
+  "timeout": 600,
+  "temperature": 0.12,
+  "top_p": 0.9,
+  "top_k": 40,
+  "max_tokens": 1536,
+  "stream": false,
+  "stop": [],
+  "presence_penalty": 0.0,
+  "frequency_penalty": 0.0,
+  "logit_bias": {},
+  "repeat_penalty": 1.06,
+  "seed": 3407
+}

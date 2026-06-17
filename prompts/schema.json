@@ -1,0 +1,21 @@
+{
+  "type": "json_schema",
+  "json_schema": {
+    "name": "circuit_output",
+    "strict": true,
+    "schema": {
+      "type": "object",
+      "properties": {
+        "record_type": {
+          "type": "string",
+          "enum": ["task", "action", "verdict", "diagnosis", "mutation"]
+        },
+        "data": {
+          "type": "object"
+        }
+      },
+      "required": ["record_type", "data"],
+      "additionalProperties": false
+    }
+  }
+}
