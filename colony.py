@@ -158,6 +158,12 @@ class Colony:
             self._actor_lock = ""
 
     def step(self) -> list[tuple[str, dict[str, Any] | None]]:
+        # Activate slots that have pending routes addressed to them
+        for r in self.bus.records:
+            if r.record_type == "route" and r.data.get("status") == "open":
+                target = r.data.get("to", "")
+                if target in self.all_slots and target not in self.active_slots:
+                    self.active_slots[target] = self.all_slots[target]
         results: list[tuple[str, dict[str, Any] | None]] = []
         for name, slot in list(self.active_slots.items()):
             if slot.can_act_desktop and not self.acquire_actor_lock(name):
