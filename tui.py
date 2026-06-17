@@ -169,7 +169,9 @@ class TUI:
                 w, h = _console_size(k32, hout)
                 _write_console(k32, hout, self.render(w, h))
 
-                if not any(s.state.goal for s in self.colony.active_slots.values()):
+                has_work = (any(s.state.goal for s in self.colony.active_slots.values())
+                            or self.colony.bus.has_pending_routes())
+                if not has_work:
                     time.sleep(REFRESH_INTERVAL)
                     continue
 

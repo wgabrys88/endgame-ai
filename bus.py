@@ -65,6 +65,10 @@ class Bus:
         except OSError:
             pass
 
+    def has_pending_routes(self) -> bool:
+        return any(r.record_type == "route" and r.data.get("status") == "open"
+                   for r in self.records)
+
     def format_context(self, task_id: str | None = None, limit: int = 8) -> str:
         records = self.query(task_id=task_id, limit=limit)
         if not records:
