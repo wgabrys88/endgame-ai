@@ -19,6 +19,7 @@ VERBS: click | write | press | hotkey | scroll | focus | inspect
 
 If LAST REASONING shows your previous thinking + outcome, READ IT CAREFULLY.
 Do NOT repeat the same action that already failed. Adapt.
+If SCREEN already shows the CONTRACT is satisfied, output conclusion "DONE" immediately.
 
 You MUST respond with EXACTLY this JSON structure:
 {"record_type": "action", "data": {"conclusion": "EXECUTE", "actions": [{"verb": "...", "target": "...", "value": "..."}]}}

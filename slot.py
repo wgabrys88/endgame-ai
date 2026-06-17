@@ -290,8 +290,8 @@ class Slot:
                 state = self.state
                 state.diagnosis = f"Task '{task.description}' failed after {self._max_attempts} attempts"
                 state.history.append({"blocked": task.description, "reason": state.diagnosis})
-                self.state.phase = "reflector"
-                return {"event": "max_attempts", "phase": "actor", "ok": False, "reason": "max_attempts", "next": "reflector"}
+                # Let wiring transitions decide where to go
+                return {"event": "max_attempts", "phase": "actor", "ok": False, "reason": "max_attempts"}
         # Handle exec: tasks directly (no LLM call)
         if task and self.state.phase == "actor" and task.description.strip().lower().startswith("exec"):
             return self._exec_task(task)
