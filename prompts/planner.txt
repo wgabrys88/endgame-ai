@@ -10,5 +10,7 @@ RULES:
 - Each task must have a contract: observable proof the task succeeded.
 - If HISTORY shows a failed approach, plan a DIFFERENT approach.
 
-Return record_type "task" with data containing:
-- tasks: array of {id, description, contract}
+You MUST respond with EXACTLY this JSON structure:
+{"record_type": "task", "data": {"tasks": [{"id": "t1", "description": "...", "contract": "..."}]}}
+
+Do NOT omit record_type or data wrapper. Do NOT add any text outside the JSON.
