@@ -32,7 +32,8 @@
         "goal",
         "screen",
         "history",
-        "bus_context"
+        "bus_context",
+        "last_reasoning"
       ]
     },
     "actor": {
@@ -52,7 +53,8 @@
         "task",
         "contract",
         "screen",
-        "evidence"
+        "evidence",
+        "last_reasoning"
       ]
     },
     "reflector": {
@@ -60,7 +62,8 @@
       "inject": [
         "goal",
         "screen",
-        "denials"
+        "denials",
+        "last_reasoning"
       ]
     },
     "mutator": {
