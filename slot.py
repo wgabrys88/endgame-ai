@@ -137,7 +137,7 @@ class Circuit:
         if self.name == "verifier":
             return self._interpret_verdict(data, state, bus)
         if self.name == "reflector":
-            return self._interpret_reflect(data, state, bus)
+            return self._interpret_reflect(data, result, state, bus)
         if self.name == "mutator":
             return self._interpret_mutate(data, result, state, bus)
         return {"event": f"{self.name}_error"}
@@ -208,11 +208,14 @@ class Circuit:
         task.status = "active"
         return {"event": "verify_unknown", "verdict": "UNKNOWN"}
 
-    def _interpret_reflect(self, data: dict, state: SlotState, bus: Bus) -> dict[str, Any]:
-        diagnosis = str(data.get("diagnosis", ""))[:500] or "unknown failure"
+    def _interpret_reflect(self, data: dict, result: LLMResult, state: SlotState, bus: Bus) -> dict[str, Any]:
+        diagnosis = str(data.get("diagnosis", ""))[:1000] or "unknown failure"
+        suggestion = str(data.get("suggestion", ""))[:1000]
         state.diagnosis = diagnosis
-        bus.publish("diagnosis", "reflector", state.active_task_id or "", {"diagnosis": diagnosis})
-        return {"event": "reflect_done", "diagnosis": diagnosis[:200], "next": "mutator"}
+        # Store reflector reasoning for its own feedback loop
+        state.reasoning_history.append({"reasoning": result.reasoning[:2000], "outcome": f"diagnosis: {diagnosis[:500]}"})
+        bus.publish("diagnosis", "reflector", state.active_task_id or "", {"diagnosis": diagnosis, "suggestion": suggestion})
+        return {"event": "reflect_done", "diagnosis": diagnosis[:200]}
 
     def _interpret_mutate(self, data: dict, result: LLMResult, state: SlotState, bus: Bus) -> dict[str, Any]:
         code = str(data.get("code", "")).strip()
