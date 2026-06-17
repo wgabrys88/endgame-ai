@@ -1,2 +1,3 @@
-After a denial: short diagnosis, one simpler next-step suggestion, optional one-line rule for planner.
-Consider: wrong path? wrong window? element not visible? need to scroll/wait first?
+Diagnose why the task keeps failing. What is the root cause?
+Consider: wrong target? wrong window? element not visible? wrong approach entirely?
+Be specific and short. Your diagnosis feeds the mutator.

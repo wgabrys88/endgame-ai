@@ -1,349 +1,225 @@
-"""TUI — compact colony display. Spawns reactor, shows slot state + bus."""
+"""TUI - single entry point for endgame-ai."""
 from __future__ import annotations
+import argparse
 import ctypes
-import glob
 import json
-import msvcrt
-import os
+import sys
 import time
 from pathlib import Path
 from typing import Any
 
-import comms
-import config
+from llm import LLMClient
+from bus import Bus
+from slot import Slot
+from colony import Colony
 
-BASE_DIR = config.BASE_DIR
-TARGET_HEIGHT = 80
-REFRESH_INTERVAL = 0.12
-SCAN_INTERVAL = 2.0
-MAX_EVENTS = 200
-
-_k32 = ctypes.WinDLL("kernel32", use_last_error=True)
-_hout = _k32.GetStdHandle(-11)
-_m = ctypes.c_ulong()
-_k32.GetConsoleMode(_hout, ctypes.byref(_m))
-_k32.SetConsoleMode(_hout, _m.value | 0x0004 | 0x0008)
-
-RST = "\x1b[0m"
-BOLD = "\x1b[1m"
+BASE_DIR = Path(__file__).parent.resolve()
+PROMPTS_DIR = BASE_DIR / "prompts"
+REFRESH_INTERVAL = 0.15
 
 
-def _w(t: str) -> None:
+def _setup_console():
+    k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    hout = k32.GetStdHandle(-11)
+    m = ctypes.c_ulong()
+    k32.GetConsoleMode(hout, ctypes.byref(m))
+    k32.SetConsoleMode(hout, m.value | 0x0004 | 0x0008)
+    return k32, hout
+
+
+def _write_console(k32, hout, text: str):
     n = ctypes.c_ulong()
-    _k32.WriteConsoleW(_hout, t, len(t), ctypes.byref(n), None)
+    k32.WriteConsoleW(hout, text, len(text), ctypes.byref(n), None)
 
 
-def _fg(r: int, g: int, b: int) -> str:
-    return f"\x1b[38;2;{r};{g};{b}m"
-
-
-def _console_width() -> int:
+def _console_size(k32, hout) -> tuple[int, int]:
     class _SR(ctypes.Structure):
         _fields_ = [("L", ctypes.c_short), ("T", ctypes.c_short), ("R", ctypes.c_short), ("B", ctypes.c_short)]
+
     class _CSBI(ctypes.Structure):
-        _fields_ = [("sz", ctypes.c_short * 2), ("cp", ctypes.c_short * 2), ("a", ctypes.c_ushort), ("w", _SR), ("mx", ctypes.c_short * 2)]
+        _fields_ = [("sz", ctypes.c_short * 2), ("cp", ctypes.c_short * 2),
+                    ("a", ctypes.c_ushort), ("w", _SR), ("mx", ctypes.c_short * 2)]
+
     csbi = _CSBI()
-    if _k32.GetConsoleScreenBufferInfo(_hout, ctypes.byref(csbi)):
-        return max(80, csbi.w.R - csbi.w.L + 1)
-    return 120
+    if k32.GetConsoleScreenBufferInfo(hout, ctypes.byref(csbi)):
+        return max(80, csbi.w.R - csbi.w.L + 1), max(20, csbi.w.B - csbi.w.T + 1)
+    return 120, 40
 
-
-def _console_height() -> int:
-    class _SR(ctypes.Structure):
-        _fields_ = [("L", ctypes.c_short), ("T", ctypes.c_short), ("R", ctypes.c_short), ("B", ctypes.c_short)]
-    class _CSBI(ctypes.Structure):
-        _fields_ = [("sz", ctypes.c_short * 2), ("cp", ctypes.c_short * 2), ("a", ctypes.c_ushort), ("w", _SR), ("mx", ctypes.c_short * 2)]
-    csbi = _CSBI()
-    if _k32.GetConsoleScreenBufferInfo(_hout, ctypes.byref(csbi)):
-        return max(20, csbi.w.B - csbi.w.T + 1)
-    return 50
-
-
-def _trunc(s: str, w: int) -> str:
-    vis = i = 0
-    while i < len(s):
-        if s[i] == "\x1b":
-            j = s.find("m", i)
-            i = (j + 1) if j != -1 else i + 1
-        else:
-            vis += 1; i += 1
-    if vis <= w:
-        return s
-    vis = 0; out = []
-    i = 0
-    while i < len(s):
-        if s[i] == "\x1b":
-            j = s.find("m", i)
-            if j != -1:
-                out.append(s[i:j + 1]); i = j + 1; continue
-        if vis >= w - 1:
-            break
-        out.append(s[i]); vis += 1; i += 1
-    out.append("…")
-    return "".join(out)
-
-
-# --- Slot tracking ---
-
-class Slot:
-    __slots__ = ("path", "slot_id", "persona", "events", "_off", "_mt",
-                 "alive", "fissions", "last_phase", "stagnation")
-
-    def __init__(self, path: Path, slot_id: int):
-        self.path = path
-        self.slot_id = slot_id
-        self.persona = ""
-        self.events: list[dict] = []
-        self._off = 0
-        self._mt = 0.0
-        self.alive = True
-        self.fissions = 0
-        self.last_phase = ""
-        self.stagnation = 0.0
-
-    def poll(self) -> None:
-        try:
-            st = self.path.stat()
-        except OSError:
-            return
-        if st.st_mtime == self._mt and st.st_size == self._off:
-            return
-        self._mt = st.st_mtime
-        if st.st_size < self._off:
-            self._off = 0
-        try:
-            with self.path.open("r", encoding="utf-8") as f:
-                f.seek(self._off)
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        ev = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    self.events.append(ev)
-                    self._ingest(ev)
-                self._off = f.tell()
-        except OSError:
-            pass
-        if len(self.events) > MAX_EVENTS:
-            self.events = self.events[-MAX_EVENTS:]
-
-    def _ingest(self, ev: dict) -> None:
-        ph = ev.get("phase", "")
-        d = ev.get("d") or {}
-        self.last_phase = ph
-        if ph == "start":
-            self.persona = str(d.get("personality", self.persona))
-            self.alive = True
-        elif ph == "fission":
-            self.fissions += 1
-        elif ph == "stop":
-            self.alive = False
-        elif ph == "pressure":
-            self.stagnation = float(d.get("stagnation", 0))
-
-
-# --- TUI ---
 
 class TUI:
-    def __init__(
-        self,
-        *,
-        mode: str = config.DEFAULT_RUN_MODE,
-        model_profile: str = "",
-        unicore_persona: str = config.UNICORE_DEFAULT_PERSONA,
-        ablation_task_id: str = "",
-    ):
-        self.slots: dict[str, Slot] = {}
-        self.running = True
-        self._last_scan = 0.0
-        self._start = time.time()
+    SLOT_KEYS = {"1": "architect", "2": "implementor", "3": "reviewer", "4": "devops"}
+
+    def __init__(self, colony: Colony, desktop_enabled: bool = True):
+        self.colony = colony
+        self.desktop_enabled = desktop_enabled
+        self._desktop = None
+        self._actions = None
+        self._running = True
         self._input_buf = ""
-        self._session_dir = ""
-        self._reactor_proc = None
-        self._mode = config.normalize_run_mode(mode)
-        self._model_profile = model_profile or config.default_model_profile_for_mode(self._mode)
-        self._unicore_persona = unicore_persona.strip() or config.UNICORE_DEFAULT_PERSONA
-        self._ablation_task_id = ablation_task_id.strip()
-        self._expected_slots = 1 if self._mode == "unicore" else config.SLOTS
+        self._log: list[str] = []
+        self._start = time.time()
 
-    def _scan(self) -> None:
-        now = time.time()
-        if self._session_dir and now - self._last_scan < SCAN_INTERVAL:
-            return
-        self._last_scan = now
-        sessions = sorted(glob.glob(str(BASE_DIR / "sessions" / "*")))
-        if not sessions:
-            return
-        sd = sessions[-1]
-        if sd != self._session_dir:
-            self._session_dir = sd
-            self.slots.clear()
-        for fp in glob.glob(os.path.join(sd, "events-child-s*.jsonl")):
-            if fp not in self.slots:
-                p = Path(fp)
-                sid = int(p.stem.replace("events-child-s", ""))
-                self.slots[fp] = Slot(p, sid)
+    def _init_desktop(self):
+        if self.desktop_enabled and self._desktop is None:
+            try:
+                from desktop import Desktop
+                from actions import ActionExecutor
+                self._desktop = Desktop()
+                self._actions = ActionExecutor(self._desktop)
+            except (ImportError, OSError) as e:
+                self._log.append(f"Desktop unavailable: {e}")
+                self.desktop_enabled = False
 
-    def _poll(self) -> None:
+    def _observe(self):
+        if not self._desktop:
+            return
         try:
-            comms.drain_inject()
-        except Exception:
-            pass
-        for s in self.slots.values():
-            s.poll()
+            obs = self._desktop.observe()
+            for slot in self.colony.active_slots.values():
+                if slot.can_act_desktop:
+                    slot.observe(obs.context_text, obs.elements)
+        except Exception as e:
+            self._log.append(f"Observe error: {e}")
 
-    def render(self) -> str:
-        W = _console_width()
-        H = _console_height()
-        inner = W - 4
-        CLR_A = _fg(80, 220, 120)
-        CLR_D = _fg(255, 80, 80)
-        CLR_H = _fg(200, 220, 255)
-        CLR_B = _fg(55, 58, 78)
-        CLR_DIM = _fg(80, 80, 100)
-        CLR_F = _fg(100, 255, 180)
-        CLR_GOAL = _fg(255, 200, 100)
+    def _execute_actions(self, slot_name: str, actions: list[dict[str, Any]]):
+        if not self._actions:
+            return
+        slot = self.colony.all_slots.get(slot_name)
+        elements = slot.state.screen_elements if slot else {}
+        for action in actions:
+            verb = str(action.get("verb", ""))
+            result = self._actions.execute(verb, action, elements)
+            self._log.append(f"  [{slot_name}] {verb}: {result.observation[:60]}")
+            if slot:
+                self.colony.bus.publish("evidence", "tool", slot.state.active_task_id or "",
+                                        {"verb": verb, "success": result.success, "obs": result.observation[:200]})
 
-        def row(c: str) -> str:
-            return f"{CLR_B}│{RST} {_trunc(c, inner)}"
+    def render(self, w: int, h: int) -> str:
+        RST = "\x1b[0m"
+        BOLD = "\x1b[1m"
+        DIM = "\x1b[2m"
+        GREEN = "\x1b[32m"
+        YELLOW = "\x1b[33m"
+        RED = "\x1b[31m"
+        CYAN = "\x1b[36m"
 
         lines: list[str] = []
-        alive = sum(1 for s in self.slots.values() if s.alive)
-        total_f = sum(s.fissions for s in self.slots.values())
         elapsed = time.time() - self._start
-        hdr = (f"{BOLD}{CLR_H}CONTRACT BUS{RST} {alive}/{self._expected_slots} "
-               f"{CLR_F}F={total_f}{RST}  {CLR_DIM}{self._mode}:{self._model_profile}{RST}  {elapsed:.0f}s")
-        lines.append(f"{CLR_B}┌{'─' * (W - 2)}┐{RST}")
-        lines.append(row(hdr))
-        lines.append(f"{CLR_B}├{'─' * (W - 2)}┤{RST}")
+        total_f = sum(s.state.fissions for s in self.colony.all_slots.values())
+        total_c = sum(s.state.cycles for s in self.colony.all_slots.values())
+        active_count = len(self.colony.active_slots)
+        lines.append(f"{BOLD}{CYAN}ENDGAME-AI{RST}  slots={active_count}/4  F={total_f}  cycles={total_c}  {elapsed:.0f}s")
+        lines.append(f"{DIM}{'=' * (w - 1)}{RST}")
 
-        # Slots — each gets header + up to 4 recent event lines
-        for s in sorted(self.slots.values(), key=lambda x: x.slot_id):
-            dot = f"{CLR_A}●{RST}" if s.alive else f"{CLR_D}○{RST}"
-            persona = (s.persona or "?")[:16].ljust(16)
-            stag = f"stag={s.stagnation:.2f}"
-            ph = s.last_phase[:20] if s.last_phase else "idle"
-            fiss = f"{CLR_F}F={s.fissions}{RST}" if s.fissions else ""
-            lines.append(row(f"s{s.slot_id} {dot} {persona} {ph:20} {stag}  {fiss}"))
-            # Recent events — full width, truncated at terminal edge
-            skip = {"start", "pressure", "plugin.web_sentinel", "prompt_signature", "schedule"}
-            recent = [e for e in s.events if e.get("phase") not in skip][-4:]
-            for ev in recent:
-                ph_e = str(ev.get("phase", ""))[:14]
-                d = ev.get("d") or {}
-                brief = comms.format_phase_brief(ph_e, d, max_w=inner - 18)
-                lines.append(row(f"    {CLR_DIM}{ph_e:14} {brief}{RST}"))
-            lines.append(row(""))
+        for i, (key, name) in enumerate(self.SLOT_KEYS.items()):
+            slot = self.colony.all_slots[name]
+            active = self.colony.is_active(name)
+            dot = f"{GREEN}*{RST}" if active else f"{RED}x{RST}"
+            phase = slot.state.last_phase[:12] if slot.state.last_phase else "idle"
+            goal = slot.state.goal[:w-40] if slot.state.goal else "(no goal)"
+            lock = " [ACT]" if self.colony._actor_lock == name else ""
+            lines.append(f"  {key}) {dot} {name:13} F={slot.state.fissions} {phase:12} {goal}{lock}")
 
-        lines.append(f"{CLR_B}├{'─' * (W - 2)}┤{RST}")
+        lines.append(f"{DIM}{'-' * (w - 1)}{RST}")
+        log_space = max(4, h - len(lines) - 4)
+        for entry in self._log[-log_space:]:
+            lines.append(f"  {DIM}{entry[:w-4]}{RST}")
 
-        # Bus chat — use remaining space, at least 6 lines
-        bus_rows = max(6, H - len(lines) - 6)
-        chat = comms.read_chat(bus_rows)
-        for entry in chat:
-            fid = str(entry.get("from", "?"))[:12]
-            kind = str(entry.get("kind", ""))[:6]
-            text = str(entry.get("text", "")).replace("\n", " ")
-            pri = int(entry.get("pri", 0) or 0)
-            color = CLR_GOAL if pri >= 3 else CLR_DIM if pri == 0 else RST
-            lines.append(row(f"  {color}@{fid:12} [{kind:6}] {text}{RST}"))
-        if not chat:
-            lines.append(row(f"  {CLR_DIM}(bus empty){RST}"))
+        while len(lines) < h - 3:
+            lines.append("")
 
-        lines.append(f"{CLR_B}├{'─' * (W - 2)}┤{RST}")
-        cursor = "▌" if int(time.time() * 2) % 2 else " "
-        lines.append(row(f"{_fg(255, 240, 200)}@human> {self._input_buf}{cursor}{RST}"))
-        lines.append(row(f"{CLR_DIM}Enter=send  Space=pause  q=quit{RST}"))
-        lines.append(f"{CLR_B}└{'─' * (W - 2)}┘{RST}")
+        lines.append(f"{DIM}{'-' * (w - 1)}{RST}")
+        cursor = "|" if int(time.time() * 2) % 2 else " "
+        lines.append(f"@human> {self._input_buf}{cursor}")
+        lines.append(f"{DIM}Enter=send  1-4=toggle slot  q=quit{RST}")
 
-        # Fill to terminal height
-        while len(lines) < H:
-            lines.append(row(""))
-        return "\x1b[H" + "\r\n".join(ln + "\x1b[K" for ln in lines[:H]) + "\x1b[J"
+        return "\x1b[H" + "\r\n".join(ln + "\x1b[K" for ln in lines[:h]) + "\x1b[J"
 
-    def _handle_key(self, ch: str) -> None:
+    def _handle_key(self, ch: str):
         if ch in ("\r", "\n"):
             text = self._input_buf.strip()
             if text:
-                if self._mode == "unicore":
-                    comms.request("human", self._unicore_persona, text, priority=config.PRI_HUMAN, goal=text)
-                else:
-                    comms.post("human", "human", text, kind="message", priority=config.PRI_HUMAN)
+                self.colony.set_goal(text)
+                self._log.append(f"GOAL: {text}")
             self._input_buf = ""
         elif ch == "\x08":
             self._input_buf = self._input_buf[:-1]
-        elif ch in ("q", "Q", "\x03"):
-            self.running = False
-        elif ch == " " and not self._input_buf:
-            p = BASE_DIR / "pause"
-            if p.exists():
-                p.unlink(missing_ok=True)
-            else:
-                p.write_text("", encoding="utf-8")
+        elif ch in self.SLOT_KEYS and not self._input_buf:
+            name = self.SLOT_KEYS[ch]
+            self.colony.toggle_slot(name)
+            status = "ON" if self.colony.is_active(name) else "OFF"
+            self._log.append(f"SLOT {name}: {status}")
+        elif ch in ("q", "Q", "\x03") and not self._input_buf:
+            self._running = False
         elif len(ch) == 1 and ch.isprintable():
             self._input_buf += ch
 
-    def run(self, *, colony_goal: str = "") -> None:
-        import log
-        import subprocess as sp
-        log.cleanup_runtime()
-        if colony_goal.strip():
-            comms.set_colony_goal(colony_goal.strip(), source="human")
-        _w("\x1b[?1049h\x1b[?25l\x1b]0;endgame-ai\x07")
-        comms.post("tui", "tui", "TUI online.", kind="beacon")
+    def run(self, goal: str = ""):
+        import msvcrt
+        k32, hout = _setup_console()
+        self._init_desktop()
+        if goal:
+            self.colony.set_goal(goal)
+            self._log.append(f"GOAL: {goal}")
 
-        env = os.environ.copy()
-        env["ENDGAME_BOOTSTRAPPED"] = "1"
-        if colony_goal.strip():
-            env["ENDGAME_COLONY_GOAL"] = colony_goal.strip()
-        reactor_cmd = [sys.executable, "reactor.py"]
-        reactor_cmd += ["--mode", self._mode, "--model-profile", self._model_profile]
-        if self._mode == "unicore":
-            reactor_cmd += ["--unicore-persona", self._unicore_persona]
-        if self._ablation_task_id:
-            reactor_cmd += ["--ablation-task-id", self._ablation_task_id]
-        if colony_goal.strip():
-            reactor_cmd += ["--goal", colony_goal.strip()]
-        self._reactor_proc = sp.Popen(reactor_cmd, cwd=str(BASE_DIR), env=env, creationflags=0x08000000)
-
+        _write_console(k32, hout, "\x1b[?1049h\x1b[?25l\x1b]0;endgame-ai\x07")
         try:
-            while self.running:
-                self._scan()
-                self._poll()
+            while self._running:
                 if msvcrt.kbhit():
                     self._handle_key(msvcrt.getwch())
-                _w(self.render())
-                time.sleep(REFRESH_INTERVAL)
+
+                w, h = _console_size(k32, hout)
+                _write_console(k32, hout, self.render(w, h))
+
+                if not any(s.state.goal for s in self.colony.active_slots.values()):
+                    time.sleep(REFRESH_INTERVAL)
+                    continue
+
+                if self.desktop_enabled:
+                    self._observe()
+
+                results = self.colony.step()
+                for name, result in results:
+                    if result:
+                        phase = result.get("phase", "?")
+                        self.colony.all_slots[name].state.last_phase = phase
+                        brief = json.dumps({k: v for k, v in result.items() if k != "phase"}, ensure_ascii=False)[:80]
+                        self._log.append(f"  [{name}:{phase}] {brief}")
+                        if result.get("actions"):
+                            self._execute_actions(name, result["actions"])
+
+                time.sleep(2.0)
         except KeyboardInterrupt:
             pass
         finally:
-            _w("\x1b[?1049l\x1b[?25h")
-            if self._reactor_proc and self._reactor_proc.poll() is None:
-                os.system(f"taskkill /F /T /PID {self._reactor_proc.pid} >nul 2>&1")
+            _write_console(k32, hout, "\x1b[?1049l\x1b[?25h")
+
+
+def main():
+    parser = argparse.ArgumentParser(prog="endgame-ai", description="Endgame-AI runtime")
+    parser.add_argument("goal", nargs="*", help="Initial goal")
+    parser.add_argument("--host", default="http://localhost:1234", help="LM Studio URL")
+    parser.add_argument("--timeout", type=int, default=600, help="LLM request timeout")
+    parser.add_argument("--temperature", type=float, default=0.12, help="LLM temperature")
+    parser.add_argument("--max-tokens", type=int, default=1536, help="LLM max tokens")
+    parser.add_argument("--no-desktop", action="store_true", help="Disable desktop observation")
+    parser.add_argument("--workspace", type=str, default=None, help="Working directory")
+    parser.add_argument("--bus-file", type=str, default=None, help="Bus persistence file")
+    args = parser.parse_args()
+
+    workspace = Path(args.workspace) if args.workspace else BASE_DIR.parent
+    bus_path = Path(args.bus_file) if args.bus_file else None
+    llm = LLMClient(
+        host=args.host,
+        timeout=args.timeout,
+        temperature=args.temperature,
+        max_tokens=args.max_tokens,
+    )
+    bus = Bus(persist_path=bus_path)
+    colony = Colony(llm=llm, bus=bus, prompts_dir=PROMPTS_DIR, workspace=workspace)
+    tui = TUI(colony=colony, desktop_enabled=not args.no_desktop)
+    tui.run(goal=" ".join(args.goal).strip())
 
 
 if __name__ == "__main__":
-    import argparse
-    import sys
-    parser = argparse.ArgumentParser()
-    parser.add_argument("goal", nargs="*")
-    parser.add_argument("--backend", choices=["lmstudio", "acp"], default="lmstudio")
-    parser.add_argument("--mode", choices=config.RUN_MODES, default=config.DEFAULT_RUN_MODE)
-    parser.add_argument("--model-profile", type=str, default=None)
-    parser.add_argument("--unicore-persona", type=str, default=config.UNICORE_DEFAULT_PERSONA)
-    parser.add_argument("--ablation-task-id", type=str, default="")
-    args = parser.parse_args()
-    model_profile = args.model_profile or config.default_model_profile_for_mode(args.mode)
-    os.environ["ENDGAME_BACKEND"] = args.backend
-    os.environ["_ENDGAME_MODEL_PROFILE"] = model_profile
-    os.environ["_ENDGAME_RUN_MODE"] = args.mode
-    os.environ["_ENDGAME_UNICORE_PERSONA"] = args.unicore_persona
-    TUI(
-        mode=args.mode,
-        model_profile=model_profile,
-        unicore_persona=args.unicore_persona,
-        ablation_task_id=args.ablation_task_id,
-    ).run(colony_goal=" ".join(args.goal).strip())
+    main()

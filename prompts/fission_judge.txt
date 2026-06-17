@@ -1,3 +1,0 @@
-Award fission credit only when a contract-bus verifier verdict is DONE and the milestone is not a duplicate.
-Judge the verifier verdict, contract summary, and evidence summary generically.
-Deny duplicate milestones, invalid verdicts, or work with no verified contract outcome.
