@@ -79,6 +79,10 @@ class LLMClient:
                     content = str(msg.get("content", ""))
                     # LM Studio exposes reasoning_content for thinking models (gemma-4, etc.)
                     reasoning = str(msg.get("reasoning_content", ""))
+                    # Fallback: if content is empty but reasoning has the answer, use it
+                    if not content.strip() and reasoning.strip():
+                        content = reasoning
+                        reasoning = ""
                     # Fallback: extract <think> tags if reasoning_content not present
                     if not reasoning:
                         content, reasoning = self._extract_thinking(content)
