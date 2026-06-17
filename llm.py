@@ -49,13 +49,11 @@ class LLMClient:
             self._model = ""
         return self._model or ""
 
-    def call(self, system: str, user: str, *, max_tokens: int = 0) -> LLMResult:
+    def call(self, system: str, user: str) -> LLMResult:
         body: dict[str, Any] = {
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
             **self._config,
         }
-        if max_tokens:
-            body["max_tokens"] = max_tokens
         model = self._resolve_model()
         if model:
             body["model"] = model

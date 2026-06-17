@@ -93,7 +93,7 @@ class GlobalMutator:
             'Return record_type "mutation" with data containing suggestion string.'
         )
         result = self._llm.call("You are a global mutator. Analyze failures and suggest improvements.",
-                                context, max_tokens=512)
+                                context)
         try:
             data = json.loads(result.text).get("data", {})
         except (json.JSONDecodeError, TypeError):

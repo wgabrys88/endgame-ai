@@ -120,8 +120,7 @@ class Circuit:
 
     def run(self, state: SlotState, llm: LLMClient, bus: Bus) -> dict[str, Any]:
         ctx = self._resolve_context(state, bus)
-        max_tok = 512 if self.name in ("verifier", "reflector") else (1024 if self.name == "mutator" else 0)
-        result = llm.call(self._prompt, ctx, max_tokens=max_tok) if ctx else LLMResult(text="")
+        result = llm.call(self._prompt, ctx) if ctx else LLMResult(text="")
         return self._interpret(result, state, bus)
 
     def _interpret(self, result: LLMResult, state: SlotState, bus: Bus) -> dict[str, Any]:
