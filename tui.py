@@ -24,6 +24,19 @@ _LOGS_DIR.mkdir(exist_ok=True)
 logging.basicConfig(filename=str(_LOGS_DIR / f"{datetime.now():%Y%m%d_%H%M%S}.txt"),
                     level=logging.DEBUG, format="%(asctime)s %(message)s")
 
+def _console_size(k32, hout) -> tuple[int, int]:
+    class _CSBI(ctypes.Structure):
+        _fields_ = [("sz", ctypes.c_short * 2), ("cp", ctypes.c_short * 2),
+                    ("a", ctypes.c_ushort),
+                    ("wL", ctypes.c_short), ("wT", ctypes.c_short),
+                    ("wR", ctypes.c_short), ("wB", ctypes.c_short),
+                    ("mx", ctypes.c_short * 2)]
+    csbi = _CSBI()
+    if k32.GetConsoleScreenBufferInfo(hout, ctypes.byref(csbi)):
+        return max(80, csbi.wR - csbi.wL + 1), max(20, csbi.wB - csbi.wT + 1)
+    return 120, 35
+
+
 W, H = 120, 35
 
 
@@ -226,6 +239,8 @@ class TUI:
     def run(self, goal: str = ""):
         import msvcrt
         k32, hout = _setup_console()
+        global W, H
+        W, H = _console_size(k32, hout)
         self._init_desktop()
         # Hook LLM client to capture last request/response for 'r'/'R' keys
         orig_call = self.colony.llm.call
