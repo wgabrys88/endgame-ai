@@ -22,7 +22,7 @@ colony.active_slots.clear()
 goal = " ".join(sys.argv[1:]) or "open chrome and play shakira on youtube"
 colony.set_goal(goal)
 
-deadline = time.time() + 180
+deadline = time.time() + 240
 cycles = 0
 
 from actions import ActionExecutor

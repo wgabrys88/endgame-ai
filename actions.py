@@ -64,6 +64,11 @@ class ActionExecutor:
             key = str(args.get(cfg["key_field"], ""))
             if not key:
                 return ActionResult(verb, False, "no key")
+            if "+" in key:
+                # Model confused press/hotkey — handle gracefully
+                keys = [k.strip() for k in key.replace("+", ",").split(",") if k.strip()]
+                self._desktop.hotkey(keys)
+                return ActionResult(verb, True, f"pressed {key}")
             self._desktop.press_key(key)
             return ActionResult(verb, True, f"pressed {key}")
 
