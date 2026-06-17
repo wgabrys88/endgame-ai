@@ -125,7 +125,12 @@ class Colony:
         self._actor_lock: str = ""
 
     def set_goal(self, goal: str):
-        self.comms.route(goal)
+        # Level 0: if no slots manually activated, route directly to implementor (single slot mode)
+        if not self.active_slots:
+            self.bus.publish("route", "comms_operator", "",
+                            {"to": "implementor", "goal": goal, "status": "open", "seq": 1})
+        else:
+            self.comms.route(goal)
 
     def toggle_slot(self, name: str) -> bool:
         if name not in self.all_slots:
