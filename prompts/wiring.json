@@ -80,7 +80,7 @@
     "verify_done": "planner",
     "verify_not_done": "reflector",
     "verify_unknown": "actor",
-    "reflect_done": "mutator",
+    "reflect_done": "actor",
     "mutate_done": "actor",
     "execute_acted": "actor",
     "goal_complete": "idle"
