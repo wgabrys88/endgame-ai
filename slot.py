@@ -80,7 +80,7 @@ class Circuit:
         if name == "goal":
             return state.goal
         if name == "screen":
-            return state.screen[:2000] if state.screen else ""
+            return state.screen[:8000] if state.screen else ""
         if name == "task":
             return task.description if task else ""
         if name == "contract":
@@ -94,24 +94,24 @@ class Circuit:
             if not state.reasoning_history:
                 return ""
             entries = state.reasoning_history[-self._reasoning_depth:]
-            return "\n".join(f"[attempt] {e.get('reasoning','')[:300]} → {e.get('outcome','')[:100]}" for e in entries)
+            return "\n".join(f"[attempt] {e.get('reasoning','')[:1500]} → {e.get('outcome','')[:500]}" for e in entries)
         if name == "history":
             if not state.history:
                 return ""
-            return "\n".join(f"  {json.dumps(h, ensure_ascii=False)[:200]}" for h in state.history[-6:])
+            return "\n".join(f"  {json.dumps(h, ensure_ascii=False)[:1000]}" for h in state.history[-6:])
         if name == "bus_context":
             return bus.format_context(limit=6)
         if name == "evidence":
             if not task:
                 return ""
             evidence = bus.query(record_type="evidence", task_id=task.id, limit=5)
-            parts = [f"  {json.dumps(r.data, ensure_ascii=False)[:300]}" for r in evidence]
+            parts = [f"  {json.dumps(r.data, ensure_ascii=False)[:1000]}" for r in evidence]
             if task.evidence:
-                parts += [f"  {e[:300]}" for e in task.evidence[-3:]]
+                parts += [f"  {e[:1000]}" for e in task.evidence[-3:]]
             return "\n".join(parts) if parts else ""
         if name == "denials":
             denials = [h for h in state.history[-6:] if isinstance(h, dict) and h.get("denied")]
-            return "\n".join(f"  {json.dumps(d, ensure_ascii=False)[:200]}" for d in denials[-3:]) if denials else ""
+            return "\n".join(f"  {json.dumps(d, ensure_ascii=False)[:1000]}" for d in denials[-3:]) if denials else ""
         if name == "diagnosis":
             return state.diagnosis
         if name == "workspace":
@@ -168,7 +168,7 @@ class Circuit:
         if not task:
             return {"event": "execute_cannot"}
         # Store reasoning for feedback loop
-        reasoning_entry = {"reasoning": result.reasoning[:500], "outcome": ""}
+        reasoning_entry = {"reasoning": result.reasoning[:2000], "outcome": ""}
         conclusion = str(data.get("conclusion", "EXECUTE"))
         if conclusion == "DONE":
             task.status = "claimed_done"

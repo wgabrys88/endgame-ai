@@ -59,7 +59,7 @@ class Bus:
             return ""
         lines = ["BUS RECORDS:"]
         for r in records:
-            lines.append(f"  [{r.record_type}] {r.role}: {json.dumps(r.data, ensure_ascii=False)[:200]}")
+            lines.append(f"  [{r.record_type}] {r.role}: {json.dumps(r.data, ensure_ascii=False)[:1000]}")
         return "\n".join(lines)
 
     def _append_to_file(self, record: Record):
