@@ -22,7 +22,7 @@ colony.active_slots.clear()
 goal = " ".join(sys.argv[1:]) or "open chrome and play shakira on youtube"
 colony.set_goal(goal)
 
-deadline = time.time() + 120
+deadline = time.time() + 180
 cycles = 0
 
 from actions import ActionExecutor
@@ -54,6 +54,7 @@ while time.time() < deadline:
                     if verb == "inspect":
                         # inspect = re-observe and update screen
                         refresh_screen()
+                        elements = slot.state.screen_elements or {}
                         outcomes.append("inspect:OK")
                         print(f"      inspect -> OK (screen refreshed)")
                     else:
@@ -64,6 +65,9 @@ while time.time() < deadline:
                             slot.state.last_action_error = f"{verb}: {res.observation}"
                         bus.publish("evidence", "tool", slot.state.active_task_id or "",
                                    {"verb": verb, "success": res.success, "obs": res.observation})
+                # Re-observe after all actions so next call sees updated screen
+                import time as _t; _t.sleep(1)
+                refresh_screen()
                 if reasoning_entry is not None:
                     reasoning_entry["outcome"] = "; ".join(outcomes)
                     slot.state.reasoning_history.append(reasoning_entry)
