@@ -1,95 +1,138 @@
 # endgame-ai
 
-Wiring-driven, self-evolving agentic runtime for Windows 11.
-Single process, model-agnostic, ~1500 LOC Python.
+A wiring-driven, self-evolving agentic runtime for Windows 11.  
+Single process. Model-agnostic. ~1500 LOC Python. All behavior controlled by text files.
 
-## Status: Active Development
-
-**Branch:** `codex-unify-bus`  
-**Model:** `nvidia-nemotron-3-nano-4b@q6_k_xl` (4B params, 32k context)  
-**Host:** LM Studio at `192.168.16.31:1234`
+**Key innovation:** Reasoning-as-memory — the LLM's own `reasoning_content` is fed back as context between calls, enabling cross-call self-correction without dedicated reflection LLM calls.
 
 ---
 
-## Progress Ledger
+## State Machine
 
-### 2026-06-17 — Session 2: Reasoning-as-Memory Proven
+Generated from [`prompts/wiring.json`](prompts/wiring.json) transitions:
 
-**Key Discovery:** The model's `reasoning_content` field IS the reflection/mutation layer.
-We don't need separate LLM calls for reflection — feed reasoning back as context and the
-model self-corrects across iterations FOR FREE.
+```mermaid
+stateDiagram-v2
+    [*] --> planner
+    planner --> actor : plan_done
+    actor --> actor : execute_acted
+    actor --> verifier : execute_done
+    actor --> planner : execute_cannot
+    actor --> reflector : max_attempts (5x fail)
+    verifier --> planner : verify_done ✓
+    verifier --> reflector : verify_not_done
+    verifier --> actor : verify_unknown
+    reflector --> planner : reflect_done
+    planner --> [*] : goal_complete
+```
 
-**Proven behaviors (real desktop runs):**
-- Model uses `inspect` verb spontaneously when screen lacks detail
-- Model self-corrects from failed approaches using prior reasoning
-- Verifier catches premature DONE claims (actor says "done" but screen contradicts)
-- Planner replans after max_attempts with history of what failed
-- Full plan→act→verify→replan cycle completes end-to-end
+## Context Injection
 
-**Architectural changes this session:**
-1. All prompts rewritten: self-aware, dynamic ID warnings, inspect verb
-2. `inspect` verb added — triggers `desktop.observe()` re-scan
-3. Truncation limits raised massively (screen 8k, reasoning 2k, evidence 1k)
-4. `max_tokens=4096` in model.json (was 2536)
-5. Reflector/mutator unwired (reasoning IS reflection — under evaluation)
-6. `_test_run.py` now executes actions + feeds reasoning back (IS the full runtime)
-7. `max_attempts` uses wiring transitions (was hardcoded to reflector)
+Each circuit receives exactly the data it needs. From [`prompts/wiring.json`](prompts/wiring.json) circuits:
 
-**Open questions:**
-- Reflector: is reasoning_content truly sufficient, or do we need explicit diagnosis?
-- Screen observation: "Program Manager" appears when no app focused (WSL2 artifact)
-- Model repeats actions when reasoning feedback says "OK" (needs "already done" awareness)
+```mermaid
+flowchart LR
+    subgraph planner
+        P[goal + screen + history + bus_context + last_reasoning]
+    end
+    subgraph actor
+        A[goal + task + contract + last_error + last_reasoning + screen]
+    end
+    subgraph verifier
+        V[task + contract + screen + evidence + last_reasoning]
+    end
+    subgraph reflector
+        R[goal + screen + denials + last_reasoning]
+    end
+```
 
-### 2026-06-17 — Session 1: Architecture Built
+**`last_reasoning`** is the key. Every circuit sees its own prior reasoning chain (up to 5 entries), enabling self-correction across calls without extra LLM calls.
 
-**Built from scratch:**
-- Generic Circuit class + Slot state machine
-- All topology in `prompts/wiring.json` (transitions, context injection, verbs)
-- Schema in prompts not API (strict schema kills reasoning on nemotron)
-- LLM fallback: reasoning_content → content when content empty
-- Goal complete lifecycle: planner returns empty → idle
-- TUI: threaded, responsive, full req/resp display, PgUp/PgDn
-- Level 0 mode: single implementor, no CommsOperator
+## Verb Dispatch
 
-**5-call curl proof:**
-Nemotron self-corrected from "use notepad" → "use chrome" → "use screenshot" → "use Word
-with exec:" across 5 reasoning iterations. Reasoning-as-memory works.
+The actor controls Windows 11 through these verbs (from [`prompts/wiring.json`](prompts/wiring.json)):
+
+| Verb | Target | Effect |
+|------|--------|--------|
+| `click` | element_id | Click UI element by dynamic ID |
+| `write` | element_id, value | Type text (optionally click target first) |
+| `hotkey` | key_combo | Key combination: `win+r`, `ctrl+l`, `alt+f4` |
+| `press` | key_name | Single key: `enter`, `tab`, `escape` |
+| `scroll` | element_id, amount | Scroll element |
+| `focus` | window_title | Focus window by title |
+| `inspect` | area | Re-scan screen for more detail |
 
 ---
 
 ## Architecture
 
 ```
-prompts/wiring.json ─── ALL behavior defined here
-  ├── circuits: planner, actor, verifier (reflector unwired)
-  ├── transitions: event → next_phase
-  ├── verbs: click, write, press, hotkey, scroll, focus, inspect
-  └── limits: max_attempts=5, reasoning_depth=5, max_tokens=4096
+prompts/
+├── wiring.json      ← ALL topology: transitions, circuits, verbs, limits
+├── planner.txt      ← Self-aware prompt with REASON FAST directive
+├── actor.txt        ← Desktop control prompt, dynamic IDs, full screen data
+├── verifier.txt     ← Independent evidence-based judgment
+├── reflector.txt    ← Root-cause diagnosis on repeated failure
+└── model.json       ← LLM config: host, temperature, max_tokens
 
-State machine (current):
-  planner → actor → verifier → planner (loop)
-                ↑         |
-                └─────────┘ (verify_not_done → planner)
-                            (max_attempts → planner)
-
-Context injection per circuit:
-  planner:  [goal, screen, history, bus_context, last_reasoning]
-  actor:    [goal, task, contract, last_error, last_reasoning, screen]
-  verifier: [task, contract, screen, evidence, last_reasoning]
+Runtime:
+├── _test_run.py     ← Headless runtime (observe → step → act → feed reasoning)
+├── tui.py           ← Interactive TUI (threaded, PgUp/PgDn scroll)
+├── colony.py        ← Level 0 bypass, slot activation, goal routing
+├── slot.py          ← Generic Circuit + Slot state machine
+├── desktop.py       ← Win32 UI Automation screen observation + actions
+├── actions.py       ← Verb dispatch (wiring-driven)
+├── llm.py           ← LM Studio client, reasoning extraction, full logging
+└── bus.py           ← Shared blackboard for inter-circuit communication
 ```
 
-## Files
+## What Makes This Work
 
-| File | LOC | Purpose |
-|------|-----|---------|
-| `_test_run.py` | ~70 | Headless runtime (executes actions, feeds reasoning) |
-| `tui.py` | 219 | Interactive TUI (threaded, PgUp/PgDn) |
-| `colony.py` | 182 | Level 0 bypass, slot activation, CommsOperator |
-| `slot.py` | 351 | Circuit + Slot state machine |
-| `desktop.py` | 428 | Win32 screen observation + GUI actions |
-| `llm.py` | ~100 | LM Studio client, reasoning extraction, logging |
-| `actions.py` | 95 | Verb dispatch (click, write, press, hotkey, inspect...) |
-| `bus.py` | 74 | Shared blackboard |
+### 1. Reasoning IS Reflection
+
+The model's `reasoning_content` field contains genuine chain-of-thought. By feeding it back as context on the next call, the model sees its own prior deductions and self-corrects. This eliminates the need for separate reflection LLM calls in most cases.
+
+The reflector circuit exists for hard failures (5x attempts exhausted, verifier rejections) where a dedicated "step back and think differently" call provides better diagnosis than inline reasoning alone.
+
+### 2. Wiring Controls Everything
+
+`prompts/wiring.json` defines:
+- Which circuits exist and what context they receive
+- All state transitions (event → next phase)
+- Available verbs and their field mappings
+- Operational limits (max_attempts, reasoning_depth, token budgets)
+
+Change the JSON, change the behavior. No code modification needed.
+
+### 3. Self-Aware Prompts
+
+Every prompt begins with `REASON FAST` — shaping the model's internal chain-of-thought to be decisive rather than verbose. Prompts explicitly instruct the model to:
+- Re-read its own previous reasoning
+- Never repeat failed approaches
+- Use current screen IDs (dynamic, change every observation)
+- Recognize when the goal is already achieved
+
+### 4. The Loop
+
+```
+observe screen → planner decomposes goal → actor executes
+     ↑                                           ↓
+     └── planner (replan) ← reflector ← verifier checks
+```
+
+Every cycle: fresh screen observation, reasoning fed back, evidence accumulated. The model operates the desktop like a human would — look, think, act, check.
+
+---
+
+## Proven Behaviors (Real Desktop Runs)
+
+From test runs on 2026-06-17 with `nvidia-nemotron-3-nano-4b` (4B params):
+
+- **Invented combined commands**: `opera https://grok.com` in Run dialog — launch + navigate in one action
+- **Self-corrected via reasoning**: failed approach → different strategy next call
+- **Verifier caught premature claims**: actor said "done" but screen contradicted → reflector diagnosed → replanner fixed
+- **Full goal completion**: plan → act → verify → done in 11 cycles, 60 seconds
+- **Used inspect spontaneously**: when screen lacked detail, model requested re-scan without being told to
 
 ## Running
 
@@ -101,7 +144,26 @@ python _test_run.py open opera and go to grok.com
 python tui.py
 ```
 
+**Requirements:** Python 3.11+, Windows 11, LM Studio running a reasoning model.
+
+## Configuration
+
+All in `prompts/model.json`:
+```json
+{
+  "host": "http://192.168.16.31:1234",
+  "temperature": 0.4,
+  "max_tokens": 4096,
+  "seed": 3407
+}
+```
+
 ## Logs
 
-All runs preserved in `logs/YYYYMMDD_HHMMSS.txt` — full LLM request/response, no truncation.
-Never delete log data during active development.
+All LLM request/response pairs logged to `logs/YYYYMMDD_HHMMSS.txt` — full content, no truncation. Logs are gitignored.
+
+---
+
+## License
+
+MIT
