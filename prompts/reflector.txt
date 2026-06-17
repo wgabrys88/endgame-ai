@@ -7,6 +7,7 @@ Consider:
 - Does the app need to be launched first?
 - Is a different window focused than expected?
 
-Return record_type "diagnosis" with data containing:
-- diagnosis: specific root cause and what should change
-- suggestion: concrete alternative approach to try
+You MUST respond with EXACTLY this JSON structure:
+{"record_type": "diagnosis", "data": {"diagnosis": "...", "suggestion": "..."}}
+
+Do NOT add any text outside the JSON.

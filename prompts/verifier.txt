@@ -8,6 +8,8 @@ RULES:
 - If screen contradicts the contract, return NOT_DONE.
 - If screen and evidence confirm the contract, return DONE.
 
-Return record_type "verdict" with data containing:
-- verdict: DONE | NOT_DONE | UNKNOWN
-- because: specific explanation referencing evidence
+You MUST respond with EXACTLY this JSON structure:
+{"record_type": "verdict", "data": {"verdict": "DONE", "because": "..."}}
+
+verdict must be one of: DONE, NOT_DONE, UNKNOWN
+Do NOT add any text outside the JSON.

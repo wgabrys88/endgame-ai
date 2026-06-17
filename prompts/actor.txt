@@ -16,6 +16,8 @@ VERBS: click | write | press | hotkey | scroll | focus
 If LAST REASONING is shown, it contains your PREVIOUS thinking and its outcome.
 Use it to avoid repeating failed approaches. If something failed, try a DIFFERENT method.
 
-Return record_type "action" with data containing:
-- conclusion: EXECUTE (performing actions), DONE (task complete), or CANNOT (impossible)
-- actions: array of {verb, target, value}
+You MUST respond with EXACTLY this JSON structure:
+{"record_type": "action", "data": {"conclusion": "EXECUTE", "actions": [{"verb": "...", "target": "...", "value": "..."}]}}
+
+conclusion must be one of: EXECUTE, DONE, CANNOT
+Do NOT add any text outside the JSON.
