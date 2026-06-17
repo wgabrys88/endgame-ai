@@ -230,12 +230,6 @@ class Mutator(Circuit):
         result = llm.call(self._prompt or "Write a one-shot Python fix script.",
                           "\n".join(parts), max_tokens=1024, raw=True)
         code = result.text.strip()
-        if code.startswith("```"):
-            lines = code.splitlines()
-            lines = lines[1:] if lines[0].startswith("```") else lines
-            if lines and lines[-1].strip().startswith("```"):
-                lines = lines[:-1]
-            code = "\n".join(lines).strip()
         if not code:
             return {"phase": "mutate", "ok": False, "reason": "empty script"}
         success, obs = run_script(code, self._workspace)

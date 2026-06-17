@@ -91,4 +91,10 @@ class LLMClient:
 
         text = _THINK_RE.sub(_cap, raw).strip()
         reasoning = "\n\n".join(t for t in thinks if t)
+        if text.startswith("```"):
+            lines = text.splitlines()
+            lines = lines[1:] if lines[0].startswith("```") else lines
+            if lines and lines[-1].strip().startswith("```"):
+                lines = lines[:-1]
+            text = "\n".join(lines).strip()
         return text, reasoning
