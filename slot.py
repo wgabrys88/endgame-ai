@@ -1,6 +1,7 @@
 """Slot - generic Circuit + data-driven state machine. All wiring from config."""
 from __future__ import annotations
 import json
+import logging
 import subprocess
 import sys
 import time
@@ -10,6 +11,8 @@ from typing import Any
 
 from llm import LLMClient, LLMResult
 from bus import Bus
+
+_log = logging.getLogger("endgame")
 
 
 @dataclass
@@ -122,6 +125,9 @@ class Circuit:
     def run(self, state: SlotState, llm: LLMClient, bus: Bus) -> dict[str, Any]:
         ctx = self._resolve_context(state, bus)
         result = llm.call(self._prompt, ctx) if ctx else LLMResult(text="")
+        _log.debug("[%s] prompt=%d ctx=%d → response=%d reasoning=%d",
+                   self.name, len(self._prompt), len(ctx),
+                   len(result.text), len(result.reasoning))
         return self._interpret(result, state, bus)
 
     def _interpret(self, result: LLMResult, state: SlotState, bus: Bus) -> dict[str, Any]:
@@ -150,6 +156,17 @@ class Circuit:
         reasoning_entry = {"reasoning": result.reasoning[:2000], "outcome": ""}
         conclusion = str(data.get("conclusion", "EXECUTE"))
         if conclusion == "DONE":
+            # Guard: check if reasoning history shows we actually did something
+            # For compound goals with "type/write", require a write action in history
+            goal_lower = state.goal.lower()
+            has_write_goal = any(w in goal_lower for w in ("type", "write", "enter text"))
+            did_write = any("write" in str(h.get("outcome", "")) or "typed" in str(h.get("outcome", ""))
+                           for h in state.reasoning_history)
+            if has_write_goal and not did_write:
+                # Premature DONE — override to continue
+                reasoning_entry["outcome"] = "SYSTEM: goal requires typing but no write was done yet"
+                state.reasoning_history.append(reasoning_entry)
+                return {"event": "unified_acted", "conclusion": "EXECUTE", "actions": []}
             reasoning_entry["outcome"] = "goal complete"
             state.reasoning_history.append(reasoning_entry)
             return {"event": "goal_complete", "conclusion": "DONE"}
@@ -162,7 +179,6 @@ class Circuit:
         if state.reasoning_history and actions:
             last = state.reasoning_history[-1]
             if "OK" in last.get("outcome", "") and actions == state._last_actions:
-                # Inject hint into reasoning history
                 state.reasoning_history.append({"reasoning": "", "outcome": "SYSTEM: repeated action — move to next step"})
         state._last_actions = actions
         bus.publish("action", "unified", state.active_task_id or "", data)

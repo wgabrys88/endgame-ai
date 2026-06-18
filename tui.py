@@ -164,6 +164,8 @@ class TUI:
             conclusion = result.get("conclusion", "")
             actions = result.get("actions", [])
             self._log_line(f"[{ts}] {name}:{phase} → {event} {conclusion}".rstrip())
+            if event == "goal_complete":
+                self._log_line(f"  ✓ GOAL COMPLETE")
             if actions:
                 for a in actions:
                     self._log_line(f"  → {a.get('verb','')} target={a.get('target','')} value={a.get('value','')}")

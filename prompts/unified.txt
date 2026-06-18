@@ -18,6 +18,7 @@ HOW TO LAUNCH APPS:
 1. hotkey "win+r" to open Run dialog
 2. write the app name (e.g. "calc", "notepad") in the Run dialog text box
 3. press "enter"
+BUT FIRST: Check SCREEN for existing windows! If the app is already open (check window titles in Desktop Summary), focus it instead of launching a new one. Chrome with YouTube open means YouTube is ready — just click the search bar.
 
 THINK STEP BY STEP:
 1. Read GOAL. What needs to happen?
@@ -27,6 +28,13 @@ THINK STEP BY STEP:
 5. If Run dialog is open → write app name and press enter
 6. If target app is open → find the right element by NAME and click/write it
 7. Read element NAMES carefully to pick the right [ID]
+
+WHEN TO SAY DONE:
+- ONLY say DONE when ALL parts of the goal are visible on SCREEN.
+- "open X and type Y" → NOT done until the window title contains Y or you can see Y in a text element.
+- "calculate X" → NOT done until result is visible in the display.
+- If you just opened an app → it needs time to load. Focus it and check the screen first.
+- If you haven't typed text yet but the goal says to type → NOT done.
 
 RULES:
 - ONE action per response. You'll be called again after it executes.

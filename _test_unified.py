@@ -71,6 +71,23 @@ for cycle in range(15):
     actions_list = data.get("actions", [])
     
     if conclusion == "DONE":
+        # Guard: check if we actually completed compound goals
+        goal_lower = goal.lower()
+        has_write_goal = any(w in goal_lower for w in ("type", "write", "enter text"))
+        # Check if the text from the goal was actually written (not just "notepad" in Run dialog)
+        goal_text_candidates = []
+        for w in ("type ", "write ", "enter text "):
+            if w in goal_lower:
+                goal_text_candidates.append(goal_lower.split(w, 1)[1].strip())
+        did_write_goal_text = False
+        for r in reasoning_history:
+            for candidate in goal_text_candidates:
+                if candidate and candidate in r.lower():
+                    did_write_goal_text = True
+        if has_write_goal and not did_write_goal_text:
+            print(f"  ⚠ Premature DONE — haven't typed the goal text yet ({elapsed:.1f}s)")
+            reasoning_history.append("SYSTEM: you haven't typed the required text yet. Focus the app window and write the text.")
+            continue
         print(f"  ✓ GOAL COMPLETE ({elapsed:.1f}s)")
         break
     elif conclusion == "CANNOT":
@@ -99,7 +116,7 @@ for cycle in range(15):
         r = actions_exec.execute(verb, a, obs.elements)
         status = "✓" if r.success else "✗"
         print(f"    {status} {r.observation}")
-        reasoning_history.append(f"{verb} {target} → {'OK' if r.success else r.observation}")
+        reasoning_history.append(f"{verb} {target} {value} → {'OK' if r.success else r.observation}")
         if not r.success:
             last_error = f"{verb}: {r.observation}"
     
