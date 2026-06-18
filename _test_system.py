@@ -59,8 +59,8 @@ print(f"GOAL: {goal}")
 print(f"{'='*60}")
 colony.set_goal(goal)
 
-# Run 3 cycles
-for cycle in range(3):
+# Run 10 cycles
+for cycle in range(10):
     print(f"\n{'─'*60}")
     print(f"CYCLE {cycle + 1}")
     print(f"{'─'*60}")
@@ -85,6 +85,22 @@ for cycle in range(3):
             actions = result.get("actions", [])
             for a in actions:
                 print(f"    ACTION: {a.get('verb','')} target={a.get('target','')} value={a.get('value','')}")
+            # Simulate action execution feedback (dry-run but capture reasoning)
+            reasoning_entry = result.get("reasoning_entry")
+            if actions and reasoning_entry is not None:
+                slot = colony.active_slots.get(name)
+                if slot:
+                    outcomes = [f"{a.get('verb','')}: OK (dry-run)" for a in actions]
+                    reasoning_entry["outcome"] = "; ".join(outcomes)
+                    slot.state.reasoning_history.append(reasoning_entry)
+                    depth = wiring["limits"]["reasoning_history_depth"]
+                    if len(slot.state.reasoning_history) > depth:
+                        slot.state.reasoning_history = slot.state.reasoning_history[-depth:]
+    # Show slot state
+    for sname, slot in colony.active_slots.items():
+        if slot.state.goal:
+            tasks = [(t.id, t.description[:60], t.status) for t in slot.state.tasks]
+            print(f"  [{sname}] phase={slot.state.phase} tasks={tasks}")
     
     time.sleep(1)
 

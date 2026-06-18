@@ -36,6 +36,7 @@ class SlotState:
     diagnosis: str = ""
     last_action_error: str = ""
     reasoning_history: list[dict[str, str]] = field(default_factory=list)
+    _last_actions: list = field(default_factory=list)
 
 
 def run_script(code: str, workspace: Path, timeout: int = 60) -> tuple[bool, str]:
@@ -130,6 +131,8 @@ class Circuit:
         except (json.JSONDecodeError, KeyError, TypeError):
             return {"event": f"{self.name}_error", "error": "parse_failed"}
 
+        if self.name == "unified":
+            return self._interpret_unified(data, result, state, bus)
         if self.name == "planner":
             return self._interpret_plan(data, state, bus)
         if self.name == "actor":
@@ -141,6 +144,30 @@ class Circuit:
         if self.name == "mutator":
             return self._interpret_mutate(data, result, state, bus)
         return {"event": f"{self.name}_error"}
+
+    def _interpret_unified(self, data: dict, result: LLMResult, state: SlotState, bus: Bus) -> dict[str, Any]:
+        """Unified agent: simple observe→act loop without task management."""
+        reasoning_entry = {"reasoning": result.reasoning[:2000], "outcome": ""}
+        conclusion = str(data.get("conclusion", "EXECUTE"))
+        if conclusion == "DONE":
+            reasoning_entry["outcome"] = "goal complete"
+            state.reasoning_history.append(reasoning_entry)
+            return {"event": "goal_complete", "conclusion": "DONE"}
+        if conclusion == "CANNOT":
+            reasoning_entry["outcome"] = "cannot"
+            state.reasoning_history.append(reasoning_entry)
+            return {"event": "unified_cannot", "conclusion": "CANNOT"}
+        # EXECUTE — check for repeat
+        actions = data.get("actions", [])
+        if state.reasoning_history and actions:
+            last = state.reasoning_history[-1]
+            if "OK" in last.get("outcome", "") and actions == state._last_actions:
+                # Inject hint into reasoning history
+                state.reasoning_history.append({"reasoning": "", "outcome": "SYSTEM: repeated action — move to next step"})
+        state._last_actions = actions
+        bus.publish("action", "unified", state.active_task_id or "", data)
+        return {"event": "unified_acted", "conclusion": "EXECUTE",
+                "actions": actions, "reasoning_entry": reasoning_entry}
 
     def _interpret_plan(self, data: dict, state: SlotState, bus: Bus) -> dict[str, Any]:
         raw = data.get("tasks", [])
@@ -182,10 +209,32 @@ class Circuit:
             reasoning_entry["outcome"] = "cannot"
             state.reasoning_history.append(reasoning_entry)
             return {"event": "execute_cannot", "conclusion": "CANNOT", "next": "planner"}
-        # EXECUTE — actions for TUI to run, then re-run actor for next observation
+        # EXECUTE — check for repeat: if last reasoning shows same action succeeded, auto-advance
+        actions = data.get("actions", [])
+        if state.reasoning_history and actions:
+            last = state.reasoning_history[-1]
+            last_outcome = last.get("outcome", "")
+            if "OK" in last_outcome and actions == state._last_actions:
+                # Same action repeated after success — task is done, skip verifier
+                task.status = "verified_done"
+                state.fissions += 1
+                reasoning_entry["outcome"] = "auto-advanced (repeated successful action)"
+                state.reasoning_history.append(reasoning_entry)
+                state.history.append({"verified": task.description, "verdict": "auto"})
+                state.active_task_id = ""
+                state._last_actions = []
+                # Advance to next task or re-plan
+                next_task = next((t for t in state.tasks if t.status == "proposed"), None)
+                if next_task:
+                    next_task.status = "active"
+                    state.active_task_id = next_task.id
+                    state.reasoning_history = []
+                    return {"event": "verify_done_advance", "conclusion": "DONE", "next": "actor"}
+                return {"event": "verify_done", "conclusion": "DONE", "next": "planner"}
+        state._last_actions = actions
         bus.publish("action", "actor", task.id, data)
         return {"event": "execute_acted", "conclusion": "EXECUTE",
-                "actions": data.get("actions", []), "reasoning_entry": reasoning_entry}
+                "actions": actions, "reasoning_entry": reasoning_entry}
 
     def _interpret_verdict(self, data: dict, state: SlotState, bus: Bus) -> dict[str, Any]:
         task = next((t for t in state.tasks if t.status == "claimed_done"), None)
@@ -200,6 +249,12 @@ class Circuit:
             state.active_task_id = ""
             state.history.append({"verified": task.description, "verdict": "DONE"})
             state.reasoning_history = []
+            # Auto-advance to next proposed task if one exists
+            next_task = next((t for t in state.tasks if t.status == "proposed"), None)
+            if next_task:
+                next_task.status = "active"
+                state.active_task_id = next_task.id
+                return {"event": "verify_done_advance", "verdict": "DONE", "next": "actor"}
             return {"event": "verify_done", "verdict": "DONE", "next": "planner"}
         if verdict == "NOT_DONE":
             task.status = "active"
@@ -244,6 +299,7 @@ class Slot:
         self._max_attempts = wiring["limits"]["max_attempts"]
         self._bus_throttle = wiring["limits"]["bus_check_throttle_s"]
         self._last_bus_check: float = 0
+        self._mode = wiring["slots"].get(name, {}).get("mode", "planner")
         self.circuits: dict[str, Circuit] = {
             n: Circuit(n, wiring, prompts_dir, workspace) for n in wiring["circuits"]
         }
@@ -254,8 +310,9 @@ class Slot:
         self.state.active_task_id = ""
         self.state.history = []
         self.state.diagnosis = ""
-        self.state.phase = "planner"
+        self.state.phase = self._mode  # "unified" or "planner"
         self.state.reasoning_history = []
+        self.state._last_actions = []
 
     def check_bus(self) -> bool:
         now = time.time()

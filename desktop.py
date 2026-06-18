@@ -688,7 +688,7 @@ def _classify(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     break
         if enabled and role in WRITABLE_ROLES and not readonly and not inside_tab:
             action = "write"
-        elif enabled and n.get("has_text_pattern") and not inside_tab:
+        elif enabled and n.get("has_text_pattern") and not readonly and not inside_tab and role in ("Edit", "ComboBox", "Document"):
             action = "write"
         elif enabled and role in CLICKABLE_ROLES:
             action = "click"
