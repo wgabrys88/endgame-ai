@@ -14,6 +14,12 @@ from urllib.request import Request, urlopen
 _log = logging.getLogger("endgame.llm")
 
 _THINK_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL | re.IGNORECASE)
+_JSON_STR_RE = re.compile(r'"((?:[^"\\]|\\.)*)"')
+
+
+def _format_log(obj: Any) -> str:
+    s = json.dumps(obj, indent=2, ensure_ascii=False)
+    return _JSON_STR_RE.sub(lambda m: json.loads(m.group(0)), s)
 
 
 @dataclass(frozen=True)
@@ -60,7 +66,7 @@ class LLMClient:
         if self._schema:
             pass  # no schema enforcement — model outputs JSON naturally
         payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
-        _log.debug(">>> REQUEST\n%s", json.dumps(body, indent=2, ensure_ascii=False))
+        _log.debug(_format_log(body))
         for attempt in range(3):
             try:
                 with self._gate:
@@ -69,7 +75,7 @@ class LLMClient:
                                   headers={"Content-Type": "application/json"}, method="POST")
                     with urlopen(req, timeout=self._timeout) as resp:
                         raw_bytes = resp.read()
-                _log.debug("<<< RESPONSE [%.1fs]\n%s", time.time() - _t0, raw_bytes.decode("utf-8", errors="replace"))
+                _log.debug(_format_log(json.loads(raw_bytes.decode("utf-8"))))
                 result = json.loads(raw_bytes.decode("utf-8"))
                 choices = result.get("choices", [])
                 if choices:
