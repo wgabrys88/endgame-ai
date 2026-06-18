@@ -131,10 +131,19 @@ class Circuit:
         return self._interpret(result, state, bus)
 
     def _interpret(self, result: LLMResult, state: SlotState, bus: Bus) -> dict[str, Any]:
+        text = result.text.strip()
+        # Try direct parse first
+        record = None
         try:
-            record = json.loads(result.text)
+            record = json.loads(text)
+        except (json.JSONDecodeError, TypeError):
+            # Fallback: find JSON object in mixed text output
+            record = self._extract_json(text)
+        if not record:
+            return {"event": f"{self.name}_error", "error": "parse_failed"}
+        try:
             rtype, data = str(record["record_type"]), record["data"]
-        except (json.JSONDecodeError, KeyError, TypeError):
+        except (KeyError, TypeError):
             return {"event": f"{self.name}_error", "error": "parse_failed"}
 
         if self.name == "unified":
@@ -150,6 +159,24 @@ class Circuit:
         if self.name == "mutator":
             return self._interpret_mutate(data, result, state, bus)
         return {"event": f"{self.name}_error"}
+
+    @staticmethod
+    def _extract_json(text: str) -> dict | None:
+        """Find first valid JSON object in text with balanced braces."""
+        for i in range(len(text)):
+            if text[i] == '{':
+                depth = 0
+                for j in range(i, len(text)):
+                    if text[j] == '{':
+                        depth += 1
+                    elif text[j] == '}':
+                        depth -= 1
+                    if depth == 0:
+                        try:
+                            return json.loads(text[i:j+1])
+                        except json.JSONDecodeError:
+                            break
+        return None
 
     def _interpret_unified(self, data: dict, result: LLMResult, state: SlotState, bus: Bus) -> dict[str, Any]:
         """Unified agent: simple observe→act loop without task management."""

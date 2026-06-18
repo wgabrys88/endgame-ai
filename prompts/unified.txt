@@ -45,7 +45,8 @@ RULES:
 - If goal is complete → conclusion "DONE"
 - If truly stuck → conclusion "CANNOT"
 
-OUTPUT (JSON only):
+OUTPUT — respond with ONLY this JSON, no other text before or after:
 {"record_type":"action","data":{"conclusion":"EXECUTE","actions":[{"verb":"...","target":"...","value":"..."}]}}
 
 conclusion: EXECUTE (do the action) | DONE (goal achieved) | CANNOT (impossible)
+IMPORTANT: Start your response with { — no explanations, no thinking, just JSON.

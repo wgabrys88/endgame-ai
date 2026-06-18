@@ -62,10 +62,30 @@ for cycle in range(15):
         record = json.loads(result.text)
         data = record["data"]
     except (json.JSONDecodeError, KeyError, TypeError) as e:
-        print(f"  ✗ Parse error ({elapsed:.1f}s): {e}")
-        print(f"  Raw: {result.text[:200]}")
-        reasoning_history.append(f"parse error → {result.text[:100]}")
-        continue
+        # Fallback: extract JSON from mixed text
+        extracted = None
+        text = result.text.strip()
+        for i in range(len(text)):
+            if text[i] == '{':
+                depth = 0
+                for j in range(i, len(text)):
+                    if text[j] == '{': depth += 1
+                    elif text[j] == '}': depth -= 1
+                    if depth == 0:
+                        try:
+                            extracted = json.loads(text[i:j+1])
+                        except json.JSONDecodeError:
+                            pass
+                        break
+                if extracted:
+                    break
+        if extracted and "data" in extracted:
+            data = extracted["data"]
+        else:
+            print(f"  ✗ Parse error ({elapsed:.1f}s): {e}")
+            print(f"  Raw: {result.text[:200]}")
+            reasoning_history.append(f"parse error → {result.text[:100]}")
+            continue
     
     conclusion = str(data.get("conclusion", "EXECUTE"))
     actions_list = data.get("actions", [])
