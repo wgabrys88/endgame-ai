@@ -192,7 +192,7 @@ class TUI:
         start = max(0, end - log_space)
         visible = self._log[start:end] if end > 0 else []
         for entry in visible:
-            lines.append(f"  {entry[:w - 4]}")
+            lines.append(f"  {entry}")
         while len(lines) < h - 2:
             lines.append("")
         # Input line

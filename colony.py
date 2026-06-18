@@ -38,8 +38,8 @@ class CommsOperator:
             parsed = json.loads(result.text)
         except (json.JSONDecodeError, TypeError):
             parsed = {}
-        data = parsed.get("data", parsed)
-        routes = data.get("routes", [])
+        data = parsed.get("data", parsed) if isinstance(parsed, dict) else {}
+        routes = data.get("routes", []) if isinstance(data, dict) else []
         if not isinstance(routes, list) or not routes:
             self._bus.publish("route", "comms_operator", "",
                              {"to": "implementor", "goal": goal, "status": "open", "seq": 1})

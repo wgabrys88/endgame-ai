@@ -46,11 +46,11 @@ def run_script(code: str, workspace: Path, timeout: int = 60) -> tuple[bool, str
         proc = subprocess.run([sys.executable, "-c", code], **kwargs)
         output = (proc.stdout or "").strip()
         error = (proc.stderr or "").strip()
-        return proc.returncode == 0, (output or error or f"exit {proc.returncode}")[:1000]
+        return proc.returncode == 0, (output or error or f"exit {proc.returncode}")
     except subprocess.TimeoutExpired:
         return False, "timeout"
     except Exception as e:
-        return False, str(e)[:500]
+        return False, str(e)
 
 
 class Circuit:
@@ -80,7 +80,7 @@ class Circuit:
         if name == "goal":
             return state.goal
         if name == "screen":
-            return state.screen[:8000] if state.screen else ""
+            return state.screen if state.screen else ""
         if name == "task":
             return task.description if task else ""
         if name == "contract":
@@ -94,11 +94,11 @@ class Circuit:
             if not state.reasoning_history:
                 return ""
             entries = state.reasoning_history[-self._reasoning_depth:]
-            return "\n".join(f"[attempt] {e.get('reasoning','')[:1500]} → {e.get('outcome','')[:500]}" for e in entries)
+            return "\n".join(f"[attempt] {e.get('reasoning','')} → {e.get('outcome','')}" for e in entries)
         if name == "history":
             if not state.history:
                 return ""
-            return "\n".join(f"  {json.dumps(h, ensure_ascii=False)[:1000]}" for h in state.history[-6:])
+            return "\n".join(f"  {json.dumps(h, ensure_ascii=False)}" for h in state.history[-6:])
         if name == "bus_context":
             return bus.format_context(limit=6)
         if name == "evidence":
