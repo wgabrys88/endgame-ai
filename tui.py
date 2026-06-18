@@ -25,6 +25,9 @@ logging.basicConfig(filename=str(_LOGS_DIR / f"{datetime.now():%Y%m%d_%H%M%S}.tx
                     level=logging.DEBUG, format="%(asctime)s %(message)s")
 
 
+_file_log = logging.getLogger("endgame")
+
+
 def _load_wiring() -> dict[str, Any]:
     path = PROMPTS_DIR / "wiring.json"
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
@@ -94,6 +97,7 @@ class TUI:
         for line in content.split("\n"):
             self._log_line(f"  {line}")
         self._log_line("")
+        _file_log.debug("%s\n%s", title, content)
 
     def _observe(self):
         if not self._desktop:
