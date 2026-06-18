@@ -60,7 +60,7 @@ class LLMClient:
         if self._schema:
             pass  # no schema enforcement — model outputs JSON naturally
         payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
-        _log.debug(">>> REQUEST\n%s", json.dumps(body, indent=2, ensure_ascii=False))
+        _log.debug(">>> REQUEST\n%s", json.dumps(body, indent=2, ensure_ascii=False).replace("\\n", "\n"))
         for attempt in range(3):
             try:
                 with self._gate:
@@ -69,7 +69,7 @@ class LLMClient:
                                   headers={"Content-Type": "application/json"}, method="POST")
                     with urlopen(req, timeout=self._timeout) as resp:
                         raw_bytes = resp.read()
-                _log.debug("<<< RESPONSE [%.1fs]\n%s", time.time() - _t0, raw_bytes.decode("utf-8", errors="replace"))
+                _log.debug("<<< RESPONSE [%.1fs]\n%s", time.time() - _t0, raw_bytes.decode("utf-8", errors="replace").replace("\\n", "\n"))
                 result = json.loads(raw_bytes.decode("utf-8"))
                 choices = result.get("choices", [])
                 if choices:
