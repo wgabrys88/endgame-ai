@@ -172,8 +172,8 @@ class TUI:
                 self._execute_actions(name, actions, result.get("reasoning_entry"))
 
     def _render(self) -> str:
-        RST, BOLD, DIM, GREEN, CYAN, YEL = (
-            "\x1b[0m", "\x1b[1m", "\x1b[2m", "\x1b[32m", "\x1b[36m", "\x1b[33m")
+        RST, BOLD, DIM, GREEN, CYAN, YEL, RED = (
+            "\x1b[0m", "\x1b[1m", "\x1b[2m", "\x1b[32m", "\x1b[36m", "\x1b[33m", "\x1b[31m")
         w, h = self._w, self._h
         lines: list[str] = []
         elapsed = time.time() - self._start
@@ -268,6 +268,10 @@ class TUI:
                 if msvcrt.kbhit():
                     self._handle_key(msvcrt.getwch())
                 self._drain_results()
+                # Detect resize
+                nw, nh = _console_size(k32, hout)
+                if nw != self._w or nh != self._h:
+                    self._w, self._h = nw, nh
                 _w(self._render())
                 time.sleep(0.1)
         except KeyboardInterrupt:
