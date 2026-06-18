@@ -63,12 +63,16 @@ class ActionExecutor:
         if verb == "press":
             key = str(args.get(cfg["key_field"], ""))
             if not key:
+                key = str(args.get("value", ""))
+            if not key:
                 return ActionResult(verb, False, "no key")
             self._desktop.press_key(key)
             return ActionResult(verb, True, f"pressed {key}")
 
         if verb == "hotkey":
             raw = str(args.get(cfg["key_field"], ""))
+            if not raw:
+                raw = str(args.get("value", ""))
             keys = [k.strip() for k in raw.replace("+", ",").split(",") if k.strip()]
             if not keys:
                 return ActionResult(verb, False, f"no keys (field '{cfg['key_field']}' was empty)")
