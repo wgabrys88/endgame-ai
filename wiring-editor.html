@@ -8,7 +8,7 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html, body, #root { width: 100vw; height: 100vh; overflow: hidden; }
 body { font-family: system-ui, -apple-system, sans-serif; background: #0a0a0f; color: #e0e0e0; }
-.app { display: grid; grid-template-columns: 1fr 340px; grid-template-rows: 40px 1fr 180px; height: 100vh; width: 100vw; }
+.app { display: grid; grid-template-columns: 1fr 340px; grid-template-rows: 0px 1fr 180px; height: 100vh; width: 100vw; }
 .toolbar { grid-column: 1/-1; display: flex; align-items: center; gap: 8px; padding: 0 12px; background: #0f172a; border-bottom: 1px solid #1e293b; }
 .toolbar h1 { font-size: 13px; color: #06b6d4; white-space: nowrap; }
 .toolbar .sep { width: 1px; height: 20px; background: #1e293b; }
@@ -90,6 +90,89 @@ body { font-family: system-ui, -apple-system, sans-serif; background: #0a0a0f; c
 <script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
 </head>
 <body>
+<!-- Native toolbar for UIA/accessibility (outside React) -->
+<nav id="native-toolbar" role="toolbar" aria-label="Controls" style="position:fixed;top:0;left:0;right:0;height:36px;z-index:9999;display:flex;align-items:center;gap:6px;padding:0 10px;background:#0f172a;border-bottom:1px solid #1e293b;font:11px system-ui;color:#cbd5e1;">
+  <span style="color:#06b6d4;font-weight:700;font-size:12px;">⚡ endgame-ai</span>
+  <button aria-label="Load Wiring" onclick="document.getElementById('file-wiring').click()">📂 Wiring</button>
+  <button aria-label="Save Wiring" id="btn-save">💾 Save</button>
+  <button aria-label="Layout" id="btn-layout">⟳ Layout</button>
+  <button aria-label="Run" id="btn-run">🚀 Run</button>
+  <button aria-label="Step" id="btn-step">⏩ Step</button>
+  <button aria-label="Stop" id="btn-stop">⏹ Stop</button>
+  <button aria-label="Interrupt" id="btn-interrupt">⚡ Interrupt</button>
+  <button aria-label="Auto" id="btn-auto">🤖 Auto</button>
+  <span id="native-status" role="status" aria-live="polite" aria-label="Status" style="margin-left:auto;font-size:10px;color:#64748b;">Ready</span>
+</nav>
+<style>#native-toolbar button{padding:3px 8px;border:1px solid #1e293b;border-radius:4px;background:#0f172a;color:#cbd5e1;cursor:pointer;font-size:11px}#native-toolbar button:hover{border-color:#06b6d4;color:#06b6d4}#root{margin-top:36px;height:calc(100vh - 36px)}</style>
+<script>
+(function(){
+  const S = 'http://127.0.0.1:9077';
+  const st = document.getElementById('native-status');
+  function setS(t){ st.textContent = t; }
+  
+  let state = null;
+  let nodeId = 'goal_inbox';
+  let running = false;
+  let topo = null;
+  
+  function getType(id){ return (topo.nodes.find(n=>n.id===id)||{}).type||id; }
+  function getNext(fromId, sig){ const e=topo.edges.find(e=>e.from===fromId&&e.on===sig); return e?e.to:null; }
+  
+  async function step(){
+    if(!topo){ setS('No wiring loaded'); return; }
+    if(!state){
+      const g = prompt('Goal:');
+      if(!g) return;
+      state = {goal:g, step:0, retries:0, history:[], bus_last_check:0, no_desktop:true, screen:''};
+      nodeId = 'goal_inbox';
+    }
+    const type = getType(nodeId);
+    setS('\u23f3 ' + nodeId + ' (' + type + ')...');
+    try{
+      const r = await fetch(S+'/node/'+type, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({state:state})});
+      const d = await r.json();
+      Object.assign(state, d.state_patch||{});
+      const sig = (d.signals||[])[0]||'';
+      const next = getNext(nodeId, sig);
+      setS('\u2713 '+nodeId+' \u2192 '+sig+(next?' \u2192 '+next:' (end)'));
+      if(next) nodeId = next;
+    }catch(e){ setS('\u2717 '+e.message); }
+  }
+  
+  async function run(){
+    if(!topo){ setS('No wiring loaded'); return; }
+    if(!state){
+      const g = prompt('Goal:');
+      if(!g) return;
+      state = {goal:g, step:0, retries:0, history:[], bus_last_check:0, no_desktop:true, screen:''};
+      nodeId = 'goal_inbox';
+    }
+    running = true;
+    while(running && nodeId !== 'satisfied'){
+      await step();
+      await new Promise(r=>setTimeout(r,200));
+    }
+    running = false;
+  }
+  
+  document.getElementById('btn-step').onclick = step;
+  document.getElementById('btn-run').onclick = run;
+  document.getElementById('btn-stop').onclick = ()=>{ running=false; setS('Stopped'); };
+  document.getElementById('btn-interrupt').onclick = ()=>{
+    const g = prompt('New goal:');
+    if(g) fetch(S+'/interrupt',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({goal:g})});
+  };
+  document.getElementById('btn-auto').onclick = ()=>{
+    const g = prompt('Autonomous goal:');
+    if(g){ fetch(S+'/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({goal:g})}); setS('Auto: '+g); }
+  };
+  
+  fetch(S+'/wiring').then(r=>r.json()).then(w=>{
+    topo = w.topology;
+    setS('Connected: '+topo.nodes.length+' nodes, '+topo.edges.length+' edges');
+  }).catch(()=>setS('Server offline'));
+})();
+</script>
 <div id="root"></div>
 <input type="file" id="file-wiring" accept=".json" style="display:none">
 <input type="file" id="file-log" accept=".txt,.log" style="display:none">
@@ -269,6 +352,7 @@ function App() {
     es.onerror = () => {};
     return () => es.close();
   }, []);
+
 
   const loadWiring = () => {
     const el = document.getElementById('file-wiring');
@@ -521,23 +605,23 @@ function App() {
 
   return (
     <div className="app">
-      <div className="toolbar">
+      <div className="toolbar" style={{display:"none"}}>
         <h1>⚡ endgame-ai wiring</h1>
         <div className="sep"/>
-        <button onClick={loadWiring}>📂 Wiring</button>
-        <button onClick={loadLog}>📋 Log</button>
-        <button onClick={saveWiring}>💾 Save</button>
+        <button aria-label="Load Wiring" onClick={loadWiring}>📂 Wiring</button>
+        <button aria-label="Load Log" onClick={loadLog}>📋 Log</button>
+        <button aria-label="Save Wiring" onClick={saveWiring}>💾 Save</button>
         <div className="sep"/>
-        <button onClick={addNode}>+ Node</button>
-        <button onClick={doLayout}>⟳ Layout</button>
+        <button aria-label="Add Node" onClick={addNode}>+ Node</button>
+        <button aria-label="Layout" onClick={doLayout}>⟳ Layout</button>
         <div className="sep"/>
-        <button onClick={runLive} className={liveRunning?'active':''}>🚀 Run</button>
-        <button onClick={stepManual}>⏩ Step</button>
-        <button onClick={stopLive}>⏹ Stop</button>
-        <button onClick={() => { const g = prompt("Interrupt with new goal:"); if(g) fetch(`${SERVER}/interrupt`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({goal:g})}); }}>⚡ Interrupt</button>
-        <button onClick={() => { const g = prompt("Autonomous goal:"); if(g) fetch(`${SERVER}/run`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({goal:g})}); setStatus("Autonomous: "+g); }}>🤖 Auto</button>
+        <button aria-label="Run" onClick={runLive} className={liveRunning?'active':''}>🚀 Run</button>
+        <button aria-label="Step" onClick={stepManual}>⏩ Step</button>
+        <button aria-label="Stop" onClick={stopLive}>⏹ Stop</button>
+        <button aria-label="Interrupt" onClick={() => { const g = prompt("Interrupt with new goal:"); if(g) fetch(`${SERVER}/interrupt`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({goal:g})}); }}>⚡ Interrupt</button>
+        <button aria-label="Auto" onClick={() => { const g = prompt("Autonomous goal:"); if(g) fetch(`${SERVER}/run`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({goal:g})}); setStatus("Autonomous: "+g); }}>🤖 Auto</button>
         <div className="spacer"/>
-        <span className="status">{status}</span>
+        <span className="status" role="status" aria-live="polite" aria-label="Status">{status}</span>
       </div>
 
       <div className="canvas">
@@ -571,7 +655,7 @@ function App() {
           <div className="section">
             <h3>🧪 Mock Inject</h3>
             <label>Screen Override</label>
-            <textarea id="mock-screen" rows="4" style={{width:'100%',background:'#1a1a2e',border:'1px solid #1e293b',borderRadius:4,color:'#e2e8f0',fontSize:10,padding:6,resize:'vertical'}}
+            <textarea aria-label="Mock Screen" id="mock-screen" rows="4" style={{width:'100%',background:'#1a1a2e',border:'1px solid #1e293b',borderRadius:4,color:'#e2e8f0',fontSize:10,padding:6,resize:'vertical'}}
               placeholder="(empty = real observe_screen)"
               defaultValue={liveState.screen||''}
             />
@@ -593,11 +677,11 @@ function App() {
               onClick={() => {
                 const s = document.getElementById('mock-screen').value;
                 if (s) { setLiveState(st => ({...st, screen: s, no_desktop: true})); liveStateRef.current = {...liveStateRef.current, screen: s, no_desktop: true}; setStatus('Mock screen injected'); }
-              }}>💉 Inject Screen</button>
+              }} aria-label="Inject Screen">💉 Inject Screen</button>
           </div>
           <div className="section">
             <h3>📝 State Editor</h3>
-            <textarea id="state-editor" rows="6" style={{width:'100%',background:'#1a1a2e',border:'1px solid #1e293b',borderRadius:4,color:'#e2e8f0',fontSize:9,padding:6,fontFamily:'monospace',resize:'vertical'}}
+            <textarea aria-label="State Editor" id="state-editor" rows="6" style={{width:'100%',background:'#1a1a2e',border:'1px solid #1e293b',borderRadius:4,color:'#e2e8f0',fontSize:9,padding:6,fontFamily:'monospace',resize:'vertical'}}
               key={JSON.stringify(liveState).length} defaultValue={JSON.stringify(liveState, null, 1)}
             />
             <button style={{marginTop:4,width:'100%',padding:'5px',border:'1px solid #f59e0b',borderRadius:4,background:'#0f172a',color:'#f59e0b',cursor:'pointer',fontSize:11}}
@@ -605,7 +689,7 @@ function App() {
                 const el = document.getElementById('state-editor');
                 try { const s = JSON.parse(el.value); setLiveState(s); liveStateRef.current = s; setStatus('State applied'); }
                 catch(e) { alert('Invalid JSON: '+e.message); }
-              }}>⚡ Apply State</button>
+              }} aria-label="Apply State">⚡ Apply State</button>
           </div>
         </>) : cycle ? (<>
           <div className="section">
