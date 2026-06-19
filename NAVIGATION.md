@@ -140,3 +140,33 @@ This is acceptable for autonomous operation but means:
 - Observe is instant (UIA capture)
 
 For faster iteration during development, use `--no-desktop` mode with mock screen data.
+
+---
+
+## Chrome UIA Accessibility (discovered 2026-06-20)
+
+### Problem
+Chrome does NOT expose page content (buttons, inputs, text) via Windows UIA by default.
+Even with `--force-renderer-accessibility`, React/JSX dynamic DOM is invisible.
+
+### Solution
+1. Launch Chrome with `--force-renderer-accessibility` (keeps default profile)
+2. Add native HTML elements OUTSIDE the React root (`<nav>`, `<button>`, `<span>`)
+3. Use `aria-label` on every interactive element
+4. Use `role="toolbar"`, `role="status"`, `aria-live="polite"`
+
+### What Works
+- Native `<button aria-label="Step">` → visible as `Button "Step"` in UIA
+- Native `<span role="status">` → visible as `StatusBar "Status"` with text content
+- Chrome's `prompt()` dialog → visible as `Window "127.0.0.1:9077 says"` with `Edit "Goal:"` + `Button "OK"`
+
+### What Does NOT Work
+- React-rendered buttons (even with aria-label in JSX)
+- SVG/Canvas elements (React Flow graph nodes)
+- Dynamic DOM content inside `<div id="root">`
+
+### Chrome Launch (preserves default profile)
+```
+"C:\Program Files\Google\Chrome\Application\chrome.exe" --force-renderer-accessibility
+```
+No --user-data-dir needed when using default profile.

@@ -42,12 +42,24 @@
 - [x] Mock testing: browser injects screen presets + steps with real LLM
 - [x] Self-awareness: system verifies it reached its own URL
 
-## What Remains: Windows-Only
+## What Remains
 
-1. Real observe_screen() with UIA data
-2. Real execute_verb() with actual keystrokes
-3. Full autonomous run (no mock screens)
-4. Self-modification under genuine stuck conditions
+1. Full autonomous `--run` loop (all steps without manual Step clicks)
+2. Self-modification under genuine stuck conditions
+3. Real desktop actions (not no_desktop mode) in full graph run
+4. Colony testing: multiple rods sharing bus
+5. UIA self-test: run the complete goal cycle via UI clicks only
+
+## Completed
+
+- [x] Real Windows execution: observe+act+verify with real desktop
+- [x] UIA self-test: system clicks its own Step button, types goal, reads status
+- [x] Chrome accessibility: native toolbar visible to UIA
+- [x] Mock testing panel with screen presets
+- [x] Self-modification (LLM rewrites wiring.json)
+- [x] Hot-reload (POST /wiring)
+- [x] Wiring backup before mutation
+- [x] All node handlers working with real LLM
 7. Test colony: `python reactor.py --goal "open chrome"`
 
 ## Architecture Decisions (final)

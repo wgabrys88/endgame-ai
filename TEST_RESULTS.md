@@ -170,3 +170,27 @@ The system:
 5. The screen now shows its own topology graph being rendered
 
 **Vision confirmed: self-aware system observing and modifying its own behavior on real Windows.**
+
+## UI SELF-TEST (2026-06-20 00:10)
+
+### Setup
+- Chrome with `--force-renderer-accessibility` (default profile)
+- Native HTML toolbar with aria-labels (outside React root)
+- Windows Python 3.13.7 with ctypes/UIA access
+
+### Results
+
+| Step | Action | UIA Element | Result |
+|------|--------|-------------|--------|
+| 1 | observe | StatusBar "Status" | "Connected: 11 nodes, 17 edges" |
+| 2 | click | Button "Step" | Chrome prompt dialog appears |
+| 3 | observe | Edit "Goal:" | Dialog visible with OK/Cancel |
+| 4 | write | Edit "Goal:" | Typed "open notepad" |
+| 5 | click | Button "OK" | Goal submitted to server |
+| 6 | observe | StatusBar text | "✓ goal_inbox → ready → planner" |
+| 7 | click | Button "Step" | Planner fires (calls LLM) |
+| 8 | observe (wait 45s) | StatusBar text | "✓ planner → plan_ready → scheduler" |
+
+### Key Technical Discovery
+Chrome UIA only exposes native HTML elements, not React/JSX.
+Solution: `<nav>` toolbar outside `<div id="root">` with `aria-label` attributes.

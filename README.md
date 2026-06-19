@@ -81,19 +81,36 @@ bus_check → interrupt → planner (new goal replaces current plan)
 ## Files
 
 ```
-server.py              521 LOC — node handlers + graph engine + HTTP/SSE
+server.py              599 LOC — node handlers + graph engine + HTTP/SSE
 reactor.py             153 LOC — colony supervisor (spawn/monitor/respawn rods)
 actions.py             138 LOC — desktop verb executor (click/write/press/hotkey/scroll/focus)
 desktop.py             824 LOC — Windows UIA wrapper (ctypes, no pip)
-wiring-editor.html     626 LOC — React Flow visual editor + SSE live observation
+wiring-editor.html     738 LOC — React Flow editor + native UIA toolbar + mock panel
 
 prompts/
-  wiring.json          87 LOC — THE TOPOLOGY (10 nodes, 14 edges, guards, limits)
+  wiring.json          87 LOC — THE TOPOLOGY (11 nodes, 17 edges, guards, limits)
   unified.txt          — executor system prompt
   planner.txt          — planning system prompt
   verifier.txt         — verification system prompt
   reflector.txt        — diagnosis system prompt
   manager.txt          — peer orchestration prompt (swap)
+  model.json           — LM Studio endpoint config (max_tokens: 2048)
+  personalities/       — executor/reviewer/comms_operator personas
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
   model.json           — LM Studio endpoint config
   schema.json          — response format reference
   personalities/
@@ -103,21 +120,27 @@ prompts/
 ```
 
 
-## Mock Testing (no Windows required)
+## Testing
 
-The browser dashboard includes a built-in mock testing panel:
+### UIA Self-Test (real Windows, Chrome with --force-renderer-accessibility)
 
-1. Open http://127.0.0.1:9077
-2. Click ⏩ Step → enter a goal
-3. In the sidebar: 🧪 Mock Inject section appears
-4. Click a Screen Preset (Desktop, Run, Chrome, Notepad, etc.)
-5. Click 💉 Inject Screen → state gets the mock screen + no_desktop flag
-6. Click ⏩ Step again → the node executes with your mock screen
-7. After each step, inject a NEW preset simulating what changed
+The native HTML toolbar exposes all buttons to Windows UIA.
+The system can observe its own dashboard and click UI elements autonomously:
 
-This lets you test the full plan→act→verify loop with real LLM decisions
-but fake desktop observations — proving the logic works without Windows.
+```
+observe_screen() → sees Button "Step", StatusBar "Connected: 11 nodes"
+execute_verb("click", "Step") → Chrome prompt dialog appears
+observe_screen() → sees Edit "Goal:" + Button "OK"
+execute_verb("write", "Goal:", "open notepad") → types goal
+execute_verb("click", "OK") → fires goal_inbox node
+observe_screen() → reads "✓ goal_inbox → ready → planner"
+```
 
+### Mock Testing (no Windows required)
+
+The sidebar has a 🧪 Mock Inject panel with screen presets (Desktop, Run, Chrome, Notepad).
+Inject a fake screen → click Step → node executes with mock data + real LLM.
+The 📝 State Editor lets you edit raw JSON state between steps.
 The 📝 State Editor shows raw JSON state. Edit it directly to test
 specific scenarios (set retries=5, inject history, force escalation, etc.).
 ## How to Extend (no code changes needed for most)
