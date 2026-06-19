@@ -20,3 +20,4 @@ wiring.py
 smoke.py
 bus.py
 llm.py
+prompts/wiring.mmd
