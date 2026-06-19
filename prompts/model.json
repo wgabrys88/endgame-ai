@@ -4,7 +4,7 @@
   "temperature": 0.3,
   "top_p": 0.9,
   "top_k": 20,
-  "max_tokens": 4096,
+  "max_tokens": 16384,
   "stream": false,
   "stop": [],
   "presence_penalty": 0.0,

@@ -75,15 +75,14 @@ class LLMClient:
                 if choices:
                     msg = choices[0].get("message", {})
                     content = str(msg.get("content", ""))
-                    # LM Studio exposes reasoning_content for thinking models (gemma-4, etc.)
+                    # LM Studio: reasoning_content = thinking channel (nemotron, etc.)
                     reasoning = str(msg.get("reasoning_content", ""))
-                    # Fallback: if content is empty but reasoning has the answer, use it
+                    # <think> tags in content when reasoning_content absent
+                    if not reasoning and content:
+                        content, reasoning = self._extract_thinking(content)
+                    # Answer may land in reasoning when content empty — keep BOTH for feedback loop
                     if not content.strip() and reasoning.strip():
                         content = reasoning
-                        reasoning = ""
-                    # Fallback: extract <think> tags if reasoning_content not present
-                    if not reasoning:
-                        content, reasoning = self._extract_thinking(content)
                     return LLMResult(text=content, reasoning=reasoning)
                 raise RuntimeError("no choices")
             except (HTTPError, URLError, TimeoutError, OSError) as e:

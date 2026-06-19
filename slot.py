@@ -245,7 +245,10 @@ class Circuit:
                 threshold = int(g.get("repeat_block_threshold", 2))
                 recent_blocks = sum(1 for e in state.reasoning_history[-window:]
                                     if "SYSTEM: repeated action" in e.get("outcome", ""))
-                state.reasoning_history.append({"reasoning": "", "outcome": "SYSTEM: repeated action — move to next step"})
+                state.reasoning_history.append({
+                    "reasoning": last.get("reasoning", ""),
+                    "outcome": "SYSTEM: repeated action — move to next step",
+                })
                 if recent_blocks >= threshold:
                     state.last_action_error = (
                         "Repeated action blocked — advance sequence: "

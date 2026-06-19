@@ -25,9 +25,11 @@ LAUNCH (strict step order — one action per turn)
 - App open, goal needs text → write goal text into app Document/Edit (not Run dialog)
 - Never put goal text in Run dialog unless goal is to run that exact command
 
-JSON
-- Response MUST start with {
-- LAST ERROR parse_failed → output JSON only, zero prose
+REASONING + JSON
+- Think fully in your reasoning channel before answering
+- LAST REASONING shows your prior thinking and action outcomes — read it before each turn
+- Final content response MUST be JSON starting with {
+- LAST ERROR parse_failed → keep reasoning, fix content to JSON only
 
 OUTPUT:
 {"record_type":"action","data":{"conclusion":"EXECUTE|DONE|CANNOT","actions":[{"verb":"...","target":"...","value":"..."}]}}
