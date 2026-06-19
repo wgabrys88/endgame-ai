@@ -211,6 +211,30 @@ class Circuit:
                             break
         return None
 
+    @staticmethod
+    def _advance_hint(last_action: dict, screen: str) -> str:
+        """SCREEN-aware next-step hint after a succeeded action is repeated."""
+        verb = str(last_action.get("verb", "")).lower()
+        target = str(last_action.get("target", "")).lower()
+        s = screen.lower()
+        if verb == "hotkey" and "win" in target:
+            if "run" in s or 'combo box "open' in s or "open:" in s:
+                return "NEXT REQUIRED: write APPLICATION NAME (e.g. chrome) into Run Open field — NOT hotkey again"
+            return "NEXT REQUIRED: write app name into Run Open field or focus existing window from SCREEN"
+        if verb == "write":
+            if "run" in s or 'combo box "open' in s:
+                return "NEXT REQUIRED: press enter or click OK to launch the application"
+            if "chrome" in s or "address and search" in s:
+                return "NEXT REQUIRED: press enter after URL, or write search query in address bar"
+        if verb in ("press", "click"):
+            if "run" in s:
+                return "NEXT REQUIRED: write APPLICATION NAME in Open field before pressing OK"
+            if "chrome" in s:
+                return "NEXT REQUIRED: write https://www.youtube.com or search terms in address bar"
+        if verb == "focus":
+            return "NEXT REQUIRED: open app via win+r → write app name → enter; or click element by [ID] from SCREEN"
+        return "NEXT REQUIRED: different verb+target — prior action already succeeded, read SCREEN"
+
     def _interpret_unified(self, data: dict, result: LLMResult, state: SlotState, bus: Bus) -> dict[str, Any]:
         """Unified agent: simple observe→act loop without task management."""
         reasoning_entry = {"reasoning": result.reasoning, "outcome": ""}
@@ -237,28 +261,21 @@ class Circuit:
             return {"event": "unified_cannot", "conclusion": "CANNOT"}
         # EXECUTE — block re-execution of an already-succeeded action
         actions = data.get("actions", [])
-        if state.reasoning_history and actions:
+        if state.reasoning_history and actions and state._last_actions:
             last = state.reasoning_history[-1]
-            if "OK" in last.get("outcome", "") and actions == state._last_actions:
-                g = self._guards
-                window = int(g.get("repeat_history_window", 4))
-                threshold = int(g.get("repeat_block_threshold", 2))
-                recent_blocks = sum(1 for e in state.reasoning_history[-window:]
-                                    if "SYSTEM: repeated action" in e.get("outcome", ""))
-                state.reasoning_history.append({
-                    "reasoning": last.get("reasoning", ""),
-                    "outcome": "SYSTEM: repeated action — move to next step",
-                })
-                if recent_blocks >= threshold:
-                    state.last_action_error = (
-                        "Repeated action blocked — advance sequence: "
-                        "Run open with app name → press enter or click OK; "
-                        "app open → write into its text field; stuck → press escape"
-                    )
-                    return {"event": "unified_acted", "conclusion": "EXECUTE",
-                            "actions": [], "reasoning_entry": reasoning_entry}
-                return {"event": "unified_acted", "conclusion": "EXECUTE",
-                        "actions": [], "reasoning_entry": reasoning_entry}
+            same = (len(actions) == len(state._last_actions)
+                    and all(a.get("verb") == b.get("verb") and a.get("target") == b.get("target")
+                            for a, b in zip(actions, state._last_actions)))
+            if "OK" in last.get("outcome", "") and same:
+                la = state._last_actions[0]
+                hint = self._advance_hint(la, state.screen)
+                reasoning_entry["outcome"] = f"SYSTEM: repeat blocked — {hint}"
+                state.reasoning_history.append(reasoning_entry)
+                depth = self._reasoning_depth
+                if len(state.reasoning_history) > depth:
+                    state.reasoning_history = state.reasoning_history[-depth:]
+                state.last_action_error = hint
+                return {"event": "unified_acted", "conclusion": "EXECUTE", "actions": []}
         state._last_actions = actions
         bus.publish("action", "unified", state.active_task_id or "", data)
         return {"event": "unified_acted", "conclusion": "EXECUTE",

@@ -16,7 +16,7 @@ LOOP
 ELEMENTS
 - Target [ID] or name substring from SCREEN
 - LAST REASONING action OK → next step, never repeat same verb+target
-- LAST ERROR or "SYSTEM: repeated action" → change strategy
+- LAST ERROR says NEXT REQUIRED → output exactly that action, not the prior verb
 
 LAUNCH (strict step order — one action per turn)
 - App already on SCREEN → focus it, interact inside it
