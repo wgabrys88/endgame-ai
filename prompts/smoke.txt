@@ -1,6 +1,7 @@
-# Cognitive smoke probes — one LLM response per scenario (debug mode)
+# Cognitive smoke probes — permanent regression suite (tracked in git)
 # Run all:  python smoke.py
 # Run one:  python smoke.py --id s01
+# Report:   prompts/smoke_report.txt (full MODEL REASONING, never trimmed)
 # Each scenario uses tui.py trailing integer (default smoke.responses) to stop after N LLM replies.
 
 smoke.responses=1

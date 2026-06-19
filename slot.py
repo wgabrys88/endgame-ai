@@ -77,6 +77,15 @@ class Circuit:
         self._max_attempts = self._limits["max_attempts"]
         self._reasoning_depth = self._limits["reasoning_history_depth"]
 
+    def _goal_triggers_manager_swap(self, goal: str) -> bool:
+        goal_lower = goal.lower()
+        for swap in self._circuit_cfg.get("prompt_swap", []):
+            triggers = swap.get("when", [])
+            alt = swap.get("prompt", "")
+            if alt and triggers and any(t.lower() in goal_lower for t in triggers):
+                return True
+        return False
+
     def _resolve_prompt(self, state: SlotState) -> str:
         """Apply prompt_swap rules from wiring.txt when GOAL matches."""
         goal_lower = state.goal.lower()
@@ -103,7 +112,12 @@ class Circuit:
         if name == "goal":
             return state.goal
         if name == "screen":
-            return state.screen if state.screen else ""
+            if state.screen:
+                return state.screen
+            return (
+                "(no SCREEN captured — assume bare Windows desktop; "
+                "Run dialog not visible; no application windows open)"
+            )
         if name == "task":
             return task.description if task else ""
         if name == "contract":
@@ -142,12 +156,19 @@ class Circuit:
             return state.diagnosis
         if name == "workspace":
             role = str(self._wiring.get("instance", {}).get("role", "instance"))
-            return (
-                f"ROLE: {role}\n"
-                f"ROOT: {self._workspace}\n"
-                f"PROMPTS: {self._workspace / 'prompts'}\n"
-                f"WIRING: {self._workspace / 'prompts' / 'wiring.txt'}"
-            )
+            lines = [
+                f"ROOT: {self._workspace}",
+                f"PROMPTS: {self._workspace / 'prompts'}",
+                f"WIRING: {self._workspace / 'prompts' / 'wiring.txt'}",
+            ]
+            if self.name == "unified":
+                if self._goal_triggers_manager_swap(state.goal):
+                    lines.insert(0, f"ROLE: {role} — orchestrate peer on desktop (manager prompt active)")
+                else:
+                    lines.insert(0, "MODE: executor — act on THIS desktop yourself; do not delegate")
+            else:
+                lines.insert(0, f"ROLE: {role}")
+            return "\n".join(lines)
         return ""
 
     def run(self, state: SlotState, llm: LLMClient, bus: Bus) -> dict[str, Any]:

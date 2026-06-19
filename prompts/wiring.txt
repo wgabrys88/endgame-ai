@@ -45,6 +45,9 @@ circuits.unified.prompt_swap.1.when=peer instance
 circuits.unified.prompt_swap.1.when=manage student
 circuits.unified.prompt_swap.1.when=outer controller
 circuits.unified.prompt_swap.1.when=launch the student
+circuits.unified.prompt_swap.1.when=launch student
+circuits.unified.prompt_swap.1.when=orchestrate the student
+circuits.unified.prompt_swap.1.when=orchestrate student
 circuits.unified.prompt_swap.1.when=run and manage
 circuits.unified.prompt_swap.1.prompt=manager.txt
 

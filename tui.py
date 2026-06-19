@@ -71,6 +71,17 @@ class TUI:
         self._w = 120
         self._h = 35
 
+    def _seed_screen(self):
+        if self.desktop_enabled:
+            return
+        msg = (
+            "(desktop observation disabled — assume bare Windows desktop; "
+            "Run dialog not visible; no application windows open)"
+        )
+        for slot in self.colony.all_slots.values():
+            if slot.can_act_desktop:
+                slot.observe(msg, {})
+
     def _init_desktop(self):
         if self.desktop_enabled and self._desktop is None:
             try:
@@ -236,6 +247,7 @@ class TUI:
         k32, hout = _setup_console()
         self._w, self._h = _console_size(k32, hout)
         self._init_desktop()
+        self._seed_screen()
         # Hook LLM to show full request/response in log
         orig_call = self.colony.llm.call
         def _hooked_call(system, user, **kw):

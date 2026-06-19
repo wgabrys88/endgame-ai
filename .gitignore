@@ -7,3 +7,8 @@ test.txt
 pause
 *.log
 logs/
+
+# Cognitive smoke harness — always tracked (never ignore)
+!smoke.py
+!prompts/smoke.txt
+!prompts/smoke_report.txt
