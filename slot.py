@@ -11,6 +11,7 @@ from typing import Any
 
 from llm import LLMClient, LLMResult
 from bus import Bus
+from topology import ContextBuilder, PromptResolver, ResponsePipeline
 
 _log = logging.getLogger("endgame")
 
@@ -58,249 +59,45 @@ def run_script(code: str, workspace: Path, timeout: int = 60) -> tuple[bool, str
 
 
 class Circuit:
-    """Generic circuit driven by wiring config. Resolves context, calls LLM, interprets result."""
+    """Dumb circuit — request/response/feedback from wiring.json via topology.py."""
 
     def __init__(self, name: str, wiring: dict[str, Any], prompts_dir: Path, workspace: Path):
         self.name = name
         self._wiring = wiring
         self._workspace = workspace
         self._prompts_dir = prompts_dir
-        cfg = wiring["circuits"][name]
-        self._circuit_cfg = cfg
-        self._inject = cfg["inject"]
-        prompt_path = prompts_dir / cfg["prompt"]
-        if not prompt_path.exists():
-            raise FileNotFoundError(f"Circuit '{name}' prompt missing: {prompt_path}")
-        self._prompt = prompt_path.read_text(encoding="utf-8").strip()
-        self._limits = wiring["limits"]
-        self._guards = wiring.get("guards", {}).get(name, {})
-        self._max_attempts = self._limits["max_attempts"]
-        self._reasoning_depth = self._limits["reasoning_history_depth"]
-
-    def _goal_triggers_manager_swap(self, goal: str) -> bool:
-        goal_lower = goal.lower()
-        for swap in self._circuit_cfg.get("prompt_swap", []):
-            triggers = swap.get("when", [])
-            alt = swap.get("prompt", "")
-            if alt and triggers and any(t.lower() in goal_lower for t in triggers):
-                return True
-        return False
-
-    def _resolve_prompt(self, state: SlotState) -> str:
-        """Apply prompt_swap rules from wiring.json when GOAL matches."""
-        goal_lower = state.goal.lower()
-        for swap in self._circuit_cfg.get("prompt_swap", []):
-            triggers = swap.get("when", [])
-            alt = swap.get("prompt", "")
-            if alt and triggers and any(t.lower() in goal_lower for t in triggers):
-                alt_path = self._prompts_dir / alt
-                if not alt_path.exists():
-                    raise FileNotFoundError(f"prompt_swap target missing: {alt_path}")
-                return alt_path.read_text(encoding="utf-8").strip()
-        return self._prompt
-
-    def _resolve_context(self, state: SlotState, bus: Bus) -> str:
-        parts: list[str] = []
-        task = next((t for t in state.tasks if t.status in ("active", "claimed_done")), None)
-        for field_name in self._inject:
-            val = self._get_field(field_name, state, task, bus)
-            if val:
-                parts.append(f"{field_name.upper().replace('_', ' ')}: {val}")
-        return "\n".join(parts)
-
-    def _get_field(self, name: str, state: SlotState, task: Task | None, bus: Bus) -> str:
-        if name == "goal":
-            return state.goal
-        if name == "screen":
-            if state.screen:
-                return state.screen
-            ctx = self._wiring.get("context", {})
-            return str(ctx.get("screen_empty", "(no SCREEN captured)"))
-        if name == "task":
-            return task.description if task else ""
-        if name == "contract":
-            return task.contract if task else ""
-        if name == "last_error":
-            err = state.last_action_error
-            if err:
-                state.last_action_error = ""
-            return err
-        if name == "last_reasoning":
-            if not state.reasoning_history:
-                return ""
-            entries = state.reasoning_history[-self._reasoning_depth:]
-            return "\n".join(f"[attempt] {e.get('reasoning','')} → {e.get('outcome','')}" for e in entries)
-        if name == "history":
-            if not state.history:
-                return ""
-            tail = int(self._limits.get("history_tail", 6))
-            return "\n".join(f"  {json.dumps(h, ensure_ascii=False)}" for h in state.history[-tail:])
-        if name == "bus_context":
-            return bus.format_context(limit=int(self._limits.get("bus_context_limit", 6)))
-        if name == "evidence":
-            if not task:
-                return ""
-            evidence = bus.query(record_type="evidence", task_id=task.id,
-                                 limit=int(self._limits.get("evidence_tail", 5)))
-            parts = [f"  {json.dumps(r.data, ensure_ascii=False)}" for r in evidence]
-            if task.evidence:
-                parts += [f"  {e}" for e in task.evidence[-3:]]
-            return "\n".join(parts) if parts else ""
-        if name == "denials":
-            tail = int(self._limits.get("history_tail", 6))
-            denials = [h for h in state.history[-tail:] if isinstance(h, dict) and h.get("denied")]
-            return "\n".join(f"  {json.dumps(d, ensure_ascii=False)}" for d in denials[-3:]) if denials else ""
-        if name == "diagnosis":
-            return state.diagnosis
-        if name == "workspace":
-            role = str(self._wiring.get("instance", {}).get("role", "instance"))
-            ctx = self._wiring.get("context", {})
-            lines = [
-                f"ROOT: {self._workspace}",
-                f"PROMPTS: {self._workspace / 'prompts'}",
-                f"WIRING: {self._workspace / 'prompts' / 'wiring.json'}",
-            ]
-            if self.name == "unified":
-                if self._goal_triggers_manager_swap(state.goal):
-                    prefix = str(ctx.get("workspace_manager", "ROLE: {role}")).format(role=role)
-                else:
-                    prefix = str(ctx.get("workspace_executor", "MODE: executor"))
-                lines.insert(0, prefix)
-            else:
-                lines.insert(0, f"ROLE: {role}")
-            return "\n".join(lines)
-        return ""
+        if name not in wiring["circuits"]:
+            raise KeyError(f"Circuit '{name}' not in wiring.circuits")
+        self._ctx = ContextBuilder(wiring, name, workspace)
+        self._prompts = PromptResolver(wiring, name, prompts_dir)
+        self._pipeline = ResponsePipeline(wiring, name)
 
     def run(self, state: SlotState, llm: LLMClient, bus: Bus) -> dict[str, Any]:
-        ctx = self._resolve_context(state, bus)
-        prompt = self._resolve_prompt(state)
-        result = llm.call(prompt, ctx) if ctx else LLMResult(text="")
+        task = next((t for t in state.tasks if t.status in ("active", "claimed_done")), None)
+        user = self._ctx.build(state, bus, task)
+        system = self._prompts.resolve(state.goal)
+        result = llm.call(system, user) if user else LLMResult(text="")
         _log.debug("[%s] prompt=%d ctx=%d → response=%d reasoning=%d",
-                   self.name, len(prompt), len(ctx),
+                   self.name, len(system), len(user),
                    len(result.text), len(result.reasoning))
-        return self._interpret(result, state, bus)
+        if self.name == "unified":
+            return self._pipeline.run(result, state, bus)
+        return self._interpret_legacy(result, state, bus)
 
-    def _interpret(self, result: LLMResult, state: SlotState, bus: Bus) -> dict[str, Any]:
-        text = result.text.strip()
-        # Try direct parse first
+    def _interpret_legacy(self, result: LLMResult, state: SlotState, bus: Bus) -> dict[str, Any]:
+        from topology import extract_json
         record = None
         try:
-            record = json.loads(text)
+            record = json.loads(result.text.strip())
         except (json.JSONDecodeError, TypeError):
-            # Fallback: find JSON object in mixed text output
-            record = self._extract_json(text)
+            record = extract_json(result.text)
         if not record:
-            if result.reasoning:
-                record = self._extract_json(result.reasoning)
-            if not record and self.name == "unified":
-                state.last_action_error = "parse_failed: respond with JSON only, no prose"
-                return {"event": "unified_error", "error": state.last_action_error}
-        try:
-            rtype, data = str(record["record_type"]), record["data"]
-        except (KeyError, TypeError):
             return {"event": f"{self.name}_error", "error": "parse_failed"}
-
-        if self.name == "unified":
-            return self._interpret_unified(data, result, state, bus)
-        if self.name == "planner":
-            return self._interpret_plan(data, state, bus)
-        if self.name == "actor":
-            return self._interpret_action(data, result, state, bus)
-        if self.name == "verifier":
-            return self._interpret_verdict(data, state, bus)
-        if self.name == "reflector":
-            return self._interpret_reflect(data, result, state, bus)
-        if self.name == "mutator":
-            return self._interpret_mutate(data, result, state, bus)
+        data = record.get("data", {})
+        handler = getattr(self, f"_interpret_{self.name}", None)
+        if handler:
+            return handler(data, result, state, bus)
         return {"event": f"{self.name}_error"}
-
-    @staticmethod
-    def _extract_json(text: str) -> dict | None:
-        """Find first valid JSON object in text with balanced braces."""
-        for i in range(len(text)):
-            if text[i] == '{':
-                depth = 0
-                for j in range(i, len(text)):
-                    if text[j] == '{':
-                        depth += 1
-                    elif text[j] == '}':
-                        depth -= 1
-                    if depth == 0:
-                        try:
-                            return json.loads(text[i:j+1])
-                        except json.JSONDecodeError:
-                            break
-        return None
-
-    @staticmethod
-    def _advance_hint(last_action: dict, screen: str) -> str:
-        """SCREEN-aware next-step hint after a succeeded action is repeated."""
-        verb = str(last_action.get("verb", "")).lower()
-        target = str(last_action.get("target", "")).lower()
-        s = screen.lower()
-        if verb == "hotkey" and "win" in target:
-            if "run" in s or 'combo box "open' in s or "open:" in s:
-                return "NEXT REQUIRED: write APPLICATION NAME (e.g. chrome) into Run Open field — NOT hotkey again"
-            return "NEXT REQUIRED: write app name into Run Open field or focus existing window from SCREEN"
-        if verb == "write":
-            if "run" in s or 'combo box "open' in s:
-                return "NEXT REQUIRED: press enter or click OK to launch the application"
-            if "chrome" in s or "address and search" in s:
-                return "NEXT REQUIRED: press enter after URL, or write search query in address bar"
-        if verb in ("press", "click"):
-            if "run" in s:
-                return "NEXT REQUIRED: write APPLICATION NAME in Open field before pressing OK"
-            if "chrome" in s:
-                return "NEXT REQUIRED: write https://www.youtube.com or search terms in address bar"
-        if verb == "focus":
-            return "NEXT REQUIRED: open app via win+r → write app name → enter; or click element by [ID] from SCREEN"
-        return "NEXT REQUIRED: different verb+target — prior action already succeeded, read SCREEN"
-
-    def _interpret_unified(self, data: dict, result: LLMResult, state: SlotState, bus: Bus) -> dict[str, Any]:
-        """Unified agent: simple observe→act loop without task management."""
-        reasoning_entry = {"reasoning": result.reasoning, "outcome": ""}
-        conclusion = str(data.get("conclusion", "EXECUTE"))
-        if conclusion == "DONE":
-            g = self._guards
-            keywords = g.get("done_write_keywords", [])
-            outcomes = g.get("done_write_outcomes", [])
-            goal_lower = state.goal.lower()
-            has_write_goal = any(w in goal_lower for w in keywords)
-            did_write = any(any(o in str(h.get("outcome", "")) for o in outcomes)
-                           for h in state.reasoning_history)
-            if keywords and outcomes and has_write_goal and not did_write:
-                # Premature DONE — override to continue
-                reasoning_entry["outcome"] = "SYSTEM: goal requires typing but no write was done yet"
-                state.reasoning_history.append(reasoning_entry)
-                return {"event": "unified_acted", "conclusion": "EXECUTE", "actions": []}
-            reasoning_entry["outcome"] = "goal complete"
-            state.reasoning_history.append(reasoning_entry)
-            return {"event": "goal_complete", "conclusion": "DONE"}
-        if conclusion == "CANNOT":
-            reasoning_entry["outcome"] = "cannot"
-            state.reasoning_history.append(reasoning_entry)
-            return {"event": "unified_cannot", "conclusion": "CANNOT"}
-        # EXECUTE — block re-execution of an already-succeeded action
-        actions = data.get("actions", [])
-        if state.reasoning_history and actions and state._last_actions:
-            last = state.reasoning_history[-1]
-            same = (len(actions) == len(state._last_actions)
-                    and all(a.get("verb") == b.get("verb") and a.get("target") == b.get("target")
-                            for a, b in zip(actions, state._last_actions)))
-            if "OK" in last.get("outcome", "") and same:
-                la = state._last_actions[0]
-                hint = self._advance_hint(la, state.screen)
-                reasoning_entry["outcome"] = f"SYSTEM: repeat blocked — {hint}"
-                state.reasoning_history.append(reasoning_entry)
-                depth = self._reasoning_depth
-                if len(state.reasoning_history) > depth:
-                    state.reasoning_history = state.reasoning_history[-depth:]
-                state.last_action_error = hint
-                return {"event": "unified_acted", "conclusion": "EXECUTE", "actions": []}
-        state._last_actions = actions
-        bus.publish("action", "unified", state.active_task_id or "", data)
-        return {"event": "unified_acted", "conclusion": "EXECUTE",
-                "actions": actions, "reasoning_entry": reasoning_entry}
 
     def _interpret_plan(self, data: dict, state: SlotState, bus: Bus) -> dict[str, Any]:
         raw = data.get("tasks", [])

@@ -4,15 +4,27 @@
 **Next session goal:** Understand, document, and **eliminate** the scattered if/else that decide who runs when.  
 **Control plane:** `prompts/wiring.json` (machine truth) + `prompts/wiring.mmd` (visual only).
 
-## Mermaid as wiring? Brutally honest
+## Topology wiring — brutally honest
 
 | Idea | Verdict |
 |------|---------|
-| Store order in **Mermaid only**, zero Python config | **Stupid** — Mermaid has no schema for limits, inject lists, verb maps, guards; parsing flowcharts to runtime is fragile |
-| **JSON** for machine truth, **Mermaid** for humans/AI to read | **Genius** — JSON reloads at runtime; `.mmd` documents intent; editors and tools understand both |
-| **Zero wiring in Python** | **Impossible** — Python must `json.load` and walk transitions; goal is **zero branching** about which path, not zero loader |
+| **Mermaid/draw.io AS the only config** (zero JSON) | **Stupid** — diagrams lack schema for guards, inject blocks, CLI args, feedback depth; parsing shapes to runtime is fragile |
+| **JSON machine truth + draw.io visual export** | **Genius** — edit `wiring.json` → hot-reload; open `wiring.drawio` in draw.io to see the same graph |
+| **Zero Python** | **Impossible** — Python must load JSON and execute node types; goal is **zero path-branching in code**, not zero interpreter |
 
-**What we did:** `wiring.json` declares one path. `wiring.mmd` mirrors it (not parsed). Python only loads JSON and follows `startup` + `transitions` — no cold-start fork, no Comms, no planner chain, no global mutator (all removed/disabled).
+**Schema:** `endgame-topology/v1` in `prompts/wiring.json`
+
+| Section | What it defines (all hot-swappable) |
+|---------|-----------------------------------|
+| `runtime.cli` | goal, trailing `N` response limit, `--no-desktop` |
+| `topology.nodes/edges` | Agentic graph → exported to `wiring.drawio` |
+| `request.unified` | SYSTEM prompt + USER block assembly order |
+| `response.unified.pipeline` | parse_json → extract_fields → branch_conclusion |
+| `response.unified.guards` | premature DONE, repeat-block, advance_hints |
+| `feedback.reasoning` | thinking loop: depth, format, inject block |
+| `transitions` | event → next phase |
+
+**Python:** `topology.py` = dumb executor. `slot.py` Circuit delegates to it. No `_interpret_unified` in code anymore.
 
 ---
 
@@ -351,7 +363,8 @@ python tui.py "Read MANAGER.md at C:\Users\px-wjt\Downloads\endgame-ai\MANAGER.m
 | `wiring.py` | Loads `prompts/wiring.json` (auto-reload on file change) |
 | `smoke.py` | Cognitive smoke runner |
 | `prompts/wiring.json` | **Machine truth** — edit to change behavior at runtime |
-| `prompts/wiring.mmd` | **Visual only** — documentation diagram, not parsed |
+| `prompts/wiring.drawio` | **Visual** — auto-exported from topology; open in draw.io |
+| `topology.py` | Dumb executor: context, pipeline, draw.io export |
 | `prompts/smoke.txt` | 10 permanent smoke scenarios |
 | `AGENTS.md` | Operational handover |
 | `MANAGER.md` | Manager role (Manager repo only) |

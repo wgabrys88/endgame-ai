@@ -17,6 +17,7 @@ from llm import LLMClient, set_response_limit
 from bus import Bus
 from colony import Colony
 from wiring import load_wiring
+from topology import parse_cli_from_wiring
 
 BASE_DIR = Path(__file__).parent.resolve()
 PROMPTS_DIR = BASE_DIR / "prompts"
@@ -297,26 +298,21 @@ class TUI:
             _w("\x1b[?1049l\x1b[?25h")
 
 
-def _parse_goal_and_limit(raw: list[str]) -> tuple[str, int | None]:
-    if raw and raw[-1].isdigit() and int(raw[-1]) > 0:
-        return " ".join(raw[:-1]).strip(), int(raw[-1])
-    return " ".join(raw).strip(), None
-
-
 def main():
     parser = argparse.ArgumentParser(prog="endgame-ai")
     parser.add_argument("goal", nargs="*", help="Goal; optional trailing positive integer = exit after N LLM responses")
     parser.add_argument("--no-desktop", action="store_true")
-    args = parser.parse_args()
-    goal, limit = _parse_goal_and_limit(args.goal)
-    if limit is not None:
-        set_response_limit(limit)
+    parser.parse_args()  # help text only; real parse from wiring.runtime.cli
     wiring = load_wiring(PROMPTS_DIR)
+    parsed = parse_cli_from_wiring(wiring, sys.argv[1:])
+    if parsed["response_limit"] is not None:
+        set_response_limit(parsed["response_limit"])
     bus = Bus(max_records=int(wiring["limits"]["bus_max_records"]))
     llm = LLMClient(prompts_dir=PROMPTS_DIR)
     colony = Colony(llm=llm, bus=bus, prompts_dir=PROMPTS_DIR, workspace=BASE_DIR, wiring=wiring)
-    tui = TUI(colony=colony, wiring=wiring, desktop_enabled=not args.no_desktop)
-    tui.run(goal=goal)
+    desktop = wiring.get("runtime", {}).get("desktop", {}).get("enabled", True) and not parsed["no_desktop"]
+    tui = TUI(colony=colony, wiring=wiring, desktop_enabled=desktop)
+    tui.run(goal=parsed["goal"])
 
 
 if __name__ == "__main__":
