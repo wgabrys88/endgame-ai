@@ -412,22 +412,27 @@ class GraphExecutor:
             signals = self._dispatch(node, slot, ctx)
             if signals is None:
                 return ctx.get("result")
-            next_id = self._follow(node_id, signals)
-            if not next_id:
+            targets = self._follow_fanout(node_id, signals)
+            if not targets:
                 return ctx.get("result")
-            node_id = next_id
+            # Fan-out: fire all secondary targets, continue on primary (first match)
+            for secondary in targets[1:]:
+                sec_node = self._nodes.get(secondary)
+                if sec_node:
+                    self._dispatch(sec_node, slot, ctx)
+            node_id = targets[0]
         if node_id == "idle":
             self._node_idle(slot, ctx)
         return ctx.get("result")
 
-    def _follow(self, from_id: str, signals: set[str]) -> str | None:
+    def _follow_fanout(self, from_id: str, signals: set[str]) -> list[str]:
+        """All matching edge targets for fan-out. First = primary continuation."""
+        targets: list[str] = []
         for edge in self._edges.get(from_id, []):
             on = str(edge.get("on", ""))
-            if on == "*":
-                return str(edge["to"])
-            if any(part in signals for part in on.split("|")):
-                return str(edge["to"])
-        return None
+            if on == "*" or any(part in signals for part in on.split("|")):
+                targets.append(str(edge["to"]))
+        return targets
 
     def _dispatch(self, node: dict[str, Any], slot: Any, ctx: dict[str, Any]) -> set[str] | None:
         handler = getattr(self, f"_node_{node['type']}", None)
@@ -508,6 +513,17 @@ class GraphExecutor:
         if llm_mod.shutdown_requested:
             signals.add("limit_reached")
         return signals
+
+    def _node_audit_log(self, node: dict[str, Any], slot: Any, ctx: dict[str, Any]) -> set[str]:
+        """Fan-out target: publish action intent to bus for tracing."""
+        result = ctx.get("result") or {}
+        actions = result.get("actions", [])
+        if actions:
+            self._rt.bus.publish(
+                "audit", self._circuit, slot.state.active_task_id or "",
+                {"actions": actions, "cycle": slot.state.cycles},
+            )
+        return {"audit_done"}
 
     def _node_feedback(self, node: dict[str, Any], slot: Any, ctx: dict[str, Any]) -> set[str]:
         return {"cycle_done"}

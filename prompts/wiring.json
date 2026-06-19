@@ -50,7 +50,8 @@
       {"id": "parse_pipeline", "type": "response_pipeline", "label": "JSON parse + guards"},
       {"id": "feedback_append", "type": "feedback", "label": "reasoning pass-through"},
       {"id": "desktop_exec", "type": "desktop_execute", "label": "verbs → actions.py"},
-      {"id": "idle", "type": "idle", "label": "goal_complete / shutdown"}
+      {"id": "idle", "type": "idle", "label": "goal_complete / shutdown"},
+      {"id": "audit_log", "type": "audit_log", "label": "Bus publish action evidence (fan-out target)"}
     ],
     "edges": [
       {"from": "cli_entry", "to": "response_limit_gate", "on": "args_parsed"},
@@ -62,6 +63,7 @@
       {"from": "llm_call", "to": "parse_pipeline", "on": "response_received"},
       {"from": "parse_pipeline", "to": "idle", "on": "goal_complete|limit_reached"},
       {"from": "parse_pipeline", "to": "desktop_exec", "on": "actions_present"},
+      {"from": "parse_pipeline", "to": "audit_log", "on": "actions_present"},
       {"from": "parse_pipeline", "to": "feedback_append", "on": "unified_acted|unified_cannot|unified_error"},
       {"from": "feedback_append", "to": "idle", "on": "cycle_done"},
       {"from": "desktop_exec", "to": "idle", "on": "cycle_done"}

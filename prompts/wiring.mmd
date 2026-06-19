@@ -11,6 +11,7 @@ flowchart TD
   feedback_append["reasoning pass-through<br/>(feedback)"]
   desktop_exec["verbs → actions.py<br/>(desktop_execute)"]
   idle["goal_complete / shutdown<br/>(idle)"]
+  audit_log["Bus publish action evidence (fan-out target)<br/>(audit_log)"]
   cli_entry -->|args_parsed| response_limit_gate
   response_limit_gate -->|limit_reached| idle
   response_limit_gate -->|under_limit| route_slot
@@ -20,6 +21,7 @@ flowchart TD
   llm_call -->|response_received| parse_pipeline
   parse_pipeline -->|goal_complete/limit_reached| idle
   parse_pipeline -->|actions_present| desktop_exec
+  parse_pipeline -->|actions_present| audit_log
   parse_pipeline -->|unified_acted/unified_cannot/unified_error| feedback_append
   feedback_append -->|cycle_done| idle
   desktop_exec -->|cycle_done| idle
