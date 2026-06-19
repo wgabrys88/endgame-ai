@@ -1,11 +1,13 @@
-"""Dumb topology executor — all intelligence in prompts/wiring.json."""
+"""Dumb topology executor — all intelligence in prompts/wiring.drawio (single format)."""
 from __future__ import annotations
 
+import base64
 import json
 import re
 import xml.etree.ElementTree as ET
+import zlib
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from llm import LLMResult
 from bus import Bus
@@ -88,7 +90,7 @@ class ContextBuilder:
             "role": role,
             "root": str(self._workspace),
             "prompts": str(self._workspace / "prompts"),
-            "wiring": str(self._workspace / "prompts" / "wiring.json"),
+            "wiring": str(self._workspace / "prompts" / "wiring.drawio"),
         }
 
     def _workspace_block(self, state: Any, block: dict[str, Any]) -> str:
@@ -299,44 +301,181 @@ def parse_cli_from_wiring(wiring: dict[str, Any], argv: list[str]) -> dict[str, 
     return {"goal": goal, "response_limit": limit, "no_desktop": no_desktop}
 
 
-def export_drawio(wiring: dict[str, Any], path: Path) -> None:
-    """Export topology nodes/edges to draw.io mxGraphModel XML."""
+CONFIG_PREFIX = "endgame-json:"
+CONFIG_DIAGRAM = "_config"
+TOPOLOGY_DIAGRAM = "topology"
+EG_TAG = "eg:"
+
+
+def _diagram_mx_model(diagram: ET.Element) -> ET.Element | None:
+    model = diagram.find("mxGraphModel")
+    if model is not None:
+        return model
+    raw = (diagram.text or "").strip()
+    if not raw:
+        return None
+    try:
+        payload = base64.b64decode(raw)
+        for wbits in (-15, zlib.MAX_WBITS):
+            try:
+                xml_bytes = zlib.decompress(payload, wbits)
+                root = ET.fromstring(xml_bytes)
+                if root.tag == "mxGraphModel":
+                    return root
+                found = root.find("mxGraphModel")
+                if found is not None:
+                    return found
+            except (zlib.error, ET.ParseError):
+                continue
+    except (ValueError, ET.ParseError):
+        return None
+    return None
+
+
+def _parse_eg_id(value: str) -> str:
+    for line in value.splitlines():
+        if line.startswith(EG_TAG):
+            return line[len(EG_TAG) :].strip()
+    return ""
+
+
+def _sync_topology_layout(mxfile: ET.Element, wiring: dict[str, Any]) -> None:
+    nodes = {n["id"]: n for n in wiring.get("topology", {}).get("nodes", [])}
+    for diagram in mxfile.findall("diagram"):
+        if diagram.get("name") not in (TOPOLOGY_DIAGRAM, "wiring-topology"):
+            continue
+        model = _diagram_mx_model(diagram)
+        if model is None:
+            continue
+        for cell in model.iter("mxCell"):
+            if cell.get("vertex") != "1":
+                continue
+            eg = _parse_eg_id(cell.get("value", ""))
+            if not eg or eg not in nodes:
+                continue
+            geo = cell.find("mxGeometry")
+            if geo is None:
+                continue
+            d = nodes[eg].setdefault("drawio", {})
+            for key, attr in (("x", "x"), ("y", "y"), ("w", "width"), ("h", "height")):
+                if attr in geo.attrib:
+                    try:
+                        d[key] = int(float(geo.attrib[attr]))
+                    except ValueError:
+                        pass
+
+
+def read_drawio(path: Path) -> dict[str, Any]:
+    """Load wiring from single prompts/wiring.drawio (topology page + embedded JSON config page)."""
+    mxfile = ET.parse(path).getroot()
+    config: dict[str, Any] | None = None
+    for diagram in mxfile.findall("diagram"):
+        if diagram.get("name") != CONFIG_DIAGRAM:
+            continue
+        model = _diagram_mx_model(diagram)
+        if model is None:
+            raise ValueError(f"{path}: _config diagram has no mxGraphModel")
+        for cell in model.iter("mxCell"):
+            val = cell.get("value", "")
+            if val.startswith(CONFIG_PREFIX):
+                payload = val[len(CONFIG_PREFIX) :]
+                config = json.loads(base64.b64decode(payload).decode("utf-8"))
+                break
+    if config is None:
+        raise ValueError(f"{path}: missing {CONFIG_PREFIX} config cell in _config diagram")
+    _sync_topology_layout(mxfile, config)
+    return config
+
+
+def write_drawio(wiring: dict[str, Any], path: Path) -> None:
+    """Write unified wiring.drawio: topology diagram + _config diagram with embedded JSON."""
     topo = wiring.get("topology", {})
-    nodes = {n["id"]: n for n in topo.get("nodes", [])}
+    nodes = topo.get("nodes", [])
     edges = topo.get("edges", [])
-    mxfile = ET.Element("mxfile", host="endgame-ai")
-    diagram = ET.SubElement(mxfile, "diagram", name="wiring-topology")
-    model = ET.SubElement(diagram, "mxGraphModel", dx="1200", dy="800", grid="1", gridSize="10")
+    mxfile = ET.Element(
+        "mxfile",
+        host="endgame-ai",
+        agent="endgame-topology/v1",
+        version="1.0",
+        type="device",
+    )
+    topo_diagram = ET.SubElement(mxfile, "diagram", id=TOPOLOGY_DIAGRAM, name=TOPOLOGY_DIAGRAM)
+    model = ET.SubElement(topo_diagram, "mxGraphModel", dx="1200", dy="800", grid="1", gridSize="10")
     root = ET.SubElement(model, "root")
     ET.SubElement(root, "mxCell", id="0")
     ET.SubElement(root, "mxCell", id="1", parent="0")
     cell_id = 2
     id_map: dict[str, str] = {}
-    for nid, node in nodes.items():
+    for node in nodes:
+        nid = str(node["id"])
         d = node.get("drawio", {})
-        x, y = str(d.get("x", 40)), str(d.get("y", 40))
-        w, h = str(d.get("w", 160)), str(d.get("h", 50))
         label = str(node.get("label", nid))
         ntype = str(node.get("type", ""))
         style = str(d.get("style", "rounded=1;whiteSpace=wrap;html=1;"))
         cid = str(cell_id)
         id_map[nid] = cid
-        cell = ET.SubElement(root, "mxCell", id=cid, value=f"{label}\n({ntype})",
-                             style=style, vertex="1", parent="1")
-        ET.SubElement(cell, "mxGeometry", x=x, y=y, width=w, height=h, **{"as": "geometry"})
+        cell = ET.SubElement(
+            root,
+            "mxCell",
+            id=cid,
+            value=f"{label}\n({ntype})\n{EG_TAG}{nid}",
+            style=style,
+            vertex="1",
+            parent="1",
+        )
+        ET.SubElement(
+            cell,
+            "mxGeometry",
+            x=str(d.get("x", 40)),
+            y=str(d.get("y", 40)),
+            width=str(d.get("w", 160)),
+            height=str(d.get("h", 50)),
+            **{"as": "geometry"},
+        )
         cell_id += 1
     for edge in edges:
-        src = id_map.get(edge.get("from", ""))
-        tgt = id_map.get(edge.get("to", ""))
+        src = id_map.get(str(edge.get("from", "")))
+        tgt = id_map.get(str(edge.get("to", "")))
         if not src or not tgt:
             continue
-        on = str(edge.get("on", ""))
         cid = str(cell_id)
-        cell = ET.SubElement(root, "mxCell", id=cid, value=on, style="edgeStyle=orthogonalEdgeStyle;html=1;",
-                             edge="1", parent="1", source=src, target=tgt)
+        cell = ET.SubElement(
+            root,
+            "mxCell",
+            id=cid,
+            value=str(edge.get("on", "")),
+            style="edgeStyle=orthogonalEdgeStyle;html=1;",
+            edge="1",
+            parent="1",
+            source=src,
+            target=tgt,
+        )
         ET.SubElement(cell, "mxGeometry", relative="1", **{"as": "geometry"})
         cell_id += 1
-    tree = ET.ElementTree(mxfile)
-    ET.indent(tree, space="  ")
-    path.write_text('<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(mxfile, encoding="unicode"),
-                    encoding="utf-8")
+
+    cfg_diagram = ET.SubElement(mxfile, "diagram", id="endgame-config", name=CONFIG_DIAGRAM)
+    cfg_model = ET.SubElement(cfg_diagram, "mxGraphModel", dx="800", dy="600", grid="1", gridSize="10")
+    cfg_root = ET.SubElement(cfg_model, "root")
+    ET.SubElement(cfg_root, "mxCell", id="0")
+    ET.SubElement(cfg_root, "mxCell", id="1", parent="0")
+    blob = base64.b64encode(json.dumps(wiring, ensure_ascii=False, indent=2).encode("utf-8")).decode("ascii")
+    cfg_cell = ET.SubElement(
+        cfg_root,
+        "mxCell",
+        id="2",
+        value=f"{CONFIG_PREFIX}{blob}",
+        style="text;html=1;strokeColor=none;fillColor=#f5f5f5;align=left;verticalAlign=top;whiteSpace=wrap;",
+        vertex="1",
+        parent="1",
+    )
+    ET.SubElement(cfg_cell, "mxGeometry", x="0", y="0", width="1200", height="2400", **{"as": "geometry"})
+
+    ET.indent(ET.ElementTree(mxfile), space="  ")
+    path.write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n' + ET.tostring(mxfile, encoding="unicode"),
+        encoding="utf-8",
+    )
+
+
+# Back-compat alias
+export_drawio = write_drawio
