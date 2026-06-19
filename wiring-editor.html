@@ -556,27 +556,63 @@ function App() {
       </div>
 
       <div className="sidebar">
-        {liveMode && liveLog.length > 0 ? (<>
+        {liveMode ? (<>
           <div className="section">
             <h3>Live Execution</h3>
             <label>Current Node</label><span style={{color:'#22c55e'}}>{liveNode || '(stopped)'}</span>
             <label>Goal</label><span>{liveState.goal}</span>
-            <label>Responses</label><span>{liveState.response_count || 0}</span>
+            <label>Step</label><span>{liveState.step || 0} / {(liveState.plan||[]).length}</span>
+            <label>Step Goal</label><span>{liveState.step_goal || '-'}</span>
           </div>
           <div className="section">
             <label>Node Log ({liveLog.length})</label>
             <pre>{liveLog.slice(-10).map(l => `${l.ts} ${l.node} → [${(l.signals||[]).join(',')}]`).join('\n')}</pre>
           </div>
-          {liveLog.length > 0 && liveLog[liveLog.length-1].data && (
-            <div className="section"><label>Last Output</label><pre>{JSON.stringify(liveLog[liveLog.length-1].data, null, 1)}</pre></div>
-          )}
+          <div className="section">
+            <h3>🧪 Mock Inject</h3>
+            <label>Screen Override</label>
+            <textarea id="mock-screen" rows="4" style={{width:'100%',background:'#1a1a2e',border:'1px solid #1e293b',borderRadius:4,color:'#e2e8f0',fontSize:10,padding:6,resize:'vertical'}}
+              placeholder="(empty = real observe_screen)"
+              defaultValue={liveState.screen||''}
+            />
+            <label>Presets</label>
+            <div style={{display:'flex',flexWrap:'wrap',gap:3,marginTop:3}}>
+              {[
+                ['Desktop','(Windows desktop: Taskbar at bottom with [1] Start, [2] Search, [3] Edge, [4] Chrome, [5] File Explorer. Desktop: [10] Recycle Bin. No apps open.)'],
+                ['Run','(Windows: [20] Run dialog. Title: Run. [21] Open: label. [22] Edit field (empty, focused). [23] OK. [24] Cancel.)'],
+                ['Run+chrome','(Windows: [20] Run dialog. Title: Run. [22] Edit field containing "chrome". [23] OK. [24] Cancel.)'],
+                ['Chrome','(Google Chrome: [30] Tab "New Tab". [31] Address bar "Search Google or type a URL". Body: Google logo, search box.)'],
+                ['Chrome@self','(Google Chrome: [30] Tab "endgame-ai Wiring Editor". [31] Address bar "127.0.0.1:9077". Canvas: goal_inbox, planner, scheduler, bus_check, observe, act, verify, reflect, self_modify, satisfied, bus_post.)'],
+                ['Notepad','(Windows: [40] Notepad - Untitled. [41] Menu: File Edit. [42] Edit area (empty, focused). Taskbar at bottom.)'],
+              ].map(([lbl,val]) => (
+                <button key={lbl} style={{fontSize:9,padding:'2px 5px',border:'1px solid #1e293b',borderRadius:3,background:'#0f172a',color:'#94a3b8',cursor:'pointer'}}
+                  onClick={() => { document.getElementById('mock-screen').value = val; }}>{lbl}</button>
+              ))}
+            </div>
+            <button style={{marginTop:8,width:'100%',padding:'5px',border:'1px solid #06b6d4',borderRadius:4,background:'#0f172a',color:'#06b6d4',cursor:'pointer',fontSize:11}}
+              onClick={() => {
+                const s = document.getElementById('mock-screen').value;
+                if (s) { setLiveState(st => ({...st, screen: s, no_desktop: true})); liveStateRef.current = {...liveStateRef.current, screen: s, no_desktop: true}; setStatus('Mock screen injected'); }
+              }}>💉 Inject Screen</button>
+          </div>
+          <div className="section">
+            <h3>📝 State Editor</h3>
+            <textarea id="state-editor" rows="6" style={{width:'100%',background:'#1a1a2e',border:'1px solid #1e293b',borderRadius:4,color:'#e2e8f0',fontSize:9,padding:6,fontFamily:'monospace',resize:'vertical'}}
+              key={JSON.stringify(liveState).length} defaultValue={JSON.stringify(liveState, null, 1)}
+            />
+            <button style={{marginTop:4,width:'100%',padding:'5px',border:'1px solid #f59e0b',borderRadius:4,background:'#0f172a',color:'#f59e0b',cursor:'pointer',fontSize:11}}
+              onClick={() => {
+                const el = document.getElementById('state-editor');
+                try { const s = JSON.parse(el.value); setLiveState(s); liveStateRef.current = s; setStatus('State applied'); }
+                catch(e) { alert('Invalid JSON: '+e.message); }
+              }}>⚡ Apply State</button>
+          </div>
         </>) : cycle ? (<>
           <div className="section">
             <h3>Cycle {cycleIdx+1}/{logCycles.length}</h3>
             <label>Time</label><span>{cycle.timestamp}</span>
             <label>Duration</label><span>{cycle.stats.duration}</span>
             <label>Conclusion</label><span style={{color: cycle.stats.conclusion==='EXECUTE'?'#22c55e':cycle.stats.conclusion==='DONE'?'#06b6d4':'#f59e0b'}}>{cycle.stats.conclusion}</span>
-            <label>Tokens</label><span>p={cycle.stats.prompt} ctx={cycle.stats.ctx} r={cycle.stats.resp} reas={cycle.stats.reas}</span>
           </div>
           <div className="section"><label>Actions</label><pre>{JSON.stringify(cycle.stats.actions, null, 1)}</pre></div>
           <div className="section"><label>Reasoning</label><pre>{cycle.response.reasoning || '(none)'}</pre></div>
@@ -586,18 +622,10 @@ function App() {
             <label>Type</label><span>{selectedNode.data.type}</span>
             <label>Label</label><span>{selectedNode.data.label}</span>
           </div>
-          {wiring && selectedNode.data.type === 'response_pipeline' && (
-            <div className="section"><label>Pipeline</label><pre>{JSON.stringify(wiring.response?.unified?.pipeline, null, 1)}</pre></div>
-          )}
-          {wiring && selectedNode.data.type === 'request_assembly' && (
-            <div className="section"><label>User Blocks</label><pre>{JSON.stringify(wiring.request?.unified?.user?.blocks, null, 1)}</pre></div>
-          )}
-          {wiring && selectedNode.data.type === 'gate' && (
-            <div className="section"><label>Check</label><pre>{selectedNode.data.check || 'response_limit'}</pre></div>
-          )}
         </>) : (
-          <div className="section"><h3>Inspector</h3><span style={{color:'#64748b'}}>Load wiring → 🚀 Run or ⏩ Step</span></div>
+          <div className="section"><h3>Inspector</h3><span style={{color:'#64748b'}}>⏩ Step to start with mock data</span></div>
         )}
+      </div>
       </div>
 
       <div className="timeline">

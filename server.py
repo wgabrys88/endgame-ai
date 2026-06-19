@@ -150,7 +150,7 @@ def node_scheduler(state, _):
 
 def node_observe(state, _):
     if state.get("no_desktop"):
-        s = WIRING.get("context", {}).get("screen_disabled", "(no desktop)")
+        s = state.get("screen") or WIRING.get("context", {}).get("screen_disabled", "(no desktop)")
     else:
         s = observe_screen()
     return {"signals": ["screen_ready"], "patch": {"screen": s}}
@@ -360,6 +360,8 @@ def node_self_modify(state, _):
     global WIRING
     wiring_path = PROMPTS / "wiring.json"
     current = json.loads(wiring_path.read_text(encoding="utf-8"))
+    # Backup before mutation
+    (PROMPTS / "wiring.backup.json").write_text(json.dumps(current, indent=2), encoding="utf-8")
     goal = state.get("goal", "")
     error = state.get("last_error", "")
     history = state.get("history", [])[-5:]

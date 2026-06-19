@@ -102,6 +102,24 @@ prompts/
     comms_operator.txt — MoE routing persona
 ```
 
+
+## Mock Testing (no Windows required)
+
+The browser dashboard includes a built-in mock testing panel:
+
+1. Open http://127.0.0.1:9077
+2. Click ⏩ Step → enter a goal
+3. In the sidebar: 🧪 Mock Inject section appears
+4. Click a Screen Preset (Desktop, Run, Chrome, Notepad, etc.)
+5. Click 💉 Inject Screen → state gets the mock screen + no_desktop flag
+6. Click ⏩ Step again → the node executes with your mock screen
+7. After each step, inject a NEW preset simulating what changed
+
+This lets you test the full plan→act→verify loop with real LLM decisions
+but fake desktop observations — proving the logic works without Windows.
+
+The 📝 State Editor shows raw JSON state. Edit it directly to test
+specific scenarios (set retries=5, inject history, force escalation, etc.).
 ## How to Extend (no code changes needed for most)
 
 | Want to... | Do this |

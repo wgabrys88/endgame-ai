@@ -28,14 +28,26 @@
 - [x] HTML CSS for all new node types
 - [x] Navigation knowledge documented (NAVIGATION.md)
 
-## What Needs Testing (on Windows with LM Studio running)
+## What Was Tested (real LLM, mock desktop)
 
-1. `python server.py --run "open notepad and write hello"` — full real execution
-2. `python server.py` + open browser → 🚀 Run with real goal
-3. Verify the planner output quality with real LLM
-4. Verify the verifier correctly confirms/denies with real screen data
-5. Verify guards fire when LLM repeats actions
-6. Test interrupt: POST /interrupt with new goal mid-execution
+- [x] All HTTP endpoints (health, wiring, state, bus, events, node)
+- [x] Planner decomposes goals correctly (real LLM, 28-48s)
+- [x] Act chooses correct verbs from screen (hotkey win+r, write chrome, etc.)
+- [x] Verify confirms/denies with screen evidence (real LLM)
+- [x] Guards: repeat_block, premature_done, advance_hints
+- [x] Interrupt: POST /interrupt → bus → bus_check → replan
+- [x] Self-modify: LLM patches wiring.json when stuck
+- [x] Hot-reload: POST /wiring modifies topology live
+- [x] SSE: real-time node events to browser
+- [x] Mock testing: browser injects screen presets + steps with real LLM
+- [x] Self-awareness: system verifies it reached its own URL
+
+## What Remains: Windows-Only
+
+1. Real observe_screen() with UIA data
+2. Real execute_verb() with actual keystrokes
+3. Full autonomous run (no mock screens)
+4. Self-modification under genuine stuck conditions
 7. Test colony: `python reactor.py --goal "open chrome"`
 
 ## Architecture Decisions (final)

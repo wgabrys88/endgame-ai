@@ -80,14 +80,17 @@ Total for 4-step goal: ~6-8 minutes estimated
 2. **Verb confusion**: LLM sometimes says `press win+r` — added normalization (press + target_with_plus → hotkey)
 3. **global WIRING in do_POST**: SyntaxError — moved to top of function
 
-## What Needs Real Windows Testing
+## What Remains: Windows-Only Testing
 
-1. `observe_screen()` returning actual UIA tree data
-2. `execute_verb()` performing real clicks/keystrokes
-3. Full autonomous loop with real desktop feedback
-4. Self-modification under real stuck conditions (not simulated)
-5. Chrome navigation with real address bar targeting
-6. Verify node confirming with real post-action screen
+Mock testing is now built into the HTML dashboard (screen presets + state editor).
+The following can ONLY be verified on real Windows with LM Studio:
+
+1. Real `observe_screen()` returning actual UIA tree data from desktop.py
+2. Real `execute_verb()` performing actual keystrokes/clicks via pyautogui/ctypes
+3. Full autonomous run end-to-end (no mock screens)
+4. Self-modification under genuine stuck conditions (not simulated failures)
+5. Chrome address bar targeting with real element IDs from UIA
+6. Verify node with fresh real screen capture after action execution
 
 ## Architecture Validation
 

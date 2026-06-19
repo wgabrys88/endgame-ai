@@ -24,3 +24,4 @@ bus.py
 llm.py
 prompts/wiring.mmd
 prompts/smoke_report.txt
+prompts/wiring.backup.json
