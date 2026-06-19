@@ -72,8 +72,10 @@ class Circuit:
         if not prompt_path.exists():
             raise FileNotFoundError(f"Circuit '{name}' prompt missing: {prompt_path}")
         self._prompt = prompt_path.read_text(encoding="utf-8").strip()
-        self._max_attempts = wiring["limits"]["max_attempts"]
-        self._reasoning_depth = wiring["limits"]["reasoning_history_depth"]
+        self._limits = wiring["limits"]
+        self._guards = wiring.get("guards", {}).get(name, {})
+        self._max_attempts = self._limits["max_attempts"]
+        self._reasoning_depth = self._limits["reasoning_history_depth"]
 
     def _resolve_prompt(self, state: SlotState) -> str:
         """Apply prompt_swap rules from wiring.txt when GOAL matches."""
@@ -119,19 +121,22 @@ class Circuit:
         if name == "history":
             if not state.history:
                 return ""
-            return "\n".join(f"  {json.dumps(h, ensure_ascii=False)}" for h in state.history[-6:])
+            tail = int(self._limits.get("history_tail", 6))
+            return "\n".join(f"  {json.dumps(h, ensure_ascii=False)}" for h in state.history[-tail:])
         if name == "bus_context":
-            return bus.format_context(limit=6)
+            return bus.format_context(limit=int(self._limits.get("bus_context_limit", 6)))
         if name == "evidence":
             if not task:
                 return ""
-            evidence = bus.query(record_type="evidence", task_id=task.id, limit=5)
+            evidence = bus.query(record_type="evidence", task_id=task.id,
+                                 limit=int(self._limits.get("evidence_tail", 5)))
             parts = [f"  {json.dumps(r.data, ensure_ascii=False)}" for r in evidence]
             if task.evidence:
                 parts += [f"  {e}" for e in task.evidence[-3:]]
             return "\n".join(parts) if parts else ""
         if name == "denials":
-            denials = [h for h in state.history[-6:] if isinstance(h, dict) and h.get("denied")]
+            tail = int(self._limits.get("history_tail", 6))
+            denials = [h for h in state.history[-tail:] if isinstance(h, dict) and h.get("denied")]
             return "\n".join(f"  {json.dumps(d, ensure_ascii=False)}" for d in denials[-3:]) if denials else ""
         if name == "diagnosis":
             return state.diagnosis
@@ -204,13 +209,14 @@ class Circuit:
         reasoning_entry = {"reasoning": result.reasoning, "outcome": ""}
         conclusion = str(data.get("conclusion", "EXECUTE"))
         if conclusion == "DONE":
-            # Guard: check if reasoning history shows we actually did something
-            # For compound goals with "type/write", require a write action in history
+            g = self._guards
+            keywords = g.get("done_write_keywords", [])
+            outcomes = g.get("done_write_outcomes", [])
             goal_lower = state.goal.lower()
-            has_write_goal = any(w in goal_lower for w in ("type", "write", "enter text"))
-            did_write = any("write" in str(h.get("outcome", "")) or "typed" in str(h.get("outcome", ""))
+            has_write_goal = any(w in goal_lower for w in keywords)
+            did_write = any(any(o in str(h.get("outcome", "")) for o in outcomes)
                            for h in state.reasoning_history)
-            if has_write_goal and not did_write:
+            if keywords and outcomes and has_write_goal and not did_write:
                 # Premature DONE — override to continue
                 reasoning_entry["outcome"] = "SYSTEM: goal requires typing but no write was done yet"
                 state.reasoning_history.append(reasoning_entry)
@@ -227,10 +233,13 @@ class Circuit:
         if state.reasoning_history and actions:
             last = state.reasoning_history[-1]
             if "OK" in last.get("outcome", "") and actions == state._last_actions:
-                recent_blocks = sum(1 for e in state.reasoning_history[-4:]
+                g = self._guards
+                window = int(g.get("repeat_history_window", 4))
+                threshold = int(g.get("repeat_block_threshold", 2))
+                recent_blocks = sum(1 for e in state.reasoning_history[-window:]
                                     if "SYSTEM: repeated action" in e.get("outcome", ""))
                 state.reasoning_history.append({"reasoning": "", "outcome": "SYSTEM: repeated action — move to next step"})
-                if recent_blocks >= 2:
+                if recent_blocks >= threshold:
                     state.last_action_error = "Repeated action blocked twice — press escape or try a different verb"
                     return {"event": "unified_acted", "conclusion": "EXECUTE",
                             "actions": [], "reasoning_entry": reasoning_entry}
@@ -244,7 +253,8 @@ class Circuit:
     def _interpret_plan(self, data: dict, state: SlotState, bus: Bus) -> dict[str, Any]:
         raw = data.get("tasks", [])
         tasks: list[Task] = []
-        for i, t in enumerate(raw[:6] if isinstance(raw, list) else []):
+        cap = int(self._limits.get("max_tasks_per_plan", 6))
+        for i, t in enumerate(raw[:cap] if isinstance(raw, list) else []):
             if isinstance(t, dict):
                 desc = str(t.get("description", ""))
                 if desc:
@@ -370,7 +380,8 @@ class Slot:
         self._max_attempts = wiring["limits"]["max_attempts"]
         self._bus_throttle = wiring["limits"]["bus_check_throttle_s"]
         self._last_bus_check: float = 0
-        self._mode = wiring["slots"].get(name, {}).get("mode", "planner")
+        self._mode = wiring["slots"][name]["mode"]
+        self._default_phase = wiring["transitions"]["default"]
         self.circuits: dict[str, Circuit] = {
             n: Circuit(n, wiring, prompts_dir, workspace) for n in wiring["circuits"]
         }
@@ -422,8 +433,7 @@ class Slot:
                 state.diagnosis = f"Task '{task.description}' failed after {self._max_attempts} attempts"
                 state.history.append({"blocked": task.description, "reason": state.diagnosis})
                 # Transition via wiring
-                next_phase = self._transitions.get("max_attempts", "planner")
-                self.state.phase = next_phase
+                self.state.phase = self._transitions["max_attempts"]
                 return {"event": "max_attempts", "phase": "actor", "ok": False, "reason": "max_attempts"}
         # Handle exec: tasks directly (no LLM call)
         if task and self.state.phase == "actor" and task.description.strip().lower().startswith("exec"):
@@ -431,17 +441,17 @@ class Slot:
         # Run current circuit
         circuit = self.circuits.get(self.state.phase)
         if not circuit:
-            self.state.phase = "planner"
-            circuit = self.circuits["planner"]
+            self.state.phase = self._default_phase
+            circuit = self.circuits[self._default_phase]
         result = circuit.run(self.state, self.llm, self.bus)
         # Handle goal_complete: mark route done, clear goal, go idle
         event = result.get("event", "")
         if event == "goal_complete":
             self._complete_goal()
-            result["phase"] = "planner"
+            result["phase"] = self._default_phase
             return result
         # Transition
-        next_phase = self._transitions.get(event, "planner")
+        next_phase = self._transitions.get(event, self._default_phase)
         self.state.phase = next_phase
         result["phase"] = circuit.name
         return result
@@ -458,7 +468,7 @@ class Slot:
                 break
         self.state.goal = ""
         self.state.tasks = []
-        self.state.phase = "planner"
+        self.state.phase = self._default_phase
 
     def _exec_task(self, task: Task) -> dict[str, Any]:
         code = task.description
@@ -475,8 +485,9 @@ class Slot:
             self.state.phase = "verifier"
             return {"phase": "actor", "event": "execute_done", "ok": True, "obs": obs, "next": "verifier"}
         task.status = "blocked"
-        self.state.phase = "planner"
-        return {"phase": "actor", "event": "execute_cannot", "ok": False, "obs": obs, "next": "planner"}
+        self.state.phase = self._default_phase
+        return {"phase": "actor", "event": "execute_cannot", "ok": False, "obs": obs,
+                "next": self._default_phase}
 
     def observe(self, screen: str, elements: dict[str, Any]):
         self.state.screen = screen

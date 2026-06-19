@@ -286,8 +286,6 @@ def main():
     bus = Bus(max_records=int(wiring["limits"]["bus_max_records"]))
     llm = LLMClient(prompts_dir=PROMPTS_DIR)
     colony = Colony(llm=llm, bus=bus, prompts_dir=PROMPTS_DIR, workspace=BASE_DIR, wiring=wiring)
-    # Start with NO active slots — they activate when routes arrive
-    colony.active_slots.clear()
     tui = TUI(colony=colony, wiring=wiring, desktop_enabled=not args.no_desktop)
     tui.run(goal=" ".join(args.goal).strip())
 

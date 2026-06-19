@@ -6,7 +6,7 @@ RULES
 - Each sub-goal goes to exactly one slot
 - Add seq (1,2,3...) for ordering
 - If sub-goal B depends on A finishing, set "after": A's seq
-- Prefer implementor for desktop execution goals
+- Route desktop execution goals to the slot with can_desktop=true
 - Use architect for design-only goals, reviewer for audit goals, devops for git/system goals
 
 OUTPUT (JSON only):

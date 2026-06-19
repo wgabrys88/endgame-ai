@@ -1,21 +1,29 @@
 # endgame-ai control plane — edit this file only; code reads topology from here
 
 limits.max_attempts=5
+limits.max_tasks_per_plan=6
 limits.observe_interval_s=2
 limits.bus_check_throttle_s=3
 limits.reasoning_history_depth=10
 limits.global_mutator_interval_s=60
+limits.global_mutator_denial_threshold=3
 limits.bus_max_records=200
+limits.history_tail=6
+limits.evidence_tail=5
+limits.bus_context_limit=6
 
 slots.architect.can_desktop=false
 slots.architect.personality=design, strategy, structure
+slots.architect.mode=planner
 slots.implementor.can_desktop=true
 slots.implementor.personality=execution, desktop actions, code
 slots.implementor.mode=unified
 slots.reviewer.can_desktop=false
 slots.reviewer.personality=verification, quality audits
+slots.reviewer.mode=planner
 slots.devops.can_desktop=false
 slots.devops.personality=git, deployment, system health
+slots.devops.mode=planner
 
 circuits.planner.prompt=planner.txt
 circuits.planner.inject=goal, screen, history, bus_context, last_reasoning
@@ -38,6 +46,7 @@ circuits.unified.prompt_swap.1.when=launch the student
 circuits.unified.prompt_swap.1.when=run and manage
 circuits.unified.prompt_swap.1.prompt=manager.txt
 
+transitions.default=planner
 transitions.plan_done=actor
 transitions.execute_done=verifier
 transitions.execute_cannot=planner
@@ -67,3 +76,10 @@ verbs.inspect.target_field=target
 
 comms.prompt=comms.txt
 comms.fallback_slot=implementor
+
+global_mutator.prompt=global_mutator.txt
+
+guards.unified.done_write_keywords=type, write, enter text
+guards.unified.done_write_outcomes=write, typed
+guards.unified.repeat_block_threshold=2
+guards.unified.repeat_history_window=4

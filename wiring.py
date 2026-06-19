@@ -36,6 +36,8 @@ def load_wiring(prompts_dir: Path) -> dict[str, Any]:
     transitions: dict[str, str] = {}
     verbs: dict[str, dict[str, str]] = {}
     comms: dict[str, Any] = {}
+    global_mutator: dict[str, Any] = {}
+    guards: dict[str, dict[str, Any]] = {}
     prompt_swaps: dict[str, dict[int, dict[str, Any]]] = {}
 
     for raw in path.read_text(encoding="utf-8").splitlines():
@@ -87,6 +89,19 @@ def load_wiring(prompts_dir: Path) -> dict[str, Any]:
             comms[parts[1]] = value
             continue
 
+        if parts[0] == "global_mutator" and len(parts) == 2:
+            global_mutator[parts[1]] = value
+            continue
+
+        if parts[0] == "guards" and len(parts) == 3:
+            section = guards.setdefault(parts[1], {})
+            key = parts[2]
+            if key.endswith("_keywords") or key.endswith("_outcomes"):
+                section[key] = _split_list(value)
+            else:
+                section[key] = _coerce(value)
+            continue
+
         raise ValueError(f"Unrecognized wiring key: {key}")
 
     for circuit, swaps in prompt_swaps.items():
@@ -95,7 +110,8 @@ def load_wiring(prompts_dir: Path) -> dict[str, Any]:
 
     required = ("limits", "slots", "circuits", "transitions", "verbs", "comms")
     result = {"limits": limits, "slots": slots, "circuits": circuits,
-              "transitions": transitions, "verbs": verbs, "comms": comms}
+              "transitions": transitions, "verbs": verbs, "comms": comms,
+              "global_mutator": global_mutator, "guards": guards}
     for section in required:
         if not result[section]:
             raise ValueError(f"wiring.txt missing required section: {section}")
@@ -103,4 +119,28 @@ def load_wiring(prompts_dir: Path) -> dict[str, Any]:
         raise ValueError("wiring.txt comms.prompt is required")
     if "fallback_slot" not in comms:
         raise ValueError("wiring.txt comms.fallback_slot is required")
+    if "default" not in transitions:
+        raise ValueError("wiring.txt transitions.default is required")
+    if "prompt" not in global_mutator:
+        raise ValueError("wiring.txt global_mutator.prompt is required")
+    for name, cfg in circuits.items():
+        if "prompt" not in cfg:
+            raise ValueError(f"wiring.txt circuit '{name}' missing prompt")
+        if "inject" not in cfg:
+            raise ValueError(f"wiring.txt circuit '{name}' missing inject")
+    for name, cfg in slots.items():
+        if "can_desktop" not in cfg:
+            raise ValueError(f"wiring.txt slot '{name}' missing can_desktop")
+        if "mode" not in cfg:
+            raise ValueError(f"wiring.txt slot '{name}' missing mode")
+    if "unified" not in guards:
+        raise ValueError("wiring.txt guards.unified section is required")
+    valid_phases = set(circuits) | {"idle"}
+    for event, target in transitions.items():
+        if event == "default":
+            continue
+        if target not in valid_phases:
+            raise ValueError(f"transition {event} -> {target} invalid (unknown phase)")
+    if transitions["default"] not in circuits:
+        raise ValueError(f"transitions.default must name a circuit, got {transitions['default']}")
     return result

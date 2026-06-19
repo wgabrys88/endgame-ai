@@ -21,18 +21,24 @@ class LLMResult:
 
 class LLMClient:
     def __init__(self, prompts_dir: Path):
-        self._config = self._load_json(prompts_dir / "model.json")
+        self._config = self._load_json(prompts_dir / "model.json", required=True)
         self._schema = self._load_json(prompts_dir / "schema.json")
-        self._host = str(self._config.pop("host", "http://localhost:1234")).rstrip("/")
-        self._timeout = int(self._config.pop("timeout", 600))
+        if "host" not in self._config:
+            raise ValueError("model.json must define host")
+        if "timeout" not in self._config:
+            raise ValueError("model.json must define timeout")
+        self._host = str(self._config.pop("host")).rstrip("/")
+        self._timeout = int(self._config.pop("timeout"))
         self._gate = threading.Semaphore(1)
         self._model: str | None = None
 
     @staticmethod
-    def _load_json(path: Path) -> dict[str, Any]:
-        if path.exists():
-            return json.loads(path.read_text(encoding="utf-8"))
-        return {}
+    def _load_json(path: Path, required: bool = False) -> dict[str, Any]:
+        if not path.exists():
+            if required:
+                raise FileNotFoundError(f"Required config missing: {path}")
+            return {}
+        return json.loads(path.read_text(encoding="utf-8"))
 
     def _resolve_model(self) -> str:
         if self._model:

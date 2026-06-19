@@ -70,12 +70,18 @@ class CommsOperator:
 class GlobalMutator:
     """Reads cross-slot denial patterns, proposes planner prompt patches."""
 
-    def __init__(self, llm: LLMClient, bus: Bus, slots: dict[str, Slot], interval: float = 60.0):
+    def __init__(self, llm: LLMClient, bus: Bus, slots: dict[str, Slot],
+                 prompts_dir: Path, cfg: dict[str, Any], limits: dict[str, Any]):
         self._llm = llm
         self._bus = bus
         self._slots = slots
         self._last_run: float = 0
-        self._interval = interval
+        self._interval = float(limits["global_mutator_interval_s"])
+        self._denial_threshold = int(limits.get("global_mutator_denial_threshold", 3))
+        prompt_path = prompts_dir / str(cfg["prompt"])
+        if not prompt_path.exists():
+            raise FileNotFoundError(f"global_mutator prompt missing: {prompt_path}")
+        self._prompt = prompt_path.read_text(encoding="utf-8").strip()
 
     def step(self) -> dict[str, Any] | None:
         now = time.time()
@@ -85,18 +91,15 @@ class GlobalMutator:
         denials: dict[str, int] = {}
         for name, slot in self._slots.items():
             count = sum(1 for h in slot.state.history[-10:] if isinstance(h, dict) and h.get("denied"))
-            if count >= 3:
+            if count >= self._denial_threshold:
                 denials[name] = count
         if not denials:
             return None
         context = (
             f"STRUGGLING SLOTS: {json.dumps(denials)}\n"
-            f"BUS CONTEXT:\n{self._bus.format_context(limit=10)}\n"
-            "Suggest planner prompt improvements.\n"
-            'Return record_type "mutation" with data containing suggestion string.'
+            f"BUS CONTEXT:\n{self._bus.format_context(limit=10)}"
         )
-        result = self._llm.call("You are a global mutator. Analyze failures and suggest improvements.",
-                                context)
+        result = self._llm.call(self._prompt, context)
         try:
             data = json.loads(result.text).get("data", {})
         except (json.JSONDecodeError, TypeError):
@@ -119,12 +122,11 @@ class Colony:
         for name, cfg in slot_configs.items():
             slot_prompts = prompts_dir / name if (prompts_dir / name).exists() else prompts_dir
             slot = Slot(name=name, llm=llm, bus=bus, prompts_dir=slot_prompts, workspace=workspace,
-                        wiring=wiring, can_act_desktop=cfg.get("can_desktop", False))
+                        wiring=wiring, can_act_desktop=bool(cfg["can_desktop"]))
             self.all_slots[name] = slot
-            self.active_slots[name] = slot
         self.comms = CommsOperator(llm, bus, slot_configs, prompts_dir, wiring["comms"])
-        self.global_mutator = GlobalMutator(llm, bus, self.all_slots,
-                                            interval=wiring["limits"].get("global_mutator_interval_s", 60))
+        self.global_mutator = GlobalMutator(llm, bus, self.all_slots, prompts_dir,
+                                            wiring["global_mutator"], wiring["limits"])
         self._actor_lock: str = ""
 
     def set_goal(self, goal: str):
