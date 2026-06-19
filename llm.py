@@ -1,7 +1,6 @@
-"""LLM client for LM Studio. Config from prompts/model.json, schema from prompts/schema.json."""
+"""LLM client for LM Studio. Config from prompts/model.json."""
 from __future__ import annotations
 import json
-import re
 import threading
 import time
 from dataclasses import dataclass
@@ -9,8 +8,6 @@ from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
-
-_THINK_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL | re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -22,7 +19,6 @@ class LLMResult:
 class LLMClient:
     def __init__(self, prompts_dir: Path):
         self._config = self._load_json(prompts_dir / "model.json", required=True)
-        self._schema = self._load_json(prompts_dir / "schema.json")
         if "host" not in self._config:
             raise ValueError("model.json must define host")
         if "timeout" not in self._config:
@@ -60,8 +56,6 @@ class LLMClient:
         model = self._resolve_model()
         if model:
             body["model"] = model
-        if self._schema:
-            pass  # no schema enforcement — model outputs JSON naturally
         payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
         for attempt in range(3):
             try:
@@ -74,15 +68,9 @@ class LLMClient:
                 choices = result.get("choices", [])
                 if choices:
                     msg = choices[0].get("message", {})
-                    content = str(msg.get("content", ""))
-                    # LM Studio: reasoning_content = thinking channel (nemotron, etc.)
-                    reasoning = str(msg.get("reasoning_content", ""))
-                    # <think> tags in content when reasoning_content absent
-                    if not reasoning and content:
-                        content, reasoning = self._extract_thinking(content)
-                    # Answer may land in reasoning when content empty — keep BOTH for feedback loop
-                    if not content.strip() and reasoning.strip():
-                        content = reasoning
+                    # LM Studio: content = answer, reasoning_content = model thinking (nemotron etc.)
+                    content = str(msg.get("content") or "")
+                    reasoning = str(msg.get("reasoning_content") or "")
                     return LLMResult(text=content, reasoning=reasoning)
                 raise RuntimeError("no choices")
             except (HTTPError, URLError, TimeoutError, OSError) as e:
@@ -90,15 +78,3 @@ class LLMClient:
                     return LLMResult(text="", reasoning=f"LLM error: {e}")
                 time.sleep(min(2 ** attempt, 10))
         return LLMResult(text="")
-
-    @staticmethod
-    def _extract_thinking(raw: str) -> tuple[str, str]:
-        thinks: list[str] = []
-
-        def _cap(m: re.Match[str]) -> str:
-            thinks.append(m.group(1).strip())
-            return ""
-
-        text = _THINK_RE.sub(_cap, raw).strip()
-        reasoning = "\n\n".join(t for t in thinks if t)
-        return text, reasoning

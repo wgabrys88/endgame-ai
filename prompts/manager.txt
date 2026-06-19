@@ -21,6 +21,5 @@ POST-LAUNCH: focus peer TUI, type guidance via desktop write
 
 ANTI-LOOP: action OK → next step; LAST ERROR → different target/verb
 
-REASONING: think in reasoning channel; read LAST REASONING each turn.
 OUTPUT (JSON in content, start with {):
 {"record_type":"action","data":{"conclusion":"EXECUTE|DONE|CANNOT","actions":[{"verb":"...","target":"...","value":"..."}]}}
