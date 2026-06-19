@@ -1,5 +1,6 @@
-"""Colony - multi-slot orchestrator with comms_operator and global mutator."""
+"""Colony - single-path orchestrator driven by prompts/wiring.json."""
 from __future__ import annotations
+
 import json
 import time
 from pathlib import Path
@@ -8,146 +9,49 @@ from typing import Any
 from llm import LLMClient
 from bus import Bus
 from slot import Slot
-
-
-class CommsOperator:
-    """Decomposes user goals into sub-goals and routes them to slots via bus."""
-
-    def __init__(self, llm: LLMClient, bus: Bus, slot_configs: dict[str, dict],
-                 prompts_dir: Path, comms_cfg: dict[str, Any], workspace: Path,
-                 instance_cfg: dict[str, Any]):
-        self._llm = llm
-        self._bus = bus
-        self._slot_names = list(slot_configs.keys())
-        self._slot_configs = slot_configs
-        self._last_goal: str = ""
-        self._fallback_slot = str(comms_cfg["fallback_slot"])
-        self._workspace = workspace
-        self._instance_cfg = instance_cfg
-        comms_path = prompts_dir / str(comms_cfg["prompt"])
-        if not comms_path.exists():
-            raise FileNotFoundError(f"comms prompt missing: {comms_path}")
-        self._prompt = comms_path.read_text(encoding="utf-8").strip()
-
-    def route(self, goal: str) -> dict[str, Any]:
-        if goal == self._last_goal:
-            return {"phase": "comms", "action": "skip"}
-        self._last_goal = goal
-        slot_desc = "\n".join(f"  {n} = {c.get('personality', '')}" for n, c in self._slot_configs.items())
-        role = str(self._instance_cfg.get("role", ""))
-        context = (
-            f"WORKSPACE: ROLE={role} ROOT={self._workspace}\n"
-            f"GOAL: {goal}\nAVAILABLE SLOTS:\n{slot_desc}"
-        )
-        result = self._llm.call(self._prompt, context)
-        try:
-            parsed = json.loads(result.text)
-        except (json.JSONDecodeError, TypeError):
-            parsed = {}
-        data = parsed.get("data", parsed) if isinstance(parsed, dict) else {}
-        routes = data.get("routes", []) if isinstance(data, dict) else []
-        if not isinstance(routes, list) or not routes:
-            if self._fallback_slot not in self._slot_names:
-                raise ValueError(f"comms.fallback_slot '{self._fallback_slot}' not in slots")
-            self._bus.publish("route", "comms_operator", "",
-                             {"to": self._fallback_slot, "goal": goal, "status": "open", "seq": 1})
-            return {"phase": "comms", "routed": 1}
-        count = 0
-        for i, r in enumerate(routes):
-            if not isinstance(r, dict):
-                continue
-            to = str(r.get("to", "")).strip()
-            sub_goal = str(r.get("goal", "")).strip()
-            if to in self._slot_names and sub_goal:
-                seq = r.get("seq", i + 1)
-                route_data: dict[str, Any] = {"to": to, "goal": sub_goal, "status": "open", "seq": seq}
-                if "after" in r:
-                    route_data["after"] = r["after"]
-                self._bus.publish("route", "comms_operator", "", route_data)
-                count += 1
-        if count == 0:
-            if self._fallback_slot not in self._slot_names:
-                raise ValueError(f"comms.fallback_slot '{self._fallback_slot}' not in slots")
-            self._bus.publish("route", "comms_operator", "",
-                             {"to": self._fallback_slot, "goal": goal, "status": "open", "seq": 1})
-            count = 1
-        return {"phase": "comms", "routed": count}
-
-
-class GlobalMutator:
-    """Reads cross-slot denial patterns, proposes planner prompt patches."""
-
-    def __init__(self, llm: LLMClient, bus: Bus, slots: dict[str, Slot],
-                 prompts_dir: Path, cfg: dict[str, Any], limits: dict[str, Any],
-                 workspace: Path):
-        self._llm = llm
-        self._bus = bus
-        self._slots = slots
-        self._workspace = workspace
-        self._last_run: float = 0
-        self._interval = float(limits["global_mutator_interval_s"])
-        self._denial_threshold = int(limits.get("global_mutator_denial_threshold", 3))
-        prompt_path = prompts_dir / str(cfg["prompt"])
-        if not prompt_path.exists():
-            raise FileNotFoundError(f"global_mutator prompt missing: {prompt_path}")
-        self._prompt = prompt_path.read_text(encoding="utf-8").strip()
-
-    def step(self) -> dict[str, Any] | None:
-        now = time.time()
-        if now - self._last_run < self._interval:
-            return None
-        self._last_run = now
-        denials: dict[str, int] = {}
-        for name, slot in self._slots.items():
-            count = sum(1 for h in slot.state.history[-10:] if isinstance(h, dict) and h.get("denied"))
-            if count >= self._denial_threshold:
-                denials[name] = count
-        if not denials:
-            return None
-        context = (
-            f"WORKSPACE: {self._workspace}\n"
-            f"STRUGGLING SLOTS: {json.dumps(denials)}\n"
-            f"BUS CONTEXT:\n{self._bus.format_context(limit=10)}"
-        )
-        result = self._llm.call(self._prompt, context)
-        try:
-            data = json.loads(result.text).get("data", {})
-        except (json.JSONDecodeError, TypeError):
-            data = {}
-        self._bus.publish("global_mutation", "global_mutator", "",
-                          {"targets": list(denials.keys()), "suggestion": str(data.get("suggestion", ""))})
-        return {"phase": "global_mutate", "targets": list(denials.keys())}
+from wiring import load_wiring
 
 
 class Colony:
-    """Multi-slot orchestrator. Wiring-driven."""
+    """Wiring-driven. One startup path: startup.slot → startup.circuit loop."""
 
     def __init__(self, llm: LLMClient, bus: Bus, prompts_dir: Path, workspace: Path, wiring: dict[str, Any]):
         self.llm = llm
         self.bus = bus
+        self._prompts_dir = prompts_dir
+        self._workspace = workspace
         self._wiring = wiring
-        slot_configs = wiring["slots"]
         self.all_slots: dict[str, Slot] = {}
         self.active_slots: dict[str, Slot] = {}
-        for name, cfg in slot_configs.items():
-            slot_prompts = prompts_dir / name if (prompts_dir / name).exists() else prompts_dir
-            slot = Slot(name=name, llm=llm, bus=bus, prompts_dir=slot_prompts, workspace=workspace,
-                        wiring=wiring, can_act_desktop=bool(cfg["can_desktop"]))
-            self.all_slots[name] = slot
-        self._workspace = workspace
-        self.comms = CommsOperator(llm, bus, slot_configs, prompts_dir,
-                                   wiring["comms"], workspace, wiring["instance"])
-        self.global_mutator = GlobalMutator(llm, bus, self.all_slots, prompts_dir,
-                                            wiring["global_mutator"], wiring["limits"], workspace)
         self._actor_lock: str = ""
+        self._apply_wiring(wiring)
 
-    def set_goal(self, goal: str):
-        if not self.active_slots:
-            slot = str(self._wiring["comms"]["fallback_slot"])
-            self.bus.publish("route", "comms_operator", "",
-                            {"to": slot, "goal": goal, "status": "open", "seq": 1})
-        else:
-            self.comms.route(goal)
+    def _apply_wiring(self, wiring: dict[str, Any]) -> None:
+        self._wiring = wiring
+        slot_configs = wiring["slots"]
+        enabled = {n: c for n, c in slot_configs.items() if c.get("enabled", True)}
+        # Drop slots that are no longer enabled
+        for name in list(self.active_slots):
+            if name not in enabled:
+                del self.active_slots[name]
+        for name in list(self.all_slots):
+            if name not in enabled:
+                del self.all_slots[name]
+        for name, cfg in enabled.items():
+            if name not in self.all_slots:
+                slot_prompts = self._prompts_dir / name if (self._prompts_dir / name).exists() else self._prompts_dir
+                self.all_slots[name] = Slot(
+                    name=name, llm=self.llm, bus=self.bus, prompts_dir=slot_prompts,
+                    workspace=self._workspace, wiring=wiring, can_act_desktop=bool(cfg["can_desktop"]),
+                )
+
+    def reload_wiring(self) -> None:
+        self._apply_wiring(load_wiring(self._prompts_dir))
+
+    def set_goal(self, goal: str) -> None:
+        """Single declarative path: wiring.startup.slot always receives the goal."""
+        slot = str(self._wiring["startup"]["slot"])
+        self.bus.publish("route", "startup", "", {"to": slot, "goal": goal, "status": "open", "seq": 1})
 
     def toggle_slot(self, name: str) -> bool:
         if name not in self.all_slots:
@@ -175,12 +79,12 @@ class Colony:
             return True
         return False
 
-    def release_actor_lock(self, name: str):
+    def release_actor_lock(self, name: str) -> None:
         if self._actor_lock == name:
             self._actor_lock = ""
 
     def step(self) -> list[tuple[str, dict[str, Any] | None]]:
-        # Activate slots that have pending routes addressed to them
+        self.reload_wiring()
         for r in self.bus.records:
             if r.record_type == "route" and r.data.get("status") == "open":
                 target = r.data.get("to", "")
@@ -197,8 +101,6 @@ class Colony:
                     active = next((t for t in slot.state.tasks if t.status == "active"), None)
                     if not active:
                         self.release_actor_lock(name)
-            else:
-                if slot.can_act_desktop:
-                    self.release_actor_lock(name)
-        self.global_mutator.step()
+            elif slot.can_act_desktop:
+                self.release_actor_lock(name)
         return results

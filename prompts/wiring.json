@@ -1,0 +1,91 @@
+{
+  "instance": {
+    "role": "manager"
+  },
+  "startup": {
+    "on_goal": "route_to_slot",
+    "slot": "implementor",
+    "circuit": "unified"
+  },
+  "limits": {
+    "max_attempts": 5,
+    "max_tasks_per_plan": 6,
+    "observe_interval_s": 2,
+    "bus_check_throttle_s": 3,
+    "reasoning_history_depth": 20,
+    "global_mutator_interval_s": 60,
+    "global_mutator_denial_threshold": 3,
+    "bus_max_records": 200,
+    "history_tail": 6,
+    "evidence_tail": 5,
+    "bus_context_limit": 6
+  },
+  "slots": {
+    "implementor": {
+      "enabled": true,
+      "can_desktop": true,
+      "mode": "unified",
+      "personality": "execution, desktop actions, code"
+    }
+  },
+  "circuits": {
+    "unified": {
+      "prompt": "unified.txt",
+      "inject": ["goal", "screen", "last_error", "last_reasoning", "workspace"],
+      "prompt_swap": [
+        {
+          "when": [
+            "MANAGER.md",
+            "student instance",
+            "peer instance",
+            "manage student",
+            "outer controller",
+            "launch the student",
+            "launch student",
+            "orchestrate the student",
+            "orchestrate student",
+            "run and manage"
+          ],
+          "prompt": "manager.txt"
+        }
+      ]
+    }
+  },
+  "transitions": {
+    "default": "unified",
+    "unified_acted": "unified",
+    "unified_error": "unified",
+    "unified_cannot": "unified",
+    "goal_complete": "idle",
+    "unified_done": "idle"
+  },
+  "context": {
+    "screen_empty": "(no SCREEN captured — assume bare Windows desktop; Run dialog not visible; no application windows open)",
+    "screen_disabled": "(desktop observation disabled — assume bare Windows desktop; Run dialog not visible; no application windows open)",
+    "workspace_executor": "MODE: executor — act on THIS desktop yourself; do not delegate",
+    "workspace_manager": "ROLE: {role} — orchestrate peer on desktop (manager prompt active)"
+  },
+  "verbs": {
+    "click": {"target_field": "target"},
+    "write": {"target_field": "target", "value_field": "value"},
+    "press": {"key_field": "target"},
+    "hotkey": {"key_field": "target"},
+    "scroll": {"target_field": "target", "amount_field": "value"},
+    "focus": {"title_field": "target"},
+    "inspect": {"target_field": "target"}
+  },
+  "guards": {
+    "unified": {
+      "done_write_keywords": ["type", "write", "enter text"],
+      "done_write_outcomes": ["write", "typed"],
+      "repeat_block_threshold": 2,
+      "repeat_history_window": 4
+    }
+  },
+  "comms": {
+    "enabled": false
+  },
+  "global_mutator": {
+    "enabled": false
+  }
+}

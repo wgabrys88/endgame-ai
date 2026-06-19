@@ -2,7 +2,17 @@
 
 **Branch:** `codex-unify-bus`  
 **Next session goal:** Understand, document, and **eliminate** the scattered if/else that decide who runs when.  
-**Control plane:** `prompts/wiring.txt` (topology) — but **order is split across wiring + Python**, which is the problem.
+**Control plane:** `prompts/wiring.json` (machine truth) + `prompts/wiring.mmd` (visual only).
+
+## Mermaid as wiring? Brutally honest
+
+| Idea | Verdict |
+|------|---------|
+| Store order in **Mermaid only**, zero Python config | **Stupid** — Mermaid has no schema for limits, inject lists, verb maps, guards; parsing flowcharts to runtime is fragile |
+| **JSON** for machine truth, **Mermaid** for humans/AI to read | **Genius** — JSON reloads at runtime; `.mmd` documents intent; editors and tools understand both |
+| **Zero wiring in Python** | **Impossible** — Python must `json.load` and walk transitions; goal is **zero branching** about which path, not zero loader |
+
+**What we did:** `wiring.json` declares one path. `wiring.mmd` mirrors it (not parsed). Python only loads JSON and follows `startup` + `transitions` — no cold-start fork, no Comms, no planner chain, no global mutator (all removed/disabled).
 
 ---
 
@@ -60,28 +70,17 @@ flowchart TD
 
 ---
 
-## Level 1 — Goal Entry (first fork)
-
-This is the **most important** fork. Normal launch never hits Comms.
+## Level 1 — Goal Entry (single path — collapsed)
 
 ```mermaid
 flowchart TD
-    G["set_goal(goal)"] --> Q{"active_slots empty?"}
-    Q -->|YES — cold start default| R["bus.publish route"]
-    R --> R1["to = comms.fallback_slot"]
-    R1 --> R2["currently: implementor"]
-    R2 --> R3["status = open, seq = 1"]
-    R3 --> S["Level 2 — colony.step loop"]
-    Q -->|NO — user toggled slots ON first| C["comms.route(goal)"]
-    C --> C1["LLM call: comms.txt"]
-    C1 --> C2{"JSON routes valid?"}
-    C2 -->|yes| C3["publish route per slot + seq + after"]
-    C2 -->|no / empty| C4["fallback → implementor"]
-    C3 --> S
-    C4 --> S
+    G["set_goal(goal)"] --> R["startup.on_goal = route_to_slot"]
+    R --> R1["startup.slot = implementor"]
+    R1 --> R2["bus.publish route status=open"]
+    R2 --> S["colony.step loop"]
 ```
 
-**Default path today:** left branch only → **implementor** always first.
+No Comms fork. No `active_slots empty?` branch. Declared in `wiring.json` → `startup`.
 
 ---
 
@@ -101,10 +100,7 @@ flowchart TD
     G --> E
     H --> I["Level 3 or 4"]
     I --> J["global_mutator.step()"]
-    J --> K{"denials >= threshold AND interval elapsed?"}
-    K -->|yes| L["LLM: global_mutator.txt"]
-    K -->|no| M["return results"]
-    L --> M
+    J --> M["return results"]
 ```
 
 **Order per cycle:** activate from bus → step active slots (dict order) → maybe global mutator.
@@ -350,11 +346,12 @@ python tui.py "Read MANAGER.md at C:\Users\px-wjt\Downloads\endgame-ai\MANAGER.m
 | File | Role |
 |------|------|
 | `tui.py` | Entry point, logging, desktop loop |
-| `colony.py` | Slot orchestration, Comms, global mutator |
+| `colony.py` | Single-path orchestrator (`startup` → slot → step) |
 | `slot.py` | State machine, circuits, guards |
-| `wiring.py` | Parses `prompts/wiring.txt` |
+| `wiring.py` | Loads `prompts/wiring.json` (auto-reload on file change) |
 | `smoke.py` | Cognitive smoke runner |
-| `prompts/wiring.txt` | **Topology** — should become **sole** order definition |
+| `prompts/wiring.json` | **Machine truth** — edit to change behavior at runtime |
+| `prompts/wiring.mmd` | **Visual only** — documentation diagram, not parsed |
 | `prompts/smoke.txt` | 10 permanent smoke scenarios |
 | `AGENTS.md` | Operational handover |
 | `MANAGER.md` | Manager role (Manager repo only) |
@@ -366,15 +363,14 @@ python tui.py "Read MANAGER.md at C:\Users\px-wjt\Downloads\endgame-ai\MANAGER.m
 ```
 You are an AI coding agent resuming work on endgame-ai.
 
-SESSION TOPIC: Wiring order simplification — eliminate scattered if/else branches.
+SESSION TOPIC: wiring.json evolution — guards, prompt_swap, runtime hot-reload.
 
 Read first (in order):
-1. README.md — this file; all mermaid diagrams; "Why This Is a Problem"
-2. AGENTS.md — operational rules
-3. prompts/wiring.txt — current topology
-4. colony.py set_goal() and step() — cold start bypasses Comms
-5. slot.py set_goal(), step(), _interpret_unified() — mode fork + guards
-6. prompts/smoke.txt + prompts/smoke_report.txt — cognitive baseline
+1. README.md — single-path architecture; Mermaid vs JSON section
+2. prompts/wiring.json — machine truth (startup, transitions, context)
+3. prompts/wiring.mmd — visual mirror (not parsed)
+4. colony.py set_goal() — always startup.slot route (no branches)
+5. prompts/smoke.txt + prompts/smoke_report.txt — cognitive baseline
 
 Environment:
 - Repo: endgame-ai on branch codex-unify-bus
@@ -383,12 +379,13 @@ Environment:
 - LM Studio: prompts/model.json host
 - Smoke: python smoke.py (1 LLM response per scenario)
 
-The problem:
-- Order is split between wiring.txt and Python branches (cold start, prompt_swap, MODE vs ROLE, guards).
-- Default path: goal → bus → implementor → unified loop only; Comms and planner chain are dead code on normal launch.
-- Next work: make order fully declarative in wiring OR delete unused paths; re-run smoke.py and diff smoke_report.txt.
+Collapsed (2026-06-19):
+- wiring.json single path: goal → startup.slot (implementor) → unified loop
+- Comms, planner chain, global_mutator, extra slots — removed/disabled
+- wiring.mmd is documentation only; JSON is machine truth
+- Edit wiring.json during runtime → colony reloads on next step (mtime)
 
-Do not add new if/else without moving the decision into wiring.txt.
+Next work: move guard hints into wiring; optional wiring schema validator; sync student repo.
 After changes: python smoke.py, commit prompts/smoke_report.txt, push codex-unify-bus.
 
 Follow AGENTS.md essential-files policy. No git worktrees.

@@ -87,7 +87,7 @@ class Circuit:
         return False
 
     def _resolve_prompt(self, state: SlotState) -> str:
-        """Apply prompt_swap rules from wiring.txt when GOAL matches."""
+        """Apply prompt_swap rules from wiring.json when GOAL matches."""
         goal_lower = state.goal.lower()
         for swap in self._circuit_cfg.get("prompt_swap", []):
             triggers = swap.get("when", [])
@@ -114,10 +114,8 @@ class Circuit:
         if name == "screen":
             if state.screen:
                 return state.screen
-            return (
-                "(no SCREEN captured — assume bare Windows desktop; "
-                "Run dialog not visible; no application windows open)"
-            )
+            ctx = self._wiring.get("context", {})
+            return str(ctx.get("screen_empty", "(no SCREEN captured)"))
         if name == "task":
             return task.description if task else ""
         if name == "contract":
@@ -156,16 +154,18 @@ class Circuit:
             return state.diagnosis
         if name == "workspace":
             role = str(self._wiring.get("instance", {}).get("role", "instance"))
+            ctx = self._wiring.get("context", {})
             lines = [
                 f"ROOT: {self._workspace}",
                 f"PROMPTS: {self._workspace / 'prompts'}",
-                f"WIRING: {self._workspace / 'prompts' / 'wiring.txt'}",
+                f"WIRING: {self._workspace / 'prompts' / 'wiring.json'}",
             ]
             if self.name == "unified":
                 if self._goal_triggers_manager_swap(state.goal):
-                    lines.insert(0, f"ROLE: {role} — orchestrate peer on desktop (manager prompt active)")
+                    prefix = str(ctx.get("workspace_manager", "ROLE: {role}")).format(role=role)
                 else:
-                    lines.insert(0, "MODE: executor — act on THIS desktop yourself; do not delegate")
+                    prefix = str(ctx.get("workspace_executor", "MODE: executor"))
+                lines.insert(0, prefix)
             else:
                 lines.insert(0, f"ROLE: {role}")
             return "\n".join(lines)
@@ -418,7 +418,7 @@ class Circuit:
 
 
 class Slot:
-    """Data-driven state machine. Phase transitions from wiring.txt."""
+    """Data-driven state machine. Phase transitions from wiring.json."""
 
     def __init__(self, name: str, llm: LLMClient, bus: Bus, prompts_dir: Path, workspace: Path,
                  wiring: dict[str, Any], *, can_act_desktop: bool = True):

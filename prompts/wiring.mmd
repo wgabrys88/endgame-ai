@@ -1,0 +1,24 @@
+%% endgame-ai wiring — VISUAL ONLY (not parsed by Python)
+%% Machine truth: prompts/wiring.json
+%% Edit JSON for runtime behavior; edit this diagram to document intent.
+
+flowchart TD
+    START([python tui.py GOAL]) --> ROUTE[startup.on_goal: route_to_slot]
+    ROUTE --> SLOT[startup.slot: implementor]
+    SLOT --> ACTIVATE[bus route status=open]
+    ACTIVATE --> UNIFIED[circuit: unified]
+    UNIFIED --> SWAP{prompt_swap goal match?}
+    SWAP -->|peer goal| MGR[manager.txt]
+    SWAP -->|desktop goal| UNI[unified.txt]
+    MGR --> LLM[LLM call]
+    UNI --> LLM
+    LLM --> EVT{transition event}
+    EVT -->|unified_acted| UNIFIED
+    EVT -->|unified_error| UNIFIED
+    EVT -->|unified_cannot| UNIFIED
+    EVT -->|goal_complete| IDLE([idle])
+    EVT -->|unified_done| IDLE
+
+    style START fill:#e1f5fe
+    style IDLE fill:#c8e6c9
+    style ROUTE fill:#fff9c4

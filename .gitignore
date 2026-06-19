@@ -8,7 +8,9 @@ pause
 *.log
 logs/
 
-# Cognitive smoke harness — always tracked (never ignore)
+# Cognitive smoke + wiring — always tracked (never ignore)
 !smoke.py
 !prompts/smoke.txt
 !prompts/smoke_report.txt
+!prompts/wiring.json
+!prompts/wiring.mmd

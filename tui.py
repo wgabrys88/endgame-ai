@@ -64,7 +64,8 @@ class TUI:
         self._log: list[str] = []
         self._scroll_offset = 0
         self._start = time.time()
-        self._slot_keys = {str(i+1): name for i, name in enumerate(wiring.get("slots", {}).keys())}
+        enabled = [n for n, c in wiring.get("slots", {}).items() if c.get("enabled", True)]
+        self._slot_keys = {str(i + 1): name for i, name in enumerate(enabled)}
         self._result_q: queue.Queue = queue.Queue()
         self._thinking = False
         self._think_start: float = 0
@@ -74,10 +75,11 @@ class TUI:
     def _seed_screen(self):
         if self.desktop_enabled:
             return
-        msg = (
-            "(desktop observation disabled — assume bare Windows desktop; "
-            "Run dialog not visible; no application windows open)"
-        )
+        ctx = self._wiring.get("context", {})
+        msg = str(ctx.get(
+            "screen_disabled",
+            "(desktop observation disabled — assume bare Windows desktop)",
+        ))
         for slot in self.colony.all_slots.values():
             if slot.can_act_desktop:
                 slot.observe(msg, {})

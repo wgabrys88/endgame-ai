@@ -1,5 +1,5 @@
 endgame-ai cognitive smoke report
-generated: 20260619_123608
+generated: 20260619_124911
 scenarios: 10
 mode: s01 one-response probes
 
@@ -7,14 +7,14 @@ mode: s01 one-response probes
 S01 — S01 Shakira YouTube
 ================================================================================
 GOAL: open youtube in chrome and play shakira waka waka
-LOG: C:\Users\px-wjt\Downloads\endgame-ai\logs\20260619_123609.txt
+LOG: C:\Users\px-wjt\Downloads\endgame-ai\logs\20260619_124912.txt
 EXIT: 0
 
 --- SYSTEM PROMPT ---
 IDENTITY
 - Circuit: unified (implementor slot)
 - WHO: endgame-ai desktop executor — observe SCREEN, act once per turn on THIS machine
-- WHERE: WORKSPACE below — your code root; prompts/ holds your instructions; wiring.txt holds topology
+- WHERE: WORKSPACE below — your code root; prompts/ holds your instructions; wiring.json holds topology
 - MODE executor: you perform desktop actions yourself. Peer orchestration uses manager prompt only when GOAL requires it.
 
 INPUT: GOAL, SCREEN, LAST ERROR, LAST REASONING, WORKSPACE
@@ -55,7 +55,235 @@ SCREEN: (desktop observation disabled — assume bare Windows desktop; Run dialo
 WORKSPACE: MODE: executor — act on THIS desktop yourself; do not delegate
 ROOT: C:\Users\px-wjt\Downloads\endgame-ai
 PROMPTS: C:\Users\px-wjt\Downloads\endgame-ai\prompts
-WIRING: C:\Users\px-wjt\Downloads\endgame-ai\prompts\wiring.txt
+WIRING: C:\Users\px-wjt\Downloads\endgame-ai\prompts\wiring.json
+
+--- MODEL CONTENT ---
+{
+  "record_type": "action",
+  "data": {
+    "conclusion": "EXECUTE",
+    "actions": [
+      {
+        "verb": "hotkey",
+        "target": "win+r",
+        "value": ""
+      }
+    ]
+  }
+}
+
+--- MODEL REASONING ---
+We need to output JSON with conclusion EXECUTE and actions list. First step: Run dialog not visible, so we must hotkey win+r. That's an action: verb "hotkey", target "win+r", value "". Also maybe need to press? The spec: RUN dialog not on SCREEN → hotkey win+r (required before any write to Open field). So first action is hotkey win+r.
+
+Thus JSON: {"record_type":"action","data":{"conclusion":"EXECUTE","actions":[{"verb":"hotkey","target":"win+r","value":""}]}}.
+
+================================================================================
+S02 — S02 Launch student
+================================================================================
+GOAL: Read MANAGER.md at C:\Users\px-wjt\Downloads\endgame-ai\MANAGER.md and launch the student instance with goal open notepad
+LOG: C:\Users\px-wjt\Downloads\endgame-ai\logs\20260619_124920.txt
+EXIT: 0
+
+--- SYSTEM PROMPT ---
+IDENTITY
+- Circuit: unified→manager swap (implementor slot, manager ROLE only)
+- WHO: endgame-ai Manager — orchestrate an identical peer instance via desktop only
+- WHERE: WORKSPACE ROOT is your code; peer path and peer goal come from GOAL
+- Student instance is a 1:1 copy in a separate folder; never edit peer files directly
+
+INPUT: GOAL, SCREEN, LAST ERROR, LAST REASONING, WORKSPACE
+
+PEER LAUNCH (one verb per turn, never win+r)
+S0 click taskbar "Terminal Preview" ([ID] or name)
+S1 hotkey win+x
+S2 click "Terminal (Admin)" or press a
+S3 focus "Windows Terminal" or click shell Document
+S4 write: cd /d {peer_directory from GOAL}
+S5 press enter
+S6 write: python tui.py "{peer_goal from GOAL}"
+S7 press enter
+S8 DONE when peer endgame-ai visible on SCREEN
+
+POST-LAUNCH: focus peer TUI, type guidance via desktop write
+
+ANTI-LOOP: action OK → next step; LAST ERROR → different target/verb
+
+VERBS: click, write, press, hotkey, focus, scroll — verb field is ONE word only (e.g. verb click, target Taskbar, value Terminal Preview)
+
+OUTPUT (JSON in content, start with {):
+{"record_type":"action","data":{"conclusion":"EXECUTE|DONE|CANNOT","actions":[{"verb":"...","target":"...","value":"..."}]}}
+
+--- USER CONTEXT ---
+GOAL: Read MANAGER.md at C:\Users\px-wjt\Downloads\endgame-ai\MANAGER.md and launch the student instance with goal open notepad
+SCREEN: (desktop observation disabled — assume bare Windows desktop; Run dialog not visible; no application windows open)
+WORKSPACE: ROLE: manager — orchestrate peer on desktop (manager prompt active)
+ROOT: C:\Users\px-wjt\Downloads\endgame-ai
+PROMPTS: C:\Users\px-wjt\Downloads\endgame-ai\prompts
+WIRING: C:\Users\px-wjt\Downloads\endgame-ai\prompts\wiring.json
+
+--- MODEL CONTENT ---
+{
+  "record_type": "action",
+  "data": {
+    "conclusion": "EXECUTE",
+    "actions": [
+      {
+        "verb": "click",
+        "target": "Taskbar",
+        "value": "Terminal Preview"
+      }
+    ]
+  }
+}
+
+--- MODEL REASONING ---
+We need to produce JSON with action verb "click", target "Taskbar", value "Terminal Preview". Then output JSON. No other actions.
+
+================================================================================
+S03 — S03 Simple math
+================================================================================
+GOAL: what is 2+2
+LOG: C:\Users\px-wjt\Downloads\endgame-ai\logs\20260619_124925.txt
+EXIT: 0
+
+--- SYSTEM PROMPT ---
+IDENTITY
+- Circuit: unified (implementor slot)
+- WHO: endgame-ai desktop executor — observe SCREEN, act once per turn on THIS machine
+- WHERE: WORKSPACE below — your code root; prompts/ holds your instructions; wiring.json holds topology
+- MODE executor: you perform desktop actions yourself. Peer orchestration uses manager prompt only when GOAL requires it.
+
+INPUT: GOAL, SCREEN, LAST ERROR, LAST REASONING, WORKSPACE
+
+VERBS: click, write, press, hotkey, focus, scroll
+
+LOOP
+1. GOAL — what must be visible on SCREEN when complete?
+2. SCREEN — read it; satisfied already?
+3. Yes with SCREEN evidence → DONE | No → one action advancing GOAL
+4. Never DONE without quoting what on SCREEN proves completion
+
+ELEMENTS
+- Target [ID] or name substring from SCREEN only — never invent targets (workspace, Command, screen)
+- LAST REASONING action OK → next step, never repeat same verb+target
+- LAST ERROR says NEXT REQUIRED → output exactly that action, not the prior verb
+
+LAUNCH (strict step order — one action per turn)
+- Run dialog not on SCREEN → hotkey win+r (required before any write to Open field)
+- Run visible on SCREEN, app not open → write APPLICATION NAME into Open field (not goal text)
+- After write in Run → press enter (never click OK)
+- App open on SCREEN → focus it, interact inside it
+- App open, goal needs text → write into app Document/Edit (not Run dialog)
+- Never put goal text in Run dialog unless goal is to run that exact command
+
+JSON OUTPUT
+- content response MUST be JSON starting with {
+- data fields only: conclusion, actions — no extra keys (no last_reasoning in JSON)
+- LAST REASONING in USER context is prior-turn thinking — read it, do not echo into JSON
+- LAST ERROR parse_failed → fix content to valid JSON
+
+OUTPUT:
+{"record_type":"action","data":{"conclusion":"EXECUTE|DONE|CANNOT","actions":[{"verb":"...","target":"...","value":"..."}]}}
+
+--- USER CONTEXT ---
+GOAL: what is 2+2
+SCREEN: (desktop observation disabled — assume bare Windows desktop; Run dialog not visible; no application windows open)
+WORKSPACE: MODE: executor — act on THIS desktop yourself; do not delegate
+ROOT: C:\Users\px-wjt\Downloads\endgame-ai
+PROMPTS: C:\Users\px-wjt\Downloads\endgame-ai\prompts
+WIRING: C:\Users\px-wjt\Downloads\endgame-ai\prompts\wiring.json
+
+--- MODEL CONTENT ---
+{
+  "record_type": "action",
+  "data": {
+    "conclusion": "EXECUTE",
+    "actions": [
+      {
+        "verb": "hotkey",
+        "target": "desktop",
+        "value": "win+r"
+      }
+    ]
+  }
+}
+
+--- MODEL REASONING ---
+We need to execute GOAL: what is 2+2. Likely we need to open calculator or compute? But spec says "Run dialog not visible; no application windows open". We must run dialog first via hotkey win+r, then write APPLICATION NAME into Open field (not goal text). Goal is to compute 2+2, maybe we need a calculator app. But we cannot assume any app installed. Maybe we just output answer? But spec: "what is 2+2" likely answer is 4. Could we just write "4"? But need to act on desktop. Might need to open Notepad and write 4. But RUN dialog required before any write to Open field. So first action: hotkey win+r (to run dialog). Then next turn write APPLICATION NAME? But which app? Maybe Calculator. But not sure.
+
+Better: The GOAL is just answer, maybe we can just output JSON with conclusion DONE and actions none? But must quote what on SCREEN proves completion. There's no screen content. So cannot DONE.
+
+We need to produce action: hotkey win+r. That will open Run dialog. Then next turn we write something.
+
+Thus first turn: verb click? Actually hotkey win+r is a verb "hotkey". target maybe "Run dialog"? But spec: target must be from SCREEN only, but screen is bare desktop; Run dialog not visible. So cannot target that. Hmm.
+
+Maybe we need to press win+r (verb hotkey). Target could be "desktop". That's okay? "Never invent targets (workspace, Command, screen)". Desktop is not workspace nor command nor screen. Might be okay.
+
+But spec: "Target [ID] or name substring from SCREEN only — never invent targets (workspace, Command, screen)". So target must be a substring of SCREEN content. Since SCREEN is blank, no target. That's problematic.
+
+Maybe we need to write answer directly? But RUN dialog required before any write to Open field. So we cannot write to Open field without running dialog first. So we must run dialog via hotkey win+r (no target). Then next turn write "4" into Open field? That would be the answer. Then press enter.
+
+Thus actions: 1) hotkey win+r target maybe "desktop". 2) write "4" target "Open field". 3) press enter target "Enter".
+
+But we can only do one action per turn. So first turn output hotkey win+r.
+
+JSON: conclusion EXECUTE, actions [{"verb":"hotkey","target":"desktop","value":"win+r"}]
+
+Let's produce that.
+
+================================================================================
+S04 — S04 Notepad hello
+================================================================================
+GOAL: open notepad and write hello world
+LOG: C:\Users\px-wjt\Downloads\endgame-ai\logs\20260619_124952.txt
+EXIT: 0
+
+--- SYSTEM PROMPT ---
+IDENTITY
+- Circuit: unified (implementor slot)
+- WHO: endgame-ai desktop executor — observe SCREEN, act once per turn on THIS machine
+- WHERE: WORKSPACE below — your code root; prompts/ holds your instructions; wiring.json holds topology
+- MODE executor: you perform desktop actions yourself. Peer orchestration uses manager prompt only when GOAL requires it.
+
+INPUT: GOAL, SCREEN, LAST ERROR, LAST REASONING, WORKSPACE
+
+VERBS: click, write, press, hotkey, focus, scroll
+
+LOOP
+1. GOAL — what must be visible on SCREEN when complete?
+2. SCREEN — read it; satisfied already?
+3. Yes with SCREEN evidence → DONE | No → one action advancing GOAL
+4. Never DONE without quoting what on SCREEN proves completion
+
+ELEMENTS
+- Target [ID] or name substring from SCREEN only — never invent targets (workspace, Command, screen)
+- LAST REASONING action OK → next step, never repeat same verb+target
+- LAST ERROR says NEXT REQUIRED → output exactly that action, not the prior verb
+
+LAUNCH (strict step order — one action per turn)
+- Run dialog not on SCREEN → hotkey win+r (required before any write to Open field)
+- Run visible on SCREEN, app not open → write APPLICATION NAME into Open field (not goal text)
+- After write in Run → press enter (never click OK)
+- App open on SCREEN → focus it, interact inside it
+- App open, goal needs text → write into app Document/Edit (not Run dialog)
+- Never put goal text in Run dialog unless goal is to run that exact command
+
+JSON OUTPUT
+- content response MUST be JSON starting with {
+- data fields only: conclusion, actions — no extra keys (no last_reasoning in JSON)
+- LAST REASONING in USER context is prior-turn thinking — read it, do not echo into JSON
+- LAST ERROR parse_failed → fix content to valid JSON
+
+OUTPUT:
+{"record_type":"action","data":{"conclusion":"EXECUTE|DONE|CANNOT","actions":[{"verb":"...","target":"...","value":"..."}]}}
+
+--- USER CONTEXT ---
+GOAL: open notepad and write hello world
+SCREEN: (desktop observation disabled — assume bare Windows desktop; Run dialog not visible; no application windows open)
+WORKSPACE: MODE: executor — act on THIS desktop yourself; do not delegate
+ROOT: C:\Users\px-wjt\Downloads\endgame-ai
+PROMPTS: C:\Users\px-wjt\Downloads\endgame-ai\prompts
+WIRING: C:\Users\px-wjt\Downloads\endgame-ai\prompts\wiring.json
 
 --- MODEL CONTENT ---
 {
@@ -66,249 +294,27 @@ WIRING: C:\Users\px-wjt\Downloads\endgame-ai\prompts\wiring.txt
       {
         "verb": "press",
         "target": "Win+R",
-        "value": "win+r"
+        "value": "Win+R"
       }
     ]
   }
 }
 
 --- MODEL REASONING ---
-We need to follow loop. Goal: open youtube in chrome and play shakira waka waka. SCREEN is bare desktop, no windows. So not satisfied. Need to run dialog? Since Run dialog not visible, we must run dialog first. According to LAUNCH steps: Run dialog not on SCREEN → hotkey win+r (required before any write to Open field). So action: press win+r. That will bring up Run dialog. Then next turn we can write application name into Open field. But we need to output one action per turn. So first action is press win+r with target "Win+R". Value maybe "win+r"? The verb is press, target Win+R, value? Probably just "win+r". Output JSON: conclusion EXECUTE, actions [verb press target Win+R value win+r]. Let's produce.
-
-================================================================================
-S02 — S02 Launch student
-================================================================================
-GOAL: Read MANAGER.md at C:\Users\px-wjt\Downloads\endgame-ai\MANAGER.md and launch the student instance with goal open notepad
-LOG: C:\Users\px-wjt\Downloads\endgame-ai\logs\20260619_123621.txt
-EXIT: 0
-
---- SYSTEM PROMPT ---
-IDENTITY
-- Circuit: unified→manager swap (implementor slot, manager ROLE only)
-- WHO: endgame-ai Manager — orchestrate an identical peer instance via desktop only
-- WHERE: WORKSPACE ROOT is your code; peer path and peer goal come from GOAL
-- Student instance is a 1:1 copy in a separate folder; never edit peer files directly
-
-INPUT: GOAL, SCREEN, LAST ERROR, LAST REASONING, WORKSPACE
-
-PEER LAUNCH (one verb per turn, never win+r)
-S0 click taskbar "Terminal Preview" ([ID] or name)
-S1 hotkey win+x
-S2 click "Terminal (Admin)" or press a
-S3 focus "Windows Terminal" or click shell Document
-S4 write: cd /d {peer_directory from GOAL}
-S5 press enter
-S6 write: python tui.py "{peer_goal from GOAL}"
-S7 press enter
-S8 DONE when peer endgame-ai visible on SCREEN
-
-POST-LAUNCH: focus peer TUI, type guidance via desktop write
-
-ANTI-LOOP: action OK → next step; LAST ERROR → different target/verb
-
-OUTPUT (JSON in content, start with {):
-{"record_type":"action","data":{"conclusion":"EXECUTE|DONE|CANNOT","actions":[{"verb":"...","target":"...","value":"..."}]}}
-
---- USER CONTEXT ---
-GOAL: Read MANAGER.md at C:\Users\px-wjt\Downloads\endgame-ai\MANAGER.md and launch the student instance with goal open notepad
-SCREEN: (desktop observation disabled — assume bare Windows desktop; Run dialog not visible; no application windows open)
-WORKSPACE: ROLE: manager — orchestrate peer on desktop (manager prompt active)
-ROOT: C:\Users\px-wjt\Downloads\endgame-ai
-PROMPTS: C:\Users\px-wjt\Downloads\endgame-ai\prompts
-WIRING: C:\Users\px-wjt\Downloads\endgame-ai\prompts\wiring.txt
-
---- MODEL CONTENT ---
-{
-  "record_type": "action",
-  "data": {
-    "conclusion": "EXECUTE",
-    "actions": [
-      {
-        "verb": "click",
-        "target": "Taskbar",
-        "value": "Terminal Preview"
-      }
-    ]
-  }
-}
-
---- MODEL REASONING ---
-We need to output JSON with action verb, target, value. Steps: click taskbar "Terminal Preview" ([ID] or name). So verb "click", target "Taskbar", value "Terminal Preview". Or maybe "click taskbar Terminal Preview". We'll produce.
-
-But also need to consider anti-loop: action OK -> next step; LAST ERROR -> different target/verb. No error yet.
-
-Thus output JSON with that action.
-
-================================================================================
-S03 — S03 Simple math
-================================================================================
-GOAL: what is 2+2
-LOG: C:\Users\px-wjt\Downloads\endgame-ai\logs\20260619_123628.txt
-EXIT: 0
-
---- SYSTEM PROMPT ---
-IDENTITY
-- Circuit: unified (implementor slot)
-- WHO: endgame-ai desktop executor — observe SCREEN, act once per turn on THIS machine
-- WHERE: WORKSPACE below — your code root; prompts/ holds your instructions; wiring.txt holds topology
-- MODE executor: you perform desktop actions yourself. Peer orchestration uses manager prompt only when GOAL requires it.
-
-INPUT: GOAL, SCREEN, LAST ERROR, LAST REASONING, WORKSPACE
-
-VERBS: click, write, press, hotkey, focus, scroll
-
-LOOP
-1. GOAL — what must be visible on SCREEN when complete?
-2. SCREEN — read it; satisfied already?
-3. Yes with SCREEN evidence → DONE | No → one action advancing GOAL
-4. Never DONE without quoting what on SCREEN proves completion
-
-ELEMENTS
-- Target [ID] or name substring from SCREEN only — never invent targets (workspace, Command, screen)
-- LAST REASONING action OK → next step, never repeat same verb+target
-- LAST ERROR says NEXT REQUIRED → output exactly that action, not the prior verb
-
-LAUNCH (strict step order — one action per turn)
-- Run dialog not on SCREEN → hotkey win+r (required before any write to Open field)
-- Run visible on SCREEN, app not open → write APPLICATION NAME into Open field (not goal text)
-- After write in Run → press enter (never click OK)
-- App open on SCREEN → focus it, interact inside it
-- App open, goal needs text → write into app Document/Edit (not Run dialog)
-- Never put goal text in Run dialog unless goal is to run that exact command
-
-JSON OUTPUT
-- content response MUST be JSON starting with {
-- data fields only: conclusion, actions — no extra keys (no last_reasoning in JSON)
-- LAST REASONING in USER context is prior-turn thinking — read it, do not echo into JSON
-- LAST ERROR parse_failed → fix content to valid JSON
-
-OUTPUT:
-{"record_type":"action","data":{"conclusion":"EXECUTE|DONE|CANNOT","actions":[{"verb":"...","target":"...","value":"..."}]}}
-
---- USER CONTEXT ---
-GOAL: what is 2+2
-SCREEN: (desktop observation disabled — assume bare Windows desktop; Run dialog not visible; no application windows open)
-WORKSPACE: MODE: executor — act on THIS desktop yourself; do not delegate
-ROOT: C:\Users\px-wjt\Downloads\endgame-ai
-PROMPTS: C:\Users\px-wjt\Downloads\endgame-ai\prompts
-WIRING: C:\Users\px-wjt\Downloads\endgame-ai\prompts\wiring.txt
-
---- MODEL CONTENT ---
-{
-  "record_type": "action",
-  "data": {
-    "conclusion": "EXECUTE",
-    "actions": [
-      {
-        "verb": "hotkey",
-        "target": "win+r",
-        "value": ""
-      }
-    ]
-  }
-}
-
---- MODEL REASONING ---
-We need to produce JSON with conclusion and actions. Goal: what is 2+2. SCREEN is bare desktop, no app open. Need to compute answer? Probably we need to write something on screen? But spec: "what is 2+2" maybe expect output "4". Since no app open, maybe we just write "4" somewhere? But actions limited to click/write/press/hotkey/focus/scroll. Could write "4" into a file? Or just produce answer? The GOAL is visible on SCREEN when complete: what is 2+2. So screen should show "4". We need to produce that via action. Since no app open, maybe we just write "4" into workspace? But actions are on desktop. Could use hotkey to open calculator? But goal is simple arithmetic; maybe we just output "4" as answer in JSON? The JSON must have conclusion EXECUTE or DONE. If we can produce answer directly, maybe DONE with no action? But need to quote what on SCREEN proves completion. Since SCREEN is bare desktop, no text visible. So not done.
-
-We need to perform an action: maybe write "4" into a file? Or just output JSON with conclusion EXECUTE and actions? The spec: LAUNCH step order: Run dialog not on SCREEN → hotkey win+r (required before any write to Open field). But we don't have app open. Maybe we need to run calculator? That's an app. So first action: hotkey win+r. Then next turn we could write "4" into Open field? But that seems weird.
-
-But maybe the goal is just to compute and output answer, not via app. The executor can just produce JSON with answer? However spec says "what is 2+2" visible on SCREEN when complete. So screen must show "4". How to get that? Could write "4" into a text file? Or maybe we need to open Notepad and type 4.
-
-Simplify: Action: hotkey win+r (to open Run dialog). That's required before any write to Open field. But we don't write anything. So action: {"verb":"hotkey","target":"win+r","value":""}. Conclusion EXECUTE.
-
-Thus JSON: {"record_type":"action","data":{"conclusion":"EXECUTE","actions":[{"verb":"hotkey","target":"win+r","value":""}]}}.
-
-Check if any error? Last error parse_failed not present. So fine.
-
-================================================================================
-S04 — S04 Notepad hello
-================================================================================
-GOAL: open notepad and write hello world
-LOG: C:\Users\px-wjt\Downloads\endgame-ai\logs\20260619_123654.txt
-EXIT: 0
-
---- SYSTEM PROMPT ---
-IDENTITY
-- Circuit: unified (implementor slot)
-- WHO: endgame-ai desktop executor — observe SCREEN, act once per turn on THIS machine
-- WHERE: WORKSPACE below — your code root; prompts/ holds your instructions; wiring.txt holds topology
-- MODE executor: you perform desktop actions yourself. Peer orchestration uses manager prompt only when GOAL requires it.
-
-INPUT: GOAL, SCREEN, LAST ERROR, LAST REASONING, WORKSPACE
-
-VERBS: click, write, press, hotkey, focus, scroll
-
-LOOP
-1. GOAL — what must be visible on SCREEN when complete?
-2. SCREEN — read it; satisfied already?
-3. Yes with SCREEN evidence → DONE | No → one action advancing GOAL
-4. Never DONE without quoting what on SCREEN proves completion
-
-ELEMENTS
-- Target [ID] or name substring from SCREEN only — never invent targets (workspace, Command, screen)
-- LAST REASONING action OK → next step, never repeat same verb+target
-- LAST ERROR says NEXT REQUIRED → output exactly that action, not the prior verb
-
-LAUNCH (strict step order — one action per turn)
-- Run dialog not on SCREEN → hotkey win+r (required before any write to Open field)
-- Run visible on SCREEN, app not open → write APPLICATION NAME into Open field (not goal text)
-- After write in Run → press enter (never click OK)
-- App open on SCREEN → focus it, interact inside it
-- App open, goal needs text → write into app Document/Edit (not Run dialog)
-- Never put goal text in Run dialog unless goal is to run that exact command
-
-JSON OUTPUT
-- content response MUST be JSON starting with {
-- data fields only: conclusion, actions — no extra keys (no last_reasoning in JSON)
-- LAST REASONING in USER context is prior-turn thinking — read it, do not echo into JSON
-- LAST ERROR parse_failed → fix content to valid JSON
-
-OUTPUT:
-{"record_type":"action","data":{"conclusion":"EXECUTE|DONE|CANNOT","actions":[{"verb":"...","target":"...","value":"..."}]}}
-
---- USER CONTEXT ---
-GOAL: open notepad and write hello world
-SCREEN: (desktop observation disabled — assume bare Windows desktop; Run dialog not visible; no application windows open)
-WORKSPACE: MODE: executor — act on THIS desktop yourself; do not delegate
-ROOT: C:\Users\px-wjt\Downloads\endgame-ai
-PROMPTS: C:\Users\px-wjt\Downloads\endgame-ai\prompts
-WIRING: C:\Users\px-wjt\Downloads\endgame-ai\prompts\wiring.txt
-
---- MODEL CONTENT ---
-{
-  "record_type": "action",
-  "data": {
-    "conclusion": "EXECUTE",
-    "actions": [
-      {
-        "verb": "hotkey",
-        "target": "win+r",
-        "value": ""
-      }
-    ]
-  }
-}
-
---- MODEL REASONING ---
-We need to produce JSON with action. Goal: open notepad and write hello world. Current state: desktop bare, no Run dialog visible, no app windows open. According to LAUNCH steps:
-
-1. Run dialog not on SCREEN → hotkey win+r (required before any write to Open field). So first action: press win+r? Actually verb "hotkey" target maybe "win+r". value? Probably just "win+r". So output JSON with verb "hotkey", target "win+r", value "". Also conclusion EXECUTE.
-
-Thus produce {"record_type":"action","data":{"conclusion":"EXECUTE","actions":[{"verb":"hotkey","target":"win+r","value":""}]}}.
+We need to output JSON with conclusion and actions. Goal: open notepad and write hello world. Current state: desktop bare, no app windows open. Need to run dialog? Actually we must open Notepad via Run dialog? According to LAUNCH steps: Run dialog not on SCREEN → hotkey win+r (required before any write to Open field). So first action: press win+r? That's a hotkey to open Run dialog. Verb "press", target maybe "win+r"? Or "Win+R". Use "press" verb with target "Win+R". Value maybe "Win+R". Let's produce JSON: conclusion EXECUTE, actions [{"verb":"press","target":"Win+R","value":"Win+R"}]. No write to Open field yet. So output.
 
 ================================================================================
 S05 — S05 Open chrome only
 ================================================================================
 GOAL: open chrome
-LOG: C:\Users\px-wjt\Downloads\endgame-ai\logs\20260619_123705.txt
+LOG: C:\Users\px-wjt\Downloads\endgame-ai\logs\20260619_125003.txt
 EXIT: 0
 
 --- SYSTEM PROMPT ---
 IDENTITY
 - Circuit: unified (implementor slot)
 - WHO: endgame-ai desktop executor — observe SCREEN, act once per turn on THIS machine
-- WHERE: WORKSPACE below — your code root; prompts/ holds your instructions; wiring.txt holds topology
+- WHERE: WORKSPACE below — your code root; prompts/ holds your instructions; wiring.json holds topology
 - MODE executor: you perform desktop actions yourself. Peer orchestration uses manager prompt only when GOAL requires it.
 
 INPUT: GOAL, SCREEN, LAST ERROR, LAST REASONING, WORKSPACE
@@ -349,7 +355,7 @@ SCREEN: (desktop observation disabled — assume bare Windows desktop; Run dialo
 WORKSPACE: MODE: executor — act on THIS desktop yourself; do not delegate
 ROOT: C:\Users\px-wjt\Downloads\endgame-ai
 PROMPTS: C:\Users\px-wjt\Downloads\endgame-ai\prompts
-WIRING: C:\Users\px-wjt\Downloads\endgame-ai\prompts\wiring.txt
+WIRING: C:\Users\px-wjt\Downloads\endgame-ai\prompts\wiring.json
 
 --- MODEL CONTENT ---
 {
@@ -367,24 +373,26 @@ WIRING: C:\Users\px-wjt\Downloads\endgame-ai\prompts\wiring.txt
 }
 
 --- MODEL REASONING ---
-We need to output JSON with conclusion EXECUTE and actions list. Goal: open chrome. According to LAUNCH steps: Run dialog not on SCREEN → hotkey win+r (required before any write). So first action: verb "hotkey", target "win+r". value maybe empty? Probably just "win+r". Then after that, we need to write application name into Open field: verb "write", target "Open field", value "chrome". Then press enter: verb "press", target "enter". But per turn only one action. So first turn: hotkey win+r.
+We need to open chrome. According to LAUNCH steps: Run dialog not on SCREEN → hotkey win+r (required before any write to Open field). So first action: press hotkey win+r? Actually verb "hotkey" target maybe "win+r". value? Probably just "win+r". Then after that, we need to write APPLICATION NAME into Open field. That is "chrome". So second action: write target "Open field", value "chrome". But spec says never repeat same verb+target. First verb hotkey target win+r; second write target Open field.
 
-Thus JSON: conclusion EXECUTE, actions [{"verb":"hotkey","target":"win+r","value":""}]. Probably value empty string.
+But also need to press enter after write? Actually LAUNCH: After write in Run → press enter (never click OK). That's third action: press enter target maybe "Enter key" or "enter". But we may output only one action per turn. The loop says one action per turn. So first turn: hotkey win+r.
 
-Let's produce.
+Thus JSON: conclusion EXECUTE, actions [{"verb":"hotkey","target":"win+r","value":""}? value maybe empty? Probably value is the key? Might be "win+r". We'll set value "". But spec: value field maybe for typed text. For hotkey maybe empty. We'll include value "".
+
+Thus output JSON.
 
 ================================================================================
 S06 — S06 Calculator
 ================================================================================
 GOAL: open calculator and compute 99 times 3
-LOG: C:\Users\px-wjt\Downloads\endgame-ai\logs\20260619_123715.txt
+LOG: C:\Users\px-wjt\Downloads\endgame-ai\logs\20260619_125018.txt
 EXIT: 0
 
 --- SYSTEM PROMPT ---
 IDENTITY
 - Circuit: unified (implementor slot)
 - WHO: endgame-ai desktop executor — observe SCREEN, act once per turn on THIS machine
-- WHERE: WORKSPACE below — your code root; prompts/ holds your instructions; wiring.txt holds topology
+- WHERE: WORKSPACE below — your code root; prompts/ holds your instructions; wiring.json holds topology
 - MODE executor: you perform desktop actions yourself. Peer orchestration uses manager prompt only when GOAL requires it.
 
 INPUT: GOAL, SCREEN, LAST ERROR, LAST REASONING, WORKSPACE
@@ -425,39 +433,43 @@ SCREEN: (desktop observation disabled — assume bare Windows desktop; Run dialo
 WORKSPACE: MODE: executor — act on THIS desktop yourself; do not delegate
 ROOT: C:\Users\px-wjt\Downloads\endgame-ai
 PROMPTS: C:\Users\px-wjt\Downloads\endgame-ai\prompts
-WIRING: C:\Users\px-wjt\Downloads\endgame-ai\prompts\wiring.txt
+WIRING: C:\Users\px-wjt\Downloads\endgame-ai\prompts\wiring.json
 
 --- MODEL CONTENT ---
 {
-  "conclusion": "EXECUTE",
-  "actions": [
-    {
-      "verb": "hotkey",
-      "target": "win+r",
-      "value": ""
-    }
-  ]
+  "record_type": "action",
+  "data": {
+    "conclusion": "EXECUTE",
+    "actions": [
+      {
+        "verb": "press",
+        "target": "win+r",
+        "value": "win+r"
+      }
+    ]
+  }
 }
 
 --- MODEL REASONING ---
-We need to output JSON with conclusion and actions. Steps: Run dialog not visible, so we must open Run dialog via hotkey win+r. That's an action: verb "hotkey", target "win+r". Value maybe empty? The spec: actions array with verb, target, value. For hotkey, value likely empty string? Probably just verb and target. Let's output.
+We need to output JSON with action. Goal: open calculator and compute 99 times 3. Steps:
 
-Conclusion: EXECUTE (since we are executing the hotkey). JSON:
+1. Run dialog not visible, so we must run dialog via hotkey win+r (required before any write). So first action: press hotkey win+r.
 
-{
-"conclusion":"EXECUTE",
-"actions":[{"verb":"hotkey","target":"win+r","value":""}]
-}
+But also need to write APPLICATION NAME into Open field after run? Actually sequence: Run dialog not on SCREEN → hotkey win+r (required before any write to Open field). So first action is hotkey win+r. Then after run, app open on SCREEN → focus it, interact inside it. So second action maybe focus calculator.
 
-But spec: "value":"..." maybe needed. Provide empty string.
+But we can only do one action per turn. So first turn: press hotkey win+r.
 
-Let's produce.
+Thus JSON: conclusion EXECUTE? actions[verb="press", target="win+r", value=""]. Or value maybe empty string? Usually value is argument. For hotkey, value maybe "win+r". But spec: verb+target+value. For hotkey, value maybe "win+r". Let's output.
+
+Conclusion EXECUTE.
+
+JSON: {"record_type":"action","data":{"conclusion":"EXECUTE","actions":[{"verb":"press","target":"win+r","value":"win+r"}]}}.
 
 ================================================================================
 S07 — S07 Student path
 ================================================================================
 GOAL: launch student at C:\Users\px-wjt\Downloads\endgame-ai-student with goal echo hello
-LOG: C:\Users\px-wjt\Downloads\endgame-ai\logs\20260619_123724.txt
+LOG: C:\Users\px-wjt\Downloads\endgame-ai\logs\20260619_125032.txt
 EXIT: 0
 
 --- SYSTEM PROMPT ---
@@ -484,6 +496,8 @@ POST-LAUNCH: focus peer TUI, type guidance via desktop write
 
 ANTI-LOOP: action OK → next step; LAST ERROR → different target/verb
 
+VERBS: click, write, press, hotkey, focus, scroll — verb field is ONE word only (e.g. verb click, target Taskbar, value Terminal Preview)
+
 OUTPUT (JSON in content, start with {):
 {"record_type":"action","data":{"conclusion":"EXECUTE|DONE|CANNOT","actions":[{"verb":"...","target":"...","value":"..."}]}}
 
@@ -493,7 +507,243 @@ SCREEN: (desktop observation disabled — assume bare Windows desktop; Run dialo
 WORKSPACE: ROLE: manager — orchestrate peer on desktop (manager prompt active)
 ROOT: C:\Users\px-wjt\Downloads\endgame-ai
 PROMPTS: C:\Users\px-wjt\Downloads\endgame-ai\prompts
-WIRING: C:\Users\px-wjt\Downloads\endgame-ai\prompts\wiring.txt
+WIRING: C:\Users\px-wjt\Downloads\endgame-ai\prompts\wiring.json
+
+--- MODEL CONTENT ---
+{
+  "record_type": "action",
+  "data": {
+    "conclusion": "EXECUTE",
+    "actions": [
+      {"verb": "click", "target": "Taskbar", "value": "Terminal Preview"},
+      {"verb": "hotkey", "target": "Windows", "value": "x"},
+      {"verb": "click", "target": "Taskbar", "value": "Terminal (Admin)"},
+      {"verb": "focus", "target": "Windows Terminal"},
+      {"verb": "write", "target": "console", "value": "cd /d C:\\Users\\px-wjt\\Downloads\\endgame-ai-student"},
+      {"verb": "press", "target": "keyboard", "value": "Enter"},
+      {"verb": "write", "target": "console", "value": "python tui.py echo hello"},
+      {"verb": "press", "target": "keyboard", "value": "Enter"}
+    ]
+  }
+}
+
+--- MODEL REASONING ---
+We need to output JSON with actions. Steps: click taskbar "Terminal Preview" (verb click, target Taskbar, value Terminal Preview). Then hotkey win+x (verb press? Actually hotkey is press? The verb list includes press, hotkey. Use verb hotkey, target Windows, value x? Probably "hotkey win+x". Let's do: verb hotkey, target Windows, value x. Next click "Terminal (Admin)" or press a. We'll click Terminal (Admin). verb click, target Taskbar, value Terminal (Admin). Then focus "Windows Terminal" or click shell Document. Use verb focus, target Windows Terminal, value None? Or just focus. Let's do verb focus, target Windows Terminal. Write cd /d {peer_directory}. That's write verb write, target console, value cd /d C:\Users\px-wjt\Downloads\endgame-ai-student. Press enter: verb press, target keyboard, value Enter. Write python tui.py "{peer_goal}". verb write, target console, value python tui.py echo hello. Press enter again? Actually after writing command, need enter. So another press. Then DONE when peer endgame-ai visible on SCREEN. So output actions list.
+
+Now produce JSON: {"record_type":"action","data":{"conclusion":"EXECUTE","actions":[...]}}.
+
+Let's craft actions:
+
+[
+{"verb":"click","target":"Taskbar","value":"Terminal Preview"},
+{"verb":"hotkey","target":"Windows","value":"x"},
+{"verb":"click","target":"Taskbar","value":"Terminal (Admin)"},
+{"verb":"focus","target":"Windows Terminal"},
+{"verb":"write","target":"console","value":"cd /d C:\\Users\\px-wjt\\Downloads\\endgame-ai-student"},
+{"verb":"press","target":"keyboard","value":"Enter"},
+{"verb":"write","target":"console","value":"python tui.py echo hello"},
+{"verb":"press","target":"keyboard","value":"Enter"}
+]
+
+Conclusion EXECUTE.
+
+Return JSON.
+
+================================================================================
+S08 — S08 Run dialog
+================================================================================
+GOAL: open the run dialog
+LOG: C:\Users\px-wjt\Downloads\endgame-ai\logs\20260619_125100.txt
+EXIT: 0
+
+--- SYSTEM PROMPT ---
+IDENTITY
+- Circuit: unified (implementor slot)
+- WHO: endgame-ai desktop executor — observe SCREEN, act once per turn on THIS machine
+- WHERE: WORKSPACE below — your code root; prompts/ holds your instructions; wiring.json holds topology
+- MODE executor: you perform desktop actions yourself. Peer orchestration uses manager prompt only when GOAL requires it.
+
+INPUT: GOAL, SCREEN, LAST ERROR, LAST REASONING, WORKSPACE
+
+VERBS: click, write, press, hotkey, focus, scroll
+
+LOOP
+1. GOAL — what must be visible on SCREEN when complete?
+2. SCREEN — read it; satisfied already?
+3. Yes with SCREEN evidence → DONE | No → one action advancing GOAL
+4. Never DONE without quoting what on SCREEN proves completion
+
+ELEMENTS
+- Target [ID] or name substring from SCREEN only — never invent targets (workspace, Command, screen)
+- LAST REASONING action OK → next step, never repeat same verb+target
+- LAST ERROR says NEXT REQUIRED → output exactly that action, not the prior verb
+
+LAUNCH (strict step order — one action per turn)
+- Run dialog not on SCREEN → hotkey win+r (required before any write to Open field)
+- Run visible on SCREEN, app not open → write APPLICATION NAME into Open field (not goal text)
+- After write in Run → press enter (never click OK)
+- App open on SCREEN → focus it, interact inside it
+- App open, goal needs text → write into app Document/Edit (not Run dialog)
+- Never put goal text in Run dialog unless goal is to run that exact command
+
+JSON OUTPUT
+- content response MUST be JSON starting with {
+- data fields only: conclusion, actions — no extra keys (no last_reasoning in JSON)
+- LAST REASONING in USER context is prior-turn thinking — read it, do not echo into JSON
+- LAST ERROR parse_failed → fix content to valid JSON
+
+OUTPUT:
+{"record_type":"action","data":{"conclusion":"EXECUTE|DONE|CANNOT","actions":[{"verb":"...","target":"...","value":"..."}]}}
+
+--- USER CONTEXT ---
+GOAL: open the run dialog
+SCREEN: (desktop observation disabled — assume bare Windows desktop; Run dialog not visible; no application windows open)
+WORKSPACE: MODE: executor — act on THIS desktop yourself; do not delegate
+ROOT: C:\Users\px-wjt\Downloads\endgame-ai
+PROMPTS: C:\Users\px-wjt\Downloads\endgame-ai\prompts
+WIRING: C:\Users\px-wjt\Downloads\endgame-ai\prompts\wiring.json
+
+--- MODEL CONTENT ---
+{
+  "record_type": "action",
+  "data": {
+    "conclusion": "EXECUTE",
+    "actions": [
+      {
+        "verb": "press",
+        "target": "win+r",
+        "value": "win+r"
+      }
+    ]
+  }
+}
+
+--- MODEL REASONING ---
+We need to output JSON with action to run dialog. According to LAUNCH steps: Run dialog not on SCREEN → hotkey win+r (required before any write). So first action is press win+r? Actually "hotkey win+r" means perform hotkey win+r. That's an action verb "press" target "win+r". Value maybe "win+r". We'll output JSON with conclusion EXECUTE, actions list with that.
+
+Check: LAST REASONING says next required is RUN DIALOG not on SCREEN → hotkey win+r. So we do that.
+
+JSON: {"record_type":"action","data":{"conclusion":"EXECUTE","actions":[{"verb":"press","target":"win+r","value":"win+r"}]}}.
+
+================================================================================
+S09 — S09 Already done
+================================================================================
+GOAL: if the answer is already visible on screen, report DONE
+LOG: C:\Users\px-wjt\Downloads\endgame-ai\logs\20260619_125111.txt
+EXIT: 0
+
+--- SYSTEM PROMPT ---
+IDENTITY
+- Circuit: unified (implementor slot)
+- WHO: endgame-ai desktop executor — observe SCREEN, act once per turn on THIS machine
+- WHERE: WORKSPACE below — your code root; prompts/ holds your instructions; wiring.json holds topology
+- MODE executor: you perform desktop actions yourself. Peer orchestration uses manager prompt only when GOAL requires it.
+
+INPUT: GOAL, SCREEN, LAST ERROR, LAST REASONING, WORKSPACE
+
+VERBS: click, write, press, hotkey, focus, scroll
+
+LOOP
+1. GOAL — what must be visible on SCREEN when complete?
+2. SCREEN — read it; satisfied already?
+3. Yes with SCREEN evidence → DONE | No → one action advancing GOAL
+4. Never DONE without quoting what on SCREEN proves completion
+
+ELEMENTS
+- Target [ID] or name substring from SCREEN only — never invent targets (workspace, Command, screen)
+- LAST REASONING action OK → next step, never repeat same verb+target
+- LAST ERROR says NEXT REQUIRED → output exactly that action, not the prior verb
+
+LAUNCH (strict step order — one action per turn)
+- Run dialog not on SCREEN → hotkey win+r (required before any write to Open field)
+- Run visible on SCREEN, app not open → write APPLICATION NAME into Open field (not goal text)
+- After write in Run → press enter (never click OK)
+- App open on SCREEN → focus it, interact inside it
+- App open, goal needs text → write into app Document/Edit (not Run dialog)
+- Never put goal text in Run dialog unless goal is to run that exact command
+
+JSON OUTPUT
+- content response MUST be JSON starting with {
+- data fields only: conclusion, actions — no extra keys (no last_reasoning in JSON)
+- LAST REASONING in USER context is prior-turn thinking — read it, do not echo into JSON
+- LAST ERROR parse_failed → fix content to valid JSON
+
+OUTPUT:
+{"record_type":"action","data":{"conclusion":"EXECUTE|DONE|CANNOT","actions":[{"verb":"...","target":"...","value":"..."}]}}
+
+--- USER CONTEXT ---
+GOAL: if the answer is already visible on screen, report DONE
+SCREEN: (desktop observation disabled — assume bare Windows desktop; Run dialog not visible; no application windows open)
+WORKSPACE: MODE: executor — act on THIS desktop yourself; do not delegate
+ROOT: C:\Users\px-wjt\Downloads\endgame-ai
+PROMPTS: C:\Users\px-wjt\Downloads\endgame-ai\prompts
+WIRING: C:\Users\px-wjt\Downloads\endgame-ai\prompts\wiring.json
+
+--- MODEL CONTENT ---
+{
+  "record_type": "action",
+  "data": {
+    "conclusion": "EXECUTE",
+    "actions": [
+      {
+        "verb": "hotkey",
+        "target": "win+r",
+        "value": ""
+      }
+    ]
+  }
+}
+
+--- MODEL REASONING ---
+We need to output JSON with conclusion EXECUTE? The goal: if answer already visible on screen, report DONE. Screen is bare desktop, no answer visible. So not done. Need to run dialog? Since Run dialog not visible, we must open it via hotkey win+r. That's first action. So output action verb "hotkey", target "win+r", value maybe empty? The spec: actions array with verb,target,value. For hotkey, value maybe empty string. We'll produce JSON.
+
+Conclusion EXECUTE. Actions: [{"verb":"hotkey","target":"win+r","value":""}]
+
+Return.
+
+================================================================================
+S10 — S10 Orchestrate peer
+================================================================================
+GOAL: orchestrate the student to run python tui.py with goal list files
+LOG: C:\Users\px-wjt\Downloads\endgame-ai\logs\20260619_125120.txt
+EXIT: 0
+
+--- SYSTEM PROMPT ---
+IDENTITY
+- Circuit: unified→manager swap (implementor slot, manager ROLE only)
+- WHO: endgame-ai Manager — orchestrate an identical peer instance via desktop only
+- WHERE: WORKSPACE ROOT is your code; peer path and peer goal come from GOAL
+- Student instance is a 1:1 copy in a separate folder; never edit peer files directly
+
+INPUT: GOAL, SCREEN, LAST ERROR, LAST REASONING, WORKSPACE
+
+PEER LAUNCH (one verb per turn, never win+r)
+S0 click taskbar "Terminal Preview" ([ID] or name)
+S1 hotkey win+x
+S2 click "Terminal (Admin)" or press a
+S3 focus "Windows Terminal" or click shell Document
+S4 write: cd /d {peer_directory from GOAL}
+S5 press enter
+S6 write: python tui.py "{peer_goal from GOAL}"
+S7 press enter
+S8 DONE when peer endgame-ai visible on SCREEN
+
+POST-LAUNCH: focus peer TUI, type guidance via desktop write
+
+ANTI-LOOP: action OK → next step; LAST ERROR → different target/verb
+
+VERBS: click, write, press, hotkey, focus, scroll — verb field is ONE word only (e.g. verb click, target Taskbar, value Terminal Preview)
+
+OUTPUT (JSON in content, start with {):
+{"record_type":"action","data":{"conclusion":"EXECUTE|DONE|CANNOT","actions":[{"verb":"...","target":"...","value":"..."}]}}
+
+--- USER CONTEXT ---
+GOAL: orchestrate the student to run python tui.py with goal list files
+SCREEN: (desktop observation disabled — assume bare Windows desktop; Run dialog not visible; no application windows open)
+WORKSPACE: ROLE: manager — orchestrate peer on desktop (manager prompt active)
+ROOT: C:\Users\px-wjt\Downloads\endgame-ai
+PROMPTS: C:\Users\px-wjt\Downloads\endgame-ai\prompts
+WIRING: C:\Users\px-wjt\Downloads\endgame-ai\prompts\wiring.json
 
 --- MODEL CONTENT ---
 {
@@ -511,232 +761,18 @@ WIRING: C:\Users\px-wjt\Downloads\endgame-ai\prompts\wiring.txt
 }
 
 --- MODEL REASONING ---
-We need to output JSON with action verb and target. Sequence: S0 click taskbar "Terminal Preview" ([ID] or name). So verb "click", target "Taskbar", value "Terminal Preview". But maybe need ID? Use name. Provide JSON.
+We need to output JSON action. Steps: click taskbar "Terminal Preview" (verb click, target Taskbar, value Terminal Preview). Then hotkey win+x etc. But we only output one action per turn? The instruction: "PEER LAUNCH (one verb per turn, never win+r)". So produce first action: click taskbar "Terminal Preview". Output JSON with that action.
 
-Action: {"verb":"click","target":"Taskbar","value":"Terminal Preview"}.
-
-Conclusion EXECUTE.
-
-================================================================================
-S08 — S08 Run dialog
-================================================================================
-GOAL: open the run dialog
-LOG: C:\Users\px-wjt\Downloads\endgame-ai\logs\20260619_123731.txt
-EXIT: 0
-
---- SYSTEM PROMPT ---
-IDENTITY
-- Circuit: unified (implementor slot)
-- WHO: endgame-ai desktop executor — observe SCREEN, act once per turn on THIS machine
-- WHERE: WORKSPACE below — your code root; prompts/ holds your instructions; wiring.txt holds topology
-- MODE executor: you perform desktop actions yourself. Peer orchestration uses manager prompt only when GOAL requires it.
-
-INPUT: GOAL, SCREEN, LAST ERROR, LAST REASONING, WORKSPACE
-
-VERBS: click, write, press, hotkey, focus, scroll
-
-LOOP
-1. GOAL — what must be visible on SCREEN when complete?
-2. SCREEN — read it; satisfied already?
-3. Yes with SCREEN evidence → DONE | No → one action advancing GOAL
-4. Never DONE without quoting what on SCREEN proves completion
-
-ELEMENTS
-- Target [ID] or name substring from SCREEN only — never invent targets (workspace, Command, screen)
-- LAST REASONING action OK → next step, never repeat same verb+target
-- LAST ERROR says NEXT REQUIRED → output exactly that action, not the prior verb
-
-LAUNCH (strict step order — one action per turn)
-- Run dialog not on SCREEN → hotkey win+r (required before any write to Open field)
-- Run visible on SCREEN, app not open → write APPLICATION NAME into Open field (not goal text)
-- After write in Run → press enter (never click OK)
-- App open on SCREEN → focus it, interact inside it
-- App open, goal needs text → write into app Document/Edit (not Run dialog)
-- Never put goal text in Run dialog unless goal is to run that exact command
-
-JSON OUTPUT
-- content response MUST be JSON starting with {
-- data fields only: conclusion, actions — no extra keys (no last_reasoning in JSON)
-- LAST REASONING in USER context is prior-turn thinking — read it, do not echo into JSON
-- LAST ERROR parse_failed → fix content to valid JSON
-
-OUTPUT:
-{"record_type":"action","data":{"conclusion":"EXECUTE|DONE|CANNOT","actions":[{"verb":"...","target":"...","value":"..."}]}}
-
---- USER CONTEXT ---
-GOAL: open the run dialog
-SCREEN: (desktop observation disabled — assume bare Windows desktop; Run dialog not visible; no application windows open)
-WORKSPACE: MODE: executor — act on THIS desktop yourself; do not delegate
-ROOT: C:\Users\px-wjt\Downloads\endgame-ai
-PROMPTS: C:\Users\px-wjt\Downloads\endgame-ai\prompts
-WIRING: C:\Users\px-wjt\Downloads\endgame-ai\prompts\wiring.txt
-
---- MODEL CONTENT ---
-{
-  "record_type": "action",
-  "data": {
-    "conclusion": "EXECUTE",
-    "actions": [
-      {
-        "verb": "hotkey",
-        "target": "win+r",
-        "value": "win+r"
-      }
-    ]
-  }
-}
-
---- MODEL REASONING ---
-We need to output JSON with action to open run dialog. According to LAUNCH steps: Run dialog not on SCREEN → hotkey win+r (required before any write to Open field). So first action is press hotkey win+r? Actually verb "hotkey" target "win+r". Value maybe "win+r". Output JSON with that action.
-
-Conclusion EXECUTE? Probably EXECUTE. Provide actions list with one.
-
-Thus JSON: {"record_type":"action","data":{"conclusion":"EXECUTE","actions":[{"verb":"hotkey","target":"win+r","value":"win+r"}]}}.
-
-================================================================================
-S09 — S09 Already done
-================================================================================
-GOAL: if the answer is already visible on screen, report DONE
-LOG: C:\Users\px-wjt\Downloads\endgame-ai\logs\20260619_123740.txt
-EXIT: 0
-
---- SYSTEM PROMPT ---
-IDENTITY
-- Circuit: unified (implementor slot)
-- WHO: endgame-ai desktop executor — observe SCREEN, act once per turn on THIS machine
-- WHERE: WORKSPACE below — your code root; prompts/ holds your instructions; wiring.txt holds topology
-- MODE executor: you perform desktop actions yourself. Peer orchestration uses manager prompt only when GOAL requires it.
-
-INPUT: GOAL, SCREEN, LAST ERROR, LAST REASONING, WORKSPACE
-
-VERBS: click, write, press, hotkey, focus, scroll
-
-LOOP
-1. GOAL — what must be visible on SCREEN when complete?
-2. SCREEN — read it; satisfied already?
-3. Yes with SCREEN evidence → DONE | No → one action advancing GOAL
-4. Never DONE without quoting what on SCREEN proves completion
-
-ELEMENTS
-- Target [ID] or name substring from SCREEN only — never invent targets (workspace, Command, screen)
-- LAST REASONING action OK → next step, never repeat same verb+target
-- LAST ERROR says NEXT REQUIRED → output exactly that action, not the prior verb
-
-LAUNCH (strict step order — one action per turn)
-- Run dialog not on SCREEN → hotkey win+r (required before any write to Open field)
-- Run visible on SCREEN, app not open → write APPLICATION NAME into Open field (not goal text)
-- After write in Run → press enter (never click OK)
-- App open on SCREEN → focus it, interact inside it
-- App open, goal needs text → write into app Document/Edit (not Run dialog)
-- Never put goal text in Run dialog unless goal is to run that exact command
-
-JSON OUTPUT
-- content response MUST be JSON starting with {
-- data fields only: conclusion, actions — no extra keys (no last_reasoning in JSON)
-- LAST REASONING in USER context is prior-turn thinking — read it, do not echo into JSON
-- LAST ERROR parse_failed → fix content to valid JSON
-
-OUTPUT:
-{"record_type":"action","data":{"conclusion":"EXECUTE|DONE|CANNOT","actions":[{"verb":"...","target":"...","value":"..."}]}}
-
---- USER CONTEXT ---
-GOAL: if the answer is already visible on screen, report DONE
-SCREEN: (desktop observation disabled — assume bare Windows desktop; Run dialog not visible; no application windows open)
-WORKSPACE: MODE: executor — act on THIS desktop yourself; do not delegate
-ROOT: C:\Users\px-wjt\Downloads\endgame-ai
-PROMPTS: C:\Users\px-wjt\Downloads\endgame-ai\prompts
-WIRING: C:\Users\px-wjt\Downloads\endgame-ai\prompts\wiring.txt
-
---- MODEL CONTENT ---
-{
-  "record_type": "action",
-  "data": {
-    "conclusion": "EXECUTE",
-    "actions": [
-      {
-        "verb": "hotkey",
-        "target": "win+r",
-        "value": "win+r"
-      }
-    ]
-  }
-}
-
---- MODEL REASONING ---
-We need to output JSON with conclusion EXECUTE? Let's parse.
-
-Goal: if answer is already visible on screen, report DONE. Screen is bare desktop, no answer visible. So not done. Need to execute something? Probably run a command that prints answer? But we have no app open. We need to run dialog? The goal seems trivial: check if answer visible; it's not, so maybe we must run something to produce answer? However instructions: "Run dialog not on SCREEN → hotkey win+r (required before any write to Open field)". So first action: hotkey win+r.
-
-Thus output JSON with verb click? Actually hotkey is a verb. Target? "win+r". Value? maybe "win+r". But spec: actions array verb, target, value. For hotkey, value maybe "win+r". Let's produce:
+Thus:
 
 {
 "record_type":"action",
 "data":{
 "conclusion":"EXECUTE",
-"actions":[{"verb":"hotkey","target":"win+r","value":"win+r"}]
+"actions":[{"verb":"click","target":"Taskbar","value":"Terminal Preview"}]
 }
 }
 
-But need to ensure JSON only fields conclusion and actions. Yes.
+But need verb field ONE word only, e.g., "click". target "Taskbar", value "Terminal Preview". Yes.
 
-Thus output that.
-
-================================================================================
-S10 — S10 Orchestrate peer
-================================================================================
-GOAL: orchestrate the student to run python tui.py with goal list files
-LOG: C:\Users\px-wjt\Downloads\endgame-ai\logs\20260619_123754.txt
-EXIT: 0
-
---- SYSTEM PROMPT ---
-IDENTITY
-- Circuit: unified→manager swap (implementor slot, manager ROLE only)
-- WHO: endgame-ai Manager — orchestrate an identical peer instance via desktop only
-- WHERE: WORKSPACE ROOT is your code; peer path and peer goal come from GOAL
-- Student instance is a 1:1 copy in a separate folder; never edit peer files directly
-
-INPUT: GOAL, SCREEN, LAST ERROR, LAST REASONING, WORKSPACE
-
-PEER LAUNCH (one verb per turn, never win+r)
-S0 click taskbar "Terminal Preview" ([ID] or name)
-S1 hotkey win+x
-S2 click "Terminal (Admin)" or press a
-S3 focus "Windows Terminal" or click shell Document
-S4 write: cd /d {peer_directory from GOAL}
-S5 press enter
-S6 write: python tui.py "{peer_goal from GOAL}"
-S7 press enter
-S8 DONE when peer endgame-ai visible on SCREEN
-
-POST-LAUNCH: focus peer TUI, type guidance via desktop write
-
-ANTI-LOOP: action OK → next step; LAST ERROR → different target/verb
-
-OUTPUT (JSON in content, start with {):
-{"record_type":"action","data":{"conclusion":"EXECUTE|DONE|CANNOT","actions":[{"verb":"...","target":"...","value":"..."}]}}
-
---- USER CONTEXT ---
-GOAL: orchestrate the student to run python tui.py with goal list files
-SCREEN: (desktop observation disabled — assume bare Windows desktop; Run dialog not visible; no application windows open)
-WORKSPACE: ROLE: manager — orchestrate peer on desktop (manager prompt active)
-ROOT: C:\Users\px-wjt\Downloads\endgame-ai
-PROMPTS: C:\Users\px-wjt\Downloads\endgame-ai\prompts
-WIRING: C:\Users\px-wjt\Downloads\endgame-ai\prompts\wiring.txt
-
---- MODEL CONTENT ---
-{
-  "record_type": "action",
-  "data": {
-    "conclusion": "EXECUTE",
-    "actions": [
-      {
-        "verb": "click taskbar",
-        "target": "Terminal Preview",
-        "value": ""
-      }
-    ]
-  }
-}
-
---- MODEL REASONING ---
-We need to output JSON with action verb "click taskbar" target "Terminal Preview". No value. So record_type action, conclusion EXECUTE, actions list verb click taskbar target Terminal Preview value empty? Probably value "". Provide JSON.
+Return that.
