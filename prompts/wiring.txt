@@ -1,0 +1,69 @@
+# endgame-ai control plane — edit this file only; code reads topology from here
+
+limits.max_attempts=5
+limits.observe_interval_s=2
+limits.bus_check_throttle_s=3
+limits.reasoning_history_depth=10
+limits.global_mutator_interval_s=60
+limits.bus_max_records=200
+
+slots.architect.can_desktop=false
+slots.architect.personality=design, strategy, structure
+slots.implementor.can_desktop=true
+slots.implementor.personality=execution, desktop actions, code
+slots.implementor.mode=unified
+slots.reviewer.can_desktop=false
+slots.reviewer.personality=verification, quality audits
+slots.devops.can_desktop=false
+slots.devops.personality=git, deployment, system health
+
+circuits.planner.prompt=planner.txt
+circuits.planner.inject=goal, screen, history, bus_context, last_reasoning
+circuits.actor.prompt=actor.txt
+circuits.actor.inject=goal, task, contract, last_error, last_reasoning, screen
+circuits.verifier.prompt=verifier.txt
+circuits.verifier.inject=task, contract, screen, evidence, last_reasoning
+circuits.reflector.prompt=reflector.txt
+circuits.reflector.inject=goal, screen, denials, last_reasoning
+circuits.mutator.prompt=mutator.txt
+circuits.mutator.inject=diagnosis, goal, workspace
+circuits.unified.prompt=unified.txt
+circuits.unified.inject=goal, screen, last_error, last_reasoning, workspace
+circuits.unified.prompt_swap.1.when=MANAGER.md
+circuits.unified.prompt_swap.1.when=student instance
+circuits.unified.prompt_swap.1.when=peer instance
+circuits.unified.prompt_swap.1.when=manage student
+circuits.unified.prompt_swap.1.when=outer controller
+circuits.unified.prompt_swap.1.when=launch the student
+circuits.unified.prompt_swap.1.when=run and manage
+circuits.unified.prompt_swap.1.prompt=manager.txt
+
+transitions.plan_done=actor
+transitions.execute_done=verifier
+transitions.execute_cannot=planner
+transitions.max_attempts=reflector
+transitions.verify_done=planner
+transitions.verify_done_advance=actor
+transitions.verify_not_done=reflector
+transitions.verify_unknown=actor
+transitions.reflect_done=planner
+transitions.mutate_done=actor
+transitions.execute_acted=actor
+transitions.goal_complete=idle
+transitions.unified_acted=unified
+transitions.unified_error=unified
+transitions.unified_done=idle
+transitions.unified_cannot=unified
+
+verbs.click.target_field=target
+verbs.write.target_field=target
+verbs.write.value_field=value
+verbs.press.key_field=target
+verbs.hotkey.key_field=target
+verbs.scroll.target_field=target
+verbs.scroll.amount_field=value
+verbs.focus.title_field=target
+verbs.inspect.target_field=target
+
+comms.prompt=comms.txt
+comms.fallback_slot=implementor

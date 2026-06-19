@@ -69,20 +69,23 @@ class Circuit:
         self._circuit_cfg = cfg
         self._inject = cfg["inject"]
         prompt_path = prompts_dir / cfg["prompt"]
-        self._prompt = prompt_path.read_text(encoding="utf-8").strip() if prompt_path.exists() else f"You are a {name}."
+        if not prompt_path.exists():
+            raise FileNotFoundError(f"Circuit '{name}' prompt missing: {prompt_path}")
+        self._prompt = prompt_path.read_text(encoding="utf-8").strip()
         self._max_attempts = wiring["limits"]["max_attempts"]
         self._reasoning_depth = wiring["limits"]["reasoning_history_depth"]
 
     def _resolve_prompt(self, state: SlotState) -> str:
-        """Select manager.txt when GOAL triggers peer-orchestration mode."""
-        if self.name != "unified":
-            return self._prompt
-        triggers = self._circuit_cfg.get("manager_triggers", [])
-        if triggers and any(t.lower() in state.goal.lower() for t in triggers):
-            mgr_file = self._circuit_cfg.get("manager_prompt", "manager.txt")
-            mgr_path = self._prompts_dir / mgr_file
-            if mgr_path.exists():
-                return mgr_path.read_text(encoding="utf-8").strip()
+        """Apply prompt_swap rules from wiring.txt when GOAL matches."""
+        goal_lower = state.goal.lower()
+        for swap in self._circuit_cfg.get("prompt_swap", []):
+            triggers = swap.get("when", [])
+            alt = swap.get("prompt", "")
+            if alt and triggers and any(t.lower() in goal_lower for t in triggers):
+                alt_path = self._prompts_dir / alt
+                if not alt_path.exists():
+                    raise FileNotFoundError(f"prompt_swap target missing: {alt_path}")
+                return alt_path.read_text(encoding="utf-8").strip()
         return self._prompt
 
     def _resolve_context(self, state: SlotState, bus: Bus) -> str:
@@ -353,7 +356,7 @@ class Circuit:
 
 
 class Slot:
-    """Data-driven state machine. Phase transitions from wiring.json."""
+    """Data-driven state machine. Phase transitions from wiring.txt."""
 
     def __init__(self, name: str, llm: LLMClient, bus: Bus, prompts_dir: Path, workspace: Path,
                  wiring: dict[str, Any], *, can_act_desktop: bool = True):

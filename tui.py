@@ -15,6 +15,7 @@ from typing import Any
 from llm import LLMClient
 from bus import Bus
 from colony import Colony
+from wiring import load_wiring
 
 BASE_DIR = Path(__file__).parent.resolve()
 PROMPTS_DIR = BASE_DIR / "prompts"
@@ -26,11 +27,6 @@ logging.basicConfig(filename=str(_LOGS_DIR / f"{datetime.now():%Y%m%d_%H%M%S}.tx
 
 
 _file_log = logging.getLogger("endgame")
-
-
-def _load_wiring() -> dict[str, Any]:
-    path = PROMPTS_DIR / "wiring.json"
-    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
 
 
 def _setup_console():
@@ -286,8 +282,8 @@ def main():
     parser.add_argument("goal", nargs="*", help="Goal")
     parser.add_argument("--no-desktop", action="store_true")
     args = parser.parse_args()
-    wiring = _load_wiring()
-    bus = Bus()
+    wiring = load_wiring(PROMPTS_DIR)
+    bus = Bus(max_records=int(wiring["limits"]["bus_max_records"]))
     llm = LLMClient(prompts_dir=PROMPTS_DIR)
     colony = Colony(llm=llm, bus=bus, prompts_dir=PROMPTS_DIR, workspace=BASE_DIR, wiring=wiring)
     # Start with NO active slots — they activate when routes arrive

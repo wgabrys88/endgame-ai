@@ -13,15 +13,18 @@ from slot import Slot
 class CommsOperator:
     """Decomposes user goals into sub-goals and routes them to slots via bus."""
 
-    def __init__(self, llm: LLMClient, bus: Bus, slot_configs: dict[str, dict], prompts_dir: Path):
+    def __init__(self, llm: LLMClient, bus: Bus, slot_configs: dict[str, dict],
+                 prompts_dir: Path, comms_cfg: dict[str, Any]):
         self._llm = llm
         self._bus = bus
         self._slot_names = list(slot_configs.keys())
         self._slot_configs = slot_configs
         self._last_goal: str = ""
-        comms_path = prompts_dir / "comms.txt"
-        self._prompt = (comms_path.read_text(encoding="utf-8").strip()
-                        if comms_path.exists() else "You are the comms_operator. Route goals to slots.")
+        self._fallback_slot = str(comms_cfg["fallback_slot"])
+        comms_path = prompts_dir / str(comms_cfg["prompt"])
+        if not comms_path.exists():
+            raise FileNotFoundError(f"comms prompt missing: {comms_path}")
+        self._prompt = comms_path.read_text(encoding="utf-8").strip()
 
     def route(self, goal: str) -> dict[str, Any]:
         if goal == self._last_goal:
@@ -37,9 +40,11 @@ class CommsOperator:
         data = parsed.get("data", parsed) if isinstance(parsed, dict) else {}
         routes = data.get("routes", []) if isinstance(data, dict) else []
         if not isinstance(routes, list) or not routes:
+            if self._fallback_slot not in self._slot_names:
+                raise ValueError(f"comms.fallback_slot '{self._fallback_slot}' not in slots")
             self._bus.publish("route", "comms_operator", "",
-                             {"to": "implementor", "goal": goal, "status": "open", "seq": 1})
-            return {"phase": "comms", "routed": 1, "fallback": True}
+                             {"to": self._fallback_slot, "goal": goal, "status": "open", "seq": 1})
+            return {"phase": "comms", "routed": 1}
         count = 0
         for i, r in enumerate(routes):
             if not isinstance(r, dict):
@@ -54,8 +59,10 @@ class CommsOperator:
                 self._bus.publish("route", "comms_operator", "", route_data)
                 count += 1
         if count == 0:
+            if self._fallback_slot not in self._slot_names:
+                raise ValueError(f"comms.fallback_slot '{self._fallback_slot}' not in slots")
             self._bus.publish("route", "comms_operator", "",
-                             {"to": "implementor", "goal": goal, "status": "open", "seq": 1})
+                             {"to": self._fallback_slot, "goal": goal, "status": "open", "seq": 1})
             count = 1
         return {"phase": "comms", "routed": count}
 
@@ -115,16 +122,16 @@ class Colony:
                         wiring=wiring, can_act_desktop=cfg.get("can_desktop", False))
             self.all_slots[name] = slot
             self.active_slots[name] = slot
-        self.comms = CommsOperator(llm, bus, slot_configs, prompts_dir)
+        self.comms = CommsOperator(llm, bus, slot_configs, prompts_dir, wiring["comms"])
         self.global_mutator = GlobalMutator(llm, bus, self.all_slots,
                                             interval=wiring["limits"].get("global_mutator_interval_s", 60))
         self._actor_lock: str = ""
 
     def set_goal(self, goal: str):
-        # Level 0: if no slots manually activated, route directly to implementor (single slot mode)
         if not self.active_slots:
+            slot = str(self._wiring["comms"]["fallback_slot"])
             self.bus.publish("route", "comms_operator", "",
-                            {"to": "implementor", "goal": goal, "status": "open", "seq": 1})
+                            {"to": slot, "goal": goal, "status": "open", "seq": 1})
         else:
             self.comms.route(goal)
 
