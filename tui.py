@@ -12,7 +12,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from llm import LLMClient
+import llm
+from llm import LLMClient, set_response_limit
 from bus import Bus
 from colony import Colony
 from wiring import load_wiring
@@ -131,7 +132,7 @@ class TUI:
 
     def _worker(self):
         """Background: observe → step → queue results."""
-        while self._running:
+        while self._running and not llm.shutdown_requested:
             has_work = (any(s.state.goal for s in self.colony.active_slots.values())
                         or self.colony.bus.has_pending_routes())
             if not has_work:
@@ -253,6 +254,8 @@ class TUI:
         if goal:
             self.colony.set_goal(goal)
             self._log_line(f"GOAL: {goal}")
+        if llm.response_limit is not None:
+            self._log_line(f"[!] Auto-exit after {llm.response_limit} response(s)")
         # Start worker
         threading.Thread(target=self._worker, daemon=True).start()
         n = ctypes.c_ulong()
@@ -264,6 +267,9 @@ class TUI:
                 if msvcrt.kbhit():
                     self._handle_key(msvcrt.getwch())
                 self._drain_results()
+                if llm.shutdown_requested:
+                    self._log_line(f"[!] Response limit reached ({llm.response_count}), exiting")
+                    self._running = False
                 # Detect resize
                 nw, nh = _console_size(k32, hout)
                 if nw != self._w or nh != self._h:
@@ -277,17 +283,26 @@ class TUI:
             _w("\x1b[?1049l\x1b[?25h")
 
 
+def _parse_goal_and_limit(raw: list[str]) -> tuple[str, int | None]:
+    if raw and raw[-1].isdigit() and int(raw[-1]) > 0:
+        return " ".join(raw[:-1]).strip(), int(raw[-1])
+    return " ".join(raw).strip(), None
+
+
 def main():
     parser = argparse.ArgumentParser(prog="endgame-ai")
-    parser.add_argument("goal", nargs="*", help="Goal")
+    parser.add_argument("goal", nargs="*", help="Goal; optional trailing positive integer = exit after N LLM responses")
     parser.add_argument("--no-desktop", action="store_true")
     args = parser.parse_args()
+    goal, limit = _parse_goal_and_limit(args.goal)
+    if limit is not None:
+        set_response_limit(limit)
     wiring = load_wiring(PROMPTS_DIR)
     bus = Bus(max_records=int(wiring["limits"]["bus_max_records"]))
     llm = LLMClient(prompts_dir=PROMPTS_DIR)
     colony = Colony(llm=llm, bus=bus, prompts_dir=PROMPTS_DIR, workspace=BASE_DIR, wiring=wiring)
     tui = TUI(colony=colony, wiring=wiring, desktop_enabled=not args.no_desktop)
-    tui.run(goal=" ".join(args.goal).strip())
+    tui.run(goal=goal)
 
 
 if __name__ == "__main__":
