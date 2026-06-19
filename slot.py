@@ -64,12 +64,26 @@ class Circuit:
         self.name = name
         self._wiring = wiring
         self._workspace = workspace
+        self._prompts_dir = prompts_dir
         cfg = wiring["circuits"][name]
+        self._circuit_cfg = cfg
         self._inject = cfg["inject"]
         prompt_path = prompts_dir / cfg["prompt"]
         self._prompt = prompt_path.read_text(encoding="utf-8").strip() if prompt_path.exists() else f"You are a {name}."
         self._max_attempts = wiring["limits"]["max_attempts"]
         self._reasoning_depth = wiring["limits"]["reasoning_history_depth"]
+
+    def _resolve_prompt(self, state: SlotState) -> str:
+        """Select manager.txt when GOAL triggers peer-orchestration mode."""
+        if self.name != "unified":
+            return self._prompt
+        triggers = self._circuit_cfg.get("manager_triggers", [])
+        if triggers and any(t.lower() in state.goal.lower() for t in triggers):
+            mgr_file = self._circuit_cfg.get("manager_prompt", "manager.txt")
+            mgr_path = self._prompts_dir / mgr_file
+            if mgr_path.exists():
+                return mgr_path.read_text(encoding="utf-8").strip()
+        return self._prompt
 
     def _resolve_context(self, state: SlotState, bus: Bus) -> str:
         parts: list[str] = []
@@ -109,13 +123,13 @@ class Circuit:
             if not task:
                 return ""
             evidence = bus.query(record_type="evidence", task_id=task.id, limit=5)
-            parts = [f"  {json.dumps(r.data, ensure_ascii=False)[:1000]}" for r in evidence]
+            parts = [f"  {json.dumps(r.data, ensure_ascii=False)}" for r in evidence]
             if task.evidence:
-                parts += [f"  {e[:1000]}" for e in task.evidence[-3:]]
+                parts += [f"  {e}" for e in task.evidence[-3:]]
             return "\n".join(parts) if parts else ""
         if name == "denials":
             denials = [h for h in state.history[-6:] if isinstance(h, dict) and h.get("denied")]
-            return "\n".join(f"  {json.dumps(d, ensure_ascii=False)[:1000]}" for d in denials[-3:]) if denials else ""
+            return "\n".join(f"  {json.dumps(d, ensure_ascii=False)}" for d in denials[-3:]) if denials else ""
         if name == "diagnosis":
             return state.diagnosis
         if name == "workspace":
@@ -124,9 +138,10 @@ class Circuit:
 
     def run(self, state: SlotState, llm: LLMClient, bus: Bus) -> dict[str, Any]:
         ctx = self._resolve_context(state, bus)
-        result = llm.call(self._prompt, ctx) if ctx else LLMResult(text="")
+        prompt = self._resolve_prompt(state)
+        result = llm.call(prompt, ctx) if ctx else LLMResult(text="")
         _log.debug("[%s] prompt=%d ctx=%d → response=%d reasoning=%d",
-                   self.name, len(self._prompt), len(ctx),
+                   self.name, len(prompt), len(ctx),
                    len(result.text), len(result.reasoning))
         return self._interpret(result, state, bus)
 
@@ -181,30 +196,9 @@ class Circuit:
                             break
         return None
 
-    @staticmethod
-    def _screen_goal_met(goal: str, screen: str) -> bool:
-        """Auto-detect observable goal completion from SCREEN text."""
-        if not screen:
-            return False
-        g = goal.lower()
-        s = screen.lower()
-        if "student" in g or "launch" in g:
-            has_shell = any(w in s for w in ("windows terminal", "terminal preview", "administrator", "command prompt"))
-            has_student_artifact = ("hello" in s and "notepad" in s) or "endgame-ai-student" in s
-            if has_shell and has_student_artifact:
-                return True
-        if "notepad" in g and "hello" in g:
-            if "hello" in s and ("text editor" in s or "notepad" in s):
-                return True
-        return False
-
     def _interpret_unified(self, data: dict, result: LLMResult, state: SlotState, bus: Bus) -> dict[str, Any]:
         """Unified agent: simple observe→act loop without task management."""
-        reasoning_entry = {"reasoning": result.reasoning[:2000], "outcome": ""}
-        if self._screen_goal_met(state.goal, state.screen):
-            reasoning_entry["outcome"] = "goal complete (auto-detected on SCREEN)"
-            state.reasoning_history.append(reasoning_entry)
-            return {"event": "goal_complete", "conclusion": "DONE"}
+        reasoning_entry = {"reasoning": result.reasoning, "outcome": ""}
         conclusion = str(data.get("conclusion", "EXECUTE"))
         if conclusion == "DONE":
             # Guard: check if reasoning history shows we actually did something
@@ -270,7 +264,7 @@ class Circuit:
         if not task:
             return {"event": "execute_cannot"}
         # Store reasoning for feedback loop
-        reasoning_entry = {"reasoning": result.reasoning[:2000], "outcome": ""}
+        reasoning_entry = {"reasoning": result.reasoning, "outcome": ""}
         conclusion = str(data.get("conclusion", "EXECUTE"))
         if conclusion == "DONE":
             task.status = "claimed_done"
@@ -316,7 +310,7 @@ class Circuit:
         if not task:
             return {"event": "verify_unknown"}
         verdict = str(data.get("verdict", "UNKNOWN")).upper()
-        because = str(data.get("because", ""))[:300]
+        because = str(data.get("because", ""))
         bus.publish("verdict", "verifier", task.id, data)
         if verdict == "DONE":
             task.status = "verified_done"
@@ -339,13 +333,12 @@ class Circuit:
         return {"event": "verify_unknown", "verdict": "UNKNOWN"}
 
     def _interpret_reflect(self, data: dict, result: LLMResult, state: SlotState, bus: Bus) -> dict[str, Any]:
-        diagnosis = str(data.get("diagnosis", ""))[:1000] or "unknown failure"
-        suggestion = str(data.get("suggestion", ""))[:1000]
+        diagnosis = str(data.get("diagnosis", "")) or "unknown failure"
+        suggestion = str(data.get("suggestion", ""))
         state.diagnosis = diagnosis
-        # Store reflector reasoning for its own feedback loop
-        state.reasoning_history.append({"reasoning": result.reasoning[:2000], "outcome": f"diagnosis: {diagnosis[:500]}"})
+        state.reasoning_history.append({"reasoning": result.reasoning, "outcome": f"diagnosis: {diagnosis}"})
         bus.publish("diagnosis", "reflector", state.active_task_id or "", {"diagnosis": diagnosis, "suggestion": suggestion})
-        return {"event": "reflect_done", "diagnosis": diagnosis[:200]}
+        return {"event": "reflect_done", "diagnosis": diagnosis}
 
     def _interpret_mutate(self, data: dict, result: LLMResult, state: SlotState, bus: Bus) -> dict[str, Any]:
         code = str(data.get("code", "")).strip()
@@ -354,9 +347,9 @@ class Circuit:
             return {"event": "mutate_done", "ok": False, "reason": "empty script"}
         success, obs = run_script(code, self._workspace)
         bus.publish("mutation", "mutator", state.active_task_id or "",
-                    {"code": code[:500], "success": success, "output": obs[:300]})
+                    {"code": code, "success": success, "output": obs})
         state.diagnosis = ""
-        return {"event": "mutate_done", "ok": success, "obs": obs[:200]}
+        return {"event": "mutate_done", "ok": success, "obs": obs}
 
 
 class Slot:
@@ -473,14 +466,14 @@ class Slot:
         success, obs = run_script(code, self._wiring.get("_workspace", Path(".")))
         task.evidence.append(obs)
         self.bus.publish("evidence", "tool", task.id, {"output": obs, "success": success})
-        self.state.history.append({"exec": task.description[:100], "ok": success, "obs": obs[:200]})
+        self.state.history.append({"exec": task.description, "ok": success, "obs": obs})
         if success:
             task.status = "claimed_done"
             self.state.phase = "verifier"
-            return {"phase": "actor", "event": "execute_done", "ok": True, "obs": obs[:200], "next": "verifier"}
+            return {"phase": "actor", "event": "execute_done", "ok": True, "obs": obs, "next": "verifier"}
         task.status = "blocked"
         self.state.phase = "planner"
-        return {"phase": "actor", "event": "execute_cannot", "ok": False, "obs": obs[:200], "next": "planner"}
+        return {"phase": "actor", "event": "execute_cannot", "ok": False, "obs": obs, "next": "planner"}
 
     def observe(self, screen: str, elements: dict[str, Any]):
         self.state.screen = screen

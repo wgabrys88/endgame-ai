@@ -13,27 +13,23 @@ from slot import Slot
 class CommsOperator:
     """Decomposes user goals into sub-goals and routes them to slots via bus."""
 
-    def __init__(self, llm: LLMClient, bus: Bus, slot_configs: dict[str, dict]):
+    def __init__(self, llm: LLMClient, bus: Bus, slot_configs: dict[str, dict], prompts_dir: Path):
         self._llm = llm
         self._bus = bus
         self._slot_names = list(slot_configs.keys())
         self._slot_configs = slot_configs
         self._last_goal: str = ""
+        comms_path = prompts_dir / "comms.txt"
+        self._prompt = (comms_path.read_text(encoding="utf-8").strip()
+                        if comms_path.exists() else "You are the comms_operator. Route goals to slots.")
 
     def route(self, goal: str) -> dict[str, Any]:
         if goal == self._last_goal:
             return {"phase": "comms", "action": "skip"}
         self._last_goal = goal
         slot_desc = "\n".join(f"  {n} = {c.get('personality', '')}" for n, c in self._slot_configs.items())
-        context = (
-            f"GOAL: {goal}\n"
-            f"AVAILABLE SLOTS: {', '.join(self._slot_names)}\n{slot_desc}\n\n"
-            "Decompose the goal into sequential sub-goals. Assign each to ONE slot.\n"
-            "Add seq (1,2,3...) for ordering. If a sub-goal depends on a prior one, add \"after\": N.\n"
-            'Return record_type "route" with data containing routes array: '
-            '[{"to":"slot_name","goal":"sub-goal","seq":1},{"to":"slot_name","goal":"...","seq":2,"after":1}]'
-        )
-        result = self._llm.call("You are a comms_operator. Decompose goals and route to worker slots.", context)
+        context = f"GOAL: {goal}\nAVAILABLE SLOTS:\n{slot_desc}"
+        result = self._llm.call(self._prompt, context)
         try:
             parsed = json.loads(result.text)
         except (json.JSONDecodeError, TypeError):
@@ -99,7 +95,7 @@ class GlobalMutator:
         except (json.JSONDecodeError, TypeError):
             data = {}
         self._bus.publish("global_mutation", "global_mutator", "",
-                          {"targets": list(denials.keys()), "suggestion": str(data.get("suggestion", ""))[:500]})
+                          {"targets": list(denials.keys()), "suggestion": str(data.get("suggestion", ""))})
         return {"phase": "global_mutate", "targets": list(denials.keys())}
 
 
@@ -119,7 +115,7 @@ class Colony:
                         wiring=wiring, can_act_desktop=cfg.get("can_desktop", False))
             self.all_slots[name] = slot
             self.active_slots[name] = slot
-        self.comms = CommsOperator(llm, bus, slot_configs)
+        self.comms = CommsOperator(llm, bus, slot_configs, prompts_dir)
         self.global_mutator = GlobalMutator(llm, bus, self.all_slots,
                                             interval=wiring["limits"].get("global_mutator_interval_s", 60))
         self._actor_lock: str = ""

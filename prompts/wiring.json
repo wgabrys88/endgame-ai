@@ -3,7 +3,7 @@
     "max_attempts": 5,
     "observe_interval_s": 2,
     "bus_check_throttle_s": 3,
-    "reasoning_history_depth": 5,
+    "reasoning_history_depth": 10,
     "global_mutator_interval_s": 60,
     "bus_max_records": 200
   },
@@ -14,7 +14,7 @@
     },
     "implementor": {
       "can_desktop": true,
-      "personality": "execution, file ops, GUI actions, code",
+      "personality": "execution, desktop actions, code",
       "mode": "unified"
     },
     "reviewer": {
@@ -76,12 +76,23 @@
       ]
     },
     "unified": {
-      "prompt": "manager.txt",
+      "prompt": "unified.txt",
+      "manager_prompt": "manager.txt",
+      "manager_triggers": [
+        "MANAGER.md",
+        "student instance",
+        "peer instance",
+        "manage student",
+        "outer controller",
+        "launch the student",
+        "run and manage"
+      ],
       "inject": [
         "goal",
         "screen",
         "last_error",
-        "last_reasoning"
+        "last_reasoning",
+        "workspace"
       ]
     }
   },
