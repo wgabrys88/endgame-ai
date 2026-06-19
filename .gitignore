@@ -8,10 +8,12 @@ sessions/
 pause
 test.txt
 
-# Runtime outputs
-prompts/smoke_report.txt
+# Runtime state (regenerated on run)
+state.json
+bus.json
+colony/
 
-# Legacy orchestration (replaced by server.py + wiring-editor.html)
+# Legacy (replaced by server.py + wiring-editor.html)
 topology.py
 tui.py
 slot.py
@@ -21,3 +23,4 @@ smoke.py
 bus.py
 llm.py
 prompts/wiring.mmd
+prompts/smoke_report.txt
