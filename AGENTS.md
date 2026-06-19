@@ -59,4 +59,34 @@ When starting an instance with a long or complex goal:
 - The `Start-Sleep` + self-kill inside the job ensures the TUI has time to initialize and begin writing logs even with complex goals.
 - Always verify logs appear in the instance’s `logs/` directory after launch.
 
+## Session Resume & Bootstrap
+
+When starting a new Grok Build session:
+
+1. Immediately run these commands in the manager directory:
+   ```powershell
+   cd C:\Users\ewojgab\Downloads\endgame-ai
+   git status
+   git branch --show-current
+   ```
+2. Check whether you are on `codex-unify-bus` or in a detached HEAD state.
+3. If in detached state, switch to the branch:
+   ```powershell
+   git checkout codex-unify-bus
+   ```
+
+### Bootstrap Prompt (copy and paste this after starting a new session)
+
+```
+You are resuming work on endgame-ai. The manager repo is at C:\Users\ewojgab\Downloads\endgame-ai on branch codex-unify-bus.
+
+First, run:
+git status
+git branch --show-current
+
+Then read AGENTS.md and MANAGER.md.
+
+Current goal: continue development of the self-evolution system between manager and student.
+```
+
 Keep this file updated as operational knowledge evolves.
