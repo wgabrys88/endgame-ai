@@ -21,6 +21,7 @@ The Manager must read this file first and then follow the rules below.
 - Manager and Student are two independent processes (separate directories, separate git repos, separate logs).
 - They communicate **only** through the Windows desktop — the Manager types into the Student’s TUI window and observes its screen via desktop.py.
 - The Manager never edits the Student’s files directly via the filesystem; all changes happen through desktop actions (focus editor, write, save).
+- Launch Student via Terminal Preview taskbar button, Win+X, then Terminal (Admin), then cd to the student directory and python tui.py with the student goal. Do not use Win+R.
 - The Manager always follows the operational rules in AGENTS.md (no worktrees, essential-files-only tree, agnostic bootstrap prompt).
 
 ## Self-Evolution Loop

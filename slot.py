@@ -189,9 +189,9 @@ class Circuit:
         g = goal.lower()
         s = screen.lower()
         if "student" in g or "launch" in g:
-            has_console = any(w in s for w in ("command prompt", "terminal preview", "endgame-ai", "windows powershell"))
-            has_hello = "hello" in s and "notepad" in s
-            if has_console and has_hello:
+            has_shell = any(w in s for w in ("windows terminal", "terminal preview", "administrator", "command prompt"))
+            has_student_artifact = ("hello" in s and "notepad" in s) or "endgame-ai-student" in s
+            if has_shell and has_student_artifact:
                 return True
         if "notepad" in g and "hello" in g:
             if "hello" in s and ("text editor" in s or "notepad" in s):
