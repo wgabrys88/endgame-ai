@@ -1,6 +1,92 @@
 # AGENTS.md
 
-Critical operational knowledge for any AI or agent working with endgame-ai.
+Critical operational knowledge for **any** AI coding agent (any provider/model) resuming or continuing endgame-ai work in a fresh or compacted session.
+
+## Core Identity & Directories
+
+- **endgame-ai** (this repo, branch `codex-unify-bus`): The **Manager** instance. Contains `prompts/manager.txt` (permanent Manager role) + all shared prompts.
+- **endgame-ai-student** (sibling dir `C:\Users\ewojgab\Downloads\endgame-ai-student`, branch `master`): The **Student** instance. Uses `prompts/unified.txt` by default. When a Student can self-orchestrate, it is promoted by receiving `manager.txt`.
+
+Both repos are independent git repositories. Manager and Student never share files or git history.
+
+## Where Logs Live
+
+Every running instance writes only to its own `logs/` directory:
+- Timestamped files: `logs/20260619_094748.txt`
+- Manager logs = endgame-ai/logs/
+- Student logs = endgame-ai-student/logs/
+- Read the newest file in the target instance's logs/ to observe behavior.
+
+## How to Run (Manager or Student)
+
+```powershell
+cd C:\Users\ewojgab\Downloads\endgame-ai          # Manager
+# or
+cd C:\Users\ewojgab\Downloads\endgame-ai-student   # Student
+
+python tui.py "goal text here"
+```
+
+## Launching the Manager (Bootstrap)
+
+The Manager must always be started with a goal that contains the **full absolute path** to MANAGER.md:
+
+```powershell
+python tui.py "Read the MANAGER.md file located at the full absolute path C:\Users\ewojgab\Downloads\endgame-ai\MANAGER.md and immediately begin acting as the outer controller to run and manage the student instance"
+```
+
+This triggers the Manager prompt (`prompts/manager.txt`) to internalize its role and start orchestrating the Student via desktop actions only.
+
+## Essential Files Policy (Strict)
+
+Only these may exist in either repo root:
+- 8 core .py: tui.py, desktop.py, llm.py, bus.py, slot.py, actions.py, + any minimal runtime modules
+- prompts/ (all .txt including manager.txt in Manager repo)
+- 3 .md: README.md, AGENTS.md, MANAGER.md (MANAGER.md only in Manager repo)
+- .git, .gitignore, .gitattributes
+
+Delete immediately: any _test_*.py, LICENSE, colony.py, runtime/, __pycache__/, logs/ (before commit), nested dirs.
+
+Never use git worktrees. Always stay on the single main checkout of the active branch.
+
+## What We Are Doing (Self-Evolution Loop)
+
+1. Manager launches Student TUI in its own directory.
+2. Manager observes Student's screen/logs via desktop.py (UIA tree).
+3. Manager types into Student's TUI window, runs tests, suggests improvements — all via keyboard/mouse simulation.
+4. Manager iterates until Student can itself become a Manager (receives manager.txt + new identity).
+5. Goal: closed loop with zero external controller.
+
+All communication is desktop-only. No shared memory, no direct API calls between instances.
+
+## Agnostic Session Handover / Bootstrap Prompt
+
+Copy and paste this verbatim into any new or compacted AI coding session (any provider):
+
+```
+You are an AI coding agent resuming work on endgame-ai.
+
+Objective: Build and operate a closed self-evolution system where one instance (Manager) fully launches, observes, and iteratively improves a completely independent second instance (Student) using only Windows desktop observation and actions. No file sharing, no direct inter-process communication — everything occurs through the desktop exactly as a human would control two applications.
+
+Environment:
+- Windows 11 + PowerShell
+- Manager repo: C:\Users\ewojgab\Downloads\endgame-ai on branch codex-unify-bus (contains prompts/manager.txt)
+- Student repo: C:\Users\ewojgab\Downloads\endgame-ai-student on branch master (uses prompts/unified.txt)
+- Local LM Studio or any OpenAI-compatible endpoint
+- Strict essential-files-only policy
+- Logs live in each repo's logs/ directory (newest .txt file)
+
+Immediate first actions:
+1. Run: git status && git branch --show-current
+2. Confirm you are in the correct repo for the role you are assuming (Manager vs Student)
+3. Read in full: AGENTS.md and MANAGER.md
+4. Verify working tree contains only essential files
+5. If the task is to start the Manager, use the exact bootstrap goal containing the full absolute path to MANAGER.md
+
+Follow every rule in AGENTS.md and MANAGER.md. Continue the Manager-Student evolution.
+```
+
+Keep AGENTS.md updated whenever operational knowledge, directory layout, or bootstrap procedure changes.
 
 ## How to Run
 
