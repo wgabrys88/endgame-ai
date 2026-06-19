@@ -1,8 +1,27 @@
 __pycache__/
 *.pyc
+*.log
+logs/
 runtime/
 sessions/
-test.txt
 .acp.lock
 pause
-*.log
+test.txt
+
+# Runtime state (regenerated on run)
+state.json
+bus.json
+colony/
+
+# Legacy (replaced by server.py + wiring-editor.html)
+topology.py
+tui.py
+slot.py
+colony.py
+wiring.py
+smoke.py
+bus.py
+llm.py
+prompts/wiring.mmd
+prompts/smoke_report.txt
+prompts/wiring.backup.json

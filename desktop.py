@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 
 import ctypes
@@ -7,7 +7,6 @@ import uuid
 from collections.abc import Generator
 from contextlib import contextmanager
 
-from config import PROCESS_DPI_AWARENESS_CONTEXT, READ_TEXT_MAX_LENGTH
 
 # --- GUI/UIA constants (moved from config.py) ---
 UIA_CONTROL_TYPE_MAP: dict[int, str] = {
@@ -191,7 +190,7 @@ def init() -> None:
 
 
 def set_dpi_aware() -> None:
-    user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(PROCESS_DPI_AWARENESS_CONTEXT))
+    user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
 
 
 def _get_property(el: ctypes.c_void_p, prop_id: int) -> VARIANT:
@@ -270,7 +269,7 @@ def get_legacy_readonly(el: ctypes.c_void_p) -> bool:
         return (var.val & VARIANT_TRUE_MASK) == VARIANT_TRUE_MASK if hr == 0 and var.vt == VT_BOOL else False
 
 
-def get_text_content(el: ctypes.c_void_p, max_len: int = READ_TEXT_MAX_LENGTH) -> str:
+def get_text_content(el: ctypes.c_void_p, max_len: int = 200) -> str:
     pattern = ctypes.c_void_p()
     hr = vt(el, UIA_GET_CURRENT_PATTERN_AS_INDEX,
             (ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(GUID), ctypes.POINTER(ctypes.c_void_p)),
@@ -373,11 +372,9 @@ from typing import Any
 import math
 import time
 
-import config
 
 
 
-__all__ = ["observe", "ObserveResult", "BookEntry"]
 
 ACTIONABLE_ROLES = frozenset({
     "Button", "Edit", "ComboBox", "ListItem", "Hyperlink", "MenuItem",
@@ -389,14 +386,14 @@ CLICKABLE_ROLES = frozenset({
     "SplitButton", "CheckBox", "RadioButton", "Slider", "ScrollBar",
     "DataItem", "Document",
 })
-WRITABLE_ROLES = frozenset({"Edit", "ComboBox"})
+WRITABLE_ROLES = frozenset({"Edit", "ComboBox", "Document"})
 SKIP_NAMELESS = frozenset({
     "Pane", "Group", "Custom", "Image", "Separator", "Thumb",
     "ProgressBar", "Header", "HeaderItem",
 })
 
 @dataclass(slots=True)
-class BookEntry:
+class Element:
     id: str
     role: str
     name: str
@@ -412,14 +409,14 @@ class BookEntry:
     action: str
 
 @dataclass(slots=True)
-class ObserveResult:
+class Observation:
     context_text: str
-    book: dict[str, BookEntry]
+    elements: dict[str, Element]
     focused_title: str
     windows: list[dict[str, Any]]
     desktop_summary: str
 
-def observe() -> ObserveResult:
+def observe() -> Observation:
     set_dpi_aware()
     init()
     screen_w = user32.GetSystemMetrics(0)
@@ -437,13 +434,13 @@ def observe() -> ObserveResult:
     for x0, y0, x1, y1, wname, whwnd in regions:
         if whwnd:
             user32.SetForegroundWindow(W.HWND(whwnd))
-            time.sleep(config.PROBE_FOREGROUND_DELAY)
-        _probe_region(probe_nodes, config.PROBE_STEP_PX, x0, y0, x1, y1, wname, whwnd)
+            time.sleep(0.3)
+        _probe_region(probe_nodes, 90, x0, y0, x1, y1, wname, whwnd)
     user32.SetCursorPos(saved.x, saved.y)
 
     tree_nodes: list[dict[str, Any]] = []
     for wnd in _tree_targets(windows, focused_title):
-        _tree_walk(tree_nodes, wnd["element"], str(wnd["name"]), int(wnd["hwnd"]), config.TREE_WALK_TIMEOUT)
+        _tree_walk(tree_nodes, wnd["element"], str(wnd["name"]), int(wnd["hwnd"]), 5.0)
 
     merged = _merge(probe_nodes, tree_nodes)
     z_titles = [str(e["title"]) for e in z_order]
@@ -456,12 +453,12 @@ def observe() -> ObserveResult:
     desktop_lines = [f"Desktop ({screen_w}x{screen_h})"]
     for i, entry in enumerate(z_order[:10]):
         is_last = i == min(len(z_order), 10) - 1
-        connector = "â””â”€â”€ " if is_last else "â”œâ”€â”€ "
+        connector = "└── " if is_last else "├── "
         marker = " (focused)" if entry["title"] == focused_title else ""
         desktop_lines.append(f"{connector}{entry['title']}{marker}")
 
-    return ObserveResult(
-        context_text=text, book=book, focused_title=focused_title,
+    return Observation(
+        context_text=text, elements=book, focused_title=focused_title,
         windows=[{"name": w["name"], "hwnd": w["hwnd"]} for w in windows],
         desktop_summary="\n".join(desktop_lines),
     )
@@ -520,13 +517,13 @@ def _probe_region(
     x0: int, y0: int, x1: int, y1: int, wname: str, whwnd: int,
 ) -> None:
     seen_rids: set[Any] = set()
-    amp = step * config.PROBE_SINE_AMPLITUDE_RATIO
-    freq = 2 * math.pi / (step * config.PROBE_SINE_PERIOD_STEPS)
+    amp = step * 0.4
+    freq = 2 * math.pi / (step * 6.0)
     for y in range(y0 + step // 2, y1, step):
         for x in range(x0 + step // 2, x1, step):
             py = max(y0, min(y1 - 1, y + int(amp * math.sin(freq * x))))
             user32.SetCursorPos(x, py)
-            time.sleep(config.PROBE_SAMPLE_DELAY)
+            time.sleep(0.001)
             try:
                 el = element_from_point(x, py)
             except OSError:
@@ -547,7 +544,7 @@ def _probe_region(
                 value = get_legacy_value(el)
                 has_text_pattern = False
                 if not value:
-                    text_content = get_text_content(el, config.READ_TEXT_MAX_LENGTH)
+                    text_content = get_text_content(el, 200)
                     if text_content:
                         value = _filter_terminal_text(text_content)
                         has_text_pattern = True
@@ -594,7 +591,7 @@ def _tree_walk(out: list[dict[str, Any]], el: Any, wnd_name: str, wnd_hwnd: int,
             value = get_legacy_value(raw_el) if role in ACTIONABLE_ROLES else ""
             has_text_pattern = False
             if not value and role in ("Text", "Document", "Edit", "Pane"):
-                tc = get_text_content(raw_el, config.READ_TEXT_MAX_LENGTH)
+                tc = get_text_content(raw_el, 200)
                 if tc:
                     value = _filter_terminal_text(tc)
                     has_text_pattern = True
@@ -620,7 +617,7 @@ def _node_key(n: dict[str, Any]) -> tuple[Any, ...]:
     return (n["role"], n.get("name", ""), n["x"], n["y"], n["w"], n["h"])
 
 def _merge(probe_nodes: list[dict[str, Any]], tree_nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Probe is primary â€” hover discoveries land first; tree adds depth and gaps."""
+    """Probe is primary — hover discoveries land first; tree adds depth and gaps."""
     index: dict[tuple[Any, ...], int] = {}
     merged: list[dict[str, Any]] = []
     for node in probe_nodes:
@@ -651,7 +648,7 @@ def _filter_terminal_text(raw: str) -> str:
             last_sep = i
             break
     tail = kept[last_sep + 1:] if last_sep >= 0 and last_sep < len(kept) - 1 else kept
-    limit = int(config.TERMINAL_CONTEXT_TAIL_LINES)
+    limit = int(-1)
     if limit > 0 and len(tail) > limit:
         tail = tail[-limit:]
     return "\n".join(tail)
@@ -691,7 +688,7 @@ def _classify(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     break
         if enabled and role in WRITABLE_ROLES and not readonly and not inside_tab:
             action = "write"
-        elif enabled and n.get("has_text_pattern") and not inside_tab:
+        elif enabled and n.get("has_text_pattern") and not readonly and not inside_tab and role in ("Edit", "ComboBox", "Document"):
             action = "write"
         elif enabled and role in CLICKABLE_ROLES:
             action = "click"
@@ -704,14 +701,10 @@ def _classify(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return result
 
 def _clip_value(value: str) -> str:
-    limit = int(config.SCREEN_ELEMENT_VALUE_LIMIT)
-    if limit <= 0:
-        return value
-    return value[:limit]
-    return value if len(value) <= limit else value[:limit] + "â€¦"
+    return value
 
-def _render(nodes: list[dict[str, Any]], focused_title: str) -> tuple[str, dict[str, BookEntry]]:
-    book: dict[str, BookEntry] = {}
+def _render(nodes: list[dict[str, Any]], focused_title: str) -> tuple[str, dict[str, Element]]:
+    elements: dict[str, Element] = {}
     wnd_groups: dict[str, list[dict[str, Any]]] = {}
     for n in nodes:
         wnd_groups.setdefault(n["wnd"], []).append(n)
@@ -721,12 +714,12 @@ def _render(nodes: list[dict[str, Any]], focused_title: str) -> tuple[str, dict[
     wnd_list = sorted(wnd_groups.keys(), key=lambda w: (w != focused_title, w))
     for i, wnd in enumerate(wnd_list):
         is_last_wnd = i == len(wnd_list) - 1
-        branch = "    " if is_last_wnd else "â”‚   "
+        branch = "    " if is_last_wnd else "│   "
         focused = " (focused)" if wnd == focused_title else ""
-        lines.append(f"{'â””â”€â”€ ' if is_last_wnd else 'â”œâ”€â”€ '}{wnd}{focused}")
+        lines.append(f"{'└── ' if is_last_wnd else '├── '}{wnd}{focused}")
         for n in wnd_groups[wnd]:
             depth = max(1, int(n.get("depth", 1)))
-            indent = branch + ("â”‚   " * (depth - 1))
+            indent = branch + ("│   " * (depth - 1))
             label = str(n.get("name", ""))
             role = str(n.get("role", ""))
             if n.get("action") != "none":
@@ -741,7 +734,7 @@ def _render(nodes: list[dict[str, Any]], focused_title: str) -> tuple[str, dict[
                     desc = f'[{nid}] {role}'
                 if not n.get("enabled"):
                     desc += " (disabled)"
-                book[nid] = BookEntry(
+                elements[nid] = Element(
                     id=nid, role=role, name=label,
                     value=str(n.get("value", "")), hwnd=n["hwnd"], wnd=wnd,
                     px=n["x"], py=n["y"], pw=n["w"], ph=n["h"],
@@ -758,5 +751,74 @@ def _render(nodes: list[dict[str, Any]], focused_title: str) -> tuple[str, dict[
                     desc = f'{role} "{val}"'
                 else:
                     desc = role
-            lines.append(f"{indent}â”œâ”€â”€ {desc}")
-    return "\n".join(lines), book
+            lines.append(f"{indent}├── {desc}")
+    return "\n".join(lines), elements
+
+
+# --- Desktop class (action executor + observer wrapper) ---
+
+class Desktop:
+    def __init__(self):
+        self.user32 = ctypes.WinDLL("user32", use_last_error=True)
+        set_dpi_aware()
+        init()
+
+    def observe(self) -> Observation:
+        return observe()
+
+    def click(self, px: int, py: int, hwnd: int = 0):
+        if hwnd:
+            self.user32.SetForegroundWindow(hwnd)
+            time.sleep(0.05)
+        self.user32.SetCursorPos(px, py)
+        time.sleep(0.02)
+        self.user32.mouse_event(0x0002, 0, 0, 0, 0)
+        time.sleep(0.05)
+        self.user32.mouse_event(0x0004, 0, 0, 0, 0)
+
+    def type_text(self, text: str):
+        for char in text:
+            inputs = (INPUT * 2)()
+            inputs[0].type = 1
+            inputs[0].u.ki.wScan = ord(char)
+            inputs[0].u.ki.dwFlags = 0x0004
+            inputs[1].type = 1
+            inputs[1].u.ki.wScan = ord(char)
+            inputs[1].u.ki.dwFlags = 0x0006
+            user32.SendInput(2, ctypes.byref(inputs), ctypes.sizeof(INPUT))
+            time.sleep(0.03)
+
+    def press_key(self, key: str):
+        vk = VK_MAP.get(key.lower())
+        if not vk:
+            return
+        flags = 0x0001 if vk in EXTENDED_VKS else 0
+        user32.keybd_event(vk, 0, flags, None)
+        time.sleep(0.03)
+        user32.keybd_event(vk, 0, 0x0002 | flags, None)
+
+    def hotkey(self, keys: list[str]):
+        vks = [VK_MAP[k.lower()] for k in keys if k.lower() in VK_MAP]
+        for vk in vks:
+            user32.keybd_event(vk, 0, 0x0001 if vk in EXTENDED_VKS else 0, None)
+            time.sleep(0.03)
+        for vk in reversed(vks):
+            user32.keybd_event(vk, 0, 0x0002 | (0x0001 if vk in EXTENDED_VKS else 0), None)
+            time.sleep(0.03)
+
+    def scroll(self, px: int, py: int, amount: int = 3):
+        self.user32.SetCursorPos(px, py)
+        time.sleep(0.02)
+        self.user32.mouse_event(0x0800, 0, 0, amount * 120, 0)
+
+    def focus_window(self, title: str) -> bool:
+        hwnd = self.user32.GetTopWindow(None)
+        while hwnd:
+            if self.user32.IsWindowVisible(hwnd):
+                wt = get_window_title(int(hwnd))
+                if title.lower() in wt.lower():
+                    self.user32.SetForegroundWindow(hwnd)
+                    time.sleep(0.3)
+                    return True
+            hwnd = self.user32.GetWindow(hwnd, 2)
+        return False
