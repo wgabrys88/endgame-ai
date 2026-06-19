@@ -55,6 +55,7 @@ body { font-family: system-ui, -apple-system, sans-serif; background: #0a0a0f; c
 .ntype-satisfied { background: #166534; }
 .ntype-bus_post { background: #7c2d12; }
 .ntype-bus_check { background: #1e3a5f; }
+.ntype-moe_route { background: #701a75; }
 .ntype-unknown { background: #374151; }
 
 .react-flow__edge-text { fill: #06b6d4 !important; font-size: 9px !important; }
@@ -418,7 +419,7 @@ function App() {
     const goal = prompt('GOAL:');
     if (!goal) return;
     const startNode = wiring.topology.cycle_start || 'response_limit_gate';
-    const initState = { goal, circuit: 'unified', response_limit: 0, response_count: 0, reasoning_history: [], no_desktop: false };
+    const initState = { goal, step: 0, retries: 0, history: [], no_desktop: false, bus_last_check: 0 };
     setLiveState(initState);
     setLiveNode(startNode);
     setLiveLog([]);
@@ -473,7 +474,7 @@ function App() {
       const goal = prompt('GOAL:');
       if (!goal) return;
       const startNode = wiring.topology.cycle_start || 'response_limit_gate';
-      const initState = { goal, circuit: 'unified', response_limit: 0, response_count: 0, reasoning_history: [], no_desktop: false };
+      const initState = { goal, step: 0, retries: 0, history: [], no_desktop: false, bus_last_check: 0 };
       setLiveState(initState);
       liveStateRef.current = initState;
       setLiveNode(startNode);
@@ -533,6 +534,8 @@ function App() {
         <button onClick={runLive} className={liveRunning?'active':''}>🚀 Run</button>
         <button onClick={stepManual}>⏩ Step</button>
         <button onClick={stopLive}>⏹ Stop</button>
+        <button onClick={() => { const g = prompt("Interrupt with new goal:"); if(g) fetch(`${SERVER}/interrupt`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({goal:g})}); }}>⚡ Interrupt</button>
+        <button onClick={() => { const g = prompt("Autonomous goal:"); if(g) fetch(`${SERVER}/run`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({goal:g})}); setStatus("Autonomous: "+g); }}>🤖 Auto</button>
         <div className="spacer"/>
         <span className="status">{status}</span>
       </div>

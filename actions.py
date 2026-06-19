@@ -110,3 +110,29 @@ class ActionExecutor:
                 return ActionResult(verb, False, f"inspect failed: {e}")
 
         return ActionResult(verb, False, f"unhandled verb: {verb}")
+
+
+# ─── Module-level API for server.py ───
+
+_desktop = None
+_executor = None
+
+def _init():
+    global _desktop, _executor
+    if _desktop is None:
+        _desktop = Desktop()
+        import json, pathlib
+        wiring = json.loads((pathlib.Path(__file__).parent / "prompts" / "wiring.json").read_text(encoding="utf-8"))
+        _executor = ActionExecutor(_desktop, wiring)
+
+def observe_screen() -> str:
+    _init()
+    obs = _desktop.observe()
+    return obs.context_text
+
+def execute_verb(verb: str, target: str, value: str = "") -> str:
+    _init()
+    obs = _desktop.observe()
+    args = {"target": target, "value": value}
+    result = _executor.execute(verb, args, obs.elements)
+    return result.observation if result.success else f"FAILED: {result.observation}"

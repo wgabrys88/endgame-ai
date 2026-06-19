@@ -2,12 +2,12 @@
 endgame-ai — stdlib only, zero pip.
 One file. Node handlers are pure functions. Wiring.json is the brain.
 """
-import json, http.server, urllib.request, pathlib, time, sys, re, threading, queue
+import json, http.server, urllib.request, pathlib, time, sys, re, threading, queue, os
 
 ROOT = pathlib.Path(__file__).parent
 PROMPTS = ROOT / "prompts"
 STATE_FILE = ROOT / "state.json"
-BUS_FILE = ROOT / "bus.json"
+BUS_FILE = pathlib.Path(os.environ.get("ENDGAME_BUS", str(ROOT / "bus.json")))
 WIRING = json.loads((PROMPTS / "wiring.json").read_text(encoding="utf-8"))
 MODEL = json.loads((PROMPTS / "model.json").read_text(encoding="utf-8"))
 
@@ -319,6 +319,32 @@ def node_bus_post(state, _):
     bus_write(msgs)
     return {"signals": ["posted"], "patch": {}}
 
+def node_moe_route(state, _):
+    """MoE gate: route goal to self or delegate to another rod via bus.
+    Reads colony telemetry from bus to pick best slot.
+    If this rod's persona matches goal domain → self.
+    Otherwise → delegate to best slot via bus post."""
+    goal = (state.get("goal", "") or "").lower()
+    my_slot = WIRING.get("instance", {}).get("slot", 0)
+    my_persona = WIRING.get("instance", {}).get("persona", "")
+    permissions = WIRING.get("instance", {}).get("permissions", [])
+
+    # Simple competence matching from persona
+    if "desktop_exec" not in permissions and any(k in goal for k in ["open", "click", "type", "write", "launch"]):
+        # This rod can't do desktop work — delegate
+        msgs = bus_read()
+        # Find a rod with desktop_exec capability from recent telemetry
+        exec_slots = set()
+        for m in msgs:
+            if m.get("type") == "telemetry" and m.get("from_slot") != my_slot:
+                exec_slots.add(m.get("from_slot"))
+        target = min(exec_slots) if exec_slots else 1  # Default to slot 1
+        bus_write(msgs + [{"ts": time.time(), "from_slot": my_slot, "to_slot": target, "type": "goal", "payload": {"goal": state.get("goal", "")}}])
+        return {"signals": ["delegated"], "patch": {"delegated_to": target}}
+
+    # This rod handles it
+    return {"signals": ["self"], "patch": {}}
+
 # ─── Registry ───
 NODES = {
     "entry": node_entry,
@@ -331,6 +357,7 @@ NODES = {
     "satisfied": node_satisfied,
     "bus_check": node_bus_check,
     "bus_post": node_bus_post,
+    "moe_route": node_moe_route,
 }
 
 # ─── Graph engine ───
@@ -430,7 +457,10 @@ class H(http.server.BaseHTTPRequestHandler):
             t = self.path[6:]
             h = NODES.get(t)
             if not h: self._j({"error": f"unknown: {t}"}, 404); return
-            try: self._j(h(body.get("state", {}), body.get("config", {})))
+            try:
+                r = h(body.get("state", {}), body.get("config", {}))
+                r["state_patch"] = r.pop("patch", {})  # browser expects state_patch
+                self._j(r)
             except Exception as e: self._j({"error": str(e)}, 500)
         elif self.path == "/run":
             goal = body.get("goal", "")
