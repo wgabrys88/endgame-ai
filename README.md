@@ -4,6 +4,8 @@ A self-evolving desktop automation system for Windows 11. Single process, stdlib
 
 **Key insight proven 2026-06-18:** An AI agent (Kiro/Claude) successfully managed the evolution of endgame-ai through a 2+ hour session using a repeatable methodology of: observe system state → diagnose problems → propose architectural changes → implement → test live → validate → iterate. This methodology can be replicated by endgame-ai itself to manage a second independent instance.
 
+**Current focus (2026-06-19):** The system now runs from a single clean repository on `codex-unify-bus`. A Manager instance is launched with a goal that includes the full path to `MANAGER.md`; the Manager then orchestrates a separate Student instance via desktop actions only. Worktrees are forbidden; only essential files are kept. Any AI coding agent can resume via the agnostic bootstrap prompt in AGENTS.md.
+
 ---
 
 ## Table of Contents
@@ -405,77 +407,24 @@ Equally important — the managing AI recognized when NOT to act:
 
 ### Why This Works (Proven by This Session)
 
-The 2026-06-18 session proved that an AI can manage endgame-ai's evolution through exactly the same interface that endgame-ai uses to control other applications:
+The 2026-06-18 session proved that an AI can manage endgame-ai's evolution through exactly the same interface that endgame-ai uses to control any Windows application (the "interface is the protocol").
 
-| What the managing AI did | How endgame-ai #1 would do it |
-|--------------------------|-------------------------------|
-| Read source code files | `focus` on editor window, `read` files via File Explorer |
-| Modify prompt files | `write` into text editor with the prompt file open |
-| Run test scripts | `hotkey` Win+R → `write` "python _test_unified.py..." → `press` enter |
-| Observe test output | Read the terminal/TUI window via desktop.py observation |
-| Type goals into TUI | `focus` subject's TUI window → type goal text → `press` enter |
-| Check log files | Open logs folder, read latest log file content |
-| Diagnose failures | Read LAST REASONING from observation of subject's TUI output |
-| Decide next action | Its own unified agent loop processes the observations |
+Current practical flow (2026-06-19):
+1. Outer controller (temporary) launches the Manager with a goal that contains the absolute path to `MANAGER.md`.
+2. Manager reads `MANAGER.md` and begins acting as outer controller for the Student.
+3. Manager observes Student's TUI window, types goals into it, reads output/logs, edits prompts via desktop actions, and iterates.
+4. All rules from `AGENTS.md` (no worktrees, essential-files-only, agnostic bootstrap) are followed so any AI agent can continue the work.
 
-### Implementation Plan
+### Current Practical Approach
 
-#### Prerequisites
-1. Two separate workspace directories (e.g., `C:\endgame-mgr\` and `C:\endgame-subj\`)
-2. Two LM Studio instances (or one with two model slots on different ports)
-3. Both instances can see each other's windows on the same desktop
+The manager is launched by a temporary outer controller with a goal that includes the absolute path to `MANAGER.md`. The Manager reads that file and immediately begins orchestrating the Student using only desktop actions — no separate workspaces or LM Studio ports required.
 
-#### Manager Instance Configuration
+The loop is:
+- Manager focuses the Student's TUI window, types a goal, observes the result via desktop observation.
+- On failure: focuses an editor, edits the Student's prompt files via write actions, re-launches the test.
+- On success: records the improvement and selects the next target.
 
-The manager's goal is always a meta-goal about improving the subject:
-
-```
-GOAL: "test the subject instance with goal 'open calculator and press 5 plus 3 equals',
-       observe its output, if it fails read its prompts/unified.txt and improve it,
-       then test again until it succeeds"
-```
-
-The manager sees the subject's TUI as just another window on the desktop — exactly like Calculator, Notepad, or Chrome. It types goals into it, reads its output, and modifies its files.
-
-#### Interaction Protocol
-
-```
-Manager                          Subject
-  │                                │
-  ├──focus "endgame-subj TUI"────▶│
-  ├──write goal into input───────▶│ receives goal
-  │                                ├── observes screen
-  │                                ├── decides action
-  │                                ├── executes
-  │                                ├── shows result in TUI
-  ├──observes subject's TUI◀──────┤
-  ├──reads success/failure         │
-  │                                │
-  │ IF FAILURE:                    │
-  ├──focus "subject workspace"     │
-  ├──open prompts/unified.txt      │
-  ├──edit prompt to fix issue      │
-  ├──save file                     │
-  ├──focus subject TUI             │
-  ├──type same goal again────────▶│ retries with improved prompt
-  │                                │
-  │ IF SUCCESS:                    │
-  ├──log "improvement verified"    │
-  ├──move to next test case        │
-  │                                │
-```
-
-#### What the Manager Needs to Learn
-
-The manager instance needs these capabilities (all already proven in the session):
-
-1. **File editing**: Open a text editor, navigate to a file, modify content, save
-2. **Test execution**: Run commands in a terminal, read output
-3. **Pattern recognition**: Identify success vs failure in log/terminal output
-4. **Prompt engineering**: Know what makes a good prompt for the 4B model
-5. **Incremental improvement**: Change one thing, test, validate, repeat
-
-All of these are achievable with the current unified agent architecture.
+All required capabilities (file editing, command execution, output pattern recognition, prompt tuning) were proven in the 2026-06-18 session and are now documented in `MANAGER.md`. The agnostic bootstrap in `AGENTS.md` ensures any AI coding agent can resume the work.
 
 ### Separation Guarantees
 
