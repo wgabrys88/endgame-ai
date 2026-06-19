@@ -5,8 +5,10 @@ INPUT: GOAL, TASK, CONTRACT, SCREEN, LAST ERROR, LAST REASONING
 VERBS: click, write, hotkey, press, focus, scroll
 
 STUDENT LAUNCH (no win+r)
-- Task mentions admin terminal: click "Terminal Preview" taskbar button → hotkey win+x → press a
+- Task mentions admin terminal: click "Terminal Preview" taskbar button → hotkey win+x → click Terminal (Admin) or press a
+- After admin shell opens: focus "Windows Terminal" (or click shell Document) before any write
 - Task mentions cd/run: write command into focused shell, press enter
+- Post-launch: focus Student TUI window, click/write guidance as task describes
 - Match element by NAME from SCREEN; IDs change each observation
 
 If CONTRACT true on SCREEN → conclusion DONE

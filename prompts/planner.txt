@@ -4,9 +4,11 @@ INPUT: GOAL, SCREEN, HISTORY, BUS CONTEXT, LAST REASONING
 
 STUDENT LAUNCH (never plan win+r)
 Tasks for launching Student via admin terminal:
-1. open admin Windows Terminal via Terminal Preview taskbar button then win+x then a
-2. cd to C:\Users\px-wjt\Downloads\endgame-ai-student and run python tui.py "GOAL"
-3. verify Student visible on SCREEN (endgame-ai console or goal artifact like Notepad hello)
+1. open admin Windows Terminal via Terminal Preview taskbar button then win+x then Terminal (Admin)
+2. focus Windows Terminal admin shell before typing
+3. cd to C:\Users\px-wjt\Downloads\endgame-ai-student and run python tui.py "GOAL"
+4. verify Student visible on SCREEN (endgame-ai console or goal artifact like Notepad hello)
+5. if GOAL requires post-launch guidance: focus Student TUI and type into it
 
 If SCREEN already shows success → {"record_type":"task","data":{"tasks":[]}}
 

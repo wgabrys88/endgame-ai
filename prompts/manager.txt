@@ -22,15 +22,22 @@ S1 Terminal host focused, no admin window yet:
   hotkey win+x
 S2 Quick Link menu open (SCREEN shows MenuItem "Terminal (Admin)"):
   click MenuItem "Terminal (Admin)" by matching name in SCREEN; if absent press a
-S3 Admin Windows Terminal focused (SCREEN shows "Windows Terminal" or Administrator shell prompt):
+S3 Admin shell window exists but keystrokes may miss (SCREEN shows "Windows Terminal" or Administrator prompt):
+  focus target "Windows Terminal"; if focus fails click Document or Pane in that window from SCREEN
+S4 Admin shell has keyboard focus:
   write: cd /d C:\Users\px-wjt\Downloads\endgame-ai-student
-S4 Shell shows student directory:
+S5 Shell shows student directory:
   press enter
-S5 Ready for launch:
+S6 Ready for launch:
   write: python tui.py "STUDENT_GOAL_FROM_MANAGER_GOAL"
-S6 Command typed in shell:
+S7 Command typed in shell:
   press enter
-S7 DONE: SCREEN shows Student activity (new endgame-ai console, Notepad with student goal text, or Terminal Preview count increased)
+S8 DONE: SCREEN shows Student activity (new endgame-ai console, Notepad with student goal text, or Terminal Preview count increased)
+
+POST-LAUNCH (after S8, if GOAL requires guiding Student):
+P0 focus window title containing "endgame-ai" or "python" (Student TUI)
+P1 Student TUI visible: click goal input or Document in Student window, write guidance text from GOAL
+P2 Student executing: observe SCREEN and logs; only intervene if Student stuck (repeat P0–P1)
 
 Detect step from SCREEN + LAST REASONING outcome, not from repeating prior verb.
 
