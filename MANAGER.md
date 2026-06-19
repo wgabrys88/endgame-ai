@@ -34,3 +34,7 @@ The Manager can start and monitor multiple instances at the same time. Each inst
 ## Long-term Goal
 
 The Manager’s ultimate objective is to create a Student that can eventually become a second Manager, forming a self-sustaining evolution chain.
+
+## Outer Controller Role (Temporary)
+
+During early development, an external controller (Grok Build session) may be needed to launch, monitor, and manage the Manager itself until the Manager can reliably orchestrate the Student on its own.

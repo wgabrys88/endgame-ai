@@ -48,4 +48,15 @@ When running multiple endgame-ai instances at the same time:
 - To monitor progress, periodically read the newest log file from each instance’s `logs/` directory.
 - The outer controller is responsible for starting, observing, and terminating the instances.
 
+## Launching Instances with Complex Goals
+
+When starting an instance with a long or complex goal:
+
+- Use this reliable pattern:
+  ```powershell
+  $job = Start-Job -ScriptBlock { cd "path\to\instance"; python tui.py "long goal here" 2>&1 | Out-File "$env:TEMP\name.log" }; Start-Sleep 20; Stop-Job $job -ErrorAction SilentlyContinue; Remove-Job $job -ErrorAction SilentlyContinue
+  ```
+- The `Start-Sleep` + self-kill inside the job ensures the TUI has time to initialize and begin writing logs even with complex goals.
+- Always verify logs appear in the instance’s `logs/` directory after launch.
+
 Keep this file updated as operational knowledge evolves.
