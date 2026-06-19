@@ -1,13 +1,14 @@
-endgame-ai cognitive smoke report
-generated: 20260619_130723
+endgame-ai smoke suite report
+generated: 20260619_132358
 scenarios: 1
-mode: s01 one-response probes
+response_limit: 1
+no_desktop: True
 
 ================================================================================
-S01 — S01 Shakira YouTube
+S08 — S08 Run dialog
 ================================================================================
-GOAL: open youtube in chrome and play shakira waka waka
-LOG: C:\Users\px-wjt\Downloads\endgame-ai\logs\20260619_130723.txt
+GOAL: open the run dialog
+LOG: C:\Users\px-wjt\Downloads\endgame-ai\logs\20260619_132358.txt
 EXIT: 0
 
 --- SYSTEM PROMPT ---
@@ -50,7 +51,7 @@ OUTPUT:
 {"record_type":"action","data":{"conclusion":"EXECUTE|DONE|CANNOT","actions":[{"verb":"...","target":"...","value":"..."}]}}
 
 --- USER CONTEXT ---
-GOAL: open youtube in chrome and play shakira waka waka
+GOAL: open the run dialog
 SCREEN: (desktop observation disabled — assume bare Windows desktop; Run dialog not visible; no application windows open)
 WORKSPACE: MODE: executor — act on THIS desktop yourself; do not delegate
 ROOT: C:\Users\px-wjt\Downloads\endgame-ai
@@ -64,7 +65,7 @@ WIRING: C:\Users\px-wjt\Downloads\endgame-ai\prompts\wiring.json
     "conclusion": "EXECUTE",
     "actions": [
       {
-        "verb": "press",
+        "verb": "hotkey",
         "target": "win+r",
         "value": ""
       }
@@ -73,10 +74,6 @@ WIRING: C:\Users\px-wjt\Downloads\endgame-ai\prompts\wiring.json
 }
 
 --- MODEL REASONING ---
-We need to follow LAUNCH steps. Goal: open youtube in chrome and play shakira waka waka.
+We need to output JSON with action to open run dialog. According to LAUNCH steps: Run dialog not on SCREEN → hotkey win+r (required before any write). So first action is hotkey win+r. Conclusion EXECUTE? Probably EXECUTE. actions: verb "hotkey", target "win+r", value maybe empty? value field needed. Provide value maybe "".
 
-Current state: desktop bare, no apps. Need to run dialog not on SCREEN → hotkey win+r (required before any write to Open field). So first action: press hotkey win+r.
-
-Thus output JSON with verb "press", target "win+r", value "". Conclusion EXECUTE? actions list.
-
-JSON: {"record_type":"action","data":{"conclusion":"EXECUTE","actions":[{"verb":"press","target":"win+r","value":""}]}}.
+JSON: {"record_type":"action","data":{"conclusion":"EXECUTE","actions":[{"verb":"hotkey","target":"win+r","value":""}]}}.

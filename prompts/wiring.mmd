@@ -1,24 +1,25 @@
 %% endgame-ai wiring — generated from prompts/wiring.json
 %% schema: endgame-topology/v1
 flowchart TD
-  cli_entry["CLI goal + optional N<br/>(entry)"]
+  cli_entry["CLI goal / suite / optional N<br/>(entry)"]
   response_limit_gate["Stop after N LLM responses<br/>(gate)"]
   route_slot["startup.slot route<br/>(bus_route)"]
   observe_screen["SCREEN capture / seed<br/>(desktop_observe)"]
   build_request["USER blocks + SYSTEM prompt<br/>(request_assembly)"]
   llm_call["LM Studio chat/completions<br/>(llm)"]
   parse_pipeline["JSON parse + guards<br/>(response_pipeline)"]
-  feedback_append["reasoning_history append<br/>(feedback)"]
+  feedback_append["reasoning pass-through<br/>(feedback)"]
   desktop_exec["verbs → actions.py<br/>(desktop_execute)"]
   idle["goal_complete / shutdown<br/>(idle)"]
   cli_entry -->|args_parsed| response_limit_gate
+  response_limit_gate -->|limit_reached| idle
   response_limit_gate -->|under_limit| route_slot
   route_slot -->|route_open| observe_screen
   observe_screen -->|screen_ready| build_request
   build_request -->|request_built| llm_call
   llm_call -->|response_received| parse_pipeline
-  parse_pipeline -->|unified_acted/unified_cannot/goal_complete| feedback_append
-  parse_pipeline -->|actions_present| desktop_exec
-  desktop_exec -->|unified_acted| observe_screen
   parse_pipeline -->|goal_complete/limit_reached| idle
-  response_limit_gate -->|limit_reached| idle
+  parse_pipeline -->|actions_present| desktop_exec
+  parse_pipeline -->|unified_acted/unified_cannot/unified_error| feedback_append
+  feedback_append -->|cycle_done| idle
+  desktop_exec -->|cycle_done| idle

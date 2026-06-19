@@ -2,7 +2,6 @@
 from __future__ import annotations
 import argparse
 import ctypes
-import json
 import logging
 import queue
 import sys
@@ -13,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import llm
-from llm import LLMClient, set_response_limit
+from llm import LLMClient, LLMResult, set_response_limit
 from bus import Bus
 from colony import Colony
 from wiring import load_wiring
@@ -58,8 +57,6 @@ class TUI:
         self.colony = colony
         self._wiring = wiring
         self.desktop_enabled = desktop_enabled
-        self._desktop = None
-        self._actions = None
         self._running = True
         self._input_buf = ""
         self._log: list[str] = []
@@ -73,33 +70,23 @@ class TUI:
         self._w = 120
         self._h = 35
 
-    def _seed_screen(self):
-        if self.desktop_enabled:
-            return
-        ctx = self._wiring.get("context", {})
-        msg = str(ctx.get(
-            "screen_disabled",
-            "(desktop observation disabled — assume bare Windows desktop)",
-        ))
-        for slot in self.colony.all_slots.values():
-            if slot.can_act_desktop:
-                slot.observe(msg, {})
-
     def _init_desktop(self):
-        if self.desktop_enabled and self._desktop is None:
+        desktop = None
+        actions = None
+        if self.desktop_enabled:
             try:
                 from desktop import Desktop
                 from actions import ActionExecutor
-                self._desktop = Desktop()
-                self._actions = ActionExecutor(self._desktop, self._wiring)
+                desktop = Desktop()
+                actions = ActionExecutor(desktop, self._wiring)
             except (ImportError, OSError) as e:
                 self._log_line(f"[!] Desktop unavailable: {e}")
                 self.desktop_enabled = False
+        self.colony.set_desktop(desktop, actions, self.desktop_enabled)
 
     def _log_line(self, text: str):
         """Add a line to the log. No truncation."""
         self._log.append(text)
-        # Auto-scroll to bottom
         self._scroll_offset = 0
 
     def _log_block(self, title: str, content: str):
@@ -110,50 +97,15 @@ class TUI:
         self._log_line("")
         _file_log.debug("%s\n%s", title, content)
 
-    def _observe(self):
-        if not self._desktop:
-            return
-        try:
-            obs = self._desktop.observe()
-            for slot in self.colony.active_slots.values():
-                if slot.can_act_desktop:
-                    slot.observe(obs.context_text, obs.elements)
-        except Exception as e:
-            self._log_line(f"[!] Observe: {e}")
-
-    def _execute_actions(self, slot_name: str, actions: list[dict[str, Any]], reasoning_entry: dict | None = None):
-        if not self._actions:
-            return
-        slot = self.colony.all_slots.get(slot_name)
-        elements = slot.state.screen_elements if slot else {}
-        outcomes: list[str] = []
-        for action in actions:
-            verb = str(action.get("verb", ""))
-            result = self._actions.execute(verb, action, elements)
-            self._log_line(f"  ▶ {verb}: {result.observation}")
-            outcomes.append(f"{verb}: {'OK' if result.success else result.observation}")
-            if slot:
-                if not result.success:
-                    slot.state.last_action_error = f"{verb}: {result.observation}"
-                self.colony.bus.publish("evidence", "tool", slot.state.active_task_id or "",
-                                        {"verb": verb, "success": result.success, "obs": result.observation})
-        if slot and reasoning_entry is not None:
-            reasoning_entry["outcome"] = "; ".join(outcomes)
-            slot.state.reasoning_history.append(reasoning_entry)
-            depth = self._wiring["limits"]["reasoning_history_depth"]
-            if len(slot.state.reasoning_history) > depth:
-                slot.state.reasoning_history = slot.state.reasoning_history[-depth:]
-
     def _worker(self):
-        """Background: observe → step → queue results."""
+        """Background: graph cycle per wiring.topology."""
+        interval = float(self._wiring.get("limits", {}).get("observe_interval_s", 1))
         while self._running and not llm.shutdown_requested:
             has_work = (any(s.state.goal for s in self.colony.active_slots.values())
                         or self.colony.bus.has_pending_routes())
             if not has_work:
                 time.sleep(0.5)
                 continue
-            if self.desktop_enabled:
-                self._observe()
             self._thinking = True
             self._think_start = time.time()
             results = self.colony.step()
@@ -161,7 +113,7 @@ class TUI:
             for name, result in results:
                 if result:
                     self._result_q.put((name, result))
-            time.sleep(1.0)
+            time.sleep(interval)
 
     def _drain_results(self):
         while not self._result_q.empty():
@@ -177,10 +129,11 @@ class TUI:
             self._log_line(f"[{ts}] {name}:{phase} → {event} {conclusion}".rstrip())
             if event == "goal_complete":
                 self._log_line(f"  ✓ GOAL COMPLETE")
-            if actions:
+            for line in result.get("execution_log", []):
+                self._log_line(f"  {line}")
+            if actions and not result.get("execution_log"):
                 for a in actions:
                     self._log_line(f"  → {a.get('verb','')} target={a.get('target','')} value={a.get('value','')}")
-                self._execute_actions(name, actions, result.get("reasoning_entry"))
 
     def _render(self) -> str:
         RST, BOLD, DIM, GREEN, CYAN, YEL, RED = (
@@ -201,10 +154,8 @@ class TUI:
             goal = slot.state.goal if slot.state.goal else f"{DIM}(idle){RST}"
             lines.append(f"  {key}) {dot} {name:13} F={slot.state.fissions} {phase:12} {goal}")
         lines.append(f"{DIM}{'─' * (w - 1)}{RST}")
-        # Log area: all remaining space minus 2 footer lines
         header_count = len(lines)
         log_space = h - header_count - 2
-        # Apply scroll offset
         end = len(self._log) - self._scroll_offset
         start = max(0, end - log_space)
         visible = self._log[start:end] if end > 0 else []
@@ -212,7 +163,6 @@ class TUI:
             lines.append(f"  {entry}")
         while len(lines) < h - 2:
             lines.append("")
-        # Input line
         cursor = "│" if int(time.time() * 2) % 2 else " "
         lines.append(f"@human> {self._input_buf}{cursor}")
         lines.append(f"{DIM}Enter=send  1-{len(self._slot_keys)}=toggle  PgUp/PgDn=scroll  q=quit{RST}")
@@ -228,12 +178,11 @@ class TUI:
         elif ch == "\x08":
             self._input_buf = self._input_buf[:-1]
         elif ch == "\x00" or ch == "\xe0":
-            # Extended key — read next char
             import msvcrt
             ext = msvcrt.getwch()
-            if ext == "I":  # PgUp
+            if ext == "I":
                 self._scroll_offset = min(self._scroll_offset + 10, max(0, len(self._log) - 5))
-            elif ext == "Q":  # PgDn
+            elif ext == "Q":
                 self._scroll_offset = max(0, self._scroll_offset - 10)
         elif ch in self._slot_keys and not self._input_buf:
             name = self._slot_keys[ch]
@@ -250,8 +199,6 @@ class TUI:
         k32, hout = _setup_console()
         self._w, self._h = _console_size(k32, hout)
         self._init_desktop()
-        self._seed_screen()
-        # Hook LLM to show full request/response in log
         orig_call = self.colony.llm.call
         def _hooked_call(system, user, **kw):
             self._log_block("REQUEST", f"SYSTEM:\n{system}\n\nUSER:\n{user}")
@@ -264,14 +211,13 @@ class TUI:
                 resp_parts.append(f"\nREASONING:\n{r.reasoning}")
             self._log_block(f"RESPONSE [{elapsed:.1f}s]", "\n".join(resp_parts))
             return r
-        self.colony.llm.call = _hooked_call
+        self.colony.set_llm_hook(_hooked_call)
 
         if goal:
             self.colony.set_goal(goal)
             self._log_line(f"GOAL: {goal}")
         if llm.response_limit is not None:
             self._log_line(f"[!] Auto-exit after {llm.response_limit} response(s)")
-        # Start worker
         threading.Thread(target=self._worker, daemon=True).start()
         n = ctypes.c_ulong()
         def _w(t):
@@ -285,7 +231,6 @@ class TUI:
                 if llm.shutdown_requested:
                     self._log_line(f"[!] Response limit reached ({llm.response_count}), exiting")
                     self._running = False
-                # Detect resize
                 nw, nh = _console_size(k32, hout)
                 if nw != self._w or nh != self._h:
                     self._w, self._h = nw, nh
@@ -302,15 +247,16 @@ def main():
     parser = argparse.ArgumentParser(prog="endgame-ai")
     parser.add_argument("goal", nargs="*", help="Goal; optional trailing positive integer = exit after N LLM responses")
     parser.add_argument("--no-desktop", action="store_true")
-    parser.parse_args()  # help text only; real parse from wiring.runtime.cli
+    parser.parse_args()
     wiring = load_wiring(PROMPTS_DIR)
     parsed = parse_cli_from_wiring(wiring, sys.argv[1:])
     if parsed["response_limit"] is not None:
         set_response_limit(parsed["response_limit"])
     bus = Bus(max_records=int(wiring["limits"]["bus_max_records"]))
-    llm = LLMClient(prompts_dir=PROMPTS_DIR)
-    colony = Colony(llm=llm, bus=bus, prompts_dir=PROMPTS_DIR, workspace=BASE_DIR, wiring=wiring)
+    llm_client = LLMClient(prompts_dir=PROMPTS_DIR)
     desktop = wiring.get("runtime", {}).get("desktop", {}).get("enabled", True) and not parsed["no_desktop"]
+    colony = Colony(llm=llm_client, bus=bus, prompts_dir=PROMPTS_DIR, workspace=BASE_DIR,
+                    wiring=wiring, desktop_enabled=desktop)
     tui = TUI(colony=colony, wiring=wiring, desktop_enabled=desktop)
     tui.run(goal=parsed["goal"])
 

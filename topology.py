@@ -1,13 +1,19 @@
-"""Dumb topology executor — all intelligence in prompts/wiring.json."""
+"""Dumb topology executor — all behavior declared in prompts/wiring.json."""
 from __future__ import annotations
 
 import json
+import logging
 import re
+import time
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
-from llm import LLMResult
+import llm as llm_mod
+from llm import LLMClient, LLMResult
 from bus import Bus
+
+_log = logging.getLogger("endgame")
 
 
 def extract_json(text: str) -> dict | None:
@@ -69,8 +75,7 @@ class ContextBuilder:
             fb = self._wiring.get("feedback", {}).get("reasoning", {})
             if not state.reasoning_history:
                 return ""
-            depth = int(fb.get("depth_from_limits", "reasoning_history_depth") and
-                        self._limits.get("reasoning_history_depth", 20))
+            depth = int(self._limits.get("reasoning_history_depth", 20))
             fmt = str(fb.get("entry_format", "[attempt] {reasoning} → {outcome}"))
             entries = state.reasoning_history[-depth:]
             return "\n".join(fmt.format(reasoning=e.get("reasoning", ""), outcome=e.get("outcome", "")) for e in entries)
@@ -130,8 +135,60 @@ class PromptResolver:
         return self._default
 
 
+class ConditionEvaluator:
+    """Evaluate wiring guard/when conditions against runtime state."""
+
+    def __init__(self, guards: dict[str, Any]):
+        self._guards = guards
+
+    def match(self, spec: dict[str, Any] | list[Any] | str | bool, ctx: dict[str, Any],
+              state: Any, result: LLMResult) -> bool:
+        if isinstance(spec, bool):
+            return spec
+        if isinstance(spec, str):
+            return bool(spec)
+        if isinstance(spec, list):
+            return all(self.match(s, ctx, state, result) for s in spec)
+        if "all" in spec:
+            return all(self.match(s, ctx, state, result) for s in spec["all"])
+        if "any" in spec:
+            return any(self.match(s, ctx, state, result) for s in spec["any"])
+        if "not" in spec:
+            return not self.match(spec["not"], ctx, state, result)
+        if "goal_contains_any" in spec:
+            g = state.goal.lower()
+            return any(w.lower() in g for w in spec["goal_contains_any"])
+        if "history_outcome_contains_any" in spec:
+            needles = spec["history_outcome_contains_any"]
+            return any(
+                any(n in str(h.get("outcome", "")) for n in needles)
+                for h in state.reasoning_history
+            )
+        if "not_empty" in spec:
+            path = str(spec["not_empty"])
+            return bool(self._resolve_path(path, ctx, state))
+        if "last_outcome_contains" in spec:
+            if not state.reasoning_history:
+                return False
+            needle = str(spec["last_outcome_contains"])
+            return needle in state.reasoning_history[-1].get("outcome", "")
+        if "actions_equal_last" in spec:
+            actions = ctx.get("actions", [])
+            if not state.reasoning_history or not actions or not state._last_actions:
+                return False
+            return (len(actions) == len(state._last_actions)
+                    and all(a.get("verb") == b.get("verb") and a.get("target") == b.get("target")
+                            for a, b in zip(actions, state._last_actions)))
+        return False
+
+    def _resolve_path(self, path: str, ctx: dict[str, Any], state: Any) -> Any:
+        if path.startswith("state."):
+            return getattr(state, path[6:], None)
+        return ctx.get(path)
+
+
 class ResponsePipeline:
-    """Run wiring.response[circuit].pipeline — parse, guards, emit events."""
+    """Run wiring.response[circuit].pipeline — declarative steps only."""
 
     def __init__(self, wiring: dict[str, Any], circuit: str):
         self._wiring = wiring
@@ -140,6 +197,8 @@ class ResponsePipeline:
         self._pipeline = self._cfg.get("pipeline", [])
         self._guards = self._cfg.get("guards", {})
         self._limits = wiring.get("limits", {})
+        self._fb = wiring.get("feedback", {}).get("reasoning", {})
+        self._conditions = ConditionEvaluator(self._guards)
 
     def run(self, result: LLMResult, state: Any, bus: Bus) -> dict[str, Any]:
         ctx: dict[str, Any] = {
@@ -150,90 +209,103 @@ class ResponsePipeline:
             "conclusion": "",
             "actions": [],
             "outcome": "",
+            "event": f"{self._circuit}_error",
+            "defer_reasoning_outcome": False,
+            "append_feedback": False,
         }
-        event = f"{self._circuit}_error"
-        for step in self._pipeline:
-            stype = str(step.get("step", ""))
-            if stype == "parse_json":
-                ctx["record"] = self._parse_json(ctx, step)
-                if not ctx["record"]:
-                    event = str(step.get("on_fail", event))
-                    return self._fail(state, event, step.get("error", "parse_failed"))
-            elif stype == "extract_fields":
-                rec = ctx.get("record") or {}
-                try:
-                    ctx["data"] = rec["data"]
-                except (KeyError, TypeError):
-                    event = str(step.get("on_fail", event))
-                    return self._fail(state, event, "parse_failed")
-                ctx["conclusion"] = str(ctx["data"].get("conclusion", "EXECUTE"))
-                ctx["actions"] = ctx["data"].get("actions", [])
-            elif stype == "branch_conclusion":
-                event = self._branch_conclusion(ctx, state, bus, result)
-                if event:
-                    return self._package(event, ctx, result, state, bus)
-            elif stype == "emit":
-                event = str(step.get("event", event))
-        return self._package(event, ctx, result, state, bus)
+        halted = self._run_steps(self._pipeline, ctx, state, bus, result)
+        if halted:
+            return halted
+        return self._package(ctx, result, state)
 
-    def _parse_json(self, ctx: dict[str, Any], step: dict[str, Any]) -> dict | None:
-        sources = step.get("from", ["content"])
-        for src in sources:
-            text = str(ctx.get(src, ""))
-            rec = None
-            try:
-                rec = json.loads(text)
-            except (json.JSONDecodeError, TypeError):
-                rec = extract_json(text)
-            if rec:
-                return rec
+    def _run_steps(self, steps: list[dict[str, Any]], ctx: dict[str, Any], state: Any,
+                   bus: Bus, result: LLMResult) -> dict[str, Any] | None:
+        for step in steps:
+            out = self._run_step(step, ctx, state, bus, result)
+            if out is not None:
+                return out
         return None
 
-    def _branch_conclusion(self, ctx: dict[str, Any], state: Any, bus: Bus, result: LLMResult) -> str | None:
-        conclusion = ctx["conclusion"]
-        if conclusion == "DONE":
-            g = self._guards.get("premature_done", {})
-            keywords = g.get("goal_keywords", [])
-            outcomes = g.get("required_outcomes", [])
-            goal_lower = state.goal.lower()
-            if keywords and outcomes and any(w in goal_lower for w in keywords):
-                did = any(any(o in str(h.get("outcome", "")) for o in outcomes) for h in state.reasoning_history)
-                if not did:
-                    ctx["outcome"] = str(g.get("override_outcome", "SYSTEM: goal requires typing but no write was done yet"))
-                    self._append_feedback(state, result, ctx)
-                    ctx["actions"] = []
-                    return "unified_acted"
-            ctx["outcome"] = "goal complete"
-            self._append_feedback(state, result, ctx)
-            return "goal_complete"
-        if conclusion == "CANNOT":
-            ctx["outcome"] = "cannot"
-            self._append_feedback(state, result, ctx)
-            return "unified_cannot"
-        # EXECUTE
-        rep = self._guards.get("repeat_block", {})
-        actions = ctx.get("actions", [])
-        if state.reasoning_history and actions and state._last_actions:
-            last = state.reasoning_history[-1]
-            same = (len(actions) == len(state._last_actions)
-                    and all(a.get("verb") == b.get("verb") and a.get("target") == b.get("target")
-                            for a, b in zip(actions, state._last_actions)))
-            if rep.get("block_if_outcome_contains", "OK") in last.get("outcome", "") and same:
-                hint = self._advance_hint(state._last_actions[0], state.screen)
-                ctx["outcome"] = f"SYSTEM: repeat blocked — {hint}"
-                self._append_feedback(state, result, ctx)
-                state.last_action_error = hint
-                ctx["actions"] = []
-                return "unified_acted"
-        state._last_actions = actions
-        bus.publish("action", self._circuit, state.active_task_id or "", ctx["data"])
-        ctx["outcome"] = ""
-        return "unified_acted"
+    def _run_step(self, step: dict[str, Any], ctx: dict[str, Any], state: Any,
+                  bus: Bus, result: LLMResult) -> dict[str, Any] | None:
+        stype = str(step.get("step", ""))
+        if stype == "parse_json":
+            ctx["record"] = self._parse_json(ctx, step)
+            if not ctx["record"]:
+                return self._fail(state, str(step.get("on_fail", f"{self._circuit}_error")),
+                                  str(step.get("error", "parse_failed")))
+        elif stype == "extract_fields":
+            rec = ctx.get("record") or {}
+            try:
+                ctx["data"] = rec["data"]
+            except (KeyError, TypeError):
+                return self._fail(state, str(step.get("on_fail", f"{self._circuit}_error")), "parse_failed")
+            ctx["conclusion"] = str(ctx["data"].get("conclusion", "EXECUTE"))
+            ctx["actions"] = ctx["data"].get("actions", [])
+        elif stype == "when":
+            field = str(step.get("field", "conclusion"))
+            key = str(ctx.get(field, ""))
+            cases = step.get("cases", {})
+            branch = cases.get(key, cases.get("*", []))
+            return self._run_steps(branch, ctx, state, bus, result)
+        elif stype == "guard":
+            ref = str(step.get("ref", ""))
+            guard = self._guards.get(ref, {})
+            when = guard.get("when", {})
+            if self._conditions.match(when, ctx, state, result):
+                return self._apply_then(guard.get("then", {}), ctx, state, bus, result)
+        elif stype == "set":
+            for key, val in step.items():
+                if key == "step":
+                    continue
+                if key == "outcome":
+                    ctx["outcome"] = str(val)
+                elif key.startswith("state."):
+                    setattr(state, key[6:], self._format(str(val), ctx, state))
+        elif stype == "remember_actions":
+            state._last_actions = list(ctx.get("actions", []))
+        elif stype == "publish":
+            channel = str(step.get("channel", "action"))
+            bus.publish(channel, self._circuit, state.active_task_id or "", ctx["data"])
+        elif stype == "emit":
+            ctx["event"] = str(step.get("event", ctx["event"]))
+            if "outcome" in step:
+                ctx["outcome"] = str(step["outcome"])
+            ctx["defer_reasoning_outcome"] = bool(step.get("defer_reasoning_outcome", False))
+            ctx["append_feedback"] = bool(step.get("append_feedback", False))
+            return self._package(ctx, result, state)
+        return None
 
-    def _advance_hint(self, action: dict, screen: str) -> str:
+    def _apply_then(self, then: dict[str, Any], ctx: dict[str, Any], state: Any,
+                    bus: Bus, result: LLMResult) -> dict[str, Any]:
+        hint = self._advance_hint(ctx, state)
+        fmt_vars = {"advance_hint": hint}
+        if then.get("clear_actions"):
+            ctx["actions"] = []
+        if "outcome" in then:
+            ctx["outcome"] = self._format(str(then["outcome"]), ctx, state, fmt_vars)
+        if "last_error" in then:
+            state.last_action_error = self._format(str(then["last_error"]), ctx, state, fmt_vars)
+        ctx["event"] = str(then.get("event", "unified_acted"))
+        ctx["append_feedback"] = bool(then.get("append_feedback", bool(ctx.get("outcome"))))
+        return self._package(ctx, result, state)
+
+    def _format(self, template: str, ctx: dict[str, Any], state: Any,
+                extra: dict[str, str] | None = None) -> str:
+        if template == "{actions}":
+            return str(ctx.get("actions", []))
+        vars_ = {"advance_hint": self._advance_hint(ctx, state), **(extra or {})}
+        try:
+            return template.format(**vars_)
+        except KeyError:
+            return template
+
+    def _advance_hint(self, ctx: dict[str, Any], state: Any) -> str:
+        actions = ctx.get("actions", [])
+        action = actions[0] if actions else (state._last_actions[0] if state._last_actions else {})
         verb = str(action.get("verb", "")).lower()
         target = str(action.get("target", "")).lower()
-        s = screen.lower()
+        s = state.screen.lower()
         for rule in self._guards.get("advance_hints", []):
             rw = str(rule.get("verb", "")).lower()
             if rw and rw != verb:
@@ -248,15 +320,24 @@ class ResponsePipeline:
             if sc_exclude and any(t in s for t in sc_exclude):
                 continue
             return str(rule.get("hint", ""))
-        return str(self._guards.get("advance_hints_default",
-                    "NEXT REQUIRED: different verb+target — prior action already succeeded, read SCREEN"))
+        return str(self._guards.get(
+            "advance_hints_default",
+            "NEXT REQUIRED: different verb+target — prior action already succeeded, read SCREEN",
+        ))
+
+    def _parse_json(self, ctx: dict[str, Any], step: dict[str, Any]) -> dict | None:
+        for src in step.get("from", ["content"]):
+            text = str(ctx.get(src, ""))
+            try:
+                return json.loads(text)
+            except (json.JSONDecodeError, TypeError):
+                rec = extract_json(text)
+                if rec:
+                    return rec
+        return None
 
     def _append_feedback(self, state: Any, result: LLMResult, ctx: dict[str, Any]) -> None:
-        fb = self._wiring.get("feedback", {}).get("reasoning", {})
-        entry = {
-            "reasoning": result.reasoning,
-            "outcome": ctx.get("outcome", ""),
-        }
+        entry = {"reasoning": result.reasoning, "outcome": ctx.get("outcome", "")}
         state.reasoning_history.append(entry)
         depth = int(self._limits.get("reasoning_history_depth", 20))
         if len(state.reasoning_history) > depth:
@@ -266,16 +347,224 @@ class ResponsePipeline:
         state.last_action_error = msg
         return {"event": event, "error": msg}
 
-    def _package(self, event: str, ctx: dict[str, Any], result: LLMResult,
-                 state: Any, bus: Bus) -> dict[str, Any]:
+    def _package(self, ctx: dict[str, Any], result: LLMResult, state: Any) -> dict[str, Any]:
+        event = str(ctx.get("event", f"{self._circuit}_error"))
+        append_events = self._fb.get("append_on_events", [])
+        if ctx.get("append_feedback") or (event in append_events and ctx.get("outcome")):
+            self._append_feedback(state, result, ctx)
         out: dict[str, Any] = {
             "event": event,
             "conclusion": ctx.get("conclusion", ""),
             "actions": ctx.get("actions", []),
         }
-        if event == "unified_acted" and ctx.get("outcome") == "":
+        if event == "unified_acted" and ctx.get("defer_reasoning_outcome"):
             out["reasoning_entry"] = {"reasoning": result.reasoning, "outcome": ""}
         return out
+
+
+@dataclass
+class GraphRuntime:
+    """Injectable services for graph node handlers."""
+    wiring: dict[str, Any]
+    llm: LLMClient
+    bus: Bus
+    workspace: Path
+    prompts_dir: Path
+    desktop_enabled: bool = True
+    desktop: Any = None
+    actions: Any = None
+    llm_hook: Callable[[str, str], LLMResult] | None = None
+
+
+class GraphExecutor:
+    """Walk topology.nodes/edges — one cycle = one LLM turn (+ optional desktop_exec)."""
+
+    def __init__(self, runtime: GraphRuntime):
+        self._rt = runtime
+        self._apply_wiring(runtime.wiring)
+
+    def update_wiring(self, wiring: dict[str, Any]) -> None:
+        self._rt.wiring = wiring
+        self._apply_wiring(wiring)
+
+    def _apply_wiring(self, wiring: dict[str, Any]) -> None:
+        topo = wiring["topology"]
+        self._nodes = {str(n["id"]): n for n in topo["nodes"]}
+        self._edges: dict[str, list[dict[str, Any]]] = {}
+        for edge in topo["edges"]:
+            self._edges.setdefault(str(edge["from"]), []).append(edge)
+        self._cycle_start = str(topo.get("cycle_start", "response_limit_gate"))
+        self._circuit = str(wiring["startup"]["circuit"])
+        self._limits = wiring["limits"]
+        self._ctx_build = ContextBuilder(wiring, self._circuit, self._rt.workspace)
+        self._prompts = PromptResolver(wiring, self._circuit, self._rt.prompts_dir)
+        self._pipeline = ResponsePipeline(wiring, self._circuit)
+        self._bus_throttle = float(self._limits.get("bus_check_throttle_s", 3))
+        self._last_bus_check: dict[str, float] = {}
+
+    def run_cycle(self, slot_name: str, slot: Any) -> dict[str, Any] | None:
+        ctx: dict[str, Any] = {"slot_name": slot_name, "result": None}
+        node_id: str | None = self._cycle_start
+        while node_id and node_id != "idle":
+            node = self._nodes.get(node_id)
+            if not node:
+                break
+            signals = self._dispatch(node, slot, ctx)
+            if signals is None:
+                return ctx.get("result")
+            next_id = self._follow(node_id, signals)
+            if not next_id:
+                return ctx.get("result")
+            node_id = next_id
+        if node_id == "idle":
+            self._node_idle(slot, ctx)
+        return ctx.get("result")
+
+    def _follow(self, from_id: str, signals: set[str]) -> str | None:
+        for edge in self._edges.get(from_id, []):
+            on = str(edge.get("on", ""))
+            if on == "*":
+                return str(edge["to"])
+            if any(part in signals for part in on.split("|")):
+                return str(edge["to"])
+        return None
+
+    def _dispatch(self, node: dict[str, Any], slot: Any, ctx: dict[str, Any]) -> set[str] | None:
+        handler = getattr(self, f"_node_{node['type']}", None)
+        if not handler:
+            raise KeyError(f"Unknown topology node type: {node['type']}")
+        return handler(node, slot, ctx)
+
+    def _node_gate(self, node: dict[str, Any], slot: Any, ctx: dict[str, Any]) -> set[str]:
+        check = str(node.get("check", "response_limit"))
+        if check == "response_limit" and llm_mod.shutdown_requested:
+            return {"limit_reached"}
+        return {"under_limit"}
+
+    def _node_bus_route(self, node: dict[str, Any], slot: Any, ctx: dict[str, Any]) -> set[str] | None:
+        name = str(ctx["slot_name"])
+        if not slot.state.goal:
+            now = time.time()
+            last = self._last_bus_check.get(name, 0.0)
+            if now - last >= self._bus_throttle:
+                self._last_bus_check[name] = now
+                for r in reversed(self._rt.bus.query(record_type="route", limit=10)):
+                    if r.data.get("to") != name or r.data.get("status") != "open":
+                        continue
+                    goal = str(r.data.get("goal", ""))
+                    if goal:
+                        slot.set_goal(goal)
+                        r.data["status"] = "accepted"
+                        break
+        if not slot.state.goal:
+            return None
+        slot.state.cycles += 1
+        return {"route_open"}
+
+    def _node_desktop_observe(self, node: dict[str, Any], slot: Any, ctx: dict[str, Any]) -> set[str]:
+        state = slot.state
+        if self._rt.desktop_enabled and self._rt.desktop:
+            try:
+                obs = self._rt.desktop.observe()
+                state.screen = obs.context_text
+                state.screen_elements = obs.elements
+            except Exception as e:
+                _log.warning("observe failed: %s", e)
+                msg = str(self._rt.wiring.get("context", {}).get("screen_empty", ""))
+                state.screen = msg
+                state.screen_elements = {}
+        else:
+            msg = str(self._rt.wiring.get("context", {}).get(
+                "screen_disabled",
+                "(desktop observation disabled — assume bare Windows desktop)",
+            ))
+            state.screen = msg
+            state.screen_elements = {}
+        return {"screen_ready"}
+
+    def _node_request_assembly(self, node: dict[str, Any], slot: Any, ctx: dict[str, Any]) -> set[str]:
+        ctx["user"] = self._ctx_build.build(slot.state, self._rt.bus, None)
+        ctx["system"] = self._prompts.resolve(slot.state.goal)
+        return {"request_built"}
+
+    def _node_llm(self, node: dict[str, Any], slot: Any, ctx: dict[str, Any]) -> set[str]:
+        system, user = ctx["system"], ctx["user"]
+        if self._rt.llm_hook:
+            result = self._rt.llm_hook(system, user)
+        else:
+            result = self._rt.llm.call(system, user) if user else LLMResult(text="")
+        ctx["llm_result"] = result
+        _log.debug("[%s] prompt=%d ctx=%d → response=%d reasoning=%d",
+                   self._circuit, len(system), len(user),
+                   len(result.text), len(result.reasoning))
+        return {"response_received"}
+
+    def _node_response_pipeline(self, node: dict[str, Any], slot: Any, ctx: dict[str, Any]) -> set[str]:
+        result = self._pipeline.run(ctx["llm_result"], slot.state, self._rt.bus)
+        ctx["result"] = result
+        signals = {str(result.get("event", ""))}
+        if result.get("actions"):
+            signals.add("actions_present")
+        if llm_mod.shutdown_requested:
+            signals.add("limit_reached")
+        return signals
+
+    def _node_feedback(self, node: dict[str, Any], slot: Any, ctx: dict[str, Any]) -> set[str]:
+        return {"cycle_done"}
+
+    def _node_desktop_execute(self, node: dict[str, Any], slot: Any, ctx: dict[str, Any]) -> set[str]:
+        result = ctx.get("result") or {}
+        actions = result.get("actions", [])
+        reasoning_entry = result.get("reasoning_entry")
+        state = slot.state
+        execution_log: list[str] = []
+        if self._rt.actions and actions and slot.can_act_desktop:
+            elements = state.screen_elements
+            outcomes: list[str] = []
+            for action in actions:
+                verb = str(action.get("verb", ""))
+                ar = self._rt.actions.execute(verb, action, elements)
+                line = f"{verb}: {'OK' if ar.success else ar.observation}"
+                outcomes.append(line)
+                execution_log.append(f"▶ {line}")
+                if not ar.success:
+                    state.last_action_error = f"{verb}: {ar.observation}"
+                self._rt.bus.publish(
+                    "evidence", "tool", state.active_task_id or "",
+                    {"verb": verb, "success": ar.success, "obs": ar.observation},
+                )
+            if reasoning_entry is not None:
+                reasoning_entry["outcome"] = "; ".join(outcomes)
+                state.reasoning_history.append(reasoning_entry)
+                depth = int(self._limits.get("reasoning_history_depth", 20))
+                if len(state.reasoning_history) > depth:
+                    state.reasoning_history = state.reasoning_history[-depth:]
+        if execution_log:
+            result["execution_log"] = execution_log
+        return {"cycle_done"}
+
+    def _node_idle(self, slot: Any, ctx: dict[str, Any]) -> None:
+        result = ctx.get("result") or {}
+        if result.get("event") == "goal_complete":
+            self._complete_goal(slot)
+
+    def _complete_goal(self, slot: Any) -> None:
+        state = slot.state
+        name = slot.name
+        for r in self._rt.bus.records:
+            if (r.record_type == "route" and r.data.get("to") == name
+                    and r.data.get("goal") == state.goal and r.data.get("status") == "accepted"):
+                seq = r.data.get("seq")
+                if seq is not None:
+                    self._rt.bus.mark_route_done(seq)
+                r.data["status"] = "verified_done"
+                break
+        state.goal = ""
+        state.tasks = []
+        state.phase = str(self._rt.wiring["transitions"]["default"])
+
+    def _node_entry(self, node: dict[str, Any], slot: Any, ctx: dict[str, Any]) -> set[str]:
+        return {"args_parsed"}
 
 
 def parse_cli_from_wiring(wiring: dict[str, Any], argv: list[str]) -> dict[str, Any]:
@@ -284,18 +573,27 @@ def parse_cli_from_wiring(wiring: dict[str, Any], argv: list[str]) -> dict[str, 
     goal_cfg = cli.get("goal", {})
     limit_cfg = cli.get("response_limit", {})
     flag_cfg = cli.get("no_desktop", {})
+    suite_cfg = cli.get("suite", {})
     raw = list(argv)
     no_desktop = False
+    suite = None
     if flag_cfg.get("flag") in raw:
         raw = [a for a in raw if a != flag_cfg["flag"]]
         no_desktop = True
+    suite_flag = suite_cfg.get("flag", "--suite")
+    if suite_flag in raw:
+        idx = raw.index(suite_flag)
+        if idx + 1 >= len(raw):
+            raise ValueError(f"{suite_flag} requires a suite name")
+        suite = raw[idx + 1]
+        raw = raw[:idx] + raw[idx + 2:]
     limit = None
     if limit_cfg.get("type") == "trailing_positive_int" and raw and raw[-1].isdigit() and int(raw[-1]) > 0:
         limit = int(raw[-1])
         raw = raw[:-1]
     join = str(goal_cfg.get("join", " "))
     goal = join.join(raw).strip()
-    return {"goal": goal, "response_limit": limit, "no_desktop": no_desktop}
+    return {"goal": goal, "response_limit": limit, "no_desktop": no_desktop, "suite": suite}
 
 
 def _mermaid_id(node_id: str) -> str:
@@ -303,7 +601,7 @@ def _mermaid_id(node_id: str) -> str:
 
 
 def export_mermaid(wiring: dict[str, Any]) -> str:
-    """Render topology.nodes/edges from wiring.json as a mermaid flowchart."""
+    """Optional: render topology.nodes/edges as mermaid (not used at runtime)."""
     topo = wiring.get("topology", {})
     lines = [
         "%% endgame-ai wiring — generated from prompts/wiring.json",
