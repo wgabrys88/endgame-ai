@@ -1,4 +1,4 @@
-"""Load endgame topology from prompts/wiring.drawio — single unified format, hot-reload."""
+"""Load endgame topology from prompts/wiring.json — hot-reload."""
 from __future__ import annotations
 
 import json
@@ -6,11 +6,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from topology import read_drawio, write_drawio
+from topology import export_mermaid, write_mermaid
 
 _CACHE: dict[str, Any] | None = None
 _MTIME: float = 0.0
-WIRING_FILE = "wiring.drawio"
+WIRING_FILE = "wiring.json"
 
 
 def wiring_path(prompts_dir: Path) -> Path:
@@ -18,37 +18,19 @@ def wiring_path(prompts_dir: Path) -> Path:
 
 
 def load_wiring(prompts_dir: Path, *, force: bool = False) -> dict[str, Any]:
-    """Load from wiring.drawio only. Reloads when file mtime changes."""
     global _CACHE, _MTIME
     path = wiring_path(prompts_dir)
-    legacy = prompts_dir / "wiring.json"
-    if not path.exists() and legacy.exists():
-        data = json.loads(legacy.read_text(encoding="utf-8"))
-        _validate(data)
-        _resolve_context_templates(data)
-        write_drawio(data, path)
     if not path.exists():
         raise FileNotFoundError(f"Required config missing: {path}")
     mtime = path.stat().st_mtime
     if not force and _CACHE is not None and mtime == _MTIME:
         return _CACHE
-    data = read_drawio(path)
+    data = json.loads(path.read_text(encoding="utf-8"))
     _validate(data)
     _resolve_context_templates(data)
     _CACHE = data
     _MTIME = mtime
     return data
-
-
-def save_wiring(prompts_dir: Path, data: dict[str, Any]) -> Path:
-    """Write unified wiring.drawio (topology + embedded config)."""
-    _validate(data)
-    path = wiring_path(prompts_dir)
-    write_drawio(data, path)
-    global _CACHE, _MTIME
-    _CACHE = data
-    _MTIME = path.stat().st_mtime
-    return path
 
 
 def _resolve_context_templates(data: dict[str, Any]) -> None:
@@ -61,11 +43,11 @@ def _resolve_context_templates(data: dict[str, Any]) -> None:
 
 def _validate(data: dict[str, Any]) -> None:
     if data.get("schema") != "endgame-topology/v1":
-        raise ValueError("wiring schema must be endgame-topology/v1")
+        raise ValueError("wiring.json schema must be endgame-topology/v1")
     for key in ("instance", "startup", "limits", "slots", "circuits", "transitions",
                 "verbs", "topology", "request", "response", "feedback", "runtime"):
         if key not in data:
-            raise ValueError(f"wiring missing section: {key}")
+            raise ValueError(f"wiring.json missing section: {key}")
     if data["instance"]["role"] not in ("manager", "student"):
         raise ValueError("instance.role must be manager or student")
     slot = str(data["startup"].get("slot", ""))
@@ -88,22 +70,17 @@ def _validate(data: dict[str, Any]) -> None:
 
 
 def main() -> int:
-    """CLI: python wiring.py save | python wiring.py json (dump config to stdout)."""
     prompts = Path(__file__).parent / "prompts"
     if len(sys.argv) < 2:
-        print("Usage: python wiring.py json | save", file=sys.stderr)
+        print("Usage: python wiring.py mermaid", file=sys.stderr)
         return 1
-    cmd = sys.argv[1]
-    if cmd == "json":
+    if sys.argv[1] == "mermaid":
         data = load_wiring(prompts, force=True)
-        print(json.dumps(data, ensure_ascii=False, indent=2))
+        out = prompts / "wiring.mmd"
+        write_mermaid(data, out)
+        print(f"Wrote {out}")
         return 0
-    if cmd == "save":
-        data = load_wiring(prompts, force=True)
-        path = save_wiring(prompts, data)
-        print(f"Wrote {path}")
-        return 0
-    print(f"Unknown command: {cmd}", file=sys.stderr)
+    print(f"Unknown command: {sys.argv[1]}", file=sys.stderr)
     return 1
 
 

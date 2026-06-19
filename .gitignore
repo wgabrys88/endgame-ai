@@ -12,4 +12,5 @@ logs/
 !smoke.py
 !prompts/smoke.txt
 !prompts/smoke_report.txt
-!prompts/wiring.drawio
+!prompts/wiring.json
+!prompts/wiring.mmd

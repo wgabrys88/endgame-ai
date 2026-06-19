@@ -1,4 +1,4 @@
-"""Actions - data-driven verb dispatch. Field mappings from wiring.drawio."""
+"""Actions - data-driven verb dispatch. Field mappings from wiring.json."""
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any

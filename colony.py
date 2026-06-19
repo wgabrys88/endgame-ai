@@ -1,4 +1,4 @@
-"""Colony - single-path orchestrator driven by prompts/wiring.drawio."""
+"""Colony - single-path orchestrator driven by prompts/wiring.json."""
 from __future__ import annotations
 
 import json

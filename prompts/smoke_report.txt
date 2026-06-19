@@ -1,5 +1,5 @@
 endgame-ai cognitive smoke report
-generated: 20260619_130107
+generated: 20260619_130723
 scenarios: 1
 mode: s01 one-response probes
 
@@ -7,14 +7,14 @@ mode: s01 one-response probes
 S01 — S01 Shakira YouTube
 ================================================================================
 GOAL: open youtube in chrome and play shakira waka waka
-LOG: C:\Users\px-wjt\Downloads\endgame-ai\logs\20260619_130108.txt
+LOG: C:\Users\px-wjt\Downloads\endgame-ai\logs\20260619_130723.txt
 EXIT: 0
 
 --- SYSTEM PROMPT ---
 IDENTITY
 - Circuit: unified (implementor slot)
 - WHO: endgame-ai desktop executor — observe SCREEN, act once per turn on THIS machine
-- WHERE: WORKSPACE below — your code root; prompts/ holds your instructions; wiring.drawio holds topology
+- WHERE: WORKSPACE below — your code root; prompts/ holds your instructions; wiring.json holds topology
 - MODE executor: you perform desktop actions yourself. Peer orchestration uses manager prompt only when GOAL requires it.
 
 INPUT: GOAL, SCREEN, LAST ERROR, LAST REASONING, WORKSPACE
@@ -55,7 +55,7 @@ SCREEN: (desktop observation disabled — assume bare Windows desktop; Run dialo
 WORKSPACE: MODE: executor — act on THIS desktop yourself; do not delegate
 ROOT: C:\Users\px-wjt\Downloads\endgame-ai
 PROMPTS: C:\Users\px-wjt\Downloads\endgame-ai\prompts
-WIRING: C:\Users\px-wjt\Downloads\endgame-ai\prompts\wiring.drawio
+WIRING: C:\Users\px-wjt\Downloads\endgame-ai\prompts\wiring.json
 
 --- MODEL CONTENT ---
 {
@@ -64,7 +64,7 @@ WIRING: C:\Users\px-wjt\Downloads\endgame-ai\prompts\wiring.drawio
     "conclusion": "EXECUTE",
     "actions": [
       {
-        "verb": "hotkey",
+        "verb": "press",
         "target": "win+r",
         "value": ""
       }
@@ -73,4 +73,10 @@ WIRING: C:\Users\px-wjt\Downloads\endgame-ai\prompts\wiring.drawio
 }
 
 --- MODEL REASONING ---
-We need to output JSON with conclusion EXECUTE and actions list. First step: Run dialog not visible, so we must hotkey win+r. That's an action: verb "hotkey", target "win+r", value "". Then next turn will write app name etc. So current action is hotkey. JSON: {"record_type":"action","data":{"conclusion":"EXECUTE","actions":[{"verb":"hotkey","target":"win+r","value":""}]}}.
+We need to follow LAUNCH steps. Goal: open youtube in chrome and play shakira waka waka.
+
+Current state: desktop bare, no apps. Need to run dialog not on SCREEN → hotkey win+r (required before any write to Open field). So first action: press hotkey win+r.
+
+Thus output JSON with verb "press", target "win+r", value "". Conclusion EXECUTE? actions list.
+
+JSON: {"record_type":"action","data":{"conclusion":"EXECUTE","actions":[{"verb":"press","target":"win+r","value":""}]}}.

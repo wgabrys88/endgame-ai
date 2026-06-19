@@ -2,33 +2,16 @@
 
 **Branch:** `codex-unify-bus`  
 **Next session goal:** Understand, document, and **eliminate** the scattered if/else that decide who runs when.  
-**Control plane:** single file `prompts/wiring.drawio`
+**Control plane:** `prompts/wiring.json` (machine truth)
 
-## draw.io + JSON — what the internet says (honest)
+Visual diagram (generated, not edited by hand): `python wiring.py mermaid` → `prompts/wiring.mmd`
 
-| draw.io capability | Reality |
-|--------------------|---------|
-| Native file format | **XML** `.drawio` (mxfile), not arbitrary JSON |
-| Export menu | PNG, SVG, PDF, HTML, **XML** — no "export as wiring JSON" |
-| Import menu | CSV, XML, VSDX, Lucidchart, etc. — **not** generic config JSON |
-| Diagram generation | draw.io can generate diagrams **from** JSON/XML (one direction) |
-| Shape metadata | Per-shape key/value (Edit Data) — good for node labels, not whole config |
-
-**Our unified format:** one `wiring.drawio` with two pages:
-
-| Page | Purpose |
-|------|---------|
-| `topology` | Visual graph — edit in draw.io (positions sync back on load) |
-| `_config` | Embedded `endgame-json:` + base64(full config) — runtime reads this |
-
-Edit visually in draw.io, or dump JSON: `python wiring.py json` → edit → `python wiring.py save` (rewrites drawio).
-
-**Schema:** `endgame-topology/v1` inside `_config` page
+**Schema:** `endgame-topology/v1`
 
 | Section | What it defines (all hot-swappable) |
 |---------|-----------------------------------|
 | `runtime.cli` | goal, trailing `N` response limit, `--no-desktop` |
-| `topology.nodes/edges` | Agentic graph → exported to `wiring.drawio` |
+| `topology.nodes/edges` | Agentic graph → `python wiring.py mermaid` |
 | `request.unified` | SYSTEM prompt + USER block assembly order |
 | `response.unified.pipeline` | parse_json → extract_fields → branch_conclusion |
 | `response.unified.guards` | premature DONE, repeat-block, advance_hints |
@@ -371,10 +354,11 @@ python tui.py "Read MANAGER.md at C:\Users\px-wjt\Downloads\endgame-ai\MANAGER.m
 | `tui.py` | Entry point, logging, desktop loop |
 | `colony.py` | Single-path orchestrator (`startup` → slot → step) |
 | `slot.py` | State machine, circuits, guards |
-| `wiring.py` | Loads `wiring.drawio`; `python wiring.py json` dumps config |
+| `wiring.py` | Loads `wiring.json`; `python wiring.py mermaid` exports diagram |
 | `smoke.py` | Cognitive smoke runner |
-| `prompts/wiring.drawio` | **Single source** — topology page + `_config` embedded JSON |
-| `topology.py` | Dumb executor + read/write unified drawio |
+| `prompts/wiring.json` | **Single source** — edit this to change behavior |
+| `prompts/wiring.mmd` | Generated mermaid flowchart (optional, for humans/AI) |
+| `topology.py` | Dumb executor + `export_mermaid()` |
 | `prompts/smoke.txt` | 10 permanent smoke scenarios |
 | `AGENTS.md` | Operational handover |
 | `MANAGER.md` | Manager role (Manager repo only) |
