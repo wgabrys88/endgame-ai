@@ -46,16 +46,15 @@ body { font-family: system-ui, -apple-system, sans-serif; background: #0a0a0f; c
 .wiring-node .ndata { color: #06b6d4; font-size: 9px; margin-top: 3px; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .ntype-entry { background: #166534; }
-.ntype-gate { background: #92400e; }
-.ntype-bus_route { background: #1e3a5f; }
-.ntype-desktop_observe { background: #0c4a6e; }
-.ntype-request_assembly { background: #155e75; }
-.ntype-llm { background: #581c87; }
-.ntype-response_pipeline { background: #312e81; }
-.ntype-feedback { background: #134e4a; }
-.ntype-desktop_execute { background: #7f1d1d; }
-.ntype-idle { background: #1e1e2e; }
-.ntype-audit_log { background: #7c2d12; }
+.ntype-planner { background: #4c1d95; }
+.ntype-scheduler { background: #1e3a5f; }
+.ntype-observe { background: #0c4a6e; }
+.ntype-act { background: #581c87; }
+.ntype-verify { background: #065f46; }
+.ntype-reflect { background: #92400e; }
+.ntype-satisfied { background: #166534; }
+.ntype-bus_post { background: #7c2d12; }
+.ntype-bus_check { background: #1e3a5f; }
 .ntype-unknown { background: #374151; }
 
 .react-flow__edge-text { fill: #06b6d4 !important; font-size: 9px !important; }
@@ -247,6 +246,29 @@ function App() {
   }, []);
 
   // Load wiring
+
+  // SSE: observe autonomous --run mode live
+  useEffect(() => {
+    let es;
+    try { es = new EventSource(`${SERVER}/events`); } catch(e) { return; }
+    es.addEventListener("node_fire", e => {
+      const d = JSON.parse(e.data);
+      setNodes(ns => ns.map(n => ({...n, data: {...n.data, replay: n.id === d.node, replayData: n.id === d.node ? "● LIVE" : null}})));
+      setStatus(`[auto] cycle ${d.cycle}: ${d.node}`);
+    });
+    es.addEventListener("node_result", e => {
+      const d = JSON.parse(e.data);
+      setLiveLog(log => [...log.slice(-50), {node: d.node, signals: d.signals, data: d.data, ts: new Date().toLocaleTimeString()}]);
+    });
+    es.addEventListener("rod_stop", e => {
+      const d = JSON.parse(e.data);
+      setStatus(`[auto] Rod stopped: ${d.reason} (${d.outcome})`);
+      setNodes(ns => ns.map(n => ({...n, data: {...n.data, replay: false, replayData: null}})));
+    });
+    es.onerror = () => {};
+    return () => es.close();
+  }, []);
+
   const loadWiring = () => {
     const el = document.getElementById('file-wiring');
     el.onchange = e => {

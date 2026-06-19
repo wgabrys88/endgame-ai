@@ -1,5 +1,5 @@
 {
-  "host": "http://192.168.16.31:1234",
+  "host": "http://localhost:1234",
   "timeout": 600,
   "temperature": 0.3,
   "top_p": 0.9,

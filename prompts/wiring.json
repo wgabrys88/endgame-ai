@@ -1,263 +1,60 @@
 {
   "schema": "endgame-topology/v1",
   "instance": {
-    "role": "manager"
-  },
-  "runtime": {
-    "entry": "tui",
-    "desktop": {
-      "enabled": true
-    },
-    "cli": {
-      "goal": {
-        "type": "positional",
-        "nargs": "*",
-        "join": " "
-      },
-      "response_limit": {
-        "type": "trailing_positive_int",
-        "after": "goal",
-        "description": "Exit after N LLM responses (smoke/debug mode)"
-      },
-      "no_desktop": {
-        "type": "flag",
-        "flag": "--no-desktop",
-        "sets": {
-          "runtime.desktop.enabled": false
-        }
-      },
-      "suite": {
-        "type": "flag_value",
-        "flag": "--suite",
-        "description": "Run a wiring-defined scenario chain (e.g. smoke)"
-      }
-    }
-  },
-  "startup": {
-    "on_goal": "route_to_slot",
-    "slot": "implementor",
-    "circuit": "unified"
+    "role": "implementor",
+    "persona": "implementor",
+    "slot": 1,
+    "permissions": ["desktop_exec", "bus_post"]
   },
   "topology": {
-    "cycle_start": "response_limit_gate",
+    "cycle_start": "goal_inbox",
     "nodes": [
-      {"id": "cli_entry", "type": "entry", "label": "CLI goal / suite / optional N"},
-      {"id": "response_limit_gate", "type": "gate", "label": "Stop after N LLM responses", "check": "response_limit"},
-      {"id": "route_slot", "type": "bus_route", "label": "startup.slot route"},
-      {"id": "observe_screen", "type": "desktop_observe", "label": "SCREEN capture / seed"},
-      {"id": "build_request", "type": "request_assembly", "label": "USER blocks + SYSTEM prompt"},
-      {"id": "llm_call", "type": "llm", "label": "LM Studio chat/completions"},
-      {"id": "parse_pipeline", "type": "response_pipeline", "label": "JSON parse + guards"},
-      {"id": "feedback_append", "type": "feedback", "label": "reasoning pass-through"},
-      {"id": "desktop_exec", "type": "desktop_execute", "label": "verbs → actions.py"},
-      {"id": "idle", "type": "idle", "label": "goal_complete / shutdown"},
-      {"id": "audit_log", "type": "audit_log", "label": "Bus publish action evidence (fan-out target)"}
+      {"id": "goal_inbox", "type": "entry", "label": "Goal input"},
+      {"id": "planner", "type": "planner", "label": "Decompose goal → steps"},
+      {"id": "scheduler", "type": "scheduler", "label": "Next step or done"},
+      {"id": "observe", "type": "observe", "label": "Screen capture"},
+      {"id": "act", "type": "act", "label": "LLM decide + execute"},
+      {"id": "verify", "type": "verify", "label": "Check step evidence"},
+      {"id": "reflect", "type": "reflect", "label": "Diagnose + retry/replan"},
+      {"id": "satisfied", "type": "satisfied", "label": "Rest"}
     ],
     "edges": [
-      {"from": "cli_entry", "to": "response_limit_gate", "on": "args_parsed"},
-      {"from": "response_limit_gate", "to": "idle", "on": "limit_reached"},
-      {"from": "response_limit_gate", "to": "route_slot", "on": "under_limit"},
-      {"from": "route_slot", "to": "observe_screen", "on": "route_open"},
-      {"from": "observe_screen", "to": "build_request", "on": "screen_ready"},
-      {"from": "build_request", "to": "llm_call", "on": "request_built"},
-      {"from": "llm_call", "to": "parse_pipeline", "on": "response_received"},
-      {"from": "parse_pipeline", "to": "idle", "on": "goal_complete|limit_reached"},
-      {"from": "parse_pipeline", "to": "desktop_exec", "on": "actions_present"},
-      {"from": "parse_pipeline", "to": "audit_log", "on": "actions_present"},
-      {"from": "parse_pipeline", "to": "feedback_append", "on": "unified_acted|unified_cannot|unified_error"},
-      {"from": "feedback_append", "to": "idle", "on": "cycle_done"},
-      {"from": "desktop_exec", "to": "idle", "on": "cycle_done"}
+      {"from": "goal_inbox", "to": "planner", "on": "ready"},
+      {"from": "planner", "to": "scheduler", "on": "plan_ready"},
+      {"from": "scheduler", "to": "observe", "on": "step_ready"},
+      {"from": "scheduler", "to": "satisfied", "on": "plan_complete"},
+      {"from": "observe", "to": "act", "on": "screen_ready"},
+      {"from": "act", "to": "verify", "on": "acted|step_done"},
+      {"from": "act", "to": "reflect", "on": "act_failed"},
+      {"from": "verify", "to": "scheduler", "on": "step_confirmed"},
+      {"from": "verify", "to": "reflect", "on": "step_denied"},
+      {"from": "reflect", "to": "scheduler", "on": "retry"},
+      {"from": "reflect", "to": "planner", "on": "replan"}
     ]
   },
-  "limits": {
-    "max_attempts": 5,
-    "reasoning_history_depth": 20,
-    "bus_max_records": 200,
-    "bus_check_throttle_s": 3,
-    "observe_interval_s": 2
-  },
-  "slots": {
-    "implementor": {
-      "enabled": true,
-      "can_desktop": true,
-      "mode": "unified"
+  "request": {
+    "unified": {
+      "system": {"file": "unified.txt"},
+      "user": {
+        "blocks": [
+          {"label": "GOAL", "source": "state.step_goal", "always": true},
+          {"label": "SCREEN", "source": "state.screen", "empty_template": "(no screen)"},
+          {"label": "LAST ERROR", "source": "state.last_error"}
+        ]
+      }
     }
   },
   "circuits": {
     "unified": {
       "prompt": "unified.txt",
       "prompt_swap": [
-        {
-          "when": [
-            "MANAGER.md",
-            "student instance",
-            "peer instance",
-            "manage student",
-            "outer controller",
-            "launch the student",
-            "launch student",
-            "orchestrate the student",
-            "orchestrate student",
-            "run and manage"
-          ],
-          "prompt": "manager.txt"
-        }
+        {"when": ["MANAGER.md", "student instance", "orchestrate the student"], "prompt": "manager.txt"}
       ]
     }
   },
-  "request": {
-    "unified": {
-      "system": {
-        "source": "prompt_file",
-        "file": "unified.txt",
-        "swap_ref": "circuits.unified.prompt_swap"
-      },
-      "user": {
-        "separator": "\n",
-        "blocks": [
-          {"id": "goal", "label": "GOAL", "source": "state.goal", "always": true},
-          {
-            "id": "screen",
-            "label": "SCREEN",
-            "source": "state.screen",
-            "empty_template": "(no SCREEN captured — assume bare Windows desktop; Run dialog not visible; no application windows open)"
-          },
-          {"id": "last_error", "label": "LAST ERROR", "source": "state.last_error"},
-          {"id": "last_reasoning", "label": "LAST REASONING", "source": "state.last_reasoning"},
-          {
-            "id": "workspace",
-            "label": "WORKSPACE",
-            "source": "state.workspace",
-            "executor_prefix": "MODE: executor — act on THIS desktop yourself; do not delegate",
-            "manager_prefix": "ROLE: {role} — orchestrate peer on desktop (manager prompt active)"
-          }
-        ]
-      }
-    }
-  },
-  "response": {
-    "unified": {
-      "pipeline": [
-        {
-          "step": "parse_json",
-          "from": ["content", "reasoning_content"],
-          "on_fail": "unified_error",
-          "error": "parse_failed: respond with JSON only, no prose"
-        },
-        {"step": "extract_fields", "on_fail": "unified_error"},
-        {
-          "step": "when",
-          "field": "conclusion",
-          "cases": {
-            "DONE": [
-              {"step": "guard", "ref": "premature_done"},
-              {"step": "set", "outcome": "goal complete"},
-              {"step": "emit", "event": "goal_complete", "append_feedback": true}
-            ],
-            "CANNOT": [
-              {"step": "set", "outcome": "cannot"},
-              {"step": "emit", "event": "unified_cannot", "append_feedback": true}
-            ],
-            "EXECUTE": [
-              {"step": "guard", "ref": "repeat_block"},
-              {"step": "remember_actions"},
-              {"step": "publish", "channel": "action"},
-              {"step": "emit", "event": "unified_acted", "defer_reasoning_outcome": true}
-            ]
-          }
-        }
-      ],
-      "guards": {
-        "premature_done": {
-          "when": {
-            "all": [
-              {"goal_contains_any": ["type", "write", "enter text"]},
-              {"not": {"history_outcome_contains_any": ["write", "typed"]}}
-            ]
-          },
-          "then": {
-            "outcome": "SYSTEM: goal requires typing but no write was done yet",
-            "clear_actions": true,
-            "event": "unified_acted",
-            "append_feedback": true
-          }
-        },
-        "repeat_block": {
-          "when": {
-            "all": [
-              {"not_empty": "state.reasoning_history"},
-              {"last_outcome_contains": "OK"},
-              {"actions_equal_last": true}
-            ]
-          },
-          "then": {
-            "outcome": "SYSTEM: repeat blocked — {advance_hint}",
-            "last_error": "{advance_hint}",
-            "clear_actions": true,
-            "event": "unified_acted",
-            "append_feedback": true
-          }
-        },
-        "advance_hints": [
-          {
-            "verb": "hotkey",
-            "target_contains": ["win"],
-            "screen_contains": ["run", "combo box \"open", "open:"],
-            "hint": "NEXT REQUIRED: write APPLICATION NAME (e.g. chrome) into Run Open field — NOT hotkey again"
-          },
-          {
-            "verb": "hotkey",
-            "target_contains": ["win"],
-            "hint": "NEXT REQUIRED: write app name into Run Open field or focus existing window from SCREEN"
-          },
-          {
-            "verb": "write",
-            "screen_contains": ["run", "combo box \"open"],
-            "hint": "NEXT REQUIRED: press enter or click OK to launch the application"
-          },
-          {
-            "verb": "write",
-            "screen_contains": ["chrome", "address and search"],
-            "hint": "NEXT REQUIRED: press enter after URL, or write search query in address bar"
-          },
-          {
-            "verb": "press",
-            "screen_contains": ["run"],
-            "hint": "NEXT REQUIRED: write APPLICATION NAME in Open field before pressing OK"
-          },
-          {
-            "verb": "click",
-            "screen_contains": ["run"],
-            "hint": "NEXT REQUIRED: write APPLICATION NAME in Open field before pressing OK"
-          },
-          {
-            "verb": "focus",
-            "hint": "NEXT REQUIRED: open app via win+r → write app name → enter; or click element by [ID] from SCREEN"
-          }
-        ],
-        "advance_hints_default": "NEXT REQUIRED: different verb+target — prior action already succeeded, read SCREEN"
-      }
-    }
-  },
-  "feedback": {
-    "reasoning": {
-      "depth_from_limits": "reasoning_history_depth",
-      "inject_block": "last_reasoning",
-      "entry_format": "[attempt] {reasoning} → {outcome}",
-      "append_on_events": ["unified_acted", "unified_cannot", "goal_complete"]
-    }
-  },
-  "context": {
-    "screen_empty": "(no SCREEN captured — assume bare Windows desktop; Run dialog not visible; no application windows open)",
-    "screen_disabled": "(desktop observation disabled — assume bare Windows desktop; Run dialog not visible; no application windows open)"
-  },
-  "transitions": {
-    "default": "unified",
-    "unified_acted": "unified",
-    "unified_error": "unified",
-    "unified_cannot": "unified",
-    "goal_complete": "idle",
-    "unified_done": "idle"
+  "limits": {
+    "max_attempts": 5,
+    "bus_max": 200
   },
   "verbs": {
     "click": {"target_field": "target"},
@@ -267,23 +64,7 @@
     "scroll": {"target_field": "target", "amount_field": "value"},
     "focus": {"title_field": "target"}
   },
-  "suites": {
-    "smoke": {
-      "defaults": {"response_limit": 1, "no_desktop": true},
-      "report": "prompts/smoke_report.txt",
-      "log_dir": "logs/smoke",
-      "chain": [
-        {"id": "s01", "name": "S01 Shakira YouTube", "goal": "open youtube in chrome and play shakira waka waka"},
-        {"id": "s02", "name": "S02 Launch student", "goal": "Read MANAGER.md at C:\\Users\\px-wjt\\Downloads\\endgame-ai\\MANAGER.md and launch the student instance with goal open notepad"},
-        {"id": "s03", "name": "S03 Simple math", "goal": "what is 2+2"},
-        {"id": "s04", "name": "S04 Notepad hello", "goal": "open notepad and write hello world"},
-        {"id": "s05", "name": "S05 Open chrome only", "goal": "open chrome"},
-        {"id": "s06", "name": "S06 Calculator", "goal": "open calculator and compute 99 times 3"},
-        {"id": "s07", "name": "S07 Student path", "goal": "launch student at C:\\Users\\px-wjt\\Downloads\\endgame-ai-student with goal echo hello"},
-        {"id": "s08", "name": "S08 Run dialog", "goal": "open the run dialog"},
-        {"id": "s09", "name": "S09 Already done", "goal": "if the answer is already visible on screen, report DONE"},
-        {"id": "s10", "name": "S10 Orchestrate peer", "goal": "orchestrate the student to run python tui.py with goal list files"}
-      ]
-    }
+  "context": {
+    "screen_disabled": "(desktop observation disabled)"
   }
 }
