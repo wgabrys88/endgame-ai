@@ -24,8 +24,12 @@ class ActionExecutor:
         digits = ''.join(c for c in target if c.isdigit())
         if digits and digits in elements:
             return elements[digits]
+        target_l = target.lower()
         for el in elements.values():
-            if el.name and el.name in target:
+            if not el.name:
+                continue
+            name_l = el.name.lower()
+            if target_l in name_l or name_l in target_l:
                 return el
         return None
 

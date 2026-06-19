@@ -17,7 +17,7 @@ NEVER use win+r to launch Student. Humans use Terminal Preview + admin shell.
 
 STUDENT LAUNCH (exact sequence — one verb per turn)
 S0 SCREEN has no admin shell and Student not running:
-  click taskbar Button whose name contains "Terminal Preview"
+  click taskbar Button "Terminal Preview" — use [ID] from SCREEN (e.g. target "13") or name substring "Terminal Preview"
 S1 Terminal host focused, no admin window yet:
   hotkey win+x
 S2 Quick Link menu open (SCREEN shows MenuItem "Terminal (Admin)"):
