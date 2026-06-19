@@ -4,48 +4,183 @@
     "role": "implementor",
     "persona": "implementor",
     "slot": 1,
-    "permissions": ["desktop_exec", "bus_post"]
+    "permissions": [
+      "desktop_exec",
+      "bus_post"
+    ]
   },
   "topology": {
     "cycle_start": "goal_inbox",
     "nodes": [
-      {"id": "goal_inbox", "type": "entry", "label": "Goal input"},
-      {"id": "planner", "type": "planner", "label": "Decompose goal → steps"},
-      {"id": "scheduler", "type": "scheduler", "label": "Next step or done"},
-      {"id": "bus_check", "type": "bus_check", "label": "Poll bus for interrupts"},
-      {"id": "observe", "type": "observe", "label": "Screen capture"},
-      {"id": "act", "type": "act", "label": "LLM decide + guards + execute"},
-      {"id": "verify", "type": "verify", "label": "Check step evidence"},
-      {"id": "reflect", "type": "reflect", "label": "Diagnose + retry/replan"},
-      {"id": "satisfied", "type": "satisfied", "label": "Rest"},
-      {"id": "bus_post", "type": "bus_post", "label": "Post telemetry"}
+      {
+        "id": "goal_inbox",
+        "type": "entry",
+        "label": "Goal input"
+      },
+      {
+        "id": "planner",
+        "type": "planner",
+        "label": "Decompose goal \u2192 steps"
+      },
+      {
+        "id": "scheduler",
+        "type": "scheduler",
+        "label": "Next step or done"
+      },
+      {
+        "id": "bus_check",
+        "type": "bus_check",
+        "label": "Poll bus for interrupts"
+      },
+      {
+        "id": "observe",
+        "type": "observe",
+        "label": "Screen capture"
+      },
+      {
+        "id": "act",
+        "type": "act",
+        "label": "LLM decide + guards + execute"
+      },
+      {
+        "id": "verify",
+        "type": "verify",
+        "label": "Check step evidence"
+      },
+      {
+        "id": "reflect",
+        "type": "reflect",
+        "label": "Diagnose + retry/replan"
+      },
+      {
+        "id": "self_modify",
+        "type": "self_modify",
+        "label": "Alter own wiring"
+      },
+      {
+        "id": "satisfied",
+        "type": "satisfied",
+        "label": "Rest"
+      },
+      {
+        "id": "bus_post",
+        "type": "bus_post",
+        "label": "Post telemetry"
+      }
     ],
     "edges": [
-      {"from": "goal_inbox", "to": "planner", "on": "ready"},
-      {"from": "planner", "to": "scheduler", "on": "plan_ready"},
-      {"from": "scheduler", "to": "bus_check", "on": "step_ready"},
-      {"from": "scheduler", "to": "bus_post", "on": "plan_complete"},
-      {"from": "bus_post", "to": "satisfied", "on": "posted"},
-      {"from": "bus_check", "to": "observe", "on": "no_interrupt"},
-      {"from": "bus_check", "to": "planner", "on": "interrupt"},
-      {"from": "observe", "to": "act", "on": "screen_ready"},
-      {"from": "act", "to": "verify", "on": "acted|step_done"},
-      {"from": "act", "to": "reflect", "on": "act_failed"},
-      {"from": "verify", "to": "scheduler", "on": "step_confirmed"},
-      {"from": "verify", "to": "reflect", "on": "step_denied"},
-      {"from": "reflect", "to": "scheduler", "on": "retry"},
-      {"from": "reflect", "to": "planner", "on": "replan"}
+      {
+        "from": "goal_inbox",
+        "to": "planner",
+        "on": "ready"
+      },
+      {
+        "from": "planner",
+        "to": "scheduler",
+        "on": "plan_ready"
+      },
+      {
+        "from": "scheduler",
+        "to": "bus_check",
+        "on": "step_ready"
+      },
+      {
+        "from": "scheduler",
+        "to": "bus_post",
+        "on": "plan_complete"
+      },
+      {
+        "from": "bus_post",
+        "to": "satisfied",
+        "on": "posted"
+      },
+      {
+        "from": "bus_check",
+        "to": "observe",
+        "on": "no_interrupt"
+      },
+      {
+        "from": "bus_check",
+        "to": "planner",
+        "on": "interrupt"
+      },
+      {
+        "from": "observe",
+        "to": "act",
+        "on": "screen_ready"
+      },
+      {
+        "from": "act",
+        "to": "verify",
+        "on": "acted|step_done"
+      },
+      {
+        "from": "act",
+        "to": "reflect",
+        "on": "act_failed"
+      },
+      {
+        "from": "verify",
+        "to": "scheduler",
+        "on": "step_confirmed"
+      },
+      {
+        "from": "verify",
+        "to": "reflect",
+        "on": "step_denied"
+      },
+      {
+        "from": "reflect",
+        "to": "scheduler",
+        "on": "retry"
+      },
+      {
+        "from": "reflect",
+        "to": "planner",
+        "on": "replan"
+      },
+      {
+        "from": "reflect",
+        "to": "self_modify",
+        "on": "escalate"
+      },
+      {
+        "from": "self_modify",
+        "to": "planner",
+        "on": "modified"
+      },
+      {
+        "from": "self_modify",
+        "to": "reflect",
+        "on": "modify_failed"
+      }
     ]
   },
   "request": {
     "unified": {
-      "system": {"file": "unified.txt"},
+      "system": {
+        "file": "unified.txt"
+      },
       "user": {
         "blocks": [
-          {"label": "GOAL", "source": "state.step_goal", "always": true},
-          {"label": "SCREEN", "source": "state.screen", "empty_template": "(no screen)"},
-          {"label": "LAST ERROR", "source": "state.last_error"},
-          {"label": "HISTORY", "source": "state.history"}
+          {
+            "label": "GOAL",
+            "source": "state.step_goal",
+            "always": true
+          },
+          {
+            "label": "SCREEN",
+            "source": "state.screen",
+            "empty_template": "(no screen)"
+          },
+          {
+            "label": "LAST ERROR",
+            "source": "state.last_error"
+          },
+          {
+            "label": "HISTORY",
+            "source": "state.history"
+          }
         ]
       }
     }
@@ -54,19 +189,59 @@
     "unified": {
       "prompt": "unified.txt",
       "prompt_swap": [
-        {"when": ["MANAGER.md", "student instance", "orchestrate the student"], "prompt": "manager.txt"}
+        {
+          "when": [
+            "MANAGER.md",
+            "student instance",
+            "orchestrate the student"
+          ],
+          "prompt": "manager.txt"
+        }
       ]
     }
   },
   "guards": {
     "advance_hints": [
-      {"verb": "hotkey", "target_contains": ["win"], "screen_contains": ["run", "open:"], "hint": "NEXT REQUIRED: write APPLICATION NAME into Run Open field"},
-      {"verb": "hotkey", "target_contains": ["win"], "hint": "NEXT REQUIRED: write app name into Run Open field or focus existing window"},
-      {"verb": "write", "screen_contains": ["run", "open"], "hint": "NEXT REQUIRED: press enter to launch the application"},
-      {"verb": "write", "screen_contains": ["chrome", "address"], "hint": "NEXT REQUIRED: press enter after URL"},
-      {"verb": "focus", "hint": "NEXT REQUIRED: interact with the focused window content"}
+      {
+        "verb": "hotkey",
+        "target_contains": [
+          "win"
+        ],
+        "screen_contains": [
+          "run",
+          "open:"
+        ],
+        "hint": "NEXT REQUIRED: write APPLICATION NAME into Run Open field"
+      },
+      {
+        "verb": "hotkey",
+        "target_contains": [
+          "win"
+        ],
+        "hint": "NEXT REQUIRED: write app name into Run Open field or focus existing window"
+      },
+      {
+        "verb": "write",
+        "screen_contains": [
+          "run",
+          "open"
+        ],
+        "hint": "NEXT REQUIRED: press enter to launch the application"
+      },
+      {
+        "verb": "write",
+        "screen_contains": [
+          "chrome",
+          "address"
+        ],
+        "hint": "NEXT REQUIRED: press enter after URL"
+      },
+      {
+        "verb": "focus",
+        "hint": "NEXT REQUIRED: interact with the focused window content"
+      }
     ],
-    "advance_hints_default": "NEXT REQUIRED: different action — prior succeeded, read SCREEN"
+    "advance_hints_default": "NEXT REQUIRED: different action \u2014 prior succeeded, read SCREEN"
   },
   "limits": {
     "max_attempts": 5,
@@ -74,12 +249,26 @@
     "bus_max": 200
   },
   "verbs": {
-    "click": {"target_field": "target"},
-    "write": {"target_field": "target", "value_field": "value"},
-    "press": {"key_field": "target"},
-    "hotkey": {"key_field": "target"},
-    "scroll": {"target_field": "target", "amount_field": "value"},
-    "focus": {"title_field": "target"}
+    "click": {
+      "target_field": "target"
+    },
+    "write": {
+      "target_field": "target",
+      "value_field": "value"
+    },
+    "press": {
+      "key_field": "target"
+    },
+    "hotkey": {
+      "key_field": "target"
+    },
+    "scroll": {
+      "target_field": "target",
+      "amount_field": "value"
+    },
+    "focus": {
+      "title_field": "target"
+    }
   },
   "context": {
     "screen_disabled": "(desktop observation disabled)"

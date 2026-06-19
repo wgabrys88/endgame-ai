@@ -112,7 +112,7 @@ def check_premature_done(state):
     if not needs_write:
         return None
     history = state.get("history", [])
-    wrote = any("write" in h.get("outcome", "").lower() or "typed" in h.get("outcome", "").lower() for h in history)
+    wrote = any(k in h.get("outcome", "").lower() for h in history for k in ("write", "wrote", "typed"))
     if not wrote:
         return "goal requires typing but no write was done yet"
     return None
@@ -228,11 +228,14 @@ def node_act(state, _):
         entry = {"attempt": len(history) + 1, "action": f"{actions[0].get('verb','')} {actions[0].get('target','')}", "outcome": f"BLOCKED: {block}"}
         return {"signals": ["act_failed"], "patch": {"last_error": block, "history": history + [entry]}}
 
-    # Execute
+    # Execute (normalize verb: press with + → hotkey)
     results = []
     for a in actions:
-        r = execute_verb(a.get("verb", ""), a.get("target", ""), a.get("value", ""))
-        results.append(f"{a.get('verb')} {a.get('target')}: {r}")
+        verb = a.get("verb", "")
+        if verb == "press" and "+" in a.get("target", ""):
+            verb = "hotkey"
+        r = execute_verb(verb, a.get("target", ""), a.get("value", ""))
+        results.append(f"{verb} {a.get('target')}: {r}")
 
     outcome = "OK: " + "; ".join(results)
     entry = {"attempt": len(history) + 1, "action": f"{actions[0].get('verb','')} {actions[0].get('target','')}", "outcome": outcome}
@@ -266,11 +269,14 @@ def node_verify(state, _):
         return {"signals": ["step_denied"], "patch": {"last_error": str(e), "screen": screen}}
 
 def node_reflect(state, _):
-    """Retry vs replan. Retries exhausted → replan."""
+    """Retry vs replan vs escalate. Retries exhausted → replan. Replans exhausted → escalate (self-modify)."""
     retries = state.get("retries", 0)
+    replans = state.get("replan_count", 0)
     max_r = WIRING.get("limits", {}).get("max_attempts", 5)
     if retries >= max_r:
-        return {"signals": ["replan"], "patch": {"retries": 0}}
+        if replans >= 2:
+            return {"signals": ["escalate"], "patch": {"retries": 0, "replan_count": 0}}
+        return {"signals": ["replan"], "patch": {"retries": 0, "replan_count": replans + 1}}
 
     step = state.get("current_step", {})
     screen = state.get("screen", "")
@@ -281,7 +287,9 @@ def node_reflect(state, _):
         content, _, _ = llm(prompt, user)
         parsed = extract_json(content)
         if parsed and parsed.get("data", {}).get("should_replan"):
-            return {"signals": ["replan"], "patch": {"retries": 0}}
+            if replans >= 2:
+                return {"signals": ["escalate"], "patch": {"retries": 0, "replan_count": 0}}
+            return {"signals": ["replan"], "patch": {"retries": 0, "replan_count": replans + 1}}
         suggestion = parsed.get("data", {}).get("suggestion", "") if parsed else ""
         return {"signals": ["retry"], "patch": {"retries": retries + 1, "last_error": suggestion or error}}
     except Exception:
@@ -345,6 +353,63 @@ def node_moe_route(state, _):
     # This rod handles it
     return {"signals": ["self"], "patch": {}}
 
+def node_self_modify(state, _):
+    """Self-modification: alter own wiring.json and hot-reload topology.
+    Triggered by reflect on 'escalate' signal when stuck.
+    Uses LLM to decide what to change in the topology."""
+    global WIRING
+    wiring_path = PROMPTS / "wiring.json"
+    current = json.loads(wiring_path.read_text(encoding="utf-8"))
+    goal = state.get("goal", "")
+    error = state.get("last_error", "")
+    history = state.get("history", [])[-5:]
+
+    prompt = """You modify a graph topology to help overcome stuck states.
+Given GOAL, ERROR, and HISTORY, suggest ONE minimal wiring change.
+OUTPUT JSON only:
+{"record_type":"wiring_patch","data":{"op":"add_node|add_edge|remove_edge|set_guard","payload":{...}}}
+add_node: {"id":"...","type":"observe|act|verify","label":"...","edge_from":"existing_node","edge_to":"existing_node","on":"signal"}
+add_edge: {"from":"...","to":"...","on":"..."}
+remove_edge: {"from":"...","to":"..."}
+set_guard: {"key":"...","value":"..."}
+Only suggest changes that help with the current stuck state. Be conservative."""
+
+    user = f"GOAL: {goal}\nERROR: {error}\nHISTORY: {json.dumps(history)[:1000]}\nCURRENT_NODES: {[n['id'] for n in current['topology']['nodes']]}"
+
+    try:
+        content, _, _ = llm(prompt, user)
+        parsed = extract_json(content)
+        if not parsed or parsed.get("record_type") != "wiring_patch":
+            return {"signals": ["modify_failed"], "patch": {"last_error": "LLM returned invalid patch"}}
+
+        op = parsed["data"]["op"]
+        payload = parsed["data"]["payload"]
+        topo = current["topology"]
+
+        if op == "add_node":
+            node = {"id": payload["id"], "type": payload["type"], "label": payload.get("label", payload["id"])}
+            topo["nodes"].append(node)
+            if payload.get("edge_from"):
+                topo["edges"].append({"from": payload["edge_from"], "to": payload["id"], "on": payload.get("on", "ready")})
+            if payload.get("edge_to"):
+                topo["edges"].append({"from": payload["id"], "to": payload["edge_to"], "on": "done"})
+        elif op == "add_edge":
+            topo["edges"].append({"from": payload["from"], "to": payload["to"], "on": payload.get("on", "ready")})
+        elif op == "remove_edge":
+            topo["edges"] = [e for e in topo["edges"] if not (e["from"] == payload["from"] and e["to"] == payload["to"])]
+        elif op == "set_guard":
+            current.setdefault("guards", {})[payload["key"]] = payload["value"]
+        else:
+            return {"signals": ["modify_failed"], "patch": {"last_error": f"unknown op: {op}"}}
+
+        # Write and hot-reload
+        wiring_path.write_text(json.dumps(current, indent=2), encoding="utf-8")
+        WIRING = current
+        sse_push("wiring_modified", {"op": op, "payload": payload})
+        return {"signals": ["modified"], "patch": {"self_modify_op": op, "self_modify_payload": payload}}
+    except Exception as e:
+        return {"signals": ["modify_failed"], "patch": {"last_error": f"self_modify: {e}"}}
+
 # ─── Registry ───
 NODES = {
     "entry": node_entry,
@@ -358,6 +423,7 @@ NODES = {
     "bus_check": node_bus_check,
     "bus_post": node_bus_post,
     "moe_route": node_moe_route,
+    "self_modify": node_self_modify,
 }
 
 # ─── Graph engine ───
@@ -452,6 +518,7 @@ class H(http.server.BaseHTTPRequestHandler):
             self.send_error(404)
 
     def do_POST(self):
+        global WIRING
         body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0) or 0))) if int(self.headers.get("Content-Length", 0) or 0) > 0 else {}
         if self.path.startswith("/node/"):
             t = self.path[6:]
@@ -484,6 +551,15 @@ class H(http.server.BaseHTTPRequestHandler):
             msgs.append({"ts": time.time(), "from_slot": 0, "to_slot": slot, "type": "goal", "payload": {"goal": new_goal}})
             bus_write(msgs)
             self._j({"interrupted": True, "goal": new_goal})
+        elif self.path == "/wiring" and body:
+            # Hot-reload: POST new wiring.json
+            try:
+                (PROMPTS / "wiring.json").write_text(json.dumps(body, indent=2), encoding="utf-8")
+                WIRING = body
+                sse_push("wiring_modified", {"source": "api"})
+                self._j({"reloaded": True, "nodes": len(body.get("topology", {}).get("nodes", []))})
+            except Exception as e:
+                self._j({"error": str(e)}, 500)
         else:
             self.send_error(404)
 
