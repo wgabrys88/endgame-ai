@@ -38,4 +38,14 @@ When using Grok Build (this TUI environment) to develop endgame-ai:
 - After any session that involves git operations, verify the current branch and HEAD state before committing.
 - Keep `AGENTS.md` in sync between the manager and any student instances.
 
+## Parallel Execution & Monitoring
+
+When running multiple endgame-ai instances at the same time:
+
+- Launch each instance in its own directory using `python tui.py "goal"`.
+- Use background jobs or subprocesses to run them in parallel.
+- Each instance writes its own logs into its local `logs/` folder (timestamped `.txt` files).
+- To monitor progress, periodically read the newest log file from each instance’s `logs/` directory.
+- The outer controller is responsible for starting, observing, and terminating the instances.
+
 Keep this file updated as operational knowledge evolves.
