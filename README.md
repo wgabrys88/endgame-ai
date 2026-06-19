@@ -179,3 +179,185 @@ specific scenarios (set retries=5, inject history, force escalation, etc.).
 - Single HTML file — CDN imports only, no build step
 - LM Studio local — no cloud API keys
 - CRLF line endings — Windows workspace
+
+---
+
+## Appendix A: AI Handover Prompt
+
+Use this prompt when starting a new AI session to continue work on this project:
+
+```
+You are continuing work on endgame-ai — a living Windows desktop organism.
+Location: C:\Users\<USER>\Downloads\endgame-ai (or equivalent path)
+Branch: codex-unify-bus
+
+Architecture:
+- server.py (599 LOC): 12 node handlers, graph engine, HTTP/SSE server on :9077
+- wiring.json: 11 nodes, 17 edges — THIS is the program (no Python if/else routing)
+- wiring-editor.html (738 LOC): React Flow dashboard + native UIA toolbar
+- actions.py: bridge to desktop.py — observe_screen() + execute_verb(verb, target, value)
+- desktop.py: Windows UIA via ctypes (no pip)
+
+Key patterns:
+- Node handler signature: def node_X(state, config) -> {"signals": [...], "patch": {...}}
+- HTTP: POST /node/{type} with {"state":{...}} → {"signals":[], "state_patch":{}}
+- Graph engine: fires node → reads signals → follows edges (field: "on") → fires next
+- LLM: localhost:1234, model.json has host/timeout/temperature, ~45-90s per call
+- Guards: repeat_block, premature_done, advance_hints (all in wiring.json)
+- Self-modify: reflect→escalate→self_modify→modified→planner (LLM rewrites wiring)
+
+For real Windows interaction, MUST use Windows Python:
+  "/mnt/c/Program Files/Python313/python.exe" (from WSL)
+  or just `python` (from Windows terminal)
+
+Chrome UIA visibility requires: --force-renderer-accessibility
+Only NATIVE HTML elements (outside React root) are visible to UIA.
+
+To test without Windows desktop: set state.no_desktop=true + state.screen="(fake screen)"
+To test with real desktop: use Windows Python, observe_screen() returns real UIA tree
+
+Endpoints: GET /health /wiring /state /bus /events / | POST /node/{type} /run /resume /interrupt /bus/post /wiring
+
+Read NAVIGATION.md for patterns, TEST_RESULTS.md for proven capabilities.
+```
+
+## Appendix B: Running Examples
+
+```powershell
+# === BASIC USAGE ===
+
+# Start server (passive mode — browser or API drives execution)
+python server.py
+
+# Start server + autonomous execution
+python server.py --run "open notepad and write hello world"
+
+# Resume after crash/restart
+python server.py --resume
+
+# Colony mode (multiple rods, shared bus)
+python reactor.py --goal "open chrome and search for cats"
+
+# === BROWSER DASHBOARD ===
+
+# Open dashboard (server must be running)
+start http://127.0.0.1:9077
+
+# Chrome with UIA accessibility (for self-testing)
+"C:\Program Files\Google\Chrome\Application\chrome.exe" --force-renderer-accessibility
+
+# === API USAGE ===
+
+# Step manually via HTTP
+curl -X POST http://127.0.0.1:9077/node/entry -H "Content-Type: application/json" -d "{\"state\":{\"goal\":\"open notepad\",\"step\":0,\"retries\":0,\"history\":[]}}"
+
+# Inject interrupt (new goal mid-execution)
+curl -X POST http://127.0.0.1:9077/interrupt -H "Content-Type: application/json" -d "{\"goal\":\"close everything and open chrome\"}"
+
+# Hot-reload topology
+curl -X POST http://127.0.0.1:9077/wiring -H "Content-Type: application/json" -d @prompts/wiring.json
+
+# Autonomous run via API
+curl -X POST http://127.0.0.1:9077/run -H "Content-Type: application/json" -d "{\"goal\":\"navigate chrome to github.com\"}"
+
+# === MOCK TESTING (no Windows desktop needed) ===
+
+# Step with mock screen (observe node uses injected screen instead of real UIA)
+curl -X POST http://127.0.0.1:9077/node/observe -H "Content-Type: application/json" -d "{\"state\":{\"goal\":\"test\",\"no_desktop\":true,\"screen\":\"(Windows: [1] Notepad - Untitled. [2] Edit area.)\"}}"
+
+# Full mock cycle: entry → planner → scheduler → observe → act
+curl -X POST http://127.0.0.1:9077/node/planner -H "Content-Type: application/json" -d "{\"state\":{\"goal\":\"type hello in notepad\",\"screen\":\"(Windows: [1] Notepad - Untitled. [2] Edit area empty.)\",\"step\":0,\"retries\":0,\"history\":[]}}"
+```
+
+## Appendix C: Two-Instance Setup (Observer + Worker)
+
+Run two separate endgame-ai instances: one doing real work, another observing and correcting the first.
+
+```
+Directory layout:
+  C:\endgame-ai\worker\    ← Instance 1: does the actual desktop work
+  C:\endgame-ai\observer\  ← Instance 2: watches Instance 1 and corrects it
+```
+
+### Instance 1 — Worker (port 9077)
+
+```powershell
+cd C:\endgame-ai\worker
+python server.py --run "open notepad and write hello world"
+```
+
+This instance:
+- Runs autonomously on port 9077
+- observe_screen() captures real desktop
+- execute_verb() performs real keystrokes/clicks
+- Follows plan → act → verify loop
+
+### Instance 2 — Observer/Corrector (port 9078)
+
+```powershell
+cd C:\endgame-ai\observer
+# Edit prompts/model.json: change nothing (same LLM)
+# Edit prompts/wiring.json: add custom observer topology (see below)
+python server.py --port 9078 --run "monitor worker at 127.0.0.1:9077 and correct if stuck"
+```
+
+This instance:
+- Runs on port 9078
+- observe_screen() sees the same desktop (including worker's Chrome/Notepad)
+- Can POST to worker's /interrupt endpoint to inject corrections
+- Can POST to worker's /wiring endpoint to modify worker's topology
+- Can read worker's /state to see what it's doing
+
+### Observer's goal prompt example:
+
+```
+Monitor the endgame-ai worker at http://127.0.0.1:9077.
+Every 30 seconds:
+1. GET /state from worker — check if stuck (retries > 3 or same node for > 2 min)
+2. If stuck: POST /interrupt with a corrective goal
+3. If topology seems wrong: POST /wiring with fixed topology
+4. observe_screen() — verify worker's actions are producing results
+5. If worker finished: report success via bus
+```
+
+### How the Observer corrects the Worker:
+
+```powershell
+# Observer reads worker state
+curl http://127.0.0.1:9077/state
+
+# Observer sees worker is stuck — injects interrupt
+curl -X POST http://127.0.0.1:9077/interrupt -H "Content-Type: application/json" -d "{\"goal\":\"try using keyboard shortcut ctrl+n instead of clicking File menu\"}"
+
+# Observer patches worker's wiring (adds a hint guard)
+curl -X POST http://127.0.0.1:9077/wiring -H "Content-Type: application/json" -d @fixed-wiring.json
+```
+
+### Setup for second instance:
+
+```powershell
+# Copy the project
+xcopy /E /I C:\endgame-ai\worker C:\endgame-ai\observer
+
+# Edit observer's config to use different port and bus
+# In observer/server.py line 1 or via env var:
+set ENDGAME_PORT=9078
+set ENDGAME_BUS=C:\endgame-ai\shared-bus.json
+
+# Both instances can share bus.json for inter-communication
+# Worker posts telemetry → Observer reads it
+# Observer posts corrections → Worker's bus_check picks them up
+```
+
+### Shared bus communication:
+
+The bus is the nervous system between instances. Both read/write the same `bus.json`:
+
+```json
+[
+  {"from": "worker", "type": "telemetry", "node": "verify", "outcome": "step_denied", "ts": 1718834400},
+  {"from": "observer", "type": "interrupt", "goal": "use ctrl+s instead of File>Save", "ts": 1718834410}
+]
+```
+
+Worker's `bus_check` node picks up observer's interrupt and replans automatically.
