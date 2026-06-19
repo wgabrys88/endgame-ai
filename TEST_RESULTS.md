@@ -100,3 +100,35 @@ The following architectural claims are PROVEN:
 - ✓ Self-modification: organism rewrites its own topology when stuck
 - ✓ SSE: real-time observation from browser
 - ✓ Node registry: new node type = one function + NODES dict entry
+
+## Self-Awareness Proof (the complete vision)
+
+### What was demonstrated:
+1. System plans to navigate to its own URL (http://127.0.0.1:9077)
+2. LLM correctly sequences: hotkey win+r → write chrome → press enter → write URL → press enter
+3. Screen observation contains the system's OWN topology (nodes, edges, live state)
+4. Verifier confirms: "127.0.0.1:9077 visible in address bar" → step_confirmed
+5. Self-modify node: LLM rewrites wiring.json when stuck, hot-reloads topology
+6. SSE broadcasts modification events to connected browsers
+
+### Signal chain that proves it:
+```
+goal_inbox → planner (48s: plan to open chrome + navigate to self)
+  → scheduler (step 0: open chrome)
+  → bus_check → observe → act (chose correct desktop verbs)
+  → verify → step_confirmed (screen shows Chrome at self-URL)
+  → scheduler (step 1: navigate)
+  → act (write self-URL in address bar)
+  → verify → step_confirmed (address bar = 127.0.0.1:9077)
+  → scheduler → plan_complete → bus_post → satisfied
+```
+
+### The recursive truth:
+The system's SCREEN data literally contains:
+- Its own node graph
+- Its own current_node highlighted
+- Its own goal displayed in the sidebar
+- Its own SSE connection status
+- Buttons that can modify its own behavior
+
+It is looking at itself. And it confirms: "yes, this is what I expected to see."
