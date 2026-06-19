@@ -6,6 +6,8 @@ import json, http.server, urllib.request, pathlib, time, sys, re, threading, que
 
 ROOT = pathlib.Path(__file__).parent
 PROMPTS = ROOT / "prompts"
+STATE_FILE = ROOT / "state.json"
+BUS_FILE = ROOT / "bus.json"
 WIRING = json.loads((PROMPTS / "wiring.json").read_text(encoding="utf-8"))
 MODEL = json.loads((PROMPTS / "model.json").read_text(encoding="utf-8"))
 
@@ -23,6 +25,28 @@ def sse_push(evt, data):
     for q in list(SSE):
         try: q.put_nowait(msg)
         except: SSE.remove(q)
+
+# ─── State persistence ───
+
+def save_state(state):
+    STATE_FILE.write_text(json.dumps(state, default=str), encoding="utf-8")
+
+def load_state():
+    if STATE_FILE.exists():
+        try: return json.loads(STATE_FILE.read_text(encoding="utf-8"))
+        except: pass
+    return None
+
+# ─── Bus ───
+
+def bus_read():
+    if BUS_FILE.exists():
+        try: return json.loads(BUS_FILE.read_text(encoding="utf-8"))
+        except: pass
+    return []
+
+def bus_write(msgs):
+    BUS_FILE.write_text(json.dumps(msgs[-WIRING.get("limits", {}).get("bus_max", 200):], indent=1), encoding="utf-8")
 
 # ─── LLM ───
 
@@ -49,6 +73,50 @@ def extract_json(text):
         except: pass
     return None
 
+# ─── Guards (from wiring.json, evaluated in act node) ───
+
+def check_repeat_block(state, actions):
+    """Block if same actions as last time and last outcome was OK."""
+    last = state.get("last_actions_raw", [])
+    if not last:
+        return None
+    if actions == last and "OK" in state.get("last_outcome", ""):
+        hint = _find_advance_hint(state, actions)
+        return hint or "repeat blocked — try a different action"
+    return None
+
+def _find_advance_hint(state, actions):
+    """Match advance hints from wiring."""
+    hints = WIRING.get("guards", {}).get("advance_hints", [])
+    screen = (state.get("screen", "") or "").lower()
+    for a in actions:
+        verb = a.get("verb", "").lower()
+        target = (a.get("target", "") or "").lower()
+        for h in hints:
+            if h.get("verb", "") != verb:
+                continue
+            tc = h.get("target_contains", [])
+            if tc and not any(t.lower() in target for t in tc):
+                continue
+            sc = h.get("screen_contains", [])
+            if sc and not any(s.lower() in screen for s in sc):
+                continue
+            return h.get("hint", "")
+    default = WIRING.get("guards", {}).get("advance_hints_default", "")
+    return default
+
+def check_premature_done(state):
+    """Block DONE if goal requires typing but no write was done."""
+    goal = (state.get("goal", "") or "").lower()
+    needs_write = any(k in goal for k in ["type", "write", "enter text"])
+    if not needs_write:
+        return None
+    history = state.get("history", [])
+    wrote = any("write" in h.get("outcome", "").lower() or "typed" in h.get("outcome", "").lower() for h in history)
+    if not wrote:
+        return "goal requires typing but no write was done yet"
+    return None
+
 # ─── Node handlers ───
 
 def node_entry(state, _):
@@ -58,13 +126,20 @@ def node_planner(state, _):
     goal = state.get("goal", "")
     screen = state.get("screen", "")
     prompt = (PROMPTS / "planner.txt").read_text(encoding="utf-8")
+    # Include persona context if available
+    persona = WIRING.get("instance", {}).get("persona", "")
+    persona_ctx = ""
+    if persona:
+        pf = PROMPTS / "personalities" / f"{persona}.txt"
+        if pf.exists():
+            persona_ctx = f"\nPERSONA: {pf.read_text(encoding='utf-8')[:500]}\n"
     try:
-        content, _, _ = llm(prompt, f"GOAL: {goal}\nSCREEN: {screen[:3000]}")
+        content, _, _ = llm(prompt, f"{persona_ctx}GOAL: {goal}\nSCREEN: {screen[:3000]}")
         parsed = extract_json(content)
         steps = parsed["data"]["steps"] if parsed and "data" in parsed and "steps" in parsed.get("data", {}) else [{"description": goal, "done_when": "goal achieved"}]
-    except Exception as e:
+    except Exception:
         steps = [{"description": goal, "done_when": "goal achieved"}]
-    return {"signals": ["plan_ready"], "patch": {"plan": steps, "step": 0, "retries": 0}}
+    return {"signals": ["plan_ready"], "patch": {"plan": steps, "step": 0, "retries": 0, "history": []}}
 
 def node_scheduler(state, _):
     steps = state.get("plan", [])
@@ -81,10 +156,9 @@ def node_observe(state, _):
     return {"signals": ["screen_ready"], "patch": {"screen": s}}
 
 def node_act(state, _):
-    """Build prompt, call LLM, parse, execute actions. One node does the full act cycle."""
-    # Build prompt
+    """Build prompt with feedback history, call LLM, apply guards, execute."""
+    # Load system prompt (with persona and swap)
     prompt_file = WIRING.get("request", {}).get("unified", {}).get("system", {}).get("file", "unified.txt")
-    # Check prompt swap
     swaps = WIRING.get("circuits", {}).get("unified", {}).get("prompt_swap", [])
     goal = state.get("goal", "")
     for sw in swaps:
@@ -92,12 +166,31 @@ def node_act(state, _):
             prompt_file = sw["prompt"]
             break
     system = (PROMPTS / prompt_file).read_text(encoding="utf-8")
+
+    # Persona injection
+    persona = WIRING.get("instance", {}).get("persona", "")
+    if persona:
+        pf = PROMPTS / "personalities" / f"{persona}.txt"
+        if pf.exists():
+            system = pf.read_text(encoding="utf-8") + "\n" + system
+
+    # Build user message with feedback history
     step_goal = state.get("step_goal", goal)
     screen = state.get("screen", "(no screen)")
     error = state.get("last_error", "")
-    user = f"GOAL: {step_goal}\nSCREEN: {screen[:4000]}"
+    history = state.get("history", [])
+
+    user_parts = [f"GOAL: {step_goal}", f"SCREEN: {screen[:4000]}"]
     if error:
-        user += f"\nLAST ERROR: {error}"
+        user_parts.append(f"LAST ERROR: {error}")
+    # Inject reasoning history (last N entries)
+    depth = WIRING.get("limits", {}).get("history_depth", 10)
+    if history:
+        recent = history[-depth:]
+        reasoning_block = "\n".join(f"  [{h.get('attempt',0)}] {h.get('action','')} → {h.get('outcome','')}" for h in recent)
+        user_parts.append(f"HISTORY:\n{reasoning_block}")
+
+    user = "\n".join(user_parts)
 
     # Call LLM
     try:
@@ -108,28 +201,51 @@ def node_act(state, _):
     # Parse
     parsed = extract_json(content) or extract_json(reasoning)
     if not parsed:
-        return {"signals": ["act_failed"], "patch": {"last_error": "LLM returned no JSON"}}
+        return {"signals": ["act_failed"], "patch": {"last_error": "parse_failed: respond with JSON only"}}
 
     conclusion = parsed.get("data", {}).get("conclusion", "")
     actions = parsed.get("data", {}).get("actions", [])
 
+    # Guard: premature DONE
     if conclusion == "DONE":
-        return {"signals": ["step_done"], "patch": {}}
+        block = check_premature_done(state)
+        if block:
+            entry = {"attempt": len(history) + 1, "action": "DONE blocked", "outcome": block}
+            return {"signals": ["act_failed"], "patch": {"last_error": block, "history": history + [entry]}}
+        entry = {"attempt": len(history) + 1, "action": "DONE", "outcome": "goal complete"}
+        return {"signals": ["step_done"], "patch": {"history": history + [entry]}}
+
     if conclusion == "CANNOT":
-        return {"signals": ["act_failed"], "patch": {"last_error": "LLM says CANNOT"}}
+        entry = {"attempt": len(history) + 1, "action": "CANNOT", "outcome": "LLM cannot proceed"}
+        return {"signals": ["act_failed"], "patch": {"last_error": "CANNOT", "history": history + [entry]}}
+
     if conclusion != "EXECUTE" or not actions:
         return {"signals": ["act_failed"], "patch": {"last_error": f"bad conclusion: {conclusion}"}}
+
+    # Guard: repeat block
+    block = check_repeat_block(state, actions)
+    if block:
+        entry = {"attempt": len(history) + 1, "action": f"{actions[0].get('verb','')} {actions[0].get('target','')}", "outcome": f"BLOCKED: {block}"}
+        return {"signals": ["act_failed"], "patch": {"last_error": block, "history": history + [entry]}}
 
     # Execute
     results = []
     for a in actions:
         r = execute_verb(a.get("verb", ""), a.get("target", ""), a.get("value", ""))
         results.append(f"{a.get('verb')} {a.get('target')}: {r}")
-    return {"signals": ["acted"], "patch": {"last_actions": results, "last_error": ""}}
+
+    outcome = "OK: " + "; ".join(results)
+    entry = {"attempt": len(history) + 1, "action": f"{actions[0].get('verb','')} {actions[0].get('target','')}", "outcome": outcome}
+    return {"signals": ["acted"], "patch": {
+        "last_actions": results,
+        "last_actions_raw": actions,
+        "last_outcome": outcome,
+        "last_error": "",
+        "history": history + [entry]
+    }}
 
 def node_verify(state, _):
-    """Fresh observe + LLM verification in one node."""
-    # Fresh screen
+    """Fresh observe + LLM verification."""
     if not state.get("no_desktop"):
         screen = observe_screen()
     else:
@@ -150,7 +266,7 @@ def node_verify(state, _):
         return {"signals": ["step_denied"], "patch": {"last_error": str(e), "screen": screen}}
 
 def node_reflect(state, _):
-    """Decide retry vs replan. If retries exhausted → replan."""
+    """Retry vs replan. Retries exhausted → replan."""
     retries = state.get("retries", 0)
     max_r = WIRING.get("limits", {}).get("max_attempts", 5)
     if retries >= max_r:
@@ -168,49 +284,40 @@ def node_reflect(state, _):
             return {"signals": ["replan"], "patch": {"retries": 0}}
         suggestion = parsed.get("data", {}).get("suggestion", "") if parsed else ""
         return {"signals": ["retry"], "patch": {"retries": retries + 1, "last_error": suggestion or error}}
-    except Exception as e:
+    except Exception:
         return {"signals": ["retry"], "patch": {"retries": retries + 1}}
 
 def node_satisfied(state, _):
     return {"signals": ["idle"], "patch": {"satisfied": True}}
 
-# ─── Bus (Phase 4) — 3 functions, 1 file ───
-
-BUS_FILE = ROOT / "bus.json"
-
-def _bus_read():
-    if BUS_FILE.exists():
-        try: return json.loads(BUS_FILE.read_text(encoding="utf-8"))
-        except: pass
-    return []
-
-def _bus_write(msgs):
-    limit = WIRING.get("limits", {}).get("bus_max", 200)
-    BUS_FILE.write_text(json.dumps(msgs[-limit:], indent=1), encoding="utf-8")
+def node_bus_check(state, _):
+    """Poll bus for interrupt goals. Higher-priority goal → interrupt."""
+    slot = WIRING.get("instance", {}).get("slot", 0)
+    since = state.get("bus_last_check", 0)
+    msgs = bus_read()
+    # Look for goal messages addressed to this slot
+    goals = [m for m in msgs if m.get("to_slot") in (slot, "all") and m.get("ts", 0) > since and m.get("type") == "goal"]
+    if goals:
+        newest = goals[-1]
+        return {"signals": ["interrupt"], "patch": {
+            "bus_last_check": time.time(),
+            "goal": newest.get("payload", {}).get("goal", state.get("goal", "")),
+            "interrupt_from": newest.get("from_slot")
+        }}
+    return {"signals": ["no_interrupt"], "patch": {"bus_last_check": time.time()}}
 
 def node_bus_post(state, _):
-    """Post a message to the shared bus."""
+    """Post telemetry/result to bus."""
     msg = {
         "ts": time.time(),
         "from_slot": WIRING.get("instance", {}).get("slot", 0),
         "type": state.get("bus_msg_type", "telemetry"),
-        "payload": state.get("bus_payload", {})
+        "payload": {"goal": state.get("goal", ""), "step": state.get("step", 0), "satisfied": state.get("satisfied", False)}
     }
-    msgs = _bus_read()
+    msgs = bus_read()
     msgs.append(msg)
-    _bus_write(msgs)
+    bus_write(msgs)
     return {"signals": ["posted"], "patch": {}}
-
-def node_bus_check(state, _):
-    """Check bus for messages addressed to this slot."""
-    slot = WIRING.get("instance", {}).get("slot", 0)
-    since = state.get("bus_last_check", 0)
-    msgs = _bus_read()
-    relevant = [m for m in msgs if m.get("to_slot") in (slot, None, "all") and m.get("ts", 0) > since]
-    if relevant:
-        newest = relevant[-1]
-        return {"signals": ["bus_message"], "patch": {"bus_last_check": time.time(), "bus_incoming": newest}}
-    return {"signals": ["no_message"], "patch": {"bus_last_check": time.time()}}
 
 # ─── Registry ───
 NODES = {
@@ -222,8 +329,8 @@ NODES = {
     "verify": node_verify,
     "reflect": node_reflect,
     "satisfied": node_satisfied,
-    "bus_post": node_bus_post,
     "bus_check": node_bus_check,
+    "bus_post": node_bus_post,
 }
 
 # ─── Graph engine ───
@@ -237,13 +344,17 @@ def find_targets(node_id, signals, topo):
             targets.append(e["to"])
     return targets
 
-def run(goal):
+def run(goal, resume_state=None):
     topo = WIRING["topology"]
-    state = {"goal": goal, "step": 0, "retries": 0, "no_desktop": False}
-    node_id = topo["cycle_start"]
+    if resume_state:
+        state = resume_state
+        node_id = state.pop("_resume_node", topo["cycle_start"])
+    else:
+        state = {"goal": goal, "step": 0, "retries": 0, "no_desktop": False, "history": [], "bus_last_check": 0}
+        node_id = topo["cycle_start"]
     cycle = 0
 
-    print(f"\n{'='*50}\n  ROD: {goal}\n{'='*50}\n")
+    print(f"\n{'='*50}\n  ROD [{WIRING.get('instance',{}).get('slot',0)}]: {goal}\n{'='*50}\n")
 
     while cycle < 300:
         cycle += 1
@@ -267,6 +378,10 @@ def run(goal):
 
         sse_push("result", {"c": cycle, "id": node_id, "s": signals})
 
+        # Persist state each cycle
+        state["_resume_node"] = node_id
+        save_state(state)
+
         targets = find_targets(node_id, signals, topo)
         if not targets:
             print(f"\n[{cycle}] terminal — no outgoing edge for {signals}")
@@ -274,7 +389,7 @@ def run(goal):
         node_id = targets[0]
         time.sleep(0.3)
 
-    print(f"\nDone. State: step={state.get('step')} satisfied={state.get('satisfied')}")
+    print(f"\nDone. step={state.get('step')} satisfied={state.get('satisfied')}")
     sse_push("stop", {"outcome": state.get("satisfied", False)})
     return state
 
@@ -286,11 +401,13 @@ class H(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/health":
-            self._j({"ok": True, "nodes": list(NODES.keys())})
+            self._j({"ok": True, "nodes": list(NODES.keys()), "slot": WIRING.get("instance", {}).get("slot", 0)})
         elif self.path == "/wiring":
             self._j(WIRING)
+        elif self.path == "/state":
+            self._j(load_state() or {})
         elif self.path == "/bus":
-            self._j(_bus_read())
+            self._j(bus_read())
         elif self.path in ("/", "/index.html"):
             d = (ROOT / "wiring-editor.html").read_bytes()
             self.send_response(200); self.send_header("Content-Type","text/html"); self.send_header("Content-Length",len(d)); self.end_headers(); self.wfile.write(d)
@@ -320,9 +437,23 @@ class H(http.server.BaseHTTPRequestHandler):
             if not goal: self._j({"error": "no goal"}, 400); return
             threading.Thread(target=run, args=(goal,), daemon=True).start()
             self._j({"started": True})
+        elif self.path == "/resume":
+            s = load_state()
+            if not s: self._j({"error": "no saved state"}, 404); return
+            threading.Thread(target=run, args=(s.get("goal",""),s), daemon=True).start()
+            self._j({"resumed": True, "goal": s.get("goal","")})
         elif self.path == "/bus/post":
-            msgs = _bus_read(); msgs.append(body); _bus_write(msgs)
+            msgs = bus_read(); msgs.append(body); bus_write(msgs)
             self._j({"ok": True})
+        elif self.path == "/interrupt":
+            # Post a goal interrupt to this rod's bus slot
+            new_goal = body.get("goal", "")
+            if not new_goal: self._j({"error": "no goal"}, 400); return
+            slot = WIRING.get("instance", {}).get("slot", 0)
+            msgs = bus_read()
+            msgs.append({"ts": time.time(), "from_slot": 0, "to_slot": slot, "type": "goal", "payload": {"goal": new_goal}})
+            bus_write(msgs)
+            self._j({"interrupted": True, "goal": new_goal})
         else:
             self.send_error(404)
 
@@ -339,15 +470,22 @@ class H(http.server.BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     args = sys.argv[1:]
-    if "--run" in args:
-        goal = " ".join(args[args.index("--run")+1:])
-        if not goal: print("Usage: python server.py --run \"goal\""); sys.exit(1)
+    if "--resume" in args:
+        s = load_state()
+        if not s: print("No state.json to resume from"); sys.exit(1)
         srv = http.server.HTTPServer(("127.0.0.1", 9077), H)
         threading.Thread(target=srv.serve_forever, daemon=True).start()
-        print(f"SSE: http://127.0.0.1:9077/events")
+        run(s.get("goal", ""), s)
+    elif "--run" in args:
+        goal = " ".join(args[args.index("--run")+1:])
+        if not goal: print("Usage: python server.py --run \"goal\""); sys.exit(1)
+        port = int(WIRING.get("instance", {}).get("slot", 0)) + 9077 if WIRING.get("instance", {}).get("slot", 0) else 9077
+        srv = http.server.HTTPServer(("127.0.0.1", port), H)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        print(f"SSE: http://127.0.0.1:{port}/events")
         run(goal)
     else:
         port = int(args[0]) if args and args[0].isdigit() else 9077
         srv = http.server.HTTPServer(("127.0.0.1", port), H)
-        print(f"endgame-ai on http://127.0.0.1:{port}  nodes: {list(NODES.keys())}")
+        print(f"endgame-ai [{WIRING.get('instance',{}).get('slot',0)}] on http://127.0.0.1:{port}  nodes: {list(NODES.keys())}")
         srv.serve_forever()
