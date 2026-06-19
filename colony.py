@@ -14,13 +14,16 @@ class CommsOperator:
     """Decomposes user goals into sub-goals and routes them to slots via bus."""
 
     def __init__(self, llm: LLMClient, bus: Bus, slot_configs: dict[str, dict],
-                 prompts_dir: Path, comms_cfg: dict[str, Any]):
+                 prompts_dir: Path, comms_cfg: dict[str, Any], workspace: Path,
+                 instance_cfg: dict[str, Any]):
         self._llm = llm
         self._bus = bus
         self._slot_names = list(slot_configs.keys())
         self._slot_configs = slot_configs
         self._last_goal: str = ""
         self._fallback_slot = str(comms_cfg["fallback_slot"])
+        self._workspace = workspace
+        self._instance_cfg = instance_cfg
         comms_path = prompts_dir / str(comms_cfg["prompt"])
         if not comms_path.exists():
             raise FileNotFoundError(f"comms prompt missing: {comms_path}")
@@ -31,7 +34,11 @@ class CommsOperator:
             return {"phase": "comms", "action": "skip"}
         self._last_goal = goal
         slot_desc = "\n".join(f"  {n} = {c.get('personality', '')}" for n, c in self._slot_configs.items())
-        context = f"GOAL: {goal}\nAVAILABLE SLOTS:\n{slot_desc}"
+        role = str(self._instance_cfg.get("role", ""))
+        context = (
+            f"WORKSPACE: ROLE={role} ROOT={self._workspace}\n"
+            f"GOAL: {goal}\nAVAILABLE SLOTS:\n{slot_desc}"
+        )
         result = self._llm.call(self._prompt, context)
         try:
             parsed = json.loads(result.text)
@@ -71,10 +78,12 @@ class GlobalMutator:
     """Reads cross-slot denial patterns, proposes planner prompt patches."""
 
     def __init__(self, llm: LLMClient, bus: Bus, slots: dict[str, Slot],
-                 prompts_dir: Path, cfg: dict[str, Any], limits: dict[str, Any]):
+                 prompts_dir: Path, cfg: dict[str, Any], limits: dict[str, Any],
+                 workspace: Path):
         self._llm = llm
         self._bus = bus
         self._slots = slots
+        self._workspace = workspace
         self._last_run: float = 0
         self._interval = float(limits["global_mutator_interval_s"])
         self._denial_threshold = int(limits.get("global_mutator_denial_threshold", 3))
@@ -96,6 +105,7 @@ class GlobalMutator:
         if not denials:
             return None
         context = (
+            f"WORKSPACE: {self._workspace}\n"
             f"STRUGGLING SLOTS: {json.dumps(denials)}\n"
             f"BUS CONTEXT:\n{self._bus.format_context(limit=10)}"
         )
@@ -124,9 +134,11 @@ class Colony:
             slot = Slot(name=name, llm=llm, bus=bus, prompts_dir=slot_prompts, workspace=workspace,
                         wiring=wiring, can_act_desktop=bool(cfg["can_desktop"]))
             self.all_slots[name] = slot
-        self.comms = CommsOperator(llm, bus, slot_configs, prompts_dir, wiring["comms"])
+        self._workspace = workspace
+        self.comms = CommsOperator(llm, bus, slot_configs, prompts_dir,
+                                   wiring["comms"], workspace, wiring["instance"])
         self.global_mutator = GlobalMutator(llm, bus, self.all_slots, prompts_dir,
-                                            wiring["global_mutator"], wiring["limits"])
+                                            wiring["global_mutator"], wiring["limits"], workspace)
         self._actor_lock: str = ""
 
     def set_goal(self, goal: str):

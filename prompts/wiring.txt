@@ -1,5 +1,7 @@
 # endgame-ai control plane — edit this file only; code reads topology from here
 
+instance.role=manager
+
 limits.max_attempts=5
 limits.max_tasks_per_plan=6
 limits.observe_interval_s=2
@@ -26,13 +28,13 @@ slots.devops.personality=git, deployment, system health
 slots.devops.mode=planner
 
 circuits.planner.prompt=planner.txt
-circuits.planner.inject=goal, screen, history, bus_context, last_reasoning
+circuits.planner.inject=goal, screen, workspace, history, bus_context, last_reasoning
 circuits.actor.prompt=actor.txt
-circuits.actor.inject=goal, task, contract, last_error, last_reasoning, screen
+circuits.actor.inject=goal, task, contract, workspace, last_error, last_reasoning, screen
 circuits.verifier.prompt=verifier.txt
-circuits.verifier.inject=task, contract, screen, evidence, last_reasoning
+circuits.verifier.inject=task, contract, screen, workspace, evidence, last_reasoning
 circuits.reflector.prompt=reflector.txt
-circuits.reflector.inject=goal, screen, denials, last_reasoning
+circuits.reflector.inject=goal, screen, workspace, denials, last_reasoning
 circuits.mutator.prompt=mutator.txt
 circuits.mutator.inject=diagnosis, goal, workspace
 circuits.unified.prompt=unified.txt

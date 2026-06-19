@@ -37,6 +37,7 @@ def load_wiring(prompts_dir: Path) -> dict[str, Any]:
     verbs: dict[str, dict[str, str]] = {}
     comms: dict[str, Any] = {}
     global_mutator: dict[str, Any] = {}
+    instance: dict[str, Any] = {}
     guards: dict[str, dict[str, Any]] = {}
     prompt_swaps: dict[str, dict[int, dict[str, Any]]] = {}
 
@@ -93,6 +94,10 @@ def load_wiring(prompts_dir: Path) -> dict[str, Any]:
             global_mutator[parts[1]] = value
             continue
 
+        if parts[0] == "instance" and len(parts) == 2:
+            instance[parts[1]] = value
+            continue
+
         if parts[0] == "guards" and len(parts) == 3:
             section = guards.setdefault(parts[1], {})
             key = parts[2]
@@ -111,7 +116,7 @@ def load_wiring(prompts_dir: Path) -> dict[str, Any]:
     required = ("limits", "slots", "circuits", "transitions", "verbs", "comms")
     result = {"limits": limits, "slots": slots, "circuits": circuits,
               "transitions": transitions, "verbs": verbs, "comms": comms,
-              "global_mutator": global_mutator, "guards": guards}
+              "global_mutator": global_mutator, "instance": instance, "guards": guards}
     for section in required:
         if not result[section]:
             raise ValueError(f"wiring.txt missing required section: {section}")
@@ -133,6 +138,10 @@ def load_wiring(prompts_dir: Path) -> dict[str, Any]:
             raise ValueError(f"wiring.txt slot '{name}' missing can_desktop")
         if "mode" not in cfg:
             raise ValueError(f"wiring.txt slot '{name}' missing mode")
+    if "role" not in instance:
+        raise ValueError("wiring.txt instance.role is required (manager or student)")
+    if instance["role"] not in ("manager", "student"):
+        raise ValueError("instance.role must be manager or student")
     if "unified" not in guards:
         raise ValueError("wiring.txt guards.unified section is required")
     valid_phases = set(circuits) | {"idle"}

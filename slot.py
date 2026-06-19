@@ -141,7 +141,13 @@ class Circuit:
         if name == "diagnosis":
             return state.diagnosis
         if name == "workspace":
-            return f"{self._workspace}\nPROMPTS DIR: {self._workspace / 'prompts'}"
+            role = str(self._wiring.get("instance", {}).get("role", "instance"))
+            return (
+                f"ROLE: {role}\n"
+                f"ROOT: {self._workspace}\n"
+                f"PROMPTS: {self._workspace / 'prompts'}\n"
+                f"WIRING: {self._workspace / 'prompts' / 'wiring.txt'}"
+            )
         return ""
 
     def run(self, state: SlotState, llm: LLMClient, bus: Bus) -> dict[str, Any]:
@@ -166,7 +172,8 @@ class Circuit:
             if result.reasoning:
                 record = self._extract_json(result.reasoning)
             if not record and self.name == "unified":
-                return {"event": "unified_error", "error": "parse_failed — output JSON only, no prose"}
+                state.last_action_error = "parse_failed: respond with JSON only, no prose"
+                return {"event": "unified_error", "error": state.last_action_error}
         try:
             rtype, data = str(record["record_type"]), record["data"]
         except (KeyError, TypeError):
@@ -240,7 +247,11 @@ class Circuit:
                                     if "SYSTEM: repeated action" in e.get("outcome", ""))
                 state.reasoning_history.append({"reasoning": "", "outcome": "SYSTEM: repeated action — move to next step"})
                 if recent_blocks >= threshold:
-                    state.last_action_error = "Repeated action blocked twice — press escape or try a different verb"
+                    state.last_action_error = (
+                        "Repeated action blocked — advance sequence: "
+                        "Run open with app name → press enter or click OK; "
+                        "app open → write into its text field; stuck → press escape"
+                    )
                     return {"event": "unified_acted", "conclusion": "EXECUTE",
                             "actions": [], "reasoning_entry": reasoning_entry}
                 return {"event": "unified_acted", "conclusion": "EXECUTE",
