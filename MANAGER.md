@@ -11,7 +11,7 @@ The Manager is the primary endgame-ai instance. Its sole job is to observe, laun
 An outer controller (temporary) starts the Manager with a goal that contains the **full absolute path** to this file:
 
 ```
-python tui.py "Read the MANAGER.md file located at the full absolute path C:\Users\ewojgab\Downloads\endgame-ai\MANAGER.md and immediately begin acting as the outer controller to run and manage the student instance"
+python tui.py "Read the MANAGER.md file located at the full absolute path C:\Users\px-wjt\Downloads\endgame-ai\MANAGER.md and immediately begin acting as the outer controller to run and manage the student instance"
 ```
 
 The Manager must read this file first and then follow the rules below.

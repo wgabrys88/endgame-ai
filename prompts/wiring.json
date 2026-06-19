@@ -76,7 +76,7 @@
       ]
     },
     "unified": {
-      "prompt": "unified.txt",
+      "prompt": "manager.txt",
       "inject": [
         "goal",
         "screen",
@@ -99,6 +99,7 @@
     "execute_acted": "actor",
     "goal_complete": "idle",
     "unified_acted": "unified",
+    "unified_error": "unified",
     "unified_done": "idle",
     "unified_cannot": "unified"
   },

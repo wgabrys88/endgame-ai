@@ -17,7 +17,12 @@ CRITICAL RULES (from observed failures)
 - Never plan more than 3 tasks.
 - Tasks must be verifiable on SCREEN (window titles, text content, button states).
 - For "Read MANAGER.md at full path" bootstrap: first task = open the exact path via Run dialog; contract = "Run dialog closed or editor window visible".
-- For Student launch: plan "launch Student TUI with goal X" then "focus Student window and verify responsiveness".
+- For Student launch: plan exactly these tasks in order:
+  1. "open Run dialog" contract "Run dialog visible"
+  2. "type student launch command in Run dialog" contract "Run field contains cmd /c cd endgame-ai-student"
+  3. "press enter to launch Student" contract "second endgame-ai console window visible"
+  Student directory: C:\Users\px-wjt\Downloads\endgame-ai-student
+  Launch command: cmd /c "cd /d C:\Users\px-wjt\Downloads\endgame-ai-student && python tui.py \"GOAL\""
 - If SCREEN already shows the final state → return empty tasks list.
 - Element IDs are dynamic; describe targets by name/role only.
 - If previous approach failed (from HISTORY), plan a fundamentally different sequence.

@@ -57,6 +57,7 @@ class ActionExecutor:
                 el = self._resolve(target, elements)
                 if el:
                     self._desktop.click(el.px + el.pw // 2, el.py + el.ph // 2, el.hwnd)
+            self._desktop.hotkey(["ctrl", "a"])
             self._desktop.type_text(text)
             return ActionResult(verb, True, f"typed {len(text)} chars")
 
