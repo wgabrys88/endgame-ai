@@ -205,3 +205,24 @@ python colony.py 1 2                          # Two rods, ports 9078 + 9079
 6. Port = 9077 + slot
 7. Self_modify validates + backs up before writing
 8. Python decides nothing — wiring.json decides everything
+
+---
+
+## ROD — Reason, Observe, Decide
+
+An evolution of ReAct. Each LLM node calls the model twice:
+
+```
+  Request 1:  system prompt + user context  →  Response 1 (reasoning_content)
+  Request 2:  system prompt + user context + reasoning_content  →  Response 2 (final JSON)
+```
+
+The second call sees the model's own thinking. One extra round-trip, but the structured
+output is dramatically better because the model already worked through the problem.
+This is why a 4B model can control a desktop — it reasons first, then decides.
+
+---
+
+## START HERE (copy-paste prompt for next AI session)
+
+Read README.md and RESEARCH.md — they are your complete briefing. The system is called ROD (Reason-Observe-Decide), an evolution of ReAct where each LLM node calls twice: first to think (reasoning_content), then fed back to produce the final structured output. Make the observe→act→verify loop reliable for 10 consecutive desktop goals, reduce cycles from 27 to under 12 by chaining actions in the act prompt (prompts/wiring.json), and validate colony delegation between 2 slots. No new files, no tests, no dependencies — every change is a wiring.json prompt edit or a small fix in the existing tracked files.
