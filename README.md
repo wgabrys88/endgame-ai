@@ -20,6 +20,7 @@ python server.py --run "open notepad and write hello"
 
 python server.py                    # passive server (editor/curl drives nodes)
 start http://127.0.0.1:9078         # wiring-editor (slot=1 → 9077+1)
+# Editor: click node → edit prompts.base / role / user blocks → Apply → 💾 Save (POST /wiring)
 ```
 
 **Port:** `runtime.http_port_base + slot` → default slot=1 serves **:9078**. `GET /health` returns `port`.
