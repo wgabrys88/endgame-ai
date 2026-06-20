@@ -2,7 +2,7 @@
 endgame-ai — stdlib only, zero pip.
 One file. Node handlers are pure functions. Wiring.json is the brain.
 """
-import json, http.server, urllib.request, pathlib, time, sys, re, threading, queue, os
+import json, http.server, urllib.request, pathlib, time, sys, threading, queue, os
 
 class ThreadingHTTPServer(http.server.ThreadingHTTPServer):
     daemon_threads = True
@@ -13,7 +13,6 @@ STATE_FILE = ROOT / "state.json"
 BUS_FILE = pathlib.Path(os.environ.get("ENDGAME_BUS", str(ROOT / "bus.json")))
 TRACES_FILE = ROOT / "prompts" / "traces.jsonl"
 WIRING = json.loads((PROMPTS / "wiring.json").read_text(encoding="utf-8"))
-WIRING_SCHEMA = json.loads((PROMPTS / "wiring-schema.json").read_text(encoding="utf-8"))
 MODEL = json.loads((PROMPTS / "model.json").read_text(encoding="utf-8"))
 
 
@@ -51,12 +50,11 @@ def validate_wiring(w):
     if not isinstance(nodes, list) or not nodes:
         return errs + ["topology.nodes must be non-empty array"]
     node_ids = set()
-    id_pat = re.compile(r'^[a-z][a-z0-9_]*$')
     for i, n in enumerate(nodes):
         if not isinstance(n, dict):
             errs.append(f"nodes[{i}] must be object"); continue
         nid = n.get("id", "")
-        if not nid or not id_pat.match(nid):
+        if not nid or not nid[0].isalpha() or not all(c.isalnum() or c == '_' for c in nid):
             errs.append(f"nodes[{i}].id invalid: '{nid}'")
         if not n.get("type"):
             errs.append(f"nodes[{i}].type required")
@@ -100,10 +98,9 @@ def topo_node(node_type):
     return {}
 
 def circuit_for(node_type):
-    """Circuit role key for reasoning store — from node.prompt.role on topology."""
+    """Circuit role key for reasoning store."""
     node = topo_node(node_type)
-    prompt = node.get("prompt", {})
-    return prompt.get("role") or node.get("circuit") or WIRING.get("node_circuits", {}).get(node_type, node_type)
+    return node.get("prompt", {}).get("role") or node.get("circuit") or node_type
 
 def node_circuits_map():
     out = {}
@@ -115,11 +112,7 @@ def node_circuits_map():
 
 def _prompt_cfg(node_type=None, circuit=None):
     if node_type:
-        cfg = topo_node(node_type).get("prompt", {})
-        if cfg:
-            return cfg
-    if circuit:
-        return WIRING.get("request", {}).get(circuit, {})
+        return topo_node(node_type).get("prompt", {})
     return {}
 
 def http_port(slot=None):
@@ -230,42 +223,25 @@ def llm(system, user, temperature=None):
     return c.get("content", ""), c.get("reasoning_content", ""), time.time() - t0
 
 def extract_json_objects(text):
-    """Return all top-level JSON objects in text, in document order."""
+    """Return all top-level JSON objects found in text."""
     if not text:
         return []
-    out = []
-    i, n = 0, len(text)
+    out, i, n = [], 0, len(text)
     while i < n:
         if text[i] != "{":
-            i += 1
-            continue
-        depth = 0
-        in_str = False
-        esc = False
+            i += 1; continue
+        depth, in_str, esc = 0, False, False
         for j in range(i, n):
             c = text[j]
-            if esc:
-                esc = False
-                continue
-            if c == "\\" and in_str:
-                esc = True
-                continue
-            if c == '"':
-                in_str = not in_str
-                continue
-            if in_str:
-                continue
-            if c == "{":
-                depth += 1
-            elif c == "}":
-                depth -= 1
-                if depth == 0:
-                    try:
-                        out.append(json.loads(text[i:j + 1]))
-                    except json.JSONDecodeError:
-                        pass
-                    i = j + 1
-                    break
+            if esc: esc = False; continue
+            if c == "\\" and in_str: esc = True; continue
+            if c == '"': in_str = not in_str; continue
+            if in_str: continue
+            depth += (c == "{") - (c == "}")
+            if depth == 0:
+                try: out.append(json.loads(text[i:j + 1]))
+                except json.JSONDecodeError: pass
+                i = j + 1; break
         else:
             break
     return out
@@ -344,12 +320,6 @@ def call_node(node_type, state, extra=None):
 
 def _resolve_value(state, source):
     """Resolve a wiring request block source to a string value."""
-    if source == "instance.persona":
-        persona = WIRING.get("instance", {}).get("persona", "")
-        if not persona:
-            return ""
-        pf = PROMPTS / "personalities" / f"{persona}.txt"
-        return pf.read_text(encoding="utf-8") if pf.exists() else ""
     if source == "topology.nodes":
         return json.dumps([n["id"] for n in WIRING.get("topology", {}).get("nodes", [])])
     if source == "traces.recent":
@@ -394,35 +364,19 @@ def _resolve_value(state, source):
     return ""
 
 def load_system_prompt(circuit, state=None, node_type=None):
-    """Compose system prompt: node.prompt + prompts.base + prompts.roles. Legacy fallbacks."""
+    """Compose system prompt: prompts.base + prompts.roles[key]."""
     prompts = WIRING.get("prompts", {})
     cfg = _prompt_cfg(node_type, circuit)
-    use_base = cfg.get("extends", "base") != "none"
-    base = prompts.get("base", "") if use_base else ""
-    roles = prompts.get("roles", {})
+    base = prompts.get("base", "") if cfg.get("extends", "base") != "none" else ""
     role_key = cfg.get("role", circuit)
-    role_text = cfg.get("system") or roles.get(role_key, "")
-    if not role_text:
-        sys_cfg = cfg.get("system", {}) if isinstance(cfg.get("system"), dict) else {}
-        if sys_cfg.get("text"):
-            role_text = sys_cfg["text"]
-        elif sys_cfg.get("file"):
-            pf = PROMPTS / sys_cfg["file"]
-            if pf.exists():
-                return pf.read_text(encoding="utf-8")
-    if not role_text:
-        pf = PROMPTS / f"{circuit}.txt"
-        if pf.exists():
-            return pf.read_text(encoding="utf-8")
+    role_text = cfg.get("system") or prompts.get("roles", {}).get(role_key, "")
     parts = [p.strip() for p in (base, role_text) if p and p.strip()]
     return "\n\n".join(parts)
 
 def build_user_message(circuit, state, node_type=None):
-    """Build dynamic user message from node.prompt.user.blocks (or legacy request)."""
+    """Build dynamic user message from node.prompt.user.blocks."""
     cfg = _prompt_cfg(node_type, circuit)
     blocks = cfg.get("user", {}).get("blocks", [])
-    if not blocks:
-        blocks = WIRING.get("request", {}).get(circuit, {}).get("user", {}).get("blocks", [])
     parts = []
     for block in blocks:
         label = block.get("label", "")
@@ -625,11 +579,8 @@ def node_act(state, _):
 def _verify_preflight_denied(state):
     """Deterministic deny before LLM — structural guard against false confirms."""
     outcome = (state.get("last_outcome") or "")
-    upper = outcome.upper()
-    if outcome.startswith("FAILED:") or "BLOCKED:" in upper or "CANNOT" in upper:
-        return True
-    if outcome and not outcome.startswith("OK:"):
-        return True
+    if not outcome or not outcome.startswith("OK:"):
+        return bool(outcome)
     return False
 
 def node_verify(state, _):
@@ -932,21 +883,17 @@ class H(http.server.BaseHTTPRequestHandler):
             })
         elif self.path == "/wiring":
             self._j(WIRING)
-        elif self.path == "/schema":
-            self._j(WIRING_SCHEMA)
         elif self.path == "/state":
             self._j(load_state() or {})
         elif self.path == "/bus":
             self._j(bus_read())
-        elif self.path == "/traces":
-            self._j(recent_traces(int(WIRING.get("limits", {}).get("trace_few_shot", 5))))
         elif self.path == "/smoke":
             # Programmatic smoke test — validates all endpoints work
             results = []
             try:
                 results.append({"test": "health", "ok": True})
                 results.append({"test": "wiring", "ok": len(WIRING.get("topology", {}).get("nodes", [])) > 0, "nodes": len(WIRING.get("topology", {}).get("nodes", []))})
-                results.append({"test": "schema", "ok": bool(WIRING_SCHEMA)})
+                results.append({"test": "schema", "ok": (PROMPTS / "wiring-schema.json").exists()})
                 werrs = validate_wiring(WIRING)
                 results.append({"test": "wiring_valid", "ok": not werrs, "errors": len(werrs)})
                 # Test entry node

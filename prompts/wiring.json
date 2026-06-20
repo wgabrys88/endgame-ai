@@ -244,11 +244,6 @@
         "id": "bus_post",
         "type": "bus_post",
         "label": "Post telemetry"
-      },
-      {
-        "id": "run_dialog",
-        "type": "observe",
-        "label": "Run dialog"
       }
     ],
     "edges": [
@@ -356,16 +351,6 @@
         "from": "self_modify",
         "to": "reflect",
         "on": "modify_failed"
-      },
-      {
-        "from": "act",
-        "to": "run_dialog",
-        "on": "ready"
-      },
-      {
-        "from": "run_dialog",
-        "to": "run_dialog",
-        "on": "done"
       }
     ]
   },
