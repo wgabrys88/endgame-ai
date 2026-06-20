@@ -891,19 +891,17 @@ class H(http.server.BaseHTTPRequestHandler):
             # Programmatic smoke test — validates all endpoints work
             results = []
             try:
-                results.append({"test": "health", "ok": True})
-                results.append({"test": "wiring", "ok": len(WIRING.get("topology", {}).get("nodes", [])) > 0, "nodes": len(WIRING.get("topology", {}).get("nodes", []))})
-                results.append({"test": "schema", "ok": (PROMPTS / "wiring-schema.json").exists()})
+                nn = len(WIRING.get("topology", {}).get("nodes", []))
                 werrs = validate_wiring(WIRING)
-                results.append({"test": "wiring_valid", "ok": not werrs, "errors": len(werrs)})
-                # Test entry node
-                h = NODES.get("entry")
-                if h:
-                    r = h({"goal": "smoke_test"}, {})
-                    results.append({"test": "node/entry", "ok": "signals" in r, "signals": r.get("signals")})
-                else:
-                    results.append({"test": "node/entry", "ok": False, "error": "no handler"})
-                results.append({"test": "html", "ok": (ROOT / "wiring-editor.html").exists()})
+                entry_r = NODES.get("entry", lambda s, c: {})({"goal": "smoke"}, {})
+                results = [
+                    {"test": "health", "ok": True},
+                    {"test": "wiring", "ok": nn > 0, "nodes": nn},
+                    {"test": "schema", "ok": (PROMPTS / "wiring-schema.json").exists()},
+                    {"test": "wiring_valid", "ok": not werrs, "errors": len(werrs)},
+                    {"test": "node/entry", "ok": "signals" in entry_r},
+                    {"test": "html", "ok": (ROOT / "wiring-editor.html").exists()},
+                ]
             except Exception as e:
                 results.append({"test": "exception", "ok": False, "error": str(e)})
             passed = sum(1 for r in results if r["ok"])
@@ -1001,42 +999,28 @@ class H(http.server.BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     args = sys.argv[1:]
+    port = int(args[0]) if args and args[0].isdigit() else http_port()
+    srv = ThreadingHTTPServer((http_bind(), port), H)
+    print_listen_urls(port)
+
     if "--resume" in args:
         s = load_state()
         if not s: print("No state.json to resume from"); sys.exit(1)
-        port = http_port()
-        bind = http_bind()
-        srv = ThreadingHTTPServer((bind, port), H)
         threading.Thread(target=srv.serve_forever, daemon=True).start()
-        print_listen_urls(port)
         run(s.get("goal", ""), s)
     elif "--run" in args:
         idx = args.index("--run")
-        max_c = None
-        if "--max-cycles" in args:
-            max_c = int(args[args.index("--max-cycles") + 1])
+        max_c = int(args[args.index("--max-cycles") + 1]) if "--max-cycles" in args else None
         goal_parts = []
         i = idx + 1
         while i < len(args):
-            if args[i] == "--max-cycles":
-                i += 2
-                continue
-            if args[i].startswith("--"):
-                break
-            goal_parts.append(args[i])
-            i += 1
+            if args[i] == "--max-cycles": i += 2; continue
+            if args[i].startswith("--"): break
+            goal_parts.append(args[i]); i += 1
         goal = " ".join(goal_parts)
         if not goal: print("Usage: python server.py --run \"goal\" [--max-cycles N]"); sys.exit(1)
-        port = http_port()
-        bind = http_bind()
-        srv = ThreadingHTTPServer((bind, port), H)
         threading.Thread(target=srv.serve_forever, daemon=True).start()
-        print_listen_urls(port)
         run(goal, max_cycles=max_c)
     else:
-        port = int(args[0]) if args and args[0].isdigit() else http_port()
-        bind = http_bind()
-        srv = ThreadingHTTPServer((bind, port), H)
-        print(f"endgame-ai [{WIRING.get('instance',{}).get('slot',0)}] bind={bind} port={port}  nodes: {list(NODES.keys())}")
-        print_listen_urls(port)
+        print(f"endgame-ai [{WIRING.get('instance',{}).get('slot',0)}] port={port} nodes: {list(NODES.keys())}")
         srv.serve_forever()
