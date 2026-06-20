@@ -27,27 +27,22 @@ button.on{border-color:var(--green);color:var(--green);box-shadow:0 0 8px #39ff1
 #topo{display:flex;flex-wrap:wrap;gap:4px;padding:8px 10px}
 .node{padding:3px 8px;border:1px solid var(--border);border-radius:4px;font-size:10px;transition:all .2s}
 .node.active{border-color:var(--green);color:var(--green);box-shadow:0 0 6px #39ff1420}
-.node.done{border-color:var(--dim);color:var(--dim)}
 #plan{list-style:none;padding:8px 10px}
 #plan li{padding:2px 0;font:11px/1.5 ui-monospace,monospace;color:var(--dim)}
 #plan li.current{color:var(--green)}
 #plan li.done{color:var(--dim);text-decoration:line-through}
 #history{padding:8px 10px;font:10px/1.6 ui-monospace,monospace;color:#7a8a9a;max-height:200px;overflow-y:auto}
-#overlay{position:fixed;inset:0;background:#000a;display:none;align-items:center;justify-content:center;z-index:100}
-#overlay .card{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:16px 20px;width:min(90vw,500px);max-height:80vh;overflow-y:auto;font:12px/1.6 ui-monospace,monospace}
-#overlay h3{color:var(--cyan);margin-bottom:8px;font-size:12px}
 </style>
 </head>
 <body>
 <header>
   <h1>endgame-ai</h1>
   <button id="bSmoke">smoke</button>
-  <button id="bWiring">wiring</button>
   <span class="status" id="status">idle</span>
 </header>
 <main id="main">
   <div class="row">
-    <input type="text" id="goal" placeholder="Goal..." autofocus>
+    <input type="text" id="goal" placeholder="Goal..." value="open notepad" autofocus>
     <button id="bRun">Run</button>
     <button id="bStep">Step</button>
     <button id="bStop">Stop</button>
@@ -57,99 +52,149 @@ button.on{border-color:var(--green);color:var(--green);box-shadow:0 0 8px #39ff1
   <div class="section"><h2>history</h2><div id="history"></div></div>
 </main>
 <aside id="log"><header>log <button id="bClr">clr</button></header><div id="logB"></div></aside>
-<div id="overlay"><div class="card" id="overlayC"></div></div>
 <script>
 const S=location.origin,$=id=>document.getElementById(id),esc=s=>String(s??'').replace(/</g,'&lt;');
-let W=null,polling=null,logs=[];
+let W=null,logs=[],stepping=false,running=false;
 
-// --- Log ---
+// --- State ---
+let state=null, currentNode=null;
+
 function log(node,sig,detail){
   const t=new Date().toLocaleTimeString('en',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});
-  logs.push({t,node,sig,detail});if(logs.length>200)logs.shift();
+  logs.push({t,node,sig,detail});if(logs.length>300)logs.shift();
   $('logB').innerHTML=logs.map(l=>`<div><span style="color:var(--dim)">${l.t}</span> <b>${esc(l.node)}</b> <span style="color:var(--cyan)">${esc(l.sig)}</span> ${esc(l.detail||'')}</div>`).join('');
   $('logB').scrollTop=1e6;
 }
 
-// --- Topology render ---
-function renderTopo(activeNode){
+function renderTopo(activeId){
   if(!W)return;
-  $('topo').innerHTML=W.topology.nodes.map(n=>`<span class="node${n.id===activeNode?' active':''}">${n.id}</span>`).join('');
+  $('topo').innerHTML=W.topology.nodes.map(n=>`<span class="node${n.id===activeId?' active':''}">${n.id}</span>`).join('');
 }
 
-// --- State render ---
-function renderState(s){
-  if(!s||!s.goal){$('status').textContent='idle';return;}
-  $('status').textContent=s.satisfied?'✓ satisfied':`cycle ${s.step||0}/${(s.plan||[]).length}`;
-  // Plan
-  const plan=s.plan||[];
+function renderState(){
+  if(!state||!state.goal){$('status').textContent='idle';return;}
+  const plan=state.plan||[];
+  const step=state.step||0;
+  $('status').textContent=state.satisfied?'✓ satisfied':`step ${step}/${plan.length} @ ${currentNode||'?'}`;
   $('plan').innerHTML=plan.map((p,i)=>{
-    const cls=i<(s.step||0)?'done':i===(s.step||0)?'current':'';
+    const cls=i<step?'done':i===step?'current':'';
     return `<li class="${cls}">${i+1}. ${esc(p.description)} <span style="color:var(--dim)">— ${esc(p.done_when)}</span></li>`;
   }).join('');
-  // History
-  const hist=s.history||[];
+  const hist=state.history||[];
   $('history').innerHTML=hist.slice(-15).map(h=>`<div>[${h.attempt}] ${esc(h.action)} → ${esc(h.outcome)}</div>`).join('');
   $('history').scrollTop=1e6;
-  // Active node
-  renderTopo(s._resume_node||null);
+  renderTopo(currentNode);
 }
 
-// --- Polling ---
-function startPoll(){
-  if(polling)return;
-  polling=setInterval(async()=>{
-    try{const s=await(await fetch(S+'/state')).json();renderState(s);}catch(e){}
-  },1500);
+// --- Graph engine (client-side stepping) ---
+function findNext(fromId, signals){
+  if(!W)return null;
+  for(const e of W.topology.edges){
+    if(e.from===fromId && signals.some(s=>e.on.split('|').includes(s)))
+      return e.to;
+  }
+  return null;
 }
-function stopPoll(){clearInterval(polling);polling=null;}
 
-// --- Actions ---
-$('bRun').onclick=async()=>{
-  const g=$('goal').value.trim();if(!g)return;
-  try{
-    await fetch(S+'/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({goal:g})});
-    log('—','start',g);startPoll();
-  }catch(e){log('err','!',e.message);}
-};
-$('goal').onkeydown=e=>{if(e.key==='Enter')$('bRun').click();};
+function nodeType(id){
+  const n=W.topology.nodes.find(n=>n.id===id);
+  return n?n.type:'?';
+}
 
+async function callNode(nodeId){
+  const type=nodeType(nodeId);
+  const r=await(await fetch(`${S}/node/${type}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({state})})).json();
+  if(r.error){log(nodeId,'ERROR',r.error);return null;}
+  return r;
+}
+
+async function advance(){
+  if(!currentNode||!state)return false;
+  renderTopo(currentNode);
+  $('status').textContent=`calling ${currentNode}...`;
+  log(currentNode,'→','');
+  const r=await callNode(currentNode);
+  if(!r)return false;
+  // Apply state patch
+  Object.assign(state, r.state_patch||{});
+  const sigs=r.signals||[];
+  log(currentNode,sigs.join(','), summarize(r.state_patch));
+  renderState();
+  // Find next
+  const next=findNext(currentNode, sigs);
+  if(!next||sigs.includes('idle')){
+    log('—',state.satisfied?'SATISFIED':'terminal','');
+    currentNode=null;
+    renderState();
+    return false;
+  }
+  currentNode=next;
+  renderTopo(currentNode);
+  return true;
+}
+
+function summarize(patch){
+  if(!patch)return'';
+  if(patch.plan)return patch.plan.map(p=>p.description).join(' → ');
+  if(patch.last_outcome)return patch.last_outcome.substring(0,80);
+  if(patch.step_goal)return patch.step_goal;
+  return'';
+}
+
+function initState(goal){
+  state={goal,step:0,retries:0,history:[],reasoning:{},reasoning_chain:[],planner_retries:0,replan_count:0,last_error:'',no_desktop:false};
+  currentNode=W.topology.cycle_start;
+  renderState();
+  log('—','start',goal);
+}
+
+// --- Controls ---
 $('bStep').onclick=async()=>{
-  const g=$('goal').value.trim();if(!g)return;
+  if(stepping)return;
+  stepping=true;
   try{
-    // Single step: run with max_cycles=1 via state manipulation
-    // For now just trigger run — step-by-step needs server support
-    await fetch(S+'/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({goal:g})});
-    log('—','step',g);startPoll();
+    if(!state||state.satisfied){
+      const g=$('goal').value.trim();if(!g){stepping=false;return;}
+      initState(g);
+    }
+    if(currentNode)await advance();
   }catch(e){log('err','!',e.message);}
+  stepping=false;
 };
 
-$('bStop').onclick=()=>{stopPoll();log('—','stop','');$('status').textContent='stopped';};
+$('bRun').onclick=async()=>{
+  if(running)return;
+  const g=$('goal').value.trim();if(!g)return;
+  if(!state||state.satisfied)initState(g);
+  running=true;
+  $('bRun').classList.add('on');
+  try{
+    let cycles=0;
+    while(running&&currentNode&&cycles<100){
+      if(!await advance())break;
+      cycles++;
+      await new Promise(r=>setTimeout(r,200));
+    }
+  }catch(e){log('err','!',e.message);}
+  running=false;
+  $('bRun').classList.remove('on');
+};
+
+$('bStop').onclick=()=>{running=false;log('—','stop','');};
+$('goal').onkeydown=e=>{if(e.key==='Enter')$('bStep').click();};
 
 $('bSmoke').onclick=async()=>{
   try{
     const r=await(await fetch(S+'/smoke')).json();
-    $('overlayC').innerHTML=`<h3>Smoke ${r.all_ok?'✓':'✗'} (${r.passed}/${r.total})</h3><pre>${esc(JSON.stringify(r.results,null,2))}</pre>`;
-    $('overlay').style.display='flex';
+    log('smoke',r.all_ok?'✓':'✗',`${r.passed}/${r.total}`);
   }catch(e){log('smoke','err',e.message);}
 };
 
-$('bWiring').onclick=async()=>{
-  try{
-    const w=await(await fetch(S+'/wiring')).json();
-    $('overlayC').innerHTML=`<h3>wiring.json</h3><pre style="white-space:pre-wrap;max-height:60vh;overflow:auto">${esc(JSON.stringify(w,null,2))}</pre>`;
-    $('overlay').style.display='flex';
-  }catch(e){log('wiring','err',e.message);}
-};
-
-$('overlay').onclick=e=>{if(e.target===$('overlay'))$('overlay').style.display='none';};
 $('bClr').onclick=()=>{logs=[];$('logB').innerHTML='';};
 
 // --- SSE ---
 const sse=new EventSource(S+'/events');
-sse.addEventListener('node',e=>{const d=JSON.parse(e.data);log(d.id,'→','');renderTopo(d.id);});
-sse.addEventListener('result',e=>{const d=JSON.parse(e.data);log(d.id,(d.s||[]).join(','),'');});
-sse.addEventListener('stop',e=>{const d=JSON.parse(e.data);log('—',d.outcome?'satisfied':'stopped','');stopPoll();});
-sse.addEventListener('push',e=>{const d=JSON.parse(e.data);log('push',d.type||'msg',d.text||'');});
+sse.addEventListener('push',e=>{const d=JSON.parse(e.data);log('push',d.type||'',d.text||'');});
 
 // --- Init ---
 (async()=>{
@@ -157,9 +202,6 @@ sse.addEventListener('push',e=>{const d=JSON.parse(e.data);log('push',d.type||'m
     W=await(await fetch(S+'/wiring')).json();
     renderTopo(null);
     log('init','ok',W.topology.nodes.length+' nodes');
-    // Check for existing state
-    const s=await(await fetch(S+'/state')).json();
-    if(s&&s.goal){renderState(s);startPoll();}
   }catch(e){log('init','err',e.message);}
 })();
 </script>
