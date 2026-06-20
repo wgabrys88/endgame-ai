@@ -73,6 +73,46 @@ def extract_json(text):
         except: pass
     return None
 
+# ─── Reasoning loop (wired in wiring.json — Python only captures + resolves) ───
+
+def reasoning_patch(state, circuit, reasoning_text):
+    """Store LM Studio reasoning_content per wiring.reasoning.store_as + append chain."""
+    text = (reasoning_text or "").strip()
+    if not text:
+        return {}
+    cfg = WIRING.get("reasoning", {})
+    store_as = cfg.get("store_as", {}).get(circuit, circuit)
+    reasoning = dict(state.get("reasoning", {}))
+    reasoning[store_as] = text
+    reasoning["last"] = text
+    reasoning["last_circuit"] = store_as
+    chain = list(state.get("reasoning_chain", []))
+    chain.append({"circuit": store_as, "text": text, "ts": time.time()})
+    depth = cfg.get("chain_depth", 8)
+    return {"reasoning": reasoning, "reasoning_chain": chain[-depth:]}
+
+def clear_reasoning_patch(state, keys):
+    """Clear per-circuit reasoning slots (wired via reasoning.clear_on_step_confirm)."""
+    if not keys:
+        return {}
+    reasoning = dict(state.get("reasoning", {}))
+    for k in keys:
+        reasoning.pop(k, None)
+    return {"reasoning": reasoning}
+
+def call_circuit(circuit, state, extra=None):
+    """Run LLM circuit: static system + wired user blocks; capture reasoning_content."""
+    s = dict(state)
+    if extra:
+        s.update(extra)
+    system = load_system_prompt(circuit, s)
+    user = build_user_message(circuit, s)
+    content, reasoning, _ = llm(system, user)
+    patch = reasoning_patch(state, circuit, reasoning)
+    fallback = circuit in WIRING.get("reasoning", {}).get("parse_fallback", [])
+    parsed = extract_json(content) or (extract_json(reasoning) if fallback and reasoning else None)
+    return {"content": content, "reasoning": reasoning, "parsed": parsed, "patch": patch}
+
 # ─── Prompt assembly: static system, dynamic user (from wiring.json) ───
 
 def _resolve_value(state, source):
@@ -85,6 +125,18 @@ def _resolve_value(state, source):
         return pf.read_text(encoding="utf-8") if pf.exists() else ""
     if source == "topology.nodes":
         return json.dumps([n["id"] for n in WIRING.get("topology", {}).get("nodes", [])])
+    if source.startswith("reasoning."):
+        key = source[10:]
+        bucket = state.get("reasoning", {})
+        if key == "chain":
+            chain = state.get("reasoning_chain", [])
+            depth = WIRING.get("reasoning", {}).get("chain_depth", 8)
+            if not chain:
+                return ""
+            return "\n\n".join(f"[{e.get('circuit', '?')}] {e.get('text', '')}" for e in chain[-depth:])
+        if key == "last":
+            return bucket.get("last", "")
+        return bucket.get(key, "")
     if source == "state.history":
         history = state.get("history", [])
         depth = WIRING.get("limits", {}).get("history_depth", 10)
@@ -170,28 +222,29 @@ def node_entry(state, _):
     return {"signals": ["ready"], "patch": {}}
 
 def node_planner(state, _):
-    system = load_system_prompt("planner")
-    user = build_user_message("planner", state)
     try:
-        content, _, _ = llm(system, user)
-        parsed = extract_json(content)
+        r = call_circuit("planner", state)
+        parsed = r["parsed"]
+        patch = dict(r["patch"])
         if not parsed or "data" not in parsed or "steps" not in parsed.get("data", {}):
             retries = state.get("planner_retries", 0) + 1
             max_r = WIRING.get("limits", {}).get("planner_retries", 3)
             err = "planner: parse_failed — respond with JSON only"
+            patch.update({"planner_retries": retries, "last_error": err})
             if retries >= max_r:
-                return {"signals": ["plan_failed"], "patch": {"planner_retries": retries, "last_error": err}}
-            return {"signals": ["retry_plan"], "patch": {"planner_retries": retries, "last_error": err}}
+                return {"signals": ["plan_failed"], "patch": patch}
+            return {"signals": ["retry_plan"], "patch": patch}
         steps = parsed["data"]["steps"]
         if not steps:
-            return {"signals": ["plan_failed"], "patch": {"last_error": "planner: empty plan"}}
+            return {"signals": ["plan_failed"], "patch": {**patch, "last_error": "planner: empty plan"}}
     except Exception as e:
         retries = state.get("planner_retries", 0) + 1
         max_r = WIRING.get("limits", {}).get("planner_retries", 3)
+        patch = {"planner_retries": retries, "last_error": f"planner: {e}"}
         if retries >= max_r:
-            return {"signals": ["plan_failed"], "patch": {"planner_retries": retries, "last_error": f"planner: {e}"}}
-        return {"signals": ["retry_plan"], "patch": {"planner_retries": retries, "last_error": f"planner: {e}"}}
-    return {"signals": ["plan_ready"], "patch": {"plan": steps, "step": 0, "retries": 0, "history": [], "planner_retries": 0}}
+            return {"signals": ["plan_failed"], "patch": patch}
+        return {"signals": ["retry_plan"], "patch": patch}
+    return {"signals": ["plan_ready"], "patch": {**patch, "plan": steps, "step": 0, "retries": 0, "history": [], "planner_retries": 0, "last_error": ""}}
 
 def node_scheduler(state, _):
     steps = state.get("plan", [])
@@ -209,41 +262,45 @@ def node_observe(state, _):
 
 def node_act(state, _):
     """Static system prompt + dynamic user message. Guards + execute."""
-    system = load_system_prompt("unified", state)
-    user = build_user_message("unified", state)
     history = state.get("history", [])
 
     try:
-        content, reasoning, _ = llm(system, user)
+        r = call_circuit("unified", state)
     except Exception as e:
         return {"signals": ["act_failed"], "patch": {"last_error": str(e)}}
 
-    parsed = extract_json(content) or extract_json(reasoning)
+    parsed = r["parsed"]
+    patch = dict(r["patch"])
     if not parsed:
-        return {"signals": ["act_failed"], "patch": {"last_error": "parse_failed: respond with JSON only"}}
+        patch["last_error"] = "parse_failed: respond with JSON only"
+        return {"signals": ["act_failed"], "patch": patch}
 
     conclusion = parsed.get("data", {}).get("conclusion", "")
     actions = parsed.get("data", {}).get("actions", [])
 
     if conclusion == "DONE":
         entry = {"attempt": len(history) + 1, "action": "DONE rejected", "outcome": "executor cannot emit DONE — verify confirms completion"}
-        return {"signals": ["act_failed"], "patch": {
+        patch.update({
             "last_error": "DONE is invalid — output EXECUTE with one action; verify node confirms step completion",
             "history": history + [entry],
-        }}
+        })
+        return {"signals": ["act_failed"], "patch": patch}
 
     if conclusion == "CANNOT":
         entry = {"attempt": len(history) + 1, "action": "CANNOT", "outcome": "LLM cannot proceed"}
-        return {"signals": ["act_failed"], "patch": {"last_error": "CANNOT", "history": history + [entry]}}
+        patch.update({"last_error": "CANNOT", "history": history + [entry]})
+        return {"signals": ["act_failed"], "patch": patch}
 
     if conclusion != "EXECUTE" or not actions:
-        return {"signals": ["act_failed"], "patch": {"last_error": f"bad conclusion: {conclusion}"}}
+        patch["last_error"] = f"bad conclusion: {conclusion}"
+        return {"signals": ["act_failed"], "patch": patch}
 
     # Guard: repeat block
     block = check_repeat_block(state, actions)
     if block:
         entry = {"attempt": len(history) + 1, "action": f"{actions[0].get('verb','')} {actions[0].get('target','')}", "outcome": f"BLOCKED: {block}"}
-        return {"signals": ["act_failed"], "patch": {"last_error": block, "history": history + [entry]}}
+        patch.update({"last_error": block, "history": history + [entry]})
+        return {"signals": ["act_failed"], "patch": patch}
 
     # Execute (normalize verb: press with + → hotkey)
     results = []
@@ -251,18 +308,19 @@ def node_act(state, _):
         verb = a.get("verb", "")
         if verb == "press" and "+" in a.get("target", ""):
             verb = "hotkey"
-        r = execute_verb(verb, a.get("target", ""), a.get("value", ""))
-        results.append(f"{verb} {a.get('target')}: {r}")
+        result = execute_verb(verb, a.get("target", ""), a.get("value", ""))
+        results.append(f"{verb} {a.get('target')}: {result}")
 
     outcome = "OK: " + "; ".join(results)
     entry = {"attempt": len(history) + 1, "action": f"{actions[0].get('verb','')} {actions[0].get('target','')}", "outcome": outcome}
-    return {"signals": ["acted"], "patch": {
+    patch.update({
         "last_actions": results,
         "last_actions_raw": actions,
         "last_outcome": outcome,
         "last_error": "",
-        "history": history + [entry]
-    }}
+        "history": history + [entry],
+    })
+    return {"signals": ["acted"], "patch": patch}
 
 def node_verify(state, _):
     """Fresh observe + LLM verification."""
@@ -271,17 +329,18 @@ def node_verify(state, _):
     else:
         screen = state.get("screen", "(no desktop)")
 
-    vstate = dict(state)
-    vstate["screen"] = screen
-    system = load_system_prompt("verifier")
-    user = build_user_message("verifier", vstate)
     try:
-        content, _, _ = llm(system, user)
-        parsed = extract_json(content)
+        r = call_circuit("verifier", state, {"screen": screen})
+        parsed = r["parsed"]
+        patch = {**r["patch"], "screen": screen}
         if parsed and parsed.get("data", {}).get("confirmed"):
-            return {"signals": ["step_confirmed"], "patch": {"step": state.get("step", 0) + 1, "retries": 0, "screen": screen}}
-        reason = parsed.get("data", {}).get("reason", "unconfirmed") if parsed else "verify parse failed"
-        return {"signals": ["step_denied"], "patch": {"last_error": reason, "screen": screen}}
+            clear_keys = WIRING.get("reasoning", {}).get("clear_on_step_confirm", [])
+            patch.update(clear_reasoning_patch({**state, **patch}, clear_keys))
+            patch.update({"step": state.get("step", 0) + 1, "retries": 0, "last_error": ""})
+            return {"signals": ["step_confirmed"], "patch": patch}
+        if not parsed:
+            patch["last_error"] = "verify parse failed"
+        return {"signals": ["step_denied"], "patch": patch}
     except Exception as e:
         return {"signals": ["step_denied"], "patch": {"last_error": str(e), "screen": screen}}
 
@@ -295,18 +354,15 @@ def node_reflect(state, _):
             return {"signals": ["escalate"], "patch": {"retries": 0, "replan_count": 0}}
         return {"signals": ["replan"], "patch": {"retries": 0, "replan_count": replans + 1}}
 
-    system = load_system_prompt("reflector")
-    user = build_user_message("reflector", state)
-    error = state.get("last_error", "")
     try:
-        content, _, _ = llm(system, user)
-        parsed = extract_json(content)
+        r = call_circuit("reflector", state)
+        parsed = r["parsed"]
+        patch = {**r["patch"], "retries": retries + 1}
         if parsed and parsed.get("data", {}).get("should_replan"):
             if replans >= 2:
-                return {"signals": ["escalate"], "patch": {"retries": 0, "replan_count": 0}}
-            return {"signals": ["replan"], "patch": {"retries": 0, "replan_count": replans + 1}}
-        suggestion = parsed.get("data", {}).get("suggestion", "") if parsed else ""
-        return {"signals": ["retry"], "patch": {"retries": retries + 1, "last_error": suggestion or error}}
+                return {"signals": ["escalate"], "patch": {"retries": 0, "replan_count": 0, **r["patch"]}}
+            return {"signals": ["replan"], "patch": {"retries": 0, "replan_count": replans + 1, **r["patch"]}}
+        return {"signals": ["retry"], "patch": patch}
     except Exception:
         return {"signals": ["retry"], "patch": {"retries": retries + 1}}
 
@@ -403,14 +459,13 @@ def node_self_modify(state, _):
     current = json.loads(wiring_path.read_text(encoding="utf-8"))
     # Backup before mutation
     (PROMPTS / "wiring.backup.json").write_text(json.dumps(current, indent=2), encoding="utf-8")
-    system = load_system_prompt("self_modify")
-    user = build_user_message("self_modify", state)
-
     try:
-        content, _, _ = llm(system, user)
-        parsed = extract_json(content)
+        r = call_circuit("self_modify", state)
+        parsed = r["parsed"]
+        patch = dict(r["patch"])
         if not parsed or parsed.get("record_type") != "wiring_patch":
-            return {"signals": ["modify_failed"], "patch": {"last_error": "LLM returned invalid patch"}}
+            patch["last_error"] = "LLM returned invalid patch"
+            return {"signals": ["modify_failed"], "patch": patch}
 
         op = parsed["data"]["op"]
         payload = parsed["data"]["payload"]
@@ -430,13 +485,15 @@ def node_self_modify(state, _):
         elif op == "set_guard":
             current.setdefault("guards", {})[payload["key"]] = payload["value"]
         else:
-            return {"signals": ["modify_failed"], "patch": {"last_error": f"unknown op: {op}"}}
+            patch["last_error"] = f"unknown op: {op}"
+            return {"signals": ["modify_failed"], "patch": patch}
 
         # Write and hot-reload
         wiring_path.write_text(json.dumps(current, indent=2), encoding="utf-8")
         WIRING = current
         sse_push("wiring_modified", {"op": op, "payload": payload})
-        return {"signals": ["modified"], "patch": {"self_modify_op": op, "self_modify_payload": payload}}
+        patch.update({"self_modify_op": op, "self_modify_payload": payload})
+        return {"signals": ["modified"], "patch": patch}
     except Exception as e:
         return {"signals": ["modify_failed"], "patch": {"last_error": f"self_modify: {e}"}}
 
@@ -473,7 +530,7 @@ def run(goal, resume_state=None):
         state = resume_state
         node_id = state.pop("_resume_node", topo["cycle_start"])
     else:
-        state = {"goal": goal, "step": 0, "retries": 0, "no_desktop": False, "history": [], "bus_last_check": time.time()}
+        state = {"goal": goal, "step": 0, "retries": 0, "no_desktop": False, "history": [], "reasoning": {}, "reasoning_chain": [], "bus_last_check": time.time()}
         node_id = topo["cycle_start"]
     cycle = 0
 

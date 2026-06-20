@@ -161,6 +161,18 @@
       }
     ]
   },
+  "reasoning": {
+    "store_as": {
+      "planner": "planner",
+      "unified": "act",
+      "verifier": "verify",
+      "reflector": "reflect",
+      "self_modify": "self_modify"
+    },
+    "parse_fallback": ["planner", "unified", "verifier", "reflector", "self_modify"],
+    "chain_depth": 8,
+    "clear_on_step_confirm": ["verify", "reflect"]
+  },
   "request": {
     "planner": {
       "system": {"file": "planner.txt"},
@@ -168,7 +180,9 @@
         "blocks": [
           {"label": "PERSONA", "source": "instance.persona"},
           {"label": "GOAL", "source": "state.goal", "always": true},
-          {"label": "SCREEN", "source": "state.screen", "empty_template": "(no screen)"}
+          {"label": "SCREEN", "source": "state.screen", "empty_template": "(no screen)"},
+          {"label": "REASONING_CHAIN", "source": "reasoning.chain"},
+          {"label": "PLANNER_REASONING", "source": "reasoning.planner"}
         ]
       }
     },
@@ -179,7 +193,11 @@
           {"label": "PERSONA", "source": "instance.persona"},
           {"label": "GOAL", "source": "state.step_goal", "always": true},
           {"label": "SCREEN", "source": "state.screen", "empty_template": "(no screen)"},
-          {"label": "LAST ERROR", "source": "state.last_error"},
+          {"label": "VERIFY_REASONING", "source": "reasoning.verify"},
+          {"label": "REFLECT_REASONING", "source": "reasoning.reflect"},
+          {"label": "ACT_REASONING", "source": "reasoning.act"},
+          {"label": "REASONING_CHAIN", "source": "reasoning.chain"},
+          {"label": "LAST_ERROR", "source": "state.last_error"},
           {"label": "HISTORY", "source": "state.history"}
         ]
       }
@@ -191,7 +209,8 @@
           {"label": "STEP", "source": "state.current_step.description", "always": true},
           {"label": "DONE_WHEN", "source": "state.current_step.done_when"},
           {"label": "SCREEN", "source": "state.screen", "empty_template": "(no screen)"},
-          {"label": "LAST_ACTIONS", "source": "state.last_actions"}
+          {"label": "LAST_ACTIONS", "source": "state.last_actions"},
+          {"label": "ACT_REASONING", "source": "reasoning.act"}
         ]
       }
     },
@@ -203,7 +222,8 @@
           {"label": "DONE_WHEN", "source": "state.current_step.done_when"},
           {"label": "SCREEN", "source": "state.screen", "empty_template": "(no screen)"},
           {"label": "LAST_ACTIONS", "source": "state.last_actions"},
-          {"label": "DENIAL_REASON", "source": "state.last_error"}
+          {"label": "VERIFY_REASONING", "source": "reasoning.verify"},
+          {"label": "ACT_REASONING", "source": "reasoning.act"}
         ]
       }
     },
@@ -212,7 +232,10 @@
       "user": {
         "blocks": [
           {"label": "GOAL", "source": "state.goal", "always": true},
-          {"label": "ERROR", "source": "state.last_error"},
+          {"label": "REASONING_CHAIN", "source": "reasoning.chain"},
+          {"label": "REFLECT_REASONING", "source": "reasoning.reflect"},
+          {"label": "VERIFY_REASONING", "source": "reasoning.verify"},
+          {"label": "LAST_ERROR", "source": "state.last_error"},
           {"label": "HISTORY", "source": "state.history"},
           {"label": "CURRENT_NODES", "source": "topology.nodes"}
         ]

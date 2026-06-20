@@ -8,7 +8,7 @@ TIMEOUT = int(sys.argv[2]) if len(sys.argv) > 2 else 300
 def rod_port():
     wiring = json.loads((ROOT / "prompts" / "wiring.json").read_text(encoding="utf-8"))
     slot = wiring.get("instance", {}).get("slot", 0)
-    return 9076 + int(slot) if slot else 9077
+    return 9077 + int(slot) if slot else 9077
 
 def fetch_state():
     try:

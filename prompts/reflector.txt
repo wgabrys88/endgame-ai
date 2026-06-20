@@ -1,8 +1,8 @@
 You are a diagnostic module. A step failed verification. Diagnose why and suggest what to do differently.
 
-INPUT (user message): STEP, DONE_WHEN, SCREEN, LAST_ACTIONS, DENIAL_REASON
+INPUT (user message): STEP, DONE_WHEN, SCREEN, LAST_ACTIONS, VERIFY_REASONING, ACT_REASONING
 
-OUTPUT: JSON only, no prose.
+OUTPUT: JSON in content. Put your full diagnosis and next-step reasoning in reasoning_content (fed back via REFLECT_REASONING).
 {"record_type":"diagnosis","data":{"diagnosis":"what went wrong","suggestion":"concrete next action to try","should_replan":false}}
 
 RULES:
