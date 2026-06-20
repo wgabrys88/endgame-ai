@@ -1,12 +1,27 @@
 # endgame-ai
 
-A living Windows desktop organism: **`wiring.json` is the brain diagram**, Python is muscles, LLM circuits are dumb specialists wired together.
+A single **rod** — one Windows desktop organism. Intelligence is wiring, not one monolithic prompt.
 
-> **Not** an agent framework. **Not** one smart prompt. Intelligence = topology + reasoning loop + verify gate.
+**Branch:** `experiment/endgame` · **Do not touch `main`.**
 
-**Branch:** `experiment/endgame` · **Ultimate goal:** replace a human for arbitrary-length desktop tasks on real Windows with local LM Studio.
+**Ultimate goal:** replace a human for arbitrary-length desktop tasks. **Today:** one rod, one `wiring.json`, local LM Studio.
 
-**Current focus:** **single rod** — master one organism before multiplying.
+---
+
+## Essential files (10)
+
+```
+README.md
+wiring-editor.html      ← visual editor + live step/run (reads wiring from server)
+server.py               ← graph engine, LLM circuits, HTTP
+actions.py              ← verb dispatch
+desktop.py              ← hover-probe observe + mouse/keyboard
+prompts/wiring.json     ← THE brain (topology, prompts, policy)
+prompts/model.json      ← LM Studio endpoint
+LICENSE · .gitignore · .gitattributes
+```
+
+**Runtime (never commit):** `state.json`, `bus.json`, `*.log`, `__pycache__/`
 
 ---
 
@@ -16,340 +31,175 @@ A living Windows desktop organism: **`wiring.json` is the brain diagram**, Pytho
 # Prerequisites: Windows, Python 3.11+, LM Studio on localhost:1234
 cd endgame-ai
 
+python server.py
+# → http://127.0.0.1:9078  (slot=1 → 9077+1)
+
 python server.py --run "open notepad and write hello"
 
-python server.py                    # passive server (editor/curl drives nodes)
-start http://127.0.0.1:9078         # wiring-editor (slot=1 → 9077+1)
-# Editor: click node → edit prompts.base / role / user blocks → Apply → 💾 Save (POST /wiring)
+start http://127.0.0.1:9078    # wiring-editor
 ```
-
-**Port:** `runtime.http_port_base + slot` → default slot=1 serves **:9078**. `GET /health` returns `port`.
 
 ---
 
-## Vision
-
-Replace a human for **arbitrary-length desktop tasks** by wiring **dumb specialists** into a self-correcting loop — like brain regions. No region is the whole intelligence; **the wiring creates behavior**.
-
-What this is **not** (yet):
-
-- Not production-ready for complex web/video goals
-- Not multi-rod MoE (deferred until single rod is reliable)
-- Not “edit JSON only for everything” — see boundaries below
-
----
-
-## The unit is the rod
+## Architecture
 
 ```
-ROD = server.py + actions.py + desktop.py + prompts/wiring.json + prompts/model.json
-    → one graph, one state.json, one LLM loop
-```
+prompts/wiring.json
+  ├── topology.nodes[]     graph + prompt per LLM node
+  ├── topology.edges[]     signals between nodes
+  ├── prompts.base         shared system preamble (all circuits)
+  ├── prompts.roles        per-circuit system text
+  ├── reasoning.*          capture + feed reasoning_content
+  ├── guards, act, limits, errors, runtime, verbs
+  └── instance.slot        HTTP port offset
 
-Colony, bus routing, MoE, and “personas” are **Phase 2** — copy-paste rods + shared `bus.json` + enforced permissions. Not separate class hierarchies. **N instances of the same template.**
-
-### Minimal file count
-
-| # | File | Role |
-|---|------|------|
-| 1 | `server.py` | Graph engine, LLM, HTTP, `call_circuit` |
-| 2 | `actions.py` | Verb dispatch from wiring `verbs` |
-| 3 | `desktop.py` | Windows UIA |
-| 4 | `prompts/wiring.json` | Topology (nodes carry `prompt`), guards, limits, reasoning, runtime |
-| 5 | `prompts/model.json` | LM Studio endpoint |
-
-**5 files to run.** Prompts live on topology nodes: `node.prompt` (role + user blocks) composed with global `prompts.base` + `prompts.roles`.
-
-Runtime output (never commit): `state.json`, `bus.json`, logs.
-
-### Mental model
-
-```
-                    ┌─────────────┐
-                    │ wiring.json │  ← THE brain
-                    └──────┬──────┘
-                           │
-    topology.nodes[].prompt ──► prompts.base + prompts.roles[role]
-                           ▼
-                    ┌─────────────┐
-                    │  server.py  │  ← THE rod
-                    └──────┬──────┘
-                           ▼
-              actions.py + desktop.py
-                           ▼
-                      Windows UIA
-```
-
-### Why personas were removed
-
-“Personalities” were 3-line blurbs injected into planner/act — **prompt flavor without enforced behavior**. Reviewer said “never execute” but `node_act` had no permission gate. Colony was three copies of the same rod with different `instance` JSON, not real specialists.
-
-**Phase 1:** one rod, no `personalities/`, no `reactor.py`.  
-**Phase 2:** multiply rods by forking `wiring.json` (`instance.slot`, topology tweaks) + bus + **enforced** `permissions` on act.
-
----
-
-## Architecture (three layers)
-
-| Layer | Location | Role |
-|-------|----------|------|
-| **Brain** | `prompts/wiring.json` | Topology nodes with `prompt`, global `prompts.base`/`roles`, reasoning, limits, guards, act |
-| **Circuits** | `node.prompt` + `prompts.roles` | System = base + role; user = `node.prompt.user.blocks` |
-| **Body** | `server.py` | Graph engine, `call_circuit()`, `reasoning_patch()`, `parse_circuit_response()` |
-| **Muscles** | `actions.py`, `desktop.py` | Hover-probe observe (`element_from_point`) + execute — no UIA tree walk |
-| **Memory** | `state.json` | goal, step, screen, history, reasoning — **full, not truncated** |
-
-```mermaid
-flowchart TB
-  subgraph brain ["wiring.json"]
-    TOPO["topology: nodes + edges"]
-    NP["node.prompt: role + user blocks"]
-    REAS["reasoning: capture + feed + record_type"]
-  end
-  subgraph body ["server.py"]
-    ENG["graph engine"]
-    ASM["load_system_prompt + build_user_message"]
-    CAP["reasoning_patch + parse_circuit_response"]
-  end
-  subgraph muscles ["actions + desktop"]
-    UIA["observe_screen / execute_verb"]
-  end
-  brain --> ASM --> LLM["LM Studio :1234"]
-  LLM --> CAP --> ST["state.json"]
-  ENG --> muscles --> ST
-  ST --> ASM
+server.py                  runs topology, calls LM Studio, executes verbs
+desktop.py                 mouse-hover grid → element_from_point (NO tree walk)
+actions.py                 click/write/hotkey/focus from [ID] in SCREEN
 ```
 
 ### Signal flow
 
 ```
 goal_inbox → planner → scheduler → bus_check → observe → act → verify
-                ↑                              ↓ act_failed / step_denied
+                ↑                              ↓ fail
              reflect ←─────────────────────────┘
                 ↓ replan / escalate → self_modify
-scheduler → plan_complete → bus_post → satisfied
 ```
 
-### Reasoning loop (critical)
+### LLM circuits (on topology nodes)
 
-LM Studio returns `content` + `reasoning_content`.
+| Node | role key | record_type |
+|------|----------|-------------|
+| planner | planner | task |
+| act | unified | action |
+| verify | verifier | verdict |
+| reflect | reflector | diagnosis |
+| self_modify | self_modify | wiring_patch |
 
-1. Captured per circuit → `state.reasoning.{act,verify,reflect,...}`
-2. Fed downstream via `node.prompt.user.blocks` (`VERIFY_REASONING`, `REFLECT_REASONING`, `REASONING_CHAIN`)
-3. `expected_record_type` prevents cross-circuit JSON poisoning (e.g. act outputting verdict)
-4. `last_error` = guard/parse only — **not** verifier feedback
+**System prompt** = `prompts.base` + `prompts.roles[node.prompt.role]`  
+**User message** = assembled from `node.prompt.user.blocks`  
+**Reasoning** = LM Studio `reasoning_content` → `state.reasoning` → downstream blocks  
+**Act never emits DONE** — verify confirms steps.
 
-```mermaid
-sequenceDiagram
-  participant Act as act
-  participant Ver as verify
-  participant Ref as reflect
-  participant State as state.reasoning
+### Desktop observe
 
-  Act->>State: reasoning.act
-  Ver->>State: reasoning.verify
-  alt step_denied
-    Ref->>State: reasoning.reflect
-    Note over Act: next act reads VERIFY_REASONING + REFLECT_REASONING
-  end
-```
+**Hover probe only** — cursor sine-grid over focused window, `element_from_point` at each point. No UIA tree walk (tree walk added noise like writable `Text "Windows PowerShell"`).
 
-### LLM circuits
-
-| Node | Circuit | record_type | Role |
-|------|---------|-------------|------|
-| planner | planner | task | Decompose goal → steps |
-| act | unified | action | One desktop verb per turn |
-| verify | verifier | verdict | SCREEN evidence check |
-| reflect | reflector | diagnosis | Retry guidance |
-| self_modify | self_modify | wiring_patch | Topology mutation when stuck |
-
-Act **never** emits DONE — verify confirms step completion.
-
----
-
-## Wiring truth table
-
-| Concern | In wiring.json? | Notes |
-|---------|-------------------|-------|
-| Node graph | **Yes** | `topology.nodes`, `topology.edges` |
-| Circuit role per node | **Yes** | `topology.nodes[].prompt.role` |
-| User message assembly | **Yes** | `topology.nodes[].prompt.user.blocks` |
-| Reasoning capture & feed | **Yes** | `reasoning.*` |
-| Limits, errors, guards, act | **Yes** | |
-| HTTP port formula | **Yes** | `runtime.http_port_base + slot` |
-| LLM host/temperature | **No** | `prompts/model.json` (merge later) |
-| Node handlers | **No** | `NODES` in `server.py` |
-| Desktop verbs | **Partial** | `verbs` in wiring; execution in `actions.py` |
-
-### “Wiring-only” — how true?
-
-**Mostly true for:** edges, node prompt blocks, limits, guards, errors, act policy, reasoning config.
-
-**Requires Python for:** new node type, new `_resolve_value` source, new desktop verb.
+SCREEN shows `[ID]` for actionable elements. Targets must exist in SCREEN.
 
 ---
 
 ## Changing behavior
 
-| Want to… | Edit… |
-|----------|-------|
-| Change flow (retry → replan earlier) | `topology.edges` |
-| Change what act sees | `act` node → `prompt.user.blocks` in topology |
-| Change retry limits | `limits.*` |
-| Change guard hints | `guards.advance_hints` |
-| Change shared prompt preamble | `prompts.base` in wiring.json |
-| Change circuit contract | `prompts.roles.{planner,unified,...}` or `node.prompt.system` override |
-| Add new node type | **Python** `server.py` + wiring topology |
+| Change | Edit |
+|--------|------|
+| Flow / retries | `topology.edges`, `limits.*` |
+| What a circuit sees | `node.prompt.user.blocks` |
+| Circuit rules | `prompts.roles.*` or `prompts.base` |
+| Guard hints | `guards.advance_hints` |
+| New node type | Python `server.py` + wiring topology |
 
 ---
 
-## Plan
+## wiring-editor.html
 
-### Done
+Served at `/` when `python server.py` is running.
 
-- [x] Policy in `wiring.json` (topology + node prompts, reasoning, limits, guards, act, runtime)
-- [x] Prompts wired to topology nodes (`node.prompt`)
-- [x] `reasoning_content` capture + feed-forward
-- [x] `expected_record_type` gate
-- [x] No screen/history truncation
-- [x] Task-agnostic circuit prompts
-- [x] Single-rod Notepad “hello” end-to-end
-- [x] `wiring-editor.html`
+| Feature | API |
+|---------|-----|
+| Load wiring | `GET /wiring` |
+| Save wiring | `POST /wiring` (💾 Save toolbar) |
+| Step node | `POST /node/{type}` |
+| Autonomous run | `POST /run` |
+| Live highlight | `GET /events` (SSE) |
 
-### P0 — blocks human replacement
+**Sidebar:** edit `prompts.base`, per-node role text + user blocks JSON → Apply → Save.
 
-| Gap | Why |
-|-----|-----|
-| Complex web goals fail | UIA blind to much DOM; LLM latency |
-| 90–120s per act+verify | Budget 6–8+ min for real goals |
-| Run dialog / `[ID]` targeting | UIA resolution fragile |
+**Port:** auto-discovers `9078`, `9077`, `9079`, `9080` via `/health`.
 
-### P1 — purity
-
-| Gap | Fix |
-|-----|-----|
-| `model.json` separate | Merge into wiring `llm` section |
-| `NODES` in Python | Acceptable — handlers are muscles |
-
-### P2 — multiply (after rod works)
-
-1. Fork `wiring.json` per rod (`instance.slot`)
-2. Shared `bus.json` for delegation
-3. Permission gate on `node_act` (`desktop_exec`)
-4. Different topology per rod type (reviewer = verify-only)
-
-### UIA patterns (inform `guards.advance_hints`)
-
-- Launch: `hotkey win+r` → `write` executable in Open field → `press enter` → `focus` window
-- Prefer `[ID]` from SCREEN over bare names (`click [2] Button "OK"`)
-- Browser chrome often visible; page DOM often not — `ctrl+l` → URL → enter works better than hunting in-page elements
+**Save behavior:** `flowToWiring()` updates `topology` from canvas; merges with full wiring from server (prompts, reasoning, guards preserved).
 
 ---
 
-## Test results (honest)
+## Known gaps
 
-| Goal | Result | Notes |
-|------|--------|-------|
-| open notepad and write hello | ✓ PASS | ~5 min single rod |
-| open chrome + play shakira on youtube | ✗ FAIL | Google not YouTube; UIA gaps; needs 8+ min budget |
-
-**Do not extrapolate** Notepad success to web/video goals. Architecturally sound; operationally immature.
-
-Reproduce:
-
-```powershell
-python server.py --run "open chrome and play shakira waka waka on youtube"
-# Analyze: state.json → step, plan, reasoning.*, screen (FULL), last_error
-```
+- Complex web/video goals unproven (UIA + LLM latency)
+- ~90–120s per act+verify — budget 6–8+ min for real goals
+- `model.json` not yet merged into wiring
+- Multi-rod / colony deferred (Phase 2)
 
 ---
 
-## Analyze failures
-
-1. `state.json` — step, plan, `reasoning.*`, `reasoning_chain`, **full** screen, `last_error`
-2. Console log — `plan_ready`, `acted`, `step_confirmed`, `step_denied`, `act_failed`, `replan`
-3. `POST /node/{type}` via wiring-editor — step one circuit with saved state
-4. Reasoning poisoning? — act outputting verdict? reflect copying verify JSON?
-
----
-
-## HTTP API
-
-| Endpoint | Purpose |
-|----------|---------|
-| `GET /health` | `{ok, slot, port, node_circuits}` |
-| `GET /wiring` | Full wiring.json |
-| `GET /state` | Current state |
-| `POST /node/{type}` | Run one handler |
-| `POST /run` | Start autonomous loop |
-| `POST /wiring` | Hot-reload wiring |
-
----
-
-## Constraints
-
-- Python **stdlib only**
-- LM Studio **local** (`prompts/model.json`)
-- Static system prompts — no runtime mutation
-- Task-agnostic prompts — no app names in `prompts.roles`
-- Work on `experiment/endgame` — do not touch `main`
-
----
-
-## Bootstrap prompt (paste to any AI)
+## Handover prompt (next session — paste to any AI)
 
 ```
-You are a systems engineer on endgame-ai — a living Windows desktop organism.
+You are continuing endgame-ai — a single-rod Windows desktop organism.
 
-VISION: Replace a human for arbitrary-length desktop tasks by wiring DUMB LLM
-circuits (planner, act, verify, reflect) like brain regions. Intelligence =
-topology + reasoning loop + verify gate — not one monolithic prompt.
+REPO: C:\Users\px-wjt\Downloads\endgame-ai
+BRANCH: experiment/endgame (never touch main)
 
-FOCUS: Single rod first. ROD = server.py + actions.py + desktop.py +
-prompts/wiring.json + prompts/model.json.
+VISION: Replace a human for arbitrary-length desktop tasks. One rod today.
+Intelligence = wiring topology + reasoning loop + verify gate — not one prompt.
 
-BRAIN — wiring.json: topology.nodes[].prompt, prompts.base, prompts.roles,
-reasoning.*, limits, errors, guards, act, runtime
-CIRCUITS — node.prompt.role + prompts.base + prompts.roles; user via node.prompt.user.blocks
-BODY — server.py: graph engine, call_circuit(), reasoning_patch(),
-parse_circuit_response() with expected_record_type. NO truncation.
+SINGLE SOURCE OF TRUTH (target architecture):
+  prompts/wiring.json is THE brain. Everything configurable lives there.
+  server.py is a dumb interpreter (graph engine + muscles hookup).
+  wiring-editor.html is a FROZEN generic viewer/editor — once correct, it
+  never changes again; it only reads/writes wiring.json shape via HTTP.
 
-REASONING LOOP: LM Studio reasoning_content → state.reasoning → fed downstream
-via node.prompt.user.blocks. last_error = guards/parse only, NOT verifier feedback.
+  Next session goal: formalize wiring.json SCHEMA so HTML and server are
+  schema-driven and never need feature patches. Deduce schema from current
+  file before adding fields.
 
-FLOW: goal_inbox→planner→scheduler→bus_check→observe→act→verify; reflect on fail.
+CURRENT wiring.json shape (endgame-topology/v1):
+  schema, instance.slot
+  topology: { cycle_start, nodes[], edges[] }
+    LLM nodes carry: circuit, prompt { extends, role, user.blocks[] }
+  prompts: { base, roles { planner, unified, verifier, reflector, self_modify } }
+  reasoning: { store_as, expected_record_type, chain_depth, clear_on_step_confirm }
+  node handlers use call_node("act") etc. — circuit role from node.prompt.role
+  guards, act, limits, errors, runtime, verbs, context
 
-PORT: slot=1 → :9078. GET /health returns port.
+ESSENTIAL FILES (only these are tracked):
+  README.md, wiring-editor.html, server.py, actions.py, desktop.py,
+  prompts/wiring.json, prompts/model.json, LICENSE, .gitignore
 
-RUN: python server.py --run "goal"
+BODY:
+  server.py — call_node(), reasoning_patch(), parse_circuit_response()
+  desktop.py — hover-probe ONLY (element_from_point grid, NO UIA tree walk)
+  actions.py — verbs; resolve [ID] from SCREEN; prefer Edit over Text
 
-ANALYZE: state.json (reasoning.*, FULL screen, last_error) + console log signals.
+RUN:
+  python server.py
+  python server.py --run "goal"
+  http://127.0.0.1:9078 — wiring-editor
 
-WIRING-ONLY: edges, node.prompt blocks, limits, errors, guards, act rules, reasoning.
-NEEDS PYTHON: new node type, new state source, new verb.
+HTML EDITOR (your focus next session):
+  wiring-editor.html — React + xyflow, ~800 lines, served at GET /
+  - Loads GET /wiring, draws topology.nodes/edges
+  - POST /wiring saves full JSON (hot-reload server)
+  - Click node → edit prompts.base, role text, user.blocks
+  - Step/Run/Auto via POST /node/{type}, POST /run, SSE /events
+  - flowToWiring() must preserve non-topology sections on save
 
-CONSTRAINTS: stdlib, Windows, static task-agnostic prompts, act never DONE.
+  FUTURE: HTML becomes schema-generic:
+    - Node types, edge signals, prompt block editors generated from schema
+    - No hardcoded node type colors or circuit names in JS
+    - Schema document drives validation (server + editor)
+    - model.json merged into wiring.llm section
 
-KNOWN GAPS: 90-120s/cycle, UIA blind to web DOM, complex web goals unproven.
-Read README.md plan section first.
+  First step: inventory wiring.json → write JSON Schema or equivalent →
+  validate on POST /wiring → refactor editor to read schema for labels/fields.
 
-WORKFLOW: reproduce with server.py --run → fix wiring+prompts first →
-report which circuit failed with SCREEN evidence from state.json.
-```
+CONSTRAINTS:
+  stdlib only, Windows, static prompts in wiring (not runtime-mutated .txt)
+  task-agnostic prompt text, no screen truncation, act never DONE
 
----
+ANALYZE FAILURES:
+  state.json — step, plan, reasoning.*, FULL screen, last_error
+  Which node failed: planner / act / verify / reflect — evidence from SCREEN
 
-## Repo layout
-
-```
-endgame-ai/
-├── README.md
-├── wiring-editor.html
-├── server.py
-├── actions.py
-├── desktop.py
-└── prompts/
-    ├── wiring.json    ← topology (nodes.prompt) + prompts.base + prompts.roles
-    └── model.json
+DO NOT re-add: colony, personalities, probe_circuits, separate .txt prompts,
+  UIA tree walk in desktop.py, extra markdown docs.
 ```
