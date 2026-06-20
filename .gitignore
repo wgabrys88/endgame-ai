@@ -3,6 +3,7 @@
 !.gitignore
 !.gitattributes
 !README.md
+!RESEARCH.md
 !LICENSE
 !server.py
 !desktop.py
