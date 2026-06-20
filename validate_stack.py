@@ -72,8 +72,6 @@ def check_prompts_no_task_hacks():
     banned = ["youtube", "chrome", "shakira", "notepad", "waka"]
     ok = True
     for f in (ROOT / "prompts").glob("*.txt"):
-        if f.name == "manager.txt":
-            continue
         text = f.read_text(encoding="utf-8").lower()
         for b in banned:
             if b in text:

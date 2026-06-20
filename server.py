@@ -207,13 +207,6 @@ def load_system_prompt(circuit, state=None):
     """Load immutable system prompt from file. Never inject runtime content."""
     req = WIRING.get("request", {}).get(circuit, {})
     prompt_file = req.get("system", {}).get("file", f"{circuit}.txt")
-    if circuit == "unified" and state:
-        swaps = WIRING.get("circuits", {}).get("unified", {}).get("prompt_swap", [])
-        goal = (state.get("goal", "") or "").lower()
-        for sw in swaps:
-            if any(k.lower() in goal for k in sw.get("when", [])):
-                prompt_file = sw["prompt"]
-                break
     return (PROMPTS / prompt_file).read_text(encoding="utf-8")
 
 def build_user_message(circuit, state):

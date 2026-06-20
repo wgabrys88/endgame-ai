@@ -1,13 +1,7 @@
 {
   "schema": "endgame-topology/v1",
   "instance": {
-    "role": "implementor",
-    "persona": "implementor",
-    "slot": 1,
-    "permissions": [
-      "desktop_exec",
-      "bus_post"
-    ]
+    "slot": 1
   },
   "topology": {
     "cycle_start": "goal_inbox",
@@ -185,7 +179,6 @@
       "system": {"file": "planner.txt"},
       "user": {
         "blocks": [
-          {"label": "PERSONA", "source": "instance.persona"},
           {"label": "GOAL", "source": "state.goal", "always": true},
           {"label": "SCREEN", "source": "state.screen", "empty_template": "(no screen)"},
           {"label": "REASONING_CHAIN", "source": "reasoning.chain"},
@@ -197,7 +190,6 @@
       "system": {"file": "unified.txt"},
       "user": {
         "blocks": [
-          {"label": "PERSONA", "source": "instance.persona"},
           {"label": "GOAL", "source": "state.step_goal", "always": true},
           {"label": "SCREEN", "source": "state.screen", "empty_template": "(no screen)"},
           {"label": "VERIFY_REASONING", "source": "reasoning.verify"},
@@ -246,21 +238,6 @@
       }
     }
   },
-  "circuits": {
-    "unified": {
-      "prompt": "unified.txt",
-      "prompt_swap": [
-        {
-          "when": [
-            "MANAGER.md",
-            "student instance",
-            "orchestrate the student"
-          ],
-          "prompt": "manager.txt"
-        }
-      ]
-    }
-  },
   "guards": {
     "advance_hints": [
       {
@@ -299,7 +276,6 @@
   "runtime": {
     "http_port_base": 9077,
     "http_port_slot_offset": true,
-    "colony_port_base": 9076,
     "cycle_delay_ms": 300,
     "initial_state": {
       "step": 0,
@@ -326,11 +302,6 @@
     "verb_normalize": [
       {"from": "press", "to": "hotkey", "when_target_contains": "+"}
     ]
-  },
-  "moe": {
-    "required_permission": "desktop_exec",
-    "delegate_keywords": ["open", "click", "type", "write", "launch", "play"],
-    "default_exec_slot": 1
   },
   "errors": {
     "parse_failed": "parse_failed: respond with JSON only",

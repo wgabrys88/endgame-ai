@@ -32,7 +32,9 @@ colony_analysis.json
 # Scratch
 test.txt
 
-# Legacy (replaced by server.py + wiring-editor.html)
+# Legacy / deferred (Phase 2 multi-rod)
+reactor.py
+run_colony_test.py
 topology.py
 tui.py
 slot.py
@@ -44,3 +46,6 @@ llm.py
 prompts/wiring.mmd
 prompts/smoke_report.txt
 prompts/wiring.backup.json
+prompts/personalities/
+prompts/manager.txt
+prompts/schema.json

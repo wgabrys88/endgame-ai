@@ -1,10 +1,12 @@
 # endgame-ai
 
-A living Windows desktop organism: **wiring.json is the brain diagram**, Python is muscles, LLM circuits are dumb specialists wired together.
+A living Windows desktop organism: **`wiring.json` is the brain diagram**, Python is muscles, LLM circuits are dumb specialists wired together.
 
-> **Not** an agent framework. **Not** “one smart prompt.” Intelligence = topology + reasoning loop + verify gate.
+> **Not** an agent framework. **Not** one smart prompt. Intelligence = topology + reasoning loop + verify gate.
 
-**Branch:** `experiment/endgame` · **Tag:** `WIRING-SEPARATION`
+**Branch:** `experiment/endgame` · **Ultimate goal:** replace a human for arbitrary-length desktop tasks on real Windows with local LM Studio.
+
+**Current focus:** **single rod** — master one organism before multiplying.
 
 ---
 
@@ -14,39 +16,118 @@ A living Windows desktop organism: **wiring.json is the brain diagram**, Python 
 # Prerequisites: Windows, Python 3.11+, LM Studio on localhost:1234
 cd endgame-ai
 
-# Single rod (autonomous)
 python server.py --run "open notepad and write hello"
 
-# Passive server (browser or curl drives nodes)
-python server.py
+python server.py                    # passive server (editor/curl drives nodes)
+start http://127.0.0.1:9078         # wiring-editor (slot=1 → 9077+1)
 
-# Visual editor (auto-discovers port via /health)
-start http://127.0.0.1:9078   # slot=1 → base 9077 + 1
-
-# Validate stack
 python validate_stack.py
-
-# Probe each LLM circuit in isolation
 python probe_circuits.py --dry all
+python run_single_rod_test.py "goal" 480
 ```
+
+**Port:** `runtime.http_port_base + slot` → default slot=1 serves **:9078**. `GET /health` returns `port`.
 
 ---
 
-## Architecture (30 seconds)
+## Vision
 
-```
-wiring.json          →  topology, request blocks, reasoning feed, limits, guards
-prompts/*.txt        →  static system prompts (planner, unified, verifier, reflector)
-server.py            →  run graph, call circuits, capture reasoning_content
-state.json           →  memory: screen, history, reasoning chain (full, not truncated)
-desktop.py           →  Windows UIA observe + execute
-```
+Replace a human for **arbitrary-length desktop tasks** by wiring **dumb specialists** into a self-correcting loop — like brain regions. No region is the whole intelligence; **the wiring creates behavior**.
 
-See **`ARCHITECTURE.md`** for diagrams, honesty table, and known gaps.
+What this is **not** (yet):
+
+- Not production-ready for complex web/video goals
+- Not multi-rod MoE (deferred until single rod is reliable)
+- Not “edit JSON only for everything” — see boundaries below
 
 ---
 
-## Topology
+## The unit is the rod
+
+```
+ROD = server.py + actions.py + desktop.py + prompts/wiring.json + prompts/model.json
+    → one graph, one state.json, one LLM loop
+```
+
+Colony, bus routing, MoE, and “personas” are **Phase 2** — copy-paste rods + shared `bus.json` + enforced permissions. Not separate class hierarchies. **N instances of the same template.**
+
+### Minimal file count
+
+| # | File | Role |
+|---|------|------|
+| 1 | `server.py` | Graph engine, LLM, HTTP, `call_circuit` |
+| 2 | `actions.py` | Verb dispatch from wiring `verbs` |
+| 3 | `desktop.py` | Windows UIA |
+| 4 | `prompts/wiring.json` | Topology, request blocks, guards, limits, reasoning, runtime |
+| 5 | `prompts/model.json` | LM Studio endpoint |
+
+**5 files to run.** Plus 5 circuit prompts (`planner.txt`, `unified.txt`, `verifier.txt`, `reflector.txt`, `self_modify.txt`) = **10 source files** — easier to edit than inlining into JSON.
+
+Runtime output (never commit): `state.json`, `bus.json`, `probe_results/`, logs.
+
+### Mental model
+
+```
+                    ┌─────────────┐
+                    │ wiring.json │  ← THE brain
+                    └──────┬──────┘
+                           │
+         ┌─────────────────┼─────────────────┐
+         ▼                 ▼                 ▼
+   planner.txt      unified.txt       verifier.txt  …
+         │                 │                 │
+         └─────────────────┼─────────────────┘
+                           ▼
+                    ┌─────────────┐
+                    │  server.py  │  ← THE rod
+                    └──────┬──────┘
+                           ▼
+              actions.py + desktop.py
+                           ▼
+                      Windows UIA
+```
+
+### Why personas were removed
+
+“Personalities” were 3-line blurbs injected into planner/act — **prompt flavor without enforced behavior**. Reviewer said “never execute” but `node_act` had no permission gate. Colony was three copies of the same rod with different `instance` JSON, not real specialists.
+
+**Phase 1:** one rod, no `personalities/`, no `reactor.py`.  
+**Phase 2:** multiply rods by forking `wiring.json` (`instance.slot`, topology tweaks) + bus + **enforced** `permissions` on act.
+
+---
+
+## Architecture (three layers)
+
+| Layer | Location | Role |
+|-------|----------|------|
+| **Brain** | `prompts/wiring.json` | Topology, request blocks, reasoning feed, limits, errors, guards, act, runtime |
+| **Circuits** | `prompts/*.txt` | Static system prompts — planner, act, verify, reflect, self_modify |
+| **Body** | `server.py` | Graph engine, `call_circuit()`, `reasoning_patch()`, `parse_circuit_response()` |
+| **Muscles** | `actions.py`, `desktop.py` | Windows UIA observe + execute |
+| **Memory** | `state.json` | goal, step, screen, history, reasoning — **full, not truncated** |
+
+```mermaid
+flowchart TB
+  subgraph brain ["wiring.json"]
+    TOPO["topology: nodes + edges"]
+    REQ["request: user message blocks"]
+    REAS["reasoning: capture + feed + record_type"]
+  end
+  subgraph body ["server.py"]
+    ENG["graph engine"]
+    ASM["load_system_prompt + build_user_message"]
+    CAP["reasoning_patch + parse_circuit_response"]
+  end
+  subgraph muscles ["actions + desktop"]
+    UIA["observe_screen / execute_verb"]
+  end
+  brain --> ASM --> LLM["LM Studio :1234"]
+  LLM --> CAP --> ST["state.json"]
+  ENG --> muscles --> ST
+  ST --> ASM
+```
+
+### Signal flow
 
 ```
 goal_inbox → planner → scheduler → bus_check → observe → act → verify
@@ -56,30 +137,63 @@ goal_inbox → planner → scheduler → bus_check → observe → act → verif
 scheduler → plan_complete → bus_post → satisfied
 ```
 
----
+### Reasoning loop (critical)
 
-## LLM circuits (MoE at the wiring level)
+LM Studio returns `content` + `reasoning_content`.
+
+1. Captured per circuit → `state.reasoning.{act,verify,reflect,...}`
+2. Fed downstream via wiring request blocks (`VERIFY_REASONING`, `REFLECT_REASONING`, `REASONING_CHAIN`)
+3. `expected_record_type` prevents cross-circuit JSON poisoning (e.g. act outputting verdict)
+4. `last_error` = guard/parse only — **not** verifier feedback
+
+```mermaid
+sequenceDiagram
+  participant Act as act
+  participant Ver as verify
+  participant Ref as reflect
+  participant State as state.reasoning
+
+  Act->>State: reasoning.act
+  Ver->>State: reasoning.verify
+  alt step_denied
+    Ref->>State: reasoning.reflect
+    Note over Act: next act reads VERIFY_REASONING + REFLECT_REASONING
+  end
+```
+
+### LLM circuits
 
 | Node | Circuit | record_type | Role |
 |------|---------|-------------|------|
 | planner | planner | task | Decompose goal → steps |
 | act | unified | action | One desktop verb per turn |
 | verify | verifier | verdict | SCREEN evidence check |
-| reflect | reflector | diagnosis | Retry guidance via reasoning |
+| reflect | reflector | diagnosis | Retry guidance |
 | self_modify | self_modify | wiring_patch | Topology mutation when stuck |
 
-**Reasoning:** LM Studio `reasoning_content` is stored per circuit and fed to downstream circuits via `wiring.json` request blocks — not via ad-hoc `last_error` strings.
+Act **never** emits DONE — verify confirms step completion.
 
 ---
 
-## Colony mode
+## Wiring truth table
 
-```powershell
-python reactor.py --goal "your goal here"
-# logs: colony/logs/rod_N.log
-```
+| Concern | In wiring.json? | Notes |
+|---------|-------------------|-------|
+| Node graph | **Yes** | `topology.nodes`, `topology.edges` |
+| Circuit per node | **Yes** | `node_circuits` |
+| User message assembly | **Yes** | `request.*.user.blocks` |
+| Reasoning capture & feed | **Yes** | `reasoning.*` |
+| Limits, errors, guards, act | **Yes** | |
+| HTTP port formula | **Yes** | `runtime.http_port_base + slot` |
+| LLM host/temperature | **No** | `prompts/model.json` (merge later) |
+| Node handlers | **No** | `NODES` in `server.py` |
+| Desktop verbs | **Partial** | `verbs` in wiring; execution in `actions.py` |
 
-**Caveat:** `reactor.py` still hardcodes `COLONY` ports. May not match `runtime.http_port_base + slot`. See `ARCHITECTURE.md`.
+### “Wiring-only” — how true?
+
+**Mostly true for:** edges, request blocks, limits, guards, errors, act policy, reasoning config.
+
+**Requires Python for:** new node type, new `_resolve_value` source, new desktop verb.
 
 ---
 
@@ -87,31 +201,173 @@ python reactor.py --goal "your goal here"
 
 | Want to… | Edit… |
 |----------|-------|
-| Change flow (retry → replan earlier) | `topology.edges` in wiring.json |
+| Change flow (retry → replan earlier) | `topology.edges` |
 | Change what act sees | `request.unified.user.blocks` |
-| Change retry limits | `limits.max_attempts`, `limits.max_replans` |
+| Change retry limits | `limits.*` |
 | Change guard hints | `guards.advance_hints` |
-| Change circuit personality | `prompts/*.txt` (static) |
+| Change circuit contract | `prompts/*.txt` (static) |
 | Add new node type | **Python** `server.py` + wiring topology |
 
 ---
 
-## Docs
+## Plan
 
-| File | Contents |
-|------|----------|
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Diagrams, wiring truth table, self-criticism |
-| [PLAN.md](PLAN.md) | Roadmap and gaps |
-| [NAVIGATION.md](NAVIGATION.md) | Generic desktop/UIA patterns |
-| [TEST_RESULTS.md](TEST_RESULTS.md) | What is proven vs not |
-| [BOOTSTRAP_PROMPT.md](BOOTSTRAP_PROMPT.md) | Paste-in prompt for any AI collaborator |
+### Done
+
+- [x] Policy in `wiring.json` (topology, request, reasoning, limits, guards, act, runtime)
+- [x] `reasoning_content` capture + feed-forward
+- [x] `expected_record_type` gate
+- [x] No screen/history truncation
+- [x] Task-agnostic circuit prompts
+- [x] Single-rod Notepad “hello” end-to-end
+- [x] `validate_stack.py`, `probe_circuits.py`, `wiring-editor.html`
+
+### P0 — blocks human replacement
+
+| Gap | Why |
+|-----|-----|
+| Complex web goals fail | UIA blind to much DOM; LLM latency |
+| 90–120s per act+verify | Budget 6–8+ min for real goals |
+| Run dialog / `[ID]` targeting | UIA resolution fragile |
+
+### P1 — purity
+
+| Gap | Fix |
+|-----|-----|
+| `model.json` separate | Merge into wiring `llm` section |
+| `NODES` in Python | Acceptable — handlers are muscles |
+
+### P2 — multiply (after rod works)
+
+1. Fork `wiring.json` per rod (`instance.slot`)
+2. Shared `bus.json` for delegation
+3. Permission gate on `node_act` (`desktop_exec`)
+4. Different topology per rod type (reviewer = verify-only)
+
+### UIA patterns (inform `guards.advance_hints`)
+
+- Launch: `hotkey win+r` → `write` executable in Open field → `press enter` → `focus` window
+- Prefer `[ID]` from SCREEN over bare names (`click [2] Button "OK"`)
+- Browser chrome often visible; page DOM often not — `ctrl+l` → URL → enter works better than hunting in-page elements
+
+---
+
+## Test results (honest)
+
+| Goal | Result | Notes |
+|------|--------|-------|
+| `validate_stack.py` | ✓ | wiring + prompts + smoke |
+| `probe_circuits.py --dry all` | ✓ | all 5 circuits assemble |
+| open notepad and write hello | ✓ PASS | ~5 min single rod |
+| open chrome + play shakira on youtube | ✗ FAIL | Google not YouTube; UIA gaps; needs 8+ min budget |
+
+**Do not extrapolate** Notepad success to web/video goals. Architecturally sound; operationally immature.
+
+Reproduce:
+
+```powershell
+python run_single_rod_test.py "open chrome and play shakira waka waka on youtube" 480
+# Analyze: state.json → step, plan, reasoning.*, screen (FULL), last_error
+```
+
+---
+
+## Analyze failures
+
+1. `state.json` — step, plan, `reasoning.*`, `reasoning_chain`, **full** screen, `last_error`
+2. Log signals — `plan_ready`, `acted`, `step_confirmed`, `step_denied`, `act_failed`, `replan`
+3. `probe_circuits.py` per circuit with fixture from failed state
+4. Reasoning poisoning? — act outputting verdict? reflect copying verify JSON?
+
+---
+
+## HTTP API
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /health` | `{ok, slot, port, node_circuits}` |
+| `GET /wiring` | Full wiring.json |
+| `GET /state` | Current state |
+| `POST /node/{type}` | Run one handler |
+| `POST /run` | Start autonomous loop |
+| `POST /wiring` | Hot-reload wiring |
 
 ---
 
 ## Constraints
 
-- Python **stdlib only** (zero pip for runtime)
+- Python **stdlib only**
 - LM Studio **local** (`prompts/model.json`)
-- Static system prompts — **no runtime prompt mutation**
-- Task-agnostic prompts — no YouTube/Chrome hardcoding in `prompts/*.txt`
-- `main` branch untouched; work on `experiment/endgame`
+- Static system prompts — no runtime mutation
+- Task-agnostic prompts — no app names in `prompts/*.txt`
+- Work on `experiment/endgame` — do not touch `main`
+
+---
+
+## Bootstrap prompt (paste to any AI)
+
+```
+You are a systems engineer on endgame-ai — a living Windows desktop organism.
+
+VISION: Replace a human for arbitrary-length desktop tasks by wiring DUMB LLM
+circuits (planner, act, verify, reflect) like brain regions. Intelligence =
+topology + reasoning loop + verify gate — not one monolithic prompt.
+
+FOCUS: Single rod first. ROD = server.py + actions.py + desktop.py +
+prompts/wiring.json + prompts/model.json + 5 circuit .txt files.
+
+BRAIN — wiring.json: topology, request blocks, reasoning.*, limits, errors,
+guards, act, runtime, node_circuits
+CIRCUITS — prompts/*.txt static system prompts
+BODY — server.py: graph engine, call_circuit(), reasoning_patch(),
+parse_circuit_response() with expected_record_type. NO truncation.
+
+REASONING LOOP: LM Studio reasoning_content → state.reasoning → fed downstream
+via wiring request blocks. last_error = guards/parse only, NOT verifier feedback.
+
+FLOW: goal_inbox→planner→scheduler→bus_check→observe→act→verify; reflect on fail.
+
+PORT: slot=1 → :9078. GET /health returns port.
+
+RUN: python server.py --run "goal" | run_single_rod_test.py "goal" 480 |
+probe_circuits.py --dry all | validate_stack.py
+
+ANALYZE: state.json (reasoning.*, FULL screen, last_error) + log signals +
+probe_circuits per circuit.
+
+WIRING-ONLY: edges, request blocks, limits, errors, guards, act rules, reasoning.
+NEEDS PYTHON: new node type, new state source, new verb.
+
+CONSTRAINTS: stdlib, Windows, static task-agnostic prompts, act never DONE.
+
+KNOWN GAPS: 90-120s/cycle, UIA blind to web DOM, complex web goals unproven.
+Read README.md plan section first.
+
+WORKFLOW: reproduce → fix wiring+prompts first → probe circuit isolation →
+validate_stack.py → report which circuit failed with SCREEN evidence.
+```
+
+---
+
+## Repo layout
+
+```
+endgame-ai/
+├── README.md                 ← this file (vision, architecture, plan, bootstrap)
+├── wiring-editor.html
+├── server.py
+├── actions.py
+├── desktop.py
+├── validate_stack.py         ← dev: structure + smoke
+├── probe_circuits.py         ← dev: isolated circuit test
+├── run_single_rod_test.py    ← dev: timed harness
+├── probe_fixtures/           ← dev: regression snapshots
+└── prompts/
+    ├── wiring.json
+    ├── model.json
+    ├── planner.txt
+    ├── unified.txt
+    ├── verifier.txt
+    ├── reflector.txt
+    └── self_modify.txt
+```
