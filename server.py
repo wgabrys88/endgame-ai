@@ -4,6 +4,9 @@ One file. Node handlers are pure functions. Wiring.json is the brain.
 """
 import json, http.server, urllib.request, pathlib, time, sys, re, threading, queue, os
 
+class ThreadingHTTPServer(http.server.ThreadingHTTPServer):
+    daemon_threads = True
+
 ROOT = pathlib.Path(__file__).parent
 PROMPTS = ROOT / "prompts"
 STATE_FILE = ROOT / "state.json"
@@ -874,7 +877,7 @@ if __name__ == "__main__":
         if not s: print("No state.json to resume from"); sys.exit(1)
         port = http_port()
         bind = http_bind()
-        srv = http.server.HTTPServer((bind, port), H)
+        srv = ThreadingHTTPServer((bind, port), H)
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         print_listen_urls(port)
         run(s.get("goal", ""), s)
@@ -883,14 +886,14 @@ if __name__ == "__main__":
         if not goal: print("Usage: python server.py --run \"goal\""); sys.exit(1)
         port = http_port()
         bind = http_bind()
-        srv = http.server.HTTPServer((bind, port), H)
+        srv = ThreadingHTTPServer((bind, port), H)
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         print_listen_urls(port)
         run(goal)
     else:
         port = int(args[0]) if args and args[0].isdigit() else http_port()
         bind = http_bind()
-        srv = http.server.HTTPServer((bind, port), H)
+        srv = ThreadingHTTPServer((bind, port), H)
         print(f"endgame-ai [{WIRING.get('instance',{}).get('slot',0)}] bind={bind} port={port}  nodes: {list(NODES.keys())}")
         print_listen_urls(port)
         srv.serve_forever()
