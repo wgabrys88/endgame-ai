@@ -1,9 +1,25 @@
 """Actions - data-driven verb dispatch. Field mappings from wiring.json."""
 from __future__ import annotations
+import re
+import threading
 from dataclasses import dataclass
 from typing import Any
 
-from desktop import Desktop, Element
+try:
+    from desktop import Desktop, Element, Observation
+except Exception:
+    # Linux/non-Windows: define stubs for sim mode
+    @dataclass(slots=True)
+    class Element:
+        id: str; role: str; name: str; value: str; hwnd: int
+        px: int; py: int; pw: int; ph: int; action: str
+        wnd: str = ""; enabled: bool = True; readonly: bool = False
+
+    @dataclass(slots=True)
+    class Observation:
+        focused_title: str; elements: dict; context_text: str
+
+    Desktop = None
 
 
 @dataclass(slots=True)
@@ -21,17 +37,47 @@ class ActionExecutor:
     def _resolve(self, target: str, elements: dict[str, Element]) -> Element | None:
         if target in elements:
             return elements[target]
-        digits = ''.join(c for c in target if c.isdigit())
-        if digits and digits in elements:
-            return elements[digits]
-        target_l = target.lower()
-        for el in elements.values():
-            if not el.name:
-                continue
-            name_l = el.name.lower()
-            if target_l in name_l or name_l in target_l:
-                return el
-        return None
+        id_match = re.match(r"^\[?(\d+)\]?$", (target or "").strip())
+        if id_match and id_match.group(1) in elements:
+            return elements[id_match.group(1)]
+        target_l = target.lower().strip()
+        if not target_l:
+            return None
+
+        def name_score(el: Element) -> tuple[int, int]:
+            name_l = (el.name or "").lower()
+            if not name_l:
+                return (99, 0)
+            if target_l == name_l:
+                return (0, -len(name_l))
+            if target_l in name_l:
+                return (1, -len(name_l))
+            if name_l in target_l:
+                return (2, -len(name_l))
+            words = [w for w in re.split(r"[\s\-]+", target_l) if len(w) > 2]
+            overlap = sum(1 for w in words if w in name_l)
+            if overlap:
+                return (3, -overlap * 10 - len(name_l))
+            return (99, 0)
+
+        def action_rank(el: Element) -> int:
+            if el.action == "write" and el.role in ("Edit", "ComboBox", "Document"):
+                return 0
+            if el.action == "click":
+                return 1
+            if el.role != "Text":
+                return 2
+            return 3
+
+        candidates = [
+            (name_score(el), action_rank(el), el)
+            for el in elements.values()
+            if name_score(el)[0] < 99
+        ]
+        if not candidates:
+            return None
+        candidates.sort(key=lambda x: (x[0][0], x[0][1], x[1]))
+        return candidates[0][2]
 
     def execute(self, verb: str, args: dict[str, Any], elements: dict[str, Element]) -> ActionResult:
         cfg = self._verbs.get(verb)
@@ -59,8 +105,9 @@ class ActionExecutor:
             target = str(args.get(cfg.get("target_field", "target"), ""))
             if target:
                 el = self._resolve(target, elements)
-                if el:
-                    self._desktop.click(el.px + el.pw // 2, el.py + el.ph // 2, el.hwnd)
+                if not el:
+                    return ActionResult(verb, False, f"element {target} not found")
+                self._desktop.click(el.px + el.pw // 2, el.py + el.ph // 2, el.hwnd)
             self._desktop.hotkey(["ctrl", "a"])
             self._desktop.type_text(text)
             return ActionResult(verb, True, f"typed {len(text)} chars")
@@ -90,7 +137,7 @@ class ActionExecutor:
             el = self._resolve(target, elements)
             if not el:
                 return ActionResult(verb, False, f"element {target} not found")
-            self._desktop.scroll(el.px + el.pw // 2, el.py + el.ph // 2, amount)
+            self._desktop.scroll(el.px + el.pw // 2, el.py + el.ph // 2, amount, el.hwnd)
             return ActionResult(verb, True, f"scrolled {amount}")
 
         if verb == "focus":
@@ -105,7 +152,7 @@ class ActionExecutor:
             # Re-observe with deeper detail — returns updated screen info
             try:
                 obs = self._desktop.observe()
-                return ActionResult(verb, True, f"inspect done: {obs.context_text[:3000]}")
+                return ActionResult(verb, True, f"inspect done: {obs.context_text}")
             except Exception as e:
                 return ActionResult(verb, False, f"inspect failed: {e}")
 
@@ -116,23 +163,70 @@ class ActionExecutor:
 
 _desktop = None
 _executor = None
+_desktop_lock = threading.RLock()
+_last_observation = None
+
+_ELEMENT_VERBS = frozenset({"click", "scroll"})
+
+def _simulation_enabled(wiring: dict) -> bool:
+    import os
+    if os.environ.get("ENDGAME_SIM", "").lower() in ("1", "true", "yes"):
+        return True
+    return bool(wiring.get("runtime", {}).get("simulation_mode", False))
 
 def _init():
     global _desktop, _executor
     if _desktop is None:
-        _desktop = Desktop()
         import json, pathlib
         wiring = json.loads((pathlib.Path(__file__).parent / "prompts" / "wiring.json").read_text(encoding="utf-8"))
+        if _simulation_enabled(wiring):
+            _desktop = _SimStub()
+        else:
+            _desktop = Desktop()
         _executor = ActionExecutor(_desktop, wiring)
 
+
+class _SimStub:
+    """Minimal sim desktop for dev without Windows."""
+    def __init__(self):
+        self._step = 0
+
+    def observe(self) -> Observation:
+        self._step += 1
+        els = {"1": Element(id="1", role="Button", name="OK", value="",
+                            hwnd=1, px=100, py=100, pw=80, ph=30, action="click")}
+        return Observation(focused_title="Sim Desktop", elements=els,
+                           context_text="FOCUSED: Sim Desktop\nELEMENTS: 1\n  [1] Button \"OK\"")
+
+    def click(self, px, py, hwnd=0): pass
+    def type_text(self, text): pass
+    def press_key(self, key): pass
+    def hotkey(self, keys): pass
+    def scroll(self, px, py, amount=3, hwnd=0): pass
+    def focus_window(self, title): return True
+
+def _remember_observation(obs: Observation) -> None:
+    global _last_observation
+    _last_observation = obs
+
+def _needs_elements(verb: str, target: str) -> bool:
+    return verb in _ELEMENT_VERBS or (verb == "write" and bool(target))
+
 def observe_screen() -> str:
-    _init()
-    obs = _desktop.observe()
-    return obs.context_text
+    with _desktop_lock:
+        _init()
+        obs = _desktop.observe()
+        _remember_observation(obs)
+        return obs.context_text
 
 def execute_verb(verb: str, target: str, value: str = "") -> str:
-    _init()
-    obs = _desktop.observe()
-    args = {"target": target, "value": value}
-    result = _executor.execute(verb, args, obs.elements)
-    return result.observation if result.success else f"FAILED: {result.observation}"
+    with _desktop_lock:
+        _init()
+        obs = _last_observation
+        if _needs_elements(verb, target) and obs is None:
+            obs = _desktop.observe()
+            _remember_observation(obs)
+        args = {"target": target, "value": value}
+        elements = obs.elements if obs else {}
+        result = _executor.execute(verb, args, elements)
+        return result.observation if result.success else f"FAILED: {result.observation}"

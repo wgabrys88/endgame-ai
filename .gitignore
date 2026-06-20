@@ -1,27 +1,26 @@
+# Allowlist: ignore generated/runtime files, then un-ignore essentials only.
+*
+
+# Runtime artifacts stay local.
+bus.json
+state.json
+prompts/traces.jsonl
+prompts/wiring.backup.json
 __pycache__/
 *.pyc
 *.log
-logs/
-runtime/
-sessions/
-.acp.lock
-pause
-test.txt
 
-# Runtime state (regenerated on run)
-state.json
-bus.json
-colony/
-
-# Legacy (replaced by server.py + wiring-editor.html)
-topology.py
-tui.py
-slot.py
-colony.py
-wiring.py
-smoke.py
-bus.py
-llm.py
-prompts/wiring.mmd
-prompts/smoke_report.txt
-prompts/wiring.backup.json
+!.gitignore
+!.gitattributes
+!README.md
+!RESEARCH.md
+!LICENSE
+!server.py
+!desktop.py
+!actions.py
+!colony.py
+!wiring-editor.html
+!prompts/
+!prompts/wiring.json
+!prompts/wiring-schema.json
+!prompts/model.json

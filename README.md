@@ -1,363 +1,250 @@
 # endgame-ai
 
-**A living Windows desktop organism — not an agent framework.**
+Local Windows desktop organism controlled by a signal graph.
 
-One JSON file wires the brain. Python is just muscles. The browser is the window into the skull.
+This repository is intentionally small. Python is the transport layer: it reads
+`prompts/wiring.json`, exposes HTTP endpoints, observes the desktop, executes
+verbs, and routes graph signals. Behavior belongs in wiring: topology, prompts,
+guards, limits, and role boundaries.
 
----
+## Current Reality
 
-## Running
+ROD now means Reason-Observe-Decide in the literal runtime:
 
-```powershell
-# Autonomous (server drives itself, browser observes)
-python server.py --run "open notepad and write hello"
+1. Each LLM node gets its system prompt and wired input blocks.
+2. The first call produces reasoning content: what the circuit sees or knows.
+3. The second call receives that reasoning and must emit one structured JSON
+   object for the circuit role.
+4. Python parses the JSON, stores reasoning by circuit, applies patches, and
+   follows wiring edges.
 
-# Passive (browser drives the graph step-by-step)
-python server.py
+The system is not a generic chatbot wrapper. It is a desktop control loop:
 
-# Resume after restart
-python server.py --resume
-
-# Colony (multiple rods, shared bus)
-python reactor.py --goal "open chrome and search for cats"
+```text
+goal_inbox -> moe_route -> planner -> scheduler -> bus_check -> observe -> act -> verify
+                 |                         |                                  |
+                 | delegated               | plan_complete                    | step_denied
+                 v                         v                                  v
+              bus_post -> satisfied     bus_post -> satisfied              reflect
+                                                                            | | |
+                                                                            | | +-> self_modify
+                                                                            | +---> planner
+                                                                            +----> scheduler
 ```
 
-Open `http://127.0.0.1:9077` for the visual editor + live observation dashboard.
+## What Changed In This Session
 
----
+Reliability work:
 
-## Architecture
+- `/run` and `/resume` now enqueue work on one background runner instead of
+  starting overlapping graph loops.
+- Resume state now points at the next node, not the node that already ran.
+- Desktop observe/action calls are serialized with a lock.
+- Act can execute short deterministic chains such as `win+r`, `write app`,
+  `enter`.
+- Chained verbs now have a small configured settle delay so removing repeated
+  scans does not race dialogs such as Run.
+- Verify has deterministic preflight confirms for:
+  - successful focus evidence when a window must be open/focused
+  - the Run-dialog launch chain for app-opening goals
+- Act no longer receives verifier/reflector reasoning, which was poisoning its
+  schema.
+- Planner no longer receives the broad reasoning chain, which was causing
+  replan attempts to copy verdict/diagnosis JSON.
+- Trace examples are labeled structural only, so old literal goal text is not
+  supposed to leak into new plans.
 
+Observation work:
+
+- Focused-window elements still get the only `[ID]` targets.
+- The last observation now owns the element map used by action execution. Act
+  no longer triggers a fresh hover scan before every verb in a chain.
+- Post-action screen refresh is now opt-in; normal refresh happens at the next
+  observe node because verify/reflect do not consume `SCREEN`.
+- Observation now also includes a `WINDOWS:` section with top-level visible
+  window titles. Those titles are not element IDs; they exist only for
+  focus/window-title reasoning.
+- Extra hover/scroll enrichment starts at fewer elements, reducing repeated
+  sweep work on sparse windows.
+- Targeted click/write/scroll actions mechanically focus the element's HWND in
+  Python. A targeted write fails if the element is not in the cached map instead
+  of typing into whatever field is currently focused.
+
+Prompt work:
+
+- The shared base prompt begins by forcing every circuit to first deduce what
+  it sees or knows from its wired inputs.
+- Non-act circuits are told explicitly that they do not see the desktop.
+- Planner is told not to add focus preparation steps for normal click/write
+  work because Python focuses the target window.
+- Act is told to use focus only as a single switch/confirmation step, never as
+  preparation for acting on a visible `[ID]`.
+- Self-modify receives a compact current-wiring summary and conservative patch
+  examples.
+
+Validated evidence:
+
+- Syntax and wiring JSON parse cleanly.
+- `/smoke` passes 6/6.
+- Two-slot colony delegation was validated: a non-exec slot delegated a browser
+  goal to the exec slot through the shared bus.
+- Real desktop streak: 10 consecutive `open notepad` goals completed, each at
+  11 graph cycles with a 15-cycle cap.
+- Direct observation confirmed `WINDOWS:` is present while `[ID]` scope remains
+  focused-window-only.
+
+## What Is Still Not Done
+
+The next target is not merely opening Notepad. The requested next proof is a
+compound desktop workflow:
+
+```text
+open chrome, start conversation with grok.com AI about endgame-ai,
+keep the conversation based on what Grok responds for 3 turns,
+save the summary of the conversation in Notepad,
+then run Shakira Waka Waka on YouTube
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  prompts/wiring.json              THE BRAIN (declarative)    │
-│  10 nodes, 14 edges, guards, personas                       │
-│  All control flow. No Python if/else for routing.           │
-└────────────────────────────┬────────────────────────────────┘
-                             │
-┌────────────────────────────▼────────────────────────────────┐
-│  server.py (521 LOC)           THE BODY (executable)        │
-│  11 node handlers. Graph engine. HTTP + SSE.                │
-│  Stateless per-node: receives state → returns signals+patch │
-└────────────────────────────┬────────────────────────────────┘
-                             │
-┌────────────────────────────▼────────────────────────────────┐
-│  bus.json                      THE NERVOUS SYSTEM (shared)   │
-│  All rods read/write. Interrupts, telemetry, goals.         │
-└─────────────────────────────────────────────────────────────┘
-```
 
-## Topology (signal flow)
+That workflow must be developed through the same HTTP/dashboard step surface a
+human can use. The dashboard must be good enough for a human to see and debug
+exactly what the AI sees through API calls.
 
-```
-goal_inbox → planner → scheduler → bus_check → observe → act → verify → scheduler
-                ▲                                                          │
-                │ replan                                           step_confirmed
-                │                                                          │
-             reflect ◄──────── step_denied ─────────────────── verify ─────┘
-                │
-                └── retry → scheduler (same step, +1 retries)
+## Methodology
 
-scheduler → plan_complete → bus_post → satisfied (terminal rest)
-bus_check → interrupt → planner (new goal replaces current plan)
-```
+Work brick by brick:
 
-## Node Types
+1. Read the current wiring and code before changing behavior.
+2. Prefer `prompts/wiring.json` for behavior changes.
+3. Make Python fixes only when the plumbing contradicts wiring's intent.
+4. Validate with `/smoke`, direct node calls, and real desktop goals.
+5. Clean runtime artifacts before committing.
+6. Commit only tracked essential files.
 
-| Type | LLM? | Purpose |
-|------|------|---------|
-| entry | no | Start signal |
-| planner | yes | Goal → `[{description, done_when}]` |
-| scheduler | no | Track step index, emit step_ready or plan_complete |
-| bus_check | no | Poll bus for interrupt goals |
-| observe | no | Capture desktop UIA tree |
-| act | yes | Build prompt + guards + execute verbs |
-| verify | yes | Fresh screen + check done_when evidence |
-| reflect | yes | Diagnose failure, retry or replan |
-| satisfied | no | Terminal rest state |
-| bus_post | no | Post telemetry to shared bus |
-| moe_route | no | MoE gate: self or delegate (colony only) |
+The design rule remains: Python should not decide task strategy. Python may
+enforce deterministic safety and mechanical truth, such as "a successful focus
+means a matching window exists" or "a failed verb cannot verify a step."
 
 ## Files
 
-```
-server.py              599 LOC — node handlers + graph engine + HTTP/SSE
-reactor.py             153 LOC — colony supervisor (spawn/monitor/respawn rods)
-actions.py             138 LOC — desktop verb executor (click/write/press/hotkey/scroll/focus)
-desktop.py             824 LOC — Windows UIA wrapper (ctypes, no pip)
-wiring-editor.html     738 LOC — React Flow editor + native UIA toolbar + mock panel
+Tracked essentials:
 
-prompts/
-  wiring.json          87 LOC — THE TOPOLOGY (11 nodes, 17 edges, guards, limits)
-  unified.txt          — executor system prompt
-  planner.txt          — planning system prompt
-  verifier.txt         — verification system prompt
-  reflector.txt        — diagnosis system prompt
-  manager.txt          — peer orchestration prompt (swap)
-  model.json           — LM Studio endpoint config (max_tokens: 2048)
-  personalities/       — executor/reviewer/comms_operator personas
-```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  model.json           — LM Studio endpoint config
-  schema.json          — response format reference
-  personalities/
-    implementor.txt    — desktop executor persona
-    reviewer.txt       — verification-only persona
-    comms_operator.txt — MoE routing persona
+```text
+server.py                  HTTP server, graph runner, LLM calls, node handlers
+desktop.py                 Windows desktop observation and input via stdlib ctypes
+actions.py                 Verb dispatcher and simulation stub
+colony.py                  Multi-slot local rod launcher
+wiring-editor.html         Human/debug UI for run, step, state, topology
+prompts/wiring.json        Brain: topology, prompts, guards, limits, verbs
+prompts/model.json         Local model endpoint configuration
+prompts/wiring-schema.json Wiring schema for validation and future UI generation
+README.md                  Operational handover
+RESEARCH.md                Product/research direction and next plan
+.gitignore                 Allowlist: only essentials are commit candidates
+.gitattributes             Line-ending normalization
+LICENSE
 ```
 
+Ignored runtime artifacts include `bus.json`, `state.json`,
+`prompts/traces.jsonl`, `prompts/wiring.backup.json`, caches, logs, and other
+generated files.
 
-## Testing
+## HTTP Surface
 
-### UIA Self-Test (real Windows, Chrome with --force-renderer-accessibility)
+```text
+GET  /                         Dashboard
+GET  /health                   Node registry, slot, run status, capabilities
+GET  /smoke                    Six-point self-test
+GET  /state                    Last persisted state
+GET  /bus                      Shared bus contents
+GET  /wiring                   Current wiring
+GET  /wiring-schema            Wiring schema for dashboard/editor
+GET  /events                   SSE stream
 
-The native HTML toolbar exposes all buttons to Windows UIA.
-The system can observe its own dashboard and click UI elements autonomously:
-
-```
-observe_screen() → sees Button "Step", StatusBar "Connected: 11 nodes"
-execute_verb("click", "Step") → Chrome prompt dialog appears
-observe_screen() → sees Edit "Goal:" + Button "OK"
-execute_verb("write", "Goal:", "open notepad") → types goal
-execute_verb("click", "OK") → fires goal_inbox node
-observe_screen() → reads "✓ goal_inbox → ready → planner"
-```
-
-### Mock Testing (no Windows required)
-
-The sidebar has a 🧪 Mock Inject panel with screen presets (Desktop, Run, Chrome, Notepad).
-Inject a fake screen → click Step → node executes with mock data + real LLM.
-The 📝 State Editor lets you edit raw JSON state between steps.
-The 📝 State Editor shows raw JSON state. Edit it directly to test
-specific scenarios (set retries=5, inject history, force escalation, etc.).
-## How to Extend (no code changes needed for most)
-
-| Want to... | Do this |
-|------------|---------|
-| Change behavior | Edit edges in wiring.json |
-| Add a guard | Add to `guards.advance_hints` in wiring.json |
-| New capability | Add node to wiring.json + one function in NODES dict |
-| New rod type | New file in `prompts/personalities/` + reactor config |
-| Change LLM | Edit `prompts/model.json` |
-| Different prompt | Edit `.txt` files |
-
-## Key Features
-
-- **Autonomous loop** — runs without browser, `--run "goal"`
-- **Multi-step planning** — LLM decomposes goal into concrete steps
-- **Verification** — LLM checks screen evidence after each action
-- **Retry + replan** — diagnoses failures, retries up to max_attempts, then replans
-- **Multi-task interrupt** — bus_check polls for new goals mid-execution
-- **Guards** — repeat_block, premature_done, advance_hints prevent loops
-- **Reasoning feedback** — history injected into prompts so LLM learns from prior attempts
-- **State persistence** — survives restart via state.json + `--resume`
-- **Persona system** — different personality = different rod behavior
-- **Shared bus** — inter-rod communication via bus.json
-- **MoE routing** — comms_operator delegates by competence
-- **Colony** — reactor.py spawns N rods, monitors health, auto-respawns
-- **SSE observation** — browser connects to /events for live node highlighting
-- **Rod reproduction** — copy folder + change slot/persona/port
-
-## Constraints
-
-- Python stdlib only — zero pip install
-- Wiring-first — JSON topology, not Python if/else
-- Browser is dashboard, not brain — system runs without it
-- Single HTML file — CDN imports only, no build step
-- LM Studio local — no cloud API keys
-- CRLF line endings — Windows workspace
-
----
-
-## Appendix A: AI Handover Prompt
-
-Use this prompt when starting a new AI session to continue work on this project:
-
-```
-You are continuing work on endgame-ai — a living Windows desktop organism.
-Location: C:\Users\<USER>\Downloads\endgame-ai (or equivalent path)
-Branch: codex-unify-bus
-
-Architecture:
-- server.py (599 LOC): 12 node handlers, graph engine, HTTP/SSE server on :9077
-- wiring.json: 11 nodes, 17 edges — THIS is the program (no Python if/else routing)
-- wiring-editor.html (738 LOC): React Flow dashboard + native UIA toolbar
-- actions.py: bridge to desktop.py — observe_screen() + execute_verb(verb, target, value)
-- desktop.py: Windows UIA via ctypes (no pip)
-
-Key patterns:
-- Node handler signature: def node_X(state, config) -> {"signals": [...], "patch": {...}}
-- HTTP: POST /node/{type} with {"state":{...}} → {"signals":[], "state_patch":{}}
-- Graph engine: fires node → reads signals → follows edges (field: "on") → fires next
-- LLM: localhost:1234, model.json has host/timeout/temperature, ~45-90s per call
-- Guards: repeat_block, premature_done, advance_hints (all in wiring.json)
-- Self-modify: reflect→escalate→self_modify→modified→planner (LLM rewrites wiring)
-
-For real Windows interaction, MUST use Windows Python:
-  "/mnt/c/Program Files/Python313/python.exe" (from WSL)
-  or just `python` (from Windows terminal)
-
-Chrome UIA visibility requires: --force-renderer-accessibility
-Only NATIVE HTML elements (outside React root) are visible to UIA.
-
-To test without Windows desktop: set state.no_desktop=true + state.screen="(fake screen)"
-To test with real desktop: use Windows Python, observe_screen() returns real UIA tree
-
-Endpoints: GET /health /wiring /state /bus /events / | POST /node/{type} /run /resume /interrupt /bus/post /wiring
-
-Read NAVIGATION.md for patterns, TEST_RESULTS.md for proven capabilities.
+POST /run        {"goal": "..."}           Queue autonomous run
+POST /resume                              Queue saved-state resume
+POST /step       {"goal","state","node"}    Execute one graph transition
+POST /node/:type {"state": {...}}          Call one node type
+POST /wiring     {full wiring.json}        Validate and hot-reload wiring
+POST /interrupt  {"goal": "..."}           Post slot interrupt
+POST /push       {"type":"..","text":".."} Dashboard event push
+POST /bus/post   {message}                 Append bus message
 ```
 
-## Appendix B: Running Examples
+The dashboard now uses `/step` for graph stepping, the same endpoint an AI can
+call directly. `/node/:type` remains available for low-level node probes.
 
-```powershell
-# === BASIC USAGE ===
+## Invariants
 
-# Start server (passive mode — browser or API drives execution)
-python server.py
+1. Only focused-window actionable elements get `[ID]` targets.
+2. `WINDOWS:` titles are not element IDs.
+3. Act is the only circuit that receives `SCREEN`.
+4. Planner never receives `SCREEN`, UIA labels, or `[ID]`.
+5. Act should not receive verifier/reflector reasoning.
+6. Action execution uses the cached observation map that produced the screen
+   shown to act; it should not rescan for every verb in a deterministic chain.
+7. Python may enforce deterministic mechanical truths but must not invent task
+   strategy.
+8. Port is `9077 + slot` when slot offset is enabled.
+9. Self-modify validates wiring before hot-reload.
+10. Behavior changes should be possible through `wiring.json` whenever the
+   Python handler already exists.
 
-# Start server + autonomous execution
-python server.py --run "open notepad and write hello world"
+## Is The Vision Closer?
 
-# Resume after crash/restart
-python server.py --resume
+Yes. Before this session the loop was proven but brittle: app launch could take
+27 cycles, focus subtasks confused the model, colony delegation had not been
+proved live, and ROD was described more strongly than it was implemented.
 
-# Colony mode (multiple rods, shared bus)
-python reactor.py --goal "open chrome and search for cats"
+Now the core proof is closer by about one layer:
 
-# === BROWSER DASHBOARD ===
+- The ROD two-pass contract exists in code.
+- The server can stay responsive while queued runs execute.
+- The model has a more accurate environment model.
+- The desktop observation exposes enough window context to reason about
+  non-focused windows without breaking `[ID]` scope.
+- 10 consecutive real desktop app-open goals passed at 11 cycles.
 
-# Open dashboard (server must be running)
-start http://127.0.0.1:9077
+The remaining gap is the hard workflow layer: browser conversation, response
+contingency, summarization into Notepad, and YouTube playback. That requires a
+better step/debug workbench and more robust browser/text-field behavior.
 
-# Chrome with UIA accessibility (for self-testing)
-"C:\Program Files\Google\Chrome\Application\chrome.exe" --force-renderer-accessibility
+## Appendix: Handover Prompt For Next AI Session
 
-# === API USAGE ===
-
-# Step manually via HTTP
-curl -X POST http://127.0.0.1:9077/node/entry -H "Content-Type: application/json" -d "{\"state\":{\"goal\":\"open notepad\",\"step\":0,\"retries\":0,\"history\":[]}}"
-
-# Inject interrupt (new goal mid-execution)
-curl -X POST http://127.0.0.1:9077/interrupt -H "Content-Type: application/json" -d "{\"goal\":\"close everything and open chrome\"}"
-
-# Hot-reload topology
-curl -X POST http://127.0.0.1:9077/wiring -H "Content-Type: application/json" -d @prompts/wiring.json
-
-# Autonomous run via API
-curl -X POST http://127.0.0.1:9077/run -H "Content-Type: application/json" -d "{\"goal\":\"navigate chrome to github.com\"}"
-
-# === MOCK TESTING (no Windows desktop needed) ===
-
-# Step with mock screen (observe node uses injected screen instead of real UIA)
-curl -X POST http://127.0.0.1:9077/node/observe -H "Content-Type: application/json" -d "{\"state\":{\"goal\":\"test\",\"no_desktop\":true,\"screen\":\"(Windows: [1] Notepad - Untitled. [2] Edit area.)\"}}"
-
-# Full mock cycle: entry → planner → scheduler → observe → act
-curl -X POST http://127.0.0.1:9077/node/planner -H "Content-Type: application/json" -d "{\"state\":{\"goal\":\"type hello in notepad\",\"screen\":\"(Windows: [1] Notepad - Untitled. [2] Edit area empty.)\",\"step\":0,\"retries\":0,\"history\":[]}}"
+```yaml
+handover:
+  project: endgame-ai
+  date: 2026-06-20
+  status:
+    proven:
+      - ROD two-pass LLM calls are implemented.
+      - queued /run worker prevents overlapping graph loops.
+      - observe/action desktop calls are serialized.
+      - act prompt supports deterministic action chains.
+      - observations include focused-window IDs plus non-ID WINDOWS list.
+      - actions use the cached observation map instead of rescanning per verb.
+      - verifier has deterministic confirms for focus/open launch evidence.
+      - 10 consecutive real desktop "open notepad" goals passed at 11 cycles.
+      - two-slot colony delegation was validated.
+    not_yet_proven:
+      - compound browser dialogue workflow with grok.com
+      - saving a generated summary into Notepad
+      - YouTube music playback after prior browser work
+      - human-grade schema-driven wiring editor
+      - runtime/pause graph rewiring from the dashboard
+  immediate_goal:
+    Rewrite the dashboard and step interface so both a human using the HTML UI
+    and an AI using HTTP POST calls can inspect, step, pause, edit wiring, and
+    debug the same live graph. Then use that step surface to develop and prove
+    the compound Grok/Notepad/YouTube workflow.
+  constraints:
+    - Prefer wiring.json for behavior changes.
+    - Keep Python as generic plumbing.
+    - Keep the repository allowlist tight.
+    - Do not commit runtime artifacts.
+  recommended_order:
+    - Finish schema-driven dashboard.
+    - Add first-class server step/session endpoints if needed.
+    - Validate manual GUI step equals API step.
+    - Run the compound workflow in small stepped slices.
+    - Commit only essential tracked files.
 ```
-
-## Appendix C: Two-Instance Setup (Observer + Worker)
-
-Run two separate endgame-ai instances: one doing real work, another observing and correcting the first.
-
-```
-Directory layout:
-  C:\endgame-ai\worker\    ← Instance 1: does the actual desktop work
-  C:\endgame-ai\observer\  ← Instance 2: watches Instance 1 and corrects it
-```
-
-### Instance 1 — Worker (port 9077)
-
-```powershell
-cd C:\endgame-ai\worker
-python server.py --run "open notepad and write hello world"
-```
-
-This instance:
-- Runs autonomously on port 9077
-- observe_screen() captures real desktop
-- execute_verb() performs real keystrokes/clicks
-- Follows plan → act → verify loop
-
-### Instance 2 — Observer/Corrector (port 9078)
-
-```powershell
-cd C:\endgame-ai\observer
-# Edit prompts/model.json: change nothing (same LLM)
-# Edit prompts/wiring.json: add custom observer topology (see below)
-python server.py --port 9078 --run "monitor worker at 127.0.0.1:9077 and correct if stuck"
-```
-
-This instance:
-- Runs on port 9078
-- observe_screen() sees the same desktop (including worker's Chrome/Notepad)
-- Can POST to worker's /interrupt endpoint to inject corrections
-- Can POST to worker's /wiring endpoint to modify worker's topology
-- Can read worker's /state to see what it's doing
-
-### Observer's goal prompt example:
-
-```
-Monitor the endgame-ai worker at http://127.0.0.1:9077.
-Every 30 seconds:
-1. GET /state from worker — check if stuck (retries > 3 or same node for > 2 min)
-2. If stuck: POST /interrupt with a corrective goal
-3. If topology seems wrong: POST /wiring with fixed topology
-4. observe_screen() — verify worker's actions are producing results
-5. If worker finished: report success via bus
-```
-
-### How the Observer corrects the Worker:
-
-```powershell
-# Observer reads worker state
-curl http://127.0.0.1:9077/state
-
-# Observer sees worker is stuck — injects interrupt
-curl -X POST http://127.0.0.1:9077/interrupt -H "Content-Type: application/json" -d "{\"goal\":\"try using keyboard shortcut ctrl+n instead of clicking File menu\"}"
-
-# Observer patches worker's wiring (adds a hint guard)
-curl -X POST http://127.0.0.1:9077/wiring -H "Content-Type: application/json" -d @fixed-wiring.json
-```
-
-### Setup for second instance:
-
-```powershell
-# Copy the project
-xcopy /E /I C:\endgame-ai\worker C:\endgame-ai\observer
-
-# Edit observer's config to use different port and bus
-# In observer/server.py line 1 or via env var:
-set ENDGAME_PORT=9078
-set ENDGAME_BUS=C:\endgame-ai\shared-bus.json
-
-# Both instances can share bus.json for inter-communication
-# Worker posts telemetry → Observer reads it
-# Observer posts corrections → Worker's bus_check picks them up
-```
-
-### Shared bus communication:
-
-The bus is the nervous system between instances. Both read/write the same `bus.json`:
-
-```json
-[
-  {"from": "worker", "type": "telemetry", "node": "verify", "outcome": "step_denied", "ts": 1718834400},
-  {"from": "observer", "type": "interrupt", "goal": "use ctrl+s instead of File>Save", "ts": 1718834410}
-]
-```
-
-Worker's `bus_check` node picks up observer's interrupt and replans automatically.
