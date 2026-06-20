@@ -505,16 +505,11 @@ def node_act(state, _):
     return {"signals": ["acted"], "patch": patch}
 
 def node_verify(state, _):
-    """Fresh observe + LLM verification."""
-    if not state.get("no_desktop"):
-        screen = observe_screen()
-    else:
-        screen = state.get("screen", "(no desktop)")
-
+    """Verify from descriptive step + act outcomes only — act is sole SCREEN consumer."""
     try:
-        r = call_node("verify", state, extra={"screen": screen})
+        r = call_node("verify", state)
         parsed = r["parsed"]
-        patch = {**r["patch"], "screen": screen}
+        patch = dict(r["patch"])
         if parsed and parsed.get("data", {}).get("confirmed"):
             clear_keys = WIRING.get("reasoning", {}).get("clear_on_step_confirm", [])
             patch.update(clear_reasoning_patch({**state, **patch}, clear_keys))
@@ -524,7 +519,7 @@ def node_verify(state, _):
             patch["last_error"] = wiring_error("verify_parse_failed")
         return {"signals": ["step_denied"], "patch": patch}
     except Exception as e:
-        return {"signals": ["step_denied"], "patch": {"last_error": str(e), "screen": screen}}
+        return {"signals": ["step_denied"], "patch": {"last_error": str(e)}}
 
 def node_reflect(state, _):
     """Retry vs replan vs escalate. Retries exhausted → replan. Replans exhausted → escalate (self-modify)."""
