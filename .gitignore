@@ -14,10 +14,11 @@ sessions/
 .acp.lock
 pause
 
-# Runtime state (regenerated every run)
+# Runtime state (regenerated every run — safe to delete anytime)
 state.json
 bus.json
 runtime/
+prompts/wiring.backup.json
 
 # Colony sandbox (deferred Phase 2)
 colony/
@@ -49,7 +50,6 @@ bus.py
 llm.py
 prompts/wiring.mmd
 prompts/smoke_report.txt
-prompts/wiring.backup.json
 prompts/personalities/
 prompts/manager.txt
 prompts/schema.json
