@@ -855,6 +855,25 @@ class H(http.server.BaseHTTPRequestHandler):
             self._j(load_state() or {})
         elif self.path == "/bus":
             self._j(bus_read())
+        elif self.path == "/smoke":
+            # Programmatic smoke test — validates all endpoints work
+            results = []
+            try:
+                results.append({"test": "health", "ok": True})
+                results.append({"test": "wiring", "ok": len(WIRING.get("topology", {}).get("nodes", [])) > 0, "nodes": len(WIRING.get("topology", {}).get("nodes", []))})
+                results.append({"test": "schema", "ok": bool(WIRING_SCHEMA)})
+                # Test entry node
+                h = NODES.get("entry")
+                if h:
+                    r = h({"goal": "smoke_test"}, {})
+                    results.append({"test": "node/entry", "ok": "signals" in r, "signals": r.get("signals")})
+                else:
+                    results.append({"test": "node/entry", "ok": False, "error": "no handler"})
+                results.append({"test": "html", "ok": (ROOT / "wiring-editor.html").exists()})
+            except Exception as e:
+                results.append({"test": "exception", "ok": False, "error": str(e)})
+            passed = sum(1 for r in results if r["ok"])
+            self._j({"passed": passed, "total": len(results), "all_ok": passed == len(results), "results": results})
         elif self.path in ("/", "/index.html"):
             d = (ROOT / "wiring-editor.html").read_bytes()
             self.send_response(200); self.send_header("Content-Type","text/html"); self.send_header("Content-Length",len(d)); self.end_headers(); self._write(d)

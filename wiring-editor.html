@@ -2,407 +2,229 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>endgame-ai</title>
-<script src="https://cdn.jsdelivr.net/npm/elkjs@0.9.3/lib/elk.bundled.js"></script>
+<script src="https://unpkg.com/cytoscape@3.30.4/dist/cytoscape.min.js"></script>
+<script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
+<script src="https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
+<script src="https://unpkg.com/lodash@4.17.21/lodash.min.js"></script>
+<script src="https://unpkg.com/cytoscape-edgehandles@4.0.1/cytoscape-edgehandles.js"></script>
 <style>
-  :root {
-    color-scheme: dark;
-    --bg: #06080d;
-    --panel: #0c1220;
-    --line: #1a2744;
-    --accent: #38bdf8;
-    --green: #4ade80;
-    --text: #e2e8f0;
-    --muted: #64748b;
-  }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { height: 100dvh; overflow: hidden; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); }
+  :root{color-scheme:only dark;--bg:#06080d;--panel:#0a0f1a;--line:#1a2744;--neon:#00e5ff;--green:#39ff14;--text:#e0e6ed;--muted:#5a6a7a}
+  *{margin:0;padding:0;box-sizing:border-box;color:inherit}
+  html,body{height:100dvh;overflow:hidden;font:13px system-ui,sans-serif;background:var(--bg);color:var(--text)}
+  body{display:grid;grid-template:"bar bar" 2.2rem "cy log" 1fr / 1fr min(18rem,30vw)}
+  @media(max-width:600px){body{grid-template:"bar" 2.2rem "cy" 1fr "log" 30dvh / 1fr}}
 
-  #app {
-    display: grid; height: 100dvh;
-    grid-template: "toolbar toolbar toolbar" 2.5rem "canvas log inspect" 1fr / 1fr min(16rem, 22vw) min(22rem, 30vw);
+  nav{grid-area:bar;display:flex;align-items:center;gap:.3rem;padding:0 .5rem;background:var(--panel);border-bottom:1px solid var(--line);
+    & h1{color:var(--neon);font-size:.7rem;text-shadow:0 0 6px var(--neon);white-space:nowrap}
+    & button{padding:.2rem .4rem;border:1px solid var(--line);border-radius:.2rem;background:var(--bg);color:var(--text);font-size:.6rem;cursor:pointer;&:hover{border-color:var(--neon);color:var(--neon);text-shadow:0 0 3px var(--neon)}}
+    & .sp{flex:1}
+    & #st{font-size:.55rem;color:var(--muted);max-width:20rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   }
-  @media (max-width: 900px) {
-    #app { grid-template: "toolbar toolbar" 2.5rem "canvas panel" 1fr / 1fr min(20rem, 40vw); }
-    #log { grid-area: panel; }
-    #inspect { display: none; }
+  #cy{grid-area:cy;min-height:0;background:var(--bg)}
+  #log{grid-area:log;background:var(--panel);border-inline-start:1px solid var(--line);display:flex;flex-direction:column;overflow:hidden;
+    & header{padding:.3rem .4rem;font:.5rem system-ui;color:var(--neon);border-bottom:1px solid var(--line);text-transform:uppercase;letter-spacing:.04em;display:flex;justify-content:space-between;align-items:center;
+      & button{font-size:.45rem;padding:.1rem .3rem;border:1px solid var(--line);border-radius:.15rem;background:var(--bg);color:var(--muted);cursor:pointer;&:hover{color:var(--neon);border-color:var(--neon)}}
+    }
+    & #logB{flex:1;min-height:0;overflow-y:auto;padding:.3rem .4rem;font:.5rem/1.5 ui-monospace,monospace;color:#7a8a9a;scrollbar-color:var(--line) transparent;
+      & .n{color:var(--text);font-weight:600} & .s{color:var(--neon)} & .d{color:#9ab;display:block;margin-left:.6rem;word-break:break-all}
+    }
   }
-  @media (orientation: portrait) {
-    #app { grid-template: "toolbar" 2.5rem "canvas" 1fr "log" 30dvh / 1fr; }
-    #inspect { display: none; }
+  #ins[popover]{position:fixed;inset:2.2rem 0 0 auto;width:min(20rem,38vw);margin:0;border:0;border-left:1px solid var(--line);background:var(--panel);color:var(--text);padding:.5rem;overflow-y:auto;font-size:.58rem;scrollbar-color:var(--line) transparent;
+    &::backdrop{background:transparent}
+    & label{display:block;color:var(--neon);font-size:.45rem;margin-top:.35rem;text-transform:uppercase;letter-spacing:.03em}
+    & input,& textarea{width:100%;padding:.2rem .3rem;border:1px solid var(--line);border-radius:.15rem;background:var(--bg);color:var(--text);font:.5rem/1.3 ui-monospace,monospace;resize:vertical;appearance:none;outline:none;&:focus{border-color:var(--neon);box-shadow:0 0 3px var(--neon)}}
+    & textarea{min-height:2.5rem}
+    & .io{background:var(--bg);border:1px solid var(--line);border-radius:.15rem;padding:.2rem .3rem;font:.45rem/1.3 ui-monospace,monospace;color:#7a8a9a;max-height:7rem;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
+    & .blk{padding:.1rem .2rem;border:1px solid var(--line);border-radius:.1rem;margin-bottom:.1rem;font-size:.45rem;& span{color:var(--muted)}}
+    & .acts{display:flex;gap:.3rem;margin-top:.4rem;& button{padding:.15rem .4rem;border:1px solid var(--line);border-radius:.15rem;background:var(--bg);color:var(--neon);font-size:.5rem;cursor:pointer;&:hover{border-color:var(--neon);box-shadow:0 0 3px var(--neon)}}}
   }
-
-  #toolbar {
-    grid-area: toolbar;
-    display: flex; align-items: center; gap: .4rem; padding: 0 .6rem;
-    background: var(--panel); border-bottom: 1px solid var(--line);
-    overflow-x: auto; scrollbar-width: none;
-  }
-  #toolbar::-webkit-scrollbar { display: none; }
-  #toolbar h1 { color: var(--accent); font-size: .78rem; white-space: nowrap; }
-  #toolbar button {
-    padding: .3rem .5rem; border: 1px solid var(--line); border-radius: .3rem;
-    background: var(--panel); color: var(--text); font-size: .68rem;
-    cursor: pointer; white-space: nowrap;
-  }
-  #toolbar button:hover { border-color: var(--accent); color: var(--accent); }
-  #toolbar .spacer { flex: 1; }
-  #toolbar #status { font-size: .62rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 18rem; }
-
-  #canvas { grid-area: canvas; min-height: 0; overflow: hidden; position: relative; }
-  #canvas svg { width: 100%; height: 100%; display: block; }
-
-  #log {
-    grid-area: log;
-    background: var(--panel); border-inline-start: 1px solid var(--line);
-    display: flex; flex-direction: column; overflow: hidden;
-  }
-  #log-head {
-    padding: .4rem .5rem; font-size: .6rem; color: var(--muted);
-    border-bottom: 1px solid var(--line); flex: 0 0 auto;
-  }
-  #log-body {
-    flex: 1; min-height: 0; overflow-y: auto; padding: .4rem .5rem;
-    font: .58rem/1.5 ui-monospace, monospace; color: #94a3b8;
-  }
-  #log-body .entry { margin-bottom: .25rem; }
-  #log-body .time { color: var(--muted); }
-  #log-body .node { color: var(--text); font-weight: 600; }
-  #log-body .sig { color: var(--accent); }
-  #log-body .detail { color: #cbd5e1; margin-left: .8rem; display: block; word-break: break-all; }
-
-  #inspect {
-    grid-area: inspect;
-    background: var(--panel); border-inline-start: 1px solid var(--line);
-    display: flex; flex-direction: column; overflow: hidden;
-  }
-  #inspect-head {
-    padding: .4rem .5rem; font-size: .6rem; color: var(--muted);
-    border-bottom: 1px solid var(--line); flex: 0 0 auto;
-    display: flex; justify-content: space-between; align-items: center;
-  }
-  #inspect-head button {
-    padding: .15rem .4rem; border: 1px solid var(--line); border-radius: .2rem;
-    background: var(--panel); color: var(--accent); font-size: .55rem; cursor: pointer;
-  }
-  #inspect-body {
-    flex: 1; min-height: 0; overflow-y: auto; padding: .5rem;
-    font-size: .62rem;
-  }
-  #inspect-body label { display: block; color: var(--muted); font-size: .55rem; margin-top: .5rem; margin-bottom: .15rem; }
-  #inspect-body label:first-child { margin-top: 0; }
-  #inspect-body input, #inspect-body textarea, #inspect-body select {
-    width: 100%; padding: .3rem .4rem; border: 1px solid var(--line); border-radius: .25rem;
-    background: var(--bg); color: var(--text); font: .6rem/1.4 ui-monospace, monospace;
-    resize: vertical;
-  }
-  #inspect-body textarea { min-height: 4rem; }
-  #inspect-body .blocks-list { padding: 0; list-style: none; }
-  #inspect-body .blocks-list li {
-    padding: .2rem .3rem; border: 1px solid var(--line); border-radius: .2rem;
-    margin-bottom: .2rem; font-size: .55rem; color: var(--text);
-  }
-  #inspect-body .blocks-list li span { color: var(--muted); }
-  #inspect-body .io-box {
-    background: var(--bg); border: 1px solid var(--line); border-radius: .25rem;
-    padding: .3rem .4rem; font: .55rem/1.4 ui-monospace, monospace;
-    color: #94a3b8; max-height: 10rem; overflow-y: auto; white-space: pre-wrap; word-break: break-all;
-  }
-
-  .elk-node { cursor: pointer; transition: filter .3s; }
-  .elk-node rect { rx: 6; ry: 6; stroke-width: 2; transition: stroke .3s, filter .3s; }
-  .elk-node.active rect { stroke: var(--green) !important; filter: drop-shadow(0 0 8px rgba(74,222,128,.6)); }
-  .elk-node.selected rect { stroke: var(--accent) !important; stroke-dasharray: 4 2; }
-  .elk-node text { fill: var(--text); font-size: 10px; font-weight: 600; pointer-events: none; }
-  .elk-node .type-label { fill: var(--muted); font-size: 8px; font-weight: 400; }
-  .elk-edge { fill: none; stroke: #0e7490; stroke-width: 1.5; marker-end: url(#arrow); transition: stroke .3s; }
-  .elk-edge.active { stroke: var(--green); stroke-width: 2.5; }
-  .edge-label { fill: var(--muted); font-size: 7px; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; }
-  #err {
-    position: fixed; top: 2.5rem; left: 0; right: 0; z-index: 99;
-    padding: .4rem .6rem; background: #450a0a; border-bottom: 1px solid #ef4444;
-    color: #fecaca; font-size: .68rem; display: none;
-  }
+  #err{position:fixed;top:2.2rem;left:0;right:0;z-index:99;padding:.25rem .4rem;background:#1a0505;border-bottom:1px solid #ff1744;color:#ff8a80;font-size:.55rem;display:none}
 </style>
 </head>
 <body>
-<div id="app">
-  <nav id="toolbar">
-    <h1>⚡ endgame</h1>
-    <button id="btn-step">Step</button>
-    <button id="btn-run">Run</button>
-    <button id="btn-stop">Stop</button>
-    <button id="btn-auto">Auto</button>
-    <button id="btn-save">Save</button>
-    <span class="spacer"></span>
-    <span id="status">…</span>
-  </nav>
-  <div id="canvas"></div>
-  <aside id="log">
-    <div id="log-head">log</div>
-    <div id="log-body"></div>
-  </aside>
-  <aside id="inspect">
-    <div id="inspect-head"><span>node inspector</span><button id="btn-apply">Apply</button></div>
-    <div id="inspect-body"><p style="color:var(--muted)">click a node</p></div>
-  </aside>
-</div>
-<div id="err" role="alert"></div>
-<script type="module">
-const SERVER = location.origin;
-const $ = id => document.getElementById(id);
-const status = t => { $('status').textContent = t; };
-const fail = t => { const e = $('err'); e.style.display = 'block'; e.textContent = t; };
-const clearErr = () => { $('err').style.display = 'none'; };
+<nav>
+  <h1>⚡ endgame</h1>
+  <button id="bStep">Step</button><button id="bRun">Run</button><button id="bStop">Stop</button><button id="bLayout">Layout</button><button id="bSave">Save</button>
+  <span class="sp"></span><span id="st">…</span>
+</nav>
+<div id="cy"></div>
+<aside id="log"><header>log<button id="bClr">clear</button></header><div id="logB"></div></aside>
+<div id="ins" popover="manual"></div>
+<div id="err"></div>
+<script>
+// Extensions auto-register via window.cytoscape detection
+const S=location.origin,$=id=>document.getElementById(id),esc=s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+let W,cy,eh,sel,liveNode,liveState,liveRun,lastIO={},logs=[];
 
-let wiring, elkGraph, svgEl;
-let liveNode, liveState, liveRun, liveStop;
-let liveLog = [];
-let selectedNode = null;
-let lastIO = {}; // nodeId → {input, output}
+const NEONS=['#00e5ff','#7c4dff','#1de9b6','#ff6d00','#00e676','#d500f9','#ffab00','#2979ff','#76ff03','#f50057','#00bcd4','#651fff'];
+const tc={};const neon=t=>(tc[t]??=NEONS[Object.keys(tc).length%NEONS.length]);
 
-// --- Colors ---
-const PALETTE = ['#166534','#5b21b6','#1e40af','#0e7490','#7e22ce','#047857','#b45309','#15803d','#1e3a5f','#9a3412','#86198f','#be185d'];
-const typeColors = {};
-function colorFor(type) {
-  if (!typeColors[type]) typeColors[type] = PALETTE[Object.keys(typeColors).length % PALETTE.length];
-  return typeColors[type];
-}
+// --- Build Cytoscape ---
+function buildGraph(w){
+  const elements=[];
+  for(const n of w.topology.nodes) elements.push({data:{id:n.id,label:n.id,type:n.type||'',ncolor:neon(n.type||'?')}});
+  for(const e of w.topology.edges) elements.push({data:{id:`${e.from}-${e.on||'*'}-${e.to}`,source:e.from,target:e.to,label:e.on||''}});
 
-// --- ELK ---
-const elk = new ELK();
-async function computeLayout(w) {
-  const t = w.topology;
-  return elk.layout({
-    id: "root",
-    layoutOptions: {
-      'elk.algorithm': 'layered',
-      'elk.direction': 'RIGHT',
-      'elk.edgeRouting': 'ORTHOGONAL',
-      'elk.layered.spacing.nodeNodeBetweenLayers': '90',
-      'elk.spacing.nodeNode': '35',
-      'elk.layered.spacing.edgeEdgeBetweenLayers': '12',
-      'elk.layered.spacing.edgeNodeBetweenLayers': '20',
-      'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
-      'elk.layered.nodePlacement.strategy': 'BRANDES_KOEPF',
-      'elk.portConstraints': 'FIXED_ORDER'
-    },
-    children: t.nodes.map(n => ({ id: n.id, width: 130, height: 44 })),
-    edges: t.edges.map((e, i) => ({ id: `e${i}`, sources: [e.from], targets: [e.to], labels: [{ text: e.on || '' }] }))
+  cy=cytoscape({
+    container:$('cy'),
+    elements,
+    style:[
+      {selector:'node',style:{'background-color':'#0f172a','border-width':2,'border-color':'data(ncolor)','label':'data(label)','color':'#e0e6ed','font-size':'9px','text-valign':'center','text-halign':'center','width':110,'height':36,'shape':'roundrectangle','text-wrap':'ellipsis','text-max-width':'100px'}},
+      {selector:'node:active',style:{'overlay-opacity':0}},
+      {selector:'node.active',style:{'border-color':'#39ff14','border-width':3,'shadow-blur':'12','shadow-color':'#39ff14','shadow-opacity':0.5}},
+      {selector:'node.sel',style:{'border-color':'#00e5ff','border-width':3,'border-style':'dashed'}},
+      {selector:'edge',style:{'width':1.5,'line-color':'#0e7490','target-arrow-color':'#00e5ff','target-arrow-shape':'triangle','curve-style':'taxi','taxi-direction':'rightward','taxi-turn':'50px','label':'data(label)','font-size':'7px','color':'#5a6a7a','text-rotation':'autorotate','text-margin-y':-8}},
+      {selector:'edge.active',style:{'line-color':'#39ff14','target-arrow-color':'#39ff14','width':2.5}},
+      {selector:'.eh-handle',style:{'background-color':'#00e5ff','width':8,'height':8,'shape':'ellipse','overlay-opacity':0}},
+      {selector:'.eh-preview,.eh-ghost-edge',style:{'line-color':'#00e5ff','target-arrow-color':'#00e5ff','opacity':0.6}}
+    ],
+    layout:{name:'dagre',rankDir:'LR',nodeSep:30,rankSep:80,edgeSep:12},
+    wheelSensitivity:0.3,
+    minZoom:0.3,maxZoom:3
   });
-}
 
-// --- SVG ---
-function renderSVG(layout) {
-  const pad = 30, W = layout.width + pad * 2, H = layout.height + pad * 2;
-  let svg = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">`;
-  svg += `<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#22d3ee"/></marker></defs>`;
-  for (const edge of layout.edges || []) {
-    for (const sec of edge.sections || []) {
-      let d = `M ${sec.startPoint.x+pad} ${sec.startPoint.y+pad}`;
-      for (const bp of sec.bendPoints || []) d += ` L ${bp.x+pad} ${bp.y+pad}`;
-      d += ` L ${sec.endPoint.x+pad} ${sec.endPoint.y+pad}`;
-      svg += `<path class="elk-edge" data-from="${edge.sources?.[0]||''}" data-to="${edge.targets?.[0]||''}" d="${d}"/>`;
+  // Edgehandles for drag-to-connect
+  eh=cy.edgehandles({hoverDelay:100,snap:true,noEdgeEventsInDraw:true,
+    complete:(src,tgt)=>{
+      const on=prompt('Signal label (e.g. ready):','*');
+      if(!on){cy.remove(cy.edges().last());return;}
+      const e={from:src.id(),to:tgt.id(),on};
+      W.topology.edges.push(e);
+      cy.edges().last().data('label',on);
+      logMsg('wire',`+edge`,`${e.from} →[${on}]→ ${e.to}`);
     }
-    if (edge.labels?.[0]?.text && edge.sections?.[0]) {
-      const s = edge.sections[0], bps = s.bendPoints || [];
-      const mid = bps.length ? bps[Math.floor(bps.length/2)] : {x:(s.startPoint.x+s.endPoint.x)/2, y:(s.startPoint.y+s.endPoint.y)/2};
-      svg += `<text class="edge-label" x="${mid.x+pad}" y="${mid.y+pad-4}">${esc(edge.labels[0].text)}</text>`;
-    }
-  }
-  for (const node of layout.children || []) {
-    const x = node.x+pad, y = node.y+pad;
-    const nd = wiring.topology.nodes.find(n => n.id === node.id);
-    const color = colorFor(nd?.type || 'unknown');
-    svg += `<g class="elk-node" data-id="${node.id}" transform="translate(${x},${y})">`;
-    svg += `<rect width="${node.width}" height="${node.height}" fill="#0f172a" stroke="${color}"/>`;
-    svg += `<text x="${node.width/2}" y="${node.height/2+1}" text-anchor="middle" dominant-baseline="middle">${esc(node.id)}</text>`;
-    svg += `<text class="type-label" x="${node.width/2}" y="${node.height-6}" text-anchor="middle">${esc(nd?.type||'')}</text>`;
-    svg += `</g>`;
-  }
-  svg += `</svg>`;
-  $('canvas').innerHTML = svg;
-  svgEl = $('canvas').querySelector('svg');
-  // click handler
-  svgEl.addEventListener('click', e => {
-    const g = e.target.closest('.elk-node');
-    if (g) selectNode(g.dataset.id);
   });
+
+  // Click to inspect
+  cy.on('tap','node',e=>{inspect(e.target.id());});
+  cy.on('tap',e=>{if(e.target===cy){hideInspect();sel=null;cy.nodes().removeClass('sel');}});
+
+  status(`${w.topology.nodes.length} nodes · ${w.topology.edges.length} edges · scroll=zoom · drag=move`);
 }
 
-function esc(s) { return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function runLayout(){cy.layout({name:'dagre',rankDir:'LR',nodeSep:30,rankSep:80,edgeSep:12,animate:true,animationDuration:300}).run();}
 
-// --- Node selection & inspector ---
-function selectNode(id) {
-  selectedNode = id;
-  svgEl.querySelectorAll('.elk-node').forEach(g => g.classList.remove('selected'));
-  const g = svgEl.querySelector(`.elk-node[data-id="${id}"]`);
-  if (g) g.classList.add('selected');
-  renderInspector();
+// --- Inspector ---
+function inspect(id){
+  sel=id;cy.nodes().removeClass('sel');cy.$id(id).addClass('sel');
+  const nd=W.topology.nodes.find(n=>n.id===id);if(!nd)return;
+  const blk=nd.prompt?.user?.blocks||[],io=lastIO[id]||{};
+  let h=`<label>id</label><input value="${esc(id)}" readonly>`;
+  h+=`<label>type</label><input id="iT" value="${esc(nd.type||'')}">`;
+  h+=`<label>label</label><input id="iL" value="${esc(nd.label||'')}">`;
+  h+=`<label>role (${esc(nd.prompt?.role||'–')})</label><textarea id="iR" placeholder="prompt text">${esc('')}</textarea>`;
+  h+=`<label>input blocks</label>`;
+  h+=blk.map(b=>`<div class="blk"><b>${esc(b.label)}</b> <span>← ${esc(b.source)}</span></div>`).join('')||'<div class="blk" style="color:var(--muted)">none</div>';
+  h+=`<label>last input → node</label><div class="io">${esc(io.i||'—')}</div>`;
+  h+=`<label>node output →</label><div class="io">${esc(io.o||'—')}</div>`;
+  h+=`<div class="acts"><button onclick="applyInspect()">Apply</button><button onclick="delNode()">Delete</button><button onclick="hideInspect()">Close</button></div>`;
+  $('ins').innerHTML=h;$('ins').showPopover();
 }
-
-function renderInspector() {
-  const nd = wiring.topology.nodes.find(n => n.id === selectedNode);
-  if (!nd) { $('inspect-body').innerHTML = '<p style="color:var(--muted)">click a node</p>'; return; }
-  const p = nd.prompt || {};
-  const blocks = p.user?.blocks || [];
-  const io = lastIO[nd.id];
-  let h = '';
-  h += `<label>id</label><input value="${esc(nd.id)}" readonly>`;
-  h += `<label>type</label><input id="inp-type" value="${esc(nd.type||'')}">`;
-  h += `<label>label</label><input id="inp-label" value="${esc(nd.label||'')}">`;
-  h += `<label>role prompt (${esc(p.role||'none')})</label>`;
-  const roleFile = p.role ? `prompts/${p.role}.md` : '';
-  h += `<textarea id="inp-role" placeholder="role prompt text loaded from ${roleFile}">${esc(nd._roleText||'(click Apply to load)')}</textarea>`;
-  h += `<label>input blocks</label><ul class="blocks-list">`;
-  for (const b of blocks) h += `<li><b>${esc(b.label)}</b> <span>← ${esc(b.source)}</span>${b.always?' ✓':''}</li>`;
-  if (!blocks.length) h += `<li style="color:var(--muted)">no wired inputs</li>`;
-  h += `</ul>`;
-  h += `<label>last LLM input</label><div class="io-box">${io?.input ? esc(io.input) : '—'}</div>`;
-  h += `<label>last LLM output</label><div class="io-box">${io?.output ? esc(io.output) : '—'}</div>`;
-  $('inspect-body').innerHTML = h;
-}
-
-$('btn-apply').onclick = () => {
-  if (!selectedNode) return;
-  const nd = wiring.topology.nodes.find(n => n.id === selectedNode);
-  if (!nd) return;
-  const t = document.getElementById('inp-type');
-  const l = document.getElementById('inp-label');
-  if (t) nd.type = t.value;
-  if (l) nd.label = l.value;
-  status(`applied ${nd.id}`);
+function hideInspect(){$('ins').hidePopover();}
+window.applyInspect=()=>{
+  if(!sel)return;const nd=W.topology.nodes.find(n=>n.id===sel);if(!nd)return;
+  const t=$('iT')?.value,l=$('iL')?.value;
+  if(t)nd.type=t; if(l)nd.label=l;
+  cy.$id(sel).data('label',l||sel).data('type',t).data('ncolor',neon(t));
+  status(`applied → ${sel}`);
 };
+window.delNode=()=>{
+  if(!sel||!confirm(`Delete ${sel}?`))return;
+  W.topology.nodes=W.topology.nodes.filter(n=>n.id!==sel);
+  W.topology.edges=W.topology.edges.filter(e=>e.from!==sel&&e.to!==sel);
+  cy.remove(cy.$id(sel));hideInspect();sel=null;
+  logMsg('edit','delete',sel);
+};
+window.hideInspect=hideInspect;
 
 // --- Glow ---
-function glow(id) {
-  if (!svgEl) return;
-  svgEl.querySelectorAll('.elk-node').forEach(g => g.classList.remove('active'));
-  svgEl.querySelectorAll('.elk-edge').forEach(p => p.classList.remove('active'));
-  if (!id) return;
-  svgEl.querySelector(`.elk-node[data-id="${id}"]`)?.classList.add('active');
-  svgEl.querySelectorAll(`.elk-edge[data-to="${id}"]`).forEach(p => p.classList.add('active'));
+function glow(id){
+  cy.nodes().removeClass('active');cy.edges().removeClass('active');
+  if(!id)return;
+  cy.$id(id).addClass('active');
+  cy.edges().filter(e=>e.target().id()===id).addClass('active');
 }
 
 // --- Log ---
-function appendLog(node, signals, detail) {
-  liveLog.push({ t: new Date().toLocaleTimeString(), n: node, s: signals, d: detail });
-  const body = $('log-body');
-  let html = '';
-  for (const l of liveLog.slice(-30)) {
-    html += `<div class="entry"><span class="time">${esc(l.t)}</span> <span class="node">${esc(l.n)}</span> <span class="sig">[${esc(l.s)}]</span>`;
-    if (l.d) html += `<span class="detail">${esc(l.d)}</span>`;
-    html += `</div>`;
-  }
-  body.innerHTML = html;
-  body.scrollTop = body.scrollHeight;
+function logMsg(n,sig,detail){
+  logs.push({t:new Date().toLocaleTimeString(),n,sig,d:detail||''});
+  $('logB').innerHTML=logs.slice(-40).map(l=>`<div><span class="n">${esc(l.n)}</span> <span class="s">[${esc(l.sig)}]</span>${l.d?`<span class="d">${esc(l.d)}</span>`:''}</div>`).join('');
+  $('logB').scrollTop=$('logB').scrollHeight;
 }
+function status(t){$('st').textContent=t;}
+function err(t){$('err').style.display='block';$('err').textContent=t;}
 
 // --- API ---
-const topo = id => wiring?.topology?.nodes?.find(n => n.id === id);
-const next = (from, sigs) => wiring.topology.edges
-  .filter(e => e.from === from && (e.on === '*' || (e.on||'').split('|').some(s => sigs.includes(s))))
-  .map(e => e.to)[0] ?? null;
-
-async function callNode(id, state) {
-  const type = topo(id)?.type || 'unknown';
-  const input = JSON.stringify(state, null, 1);
-  const r = await fetch(`${SERVER}/node/${type}`, {
-    method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({ state })
-  });
-  const data = await r.json();
-  const output = JSON.stringify(data, null, 1);
-  lastIO[id] = { input, output };
-  if (id === selectedNode) renderInspector();
-  return data;
+const nd=id=>W.topology.nodes.find(n=>n.id===id);
+const next=(from,sigs)=>W.topology.edges.filter(e=>e.from===from&&(e.on==='*'||(e.on||'').split('|').some(s=>sigs.includes(s)))).map(e=>e.to)[0]||null;
+async function callNode(id,state){
+  const type=nd(id)?.type||'?';
+  const r=await(await fetch(`${S}/node/${type}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({state})})).json();
+  lastIO[id]={i:JSON.stringify(state,null,1),o:JSON.stringify(r,null,1)};
+  if(id===sel)inspect(id);
+  return r;
+}
+function detail(sp){
+  if(sp.plan)return'plan: '+sp.plan.map(p=>p.description).join(' → ');
+  if(sp.step_goal)return`goal: "${sp.step_goal}"`;
+  if(sp.reasoning?.last)return sp.reasoning.last.slice(0,180);
+  return'';
 }
 
-// --- Execution ---
-const freshState = g => ({
-  goal: g, step: 0, retries: 0, history: [], reasoning: {}, reasoning_chain: [],
-  planner_retries: 0, replan_count: 0, last_error: '', bus_last_check: Date.now()/1e3, no_desktop: false
-});
-
-function extractDetail(sp) {
-  if (sp.plan) return `plan: ${sp.plan.map(p=>p.description).join(' → ')}`;
-  if (sp.step_goal) return `goal: "${sp.step_goal}"`;
-  if (sp.last_actions) return `actions: ${sp.last_actions}`;
-  if (sp.reasoning?.last) return sp.reasoning.last.slice(0, 200);
-  return '';
-}
-
-function needGoal() {
-  if (liveState) return true;
-  const g = prompt('Goal:');
-  if (!g) return false;
-  liveState = freshState(g);
-  liveNode = wiring.topology.cycle_start;
-  glow(liveNode);
-  appendLog('—', 'start', `goal: "${g}"`);
+// --- Run engine ---
+function needGoal(){
+  if(liveState)return true;
+  const g=prompt('Goal:');if(!g)return false;
+  liveState={goal:g,step:0,retries:0,history:[],reasoning:{},reasoning_chain:[],planner_retries:0,replan_count:0,last_error:'',no_desktop:false};
+  liveNode=W.topology.cycle_start;glow(liveNode);logMsg('–','start',`goal: "${g}"`);
   return true;
 }
-
-async function advance() {
-  if (!liveNode) return false;
-  const id = liveNode;
-  glow(id);
-  status(`⏳ ${id}…`);
-  const r = await callNode(id, liveState);
-  liveState = { ...liveState, ...r.state_patch };
-  const s = r.signals || [];
-  liveNode = next(id, s);
-  appendLog(id, s.join(','), extractDetail(r.state_patch || {}));
-  status(`${id} → [${s}]${liveNode ? ' → '+liveNode : ' (end)'}`);
+async function advance(){
+  if(!liveNode)return false;
+  const id=liveNode;glow(id);status(`⏳ ${id}…`);
+  const r=await callNode(id,liveState);
+  liveState={...liveState,...r.state_patch};
+  const s=r.signals||[];
+  liveNode=next(id,s);
+  logMsg(id,s.join(','),detail(r.state_patch||{}));
+  status(`${id} → [${s}]${liveNode?' → '+liveNode:' (end)'}`);
   glow(liveNode);
-  return !!(liveNode && !s.includes('idle') && !liveState.satisfied);
+  return!!(liveNode&&!s.includes('idle')&&!liveState.satisfied);
 }
-
-async function step() {
-  if (!needGoal() || !liveNode) return status(liveNode ? '…' : 'done');
-  try { await advance(); } catch(e) { fail(e.message); }
-}
-async function run() {
-  if (!needGoal()) return;
-  liveRun = true; liveStop = false;
-  try { while (liveRun && !liveStop && liveNode) { if (!await advance()) break; await new Promise(r=>setTimeout(r,300)); } }
-  catch(e) { fail(e.message); }
-  liveRun = false; status('done');
-}
-async function save() {
-  const r = await fetch(`${SERVER}/wiring`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(wiring) });
-  const d = await r.json();
-  if (!r.ok || d.error) { fail(d.details ? d.details.join('; ') : d.error); return; }
-  clearErr(); status(`saved ${d.nodes} nodes`);
+async function step(){if(!needGoal()||!liveNode)return;try{await advance();}catch(e){err(e.message);}}
+async function run(){if(!needGoal())return;liveRun=true;try{while(liveRun&&liveNode){if(!await advance())break;await new Promise(r=>setTimeout(r,300));}}catch(e){err(e.message);}liveRun=false;status('done');}
+async function save(){
+  // Sync positions back
+  for(const n of W.topology.nodes){const pos=cy.$id(n.id).position();n._pos={x:Math.round(pos.x),y:Math.round(pos.y)};}
+  const r=await fetch(`${S}/wiring`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(W)});
+  const d=await r.json();
+  if(!r.ok||d.error){err(d.details?.join('; ')||d.error);return;}
+  $('err').style.display='none';status(`saved ${d.nodes} nodes`);
 }
 
 // --- SSE ---
-const sse = new EventSource(`${SERVER}/events`);
-sse.addEventListener('node', e => { const d = JSON.parse(e.data); glow(d.id); status(`auto: ${d.id}`); });
-sse.addEventListener('result', e => { const d = JSON.parse(e.data); appendLog(d.id, (d.s||[]).join(','), ''); });
-sse.addEventListener('stop', () => { glow(null); status('auto done'); });
+const sse=new EventSource(`${S}/events`);
+sse.addEventListener('node',e=>{const d=JSON.parse(e.data);glow(d.id);status(`auto: ${d.id}`);});
+sse.addEventListener('result',e=>{const d=JSON.parse(e.data);logMsg(d.id,(d.s||[]).join(','),'');});
+sse.addEventListener('stop',()=>{glow(null);status('done');});
 
 // --- Buttons ---
-$('btn-step').onclick = () => step();
-$('btn-run').onclick = () => run();
-$('btn-stop').onclick = () => { liveStop = true; liveRun = false; status('stopped'); glow(null); };
-$('btn-auto').onclick = () => {
-  const g = prompt('Goal (server-side):');
-  if (g) fetch(`${SERVER}/run`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({goal:g}) });
-};
-$('btn-save').onclick = () => save();
+$('bStep').onclick=step;
+$('bRun').onclick=run;
+$('bStop').onclick=()=>{liveRun=false;status('stopped');glow(null);};
+$('bLayout').onclick=runLayout;
+$('bSave').onclick=save;
+$('bClr').onclick=()=>{logs=[];$('logB').innerHTML='';};
 
 // --- Init ---
-try {
-  const h = await (await fetch(`${SERVER}/health`)).json();
-  if (!h.ok) throw new Error('health failed');
-  wiring = await (await fetch(`${SERVER}/wiring`)).json();
-  status(`${wiring.topology.nodes.length} nodes · ${wiring.topology.edges.length} edges`);
-  const layout = await computeLayout(wiring);
-  renderSVG(layout);
-  elkGraph = layout;
-} catch(e) { fail(e.message); status('offline'); }
+(async()=>{
+  try{
+    W=await(await fetch(`${S}/wiring`)).json();
+    buildGraph(W);
+  }catch(e){err(e.message);status('offline');}
+})();
 </script>
 </body>
 </html>
