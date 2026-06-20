@@ -1,167 +1,112 @@
 # endgame-ai
 
-Autonomous Windows desktop agent. Local 4B model. Zero pip dependencies.
+> HANDOVER PROMPT — this file IS the bootstrap for the next AI session.
+> Read `prompts/wiring.json` → `server.py` → `actions.py` → `desktop.py` → `colony.py` in that order.
 
-It cannot see pixels. It cannot click coordinates. It probes the Windows UIA tree via
-cursor hover, gets a text list of elements with IDs, sends that to a local LLM, gets back
-a structured JSON action, executes it via Windows API, observes result, verifies, reflects.
+Autonomous Windows desktop agent. Local 4B model (nvidia-nemotron-3-nano-4b via LM Studio).
+Zero pip dependencies. One stdlib Python process. ~2000 lines total.
 
-The intelligence is in `prompts/wiring.json`. Python is plumbing.
-
----
-
-## For the next AI session
-
-**Read every `.py` and `.json` file before proposing ANY change.**
-
-This system is architecturally different from every other agent framework you know.
-Do not restructure it. Do not add dependencies. Do not create new files unless replacing old ones.
-
-### What this is NOT
-
-- NOT a LangChain/AutoGPT style agent with plugins and tool-calling
-- NOT a vision model looking at screenshots
-- NOT a system that needs tests/ directories or pytest
-- NOT something where more code = more capability
-
-### What this IS
-
-- A directed graph where nodes emit signals, edges route those signals to the next node
-- 4 LLM calls total per cycle (planner, act, verify, reflect)
-- Everything else is deterministic Python reading config from wiring.json
-- Behavior changes happen in wiring.json prompts/guards/limits — not in Python
-- Testing happens via HTTP API: POST `/run`, GET `/state`, GET `/smoke`
+It cannot see pixels. It probes the Windows UIA tree via cursor hover, gets a text list of
+elements with IDs, sends that to a local LLM, gets back structured JSON, executes via Windows API,
+observes result, verifies, reflects. The intelligence is in `prompts/wiring.json`. Python is plumbing.
 
 ---
 
-## Topology
+## Status (2026-06-20)
+
+### What works — proven on real desktop + real LLM
+
+| Goal | Cycles | Result |
+|------|--------|--------|
+| open notepad | 11 | ✓ satisfied |
+| open notepad and type hello | 16 | ✓ satisfied |
+| open Chrome, focus, type youtube.com, enter | 27 | ✓ satisfied |
+| Step-by-step via `/node/:type` API | manual | ✓ all nodes callable |
+
+### What was fixed this session (10 commits from main)
+
+1. **Screen pollution** — FIXED. `_render()` filters by focused HWND. Only focused-window
+   elements get `[ID]`. Observation went from 58-84 elements to 3-8 elements.
+
+2. **Verifier false-positives** — FIXED. Prompt now has explicit negative examples:
+   `hotkey win+r` NEVER confirms "Notepad is open". The 4B model obeys concrete examples
+   where it ignores abstract rules.
+
+3. **Reasoning chain poisoning** — FIXED. REASONING_CHAIN removed from act/verify/reflect/
+   self_modify nodes. Only planner keeps it for replan context. Chain clears on plan_ready.
+
+4. **Code reduction** — server.py 1180→1026 lines. Total repo 23 files→10 files.
+   Deleted: test files, simulation.py, start scripts, personality files, prompt .txt files,
+   PLAN.md, NAVIGATION.md, TEST_RESULTS.md, reactor.py.
+
+5. **HTML dashboard** — rewritten as control panel with Step/Run buttons that call
+   `/node/:type` API directly. Real-time SSE log. `/push` endpoint for AI-to-dashboard
+   communication.
+
+### What doesn't work yet
+
+1. **Full autonomous run blocks HTTP** — the observe probe (cursor movement) takes 2-5s and
+   blocks the server thread. `ThreadingHTTPServer` helps but the GIL + UIA COM calls still
+   cause timeouts. Fix: run the `run()` loop in a subprocess or use async.
+
+2. **Colony untested end-to-end** — `colony.py` spawns N slots, bus routing is wired, but
+   no real multi-slot run has been validated. The MoE gate delegates browser keywords to
+   slot 1 but this hasn't been tested with 2 live instances.
+
+3. **Model temperature/retry** — when parse fails, temperature bumps 0.15 per retry. This
+   sometimes helps, sometimes produces worse JSON. The 4B model is highly sensitive to
+   temperature. Consider keeping 0.3 fixed and just retrying.
+
+---
+
+## Architecture
 
 ```
 goal_inbox ──→ moe_route ──→ planner ──→ scheduler ──→ bus_check ──→ observe ──→ act ──→ verify
                   │              ↑            │                                     │       │
                   │ delegated    │ retry      │ plan_complete                       │       │
                   ↓              │            ↓                                     │       │
-              bus_post ──→ satisfied      bus_post ──→ satisfied                    │       │
-                                                                                   │       │
+              bus_post → satisfied        bus_post → satisfied                      │       │
                                                                     act_failed ─────┘       │
-                                                                        │                  │
                                                                         ↓                  │
                                                                      reflect ←── step_denied
                                                                      │  │  │
                                                               retry ──┘  │  └── escalate
-                                                                        │          ↓
                                                                      replan    self_modify
-                                                                        │          │
                                                                         ↓          ↓
                                                                      planner    planner
 ```
 
-Each node: `(state, config) → {signals: [...], patch: {...}}`
-
-Graph engine in `server.py` function `run()`: resolve signals → find edge → call next node → repeat.
-
----
-
-## Proven results (nvidia-nemotron-3-nano-4b, real Windows desktop)
-
-| Goal | Cycles | Steps | Result |
-|------|--------|-------|--------|
-| open notepad | 11 | 1 | ✓ satisfied |
-| open notepad and type hello | 16 | 2 | ✓ satisfied |
-| open Chrome, focus it, type youtube.com, press enter | 27 | 3 | ✓ satisfied |
+- 12 nodes, 21 edges. 4 LLM calls per full cycle (planner, act, verify, reflect).
+- All behavior in `prompts/wiring.json`. Python only resolves signals and executes.
+- Each node: `(state, config) → {signals: [...], patch: {...}}`
 
 ---
 
-## Forensic findings from LM Studio logs (2026-06-20)
-
-### Bug 1: Reasoning chain poisoning — FIXED
-
-The model's `reasoning_content` from each circuit was concatenated into a REASONING_CHAIN
-block and passed to ALL subsequent circuits. The 4B model would read the chain, see
-`[planner]` entries with `record_type: task`, and then output `record_type: task` from
-the act circuit instead of `record_type: action`.
-
-**Fix applied:**
-- REASONING_CHAIN removed from act, verify, reflect, and self_modify nodes
-- Only planner retains REASONING_CHAIN (for replan context)
-- reasoning_chain clears on every plan_ready
-
-### Bug 2: Verifier false positives — FIXED
-
-The verifier confirmed "Chrome is open" after seeing `OK: hotkey win+r: pressed win+r`.
-Pressing Win+R opens the Run dialog, not Chrome.
-
-**Fix applied:** Verifier prompt now requires DIRECT causal match:
-"confirmed=true requires LAST_OUTCOME to DIRECTLY demonstrate done_when — a precursor
-action (e.g. pressing Win+R) is NOT confirmation that an app is open"
-
-### Bug 3: Screen pollution — FIXED
-
-The UIA probe captured elements from ALL visible windows. The model saw 58-84 elements
-when only 3-5 belonged to the focused app.
-
-**Fix applied:** `_render()` now accepts `focused_hwnd`. Only elements matching the
-focused window's HWND get `[ID]` (targetable). Other elements render as plain text
-context — visible but not clickable.
-
-### Bug 4: Model outputs JSON in reasoning_content instead of content
-
-The model sometimes puts structured JSON in `reasoning_content` and leaves `content` empty.
-The `parse_fallback` config handles this by checking both channels.
-
-**Not a bug** — correct compensation for small model behavior.
-
----
-
-## File purposes
+## Files
 
 | File | Lines | Role |
 |------|-------|------|
-| `server.py` | 1091 | Graph engine + HTTP API + all 12 node handlers + LLM caller + prompt assembly |
-| `desktop.py` | 480 | Windows UIA hover-probe observer (cursor moves, reads elements by HWND) |
-| `actions.py` | 195 | Verb executor + sim stub (click/write/press/hotkey/focus/scroll) |
-| `colony.py` | 112 | Multi-slot spawner (N instances sharing bus.json) |
-| `wiring-editor.html` | 277 | Canvas2D topology visualizer + SSE event log |
-| `prompts/wiring.json` | 536 | **THE BRAIN** — topology, prompts, guards, limits, reasoning config |
-| `prompts/model.json` | — | LLM endpoint (localhost:1234, nvidia-nemotron-3-nano-4b) |
-| `prompts/wiring-schema.json` | — | Validation schema |
+| `server.py` | 1026 | Graph engine + HTTP + node handlers + LLM caller + prompt assembly |
+| `desktop.py` | 482 | Windows UIA hover-probe (cursor moves, reads elements by HWND) |
+| `actions.py` | 212 | Verb executor + sim stub (click/write/press/hotkey/focus/scroll) |
+| `colony.py` | 112 | Multi-slot spawner (N rods sharing bus.json) |
+| `wiring-editor.html` | 209 | Control panel: Step/Run, topology, plan/history, SSE log |
+| `prompts/wiring.json` | 517 | **THE BRAIN** — topology, prompts, guards, limits |
+| `prompts/model.json` | 16 | LLM endpoint (localhost:1234) |
+| `prompts/wiring-schema.json` | 116 | Validation schema for self_modify |
 
 ---
 
-## What the next session must do
+## For the next AI — rules
 
-### Priority 1: wiring-editor.html becomes the test/control panel
-
-Add to the HTML:
-- A text input + "Run" button that POSTs to `/run`
-- A state panel that polls `/state` every 2s and displays plan/step/history
-- A "Smoke" button that GETs `/smoke` and shows pass/fail
-- Goal history sidebar (localStorage)
-
-No new files. No test frameworks. The HTML IS the interface.
-
-### Priority 2: Live desktop verification
-
-Run `python server.py --run "open notepad" --max-cycles 30` on real Windows desktop
-with the screen pollution fix active. Confirm:
-- Element count is now 3-8 (was 58-84)
-- No clicks on wrong windows
-- Verifier no longer false-confirms precursor actions
-
-### Priority 3: Code reduction in server.py
-
-Target: under 900 lines. Candidates:
-- `_resolve_value` (50 lines): switch-case that could be table-driven
-- `load_system_prompt` (23 lines): has dead legacy fallback paths (file-based prompts)
-- `append_trace` / `recent_traces` (30 lines): trace system rarely used — consider removal
-- HTTP endpoints (117 lines): /schema, /traces endpoints unused
-- `validate_wiring` (40 lines): useful but could be startup-only
-
-### Priority 4: Colony end-to-end
-
-Colony multi-slot delegation via shared bus.json. Already wired. Needs real test:
-POST to slot 2's `/run`, observe slot 1 receiving delegated goal and completing it.
-Test via the HTML dashboard.
+1. **Read every file before changing anything.**
+2. This is NOT LangChain/AutoGPT. Do not add frameworks, plugins, or abstractions.
+3. Behavior changes go in `wiring.json` — not Python. Always.
+4. Testing = HTTP API. `POST /run`, `GET /state`, `POST /node/:type`.
+5. The HTML dashboard is the only UI. No new files for test harnesses.
+6. Code deletion is always right if wiring.json handles the behavior.
+7. Do not add pip dependencies. stdlib only.
 
 ---
 
@@ -171,18 +116,17 @@ Test via the HTML dashboard.
 cd C:\Users\ewojgab\Downloads\endgame-ai
 $env:PYTHONIOENCODING = "utf-8"
 
-# Run a goal on real desktop
+# Real desktop goal
 python server.py --run "open notepad" --max-cycles 30
 
-# Server mode (goals via HTTP)
+# Server mode (HTTP API + dashboard)
 python server.py
-# Then: curl -X POST http://localhost:9078/run -d "{\"goal\":\"open notepad\"}"
+# Open http://localhost:9078/ in Chrome
 
-# Simulation (Linux/no Windows)
-$env:ENDGAME_SIM = "1"
-python server.py --run "open notepad"
+# Step-by-step from dashboard
+# Click Step button — calls /node/:type one at a time
 
-# Colony
+# Colony (2 slots)
 python colony.py 1 2
 ```
 
@@ -191,37 +135,65 @@ python colony.py 1 2
 | Method | Path | Purpose |
 |--------|------|---------|
 | POST | `/run` | Start goal: `{"goal": "..."}` |
-| POST | `/resume` | Resume from state.json |
-| POST | `/interrupt` | Push new goal mid-run |
+| POST | `/node/:type` | Call single node: `{"state": {...}}` → `{signals, state_patch}` |
+| POST | `/push` | Push to dashboard SSE: `{"type":"...", "text":"..."}` |
 | POST | `/wiring` | Hot-reload topology |
+| POST | `/interrupt` | Mid-run goal change |
 | GET | `/state` | Current ROD state |
 | GET | `/health` | Node registry + slot info |
 | GET | `/smoke` | 6-point self-test |
-| GET | `/events` | SSE stream (node transitions) |
+| GET | `/events` | SSE stream |
 | GET | `/wiring` | Current wiring.json |
-| GET | `/` | Serve wiring-editor.html |
+| GET | `/` | Dashboard HTML |
 
 ---
 
-## Environment
+## Colony + MoE + Bus
 
-| Var | Effect |
-|-----|--------|
-| `ENDGAME_SLOT=N` | Instance slot, port = 9077 + N |
-| `ENDGAME_PERMISSIONS=desktop_exec` | MoE routing permission |
-| `ENDGAME_SIM=1` | Inline stub desktop (dev without Windows) |
-| `PYTHONIOENCODING=utf-8` | Required on Windows |
+**Colony** (`colony.py`): spawns N `server.py` instances on consecutive ports (9078+slot).
+Each rod has a `slot` and `permissions` from wiring.json.
+
+**MoE gate** (`moe_route` node): checks if goal contains `delegate_keywords` (chrome,
+browser, youtube) AND this rod lacks `desktop_exec` permission. If so, delegates to the
+slot that has it via bus message + HTTP `/run` trigger.
+
+**Bus** (`bus.json`): shared file. Messages have `{from_slot, to_slot, type, payload}`.
+Types: `goal` (delegate), `telemetry` (status). `bus_check` node polls for interrupts.
+
+**Status**: wired and code-complete. Not validated with 2 live instances. Next step:
+run `python colony.py 1 2`, POST a browser goal to slot 2, confirm slot 1 executes it.
 
 ---
 
-## Architecture invariants (do not break)
+## Key invariants (do not break)
 
-1. `_trigger_rod_run` uses `http_port(slot)` — never a separate port function
-2. Element resolver: only `[ID]` numeric targets, digits are never stripped from names
-3. `PRIOR_TRACES` only emitted on replan (`replan_count > 0`)
-4. Verify preflight denies `FAILED:` / `BLOCKED` outcomes before calling LLM
-5. `node_satisfied`: false on `plan_failed`, true only when `step >= len(plan)`
-6. Reasoning chain clears on plan_ready (prevents cross-circuit poisoning)
-7. Act node does NOT receive REASONING_CHAIN (only VERIFY/REFLECT feedback)
-8. Only focused-window elements get [ID] — others rendered as context without targeting
-9. Verifier requires DIRECT causal match between LAST_OUTCOME and done_when
+1. Only focused-window elements get `[ID]` in screen output
+2. Reasoning chain clears on plan_ready
+3. Act node does NOT receive REASONING_CHAIN
+4. Verify preflight denies non-OK outcomes before calling LLM
+5. Verifier: hotkey/press NEVER confirms app-opening goals
+6. `http_port(slot)` = 9077 + slot. Slot 1 = port 9078.
+7. Element resolver: `[ID]` targets only, digits never stripped from names
+8. Self_modify validates wiring before writing, backs up first
+
+---
+
+## Next session priorities
+
+1. **Fix server blocking during observe** — the UIA probe cursor sweep takes 2-5s and blocks
+   all HTTP. Either: run `run()` in subprocess, or make observe non-blocking with a timeout,
+   or use a dedicated worker thread for the graph loop separate from HTTP.
+
+2. **Colony end-to-end test** — `python colony.py 1 2`, POST browser goal to slot 2's port,
+   confirm delegation + slot 1 execution + bus telemetry.
+
+3. **Server.py under 900 lines** — remaining targets: `_resolve_value` (table-driven),
+   validate_wiring (separate module), compact node_act/node_self_modify.
+
+4. **Observe filtering improvement** — current HWND filter may exclude taskbar elements
+   that are needed (Start button for opening apps). Consider: include taskbar items as
+   targetable when focused window is "Desktop" or "Program Manager".
+
+5. **Model-specific prompt tuning** — the 4B model works with explicit examples, not
+   abstract rules. Every new failure mode needs a concrete example in the prompt, not
+   more English instructions.
