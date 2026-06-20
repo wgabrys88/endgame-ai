@@ -1,228 +1,250 @@
 # endgame-ai
 
-> This file is a handover prompt. Copy-paste it to any AI provider with the goal:
-> **"Make this organism reliably execute desktop goals and evolve its own wiring."**
+Local Windows desktop organism controlled by a signal graph.
 
-## What this is
+This repository is intentionally small. Python is the transport layer: it reads
+`prompts/wiring.json`, exposes HTTP endpoints, observes the desktop, executes
+verbs, and routes graph signals. Behavior belongs in wiring: topology, prompts,
+guards, limits, and role boundaries.
 
-An organism. Not an agent framework. Not a chatbot wrapper.
+## Current Reality
 
-A single-rod autonomous entity that perceives a Windows desktop through UIA hover-probing,
-reasons through a signal-driven graph, acts via keyboard/mouse, verifies outcomes, reflects
-on failures, and rewrites its own topology when stuck.
+ROD now means Reason-Observe-Decide in the literal runtime:
 
-The model (nvidia-nemotron-3-nano-4b, local, 4B params) already opened Chrome, navigated
-to YouTube, typed in the address bar, and satisfied multi-step goals. The system works.
-It now needs to work **reliably and fast** and become **self-aware of its own wiring**.
+1. Each LLM node gets its system prompt and wired input blocks.
+2. The first call produces reasoning content: what the circuit sees or knows.
+3. The second call receives that reasoning and must emit one structured JSON
+   object for the circuit role.
+4. Python parses the JSON, stores reasoning by circuit, applies patches, and
+   follows wiring edges.
 
-## The vision
+The system is not a generic chatbot wrapper. It is a desktop control loop:
 
-```
-                    ┌──────────────────────────────────────┐
-                    │         GENESIS ENTITY               │
-                    │                                      │
-                    │  ┌────────────┐  ┌───────────────┐  │
-                    │  │  KERNEL    │  │  ENDGAME-AI   │  │
-                    │  │ (event bus │  │  (actuator    │  │
-                    │  │  mutation  │  │   organism)   │  │
-                    │  │  journal)  │  │               │  │
-                    │  └─────┬──────┘  └───────┬───────┘  │
-                    │        │                  │          │
-                    │        └──────┬───────────┘          │
-                    │               │                      │
-                    │        ┌──────┴──────┐               │
-                    │        │  BREEDING   │               │
-                    │        │  REACTOR    │               │
-                    │        │             │               │
-                    │        │ wiring.json │               │
-                    │        │ mutations   │               │
-                    │        │ selection   │               │
-                    │        │ propagation │               │
-                    │        └─────────────┘               │
-                    └──────────────────────────────────────┘
+```text
+goal_inbox -> moe_route -> planner -> scheduler -> bus_check -> observe -> act -> verify
+                 |                         |                                  |
+                 | delegated               | plan_complete                    | step_denied
+                 v                         v                                  v
+              bus_post -> satisfied     bus_post -> satisfied              reflect
+                                                                            | | |
+                                                                            | | +-> self_modify
+                                                                            | +---> planner
+                                                                            +----> scheduler
 ```
 
-The breeding reactor is not a cron job. It is the self_modify node + trace memory +
-successful wiring variants that survive. Failed wirings die. Successful wirings propagate
-through the bus to other rods. The organism evolves by doing real work and keeping what works.
+## What Changed In This Session
 
-## Current state — what is proven
+Reliability work:
 
-| Capability | Evidence | Cycles |
-|-----------|----------|--------|
-| Plan a goal into steps | LLM returns ordered subtasks | 1 call |
-| Execute keyboard sequences | Win+R → type app → Enter | 3 actions |
-| Read focused window elements | UIA probe, HWND-filtered | 3-8 elements |
-| Verify with causal reasoning | Denies precursors, confirms results | 1 call |
-| Reflect and suggest corrections | "use Run dialog" from reflector | 1 call |
-| Self-modify topology | LLM proposes JSON patches, validates, hot-reloads | working |
-| Colony routing (MoE gate) | Delegate by keyword + permission | code-complete |
-| Bus communication | Shared JSON, slot-addressed messages | code-complete |
-| Dashboard control | Step/Run via /node/:type API, SSE stream | working |
-| Screen filtering | Only focused-window gets [ID] | validated today |
-| Verifier anti-false-positive | Explicit negative examples in prompt | validated today |
+- `/run` and `/resume` now enqueue work on one background runner instead of
+  starting overlapping graph loops.
+- Resume state now points at the next node, not the node that already ran.
+- Desktop observe/action calls are serialized with a lock.
+- Act can execute short deterministic chains such as `win+r`, `write app`,
+  `enter`.
+- Chained verbs now have a small configured settle delay so removing repeated
+  scans does not race dialogs such as Run.
+- Verify has deterministic preflight confirms for:
+  - successful focus evidence when a window must be open/focused
+  - the Run-dialog launch chain for app-opening goals
+- Act no longer receives verifier/reflector reasoning, which was poisoning its
+  schema.
+- Planner no longer receives the broad reasoning chain, which was causing
+  replan attempts to copy verdict/diagnosis JSON.
+- Trace examples are labeled structural only, so old literal goal text is not
+  supposed to leak into new plans.
 
-## Current state — what is NOT proven
+Observation work:
 
-| Gap | Why it matters |
-|-----|---------------|
-| Reliable unattended runs | Server blocks during observe (2-5s cursor sweep) |
-| Colony multi-slot | Never run with 2 live instances |
-| Self-modify producing useful patches | Needs good examples in prompt (wiring fix) |
-| Trace-based learning | traces.jsonl exists but few-shot never validated |
-| Wiring self-awareness | Organism doesn't introspect its own topology yet |
-| Speed | 27 cycles for Chrome+YouTube is slow. Target: 10. |
+- Focused-window elements still get the only `[ID]` targets.
+- The last observation now owns the element map used by action execution. Act
+  no longer triggers a fresh hover scan before every verb in a chain.
+- Post-action screen refresh is now opt-in; normal refresh happens at the next
+  observe node because verify/reflect do not consume `SCREEN`.
+- Observation now also includes a `WINDOWS:` section with top-level visible
+  window titles. Those titles are not element IDs; they exist only for
+  focus/window-title reasoning.
+- Extra hover/scroll enrichment starts at fewer elements, reducing repeated
+  sweep work on sparse windows.
+- Targeted click/write/scroll actions mechanically focus the element's HWND in
+  Python. A targeted write fails if the element is not in the cached map instead
+  of typing into whatever field is currently focused.
 
-## Architecture
+Prompt work:
 
-```
-goal_inbox → moe_route → planner → scheduler → bus_check → observe → act → verify
-                │            ↑          │                               │      │
-                │ delegated  │ retry    │ plan_complete                 │      │
-                ↓            │          ↓                               │      │
-            bus_post → satisfied    bus_post → satisfied                │      │
-                                                            act_failed─┘      │
-                                                                ↓             │
-                                                             reflect ← step_denied
-                                                             │  │  │
-                                                      retry──┘  │  └─escalate
-                                                             replan   self_modify
-                                                                ↓         ↓
-                                                             planner   planner
-```
+- The shared base prompt begins by forcing every circuit to first deduce what
+  it sees or knows from its wired inputs.
+- Non-act circuits are told explicitly that they do not see the desktop.
+- Planner is told not to add focus preparation steps for normal click/write
+  work because Python focuses the target window.
+- Act is told to use focus only as a single switch/confirmation step, never as
+  preparation for acting on a visible `[ID]`.
+- Self-modify receives a compact current-wiring summary and conservative patch
+  examples.
 
-12 nodes. 21 edges. 5 LLM-calling circuits. All behavior lives in `prompts/wiring.json`.
-Python resolves signals and executes verbs. It does not decide anything.
+Validated evidence:
 
-## Files (10 tracked, that's all)
+- Syntax and wiring JSON parse cleanly.
+- `/smoke` passes 6/6.
+- Two-slot colony delegation was validated: a non-exec slot delegated a browser
+  goal to the exec slot through the shared bus.
+- Real desktop streak: 10 consecutive `open notepad` goals completed, each at
+  11 graph cycles with a 15-cycle cap.
+- Direct observation confirmed `WINDOWS:` is present while `[ID]` scope remains
+  focused-window-only.
 
-```
-server.py              1026  Graph engine + HTTP + nodes + LLM + prompts
-desktop.py              482  Windows UIA hover-probe (ctypes, zero deps)
-actions.py              212  Verb dispatch + sim stub
-colony.py               112  Multi-slot spawner
-wiring-editor.html      209  Dashboard: Step/Run, topology, plan, history
-prompts/wiring.json     517  THE BRAIN — topology, prompts, guards, limits
-prompts/model.json       16  LLM endpoint config
-prompts/wiring-schema.json  Schema for self_modify validation
-.gitignore                   Allowlist (only tracked files pass)
-.gitattributes               CRLF normalization
-```
+## What Is Still Not Done
 
-## LLM response schema (real, from LM Studio logs)
+The next target is not merely opening Notepad. The requested next proof is a
+compound desktop workflow:
 
-The model returns `reasoning_content` (thinking) + `content` (structured JSON):
-
-```json
-// Planner
-{"record_type": "task", "data": {"steps": [{"description": "...", "done_when": "..."}]}}
-
-// Act
-{"record_type": "action", "data": {"conclusion": "EXECUTE", "actions": [{"verb": "...", "target": "...", "value": "..."}]}}
-
-// Verify
-{"record_type": "verdict", "data": {"confirmed": true|false, "evidence": "...", "reason": "..."}}
-
-// Reflect
-{"record_type": "diagnosis", "data": {"diagnosis": "...", "suggestion": "...", "should_replan": false}}
-
-// Self_modify
-{"record_type": "wiring_patch", "data": {"op": "add_node|add_edge|remove_edge|set_guard", "payload": {...}}}
+```text
+open chrome, start conversation with grok.com AI about endgame-ai,
+keep the conversation based on what Grok responds for 3 turns,
+save the summary of the conversation in Notepad,
+then run Shakira Waka Waka on YouTube
 ```
 
-`reasoning_content` is stored per-circuit and fed downstream. `parse_fallback` checks
-both channels (model sometimes puts JSON in reasoning instead of content).
+That workflow must be developed through the same HTTP/dashboard step surface a
+human can use. The dashboard must be good enough for a human to see and debug
+exactly what the AI sees through API calls.
 
-## API (uniform interface — human or AI uses same HTTP)
+## Methodology
 
-```
-POST /run            {"goal": "..."}           Start autonomous loop
-POST /node/:type     {"state": {...}}          Call ONE node, get signals + patch
-POST /push           {"type":"..","text":".."}  Push to dashboard SSE
-POST /wiring         {full wiring.json}        Hot-reload topology
-POST /interrupt      {"goal": "..."}           Mid-run goal change
-GET  /state                                    Current ROD state
-GET  /health                                   Node registry, slot, port
-GET  /smoke                                    6-point self-test
-GET  /events                                   SSE stream
-GET  /wiring                                   Current topology
-GET  /                                         Dashboard HTML
-```
+Work brick by brick:
 
-## What the next AI must do
+1. Read the current wiring and code before changing behavior.
+2. Prefer `prompts/wiring.json` for behavior changes.
+3. Make Python fixes only when the plumbing contradicts wiring's intent.
+4. Validate with `/smoke`, direct node calls, and real desktop goals.
+5. Clean runtime artifacts before committing.
+6. Commit only tracked essential files.
 
-### 1. Make it reliable
+The design rule remains: Python should not decide task strategy. Python may
+enforce deterministic safety and mechanical truth, such as "a successful focus
+means a matching window exists" or "a failed verb cannot verify a step."
 
-The observe node does a cursor sweep that blocks everything for 2-5s.
-Fix: run the graph loop in a dedicated thread with a queue, or make observe async.
-The HTTP server must stay responsive during runs.
+## Files
 
-### 2. Make it self-aware
+Tracked essentials:
 
-The organism must be able to read its own wiring.json, understand which nodes exist,
-which edges connect them, and what prompts drive each circuit. The `self_modify` node
-already does this — but it needs better examples of what a GOOD patch looks like.
-Feed it traces of past successful modifications.
-
-### 3. Validate colony
-
-`python colony.py 1 2` starts 2 rods. POST a browser goal to slot 2 (no desktop_exec
-permission). Slot 2's MoE gate should delegate to slot 1. Slot 1 executes. Bus carries
-the result back. This is already wired. Just run it.
-
-### 4. Speed
-
-27 cycles for Chrome+YouTube is because the model needs 3 turns per step (hotkey → write → enter).
-Each turn = observe + LLM call + verify. Reduce by: teaching the model to chain multiple
-actions per turn (wiring.json prompt change), or reducing observe frequency.
-
-### 5. Trace-based evolution (the breeding reactor)
-
-`append_trace()` saves successful runs to `prompts/traces.jsonl`. On replan, these traces
-are fed to the planner as few-shot examples (`PRIOR_TRACES` block). This is the organism's
-memory. It learns from its own successes. Currently: traces exist but are weak because
-few runs complete. Once runs are reliable, traces accumulate, and the planner improves
-automatically. That's the reactor: run → succeed → remember → run better → evolve.
-
-## Running
-
-```powershell
-$env:PYTHONIOENCODING = "utf-8"
-cd C:\Users\ewojgab\Downloads\endgame-ai
-
-python server.py                              # Server mode, http://localhost:9078
-python server.py --run "open notepad" --max-cycles 30   # Single goal
-python colony.py 1 2                          # Two rods, ports 9078 + 9079
+```text
+server.py                  HTTP server, graph runner, LLM calls, node handlers
+desktop.py                 Windows desktop observation and input via stdlib ctypes
+actions.py                 Verb dispatcher and simulation stub
+colony.py                  Multi-slot local rod launcher
+wiring-editor.html         Human/debug UI for run, step, state, topology
+prompts/wiring.json        Brain: topology, prompts, guards, limits, verbs
+prompts/model.json         Local model endpoint configuration
+prompts/wiring-schema.json Wiring schema for validation and future UI generation
+README.md                  Operational handover
+RESEARCH.md                Product/research direction and next plan
+.gitignore                 Allowlist: only essentials are commit candidates
+.gitattributes             Line-ending normalization
+LICENSE
 ```
 
-## Invariants (break these and the organism dies)
+Ignored runtime artifacts include `bus.json`, `state.json`,
+`prompts/traces.jsonl`, `prompts/wiring.backup.json`, caches, logs, and other
+generated files.
 
-1. Only focused-window elements get [ID]
-2. Reasoning chain clears on plan_ready
-3. Act never receives REASONING_CHAIN
-4. Verify preflight denies non-OK outcomes before LLM
-5. Hotkey/press never confirms app-opening goals
-6. Port = 9077 + slot
-7. Self_modify validates + backs up before writing
-8. Python decides nothing — wiring.json decides everything
+## HTTP Surface
 
----
+```text
+GET  /                         Dashboard
+GET  /health                   Node registry, slot, run status, capabilities
+GET  /smoke                    Six-point self-test
+GET  /state                    Last persisted state
+GET  /bus                      Shared bus contents
+GET  /wiring                   Current wiring
+GET  /wiring-schema            Wiring schema for dashboard/editor
+GET  /events                   SSE stream
 
-## ROD — Reason, Observe, Decide
-
-An evolution of ReAct. Each LLM node calls the model twice:
-
+POST /run        {"goal": "..."}           Queue autonomous run
+POST /resume                              Queue saved-state resume
+POST /step       {"goal","state","node"}    Execute one graph transition
+POST /node/:type {"state": {...}}          Call one node type
+POST /wiring     {full wiring.json}        Validate and hot-reload wiring
+POST /interrupt  {"goal": "..."}           Post slot interrupt
+POST /push       {"type":"..","text":".."} Dashboard event push
+POST /bus/post   {message}                 Append bus message
 ```
-  Request 1:  system prompt + user context  →  Response 1 (reasoning_content)
-  Request 2:  system prompt + user context + reasoning_content  →  Response 2 (final JSON)
+
+The dashboard now uses `/step` for graph stepping, the same endpoint an AI can
+call directly. `/node/:type` remains available for low-level node probes.
+
+## Invariants
+
+1. Only focused-window actionable elements get `[ID]` targets.
+2. `WINDOWS:` titles are not element IDs.
+3. Act is the only circuit that receives `SCREEN`.
+4. Planner never receives `SCREEN`, UIA labels, or `[ID]`.
+5. Act should not receive verifier/reflector reasoning.
+6. Action execution uses the cached observation map that produced the screen
+   shown to act; it should not rescan for every verb in a deterministic chain.
+7. Python may enforce deterministic mechanical truths but must not invent task
+   strategy.
+8. Port is `9077 + slot` when slot offset is enabled.
+9. Self-modify validates wiring before hot-reload.
+10. Behavior changes should be possible through `wiring.json` whenever the
+   Python handler already exists.
+
+## Is The Vision Closer?
+
+Yes. Before this session the loop was proven but brittle: app launch could take
+27 cycles, focus subtasks confused the model, colony delegation had not been
+proved live, and ROD was described more strongly than it was implemented.
+
+Now the core proof is closer by about one layer:
+
+- The ROD two-pass contract exists in code.
+- The server can stay responsive while queued runs execute.
+- The model has a more accurate environment model.
+- The desktop observation exposes enough window context to reason about
+  non-focused windows without breaking `[ID]` scope.
+- 10 consecutive real desktop app-open goals passed at 11 cycles.
+
+The remaining gap is the hard workflow layer: browser conversation, response
+contingency, summarization into Notepad, and YouTube playback. That requires a
+better step/debug workbench and more robust browser/text-field behavior.
+
+## Appendix: Handover Prompt For Next AI Session
+
+```yaml
+handover:
+  project: endgame-ai
+  date: 2026-06-20
+  status:
+    proven:
+      - ROD two-pass LLM calls are implemented.
+      - queued /run worker prevents overlapping graph loops.
+      - observe/action desktop calls are serialized.
+      - act prompt supports deterministic action chains.
+      - observations include focused-window IDs plus non-ID WINDOWS list.
+      - actions use the cached observation map instead of rescanning per verb.
+      - verifier has deterministic confirms for focus/open launch evidence.
+      - 10 consecutive real desktop "open notepad" goals passed at 11 cycles.
+      - two-slot colony delegation was validated.
+    not_yet_proven:
+      - compound browser dialogue workflow with grok.com
+      - saving a generated summary into Notepad
+      - YouTube music playback after prior browser work
+      - human-grade schema-driven wiring editor
+      - runtime/pause graph rewiring from the dashboard
+  immediate_goal:
+    Rewrite the dashboard and step interface so both a human using the HTML UI
+    and an AI using HTTP POST calls can inspect, step, pause, edit wiring, and
+    debug the same live graph. Then use that step surface to develop and prove
+    the compound Grok/Notepad/YouTube workflow.
+  constraints:
+    - Prefer wiring.json for behavior changes.
+    - Keep Python as generic plumbing.
+    - Keep the repository allowlist tight.
+    - Do not commit runtime artifacts.
+  recommended_order:
+    - Finish schema-driven dashboard.
+    - Add first-class server step/session endpoints if needed.
+    - Validate manual GUI step equals API step.
+    - Run the compound workflow in small stepped slices.
+    - Commit only essential tracked files.
 ```
-
-The second call sees the model's own thinking. One extra round-trip, but the structured
-output is dramatically better because the model already worked through the problem.
-This is why a 4B model can control a desktop — it reasons first, then decides.
-
----
-
-## START HERE (copy-paste prompt for next AI session)
-
-Read README.md and RESEARCH.md — they are your complete briefing. The system is called ROD (Reason-Observe-Decide), an evolution of ReAct where each LLM node calls twice: first to think (reasoning_content), then fed back to produce the final structured output. Make the observe→act→verify loop reliable for 10 consecutive desktop goals, reduce cycles from 27 to under 12 by chaining actions in the act prompt (prompts/wiring.json), and validate colony delegation between 2 slots. No new files, no tests, no dependencies — every change is a wiring.json prompt edit or a small fix in the existing tracked files.

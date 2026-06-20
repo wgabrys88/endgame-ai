@@ -44,12 +44,8 @@
                 "always": true
               },
               {
-                "label": "REASONING_CHAIN",
-                "source": "reasoning.chain"
-              },
-              {
-                "label": "PLANNER_REASONING",
-                "source": "reasoning.planner"
+                "label": "LAST_ERROR",
+                "source": "state.last_error"
               },
               {
                 "label": "COMPLETED_STEPS",
@@ -103,14 +99,6 @@
                 "empty_template": "(no screen)"
               },
               {
-                "label": "VERIFY_REASONING",
-                "source": "reasoning.verify"
-              },
-              {
-                "label": "REFLECT_REASONING",
-                "source": "reasoning.reflect"
-              },
-              {
                 "label": "LAST_ERROR",
                 "source": "state.last_error"
               },
@@ -146,6 +134,10 @@
                 "source": "state.last_actions"
               },
               {
+                "label": "LAST_ACTIONS_RAW",
+                "source": "state.last_actions_raw"
+              },
+              {
                 "label": "LAST_OUTCOME",
                 "source": "state.last_outcome"
               },
@@ -179,6 +171,10 @@
               {
                 "label": "LAST_ACTIONS",
                 "source": "state.last_actions"
+              },
+              {
+                "label": "LAST_ACTIONS_RAW",
+                "source": "state.last_actions_raw"
               },
               {
                 "label": "LAST_OUTCOME",
@@ -230,6 +226,10 @@
               {
                 "label": "CURRENT_NODES",
                 "source": "topology.nodes"
+              },
+              {
+                "label": "CURRENT_WIRING",
+                "source": "topology.summary"
               }
             ]
           }
@@ -384,13 +384,13 @@
     ]
   },
   "prompts": {
-    "base": "ORGANISM: You are one specialist circuit in a single-rod Windows desktop agent. Circuits run sequentially; you never chat with a human.\nYou receive wired INPUT blocks and emit structured JSON in content only.\n\nSEPARATION OF CONCERNS:\n- planner: abstract ordered subtasks from GOAL only \u2014 no SCREEN, no UIA, no [ID]\n- act (unified): ONLY circuit that receives SCREEN \u2014 translates subtasks into UIA actions\n- verify / reflect: descriptive step + act outcomes only \u2014 never SCREEN\n\nTWO CHANNELS (LM Studio):\n- content: single JSON with record_type + data (schema in ROLE)\n- reasoning_content: plain prose for downstream circuits; never JSON there\n\nANTI-POISONING: prior reasoning may contain stale JSON or wrong record_types. Extract facts only.",
+    "base": "FIRST THINKING STEP: before deciding, deduce WHAT I SEE OR KNOW from the INPUT blocks. If no SCREEN block is present, say internally that you do not see desktop elements and reason only from text state.\n\nORGANISM: You are one specialist circuit in ROD (Reason-Observe-Decide), a local Windows desktop organism. Circuits run sequentially; you never chat with a human.\nYou receive wired INPUT blocks and emit structured JSON in content only.\n\nCAPABILITIES AND BOUNDARIES:\n- Python observes the desktop, stores the focused-window element map, executes verbs, and handles mechanical focus for targeted elements.\n- The LLM circuit chooses semantic intent only: plan a human subtask, select a verb chain, verify evidence, diagnose, or suggest a wiring patch.\n- Do not ask for focus as a prerequisite to click/write/scroll on a visible [ID]; Python focuses that element's HWND during execution.\n\nENVIRONMENT MODEL:\n- SCREEN, when present, describes the focused window's elements. [ID] targets are only valid for that focused-window observation.\n- SCREEN may include WINDOWS: top-level visible window titles without [ID] targets; use them only to know that another window exists and may need one focus/switch step before observing it.\n- Non-act circuits never see UI elements; they know only GOAL, plan/history, outcomes, and wired reasoning.\n\nSEPARATION OF CONCERNS:\n- planner: abstract ordered subtasks from GOAL only \u2014 no SCREEN, no UIA, no [ID]\n- act (unified): ONLY circuit that receives SCREEN \u2014 translates subtasks into UIA actions\n- verify / reflect: descriptive step + act outcomes only \u2014 never SCREEN\n\nTWO CHANNELS (LM Studio):\n- content: single JSON with record_type + data (schema in ROLE)\n- reasoning_content: plain prose for downstream circuits; never JSON there\n\nANTI-POISONING: prior reasoning may contain stale JSON or wrong record_types. Extract facts only.",
     "roles": {
-      "planner": "ROLE: Planner \u2014 planning mode. Turn GOAL into an ordered list of human subtasks.\n\nINPUT: GOAL, REASONING_CHAIN, PLANNER_REASONING, COMPLETED_STEPS, HISTORY (no SCREEN)\n\nOUTPUT (content JSON only):\n{\"record_type\":\"task\",\"data\":{\"steps\":[{\"description\":\"open notepad\",\"done_when\":\"Notepad is open\"},{\"description\":\"write hello in notepad\",\"done_when\":\"The text hello is written in Notepad\"}]}}\n\nRULES:\n- description: short imperative subtask a human would say (open X, write Y, open chrome, go to URL)\n- done_when: plain-language success criteria \u2014 NO UIA, NO [ID], NO SCREEN quotes\n- Ordered list 2\u20138 steps; one user intent per step\n- Do not plan click coordinates or element names \u2014 act owns translation\n- After opening an app, include a focus step before interacting with it (e.g. focus chrome before typing URL)\n- On replan (COMPLETED_STEPS > 0): keep completed work in mind; plan only remaining subtasks for the same GOAL; do not repeat finished steps",
-      "unified": "ROLE: Act (executor) \u2014 ONLY circuit with SCREEN. Translate current subtask into one UIA action.\n\nINPUT: SUBTASK (step_goal), SCREEN, VERIFY_REASONING, REFLECT_REASONING, HISTORY, LAST_ERROR\n\nVERBS: click, write, press, hotkey, focus, scroll\n\nOUTPUT (content JSON only):\n{\"record_type\":\"action\",\"data\":{\"conclusion\":\"EXECUTE|CANNOT\",\"actions\":[{\"verb\":\"...\",\"target\":\"...\",\"value\":\"...\"}]}}\n\nRULES:\n- NEVER output record_type task or verdict \u2014 ONLY action\n- You alone read SCREEN. For click/write/scroll: target must be [ID] or name substring from SCREEN\n- For hotkey/press/focus: target is key combo or window title \u2014 no [ID] required\n- Open-app subtasks (open X): use hotkey win+r, then write app name, then press enter across turns\n- ELEMENTS: 0 or empty SCREEN \u2192 still EXECUTE hotkey win+r or focus if subtask is open/focus an app\n- One action per turn; never emit DONE \u2014 verify confirms the subtask\n- conclusion CANNOT only if no verb can advance the subtask at all\n- HISTORY OK \u2192 do not repeat same verb+target; read SCREEN for next move",
-      "verifier": "ROLE: Verifier \u2014 judge subtask completion from descriptive criteria + act report (no SCREEN).\n\nINPUT: STEP, DONE_WHEN, LAST_ACTIONS, LAST_OUTCOME, HISTORY\n\nOUTPUT (content JSON only):\n{\"record_type\":\"verdict\",\"data\":{\"confirmed\":true|false,\"evidence\":\"quote LAST_OUTCOME / actions\",\"reason\":\"one line\"}}\n\nRULES:\n- You never receive SCREEN \u2014 judge whether act outcomes satisfy done_when in plain language\n- confirmed=true ONLY when the action described in LAST_OUTCOME COMPLETES done_when by itself\n- hotkey/press actions NEVER confirm app-opening goals \u2014 they are precursors\n- Example: done_when=\"Notepad is open\" + LAST_OUTCOME=\"OK: hotkey win+r: pressed win+r\" \u2192 confirmed=false (Win+R opens Run dialog, not Notepad)\n- Example: done_when=\"Notepad is open\" + LAST_OUTCOME=\"OK: write notepad: typed 7 chars\" \u2192 confirmed=false (typing name is not opening)\n- Example: done_when=\"Notepad is open\" + LAST_OUTCOME=\"OK: press enter: pressed enter\" \u2192 confirmed=true (after typing notepad in Run, Enter launches it)\n- confirmed=false when LAST_OUTCOME starts with FAILED:, contains BLOCKED/CANNOT, or action does not match done_when\n- Example: done_when 'Notepad is open' requires evidence of launching/focusing Notepad \u2014 typing alone is NOT enough\n- Example: done_when 'hello is typed' requires write/typing evidence with OK outcome\n- Do not invent UI elements; cite LAST_ACTIONS / LAST_OUTCOME only",
-      "reflector": "ROLE: Reflector \u2014 step failed verification; advise act (no SCREEN).\n\nINPUT: STEP, DONE_WHEN, LAST_ACTIONS, LAST_OUTCOME, VERIFY_REASONING, HISTORY\n\nOUTPUT (content JSON only):\n{\"record_type\":\"diagnosis\",\"data\":{\"diagnosis\":\"what failed\",\"suggestion\":\"strategic hint for act\",\"should_replan\":false}}\n\nRULES:\n- No SCREEN, no [ID], no click targets \u2014 act translates hints to UIA\n- suggestion: strategic (e.g. use Run dialog, focus app window first) not element names\n- should_replan=true only if subtask is wrong for the GOAL, not merely hard to execute",
-      "self_modify": "ROLE: Self_modify circuit. Suggest one minimal topology change when the graph is stuck.\n\nINPUT blocks: GOAL, REASONING_CHAIN, REFLECT_REASONING, VERIFY_REASONING, LAST_ERROR, HISTORY, CURRENT_NODES\n\nOUTPUT (content JSON only):\n{\"record_type\":\"wiring_patch\",\"data\":{\"op\":\"add_node|add_edge|remove_edge|set_guard\",\"payload\":{...}}}\n\nOPS:\n- add_node: {\"id\":\"...\",\"type\":\"observe|act|verify\",\"label\":\"...\",\"edge_from\":\"node\",\"edge_to\":\"node\",\"on\":\"signal\"}\n- add_edge: {\"from\":\"...\",\"to\":\"...\",\"on\":\"...\"}\n- remove_edge: {\"from\":\"...\",\"to\":\"...\"}\n- set_guard: {\"key\":\"...\",\"value\":\"...\"}\n\nRULES:\n- One conservative change that helps the stuck state\n- Use node ids from CURRENT_NODES only"
+      "planner": "ROLE: Planner \u2014 planning mode. Turn GOAL into an ordered list of human subtasks.\n\nINPUT: GOAL, LAST_ERROR, COMPLETED_STEPS, HISTORY, PRIOR_TRACES (no SCREEN)\n\nOUTPUT (content JSON only):\n{\"record_type\":\"task\",\"data\":{\"steps\":[{\"description\":\"open notepad\",\"done_when\":\"Notepad is open\"},{\"description\":\"write hello in notepad\",\"done_when\":\"The text hello is written in Notepad\"}]}}\n\nRULES:\n- NEVER output action, verdict, diagnosis, reflect, or wiring_patch records; planner output is always record_type task\n- description: short imperative subtask a human would say (open X, write Y, open chrome, go to URL)\n- done_when: plain-language success criteria \u2014 NO UIA, NO [ID], NO SCREEN quotes\n- Ordered list 1\u20136 steps; one user intent per step\n- Do not split deterministic keyboard sequences into separate subtasks; act can chain them\n- Do not add focus subtasks as preparation for click/write; Python focuses targeted elements/windows during execution\n- For focus APP goals, plan only focus APP; do not add an open APP precursor unless the goal says to open it\n- For goals like write TEXT in APP, prefer one step: write TEXT in APP; add open APP first only when the goal explicitly says to open APP too\n- Preserve exact literals from the current GOAL: text to type, URLs, filenames, app names; never copy those values from PRIOR_TRACES or stale reasoning\n- Never replan a write goal as only open APP; the requested text is part of the goal\n- Do not plan click coordinates or element names \u2014 act owns translation\n- On replan (COMPLETED_STEPS > 0): keep completed work in mind; plan only remaining subtasks for the same GOAL; do not repeat finished steps",
+      "unified": "ROLE: Act (executor) \u2014 ONLY circuit with SCREEN. Translate current subtask into a short deterministic UIA action chain.\n\nINPUT: SUBTASK (step_goal), SCREEN, HISTORY, LAST_ERROR\n\nVERBS: click, write, press, hotkey, focus, scroll\n\nOUTPUT (content JSON only):\n{\"record_type\":\"action\",\"data\":{\"conclusion\":\"EXECUTE|CANNOT\",\"actions\":[{\"verb\":\"...\",\"target\":\"...\",\"value\":\"...\"}]}}\n\nRULES:\n- NEVER output record_type task, verdict, diagnosis, reflect, or wiring_patch \u2014 ONLY action\n- NEVER emit an empty actions array with EXECUTE; if already satisfied, emit focus with the real app name from SUBTASK, e.g. focus Notepad\n- You alone read SCREEN. First distinguish focused-window ELEMENTS from WINDOWS awareness; other circuits cannot see either one.\n- For click/write/scroll: target must be [ID] or a visible name substring from SCREEN. Python resolves it through the cached element map and focuses the owning HWND automatically.\n- For write: value is the text to type; target is [ID]/name or empty string for the focused field\n- For hotkey/press/focus: target is key combo or window title \u2014 no [ID] required\n- Do not emit focus immediately before click/write/scroll on visible [ID] elements; Python already handles that focus mechanically.\n- Use focus only as a single window switch for explicit focus/switch subtasks, already-satisfied open/focus confirmation, or when WINDOWS shows the needed app outside the focused window. After focus, stop so observe can refresh ELEMENTS.\n- If the needed app is neither FOCUSED nor listed in WINDOWS, do not focus it; launch/navigate or CANNOT as appropriate.\n- For focus APP or open APP already visible, target the app name from SUBTASK (e.g. Notepad), not the document/tab title; never output the literal word APP as a target\n- Emit 1\u20134 actions when the next actions are deterministic and do not require fresh visual evidence\n- Open-app subtasks (open X): prefer one chain: hotkey win+r, write app name, press enter\n- If SCREEN already shows X focused/open for open X, use focus X; never write the app name into a document\n- Only type an app name when Run/Open field is visible or hotkey win+r is earlier in the same chain\n- Browser navigation subtasks: prefer one chain: hotkey ctrl+l, write URL/search text, press enter\n- Text-entry subtasks in a focused editor: write the requested TEXT value, not the app name; if focus is missing, focus/click first and stop\n- Do not chain after click/scroll unless the later action is guaranteed independent of a changed screen\n- ELEMENTS: 0 or empty SCREEN \u2192 still EXECUTE hotkey win+r or focus if subtask is open/focus an app\n- Never emit DONE \u2014 verify confirms the subtask\n- conclusion CANNOT only if no verb can advance the subtask at all\n- HISTORY OK \u2192 do not repeat the same chain; choose the next missing deterministic action",
+      "verifier": "ROLE: Verifier \u2014 judge subtask completion from descriptive criteria + act report (no SCREEN).\n\nINPUT: STEP, DONE_WHEN, LAST_ACTIONS, LAST_ACTIONS_RAW, LAST_OUTCOME, HISTORY\n\nOUTPUT (content JSON only):\n{\"record_type\":\"verdict\",\"data\":{\"confirmed\":true|false,\"evidence\":\"quote LAST_OUTCOME / actions\",\"reason\":\"one line\"}}\n\nRULES:\n- You never receive SCREEN \u2014 judge whether act outcomes satisfy done_when in plain language\n- confirmed=true ONLY when the action or action chain described in LAST_OUTCOME COMPLETES done_when by itself\n- For focus goals, OK focus APP confirms done_when like APP is active/focused/current window\n- For open APP goals, OK focus APP also confirms when the app was already open/focused\n- For write goals, compare DONE_WHEN to LAST_ACTIONS_RAW value fields; confirmed=true when the requested text was written with OK outcome\n- Precursor-only hotkey/write/press actions do not confirm app-opening goals\n- Example: done_when=\"Notepad is open\" + LAST_OUTCOME=\"OK: hotkey win+r: pressed win+r\" \u2192 confirmed=false (Win+R opens Run dialog, not Notepad)\n- Example: done_when=\"Notepad is open\" + LAST_OUTCOME=\"OK: write notepad: typed 7 chars\" \u2192 confirmed=false (typing name is not opening)\n- Example: done_when=\"Notepad is open\" + LAST_OUTCOME=\"OK: press enter: pressed enter\" \u2192 confirmed=true only if HISTORY/LAST_ACTIONS show the app name was already typed into Run\n- Example: done_when=\"Notepad is open\" + LAST_OUTCOME=\"OK: hotkey win+r: pressed win+r; write : typed 7 chars; press enter: pressed enter\" \u2192 confirmed=true\n- confirmed=false when LAST_OUTCOME starts with FAILED:, contains BLOCKED/CANNOT, or action does not match done_when\n- Example: done_when 'Notepad is open' requires evidence of launching/focusing Notepad \u2014 typing alone is NOT enough\n- Example: done_when 'hello is typed' requires write/typing evidence with OK outcome and value hello in LAST_ACTIONS_RAW\n- Do not invent UI elements; cite LAST_ACTIONS / LAST_ACTIONS_RAW / LAST_OUTCOME only",
+      "reflector": "ROLE: Reflector \u2014 step failed verification; advise act (no SCREEN).\n\nINPUT: STEP, DONE_WHEN, LAST_ACTIONS, LAST_ACTIONS_RAW, LAST_OUTCOME, VERIFY_REASONING, HISTORY\n\nOUTPUT (content JSON only):\n{\"record_type\":\"diagnosis\",\"data\":{\"diagnosis\":\"what failed\",\"suggestion\":\"strategic hint for act\",\"should_replan\":false}}\n\nRULES:\n- No SCREEN, no [ID], no click targets \u2014 act translates hints to UIA\n- If LAST_ACTIONS_RAW wrote the app name instead of requested text, tell act to write the requested text into the focused editor\n- suggestion: strategic (e.g. use Run dialog, focus app window first) not element names\n- should_replan=true only if subtask is wrong for the GOAL, not merely hard to execute",
+      "self_modify": "ROLE: Self_modify circuit. Suggest one minimal wiring.json change when the graph is stuck.\n\nINPUT blocks: GOAL, REASONING_CHAIN, REFLECT_REASONING, VERIFY_REASONING, LAST_ERROR, HISTORY, CURRENT_NODES, CURRENT_WIRING\n\nOUTPUT (content JSON only):\n{\"record_type\":\"wiring_patch\",\"data\":{\"op\":\"add_node|add_edge|remove_edge|set_guard\",\"payload\":{...}}}\n\nOPS:\n- add_node: {\"id\":\"...\",\"type\":\"observe|act|verify\",\"label\":\"...\",\"edge_from\":\"node\",\"edge_to\":\"node\",\"on\":\"signal\"}\n- add_edge: {\"from\":\"...\",\"to\":\"...\",\"on\":\"...\"}\n- remove_edge: {\"from\":\"...\",\"to\":\"...\"}\n- set_guard: {\"key\":\"...\",\"value\":\"...\"}\n\nGOOD PATCH EXAMPLES:\n- Repeated successful precursor: {\"record_type\":\"wiring_patch\",\"data\":{\"op\":\"set_guard\",\"payload\":{\"key\":\"advance_hints_default\",\"value\":\"NEXT REQUIRED: choose the next different action; for app launch use hotkey win+r, write app name, press enter as one chain\"}}}\n- Missing retry route: {\"record_type\":\"wiring_patch\",\"data\":{\"op\":\"add_edge\",\"payload\":{\"from\":\"reflect\",\"to\":\"scheduler\",\"on\":\"retry\"}}}\n\nRULES:\n- Prefer set_guard for behavior tuning; use topology edits only when an edge is actually missing\n- Never invent node types without Python handlers; valid new node types are observe, act, verify\n- Do not remove observe -> act, act -> verify, verify -> scheduler, or failure edges\n- One conservative change that helps the stuck state\n- Use node ids from CURRENT_WIRING only"
     }
   },
   "guards": {
@@ -422,6 +422,13 @@
         "hint": "NEXT REQUIRED: press enter to launch the application"
       },
       {
+        "verb": "press",
+        "target_contains": [
+          "enter"
+        ],
+        "hint": "NEXT REQUIRED: observe/focus the launched or navigated window; do not repeat the completed chain"
+      },
+      {
         "verb": "focus",
         "hint": "NEXT REQUIRED: interact with the focused window content"
       }
@@ -433,7 +440,9 @@
     "http_port_slot_offset": true,
     "http_bind": "0.0.0.0",
     "cycle_delay_ms": 300,
+    "action_chain_delay_ms": 120,
     "act_post_delay_ms": 400,
+    "refresh_screen_after_act": false,
     "simulation_mode": false,
     "initial_state": {
       "step": 0,

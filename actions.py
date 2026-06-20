@@ -1,6 +1,7 @@
 """Actions - data-driven verb dispatch. Field mappings from wiring.json."""
 from __future__ import annotations
 import re
+import threading
 from dataclasses import dataclass
 from typing import Any
 
@@ -104,8 +105,9 @@ class ActionExecutor:
             target = str(args.get(cfg.get("target_field", "target"), ""))
             if target:
                 el = self._resolve(target, elements)
-                if el:
-                    self._desktop.click(el.px + el.pw // 2, el.py + el.ph // 2, el.hwnd)
+                if not el:
+                    return ActionResult(verb, False, f"element {target} not found")
+                self._desktop.click(el.px + el.pw // 2, el.py + el.ph // 2, el.hwnd)
             self._desktop.hotkey(["ctrl", "a"])
             self._desktop.type_text(text)
             return ActionResult(verb, True, f"typed {len(text)} chars")
@@ -135,7 +137,7 @@ class ActionExecutor:
             el = self._resolve(target, elements)
             if not el:
                 return ActionResult(verb, False, f"element {target} not found")
-            self._desktop.scroll(el.px + el.pw // 2, el.py + el.ph // 2, amount)
+            self._desktop.scroll(el.px + el.pw // 2, el.py + el.ph // 2, amount, el.hwnd)
             return ActionResult(verb, True, f"scrolled {amount}")
 
         if verb == "focus":
@@ -161,6 +163,10 @@ class ActionExecutor:
 
 _desktop = None
 _executor = None
+_desktop_lock = threading.RLock()
+_last_observation = None
+
+_ELEMENT_VERBS = frozenset({"click", "scroll"})
 
 def _simulation_enabled(wiring: dict) -> bool:
     import os
@@ -196,17 +202,31 @@ class _SimStub:
     def type_text(self, text): pass
     def press_key(self, key): pass
     def hotkey(self, keys): pass
-    def scroll(self, px, py, amount=3): pass
+    def scroll(self, px, py, amount=3, hwnd=0): pass
     def focus_window(self, title): return True
 
+def _remember_observation(obs: Observation) -> None:
+    global _last_observation
+    _last_observation = obs
+
+def _needs_elements(verb: str, target: str) -> bool:
+    return verb in _ELEMENT_VERBS or (verb == "write" and bool(target))
+
 def observe_screen() -> str:
-    _init()
-    obs = _desktop.observe()
-    return obs.context_text
+    with _desktop_lock:
+        _init()
+        obs = _desktop.observe()
+        _remember_observation(obs)
+        return obs.context_text
 
 def execute_verb(verb: str, target: str, value: str = "") -> str:
-    _init()
-    obs = _desktop.observe()
-    args = {"target": target, "value": value}
-    result = _executor.execute(verb, args, obs.elements)
-    return result.observation if result.success else f"FAILED: {result.observation}"
+    with _desktop_lock:
+        _init()
+        obs = _last_observation
+        if _needs_elements(verb, target) and obs is None:
+            obs = _desktop.observe()
+            _remember_observation(obs)
+        args = {"target": target, "value": value}
+        elements = obs.elements if obs else {}
+        result = _executor.execute(verb, args, elements)
+        return result.observation if result.success else f"FAILED: {result.observation}"

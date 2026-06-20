@@ -9,7 +9,7 @@ from typing import Any
 
 PROBE_STEP_PX = 90
 PROBE_DELAY = 0.001
-SCROLL_ENRICH_MIN = 5
+SCROLL_ENRICH_MIN = 3
 SCROLL_ENRICH_PASSES = (-3, -2, 2, 3)
 SCROLL_ENRICH_DELAY = 0.08
 SINE_AMP_RATIO = 0.4
@@ -277,6 +277,9 @@ class Desktop:
             classified = self._classify(nodes)
         self.user32.SetCursorPos(saved.x, saved.y)
         elements, context_text = self._render(classified, focused_title, focused_hwnd)
+        windows = self._window_titles(focused_hwnd)
+        if windows:
+            context_text += "\nWINDOWS:\n" + "\n".join(f"  {w}" for w in windows)
         if not elements:
             context_text += (
                 "\n  (no interactive elements — use hotkey win+r for Run dialog, "
@@ -333,7 +336,10 @@ class Desktop:
             self.user32.keybd_event(vk, 0, 0x0002 | (0x0001 if vk in EXTENDED_VKS else 0), None)
             time.sleep(0.03)
 
-    def scroll(self, px: int, py: int, amount: int = 3):
+    def scroll(self, px: int, py: int, amount: int = 3, hwnd: int = 0):
+        if hwnd:
+            self.user32.SetForegroundWindow(hwnd)
+            time.sleep(0.05)
         self.user32.SetCursorPos(px, py)
         time.sleep(0.02)
         self.user32.mouse_event(0x0800, 0, 0, amount * 120, 0)
@@ -363,6 +369,21 @@ class Desktop:
             time.sleep(FOCUS_DELAY)
             return True
         return False
+
+    def _window_titles(self, focused_hwnd: int, limit: int = 8) -> list[str]:
+        titles: list[str] = []
+        seen: set[str] = set()
+        hwnd = self.user32.GetTopWindow(None)
+        while hwnd and len(titles) < limit:
+            if self.user32.IsWindowVisible(hwnd):
+                title = self._get_window_title(int(hwnd)).strip()
+                key = title.lower()
+                if title and key not in seen:
+                    seen.add(key)
+                    prefix = "*" if int(hwnd) == focused_hwnd else "-"
+                    titles.append(f"{prefix} {title}")
+            hwnd = self.user32.GetWindow(hwnd, 2)
+        return titles
 
     def _get_window_title(self, hwnd: int) -> str:
         buf = ctypes.create_unicode_buffer(512)
@@ -445,7 +466,10 @@ class Desktop:
 
     def _render(self, nodes: list[dict[str, Any]], focused_title: str, focused_hwnd: int = 0) -> tuple[dict[str, Element], str]:
         elements: dict[str, Element] = {}
-        lines: list[str] = [f"FOCUSED: {focused_title}"]
+        lines: list[str] = [
+            f"FOCUSED: {focused_title}",
+            "SCOPE: [ID] targets are actionable only in this focused window; WINDOWS titles are awareness only.",
+        ]
         seq = 0
         for n in nodes:
             role, name, value = n["role"], n.get("name", ""), n.get("value", "")

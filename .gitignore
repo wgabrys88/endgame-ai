@@ -1,5 +1,15 @@
-# Allowlist — ignore all, then un-ignore essentials only
+# Allowlist: ignore generated/runtime files, then un-ignore essentials only.
 *
+
+# Runtime artifacts stay local.
+bus.json
+state.json
+prompts/traces.jsonl
+prompts/wiring.backup.json
+__pycache__/
+*.pyc
+*.log
+
 !.gitignore
 !.gitattributes
 !README.md

@@ -2,208 +2,307 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>endgame-ai</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>endgame-ai workbench</title>
 <style>
-:root{--bg:#06080d;--panel:#0a0f1a;--border:#1a2744;--cyan:#00e5ff;--green:#39ff14;--dim:#5a6a7a;--txt:#e0e6ed;color-scheme:only dark}
-*{margin:0;padding:0;box-sizing:border-box;color:inherit}
-html,body{height:100dvh;overflow:hidden;font:13px/1.5 system-ui,sans-serif;background:var(--bg);color:var(--txt)}
-body{display:grid;grid-template:"hd hd" auto "main log" 1fr / 1fr 22rem}
-header{grid-area:hd;display:flex;align-items:center;gap:12px;padding:8px 16px;border-bottom:1px solid var(--border);background:var(--panel)}
-header h1{font-size:14px;color:var(--cyan);letter-spacing:.5px}
-header .status{margin-left:auto;font:11px ui-monospace,monospace;color:var(--dim)}
-#main{grid-area:main;display:flex;flex-direction:column;overflow:hidden;padding:12px 16px;gap:12px}
-#log{grid-area:log;display:flex;flex-direction:column;overflow:hidden;border-left:1px solid var(--border);background:var(--panel)}
-#log header{padding:6px 10px;font-size:10px;color:var(--cyan);text-transform:uppercase;border-bottom:1px solid var(--border);display:flex;justify-content:space-between}
-#logB{flex:1;overflow-y:auto;padding:6px 10px;font:10px/1.7 ui-monospace,monospace;color:#7a8a9a;scrollbar-width:thin}
-.row{display:flex;gap:8px;align-items:center}
-input[type=text]{flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:4px;background:var(--bg);font:13px system-ui;outline:none}
-input:focus{border-color:var(--cyan);box-shadow:0 0 6px #00e5ff30}
-button{padding:5px 14px;border:1px solid var(--border);border-radius:4px;background:var(--bg);font:12px system-ui;cursor:pointer;transition:all .15s}
+:root{
+  --bg:#080b10;--panel:#101722;--panel2:#0c111a;--line:#263246;--line2:#394861;
+  --txt:#e7edf5;--muted:#8b9aab;--cyan:#4cc9f0;--green:#53d769;--red:#ff5c5c;
+  --amber:#f6bd60;--blue:#7aa2f7;--mono:ui-monospace,SFMono-Regular,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html,body{height:100dvh;margin:0;overflow:hidden;background:var(--bg);color:var(--txt);font:13px/1.45 system-ui,Segoe UI,sans-serif}
+button,input,select,textarea{font:inherit}
+button{border:1px solid var(--line2);background:#121b29;color:var(--txt);border-radius:4px;padding:5px 9px;cursor:pointer}
 button:hover{border-color:var(--cyan);color:var(--cyan)}
-button.on{border-color:var(--green);color:var(--green);box-shadow:0 0 8px #39ff1430}
-.section{border:1px solid var(--border);border-radius:6px;background:var(--panel);overflow:hidden}
-.section h2{font-size:10px;color:var(--cyan);text-transform:uppercase;letter-spacing:.4px;padding:6px 10px;border-bottom:1px solid var(--border)}
-.section-body{padding:8px 10px;font:11px/1.6 ui-monospace,monospace;overflow-y:auto;max-height:calc(100dvh - 280px)}
-#topo{display:flex;flex-wrap:wrap;gap:4px;padding:8px 10px}
-.node{padding:3px 8px;border:1px solid var(--border);border-radius:4px;font-size:10px;transition:all .2s}
-.node.active{border-color:var(--green);color:var(--green);box-shadow:0 0 6px #39ff1420}
-#plan{list-style:none;padding:8px 10px}
-#plan li{padding:2px 0;font:11px/1.5 ui-monospace,monospace;color:var(--dim)}
-#plan li.current{color:var(--green)}
-#plan li.done{color:var(--dim);text-decoration:line-through}
-#history{padding:8px 10px;font:10px/1.6 ui-monospace,monospace;color:#7a8a9a;max-height:200px;overflow-y:auto}
+button.primary{border-color:var(--cyan);color:var(--cyan)}
+button.good{border-color:var(--green);color:var(--green)}
+button.warn{border-color:var(--amber);color:var(--amber)}
+button.danger{border-color:var(--red);color:var(--red)}
+button:disabled{opacity:.45;cursor:not-allowed}
+input,select,textarea{border:1px solid var(--line);background:#070a0f;color:var(--txt);border-radius:4px;padding:5px 7px;outline:none}
+input:focus,select:focus,textarea:focus{border-color:var(--cyan)}
+textarea{resize:none;font-family:var(--mono);font-size:11px;line-height:1.45}
+.app{height:100dvh;display:grid;grid-template-rows:auto 1fr;min-width:980px}
+.top{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--line);background:var(--panel)}
+.brand{font-weight:700;color:var(--cyan);letter-spacing:.3px;margin-right:8px}
+.goal{flex:1;min-width:260px}
+.status{font:11px var(--mono);color:var(--muted);white-space:nowrap}
+.main{min-height:0;display:grid;grid-template-columns:310px 1fr 430px}
+.rail,.inspect{min-height:0;background:var(--panel2);display:flex;flex-direction:column}
+.rail{border-right:1px solid var(--line)}
+.inspect{border-left:1px solid var(--line)}
+.center{min-height:0;display:flex;flex-direction:column}
+.bar{display:flex;align-items:center;gap:6px;padding:7px 8px;border-bottom:1px solid var(--line);background:#0d1420}
+.bar h2{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);margin:0;margin-right:auto}
+.pane{min-height:0;overflow:auto;padding:8px}
+.split{display:grid;grid-template-rows:1fr 210px;min-height:0;flex:1}
+.box{border:1px solid var(--line);background:var(--panel);border-radius:6px;overflow:hidden;margin-bottom:8px}
+.box h3{margin:0;padding:6px 8px;border-bottom:1px solid var(--line);font-size:11px;text-transform:uppercase;color:var(--muted);letter-spacing:.4px}
+.box .body{padding:7px 8px}
+.kv{display:grid;grid-template-columns:95px 1fr;gap:4px 8px;font:11px var(--mono)}
+.kv b{color:var(--muted);font-weight:500}
+.list{display:flex;flex-direction:column;gap:4px}
+.item{border:1px solid var(--line);background:#0a1019;border-radius:4px;padding:5px 6px;font:11px var(--mono);cursor:pointer}
+.item:hover,.item.sel{border-color:var(--cyan)}
+.item.done{color:var(--muted);text-decoration:line-through}
+.item.current{border-color:var(--green);color:var(--green)}
+#graphWrap{min-height:0;flex:1;position:relative;background:#070a0f}
+#graph{width:100%;height:100%;display:block}
+.node rect{fill:#111a27;stroke:var(--line2);stroke-width:1.2}
+.node text{font:12px var(--mono);fill:var(--txt)}
+.node.active rect{stroke:var(--green);stroke-width:2}
+.node.sel rect{stroke:var(--cyan);stroke-width:2}
+.edge{stroke:#465872;stroke-width:1.4;fill:none;marker-end:url(#arrow)}
+.edge.sel{stroke:var(--cyan);stroke-width:2.2}
+.edgeLabel{font:10px var(--mono);fill:var(--muted);cursor:pointer}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);background:#0d1420;padding:5px 6px 0}
+.tab{border:1px solid var(--line);border-bottom:0;border-radius:4px 4px 0 0;background:#0a1019;padding:5px 8px;font-size:11px;color:var(--muted);cursor:pointer}
+.tab.on{color:var(--cyan);border-color:var(--cyan);background:var(--panel2)}
+.form{display:grid;gap:7px}
+.field{display:grid;gap:3px}
+.field label{font:10px var(--mono);color:var(--muted)}
+.field input,.field select,.field textarea{width:100%}
+.row{display:flex;align-items:center;gap:6px}
+.row>*{min-width:0}
+.grow{flex:1}
+.code{font:11px/1.45 var(--mono);white-space:pre-wrap}
+.log{font:10px/1.55 var(--mono);color:#a8b3c2}
+.log div{border-bottom:1px solid #162033;padding:2px 0}
+.ok{color:var(--green)}.bad{color:var(--red)}.muted{color:var(--muted)}.cyan{color:var(--cyan)}
 </style>
 </head>
 <body>
-<header>
-  <h1>endgame-ai</h1>
-  <button id="bSmoke">smoke</button>
-  <span class="status" id="status">idle</span>
-</header>
-<main id="main">
-  <div class="row">
-    <input type="text" id="goal" placeholder="Goal..." value="open notepad" autofocus>
-    <button id="bRun">Run</button>
-    <button id="bStep">Step</button>
-    <button id="bStop">Stop</button>
-  </div>
-  <div class="section"><h2>topology</h2><div id="topo"></div></div>
-  <div class="section"><h2>plan</h2><ol id="plan"></ol></div>
-  <div class="section"><h2>history</h2><div id="history"></div></div>
-</main>
-<aside id="log"><header>log <button id="bClr">clr</button></header><div id="logB"></div></aside>
+<div class="app">
+  <header class="top">
+    <div class="brand">endgame-ai workbench</div>
+    <input id="goal" class="goal" value="open notepad" aria-label="Goal">
+    <button id="newSession">New</button>
+    <button id="stepBtn" class="primary">Step</button>
+    <button id="runBtn" class="good">Run</button>
+    <button id="pauseBtn" class="warn">Pause</button>
+    <button id="resumeBtn">Resume Saved</button>
+    <button id="smokeBtn">Smoke</button>
+    <button id="saveBtn" class="primary">Save Wiring</button>
+    <span id="status" class="status">loading</span>
+  </header>
+  <section class="main">
+    <aside class="rail">
+      <div class="bar"><h2>State</h2><button id="refreshBtn">Refresh</button></div>
+      <div class="pane">
+        <div class="box"><h3>Run</h3><div class="body kv" id="runBox"></div></div>
+        <div class="box"><h3>Plan</h3><div class="body list" id="planList"></div></div>
+        <div class="box"><h3>History</h3><div class="body list" id="historyList"></div></div>
+      </div>
+    </aside>
+    <main class="center">
+      <div class="bar">
+        <h2>Wiring graph</h2>
+        <button id="addEdgeBtn">Add Edge</button>
+        <button id="deleteBtn" class="danger">Delete Selected</button>
+        <span class="status" id="graphHint">click node or edge to inspect</span>
+      </div>
+      <div class="split">
+        <div id="graphWrap"><svg id="graph" role="img" aria-label="Wiring graph"></svg></div>
+        <div class="box" style="margin:8px"><h3>Screen / Outcome</h3><div class="body code" id="screenBox"></div></div>
+      </div>
+    </main>
+    <aside class="inspect">
+      <div class="tabs">
+        <div class="tab on" data-tab="inspect">Inspect</div>
+        <div class="tab" data-tab="json">JSON</div>
+        <div class="tab" data-tab="schema">Schema</div>
+        <div class="tab" data-tab="log">Log</div>
+      </div>
+      <div class="pane" id="tabInspect"></div>
+      <div class="pane" id="tabJson" hidden><textarea id="jsonEdit" style="width:100%;height:100%"></textarea></div>
+      <div class="pane" id="tabSchema" hidden><pre class="code" id="schemaBox"></pre></div>
+      <div class="pane log" id="tabLog" hidden></div>
+    </aside>
+  </section>
+</div>
 <script>
-const S=location.origin,$=id=>document.getElementById(id),esc=s=>String(s??'').replace(/</g,'&lt;');
-let W=null,logs=[],stepping=false,running=false;
+const API=location.origin;
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+let wiring=null,schema=null,state=null,currentNode=null,selected={kind:null,index:null,id:null},running=false,logs=[];
 
-// --- State ---
-let state=null, currentNode=null;
-
-function log(node,sig,detail){
+function log(kind,msg,data){
   const t=new Date().toLocaleTimeString('en',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit'});
-  logs.push({t,node,sig,detail});if(logs.length>300)logs.shift();
-  $('logB').innerHTML=logs.map(l=>`<div><span style="color:var(--dim)">${l.t}</span> <b>${esc(l.node)}</b> <span style="color:var(--cyan)">${esc(l.sig)}</span> ${esc(l.detail||'')}</div>`).join('');
-  $('logB').scrollTop=1e6;
+  logs.push({t,kind,msg,data}); if(logs.length>500)logs.shift();
+  $('tabLog').innerHTML=logs.map(l=>`<div><span class="muted">${l.t}</span> <b>${esc(l.kind)}</b> ${esc(l.msg)} ${l.data?esc(JSON.stringify(l.data)).slice(0,260):''}</div>`).join('');
+  $('tabLog').scrollTop=1e9;
 }
-
-function renderTopo(activeId){
-  if(!W)return;
-  $('topo').innerHTML=W.topology.nodes.map(n=>`<span class="node${n.id===activeId?' active':''}">${n.id}</span>`).join('');
+async function api(path,opts={}){
+  const r=await fetch(API+path,opts);
+  const text=await r.text();
+  let data={}; try{data=text?JSON.parse(text):{};}catch{data={raw:text};}
+  if(!r.ok||data.error)throw new Error(data.error||r.statusText);
+  return data;
 }
+function nodeById(id){return wiring?.topology.nodes.find(n=>n.id===id)}
+function nodeIndex(id){return wiring?.topology.nodes.findIndex(n=>n.id===id)}
+function nodeType(id){return nodeById(id)?.type||''}
+function targets(){return (wiring?.topology.nodes||[]).map(n=>n.id)}
+function setStatus(s){$('status').textContent=s}
 
+async function loadAll(){
+  [wiring,schema]=await Promise.all([api('/wiring'),api('/wiring-schema')]);
+  try{state=await api('/state')}catch{state={}}
+  currentNode=state?._resume_node||wiring.topology.cycle_start;
+  $('schemaBox').textContent=JSON.stringify(schema,null,2);
+  $('jsonEdit').value=JSON.stringify(wiring,null,2);
+  renderAll();
+  setStatus('ready');
+}
+function newSession(){
+  state={goal:$('goal').value.trim(),step:0,retries:0,history:[],reasoning:{},reasoning_chain:[],planner_retries:0,replan_count:0,last_error:'',no_desktop:false};
+  currentNode=wiring.topology.cycle_start;
+  log('session','new',state.goal);
+  renderAll();
+}
+async function step(){
+  if(!state||!state.goal)newSession();
+  const payload={goal:$('goal').value.trim(),state,node:currentNode};
+  setStatus(`step ${currentNode}`);
+  const r=await api('/step',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  state=r.state; currentNode=r.next||state._resume_node||null;
+  selected={kind:'node',id:r.node,index:nodeIndex(r.node)};
+  log('step',`${r.node} -> ${(r.signals||[]).join(',')}`,r.state_patch);
+  renderAll();
+  return !r.terminal;
+}
+async function runLoop(){
+  if(running)return; running=true; $('runBtn').disabled=true; $('pauseBtn').disabled=false;
+  try{
+    for(let i=0;running&&i<200;i++){
+      if(!await step())break;
+      await new Promise(r=>setTimeout(r,160));
+    }
+  }catch(e){log('error',e.message)}
+  running=false; $('runBtn').disabled=false; $('pauseBtn').disabled=true; setStatus('paused');
+}
+function pause(){running=false;setStatus('paused')}
+
+function renderAll(){
+  renderGraph(); renderState(); renderInspect();
+  $('jsonEdit').value=JSON.stringify(wiring,null,2);
+}
 function renderState(){
-  if(!state||!state.goal){$('status').textContent='idle';return;}
-  const plan=state.plan||[];
-  const step=state.step||0;
-  $('status').textContent=state.satisfied?'✓ satisfied':`step ${step}/${plan.length} @ ${currentNode||'?'}`;
-  $('plan').innerHTML=plan.map((p,i)=>{
-    const cls=i<step?'done':i===step?'current':'';
-    return `<li class="${cls}">${i+1}. ${esc(p.description)} <span style="color:var(--dim)">— ${esc(p.done_when)}</span></li>`;
+  const plan=state?.plan||[], stepNo=state?.step||0;
+  $('runBox').innerHTML=[
+    ['goal',state?.goal||''],
+    ['node',currentNode||state?._resume_node||''],
+    ['step',`${stepNo}/${plan.length}`],
+    ['retries',state?.retries??0],
+    ['satisfied',String(!!state?.satisfied)],
+    ['error',state?.last_error||'']
+  ].map(([k,v])=>`<b>${esc(k)}</b><span>${esc(v)}</span>`).join('');
+  $('planList').innerHTML=plan.length?plan.map((p,i)=>{
+    const cls=i<stepNo?'done':i===stepNo?'current':'';
+    return `<div class="item ${cls}">${i+1}. ${esc(p.description)}<br><span class="muted">${esc(p.done_when)}</span></div>`;
+  }).join(''):'<span class="muted">no plan</span>';
+  const hist=state?.history||[];
+  $('historyList').innerHTML=hist.length?hist.slice(-12).map(h=>`<div class="item">${esc(h.action)}<br><span class="muted">${esc(h.outcome)}</span></div>`).join(''):'<span class="muted">no history</span>';
+  const screen=state?.screen||state?.last_outcome||'';
+  $('screenBox').textContent=screen||'No screen or outcome yet.';
+}
+function layout(){
+  const nodes=wiring.topology.nodes, cols=Math.max(3,Math.ceil(Math.sqrt(nodes.length)));
+  const w=$('graphWrap').clientWidth||700, gapX=Math.max(160,Math.floor((w-80)/cols)), gapY=92;
+  return new Map(nodes.map((n,i)=>[n.id,{x:40+(i%cols)*gapX,y:38+Math.floor(i/cols)*gapY,w:128,h:42}]));
+}
+function renderGraph(){
+  if(!wiring)return;
+  const pos=layout(), nodes=wiring.topology.nodes, edges=wiring.topology.edges;
+  const rows=Math.ceil(nodes.length/Math.max(3,Math.ceil(Math.sqrt(nodes.length))));
+  const h=Math.max(360,rows*100+70);
+  const svg=$('graph'); svg.setAttribute('viewBox',`0 0 ${$('graphWrap').clientWidth||900} ${h}`);
+  let out='<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#465872"/></marker></defs>';
+  edges.forEach((e,i)=>{
+    const a=pos.get(e.from), b=pos.get(e.to); if(!a||!b)return;
+    const x1=a.x+a.w, y1=a.y+a.h/2, x2=b.x, y2=b.y+b.h/2, mid=(x1+x2)/2;
+    out+=`<path class="edge ${selected.kind==='edge'&&selected.index===i?'sel':''}" data-edge="${i}" d="M${x1},${y1} C${mid},${y1} ${mid},${y2} ${x2},${y2}"/>`;
+    out+=`<text class="edgeLabel" data-edge="${i}" x="${mid-20}" y="${(y1+y2)/2-5}">${esc(e.on)}</text>`;
+  });
+  nodes.forEach((n,i)=>{
+    const p=pos.get(n.id), active=n.id===currentNode||n.id===state?._resume_node, sel=selected.kind==='node'&&selected.id===n.id;
+    out+=`<g class="node ${active?'active':''} ${sel?'sel':''}" data-node="${esc(n.id)}"><rect x="${p.x}" y="${p.y}" width="${p.w}" height="${p.h}" rx="4"/><text x="${p.x+8}" y="${p.y+17}">${esc(n.id)}</text><text x="${p.x+8}" y="${p.y+32}" fill="#8b9aab">${esc(n.type)}</text></g>`;
+  });
+  svg.innerHTML=out;
+  svg.querySelectorAll('[data-node]').forEach(el=>el.onclick=()=>{selected={kind:'node',id:el.dataset.node,index:nodeIndex(el.dataset.node)};renderAll()});
+  svg.querySelectorAll('[data-edge]').forEach(el=>el.onclick=()=>{selected={kind:'edge',index:Number(el.dataset.edge)};renderAll()});
+}
+function renderInspect(){
+  const root=$('tabInspect');
+  if(!selected.kind){root.innerHTML='<div class="muted">Select a node or edge in the graph.</div>';return}
+  if(selected.kind==='node'){
+    const idx=selected.index, obj=wiring.topology.nodes[idx];
+    root.innerHTML=`<div class="box"><h3>Node ${esc(obj.id)}</h3><div class="body form">${editor(obj,`topology.nodes.${idx}`)}</div></div>`;
+  }else{
+    const idx=selected.index, obj=wiring.topology.edges[idx];
+    root.innerHTML=`<div class="box"><h3>Edge ${idx+1}</h3><div class="body form">${edgeEditor(obj,idx)}</div></div>`;
+  }
+  if(selected.kind==='edge'){
+    const edge=wiring.topology.edges[selected.index];
+    root.querySelector(`[data-path="topology.edges.${selected.index}.from"]`).value=edge.from;
+    root.querySelector(`[data-path="topology.edges.${selected.index}.to"]`).value=edge.to;
+  }
+  root.querySelectorAll('[data-path]').forEach(el=>el.oninput=()=>{setPath(el.dataset.path, el.value); renderGraph(); $('jsonEdit').value=JSON.stringify(wiring,null,2)});
+}
+function editor(obj,path){
+  return Object.keys(obj).map(k=>{
+    const v=obj[k], p=`${path}.${k}`;
+    if(v&&typeof v==='object')return `<div class="field"><label>${esc(k)}</label><textarea rows="7" data-path="${p}">${esc(JSON.stringify(v,null,2))}</textarea></div>`;
+    return `<div class="field"><label>${esc(k)}</label><input data-path="${p}" value="${esc(v)}"></div>`;
   }).join('');
-  const hist=state.history||[];
-  $('history').innerHTML=hist.slice(-15).map(h=>`<div>[${h.attempt}] ${esc(h.action)} → ${esc(h.outcome)}</div>`).join('');
-  $('history').scrollTop=1e6;
-  renderTopo(currentNode);
 }
-
-// --- Graph engine (client-side stepping) ---
-function findNext(fromId, signals){
-  if(!W)return null;
-  for(const e of W.topology.edges){
-    if(e.from===fromId && signals.some(s=>e.on.split('|').includes(s)))
-      return e.to;
-  }
-  return null;
+function edgeEditor(e,i){
+  const opts=targets().map(id=>`<option value="${esc(id)}">${esc(id)}</option>`).join('');
+  return `<div class="field"><label>from</label><select data-path="topology.edges.${i}.from">${opts}</select></div>
+  <div class="field"><label>to</label><select data-path="topology.edges.${i}.to">${opts}</select></div>
+  <div class="field"><label>on</label><input data-path="topology.edges.${i}.on" value="${esc(e.on)}"></div>`;
 }
-
-function nodeType(id){
-  const n=W.topology.nodes.find(n=>n.id===id);
-  return n?n.type:'?';
+function setPath(path,value){
+  const parts=path.split('.'); let obj=wiring;
+  for(let i=0;i<parts.length-1;i++)obj=obj[parts[i]];
+  const key=parts.at(-1);
+  try{obj[key]=value.trim().startsWith('{')||value.trim().startsWith('[')?JSON.parse(value):value}catch{obj[key]=value}
 }
-
-async function callNode(nodeId){
-  const type=nodeType(nodeId);
-  const r=await(await fetch(`${S}/node/${type}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({state})})).json();
-  if(r.error){log(nodeId,'ERROR',r.error);return null;}
-  return r;
-}
-
-async function advance(){
-  if(!currentNode||!state)return false;
-  renderTopo(currentNode);
-  $('status').textContent=`calling ${currentNode}...`;
-  log(currentNode,'→','');
-  const r=await callNode(currentNode);
-  if(!r)return false;
-  // Apply state patch
-  Object.assign(state, r.state_patch||{});
-  const sigs=r.signals||[];
-  log(currentNode,sigs.join(','), summarize(r.state_patch));
-  renderState();
-  // Find next
-  const next=findNext(currentNode, sigs);
-  if(!next||sigs.includes('idle')){
-    log('—',state.satisfied?'SATISFIED':'terminal','');
-    currentNode=null;
-    renderState();
-    return false;
-  }
-  currentNode=next;
-  renderTopo(currentNode);
-  return true;
-}
-
-function summarize(patch){
-  if(!patch)return'';
-  if(patch.plan)return patch.plan.map(p=>p.description).join(' → ');
-  if(patch.last_outcome)return patch.last_outcome.substring(0,80);
-  if(patch.step_goal)return patch.step_goal;
-  return'';
-}
-
-function initState(goal){
-  state={goal,step:0,retries:0,history:[],reasoning:{},reasoning_chain:[],planner_retries:0,replan_count:0,last_error:'',no_desktop:false};
-  currentNode=W.topology.cycle_start;
-  renderState();
-  log('—','start',goal);
-}
-
-// --- Controls ---
-$('bStep').onclick=async()=>{
-  if(stepping)return;
-  stepping=true;
+async function saveWiring(){
   try{
-    if(!state||state.satisfied){
-      const g=$('goal').value.trim();if(!g){stepping=false;return;}
-      initState(g);
-    }
-    if(currentNode)await advance();
-  }catch(e){log('err','!',e.message);}
-  stepping=false;
-};
-
-$('bRun').onclick=async()=>{
-  if(running)return;
-  const g=$('goal').value.trim();if(!g)return;
-  if(!state||state.satisfied)initState(g);
-  running=true;
-  $('bRun').classList.add('on');
-  try{
-    let cycles=0;
-    while(running&&currentNode&&cycles<100){
-      if(!await advance())break;
-      cycles++;
-      await new Promise(r=>setTimeout(r,200));
-    }
-  }catch(e){log('err','!',e.message);}
-  running=false;
-  $('bRun').classList.remove('on');
-};
-
-$('bStop').onclick=()=>{running=false;log('—','stop','');};
-$('goal').onkeydown=e=>{if(e.key==='Enter')$('bStep').click();};
-
-$('bSmoke').onclick=async()=>{
-  try{
-    const r=await(await fetch(S+'/smoke')).json();
-    log('smoke',r.all_ok?'✓':'✗',`${r.passed}/${r.total}`);
-  }catch(e){log('smoke','err',e.message);}
-};
-
-$('bClr').onclick=()=>{logs=[];$('logB').innerHTML='';};
-
-// --- SSE ---
-const sse=new EventSource(S+'/events');
-sse.addEventListener('push',e=>{const d=JSON.parse(e.data);log('push',d.type||'',d.text||'');});
-
-// --- Init ---
-(async()=>{
-  try{
-    W=await(await fetch(S+'/wiring')).json();
-    renderTopo(null);
-    log('init','ok',W.topology.nodes.length+' nodes');
-  }catch(e){log('init','err',e.message);}
-})();
+    const edited=JSON.parse($('jsonEdit').value);
+    const r=await api('/wiring',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(edited)});
+    wiring=edited; log('wiring','saved',r); renderAll();
+  }catch(e){log('wiring','save failed '+e.message)}
+}
+function addEdge(){
+  const ids=targets(); if(ids.length<2)return;
+  wiring.topology.edges.push({from:ids[0],to:ids[1],on:'ready'});
+  selected={kind:'edge',index:wiring.topology.edges.length-1}; renderAll();
+}
+function deleteSelected(){
+  if(selected.kind==='edge')wiring.topology.edges.splice(selected.index,1);
+  if(selected.kind==='node')wiring.topology.nodes.splice(selected.index,1);
+  selected={kind:null,index:null,id:null}; renderAll();
+}
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x===t));
+  ['Inspect','Json','Schema','Log'].forEach(name=>$('tab'+name).hidden=t.dataset.tab!==name.toLowerCase());
+});
+$('newSession').onclick=newSession;
+$('stepBtn').onclick=()=>step().catch(e=>log('error',e.message));
+$('runBtn').onclick=runLoop;
+$('pauseBtn').onclick=pause;
+$('resumeBtn').onclick=async()=>{const s=await api('/state');state=s;currentNode=s._resume_node||wiring.topology.cycle_start;renderAll();log('state','resumed')};
+$('refreshBtn').onclick=loadAll;
+$('smokeBtn').onclick=async()=>log('smoke','result',await api('/smoke'));
+$('saveBtn').onclick=saveWiring;
+$('addEdgeBtn').onclick=addEdge;
+$('deleteBtn').onclick=deleteSelected;
+$('goal').onkeydown=e=>{if(e.key==='Enter')step().catch(err=>log('error',err.message))};
+new EventSource(API+'/events').addEventListener('push',e=>log('push','event',JSON.parse(e.data)));
+loadAll().catch(e=>{setStatus('load failed');log('error',e.message)});
 </script>
 </body>
 </html>
