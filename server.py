@@ -2,7 +2,7 @@
 endgame-ai — stdlib only, zero pip.
 One file. Node handlers are pure functions. Wiring.json is the brain.
 """
-import json, http.server, urllib.request, pathlib, time, sys, re, threading, queue, os, importlib, importlib.util
+import json, http.server, urllib.request, pathlib, time, sys, re, threading, queue, os
 
 class ThreadingHTTPServer(http.server.ThreadingHTTPServer):
     daemon_threads = True
@@ -134,38 +134,8 @@ def http_port(slot=None):
 def http_bind():
     return os.environ.get("ENDGAME_BIND") or WIRING.get("runtime", {}).get("http_bind", "0.0.0.0")
 
-def local_lan_ips():
-    import socket
-    ips = set()
-    try:
-        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
-            ip = info[4][0]
-            if not ip.startswith("127."):
-                ips.add(ip)
-    except Exception:
-        pass
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.settimeout(0.2)
-        s.connect(("8.8.8.8", 80))
-        ips.add(s.getsockname()[0])
-        s.close()
-    except Exception:
-        pass
-    return sorted(ips)
-
 def print_listen_urls(port):
-    bind = http_bind()
-    print(f"  local   http://127.0.0.1:{port}")
-    if bind in ("0.0.0.0", "::"):
-        for ip in local_lan_ips():
-            print(f"  lan     http://{ip}:{port}")
-        print(f"  phone   same WiFi - open LAN URL in browser")
-        print(f"  firewall (once, admin PS): netsh advfirewall firewall add rule name=\"endgame-ai\" dir=in action=allow protocol=TCP localport={port}")
-
-def colony_port(slot):
-    rt = WIRING.get("runtime", {})
-    return int(rt.get("colony_port_base", 9076)) + int(slot)
+    print(f"  http://127.0.0.1:{port}")
 
 def simulation_mode():
     if os.environ.get("ENDGAME_SIM", "").lower() in ("1", "true", "yes"):
@@ -512,6 +482,8 @@ def _planner_ready_patch(state, steps, patch):
         "plan_failed": False,
         "replanning": False,
         "_planned_goal": state.get("goal", ""),
+        "reasoning_chain": [],
+        "reasoning": {},
     }
     preserve = state.get("replanning") and state.get("step", 0) > 0
     if preserve:
@@ -557,7 +529,17 @@ def node_observe(state, _):
     if state.get("no_desktop"):
         s = state.get("screen") or WIRING.get("context", {}).get("screen_disabled", "(no desktop)")
     else:
+        obs_cfg = WIRING.get("observe", {})
+        min_elements = obs_cfg.get("min_elements", 0)
+        retries = obs_cfg.get("wait_retries", 0)
+        wait_ms = obs_cfg.get("wait_ms", 500)
         s = observe_screen()
+        if min_elements > 0 and retries > 0:
+            for _ in range(retries):
+                if s.count("[") >= min_elements:
+                    break
+                time.sleep(wait_ms / 1000.0)
+                s = observe_screen()
     return {"signals": ["screen_ready"], "patch": {"screen": s}}
 
 def node_act(state, _):
@@ -854,69 +836,6 @@ NODES = {
     "moe_route": node_moe_route,
     "self_modify": node_self_modify,
 }
-
-# ─── Hot-reload node handlers from nodes/ directory ───
-
-NODES_DIR = ROOT / "nodes"
-NODES_DIR.mkdir(exist_ok=True)
-_handler_mtimes = {}
-
-def hot_load_nodes():
-    """Scan nodes/ dir and load/reload any new or changed .py handler modules."""
-    importlib.invalidate_caches()
-    for f in NODES_DIR.iterdir():
-        if f.suffix != '.py' or f.name.startswith('_'):
-            continue
-        mtime = f.stat().st_mtime
-        name = f.stem
-        if name in _handler_mtimes and _handler_mtimes[name] >= mtime:
-            continue
-        try:
-            spec = importlib.util.spec_from_file_location(f"nodes.{name}", f)
-            mod = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(mod)
-            if hasattr(mod, 'handler'):
-                NODES[name] = mod.handler
-                _handler_mtimes[name] = mtime
-        except Exception as e:
-            print(f"[hot-load] {name}: {e}")
-
-hot_load_nodes()  # initial scan
-
-def _node_watcher():
-    while True:
-        time.sleep(2)
-        hot_load_nodes()
-
-threading.Thread(target=_node_watcher, daemon=True).start()
-
-# ─── Hot-reload wiring.json from disk ───
-
-_wiring_mtime = (PROMPTS / "wiring.json").stat().st_mtime if (PROMPTS / "wiring.json").exists() else 0
-
-def _wiring_watcher():
-    global WIRING, _wiring_mtime
-    path = PROMPTS / "wiring.json"
-    while True:
-        time.sleep(2)
-        try:
-            if not path.exists():
-                continue
-            mtime = path.stat().st_mtime
-            if mtime <= _wiring_mtime:
-                continue
-            data = json.loads(path.read_text(encoding="utf-8"))
-            errs = validate_wiring(data)
-            if errs:
-                print(f"[wiring-watch] skipped invalid wiring: {errs[0]}")
-                continue
-            WIRING = data
-            _wiring_mtime = mtime
-            sse_push("wiring_modified", {"source": "file"})
-        except Exception as e:
-            print(f"[wiring-watch] {e}")
-
-threading.Thread(target=_wiring_watcher, daemon=True).start()
 
 # ─── Graph engine ───
 

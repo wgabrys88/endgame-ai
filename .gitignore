@@ -1,23 +1,20 @@
 # Allowlist — ignore all, then un-ignore essentials only
 *
 !.gitignore
+!.gitattributes
 !README.md
 !LICENSE
-!.gitattributes
 !server.py
 !desktop.py
 !actions.py
 !simulation.py
 !colony.py
-!rod_test.py
 !wiring-editor.html
-!start.sh
-!start_colony.ps1
 !test_server.py
 !test_llm_live.py
 !test_desktop_live.py
 !test_colony_delegate.py
+!prompts/
 !prompts/wiring.json
 !prompts/wiring-schema.json
 !prompts/model.json
-!nodes/example_gate.py

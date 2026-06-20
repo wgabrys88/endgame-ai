@@ -536,8 +536,7 @@ def test_colony_boot_sim():
 
 def test_rod_trigger_port_mapping():
     assert server.http_port(1) == 9078
-    assert server.colony_port(1) == 9077
-    assert server.http_port(1) != server.colony_port(1)
+    assert server.http_port(2) == 9079
     print("PASS rod_trigger_port_mapping")
 
 

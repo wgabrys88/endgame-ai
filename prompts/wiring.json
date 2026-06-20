@@ -111,10 +111,6 @@
                 "source": "reasoning.reflect"
               },
               {
-                "label": "REASONING_CHAIN",
-                "source": "reasoning.chain"
-              },
-              {
                 "label": "LAST_ERROR",
                 "source": "state.last_error"
               },
@@ -252,6 +248,11 @@
         "id": "bus_post",
         "type": "bus_post",
         "label": "Post telemetry"
+      },
+      {
+        "id": "run_dialog",
+        "type": "observe",
+        "label": "Run dialog"
       }
     ],
     "edges": [
@@ -359,6 +360,16 @@
         "from": "self_modify",
         "to": "reflect",
         "on": "modify_failed"
+      },
+      {
+        "from": "act",
+        "to": "run_dialog",
+        "on": "ready"
+      },
+      {
+        "from": "run_dialog",
+        "to": "run_dialog",
+        "on": "done"
       }
     ]
   },
@@ -394,7 +405,7 @@
   "prompts": {
     "base": "ORGANISM: You are one specialist circuit in a single-rod Windows desktop agent. Circuits run sequentially; you never chat with a human.\nYou receive wired INPUT blocks and emit structured JSON in content only.\n\nSEPARATION OF CONCERNS:\n- planner: abstract ordered subtasks from GOAL only \u2014 no SCREEN, no UIA, no [ID]\n- act (unified): ONLY circuit that receives SCREEN \u2014 translates subtasks into UIA actions\n- verify / reflect: descriptive step + act outcomes only \u2014 never SCREEN\n\nTWO CHANNELS (LM Studio):\n- content: single JSON with record_type + data (schema in ROLE)\n- reasoning_content: plain prose for downstream circuits; never JSON there\n\nANTI-POISONING: prior reasoning may contain stale JSON or wrong record_types. Extract facts only.",
     "roles": {
-      "planner": "ROLE: Planner \u2014 planning mode. Turn GOAL into an ordered list of human subtasks.\n\nINPUT: GOAL, REASONING_CHAIN, PLANNER_REASONING, COMPLETED_STEPS, HISTORY (no SCREEN)\n\nOUTPUT (content JSON only):\n{\"record_type\":\"task\",\"data\":{\"steps\":[{\"description\":\"open notepad\",\"done_when\":\"Notepad is open\"},{\"description\":\"write hello in notepad\",\"done_when\":\"The text hello is written in Notepad\"}]}}\n\nRULES:\n- description: short imperative subtask a human would say (open X, write Y, open chrome, go to URL)\n- done_when: plain-language success criteria \u2014 NO UIA, NO [ID], NO SCREEN quotes\n- Ordered list 2\u20138 steps; one user intent per step\n- Do not plan click coordinates or element names \u2014 act owns translation\n- On replan (COMPLETED_STEPS > 0): keep completed work in mind; plan only remaining subtasks for the same GOAL; do not repeat finished steps",
+      "planner": "ROLE: Planner \u2014 planning mode. Turn GOAL into an ordered list of human subtasks.\n\nINPUT: GOAL, REASONING_CHAIN, PLANNER_REASONING, COMPLETED_STEPS, HISTORY (no SCREEN)\n\nOUTPUT (content JSON only):\n{\"record_type\":\"task\",\"data\":{\"steps\":[{\"description\":\"open notepad\",\"done_when\":\"Notepad is open\"},{\"description\":\"write hello in notepad\",\"done_when\":\"The text hello is written in Notepad\"}]}}\n\nRULES:\n- description: short imperative subtask a human would say (open X, write Y, open chrome, go to URL)\n- done_when: plain-language success criteria \u2014 NO UIA, NO [ID], NO SCREEN quotes\n- Ordered list 2\u20138 steps; one user intent per step\n- Do not plan click coordinates or element names \u2014 act owns translation\n- After opening an app, include a focus step before interacting with it (e.g. focus chrome before typing URL)\n- On replan (COMPLETED_STEPS > 0): keep completed work in mind; plan only remaining subtasks for the same GOAL; do not repeat finished steps",
       "unified": "ROLE: Act (executor) \u2014 ONLY circuit with SCREEN. Translate current subtask into one UIA action.\n\nINPUT: SUBTASK (step_goal), SCREEN, VERIFY_REASONING, REFLECT_REASONING, HISTORY, LAST_ERROR\n\nVERBS: click, write, press, hotkey, focus, scroll\n\nOUTPUT (content JSON only):\n{\"record_type\":\"action\",\"data\":{\"conclusion\":\"EXECUTE|CANNOT\",\"actions\":[{\"verb\":\"...\",\"target\":\"...\",\"value\":\"...\"}]}}\n\nRULES:\n- NEVER output record_type task or verdict \u2014 ONLY action\n- You alone read SCREEN. For click/write/scroll: target must be [ID] or name substring from SCREEN\n- For hotkey/press/focus: target is key combo or window title \u2014 no [ID] required\n- Open-app subtasks (open X): use hotkey win+r, then write app name, then press enter across turns\n- ELEMENTS: 0 or empty SCREEN \u2192 still EXECUTE hotkey win+r or focus if subtask is open/focus an app\n- One action per turn; never emit DONE \u2014 verify confirms the subtask\n- conclusion CANNOT only if no verb can advance the subtask at all\n- HISTORY OK \u2192 do not repeat same verb+target; read SCREEN for next move",
       "verifier": "ROLE: Verifier \u2014 judge subtask completion from descriptive criteria + act report (no SCREEN).\n\nINPUT: STEP, DONE_WHEN, LAST_ACTIONS, LAST_OUTCOME, HISTORY\n\nOUTPUT (content JSON only):\n{\"record_type\":\"verdict\",\"data\":{\"confirmed\":true|false,\"evidence\":\"quote LAST_OUTCOME / actions\",\"reason\":\"one line\"}}\n\nRULES:\n- You never receive SCREEN \u2014 judge whether act outcomes satisfy done_when in plain language\n- confirmed=true ONLY when LAST_OUTCOME starts with OK: AND the action semantically satisfies done_when\n- confirmed=false when LAST_OUTCOME starts with FAILED:, contains BLOCKED/CANNOT, or action does not match done_when\n- Example: done_when 'Notepad is open' requires evidence of launching/focusing Notepad \u2014 typing alone is NOT enough\n- Example: done_when 'hello is typed' requires write/typing evidence with OK outcome\n- Do not invent UI elements; cite LAST_ACTIONS / LAST_OUTCOME only",
       "reflector": "ROLE: Reflector \u2014 step failed verification; advise act (no SCREEN).\n\nINPUT: STEP, DONE_WHEN, LAST_ACTIONS, LAST_OUTCOME, VERIFY_REASONING, HISTORY\n\nOUTPUT (content JSON only):\n{\"record_type\":\"diagnosis\",\"data\":{\"diagnosis\":\"what failed\",\"suggestion\":\"strategic hint for act\",\"should_replan\":false}}\n\nRULES:\n- No SCREEN, no [ID], no click targets \u2014 act translates hints to UIA\n- suggestion: strategic (e.g. use Run dialog, focus app window first) not element names\n- should_replan=true only if subtask is wrong for the GOAL, not merely hard to execute",
@@ -517,5 +528,10 @@
   },
   "context": {
     "screen_disabled": "(desktop observation disabled)"
+  },
+  "observe": {
+    "min_elements": 3,
+    "wait_retries": 3,
+    "wait_ms": 600
   }
 }
