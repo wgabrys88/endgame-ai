@@ -59,16 +59,14 @@ def probe(srv, circuit, state, dry=False, save=True):
 
     t0 = time.time()
     content, reasoning, elapsed = srv.llm(system, user)
-    parsed_content = srv.extract_json(content)
-    parsed_reasoning = srv.extract_json(reasoning) if reasoning else None
-    parsed = parsed_content or parsed_reasoning
+    parsed, parsed_from = srv.parse_circuit_response(circuit, content, reasoning)
     record_type = (parsed or {}).get("record_type")
     ok = record_type == EXPECTED.get(circuit)
 
     result.update({
         "content": content,
         "reasoning_content": reasoning or "",
-        "parsed_from": "content" if parsed_content else ("reasoning" if parsed_reasoning else None),
+        "parsed_from": parsed_from,
         "parsed": parsed,
         "record_type": record_type,
         "record_type_ok": ok,

@@ -170,8 +170,15 @@
       "self_modify": "self_modify"
     },
     "parse_fallback": ["planner", "unified", "verifier", "reflector", "self_modify"],
+    "expected_record_type": {
+      "planner": "task",
+      "unified": "action",
+      "verifier": "verdict",
+      "reflector": "diagnosis",
+      "self_modify": "wiring_patch"
+    },
     "chain_depth": 8,
-    "clear_on_step_confirm": ["verify", "reflect"]
+    "clear_on_step_confirm": ["verify", "reflect", "act"]
   },
   "request": {
     "planner": {
@@ -195,7 +202,6 @@
           {"label": "SCREEN", "source": "state.screen", "empty_template": "(no screen)"},
           {"label": "VERIFY_REASONING", "source": "reasoning.verify"},
           {"label": "REFLECT_REASONING", "source": "reasoning.reflect"},
-          {"label": "ACT_REASONING", "source": "reasoning.act"},
           {"label": "REASONING_CHAIN", "source": "reasoning.chain"},
           {"label": "LAST_ERROR", "source": "state.last_error"},
           {"label": "HISTORY", "source": "state.history"}
@@ -209,8 +215,7 @@
           {"label": "STEP", "source": "state.current_step.description", "always": true},
           {"label": "DONE_WHEN", "source": "state.current_step.done_when"},
           {"label": "SCREEN", "source": "state.screen", "empty_template": "(no screen)"},
-          {"label": "LAST_ACTIONS", "source": "state.last_actions"},
-          {"label": "ACT_REASONING", "source": "reasoning.act"}
+          {"label": "LAST_ACTIONS", "source": "state.last_actions"}
         ]
       }
     },
@@ -222,8 +227,7 @@
           {"label": "DONE_WHEN", "source": "state.current_step.done_when"},
           {"label": "SCREEN", "source": "state.screen", "empty_template": "(no screen)"},
           {"label": "LAST_ACTIONS", "source": "state.last_actions"},
-          {"label": "VERIFY_REASONING", "source": "reasoning.verify"},
-          {"label": "ACT_REASONING", "source": "reasoning.act"}
+          {"label": "VERIFY_REASONING", "source": "reasoning.verify"}
         ]
       }
     },

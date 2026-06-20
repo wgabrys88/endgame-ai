@@ -100,6 +100,23 @@ def clear_reasoning_patch(state, keys):
         reasoning.pop(k, None)
     return {"reasoning": reasoning}
 
+def parse_circuit_response(circuit, content, reasoning):
+    """Parse LLM JSON; enforce wiring.reasoning.expected_record_type per circuit."""
+    cfg = WIRING.get("reasoning", {})
+    expected = cfg.get("expected_record_type", {}).get(circuit)
+    fallback = circuit in cfg.get("parse_fallback", [])
+    sources = [("content", content)]
+    if fallback and reasoning:
+        sources.append(("reasoning", reasoning))
+    for source_name, text in sources:
+        parsed = extract_json(text)
+        if not parsed:
+            continue
+        if expected and parsed.get("record_type") != expected:
+            continue
+        return parsed, source_name
+    return None, None
+
 def call_circuit(circuit, state, extra=None):
     """Run LLM circuit: static system + wired user blocks; capture reasoning_content."""
     s = dict(state)
@@ -109,8 +126,7 @@ def call_circuit(circuit, state, extra=None):
     user = build_user_message(circuit, s)
     content, reasoning, _ = llm(system, user)
     patch = reasoning_patch(state, circuit, reasoning)
-    fallback = circuit in WIRING.get("reasoning", {}).get("parse_fallback", [])
-    parsed = extract_json(content) or (extract_json(reasoning) if fallback and reasoning else None)
+    parsed, _ = parse_circuit_response(circuit, content, reasoning)
     return {"content": content, "reasoning": reasoning, "parsed": parsed, "patch": patch}
 
 # ─── Prompt assembly: static system, dynamic user (from wiring.json) ───
@@ -358,7 +374,10 @@ def node_reflect(state, _):
         r = call_circuit("reflector", state)
         parsed = r["parsed"]
         patch = {**r["patch"], "retries": retries + 1}
-        if parsed and parsed.get("data", {}).get("should_replan"):
+        if not parsed:
+            patch["last_error"] = "reflector: parse_failed or wrong record_type — output diagnosis JSON only"
+            return {"signals": ["retry"], "patch": patch}
+        if parsed.get("data", {}).get("should_replan"):
             if replans >= 2:
                 return {"signals": ["escalate"], "patch": {"retries": 0, "replan_count": 0, **r["patch"]}}
             return {"signals": ["replan"], "patch": {"retries": 0, "replan_count": replans + 1, **r["patch"]}}
