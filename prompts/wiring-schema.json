@@ -1,0 +1,115 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "endgame-topology/v1",
+  "title": "endgame wiring",
+  "type": "object",
+  "required": ["schema", "topology"],
+  "properties": {
+    "schema": { "const": "endgame-topology/v1" },
+    "instance": {
+      "type": "object",
+      "properties": {
+        "slot": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "topology": {
+      "type": "object",
+      "required": ["cycle_start", "nodes", "edges"],
+      "properties": {
+        "cycle_start": { "type": "string", "minLength": 1 },
+        "nodes": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/node" }
+        },
+        "edges": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/edge" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "reasoning": { "type": "object" },
+    "prompts": { "type": "object" },
+    "guards": { "type": "object" },
+    "runtime": { "type": "object" },
+    "act": { "type": "object" },
+    "errors": { "type": "object" },
+    "limits": {
+      "type": "object",
+      "properties": {
+        "max_attempts": { "type": "integer", "minimum": 1 },
+        "max_replans": { "type": "integer", "minimum": 0 },
+        "max_cycles": { "type": "integer", "minimum": 1 },
+        "history_depth": { "type": "integer", "minimum": 1 },
+        "bus_max": { "type": "integer", "minimum": 1 },
+        "planner_retries": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "verbs": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "target_field": { "type": "string" },
+          "value_field": { "type": "string" },
+          "key_field": { "type": "string" },
+          "title_field": { "type": "string" },
+          "amount_field": { "type": "string" }
+        }
+      }
+    },
+    "context": { "type": "object" }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "node": {
+      "type": "object",
+      "required": ["id", "type", "label"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+        "type": { "type": "string", "minLength": 1 },
+        "label": { "type": "string" },
+        "circuit": { "type": "string" },
+        "prompt": { "$ref": "#/$defs/prompt" }
+      },
+      "additionalProperties": false
+    },
+    "edge": {
+      "type": "object",
+      "required": ["from", "to", "on"],
+      "properties": {
+        "from": { "type": "string", "minLength": 1 },
+        "to": { "type": "string", "minLength": 1 },
+        "on": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "prompt": {
+      "type": "object",
+      "properties": {
+        "extends": { "type": "string" },
+        "role": { "type": "string" },
+        "user": {
+          "type": "object",
+          "properties": {
+            "blocks": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["label", "source"],
+                "properties": {
+                  "label": { "type": "string" },
+                  "source": { "type": "string" },
+                  "always": { "type": "boolean" },
+                  "empty_template": { "type": "string" }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

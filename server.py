@@ -2,7 +2,7 @@
 endgame-ai — stdlib only, zero pip.
 One file. Node handlers are pure functions. Wiring.json is the brain.
 """
-import json, http.server, urllib.request, pathlib, time, sys, re, threading, queue, os
+import json, http.server, urllib.request, pathlib, time, sys, re, threading, queue, os, importlib, importlib.util
 
 class ThreadingHTTPServer(http.server.ThreadingHTTPServer):
     daemon_threads = True
@@ -12,7 +12,50 @@ PROMPTS = ROOT / "prompts"
 STATE_FILE = ROOT / "state.json"
 BUS_FILE = pathlib.Path(os.environ.get("ENDGAME_BUS", str(ROOT / "bus.json")))
 WIRING = json.loads((PROMPTS / "wiring.json").read_text(encoding="utf-8"))
+WIRING_SCHEMA = json.loads((PROMPTS / "wiring-schema.json").read_text(encoding="utf-8"))
 MODEL = json.loads((PROMPTS / "model.json").read_text(encoding="utf-8"))
+
+
+def validate_wiring(w):
+    """Validate wiring against schema. Returns list of error strings (empty = valid)."""
+    errs = []
+    if not isinstance(w, dict):
+        return ["root must be object"]
+    if w.get("schema") != "endgame-topology/v1":
+        errs.append("schema must be 'endgame-topology/v1'")
+    topo = w.get("topology")
+    if not isinstance(topo, dict):
+        return errs + ["topology required and must be object"]
+    if not topo.get("cycle_start"):
+        errs.append("topology.cycle_start required")
+    nodes = topo.get("nodes")
+    if not isinstance(nodes, list) or not nodes:
+        return errs + ["topology.nodes must be non-empty array"]
+    node_ids = set()
+    id_pat = re.compile(r'^[a-z][a-z0-9_]*$')
+    for i, n in enumerate(nodes):
+        if not isinstance(n, dict):
+            errs.append(f"nodes[{i}] must be object"); continue
+        nid = n.get("id", "")
+        if not nid or not id_pat.match(nid):
+            errs.append(f"nodes[{i}].id invalid: '{nid}'")
+        if not n.get("type"):
+            errs.append(f"nodes[{i}].type required")
+        if "label" not in n:
+            errs.append(f"nodes[{i}].label required")
+        node_ids.add(nid)
+    if topo.get("cycle_start") not in node_ids:
+        errs.append(f"cycle_start '{topo.get('cycle_start')}' not in nodes")
+    for i, e in enumerate(topo.get("edges") or []):
+        if not isinstance(e, dict):
+            errs.append(f"edges[{i}] must be object"); continue
+        if e.get("from") not in node_ids:
+            errs.append(f"edges[{i}].from '{e.get('from')}' unknown")
+        if e.get("to") not in node_ids:
+            errs.append(f"edges[{i}].to '{e.get('to')}' unknown")
+        if not e.get("on"):
+            errs.append(f"edges[{i}].on required")
+    return errs
 
 try:
     from actions import execute_verb, observe_screen
@@ -255,20 +298,6 @@ def call_node(node_type, state, extra=None):
         s.update(extra)
     system = load_system_prompt(circuit, s, node_type=node_type)
     user = build_user_message(circuit, s, node_type=node_type)
-    content, reasoning, _ = llm(system, user)
-    patch = reasoning_patch(state, circuit, reasoning)
-    parsed, _ = parse_circuit_response(circuit, content, reasoning)
-    return {"content": content, "reasoning": reasoning, "parsed": parsed, "patch": patch}
-
-def call_circuit(circuit, state, extra=None, node_type=None):
-    """Legacy entry — prefer call_node(node_type)."""
-    if node_type:
-        return call_node(node_type, state, extra=extra)
-    s = dict(state)
-    if extra:
-        s.update(extra)
-    system = load_system_prompt(circuit, s)
-    user = build_user_message(circuit, s)
     content, reasoning, _ = llm(system, user)
     patch = reasoning_patch(state, circuit, reasoning)
     parsed, _ = parse_circuit_response(circuit, content, reasoning)
@@ -692,6 +721,41 @@ NODES = {
     "self_modify": node_self_modify,
 }
 
+# ─── Hot-reload node handlers from nodes/ directory ───
+
+NODES_DIR = ROOT / "nodes"
+NODES_DIR.mkdir(exist_ok=True)
+_handler_mtimes = {}
+
+def hot_load_nodes():
+    """Scan nodes/ dir and load/reload any new or changed .py handler modules."""
+    importlib.invalidate_caches()
+    for f in NODES_DIR.iterdir():
+        if f.suffix != '.py' or f.name.startswith('_'):
+            continue
+        mtime = f.stat().st_mtime
+        name = f.stem
+        if name in _handler_mtimes and _handler_mtimes[name] >= mtime:
+            continue
+        try:
+            spec = importlib.util.spec_from_file_location(f"nodes.{name}", f)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            if hasattr(mod, 'handler'):
+                NODES[name] = mod.handler
+                _handler_mtimes[name] = mtime
+        except Exception as e:
+            print(f"[hot-load] {name}: {e}")
+
+hot_load_nodes()  # initial scan
+
+def _node_watcher():
+    while True:
+        time.sleep(2)
+        hot_load_nodes()
+
+threading.Thread(target=_node_watcher, daemon=True).start()
+
 # ─── Graph engine ───
 
 def find_targets(node_id, signals, topo):
@@ -785,6 +849,8 @@ class H(http.server.BaseHTTPRequestHandler):
             })
         elif self.path == "/wiring":
             self._j(WIRING)
+        elif self.path == "/schema":
+            self._j(WIRING_SCHEMA)
         elif self.path == "/state":
             self._j(load_state() or {})
         elif self.path == "/bus":
@@ -798,7 +864,14 @@ class H(http.server.BaseHTTPRequestHandler):
             q = queue.Queue(); SSE.append(q)
             try:
                 while True:
-                    if not self._write(q.get(timeout=30).encode()):
+                    try:
+                        msg = q.get(timeout=30)
+                    except queue.Empty:
+                        if not self._write(":keepalive\n\n".encode()):
+                            break
+                        self.wfile.flush()
+                        continue
+                    if not self._write(msg.encode()):
                         break
                     self.wfile.flush()
             except (ConnectionAbortedError, BrokenPipeError, ConnectionResetError):
@@ -843,10 +916,14 @@ class H(http.server.BaseHTTPRequestHandler):
             bus_write(msgs)
             self._j({"interrupted": True, "goal": new_goal})
         elif self.path == "/wiring" and body:
-            # Hot-reload: POST new wiring.json
+            # Hot-reload: POST new wiring.json (validates against schema)
+            errs = validate_wiring(body)
+            if errs:
+                self._j({"error": "validation failed", "details": errs}, 400)
+                return
             try:
-                (PROMPTS / "wiring.json").write_text(json.dumps(body, indent=2), encoding="utf-8")
                 WIRING = body
+                (PROMPTS / "wiring.json").write_text(json.dumps(body, indent=2), encoding="utf-8")
                 sse_push("wiring_modified", {"source": "api"})
                 self._j({"reloaded": True, "nodes": len(body.get("topology", {}).get("nodes", []))})
             except Exception as e:
