@@ -20,10 +20,6 @@ python server.py --run "open notepad and write hello"
 
 python server.py                    # passive server (editor/curl drives nodes)
 start http://127.0.0.1:9078         # wiring-editor (slot=1 → 9077+1)
-
-python validate_stack.py
-python probe_circuits.py --dry all
-python run_single_rod_test.py "goal" 480
 ```
 
 **Port:** `runtime.http_port_base + slot` → default slot=1 serves **:9078**. `GET /health` returns `port`.
@@ -63,7 +59,7 @@ Colony, bus routing, MoE, and “personas” are **Phase 2** — copy-paste rods
 
 **5 files to run.** Plus 5 circuit prompts (`planner.txt`, `unified.txt`, `verifier.txt`, `reflector.txt`, `self_modify.txt`) = **10 source files** — easier to edit than inlining into JSON.
 
-Runtime output (never commit): `state.json`, `bus.json`, `probe_results/`, logs.
+Runtime output (never commit): `state.json`, `bus.json`, logs.
 
 ### Mental model
 
@@ -220,7 +216,7 @@ Act **never** emits DONE — verify confirms step completion.
 - [x] No screen/history truncation
 - [x] Task-agnostic circuit prompts
 - [x] Single-rod Notepad “hello” end-to-end
-- [x] `validate_stack.py`, `probe_circuits.py`, `wiring-editor.html`
+- [x] `wiring-editor.html`
 
 ### P0 — blocks human replacement
 
@@ -256,8 +252,6 @@ Act **never** emits DONE — verify confirms step completion.
 
 | Goal | Result | Notes |
 |------|--------|-------|
-| `validate_stack.py` | ✓ | wiring + prompts + smoke |
-| `probe_circuits.py --dry all` | ✓ | all 5 circuits assemble |
 | open notepad and write hello | ✓ PASS | ~5 min single rod |
 | open chrome + play shakira on youtube | ✗ FAIL | Google not YouTube; UIA gaps; needs 8+ min budget |
 
@@ -266,7 +260,7 @@ Act **never** emits DONE — verify confirms step completion.
 Reproduce:
 
 ```powershell
-python run_single_rod_test.py "open chrome and play shakira waka waka on youtube" 480
+python server.py --run "open chrome and play shakira waka waka on youtube"
 # Analyze: state.json → step, plan, reasoning.*, screen (FULL), last_error
 ```
 
@@ -275,8 +269,8 @@ python run_single_rod_test.py "open chrome and play shakira waka waka on youtube
 ## Analyze failures
 
 1. `state.json` — step, plan, `reasoning.*`, `reasoning_chain`, **full** screen, `last_error`
-2. Log signals — `plan_ready`, `acted`, `step_confirmed`, `step_denied`, `act_failed`, `replan`
-3. `probe_circuits.py` per circuit with fixture from failed state
+2. Console log — `plan_ready`, `acted`, `step_confirmed`, `step_denied`, `act_failed`, `replan`
+3. `POST /node/{type}` via wiring-editor — step one circuit with saved state
 4. Reasoning poisoning? — act outputting verdict? reflect copying verify JSON?
 
 ---
@@ -329,11 +323,9 @@ FLOW: goal_inbox→planner→scheduler→bus_check→observe→act→verify; ref
 
 PORT: slot=1 → :9078. GET /health returns port.
 
-RUN: python server.py --run "goal" | run_single_rod_test.py "goal" 480 |
-probe_circuits.py --dry all | validate_stack.py
+RUN: python server.py --run "goal"
 
-ANALYZE: state.json (reasoning.*, FULL screen, last_error) + log signals +
-probe_circuits per circuit.
+ANALYZE: state.json (reasoning.*, FULL screen, last_error) + console log signals.
 
 WIRING-ONLY: edges, request blocks, limits, errors, guards, act rules, reasoning.
 NEEDS PYTHON: new node type, new state source, new verb.
@@ -343,8 +335,8 @@ CONSTRAINTS: stdlib, Windows, static task-agnostic prompts, act never DONE.
 KNOWN GAPS: 90-120s/cycle, UIA blind to web DOM, complex web goals unproven.
 Read README.md plan section first.
 
-WORKFLOW: reproduce → fix wiring+prompts first → probe circuit isolation →
-validate_stack.py → report which circuit failed with SCREEN evidence.
+WORKFLOW: reproduce with server.py --run → fix wiring+prompts first →
+report which circuit failed with SCREEN evidence from state.json.
 ```
 
 ---
@@ -353,15 +345,11 @@ validate_stack.py → report which circuit failed with SCREEN evidence.
 
 ```
 endgame-ai/
-├── README.md                 ← this file (vision, architecture, plan, bootstrap)
+├── README.md
 ├── wiring-editor.html
 ├── server.py
 ├── actions.py
 ├── desktop.py
-├── validate_stack.py         ← dev: structure + smoke
-├── probe_circuits.py         ← dev: isolated circuit test
-├── run_single_rod_test.py    ← dev: timed harness
-├── probe_fixtures/           ← dev: regression snapshots
 └── prompts/
     ├── wiring.json
     ├── model.json
