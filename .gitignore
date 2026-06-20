@@ -3,59 +3,33 @@ __pycache__/
 *.pyc
 _*.py
 
-# Logs (all test/run output)
+# Runtime data (regenerated every run)
 *.log
-*.log.err
-logs/
+state.json
+bus.json
+srv.pid
+runtime/
+prompts/wiring.backup.json
+
+# Colony sandbox (Phase 2)
+colony/
+
+# Dev/test scratch
+test_desktop.py
+run_server.py
+start_win.bat
+validate_stack.py
+probe_circuits.py
+run_single_rod_test.py
+probe_fixtures/
+probe_results/
+*_analysis.json
+shakira_test.json
+test.txt
 
 # IDE / agent session artifacts
 terminals/
 sessions/
 .acp.lock
 pause
-
-# Runtime state (regenerated every run — safe to delete anytime)
-state.json
-bus.json
-runtime/
-prompts/wiring.backup.json
-
-# Colony sandbox (deferred Phase 2)
-colony/
-
-# Dev harness (not in repo — ignore if recreated locally)
-validate_stack.py
-probe_circuits.py
-run_single_rod_test.py
-probe_fixtures/
-probe_results/
-
-# Test analysis dumps
-*_analysis.json
-shakira_test.json
-
-# Scratch
-test.txt
-
-# Legacy / deferred
-reactor.py
-run_colony_test.py
-topology.py
-tui.py
-slot.py
-colony.py
-wiring.py
-smoke.py
-bus.py
-llm.py
-prompts/wiring.mmd
-prompts/smoke_report.txt
-prompts/personalities/
-prompts/manager.txt
-prompts/schema.json
-prompts/planner.txt
-prompts/unified.txt
-prompts/verifier.txt
-prompts/reflector.txt
-prompts/self_modify.txtsrv.log
-srv.pid
+logs/

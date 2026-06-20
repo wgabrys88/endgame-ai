@@ -1,7 +1,6 @@
 #!/bin/bash
-# Launch endgame-ai server from WSL2
-# Access at http://localhost:9077 from Windows browser
+# Launch endgame-ai on Windows Python (required for desktop access)
 cd "$(dirname "$0")"
-echo "endgame-ai server starting on 0.0.0.0:9077"
-echo "Open http://localhost:9077 in Chrome"
-python3 server.py "$@"
+export PYTHONIOENCODING=utf-8
+echo "endgame-ai slot 1 → http://localhost:9078"
+python server.py "$@"
