@@ -106,7 +106,7 @@ body { font-family: system-ui, -apple-system, sans-serif; background: #0a0a0f; c
 <style>#native-toolbar button{padding:3px 8px;border:1px solid #1e293b;border-radius:4px;background:#0f172a;color:#cbd5e1;cursor:pointer;font-size:11px}#native-toolbar button:hover{border-color:#06b6d4;color:#06b6d4}#root{margin-top:36px;height:calc(100vh - 36px)}</style>
 <script>
 (function(){
-  let S = 'http://127.0.0.1:9077';
+  let S = 'http://127.0.0.1:9078';
   const st = document.getElementById('native-status');
   function setS(t){ st.textContent = t; }
   
@@ -489,8 +489,17 @@ function App() {
   // Node click → sidebar
   const onNodeClick = useCallback((_, node) => setSelectedNode(node), []);
 
+  const circuitForNode = (nodeType) => {
+    if (!wiring) return null;
+    const circuit = wiring.node_circuits?.[nodeType] || nodeType;
+    const roles = wiring.prompts?.roles || {};
+    if (!roles[circuit]) return null;
+    const base = wiring.prompts?.base || '';
+    return { circuit, text: [base, roles[circuit]].filter(Boolean).join('\n\n') };
+  };
+
   // ============ LIVE EXECUTION ENGINE ============
-  const [SERVER, setServerUrl] = useState('http://127.0.0.1:9077');
+  const [SERVER, setServerUrl] = useState('http://127.0.0.1:9078');
   useEffect(() => {
     (async () => {
       for (const p of [9078, 9077, 9079, 9080]) {
@@ -709,7 +718,7 @@ function App() {
                 ['Run','(Windows: [20] Run dialog. Title: Run. [21] Open: label. [22] Edit field (empty, focused). [23] OK. [24] Cancel.)'],
                 ['Run+chrome','(Windows: [20] Run dialog. Title: Run. [22] Edit field containing "chrome". [23] OK. [24] Cancel.)'],
                 ['Chrome','(Google Chrome: [30] Tab "New Tab". [31] Address bar "Search Google or type a URL". Body: Google logo, search box.)'],
-                ['Chrome@self','(Google Chrome: [30] Tab "endgame-ai Wiring Editor". [31] Address bar "127.0.0.1:9077". Canvas: goal_inbox, planner, scheduler, bus_check, observe, act, verify, reflect, self_modify, satisfied, bus_post.)'],
+                ['Chrome@self','(Google Chrome: [30] Tab "endgame-ai Wiring Editor". [31] Address bar "127.0.0.1:9078". Canvas: goal_inbox, planner, scheduler, bus_check, observe, act, verify, reflect, self_modify, satisfied, bus_post.)'],
                 ['Notepad','(Windows: [40] Notepad - Untitled. [41] Menu: File Edit. [42] Edit area (empty, focused). Taskbar at bottom.)'],
               ].map(([lbl,val]) => (
                 <button key={lbl} style={{fontSize:9,padding:'2px 5px',border:'1px solid #1e293b',borderRadius:3,background:'#0f172a',color:'#94a3b8',cursor:'pointer'}}
@@ -748,6 +757,15 @@ function App() {
             <h3>{selectedNode.data.id}</h3>
             <label>Type</label><span>{selectedNode.data.type}</span>
             <label>Label</label><span>{selectedNode.data.label}</span>
+            {(() => {
+              const cp = circuitForNode(selectedNode.data.type);
+              if (!cp) return null;
+              return (<>
+                <label>Circuit</label><span>{cp.circuit}</span>
+                <label>System prompt ({cp.text.length} chars)</label>
+                <pre style={{maxHeight:320}}>{cp.text}</pre>
+              </>);
+            })()}
           </div>
         </>) : (
           <div className="section"><h3>Inspector</h3><span style={{color:'#64748b'}}>⏩ Step to start with mock data</span></div>

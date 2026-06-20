@@ -57,7 +57,7 @@ Colony, bus routing, MoE, and “personas” are **Phase 2** — copy-paste rods
 | 4 | `prompts/wiring.json` | Topology, request blocks, guards, limits, reasoning, runtime |
 | 5 | `prompts/model.json` | LM Studio endpoint |
 
-**5 files to run.** Plus 5 circuit prompts (`planner.txt`, `unified.txt`, `verifier.txt`, `reflector.txt`, `self_modify.txt`) = **10 source files** — easier to edit than inlining into JSON.
+**5 files to run.** Circuit system prompts live in `wiring.json` → `prompts.base` (shared) + `prompts.roles` (per circuit).
 
 Runtime output (never commit): `state.json`, `bus.json`, logs.
 
@@ -68,11 +68,7 @@ Runtime output (never commit): `state.json`, `bus.json`, logs.
                     │ wiring.json │  ← THE brain
                     └──────┬──────┘
                            │
-         ┌─────────────────┼─────────────────┐
-         ▼                 ▼                 ▼
-   planner.txt      unified.txt       verifier.txt  …
-         │                 │                 │
-         └─────────────────┼─────────────────┘
+         prompts.base + roles.planner / roles.unified / …
                            ▼
                     ┌─────────────┐
                     │  server.py  │  ← THE rod
@@ -97,7 +93,7 @@ Runtime output (never commit): `state.json`, `bus.json`, logs.
 | Layer | Location | Role |
 |-------|----------|------|
 | **Brain** | `prompts/wiring.json` | Topology, request blocks, reasoning feed, limits, errors, guards, act, runtime |
-| **Circuits** | `prompts/*.txt` | Static system prompts — planner, act, verify, reflect, self_modify |
+| **Circuits** | `wiring.json` → `prompts.base` + `prompts.roles` | Composed system prompts — base + role per circuit |
 | **Body** | `server.py` | Graph engine, `call_circuit()`, `reasoning_patch()`, `parse_circuit_response()` |
 | **Muscles** | `actions.py`, `desktop.py` | Windows UIA observe + execute |
 | **Memory** | `state.json` | goal, step, screen, history, reasoning — **full, not truncated** |
@@ -201,7 +197,8 @@ Act **never** emits DONE — verify confirms step completion.
 | Change what act sees | `request.unified.user.blocks` |
 | Change retry limits | `limits.*` |
 | Change guard hints | `guards.advance_hints` |
-| Change circuit contract | `prompts/*.txt` (static) |
+| Change shared prompt preamble | `prompts.base` in wiring.json |
+| Change circuit contract | `prompts.roles.{planner,unified,...}` |
 | Add new node type | **Python** `server.py` + wiring topology |
 
 ---
@@ -293,7 +290,7 @@ python server.py --run "open chrome and play shakira waka waka on youtube"
 - Python **stdlib only**
 - LM Studio **local** (`prompts/model.json`)
 - Static system prompts — no runtime mutation
-- Task-agnostic prompts — no app names in `prompts/*.txt`
+- Task-agnostic prompts — no app names in `prompts.roles`
 - Work on `experiment/endgame` — do not touch `main`
 
 ---
@@ -308,11 +305,11 @@ circuits (planner, act, verify, reflect) like brain regions. Intelligence =
 topology + reasoning loop + verify gate — not one monolithic prompt.
 
 FOCUS: Single rod first. ROD = server.py + actions.py + desktop.py +
-prompts/wiring.json + prompts/model.json + 5 circuit .txt files.
+prompts/wiring.json + prompts/model.json.
 
-BRAIN — wiring.json: topology, request blocks, reasoning.*, limits, errors,
-guards, act, runtime, node_circuits
-CIRCUITS — prompts/*.txt static system prompts
+BRAIN — wiring.json: topology, request blocks, prompts.base, prompts.roles,
+reasoning.*, limits, errors, guards, act, runtime, node_circuits
+CIRCUITS — prompts.base + prompts.roles (composed system prompt per circuit)
 BODY — server.py: graph engine, call_circuit(), reasoning_patch(),
 parse_circuit_response() with expected_record_type. NO truncation.
 
@@ -351,11 +348,6 @@ endgame-ai/
 ├── actions.py
 ├── desktop.py
 └── prompts/
-    ├── wiring.json
-    ├── model.json
-    ├── planner.txt
-    ├── unified.txt
-    ├── verifier.txt
-    ├── reflector.txt
-    └── self_modify.txt
+    ├── wiring.json    ← topology + prompts.base + prompts.roles + request blocks
+    └── model.json
 ```

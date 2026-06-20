@@ -204,10 +204,26 @@ def _resolve_value(state, source):
     return ""
 
 def load_system_prompt(circuit, state=None):
-    """Load immutable system prompt from file. Never inject runtime content."""
+    """Compose system prompt: prompts.base + prompts.roles[circuit]. Legacy file fallback."""
+    prompts = WIRING.get("prompts", {})
+    base = prompts.get("base", "")
+    roles = prompts.get("roles", {})
     req = WIRING.get("request", {}).get(circuit, {})
-    prompt_file = req.get("system", {}).get("file", f"{circuit}.txt")
-    return (PROMPTS / prompt_file).read_text(encoding="utf-8")
+    sys_cfg = req.get("system", {})
+    role_key = sys_cfg.get("role", circuit)
+    role_text = roles.get(role_key, "")
+    if sys_cfg.get("text"):
+        role_text = sys_cfg["text"]
+    elif not role_text and sys_cfg.get("file"):
+        pf = PROMPTS / sys_cfg["file"]
+        if pf.exists():
+            return pf.read_text(encoding="utf-8")
+    elif not role_text:
+        pf = PROMPTS / f"{circuit}.txt"
+        if pf.exists():
+            return pf.read_text(encoding="utf-8")
+    parts = [p.strip() for p in (base, role_text) if p and p.strip()]
+    return "\n\n".join(parts)
 
 def build_user_message(circuit, state):
     """Build dynamic user message from wiring.json request blocks."""

@@ -53,3 +53,8 @@ prompts/wiring.backup.json
 prompts/personalities/
 prompts/manager.txt
 prompts/schema.json
+prompts/planner.txt
+prompts/unified.txt
+prompts/verifier.txt
+prompts/reflector.txt
+prompts/self_modify.txt
