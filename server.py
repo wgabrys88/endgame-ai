@@ -307,9 +307,12 @@ def node_bus_check(state, _):
     goals = [m for m in msgs if m.get("to_slot") in (slot, "all") and m.get("ts", 0) > since and m.get("type") == "goal"]
     if goals:
         newest = goals[-1]
+        new_goal = newest.get("payload", {}).get("goal", state.get("goal", ""))
+        if new_goal.strip().lower() == (state.get("goal", "") or "").strip().lower():
+            return {"signals": ["no_interrupt"], "patch": {"bus_last_check": time.time()}}
         return {"signals": ["interrupt"], "patch": {
             "bus_last_check": time.time(),
-            "goal": newest.get("payload", {}).get("goal", state.get("goal", "")),
+            "goal": new_goal,
             "interrupt_from": newest.get("from_slot")
         }}
     return {"signals": ["no_interrupt"], "patch": {"bus_last_check": time.time()}}
@@ -468,7 +471,7 @@ def run(goal, resume_state=None):
         state = resume_state
         node_id = state.pop("_resume_node", topo["cycle_start"])
     else:
-        state = {"goal": goal, "step": 0, "retries": 0, "no_desktop": False, "history": [], "bus_last_check": 0}
+        state = {"goal": goal, "step": 0, "retries": 0, "no_desktop": False, "history": [], "bus_last_check": time.time()}
         node_id = topo["cycle_start"]
     cycle = 0
 

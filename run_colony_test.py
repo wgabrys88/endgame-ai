@@ -1,5 +1,5 @@
 """Run colony test for 2 minutes, capture logs, then kill."""
-import json, os, pathlib, subprocess, sys, time, urllib.request
+import json, os, pathlib, subprocess, sys, threading, time, urllib.request
 
 ROOT = pathlib.Path(__file__).parent
 LOG = ROOT / "colony_run.log"
@@ -23,16 +23,15 @@ def main():
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
     )
     lines = []
-    start = time.time()
-    print(f"Started reactor PID={proc.pid}, waiting 120s...")
-    while time.time() - start < 120:
-        line = proc.stdout.readline()
-        if line:
+
+    def _read_stdout():
+        for line in proc.stdout:
             lines.append(line.rstrip())
             print(line, end="")
-        elif proc.poll() is not None:
-            break
-        time.sleep(0.1)
+
+    print(f"Started reactor PID={proc.pid}, waiting 120s...")
+    threading.Thread(target=_read_stdout, daemon=True).start()
+    time.sleep(120)
     print("\n=== KILLING ===")
     proc.terminate()
     try:

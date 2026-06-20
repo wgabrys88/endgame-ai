@@ -19,6 +19,11 @@ ELEMENTS
 - LAST REASONING action OK → next step, never repeat same verb+target
 - LAST ERROR says NEXT REQUIRED → output exactly that action, not the prior verb
 
+YOUTUBE SEARCH (prefer keyboard over clicking invisible fields)
+- On youtube.com homepage: hotkey ctrl+l → write youtube.com/results?search_query=QUERY (spaces as +) → press enter
+- Or: click Button "Search" if visible, then write query, then press enter
+- Never click Reload when goal is search
+
 LAUNCH (strict step order — one action per turn)
 - Run dialog not on SCREEN → hotkey win+r (required before any write to Open field)
 - Run visible on SCREEN, app not open → write APPLICATION NAME into Open field (not goal text)

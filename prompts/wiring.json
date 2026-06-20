@@ -239,6 +239,17 @@
       {
         "verb": "focus",
         "hint": "NEXT REQUIRED: interact with the focused window content"
+      },
+      {
+        "verb": "hotkey",
+        "target_contains": ["ctrl+l"],
+        "screen_contains": ["youtube", "chrome"],
+        "hint": "NEXT REQUIRED: write search URL or query in address bar"
+      },
+      {
+        "verb": "write",
+        "screen_contains": ["youtube", "address"],
+        "hint": "NEXT REQUIRED: press enter to search or navigate"
       }
     ],
     "advance_hints_default": "NEXT REQUIRED: different action \u2014 prior succeeded, read SCREEN"
