@@ -57,7 +57,7 @@ def spawn_rod(rod_cfg):
     (prompts_dir / "wiring.json").write_text(json.dumps(wiring, indent=2), encoding="utf-8")
 
     # Symlink/copy shared files
-    for f in ["model.json", "unified.txt", "manager.txt", "schema.json", "planner.txt", "verifier.txt", "reflector.txt"]:
+    for f in ["model.json", "unified.txt", "manager.txt", "schema.json", "planner.txt", "verifier.txt", "reflector.txt", "self_modify.txt"]:
         src = ROOT / "prompts" / f
         dst = prompts_dir / f
         if src.exists() and not dst.exists():

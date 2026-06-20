@@ -73,6 +73,65 @@ def extract_json(text):
         except: pass
     return None
 
+# ─── Prompt assembly: static system, dynamic user (from wiring.json) ───
+
+def _resolve_value(state, source):
+    """Resolve a wiring request block source to a string value."""
+    if source == "instance.persona":
+        persona = WIRING.get("instance", {}).get("persona", "")
+        if not persona:
+            return ""
+        pf = PROMPTS / "personalities" / f"{persona}.txt"
+        return pf.read_text(encoding="utf-8") if pf.exists() else ""
+    if source == "topology.nodes":
+        return json.dumps([n["id"] for n in WIRING.get("topology", {}).get("nodes", [])])
+    if source == "state.history":
+        history = state.get("history", [])
+        depth = WIRING.get("limits", {}).get("history_depth", 10)
+        if not history:
+            return ""
+        recent = history[-depth:]
+        return "\n".join(f"  [{h.get('attempt', 0)}] {h.get('action', '')} → {h.get('outcome', '')}" for h in recent)
+    if source == "state.last_actions":
+        actions = state.get("last_actions", [])
+        return json.dumps(actions) if actions else ""
+    if source.startswith("state."):
+        key = source[6:]
+        if key == "current_step.description":
+            return state.get("current_step", {}).get("description", "")
+        if key == "current_step.done_when":
+            return state.get("current_step", {}).get("done_when", "")
+        return state.get(key, "")
+    return ""
+
+def load_system_prompt(circuit, state=None):
+    """Load immutable system prompt from file. Never inject runtime content."""
+    req = WIRING.get("request", {}).get(circuit, {})
+    prompt_file = req.get("system", {}).get("file", f"{circuit}.txt")
+    if circuit == "unified" and state:
+        swaps = WIRING.get("circuits", {}).get("unified", {}).get("prompt_swap", [])
+        goal = (state.get("goal", "") or "").lower()
+        for sw in swaps:
+            if any(k.lower() in goal for k in sw.get("when", [])):
+                prompt_file = sw["prompt"]
+                break
+    return (PROMPTS / prompt_file).read_text(encoding="utf-8")
+
+def build_user_message(circuit, state):
+    """Build dynamic user message from wiring.json request blocks."""
+    blocks = WIRING.get("request", {}).get(circuit, {}).get("user", {}).get("blocks", [])
+    parts = []
+    for block in blocks:
+        label = block.get("label", "")
+        value = _resolve_value(state, block.get("source", ""))
+        if not value and not block.get("always"):
+            if block.get("empty_template"):
+                value = block["empty_template"]
+            else:
+                continue
+        parts.append(f"{label}: {value}")
+    return "\n".join(parts)
+
 # ─── Guards (from wiring.json, evaluated in act node) ───
 
 def check_repeat_block(state, actions):
@@ -105,41 +164,34 @@ def _find_advance_hint(state, actions):
     default = WIRING.get("guards", {}).get("advance_hints_default", "")
     return default
 
-def check_premature_done(state):
-    """Block DONE if goal requires typing but no write was done."""
-    goal = (state.get("goal", "") or "").lower()
-    needs_write = any(k in goal for k in ["type", "write", "enter text"])
-    if not needs_write:
-        return None
-    history = state.get("history", [])
-    wrote = any(k in h.get("outcome", "").lower() for h in history for k in ("write", "wrote", "typed"))
-    if not wrote:
-        return "goal requires typing but no write was done yet"
-    return None
-
 # ─── Node handlers ───
 
 def node_entry(state, _):
     return {"signals": ["ready"], "patch": {}}
 
 def node_planner(state, _):
-    goal = state.get("goal", "")
-    screen = state.get("screen", "")
-    prompt = (PROMPTS / "planner.txt").read_text(encoding="utf-8")
-    # Include persona context if available
-    persona = WIRING.get("instance", {}).get("persona", "")
-    persona_ctx = ""
-    if persona:
-        pf = PROMPTS / "personalities" / f"{persona}.txt"
-        if pf.exists():
-            persona_ctx = f"\nPERSONA: {pf.read_text(encoding='utf-8')[:500]}\n"
+    system = load_system_prompt("planner")
+    user = build_user_message("planner", state)
     try:
-        content, _, _ = llm(prompt, f"{persona_ctx}GOAL: {goal}\nSCREEN: {screen[:3000]}")
+        content, _, _ = llm(system, user)
         parsed = extract_json(content)
-        steps = parsed["data"]["steps"] if parsed and "data" in parsed and "steps" in parsed.get("data", {}) else [{"description": goal, "done_when": "goal achieved"}]
-    except Exception:
-        steps = [{"description": goal, "done_when": "goal achieved"}]
-    return {"signals": ["plan_ready"], "patch": {"plan": steps, "step": 0, "retries": 0, "history": []}}
+        if not parsed or "data" not in parsed or "steps" not in parsed.get("data", {}):
+            retries = state.get("planner_retries", 0) + 1
+            max_r = WIRING.get("limits", {}).get("planner_retries", 3)
+            err = "planner: parse_failed — respond with JSON only"
+            if retries >= max_r:
+                return {"signals": ["plan_failed"], "patch": {"planner_retries": retries, "last_error": err}}
+            return {"signals": ["retry_plan"], "patch": {"planner_retries": retries, "last_error": err}}
+        steps = parsed["data"]["steps"]
+        if not steps:
+            return {"signals": ["plan_failed"], "patch": {"last_error": "planner: empty plan"}}
+    except Exception as e:
+        retries = state.get("planner_retries", 0) + 1
+        max_r = WIRING.get("limits", {}).get("planner_retries", 3)
+        if retries >= max_r:
+            return {"signals": ["plan_failed"], "patch": {"planner_retries": retries, "last_error": f"planner: {e}"}}
+        return {"signals": ["retry_plan"], "patch": {"planner_retries": retries, "last_error": f"planner: {e}"}}
+    return {"signals": ["plan_ready"], "patch": {"plan": steps, "step": 0, "retries": 0, "history": [], "planner_retries": 0}}
 
 def node_scheduler(state, _):
     steps = state.get("plan", [])
@@ -156,49 +208,16 @@ def node_observe(state, _):
     return {"signals": ["screen_ready"], "patch": {"screen": s}}
 
 def node_act(state, _):
-    """Build prompt with feedback history, call LLM, apply guards, execute."""
-    # Load system prompt (with persona and swap)
-    prompt_file = WIRING.get("request", {}).get("unified", {}).get("system", {}).get("file", "unified.txt")
-    swaps = WIRING.get("circuits", {}).get("unified", {}).get("prompt_swap", [])
-    goal = state.get("goal", "")
-    for sw in swaps:
-        if any(k.lower() in goal.lower() for k in sw.get("when", [])):
-            prompt_file = sw["prompt"]
-            break
-    system = (PROMPTS / prompt_file).read_text(encoding="utf-8")
-
-    # Persona injection
-    persona = WIRING.get("instance", {}).get("persona", "")
-    if persona:
-        pf = PROMPTS / "personalities" / f"{persona}.txt"
-        if pf.exists():
-            system = pf.read_text(encoding="utf-8") + "\n" + system
-
-    # Build user message with feedback history
-    step_goal = state.get("step_goal", goal)
-    screen = state.get("screen", "(no screen)")
-    error = state.get("last_error", "")
+    """Static system prompt + dynamic user message. Guards + execute."""
+    system = load_system_prompt("unified", state)
+    user = build_user_message("unified", state)
     history = state.get("history", [])
 
-    user_parts = [f"GOAL: {step_goal}", f"SCREEN: {screen[:4000]}"]
-    if error:
-        user_parts.append(f"LAST ERROR: {error}")
-    # Inject reasoning history (last N entries)
-    depth = WIRING.get("limits", {}).get("history_depth", 10)
-    if history:
-        recent = history[-depth:]
-        reasoning_block = "\n".join(f"  [{h.get('attempt',0)}] {h.get('action','')} → {h.get('outcome','')}" for h in recent)
-        user_parts.append(f"HISTORY:\n{reasoning_block}")
-
-    user = "\n".join(user_parts)
-
-    # Call LLM
     try:
-        content, reasoning, dur = llm(system, user)
+        content, reasoning, _ = llm(system, user)
     except Exception as e:
         return {"signals": ["act_failed"], "patch": {"last_error": str(e)}}
 
-    # Parse
     parsed = extract_json(content) or extract_json(reasoning)
     if not parsed:
         return {"signals": ["act_failed"], "patch": {"last_error": "parse_failed: respond with JSON only"}}
@@ -206,14 +225,12 @@ def node_act(state, _):
     conclusion = parsed.get("data", {}).get("conclusion", "")
     actions = parsed.get("data", {}).get("actions", [])
 
-    # Guard: premature DONE
     if conclusion == "DONE":
-        block = check_premature_done(state)
-        if block:
-            entry = {"attempt": len(history) + 1, "action": "DONE blocked", "outcome": block}
-            return {"signals": ["act_failed"], "patch": {"last_error": block, "history": history + [entry]}}
-        entry = {"attempt": len(history) + 1, "action": "DONE", "outcome": "goal complete"}
-        return {"signals": ["step_done"], "patch": {"history": history + [entry]}}
+        entry = {"attempt": len(history) + 1, "action": "DONE rejected", "outcome": "executor cannot emit DONE — verify confirms completion"}
+        return {"signals": ["act_failed"], "patch": {
+            "last_error": "DONE is invalid — output EXECUTE with one action; verify node confirms step completion",
+            "history": history + [entry],
+        }}
 
     if conclusion == "CANNOT":
         entry = {"attempt": len(history) + 1, "action": "CANNOT", "outcome": "LLM cannot proceed"}
@@ -254,12 +271,12 @@ def node_verify(state, _):
     else:
         screen = state.get("screen", "(no desktop)")
 
-    step = state.get("current_step", {})
-    actions = state.get("last_actions", [])
-    prompt = (PROMPTS / "verifier.txt").read_text(encoding="utf-8")
-    user = f"STEP: {step.get('description','')}\nDONE_WHEN: {step.get('done_when','')}\nSCREEN: {screen[:3000]}\nLAST_ACTIONS: {json.dumps(actions)[:500]}"
+    vstate = dict(state)
+    vstate["screen"] = screen
+    system = load_system_prompt("verifier")
+    user = build_user_message("verifier", vstate)
     try:
-        content, _, _ = llm(prompt, user)
+        content, _, _ = llm(system, user)
         parsed = extract_json(content)
         if parsed and parsed.get("data", {}).get("confirmed"):
             return {"signals": ["step_confirmed"], "patch": {"step": state.get("step", 0) + 1, "retries": 0, "screen": screen}}
@@ -278,13 +295,11 @@ def node_reflect(state, _):
             return {"signals": ["escalate"], "patch": {"retries": 0, "replan_count": 0}}
         return {"signals": ["replan"], "patch": {"retries": 0, "replan_count": replans + 1}}
 
-    step = state.get("current_step", {})
-    screen = state.get("screen", "")
+    system = load_system_prompt("reflector")
+    user = build_user_message("reflector", state)
     error = state.get("last_error", "")
-    prompt = (PROMPTS / "reflector.txt").read_text(encoding="utf-8")
-    user = f"STEP: {step.get('description','')}\nDONE_WHEN: {step.get('done_when','')}\nSCREEN: {screen[:3000]}\nDENIAL_REASON: {error}"
     try:
-        content, _, _ = llm(prompt, user)
+        content, _, _ = llm(system, user)
         parsed = extract_json(content)
         if parsed and parsed.get("data", {}).get("should_replan"):
             if replans >= 2:
@@ -388,24 +403,11 @@ def node_self_modify(state, _):
     current = json.loads(wiring_path.read_text(encoding="utf-8"))
     # Backup before mutation
     (PROMPTS / "wiring.backup.json").write_text(json.dumps(current, indent=2), encoding="utf-8")
-    goal = state.get("goal", "")
-    error = state.get("last_error", "")
-    history = state.get("history", [])[-5:]
-
-    prompt = """You modify a graph topology to help overcome stuck states.
-Given GOAL, ERROR, and HISTORY, suggest ONE minimal wiring change.
-OUTPUT JSON only:
-{"record_type":"wiring_patch","data":{"op":"add_node|add_edge|remove_edge|set_guard","payload":{...}}}
-add_node: {"id":"...","type":"observe|act|verify","label":"...","edge_from":"existing_node","edge_to":"existing_node","on":"signal"}
-add_edge: {"from":"...","to":"...","on":"..."}
-remove_edge: {"from":"...","to":"..."}
-set_guard: {"key":"...","value":"..."}
-Only suggest changes that help with the current stuck state. Be conservative."""
-
-    user = f"GOAL: {goal}\nERROR: {error}\nHISTORY: {json.dumps(history)[:1000]}\nCURRENT_NODES: {[n['id'] for n in current['topology']['nodes']]}"
+    system = load_system_prompt("self_modify")
+    user = build_user_message("self_modify", state)
 
     try:
-        content, _, _ = llm(prompt, user)
+        content, _, _ = llm(system, user)
         parsed = extract_json(content)
         if not parsed or parsed.get("record_type") != "wiring_patch":
             return {"signals": ["modify_failed"], "patch": {"last_error": "LLM returned invalid patch"}}

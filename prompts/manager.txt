@@ -24,4 +24,4 @@ ANTI-LOOP: action OK → next step; LAST ERROR → different target/verb
 VERBS: click, write, press, hotkey, focus, scroll — verb field is ONE word only (e.g. verb click, target Taskbar, value Terminal Preview)
 
 OUTPUT (JSON in content, start with {):
-{"record_type":"action","data":{"conclusion":"EXECUTE|DONE|CANNOT","actions":[{"verb":"...","target":"...","value":"..."}]}}
+{"record_type":"action","data":{"conclusion":"EXECUTE|CANNOT","actions":[{"verb":"...","target":"...","value":"..."}]}}

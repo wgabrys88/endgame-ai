@@ -80,6 +80,11 @@
         "on": "plan_ready"
       },
       {
+        "from": "planner",
+        "to": "planner",
+        "on": "retry_plan"
+      },
+      {
         "from": "scheduler",
         "to": "bus_check",
         "on": "step_ready"
@@ -112,7 +117,7 @@
       {
         "from": "act",
         "to": "verify",
-        "on": "acted|step_done"
+        "on": "acted"
       },
       {
         "from": "act",
@@ -157,30 +162,59 @@
     ]
   },
   "request": {
-    "unified": {
-      "system": {
-        "file": "unified.txt"
-      },
+    "planner": {
+      "system": {"file": "planner.txt"},
       "user": {
         "blocks": [
-          {
-            "label": "GOAL",
-            "source": "state.step_goal",
-            "always": true
-          },
-          {
-            "label": "SCREEN",
-            "source": "state.screen",
-            "empty_template": "(no screen)"
-          },
-          {
-            "label": "LAST ERROR",
-            "source": "state.last_error"
-          },
-          {
-            "label": "HISTORY",
-            "source": "state.history"
-          }
+          {"label": "PERSONA", "source": "instance.persona"},
+          {"label": "GOAL", "source": "state.goal", "always": true},
+          {"label": "SCREEN", "source": "state.screen", "empty_template": "(no screen)"}
+        ]
+      }
+    },
+    "unified": {
+      "system": {"file": "unified.txt"},
+      "user": {
+        "blocks": [
+          {"label": "PERSONA", "source": "instance.persona"},
+          {"label": "GOAL", "source": "state.step_goal", "always": true},
+          {"label": "SCREEN", "source": "state.screen", "empty_template": "(no screen)"},
+          {"label": "LAST ERROR", "source": "state.last_error"},
+          {"label": "HISTORY", "source": "state.history"}
+        ]
+      }
+    },
+    "verifier": {
+      "system": {"file": "verifier.txt"},
+      "user": {
+        "blocks": [
+          {"label": "STEP", "source": "state.current_step.description", "always": true},
+          {"label": "DONE_WHEN", "source": "state.current_step.done_when"},
+          {"label": "SCREEN", "source": "state.screen", "empty_template": "(no screen)"},
+          {"label": "LAST_ACTIONS", "source": "state.last_actions"}
+        ]
+      }
+    },
+    "reflector": {
+      "system": {"file": "reflector.txt"},
+      "user": {
+        "blocks": [
+          {"label": "STEP", "source": "state.current_step.description", "always": true},
+          {"label": "DONE_WHEN", "source": "state.current_step.done_when"},
+          {"label": "SCREEN", "source": "state.screen", "empty_template": "(no screen)"},
+          {"label": "LAST_ACTIONS", "source": "state.last_actions"},
+          {"label": "DENIAL_REASON", "source": "state.last_error"}
+        ]
+      }
+    },
+    "self_modify": {
+      "system": {"file": "self_modify.txt"},
+      "user": {
+        "blocks": [
+          {"label": "GOAL", "source": "state.goal", "always": true},
+          {"label": "ERROR", "source": "state.last_error"},
+          {"label": "HISTORY", "source": "state.history"},
+          {"label": "CURRENT_NODES", "source": "topology.nodes"}
         ]
       }
     }
@@ -229,27 +263,8 @@
         "hint": "NEXT REQUIRED: press enter to launch the application"
       },
       {
-        "verb": "write",
-        "screen_contains": [
-          "chrome",
-          "address"
-        ],
-        "hint": "NEXT REQUIRED: press enter after URL"
-      },
-      {
         "verb": "focus",
         "hint": "NEXT REQUIRED: interact with the focused window content"
-      },
-      {
-        "verb": "hotkey",
-        "target_contains": ["ctrl+l"],
-        "screen_contains": ["youtube", "chrome"],
-        "hint": "NEXT REQUIRED: write search URL or query in address bar"
-      },
-      {
-        "verb": "write",
-        "screen_contains": ["youtube", "address"],
-        "hint": "NEXT REQUIRED: press enter to search or navigate"
       }
     ],
     "advance_hints_default": "NEXT REQUIRED: different action \u2014 prior succeeded, read SCREEN"
@@ -257,7 +272,8 @@
   "limits": {
     "max_attempts": 5,
     "history_depth": 10,
-    "bus_max": 200
+    "bus_max": 200,
+    "planner_retries": 3
   },
   "verbs": {
     "click": {

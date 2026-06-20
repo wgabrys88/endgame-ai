@@ -105,7 +105,7 @@ class ActionExecutor:
             # Re-observe with deeper detail — returns updated screen info
             try:
                 obs = self._desktop.observe()
-                return ActionResult(verb, True, f"inspect done: {obs.context_text[:3000]}")
+                return ActionResult(verb, True, f"inspect done: {obs.context_text}")
             except Exception as e:
                 return ActionResult(verb, False, f"inspect failed: {e}")
 
