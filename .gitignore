@@ -57,4 +57,5 @@ prompts/planner.txt
 prompts/unified.txt
 prompts/verifier.txt
 prompts/reflector.txt
-prompts/self_modify.txt
+prompts/self_modify.txtsrv.log
+srv.pid

@@ -141,7 +141,7 @@ def print_listen_urls(port):
     if bind in ("0.0.0.0", "::"):
         for ip in local_lan_ips():
             print(f"  lan     http://{ip}:{port}")
-        print(f"  phone   same WiFi → open LAN URL in browser")
+        print(f"  phone   same WiFi - open LAN URL in browser")
         print(f"  firewall (once, admin PS): netsh advfirewall firewall add rule name=\"endgame-ai\" dir=in action=allow protocol=TCP localport={port}")
 
 def colony_port(slot):
@@ -799,7 +799,7 @@ def run(goal, resume_state=None):
         result = handler(state, node_cfg)
         state.update(result.get("patch", {}))
         signals = result.get("signals", [])
-        print(f"       → {signals}")
+        print(f"       -> {signals}")
 
         sse_push("result", {"c": cycle, "id": node_id, "s": signals})
 
@@ -809,7 +809,7 @@ def run(goal, resume_state=None):
 
         targets = find_targets(node_id, signals, topo)
         if not targets:
-            print(f"\n[{cycle}] terminal — no outgoing edge for {signals}")
+            print(f"\n[{cycle}] terminal - no outgoing edge for {signals}")
             break
         node_id = targets[0]
         time.sleep(cycle_delay)

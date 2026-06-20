@@ -2,159 +2,227 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>endgame-ai</title>
-<script src="https://unpkg.com/cytoscape@3.30.4/dist/cytoscape.min.js"></script>
-<script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
-<script src="https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
-<script src="https://unpkg.com/lodash@4.17.21/lodash.min.js"></script>
-<script src="https://unpkg.com/cytoscape-edgehandles@4.0.1/cytoscape-edgehandles.js"></script>
 <style>
-  :root{color-scheme:only dark;--bg:#06080d;--panel:#0a0f1a;--line:#1a2744;--neon:#00e5ff;--green:#39ff14;--text:#e0e6ed;--muted:#5a6a7a}
-  *{margin:0;padding:0;box-sizing:border-box;color:inherit}
-  html,body{height:100dvh;overflow:hidden;font:13px system-ui,sans-serif;background:var(--bg);color:var(--text)}
-  body{display:grid;grid-template:"bar bar" 2.2rem "cy log" 1fr / 1fr min(18rem,30vw)}
-  @media(max-width:600px){body{grid-template:"bar" 2.2rem "cy" 1fr "log" 30dvh / 1fr}}
-
-  nav{grid-area:bar;display:flex;align-items:center;gap:.3rem;padding:0 .5rem;background:var(--panel);border-bottom:1px solid var(--line);
-    & h1{color:var(--neon);font-size:.7rem;text-shadow:0 0 6px var(--neon);white-space:nowrap}
-    & button{padding:.2rem .4rem;border:1px solid var(--line);border-radius:.2rem;background:var(--bg);color:var(--text);font-size:.6rem;cursor:pointer;&:hover{border-color:var(--neon);color:var(--neon);text-shadow:0 0 3px var(--neon)}}
-    & .sp{flex:1}
-    & #st{font-size:.55rem;color:var(--muted);max-width:20rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  }
-  #cy{grid-area:cy;min-height:0;background:var(--bg)}
-  #log{grid-area:log;background:var(--panel);border-inline-start:1px solid var(--line);display:flex;flex-direction:column;overflow:hidden;
-    & header{padding:.3rem .4rem;font:.5rem system-ui;color:var(--neon);border-bottom:1px solid var(--line);text-transform:uppercase;letter-spacing:.04em;display:flex;justify-content:space-between;align-items:center;
-      & button{font-size:.45rem;padding:.1rem .3rem;border:1px solid var(--line);border-radius:.15rem;background:var(--bg);color:var(--muted);cursor:pointer;&:hover{color:var(--neon);border-color:var(--neon)}}
-    }
-    & #logB{flex:1;min-height:0;overflow-y:auto;padding:.3rem .4rem;font:.5rem/1.5 ui-monospace,monospace;color:#7a8a9a;scrollbar-color:var(--line) transparent;
-      & .n{color:var(--text);font-weight:600} & .s{color:var(--neon)} & .d{color:#9ab;display:block;margin-left:.6rem;word-break:break-all}
-    }
-  }
-  #ins[popover]{position:fixed;inset:2.2rem 0 0 auto;width:min(20rem,38vw);margin:0;border:0;border-left:1px solid var(--line);background:var(--panel);color:var(--text);padding:.5rem;overflow-y:auto;font-size:.58rem;scrollbar-color:var(--line) transparent;
-    &::backdrop{background:transparent}
-    & label{display:block;color:var(--neon);font-size:.45rem;margin-top:.35rem;text-transform:uppercase;letter-spacing:.03em}
-    & input,& textarea{width:100%;padding:.2rem .3rem;border:1px solid var(--line);border-radius:.15rem;background:var(--bg);color:var(--text);font:.5rem/1.3 ui-monospace,monospace;resize:vertical;appearance:none;outline:none;&:focus{border-color:var(--neon);box-shadow:0 0 3px var(--neon)}}
-    & textarea{min-height:2.5rem}
-    & .io{background:var(--bg);border:1px solid var(--line);border-radius:.15rem;padding:.2rem .3rem;font:.45rem/1.3 ui-monospace,monospace;color:#7a8a9a;max-height:7rem;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
-    & .blk{padding:.1rem .2rem;border:1px solid var(--line);border-radius:.1rem;margin-bottom:.1rem;font-size:.45rem;& span{color:var(--muted)}}
-    & .acts{display:flex;gap:.3rem;margin-top:.4rem;& button{padding:.15rem .4rem;border:1px solid var(--line);border-radius:.15rem;background:var(--bg);color:var(--neon);font-size:.5rem;cursor:pointer;&:hover{border-color:var(--neon);box-shadow:0 0 3px var(--neon)}}}
-  }
-  #err{position:fixed;top:2.2rem;left:0;right:0;z-index:99;padding:.25rem .4rem;background:#1a0505;border-bottom:1px solid #ff1744;color:#ff8a80;font-size:.55rem;display:none}
+:root{color-scheme:only dark}
+*{margin:0;padding:0;box-sizing:border-box;color:inherit}
+html,body{height:100dvh;overflow:hidden;font:12px system-ui,sans-serif;background:#06080d;color:#e0e6ed}
+body{display:grid;grid-template:"cv log" 1fr / 1fr min(16rem,28vw)}
+canvas{grid-area:cv;width:100%;height:100%;display:block;cursor:grab}
+canvas:active{cursor:grabbing}
+#log{grid-area:log;background:#0a0f1a;border-left:1px solid #1a2744;display:flex;flex-direction:column;overflow:hidden;font-size:11px}
+#log header{padding:4px 8px;color:#00e5ff;font-size:10px;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #1a2744;display:flex;justify-content:space-between;align-items:center}
+#log header button{font-size:9px;padding:1px 6px;border:1px solid #1a2744;border-radius:3px;background:#06080d;color:#5a6a7a;cursor:pointer}
+#logB{flex:1;overflow-y:auto;padding:4px 8px;font:10px/1.6 ui-monospace,monospace;color:#7a8a9a;scrollbar-color:#1a2744 transparent}
+#ins{position:fixed;top:0;right:0;bottom:0;width:min(20rem,36vw);background:#0a0f1a;border-left:1px solid #1a2744;padding:8px;overflow-y:auto;font-size:11px;display:none;z-index:10;scrollbar-color:#1a2744 transparent}
+#ins label{display:block;color:#00e5ff;font-size:9px;margin-top:6px;text-transform:uppercase}
+#ins input,#ins textarea{width:100%;padding:3px 5px;border:1px solid #1a2744;border-radius:3px;background:#06080d;color:#e0e6ed;font:10px/1.3 ui-monospace,monospace;outline:none;appearance:none}
+#ins input:focus,#ins textarea:focus{border-color:#00e5ff;box-shadow:0 0 4px #00e5ff40}
+#ins textarea{min-height:40px;resize:vertical}
+#ins .io{background:#06080d;border:1px solid #1a2744;border-radius:3px;padding:3px 5px;font:9px/1.3 ui-monospace,monospace;color:#7a8a9a;max-height:100px;overflow-y:auto;white-space:pre-wrap;word-break:break-all}
+#ins .acts{display:flex;gap:4px;margin-top:8px}
+#ins .acts button{padding:3px 8px;border:1px solid #1a2744;border-radius:3px;background:#06080d;color:#00e5ff;font-size:10px;cursor:pointer}
+#ins .acts button:hover{border-color:#00e5ff;box-shadow:0 0 4px #00e5ff40}
 </style>
 </head>
 <body>
-<nav>
-  <h1>⚡ endgame</h1>
-  <button id="bStep">Step</button><button id="bRun">Run</button><button id="bStop">Stop</button><button id="bLayout">Layout</button><button id="bSave">Save</button>
-  <span class="sp"></span><span id="st">…</span>
-</nav>
-<div id="cy"></div>
-<aside id="log"><header>log<button id="bClr">clear</button></header><div id="logB"></div></aside>
-<div id="ins" popover="manual"></div>
-<div id="err"></div>
+<canvas id="cv"></canvas>
+<aside id="log"><header>log<button id="bClr">clr</button></header><div id="logB"></div></aside>
+<div id="ins"></div>
 <script>
-// Extensions auto-register via window.cytoscape detection
-const S=location.origin,$=id=>document.getElementById(id),esc=s=>String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-let W,cy,eh,sel,liveNode,liveState,liveRun,lastIO={},logs=[];
+const S=location.origin,$=id=>document.getElementById(id),esc=s=>String(s??'').replace(/</g,'&lt;');
+const cv=$('cv'),ctx=cv.getContext('2d');
+let W,nodes=[],edges=[],cam={x:0,y:0,z:1},drag=null,wiring=null,sel=null,hover=null;
+let lastIO={},logs=[];
 
-const NEONS=['#00e5ff','#7c4dff','#1de9b6','#ff6d00','#00e676','#d500f9','#ffab00','#2979ff','#76ff03','#f50057','#00bcd4','#651fff'];
+// Neon palette per type
+const NEONS=['#00e5ff','#7c4dff','#1de9b6','#ff6d00','#00e676','#d500f9','#ffab00','#2979ff','#76ff03','#f50057'];
 const tc={};const neon=t=>(tc[t]??=NEONS[Object.keys(tc).length%NEONS.length]);
 
-// --- Build Cytoscape ---
-function buildGraph(w){
-  const elements=[];
-  for(const n of w.topology.nodes) elements.push({data:{id:n.id,label:n.id,type:n.type||'',ncolor:neon(n.type||'?')}});
-  for(const e of w.topology.edges) elements.push({data:{id:`${e.from}-${e.on||'*'}-${e.to}`,source:e.from,target:e.to,label:e.on||''}});
+// --- Layout: simple left-to-right layered ---
+function layout(){
+  if(!W)return;
+  const topo=W.topology, nMap={};
+  // BFS from cycle_start to assign layers
+  const layers={};let q=[topo.cycle_start||topo.nodes[0]?.id],visited=new Set(),layer=0;
+  while(q.length){
+    const next=[];
+    for(const id of q){if(visited.has(id))continue;visited.add(id);layers[id]=layer;}
+    layer++;
+    for(const id of q)for(const e of topo.edges)if(e.from===id&&!visited.has(e.to))next.push(e.to);
+    q=next;
+  }
+  // Unvisited nodes get last layer
+  for(const n of topo.nodes)if(!visited.has(n.id)){layers[n.id]=layer;visited.add(n.id);}
 
-  cy=cytoscape({
-    container:$('cy'),
-    elements,
-    style:[
-      {selector:'node',style:{'background-color':'#0f172a','border-width':2,'border-color':'data(ncolor)','label':'data(label)','color':'#e0e6ed','font-size':'9px','text-valign':'center','text-halign':'center','width':110,'height':36,'shape':'roundrectangle','text-wrap':'ellipsis','text-max-width':'100px'}},
-      {selector:'node:active',style:{'overlay-opacity':0}},
-      {selector:'node.active',style:{'border-color':'#39ff14','border-width':3,'shadow-blur':'12','shadow-color':'#39ff14','shadow-opacity':0.5}},
-      {selector:'node.sel',style:{'border-color':'#00e5ff','border-width':3,'border-style':'dashed'}},
-      {selector:'edge',style:{'width':1.5,'line-color':'#0e7490','target-arrow-color':'#00e5ff','target-arrow-shape':'triangle','curve-style':'taxi','taxi-direction':'rightward','taxi-turn':'50px','label':'data(label)','font-size':'7px','color':'#5a6a7a','text-rotation':'autorotate','text-margin-y':-8}},
-      {selector:'edge.active',style:{'line-color':'#39ff14','target-arrow-color':'#39ff14','width':2.5}},
-      {selector:'.eh-handle',style:{'background-color':'#00e5ff','width':8,'height':8,'shape':'ellipse','overlay-opacity':0}},
-      {selector:'.eh-preview,.eh-ghost-edge',style:{'line-color':'#00e5ff','target-arrow-color':'#00e5ff','opacity':0.6}}
-    ],
-    layout:{name:'dagre',rankDir:'LR',nodeSep:30,rankSep:80,edgeSep:12},
-    wheelSensitivity:0.3,
-    minZoom:0.3,maxZoom:3
-  });
-
-  // Edgehandles for drag-to-connect
-  eh=cy.edgehandles({hoverDelay:100,snap:true,noEdgeEventsInDraw:true,
-    complete:(src,tgt)=>{
-      const on=prompt('Signal label (e.g. ready):','*');
-      if(!on){cy.remove(cy.edges().last());return;}
-      const e={from:src.id(),to:tgt.id(),on};
-      W.topology.edges.push(e);
-      cy.edges().last().data('label',on);
-      logMsg('wire',`+edge`,`${e.from} →[${on}]→ ${e.to}`);
+  // Position by layer
+  const byLayer={};
+  for(const n of topo.nodes){const l=layers[n.id]||0;(byLayer[l]??=[]).push(n.id);}
+  const NW=140,NH=44,PAD_X=100,PAD_Y=30;
+  nodes=[];
+  for(const[l,ids] of Object.entries(byLayer)){
+    const li=+l;
+    for(let i=0;i<ids.length;i++){
+      const nd=topo.nodes.find(n=>n.id===ids[i]);
+      nodes.push({id:ids[i],type:nd?.type||'',x:li*(NW+PAD_X)+50,y:i*(NH+PAD_Y)+50,w:NW,h:NH,color:neon(nd?.type||'?')});
     }
-  });
-
-  // Click to inspect
-  cy.on('tap','node',e=>{inspect(e.target.id());});
-  cy.on('tap',e=>{if(e.target===cy){hideInspect();sel=null;cy.nodes().removeClass('sel');}});
-
-  status(`${w.topology.nodes.length} nodes · ${w.topology.edges.length} edges · scroll=zoom · drag=move`);
+  }
+  edges=topo.edges.map(e=>({from:e.from,to:e.to,on:e.on||''}));
+  // Center camera
+  if(nodes.length){
+    const cx=nodes.reduce((s,n)=>s+n.x+n.w/2,0)/nodes.length;
+    const cy2=nodes.reduce((s,n)=>s+n.y+n.h/2,0)/nodes.length;
+    cam.x=cv.width/2-cx;cam.y=cv.height/2-cy2;
+  }
 }
 
-function runLayout(){cy.layout({name:'dagre',rankDir:'LR',nodeSep:30,rankSep:80,edgeSep:12,animate:true,animationDuration:300}).run();}
+// --- Render ---
+function render(){
+  const dpr=devicePixelRatio;
+  if(cv.width!==cv.clientWidth*dpr||cv.height!==cv.clientHeight*dpr){cv.width=cv.clientWidth*dpr;cv.height=cv.clientHeight*dpr;}
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,cv.clientWidth,cv.clientHeight);
+  ctx.save();ctx.translate(cam.x,cam.y);ctx.scale(cam.z,cam.z);
+
+  // Edges
+  for(const e of edges){
+    const a=nodes.find(n=>n.id===e.from),b=nodes.find(n=>n.id===e.to);
+    if(!a||!b)continue;
+    const ax=a.x+a.w,ay=a.y+a.h/2,bx=b.x,by=b.y+b.h/2;
+    const mx=(ax+bx)/2;
+    ctx.beginPath();ctx.moveTo(ax,ay);ctx.bezierCurveTo(mx,ay,mx,by,bx,by);
+    ctx.strokeStyle=e._active?'#39ff14':'#0e7490';ctx.lineWidth=e._active?2.5:1.5;ctx.stroke();
+    // Arrow
+    const angle=Math.atan2(by-ay,bx-ax);
+    ctx.save();ctx.translate(bx,by);ctx.rotate(angle);
+    ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(-8,-4);ctx.lineTo(-8,4);ctx.closePath();
+    ctx.fillStyle=e._active?'#39ff14':'#00e5ff';ctx.fill();ctx.restore();
+    // Label
+    if(e.on){ctx.font='9px system-ui';ctx.fillStyle='#5a6a7a';ctx.textAlign='center';ctx.fillText(e.on,mx,Math.min(ay,by)-6);}
+  }
+
+  // Nodes
+  for(const n of nodes){
+    const active=n._active,selected=n.id===sel;
+    ctx.beginPath();ctx.roundRect(n.x,n.y,n.w,n.h,6);
+    ctx.fillStyle='#0f172a';ctx.fill();
+    ctx.strokeStyle=active?'#39ff14':selected?'#00e5ff':n.color;
+    ctx.lineWidth=active||selected?3:2;
+    if(selected)ctx.setLineDash([5,3]);
+    ctx.stroke();ctx.setLineDash([]);
+    // Glow
+    if(active){ctx.shadowColor='#39ff14';ctx.shadowBlur=12;ctx.stroke();ctx.shadowBlur=0;}
+    // Text
+    ctx.font='bold 10px system-ui';ctx.fillStyle='#e0e6ed';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText(n.id,n.x+n.w/2,n.y+n.h/2-5);
+    ctx.font='8px system-ui';ctx.fillStyle='#5a6a7a';
+    ctx.fillText(n.type,n.x+n.w/2,n.y+n.h/2+9);
+    // Ports
+    ctx.beginPath();ctx.arc(n.x,n.y+n.h/2,4,0,Math.PI*2);ctx.fillStyle='#1a2744';ctx.fill();ctx.strokeStyle=n.color;ctx.lineWidth=1.5;ctx.stroke();
+    ctx.beginPath();ctx.arc(n.x+n.w,n.y+n.h/2,4,0,Math.PI*2);ctx.fillStyle='#1a2744';ctx.fill();ctx.strokeStyle=n.color;ctx.lineWidth=1.5;ctx.stroke();
+  }
+
+  // Wiring preview
+  if(wiring){
+    ctx.beginPath();ctx.moveTo(wiring.sx,wiring.sy);ctx.lineTo(wiring.ex,wiring.ey);
+    ctx.strokeStyle='#00e5ff';ctx.lineWidth=2;ctx.setLineDash([4,4]);ctx.stroke();ctx.setLineDash([]);
+  }
+  ctx.restore();
+  requestAnimationFrame(render);
+}
+
+// --- Interaction ---
+function toWorld(ex,ey){return{x:(ex-cam.x)/cam.z,y:(ey-cam.y)/cam.z};}
+function hitNode(wx,wy){return nodes.find(n=>wx>=n.x&&wx<=n.x+n.w&&wy>=n.y&&wy<=n.y+n.h);}
+function hitPort(wx,wy){
+  for(const n of nodes){
+    if(Math.hypot(wx-(n.x+n.w),wy-(n.y+n.h/2))<8)return{node:n,side:'out'};
+    if(Math.hypot(wx-n.x,wy-(n.y+n.h/2))<8)return{node:n,side:'in'};
+  }return null;
+}
+
+cv.onmousedown=e=>{
+  const w=toWorld(e.offsetX,e.offsetY);
+  const port=hitPort(w.x,w.y);
+  if(port&&port.side==='out'){wiring={from:port.node.id,sx:port.node.x+port.node.w,sy:port.node.y+port.node.h/2,ex:w.x,ey:w.y};return;}
+  const n=hitNode(w.x,w.y);
+  if(n){drag={node:n,ox:w.x-n.x,oy:w.y-n.y};return;}
+  drag={pan:true,sx:e.offsetX,sy:e.offsetY,cx:cam.x,cy:cam.y};
+};
+cv.onmousemove=e=>{
+  const w=toWorld(e.offsetX,e.offsetY);
+  if(wiring){wiring.ex=w.x;wiring.ey=w.y;return;}
+  if(drag?.node){drag.node.x=w.x-drag.ox;drag.node.y=w.y-drag.oy;return;}
+  if(drag?.pan){cam.x=drag.cx+(e.offsetX-drag.sx);cam.y=drag.cy+(e.offsetY-drag.sy);return;}
+  // Hover
+  const n=hitNode(w.x,w.y);
+  cv.style.cursor=n?'pointer':hitPort(w.x,w.y)?'crosshair':'grab';
+};
+cv.onmouseup=e=>{
+  if(wiring){
+    const w=toWorld(e.offsetX,e.offsetY);
+    const port=hitPort(w.x,w.y);
+    if(port&&port.side==='in'&&port.node.id!==wiring.from){
+      const on=prompt('Signal label:','*');
+      if(on){
+        W.topology.edges.push({from:wiring.from,to:port.node.id,on});
+        edges.push({from:wiring.from,to:port.node.id,on});
+        logMsg('wire','+edge',`${wiring.from} -[${on}]-> ${port.node.id}`);
+      }
+    }
+    wiring=null;
+  }
+  if(!drag?.pan&&!drag?.node){
+    const w=toWorld(e.offsetX,e.offsetY);
+    const n=hitNode(w.x,w.y);
+    if(n){sel=n.id;inspect(n.id);}else{sel=null;$('ins').style.display='none';}
+  }
+  drag=null;
+};
+cv.onwheel=e=>{
+  e.preventDefault();
+  const z0=cam.z;
+  cam.z=Math.max(0.2,Math.min(4,cam.z*(e.deltaY<0?1.15:0.87)));
+  // Zoom toward cursor
+  cam.x=e.offsetX-(e.offsetX-cam.x)*cam.z/z0;
+  cam.y=e.offsetY-(e.offsetY-cam.y)*cam.z/z0;
+};
+cv.ondblclick=e=>{
+  const w=toWorld(e.offsetX,e.offsetY);
+  const n=hitNode(w.x,w.y);
+  if(n){inspect(n.id);return;}
+  // Double-click empty = add node
+  const id=prompt('Node ID:');if(!id)return;
+  const type=prompt('Node type:','custom');if(!type)return;
+  W.topology.nodes.push({id,type});
+  nodes.push({id,type,x:w.x,y:w.y,w:140,h:44,color:neon(type)});
+  logMsg('edit','add',id);
+};
 
 // --- Inspector ---
 function inspect(id){
-  sel=id;cy.nodes().removeClass('sel');cy.$id(id).addClass('sel');
-  const nd=W.topology.nodes.find(n=>n.id===id);if(!nd)return;
-  const blk=nd.prompt?.user?.blocks||[],io=lastIO[id]||{};
+  sel=id;const nd=W.topology.nodes.find(n=>n.id===id);if(!nd)return;
+  const io=lastIO[id]||{};
   let h=`<label>id</label><input value="${esc(id)}" readonly>`;
   h+=`<label>type</label><input id="iT" value="${esc(nd.type||'')}">`;
   h+=`<label>label</label><input id="iL" value="${esc(nd.label||'')}">`;
-  h+=`<label>role (${esc(nd.prompt?.role||'–')})</label><textarea id="iR" placeholder="prompt text">${esc('')}</textarea>`;
-  h+=`<label>input blocks</label>`;
-  h+=blk.map(b=>`<div class="blk"><b>${esc(b.label)}</b> <span>← ${esc(b.source)}</span></div>`).join('')||'<div class="blk" style="color:var(--muted)">none</div>';
-  h+=`<label>last input → node</label><div class="io">${esc(io.i||'—')}</div>`;
-  h+=`<label>node output →</label><div class="io">${esc(io.o||'—')}</div>`;
-  h+=`<div class="acts"><button onclick="applyInspect()">Apply</button><button onclick="delNode()">Delete</button><button onclick="hideInspect()">Close</button></div>`;
-  $('ins').innerHTML=h;$('ins').showPopover();
+  h+=`<label>last input</label><div class="io">${esc(io.i||'-')}</div>`;
+  h+=`<label>last output</label><div class="io">${esc(io.o||'-')}</div>`;
+  h+=`<div class="acts"><button onclick="applyIns()">Apply</button><button onclick="delNode()">Del</button><button onclick="$('ins').style.display='none'">Close</button></div>`;
+  $('ins').innerHTML=h;$('ins').style.display='block';
 }
-function hideInspect(){$('ins').hidePopover();}
-window.applyInspect=()=>{
-  if(!sel)return;const nd=W.topology.nodes.find(n=>n.id===sel);if(!nd)return;
-  const t=$('iT')?.value,l=$('iL')?.value;
-  if(t)nd.type=t; if(l)nd.label=l;
-  cy.$id(sel).data('label',l||sel).data('type',t).data('ncolor',neon(t));
-  status(`applied → ${sel}`);
-};
-window.delNode=()=>{
-  if(!sel||!confirm(`Delete ${sel}?`))return;
-  W.topology.nodes=W.topology.nodes.filter(n=>n.id!==sel);
-  W.topology.edges=W.topology.edges.filter(e=>e.from!==sel&&e.to!==sel);
-  cy.remove(cy.$id(sel));hideInspect();sel=null;
-  logMsg('edit','delete',sel);
-};
-window.hideInspect=hideInspect;
+window.applyIns=()=>{if(!sel)return;const nd=W.topology.nodes.find(n=>n.id===sel);if(!nd)return;const t=$('iT')?.value;if(t)nd.type=t;const gn=nodes.find(n=>n.id===sel);if(gn)gn.color=neon(t);};
+window.delNode=()=>{if(!sel||!confirm(`Delete ${sel}?`))return;W.topology.nodes=W.topology.nodes.filter(n=>n.id!==sel);W.topology.edges=W.topology.edges.filter(e=>e.from!==sel&&e.to!==sel);nodes=nodes.filter(n=>n.id!==sel);edges=edges.filter(e=>e.from!==sel&&e.to!==sel);$('ins').style.display='none';sel=null;};
 
 // --- Glow ---
-function glow(id){
-  cy.nodes().removeClass('active');cy.edges().removeClass('active');
-  if(!id)return;
-  cy.$id(id).addClass('active');
-  cy.edges().filter(e=>e.target().id()===id).addClass('active');
-}
+function glow(id){nodes.forEach(n=>n._active=n.id===id);edges.forEach(e=>e._active=e.to===id);}
 
 // --- Log ---
-function logMsg(n,sig,detail){
-  logs.push({t:new Date().toLocaleTimeString(),n,sig,d:detail||''});
-  $('logB').innerHTML=logs.slice(-40).map(l=>`<div><span class="n">${esc(l.n)}</span> <span class="s">[${esc(l.sig)}]</span>${l.d?`<span class="d">${esc(l.d)}</span>`:''}</div>`).join('');
+function logMsg(n,sig,d){
+  logs.push({t:new Date().toLocaleTimeString(),n,sig,d});
+  $('logB').innerHTML=logs.slice(-50).map(l=>`<div><b>${esc(l.n)}</b> <span style="color:#00e5ff">[${esc(l.sig)}]</span>${l.d?` <span style="color:#9ab">${esc(l.d)}</span>`:''}</div>`).join('');
   $('logB').scrollTop=$('logB').scrollHeight;
 }
-function status(t){$('st').textContent=t;}
-function err(t){$('err').style.display='block';$('err').textContent=t;}
 
 // --- API ---
 const nd=id=>W.topology.nodes.find(n=>n.id===id);
@@ -163,67 +231,46 @@ async function callNode(id,state){
   const type=nd(id)?.type||'?';
   const r=await(await fetch(`${S}/node/${type}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({state})})).json();
   lastIO[id]={i:JSON.stringify(state,null,1),o:JSON.stringify(r,null,1)};
-  if(id===sel)inspect(id);
-  return r;
+  if(id===sel)inspect(id);return r;
 }
-function detail(sp){
-  if(sp.plan)return'plan: '+sp.plan.map(p=>p.description).join(' → ');
-  if(sp.step_goal)return`goal: "${sp.step_goal}"`;
-  if(sp.reasoning?.last)return sp.reasoning.last.slice(0,180);
-  return'';
-}
+function detail(sp){if(sp.plan)return sp.plan.map(p=>p.description).join(' > ');if(sp.step_goal)return sp.step_goal;return'';}
 
 // --- Run engine ---
-function needGoal(){
-  if(liveState)return true;
-  const g=prompt('Goal:');if(!g)return false;
-  liveState={goal:g,step:0,retries:0,history:[],reasoning:{},reasoning_chain:[],planner_retries:0,replan_count:0,last_error:'',no_desktop:false};
-  liveNode=W.topology.cycle_start;glow(liveNode);logMsg('–','start',`goal: "${g}"`);
-  return true;
-}
-async function advance(){
-  if(!liveNode)return false;
-  const id=liveNode;glow(id);status(`⏳ ${id}…`);
-  const r=await callNode(id,liveState);
-  liveState={...liveState,...r.state_patch};
-  const s=r.signals||[];
-  liveNode=next(id,s);
-  logMsg(id,s.join(','),detail(r.state_patch||{}));
-  status(`${id} → [${s}]${liveNode?' → '+liveNode:' (end)'}`);
-  glow(liveNode);
-  return!!(liveNode&&!s.includes('idle')&&!liveState.satisfied);
-}
-async function step(){if(!needGoal()||!liveNode)return;try{await advance();}catch(e){err(e.message);}}
-async function run(){if(!needGoal())return;liveRun=true;try{while(liveRun&&liveNode){if(!await advance())break;await new Promise(r=>setTimeout(r,300));}}catch(e){err(e.message);}liveRun=false;status('done');}
-async function save(){
-  // Sync positions back
-  for(const n of W.topology.nodes){const pos=cy.$id(n.id).position();n._pos={x:Math.round(pos.x),y:Math.round(pos.y)};}
-  const r=await fetch(`${S}/wiring`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(W)});
-  const d=await r.json();
-  if(!r.ok||d.error){err(d.details?.join('; ')||d.error);return;}
-  $('err').style.display='none';status(`saved ${d.nodes} nodes`);
-}
+let liveNode,liveState,liveRun;
+function needGoal(){if(liveState)return true;const g=prompt('Goal:');if(!g)return false;liveState={goal:g,step:0,retries:0,history:[],reasoning:{},reasoning_chain:[],planner_retries:0,replan_count:0,last_error:'',no_desktop:false};liveNode=W.topology.cycle_start;glow(liveNode);logMsg('-','start',g);return true;}
+async function advance(){if(!liveNode)return false;glow(liveNode);const r=await callNode(liveNode,liveState);liveState={...liveState,...r.state_patch};const s=r.signals||[];const prev=liveNode;liveNode=next(prev,s);logMsg(prev,s.join(','),detail(r.state_patch||{}));glow(liveNode);return!!(liveNode&&!s.includes('idle')&&!liveState.satisfied);}
+async function step(){if(!needGoal()||!liveNode)return;try{await advance();}catch(e){logMsg('err','!',e.message);}}
+async function run(){if(!needGoal())return;liveRun=true;try{while(liveRun&&liveNode){if(!await advance())break;await new Promise(r=>setTimeout(r,300));}}catch(e){logMsg('err','!',e.message);}liveRun=false;}
+async function save(){const r=await fetch(`${S}/wiring`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(W)});const d=await r.json();logMsg('save',r.ok?'ok':'err',r.ok?`${d.nodes} nodes`:d.error);}
 
 // --- SSE ---
 const sse=new EventSource(`${S}/events`);
-sse.addEventListener('node',e=>{const d=JSON.parse(e.data);glow(d.id);status(`auto: ${d.id}`);});
+sse.addEventListener('node',e=>{const d=JSON.parse(e.data);glow(d.id);});
 sse.addEventListener('result',e=>{const d=JSON.parse(e.data);logMsg(d.id,(d.s||[]).join(','),'');});
-sse.addEventListener('stop',()=>{glow(null);status('done');});
+sse.addEventListener('stop',()=>glow(null));
 
-// --- Buttons ---
-$('bStep').onclick=step;
-$('bRun').onclick=run;
-$('bStop').onclick=()=>{liveRun=false;status('stopped');glow(null);};
-$('bLayout').onclick=runLayout;
-$('bSave').onclick=save;
+// --- Keyboard shortcuts ---
+document.onkeydown=e=>{
+  if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')return;
+  if(e.key==='s'&&!e.ctrlKey)step();
+  if(e.key==='r'&&!e.ctrlKey)run();
+  if(e.key==='q')liveRun=false;
+  if(e.key==='l')layout();
+  if(e.key==='w')save();
+  if(e.key==='Escape'){sel=null;$('ins').style.display='none';}
+};
+
 $('bClr').onclick=()=>{logs=[];$('logB').innerHTML='';};
 
 // --- Init ---
 (async()=>{
   try{
     W=await(await fetch(`${S}/wiring`)).json();
-    buildGraph(W);
-  }catch(e){err(e.message);status('offline');}
+    layout();
+    logMsg('init','ok',`${nodes.length} nodes, ${edges.length} edges`);
+    logMsg('keys','help','s=step r=run q=stop l=layout w=save dblclick=add');
+  }catch(e){logMsg('init','err',e.message);}
+  render();
 })();
 </script>
 </body>
