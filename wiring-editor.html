@@ -2,482 +2,416 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>endgame-ai — Wiring</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>endgame-ai</title>
 <script src="https://cdn.jsdelivr.net/npm/dagre@0.8.5/dist/dagre.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/cytoscape@3.30.2/dist/cytoscape.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
 <style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-html, body { height: 100%; overflow: hidden; }
-body { font-family: system-ui, sans-serif; background: #06080d; color: #d4d4d8; display: flex; flex-direction: column; }
-#toolbar { flex: 0 0 36px; display: flex; align-items: center; gap: 6px; padding: 0 10px; background: #0c1220; border-bottom: 1px solid #1a2744; font-size: 11px; }
-#toolbar h1 { color: #38bdf8; font-size: 12px; margin-right: 4px; }
-#toolbar button { padding: 3px 8px; border: 1px solid #1e3a5f; border-radius: 4px; background: #0c1220; color: #cbd5e1; cursor: pointer; }
-#toolbar button:hover { border-color: #38bdf8; color: #38bdf8; }
-#toolbar .spacer { flex: 1; }
-#status { font-size: 10px; color: #64748b; max-width: 45vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#main { flex: 1; display: grid; grid-template-columns: 1fr 320px; min-height: 0; }
-#cy { background: #06080d radial-gradient(circle at 1px 1px, #141c2e 1px, transparent 0) 0 0 / 18px 18px; }
-#sidebar { background: #0c1220; border-left: 1px solid #1a2744; overflow-y: auto; padding: 10px; font-size: 11px; }
-#sidebar h3 { color: #38bdf8; font-size: 12px; margin-bottom: 6px; }
-#sidebar label { display: block; color: #64748b; font-size: 9px; text-transform: uppercase; margin: 6px 0 2px; }
-#sidebar textarea { width: 100%; background: #111827; border: 1px solid #1e3a5f; border-radius: 4px; color: #e2e8f0; font-size: 9px; padding: 6px; font-family: ui-monospace, monospace; resize: vertical; }
-#sidebar pre { background: #111827; border: 1px solid #1e3a5f; border-radius: 4px; padding: 6px; font-size: 9px; max-height: 120px; overflow: auto; color: #94a3b8; white-space: pre-wrap; }
-#sidebar .btn { margin-top: 6px; width: 100%; padding: 5px; border-radius: 4px; cursor: pointer; font-size: 11px; background: #0c1220; border: 1px solid #1e3a5f; color: #38bdf8; }
-#sidebar .hint { color: #64748b; font-size: 10px; line-height: 1.4; }
-#sidebar .log { font-size: 9px; color: #94a3b8; max-height: 100px; overflow-y: auto; }
-#import-link { font-size: 10px; color: #475569; cursor: pointer; text-decoration: underline; margin-left: 6px; }
-#error-banner { display: none; background: #450a0a; border-bottom: 1px solid #ef4444; color: #fecaca; padding: 6px 10px; font-size: 11px; }
+  :root {
+    color-scheme: dark;
+    --bg: #06080d;
+    --panel: #0c1220;
+    --line: #1a2744;
+    --accent: #38bdf8;
+    --text: #e2e8f0;
+    --muted: #64748b;
+    --toolbar-h: clamp(2.75rem, 8vw, 3rem);
+    --panel-w: clamp(16rem, 32vw, 22rem);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100dvh; overflow: hidden; }
+  body {
+    font-family: system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: grid;
+    grid-template-rows: var(--toolbar-h) 1fr;
+  }
+  #toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0 0.6rem;
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+    overflow-x: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+  }
+  #toolbar::-webkit-scrollbar { display: none; }
+  #toolbar h1 {
+    color: var(--accent);
+    font-size: clamp(0.7rem, 2.5vw, 0.8rem);
+    white-space: nowrap;
+    margin-right: 0.25rem;
+  }
+  #toolbar button {
+    flex: 0 0 auto;
+    padding: 0.35rem 0.55rem;
+    border: 1px solid var(--line);
+    border-radius: 0.35rem;
+    background: var(--panel);
+    color: var(--text);
+    font-size: clamp(0.65rem, 2.2vw, 0.72rem);
+    touch-action: manipulation;
+  }
+  #toolbar button:active { border-color: var(--accent); color: var(--accent); }
+  #status {
+    margin-inline-start: auto;
+    font-size: clamp(0.58rem, 2vw, 0.68rem);
+    color: var(--muted);
+    white-space: nowrap;
+    max-width: min(42vw, 14rem);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #shell {
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 1fr var(--panel-w);
+    grid-template-rows: 1fr;
+  }
+  @media (max-width: 720px) {
+    #shell {
+      grid-template-columns: 1fr;
+      grid-template-rows: 1fr min(42dvh, 50%);
+    }
+  }
+  #cy {
+    min-height: 0;
+    background: var(--bg) radial-gradient(circle at 1px 1px, #141c2e 1px, transparent 0) 0 0 / 18px 18px;
+  }
+  #panel {
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--panel);
+    border-inline-start: 1px solid var(--line);
+    overflow: hidden;
+  }
+  @media (max-width: 720px) {
+    #panel { border-inline-start: none; border-top: 1px solid var(--line); }
+  }
+  #panel-head {
+    flex: 0 0 auto;
+    padding: 0.55rem 0.65rem 0.35rem;
+    font-size: 0.62rem;
+    color: var(--muted);
+    border-bottom: 1px solid var(--line);
+  }
+  #panel-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0.55rem 0.65rem 0.75rem;
+    font-size: 0.68rem;
+    -webkit-overflow-scrolling: touch;
+  }
+  #panel-body h3 { color: var(--accent); font-size: 0.75rem; margin-bottom: 0.35rem; }
+  #panel-body label {
+    display: block;
+    color: var(--muted);
+    font-size: 0.58rem;
+    text-transform: uppercase;
+    margin: 0.45rem 0 0.15rem;
+  }
+  #panel-body textarea {
+    width: 100%;
+    min-height: 4.5rem;
+    field-sizing: content;
+    background: #111827;
+    border: 1px solid var(--line);
+    border-radius: 0.35rem;
+    color: var(--text);
+    font: 0.62rem/1.35 ui-monospace, monospace;
+    padding: 0.45rem;
+    resize: none;
+  }
+  #panel-body .btn {
+    width: 100%;
+    margin-top: 0.45rem;
+    padding: 0.45rem;
+    border: 1px solid var(--line);
+    border-radius: 0.35rem;
+    background: var(--panel);
+    color: var(--accent);
+    font-size: 0.68rem;
+    touch-action: manipulation;
+  }
+  #panel-body .log {
+    font: 0.58rem/1.35 ui-monospace, monospace;
+    color: #94a3b8;
+    max-height: 6rem;
+    overflow-y: auto;
+  }
+  #err {
+    display: none;
+    padding: 0.4rem 0.65rem;
+    background: #450a0a;
+    border-bottom: 1px solid #ef4444;
+    color: #fecaca;
+    font-size: 0.68rem;
+  }
 </style>
 </head>
 <body>
 <nav id="toolbar">
-  <h1>⚡ endgame-ai</h1>
-  <button id="btn-save" title="POST /wiring — save prompts + topology">💾 Save</button>
-  <button id="btn-layout" title="Re-run dagre layout">⟳ Layout</button>
-  <button id="btn-step" title="One node — highlights on diagram">⏩ Step</button>
-  <button id="btn-run" title="Full loop with highlight">🚀 Run</button>
-  <button id="btn-stop" title="Stop run loop">⏹ Stop</button>
-  <button id="btn-auto" title="POST /run — server autonomous loop">🤖 Auto</button>
-  <span id="import-link" title="Only if server offline">import file</span>
-  <span class="spacer"></span>
-  <span id="status">Connecting…</span>
+  <h1>⚡ endgame</h1>
+  <button id="btn-save">Save</button>
+  <button id="btn-layout">Layout</button>
+  <button id="btn-step">Step</button>
+  <button id="btn-run">Run</button>
+  <button id="btn-stop">Stop</button>
+  <button id="btn-auto">Auto</button>
+  <span id="status">…</span>
 </nav>
-<div id="error-banner" role="alert"></div>
-<div id="main">
+<div id="err" role="alert"></div>
+<div id="shell">
   <div id="cy"></div>
-  <div id="sidebar">
-    <div class="hint">Wiring loads from server (<code>GET /wiring</code>). Click a chip to edit its prompt.</div>
-    <div id="sidebar-body"></div>
-  </div>
+  <aside id="panel">
+    <div id="panel-head">GET /wiring · tap a chip to edit</div>
+    <div id="panel-body"></div>
+  </aside>
 </div>
-<input type="file" id="file-wiring" accept=".json" hidden>
-
-<script>
+<script type="module">
 cytoscape.use(cytoscapeDagre);
 
-const TYPE_COLORS = {
-  entry: '#166534', planner: '#5b21b6', scheduler: '#1e40af', observe: '#0e7490',
-  act: '#7e22ce', verify: '#047857', reflect: '#b45309', satisfied: '#15803d',
-  bus_check: '#1e3a5f', bus_post: '#9a3412', moe_route: '#86198f', self_modify: '#be185d'
+const COLORS = {
+  entry:'#166534', planner:'#5b21b6', scheduler:'#1e40af', observe:'#0e7490',
+  act:'#7e22ce', verify:'#047857', reflect:'#b45309', satisfied:'#15803d',
+  bus_check:'#1e3a5f', bus_post:'#9a3412', moe_route:'#86198f', self_modify:'#be185d'
 };
 
-let SERVER = location.origin;
-let wiring = null;
-let cy = null;
-let selectedId = null;
-let lastEditId = null;
-let liveNode = null;
-let liveState = null;
-let liveRunning = false;
-let liveStopped = false;
-let baseEdit = '';
-let roleEdit = '';
-let blocksEdit = '[]';
-let liveLog = [];
-
+const SERVER = location.origin;
 const $ = id => document.getElementById(id);
-const setStatus = t => { $('status').textContent = t; };
-const showError = t => { const e = $('error-banner'); e.style.display = 'block'; e.textContent = t; };
+const panel = $('panel-body');
+const status = t => { $('status').textContent = t; };
+const fail = t => { const e = $('err'); e.style.display = 'block'; e.textContent = t; };
 
-async function discoverServer() {
-  if (location.protocol.startsWith('http') && location.host) {
-    try {
-      const r = await fetch(location.origin + '/health');
-      if ((await r.json()).ok) return location.origin;
-    } catch (_) {}
-  }
-  const host = location.hostname || '127.0.0.1';
-  for (const p of [9078, 9077, 9079, 9080]) {
-    try {
-      const url = `http://${host}:${p}`;
-      const r = await fetch(url + '/health');
-      if ((await r.json()).ok) return url;
-    } catch (_) {}
-  }
-  for (const p of [9078, 9077]) {
-    try {
-      const url = `http://127.0.0.1:${p}`;
-      const r = await fetch(url + '/health');
-      if ((await r.json()).ok) return url;
-    } catch (_) {}
-  }
-  return null;
-}
+let wiring, cy, selectedId, lastEditId;
+let liveNode, liveState, liveRun, liveStop, liveLog = [];
+let baseEdit = '', roleEdit = '', blocksEdit = '[]';
 
-function wiringToElements(w) {
-  const t = w.topology || {};
-  const nodes = (t.nodes || []).map(n => ({
-    data: {
-      id: n.id,
-      label: n.id,
-      sub: n.type,
-      type: n.type,
-      nodeLabel: n.label || '',
-      raw: n
-    }
-  }));
-  const edges = (t.edges || []).map((e, i) => ({
-    data: {
-      id: `e${i}`,
-      source: e.from,
-      target: e.to,
-      signal: e.on || ''
-    }
-  }));
-  return { nodes, edges };
-}
+const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const topo = id => wiring?.topology?.nodes?.find(n => n.id === id);
+const circuit = n => n?.prompt ? (n.prompt.role || n.circuit || n.type) : null;
 
 function initCy() {
   cy = cytoscape({
     container: $('cy'),
-    elements: [],
     style: [
-      {
-        selector: 'node',
-        style: {
-          'shape': 'round-rectangle',
-          'background-color': '#0f172a',
-          'background-opacity': 1,
-          'border-width': 2,
-          'border-color': '#334155',
-          'width': 130,
-          'height': 44,
-          'label': 'data(label)',
-          'text-valign': 'center',
-          'text-halign': 'center',
-          'color': '#f1f5f9',
-          'font-size': 11,
-          'font-weight': 600,
-          'text-wrap': 'none',
-          'overlay-opacity': 0
-        }
-      },
-      {
-        selector: 'node',
-        style: {
-          'border-color': ele => TYPE_COLORS[ele.data('type')] || '#475569'
-        }
-      },
-      {
-        selector: 'edge',
-        style: {
-          'width': 1.5,
-          'line-color': '#0e7490',
-          'target-arrow-color': '#22d3ee',
-          'target-arrow-shape': 'triangle',
-          'arrow-scale': 0.7,
-          'curve-style': 'bezier',
-          'control-point-step-size': 40,
-          'label': 'data(signal)',
-          'font-size': 8,
-          'color': '#64748b',
-          'text-background-color': '#06080d',
-          'text-background-opacity': 0.85,
-          'text-background-padding': 2
-        }
-      },
-      { selector: 'node.active', style: { 'border-color': '#4ade80', 'border-width': 3 } },
-      { selector: 'node.selected', style: { 'border-color': '#fbbf24', 'border-width': 3 } },
-      { selector: '.dim', style: { 'opacity': 0.25 } }
+      { selector: 'node', style: {
+        shape: 'round-rectangle', width: 120, height: 40,
+        'background-color': '#0f172a', 'border-width': 2,
+        'border-color': e => COLORS[e.data('type')] || '#475569',
+        label: 'data(label)', color: '#f8fafc', 'font-size': 10, 'font-weight': 600,
+        'text-valign': 'center', 'overlay-opacity': 0
+      }},
+      { selector: 'edge', style: {
+        width: 1.5, 'line-color': '#0e7490', 'target-arrow-color': '#22d3ee',
+        'target-arrow-shape': 'triangle', 'arrow-scale': 0.65, 'curve-style': 'bezier',
+        label: 'data(signal)', 'font-size': 7, color: '#64748b',
+        'text-background-color': '#06080d', 'text-background-opacity': 0.9, 'text-background-padding': 2
+      }},
+      { selector: 'node.active', style: { 'border-color': '#4ade80', 'border-width': 3 }},
+      { selector: 'node.selected', style: { 'border-color': '#fbbf24', 'border-width': 3 }},
+      { selector: '.dim', style: { opacity: 0.22 }}
     ],
-    layout: { name: 'dagre', rankDir: 'LR', nodeSep: 40, rankSep: 70, edgeSep: 10 },
-    minZoom: 0.2,
-    maxZoom: 2.5,
-    wheelSensitivity: 0.2
+    minZoom: 0.15, maxZoom: 3, wheelSensitivity: 0.15
   });
-
-  cy.on('tap', 'node', evt => selectNode(evt.target.id()));
-  cy.on('tap', evt => { if (evt.target === cy) selectNode(null); });
+  cy.on('tap', 'node', e => pick(e.target.id()));
+  cy.on('tap', e => { if (e.target === cy) pick(null); });
+  new ResizeObserver(() => cy.resize()).observe($('cy'));
 }
 
-function renderGraph(w) {
+function toElements(w) {
+  const t = w.topology;
+  return [
+    ...t.nodes.map(n => ({ data: { id: n.id, label: n.id, type: n.type }})),
+    ...t.edges.map((e, i) => ({ data: { id: `e${i}`, source: e.from, target: e.to, signal: e.on || '' }}))
+  ];
+}
+
+function layout() {
+  cy.layout({ name: 'dagre', rankDir: 'LR', nodeSep: 36, rankSep: 64, animate: false }).run();
+  cy.fit(36);
+}
+
+function draw(w) {
   if (!cy) initCy();
-  const { nodes, edges } = wiringToElements(w);
   cy.elements().remove();
-  cy.add([...nodes, ...edges]);
-  doLayout();
+  cy.add(toElements(w));
+  layout();
 }
 
-function doLayout() {
-  if (!cy) return;
-  cy.layout({ name: 'dagre', rankDir: 'LR', nodeSep: 40, rankSep: 70, animate: false }).run();
-  cy.fit(40);
-}
-
-function highlightNode(id) {
-  if (!cy) return;
+function glow(id) {
   cy.nodes().removeClass('active dim');
   if (!id) return;
   cy.nodes().addClass('dim');
   cy.getElementById(id).removeClass('dim').addClass('active');
 }
 
-function selectNode(id) {
+function pick(id) {
   selectedId = id;
   if (id !== lastEditId) lastEditId = null;
-  if (!cy) return;
   cy.nodes().removeClass('selected');
   if (id) cy.getElementById(id).addClass('selected');
-  renderSidebar();
+  paintPanel();
 }
 
-function topoNode(id) {
-  return (wiring?.topology?.nodes || []).find(n => n.id === id);
-}
-
-function circuitFor(n) {
-  if (!n) return null;
-  const pr = n.prompt;
-  if (!pr) return null;
-  return pr.role || n.circuit || n.type;
-}
-
-function renderSidebar() {
-  const body = $('sidebar-body');
-  if (!wiring) { body.innerHTML = '<p class="hint">No wiring loaded.</p>'; return; }
-
-  let html = `
-    <div style="margin-top:8px">
-      <h3>Global base</h3>
-      <label>prompts.base</label>
-      <textarea id="ta-base" rows="4">${esc(baseEdit)}</textarea>
-    </div>`;
-
-  if (selectedId) {
-    if (selectedId !== lastEditId) { loadNodeEdits(); lastEditId = selectedId; }
-    const n = topoNode(selectedId);
-    const c = circuitFor(n);
-    html += `<div style="margin-top:10px"><h3>${esc(selectedId)}</h3>
-      <label>type</label><span>${esc(n?.type || '?')}</span>
-      <label>label</label><span>${esc(n?.label || '')}</span>`;
-    if (c && n?.prompt) {
-      html += `
-        <label>role (${esc(c)})</label>
-        <textarea id="ta-role" rows="6">${esc(roleEdit)}</textarea>
-        <label>user.blocks (json)</label>
-        <textarea id="ta-blocks" rows="5">${esc(blocksEdit)}</textarea>
-        <button class="btn" id="btn-apply">Apply prompt (then Save)</button>`;
-    } else {
-      html += `<p class="hint">No LLM prompt on this node.</p>`;
-    }
-    html += `<button class="btn" id="btn-save-side">💾 Save to server</button></div>`;
-  } else {
-    html += `<p class="hint" style="margin-top:10px">Click a chip on the diagram.</p>`;
-  }
-
-  if (liveLog.length) {
-    html += `<div style="margin-top:10px"><label>Step log</label><div class="log">${liveLog.slice(-8).map(l =>
-      `${esc(l.ts)} ${esc(l.node)} → [${esc((l.signals||[]).join(','))}]`
-    ).join('<br>')}</div></div>`;
-  }
-
-  body.innerHTML = html;
-  const tb = $('ta-base'); if (tb) tb.oninput = () => { baseEdit = tb.value; };
-  const tr = $('ta-role'); if (tr) tr.oninput = () => { roleEdit = tr.value; };
-  const tbb = $('ta-blocks'); if (tbb) tbb.oninput = () => { blocksEdit = tbb.value; };
-  $('btn-apply')?.addEventListener('click', applyPromptEdits);
-  $('btn-save-side')?.addEventListener('click', () => saveWiring());
-}
-
-function esc(s) {
-  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
-function loadNodeEdits() {
-  const n = topoNode(selectedId);
-  const c = circuitFor(n);
+function loadEdits() {
+  const n = topo(selectedId), c = circuit(n);
   roleEdit = c ? (wiring.prompts?.roles?.[c] || '') : '';
   blocksEdit = JSON.stringify(n?.prompt?.user?.blocks || [], null, 2);
 }
 
-function applyPromptEdits() {
-  const n = topoNode(selectedId);
-  const c = circuitFor(n);
+function paintPanel() {
+  if (!wiring) { panel.innerHTML = '<p>No wiring.</p>'; return; }
+  let h = `<h3>Base</h3><label>prompts.base</label><textarea id="ta-base">${esc(baseEdit)}</textarea>`;
+  if (selectedId) {
+    if (selectedId !== lastEditId) { loadEdits(); lastEditId = selectedId; }
+    const n = topo(selectedId), c = circuit(n);
+    h += `<h3>${esc(selectedId)}</h3><label>type</label>${esc(n?.type)}<label>label</label>${esc(n?.label)}`;
+    if (c && n?.prompt) {
+      h += `<label>role ${esc(c)}</label><textarea id="ta-role">${esc(roleEdit)}</textarea>
+        <label>blocks</label><textarea id="ta-blocks">${esc(blocksEdit)}</textarea>
+        <button class="btn" id="btn-apply">Apply</button>`;
+    }
+    h += `<button class="btn" id="btn-save2">Save</button>`;
+  } else {
+    h += `<p style="color:var(--muted);margin-top:.5rem">Tap a chip.</p>`;
+  }
+  if (liveLog.length) {
+    h += `<label>log</label><div class="log">${liveLog.slice(-8).map(l =>
+      `${esc(l.t)} ${esc(l.n)} [${esc(l.s)}]`).join('<br>')}</div>`;
+  }
+  panel.innerHTML = h;
+  $('ta-base')?.addEventListener('input', e => { baseEdit = e.target.value; });
+  $('ta-role')?.addEventListener('input', e => { roleEdit = e.target.value; });
+  $('ta-blocks')?.addEventListener('input', e => { blocksEdit = e.target.value; });
+  $('btn-apply')?.addEventListener('click', apply);
+  $('btn-save2')?.addEventListener('click', save);
+}
+
+function apply() {
+  const n = topo(selectedId), c = circuit(n);
   if (!n?.prompt || !c) return;
   let blocks;
-  try { blocks = JSON.parse(blocksEdit); } catch (e) { alert('Invalid blocks JSON'); return; }
-  if (!wiring.prompts) wiring.prompts = { base: '', roles: {} };
-  if (!wiring.prompts.roles) wiring.prompts.roles = {};
+  try { blocks = JSON.parse(blocksEdit); } catch { fail('invalid blocks JSON'); return; }
+  wiring.prompts ??= { base: '', roles: {} };
+  wiring.prompts.roles ??= {};
   wiring.prompts.base = baseEdit;
   wiring.prompts.roles[c] = roleEdit;
   n.prompt.user = { blocks };
-  setStatus(`Applied ${selectedId} — click Save`);
+  status(`Applied ${selectedId}`);
 }
 
-async function loadWiringFromServer() {
-  const r = await fetch(SERVER + '/wiring');
-  wiring = await r.json();
+async function load() {
+  wiring = await (await fetch(`${SERVER}/wiring`)).json();
   baseEdit = wiring.prompts?.base || '';
-  renderGraph(wiring);
-  if (selectedId) loadNodeEdits();
-  renderSidebar();
-  const n = wiring.topology?.nodes?.length || 0;
-  const e = wiring.topology?.edges?.length || 0;
-  setStatus(`Diagram: ${n} chips, ${e} traces — Step to walk`);
+  draw(wiring);
+  paintPanel();
+  const n = wiring.topology.nodes.length, e = wiring.topology.edges.length;
+  status(`${n} chips · ${e} traces`);
 }
 
-async function saveWiring() {
-  if (!wiring) return;
-  wiring.prompts = wiring.prompts || {};
+async function save() {
+  wiring.prompts ??= {};
   wiring.prompts.base = baseEdit;
-  const r = await fetch(SERVER + '/wiring', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+  const r = await fetch(`${SERVER}/wiring`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(wiring)
   });
   const d = await r.json();
-  if (!r.ok || d.error) { alert(d.error || 'Save failed'); return; }
-  setStatus(`Saved (${d.nodes} nodes)`);
+  if (!r.ok || d.error) throw new Error(d.error || 'save failed');
+  status(`Saved ${d.nodes} nodes`);
 }
 
-function freshState(goal) {
-  return {
-    goal, step: 0, retries: 0, history: [], reasoning: {}, reasoning_chain: [],
-    planner_retries: 0, replan_count: 0, last_error: '', bus_last_check: Date.now() / 1000,
-    no_desktop: false
-  };
+const fresh = g => ({
+  goal: g, step: 0, retries: 0, history: [], reasoning: {}, reasoning_chain: [],
+  planner_retries: 0, replan_count: 0, last_error: '', bus_last_check: Date.now() / 1e3, no_desktop: false
+});
+
+const next = (from, sigs) => wiring.topology.edges
+  .filter(e => e.from === from && (e.on === '*' || (e.on || '').split('|').some(s => sigs.includes(s))))
+  .map(e => e.to)[0] ?? null;
+
+async function call(id, state) {
+  const type = topo(id)?.type || 'unknown';
+  return (await fetch(`${SERVER}/node/${type}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ state })
+  })).json();
 }
 
-function getNodeType(id) {
-  return topoNode(id)?.type || 'unknown';
-}
-
-function followEdges(fromId, signals) {
-  const out = [];
-  for (const e of wiring.topology.edges || []) {
-    if (e.from !== fromId) continue;
-    const parts = (e.on || '').split('|');
-    if (parts.some(p => signals.includes(p)) || e.on === '*') out.push(e.to);
-  }
-  return out;
-}
-
-async function callNode(nodeId, state) {
-  const type = getNodeType(nodeId);
-  const res = await fetch(`${SERVER}/node/${type}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ state, config: {} })
-  });
-  return res.json();
-}
-
-function ensureGoal() {
+function needGoal() {
   if (liveState) return true;
   const g = prompt('Goal:');
   if (!g) return false;
-  liveState = freshState(g);
-  liveNode = wiring.topology.cycle_start || 'goal_inbox';
+  liveState = fresh(g);
+  liveNode = wiring.topology.cycle_start;
   liveLog = [];
-  highlightNode(liveNode);
-  renderSidebar();
+  glow(liveNode);
+  paintPanel();
   return true;
 }
 
-async function advanceOne() {
+async function advance() {
   if (!liveNode) return false;
-  const cur = liveNode;
-  highlightNode(cur);
-  setStatus(`⏳ ${cur}…`);
-  let result;
-  try { result = await callNode(cur, liveState); }
-  catch (e) { setStatus('Error: ' + e.message); return false; }
-  liveState = { ...liveState, ...(result.state_patch || {}) };
-  const sig = result.signals || [];
-  liveLog.push({ node: cur, signals: sig, ts: new Date().toLocaleTimeString() });
-  liveNode = followEdges(cur, sig)[0] || null;
-  setStatus(`✓ ${cur} → [${sig.join(',')}]${liveNode ? ' → ' + liveNode : ''}`);
-  highlightNode(liveNode);
-  renderSidebar();
-  return !!(liveNode && !sig.includes('idle') && !liveState.satisfied);
+  const id = liveNode;
+  glow(id);
+  status(`… ${id}`);
+  const r = await call(id, liveState);
+  liveState = { ...liveState, ...r.state_patch };
+  const s = r.signals || [];
+  liveLog.push({ t: new Date().toLocaleTimeString(), n: id, s: s.join(',') });
+  liveNode = next(id, s);
+  status(`${id} → [${s}]${liveNode ? ' → ' + liveNode : ''}`);
+  glow(liveNode);
+  paintPanel();
+  return !!(liveNode && !s.includes('idle') && !liveState.satisfied);
 }
 
-async function stepOnce() {
-  if (!wiring) return;
-  if (!ensureGoal()) return;
-  if (!liveNode) { setStatus('Finished'); return; }
-  await advanceOne();
+async function step() {
+  if (!needGoal() || !liveNode) return status(liveNode ? '…' : 'done');
+  await advance();
 }
 
-async function runLoop() {
-  if (!wiring) return;
-  if (!ensureGoal()) return;
-  liveRunning = true;
-  liveStopped = false;
-  while (liveRunning && !liveStopped && liveNode) {
-    const cont = await advanceOne();
-    if (!cont) break;
+async function run() {
+  if (!needGoal()) return;
+  liveRun = true; liveStop = false;
+  while (liveRun && !liveStop && liveNode) {
+    if (!await advance()) break;
     await new Promise(r => setTimeout(r, 300));
   }
-  liveRunning = false;
-  setStatus('Run finished');
+  liveRun = false;
+  status('run done');
 }
 
-function hookSSE() {
-  try {
-    const es = new EventSource(SERVER + '/events');
-    es.addEventListener('node', e => {
-      const d = JSON.parse(e.data);
-      highlightNode(d.id);
-      setStatus(`[auto] #${d.c} ${d.id}`);
-    });
-    es.addEventListener('stop', e => {
-      const d = JSON.parse(e.data);
-      highlightNode(null);
-      setStatus(`[auto] done satisfied=${d.outcome}`);
-    });
-    es.onerror = () => {};
-  } catch (_) {}
-}
+const sse = new EventSource(`${SERVER}/events`);
+sse.addEventListener('node', e => { const d = JSON.parse(e.data); glow(d.id); status(`auto ${d.id}`); });
+sse.addEventListener('stop', () => { glow(null); status('auto done'); });
 
-$('btn-save').onclick = () => saveWiring();
-$('btn-layout').onclick = () => doLayout();
-$('btn-step').onclick = () => stepOnce();
-$('btn-run').onclick = () => runLoop();
-$('btn-stop').onclick = () => { liveStopped = true; liveRunning = false; setStatus('Stopped'); };
+$('btn-save').onclick = () => save().catch(e => fail(e.message));
+$('btn-layout').onclick = () => layout();
+$('btn-step').onclick = () => step().catch(e => fail(e.message));
+$('btn-run').onclick = () => run().catch(e => fail(e.message));
+$('btn-stop').onclick = () => { liveStop = true; liveRun = false; status('stopped'); };
 $('btn-auto').onclick = () => {
-  const g = prompt('Autonomous goal:');
-  if (g) { fetch(SERVER + '/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ goal: g }) }); setStatus('Auto: ' + g); }
-};
-$('import-link').onclick = () => $('file-wiring').click();
-$('file-wiring').onchange = e => {
-  const f = e.target.files[0]; if (!f) return;
-  const r = new FileReader();
-  r.onload = ev => {
-    try {
-      wiring = JSON.parse(ev.target.result);
-      baseEdit = wiring.prompts?.base || '';
-      renderGraph(wiring);
-      setStatus('Imported from file (Save to push to server)');
-      renderSidebar();
-    } catch (err) { alert(err.message); }
-  };
-  r.readAsText(f);
-  e.target.value = '';
+  const g = prompt('Goal:');
+  if (g) fetch(`${SERVER}/run`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ goal: g }) });
 };
 
-(async () => {
-  initCy();
-  SERVER = await discoverServer();
-  if (!SERVER) {
-    setStatus('Server offline — use import file');
-    renderSidebar();
-    return;
-  }
-  try {
-    const h = await (await fetch(SERVER + '/health')).json();
-    setStatus(`Connected ${SERVER.replace('http://','')} slot=${h.slot ?? '?'}`);
-    await loadWiringFromServer();
-    hookSSE();
-  } catch (e) {
-    showError(e.message);
-    setStatus('Load failed');
-  }
-})();
-
-window.addEventListener('resize', () => { if (cy) cy.resize(); });
+try {
+  const h = await (await fetch(`${SERVER}/health`)).json();
+  if (!h.ok) throw new Error('health failed');
+  status(`:${location.port} slot ${h.slot ?? '?'}`);
+  await load();
+} catch (e) {
+  fail(e.message);
+  status('offline');
+}
 </script>
 </body>
 </html>
