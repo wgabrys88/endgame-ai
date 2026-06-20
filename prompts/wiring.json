@@ -394,6 +394,7 @@
   "runtime": {
     "http_port_base": 9077,
     "http_port_slot_offset": true,
+    "http_bind": "0.0.0.0",
     "cycle_delay_ms": 300,
     "initial_state": {
       "step": 0,

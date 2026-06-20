@@ -33,11 +33,27 @@ cd endgame-ai
 
 python server.py
 # → http://127.0.0.1:9078  (slot=1 → 9077+1)
+# Startup prints LAN URLs for phone/tablet on same WiFi
 
 python server.py --run "open notepad and write hello"
 
-start http://127.0.0.1:9078    # wiring-editor
+start http://127.0.0.1:9078    # wiring-editor (wiring auto-loads — no file button needed)
 ```
+
+### Phone / LAN dashboard
+
+Same idea as LM Studio: server must listen beyond localhost and Windows Firewall must allow the port.
+
+1. `wiring.json` → `runtime.http_bind`: `"0.0.0.0"` (default in repo)
+2. Start server — note the `lan http://192.168.x.x:9078` line in console
+3. On phone (same WiFi), open that URL in Chrome
+4. **Firewall (once, admin PowerShell):**
+   ```powershell
+   netsh advfirewall firewall add rule name="endgame-ai" dir=in action=allow protocol=TCP localport=9078
+   ```
+5. LM Studio stays on PC (`localhost:1234`) — only the **dashboard** is exposed to LAN; the rod still calls LM Studio locally
+
+Override bind: `$env:ENDGAME_BIND="127.0.0.1"` for localhost-only.
 
 ---
 

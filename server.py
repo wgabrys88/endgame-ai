@@ -66,6 +66,38 @@ def http_port(slot=None):
         return base + int(slot)
     return base
 
+def http_bind():
+    return os.environ.get("ENDGAME_BIND") or WIRING.get("runtime", {}).get("http_bind", "0.0.0.0")
+
+def local_lan_ips():
+    import socket
+    ips = set()
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ip = info[4][0]
+            if not ip.startswith("127."):
+                ips.add(ip)
+    except Exception:
+        pass
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(0.2)
+        s.connect(("8.8.8.8", 80))
+        ips.add(s.getsockname()[0])
+        s.close()
+    except Exception:
+        pass
+    return sorted(ips)
+
+def print_listen_urls(port):
+    bind = http_bind()
+    print(f"  local   http://127.0.0.1:{port}")
+    if bind in ("0.0.0.0", "::"):
+        for ip in local_lan_ips():
+            print(f"  lan     http://{ip}:{port}")
+        print(f"  phone   same WiFi → open LAN URL in browser")
+        print(f"  firewall (once, admin PS): netsh advfirewall firewall add rule name=\"endgame-ai\" dir=in action=allow protocol=TCP localport={port}")
+
 def colony_port(slot):
     rt = WIRING.get("runtime", {})
     return int(rt.get("colony_port_base", 9076)) + int(slot)
@@ -841,19 +873,24 @@ if __name__ == "__main__":
         s = load_state()
         if not s: print("No state.json to resume from"); sys.exit(1)
         port = http_port()
-        srv = http.server.HTTPServer(("127.0.0.1", port), H)
+        bind = http_bind()
+        srv = http.server.HTTPServer((bind, port), H)
         threading.Thread(target=srv.serve_forever, daemon=True).start()
+        print_listen_urls(port)
         run(s.get("goal", ""), s)
     elif "--run" in args:
         goal = " ".join(args[args.index("--run")+1:])
         if not goal: print("Usage: python server.py --run \"goal\""); sys.exit(1)
         port = http_port()
-        srv = http.server.HTTPServer(("127.0.0.1", port), H)
+        bind = http_bind()
+        srv = http.server.HTTPServer((bind, port), H)
         threading.Thread(target=srv.serve_forever, daemon=True).start()
-        print(f"SSE: http://127.0.0.1:{port}/events")
+        print_listen_urls(port)
         run(goal)
     else:
         port = int(args[0]) if args and args[0].isdigit() else http_port()
-        srv = http.server.HTTPServer(("127.0.0.1", port), H)
-        print(f"endgame-ai [{WIRING.get('instance',{}).get('slot',0)}] on http://127.0.0.1:{port}  nodes: {list(NODES.keys())}")
+        bind = http_bind()
+        srv = http.server.HTTPServer((bind, port), H)
+        print(f"endgame-ai [{WIRING.get('instance',{}).get('slot',0)}] bind={bind} port={port}  nodes: {list(NODES.keys())}")
+        print_listen_urls(port)
         srv.serve_forever()

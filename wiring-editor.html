@@ -2,852 +2,482 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>endgame-ai — Wiring Editor + Replay</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xyflow/react@12/dist/style.min.css">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>endgame-ai — Wiring</title>
+<script src="https://cdn.jsdelivr.net/npm/dagre@0.8.5/dist/dagre.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/cytoscape@3.30.2/dist/cytoscape.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
-html, body, #root { width: 100vw; height: 100vh; overflow: hidden; }
-body { font-family: system-ui, -apple-system, sans-serif; background: #0a0a0f; color: #e0e0e0; }
-.app { display: grid; grid-template-columns: 1fr 340px; grid-template-rows: 1fr auto; height: 100%; width: 100%; min-height: 0; }
-.toolbar { grid-column: 1/-1; display: flex; align-items: center; gap: 8px; padding: 0 12px; background: #0f172a; border-bottom: 1px solid #1e293b; }
-.toolbar h1 { font-size: 13px; color: #06b6d4; white-space: nowrap; }
-.toolbar .sep { width: 1px; height: 20px; background: #1e293b; }
-.toolbar button { padding: 4px 10px; border: 1px solid #1e293b; border-radius: 4px; background: #0f172a; color: #cbd5e1; cursor: pointer; font-size: 11px; }
-.toolbar button:hover { border-color: #06b6d4; color: #06b6d4; }
-.toolbar button.active { background: #06b6d4; color: #000; border-color: #06b6d4; }
-.toolbar .spacer { flex: 1; }
-.toolbar .status { font-size: 10px; color: #64748b; }
-.canvas { position: relative; overflow: hidden; height: 100%; min-height: 0; }
-.sidebar { background: #0f172a; border-left: 1px solid #1e293b; overflow-y: auto; padding: 12px; font-size: 11px; }
-.sidebar h3 { font-size: 12px; color: #06b6d4; margin: 0 0 8px; }
-.sidebar pre { background: #1a1a2e; border: 1px solid #1e293b; border-radius: 4px; padding: 8px; font-size: 10px; overflow: auto; max-height: 200px; white-space: pre-wrap; word-break: break-all; color: #94a3b8; }
-.sidebar .section { margin-bottom: 12px; }
-.sidebar label { display: block; color: #64748b; margin: 4px 0 2px; font-size: 10px; text-transform: uppercase; }
-.timeline { grid-column: 1/-1; background: #0f172a; border-top: 1px solid #1e293b; display: flex; flex-direction: column; padding: 8px 12px; overflow: hidden; }
-.timeline h3 { font-size: 11px; color: #06b6d4; margin-bottom: 6px; }
-.timeline .controls { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-.timeline .controls button { padding: 3px 8px; border: 1px solid #1e293b; border-radius: 3px; background: #0f172a; color: #cbd5e1; cursor: pointer; font-size: 11px; }
-.timeline .controls button:hover { border-color: #06b6d4; }
-.timeline .controls span { font-size: 10px; color: #64748b; }
-.timeline .cycles { display: flex; gap: 3px; overflow-x: auto; flex: 1; align-items: stretch; }
-.timeline .cycle-bar { min-width: 28px; flex: 1; max-width: 60px; background: #1e293b; border-radius: 3px; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 9px; padding: 2px; transition: all 0.15s; position: relative; }
-.timeline .cycle-bar:hover { background: #334155; }
-.timeline .cycle-bar.active { background: #06b6d4; color: #000; }
-.timeline .cycle-bar .verdict { font-weight: 700; }
-
-/* Node styling */
-.wiring-node { background: #0f172a; border: 1.5px solid #1e293b; border-radius: 8px; min-width: 160px; font-size: 11px; box-shadow: 0 2px 8px rgba(0,0,0,0.3); transition: all 0.3s; }
-.wiring-node.selected { border-color: #06b6d4; box-shadow: 0 0 12px rgba(6,182,212,0.3); }
-.wiring-node.active-replay { border-color: #22c55e; box-shadow: 0 0 20px rgba(34,197,94,0.4); }
-.wiring-node .ntype { padding: 5px 10px; border-radius: 6px 6px 0 0; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #fff; }
-.wiring-node .nbody { padding: 6px 10px; }
-.wiring-node .nid { font-weight: 600; color: #e2e8f0; }
-.wiring-node .nlabel { color: #64748b; font-size: 10px; margin-top: 1px; }
-.wiring-node .ndata { color: #06b6d4; font-size: 9px; margin-top: 3px; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-.ntype-entry { background: #166534; }
-.ntype-planner { background: #4c1d95; }
-.ntype-scheduler { background: #1e3a5f; }
-.ntype-observe { background: #0c4a6e; }
-.ntype-act { background: #581c87; }
-.ntype-verify { background: #065f46; }
-.ntype-reflect { background: #92400e; }
-.ntype-satisfied { background: #166534; }
-.ntype-bus_post { background: #7c2d12; }
-.ntype-bus_check { background: #1e3a5f; }
-.ntype-moe_route { background: #701a75; }
-.ntype-unknown { background: #374151; }
-
-.react-flow__edge-text { fill: #06b6d4 !important; font-size: 9px !important; }
-.react-flow__edge-textbg { fill: #0a0a0f !important; fill-opacity: 0.9 !important; }
-.react-flow__panel { display: none !important; }
-.react-flow__minimap { background: #0f172a !important; }
-.react-flow__controls button { background: #0f172a !important; border-color: #1e293b !important; color: #cbd5e1 !important; }
-
-/* Modal */
-.modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 500; display: flex; align-items: center; justify-content: center; }
-.modal { background: #0f172a; border: 1px solid #1e293b; border-radius: 8px; padding: 16px; min-width: 300px; }
-.modal h3 { font-size: 13px; color: #06b6d4; margin-bottom: 12px; }
-.modal label { display: block; font-size: 10px; color: #64748b; margin: 6px 0 2px; }
-.modal input, .modal select { width: 100%; padding: 6px 8px; background: #1a1a2e; border: 1px solid #1e293b; border-radius: 4px; color: #e2e8f0; font-size: 11px; }
-.modal .btns { display: flex; gap: 6px; margin-top: 12px; }
-.modal .btns button { flex: 1; padding: 6px; border: 1px solid #1e293b; border-radius: 4px; background: #0f172a; color: #cbd5e1; cursor: pointer; font-size: 11px; }
-.modal .btns button.primary { background: #06b6d4; color: #000; border-color: #06b6d4; }
+html, body { height: 100%; overflow: hidden; }
+body { font-family: system-ui, sans-serif; background: #06080d; color: #d4d4d8; display: flex; flex-direction: column; }
+#toolbar { flex: 0 0 36px; display: flex; align-items: center; gap: 6px; padding: 0 10px; background: #0c1220; border-bottom: 1px solid #1a2744; font-size: 11px; }
+#toolbar h1 { color: #38bdf8; font-size: 12px; margin-right: 4px; }
+#toolbar button { padding: 3px 8px; border: 1px solid #1e3a5f; border-radius: 4px; background: #0c1220; color: #cbd5e1; cursor: pointer; }
+#toolbar button:hover { border-color: #38bdf8; color: #38bdf8; }
+#toolbar .spacer { flex: 1; }
+#status { font-size: 10px; color: #64748b; max-width: 45vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#main { flex: 1; display: grid; grid-template-columns: 1fr 320px; min-height: 0; }
+#cy { background: #06080d radial-gradient(circle at 1px 1px, #141c2e 1px, transparent 0) 0 0 / 18px 18px; }
+#sidebar { background: #0c1220; border-left: 1px solid #1a2744; overflow-y: auto; padding: 10px; font-size: 11px; }
+#sidebar h3 { color: #38bdf8; font-size: 12px; margin-bottom: 6px; }
+#sidebar label { display: block; color: #64748b; font-size: 9px; text-transform: uppercase; margin: 6px 0 2px; }
+#sidebar textarea { width: 100%; background: #111827; border: 1px solid #1e3a5f; border-radius: 4px; color: #e2e8f0; font-size: 9px; padding: 6px; font-family: ui-monospace, monospace; resize: vertical; }
+#sidebar pre { background: #111827; border: 1px solid #1e3a5f; border-radius: 4px; padding: 6px; font-size: 9px; max-height: 120px; overflow: auto; color: #94a3b8; white-space: pre-wrap; }
+#sidebar .btn { margin-top: 6px; width: 100%; padding: 5px; border-radius: 4px; cursor: pointer; font-size: 11px; background: #0c1220; border: 1px solid #1e3a5f; color: #38bdf8; }
+#sidebar .hint { color: #64748b; font-size: 10px; line-height: 1.4; }
+#sidebar .log { font-size: 9px; color: #94a3b8; max-height: 100px; overflow-y: auto; }
+#import-link { font-size: 10px; color: #475569; cursor: pointer; text-decoration: underline; margin-left: 6px; }
+#error-banner { display: none; background: #450a0a; border-bottom: 1px solid #ef4444; color: #fecaca; padding: 6px 10px; font-size: 11px; }
 </style>
-<script type="importmap">
-{
-  "imports": {
-    "react": "https://esm.sh/react@18.3.1",
-    "react/": "https://esm.sh/react@18.3.1/",
-    "react-dom": "https://esm.sh/react-dom@18.3.1?external=react",
-    "react-dom/": "https://esm.sh/react-dom@18.3.1&external=react/",
-    "@xyflow/react": "https://esm.sh/@xyflow/react@12?external=react,react-dom",
-    "@dagrejs/dagre": "https://esm.sh/@dagrejs/dagre@1",
-    "elkjs": "https://esm.sh/elkjs@0.9.3"
-  }
-}
-</script>
-<script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
 </head>
 <body>
-<!-- Native toolbar for UIA/accessibility (outside React) -->
-<nav id="native-toolbar" role="toolbar" aria-label="Controls" style="position:fixed;top:0;left:0;right:0;height:36px;z-index:9999;display:flex;align-items:center;gap:6px;padding:0 10px;background:#0f172a;border-bottom:1px solid #1e293b;font:11px system-ui;color:#cbd5e1;">
-  <span style="color:#06b6d4;font-weight:700;font-size:12px;">⚡ endgame-ai</span>
-  <button aria-label="Load Wiring" title="Load wiring.json from disk" onclick="document.getElementById('file-wiring').click()">📂 Wiring</button>
-  <button aria-label="Save Wiring" id="btn-save" title="Save prompts/topology to server (POST /wiring)">💾 Save</button>
-  <button aria-label="Layout" id="btn-layout" title="Re-layout diagram nodes">⟳ Layout</button>
-  <button aria-label="Run" id="btn-run" title="Run full loop with diagram highlight (needs goal)">🚀 Run</button>
-  <button aria-label="Step" id="btn-step" title="Advance one node — highlights active node on diagram">⏩ Step</button>
-  <button aria-label="Stop" id="btn-stop" title="Stop Run loop">⏹ Stop</button>
-  <button aria-label="Interrupt" id="btn-interrupt" title="Post new goal to bus (POST /interrupt)">⚡ Interrupt</button>
-  <button aria-label="Auto" id="btn-auto" title="Start autonomous server loop (POST /run)">🤖 Auto</button>
-  <span id="native-status" role="status" aria-live="polite" aria-label="Status" style="margin-left:auto;font-size:10px;color:#64748b;">Ready</span>
+<nav id="toolbar">
+  <h1>⚡ endgame-ai</h1>
+  <button id="btn-save" title="POST /wiring — save prompts + topology">💾 Save</button>
+  <button id="btn-layout" title="Re-run dagre layout">⟳ Layout</button>
+  <button id="btn-step" title="One node — highlights on diagram">⏩ Step</button>
+  <button id="btn-run" title="Full loop with highlight">🚀 Run</button>
+  <button id="btn-stop" title="Stop run loop">⏹ Stop</button>
+  <button id="btn-auto" title="POST /run — server autonomous loop">🤖 Auto</button>
+  <span id="import-link" title="Only if server offline">import file</span>
+  <span class="spacer"></span>
+  <span id="status">Connecting…</span>
 </nav>
-<style>#native-toolbar button{padding:3px 8px;border:1px solid #1e293b;border-radius:4px;background:#0f172a;color:#cbd5e1;cursor:pointer;font-size:11px}#native-toolbar button:hover{border-color:#06b6d4;color:#06b6d4}#native-toolbar button[title]{cursor:help}#root{margin-top:36px;height:calc(100vh - 36px);min-height:0}#react-error{position:fixed;top:40px;left:10px;right:10px;z-index:9998;background:#450a0a;border:1px solid #ef4444;color:#fecaca;padding:10px 12px;border-radius:6px;font:12px system-ui;display:none;white-space:pre-wrap}</style>
-<div id="react-error" role="alert"></div>
+<div id="error-banner" role="alert"></div>
+<div id="main">
+  <div id="cy"></div>
+  <div id="sidebar">
+    <div class="hint">Wiring loads from server (<code>GET /wiring</code>). Click a chip to edit its prompt.</div>
+    <div id="sidebar-body"></div>
+  </div>
+</div>
+<input type="file" id="file-wiring" accept=".json" hidden>
+
 <script>
-(function(){
-  const st = document.getElementById('native-status');
-  function setS(t){ st.textContent = t; }
-  function call(name, fallback){
-    if (window[name]) { window[name](); return true; }
-    if (fallback) fallback();
-    else setS('Editor loading…');
-    return false;
-  }
-  document.getElementById('btn-step').onclick = () => call('__endgameStep');
-  document.getElementById('btn-run').onclick = () => call('__endgameRun');
-  document.getElementById('btn-stop').onclick = () => call('__endgameStop', () => setS('Stopped'));
-  document.getElementById('btn-layout').onclick = () => call('__endgameLayout');
-  document.getElementById('btn-save').onclick = () => call('__endgameSave');
-  document.getElementById('btn-interrupt').onclick = () => {
-    const g = prompt('New goal:');
-    if (g && window.__endgameInterrupt) window.__endgameInterrupt(g);
-  };
-  document.getElementById('btn-auto').onclick = () => {
-    const g = prompt('Autonomous goal:');
-    if (g && window.__endgameAuto) window.__endgameAuto(g);
-  };
-  window.addEventListener('error', e => {
-    const el = document.getElementById('react-error');
-    el.style.display = 'block';
-    el.textContent = 'UI error: ' + (e.message || e) + '\nCheck DevTools Console for full stack.';
-  });
-  window.addEventListener('unhandledrejection', e => {
-    const el = document.getElementById('react-error');
-    el.style.display = 'block';
-    el.textContent = 'UI promise error: ' + (e.reason?.message || e.reason);
-  });
-})();
-</script>
-<div id="root"></div>
-<input type="file" id="file-wiring" accept=".json" style="display:none">
-<input type="file" id="file-log" accept=".txt,.log" style="display:none">
-</body>
-</html>
+cytoscape.use(cytoscapeDagre);
 
-<script type="text/babel" data-type="module">
-import React, { useState, useCallback, useRef, useMemo, useEffect } from 'react';
-import { createRoot } from 'react-dom/client';
-import {
-  ReactFlow, Controls, Background, MiniMap,
-  useNodesState, useEdgesState, addEdge,
-  Handle, Position, MarkerType, useReactFlow,
-  ReactFlowProvider
-} from '@xyflow/react';
-import dagre from '@dagrejs/dagre';
+const TYPE_COLORS = {
+  entry: '#166534', planner: '#5b21b6', scheduler: '#1e40af', observe: '#0e7490',
+  act: '#7e22ce', verify: '#047857', reflect: '#b45309', satisfied: '#15803d',
+  bus_check: '#1e3a5f', bus_post: '#9a3412', moe_route: '#86198f', self_modify: '#be185d'
+};
 
-// ============ LOG PARSER ============
-function parseLog(text) {
-  const cycles = [];
-  const lines = text.split('\n');
-  let current = null;
-  let section = null;
-  let buffer = [];
-  function flush() {
-    if (!current || !section) return;
-    const txt = buffer.join('\n').trim();
-    if (section === 'sys') current.request.system = txt;
-    else if (section === 'usr') current.request.user = txt;
-    else if (section === 'content') current.response.content = txt;
-    else if (section === 'reasoning') current.response.reasoning = txt;
-    buffer = []; section = null;
+let SERVER = location.origin;
+let wiring = null;
+let cy = null;
+let selectedId = null;
+let lastEditId = null;
+let liveNode = null;
+let liveState = null;
+let liveRunning = false;
+let liveStopped = false;
+let baseEdit = '';
+let roleEdit = '';
+let blocksEdit = '[]';
+let liveLog = [];
+
+const $ = id => document.getElementById(id);
+const setStatus = t => { $('status').textContent = t; };
+const showError = t => { const e = $('error-banner'); e.style.display = 'block'; e.textContent = t; };
+
+async function discoverServer() {
+  if (location.protocol.startsWith('http') && location.host) {
+    try {
+      const r = await fetch(location.origin + '/health');
+      if ((await r.json()).ok) return location.origin;
+    } catch (_) {}
   }
-  for (const line of lines) {
-    const rm = line.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d+) REQUEST$/);
-    if (rm) { flush(); if (current) cycles.push(current); current = { timestamp: rm[1], request: {system:'',user:''}, response: {content:'',reasoning:''}, stats: {}, nodes_hit: [] }; section='sys'; buffer=[]; continue; }
-    const rr = line.match(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d+) RESPONSE \[(.+?)\]$/);
-    if (rr) { flush(); if(current){ current.response.timestamp=rr[1]; current.stats.duration=rr[2]; } section='content'; buffer=[]; continue; }
-    if (section==='sys' && line==='USER:') { flush(); section='usr'; buffer=[]; continue; }
-    if (section==='sys' && line==='SYSTEM:') { buffer=[]; continue; }
-    if (line==='CONTENT:' && current) { flush(); section='content'; buffer=[]; continue; }
-    if (line==='REASONING:' && current) { flush(); section='reasoning'; buffer=[]; continue; }
-    const sm = line.match(/^\d{4}-.+ \[(\w+)\] prompt=(\d+) ctx=(\d+) .+ response=(\d+) reasoning=(\d+)$/);
-    if (sm && current) {
-      flush();
-      current.stats = { ...current.stats, circuit: sm[1], prompt: +sm[2], ctx: +sm[3], resp: +sm[4], reas: +sm[5] };
-      try {
-        const j = JSON.parse(current.response.content);
-        current.stats.conclusion = j?.data?.conclusion || '?';
-        current.stats.actions = j?.data?.actions || [];
-      } catch(e) { current.stats.conclusion = 'ERR'; }
-      // Derive which nodes were hit this cycle
-      current.nodes_hit = ['response_limit_gate','route_slot','observe_screen','build_request','llm_call','parse_pipeline'];
-      if (current.stats.conclusion === 'EXECUTE') current.nodes_hit.push('desktop_exec','audit_log');
-      else if (current.stats.conclusion === 'DONE') current.nodes_hit.push('idle');
-      else current.nodes_hit.push('feedback_append');
-      continue;
-    }
-    if (section) buffer.push(line);
+  const host = location.hostname || '127.0.0.1';
+  for (const p of [9078, 9077, 9079, 9080]) {
+    try {
+      const url = `http://${host}:${p}`;
+      const r = await fetch(url + '/health');
+      if ((await r.json()).ok) return url;
+    } catch (_) {}
   }
-  flush(); if (current) cycles.push(current);
-  return cycles;
+  for (const p of [9078, 9077]) {
+    try {
+      const url = `http://127.0.0.1:${p}`;
+      const r = await fetch(url + '/health');
+      if ((await r.json()).ok) return url;
+    } catch (_) {}
+  }
+  return null;
 }
 
-// ============ LAYOUT (ELK-style via dagre) ============
-function layoutGraph(nodes, edges, direction = 'LR') {
-  const g = new dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}));
-  g.setGraph({ rankdir: direction, nodesep: 50, ranksep: 100, edgesep: 20 });
-  nodes.forEach(n => g.setNode(n.id, { width: 190, height: 72 }));
-  edges.forEach(e => g.setEdge(e.source, e.target));
-  dagre.layout(g);
-  return nodes.map(n => { const p = g.node(n.id); return { ...n, position: { x: p.x - 95, y: p.y - 36 } }; });
-}
-
-// ============ WIRING ADAPTER ============
-function wiringToFlow(wiring) {
-  const t = wiring.topology || {};
+function wiringToElements(w) {
+  const t = w.topology || {};
   const nodes = (t.nodes || []).map(n => ({
-    id: n.id, type: 'wiringNode',
-    data: { ...n },
-    position: { x: 0, y: 0 }
+    data: {
+      id: n.id,
+      label: n.id,
+      sub: n.type,
+      type: n.type,
+      nodeLabel: n.label || '',
+      raw: n
+    }
   }));
   const edges = (t.edges || []).map((e, i) => ({
-    id: `e${i}`, source: e.from, target: e.to, label: e.on || '',
-    markerEnd: { type: MarkerType.ArrowClosed, color: '#06b6d4', width: 16, height: 16 },
-    style: { stroke: '#06b6d4', strokeWidth: 1.5 },
-    animated: (e.on||'').includes('actions_present'),
-    data: { on: e.on }
+    data: {
+      id: `e${i}`,
+      source: e.from,
+      target: e.to,
+      signal: e.on || ''
+    }
   }));
-  const laid = layoutGraph(nodes, edges, 'LR');
-  return { nodes: laid, edges };
+  return { nodes, edges };
 }
 
-function flowToWiring(nodes, edges, original) {
-  const tNodes = nodes.map(n => {
-    const { id, type, label, ...extra } = n.data;
-    const base = { id, type, label };
-    Object.keys(extra).forEach(k => { if (k !== 'replay') base[k] = extra[k]; });
-    return base;
+function initCy() {
+  cy = cytoscape({
+    container: $('cy'),
+    elements: [],
+    style: [
+      {
+        selector: 'node',
+        style: {
+          'shape': 'round-rectangle',
+          'background-color': '#0f172a',
+          'background-opacity': 1,
+          'border-width': 2,
+          'border-color': '#334155',
+          'width': 130,
+          'height': 44,
+          'label': 'data(label)',
+          'text-valign': 'center',
+          'text-halign': 'center',
+          'color': '#f1f5f9',
+          'font-size': 11,
+          'font-weight': 600,
+          'text-wrap': 'none',
+          'overlay-opacity': 0
+        }
+      },
+      {
+        selector: 'node',
+        style: {
+          'border-color': ele => TYPE_COLORS[ele.data('type')] || '#475569'
+        }
+      },
+      {
+        selector: 'edge',
+        style: {
+          'width': 1.5,
+          'line-color': '#0e7490',
+          'target-arrow-color': '#22d3ee',
+          'target-arrow-shape': 'triangle',
+          'arrow-scale': 0.7,
+          'curve-style': 'bezier',
+          'control-point-step-size': 40,
+          'label': 'data(signal)',
+          'font-size': 8,
+          'color': '#64748b',
+          'text-background-color': '#06080d',
+          'text-background-opacity': 0.85,
+          'text-background-padding': 2
+        }
+      },
+      { selector: 'node.active', style: { 'border-color': '#4ade80', 'border-width': 3 } },
+      { selector: 'node.selected', style: { 'border-color': '#fbbf24', 'border-width': 3 } },
+      { selector: '.dim', style: { 'opacity': 0.25 } }
+    ],
+    layout: { name: 'dagre', rankDir: 'LR', nodeSep: 40, rankSep: 70, edgeSep: 10 },
+    minZoom: 0.2,
+    maxZoom: 2.5,
+    wheelSensitivity: 0.2
   });
-  const tEdges = edges.map(e => ({ from: e.source, to: e.target, on: e.data?.on || e.label || '' }));
-  return { ...original, topology: { ...original.topology, nodes: tNodes, edges: tEdges } };
+
+  cy.on('tap', 'node', evt => selectNode(evt.target.id()));
+  cy.on('tap', evt => { if (evt.target === cy) selectNode(null); });
 }
 
-// ============ CUSTOM NODE ============
-function WiringNode({ data, selected }) {
-  const cls = `ntype-${data.type || 'unknown'}`;
-  const isActive = data.replay;
-  return (
-    <div className={`wiring-node${selected ? ' selected' : ''}${isActive ? ' active-replay' : ''}`}>
-      <Handle type="target" position={Position.Left} />
-      <div className={`ntype ${cls}`}>{data.type}</div>
-      <div className="nbody">
-        <div className="nid">{data.id}</div>
-        <div className="nlabel">{data.label || ''}</div>
-        {data.replayData && <div className="ndata" title={data.replayData}>{data.replayData}</div>}
-      </div>
-      <Handle type="source" position={Position.Right} />
-    </div>
-  );
-}
-const nodeTypes = { wiringNode: WiringNode };
-
-// ============ MODAL ============
-function Modal({ title, children, onClose }) {
-  return (<div className="modal-bg" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}><h3>{title}</h3>{children}</div></div>);
+function renderGraph(w) {
+  if (!cy) initCy();
+  const { nodes, edges } = wiringToElements(w);
+  cy.elements().remove();
+  cy.add([...nodes, ...edges]);
+  doLayout();
 }
 
-// ============ MAIN APP ============
-function App() {
-  const [SERVER, setServerUrl] = useState('http://127.0.0.1:9078');
-  const [nodes, setNodes, onNodesChange] = useNodesState([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
-  const [wiring, setWiring] = useState(null);
-  const [logCycles, setLogCycles] = useState([]);
-  const [cycleIdx, setCycleIdx] = useState(-1);
-  const [playing, setPlaying] = useState(false);
-  const [selectedNode, setSelectedNode] = useState(null);
-  const [modal, setModal] = useState(null);
-  const [status, _setStatus] = useState('Connecting…');
-  const setStatus = useCallback((t) => {
-    _setStatus(t);
-    const el = document.getElementById('native-status');
-    if (el) el.textContent = t;
-  }, []);
-  const [promptEdit, setPromptEdit] = useState(null);
-  const [baseEdit, setBaseEdit] = useState('');
-  const { fitView } = useReactFlow();
-  const playRef = useRef(null);
+function doLayout() {
+  if (!cy) return;
+  cy.layout({ name: 'dagre', rankDir: 'LR', nodeSep: 40, rankSep: 70, animate: false }).run();
+  cy.fit(40);
+}
 
-  useEffect(() => {
-    (async () => {
-      for (const p of [9078, 9077, 9079, 9080]) {
-        try {
-          const r = await fetch(`http://127.0.0.1:${p}/health`);
-          const h = await r.json();
-          if (h.ok) { setServerUrl(`http://127.0.0.1:${p}`); return; }
-        } catch (e) {}
-      }
-    })();
-  }, []);
+function highlightNode(id) {
+  if (!cy) return;
+  cy.nodes().removeClass('active dim');
+  if (!id) return;
+  cy.nodes().addClass('dim');
+  cy.getElementById(id).removeClass('dim').addClass('active');
+}
 
-  // Auto-connect to server on mount
-  useEffect(() => {
-    fetch(`${SERVER}/health`).then(r => r.json()).then(h => {
-      setStatus(`Server :${SERVER.split(':').pop()} — ${h.nodes.length} handlers`);
-      return fetch(`${SERVER}/wiring`).then(r => r.json());
-    }).then(w => {
-      setWiring(w);
-      const { nodes: n, edges: e2 } = wiringToFlow(w);
-      setNodes(n); setEdges(e2);
-      setStatus(`Diagram: ${n.length} nodes, ${e2.length} edges — click Step to walk graph`);
-      setTimeout(() => fitView({ padding: 0.15 }), 200);
-    }).catch(() => setStatus('Server offline — use 📂 Wiring to load manually'));
-  }, [SERVER, setStatus, fitView, setNodes, setEdges]);
+function selectNode(id) {
+  selectedId = id;
+  if (id !== lastEditId) lastEditId = null;
+  if (!cy) return;
+  cy.nodes().removeClass('selected');
+  if (id) cy.getElementById(id).addClass('selected');
+  renderSidebar();
+}
 
-  useEffect(() => {
-    if (wiring?.prompts?.base != null) setBaseEdit(wiring.prompts.base);
-  }, [wiring?.prompts?.base]);
+function topoNode(id) {
+  return (wiring?.topology?.nodes || []).find(n => n.id === id);
+}
 
-  useEffect(() => {
-    if (!selectedNode || !wiring) { setPromptEdit(null); return; }
-    const topoNode = (wiring.topology?.nodes || []).find(n => n.id === selectedNode.data.id);
-    const pr = topoNode?.prompt || selectedNode.data.prompt;
-    if (!pr) { setPromptEdit(null); return; }
-    const circuit = pr.role || topoNode?.circuit || selectedNode.data.type;
-    setPromptEdit({
-      nodeId: selectedNode.data.id,
-      circuit,
-      roleText: wiring.prompts?.roles?.[circuit] || '',
-      blocksJson: JSON.stringify(pr.user?.blocks || [], null, 2),
-    });
-  }, [selectedNode, wiring]);
+function circuitFor(n) {
+  if (!n) return null;
+  const pr = n.prompt;
+  if (!pr) return null;
+  return pr.role || n.circuit || n.type;
+}
 
-  // Load wiring
+function renderSidebar() {
+  const body = $('sidebar-body');
+  if (!wiring) { body.innerHTML = '<p class="hint">No wiring loaded.</p>'; return; }
 
-  // SSE: observe autonomous --run mode live (server emits: node, result, stop)
-  useEffect(() => {
-    let es;
-    try { es = new EventSource(`${SERVER}/events`); } catch(e) { return; }
-    es.addEventListener("node", e => {
+  let html = `
+    <div style="margin-top:8px">
+      <h3>Global base</h3>
+      <label>prompts.base</label>
+      <textarea id="ta-base" rows="4">${esc(baseEdit)}</textarea>
+    </div>`;
+
+  if (selectedId) {
+    if (selectedId !== lastEditId) { loadNodeEdits(); lastEditId = selectedId; }
+    const n = topoNode(selectedId);
+    const c = circuitFor(n);
+    html += `<div style="margin-top:10px"><h3>${esc(selectedId)}</h3>
+      <label>type</label><span>${esc(n?.type || '?')}</span>
+      <label>label</label><span>${esc(n?.label || '')}</span>`;
+    if (c && n?.prompt) {
+      html += `
+        <label>role (${esc(c)})</label>
+        <textarea id="ta-role" rows="6">${esc(roleEdit)}</textarea>
+        <label>user.blocks (json)</label>
+        <textarea id="ta-blocks" rows="5">${esc(blocksEdit)}</textarea>
+        <button class="btn" id="btn-apply">Apply prompt (then Save)</button>`;
+    } else {
+      html += `<p class="hint">No LLM prompt on this node.</p>`;
+    }
+    html += `<button class="btn" id="btn-save-side">💾 Save to server</button></div>`;
+  } else {
+    html += `<p class="hint" style="margin-top:10px">Click a chip on the diagram.</p>`;
+  }
+
+  if (liveLog.length) {
+    html += `<div style="margin-top:10px"><label>Step log</label><div class="log">${liveLog.slice(-8).map(l =>
+      `${esc(l.ts)} ${esc(l.node)} → [${esc((l.signals||[]).join(','))}]`
+    ).join('<br>')}</div></div>`;
+  }
+
+  body.innerHTML = html;
+  const tb = $('ta-base'); if (tb) tb.oninput = () => { baseEdit = tb.value; };
+  const tr = $('ta-role'); if (tr) tr.oninput = () => { roleEdit = tr.value; };
+  const tbb = $('ta-blocks'); if (tbb) tbb.oninput = () => { blocksEdit = tbb.value; };
+  $('btn-apply')?.addEventListener('click', applyPromptEdits);
+  $('btn-save-side')?.addEventListener('click', () => saveWiring());
+}
+
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function loadNodeEdits() {
+  const n = topoNode(selectedId);
+  const c = circuitFor(n);
+  roleEdit = c ? (wiring.prompts?.roles?.[c] || '') : '';
+  blocksEdit = JSON.stringify(n?.prompt?.user?.blocks || [], null, 2);
+}
+
+function applyPromptEdits() {
+  const n = topoNode(selectedId);
+  const c = circuitFor(n);
+  if (!n?.prompt || !c) return;
+  let blocks;
+  try { blocks = JSON.parse(blocksEdit); } catch (e) { alert('Invalid blocks JSON'); return; }
+  if (!wiring.prompts) wiring.prompts = { base: '', roles: {} };
+  if (!wiring.prompts.roles) wiring.prompts.roles = {};
+  wiring.prompts.base = baseEdit;
+  wiring.prompts.roles[c] = roleEdit;
+  n.prompt.user = { blocks };
+  setStatus(`Applied ${selectedId} — click Save`);
+}
+
+async function loadWiringFromServer() {
+  const r = await fetch(SERVER + '/wiring');
+  wiring = await r.json();
+  baseEdit = wiring.prompts?.base || '';
+  renderGraph(wiring);
+  if (selectedId) loadNodeEdits();
+  renderSidebar();
+  const n = wiring.topology?.nodes?.length || 0;
+  const e = wiring.topology?.edges?.length || 0;
+  setStatus(`Diagram: ${n} chips, ${e} traces — Step to walk`);
+}
+
+async function saveWiring() {
+  if (!wiring) return;
+  wiring.prompts = wiring.prompts || {};
+  wiring.prompts.base = baseEdit;
+  const r = await fetch(SERVER + '/wiring', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(wiring)
+  });
+  const d = await r.json();
+  if (!r.ok || d.error) { alert(d.error || 'Save failed'); return; }
+  setStatus(`Saved (${d.nodes} nodes)`);
+}
+
+function freshState(goal) {
+  return {
+    goal, step: 0, retries: 0, history: [], reasoning: {}, reasoning_chain: [],
+    planner_retries: 0, replan_count: 0, last_error: '', bus_last_check: Date.now() / 1000,
+    no_desktop: false
+  };
+}
+
+function getNodeType(id) {
+  return topoNode(id)?.type || 'unknown';
+}
+
+function followEdges(fromId, signals) {
+  const out = [];
+  for (const e of wiring.topology.edges || []) {
+    if (e.from !== fromId) continue;
+    const parts = (e.on || '').split('|');
+    if (parts.some(p => signals.includes(p)) || e.on === '*') out.push(e.to);
+  }
+  return out;
+}
+
+async function callNode(nodeId, state) {
+  const type = getNodeType(nodeId);
+  const res = await fetch(`${SERVER}/node/${type}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ state, config: {} })
+  });
+  return res.json();
+}
+
+function ensureGoal() {
+  if (liveState) return true;
+  const g = prompt('Goal:');
+  if (!g) return false;
+  liveState = freshState(g);
+  liveNode = wiring.topology.cycle_start || 'goal_inbox';
+  liveLog = [];
+  highlightNode(liveNode);
+  renderSidebar();
+  return true;
+}
+
+async function advanceOne() {
+  if (!liveNode) return false;
+  const cur = liveNode;
+  highlightNode(cur);
+  setStatus(`⏳ ${cur}…`);
+  let result;
+  try { result = await callNode(cur, liveState); }
+  catch (e) { setStatus('Error: ' + e.message); return false; }
+  liveState = { ...liveState, ...(result.state_patch || {}) };
+  const sig = result.signals || [];
+  liveLog.push({ node: cur, signals: sig, ts: new Date().toLocaleTimeString() });
+  liveNode = followEdges(cur, sig)[0] || null;
+  setStatus(`✓ ${cur} → [${sig.join(',')}]${liveNode ? ' → ' + liveNode : ''}`);
+  highlightNode(liveNode);
+  renderSidebar();
+  return !!(liveNode && !sig.includes('idle') && !liveState.satisfied);
+}
+
+async function stepOnce() {
+  if (!wiring) return;
+  if (!ensureGoal()) return;
+  if (!liveNode) { setStatus('Finished'); return; }
+  await advanceOne();
+}
+
+async function runLoop() {
+  if (!wiring) return;
+  if (!ensureGoal()) return;
+  liveRunning = true;
+  liveStopped = false;
+  while (liveRunning && !liveStopped && liveNode) {
+    const cont = await advanceOne();
+    if (!cont) break;
+    await new Promise(r => setTimeout(r, 300));
+  }
+  liveRunning = false;
+  setStatus('Run finished');
+}
+
+function hookSSE() {
+  try {
+    const es = new EventSource(SERVER + '/events');
+    es.addEventListener('node', e => {
       const d = JSON.parse(e.data);
-      setNodes(ns => ns.map(n => ({...n, data: {...n.data, replay: n.id === d.id, replayData: n.id === d.id ? `● #${d.c}` : null}})));
+      highlightNode(d.id);
       setStatus(`[auto] #${d.c} ${d.id}`);
     });
-    es.addEventListener("result", e => {
+    es.addEventListener('stop', e => {
       const d = JSON.parse(e.data);
-      setLiveLog(log => [...log.slice(-50), {node: d.id, signals: d.s, data: {}, ts: new Date().toLocaleTimeString()}]);
-    });
-    es.addEventListener("stop", e => {
-      const d = JSON.parse(e.data);
-      setStatus(`[auto] stopped — satisfied=${d.outcome}`);
-      setNodes(ns => ns.map(n => ({...n, data: {...n.data, replay: false, replayData: null}})));
+      highlightNode(null);
+      setStatus(`[auto] done satisfied=${d.outcome}`);
     });
     es.onerror = () => {};
-    return () => es.close();
-  }, [SERVER, setStatus]);
-
-
-  const loadWiring = () => {
-    const el = document.getElementById('file-wiring');
-    el.onchange = e => {
-      const f = e.target.files[0]; if (!f) return;
-      const r = new FileReader();
-      r.onload = ev => {
-        try {
-          const w = JSON.parse(ev.target.result);
-          setWiring(w);
-          const { nodes: n, edges: e2 } = wiringToFlow(w);
-          setNodes(n); setEdges(e2);
-          setStatus(`Loaded: ${n.length} nodes, ${e2.length} edges`);
-          setTimeout(() => fitView({ padding: 0.15 }), 100);
-        } catch(err) { alert('JSON error: ' + err.message); }
-      };
-      r.readAsText(f); el.value = '';
-    };
-    el.click();
-  };
-
-  // Load log
-  const loadLog = () => {
-    const el = document.getElementById('file-log');
-    el.onchange = e => {
-      const f = e.target.files[0]; if (!f) return;
-      const r = new FileReader();
-      r.onload = ev => {
-        const cycles = parseLog(ev.target.result);
-        setLogCycles(cycles);
-        setCycleIdx(cycles.length > 0 ? 0 : -1);
-        setStatus(`Log: ${cycles.length} cycles loaded`);
-      };
-      r.readAsText(f); el.value = '';
-    };
-    el.click();
-  };
-
-  const buildWiring = () => {
-    const base = wiring || { schema:'endgame-topology/v1', topology:{ cycle_start:'goal_inbox', nodes:[], edges:[] } };
-    const out = flowToWiring(nodes, edges, base);
-    if (baseEdit !== '' && out.prompts) out.prompts.base = baseEdit;
-    return out;
-  };
-
-  const saveWiring = async (downloadAlso = false) => {
-    const out = buildWiring();
-    try {
-      const res = await fetch(`${SERVER}/wiring`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(out),
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || res.statusText);
-      setWiring(out);
-      setStatus(`Saved to server :${SERVER.split(':').pop()} (${data.nodes} nodes)`);
-    } catch (e) {
-      setStatus('Server save failed — downloading file');
-      downloadAlso = true;
-    }
-    if (downloadAlso) {
-      const blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
-      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'wiring.json'; a.click();
-    }
-  };
-
-  const applyPromptEdits = () => {
-    if (!promptEdit || !wiring) return;
-    let blocks;
-    try { blocks = JSON.parse(promptEdit.blocksJson); }
-    catch (e) { alert('Invalid blocks JSON: ' + e.message); return; }
-    const out = JSON.parse(JSON.stringify(wiring));
-    if (!out.prompts) out.prompts = { base: '', roles: {} };
-    if (!out.prompts.roles) out.prompts.roles = {};
-    out.prompts.roles[promptEdit.circuit] = promptEdit.roleText;
-    if (baseEdit !== '') out.prompts.base = baseEdit;
-    const node = out.topology.nodes.find(n => n.id === promptEdit.nodeId);
-    if (node?.prompt) node.prompt.user = { blocks };
-    setWiring(out);
-    setNodes(ns => ns.map(n => n.id === promptEdit.nodeId
-      ? { ...n, data: { ...n.data, prompt: node?.prompt } }
-      : n));
-    setStatus(`Applied ${promptEdit.nodeId} prompt — Save to persist`);
-  };
-
-  useEffect(() => {
-    window.__endgameSave = () => saveWiring(false);
-    window.__endgameSaveDownload = () => saveWiring(true);
-    window.__endgameLayout = doLayout;
-    window.__endgameStep = stepManual;
-    window.__endgameRun = runLive;
-    window.__endgameStop = stopLive;
-    window.__endgameInterrupt = (g) => fetch(`${SERVER}/interrupt`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({goal:g})});
-    window.__endgameAuto = (g) => { fetch(`${SERVER}/run`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({goal:g})}); setStatus('Auto: ' + g); };
-    return () => {
-      ['__endgameSave','__endgameSaveDownload','__endgameLayout','__endgameStep','__endgameRun','__endgameStop','__endgameInterrupt','__endgameAuto'].forEach(k => delete window[k]);
-    };
-  });
-
-  // Re-layout
-  const doLayout = () => {
-    const laid = layoutGraph(nodes, edges, 'LR');
-    setNodes(laid);
-    setTimeout(() => fitView({ padding: 0.15 }), 50);
-  };
-
-  // Connect
-  const onConnect = useCallback(params => {
-    const signal = prompt('Signal name (on):');
-    if (!signal) return;
-    const e = { ...params, id: `e${Date.now()}`, label: signal, data: { on: signal }, markerEnd: { type: MarkerType.ArrowClosed, color: '#06b6d4', width: 16, height: 16 }, style: { stroke: '#06b6d4', strokeWidth: 1.5 } };
-    setEdges(es => addEdge(e, es));
-  }, []);
-
-  // Add node
-  const addNode = () => {
-    const id = prompt('Node ID:'); if (!id) return;
-    const type = prompt('Type (gate, llm, feedback, ...):') || 'unknown';
-    const label = prompt('Label:') || '';
-    setNodes(ns => [...ns, { id, type: 'wiringNode', data: { id, type, label }, position: { x: 300, y: 200 } }]);
-  };
-
-  // Replay: highlight nodes for current cycle
-  useEffect(() => {
-    if (cycleIdx < 0 || !logCycles.length) {
-      setNodes(ns => ns.map(n => ({ ...n, data: { ...n.data, replay: false, replayData: null } })));
-      return;
-    }
-    const cycle = logCycles[cycleIdx];
-    const hitSet = new Set(cycle.nodes_hit || []);
-    setNodes(ns => ns.map(n => {
-      const hit = hitSet.has(n.id);
-      let rd = null;
-      if (hit && n.id === 'llm_call') rd = cycle.stats.duration || '';
-      if (hit && n.id === 'parse_pipeline') rd = cycle.stats.conclusion || '';
-      if (hit && n.id === 'desktop_exec') rd = (cycle.stats.actions||[]).map(a=>`${a.verb} ${a.target}`).join(', ');
-      if (hit && n.id === 'observe_screen') {
-        const m = (cycle.request.user||'').match(/SCREEN: (.{0,60})/);
-        rd = m ? m[1] + '…' : '';
-      }
-      return { ...n, data: { ...n.data, replay: hit, replayData: rd } };
-    }));
-  }, [cycleIdx, logCycles]);
-
-  // Auto-play
-  useEffect(() => {
-    if (!playing) { if (playRef.current) clearInterval(playRef.current); return; }
-    playRef.current = setInterval(() => {
-      setCycleIdx(i => {
-        if (i >= logCycles.length - 1) { setPlaying(false); return i; }
-        return i + 1;
-      });
-    }, 1500);
-    return () => clearInterval(playRef.current);
-  }, [playing, logCycles.length]);
-
-  // Node click → sidebar
-  const onNodeClick = useCallback((_, node) => setSelectedNode(node), []);
-
-  const circuitForNode = (nodeData) => {
-    if (!wiring || !nodeData) return null;
-    const topoNode = (wiring.topology?.nodes || []).find(n => n.id === nodeData.id || n.type === nodeData.type);
-    const prompt = topoNode?.prompt || nodeData.prompt;
-    if (!prompt) return null;
-    const circuit = prompt.role || topoNode?.circuit || nodeData.type;
-    const roles = wiring.prompts?.roles || {};
-    const useBase = prompt.extends !== 'none';
-    const base = useBase ? (wiring.prompts?.base || '') : '';
-    const roleText = prompt.system || roles[circuit] || '';
-    if (!roleText && !base) return null;
-    const blocks = prompt.user?.blocks || [];
-    return {
-      circuit,
-      text: [base, roleText].filter(Boolean).join('\n\n'),
-      blocks,
-    };
-  };
-
-  // ============ LIVE EXECUTION ENGINE ============
-  const [liveState, setLiveState] = useState({});
-  const [liveNode, setLiveNode] = useState(null);
-  const [liveLog, setLiveLog] = useState([]);
-  const [liveRunning, setLiveRunning] = useState(false);
-  const [liveMode, setLiveMode] = useState(false); // false=replay, true=live
-  const liveStopped = useRef(false);
-
-  // Follow edges: given signals from current node, find next targets
-  const followEdges = (fromId, signals, wiringObj) => {
-    const tEdges = wiringObj?.topology?.edges || [];
-    const targets = [];
-    for (const edge of tEdges) {
-      if (edge.from !== fromId) continue;
-      const parts = (edge.on || '').split('|');
-      if (parts.some(p => signals.includes(p)) || edge.on === '*') {
-        targets.push(edge.to);
-      }
-    }
-    return targets;
-  };
-
-  // Get node type from id
-  const getNodeType = (nodeId, wiringObj) => {
-    const n = (wiringObj?.topology?.nodes || []).find(n => n.id === nodeId);
-    return n?.type || 'unknown';
-  };
-
-  // Highlight active node
-  const highlightNode = (nodeId) => {
-    setNodes(ns => ns.map(n => ({
-      ...n, data: { ...n.data, replay: n.id === nodeId, replayData: n.id === nodeId ? '● ACTIVE' : null }
-    })));
-    setLiveNode(nodeId);
-  };
-
-  // Run continuously
-  const runLive = async () => {
-    if (!wiring) { alert('Load wiring.json first'); return; }
-    const goal = prompt('GOAL:');
-    if (!goal) return;
-    const startNode = wiring.topology.cycle_start || 'goal_inbox';
-    const initState = {
-      goal, step: 0, retries: 0, history: [], reasoning: {}, reasoning_chain: [],
-      planner_retries: 0, replan_count: 0, last_error: '', no_desktop: false, bus_last_check: Date.now()/1000
-    };
-    setLiveState(initState);
-    setLiveNode(startNode);
-    setLiveLog([]);
-    setLiveMode(true);
-    liveStopped.current = false;
-    setStatus('Live: running...');
-    highlightNode(startNode);
-    // Run loop
-    let state = initState;
-    let node = startNode;
-    while (node && !liveStopped.current) {
-      highlightNode(node);
-      await new Promise(r => setTimeout(r, 400));
-      const nodeType = getNodeType(node, wiring);
-      let result;
-      try {
-        const res = await fetch(`${SERVER}/node/${nodeType}`, {
-          method: 'POST', headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({ state, config: {} })
-        });
-        result = await res.json();
-      } catch(e) { setStatus(`Error: ${e.message}`); break; }
-      const entry = { node, type: nodeType, signals: result.signals, data: result.data, ts: new Date().toLocaleTimeString() };
-      setLiveLog(log => [...log, entry]);
-      state = { ...state, ...result.state_patch };
-      setLiveState(state);
-      const targets = followEdges(node, result.signals || [], wiring);
-      // Fire fan-out secondaries
-      for (let i = 1; i < targets.length; i++) {
-        try { await fetch(`${SERVER}/node/${getNodeType(targets[i], wiring)}`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({state,config:{}}) }); } catch(e){}
-        setLiveLog(log => [...log, { node: targets[i], type: getNodeType(targets[i], wiring), signals:['fan-out'], data:{}, ts: new Date().toLocaleTimeString() }]);
-      }
-      node = targets[0] || null;
-      if (!node || result.signals?.includes('idle') || result.signals?.includes('limit_reached')) {
-        highlightNode(null);
-        setStatus(`Live: finished (${result.signals?.join(',')})`);
-        break;
-      }
-    }
-    setLiveRunning(false);
-    setLiveNode(null);
-  };
-
-  // Step loop effect - REMOVED (loop is in runLive now)
-
-  // Manual step
-  const liveStateRef = useRef(liveState);
-  useEffect(() => { liveStateRef.current = liveState; }, [liveState]);
-
-  const stepManual = async () => {
-    if (!liveNode && wiring) {
-      const goal = prompt('GOAL:');
-      if (!goal) return;
-      const startNode = wiring.topology.cycle_start || 'goal_inbox';
-      const initState = { goal, step: 0, retries: 0, history: [], no_desktop: false, bus_last_check: 0 };
-      setLiveState(initState);
-      liveStateRef.current = initState;
-      setLiveNode(startNode);
-      setLiveLog([]);
-      setLiveMode(true);
-      highlightNode(startNode);
-      setStatus('Live: step mode — click Step to advance');
-      return;
-    }
-    if (!liveNode) return;
-    const state = liveStateRef.current;
-    const nodeType = getNodeType(liveNode, wiring);
-    let result;
-    try {
-      const res = await fetch(`${SERVER}/node/${nodeType}`, {
-        method: 'POST', headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ state, config: {} })
-      });
-      result = await res.json();
-    } catch(e) { setStatus(`Error: ${e.message}`); return; }
-    const entry = { node: liveNode, type: nodeType, signals: result.signals, data: result.data, ts: new Date().toLocaleTimeString() };
-    setLiveLog(log => [...log, entry]);
-    const newState = { ...state, ...result.state_patch };
-    setLiveState(newState);
-    liveStateRef.current = newState;
-    const targets = followEdges(liveNode, result.signals || [], wiring);
-    for (let i = 1; i < targets.length; i++) {
-      try { await fetch(`${SERVER}/node/${getNodeType(targets[i], wiring)}`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({state:newState,config:{}}) }); } catch(e){}
-    }
-    const next = targets[0] || null;
-    setLiveNode(next);
-    highlightNode(next);
-    if (!next) setStatus('Live: finished');
-    else setStatus(`Step: ${liveNode} → [${result.signals}] → ${next}`);
-  };
-
-  const stopLive = () => {
-    liveStopped.current = true;
-    setLiveRunning(false);
-    setStatus('Live: stopped by user');
-  };
-
-  const cycle = cycleIdx >= 0 ? logCycles[cycleIdx] : null;
-
-  return (
-    <div className="app">
-      <div className="toolbar" style={{display:"none"}}>
-        <h1>⚡ endgame-ai wiring</h1>
-        <div className="sep"/>
-        <button aria-label="Load Wiring" onClick={loadWiring}>📂 Wiring</button>
-        <button aria-label="Load Log" onClick={loadLog}>📋 Log</button>
-        <button aria-label="Save Wiring" onClick={() => saveWiring(false)}>💾 Save</button>
-        <button aria-label="Save Download" onClick={() => saveWiring(true)}>⬇️ DL</button>
-        <div className="sep"/>
-        <button aria-label="Add Node" onClick={addNode}>+ Node</button>
-        <button aria-label="Layout" onClick={doLayout}>⟳ Layout</button>
-        <div className="sep"/>
-        <button aria-label="Run" onClick={runLive} className={liveRunning?'active':''}>🚀 Run</button>
-        <button aria-label="Step" onClick={stepManual}>⏩ Step</button>
-        <button aria-label="Stop" onClick={stopLive}>⏹ Stop</button>
-        <button aria-label="Interrupt" onClick={() => { const g = prompt("Interrupt with new goal:"); if(g) fetch(`${SERVER}/interrupt`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({goal:g})}); }}>⚡ Interrupt</button>
-        <button aria-label="Auto" onClick={() => { const g = prompt("Autonomous goal:"); if(g) fetch(`${SERVER}/run`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({goal:g})}); setStatus("Autonomous: "+g); }}>🤖 Auto</button>
-        <div className="spacer"/>
-        <span className="status" role="status" aria-live="polite" aria-label="Status">{status}</span>
-      </div>
-
-      <div className="canvas">
-        <ReactFlow
-          style={{ width: '100%', height: '100%' }}
-          nodes={nodes} edges={edges}
-          onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
-          onConnect={onConnect} onNodeClick={onNodeClick}
-          nodeTypes={nodeTypes} fitView
-          defaultEdgeOptions={{ type:'default', style:{stroke:'#06b6d4'}, markerEnd:{type:MarkerType.ArrowClosed,color:'#06b6d4'} }}
-          proOptions={{ hideAttribution: true }}
-        >
-          <Background color="#1e293b" gap={24} size={1}/>
-          <Controls position="bottom-left"/>
-          <MiniMap style={{background:'#0f172a'}} nodeColor="#1e293b" maskColor="rgba(0,0,0,0.6)"/>
-        </ReactFlow>
-      </div>
-
-      <div className="sidebar">
-        <div className="section">
-          <h3>Global base</h3>
-          <label>prompts.base ({baseEdit.length} chars)</label>
-          <textarea aria-label="prompts base" rows="5" style={{width:'100%',background:'#1a1a2e',border:'1px solid #1e293b',borderRadius:4,color:'#e2e8f0',fontSize:9,padding:6,resize:'vertical',fontFamily:'monospace'}}
-            value={baseEdit} onChange={e => setBaseEdit(e.target.value)}
-          />
-        </div>
-        {liveMode ? (<>
-          <div className="section">
-            <h3>Live Execution</h3>
-            <label>Current Node</label><span style={{color:'#22c55e'}}>{liveNode || '(stopped)'}</span>
-            <label>Goal</label><span>{liveState.goal}</span>
-            <label>Step</label><span>{liveState.step || 0} / {(liveState.plan||[]).length}</span>
-            <label>Step Goal</label><span>{liveState.step_goal || '-'}</span>
-          </div>
-          <div className="section">
-            <label>Node Log ({liveLog.length})</label>
-            <pre>{liveLog.slice(-10).map(l => `${l.ts} ${l.node} → [${(l.signals||[]).join(',')}]`).join('\n')}</pre>
-          </div>
-          <div className="section">
-            <h3>🧪 Mock Inject</h3>
-            <label>Screen Override</label>
-            <textarea aria-label="Mock Screen" id="mock-screen" rows="4" style={{width:'100%',background:'#1a1a2e',border:'1px solid #1e293b',borderRadius:4,color:'#e2e8f0',fontSize:10,padding:6,resize:'vertical'}}
-              placeholder="(empty = real observe_screen)"
-              defaultValue={liveState.screen||''}
-            />
-            <label>Presets</label>
-            <div style={{display:'flex',flexWrap:'wrap',gap:3,marginTop:3}}>
-              {[
-                ['Desktop','(Windows desktop: Taskbar at bottom with [1] Start, [2] Search, [3] Edge, [4] Chrome, [5] File Explorer. Desktop: [10] Recycle Bin. No apps open.)'],
-                ['Run','(Windows: [20] Run dialog. Title: Run. [21] Open: label. [22] Edit field (empty, focused). [23] OK. [24] Cancel.)'],
-                ['Run+chrome','(Windows: [20] Run dialog. Title: Run. [22] Edit field containing "chrome". [23] OK. [24] Cancel.)'],
-                ['Chrome','(Google Chrome: [30] Tab "New Tab". [31] Address bar "Search Google or type a URL". Body: Google logo, search box.)'],
-                ['Chrome@self','(Google Chrome: [30] Tab "endgame-ai Wiring Editor". [31] Address bar "127.0.0.1:9078". Canvas: goal_inbox, planner, scheduler, bus_check, observe, act, verify, reflect, self_modify, satisfied, bus_post.)'],
-                ['Notepad','(Windows: [40] Notepad - Untitled. [41] Menu: File Edit. [42] Edit area (empty, focused). Taskbar at bottom.)'],
-              ].map(([lbl,val]) => (
-                <button key={lbl} style={{fontSize:9,padding:'2px 5px',border:'1px solid #1e293b',borderRadius:3,background:'#0f172a',color:'#94a3b8',cursor:'pointer'}}
-                  onClick={() => { document.getElementById('mock-screen').value = val; }}>{lbl}</button>
-              ))}
-            </div>
-            <button style={{marginTop:8,width:'100%',padding:'5px',border:'1px solid #06b6d4',borderRadius:4,background:'#0f172a',color:'#06b6d4',cursor:'pointer',fontSize:11}}
-              onClick={() => {
-                const s = document.getElementById('mock-screen').value;
-                if (s) { setLiveState(st => ({...st, screen: s, no_desktop: true})); liveStateRef.current = {...liveStateRef.current, screen: s, no_desktop: true}; setStatus('Mock screen injected'); }
-              }} aria-label="Inject Screen">💉 Inject Screen</button>
-          </div>
-          <div className="section">
-            <h3>📝 State Editor</h3>
-            <textarea aria-label="State Editor" id="state-editor" rows="6" style={{width:'100%',background:'#1a1a2e',border:'1px solid #1e293b',borderRadius:4,color:'#e2e8f0',fontSize:9,padding:6,fontFamily:'monospace',resize:'vertical'}}
-              key={JSON.stringify(liveState).length} defaultValue={JSON.stringify(liveState, null, 1)}
-            />
-            <button style={{marginTop:4,width:'100%',padding:'5px',border:'1px solid #f59e0b',borderRadius:4,background:'#0f172a',color:'#f59e0b',cursor:'pointer',fontSize:11}}
-              onClick={() => {
-                const el = document.getElementById('state-editor');
-                try { const s = JSON.parse(el.value); setLiveState(s); liveStateRef.current = s; setStatus('State applied'); }
-                catch(e) { alert('Invalid JSON: '+e.message); }
-              }} aria-label="Apply State">⚡ Apply State</button>
-          </div>
-        </>) : cycle ? (<>
-          <div className="section">
-            <h3>Cycle {cycleIdx+1}/{logCycles.length}</h3>
-            <label>Time</label><span>{cycle.timestamp}</span>
-            <label>Duration</label><span>{cycle.stats.duration}</span>
-            <label>Conclusion</label><span style={{color: cycle.stats.conclusion==='EXECUTE'?'#22c55e':cycle.stats.conclusion==='DONE'?'#06b6d4':'#f59e0b'}}>{cycle.stats.conclusion}</span>
-          </div>
-          <div className="section"><label>Actions</label><pre>{JSON.stringify(cycle.stats.actions, null, 1)}</pre></div>
-          <div className="section"><label>Reasoning</label><pre>{cycle.response.reasoning || '(none)'}</pre></div>
-        </>) : selectedNode ? (<>
-          <div className="section">
-            <h3>{selectedNode.data.id}</h3>
-            <label>Type</label><span>{selectedNode.data.type}</span>
-            <label>Label</label><span>{selectedNode.data.label}</span>
-            {promptEdit ? (<>
-              <label>Role ({promptEdit.circuit})</label>
-              <textarea aria-label="role prompt" rows="8" style={{width:'100%',background:'#1a1a2e',border:'1px solid #1e293b',borderRadius:4,color:'#e2e8f0',fontSize:9,padding:6,resize:'vertical',fontFamily:'monospace'}}
-                value={promptEdit.roleText} onChange={e => setPromptEdit(pe => ({...pe, roleText: e.target.value}))}
-              />
-              <label>User blocks (JSON)</label>
-              <textarea aria-label="user blocks" rows="6" style={{width:'100%',background:'#1a1a2e',border:'1px solid #1e293b',borderRadius:4,color:'#e2e8f0',fontSize:9,padding:6,resize:'vertical',fontFamily:'monospace'}}
-                value={promptEdit.blocksJson} onChange={e => setPromptEdit(pe => ({...pe, blocksJson: e.target.value}))}
-              />
-              <button style={{marginTop:6,width:'100%',padding:'5px',border:'1px solid #06b6d4',borderRadius:4,background:'#0f172a',color:'#06b6d4',cursor:'pointer',fontSize:11}}
-                onClick={applyPromptEdits}>Apply prompt</button>
-              {(() => {
-                const cp = circuitForNode(selectedNode.data);
-                if (!cp) return null;
-                return (<>
-                  <label>Preview system ({cp.text.length} chars)</label>
-                  <pre style={{maxHeight:120,fontSize:9}}>{cp.text.slice(0, 800)}{cp.text.length > 800 ? '…' : ''}</pre>
-                </>);
-              })()}
-            </>) : <span style={{color:'#64748b'}}>No LLM prompt on this node</span>}
-            <button style={{marginTop:8,width:'100%',padding:'5px',border:'1px solid #22c55e',borderRadius:4,background:'#0f172a',color:'#22c55e',cursor:'pointer',fontSize:11}}
-              onClick={() => saveWiring(false)}>💾 Save to server</button>
-          </div>
-        </>) : (
-          <div className="section"><h3>Inspector</h3><span style={{color:'#64748b'}}>⏩ Step to start with mock data</span></div>
-        )}
-      </div>
-
-      {logCycles.length > 0 && <div className="timeline">
-        <h3>Replay Timeline {logCycles.length > 0 && `(${logCycles.length} cycles)`}</h3>
-        <div className="controls">
-          <button onClick={() => setCycleIdx(i => Math.max(0, i-1))}>⏮ Prev</button>
-          <button className={playing?'active':''} onClick={() => setPlaying(!playing)}>{playing ? '⏸ Pause' : '▶ Play'}</button>
-          <button onClick={() => setCycleIdx(i => Math.min(logCycles.length-1, i+1))}>Next ⏭</button>
-          <span>{cycleIdx >= 0 ? `Cycle ${cycleIdx+1}` : 'No log'}</span>
-        </div>
-        <div className="cycles">
-          {logCycles.map((c, i) => (
-            <div key={i} className={`cycle-bar${i===cycleIdx?' active':''}`} onClick={() => setCycleIdx(i)}>
-              <span className="verdict">{c.stats.conclusion === 'EXECUTE' ? '⚡' : c.stats.conclusion === 'DONE' ? '✓' : '?'}</span>
-              <span>{c.stats.duration}</span>
-            </div>
-          ))}
-        </div>
-      </div>}
-    </div>
-  );
+  } catch (_) {}
 }
 
-function Root() { return <ReactFlowProvider><App/></ReactFlowProvider>; }
-try {
-  createRoot(document.getElementById('root')).render(<Root/>);
-} catch (e) {
-  const el = document.getElementById('react-error');
-  if (el) { el.style.display = 'block'; el.textContent = 'React failed to mount: ' + e.message; }
-  throw e;
-}
+$('btn-save').onclick = () => saveWiring();
+$('btn-layout').onclick = () => doLayout();
+$('btn-step').onclick = () => stepOnce();
+$('btn-run').onclick = () => runLoop();
+$('btn-stop').onclick = () => { liveStopped = true; liveRunning = false; setStatus('Stopped'); };
+$('btn-auto').onclick = () => {
+  const g = prompt('Autonomous goal:');
+  if (g) { fetch(SERVER + '/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ goal: g }) }); setStatus('Auto: ' + g); }
+};
+$('import-link').onclick = () => $('file-wiring').click();
+$('file-wiring').onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = ev => {
+    try {
+      wiring = JSON.parse(ev.target.result);
+      baseEdit = wiring.prompts?.base || '';
+      renderGraph(wiring);
+      setStatus('Imported from file (Save to push to server)');
+      renderSidebar();
+    } catch (err) { alert(err.message); }
+  };
+  r.readAsText(f);
+  e.target.value = '';
+};
+
+(async () => {
+  initCy();
+  SERVER = await discoverServer();
+  if (!SERVER) {
+    setStatus('Server offline — use import file');
+    renderSidebar();
+    return;
+  }
+  try {
+    const h = await (await fetch(SERVER + '/health')).json();
+    setStatus(`Connected ${SERVER.replace('http://','')} slot=${h.slot ?? '?'}`);
+    await loadWiringFromServer();
+    hookSSE();
+  } catch (e) {
+    showError(e.message);
+    setStatus('Load failed');
+  }
+})();
+
+window.addEventListener('resize', () => { if (cy) cy.resize(); });
 </script>
+</body>
+</html>
