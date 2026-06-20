@@ -934,7 +934,8 @@ class H(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):
         global WIRING
-        body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0) or 0))) if int(self.headers.get("Content-Length", 0) or 0) > 0 else {}
+        cl = int(self.headers.get("Content-Length", 0) or 0)
+        body = json.loads(self.rfile.read(cl)) if cl > 0 else {}
         if self.path.startswith("/node/"):
             t = self.path[6:]
             h = NODES.get(t)
@@ -966,8 +967,11 @@ class H(http.server.BaseHTTPRequestHandler):
             msgs.append({"ts": time.time(), "from_slot": 0, "to_slot": slot, "type": "goal", "payload": {"goal": new_goal}})
             bus_write(msgs)
             self._j({"interrupted": True, "goal": new_goal})
-        elif self.path == "/wiring" and body:
-            # Hot-reload: POST new wiring.json (validates against schema)
+        elif self.path == "/push":
+            # AI/external push: send arbitrary data to dashboard via SSE
+            sse_push("push", body)
+            self._j({"pushed": True})
+        elif self.path == "/wiring" and body:            # Hot-reload: POST new wiring.json (validates against schema)
             errs = validate_wiring(body)
             if errs:
                 self._j({"error": "validation failed", "details": errs}, 400)
@@ -979,10 +983,6 @@ class H(http.server.BaseHTTPRequestHandler):
                 self._j({"reloaded": True, "nodes": len(body.get("topology", {}).get("nodes", []))})
             except Exception as e:
                 self._j({"error": str(e)}, 500)
-        elif self.path == "/push":
-            # AI/external push: send arbitrary data to dashboard via SSE
-            sse_push("push", body)
-            self._j({"pushed": True})
         else:
             self.send_error(404)
 
