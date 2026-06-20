@@ -125,12 +125,50 @@ def llm(system, user):
     c = json.loads(r.read())["choices"][0]["message"]
     return c.get("content", ""), c.get("reasoning_content", ""), time.time() - t0
 
+def extract_json_objects(text):
+    """Return all top-level JSON objects in text, in document order."""
+    if not text:
+        return []
+    out = []
+    i, n = 0, len(text)
+    while i < n:
+        if text[i] != "{":
+            i += 1
+            continue
+        depth = 0
+        in_str = False
+        esc = False
+        for j in range(i, n):
+            c = text[j]
+            if esc:
+                esc = False
+                continue
+            if c == "\\" and in_str:
+                esc = True
+                continue
+            if c == '"':
+                in_str = not in_str
+                continue
+            if in_str:
+                continue
+            if c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        out.append(json.loads(text[i:j + 1]))
+                    except json.JSONDecodeError:
+                        pass
+                    i = j + 1
+                    break
+        else:
+            break
+    return out
+
 def extract_json(text):
-    m = re.search(r'\{.*\}', text or "", re.DOTALL)
-    if m:
-        try: return json.loads(m.group())
-        except: pass
-    return None
+    objs = extract_json_objects(text)
+    return objs[0] if objs else None
 
 # ─── Reasoning loop (wired in wiring.json — Python only captures + resolves) ───
 
@@ -168,12 +206,10 @@ def parse_circuit_response(circuit, content, reasoning):
     if fallback and reasoning:
         sources.append(("reasoning", reasoning))
     for source_name, text in sources:
-        parsed = extract_json(text)
-        if not parsed:
-            continue
-        if expected and parsed.get("record_type") != expected:
-            continue
-        return parsed, source_name
+        for parsed in extract_json_objects(text):
+            if expected and parsed.get("record_type") != expected:
+                continue
+            return parsed, source_name
     return None, None
 
 def call_node(node_type, state, extra=None):
@@ -379,7 +415,9 @@ def node_act(state, _):
     parsed = r["parsed"]
     patch = dict(r["patch"])
     if not parsed:
-        patch["last_error"] = wiring_error("parse_failed")
+        preview = (r.get("content") or "")[:200].replace("\n", " ")
+        patch["last_error"] = wiring_error("parse_failed") + f" (content: {preview!r})"
+        print(f"       [!] act parse_failed: {patch['last_error']}")
         return {"signals": ["act_failed"], "patch": patch}
 
     conclusion = parsed.get("data", {}).get("conclusion", "")
@@ -689,6 +727,19 @@ def run(goal, resume_state=None):
 # ─── HTTP ───
 
 class H(http.server.BaseHTTPRequestHandler):
+    def handle_one_request(self):
+        try:
+            super().handle_one_request()
+        except (ConnectionAbortedError, BrokenPipeError, ConnectionResetError):
+            pass
+
+    def _write(self, data):
+        try:
+            self.wfile.write(data)
+            return True
+        except (ConnectionAbortedError, BrokenPipeError, ConnectionResetError):
+            return False
+
     def do_OPTIONS(self):
         self.send_response(200); self._cors(); self.end_headers()
 
@@ -710,15 +761,18 @@ class H(http.server.BaseHTTPRequestHandler):
             self._j(bus_read())
         elif self.path in ("/", "/index.html"):
             d = (ROOT / "wiring-editor.html").read_bytes()
-            self.send_response(200); self.send_header("Content-Type","text/html"); self.send_header("Content-Length",len(d)); self.end_headers(); self.wfile.write(d)
+            self.send_response(200); self.send_header("Content-Type","text/html"); self.send_header("Content-Length",len(d)); self.end_headers(); self._write(d)
         elif self.path == "/events":
             self.send_response(200); self._cors()
             self.send_header("Content-Type","text/event-stream"); self.send_header("Cache-Control","no-cache"); self.end_headers()
             q = queue.Queue(); SSE.append(q)
             try:
                 while True:
-                    self.wfile.write(q.get(timeout=30).encode()); self.wfile.flush()
-            except: pass
+                    if not self._write(q.get(timeout=30).encode()):
+                        break
+                    self.wfile.flush()
+            except (ConnectionAbortedError, BrokenPipeError, ConnectionResetError):
+                pass
             finally:
                 if q in SSE: SSE.remove(q)
         else:
@@ -772,7 +826,7 @@ class H(http.server.BaseHTTPRequestHandler):
 
     def _j(self, d, code=200):
         self.send_response(code); self._cors(); self.send_header("Content-Type","application/json"); self.end_headers()
-        self.wfile.write(json.dumps(d).encode())
+        self._write(json.dumps(d).encode())
 
     def _cors(self):
         self.send_header("Access-Control-Allow-Origin","*")
