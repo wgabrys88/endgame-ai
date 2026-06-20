@@ -327,6 +327,28 @@ def node_bus_post(state, _):
     bus_write(msgs)
     return {"signals": ["posted"], "patch": {}}
 
+def _rod_port(slot):
+    """Map colony slot → HTTP port (must match reactor.py COLONY config)."""
+    return 9076 + int(slot)
+
+def _trigger_rod_run(slot, goal):
+    """Wake a peer rod and start its autonomous loop."""
+    port = _rod_port(slot)
+    body = json.dumps({"goal": goal}).encode()
+    try:
+        urllib.request.urlopen(
+            urllib.request.Request(
+                f"http://127.0.0.1:{port}/run",
+                data=body,
+                headers={"Content-Type": "application/json"},
+            ),
+            timeout=5,
+        )
+        return True
+    except Exception as e:
+        print(f"       [!] failed to start rod {slot} on :{port}: {e}")
+        return False
+
 def node_moe_route(state, _):
     """MoE gate: route goal to self or delegate to another rod via bus.
     Reads colony telemetry from bus to pick best slot.
@@ -334,11 +356,10 @@ def node_moe_route(state, _):
     Otherwise → delegate to best slot via bus post."""
     goal = (state.get("goal", "") or "").lower()
     my_slot = WIRING.get("instance", {}).get("slot", 0)
-    my_persona = WIRING.get("instance", {}).get("persona", "")
     permissions = WIRING.get("instance", {}).get("permissions", [])
 
     # Simple competence matching from persona
-    if "desktop_exec" not in permissions and any(k in goal for k in ["open", "click", "type", "write", "launch"]):
+    if "desktop_exec" not in permissions and any(k in goal for k in ["open", "click", "type", "write", "launch", "play"]):
         # This rod can't do desktop work — delegate
         msgs = bus_read()
         # Find a rod with desktop_exec capability from recent telemetry
@@ -347,7 +368,9 @@ def node_moe_route(state, _):
             if m.get("type") == "telemetry" and m.get("from_slot") != my_slot:
                 exec_slots.add(m.get("from_slot"))
         target = min(exec_slots) if exec_slots else 1  # Default to slot 1
-        bus_write(msgs + [{"ts": time.time(), "from_slot": my_slot, "to_slot": target, "type": "goal", "payload": {"goal": state.get("goal", "")}}])
+        full_goal = state.get("goal", "")
+        bus_write(msgs + [{"ts": time.time(), "from_slot": my_slot, "to_slot": target, "type": "goal", "payload": {"goal": full_goal}}])
+        _trigger_rod_run(target, full_goal)
         return {"signals": ["delegated"], "patch": {"delegated_to": target}}
 
     # This rod handles it

@@ -80,11 +80,16 @@ def spawn_rod(rod_cfg):
     port = rod_cfg["port"]
     env = dict(os.environ)
     env["ENDGAME_BUS"] = str(ROOT / "bus.json")  # Shared bus for all rods
+    log_dir = COLONY_DIR / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / f"rod_{rod_cfg['slot']}.log"
+    log_f = open(log_path, "a", encoding="utf-8")
     proc = subprocess.Popen(
-        [sys.executable, "server.py", str(port)],
+        [sys.executable, "-u", "server.py", str(port)],
         cwd=str(rod_dir), env=env,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        stdout=log_f, stderr=subprocess.STDOUT,
     )
+    proc._log_f = log_f  # keep handle alive
     return proc
 
 def check_health(port):
@@ -94,13 +99,20 @@ def check_health(port):
     except:
         return None
 
-def inject_goal(goal, port=9079):
-    """Send goal to comms_operator via interrupt."""
+def rod_port(slot):
+    return next((c["port"] for c in COLONY if c["slot"] == slot), 9076 + int(slot))
+
+def start_run(goal, port):
+    """Start autonomous execution on a rod via POST /run."""
     body = json.dumps({"goal": goal}).encode()
     try:
         r = urllib.request.urlopen(
-            urllib.request.Request(f"http://127.0.0.1:{port}/interrupt", data=body, headers={"Content-Type": "application/json"}),
-            timeout=3
+            urllib.request.Request(
+                f"http://127.0.0.1:{port}/run",
+                data=body,
+                headers={"Content-Type": "application/json"},
+            ),
+            timeout=5,
         )
         return json.loads(r.read())
     except Exception as e:
@@ -128,12 +140,13 @@ if __name__ == "__main__":
         status = f"OK (slot={h.get('slot')})" if h else "FAILED"
         print(f"    Rod {cfg['slot']} ({cfg['persona']}): {status}")
 
-    # Inject goal if provided
+    # Start execution if goal provided — comms_operator routes, implementor executes
     if "--goal" in args:
         goal = " ".join(args[args.index("--goal")+1:])
         if goal:
-            print(f"\n  Injecting goal to comms_operator: {goal}")
-            result = inject_goal(goal)
+            comms_port = rod_port(3)
+            print(f"\n  Starting colony run via comms_operator (:{comms_port}): {goal}")
+            result = start_run(goal, comms_port)
             print(f"    Result: {result}")
 
     # Monitor loop
