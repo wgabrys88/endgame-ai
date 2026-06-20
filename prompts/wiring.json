@@ -296,8 +296,57 @@
     ],
     "advance_hints_default": "NEXT REQUIRED: different action \u2014 prior succeeded, read SCREEN"
   },
+  "runtime": {
+    "http_port_base": 9077,
+    "http_port_slot_offset": true,
+    "colony_port_base": 9076,
+    "cycle_delay_ms": 300,
+    "initial_state": {
+      "step": 0,
+      "retries": 0,
+      "no_desktop": false,
+      "history": [],
+      "reasoning": {},
+      "reasoning_chain": [],
+      "planner_retries": 0,
+      "replan_count": 0,
+      "last_error": ""
+    }
+  },
+  "node_circuits": {
+    "planner": "planner",
+    "act": "unified",
+    "verify": "verifier",
+    "reflect": "reflector",
+    "self_modify": "self_modify"
+  },
+  "act": {
+    "valid_conclusions": ["EXECUTE", "CANNOT"],
+    "reject_conclusions": ["DONE"],
+    "verb_normalize": [
+      {"from": "press", "to": "hotkey", "when_target_contains": "+"}
+    ]
+  },
+  "moe": {
+    "required_permission": "desktop_exec",
+    "delegate_keywords": ["open", "click", "type", "write", "launch", "play"],
+    "default_exec_slot": 1
+  },
+  "errors": {
+    "parse_failed": "parse_failed: respond with JSON only",
+    "act_done_rejected": "DONE is invalid — output EXECUTE with one action; verify node confirms step completion",
+    "act_cannot": "CANNOT",
+    "act_bad_conclusion": "bad conclusion: {conclusion}",
+    "verify_parse_failed": "verify parse failed",
+    "reflector_parse_failed": "reflector: parse_failed or wrong record_type — output diagnosis JSON only",
+    "planner_parse_failed": "planner: parse_failed — respond with JSON only",
+    "planner_empty": "planner: empty plan",
+    "self_modify_invalid": "LLM returned invalid patch"
+  },
   "limits": {
     "max_attempts": 5,
+    "max_replans": 2,
+    "max_cycles": 300,
     "history_depth": 10,
     "bus_max": 200,
     "planner_retries": 3

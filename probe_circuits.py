@@ -11,13 +11,9 @@ import json, pathlib, sys, time
 ROOT = pathlib.Path(__file__).parent
 OUT = ROOT / "probe_results"
 CIRCUITS = ["planner", "unified", "verifier", "reflector", "self_modify"]
-EXPECTED = {
-    "planner": "task",
-    "unified": "action",
-    "verifier": "verdict",
-    "reflector": "diagnosis",
-    "self_modify": "wiring_patch",
-}
+def expected_types():
+    wiring = json.loads((ROOT / "prompts" / "wiring.json").read_text(encoding="utf-8"))
+    return wiring.get("reasoning", {}).get("expected_record_type", {})
 
 
 def _import_server():
@@ -33,10 +29,10 @@ def load_fixture(path=None):
     return json.loads(p.read_text(encoding="utf-8"))
 
 
-def probe(srv, circuit, state, dry=False, save=True):
+def probe(srv, circuit, state, expected, dry=False, save=True):
     system = srv.load_system_prompt(circuit, state)
     user = srv.build_user_message(circuit, state)
-    header = f"\n{'='*60}\nCIRCUIT: {circuit}  (expect record_type={EXPECTED.get(circuit)})\n{'='*60}"
+    header = f"\n{'='*60}\nCIRCUIT: {circuit}  (expect record_type={expected.get(circuit)})\n{'='*60}"
     print(header)
     print(f"SYSTEM ({len(system)} chars)")
     print(system)
@@ -45,7 +41,7 @@ def probe(srv, circuit, state, dry=False, save=True):
 
     result = {
         "circuit": circuit,
-        "expected_record_type": EXPECTED.get(circuit),
+        "expected_record_type": expected.get(circuit),
         "fixture_goal": state.get("goal"),
         "step_goal": state.get("step_goal"),
         "system": system,
@@ -61,7 +57,7 @@ def probe(srv, circuit, state, dry=False, save=True):
     content, reasoning, elapsed = srv.llm(system, user)
     parsed, parsed_from = srv.parse_circuit_response(circuit, content, reasoning)
     record_type = (parsed or {}).get("record_type")
-    ok = record_type == EXPECTED.get(circuit)
+    ok = record_type == expected.get(circuit)
 
     result.update({
         "content": content,
@@ -103,6 +99,7 @@ def main():
             print(f"Unknown circuit: {c}. Choose from: {', '.join(CIRCUITS)}")
             sys.exit(1)
 
+    expected = expected_types()
     state = load_fixture(fixture_path)
     srv = _import_server()
     print(f"Fixture: {fixture_path or 'state.json'}")
@@ -111,7 +108,7 @@ def main():
 
     summary = []
     for circuit in circuits:
-        r = probe(srv, circuit, state, dry=dry)
+        r = probe(srv, circuit, state, expected, dry=dry)
         summary.append({
             "circuit": circuit,
             "record_type": r.get("record_type"),

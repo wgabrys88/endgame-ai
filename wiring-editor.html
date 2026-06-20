@@ -106,7 +106,7 @@ body { font-family: system-ui, -apple-system, sans-serif; background: #0a0a0f; c
 <style>#native-toolbar button{padding:3px 8px;border:1px solid #1e293b;border-radius:4px;background:#0f172a;color:#cbd5e1;cursor:pointer;font-size:11px}#native-toolbar button:hover{border-color:#06b6d4;color:#06b6d4}#root{margin-top:36px;height:calc(100vh - 36px)}</style>
 <script>
 (function(){
-  const S = 'http://127.0.0.1:9077';
+  let S = 'http://127.0.0.1:9077';
   const st = document.getElementById('native-status');
   function setS(t){ st.textContent = t; }
   
@@ -114,17 +114,49 @@ body { font-family: system-ui, -apple-system, sans-serif; background: #0a0a0f; c
   let nodeId = 'goal_inbox';
   let running = false;
   let topo = null;
-  
+  let wiring = null;
+
+  const freshState = (goal) => ({
+    goal, step: 0, retries: 0, history: [], reasoning: {}, reasoning_chain: [],
+    planner_retries: 0, replan_count: 0, last_error: '', bus_last_check: Date.now()/1000,
+    no_desktop: true, screen: ''
+  });
+
   function getType(id){ return (topo.nodes.find(n=>n.id===id)||{}).type||id; }
-  function getNext(fromId, sig){ const e=topo.edges.find(e=>e.from===fromId&&e.on===sig); return e?e.to:null; }
+  function getNext(fromId, sig){
+    for (const e of topo.edges) {
+      if (e.from !== fromId) continue;
+      const parts = (e.on||'').split('|');
+      if (parts.includes(sig) || e.on === '*') return e.to;
+    }
+    return null;
+  }
+
+  async function connectServer(){
+    for (const p of [9078, 9077, 9079, 9080]) {
+      try {
+        const r = await fetch('http://127.0.0.1:'+p+'/health');
+        const h = await r.json();
+        if (h.ok) {
+          S = 'http://127.0.0.1:'+p;
+          wiring = await (await fetch(S+'/wiring')).json();
+          topo = wiring.topology;
+          nodeId = topo.cycle_start || 'goal_inbox';
+          setS('Connected :'+p+' slot='+(h.slot??'?')+' nodes='+topo.nodes.length);
+          return;
+        }
+      } catch(e) {}
+    }
+    setS('Server offline');
+  }
   
   async function step(){
     if(!topo){ setS('No wiring loaded'); return; }
     if(!state){
       const g = prompt('Goal:');
       if(!g) return;
-      state = {goal:g, step:0, retries:0, history:[], bus_last_check:0, no_desktop:true, screen:''};
-      nodeId = 'goal_inbox';
+      state = freshState(g);
+      nodeId = topo.cycle_start || 'goal_inbox';
     }
     const type = getType(nodeId);
     setS('\u23f3 ' + nodeId + ' (' + type + ')...');
@@ -144,8 +176,8 @@ body { font-family: system-ui, -apple-system, sans-serif; background: #0a0a0f; c
     if(!state){
       const g = prompt('Goal:');
       if(!g) return;
-      state = {goal:g, step:0, retries:0, history:[], bus_last_check:0, no_desktop:true, screen:''};
-      nodeId = 'goal_inbox';
+      state = freshState(g);
+      nodeId = topo.cycle_start || 'goal_inbox';
     }
     running = true;
     while(running && nodeId !== 'satisfied'){
@@ -167,10 +199,7 @@ body { font-family: system-ui, -apple-system, sans-serif; background: #0a0a0f; c
     if(g){ fetch(S+'/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({goal:g})}); setS('Auto: '+g); }
   };
   
-  fetch(S+'/wiring').then(r=>r.json()).then(w=>{
-    topo = w.topology;
-    setS('Connected: '+topo.nodes.length+' nodes, '+topo.edges.length+' edges');
-  }).catch(()=>setS('Server offline'));
+  connectServer();
 })();
 </script>
 <div id="root"></div>
@@ -461,7 +490,18 @@ function App() {
   const onNodeClick = useCallback((_, node) => setSelectedNode(node), []);
 
   // ============ LIVE EXECUTION ENGINE ============
-  const SERVER = 'http://127.0.0.1:9077';
+  const [SERVER, setServerUrl] = useState('http://127.0.0.1:9077');
+  useEffect(() => {
+    (async () => {
+      for (const p of [9078, 9077, 9079, 9080]) {
+        try {
+          const r = await fetch(`http://127.0.0.1:${p}/health`);
+          const h = await r.json();
+          if (h.ok) { setServerUrl(`http://127.0.0.1:${p}`); return; }
+        } catch(e) {}
+      }
+    })();
+  }, []);
   const [liveState, setLiveState] = useState({});
   const [liveNode, setLiveNode] = useState(null);
   const [liveLog, setLiveLog] = useState([]);
@@ -502,8 +542,11 @@ function App() {
     if (!wiring) { alert('Load wiring.json first'); return; }
     const goal = prompt('GOAL:');
     if (!goal) return;
-    const startNode = wiring.topology.cycle_start || 'response_limit_gate';
-    const initState = { goal, step: 0, retries: 0, history: [], no_desktop: false, bus_last_check: 0 };
+    const startNode = wiring.topology.cycle_start || 'goal_inbox';
+    const initState = {
+      goal, step: 0, retries: 0, history: [], reasoning: {}, reasoning_chain: [],
+      planner_retries: 0, replan_count: 0, last_error: '', no_desktop: false, bus_last_check: Date.now()/1000
+    };
     setLiveState(initState);
     setLiveNode(startNode);
     setLiveLog([]);

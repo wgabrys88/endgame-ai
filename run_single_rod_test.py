@@ -7,8 +7,12 @@ TIMEOUT = int(sys.argv[2]) if len(sys.argv) > 2 else 300
 
 def rod_port():
     wiring = json.loads((ROOT / "prompts" / "wiring.json").read_text(encoding="utf-8"))
-    slot = wiring.get("instance", {}).get("slot", 0)
-    return 9077 + int(slot) if slot else 9077
+    rt = wiring.get("runtime", {})
+    base = int(rt.get("http_port_base", 9077))
+    slot = int(wiring.get("instance", {}).get("slot", 0) or 0)
+    if slot and rt.get("http_port_slot_offset", True):
+        return base + slot
+    return base
 
 def fetch_state():
     try:
