@@ -7,13 +7,8 @@
 !server.py
 !desktop.py
 !actions.py
-!simulation.py
 !colony.py
 !wiring-editor.html
-!test_server.py
-!test_llm_live.py
-!test_desktop_live.py
-!test_colony_delegate.py
 !prompts/
 !prompts/wiring.json
 !prompts/wiring-schema.json
