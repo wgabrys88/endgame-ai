@@ -4,7 +4,21 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from desktop import Desktop, Element
+try:
+    from desktop import Desktop, Element, Observation
+except Exception:
+    # Linux/non-Windows: define stubs for sim mode
+    @dataclass(slots=True)
+    class Element:
+        id: str; role: str; name: str; value: str; hwnd: int
+        px: int; py: int; pw: int; ph: int; action: str
+        wnd: str = ""; enabled: bool = True; readonly: bool = False
+
+    @dataclass(slots=True)
+    class Observation:
+        focused_title: str; elements: dict; context_text: str
+
+    Desktop = None
 
 
 @dataclass(slots=True)
@@ -160,11 +174,30 @@ def _init():
         import json, pathlib
         wiring = json.loads((pathlib.Path(__file__).parent / "prompts" / "wiring.json").read_text(encoding="utf-8"))
         if _simulation_enabled(wiring):
-            from simulation import SimDesktop
-            _desktop = SimDesktop()
+            _desktop = _SimStub()
         else:
             _desktop = Desktop()
         _executor = ActionExecutor(_desktop, wiring)
+
+
+class _SimStub:
+    """Minimal sim desktop for dev without Windows."""
+    def __init__(self):
+        self._step = 0
+
+    def observe(self) -> Observation:
+        self._step += 1
+        els = {"1": Element(id="1", role="Button", name="OK", value="",
+                            hwnd=1, px=100, py=100, pw=80, ph=30, action="click")}
+        return Observation(focused_title="Sim Desktop", elements=els,
+                           context_text="FOCUSED: Sim Desktop\nELEMENTS: 1\n  [1] Button \"OK\"")
+
+    def click(self, px, py, hwnd=0): pass
+    def type_text(self, text): pass
+    def press_key(self, key): pass
+    def hotkey(self, keys): pass
+    def scroll(self, px, py, amount=3): pass
+    def focus_window(self, title): return True
 
 def observe_screen() -> str:
     _init()

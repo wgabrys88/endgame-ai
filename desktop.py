@@ -276,7 +276,7 @@ class Desktop:
                         nodes.append(n)
             classified = self._classify(nodes)
         self.user32.SetCursorPos(saved.x, saved.y)
-        elements, context_text = self._render(classified, focused_title)
+        elements, context_text = self._render(classified, focused_title, focused_hwnd)
         if not elements:
             context_text += (
                 "\n  (no interactive elements — use hotkey win+r for Run dialog, "
@@ -443,15 +443,16 @@ class Desktop:
         result.sort(key=lambda n: (n["y"], n["x"]))
         return result
 
-    def _render(self, nodes: list[dict[str, Any]], focused_title: str) -> tuple[dict[str, Element], str]:
+    def _render(self, nodes: list[dict[str, Any]], focused_title: str, focused_hwnd: int = 0) -> tuple[dict[str, Element], str]:
         elements: dict[str, Element] = {}
-        lines: list[str] = [f"FOCUSED: {focused_title}", f"ELEMENTS: {sum(1 for n in nodes if n.get('action') != 'read')}"]
+        lines: list[str] = [f"FOCUSED: {focused_title}"]
         seq = 0
         for n in nodes:
-            seq += 1
-            eid = str(seq)
             role, name, value = n["role"], n.get("name", ""), n.get("value", "")
-            if n["action"] != "read":
+            owns_focus = not focused_hwnd or n.get("hwnd", 0) == focused_hwnd
+            if n["action"] != "read" and owns_focus:
+                seq += 1
+                eid = str(seq)
                 if value and n["action"] == "write":
                     desc = f'[{eid}] {role} "{name}" = "{value[:80]}"' if name else f'[{eid}] {role} "{value[:80]}"'
                 elif name:
@@ -472,6 +473,7 @@ class Desktop:
                 else:
                     desc = f'{role} "{value[:80]}"'
             lines.append(f"  {desc}")
+        lines.insert(1, f"ELEMENTS: {seq}")
         return elements, "\n".join(lines)
 
 
