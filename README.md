@@ -1,140 +1,199 @@
 # endgame-ai
 
-Autonomous Windows desktop agent. Cannot see the screen. Cannot click directly.
-Writes Python, executes it, reads stdout, reasons, acts, verifies, reflects.
+Autonomous Windows desktop agent. Local 4B model. Zero pip dependencies.
 
-Local 4B-class model. Artificial persistence via graph topology, not open-ended reasoning.
+It cannot see pixels. It cannot click coordinates. It probes the Windows UIA tree via
+cursor hover, gets a text list of elements with IDs, sends that to a local LLM, gets back
+a structured JSON action, executes it via Windows API, observes result, verifies, reflects.
 
----
-
-## For the AI reading this
-
-You are the next session. Read every file before changing anything.
-This system is NOT like other agent frameworks. Do not restructure it.
-
-The rules:
-
-1. Python is dumb plumbing. All behavior lives in `prompts/wiring.json`.
-2. There are exactly 4 LLM calls: planner, act, verify, reflect (+self_modify on escalate).
-3. Everything else is deterministic graph traversal driven by signals and edges.
-4. Prefer wiring.json changes over code changes. Always.
-5. Testing happens via HTTP API (`/run`, `/state`, `/smoke`) — not unit test files.
-6. The `wiring-editor.html` IS the dashboard. It must become the test harness too.
-7. Code reduction is always correct. If Python can be deleted because wiring handles it, delete it.
-
-Read these files in this order: `prompts/wiring.json` → `server.py` → `actions.py` → `desktop.py`
+The intelligence is in `prompts/wiring.json`. Python is plumbing.
 
 ---
 
-## Topology (the brain)
+## For the next AI session
+
+**Read every `.py` and `.json` file before proposing ANY change.**
+
+This system is architecturally different from every other agent framework you know.
+Do not restructure it. Do not add dependencies. Do not create new files unless replacing old ones.
+
+### What this is NOT
+
+- NOT a LangChain/AutoGPT style agent with plugins and tool-calling
+- NOT a vision model looking at screenshots
+- NOT a system that needs tests/ directories or pytest
+- NOT something where more code = more capability
+
+### What this IS
+
+- A directed graph where nodes emit signals, edges route those signals to the next node
+- 4 LLM calls total per cycle (planner, act, verify, reflect)
+- Everything else is deterministic Python reading config from wiring.json
+- Behavior changes happen in wiring.json prompts/guards/limits — not in Python
+- Testing happens via HTTP API: POST `/run`, GET `/state`, GET `/smoke`
+
+---
+
+## Topology
 
 ```
-                              ┌─────────────────────────────────────────────────────┐
-                              │                                                     │
-  goal_inbox ─→ moe_route ─→ planner ─→ scheduler ─→ bus_check ─→ observe ─→ act ─→ verify
-                   │  delegated    ↑ retry_plan        │ plan_complete               │  │
-                   ↓               │                   ↓                             │  │
-               bus_post ─→ satisfied                bus_post ─→ satisfied            │  │
-                                   │                                                 │  │
-                                   │              ┌──────────────────────────────────┘  │
-                                   │              │ step_confirmed → scheduler           │
-                                   │              │                                     │
-                                   │              │ step_denied ─→ reflect               │
-                                   │              │                  │  │  │             │
-                                   │              │          retry ──┘  │  │             │
-                                   │              │         replan ─────┘  │             │
-                                   │              │       escalate ────────┘             │
-                                   │              │            ↓                         │
-                                   │              │       self_modify ─→ planner         │
-                                   │              │                                     │
-                                   └──────────────┴── act_failed ───→ reflect ──────────┘
+goal_inbox ──→ moe_route ──→ planner ──→ scheduler ──→ bus_check ──→ observe ──→ act ──→ verify
+                  │              ↑            │                                     │       │
+                  │ delegated    │ retry      │ plan_complete                       │       │
+                  ↓              │            ↓                                     │       │
+              bus_post ──→ satisfied      bus_post ──→ satisfied                    │       │
+                                                                                   │       │
+                                                                    act_failed ─────┘       │
+                                                                        │                  │
+                                                                        ↓                  │
+                                                                     reflect ←── step_denied
+                                                                     │  │  │
+                                                              retry ──┘  │  └── escalate
+                                                                        │          ↓
+                                                                     replan    self_modify
+                                                                        │          │
+                                                                        ↓          ↓
+                                                                     planner    planner
 ```
 
-Signals flow through edges. Python resolves them: `find_targets(node_id, signals, topology)`.
+Each node: `(state, config) → {signals: [...], patch: {...}}`
 
-Each node is a pure function: `(state, config) → {signals: [...], patch: {...}}`
-
-LLM nodes call the model and parse structured JSON. Non-LLM nodes are 3-10 lines of logic.
+Graph engine in `server.py` function `run()`: resolve signals → find edge → call next node → repeat.
 
 ---
 
-## What works (proven on real desktop + nvidia-nemotron-3-nano-4b)
+## Proven results (nvidia-nemotron-3-nano-4b, real Windows desktop)
 
-- `open notepad` — 11 cycles, 1 plan step, satisfied
-- `open notepad and type hello` — 16 cycles, 2 plan steps, satisfied
-- `open Chrome, focus it, type youtube.com in address bar and press enter` — 27 cycles, 3 steps, satisfied
-- Colony multi-slot delegation via shared bus.json
-- Self-modification: LLM proposes topology patches when stuck
-- Full simulate mode (`ENDGAME_SIM=1`) for development without Windows
-
----
-
-## What doesn't work yet
-
-1. **Reasoning chain poisoning** — the 4B model mimics format from prior circuit outputs.
-   Fixed partially: chain clears on plan_ready. Still leaks within a step's retry loop.
-   Root cause: `reasoning_content` from all circuits is concatenated into REASONING_CHAIN.
-
-2. **Verifier false positives** — model confirms steps too eagerly (e.g. confirms "Chrome open"
-   after just pressing Win+R). The `done_when` criteria are ambiguous for a 4B model.
-
-3. **Screen pollution** — UIA probe captures ALL visible windows (Task Manager, LM Studio, Terminal)
-   not just the focused app. Agent sees 60-80 elements when 5 matter.
-
-4. **Implicit goals fail** — "open Chrome and go to youtube.com" fails because the planner
-   doesn't always emit the focus step. Explicit goals succeed.
+| Goal | Cycles | Steps | Result |
+|------|--------|-------|--------|
+| open notepad | 11 | 1 | ✓ satisfied |
+| open notepad and type hello | 16 | 2 | ✓ satisfied |
+| open Chrome, focus it, type youtube.com, press enter | 27 | 3 | ✓ satisfied |
 
 ---
 
-## Code reduction opportunities
+## Critical bugs found via LM Studio log forensics (2026-06-20)
 
-| Area | Current | Opportunity |
-|------|---------|-------------|
-| `_resolve_value` (50 lines) | Giant switch for state lookups | Table-driven from wiring |
-| `load_system_prompt` (23 lines) | Legacy fallback paths | Node prompt config is enough, remove file fallbacks |
-| `check_repeat_block` + `_find_advance_hint` (30 lines) | Guard logic in Python | Move to wiring declarative eval |
-| `validate_wiring` (40 lines) | Runtime schema check | Keep but could be separate script |
-| `extract_json_objects` (40 lines) | JSON parser from raw text | Needed but could use regex first-pass |
-| HTTP endpoints (117 lines) | Full REST API | Some endpoints unused (/schema, /traces) |
-| Test files (4 files, ~400 lines) | Separate test infrastructure | Replace with `/smoke` + HTML test panel |
+### Bug 1: Reasoning chain poisoning (PARTIALLY FIXED)
 
-Target: server.py under 800 lines. Total Python under 1200 lines.
+The model's `reasoning_content` from each circuit was concatenated into a REASONING_CHAIN
+block and passed to ALL subsequent circuits. The 4B model would read the chain, see
+`[planner]` entries with `record_type: task`, and then output `record_type: task` from
+the act circuit instead of `record_type: action`.
+
+**Evidence from logs:** At cycle 35, act node received a REASONING_CHAIN containing 8 entries
+from planner/reflect/self_modify. The model's reasoning_content shows it literally
+roleplaying each prior circuit: "We need to output content JSON with record_type task as
+per planner" — then outputs task JSON from within the act node.
+
+**Fix applied:** 
+- REASONING_CHAIN block removed from act node's user blocks in wiring.json
+- reasoning_chain clears on every plan_ready
+
+**Remaining gap:** Within a single step's retry loop, the chain still accumulates
+verify+reflect entries. The 4B model sometimes mimics those too. Solution: remove
+REASONING_CHAIN from ALL LLM nodes except planner (which uses it for replan context).
+
+### Bug 2: Verifier false positives
+
+The verifier confirmed "Chrome is open" after seeing `OK: hotkey win+r: pressed win+r`.
+Pressing Win+R opens the Run dialog, not Chrome. The model cannot reason about multi-step
+causality — it sees "OK" prefix and confirms.
+
+**Root cause:** `done_when: "Chrome is open"` is semantically unreachable from a single
+`hotkey win+r` action, but the 4B model doesn't understand that.
+
+**Fix needed in wiring.json:** Tighten verifier prompt: "confirmed=true requires the
+LAST_OUTCOME to DIRECTLY demonstrate the done_when criteria, not merely a precursor step."
+
+### Bug 3: Screen pollution (UNFIXED)
+
+The UIA probe in `desktop.py` captures elements from ALL visible windows across the entire
+screen — not just the focused application. A typical observation:
+
+```
+FOCUSED: Untitled - Notepad
+ELEMENTS: 58
+  [1] Button "Minimize"           ← Notepad (relevant)
+  ...
+  [26] Button "CPU 31% 3.07 GHz"  ← Task Manager (irrelevant)
+  [44] Document "LM Studio"        ← LM Studio (irrelevant)
+  [63] Button "Google Chrome pinned" ← Taskbar (irrelevant)
+```
+
+The model sees 58-84 elements when only 3-5 belong to the focused app. It clicks wrong
+elements (e.g. "Edit bookmark for this tab" instead of using Run dialog to open Chrome).
+
+**Fix needed in desktop.py:** Filter `_probe` results by the focused window's HWND.
+Elements whose `el_hwnd != focused_hwnd` should be excluded or rendered without [ID].
+
+### Bug 4: Model outputs JSON in reasoning_content instead of content
+
+The model sometimes puts the structured JSON in `reasoning_content` (thinking channel)
+and leaves `content` empty. The `parse_fallback` config in wiring.json handles this by
+checking both channels — this works but it means the model wastes its content channel.
+
+**Not a bug to fix** — the parse_fallback is correct compensation for small model behavior.
 
 ---
 
-## Next session priorities
-
-1. **wiring-editor.html becomes the test harness** — add a goal input + run button + state viewer.
-   Testing = POST to `/run`, poll `/state`, display signals. No more test_*.py files.
-
-2. **Screen filtering** — `observe` should only render elements from the focused window's HWND.
-   The current probe scans the entire screen. Focused-only would cut noise by 80%.
-
-3. **Reasoning chain isolation** — don't pass full chain to act. Act only needs its own
-   last-attempt reasoning + reflect suggestion. Planner/verify reasoning is irrelevant to it.
-
-4. **Colony P2** — slot 2 delegates to slot 1 via bus. Already wired, needs end-to-end test
-   via the HTML dashboard (POST to slot 2's `/run`, observe slot 1 completing).
-
-5. **Code deletion** — remove `test_*.py` files after HTML test harness works.
-   Remove `start.sh`, `start_colony.ps1` (one-liners that add nothing).
-   Remove `simulation.py` if HTML panel can mock responses.
-
----
-
-## Files
+## File purposes
 
 | File | Lines | Role |
 |------|-------|------|
-| `server.py` | ~1090 | Graph engine + HTTP + all node handlers |
-| `desktop.py` | ~300 | Windows UIA hover-probe observer |
-| `actions.py` | ~180 | Verb dispatch (click/write/press/hotkey/focus/scroll) |
-| `simulation.py` | ~115 | Fake desktop for dev without Windows |
-| `colony.py` | ~112 | Multi-slot spawner |
-| `wiring-editor.html` | ~280 | Canvas2D topology editor + SSE log |
-| `prompts/wiring.json` | THE BRAIN | Topology, prompts, guards, limits, reasoning config |
-| `prompts/model.json` | LLM endpoint config |
-| `prompts/wiring-schema.json` | Validation schema |
+| `server.py` | 1091 | Graph engine + HTTP API + all 12 node handlers + LLM caller + prompt assembly |
+| `desktop.py` | 480 | Windows UIA hover-probe observer (cursor moves across screen, reads elements) |
+| `actions.py` | 179 | Verb executor: click, write, press, hotkey, focus, scroll |
+| `colony.py` | 112 | Multi-slot spawner (N instances sharing bus.json) |
+| `wiring-editor.html` | 277 | Canvas2D topology visualizer + SSE event log |
+| `prompts/wiring.json` | 536 | **THE BRAIN** — topology, prompts, guards, limits, reasoning config |
+| `prompts/model.json` | - | LLM endpoint (localhost:1234, nvidia-nemotron-3-nano-4b) |
+| `prompts/wiring-schema.json` | - | Schema for wiring validation |
+
+---
+
+## What the next session must do
+
+### Priority 1: Fix screen pollution in desktop.py
+
+In `Desktop.observe()`, after getting the focused HWND, the `_probe()` results should
+filter: only elements where `el_hwnd == focused_hwnd` get an [ID]. Others render as
+read-only context (no [ID] = model can't target them = no wrong clicks).
+
+This is a 5-line change in `_render()` or `_classify()`.
+
+### Priority 2: Fix verifier prompt in wiring.json
+
+Change the verifier role prompt to explicitly require causal connection:
+"confirmed=true requires LAST_OUTCOME to DIRECTLY achieve done_when, not merely be a
+precursor action. Example: pressing Win+R is a precursor to opening an app, NOT confirmation
+that the app is open."
+
+### Priority 3: wiring-editor.html becomes the test/control panel
+
+Add to the HTML:
+- A text input + "Run" button that POSTs to `/run`
+- A state panel that polls `/state` every 2s and displays plan/step/history
+- A "Smoke" button that GETs `/smoke` and shows pass/fail
+
+No new files. No test frameworks. The HTML IS the interface.
+
+### Priority 4: Code reduction in server.py
+
+Target: under 900 lines. Candidates:
+- `_resolve_value` (50 lines): switch-case that could be table-driven
+- `load_system_prompt` (23 lines): has dead legacy fallback paths (file-based prompts)
+- `print_listen_urls` / `http_bind`: already simplified, can be inlined
+- `append_trace` / `recent_traces` (30 lines): trace system never produces output — consider removal
+- `validate_wiring` (40 lines): useful but could be a startup-only check, not imported
+
+### Priority 5: Remove REASONING_CHAIN from remaining LLM nodes
+
+In `prompts/wiring.json`, remove the REASONING_CHAIN block from:
+- verify node (doesn't need it — judges from LAST_ACTIONS/LAST_OUTCOME only)
+- reflect node (doesn't need it — diagnoses from STEP/OUTCOME/VERIFY_REASONING)
+
+Keep it ONLY in planner (needs replan context).
 
 ---
 
@@ -144,27 +203,32 @@ Target: server.py under 800 lines. Total Python under 1200 lines.
 cd C:\Users\ewojgab\Downloads\endgame-ai
 $env:PYTHONIOENCODING = "utf-8"
 
-# Single goal (real desktop + LLM)
+# Run a goal on real desktop
 python server.py --run "open notepad" --max-cycles 30
 
-# Server mode (accepts goals via HTTP)
+# Server mode (goals via HTTP)
 python server.py
+# Then: curl -X POST http://localhost:9078/run -d "{\"goal\":\"open notepad\"}"
 
-# Simulation (no Windows needed)
-$env:ENDGAME_SIM = "1"
-python server.py --run "open notepad"
-
-# Colony
-python colony.py 1 2
+# Check state
+curl http://localhost:9078/state
+curl http://localhost:9078/smoke
 ```
 
-API:
-- `POST /run {"goal": "..."}` — start autonomous loop
-- `GET /state` — current ROD state
-- `GET /smoke` — 6-point health check
-- `GET /health` — node registry + slot info
-- `GET /events` — SSE stream (node transitions)
-- `POST /wiring` — hot-reload topology
+### API
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/run` | Start goal: `{"goal": "..."}` |
+| POST | `/resume` | Resume from state.json |
+| POST | `/interrupt` | Push new goal mid-run |
+| POST | `/wiring` | Hot-reload topology |
+| GET | `/state` | Current ROD state |
+| GET | `/health` | Node registry + slot info |
+| GET | `/smoke` | 6-point self-test |
+| GET | `/events` | SSE stream (node transitions) |
+| GET | `/wiring` | Current wiring.json |
+| GET | `/` | Serve wiring-editor.html |
 
 ---
 
@@ -172,25 +236,19 @@ API:
 
 | Var | Effect |
 |-----|--------|
-| `ENDGAME_SIM=1` | Use simulation.py desktop |
-| `ENDGAME_SLOT=N` | Override instance slot (port = 9077 + N) |
+| `ENDGAME_SLOT=N` | Instance slot, port = 9077 + N |
 | `ENDGAME_PERMISSIONS=desktop_exec` | MoE routing permission |
+| `ENDGAME_SIM=1` | Stub desktop (for dev without Windows) |
 | `PYTHONIOENCODING=utf-8` | Required on Windows |
 
 ---
 
-## Key insight from LM Studio logs (2026-06-20)
+## Architecture invariants (do not break)
 
-The 4B model's `reasoning_content` channel contains its full chain-of-thought.
-When this is passed downstream as REASONING_CHAIN, the model at the next node
-**role-plays all previous circuits** in its reasoning, then outputs the wrong record_type.
-
-Example: act node receives chain containing `[planner]` reasoning about task decomposition.
-The model's reasoning_content shows it literally re-deriving the plan, then outputs
-`record_type: task` instead of `record_type: action`.
-
-The fix: strict isolation. Each circuit should only see its own prior attempt + the
-reflect suggestion. The full chain is useful for humans/debugging but toxic for the 4B model.
-
-This is a wiring.json change: modify act's user blocks to remove REASONING_CHAIN,
-keep only VERIFY_REASONING and REFLECT_REASONING.
+1. `_trigger_rod_run` uses `http_port(slot)` — never a separate port function
+2. Element resolver: only `[ID]` numeric targets, digits are never stripped from names
+3. `PRIOR_TRACES` only emitted on replan (`replan_count > 0`)
+4. Verify preflight denies `FAILED:` / `BLOCKED` outcomes before calling LLM
+5. `node_satisfied`: false on `plan_failed`, true only when `step >= len(plan)`
+6. Reasoning chain clears on plan_ready (prevents cross-circuit poisoning)
+7. Act node does NOT receive REASONING_CHAIN (only VERIFY/REFLECT feedback)
