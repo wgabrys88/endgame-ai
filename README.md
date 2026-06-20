@@ -54,10 +54,10 @@ Colony, bus routing, MoE, and “personas” are **Phase 2** — copy-paste rods
 | 1 | `server.py` | Graph engine, LLM, HTTP, `call_circuit` |
 | 2 | `actions.py` | Verb dispatch from wiring `verbs` |
 | 3 | `desktop.py` | Windows UIA |
-| 4 | `prompts/wiring.json` | Topology, request blocks, guards, limits, reasoning, runtime |
+| 4 | `prompts/wiring.json` | Topology (nodes carry `prompt`), guards, limits, reasoning, runtime |
 | 5 | `prompts/model.json` | LM Studio endpoint |
 
-**5 files to run.** Circuit system prompts live in `wiring.json` → `prompts.base` (shared) + `prompts.roles` (per circuit).
+**5 files to run.** Prompts live on topology nodes: `node.prompt` (role + user blocks) composed with global `prompts.base` + `prompts.roles`.
 
 Runtime output (never commit): `state.json`, `bus.json`, logs.
 
@@ -68,7 +68,7 @@ Runtime output (never commit): `state.json`, `bus.json`, logs.
                     │ wiring.json │  ← THE brain
                     └──────┬──────┘
                            │
-         prompts.base + roles.planner / roles.unified / …
+    topology.nodes[].prompt ──► prompts.base + prompts.roles[role]
                            ▼
                     ┌─────────────┐
                     │  server.py  │  ← THE rod
@@ -92,8 +92,8 @@ Runtime output (never commit): `state.json`, `bus.json`, logs.
 
 | Layer | Location | Role |
 |-------|----------|------|
-| **Brain** | `prompts/wiring.json` | Topology, request blocks, reasoning feed, limits, errors, guards, act, runtime |
-| **Circuits** | `wiring.json` → `prompts.base` + `prompts.roles` | Composed system prompts — base + role per circuit |
+| **Brain** | `prompts/wiring.json` | Topology nodes with `prompt`, global `prompts.base`/`roles`, reasoning, limits, guards, act |
+| **Circuits** | `node.prompt` + `prompts.roles` | System = base + role; user = `node.prompt.user.blocks` |
 | **Body** | `server.py` | Graph engine, `call_circuit()`, `reasoning_patch()`, `parse_circuit_response()` |
 | **Muscles** | `actions.py`, `desktop.py` | Windows UIA observe + execute |
 | **Memory** | `state.json` | goal, step, screen, history, reasoning — **full, not truncated** |
@@ -102,7 +102,7 @@ Runtime output (never commit): `state.json`, `bus.json`, logs.
 flowchart TB
   subgraph brain ["wiring.json"]
     TOPO["topology: nodes + edges"]
-    REQ["request: user message blocks"]
+    NP["node.prompt: role + user blocks"]
     REAS["reasoning: capture + feed + record_type"]
   end
   subgraph body ["server.py"]
@@ -134,7 +134,7 @@ scheduler → plan_complete → bus_post → satisfied
 LM Studio returns `content` + `reasoning_content`.
 
 1. Captured per circuit → `state.reasoning.{act,verify,reflect,...}`
-2. Fed downstream via wiring request blocks (`VERIFY_REASONING`, `REFLECT_REASONING`, `REASONING_CHAIN`)
+2. Fed downstream via `node.prompt.user.blocks` (`VERIFY_REASONING`, `REFLECT_REASONING`, `REASONING_CHAIN`)
 3. `expected_record_type` prevents cross-circuit JSON poisoning (e.g. act outputting verdict)
 4. `last_error` = guard/parse only — **not** verifier feedback
 
@@ -172,8 +172,8 @@ Act **never** emits DONE — verify confirms step completion.
 | Concern | In wiring.json? | Notes |
 |---------|-------------------|-------|
 | Node graph | **Yes** | `topology.nodes`, `topology.edges` |
-| Circuit per node | **Yes** | `node_circuits` |
-| User message assembly | **Yes** | `request.*.user.blocks` |
+| Circuit role per node | **Yes** | `topology.nodes[].prompt.role` |
+| User message assembly | **Yes** | `topology.nodes[].prompt.user.blocks` |
 | Reasoning capture & feed | **Yes** | `reasoning.*` |
 | Limits, errors, guards, act | **Yes** | |
 | HTTP port formula | **Yes** | `runtime.http_port_base + slot` |
@@ -183,7 +183,7 @@ Act **never** emits DONE — verify confirms step completion.
 
 ### “Wiring-only” — how true?
 
-**Mostly true for:** edges, request blocks, limits, guards, errors, act policy, reasoning config.
+**Mostly true for:** edges, node prompt blocks, limits, guards, errors, act policy, reasoning config.
 
 **Requires Python for:** new node type, new `_resolve_value` source, new desktop verb.
 
@@ -194,11 +194,11 @@ Act **never** emits DONE — verify confirms step completion.
 | Want to… | Edit… |
 |----------|-------|
 | Change flow (retry → replan earlier) | `topology.edges` |
-| Change what act sees | `request.unified.user.blocks` |
+| Change what act sees | `act` node → `prompt.user.blocks` in topology |
 | Change retry limits | `limits.*` |
 | Change guard hints | `guards.advance_hints` |
 | Change shared prompt preamble | `prompts.base` in wiring.json |
-| Change circuit contract | `prompts.roles.{planner,unified,...}` |
+| Change circuit contract | `prompts.roles.{planner,unified,...}` or `node.prompt.system` override |
 | Add new node type | **Python** `server.py` + wiring topology |
 
 ---
@@ -207,7 +207,8 @@ Act **never** emits DONE — verify confirms step completion.
 
 ### Done
 
-- [x] Policy in `wiring.json` (topology, request, reasoning, limits, guards, act, runtime)
+- [x] Policy in `wiring.json` (topology + node prompts, reasoning, limits, guards, act, runtime)
+- [x] Prompts wired to topology nodes (`node.prompt`)
 - [x] `reasoning_content` capture + feed-forward
 - [x] `expected_record_type` gate
 - [x] No screen/history truncation
@@ -307,14 +308,14 @@ topology + reasoning loop + verify gate — not one monolithic prompt.
 FOCUS: Single rod first. ROD = server.py + actions.py + desktop.py +
 prompts/wiring.json + prompts/model.json.
 
-BRAIN — wiring.json: topology, request blocks, prompts.base, prompts.roles,
-reasoning.*, limits, errors, guards, act, runtime, node_circuits
-CIRCUITS — prompts.base + prompts.roles (composed system prompt per circuit)
+BRAIN — wiring.json: topology.nodes[].prompt, prompts.base, prompts.roles,
+reasoning.*, limits, errors, guards, act, runtime
+CIRCUITS — node.prompt.role + prompts.base + prompts.roles; user via node.prompt.user.blocks
 BODY — server.py: graph engine, call_circuit(), reasoning_patch(),
 parse_circuit_response() with expected_record_type. NO truncation.
 
 REASONING LOOP: LM Studio reasoning_content → state.reasoning → fed downstream
-via wiring request blocks. last_error = guards/parse only, NOT verifier feedback.
+via node.prompt.user.blocks. last_error = guards/parse only, NOT verifier feedback.
 
 FLOW: goal_inbox→planner→scheduler→bus_check→observe→act→verify; reflect on fail.
 
@@ -324,7 +325,7 @@ RUN: python server.py --run "goal"
 
 ANALYZE: state.json (reasoning.*, FULL screen, last_error) + console log signals.
 
-WIRING-ONLY: edges, request blocks, limits, errors, guards, act rules, reasoning.
+WIRING-ONLY: edges, node.prompt blocks, limits, errors, guards, act rules, reasoning.
 NEEDS PYTHON: new node type, new state source, new verb.
 
 CONSTRAINTS: stdlib, Windows, static task-agnostic prompts, act never DONE.
@@ -348,6 +349,6 @@ endgame-ai/
 ├── actions.py
 ├── desktop.py
 └── prompts/
-    ├── wiring.json    ← topology + prompts.base + prompts.roles + request blocks
+    ├── wiring.json    ← topology (nodes.prompt) + prompts.base + prompts.roles
     └── model.json
 ```

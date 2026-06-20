@@ -489,13 +489,23 @@ function App() {
   // Node click → sidebar
   const onNodeClick = useCallback((_, node) => setSelectedNode(node), []);
 
-  const circuitForNode = (nodeType) => {
-    if (!wiring) return null;
-    const circuit = wiring.node_circuits?.[nodeType] || nodeType;
+  const circuitForNode = (nodeData) => {
+    if (!wiring || !nodeData) return null;
+    const topoNode = (wiring.topology?.nodes || []).find(n => n.id === nodeData.id || n.type === nodeData.type);
+    const prompt = topoNode?.prompt || nodeData.prompt;
+    if (!prompt) return null;
+    const circuit = prompt.role || topoNode?.circuit || nodeData.type;
     const roles = wiring.prompts?.roles || {};
-    if (!roles[circuit]) return null;
-    const base = wiring.prompts?.base || '';
-    return { circuit, text: [base, roles[circuit]].filter(Boolean).join('\n\n') };
+    const useBase = prompt.extends !== 'none';
+    const base = useBase ? (wiring.prompts?.base || '') : '';
+    const roleText = prompt.system || roles[circuit] || '';
+    if (!roleText && !base) return null;
+    const blocks = prompt.user?.blocks || [];
+    return {
+      circuit,
+      text: [base, roleText].filter(Boolean).join('\n\n'),
+      blocks,
+    };
   };
 
   // ============ LIVE EXECUTION ENGINE ============
@@ -758,12 +768,14 @@ function App() {
             <label>Type</label><span>{selectedNode.data.type}</span>
             <label>Label</label><span>{selectedNode.data.label}</span>
             {(() => {
-              const cp = circuitForNode(selectedNode.data.type);
-              if (!cp) return null;
+              const cp = circuitForNode(selectedNode.data);
+              if (!cp) return <span style={{color:'#64748b'}}>No LLM prompt on this node</span>;
               return (<>
-                <label>Circuit</label><span>{cp.circuit}</span>
+                <label>Circuit role</label><span>{cp.circuit}</span>
                 <label>System prompt ({cp.text.length} chars)</label>
-                <pre style={{maxHeight:320}}>{cp.text}</pre>
+                <pre style={{maxHeight:240}}>{cp.text}</pre>
+                <label>User blocks ({cp.blocks.length})</label>
+                <pre style={{maxHeight:160}}>{JSON.stringify(cp.blocks, null, 1)}</pre>
               </>);
             })()}
           </div>

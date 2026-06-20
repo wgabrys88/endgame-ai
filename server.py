@@ -26,8 +26,36 @@ def wiring_error(key, **fmt):
     msg = WIRING.get("errors", {}).get(key, key)
     return msg.format(**fmt) if fmt else msg
 
+LLM_NODE_TYPES = frozenset({"planner", "act", "verify", "reflect", "self_modify"})
+
+def topo_node(node_type):
+    for n in WIRING.get("topology", {}).get("nodes", []):
+        if n.get("type") == node_type:
+            return n
+    return {}
+
 def circuit_for(node_type):
-    return WIRING.get("node_circuits", {}).get(node_type, node_type)
+    """Circuit role key for reasoning store — from node.prompt.role on topology."""
+    node = topo_node(node_type)
+    prompt = node.get("prompt", {})
+    return prompt.get("role") or node.get("circuit") or WIRING.get("node_circuits", {}).get(node_type, node_type)
+
+def node_circuits_map():
+    out = {}
+    for n in WIRING.get("topology", {}).get("nodes", []):
+        t = n.get("type")
+        if t in LLM_NODE_TYPES or n.get("prompt"):
+            out[t] = circuit_for(t)
+    return out
+
+def _prompt_cfg(node_type=None, circuit=None):
+    if node_type:
+        cfg = topo_node(node_type).get("prompt", {})
+        if cfg:
+            return cfg
+    if circuit:
+        return WIRING.get("request", {}).get(circuit, {})
+    return {}
 
 def http_port(slot=None):
     rt = WIRING.get("runtime", {})
@@ -148,8 +176,23 @@ def parse_circuit_response(circuit, content, reasoning):
         return parsed, source_name
     return None, None
 
-def call_circuit(circuit, state, extra=None):
-    """Run LLM circuit: static system + wired user blocks; capture reasoning_content."""
+def call_node(node_type, state, extra=None):
+    """Run LLM for a topology node: prompt on node + prompts.base/roles."""
+    circuit = circuit_for(node_type)
+    s = dict(state)
+    if extra:
+        s.update(extra)
+    system = load_system_prompt(circuit, s, node_type=node_type)
+    user = build_user_message(circuit, s, node_type=node_type)
+    content, reasoning, _ = llm(system, user)
+    patch = reasoning_patch(state, circuit, reasoning)
+    parsed, _ = parse_circuit_response(circuit, content, reasoning)
+    return {"content": content, "reasoning": reasoning, "parsed": parsed, "patch": patch}
+
+def call_circuit(circuit, state, extra=None, node_type=None):
+    """Legacy entry — prefer call_node(node_type)."""
+    if node_type:
+        return call_node(node_type, state, extra=extra)
     s = dict(state)
     if extra:
         s.update(extra)
@@ -203,31 +246,36 @@ def _resolve_value(state, source):
         return state.get(key, "")
     return ""
 
-def load_system_prompt(circuit, state=None):
-    """Compose system prompt: prompts.base + prompts.roles[circuit]. Legacy file fallback."""
+def load_system_prompt(circuit, state=None, node_type=None):
+    """Compose system prompt: node.prompt + prompts.base + prompts.roles. Legacy fallbacks."""
     prompts = WIRING.get("prompts", {})
-    base = prompts.get("base", "")
+    cfg = _prompt_cfg(node_type, circuit)
+    use_base = cfg.get("extends", "base") != "none"
+    base = prompts.get("base", "") if use_base else ""
     roles = prompts.get("roles", {})
-    req = WIRING.get("request", {}).get(circuit, {})
-    sys_cfg = req.get("system", {})
-    role_key = sys_cfg.get("role", circuit)
-    role_text = roles.get(role_key, "")
-    if sys_cfg.get("text"):
-        role_text = sys_cfg["text"]
-    elif not role_text and sys_cfg.get("file"):
-        pf = PROMPTS / sys_cfg["file"]
-        if pf.exists():
-            return pf.read_text(encoding="utf-8")
-    elif not role_text:
+    role_key = cfg.get("role", circuit)
+    role_text = cfg.get("system") or roles.get(role_key, "")
+    if not role_text:
+        sys_cfg = cfg.get("system", {}) if isinstance(cfg.get("system"), dict) else {}
+        if sys_cfg.get("text"):
+            role_text = sys_cfg["text"]
+        elif sys_cfg.get("file"):
+            pf = PROMPTS / sys_cfg["file"]
+            if pf.exists():
+                return pf.read_text(encoding="utf-8")
+    if not role_text:
         pf = PROMPTS / f"{circuit}.txt"
         if pf.exists():
             return pf.read_text(encoding="utf-8")
     parts = [p.strip() for p in (base, role_text) if p and p.strip()]
     return "\n\n".join(parts)
 
-def build_user_message(circuit, state):
-    """Build dynamic user message from wiring.json request blocks."""
-    blocks = WIRING.get("request", {}).get(circuit, {}).get("user", {}).get("blocks", [])
+def build_user_message(circuit, state, node_type=None):
+    """Build dynamic user message from node.prompt.user.blocks (or legacy request)."""
+    cfg = _prompt_cfg(node_type, circuit)
+    blocks = cfg.get("user", {}).get("blocks", [])
+    if not blocks:
+        blocks = WIRING.get("request", {}).get(circuit, {}).get("user", {}).get("blocks", [])
     parts = []
     for block in blocks:
         label = block.get("label", "")
@@ -279,7 +327,7 @@ def node_entry(state, _):
 
 def node_planner(state, _):
     try:
-        r = call_circuit(circuit_for("planner"), state)
+        r = call_node("planner", state)
         parsed = r["parsed"]
         patch = dict(r["patch"])
         if not parsed or "data" not in parsed or "steps" not in parsed.get("data", {}):
@@ -324,7 +372,7 @@ def node_act(state, _):
     valid = set(act_cfg.get("valid_conclusions", ["EXECUTE", "CANNOT"]))
 
     try:
-        r = call_circuit(circuit_for("act"), state)
+        r = call_node("act", state)
     except Exception as e:
         return {"signals": ["act_failed"], "patch": {"last_error": str(e)}}
 
@@ -391,7 +439,7 @@ def node_verify(state, _):
         screen = state.get("screen", "(no desktop)")
 
     try:
-        r = call_circuit(circuit_for("verify"), state, {"screen": screen})
+        r = call_node("verify", state, extra={"screen": screen})
         parsed = r["parsed"]
         patch = {**r["patch"], "screen": screen}
         if parsed and parsed.get("data", {}).get("confirmed"):
@@ -417,7 +465,7 @@ def node_reflect(state, _):
         return {"signals": ["replan"], "patch": {"retries": 0, "replan_count": replans + 1}}
 
     try:
-        r = call_circuit(circuit_for("reflect"), state)
+        r = call_node("reflect", state)
         parsed = r["parsed"]
         patch = {**r["patch"], "retries": retries + 1}
         if not parsed:
@@ -522,7 +570,7 @@ def node_self_modify(state, _):
     # Backup before mutation
     (PROMPTS / "wiring.backup.json").write_text(json.dumps(current, indent=2), encoding="utf-8")
     try:
-        r = call_circuit(circuit_for("self_modify"), state)
+        r = call_node("self_modify", state)
         parsed = r["parsed"]
         patch = dict(r["patch"])
         expected = WIRING.get("reasoning", {}).get("expected_record_type", {}).get("self_modify", "wiring_patch")
@@ -650,7 +698,7 @@ class H(http.server.BaseHTTPRequestHandler):
             self._j({
                 "ok": True,
                 "nodes": list(NODES.keys()),
-                "node_circuits": WIRING.get("node_circuits", {}),
+                "node_circuits": node_circuits_map(),
                 "slot": slot,
                 "port": http_port(slot),
             })

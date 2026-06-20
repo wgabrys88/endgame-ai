@@ -14,7 +14,34 @@
       {
         "id": "planner",
         "type": "planner",
-        "label": "Decompose goal \u2192 steps"
+        "label": "Decompose goal \u2192 steps",
+        "circuit": "planner",
+        "prompt": {
+          "extends": "base",
+          "role": "planner",
+          "user": {
+            "blocks": [
+              {
+                "label": "GOAL",
+                "source": "state.goal",
+                "always": true
+              },
+              {
+                "label": "SCREEN",
+                "source": "state.screen",
+                "empty_template": "(no screen)"
+              },
+              {
+                "label": "REASONING_CHAIN",
+                "source": "reasoning.chain"
+              },
+              {
+                "label": "PLANNER_REASONING",
+                "source": "reasoning.planner"
+              }
+            ]
+          }
+        }
       },
       {
         "id": "scheduler",
@@ -34,22 +61,157 @@
       {
         "id": "act",
         "type": "act",
-        "label": "LLM decide + guards + execute"
+        "label": "LLM decide + guards + execute",
+        "circuit": "unified",
+        "prompt": {
+          "extends": "base",
+          "role": "unified",
+          "user": {
+            "blocks": [
+              {
+                "label": "GOAL",
+                "source": "state.step_goal",
+                "always": true
+              },
+              {
+                "label": "SCREEN",
+                "source": "state.screen",
+                "empty_template": "(no screen)"
+              },
+              {
+                "label": "VERIFY_REASONING",
+                "source": "reasoning.verify"
+              },
+              {
+                "label": "REFLECT_REASONING",
+                "source": "reasoning.reflect"
+              },
+              {
+                "label": "REASONING_CHAIN",
+                "source": "reasoning.chain"
+              },
+              {
+                "label": "LAST_ERROR",
+                "source": "state.last_error"
+              },
+              {
+                "label": "HISTORY",
+                "source": "state.history"
+              }
+            ]
+          }
+        }
       },
       {
         "id": "verify",
         "type": "verify",
-        "label": "Check step evidence"
+        "label": "Check step evidence",
+        "circuit": "verifier",
+        "prompt": {
+          "extends": "base",
+          "role": "verifier",
+          "user": {
+            "blocks": [
+              {
+                "label": "STEP",
+                "source": "state.current_step.description",
+                "always": true
+              },
+              {
+                "label": "DONE_WHEN",
+                "source": "state.current_step.done_when"
+              },
+              {
+                "label": "SCREEN",
+                "source": "state.screen",
+                "empty_template": "(no screen)"
+              },
+              {
+                "label": "LAST_ACTIONS",
+                "source": "state.last_actions"
+              }
+            ]
+          }
+        }
       },
       {
         "id": "reflect",
         "type": "reflect",
-        "label": "Diagnose + retry/replan"
+        "label": "Diagnose + retry/replan",
+        "circuit": "reflector",
+        "prompt": {
+          "extends": "base",
+          "role": "reflector",
+          "user": {
+            "blocks": [
+              {
+                "label": "STEP",
+                "source": "state.current_step.description",
+                "always": true
+              },
+              {
+                "label": "DONE_WHEN",
+                "source": "state.current_step.done_when"
+              },
+              {
+                "label": "SCREEN",
+                "source": "state.screen",
+                "empty_template": "(no screen)"
+              },
+              {
+                "label": "LAST_ACTIONS",
+                "source": "state.last_actions"
+              },
+              {
+                "label": "VERIFY_REASONING",
+                "source": "reasoning.verify"
+              }
+            ]
+          }
+        }
       },
       {
         "id": "self_modify",
         "type": "self_modify",
-        "label": "Alter own wiring"
+        "label": "Alter own wiring",
+        "circuit": "self_modify",
+        "prompt": {
+          "extends": "base",
+          "role": "self_modify",
+          "user": {
+            "blocks": [
+              {
+                "label": "GOAL",
+                "source": "state.goal",
+                "always": true
+              },
+              {
+                "label": "REASONING_CHAIN",
+                "source": "reasoning.chain"
+              },
+              {
+                "label": "REFLECT_REASONING",
+                "source": "reasoning.reflect"
+              },
+              {
+                "label": "VERIFY_REASONING",
+                "source": "reasoning.verify"
+              },
+              {
+                "label": "LAST_ERROR",
+                "source": "state.last_error"
+              },
+              {
+                "label": "HISTORY",
+                "source": "state.history"
+              },
+              {
+                "label": "CURRENT_NODES",
+                "source": "topology.nodes"
+              }
+            ]
+          }
+        }
       },
       {
         "id": "satisfied",
@@ -194,155 +356,6 @@
       "self_modify": "ROLE: Self_modify circuit. Suggest one minimal topology change when the graph is stuck.\n\nINPUT blocks: GOAL, REASONING_CHAIN, REFLECT_REASONING, VERIFY_REASONING, LAST_ERROR, HISTORY, CURRENT_NODES\n\nOUTPUT (content JSON only):\n{\"record_type\":\"wiring_patch\",\"data\":{\"op\":\"add_node|add_edge|remove_edge|set_guard\",\"payload\":{...}}}\n\nOPS:\n- add_node: {\"id\":\"...\",\"type\":\"observe|act|verify\",\"label\":\"...\",\"edge_from\":\"node\",\"edge_to\":\"node\",\"on\":\"signal\"}\n- add_edge: {\"from\":\"...\",\"to\":\"...\",\"on\":\"...\"}\n- remove_edge: {\"from\":\"...\",\"to\":\"...\"}\n- set_guard: {\"key\":\"...\",\"value\":\"...\"}\n\nRULES:\n- One conservative change that helps the stuck state\n- Use node ids from CURRENT_NODES only"
     }
   },
-  "request": {
-    "planner": {
-      "user": {
-        "blocks": [
-          {
-            "label": "GOAL",
-            "source": "state.goal",
-            "always": true
-          },
-          {
-            "label": "SCREEN",
-            "source": "state.screen",
-            "empty_template": "(no screen)"
-          },
-          {
-            "label": "REASONING_CHAIN",
-            "source": "reasoning.chain"
-          },
-          {
-            "label": "PLANNER_REASONING",
-            "source": "reasoning.planner"
-          }
-        ]
-      }
-    },
-    "unified": {
-      "user": {
-        "blocks": [
-          {
-            "label": "GOAL",
-            "source": "state.step_goal",
-            "always": true
-          },
-          {
-            "label": "SCREEN",
-            "source": "state.screen",
-            "empty_template": "(no screen)"
-          },
-          {
-            "label": "VERIFY_REASONING",
-            "source": "reasoning.verify"
-          },
-          {
-            "label": "REFLECT_REASONING",
-            "source": "reasoning.reflect"
-          },
-          {
-            "label": "REASONING_CHAIN",
-            "source": "reasoning.chain"
-          },
-          {
-            "label": "LAST_ERROR",
-            "source": "state.last_error"
-          },
-          {
-            "label": "HISTORY",
-            "source": "state.history"
-          }
-        ]
-      }
-    },
-    "verifier": {
-      "user": {
-        "blocks": [
-          {
-            "label": "STEP",
-            "source": "state.current_step.description",
-            "always": true
-          },
-          {
-            "label": "DONE_WHEN",
-            "source": "state.current_step.done_when"
-          },
-          {
-            "label": "SCREEN",
-            "source": "state.screen",
-            "empty_template": "(no screen)"
-          },
-          {
-            "label": "LAST_ACTIONS",
-            "source": "state.last_actions"
-          }
-        ]
-      }
-    },
-    "reflector": {
-      "user": {
-        "blocks": [
-          {
-            "label": "STEP",
-            "source": "state.current_step.description",
-            "always": true
-          },
-          {
-            "label": "DONE_WHEN",
-            "source": "state.current_step.done_when"
-          },
-          {
-            "label": "SCREEN",
-            "source": "state.screen",
-            "empty_template": "(no screen)"
-          },
-          {
-            "label": "LAST_ACTIONS",
-            "source": "state.last_actions"
-          },
-          {
-            "label": "VERIFY_REASONING",
-            "source": "reasoning.verify"
-          }
-        ]
-      }
-    },
-    "self_modify": {
-      "user": {
-        "blocks": [
-          {
-            "label": "GOAL",
-            "source": "state.goal",
-            "always": true
-          },
-          {
-            "label": "REASONING_CHAIN",
-            "source": "reasoning.chain"
-          },
-          {
-            "label": "REFLECT_REASONING",
-            "source": "reasoning.reflect"
-          },
-          {
-            "label": "VERIFY_REASONING",
-            "source": "reasoning.verify"
-          },
-          {
-            "label": "LAST_ERROR",
-            "source": "state.last_error"
-          },
-          {
-            "label": "HISTORY",
-            "source": "state.history"
-          },
-          {
-            "label": "CURRENT_NODES",
-            "source": "topology.nodes"
-          }
-        ]
-      }
-    }
-  },
   "guards": {
     "advance_hints": [
       {
@@ -393,13 +406,6 @@
       "replan_count": 0,
       "last_error": ""
     }
-  },
-  "node_circuits": {
-    "planner": "planner",
-    "act": "unified",
-    "verify": "verifier",
-    "reflect": "reflector",
-    "self_modify": "self_modify"
   },
   "act": {
     "valid_conclusions": [
