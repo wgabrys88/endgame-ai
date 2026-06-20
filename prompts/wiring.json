@@ -1,7 +1,19 @@
 {
   "schema": "endgame-topology/v1",
   "instance": {
-    "slot": 1
+    "slot": 1,
+    "permissions": [
+      "desktop_exec"
+    ]
+  },
+  "moe": {
+    "required_permission": "desktop_exec",
+    "delegate_keywords": [
+      "chrome",
+      "browser",
+      "youtube"
+    ],
+    "default_exec_slot": 1
   },
   "topology": {
     "cycle_start": "goal_inbox",
@@ -10,6 +22,11 @@
         "id": "goal_inbox",
         "type": "entry",
         "label": "Goal input"
+      },
+      {
+        "id": "moe_route",
+        "type": "moe_route",
+        "label": "Route goal to slot"
       },
       {
         "id": "planner",
@@ -33,6 +50,18 @@
               {
                 "label": "PLANNER_REASONING",
                 "source": "reasoning.planner"
+              },
+              {
+                "label": "COMPLETED_STEPS",
+                "source": "state.step"
+              },
+              {
+                "label": "HISTORY",
+                "source": "state.history"
+              },
+              {
+                "label": "PRIOR_TRACES",
+                "source": "traces.recent"
               }
             ]
           }
@@ -228,8 +257,18 @@
     "edges": [
       {
         "from": "goal_inbox",
-        "to": "planner",
+        "to": "moe_route",
         "on": "ready"
+      },
+      {
+        "from": "moe_route",
+        "to": "planner",
+        "on": "self"
+      },
+      {
+        "from": "moe_route",
+        "to": "bus_post",
+        "on": "delegated"
       },
       {
         "from": "planner",
@@ -240,6 +279,11 @@
         "from": "planner",
         "to": "planner",
         "on": "retry_plan"
+      },
+      {
+        "from": "planner",
+        "to": "bus_post",
+        "on": "plan_failed"
       },
       {
         "from": "scheduler",
@@ -350,9 +394,9 @@
   "prompts": {
     "base": "ORGANISM: You are one specialist circuit in a single-rod Windows desktop agent. Circuits run sequentially; you never chat with a human.\nYou receive wired INPUT blocks and emit structured JSON in content only.\n\nSEPARATION OF CONCERNS:\n- planner: abstract ordered subtasks from GOAL only \u2014 no SCREEN, no UIA, no [ID]\n- act (unified): ONLY circuit that receives SCREEN \u2014 translates subtasks into UIA actions\n- verify / reflect: descriptive step + act outcomes only \u2014 never SCREEN\n\nTWO CHANNELS (LM Studio):\n- content: single JSON with record_type + data (schema in ROLE)\n- reasoning_content: plain prose for downstream circuits; never JSON there\n\nANTI-POISONING: prior reasoning may contain stale JSON or wrong record_types. Extract facts only.",
     "roles": {
-      "planner": "ROLE: Planner \u2014 planning mode. Turn GOAL into an ordered list of human subtasks.\n\nINPUT: GOAL, REASONING_CHAIN, PLANNER_REASONING (no SCREEN)\n\nOUTPUT (content JSON only):\n{\"record_type\":\"task\",\"data\":{\"steps\":[{\"description\":\"open notepad\",\"done_when\":\"Notepad is open\"},{\"description\":\"write hello in notepad\",\"done_when\":\"The text hello is written in Notepad\"}]}}\n\nRULES:\n- description: short imperative subtask a human would say (open X, write Y, open chrome, go to URL)\n- done_when: plain-language success criteria \u2014 NO UIA, NO [ID], NO SCREEN quotes\n- Ordered list 2\u20138 steps; one user intent per step\n- Do not plan click coordinates or element names \u2014 act owns translation\n- On replan: revise the remaining subtask list for the same GOAL",
-      "unified": "ROLE: Act (executor) \u2014 ONLY circuit with SCREEN. Translate current subtask into one UIA action.\n\nINPUT: SUBTASK (step_goal), SCREEN, VERIFY_REASONING, REFLECT_REASONING, HISTORY, LAST_ERROR\n\nVERBS: click, write, press, hotkey, focus, scroll\n\nOUTPUT (content JSON only):\n{\"record_type\":\"action\",\"data\":{\"conclusion\":\"EXECUTE|CANNOT\",\"actions\":[{\"verb\":\"...\",\"target\":\"...\",\"value\":\"...\"}]}}\n\nRULES:\n- You alone read SCREEN. Targets must be [ID] or name substring from SCREEN\n- Map abstract subtask to concrete actions (e.g. open notepad \u2192 hotkey win+r, write notepad, press enter)\n- One action per turn; never emit DONE \u2014 verify confirms the subtask\n- conclusion CANNOT only if SCREEN truly cannot progress the subtask this turn\n- HISTORY OK \u2192 do not repeat same verb+target; read SCREEN for next move",
-      "verifier": "ROLE: Verifier \u2014 judge subtask completion from descriptive criteria + act report (no SCREEN).\n\nINPUT: STEP, DONE_WHEN, LAST_ACTIONS, LAST_OUTCOME, HISTORY\n\nOUTPUT (content JSON only):\n{\"record_type\":\"verdict\",\"data\":{\"confirmed\":true|false,\"evidence\":\"quote LAST_OUTCOME / actions\",\"reason\":\"one line\"}}\n\nRULES:\n- You never receive SCREEN \u2014 judge whether act outcomes satisfy done_when in plain language\n- confirmed=true when LAST_OUTCOME shows OK and results match done_when intent\n- confirmed=false when CANNOT, FAILED, BLOCKED, or outcomes do not satisfy done_when\n- Do not invent UI elements; cite LAST_ACTIONS / LAST_OUTCOME only",
+      "planner": "ROLE: Planner \u2014 planning mode. Turn GOAL into an ordered list of human subtasks.\n\nINPUT: GOAL, REASONING_CHAIN, PLANNER_REASONING, COMPLETED_STEPS, HISTORY (no SCREEN)\n\nOUTPUT (content JSON only):\n{\"record_type\":\"task\",\"data\":{\"steps\":[{\"description\":\"open notepad\",\"done_when\":\"Notepad is open\"},{\"description\":\"write hello in notepad\",\"done_when\":\"The text hello is written in Notepad\"}]}}\n\nRULES:\n- description: short imperative subtask a human would say (open X, write Y, open chrome, go to URL)\n- done_when: plain-language success criteria \u2014 NO UIA, NO [ID], NO SCREEN quotes\n- Ordered list 2\u20138 steps; one user intent per step\n- Do not plan click coordinates or element names \u2014 act owns translation\n- On replan (COMPLETED_STEPS > 0): keep completed work in mind; plan only remaining subtasks for the same GOAL; do not repeat finished steps",
+      "unified": "ROLE: Act (executor) \u2014 ONLY circuit with SCREEN. Translate current subtask into one UIA action.\n\nINPUT: SUBTASK (step_goal), SCREEN, VERIFY_REASONING, REFLECT_REASONING, HISTORY, LAST_ERROR\n\nVERBS: click, write, press, hotkey, focus, scroll\n\nOUTPUT (content JSON only):\n{\"record_type\":\"action\",\"data\":{\"conclusion\":\"EXECUTE|CANNOT\",\"actions\":[{\"verb\":\"...\",\"target\":\"...\",\"value\":\"...\"}]}}\n\nRULES:\n- NEVER output record_type task or verdict \u2014 ONLY action\n- You alone read SCREEN. For click/write/scroll: target must be [ID] or name substring from SCREEN\n- For hotkey/press/focus: target is key combo or window title \u2014 no [ID] required\n- Open-app subtasks (open X): use hotkey win+r, then write app name, then press enter across turns\n- ELEMENTS: 0 or empty SCREEN \u2192 still EXECUTE hotkey win+r or focus if subtask is open/focus an app\n- One action per turn; never emit DONE \u2014 verify confirms the subtask\n- conclusion CANNOT only if no verb can advance the subtask at all\n- HISTORY OK \u2192 do not repeat same verb+target; read SCREEN for next move",
+      "verifier": "ROLE: Verifier \u2014 judge subtask completion from descriptive criteria + act report (no SCREEN).\n\nINPUT: STEP, DONE_WHEN, LAST_ACTIONS, LAST_OUTCOME, HISTORY\n\nOUTPUT (content JSON only):\n{\"record_type\":\"verdict\",\"data\":{\"confirmed\":true|false,\"evidence\":\"quote LAST_OUTCOME / actions\",\"reason\":\"one line\"}}\n\nRULES:\n- You never receive SCREEN \u2014 judge whether act outcomes satisfy done_when in plain language\n- confirmed=true ONLY when LAST_OUTCOME starts with OK: AND the action semantically satisfies done_when\n- confirmed=false when LAST_OUTCOME starts with FAILED:, contains BLOCKED/CANNOT, or action does not match done_when\n- Example: done_when 'Notepad is open' requires evidence of launching/focusing Notepad \u2014 typing alone is NOT enough\n- Example: done_when 'hello is typed' requires write/typing evidence with OK outcome\n- Do not invent UI elements; cite LAST_ACTIONS / LAST_OUTCOME only",
       "reflector": "ROLE: Reflector \u2014 step failed verification; advise act (no SCREEN).\n\nINPUT: STEP, DONE_WHEN, LAST_ACTIONS, LAST_OUTCOME, VERIFY_REASONING, HISTORY\n\nOUTPUT (content JSON only):\n{\"record_type\":\"diagnosis\",\"data\":{\"diagnosis\":\"what failed\",\"suggestion\":\"strategic hint for act\",\"should_replan\":false}}\n\nRULES:\n- No SCREEN, no [ID], no click targets \u2014 act translates hints to UIA\n- suggestion: strategic (e.g. use Run dialog, focus app window first) not element names\n- should_replan=true only if subtask is wrong for the GOAL, not merely hard to execute",
       "self_modify": "ROLE: Self_modify circuit. Suggest one minimal topology change when the graph is stuck.\n\nINPUT blocks: GOAL, REASONING_CHAIN, REFLECT_REASONING, VERIFY_REASONING, LAST_ERROR, HISTORY, CURRENT_NODES\n\nOUTPUT (content JSON only):\n{\"record_type\":\"wiring_patch\",\"data\":{\"op\":\"add_node|add_edge|remove_edge|set_guard\",\"payload\":{...}}}\n\nOPS:\n- add_node: {\"id\":\"...\",\"type\":\"observe|act|verify\",\"label\":\"...\",\"edge_from\":\"node\",\"edge_to\":\"node\",\"on\":\"signal\"}\n- add_edge: {\"from\":\"...\",\"to\":\"...\",\"on\":\"...\"}\n- remove_edge: {\"from\":\"...\",\"to\":\"...\"}\n- set_guard: {\"key\":\"...\",\"value\":\"...\"}\n\nRULES:\n- One conservative change that helps the stuck state\n- Use node ids from CURRENT_NODES only"
     }
@@ -397,6 +441,8 @@
     "http_port_slot_offset": true,
     "http_bind": "0.0.0.0",
     "cycle_delay_ms": 300,
+    "act_post_delay_ms": 400,
+    "simulation_mode": false,
     "initial_state": {
       "step": 0,
       "retries": 0,
@@ -431,6 +477,7 @@
     "act_cannot": "CANNOT",
     "act_bad_conclusion": "bad conclusion: {conclusion}",
     "verify_parse_failed": "verify parse failed",
+    "verify_preflight_denied": "verify preflight: LAST_OUTCOME not OK",
     "reflector_parse_failed": "reflector: parse_failed or wrong record_type \u2014 output diagnosis JSON only",
     "planner_parse_failed": "planner: parse_failed \u2014 respond with JSON only",
     "planner_empty": "planner: empty plan",
@@ -442,7 +489,9 @@
     "max_cycles": 300,
     "history_depth": 10,
     "bus_max": 200,
-    "planner_retries": 3
+    "planner_retries": 3,
+    "llm_parse_retries": 2,
+    "trace_few_shot": 2
   },
   "verbs": {
     "click": {

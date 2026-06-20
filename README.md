@@ -1,133 +1,133 @@
-# endgame-ai
+# endgame-ai — Session Handover / Bootstrap Prompt
 
-> You are building a system that works like you work.
+**Version:** 2.0 | **Date:** 2026-06-20 | **Branch:** `experiment/endgame` | **Repo:** https://github.com/wgabrys88/endgame-ai
 
-## The Prompt
-
-You are an autonomous desktop agent. You cannot see the screen. You cannot click. You cannot type. What you CAN do: write a Python script, execute it, and read its stdout. That stdout contains a structured observation of the screen. Based on that observation, you reason about what action to take, write another script that performs that action, execute it, read the result, and observe again.
-
-This is the ROD loop: **Read → Orient → Decide → Act → Verify → Reflect**.
-
-When your action fails — and it WILL fail — you do not retry blindly. You read the observation, identify WHY it failed (wrong element matched, page didn't load, ambiguous target), change your approach, and try again with more precision.
-
-You are not special. A 4-billion-parameter model running locally can do this same loop. The methodology works because:
-1. Each step is small (one verb: click, write, press)
-2. Verification is immediate (observe after every action)
-3. Failure is expected and handled (replan, escalate precision)
-4. The topology constrains the flow (no unbounded reasoning)
+Paste this entire file into a new AI coding session. Zero prior context assumed.
 
 ---
 
-## Architecture: ROD → Slot → Colony
+## Mission
 
-### ROD (single task, single desktop)
-One loop executing one goal. Nodes connected by signals in a DAG:
-```
-goal_inbox →[ready]→ planner →[plan_ready]→ scheduler →[step_ready]→ observe →[observed]→ act →[acted]→ verify →[ok]→ reflect →[continue]→ observe
-                                                                                                        →[fail]→ reflect →[replan]→ planner
-                                                                                                                          →[done]→ satisfied
-```
-Each node is a function: `(state, config) → {signals, state_patch}`. Some call the LLM, some call the desktop, some are pure logic. All state flows through a single dict. All decisions are edge labels.
+Build **endgame-ai** — a task-agnostic Windows desktop agent that cannot see the screen or click directly. It **writes Python, executes it, reads stdout, reasons, acts, verifies, reflects, replans**. Goal is **artificial persistence** on a local 4B-class model, not open-ended reasoning.
 
-### Slot (one server, one port, one instance)
-A running ROD is a slot. It binds to a port (`9077 + slot`), serves an HTML editor for its wiring topology, accepts goals via HTTP, and streams progress via SSE. The slot's brain lives in `prompts/wiring.json` — change the topology and the behavior changes. No code modification needed.
+**ROD loop:** Read → Orient → Decide → Act → Verify → Reflect.
 
-### Colony (future: N slots, one coordinator)
-Multiple slots, each with their own goal, coordinated via a bus. Slot 1 might control Chrome while Slot 2 controls VS Code. A manager slot assigns goals based on priority. Each slot is an independent process with its own port.
+You (the AI) must use the same loop to develop this repo: small steps, verify every change, expect failure, diagnose from observations.
 
 ---
 
-## How the LLM Fits
+## Current State (proven)
 
-The model (`nvidia-nemotron-3-nano-4b` at `192.168.16.31:1234`) is called by exactly 4 nodes:
-- **planner**: receives goal → outputs plan (list of steps)
-- **act**: receives screen + current step → outputs action JSON `{verb, target, value}`
-- **verify**: receives screen + expected outcome → outputs ok/fail
-- **reflect**: receives failure history → outputs replan/continue/done
+| Layer | Status |
+|-------|--------|
+| Graph engine | `server.py` — 12 topology nodes, SSE, hot-reload wiring/nodes |
+| Brain | `prompts/wiring.json` — topology + prompts + guards + limits |
+| Desktop | `desktop.py` — Windows UIA hover-probe, scroll enrich, element IDs |
+| Actions | `actions.py` — verb dispatch; fixed resolver (no digit-stripping bug) |
+| Simulation | `simulation.py` + `ENDGAME_SIM=1` |
+| Colony | `colony.py` — multi-slot via `ENDGAME_SLOT` / `ENDGAME_PERMISSIONS` |
+| Tests | `test_server.py` 26/26 · `test_llm_live.py` 3/3 · `test_desktop_live.py` 2/2 · `test_colony_delegate.py` PASS |
 
-Each call is: system prompt (from wiring.json) + user prompt (assembled from state fields) → structured JSON response. The model doesn't need to be smart. It needs to be constrained. The topology does the thinking; the model fills in blanks.
+**Live desktop proven:** cold-start → `open notepad` (11 cycles) and `open notepad and type hello` (16 cycles) with real UIA + LLM at `prompts/model.json`.
 
 ---
 
-## Files
+## Architecture
 
 ```
-server.py              990 LOC  HTTP server + graph engine + all node handlers
-desktop.py             437 LOC  Windows UIA screen reader (ctypes, zero deps)
-actions.py             148 LOC  Verb executor: click/write/press/hotkey/scroll/focus
-wiring-editor.html     277 LOC  Canvas2D topology editor (pan/zoom/drag/wire)
-rod_test.py             91 LOC  Standalone proof: opens Chrome, plays YouTube video
-prompts/wiring.json    471 LOC  THE BRAIN: topology + prompts + config + limits
-prompts/model.json      14 LOC  LLM endpoint config
-prompts/wiring-schema.json  JSON Schema for topology validation
-nodes/example_gate.py    7 LOC  Hot-loadable custom node
-start.sh                       Launch script
+goal_inbox → moe_route → planner → scheduler → bus_check → observe → act → verify
+                ↓ delegated → bus_post → satisfied
+                reflect → retry | replan | escalate → self_modify
 ```
 
-Total: **2550 lines**. Complete autonomous agent + visual editor + desktop control.
+- **LLM nodes (4 only):** planner, act, verify, reflect (+ self_modify on escalate)
+- **Everything else:** deterministic Python; behavior changes via `wiring.json`, not code
+- **Slot:** one `server.py` instance, port `9077 + slot`
+- **Colony:** N slots, shared `bus.json` (runtime, gitignored)
 
 ---
 
-## How to Make This Work
+## Essential Files
 
-```bash
-# On Windows (required — desktop.py uses Windows APIs)
-set PYTHONIOENCODING=utf-8
-cd C:\Users\ewojgab\Downloads\endgame-ai
-python server.py
-# → http://localhost:9078
+| File | Role |
+|------|------|
+| `server.py` | HTTP + graph engine + node handlers |
+| `desktop.py` | UIA observer |
+| `actions.py` | click/write/press/hotkey/focus/scroll |
+| `simulation.py` | Deterministic fake desktop |
+| `colony.py` | Spawn multi-slot colony |
+| `prompts/wiring.json` | **THE BRAIN** |
+| `prompts/model.json` | LLM endpoint |
+| `wiring-editor.html` | Live topology editor |
+| `test_*.py` | Mock, live LLM, live desktop, colony tests |
+
+---
+
+## First Commands (mandatory onboarding)
+
+```powershell
+cd <repo>
+$env:PYTHONIOENCODING="utf-8"
+python test_server.py              # 26/26 — no LLM needed
+python test_llm_live.py            # skips if LLM down
+python test_desktop_live.py        # real UIA + LLM (Windows only)
+python server.py                   # → http://localhost:9078 (slot 1)
+python colony.py --sim 1 2         # multi-slot simulation
 ```
 
-Verify: `curl http://localhost:9078/smoke` → 5/5 pass
-
-Give it a goal:
-```bash
-curl -X POST http://localhost:9078/run -H 'Content-Type: application/json' -d '{"goal": "open notepad and type hello world"}'
-```
-
-Watch: `curl -N http://localhost:9078/events` (SSE stream)
+Smoke: `curl http://127.0.0.1:9078/smoke` → 6/6
 
 ---
 
-## What Was Proven
+## Development Rules
 
-An AI coding assistant (Kiro/Claude) controlled this system end-to-end:
-1. Wrote `test_desktop.py` scripts
-2. Executed them on Windows Python via `cmd.exe /c`
-3. Read stdout containing screen observations
-4. Noticed failures (wrong element clicked, encoding crash, address bar matched instead of search box)
-5. Rewrote with more precision (direct URLs, explicit element numbers, encoding fixes)
-6. Achieved goal: Chrome → YouTube → Shakira Waka Waka → Audio playing
-
-**The AI was doing exactly what the ROD does.** The recursive insight: an AI built an AI agent by demonstrating the agent's methodology manually. The nemotron model needs to do the same thing — just faster, in a loop, guided by the topology.
+1. **ROD every turn:** Read files → Orient → one micro-step → Act → Verify → Reflect
+2. **Max 1–2 file edits** or one test run per step
+3. **Never claim done** without test output in the same turn
+4. **Prefer wiring.json** over Python for behavior changes
+5. **Self-critique every ~5 steps:** What worked? What assumption was wrong? What's the precise next action?
+6. **Continue autonomously** unless user says pause/new goal
 
 ---
 
-## Challenges (Permanent, By Design)
+## Known Fixes (do not regress)
 
-| Challenge | Why it exists | How ROD handles it |
-|-----------|--------------|-------------------|
-| Element ambiguity | UIA names overlap ("Search" matches address bar) | Verify after act, replan with element numbers |
-| Incomplete observation | Spatial probe misses ~20-40% of elements | Scroll, Tab, or use known URLs |
-| Model outputs garbage | 4B params, sometimes empty/malformed | Retry with temperature bump, parse defensively |
-| Action has no effect | Click missed, page loading | Re-observe, wait, retry |
-| Encoding crash | Windows cp1252 vs Unicode | PYTHONIOENCODING=utf-8, errors='replace' |
-
-These aren't bugs. They're the reason the verify→reflect→replan loop exists.
+- `_trigger_rod_run` uses `http_port(slot)` not `colony_port`
+- Element resolver: only `[ID]` numeric targets, not digits stripped from names
+- `PRIOR_TRACES` only on replan (`replan_count > 0`)
+- Verify preflight denies `FAILED:` / `BLOCKED` outcomes before LLM
+- `node_satisfied`: false on `plan_failed`, true only when `step >= len(plan)`
 
 ---
 
-## For AI Agents Continuing This Work
+## Next Priorities
 
-You are a system that observes, reasons, acts, and verifies. So is endgame-ai. Build it like you work:
-- Small steps, each verified
-- Expect failure, handle it structurally
-- Don't reason forever — act, observe the result, adjust
-- The topology constrains you — that's the feature, not the limitation
-- State is a dict, decisions are edge labels, everything is inspectable
-
-The goal is not artificial intelligence. The goal is artificial persistence — a system that maintains any task, for any duration, on a 4B local model, without human intervention, by being structurally unable to get lost.
+| P | Task | Verify |
+|---|------|--------|
+| 1 | YouTube/browser goal via `server.run()` on real desktop | multi-step satisfied |
+| 2 | Colony: slot 2 delegates → slot 1 executes goal end-to-end | bus + slot1 state |
+| 3 | Align `rod_test.py` with `server.run()` topology | same goal, fewer ad-hoc prompts |
+| 4 | Probe density / wait-for loading in verify | fewer false CANNOT on sparse screens |
 
 ---
 
-*Branch: `experiment/endgame` | 2550 LOC | Zero pip dependencies | Windows + Python 3.13*
+## Environment
+
+| Var | Effect |
+|-----|--------|
+| `ENDGAME_SIM=1` | Use `simulation.py` desktop |
+| `ENDGAME_SLOT=N` | Override instance slot / port |
+| `ENDGAME_PERMISSIONS=desktop_exec` | MoE self-route vs delegate |
+| `PYTHONIOENCODING=utf-8` | Required on Windows |
+
+---
+
+## Session Start Checklist
+
+- [ ] `git checkout experiment/endgame`
+- [ ] `python test_server.py` → 26/26
+- [ ] Read `server.py` graph engine (`run`, `call_node`, node handlers)
+- [ ] Read `prompts/wiring.json` topology + roles
+- [ ] Pick one P1 task; document state dict; execute first micro-step with verification
+
+**The topology is waiting. Persistence starts with one verified micro-step.**

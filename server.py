@@ -11,9 +11,28 @@ ROOT = pathlib.Path(__file__).parent
 PROMPTS = ROOT / "prompts"
 STATE_FILE = ROOT / "state.json"
 BUS_FILE = pathlib.Path(os.environ.get("ENDGAME_BUS", str(ROOT / "bus.json")))
+TRACES_FILE = ROOT / "prompts" / "traces.jsonl"
 WIRING = json.loads((PROMPTS / "wiring.json").read_text(encoding="utf-8"))
 WIRING_SCHEMA = json.loads((PROMPTS / "wiring-schema.json").read_text(encoding="utf-8"))
 MODEL = json.loads((PROMPTS / "model.json").read_text(encoding="utf-8"))
+
+
+def apply_instance_env():
+    """Override instance.slot / permissions from environment (colony workers)."""
+    global WIRING
+    slot = os.environ.get("ENDGAME_SLOT")
+    perms = os.environ.get("ENDGAME_PERMISSIONS")
+    if slot is None and perms is None:
+        return
+    inst = dict(WIRING.get("instance", {}))
+    if slot is not None:
+        inst["slot"] = int(slot)
+    if perms is not None:
+        inst["permissions"] = [p.strip() for p in perms.split(",") if p.strip()]
+    WIRING = {**WIRING, "instance": inst}
+
+
+apply_instance_env()
 
 
 def validate_wiring(w):
@@ -148,10 +167,18 @@ def colony_port(slot):
     rt = WIRING.get("runtime", {})
     return int(rt.get("colony_port_base", 9076)) + int(slot)
 
+def simulation_mode():
+    if os.environ.get("ENDGAME_SIM", "").lower() in ("1", "true", "yes"):
+        return True
+    return bool(WIRING.get("runtime", {}).get("simulation_mode", False))
+
 def fresh_state(goal):
     state = dict(WIRING.get("runtime", {}).get("initial_state", {}))
     state["goal"] = goal
     state["bus_last_check"] = time.time()
+    if simulation_mode():
+        state["simulation"] = True
+        state["no_desktop"] = False
     return state
 
 # ─── SSE ───
@@ -185,13 +212,42 @@ def bus_read():
 def bus_write(msgs):
     BUS_FILE.write_text(json.dumps(msgs[-wiring_limit("bus_max", 200):], indent=1), encoding="utf-8")
 
+def append_trace(state):
+    """Persist successful ROD trace for few-shot replay."""
+    steps = state.get("plan", [])
+    if not steps or state.get("step", 0) < len(steps):
+        return
+    entry = {
+        "ts": time.time(),
+        "goal": state.get("goal", ""),
+        "plan": steps,
+        "history": state.get("history", [])[-wiring_limit("history_depth", 10):],
+    }
+    try:
+        with TRACES_FILE.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, default=str) + "\n")
+    except Exception as e:
+        print(f"[trace] {e}")
+
+def recent_traces(limit=3):
+    if not TRACES_FILE.exists():
+        return []
+    lines = TRACES_FILE.read_text(encoding="utf-8").strip().splitlines()
+    out = []
+    for line in lines[-limit:]:
+        try:
+            out.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return out
+
 # ─── LLM ───
 
-def llm(system, user):
+def llm(system, user, temperature=None):
     body = {
         "model": MODEL.get("model", "local-model"),
         "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-        "temperature": MODEL.get("temperature", 0.3),
+        "temperature": MODEL.get("temperature", 0.3) if temperature is None else temperature,
         "max_tokens": MODEL.get("max_tokens", 16384),
     }
     url = MODEL["host"] + "/v1/chat/completions"
@@ -298,10 +354,21 @@ def call_node(node_type, state, extra=None):
         s.update(extra)
     system = load_system_prompt(circuit, s, node_type=node_type)
     user = build_user_message(circuit, s, node_type=node_type)
-    content, reasoning, _ = llm(system, user)
-    patch = reasoning_patch(state, circuit, reasoning)
-    parsed, _ = parse_circuit_response(circuit, content, reasoning)
-    return {"content": content, "reasoning": reasoning, "parsed": parsed, "patch": patch}
+    base_temp = MODEL.get("temperature", 0.3)
+    bump = MODEL.get("temperature_bump", 0.15)
+    max_retries = wiring_limit("llm_parse_retries", 2)
+    content, reasoning, parsed, source = "", "", None, None
+    patch = {}
+    for attempt in range(max_retries + 1):
+        temp = base_temp if attempt == 0 else min(1.0, base_temp + bump * attempt)
+        content, reasoning, _ = llm(system, user, temperature=temp)
+        attempt_patch = reasoning_patch(state, circuit, reasoning)
+        if attempt_patch:
+            patch = attempt_patch
+        parsed, source = parse_circuit_response(circuit, content, reasoning)
+        if parsed:
+            break
+    return {"content": content, "reasoning": reasoning, "parsed": parsed, "patch": patch, "parse_source": source}
 
 # ─── Prompt assembly: static system, dynamic user (from wiring.json) ───
 
@@ -315,6 +382,16 @@ def _resolve_value(state, source):
         return pf.read_text(encoding="utf-8") if pf.exists() else ""
     if source == "topology.nodes":
         return json.dumps([n["id"] for n in WIRING.get("topology", {}).get("nodes", [])])
+    if source == "traces.recent":
+        if not state.get("replanning") and not state.get("replan_count"):
+            return ""
+        traces = recent_traces(wiring_limit("trace_few_shot", 2))
+        if not traces:
+            return ""
+        return "\n\n".join(
+            f"GOAL: {t.get('goal','')}\nPLAN: {json.dumps(t.get('plan', []))}"
+            for t in traces
+        )
     if source.startswith("reasoning."):
         key = source[10:]
         bucket = state.get("reasoning", {})
@@ -425,6 +502,26 @@ def _find_advance_hint(state, actions):
 def node_entry(state, _):
     return {"signals": ["ready"], "patch": {}}
 
+def _planner_ready_patch(state, steps, patch):
+    """Apply plan_ready state patch — preserve progress on replan, reset on fresh plan."""
+    out = {
+        **patch,
+        "plan": steps,
+        "planner_retries": 0,
+        "last_error": "",
+        "plan_failed": False,
+        "replanning": False,
+        "_planned_goal": state.get("goal", ""),
+    }
+    preserve = state.get("replanning") and state.get("step", 0) > 0
+    if preserve:
+        out["step"] = min(state.get("step", 0), len(steps))
+        out["retries"] = 0
+        out["history"] = list(state.get("history", []))
+    else:
+        out.update({"step": 0, "retries": 0, "history": []})
+    return out
+
 def node_planner(state, _):
     try:
         r = call_node("planner", state)
@@ -435,19 +532,19 @@ def node_planner(state, _):
             max_r = wiring_limit("planner_retries", 3)
             patch.update({"planner_retries": retries, "last_error": wiring_error("planner_parse_failed")})
             if retries >= max_r:
-                return {"signals": ["plan_failed"], "patch": patch}
+                return {"signals": ["plan_failed"], "patch": {**patch, "plan_failed": True}}
             return {"signals": ["retry_plan"], "patch": patch}
         steps = parsed["data"]["steps"]
         if not steps:
-            return {"signals": ["plan_failed"], "patch": {**patch, "last_error": wiring_error("planner_empty")}}
+            return {"signals": ["plan_failed"], "patch": {**patch, "last_error": wiring_error("planner_empty"), "plan_failed": True}}
     except Exception as e:
         retries = state.get("planner_retries", 0) + 1
         max_r = wiring_limit("planner_retries", 3)
         patch = {"planner_retries": retries, "last_error": f"planner: {e}"}
         if retries >= max_r:
-            return {"signals": ["plan_failed"], "patch": patch}
+            return {"signals": ["plan_failed"], "patch": {**patch, "plan_failed": True}}
         return {"signals": ["retry_plan"], "patch": patch}
-    return {"signals": ["plan_ready"], "patch": {**patch, "plan": steps, "step": 0, "retries": 0, "history": [], "planner_retries": 0, "last_error": ""}}
+    return {"signals": ["plan_ready"], "patch": _planner_ready_patch(state, steps, patch)}
 
 def node_scheduler(state, _):
     steps = state.get("plan", [])
@@ -522,7 +619,9 @@ def node_act(state, _):
         result = execute_verb(verb, target, a.get("value", ""))
         results.append(f"{verb} {a.get('target')}: {result}")
 
-    outcome = "OK: " + "; ".join(results)
+    ok = all(": FAILED" not in str(r).upper() and not str(r).upper().startswith("FAILED") for r in results)
+    prefix = "OK: " if ok else "FAILED: "
+    outcome = prefix + "; ".join(results)
     entry = {"attempt": len(history) + 1, "action": f"{actions[0].get('verb','')} {actions[0].get('target','')}", "outcome": outcome}
     patch.update({
         "last_actions": results,
@@ -531,10 +630,30 @@ def node_act(state, _):
         "last_error": "",
         "history": history + [entry],
     })
+    if not state.get("no_desktop"):
+        delay = int(WIRING.get("runtime", {}).get("act_post_delay_ms", 0)) / 1000.0
+        if delay:
+            time.sleep(delay)
+        try:
+            patch["screen"] = observe_screen()
+        except Exception:
+            pass
     return {"signals": ["acted"], "patch": patch}
+
+def _verify_preflight_denied(state):
+    """Deterministic deny before LLM — structural guard against false confirms."""
+    outcome = (state.get("last_outcome") or "")
+    upper = outcome.upper()
+    if outcome.startswith("FAILED:") or "BLOCKED:" in upper or "CANNOT" in upper:
+        return True
+    if outcome and not outcome.startswith("OK:"):
+        return True
+    return False
 
 def node_verify(state, _):
     """Verify from descriptive step + act outcomes only — act is sole SCREEN consumer."""
+    if _verify_preflight_denied(state):
+        return {"signals": ["step_denied"], "patch": {"last_error": wiring_error("verify_preflight_denied")}}
     try:
         r = call_node("verify", state)
         parsed = r["parsed"]
@@ -559,7 +678,7 @@ def node_reflect(state, _):
     if retries >= max_r:
         if replans >= max_replans:
             return {"signals": ["escalate"], "patch": {"retries": 0, "replan_count": 0}}
-        return {"signals": ["replan"], "patch": {"retries": 0, "replan_count": replans + 1}}
+        return {"signals": ["replan"], "patch": {"retries": 0, "replan_count": replans + 1, "replanning": True}}
 
     try:
         r = call_node("reflect", state)
@@ -571,13 +690,21 @@ def node_reflect(state, _):
         if parsed.get("data", {}).get("should_replan"):
             if replans >= max_replans:
                 return {"signals": ["escalate"], "patch": {"retries": 0, "replan_count": 0, **r["patch"]}}
-            return {"signals": ["replan"], "patch": {"retries": 0, "replan_count": replans + 1, **r["patch"]}}
+            return {"signals": ["replan"], "patch": {"retries": 0, "replan_count": replans + 1, "replanning": True, **r["patch"]}}
         return {"signals": ["retry"], "patch": patch}
     except Exception:
         return {"signals": ["retry"], "patch": {"retries": retries + 1}}
 
 def node_satisfied(state, _):
-    return {"signals": ["idle"], "patch": {"satisfied": True}}
+    if "delegated_to" in state:
+        return {"signals": ["idle"], "patch": {"satisfied": False, "delegated": True}}
+    if state.get("plan_failed"):
+        return {"signals": ["idle"], "patch": {"satisfied": False}}
+    steps = state.get("plan", [])
+    step = state.get("step", 0)
+    if steps and step >= len(steps):
+        return {"signals": ["idle"], "patch": {"satisfied": True}}
+    return {"signals": ["idle"], "patch": {"satisfied": False}}
 
 def node_bus_check(state, _):
     """Poll bus for interrupt goals. Higher-priority goal → interrupt."""
@@ -609,11 +736,13 @@ def node_bus_post(state, _):
     msgs = bus_read()
     msgs.append(msg)
     bus_write(msgs)
+    if state.get("plan") and state.get("step", 0) >= len(state.get("plan", [])):
+        append_trace(state)
     return {"signals": ["posted"], "patch": {}}
 
 def _trigger_rod_run(slot, goal):
     """Wake a peer rod and start its autonomous loop."""
-    port = colony_port(slot)
+    port = http_port(int(slot))
     body = json.dumps({"goal": goal}).encode()
     try:
         urllib.request.urlopen(
@@ -696,6 +825,11 @@ def node_self_modify(state, _):
             patch["last_error"] = f"unknown op: {op}"
             return {"signals": ["modify_failed"], "patch": patch}
 
+        errs = validate_wiring(current)
+        if errs:
+            patch["last_error"] = wiring_error("self_modify_invalid") + ": " + "; ".join(errs[:5])
+            return {"signals": ["modify_failed"], "patch": patch}
+
         # Write and hot-reload
         wiring_path.write_text(json.dumps(current, indent=2), encoding="utf-8")
         WIRING = current
@@ -756,6 +890,34 @@ def _node_watcher():
 
 threading.Thread(target=_node_watcher, daemon=True).start()
 
+# ─── Hot-reload wiring.json from disk ───
+
+_wiring_mtime = (PROMPTS / "wiring.json").stat().st_mtime if (PROMPTS / "wiring.json").exists() else 0
+
+def _wiring_watcher():
+    global WIRING, _wiring_mtime
+    path = PROMPTS / "wiring.json"
+    while True:
+        time.sleep(2)
+        try:
+            if not path.exists():
+                continue
+            mtime = path.stat().st_mtime
+            if mtime <= _wiring_mtime:
+                continue
+            data = json.loads(path.read_text(encoding="utf-8"))
+            errs = validate_wiring(data)
+            if errs:
+                print(f"[wiring-watch] skipped invalid wiring: {errs[0]}")
+                continue
+            WIRING = data
+            _wiring_mtime = mtime
+            sse_push("wiring_modified", {"source": "file"})
+        except Exception as e:
+            print(f"[wiring-watch] {e}")
+
+threading.Thread(target=_wiring_watcher, daemon=True).start()
+
 # ─── Graph engine ───
 
 def find_targets(node_id, signals, topo):
@@ -767,7 +929,7 @@ def find_targets(node_id, signals, topo):
             targets.append(e["to"])
     return targets
 
-def run(goal, resume_state=None):
+def run(goal, resume_state=None, max_cycles=None):
     topo = WIRING["topology"]
     if resume_state:
         state = resume_state
@@ -776,7 +938,7 @@ def run(goal, resume_state=None):
         state = fresh_state(goal)
         node_id = topo["cycle_start"]
     cycle = 0
-    max_cycles = wiring_limit("max_cycles", 300)
+    max_cycles = max_cycles if max_cycles is not None else wiring_limit("max_cycles", 300)
     cycle_delay = int(WIRING.get("runtime", {}).get("cycle_delay_ms", 300)) / 1000.0
 
     print(f"\n{'='*50}\n  ROD [{WIRING.get('instance',{}).get('slot',0)}]: {goal}\n{'='*50}\n")
@@ -846,6 +1008,8 @@ class H(http.server.BaseHTTPRequestHandler):
                 "node_circuits": node_circuits_map(),
                 "slot": slot,
                 "port": http_port(slot),
+                "simulation": simulation_mode(),
+                "permissions": WIRING.get("instance", {}).get("permissions", []),
             })
         elif self.path == "/wiring":
             self._j(WIRING)
@@ -855,6 +1019,8 @@ class H(http.server.BaseHTTPRequestHandler):
             self._j(load_state() or {})
         elif self.path == "/bus":
             self._j(bus_read())
+        elif self.path == "/traces":
+            self._j(recent_traces(int(WIRING.get("limits", {}).get("trace_few_shot", 5))))
         elif self.path == "/smoke":
             # Programmatic smoke test — validates all endpoints work
             results = []
@@ -862,6 +1028,8 @@ class H(http.server.BaseHTTPRequestHandler):
                 results.append({"test": "health", "ok": True})
                 results.append({"test": "wiring", "ok": len(WIRING.get("topology", {}).get("nodes", [])) > 0, "nodes": len(WIRING.get("topology", {}).get("nodes", []))})
                 results.append({"test": "schema", "ok": bool(WIRING_SCHEMA)})
+                werrs = validate_wiring(WIRING)
+                results.append({"test": "wiring_valid", "ok": not werrs, "errors": len(werrs)})
                 # Test entry node
                 h = NODES.get("entry")
                 if h:
@@ -973,14 +1141,28 @@ if __name__ == "__main__":
         print_listen_urls(port)
         run(s.get("goal", ""), s)
     elif "--run" in args:
-        goal = " ".join(args[args.index("--run")+1:])
-        if not goal: print("Usage: python server.py --run \"goal\""); sys.exit(1)
+        idx = args.index("--run")
+        max_c = None
+        if "--max-cycles" in args:
+            max_c = int(args[args.index("--max-cycles") + 1])
+        goal_parts = []
+        i = idx + 1
+        while i < len(args):
+            if args[i] == "--max-cycles":
+                i += 2
+                continue
+            if args[i].startswith("--"):
+                break
+            goal_parts.append(args[i])
+            i += 1
+        goal = " ".join(goal_parts)
+        if not goal: print("Usage: python server.py --run \"goal\" [--max-cycles N]"); sys.exit(1)
         port = http_port()
         bind = http_bind()
         srv = ThreadingHTTPServer((bind, port), H)
         threading.Thread(target=srv.serve_forever, daemon=True).start()
         print_listen_urls(port)
-        run(goal)
+        run(goal, max_cycles=max_c)
     else:
         port = int(args[0]) if args and args[0].isdigit() else http_port()
         bind = http_bind()

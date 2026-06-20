@@ -1,35 +1,23 @@
-# Python bytecode
-__pycache__/
-*.pyc
-_*.py
-
-# Runtime data (regenerated every run)
-*.log
-state.json
-bus.json
-srv.pid
-runtime/
-prompts/wiring.backup.json
-
-# Colony sandbox (Phase 2)
-colony/
-
-# Dev/test scratch
-test_desktop.py
-run_server.py
-start_win.bat
-validate_stack.py
-probe_circuits.py
-run_single_rod_test.py
-probe_fixtures/
-probe_results/
-*_analysis.json
-shakira_test.json
-test.txt
-
-# IDE / agent session artifacts
-terminals/
-sessions/
-.acp.lock
-pause
-logs/
+# Allowlist — ignore all, then un-ignore essentials only
+*
+!.gitignore
+!README.md
+!LICENSE
+!.gitattributes
+!server.py
+!desktop.py
+!actions.py
+!simulation.py
+!colony.py
+!rod_test.py
+!wiring-editor.html
+!start.sh
+!start_colony.ps1
+!test_server.py
+!test_llm_live.py
+!test_desktop_live.py
+!test_colony_delegate.py
+!prompts/wiring.json
+!prompts/wiring-schema.json
+!prompts/model.json
+!nodes/example_gate.py

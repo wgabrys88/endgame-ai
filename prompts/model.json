@@ -1,5 +1,7 @@
 {
   "host": "http://192.168.16.31:1234",
+  "model": "nvidia-nemotron-3-nano-4b",
+  "temperature_bump": 0.15,
   "timeout": 600,
   "temperature": 0.3,
   "top_p": 0.9,

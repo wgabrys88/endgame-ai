@@ -1,5 +1,6 @@
 """Actions - data-driven verb dispatch. Field mappings from wiring.json."""
 from __future__ import annotations
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -21,12 +22,30 @@ class ActionExecutor:
     def _resolve(self, target: str, elements: dict[str, Element]) -> Element | None:
         if target in elements:
             return elements[target]
-        digits = ''.join(c for c in target if c.isdigit())
-        if digits and digits in elements:
-            return elements[digits]
+        id_match = re.match(r"^\[?(\d+)\]?$", (target or "").strip())
+        if id_match and id_match.group(1) in elements:
+            return elements[id_match.group(1)]
         target_l = target.lower().strip()
+        if not target_l:
+            return None
 
-        def rank(el: Element) -> int:
+        def name_score(el: Element) -> tuple[int, int]:
+            name_l = (el.name or "").lower()
+            if not name_l:
+                return (99, 0)
+            if target_l == name_l:
+                return (0, -len(name_l))
+            if target_l in name_l:
+                return (1, -len(name_l))
+            if name_l in target_l:
+                return (2, -len(name_l))
+            words = [w for w in re.split(r"[\s\-]+", target_l) if len(w) > 2]
+            overlap = sum(1 for w in words if w in name_l)
+            if overlap:
+                return (3, -overlap * 10 - len(name_l))
+            return (99, 0)
+
+        def action_rank(el: Element) -> int:
             if el.action == "write" and el.role in ("Edit", "ComboBox", "Document"):
                 return 0
             if el.action == "click":
@@ -35,13 +54,15 @@ class ActionExecutor:
                 return 2
             return 3
 
-        for el in sorted(elements.values(), key=rank):
-            if not el.name:
-                continue
-            name_l = el.name.lower()
-            if target_l == name_l or target_l in name_l or name_l in target_l:
-                return el
-        return None
+        candidates = [
+            (name_score(el), action_rank(el), el)
+            for el in elements.values()
+            if name_score(el)[0] < 99
+        ]
+        if not candidates:
+            return None
+        candidates.sort(key=lambda x: (x[0][0], x[0][1], x[1]))
+        return candidates[0][2]
 
     def execute(self, verb: str, args: dict[str, Any], elements: dict[str, Element]) -> ActionResult:
         cfg = self._verbs.get(verb)
@@ -127,12 +148,22 @@ class ActionExecutor:
 _desktop = None
 _executor = None
 
+def _simulation_enabled(wiring: dict) -> bool:
+    import os
+    if os.environ.get("ENDGAME_SIM", "").lower() in ("1", "true", "yes"):
+        return True
+    return bool(wiring.get("runtime", {}).get("simulation_mode", False))
+
 def _init():
     global _desktop, _executor
     if _desktop is None:
-        _desktop = Desktop()
         import json, pathlib
         wiring = json.loads((pathlib.Path(__file__).parent / "prompts" / "wiring.json").read_text(encoding="utf-8"))
+        if _simulation_enabled(wiring):
+            from simulation import SimDesktop
+            _desktop = SimDesktop()
+        else:
+            _desktop = Desktop()
         _executor = ActionExecutor(_desktop, wiring)
 
 def observe_screen() -> str:

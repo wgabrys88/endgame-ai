@@ -9,6 +9,9 @@ from typing import Any
 
 PROBE_STEP_PX = 90
 PROBE_DELAY = 0.001
+SCROLL_ENRICH_MIN = 5
+SCROLL_ENRICH_PASSES = (-3, -2, 2, 3)
+SCROLL_ENRICH_DELAY = 0.08
 SINE_AMP_RATIO = 0.4
 SINE_PERIOD = 6.0
 READ_TEXT_MAX = 200
@@ -238,7 +241,7 @@ class Desktop:
         screen_w = self.user32.GetSystemMetrics(0)
         screen_h = self.user32.GetSystemMetrics(1)
         focused_hwnd = int(self.user32.GetForegroundWindow())
-        focused_title = self._get_window_title(focused_hwnd)
+        focused_title = self._get_window_title(focused_hwnd) or "Desktop"
 
         rect = self._get_window_rect(focused_hwnd)
         if rect:
@@ -249,10 +252,36 @@ class Desktop:
         saved = W.POINT()
         self.user32.GetCursorPos(ctypes.byref(saved))
         nodes = self._probe(x0, y0, x1, y1, focused_hwnd)
-        self.user32.SetCursorPos(saved.x, saved.y)
-
+        if len(nodes) < SCROLL_ENRICH_MIN:
+            dense_step = max(45, PROBE_STEP_PX // 2)
+            extra = self._probe(0, 0, screen_w, screen_h, focused_hwnd, step=dense_step)
+            seen = {(n["role"], n.get("name", ""), n["x"], n["y"], n["w"], n["h"]) for n in nodes}
+            for n in extra:
+                key = (n["role"], n.get("name", ""), n["x"], n["y"], n["w"], n["h"])
+                if key not in seen:
+                    seen.add(key)
+                    nodes.append(n)
         classified = self._classify(nodes)
+        if len(classified) < SCROLL_ENRICH_MIN:
+            cx = max(x0 + 40, min(x1 - 40, (x0 + x1) // 2))
+            cy = max(y0 + 40, min(y1 - 40, (y0 + y1) // 2))
+            seen = {(n["role"], n.get("name", ""), n["x"], n["y"], n["w"], n["h"]) for n in nodes}
+            for amount in SCROLL_ENRICH_PASSES:
+                self.scroll(cx, cy, amount)
+                time.sleep(SCROLL_ENRICH_DELAY)
+                for n in self._probe(x0, y0, x1, y1, focused_hwnd):
+                    key = (n["role"], n.get("name", ""), n["x"], n["y"], n["w"], n["h"])
+                    if key not in seen:
+                        seen.add(key)
+                        nodes.append(n)
+            classified = self._classify(nodes)
+        self.user32.SetCursorPos(saved.x, saved.y)
         elements, context_text = self._render(classified, focused_title)
+        if not elements:
+            context_text += (
+                "\n  (no interactive elements — use hotkey win+r for Run dialog, "
+                "or focus with window title substring)"
+            )
         return Observation(focused_title=focused_title, elements=elements, context_text=context_text)
 
     def click(self, px: int, py: int, hwnd: int = 0):
@@ -310,15 +339,29 @@ class Desktop:
         self.user32.mouse_event(0x0800, 0, 0, amount * 120, 0)
 
     def focus_window(self, title: str) -> bool:
+        import re
+        title_l = title.lower().strip()
+        keywords = [w for w in re.split(r"[\s\-]+", title_l) if len(w) > 3]
+        best_hwnd = None
+        best_score = 99
         hwnd = self.user32.GetTopWindow(None)
         while hwnd:
             if self.user32.IsWindowVisible(hwnd):
                 wt = self._get_window_title(int(hwnd))
-                if title.lower() in wt.lower():
+                wt_l = wt.lower()
+                if title_l in wt_l or wt_l in title_l:
                     self.user32.SetForegroundWindow(hwnd)
                     time.sleep(FOCUS_DELAY)
                     return True
+                overlap = sum(1 for w in keywords if w in wt_l)
+                if overlap and overlap < best_score:
+                    best_score = overlap
+                    best_hwnd = hwnd
             hwnd = self.user32.GetWindow(hwnd, 2)
+        if best_hwnd:
+            self.user32.SetForegroundWindow(best_hwnd)
+            time.sleep(FOCUS_DELAY)
+            return True
         return False
 
     def _get_window_title(self, hwnd: int) -> str:
@@ -332,10 +375,10 @@ class Desktop:
             return (rect.left, rect.top, rect.right, rect.bottom)
         return None
 
-    def _probe(self, x0: int, y0: int, x1: int, y1: int, hwnd: int) -> list[dict[str, Any]]:
+    def _probe(self, x0: int, y0: int, x1: int, y1: int, hwnd: int, step: int | None = None) -> list[dict[str, Any]]:
         nodes: list[dict[str, Any]] = []
         seen_keys: set[tuple] = set()
-        step = PROBE_STEP_PX
+        step = step or PROBE_STEP_PX
         amp = step * SINE_AMP_RATIO
         freq = 2 * math.pi / (step * SINE_PERIOD)
 
@@ -402,7 +445,7 @@ class Desktop:
 
     def _render(self, nodes: list[dict[str, Any]], focused_title: str) -> tuple[dict[str, Element], str]:
         elements: dict[str, Element] = {}
-        lines: list[str] = [f"FOCUSED: {focused_title}"]
+        lines: list[str] = [f"FOCUSED: {focused_title}", f"ELEMENTS: {sum(1 for n in nodes if n.get('action') != 'read')}"]
         seq = 0
         for n in nodes:
             seq += 1

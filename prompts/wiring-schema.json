@@ -59,7 +59,8 @@
         }
       }
     },
-    "context": { "type": "object" }
+    "context": { "type": "object" },
+    "moe": { "type": "object" }
   },
   "additionalProperties": false,
   "$defs": {
