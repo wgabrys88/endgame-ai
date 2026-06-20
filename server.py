@@ -1034,6 +1034,10 @@ class H(http.server.BaseHTTPRequestHandler):
                 self._j({"reloaded": True, "nodes": len(body.get("topology", {}).get("nodes", []))})
             except Exception as e:
                 self._j({"error": str(e)}, 500)
+        elif self.path == "/push":
+            # AI/external push: send arbitrary data to dashboard via SSE
+            sse_push("push", body)
+            self._j({"pushed": True})
         else:
             self.send_error(404)
 
