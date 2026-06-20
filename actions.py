@@ -24,12 +24,22 @@ class ActionExecutor:
         digits = ''.join(c for c in target if c.isdigit())
         if digits and digits in elements:
             return elements[digits]
-        target_l = target.lower()
-        for el in elements.values():
+        target_l = target.lower().strip()
+
+        def rank(el: Element) -> int:
+            if el.action == "write" and el.role in ("Edit", "ComboBox", "Document"):
+                return 0
+            if el.action == "click":
+                return 1
+            if el.role != "Text":
+                return 2
+            return 3
+
+        for el in sorted(elements.values(), key=rank):
             if not el.name:
                 continue
             name_l = el.name.lower()
-            if target_l in name_l or name_l in target_l:
+            if target_l == name_l or target_l in name_l or name_l in target_l:
                 return el
         return None
 

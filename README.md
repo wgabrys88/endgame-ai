@@ -96,7 +96,7 @@ Runtime output (never commit): `state.json`, `bus.json`, logs.
 | **Brain** | `prompts/wiring.json` | Topology nodes with `prompt`, global `prompts.base`/`roles`, reasoning, limits, guards, act |
 | **Circuits** | `node.prompt` + `prompts.roles` | System = base + role; user = `node.prompt.user.blocks` |
 | **Body** | `server.py` | Graph engine, `call_circuit()`, `reasoning_patch()`, `parse_circuit_response()` |
-| **Muscles** | `actions.py`, `desktop.py` | Windows UIA observe + execute |
+| **Muscles** | `actions.py`, `desktop.py` | Hover-probe observe (`element_from_point`) + execute — no UIA tree walk |
 | **Memory** | `state.json` | goal, step, screen, history, reasoning — **full, not truncated** |
 
 ```mermaid
