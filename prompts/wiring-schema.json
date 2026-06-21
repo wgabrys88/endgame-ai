@@ -34,6 +34,7 @@
     "guards": { "type": "object" },
     "runtime": { "type": "object" },
     "act": { "type": "object" },
+    "observe": { "type": "object" },
     "errors": { "type": "object" },
     "limits": {
       "type": "object",

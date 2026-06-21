@@ -1,219 +1,284 @@
 # RESEARCH.md - Reality, Direction, and Next Proof
 
-This file is the strategic companion to `README.md`. The README is the
-operational handover. This document explains why the system matters, what was
-learned in the latest session, and what must be proven next.
+This document is the strategic companion to `README.md`. The README is the
+operational handover. This file explains why the organism matters, what the
+previous session changed, and what must be built next.
 
 ## Thesis
 
-endgame-ai is a small local desktop organism. It does not need to rewrite its
-Python source to evolve. It rewrites and hot-reloads its topology and behavior
-contract in `prompts/wiring.json`.
+endgame-ai is a local-first Windows desktop organism. Its central bet is that a
+small local model can perform useful desktop work when it is embedded in a
+truthful signal graph instead of asked to improvise a whole agent loop.
 
-The research bet is that a small local model can perform useful desktop work
-when the surrounding organism constrains the model's job:
+The graph constrains each role:
 
-- planner produces human subtasks
-- scheduler selects the current step
+- planner produces current-goal-preserving human subtasks
+- scheduler selects one current step
 - observe produces a bounded desktop view
-- act maps the step and screen to verbs
-- verify judges outcome evidence
+- act maps the step and screen to deterministic verbs
+- verify judges completion evidence
 - reflect diagnoses failure
-- self_modify suggests wiring changes
-- colony routes work across rods through a bus
+- self_modify proposes conservative wiring patches
+- colony routes work across local rods through a bus
 
-That structure lets a weak local model act more like a stronger model because
-it is filling a constrained role instead of improvising an entire agent loop.
+The organism evolves by changing `prompts/wiring.json`: topology, prompt
+contracts, guards, routing, limits, and behavior policy. Python should remain
+small, generic, and mechanical.
 
-## What This Session Proved
+## Previous Session Result
 
-The work moved the system from "promising but brittle" to "locally repeatable on
-a narrow desktop class."
+The previous session moved the project from a brittle proof to a repeatable
+simple desktop loop.
 
-Evidence:
+The biggest technical change was making ROD literal. For each LLM-backed node,
+the first call produces reasoning content and the second call emits the single
+structured JSON object used by the circuit. Reasoning is stored for inspection
+instead of being allowed to leak everywhere.
 
-- ROD is implemented as a two-call LLM pattern for every LLM node:
-  reason first, decide second.
-- The server queues autonomous runs instead of spawning overlapping run loops.
-- HTTP remains available while the graph runner is doing slow observe/act work.
-- Focus is no longer treated as an LLM planning crutch for normal element
-  interaction. Python already has HWNDs and performs mechanical focus as part
-  of click/write.
-- Action execution now reuses the observation map that produced the act
-  prompt's `SCREEN`, so deterministic chains do not rescan the desktop before
-  every verb and `[ID]` targets remain tied to what the model saw.
-- A small configured delay between chained verbs replaces the accidental delay
-  that hover rescans previously provided.
-- Post-action screen refresh is now opt-in because verify and reflect consume
-  action evidence, not desktop elements.
-- Observation exposes two layers:
-  - focused-window actionable elements with `[ID]`
-  - non-actionable `WINDOWS:` titles for top-level window awareness
-- The prompt base now starts by requiring each circuit to deduce what it sees
-  or knows from its input blocks.
-- Planner and act were isolated from stale downstream reasoning that caused
-  schema poisoning.
-- Deterministic verifier preflights now cover mechanical truths that the model
-  repeatedly misjudged:
-  - successful focus means the window exists
-  - `win+r`, app name, `enter` is app-launch evidence
-- Colony delegation was validated between two slots.
-- The loop completed 10 consecutive real desktop `open notepad` goals at 11
-  cycles each.
+The second major change was reducing race and contradiction:
 
-## Methodology Used
+- `/run` and `/resume` use a queued runner, so the server does not start
+  overlapping graph loops.
+- Desktop observe/action calls are serialized.
+- Resume state advances to the next node.
+- `act` can chain deterministic verbs without repeated scans.
+- Action execution uses the cached element map that produced `SCREEN`.
+- A small chain settle delay replaces accidental hover-scan delay.
+- Post-action desktop refresh is opt-in.
+- Focused-window `[ID]` scope stays narrow.
+- A `WINDOWS:` list gives non-actionable top-level window awareness.
+- Targeted action mechanics focus HWNDs in Python.
+- Missing cached targets fail instead of typing into the wrong focused field.
 
-The debugging pattern was:
+The third change was prompt hygiene:
 
-1. Run a real goal with a tight cycle cap.
-2. Inspect `state.json` for the exact failure.
-3. Decide whether the failure belongs to wiring or Python plumbing.
-4. Patch the smallest responsible surface.
-5. Rerun the narrow proof.
-6. Clean runtime artifacts.
+- Every circuit first deduces what it sees or knows from its wired inputs.
+- Non-`act` circuits are reminded that they do not see the desktop.
+- Planner is told not to create focus-preparation steps for normal targeted
+  click/write work.
+- Act uses focus as a switch or confirmation step, not as preparation for a
+  visible `[ID]`.
+- Planner receives traces as structural examples only.
+- Act no longer receives verifier/reflector reasoning.
+- Planner no longer receives broad downstream reasoning that previously led it
+  to copy stale verdicts or JSON shapes.
+- Self-modify sees a concise wiring summary and conservative patch examples.
 
-Important examples:
+The measured result was a 10-run real desktop `open notepad` streak at about 11
+cycles per run with a 15-cycle cap. That is not the final vision, but it proves
+the organism can be made less fragile by aligning observation, prompts, and
+mechanical execution.
 
-- When act started copying reflector diagnosis JSON, the fix was not more
-  retries. The fix was to remove verify/reflect reasoning from act's prompt
-  inputs.
-- When planner copied old trace literals into a new write goal, the fix was to
-  label traces as structural examples only and instruct planner to preserve
-  current-goal literals.
-- When verifier denied a successful focus as evidence for "Notepad is open,"
-  the fix was a deterministic preflight because Python knew focus succeeded.
-- When chained actions caused repeated hover scans, the fix was to keep the
-  focused-window element map from observe and execute against that map instead
-  of scanning again for every verb.
+## Current Implementation Additions
 
-This is the core engineering pattern for the organism: let the model handle
-semantic choice, but make the plumbing enforce mechanical truths.
+This implementation session did not run servers, `/smoke`, colony tests,
+desktop goals, or runtime validation. It changed only tracked source,
+documentation, schema, and wiring files.
 
-## How Much Closer Is The Vision?
+Added in source:
 
-Closer by one proof layer, not finished.
+- richer `/step` results with executed node, transition, state patch, full
+  state, next node, and before/after debug context
+- `/inspect` for wired input inspection without executing a node
+- `POST /state` for GUI/API saved-state parity
+- `POST /pause` for pause-between-nodes autonomous run control
+- `/node/:type` patch-plus-full-state responses
+- a rebuilt schema-driven HTML workbench with editable SVG graph nodes,
+  draggable/reconnectable edges, generic schema/object editors, hot-reload
+  saves, state panels, wired input panels, screen/window/outcome panels, and
+  reasoning panels
+- a top-level schema entry for the existing `observe` section
+- `state.memory` plus a wiring-declared `remember` verb for carrying compact
+  observed facts or summaries across app switches
+- task-agnostic prompt refinements for browser navigation, contingent
+  conversation turns, memory before context switches, verifier evidence
+  discipline, reflector diagnosis, and conservative self-modification
 
-Before this session:
+The runtime research question now shifts from "can the UI express the shared
+debug surface?" to "does the shared surface let a human and API client steer the
+compound workflow to completion?"
 
-- ROD was described but not faithfully implemented as two calls per LLM node.
-- The loop could work but was slow and fragile.
-- Focus behavior confused the model and wasted cycles.
-- Colony delegation was code-complete but unvalidated.
-- The dashboard existed but was still too thin for serious step debugging.
+## ROD Research Position
 
-After this session:
+ROD works only if the contracts remain strict.
 
-- The core ROD loop is real.
-- A small local model can repeatedly complete a simple real desktop goal under
-  the target cycle count.
-- The system now has a more truthful environment model.
-- The next bottleneck is not "can it open an app?" but "can it be debugged and
-  evolved through a human/AI shared step surface?"
+Reasoning should explain what the node believes based on its inputs. Decision
+output should be a constrained JSON object for the current role. Observation
+should be bounded and scoped. Routing should follow wiring edges. Python should
+patch state and enforce mechanical truths, not make semantic plans.
 
-Approximate progress toward the larger vision:
+Important invariants:
+
+- `SCREEN` belongs to `act`.
+- `[ID]` targets belong only to the focused window.
+- `WINDOWS:` titles are context, not actions.
+- Planner plans from the goal, history, completed steps, traces, and state.
+- Verify decides from intended step and action evidence unless wiring gives it
+  more.
+- Reflect diagnoses why a step failed.
+- Self-modify changes wiring conservatively and validates the whole document.
+
+The prior failures were mostly contract failures. The system improved when
+reasoning was isolated, stale traces were demoted to structure, and mechanical
+facts were handled by code.
+
+## Methodology
+
+The working methodology is deliberately narrow:
+
+1. Reproduce or inspect the exact failure state.
+2. Determine whether the failure is behavioral wiring or generic plumbing.
+3. Prefer a wiring change for policy, role boundaries, wording, guards, and
+   routing.
+4. Use Python only for mechanics the model cannot safely infer: focus, cached
+   target maps, validation, queueing, state persistence, or HTTP parity.
+5. Keep runtime artifacts out of commits.
+6. Keep the tracked file set small.
+7. Validate with static checks in implementation-only sessions.
+8. Save runtime and desktop validation for sessions that explicitly allow it.
+
+For the current implementation session, no server runs, `/smoke`, colony tests,
+desktop streaks, or goal executions should be performed. The allowed checks are
+lightweight: JSON parsing, schema parsing, Python AST parsing, and
+`git diff --check`.
+
+## Current Gap
+
+The system can repeatedly open a simple app. It is not yet proven on a
+multi-application contingent workflow.
+
+The target workflow is:
+
+```text
+open Chrome
+start conversation with grok.com about endgame-ai
+keep the conversation based on Grok's real responses for 3 turns
+save a summary of the conversation in Notepad
+play Shakira Waka Waka on YouTube
+```
+
+This combines several hard cases:
+
+- browser navigation
+- login or site-state uncertainty
+- reading real model responses
+- preserving conversational context
+- producing a summary from actual observed content
+- switching from browser to Notepad
+- writing into the correct application
+- returning to browser media playback
+- avoiding stale trace or prompt literals
+
+Blind autonomous runs are not the right first tool for this proof. The next
+layer is a shared step/debug workbench where a human can inspect and guide the
+same graph state that an AI sees through API calls.
+
+## Workbench Direction
+
+The dashboard should become a schema-driven wiring and stepping workbench.
+
+The source now implements that direction, pending runtime validation.
+
+It needs to expose:
+
+- live graph topology from `prompts/wiring.json`
+- generic editors derived from `prompts/wiring-schema.json`
+- node boxes with editable data, prompts, inputs, guards, and routing metadata
+- edge connections that can be added, removed, and reconnected
+- current node, next node, signals, state patch, and full state after `/step`
+- reasoning content from both-pass ROD execution
+- wired prompt inputs, especially `SCREEN`, `HISTORY`, `COMPLETED_STEPS`,
+  `CURRENT_WIRING`, action evidence, and traces
+- cached observation target IDs and non-actionable `WINDOWS:` titles
+- pause, resume, inspect, run, step, and hot-reload controls
+
+The key research requirement is parity. A GUI action should correspond to an
+HTTP API call. An API call should update the same state and be visible in the
+GUI. There should not be a hidden special path for human debugging.
+
+## Wiring-First Behavior Direction
+
+The compound workflow should be enabled by task-agnostic behavior rather than
+hardcoded browser policy.
+
+Planner should:
+
+- preserve the current user goal and not copy old trace literals
+- plan contingent work as short observable steps
+- explicitly wait for and use real responses when the task depends on them
+- avoid focus-prep steps when Python already handles target focus
+- maintain enough state for multi-turn browser conversation and summarization
+
+Act should:
+
+- prefer short deterministic chains for known UI transitions
+- use `SCREEN` and cached `[ID]` targets as ground truth
+- use `remember` to store compact visible response facts before context switches
+- write only when the intended field or app is focused or targeted
+- avoid rescanning or over-focusing inside deterministic chains
+- fall back to observe when the target is not visible
+
+Verify should:
+
+- accept mechanical evidence Python can prove
+- reject stale or unrelated evidence
+- confirm memory capture only from `remember` outcome plus non-empty `MEMORY`
+- distinguish "step progressed" from "whole goal done"
+
+Reflect should:
+
+- identify whether failure came from stale state, missing target, wrong app,
+  site state, insufficient observation, or a bad plan
+- choose a conservative recovery route
+
+Self-modify should:
+
+- understand the current wiring summary
+- prefer small prompt, guard, or input-boundary patches
+- avoid broad topology changes unless the defect is plainly topological
+- keep patches task-agnostic and reusable
+
+## Open Questions
+
+- How strict should `prompts/wiring-schema.json` become before it blocks
+  useful self-modification?
+- Should the server own first-class named step sessions, or is persisted state
+  plus `/step` enough for now?
+- What is the minimum browser observation needed for Grok and YouTube without
+  adding external dependencies?
+- How should ignored trace memory be curated if traces remain outside commits?
+- When should self-modify be allowed to change topology rather than prompts and
+  guards?
+
+## Progress Estimate
+
+Approximate state after the previous session:
 
 - Desktop actuation substrate: 60 percent
 - ROD role separation: 70 percent
 - Simple-goal reliability: 65 percent
-- Compound browser workflows: 25 percent
-- Self-modifying wiring UX: 20 percent
+- Compound browser workflows: 35 percent
+- Self-modifying wiring UX: 45 percent
 - Colony as useful work router: 35 percent
 - Breeding reactor with trace selection: 20 percent
 
-## The Next Proof
+The next useful progress is not another claim of generality. It is a practical
+step/debug workbench plus a successful compound workflow proof.
 
-The next target workflow is intentionally hard:
+## Next Proof Plan
 
-```text
-open chrome,
-start conversation with grok.com AI about endgame-ai,
-keep the conversation based on what Grok responds for 3 turns,
-save the summary of conversation in Notepad,
-then run Shakira Waka Waka on YouTube
-```
+The next validation session should:
 
-This cannot be proven by blind `/run` alone. It needs step-level visibility.
-The human dashboard and AI API must share the same control surface.
+1. Review this file, `README.md`, and the current diff.
+2. Start the server only in a validation session.
+3. Open the dashboard and call `/step` through API side by side.
+4. Confirm GUI actions and API calls produce equivalent state transitions.
+5. Step Chrome open/navigation.
+6. Step the Grok conversation one real response at a time.
+7. Save a summary to Notepad based on observed content.
+8. Step YouTube search/playback.
+9. Move any task-specific lesson back into task-agnostic wiring or generic
+   plumbing.
 
-## Required Step Workbench
-
-The HTML dashboard is now moving into the role of primary visual debugger. The
-current version has a first-class `/step` backend endpoint and a graph workbench
-that can inspect nodes and edges, edit wiring JSON, fetch the schema, and save
-through `/wiring`.
-
-It still must mature into a full runtime wiring lab:
-
-- show the live wiring graph from `prompts/wiring.json`
-- derive editable node and edge forms from `prompts/wiring-schema.json`
-- render current node, pending signals, next edge, state patch, and reasoning
-- let a human step the graph exactly as an AI can via HTTP
-- support pause/resume and safe hot-reload of wiring
-- expose schema validation errors before POST `/wiring`
-- show the focused-window `SCREEN` and `WINDOWS:` context separately
-- display history, last actions, last outcome, and verifier/reflector reasoning
-- make every UI element meaningful: no decorative controls
-
-The dashboard should not hardcode future schema fields if avoidable. It should
-inspect the schema and the wiring document, then render generic object editors
-for unknown properties.
-
-## Wiring-First Direction
-
-The long-term goal is that adding behavior does not require editing Python.
-Python should be changed only when a generic capability is missing:
-
-- a new endpoint for stepping sessions
-- a generic schema validator
-- a generic wiring patch operation
-- a new mechanical verb
-- a safer desktop observation primitive
-
-Task policy, role personality, routing, guards, limits, prompt inputs, and graph
-edges should live in `prompts/wiring.json`.
-
-## Open Questions
-
-- Should the server own a first-class step session, or should the dashboard keep
-  doing client-side stepping through `/node/:type`?
-- Should `prompts/wiring-schema.json` become strict enough to drive the editor
-  without custom dashboard knowledge?
-- How should trace memory be kept if `prompts/traces.jsonl` remains ignored and
-  not committed?
-- Should `self_modify` be limited to wiring prompt/guard edits until the UI can
-  visualize topology mutations safely?
-- What is the minimum browser observation needed for Grok and YouTube flows
-  without adding dependencies?
-
-## Research Position
-
-The broader field is moving toward self-evolving agents, multi-agent routing,
-and stronger desktop control. endgame-ai's differentiator remains:
-
-- local-first
-- stdlib-only
-- Windows desktop control
-- topology-level self-modification
-- human-visible signal graph
-- small enough to understand and mutate
-
-The project is viable only if it proves real desktop reliability before cloud
-agents make the baseline trivial. The next proof must therefore be practical:
-the system should complete the Grok/Notepad/YouTube workflow with step-level
-debug evidence, not just claim architectural potential.
-
-## Next Session Checklist
-
-1. Review `README.md`, this file, and current `git diff`.
-2. Start the server locally.
-3. Use the HTML dashboard and API `/step` side by side.
-4. Continue upgrading the dashboard into a real wiring workbench.
-5. Validate that GUI step and API step produce the same node transitions.
-6. Step through the compound browser workflow in slices:
-   - Chrome open and navigate
-   - Grok prompt submit
-   - capture/continue three turns
-   - Notepad summary save
-   - YouTube search/play
-7. Move task-specific fixes into wiring prompts/guards first.
-8. Commit only tracked essential files.
+The research milestone is complete only when the workflow succeeds with
+step-level evidence a human can inspect.
