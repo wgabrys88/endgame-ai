@@ -653,9 +653,33 @@ def _target_screen_line(state, target):
                 return line.lower()
     return target.lower()
 
+def _focused_title(state):
+    screen = state.get("screen", "") or ""
+    for line in screen.splitlines():
+        if line.lower().startswith("focused:"):
+            return line.split(":", 1)[1].strip().lower()
+    return ""
+
+def _browser_focused(state):
+    title = _focused_title(state)
+    return any(token in title for token in ("chrome", "edge", "firefox", "browser", "youtube", "grok"))
+
+def _focuses_browser(actions):
+    for action in actions:
+        if action.get("verb") != "focus":
+            continue
+        target = (action.get("target") or action.get("value") or "").lower()
+        if any(token in target for token in ("chrome", "edge", "firefox", "browser", "youtube", "grok")):
+            return True
+    return False
+
 def _is_browser_navigation_step(state):
     text = _step_text(state)
     return any(w in text for w in ("go to ", "navigate", "url", ".com", "youtube", "website", "page loads", "page is loaded"))
+
+def _is_playback_step(state):
+    text = _step_text(state)
+    return any(w in text for w in ("play ", "playing", "playback", "video"))
 
 def _is_chat_message_step(state):
     text = _step_text(state)
@@ -717,6 +741,39 @@ def unsafe_chat_target(state, actions):
             return "chat/message write targeted the browser address bar; observe or navigate until a chat input is visible"
     return ""
 
+def unsafe_browser_navigation_context(state, actions):
+    if not _is_browser_navigation_step(state):
+        return ""
+    if not any(a.get("verb") == "write" and a.get("value") for a in actions):
+        return ""
+    if _browser_focused(state) or _focuses_browser(actions):
+        return ""
+    if any(a.get("verb") == "write" and "address" in _target_screen_line(state, a.get("target", "")) for a in actions):
+        return ""
+    return "browser navigation/search requires a browser or address bar focused; focus/open browser first"
+
+def unsafe_launch_then_content_write(state, actions):
+    saw_run = False
+    app_value = ""
+    launch_submitted = False
+    for action in actions:
+        verb = action.get("verb", "")
+        target = (action.get("target") or action.get("value") or "").lower()
+        value = str(action.get("value") or "")
+        if verb == "hotkey" and "win" in target and "r" in target:
+            saw_run = True
+            continue
+        if saw_run and not app_value and verb == "write" and value:
+            app_value = value.strip().lower()
+            continue
+        if saw_run and app_value and verb == "press" and "enter" in target:
+            launch_submitted = True
+            continue
+        if launch_submitted and verb == "write" and value.strip().lower() != app_value:
+            if len(value.strip()) > 20 or "summary" in _step_text(state):
+                return "do not chain content writing immediately after launching an app; observe/focus the editor first"
+    return ""
+
 def _find_advance_hint(state, actions):
     """Match advance hints from wiring."""
     hints = WIRING.get("guards", {}).get("advance_hints", [])
@@ -755,11 +812,8 @@ def _planner_ready_patch(state, steps, patch):
         "reasoning_chain": [],
         "reasoning": {},
     }
-    preserve = state.get("replanning") and state.get("step", 0) > 0
-    if preserve:
-        out["step"] = min(state.get("step", 0), len(steps))
-        out["retries"] = 0
-        out["history"] = list(state.get("history", []))
+    if state.get("replanning"):
+        out.update({"step": 0, "retries": 0, "history": list(state.get("history", []))})
     else:
         out.update({"step": 0, "retries": 0, "history": []})
     return out
@@ -855,6 +909,20 @@ def node_act(state, _):
 
     actions = normalize_action_chain(state, actions)
     unsafe = unsafe_chat_target(state, actions)
+    if unsafe:
+        action_label = "; ".join(f"{a.get('verb','')} {a.get('target','')}" for a in actions)
+        entry = {"attempt": len(history) + 1, "action": action_label, "outcome": f"BLOCKED: {unsafe}"}
+        patch.update({"last_error": unsafe, "history": history + [entry]})
+        return {"signals": ["act_failed"], "patch": patch}
+
+    unsafe = unsafe_browser_navigation_context(state, actions)
+    if unsafe:
+        action_label = "; ".join(f"{a.get('verb','')} {a.get('target','')}" for a in actions)
+        entry = {"attempt": len(history) + 1, "action": action_label, "outcome": f"BLOCKED: {unsafe}"}
+        patch.update({"last_error": unsafe, "history": history + [entry]})
+        return {"signals": ["act_failed"], "patch": patch}
+
+    unsafe = unsafe_launch_then_content_write(state, actions)
     if unsafe:
         action_label = "; ".join(f"{a.get('verb','')} {a.get('target','')}" for a in actions)
         entry = {"attempt": len(history) + 1, "action": action_label, "outcome": f"BLOCKED: {unsafe}"}
@@ -962,13 +1030,24 @@ def _verify_preflight_confirmed(state):
         for a in actions
         if a.get("verb") in ("press", "hotkey")
     ).lower()
-    navigation_done = any(word in done_when for word in ("load", "page", "navigate", "url", "website", "site", "youtube"))
-    address_ready = any(
+    focused_title = _focused_title(state)
+    screen_l = (state.get("screen") or "").lower()
+    write_done = any(word in done_when for word in ("written", "write", "typed", "text", "summary"))
+    editor_ready = any(word in focused_title for word in ("notepad", "editor")) or "document \"text editor\"" in screen_l
+    if write_done and typed and editor_ready:
+        return True
+    playback_required = any(word in done_when for word in ("playing", "playback"))
+    navigation_done = (
+        not playback_required
+        and any(word in done_when for word in ("load", "page", "navigate", "url", "website", "site", "youtube"))
+    )
+    ctrl_l_ready = any(
         a.get("verb") == "hotkey"
         and "ctrl" in (a.get("target") or a.get("value") or "").lower()
         and "l" in (a.get("target") or a.get("value") or "").lower()
         for a in actions
-    ) or any(
+    ) and (_browser_focused(state) or _focuses_browser(actions))
+    address_ready = ctrl_l_ready or any(
         a.get("verb") == "write"
         and "address" in _target_screen_line(state, a.get("target", ""))
         for a in actions
@@ -1022,6 +1101,19 @@ def node_reflect(state, _):
     replans = state.get("replan_count", 0)
     max_r = wiring_limit("max_attempts", 5)
     max_replans = wiring_limit("max_replans", 2)
+    if (
+        _is_playback_step(state)
+        and (state.get("last_outcome") or "").startswith("OK:")
+        and any(a.get("verb") == "write" for a in state.get("last_actions_raw", []))
+        and retries < max_r
+    ):
+        return {
+            "signals": ["retry"],
+            "patch": {
+                "retries": retries + 1,
+                "last_error": "playback not confirmed after search/navigation; observe results and click or play a matching video",
+            },
+        }
     if retries >= max_r:
         if replans >= max_replans:
             return {"signals": ["escalate"], "patch": {"retries": 0, "replan_count": 0}}

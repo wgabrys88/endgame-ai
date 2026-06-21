@@ -95,35 +95,44 @@ is useful but insufficient. The next proof must be contingent and multi-app.
 ## Stopped Run Evidence
 
 Validation was stopped on request on 2026-06-21. No further tests should be run
-until the next session explicitly resumes.
+until a later session explicitly authorizes runtime work.
 
-The latest real run reached this state:
+The local ignored runtime files are preserved as evidence. They should not be
+cleaned automatically during handover:
 
-- `state.json` exists locally and is ignored by git.
-- `_resume_node` is `scheduler`.
-- `step` is `7`.
-- current step is `write summary of conversation to Notepad`.
-- `memory` contains `grok_turn_1_response`, `grok_turn_2_response`, and
-  `grok_turn_3_response`.
-- last useful outcome was `remember grok_turn_3_response`.
+- `state.json`
+- `bus.json`
+- `prompts/traces.jsonl`
+- `prompts/wiring.backup.json`
+- local transcript files such as `chat-gpt.md`
 
-What the run proved:
+The current `state.json` is useful but not a clean resume point. It contains
+real history and screen evidence, but the last failed reflect path replanned
+back to stale Grok work after YouTube search results had already been reached.
+
+What the real run proved:
 
 - deeper observation worked in real Chrome/Grok pages, showing dozens of
   observed entries instead of a tiny narrow view
-- the browser navigation fix worked: Chrome focus happened before `ctrl+l`
+- browser navigation worked when Chrome focus happened before `ctrl+l`
 - Grok loaded from real `grok.com`
 - the system submitted the initial endgame-ai message
 - the system remembered three visible Grok response snippets
 - the system made follow-up submissions based on the running state
+- Notepad summary writing advanced with real action evidence: a
+  memory-derived 135-character summary was typed into Notepad
+- YouTube search/navigation reached results for `Shakira Waka Waka`
+- the verifier correctly refused to treat search/navigation as playback
 
 What remains:
 
-- planner/act must split Notepad summary work into open/focus Notepad and write
-  a MEMORY-derived summary
-- verify should confirm the summary from the write action and/or visible
-  Notepad content
-- YouTube navigation/search/playback still needs real step evidence
+- do not resume the current state blindly; repair it to the remaining YouTube
+  playback step or restart from the smallest useful slice after preserving
+  evidence
+- click/play a matching YouTube result and verify visible playback
+- optionally refocus Notepad and observe the written summary as a final audit
+- validate the newest reflect retry hardening, which should retry from search
+  results instead of replanning back to old Grok subtasks
 - response capture should become less shallow; turn 2 and 3 memories captured
   visible short prompts/snippets, not full rich answer summaries
 
@@ -160,6 +169,9 @@ generic browser invariants:
 - when leaving browser for Notepad, first convert browser MEMORY into a summary
   and then write that summary in the editor; do not try to write while Grok is
   still focused
+- for media playback, navigation/search is only a precursor; confirmation
+  requires playback evidence or an explicit play/click action that opens the
+  matching media
 
 ### Prompt Contamination
 
@@ -212,8 +224,9 @@ continue.
 For this target, simulated tests are not enough. The useful validation loop is:
 
 1. Stop stale servers.
-2. Inspect local `state.json` before cleaning; if it is the 2026-06-21 stopped
-   state, resume from it or summarize it before deletion.
+2. Inspect local `state.json` before cleaning; if it still contains the
+   2026-06-21 stale replan, preserve the evidence and repair/restart from a
+   small slice instead of resuming blindly.
 3. Start the real local server.
 4. Confirm `/health` reports `simulation=false`.
 5. Step through the compound goal via `/step` in small chunks.
@@ -247,9 +260,10 @@ The system is production-ready for the current vision when:
    first-class editor fields.
 3. Improve dashboard session ergonomics: named step sessions, state diff view,
    and explicit current-node resume controls.
-4. Strengthen prompt roles for response capture and memory-derived summaries.
-5. Fix the Notepad transition: plan open/focus Notepad, write summary from
-   MEMORY, verify written content, then continue to YouTube.
+4. Strengthen prompt roles for response capture, memory-derived summaries, and
+   media search-result playback.
+5. Validate the current Notepad transition and playback retry hardening in a
+   real authorized run.
 6. Let self_modify edit conservative prompt/guard fields through validated
    wiring patches.
 7. Keep running real slices of the compound workflow after each generic fix.
@@ -262,8 +276,8 @@ Before another AI continues:
 - inspect `git status --short`
 - review current diffs in `server.py`, `actions.py`, `desktop.py`,
   `prompts/wiring.json`, `prompts/wiring-schema.json`, and `prompts/model.json`
-- check ignored `state.json`; if present, it is useful resumable evidence from
-  the stopped real run
+- check ignored `state.json`; if present, it is useful evidence, but may need
+  repair before resume because the latest copy contained a stale Grok replan
 - start no background helper that will be left running
 - when validation begins, use real `/step` calls and compact evidence output
 - do not hardcode the target workflow in Python

@@ -131,28 +131,34 @@ Previously validated:
 
 Real compound run state on 2026-06-21:
 
+- All runtime execution was stopped for handover. At this handover there is no
+  Python server process intentionally left running.
 - A real compound run exposed a generic navigation bug: inserting `ctrl+l`
   before a model-emitted browser focus selected the wrong window. The fix is now
-  generic chain normalization, not Grok-specific logic.
-- A resumed real run then proved the navigation fix: Chrome was focused,
-  `ctrl+l` selected the address bar, `grok.com` was typed, and Grok loaded.
-- The run reached `state.step == 7` and stopped at the scheduler for:
-  `write summary of conversation to Notepad`.
-- `state.json` is ignored by git but intentionally left local as resumable run
-  data. Current resume node: `scheduler`.
+  generic chain normalization and context guarding, not Grok-specific logic.
+- A resumed real run proved the navigation fix: Chrome was focused, `ctrl+l`
+  selected the address bar, `grok.com` was typed, and Grok loaded.
 - Memory contains three real Grok capture keys:
   `grok_turn_1_response`, `grok_turn_2_response`, and
   `grok_turn_3_response`.
 - Completed real workflow evidence: Chrome/Grok navigation, initial Grok
   message submission, first response memory, follow-up submission, second
-  response memory, third message submission, and third response memory.
-- Remaining workflow work: open/focus Notepad, write a memory-derived summary,
-  verify the Notepad content, then navigate/search YouTube and verify Waka Waka
-  playback.
-- Open reliability gap from the stopped run: `act` returned `CANNOT` when asked
-  to write the summary to Notepad while Grok was still focused. Planner/act
-  wiring should split this into open/focus Notepad, write summary from MEMORY,
-  then continue to YouTube.
+  response memory, third message submission, third response memory, and a
+  135-character summary write action into Notepad from memory.
+- Later real evidence reached YouTube search results for
+  `Shakira Waka Waka`. The verifier correctly refused to treat search/navigation
+  as playback.
+- Current local `state.json` is intentionally preserved but is not a clean
+  resume point. It contains useful history and screen evidence, but the last
+  failed reflect path replanned back to stale Grok steps while the browser was
+  already on YouTube results.
+- Remaining workflow work: repair or restart from the smallest useful slice,
+  click/play a matching YouTube result, verify playback, and optionally refocus
+  Notepad to audit the written summary visually.
+- Latest unvalidated hardening in tracked files: browser navigation context
+  guard, unsafe launch-then-content-write guard, summary-write verifier
+  preflight, playback false-positive block, replan index reset, and a reflect
+  retry path for "searched but playback not confirmed".
 
 ## HTTP Surface
 
@@ -214,21 +220,25 @@ RESEARCH.md                Direction, risks, and proof plan
 ```
 
 Ignored runtime files include `state.json`, `bus.json`,
-`prompts/traces.jsonl`, `prompts/wiring.backup.json`, caches, and logs.
+`prompts/traces.jsonl`, `prompts/wiring.backup.json`, local transcripts,
+caches, and logs.
 The allowlist `.gitignore` is intentional: source/docs/prompts are committed,
 while local run state and traces remain on disk for resume/debug unless a human
 explicitly cleans them.
 
 ## Immediate Validation Loop
 
-For this target, use real step-by-step server runs, not simulated tests. If the
-local `state.json` from 2026-06-21 is still present, resume from it first; it is
-at the Notepad-summary stage with three Grok memory entries.
+For this target, use real step-by-step server runs, not simulated tests, only
+after a session explicitly authorizes runtime work. The current local
+`state.json` from 2026-06-21 should be inspected before use. It preserves real
+evidence, but its current step was poisoned by a bad replan after YouTube search
+results were reached.
 
 1. Start the server.
 2. Use `/health` only to confirm the server is alive and not in simulation.
-3. Inspect `/state`; if `_resume_node` is `scheduler` and `step` is `7`,
-   continue from the saved run.
+3. Inspect `/state`; if it still contains the stale Grok replan, do not resume
+   blindly. Either repair the plan/current step to the remaining YouTube
+   playback work or start a new small real slice after preserving evidence.
 4. Inspect `state`, `screen`, `last_actions_raw`, `last_outcome`, `memory`,
    and `reasoning_chain`.
 5. Drive the goal through `/step` in small chunks.
@@ -270,27 +280,31 @@ Known focus areas:
 
 Current stopped state:
 - all servers/tests were stopped on request
-- ignored state.json resumes at scheduler, step 7
-- current step is write summary of conversation to Notepad
+- ignored state.json is preserved as evidence, not a clean resume point
+- Notepad summary writing has real action evidence
+- browser reached YouTube search results for Shakira Waka Waka
+- the latest current_step may be stale Grok work due to a bad replan
 - memory has grok_turn_1_response, grok_turn_2_response, grok_turn_3_response
-- remaining proof is Notepad summary, then YouTube Waka Waka playback
+- remaining proof is click/play a matching YouTube result and verify playback
+- optional final audit: refocus Notepad and observe the written summary
 ```
 
 ### Real Validation Prompt
 
 ```text
-Run only real step-by-step validation through the local server. Do not rely on
-simulated tests for the compound proof. First inspect state.json. If it matches
-the 2026-06-21 stopped state, resume it instead of starting over:
+Run only real step-by-step validation through the local server after runtime is
+explicitly authorized. Do not rely on simulated tests for the compound proof.
+First inspect state.json. If it still contains the 2026-06-21 stale replan, do
+not blindly resume it:
 
-resume node: scheduler
-step: 7
-current step: write summary of conversation to Notepad
+current screen evidence: YouTube search results for Shakira Waka Waka
+known bad current step: stale Grok send-message work
 memory keys: grok_turn_1_response, grok_turn_2_response, grok_turn_3_response
+Notepad evidence: 135-character memory-derived summary write action
 
-If state.json is absent or intentionally discarded, start from clean
-state.json/bus.json, confirm /health reports simulation=false, then step the
-target goal in small chunks:
+Either repair the state to the remaining YouTube playback step or start from a
+clean slice after preserving the evidence. Confirm /health reports
+simulation=false, then step the target goal in small chunks:
 
 open Chrome; go to grok.com; ask about endgame-ai; remember Grok response 1;
 send a follow-up based on memory; remember response 2; send a follow-up based
