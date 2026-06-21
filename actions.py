@@ -107,6 +107,8 @@ class ActionExecutor:
                 el = self._resolve(target, elements)
                 if not el:
                     return ActionResult(verb, False, f"element {target} not found")
+                if el.action != "write" and el.role not in ("Edit", "ComboBox", "Document"):
+                    return ActionResult(verb, False, f"element {target} is not writable ({el.role})")
                 self._desktop.click(el.px + el.pw // 2, el.py + el.ph // 2, el.hwnd)
             self._desktop.hotkey(["ctrl", "a"])
             self._desktop.type_text(text)

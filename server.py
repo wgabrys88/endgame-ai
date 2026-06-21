@@ -149,6 +149,10 @@ def wiring_summary():
             "self_modify": "self_modify" in roles and any(n.get("type") == "self_modify" for n in topo.get("nodes", [])),
             "colony_delegate": bool(WIRING.get("moe", {}).get("delegate_keywords")),
             "trace_memory": True,
+            "step_debug": True,
+            "pause_resume": True,
+            "wiring_hot_reload": True,
+            "state_memory": "remember" in WIRING.get("verbs", {}),
         },
         "limits": WIRING.get("limits", {}),
     }
@@ -608,6 +612,75 @@ def check_repeat_block(state, actions):
         return hint or "repeat blocked — try a different action"
     return None
 
+def apply_memory_action(existing_memory, target, value):
+    """Apply act's remember verb without desktop or model side effects."""
+    memory = dict(existing_memory or {})
+    key = target or f"note_{len(memory) + 1}"
+    text = str(value or "")
+    if not text.strip():
+        return False, memory, "FAILED: empty memory value"
+    memory[key] = value
+    return True, memory, f"stored {key} ({len(text)} chars)"
+
+def _step_text(state):
+    step = state.get("current_step", {})
+    return f"{step.get('description', '')} {step.get('done_when', '')}".lower()
+
+def _target_screen_line(state, target):
+    target = (target or "").strip()
+    if not target:
+        return ""
+    id_match = re.match(r"^\[?(\d+)\]?$", target)
+    screen = state.get("screen", "") or ""
+    if id_match:
+        needle = f"[{id_match.group(1)}]"
+        for line in screen.splitlines():
+            if needle in line:
+                return line.lower()
+    return target.lower()
+
+def _is_browser_navigation_step(state):
+    text = _step_text(state)
+    return any(w in text for w in ("go to ", "navigate", "url", ".com", "youtube", "website", "page loads", "page is loaded"))
+
+def _is_chat_message_step(state):
+    text = _step_text(state)
+    if _is_browser_navigation_step(state):
+        return False
+    return any(w in text for w in ("send ", "message", "prompt", "follow-up", "question", "chat"))
+
+def normalize_action_chain(state, actions):
+    """Apply deterministic safety normalizations that do not change task intent."""
+    out = [dict(a) for a in actions]
+    if _is_browser_navigation_step(state) and any(a.get("verb") == "write" and a.get("value") for a in out):
+        has_ctrl_l = any(
+            a.get("verb") == "hotkey"
+            and "ctrl" in (a.get("target") or a.get("value") or "").lower()
+            and "l" in (a.get("target") or a.get("value") or "").lower()
+            for a in out
+        )
+        if not has_ctrl_l:
+            out.insert(0, {"verb": "hotkey", "target": "ctrl+l", "value": ""})
+        has_enter = any(
+            a.get("verb") in ("press", "hotkey")
+            and "enter" in (a.get("target") or a.get("value") or "").lower()
+            for a in out
+        )
+        if not has_enter:
+            out.append({"verb": "press", "target": "enter", "value": ""})
+    return out
+
+def unsafe_chat_target(state, actions):
+    if not _is_chat_message_step(state):
+        return ""
+    for a in actions:
+        if a.get("verb") != "write":
+            continue
+        line = _target_screen_line(state, a.get("target", ""))
+        if "address and search bar" in line:
+            return "chat/message write targeted the browser address bar; observe or navigate until a chat input is visible"
+    return ""
+
 def _find_advance_hint(state, actions):
     """Match advance hints from wiring."""
     hints = WIRING.get("guards", {}).get("advance_hints", [])
@@ -744,6 +817,14 @@ def node_act(state, _):
         patch["last_error"] = wiring_error("act_bad_conclusion", conclusion=conclusion)
         return {"signals": ["act_failed"], "patch": patch}
 
+    actions = normalize_action_chain(state, actions)
+    unsafe = unsafe_chat_target(state, actions)
+    if unsafe:
+        action_label = "; ".join(f"{a.get('verb','')} {a.get('target','')}" for a in actions)
+        entry = {"attempt": len(history) + 1, "action": action_label, "outcome": f"BLOCKED: {unsafe}"}
+        patch.update({"last_error": unsafe, "history": history + [entry]})
+        return {"signals": ["act_failed"], "patch": patch}
+
     # Guard: repeat block
     block = check_repeat_block(state, actions)
     if block:
@@ -758,24 +839,44 @@ def node_act(state, _):
     chain_delay = int(WIRING.get("runtime", {}).get("action_chain_delay_ms", 0)) / 1000.0
     for i, a in enumerate(actions):
         verb = a.get("verb", "")
-        target = a.get("target", "")
+        target = a.get("target", "") or ""
+        value = a.get("value", "") or ""
+        prior = actions[:i]
+        prior_run = any(
+            pa.get("verb") == "hotkey"
+            and "win" in (pa.get("target") or pa.get("value") or "").lower()
+            and "r" in (pa.get("target") or pa.get("value") or "").lower()
+            for pa in prior
+        )
+        screen_l = (state.get("screen") or "").lower()
+        if verb == "write" and "focused: run" in screen_l and target:
+            target = ""
+            a["target"] = ""
+        if verb == "write" and prior_run and target and target.strip().lower() == str(value).strip().lower():
+            target = ""
+            a["target"] = ""
+        if verb == "press" and not (target or value) and any(pa.get("verb") == "write" for pa in prior):
+            target = "enter"
+            a["target"] = "enter"
+        if verb == "click" and target.strip().lower() == "ok" and "focused: run" in screen_l:
+            verb = "press"
+            target = "enter"
+            a["verb"] = "press"
+            a["target"] = "enter"
         for norm in act_cfg.get("verb_normalize", []):
             if verb == norm.get("from") and norm.get("when_target_contains", "") in target:
                 verb = norm.get("to", verb)
         if verb == "remember":
-            memory = dict(patch.get("memory") or state.get("memory") or {})
-            key = target or f"note_{len(memory) + 1}"
-            value = a.get("value", "")
-            memory[key] = value
-            patch["memory"] = memory
-            result = f"stored {key} ({len(value)} chars)"
+            ok_mem, memory, result = apply_memory_action(patch.get("memory") or state.get("memory"), target, value)
+            if ok_mem:
+                patch["memory"] = memory
         else:
-            result = execute_verb(verb, target, a.get("value", ""))
+            result = execute_verb(verb, target, value)
         label = target
-        if verb == "write" and a.get("value"):
-            label = f"{target or 'focused'} value={a.get('value')[:80]!r}"
-        if verb == "remember" and a.get("value"):
-            label = f"{target or 'note'} value={a.get('value')[:80]!r}"
+        if verb == "write" and value:
+            label = f"{target or 'focused'} value={value[:80]!r}"
+        if verb == "remember" and value:
+            label = f"{target or 'note'} value={value[:80]!r}"
         results.append(f"{verb} {label}: {result}")
         if str(result).upper().startswith("FAILED"):
             failed = True
@@ -819,14 +920,32 @@ def _verify_preflight_confirmed(state):
         return False
     done_when = (state.get("current_step", {}).get("done_when") or "").lower()
     actions = state.get("last_actions_raw", [])
+    typed = " ".join((a.get("value") or "") for a in actions if a.get("verb") == "write").lower()
+    submitted = " ".join(
+        (a.get("target") or a.get("value") or "")
+        for a in actions
+        if a.get("verb") in ("press", "hotkey")
+    ).lower()
+    navigation_done = any(word in done_when for word in ("load", "page", "navigate", "url", "website", "site", "youtube"))
+    address_ready = any(
+        a.get("verb") == "hotkey"
+        and "ctrl" in (a.get("target") or a.get("value") or "").lower()
+        and "l" in (a.get("target") or a.get("value") or "").lower()
+        for a in actions
+    ) or any(
+        a.get("verb") == "write"
+        and "address" in _target_screen_line(state, a.get("target", ""))
+        for a in actions
+    )
+    if navigation_done and address_ready and typed and typed in done_when and "enter" in submitted:
+        return True
     if "open" in done_when and len(actions) >= 3:
         verbs = [a.get("verb", "") for a in actions]
         hotkey = (actions[0].get("target") or "").lower()
-        typed = " ".join((a.get("value") or "") for a in actions if a.get("verb") == "write").lower()
         pressed = " ".join((a.get("target") or a.get("value") or "") for a in actions if a.get("verb") == "press").lower()
         if verbs[:3] == ["hotkey", "write", "press"] and "win" in hotkey and "r" in hotkey and typed and typed in done_when and "enter" in pressed:
             return True
-    if not any(word in done_when for word in ("open", "focused", "active window", "current window")):
+    if not any(word in done_when for word in ("open", "focused", "active window", "current window", "load", "page", "navigate", "url", "website", "site")):
         return False
     for action in actions:
         if action.get("verb") != "focus":
@@ -1231,12 +1350,21 @@ class H(http.server.BaseHTTPRequestHandler):
                 nn = len(WIRING.get("topology", {}).get("nodes", []))
                 werrs = validate_wiring(WIRING)
                 entry_r = NODES.get("entry", lambda s, c: {})({"goal": "smoke"}, {})
+                inspect_r = inspect_state(goal="smoke", state={}, node_id=WIRING.get("topology", {}).get("cycle_start"))
+                summary = wiring_summary()
+                mem_ok, mem_state, _ = apply_memory_action({}, "note", "value")
+                mem_bad, _, _ = apply_memory_action({}, "note", "")
                 results = [
                     {"test": "health", "ok": True},
                     {"test": "wiring", "ok": nn > 0, "nodes": nn},
                     {"test": "schema", "ok": (PROMPTS / "wiring-schema.json").exists()},
                     {"test": "wiring_valid", "ok": not werrs, "errors": len(werrs)},
                     {"test": "node/entry", "ok": "signals" in entry_r},
+                    {"test": "inspect", "ok": bool(inspect_r.get("debug", {}).get("id"))},
+                    {"test": "capability/step_debug", "ok": bool(summary.get("capabilities", {}).get("step_debug"))},
+                    {"test": "capability/state_memory", "ok": bool(summary.get("capabilities", {}).get("state_memory"))},
+                    {"test": "remember/store", "ok": mem_ok and mem_state.get("note") == "value"},
+                    {"test": "remember/reject_empty", "ok": not mem_bad},
                     {"test": "html", "ok": (ROOT / "wiring-editor.html").exists()},
                 ]
             except Exception as e:
