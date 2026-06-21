@@ -4,6 +4,7 @@
 # Runtime artifacts stay local.
 bus.json
 state.json
+state.*.json
 prompts/traces.jsonl
 prompts/wiring.backup.json
 chat-gpt.md

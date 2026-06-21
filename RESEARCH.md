@@ -109,6 +109,9 @@ cleaned automatically during handover:
 The current `state.json` is useful but not a clean resume point. It contains
 real history and screen evidence, but the last failed reflect path replanned
 back to stale Grok work after YouTube search results had already been reached.
+That stale state was later copied to `state.before-youtube-repair.json`, and
+`state.json` was repaired to a single remaining playback step. The repaired run
+is still incomplete and must not be treated as success.
 
 What the real run proved:
 
@@ -123,18 +126,54 @@ What the real run proved:
   memory-derived 135-character summary was typed into Notepad
 - YouTube search/navigation reached results for `Shakira Waka Waka`
 - the verifier correctly refused to treat search/navigation as playback
+- after repair, the graph stayed on the playback step instead of replanning
+  back to old Grok subtasks
+- verifier continued to reject weak evidence such as clicking `Videos`,
+  waiting, focusing Chrome, or clicking a page/tab title
 
 What remains:
 
-- do not resume the current state blindly; repair it to the remaining YouTube
-  playback step or restart from the smallest useful slice after preserving
-  evidence
+- do not interpret the current repaired state as proof of playback; it is only
+  a preserved continuation point
+- improve the observation representation enough that playable YouTube result
+  controls are visible and cognitively clear to `act`
 - click/play a matching YouTube result and verify visible playback
 - optionally refocus Notepad and observe the written summary as a final audit
 - validate the newest reflect retry hardening, which should retry from search
   results instead of replanning back to old Grok subtasks
 - response capture should become less shallow; turn 2 and 3 memories captured
   visible short prompts/snippets, not full rich answer summaries
+
+## Latest Lesson: Observation Before Prompt Tightening
+
+The most recent playback attempts should not be read as a YouTube-specific
+prompt failure. The real issue is more fundamental: `act` reasons from the
+serialized `SCREEN` tree, not from pixels or a human's full visual
+understanding. On the YouTube results page, `SCREEN` exposed browser chrome,
+the address bar, filter tabs, `About these results`, a document node, and
+window awareness, but it did not expose a clear playable video result card or
+play control. The model therefore made plausible but wrong choices: click the
+`Videos` filter, wait, refocus Chrome, or click the page/tab title.
+
+A Codex command-approval popup appeared in part of the observed tree during
+some steps. It should not be over-weighted. The popup covered only a small part
+of the browser and is not the core bug. The core bug is the fidelity and
+cognitive shape of the observation passed to the model:
+
+- what is included or omitted from the UIA tree
+- how much page content survives truncation and filtering
+- whether ancestry, spatial order, viewport position, and scrollability are
+  represented
+- whether small overlays are separated from the main focused app content
+- whether browser chrome, page filters, result cards, links, and controls are
+  distinguishable to the model
+- whether the workbench lets a human compare the real screen to the exact
+  `SCREEN` block given to `act`
+
+The next engineering push should treat observation as the center of gravity.
+Do not accumulate narrow rules such as "for this site, do not click this
+filter." Those are brittle. The reusable fix is to make the observer and the
+screen serialization tell the truth in a form the LLM can reliably reason over.
 
 ## Current Reliability Risks
 
@@ -147,12 +186,19 @@ from wiring and visible in the workbench.
 
 Current direction:
 
-- lower probe spacing for richer UIA coverage
-- read longer text pattern content
-- render longer field/text previews
-- list more top-level windows
+- lower probe spacing or otherwise improve coverage for richer UIA discovery
+- read longer text pattern content without drowning out actionable structure
+- render longer field/text previews where content matters
+- list more top-level windows without making them actionable
 - show total observed entries as well as actionable `[ID]` count
 - keep focused-window target scope strict
+- preserve role, ancestry, and spatial order so the model knows what an element
+  is and where it belongs
+- represent scrollability and whether more content exists above/below the
+  viewport
+- separate overlays/modals/notifications from primary page content
+- expose enough page-result structure that a result card is not collapsed into a
+  generic document/title node
 
 ### Browser State
 
@@ -225,13 +271,17 @@ For this target, simulated tests are not enough. The useful validation loop is:
 
 1. Stop stale servers.
 2. Inspect local `state.json` before cleaning; if it still contains the
-   2026-06-21 stale replan, preserve the evidence and repair/restart from a
-   small slice instead of resuming blindly.
+   repaired playback state, preserve it and understand the latest observation
+   failure before continuing. If it regressed to the stale replan, use
+   `state.before-youtube-repair.json` and the docs to repair/restart from a
+   small slice.
 3. Start the real local server.
 4. Confirm `/health` reports `simulation=false`.
 5. Step through the compound goal via `/step` in small chunks.
-6. Inspect compact state after each chunk.
-7. Patch generic defects.
+6. Inspect compact state after each chunk, especially the exact `SCREEN` block
+   that `act` received.
+7. Patch generic defects. Prefer observation/runtime representation fixes when
+   the LLM is reasoning from an incomplete or misleading tree.
 8. Preserve useful run evidence in docs or state before cleaning artifacts.
 9. Restart and rerun from the smallest meaningful real slice.
 
@@ -245,7 +295,9 @@ The system is production-ready for the current vision when:
 - behavior changes can be made in `prompts/wiring.json`
 - the schema-driven HTML workbench can inspect and edit live wiring
 - API and GUI paths have parity
-- observer depth is sufficient for browser responses and editor text
+- observer depth and representation are sufficient for browser responses,
+  editor text, result lists, overlays, scrollable regions, and actionable
+  controls
 - action chains are deterministic and safe
 - memory captures real visible content before context switches
 - self_modify can propose small wiring fixes from failure evidence
@@ -254,19 +306,23 @@ The system is production-ready for the current vision when:
 
 ## Next Implementation Priorities
 
-1. Continue removing small hardcoded truncations from state shown to the model
-   or debugger.
-2. Expand `prompts/wiring-schema.json` until all important wiring knobs are
+1. Make observation the next center of gravity: inspect `desktop.py` and
+   `server.py` end to end, compare real screen vs `SCREEN`, and improve generic
+   UIA tree coverage, hierarchy, spatial ordering, overlay separation, and
+   scrollability metadata.
+2. Continue removing small hardcoded truncations from state shown to the model
+   or debugger when they hide task-relevant structure.
+3. Expand `prompts/wiring-schema.json` until all important wiring knobs are
    first-class editor fields.
-3. Improve dashboard session ergonomics: named step sessions, state diff view,
+4. Improve dashboard session ergonomics: named step sessions, state diff view,
    and explicit current-node resume controls.
-4. Strengthen prompt roles for response capture, memory-derived summaries, and
-   media search-result playback.
-5. Validate the current Notepad transition and playback retry hardening in a
+5. Strengthen prompt roles only after the observation contract is truthful
+   enough for the model to see the relevant controls.
+6. Validate the current Notepad transition and playback retry hardening in a
    real authorized run.
-6. Let self_modify edit conservative prompt/guard fields through validated
+7. Let self_modify edit conservative prompt/guard fields through validated
    wiring patches.
-7. Keep running real slices of the compound workflow after each generic fix.
+8. Keep running real slices of the compound workflow after each generic fix.
 
 ## Handoff Checklist
 
@@ -277,10 +333,14 @@ Before another AI continues:
 - review current diffs in `server.py`, `actions.py`, `desktop.py`,
   `prompts/wiring.json`, `prompts/wiring-schema.json`, and `prompts/model.json`
 - check ignored `state.json`; if present, it is useful evidence, but may need
-  repair before resume because the latest copy contained a stale Grok replan
+  repair before resume if it regressed. The intended latest state is a repaired
+  single-step YouTube playback continuation; `state.before-youtube-repair.json`
+  preserves the stale pre-repair evidence
 - start no background helper that will be left running
 - when validation begins, use real `/step` calls and compact evidence output
 - do not hardcode the target workflow in Python
+- do not keep adding narrow prompt rules for YouTube controls. First understand
+  why observation did not expose playable result controls clearly enough.
 
 The correct final report is evidence-based: what was changed, which real steps
 completed, where any failure remains, whether helper processes were stopped, and
