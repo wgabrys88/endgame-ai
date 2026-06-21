@@ -82,7 +82,7 @@ textarea{resize:vertical;font-family:var(--mono);font-size:11px;line-height:1.45
 .mini{padding:3px 6px;min-height:23px;font-size:11px}
 .log{font:10px/1.55 var(--mono);color:#c3cad1}
 .log div{border-bottom:1px solid #1c2025;padding:2px 0;overflow-wrap:anywhere}
-.screenGrid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,.8fr) minmax(0,1fr);gap:8px;min-height:0;height:100%;padding:8px}
+.screenGrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,.75fr) minmax(0,.9fr);gap:8px;min-height:0;height:100%;padding:8px}
 .screenGrid .box{margin:0;min-height:0;display:flex;flex-direction:column}
 .screenGrid .body{min-height:0;overflow:auto}
 @media (max-width:1050px){
@@ -130,7 +130,8 @@ textarea{resize:vertical;font-family:var(--mono);font-size:11px;line-height:1.45
       </div>
       <div id="graphWrap"><svg id="graph" role="img" aria-label="Wiring graph"></svg></div>
       <div class="screenGrid">
-        <div class="box"><h3>Focused Screen IDs</h3><div class="body code" id="screenBox"></div></div>
+        <div class="box"><h3>Action Scope IDs</h3><div class="body code" id="screenBox"></div></div>
+        <div class="box"><h3>Desktop Tree</h3><div class="body code" id="treeBox"></div></div>
         <div class="box"><h3>Windows</h3><div class="body code" id="windowsBox"></div></div>
         <div class="box"><h3>Outcome</h3><div class="body code" id="outcomeBox"></div></div>
       </div>
@@ -264,9 +265,25 @@ async function saveState(){
 function splitScreen(text){
   const raw=String(text||'');
   const lines=raw.split(/\r?\n/);
-  const idx=lines.findIndex(l=>l.trim().toUpperCase().startsWith('WINDOWS:'));
-  if(idx<0)return {screen:raw,windows:''};
-  return {screen:lines.slice(0,idx).join('\n').trim(),windows:lines.slice(idx).join('\n').trim()};
+  const treeIdx=lines.findIndex(l=>l.trim().toUpperCase().startsWith('DESKTOP_TREE:'));
+  const winIdx=lines.findIndex(l=>l.trim().toUpperCase().startsWith('WINDOWS:'));
+  const stops=[treeIdx,winIdx].filter(i=>i>=0);
+  const firstStop=stops.length?Math.min(...stops):lines.length;
+  const treeEnd=winIdx>=0?winIdx:lines.length;
+  return {
+    screen:lines.slice(0,firstStop).join('\n').trim(),
+    tree:treeIdx>=0?lines.slice(treeIdx,treeEnd).join('\n').trim():'',
+    windows:winIdx>=0?lines.slice(winIdx).join('\n').trim():''
+  };
+}
+function formatWindowsMeta(meta){
+  const wins=meta?.windows||[];
+  if(!wins.length)return '';
+  return 'WINDOWS_META:\n'+wins.map(w=>{
+    const mark=w.focused?'*':'-';
+    const rect=w.rect?` @ ${w.rect[0]},${w.rect[1]} ${w.rect[2]-w.rect[0]}x${w.rect[3]-w.rect[1]}`:'';
+    return `  ${mark} z=${w.z} hwnd=${w.hwnd} ${w.title||'(untitled)'}${rect}`;
+  }).join('\n');
 }
 function renderState(){
   const plan=state?.plan||[], stepNo=state?.step||0, tr=lastStep?.transition||{};
@@ -297,8 +314,12 @@ function renderState(){
   $('sectionList').innerHTML=sections;
   $('sectionList').querySelectorAll('[data-section]').forEach(el=>el.onclick=()=>{selected={kind:'path',path:el.dataset.section};renderAll()});
   const parts=splitScreen(state?.screen||'');
+  const meta=state?.screen_meta||{};
+  const tree=meta.desktop_tree;
+  const treeHead=tree?`META: nodes=${tree.node_count||0} max=${tree.max_nodes||''} truncated=${!!tree.truncated}\n`:'';
   $('screenBox').textContent=parts.screen||'No focused screen observation.';
-  $('windowsBox').textContent=parts.windows||'No window list.';
+  $('treeBox').textContent=(treeHead+parts.tree).trim()||meta.desktop_tree_error||'No desktop tree.';
+  $('windowsBox').textContent=formatWindowsMeta(meta)||parts.windows||'No window list.';
   $('outcomeBox').textContent=state?.last_outcome||'No action outcome.';
 }
 

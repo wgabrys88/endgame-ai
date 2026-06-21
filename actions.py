@@ -17,7 +17,7 @@ except Exception:
 
     @dataclass(slots=True)
     class Observation:
-        focused_title: str; elements: dict; context_text: str
+        focused_title: str; elements: dict; context_text: str; snapshot: dict | None = None
 
     Desktop = None
 
@@ -220,10 +220,26 @@ class _SimStub:
 
     def observe(self) -> Observation:
         self._step += 1
-        els = {"1": Element(id="1", role="Button", name="OK", value="",
-                            hwnd=1, px=100, py=100, pw=80, ph=30, action="click")}
+        ok = Element(id="1", role="Button", name="OK", value="",
+                     hwnd=1, px=100, py=100, pw=80, ph=30, action="click")
+        els = {"1": ok}
+        snapshot = {
+            "focused_title": "Sim Desktop",
+            "focused_hwnd": 1,
+            "action_scope": "focused_window_or_top_overlay",
+            "elements": [{
+                "id": ok.id, "role": ok.role, "name": ok.name, "value": ok.value,
+                "hwnd": ok.hwnd, "x": ok.px, "y": ok.py, "w": ok.pw, "h": ok.ph,
+                "action": ok.action, "window": ok.wnd, "enabled": ok.enabled,
+                "readonly": ok.readonly,
+            }],
+            "windows": [{"hwnd": 1, "title": "Sim Desktop", "rect": [0, 0, 320, 240], "focused": True, "z": 0}],
+            "desktop_tree": None,
+            "desktop_tree_error": "",
+        }
         return Observation(focused_title="Sim Desktop", elements=els,
-                           context_text="FOCUSED: Sim Desktop\nELEMENTS: 1\n  [1] Button \"OK\"")
+                           context_text="FOCUSED: Sim Desktop\nELEMENTS: 1\n  [1] Button \"OK\"",
+                           snapshot=snapshot)
 
     def click(self, px, py, hwnd=0): pass
     def type_text(self, text): pass
@@ -245,6 +261,13 @@ def observe_screen() -> str:
         obs = _desktop.observe()
         _remember_observation(obs)
         return obs.context_text
+
+def last_observation_snapshot() -> dict[str, Any]:
+    with _desktop_lock:
+        if _last_observation is None:
+            return {}
+        snapshot = getattr(_last_observation, "snapshot", None)
+        return snapshot if isinstance(snapshot, dict) else {}
 
 def execute_verb(verb: str, target: str, value: str = "") -> str:
     with _desktop_lock:
