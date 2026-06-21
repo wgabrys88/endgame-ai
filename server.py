@@ -77,11 +77,12 @@ def validate_wiring(w):
     return errs
 
 try:
-    from actions import execute_verb, observe_screen, configure_runtime
+    from actions import execute_verb, observe_screen, configure_runtime, last_observation_snapshot
 except Exception:
     def observe_screen(): return "(desktop not available)"
     def execute_verb(verb, target, value=""): return f"[stub] {verb} {target} {value}"
     def configure_runtime(_wiring): pass
+    def last_observation_snapshot(): return {}
 
 
 configure_runtime(WIRING)
@@ -169,6 +170,7 @@ def wiring_summary():
             "state_memory": "remember" in WIRING.get("verbs", {}),
         },
         "limits": WIRING.get("limits", {}),
+        "observe": WIRING.get("observe", {}),
     }
 
 def _prompt_cfg(node_type=None, circuit=None):
@@ -660,6 +662,11 @@ def _focused_title(state):
             return line.split(":", 1)[1].strip().lower()
     return ""
 
+def _screen_action_id_count(screen, meta=None):
+    if isinstance(meta, dict) and isinstance(meta.get("elements"), list):
+        return len(meta["elements"])
+    return sum(1 for line in (screen or "").splitlines() if re.match(r"\s*\[\d+\]\s+", line))
+
 def _browser_focused(state):
     title = _focused_title(state)
     return any(token in title for token in ("chrome", "edge", "firefox", "browser", "youtube", "grok"))
@@ -852,19 +859,25 @@ def node_scheduler(state, _):
 def node_observe(state, _):
     if state.get("no_desktop"):
         s = state.get("screen") or WIRING.get("context", {}).get("screen_disabled", "(no desktop)")
+        meta = {}
     else:
         obs_cfg = WIRING.get("observe", {})
         min_elements = obs_cfg.get("min_elements", 0)
         retries = obs_cfg.get("wait_retries", 0)
         wait_ms = obs_cfg.get("wait_ms", 500)
         s = observe_screen()
+        meta = last_observation_snapshot()
         if min_elements > 0 and retries > 0:
             for _ in range(retries):
-                if s.count("[") >= min_elements:
+                if _screen_action_id_count(s, meta) >= min_elements:
                     break
                 time.sleep(wait_ms / 1000.0)
                 s = observe_screen()
-    return {"signals": ["screen_ready"], "patch": {"screen": s}}
+                meta = last_observation_snapshot()
+    patch = {"screen": s}
+    if meta:
+        patch["screen_meta"] = meta
+    return {"signals": ["screen_ready"], "patch": patch}
 
 def node_act(state, _):
     """Static system prompt + dynamic user message. Guards + execute."""
@@ -1260,6 +1273,21 @@ def node_self_modify(state, _):
             topo["edges"] = [e for e in topo["edges"] if not (e["from"] == payload["from"] and e["to"] == payload["to"])]
         elif op == "set_guard":
             current.setdefault("guards", {})[payload["key"]] = payload["value"]
+        elif op == "set_observe":
+            current.setdefault("observe", {})[payload["key"]] = payload["value"]
+        elif op == "append_role_rule":
+            role = str(payload.get("role", "")).strip()
+            rule = str(payload.get("rule", "")).strip()
+            roles = current.setdefault("prompts", {}).setdefault("roles", {})
+            if not role or role not in roles:
+                patch["last_error"] = f"unknown prompt role: {role}"
+                return {"signals": ["modify_failed"], "patch": patch}
+            if not rule:
+                patch["last_error"] = "empty role rule"
+                return {"signals": ["modify_failed"], "patch": patch}
+            line = rule if rule.startswith("-") else f"- {rule}"
+            if line not in roles[role]:
+                roles[role] = roles[role].rstrip() + "\n" + line
         else:
             patch["last_error"] = f"unknown op: {op}"
             return {"signals": ["modify_failed"], "patch": patch}

@@ -83,7 +83,15 @@
         "read_text_max": { "type": "integer", "minimum": 0 },
         "node_value_max_chars": { "type": "integer", "minimum": 0 },
         "render_value_max_chars": { "type": "integer", "minimum": 0 },
-        "window_limit": { "type": "integer", "minimum": 1 }
+        "window_limit": { "type": "integer", "minimum": 1 },
+        "desktop_tree_enabled": { "type": "boolean" },
+        "desktop_tree_max_depth": { "type": "integer", "minimum": 1 },
+        "desktop_tree_max_nodes": { "type": "integer", "minimum": 1 },
+        "desktop_tree_child_limit": { "type": "integer", "minimum": 1 },
+        "tree_value_max_chars": { "type": "integer", "minimum": 0 },
+        "render_tree_value_max_chars": { "type": "integer", "minimum": 0 },
+        "overlay_window_limit": { "type": "integer", "minimum": 1 },
+        "window_scan_limit": { "type": "integer", "minimum": 1 }
       }
     },
     "moe": { "type": "object" }

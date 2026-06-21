@@ -13,11 +13,12 @@ except Exception:
     class Element:
         id: str; role: str; name: str; value: str; hwnd: int
         px: int; py: int; pw: int; ph: int; action: str
-        wnd: str = ""; enabled: bool = True; readonly: bool = False
+        wnd: str = ""; scope: str = "focused"; automation_id: str = ""; class_name: str = ""
+        enabled: bool = True; readonly: bool = False
 
     @dataclass(slots=True)
     class Observation:
-        focused_title: str; elements: dict; context_text: str
+        focused_title: str; elements: dict; context_text: str; snapshot: dict | None = None
 
     Desktop = None
 
@@ -220,10 +221,45 @@ class _SimStub:
 
     def observe(self) -> Observation:
         self._step += 1
-        els = {"1": Element(id="1", role="Button", name="OK", value="",
-                            hwnd=1, px=100, py=100, pw=80, ph=30, action="click")}
+        ok = Element(id="1", role="Button", name="OK", value="",
+                     hwnd=1, px=100, py=100, pw=80, ph=30, action="click",
+                     wnd="Sim Desktop", scope="focused", automation_id="ok", class_name="Button")
+        els = {"1": ok}
+        snapshot = {
+            "focused_title": "Sim Desktop",
+            "focused_hwnd": 1,
+            "action_scope": "focused_window_or_top_overlay",
+            "probe": {
+                "bounds": [0, 0, 320, 240],
+                "primary_step": 90,
+                "primary_points": 12,
+                "primary_found": 1,
+                "dense_used": False,
+                "dense_step": 0,
+                "dense_points": 0,
+                "dense_found": 0,
+                "dense_added": 0,
+                "scroll_used": False,
+                "scroll_passes": [],
+                "scroll_added": 0,
+                "raw_nodes": 1,
+                "classified_nodes": 1,
+            },
+            "elements": [{
+                "id": ok.id, "role": ok.role, "name": ok.name, "value": ok.value,
+                "hwnd": ok.hwnd, "x": ok.px, "y": ok.py, "w": ok.pw, "h": ok.ph,
+                "action": ok.action, "window": ok.wnd, "scope": ok.scope,
+                "automation_id": ok.automation_id, "class_name": ok.class_name,
+                "enabled": ok.enabled, "readonly": ok.readonly,
+            }],
+            "windows": [{"hwnd": 1, "title": "Sim Desktop", "rect": [0, 0, 320, 240], "focused": True, "z": 0}],
+            "overlays": [],
+            "desktop_tree": None,
+            "desktop_tree_error": "",
+        }
         return Observation(focused_title="Sim Desktop", elements=els,
-                           context_text="FOCUSED: Sim Desktop\nELEMENTS: 1\n  [1] Button \"OK\"")
+                           context_text="FOCUSED: Sim Desktop\nELEMENTS: 1\n  [1] Button \"OK\"",
+                           snapshot=snapshot)
 
     def click(self, px, py, hwnd=0): pass
     def type_text(self, text): pass
@@ -245,6 +281,13 @@ def observe_screen() -> str:
         obs = _desktop.observe()
         _remember_observation(obs)
         return obs.context_text
+
+def last_observation_snapshot() -> dict[str, Any]:
+    with _desktop_lock:
+        if _last_observation is None:
+            return {}
+        snapshot = getattr(_last_observation, "snapshot", None)
+        return snapshot if isinstance(snapshot, dict) else {}
 
 def execute_verb(verb: str, target: str, value: str = "") -> str:
     with _desktop_lock:
