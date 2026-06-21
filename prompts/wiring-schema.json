@@ -90,7 +90,8 @@
         "desktop_tree_child_limit": { "type": "integer", "minimum": 1 },
         "tree_value_max_chars": { "type": "integer", "minimum": 0 },
         "render_tree_value_max_chars": { "type": "integer", "minimum": 0 },
-        "overlay_window_limit": { "type": "integer", "minimum": 1 }
+        "overlay_window_limit": { "type": "integer", "minimum": 1 },
+        "window_scan_limit": { "type": "integer", "minimum": 1 }
       }
     },
     "moe": { "type": "object" }

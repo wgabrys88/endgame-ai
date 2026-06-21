@@ -13,7 +13,8 @@ except Exception:
     class Element:
         id: str; role: str; name: str; value: str; hwnd: int
         px: int; py: int; pw: int; ph: int; action: str
-        wnd: str = ""; enabled: bool = True; readonly: bool = False
+        wnd: str = ""; scope: str = "focused"; automation_id: str = ""; class_name: str = ""
+        enabled: bool = True; readonly: bool = False
 
     @dataclass(slots=True)
     class Observation:
@@ -221,19 +222,38 @@ class _SimStub:
     def observe(self) -> Observation:
         self._step += 1
         ok = Element(id="1", role="Button", name="OK", value="",
-                     hwnd=1, px=100, py=100, pw=80, ph=30, action="click")
+                     hwnd=1, px=100, py=100, pw=80, ph=30, action="click",
+                     wnd="Sim Desktop", scope="focused", automation_id="ok", class_name="Button")
         els = {"1": ok}
         snapshot = {
             "focused_title": "Sim Desktop",
             "focused_hwnd": 1,
             "action_scope": "focused_window_or_top_overlay",
+            "probe": {
+                "bounds": [0, 0, 320, 240],
+                "primary_step": 90,
+                "primary_points": 12,
+                "primary_found": 1,
+                "dense_used": False,
+                "dense_step": 0,
+                "dense_points": 0,
+                "dense_found": 0,
+                "dense_added": 0,
+                "scroll_used": False,
+                "scroll_passes": [],
+                "scroll_added": 0,
+                "raw_nodes": 1,
+                "classified_nodes": 1,
+            },
             "elements": [{
                 "id": ok.id, "role": ok.role, "name": ok.name, "value": ok.value,
                 "hwnd": ok.hwnd, "x": ok.px, "y": ok.py, "w": ok.pw, "h": ok.ph,
-                "action": ok.action, "window": ok.wnd, "enabled": ok.enabled,
-                "readonly": ok.readonly,
+                "action": ok.action, "window": ok.wnd, "scope": ok.scope,
+                "automation_id": ok.automation_id, "class_name": ok.class_name,
+                "enabled": ok.enabled, "readonly": ok.readonly,
             }],
             "windows": [{"hwnd": 1, "title": "Sim Desktop", "rect": [0, 0, 320, 240], "focused": True, "z": 0}],
+            "overlays": [],
             "desktop_tree": None,
             "desktop_tree_error": "",
         }

@@ -35,6 +35,7 @@ OBSERVE_DEFAULTS = {
     "tree_value_max_chars": 600,
     "render_tree_value_max_chars": 160,
     "overlay_window_limit": 32,
+    "window_scan_limit": 128,
 }
 OBSERVE_CONFIG = dict(OBSERVE_DEFAULTS)
 
@@ -124,6 +125,9 @@ class Element:
     ph: int
     action: str
     wnd: str = ""
+    scope: str = "focused"
+    automation_id: str = ""
+    class_name: str = ""
     enabled: bool = True
     readonly: bool = False
 
@@ -328,7 +332,7 @@ class _UIA:
 
 
 class Desktop:
-    """Desktop observer using mouse hover probing only."""
+    """Desktop observer using hover probing plus bounded desktop tree context."""
 
     def __init__(self):
         self.user32 = ctypes.WinDLL("user32", use_last_error=True)
@@ -359,24 +363,47 @@ class Desktop:
         self.user32.GetCursorPos(ctypes.byref(saved))
         probe_step = max(10, _obs_int("probe_step_px", PROBE_STEP_PX))
         enrich_min = max(0, _obs_int("scroll_enrich_min", SCROLL_ENRICH_MIN))
+        probe_stats: dict[str, Any] = {
+            "bounds": [x0, y0, x1, y1],
+            "primary_step": probe_step,
+            "primary_points": self._probe_point_count(x0, y0, x1, y1, probe_step),
+            "dense_used": False,
+            "dense_step": 0,
+            "dense_points": 0,
+            "dense_added": 0,
+            "scroll_used": False,
+            "scroll_passes": [],
+            "scroll_added": 0,
+        }
+        overlay_limit = max(1, _obs_int("overlay_window_limit", 32))
         window_infos = self._window_infos(
             focused_hwnd,
-            limit=max(1, _obs_int("overlay_window_limit", 32)),
+            limit=overlay_limit,
             include_untitled=True,
+            include_until=focused_hwnd,
+            scan_limit=max(overlay_limit, _obs_int("window_scan_limit", 128)),
         )
+        focus_in_scan = any(int(w.get("hwnd", 0) or 0) == focused_hwnd for w in window_infos)
         z_index = {int(w["hwnd"]): int(w["z"]) for w in window_infos}
         overlay_hwnds = self._overlay_hwnds(focused_hwnd, rect, window_infos)
 
         nodes = self._probe(x0, y0, x1, y1, focused_hwnd, step=probe_step)
+        probe_stats["primary_found"] = len(nodes)
         if len(nodes) < enrich_min:
             dense_step = max(_obs_int("dense_probe_min_px", 45), probe_step // 2)
+            probe_stats["dense_used"] = True
+            probe_stats["dense_step"] = dense_step
+            probe_stats["dense_points"] = self._probe_point_count(0, 0, screen_w, screen_h, dense_step)
             extra = self._probe(0, 0, screen_w, screen_h, focused_hwnd, step=dense_step)
+            before_dense = len(nodes)
             seen = {(n["role"], n.get("name", ""), n["x"], n["y"], n["w"], n["h"]) for n in nodes}
             for n in extra:
                 key = (n["role"], n.get("name", ""), n["x"], n["y"], n["w"], n["h"])
                 if key not in seen:
                     seen.add(key)
                     nodes.append(n)
+            probe_stats["dense_found"] = len(extra)
+            probe_stats["dense_added"] = len(nodes) - before_dense
         classified = self._classify(nodes, z_index)
         if len(classified) < enrich_min:
             cx = max(x0 + 40, min(x1 - 40, (x0 + x1) // 2))
@@ -386,21 +413,34 @@ class Desktop:
             if not isinstance(passes, (list, tuple)):
                 passes = SCROLL_ENRICH_PASSES
             for amount in passes:
+                before_scroll = len(nodes)
                 self.scroll(cx, cy, amount)
                 time.sleep(_obs_float_ms("scroll_enrich_delay_ms", SCROLL_ENRICH_DELAY))
+                found = 0
                 for n in self._probe(x0, y0, x1, y1, focused_hwnd, step=probe_step):
+                    found += 1
                     key = (n["role"], n.get("name", ""), n["x"], n["y"], n["w"], n["h"])
                     if key not in seen:
                         seen.add(key)
                         nodes.append(n)
+                added = len(nodes) - before_scroll
+                probe_stats["scroll_used"] = True
+                probe_stats["scroll_added"] += added
+                probe_stats["scroll_passes"].append({"amount": int(amount), "found": found, "added": added})
             classified = self._classify(nodes, z_index)
+        probe_stats["raw_nodes"] = len(nodes)
+        probe_stats["classified_nodes"] = len(classified)
         self.user32.SetCursorPos(saved.x, saved.y)
-        elements, context_text = self._render(classified, focused_title, focused_hwnd, overlay_hwnds)
+        elements, context_text = self._render(classified, focused_title, focused_hwnd, overlay_hwnds, window_infos)
+        context_text += "\n" + self._probe_stats_line(probe_stats)
+        overlay_lines = self._overlay_lines(overlay_hwnds, window_infos)
+        if overlay_lines:
+            context_text += "\nOVERLAYS:\n" + "\n".join(overlay_lines)
         tree_snapshot = None
         tree_error = ""
         if OBSERVE_CONFIG.get("desktop_tree_enabled", True):
             try:
-                tree_snapshot = self._desktop_tree_snapshot(window_infos)
+                tree_snapshot = self._desktop_tree_snapshot(window_infos, focused_hwnd, overlay_hwnds)
                 tree_lines = self._desktop_tree_lines(tree_snapshot)
             except Exception as e:
                 tree_error = f"{type(e).__name__}: {e}"
@@ -410,12 +450,24 @@ class Desktop:
         windows = self._window_titles(focused_hwnd, limit=max(1, _obs_int("window_limit", 8)))
         if windows:
             context_text += "\nWINDOWS:\n" + "\n".join(f"  {w}" for w in windows)
+        if not focus_in_scan:
+            context_text += "\nWINDOW_SCAN_WARNING: focused window was not reached; overlay ordering may be incomplete"
         if not elements:
             context_text += (
                 "\n  (no interactive elements — use hotkey win+r for Run dialog, "
                 "or focus with window title substring)"
             )
-        snapshot = self._observation_snapshot(focused_title, focused_hwnd, elements, window_infos, tree_snapshot, tree_error)
+        snapshot = self._observation_snapshot(
+            focused_title,
+            focused_hwnd,
+            elements,
+            window_infos,
+            overlay_hwnds,
+            probe_stats,
+            tree_snapshot,
+            tree_error,
+            focus_in_scan,
+        )
         return Observation(focused_title=focused_title, elements=elements, context_text=context_text, snapshot=snapshot)
 
     def click(self, px: int, py: int, hwnd: int = 0):
@@ -518,25 +570,42 @@ class Desktop:
             for w in self._window_infos(focused_hwnd, limit=limit, include_untitled=False)
         ]
 
-    def _window_infos(self, focused_hwnd: int, limit: int = 8, include_untitled: bool = False) -> list[dict[str, Any]]:
+    def _window_infos(
+        self,
+        focused_hwnd: int,
+        limit: int = 8,
+        include_untitled: bool = False,
+        include_until: int = 0,
+        scan_limit: int | None = None,
+    ) -> list[dict[str, Any]]:
         infos: list[dict[str, Any]] = []
         seen: set[int] = set()
         hwnd = self.user32.GetTopWindow(None)
         z = 0
-        while hwnd and len(infos) < limit:
+        scanned = 0
+        found_until = not include_until
+        max_scan = max(limit, scan_limit or limit)
+        while hwnd and scanned < max_scan:
+            scanned += 1
             ihwnd = int(hwnd)
             if ihwnd not in seen and self.user32.IsWindowVisible(hwnd):
                 seen.add(ihwnd)
                 title = self._get_window_title(ihwnd).strip()
-                if title or include_untitled:
-                    infos.append({
-                        "hwnd": ihwnd,
-                        "title": title or "(untitled)",
-                        "rect": self._get_window_rect(ihwnd),
-                        "focused": ihwnd == focused_hwnd,
-                        "z": z,
-                    })
+                if title or include_untitled or ihwnd == include_until:
+                    is_until = ihwnd == include_until
+                    if len(infos) < limit or is_until or not found_until:
+                        infos.append({
+                            "hwnd": ihwnd,
+                            "title": title or "(untitled)",
+                            "rect": self._get_window_rect(ihwnd),
+                            "focused": ihwnd == focused_hwnd,
+                            "z": z,
+                        })
+                    if is_until:
+                        found_until = True
                     z += 1
+                if len(infos) >= limit and found_until:
+                    break
             hwnd = self.user32.GetWindow(hwnd, 2)
         return infos
 
@@ -557,6 +626,17 @@ class Desktop:
             if rect and self._rects_intersect(focused_rect, rect):
                 overlays.add(hwnd)
         return overlays
+
+    def _overlay_lines(self, overlay_hwnds: set[int], window_infos: list[dict[str, Any]]) -> list[str]:
+        lines: list[str] = []
+        for info in window_infos:
+            hwnd = int(info.get("hwnd", 0) or 0)
+            if hwnd not in overlay_hwnds:
+                continue
+            rect = info.get("rect")
+            rect_s = f" @ {rect[0]},{rect[1]} {rect[2] - rect[0]}x{rect[3] - rect[1]}" if rect else ""
+            lines.append(f"  z={info.get('z', '?')} hwnd={hwnd} {info.get('title', '(untitled)')}{rect_s}")
+        return lines
 
     @staticmethod
     def _rects_intersect(a: tuple[int, int, int, int], b: tuple[int, int, int, int]) -> bool:
@@ -589,7 +669,36 @@ class Desktop:
             return (rect.left, rect.top, rect.right, rect.bottom)
         return None
 
-    def _desktop_tree_snapshot(self, window_infos: list[dict[str, Any]]) -> dict[str, Any]:
+    @staticmethod
+    def _probe_point_count(x0: int, y0: int, x1: int, y1: int, step: int) -> int:
+        if step <= 0 or x1 <= x0 or y1 <= y0:
+            return 0
+        xs = range(x0 + step // 2, x1, step)
+        ys = range(y0 + step // 2, y1, step)
+        return len(xs) * len(ys)
+
+    @staticmethod
+    def _probe_stats_line(stats: dict[str, Any]) -> str:
+        parts = [
+            f"primary_step={stats.get('primary_step', 0)}",
+            f"primary_points={stats.get('primary_points', 0)}",
+            f"primary_found={stats.get('primary_found', 0)}",
+            f"raw={stats.get('raw_nodes', 0)}",
+            f"classified={stats.get('classified_nodes', 0)}",
+        ]
+        if stats.get("dense_used"):
+            parts.append(f"dense_step={stats.get('dense_step', 0)}")
+            parts.append(f"dense_added={stats.get('dense_added', 0)}")
+        if stats.get("scroll_used"):
+            parts.append(f"scroll_added={stats.get('scroll_added', 0)}")
+        return "PROBE: " + " ".join(parts)
+
+    def _desktop_tree_snapshot(
+        self,
+        window_infos: list[dict[str, Any]],
+        focused_hwnd: int = 0,
+        overlay_hwnds: set[int] | None = None,
+    ) -> dict[str, Any]:
         max_depth = max(1, _obs_int("desktop_tree_max_depth", 5))
         max_nodes = max(1, _obs_int("desktop_tree_max_nodes", 220))
         child_limit = max(1, _obs_int("desktop_tree_child_limit", 80))
@@ -600,24 +709,32 @@ class Desktop:
         if not condition:
             self._uia._release(root)
             raise RuntimeError("UIA true condition unavailable")
+        z_index = {int(w["hwnd"]): int(w["z"]) for w in window_infos}
         counter = {"count": 0, "truncated": False}
         try:
-            root_node = self._collect_tree_node(root, condition, 0, max_depth, max_nodes, child_limit, counter)
+            root_node = self._collect_tree_node(root, condition, 0, max_depth, max_nodes, child_limit, counter, z_index)
         finally:
             self._uia._release(condition)
             self._uia._release(root)
         if not root_node:
             return {}
-        z_index = {int(w["hwnd"]): int(w["z"]) for w in window_infos}
-        self._order_root_tree(root_node, z_index)
+        self._order_tree(root_node, z_index, focused_hwnd, overlay_hwnds or set())
+        scope_counts = self._tree_scope_counts(root_node)
+        overlay_count = len(overlay_hwnds or set())
         return {
-            "order": "top-level windows are rendered top-to-bottom by Win32 z-order; [ID] targets are the actionable scope",
+            "order": "each tree level is sorted by owning top-level Win32 z-order, then screen position; scope marks desktop/focused/overlay/background; [ID] targets are the actionable scope",
             "root": root_node,
             "node_count": counter["count"],
             "truncated": bool(counter.get("truncated")),
             "max_depth": max_depth,
             "max_nodes": max_nodes,
             "child_limit": child_limit,
+            "scope_counts": scope_counts,
+            "focused_hwnd": int(focused_hwnd or 0),
+            "focused_captured": bool(scope_counts.get("focused")),
+            "overlay_hwnds": sorted(int(h) for h in (overlay_hwnds or set())),
+            "overlay_count": overlay_count,
+            "overlay_captured": bool(scope_counts.get("overlay")) if overlay_count else True,
         }
 
     def _desktop_tree_lines(self, snapshot: dict[str, Any]) -> list[str]:
@@ -627,7 +744,12 @@ class Desktop:
         lines = [
             f"  ORDER: {snapshot.get('order', '')}.",
             f"  TREE_NODES: {snapshot.get('node_count', 0)}",
+            f"  TREE_SCOPES: {self._format_scope_counts(snapshot.get('scope_counts', {}))}",
         ]
+        if snapshot.get("focused_hwnd") and not snapshot.get("focused_captured"):
+            lines.append(f"  TREE_WARNING: focused hwnd {snapshot.get('focused_hwnd')} was not captured in bounded tree")
+        if snapshot.get("overlay_count") and not snapshot.get("overlay_captured"):
+            lines.append("  TREE_WARNING: one or more overlay windows were not captured in bounded tree")
         self._render_tree_node(root_node, lines, 1)
         if snapshot.get("truncated"):
             lines.append(f"  ... tree truncated at {snapshot.get('max_nodes', '?')} UIA nodes")
@@ -639,13 +761,19 @@ class Desktop:
         focused_hwnd: int,
         elements: dict[str, Element],
         window_infos: list[dict[str, Any]],
+        overlay_hwnds: set[int],
+        probe_stats: dict[str, Any],
         tree_snapshot: dict[str, Any] | None,
         tree_error: str,
+        focus_in_scan: bool,
     ) -> dict[str, Any]:
+        overlays = [w for w in window_infos if int(w.get("hwnd", 0) or 0) in overlay_hwnds]
         return {
             "focused_title": focused_title,
             "focused_hwnd": int(focused_hwnd or 0),
             "action_scope": "focused_window_or_top_overlay",
+            "window_scan_complete": focus_in_scan,
+            "probe": probe_stats,
             "elements": [
                 {
                     "id": e.id,
@@ -659,6 +787,9 @@ class Desktop:
                     "h": e.ph,
                     "action": e.action,
                     "window": e.wnd,
+                    "scope": e.scope,
+                    "automation_id": e.automation_id,
+                    "class_name": e.class_name,
                     "enabled": e.enabled,
                     "readonly": e.readonly,
                 }
@@ -674,6 +805,16 @@ class Desktop:
                 }
                 for w in window_infos
             ],
+            "overlays": [
+                {
+                    "hwnd": int(w.get("hwnd", 0) or 0),
+                    "title": w.get("title", ""),
+                    "rect": list(w["rect"]) if w.get("rect") else None,
+                    "focused": bool(w.get("focused")),
+                    "z": int(w.get("z", 0) or 0),
+                }
+                for w in overlays
+            ],
             "desktop_tree": tree_snapshot,
             "desktop_tree_error": tree_error,
         }
@@ -687,6 +828,7 @@ class Desktop:
         max_nodes: int,
         child_limit: int,
         counter: dict[str, Any],
+        z_index: dict[int, int] | None = None,
     ) -> dict[str, Any] | None:
         if counter["count"] >= max_nodes:
             counter["truncated"] = True
@@ -701,16 +843,38 @@ class Desktop:
             return node
         try:
             total = self._uia.array_length(arr)
-            limit = min(total, child_limit)
-            for i in range(limit):
+            sort_root_children = depth == 0 and bool(z_index)
+            read_limit = total if sort_root_children else min(total, child_limit)
+            child_refs: list[tuple[tuple[int, int, int, int], ctypes.c_void_p]] = []
+            for i in range(read_limit):
                 if counter["count"] >= max_nodes:
                     counter["truncated"] = True
                     break
                 child = self._uia.array_get(arr, i)
                 if not child:
                     continue
+                key = self._tree_child_sort_key(child, z_index or {}, i) if sort_root_children else (i, 0, 0, 0)
+                child_refs.append((key, child))
+            if sort_root_children:
+                child_refs.sort(key=lambda item: item[0])
+            limit = min(len(child_refs), child_limit)
+            for i, (_, child) in enumerate(child_refs):
                 try:
-                    child_node = self._collect_tree_node(child, condition, depth + 1, max_depth, max_nodes, child_limit, counter)
+                    if i >= limit:
+                        continue
+                    if counter["count"] >= max_nodes:
+                        counter["truncated"] = True
+                        continue
+                    child_node = self._collect_tree_node(
+                        child,
+                        condition,
+                        depth + 1,
+                        max_depth,
+                        max_nodes,
+                        child_limit,
+                        counter,
+                        z_index,
+                    )
                     if child_node and self._tree_node_visible(child_node):
                         node["children"].append(child_node)
                 finally:
@@ -720,6 +884,36 @@ class Desktop:
         finally:
             self._uia._release(arr)
         return node
+
+    def _tree_child_sort_key(
+        self,
+        el: ctypes.c_void_p,
+        z_index: dict[int, int],
+        fallback_index: int,
+    ) -> tuple[int, int, int, int]:
+        hwnd = self._uia.get_int(el, _UIA.UIA_NATIVE_WINDOW_HANDLE)
+        owner_hwnd = self._root_hwnd(hwnd) or int(hwnd or 0)
+        x, y, _w, _h = self._uia.get_rect(el)
+        return (z_index.get(owner_hwnd, 9999), int(y), int(x), int(fallback_index))
+
+    @staticmethod
+    def _tree_scope_counts(node: dict[str, Any]) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        stack = [node]
+        while stack:
+            current = stack.pop()
+            scope = str(current.get("scope") or "unknown")
+            counts[scope] = counts.get(scope, 0) + 1
+            stack.extend(current.get("children") or [])
+        return counts
+
+    @staticmethod
+    def _format_scope_counts(counts: dict[str, Any]) -> str:
+        ordered = ["desktop", "focused", "overlay", "background", "unknown"]
+        parts = [f"{key}={int(counts.get(key, 0) or 0)}" for key in ordered if counts.get(key)]
+        extras = sorted(k for k in counts if k not in ordered)
+        parts.extend(f"{key}={int(counts.get(key, 0) or 0)}" for key in extras)
+        return " ".join(parts) if parts else "none"
 
     def _tree_snapshot(self, el: ctypes.c_void_p) -> dict[str, Any]:
         ct = self._uia.get_int(el, _UIA.UIA_CONTROL_TYPE)
@@ -751,10 +945,37 @@ class Desktop:
             return False
         return bool(node.get("name") or node.get("value") or (node.get("w", 0) > 0 and node.get("h", 0) > 0))
 
-    def _order_root_tree(self, root_node: dict[str, Any], z_index: dict[int, int]) -> None:
-        children = root_node.get("children") or []
+    def _order_tree(
+        self,
+        node: dict[str, Any],
+        z_index: dict[int, int],
+        focused_hwnd: int = 0,
+        overlay_hwnds: set[int] | None = None,
+        depth: int = 0,
+        inherited_owner_hwnd: int = 0,
+    ) -> None:
+        overlay_hwnds = overlay_hwnds or set()
+        own_hwnd = int(node.get("root_hwnd") or node.get("hwnd") or 0)
+        owner_hwnd = own_hwnd or int(inherited_owner_hwnd or 0)
+        if owner_hwnd:
+            node["owner_hwnd"] = owner_hwnd
+        if owner_hwnd in z_index:
+            node["z"] = z_index[owner_hwnd]
+        if depth == 0:
+            node["scope"] = "desktop"
+        elif focused_hwnd and owner_hwnd == focused_hwnd:
+            node["scope"] = "focused"
+        elif owner_hwnd in overlay_hwnds:
+            node["scope"] = "overlay"
+        elif owner_hwnd:
+            node["scope"] = "background"
+        else:
+            node["scope"] = "desktop"
+        children = node.get("children") or []
+        for child in children:
+            self._order_tree(child, z_index, focused_hwnd, overlay_hwnds, depth + 1, owner_hwnd)
         children.sort(key=lambda n: (
-            z_index.get(int(n.get("root_hwnd") or n.get("hwnd") or 0), 9999),
+            z_index.get(int(n.get("owner_hwnd") or n.get("root_hwnd") or n.get("hwnd") or 0), 9999),
             int(n.get("y", 0)),
             int(n.get("x", 0)),
         ))
@@ -769,11 +990,20 @@ class Desktop:
             bits.append(f'"{name}"')
         if value and value != name:
             bits.append(f'= "{value}"')
+        if node.get("automation_id"):
+            bits.append(f"aid={node['automation_id']}")
         if node.get("class_name"):
             bits.append(f"class={node['class_name']}")
         hwnd = int(node.get("root_hwnd") or node.get("hwnd") or 0)
+        owner_hwnd = int(node.get("owner_hwnd") or hwnd or 0)
         if hwnd:
             bits.append(f"hwnd={hwnd}")
+        elif owner_hwnd:
+            bits.append(f"owner_hwnd={owner_hwnd}")
+        if "z" in node:
+            bits.append(f"z={node['z']}")
+        if node.get("scope"):
+            bits.append(f"scope={node['scope']}")
         if node.get("w", 0) > 0 and node.get("h", 0) > 0:
             bits.append(f"@ {node['x']},{node['y']} {node['w']}x{node['h']}")
         if node.get("offscreen"):
@@ -814,10 +1044,12 @@ class Desktop:
                     value = self._uia.get_legacy_value(el)
                     if not value:
                         value = self._uia.get_text_content(el, read_text_max)
+                    automation_id = self._uia.get_str(el, _UIA.UIA_AUTOMATION_ID)
+                    class_name = self._uia.get_str(el, _UIA.UIA_CLASS_NAME)
                     rx, ry, rw, rh = self._uia.get_rect(el)
                     if rw <= 0 or rh <= 0:
                         continue
-                    key = (role, name, rx, ry, rw, rh)
+                    key = (role, name, automation_id, class_name, rx, ry, rw, rh)
                     if key in seen_keys:
                         continue
                     seen_keys.add(key)
@@ -827,6 +1059,8 @@ class Desktop:
                     root_hwnd = self._root_hwnd(el_hwnd)
                     nodes.append({
                         "role": role, "name": name, "value": _obs_clip(value, "node_value_max_chars", 1000),
+                        "automation_id": automation_id,
+                        "class_name": class_name,
                         "x": rx, "y": ry, "w": rw, "h": rh,
                         "hwnd": el_hwnd,
                         "root_hwnd": root_hwnd,
@@ -866,12 +1100,17 @@ class Desktop:
         focused_title: str,
         focused_hwnd: int = 0,
         overlay_hwnds: set[int] | None = None,
+        window_infos: list[dict[str, Any]] | None = None,
     ) -> tuple[dict[str, Element], str]:
         elements: dict[str, Element] = {}
         overlay_hwnds = overlay_hwnds or set()
+        window_titles = {
+            int(w.get("hwnd", 0) or 0): str(w.get("title", "") or "(untitled)")
+            for w in (window_infos or [])
+        }
         lines: list[str] = [
             f"FOCUSED: {focused_title}",
-            "SCOPE: [ID] targets are actionable in the focused window or top overlay; DESKTOP_TREE/WINDOWS are awareness only.",
+            "SCOPE: [ID] targets are actionable in the focused window or top overlay; @focused/@overlay gives owner window.",
         ]
         seq = 0
         rendered = 0
@@ -879,6 +1118,12 @@ class Desktop:
             role, name, value = n["role"], n.get("name", ""), n.get("value", "")
             rendered += 1
             preview = _obs_clip(value, "render_value_max_chars", 80)
+            identity_bits = []
+            if n.get("automation_id"):
+                identity_bits.append(f"aid={_obs_clip(n.get('automation_id', ''), 'render_value_max_chars', 80)}")
+            if n.get("class_name"):
+                identity_bits.append(f"class={_obs_clip(n.get('class_name', ''), 'render_value_max_chars', 80)}")
+            identity = (" " + " ".join(identity_bits)) if identity_bits else ""
             root_hwnd = int(n.get("root_hwnd") or n.get("hwnd", 0) or 0)
             owns_scope = (
                 not focused_hwnd
@@ -890,16 +1135,26 @@ class Desktop:
             if n["action"] != "read" and owns_scope:
                 seq += 1
                 eid = str(seq)
+                if not focused_hwnd or n.get("hwnd", 0) == focused_hwnd or root_hwnd == focused_hwnd:
+                    scope = "focused"
+                elif n.get("hwnd", 0) in overlay_hwnds or root_hwnd in overlay_hwnds:
+                    scope = "overlay"
+                else:
+                    scope = "actionable"
+                wnd_title = window_titles.get(root_hwnd) or window_titles.get(int(n.get("hwnd", 0) or 0)) or focused_title
                 if value and n["action"] == "write":
                     desc = f'[{eid}] {role} "{name}" = "{preview}"' if name else f'[{eid}] {role} "{preview}"'
                 elif name:
                     desc = f'[{eid}] {role} "{name}"'
                 else:
                     desc = f'[{eid}] {role}'
+                desc += identity
+                desc += f' @{scope} "{wnd_title}"'
                 elements[eid] = Element(
                     id=eid, role=role, name=name, value=value,
                     hwnd=root_hwnd or n["hwnd"], px=n["x"], py=n["y"], pw=n["w"], ph=n["h"],
-                    action=n["action"], wnd=focused_title,
+                    action=n["action"], wnd=wnd_title, scope=scope,
+                    automation_id=n.get("automation_id", ""), class_name=n.get("class_name", ""),
                     enabled=n.get("enabled", True), readonly=False,
                 )
             else:
@@ -909,6 +1164,7 @@ class Desktop:
                     desc = f'{role} "{name}"'
                 else:
                     desc = f'{role} "{preview}"'
+                desc += identity
             lines.append(f"  {desc}")
         lines.insert(1, f"ELEMENTS: {seq}")
         lines.insert(2, f"OBSERVED: {rendered}")
