@@ -131,28 +131,73 @@ Previously validated:
 
 Real compound run state on 2026-06-21:
 
+- All runtime execution was stopped for handover. At this handover there is no
+  Python server process intentionally left running.
 - A real compound run exposed a generic navigation bug: inserting `ctrl+l`
   before a model-emitted browser focus selected the wrong window. The fix is now
-  generic chain normalization, not Grok-specific logic.
-- A resumed real run then proved the navigation fix: Chrome was focused,
-  `ctrl+l` selected the address bar, `grok.com` was typed, and Grok loaded.
-- The run reached `state.step == 7` and stopped at the scheduler for:
-  `write summary of conversation to Notepad`.
-- `state.json` is ignored by git but intentionally left local as resumable run
-  data. Current resume node: `scheduler`.
+  generic chain normalization and context guarding, not Grok-specific logic.
+- A resumed real run proved the navigation fix: Chrome was focused, `ctrl+l`
+  selected the address bar, `grok.com` was typed, and Grok loaded.
 - Memory contains three real Grok capture keys:
   `grok_turn_1_response`, `grok_turn_2_response`, and
   `grok_turn_3_response`.
 - Completed real workflow evidence: Chrome/Grok navigation, initial Grok
   message submission, first response memory, follow-up submission, second
-  response memory, third message submission, and third response memory.
-- Remaining workflow work: open/focus Notepad, write a memory-derived summary,
-  verify the Notepad content, then navigate/search YouTube and verify Waka Waka
-  playback.
-- Open reliability gap from the stopped run: `act` returned `CANNOT` when asked
-  to write the summary to Notepad while Grok was still focused. Planner/act
-  wiring should split this into open/focus Notepad, write summary from MEMORY,
-  then continue to YouTube.
+  response memory, third message submission, third response memory, and a
+  135-character summary write action into Notepad from memory.
+- Later real evidence reached YouTube search results for
+  `Shakira Waka Waka`. The verifier correctly refused to treat search/navigation
+  as playback.
+- After that handover, a short authorized continuation repaired
+  `state.json` to a single remaining YouTube playback step and preserved the
+  pre-repair file as `state.before-youtube-repair.json`.
+- The repaired state reached `_resume_node = "scheduler"`, `step = 0`,
+  `retries = 5`, with the single current step:
+  `play Shakira Waka Waka on YouTube`.
+- Additional real attempts produced useful evidence but did not complete
+  playback: `act` clicked the YouTube `Videos` filter, waited, refocused
+  Chrome, and clicked the page/tab title. Verifier correctly denied every
+  precursor because no playback evidence existed.
+- Runtime was stopped again for handover. At this handover there is no Python
+  server process intentionally left running.
+- Remaining workflow work: solve the observation/cognition issue on YouTube
+  results, click/play a matching result, verify playback, and optionally refocus
+  Notepad to audit the written summary visually.
+- Latest unvalidated hardening in tracked files: browser navigation context
+  guard, unsafe launch-then-content-write guard, summary-write verifier
+  preflight, playback false-positive block, replan index reset, and a reflect
+  retry path for "searched but playback not confirmed".
+
+## Key Handover Insight
+
+Do not keep adding task-specific prompt rules for YouTube, Grok, Notepad, or
+individual page controls. The latest run showed a more fundamental problem:
+`act` can only reason over the textual `SCREEN` tree it receives. In the
+YouTube state, that tree exposed browser chrome, the address bar, filter tabs,
+`About these results`, and a page document node, but did not expose usable video
+result cards or a clear spatial/content hierarchy. The model then made
+plausible but wrong cognitive inferences from a partial tree: it clicked
+`Videos`, waited, refocused Chrome, and clicked the page/tab title.
+
+A small Codex command-approval popup appeared in the observation text during
+some steps. That popup was not the core issue; it only made the symptom more
+obvious. The core issue is how the observer represents the real screen to the
+LLM and how the LLM understands that representation.
+
+The next work should focus on generic observation quality and cognition:
+
+- expose enough of the focused app's UIA tree for the task-relevant controls to
+  appear
+- preserve spatial/order clues so the model knows what is browser chrome,
+  page content, result cards, overlays, filters, and controls
+- separate obstructing overlays from normal page content without letting a small
+  unrelated overlay dominate the `SCREEN` block
+- show scrollability, viewport position, and whether more content exists below
+- identify element roles and ancestry well enough that a document title is not
+  confused with a playable media result
+- make the workbench show the same observation tree humans and API clients pass
+  to `act`
+- improve the observer generically before tightening prompts for one site
 
 ## HTTP Surface
 
@@ -214,27 +259,34 @@ RESEARCH.md                Direction, risks, and proof plan
 ```
 
 Ignored runtime files include `state.json`, `bus.json`,
-`prompts/traces.jsonl`, `prompts/wiring.backup.json`, caches, and logs.
+`state.*.json`, `prompts/traces.jsonl`, `prompts/wiring.backup.json`, local
+transcripts, caches, and logs.
 The allowlist `.gitignore` is intentional: source/docs/prompts are committed,
 while local run state and traces remain on disk for resume/debug unless a human
 explicitly cleans them.
 
 ## Immediate Validation Loop
 
-For this target, use real step-by-step server runs, not simulated tests. If the
-local `state.json` from 2026-06-21 is still present, resume from it first; it is
-at the Notepad-summary stage with three Grok memory entries.
+For this target, use real step-by-step server runs, not simulated tests, only
+after a session explicitly authorizes runtime work. The current local
+`state.json` from 2026-06-21 should be inspected before use. It preserves real
+evidence and is repaired to the remaining YouTube playback step, but playback
+is still unproven. `state.before-youtube-repair.json` preserves the stale
+pre-repair state.
 
 1. Start the server.
 2. Use `/health` only to confirm the server is alive and not in simulation.
-3. Inspect `/state`; if `_resume_node` is `scheduler` and `step` is `7`,
-   continue from the saved run.
+3. Inspect `/state`; confirm whether it is the repaired single-step playback
+   state or the older stale Grok replan.
 4. Inspect `state`, `screen`, `last_actions_raw`, `last_outcome`, `memory`,
    and `reasoning_chain`.
-5. Drive the goal through `/step` in small chunks.
-6. Patch wiring first when the model policy is wrong.
-7. Patch Python only for generic contradictions such as wrong chain ordering,
-   too-narrow observation, stale hot-reload, or unsafe action mechanics.
+5. Before more prompt changes, inspect how `desktop.py` and `server.py` build
+   the `SCREEN` block and why the video result cards are not visible or
+   cognitively clear to `act`.
+6. Drive the goal through `/step` in small chunks only after the observation
+   hypothesis is understood.
+7. Patch wiring first when the behavior contract is wrong. Patch Python when
+   the observation representation or action mechanics contradict the real UI.
 8. Restart from clean runtime artifacts only after the useful run state has
    been summarized or intentionally discarded.
 9. Final proof requires visible evidence of Grok conversation memory, Notepad
@@ -259,6 +311,9 @@ editing. Preserve GUI/API parity for /step, /inspect, /state, /wiring, and
 Use Python only for mechanical contradictions.
 
 Known focus areas:
+- make observation the next center of gravity: richer UIA tree, spatial/order
+  cues, scrollability, overlay separation, and clearer distinction between
+  browser chrome and page content
 - deepen observation without arbitrary tiny truncation
 - keep live hot-reload synchronized with action and observation runtime
 - ensure browser navigation focuses the browser before ctrl+l
@@ -267,30 +322,42 @@ Known focus areas:
 - make planner split summary-to-Notepad into open/focus Notepad and write
   MEMORY-derived summary
 - keep self_modify conservative and wiring-aware
+- avoid adding narrow prompt rules for one page/site until the generic
+  observation problem is understood
 
 Current stopped state:
 - all servers/tests were stopped on request
-- ignored state.json resumes at scheduler, step 7
-- current step is write summary of conversation to Notepad
+- ignored state.json is preserved and currently repaired to one remaining
+  playback step
+- ignored state.before-youtube-repair.json preserves the stale pre-repair state
+- Notepad summary writing has real action evidence
+- browser reached YouTube search results for Shakira Waka Waka
+- current_step is play Shakira Waka Waka on YouTube
+- latest attempts did not complete playback; verifier correctly denied them
 - memory has grok_turn_1_response, grok_turn_2_response, grok_turn_3_response
-- remaining proof is Notepad summary, then YouTube Waka Waka playback
+- remaining proof is improve/understand observation, click/play a matching
+  YouTube result, and verify playback
+- optional final audit: refocus Notepad and observe the written summary
 ```
 
 ### Real Validation Prompt
 
 ```text
-Run only real step-by-step validation through the local server. Do not rely on
-simulated tests for the compound proof. First inspect state.json. If it matches
-the 2026-06-21 stopped state, resume it instead of starting over:
+Run only real step-by-step validation through the local server after runtime is
+explicitly authorized. Do not rely on simulated tests for the compound proof.
+First inspect state.json. If it still contains the 2026-06-21 stale replan, do
+not blindly resume it:
 
-resume node: scheduler
-step: 7
-current step: write summary of conversation to Notepad
+current expected state: repaired single-step YouTube playback state
+backup evidence: state.before-youtube-repair.json contains stale Grok replan
 memory keys: grok_turn_1_response, grok_turn_2_response, grok_turn_3_response
+Notepad evidence: 135-character memory-derived summary write action
+current blocker: observation tree does not expose/cognitively clarify playable
+YouTube result controls
 
-If state.json is absent or intentionally discarded, start from clean
-state.json/bus.json, confirm /health reports simulation=false, then step the
-target goal in small chunks:
+If state.json has regressed, repair it to the remaining YouTube playback step or
+start from a clean slice after preserving the evidence. Confirm /health reports
+simulation=false, then inspect observation before stepping the target goal:
 
 open Chrome; go to grok.com; ask about endgame-ai; remember Grok response 1;
 send a follow-up based on memory; remember response 2; send a follow-up based
@@ -301,6 +368,12 @@ After each chunk inspect state.current_step, screen, last_actions_raw,
 last_outcome, memory, last_error, and reasoning_chain. If a failure is generic,
 patch wiring or Python, restart the server, preserve or summarize useful
 runtime state, and rerun from the smallest useful real slice.
+
+Priority diagnosis for the next run:
+- compare the visible browser page to the `SCREEN` text passed to `act`
+- determine why playable result cards are absent or unclear
+- improve observation representation generically in `desktop.py`/`server.py`
+- only then decide whether any wiring prompt needs a task-agnostic update
 ```
 
 ### Debug Patch Prompt
