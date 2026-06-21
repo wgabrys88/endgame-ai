@@ -17,6 +17,52 @@ SINE_PERIOD = 6.0
 READ_TEXT_MAX = 200
 FOCUS_DELAY = 0.3
 
+OBSERVE_DEFAULTS = {
+    "probe_step_px": PROBE_STEP_PX,
+    "probe_delay_ms": int(PROBE_DELAY * 1000),
+    "dense_probe_min_px": 45,
+    "scroll_enrich_min": SCROLL_ENRICH_MIN,
+    "scroll_enrich_passes": list(SCROLL_ENRICH_PASSES),
+    "scroll_enrich_delay_ms": int(SCROLL_ENRICH_DELAY * 1000),
+    "read_text_max": READ_TEXT_MAX,
+    "node_value_max_chars": 1000,
+    "render_value_max_chars": 80,
+    "window_limit": 8,
+}
+OBSERVE_CONFIG = dict(OBSERVE_DEFAULTS)
+
+
+def configure_observation(config: dict[str, Any] | None = None) -> None:
+    """Update observer detail from wiring.json without coupling desktop.py to it."""
+    global OBSERVE_CONFIG
+    merged = dict(OBSERVE_DEFAULTS)
+    if isinstance(config, dict):
+        for key in OBSERVE_DEFAULTS:
+            if key in config:
+                merged[key] = config[key]
+    OBSERVE_CONFIG = merged
+
+
+def _obs_int(key: str, default: int) -> int:
+    try:
+        return int(OBSERVE_CONFIG.get(key, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def _obs_float_ms(key: str, default_seconds: float) -> float:
+    try:
+        return max(0.0, float(OBSERVE_CONFIG.get(key, default_seconds * 1000.0)) / 1000.0)
+    except (TypeError, ValueError):
+        return default_seconds
+
+
+def _obs_clip(text: str, limit_key: str, default: int) -> str:
+    limit = _obs_int(limit_key, default)
+    if limit <= 0:
+        return text
+    return text[:limit]
+
 UIA_CONTROL_TYPE_MAP: dict[int, str] = {
     50000: "Button", 50001: "Calendar", 50002: "CheckBox", 50003: "ComboBox",
     50004: "Edit", 50005: "Hyperlink", 50006: "Image", 50007: "ListItem",
@@ -242,6 +288,10 @@ class Desktop:
         screen_h = self.user32.GetSystemMetrics(1)
         focused_hwnd = int(self.user32.GetForegroundWindow())
         focused_title = self._get_window_title(focused_hwnd) or "Desktop"
+        if focused_title.strip().lower() in {"desktop", "program manager"}:
+            fallback = self._top_application_window()
+            if fallback:
+                focused_hwnd, focused_title = fallback
 
         rect = self._get_window_rect(focused_hwnd)
         if rect:
@@ -251,9 +301,11 @@ class Desktop:
 
         saved = W.POINT()
         self.user32.GetCursorPos(ctypes.byref(saved))
-        nodes = self._probe(x0, y0, x1, y1, focused_hwnd)
-        if len(nodes) < SCROLL_ENRICH_MIN:
-            dense_step = max(45, PROBE_STEP_PX // 2)
+        probe_step = max(10, _obs_int("probe_step_px", PROBE_STEP_PX))
+        enrich_min = max(0, _obs_int("scroll_enrich_min", SCROLL_ENRICH_MIN))
+        nodes = self._probe(x0, y0, x1, y1, focused_hwnd, step=probe_step)
+        if len(nodes) < enrich_min:
+            dense_step = max(_obs_int("dense_probe_min_px", 45), probe_step // 2)
             extra = self._probe(0, 0, screen_w, screen_h, focused_hwnd, step=dense_step)
             seen = {(n["role"], n.get("name", ""), n["x"], n["y"], n["w"], n["h"]) for n in nodes}
             for n in extra:
@@ -262,14 +314,17 @@ class Desktop:
                     seen.add(key)
                     nodes.append(n)
         classified = self._classify(nodes)
-        if len(classified) < SCROLL_ENRICH_MIN:
+        if len(classified) < enrich_min:
             cx = max(x0 + 40, min(x1 - 40, (x0 + x1) // 2))
             cy = max(y0 + 40, min(y1 - 40, (y0 + y1) // 2))
             seen = {(n["role"], n.get("name", ""), n["x"], n["y"], n["w"], n["h"]) for n in nodes}
-            for amount in SCROLL_ENRICH_PASSES:
+            passes = OBSERVE_CONFIG.get("scroll_enrich_passes", SCROLL_ENRICH_PASSES)
+            if not isinstance(passes, (list, tuple)):
+                passes = SCROLL_ENRICH_PASSES
+            for amount in passes:
                 self.scroll(cx, cy, amount)
-                time.sleep(SCROLL_ENRICH_DELAY)
-                for n in self._probe(x0, y0, x1, y1, focused_hwnd):
+                time.sleep(_obs_float_ms("scroll_enrich_delay_ms", SCROLL_ENRICH_DELAY))
+                for n in self._probe(x0, y0, x1, y1, focused_hwnd, step=probe_step):
                     key = (n["role"], n.get("name", ""), n["x"], n["y"], n["w"], n["h"])
                     if key not in seen:
                         seen.add(key)
@@ -277,7 +332,7 @@ class Desktop:
             classified = self._classify(nodes)
         self.user32.SetCursorPos(saved.x, saved.y)
         elements, context_text = self._render(classified, focused_title, focused_hwnd)
-        windows = self._window_titles(focused_hwnd)
+        windows = self._window_titles(focused_hwnd, limit=max(1, _obs_int("window_limit", 8)))
         if windows:
             context_text += "\nWINDOWS:\n" + "\n".join(f"  {w}" for w in windows)
         if not elements:
@@ -385,6 +440,16 @@ class Desktop:
             hwnd = self.user32.GetWindow(hwnd, 2)
         return titles
 
+    def _top_application_window(self) -> tuple[int, str] | None:
+        hwnd = self.user32.GetTopWindow(None)
+        while hwnd:
+            if self.user32.IsWindowVisible(hwnd):
+                title = self._get_window_title(int(hwnd)).strip()
+                if title and title.lower() not in {"desktop", "program manager"}:
+                    return int(hwnd), title
+            hwnd = self.user32.GetWindow(hwnd, 2)
+        return None
+
     def _get_window_title(self, hwnd: int) -> str:
         buf = ctypes.create_unicode_buffer(512)
         self.user32.GetWindowTextW(W.HWND(hwnd), buf, 512)
@@ -399,15 +464,18 @@ class Desktop:
     def _probe(self, x0: int, y0: int, x1: int, y1: int, hwnd: int, step: int | None = None) -> list[dict[str, Any]]:
         nodes: list[dict[str, Any]] = []
         seen_keys: set[tuple] = set()
-        step = step or PROBE_STEP_PX
+        step = step or max(10, _obs_int("probe_step_px", PROBE_STEP_PX))
         amp = step * SINE_AMP_RATIO
         freq = 2 * math.pi / (step * SINE_PERIOD)
+        probe_delay = _obs_float_ms("probe_delay_ms", PROBE_DELAY)
+        read_text_max = max(0, _obs_int("read_text_max", READ_TEXT_MAX))
 
         for y in range(y0 + step // 2, y1, step):
             for x in range(x0 + step // 2, x1, step):
                 py = max(y0, min(y1 - 1, y + int(amp * math.sin(freq * x))))
                 self.user32.SetCursorPos(x, py)
-                time.sleep(PROBE_DELAY)
+                if probe_delay:
+                    time.sleep(probe_delay)
                 try:
                     el = self._uia.element_from_point(x, py)
                 except OSError:
@@ -422,7 +490,7 @@ class Desktop:
                     name = self._uia.get_str(el, _UIA.UIA_NAME)
                     value = self._uia.get_legacy_value(el)
                     if not value:
-                        value = self._uia.get_text_content(el, READ_TEXT_MAX)
+                        value = self._uia.get_text_content(el, read_text_max)
                     rx, ry, rw, rh = self._uia.get_rect(el)
                     if rw <= 0 or rh <= 0:
                         continue
@@ -434,7 +502,7 @@ class Desktop:
                         continue
                     el_hwnd = self._uia.get_int(el, _UIA.UIA_NATIVE_WINDOW_HANDLE) or hwnd
                     nodes.append({
-                        "role": role, "name": name, "value": value[:1000],
+                        "role": role, "name": name, "value": _obs_clip(value, "node_value_max_chars", 1000),
                         "x": rx, "y": ry, "w": rw, "h": rh,
                         "hwnd": el_hwnd,
                         "enabled": self._uia.get_bool(el, _UIA.UIA_IS_ENABLED),
@@ -471,14 +539,17 @@ class Desktop:
             "SCOPE: [ID] targets are actionable only in this focused window; WINDOWS titles are awareness only.",
         ]
         seq = 0
+        rendered = 0
         for n in nodes:
             role, name, value = n["role"], n.get("name", ""), n.get("value", "")
+            rendered += 1
+            preview = _obs_clip(value, "render_value_max_chars", 80)
             owns_focus = not focused_hwnd or n.get("hwnd", 0) == focused_hwnd
             if n["action"] != "read" and owns_focus:
                 seq += 1
                 eid = str(seq)
                 if value and n["action"] == "write":
-                    desc = f'[{eid}] {role} "{name}" = "{value[:80]}"' if name else f'[{eid}] {role} "{value[:80]}"'
+                    desc = f'[{eid}] {role} "{name}" = "{preview}"' if name else f'[{eid}] {role} "{preview}"'
                 elif name:
                     desc = f'[{eid}] {role} "{name}"'
                 else:
@@ -491,13 +562,14 @@ class Desktop:
                 )
             else:
                 if name and value:
-                    desc = f'{role} "{name}" = "{value[:80]}"'
+                    desc = f'{role} "{name}" = "{preview}"'
                 elif name:
                     desc = f'{role} "{name}"'
                 else:
-                    desc = f'{role} "{value[:80]}"'
+                    desc = f'{role} "{preview}"'
             lines.append(f"  {desc}")
         lines.insert(1, f"ELEMENTS: {seq}")
+        lines.insert(2, f"OBSERVED: {rendered}")
         return elements, "\n".join(lines)
 
 

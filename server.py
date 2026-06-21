@@ -56,6 +56,8 @@ def validate_wiring(w):
         nid = n.get("id", "")
         if not nid or not nid[0].isalpha() or not all(c.isalnum() or c == '_' for c in nid):
             errs.append(f"nodes[{i}].id invalid: '{nid}'")
+        if nid in node_ids:
+            errs.append(f"nodes[{i}].id duplicate: '{nid}'")
         if not n.get("type"):
             errs.append(f"nodes[{i}].type required")
         if "label" not in n:
@@ -75,10 +77,14 @@ def validate_wiring(w):
     return errs
 
 try:
-    from actions import execute_verb, observe_screen
+    from actions import execute_verb, observe_screen, configure_runtime
 except Exception:
     def observe_screen(): return "(desktop not available)"
     def execute_verb(verb, target, value=""): return f"[stub] {verb} {target} {value}"
+    def configure_runtime(_wiring): pass
+
+
+configure_runtime(WIRING)
 
 # ─── Wiring accessors (policy lives in wiring.json — Python only executes) ───
 
@@ -89,6 +95,16 @@ def wiring_error(key, **fmt):
     msg = WIRING.get("errors", {}).get(key, key)
     return msg.format(**fmt) if fmt else msg
 
+def preview_text(text, limit_key="debug_value_max_chars", default=1200):
+    text = str(text or "")
+    try:
+        limit = int(wiring_limit(limit_key, default) or 0)
+    except (TypeError, ValueError):
+        limit = default
+    if limit <= 0:
+        return text
+    return text[:limit]
+
 LLM_NODE_TYPES = frozenset({"planner", "act", "verify", "reflect", "self_modify"})
 
 def topo_node(node_type):
@@ -96,6 +112,12 @@ def topo_node(node_type):
         if n.get("type") == node_type:
             return n
     return {}
+
+def topo_node_by_id(node_id):
+    for n in WIRING.get("topology", {}).get("nodes", []):
+        if n.get("id") == node_id:
+            return n
+    return None
 
 def circuit_for(node_type):
     """Circuit role key for reasoning store."""
@@ -141,6 +163,10 @@ def wiring_summary():
             "self_modify": "self_modify" in roles and any(n.get("type") == "self_modify" for n in topo.get("nodes", [])),
             "colony_delegate": bool(WIRING.get("moe", {}).get("delegate_keywords")),
             "trace_memory": True,
+            "step_debug": True,
+            "pause_resume": True,
+            "wiring_hot_reload": True,
+            "state_memory": "remember" in WIRING.get("verbs", {}),
         },
         "limits": WIRING.get("limits", {}),
     }
@@ -195,6 +221,8 @@ RUN_STATUS_LOCK = threading.Lock()
 RUNNER_THREAD = None
 RUN_STATUS = {
     "running": False,
+    "paused": False,
+    "pause_requested": False,
     "goal": "",
     "queued": 0,
     "last_goal": "",
@@ -214,6 +242,7 @@ def _run_worker_loop():
         with RUN_STATUS_LOCK:
             RUN_STATUS.update({
                 "running": True,
+                "paused": False,
                 "goal": job.get("goal", ""),
                 "queued": RUN_QUEUE.qsize(),
                 "last_error": "",
@@ -253,8 +282,32 @@ def enqueue_run(goal, resume_state=None, max_cycles=None):
     RUN_QUEUE.put({"goal": goal, "resume_state": resume_state, "max_cycles": max_cycles})
     with RUN_STATUS_LOCK:
         RUN_STATUS["queued"] = RUN_QUEUE.qsize()
+        RUN_STATUS["paused"] = False
+        RUN_STATUS["pause_requested"] = False
         running = RUN_STATUS["running"]
     return {"started": True, "queued": RUN_QUEUE.qsize(), "running": running}
+
+def request_pause():
+    with RUN_STATUS_LOCK:
+        RUN_STATUS["pause_requested"] = True
+        running = RUN_STATUS["running"]
+        queued = RUN_QUEUE.qsize()
+    sse_push("pause", {"requested": True, "running": running})
+    return {"pause_requested": True, "running": running, "queued": queued}
+
+def run_pause_requested():
+    with RUN_STATUS_LOCK:
+        return bool(RUN_STATUS.get("pause_requested"))
+
+def pause_run_state(state, node_id):
+    state["_resume_node"] = node_id
+    state["_paused"] = True
+    save_state(state)
+    with RUN_STATUS_LOCK:
+        RUN_STATUS["paused"] = True
+        RUN_STATUS["pause_requested"] = False
+    sse_push("paused", {"node": node_id, "cycle": state.get("_cycle", 0)})
+    return state
 
 def save_state(state):
     STATE_FILE.write_text(json.dumps(state, default=str), encoding="utf-8")
@@ -475,7 +528,10 @@ def _resolve_value(state, source):
             return state.get("current_step", {}).get("description", "")
         if key == "current_step.done_when":
             return state.get("current_step", {}).get("done_when", "")
-        return state.get(key, "")
+        value = state.get(key, "")
+        if isinstance(value, (dict, list)):
+            return json.dumps(value, ensure_ascii=True)
+        return value
     return ""
 
 def load_system_prompt(circuit, state=None, node_type=None):
@@ -488,21 +544,75 @@ def load_system_prompt(circuit, state=None, node_type=None):
     parts = [p.strip() for p in (base, role_text) if p and p.strip()]
     return "\n\n".join(parts)
 
-def build_user_message(circuit, state, node_type=None):
-    """Build dynamic user message from node.prompt.user.blocks."""
-    cfg = _prompt_cfg(node_type, circuit)
+def resolve_prompt_blocks(node_type, state):
+    """Resolve node prompt input blocks for execution and dashboard inspection."""
+    cfg = _prompt_cfg(node_type=node_type)
     blocks = cfg.get("user", {}).get("blocks", [])
-    parts = []
+    resolved = []
     for block in blocks:
         label = block.get("label", "")
-        value = _resolve_value(state, block.get("source", ""))
+        source = block.get("source", "")
+        value = _resolve_value(state, source)
+        included = True
         if not value and not block.get("always"):
             if block.get("empty_template"):
                 value = block["empty_template"]
             else:
-                continue
-        parts.append(f"{label}: {value}")
+                included = False
+                value = ""
+        resolved.append({
+            "label": label,
+            "source": source,
+            "value": value,
+            "included": included,
+            "always": bool(block.get("always")),
+        })
+    return resolved
+
+def build_user_message(circuit, state, node_type=None):
+    """Build dynamic user message from node.prompt.user.blocks."""
+    parts = []
+    for block in resolve_prompt_blocks(node_type, state):
+        if block["included"]:
+            parts.append(f"{block['label']}: {block['value']}")
     return "\n".join(parts)
+
+def node_debug_context(node_id, state):
+    """Return schema-independent node context for GUI/API inspection."""
+    topo = WIRING.get("topology", {})
+    node_cfg = topo_node_by_id(node_id) if node_id else None
+    if not node_cfg:
+        return {"id": node_id, "error": f"unknown node: {node_id}"}
+    node_type = node_cfg.get("type", "")
+    has_prompt = bool(node_cfg.get("prompt")) or node_type in LLM_NODE_TYPES
+    incoming = [e for e in topo.get("edges", []) if e.get("to") == node_id]
+    outgoing = [e for e in topo.get("edges", []) if e.get("from") == node_id]
+    return {
+        "id": node_id,
+        "type": node_type,
+        "label": node_cfg.get("label", ""),
+        "circuit": circuit_for(node_type) if has_prompt else "",
+        "config": node_cfg,
+        "incoming_edges": incoming,
+        "outgoing_edges": outgoing,
+        "wired_inputs": resolve_prompt_blocks(node_type, state) if has_prompt else [],
+        "reasoning": state.get("reasoning", {}),
+        "reasoning_chain": state.get("reasoning_chain", []),
+    }
+
+def inspect_state(goal="", state=None, node_id=None):
+    topo = WIRING["topology"]
+    state = dict(state if state is not None else (load_state() or {}))
+    if goal and not state.get("goal"):
+        state["goal"] = goal
+    node_id = node_id or state.get("_resume_node") or topo.get("cycle_start")
+    return {
+        "node": node_id,
+        "state": state,
+        "debug": node_debug_context(node_id, state),
+        "wiring": wiring_summary(),
+        "run": run_status_snapshot(),
+    }
 
 # ─── Guards (from wiring.json, evaluated in act node) ───
 
@@ -515,6 +625,97 @@ def check_repeat_block(state, actions):
         hint = _find_advance_hint(state, actions)
         return hint or "repeat blocked — try a different action"
     return None
+
+def apply_memory_action(existing_memory, target, value):
+    """Apply act's remember verb without desktop or model side effects."""
+    memory = dict(existing_memory or {})
+    key = target or f"note_{len(memory) + 1}"
+    text = str(value or "")
+    if not text.strip():
+        return False, memory, "FAILED: empty memory value"
+    memory[key] = value
+    return True, memory, f"stored {key} ({len(text)} chars)"
+
+def _step_text(state):
+    step = state.get("current_step", {})
+    return f"{step.get('description', '')} {step.get('done_when', '')}".lower()
+
+def _target_screen_line(state, target):
+    target = (target or "").strip()
+    if not target:
+        return ""
+    id_match = re.match(r"^\[?(\d+)\]?$", target)
+    screen = state.get("screen", "") or ""
+    if id_match:
+        needle = f"[{id_match.group(1)}]"
+        for line in screen.splitlines():
+            if needle in line:
+                return line.lower()
+    return target.lower()
+
+def _is_browser_navigation_step(state):
+    text = _step_text(state)
+    return any(w in text for w in ("go to ", "navigate", "url", ".com", "youtube", "website", "page loads", "page is loaded"))
+
+def _is_chat_message_step(state):
+    text = _step_text(state)
+    if _is_browser_navigation_step(state):
+        return False
+    return any(w in text for w in ("send ", "message", "prompt", "follow-up", "question", "chat"))
+
+def normalize_action_chain(state, actions):
+    """Apply deterministic safety normalizations that do not change task intent."""
+    out = [dict(a) for a in actions]
+    if _is_browser_navigation_step(state) and any(a.get("verb") == "write" and a.get("value") for a in out):
+        def is_ctrl_l(action):
+            combo = (action.get("target") or action.get("value") or "").lower()
+            return (
+                action.get("verb") == "hotkey"
+                and "ctrl" in combo
+                and "l" in combo
+            )
+
+        first_write = next((i for i, a in enumerate(out) if a.get("verb") == "write" and a.get("value")), len(out))
+        prefix = out[:first_write]
+        suffix = out[first_write:]
+        focus_prefix = [a for a in prefix if a.get("verb") == "focus"]
+        ctrl_l_prefix = [a for a in prefix if is_ctrl_l(a)]
+        other_prefix = [a for a in prefix if a.get("verb") != "focus" and not is_ctrl_l(a)]
+        if focus_prefix or ctrl_l_prefix:
+            if not ctrl_l_prefix:
+                ctrl_l_prefix = [{"verb": "hotkey", "target": "ctrl+l", "value": ""}]
+            out = focus_prefix + other_prefix + ctrl_l_prefix + suffix
+
+        has_ctrl_l = any(
+            a.get("verb") == "hotkey"
+            and "ctrl" in (a.get("target") or a.get("value") or "").lower()
+            and "l" in (a.get("target") or a.get("value") or "").lower()
+            for a in out
+        )
+        if not has_ctrl_l:
+            insert_at = 0
+            while insert_at < len(out) and out[insert_at].get("verb") == "focus":
+                insert_at += 1
+            out.insert(insert_at, {"verb": "hotkey", "target": "ctrl+l", "value": ""})
+        has_enter = any(
+            a.get("verb") in ("press", "hotkey")
+            and "enter" in (a.get("target") or a.get("value") or "").lower()
+            for a in out
+        )
+        if not has_enter:
+            out.append({"verb": "press", "target": "enter", "value": ""})
+    return out
+
+def unsafe_chat_target(state, actions):
+    if not _is_chat_message_step(state):
+        return ""
+    for a in actions:
+        if a.get("verb") != "write":
+            continue
+        line = _target_screen_line(state, a.get("target", ""))
+        if "address and search bar" in line:
+            return "chat/message write targeted the browser address bar; observe or navigate until a chat input is visible"
+    return ""
 
 def _find_advance_hint(state, actions):
     """Match advance hints from wiring."""
@@ -627,7 +828,7 @@ def node_act(state, _):
     parsed = r["parsed"]
     patch = dict(r["patch"])
     if not parsed:
-        preview = (r.get("content") or "")[:200].replace("\n", " ")
+        preview = preview_text(r.get("content") or "", "error_preview_chars", 1200).replace("\n", " ")
         patch["last_error"] = wiring_error("parse_failed") + f" (content: {preview!r})"
         print(f"       [!] act parse_failed: {patch['last_error']}")
         return {"signals": ["act_failed"], "patch": patch}
@@ -652,6 +853,14 @@ def node_act(state, _):
         patch["last_error"] = wiring_error("act_bad_conclusion", conclusion=conclusion)
         return {"signals": ["act_failed"], "patch": patch}
 
+    actions = normalize_action_chain(state, actions)
+    unsafe = unsafe_chat_target(state, actions)
+    if unsafe:
+        action_label = "; ".join(f"{a.get('verb','')} {a.get('target','')}" for a in actions)
+        entry = {"attempt": len(history) + 1, "action": action_label, "outcome": f"BLOCKED: {unsafe}"}
+        patch.update({"last_error": unsafe, "history": history + [entry]})
+        return {"signals": ["act_failed"], "patch": patch}
+
     # Guard: repeat block
     block = check_repeat_block(state, actions)
     if block:
@@ -660,20 +869,50 @@ def node_act(state, _):
         patch.update({"last_error": block, "history": history + [entry]})
         return {"signals": ["act_failed"], "patch": patch}
 
-    # Execute (normalize verb: press with + → hotkey)
+    # Execute (normalize verb: press with + -> hotkey)
     results = []
     failed = False
     chain_delay = int(WIRING.get("runtime", {}).get("action_chain_delay_ms", 0)) / 1000.0
     for i, a in enumerate(actions):
         verb = a.get("verb", "")
-        target = a.get("target", "")
+        target = a.get("target", "") or ""
+        value = a.get("value", "") or ""
+        prior = actions[:i]
+        prior_run = any(
+            pa.get("verb") == "hotkey"
+            and "win" in (pa.get("target") or pa.get("value") or "").lower()
+            and "r" in (pa.get("target") or pa.get("value") or "").lower()
+            for pa in prior
+        )
+        screen_l = (state.get("screen") or "").lower()
+        if verb == "write" and "focused: run" in screen_l and target:
+            target = ""
+            a["target"] = ""
+        if verb == "write" and prior_run and target and target.strip().lower() == str(value).strip().lower():
+            target = ""
+            a["target"] = ""
+        if verb == "press" and not (target or value) and any(pa.get("verb") == "write" for pa in prior):
+            target = "enter"
+            a["target"] = "enter"
+        if verb == "click" and target.strip().lower() == "ok" and "focused: run" in screen_l:
+            verb = "press"
+            target = "enter"
+            a["verb"] = "press"
+            a["target"] = "enter"
         for norm in act_cfg.get("verb_normalize", []):
             if verb == norm.get("from") and norm.get("when_target_contains", "") in target:
                 verb = norm.get("to", verb)
-        result = execute_verb(verb, target, a.get("value", ""))
+        if verb == "remember":
+            ok_mem, memory, result = apply_memory_action(patch.get("memory") or state.get("memory"), target, value)
+            if ok_mem:
+                patch["memory"] = memory
+        else:
+            result = execute_verb(verb, target, value)
         label = target
-        if verb == "write" and a.get("value"):
-            label = f"{target or 'focused'} value={a.get('value')[:80]!r}"
+        if verb == "write" and value:
+            label = f"{target or 'focused'} value={preview_text(value)!r}"
+        if verb == "remember" and value:
+            label = f"{target or 'note'} value={preview_text(value)!r}"
         results.append(f"{verb} {label}: {result}")
         if str(result).upper().startswith("FAILED"):
             failed = True
@@ -717,14 +956,32 @@ def _verify_preflight_confirmed(state):
         return False
     done_when = (state.get("current_step", {}).get("done_when") or "").lower()
     actions = state.get("last_actions_raw", [])
+    typed = " ".join((a.get("value") or "") for a in actions if a.get("verb") == "write").lower()
+    submitted = " ".join(
+        (a.get("target") or a.get("value") or "")
+        for a in actions
+        if a.get("verb") in ("press", "hotkey")
+    ).lower()
+    navigation_done = any(word in done_when for word in ("load", "page", "navigate", "url", "website", "site", "youtube"))
+    address_ready = any(
+        a.get("verb") == "hotkey"
+        and "ctrl" in (a.get("target") or a.get("value") or "").lower()
+        and "l" in (a.get("target") or a.get("value") or "").lower()
+        for a in actions
+    ) or any(
+        a.get("verb") == "write"
+        and "address" in _target_screen_line(state, a.get("target", ""))
+        for a in actions
+    )
+    if navigation_done and address_ready and typed and typed in done_when and "enter" in submitted:
+        return True
     if "open" in done_when and len(actions) >= 3:
         verbs = [a.get("verb", "") for a in actions]
         hotkey = (actions[0].get("target") or "").lower()
-        typed = " ".join((a.get("value") or "") for a in actions if a.get("verb") == "write").lower()
         pressed = " ".join((a.get("target") or a.get("value") or "") for a in actions if a.get("verb") == "press").lower()
         if verbs[:3] == ["hotkey", "write", "press"] and "win" in hotkey and "r" in hotkey and typed and typed in done_when and "enter" in pressed:
             return True
-    if not any(word in done_when for word in ("open", "focused", "active window", "current window")):
+    if not any(word in done_when for word in ("open", "focused", "active window", "current window", "load", "page", "navigate", "url", "website", "site")):
         return False
     for action in actions:
         if action.get("verb") != "focus":
@@ -923,6 +1180,7 @@ def node_self_modify(state, _):
         # Write and hot-reload
         wiring_path.write_text(json.dumps(current, indent=2), encoding="utf-8")
         WIRING = current
+        configure_runtime(WIRING)
         sse_push("wiring_modified", {"op": op, "payload": payload})
         patch.update({"self_modify_op": op, "self_modify_payload": payload})
         return {"signals": ["modified"], "patch": patch}
@@ -967,13 +1225,15 @@ def step_once(goal="", state=None, node_id=None):
     if goal and not state.get("goal"):
         state["goal"] = goal
     node_id = node_id or state.pop("_resume_node", topo["cycle_start"])
-    node_cfg = next((n for n in topo["nodes"] if n["id"] == node_id), None)
+    state.pop("_paused", None)
+    node_cfg = topo_node_by_id(node_id)
     if not node_cfg:
         raise ValueError(f"dead end: no node '{node_id}'")
     handler = NODES.get(node_cfg["type"])
     if not handler:
         raise ValueError(f"no handler for type '{node_cfg['type']}'")
 
+    before_debug = node_debug_context(node_id, state)
     sse_push("node", {"c": state.get("_cycle", 0) + 1, "id": node_id})
     result = handler(state, node_cfg)
     patch = result.get("patch", {})
@@ -988,13 +1248,34 @@ def step_once(goal="", state=None, node_id=None):
     sse_push("result", {"c": state["_cycle"], "id": node_id, "s": signals})
     if terminal:
         sse_push("stop", {"outcome": state.get("satisfied", False)})
+    next_debug = node_debug_context(next_node, state) if next_node else None
     return {
         "node": node_id,
         "type": node_cfg["type"],
+        "executed": {
+            "id": node_id,
+            "type": node_cfg["type"],
+            "label": node_cfg.get("label", ""),
+            "circuit": before_debug.get("circuit", ""),
+        },
         "signals": signals,
         "state_patch": patch,
         "state": state,
+        "targets": targets,
         "next": None if terminal else next_node,
+        "next_node": next_debug,
+        "transition": {
+            "from": node_id,
+            "signals": signals,
+            "targets": targets,
+            "next": None if terminal else next_node,
+            "terminal": terminal,
+        },
+        "debug": {
+            "before": before_debug,
+            "after": next_debug,
+            "run": run_status_snapshot(),
+        },
         "terminal": terminal,
         "satisfied": state.get("satisfied", False),
     }
@@ -1004,6 +1285,7 @@ def run(goal, resume_state=None, max_cycles=None):
     if resume_state:
         state = resume_state
         node_id = state.pop("_resume_node", topo["cycle_start"])
+        state.pop("_paused", None)
     else:
         state = fresh_state(goal)
         node_id = topo["cycle_start"]
@@ -1015,8 +1297,11 @@ def run(goal, resume_state=None, max_cycles=None):
 
     while cycle < max_cycles:
         topo = WIRING["topology"]
+        if run_pause_requested():
+            print(f"\n[{cycle}] paused before {node_id}")
+            return pause_run_state(state, node_id)
         cycle += 1
-        node_cfg = next((n for n in topo["nodes"] if n["id"] == node_id), None)
+        node_cfg = topo_node_by_id(node_id)
         if not node_cfg:
             print(f"[{cycle}] dead end: no node '{node_id}'")
             break
@@ -1102,12 +1387,21 @@ class H(http.server.BaseHTTPRequestHandler):
                 nn = len(WIRING.get("topology", {}).get("nodes", []))
                 werrs = validate_wiring(WIRING)
                 entry_r = NODES.get("entry", lambda s, c: {})({"goal": "smoke"}, {})
+                inspect_r = inspect_state(goal="smoke", state={}, node_id=WIRING.get("topology", {}).get("cycle_start"))
+                summary = wiring_summary()
+                mem_ok, mem_state, _ = apply_memory_action({}, "note", "value")
+                mem_bad, _, _ = apply_memory_action({}, "note", "")
                 results = [
                     {"test": "health", "ok": True},
                     {"test": "wiring", "ok": nn > 0, "nodes": nn},
                     {"test": "schema", "ok": (PROMPTS / "wiring-schema.json").exists()},
                     {"test": "wiring_valid", "ok": not werrs, "errors": len(werrs)},
                     {"test": "node/entry", "ok": "signals" in entry_r},
+                    {"test": "inspect", "ok": bool(inspect_r.get("debug", {}).get("id"))},
+                    {"test": "capability/step_debug", "ok": bool(summary.get("capabilities", {}).get("step_debug"))},
+                    {"test": "capability/state_memory", "ok": bool(summary.get("capabilities", {}).get("state_memory"))},
+                    {"test": "remember/store", "ok": mem_ok and mem_state.get("note") == "value"},
+                    {"test": "remember/reject_empty", "ok": not mem_bad},
                     {"test": "html", "ok": (ROOT / "wiring-editor.html").exists()},
                 ]
             except Exception as e:
@@ -1149,8 +1443,21 @@ class H(http.server.BaseHTTPRequestHandler):
             h = NODES.get(t)
             if not h: self._j({"error": f"unknown: {t}"}, 404); return
             try:
-                r = h(body.get("state", {}), body.get("config", {}))
-                r["state_patch"] = r.pop("patch", {})  # browser expects state_patch
+                input_state = dict(body.get("state", {}))
+                node_cfg = topo_node(t)
+                before = node_debug_context(node_cfg.get("id"), input_state) if node_cfg else {"type": t}
+                r = h(input_state, body.get("config", {}))
+                patch = r.pop("patch", {})
+                output_state = {**input_state, **patch}
+                r["node_type"] = t
+                r["state_patch"] = patch
+                r["state"] = output_state
+                r["debug"] = {
+                    "before": before,
+                    "after": node_debug_context(node_cfg.get("id"), output_state) if node_cfg else {"type": t},
+                }
+                if body.get("save"):
+                    save_state(output_state)
                 self._j(r)
             except Exception as e: self._j({"error": str(e)}, 500)
         elif self.path == "/step":
@@ -1162,6 +1469,21 @@ class H(http.server.BaseHTTPRequestHandler):
                 ))
             except Exception as e:
                 self._j({"error": str(e)}, 500)
+        elif self.path == "/inspect":
+            try:
+                self._j(inspect_state(
+                    goal=body.get("goal", ""),
+                    state=body.get("state"),
+                    node_id=body.get("node"),
+                ))
+            except Exception as e:
+                self._j({"error": str(e)}, 500)
+        elif self.path == "/state":
+            state_body = body.get("state") if isinstance(body, dict) and "state" in body else body
+            if not isinstance(state_body, dict):
+                self._j({"error": "state must be object"}, 400); return
+            save_state(state_body)
+            self._j({"saved": True, "state": state_body})
         elif self.path == "/run":
             goal = body.get("goal", "")
             if not goal: self._j({"error": "no goal"}, 400); return
@@ -1169,8 +1491,11 @@ class H(http.server.BaseHTTPRequestHandler):
         elif self.path == "/resume":
             s = load_state()
             if not s: self._j({"error": "no saved state"}, 404); return
+            s.pop("_paused", None)
             queued = enqueue_run(s.get("goal",""), resume_state=s)
             self._j({"resumed": True, "goal": s.get("goal",""), **queued})
+        elif self.path == "/pause":
+            self._j(request_pause())
         elif self.path == "/bus/post":
             msgs = bus_read(); msgs.append(body); bus_write(msgs)
             self._j({"ok": True})
@@ -1187,16 +1512,26 @@ class H(http.server.BaseHTTPRequestHandler):
             # AI/external push: send arbitrary data to dashboard via SSE
             sse_push("push", body)
             self._j({"pushed": True})
-        elif self.path == "/wiring" and body:            # Hot-reload: POST new wiring.json (validates against schema)
+        elif self.path == "/wiring":            # Hot-reload: POST new wiring.json (validates against schema)
+            if not body:
+                self._j({"error": "wiring body required"}, 400)
+                return
             errs = validate_wiring(body)
             if errs:
                 self._j({"error": "validation failed", "details": errs}, 400)
                 return
             try:
-                WIRING = body
                 (PROMPTS / "wiring.json").write_text(json.dumps(body, indent=2), encoding="utf-8")
+                WIRING = body
+                apply_instance_env()
+                configure_runtime(WIRING)
                 sse_push("wiring_modified", {"source": "api"})
-                self._j({"reloaded": True, "nodes": len(body.get("topology", {}).get("nodes", []))})
+                self._j({
+                    "reloaded": True,
+                    "nodes": len(WIRING.get("topology", {}).get("nodes", [])),
+                    "summary": wiring_summary(),
+                    "run": run_status_snapshot(),
+                })
             except Exception as e:
                 self._j({"error": str(e)}, 500)
         else:

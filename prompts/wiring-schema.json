@@ -42,8 +42,13 @@
         "max_replans": { "type": "integer", "minimum": 0 },
         "max_cycles": { "type": "integer", "minimum": 1 },
         "history_depth": { "type": "integer", "minimum": 1 },
+        "reasoning_chain_depth": { "type": "integer", "minimum": 1 },
         "bus_max": { "type": "integer", "minimum": 1 },
-        "planner_retries": { "type": "integer", "minimum": 0 }
+        "planner_retries": { "type": "integer", "minimum": 0 },
+        "llm_parse_retries": { "type": "integer", "minimum": 0 },
+        "trace_few_shot": { "type": "integer", "minimum": 0 },
+        "debug_value_max_chars": { "type": "integer", "minimum": 0 },
+        "error_preview_chars": { "type": "integer", "minimum": 0 }
       }
     },
     "verbs": {
@@ -60,6 +65,27 @@
       }
     },
     "context": { "type": "object" },
+    "observe": {
+      "type": "object",
+      "properties": {
+        "min_elements": { "type": "integer", "minimum": 0 },
+        "wait_retries": { "type": "integer", "minimum": 0 },
+        "wait_ms": { "type": "integer", "minimum": 0 },
+        "probe_step_px": { "type": "integer", "minimum": 10 },
+        "probe_delay_ms": { "type": "integer", "minimum": 0 },
+        "dense_probe_min_px": { "type": "integer", "minimum": 10 },
+        "scroll_enrich_min": { "type": "integer", "minimum": 0 },
+        "scroll_enrich_passes": {
+          "type": "array",
+          "items": { "type": "integer" }
+        },
+        "scroll_enrich_delay_ms": { "type": "integer", "minimum": 0 },
+        "read_text_max": { "type": "integer", "minimum": 0 },
+        "node_value_max_chars": { "type": "integer", "minimum": 0 },
+        "render_value_max_chars": { "type": "integer", "minimum": 0 },
+        "window_limit": { "type": "integer", "minimum": 1 }
+      }
+    },
     "moe": { "type": "object" }
   },
   "additionalProperties": false,
