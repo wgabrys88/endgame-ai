@@ -1,127 +1,30 @@
 # endgame-ai
 
-endgame-ai is a local Windows desktop organism driven by a signal graph.
+endgame-ai is a local Windows desktop organism driven by a JSON signal graph.
+Python owns mechanics. `prompts/wiring.json` owns behavior.
 
-The repository is intentionally small. Python owns mechanics: HTTP transport,
-state files, graph routing, desktop observation, deterministic input, and wiring
-validation. Behavior belongs in `prompts/wiring.json`: topology, role prompts,
-guards, limits, prompt inputs, and self-modification policy.
+The project goal is a reliable, collaborative desktop agent that can handle
+complex contingent workflows through the same interface a human uses in the
+browser dashboard and an AI uses over HTTP. The immediate target is:
 
-The current work is about making that organism reliable enough for complex,
-contingent desktop workflows, with a shared step/debug surface that a human can
-operate in the browser and an AI can operate through the same HTTP API.
+```text
+open Chrome
+start a conversation with grok.com about endgame-ai
+continue from Grok's real responses for 3 turns
+save a summary of the conversation in Notepad
+play Shakira Waka Waka on YouTube
+```
 
-## Current State
+This is intentionally hard. It requires real desktop observation, browser state,
+conversation memory, app switching, summary writing, and media playback without
+copying stale trace literals or typing into the wrong window.
 
-The previous session made the core loop materially more truthful and more
-repeatable.
+## Architecture
 
-Implemented and proven:
+The runtime is a signal graph. Nodes are defined in `prompts/wiring.json`,
+executed by `server.py`, and inspected or edited through `wiring-editor.html`.
 
-- ROD is implemented as a two-pass LLM contract for every LLM-backed circuit.
-- `/run` and `/resume` enqueue work on one background runner instead of
-  creating overlapping graph loops.
-- Saved resume state points to the next node rather than the node that already
-  ran.
-- Desktop observation and desktop action calls are serialized.
-- `act` can emit short deterministic chains such as `win+r`, write app name,
-  and `enter`.
-- Chained verbs reuse the observation map that produced the `SCREEN` shown to
-  `act`; they do not rescan before every verb.
-- A configured settle delay between chained verbs replaces the accidental delay
-  that repeated hover scans previously provided.
-- Focused-window actionable elements receive `[ID]` targets.
-- Observations include a non-actionable `WINDOWS:` list of visible top-level
-  window titles.
-- Targeted click/write/scroll actions mechanically focus the cached element's
-  HWND in Python.
-- A targeted write fails if its `[ID]` is not in the cached map.
-- Verifier preflights cover deterministic truths such as successful focus
-  evidence and Run-dialog app-launch chains.
-- `act` no longer receives verifier/reflector reasoning that can poison its
-  schema.
-- `planner` no longer receives broad downstream reasoning that can cause it to
-  copy verdict JSON into future plans.
-- Planner receives traces as structural examples, not as literal tasks to copy.
-- `self_modify` receives a compact current-wiring summary and conservative
-  patch examples.
-- Colony support has been validated with a two-slot delegation proof.
-- A basic dashboard and `/step` endpoint exist for manual stepping.
-
-Previous-session evidence:
-
-- Syntax and wiring JSON parsed cleanly.
-- `/smoke` passed 6/6.
-- Direct observation confirmed `WINDOWS:` is present while `[ID]` scope remains
-  focused-window-only.
-- Ten consecutive real desktop `open notepad` goals completed at roughly 11
-  graph cycles each under a 15-cycle cap.
-
-Implementation additions in this session, pending runtime validation:
-
-- `/step` now returns the executed node, signals, target edges, state patch,
-  full state, next node, and before/after debug context.
-- `/inspect` exposes the current node's wired prompt inputs without executing a
-  graph node.
-- `POST /state` can save an API-provided state object for GUI/API parity.
-- `POST /pause` lets autonomous runs stop between nodes and persist a resume
-  point.
-- `/node/:type` returns the same patch-plus-full-state shape used by the
-  dashboard.
-- The dashboard was rebuilt as a schema-driven wiring workbench with node drag,
-  edge creation/reconnection, generic object editors, state panels, wired input
-  panels, reasoning panels, and debounced hot-reload through `POST /wiring`.
-- `state.memory` and the `remember` verb were added so `act` can store compact
-  response facts or summaries before switching apps or navigating away.
-- Wiring prompts now describe a precise, conservative, safety-first desktop
-  organism that handles contingent browser work through observe, remember,
-  continue, summarize, and write steps.
-
-## ROD Contract
-
-ROD means Reason, Observe, Decide in the actual runtime, not only in prompts.
-Each LLM node follows this contract:
-
-1. Build the node's wired input blocks from current state and wiring.
-2. Call the model once for reasoning content.
-3. Store the reasoning content under the circuit/node for inspection.
-4. Call the model a second time with that reasoning content and the same role
-   contract.
-5. Require the second call to emit exactly one JSON object for that circuit.
-6. Parse and validate the object in Python.
-7. Apply only generic state patches and route along wiring edges.
-
-The model should first deduce what it sees or knows from its wired inputs, then
-produce the circuit's structured output. Non-`act` circuits do not see the
-desktop unless the wiring explicitly gives them a desktop-derived block.
-
-## ROD Invariants
-
-These invariants are part of the runtime contract:
-
-- `prompts/wiring.json` is the behavior source of truth.
-- Python may enforce mechanical facts, but it must not invent task strategy.
-- Only focused-window actionable elements get `[ID]` targets.
-- `WINDOWS:` entries are context, not targets.
-- `act` is the only circuit that receives `SCREEN`.
-- Planner never receives raw desktop UI labels, `[ID]` targets, or `SCREEN`.
-- `act` should not receive verifier or reflector reasoning.
-- Action execution uses the cached observation map that produced the screen
-  shown to `act`.
-- Normal verification relies on action evidence and structured state, not an
-  automatic post-action hover scan.
-- A successful mechanical focus/open action can be confirmed by Python before
-  model verification.
-- `MEMORY` is explicit task state; the model chooses when to store it through
-  the `remember` action, and later circuits consume it only through wired input
-  blocks.
-- Self-modification validates a complete wiring document before hot-reload.
-- The same step/debug operations must be available through GUI controls and
-  HTTP calls.
-
-## Current Graph
-
-The working loop is a signal graph:
+Current graph shape:
 
 ```text
 goal_inbox -> moe_route -> planner -> scheduler -> bus_check -> observe -> act -> verify
@@ -135,216 +38,283 @@ goal_inbox -> moe_route -> planner -> scheduler -> bus_check -> observe -> act -
                                                                             +----> scheduler
 ```
 
-The graph is not a chatbot wrapper. Each node has one constrained job:
+Roles:
 
-- `goal_inbox` normalizes a user goal.
-- `moe_route` decides whether local execution or delegation is appropriate.
-- `planner` creates task-agnostic, current-goal-preserving steps.
-- `scheduler` selects the next step.
-- `bus_check` checks shared colony messages.
-- `observe` captures a bounded desktop view.
-- `act` maps the current step plus `SCREEN` to deterministic verbs.
-- `verify` judges whether the current step is complete.
-- `reflect` diagnoses failure and selects a recovery path.
+- `goal_inbox` normalizes the requested goal.
+- `moe_route` decides local execution or colony delegation.
+- `planner` creates ordered human-level subtasks.
+- `scheduler` selects the current subtask.
+- `bus_check` handles colony interrupts.
+- `observe` captures the focused desktop window plus window awareness.
+- `act` is the only circuit that sees `SCREEN`; it emits deterministic verbs.
+- `verify` judges completion from action evidence and memory.
+- `reflect` diagnoses failed steps.
 - `self_modify` proposes conservative wiring changes.
-- `bus_post` publishes delegation or completion messages.
-- `satisfied` ends the graph.
+- `bus_post` publishes final/delegation state.
+- `satisfied` terminates the graph.
 
-## Methodology
+## ROD Contract
 
-The operating method is brick by brick:
+ROD means Reason, Observe, Decide as a runtime contract:
 
-1. Read the current wiring and plumbing before changing behavior.
-2. Prefer `prompts/wiring.json` for behavior, role, guard, and routing changes.
-3. Use Python only for plumbing contradictions, missing generic endpoints, or
-   deterministic mechanics.
-4. Keep runtime artifacts out of the repository.
-5. Edit only tracked source, documentation, and prompt files.
-6. After edit blocks, run only lightweight static checks when runtime validation
-   is out of scope: JSON parsing, schema parsing, Python AST parsing, and
-   `git diff --check`.
-7. Leave real server runs, `/smoke`, colony runs, and desktop goals for
-   validation sessions.
+1. Build the node's wired input blocks from current state and wiring.
+2. Call the local model once for reasoning.
+3. Store reasoning under the circuit for inspection.
+4. Call the model again with that reasoning and the same role contract.
+5. Require one JSON object in content for the circuit.
+6. Parse and validate the circuit record type.
+7. Apply only generic state patches and route along wiring edges.
 
-The engineering rule is simple: the model handles semantic choice; Python
-handles mechanical truth.
+The model first deduces what it sees or knows from its wired inputs. It then
+emits the constrained decision JSON. Reasoning is inspectable but must not leak
+into circuits that should not see it.
 
-## Immediate Target
+## Invariants
 
-The next target proof is the compound desktop workflow:
+- `prompts/wiring.json` is the behavior source of truth.
+- Python handles mechanical truth: HTTP, graph routing, desktop focus,
+  cached element maps, action execution, state files, wiring validation, and
+  hot-reload.
+- Python must not hardcode task strategy for Grok, Notepad, YouTube, or any
+  future workflow.
+- `act` is the only circuit that receives `SCREEN`.
+- Focused-window `[ID]` targets are actionable only for the observation that
+  produced them.
+- `WINDOWS:` entries are awareness only; they are not element targets.
+- Chained actions use the cached observation map shown to `act`.
+- Normal verification uses action evidence and `MEMORY`, not a hidden post-act
+  screen scan.
+- If visible information must survive app switching, `act` stores it through
+  `remember`.
+- Dashboard actions and HTTP API calls must have parity.
+- The HTML editor must stay schema-driven where `prompts/wiring-schema.json`
+  describes the data, with generic object editors for future fields.
 
-```text
-open Chrome
-start a conversation with grok.com about endgame-ai
-keep the conversation based on Grok's real responses for 3 turns
-save a summary of the conversation in Notepad
-play Shakira Waka Waka on YouTube
-```
+## Current Implementation State
 
-This is intentionally contingent. The organism must read what actually happens
-on the desktop, preserve useful state across turns, avoid stale trace literals,
-write the summary into the correct focused application, and continue into a
-separate browser media task.
+Implemented:
 
-This workflow should be developed through the same collaborative step/debug
-surface used by humans and API clients.
+- two-pass ROD for LLM-backed nodes
+- queued `/run` and `/resume` runner
+- saved resume state at the next node
+- serialized observe/action calls
+- deterministic action chains
+- cached observation reuse across chained verbs
+- focused `[ID]` targets and non-actionable `WINDOWS:` list
+- Python HWND focus for targeted actions
+- rejection of targeted writes to non-writable elements
+- verifier preflights for focus, app launch, and browser navigation evidence
+- trace examples for planner as structure only
+- isolated planner/act reasoning to prevent stale JSON poisoning
+- `state.memory` plus `remember`
+- `/step`, `/inspect`, `/node/:type`, `/state`, `/wiring`, pause/resume, and SSE
+- schema-driven `wiring-editor.html` with graph editing, state panels, wired
+  inputs, reasoning, screen/window split, and hot-reload
+- self-modify with current wiring summary and conservative patch examples
+- observation detail controlled by `wiring.json` instead of hardcoded tiny
+  previews
+- hot-reloaded wiring updates action verbs and observation settings in the live
+  server
+- browser navigation normalization now preserves focus-before-`ctrl+l` order
+- focused-window observation now falls back from shell/Desktop foreground to the
+  top real application window, avoiding mixed shell/browser target maps
+- browser conversation policy now permits deterministic scroll/end/wait
+  recovery before returning `CANNOT`
+- model output budget raised from 2048 to 8192 tokens for longer reasoning and
+  structured decisions
 
-## Step/Debug Workbench Target
+Previously validated:
 
-The dashboard is now implemented as the operational workbench source. It is
-schema-driven from `prompts/wiring-schema.json` where schema detail exists, and
-falls back to generic JSON/object editors for unknown future fields. Runtime
-validation is still pending by design for this implementation-only session.
+- simple desktop `open notepad` streaks completed repeatedly at about 11 cycles
+- dashboard loaded and basic step/debug controls worked
+- `/health` and `/smoke` passed in prior validation runs
 
-Required properties:
+Real compound run state on 2026-06-21:
 
-- Load and render the live `prompts/wiring.json` graph.
-- Represent nodes as editable boxes and edges as editable connections.
-- Support adding, removing, editing, and reconnecting nodes and edges.
-- Hot-reload valid wiring through `POST /wiring`.
-- Show current node, next node, state patch, signals, and full state after
-  every step.
-- Show wired inputs such as `SCREEN`, `HISTORY`, `COMPLETED_STEPS`,
-  `CURRENT_WIRING`, action evidence, and reasoning content.
-- Separate focused `[ID]` targets from the non-target `WINDOWS:` list.
-- Support pause, resume, inspect, and one-step execution.
-- Provide parity between GUI controls and HTTP calls.
-- Avoid hardcoded future wiring fields where the schema can drive editors.
-
-The long-term plan is a fully operational schema-driven interactive
-step/debug workbench where a human and an AI can collaborate on the same graph
-state without hidden side channels.
+- A real compound run exposed a generic navigation bug: inserting `ctrl+l`
+  before a model-emitted browser focus selected the wrong window. The fix is now
+  generic chain normalization, not Grok-specific logic.
+- A resumed real run then proved the navigation fix: Chrome was focused,
+  `ctrl+l` selected the address bar, `grok.com` was typed, and Grok loaded.
+- The run reached `state.step == 7` and stopped at the scheduler for:
+  `write summary of conversation to Notepad`.
+- `state.json` is ignored by git but intentionally left local as resumable run
+  data. Current resume node: `scheduler`.
+- Memory contains three real Grok capture keys:
+  `grok_turn_1_response`, `grok_turn_2_response`, and
+  `grok_turn_3_response`.
+- Completed real workflow evidence: Chrome/Grok navigation, initial Grok
+  message submission, first response memory, follow-up submission, second
+  response memory, third message submission, and third response memory.
+- Remaining workflow work: open/focus Notepad, write a memory-derived summary,
+  verify the Notepad content, then navigate/search YouTube and verify Waka Waka
+  playback.
+- Open reliability gap from the stopped run: `act` returned `CANNOT` when asked
+  to write the summary to Notepad while Grok was still focused. Planner/act
+  wiring should split this into open/focus Notepad, write summary from MEMORY,
+  then continue to YouTube.
 
 ## HTTP Surface
 
-Current and target-compatible endpoints:
-
 ```text
-GET  /                         Dashboard
-GET  /health                   Node registry, slot, run status, capabilities
-GET  /smoke                    Six-point self-test
+GET  /                         Workbench
+GET  /health                   Runtime status and capabilities
 GET  /state                    Last persisted state
-GET  /bus                      Shared bus contents
-GET  /wiring                   Current wiring
-GET  /wiring-schema            Wiring schema for dashboard/editor
-GET  /events                   SSE stream
+GET  /bus                      Colony bus
+GET  /wiring                   Live wiring
+GET  /wiring-schema            Editor schema
+GET  /events                   SSE events
 
-POST /run        {"goal": "..."}           Queue autonomous run
-POST /resume                              Queue saved-state resume
-POST /pause                               Request pause between run nodes
-POST /step       {"goal","state","node"}    Execute one graph transition with debug context
-POST /inspect    {"goal","state","node"}    Inspect wired inputs without executing
-POST /state      {"state": {...}}           Save API-provided state
-POST /node/:type {"state": {...}}          Call one node type and return patch/full state
-POST /wiring     {full wiring.json}        Validate and hot-reload wiring
-POST /interrupt  {"goal": "..."}           Post slot interrupt
-POST /push       {"type":"..","text":".."} Dashboard event push
-POST /bus/post   {message}                 Append bus message
+POST /run        {"goal": "..."}             Queue autonomous run
+POST /resume                                Resume saved state
+POST /pause                                 Pause between nodes
+POST /step       {"goal","state","node"}      Execute one node transition
+POST /inspect    {"goal","state","node"}      Inspect wired inputs
+POST /state      {"state": {...}}             Save state
+POST /node/:type {"state": {...}}             Execute one node handler
+POST /wiring     {full wiring.json}          Validate and hot-reload wiring
+POST /interrupt  {"goal": "..."}             Bus interrupt
+POST /push       {"type":"...","text":"..."} Dashboard event push
+POST /bus/post   {message}                   Append bus message
 ```
 
-The important parity rule: anything the dashboard can do should be expressible
-as one of these HTTP operations, and anything an API client can do should be
-visible in the dashboard.
+Parity rule: anything the GUI can do must be possible through HTTP, and HTTP
+state changes must be visible in the GUI.
+
+## Methodology
+
+Work brick by brick:
+
+1. Inspect the exact state or failure.
+2. Decide whether the defect is behavior wiring or mechanical plumbing.
+3. Prefer `prompts/wiring.json` for behavior, role contracts, guards, limits,
+   and routing.
+4. Use Python only for generic mechanics the model cannot reliably infer.
+5. Keep runtime artifacts out of tracked files.
+6. Validate with real `/step` runs when the session authorizes runtime work.
+7. Move lessons from the target workflow back into task-agnostic wiring or
+   generic plumbing.
+
+Do not solve the compound target by hardcoding the target. The correct product
+is a wiring-first organism that can self-debug and evolve behavior through JSON.
 
 ## Files
 
-Tracked essentials:
-
 ```text
 server.py                  HTTP server, graph runner, LLM calls, node handlers
-desktop.py                 Windows desktop observation and input via stdlib ctypes
-actions.py                 Verb dispatcher and simulation stub
-colony.py                  Multi-slot local rod launcher
-wiring-editor.html         Human/debug UI for run, step, state, topology
-prompts/wiring.json        Brain: topology, prompts, guards, limits, verbs
-prompts/model.json         Local model endpoint configuration
-prompts/wiring-schema.json Wiring schema for validation and future UI generation
+desktop.py                 Windows desktop observation/input via ctypes
+actions.py                 Data-driven verb dispatcher
+colony.py                  Multi-slot local runner
+wiring-editor.html         Human/API step-debug workbench
+prompts/wiring.json        Behavior graph, prompts, guards, limits, verbs
+prompts/wiring-schema.json Schema for validation and editor generation
+prompts/model.json         Local model endpoint and generation budget
 README.md                  Operational handover
-RESEARCH.md                Product/research direction and next proof
-.gitignore                 Allowlist: only essentials are commit candidates
-.gitattributes             Line-ending normalization
-LICENSE
+RESEARCH.md                Direction, risks, and proof plan
 ```
 
-Ignored runtime artifacts include `bus.json`, `state.json`,
-`prompts/traces.jsonl`, `prompts/wiring.backup.json`, caches, logs, and other
-generated files.
+Ignored runtime files include `state.json`, `bus.json`,
+`prompts/traces.jsonl`, `prompts/wiring.backup.json`, caches, and logs.
+The allowlist `.gitignore` is intentional: source/docs/prompts are committed,
+while local run state and traces remain on disk for resume/debug unless a human
+explicitly cleans them.
 
-## Reliability Notes
+## Immediate Validation Loop
 
-The prior reliability gains came from reducing contradiction:
+For this target, use real step-by-step server runs, not simulated tests. If the
+local `state.json` from 2026-06-21 is still present, resume from it first; it is
+at the Notepad-summary stage with three Grok memory entries.
 
-- Focus is mechanical when acting on a visible `[ID]`.
-- Planner should not invent focus-preparation subtasks for normal targeted
-  click/write work.
-- `WINDOWS:` helps identify existing windows without expanding target scope.
-- Short deterministic chains are safer than many single-step scan/action loops
-  when the UI transition is known.
-- Verifier preflights should cover facts Python already knows.
-- Traces are useful as structural patterns only.
-- Self-modification should patch conservative prompt or wiring defects rather
-  than make broad topology changes during a live failure.
+1. Start the server.
+2. Use `/health` only to confirm the server is alive and not in simulation.
+3. Inspect `/state`; if `_resume_node` is `scheduler` and `step` is `7`,
+   continue from the saved run.
+4. Inspect `state`, `screen`, `last_actions_raw`, `last_outcome`, `memory`,
+   and `reasoning_chain`.
+5. Drive the goal through `/step` in small chunks.
+6. Patch wiring first when the model policy is wrong.
+7. Patch Python only for generic contradictions such as wrong chain ordering,
+   too-narrow observation, stale hot-reload, or unsafe action mechanics.
+8. Restart from clean runtime artifacts only after the useful run state has
+   been summarized or intentionally discarded.
+9. Final proof requires visible evidence of Grok conversation memory, Notepad
+   summary content, and YouTube playback.
 
-These rules matter more for browser workflows than simple app-launch goals,
-because stale state and copied literals are more damaging when each turn depends
-on a real response.
+## Handover Prompts
 
-## Appendix: Meta-Format Handover
+Use these prompts when handing the project to another AI coding provider.
 
-```yaml
-handover:
-  project: endgame-ai
-  repository: https://github.com/wgabrys88/endgame-ai
-  local_workspace: C:\Users\px-wjt\Downloads\endgame-ai
-  date: 2026-06-21
-  mission:
-    Implement the wiring-first organism so it can handle complex contingent
-    Windows desktop workflows through a collaborative human/API step debugger.
-  previous_session_state:
-    proven:
-      - two-pass ROD calls are implemented for LLM nodes
-      - autonomous runs use a queued background runner
-      - resume continues at the next node
-      - observe/action calls are serialized
-      - act supports deterministic short chains
-      - chained actions use cached observation targets
-      - observations include focused [ID] targets plus a WINDOWS list
-      - verifier has deterministic preflights for focus and app launch evidence
-      - planner and act are isolated from stale downstream reasoning
-      - traces are structural examples for planner
-      - self_modify sees a compact wiring summary
-      - two-slot colony delegation was validated
-      - open-notepad completed 10 consecutive times at about 11 cycles
-    implemented_this_session_static_only:
-      - /step returns transition/debug context for GUI and API users
-      - /inspect, POST /state, and POST /pause were added
-      - /node/:type now returns state_patch plus full state
-      - dashboard is schema-driven with editable nodes, edges, generic fields,
-        wired input inspection, reasoning inspection, and hot-reload saves
-      - edge creation/reconnection and node dragging are implemented in SVG
-      - state.memory plus remember verb support contingent response carryover
-      - prompts were refined for browser conversation, summary, Notepad, and
-        YouTube-style compound workflows without hardcoding the task
-    not_yet_proven:
-      - Grok three-turn contingent browser dialogue
-      - Notepad summary save after browser work
-      - YouTube Waka Waka playback after the summary
-      - runtime behavior of the new dashboard and memory support
-  immediate_target:
-    Validate the schema-driven wiring/step workbench and memory-aware prompts
-    against the compound Chrome/Grok/Notepad/YouTube workflow.
-  methodology:
-    - edit tracked files only
-    - rewrite behavior in prompts/wiring.json whenever possible
-    - change Python only for generic plumbing or mechanical contradictions
-    - do not create runtime artifacts
-    - do not run servers, /smoke, colony tests, desktop streaks, or goals in
-      implementation-only sessions
-    - after edit blocks, run static checks only
-  next_ai_session_start:
-    - read README.md and RESEARCH.md
-    - inspect git diff and tracked status
-    - if in validation mode, start the server and use GUI/API /step side by side
-    - step through Chrome open, Grok conversation, Notepad summary, and YouTube
-    - move task-specific lessons back into wiring prompts or generic plumbing
+### Implementation Continuation Prompt
+
+```text
+You are working in the local clone of endgame-ai. Continue implementation until
+the system is a wiring-first Windows desktop organism: behavior in
+prompts/wiring.json, schema-driven editing in wiring-editor.html, Python only
+for generic mechanics, and no task-specific Grok/Notepad/YouTube hardcoding.
+
+Read README.md, RESEARCH.md, server.py, actions.py, desktop.py,
+prompts/wiring.json, prompts/wiring-schema.json, and wiring-editor.html before
+editing. Preserve GUI/API parity for /step, /inspect, /state, /wiring, and
+/node/:type. Prefer wiring changes for prompts, guards, limits, and routing.
+Use Python only for mechanical contradictions.
+
+Known focus areas:
+- deepen observation without arbitrary tiny truncation
+- keep live hot-reload synchronized with action and observation runtime
+- ensure browser navigation focuses the browser before ctrl+l
+- make planner produce contingent submit/remember/follow-up steps
+- make act use remember before app switches
+- make planner split summary-to-Notepad into open/focus Notepad and write
+  MEMORY-derived summary
+- keep self_modify conservative and wiring-aware
+
+Current stopped state:
+- all servers/tests were stopped on request
+- ignored state.json resumes at scheduler, step 7
+- current step is write summary of conversation to Notepad
+- memory has grok_turn_1_response, grok_turn_2_response, grok_turn_3_response
+- remaining proof is Notepad summary, then YouTube Waka Waka playback
+```
+
+### Real Validation Prompt
+
+```text
+Run only real step-by-step validation through the local server. Do not rely on
+simulated tests for the compound proof. First inspect state.json. If it matches
+the 2026-06-21 stopped state, resume it instead of starting over:
+
+resume node: scheduler
+step: 7
+current step: write summary of conversation to Notepad
+memory keys: grok_turn_1_response, grok_turn_2_response, grok_turn_3_response
+
+If state.json is absent or intentionally discarded, start from clean
+state.json/bus.json, confirm /health reports simulation=false, then step the
+target goal in small chunks:
+
+open Chrome; go to grok.com; ask about endgame-ai; remember Grok response 1;
+send a follow-up based on memory; remember response 2; send a follow-up based
+on memory; remember response 3; save a summary to Notepad; play Shakira Waka
+Waka on YouTube.
+
+After each chunk inspect state.current_step, screen, last_actions_raw,
+last_outcome, memory, last_error, and reasoning_chain. If a failure is generic,
+patch wiring or Python, restart the server, preserve or summarize useful
+runtime state, and rerun from the smallest useful real slice.
+```
+
+### Debug Patch Prompt
+
+```text
+When a real run fails, classify the failure before editing:
+
+1. Behavior prompt/guard/limit/routing problem: patch prompts/wiring.json.
+2. Schema/editor parity problem: patch wiring-schema.json and
+   wiring-editor.html.
+3. Generic runtime contradiction: patch server.py, actions.py, or desktop.py.
+4. Task-specific workaround: reject it and find the reusable rule.
+
+Every patch must preserve the invariant that Python is mechanics and wiring is
+behavior. The final answer must report real step evidence, remaining risk, and
+whether helper processes were stopped and runtime artifacts cleaned.
 ```

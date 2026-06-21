@@ -77,10 +77,14 @@ def validate_wiring(w):
     return errs
 
 try:
-    from actions import execute_verb, observe_screen
+    from actions import execute_verb, observe_screen, configure_runtime
 except Exception:
     def observe_screen(): return "(desktop not available)"
     def execute_verb(verb, target, value=""): return f"[stub] {verb} {target} {value}"
+    def configure_runtime(_wiring): pass
+
+
+configure_runtime(WIRING)
 
 # ─── Wiring accessors (policy lives in wiring.json — Python only executes) ───
 
@@ -90,6 +94,16 @@ def wiring_limit(key, default=None):
 def wiring_error(key, **fmt):
     msg = WIRING.get("errors", {}).get(key, key)
     return msg.format(**fmt) if fmt else msg
+
+def preview_text(text, limit_key="debug_value_max_chars", default=1200):
+    text = str(text or "")
+    try:
+        limit = int(wiring_limit(limit_key, default) or 0)
+    except (TypeError, ValueError):
+        limit = default
+    if limit <= 0:
+        return text
+    return text[:limit]
 
 LLM_NODE_TYPES = frozenset({"planner", "act", "verify", "reflect", "self_modify"})
 
@@ -653,6 +667,25 @@ def normalize_action_chain(state, actions):
     """Apply deterministic safety normalizations that do not change task intent."""
     out = [dict(a) for a in actions]
     if _is_browser_navigation_step(state) and any(a.get("verb") == "write" and a.get("value") for a in out):
+        def is_ctrl_l(action):
+            combo = (action.get("target") or action.get("value") or "").lower()
+            return (
+                action.get("verb") == "hotkey"
+                and "ctrl" in combo
+                and "l" in combo
+            )
+
+        first_write = next((i for i, a in enumerate(out) if a.get("verb") == "write" and a.get("value")), len(out))
+        prefix = out[:first_write]
+        suffix = out[first_write:]
+        focus_prefix = [a for a in prefix if a.get("verb") == "focus"]
+        ctrl_l_prefix = [a for a in prefix if is_ctrl_l(a)]
+        other_prefix = [a for a in prefix if a.get("verb") != "focus" and not is_ctrl_l(a)]
+        if focus_prefix or ctrl_l_prefix:
+            if not ctrl_l_prefix:
+                ctrl_l_prefix = [{"verb": "hotkey", "target": "ctrl+l", "value": ""}]
+            out = focus_prefix + other_prefix + ctrl_l_prefix + suffix
+
         has_ctrl_l = any(
             a.get("verb") == "hotkey"
             and "ctrl" in (a.get("target") or a.get("value") or "").lower()
@@ -660,7 +693,10 @@ def normalize_action_chain(state, actions):
             for a in out
         )
         if not has_ctrl_l:
-            out.insert(0, {"verb": "hotkey", "target": "ctrl+l", "value": ""})
+            insert_at = 0
+            while insert_at < len(out) and out[insert_at].get("verb") == "focus":
+                insert_at += 1
+            out.insert(insert_at, {"verb": "hotkey", "target": "ctrl+l", "value": ""})
         has_enter = any(
             a.get("verb") in ("press", "hotkey")
             and "enter" in (a.get("target") or a.get("value") or "").lower()
@@ -792,7 +828,7 @@ def node_act(state, _):
     parsed = r["parsed"]
     patch = dict(r["patch"])
     if not parsed:
-        preview = (r.get("content") or "")[:200].replace("\n", " ")
+        preview = preview_text(r.get("content") or "", "error_preview_chars", 1200).replace("\n", " ")
         patch["last_error"] = wiring_error("parse_failed") + f" (content: {preview!r})"
         print(f"       [!] act parse_failed: {patch['last_error']}")
         return {"signals": ["act_failed"], "patch": patch}
@@ -874,9 +910,9 @@ def node_act(state, _):
             result = execute_verb(verb, target, value)
         label = target
         if verb == "write" and value:
-            label = f"{target or 'focused'} value={value[:80]!r}"
+            label = f"{target or 'focused'} value={preview_text(value)!r}"
         if verb == "remember" and value:
-            label = f"{target or 'note'} value={value[:80]!r}"
+            label = f"{target or 'note'} value={preview_text(value)!r}"
         results.append(f"{verb} {label}: {result}")
         if str(result).upper().startswith("FAILED"):
             failed = True
@@ -1144,6 +1180,7 @@ def node_self_modify(state, _):
         # Write and hot-reload
         wiring_path.write_text(json.dumps(current, indent=2), encoding="utf-8")
         WIRING = current
+        configure_runtime(WIRING)
         sse_push("wiring_modified", {"op": op, "payload": payload})
         patch.update({"self_modify_op": op, "self_modify_payload": payload})
         return {"signals": ["modified"], "patch": patch}
@@ -1487,6 +1524,7 @@ class H(http.server.BaseHTTPRequestHandler):
                 (PROMPTS / "wiring.json").write_text(json.dumps(body, indent=2), encoding="utf-8")
                 WIRING = body
                 apply_instance_env()
+                configure_runtime(WIRING)
                 sse_push("wiring_modified", {"source": "api"})
                 self._j({
                     "reloaded": True,

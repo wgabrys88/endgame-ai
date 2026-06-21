@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 try:
-    from desktop import Desktop, Element, Observation
+    from desktop import Desktop, Element, Observation, configure_observation
 except Exception:
     # Linux/non-Windows: define stubs for sim mode
     @dataclass(slots=True)
@@ -20,6 +20,8 @@ except Exception:
         focused_title: str; elements: dict; context_text: str
 
     Desktop = None
+
+    def configure_observation(_config=None): pass
 
 
 @dataclass(slots=True)
@@ -150,6 +152,17 @@ class ActionExecutor:
                 return ActionResult(verb, True, f"focused '{title}'")
             return ActionResult(verb, False, f"window '{title}' not found")
 
+        if verb == "wait":
+            import time
+            raw = args.get(cfg.get("amount_field", "value"), args.get("value", args.get("target", "")))
+            try:
+                ms = int(raw or 1000)
+            except (TypeError, ValueError):
+                ms = 1000
+            ms = max(100, min(ms, 30000))
+            time.sleep(ms / 1000.0)
+            return ActionResult(verb, True, f"waited {ms} ms")
+
         if verb == "inspect":
             # Re-observe with deeper detail — returns updated screen info
             try:
@@ -167,6 +180,7 @@ _desktop = None
 _executor = None
 _desktop_lock = threading.RLock()
 _last_observation = None
+_runtime_wiring = None
 
 _ELEMENT_VERBS = frozenset({"click", "scroll"})
 
@@ -176,11 +190,22 @@ def _simulation_enabled(wiring: dict) -> bool:
         return True
     return bool(wiring.get("runtime", {}).get("simulation_mode", False))
 
+def configure_runtime(wiring: dict[str, Any] | None) -> None:
+    """Accept live wiring updates from server.py without recreating the desktop."""
+    global _runtime_wiring, _executor
+    with _desktop_lock:
+        _runtime_wiring = dict(wiring or {})
+        configure_observation(_runtime_wiring.get("observe", {}))
+        if _desktop is not None:
+            _executor = ActionExecutor(_desktop, _runtime_wiring)
+
+
 def _init():
     global _desktop, _executor
     if _desktop is None:
         import json, pathlib
-        wiring = json.loads((pathlib.Path(__file__).parent / "prompts" / "wiring.json").read_text(encoding="utf-8"))
+        wiring = _runtime_wiring or json.loads((pathlib.Path(__file__).parent / "prompts" / "wiring.json").read_text(encoding="utf-8"))
+        configure_observation(wiring.get("observe", {}))
         if _simulation_enabled(wiring):
             _desktop = _SimStub()
         else:
