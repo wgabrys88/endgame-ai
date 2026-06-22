@@ -559,7 +559,7 @@
     "probe_step_px": 40,
     "probe_delay_ms": 1,
     "hover_scan_enabled": true,
-    "hover_scan_step_px": 40,
+    "hover_scan_step_px": 70,
     "hover_scan_delay_ms": 1,
     "dense_probe_min_px": 24,
     "scroll_enrich_min": 3,

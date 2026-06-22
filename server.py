@@ -1237,11 +1237,13 @@ def _verify_preflight_confirmed(state):
     )
     if navigation_done and address_ready and typed and typed in done_when and "enter" in submitted:
         return True
-    if "open" in done_when and len(actions) >= 3:
+    # Win+R -> type -> Enter is structurally unambiguous (launch via Run dialog).
+    # Confirm without requiring done_when match.
+    if len(actions) >= 3:
         verbs = [a.get("verb", "") for a in actions]
         hotkey = (actions[0].get("target") or "").lower()
         pressed = " ".join((a.get("target") or a.get("value") or "") for a in actions if a.get("verb") == "press").lower()
-        if verbs[:3] == ["hotkey", "write", "press"] and "win" in hotkey and "r" in hotkey and typed and typed in done_when and "enter" in pressed:
+        if verbs[:3] == ["hotkey", "write", "press"] and "win" in hotkey and "r" in hotkey and typed and "enter" in pressed:
             return True
     if not any(word in done_when for word in ("open", "focused", "active window", "current window", "load", "page", "navigate", "url", "website", "site")):
         return False

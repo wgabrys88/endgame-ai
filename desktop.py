@@ -21,7 +21,7 @@ OBSERVE_DEFAULTS = {
     "probe_step_px": PROBE_STEP_PX,
     "probe_delay_ms": int(PROBE_DELAY * 1000),
     "hover_scan_enabled": True,
-    "hover_scan_step_px": 40,
+    "hover_scan_step_px": 70,
     "hover_scan_delay_ms": int(PROBE_DELAY * 1000),
     "dense_probe_min_px": 24,
     "scroll_enrich_min": SCROLL_ENRICH_MIN,
@@ -410,9 +410,6 @@ class Desktop:
         z_index = {int(w["hwnd"]): int(w["z"]) for w in window_infos}
         overlay_hwnds = self._overlay_hwnds(focused_hwnd, rect, window_infos)
 
-        nodes = self._probe(x0, y0, x1, y1, focused_hwnd, step=probe_step, window_infos=window_infos)
-        seen = {self._node_key(n) for n in nodes}
-
         def merge(found: list[dict[str, Any]]) -> int:
             before = len(nodes)
             for n in found:
@@ -422,25 +419,32 @@ class Desktop:
                     nodes.append(n)
             return len(nodes) - before
 
-        probe_stats["primary_found"] = len(nodes)
-        for info in window_infos:
-            hwnd = int(info.get("hwnd", 0) or 0)
-            rect = info.get("rect")
-            if hwnd not in overlay_hwnds or not rect:
-                continue
-            found = self._probe(rect[0], rect[1], rect[2], rect[3], focused_hwnd, step=probe_step, window_infos=window_infos)
-            probe_stats["overlay_probe_used"] = True
-            probe_stats["overlay_probe_points"] += self._probe_point_count(rect[0], rect[1], rect[2], rect[3], probe_step)
-            probe_stats["overlay_probe_found"] += len(found)
-            probe_stats["overlay_probe_added"] += merge(found)
+        # Single-pass: when hover_scan_enabled, one full-screen sweep replaces
+        # the separate primary + overlay + hover passes (3x fewer points).
         if probe_stats["hover_scan_enabled"]:
             hover_step = max(10, _obs_int("hover_scan_step_px", probe_step))
-            found = self._probe(0, 0, screen_w, screen_h, focused_hwnd, step=hover_step, delay_key="hover_scan_delay_ms", window_infos=window_infos)
+            nodes = self._probe(0, 0, screen_w, screen_h, focused_hwnd, step=hover_step, delay_key="hover_scan_delay_ms", window_infos=window_infos)
+            seen = {self._node_key(n) for n in nodes}
             probe_stats["hover_scan_used"] = True
             probe_stats["hover_scan_step"] = hover_step
             probe_stats["hover_scan_points"] = self._probe_point_count(0, 0, screen_w, screen_h, hover_step)
-            probe_stats["hover_scan_found"] = len(found)
-            probe_stats["hover_scan_added"] = merge(found)
+            probe_stats["hover_scan_found"] = len(nodes)
+            probe_stats["hover_scan_added"] = len(nodes)
+            probe_stats["primary_found"] = 0
+        else:
+            nodes = self._probe(x0, y0, x1, y1, focused_hwnd, step=probe_step, window_infos=window_infos)
+            seen = {self._node_key(n) for n in nodes}
+            probe_stats["primary_found"] = len(nodes)
+            for info in window_infos:
+                hwnd = int(info.get("hwnd", 0) or 0)
+                rect = info.get("rect")
+                if hwnd not in overlay_hwnds or not rect:
+                    continue
+                found = self._probe(rect[0], rect[1], rect[2], rect[3], focused_hwnd, step=probe_step, window_infos=window_infos)
+                probe_stats["overlay_probe_used"] = True
+                probe_stats["overlay_probe_points"] += self._probe_point_count(rect[0], rect[1], rect[2], rect[3], probe_step)
+                probe_stats["overlay_probe_found"] += len(found)
+                probe_stats["overlay_probe_added"] += merge(found)
         if len(nodes) < enrich_min:
             dense_step = max(_obs_int("dense_probe_min_px", 45), probe_step // 2)
             probe_stats["dense_used"] = True
