@@ -4,7 +4,7 @@ Endgame-ai is a local Windows desktop agent organism. It observes the desktop, p
 
 This README is the handover source of truth for humans and for any agentic coding AI that continues the project. Read it before changing code.
 
-Last updated: 2026-06-22.
+Last updated: 2026-06-22 (render filters + first autonomous goal).
 
 Workspace:
 
@@ -48,6 +48,11 @@ Implemented and verified:
   - `render_value_max_chars`
   - `tree_value_max_chars`
   - `render_tree_value_max_chars`
+- Observe render filters reduce SCREEN token count for the 4B model:
+  - `render_class_name`
+  - `render_automation_id`
+  - `render_window_per_element`
+  - `desktop_tree_enabled`
 - Observe filters are live in wiring:
   - `scope_depth`
   - `element_text_max`
@@ -65,8 +70,8 @@ Implemented and verified:
 
 Not complete yet:
 
-- A live LLM-driven self-modification escalation cycle has not yet been exercised after the patch-engine upgrade.
-- A full autonomous end-to-end desktop goal has not yet been completed after these changes.
+- A live LLM-driven self-modification escalation cycle has been exercised (set_limit op confirmed).
+- A full autonomous end-to-end desktop goal (open notepad, write text) has been completed with render filters.
 - Python still contains behavioral guard helpers that should shrink over time.
 - There is no formal automated test suite.
 - Desktop tree output can still be noisy under broad filters.
@@ -186,6 +191,10 @@ Current observe config:
   "scope_depth": 4,
   "element_text_max": 500,
   "render_focused_first": true,
+  "render_class_name": false,
+  "render_automation_id": true,
+  "render_window_per_element": false,
+  "desktop_tree_enabled": false,
   "desktop_tree_max_depth": 8,
   "desktop_tree_max_nodes": 900
 }

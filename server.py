@@ -58,6 +58,9 @@ OBSERVE_RULES = {
     "desktop_tree_child_limit": (int, 1),
     "overlay_window_limit": (int, 1),
     "window_scan_limit": (int, 1),
+    "render_class_name": (bool, None),
+    "render_automation_id": (bool, None),
+    "render_window_per_element": (bool, None),
 }
 
 

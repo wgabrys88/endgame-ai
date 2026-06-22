@@ -38,6 +38,9 @@ OBSERVE_DEFAULTS = {
     "desktop_tree_child_limit": 180,
     "overlay_window_limit": 48,
     "window_scan_limit": 256,
+    "render_class_name": True,
+    "render_automation_id": True,
+    "render_window_per_element": True,
 }
 OBSERVE_CONFIG = dict(OBSERVE_DEFAULTS)
 
@@ -1315,10 +1318,12 @@ class Desktop:
             rendered += 1
             scope = bucket.split("_", 1)[0] if bucket.startswith("focused_") else bucket
             preview = _obs_text(value)
+            show_aid = _obs_bool("render_automation_id", True)
+            show_class = _obs_bool("render_class_name", True)
             identity_bits = []
-            if n.get("automation_id"):
+            if show_aid and n.get("automation_id"):
                 identity_bits.append(f"aid={_obs_text(n.get('automation_id', ''))}")
-            if n.get("class_name"):
+            if show_class and n.get("class_name"):
                 identity_bits.append(f"class={_obs_text(n.get('class_name', ''))}")
             identity = (" " + " ".join(identity_bits)) if identity_bits else ""
             root_hwnd = int(n.get("root_hwnd") or n.get("hwnd", 0) or 0)
@@ -1334,7 +1339,10 @@ class Desktop:
                 else:
                     desc = f'[{eid}] {role}'
                 desc += identity
-                desc += f' @{scope} "{wnd_title}"'
+                if _obs_bool("render_window_per_element", True):
+                    desc += f' @{scope} "{wnd_title}"'
+                else:
+                    desc += f" @{scope}"
                 elements[eid] = Element(
                     id=eid, role=role, name=name, value=value,
                     hwnd=root_hwnd or n["hwnd"], px=n["x"], py=n["y"], pw=n["w"], ph=n["h"],

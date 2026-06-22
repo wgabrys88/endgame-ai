@@ -93,7 +93,10 @@
         "desktop_tree_max_nodes": { "type": "integer", "minimum": 1 },
         "desktop_tree_child_limit": { "type": "integer", "minimum": 1 },
         "overlay_window_limit": { "type": "integer", "minimum": 1 },
-        "window_scan_limit": { "type": "integer", "minimum": 1 }
+        "window_scan_limit": { "type": "integer", "minimum": 1 },
+        "render_class_name": { "type": "boolean" },
+        "render_automation_id": { "type": "boolean" },
+        "render_window_per_element": { "type": "boolean" }
       },
       "additionalProperties": false
     },
