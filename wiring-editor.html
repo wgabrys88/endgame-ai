@@ -42,13 +42,21 @@ textarea{resize:vertical;font-family:var(--mono);font-size:11px;line-height:1.45
 .box .body{padding:7px 8px}
 .kv{display:grid;grid-template-columns:96px minmax(0,1fr);gap:4px 8px;font:11px var(--mono)}
 .kv b{color:var(--muted);font-weight:500}
-.kv span{overflow-wrap:anywhere}
+.kv span{overflow-wrap:anywhere;white-space:pre-wrap}
 .list{display:flex;flex-direction:column;gap:4px}
 .item{border:1px solid var(--line);background:#0b0d10;border-radius:4px;padding:5px 6px;font:11px var(--mono);cursor:pointer;overflow-wrap:anywhere}
 .item:hover,.item.sel{border-color:var(--cyan)}
 .item.done{color:var(--muted);text-decoration:line-through}
 .item.current{border-color:var(--green);color:var(--green)}
 .item.bad{border-color:var(--red);color:var(--red)}
+.item.preflight{border-color:var(--amber);color:var(--amber)}
+.itemHead{display:flex;align-items:center;gap:5px;min-width:0}
+.itemHead span:first-child{flex:1;overflow-wrap:anywhere}
+.pill{display:inline-block;border:1px solid var(--line2);border-radius:999px;padding:1px 5px;font:9px var(--mono);color:var(--muted);white-space:nowrap}
+.pill.green{border-color:var(--green);color:var(--green)}
+.pill.red{border-color:var(--red);color:var(--red)}
+.pill.amber{border-color:var(--amber);color:var(--amber)}
+.ruleMeta{display:flex;gap:4px;flex-wrap:wrap;margin-top:3px}
 .cols{display:grid;grid-template-columns:1fr 1fr;gap:8px;min-height:0}
 .code{font:11px/1.45 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere}
 .muted{color:var(--muted)}.cyan{color:var(--cyan)}.green{color:var(--green)}.red{color:var(--red)}.amber{color:var(--amber)}
@@ -65,8 +73,10 @@ textarea{resize:vertical;font-family:var(--mono);font-size:11px;line-height:1.45
 .node.reflect rect{stroke:#ff8b65}
 .node.satisfied rect{stroke:#58d36d;stroke-dasharray:3 2}
 .node.active rect{stroke:var(--green);stroke-width:2}
+.node.preflight rect{stroke:var(--amber);stroke-width:2.8}
 .node.sel rect{stroke:var(--cyan);stroke-width:2}
 .node.unknown rect{stroke:var(--red);stroke-dasharray:4 3}
+.preflightBadge{font:9px var(--mono);fill:var(--amber);pointer-events:none}
 .edge{stroke:#656d78;stroke-width:1.4;fill:none;marker-end:url(#arrow)}
 .edge.back{stroke:var(--amber);stroke-dasharray:6 4}
 .edge.loop{stroke:var(--violet);stroke-dasharray:4 3}
@@ -97,7 +107,7 @@ textarea{resize:vertical;font-family:var(--mono);font-size:11px;line-height:1.45
 .grow{flex:1}
 .mini{padding:3px 6px;min-height:23px;font-size:11px}
 .log{font:10px/1.55 var(--mono);color:#c3cad1}
-.log div{border-bottom:1px solid #1c2025;padding:2px 0;overflow-wrap:anywhere}
+.log div{border-bottom:1px solid #1c2025;padding:2px 0;overflow-wrap:anywhere;white-space:pre-wrap}
 .screenGrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr) minmax(0,1fr);gap:8px;min-height:0;height:100%;padding:8px}
 .screenGrid .box{margin:0;min-height:0;display:flex;flex-direction:column}
 .screenGrid .body{min-height:0;overflow:auto}
@@ -139,7 +149,9 @@ textarea{resize:vertical;font-family:var(--mono);font-size:11px;line-height:1.45
       <div class="bar"><h2>State</h2><button id="refreshBtn" class="mini">Refresh</button></div>
       <div class="pane">
         <div class="box"><h3>Run</h3><div class="body kv" id="runBox"></div></div>
+        <div class="box"><h3>Timing</h3><div class="body kv" id="timingBox"></div></div>
         <div class="box"><h3>Filters</h3><div class="body form" id="filterBox"></div></div>
+        <div class="box"><h3>Rules</h3><div class="body list" id="ruleBox"></div></div>
         <div class="box"><h3>Plan</h3><div class="body list" id="planList"></div></div>
         <div class="box"><h3>History</h3><div class="body list" id="historyList"></div></div>
         <div class="box"><h3>Wiring</h3><div class="body list" id="sectionList"></div></div>
@@ -189,6 +201,8 @@ const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&g
 const attr=s=>esc(s).replace(/'/g,"&#39;");
 let wiring=null,schema=null,state=null,currentNode=null,selected={kind:null},running=false;
 let logs=[],lastStep=null,inspectData=null,positions={},positionsLoaded=false,graphView=null,drag=null,linkDrag=null,graphPan=null,autoSaveTimer=null,liveRefreshTimer=null;
+let wiringSnapshot=null,lastRuleHit=null,graphFlashes={};
+let perf={goalStart:null,lastEventTs:null,activeNode:null,lastDeltaMs:null,lastVerify:null,nodeRuns:[],tokens:null};
 
 function setStatus(s){$('status').textContent=s}
 function clone(v){return v==null?v:JSON.parse(JSON.stringify(v))}
@@ -198,6 +212,79 @@ function log(kind,msg,data){
   logs.push({t,kind,msg,data}); if(logs.length>700)logs.shift();
   $('tabLog').innerHTML=logs.map(l=>`<div><span class="muted">${l.t}</span> <b>${esc(l.kind)}</b> ${esc(l.msg)} ${l.data?esc(JSON.stringify(l.data)).slice(0,360):''}</div>`).join('');
   $('tabLog').scrollTop=1e9;
+}
+function resetPerf(){
+  perf={goalStart:null,lastEventTs:null,activeNode:null,lastDeltaMs:null,lastVerify:null,nodeRuns:[],tokens:null};
+  lastRuleHit=null;
+  graphFlashes={};
+}
+function eventTs(data){
+  const ts=Number(data?.ts);
+  return Number.isFinite(ts)?ts*1000:Date.now();
+}
+function fmtMs(ms){
+  if(ms==null||!Number.isFinite(ms))return '';
+  return ms>=1000?`${(ms/1000).toFixed(ms>=10000?1:2)}s`:`${Math.round(ms)}ms`;
+}
+function shortJson(v,limit=180){
+  const s=JSON.stringify(v);
+  return s&&s.length>limit?s.slice(0,limit-1)+'...':s;
+}
+function jsonDiff(before,after,path='$',out=[]){
+  if(out.length>320)return out;
+  if(before===after)return out;
+  const beforeObj=before&&typeof before==='object', afterObj=after&&typeof after==='object';
+  if(!beforeObj||!afterObj||Array.isArray(before)!==Array.isArray(after)){
+    out.push(`~ ${path}: ${shortJson(before)} -> ${shortJson(after)}`);
+    return out;
+  }
+  if(Array.isArray(before)||Array.isArray(after)){
+    const max=Math.max(before?.length||0,after?.length||0);
+    for(let i=0;i<max;i++){
+      if(i>=before.length)out.push(`+ ${path}[${i}]: ${shortJson(after[i])}`);
+      else if(i>=after.length)out.push(`- ${path}[${i}]: ${shortJson(before[i])}`);
+      else jsonDiff(before[i],after[i],`${path}[${i}]`,out);
+      if(out.length>320)break;
+    }
+    return out;
+  }
+  const keys=[...new Set([...Object.keys(before||{}),...Object.keys(after||{})])].sort();
+  for(const k of keys){
+    const p=`${path}.${k}`;
+    if(!Object.prototype.hasOwnProperty.call(before,k))out.push(`+ ${p}: ${shortJson(after[k])}`);
+    else if(!Object.prototype.hasOwnProperty.call(after,k))out.push(`- ${p}: ${shortJson(before[k])}`);
+    else jsonDiff(before[k],after[k],p,out);
+    if(out.length>320)break;
+  }
+  return out;
+}
+function captureNodeEvent(data){
+  const ts=eventTs(data);
+  if(!perf.goalStart||Number(data.c)<=1)perf.goalStart=ts;
+  perf.lastDeltaMs=perf.lastEventTs==null?null:ts-perf.lastEventTs;
+  perf.lastEventTs=ts;
+  perf.activeNode={id:data.id,c:data.c,ts};
+}
+function captureResultEvent(data){
+  const ts=eventTs(data);
+  if(!perf.goalStart)perf.goalStart=ts;
+  perf.lastDeltaMs=perf.lastEventTs==null?null:ts-perf.lastEventTs;
+  perf.lastEventTs=ts;
+  const started=perf.activeNode&&perf.activeNode.id===data.id&&String(perf.activeNode.c)===String(data.c)?perf.activeNode.ts:null;
+  const ms=started==null?perf.lastDeltaMs:ts-started;
+  perf.nodeRuns.push({id:data.id,c:data.c,ms,signals:data.s||[],preflight:!!data.preflight,rule:data.rule_id||''});
+  perf.nodeRuns=perf.nodeRuns.slice(-10);
+  if(data.tokens||data.usage)perf.tokens=data.tokens||data.usage;
+  if(data.id==='verify'){
+    perf.lastVerify=data.preflight?`Preflight hit${data.rule_id?`: ${data.rule_id}`:''}`:'LLM verify';
+    if(data.preflight){
+      lastRuleHit={id:data.rule_id||'',verdict:data.rule_verdict||'',description:data.rule_description||'',ts};
+      graphFlashes[data.id]={preflight:true,until:Date.now()+3200};
+      setTimeout(()=>renderGraph(),3300);
+    }else{
+      lastRuleHit=null;
+    }
+  }
 }
 async function api(path,opts={}){
   const r=await fetch(API+path,opts);
@@ -222,6 +309,7 @@ function currentGoal(){return $('goal').value.trim()}
 
 async function loadAll(){
   [wiring,schema]=await Promise.all([api('/wiring'),api('/wiring-schema')]);
+  wiringSnapshot=clone(wiring);
   try{state=await api('/state')}catch{state={}}
   currentNode=state?._resume_node||wiring.topology.cycle_start;
   seedPositions();
@@ -246,6 +334,7 @@ function newSession(){
   state={};
   lastStep=null;
   inspectData=null;
+  resetPerf();
   currentNode=wiring.topology.cycle_start;
   selected={kind:'node',id:currentNode,index:nodeIndex(currentNode)};
   log('session','new',currentGoal());
@@ -258,6 +347,7 @@ async function refreshInspect(){
 }
 async function step(nodeOverride){
   if(!currentGoal()&&!nonEmptyState())throw new Error('goal required');
+  if(!nonEmptyState())resetPerf();
   const node=nodeOverride||currentNode||wiring.topology.cycle_start;
   setStatus(`step ${node}`);
   const payload={goal:currentGoal(),state:nonEmptyState()?state:null,node};
@@ -289,6 +379,7 @@ async function pause(){
 }
 async function resumeSaved(){
   state=await api('/state');
+  resetPerf();
   currentNode=state._resume_node||wiring.topology.cycle_start;
   selected={kind:'node',id:currentNode,index:nodeIndex(currentNode)};
   await refreshInspect();
@@ -400,6 +491,65 @@ function renderFilters(){
   root.querySelectorAll('[data-filter-bool]').forEach(el=>{
     el.onchange=()=>{observe[el.dataset.filterBool]=!!el.checked; afterWiringEdit();};
   });
+}
+function ruleIdSet(){return new Set((wiring?.rules||[]).map(r=>r.id).filter(Boolean))}
+function uniqueRuleId(base='rule'){
+  const clean=String(base||'rule').toLowerCase().replace(/[^a-z0-9_]+/g,'_').replace(/^[^a-z]+/,'rule_').replace(/_+$/,'')||'rule';
+  const ids=ruleIdSet(); let id=clean, i=2;
+  while(ids.has(id))id=`${clean}_${i++}`;
+  return id;
+}
+function addRule(){
+  const rules=wiring.rules||(wiring.rules=[]);
+  const rule={id:uniqueRuleId('new_rule'),phase:'verify',verdict:'deny',description:'new rule',match:{outcome_failed:true}};
+  rules.push(rule);
+  selected={kind:'path',path:`rules.${rules.length-1}`};
+  afterWiringEdit(); renderAll();
+}
+function removeRule(index){
+  const rules=wiring.rules||[];
+  if(index<0||index>=rules.length)return;
+  rules.splice(index,1);
+  if(selected.kind==='path'&&selected.path.startsWith('rules.'))selected={kind:null};
+  afterWiringEdit(); renderAll();
+}
+function renderRules(){
+  const root=$('ruleBox');
+  if(!wiring){root.innerHTML='';return}
+  const rules=wiring.rules||(wiring.rules=[]);
+  const add=`<button class="mini primary" id="addRuleBtn">Add Rule</button>`;
+  const rows=rules.map((r,i)=>{
+    const fired=lastRuleHit?.id&&lastRuleHit.id===r.id;
+    const sel=selected.kind==='path'&&selected.path===`rules.${i}`;
+    const verdict=String(r.verdict||'');
+    const verdictCls=verdict==='confirm'?'green':verdict==='deny'||verdict==='reject'?'red':'';
+    const matchKeys=Object.keys(r.match||{}).join(', ')||'no match';
+    return `<div class="item ${sel?'sel':''} ${fired?'preflight':''}" data-rule="${i}">
+      <div class="itemHead"><span>${esc(r.id||`rule_${i+1}`)}</span><button class="mini danger" data-remove-rule="${i}">Remove</button></div>
+      <div class="ruleMeta"><span class="pill">${esc(r.phase||'')}</span><span class="pill ${verdictCls}">${esc(verdict)}</span>${fired?'<span class="pill amber">fired</span>':''}</div>
+      <span class="muted">${esc(r.description||'')}</span><br><span class="muted">${esc(matchKeys)}</span>
+    </div>`;
+  }).join('');
+  root.innerHTML=add+(rows||'<span class="muted">no rules</span>');
+  $('addRuleBtn').onclick=addRule;
+  root.querySelectorAll('[data-rule]').forEach(el=>el.onclick=()=>{selected={kind:'path',path:`rules.${el.dataset.rule}`};renderAll()});
+  root.querySelectorAll('[data-remove-rule]').forEach(el=>el.onclick=e=>{e.stopPropagation();removeRule(Number(el.dataset.removeRule))});
+}
+function renderTiming(){
+  const root=$('timingBox');
+  const total=perf.goalStart&&perf.lastEventTs?perf.lastEventTs-perf.goalStart:null;
+  const lastRun=perf.nodeRuns[perf.nodeRuns.length-1];
+  const rows=[
+    ['goal time',fmtMs(total)||''],
+    ['event delta',fmtMs(perf.lastDeltaMs)||''],
+    ['active',perf.activeNode?`${perf.activeNode.c||''}:${perf.activeNode.id}`:''],
+    ['last node',lastRun?`${lastRun.c||''}:${lastRun.id} ${fmtMs(lastRun.ms)} ${(lastRun.signals||[]).join(', ')}`:''],
+    ['verify',perf.lastVerify||''],
+    ['rule',lastRuleHit?.id?`${lastRuleHit.id}\n${lastRuleHit.description||''}`:''],
+    ['recent',perf.nodeRuns.map(r=>`${r.c||''}:${r.id} ${fmtMs(r.ms)}${r.preflight?' preflight':''}${r.rule?` ${r.rule}`:''}`).join('\n')],
+    ['tokens',perf.tokens?shortJson(perf.tokens,160):'']
+  ];
+  root.innerHTML=rows.map(([k,v])=>`<b>${esc(k)}</b><span>${esc(v)}</span>`).join('');
 }
 function renderState(){
   const plan=state?.plan||[], stepNo=state?.step||0, tr=lastStep?.transition||{};
@@ -562,12 +712,15 @@ function renderGraph(){
   if(linkDrag){
     out+=`<path class="ghost" d="M${linkDrag.x1},${linkDrag.y1} L${linkDrag.x2},${linkDrag.y2}"/>`;
   }
+  const now=Date.now();
   nodes.forEach(n=>{
     const p=positions[n.id], active=n.id===currentNode||n.id===state?._resume_node, sel=selected.kind==='node'&&selected.id===n.id;
+    const flash=graphFlashes[n.id]&&graphFlashes[n.id].until>now?graphFlashes[n.id]:null;
     const typeClass=String(n.type||'unknown').replace(/[^a-z0-9_-]/gi,'_');
     const unknown=!n.type;
-    out+=`<g class="node ${typeClass} ${active?'active':''} ${sel?'sel':''} ${unknown?'unknown':''}" data-node="${attr(n.id)}" transform="translate(${p.x},${p.y})">`;
+    out+=`<g class="node ${typeClass} ${active?'active':''} ${sel?'sel':''} ${unknown?'unknown':''} ${flash?.preflight?'preflight':''}" data-node="${attr(n.id)}" transform="translate(${p.x},${p.y})">`;
     out+=`<rect width="${p.w}" height="${p.h}" rx="4"/><text x="10" y="19">${esc(n.id)}</text><text class="sub" x="10" y="38">${esc(n.type||'missing type')}</text>`;
+    if(flash?.preflight)out+=`<text class="preflightBadge" x="${p.w-24}" y="13">PF</text>`;
     out+=`<circle class="port" data-port="in" data-node="${attr(n.id)}" cx="0" cy="${p.h/2}" r="5"/>`;
     out+=`<circle class="port" data-port="out" data-node="${attr(n.id)}" cx="${p.w}" cy="${p.h/2}" r="5"/>`;
     out+='</g>';
@@ -860,7 +1013,7 @@ function renderReasoning(){
 }
 function renderAll(){
   if(!wiring)return;
-  renderGraph(); renderState(); renderFilters(); renderInspect(); renderInputs(); renderReasoning();
+  renderGraph(); renderState(); renderTiming(); renderFilters(); renderRules(); renderInspect(); renderInputs(); renderReasoning();
   $('jsonEdit').value=JSON.stringify(wiring,null,2);
 }
 
@@ -901,6 +1054,21 @@ async function saveWiring(auto=false){
   const r=await post('/wiring',wiring);
   setStatus(auto?'wiring hot-reloaded':'wiring saved');
   log('wiring',auto?'hot-reloaded':'saved',r);
+}
+async function handleWiringModified(data){
+  log('wiring','modified',data);
+  const before=clone(wiringSnapshot||wiring||{});
+  try{
+    const next=await api('/wiring');
+    const diff=jsonDiff(before,next);
+    const lines=diff.slice(0,320);
+    if(diff.length>320)lines.push('... diff truncated');
+    const body=lines.length?lines.join('\n'):'no JSON changes';
+    log('diff','wiring diff\n'+body);
+  }catch(e){
+    log('diff','wiring diff unavailable '+e.message);
+  }
+  await loadAll();
 }
 function addNode(){
   const id=uniqueId('observe');
@@ -958,18 +1126,20 @@ try{
   es.addEventListener('push',e=>log('push','event',JSON.parse(e.data)));
   es.addEventListener('node',e=>{
     const data=JSON.parse(e.data);
+    captureNodeEvent(data);
     currentNode=data.id||currentNode;
     log('node','event',data);
     renderAll();
   });
   es.addEventListener('result',e=>{
     const data=JSON.parse(e.data);
+    captureResultEvent(data);
     log('result','event',data);
+    renderTiming(); renderRules(); renderGraph();
     queueLiveRefresh('live result');
   });
   es.addEventListener('wiring_modified',e=>{
-    log('wiring','modified',JSON.parse(e.data));
-    loadAll().catch(err=>log('wiring',err.message));
+    handleWiringModified(JSON.parse(e.data)).catch(err=>log('wiring',err.message));
   });
   es.addEventListener('paused',e=>{
     log('pause','paused',JSON.parse(e.data));

@@ -29,11 +29,15 @@
       },
       "additionalProperties": false
     },
+    "rules": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/rule" }
+    },
     "reasoning": { "type": "object" },
     "prompts": { "type": "object" },
     "guards": { "type": "object" },
     "runtime": { "type": "object" },
-    "act": { "type": "object" },
+    "act": { "$ref": "#/$defs/actConfig" },
     "errors": { "type": "object" },
     "limits": {
       "type": "object",
@@ -93,7 +97,10 @@
         "desktop_tree_max_nodes": { "type": "integer", "minimum": 1 },
         "desktop_tree_child_limit": { "type": "integer", "minimum": 1 },
         "overlay_window_limit": { "type": "integer", "minimum": 1 },
-        "window_scan_limit": { "type": "integer", "minimum": 1 }
+        "window_scan_limit": { "type": "integer", "minimum": 1 },
+        "render_class_name": { "type": "boolean" },
+        "render_automation_id": { "type": "boolean" },
+        "render_window_per_element": { "type": "boolean" }
       },
       "additionalProperties": false
     },
@@ -121,6 +128,115 @@
         "to": { "type": "string", "minLength": 1 },
         "on": { "type": "string", "minLength": 1 }
       },
+      "additionalProperties": false
+    },
+    "rule": {
+      "type": "object",
+      "required": ["id", "phase", "verdict", "description", "match"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+        "phase": { "enum": ["verify", "act"] },
+        "verdict": { "enum": ["confirm", "deny", "reject"] },
+        "description": { "type": "string" },
+        "match": { "$ref": "#/$defs/ruleMatch" }
+      },
+      "additionalProperties": false
+    },
+    "ruleMatch": {
+      "type": "object",
+      "minProperties": 1,
+      "properties": {
+        "outcome_ok": { "type": "boolean" },
+        "outcome_failed": { "type": "boolean" },
+        "actions_include_verb": { "type": "string", "minLength": 1 },
+        "actions_all_verb": { "type": "string", "minLength": 1 },
+        "actions_verb_absent": { "type": "string", "minLength": 1 },
+        "actions_sequence": { "$ref": "#/$defs/stringList" },
+        "actions_wrote_nonempty": { "type": "boolean" },
+        "actions_pressed": { "type": "string", "minLength": 1 },
+        "actions_pressed_absent": { "type": "string", "minLength": 1 },
+        "actions_hotkey_contains": { "$ref": "#/$defs/stringList" },
+        "actions_hotkey_absent": { "$ref": "#/$defs/stringList" },
+        "actions_write_is_url": { "type": "boolean" },
+        "actions_writes_all_url": { "type": "boolean" },
+        "actions_write_target_line_contains": { "$ref": "#/$defs/stringList" },
+        "actions_write_target_line_absent": { "$ref": "#/$defs/stringList" },
+        "actions_click_target_line_contains": { "$ref": "#/$defs/stringList" },
+        "actions_click_target_line_absent": { "$ref": "#/$defs/stringList" },
+        "actions_focus_target_matches": { "$ref": "#/$defs/stringList" },
+        "actions_focus_target_absent": { "$ref": "#/$defs/stringList" },
+        "actions_write_after_hotkey_has_target": { "$ref": "#/$defs/stringList" },
+        "done_when_matches": { "$ref": "#/$defs/stringList" },
+        "done_when_absent": { "$ref": "#/$defs/stringList" },
+        "step_text_matches": { "$ref": "#/$defs/stringList" },
+        "step_text_matches_groups": { "$ref": "#/$defs/stringList" },
+        "step_text_absent": { "$ref": "#/$defs/stringList" },
+        "step_has_domain_needle": { "type": "boolean" },
+        "goal_has_domain": { "type": "boolean" },
+        "screen_contains_domain_needle": { "type": "boolean" },
+        "screen_contains": { "$ref": "#/$defs/stringList" },
+        "focused_title_matches": { "$ref": "#/$defs/stringList" },
+        "focused_title_absent": { "$ref": "#/$defs/stringList" },
+        "focused_contains_action_target": { "type": "boolean" },
+        "focused_has_writable": { "type": "boolean" },
+        "focused_element_role_any": { "$ref": "#/$defs/stringList" },
+        "memory_has_key_from_action": { "type": "boolean" },
+        "memory_stored_by_action": { "type": "boolean" },
+        "memory_value_min_length": { "type": "integer", "minimum": 0 },
+        "memory_value_below_length": { "type": "integer", "minimum": 0 },
+        "memory_value_not_url": { "type": "boolean" },
+        "memory_value_not_title": { "type": "boolean" },
+        "memory_value_not_prior_write": { "type": "boolean" },
+        "memory_value_not_question": { "type": "boolean" },
+        "chain_is_launch": { "type": "boolean" },
+        "chain_launch_then_content_write": { "type": "boolean" },
+        "chain_launch_then_write_min_length": { "type": "integer", "minimum": 0 },
+        "chain_is_navigation": { "type": "boolean" },
+        "chain_is_save": { "type": "boolean" },
+        "chain_wrote_and_submitted": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "stringList": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "actConfig": {
+      "type": "object",
+      "properties": {
+        "valid_conclusions": { "$ref": "#/$defs/stringList" },
+        "reject_conclusions": { "$ref": "#/$defs/stringList" },
+        "verb_normalize": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/verbNormalizer" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "verbNormalizer": {
+      "type": "object",
+      "required": ["from"],
+      "properties": {
+        "from": { "type": "string", "minLength": 1 },
+        "to": { "type": "string" },
+        "target_set": { "type": "string" },
+        "value_set": { "type": "string" },
+        "when_target_contains": { "type": "string" },
+        "when_target_is": { "type": "string" },
+        "when_target_empty": { "type": "boolean" },
+        "when_target_nonempty": { "type": "boolean" },
+        "when_value_empty": { "type": "boolean" },
+        "when_target_equals_value": { "type": "boolean" },
+        "when_focused_contains": { "$ref": "#/$defs/stringList" },
+        "when_prior_verb": { "type": "string" },
+        "when_prior_hotkey_contains": { "$ref": "#/$defs/stringList" }
+      },
+      "anyOf": [
+        { "required": ["to"] },
+        { "required": ["target_set"] },
+        { "required": ["value_set"] }
+      ],
       "additionalProperties": false
     },
     "prompt": {
