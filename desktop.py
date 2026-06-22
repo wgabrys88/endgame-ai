@@ -28,15 +28,14 @@ OBSERVE_DEFAULTS = {
     "scroll_enrich_passes": list(SCROLL_ENRICH_PASSES),
     "scroll_enrich_delay_ms": int(SCROLL_ENRICH_DELAY * 1000),
     "read_text_max": READ_TEXT_MAX,
-    "node_value_max_chars": 12000,
-    "render_value_max_chars": 4000,
+    "scope_depth": 4,
+    "element_text_max": 500,
+    "render_focused_first": True,
     "window_limit": 40,
     "desktop_tree_enabled": True,
     "desktop_tree_max_depth": 8,
     "desktop_tree_max_nodes": 900,
     "desktop_tree_child_limit": 180,
-    "tree_value_max_chars": 4000,
-    "render_tree_value_max_chars": 800,
     "overlay_window_limit": 48,
     "window_scan_limit": 256,
 }
@@ -68,11 +67,16 @@ def _obs_float_ms(key: str, default_seconds: float) -> float:
         return default_seconds
 
 
-def _obs_clip(text: str, limit_key: str, default: int) -> str:
-    limit = _obs_int(limit_key, default)
+def _obs_bool(key: str, default: bool) -> bool:
+    value = OBSERVE_CONFIG.get(key, default)
+    return value if type(value) is bool else default
+
+
+def _obs_text(text: str, default: int = 500) -> str:
+    limit = _obs_int("element_text_max", default)
     if limit <= 0:
-        return text
-    return text[:limit]
+        return str(text or "")
+    return str(text or "")[:limit]
 
 UIA_CONTROL_TYPE_MAP: dict[int, str] = {
     50000: "Button", 50001: "Calendar", 50002: "CheckBox", 50003: "ComboBox",
@@ -113,6 +117,8 @@ CLICKABLE_ROLES = frozenset({
     "SplitButton", "CheckBox", "RadioButton", "Slider", "ScrollBar", "DataItem",
 })
 WRITABLE_ROLES = frozenset({"Edit", "ComboBox", "Document"})
+PAGE_ROLES = frozenset({"Document", "Edit", "Hyperlink", "Text", "ComboBox", "DataItem", "Custom"})
+DOCUMENT_CHILD_ROLES = PAGE_ROLES | frozenset({"Button"})
 
 
 @dataclass(slots=True)
@@ -1017,8 +1023,8 @@ class Desktop:
         value = self._uia.get_legacy_value(el)
         return {
             "role": role,
-            "name": _obs_clip(self._uia.get_str(el, _UIA.UIA_NAME), "tree_value_max_chars", 600),
-            "value": _obs_clip(value, "tree_value_max_chars", 600),
+            "name": _obs_text(self._uia.get_str(el, _UIA.UIA_NAME)),
+            "value": _obs_text(value),
             "automation_id": self._uia.get_str(el, _UIA.UIA_AUTOMATION_ID),
             "class_name": self._uia.get_str(el, _UIA.UIA_CLASS_NAME),
             "hwnd": hwnd,
@@ -1084,8 +1090,8 @@ class Desktop:
     def _render_tree_node(self, node: dict[str, Any], lines: list[str], depth: int) -> None:
         indent = "  " * depth
         role = node.get("role") or "Element"
-        name = _obs_clip(node.get("name", ""), "render_tree_value_max_chars", 160)
-        value = _obs_clip(node.get("value", ""), "render_tree_value_max_chars", 160)
+        name = _obs_text(node.get("name", ""))
+        value = _obs_text(node.get("value", ""))
         bits = [role]
         if name:
             bits.append(f'"{name}"')
@@ -1177,7 +1183,7 @@ class Desktop:
                         el_hwnd = owner_hwnd
                         root_hwnd = owner_hwnd
                     nodes.append({
-                        "role": role, "name": name, "value": _obs_clip(value, "node_value_max_chars", 1000),
+                        "role": role, "name": _obs_text(name), "value": _obs_text(value),
                         "automation_id": automation_id,
                         "class_name": class_name,
                         "x": rx, "y": ry, "w": rw, "h": rh,
@@ -1213,6 +1219,51 @@ class Desktop:
         result.sort(key=lambda n: (z_index.get(int(n.get("root_hwnd") or n.get("hwnd") or 0), 9999), n["y"], n["x"]))
         return result
 
+    @staticmethod
+    def _node_scope(n: dict[str, Any], focused_hwnd: int, overlay_hwnds: set[int]) -> str:
+        hwnd = int(n.get("hwnd", 0) or 0)
+        root_hwnd = int(n.get("root_hwnd") or hwnd or 0)
+        if not focused_hwnd or hwnd == focused_hwnd or root_hwnd == focused_hwnd:
+            return "focused"
+        if hwnd in overlay_hwnds or root_hwnd in overlay_hwnds:
+            return "overlay"
+        return "background"
+
+    @staticmethod
+    def _center_in_rect(n: dict[str, Any], rect: tuple[int, int, int, int]) -> bool:
+        x1, y1, x2, y2 = rect
+        cx = int(n.get("x", 0)) + int(n.get("w", 0)) // 2
+        cy = int(n.get("y", 0)) + int(n.get("h", 0)) // 2
+        return x1 <= cx <= x2 and y1 <= cy <= y2
+
+    @classmethod
+    def _is_page_node(cls, n: dict[str, Any], document_rects: list[tuple[int, tuple[int, int, int, int]]]) -> bool:
+        role = n.get("role")
+        if role == "Document":
+            return True
+        if document_rects:
+            root_hwnd = int(n.get("root_hwnd") or n.get("hwnd") or 0)
+            return role in DOCUMENT_CHILD_ROLES and any(
+                (not doc_hwnd or not root_hwnd or doc_hwnd == root_hwnd) and cls._center_in_rect(n, rect)
+                for doc_hwnd, rect in document_rects
+            )
+        return role in PAGE_ROLES
+
+    @classmethod
+    def _scope_level(
+        cls,
+        n: dict[str, Any],
+        scope: str,
+        document_rects: list[tuple[int, tuple[int, int, int, int]]],
+    ) -> tuple[int, str]:
+        if scope == "focused":
+            if cls._is_page_node(n, document_rects):
+                return 1, "focused_page"
+            return 2, "focused_chrome"
+        if scope == "overlay":
+            return 3, "overlay"
+        return 4, "background"
+
     def _render(
         self,
         nodes: list[dict[str, Any]],
@@ -1231,35 +1282,50 @@ class Desktop:
             f"FOCUSED: {focused_title}",
             "SCOPE: [ID] targets are actionable in the focused window or top overlay; @focused/@overlay gives owner window.",
         ]
+        scope_depth = max(1, _obs_int("scope_depth", 4))
+        render_focused_first = _obs_bool("render_focused_first", True)
+        document_rects = [
+            (
+                int(n.get("root_hwnd") or n.get("hwnd") or 0),
+                (
+                    int(n.get("x", 0)),
+                    int(n.get("y", 0)),
+                    int(n.get("x", 0)) + int(n.get("w", 0)),
+                    int(n.get("y", 0)) + int(n.get("h", 0)),
+                ),
+            )
+            for n in nodes
+            if n.get("role") == "Document" and self._node_scope(n, focused_hwnd, overlay_hwnds) == "focused"
+        ]
+        render_nodes: list[tuple[int, int, str, dict[str, Any]]] = []
+        filtered = 0
+        for index, n in enumerate(nodes):
+            scope = self._node_scope(n, focused_hwnd, overlay_hwnds)
+            level, bucket = self._scope_level(n, scope, document_rects)
+            if level > scope_depth:
+                filtered += 1
+                continue
+            render_nodes.append((index, level, bucket, n))
+        if render_focused_first:
+            render_nodes.sort(key=lambda item: (item[1], int(item[3].get("y", 0)), int(item[3].get("x", 0)), item[0]))
         seq = 0
         rendered = 0
-        for n in nodes:
+        for _index, _level, bucket, n in render_nodes:
             role, name, value = n["role"], n.get("name", ""), n.get("value", "")
             rendered += 1
-            preview = _obs_clip(value, "render_value_max_chars", 80)
+            scope = bucket.split("_", 1)[0] if bucket.startswith("focused_") else bucket
+            preview = _obs_text(value)
             identity_bits = []
             if n.get("automation_id"):
-                identity_bits.append(f"aid={_obs_clip(n.get('automation_id', ''), 'render_value_max_chars', 80)}")
+                identity_bits.append(f"aid={_obs_text(n.get('automation_id', ''))}")
             if n.get("class_name"):
-                identity_bits.append(f"class={_obs_clip(n.get('class_name', ''), 'render_value_max_chars', 80)}")
+                identity_bits.append(f"class={_obs_text(n.get('class_name', ''))}")
             identity = (" " + " ".join(identity_bits)) if identity_bits else ""
             root_hwnd = int(n.get("root_hwnd") or n.get("hwnd", 0) or 0)
-            owns_scope = (
-                not focused_hwnd
-                or n.get("hwnd", 0) == focused_hwnd
-                or root_hwnd == focused_hwnd
-                or n.get("hwnd", 0) in overlay_hwnds
-                or root_hwnd in overlay_hwnds
-            )
+            owns_scope = scope in ("focused", "overlay")
             if n["action"] != "read" and owns_scope:
                 seq += 1
                 eid = str(seq)
-                if not focused_hwnd or n.get("hwnd", 0) == focused_hwnd or root_hwnd == focused_hwnd:
-                    scope = "focused"
-                elif n.get("hwnd", 0) in overlay_hwnds or root_hwnd in overlay_hwnds:
-                    scope = "overlay"
-                else:
-                    scope = "actionable"
                 wnd_title = window_titles.get(root_hwnd) or window_titles.get(int(n.get("hwnd", 0) or 0)) or focused_title
                 if value and n["action"] == "write":
                     desc = f'[{eid}] {role} "{name}" = "{preview}"' if name else f'[{eid}] {role} "{preview}"'
@@ -1284,7 +1350,9 @@ class Desktop:
                 else:
                     desc = f'{role} "{preview}"'
                 desc += identity
+                desc += f" @{scope}"
             lines.append(f"  {desc}")
         lines.insert(1, f"ELEMENTS: {seq}")
         lines.insert(2, f"OBSERVED: {rendered}")
+        lines.insert(3, f"FILTERS: scope_depth={scope_depth} element_text_max={_obs_int('element_text_max', 500)} render_focused_first={str(render_focused_first).lower()} filtered={filtered}")
         return elements, "\n".join(lines)

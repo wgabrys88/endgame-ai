@@ -85,6 +85,10 @@ textarea{resize:vertical;font-family:var(--mono);font-size:11px;line-height:1.45
 .field{display:grid;gap:3px;min-width:0}
 .field label{font:10px var(--mono);color:var(--muted);overflow-wrap:anywhere}
 .field input,.field select,.field textarea{width:100%}
+.rangeRow{display:grid;grid-template-columns:minmax(0,1fr) 70px;gap:6px;align-items:center}
+.rangeRow input[type="range"]{padding:0}
+.checkRow{display:flex;align-items:center;gap:7px;font:11px var(--mono);color:var(--muted)}
+.checkRow input{width:auto}
 .group{border:1px solid var(--line);border-radius:6px;padding:7px;display:grid;gap:7px;background:#0c0e11}
 .groupTitle{font:10px var(--mono);color:var(--cyan);display:flex;align-items:center;gap:6px}
 .groupTitle span{flex:1;overflow-wrap:anywhere}
@@ -135,6 +139,7 @@ textarea{resize:vertical;font-family:var(--mono);font-size:11px;line-height:1.45
       <div class="bar"><h2>State</h2><button id="refreshBtn" class="mini">Refresh</button></div>
       <div class="pane">
         <div class="box"><h3>Run</h3><div class="body kv" id="runBox"></div></div>
+        <div class="box"><h3>Filters</h3><div class="body form" id="filterBox"></div></div>
         <div class="box"><h3>Plan</h3><div class="body list" id="planList"></div></div>
         <div class="box"><h3>History</h3><div class="body list" id="historyList"></div></div>
         <div class="box"><h3>Wiring</h3><div class="body list" id="sectionList"></div></div>
@@ -154,7 +159,7 @@ textarea{resize:vertical;font-family:var(--mono);font-size:11px;line-height:1.45
       </div>
       <div id="graphWrap"><svg id="graph" role="img" aria-label="Wiring graph"></svg></div>
       <div class="screenGrid">
-        <div class="box"><h3>Action Scope IDs</h3><div class="body code" id="screenBox"></div></div>
+        <div class="box"><h3>Live Screen</h3><div class="body code" id="screenBox"></div></div>
         <div class="box"><h3>Desktop Tree</h3><div class="body code" id="treeBox"></div></div>
         <div class="box"><h3>Telemetry</h3><div class="body code" id="telemetryBox"></div></div>
       </div>
@@ -183,7 +188,7 @@ const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
 const attr=s=>esc(s).replace(/'/g,"&#39;");
 let wiring=null,schema=null,state=null,currentNode=null,selected={kind:null},running=false;
-let logs=[],lastStep=null,inspectData=null,positions={},positionsLoaded=false,graphView=null,drag=null,linkDrag=null,graphPan=null,autoSaveTimer=null;
+let logs=[],lastStep=null,inspectData=null,positions={},positionsLoaded=false,graphView=null,drag=null,linkDrag=null,graphPan=null,autoSaveTimer=null,liveRefreshTimer=null;
 
 function setStatus(s){$('status').textContent=s}
 function clone(v){return v==null?v:JSON.parse(JSON.stringify(v))}
@@ -225,6 +230,17 @@ async function loadAll(){
   await refreshInspect();
   renderAll();
   setStatus('ready');
+}
+async function refreshStateOnly(reason='state'){
+  state=await api('/state');
+  currentNode=state?._resume_node||currentNode||wiring?.topology?.cycle_start||null;
+  await refreshInspect();
+  renderAll();
+  setStatus(reason);
+}
+function queueLiveRefresh(reason='live'){
+  clearTimeout(liveRefreshTimer);
+  liveRefreshTimer=setTimeout(()=>refreshStateOnly(reason).catch(e=>log('live',e.message)),90);
 }
 function newSession(){
   state={};
@@ -354,6 +370,36 @@ function formatCoverageMeta(meta){
   const owners=meta?.captured_owner_hwnds?.length?`\nCAPTURED_OWNERS: ${meta.captured_owner_hwnds.join(', ')}`:'';
   const coverage=`TREE_COVERAGE: focused_captured=${meta?.focused_captured??'n/a'} overlay_captured=${meta?.overlay_captured??'n/a'} truncated=${meta?.truncated??'n/a'}`;
   return [coverage,scopeText].filter(Boolean).join('\n')+missing+owners;
+}
+function renderFilters(){
+  const root=$('filterBox');
+  if(!wiring){root.innerHTML='';return}
+  const observe=wiring.observe||(wiring.observe={});
+  const rows=[
+    {key:'scope_depth',label:'scope depth',min:1,max:4,step:1,value:observe.scope_depth??4},
+    {key:'element_text_max',label:'element text',min:0,max:4000,step:100,value:observe.element_text_max??500},
+    {key:'desktop_tree_max_depth',label:'tree depth',min:1,max:12,step:1,value:observe.desktop_tree_max_depth??8}
+  ];
+  root.innerHTML=rows.map(r=>`<div class="field">
+    <label>${esc(r.label)}</label>
+    <div class="rangeRow">
+      <input type="range" min="${r.min}" max="${r.max}" step="${r.step}" value="${esc(r.value)}" data-filter="${r.key}">
+      <input type="number" min="${r.min}" max="${r.max}" step="${r.step}" value="${esc(r.value)}" data-filter-number="${r.key}">
+    </div>
+  </div>`).join('')+`<label class="checkRow"><input type="checkbox" data-filter-bool="render_focused_first" ${observe.render_focused_first!==false?'checked':''}> focused first</label>`;
+  root.querySelectorAll('[data-filter]').forEach(el=>{
+    const key=el.dataset.filter;
+    const number=root.querySelector(`[data-filter-number="${key}"]`);
+    el.oninput=()=>{observe[key]=parseInt(el.value||'0',10); if(number)number.value=el.value; afterWiringEdit();};
+  });
+  root.querySelectorAll('[data-filter-number]').forEach(el=>{
+    const key=el.dataset.filterNumber;
+    const range=root.querySelector(`[data-filter="${key}"]`);
+    el.oninput=()=>{observe[key]=parseInt(el.value||'0',10); if(range)range.value=el.value; afterWiringEdit();};
+  });
+  root.querySelectorAll('[data-filter-bool]').forEach(el=>{
+    el.onchange=()=>{observe[el.dataset.filterBool]=!!el.checked; afterWiringEdit();};
+  });
 }
 function renderState(){
   const plan=state?.plan||[], stepNo=state?.step||0, tr=lastStep?.transition||{};
@@ -814,7 +860,7 @@ function renderReasoning(){
 }
 function renderAll(){
   if(!wiring)return;
-  renderGraph(); renderState(); renderInspect(); renderInputs(); renderReasoning();
+  renderGraph(); renderState(); renderFilters(); renderInspect(); renderInputs(); renderReasoning();
   $('jsonEdit').value=JSON.stringify(wiring,null,2);
 }
 
@@ -910,10 +956,29 @@ $('jsonEdit').oninput=()=>{setStatus('json dirty')};
 try{
   const es=new EventSource(API+'/events');
   es.addEventListener('push',e=>log('push','event',JSON.parse(e.data)));
-  es.addEventListener('node',e=>log('node','event',JSON.parse(e.data)));
-  es.addEventListener('result',e=>log('result','event',JSON.parse(e.data)));
-  es.addEventListener('wiring_modified',e=>log('wiring','modified',JSON.parse(e.data)));
-  es.addEventListener('paused',e=>log('pause','paused',JSON.parse(e.data)));
+  es.addEventListener('node',e=>{
+    const data=JSON.parse(e.data);
+    currentNode=data.id||currentNode;
+    log('node','event',data);
+    renderAll();
+  });
+  es.addEventListener('result',e=>{
+    const data=JSON.parse(e.data);
+    log('result','event',data);
+    queueLiveRefresh('live result');
+  });
+  es.addEventListener('wiring_modified',e=>{
+    log('wiring','modified',JSON.parse(e.data));
+    loadAll().catch(err=>log('wiring',err.message));
+  });
+  es.addEventListener('paused',e=>{
+    log('pause','paused',JSON.parse(e.data));
+    queueLiveRefresh('paused');
+  });
+  es.addEventListener('stop',e=>{
+    log('stop','event',JSON.parse(e.data));
+    queueLiveRefresh('stopped');
+  });
 }catch(e){log('events',e.message)}
 loadAll().catch(e=>{setStatus('load failed');log('error',e.message)});
 </script>
