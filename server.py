@@ -1245,6 +1245,17 @@ def _verify_preflight_confirmed(state):
         pressed = " ".join((a.get("target") or a.get("value") or "") for a in actions if a.get("verb") == "press").lower()
         if verbs[:3] == ["hotkey", "write", "press"] and "win" in hotkey and "r" in hotkey and typed and "enter" in pressed:
             return True
+    # remember verb has no desktop side effect — if OK, data is captured.
+    if all(a.get("verb") == "remember" for a in actions) and actions:
+        return True
+    # Ctrl+S is structurally unambiguous save action.
+    if any(
+        a.get("verb") == "hotkey"
+        and "ctrl" in (a.get("target") or "").lower()
+        and "s" in (a.get("target") or "").lower()
+        for a in actions
+    ) and any(word in done_when for word in ("save", "saved")):
+        return True
     if not any(word in done_when for word in ("open", "focused", "active window", "current window", "load", "page", "navigate", "url", "website", "site")):
         return False
     for action in actions:
