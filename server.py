@@ -393,7 +393,9 @@ def fresh_state(goal):
 SSE = []
 
 def sse_push(evt, data):
-    msg = f"event: {evt}\ndata: {json.dumps(data)}\n\n"
+    payload = dict(data) if isinstance(data, dict) else {"value": data}
+    payload.setdefault("ts", time.time())
+    msg = f"event: {evt}\ndata: {json.dumps(payload)}\n\n"
     for q in list(SSE):
         try: q.put_nowait(msg)
         except: SSE.remove(q)
@@ -1490,12 +1492,26 @@ def node_verify(state, node_cfg):
     """Verify from descriptive step + act outcomes only — act is sole SCREEN consumer."""
     rule = evaluate_rules("verify", state, WIRING)
     if rule and rule.get("verdict") == "deny":
-        return {"signals": ["step_denied"], "patch": {"last_error": rule.get("description") or wiring_error("verify_preflight_denied")}}
+        return {
+            "signals": ["step_denied"],
+            "patch": {"last_error": rule.get("description") or wiring_error("verify_preflight_denied")},
+            "preflight": True,
+            "rule_id": rule.get("id"),
+            "rule_verdict": rule.get("verdict"),
+            "rule_description": rule.get("description"),
+        }
     if rule and rule.get("verdict") == "confirm":
         clear_keys = WIRING.get("reasoning", {}).get("clear_on_step_confirm", [])
         patch: dict[str, Any] = dict(clear_reasoning_patch(state, clear_keys))
         patch.update({"step": state.get("step", 0) + 1, "retries": 0, "last_error": ""})
-        return {"signals": ["step_confirmed"], "patch": patch}
+        return {
+            "signals": ["step_confirmed"],
+            "patch": patch,
+            "preflight": True,
+            "rule_id": rule.get("id"),
+            "rule_verdict": rule.get("verdict"),
+            "rule_description": rule.get("description"),
+        }
     try:
         r = call_node(node_cfg, state)
         parsed = r["parsed"]
@@ -1930,6 +1946,13 @@ def find_targets(node_id, signals, topo):
             targets.append(e["to"])
     return targets
 
+def result_sse_payload(cycle, node_id, result, signals):
+    payload = {"c": cycle, "id": node_id, "s": signals, "preflight": bool(result.get("preflight"))}
+    for key in ("rule_id", "rule_verdict", "rule_description", "tokens", "usage"):
+        if result.get(key) is not None:
+            payload[key] = result.get(key)
+    return payload
+
 def step_once(goal="", state=None, node_id=None):
     """Execute exactly one graph node and return a debuggable transition."""
     topo = WIRING["topology"]
@@ -1962,7 +1985,7 @@ def step_once(goal="", state=None, node_id=None):
     state["_cycle"] = state.get("_cycle", 0) + 1
     state["_resume_node"] = node_id if terminal else next_node
     save_state(state)
-    sse_push("result", {"c": state["_cycle"], "id": node_id, "s": signals})
+    sse_push("result", result_sse_payload(state["_cycle"], node_id, result, signals))
     if terminal:
         sse_push("stop", {"outcome": state.get("satisfied", False)})
     next_debug = node_debug_context(next_node, state) if next_node else None
@@ -2037,7 +2060,7 @@ def run(goal, resume_state=None, max_cycles=None):
         signals = result.get("signals", [])
         print(f"       -> {signals}")
 
-        sse_push("result", {"c": cycle, "id": node_id, "s": signals})
+        sse_push("result", result_sse_payload(cycle, node_id, result, signals))
 
         targets = find_targets(node_id, signals, topo)
         if not targets:
