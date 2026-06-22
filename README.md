@@ -776,3 +776,1111 @@ This is the organism LEARNING what "done" means — in data, not code.
 - The `SELF_MODIFY_OPS` frozenset (line ~100) needs the new ops added
 - The `apply_wiring_patch` function (line ~780) needs new op handlers
 - The `validate_wiring` function (line ~80) needs preflight array validation
+
+---
+---
+
+# ANALYSIS: Code Reduction & Separation of Concerns
+
+## Current Codebase Metrics
+
+```
+┌─────────────────────┬───────┬──────────┬─────────────────────────────────┐
+│ File                │ Lines │ Functions│ Purpose                         │
+├─────────────────────┼───────┼──────────┼─────────────────────────────────┤
+│ server.py           │ 2003  │ 98       │ HTTP + graph + nodes + guards   │
+│ desktop.py          │ 1370  │ 62       │ UIA observer + input simulation │
+│ actions.py          │  229  │ 14       │ Verb dispatch + runtime glue    │
+│ wiring-editor.html  │  986  │ 66       │ Full workbench UI (CSS+JS+HTML) │
+│ colony.py           │   95  │  5       │ Multi-slot launcher             │
+├─────────────────────┼───────┼──────────┼─────────────────────────────────┤
+│ TOTAL               │ 4683  │ 245      │                                 │
+└─────────────────────┴───────┴──────────┴─────────────────────────────────┘
+```
+
+## server.py Breakdown (2003 lines, 98 functions)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ CATEGORY              │ LINES │ FUNCTIONS │ BELONGS IN PYTHON?              │
+├───────────────────────┼───────┼───────────┼─────────────────────────────────┤
+│ Config/setup          │  ~60  │    5      │ ✓ mechanical                    │
+│ Wiring validation     │  ~80  │    3      │ ✓ mechanical                    │
+│ Wiring accessors      │ ~120  │   18      │ ✓ mechanical                    │
+│ LLM call + parsing    │ ~100  │    8      │ ✓ mechanical                    │
+│ Prompt assembly       │  ~80  │    6      │ ✓ mechanical                    │
+│ Node handlers         │ ~350  │   12      │ ✓ mechanical                    │
+│ Graph engine          │ ~100  │    4      │ ✓ mechanical                    │
+│ Run loop              │ ~100  │    8      │ ✓ mechanical                    │
+│ HTTP server           │ ~180  │    6      │ ✓ mechanical                    │
+│ State/bus/trace       │  ~80  │    8      │ ✓ mechanical                    │
+│ Self-modify apply     │ ~180  │    6      │ ✓ mechanical                    │
+│                       │       │           │                                 │
+│ SEMANTIC GUARDS       │ ~190  │   12      │ ✗ SHOULD BE WIRING              │
+│ VERIFY PREFLIGHTS     │ ~160  │    4      │ ✗ SHOULD BE WIRING              │
+│ ACTION NORMALIZER     │  ~55  │    1      │ ✗ SHOULD BE WIRING              │
+│ TASK CLASSIFIERS      │  ~30  │    6      │ ✗ SHOULD BE WIRING              │
+├───────────────────────┼───────┼───────────┼─────────────────────────────────┤
+│ TOTAL MISPLACED       │ ~435  │   23      │ 22% of server.py is SEMANTIC    │
+└───────────────────────┴───────┴───────────┴─────────────────────────────────┘
+```
+
+## The Violations — Semantic Logic in Python
+
+```
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  VIOLATION #1: Task-Specific Classifiers (lines 766-791)                    ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                             ║
+║  _browser_focused()         — checks for "chrome", "edge", "firefox"        ║
+║  _focuses_browser()         — checks for "chrome", "edge", "firefox"        ║
+║  _is_browser_navigation_step() — checks for "navigate", "url", "website"   ║
+║  _is_playback_step()        — checks for "play", "playback", "video"        ║
+║  _is_chat_message_step()    — checks for "send", "message", "chat"          ║
+║                                                                             ║
+║  PROBLEM: These encode SEMANTIC KNOWLEDGE about task categories.             ║
+║  Python is deciding "is this a browser task?" — that's judgment, not         ║
+║  mechanism. A new category (e.g., "file transfer step") requires             ║
+║  editing Python.                                                            ║
+║                                                                             ║
+║  FIX: Move category keywords to wiring.json as guard conditions.            ║
+║  Python just does: "does done_when contain any keyword from this list?"     ║
+║  The list lives in wiring. Self-modify can extend it.                       ║
+║                                                                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  VIOLATION #2: normalize_action_chain() (lines 793-842, 50 lines)           ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                             ║
+║  This function:                                                             ║
+║    - Detects "browser navigation step" (semantic classification)            ║
+║    - Injects ctrl+l if missing (semantic correction)                        ║
+║    - Clears write target after ctrl+l (semantic rule)                       ║
+║    - Appends Enter if missing (semantic assumption)                         ║
+║                                                                             ║
+║  It's a 50-line function that ONLY fires for browser navigation.            ║
+║  It hardcodes the pattern: "when navigating, ensure ctrl+l → write → enter" ║
+║                                                                             ║
+║  PROBLEM: This is the act prompt's job. If the model forgets ctrl+l,        ║
+║  the correct fix is: make the prompt clearer, or add a guard that           ║
+║  rejects the action chain (forcing retry). Not silently fix it in Python.   ║
+║                                                                             ║
+║  WORSE: It masks model failures. The model never learns because Python      ║
+║  patches its mistakes silently. No trace of the correction in history.      ║
+║                                                                             ║
+║  FIX OPTIONS:                                                               ║
+║    A) Remove entirely — let act prompt handle it (already has rules)        ║
+║    B) Convert to a wiring "normalizer" rule set (declarative)               ║
+║    C) Convert to a guard that REJECTS incomplete chains (forces retry)      ║
+║                                                                             ║
+║  RECOMMENDED: Option C. A guard in wiring.json:                             ║
+║    "if step has domain needle AND actions include write but NOT ctrl+l       ║
+║     → reject with hint: include ctrl+l before URL write"                    ║
+║  This teaches the model. The current approach hides the problem.            ║
+║                                                                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  VIOLATION #3: unsafe_* guards (lines 843-885, 42 lines)                    ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                             ║
+║  unsafe_chat_target()               — "address bar" in target line          ║
+║  unsafe_browser_navigation_context() — "browser focused" check              ║
+║  unsafe_launch_then_content_write() — Win+R → write → too soon              ║
+║                                                                             ║
+║  These are SEMANTIC GUARDS. They decide: "this action chain is unsafe        ║
+║  because it targets the wrong UI element for this task type."               ║
+║                                                                             ║
+║  They're doing the RIGHT thing (preventing wrong actions) but in the        ║
+║  WRONG place (Python code instead of wiring data).                          ║
+║                                                                             ║
+║  FIX: Express as declarative guard rules in wiring.json. Python             ║
+║  evaluates them mechanically. Self-modify can add new ones.                 ║
+║                                                                             ║
+║  Example wiring guard:                                                      ║
+║  {                                                                          ║
+║    "id": "reject_write_to_address_bar_on_chat_step",                        ║
+║    "when": {                                                                ║
+║      "done_when_matches": ["send","message","chat","prompt"],               ║
+║      "actions_write_target_line_contains": "address"                        ║
+║    },                                                                       ║
+║    "reject": "chat write targeted address bar; find chat input"             ║
+║  }                                                                          ║
+║                                                                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  VIOLATION #4: Verify preflights with app names (lines 1121-1280)           ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                             ║
+║  Line 1190: value_l.endswith(" - google chrome")                            ║
+║  Line 1190: value_l.endswith(" - microsoft edge")                           ║
+║  Line 1214: ("notepad", "editor") in focused_title                          ║
+║                                                                             ║
+║  These are NAMED APP CHECKS. They break on:                                 ║
+║    - Non-English Windows (localized app names)                              ║
+║    - Alternative editors (VS Code, WordPad, vim)                            ║
+║    - Alternative browsers (Brave, Vivaldi, Arc)                             ║
+║                                                                             ║
+║  FIX: Already covered in the preflight implementation plan.                 ║
+║  Use generic conditions: "focused element has writable role" instead         ║
+║  of "focused title contains notepad".                                       ║
+║                                                                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+```
+
+## Code That SHOULD Stay in Python (mechanical)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ These are correctly placed — pure mechanism, no semantic knowledge:          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│ ✓ check_repeat_block()     — "same actions as last time" = structural       │
+│ ✓ _step_domain_needles()   — regex extraction, not interpretation           │
+│ ✓ _target_screen_line()    — lookup by ID, not judgment                     │
+│ ✓ _focused_title()         — parse screen text mechanically                 │
+│ ✓ _find_advance_hint()     — already reads hints FROM wiring.json ✓         │
+│ ✓ apply_memory_action()    — dict write, no interpretation                  │
+│ ✓ All node handlers        — execute wiring topology, no judgment           │
+│ ✓ Graph engine             — find_targets, step_once, run                   │
+│ ✓ HTTP server              — routing, serialization                         │
+│ ✓ Wiring validation        — schema enforcement                             │
+│ ✓ Self-modify apply        — validated patch application                    │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+---
+
+# ANALYSIS: Duplications and Redundancies
+
+## Identified Duplications
+
+```
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  DUPLICATION #1: Browser detection logic (3 copies)                         ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                             ║
+║  Location 1 — _browser_focused() line 768:                                  ║
+║    any(token in title for token in ("chrome","edge","firefox","opera",...))  ║
+║                                                                             ║
+║  Location 2 — _focuses_browser() line 775:                                  ║
+║    any(token in target for token in ("chrome","edge","firefox","opera",...)) ║
+║                                                                             ║
+║  Location 3 — _verify_memory_capture_denied() line 1190:                    ║
+║    value_l.endswith(" - google chrome") or ... "microsoft edge"             ║
+║                                                                             ║
+║  Same concept ("is this a browser?") expressed 3 different ways.            ║
+║  If you add Brave support, you edit 3 places. Miss one = bug.              ║
+║                                                                             ║
+║  FIX: One keyword list in wiring.json. All three checks reference it.       ║
+║  Or better: eliminate the checks entirely when preflights go declarative.  ║
+║                                                                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  DUPLICATION #2: "ctrl+l detection" (4 occurrences)                         ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                             ║
+║  normalize_action_chain:                                                    ║
+║    is_ctrl_l() local function (line ~798)                                   ║
+║    has_ctrl_l check (line ~820)                                             ║
+║                                                                             ║
+║  _verify_preflight_confirmed:                                               ║
+║    ctrl_l_ready check (line ~1230)                                          ║
+║                                                                             ║
+║  All check: verb=="hotkey" and "ctrl" in target and "l" in target           ║
+║  Same logic, 4 places.                                                      ║
+║                                                                             ║
+║  FIX: When guards become declarative, this becomes one condition            ║
+║  primitive: "actions_hotkey_contains": ["ctrl","l"]                         ║
+║                                                                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  DUPLICATION #3: "outcome OK" check (8 occurrences)                         ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                             ║
+║  Pattern: outcome.startswith("OK:")                                         ║
+║  Found in: _verify_preflight_denied, _verify_chat_submission_denied,        ║
+║  _verify_memory_capture_denied, _verify_preflight_confirmed,                ║
+║  _verify_chat_submission_denied (again), node_reflect playback check,       ║
+║  unsafe checks...                                                           ║
+║                                                                             ║
+║  Not a bug but shows how pervasive the preflight logic is — all these       ║
+║  collapse into one declarative condition: "outcome_ok": true                ║
+║                                                                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  DUPLICATION #4: done_when keyword matching (5+ occurrences)                ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                             ║
+║  Pattern: any(word in done_when for word in ("written","typed",...))         ║
+║                                                                             ║
+║  _verify_preflight_confirmed line 1214:                                     ║
+║    ("written", "write", "typed", "text", "summary")                         ║
+║  _verify_preflight_confirmed line 1220:                                     ║
+║    ("load", "page", "navigate", "url", "website", "site")                   ║
+║  _verify_preflight_confirmed line 1253:                                     ║
+║    ("save", "saved")                                                        ║
+║  _verify_preflight_confirmed line 1256:                                     ║
+║    ("open", "focused", "active window", ...)                                ║
+║  _is_browser_navigation_step line 781:                                      ║
+║    ("go to ", "navigate", "url", "website", "site", ...)                    ║
+║  _is_chat_message_step line 789:                                            ║
+║    ("send ", "message", "prompt", "follow-up", ...)                         ║
+║                                                                             ║
+║  Each is a DIFFERENT keyword list for a DIFFERENT category.                 ║
+║  All do the same mechanical operation: "does text contain any of [...]?"    ║
+║                                                                             ║
+║  FIX: One condition primitive in the evaluator:                             ║
+║    "done_when_matches": ["written","typed","text"]                           ║
+║  Keywords live in each rule's match block. Zero Python lists.               ║
+║                                                                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  DUPLICATION #5: Action verb extraction patterns (widespread)               ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                             ║
+║  Repeated across guards and preflights:                                     ║
+║    - "any action has verb == X"                                             ║
+║    - "all actions have verb == X"                                           ║
+║    - "action sequence starts with [hotkey, write, press]"                   ║
+║    - "any press/hotkey contains 'enter'"                                    ║
+║    - "any write has non-empty value"                                        ║
+║                                                                             ║
+║  Each guard re-implements these from scratch with inline list comps.        ║
+║                                                                             ║
+║  FIX: Condition primitives in the evaluator. Each is one function,          ║
+║  called by name from any rule. Written once, reused everywhere.             ║
+║                                                                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+```
+
+## Removal Candidates — Code That Provides No Value
+
+```
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  CANDIDATE #1: normalize_action_chain() — 50 lines, REMOVE                 ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                             ║
+║  PURPOSE: Silently fix browser navigation chains the model gets wrong.      ║
+║                                                                             ║
+║  WHY REMOVE:                                                                ║
+║  1. Violates "Python = mechanical" — it interprets task intent              ║
+║  2. Masks model failures — model never gets negative signal                 ║
+║  3. Only fires for ONE task type (browser navigation)                       ║
+║  4. The act prompt already has navigation rules                             ║
+║  5. A guard (reject + hint) teaches the model; normalization doesn't        ║
+║                                                                             ║
+║  REPLACEMENT: Declarative guard rule in wiring.json:                        ║
+║    {                                                                        ║
+║      "id": "reject_navigation_without_address_focus",                       ║
+║      "when": {                                                              ║
+║        "step_has_domain_needle": true,                                      ║
+║        "actions_include_verb": "write",                                     ║
+║        "actions_hotkey_absent": ["ctrl","l"],                               ║
+║        "actions_verb_absent": "focus"                                       ║
+║      },                                                                     ║
+║      "reject": "navigation write requires ctrl+l or address bar focus"      ║
+║    }                                                                        ║
+║                                                                             ║
+║  RISK: Model might fail more initially without the crutch.                  ║
+║  MITIGATION: The act prompt already covers this. If it still fails,         ║
+║  append_role_rule via self_modify fixes it in the prompt.                   ║
+║                                                                             ║
+║  NET: -50 lines of Python, +5 lines of wiring, model learns faster.        ║
+║                                                                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  CANDIDATE #2: Task classifiers — 30 lines, REMOVE                          ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                             ║
+║  _is_browser_navigation_step()                                              ║
+║  _is_playback_step()                                                        ║
+║  _is_chat_message_step()                                                    ║
+║  _browser_focused()                                                         ║
+║  _focuses_browser()                                                         ║
+║                                                                             ║
+║  These exist ONLY to gate the unsafe_* guards and normalize_action_chain.   ║
+║  If guards become declarative rules with their own conditions,              ║
+║  these classifiers have zero callers and can be deleted.                    ║
+║                                                                             ║
+║  NET: -30 lines of semantic Python, zero loss.                              ║
+║                                                                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  CANDIDATE #3: unsafe_* functions — 42 lines, MIGRATE TO WIRING            ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                             ║
+║  unsafe_chat_target()                  — 11 lines                           ║
+║  unsafe_browser_navigation_context()   — 11 lines                           ║
+║  unsafe_launch_then_content_write()    — 20 lines                           ║
+║                                                                             ║
+║  All three are GUARD RULES that can be expressed declaratively.             ║
+║  They check conditions and return rejection strings.                        ║
+║  This is EXACTLY what declarative guard rules do.                           ║
+║                                                                             ║
+║  NET: -42 lines of Python, +3 rules in wiring.json.                        ║
+║                                                                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  CANDIDATE #4: Playback special case in node_reflect — 8 lines, REMOVE     ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                             ║
+║  Lines 1304-1313: Special handling for "_is_playback_step" in reflect.      ║
+║  This is task-specific behavior in a node handler.                          ║
+║                                                                             ║
+║  FIX: The reflector LLM should handle this via its prompt.                  ║
+║  If playback steps need special retry logic, encode it in the               ║
+║  reflector role prompt, not in Python.                                       ║
+║                                                                             ║
+║  NET: -8 lines, prompt handles the edge case.                               ║
+║                                                                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+## Total Reduction Potential
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│  REMOVABLE FROM server.py:                                                  │
+│                                                                             │
+│    normalize_action_chain:     -50 lines                                    │
+│    Task classifiers:           -30 lines                                    │
+│    unsafe_* guards:            -42 lines                                    │
+│    Verify preflights (Python): -160 lines                                   │
+│    Playback special case:      -8 lines                                     │
+│    ─────────────────────────────────────                                    │
+│    TOTAL REMOVABLE:            -290 lines (14.5% of server.py)              │
+│                                                                             │
+│  REPLACED BY:                                                               │
+│    Generic preflight evaluator:  +80 lines (mechanical)                     │
+│    Generic guard evaluator:      +40 lines (mechanical)                     │
+│    ─────────────────────────────────────                                    │
+│    TOTAL ADDED:                  +120 lines                                 │
+│                                                                             │
+│  NET: -170 lines from server.py                                             │
+│       server.py goes from 2003 → ~1833 lines                               │
+│       AND all semantic logic moves to wiring (learnable)                    │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+---
+
+# ANALYSIS: HTML Interface — Capabilities & Modernization
+
+## Current State (wiring-editor.html)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ METRICS                                                                     │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  Total:      986 lines (50KB) — single file, zero dependencies              │
+│  HTML:        72 lines (layout structure)                                   │
+│  CSS:        114 lines (dark theme, grid layout, responsive)                │
+│  JavaScript: 800 lines (all logic — graph, editors, SSE, state)             │
+│  Functions:   66 (JS)                                                       │
+│                                                                             │
+│  ARCHITECTURE: Single-page app served from GET /                            │
+│  RENDERING: SVG graph + DOM panels                                          │
+│  STATE: In-memory JS objects, synced via /state and /wiring endpoints       │
+│  UPDATES: SSE event stream for live node transitions                        │
+│  PERSISTENCE: localStorage for graph node positions                         │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+## What It Does Well
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ STRENGTHS                                                                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ✓ Zero dependencies — loads instantly, no build step                       │
+│  ✓ Full topology graph editor (drag nodes, drag-to-connect edges)           │
+│  ✓ Schema-driven property editor (reads wiring-schema.json, generates UI)   │
+│  ✓ Live SSE updates (node transitions, wiring changes, push events)         │
+│  ✓ Hot-reload wiring with validation feedback                               │
+│  ✓ Step/Run/Pause/Resume controls                                           │
+│  ✓ State inspector (plan, history, reasoning chain)                         │
+│  ✓ Screen/Tree/Telemetry display                                            │
+│  ✓ Dark theme, responsive grid layout                                       │
+│  ✓ Auto-layout with z-index graph ordering                                  │
+│  ✓ Edge routing with cubic bezier curves                                    │
+│  ✓ Inline wiring JSON editor with hot-save on edit                          │
+│                                                                             │
+│  This is a COMPLETE development workbench for the organism.                 │
+│  It's genuinely impressive for 986 lines with zero deps.                    │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+## What It's Missing / Could Improve
+
+```
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  GAP #1: No Preflight Rule Editor                                           ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                             ║
+║  When preflights move to wiring.json, the UI needs a way to:               ║
+║    - List all preflight rules with their match conditions                   ║
+║    - Add/edit/remove rules visually                                         ║
+║    - Show which rule fired on last verify (highlight in real-time)          ║
+║    - Show rule hit counts (which patterns save the most time)              ║
+║                                                                             ║
+║  IMPLEMENTATION: The schema-driven editor already handles this!             ║
+║  As long as wiring-schema.json has the preflight rule definition,           ║
+║  renderValueEditor() will auto-generate the edit UI.                        ║
+║  Only addition: a "Preflights" section in the left rail.                   ║
+║                                                                             ║
+║  EFFORT: ~20 lines of JS + schema definition. No new architecture.         ║
+║                                                                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  GAP #2: No Guard Rule Editor                                               ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                             ║
+║  Same as above. When guards become declarative, the UI shows them.          ║
+║  The schema-driven editor already covers generic object editing.            ║
+║  Just need a "Guards" panel in the left rail alongside "Filters".           ║
+║                                                                             ║
+║  EFFORT: ~10 lines of JS.                                                  ║
+║                                                                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  GAP #3: No Timing/Performance Panel                                        ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                             ║
+║  The workbench shows WHAT happened but not HOW LONG each step took.         ║
+║  Missing:                                                                   ║
+║    - Per-node execution time (from SSE timestamps)                          ║
+║    - "Preflight hit" vs "LLM verify" indicator                             ║
+║    - Cumulative time per goal                                               ║
+║    - Token count per call (if server exposes it)                            ║
+║                                                                             ║
+║  WHY IT MATTERS: Optimization is blind without timing visibility.           ║
+║  Currently you have to read LM Studio logs manually.                        ║
+║                                                                             ║
+║  IMPLEMENTATION:                                                            ║
+║    - Server already pushes SSE events with cycle number                     ║
+║    - Add timestamp to SSE events (trivial: time.time() in sse_push)        ║
+║    - JS calculates deltas between node/result events                        ║
+║    - Display in telemetry panel or new "Timing" tab                        ║
+║                                                                             ║
+║  EFFORT: ~5 lines server.py + ~30 lines JS.                                ║
+║                                                                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  GAP #4: No Preflight Hit Visualization on Graph                            ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                             ║
+║  When verify fires preflight (skips LLM), the graph should show it.        ║
+║  Currently: verify node turns green (active) briefly, same as LLM call.    ║
+║  Better: flash a different color or show "⚡" badge on preflight hit.       ║
+║                                                                             ║
+║  This tells the operator: "that was instant, no LLM cost."                 ║
+║                                                                             ║
+║  IMPLEMENTATION:                                                            ║
+║    - Server SSE result event already has signals: ["step_confirmed"]        ║
+║    - Add field: "preflight": true to the event when rule matched            ║
+║    - JS checks for preflight flag, applies different node style             ║
+║                                                                             ║
+║  EFFORT: ~3 lines server.py + ~10 lines JS.                                ║
+║                                                                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  GAP #5: No Wiring Diff View                                                ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                             ║
+║  When self_modify mutates wiring, the dashboard shows "wiring_modified"     ║
+║  SSE event but not WHAT changed. A diff view showing before/after would     ║
+║  make self-modification observable and debuggable.                           ║
+║                                                                             ║
+║  IMPLEMENTATION: Store last wiring snapshot in JS. On wiring_modified,      ║
+║  compute diff (JSON key-level) and display in log tab.                      ║
+║                                                                             ║
+║  EFFORT: ~30 lines JS.                                                     ║
+║                                                                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+```
+
+## What NOT to Change
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ KEEP AS-IS                                                                  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ✓ Single-file architecture — no build step, no npm, no frameworks          │
+│  ✓ Zero dependencies — loads from disk or localhost instantly                │
+│  ✓ SVG-based graph — performant, scriptable, no canvas state bugs           │
+│  ✓ Schema-driven editors — auto-adapt when wiring-schema.json changes       │
+│  ✓ SSE for live updates — simple, reliable, no WebSocket complexity         │
+│  ✓ localStorage for positions — no server persistence needed                │
+│  ✓ Dark theme — this is a dev tool, not a consumer product                  │
+│                                                                             │
+│  DO NOT:                                                                    │
+│    ✗ Add React/Vue/Svelte — kills the zero-dep advantage                    │
+│    ✗ Split into multiple files — adds serving complexity                    │
+│    ✗ Add a build step — violates "any person with a computer" vision        │
+│    ✗ Add external CSS frameworks — bloat for no gain                        │
+│    ✗ "Modernize" with TypeScript — the 800 lines of JS work fine            │
+│                                                                             │
+│  The HTML IS already modern. It uses:                                       │
+│    - CSS Grid + custom properties                                           │
+│    - async/await                                                            │
+│    - Optional chaining (?.)                                                 │
+│    - EventSource (SSE)                                                      │
+│    - Template literals                                                      │
+│    - Pointer events API                                                     │
+│    - dvh units                                                              │
+│                                                                             │
+│  "Modernization" = adding the missing FEATURES, not rewriting the stack.    │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+---
+
+# ANALYSIS: Unified Declarative Rule System
+
+## The Big Picture — One Evaluator, Three Rule Types
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│  Currently: 3 separate Python systems doing similar pattern matching:       │
+│                                                                             │
+│    1. PREFLIGHTS  — verify: should I confirm/deny without LLM?              │
+│    2. GUARDS      — act: should I reject this action chain?                 │
+│    3. NORMALIZERS — act: should I silently fix this chain?                  │
+│                                                                             │
+│  All three: read state + actions → evaluate conditions → return verdict     │
+│                                                                             │
+│  UNIFIED DESIGN:                                                            │
+│                                                                             │
+│    wiring.json:                                                             │
+│      "rules": [                                                             │
+│        {"id":..., "phase":"verify",  "verdict":"confirm", "match":{...}},   │
+│        {"id":..., "phase":"verify",  "verdict":"deny",    "match":{...}},   │
+│        {"id":..., "phase":"act",     "verdict":"reject",  "match":{...}},   │
+│      ]                                                                      │
+│                                                                             │
+│    server.py:                                                               │
+│      def evaluate_rules(phase, state, wiring):                              │
+│          """One evaluator for all phases."""                                 │
+│          for rule in wiring.get("rules", []):                               │
+│              if rule.get("phase") != phase:                                 │
+│                  continue                                                   │
+│              if _all_conditions_met(rule["match"], state):                  │
+│                  return rule                                                │
+│          return None                                                        │
+│                                                                             │
+│  ONE evaluator replaces:                                                    │
+│    - _verify_preflight_denied()        (8 lines)                            │
+│    - _verify_preflight_confirmed()     (85 lines)                           │
+│    - _verify_chat_submission_denied()  (35 lines)                           │
+│    - _verify_memory_capture_denied()   (40 lines)                           │
+│    - unsafe_chat_target()              (11 lines)                           │
+│    - unsafe_browser_navigation_context() (11 lines)                         │
+│    - unsafe_launch_then_content_write() (20 lines)                          │
+│    - normalize_action_chain()          (50 lines)                           │
+│    - _is_browser_navigation_step()     (3 lines)                            │
+│    - _is_playback_step()               (3 lines)                            │
+│    - _is_chat_message_step()           (5 lines)                            │
+│    - _browser_focused()                (3 lines)                            │
+│    - _focuses_browser()                (6 lines)                            │
+│                                                                             │
+│  Total replaced: ~280 lines of semantic Python                              │
+│  Total added:    ~100 lines of generic evaluator                            │
+│  NET GAIN:       -180 lines + all logic now learnable via self_modify       │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+## Rule Phases
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ PHASE: "verify" — runs in node_verify BEFORE LLM call                       │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  Verdict options: "confirm" | "deny"                                        │
+│                                                                             │
+│  "confirm" → step advances, no LLM verify needed                           │
+│  "deny"    → step fails, goes to reflect, no LLM verify needed             │
+│  no match  → fall through to LLM verify (two-pass)                         │
+│                                                                             │
+│  Evaluation order: deny rules first, then confirm rules.                   │
+│  Safety: deny is cheaper (prevents false confirms).                         │
+│                                                                             │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ PHASE: "act" — runs in node_act AFTER LLM produces actions, BEFORE exec     │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  Verdict options: "reject"                                                  │
+│                                                                             │
+│  "reject" → action chain NOT executed, error message set, goes to reflect  │
+│  no match → actions execute normally                                        │
+│                                                                             │
+│  This replaces unsafe_* guards AND normalize_action_chain.                  │
+│  Instead of silently fixing: reject + hint. Model learns.                  │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+## Self-Modify Integration
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│  New self_modify operations:                                                │
+│                                                                             │
+│    add_rule    {id, phase, verdict, description, match}                     │
+│    update_rule {id, set: {match?, verdict?, description?}}                  │
+│    remove_rule {id}                                                         │
+│                                                                             │
+│  When self_modify fires after repeated failures:                            │
+│                                                                             │
+│    SCENARIO: act keeps writing URL without ctrl+l, gets rejected            │
+│    REFLECT: "model forgets address bar focus for navigation"                │
+│    SELF_MODIFY options:                                                     │
+│      1. append_role_rule to act prompt (teach model)                        │
+│      2. add_rule phase=act to reject the pattern (guard)                   │
+│      3. add_rule phase=verify to confirm navigation structurally            │
+│                                                                             │
+│  The organism can now learn BOTH:                                           │
+│    - "What actions are wrong" (act-phase reject rules)                      │
+│    - "What outcomes prove success" (verify-phase confirm rules)             │
+│                                                                             │
+│  This is the organism developing INTUITION about its own capabilities.      │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+## Condition Primitive Inventory (Complete)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ CONDITION NAME                      │ CHECKS                                │
+├─────────────────────────────────────┼───────────────────────────────────────┤
+│                                     │                                       │
+│ ── Outcome ──                       │                                       │
+│ outcome_ok                          │ last_outcome starts with "OK:"        │
+│ outcome_failed                      │ last_outcome starts with "FAILED"/""  │
+│                                     │                                       │
+│ ── Actions (verb checks) ──        │                                       │
+│ actions_include_verb                │ any action.verb == value              │
+│ actions_all_verb                    │ all action.verb == value              │
+│ actions_verb_absent                 │ no action.verb == value               │
+│ actions_sequence                    │ verb sequence starts with [...]       │
+│                                     │                                       │
+│ ── Actions (value checks) ──       │                                       │
+│ actions_wrote_nonempty              │ a write action has non-empty value    │
+│ actions_pressed                     │ press/hotkey target contains key      │
+│ actions_hotkey_contains             │ hotkey target contains ALL of [...]   │
+│ actions_hotkey_absent               │ no hotkey contains ALL of [...]       │
+│ actions_write_is_url                │ write value looks like URL/domain     │
+│                                     │                                       │
+│ ── Done_when / Step text ──         │                                       │
+│ done_when_matches                   │ done_when contains any of [...]       │
+│ done_when_absent                    │ done_when does NOT contain [...]      │
+│ step_has_domain_needle              │ goal/done_when has domain pattern     │
+│                                     │                                       │
+│ ── Screen / Focus ──                │                                       │
+│ screen_contains_domain_needle       │ domain needle in screen/title         │
+│ screen_contains                     │ screen text contains any of [...]     │
+│ focused_contains_action_target      │ focused title matches focus target    │
+│ focused_has_writable                │ screen has writable [ID] element      │
+│                                     │                                       │
+│ ── Memory ──                        │                                       │
+│ memory_stored_by_action             │ remember verb stored a key            │
+│ memory_value_min_length             │ stored value >= N chars               │
+│ memory_value_not_url                │ stored value isn't just a URL         │
+│ memory_value_not_title              │ stored value != focused window title  │
+│                                     │                                       │
+│ ── Composites (expand internally) ──│                                       │
+│ chain_is_launch                     │ hotkey(win+r) → write → press(enter) │
+│ chain_is_navigation                 │ ctrl+l/addr → write → press(enter)   │
+│ chain_is_save                       │ hotkey(ctrl+s) + done_when=save       │
+│ chain_wrote_and_submitted           │ write + press(enter)/click(send)      │
+│                                     │                                       │
+└─────────────────────────────────────┴───────────────────────────────────────┘
+```
+
+## Implementation Sequence (Revised — Unified)
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│  PHASE 1: Foundation (next session)                                         │
+│  ─────────────────────────────────                                          │
+│    1. Add "rules" array to wiring-schema.json                               │
+│    2. Write evaluate_rules() in server.py (~60 lines)                       │
+│    3. Write _check_condition() dispatch (~40 lines)                         │
+│    4. Wire into node_verify (replace _verify_preflight_* calls)             │
+│    5. Add 7 initial verify-phase rules to wiring.json                       │
+│    6. Test: same goals produce same outcomes                                │
+│    7. Add self-modify ops (add_rule, update_rule, remove_rule)              │
+│                                                                             │
+│  PHASE 2: Guards migration                                                  │
+│  ────────────────────────                                                   │
+│    8. Add act-phase rules replacing unsafe_* functions                      │
+│    9. Wire into node_act (replace unsafe_* calls)                           │
+│   10. Remove unsafe_* functions                                             │
+│   11. Remove task classifiers (_is_browser_*, etc.)                         │
+│   12. Remove or replace normalize_action_chain with reject rule             │
+│   13. Test: same goals, guards still fire                                   │
+│                                                                             │
+│  PHASE 3: Learning verification                                             │
+│  ──────────────────────────────                                             │
+│    14. Update self_modify role prompt to know about rule ops                │
+│    15. Run a goal that triggers self_modify                                 │
+│    16. Verify it emits a valid add_rule patch                               │
+│    17. Verify the rule fires on subsequent runs                             │
+│                                                                             │
+│  PHASE 4: UI integration                                                    │
+│  ───────────────────────                                                    │
+│    18. Add "Rules" panel to left rail in wiring-editor.html                 │
+│    19. Show rule hit/miss on verify SSE events                              │
+│    20. Add timing to SSE events for performance visibility                  │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+## Self-Critique of This Plan
+
+```
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  CRITIQUE #1: "Are 30 condition primitives too many?"                       ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                             ║
+║  CONCERN: Each primitive is a Python function. 30 functions = 150-240       ║
+║  lines. That's more than some of the code being replaced.                   ║
+║                                                                             ║
+║  COUNTER: Each primitive is 3-8 lines, trivially testable, and REUSED       ║
+║  across all rules. The 280 lines being replaced are tangled, duplicative,   ║
+║  and untestable in isolation.                                               ║
+║                                                                             ║
+║  DECISION: Start with ~15 primitives (the ones needed for initial rules).   ║
+║  Add more only when self_modify needs them. YAGNI for rare conditions.      ║
+║                                                                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  CRITIQUE #2: "What if the evaluator itself needs to be learned?"           ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                             ║
+║  CONCERN: If a pattern can't be expressed with existing primitives,         ║
+║  self_modify is stuck. It can't add new Python condition functions.          ║
+║                                                                             ║
+║  COUNTER: The primitives cover ALL current hardcoded patterns. They         ║
+║  are designed from the PROVEN patterns in the existing code. If new         ║
+║  patterns emerge that need new primitives, that's a human-session task      ║
+║  (add one 5-line function). The self_modify path handles 95% of cases.      ║
+║                                                                             ║
+║  DECISION: Accept this limitation. Primitives grow slowly with human        ║
+║  sessions. Rules grow autonomously via self_modify. Good tradeoff.          ║
+║                                                                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  CRITIQUE #3: "Should normalize_action_chain really be removed?"            ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                             ║
+║  CONCERN: The normalizer catches real model mistakes. Removing it means     ║
+║  more retries until the model learns. Each retry = 300s+.                   ║
+║                                                                             ║
+║  COUNTER: The act prompt ALREADY has the navigation rules. If the model     ║
+║  still forgets ctrl+l, the prompt is weak — fix the PROMPT. Silently        ║
+║  fixing in Python means the model never gets the error signal it needs      ║
+║  to improve its reasoning. You're paying 50 lines of Python to hide a       ║
+║  prompt problem that should take 1 line to fix in the role text.            ║
+║                                                                             ║
+║  COMPROMISE: Don't remove Day 1. Convert to reject rule first. If           ║
+║  reject causes >3 extra retries on navigation goals, strengthen the         ║
+║  act prompt. Remove normalize_action_chain only after prompt proves          ║
+║  sufficient. Track via traces.                                              ║
+║                                                                             ║
+║  DECISION: Phase 2 converts to reject rule. Observe for 1-2 goals.         ║
+║  If model handles it → delete normalizer. If not → fix prompt first.        ║
+║                                                                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  CRITIQUE #4: "Is unifying guards+preflights into one 'rules' array smart?" ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                             ║
+║  CONCERN: Different phases have different semantics. Mixing them in one     ║
+║  array could confuse self_modify or the human operator.                     ║
+║                                                                             ║
+║  COUNTER: The "phase" field clearly separates them. The evaluator only      ║
+║  looks at rules matching the requested phase. Unified array means           ║
+║  ONE schema definition, ONE set of self-modify ops, ONE UI panel.           ║
+║  Simpler > separated.                                                       ║
+║                                                                             ║
+║  ALTERNATIVE considered: separate "preflights" and "act_guards" arrays.     ║
+║  This means: 2 schema definitions, 2 sets of ops (add_preflight +          ║
+║  add_guard), 2 UI panels, 2 evaluator entry points. More complexity         ║
+║  for zero functional benefit.                                               ║
+║                                                                             ║
+║  DECISION: Unified "rules" array with "phase" field. Single system.         ║
+║                                                                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  CRITIQUE #5: "First-match-wins ordering — can self_modify break it?"       ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                             ║
+║  CONCERN: add_rule appends to end. If a deny rule should fire before a      ║
+║  confirm rule but gets added later, the confirm rule wins incorrectly.      ║
+║                                                                             ║
+║  SOLUTION: Evaluation order is: all deny rules first, then confirm rules,   ║
+║  regardless of array position. Python sorts by verdict before evaluating.   ║
+║  This means: deny always wins over confirm. Self_modify can't break this.  ║
+║                                                                             ║
+║  Within same verdict type: array order = priority. Self_modify adds to      ║
+║  end = lowest priority. Safe default. Operator can reorder via UI.          ║
+║                                                                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  CRITIQUE #6: "986-line HTML — should it grow or be refactored?"            ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                             ║
+║  CONCERN: Adding rules panel + timing + diff view could push to 1200+.     ║
+║                                                                             ║
+║  COUNTER: 1200 lines for a full dev workbench is SMALL. The file is         ║
+║  well-structured (CSS block, HTML block, JS block). It's readable.          ║
+║  There's no maintenance burden — it's a tool, not a product.                ║
+║                                                                             ║
+║  The real question: does single-file become unnavigable at 1500 lines?      ║
+║  Answer: No. VS Code folds sections. grep works. No imports to trace.       ║
+║  The zero-dep advantage outweighs the "long file" concern until ~3000 LOC. ║
+║                                                                             ║
+║  DECISION: Keep single-file. Grow as needed. Only split if a clear          ║
+║  independent component emerges (unlikely for <2000 LOC).                    ║
+║                                                                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+```
+
+---
+---
+
+# ANALYSIS: Fallback Removal Audit
+
+## What "Fallbacks" Exist
+
+```
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  FALLBACK #1: LLM parse retries with temperature bump                       ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                             ║
+║  Location: call_node() lines 548-565                                        ║
+║  Behavior: If LLM output doesn't parse as valid JSON with correct           ║
+║  record_type, retry with higher temperature (up to 2 retries).              ║
+║                                                                             ║
+║  VERDICT: KEEP. This is mechanical retry logic, not semantic fallback.      ║
+║  A 4B model sometimes produces malformed JSON. Retrying with higher         ║
+║  temperature is a proven recovery mechanism. It doesn't interpret           ║
+║  content — just checks "is this valid JSON with the right record_type?"     ║
+║                                                                             ║
+║  HOWEVER: The limit (llm_parse_retries: 2) is in wiring.json.              ║
+║  Self_modify can adjust it. This is correctly placed.                       ║
+║                                                                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  FALLBACK #2: Planner retry on parse failure                                ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                             ║
+║  Location: node_planner() — signals "retry_plan" with counter               ║
+║  Behavior: If planner output doesn't parse, retry (up to planner_retries).  ║
+║  After max retries: "plan_failed" signal → bus_post → satisfied(false).     ║
+║                                                                             ║
+║  VERDICT: KEEP. Same as above — structural retry for parse failures.        ║
+║  Not a semantic fallback. It doesn't guess what the plan should be.         ║
+║                                                                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  FALLBACK #3: normalize_action_chain() — SILENT CORRECTION                  ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                             ║
+║  Location: server.py lines 793-842                                          ║
+║  Behavior: Silently injects ctrl+l, clears targets, appends Enter.          ║
+║                                                                             ║
+║  VERDICT: REMOVE (already discussed above).                                 ║
+║  This IS a semantic fallback. It compensates for model mistakes without     ║
+║  signaling the error. Replace with reject rule that teaches the model.      ║
+║                                                                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  FALLBACK #4: verb_normalize in act config                                  ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                             ║
+║  Location: node_act() line ~1016, reads from wiring.act.verb_normalize      ║
+║  Config:   [{"from":"press","to":"hotkey","when_target_contains":"+"}]      ║
+║  Behavior: If model emits press "ctrl+s" instead of hotkey "ctrl+s",        ║
+║            automatically converts to hotkey.                                ║
+║                                                                             ║
+║  VERDICT: KEEP — this is ALREADY in wiring.json (good!). It's              ║
+║  mechanical normalization of equivalent verbs, not semantic correction.      ║
+║  "press ctrl+s" and "hotkey ctrl+s" mean the same thing mechanically.       ║
+║  The model isn't "wrong" — the vocabulary is ambiguous. This resolves       ║
+║  ambiguity, not errors.                                                     ║
+║                                                                             ║
+║  Self_modify can extend it (add more normalizations). Correctly placed.     ║
+║                                                                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  FALLBACK #5: Run dialog special cases in node_act execution                ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                             ║
+║  Location: node_act() lines ~1006-1020                                      ║
+║  Behavior:                                                                  ║
+║    - If focused="Run" and write has target → clear target (write to field)  ║
+║    - If after Win+R and write target == write value → clear target           ║
+║    - If press has no key and prior write exists → assume "enter"            ║
+║    - If click "ok" in Run dialog → convert to press "enter"                 ║
+║                                                                             ║
+║  VERDICT: BORDERLINE. These handle model confusion about Run dialog:        ║
+║    - Model says write target="notepad" value="notepad" (target is wrong)    ║
+║    - Model says press "" after a write (forgot to specify enter)            ║
+║    - Model clicks "OK" button in Run instead of pressing Enter              ║
+║                                                                             ║
+║  These are TASK-SPECIFIC (Run dialog) but also GENERIC (any Win+R use).     ║
+║                                                                             ║
+║  DECISION: Convert to declarative normalizations in wiring.json             ║
+║  under act.verb_normalize (already exists). They're mechanical              ║
+║  translations, not semantic corrections:                                    ║
+║    - "write to Run dialog always targets the open field"                    ║
+║    - "empty press after write = press enter"                                ║
+║    - "click OK in dialog = press enter"                                     ║
+║                                                                             ║
+║  These could be wiring rules like:                                          ║
+║    {"when":"focused_run_dialog","press_empty":"enter"}                       ║
+║    {"when":"click_ok_in_dialog","convert":"press_enter"}                     ║
+║                                                                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  FALLBACK #6: Scroll enrichment in desktop.py                               ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                             ║
+║  Location: desktop.py observe() — scroll_enrich_* config                    ║
+║  Behavior: If probe finds fewer elements than scroll_enrich_min,            ║
+║  scroll the window up/down and re-probe to find hidden elements.            ║
+║                                                                             ║
+║  VERDICT: KEEP. This is mechanical observation enrichment, controlled       ║
+║  entirely by wiring.json observe config. Not a semantic fallback.           ║
+║  Config already in wiring: scroll_enrich_min, scroll_enrich_passes, etc.    ║
+║  Self_modify can tune via set_observe op. Correctly placed.                 ║
+║                                                                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  FALLBACK #7: Dense probe in desktop.py                                     ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                             ║
+║  Location: desktop.py observe() — dense_probe_min_px config                 ║
+║  Behavior: If initial probe finds too few elements, re-probe with           ║
+║  smaller step size over full screen.                                        ║
+║                                                                             ║
+║  VERDICT: KEEP. Same as scroll enrichment — mechanical, config-driven.      ║
+║                                                                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+```
+
+## Summary: Fallback Audit Results
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│  KEEP (mechanical, config-driven, not semantic):                            │
+│    ✓ LLM parse retries with temperature bump                               │
+│    ✓ Planner retry on parse failure                                         │
+│    ✓ verb_normalize (wiring-configured)                                     │
+│    ✓ Scroll enrichment (wiring-configured)                                  │
+│    ✓ Dense probe (wiring-configured)                                        │
+│                                                                             │
+│  REMOVE (semantic, masks errors, task-specific):                            │
+│    ✗ normalize_action_chain → reject rule                                   │
+│                                                                             │
+│  MIGRATE TO WIRING (mechanical but hardcoded):                              │
+│    → Run dialog special cases → act.verb_normalize or reject rules          │
+│                                                                             │
+│  TOTAL REMOVABLE: ~60 lines                                                 │
+│  Combined with guards/preflights migration: ~350 lines removed              │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+---
+
+# COMPLETE REDUCTION SUMMARY
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                                                                             │
+│  server.py TODAY:      2003 lines, 98 functions                             │
+│                                                                             │
+│  AFTER unified rules migration:                                             │
+│                                                                             │
+│    REMOVED:                                                                 │
+│      Verify preflights (Python):    -160 lines                              │
+│      Task classifiers:              -30 lines                               │
+│      unsafe_* guards:               -42 lines                               │
+│      normalize_action_chain:        -50 lines                               │
+│      Run dialog special cases:      -15 lines                               │
+│      Playback special case:         -8 lines                                │
+│      ──────────────────────────────────────                                 │
+│      TOTAL REMOVED:                 -305 lines                              │
+│                                                                             │
+│    ADDED:                                                                   │
+│      evaluate_rules():              +15 lines                               │
+│      _all_conditions_met():         +8 lines                                │
+│      _check_condition() dispatch:   +20 lines                               │
+│      Condition primitives (15):     +75 lines                               │
+│      Self-modify ops (3):           +40 lines                               │
+│      Validation for rules:          +15 lines                               │
+│      ──────────────────────────────────────                                 │
+│      TOTAL ADDED:                   +173 lines                              │
+│                                                                             │
+│    NET: -132 lines from server.py (2003 → ~1871)                            │
+│         + all semantic logic now in wiring.json (learnable)                 │
+│         + zero duplication (one evaluator, reusable conditions)             │
+│         + zero task-specific Python                                         │
+│         + zero app-name strings in Python                                   │
+│                                                                             │
+│  wiring.json GROWTH:                                                        │
+│    Initial rules array: ~120 lines (7 verify + 3 act rules)                │
+│    Schema addition: ~40 lines                                               │
+│                                                                             │
+│  wiring-editor.html:                                                        │
+│    Rules panel: ~30 lines                                                   │
+│    Timing display: ~35 lines                                                │
+│    Preflight indicator: ~13 lines                                           │
+│    TOTAL: +78 lines (986 → ~1064)                                           │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
