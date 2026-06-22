@@ -1,122 +1,145 @@
 # endgame-ai
 
-Local Windows desktop automation organism using a wired ROD loop:
-Reason -> Observe -> Decide -> Verify -> Reflect -> Self-modify.
+Endgame-ai is a local Windows desktop agent organism. It observes the desktop, reasons through a wired ROD loop, executes UI actions, verifies outcomes, reflects on failures, and can mutate its own `prompts/wiring.json` when stuck.
 
-This README is the current handover document for the next agentic coding AI provider. It records what was changed in this session, how it was verified, what remains unfinished, and the exact methodology the next session should follow.
+This file is the handover source of truth for any coding AI that continues the project. Read it before editing code.
 
-Current date of this handover: 2026-06-22.
+Last updated: 2026-06-22.
 
-## Current Status
+## Vision
 
-The critical observation-pipeline work has been implemented and verified locally.
+Build a self-improving local desktop organism:
 
-Done:
+- Python is the mechanical body.
+- `prompts/wiring.json` is the mutable brain.
+- The local LLM supplies semantic judgment.
+- The workbench shows and edits the organism live.
+- Failures become evidence for self-rewiring.
 
-- Removed prompt-side SCREEN truncation from `server.py`.
-- Removed `prompt_screen_max_chars` from wiring limits and schema.
-- Removed `SCREEN_TRUNCATED_FOR_PROMPT` generation from prompt assembly.
-- Replaced retired observe value caps:
+The system should eventually run long autonomous goals, notice repeated failure modes, patch its own wiring, hot-reload the change, and continue without a human writing task-specific code.
+
+The central rule:
+
+```text
+Do not make Python smarter about tasks. Make Python better at exposing facts and applying validated wiring mutations.
+```
+
+## Current Implementation Status
+
+Implemented and verified:
+
+- SCREEN prompt truncation removed.
+- `SCREEN_TRUNCATED_FOR_PROMPT` removed from generated SCREEN.
+- Retired truncation config removed from runtime/schema:
+  - `prompt_screen_max_chars`
   - `node_value_max_chars`
   - `render_value_max_chars`
   - `tree_value_max_chars`
   - `render_tree_value_max_chars`
-- Added observe filters in `prompts/wiring.json` and `prompts/wiring-schema.json`:
+- Observe filters added:
   - `scope_depth`
   - `element_text_max`
   - `render_focused_first`
-- Reworked `desktop.py` action-scope rendering so focused page content renders before focused chrome, overlays, and background context.
-- Added generic document-rectangle detection so browser toolbar buttons do not outrank page content.
-- Added a visible `FILTERS:` line to SCREEN output.
-- Added filter controls to `wiring-editor.html`:
-  - scope depth slider
-  - element text slider
-  - desktop tree depth slider
-  - focused-first checkbox
-- Wired the workbench to SSE events so live state and SCREEN panels refresh during autonomous runs.
-- Added graceful SIGINT/SIGTERM handling in `server.py`.
-- Removed `parse_fallback`; circuit JSON parsing now accepts final content JSON only.
-- Removed hard-coded site names such as `youtube` and `grok` from Python guard logic.
-- Removed silent `except/pass` branches from state and bus JSON loading.
-- Made LLM node execution concrete-node aware, so evolved nodes with the same handler type can carry distinct prompt config.
-- Replaced the old ad hoc self-modify branch chain with a validated `apply_wiring_patch()` engine.
-- Extended self-modify operations to include topology edits, node updates, prompt rewrites, limit/observe tuning, guard updates, and reasoning-contract updates.
-- Refreshed outdated prompts around the current no-truncation observe model and the new self-rewiring contract.
-- Removed the remaining hard-coded site keyword from `moe.delegate_keywords`.
-- Started and verified the local workbench server at `http://127.0.0.1:9078/`.
+- Focused page content renders before focused chrome, overlays, and background.
+- Workbench has live filter controls and SSE-driven refresh.
+- SIGINT/SIGTERM saves current state.
+- `parse_fallback` removed; content JSON is the contract.
+- Python hard-coded site names were removed.
+- Self-modify now uses a validated patch engine.
+- Concrete node prompt config is supported, so evolved nodes of the same handler type can have distinct prompts.
+- README now documents the handover and continuation plan.
 
-Not done:
+Committed work:
 
-- The large cleanup target of 30%+ LOC reduction has not been achieved.
-- Python still contains meaningful behavioral guard logic around browser navigation, chat writes, playback, and verification shortcuts. That is better than before, but not yet the final "Python is dumb" vision.
-- No full LM Studio end-to-end autonomous goal was run after the changes.
-- No formal automated test suite exists yet.
-- Desktop tree payloads can still be large. They are bounded by depth/node filters, but the next agent should keep pressure on reducing noisy default context.
-- Self-modify has been unit-verified through in-memory patch application, but it has not yet been exercised through a live LLM escalation cycle.
+```text
+806a753 Enable self-rewiring observation filters
+40ab6eb Preserve node config in direct node runs
+```
 
-## Local Server
+Still not complete:
 
-Default server URL for slot 1:
+- No live LLM self-modification escalation cycle has been exercised after the patch-engine upgrade.
+- No full autonomous end-to-end goal has been completed after these changes.
+- Python still contains behavioral guard helpers that should shrink over time.
+- There is no formal automated test suite.
+- Desktop tree output can still be noisy under broad filters.
+
+## How To Run
+
+Use this Python runtime if `python` is not on PATH:
+
+```powershell
+C:\Users\px-wjt\AppData\Local\Python\bin\python.exe
+```
+
+Start the workbench server:
+
+```powershell
+& "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" "C:\Users\px-wjt\Downloads\endgame-ai\server.py"
+```
+
+Hidden background start:
+
+```powershell
+$py = 'C:\Users\px-wjt\AppData\Local\Python\bin\python.exe'
+$script = 'C:\Users\px-wjt\Downloads\endgame-ai\server.py'
+Start-Process -FilePath $py -ArgumentList @($script) -WorkingDirectory 'C:\Users\px-wjt\Downloads\endgame-ai' -WindowStyle Hidden
+```
+
+Workbench URL:
 
 ```text
 http://127.0.0.1:9078/
 ```
 
-Useful endpoints:
+Health check:
 
-```text
-GET  /                  workbench HTML
-GET  /health            node list, run status, capabilities
-GET  /wiring            current wiring.json
-GET  /wiring-schema     schema for wiring validation
-GET  /state             saved runtime state
-GET  /bus               bus messages
-GET  /events            SSE stream
-POST /step              execute one graph node
-POST /run               enqueue autonomous run
-POST /resume            resume saved state
-POST /pause             request pause
-POST /state             overwrite state
-POST /wiring            hot-reload wiring
-POST /node/{type}       execute one node handler
-POST /bus/post          append bus message
-POST /interrupt         inject goal interrupt
-POST /push              push arbitrary SSE event
+```powershell
+Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:9078/health'
 ```
+
+Stop the server on port 9078:
+
+```powershell
+$owners = Get-NetTCPConnection -LocalPort 9078 -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique
+foreach ($ownerPid in $owners) { Stop-Process -Id $ownerPid -Force -ErrorAction SilentlyContinue }
+```
+
+Important: start `server.py` by absolute path. A prior restart using only `server.py` served stale wiring from another process context.
 
 ## Architecture
 
 ```mermaid
 graph TD
-    User[Goal] --> Server[server.py]
+    Goal[User Goal] --> Server[server.py]
     Server --> Wiring[prompts/wiring.json]
     Server --> Desktop[desktop.py]
     Server --> Actions[actions.py]
-    Server --> LLM[Local LLM via LM Studio]
-    Desktop --> Screen[SCREEN text + screen_meta]
+    Server --> LLM[LM Studio / local LLM]
+    Desktop --> Screen[SCREEN + screen_meta]
     Screen --> Server
-    LLM --> Decision[content JSON + reasoning_content]
-    Decision --> Server
+    LLM --> JSON[content JSON]
+    LLM --> Reasoning[reasoning_content]
+    JSON --> Server
+    Reasoning --> Server
     Server --> Workbench[wiring-editor.html]
     Workbench --> Wiring
 ```
 
 Core files:
 
-| File | Current lines | Purpose |
-| --- | ---: | --- |
-| `server.py` | 1818 | HTTP server, ROD graph engine, node handlers, prompt assembly |
-| `desktop.py` | 1358 | Windows UIA observation, hover probing, tree snapshot, SCREEN rendering |
-| `actions.py` | 229 | Data-driven verb executor |
-| `colony.py` | 119 | Future multi-instance bus support |
-| `wiring-editor.html` | 986 | Workbench UI, graph editor, live state/screen viewer |
-| `prompts/wiring.json` | varies | Brain topology, prompts, guards, limits, observe config |
-| `prompts/wiring-schema.json` | varies | Wiring validation schema |
-| `prompts/model.json` | varies | LM Studio model connection |
+| File | Purpose |
+| --- | --- |
+| `server.py` | HTTP API, ROD graph runner, node handlers, prompt assembly, self-modify patch engine |
+| `desktop.py` | Win32/UIA observation, hover probe, desktop tree, SCREEN rendering |
+| `actions.py` | Mechanical verb execution |
+| `colony.py` | Future multi-instance bus support |
+| `wiring-editor.html` | Workbench UI, graph editor, live SCREEN/state panels |
+| `prompts/wiring.json` | Mutable topology, prompts, guards, limits, observe config |
+| `prompts/wiring-schema.json` | Wiring validation schema |
+| `prompts/model.json` | LM Studio connection |
 
 ## ROD Loop
-
-Current topology:
 
 ```mermaid
 graph LR
@@ -139,18 +162,85 @@ graph LR
     bus_post --> satisfied
 ```
 
-Circuit responsibilities:
+Circuit roles:
 
-| Circuit | Sees SCREEN | Responsibility |
-| --- | --- | --- |
-| `planner` | no | Turn the goal into ordered human subtasks |
-| `observe` | no LLM | Capture desktop state into SCREEN and `screen_meta` |
-| `act` | yes | Convert the current subtask into verb actions |
-| `verify` | no | Confirm or deny step completion from outcomes and memory |
-| `reflect` | no | Diagnose failed steps and choose retry/replan/escalate |
-| `self_modify` | no | Patch wiring when stuck |
+| Node | LLM | SCREEN | Responsibility |
+| --- | --- | --- | --- |
+| `planner` | yes | no | Convert goal into ordered subtasks |
+| `observe` | no | captures | Build SCREEN and metadata |
+| `act` | yes | yes | Emit mechanical action chain |
+| `verify` | yes | no | Confirm or deny from outcomes/memory |
+| `reflect` | yes | no | Diagnose failure and retry/replan/escalate |
+| `self_modify` | yes | no | Emit one validated `wiring_patch` |
 
-Self-modify can now apply these validated operations:
+## Observation Pipeline
+
+Current path:
+
+```text
+desktop.py Desktop.observe()
+  -> _probe()
+  -> _classify()
+  -> _render()
+  -> Observation(context_text, snapshot)
+
+actions.py observe_screen()
+  -> Desktop.observe()
+
+server.py node_observe()
+  -> state["screen"]
+  -> state["screen_meta"]
+
+server.py _resolve_value()
+  -> passes state["screen"] to act prompt without prompt truncation
+```
+
+Current action-scope order:
+
+1. focused page content
+2. focused chrome
+3. overlays
+4. background context
+
+Current observe config:
+
+```json
+{
+  "scope_depth": 4,
+  "element_text_max": 500,
+  "render_focused_first": true,
+  "desktop_tree_max_depth": 8,
+  "desktop_tree_max_nodes": 900
+}
+```
+
+`scope_depth` buckets:
+
+| Value | Includes |
+| ---: | --- |
+| 1 | focused page |
+| 2 | focused page + focused chrome |
+| 3 | focused page + focused chrome + overlays |
+| 4 | focused page + focused chrome + overlays + background |
+
+The model should see useful page content before toolbars, taskbar, or unrelated windows.
+
+## Self-Rewiring
+
+The self-rewiring path is now a real patch engine:
+
+```text
+self_modify LLM
+  -> emits {"record_type":"wiring_patch","data":{"op":"...","payload":{...}}}
+  -> server.apply_wiring_patch()
+  -> validate_wiring()
+  -> write prompts/wiring.json
+  -> configure_runtime(WIRING)
+  -> SSE wiring_modified
+  -> graph continues
+```
+
+Supported patch ops:
 
 ```text
 add_node
@@ -167,167 +257,139 @@ append_role_rule
 set_reasoning
 ```
 
-Concrete node prompts are supported. If the organism adds another `act`, `verify`, `planner`, `reflect`, or `self_modify` node with a custom `prompt`, that node's handler now uses the concrete node config rather than the first node of the same type.
+Concrete node prompt support matters:
 
-## Observation Pipeline
+- Before: `call_node("act")` always used the first topology node of type `act`.
+- Now: handlers receive the concrete node config and use that node's prompt.
+- Result: self-modify can add another `act` or `verify` node with different prompt inputs/role behavior and the runtime can actually use it.
 
-The important path:
+Backups:
+
+- `prompts/wiring.backup.json`
+- `prompts/wiring.backup.YYYYMMDD-HHMMSS.json`
+
+These are written before a self-modify mutation.
+
+## HTTP API
 
 ```text
-desktop.py Desktop.observe()
-  -> _probe()
-  -> _classify()
-  -> _render()
-  -> Observation(context_text=..., snapshot=...)
-
-actions.py observe_screen()
-  -> Desktop.observe()
-  -> returns full context_text
-
-server.py node_observe()
-  -> observe_screen()
-  -> stores state["screen"] and state["screen_meta"]
-
-server.py _resolve_value()
-  -> returns state["screen"] to prompt blocks without prompt truncation
+GET  /                  workbench
+GET  /health            server status, capabilities, self_modify_ops
+GET  /wiring            current wiring
+GET  /wiring-schema     schema
+GET  /state             saved state
+GET  /bus               bus messages
+GET  /events            SSE stream
+POST /step              execute one graph node
+POST /run               enqueue autonomous run
+POST /resume            resume saved state
+POST /pause             pause run
+POST /state             overwrite state
+POST /wiring            validate and hot-reload wiring
+POST /node/{type}       execute one handler directly
+POST /bus/post          append bus message
+POST /interrupt         inject goal
+POST /push              send SSE push
 ```
 
-Current SCREEN action-scope order:
+## Workbench
 
-1. Focused page content
-2. Focused chrome
-3. Overlay elements
-4. Background context
+`wiring-editor.html` is a no-build single-file UI.
 
-Current observe filters:
+Current features:
 
-```json
-{
-  "scope_depth": 4,
-  "element_text_max": 500,
-  "render_focused_first": true,
-  "desktop_tree_max_depth": 8,
-  "desktop_tree_max_nodes": 900
-}
-```
+- goal entry
+- new session
+- observe
+- single step
+- continue loop
+- pause
+- load/save state
+- hot-save wiring
+- graph editor
+- live SCREEN panes
+- filter sliders:
+  - `scope_depth`
+  - `element_text_max`
+  - `desktop_tree_max_depth`
+- focused-first checkbox
+- state, plan, history, reasoning, JSON, schema, log tabs
+- SSE event log and state refresh
 
-Scope-depth meaning in current implementation:
+Next workbench improvements:
 
-| `scope_depth` | Included buckets |
-| ---: | --- |
-| 1 | focused page only |
-| 2 | focused page + focused chrome |
-| 3 | focused page + focused chrome + overlays |
-| 4 | focused page + focused chrome + overlays + background |
+- Prompt Input Preview panel for every circuit.
+- Clear indicator for SSE connected/stale.
+- State diff per cycle.
+- Self-modify patch history panel.
+- One-click "force self_modify on current state" debug button.
 
-The default remains 4 to preserve context, but focused page data is now first.
+## Verification Already Performed
 
-## Verification Performed
-
-Commands/checks run in this session:
+Static checks:
 
 ```powershell
 & "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" -m compileall -q .
 ```
 
-Result: passed.
-
 ```powershell
 & "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" -c "import json; json.load(open('prompts/wiring.json', encoding='utf-8')); json.load(open('prompts/wiring-schema.json', encoding='utf-8')); print('json ok')"
 ```
 
-Result: `json ok`.
-
 ```powershell
-& "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" -c "import server; print('server import ok')"
+git diff --check
 ```
 
-Result: `server import ok`.
+Runtime checks:
 
-```powershell
-Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:9078/health'
-```
+- `/health` returns OK.
+- `/health` exposes `self_modify_ops`.
+- `/wiring` shows updated self_modify prompt.
+- `/wiring` has `moe.delegate_keywords = ["chrome", "browser"]`.
+- `/node/observe` generated a `FILTERS:` line.
+- Standalone `SCREEN_TRUNCATED_FOR_PROMPT:` generated lines: 0.
+- Workbench loaded with no console errors.
 
-Result: server healthy.
+Patch-engine checks:
 
-Real observe-node verification:
+- In-memory `set_observe` patch validated.
+- In-memory `append_role_rule` patch validated.
+- Synthetic concrete `act` node prompt resolution validated.
+- `/node/{type}` now preserves topology node config when invoking handlers.
 
-- SCREEN starts with `FOCUSED`, `ELEMENTS`, `OBSERVED`, and `FILTERS`.
-- `FILTERS: scope_depth=4 element_text_max=500 render_focused_first=true ...` appears.
-- Focused `Document` rendered before browser toolbar/chrome.
-- Standalone `SCREEN_TRUNCATED_FOR_PROMPT:` marker lines: 0.
+## Current Git State Expected
 
-Browser UI verification:
-
-- Workbench loaded at `http://127.0.0.1:9078/`.
-- Status showed `ready`.
-- Filter controls were visible.
-- Values matched wiring:
-  - scope depth: `4`
-  - element text max: `500`
-  - tree depth: `8`
-  - focused first: checked
-- `Live Screen` panel was present.
-- Graph SVG was present.
-- No browser console errors were reported.
-
-Self-rewiring verification:
-
-- `apply_wiring_patch()` accepted an in-memory `set_observe` mutation and produced valid wiring.
-- `apply_wiring_patch()` accepted an in-memory `append_role_rule` mutation and produced valid wiring.
-- Concrete node prompt resolution was verified with a synthetic `act` node using its own `prompt.user.blocks`.
-
-Final local search passed for retired names in Python/schema:
+At this handover point, recent work should include these commits:
 
 ```text
-SCREEN_TRUNCATED_FOR_PROMPT
-prompt_screen_max_chars
-node_value_max_chars
-render_value_max_chars
-tree_value_max_chars
-render_tree_value_max_chars
-parse_fallback
-grok
-youtube
+806a753 Enable self-rewiring observation filters
+40ab6eb Preserve node config in direct node runs
 ```
 
-Note: `prompts/wiring.json` can still contain site-specific examples or prompt policy. That is acceptable because semantic intelligence belongs in wiring prompts, not Python.
+The README update itself should be committed separately after this rewrite.
 
-## Development Methodology Used
+## Immediate Next Goals
 
-This session followed this order:
+Goal 1: exercise a live self-modify cycle.
 
-1. Read the attached objective.
-2. Inspect actual code paths instead of trusting stale line numbers.
-3. Search for all truncation and fallback markers with `rg`.
-4. Patch the observation pipeline before broad cleanup.
-5. Update schema and wiring with the runtime changes.
-6. Verify by running the real server and real `/node/observe`.
-7. Verify the workbench in a browser.
-8. Remove targeted task-specific Python remnants.
-9. Rewrite this README as a handover artifact.
+Use a controlled state that makes self_modify choose a harmless wiring patch, such as increasing `element_text_max` or appending a durable role rule. Confirm:
 
-Rules that should continue:
+- LLM emits `record_type: wiring_patch`.
+- `apply_wiring_patch()` applies it.
+- `prompts/wiring.json` changes.
+- backup file is created.
+- `/wiring` reflects the change.
+- graph continues through `modified`.
 
-- Prefer `rg` for search.
-- Use `apply_patch` for edits.
-- Keep Python mechanical.
-- Keep semantic behavior in wiring prompts.
-- Fail visibly where possible.
-- Verify against the real local server, not just static syntax.
-- When changing observation behavior, run a real observe node and inspect the first SCREEN lines.
+Goal 2: run a full autonomous desktop goal.
 
-## What To Do Next
-
-Priority 1: run an end-to-end autonomous goal.
-
-Use LM Studio and a small controlled goal such as:
+Start simple:
 
 ```text
 open notepad and write hello from endgame
 ```
 
-Then a browser goal:
+Then browser:
 
 ```text
 open browser, go to example.com, remember the visible headline
@@ -335,161 +397,161 @@ open browser, go to example.com, remember the visible headline
 
 Acceptance criteria:
 
-- Planner emits a reasonable plan.
-- Observe SCREEN shows the relevant focused content first.
-- Act chooses the correct visible [ID] or deterministic hotkey chain.
-- Verify confirms based on real outcomes.
-- No prompt truncation marker exists.
-- Workbench Live Screen updates during the run.
+- planner creates a short correct plan.
+- observe puts relevant focused content first.
+- act picks visible IDs or deterministic hotkeys.
+- verify confirms real outcomes.
+- no truncation marker appears.
+- workbench updates live.
 
-Priority 2: reduce Python intelligence.
+Goal 3: reduce Python behavioral intelligence.
 
-Targets:
+Targets in `server.py`:
 
-- `server.py` browser/chat/playback guard helpers.
-- Preflight confirmation shortcuts that infer too much.
-- Retry and replan branches that duplicate wiring-level reasoning.
-- Any task-specific or website-specific logic in Python.
+- browser/navigation guard helpers
+- playback-specific verification shortcuts
+- chat-specific preflight logic
+- repeated precursor handling that could live in prompts/guards
 
-Goal: move semantic policy into `prompts/wiring.json`, keep Python as a mechanical executor and formatter.
+Do not remove capability blindly. Replace Python policy with wiring prompt or guard behavior and verify.
 
-Priority 3: make observation filters more explicit.
+Goal 4: add tests.
 
-Consider adding:
-
-- `include_background`: boolean
-- `include_desktop_tree`: boolean or depth-gated mode
-- `max_action_scope_nodes`
-- `document_first_roles`
-- `chrome_roles`
-
-Keep the defaults small and useful. The model should see focused page content first.
-
-Priority 4: add tests.
-
-Suggested tests:
-
-- JSON schema accepts current wiring.
-- `_resolve_value(state, "state.screen")` returns the full screen string.
-- No retired config names appear in Python/schema.
-- `_render()` orders synthetic focused Document nodes before toolbar Button nodes.
-- `scope_depth` filters buckets as expected.
-- Signal handler can call `save_state()` without a passed state.
-
-Priority 5: continue workbench refinement.
-
-Possible improvements:
-
-- Add an explicit "Prompt Input Preview" panel showing exactly what each LLM circuit receives.
-- Add a small indicator when `/events` is connected.
-- Add state diff view per cycle.
-- Add filter presets:
-  - page only
-  - page + chrome
-  - page + overlays
-  - full debug
-- Add "run observe only" shortcut beside filters.
-
-## Handover Meta Prompt For The Next Agentic Coding AI
-
-Copy this section into the next coding-agent session.
+Suggested test file:
 
 ```text
-You are continuing work in C:\Users\px-wjt\Downloads\endgame-ai.
-
-Read README.md first. Treat it as the handover source of truth.
-
-Mission:
-Move endgame-ai toward a local self-evolving Windows desktop organism whose Python layer is dumb mechanical infrastructure and whose intelligence lives in wiring prompts and the local LLM.
-
-Current progress:
-- Prompt-side SCREEN truncation has been removed.
-- Retired truncation config names have been removed.
-- Observe filters now exist: scope_depth, element_text_max, render_focused_first.
-- desktop.py renders focused page content before focused chrome, overlays, and background context.
-- wiring-editor.html has live filter controls and SSE refresh.
-- SIGINT/SIGTERM state saving exists.
-- parse_fallback was removed.
-- site-specific Python names such as grok/youtube were removed from Python.
-- self_modify now uses a validated patch engine with prompt/topology/guard/observe/limit/reasoning mutation ops.
-- concrete node prompt config is supported for evolved nodes.
-- Local server was verified healthy at http://127.0.0.1:9078/.
-
-Non-negotiables:
-- Do not reintroduce prompt_screen_max_chars or SCREEN_TRUNCATED_FOR_PROMPT.
-- Do not add website-specific Python branches.
-- Do not add hidden fallback chains.
-- Do not silently swallow state, bus, parse, or observe errors.
-- Keep Python mechanical.
-- Put semantic policy in prompts/wiring.json.
-- Preserve hot-reload of wiring.json.
-- Verify with real server calls, especially /node/observe.
-
-Start by running:
-1. git status --short
-2. rg -n "SCREEN_TRUNCATED_FOR_PROMPT|prompt_screen_max_chars|node_value_max_chars|render_value_max_chars|parse_fallback|grok|youtube" server.py desktop.py actions.py prompts/wiring-schema.json
-3. python equivalent: compileall -q .
-4. GET http://127.0.0.1:9078/health, or start server.py if not running
-5. POST /node/observe and inspect the first 40 SCREEN lines
-
-First real task:
-Run an end-to-end autonomous goal and observe where the loop still fails.
-
-If it fails:
-- Do not patch around the specific site or app.
-- Identify whether the model lacked data, the prompt had bad policy, or Python executed mechanics incorrectly.
-- If data was missing, fix observation filters/rendering.
-- If policy was wrong, patch wiring prompts.
-- If mechanics were wrong, patch desktop/actions/server mechanically.
-
-Target next commit:
-Either a verified end-to-end autonomous success, or a focused cleanup that removes a meaningful chunk of Python behavioral intelligence without reducing capability.
-
-Report verification in README.md when done.
+tests/test_wiring_runtime.py
 ```
 
-## Operational Notes
+Initial tests:
 
-The project is Windows-specific. `desktop.py` uses Win32 APIs and UI Automation through `ctypes`.
+- current wiring validates.
+- retired truncation keys absent from code/schema.
+- `_resolve_value(state, "state.screen")` returns full string.
+- `apply_wiring_patch()` handles every supported op on a copy.
+- concrete node prompt config overrides same-type default behavior.
+- `_render()` orders focused Document before toolbar Button using synthetic nodes.
 
-The local Python runtime used during this handover was:
+## Non-Negotiable Constraints
 
-```text
-C:\Users\px-wjt\AppData\Local\Python\bin\python.exe
-```
+- Do not reintroduce SCREEN prompt truncation.
+- Do not reintroduce `parse_fallback`.
+- Do not add site-specific Python branches.
+- Do not hide errors with `except/pass`.
+- Do not make Python infer task semantics.
+- Do not add confirmation loops for normal autonomous operation.
+- Use wiring prompts/guards for semantic behavior.
+- Validate and hot-reload wiring after mutations.
+- Commit regularly.
 
-If `python` is not on PATH, use that runtime path.
+## Methodology For Future Coding Agents
 
-To start the server:
+Before editing:
+
+1. Run `git status --short`.
+2. Read this README.
+3. Inspect the exact code path you will touch.
+4. Search with `rg` before assuming.
+5. Make one coherent patch batch.
+6. Run compile and JSON checks.
+7. Restart server with absolute `server.py` path.
+8. Verify with HTTP endpoints.
+9. Commit the batch.
+
+Commands:
 
 ```powershell
-& "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" server.py
+git status --short
+rg -n "SCREEN_TRUNCATED_FOR_PROMPT|prompt_screen_max_chars|parse_fallback|grok|youtube" server.py desktop.py actions.py prompts\wiring-schema.json
+& "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" -m compileall -q .
+& "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" -c "import json; json.load(open('prompts/wiring.json', encoding='utf-8')); json.load(open('prompts/wiring-schema.json', encoding='utf-8')); print('json ok')"
+git diff --check
 ```
 
-Slot 1 maps to port `9078` because `http_port_base` is `9077` and slot offset is enabled.
-
-To start hidden from PowerShell:
+Restart server:
 
 ```powershell
+$owners = Get-NetTCPConnection -LocalPort 9078 -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique
+foreach ($ownerPid in $owners) { Stop-Process -Id $ownerPid -Force -ErrorAction SilentlyContinue }
 $py = 'C:\Users\px-wjt\AppData\Local\Python\bin\python.exe'
-Start-Process -FilePath $py -ArgumentList @('server.py') -WorkingDirectory 'C:\Users\px-wjt\Downloads\endgame-ai' -WindowStyle Hidden
+$script = 'C:\Users\px-wjt\Downloads\endgame-ai\server.py'
+Start-Process -FilePath $py -ArgumentList @($script) -WorkingDirectory 'C:\Users\px-wjt\Downloads\endgame-ai' -WindowStyle Hidden
 ```
 
-To stop a known server PID:
+Verify:
 
 ```powershell
-Stop-Process -Id <pid> -Force
+Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:9078/health' | Select-Object -ExpandProperty Content
+Invoke-WebRequest -UseBasicParsing -Uri 'http://127.0.0.1:9078/wiring' | Select-Object -ExpandProperty Content
 ```
 
-## Current Design Principle
+## Handover Meta Prompt
 
-The model was not the main failure mode. The core failure was starving the model of the right desktop data.
+Copy this prompt into any AI coding software that takes over the project:
 
-Therefore:
+```text
+You are continuing endgame-ai in C:\Users\px-wjt\Downloads\endgame-ai.
 
-- Observation quality comes first.
-- Focused page content must be first.
-- SCREEN must not be prompt-truncated.
-- Workbench must show what the model receives.
-- Python should not guess the task.
-- Wiring and the LLM should own task reasoning.
+Read README.md first. It is the source of truth.
+
+Vision:
+Build a local Windows desktop organism that observes, acts, verifies, reflects, and rewires its own prompts/topology/guards/filters through validated wiring patches. Python is mechanical infrastructure. The mutable brain is prompts/wiring.json. The local LLM provides semantic judgment.
+
+Current state:
+- SCREEN prompt truncation has been removed.
+- Focused page content renders before chrome/overlays/background.
+- Observe filters exist: scope_depth, element_text_max, render_focused_first.
+- Workbench has live filter controls and SSE refresh.
+- parse_fallback is removed.
+- SIGINT/SIGTERM state saving exists.
+- Python site-specific names were removed.
+- self_modify now uses apply_wiring_patch() with validated ops:
+  add_node, update_node, remove_node, add_edge, remove_edge, set_guard, set_limit, set_observe, set_prompt_base, set_role, append_role_rule, set_reasoning.
+- Concrete node prompt config is supported, so evolved nodes can have distinct prompts even if they share a handler type.
+- Recent commits:
+  806a753 Enable self-rewiring observation filters
+  40ab6eb Preserve node config in direct node runs
+
+Rules:
+- Do not reintroduce prompt_screen_max_chars or SCREEN_TRUNCATED_FOR_PROMPT.
+- Do not reintroduce parse_fallback.
+- Do not add task/site-specific Python branches.
+- Do not hide errors with except/pass.
+- Keep Python dumb and mechanical.
+- Put semantic fixes in wiring prompts or guards.
+- Validate wiring after every mutation.
+- Restart the server using the absolute server.py path.
+- Commit regularly after each coherent batch.
+
+First actions:
+1. Run git status --short.
+2. Run compileall and JSON checks from README.
+3. Restart server with absolute server.py path.
+4. Confirm /health exposes self_modify_ops.
+5. Confirm /wiring has the updated self_modify prompt.
+
+Main next task:
+Exercise a live self_modify cycle using a controlled state. Confirm the LLM emits wiring_patch, the patch engine applies it, wiring.json changes, backup is created, hot reload works, and graph continues through modified.
+
+Then run a simple end-to-end autonomous goal:
+open notepad and write hello from endgame
+
+When something fails:
+- If the model lacked data, fix observation/rendering/filters.
+- If the model had wrong policy, patch prompts/wiring.json.
+- If mechanics failed, patch Python mechanically.
+- Do not add one-off site/app hacks.
+
+Deliverable for your session:
+One verified capability improvement and a commit. Update README.md with what changed and what remains.
+```
+
+## Final Reminder
+
+The system becomes evolutionary only when failures are converted into durable wiring mutations.
+
+Do not optimize for a single demo. Optimize for the loop:
+
+```text
+observe failure -> reason about cause -> patch wiring -> validate -> hot reload -> continue
+```
