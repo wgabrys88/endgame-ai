@@ -694,6 +694,151 @@ The difference: **the model sees what it needs on the first observation.**
 
 ---
 
+---
+---
+
+# Appendix A — Implementation Plan (for coding agents)
+
+**Mode:** FULLY AUTONOMOUS — human pre-approves all file operations  
+**Reasoning:** HIGH — use MoE self-analysis on every plan and action
+
+---
+
+## NON-NEGOTIABLE RULES FOR THIS WORK
+
+1. **NO TRUNCATION anywhere in the system.** Replace all truncation with FILTERS. Filters are depth/length controls exposed via the workbench HTML and stored in wiring.json observe config. Hot-reloadable.
+2. **NO TASK-SPECIFIC LOGIC in Python.** No "if Chrome Lens then Escape". No "if grok.com then switch tab". Python stays dumb. ALL intelligence is in the wiring prompts or the LLM's own reasoning.
+3. **NO FALLBACKS.** No "if parse fails, try this other thing". Fail hard. Surface the error to the wiring brain.
+4. **NO SAFETY THEATER.** No double-checking, no confirmation loops. The organism operates. If it breaks, reflect/self_modify handle it.
+5. **PYTHON IS DUMB.** Minimal code. Clear failure. No branching recovery. Mechanical execution only.
+6. **WIRING IS DUMB.** Static topology with prompts. Only the LLM + human are smart.
+7. **MODERN WEB ONLY.** Latest Chrome and Opera (desktop and Android). No legacy. Use modern CSS (grid, container queries, :has), modern JS (top-level await, web components), modern HTML5.
+8. **HUMAN APPROVES FULLY AUTONOMOUS OPERATION.** Read, write, delete, restructure any file without asking.
+
+---
+
+## TASK 1: REPLACE TRUNCATION WITH INTELLIGENT FILTERS
+
+### What exists now
+- `prompt_screen_max_chars: 8000` — hard truncation of SCREEN text
+- `desktop_tree_max_depth: 8`, `desktop_tree_max_nodes: 900` — hard limits
+- `node_value_max_chars: 12000`, `render_value_max_chars: 4000` — hard cuts
+- Result: LLM receives SCREEN where focused page content is cut off because taskbar renders first
+
+### What must exist after
+- **NO max_chars truncation.** FILTER by SCOPE PRIORITY instead.
+- Render order:
+  1. Focused window page content (scope=focused, depth-controlled)
+  2. Top overlay content (scope=overlay)
+  3. Window chrome (tabs, toolbar) — only names, not CSS class noise
+  4. Taskbar/tray — only if depth setting includes it
+- **Depth filter** (integer, hot-reloadable via workbench slider):
+  - depth=1: focused window page elements only
+  - depth=2: + overlay elements
+  - depth=3: + window chrome (tabs, toolbar, address bar)
+  - depth=4: + taskbar/tray (DEFAULT)
+  - depth=5: + background windows
+  - depth=6: + full desktop tree
+- **Element text length filter** (integer, hot-reloadable):
+  - Default: 500 chars per element value. Range: 50–5000.
+- **Desktop tree depth filter** (integer, hot-reloadable):
+  - Default: 4. Range: 1–12.
+- All stored in `wiring.json → observe`, hot-reloaded every cycle.
+- Remove ALL instances of `SCREEN_TRUNCATED_FOR_PROMPT`.
+
+---
+
+## TASK 2: CODEBASE CLEANUP
+
+### Targets
+- **server.py** (~1808 lines): Remove duplicate handlers, parse fallback chains, task-specific conditionals, defensive try/except/pass, dead code paths.
+- **desktop.py**: Remove redundant element search strategies, legacy API patterns, over-engineered retry loops.
+- **actions.py**: Remove verb execution fallbacks, duplicate handling.
+- **colony.py**: Keep, mark as future.
+
+### Rules
+- Branches doing same thing differently "just in case" → keep direct path, delete alternatives
+- Error handling that silently recovers → remove, let it crash
+- Target: 30%+ reduction in total LOC
+
+---
+
+## TASK 3: MODERNIZE WORKBENCH HTML
+
+Single HTML file with:
+1. **Live SCREEN viewer** — shows what LLM receives, updates every cycle
+2. **Filter sliders** — scope_depth, element_text_max, tree_depth → patch wiring.json
+3. **Wiring topology** — Canvas2D graph (keep existing, modernize)
+4. **State inspector** — step, plan, memory, reasoning_chain, history
+5. **Step controls** — pause/resume/step/set goal
+6. **Cycle log** — scrolling node transitions + action outcomes
+
+Technical: CSS grid, dark theme, WebSocket/SSE live updates, touch-friendly, no frameworks, no build step.
+
+---
+
+## TASK 4: SCREEN RENDERING — FOCUSED CONTENT FIRST
+
+The core fix in the Python observe/render pipeline:
+
+```
+BEFORE: overlay → focused_chrome → focused_page → background → tree
+AFTER:  focused_page → focused_chrome → overlay → (stop if depth<5)
+```
+
+- Element list already has `scope` field — sort by scope before rendering
+- Page content (Document children, Edit fields, Hyperlinks) renders BEFORE toolbar
+- Apply depth filter to control what enters the pipeline
+- Background windows NEVER render unless depth≥5
+
+---
+
+## TASK 5: CLI INTERACTION
+
+- Hover probe already captures terminal text in element values
+- With element_text_max=2000, LLM reads ~50 lines of terminal output
+- Verbs already work: `write ""` → terminal input, `press enter` → submit, `hotkey ctrl+c` → interrupt
+- No new code needed — just stop truncating element values
+
+---
+
+## TASK 6: GRACEFUL SIGNAL HANDLING
+
+```python
+import signal
+def _shutdown(sig, frame):
+    save_state()
+    print("shutdown")
+    sys.exit(0)
+signal.signal(signal.SIGINT, _shutdown)
+signal.signal(signal.SIGTERM, _shutdown)
+```
+
+---
+
+## EXECUTION ORDER
+
+1. Task 2 (cleanup) — understand codebase, remove noise
+2. Task 4 (render order) — the critical fix
+3. Task 1 (filters replace truncation) — architecture change
+4. Task 3 (workbench) — collaboration tool
+5. Task 5 (CLI) — emerges from Tasks 1+4
+6. Task 6 (signal handler) — 5 lines, anytime
+
+---
+
+## META-RULES FOR THE CODING AGENT
+
+- **Speed over safety.** Make changes directly. Git exists.
+- **Delete freely.** Dead code is debt.
+- **One pass.** Read, understand, modify. Don't re-read 5 times.
+- **Test by running.** `python server.py` — does it start? Good.
+- **MoE self-analysis.** Before each change: "Am I adding a fallback? Making Python smarter?" If yes → stop.
+- **Measure in deleted lines.** Best commits remove more than they add.
+- **The model is smart.** Every change justified by: "gives LLM better data" or "removes complexity from mechanical layer."
+
+---
+
 ## License
 
 See `LICENSE` file.
