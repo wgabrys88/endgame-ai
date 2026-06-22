@@ -704,6 +704,76 @@ The difference: **the model sees what it needs on the first observation.**
 
 ---
 
+## CODE ENTRY POINTS (start here)
+
+The observation→render→truncate pipeline:
+
+```
+desktop.py line 1216: _render()
+  → Builds context_text string from classified UIA nodes
+  → Node order = probe discovery order (overlay/taskbar FIRST, page content LAST)
+  → THIS IS WHERE RENDER ORDER MUST CHANGE
+
+desktop.py line 462: observe() method
+  → Calls _render(), appends PROBE stats, OVERLAYS, DESKTOP_TREE, WINDOWS
+  → Returns Observation(context_text=...)
+
+actions.py line 196: observe_screen()
+  → Returns obs.context_text (the full SCREEN string, untruncated)
+
+server.py line 923: node_observe()
+  → Calls observe_screen(), stores result in state["screen"]
+  → This is the FULL untruncated observation
+
+server.py line 574: (inside prompt block assembly)
+  → TRUNCATES state["screen"] at prompt_screen_max_chars (8000)
+  → Produces "SCREEN_TRUNCATED_FOR_PROMPT: omitted N chars"
+  → THIS IS WHAT MUST BE REMOVED — replace with scope filter
+```
+
+### HTTP Endpoints (workbench API)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/` | Serve wiring-editor.html |
+| GET | `/health` | Node list, slot, port, run status |
+| GET | `/wiring` | Current wiring.json |
+| GET | `/wiring-schema` | JSON Schema |
+| GET | `/state` | Current state.json |
+| GET | `/bus` | Bus messages |
+| GET | `/events` | SSE stream (live updates already exist!) |
+| POST | `/step` | Execute one ROD cycle |
+| POST | `/run` | Start autonomous goal execution |
+| POST | `/resume` | Resume from saved state |
+| POST | `/pause` | Pause execution |
+| POST | `/state` | Overwrite state |
+| POST | `/wiring` | Hot-reload wiring.json (validates against schema) |
+| POST | `/node/{type}` | Execute single node handler |
+| POST | `/bus/post` | Post to bus |
+| POST | `/interrupt` | Inject new goal via bus |
+| POST | `/push` | Push arbitrary data via SSE |
+
+**Key finding: SSE `/events` already exists.** The workbench modernization can use it directly — no new server code needed for live updates.
+
+### Wiring Hot-Reload Mechanism
+
+- POST to `/wiring` validates against schema, writes to `prompts/wiring.json`, reloads global `WIRING` dict
+- `self_modify` node (line 1376) writes patches and calls the same reload path
+- The ROD cycle reads `WIRING` on every node execution — changes take effect immediately
+
+### State Persistence
+
+```python
+# server.py line 351
+def save_state(state):
+    # Writes to exec-data/state.json
+    # Called after every node execution when body contains "save": true
+    # Called by /state POST endpoint
+    # NOT called on Ctrl+C (the gap to fix)
+```
+
+---
+
 ## NON-NEGOTIABLE RULES FOR THIS WORK
 
 1. **NO TRUNCATION anywhere in the system.** Replace all truncation with FILTERS. Filters are depth/length controls exposed via the workbench HTML and stored in wiring.json observe config. Hot-reloadable.
@@ -720,31 +790,31 @@ The difference: **the model sees what it needs on the first observation.**
 ## TASK 1: REPLACE TRUNCATION WITH INTELLIGENT FILTERS
 
 ### What exists now
-- `prompt_screen_max_chars: 8000` — hard truncation of SCREEN text
-- `desktop_tree_max_depth: 8`, `desktop_tree_max_nodes: 900` — hard limits
-- `node_value_max_chars: 12000`, `render_value_max_chars: 4000` — hard cuts
+- `prompt_screen_max_chars: 8000` in wiring.json limits section — hard truncation at server.py line 574
+- `desktop_tree_max_depth: 8`, `desktop_tree_max_nodes: 900` — hard limits in observe config
+- `node_value_max_chars: 12000`, `render_value_max_chars: 4000` — hard cuts applied in desktop.py _render()
+- `_obs_clip()` function in desktop.py — clips text values before rendering
 - Result: LLM receives SCREEN where focused page content is cut off because taskbar renders first
 
 ### What must exist after
-- **NO max_chars truncation.** FILTER by SCOPE PRIORITY instead.
-- Render order:
-  1. Focused window page content (scope=focused, depth-controlled)
-  2. Top overlay content (scope=overlay)
-  3. Window chrome (tabs, toolbar) — only names, not CSS class noise
-  4. Taskbar/tray — only if depth setting includes it
-- **Depth filter** (integer, hot-reloadable via workbench slider):
-  - depth=1: focused window page elements only
-  - depth=2: + overlay elements
-  - depth=3: + window chrome (tabs, toolbar, address bar)
-  - depth=4: + taskbar/tray (DEFAULT)
-  - depth=5: + background windows
-  - depth=6: + full desktop tree
-- **Element text length filter** (integer, hot-reloadable):
-  - Default: 500 chars per element value. Range: 50–5000.
-- **Desktop tree depth filter** (integer, hot-reloadable):
-  - Default: 4. Range: 1–12.
-- All stored in `wiring.json → observe`, hot-reloaded every cycle.
-- Remove ALL instances of `SCREEN_TRUNCATED_FOR_PROMPT`.
+- **Remove `prompt_screen_max_chars` from limits.** Delete the truncation block at server.py line 574-580.
+- **Remove `_obs_clip()` hard cuts** — replace with configurable `element_text_max` from observe config.
+- **Add scope-priority FILTER** in desktop.py `_render()`:
+  - Group nodes by scope (focused/overlay/background) BEFORE rendering
+  - Render focused-scope page elements first (Document children, Edit, Hyperlink)
+  - Render focused-scope chrome elements second (toolbar, tabs)
+  - Render overlay-scope elements third
+  - Stop at configured `scope_depth` level
+- **New wiring.json observe fields:**
+  ```json
+  {
+    "scope_depth": 4,
+    "element_text_max": 500,
+    "render_focused_first": true
+  }
+  ```
+- **Remove** `prompt_screen_max_chars`, `render_value_max_chars`, `node_value_max_chars` from wiring.json
+- Remove ALL instances of `SCREEN_TRUNCATED_FOR_PROMPT`
 
 ---
 
@@ -779,17 +849,21 @@ Technical: CSS grid, dark theme, WebSocket/SSE live updates, touch-friendly, no 
 
 ## TASK 4: SCREEN RENDERING — FOCUSED CONTENT FIRST
 
-The core fix in the Python observe/render pipeline:
+### The core fix
+In `desktop.py` `_render()` method (line 1216), the `nodes` list arrives in probe discovery order (overlay first, page content last). Reorder before rendering:
 
 ```
-BEFORE: overlay → focused_chrome → focused_page → background → tree
-AFTER:  focused_page → focused_chrome → overlay → (stop if depth<5)
+CURRENT node order in _render():  overlay → focused_chrome → focused_page
+REQUIRED node order:               focused_page → focused_chrome → overlay
 ```
 
-- Element list already has `scope` field — sort by scope before rendering
-- Page content (Document children, Edit fields, Hyperlinks) renders BEFORE toolbar
-- Apply depth filter to control what enters the pipeline
-- Background windows NEVER render unless depth≥5
+### Implementation
+- Before the rendering loop, sort nodes by scope priority
+- Focused-scope page elements (role in Document/Edit/Hyperlink/Button on page) render FIRST
+- Focused-scope chrome elements (toolbar buttons, tabs, address bar) render SECOND  
+- Overlay elements render THIRD
+- Apply `scope_depth` from wiring.json observe config as cutoff
+- Remove the truncation block at server.py line 574-580 entirely
 
 ---
 
