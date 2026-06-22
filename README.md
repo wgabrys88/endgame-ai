@@ -1,11 +1,21 @@
 # endgame-ai
 
-endgame-ai is a local Windows desktop organism driven by a JSON signal graph.
-Python owns mechanics. `prompts/wiring.json` owns behavior.
+endgame-ai is a local Windows desktop organism whose behavior lives in a JSON
+signal graph and whose mechanics live in Python.
 
-The project goal is a reliable, collaborative desktop agent that can handle
-complex contingent workflows through the same interface a human uses in the
-browser dashboard and an AI uses over HTTP. The immediate target is:
+The project is not a prompt demo. It is a wiring-first agent runtime that can
+look at the real desktop, choose a bounded action, verify from evidence, reflect
+when a step fails, and conservatively change its own wiring when the failure is
+generic. The same runtime must be usable by a human in the workbench and by an
+AI over HTTP.
+
+## Vision
+
+The long-term target is a desktop agent that can complete complex contingent
+workflows through the same applications a human uses, without task-specific
+Python code and without stale trace replay.
+
+The current north-star workflow is:
 
 ```text
 open Chrome
@@ -15,16 +25,21 @@ save a summary of the conversation in Notepad
 play Shakira Waka Waka on YouTube
 ```
 
-This is intentionally hard. It requires real desktop observation, browser state,
-conversation memory, app switching, summary writing, and media playback without
-copying stale trace literals or typing into the wrong window.
+That target is intentionally hard. It requires real desktop observation,
+conversation memory, browser state, app switching, summary writing, media
+selection, and playback verification. The product direction is not to hardcode
+Grok, Notepad, YouTube, or a particular page layout. The product direction is
+to improve observation, wiring, reasoning contracts, and verification until the
+system can handle this class of workflow generically.
 
 ## Architecture
 
-The runtime is a signal graph. Nodes are defined in `prompts/wiring.json`,
-executed by `server.py`, and inspected or edited through `wiring-editor.html`.
+Runtime behavior is a directed signal graph in `prompts/wiring.json`.
+`server.py` executes the graph. `desktop.py` observes and manipulates Windows.
+`actions.py` dispatches data-driven action verbs. `wiring-editor.html` is the
+human workbench and schema-driven wiring editor.
 
-Current graph shape:
+Current graph:
 
 ```text
 goal_inbox -> moe_route -> planner -> scheduler -> bus_check -> observe -> act -> verify
@@ -38,166 +53,126 @@ goal_inbox -> moe_route -> planner -> scheduler -> bus_check -> observe -> act -
                                                                             +----> scheduler
 ```
 
-Roles:
+Node roles:
 
-- `goal_inbox` normalizes the requested goal.
+- `goal_inbox` normalizes a requested goal into state.
 - `moe_route` decides local execution or colony delegation.
-- `planner` creates ordered human-level subtasks.
+- `planner` turns the goal, history, and memory into human-level subtasks.
 - `scheduler` selects the current subtask.
 - `bus_check` handles colony interrupts.
-- `observe` captures the focused desktop window plus window awareness.
+- `observe` captures the real desktop and builds the `SCREEN` block.
 - `act` is the only circuit that sees `SCREEN`; it emits deterministic verbs.
-- `verify` judges completion from action evidence and memory.
-- `reflect` diagnoses failed steps.
+- `verify` judges step completion from action evidence and memory.
+- `reflect` diagnoses failed steps without seeing `SCREEN`.
 - `self_modify` proposes conservative wiring changes.
-- `bus_post` publishes final/delegation state.
+- `bus_post` publishes terminal or delegation telemetry.
 - `satisfied` terminates the graph.
 
 ## ROD Contract
 
-ROD means Reason, Observe, Decide as a runtime contract:
+ROD means Reason, Observe, Decide. Each LLM-backed circuit follows the same
+shape:
 
 1. Build the node's wired input blocks from current state and wiring.
 2. Call the local model once for reasoning.
-3. Store reasoning under the circuit for inspection.
-4. Call the model again with that reasoning and the same role contract.
-5. Require one JSON object in content for the circuit.
-6. Parse and validate the circuit record type.
+3. Store reasoning under that circuit for inspection.
+4. Call the model again with the same role contract and the reasoning context.
+5. Require one JSON object in content.
+6. Parse and validate the circuit's record type.
 7. Apply only generic state patches and route along wiring edges.
 
-The model first deduces what it sees or knows from its wired inputs. It then
-emits the constrained decision JSON. Reasoning is inspectable but must not leak
-into circuits that should not see it.
+Reasoning is inspectable, but circuit boundaries matter. Planner never sees
+screen elements. Verify and reflect never see screen elements. Act is the only
+circuit that receives desktop observation.
 
-## Invariants
+## Core Invariants
 
 - `prompts/wiring.json` is the behavior source of truth.
-- Python handles mechanical truth: HTTP, graph routing, desktop focus,
-  cached element maps, action execution, state files, wiring validation, and
-  hot-reload.
+- Python owns mechanics: HTTP, graph routing, desktop focus, cached element
+  maps, action execution, state files, validation, and hot reload.
 - Python must not hardcode task strategy for Grok, Notepad, YouTube, or any
   future workflow.
 - `act` is the only circuit that receives `SCREEN`.
 - Focused-window `[ID]` targets are actionable only for the observation that
   produced them.
 - `WINDOWS:` entries are awareness only; they are not element targets.
+- `DESKTOP_TREE:` is read-only context.
+- `aid=` and `class=` are stable UIA identity hints, not action targets.
+- `screen_meta` must report tree and probe coverage truthfully.
 - Chained actions use the cached observation map shown to `act`.
-- Normal verification uses action evidence and `MEMORY`, not a hidden post-act
-  screen scan.
-- If visible information must survive app switching, `act` stores it through
+- Normal verification uses action evidence and `MEMORY`, not hidden post-act
+  screen scans.
+- If visible information must survive app switching, `act` stores it with
   `remember`.
 - Dashboard actions and HTTP API calls must have parity.
-- The HTML editor must stay schema-driven where `prompts/wiring-schema.json`
-  describes the data, with generic object editors for future fields.
+- The workbench must remain schema-driven where `prompts/wiring-schema.json`
+  describes the data, with generic editors for future fields.
 
-## Current Implementation State
+## Observation Model
 
-Implemented:
+Observation is the next center of gravity for the project. A weak or partial
+`SCREEN` block causes the model to make plausible but wrong inferences.
 
-- two-pass ROD for LLM-backed nodes
-- queued `/run` and `/resume` runner
-- saved resume state at the next node
-- serialized observe/action calls
-- deterministic action chains
-- cached observation reuse across chained verbs
-- focused `[ID]` targets and non-actionable `WINDOWS:` list
-- Python HWND focus for targeted actions
-- rejection of targeted writes to non-writable elements
-- verifier preflights for focus, app launch, and browser navigation evidence
-- trace examples for planner as structure only
-- isolated planner/act reasoning to prevent stale JSON poisoning
-- `state.memory` plus `remember`
-- `/step`, `/inspect`, `/node/:type`, `/state`, `/wiring`, pause/resume, and SSE
-- schema-driven `wiring-editor.html` with graph editing, state panels, wired
-  inputs, reasoning, screen/window split, and hot-reload
-- self-modify with current wiring summary and conservative patch examples
-- observation detail controlled by `wiring.json` instead of hardcoded tiny
-  previews
-- hot-reloaded wiring updates action verbs and observation settings in the live
-  server
-- browser navigation normalization now preserves focus-before-`ctrl+l` order
-- focused-window observation now falls back from shell/Desktop foreground to the
-  top real application window, avoiding mixed shell/browser target maps
-- browser conversation policy now permits deterministic scroll/end/wait
-  recovery before returning `CANNOT`
-- model output budget raised from 2048 to 8192 tokens for longer reasoning and
-  structured decisions
+The observer now produces:
 
-Previously validated:
+- ACTION SCOPE: actionable focused-window and top-overlay `[ID]` targets.
+- OVERLAYS: z-ordered window overlays that may obstruct the focused app.
+- DESKTOP_TREE: a bounded full-desktop UIA hierarchy for read-only context.
+- WINDOWS: z-ordered visible top-level windows for awareness.
+- PROBE telemetry: primary, overlay, full-screen hover, dense, and scroll
+  enrichment stats.
+- TREE coverage: focused capture, overlay capture, truncation, scope counts,
+  captured owner HWNDs, and missing overlay HWNDs.
 
-- simple desktop `open notepad` streaks completed repeatedly at about 11 cycles
-- dashboard loaded and basic step/debug controls worked
-- `/health` and `/smoke` passed in prior validation runs
+The full-screen hover pass intentionally moves the mouse across the screen at
+the configured point spacing, collects UIA elements under those hover points,
+deduplicates them against focused/overlay probes, and restores the cursor.
+This is generic mechanical observation. It is controlled by `observe` keys in
+`prompts/wiring.json` and validated by `server.py` plus
+`prompts/wiring-schema.json`.
 
-Real compound run state on 2026-06-21:
+Current rich observation defaults are intentionally large because the local LM
+Studio context budget can accept more screen evidence:
 
-- All runtime execution was stopped for handover. At this handover there is no
-  Python server process intentionally left running.
-- A real compound run exposed a generic navigation bug: inserting `ctrl+l`
-  before a model-emitted browser focus selected the wrong window. The fix is now
-  generic chain normalization and context guarding, not Grok-specific logic.
-- A resumed real run proved the navigation fix: Chrome was focused, `ctrl+l`
-  selected the address bar, `grok.com` was typed, and Grok loaded.
-- Memory contains three real Grok capture keys:
-  `grok_turn_1_response`, `grok_turn_2_response`, and
-  `grok_turn_3_response`.
-- Completed real workflow evidence: Chrome/Grok navigation, initial Grok
-  message submission, first response memory, follow-up submission, second
-  response memory, third message submission, third response memory, and a
-  135-character summary write action into Notepad from memory.
-- Later real evidence reached YouTube search results for
-  `Shakira Waka Waka`. The verifier correctly refused to treat search/navigation
-  as playback.
-- After that handover, a short authorized continuation repaired
-  `state.json` to a single remaining YouTube playback step and preserved the
-  pre-repair file as `state.before-youtube-repair.json`.
-- The repaired state reached `_resume_node = "scheduler"`, `step = 0`,
-  `retries = 5`, with the single current step:
-  `play Shakira Waka Waka on YouTube`.
-- Additional real attempts produced useful evidence but did not complete
-  playback: `act` clicked the YouTube `Videos` filter, waited, refocused
-  Chrome, and clicked the page/tab title. Verifier correctly denied every
-  precursor because no playback evidence existed.
-- Runtime was stopped again for handover. At this handover there is no Python
-  server process intentionally left running.
-- Remaining workflow work: solve the observation/cognition issue on YouTube
-  results, click/play a matching result, verify playback, and optionally refocus
-  Notepad to audit the written summary visually.
-- Latest unvalidated hardening in tracked files: browser navigation context
-  guard, unsafe launch-then-content-write guard, summary-write verifier
-  preflight, playback false-positive block, replan index reset, and a reflect
-  retry path for "searched but playback not confirmed".
+```text
+probe_step_px=40
+hover_scan_enabled=true
+hover_scan_step_px=40
+desktop_tree_max_depth=8
+desktop_tree_max_nodes=900
+desktop_tree_child_limit=180
+read_text_max=16000
+node_value_max_chars=12000
+render_value_max_chars=4000
+tree_value_max_chars=4000
+render_tree_value_max_chars=800
+```
 
-## Key Handover Insight
+If observation becomes too slow, reduce the wiring values rather than removing
+the generic capability.
 
-Do not keep adding task-specific prompt rules for YouTube, Grok, Notepad, or
-individual page controls. The latest run showed a more fundamental problem:
-`act` can only reason over the textual `SCREEN` tree it receives. In the
-YouTube state, that tree exposed browser chrome, the address bar, filter tabs,
-`About these results`, and a page document node, but did not expose usable video
-result cards or a clear spatial/content hierarchy. The model then made
-plausible but wrong cognitive inferences from a partial tree: it clicked
-`Videos`, waited, refocused Chrome, and clicked the page/tab title.
+## Workbench
 
-A small Codex command-approval popup appeared in the observation text during
-some steps. That popup was not the core issue; it only made the symptom more
-obvious. The core issue is how the observer represents the real screen to the
-LLM and how the LLM understands that representation.
+`wiring-editor.html` is the operator surface. It must make the wiring graph and
+runtime state understandable without requiring raw JSON reading.
 
-The next work should focus on generic observation quality and cognition:
+The workbench currently includes:
 
-- expose enough of the focused app's UIA tree for the task-relevant controls to
-  appear
-- preserve spatial/order clues so the model knows what is browser chrome,
-  page content, result cards, overlays, filters, and controls
-- separate obstructing overlays from normal page content without letting a small
-  unrelated overlay dominate the `SCREEN` block
-- show scrollability, viewport position, and whether more content exists below
-- identify element roles and ancestry well enough that a document title is not
-  confused with a playable media result
-- make the workbench show the same observation tree humans and API clients pass
-  to `act`
-- improve the observer generically before tightening prompts for one site
+- a topology-aware SVG signal graph
+- auto layout from `topology.cycle_start`
+- draggable nodes with persisted local positions
+- pan, wheel zoom, fit, and explicit zoom controls
+- styled forward, back, loop, success, and failure edges
+- edge creation and reconnection through ports/handles
+- schema-driven inspectors for nodes, edges, and top-level wiring sections
+- hot-reload through `POST /wiring`
+- `Step`, `Continue`, `Pause`, `Observe`, `Load State`, and `Save State`
+- state, plan, history, wired inputs, reasoning, raw JSON, schema, and log tabs
+- Action Scope IDs, Desktop Tree, and Telemetry observation panels
+
+The graph is an editor and a debugger. It should keep improving toward a view
+where the operator can see which node ran, why a transition was selected, where
+failure loops occur, and which JSON fields control each behavior.
 
 ## HTTP Surface
 
@@ -226,71 +201,150 @@ POST /bus/post   {message}                   Append bus message
 Parity rule: anything the GUI can do must be possible through HTTP, and HTTP
 state changes must be visible in the GUI.
 
+## Current Implementation State
+
+Implemented:
+
+- two-pass ROD for LLM-backed nodes
+- queued `/run` and `/resume` runner
+- saved resume state at the next node
+- serialized observe/action calls
+- deterministic action chains
+- cached observation reuse across chained verbs
+- focused `[ID]` targets plus non-actionable window/tree awareness
+- Python HWND focus for targeted actions
+- rejection of targeted writes to non-writable elements
+- verifier preflights for focus, app launch, browser navigation, summary
+  writing, and media playback false positives
+- isolated planner/act reasoning to reduce stale JSON poisoning
+- `state.memory` plus `remember`
+- `/step`, `/inspect`, `/node/:type`, `/state`, `/wiring`, pause/resume, and SSE
+- schema-driven workbench with graph editing, hot reload, state panels, wired
+  inputs, reasoning, observation panels, and telemetry
+- self-modify with current wiring summary and conservative patch examples
+- observation settings controlled by `wiring.json`
+- validated `set_observe` and `/wiring` observe updates
+- UIA `automation_id` and `class_name` identity hints
+- z-ordered desktop tree and rectangle-based window ownership fallback
+- full-screen mouse-hover observation enrichment
+- richer token-oriented observation and debug limits
+
+Known compound-run evidence from prior real runs:
+
+- Chrome/Grok navigation succeeded.
+- A Grok initial message was submitted.
+- Three Grok response memory keys existed in the real run:
+  `grok_turn_1_response`, `grok_turn_2_response`, and
+  `grok_turn_3_response`.
+- A memory-derived summary write action into Notepad succeeded.
+- YouTube search/navigation for `Shakira Waka Waka` succeeded.
+- Playback was not proven; verifier correctly refused precursor evidence.
+
+Do not treat that as final completion. The remaining proof is to expose and
+click a matching playable media result, verify playback, and optionally refocus
+Notepad to visually audit the summary.
+
+## Latest Validation Evidence
+
+Validated on 2026-06-22 from the current worktree:
+
+- `python -m compileall -q .` passed.
+- `python -m pyright` passed with 0 errors, 0 warnings, 0 informations.
+- `git diff --check` passed, with only Git CRLF normalization warnings.
+- Workbench inline JavaScript parsed successfully with bundled Node.
+- Fresh server started on `http://127.0.0.1:9078`.
+- `GET /health` returned `ok=true`, `desktop_exec=true`, and
+  `wiring_hot_reload=true`.
+- `GET /wiring` showed `hover_scan_enabled=true`,
+  `hover_scan_step_px=40`, `desktop_tree_max_nodes=900`, and
+  `debug_value_max_chars=12000`.
+- `POST /node/observe` returned `screen_ready`, focused
+  `YouTube - Google Chrome`, 65 action-scope elements, 28,594 screen
+  characters, `hover_scan_used=true`, 1,296 hover points, 51 hover-added
+  nodes, 374 desktop tree nodes, `treeTruncated=false`,
+  `focusedCaptured=true`, and `overlayCaptured=true`.
+- `POST /step` on the `observe` node returned `screen_ready`, routed next to
+  `act`, produced 70 action-scope elements, 33,283 screen characters,
+  `hover_scan_used=true`, 1,296 hover points, 60 hover-added nodes, 374 tree
+  nodes, and `transitionTerminal=false`.
+- Raw `POST /wiring` hot reload accepted the updated `wiring.json`.
+- Browser verification of the workbench showed 12 graph nodes, 21 graph edges,
+  7 back edges, 1 loop edge, 9 failure-styled edges, working zoom/fit/auto
+  layout controls, no desktop or mobile horizontal overflow, and no browser
+  console errors.
+- The synthetic `/step` validation state was cleared afterward; `GET /state`
+  should return `{}` unless a later run writes new state.
+
 ## Methodology
 
 Work brick by brick:
 
 1. Inspect the exact state or failure.
 2. Decide whether the defect is behavior wiring or mechanical plumbing.
-3. Prefer `prompts/wiring.json` for behavior, role contracts, guards, limits,
-   and routing.
+3. Prefer `prompts/wiring.json` for prompts, guards, limits, roles, routing,
+   and behavior contracts.
 4. Use Python only for generic mechanics the model cannot reliably infer.
 5. Keep runtime artifacts out of tracked files.
-6. Validate with real `/step` runs when the session authorizes runtime work.
-7. Move lessons from the target workflow back into task-agnostic wiring or
+6. Validate with real `/step` runs when runtime work is authorized.
+7. Move lessons from target workflows back into task-agnostic wiring or
    generic plumbing.
 
-Do not solve the compound target by hardcoding the target. The correct product
-is a wiring-first organism that can self-debug and evolve behavior through JSON.
+Failure classification:
+
+- Behavior prompt, guard, limit, or routing problem: patch `prompts/wiring.json`.
+- Schema/editor parity problem: patch `prompts/wiring-schema.json` and
+  `wiring-editor.html`.
+- Generic runtime contradiction: patch `server.py`, `actions.py`, or
+  `desktop.py`.
+- Task-specific workaround: reject it and find the reusable rule.
 
 ## Files
 
 ```text
 server.py                  HTTP server, graph runner, LLM calls, node handlers
-desktop.py                 Windows desktop observation/input via ctypes
+desktop.py                 Windows desktop observation and input via ctypes/UIA
 actions.py                 Data-driven verb dispatcher
 colony.py                  Multi-slot local runner
 wiring-editor.html         Human/API step-debug workbench
 prompts/wiring.json        Behavior graph, prompts, guards, limits, verbs
 prompts/wiring-schema.json Schema for validation and editor generation
-prompts/model.json         Local model endpoint and generation budget
-README.md                  Operational handover
+prompts/model.json         Local LM Studio endpoint and generation budget
+README.md                  Operational handover and project vision
 RESEARCH.md                Direction, risks, and proof plan
 ```
 
-Ignored runtime files include `state.json`, `bus.json`,
-`state.*.json`, `prompts/traces.jsonl`, `prompts/wiring.backup.json`, local
-transcripts, caches, and logs.
-The allowlist `.gitignore` is intentional: source/docs/prompts are committed,
-while local run state and traces remain on disk for resume/debug unless a human
-explicitly cleans them.
+Ignored runtime files include `state.json`, `bus.json`, `state.*.json`,
+`prompts/traces.jsonl`, `prompts/wiring.backup.json`, local transcripts,
+caches, and logs. The allowlist `.gitignore` is intentional: source, docs, and
+prompts are committed; local run state and traces remain on disk for
+resume/debug unless a human explicitly cleans them.
 
-## Immediate Validation Loop
+## Real Validation Loop
 
-For this target, use real step-by-step server runs, not simulated tests, only
-after a session explicitly authorizes runtime work. The current local
-`state.json` from 2026-06-21 should be inspected before use. It preserves real
-evidence and is repaired to the remaining YouTube playback step, but playback
-is still unproven. `state.before-youtube-repair.json` preserves the stale
-pre-repair state.
+Use real step-by-step server runs for compound proof. Do not rely on simulated
+tests for the final target.
 
-1. Start the server.
-2. Use `/health` only to confirm the server is alive and not in simulation.
-3. Inspect `/state`; confirm whether it is the repaired single-step playback
-   state or the older stale Grok replan.
-4. Inspect `state`, `screen`, `last_actions_raw`, `last_outcome`, `memory`,
-   and `reasoning_chain`.
-5. Before more prompt changes, inspect how `desktop.py` and `server.py` build
-   the `SCREEN` block and why the video result cards are not visible or
-   cognitively clear to `act`.
-6. Drive the goal through `/step` in small chunks only after the observation
-   hypothesis is understood.
-7. Patch wiring first when the behavior contract is wrong. Patch Python when
-   the observation representation or action mechanics contradict the real UI.
-8. Restart from clean runtime artifacts only after the useful run state has
-   been summarized or intentionally discarded.
-9. Final proof requires visible evidence of Grok conversation memory, Notepad
-   summary content, and YouTube playback.
+Recommended loop:
+
+1. Start the server bound to localhost unless there is a specific reason to
+   expose it.
+2. Confirm `GET /health`.
+3. Inspect `GET /state`.
+4. Inspect `state.current_step`, `screen`, `screen_meta`, `last_actions_raw`,
+   `last_outcome`, `memory`, `last_error`, and `reasoning_chain`.
+5. Use `POST /node/observe` when the question is observation quality.
+6. Use `POST /step` for one graph transition at a time.
+7. If a step fails, classify the failure before editing.
+8. Patch wiring first when the behavior contract is wrong.
+9. Patch Python only when observation or action mechanics contradict the real
+   UI.
+10. Preserve useful runtime state before resetting or repairing it.
+
+Final proof for the north-star workflow requires:
+
+- visible evidence or memory evidence for three real Grok responses
+- Notepad summary content written from memory
+- YouTube playback evidence, not only search or navigation evidence
 
 ## Handover Prompts
 
@@ -305,89 +359,102 @@ prompts/wiring.json, schema-driven editing in wiring-editor.html, Python only
 for generic mechanics, and no task-specific Grok/Notepad/YouTube hardcoding.
 
 Read README.md, RESEARCH.md, server.py, actions.py, desktop.py,
-prompts/wiring.json, prompts/wiring-schema.json, and wiring-editor.html before
-editing. Preserve GUI/API parity for /step, /inspect, /state, /wiring, and
-/node/:type. Prefer wiring changes for prompts, guards, limits, and routing.
-Use Python only for mechanical contradictions.
+prompts/wiring.json, prompts/wiring-schema.json, prompts/model.json, and
+wiring-editor.html before editing. Preserve GUI/API parity for /step, /inspect,
+/state, /wiring, and /node/:type. Prefer wiring changes for prompts, guards,
+limits, roles, and routing. Use Python only for mechanical contradictions.
 
 Known focus areas:
-- make observation the next center of gravity: richer UIA tree, spatial/order
-  cues, scrollability, overlay separation, and clearer distinction between
-  browser chrome and page content
-- deepen observation without arbitrary tiny truncation
-- keep live hot-reload synchronized with action and observation runtime
-- ensure browser navigation focuses the browser before ctrl+l
+- keep observation as the center of gravity: rich UIA tree, full-screen hover
+  probing, spatial/order cues, overlay separation, and scrollability
+- ensure ACTION SCOPE IDs remain the only actionable element targets
+- keep DESKTOP_TREE read-only and useful for cognition
+- make the workbench graph show real signal flow, feedback, and failure loops
+- keep live hot reload synchronized with action and observation runtime
 - make planner produce contingent submit/remember/follow-up steps
 - make act use remember before app switches
-- make planner split summary-to-Notepad into open/focus Notepad and write
-  MEMORY-derived summary
 - keep self_modify conservative and wiring-aware
-- avoid adding narrow prompt rules for one page/site until the generic
-  observation problem is understood
+- avoid narrow prompt rules for one page/site until the generic observation
+  problem is understood
 
-Current stopped state:
-- all servers/tests were stopped on request
-- ignored state.json is preserved and currently repaired to one remaining
-  playback step
-- ignored state.before-youtube-repair.json preserves the stale pre-repair state
-- Notepad summary writing has real action evidence
-- browser reached YouTube search results for Shakira Waka Waka
-- current_step is play Shakira Waka Waka on YouTube
-- latest attempts did not complete playback; verifier correctly denied them
-- memory has grok_turn_1_response, grok_turn_2_response, grok_turn_3_response
-- remaining proof is improve/understand observation, click/play a matching
-  YouTube result, and verify playback
-- optional final audit: refocus Notepad and observe the written summary
+Before claiming completion, prove it with current files, static checks, live
+/health, live /wiring validation, live /node/observe telemetry, and real /step
+evidence.
 ```
 
-### Real Validation Prompt
+### Real Step Validation Prompt
 
 ```text
 Run only real step-by-step validation through the local server after runtime is
 explicitly authorized. Do not rely on simulated tests for the compound proof.
-First inspect state.json. If it still contains the 2026-06-21 stale replan, do
-not blindly resume it:
 
-current expected state: repaired single-step YouTube playback state
-backup evidence: state.before-youtube-repair.json contains stale Grok replan
-memory keys: grok_turn_1_response, grok_turn_2_response, grok_turn_3_response
-Notepad evidence: 135-character memory-derived summary write action
-current blocker: observation tree does not expose/cognitively clarify playable
-YouTube result controls
+First inspect /health and /state. If state.json exists, preserve or summarize
+useful evidence before repairing it. If the current goal is the north-star
+workflow, expected prior evidence may include memory keys:
+grok_turn_1_response, grok_turn_2_response, grok_turn_3_response.
 
-If state.json has regressed, repair it to the remaining YouTube playback step or
-start from a clean slice after preserving the evidence. Confirm /health reports
-simulation=false, then inspect observation before stepping the target goal:
+Before stepping act-heavy work, inspect observation quality:
+- compare the visible browser/app page to SCREEN
+- confirm PROBE telemetry includes the full-screen hover pass
+- confirm DESKTOP_TREE coverage and truncation are truthful
+- confirm playable or writable controls appear in ACTION SCOPE before targeting
+  them
 
-open Chrome; go to grok.com; ask about endgame-ai; remember Grok response 1;
-send a follow-up based on memory; remember response 2; send a follow-up based
-on memory; remember response 3; save a summary to Notepad; play Shakira Waka
-Waka on YouTube.
+Use POST /step in small chunks. After each transition inspect:
+state.current_step, screen, screen_meta, last_actions_raw, last_outcome,
+memory, last_error, and reasoning_chain.
 
-After each chunk inspect state.current_step, screen, last_actions_raw,
-last_outcome, memory, last_error, and reasoning_chain. If a failure is generic,
-patch wiring or Python, restart the server, preserve or summarize useful
-runtime state, and rerun from the smallest useful real slice.
-
-Priority diagnosis for the next run:
-- compare the visible browser page to the `SCREEN` text passed to `act`
-- determine why playable result cards are absent or unclear
-- improve observation representation generically in `desktop.py`/`server.py`
-- only then decide whether any wiring prompt needs a task-agnostic update
+If a failure is generic, patch wiring or Python, restart/hot-reload as needed,
+preserve useful runtime state, and rerun from the smallest useful slice.
 ```
 
-### Debug Patch Prompt
+### Observation Debug Prompt
 
 ```text
-When a real run fails, classify the failure before editing:
+Diagnose observation before prompt-tuning. The model can only reason over the
+SCREEN text it receives.
 
-1. Behavior prompt/guard/limit/routing problem: patch prompts/wiring.json.
-2. Schema/editor parity problem: patch wiring-schema.json and
-   wiring-editor.html.
-3. Generic runtime contradiction: patch server.py, actions.py, or desktop.py.
-4. Task-specific workaround: reject it and find the reusable rule.
+For any failed page/app interaction:
+1. Observe the real screen through /node/observe.
+2. Inspect ACTION SCOPE, DESKTOP_TREE, WINDOWS, and screen_meta.probe.
+3. Check whether full-screen hover_scan_used is true and whether hover_added
+   exposed additional controls.
+4. Check whether the tree is truncated before the relevant content.
+5. Check whether overlays or browser chrome are being confused with page
+   content.
+6. Patch observe limits or desktop.py mechanics only if the representation is
+   missing generic truth.
+7. Patch prompts/wiring.json only if the representation is truthful but the
+   role contract makes the circuit reason incorrectly.
+```
 
-Every patch must preserve the invariant that Python is mechanics and wiring is
-behavior. The final answer must report real step evidence, remaining risk, and
-whether helper processes were stopped and runtime artifacts cleaned.
+### Workbench UI Prompt
+
+```text
+Improve wiring-editor.html as an operator/debugger surface, not as a marketing
+page. The graph should communicate topology, current node, edge signals,
+feedback loops, failed paths, and editable JSON fields. Keep the editor
+schema-driven, preserve /wiring hot reload, keep HTTP/API parity, and verify in
+the browser at desktop and mobile sizes.
+
+Avoid hiding raw JSON; make it one tab among better structured views. Any graph
+positioning should be interactive, persistent locally, and recoverable with an
+auto-layout button.
+```
+
+### Completion Audit Prompt
+
+```text
+Before marking the goal complete, derive every concrete requirement from the
+current user objective and verify each against current evidence:
+- README fully rewritten with vision and handover prompts
+- /step API authorized and used for behavior evidence when safe
+- observation scan includes full-screen mouse-hover enrichment
+- richer observation/token limits are wired, validated, and hot-reloadable
+- workbench graph represents nodes and connections usefully and interactively
+- static checks pass
+- live /health, /wiring, /node/observe, and relevant /step calls prove runtime
+  behavior
+
+If any item has weak or missing evidence, keep working.
 ```

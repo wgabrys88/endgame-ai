@@ -474,9 +474,6 @@
     "http_bind": "0.0.0.0",
     "cycle_delay_ms": 300,
     "action_chain_delay_ms": 120,
-    "act_post_delay_ms": 400,
-    "refresh_screen_after_act": false,
-    "simulation_mode": false,
     "initial_state": {
       "step": 0,
       "retries": 0,
@@ -528,8 +525,9 @@
     "planner_retries": 3,
     "llm_parse_retries": 2,
     "trace_few_shot": 6,
-    "debug_value_max_chars": 2400,
-    "error_preview_chars": 2400
+    "prompt_screen_max_chars": 8000,
+    "debug_value_max_chars": 12000,
+    "error_preview_chars": 8000
   },
   "verbs": {
     "click": {
@@ -567,9 +565,12 @@
     "min_elements": 3,
     "wait_retries": 6,
     "wait_ms": 750,
-    "probe_step_px": 45,
+    "probe_step_px": 40,
     "probe_delay_ms": 1,
-    "dense_probe_min_px": 30,
+    "hover_scan_enabled": true,
+    "hover_scan_step_px": 40,
+    "hover_scan_delay_ms": 1,
+    "dense_probe_min_px": 24,
     "scroll_enrich_min": 3,
     "scroll_enrich_passes": [
       -3,
@@ -578,17 +579,17 @@
       3
     ],
     "scroll_enrich_delay_ms": 80,
-    "read_text_max": 4000,
-    "node_value_max_chars": 4000,
-    "render_value_max_chars": 1600,
-    "window_limit": 24,
+    "read_text_max": 16000,
+    "node_value_max_chars": 12000,
+    "render_value_max_chars": 4000,
+    "window_limit": 40,
     "desktop_tree_enabled": true,
-    "desktop_tree_max_depth": 5,
-    "desktop_tree_max_nodes": 220,
-    "desktop_tree_child_limit": 80,
-    "tree_value_max_chars": 600,
-    "render_tree_value_max_chars": 160,
-    "overlay_window_limit": 32,
-    "window_scan_limit": 128
+    "desktop_tree_max_depth": 8,
+    "desktop_tree_max_nodes": 900,
+    "desktop_tree_child_limit": 180,
+    "tree_value_max_chars": 4000,
+    "render_tree_value_max_chars": 800,
+    "overlay_window_limit": 48,
+    "window_scan_limit": 256
   }
 }

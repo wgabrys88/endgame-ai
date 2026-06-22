@@ -2,7 +2,8 @@
 endgame-ai — stdlib only, zero pip.
 One file. Node handlers are pure functions. Wiring.json is the brain.
 """
-import json, http.server, urllib.request, pathlib, time, sys, threading, queue, os, re
+import json, http.server, urllib.request, urllib.error, pathlib, time, sys, threading, queue, os, re
+from typing import Any
 
 class ThreadingHTTPServer(http.server.ThreadingHTTPServer):
     daemon_threads = True
@@ -32,6 +33,62 @@ def apply_instance_env():
 
 
 apply_instance_env()
+
+OBSERVE_RULES = {
+    "min_elements": (int, 0),
+    "wait_retries": (int, 0),
+    "wait_ms": (int, 0),
+    "probe_step_px": (int, 10),
+    "probe_delay_ms": (int, 0),
+    "hover_scan_enabled": (bool, None),
+    "hover_scan_step_px": (int, 10),
+    "hover_scan_delay_ms": (int, 0),
+    "dense_probe_min_px": (int, 10),
+    "scroll_enrich_min": (int, 0),
+    "scroll_enrich_passes": (list, None),
+    "scroll_enrich_delay_ms": (int, 0),
+    "read_text_max": (int, 0),
+    "node_value_max_chars": (int, 0),
+    "render_value_max_chars": (int, 0),
+    "window_limit": (int, 1),
+    "desktop_tree_enabled": (bool, None),
+    "desktop_tree_max_depth": (int, 1),
+    "desktop_tree_max_nodes": (int, 1),
+    "desktop_tree_child_limit": (int, 1),
+    "tree_value_max_chars": (int, 0),
+    "render_tree_value_max_chars": (int, 0),
+    "overlay_window_limit": (int, 1),
+    "window_scan_limit": (int, 1),
+}
+
+
+def validate_observe_item(key, value, prefix="observe"):
+    spec = OBSERVE_RULES.get(key)
+    if not spec:
+        return [f"{prefix}.{key} unknown"]
+    typ, minimum = spec
+    if typ is list:
+        if not isinstance(value, list) or any(type(v) is not int for v in value):
+            return [f"{prefix}.{key} must be array of integers"]
+        return []
+    if typ is bool:
+        return [] if type(value) is bool else [f"{prefix}.{key} must be boolean"]
+    if type(value) is not int:
+        return [f"{prefix}.{key} must be integer"]
+    if minimum is not None and value < minimum:
+        return [f"{prefix}.{key} must be >= {minimum}"]
+    return []
+
+
+def validate_observe_config(config, prefix="observe"):
+    if config is None:
+        return []
+    if not isinstance(config, dict):
+        return [f"{prefix} must be object"]
+    errs = []
+    for key, value in config.items():
+        errs.extend(validate_observe_item(key, value, prefix))
+    return errs
 
 
 def validate_wiring(w):
@@ -74,16 +131,10 @@ def validate_wiring(w):
             errs.append(f"edges[{i}].to '{e.get('to')}' unknown")
         if not e.get("on"):
             errs.append(f"edges[{i}].on required")
+    errs.extend(validate_observe_config(w.get("observe")))
     return errs
 
-try:
-    from actions import execute_verb, observe_screen, configure_runtime, last_observation_snapshot
-except Exception:
-    def observe_screen(): return "(desktop not available)"
-    def execute_verb(verb, target, value=""): return f"[stub] {verb} {target} {value}"
-    def configure_runtime(_wiring): pass
-    def last_observation_snapshot(): return {}
-
+from actions import execute_verb, observe_screen, configure_runtime, last_observation_snapshot
 
 configure_runtime(WIRING)
 
@@ -190,24 +241,12 @@ def http_port(slot=None):
 def http_bind():
     return os.environ.get("ENDGAME_BIND") or WIRING.get("runtime", {}).get("http_bind", "0.0.0.0")
 
-def print_listen_urls(port):
-    print(f"  http://127.0.0.1:{port}")
-
-def simulation_mode():
-    if os.environ.get("ENDGAME_SIM", "").lower() in ("1", "true", "yes"):
-        return True
-    return bool(WIRING.get("runtime", {}).get("simulation_mode", False))
-
 def fresh_state(goal):
     state = dict(WIRING.get("runtime", {}).get("initial_state", {}))
     state["goal"] = goal
     state["bus_last_check"] = time.time()
-    if simulation_mode():
-        state["simulation"] = True
-        state["no_desktop"] = False
     return state
 
-# ─── SSE ───
 SSE = []
 
 def sse_push(evt, data):
@@ -215,8 +254,6 @@ def sse_push(evt, data):
     for q in list(SSE):
         try: q.put_nowait(msg)
         except: SSE.remove(q)
-
-# ─── State persistence ───
 
 RUN_QUEUE = queue.Queue()
 RUN_STATUS_LOCK = threading.Lock()
@@ -371,10 +408,16 @@ def llm(system, user, temperature=None):
     }
     url = MODEL["host"] + "/v1/chat/completions"
     t0 = time.time()
-    r = urllib.request.urlopen(
-        urllib.request.Request(url, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"}),
-        timeout=MODEL.get("timeout", 120)
-    )
+    req = urllib.request.Request(url, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
+    try:
+        r = urllib.request.urlopen(req, timeout=MODEL.get("timeout", 120))
+    except urllib.error.HTTPError as e:
+        detail = ""
+        try:
+            detail = e.read().decode("utf-8", errors="replace")
+        except Exception:
+            pass
+        raise RuntimeError(f"LLM HTTP {e.code}: {preview_text(detail, 'error_preview_chars', 1200)}") from e
     c = json.loads(r.read())["choices"][0]["message"]
     return c.get("content", ""), c.get("reasoning_content", ""), time.time() - t0
 
@@ -401,10 +444,6 @@ def extract_json_objects(text):
         else:
             break
     return out
-
-def extract_json(text):
-    objs = extract_json_objects(text)
-    return objs[0] if objs else None
 
 # ─── Reasoning loop (wired in wiring.json — Python only captures + resolves) ───
 
@@ -531,6 +570,14 @@ def _resolve_value(state, source):
         if key == "current_step.done_when":
             return state.get("current_step", {}).get("done_when", "")
         value = state.get(key, "")
+        if key == "screen" and isinstance(value, str):
+            limit = int(wiring_limit("prompt_screen_max_chars", 8000) or 0)
+            if limit > 0 and len(value) > limit:
+                omitted = len(value) - limit
+                return (
+                    value[:limit]
+                    + f"\n\nSCREEN_TRUNCATED_FOR_PROMPT: omitted {omitted} chars; full screen remains in state.screen and screen_meta."
+                )
         if isinstance(value, (dict, list)):
             return json.dumps(value, ensure_ascii=True)
         return value
@@ -642,6 +689,16 @@ def _step_text(state):
     step = state.get("current_step", {})
     return f"{step.get('description', '')} {step.get('done_when', '')}".lower()
 
+def _step_domain_needles(state):
+    text = f"{state.get('goal', '')} {_step_text(state)}".lower()
+    needles: set[str] = set()
+    for domain in re.findall(r"\b[a-z0-9-]+(?:\.[a-z0-9-]+)+\b", text):
+        needles.add(domain)
+        label = domain.split(".", 1)[0]
+        if len(label) > 3:
+            needles.add(label)
+    return needles
+
 def _target_screen_line(state, target):
     target = (target or "").strip()
     if not target:
@@ -728,6 +785,13 @@ def normalize_action_chain(state, actions):
             while insert_at < len(out) and out[insert_at].get("verb") == "focus":
                 insert_at += 1
             out.insert(insert_at, {"verb": "hotkey", "target": "ctrl+l", "value": ""})
+        ctrl_l_seen = False
+        for action in out:
+            if is_ctrl_l(action):
+                ctrl_l_seen = True
+                continue
+            if ctrl_l_seen and action.get("verb") == "write" and action.get("value"):
+                action["target"] = ""
         has_enter = any(
             a.get("verb") in ("press", "hotkey")
             and "enter" in (a.get("target") or a.get("value") or "").lower()
@@ -1013,14 +1077,6 @@ def node_act(state, _):
         "last_error": "",
         "history": history + [entry],
     })
-    if not state.get("no_desktop") and WIRING.get("runtime", {}).get("refresh_screen_after_act", False):
-        delay = int(WIRING.get("runtime", {}).get("act_post_delay_ms", 0)) / 1000.0
-        if delay:
-            time.sleep(delay)
-        try:
-            patch["screen"] = observe_screen()
-        except Exception:
-            pass
     return {"signals": ["acted"], "patch": patch}
 
 def _verify_preflight_denied(state):
@@ -1029,6 +1085,76 @@ def _verify_preflight_denied(state):
     if not outcome or not outcome.startswith("OK:"):
         return bool(outcome)
     return False
+
+def _verify_chat_submission_denied(state):
+    """Deny false positives where a chat/message step did not write and submit text."""
+    if not _is_chat_message_step(state):
+        return ""
+    outcome = (state.get("last_outcome") or "")
+    if not outcome.startswith("OK:"):
+        return ""
+    actions = state.get("last_actions_raw", [])
+    writes = [
+        str(a.get("value") or "").strip()
+        for a in actions
+        if a.get("verb") == "write" and str(a.get("value") or "").strip()
+    ]
+    if not writes:
+        return "chat submission preflight: no prompt text was written"
+    if all(re.fullmatch(r"(https?://)?[a-z0-9.-]+\.[a-z]{2,}/?", w.lower()) for w in writes):
+        return "chat submission preflight: written text looks like navigation, not a chat prompt"
+    submitted = False
+    for action in actions:
+        verb = action.get("verb")
+        target = str(action.get("target") or action.get("value") or "")
+        line = _target_screen_line(state, target)
+        submit_text = f"{target} {line}".lower()
+        if verb in ("press", "hotkey") and "enter" in submit_text:
+            submitted = True
+        if verb == "click" and any(word in submit_text for word in ("send", "submit")):
+            submitted = True
+    if not submitted:
+        return "chat submission preflight: prompt text was not submitted"
+    return ""
+
+def _verify_memory_capture_denied(state):
+    """Deny response-memory captures that are plainly window titles or placeholders."""
+    text = _step_text(state)
+    if not any(word in text for word in ("remember", "capture", "store")):
+        return ""
+    if not any(word in text for word in ("response", "reply", "answer")):
+        return ""
+    outcome = (state.get("last_outcome") or "")
+    if not outcome.startswith("OK:"):
+        return ""
+    values = [
+        str(a.get("value") or "").strip()
+        for a in state.get("last_actions_raw", [])
+        if a.get("verb") == "remember" and str(a.get("value") or "").strip()
+    ]
+    if not values:
+        return "memory capture preflight: no response text was remembered"
+    focused = _focused_title(state)
+    prior_writes = "\n".join(
+        str(entry.get("outcome") or "")
+        for entry in state.get("history", [])
+        if "write " in str(entry.get("outcome") or "").lower()
+    ).lower()
+    for value in values:
+        value_l = value.lower()
+        if value_l in prior_writes:
+            return "memory capture preflight: remembered value matches a previously submitted prompt"
+        if value.endswith("?"):
+            return "memory capture preflight: remembered value looks like a question, not a response"
+        if focused and value_l == focused:
+            return "memory capture preflight: remembered value is only the focused window title"
+        if value_l.endswith(" - google chrome") or value_l.endswith(" - microsoft edge"):
+            return "memory capture preflight: remembered value is only a browser title"
+        if re.fullmatch(r"(https?://)?[a-z0-9.-]+\.[a-z]{2,}/?", value_l):
+            return "memory capture preflight: remembered value is only a URL or domain"
+        if len(value) < 30:
+            return "memory capture preflight: remembered response is too short to be useful evidence"
+    return ""
 
 def _verify_preflight_confirmed(state):
     """Deterministic confirm for focus evidence: a focused window must already exist."""
@@ -1050,10 +1176,15 @@ def _verify_preflight_confirmed(state):
     if write_done and typed and editor_ready:
         return True
     playback_required = any(word in done_when for word in ("playing", "playback"))
+    domain_needles = _step_domain_needles(state)
     navigation_done = (
         not playback_required
-        and any(word in done_when for word in ("load", "page", "navigate", "url", "website", "site", "youtube"))
+        and (domain_needles or any(word in done_when for word in ("load", "page", "navigate", "url", "website", "site", "youtube")))
     )
+    if navigation_done and domain_needles:
+        proof_text = " ".join([focused_title, screen_l, outcome.lower()])
+        if any(needle in proof_text for needle in domain_needles):
+            return True
     ctrl_l_ready = any(
         a.get("verb") == "hotkey"
         and "ctrl" in (a.get("target") or a.get("value") or "").lower()
@@ -1088,9 +1219,12 @@ def node_verify(state, _):
     """Verify from descriptive step + act outcomes only — act is sole SCREEN consumer."""
     if _verify_preflight_denied(state):
         return {"signals": ["step_denied"], "patch": {"last_error": wiring_error("verify_preflight_denied")}}
+    deny_reason = _verify_chat_submission_denied(state) or _verify_memory_capture_denied(state)
+    if deny_reason:
+        return {"signals": ["step_denied"], "patch": {"last_error": deny_reason}}
     if _verify_preflight_confirmed(state):
         clear_keys = WIRING.get("reasoning", {}).get("clear_on_step_confirm", [])
-        patch = clear_reasoning_patch(state, clear_keys)
+        patch: dict[str, Any] = dict(clear_reasoning_patch(state, clear_keys))
         patch.update({"step": state.get("step", 0) + 1, "retries": 0, "last_error": ""})
         return {"signals": ["step_confirmed"], "patch": patch}
     try:
@@ -1274,7 +1408,13 @@ def node_self_modify(state, _):
         elif op == "set_guard":
             current.setdefault("guards", {})[payload["key"]] = payload["value"]
         elif op == "set_observe":
-            current.setdefault("observe", {})[payload["key"]] = payload["value"]
+            key = str(payload.get("key", "")).strip()
+            value = payload.get("value")
+            item_errs = validate_observe_item(key, value)
+            if item_errs:
+                patch["last_error"] = "; ".join(item_errs)
+                return {"signals": ["modify_failed"], "patch": patch}
+            current.setdefault("observe", {})[key] = value
         elif op == "append_role_rule":
             role = str(payload.get("role", "")).strip()
             rule = str(payload.get("rule", "")).strip()
@@ -1484,7 +1624,6 @@ class H(http.server.BaseHTTPRequestHandler):
                 "node_circuits": node_circuits_map(),
                 "slot": slot,
                 "port": http_port(slot),
-                "simulation": simulation_mode(),
                 "permissions": WIRING.get("instance", {}).get("permissions", []),
                 "run": run_status_snapshot(),
                 "capabilities": wiring_summary().get("capabilities", {}),
@@ -1500,37 +1639,9 @@ class H(http.server.BaseHTTPRequestHandler):
             self._j(load_state() or {})
         elif self.path == "/bus":
             self._j(bus_read())
-        elif self.path == "/smoke":
-            # Programmatic smoke test — validates all endpoints work
-            results = []
-            try:
-                nn = len(WIRING.get("topology", {}).get("nodes", []))
-                werrs = validate_wiring(WIRING)
-                entry_r = NODES.get("entry", lambda s, c: {})({"goal": "smoke"}, {})
-                inspect_r = inspect_state(goal="smoke", state={}, node_id=WIRING.get("topology", {}).get("cycle_start"))
-                summary = wiring_summary()
-                mem_ok, mem_state, _ = apply_memory_action({}, "note", "value")
-                mem_bad, _, _ = apply_memory_action({}, "note", "")
-                results = [
-                    {"test": "health", "ok": True},
-                    {"test": "wiring", "ok": nn > 0, "nodes": nn},
-                    {"test": "schema", "ok": (PROMPTS / "wiring-schema.json").exists()},
-                    {"test": "wiring_valid", "ok": not werrs, "errors": len(werrs)},
-                    {"test": "node/entry", "ok": "signals" in entry_r},
-                    {"test": "inspect", "ok": bool(inspect_r.get("debug", {}).get("id"))},
-                    {"test": "capability/step_debug", "ok": bool(summary.get("capabilities", {}).get("step_debug"))},
-                    {"test": "capability/state_memory", "ok": bool(summary.get("capabilities", {}).get("state_memory"))},
-                    {"test": "remember/store", "ok": mem_ok and mem_state.get("note") == "value"},
-                    {"test": "remember/reject_empty", "ok": not mem_bad},
-                    {"test": "html", "ok": (ROOT / "wiring-editor.html").exists()},
-                ]
-            except Exception as e:
-                results.append({"test": "exception", "ok": False, "error": str(e)})
-            passed = sum(1 for r in results if r["ok"])
-            self._j({"passed": passed, "total": len(results), "all_ok": passed == len(results), "results": results})
         elif self.path in ("/", "/index.html"):
             d = (ROOT / "wiring-editor.html").read_bytes()
-            self.send_response(200); self.send_header("Content-Type","text/html"); self.send_header("Content-Length",len(d)); self.end_headers(); self._write(d)
+            self.send_response(200); self.send_header("Content-Type","text/html"); self.send_header("Content-Length",str(len(d))); self.end_headers(); self._write(d)
         elif self.path == "/events":
             self.send_response(200); self._cors()
             self.send_header("Content-Type","text/event-stream"); self.send_header("Cache-Control","no-cache"); self.end_headers()
@@ -1666,13 +1777,13 @@ class H(http.server.BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods","GET,POST,OPTIONS")
         self.send_header("Access-Control-Allow-Headers","Content-Type")
 
-    def log_message(self, *a): pass
+    def log_message(self, format: str, *args: Any) -> None: pass
 
 if __name__ == "__main__":
     args = sys.argv[1:]
     port = int(args[0]) if args and args[0].isdigit() else http_port()
     srv = ThreadingHTTPServer((http_bind(), port), H)
-    print_listen_urls(port)
+    print(f"  http://127.0.0.1:{port}")
 
     if "--resume" in args:
         s = load_state()

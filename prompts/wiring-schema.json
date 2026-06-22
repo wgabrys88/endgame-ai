@@ -47,6 +47,7 @@
         "planner_retries": { "type": "integer", "minimum": 0 },
         "llm_parse_retries": { "type": "integer", "minimum": 0 },
         "trace_few_shot": { "type": "integer", "minimum": 0 },
+        "prompt_screen_max_chars": { "type": "integer", "minimum": 0 },
         "debug_value_max_chars": { "type": "integer", "minimum": 0 },
         "error_preview_chars": { "type": "integer", "minimum": 0 }
       }
@@ -73,6 +74,9 @@
         "wait_ms": { "type": "integer", "minimum": 0 },
         "probe_step_px": { "type": "integer", "minimum": 10 },
         "probe_delay_ms": { "type": "integer", "minimum": 0 },
+        "hover_scan_enabled": { "type": "boolean" },
+        "hover_scan_step_px": { "type": "integer", "minimum": 10 },
+        "hover_scan_delay_ms": { "type": "integer", "minimum": 0 },
         "dense_probe_min_px": { "type": "integer", "minimum": 10 },
         "scroll_enrich_min": { "type": "integer", "minimum": 0 },
         "scroll_enrich_passes": {
@@ -92,7 +96,8 @@
         "render_tree_value_max_chars": { "type": "integer", "minimum": 0 },
         "overlay_window_limit": { "type": "integer", "minimum": 1 },
         "window_scan_limit": { "type": "integer", "minimum": 1 }
-      }
+      },
+      "additionalProperties": false
     },
     "moe": { "type": "object" }
   },

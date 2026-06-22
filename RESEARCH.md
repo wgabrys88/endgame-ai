@@ -276,7 +276,7 @@ For this target, simulated tests are not enough. The useful validation loop is:
    `state.before-youtube-repair.json` and the docs to repair/restart from a
    small slice.
 3. Start the real local server.
-4. Confirm `/health` reports `simulation=false`.
+4. Confirm `/health` reports the server is alive.
 5. Step through the compound goal via `/step` in small chunks.
 6. Inspect compact state after each chunk, especially the exact `SCREEN` block
    that `act` received.
@@ -284,9 +284,6 @@ For this target, simulated tests are not enough. The useful validation loop is:
    the LLM is reasoning from an incomplete or misleading tree.
 8. Preserve useful run evidence in docs or state before cleaning artifacts.
 9. Restart and rerun from the smallest meaningful real slice.
-
-Use `/smoke` only as a fast endpoint sanity check when appropriate. It is not
-evidence that the compound workflow works.
 
 ## Completion Definition
 
