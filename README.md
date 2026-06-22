@@ -4,7 +4,7 @@ A self-rewiring local Windows desktop organism. It observes the screen through U
 
 This README is the source of truth for humans and for any AI continuing the project.
 
-Last verified: 2026-06-22.
+Last verified: 2026-06-22 (pipeline efficiency pass).
 
 ## Architecture
 
@@ -69,10 +69,11 @@ scheduler → plan_complete → bus_post → posted → satisfied
 
 ## Observation Pipeline
 
-1. `desktop.py Desktop.observe()` probes the focused window via UIA
-2. Elements are classified by scope: focused page → focused chrome → overlay → background
-3. `_render()` builds SCREEN text with configurable filters
-4. SCREEN goes into `state["screen"]` and is passed to `act` prompt
+1. `desktop.py Desktop.observe()` does a single full-screen cursor probe (hover scan)
+2. When `hover_scan_enabled=true`, one pass replaces separate primary + overlay + hover passes
+3. Elements are classified by scope: focused page → focused chrome → overlay → background
+4. `_render()` builds SCREEN text with configurable filters
+5. SCREEN goes into `state["screen"]` and is passed to `act` prompt
 
 ### Current Observe Config
 
@@ -256,6 +257,8 @@ Select-String -Pattern 'SCREEN_TRUNCATED_FOR_PROMPT|prompt_screen_max_chars|node
 - [x] Self-modify cycle: LLM emits wiring_patch → validate → backup → hot-reload
 - [x] Mechanical verb execution (click, write, press, hotkey, scroll, focus, wait, remember)
 - [x] SCREEN from 37KB to 6KB with render filters (model completes goals that previously timed out)
+- [x] Single-pass observation: 405 probe points vs 1538 (73% fewer, ~3x faster)
+- [x] Verify preflight eliminates wasted LLM calls for structurally obvious outcomes
 - [x] First autonomous desktop goal completed: open notepad + write text
 - [x] Compact prompts for 4B model (~7KB total)
 - [x] SIGINT/SIGTERM state persistence
@@ -265,7 +268,7 @@ Select-String -Pattern 'SCREEN_TRUNCATED_FOR_PROMPT|prompt_screen_max_chars|node
 ## Current Limitations
 
 - The two-pass LLM call (reason + decide) is slow on the 4B model (~30-60s per node)
-- Pipeline phases may be wasteful for simple actions (planner/bus_check/scheduler overhead)
+- Simple 1-step goals still take ~3 min due to planner+act two-pass overhead
 - The model typed "hello" instead of "hello from endgame" — verification was too lenient
 - No formal test suite yet
 - `server.py` is 84KB — still mixes graph runtime, HTTP, prompt plumbing, and guards
@@ -312,20 +315,32 @@ Non-negotiables:
 - Hot-reload or restart the server using the absolute server.py path.
 - Commit every coherent verified batch.
 
-Immediate next goal: Pipeline efficiency.
-The two-pass LLM call and multi-node overhead make simple goals take 3+ minutes.
-Analyze the LM Studio server log to understand actual token throughput and wasted calls:
+Immediate next goal: Further pipeline efficiency.
+Current: simple goals take ~3 min (planner two-pass + act two-pass). The two-pass
+reasoning loop is core and stays, but planner overhead for trivial 1-step goals
+is avoidable.
+
+Analyze the LM Studio server log for the most recent runs:
   C:\Users\px-wjt\.cache\lm-studio\server-logs\2026-06\<latest>.log
+Key metrics (4B Nemotron Q6 on GPU):
+- Prompt eval: ~73-125 tok/s
+- Generation: ~6.4 tok/s
+- Two-pass act call: ~90s (pass 1) + ~66s (pass 2) = 156s for one act cycle
+
 Determine:
-- Which pipeline phases are redundant for simple goals
-- Whether the two-pass call is always needed or can be single-pass for some circuits
-- Whether planner/scheduler/bus_check overhead can be bypassed for direct-action goals
-- What the actual token generation speed is and where time is spent
+- Whether planner can be bypassed for goals with a single obvious action
+- Whether the act prompt can be more compact to reduce prompt eval time
+- Whether reasoning chain from planner bloats the act prompt unnecessarily
+
+Done (2026-06-22):
+- Single-pass observation (was 1538 points, now 405 at 70px step)
+- Verify preflight strengthened: Win+R pattern confirms without LLM (saved 163s)
+- Result: simple goals went from 6 LLM calls to 4, wall time ~27% faster
 
 Fix approach:
-- If the model wasted time on unnecessary phases, patch topology/guards/limits.
-- If the two-pass call is overkill for some circuits, make it configurable per node.
-- If observation took too long, tune observe config.
+- If planner is redundant for direct goals, add a guard that skips it.
+- If act prompt is too large, trim reasoning chain or history injection.
+- Do not remove reasoning feedback — it's core.
 - Do not add task-specific Python. Keep changes mechanical and wiring-driven.
 
 First actions:
