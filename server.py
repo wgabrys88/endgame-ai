@@ -1853,8 +1853,10 @@ class H(http.server.BaseHTTPRequestHandler):
             try:
                 input_state = dict(body.get("state", {}))
                 node_cfg = topo_node(t)
+                request_cfg = body.get("config", {})
+                handler_cfg = {**node_cfg, **request_cfg} if node_cfg and isinstance(request_cfg, dict) and request_cfg else node_cfg or request_cfg
                 before = node_debug_context(node_cfg.get("id"), input_state) if node_cfg else {"type": t}
-                r = h(input_state, body.get("config", {}))
+                r = h(input_state, handler_cfg)
                 patch = r.pop("patch", {})
                 output_state = {**input_state, **patch}
                 r["node_type"] = t
