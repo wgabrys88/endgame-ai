@@ -37,7 +37,7 @@
     "prompts": { "type": "object" },
     "guards": { "type": "object" },
     "runtime": { "type": "object" },
-    "act": { "type": "object" },
+    "act": { "$ref": "#/$defs/actConfig" },
     "errors": { "type": "object" },
     "limits": {
       "type": "object",
@@ -161,6 +161,8 @@
         "actions_writes_all_url": { "type": "boolean" },
         "actions_write_target_line_contains": { "$ref": "#/$defs/stringList" },
         "actions_write_target_line_absent": { "$ref": "#/$defs/stringList" },
+        "actions_click_target_line_contains": { "$ref": "#/$defs/stringList" },
+        "actions_click_target_line_absent": { "$ref": "#/$defs/stringList" },
         "actions_focus_target_matches": { "$ref": "#/$defs/stringList" },
         "actions_focus_target_absent": { "$ref": "#/$defs/stringList" },
         "actions_write_after_hotkey_has_target": { "$ref": "#/$defs/stringList" },
@@ -199,6 +201,43 @@
       "type": "array",
       "minItems": 1,
       "items": { "type": "string", "minLength": 1 }
+    },
+    "actConfig": {
+      "type": "object",
+      "properties": {
+        "valid_conclusions": { "$ref": "#/$defs/stringList" },
+        "reject_conclusions": { "$ref": "#/$defs/stringList" },
+        "verb_normalize": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/verbNormalizer" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "verbNormalizer": {
+      "type": "object",
+      "required": ["from"],
+      "properties": {
+        "from": { "type": "string", "minLength": 1 },
+        "to": { "type": "string" },
+        "target_set": { "type": "string" },
+        "value_set": { "type": "string" },
+        "when_target_contains": { "type": "string" },
+        "when_target_is": { "type": "string" },
+        "when_target_empty": { "type": "boolean" },
+        "when_target_nonempty": { "type": "boolean" },
+        "when_value_empty": { "type": "boolean" },
+        "when_target_equals_value": { "type": "boolean" },
+        "when_focused_contains": { "$ref": "#/$defs/stringList" },
+        "when_prior_verb": { "type": "string" },
+        "when_prior_hotkey_contains": { "$ref": "#/$defs/stringList" }
+      },
+      "anyOf": [
+        { "required": ["to"] },
+        { "required": ["target_set"] },
+        { "required": ["value_set"] }
+      ],
+      "additionalProperties": false
     },
     "prompt": {
       "type": "object",

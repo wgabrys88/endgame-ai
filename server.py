@@ -64,6 +64,23 @@ OBSERVE_RULES = {
 }
 
 
+NORMALIZER_RULES = {
+    "from": str,
+    "to": str,
+    "target_set": str,
+    "value_set": str,
+    "when_target_contains": str,
+    "when_target_is": str,
+    "when_target_empty": bool,
+    "when_target_nonempty": bool,
+    "when_value_empty": bool,
+    "when_target_equals_value": bool,
+    "when_focused_contains": list,
+    "when_prior_verb": str,
+    "when_prior_hotkey_contains": list,
+}
+
+
 def validate_observe_item(key, value, prefix="observe"):
     spec = OBSERVE_RULES.get(key)
     if not spec:
@@ -93,6 +110,47 @@ def validate_observe_config(config, prefix="observe"):
     return errs
 
 
+def validate_normalizer_item(norm, prefix):
+    if not isinstance(norm, dict):
+        return [f"{prefix} must be object"]
+    errs = []
+    for key, value in norm.items():
+        typ = NORMALIZER_RULES.get(key)
+        if not typ:
+            errs.append(f"{prefix}.{key} unknown")
+        elif typ is bool and type(value) is not bool:
+            errs.append(f"{prefix}.{key} must be boolean")
+        elif typ is str and not isinstance(value, str):
+            errs.append(f"{prefix}.{key} must be string")
+        elif typ is list and (not isinstance(value, list) or any(not isinstance(v, str) or not v.strip() for v in value)):
+            errs.append(f"{prefix}.{key} must be array of non-empty strings")
+    if not isinstance(norm.get("from"), str) or not norm.get("from", "").strip():
+        errs.append(f"{prefix}.from must be non-empty string")
+    if not any(k in norm for k in ("to", "target_set", "value_set")):
+        errs.append(f"{prefix} must set one of to, target_set, value_set")
+    return errs
+
+
+def validate_act_config(config, prefix="act"):
+    if config is None:
+        return []
+    if not isinstance(config, dict):
+        return [f"{prefix} must be object"]
+    allowed = {"valid_conclusions", "reject_conclusions", "verb_normalize"}
+    errs = [f"{prefix}.{key} unknown" for key in config if key not in allowed]
+    for key in ("valid_conclusions", "reject_conclusions"):
+        if key in config and (not isinstance(config[key], list) or any(not isinstance(v, str) or not v.strip() for v in config[key])):
+            errs.append(f"{prefix}.{key} must be array of non-empty strings")
+    normalizers = config.get("verb_normalize")
+    if normalizers is not None:
+        if not isinstance(normalizers, list):
+            errs.append(f"{prefix}.verb_normalize must be array")
+        else:
+            for i, norm in enumerate(normalizers):
+                errs.extend(validate_normalizer_item(norm, f"{prefix}.verb_normalize[{i}]"))
+    return errs
+
+
 RULE_CONDITIONS = {
     "outcome_ok": bool,
     "outcome_failed": bool,
@@ -109,6 +167,8 @@ RULE_CONDITIONS = {
     "actions_writes_all_url": bool,
     "actions_write_target_line_contains": list,
     "actions_write_target_line_absent": list,
+    "actions_click_target_line_contains": list,
+    "actions_click_target_line_absent": list,
     "actions_focus_target_matches": list,
     "actions_focus_target_absent": list,
     "actions_write_after_hotkey_has_target": list,
@@ -234,6 +294,7 @@ def validate_wiring(w):
             errs.append(f"edges[{i}].on required")
     errs.extend(validate_rules_config(w.get("rules")))
     errs.extend(validate_observe_config(w.get("observe")))
+    errs.extend(validate_act_config(w.get("act")))
     return errs
 
 from actions import execute_verb, observe_screen, configure_runtime, last_observation_snapshot
@@ -1102,6 +1163,17 @@ def _check_actions_write_target_line_absent(state, expected):
     return not _check_actions_write_target_line_contains(state, expected)
 
 
+def _check_actions_click_target_line_contains(state, expected):
+    return any(
+        a.get("verb") == "click" and _contains_any(f"{_action_text(a)} {_target_screen_line(state, a.get('target', ''))}", expected)
+        for a in _rule_actions(state)
+    )
+
+
+def _check_actions_click_target_line_absent(state, expected):
+    return not _check_actions_click_target_line_contains(state, expected)
+
+
 def _check_actions_focus_target_matches(state, expected):
     return any(a.get("verb") == "focus" and _contains_any(_action_text(a), expected) for a in _rule_actions(state))
 
@@ -1246,22 +1318,15 @@ def _check_chain_launch_then_write_min_length(state, expected):
 
 
 def _check_chain_is_navigation(state, _):
-    address_write = any(a.get("verb") == "write" and "address" in _target_screen_line(state, a.get("target", "")) for a in _rule_actions(state))
-    return _check_actions_wrote_nonempty(state, True) and _check_actions_pressed(state, "enter") and (
-        _check_actions_hotkey_contains(state, ["ctrl", "l"]) or address_write
-    )
+    return _check_actions_wrote_nonempty(state, True) and _check_actions_pressed(state, "enter")
 
 
 def _check_chain_is_save(state, _):
-    return _check_actions_hotkey_contains(state, ["ctrl", "s"]) and _check_done_when_matches(state, ["save", "saved"])
+    return _check_actions_hotkey_contains(state, ["ctrl", "s"])
 
 
 def _check_chain_wrote_and_submitted(state, _):
-    clicked_submit = any(
-        a.get("verb") == "click" and _contains_any(f"{_action_text(a)} {_target_screen_line(state, a.get('target', ''))}", ["send", "submit"])
-        for a in _rule_actions(state)
-    )
-    return _check_actions_wrote_nonempty(state, True) and (_check_actions_pressed(state, "enter") or clicked_submit)
+    return _check_actions_wrote_nonempty(state, True) and _check_actions_pressed(state, "enter")
 
 
 RULE_CHECKERS = {
@@ -1280,6 +1345,8 @@ RULE_CHECKERS = {
     "actions_writes_all_url": _check_actions_writes_all_url,
     "actions_write_target_line_contains": _check_actions_write_target_line_contains,
     "actions_write_target_line_absent": _check_actions_write_target_line_absent,
+    "actions_click_target_line_contains": _check_actions_click_target_line_contains,
+    "actions_click_target_line_absent": _check_actions_click_target_line_absent,
     "actions_focus_target_matches": _check_actions_focus_target_matches,
     "actions_focus_target_absent": _check_actions_focus_target_absent,
     "actions_write_after_hotkey_has_target": _check_actions_write_after_hotkey_has_target,
