@@ -747,3 +747,29 @@ This project is already past the fragile idea stage. It has the bones of a livin
 - a scaling direction
 
 The decisive work now is repeated agentic engineering sessions. Each session should leave one verified improvement, less Python policy, clearer wiring, and a committed handoff. That is how endgame-ai becomes a real organism on ordinary computers.
+
+## Appendix B: Time-Boxed Probe Goal
+
+Paste this one-line goal into the workbench when running endgame-ai alone and collecting LM Studio logs for the next agentic session:
+
+```text
+TIMEBOX 8 MINUTES / MAX 12 ACTION ATTEMPTS: open Chrome or Opera, go to grok.com, start or use an existing chat; if login/paywall blocks the chat, remember the visible blocker and continue; ask Grok "In one short paragraph, name two failure modes for a self-rewiring Windows desktop agent using observe-act-verify-reflect", remember the answer; ask Grok "Given that answer, what single observation or prompt change would you test first?", remember the answer; if any observe/action/verification failure repeats twice, trigger self_modify exactly once with a task-agnostic wiring_patch, preferably set_observe or append_role_rule and never site-specific Python; open Notepad and write a concise run report containing Grok status, both remembered answers or blocker, whether self_modify happened, the patch op if any, final success/blocker, and one sentence on what the model seemed to misunderstand; stop when the report is written or the timebox is reached.
+```
+
+Why this goal is useful:
+
+- it tests browser launch, navigation, conversation, memory, app switching, writing, and verification
+- it forces compact reasoning artifacts through `remember`
+- it gives `self_modify` a bounded chance to act without creating huge logs
+- it handles Grok login/paywall reality as evidence instead of a dead end
+- it produces a small Notepad report plus LM Studio reasoning traces for the next session
+
+Collect after the run:
+
+```text
+LM Studio server log for the run
+exec-data/state.json
+prompts/wiring.json
+any prompts/wiring.backup*.json created
+the Notepad report text if written
+```
