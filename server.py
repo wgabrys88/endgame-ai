@@ -93,6 +93,88 @@ def validate_observe_config(config, prefix="observe"):
     return errs
 
 
+RULE_CONDITIONS = {
+    "outcome_ok": bool,
+    "outcome_failed": bool,
+    "actions_include_verb": str,
+    "actions_all_verb": str,
+    "actions_verb_absent": str,
+    "actions_sequence": list,
+    "actions_wrote_nonempty": bool,
+    "actions_pressed": str,
+    "actions_hotkey_contains": list,
+    "actions_hotkey_absent": list,
+    "actions_write_is_url": bool,
+    "done_when_matches": list,
+    "done_when_absent": list,
+    "step_has_domain_needle": bool,
+    "goal_has_domain": bool,
+    "screen_contains_domain_needle": bool,
+    "screen_contains": list,
+    "focused_contains_action_target": bool,
+    "focused_has_writable": bool,
+    "focused_element_role_any": list,
+    "memory_has_key_from_action": bool,
+    "memory_stored_by_action": bool,
+    "memory_value_min_length": int,
+    "memory_value_not_url": bool,
+    "memory_value_not_title": bool,
+    "chain_is_launch": bool,
+    "chain_is_navigation": bool,
+    "chain_is_save": bool,
+    "chain_wrote_and_submitted": bool,
+}
+RULE_PHASE_VERDICTS = {"verify": {"confirm", "deny"}, "act": {"reject"}}
+
+
+def validate_rule_condition(key, value, prefix):
+    typ = RULE_CONDITIONS.get(key)
+    if not typ:
+        return [f"{prefix}.{key} unknown"]
+    if typ is bool:
+        return [] if type(value) is bool else [f"{prefix}.{key} must be boolean"]
+    if typ is str:
+        return [] if isinstance(value, str) and value.strip() else [f"{prefix}.{key} must be non-empty string"]
+    if typ is int:
+        return [] if type(value) is int else [f"{prefix}.{key} must be integer"]
+    if not isinstance(value, list) or any(not isinstance(v, str) or not v.strip() for v in value):
+        return [f"{prefix}.{key} must be array of non-empty strings"]
+    return []
+
+
+def validate_rules_config(rules, prefix="rules"):
+    if rules is None:
+        return []
+    if not isinstance(rules, list):
+        return [f"{prefix} must be array"]
+    errs = []
+    ids = set()
+    for i, rule in enumerate(rules):
+        p = f"{prefix}[{i}]"
+        if not isinstance(rule, dict):
+            errs.append(f"{p} must be object"); continue
+        rid = rule.get("id", "")
+        if not isinstance(rid, str) or not re.match(r"^[a-z][a-z0-9_]*$", rid):
+            errs.append(f"{p}.id invalid: '{rid}'")
+        if rid in ids:
+            errs.append(f"{p}.id duplicate: '{rid}'")
+        ids.add(rid)
+        phase = rule.get("phase")
+        verdict = rule.get("verdict")
+        if phase not in RULE_PHASE_VERDICTS:
+            errs.append(f"{p}.phase invalid: '{phase}'")
+        elif verdict not in RULE_PHASE_VERDICTS[phase]:
+            errs.append(f"{p}.verdict invalid for phase {phase}: '{verdict}'")
+        if not isinstance(rule.get("description"), str):
+            errs.append(f"{p}.description must be string")
+        match = rule.get("match")
+        if not isinstance(match, dict) or not match:
+            errs.append(f"{p}.match must be non-empty object"); continue
+        for key, value in match.items():
+            errs.extend(validate_rule_condition(key, value, f"{p}.match"))
+    return errs
+
+
 def validate_wiring(w):
     """Validate wiring against schema. Returns list of error strings (empty = valid)."""
     errs = []
@@ -133,6 +215,7 @@ def validate_wiring(w):
             errs.append(f"edges[{i}].to '{e.get('to')}' unknown")
         if not e.get("on"):
             errs.append(f"edges[{i}].on required")
+    errs.extend(validate_rules_config(w.get("rules")))
     errs.extend(validate_observe_config(w.get("observe")))
     return errs
 
@@ -166,6 +249,9 @@ SELF_MODIFY_OPS = frozenset({
     "remove_node",
     "add_edge",
     "remove_edge",
+    "add_rule",
+    "update_rule",
+    "remove_rule",
     "set_guard",
     "set_limit",
     "set_observe",
@@ -228,6 +314,16 @@ def wiring_summary():
         {"from": e.get("from"), "on": e.get("on"), "to": e.get("to")}
         for e in topo.get("edges", [])
     ]
+    rules = [
+        {
+            "id": r.get("id"),
+            "phase": r.get("phase"),
+            "verdict": r.get("verdict"),
+            "description": r.get("description", ""),
+            "match": r.get("match", {}),
+        }
+        for r in WIRING.get("rules", [])
+    ]
     perms = WIRING.get("instance", {}).get("permissions", [])
     roles = sorted(WIRING.get("prompts", {}).get("roles", {}).keys())
     return {
@@ -236,6 +332,7 @@ def wiring_summary():
         "permissions": perms,
         "nodes": nodes,
         "edges": edges,
+        "rules": rules,
         "roles": roles,
         "capabilities": {
             "desktop_exec": "desktop_exec" in perms,
@@ -904,6 +1001,235 @@ def _find_advance_hint(state, actions):
     default = WIRING.get("guards", {}).get("advance_hints_default", "")
     return default
 
+
+def evaluate_rules(phase, state, wiring):
+    """Evaluate declarative rules from wiring. Deny/reject rules have priority."""
+    rules = [r for r in wiring.get("rules", []) if r.get("phase") == phase]
+    ordered = [r for r in rules if r.get("verdict") in {"deny", "reject"}]
+    ordered += [r for r in rules if r.get("verdict") not in {"deny", "reject"}]
+    for rule in ordered:
+        if _all_conditions_met(rule.get("match") or {}, state):
+            return rule
+    return None
+
+
+def _all_conditions_met(match, state):
+    if not isinstance(match, dict):
+        raise ValueError("rule match must be object")
+    return all(_check_condition(key, expected, state) for key, expected in match.items())
+
+
+def _check_condition(key, expected, state):
+    checker = RULE_CHECKERS.get(key)
+    if not checker:
+        raise ValueError(f"unknown rule condition: {key}")
+    result = bool(checker(state, expected))
+    return result == expected if type(expected) is bool else result
+
+
+def _rule_actions(state):
+    return [a for a in state.get("last_actions_raw", []) if isinstance(a, dict)]
+
+
+def _action_text(action):
+    return f"{action.get('target', '')} {action.get('value', '')}".lower()
+
+
+def _contains_any(text, needles):
+    if isinstance(needles, str):
+        needles = [needles]
+    text = (text or "").lower()
+    return any(str(n).lower() in text for n in needles)
+
+
+def _looks_like_url(text):
+    return bool(re.fullmatch(r"(https?://)?[a-z0-9.-]+\.[a-z]{2,}(/\S*)?", str(text or "").strip().lower()))
+
+
+def _memory_values_for_actions(state):
+    memory = state.get("memory") if isinstance(state.get("memory"), dict) else {}
+    values = []
+    for action in _rule_actions(state):
+        if action.get("verb") != "remember":
+            continue
+        key = str(action.get("target") or "")
+        value = action.get("value") if str(action.get("value") or "").strip() else memory.get(key, "")
+        if str(value or "").strip():
+            values.append(str(value))
+    return values or [str(v) for v in memory.values() if str(v).strip()]
+
+
+def _check_outcome_ok(state, _):
+    return str(state.get("last_outcome") or "").startswith("OK:")
+
+
+def _check_outcome_failed(state, _):
+    outcome = str(state.get("last_outcome") or "")
+    return not outcome or not outcome.startswith("OK:")
+
+
+def _check_actions_include_verb(state, expected):
+    return any(a.get("verb") == expected for a in _rule_actions(state))
+
+
+def _check_actions_all_verb(state, expected):
+    actions = _rule_actions(state)
+    return bool(actions) and all(a.get("verb") == expected for a in actions)
+
+
+def _check_actions_verb_absent(state, expected):
+    return not _check_actions_include_verb(state, expected)
+
+
+def _check_actions_sequence(state, expected):
+    verbs = [a.get("verb", "") for a in _rule_actions(state)]
+    return verbs[:len(expected)] == [str(v) for v in expected]
+
+
+def _check_actions_wrote_nonempty(state, _):
+    return any(a.get("verb") == "write" and str(a.get("value") or "").strip() for a in _rule_actions(state))
+
+
+def _check_actions_pressed(state, expected):
+    needle = str(expected).lower()
+    return any(a.get("verb") in {"press", "hotkey"} and needle in _action_text(a) for a in _rule_actions(state))
+
+
+def _check_actions_hotkey_contains(state, expected):
+    needles = [str(v).lower() for v in expected]
+    return any(a.get("verb") == "hotkey" and all(n in _action_text(a) for n in needles) for a in _rule_actions(state))
+
+
+def _check_actions_hotkey_absent(state, expected):
+    return not _check_actions_hotkey_contains(state, expected)
+
+
+def _check_actions_write_is_url(state, _):
+    return any(a.get("verb") == "write" and _looks_like_url(a.get("value")) for a in _rule_actions(state))
+
+
+def _check_done_when_matches(state, expected):
+    return _contains_any(state.get("current_step", {}).get("done_when", ""), expected)
+
+
+def _check_done_when_absent(state, expected):
+    return not _check_done_when_matches(state, expected)
+
+
+def _check_goal_has_domain(state, _):
+    return bool(re.search(r"\b[a-z0-9-]+(?:\.[a-z0-9-]+)+\b", str(state.get("goal", "")).lower()))
+
+
+def _check_screen_contains_domain_needle(state, _):
+    proof = " ".join([state.get("screen", "") or "", _focused_title(state), state.get("last_outcome", "") or ""]).lower()
+    return any(needle in proof for needle in _step_domain_needles(state))
+
+
+def _check_screen_contains(state, expected):
+    return _contains_any(state.get("screen", ""), expected)
+
+
+def _check_focused_contains_action_target(state, _):
+    focused = _focused_title(state)
+    done_when = str(state.get("current_step", {}).get("done_when") or "").lower()
+    for action in _rule_actions(state):
+        if action.get("verb") != "focus":
+            continue
+        target = str(action.get("target") or "").strip().lower()
+        words = [w for w in re.split(r"[^a-z0-9]+", target) if len(w) > 2]
+        if target and (target in focused or target in done_when or any(w in focused or w in done_when for w in words)):
+            return True
+    return False
+
+
+def _check_focused_has_writable(state, _):
+    screen = (state.get("screen") or "").lower()
+    return any(token in screen for token in ("edit", "document", "combobox", "input", "textarea"))
+
+
+def _check_focused_element_role_any(state, expected):
+    screen = (state.get("screen") or "").lower()
+    return any(str(role).lower() in screen for role in expected)
+
+
+def _check_memory_stored_by_action(state, _):
+    return bool(_memory_values_for_actions(state))
+
+
+def _check_memory_value_min_length(state, expected):
+    return any(len(v.strip()) >= int(expected) for v in _memory_values_for_actions(state))
+
+
+def _check_memory_value_not_url(state, _):
+    values = _memory_values_for_actions(state)
+    return bool(values) and all(not _looks_like_url(v) for v in values)
+
+
+def _check_memory_value_not_title(state, _):
+    focused = _focused_title(state)
+    values = [v.strip().lower() for v in _memory_values_for_actions(state)]
+    return bool(values) and all(v != focused for v in values)
+
+
+def _check_chain_is_launch(state, _):
+    actions = _rule_actions(state)
+    if len(actions) < 3 or [a.get("verb") for a in actions[:3]] != ["hotkey", "write", "press"]:
+        return False
+    hotkey = _action_text(actions[0])
+    return "win" in hotkey and "r" in hotkey and str(actions[1].get("value") or "").strip() and "enter" in _action_text(actions[2])
+
+
+def _check_chain_is_navigation(state, _):
+    address_write = any(a.get("verb") == "write" and "address" in _target_screen_line(state, a.get("target", "")) for a in _rule_actions(state))
+    return _check_actions_wrote_nonempty(state, True) and _check_actions_pressed(state, "enter") and (
+        _check_actions_hotkey_contains(state, ["ctrl", "l"]) or address_write
+    )
+
+
+def _check_chain_is_save(state, _):
+    return _check_actions_hotkey_contains(state, ["ctrl", "s"]) and _check_done_when_matches(state, ["save", "saved"])
+
+
+def _check_chain_wrote_and_submitted(state, _):
+    clicked_submit = any(
+        a.get("verb") == "click" and _contains_any(f"{_action_text(a)} {_target_screen_line(state, a.get('target', ''))}", ["send", "submit"])
+        for a in _rule_actions(state)
+    )
+    return _check_actions_wrote_nonempty(state, True) and (_check_actions_pressed(state, "enter") or clicked_submit)
+
+
+RULE_CHECKERS = {
+    "outcome_ok": _check_outcome_ok,
+    "outcome_failed": _check_outcome_failed,
+    "actions_include_verb": _check_actions_include_verb,
+    "actions_all_verb": _check_actions_all_verb,
+    "actions_verb_absent": _check_actions_verb_absent,
+    "actions_sequence": _check_actions_sequence,
+    "actions_wrote_nonempty": _check_actions_wrote_nonempty,
+    "actions_pressed": _check_actions_pressed,
+    "actions_hotkey_contains": _check_actions_hotkey_contains,
+    "actions_hotkey_absent": _check_actions_hotkey_absent,
+    "actions_write_is_url": _check_actions_write_is_url,
+    "done_when_matches": _check_done_when_matches,
+    "done_when_absent": _check_done_when_absent,
+    "step_has_domain_needle": lambda state, _: bool(_step_domain_needles(state)),
+    "goal_has_domain": _check_goal_has_domain,
+    "screen_contains_domain_needle": _check_screen_contains_domain_needle,
+    "screen_contains": _check_screen_contains,
+    "focused_contains_action_target": _check_focused_contains_action_target,
+    "focused_has_writable": _check_focused_has_writable,
+    "focused_element_role_any": _check_focused_element_role_any,
+    "memory_has_key_from_action": _check_memory_stored_by_action,
+    "memory_stored_by_action": _check_memory_stored_by_action,
+    "memory_value_min_length": _check_memory_value_min_length,
+    "memory_value_not_url": _check_memory_value_not_url,
+    "memory_value_not_title": _check_memory_value_not_title,
+    "chain_is_launch": _check_chain_is_launch,
+    "chain_is_navigation": _check_chain_is_navigation,
+    "chain_is_save": _check_chain_is_save,
+    "chain_wrote_and_submitted": _check_chain_wrote_and_submitted,
+}
+
 # ─── Node handlers ───
 
 def node_entry(state, _):
@@ -1269,6 +1595,14 @@ def _verify_preflight_confirmed(state):
 
 def node_verify(state, node_cfg):
     """Verify from descriptive step + act outcomes only — act is sole SCREEN consumer."""
+    rule = evaluate_rules("verify", state, WIRING)
+    if rule and rule.get("verdict") == "deny":
+        return {"signals": ["step_denied"], "patch": {"last_error": rule.get("description") or wiring_error("verify_preflight_denied")}}
+    if rule and rule.get("verdict") == "confirm":
+        clear_keys = WIRING.get("reasoning", {}).get("clear_on_step_confirm", [])
+        patch: dict[str, Any] = dict(clear_reasoning_patch(state, clear_keys))
+        patch.update({"step": state.get("step", 0) + 1, "retries": 0, "last_error": ""})
+        return {"signals": ["step_confirmed"], "patch": patch}
     if _verify_preflight_denied(state):
         return {"signals": ["step_denied"], "patch": {"last_error": wiring_error("verify_preflight_denied")}}
     deny_reason = _verify_chat_submission_denied(state) or _verify_memory_capture_denied(state)
@@ -1449,6 +1783,34 @@ def _require_nonempty_text(value, field):
     return text
 
 
+def _require_rule_id(rule_id):
+    rule_id = str(rule_id or "").strip()
+    if not re.match(r"^[a-z][a-z0-9_]*$", rule_id):
+        raise ValueError(f"invalid rule id: {rule_id!r}")
+    return rule_id
+
+
+def _find_rule(rules, rule_id):
+    for rule in rules:
+        if rule.get("id") == rule_id:
+            return rule
+    return None
+
+
+def _rule_from_payload(payload):
+    rule = {
+        "id": _require_rule_id(payload.get("id")),
+        "phase": _require_nonempty_text(payload.get("phase"), "phase"),
+        "verdict": _require_nonempty_text(payload.get("verdict"), "verdict"),
+        "description": str(payload.get("description") or ""),
+        "match": payload.get("match"),
+    }
+    errs = validate_rules_config([rule], "rule")
+    if errs:
+        raise ValueError("; ".join(errs))
+    return rule
+
+
 def apply_wiring_patch(current, parsed):
     """Apply one LLM-proposed wiring mutation to an in-memory wiring object."""
     data = parsed.get("data")
@@ -1541,6 +1903,39 @@ def apply_wiring_patch(current, parsed):
         ]
         if len(topo["edges"]) == before:
             raise ValueError(f"edge not found: {edge_from}->{edge_to}")
+
+    elif op == "add_rule":
+        rule = _rule_from_payload(payload)
+        rules = current.setdefault("rules", [])
+        if _find_rule(rules, rule["id"]):
+            raise ValueError(f"rule already exists: {rule['id']}")
+        rules.append(rule)
+
+    elif op == "update_rule":
+        rule_id = _require_rule_id(payload.get("id"))
+        rule = _find_rule(current.setdefault("rules", []), rule_id)
+        if not rule:
+            raise ValueError(f"unknown rule: {rule_id}")
+        updates = payload.get("set")
+        if not isinstance(updates, dict) or not updates:
+            raise ValueError("update_rule.set must be non-empty object")
+        for key in updates:
+            if key not in {"match", "verdict", "description"}:
+                raise ValueError(f"update_rule cannot set {key}")
+        candidate = dict(rule)
+        candidate.update(updates)
+        errs = validate_rules_config([candidate], "rule")
+        if errs:
+            raise ValueError("; ".join(errs))
+        rule.update(updates)
+
+    elif op == "remove_rule":
+        rule_id = _require_rule_id(payload.get("id"))
+        rules = current.setdefault("rules", [])
+        before = len(rules)
+        current["rules"] = [r for r in rules if r.get("id") != rule_id]
+        if len(current["rules"]) == before:
+            raise ValueError(f"unknown rule: {rule_id}")
 
     elif op == "set_guard":
         key = _require_nonempty_text(payload.get("key"), "key")
