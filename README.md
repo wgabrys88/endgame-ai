@@ -1,329 +1,384 @@
 # endgame-ai
 
-A self-rewiring autonomous desktop organism. Not a react agent. Not a chatbot with tools. A persistent reasoning loop that observes, plans, acts, verifies, reflects, and evolves its own wiring over days-long sessions.
+A local computer becomes a living organism. No cloud. No API keys. No programming required to use it. A 4-billion parameter model running on consumer hardware plans, observes, acts, verifies, reflects, and evolves its own wiring — working for hours or days on complex goals the way a human works at a desktop.
 
-The system will install software, configure virtual machines, interact with web services, handle multi-hour tasks, replan when reality changes, and self-modify its own topology when its current design fails. The organism operates continuously — like a human at a desktop — not per-request.
+This is not a chatbot with tools. Not a react agent. Not a copilot. It is a self-rewiring autonomous organism that turns any Windows PC into a thinking machine.
 
-Last verified: 2026-06-22.
+## Why This Exists
 
-## What ROD Is
+Every AI agent today requires: cloud APIs, programming skills to configure, RAG pipelines, tool definitions, prompt engineering per task, and constant human oversight. endgame-ai requires: one local model, one Python file, one JSON brain. The human says "install VirtualBox, create an Ubuntu VM, configure NAT networking" and walks away. The organism plans, executes, handles failures, replans, and evolves.
 
-ROD = Reason → Observe → Decide. A closed-loop cognitive architecture where:
+When this project is complete — when Python is purely mechanical and wiring.json fully governs behavior — the system becomes a true endgame: any person with a computer can have an autonomous digital worker that improves itself through experience. No programming. No cloud dependency. No per-token billing. The model runs locally, the reasoning stays local, the evolution stays local.
 
-- **Python** is the mechanical body: probes the screen, executes verbs, validates patches, hot-reloads wiring. Python never interprets tasks semantically.
-- **prompts/wiring.json** is the mutable brain: topology, prompts, guards, limits, observation config. This is where semantic behavior lives.
-- **Local 4B LLM** provides judgment: plans multi-step goals, chooses actions from observation, verifies outcomes, reflects on failure, and proposes structural self-modifications.
-- **wiring-editor.html** is the live workbench: graph, state, SCREEN, SSE.
-
-The two-pass LLM call is core: pass 1 generates internal reasoning (via native `<think>` tags captured as `reasoning_content`), then pass 2 receives that reasoning back and emits the final decision JSON. This creates a feedback loop where the model critiques its own first impulse before committing. The reasoning propagates between nodes — planner's thoughts inform act, act's thoughts inform verify, verify's thoughts inform reflect.
-
-## ROD Loop
+## Architecture: ROD (Reason → Observe → Decide)
 
 ```
-goal_inbox → moe_route → planner → scheduler → bus_check → observe → act → verify → scheduler
-                                                                               ↓ fail
-                                                                             reflect → retry | replan | escalate
-                                                                                                          ↓
-                                                                                                    self_modify
+Python = mechanical body (probe screen, execute verbs, validate, hot-reload)
+prompts/wiring.json = mutable brain (topology, prompts, guards, limits, filters)
+Local LLM = semantic judgment (plans, decides, verifies, reflects, evolves)
 ```
 
-This is not a simple plan-execute-done flow. For a complex goal like "install VirtualBox, create a VM, configure networking":
-1. Planner decomposes into 8-10 steps
-2. Each step cycles through observe → act → verify
-3. If verify denies (action didn't achieve intent), reflect decides: retry (same approach), replan (decompose differently), or escalate (self_modify the wiring)
-4. Self_modify can add guards, change prompts, adjust observation depth, restructure topology
-5. After mutation, the whole loop restarts with evolved wiring
+### The Closed Loop
 
-The organism is expected to run for hours, replan multiple times, and evolve its own behavior mid-task.
+```
+goal_inbox → planner → scheduler → observe → act → verify → scheduler (loop)
+                                                      ↓ fail
+                                                    reflect → retry | replan | escalate
+                                                                                  ↓
+                                                                            self_modify
+                                                                                  ↓
+                                                                          planner (evolved)
+```
 
-## File Map
+For a goal like "install software X, configure it, verify it works":
+1. Planner decomposes into 8-10 ordered steps with completion criteria
+2. Each step cycles: observe screen → decide action → execute → verify outcome
+3. If verify denies: reflect diagnoses → retry (different approach) or replan (different decomposition)
+4. If replans exhausted: escalate to self_modify → organism evolves its own wiring
+5. After mutation: restart with evolved brain — new prompts, guards, observation config
+6. This continues for hours until the goal is satisfied or limits hit
 
-| File | LOC | Purpose |
-| --- | ---: | --- |
-| `server.py` | ~2100 | HTTP API, ROD graph runner, node handlers, prompt assembly, two-pass LLM, self-modify patch engine, validation |
-| `desktop.py` | ~1500 | Win32/UIA observation, single-pass hover probe, element classification, SCREEN rendering |
-| `actions.py` | ~250 | Data-driven verb dispatch (click, write, press, hotkey, scroll, focus, remember, wait) |
-| `colony.py` | ~90 | Multi-slot colony manager (future: parallel organisms sharing bus) |
-| `wiring-editor.html` | ~280 | Zero-dependency Canvas2D workbench |
-| `prompts/wiring.json` | - | The brain: topology, prompts, guards, limits, observe config |
-| `prompts/wiring-schema.json` | - | JSON Schema for wiring validation |
-| `prompts/model.json` | - | LM Studio connection parameters |
+The organism is designed for **sustained autonomous operation** — not single-shot requests.
 
 ## The Two-Pass Reasoning Loop
 
-Every LLM node (planner, act, verify, reflect, self_modify) executes:
+The core innovation. Every LLM node executes two passes:
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│ PASS 1: system + user → LLM                                    │
-│   Model: <think>reasoning_content</think>content                │
-│   Python captures reasoning_content                             │
-│                                                                 │
-│ PASS 2: system + user + ROD_REASONING_CONTENT + "DECIDE NOW"   │
-│   Model: <think>brief</think>final JSON                         │
-│   Python parses JSON from content                               │
-│                                                                 │
-│ Reasoning stored in state.reasoning[circuit] → propagates       │
-│ to downstream nodes via reasoning_chain                         │
-└─────────────────────────────────────────────────────────────────┘
+PASS 1: [system + user] → LLM
+  Model thinks internally: <think>reasoning</think>
+  Model outputs: content (often contains the answer)
+  Python captures: reasoning_content (the model's internal deliberation)
+
+PASS 2: [system + user + reasoning_from_pass_1 + "DECIDE NOW"] → LLM
+  Model sees its OWN prior reasoning as input
+  Model self-corrects: catches errors, fixes targets, confirms logic
+  Model outputs: final JSON decision
 ```
 
-This is not overhead. This is the organism thinking before committing. The reasoning chain is the organism's memory of WHY it made each decision — critical for reflect and self_modify to diagnose failures.
+This creates **self-critique between impulse and commitment**. The model's first instinct (pass 1) is fed back to it for review (pass 2). Empirically proven: pass 2 caught a bug where pass 1 emitted `press target=""` and pass 2 corrected it to `press target="enter"`. Without this, the action would have failed, triggering a 120s+ retry cycle.
 
-### Measured Performance (4B Nemotron Q6, single GPU)
+The reasoning propagates between nodes via the reasoning chain — planner's thoughts inform reflect, reflect's thoughts inform self_modify. This is the organism's memory of WHY it made each decision.
 
-| Metric | Value |
-| --- | --- |
-| Prompt eval (cached) | 50-170 tok/s |
-| Prompt eval (cold) | 60-80 tok/s |
-| Generation | 6.0-6.4 tok/s |
-| Reasoning tokens/call | 13-240 |
-| Content tokens/call | 37-109 |
-| Per-node wall time | 12-90s |
-| Full single-step goal | ~3.5 min |
+## Observation: Single-Pass Full-Screen Probe
 
-The hard constraint is **6.14 tok/s generation speed**. Everything else (prompt eval, observation, routing) is negligible by comparison.
+The organism sees through cursor-based hover probing:
 
-## Observation Pipeline
+1. Cursor moves across entire screen in a grid (70px steps, 405 points)
+2. At each point: Win32 `SetCursorPos` + UIA `ElementFromPoint`
+3. Elements are deduplicated, classified by scope, rendered to SCREEN text
+4. SCREEN is the sole input to the act circuit (~4-6KB, ~1200 tokens)
 
-Single full-screen hover probe (primary observation method):
+Why hover probe is primary (not UIA tree walking):
+- Captures custom-rendered web elements invisible to UIA
+- Sees hover-only tooltips and dynamic menus
+- Works on any framework (Electron, WPF, Win32, web)
+- Sees what a human would see, not what accessibility APIs expose
 
-1. Cursor moves across screen at configurable step size (default 70px)
-2. At each point: `SetCursorPos` + `IUIAutomation::ElementFromPoint`
-3. Elements are deduplicated, classified by scope, and rendered to SCREEN text
-4. SCREEN is the only input to the act circuit
+Current performance: 405 probe points in ~2-3 seconds. Negligible vs LLM time.
 
-```
-Current config:
-- hover_scan_step_px: 70  (was 40, now 3x fewer points)
-- Single pass: 405 probe points covers full 1920x1080
-- UIA is secondary enrichment for modern apps and web content
-- SCREEN size: ~4-6KB depending on active window complexity
-```
+## Verify Preflight: Mechanical Intelligence
 
-### Why Hover Scan is Primary
+Before calling the LLM for verification, Python checks structural patterns:
 
-UIA tree walking misses:
-- Custom-rendered web elements (Canvas, WebGL, React portals)
-- Hover-only tooltips and dynamic menus
-- Elements inside embedded frames not exposed to UIA
-- Modern Electron/Chromium content that exposes minimal UIA nodes
+| Pattern | Logic | Saves |
+| --- | --- | --- |
+| Win+R → write → Enter | App launch via Run dialog | ~120s |
+| Focus browser → Ctrl+L → write → Enter | URL navigation | ~120s |
+| Typed text + editor focused | Write-to-editor | ~120s |
+| All actions are `remember` | No side effect, data captured | ~120s |
+| Ctrl+S + done_when mentions "save" | File save | ~120s |
+| Focus + target matches done_when | Window switch | ~120s |
 
-The cursor probe via `ElementFromPoint` captures what's VISUALLY there, regardless of framework. UIA enriches with accessibility metadata. Together they form complete observation.
-
-## Prompt Architecture
-
-All prompts live in `wiring.json` under `prompts.base` and `prompts.roles.*`. System prompts are assembled at runtime by combining base + role for the active circuit.
-
-### Current Budget
-
-| Prompt | Chars | Purpose |
-| --- | ---: | --- |
-| base | 863 | Shared context: what ROD is, runtime facts |
-| planner | 972 | Goal → subtasks decomposition |
-| unified (act) | 1724 | SCREEN → deterministic verb chain |
-| verifier | 974 | Evidence → confirmed/denied |
-| reflector | 834 | Failure → retry/replan/escalate |
-| self_modify | 1648 | Diagnosis → validated wiring_patch |
-
-### Prompt Rules
-
-- Every role specifies exact JSON output schema
-- No prose in model output (content = JSON only)
-- Task semantics in prompts/guards, never in Python
-- `<think>` content is for the model's own reasoning, never parsed as output
+Each pattern eliminates 2 LLM calls. For a 10-step goal where 8 steps match patterns: **16 minutes saved**. This is the highest-leverage optimization in the system — adding patterns is cheaper than faster hardware.
 
 ## Self-Rewiring
 
-When reflect escalates (retries exhausted, replans exhausted):
+When the organism fails repeatedly (retries exhausted, replans exhausted), it escalates:
 
 ```
-reflect → escalate signal → self_modify node → LLM emits wiring_patch → validate → backup → write → hot-reload → planner (restart with evolved brain)
+reflect → "I cannot solve this with current wiring" → self_modify
+self_modify → LLM emits a validated wiring_patch → Python validates → backup → write → hot-reload
 ```
 
-### Patch Operations
+Patch operations: `set_observe`, `set_limit`, `set_guard`, `append_role_rule`, `set_prompt_base`, `set_role`, `set_reasoning`, `add_node`, `update_node`, `remove_node`, `add_edge`, `remove_edge`.
 
-```
-set_observe       — tune observation (step size, depth, filters)
-set_limit         — adjust numeric caps (attempts, replans, cycles)
-set_guard         — add/change behavioral guards
-append_role_rule  — add rule to a prompt role
-set_prompt_base   — modify shared system prompt
-set_role          — replace a role prompt entirely
-set_reasoning     — tune reasoning config
-add_node / update_node / remove_node — topology changes
-add_edge / remove_edge — signal routing
-```
+The organism can:
+- Adjust observation depth when SCREEN is too noisy or too sparse
+- Add rules to its own prompts when it keeps making the same mistake
+- Change retry limits when tasks need more patience
+- Restructure its own topology when the graph flow is wrong
 
-### What Self-Modify Is For
+Every mutation is validated against schema, backed up, and hot-reloaded. The organism cannot corrupt itself.
 
-- "Observation is too noisy" → `set_observe` render filters
-- "Keep retrying the same wrong approach" → `append_role_rule` or `set_guard`
-- "Need more attempts before giving up" → `set_limit`
-- "Wrong node handles this signal" → topology edits
+## Measured Performance
 
-Self-modify is the organism's adaptation mechanism. It doesn't solve tasks — it evolves the organism's capability to solve future tasks.
+Source: LM Studio server log, nvidia-nemotron-3-nano-4b Q6_K_XL, single GPU.
 
-## Verify Preflight Guards
-
-Before calling the LLM for verification, mechanical Python guards check for structurally unambiguous outcomes:
-
-- `hotkey win+r → write → press enter` → confirmed (app launch pattern)
-- `focus browser → ctrl+l → write URL → enter` → confirmed (navigation)
-- `typed text + editor focused` → confirmed (write-to-editor)
-- Outcome doesn't start with "OK:" → denied (action failed mechanically)
-
-These guards save ~30-60s per step by avoiding unnecessary LLM calls for obvious outcomes. They are generic patterns, not task-specific.
-
-## HTTP API
-
-| Method | Path | Purpose |
+| Metric | Value | Implication |
 | --- | --- | --- |
-| GET | /health | Status, capabilities, self_modify_ops |
-| GET | /wiring | Current wiring |
-| GET | /state | Persisted run state |
-| GET | /events | SSE live stream |
-| POST | /run | Start autonomous goal |
-| POST | /step | Execute one graph node |
-| POST | /resume | Resume saved state |
-| POST | /pause | Pause running goal |
-| POST | /wiring | Validate and hot-reload wiring |
-| POST | /node/{type} | Direct node execution |
-| POST | /interrupt | Inject goal into running loop |
+| Generation speed | 6.14 tok/s | **THE WALL** — hardware bound |
+| Prompt eval (cached) | 50-170 tok/s | Fast when cache hits |
+| Prompt eval (cold) | 60-80 tok/s | One-time cost per circuit switch |
+| Avg reasoning/call | 13-240 tokens | Model thinks proportionally to complexity |
+| Avg content/call | 37-109 tokens | Compact JSON decisions |
+| Two-pass per node | 40-156s | Depends on prompt size and output length |
+| Verify preflight | <1s | Structural patterns eliminate LLM entirely |
+| Observation | ~3s | Single-pass hover probe |
+| Simple goal (1 step) | ~3.5 min | Planner + act + verify(preflight) |
+| 5-step goal (estimated) | ~12 min | With preflight on most steps |
+| 5-step goal (no preflight) | ~20 min | Every verify needs LLM |
 
-## LLM Configuration
+### Where Time Goes (from log truth)
 
-```json
-{
-  "host": "http://localhost:1234",
-  "model": "nvidia-nemotron-3-nano-4b",
-  "temperature": 0.3,
-  "temperature_bump": 0.15,
-  "timeout": 900,
-  "max_tokens": 2048
-}
+```
+Generation (output tokens):     69%  ← HARDWARE LIMIT, cannot optimize
+Prompt eval (input processing): 24%  ← Benefits from cache, mostly good
+Non-LLM (observe, routing):      7%  ← Already negligible
 ```
 
-LM Studio with prompt caching enabled. Context window: 16384 tokens. Single slot. The `temperature_bump` adds 0.15 per parse retry to escape local optima.
+The only software levers: reduce how many times we hit the LLM (verify preflight), reduce output tokens (tighter prompts), prevent failed actions (better guards).
 
-## Proven Capabilities
+## File Map
 
-- [x] Full ROD loop: plan → observe → act → verify → satisfied
-- [x] Two-pass reasoning with inter-node propagation
-- [x] Self-modify cycle: LLM emits wiring_patch → validate → backup → hot-reload
-- [x] Single-pass full-screen observation (405 points, ~4-6KB SCREEN)
-- [x] Verify preflight for structurally obvious outcomes
-- [x] Render filters: 37KB → 6KB SCREEN (83% reduction)
-- [x] Compact prompts for 4B model (~7KB total)
-- [x] SIGINT/SIGTERM state persistence and resume
-- [x] Colony multi-slot architecture (implemented)
+| File | Purpose |
+| --- | --- |
+| `server.py` | HTTP API, ROD graph runner, node handlers, two-pass LLM, prompt assembly, self-modify engine |
+| `desktop.py` | Win32/UIA observation, single-pass hover probe, SCREEN rendering, scope classification |
+| `actions.py` | Data-driven verb dispatch: click, write, press, hotkey, scroll, focus, remember, wait |
+| `colony.py` | Multi-slot colony manager (future: parallel organisms) |
+| `wiring-editor.html` | Zero-dependency Canvas2D workbench for live monitoring |
+| `prompts/wiring.json` | The mutable brain — all semantic behavior lives here |
+| `prompts/wiring-schema.json` | JSON Schema for wiring validation |
+| `prompts/model.json` | LM Studio connection config |
 
-## Current Limitations
+## Runbook
 
-- Generation speed: 6.14 tok/s hard limit (hardware-bound)
-- Single-step goals take ~3.5 min (two-pass × 2 nodes)
-- Complex multi-step goals will take proportionally longer
-- Model typed "hello" instead of "hello from endgame" (verifier too lenient)
-- `server.py` is 84KB (graph runtime + HTTP + prompt plumbing in one file)
-- No formal test suite
+```powershell
+# Start
+python "C:\path\to\endgame-ai\server.py"
+
+# Stop
+Get-NetTCPConnection -LocalPort 9078 -State Listen -ErrorAction SilentlyContinue |
+  Select-Object -ExpandProperty OwningProcess -Unique |
+  ForEach-Object { Stop-Process -Id $_ -Force }
+
+# Hot-reload wiring after edits
+Invoke-WebRequest -Method Post -Uri 'http://127.0.0.1:9078/wiring' -InFile 'prompts\wiring.json' -ContentType 'application/json'
+
+# Verify
+python -m compileall -q .
+GET http://127.0.0.1:9078/health
+```
 
 ## Non-Negotiable Constraints
 
-- Do not reintroduce SCREEN prompt truncation
-- Do not reintroduce `parse_fallback`
-- Do not add site-specific or task-specific Python branches
-- Do not hide errors with `except/pass`
-- Python = mechanical. Wiring = semantic.
-- Validate and hot-reload wiring after mutations
-- Commit every coherent verified batch
-- Do not remove or weaken the two-pass reasoning loop
+- Python is mechanical. It never interprets tasks semantically.
+- Wiring is semantic. All behavior changes go through prompts/guards.
+- Do not reintroduce prompt truncation.
+- Do not reintroduce parse_fallback.
+- Do not add site-specific or task-specific Python branches.
+- Do not hide errors with except/pass.
+- Do not remove or weaken the two-pass reasoning loop.
+- Validate wiring after every mutation.
+- Commit every coherent verified batch.
+
+## Evolution Path
+
+**Now (v1)**: Single organism, sequential ROD loop, proven capabilities
+- Plans, observes, acts, verifies, reflects, self-modifies
+- 6 verify preflight patterns, single-pass observation, render filters
+- First autonomous goals completed
+
+**Next (v1.x)**: Reliability and efficiency
+- More verify preflight patterns (discovered from real multi-step runs)
+- Tighter prompts (model reasons less redundantly, same quality)
+- Better guards (prevent repeat actions, prevent impossible targets)
+- Trace-based learning (successful goal traces inform future planning)
+
+**Future (v2)**: Colony
+- Multiple organisms sharing a bus, parallel execution
+- Specialized slots (browser worker, file system worker, installer worker)
+- Cross-organism teaching through shared wiring patches
+- Pipeline parallelism (observe next step while acting on current)
+
+**Endgame**: Any person with a computer runs a local organism that handles complex digital work — installs software, configures systems, manages files, interacts with services — autonomously, privately, without programming skills or cloud dependencies.
 
 ## Handover Session Prompt
 
 ```text
-You are continuing endgame-ai in C:\Users\px-wjt\Downloads\endgame-ai.
+You are continuing endgame-ai — a self-rewiring autonomous desktop organism.
 
-Read README.md first. Treat it as the source of truth unless /health or code proves it stale.
+=== WHAT THIS IS ===
 
-This is a ROD organism (Reason → Observe → Decide), not a react agent. The two-pass
-reasoning loop is CORE — pass 1 generates reasoning, pass 2 receives it back and
-decides. This creates self-critique between impulse and commitment. Do NOT propose
-removing it. The reasoning chain propagates between nodes and is the organism's
-memory of WHY decisions were made.
+A local Windows PC becomes a living organism. A 4B parameter LLM runs locally
+(LM Studio) and drives a closed ROD loop (Reason → Observe → Decide) that can
+plan multi-step goals, observe the screen, execute desktop actions, verify
+outcomes, reflect on failures, and self-modify its own wiring topology.
 
-Current reality (verified 2026-06-22):
-- Single-pass full-screen hover probe: 405 points at 70px step (~1-2s)
-- SCREEN: 4-6KB after render filters
-- Two-pass LLM per node: 12-90s depending on prompt size and reasoning depth
-- Generation: 6.14 tok/s (hard limit — the constraint is HARDWARE not software)
-- Prompt eval: 50-170 tok/s (benefits from LM Studio prompt cache)
-- Verify preflight eliminates LLM for structurally obvious outcomes
-- Self-modify exercised and proven
-- First autonomous goal completed
+This is NOT a react agent. NOT a chatbot with tools. It is a persistent
+reasoning loop designed to work for hours or days on complex goals: installing
+software, configuring systems, interacting with web services, managing files.
+The human provides a goal and walks away.
 
-Non-negotiables:
-- Do not reintroduce prompt truncation or parse_fallback.
-- Do not add task/site-specific Python.
-- Do not hide errors. Do not remove the two-pass reasoning.
-- Python = mechanical body. Wiring = mutable brain.
-- Put semantic fixes in prompts/guards, not code.
-- Validate wiring. Hot-reload with absolute path.
-- Commit coherent verified batches.
+The endgame vision: any person with a computer can have an autonomous digital
+worker. No programming. No cloud. No per-token billing. Local model, local
+reasoning, local evolution. When Python is purely mechanical and wiring.json
+fully governs behavior, the system becomes model-agnostic — swap in any local
+LLM and the organism works.
 
-Immediate analysis approach:
-- Read the LM Studio server log for the latest run:
-  C:\Users\px-wjt\.cache\lm-studio\server-logs\2026-06\<latest>.log
-- The log contains FULL request bodies and responses — this is ground truth.
-- Map each LLM call to its pipeline node (planner P1/P2, act P1/P2, etc.)
-- Measure: prompt_tokens, reasoning_tokens, content_tokens, total_time
-- Identify: what consumed the most tokens, what was redundant reasoning
+=== ARCHITECTURE ===
 
-Key constraints for efficiency work:
-- Generation at 6.14 tok/s is FIXED (hardware). Cannot improve.
-- The only levers are: reduce output tokens, improve prompt cache hits,
-  reduce prompt size (fewer input tokens = faster prompt eval).
-- The two-pass stays. But within it, we can:
-  - Reduce reasoning tokens per pass (shorter prompts = less to think about)
-  - Improve cache overlap between pass 1 and pass 2 (already 87.9% for act)
-  - Reduce SCREEN tokens sent to non-act nodes (they shouldn't see it anyway)
-  - Reduce reasoning chain pollution between unrelated nodes
-- Strengthen verify preflight to cover more structural patterns
-  (every pattern matched = 2 LLM calls × 30-60s saved)
-- IMPORTANT: changes must be GENERIC not task-specific
+Python (server.py, desktop.py, actions.py) = mechanical body.
+  Probes screen, executes verbs, validates patches, hot-reloads wiring.
+  NEVER interprets tasks semantically. Pure mechanical infrastructure.
 
-The system will run complex multi-day tasks. Optimizing for "open notepad"
-is misleading. The real workload is: install software, configure systems,
-interact with web services, handle failures, replan mid-task.
+prompts/wiring.json = mutable brain.
+  Topology (graph nodes + edges + signals), prompts (base + roles),
+  guards, limits, observe config, reasoning config, verbs config.
+  ALL semantic behavior lives here. This is what self_modify mutates.
 
-First actions:
-1. git status, compileall, JSON parse, git diff --check
-2. Confirm /health and /wiring
-3. Read LM Studio server log for latest run
-4. Full request/response forensics: map data flow through the topology
-5. Identify the highest-leverage generic efficiency improvement
-6. Implement, test, commit, update README
+Local LLM (via LM Studio at localhost:1234) = judgment.
+  Plans, decides actions, verifies, reflects, proposes wiring patches.
+  Currently: nvidia-nemotron-3-nano-4b (4B params, Q6, runs on any GPU).
 
-When something fails:
-- Model lacked data → fix observation/rendering/filters
-- Model had wrong policy → patch prompts/wiring.json
-- Graph flow wrong → patch topology/guards/limits
-- Mechanics failed → patch Python mechanically
-- Fix names one website/app → it belongs in prompt policy or not at all
+=== THE TWO-PASS REASONING LOOP (CORE — DO NOT REMOVE) ===
+
+Every LLM node executes:
+  Pass 1: system + user → model produces <think>reasoning</think>content
+  Pass 2: system + user + reasoning_from_pass_1 + "DECIDE NOW" → final JSON
+
+This creates self-critique. Pass 1 is impulse, pass 2 is commitment with
+review. Proven: pass 2 caught real bugs that would have caused failures.
+The reasoning propagates between nodes (planner → act → verify → reflect)
+via the reasoning chain — the organism's memory of WHY.
+
+=== ROD LOOP ===
+
+goal → planner → [scheduler → bus_check → observe → act → verify] loop
+                                                         ↓ fail
+                                                       reflect → retry | replan | escalate → self_modify
+
+Nodes: planner (decompose), observe (screen probe), act (decide+execute),
+       verify (confirm/deny), reflect (diagnose), self_modify (evolve wiring)
+
+=== OBSERVATION ===
+
+Single full-screen hover probe: cursor grid at 70px step (405 points, ~3s).
+SetCursorPos + ElementFromPoint at each point. Captures everything visible
+regardless of framework. SCREEN rendered as text with [ID] targets (~4-6KB).
+This is the act circuit's sole visual input.
+
+Config in wiring.json "observe" section:
+  hover_scan_step_px: 70 (grid density)
+  render_class_name: false (suppress CSS class noise)
+  render_automation_id: true (keep short UIDs)
+  render_window_per_element: false (window shown in header only)
+  desktop_tree_enabled: false (disabled, model works without)
+
+=== VERIFY PREFLIGHT ===
+
+Mechanical Python guards that confirm/deny without LLM — highest leverage
+optimization. Each pattern saves 100-180s (2 LLM calls eliminated).
+Current patterns: Win+R launch, browser navigation, write-to-editor,
+remember (no side effect), Ctrl+S save, focus-matches-done_when.
+
+Adding more structural patterns is the #1 efficiency lever.
+
+=== MEASURED PERFORMANCE (GROUND TRUTH FROM LM STUDIO LOG) ===
+
+Generation: 6.14 tok/s (HARDWARE WALL — cannot improve in software)
+Prompt eval: 50-170 tok/s (cache-dependent)
+Single-step goal: ~3.5 min (planner two-pass + act two-pass + verify preflight)
+5-step goal: ~12 min (with preflight on most steps)
+
+Where time goes: 69% generation (hardware), 24% prompt eval, 7% non-LLM.
+The ONLY software levers: fewer LLM calls (preflight), fewer output tokens
+(tighter prompts), fewer retries (better guards/prompts).
+
+=== SELF-MODIFY ===
+
+When retries+replans exhausted: reflect escalates to self_modify.
+LLM emits a wiring_patch (validated JSON operation). Python validates
+against schema, creates timestamped backup, writes new wiring, hot-reloads.
+Operations: set_observe, set_limit, set_guard, append_role_rule,
+set_prompt_base, set_role, set_reasoning, add/update/remove node/edge.
+The organism cannot corrupt itself — validation prevents invalid mutations.
+
+=== NON-NEGOTIABLES ===
+
+- Python = mechanical. Wiring = semantic. Never cross this boundary.
+- Do NOT reintroduce prompt truncation or parse_fallback.
+- Do NOT add task-specific or site-specific Python branches.
+- Do NOT hide errors with except/pass.
+- Do NOT remove or weaken the two-pass reasoning loop.
+- Do NOT optimize for trivial goals — the system runs complex multi-day tasks.
+- Validate wiring after every mutation. Hot-reload with absolute path.
+- Commit every coherent verified batch.
+- Changes must be GENERIC — if it names one app/site, it's wrong.
+
+=== WHAT TO WORK ON (priority order) ===
+
+1. VERIFY PREFLIGHT COVERAGE — Run real multi-step goals, observe which
+   verify calls go to LLM, add structural patterns for those cases.
+   Each pattern = 100-180s saved per occurrence. Target: 80% coverage.
+
+2. PROMPT PRECISION — Analyze reasoning tokens in LM Studio logs.
+   Where the model re-derives rules from the system prompt, make the
+   prompt more decisive so the model reasons less redundantly.
+   Lever: 50-90 fewer tokens per call × 163ms each.
+
+3. RELIABILITY — Run complex goals (install software, configure systems).
+   When the model makes wrong actions, fix via prompts/guards in wiring.
+   Every prevented retry = 300s+ saved. Better than faster pipeline.
+
+4. TRACE LEARNING — Completed goal traces (prompts/traces.jsonl) inform
+   future planning via few-shot context. More traces = better first plans.
+
+=== HOW TO DIAGNOSE ===
+
+The LM Studio server log is GROUND TRUTH:
+  %USERPROFILE%\.cache\lm-studio\server-logs\<year-month>\<date>.log
+
+It contains: full request bodies (system + user messages), full responses
+(content + reasoning_content + token counts + timing). Map each request
+to its pipeline node by matching system prompt role and user content.
+
+Key metrics per call:
+  - prompt_tokens: how large was the input
+  - reasoning_tokens: how much the model thought
+  - completion_tokens - reasoning_tokens: actual output size
+  - total_time: wall clock for that call
+  - tg (tokens generated per second): generation speed
+
+If a goal fails or is slow:
+  - Read the log, find which node produced wrong output
+  - If wrong action → fix act prompt in wiring
+  - If wrong plan → fix planner prompt in wiring
+  - If wasted verify calls → add preflight pattern in server.py
+  - If observation missed elements → tune observe config in wiring
+  - NEVER add task-specific Python code
+
+=== ENDPOINTS ===
+
+GET  /health     — status + capabilities
+GET  /wiring     — current brain
+GET  /state      — persisted run state
+GET  /events     — SSE live stream
+POST /run        — start autonomous goal
+POST /step       — execute one graph node
+POST /pause      — pause running goal
+POST /resume     — resume from saved state
+POST /wiring     — validate + hot-reload wiring (JSON body)
+POST /node/{id}  — direct node execution
+
+=== FIRST ACTIONS ===
+
+1. git status, python -m compileall, JSON parse check, /health
+2. Read this README fully — it IS the architecture document
+3. Pick a multi-step goal, run it, observe behavior
+4. Read LM Studio log for that run — full forensics
+5. Identify highest-leverage improvement (usually: more preflight patterns
+   or tighter prompts to reduce wasted reasoning)
+6. Implement, test with a goal, verify, commit, update README
 ```
-
-## Decision Rules
-
-- Model lacked data → fix observation/rendering/filters
-- Model had wrong policy → patch `prompts/wiring.json`
-- Graph flow wrong → patch topology/guards/limits
-- Mechanics failed → patch Python mechanically
-- Fix names one app/site → it belongs in prompt policy or not at all
-- If unsure whether a change is generic → it's probably not, don't add it
-
-## Session Close Checklist
-
-- [ ] README updated when reality changed
-- [ ] Wiring validates (POST /wiring returns 200)
-- [ ] Server reports healthy (GET /health)
-- [ ] Current limitations stated directly
-- [ ] Commit exists for the coherent batch
