@@ -2,7 +2,8 @@
 endgame-ai — stdlib only, zero pip.
 One file. Node handlers are pure functions. Wiring.json is the brain.
 """
-import json, http.server, urllib.request, pathlib, time, sys, threading, queue, os, re
+import json, http.server, urllib.request, urllib.error, pathlib, time, sys, threading, queue, os, re, signal
+from typing import Any
 
 class ThreadingHTTPServer(http.server.ThreadingHTTPServer):
     daemon_threads = True
@@ -32,6 +33,61 @@ def apply_instance_env():
 
 
 apply_instance_env()
+
+OBSERVE_RULES = {
+    "min_elements": (int, 0),
+    "wait_retries": (int, 0),
+    "wait_ms": (int, 0),
+    "probe_step_px": (int, 10),
+    "probe_delay_ms": (int, 0),
+    "hover_scan_enabled": (bool, None),
+    "hover_scan_step_px": (int, 10),
+    "hover_scan_delay_ms": (int, 0),
+    "dense_probe_min_px": (int, 10),
+    "scroll_enrich_min": (int, 0),
+    "scroll_enrich_passes": (list, None),
+    "scroll_enrich_delay_ms": (int, 0),
+    "read_text_max": (int, 0),
+    "scope_depth": (int, 1),
+    "element_text_max": (int, 0),
+    "render_focused_first": (bool, None),
+    "window_limit": (int, 1),
+    "desktop_tree_enabled": (bool, None),
+    "desktop_tree_max_depth": (int, 1),
+    "desktop_tree_max_nodes": (int, 1),
+    "desktop_tree_child_limit": (int, 1),
+    "overlay_window_limit": (int, 1),
+    "window_scan_limit": (int, 1),
+}
+
+
+def validate_observe_item(key, value, prefix="observe"):
+    spec = OBSERVE_RULES.get(key)
+    if not spec:
+        return [f"{prefix}.{key} unknown"]
+    typ, minimum = spec
+    if typ is list:
+        if not isinstance(value, list) or any(type(v) is not int for v in value):
+            return [f"{prefix}.{key} must be array of integers"]
+        return []
+    if typ is bool:
+        return [] if type(value) is bool else [f"{prefix}.{key} must be boolean"]
+    if type(value) is not int:
+        return [f"{prefix}.{key} must be integer"]
+    if minimum is not None and value < minimum:
+        return [f"{prefix}.{key} must be >= {minimum}"]
+    return []
+
+
+def validate_observe_config(config, prefix="observe"):
+    if config is None:
+        return []
+    if not isinstance(config, dict):
+        return [f"{prefix} must be object"]
+    errs = []
+    for key, value in config.items():
+        errs.extend(validate_observe_item(key, value, prefix))
+    return errs
 
 
 def validate_wiring(w):
@@ -74,16 +130,10 @@ def validate_wiring(w):
             errs.append(f"edges[{i}].to '{e.get('to')}' unknown")
         if not e.get("on"):
             errs.append(f"edges[{i}].on required")
+    errs.extend(validate_observe_config(w.get("observe")))
     return errs
 
-try:
-    from actions import execute_verb, observe_screen, configure_runtime, last_observation_snapshot
-except Exception:
-    def observe_screen(): return "(desktop not available)"
-    def execute_verb(verb, target, value=""): return f"[stub] {verb} {target} {value}"
-    def configure_runtime(_wiring): pass
-    def last_observation_snapshot(): return {}
-
+from actions import execute_verb, observe_screen, configure_runtime, last_observation_snapshot
 
 configure_runtime(WIRING)
 
@@ -107,6 +157,20 @@ def preview_text(text, limit_key="debug_value_max_chars", default=1200):
     return text[:limit]
 
 LLM_NODE_TYPES = frozenset({"planner", "act", "verify", "reflect", "self_modify"})
+SELF_MODIFY_OPS = frozenset({
+    "add_node",
+    "update_node",
+    "remove_node",
+    "add_edge",
+    "remove_edge",
+    "set_guard",
+    "set_limit",
+    "set_observe",
+    "set_prompt_base",
+    "set_role",
+    "append_role_rule",
+    "set_reasoning",
+})
 
 def topo_node(node_type):
     for n in WIRING.get("topology", {}).get("nodes", []):
@@ -120,17 +184,29 @@ def topo_node_by_id(node_id):
             return n
     return None
 
+def node_ref(ref):
+    if isinstance(ref, dict):
+        return ref
+    node = topo_node(str(ref))
+    if not node:
+        raise ValueError(f"no topology node for type '{ref}'")
+    return node
+
 def circuit_for(node_type):
     """Circuit role key for reasoning store."""
     node = topo_node(node_type)
     return node.get("prompt", {}).get("role") or node.get("circuit") or node_type
+
+def circuit_for_node(node):
+    """Circuit role key for a concrete topology node."""
+    return node.get("prompt", {}).get("role") or node.get("circuit") or node.get("type", "")
 
 def node_circuits_map():
     out = {}
     for n in WIRING.get("topology", {}).get("nodes", []):
         t = n.get("type")
         if t in LLM_NODE_TYPES or n.get("prompt"):
-            out[t] = circuit_for(t)
+            out[n.get("id", t)] = circuit_for_node(n)
     return out
 
 def wiring_summary():
@@ -140,7 +216,7 @@ def wiring_summary():
         {
             "id": n.get("id"),
             "type": n.get("type"),
-            "circuit": circuit_for(n.get("type", "")) if n.get("type") in LLM_NODE_TYPES or n.get("prompt") else "",
+            "circuit": circuit_for_node(n) if n.get("type") in LLM_NODE_TYPES or n.get("prompt") else "",
             "label": n.get("label", ""),
         }
         for n in topo.get("nodes", [])
@@ -168,14 +244,15 @@ def wiring_summary():
             "pause_resume": True,
             "wiring_hot_reload": True,
             "state_memory": "remember" in WIRING.get("verbs", {}),
+            "self_modify_ops": sorted(SELF_MODIFY_OPS),
         },
         "limits": WIRING.get("limits", {}),
         "observe": WIRING.get("observe", {}),
     }
 
-def _prompt_cfg(node_type=None, circuit=None):
-    if node_type:
-        return topo_node(node_type).get("prompt", {})
+def _prompt_cfg(node=None):
+    if node:
+        return node_ref(node).get("prompt", {})
     return {}
 
 def http_port(slot=None):
@@ -190,24 +267,12 @@ def http_port(slot=None):
 def http_bind():
     return os.environ.get("ENDGAME_BIND") or WIRING.get("runtime", {}).get("http_bind", "0.0.0.0")
 
-def print_listen_urls(port):
-    print(f"  http://127.0.0.1:{port}")
-
-def simulation_mode():
-    if os.environ.get("ENDGAME_SIM", "").lower() in ("1", "true", "yes"):
-        return True
-    return bool(WIRING.get("runtime", {}).get("simulation_mode", False))
-
 def fresh_state(goal):
     state = dict(WIRING.get("runtime", {}).get("initial_state", {}))
     state["goal"] = goal
     state["bus_last_check"] = time.time()
-    if simulation_mode():
-        state["simulation"] = True
-        state["no_desktop"] = False
     return state
 
-# ─── SSE ───
 SSE = []
 
 def sse_push(evt, data):
@@ -215,8 +280,6 @@ def sse_push(evt, data):
     for q in list(SSE):
         try: q.put_nowait(msg)
         except: SSE.remove(q)
-
-# ─── State persistence ───
 
 RUN_QUEUE = queue.Queue()
 RUN_STATUS_LOCK = threading.Lock()
@@ -231,6 +294,14 @@ RUN_STATUS = {
     "last_satisfied": None,
     "last_error": "",
 }
+STATE_LOCK = threading.Lock()
+CURRENT_STATE: dict[str, Any] | None = None
+
+
+def remember_state(state):
+    global CURRENT_STATE
+    with STATE_LOCK:
+        CURRENT_STATE = state
 
 def run_status_snapshot():
     with RUN_STATUS_LOCK:
@@ -311,21 +382,35 @@ def pause_run_state(state, node_id):
     sse_push("paused", {"node": node_id, "cycle": state.get("_cycle", 0)})
     return state
 
-def save_state(state):
+def save_state(state=None):
+    if state is None:
+        with STATE_LOCK:
+            state = CURRENT_STATE
+        if state is None:
+            return
+    remember_state(state)
     STATE_FILE.write_text(json.dumps(state, default=str), encoding="utf-8")
+
+
+def _shutdown(sig, frame):
+    save_state()
+    print("shutdown")
+    sys.exit(0)
+
+
+signal.signal(signal.SIGINT, _shutdown)
+signal.signal(signal.SIGTERM, _shutdown)
 
 def load_state():
     if STATE_FILE.exists():
-        try: return json.loads(STATE_FILE.read_text(encoding="utf-8"))
-        except: pass
+        return json.loads(STATE_FILE.read_text(encoding="utf-8"))
     return None
 
 # ─── Bus ───
 
 def bus_read():
     if BUS_FILE.exists():
-        try: return json.loads(BUS_FILE.read_text(encoding="utf-8"))
-        except: pass
+        return json.loads(BUS_FILE.read_text(encoding="utf-8"))
     return []
 
 def bus_write(msgs):
@@ -371,10 +456,16 @@ def llm(system, user, temperature=None):
     }
     url = MODEL["host"] + "/v1/chat/completions"
     t0 = time.time()
-    r = urllib.request.urlopen(
-        urllib.request.Request(url, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"}),
-        timeout=MODEL.get("timeout", 120)
-    )
+    req = urllib.request.Request(url, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
+    try:
+        r = urllib.request.urlopen(req, timeout=MODEL.get("timeout", 120))
+    except urllib.error.HTTPError as e:
+        detail = ""
+        try:
+            detail = e.read().decode("utf-8", errors="replace")
+        except Exception:
+            pass
+        raise RuntimeError(f"LLM HTTP {e.code}: {preview_text(detail, 'error_preview_chars', 1200)}") from e
     c = json.loads(r.read())["choices"][0]["message"]
     return c.get("content", ""), c.get("reasoning_content", ""), time.time() - t0
 
@@ -401,10 +492,6 @@ def extract_json_objects(text):
         else:
             break
     return out
-
-def extract_json(text):
-    objs = extract_json_objects(text)
-    return objs[0] if objs else None
 
 # ─── Reasoning loop (wired in wiring.json — Python only captures + resolves) ───
 
@@ -437,25 +524,21 @@ def parse_circuit_response(circuit, content, reasoning):
     """Parse LLM JSON; enforce wiring.reasoning.expected_record_type per circuit."""
     cfg = WIRING.get("reasoning", {})
     expected = cfg.get("expected_record_type", {}).get(circuit)
-    fallback = circuit in cfg.get("parse_fallback", [])
-    sources = [("content", content)]
-    if fallback and reasoning:
-        sources.append(("reasoning", reasoning))
-    for source_name, text in sources:
-        for parsed in extract_json_objects(text):
-            if expected and parsed.get("record_type") != expected:
-                continue
-            return parsed, source_name
+    for parsed in extract_json_objects(content):
+        if expected and parsed.get("record_type") != expected:
+            continue
+        return parsed, "content"
     return None, None
 
-def call_node(node_type, state, extra=None):
+def call_node(node, state, extra=None):
     """Run LLM for a topology node: prompt on node + prompts.base/roles."""
-    circuit = circuit_for(node_type)
+    node_cfg = node_ref(node)
+    circuit = circuit_for_node(node_cfg)
     s = dict(state)
     if extra:
         s.update(extra)
-    system = load_system_prompt(circuit, s, node_type=node_type)
-    user = build_user_message(circuit, s, node_type=node_type)
+    system = load_system_prompt(circuit, s, node=node_cfg)
+    user = build_user_message(circuit, s, node=node_cfg)
     base_temp = MODEL.get("temperature", 0.3)
     bump = MODEL.get("temperature_bump", 0.15)
     max_retries = wiring_limit("llm_parse_retries", 2)
@@ -536,19 +619,19 @@ def _resolve_value(state, source):
         return value
     return ""
 
-def load_system_prompt(circuit, state=None, node_type=None):
+def load_system_prompt(circuit, state=None, node=None):
     """Compose system prompt: prompts.base + prompts.roles[key]."""
     prompts = WIRING.get("prompts", {})
-    cfg = _prompt_cfg(node_type, circuit)
+    cfg = _prompt_cfg(node)
     base = prompts.get("base", "") if cfg.get("extends", "base") != "none" else ""
     role_key = cfg.get("role", circuit)
     role_text = cfg.get("system") or prompts.get("roles", {}).get(role_key, "")
     parts = [p.strip() for p in (base, role_text) if p and p.strip()]
     return "\n\n".join(parts)
 
-def resolve_prompt_blocks(node_type, state):
+def resolve_prompt_blocks(node, state):
     """Resolve node prompt input blocks for execution and dashboard inspection."""
-    cfg = _prompt_cfg(node_type=node_type)
+    cfg = _prompt_cfg(node)
     blocks = cfg.get("user", {}).get("blocks", [])
     resolved = []
     for block in blocks:
@@ -571,10 +654,10 @@ def resolve_prompt_blocks(node_type, state):
         })
     return resolved
 
-def build_user_message(circuit, state, node_type=None):
+def build_user_message(circuit, state, node=None):
     """Build dynamic user message from node.prompt.user.blocks."""
     parts = []
-    for block in resolve_prompt_blocks(node_type, state):
+    for block in resolve_prompt_blocks(node, state):
         if block["included"]:
             parts.append(f"{block['label']}: {block['value']}")
     return "\n".join(parts)
@@ -593,11 +676,11 @@ def node_debug_context(node_id, state):
         "id": node_id,
         "type": node_type,
         "label": node_cfg.get("label", ""),
-        "circuit": circuit_for(node_type) if has_prompt else "",
+        "circuit": circuit_for_node(node_cfg) if has_prompt else "",
         "config": node_cfg,
         "incoming_edges": incoming,
         "outgoing_edges": outgoing,
-        "wired_inputs": resolve_prompt_blocks(node_type, state) if has_prompt else [],
+        "wired_inputs": resolve_prompt_blocks(node_cfg, state) if has_prompt else [],
         "reasoning": state.get("reasoning", {}),
         "reasoning_chain": state.get("reasoning_chain", []),
     }
@@ -642,6 +725,16 @@ def _step_text(state):
     step = state.get("current_step", {})
     return f"{step.get('description', '')} {step.get('done_when', '')}".lower()
 
+def _step_domain_needles(state):
+    text = f"{state.get('goal', '')} {_step_text(state)}".lower()
+    needles: set[str] = set()
+    for domain in re.findall(r"\b[a-z0-9-]+(?:\.[a-z0-9-]+)+\b", text):
+        needles.add(domain)
+        label = domain.split(".", 1)[0]
+        if len(label) > 3:
+            needles.add(label)
+    return needles
+
 def _target_screen_line(state, target):
     target = (target or "").strip()
     if not target:
@@ -669,20 +762,20 @@ def _screen_action_id_count(screen, meta=None):
 
 def _browser_focused(state):
     title = _focused_title(state)
-    return any(token in title for token in ("chrome", "edge", "firefox", "browser", "youtube", "grok"))
+    return any(token in title for token in ("chrome", "edge", "firefox", "opera", "browser"))
 
 def _focuses_browser(actions):
     for action in actions:
         if action.get("verb") != "focus":
             continue
         target = (action.get("target") or action.get("value") or "").lower()
-        if any(token in target for token in ("chrome", "edge", "firefox", "browser", "youtube", "grok")):
+        if any(token in target for token in ("chrome", "edge", "firefox", "opera", "browser")):
             return True
     return False
 
 def _is_browser_navigation_step(state):
     text = _step_text(state)
-    return any(w in text for w in ("go to ", "navigate", "url", ".com", "youtube", "website", "page loads", "page is loaded"))
+    return bool(_step_domain_needles(state)) or any(w in text for w in ("go to ", "navigate", "url", "website", "site", "page loads", "page is loaded"))
 
 def _is_playback_step(state):
     text = _step_text(state)
@@ -728,6 +821,13 @@ def normalize_action_chain(state, actions):
             while insert_at < len(out) and out[insert_at].get("verb") == "focus":
                 insert_at += 1
             out.insert(insert_at, {"verb": "hotkey", "target": "ctrl+l", "value": ""})
+        ctrl_l_seen = False
+        for action in out:
+            if is_ctrl_l(action):
+                ctrl_l_seen = True
+                continue
+            if ctrl_l_seen and action.get("verb") == "write" and action.get("value"):
+                action["target"] = ""
         has_enter = any(
             a.get("verb") in ("press", "hotkey")
             and "enter" in (a.get("target") or a.get("value") or "").lower()
@@ -825,9 +925,9 @@ def _planner_ready_patch(state, steps, patch):
         out.update({"step": 0, "retries": 0, "history": []})
     return out
 
-def node_planner(state, _):
+def node_planner(state, node_cfg):
     try:
-        r = call_node("planner", state)
+        r = call_node(node_cfg, state)
         parsed = r["parsed"]
         patch = dict(r["patch"])
         if not parsed or "data" not in parsed or "steps" not in parsed.get("data", {}):
@@ -879,7 +979,7 @@ def node_observe(state, _):
         patch["screen_meta"] = meta
     return {"signals": ["screen_ready"], "patch": patch}
 
-def node_act(state, _):
+def node_act(state, node_cfg):
     """Static system prompt + dynamic user message. Guards + execute."""
     history = state.get("history", [])
 
@@ -888,7 +988,7 @@ def node_act(state, _):
     valid = set(act_cfg.get("valid_conclusions", ["EXECUTE", "CANNOT"]))
 
     try:
-        r = call_node("act", state)
+        r = call_node(node_cfg, state)
     except Exception as e:
         return {"signals": ["act_failed"], "patch": {"last_error": str(e)}}
 
@@ -1013,14 +1113,6 @@ def node_act(state, _):
         "last_error": "",
         "history": history + [entry],
     })
-    if not state.get("no_desktop") and WIRING.get("runtime", {}).get("refresh_screen_after_act", False):
-        delay = int(WIRING.get("runtime", {}).get("act_post_delay_ms", 0)) / 1000.0
-        if delay:
-            time.sleep(delay)
-        try:
-            patch["screen"] = observe_screen()
-        except Exception:
-            pass
     return {"signals": ["acted"], "patch": patch}
 
 def _verify_preflight_denied(state):
@@ -1029,6 +1121,76 @@ def _verify_preflight_denied(state):
     if not outcome or not outcome.startswith("OK:"):
         return bool(outcome)
     return False
+
+def _verify_chat_submission_denied(state):
+    """Deny false positives where a chat/message step did not write and submit text."""
+    if not _is_chat_message_step(state):
+        return ""
+    outcome = (state.get("last_outcome") or "")
+    if not outcome.startswith("OK:"):
+        return ""
+    actions = state.get("last_actions_raw", [])
+    writes = [
+        str(a.get("value") or "").strip()
+        for a in actions
+        if a.get("verb") == "write" and str(a.get("value") or "").strip()
+    ]
+    if not writes:
+        return "chat submission preflight: no prompt text was written"
+    if all(re.fullmatch(r"(https?://)?[a-z0-9.-]+\.[a-z]{2,}/?", w.lower()) for w in writes):
+        return "chat submission preflight: written text looks like navigation, not a chat prompt"
+    submitted = False
+    for action in actions:
+        verb = action.get("verb")
+        target = str(action.get("target") or action.get("value") or "")
+        line = _target_screen_line(state, target)
+        submit_text = f"{target} {line}".lower()
+        if verb in ("press", "hotkey") and "enter" in submit_text:
+            submitted = True
+        if verb == "click" and any(word in submit_text for word in ("send", "submit")):
+            submitted = True
+    if not submitted:
+        return "chat submission preflight: prompt text was not submitted"
+    return ""
+
+def _verify_memory_capture_denied(state):
+    """Deny response-memory captures that are plainly window titles or placeholders."""
+    text = _step_text(state)
+    if not any(word in text for word in ("remember", "capture", "store")):
+        return ""
+    if not any(word in text for word in ("response", "reply", "answer")):
+        return ""
+    outcome = (state.get("last_outcome") or "")
+    if not outcome.startswith("OK:"):
+        return ""
+    values = [
+        str(a.get("value") or "").strip()
+        for a in state.get("last_actions_raw", [])
+        if a.get("verb") == "remember" and str(a.get("value") or "").strip()
+    ]
+    if not values:
+        return "memory capture preflight: no response text was remembered"
+    focused = _focused_title(state)
+    prior_writes = "\n".join(
+        str(entry.get("outcome") or "")
+        for entry in state.get("history", [])
+        if "write " in str(entry.get("outcome") or "").lower()
+    ).lower()
+    for value in values:
+        value_l = value.lower()
+        if value_l in prior_writes:
+            return "memory capture preflight: remembered value matches a previously submitted prompt"
+        if value.endswith("?"):
+            return "memory capture preflight: remembered value looks like a question, not a response"
+        if focused and value_l == focused:
+            return "memory capture preflight: remembered value is only the focused window title"
+        if value_l.endswith(" - google chrome") or value_l.endswith(" - microsoft edge"):
+            return "memory capture preflight: remembered value is only a browser title"
+        if re.fullmatch(r"(https?://)?[a-z0-9.-]+\.[a-z]{2,}/?", value_l):
+            return "memory capture preflight: remembered value is only a URL or domain"
+        if len(value) < 30:
+            return "memory capture preflight: remembered response is too short to be useful evidence"
+    return ""
 
 def _verify_preflight_confirmed(state):
     """Deterministic confirm for focus evidence: a focused window must already exist."""
@@ -1050,10 +1212,15 @@ def _verify_preflight_confirmed(state):
     if write_done and typed and editor_ready:
         return True
     playback_required = any(word in done_when for word in ("playing", "playback"))
+    domain_needles = _step_domain_needles(state)
     navigation_done = (
         not playback_required
-        and any(word in done_when for word in ("load", "page", "navigate", "url", "website", "site", "youtube"))
+        and (domain_needles or any(word in done_when for word in ("load", "page", "navigate", "url", "website", "site")))
     )
+    if navigation_done and domain_needles:
+        proof_text = " ".join([focused_title, screen_l, outcome.lower()])
+        if any(needle in proof_text for needle in domain_needles):
+            return True
     ctrl_l_ready = any(
         a.get("verb") == "hotkey"
         and "ctrl" in (a.get("target") or a.get("value") or "").lower()
@@ -1084,17 +1251,20 @@ def _verify_preflight_confirmed(state):
             return True
     return False
 
-def node_verify(state, _):
+def node_verify(state, node_cfg):
     """Verify from descriptive step + act outcomes only — act is sole SCREEN consumer."""
     if _verify_preflight_denied(state):
         return {"signals": ["step_denied"], "patch": {"last_error": wiring_error("verify_preflight_denied")}}
+    deny_reason = _verify_chat_submission_denied(state) or _verify_memory_capture_denied(state)
+    if deny_reason:
+        return {"signals": ["step_denied"], "patch": {"last_error": deny_reason}}
     if _verify_preflight_confirmed(state):
         clear_keys = WIRING.get("reasoning", {}).get("clear_on_step_confirm", [])
-        patch = clear_reasoning_patch(state, clear_keys)
+        patch: dict[str, Any] = dict(clear_reasoning_patch(state, clear_keys))
         patch.update({"step": state.get("step", 0) + 1, "retries": 0, "last_error": ""})
         return {"signals": ["step_confirmed"], "patch": patch}
     try:
-        r = call_node("verify", state)
+        r = call_node(node_cfg, state)
         parsed = r["parsed"]
         patch = dict(r["patch"])
         if parsed and parsed.get("data", {}).get("confirmed"):
@@ -1108,7 +1278,7 @@ def node_verify(state, _):
     except Exception as e:
         return {"signals": ["step_denied"], "patch": {"last_error": str(e)}}
 
-def node_reflect(state, _):
+def node_reflect(state, node_cfg):
     """Retry vs replan vs escalate. Retries exhausted → replan. Replans exhausted → escalate (self-modify)."""
     retries = state.get("retries", 0)
     replans = state.get("replan_count", 0)
@@ -1133,7 +1303,7 @@ def node_reflect(state, _):
         return {"signals": ["replan"], "patch": {"retries": 0, "replan_count": replans + 1, "replanning": True}}
 
     try:
-        r = call_node("reflect", state)
+        r = call_node(node_cfg, state)
         parsed = r["parsed"]
         patch = {**r["patch"], "retries": retries + 1}
         if not parsed:
@@ -1238,17 +1408,196 @@ def node_moe_route(state, _):
     # This rod handles it
     return {"signals": ["self"], "patch": {}}
 
-def node_self_modify(state, _):
+def _node_ids(topo):
+    return {n.get("id") for n in topo.get("nodes", [])}
+
+
+def _find_node(topo, node_id):
+    for node in topo.get("nodes", []):
+        if node.get("id") == node_id:
+            return node
+    return None
+
+
+def _require_node_id(node_id):
+    node_id = str(node_id or "").strip()
+    if not re.match(r"^[a-z][a-z0-9_]*$", node_id):
+        raise ValueError(f"invalid node id: {node_id!r}")
+    return node_id
+
+
+def _require_nonempty_text(value, field):
+    text = str(value or "").strip()
+    if not text:
+        raise ValueError(f"{field} required")
+    return text
+
+
+def apply_wiring_patch(current, parsed):
+    """Apply one LLM-proposed wiring mutation to an in-memory wiring object."""
+    data = parsed.get("data")
+    if not isinstance(data, dict):
+        raise ValueError("wiring_patch.data must be object")
+    op = str(data.get("op", "")).strip()
+    payload = data.get("payload")
+    if op not in SELF_MODIFY_OPS:
+        raise ValueError(f"unknown op: {op}")
+    if not isinstance(payload, dict):
+        raise ValueError("wiring_patch.data.payload must be object")
+
+    topo = current.setdefault("topology", {})
+
+    if op == "add_node":
+        node_id = _require_node_id(payload.get("id"))
+        if node_id in _node_ids(topo):
+            raise ValueError(f"node already exists: {node_id}")
+        node_type = _require_nonempty_text(payload.get("type"), "type")
+        if node_type not in NODES:
+            raise ValueError(f"no handler for node type: {node_type}")
+        node = {"id": node_id, "type": node_type, "label": str(payload.get("label") or node_id)}
+        if payload.get("circuit"):
+            node["circuit"] = str(payload["circuit"])
+        if "prompt" in payload:
+            if not isinstance(payload["prompt"], dict):
+                raise ValueError("add_node.prompt must be object")
+            node["prompt"] = payload["prompt"]
+        topo.setdefault("nodes", []).append(node)
+        if payload.get("edge_from"):
+            topo.setdefault("edges", []).append({
+                "from": _require_node_id(payload["edge_from"]),
+                "to": node_id,
+                "on": str(payload.get("on") or payload.get("edge_from_on") or "ready"),
+            })
+        if payload.get("edge_to"):
+            topo.setdefault("edges", []).append({
+                "from": node_id,
+                "to": _require_node_id(payload["edge_to"]),
+                "on": str(payload.get("edge_to_on") or "done"),
+            })
+
+    elif op == "update_node":
+        node_id = _require_node_id(payload.get("id"))
+        node = _find_node(topo, node_id)
+        if not node:
+            raise ValueError(f"unknown node: {node_id}")
+        updates = payload.get("set")
+        if updates is None:
+            updates = {k: v for k, v in payload.items() if k != "id"}
+        if not isinstance(updates, dict) or not updates:
+            raise ValueError("update_node.set must be non-empty object")
+        for key, value in updates.items():
+            if key not in {"label", "circuit", "prompt"}:
+                raise ValueError(f"update_node cannot set {key}")
+            if key == "prompt" and not isinstance(value, dict):
+                raise ValueError("update_node.prompt must be object")
+            node[key] = value
+
+    elif op == "remove_node":
+        node_id = _require_node_id(payload.get("id"))
+        if topo.get("cycle_start") == node_id:
+            raise ValueError("cannot remove cycle_start node")
+        before = len(topo.get("nodes", []))
+        topo["nodes"] = [n for n in topo.get("nodes", []) if n.get("id") != node_id]
+        if len(topo["nodes"]) == before:
+            raise ValueError(f"unknown node: {node_id}")
+        topo["edges"] = [e for e in topo.get("edges", []) if e.get("from") != node_id and e.get("to") != node_id]
+
+    elif op == "add_edge":
+        edge = {
+            "from": _require_node_id(payload.get("from")),
+            "to": _require_node_id(payload.get("to")),
+            "on": _require_nonempty_text(payload.get("on", "ready"), "on"),
+        }
+        if edge["from"] not in _node_ids(topo) or edge["to"] not in _node_ids(topo):
+            raise ValueError(f"edge references unknown node: {edge}")
+        if edge in topo.get("edges", []):
+            raise ValueError(f"edge already exists: {edge}")
+        topo.setdefault("edges", []).append(edge)
+
+    elif op == "remove_edge":
+        edge_from = _require_node_id(payload.get("from"))
+        edge_to = _require_node_id(payload.get("to"))
+        edge_on = payload.get("on")
+        before = len(topo.get("edges", []))
+        topo["edges"] = [
+            e for e in topo.get("edges", [])
+            if not (e.get("from") == edge_from and e.get("to") == edge_to and (edge_on is None or e.get("on") == edge_on))
+        ]
+        if len(topo["edges"]) == before:
+            raise ValueError(f"edge not found: {edge_from}->{edge_to}")
+
+    elif op == "set_guard":
+        key = _require_nonempty_text(payload.get("key"), "key")
+        current.setdefault("guards", {})[key] = payload.get("value")
+
+    elif op == "set_limit":
+        key = _require_nonempty_text(payload.get("key"), "key")
+        value = payload.get("value")
+        if type(value) is not int:
+            raise ValueError("set_limit.value must be integer")
+        current.setdefault("limits", {})[key] = value
+
+    elif op == "set_observe":
+        key = _require_nonempty_text(payload.get("key"), "key")
+        value = payload.get("value")
+        item_errs = validate_observe_item(key, value)
+        if item_errs:
+            raise ValueError("; ".join(item_errs))
+        current.setdefault("observe", {})[key] = value
+
+    elif op == "set_prompt_base":
+        current.setdefault("prompts", {})["base"] = _require_nonempty_text(payload.get("text"), "text")
+
+    elif op == "set_role":
+        role = _require_nonempty_text(payload.get("role"), "role")
+        text = _require_nonempty_text(payload.get("text"), "text")
+        current.setdefault("prompts", {}).setdefault("roles", {})[role] = text
+
+    elif op == "append_role_rule":
+        role = _require_nonempty_text(payload.get("role"), "role")
+        rule = _require_nonempty_text(payload.get("rule"), "rule")
+        roles = current.setdefault("prompts", {}).setdefault("roles", {})
+        if role not in roles:
+            raise ValueError(f"unknown prompt role: {role}")
+        line = rule if rule.startswith("-") else f"- {rule}"
+        if line not in roles[role]:
+            roles[role] = roles[role].rstrip() + "\n" + line
+
+    elif op == "set_reasoning":
+        section = _require_nonempty_text(payload.get("section"), "section")
+        key = payload.get("key")
+        value = payload.get("value")
+        reasoning = current.setdefault("reasoning", {})
+        if section in {"store_as", "expected_record_type"}:
+            key = _require_nonempty_text(key, "key")
+            reasoning.setdefault(section, {})[key] = _require_nonempty_text(value, "value")
+        elif section == "chain_depth":
+            if type(value) is not int or value < 1:
+                raise ValueError("chain_depth value must be integer >= 1")
+            reasoning["chain_depth"] = value
+        elif section == "clear_on_step_confirm":
+            if not isinstance(value, list) or any(type(v) is not str for v in value):
+                raise ValueError("clear_on_step_confirm value must be array of strings")
+            reasoning["clear_on_step_confirm"] = value
+        else:
+            raise ValueError(f"unknown reasoning section: {section}")
+
+    return op, payload
+
+
+def node_self_modify(state, node_cfg):
     """Self-modification: alter own wiring.json and hot-reload topology.
     Triggered by reflect on 'escalate' signal when stuck.
-    Uses LLM to decide what to change in the topology."""
+    Uses LLM to decide what to change in the topology, prompts, or filters."""
     global WIRING
     wiring_path = PROMPTS / "wiring.json"
     current = json.loads(wiring_path.read_text(encoding="utf-8"))
-    # Backup before mutation
-    (PROMPTS / "wiring.backup.json").write_text(json.dumps(current, indent=2), encoding="utf-8")
+    backup_text = json.dumps(current, indent=2)
+    (PROMPTS / "wiring.backup.json").write_text(backup_text, encoding="utf-8")
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    (PROMPTS / f"wiring.backup.{stamp}.json").write_text(backup_text, encoding="utf-8")
     try:
-        r = call_node("self_modify", state)
+        r = call_node(node_cfg, state)
         parsed = r["parsed"]
         patch = dict(r["patch"])
         expected = WIRING.get("reasoning", {}).get("expected_record_type", {}).get("self_modify", "wiring_patch")
@@ -1256,50 +1605,16 @@ def node_self_modify(state, _):
             patch["last_error"] = wiring_error("self_modify_invalid")
             return {"signals": ["modify_failed"], "patch": patch}
 
-        op = parsed["data"]["op"]
-        payload = parsed["data"]["payload"]
-        topo = current["topology"]
-
-        if op == "add_node":
-            node = {"id": payload["id"], "type": payload["type"], "label": payload.get("label", payload["id"])}
-            topo["nodes"].append(node)
-            if payload.get("edge_from"):
-                topo["edges"].append({"from": payload["edge_from"], "to": payload["id"], "on": payload.get("on", "ready")})
-            if payload.get("edge_to"):
-                topo["edges"].append({"from": payload["id"], "to": payload["edge_to"], "on": "done"})
-        elif op == "add_edge":
-            topo["edges"].append({"from": payload["from"], "to": payload["to"], "on": payload.get("on", "ready")})
-        elif op == "remove_edge":
-            topo["edges"] = [e for e in topo["edges"] if not (e["from"] == payload["from"] and e["to"] == payload["to"])]
-        elif op == "set_guard":
-            current.setdefault("guards", {})[payload["key"]] = payload["value"]
-        elif op == "set_observe":
-            current.setdefault("observe", {})[payload["key"]] = payload["value"]
-        elif op == "append_role_rule":
-            role = str(payload.get("role", "")).strip()
-            rule = str(payload.get("rule", "")).strip()
-            roles = current.setdefault("prompts", {}).setdefault("roles", {})
-            if not role or role not in roles:
-                patch["last_error"] = f"unknown prompt role: {role}"
-                return {"signals": ["modify_failed"], "patch": patch}
-            if not rule:
-                patch["last_error"] = "empty role rule"
-                return {"signals": ["modify_failed"], "patch": patch}
-            line = rule if rule.startswith("-") else f"- {rule}"
-            if line not in roles[role]:
-                roles[role] = roles[role].rstrip() + "\n" + line
-        else:
-            patch["last_error"] = f"unknown op: {op}"
-            return {"signals": ["modify_failed"], "patch": patch}
+        op, payload = apply_wiring_patch(current, parsed)
 
         errs = validate_wiring(current)
         if errs:
             patch["last_error"] = wiring_error("self_modify_invalid") + ": " + "; ".join(errs[:5])
             return {"signals": ["modify_failed"], "patch": patch}
 
-        # Write and hot-reload
         wiring_path.write_text(json.dumps(current, indent=2), encoding="utf-8")
         WIRING = current
+        apply_instance_env()
         configure_runtime(WIRING)
         sse_push("wiring_modified", {"op": op, "payload": payload})
         patch.update({"self_modify_op": op, "self_modify_payload": payload})
@@ -1353,6 +1668,7 @@ def step_once(goal="", state=None, node_id=None):
     if not handler:
         raise ValueError(f"no handler for type '{node_cfg['type']}'")
 
+    remember_state(state)
     before_debug = node_debug_context(node_id, state)
     sse_push("node", {"c": state.get("_cycle", 0) + 1, "id": node_id})
     result = handler(state, node_cfg)
@@ -1431,6 +1747,7 @@ def run(goal, resume_state=None, max_cycles=None):
             print(f"[{cycle}] no handler for type '{node_cfg['type']}'")
             break
 
+        remember_state(state)
         print(f"[{cycle}] {node_id}")
         sse_push("node", {"c": cycle, "id": node_id})
 
@@ -1484,7 +1801,6 @@ class H(http.server.BaseHTTPRequestHandler):
                 "node_circuits": node_circuits_map(),
                 "slot": slot,
                 "port": http_port(slot),
-                "simulation": simulation_mode(),
                 "permissions": WIRING.get("instance", {}).get("permissions", []),
                 "run": run_status_snapshot(),
                 "capabilities": wiring_summary().get("capabilities", {}),
@@ -1500,37 +1816,9 @@ class H(http.server.BaseHTTPRequestHandler):
             self._j(load_state() or {})
         elif self.path == "/bus":
             self._j(bus_read())
-        elif self.path == "/smoke":
-            # Programmatic smoke test — validates all endpoints work
-            results = []
-            try:
-                nn = len(WIRING.get("topology", {}).get("nodes", []))
-                werrs = validate_wiring(WIRING)
-                entry_r = NODES.get("entry", lambda s, c: {})({"goal": "smoke"}, {})
-                inspect_r = inspect_state(goal="smoke", state={}, node_id=WIRING.get("topology", {}).get("cycle_start"))
-                summary = wiring_summary()
-                mem_ok, mem_state, _ = apply_memory_action({}, "note", "value")
-                mem_bad, _, _ = apply_memory_action({}, "note", "")
-                results = [
-                    {"test": "health", "ok": True},
-                    {"test": "wiring", "ok": nn > 0, "nodes": nn},
-                    {"test": "schema", "ok": (PROMPTS / "wiring-schema.json").exists()},
-                    {"test": "wiring_valid", "ok": not werrs, "errors": len(werrs)},
-                    {"test": "node/entry", "ok": "signals" in entry_r},
-                    {"test": "inspect", "ok": bool(inspect_r.get("debug", {}).get("id"))},
-                    {"test": "capability/step_debug", "ok": bool(summary.get("capabilities", {}).get("step_debug"))},
-                    {"test": "capability/state_memory", "ok": bool(summary.get("capabilities", {}).get("state_memory"))},
-                    {"test": "remember/store", "ok": mem_ok and mem_state.get("note") == "value"},
-                    {"test": "remember/reject_empty", "ok": not mem_bad},
-                    {"test": "html", "ok": (ROOT / "wiring-editor.html").exists()},
-                ]
-            except Exception as e:
-                results.append({"test": "exception", "ok": False, "error": str(e)})
-            passed = sum(1 for r in results if r["ok"])
-            self._j({"passed": passed, "total": len(results), "all_ok": passed == len(results), "results": results})
         elif self.path in ("/", "/index.html"):
             d = (ROOT / "wiring-editor.html").read_bytes()
-            self.send_response(200); self.send_header("Content-Type","text/html"); self.send_header("Content-Length",len(d)); self.end_headers(); self._write(d)
+            self.send_response(200); self.send_header("Content-Type","text/html"); self.send_header("Content-Length",str(len(d))); self.end_headers(); self._write(d)
         elif self.path == "/events":
             self.send_response(200); self._cors()
             self.send_header("Content-Type","text/event-stream"); self.send_header("Cache-Control","no-cache"); self.end_headers()
@@ -1565,8 +1853,10 @@ class H(http.server.BaseHTTPRequestHandler):
             try:
                 input_state = dict(body.get("state", {}))
                 node_cfg = topo_node(t)
+                request_cfg = body.get("config", {})
+                handler_cfg = {**node_cfg, **request_cfg} if node_cfg and isinstance(request_cfg, dict) and request_cfg else node_cfg or request_cfg
                 before = node_debug_context(node_cfg.get("id"), input_state) if node_cfg else {"type": t}
-                r = h(input_state, body.get("config", {}))
+                r = h(input_state, handler_cfg)
                 patch = r.pop("patch", {})
                 output_state = {**input_state, **patch}
                 r["node_type"] = t
@@ -1666,13 +1956,13 @@ class H(http.server.BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods","GET,POST,OPTIONS")
         self.send_header("Access-Control-Allow-Headers","Content-Type")
 
-    def log_message(self, *a): pass
+    def log_message(self, format: str, *args: Any) -> None: pass
 
 if __name__ == "__main__":
     args = sys.argv[1:]
     port = int(args[0]) if args and args[0].isdigit() else http_port()
     srv = ThreadingHTTPServer((http_bind(), port), H)
-    print_listen_urls(port)
+    print(f"  http://127.0.0.1:{port}")
 
     if "--resume" in args:
         s = load_state()

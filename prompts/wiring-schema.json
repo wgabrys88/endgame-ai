@@ -73,6 +73,9 @@
         "wait_ms": { "type": "integer", "minimum": 0 },
         "probe_step_px": { "type": "integer", "minimum": 10 },
         "probe_delay_ms": { "type": "integer", "minimum": 0 },
+        "hover_scan_enabled": { "type": "boolean" },
+        "hover_scan_step_px": { "type": "integer", "minimum": 10 },
+        "hover_scan_delay_ms": { "type": "integer", "minimum": 0 },
         "dense_probe_min_px": { "type": "integer", "minimum": 10 },
         "scroll_enrich_min": { "type": "integer", "minimum": 0 },
         "scroll_enrich_passes": {
@@ -81,18 +84,18 @@
         },
         "scroll_enrich_delay_ms": { "type": "integer", "minimum": 0 },
         "read_text_max": { "type": "integer", "minimum": 0 },
-        "node_value_max_chars": { "type": "integer", "minimum": 0 },
-        "render_value_max_chars": { "type": "integer", "minimum": 0 },
+        "scope_depth": { "type": "integer", "minimum": 1 },
+        "element_text_max": { "type": "integer", "minimum": 0 },
+        "render_focused_first": { "type": "boolean" },
         "window_limit": { "type": "integer", "minimum": 1 },
         "desktop_tree_enabled": { "type": "boolean" },
         "desktop_tree_max_depth": { "type": "integer", "minimum": 1 },
         "desktop_tree_max_nodes": { "type": "integer", "minimum": 1 },
         "desktop_tree_child_limit": { "type": "integer", "minimum": 1 },
-        "tree_value_max_chars": { "type": "integer", "minimum": 0 },
-        "render_tree_value_max_chars": { "type": "integer", "minimum": 0 },
         "overlay_window_limit": { "type": "integer", "minimum": 1 },
         "window_scan_limit": { "type": "integer", "minimum": 1 }
-      }
+      },
+      "additionalProperties": false
     },
     "moe": { "type": "object" }
   },

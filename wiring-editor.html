@@ -29,7 +29,7 @@ textarea{resize:vertical;font-family:var(--mono);font-size:11px;line-height:1.45
 .brand{font-weight:700;color:var(--cyan);margin-right:6px;white-space:nowrap}
 .goal{flex:1;min-width:140px}
 .status{font:11px var(--mono);color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:32ch}
-.main{min-height:0;display:grid;grid-template-columns:minmax(240px,310px) minmax(380px,1fr) minmax(320px,460px)}
+.main{min-height:0;display:grid;grid-template-columns:minmax(220px,280px) minmax(520px,1fr) minmax(280px,400px)}
 .rail,.inspect{min-height:0;background:var(--panel2);display:flex;flex-direction:column}
 .rail{border-right:1px solid var(--line)}
 .inspect{border-left:1px solid var(--line)}
@@ -57,12 +57,24 @@ textarea{resize:vertical;font-family:var(--mono);font-size:11px;line-height:1.45
 .node rect{fill:#15181d;stroke:var(--line2);stroke-width:1.2}
 .node text{font:12px var(--mono);fill:var(--txt);pointer-events:none}
 .node .sub{fill:var(--muted)}
+.node.entry rect{stroke:#47c7d7}
+.node.planner rect{stroke:#b28cff}
+.node.observe rect{stroke:#58d36d}
+.node.act rect{stroke:#efb54a}
+.node.verify rect{stroke:#7aa7ff}
+.node.reflect rect{stroke:#ff8b65}
+.node.satisfied rect{stroke:#58d36d;stroke-dasharray:3 2}
 .node.active rect{stroke:var(--green);stroke-width:2}
 .node.sel rect{stroke:var(--cyan);stroke-width:2}
 .node.unknown rect{stroke:var(--red);stroke-dasharray:4 3}
 .edge{stroke:#656d78;stroke-width:1.4;fill:none;marker-end:url(#arrow)}
+.edge.back{stroke:var(--amber);stroke-dasharray:6 4}
+.edge.loop{stroke:var(--violet);stroke-dasharray:4 3}
+.edge.fail{stroke:var(--red)}
+.edge.ready{stroke:var(--green)}
 .edge.sel{stroke:var(--cyan);stroke-width:2.4}
 .edgeLabel{font:10px var(--mono);fill:var(--muted);cursor:pointer}
+.edgeLabel.fail{fill:var(--red)}.edgeLabel.back{fill:var(--amber)}.edgeLabel.ready{fill:var(--green)}
 .port{fill:#08090b;stroke:var(--cyan);stroke-width:1.4;cursor:crosshair}
 .edgeHandle{fill:var(--amber);stroke:#08090b;stroke-width:1.5;cursor:grab}
 .ghost{stroke:var(--amber);stroke-width:1.5;stroke-dasharray:5 4;fill:none}
@@ -73,6 +85,10 @@ textarea{resize:vertical;font-family:var(--mono);font-size:11px;line-height:1.45
 .field{display:grid;gap:3px;min-width:0}
 .field label{font:10px var(--mono);color:var(--muted);overflow-wrap:anywhere}
 .field input,.field select,.field textarea{width:100%}
+.rangeRow{display:grid;grid-template-columns:minmax(0,1fr) 70px;gap:6px;align-items:center}
+.rangeRow input[type="range"]{padding:0}
+.checkRow{display:flex;align-items:center;gap:7px;font:11px var(--mono);color:var(--muted)}
+.checkRow input{width:auto}
 .group{border:1px solid var(--line);border-radius:6px;padding:7px;display:grid;gap:7px;background:#0c0e11}
 .groupTitle{font:10px var(--mono);color:var(--cyan);display:flex;align-items:center;gap:6px}
 .groupTitle span{flex:1;overflow-wrap:anywhere}
@@ -82,7 +98,7 @@ textarea{resize:vertical;font-family:var(--mono);font-size:11px;line-height:1.45
 .mini{padding:3px 6px;min-height:23px;font-size:11px}
 .log{font:10px/1.55 var(--mono);color:#c3cad1}
 .log div{border-bottom:1px solid #1c2025;padding:2px 0;overflow-wrap:anywhere}
-.screenGrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,.75fr) minmax(0,.9fr);gap:8px;min-height:0;height:100%;padding:8px}
+.screenGrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr) minmax(0,1fr);gap:8px;min-height:0;height:100%;padding:8px}
 .screenGrid .box{margin:0;min-height:0;display:flex;flex-direction:column}
 .screenGrid .body{min-height:0;overflow:auto}
 @media (max-width:1050px){
@@ -93,6 +109,13 @@ textarea{resize:vertical;font-family:var(--mono);font-size:11px;line-height:1.45
   .rail,.inspect{border:0;border-bottom:1px solid var(--line)}
   .center{min-height:720px}
   .screenGrid{grid-template-columns:1fr}
+}
+@media (max-width:640px){
+  .top{display:grid;grid-template-columns:1fr 1fr 1fr;align-items:stretch}
+  .brand,.goal,.status{grid-column:1/-1;max-width:none}
+  .center{grid-template-rows:auto minmax(360px,55dvh) auto}
+  .screenGrid{height:auto}
+  button{padding:6px 7px}
 }
 </style>
 </head>
@@ -116,6 +139,7 @@ textarea{resize:vertical;font-family:var(--mono);font-size:11px;line-height:1.45
       <div class="bar"><h2>State</h2><button id="refreshBtn" class="mini">Refresh</button></div>
       <div class="pane">
         <div class="box"><h3>Run</h3><div class="body kv" id="runBox"></div></div>
+        <div class="box"><h3>Filters</h3><div class="body form" id="filterBox"></div></div>
         <div class="box"><h3>Plan</h3><div class="body list" id="planList"></div></div>
         <div class="box"><h3>History</h3><div class="body list" id="historyList"></div></div>
         <div class="box"><h3>Wiring</h3><div class="body list" id="sectionList"></div></div>
@@ -124,6 +148,10 @@ textarea{resize:vertical;font-family:var(--mono);font-size:11px;line-height:1.45
     <main class="center">
       <div class="bar">
         <h2>Graph</h2>
+        <button id="autoLayoutBtn">Auto Layout</button>
+        <button id="fitGraphBtn">Fit</button>
+        <button id="zoomOutBtn">-</button>
+        <button id="zoomInBtn">+</button>
         <button id="addNodeBtn">Add Node</button>
         <button id="addEdgeBtn">Add Edge</button>
         <button id="deleteBtn" class="danger">Delete</button>
@@ -131,10 +159,9 @@ textarea{resize:vertical;font-family:var(--mono);font-size:11px;line-height:1.45
       </div>
       <div id="graphWrap"><svg id="graph" role="img" aria-label="Wiring graph"></svg></div>
       <div class="screenGrid">
-        <div class="box"><h3>Action Scope IDs</h3><div class="body code" id="screenBox"></div></div>
+        <div class="box"><h3>Live Screen</h3><div class="body code" id="screenBox"></div></div>
         <div class="box"><h3>Desktop Tree</h3><div class="body code" id="treeBox"></div></div>
-        <div class="box"><h3>Windows</h3><div class="body code" id="windowsBox"></div></div>
-        <div class="box"><h3>Outcome</h3><div class="body code" id="outcomeBox"></div></div>
+        <div class="box"><h3>Telemetry</h3><div class="body code" id="telemetryBox"></div></div>
       </div>
     </main>
     <aside class="inspect">
@@ -161,7 +188,7 @@ const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
 const attr=s=>esc(s).replace(/'/g,"&#39;");
 let wiring=null,schema=null,state=null,currentNode=null,selected={kind:null},running=false;
-let logs=[],lastStep=null,inspectData=null,positions={},drag=null,linkDrag=null,autoSaveTimer=null;
+let logs=[],lastStep=null,inspectData=null,positions={},positionsLoaded=false,graphView=null,drag=null,linkDrag=null,graphPan=null,autoSaveTimer=null,liveRefreshTimer=null;
 
 function setStatus(s){$('status').textContent=s}
 function clone(v){return v==null?v:JSON.parse(JSON.stringify(v))}
@@ -203,6 +230,17 @@ async function loadAll(){
   await refreshInspect();
   renderAll();
   setStatus('ready');
+}
+async function refreshStateOnly(reason='state'){
+  state=await api('/state');
+  currentNode=state?._resume_node||currentNode||wiring?.topology?.cycle_start||null;
+  await refreshInspect();
+  renderAll();
+  setStatus(reason);
+}
+function queueLiveRefresh(reason='live'){
+  clearTimeout(liveRefreshTimer);
+  liveRefreshTimer=setTimeout(()=>refreshStateOnly(reason).catch(e=>log('live',e.message)),90);
 }
 function newSession(){
   state={};
@@ -319,9 +357,49 @@ function formatProbeMeta(meta){
   const p=meta?.probe;
   if(!p)return '';
   const bounds=p.bounds?` bounds=${p.bounds.join(',')}`:'';
+  const overlay=p.overlay_probe_used?` overlay_points=${p.overlay_probe_points} overlay_found=${p.overlay_probe_found} overlay_added=${p.overlay_probe_added}`:' overlay=off';
+  const hover=p.hover_scan_used?` hover_step=${p.hover_scan_step} hover_points=${p.hover_scan_points} hover_found=${p.hover_scan_found} hover_added=${p.hover_scan_added}`:' hover=off';
   const dense=p.dense_used?` dense_step=${p.dense_step} dense_points=${p.dense_points} dense_added=${p.dense_added}`:' dense=off';
   const scroll=p.scroll_used?` scroll_passes=${(p.scroll_passes||[]).length} scroll_added=${p.scroll_added}`:' scroll=off';
-  return `PROBE_META: primary_step=${p.primary_step} primary_points=${p.primary_points} primary_found=${p.primary_found} raw=${p.raw_nodes} classified=${p.classified_nodes}${dense}${scroll}${bounds}`;
+  return `PROBE_META: primary_step=${p.primary_step} primary_points=${p.primary_points} primary_found=${p.primary_found} raw=${p.raw_nodes} classified=${p.classified_nodes}${overlay}${hover}${dense}${scroll}${bounds}`;
+}
+function formatCoverageMeta(meta){
+  const scopes=meta?.scope_counts||meta?.desktop_tree?.scope_counts||{};
+  const scopeText=Object.keys(scopes).length?`TREE_SCOPES: ${Object.entries(scopes).map(([k,v])=>`${k}=${v}`).join(' ')}`:'';
+  const missing=meta?.missing_overlay_hwnds?.length?`\nMISSING_OVERLAYS: ${meta.missing_overlay_hwnds.join(', ')}`:'';
+  const owners=meta?.captured_owner_hwnds?.length?`\nCAPTURED_OWNERS: ${meta.captured_owner_hwnds.join(', ')}`:'';
+  const coverage=`TREE_COVERAGE: focused_captured=${meta?.focused_captured??'n/a'} overlay_captured=${meta?.overlay_captured??'n/a'} truncated=${meta?.truncated??'n/a'}`;
+  return [coverage,scopeText].filter(Boolean).join('\n')+missing+owners;
+}
+function renderFilters(){
+  const root=$('filterBox');
+  if(!wiring){root.innerHTML='';return}
+  const observe=wiring.observe||(wiring.observe={});
+  const rows=[
+    {key:'scope_depth',label:'scope depth',min:1,max:4,step:1,value:observe.scope_depth??4},
+    {key:'element_text_max',label:'element text',min:0,max:4000,step:100,value:observe.element_text_max??500},
+    {key:'desktop_tree_max_depth',label:'tree depth',min:1,max:12,step:1,value:observe.desktop_tree_max_depth??8}
+  ];
+  root.innerHTML=rows.map(r=>`<div class="field">
+    <label>${esc(r.label)}</label>
+    <div class="rangeRow">
+      <input type="range" min="${r.min}" max="${r.max}" step="${r.step}" value="${esc(r.value)}" data-filter="${r.key}">
+      <input type="number" min="${r.min}" max="${r.max}" step="${r.step}" value="${esc(r.value)}" data-filter-number="${r.key}">
+    </div>
+  </div>`).join('')+`<label class="checkRow"><input type="checkbox" data-filter-bool="render_focused_first" ${observe.render_focused_first!==false?'checked':''}> focused first</label>`;
+  root.querySelectorAll('[data-filter]').forEach(el=>{
+    const key=el.dataset.filter;
+    const number=root.querySelector(`[data-filter-number="${key}"]`);
+    el.oninput=()=>{observe[key]=parseInt(el.value||'0',10); if(number)number.value=el.value; afterWiringEdit();};
+  });
+  root.querySelectorAll('[data-filter-number]').forEach(el=>{
+    const key=el.dataset.filterNumber;
+    const range=root.querySelector(`[data-filter="${key}"]`);
+    el.oninput=()=>{observe[key]=parseInt(el.value||'0',10); if(range)range.value=el.value; afterWiringEdit();};
+  });
+  root.querySelectorAll('[data-filter-bool]').forEach(el=>{
+    el.onchange=()=>{observe[el.dataset.filterBool]=!!el.checked; afterWiringEdit();};
+  });
 }
 function renderState(){
   const plan=state?.plan||[], stepNo=state?.step||0, tr=lastStep?.transition||{};
@@ -355,47 +433,130 @@ function renderState(){
   const meta=state?.screen_meta||{};
   const tree=meta.desktop_tree;
   const scopes=tree?.scope_counts?Object.entries(tree.scope_counts).map(([k,v])=>`${k}=${v}`).join(' '):'';
-  const treeCoverage=tree?` focused_captured=${tree.focused_captured!==false} overlays=${tree.overlay_count||0} overlay_captured=${tree.overlay_captured!==false}`:'';
+  const treeCoverage=tree?` focused_captured=${tree.focused_captured} overlays=${tree.overlay_count||0} overlay_captured=${tree.overlay_captured}`:'';
   const treeHead=tree?`META: nodes=${tree.node_count||0} max=${tree.max_nodes||''} truncated=${!!tree.truncated}${treeCoverage}${scopes?`\nSCOPES: ${scopes}`:''}\n`:'';
   const elementMeta=formatElementsMeta(meta);
   const probeMeta=formatProbeMeta(meta);
-  $('screenBox').textContent=[probeMeta,elementMeta,parts.screen].filter(Boolean).join('\n\n')||'No focused screen observation.';
+  const outcome=state?.last_outcome?`LAST_OUTCOME:\n${state.last_outcome}`:'';
+  $('screenBox').textContent=[elementMeta,parts.screen].filter(Boolean).join('\n\n')||'No focused screen observation.';
   $('treeBox').textContent=(treeHead+parts.tree).trim()||meta.desktop_tree_error||'No desktop tree.';
-  $('windowsBox').textContent=[formatWindowsMeta(meta),parts.overlays,parts.windows].filter(Boolean).join('\n\n')||'No window list.';
-  $('outcomeBox').textContent=state?.last_outcome||'No action outcome.';
+  $('telemetryBox').textContent=[formatCoverageMeta(meta),probeMeta,formatWindowsMeta(meta),parts.overlays,parts.windows,outcome].filter(Boolean).join('\n\n')||'No telemetry.';
 }
 
+function graphStorageKey(){return `endgame-ai.graph.positions:${wiring?.schema||'schema'}:${nodeIds().join('|')}`}
+function loadPositions(){
+  if(positionsLoaded)return;
+  positionsLoaded=true;
+  try{
+    const raw=localStorage.getItem(graphStorageKey());
+    if(raw)positions=JSON.parse(raw)||{};
+  }catch{positions={}}
+}
+function savePositions(){
+  try{localStorage.setItem(graphStorageKey(),JSON.stringify(positions))}catch{}
+}
+function autoLayoutPositions(force=true){
+  if(!wiring)return;
+  const nodes=wiring.topology.nodes||[], edges=wiring.topology.edges||[], ids=nodes.map(n=>n.id);
+  const out=new Map(ids.map(id=>[id,[]]));
+  edges.forEach(e=>{if(out.has(e.from)&&ids.includes(e.to))out.get(e.from).push(e.to)});
+  const start=ids.includes(wiring.topology.cycle_start)?wiring.topology.cycle_start:ids[0];
+  const rank=new Map(ids.map(id=>[id,999]));
+  if(start)rank.set(start,0);
+  const q=start?[start]:[];
+  while(q.length){
+    const id=q.shift(), nextRank=(rank.get(id)||0)+1;
+    for(const to of out.get(id)||[]){
+      if(nextRank<rank.get(to)){
+        rank.set(to,nextRank);
+        if(nextRank<18)q.push(to);
+      }
+    }
+  }
+  let tail=Math.max(0,...[...rank.values()].filter(v=>v<999));
+  ids.forEach(id=>{if(rank.get(id)===999)rank.set(id,++tail)});
+  const typeOrder={entry:0,moe_route:1,planner:2,scheduler:3,bus_check:4,observe:5,act:6,verify:7,reflect:8,self_modify:9,bus_post:10,satisfied:11};
+  const layers=new Map();
+  nodes.forEach(n=>{
+    const r=rank.get(n.id)||0;
+    if(!layers.has(r))layers.set(r,[]);
+    layers.get(r).push(n);
+  });
+  const colW=218,rowH=92,startX=46,startY=42;
+  [...layers.entries()].sort((a,b)=>a[0]-b[0]).forEach(([r,layer])=>{
+    layer.sort((a,b)=>(typeOrder[a.type]??50)-(typeOrder[b.type]??50)||a.id.localeCompare(b.id));
+    const offset=Math.max(0,(3-layer.length)*rowH/2);
+    layer.forEach((n,i)=>{
+      if(force||!positions[n.id])positions[n.id]={x:startX+r*colW,y:startY+offset+i*rowH,w:154,h:52};
+    });
+  });
+  savePositions();
+  graphView=null;
+}
 function seedPositions(){
   const nodes=wiring?.topology?.nodes||[];
   const ids=new Set(nodes.map(n=>n.id));
+  loadPositions();
   for(const k of Object.keys(positions))if(!ids.has(k))delete positions[k];
-  const cols=Math.max(3,Math.ceil(Math.sqrt(nodes.length||1)));
-  const gapX=178,gapY=104;
-  nodes.forEach((n,i)=>{
-    if(!positions[n.id])positions[n.id]={x:42+(i%cols)*gapX,y:42+Math.floor(i/cols)*gapY,w:142,h:48};
-  });
+  if(nodes.some(n=>!positions[n.id]))autoLayoutPositions(false);
 }
 function graphExtent(){
   const vals=Object.values(positions);
-  const maxX=Math.max(760,...vals.map(p=>p.x+p.w+80));
-  const maxY=Math.max(420,...vals.map(p=>p.y+p.h+80));
-  return {maxX,maxY};
+  const minX=Math.min(0,...vals.map(p=>p.x-80));
+  const minY=Math.min(0,...vals.map(p=>p.y-80));
+  const maxX=Math.max(900,...vals.map(p=>p.x+p.w+100));
+  const maxY=Math.max(520,...vals.map(p=>p.y+p.h+100));
+  return {minX,minY,maxX,maxY,w:maxX-minX,h:maxY-minY};
+}
+function ensureGraphView(){
+  const ext=graphExtent();
+  if(!graphView)graphView={x:ext.minX,y:ext.minY,w:ext.w,h:ext.h};
+}
+function fitGraph(){graphView=null;renderGraph()}
+function zoomGraph(factor,cx=null,cy=null){
+  ensureGraphView();
+  cx=cx??graphView.x+graphView.w/2; cy=cy??graphView.y+graphView.h/2;
+  const w=Math.max(260,Math.min(4000,graphView.w*factor));
+  const h=Math.max(180,Math.min(2600,graphView.h*factor));
+  graphView={x:cx-(cx-graphView.x)*(w/graphView.w),y:cy-(cy-graphView.y)*(h/graphView.h),w,h};
+  renderGraph();
+}
+function edgeClass(e,a,b){
+  const on=String(e.on||'').toLowerCase(), cls=[];
+  if(e.from===e.to)cls.push('loop');
+  else if(b.x<a.x)cls.push('back');
+  if(/failed|denied|escalate|modify_failed|retry|interrupt|cannot/.test(on))cls.push('fail');
+  else if(/ready|confirmed|posted|complete|no_interrupt|self|acted|screen_ready/.test(on))cls.push('ready');
+  return cls.join(' ');
+}
+function edgeGeom(e,i){
+  const a=positions[e.from], b=positions[e.to];
+  if(!a||!b)return null;
+  if(e.from===e.to){
+    const x1=a.x+a.w, y1=a.y+16, x2=a.x+a.w, y2=a.y+a.h-14, loop=54+(i%3)*18;
+    return {x1,y1,x2,y2,lx:a.x+a.w+loop-14,ly:a.y-14,d:`M${x1},${y1} C${x1+loop},${y1-58} ${x2+loop},${y2+58} ${x2},${y2}`};
+  }
+  const back=b.x<a.x;
+  const x1=back?a.x:a.x+a.w, y1=a.y+a.h/2, x2=back?b.x+b.w:b.x, y2=b.y+b.h/2;
+  const dx=Math.max(78,Math.abs(x2-x1)*0.46), dir=back?-1:1, mid=(x1+x2)/2;
+  return {x1,y1,x2,y2,lx:mid-28,ly:(y1+y2)/2-8,d:`M${x1},${y1} C${x1+dir*dx},${y1} ${x2-dir*dx},${y2} ${x2},${y2}`};
 }
 function renderGraph(){
   if(!wiring)return;
   seedPositions();
+  ensureGraphView();
   const svg=$('graph'), nodes=wiring.topology.nodes||[], edges=wiring.topology.edges||[];
-  const ext=graphExtent(); svg.setAttribute('viewBox',`0 0 ${ext.maxX} ${ext.maxY}`);
+  svg.setAttribute('viewBox',`${graphView.x} ${graphView.y} ${graphView.w} ${graphView.h}`);
   let out='<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#656d78"/></marker></defs>';
   edges.forEach((e,i)=>{
-    const a=positions[e.from], b=positions[e.to]; if(!a||!b)return;
-    const x1=a.x+a.w, y1=a.y+a.h/2, x2=b.x, y2=b.y+b.h/2, mid=(x1+x2)/2;
+    const geom=edgeGeom(e,i); if(!geom)return;
+    const cls=edgeClass(e,positions[e.from],positions[e.to]);
     const sel=selected.kind==='edge'&&selected.index===i;
-    out+=`<path class="edge ${sel?'sel':''}" data-edge="${i}" d="M${x1},${y1} C${mid},${y1} ${mid},${y2} ${x2},${y2}"/>`;
-    out+=`<text class="edgeLabel" data-edge="${i}" x="${mid-28}" y="${(y1+y2)/2-6}">${esc(e.on)}</text>`;
+    out+=`<path class="edge ${cls} ${sel?'sel':''}" data-edge="${i}" d="${geom.d}"/>`;
+    out+=`<text class="edgeLabel ${cls}" data-edge="${i}" x="${geom.lx}" y="${geom.ly}">${esc(e.on)}</text>`;
     if(sel){
-      out+=`<circle class="edgeHandle" data-edge-end="from" data-edge="${i}" cx="${x1}" cy="${y1}" r="6"/>`;
-      out+=`<circle class="edgeHandle" data-edge-end="to" data-edge="${i}" cx="${x2}" cy="${y2}" r="6"/>`;
+      out+=`<circle class="edgeHandle" data-edge-end="from" data-edge="${i}" cx="${geom.x1}" cy="${geom.y1}" r="6"/>`;
+      out+=`<circle class="edgeHandle" data-edge-end="to" data-edge="${i}" cx="${geom.x2}" cy="${geom.y2}" r="6"/>`;
     }
   });
   if(linkDrag){
@@ -403,9 +564,10 @@ function renderGraph(){
   }
   nodes.forEach(n=>{
     const p=positions[n.id], active=n.id===currentNode||n.id===state?._resume_node, sel=selected.kind==='node'&&selected.id===n.id;
+    const typeClass=String(n.type||'unknown').replace(/[^a-z0-9_-]/gi,'_');
     const unknown=!n.type;
-    out+=`<g class="node ${active?'active':''} ${sel?'sel':''} ${unknown?'unknown':''}" data-node="${attr(n.id)}" transform="translate(${p.x},${p.y})">`;
-    out+=`<rect width="${p.w}" height="${p.h}" rx="4"/><text x="10" y="18">${esc(n.id)}</text><text class="sub" x="10" y="35">${esc(n.type||'missing type')}</text>`;
+    out+=`<g class="node ${typeClass} ${active?'active':''} ${sel?'sel':''} ${unknown?'unknown':''}" data-node="${attr(n.id)}" transform="translate(${p.x},${p.y})">`;
+    out+=`<rect width="${p.w}" height="${p.h}" rx="4"/><text x="10" y="19">${esc(n.id)}</text><text class="sub" x="10" y="38">${esc(n.type||'missing type')}</text>`;
     out+=`<circle class="port" data-port="in" data-node="${attr(n.id)}" cx="0" cy="${p.h/2}" r="5"/>`;
     out+=`<circle class="port" data-port="out" data-node="${attr(n.id)}" cx="${p.w}" cy="${p.h/2}" r="5"/>`;
     out+='</g>';
@@ -463,6 +625,12 @@ function bindGraphEvents(){
       drag={id,start:pt,orig:{x:p.x,y:p.y},moved:false};
       selected={kind:'node',id,index:nodeIndex(id)};
       svg.setPointerCapture(e.pointerId);
+      return;
+    }
+    if(target===svg){
+      ensureGraphView();
+      graphPan={startX:e.clientX,startY:e.clientY,view:{...graphView},moved:false};
+      svg.setPointerCapture(e.pointerId);
     }
   };
   svg.onpointermove=e=>{
@@ -475,12 +643,21 @@ function bindGraphEvents(){
     }
     if(linkDrag){
       linkDrag.x2=pt.x; linkDrag.y2=pt.y; renderGraph();
+      return;
+    }
+    if(graphPan){
+      const r=svg.getBoundingClientRect();
+      const dx=(e.clientX-graphPan.startX)*(graphPan.view.w/r.width);
+      const dy=(e.clientY-graphPan.startY)*(graphPan.view.h/r.height);
+      graphView={...graphPan.view,x:graphPan.view.x-dx,y:graphPan.view.y-dy};
+      graphPan.moved=Math.abs(dx)+Math.abs(dy)>2;
+      renderGraph();
     }
   };
   svg.onpointerup=e=>{
     const pt=svgPoint(e);
     if(drag){
-      drag=null; renderAll(); return;
+      savePositions(); drag=null; renderAll(); return;
     }
     if(linkDrag){
       const targetId=hitNode(pt);
@@ -499,7 +676,16 @@ function bindGraphEvents(){
         }
       }
       linkDrag=null; renderAll();
+      return;
     }
+    if(graphPan){
+      graphPan=null;
+    }
+  };
+  svg.onwheel=e=>{
+    e.preventDefault();
+    const pt=svgPoint(e);
+    zoomGraph(e.deltaY>0?1.12:0.88,pt.x,pt.y);
   };
   svg.onclick=e=>{if(e.target===svg){selected={kind:null};renderAll()}};
 }
@@ -674,7 +860,7 @@ function renderReasoning(){
 }
 function renderAll(){
   if(!wiring)return;
-  renderGraph(); renderState(); renderInspect(); renderInputs(); renderReasoning();
+  renderGraph(); renderState(); renderFilters(); renderInspect(); renderInputs(); renderReasoning();
   $('jsonEdit').value=JSON.stringify(wiring,null,2);
 }
 
@@ -720,6 +906,7 @@ function addNode(){
   const id=uniqueId('observe');
   wiring.topology.nodes.push({id,type:'observe',label:'Observe'});
   positions[id]={x:60,y:60,w:142,h:48};
+  savePositions();
   selected={kind:'node',id,index:nodeIndex(id)};
   afterWiringEdit(); renderAll();
 }
@@ -757,6 +944,10 @@ $('resumeBtn').onclick=()=>resumeSaved().catch(e=>log('error',e.message));
 $('saveStateBtn').onclick=()=>saveState().catch(e=>log('error',e.message));
 $('refreshBtn').onclick=()=>loadAll().catch(e=>log('error',e.message));
 $('saveBtn').onclick=()=>saveWiring(false).catch(e=>log('wiring','save failed '+e.message));
+$('autoLayoutBtn').onclick=()=>{autoLayoutPositions(true);renderAll()};
+$('fitGraphBtn').onclick=()=>fitGraph();
+$('zoomOutBtn').onclick=()=>zoomGraph(1.18);
+$('zoomInBtn').onclick=()=>zoomGraph(0.84);
 $('addNodeBtn').onclick=addNode;
 $('addEdgeBtn').onclick=()=>addEdge();
 $('deleteBtn').onclick=deleteSelected;
@@ -765,10 +956,29 @@ $('jsonEdit').oninput=()=>{setStatus('json dirty')};
 try{
   const es=new EventSource(API+'/events');
   es.addEventListener('push',e=>log('push','event',JSON.parse(e.data)));
-  es.addEventListener('node',e=>log('node','event',JSON.parse(e.data)));
-  es.addEventListener('result',e=>log('result','event',JSON.parse(e.data)));
-  es.addEventListener('wiring_modified',e=>log('wiring','modified',JSON.parse(e.data)));
-  es.addEventListener('paused',e=>log('pause','paused',JSON.parse(e.data)));
+  es.addEventListener('node',e=>{
+    const data=JSON.parse(e.data);
+    currentNode=data.id||currentNode;
+    log('node','event',data);
+    renderAll();
+  });
+  es.addEventListener('result',e=>{
+    const data=JSON.parse(e.data);
+    log('result','event',data);
+    queueLiveRefresh('live result');
+  });
+  es.addEventListener('wiring_modified',e=>{
+    log('wiring','modified',JSON.parse(e.data));
+    loadAll().catch(err=>log('wiring',err.message));
+  });
+  es.addEventListener('paused',e=>{
+    log('pause','paused',JSON.parse(e.data));
+    queueLiveRefresh('paused');
+  });
+  es.addEventListener('stop',e=>{
+    log('stop','event',JSON.parse(e.data));
+    queueLiveRefresh('stopped');
+  });
 }catch(e){log('events',e.message)}
 loadAll().catch(e=>{setStatus('load failed');log('error',e.message)});
 </script>

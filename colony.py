@@ -36,14 +36,12 @@ def wait_health(port: int, timeout: float = 20.0) -> bool:
     return False
 
 
-def spawn_slot(slot: int, permissions: str | None = None, simulation: bool = False) -> subprocess.Popen:
+def spawn_slot(slot: int, permissions: str | None = None) -> subprocess.Popen:
     env = os.environ.copy()
     env["ENDGAME_SLOT"] = str(slot)
     env.setdefault("PYTHONIOENCODING", "utf-8")
     if permissions is not None:
         env["ENDGAME_PERMISSIONS"] = permissions
-    if simulation:
-        env["ENDGAME_SIM"] = "1"
     return subprocess.Popen(
         [sys.executable, str(ROOT / "server.py")],
         cwd=str(ROOT),
@@ -68,18 +66,15 @@ def post_goal(port: int, goal: str) -> bool:
 
 def main(argv: list[str] | None = None) -> int:
     argv = argv if argv is not None else sys.argv[1:]
-    sim = "--sim" in argv
-    if sim:
-        argv = [a for a in argv if a != "--sim"]
     slots = [int(a) for a in argv if a.isdigit()] or [1, 2]
 
     BUS.write_text("[]", encoding="utf-8")
     procs: list[tuple[int, subprocess.Popen]] = []
 
-    print(f"endgame-ai colony starting slots {slots} (sim={sim})")
+    print(f"endgame-ai colony starting slots {slots}")
     for slot in slots:
         perms = "desktop_exec" if slot == min(slots) else ""
-        proc = spawn_slot(slot, permissions=perms, simulation=sim)
+        proc = spawn_slot(slot, permissions=perms)
         procs.append((slot, proc))
         port = http_port(slot)
         print(f"  slot {slot} pid={proc.pid} port={port} perms={perms or '(delegate)'}")

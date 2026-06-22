@@ -5,24 +5,7 @@ import threading
 from dataclasses import dataclass
 from typing import Any
 
-try:
-    from desktop import Desktop, Element, Observation, configure_observation
-except Exception:
-    # Linux/non-Windows: define stubs for sim mode
-    @dataclass(slots=True)
-    class Element:
-        id: str; role: str; name: str; value: str; hwnd: int
-        px: int; py: int; pw: int; ph: int; action: str
-        wnd: str = ""; scope: str = "focused"; automation_id: str = ""; class_name: str = ""
-        enabled: bool = True; readonly: bool = False
-
-    @dataclass(slots=True)
-    class Observation:
-        focused_title: str; elements: dict; context_text: str; snapshot: dict | None = None
-
-    Desktop = None
-
-    def configure_observation(_config=None): pass
+from desktop import Desktop, Element, Observation, configure_observation
 
 
 @dataclass(slots=True)
@@ -164,32 +147,15 @@ class ActionExecutor:
             time.sleep(ms / 1000.0)
             return ActionResult(verb, True, f"waited {ms} ms")
 
-        if verb == "inspect":
-            # Re-observe with deeper detail — returns updated screen info
-            try:
-                obs = self._desktop.observe()
-                return ActionResult(verb, True, f"inspect done: {obs.context_text}")
-            except Exception as e:
-                return ActionResult(verb, False, f"inspect failed: {e}")
-
         return ActionResult(verb, False, f"unhandled verb: {verb}")
 
-
-# ─── Module-level API for server.py ───
-
-_desktop = None
-_executor = None
+_desktop: Desktop | None = None
+_executor: ActionExecutor | None = None
 _desktop_lock = threading.RLock()
-_last_observation = None
-_runtime_wiring = None
+_last_observation: Observation | None = None
+_runtime_wiring: dict[str, Any] | None = None
 
 _ELEMENT_VERBS = frozenset({"click", "scroll"})
-
-def _simulation_enabled(wiring: dict) -> bool:
-    import os
-    if os.environ.get("ENDGAME_SIM", "").lower() in ("1", "true", "yes"):
-        return True
-    return bool(wiring.get("runtime", {}).get("simulation_mode", False))
 
 def configure_runtime(wiring: dict[str, Any] | None) -> None:
     """Accept live wiring updates from server.py without recreating the desktop."""
@@ -207,66 +173,8 @@ def _init():
         import json, pathlib
         wiring = _runtime_wiring or json.loads((pathlib.Path(__file__).parent / "prompts" / "wiring.json").read_text(encoding="utf-8"))
         configure_observation(wiring.get("observe", {}))
-        if _simulation_enabled(wiring):
-            _desktop = _SimStub()
-        else:
-            _desktop = Desktop()
+        _desktop = Desktop()
         _executor = ActionExecutor(_desktop, wiring)
-
-
-class _SimStub:
-    """Minimal sim desktop for dev without Windows."""
-    def __init__(self):
-        self._step = 0
-
-    def observe(self) -> Observation:
-        self._step += 1
-        ok = Element(id="1", role="Button", name="OK", value="",
-                     hwnd=1, px=100, py=100, pw=80, ph=30, action="click",
-                     wnd="Sim Desktop", scope="focused", automation_id="ok", class_name="Button")
-        els = {"1": ok}
-        snapshot = {
-            "focused_title": "Sim Desktop",
-            "focused_hwnd": 1,
-            "action_scope": "focused_window_or_top_overlay",
-            "probe": {
-                "bounds": [0, 0, 320, 240],
-                "primary_step": 90,
-                "primary_points": 12,
-                "primary_found": 1,
-                "dense_used": False,
-                "dense_step": 0,
-                "dense_points": 0,
-                "dense_found": 0,
-                "dense_added": 0,
-                "scroll_used": False,
-                "scroll_passes": [],
-                "scroll_added": 0,
-                "raw_nodes": 1,
-                "classified_nodes": 1,
-            },
-            "elements": [{
-                "id": ok.id, "role": ok.role, "name": ok.name, "value": ok.value,
-                "hwnd": ok.hwnd, "x": ok.px, "y": ok.py, "w": ok.pw, "h": ok.ph,
-                "action": ok.action, "window": ok.wnd, "scope": ok.scope,
-                "automation_id": ok.automation_id, "class_name": ok.class_name,
-                "enabled": ok.enabled, "readonly": ok.readonly,
-            }],
-            "windows": [{"hwnd": 1, "title": "Sim Desktop", "rect": [0, 0, 320, 240], "focused": True, "z": 0}],
-            "overlays": [],
-            "desktop_tree": None,
-            "desktop_tree_error": "",
-        }
-        return Observation(focused_title="Sim Desktop", elements=els,
-                           context_text="FOCUSED: Sim Desktop\nELEMENTS: 1\n  [1] Button \"OK\"",
-                           snapshot=snapshot)
-
-    def click(self, px, py, hwnd=0): pass
-    def type_text(self, text): pass
-    def press_key(self, key): pass
-    def hotkey(self, keys): pass
-    def scroll(self, px, py, amount=3, hwnd=0): pass
-    def focus_window(self, title): return True
 
 def _remember_observation(obs: Observation) -> None:
     global _last_observation
@@ -275,10 +183,22 @@ def _remember_observation(obs: Observation) -> None:
 def _needs_elements(verb: str, target: str) -> bool:
     return verb in _ELEMENT_VERBS or (verb == "write" and bool(target))
 
+def _focus_already_satisfied(target: str, obs: Observation | None) -> bool:
+    focused = (getattr(obs, "focused_title", "") or "").lower().strip()
+    target_l = (target or "").lower().strip()
+    if not focused or not target_l:
+        return False
+    if target_l in focused or focused in target_l:
+        return True
+    words = [w for w in re.split(r"[\s\-]+", target_l) if len(w) > 3]
+    return bool(words and any(w in focused for w in words))
+
 def observe_screen() -> str:
     with _desktop_lock:
         _init()
-        obs = _desktop.observe()
+        desktop = _desktop
+        assert desktop is not None
+        obs = desktop.observe()
         _remember_observation(obs)
         return obs.context_text
 
@@ -294,9 +214,16 @@ def execute_verb(verb: str, target: str, value: str = "") -> str:
         _init()
         obs = _last_observation
         if _needs_elements(verb, target) and obs is None:
-            obs = _desktop.observe()
+            desktop = _desktop
+            assert desktop is not None
+            obs = desktop.observe()
             _remember_observation(obs)
         args = {"target": target, "value": value}
         elements = obs.elements if obs else {}
-        result = _executor.execute(verb, args, elements)
+        if verb == "focus" and _focus_already_satisfied(target, obs):
+            focused = getattr(obs, "focused_title", target)
+            return f"focused '{focused}' (already focused)"
+        executor = _executor
+        assert executor is not None
+        result = executor.execute(verb, args, elements)
         return result.observation if result.success else f"FAILED: {result.observation}"
