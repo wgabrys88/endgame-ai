@@ -1061,6 +1061,7 @@
     "window_scan_limit": 256,
     "render_class_name": false,
     "render_automation_id": true,
-    "render_window_per_element": false
+    "render_window_per_element": false,
+    "post_action_delay_ms": 250
   }
 }

@@ -209,6 +209,19 @@ def last_observation_snapshot() -> dict[str, Any]:
         snapshot = getattr(_last_observation, "snapshot", None)
         return snapshot if isinstance(snapshot, dict) else {}
 
+def get_focused_title() -> str:
+    """Lightweight post-action snapshot: just the focused window title."""
+    with _desktop_lock:
+        _init()
+        desktop = _desktop
+        assert desktop is not None
+        hwnd = int(desktop.user32.GetForegroundWindow())
+        import ctypes
+        buf = ctypes.create_unicode_buffer(512)
+        desktop.user32.GetWindowTextW(ctypes.c_void_p(hwnd), buf, 512)
+        return buf.value or ""
+
+
 def execute_verb(verb: str, target: str, value: str = "") -> str:
     with _desktop_lock:
         _init()

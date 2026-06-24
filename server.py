@@ -61,6 +61,7 @@ OBSERVE_RULES = {
     "render_class_name": (bool, None),
     "render_automation_id": (bool, None),
     "render_window_per_element": (bool, None),
+    "post_action_delay_ms": (int, 0),
 }
 
 
@@ -297,7 +298,7 @@ def validate_wiring(w):
     errs.extend(validate_act_config(w.get("act")))
     return errs
 
-from actions import execute_verb, observe_screen, configure_runtime, last_observation_snapshot
+from actions import execute_verb, observe_screen, configure_runtime, last_observation_snapshot, get_focused_title
 
 configure_runtime(WIRING)
 
@@ -1292,7 +1293,9 @@ def _check_goal_has_domain(state, _):
 def _check_screen_contains_domain_needle(state, _):
     # Exclude last_outcome: it contains typed URL text which conflates
     # "I typed the URL" with "the page loaded". Only screen/title count.
-    proof = " ".join([state.get("screen", "") or "", _focused_title(state)]).lower()
+    # Include post_action_title: fresh evidence captured after act executed.
+    post_title = state.get("post_action_title", "") or ""
+    proof = " ".join([state.get("screen", "") or "", _focused_title(state), post_title]).lower()
     return any(needle in proof for needle in _step_domain_needles(state))
 
 
@@ -1614,12 +1617,25 @@ def node_act(state, node_cfg):
     outcome = prefix + "; ".join(results)
     action_label = "; ".join(f"{a.get('verb','')} {a.get('target','')}" for a in actions)
     entry = {"attempt": len(history) + 1, "action": action_label, "outcome": outcome}
+
+    # Post-action snapshot: capture focused title for verify evidence
+    post_title = ""
+    if ok and not state.get("no_desktop"):
+        post_delay = int(WIRING.get("observe", {}).get("post_action_delay_ms", 250)) / 1000.0
+        if post_delay > 0:
+            time.sleep(post_delay)
+        try:
+            post_title = get_focused_title()
+        except Exception:
+            pass
+
     patch.update({
         "last_actions": results,
         "last_actions_raw": actions,
         "last_outcome": outcome,
         "last_error": "",
         "history": history + [entry],
+        "post_action_title": post_title,
     })
     return {"signals": ["acted"], "patch": patch}
 
