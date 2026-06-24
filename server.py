@@ -834,13 +834,79 @@ def resolve_prompt_blocks(node, state):
         })
     return resolved
 
+def _estimate_tokens(text):
+    """Approximate token count: ~3.5 chars per token for Llama-family tokenizers."""
+    return max(1, len(text or "") * 10 // 35)
+
+
+def _context_budget():
+    """Return max input tokens from wiring limits."""
+    limits = WIRING.get("limits", {})
+    ctx = limits.get("context_window_tokens", 17920)
+    reserve = limits.get("context_reserve_tokens", 2560)
+    return ctx - reserve
+
+
+# Block truncation priority: lower = truncate first when over budget
+_BLOCK_PRIORITY = {
+    "HISTORY": 1, "PRIOR_TRACES": 1,
+    "REASONING_CHAIN": 2, "CURRENT_WIRING": 2,
+    "REFLECT_REASONING": 3, "VERIFY_REASONING": 3,
+    "SCREEN": 4,
+    "MEMORY": 5, "LAST_ACTIONS": 5, "LAST_ACTIONS_RAW": 5, "LAST_OUTCOME": 5,
+    "LAST_ERROR": 6, "CURRENT_NODES": 6,
+    "DONE_WHEN": 7,
+    "SUBTASK": 8, "STEP": 8, "GOAL": 9,
+}
+
+
 def build_user_message(circuit, state, node=None):
-    """Build dynamic user message from node.prompt.user.blocks."""
-    parts = []
-    for block in resolve_prompt_blocks(node, state):
-        if block["included"]:
-            parts.append(f"{block['label']}: {block['value']}")
-    return "\n".join(parts)
+    """Build dynamic user message from node.prompt.user.blocks with token budget."""
+    blocks = resolve_prompt_blocks(node, state)
+    included = [(b["label"], b["value"]) for b in blocks if b["included"]]
+    if not included:
+        return ""
+
+    # Estimate system prompt token overhead
+    prompts_cfg = WIRING.get("prompts", {})
+    node_cfg = _prompt_cfg(node)
+    base_text = prompts_cfg.get("base", "") if node_cfg.get("extends", "base") != "none" else ""
+    role_key = node_cfg.get("role", circuit)
+    role_text = node_cfg.get("system") or prompts_cfg.get("roles", {}).get(role_key, "")
+    system_tokens = _estimate_tokens(base_text) + _estimate_tokens(role_text)
+
+    available = _context_budget() - system_tokens
+
+    parts = [f"{label}: {value}" for label, value in included]
+    total_tokens = sum(_estimate_tokens(p) for p in parts)
+
+    if total_tokens <= available:
+        return "\n".join(parts)
+
+    # Over budget: truncate lowest-priority blocks first
+    indexed = [(i, label, value, _estimate_tokens(f"{label}: {value}")) for i, (label, value) in enumerate(included)]
+    by_priority = sorted(indexed, key=lambda x: _BLOCK_PRIORITY.get(x[1], 5))
+
+    excess = total_tokens - available
+    truncated = {}
+    for idx, label, value, tokens in by_priority:
+        if excess <= 0:
+            break
+        if tokens < 20:
+            continue  # too small to yield savings after adding marker
+        keep_tokens = max(tokens - excess, tokens // 4)
+        if keep_tokens < tokens:
+            keep_chars = keep_tokens * 35 // 10
+            new_val = value[:keep_chars] + "\n[...truncated]"
+            saved = tokens - _estimate_tokens(f"{label}: {new_val}")
+            if saved > 0:
+                truncated[idx] = new_val
+                excess -= saved
+
+    result = []
+    for i, (label, value) in enumerate(included):
+        result.append(f"{label}: {truncated.get(i, value)}")  
+    return "\n".join(result)
 
 def node_debug_context(node_id, state):
     """Return schema-independent node context for GUI/API inspection."""

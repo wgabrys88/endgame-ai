@@ -994,7 +994,9 @@
     "llm_parse_retries": 2,
     "trace_few_shot": 6,
     "debug_value_max_chars": 12000,
-    "error_preview_chars": 8000
+    "error_preview_chars": 8000,
+    "context_window_tokens": 17920,
+    "context_reserve_tokens": 2560
   },
   "verbs": {
     "click": {
