@@ -61,6 +61,7 @@ OBSERVE_RULES = {
     "render_class_name": (bool, None),
     "render_automation_id": (bool, None),
     "render_window_per_element": (bool, None),
+    "post_action_delay_ms": (int, 0),
 }
 
 
@@ -76,6 +77,7 @@ NORMALIZER_RULES = {
     "when_value_empty": bool,
     "when_target_equals_value": bool,
     "when_focused_contains": list,
+    "when_focused_exact": list,
     "when_prior_verb": str,
     "when_prior_hotkey_contains": list,
 }
@@ -297,7 +299,7 @@ def validate_wiring(w):
     errs.extend(validate_act_config(w.get("act")))
     return errs
 
-from actions import execute_verb, observe_screen, configure_runtime, last_observation_snapshot
+from actions import execute_verb, observe_screen, configure_runtime, last_observation_snapshot, get_focused_title
 
 configure_runtime(WIRING)
 
@@ -834,13 +836,79 @@ def resolve_prompt_blocks(node, state):
         })
     return resolved
 
+def _estimate_tokens(text):
+    """Approximate token count: ~3.5 chars per token for Llama-family tokenizers."""
+    return max(1, len(text or "") * 10 // 35)
+
+
+def _context_budget():
+    """Return max input tokens from wiring limits."""
+    limits = WIRING.get("limits", {})
+    ctx = limits.get("context_window_tokens", 17920)
+    reserve = limits.get("context_reserve_tokens", 2560)
+    return ctx - reserve
+
+
+# Block truncation priority: lower = truncate first when over budget
+_BLOCK_PRIORITY = {
+    "HISTORY": 1, "PRIOR_TRACES": 1,
+    "REASONING_CHAIN": 2, "CURRENT_WIRING": 2,
+    "REFLECT_REASONING": 3, "VERIFY_REASONING": 3,
+    "SCREEN": 4,
+    "MEMORY": 5, "LAST_ACTIONS": 5, "LAST_ACTIONS_RAW": 5, "LAST_OUTCOME": 5,
+    "LAST_ERROR": 6, "CURRENT_NODES": 6,
+    "DONE_WHEN": 7,
+    "SUBTASK": 8, "STEP": 8, "GOAL": 9,
+}
+
+
 def build_user_message(circuit, state, node=None):
-    """Build dynamic user message from node.prompt.user.blocks."""
-    parts = []
-    for block in resolve_prompt_blocks(node, state):
-        if block["included"]:
-            parts.append(f"{block['label']}: {block['value']}")
-    return "\n".join(parts)
+    """Build dynamic user message from node.prompt.user.blocks with token budget."""
+    blocks = resolve_prompt_blocks(node, state)
+    included = [(b["label"], b["value"]) for b in blocks if b["included"]]
+    if not included:
+        return ""
+
+    # Estimate system prompt token overhead
+    prompts_cfg = WIRING.get("prompts", {})
+    node_cfg = _prompt_cfg(node)
+    base_text = prompts_cfg.get("base", "") if node_cfg.get("extends", "base") != "none" else ""
+    role_key = node_cfg.get("role", circuit)
+    role_text = node_cfg.get("system") or prompts_cfg.get("roles", {}).get(role_key, "")
+    system_tokens = _estimate_tokens(base_text) + _estimate_tokens(role_text)
+
+    available = _context_budget() - system_tokens
+
+    parts = [f"{label}: {value}" for label, value in included]
+    total_tokens = sum(_estimate_tokens(p) for p in parts)
+
+    if total_tokens <= available:
+        return "\n".join(parts)
+
+    # Over budget: truncate lowest-priority blocks first
+    indexed = [(i, label, value, _estimate_tokens(f"{label}: {value}")) for i, (label, value) in enumerate(included)]
+    by_priority = sorted(indexed, key=lambda x: _BLOCK_PRIORITY.get(x[1], 5))
+
+    excess = total_tokens - available
+    truncated = {}
+    for idx, label, value, tokens in by_priority:
+        if excess <= 0:
+            break
+        if tokens < 20:
+            continue  # too small to yield savings after adding marker
+        keep_tokens = max(tokens - excess, tokens // 4)
+        if keep_tokens < tokens:
+            keep_chars = keep_tokens * 35 // 10
+            new_val = value[:keep_chars] + "\n[...truncated]"
+            saved = tokens - _estimate_tokens(f"{label}: {new_val}")
+            if saved > 0:
+                truncated[idx] = new_val
+                excess -= saved
+
+    result = []
+    for i, (label, value) in enumerate(included):
+        result.append(f"{label}: {truncated.get(i, value)}")  
+    return "\n".join(result)
 
 def node_debug_context(node_id, state):
     """Return schema-independent node context for GUI/API inspection."""
@@ -997,6 +1065,10 @@ def _normalizer_matches(norm, action, prior, state):
         return False
     if norm.get("when_focused_contains") and not _contains_any(_focused_title(state), norm.get("when_focused_contains")):
         return False
+    if norm.get("when_focused_exact"):
+        title = _focused_title(state).strip()
+        if not any(title == str(v).strip().lower() for v in norm.get("when_focused_exact")):
+            return False
     if norm.get("when_prior_verb") and not any(a.get("verb") == norm.get("when_prior_verb") for a in prior):
         return False
     if norm.get("when_prior_hotkey_contains"):
@@ -1224,7 +1296,11 @@ def _check_goal_has_domain(state, _):
 
 
 def _check_screen_contains_domain_needle(state, _):
-    proof = " ".join([state.get("screen", "") or "", _focused_title(state), state.get("last_outcome", "") or ""]).lower()
+    # Exclude last_outcome: it contains typed URL text which conflates
+    # "I typed the URL" with "the page loaded". Only screen/title count.
+    # Include post_action_title: fresh evidence captured after act executed.
+    post_title = state.get("post_action_title", "") or ""
+    proof = " ".join([state.get("screen", "") or "", _focused_title(state), post_title]).lower()
     return any(needle in proof for needle in _step_domain_needles(state))
 
 
@@ -1546,12 +1622,25 @@ def node_act(state, node_cfg):
     outcome = prefix + "; ".join(results)
     action_label = "; ".join(f"{a.get('verb','')} {a.get('target','')}" for a in actions)
     entry = {"attempt": len(history) + 1, "action": action_label, "outcome": outcome}
+
+    # Post-action snapshot: capture focused title for verify evidence
+    post_title = ""
+    if ok and not state.get("no_desktop"):
+        post_delay = int(WIRING.get("observe", {}).get("post_action_delay_ms", 250)) / 1000.0
+        if post_delay > 0:
+            time.sleep(post_delay)
+        try:
+            post_title = get_focused_title()
+        except Exception:
+            pass
+
     patch.update({
         "last_actions": results,
         "last_actions_raw": actions,
         "last_outcome": outcome,
         "last_error": "",
         "history": history + [entry],
+        "post_action_title": post_title,
     })
     return {"signals": ["acted"], "patch": patch}
 

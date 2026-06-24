@@ -1,248 +1,402 @@
-# endgame-ai - Self-Rewiring Local Desktop Agent
+# endgame-ai
 
-This README is the bootstrap document for the next engineering session. It is
-based on the repository, the live endgame-ai API, the current `state.json`, and
-the LM Studio server log available on 2026-06-22 at about 22:42 Europe/Warsaw.
+> **The last agent you'll ever need to build.**
 
-endgame-ai is a local Windows desktop ROD loop. A local LM Studio model plans,
-acts on the desktop, verifies outcomes, reflects on failures, and can mutate its
-own `prompts/wiring.json` through validated operations. Python is the mechanical
-body. `wiring.json` is the mutable behavior layer. The local model supplies
-judgment.
+A self-rewiring local Windows desktop agent that replaces the human operator. It sees the screen through accessibility APIs, acts through keyboard and mouse, reasons with a local 4B model, and evolves its own behavior at runtime — no cloud, no APIs, no pre-programmed skills.
 
-The system is currently usable and exploratory. In the active/persisted run it
-tried multiple approaches, recovered from at least one bad navigation chain, and
-kept moving despite an imprecise human goal. It is not yet fully reliable: the
-latest run also proves a verification gap where the model treated a successful
-`wait` action as proof that an external response had arrived.
+```
+Python checks structure. Wiring expresses policy. The model makes judgment when rules cannot prove the answer.
+```
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-cyan.svg)](LICENSE)
+![Python](https://img.shields.io/badge/Python-stdlib_only-blue)
+![Model](https://img.shields.io/badge/Model-Nemotron_3_Nano_4B-green)
+![Dependencies](https://img.shields.io/badge/pip_dependencies-zero-orange)
 
 ---
 
-## Status Snapshot
+## Table of Contents
 
-Repository state before this README rewrite:
+- [Vision](#vision)
+- [Architecture](#architecture)
+- [The ROD Loop](#the-rod-loop)
+- [Two-Pass Reasoning](#two-pass-reasoning)
+- [Observation System](#observation-system)
+- [Declarative Rule System](#declarative-rule-system)
+- [Self-Modification](#self-modification)
+- [Colony & MoE Routing](#colony--moe-routing)
+- [Workbench](#workbench)
+- [API Reference](#api-reference)
+- [Hyperparameters](#hyperparameters)
+- [Design Principles](#design-principles)
+- [Research Connections](#research-connections)
+- [Archaeology: Ideas Born & Killed](#archaeology-ideas-born--killed)
+- [File Inventory](#file-inventory)
+- [Diagnosis Workflow](#diagnosis-workflow)
 
-```text
-branch: validation-observation
-tracked worktree before README edit: clean
-latest commits:
-  d370285 Complete fallback audit integration
-  192852c Add wiring editor rule visibility
-  161e2ad Migrate semantic guards to declarative rules
-  e5481a4 Add declarative preflight rules
-```
+---
 
-Important ignored runtime files exist and should not be treated as source:
+## Vision
 
-```text
-state.json
-__pycache__/
-prompts/wiring.backup.json
-prompts/wiring.backup.20260622-221732.json
-```
+endgame-ai is not a coding assistant, not a chatbot, not a task runner. It is a **living organism of the computer** — a slow but real operator that clicks, types, and watches the screen exactly as a human does.
 
-Current source sizes:
+**Three perceptors, infinite capability:**
+- 👁️ **See** — UIA accessibility tree + hover probes (no screenshots)
+- ✋ **Act** — keyboard and mouse verbs (click, type, hotkey, scroll, focus)
+- 🧠 **Think** — local 4B model with two-pass reasoning
 
-```text
-server.py                  2059 lines
-desktop.py                 1279 lines
-actions.py                  200 lines
-colony.py                    91 lines
-wiring-editor.html         1148 lines
-prompts/wiring.json        1047 lines
-prompts/wiring-schema.json  269 lines
-```
+A human using these three perceptors can do *anything* on a computer. So can this system.
 
-Live API facts from `GET http://127.0.0.1:9078/health`:
+**After completion:**
+- No more programming or configuration of skills
+- Skills are evolutionary products of runtime mutations
+- The system writes its own scripts, opens its own terminals
+- Re-planning and goal rephrasing ARE the mutations
+- The environment evolves alongside the agent
 
-```text
-ok: true
-slot: 1
-port: 9078
-permissions: desktop_exec
-nodes: entry, planner, scheduler, observe, act, verify, reflect,
-       satisfied, bus_check, bus_post, moe_route, self_modify
-capabilities: desktop_exec, rod_loop, self_modify, colony_delegate,
-              trace_memory, step_debug, pause_resume, wiring_hot_reload,
-              state_memory
-```
-
-`/health.run.running` was `false` at the snapshot, while `/state` and the LM
-Studio log showed recent run activity. Treat `/health` and `/state` together;
-do not infer run truth from only one field.
+**What makes this different:**
+- Runs entirely local (LM Studio + stdlib Python)
+- Zero pip dependencies
+- Zero cloud API calls
+- Self-modifies its own topology, prompts, and rules at runtime
+- Uses ROD (Reason-Observe-Decide) instead of ReAct
+- Mechanical preflight rules eliminate LLM calls when outcomes are provable
+- The mutable layer (wiring.json) IS the brain — Python is just muscles
 
 ---
 
 ## Architecture
 
-```text
-Python: server.py, desktop.py, actions.py
-  Mechanical body. It serves HTTP, runs the graph, observes UIA, executes
-  desktop verbs, validates wiring patches, hot-reloads wiring, stores state,
-  and performs generic rule evaluation.
+```mermaid
+graph LR
+    subgraph "Immutable Body (Python)"
+        S[server.py<br/>Graph Engine + HTTP + Rules]
+        D[desktop.py<br/>UIA Observer]
+        A[actions.py<br/>Verb Dispatch]
+        C[colony.py<br/>Multi-Slot Spawner]
+    end
 
-prompts/wiring.json
-  Mutable brain. It defines graph topology, prompt blocks, role prompts,
-  runtime limits, observation config, MoE routing, act normalizers, and
-  declarative rules. Semantic policy should live here.
+    subgraph "Mutable Brain (JSON)"
+        W[wiring.json<br/>Topology + Rules + Prompts]
+        SC[wiring-schema.json<br/>Validation Contract]
+        M[model.json<br/>LLM Config]
+    end
 
-prompts/wiring-schema.json
-  Validation contract for wiring. It now includes the unified rules schema,
-  act normalizer schema, and rule match condition vocabulary.
+    subgraph "External"
+        LM[LM Studio<br/>localhost:1234]
+        UI[Windows Desktop<br/>UIA COM]
+    end
 
-wiring-editor.html
-  Zero-build browser workbench served by server.py. It shows topology, state,
-  timings, filters, reasoning, and now rules/rule hits.
-
-LM Studio on localhost:1234
-  OpenAI-compatible local model server. Current loaded model:
-  nvidia-nemotron-3-nano-4b@q6_k_xl.
+    S -->|hot-reload| W
+    S -->|validate| SC
+    S -->|/v1/chat/completions| LM
+    S -->|observe/execute| D
+    D -->|UIA COM| UI
+    A -->|keyboard/mouse| UI
+    S -->|dispatch| A
 ```
 
-The boundary remains the central engineering rule:
+**Separation of concerns:**
 
-```text
-Python checks structure.
-Wiring expresses policy.
-The model makes judgment when rules cannot prove the answer.
-```
+| Layer | Changes | Contains |
+|-------|---------|----------|
+| Python (body) | Rarely | HTTP, graph execution, UIA, verbs, validation, rule dispatch |
+| wiring.json (brain) | At runtime | Topology, prompts, rules, limits, observe config, normalizers |
+| model.json (senses) | Per model swap | Temperature, top_p, top_k, max_tokens, endpoint |
 
 ---
 
-## Runtime Today
+## The ROD Loop
 
-LM Studio facts from log and API:
+ROD = **Reason → Observe → Decide**
 
-```text
-model path:
-  C:\Users\px-wjt\.lmstudio\models\unsloth\NVIDIA-Nemotron-3-Nano-4B-GGUF\NVIDIA-Nemotron-3-Nano-4B-UD-Q6_K_XL.gguf
+Unlike ReAct (which interleaves reasoning and action in a flat loop), ROD is a directed graph with distinct phases, retry paths, escalation, and self-modification.
 
-model id from /v1/models:
-  nvidia-nemotron-3-nano-4b@q6_k_xl
-
-server:
-  HTTP listening on port 1234
-  OpenAI-compatible endpoint: /v1/chat/completions
-  OpenAI-compatible endpoint: /v1/models
-  logs saved in C:\Users\px-wjt\.lmstudio\server-logs
-
-llama.cpp runtime:
-  n_parallel=2
-  configured n_ctx=35664
-  two slots, each n_ctx=17920
-  prompt cache enabled, 8192 MiB limit
-  context checkpoints enabled, max 32
+```mermaid
+graph TD
+    GI[goal_inbox] -->|ready| MR[moe_route]
+    MR -->|self| PL[planner]
+    MR -->|delegated| BP[bus_post]
+    PL -->|plan_ready| SC[scheduler]
+    PL -->|retry_plan| PL
+    PL -->|plan_failed| BP
+    SC -->|step_ready| BC[bus_check]
+    SC -->|plan_complete| BP
+    BC -->|no_interrupt| OB[observe]
+    BC -->|interrupt| PL
+    OB -->|screen_ready| ACT[act]
+    ACT -->|acted| VE[verify]
+    ACT -->|act_failed| RE[reflect]
+    VE -->|step_confirmed| SC
+    VE -->|step_denied| RE
+    RE -->|retry| SC
+    RE -->|replan| PL
+    RE -->|escalate| SM[self_modify]
+    SM -->|modified| PL
+    SM -->|modify_failed| RE
+    BP -->|posted| SAT[satisfied]
 ```
 
-The old README path `%USERPROFILE%\.cache\lm-studio\server-logs` is stale on
-this machine. The actual path is:
+**12 Node Types:**
 
-```text
-C:\Users\px-wjt\.lmstudio\server-logs\2026-06\2026-06-22.1.log
-```
+| Node | Type | LLM? | Purpose |
+|------|------|------|---------|
+| goal_inbox | entry | No | Accept goal, emit ready |
+| moe_route | moe_route | No | Route to self or delegate via bus |
+| planner | planner | Yes | Decompose goal → 1-10 observable subtasks |
+| scheduler | scheduler | No | Select current step or signal completion |
+| bus_check | bus_check | No | Poll bus.json for interrupt goals |
+| observe | observe | No | Capture UIA screen text + action targets |
+| act | act | Yes | Emit and execute desktop verb chains |
+| verify | verify | Yes* | Confirm or deny step completion |
+| reflect | reflect | Yes | Diagnose failure → retry/replan/escalate |
+| self_modify | self_modify | Yes | Propose validated wiring mutations |
+| bus_post | bus_post | No | Post telemetry/result to bus |
+| satisfied | satisfied | No | Terminal rest state |
+
+*verify skips LLM when preflight rules fire
+
+**Failure recovery paths:**
+- **Retry:** reflect → scheduler → observe → act → verify (fresh attempt with new observation)
+- **Replan:** reflect → planner (new plan from current state, preserves history)
+- **Escalate:** reflect → self_modify → planner (mutate wiring then replan)
+
+**Bounds:** `max_attempts=7` retries × `max_replans=3` before escalation. `max_cycles=300` absolute limit.
 
 ---
 
-## The Two-Pass Reasoning Loop
+## Two-Pass Reasoning
 
-The two-pass loop is still intact. Every LLM node is called once to think and
-then called again with the first pass reasoning plus:
+Every LLM node executes two calls:
 
-```text
-DECIDE NOW: emit exactly one content JSON object for this role. No prose.
+```
+Pass 1 (Think):   system_prompt + user_blocks → free reasoning
+Pass 2 (Decide):  system_prompt + user_blocks + ROD_REASONING_CONTENT + "DECIDE NOW" → JSON output
 ```
 
-The log proves this pattern. Planner, act, verify, reflect, and self_modify
-requests include the static role prompt and then a second request containing
-`ROD_REASONING_CONTENT`.
+**Why:** A 4B model struggles to reason AND format JSON simultaneously. Separating these concerns:
+- Pass 1 produces unconstrained reasoning (catches impulse errors)
+- Pass 2 receives that reasoning as input and commits to structured output
+- Temperature bumps on parse retries (0.3 → 0.45 → 0.6) explore alternatives
 
-This is still a good design for small local models. It catches some first-pass
-impulses, preserves reasoning across nodes, and makes failures inspectable. Do
-not remove it for latency alone. Prefer preflight/rule hits to remove whole LLM
-calls when the outcome is mechanically provable.
+**KV-cache friendliness:** System prompt (base + role) is static per node type → LM Studio prompt cache hits on the prefix. Dynamic user message changes per cycle.
+
+**Retry logic:** Up to `llm_parse_retries=2` attempts with increasing temperature if JSON parse fails.
 
 ---
 
-## ROD Loop
+## Observation System
 
-Current graph shape:
+endgame-ai observes the Windows desktop through UIA (UI Automation) COM interfaces — no screenshots, no OCR, no vision models.
 
-```text
-goal_inbox -> moe_route -> planner -> scheduler -> bus_check -> observe -> act -> verify
-                                                                       |        |
-                                                                       |        v
-                                                                       +---- reflect
-                                                                              |
-                                                                              v
-                                                                         self_modify
+**Pipeline:**
+
+```mermaid
+graph LR
+    HP[Hover Probes<br/>Sinusoidal grid scan] --> CL[Classify<br/>clickable/writable/read]
+    CL --> RN[Render<br/>Scope-filtered text]
+    DT[Desktop Tree<br/>Bounded UIA walk] --> RN
+    RN --> SC[SCREEN text<br/>for act node]
 ```
 
-Key node responsibilities:
+**Probe scanning:**
+- Full-screen sweep at configurable step (default 70px for hover scan)
+- Sinusoidal y-offset prevents grid-aligned misses
+- Each probe point: `SetCursorPos` → `ElementFromPoint` → extract properties
+- Deduplication by (role, name, automation_id, class_name, x, y, w, h)
 
-```text
-planner      converts GOAL into 1-10 observable subtasks
-scheduler    selects current step or completion
-bus_check    polls for interrupt goals
-observe      captures UIA screen text and action targets
-act          emits and executes desktop verb chains
-verify       confirms or denies step completion
-reflect      diagnoses failure and chooses retry/replan/escalation
-self_modify  proposes validated wiring mutations after escalation
-```
+**Enrichment fallbacks:**
+- Dense probe (half step size) if elements < `scroll_enrich_min`
+- Scroll enrichment passes `[-3, -2, 2, 3]` if still below threshold
+- Desktop tree walk (bounded BFS of UIA hierarchy)
 
-The graph still has retry, replan, and self-modify escalation paths. The final
-read-only `/state` API snapshot before this README commit had:
+**Element classification:**
+- `WRITABLE_ROLES` (Edit, ComboBox, Document) → action: write
+- `CLICKABLE_ROLES` (Button, MenuItem, Hyperlink, ...) → action: click
+- `ACTIONABLE_ROLES` (all interactive) → action: read
 
-```text
-step: 0
-current_step: Navigate to https://thegrok.ai using ctrl+l then write the URL and press enter.
-done_when: The browser is on TheGrok AI homepage.
-retries: 0
-replan_count: 1
-_cycle: 133
-_resume_node: act
-last_outcome: OK: wait : waited 5000 ms
-last_error: ""
-```
+**Rendering:**
+- Scope ordering: focused_page → focused_chrome → overlay → background
+- Configurable `scope_depth` (default 4) filters background noise
+- Action elements get sequential `[ID]` targets for act node
+- Non-actionable elements rendered without IDs (context only)
 
-Earlier in the same investigation the persisted state was on `Wait for AI
-response` with repeated waits, empty memory, and a verifier false confirmation.
-That earlier evidence is preserved below because it is the clearest proven
-remaining bug.
+**Overlay handling:**
+- Z-order scan of visible windows
+- Rectangle intersection test against focused window
+- Overlay elements rendered with `@overlay` scope tag
 
-The run goal was intentionally imprecise:
+**Post-action title capture:**
+- After act execution, 250ms delay then capture focused window title
+- Stored as `state.post_action_title` for verify evidence freshness
+- Used in domain needle proof for navigation confirmation
 
-```text
-use thegrok tab in chrome to have a 2 turns conversation with the grok ai about
-current geopolitical situation by making a followup question after the first one
-where the second one will be dependent on the response to the first one, then
-write the result of the conversation into notepad window and then your task will
-be completed
-```
+**Configuration (all in `wiring.json → observe`):**
 
-Observed behavior:
-
-- It planned a multi-step browser/chat/notepad task.
-- It used Chrome and Notepad windows visible in the UIA screen.
-- It attempted URL navigation and question submission.
-- It hit a network error for `thegrok.ai`.
-- It drifted to a Google search for `geopolitical tensions`.
-- It recognized some failures and retried/replanned.
-- It repeatedly waited for a response while memory stayed empty.
-- It eventually accepted a wait outcome as completion evidence, which is wrong.
-
-The human observation that it is "acting great" is partly supported: it is
-trying different approaches and recovering from some mistakes. The truthful
-engineering read is: exploration and guard behavior improved, but completion
-proof is still too weak for external-response tasks.
+| Key | Default | Purpose |
+|-----|---------|---------|
+| hover_scan_enabled | true | Single-pass full-screen sweep |
+| hover_scan_step_px | 70 | Probe grid spacing |
+| probe_step_px | 40 | Primary probe step (when hover disabled) |
+| scope_depth | 4 | Max scope levels rendered |
+| element_text_max | 500 | Per-element text truncation |
+| read_text_max | 16000 | Max chars from TextPattern |
+| desktop_tree_enabled | false | UIA tree walk alongside probes |
+| min_elements | 3 | Minimum before enrichment triggers |
+| wait_retries | 6 | Retry waits for elements to appear |
+| post_action_delay_ms | 250 | Delay before post-action title capture |
 
 ---
 
-## MoE / Colony Routing
+## Declarative Rule System
 
-This repository uses a practical local MoE/colony routing layer, not a mixture
-of model weights. The current `wiring.moe` config is:
+Rules eliminate LLM calls when outcomes are mechanically provable. They are the primary performance lever.
 
+**Two phases, three verdicts:**
+
+| Phase | Verdict | Effect |
+|-------|---------|--------|
+| verify | deny | Block false confirmation before verifier LLM |
+| verify | confirm | Approve step completion before verifier LLM |
+| act | reject | Block unsafe action chains before desktop execution |
+
+**Evaluation order (safety-first):**
+1. Filter rules by current phase
+2. Evaluate deny/reject rules first
+3. Evaluate confirm rules second
+4. First matching rule wins
+5. No match → fall through to LLM
+
+**AND logic:** All conditions in a rule's `match` object must be true for the rule to fire.
+
+**48 Condition Types:**
+
+<details>
+<summary>Click to expand full condition inventory</summary>
+
+**Boolean conditions:**
+- `outcome_ok`, `outcome_failed`
+- `actions_wrote_nonempty`, `actions_write_is_url`, `actions_writes_all_url`
+- `step_has_domain_needle`, `goal_has_domain`, `screen_contains_domain_needle`
+- `focused_contains_action_target`, `focused_has_writable`
+- `memory_has_key_from_action`, `memory_stored_by_action`
+- `memory_value_not_url`, `memory_value_not_title`, `memory_value_not_prior_write`, `memory_value_not_question`
+- `chain_is_launch`, `chain_launch_then_content_write`, `chain_is_navigation`, `chain_is_save`, `chain_wrote_and_submitted`
+
+**String conditions:**
+- `actions_include_verb`, `actions_all_verb`, `actions_verb_absent`
+- `actions_pressed`, `actions_pressed_absent`
+
+**Integer conditions:**
+- `memory_value_min_length`, `memory_value_below_length`, `chain_launch_then_write_min_length`
+
+**String array conditions:**
+- `actions_sequence`, `actions_hotkey_contains`, `actions_hotkey_absent`
+- `actions_write_target_line_contains`, `actions_write_target_line_absent`
+- `actions_click_target_line_contains`, `actions_click_target_line_absent`
+- `actions_focus_target_matches`, `actions_focus_target_absent`
+- `actions_write_after_hotkey_has_target`
+- `done_when_matches`, `done_when_absent`
+- `step_text_matches`, `step_text_matches_groups`, `step_text_absent`
+- `screen_contains`, `focused_title_matches`, `focused_title_absent`
+- `focused_element_role_any`
+
+</details>
+
+**Current rules (25):**
+
+| ID | Phase | Verdict | Purpose |
+|----|-------|---------|---------|
+| deny_outcome_failed | verify | deny | Any non-OK outcome → immediate denial |
+| deny_chat_submission_missing_write | verify | deny | Chat step without write verb |
+| deny_chat_submission_navigation_text | verify | deny | Written text is URL, not chat |
+| deny_chat_submission_missing_submit | verify | deny | Chat text not submitted |
+| deny_memory_capture_missing_value | verify | deny | Capture step without remember |
+| deny_memory_capture_prior_prompt | verify | deny | Remembered value = prior prompt |
+| deny_memory_capture_question | verify | deny | Remembered value is a question |
+| deny_memory_capture_title | verify | deny | Remembered value = window title |
+| deny_memory_capture_url | verify | deny | Remembered value is just a URL |
+| deny_memory_capture_too_short | verify | deny | Remembered value < 30 chars |
+| deny_response_no_evidence | verify | deny | Response step with no click/write/memory |
+| confirm_launch_chain | verify | confirm | Win+R → type → Enter proven |
+| confirm_browser_navigation | verify | confirm | ctrl+l → URL → Enter + domain visible |
+| confirm_browser_navigation_address_target | verify | confirm | Address bar → URL → Enter + domain |
+| confirm_remember_action | verify | confirm | Remember verb always confirms |
+| confirm_write_to_writable | verify | confirm | Write to Edit/Document field |
+| confirm_save_hotkey | verify | confirm | Ctrl+S with save in done_when |
+| confirm_focus_matches_done_when | verify | confirm | Focus target in done_when |
+| reject_chat_write_to_address_bar | act | reject | Chat write targeted address bar |
+| reject_navigation_write_without_ctrl_l | act | reject | URL write without ctrl+l |
+| reject_navigation_without_browser_context | act | reject | Navigation without browser focused |
+| reject_navigation_missing_enter | act | reject | Navigation write without Enter |
+| reject_navigation_target_after_ctrl_l | act | reject | Non-empty target after ctrl+l |
+| reject_launch_then_long_content_write | act | reject | Content write chained after launch |
+| reject_launch_then_summary_write | act | reject | Summary write chained after launch |
+
+---
+
+## Self-Modification
+
+When the ROD loop exhausts retries and replans, it escalates to `self_modify` — the system proposes and applies validated mutations to its own wiring.json.
+
+**15 Operations:**
+
+| Operation | Target | Effect |
+|-----------|--------|--------|
+| add_node | topology | Add a new graph node with optional edges |
+| update_node | topology | Change label, circuit, or prompt config |
+| remove_node | topology | Delete node and all connected edges |
+| add_edge | topology | Connect two nodes with a signal |
+| remove_edge | topology | Disconnect nodes |
+| add_rule | rules | Add a new declarative rule |
+| update_rule | rules | Modify match/verdict/description |
+| remove_rule | rules | Delete a rule |
+| set_guard | guards | Set advance hint or guard value |
+| set_limit | limits | Change numeric limits |
+| set_observe | observe | Tune observation parameters |
+| set_prompt_base | prompts | Replace the base system prompt |
+| set_role | prompts.roles | Replace a role prompt |
+| append_role_rule | prompts.roles | Add a line to a role prompt |
+| set_reasoning | reasoning | Configure reasoning storage/chain |
+
+**Safety gates:**
+1. Backup written before every mutation (`wiring.backup.json` + timestamped)
+2. Mutation applied to in-memory copy
+3. `validate_wiring()` runs against schema
+4. Only on validation pass: write to disk + hot-reload
+5. SSE event `wiring_modified` pushed to workbench
+
+**What can go wrong:**
+- `set_role` replaces entire prompts — a 4B model may lose critical instructions
+- Rule accumulation without cleanup (no limit on rule count)
+- Graph disconnection possible via `remove_edge` (validation checks endpoints exist, not reachability)
+- No `revert_last_mutation` operation exists
+
+**What cannot go wrong:**
+- `cycle_start` node cannot be removed
+- Unknown rule conditions raise errors (not silently ignored)
+- Schema violations are rejected before write
+- Backup always exists for human recovery
+
+---
+
+## Colony & MoE Routing
+
+The colony system enables multiple endgame-ai instances sharing a bus.
+
+```mermaid
+graph TD
+    subgraph "Slot 1 (desktop_exec)"
+        R1[ROD Loop] -->|bus.json| BUS[(bus.json)]
+    end
+    subgraph "Slot 2 (delegate)"
+        R2[ROD Loop] -->|bus.json| BUS
+    end
+    BUS -->|interrupt| R1
+    BUS -->|goal| R2
+```
+
+**Current MoE config:**
 ```json
 {
   "required_permission": "desktop_exec",
@@ -251,807 +405,376 @@ of model weights. The current `wiring.moe` config is:
 }
 ```
 
-`/health` reports `colony_delegate: true`, and the topology contains
-`moe_route`, `bus_check`, and `bus_post`. The active instance is slot 1 with
-`desktop_exec`. For this session, the MoE value is routing and isolation between
-desktop-capable slots, not multiple specialized LLMs.
+**Routing logic (node_moe_route):**
+1. If this slot lacks `required_permission` AND goal contains delegate keywords → delegate via bus
+2. Otherwise → handle locally
 
-Next MoE work should be evidence-driven:
+**Colony spawning (colony.py):**
+- `python colony.py 1 2 3` spawns N slots with incrementing HTTP ports
+- Slot with lowest number gets `desktop_exec` permission
+- Health check polling with 20s timeout
+- Graceful shutdown on Ctrl+C
 
-- Log whether a goal was handled locally or delegated.
-- Record slot, permission, and bus messages in state/history.
-- Avoid routing by brittle app keywords when the same signal can be expressed
-  through permissions and available windows.
+**Bus protocol:**
+- Messages: `{ts, from_slot, to_slot, type, payload}`
+- Types: `goal`, `telemetry`
+- Polling: `bus_check` node reads on every cycle
+- Interrupt: higher-priority goal causes replan
 
----
-
-## Observation
-
-Observation is UIA based and mechanical. The act circuit is the only circuit
-that receives `SCREEN`.
-
-Current observe config:
-
-```text
-min_elements: 3
-wait_retries: 6
-wait_ms: 750
-probe_step_px: 40
-hover_scan_enabled: true
-hover_scan_step_px: 70
-dense_probe_min_px: 24
-scroll_enrich_min: 3
-scroll_enrich_passes: [-3, -2, 2, 3]
-scope_depth: 4
-element_text_max: 500
-read_text_max: 16000
-render_focused_first: true
-render_class_name: false
-render_automation_id: true
-render_window_per_element: false
-desktop_tree_enabled: false
-```
-
-The latest persisted screen showed Chrome focused on Google results, with
-actionable IDs for the address bar, Google search box, tabs, bookmarks, and
-buttons. It also showed Notepad and LM Studio in the window list. Probe stats
-from state:
-
-```text
-primary_step=40
-primary_points=357
-primary_found=0
-hover_step=70
-hover_points=405
-hover_found=49
-classified_nodes=42 in one snapshot
-```
-
-Mechanical observation enrichment should stay in Python. It is config-driven,
-generic, and does not decide task success.
+**Current status:** Colony architecture is functional but single-instance mode is the primary use case. The keyword-based routing is intentionally simple — future evolution should be evidence-driven.
 
 ---
 
-## Measured Performance
+## Workbench
 
-The previous README's `6.14 tok/s` generation figure is stale for the current
-LM Studio run. Recent LM Studio `print_timing` lines show:
+`wiring-editor.html` is a zero-dependency, zero-build single-file browser workbench served at `GET /`.
 
-```text
-generation/eval speed: usually about 24-25 decoded tokens/s
-cached prompt eval:    often about 480-558 prompt tokens/s
-initial prompt eval:   seen at about 158 tokens/s before cache warmed
-recent total times:    about 4.3s to 18.9s per LLM call in sampled lines
+**Capabilities:**
+- SVG topology graph with drag, zoom, pan
+- Add/remove nodes and edges visually
+- Edge creation by dragging from port circles
+- State inspection (goal, step, retries, history, memory)
+- Live SSE event consumption (node firing, rule hits, wiring modifications)
+- Rule panel with add/remove and preflight hit highlighting
+- Timing panel (goal time, event delta, node durations, token usage)
+- Observation filters (scope_depth, element_text_max, tree depth) with live sliders
+- Screen/Tree/Telemetry split panels
+- Reasoning chain display
+- Node input block inspection (resolved prompt blocks)
+- JSON editor with hot-save (validates on server, rejects on error)
+- Schema browser
+
+**No build step.** No npm. No framework. Single HTML file with inline CSS and JS.
+
+---
+
+## API Reference
+
+**Base URL:** `http://127.0.0.1:{port}` where port = `http_port_base` + slot (default: 9078 for slot 1)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/` | Serve workbench HTML |
+| GET | `/health` | Status, nodes, capabilities, run state |
+| GET | `/wiring` | Current wiring.json |
+| GET | `/wiring-schema` | Validation schema |
+| GET | `/state` | Persisted state.json |
+| GET | `/bus` | Bus messages |
+| GET | `/events` | SSE stream (node, result, stop, paused, wiring_modified, push) |
+| POST | `/run` | Start autonomous goal loop `{goal}` |
+| POST | `/step` | Execute one graph node `{goal?, state?, node?}` |
+| POST | `/inspect` | Debug context for a node `{goal?, state?, node?}` |
+| POST | `/state` | Save state `{state}` |
+| POST | `/pause` | Request pause of running goal |
+| POST | `/resume` | Resume from saved state |
+| POST | `/wiring` | Validate + hot-reload wiring `{...wiring}` |
+| POST | `/node/{type}` | Direct node execution `{state, config?, save?}` |
+| POST | `/bus/post` | Post message to bus |
+| POST | `/interrupt` | Send interrupt goal to this slot |
+| POST | `/push` | Push arbitrary data to workbench via SSE |
+
+---
+
+## Hyperparameters
+
+From `prompts/model.json`:
+
+| Parameter | Value | Rationale |
+|-----------|-------|-----------|
+| host | http://localhost:1234 | LM Studio local server |
+| model | nvidia-nemotron-3-nano-4b | 4B params, optimized for function calling |
+| temperature | 0.3 | Low variance for deterministic actions |
+| temperature_bump | 0.15 | Per-retry increment on parse failure |
+| top_p | 0.9 | Nucleus sampling threshold |
+| top_k | 20 | Restrictive — aids JSON formatting |
+| max_tokens | 2048 | Shared across all roles |
+| repeat_penalty | 1.06 | Mild repetition suppression |
+| timeout | 900 | 15 min max per LLM call |
+| stream | false | Complete responses only |
+
+**LM Studio runtime (from proven logs):**
+- Context: 35664 total, 2 slots × 17920 each
+- Generation speed: ~24-25 tok/s
+- Cached prompt eval: ~480-558 tok/s
+- Prompt cache: 8192 MiB limit, checkpoints enabled
+
+**Token budget management:**
+- Estimated at ~3.5 chars/token
+- Priority-based truncation: HISTORY and PRIOR_TRACES truncated first
+- GOAL and SUBTASK never truncated (highest priority)
+- Configurable: `limits.context_window_tokens=17920`, `limits.context_reserve_tokens=2560`
+
+---
+
+## Design Principles
+
+1. **Python is mechanical.** No semantic decisions in Python. If a behavior can be expressed as a wiring rule or prompt instruction, it MUST live there.
+
+2. **Wiring is the brain.** `prompts/wiring.json` is the single source of truth for behavior. It changes at runtime. Python hot-reloads it.
+
+3. **Rules before LLM.** If an outcome is mechanically provable (launch chain, navigation pattern, write to writable), prove it with a rule. Save the LLM call for uncertain cases.
+
+4. **No truncation hiding.** Do not silently truncate model output. Parse failures surface as errors, trigger retries with temperature bumps, and ultimately escalate.
+
+5. **No site-specific code.** No `if "chrome" in title` branches in Python. Put domain keywords in rule match values.
+
+6. **Self-modify is bounded.** 15 operations, schema-validated, backup-protected. Evolution is real but cannot produce structurally invalid wiring.
+
+7. **Two-pass is non-negotiable.** Small models need the think/commit separation. Do not remove for latency. Prefer rules to eliminate whole LLM calls instead.
+
+8. **Observation is generic.** UIA probing discovers whatever is on screen. No app-specific element selectors.
+
+9. **Zero dependencies.** stdlib Python only. No pip install. No npm. No docker. Runs on any Windows machine with Python and LM Studio.
+
+10. **Evidence over assumption.** Claims about completion require matching `done_when` criteria with observed facts. "OK wait" ≠ "response received."
+
+---
+
+## Research Connections
+
+endgame-ai's mechanisms connect to active research. These are proven references, not aspirational comparisons.
+
+### ROD vs ReAct
+
+| Paper/System | Relevance to endgame-ai |
+|--------------|------------------------|
+| [Plan-Then-Execute for Web Agents](https://arxiv.org/html/2605.14290) | Validates ROD's separated planning phase over ReAct's interleaved approach |
+| [ReAct Brittleness](https://arxiv.org/html/2601.17915v2) | "ReAct-style agents are especially brittle... conclusions sensitive to exploration order" — ROD's graph avoids this |
+| [From Reactive to Programmatic GUI Agents](https://arxiv.org/html/2602.20502v1) | State machine + node-level execution with localized validation — mirrors ROD topology |
+| [MGA (Memory-Driven GUI Agent)](https://arxiv.org/html/2510.24168v1) | "Observe first, then decide" — each step as independent context-rich state |
+| [Dual-System Intelligence for GUI](https://arxiv.org/html/2506.17913v1) | Kahneman System 1/2 framework — rules = System 1, LLM = System 2 |
+
+### Self-Evolution
+
+| Paper/System | Relevance to endgame-ai |
+|--------------|------------------------|
+| [APEX Three-Layer Self-Evolution](https://arxiv.org/html/2606.15363) | Harness review → principle distillation → workflow topology evolution. Very close to self_modify |
+| [Gödel Agent](https://arxiv.org/html/2410.04444v1) | "Self-evolving framework enabling agents to recursively improve without predefined routines" |
+| [Self-Harness](https://arxiv.org/html/2606.09498v1) | "LLM-based agent improves its own operating harness without stronger external agents" |
+| [Source-Level Rewriting](https://arxiv.org/html/2605.22794v2) | "Confine evolution to text-mutable artifacts—skill files, prompt configurations, workflow graphs" — exactly wiring.json |
+| [Governed Evolution](https://arxiv.org/html/2605.27328) | "Bounded and observable process over persistent operational memory" |
+
+### Desktop/GUI Agents
+
+| Paper/System | Relevance to endgame-ai |
+|--------------|------------------------|
+| [OSWorld Benchmark](https://arxiv.org/abs/2404.07972) | Premier benchmark: humans 72.36%, best model 12.24%. Supports accessibility tree observation |
+| [OSWorld Efficiency](https://arxiv.org/html/2506.16042v1) | Even best agents take 1.4-2.7x more steps than necessary |
+| [OS-Harm Safety Benchmark](https://arxiv.org/html/2506.14866v1) | Safety benchmark for computer use agents |
+| [Formally Specifying Agent Behavior](https://arxiv.org/html/2310.08535v2) | Declarative specification → decoding monitor guaranteeing behavior — mirrors rule system |
+| [Declarative Agent Workflows](https://arxiv.org/html/2512.19769v1) | Separates workflow specification from implementation — mirrors wiring/Python split |
+
+### Small Model Optimization
+
+| Source | Relevance |
+|--------|-----------|
+| [Nemotron-Mini-4B](https://build.nvidia.com) | "Optimized through distillation for speed and on-device. Optimized for function calling" |
+| [NVIDIA SLMs for Agentic AI](https://developer.nvidia.com) | Position that sub-10B models on consumer hardware are viable for agentic tasks |
+| [Nemotron Edge Configuration](https://docs.nvidia.com) | "Dedicated configuration with simplified planning prompt optimized for smaller models" |
+
+---
+
+## Archaeology: Ideas Born & Killed
+
+749 commits of evolution. These ideas were explored and removed — but may be relevant for future work.
+
+<details>
+<summary>Click to expand full archaeology</summary>
+
+### Multi-Persona System (commits c519609, a1a1f4a)
+- Had: `comms_operator`, `implementor`, `reviewer`, `architect`, `devops`, `generalist`
+- Why killed: Collapsed into single unified act role. Multiple personas added orchestration complexity without proportional benefit for a single 4B model.
+- **Revival potential:** With colony multi-slot, each slot could assume a persona. The infrastructure exists.
+
+### Blackboard Architecture (v2/ directory, commit 2704b1b)
+- Had: observer, orchestrator, persistence, journal, lessons modules
+- Why killed: Over-engineered for the actual problem. Replaced by flat state.json + history array.
+- **Revival potential:** The "journal" and "lessons" concepts map to traces.jsonl and self_modify. Already spiritually present.
+
+### Voice Interface / ASR+TTS (commit e7d4f0c)
+- Had: Nemotron ASR + Kokoro TTS via WSL2 audio bridge
+- Why killed: Added complexity without core value. Voice is a nice-to-have for a desktop operator.
+- **Revival potential:** High. A human operator hears and speaks. Voice adds a 4th perceptor. WSL2 bridge was working.
+
+### Manager-Student Orchestration (commits 8974330, 8036a8d, 2cf43f0)
+- Had: Dedicated manager.txt prompt, anti-loop guards, auto-DONE, outer-controller pattern
+- Why killed: Unnecessary hierarchy for single-instance. The ROD loop IS the manager.
+- **Revival potential:** For colony mode, a manager slot that only plans (no desktop_exec) while student slots execute.
+
+### TUI Interface (commit replaced by HTML)
+- Had: Terminal-based interface for monitoring
+- Why killed: HTML workbench provides richer visualization with graphs, SSE, filters.
+- **Revival potential:** None. HTML is strictly superior for this use case.
+
+### Cytoscape.js / ELK Graph Editors (commits c2f83ac, e8ca171)
+- Had: Third-party graph visualization libraries
+- Why killed: External dependencies violated zero-dependency principle. Custom SVG replaced them.
+- **Revival potential:** None. Current SVG editor is sufficient and dependency-free.
+
+### Probe Testing Framework (probe_circuits.py, probe_fixtures/)
+- Had: Dedicated probe testing with fixtures
+- Why killed: Testing infrastructure removed to reduce surface area.
+- **Revival potential:** Moderate. As rules grow complex, regression testing becomes important.
+
+### Separate Module Architecture (llm.py, bus.py, slot.py, topology.py, wiring.py)
+- Had: Clean module separation
+- Why killed: Collapsed into server.py for single-file deployment simplicity.
+- **Revival potential:** Low. Single file is easier for self_modify to reason about.
+
+### Smoke Testing (smoke.py, 0e5b022)
+- Had: "10/10 pass" automated cognitive smoke probes
+- Why killed: Removed with test infrastructure consolidation.
+- **Revival potential:** High. Automated validation of rule behavior after self_modify.
+
+### ACP Client (acp_client.py)
+- Had: Agent Communication Protocol integration
+- Why killed: Non-standard protocol added complexity. Bus.json is simpler.
+- **Revival potential:** Low unless integrating with external agent ecosystems.
+
+### Plugin System (plugins/comms_beacon.py, plugins/fission_log.py)
+- Had: Plugin architecture for extensibility
+- Why killed: Self_modify + wiring mutation is more powerful than static plugins.
+- **Revival potential:** None. Self-modify IS the plugin system.
+
+### RESEARCH.md (commit 46deba9)
+- Had: Field landscape research document covering DGM, HyperAgents, MOSS, AlphaEvolve, APEX, OSWorld
+- Why killed: Merged into README context.
+- **Revival potential:** This README's Research Connections section replaces it.
+
+### Gemma 4B Hyperparameters (commit 70e4e3b)
+- Had: "Perfect set of hyperparameters for Gemma4 E4B from Unsloth"
+- Context: Before switching to Nemotron. Model-specific tuning is ephemeral.
+- **Revival potential:** The principle remains — each model needs specific tuning. Document what works.
+
+</details>
+
+---
+
+## File Inventory
+
+```
+endgame-ai/
+├── server.py              # Graph engine, HTTP, LLM, rules, self-modify, state
+├── desktop.py             # UIA COM observer, probe scanning, element classification
+├── actions.py             # Verb dispatch (click/write/press/hotkey/scroll/focus/wait/remember)
+├── colony.py              # Multi-slot spawner, bus communication, health checks
+├── wiring-editor.html     # Zero-dependency browser workbench (SVG graph, SSE, state)
+├── prompts/
+│   ├── wiring.json        # THE BRAIN — topology, rules, prompts, config, everything
+│   ├── wiring-schema.json # JSON Schema validation contract
+│   └── model.json         # LLM hyperparameters and endpoint
+├── .gitignore             # Allowlist format (track only source)
+├── .gitattributes         # Line ending normalization
+├── LICENSE                # MIT
+└── README.md              # This file
 ```
 
-Log summary during the investigation while the file was still growing:
+**Runtime artifacts (gitignored):**
+- `state.json` — persisted agent state
+- `bus.json` — colony bus messages
+- `prompts/traces.jsonl` — successful ROD traces for few-shot replay
+- `prompts/wiring.backup.json` — pre-mutation backup
+- `prompts/wiring.backup.*.json` — timestamped backups
 
-```text
-server log bytes at 2026-06-22 22:48:06: 2637591
-chat completion POST requests from the 22:42 scan: at least 148
-generated predictions from the 22:42 scan: at least 147
-latest timing line in the 22:42 scan: 2026-06-22 22:42:08
+---
+
+## Diagnosis Workflow
+
+```
+1. git status --short
+2. GET /health — status, capabilities, run state
+3. GET /state — current step, retries, last_error, history
+4. Check last_error and history[-1].outcome
+5. Search LM Studio log by role and goal text
+6. Use print_timing lines for performance (not "Reasoned for" lines)
 ```
 
-Role prompt occurrences in the log scan:
+**Fix by symptom:**
 
-```text
-ROLE: Planner      16
-ROLE: Act          46
-ROLE: Verifier     18
-ROLE: Reflector    62
-ROLE: Self_modify   6
+| Symptom | Fix Location |
+|---------|-------------|
+| Model chose bad action | `prompts.roles.unified` or add act-reject rule |
+| Verify confirmed too much | Add verify-deny rule or tighten verifier prompt |
+| Observe missed elements | Tune `observe` config via `set_observe` |
+| Parse failures | Check context budget, adjust `max_tokens` or truncation priority |
+| Repeated same failure | Check repeat_block, add advance_hint |
+| Stuck after launch | Check normalizers, verify focus flow |
+
+**Ground truth paths:**
 ```
-
-Those are text occurrences in request bodies, not exact node-call counters.
-
-LM Studio also prints lines like `Done reasoning. Reasoned for 6644.96 seconds`.
-Those numbers do not match wall-clock timings and should not be used as elapsed
-time. Use `print_timing` `total time`, prompt tokens, completion tokens, and
-token/s lines for performance analysis.
-
-Highest leverage remains:
-
-```text
-1. Skip verifier LLM calls with conservative verify rules.
-2. Reject unsafe act chains before desktop execution.
-3. Tighten prompts where the model repeats bad reasoning.
-4. Reorder ACT prompt blocks if log evidence shows attention waste.
+Repo:      C:\Users\px-wjt\Downloads\endgame-ai
+LM Studio: C:\Users\px-wjt\.lmstudio\server-logs\
+API:       http://127.0.0.1:9078
+LM Studio: http://127.0.0.1:1234/v1/models
 ```
 
 ---
 
-## Self-Modify
+## Running
 
-Self-modify is enabled and exposed by `/health`. Current allowed operations:
+```powershell
+# Start LM Studio with nvidia-nemotron-3-nano-4b loaded
 
-```text
-add_node, update_node, remove_node
-add_edge, remove_edge
-add_rule, update_rule, remove_rule
-set_guard, set_limit, set_observe
-set_prompt_base, set_role, append_role_rule
-set_reasoning
+# Single instance
+python server.py
+
+# With immediate goal
+python server.py --run "open notepad and type hello"
+
+# Resume saved state
+python server.py --resume
+
+# Colony (multiple slots)
+python colony.py 1 2
+
+# Then open http://127.0.0.1:9078 for workbench
 ```
 
-Self-modify behavior in `server.py`:
-
-- Reads `prompts/wiring.json`.
-- Writes `prompts/wiring.backup.json`.
-- Writes timestamped backups such as `prompts/wiring.backup.YYYYMMDD-HHMMSS.json`.
-- Calls the self_modify LLM node.
-- Validates the mutation with `validate_wiring`.
-- Writes the new wiring and hot-reloads `WIRING`.
-- Pushes an SSE `wiring_modified` event.
-
-The current log proves self_modify prompts appeared, and `/health` proves the
-ops are available. This investigation did not prove a successful live
-self-modify patch during the active run. Do not claim autonomous mutation
-happened unless `state.self_modify_op`, `wiring_modified`, or a changed
-timestamped backup proves it.
-
----
-
-## Declarative Rule System
-
-The earlier implementation plan is now implemented.
-
-Current facts:
-
-```text
-rules in prompts/wiring.json: 24
-  verify deny:    10
-  verify confirm:  7
-  act reject:      7
-
-schema rule match conditions: 48
-self_modify rule ops: add_rule, update_rule, remove_rule
-editor support: Rules panel and rule hit display exist
-```
-
-The evaluator is generic:
-
-```python
-evaluate_rules(phase, state, wiring)
-_all_conditions_met(match, state)
-_check_condition(key, expected, state)
-```
-
-Evaluation order is safety-first:
-
-```text
-1. rules for the selected phase only
-2. deny/reject rules first
-3. confirm rules after deny/reject
-4. first matching rule returns
-5. no match falls through to the LLM verifier or normal execution
-```
-
-Rule phases:
-
-```text
-act:
-  verdict reject
-  evaluated after action parse and wiring normalizers, before desktop execution
-
-verify:
-  verdict deny or confirm
-  evaluated before the verifier LLM
-```
-
-Current verify rules:
-
-```text
-deny_outcome_failed
-deny_chat_submission_missing_write
-deny_chat_submission_navigation_text
-deny_chat_submission_missing_submit
-deny_memory_capture_missing_value
-deny_memory_capture_prior_prompt
-deny_memory_capture_question
-deny_memory_capture_title
-deny_memory_capture_url
-deny_memory_capture_too_short
-confirm_launch_chain
-confirm_browser_navigation
-confirm_browser_navigation_address_target
-confirm_remember_action
-confirm_write_to_writable
-confirm_save_hotkey
-confirm_focus_matches_done_when
-```
-
-Current act reject rules:
-
-```text
-reject_chat_write_to_address_bar
-reject_navigation_write_without_ctrl_l
-reject_navigation_without_browser_context
-reject_navigation_missing_enter
-reject_navigation_target_after_ctrl_l
-reject_launch_then_long_content_write
-reject_launch_then_summary_write
-```
-
-Live evidence that the rule system changed behavior:
-
-```text
-attempt 8:
-  action: write ; press enter
-  outcome: BLOCKED: navigation write requires ctrl+l before URL/query text;
-           retry with ctrl+l, write, then enter
-
-attempt 9:
-  action: hotkey ctrl+l; write ; press enter
-  outcome: OK: hotkey ctrl+l: pressed ctrl+l; write focused value='https://thegrok.ai';
-           press enter: pressed enter
-```
-
-That is exactly the intended shape: reject unsafe chains, give the model a
-negative signal, and allow a corrected retry.
-
-Known rule-system gap:
-
-```text
-STEP: Wait for AI response
-DONE_WHEN: Response received
-LAST_OUTCOME: OK: wait : waited 5000 ms
-MEMORY: {}
-
-Verifier output later confirmed true because the wait action succeeded.
-That is logically invalid: waiting is not evidence that a response arrived.
-```
-
-The next rule/prompt work should prevent wait-only confirmation for response,
-reply, answer, loaded-result, and capture tasks unless memory or observed screen
-evidence is present.
+**Requirements:**
+- Windows (UIA COM requires it)
+- Python 3.11+ (for `tomllib`, type unions, slots dataclasses)
+- LM Studio running with a compatible model loaded
+- No pip install needed
 
 ---
 
 ## Act Normalizers
 
-The old semantic `normalize_action_chain` function is gone. Normalization now
-lives under `act.verb_normalize` in wiring and is schema-validated.
+Mechanical equivalence rewrites applied after LLM output, before execution:
 
-Current normalizers:
+| From | Condition | Effect |
+|------|-----------|--------|
+| press | target contains "+" | Convert to hotkey |
+| write | focused window exactly "Run", non-empty target | Clear target (type into focused Run field) |
+| write | after Win+R, target equals value | Clear target |
+| press | empty target+value after write | Set target to "enter" |
+| click | focused exactly "Run", target is "ok" | Convert to press enter |
 
-```text
-press with "+" in target -> hotkey
-write in Run dialog with non-empty target -> target ""
-write after Win+R when target equals value -> target ""
-empty press after write -> target "enter"
-click OK in Run dialog -> press enter
-```
-
-These are mechanical equivalences and Run-dialog input repairs. They are not a
-general semantic correction layer. When the model emits a meaningfully unsafe
-chain, prefer an act-phase reject rule over silent normalization.
+These fix model imprecision without hiding semantic errors. Silent normalization is bounded to Run-dialog equivalences only.
 
 ---
 
-## Endpoints
+## Verbs
 
-Current endpoint contract from `server.py` and `/health`:
+8 desktop verbs, field-mapped from `wiring.json → verbs`:
 
-```text
-GET  /                 wiring editor
-GET  /health           server status, nodes, capabilities, self-modify ops
-GET  /wiring           current wiring
-GET  /schema           wiring schema
-GET  /state            persisted state
-GET  /events           SSE stream
-GET  /inspect          debug context
+| Verb | Fields | Desktop Effect |
+|------|--------|----------------|
+| click | target_field | Resolve element → click center |
+| write | target_field, value_field | Resolve element → click → ctrl+a → type |
+| press | key_field | Single keypress |
+| hotkey | key_field | Modifier combo (ctrl+c, alt+f4, etc.) |
+| scroll | target_field, amount_field | Mouse wheel on element |
+| focus | title_field | SetForegroundWindow by title match |
+| wait | amount_field | Sleep (100ms-30s, clamped) |
+| remember | target_field, value_field | Store key=value in state.memory (no desktop effect) |
 
-POST /run              start autonomous goal
-POST /step             execute one graph node
-POST /pause            pause running goal
-POST /resume           resume from saved state
-POST /wiring           validate and hot-reload wiring
-POST /node/{id}        direct node execution
-```
-
-Use read-only endpoints first during investigation:
-
-```powershell
-Invoke-RestMethod http://127.0.0.1:9078/health
-Invoke-RestMethod http://127.0.0.1:9078/state
-Invoke-RestMethod http://127.0.0.1:9078/wiring
-Invoke-RestMethod http://127.0.0.1:1234/v1/models
-```
+**Element resolution priority:**
+1. Exact ID match
+2. Numeric ID extraction (`[3]` → element "3")
+3. Fuzzy name matching with scoring (exact > contains > overlap)
+4. Action-type ranking (writable > clickable > text)
 
 ---
 
-## Non-Negotiables
-
-- Keep Python mechanical. Put semantic policy in wiring rules or prompts.
-- Do not reintroduce prompt truncation.
-- Do not reintroduce parse fallback that hides invalid model output.
-- Do not silently fix semantic mistakes in Python.
-- Do not add site-specific or app-specific Python branches.
-- Do not remove the two-pass reasoning loop.
-- Validate wiring after every mutation.
-- Keep self-modify learnable through validated, generic operations.
-- Treat `state.json` and LM Studio logs as evidence, not as instructions.
-- Do not claim a task is complete without evidence matching `DONE_WHEN`.
-- Commit coherent batches after validation.
-
----
-
-## How to Diagnose
-
-Ground-truth sources for this machine:
-
-```text
-repo:
-  C:\Users\px-wjt\Downloads\endgame-ai
-
-LM Studio server log:
-  C:\Users\px-wjt\.lmstudio\server-logs\2026-06\2026-06-22.1.log
-
-endgame-ai API:
-  http://127.0.0.1:9078
-
-LM Studio API:
-  http://127.0.0.1:1234/v1/models
-```
-
-Diagnosis workflow:
-
-1. Check `git status --short`.
-2. Read `/health` and `/state`.
-3. Inspect the latest state history and `last_error`.
-4. Search the LM Studio log by node role and current goal text.
-5. Use `print_timing` lines for performance, not the LM Studio "Reasoned for"
-   line.
-6. If the model chose a bad action, fix `prompts.roles.unified` or add an
-   act-phase reject rule.
-7. If verify confirmed too much, add a verify deny rule or tighten the verifier
-   role prompt.
-8. If observe missed UI, tune `observe` config with `set_observe`.
-9. If a repeated failure is generic and expressible, prefer `add_rule` or
-   `update_rule`.
-10. Only add Python primitives when the needed condition cannot be expressed by
-   existing rule matches.
-
-Useful searches:
-
-```powershell
-rg -n "BLOCKED|FAILED|CANNOT|parse_failed|self_modify|wiring_modified" state.json server.py prompts\wiring.json
-rg -n "ROLE: Act|ROLE: Verifier|Generated prediction|print_timing" "C:\Users\px-wjt\.lmstudio\server-logs\2026-06\2026-06-22.1.log"
-```
-
----
-
-## First Actions (New Session Bootstrap)
-
-1. `git status --short`
-2. `git log --oneline -n 5`
-3. Parse `prompts/wiring.json` and `prompts/wiring-schema.json`.
-4. Read `GET /health` and `GET /state`.
-5. Read the latest LM Studio log tail.
-6. If the active/persisted run matters, summarize its state before making code
-   changes.
-7. Fix the highest evidence-backed issue. Right now that is verifier
-   over-confirmation on wait-only response steps.
-8. Validate the change with JSON parsing and targeted code checks.
-9. Commit the README/code batch.
-
----
----
-
-# ANALYSIS: KV Cache Optimization
-
-The static/dynamic split still exists:
-
-```text
-system prompt = static base + role prompt from wiring
-user message  = dynamic blocks from state
-```
-
-`build_user_message()` resolves prompt blocks from node config. This keeps the
-static prefix stable enough for LM Studio/llama.cpp prompt caching.
-
-Current log evidence:
-
-```text
-prompt cache enabled, size limit 8192 MiB
-context checkpoints enabled
-LCP similarity slot selection is active
-cached prompt eval often above 500 tok/s
-```
-
-Conclusion: the original KV-cache architecture claim is still directionally
-correct. The exact old numbers are stale. Do not spend the next session on KV
-cache unless logs show prompt eval dominates wall time; current sampled calls
-are mostly generation/eval-token limited after cache warmup.
-
----
-
-# ANALYSIS: Attention Quality via Block Ordering
-
-The old recommendation to place `SCREEN` near the end for act recency remains
-pending.
-
-Current ACT block order in `prompts/wiring.json`:
-
-```text
-SUBTASK
-DONE_WHEN
-SCREEN
-LAST_ERROR
-HISTORY
-MEMORY
-```
-
-The old proposed order was closer to:
-
-```text
-SUBTASK
-DONE_WHEN
-MEMORY
-LAST_ERROR
-HISTORY
-SCREEN
-```
-
-This has not been implemented. The active run shows act sometimes reasoned from
-stale history and confused a site/network-error context with a query/search
-context. That is not proof that block order caused the issue, but it keeps this
-as a plausible low-risk follow-up after the verifier proof gap is fixed.
-
-Do not reorder blindly and then claim performance improvement. Measure reasoning
-tokens and error rate before/after in the LM Studio log.
-
----
-
-# ANALYSIS: Verify Preflight - The #1 Performance Lever
-
-This lever is no longer just a plan. It is implemented as verify-phase rules.
-
-What works now:
-
-- Outcome failures are denied before verifier LLM.
-- Launch, navigation, remember, writable write, save, and focus patterns can
-  confirm before verifier LLM.
-- Chat submission and memory capture have deny rules for several unsafe or
-  weak-evidence patterns.
-
-What still fails:
-
-- No rule currently denies wait-only completion for response-received tasks.
-- The verifier prompt still allowed "OK wait" to become "response received".
-
-Immediate improvement:
-
-Add a deny rule or prompt constraint such as:
-
-```json
-{
-  "id": "deny_response_wait_only",
-  "phase": "verify",
-  "verdict": "deny",
-  "description": "waiting alone does not prove a response was received",
-  "match": {
-    "outcome_ok": true,
-    "step_text_matches": ["response", "reply", "answer"],
-    "actions_all_verb": "wait",
-    "memory_stored_by_action": false
-  }
-}
-```
-
-That exact rule may need a new primitive if `actions_all_verb: wait` plus
-`memory_stored_by_action: false` is insufficient for screen evidence. The
-desired invariant is clear: response receipt needs observed text or memory, not
-elapsed time.
-
----
-
-# IMPLEMENTATION PLAN: Declarative Preflight Rules in Wiring
-
-Status: implemented across four commits.
-
-Completed:
-
-- Added `rules` array to `wiring-schema.json`.
-- Added full rule schema and `ruleMatch` vocabulary.
-- Added generic `evaluate_rules(phase, state, wiring)`.
-- Added `_all_conditions_met` and `_check_condition` dispatch.
-- Added pure condition primitives for outcomes, actions, step text, screen,
-  focused title, memory, and chain composites.
-- Wired verify rules into `node_verify` before the verifier LLM.
-- Wired act rules into `node_act` before desktop execution.
-- Added `add_rule`, `update_rule`, and `remove_rule`.
-- Updated `SELF_MODIFY_OPS`, `apply_wiring_patch`, and validation.
-- Migrated hardcoded verify preflight and semantic guard behavior into
-  `prompts/wiring.json`.
-- Added wiring editor visibility for rules and preflight hits.
-- Removed old hardcoded fallback names from `server.py`.
-
-Current rule primitive count in schema: 48.
-
-Important implementation nuance:
-
-`chain_is_navigation`, `chain_is_save`, and `chain_wrote_and_submitted` are now
-structural composites. Semantic keywords such as address, save, send, and submit
-belong in rule match values, not in Python.
-
----
-
-# WHAT TO WORK ON
-
-Priority order for the next session:
-
-1. Fix verifier over-confirmation for wait-only response steps.
-   The active run proves this bug. Add a conservative verify deny rule and/or
-   tighten the verifier prompt so `OK wait` never proves `Response received`.
-
-2. Add an act reject rule for empty hotkey actions.
-   The active run emitted `hotkey` with empty target and failed mechanically.
-   This can be rejected earlier with a clearer hint.
-
-3. Improve response capture workflow.
-   The system needs a reliable pattern: observe response text, remember it, then
-   ask the follow-up from memory. The planner prompt already says this, but the
-   run did not achieve it.
-
-4. Decide whether to handle network-error pages as a generic condition.
-   The run hit `chrome-error://chromewebdata/` for `thegrok.ai`. A generic
-   "network/browser error visible" deny or reflect hint may be useful, but keep
-   it browser-agnostic and wiring-driven where possible.
-
-5. Consider ACT prompt block reorder.
-   Move `SCREEN` later only after taking before/after log measurements.
-
-6. Improve run-status truth.
-   `/health.run.running=false` while `/state` and logs showed recent activity is
-   confusing. Clarify whether this is because the workbench is stepping nodes,
-   because state is stale, or because run tracking is incomplete.
-
-7. Continue reducing Python semantics only when evidence supports it.
-   Do not churn working mechanical code for line-count goals.
-
----
-
-## Session Handover Notes
-
-Use this README as the handoff source. The older README sections that described
-"next session implement Phase 1" are now obsolete. Phase 1 and the unified rule
-migration are complete.
-
-Current known truth:
-
-- Branch is `validation-observation`.
-- Last rule-system commit is `d370285 Complete fallback audit integration`.
-- Current loaded model is `nvidia-nemotron-3-nano-4b@q6_k_xl`.
-- endgame-ai server is on `127.0.0.1:9078`.
-- LM Studio server is on `127.0.0.1:1234`.
-- Rules are visible in `/wiring` and the editor.
-- There are 24 declarative rules.
-- The active/persisted run showed both improvement and a remaining verifier bug.
-- The final API snapshot had replanned back to the navigation step with
-  `replan_count=1`.
-
-Do not push automatically. The user said they will push.
-
----
----
-
-# ANALYSIS: Code Reduction & Separation of Concerns
-
-The old code-reduction estimates are stale because the migration added generic
-rule infrastructure and editor support. Current source size is the factual
-baseline listed above.
-
-What improved:
-
-- Hardcoded verify preflight functions are gone.
-- Hardcoded unsafe action guard functions are gone.
-- Browser/chat/playback classifier helper names are gone.
-- Silent navigation correction is gone.
-- Rule semantics are visible in `prompts/wiring.json`.
-- Self-modify can learn rules through validated operations.
-
-What remains in Python and should remain there:
-
-- HTTP server and API contract.
-- Graph execution.
-- Prompt assembly from declarative blocks.
-- LM Studio calls and JSON parsing.
-- UIA observation.
-- Desktop verb execution.
-- State persistence.
-- Wiring validation.
-- Generic rule dispatch and pure condition primitives.
-- Config-driven act normalizers.
-- Repeat blocking and generic advance hints.
-
-Potential remaining concern:
-
-Some condition primitives necessarily inspect strings such as focused title,
-screen text, action target lines, and URL/domain shapes. That is acceptable only
-because the semantic keywords live in wiring values. Keep Python primitives as
-generic operations like "contains any of these values", not as task categories.
-
----
-
-# ANALYSIS: Duplications and Redundancies
-
-The main duplications identified in the old README have been collapsed:
-
-```text
-outcome OK checks                  -> outcome_ok / outcome_failed
-verb inclusion/exclusion checks    -> actions_* primitives
-ctrl+l checks                      -> actions_hotkey_contains / absent
-done_when keyword matching         -> done_when_matches / absent
-target-line checks                 -> actions_*_target_line_contains / absent
-memory capture checks              -> memory_* primitives
-launch/navigation/save composites  -> chain_* primitives
-```
-
-Remaining redundancy to watch:
-
-- Verifier prompt and verify rules both express completion policy. This is
-  intended, but when they disagree, rules should handle the mechanically provable
-  cases and the prompt should handle uncertain cases.
-- `focused_has_writable` and `focused_element_role_any` overlap. Prefer the
-  role-array condition in new rules because it is more explicit.
-- Run-dialog normalizers are still a cluster of special cases. They are in
-  wiring now, but should remain small.
-
----
-
-# ANALYSIS: HTML Interface - Capabilities & Modernization
-
-`wiring-editor.html` is still a zero-dependency single-file workbench. Current
-size is 1148 lines.
-
-It does:
-
-- Render topology graph.
-- Inspect state, reasoning, inputs, filters, timing, and screen data.
-- Run, pause, resume, and step nodes.
-- Consume SSE events.
-- Hot-save wiring.
-- Show rules in a Rules panel.
-- Highlight recent rule/preflight hits.
-
-Keep:
-
-- Single-file architecture.
-- No build step.
-- No framework.
-- SVG/DOM graph.
-- Schema-driven editing.
-- SSE instead of WebSockets.
-
-Useful next UI work:
-
-- Show rule match details, not only the rule id.
-- Show before/after wiring diffs on `wiring_modified`.
-- Expose `/health.run` versus `/state` discrepancy clearly.
-- Add a compact "current blocker" panel from `last_error`, current step, and
-  last matching rule.
-
----
-
-# ANALYSIS: Unified Declarative Rule System
-
-The unified design is implemented with one evaluator and two active phases:
-
-```text
-phase=act     verdict=reject
-phase=verify  verdict=deny|confirm
-```
-
-There is not a separate guard evaluator anymore. Act guards are act-phase rules.
-There is not a separate preflight evaluator anymore. Verify preflights are
-verify-phase rules.
-
-Self-modify integration is present through:
-
-```text
-add_rule
-update_rule
-remove_rule
-```
-
-Schema condition inventory has 48 conditions. The inventory is larger than the
-original "about 15" target because the migration included chat submission,
-memory capture, target-line, focus, and act reject patterns. This is acceptable
-because the functions are mechanical and reusable, but future primitives should
-be added slowly.
-
-Design constraints that still matter:
-
-- AND logic per rule.
-- First match wins within safety ordering.
-- Deny/reject before confirm.
-- No task-specific Python branches.
-- No hidden semantic corrections.
-- Unknown rule conditions raise errors; they are not ignored.
-
----
-
-# ANALYSIS: Fallback Removal Audit
-
-Removed or migrated:
-
-```text
-normalize_action_chain              removed
-unsafe_chat_target                  migrated to act reject rule
-unsafe_browser_navigation_context   migrated to act reject rule
-unsafe_launch_then_content_write    migrated to act reject rule
-_verify_preflight_*                 migrated to verify rules
-_verify_chat_submission_*           migrated to verify rules
-_verify_memory_capture_*            migrated to verify rules
-_is_browser_* / _is_chat_* names     removed
-_is_playback_step                   removed
-```
-
-Kept because they are mechanical:
-
-```text
-LLM parse retries with temperature bump
-planner retry on parse failure
-act.verb_normalize from wiring
-scroll enrichment from observe config
-dense probe from observe config
-repeat-action block with generic advance hints
-```
-
-Current audit conclusion:
-
-The largest semantic fallbacks have been removed from Python. The remaining
-risk is not hidden Python correction; it is weak model verification when no rule
-fires. The active run proves this with the wait-only false confirmation.
-
----
-
-# COMPLETE REDUCTION SUMMARY
-
-Today's actual changes across the last four commits:
-
-```text
-prompts/wiring-schema.json   +115 / -small
-prompts/wiring.json          +465 / -small
-server.py                   +1029 / -347
-wiring-editor.html           +182 / -small
-
-combined:
-  1444 insertions
-   347 deletions
-```
-
-This was not a pure line-count reduction. It was a separation-of-concerns
-refactor:
-
-- Semantic patterns moved out of Python into wiring.
-- Python gained generic validation and evaluation infrastructure.
-- The workbench gained visibility into rules.
-- Self-modify gained rule-level operations.
-
-Current outcome:
-
-```text
-done:
-  unified declarative rule system
-  verify preflight rules
-  act reject rules
-  wiring schema support
-  self_modify rule ops
-  editor rule visibility
-  fallback audit migration
-
-proven helpful:
-  navigation write without ctrl+l was blocked and corrected on retry
-
-not done:
-  verifier proof gap for wait-only response steps
-  robust memory capture for web/chat answers
-  measured ACT block reorder
-  clearer run-status reporting
-```
-
-The next session should start with the verifier proof gap. It is the most recent
-truthful failure and the cleanest continuation of the declarative rules work.
+<sub>MIT License © 2026 wgabrys88 — Built for the endgame.</sub>

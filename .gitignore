@@ -1,28 +1,37 @@
-# Allowlist: ignore generated/runtime files, then un-ignore essentials only.
+# ══════════════════════════════════════════════════════════════
+# endgame-ai: ALLOWLIST gitignore
+# Strategy: deny everything (*), then whitelist tracked sources.
+# ══════════════════════════════════════════════════════════════
+
+# Deny all by default
 *
 
-# Runtime artifacts stay local.
-bus.json
-state.json
-state.*.json
-prompts/traces.jsonl
-prompts/wiring.backup.json
-chat-gpt.md
-__pycache__/
-*.pyc
-*.log
-
-!.gitignore
-!.gitattributes
-!README.md
-!RESEARCH.md
-!LICENSE
+# ─── Tracked: Source ──────────────────────────────────────────
 !server.py
 !desktop.py
 !actions.py
 !colony.py
 !wiring-editor.html
+
+# ─── Tracked: Configuration ──────────────────────────────────
 !prompts/
 !prompts/wiring.json
 !prompts/wiring-schema.json
 !prompts/model.json
+
+# ─── Tracked: Documentation & Meta ───────────────────────────
+!README.md
+!LICENSE
+!.gitignore
+!.gitattributes
+
+# ─── Explicitly ignored runtime artifacts ─────────────────────
+# (redundant with * but documents what exists at runtime)
+state.json
+bus.json
+prompts/traces.jsonl
+prompts/wiring.backup.json
+prompts/wiring.backup.*.json
+__pycache__/
+*.pyc
+*.log
