@@ -1224,7 +1224,9 @@ def _check_goal_has_domain(state, _):
 
 
 def _check_screen_contains_domain_needle(state, _):
-    proof = " ".join([state.get("screen", "") or "", _focused_title(state), state.get("last_outcome", "") or ""]).lower()
+    # Exclude last_outcome: it contains typed URL text which conflates
+    # "I typed the URL" with "the page loaded". Only screen/title count.
+    proof = " ".join([state.get("screen", "") or "", _focused_title(state)]).lower()
     return any(needle in proof for needle in _step_domain_needles(state))
 
 
