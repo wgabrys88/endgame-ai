@@ -77,6 +77,7 @@ NORMALIZER_RULES = {
     "when_value_empty": bool,
     "when_target_equals_value": bool,
     "when_focused_contains": list,
+    "when_focused_exact": list,
     "when_prior_verb": str,
     "when_prior_hotkey_contains": list,
 }
@@ -1064,6 +1065,10 @@ def _normalizer_matches(norm, action, prior, state):
         return False
     if norm.get("when_focused_contains") and not _contains_any(_focused_title(state), norm.get("when_focused_contains")):
         return False
+    if norm.get("when_focused_exact"):
+        title = _focused_title(state).strip()
+        if not any(title == str(v).strip().lower() for v in norm.get("when_focused_exact")):
+            return False
     if norm.get("when_prior_verb") and not any(a.get("verb") == norm.get("when_prior_verb") for a in prior):
         return False
     if norm.get("when_prior_hotkey_contains"):
