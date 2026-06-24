@@ -115,6 +115,23 @@
       }
     },
     {
+      "id": "deny_response_no_evidence",
+      "phase": "verify",
+      "verdict": "deny",
+      "description": "response/reply/answer receipt requires observed evidence (remember or interaction); waiting, scrolling, or passive verbs alone do not prove receipt",
+      "match": {
+        "outcome_ok": true,
+        "step_text_matches": [
+          "response",
+          "reply",
+          "answer"
+        ],
+        "actions_verb_absent": "click",
+        "actions_wrote_nonempty": false,
+        "memory_stored_by_action": false
+      }
+    },
+    {
       "id": "deny_memory_capture_missing_value",
       "phase": "verify",
       "verdict": "deny",
@@ -202,7 +219,7 @@
       "id": "confirm_launch_chain",
       "phase": "verify",
       "verdict": "confirm",
-      "description": "Win+R \u2192 type app \u2192 Enter is structurally proven launch",
+      "description": "Win+R → type app → Enter is structurally proven launch",
       "match": {
         "outcome_ok": true,
         "chain_is_launch": true
@@ -455,7 +472,7 @@
       {
         "id": "planner",
         "type": "planner",
-        "label": "Decompose goal \u2192 steps",
+        "label": "Decompose goal → steps",
         "circuit": "planner",
         "prompt": {
           "extends": "base",
@@ -956,13 +973,13 @@
   },
   "errors": {
     "parse_failed": "parse_failed: respond with JSON only",
-    "act_done_rejected": "DONE is invalid \u2014 output EXECUTE with one action; verify node confirms step completion",
+    "act_done_rejected": "DONE is invalid — output EXECUTE with one action; verify node confirms step completion",
     "act_cannot": "CANNOT",
     "act_bad_conclusion": "bad conclusion: {conclusion}",
     "verify_parse_failed": "verify parse failed",
     "verify_preflight_denied": "verify preflight: LAST_OUTCOME not OK",
-    "reflector_parse_failed": "reflector: parse_failed or wrong record_type \u2014 output diagnosis JSON only",
-    "planner_parse_failed": "planner: parse_failed \u2014 respond with JSON only",
+    "reflector_parse_failed": "reflector: parse_failed or wrong record_type — output diagnosis JSON only",
+    "planner_parse_failed": "planner: parse_failed — respond with JSON only",
     "planner_empty": "planner: empty plan",
     "self_modify_invalid": "LLM returned invalid patch"
   },
