@@ -137,8 +137,19 @@ textarea{resize:vertical;font-family:var(--mono);font-size:11px;line-height:1.45
     <button id="newSession">New</button>
     <button id="observeBtn">Observe</button>
     <button id="stepBtn" class="primary">Step</button>
-    <button id="runBtn" class="good">Continue</button>
+    <select id="runSlot" aria-label="Run target">
+      <option value="1" selected>Slot 1</option>
+      <option value="0">Root</option>
+      <option value="2">Slot 2</option>
+    </select>
+    <button id="runBtn" class="good">Run</button>
     <button id="pauseBtn" class="warn">Pause</button>
+    <select id="transport" aria-label="LLM transport">
+      <option value="openai">LM Studio</option>
+      <option value="file_proxy">Agent file self-proxy</option>
+    </select>
+    <button id="startSlotsBtn">Start Slots</button>
+    <button id="stopSlotsBtn" class="danger">Stop Slots</button>
     <button id="resumeBtn">Load State</button>
     <button id="saveStateBtn">Save State</button>
     <button id="saveBtn" class="primary">Save Wiring</button>
@@ -149,6 +160,10 @@ textarea{resize:vertical;font-family:var(--mono);font-size:11px;line-height:1.45
       <div class="bar"><h2>State</h2><button id="refreshBtn" class="mini">Refresh</button></div>
       <div class="pane">
         <div class="box"><h3>Run</h3><div class="body kv" id="runBox"></div></div>
+        <div class="box"><h3>System</h3><div class="body kv" id="systemBox"></div></div>
+        <div class="box"><h3>Slots</h3><div class="body list" id="slotBox"></div></div>
+        <div class="box"><h3>LLM Proxy</h3><div class="body kv" id="proxyBox"></div></div>
+        <div class="box"><h3>Audit</h3><div class="body list" id="auditBox"></div></div>
         <div class="box"><h3>Timing</h3><div class="body kv" id="timingBox"></div></div>
         <div class="box"><h3>Filters</h3><div class="body form" id="filterBox"></div></div>
         <div class="box"><h3>Rules</h3><div class="body list" id="ruleBox"></div></div>
@@ -199,7 +214,7 @@ const API=location.origin;
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
 const attr=s=>esc(s).replace(/'/g,"&#39;");
-let wiring=null,schema=null,state=null,currentNode=null,selected={kind:null},running=false;
+let wiring=null,schema=null,state=null,currentNode=null,selected={kind:null},running=false,systemInfo=null,auditInfo=null;
 let logs=[],lastStep=null,inspectData=null,positions={},positionsLoaded=false,graphView=null,drag=null,linkDrag=null,graphPan=null,autoSaveTimer=null,liveRefreshTimer=null;
 let wiringSnapshot=null,lastRuleHit=null,graphFlashes={};
 let perf={goalStart:null,lastEventTs:null,activeNode:null,lastDeltaMs:null,lastVerify:null,nodeRuns:[],tokens:null};
@@ -308,23 +323,32 @@ function uniqueId(base){
 function currentGoal(){return $('goal').value.trim()}
 
 async function loadAll(){
-  [wiring,schema]=await Promise.all([api('/wiring'),api('/wiring-schema')]);
+  [wiring,schema,systemInfo,auditInfo]=await Promise.all([api('/wiring'),api('/wiring-schema'),api('/system'),api('/wiring/audit')]);
   wiringSnapshot=clone(wiring);
   try{state=await api('/state')}catch{state={}}
   currentNode=state?._resume_node||wiring.topology.cycle_start;
   seedPositions();
   $('schemaBox').textContent=JSON.stringify(schema,null,2);
   $('jsonEdit').value=JSON.stringify(wiring,null,2);
+  syncSystemControls();
   await refreshInspect();
   renderAll();
   setStatus('ready');
 }
 async function refreshStateOnly(reason='state'){
   state=await api('/state');
+  await refreshSystem();
   currentNode=state?._resume_node||currentNode||wiring?.topology?.cycle_start||null;
   await refreshInspect();
   renderAll();
   setStatus(reason);
+}
+async function refreshSystem(){
+  try{[systemInfo,auditInfo]=await Promise.all([api('/system'),api('/wiring/audit')]); syncSystemControls();}
+  catch(e){log('system',e.message)}
+}
+function syncSystemControls(){
+  if(systemInfo?.transport&&$('transport'))$('transport').value=systemInfo.transport;
 }
 function queueLiveRefresh(reason='live'){
   clearTimeout(liveRefreshTimer);
@@ -365,12 +389,40 @@ async function runLoop(){
   if(running)return;
   running=true; $('runBtn').disabled=true; $('pauseBtn').disabled=false;
   try{
-    for(let i=0;running&&i<240;i++){
-      if(!await step())break;
-      await new Promise(r=>setTimeout(r,140));
-    }
+    const goal=currentGoal();
+    if(!goal)throw new Error('goal required');
+    const slot=Number($('runSlot').value||1);
+    if(slot>0)await post('/slots/start',{slots:[slot]});
+    const result=slot>0?await post('/slots/run',{slot,goal}):await post('/run',{goal});
+    log('run',slot>0?`slot ${slot}`:'root',result);
+    await refreshSystem();
   }catch(e){log('error',e.message)}
   running=false; $('runBtn').disabled=false; $('pauseBtn').disabled=true; setStatus('paused');
+}
+async function startSlots(){
+  const r=await post('/slots/start',{slots:[1,2]});
+  log('slots','started',r);
+  await refreshSystem();
+  renderAll();
+}
+async function stopSlots(){
+  const r=await post('/slots/stop',{slots:[1,2]});
+  log('slots','stopped',r);
+  await refreshSystem();
+  renderAll();
+}
+async function setTransport(){
+  const transport=$('transport').value;
+  const r=await post('/system/transport',{transport});
+  log('transport',transport,r);
+  await refreshSystem();
+  renderAll();
+}
+async function clearProxy(){
+  const r=await post('/llm-proxy/clear',{confirm:true});
+  log('proxy','cleared',r);
+  await refreshSystem();
+  renderAll();
 }
 async function pause(){
   running=false;
@@ -591,6 +643,45 @@ function renderState(){
   $('screenBox').textContent=[elementMeta,parts.screen].filter(Boolean).join('\n\n')||'No focused screen observation.';
   $('treeBox').textContent=(treeHead+parts.tree).trim()||meta.desktop_tree_error||'No desktop tree.';
   $('telemetryBox').textContent=[formatCoverageMeta(meta),probeMeta,formatWindowsMeta(meta),parts.overlays,parts.windows,outcome].filter(Boolean).join('\n\n')||'No telemetry.';
+}
+
+function renderSystemPanels(){
+  const sys=systemInfo||{}, proxy=sys.llm_proxy||{}, audit=auditInfo||{};
+  $('systemBox').innerHTML=[
+    ['transport',sys.transport||''],
+    ['model',sys.model?.model||''],
+    ['host',sys.model?.host||''],
+    ['root',sys.root?.url||location.origin],
+    ['run',sys.run?`running=${!!sys.run.running} queued=${sys.run.queued??0} paused=${!!sys.run.paused}`:'']
+  ].map(([k,v])=>`<b>${esc(k)}</b><span>${esc(v)}</span>`).join('');
+
+  const slots=sys.slots||[];
+  $('slotBox').innerHTML=slots.length?slots.map(s=>{
+    const cls=s.running?'current':'';
+    const health=s.health?.ok?'healthy':s.health?.error||'offline';
+    return `<div class="item ${cls}">
+      <div class="itemHead"><span>Slot ${esc(s.slot)} :${esc(s.port)}</span><span class="pill ${s.running?'green':'red'}">${s.running?'running':'stopped'}</span></div>
+      <span class="muted">${esc(s.wiring_name||'')} ${esc(health)} ${s.pid?`pid=${esc(s.pid)}`:''}</span>
+    </div>`;
+  }).join(''):'<span class="muted">no slots</span>';
+
+  $('proxyBox').innerHTML=[
+    ['request',proxy.request_exists?'present':'none'],
+    ['response',proxy.response_exists?'present':'none'],
+    ['pending',proxy.pending?.id||''],
+    ['last archive',proxy.last_archive_id||''],
+    ['request path',proxy.request_path||''],
+    ['response path',proxy.response_path||''],
+    ['clear','<button id="clearProxyBtn" class="mini danger">Clear</button>']
+  ].map(([k,v])=>`<b>${esc(k)}</b><span>${k==='clear'?v:esc(v)}</span>`).join('');
+  const clearBtn=$('clearProxyBtn');
+  if(clearBtn)clearBtn.onclick=()=>clearProxy().catch(e=>log('proxy',e.message));
+
+  const summary=audit.summary||{};
+  const issues=audit.issues||[];
+  const head=`<div class="item ${audit.ok?'current':'bad'}">Audit ${audit.ok?'ok':'needs attention'}<br><span class="muted">nodes=${esc(summary.nodes??'')} edges=${esc(summary.edges??'')} issues=${esc(summary.issues??0)} errors=${esc(summary.counts?.error??0)} warnings=${esc(summary.counts?.warning??0)}</span></div>`;
+  const rows=issues.slice(0,10).map(i=>`<div class="item ${i.severity==='error'?'bad':'preflight'}">${esc(i.code)}<br><span class="muted">${esc(i.message)}</span></div>`).join('');
+  $('auditBox').innerHTML=head+(rows||'<span class="muted">no audit issues</span>');
 }
 
 function graphStorageKey(){return `endgame-ai.graph.positions:${wiring?.schema||'schema'}:${nodeIds().join('|')}`}
@@ -1013,7 +1104,7 @@ function renderReasoning(){
 }
 function renderAll(){
   if(!wiring)return;
-  renderGraph(); renderState(); renderTiming(); renderFilters(); renderRules(); renderInspect(); renderInputs(); renderReasoning();
+  renderGraph(); renderState(); renderSystemPanels(); renderTiming(); renderFilters(); renderRules(); renderInspect(); renderInputs(); renderReasoning();
   $('jsonEdit').value=JSON.stringify(wiring,null,2);
 }
 
@@ -1052,6 +1143,7 @@ async function saveWiring(auto=false){
   const errs=validateLocal();
   if(errs.length){setStatus('wiring invalid');log('wiring','local validation failed',errs);return}
   const r=await post('/wiring',wiring);
+  await refreshSystem();
   setStatus(auto?'wiring hot-reloaded':'wiring saved');
   log('wiring',auto?'hot-reloaded':'saved',r);
 }
@@ -1108,6 +1200,9 @@ $('observeBtn').onclick=()=>observeNow().catch(e=>log('observe',e.message));
 $('stepBtn').onclick=()=>step().catch(e=>log('error',e.message));
 $('runBtn').onclick=runLoop;
 $('pauseBtn').onclick=()=>pause();
+$('startSlotsBtn').onclick=()=>startSlots().catch(e=>log('slots',e.message));
+$('stopSlotsBtn').onclick=()=>stopSlots().catch(e=>log('slots',e.message));
+$('transport').onchange=()=>setTransport().catch(e=>log('transport',e.message));
 $('resumeBtn').onclick=()=>resumeSaved().catch(e=>log('error',e.message));
 $('saveStateBtn').onclick=()=>saveState().catch(e=>log('error',e.message));
 $('refreshBtn').onclick=()=>loadAll().catch(e=>log('error',e.message));
@@ -1124,6 +1219,22 @@ $('jsonEdit').oninput=()=>{setStatus('json dirty')};
 try{
   const es=new EventSource(API+'/events');
   es.addEventListener('push',e=>log('push','event',JSON.parse(e.data)));
+  es.addEventListener('system',e=>{
+    log('system','event',JSON.parse(e.data));
+    refreshSystem().then(renderAll).catch(err=>log('system',err.message));
+  });
+  es.addEventListener('llm_proxy_request',e=>{
+    log('proxy','request',JSON.parse(e.data));
+    refreshSystem().then(renderAll).catch(err=>log('proxy',err.message));
+  });
+  es.addEventListener('llm_proxy_response',e=>{
+    log('proxy','response',JSON.parse(e.data));
+    refreshSystem().then(renderAll).catch(err=>log('proxy',err.message));
+  });
+  es.addEventListener('llm_proxy_clear',e=>{
+    log('proxy','clear',JSON.parse(e.data));
+    refreshSystem().then(renderAll).catch(err=>log('proxy',err.message));
+  });
   es.addEventListener('node',e=>{
     const data=JSON.parse(e.data);
     captureNodeEvent(data);

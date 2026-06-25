@@ -2,7 +2,7 @@
 endgame-ai — stdlib only, zero pip.
 One file. Node handlers are pure functions. Wiring.json is the brain.
 """
-import json, http.server, urllib.request, urllib.error, pathlib, time, sys, threading, queue, os, re, signal
+import json, http.server, urllib.request, urllib.error, pathlib, time, sys, threading, queue, os, re, signal, subprocess
 from typing import Any
 
 class ThreadingHTTPServer(http.server.ThreadingHTTPServer):
@@ -10,6 +10,8 @@ class ThreadingHTTPServer(http.server.ThreadingHTTPServer):
 
 ROOT = pathlib.Path(__file__).parent
 PROMPTS = ROOT / "prompts"
+MAIN_WIRING_PATH = PROMPTS / "wiring.json"
+RELAY_WIRING_PATH = PROMPTS / "wiring_relay.json"
 WIRING_PATH = pathlib.Path(os.environ.get("ENDGAME_WIRING", str(PROMPTS / "wiring.json")))
 if not WIRING_PATH.is_absolute():
     WIRING_PATH = ROOT / WIRING_PATH
@@ -20,8 +22,13 @@ if not STATE_FILE.is_absolute():
 STATE_FILE = STATE_FILE.resolve()
 BUS_FILE = pathlib.Path(os.environ.get("ENDGAME_BUS", str(ROOT / "bus.json")))
 TRACES_FILE = ROOT / "prompts" / "traces.jsonl"
+MODEL_PATH = PROMPTS / "model.json"
 WIRING = json.loads(WIRING_PATH.read_text(encoding="utf-8"))
-MODEL = json.loads((PROMPTS / "model.json").read_text(encoding="utf-8"))
+MODEL = json.loads(MODEL_PATH.read_text(encoding="utf-8"))
+MODEL_LOCK = threading.Lock()
+LLM_PROXY_LOCK = threading.Lock()
+SLOT_PROCS_LOCK = threading.Lock()
+SLOT_PROCS: dict[int, subprocess.Popen] = {}
 
 
 def apply_instance_env():
@@ -590,6 +597,225 @@ def read_json_with_retry(path: pathlib.Path, default):
             time.sleep(0.05)
     return default
 
+DEFAULT_FILE_PROXY = {
+    "request_path": "comms/llm_proxy/request.json",
+    "response_path": "comms/llm_proxy/response.json",
+    "archive_dir": "comms/llm_proxy/archive",
+    "poll_interval_ms": 1000,
+}
+
+def model_snapshot():
+    with MODEL_LOCK:
+        return json.loads(json.dumps(MODEL))
+
+def normalize_model_config(config):
+    out = dict(config or {})
+    transport = str(out.get("transport") or "openai").strip().lower()
+    out["transport"] = "file_proxy" if transport in {"file_proxy", "file-proxy", "self_proxy"} else "openai"
+    proxy = dict(DEFAULT_FILE_PROXY)
+    proxy.update(out.get("file_proxy") or {})
+    out["file_proxy"] = proxy
+    return out
+
+def reload_model_config():
+    global MODEL
+    with MODEL_LOCK:
+        MODEL = normalize_model_config(json.loads(MODEL_PATH.read_text(encoding="utf-8")))
+        return json.loads(json.dumps(MODEL))
+
+def persist_model_config(config):
+    global MODEL
+    normalized = normalize_model_config(config)
+    atomic_write_json(MODEL_PATH, normalized, indent=2)
+    with MODEL_LOCK:
+        MODEL = normalized
+    return json.loads(json.dumps(normalized))
+
+def set_model_transport(transport):
+    transport = str(transport or "").strip().lower()
+    if transport in {"lm_studio", "lm-studio", "openai_api"}:
+        transport = "openai"
+    if transport not in {"openai", "file_proxy"}:
+        raise ValueError("transport must be openai or file_proxy")
+    current = model_snapshot()
+    current["transport"] = transport
+    saved = persist_model_config(current)
+    sse_push("system", {"transport": saved.get("transport")})
+    return saved
+
+def model_runtime_path(cfg, key, default):
+    raw = str((cfg or {}).get(key, default) or default)
+    path = pathlib.Path(raw)
+    if not path.is_absolute():
+        path = ROOT / path
+    resolved = path.resolve()
+    try:
+        resolved.relative_to(ROOT.resolve())
+    except ValueError as exc:
+        raise ValueError(f"file_proxy.{key} must stay under {ROOT}") from exc
+    return resolved
+
+def file_proxy_config():
+    return dict(model_snapshot().get("file_proxy") or DEFAULT_FILE_PROXY)
+
+def file_proxy_paths():
+    cfg = file_proxy_config()
+    return {
+        "request": model_runtime_path(cfg, "request_path", DEFAULT_FILE_PROXY["request_path"]),
+        "response": model_runtime_path(cfg, "response_path", DEFAULT_FILE_PROXY["response_path"]),
+        "archive": model_runtime_path(cfg, "archive_dir", DEFAULT_FILE_PROXY["archive_dir"]),
+    }
+
+def unlink_if_exists(path):
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass
+
+def _archive_last_id(archive_dir):
+    if not archive_dir.exists():
+        return ""
+    files = list(archive_dir.glob("*.request.json"))
+    if not files:
+        return ""
+    latest = max(files, key=lambda p: p.stat().st_mtime)
+    return latest.name.removesuffix(".request.json")
+
+def llm_proxy_status():
+    try:
+        paths = file_proxy_paths()
+        request = read_json_with_retry(paths["request"], None)
+        response = read_json_with_retry(paths["response"], None)
+        pending = {}
+        if isinstance(request, dict):
+            pending = {
+                "id": request.get("id", ""),
+                "created_at": request.get("created_at"),
+                "model": request.get("model", ""),
+                "message_count": len(request.get("messages", [])) if isinstance(request.get("messages"), list) else 0,
+            }
+        return {
+            "transport": model_snapshot().get("transport", "openai"),
+            "request_path": str(paths["request"]),
+            "response_path": str(paths["response"]),
+            "archive_dir": str(paths["archive"]),
+            "request_exists": paths["request"].exists(),
+            "response_exists": paths["response"].exists(),
+            "pending": pending,
+            "response_id": response.get("id", "") if isinstance(response, dict) else "",
+            "last_archive_id": _archive_last_id(paths["archive"]),
+        }
+    except Exception as e:
+        return {"error": str(e), "transport": model_snapshot().get("transport", "openai")}
+
+def clear_llm_proxy_files():
+    paths = file_proxy_paths()
+    removed = []
+    for key in ("request", "response"):
+        path = paths[key]
+        if path.exists():
+            unlink_if_exists(path)
+            removed.append(str(path))
+    sse_push("llm_proxy_clear", {"removed": removed})
+    return {"removed": removed, "status": llm_proxy_status()}
+
+def new_llm_proxy_id():
+    return f"llm-{int(time.time() * 1000)}-{os.getpid()}-{threading.get_ident()}"
+
+def parse_file_proxy_response(resp, request_id):
+    if not isinstance(resp, dict):
+        return None
+    response_id = str(resp.get("id", "") or "")
+    if response_id and response_id != request_id:
+        return None
+    message = None
+    choices = resp.get("choices")
+    if isinstance(choices, list) and choices:
+        choice = choices[0] if isinstance(choices[0], dict) else {}
+        maybe = choice.get("message")
+        if isinstance(maybe, dict):
+            message = maybe
+    if message is None:
+        message = resp
+    content = message.get("content", "")
+    reasoning = message.get("reasoning_content", resp.get("reasoning_content", ""))
+    if content is None:
+        content = ""
+    if not isinstance(content, str):
+        content = json.dumps(content)
+    if reasoning is None:
+        reasoning = ""
+    if not isinstance(reasoning, str):
+        reasoning = json.dumps(reasoning)
+    return content, reasoning
+
+def archive_llm_proxy_exchange(request_id, request_payload, response_payload):
+    paths = file_proxy_paths()
+    archive = paths["archive"]
+    archive.mkdir(parents=True, exist_ok=True)
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", request_id)
+    atomic_write_json(archive / f"{safe}.request.json", request_payload, indent=2)
+    atomic_write_json(archive / f"{safe}.response.json", response_payload, indent=2)
+
+def archive_stale_proxy_response(path):
+    if not path.exists():
+        return
+    paths = file_proxy_paths()
+    paths["archive"].mkdir(parents=True, exist_ok=True)
+    stale = read_json_with_retry(path, None)
+    if stale is None:
+        stale = {"raw": path.read_text(encoding="utf-8", errors="replace")}
+    stamp = f"stale-response-{int(time.time() * 1000)}"
+    atomic_write_json(paths["archive"] / f"{stamp}.json", stale, indent=2)
+    unlink_if_exists(path)
+
+def llm_via_file_proxy(body):
+    cfg = file_proxy_config()
+    paths = file_proxy_paths()
+    poll = max(0.1, int(cfg.get("poll_interval_ms", 1000) or 1000) / 1000.0)
+    timeout = max(1.0, float(model_snapshot().get("timeout", 120) or 120))
+    request_id = new_llm_proxy_id()
+    payload = dict(body)
+    payload.update({
+        "id": request_id,
+        "status": "pending",
+        "transport": "file_proxy",
+        "created_at": time.time(),
+    })
+    t0 = time.time()
+    with LLM_PROXY_LOCK:
+        if paths["request"].exists():
+            existing = read_json_with_retry(paths["request"], {})
+            existing_id = existing.get("id", "") if isinstance(existing, dict) else ""
+            raise RuntimeError(
+                f"LLM file proxy request already pending id={existing_id or '(unknown)'}; "
+                f"answer it or clear {paths['request']}"
+            )
+        archive_stale_proxy_response(paths["response"])
+        atomic_write_json(paths["request"], payload, indent=2)
+        sse_push("llm_proxy_request", {"id": request_id, "request_path": str(paths["request"])})
+        deadline = time.time() + timeout
+        last_response_id = ""
+        while time.time() < deadline:
+            resp = read_json_with_retry(paths["response"], None)
+            parsed = parse_file_proxy_response(resp, request_id)
+            if parsed:
+                content, reasoning = parsed
+                archive_llm_proxy_exchange(request_id, payload, resp)
+                unlink_if_exists(paths["request"])
+                unlink_if_exists(paths["response"])
+                elapsed = time.time() - t0
+                sse_push("llm_proxy_response", {"id": request_id, "elapsed": elapsed})
+                return content, reasoning, elapsed
+            if isinstance(resp, dict):
+                last_response_id = str(resp.get("id", "") or "")
+            time.sleep(poll)
+    suffix = f"; saw response id={last_response_id}" if last_response_id else ""
+    raise RuntimeError(f"LLM file proxy timeout after {int(timeout)}s for id={request_id}{suffix}; request_path={paths['request']}")
+
+with MODEL_LOCK:
+    MODEL = normalize_model_config(MODEL)
+
 def save_state(state=None):
     if state is None:
         with STATE_LOCK:
@@ -739,17 +965,20 @@ def recent_traces(limit=3):
 # ─── LLM ───
 
 def llm(system, user, temperature=None):
+    model = model_snapshot()
     body = {
-        "model": MODEL.get("model", "local-model"),
+        "model": model.get("model", "local-model"),
         "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-        "temperature": MODEL.get("temperature", 0.3) if temperature is None else temperature,
-        "max_tokens": MODEL.get("max_tokens", 16384),
+        "temperature": model.get("temperature", 0.3) if temperature is None else temperature,
+        "max_tokens": model.get("max_tokens", 16384),
     }
-    url = MODEL["host"] + "/v1/chat/completions"
+    if model.get("transport", "openai") == "file_proxy":
+        return llm_via_file_proxy(body)
+    url = model["host"] + "/v1/chat/completions"
     t0 = time.time()
     req = urllib.request.Request(url, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
     try:
-        r = urllib.request.urlopen(req, timeout=MODEL.get("timeout", 120))
+        r = urllib.request.urlopen(req, timeout=model.get("timeout", 120))
     except urllib.error.HTTPError as e:
         detail = ""
         try:
@@ -830,8 +1059,9 @@ def call_node(node, state, extra=None):
         s.update(extra)
     system = load_system_prompt(circuit, s, node=node_cfg)
     user = build_user_message(circuit, s, node=node_cfg)
-    base_temp = MODEL.get("temperature", 0.3)
-    bump = MODEL.get("temperature_bump", 0.15)
+    model = model_snapshot()
+    base_temp = model.get("temperature", 0.3)
+    bump = model.get("temperature_bump", 0.15)
     max_retries = wiring_limit("llm_parse_retries", 2)
     content, reasoning, parsed, source = "", "", None, None
     patch = {}
@@ -2440,6 +2670,271 @@ def run(goal, resume_state=None, max_cycles=None):
 
 # ─── HTTP ───
 
+def normalize_slots(value=None):
+    if value is None or value == "":
+        return [1, 2]
+    raw = value if isinstance(value, list) else [value]
+    slots = []
+    for item in raw:
+        try:
+            slot = int(item)
+        except (TypeError, ValueError):
+            continue
+        if slot > 0 and slot not in slots:
+            slots.append(slot)
+    return slots or [1, 2]
+
+def slot_wiring_path(slot):
+    if int(slot) == 2 and RELAY_WIRING_PATH.exists():
+        return RELAY_WIRING_PATH
+    return MAIN_WIRING_PATH
+
+def slot_permissions(slot, slots):
+    slot = int(slot)
+    if slot == 2 and RELAY_WIRING_PATH.exists():
+        return "desktop_exec"
+    return "desktop_exec" if slots and slot == min(slots) else ""
+
+def slot_health(slot, timeout=0.8):
+    port = http_port(int(slot))
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=timeout) as r:
+            data = json.loads(r.read())
+        return {"ok": bool(data.get("ok")), "data": data}
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as e:
+        return {"ok": False, "error": str(e)}
+
+def wait_slot_health(slot, timeout=8.0):
+    deadline = time.time() + timeout
+    last = {"ok": False}
+    while time.time() < deadline:
+        last = slot_health(slot, timeout=1.0)
+        if last.get("ok"):
+            return last
+        time.sleep(0.35)
+    return last
+
+def slot_status(slots=None):
+    slots = normalize_slots(slots)
+    out = []
+    with SLOT_PROCS_LOCK:
+        for slot in slots:
+            proc = SLOT_PROCS.get(slot)
+            running = bool(proc and proc.poll() is None)
+            if proc and not running:
+                SLOT_PROCS.pop(slot, None)
+            health = slot_health(slot)
+            wiring_path = slot_wiring_path(slot)
+            out.append({
+                "slot": slot,
+                "port": http_port(slot),
+                "url": f"http://127.0.0.1:{http_port(slot)}/",
+                "managed": bool(proc),
+                "running": running or bool(health.get("ok")),
+                "pid": proc.pid if proc and running else None,
+                "health": health,
+                "wiring": str(wiring_path),
+                "wiring_name": wiring_path.name,
+            })
+    return out
+
+def spawn_slot_process(slot, slots):
+    env = os.environ.copy()
+    wiring_path = slot_wiring_path(slot)
+    env["ENDGAME_SLOT"] = str(slot)
+    env["ENDGAME_STATE"] = str(ROOT / f"state.slot{slot}.json")
+    env["ENDGAME_WIRING"] = str(wiring_path)
+    env["ENDGAME_PERMISSIONS"] = slot_permissions(slot, slots)
+    env.setdefault("PYTHONIOENCODING", "utf-8")
+    return subprocess.Popen([sys.executable, str(ROOT / "server.py")], cwd=str(ROOT), env=env)
+
+def start_slots(slots=None):
+    slots = normalize_slots(slots)
+    started = []
+    with SLOT_PROCS_LOCK:
+        for slot in slots:
+            proc = SLOT_PROCS.get(slot)
+            if proc and proc.poll() is None:
+                started.append({"slot": slot, "status": "already_managed", "pid": proc.pid, "port": http_port(slot)})
+                continue
+            health = slot_health(slot)
+            if health.get("ok"):
+                started.append({"slot": slot, "status": "already_running", "pid": None, "port": http_port(slot)})
+                continue
+            proc = spawn_slot_process(slot, slots)
+            SLOT_PROCS[slot] = proc
+            started.append({"slot": slot, "status": "started", "pid": proc.pid, "port": http_port(slot)})
+    for item in started:
+        if item["status"] == "started":
+            item["health"] = wait_slot_health(item["slot"])
+            if item["health"].get("ok"):
+                try:
+                    wiring = json.loads(slot_wiring_path(item["slot"]).read_text(encoding="utf-8"))
+                    auto_goal = wiring.get("runtime", {}).get("auto_start_goal", "")
+                    if auto_goal:
+                        item["auto_start"] = post_slot_goal(item["slot"], auto_goal)
+                except Exception as e:
+                    item["auto_start_error"] = str(e)
+    return {"slots": slot_status(slots), "started": started}
+
+def stop_slots(slots=None):
+    slots = normalize_slots(slots)
+    stopped = []
+    with SLOT_PROCS_LOCK:
+        targets = [(slot, SLOT_PROCS.get(slot)) for slot in slots]
+    for slot, proc in targets:
+        if not proc or proc.poll() is not None:
+            stopped.append({"slot": slot, "status": "not_managed"})
+            continue
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+            status = "stopped"
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            status = "killed"
+        stopped.append({"slot": slot, "status": status})
+        with SLOT_PROCS_LOCK:
+            SLOT_PROCS.pop(slot, None)
+    return {"slots": slot_status(slots), "stopped": stopped}
+
+def post_slot_goal(slot, goal):
+    slot = int(slot or 1)
+    goal = str(goal or "").strip()
+    if not goal:
+        raise ValueError("goal required")
+    body = json.dumps({"goal": goal}).encode()
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{http_port(slot)}/run",
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=8) as r:
+        data = json.loads(r.read())
+    return {"slot": slot, "port": http_port(slot), "result": data}
+
+def system_snapshot():
+    model = model_snapshot()
+    return {
+        "transport": model.get("transport", "openai"),
+        "model": {
+            "host": model.get("host", ""),
+            "model": model.get("model", ""),
+            "timeout": model.get("timeout", 120),
+        },
+        "root": {
+            "slot": WIRING.get("instance", {}).get("slot", 0),
+            "port": http_port(),
+            "url": f"http://127.0.0.1:{http_port()}/",
+            "wiring": str(WIRING_PATH),
+        },
+        "slots": slot_status([1, 2]),
+        "llm_proxy": llm_proxy_status(),
+        "run": run_status_snapshot(),
+    }
+
+def wiring_audit():
+    topo = WIRING.get("topology", {})
+    nodes = topo.get("nodes", []) if isinstance(topo.get("nodes"), list) else []
+    edges = topo.get("edges", []) if isinstance(topo.get("edges"), list) else []
+    ids: set[str] = set()
+    for n in nodes:
+        if isinstance(n, dict):
+            node_id = n.get("id")
+            if isinstance(node_id, str):
+                ids.add(node_id)
+    issues = []
+
+    def add(severity, code, message, ref=""):
+        issues.append({"severity": severity, "code": code, "message": message, "ref": ref})
+
+    start = topo.get("cycle_start")
+    if start not in ids:
+        add("error", "missing_cycle_start", f"cycle_start {start!r} is not a node", "topology.cycle_start")
+
+    for n in nodes:
+        if not isinstance(n, dict):
+            continue
+        node_id = n.get("id", "")
+        node_type = n.get("type", "")
+        if node_type not in NODES:
+            add("error", "missing_handler", f"node {node_id} uses unknown handler type {node_type}", f"node:{node_id}")
+        if node_type in LLM_NODE_TYPES or n.get("prompt"):
+            circuit = circuit_for_node(n)
+            roles = WIRING.get("prompts", {}).get("roles", {})
+            if circuit and circuit not in roles:
+                add("warning", "missing_prompt_role", f"node {node_id} circuit {circuit} has no prompt role", f"node:{node_id}")
+
+    for i, edge in enumerate(edges):
+        if not isinstance(edge, dict):
+            add("error", "invalid_edge", f"edge {i} is not an object", f"edge:{i}")
+            continue
+        if edge.get("from") not in ids:
+            add("error", "edge_from_missing", f"edge {i} from {edge.get('from')!r} is missing", f"edge:{i}")
+        if edge.get("to") not in ids:
+            add("error", "edge_to_missing", f"edge {i} to {edge.get('to')!r} is missing", f"edge:{i}")
+
+    reachable: set[str] = set()
+    if isinstance(start, str) and start in ids:
+        queue_ids: list[str] = [start]
+        while queue_ids:
+            node_id = queue_ids.pop(0)
+            if node_id in reachable:
+                continue
+            reachable.add(node_id)
+            for edge in edges:
+                target = edge.get("to") if isinstance(edge, dict) else None
+                if isinstance(target, str) and edge.get("from") == node_id and target in ids:
+                    queue_ids.append(target)
+    for node_id in sorted(ids - reachable):
+        add("warning", "unreachable_node", f"node {node_id} is not reachable from cycle_start", f"node:{node_id}")
+
+    verbs = set((WIRING.get("verbs") or {}).keys())
+    prompt_text = "\n".join(str(v) for v in (WIRING.get("prompts", {}).get("roles", {}) or {}).values())
+    mentioned = set()
+    for match in re.finditer(r"Verbs:\s*([^\n]+)", prompt_text, re.IGNORECASE):
+        for raw in re.split(r"[, ]+", match.group(1)):
+            token = raw.strip(" .;:-`\"'")
+            if token:
+                mentioned.add(token)
+    for verb in sorted(v for v in mentioned if v and v not in verbs):
+        add("warning", "prompt_verb_missing", f"prompt mentions verb {verb} but verbs.{verb} is absent", f"verbs:{verb}")
+
+    for i, rule in enumerate(WIRING.get("rules", []) or []):
+        if not isinstance(rule, dict):
+            continue
+        for key in (rule.get("match") or {}).keys():
+            if key not in RULE_CONDITIONS:
+                add("error", "unknown_rule_match", f"rule {rule.get('id', i)} uses unknown match key {key}", f"rules:{rule.get('id', i)}")
+
+    moe_nodes = [n.get("id") for n in nodes if isinstance(n, dict) and n.get("type") == "moe_route"]
+    moe = WIRING.get("moe") or {}
+    moe_status = {
+        "nodes": moe_nodes,
+        "configured": bool(moe),
+        "delegate_keywords": len(moe.get("delegate_keywords", [])) if isinstance(moe, dict) else 0,
+        "default_exec_slot": moe.get("default_exec_slot") if isinstance(moe, dict) else None,
+    }
+    if moe_nodes and not moe:
+        add("warning", "moe_unconfigured", "moe_route exists but moe config is empty", "moe")
+
+    counts = {}
+    for issue in issues:
+        counts[issue["severity"]] = counts.get(issue["severity"], 0) + 1
+    return {
+        "ok": counts.get("error", 0) == 0,
+        "summary": {
+            "nodes": len(nodes),
+            "edges": len(edges),
+            "reachable": len(reachable),
+            "issues": len(issues),
+            "counts": counts,
+        },
+        "issues": issues,
+        "moe": moe_status,
+    }
+
 class H(http.server.BaseHTTPRequestHandler):
     def handle_one_request(self):
         try:
@@ -2470,6 +2965,12 @@ class H(http.server.BaseHTTPRequestHandler):
                 "run": run_status_snapshot(),
                 "capabilities": wiring_summary().get("capabilities", {}),
             })
+        elif self.path == "/system":
+            self._j(system_snapshot())
+        elif self.path == "/llm-proxy/status":
+            self._j(llm_proxy_status())
+        elif self.path == "/wiring/audit":
+            self._j(wiring_audit())
         elif self.path == "/wiring":
             self._j(WIRING)
         elif self.path == "/wiring-schema":
@@ -2571,6 +3072,34 @@ class H(http.server.BaseHTTPRequestHandler):
             self._j({"resumed": True, "goal": s.get("goal",""), **queued})
         elif self.path == "/pause":
             self._j(request_pause())
+        elif self.path == "/system/transport":
+            try:
+                model = set_model_transport(body.get("transport", ""))
+                self._j({"transport": model.get("transport"), "model": model, "system": system_snapshot()})
+            except Exception as e:
+                self._j({"error": str(e)}, 400)
+        elif self.path == "/llm-proxy/clear":
+            if body.get("confirm") is not True:
+                self._j({"error": "confirm=true required"}, 400); return
+            try:
+                self._j(clear_llm_proxy_files())
+            except Exception as e:
+                self._j({"error": str(e)}, 500)
+        elif self.path == "/slots/start":
+            try:
+                self._j(start_slots(body.get("slots")))
+            except Exception as e:
+                self._j({"error": str(e)}, 500)
+        elif self.path == "/slots/stop":
+            try:
+                self._j(stop_slots(body.get("slots")))
+            except Exception as e:
+                self._j({"error": str(e)}, 500)
+        elif self.path == "/slots/run":
+            try:
+                self._j(post_slot_goal(body.get("slot", 1), body.get("goal", "")))
+            except Exception as e:
+                self._j({"error": str(e)}, 500)
         elif self.path == "/bus/post":
             msgs = bus_read(); msgs.append(body); bus_write(msgs)
             self._j({"ok": True})

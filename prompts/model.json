@@ -1,6 +1,13 @@
 {
+  "transport": "openai",
   "host": "http://localhost:1234",
   "model": "nvidia-nemotron-3-nano-4b",
+  "file_proxy": {
+    "request_path": "comms/llm_proxy/request.json",
+    "response_path": "comms/llm_proxy/response.json",
+    "archive_dir": "comms/llm_proxy/archive",
+    "poll_interval_ms": 1000
+  },
   "temperature_bump": 0.15,
   "timeout": 900,
   "temperature": 0.3,
