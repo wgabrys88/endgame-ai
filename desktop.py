@@ -348,11 +348,28 @@ class Desktop:
 
     def __init__(self):
         self.user32 = ctypes.WinDLL("user32", use_last_error=True)
+        self.kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
         self.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
         self.user32.GetForegroundWindow.restype = W.HWND
         self.user32.GetTopWindow.restype = W.HWND
         self.user32.GetWindow.restype = W.HWND
         self.user32.GetAncestor.restype = W.HWND
+        self.user32.OpenClipboard.argtypes = [ctypes.c_void_p]
+        self.user32.OpenClipboard.restype = W.BOOL
+        self.user32.CloseClipboard.restype = W.BOOL
+        self.user32.EmptyClipboard.restype = W.BOOL
+        self.user32.GetClipboardData.argtypes = [W.UINT]
+        self.user32.GetClipboardData.restype = ctypes.c_void_p
+        self.user32.SetClipboardData.argtypes = [W.UINT, ctypes.c_void_p]
+        self.user32.SetClipboardData.restype = ctypes.c_void_p
+        self.kernel32.GlobalAlloc.argtypes = [W.UINT, ctypes.c_size_t]
+        self.kernel32.GlobalAlloc.restype = ctypes.c_void_p
+        self.kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
+        self.kernel32.GlobalLock.restype = ctypes.c_void_p
+        self.kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
+        self.kernel32.GlobalUnlock.restype = W.BOOL
+        self.kernel32.GlobalFree.argtypes = [ctypes.c_void_p]
+        self.kernel32.GlobalFree.restype = ctypes.c_void_p
         self._uia = _UIA()
 
     def observe(self) -> Observation:
@@ -526,6 +543,10 @@ class Desktop:
         self.user32.mouse_event(0x0004, 0, 0, 0, 0)
 
     def type_text(self, text: str):
+        if len(text) > 80 or "\n" in text:
+            if self._paste_text(text):
+                return
+
         class KEYBDINPUT(ctypes.Structure):
             _fields_ = [("wVk", W.WORD), ("wScan", W.WORD), ("dwFlags", W.DWORD),
                         ("time", W.DWORD), ("dwExtraInfo", ctypes.c_size_t)]
@@ -545,6 +566,72 @@ class Desktop:
             inputs[1].u.ki.dwFlags = 0x0006
             self.user32.SendInput(2, ctypes.byref(inputs), ctypes.sizeof(INPUT))
             time.sleep(0.03)
+
+    def _paste_text(self, text: str) -> bool:
+        try:
+            previous = self._clipboard_text()
+            self._set_clipboard_text(text)
+            time.sleep(0.05)
+            self.hotkey(["ctrl", "v"])
+            time.sleep(0.15)
+            self._set_clipboard_text(previous)
+            return True
+        except Exception:
+            return False
+
+    def _open_clipboard(self) -> bool:
+        for _ in range(10):
+            if self.user32.OpenClipboard(None):
+                return True
+            time.sleep(0.03)
+        return False
+
+    def _clipboard_text(self) -> str:
+        CF_UNICODETEXT = 13
+        if not self._open_clipboard():
+            return ""
+        try:
+            handle = self.user32.GetClipboardData(CF_UNICODETEXT)
+            if not handle:
+                return ""
+            ptr = self.kernel32.GlobalLock(handle)
+            if not ptr:
+                return ""
+            try:
+                return ctypes.wstring_at(ptr)
+            finally:
+                self.kernel32.GlobalUnlock(handle)
+        finally:
+            self.user32.CloseClipboard()
+
+    def _set_clipboard_text(self, text: str) -> None:
+        CF_UNICODETEXT = 13
+        GMEM_MOVEABLE = 0x0002
+        data = (text + "\0").encode("utf-16-le")
+        handle = self.kernel32.GlobalAlloc(GMEM_MOVEABLE, len(data))
+        if not handle:
+            raise OSError("GlobalAlloc failed")
+        ptr = self.kernel32.GlobalLock(handle)
+        if not ptr:
+            self.kernel32.GlobalFree(handle)
+            raise OSError("GlobalLock failed")
+        try:
+            ctypes.memmove(ptr, data, len(data))
+        finally:
+            self.kernel32.GlobalUnlock(handle)
+        if not self._open_clipboard():
+            self.kernel32.GlobalFree(handle)
+            raise OSError("OpenClipboard failed")
+        try:
+            if not self.user32.EmptyClipboard():
+                raise OSError("EmptyClipboard failed")
+            if not self.user32.SetClipboardData(CF_UNICODETEXT, handle):
+                raise OSError("SetClipboardData failed")
+            handle = 0
+        finally:
+            self.user32.CloseClipboard()
+            if handle:
+                self.kernel32.GlobalFree(handle)
 
     def press_key(self, key: str):
         vk = VK_MAP.get(key.lower())
