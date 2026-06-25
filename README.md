@@ -34,10 +34,11 @@ Important status:
   - fe25061 Add self proxy transport and unified panel
 - A later handover commit may contain this README and the desktop long-text paste fix.
 - The Grok review loop is not complete.
-- The most important suspected architecture gap is that there are currently two file handoff mechanisms:
+- The earlier handover identified a split file-handoff problem. The current worktree statically bridges it:
   - llm() file_proxy uses comms/llm_proxy/request.json and comms/llm_proxy/response.json.
-  - Slot 2 relay wiring uses runtime.llm_request_path comms/llm_request.json and comms/llm_response.json.
-  Verify whether they should be unified. Do not claim Slot 2 services llm() file_proxy requests until this is proven or fixed.
+  - Slot 2 relay wiring now points runtime.llm_request_path and runtime.llm_response_path at the same comms/llm_proxy files.
+  - server.py now lets relay responses satisfy llm() file_proxy by accepting the relay `response` field as content.
+  Runtime proof is still missing because the local server start was blocked by the approval layer in the continuation turn.
 
 Start by running:
 git status --short --branch
@@ -146,9 +147,9 @@ Last known clean state after stopping:
 - Archive exists for the first file-proxy exchange under `comms/llm_proxy/archive`.
 - Root server may still be running on port `9077`; inspect before starting another copy.
 
-## Known Correctness Gap To Investigate
+## Known Correctness Gap To Verify
 
-There are two related but not yet proven-equivalent handoff systems:
+There used to be two related but not equivalent handoff systems:
 
 1. `llm()` file-proxy transport:
    - Request: `comms/llm_proxy/request.json`
@@ -157,18 +158,19 @@ There are two related but not yet proven-equivalent handoff systems:
    - Response accepts simplified `{id, content, reasoning_content}` or OpenAI-compatible `choices`.
 
 2. Slot 2 browser relay:
-   - Request: `comms/llm_request.json`
-   - Response: `comms/llm_response.json`
+   - Request: `comms/llm_proxy/request.json`
+   - Response: `comms/llm_proxy/response.json`
    - Shape: relay-specific request and response memory.
    - Implemented by `llm_request_check` and `llm_response_write` nodes.
 
-The user wants a self-referential loop where the agent can use the browser AI it controls as its own brain. To prove that, one of these must be true:
+The current worktree statically bridges them:
 
-- Slot 2 is updated to service `llm()` file-proxy requests directly, including OpenAI-style `messages`.
-- Or Slot 1 uses the legacy `llm_request` and `llm_wait_response` verbs deliberately for browser-AI handoff, while `llm()` file_proxy remains the coding-agent self-proxy transport.
-- Or a bridge/adapter converts between the two protocols.
+- `_request_text()` can convert an OpenAI-style `messages` array into a browser prompt.
+- `node_llm_response_write()` writes both `content` and `response`.
+- `parse_file_proxy_response()` accepts the relay `response` field when `content` is absent.
+- `prompts/wiring.json` and `prompts/wiring_relay.json` both point their relay runtime paths at `comms/llm_proxy`.
 
-Do not claim the browser relay is the transparent replacement for LM Studio until this is verified with a live run.
+Do not claim the browser relay is the transparent replacement for LM Studio until this is verified with a live Slot 1 + Slot 2 run.
 
 ## File-Proxy Contract
 

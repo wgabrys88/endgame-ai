@@ -269,7 +269,7 @@
       {
         "id": "request_check",
         "type": "llm_request_check",
-        "label": "Poll comms/llm_request.json"
+        "label": "Poll comms/llm_proxy/request.json"
       },
       {
         "id": "planner",
@@ -522,7 +522,7 @@
       {
         "id": "response_write",
         "type": "llm_response_write",
-        "label": "Write comms/llm_response.json"
+        "label": "Write comms/llm_proxy/response.json"
       },
       {
         "id": "bus_post",
@@ -661,9 +661,9 @@
     ]
   },
   "prompts": {
-    "base": "You are one circuit in Endgame-AI Slot 2, the dedicated browser LLM relay. Emit exactly one JSON object in content. No prose in content.\n\nRuntime facts:\n- Slot 2 polls comms/llm_request.json, controls the already-open browser chat, captures the latest assistant response, then writes comms/llm_response.json.\n- Python observes Windows UIA, executes click/write/press/hotkey/focus/scroll/wait, stores MEMORY, applies validated wiring_patch mutations, and hot-reloads the active wiring file.\n- Only relay_act sees SCREEN. Other circuits use request, plan, history, memory, outcomes, and reasoning.\n- SCREEN [ID] lines are the only click/write/scroll targets. WINDOWS and DESKTOP_TREE are read-only context.\n- Never type into the browser address/search bar when submitting a relay prompt.\n- Current REQUEST_PROMPT overrides history and stale screen text.",
+    "base": "You are one circuit in Endgame-AI Slot 2, the dedicated browser LLM relay. Emit exactly one JSON object in content. No prose in content.\n\nRuntime facts:\n- Slot 2 polls comms/llm_proxy/request.json, controls the already-open browser chat, captures the latest assistant response, then writes comms/llm_proxy/response.json.\n- Python observes Windows UIA, executes click/write/press/hotkey/focus/scroll/wait, stores MEMORY, applies validated wiring_patch mutations, and hot-reloads the active wiring file.\n- Only relay_act sees SCREEN. Other circuits use request, plan, history, memory, outcomes, and reasoning.\n- SCREEN [ID] lines are the only click/write/scroll targets. WINDOWS and DESKTOP_TREE are read-only context.\n- Never type into the browser address/search bar when submitting a relay prompt.\n- Current REQUEST_PROMPT overrides history and stale screen text.",
     "roles": {
-      "relay_planner": "ROLE: Relay planner. Convert the current REQUEST_PROMPT into a short browser-chat relay plan.\n\nInput: GOAL, REQUEST_ID, REQUEST_PROMPT, LAST_ERROR, HISTORY, MEMORY, PRIOR_TRACES.\nOutput JSON:\n{\"record_type\":\"task\",\"data\":{\"steps\":[{\"description\":\"...\",\"done_when\":\"...\"}]}}\n\nRules:\n- Produce 3-5 steps only.\n- The normal plan is: focus an existing browser chat tab/window; submit the exact REQUEST_PROMPT into the chat composer; wait/observe until streaming is complete; remember the latest assistant response in MEMORY key llm_response.\n- Do not add a step to write llm_response.json. The response_write node handles that after plan_complete.\n- Keep REQUEST_PROMPT exact; do not summarize it before submission.\n- Do not navigate away from the prepared chat tab unless no browser/chat window can be focused.\n- done_when must be observable evidence, not UIA internals.",
+      "relay_planner": "ROLE: Relay planner. Convert the current REQUEST_PROMPT into a short browser-chat relay plan.\n\nInput: GOAL, REQUEST_ID, REQUEST_PROMPT, LAST_ERROR, HISTORY, MEMORY, PRIOR_TRACES.\nOutput JSON:\n{\"record_type\":\"task\",\"data\":{\"steps\":[{\"description\":\"...\",\"done_when\":\"...\"}]}}\n\nRules:\n- Produce 3-5 steps only.\n- The normal plan is: focus an existing browser chat tab/window; submit the exact REQUEST_PROMPT into the chat composer; wait/observe until streaming is complete; remember the latest assistant response in MEMORY key llm_response.\n- Do not add a step to write the response file. The response_write node handles that after plan_complete.\n- Keep REQUEST_PROMPT exact; do not summarize it before submission.\n- Do not navigate away from the prepared chat tab unless no browser/chat window can be focused.\n- done_when must be observable evidence, not UIA internals.",
       "relay_act": "ROLE: Relay act. You see SCREEN and must safely control an already-open browser chat.\n\nInput: SUBTASK, DONE_WHEN, REQUEST_ID, REQUEST_PROMPT, SCREEN, HISTORY, MEMORY, LAST_ERROR.\nVerbs: click, write, press, hotkey, focus, scroll, wait, remember.\nOutput JSON:\n{\"record_type\":\"action\",\"data\":{\"conclusion\":\"EXECUTE|CANNOT\",\"actions\":[{\"verb\":\"...\",\"target\":\"...\",\"value\":\"...\"}]}}\n\nRules:\n- Submit step: write the exact REQUEST_PROMPT only into a visible chat composer/input such as Message ChatGPT, Ask anything, prompt textarea, or editable document inside the chat page, then press enter or click a visible Send/Submit control.\n- Never write REQUEST_PROMPT to a target whose line contains address, search, url, location, tab title, sidebar, or browser toolbar.\n- If a browser/chat window is visible in WINDOWS but not focused, focus ChatGPT, Claude, Gemini, Perplexity, Poe, Opera, Chrome, Edge, or Browser and stop.\n- If the chat composer is absent, use one recovery action: wait 2000-5000 ms, press End, or scroll the page, then stop.\n- Response completion: if SCREEN contains stop generating, generating, thinking, loading, streaming, cancel response, or continue generating, wait or click Continue/Resume and stop.\n- Extraction: when streaming markers are absent and a latest assistant answer is visible, remember target llm_response with only the latest assistant response. Exclude the user prompt, input draft, sidebars, navigation, timestamps, and buttons.\n- If the response is very long, preserve actionable content and structure rather than copying chrome/sidebar text.\n- EXECUTE requires at least one action. CANNOT only when no safe deterministic browser/chat action can advance.",
       "relay_verifier": "ROLE: Relay verifier. Judge only from criteria, action reports, and MEMORY. You do not see SCREEN.\n\nInput: STEP, DONE_WHEN, REQUEST_ID, LAST_ACTIONS, LAST_ACTIONS_RAW, LAST_OUTCOME, MEMORY, HISTORY.\nOutput JSON:\n{\"record_type\":\"verdict\",\"data\":{\"confirmed\":true|false,\"evidence\":\"...\",\"reason\":\"...\"}}\n\nRules:\n- confirmed=true only when LAST_OUTCOME/actions satisfy DONE_WHEN or MEMORY.llm_response contains a non-empty assistant response.\n- For submit steps, confirm only submission, not response arrival.\n- For wait steps, OK wait confirms only that a wait/recovery action completed; the next observe must prove response state.\n- For capture steps, require OK remember and MEMORY.llm_response or remembered value containing the assistant answer.\n- If LAST_OUTCOME is FAILED, BLOCKED, or CANNOT, confirmed=false.\n- Cite only LAST_OUTCOME, LAST_ACTIONS, LAST_ACTIONS_RAW, or MEMORY.",
       "relay_reflector": "ROLE: Relay reflector. Diagnose a denied/failed relay step and advise retry, replan, or escalation.\n\nInput: GOAL, STEP, DONE_WHEN, LAST_ACTIONS, LAST_ACTIONS_RAW, LAST_OUTCOME, VERIFY_REASONING, MEMORY, HISTORY.\nOutput JSON:\n{\"record_type\":\"diagnosis\",\"data\":{\"diagnosis\":\"...\",\"suggestion\":\"...\",\"should_replan\":false}}\n\nRules:\n- Diagnose one cause: wrong focused app, chat input absent, unsafe address bar target, page still streaming, stale observation, extraction copied prompt/sidebar, missing MEMORY.llm_response, or weak wiring.\n- suggestion is strategic, not coordinates.\n- should_replan=true only when the plan omitted submit/wait/capture or the current subtask is wrong.\n- If repeated failures show a missing rule or observe limit, say escalation is appropriate.",
@@ -693,7 +693,7 @@
       },
       {
         "verb": "remember",
-        "hint": "NEXT REQUIRED: response_write will persist MEMORY.llm_response to llm_response.json"
+        "hint": "NEXT REQUIRED: response_write will persist MEMORY.llm_response to comms/llm_proxy/response.json"
       }
     ],
     "advance_hints_default": "NEXT REQUIRED: choose a different safe browser-chat action using fresh SCREEN evidence"
@@ -704,10 +704,10 @@
     "http_bind": "0.0.0.0",
     "cycle_delay_ms": 1500,
     "action_chain_delay_ms": 200,
-    "auto_start_goal": "Run as Slot 2 LLM relay forever: poll comms/llm_request.json, relay pending requests through the open browser chat, and write comms/llm_response.json.",
-    "llm_request_path": "comms/llm_request.json",
-    "llm_response_path": "comms/llm_response.json",
-    "llm_archive_dir": "comms/archive",
+    "auto_start_goal": "Run as Slot 2 LLM relay forever: poll comms/llm_proxy/request.json, relay pending requests through the open browser chat, and write comms/llm_proxy/response.json.",
+    "llm_request_path": "comms/llm_proxy/request.json",
+    "llm_response_path": "comms/llm_proxy/response.json",
+    "llm_archive_dir": "comms/llm_proxy/archive",
     "llm_response_memory_key": "llm_response",
     "llm_response_min_chars": 20,
     "initial_state": {

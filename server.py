@@ -738,6 +738,8 @@ def parse_file_proxy_response(resp, request_id):
     if message is None:
         message = resp
     content = message.get("content", "")
+    if not content and message is resp:
+        content = resp.get("response", "")
     reasoning = message.get("reasoning_content", resp.get("reasoning_content", ""))
     if content is None:
         content = ""
@@ -859,13 +861,13 @@ def runtime_path(key: str, default: str) -> pathlib.Path:
     return resolved
 
 def llm_request_path() -> pathlib.Path:
-    return runtime_path("llm_request_path", "comms/llm_request.json")
+    return runtime_path("llm_request_path", DEFAULT_FILE_PROXY["request_path"])
 
 def llm_response_path() -> pathlib.Path:
-    return runtime_path("llm_response_path", "comms/llm_response.json")
+    return runtime_path("llm_response_path", DEFAULT_FILE_PROXY["response_path"])
 
 def llm_archive_dir() -> pathlib.Path:
-    return runtime_path("llm_archive_dir", "comms/archive")
+    return runtime_path("llm_archive_dir", DEFAULT_FILE_PROXY["archive_dir"])
 
 def _slot_id() -> int:
     return int(WIRING.get("instance", {}).get("slot", 0) or 0)
@@ -874,6 +876,22 @@ def _new_llm_request_id() -> str:
     return f"slot{_slot_id()}-{int(time.time() * 1000)}"
 
 def _request_text(req: dict[str, Any]) -> str:
+    messages = req.get("messages")
+    if isinstance(messages, list):
+        blocks = []
+        for item in messages:
+            if not isinstance(item, dict):
+                continue
+            role = str(item.get("role", "message") or "message").upper()
+            content = item.get("content", "")
+            if isinstance(content, str):
+                text = content
+            else:
+                text = json.dumps(content, ensure_ascii=False)
+            if text.strip():
+                blocks.append(f"{role}:\n{text.strip()}")
+        if blocks:
+            return "\n\n".join(blocks)
     for key in ("prompt", "request", "question", "content", "text"):
         value = req.get(key)
         if isinstance(value, str) and value.strip():
@@ -881,7 +899,7 @@ def _request_text(req: dict[str, Any]) -> str:
     return ""
 
 def apply_llm_request_action(existing_memory, target, value):
-    """Write comms/llm_request.json for the relay worker."""
+    """Write the configured file-proxy request for the relay worker."""
     memory = dict(existing_memory or {})
     text = str(value or "").strip()
     if not text:
@@ -904,10 +922,10 @@ def apply_llm_request_action(existing_memory, target, value):
         "llm_request_prompt": text,
         "llm_response_pending": True,
     })
-    return True, memory, f"wrote llm_request.json id={req_id} ({len(text)} chars)"
+    return True, memory, f"wrote file-proxy request id={req_id} ({len(text)} chars)"
 
 def apply_llm_wait_response_action(existing_memory, target, value):
-    """Poll comms/llm_response.json and store the matching relay answer in memory."""
+    """Poll the configured file-proxy response and store the matching relay answer in memory."""
     memory = dict(existing_memory or {})
     req_id = str(target or "").strip() or str(memory.get("llm_request_id", "") or "")
     try:
@@ -929,7 +947,7 @@ def apply_llm_wait_response_action(existing_memory, target, value):
                     "llm_response_pending": False,
                     "llm_response_received_at": resp.get("created_at", time.time()),
                 })
-                return True, memory, f"received llm_response.json id={resp_id} ({len(text)} chars)"
+                return True, memory, f"received file-proxy response id={resp_id} ({len(text)} chars)"
         time.sleep(0.5)
     return False, memory, f"FAILED: llm response not ready for id={req_id or '(any)'}"
 
@@ -2061,14 +2079,14 @@ def node_reflect(state, node_cfg):
         return {"signals": ["retry"], "patch": {"retries": retries + 1}}
 
 def node_llm_request_check(state, _):
-    """Relay worker poller: claim a pending llm_request.json and make it the active goal."""
+    """Relay worker poller: claim a pending file-proxy request and make it the active goal."""
     req_path = llm_request_path()
     req = read_json_with_retry(req_path, None)
     if not isinstance(req, dict):
         return {"signals": ["no_request"], "patch": {"last_error": ""}}
     request_text = _request_text(req)
     if not request_text:
-        return {"signals": ["no_request"], "patch": {"last_error": "llm_request.json has no prompt"}}
+        return {"signals": ["no_request"], "patch": {"last_error": "llm proxy request has no prompt"}}
     status = str(req.get("status", "pending") or "pending")
     if status not in {"pending", "claimed", "in_progress"}:
         return {"signals": ["no_request"], "patch": {"last_error": ""}}
@@ -2082,7 +2100,7 @@ def node_llm_request_check(state, _):
     })
     atomic_write_json(req_path, claimed, indent=2)
     relay_goal = (
-        "Relay the pending llm_request.json through the already-open browser chat, "
+        "Relay the pending file-proxy LLM request through the already-open browser chat, "
         "wait for the assistant answer to finish, and capture only the latest assistant response.\n\n"
         f"REQUEST_ID: {req_id}\n"
         f"REQUEST_PROMPT:\n{request_text}"
@@ -2104,7 +2122,7 @@ def _safe_archive_name(req_id: str) -> str:
     return safe[:120] or "request"
 
 def node_llm_response_write(state, _):
-    """Write comms/llm_response.json from relay memory and remove the pending request."""
+    """Write the file-proxy response from relay memory and remove the pending request."""
     key = str(WIRING.get("runtime", {}).get("llm_response_memory_key", "llm_response") or "llm_response")
     memory = state.get("memory") if isinstance(state.get("memory"), dict) else {}
     response = str(memory.get(key, "") or "").strip()
@@ -2123,6 +2141,8 @@ def node_llm_response_write(state, _):
             "from_slot": req.get("from_slot"),
             "created_at": req.get("created_at"),
         },
+        "content": response,
+        "reasoning_content": "",
         "response": response,
     }
     resp_path = llm_response_path()
