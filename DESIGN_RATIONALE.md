@@ -1,38 +1,52 @@
 # Design Rationale
 
-## Why Colony Mode Solves Blocking
+## Why Slot Separation Matters
 
-Slot 1 can keep its actual project state local and linear: plan, act, verify, and continue. When it needs stronger reasoning, it writes `comms/llm_request.json` with the exact prompt and waits for `comms/llm_response.json`.
+Slot 1 owns the user's real goal. It plans, observes, acts, verifies, and keeps project MEMORY local to its graph.
 
-Slot 2 is a separate always-running ROD loop. It can spend many cycles focusing the browser, submitting the prompt, waiting for streaming to finish, extracting the response, and recovering from UI drift without blocking or corrupting Slot 1's project plan.
+Slot 2 is a dedicated browser relay. It can spend many cycles focusing a browser chat, submitting a prompt, waiting for streaming to finish, extracting the latest assistant answer, and recovering from UI drift without corrupting Slot 1's plan.
+
+The queues are split by purpose:
+
+- Slot 1/root cognition proxy: `comms/slot1_cognition/`
+- Slot 2 cognition proxy: `comms/relay_cognition/`
+- Browser relay handoff: `comms/llm_proxy/`
+
+This prevents a file-proxy model request from being mistaken for a browser relay request, and prevents the relay response path from blocking the model transport.
 
 ## Reliable Browser Chat Control
 
-The relay wiring keeps browser control declarative:
+Browser control remains declarative:
 
-- `llm_request_check` claims only pending request files.
-- `relay_planner` always creates the same relay shape: focus chat, submit exact prompt, wait for completion, remember `llm_response`.
-- `relay_act` is the only circuit with SCREEN and is constrained to visible `[ID]` targets.
-- Act rules reject writing to address/search/url/location targets.
-- Capture rules reject prompt echoes, questions, short captures, and captures while streaming/loading markers remain visible.
-- `llm_response_write` atomically writes the final response file and archives the request.
+- `llm_request_check` claims only pending browser-relay requests.
+- `relay_planner` creates a browser-chat relay plan from the exact request prompt.
+- `relay_act` is the only relay circuit with SCREEN.
+- Desktop actions use visible `[ID]` action-scope targets; `WINDOWS` and `DESKTOP_TREE` are context only.
+- Act rules reject writing relay prompts to address/search/url/location targets.
+- Capture rules reject prompt echoes, questions, short captures, stale captures, URL/title-only captures, and captures while streaming/loading markers are visible.
+- `llm_response_write` atomically writes the relay response and archives the completed request.
 
 ## True Self-Referential Loop
 
-The agent controls the same browser chat it uses as a stronger brain. Slot 1 asks for high-level reasoning through a file request. Slot 2 pushes that request into the web model, waits for the answer, and returns it to Slot 1 memory. Slot 1 then uses `MEMORY.llm_response` to continue the original task.
+The same local system that needs help controls the browser model it uses as external intelligence:
 
-This is closed loop: Endgame-AI drives the external model UI, consumes the result, and can use that result to improve Endgame-AI itself.
+1. Slot 1 writes a browser-relay request.
+2. Slot 2 uses the real desktop/browser environment to submit that request to a web model.
+3. Slot 2 captures the answer and writes it back.
+4. Slot 1 reads it into `MEMORY.llm_response` and continues.
+
+Slot 1 does not need to know whether a response came from LM Studio, a coding agent file proxy, or a browser AI relay. It only sees its configured cognition result or MEMORY.
 
 ## Failure Modes Considered
 
-- Wrong field: address/search-bar writes are rejected before execution.
-- Streaming not complete: capture is rejected if stop/generating/loading markers remain.
-- Prompt echo captured: verifier denies memory that matches the prior write or looks like a question.
-- UI focus drift: planner/act focus browser chat first and retry from fresh observations.
-- File races: state, bus, request, and response writes use atomic replace.
-- Relay prompt drift: `REQUEST_PROMPT` is preserved exactly and overrides stale history.
-- Repeated UI failure: `self_modify` can add rules, tune observe settings, or append role guidance in `wiring_relay.json`.
+- Wrong target: chat prompt writes to browser address/search/url/location fields are rejected.
+- Streaming not complete: capture is rejected while generating/loading markers remain.
+- Prompt echo captured: verifier denies memory that matches prior submitted prompt text.
+- Weak capture: questions, titles, URLs, and too-short captures are denied.
+- UI focus drift: observe includes hover scan, action scope, desktop tree, overlays, and window list.
+- File races: state, bus, request, response, and archive writes use atomic replace.
+- Queue collision: Slot 1 cognition, Slot 2 cognition, and browser relay handoff now use separate paths.
 
-## Scaling To Long Autonomous Builds
+## Scaling To Long Work
 
-The handoff is file-based, inspectable, and restartable. Slot 1 can issue multiple intelligence requests over a long project; Slot 2 processes one pending request at a time and returns to polling. More relay slots can be added later by giving each slot a distinct request path or queue convention while keeping the same ROD graph.
+The graph is inspectable and restartable. Long runs can interleave local model reasoning, coding-agent file proxy reasoning, browser AI relay reasoning, desktop actions, and self-modifying wiring patches. The system should still report actual evidence and limitations rather than claiming capabilities not proven by the current runtime.

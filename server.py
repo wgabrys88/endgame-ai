@@ -22,7 +22,10 @@ if not STATE_FILE.is_absolute():
 STATE_FILE = STATE_FILE.resolve()
 BUS_FILE = pathlib.Path(os.environ.get("ENDGAME_BUS", str(ROOT / "bus.json")))
 TRACES_FILE = ROOT / "prompts" / "traces.jsonl"
-MODEL_PATH = PROMPTS / "model.json"
+MODEL_PATH = pathlib.Path(os.environ.get("ENDGAME_MODEL", str(PROMPTS / "model.json")))
+if not MODEL_PATH.is_absolute():
+    MODEL_PATH = ROOT / MODEL_PATH
+MODEL_PATH = MODEL_PATH.resolve()
 WIRING = json.loads(WIRING_PATH.read_text(encoding="utf-8"))
 MODEL = json.loads(MODEL_PATH.read_text(encoding="utf-8"))
 MODEL_LOCK = threading.Lock()
@@ -598,6 +601,12 @@ def read_json_with_retry(path: pathlib.Path, default):
     return default
 
 DEFAULT_FILE_PROXY = {
+    "request_path": "comms/slot1_cognition/request.json",
+    "response_path": "comms/slot1_cognition/response.json",
+    "archive_dir": "comms/slot1_cognition/archive",
+    "poll_interval_ms": 1000,
+}
+DEFAULT_RELAY_PROXY = {
     "request_path": "comms/llm_proxy/request.json",
     "response_path": "comms/llm_proxy/response.json",
     "archive_dir": "comms/llm_proxy/archive",
@@ -681,6 +690,14 @@ def _archive_last_id(archive_dir):
     latest = max(files, key=lambda p: p.stat().st_mtime)
     return latest.name.removesuffix(".request.json")
 
+def _archive_last_file(archive_dir):
+    if not archive_dir.exists():
+        return ""
+    files = [p for p in archive_dir.glob("*.json") if p.is_file()]
+    if not files:
+        return ""
+    return max(files, key=lambda p: p.stat().st_mtime).name
+
 def llm_proxy_status():
     try:
         paths = file_proxy_paths()
@@ -718,6 +735,63 @@ def clear_llm_proxy_files():
             removed.append(str(path))
     sse_push("llm_proxy_clear", {"removed": removed})
     return {"removed": removed, "status": llm_proxy_status()}
+
+def relay_status():
+    try:
+        paths = {
+            "request": llm_request_path(),
+            "response": llm_response_path(),
+            "archive": llm_archive_dir(),
+        }
+        request = read_json_with_retry(paths["request"], None)
+        response = read_json_with_retry(paths["response"], None)
+        pending = {}
+        if isinstance(request, dict):
+            request_text = _request_text(request)
+            pending = {
+                "id": request.get("id", ""),
+                "status": request.get("status", "pending"),
+                "from_slot": request.get("from_slot"),
+                "created_at": request.get("created_at"),
+                "message_count": len(request.get("messages", [])) if isinstance(request.get("messages"), list) else 0,
+                "prompt_chars": len(request_text),
+            }
+        response_info = {}
+        if isinstance(response, dict):
+            response_text = str(response.get("response", "") or response.get("content", "") or "")
+            response_info = {
+                "id": response.get("id", ""),
+                "status": response.get("status", ""),
+                "from_slot": response.get("from_slot"),
+                "created_at": response.get("created_at"),
+                "response_chars": len(response_text),
+            }
+        return {
+            "request_path": str(paths["request"]),
+            "response_path": str(paths["response"]),
+            "archive_dir": str(paths["archive"]),
+            "request_exists": paths["request"].exists(),
+            "response_exists": paths["response"].exists(),
+            "pending": pending,
+            "response": response_info,
+            "last_archive_file": _archive_last_file(paths["archive"]),
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+def clear_relay_files():
+    paths = {
+        "request": llm_request_path(),
+        "response": llm_response_path(),
+    }
+    removed = []
+    for key in ("request", "response"):
+        path = paths[key]
+        if path.exists():
+            unlink_if_exists(path)
+            removed.append(str(path))
+    sse_push("relay_clear", {"removed": removed})
+    return {"removed": removed, "status": relay_status()}
 
 def new_llm_proxy_id():
     return f"llm-{int(time.time() * 1000)}-{os.getpid()}-{threading.get_ident()}"
@@ -861,13 +935,13 @@ def runtime_path(key: str, default: str) -> pathlib.Path:
     return resolved
 
 def llm_request_path() -> pathlib.Path:
-    return runtime_path("llm_request_path", DEFAULT_FILE_PROXY["request_path"])
+    return runtime_path("llm_request_path", DEFAULT_RELAY_PROXY["request_path"])
 
 def llm_response_path() -> pathlib.Path:
-    return runtime_path("llm_response_path", DEFAULT_FILE_PROXY["response_path"])
+    return runtime_path("llm_response_path", DEFAULT_RELAY_PROXY["response_path"])
 
 def llm_archive_dir() -> pathlib.Path:
-    return runtime_path("llm_archive_dir", DEFAULT_FILE_PROXY["archive_dir"])
+    return runtime_path("llm_archive_dir", DEFAULT_RELAY_PROXY["archive_dir"])
 
 def _slot_id() -> int:
     return int(WIRING.get("instance", {}).get("slot", 0) or 0)
@@ -2765,6 +2839,9 @@ def spawn_slot_process(slot, slots):
     env["ENDGAME_STATE"] = str(ROOT / f"state.slot{slot}.json")
     env["ENDGAME_WIRING"] = str(wiring_path)
     env["ENDGAME_PERMISSIONS"] = slot_permissions(slot, slots)
+    relay_model = PROMPTS / "model_relay.json"
+    if int(slot) == 2 and relay_model.exists():
+        env["ENDGAME_MODEL"] = str(relay_model)
     env.setdefault("PYTHONIOENCODING", "utf-8")
     return subprocess.Popen([sys.executable, str(ROOT / "server.py")], cwd=str(ROOT), env=env)
 
@@ -2836,9 +2913,12 @@ def post_slot_goal(slot, goal):
 
 def system_snapshot():
     model = model_snapshot()
+    cognition_proxy = llm_proxy_status()
+    browser_relay = relay_status()
     return {
         "transport": model.get("transport", "openai"),
         "model": {
+            "path": str(MODEL_PATH),
             "host": model.get("host", ""),
             "model": model.get("model", ""),
             "timeout": model.get("timeout", 120),
@@ -2850,7 +2930,9 @@ def system_snapshot():
             "wiring": str(WIRING_PATH),
         },
         "slots": slot_status([1, 2]),
-        "llm_proxy": llm_proxy_status(),
+        "llm_proxy": cognition_proxy,
+        "cognition_proxy": cognition_proxy,
+        "browser_relay": browser_relay,
         "run": run_status_snapshot(),
     }
 
@@ -2982,6 +3064,8 @@ class H(http.server.BaseHTTPRequestHandler):
                 "slot": slot,
                 "port": http_port(slot),
                 "permissions": WIRING.get("instance", {}).get("permissions", []),
+                "model_path": str(MODEL_PATH),
+                "model_transport": model_snapshot().get("transport", "openai"),
                 "run": run_status_snapshot(),
                 "capabilities": wiring_summary().get("capabilities", {}),
             })
@@ -2989,6 +3073,8 @@ class H(http.server.BaseHTTPRequestHandler):
             self._j(system_snapshot())
         elif self.path == "/llm-proxy/status":
             self._j(llm_proxy_status())
+        elif self.path == "/relay/status":
+            self._j(relay_status())
         elif self.path == "/wiring/audit":
             self._j(wiring_audit())
         elif self.path == "/wiring":
@@ -3103,6 +3189,13 @@ class H(http.server.BaseHTTPRequestHandler):
                 self._j({"error": "confirm=true required"}, 400); return
             try:
                 self._j(clear_llm_proxy_files())
+            except Exception as e:
+                self._j({"error": str(e)}, 500)
+        elif self.path == "/relay/clear":
+            if body.get("confirm") is not True:
+                self._j({"error": "confirm=true required"}, 400); return
+            try:
+                self._j(clear_relay_files())
             except Exception as e:
                 self._j({"error": str(e)}, 500)
         elif self.path == "/slots/start":

@@ -2,85 +2,77 @@
 
 ## Browser Preparation
 
-1. Open Opera, Chrome, or Edge.
-2. Open one chat tab for the high-intelligence model: ChatGPT, Claude, Gemini, Perplexity, or Poe.
-3. Sign in, select the desired strong model, and leave the chat composer visible.
+1. Open Chrome, Edge, Opera, or another supported browser.
+2. Open a chat provider such as Grok, ChatGPT, Claude, Gemini, Perplexity, or Poe.
+3. Sign in, select the model you want, and leave the chat composer visible.
 4. Do not leave the browser address bar focused. Click inside the chat page or composer once.
 
-## Launch Both Slots
+Browser relay depends on provider accounts, rate limits, UI state, and Windows focus behavior.
+
+## Start The Root Workbench
 
 ```powershell
 cd C:\Users\px-wjt\Downloads\endgame-ai
-python colony.py 1 2
+$env:PYTHONIOENCODING='utf-8'
+python server.py
 ```
 
-`colony.py` now starts:
-
-- Slot 1 on `prompts/wiring.json` at `http://127.0.0.1:9078`
-- Slot 2 on `prompts/wiring_relay.json` at `http://127.0.0.1:9079`
-- shared bus at `bus.json`
-- shared relay files under `comms/`
-
-Slot 2 auto-starts and polls `comms/llm_request.json`. Slot 1 starts when you post a project goal.
-
-## Recommended `prompts/model.json`
-
-Use a deterministic local model for both slots:
-
-```json
-{
-  "host": "http://localhost:1234",
-  "model": "nvidia-nemotron-3-nano-4b",
-  "temperature": 0.3,
-  "temperature_bump": 0.15,
-  "top_p": 0.9,
-  "top_k": 20,
-  "max_tokens": 2048,
-  "timeout": 900,
-  "stream": false
-}
-```
-
-The browser tab can run GPT-5.5, Claude, or another stronger web model. The local model only needs to drive the ROD wiring safely.
-
-## Start The Main Project Goal On Slot 1
-
-Open the Slot 1 workbench:
-
-```text
-http://127.0.0.1:9078
-```
-
-Post a goal through the UI, or use PowerShell:
+If `python` is not on `PATH`, use the local interpreter path:
 
 ```powershell
-Invoke-RestMethod -Method Post -Uri http://127.0.0.1:9078/run -ContentType 'application/json' -Body '{"goal":"Use the browser relay when you need high-level reasoning. Then implement the requested project change and verify it."}'
+& "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" server.py
 ```
 
-When Slot 1 needs help, it emits:
-
-```json
-{
-  "id": "slot1-...",
-  "status": "pending",
-  "from_slot": 1,
-  "prompt": "..."
-}
-```
-
-Slot 2 claims it, submits it to the browser chat, captures the latest assistant response, writes `comms/llm_response.json`, and archives the request under `comms/archive/`.
-
-## Workbench Monitoring
-
-- Slot 1 workbench: `http://127.0.0.1:9078`
-- Slot 2 workbench: `http://127.0.0.1:9079`
-- Bus: `http://127.0.0.1:9078/bus`
-- Slot 1 state: `state.slot1.json`
-- Slot 2 state: `state.slot2.json`
-- Relay handoff: `comms/llm_request.json`, `comms/llm_response.json`
-
-## Example Initial Goal
+Open:
 
 ```text
-Build a concise DESIGN.md for this repository. First ask the browser relay to analyze the architecture and identify the three highest-leverage improvements. Then use MEMORY.llm_response to write DESIGN.md, keeping it specific to Endgame-AI, and verify the file exists.
+http://127.0.0.1:9077/
 ```
+
+The root panel can start and stop managed slots:
+
+- Slot 1 worker: `http://127.0.0.1:9078/`
+- Slot 2 browser relay: `http://127.0.0.1:9079/`
+
+`colony.py` remains a compatibility wrapper, but the root panel is the preferred launcher.
+
+## Queue Layout
+
+Endgame-AI uses separate file paths for cognition and browser relay:
+
+- Slot 1/root cognition: `comms/slot1_cognition/request.json`, `comms/slot1_cognition/response.json`
+- Slot 2 cognition: `comms/relay_cognition/request.json`, `comms/relay_cognition/response.json`
+- Browser relay handoff: `comms/llm_proxy/request.json`, `comms/llm_proxy/response.json`
+
+Slot 2 auto-starts with `prompts/wiring_relay.json` and polls the browser relay handoff. It answers that handoff by controlling the already-open browser chat through Endgame-AI observe/act paths.
+
+## Model Configs
+
+Default checked-in configs use file-proxy cognition:
+
+```text
+prompts/model.json        Slot 1/root cognition
+prompts/model_relay.json  Slot 2 cognition
+```
+
+To use LM Studio for a slot, set that slot's model config transport to `openai` and confirm the configured `host` serves `/v1/chat/completions`.
+
+## Start A Goal
+
+From the panel, choose Slot 1 and click Run. Or use PowerShell:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:9077/slots/start -ContentType 'application/json' -Body '{"slots":[1,2]}'
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:9077/slots/run -ContentType 'application/json' -Body '{"slot":1,"goal":"Use the browser relay when high-level reasoning is needed, then complete the requested project change and verify it."}'
+```
+
+Monitor:
+
+```text
+GET http://127.0.0.1:9077/system
+GET http://127.0.0.1:9077/wiring/audit
+GET http://127.0.0.1:9077/llm-proxy/status
+GET http://127.0.0.1:9077/relay/status
+```
+
+Use `/llm-proxy/clear` for active cognition proxy files and `/relay/clear` for browser-relay handoff files.

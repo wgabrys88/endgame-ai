@@ -424,6 +424,12 @@ async function clearProxy(){
   await refreshSystem();
   renderAll();
 }
+async function clearRelay(){
+  const r=await post('/relay/clear',{confirm:true});
+  log('relay','cleared',r);
+  await refreshSystem();
+  renderAll();
+}
 async function pause(){
   running=false;
   try{log('pause','requested',await post('/pause',{}))}catch(e){log('pause','local only '+e.message)}
@@ -646,10 +652,11 @@ function renderState(){
 }
 
 function renderSystemPanels(){
-  const sys=systemInfo||{}, proxy=sys.llm_proxy||{}, audit=auditInfo||{};
+  const sys=systemInfo||{}, proxy=sys.cognition_proxy||sys.llm_proxy||{}, relay=sys.browser_relay||{}, audit=auditInfo||{};
   $('systemBox').innerHTML=[
     ['transport',sys.transport||''],
     ['model',sys.model?.model||''],
+    ['model path',sys.model?.path||''],
     ['host',sys.model?.host||''],
     ['root',sys.root?.url||location.origin],
     ['run',sys.run?`running=${!!sys.run.running} queued=${sys.run.queued??0} paused=${!!sys.run.paused}`:'']
@@ -666,16 +673,23 @@ function renderSystemPanels(){
   }).join(''):'<span class="muted">no slots</span>';
 
   $('proxyBox').innerHTML=[
-    ['request',proxy.request_exists?'present':'none'],
-    ['response',proxy.response_exists?'present':'none'],
-    ['pending',proxy.pending?.id||''],
-    ['last archive',proxy.last_archive_id||''],
-    ['request path',proxy.request_path||''],
-    ['response path',proxy.response_path||''],
-    ['clear','<button id="clearProxyBtn" class="mini danger">Clear</button>']
-  ].map(([k,v])=>`<b>${esc(k)}</b><span>${k==='clear'?v:esc(v)}</span>`).join('');
+    ['cognition request',proxy.request_exists?'present':'none'],
+    ['cognition response',proxy.response_exists?'present':'none'],
+    ['cognition pending',proxy.pending?.id||''],
+    ['cognition archive',proxy.last_archive_id||''],
+    ['cognition path',proxy.request_path||''],
+    ['relay request',relay.request_exists?'present':'none'],
+    ['relay response',relay.response_exists?'present':'none'],
+    ['relay pending',relay.pending?.id||''],
+    ['relay archive',relay.last_archive_file||''],
+    ['relay path',relay.request_path||''],
+    ['clear cognition','<button id="clearProxyBtn" class="mini danger">Clear</button>'],
+    ['clear relay','<button id="clearRelayBtn" class="mini danger">Clear</button>']
+  ].map(([k,v])=>`<b>${esc(k)}</b><span>${k.startsWith('clear ')?v:esc(v)}</span>`).join('');
   const clearBtn=$('clearProxyBtn');
   if(clearBtn)clearBtn.onclick=()=>clearProxy().catch(e=>log('proxy',e.message));
+  const clearRelayBtn=$('clearRelayBtn');
+  if(clearRelayBtn)clearRelayBtn.onclick=()=>clearRelay().catch(e=>log('relay',e.message));
 
   const summary=audit.summary||{};
   const issues=audit.issues||[];
@@ -1234,6 +1248,10 @@ try{
   es.addEventListener('llm_proxy_clear',e=>{
     log('proxy','clear',JSON.parse(e.data));
     refreshSystem().then(renderAll).catch(err=>log('proxy',err.message));
+  });
+  es.addEventListener('relay_clear',e=>{
+    log('relay','clear',JSON.parse(e.data));
+    refreshSystem().then(renderAll).catch(err=>log('relay',err.message));
   });
   es.addEventListener('node',e=>{
     const data=JSON.parse(e.data);

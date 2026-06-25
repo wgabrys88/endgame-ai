@@ -19,9 +19,11 @@
 !prompts/wiring_relay.json
 !prompts/wiring-schema.json
 !prompts/model.json
+!prompts/model_relay.json
 
 # ─── Tracked: Documentation & Meta ───────────────────────────
 !README.md
+!HANDOVER_FAULTS.md
 !SETUP_AND_LAUNCH.md
 !DESIGN_RATIONALE.md
 !LICENSE

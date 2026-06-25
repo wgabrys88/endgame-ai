@@ -3,9 +3,9 @@
   "host": "http://localhost:1234",
   "model": "nvidia-nemotron-3-nano-4b",
   "file_proxy": {
-    "request_path": "comms/slot1_cognition/request.json",
-    "response_path": "comms/slot1_cognition/response.json",
-    "archive_dir": "comms/slot1_cognition/archive",
+    "request_path": "comms/relay_cognition/request.json",
+    "response_path": "comms/relay_cognition/response.json",
+    "archive_dir": "comms/relay_cognition/archive",
     "poll_interval_ms": 1000
   },
   "temperature_bump": 0.15,
