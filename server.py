@@ -10,10 +10,17 @@ class ThreadingHTTPServer(http.server.ThreadingHTTPServer):
 
 ROOT = pathlib.Path(__file__).parent
 PROMPTS = ROOT / "prompts"
-STATE_FILE = ROOT / "state.json"
+WIRING_PATH = pathlib.Path(os.environ.get("ENDGAME_WIRING", str(PROMPTS / "wiring.json")))
+if not WIRING_PATH.is_absolute():
+    WIRING_PATH = ROOT / WIRING_PATH
+WIRING_PATH = WIRING_PATH.resolve()
+STATE_FILE = pathlib.Path(os.environ.get("ENDGAME_STATE", str(ROOT / "state.json")))
+if not STATE_FILE.is_absolute():
+    STATE_FILE = ROOT / STATE_FILE
+STATE_FILE = STATE_FILE.resolve()
 BUS_FILE = pathlib.Path(os.environ.get("ENDGAME_BUS", str(ROOT / "bus.json")))
 TRACES_FILE = ROOT / "prompts" / "traces.jsonl"
-WIRING = json.loads((PROMPTS / "wiring.json").read_text(encoding="utf-8"))
+WIRING = json.loads(WIRING_PATH.read_text(encoding="utf-8"))
 MODEL = json.loads((PROMPTS / "model.json").read_text(encoding="utf-8"))
 
 
@@ -564,6 +571,25 @@ def pause_run_state(state, node_id):
     sse_push("paused", {"node": node_id, "cycle": state.get("_cycle", 0)})
     return state
 
+def atomic_write_text(path: pathlib.Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+def atomic_write_json(path: pathlib.Path, data, indent=None, default=None) -> None:
+    atomic_write_text(path, json.dumps(data, indent=indent, default=default))
+
+def read_json_with_retry(path: pathlib.Path, default):
+    if not path.exists():
+        return default
+    for _ in range(3):
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            time.sleep(0.05)
+    return default
+
 def save_state(state=None):
     if state is None:
         with STATE_LOCK:
@@ -571,7 +597,7 @@ def save_state(state=None):
         if state is None:
             return
     remember_state(state)
-    STATE_FILE.write_text(json.dumps(state, default=str), encoding="utf-8")
+    atomic_write_json(STATE_FILE, state, default=str)
 
 
 def _shutdown(sig, frame):
@@ -584,19 +610,102 @@ signal.signal(signal.SIGINT, _shutdown)
 signal.signal(signal.SIGTERM, _shutdown)
 
 def load_state():
-    if STATE_FILE.exists():
-        return json.loads(STATE_FILE.read_text(encoding="utf-8"))
-    return None
+    return read_json_with_retry(STATE_FILE, None)
 
 # ─── Bus ───
 
 def bus_read():
-    if BUS_FILE.exists():
-        return json.loads(BUS_FILE.read_text(encoding="utf-8"))
-    return []
+    return read_json_with_retry(BUS_FILE, [])
 
 def bus_write(msgs):
-    BUS_FILE.write_text(json.dumps(msgs[-wiring_limit("bus_max", 200):], indent=1), encoding="utf-8")
+    atomic_write_json(BUS_FILE, msgs[-wiring_limit("bus_max", 200):], indent=1)
+
+def runtime_path(key: str, default: str) -> pathlib.Path:
+    raw = str(WIRING.get("runtime", {}).get(key, default) or default)
+    path = pathlib.Path(raw)
+    if not path.is_absolute():
+        path = ROOT / path
+    resolved = path.resolve()
+    try:
+        resolved.relative_to(ROOT.resolve())
+    except ValueError as exc:
+        raise ValueError(f"runtime.{key} must stay under {ROOT}") from exc
+    return resolved
+
+def llm_request_path() -> pathlib.Path:
+    return runtime_path("llm_request_path", "comms/llm_request.json")
+
+def llm_response_path() -> pathlib.Path:
+    return runtime_path("llm_response_path", "comms/llm_response.json")
+
+def llm_archive_dir() -> pathlib.Path:
+    return runtime_path("llm_archive_dir", "comms/archive")
+
+def _slot_id() -> int:
+    return int(WIRING.get("instance", {}).get("slot", 0) or 0)
+
+def _new_llm_request_id() -> str:
+    return f"slot{_slot_id()}-{int(time.time() * 1000)}"
+
+def _request_text(req: dict[str, Any]) -> str:
+    for key in ("prompt", "request", "question", "content", "text"):
+        value = req.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+    return ""
+
+def apply_llm_request_action(existing_memory, target, value):
+    """Write comms/llm_request.json for the relay worker."""
+    memory = dict(existing_memory or {})
+    text = str(value or "").strip()
+    if not text:
+        return False, memory, "FAILED: empty llm request"
+    req_path = llm_request_path()
+    existing = read_json_with_retry(req_path, None)
+    if isinstance(existing, dict) and _request_text(existing) and existing.get("status", "pending") in {"pending", "claimed", "in_progress"}:
+        return False, memory, f"FAILED: pending llm request already exists ({existing.get('id', 'unknown')})"
+    req_id = str(target or "").strip() or _new_llm_request_id()
+    request = {
+        "id": req_id,
+        "status": "pending",
+        "from_slot": _slot_id(),
+        "created_at": time.time(),
+        "prompt": text,
+    }
+    atomic_write_json(req_path, request, indent=2)
+    memory.update({
+        "llm_request_id": req_id,
+        "llm_request_prompt": text,
+        "llm_response_pending": True,
+    })
+    return True, memory, f"wrote llm_request.json id={req_id} ({len(text)} chars)"
+
+def apply_llm_wait_response_action(existing_memory, target, value):
+    """Poll comms/llm_response.json and store the matching relay answer in memory."""
+    memory = dict(existing_memory or {})
+    req_id = str(target or "").strip() or str(memory.get("llm_request_id", "") or "")
+    try:
+        timeout_ms = int(value or WIRING.get("runtime", {}).get("llm_wait_timeout_ms", 30000))
+    except (TypeError, ValueError):
+        timeout_ms = 30000
+    timeout_ms = max(1000, min(timeout_ms, 300000))
+    deadline = time.time() + timeout_ms / 1000.0
+    resp_path = llm_response_path()
+    while time.time() < deadline:
+        resp = read_json_with_retry(resp_path, None)
+        if isinstance(resp, dict) and resp.get("status") == "complete":
+            resp_id = str(resp.get("id", "") or "")
+            text = str(resp.get("response", "") or "")
+            if text.strip() and (not req_id or resp_id == req_id):
+                memory.update({
+                    "llm_response": text,
+                    "llm_response_id": resp_id,
+                    "llm_response_pending": False,
+                    "llm_response_received_at": resp.get("created_at", time.time()),
+                })
+                return True, memory, f"received llm_response.json id={resp_id} ({len(text)} chars)"
+        time.sleep(0.5)
+    return False, memory, f"FAILED: llm response not ready for id={req_id or '(any)'}"
 
 def append_trace(state):
     """Persist successful ROD trace for few-shot replay."""
@@ -1603,6 +1712,14 @@ def node_act(state, node_cfg):
             ok_mem, memory, result = apply_memory_action(patch.get("memory") or state.get("memory"), target, value)
             if ok_mem:
                 patch["memory"] = memory
+        elif verb == "llm_request":
+            ok_mem, memory, result = apply_llm_request_action(patch.get("memory") or state.get("memory"), target, value)
+            if ok_mem:
+                patch["memory"] = memory
+        elif verb == "llm_wait_response":
+            ok_mem, memory, result = apply_llm_wait_response_action(patch.get("memory") or state.get("memory"), target, value)
+            if ok_mem:
+                patch["memory"] = memory
         else:
             result = execute_verb(verb, target, value)
         label = target
@@ -1610,6 +1727,10 @@ def node_act(state, node_cfg):
             label = f"{target or 'focused'} value={preview_text(value)!r}"
         if verb == "remember" and value:
             label = f"{target or 'note'} value={preview_text(value)!r}"
+        if verb == "llm_request" and value:
+            label = f"{target or 'auto'} value={preview_text(value)!r}"
+        if verb == "llm_wait_response" and value:
+            label = f"{target or 'memory'} timeout_ms={preview_text(value)!r}"
         results.append(f"{verb} {label}: {result}")
         if str(result).upper().startswith("FAILED"):
             failed = True
@@ -1708,6 +1829,87 @@ def node_reflect(state, node_cfg):
         return {"signals": ["retry"], "patch": patch}
     except Exception:
         return {"signals": ["retry"], "patch": {"retries": retries + 1}}
+
+def node_llm_request_check(state, _):
+    """Relay worker poller: claim a pending llm_request.json and make it the active goal."""
+    req_path = llm_request_path()
+    req = read_json_with_retry(req_path, None)
+    if not isinstance(req, dict):
+        return {"signals": ["no_request"], "patch": {"last_error": ""}}
+    request_text = _request_text(req)
+    if not request_text:
+        return {"signals": ["no_request"], "patch": {"last_error": "llm_request.json has no prompt"}}
+    status = str(req.get("status", "pending") or "pending")
+    if status not in {"pending", "claimed", "in_progress"}:
+        return {"signals": ["no_request"], "patch": {"last_error": ""}}
+    req_id = str(req.get("id") or _new_llm_request_id())
+    claimed = dict(req)
+    claimed.update({
+        "id": req_id,
+        "status": "claimed",
+        "claimed_by_slot": _slot_id(),
+        "claimed_at": time.time(),
+    })
+    atomic_write_json(req_path, claimed, indent=2)
+    relay_goal = (
+        "Relay the pending llm_request.json through the already-open browser chat, "
+        "wait for the assistant answer to finish, and capture only the latest assistant response.\n\n"
+        f"REQUEST_ID: {req_id}\n"
+        f"REQUEST_PROMPT:\n{request_text}"
+    )
+    patch = fresh_state(relay_goal)
+    patch.update({
+        "llm_request": claimed,
+        "llm_request_id": req_id,
+        "llm_request_text": request_text,
+        "llm_request_path": str(req_path),
+        "llm_response_path": str(llm_response_path()),
+        "bus_msg_type": "telemetry",
+        "memory": {},
+    })
+    return {"signals": ["request_ready"], "patch": patch}
+
+def _safe_archive_name(req_id: str) -> str:
+    safe = re.sub(r"[^a-zA-Z0-9_.-]+", "_", req_id or "request")
+    return safe[:120] or "request"
+
+def node_llm_response_write(state, _):
+    """Write comms/llm_response.json from relay memory and remove the pending request."""
+    key = str(WIRING.get("runtime", {}).get("llm_response_memory_key", "llm_response") or "llm_response")
+    memory = state.get("memory") if isinstance(state.get("memory"), dict) else {}
+    response = str(memory.get(key, "") or "").strip()
+    min_chars = int(WIRING.get("runtime", {}).get("llm_response_min_chars", 20) or 20)
+    if len(response) < min_chars:
+        return {"signals": ["write_failed"], "patch": {"last_error": f"missing relay response in memory.{key}"}}
+    req_id = str(state.get("llm_request_id") or memory.get("llm_request_id") or _new_llm_request_id())
+    req = state.get("llm_request") if isinstance(state.get("llm_request"), dict) else {}
+    payload = {
+        "id": req_id,
+        "status": "complete",
+        "from_slot": _slot_id(),
+        "created_at": time.time(),
+        "request": {
+            "prompt": state.get("llm_request_text", req.get("prompt", "")),
+            "from_slot": req.get("from_slot"),
+            "created_at": req.get("created_at"),
+        },
+        "response": response,
+    }
+    resp_path = llm_response_path()
+    atomic_write_json(resp_path, payload, indent=2)
+    req_path = llm_request_path()
+    archive = llm_archive_dir() / f"llm_request.{_safe_archive_name(req_id)}.done.json"
+    if req_path.exists():
+        archive.parent.mkdir(parents=True, exist_ok=True)
+        os.replace(req_path, archive)
+    patch = {
+        "last_error": "",
+        "bus_msg_type": "relay_response",
+        "satisfied": True,
+        "llm_response_written": str(resp_path),
+        "llm_request_archived": str(archive),
+    }
+    return {"signals": ["response_written"], "patch": patch}
 
 def node_satisfied(state, _):
     if "delegated_to" in state:
@@ -1874,7 +2076,7 @@ def apply_wiring_patch(current, parsed):
         node_type = _require_nonempty_text(payload.get("type"), "type")
         if node_type not in NODES:
             raise ValueError(f"no handler for node type: {node_type}")
-        node = {"id": node_id, "type": node_type, "label": str(payload.get("label") or node_id)}
+        node: dict[str, Any] = {"id": node_id, "type": node_type, "label": str(payload.get("label") or node_id)}
         if payload.get("circuit"):
             node["circuit"] = str(payload["circuit"])
         if "prompt" in payload:
@@ -1897,9 +2099,10 @@ def apply_wiring_patch(current, parsed):
 
     elif op == "update_node":
         node_id = _require_node_id(payload.get("id"))
-        node = _find_node(topo, node_id)
-        if not node:
+        found_node = _find_node(topo, node_id)
+        if not found_node:
             raise ValueError(f"unknown node: {node_id}")
+        node: dict[str, Any] = found_node
         updates = payload.get("set")
         if updates is None:
             updates = {k: v for k, v in payload.items() if k != "id"}
@@ -2043,12 +2246,12 @@ def node_self_modify(state, node_cfg):
     Triggered by reflect on 'escalate' signal when stuck.
     Uses LLM to decide what to change in the topology, prompts, or filters."""
     global WIRING
-    wiring_path = PROMPTS / "wiring.json"
+    wiring_path = WIRING_PATH
     current = json.loads(wiring_path.read_text(encoding="utf-8"))
     backup_text = json.dumps(current, indent=2)
-    (PROMPTS / "wiring.backup.json").write_text(backup_text, encoding="utf-8")
+    atomic_write_text(wiring_path.with_suffix(".backup.json"), backup_text)
     stamp = time.strftime("%Y%m%d-%H%M%S")
-    (PROMPTS / f"wiring.backup.{stamp}.json").write_text(backup_text, encoding="utf-8")
+    atomic_write_text(wiring_path.with_name(f"{wiring_path.stem}.backup.{stamp}.json"), backup_text)
     try:
         r = call_node(node_cfg, state)
         parsed = r["parsed"]
@@ -2065,7 +2268,7 @@ def node_self_modify(state, node_cfg):
             patch["last_error"] = wiring_error("self_modify_invalid") + ": " + "; ".join(errs[:5])
             return {"signals": ["modify_failed"], "patch": patch}
 
-        wiring_path.write_text(json.dumps(current, indent=2), encoding="utf-8")
+        atomic_write_json(wiring_path, current, indent=2)
         WIRING = current
         apply_instance_env()
         configure_runtime(WIRING)
@@ -2088,6 +2291,8 @@ NODES = {
     "bus_check": node_bus_check,
     "bus_post": node_bus_post,
     "moe_route": node_moe_route,
+    "llm_request_check": node_llm_request_check,
+    "llm_response_write": node_llm_response_write,
     "self_modify": node_self_modify,
 }
 
@@ -2391,7 +2596,7 @@ class H(http.server.BaseHTTPRequestHandler):
                 self._j({"error": "validation failed", "details": errs}, 400)
                 return
             try:
-                (PROMPTS / "wiring.json").write_text(json.dumps(body, indent=2), encoding="utf-8")
+                atomic_write_json(WIRING_PATH, body, indent=2)
                 WIRING = body
                 apply_instance_env()
                 configure_runtime(WIRING)

@@ -16,11 +16,14 @@
 # ─── Tracked: Configuration ──────────────────────────────────
 !prompts/
 !prompts/wiring.json
+!prompts/wiring_relay.json
 !prompts/wiring-schema.json
 !prompts/model.json
 
 # ─── Tracked: Documentation & Meta ───────────────────────────
 !README.md
+!SETUP_AND_LAUNCH.md
+!DESIGN_RATIONALE.md
 !LICENSE
 !.gitignore
 !.gitattributes
