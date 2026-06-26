@@ -13,11 +13,8 @@
 !colony.py
 !wiring-editor.html
 
-# ─── Tracked: Tests & harness ─────────────────────────────────
+# ─── Tracked: Tests ───────────────────────────────────────────
 !test_mechanical_fixes.py
-!run_verification.py
-!p0_file_proxy_runner.py
-!harness_common.py
 
 # ─── Tracked: Configuration ──────────────────────────────────
 !prompts/

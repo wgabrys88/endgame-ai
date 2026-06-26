@@ -146,9 +146,8 @@ flowchart LR
 | Standard tool-calling agent | Tools are not the interface — verbs + SCREEN + wiring rules are |
 | Cloud computer-use only | Runs fully local; no vendor lock-in for hands or brain |
 | Hardcoded grok/Chrome recipe | grok is one *discoverable* cognition source, not the architecture |
-| `p0_file_proxy_runner.py` | Canned responses without reading SCREEN — automation only, invalid proof |
 | MCP-as-hands | Endgame owns HWND focus and UIA — external agents advise, never click |
-| Dev scripts instead of Endgame | `p0_file_proxy_runner.py`, new harnesses — use the operator to test the operator |
+| **New harness/runner/proof scripts** | Coding agents must **use Endgame** (panel, `POST /run`, poll `request.json`) — never generate parallel test scripts |
 | Legacy multi-slot recipes | Slots are helpers; architecture is one uniform operator |
 
 ---
@@ -568,7 +567,7 @@ Verified in code:
 | Cognition | file_proxy agent read **real SCREEN** in `request.json`, wrote `response.json` |
 | Act | `hotkey win+r` → `write notepad` → `press enter` → `write hello` |
 | Verify | `confirm_launch_chain`, `confirm_write_to_writable` (structural rules) |
-| Invalid proof | `p0_file_proxy_runner.py` canned acts without SCREEN |
+| Invalid proof | Any canned cognition script that does not read SCREEN from `request.json` |
 
 ### Google Chrome (proven)
 
@@ -634,9 +633,9 @@ sequenceDiagram
 
 | Path | Why invalid |
 |------|-------------|
-| `p0_file_proxy_runner.py` | Canned planner/act — never reads SCREEN |
+| New `*_runner.py`, `harness_*.py`, `run_verification.py`-style scripts | Canned cognition — never reads SCREEN; **removed from repo** |
 | Coding agent manually clicking desktop | Bypasses Endgame loop |
-| Unit tests alone | Mechanical only |
+| Unit tests alone | Mechanical only — `test_mechanical_fixes.py` is regression, not E2E |
 
 ---
 
@@ -791,7 +790,6 @@ Ports: root **9077**, slot 1 **9078**, slot 2 **9079** (optional relay worker).
 3. **Autonomous grok discovery** — no pre-opened tab; operator finds browser + chat via plan/act.
 4. **Prove self_modify** — stuck goal → `wiring_patch` → retry success.
 5. **Shrink `server.py`** — remove dead paths; brave architecture changes welcome.
-6. **Delete or quarantine harness scripts** — test via Endgame itself.
 
 ---
 
@@ -808,18 +806,25 @@ MINDSET — NOT legacy mode:
 - This is NOT a standard computer-use agent. GUI = universal API. No vendor API required.
 - One uniform operator. User posts goal in panel (:9077) and walks away.
 - Bootstrap = Nemotron (LM Studio transport:openai). Upgrade cognition by navigating to grok.com, Grok Build, OpenCode, kiro-cli, any JSON file-proxy — via open_url/focus/write.
-- wiring.json evolves (self_modify + panel hot-reload). Brave architecture changes and CODE REDUCTION encouraged — like Codex would.
-- TEST BY RUNNING ENDGAME — not by adding p0 runners or harness scripts. Use panel, POST /run, read state.slot1.json.
+- wiring.json evolves (self_modify + panel hot-reload). Brave architecture changes and CODE REDUCTION encouraged.
 
-RULES: Structural guardrails, not the enemy. Panel can hot-remove rules (no enabled toggle). If stuck, check deny rules before blaming cognition.
+YOU MUST USE ENDGAME TO TEST AND PROVE — NOT WRITE NEW SCRIPTS:
+- Start: python server.py → panel http://127.0.0.1:9077/
+- Post goal: POST /run on :9078 or panel Run button
+- Cognition: poll comms/slot1_cognition/request.json, read SCREEN, write response.json (file_proxy) OR use transport:openai + LM Studio
+- Proof: GET /state → satisfied:true + history with real verbs
+- Mechanical regression only: python test_mechanical_fixes.py
+- DO NOT create harness_*.py, *_runner.py, run_verification.py, ProxyResponder, or any canned cognition layer
+- DO NOT bypass Endgame with manual desktop control or scripted planner/act responses
+- If you need a test, it IS a goal string posted to /run
+
+RULES: Structural guardrails, not the enemy. Panel can hot-remove rules (no enabled toggle).
 
 PROVEN (SCREEN-driven, Endgame owned hands):
 - Notepad hello, Google open_url, YouTube via open_url (partial)
 - Cognition read request.json SCREEN — no manual desktop by dev agent
 
-NEXT SESSION PRIORITY: Document HOW Shakira + grok proofs were achieved (history + SCREEN captures). Extend to full walk-away + grok chat E2E.
-
-FORBIDDEN: p0_file_proxy_runner.py as proof, new test scripts before shrink, legacy slot-recipe thinking.
+NEXT SESSION PRIORITY: Walk-away goals, autonomous grok discovery, self_modify proof. Shrink server.py.
 
 KEY FILES: server.py, desktop.py, actions.py, prompts/wiring.json, wiring-editor.html
 ```
@@ -863,6 +868,9 @@ Research questions:
 7. SEED ROADMAP
    What is "complete seed" vs unrestricted future evolution? How were YouTube + grok proofs achieved mechanically?
 
+8. NO PARALLEL SCRIPTS POLICY
+   Why were harness_common.py, run_verification.py, p0_file_proxy_runner.py removed? How must coding agents test (panel + POST /run only)?
+
 Deliverables:
 - 1-page executive summary
 - Comparison table vs 5 closest systems
@@ -883,10 +891,11 @@ Deliverables:
 | `prompts/wiring.json` | Brain — 32 rules, 12 nodes, 22 edges |
 | `prompts/model.json` | Cognition transport (openai or file_proxy) |
 | `wiring-editor.html` | Walk-away panel |
-| `test_mechanical_fixes.py` | 11 mechanical tests (not E2E proof) |
-| `p0_file_proxy_runner.py` | Canned driver — **not valid proof** |
+| `test_mechanical_fixes.py` | Mechanical regression only (11 tests) — **not** E2E proof |
 
-**Gitignored runtime (never commit):** `state*.json`, `bus.json`, `comms/`, `traces.jsonl`, `__pycache__/`, `mcps/`, scratch under `%USERPROFILE%\AppData\Local\Temp\endgame-ai-scratch\`
+**No harness scripts in repo.** Coding agents test via Endgame itself. Do not add runners.
+
+**Gitignored runtime (never commit):** `state*.json`, `bus.json`, `comms/`, `traces.jsonl`, `__pycache__/`, `mcps/`
 
 ---
 
@@ -929,30 +938,32 @@ No usernames or machine-specific paths in docs — use `%USERPROFILE%` / `$env:U
 | Rules honesty + panel hot-remove verified in code | Done |
 | How benchmarks achieved (§11) | Done |
 | Handover + Deep Research prompts updated | Done |
-| Anti-legacy / anti-script discipline | Done |
+| Harness scripts removed | Done |
+| Anti-script discipline in handover prompts | Done |
 
 ### Next session — start here
 
 1. Read README §0, §9, §11, §18.
 2. Reproduce Shakira goal with Nemotron walk-away — capture `history` + how each step was decided.
 3. Reproduce grok.com chat — capture SCREEN in `request.json` at act steps.
-4. Remove or quarantine `p0_file_proxy_runner.py` if still tempting as shortcut.
-5. Shrink `server.py` — one dead path removed per feature added.
+4. Shrink `server.py` — one dead path removed per feature added.
 
 ### Developer discipline (all future agents)
 
 | Do | Don't |
 |----|-------|
-| POST /run, use panel, read `/state` | Add parallel proof scripts |
+| `python server.py` → panel → `POST /run` | Create `harness_*.py`, `*_runner.py`, or verification wrappers |
+| Poll `request.json`, read SCREEN, write `response.json` | Canned planner/act scripts without SCREEN |
+| Read `/state` and `state.slot1.json` for proof | Manually click desktop during benchmarks |
+| `python test_mechanical_fixes.py` for mechanical regressions | Use unit tests as E2E proof |
 | Modify/remove `server.py` first | Inflate codebase |
 | Hot-edit rules in panel to debug | Assume rules are the root bug without checking SCREEN |
-| Use Endgame to test Endgame | Manually click desktop during benchmarks |
 | Brave wiring/topology changes | Treat slots as the product architecture |
 | Let self_modify evolve policy | Hardcode grok/YouTube recipes in Python |
 
-### Grok Build / Codex knowledge note
+### Coding agent rule (mandatory)
 
-Prior sessions created `p0_file_proxy_runner.py`, `harness_common.py`, `run_verification.py` for automation — **invalid as E2E proof** because they do not read SCREEN. The operator itself is the test harness. Scripts may remain for mechanical regression only (`test_mechanical_fixes.py`).
+**Endgame-AI is the test harness.** Every benchmark is a goal posted to the running operator. If you are about to write a new Python script to "drive" or "prove" Endgame — stop. Post the goal instead.
 
 ---
 
