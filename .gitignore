@@ -13,6 +13,12 @@
 !colony.py
 !wiring-editor.html
 
+# ─── Tracked: Tests & harness ─────────────────────────────────
+!test_mechanical_fixes.py
+!run_verification.py
+!p0_file_proxy_runner.py
+!harness_common.py
+
 # ─── Tracked: Configuration ──────────────────────────────────
 !prompts/
 !prompts/wiring.json
@@ -23,20 +29,19 @@
 
 # ─── Tracked: Documentation & Meta ───────────────────────────
 !README.md
-!HANDOVER_FAULTS.md
-!SETUP_AND_LAUNCH.md
-!DESIGN_RATIONALE.md
 !LICENSE
 !.gitignore
 !.gitattributes
 
 # ─── Explicitly ignored runtime artifacts ─────────────────────
-# (redundant with * but documents what exists at runtime)
 state.json
+state.slot*.json
 bus.json
+comms/
 prompts/traces.jsonl
 prompts/wiring.backup.json
 prompts/wiring.backup.*.json
 __pycache__/
 *.pyc
 *.log
+terminals/

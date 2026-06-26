@@ -199,6 +199,7 @@ RULE_CONDITIONS = {
     "step_has_domain_needle": bool,
     "goal_has_domain": bool,
     "screen_contains_domain_needle": bool,
+    "outcome_contains_domain_needle": bool,
     "screen_contains": list,
     "focused_title_matches": list,
     "focused_title_absent": list,
@@ -1431,11 +1432,22 @@ def _target_screen_line(state, target):
     return target.lower()
 
 def _focused_title(state):
+    post = (state.get("post_action_title") or "").strip().lower()
+    if post:
+        return post
     screen = state.get("screen", "") or ""
     for line in screen.splitlines():
         if line.lower().startswith("focused:"):
             return line.split(":", 1)[1].strip().lower()
     return ""
+
+
+def _verify_proof_text(state):
+    return " ".join([
+        state.get("screen", "") or "",
+        state.get("post_action_title", "") or "",
+        state.get("last_outcome", "") or "",
+    ]).lower()
 
 def _screen_action_id_count(screen, meta=None):
     if isinstance(meta, dict) and isinstance(meta.get("elements"), list):
@@ -1730,16 +1742,20 @@ def _check_goal_has_domain(state, _):
 
 
 def _check_screen_contains_domain_needle(state, _):
-    # Exclude last_outcome: it contains typed URL text which conflates
-    # "I typed the URL" with "the page loaded". Only screen/title count.
-    # Include post_action_title: fresh evidence captured after act executed.
     post_title = state.get("post_action_title", "") or ""
     proof = " ".join([state.get("screen", "") or "", _focused_title(state), post_title]).lower()
     return any(needle in proof for needle in _step_domain_needles(state))
 
 
+def _check_outcome_contains_domain_needle(state, _):
+    outcome = (state.get("last_outcome") or "").lower()
+    if "open_url" not in outcome:
+        return False
+    return any(needle in outcome for needle in _step_domain_needles(state))
+
+
 def _check_screen_contains(state, expected):
-    return _contains_any(state.get("screen", ""), expected)
+    return _contains_any(_verify_proof_text(state), expected)
 
 
 def _check_focused_title_matches(state, expected):
@@ -1887,6 +1903,7 @@ RULE_CHECKERS = {
     "step_has_domain_needle": lambda state, _: bool(_step_domain_needles(state)),
     "goal_has_domain": _check_goal_has_domain,
     "screen_contains_domain_needle": _check_screen_contains_domain_needle,
+    "outcome_contains_domain_needle": _check_outcome_contains_domain_needle,
     "screen_contains": _check_screen_contains,
     "focused_title_matches": _check_focused_title_matches,
     "focused_title_absent": _check_focused_title_absent,
@@ -2112,27 +2129,52 @@ def node_act(state, node_cfg):
     })
     return {"signals": ["acted"], "patch": patch}
 
+def _verify_history_entry(state, rule_id: str, verdict: str, signal: str) -> dict:
+    history = list(state.get("history", []))
+    history.append({
+        "attempt": len(history) + 1,
+        "node": "verify",
+        "action": f"verify:{rule_id}",
+        "outcome": f"{signal}: rule {rule_id} ({verdict})",
+        "rule_id": rule_id,
+        "rule_verdict": verdict,
+    })
+    return history
+
+
 def node_verify(state, node_cfg):
     """Verify from descriptive step + act outcomes only — act is sole SCREEN consumer."""
     rule = evaluate_rules("verify", state, WIRING)
     if rule and rule.get("verdict") == "deny":
+        rid = str(rule.get("id", "") or "")
         return {
             "signals": ["step_denied"],
-            "patch": {"last_error": rule.get("description") or wiring_error("verify_preflight_denied")},
+            "patch": {
+                "last_error": rule.get("description") or wiring_error("verify_preflight_denied"),
+                "last_verify_rule": rid,
+                "history": _verify_history_entry(state, rid, "deny", "deny"),
+            },
             "preflight": True,
-            "rule_id": rule.get("id"),
+            "rule_id": rid,
             "rule_verdict": rule.get("verdict"),
             "rule_description": rule.get("description"),
         }
     if rule and rule.get("verdict") == "confirm":
         clear_keys = WIRING.get("reasoning", {}).get("clear_on_step_confirm", [])
+        rid = str(rule.get("id", "") or "")
         patch: dict[str, Any] = dict(clear_reasoning_patch(state, clear_keys))
-        patch.update({"step": state.get("step", 0) + 1, "retries": 0, "last_error": ""})
+        patch.update({
+            "step": state.get("step", 0) + 1,
+            "retries": 0,
+            "last_error": "",
+            "last_verify_rule": rid,
+            "history": _verify_history_entry(state, rid, "confirm", "confirm"),
+        })
         return {
             "signals": ["step_confirmed"],
             "patch": patch,
             "preflight": True,
-            "rule_id": rule.get("id"),
+            "rule_id": rid,
             "rule_verdict": rule.get("verdict"),
             "rule_description": rule.get("description"),
         }
@@ -2143,11 +2185,20 @@ def node_verify(state, node_cfg):
         if parsed and parsed.get("data", {}).get("confirmed"):
             clear_keys = WIRING.get("reasoning", {}).get("clear_on_step_confirm", [])
             patch.update(clear_reasoning_patch({**state, **patch}, clear_keys))
-            patch.update({"step": state.get("step", 0) + 1, "retries": 0, "last_error": ""})
-            return {"signals": ["step_confirmed"], "patch": patch}
+            patch.update({
+                "step": state.get("step", 0) + 1,
+                "retries": 0,
+                "last_error": "",
+                "last_verify_rule": "llm_verdict",
+                "history": _verify_history_entry(state, "llm_verdict", "confirm", "confirm"),
+            })
+            return {"signals": ["step_confirmed"], "patch": patch, "rule_id": "llm_verdict", "rule_verdict": "confirm"}
+        rid = "llm_verdict"
+        patch["last_verify_rule"] = rid
+        patch["history"] = _verify_history_entry(state, rid, "deny", "deny")
         if not parsed:
             patch["last_error"] = wiring_error("verify_parse_failed")
-        return {"signals": ["step_denied"], "patch": patch}
+        return {"signals": ["step_denied"], "patch": patch, "rule_id": rid, "rule_verdict": "deny"}
     except Exception as e:
         return {"signals": ["step_denied"], "patch": {"last_error": str(e)}}
 

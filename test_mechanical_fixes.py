@@ -116,10 +116,7 @@ class FocusResolverTests(unittest.TestCase):
                 return
             last_error = f"foreground {after_hwnd} did not match notepad {expected} (was {before_hwnd})"
 
-        self.skipTest(
-            last_error or "no notepad window could be focused to foreground"
-            + " (Windows foreground restrictions; see scratch P0 capture for live focus W3 proof)"
-        )
+        self.fail(last_error or "no notepad window could be focused to foreground")
 
 
 class WaitDenyRuleTests(unittest.TestCase):
@@ -183,6 +180,25 @@ class WaitDenyRuleTests(unittest.TestCase):
         rule = self._verify(state)
         if rule and rule.get("id") == "confirm_llm_response_received":
             self.fail("confirm_llm_response_received fired without memory evidence")
+
+    def test_confirm_browser_open_url_via_outcome_needle(self):
+        state = {
+            "goal": "navigate to google.com in chrome",
+            "last_outcome": "OK: open_url chrome: opened https://google.com via chrome",
+            "last_actions_raw": [{"verb": "open_url", "target": "chrome", "value": "google.com"}],
+            "current_step": {
+                "description": "Navigate to google.com in Chrome",
+                "done_when": "google.com page is loaded in Chrome",
+            },
+            "memory": {},
+            "screen": "FOCUSED: Notepad",
+            "post_action_title": "Untitled - Google Chrome",
+            "history": [],
+        }
+        rule = self._verify(state)
+        self.assertIsNotNone(rule)
+        assert rule is not None
+        self.assertEqual(rule["id"], "confirm_browser_open_url")
 
     def test_llm_response_confirm_with_memory(self):
         state = {

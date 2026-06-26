@@ -211,17 +211,9 @@ def _observation_windows(obs: Observation | None) -> list[dict[str, Any]]:
 
 
 def _focus_already_satisfied(target: str, obs: Observation | None) -> bool:
-    focused = (getattr(obs, "focused_title", "") or "").lower().strip()
-    target_l = (target or "").lower().strip()
-    if not focused or not target_l:
-        return False
+    """Only skip focus when observation snapshot marks the resolved window focused."""
     resolved = resolve_window_target(target, _observation_windows(obs))
-    if resolved and bool(resolved.get("focused")):
-        return True
-    if target_l in focused or focused in target_l:
-        return True
-    words = [w for w in re.split(r"[\s\-]+", target_l) if len(w) > 2]
-    return bool(words and any(w in focused for w in words))
+    return bool(resolved and resolved.get("focused"))
 
 def observe_screen() -> str:
     with _desktop_lock:

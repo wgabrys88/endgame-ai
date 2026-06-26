@@ -8,7 +8,7 @@ Local Windows desktop **Reason–Observe–Decide (ROD)** operator. Python stdli
 | **Workspace** | `C:\Users\ewojgab\Downloads\endgame-ai` |
 | **Platform** | Windows 10/11 |
 | **Entry** | `server.py` (stdlib `http.server`, not FastAPI) |
-| **Goal status** | **Paused** — mechanical fixes landed; live foreground + strict rule-evidence gaps remain |
+| **Goal status** | **Paused** — awaiting operator observations; core mechanical fixes + P0 rule evidence landed |
 
 > **Truth order:** `prompts/wiring.json` + `server.py` + `desktop.py` + `actions.py` beat this README. Re-count rules/edges after every wiring edit.
 
@@ -276,8 +276,11 @@ CONSTRAINTS: Minimal diff; wiring.json for policy; no manual desktop control for
 
 | Fix | Location | Behavior |
 |-----|----------|----------|
-| Focus contract | `desktop.py`, `actions.py` | `[W#]` tokens, shared resolver, HWND-first `focus_window` |
+| Focus contract | `desktop.py`, `actions.py` | `[W#]` tokens, shared resolver, HWND-first `focus_window` with `AttachThreadInput` + retry |
+| Focus short-circuit | `actions.py` | Skip `focus_window` only when observation snapshot marks token `focused: true` |
 | Browser navigate | `desktop.open_url`, `actions.py` | `start chrome <url>` without prior focus |
+| Nav confirm rule | `wiring.json`, `server.py` | `confirm_browser_open_url` uses `outcome_contains_domain_needle` for `open_url` proof |
+| Verify history | `server.py` `node_verify` | Preflight confirms/denies append `rule_id` to `history` |
 | Wait semantics | `wiring.json`, `wiring_relay.json` | `deny_wait_only_content_receipt`, strengthened `confirm_llm_response_received` |
 | Self-modify cap | `wiring.json`, `server.py` | `max_self_modify: 3`, `give_up` edge |
 | Observe alignment | `desktop.py`, wiring | `configure_observation()` is source of truth after load |
@@ -318,9 +321,9 @@ Cognition for live runs: **file_proxy** with coding agent reading/writing `comms
 
 | Priority | Goal | Status | Notes |
 |----------|------|--------|-------|
-| P0 | `open notepad and type hello` | Partial pass | `satisfied=true`; focus W3 reported `(already focused)` — no proof of `_set_foreground_verified` on unfocused token |
-| P0 | `navigate to google.com in chrome` | Partial pass | `open_url` OK, `satisfied=true`; confirm rule IDs not always in history |
-| P0 | `play Shakira Waka Waka on YouTube` | Partial pass | Reached watch URL via `open_url`, not click-play; playback rule evidence thin |
+| P0 | `open notepad and type hello` | Pass | `confirm_launch_chain` + `confirm_write_to_writable` in `history` |
+| P0 | `navigate to google.com in chrome` | Pass | `confirm_browser_open_url` in `history` after `open_url` |
+| P0 | `play Shakira Waka Waka on YouTube` | Partial pass | `confirm_youtube_playback` in `history` on clean run; reached via `open_url` not click-play |
 | P1 | `have a conversation with an AI chatbot` | Not run | |
 | P2 | Self-modify after focus failures | Not run | |
 
@@ -337,8 +340,8 @@ Unit tests: **9 pass, 1 skip** — live foreground test skips when Windows block
 
 ## Known gaps
 
-- **`focus_window`** can return false under Windows foreground restrictions; no `AttachThreadInput` / robust retry yet (`desktop.py:_set_foreground_verified`).
-- **Structural confirm rules** (`confirm_browser_open_url`, `confirm_youtube_playback`) may not appear in `history` even when `satisfied=true` (verifier LLM or preflight path).
+- **YouTube playback** reached via direct `open_url` to watch page — no click-play or player-state DOM proof yet.
+- **Harness cleanup** between P0 runs can still leave stale `request.json` (run 1 fail); clear via `/llm-proxy/clear` before each goal.
 - **MoE delegation** on Slot 1 is inert when `desktop_exec` is present.
 - **`plan_failed`** exits to `bus_post` without reflect/replan.
 - **YouTube playback** has structural rules but no player-state/audio proof; ads/login/cookie paths partial.

@@ -132,8 +132,9 @@ def _history_evidence(state: dict, history: list) -> dict:
     memory = state.get("memory") or {}
     rules_hit = []
     for entry in history:
-        if entry.get("node") == "verify" and entry.get("rule"):
-            rules_hit.append(entry.get("rule"))
+        rid = entry.get("rule_id") or entry.get("rule")
+        if entry.get("node") == "verify" and rid:
+            rules_hit.append(rid)
     return {
         "focus_failed": any(
             "FAILED" in str(h.get("outcome", "")) and "focus" in str(h.get("action", "")).lower()
@@ -155,7 +156,13 @@ def _history_evidence(state: dict, history: list) -> dict:
 
 def run_goal(goal_key: str, run_index: int) -> dict:
     ensure_proxy_clear()
-    time.sleep(0.2)
+    time.sleep(0.5)
+    try:
+        wait_run_idle("", timeout_s=15)
+    except Exception:
+        pass
+    ensure_proxy_clear()
+    time.sleep(0.5)
 
     script = GOAL_SCRIPTS[goal_key]
     responder, thread = start_proxy(script)
@@ -206,7 +213,7 @@ def main() -> int:
             for run in (1, 2):
                 results.append(run_goal(goal, run))
                 ensure_proxy_clear()
-                time.sleep(1.5)
+                time.sleep(2.5)
         (SCRATCH / "p0-summary.json").write_text(json.dumps(results, indent=2, default=str), encoding="utf-8")
         print(json.dumps({"port": SLOT_PORT, "health_ok": health.get("ok"), "runs": len(results)}, indent=2))
     finally:

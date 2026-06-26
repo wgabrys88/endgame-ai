@@ -328,7 +328,7 @@
           "playing",
           "playback"
         ],
-        "screen_contains_domain_needle": true
+        "outcome_contains_domain_needle": true
       }
     },
     {

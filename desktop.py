@@ -793,20 +793,73 @@ class Desktop:
         except Exception as exc:
             return False, f"{type(exc).__name__}: {exc}"
 
-    def _set_foreground_verified(self, hwnd: int, title_l: str, keywords: list[str]) -> bool:
-        self.user32.SetForegroundWindow(W.HWND(hwnd))
-        time.sleep(FOCUS_DELAY)
+    def _window_thread_id(self, hwnd: int) -> int:
+        if not hwnd:
+            return 0
+        pid = W.DWORD()
+        tid = self.user32.GetWindowThreadProcessId(W.HWND(hwnd), ctypes.byref(pid))
+        return int(tid or 0)
+
+    def _raise_foreground(self, hwnd: int) -> None:
+        """Best-effort foreground activation using AttachThreadInput + restore."""
+        hwnd = int(hwnd)
+        if not hwnd or not self.user32.IsWindow(W.HWND(hwnd)):
+            return
+        SW_RESTORE = 9
+        if self.user32.IsIconic(W.HWND(hwnd)):
+            self.user32.ShowWindow(W.HWND(hwnd), SW_RESTORE)
+            time.sleep(0.05)
+        foreground = int(self.user32.GetForegroundWindow() or 0)
+        if foreground == hwnd:
+            return
+        current_tid = int(self.kernel32.GetCurrentThreadId() or 0)
+        fg_tid = self._window_thread_id(foreground) if foreground else 0
+        target_tid = self._window_thread_id(hwnd)
+        attached_fg = False
+        attached_target = False
+        try:
+            if fg_tid and fg_tid != current_tid:
+                attached_fg = bool(self.user32.AttachThreadInput(fg_tid, current_tid, True))
+            if target_tid and target_tid != current_tid:
+                attached_target = bool(self.user32.AttachThreadInput(target_tid, current_tid, True))
+            self.user32.BringWindowToTop(W.HWND(hwnd))
+            self.user32.ShowWindow(W.HWND(hwnd), SW_RESTORE)
+            self.user32.SetForegroundWindow(W.HWND(hwnd))
+            # Alt key pulse helps Windows allow foreground steal in some sessions.
+            VK_MENU = 0x12
+            KEYEVENTF_KEYUP = 0x0002
+            self.user32.keybd_event(VK_MENU, 0, 0, 0)
+            self.user32.keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0)
+            self.user32.SetForegroundWindow(W.HWND(hwnd))
+        finally:
+            if attached_target and target_tid:
+                self.user32.AttachThreadInput(target_tid, current_tid, False)
+            if attached_fg and fg_tid:
+                self.user32.AttachThreadInput(fg_tid, current_tid, False)
+
+    def _foreground_matches(self, hwnd: int, title_l: str, keywords: list[str]) -> bool:
         active = int(self.user32.GetForegroundWindow() or 0)
         if not active:
             return False
         active_root = self._root_hwnd(active)
         target_root = self._root_hwnd(hwnd)
-        if active == hwnd or (active_root and active_root == target_root):
+        if active == hwnd or (active_root and target_root and active_root == target_root):
             return True
         active_title = self._get_window_title(active).lower()
         if title_l and (title_l in active_title or active_title in title_l):
             return True
         return bool(keywords and any(w in active_title for w in keywords))
+
+    def _set_foreground_verified(self, hwnd: int, title_l: str, keywords: list[str]) -> bool:
+        hwnd = int(hwnd)
+        if not hwnd:
+            return False
+        for _ in range(3):
+            self._raise_foreground(hwnd)
+            time.sleep(FOCUS_DELAY)
+            if self._foreground_matches(hwnd, title_l, keywords):
+                return True
+        return False
 
     def _window_infos(
         self,
