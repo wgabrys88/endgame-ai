@@ -915,6 +915,25 @@ def _shutdown(sig, frame):
 signal.signal(signal.SIGINT, _shutdown)
 signal.signal(signal.SIGTERM, _shutdown)
 
+# ─── Unified raw log ───
+
+import datetime as _dt
+
+_RAW_LOG_PATH = ROOT / 'logs' / 'endgame_raw.jsonl'
+
+def raw_log(event: str, **data):
+    """Append one JSON line to the unified raw log."""
+    entry = {'ts': time.time(), 'iso': _dt.datetime.now().isoformat(), 'slot': WIRING.get('instance', {}).get('slot', 0), 'event': event}
+    entry.update(data)
+    try:
+        _RAW_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with _RAW_LOG_PATH.open('a', encoding='utf-8') as f:
+            f.write(json.dumps(entry, default=str) + '
+')
+    except Exception:
+        pass
+
+
 def load_state():
     return read_json_with_retry(STATE_FILE, None)
 
@@ -1137,13 +1156,17 @@ def clear_reasoning_patch(state, keys):
     return {"reasoning": reasoning}
 
 def parse_circuit_response(circuit, content, reasoning):
-    """Parse LLM JSON; enforce wiring.reasoning.expected_record_type per circuit."""
+    """Parse LLM JSON from content OR reasoning_content (Nemotron puts JSON in reasoning)."""
     cfg = WIRING.get("reasoning", {})
     expected = cfg.get("expected_record_type", {}).get(circuit)
     for parsed in extract_json_objects(content):
         if expected and parsed.get("record_type") != expected:
             continue
         return parsed, "content"
+    for parsed in extract_json_objects(reasoning):
+        if expected and parsed.get("record_type") != expected:
+            continue
+        return parsed, "reasoning_content"
     return None, None
 
 def call_node(node, state, extra=None):
@@ -1179,6 +1202,7 @@ def call_node(node, state, extra=None):
         parsed, source = parse_circuit_response(circuit, content, reasoning)
         if parsed:
             break
+    raw_log('llm_call', circuit=circuit, content=content, reasoning=reasoning, parsed=bool(parsed), parse_source=source)
     return {"content": content, "reasoning": reasoning, "parsed": parsed, "patch": patch, "parse_source": source}
 
 # ─── Prompt assembly: static system, dynamic user (from wiring.json) ───
@@ -2065,6 +2089,42 @@ def node_act(state, node_cfg):
         patch.update({"last_error": block, "history": history + [entry]})
         return {"signals": ["act_failed"], "patch": patch}
 
+    # Pre-execution target validation: reject invalid targets before mouse action
+    screen_meta = state.get("screen_meta") if isinstance(state.get("screen_meta"), dict) else {}
+    valid_ids = set()
+    if isinstance(screen_meta.get("elements"), list):
+        valid_ids = {str(e.get("id", "")) for e in screen_meta["elements"] if e.get("id")}
+    elif state.get("screen"):
+        for line in (state.get("screen") or "").splitlines():
+            m = re.match(r"\s*\[?(\d+)\]?", line)
+            if m:
+                valid_ids.add(m.group(1))
+    window_tokens = set()
+    if isinstance(screen_meta.get("windows"), list):
+        window_tokens = {str(w.get("token", "")).upper() for w in screen_meta["windows"] if w.get("token")}
+    for a in actions:
+        verb = a.get("verb", "")
+        target = str(a.get("target", "") or "").strip()
+        if verb in ("click", "scroll", "write") and target:
+            id_m = re.match(r"^\[?(\d+)\]?$", target)
+            if id_m:
+                if valid_ids and id_m.group(1) not in valid_ids:
+                    reason = f"invalid_target:not_in_current_targets (target={target}, valid=[{','.join(sorted(valid_ids, key=int)[:20])}])"
+                    entry = {"attempt": len(history) + 1, "action": "; ".join(f"{x.get('verb','')} {x.get('target','')}" for x in actions), "outcome": f"BLOCKED: {reason}"}
+                    patch.update({"last_error": reason, "history": history + [entry], "failed_targets": list(set(state.get("failed_targets", []) + [target]))})
+                    raw_log("act_target_rejected", target=target, valid_count=len(valid_ids))
+                    return {"signals": ["act_failed"], "patch": patch}
+            elif not id_m and verb != "write":
+                # Named target — resolve check done by executor, but log
+                pass
+        if verb == "focus" and target:
+            token_m = re.match(r"^\[?(W\d+)\]?$", target, re.IGNORECASE)
+            if token_m and window_tokens and token_m.group(1).upper() not in window_tokens:
+                reason = f"invalid_focus_target:not_in_windows (target={target})"
+                entry = {"attempt": len(history) + 1, "action": "; ".join(f"{x.get('verb','')} {x.get('target','')}" for x in actions), "outcome": f"BLOCKED: {reason}"}
+                patch.update({"last_error": reason, "history": history + [entry]})
+                return {"signals": ["act_failed"], "patch": patch}
+
     results = []
     failed = False
     chain_delay = int(WIRING.get("runtime", {}).get("action_chain_delay_ms", 0)) / 1000.0
@@ -2102,6 +2162,7 @@ def node_act(state, node_cfg):
         if chain_delay and i < len(actions) - 1:
             time.sleep(chain_delay)
 
+    raw_log('act_executed', actions=[{"verb":a.get("verb"),"target":a.get("target")} for a in actions], results=results)
     ok = not failed and all(": FAILED" not in str(r).upper() and not str(r).upper().startswith("FAILED") for r in results)
     prefix = "OK: " if ok else "FAILED: "
     outcome = prefix + "; ".join(results)
@@ -2147,6 +2208,7 @@ def node_verify(state, node_cfg):
     rule = evaluate_rules("verify", state, WIRING)
     if rule and rule.get("verdict") == "deny":
         rid = str(rule.get("id", "") or "")
+        raw_log('verify_rule', rule_id=rid, verdict='deny', phase='verify')
         return {
             "signals": ["step_denied"],
             "patch": {
@@ -2204,6 +2266,14 @@ def node_verify(state, node_cfg):
 
 def node_reflect(state, node_cfg):
     """Retry vs replan vs escalate. Retries exhausted → replan. Replans exhausted → escalate (self-modify)."""
+    # Inject strategy hints from failed targets
+    failed = state.get('failed_targets', [])
+    if failed:
+        hint = f'STRATEGY: avoid targets {failed}; use launch verb for app opening or hotkey win+r sequence'
+        current_error = state.get('last_error', '')
+        if hint not in current_error:
+            state = {**state, 'last_error': f"{current_error}
+{hint}" if current_error else hint}
     retries = state.get("retries", 0)
     replans = state.get("replan_count", 0)
     max_r = wiring_limit("max_attempts", 7)
@@ -2346,6 +2416,7 @@ def node_satisfied(state, _):
     steps = state.get("plan", [])
     step = state.get("step", 0)
     if steps and step >= len(steps):
+        raw_log('run_satisfied', goal=state.get('goal',''))
         return {"signals": ["idle"], "patch": {"satisfied": True}}
     return {"signals": ["idle"], "patch": {"satisfied": False}}
 
@@ -2835,6 +2906,7 @@ def run(goal, resume_state=None, max_cycles=None):
     max_cycles = max_cycles if max_cycles is not None else wiring_limit("max_cycles", 300)
     cycle_delay = int(WIRING.get("runtime", {}).get("cycle_delay_ms", 300)) / 1000.0
 
+    raw_log('run_start', goal=goal, slot=WIRING.get('instance',{}).get('slot',0))
     print(f"\n{'='*50}\n  ROD [{WIRING.get('instance',{}).get('slot',0)}]: {goal}\n{'='*50}\n")
 
     while cycle < max_cycles:

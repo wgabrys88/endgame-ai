@@ -25,6 +25,8 @@
 
 # ─── Tracked: Documentation & Meta ───────────────────────────
 !README.md
+!logs/
+!logs/*.jsonl
 !LICENSE
 !.gitignore
 !.gitattributes

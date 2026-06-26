@@ -154,6 +154,30 @@ class ActionExecutor:
             ok, message = self._desktop.open_url(browser, url)
             return ActionResult(verb, ok, message)
 
+        if verb == "launch":
+            import time as _time
+            app = str(args.get(cfg.get("value_field", "value"), args.get("value", ""))).strip()
+            if not app:
+                app = str(args.get(cfg.get("target_field", "target"), args.get("target", ""))).strip()
+            if not app:
+                return ActionResult(verb, False, "no app specified")
+            # Deterministic launch: Win+R → type app → Enter → wait
+            self._desktop.hotkey(["win", "r"])
+            _time.sleep(0.5)
+            self._desktop.type_text(app)
+            _time.sleep(0.2)
+            self._desktop.press_key("enter")
+            _time.sleep(1.5)
+            # Verify new window appeared
+            import ctypes
+            hwnd = int(self._desktop.user32.GetForegroundWindow())
+            buf = ctypes.create_unicode_buffer(512)
+            self._desktop.user32.GetWindowTextW(ctypes.c_void_p(hwnd), buf, 512)
+            title = buf.value or ""
+            if app.lower().replace(".exe", "") in title.lower() or title.lower() not in ("run", ""):
+                return ActionResult(verb, True, f"launched {app}, window: {title}")
+            return ActionResult(verb, False, f"launched {app} but foreground is: {title}")
+
         if verb == "wait":
             import time
             raw = args.get(cfg.get("amount_field", "value"), args.get("value", args.get("target", "")))

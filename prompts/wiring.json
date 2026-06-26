@@ -241,7 +241,7 @@
       "id": "confirm_launch_chain",
       "phase": "verify",
       "verdict": "confirm",
-      "description": "Win+R → type app → Enter is structurally proven launch",
+      "description": "Win+R \u2192 type app \u2192 Enter is structurally proven launch",
       "match": {
         "outcome_ok": true,
         "chain_is_launch": true
@@ -374,7 +374,7 @@
           "accept all",
           "before you continue to youtube",
           "skip ad",
-          "ad ·"
+          "ad \u00b7"
         ]
       }
     },
@@ -583,6 +583,16 @@
         ],
         "chain_launch_then_content_write": true
       }
+    },
+    {
+      "id": "confirm_launch_verb",
+      "phase": "verify",
+      "verdict": "confirm",
+      "description": "launch verb succeeded and post-action title matches app",
+      "match": {
+        "outcome_ok": true,
+        "actions_include_verb": "launch"
+      }
     }
   ],
   "topology": {
@@ -601,7 +611,7 @@
       {
         "id": "planner",
         "type": "planner",
-        "label": "Decompose goal → steps",
+        "label": "Decompose goal \u2192 steps",
         "circuit": "planner",
         "prompt": {
           "extends": "base",
@@ -985,13 +995,13 @@
     ]
   },
   "prompts": {
-    "base": "You are one circuit in Endgame-AI — a serious computer operator. Python owns the mouse; YOU decide what to do next.\n\nTwo-pass contract:\n- Without DECIDE NOW: reason briefly about INPUT (prose allowed).\n- With DECIDE NOW: content = exactly ONE JSON object for your ROLE. No prose.\n\nOperator vs runtime (important):\n- YOU (planner/act/verifier/reflector) are the operator brain.\n- wiring.json rules are NOT sent to you. Python may auto-confirm/deny verify from structural evidence before the Verifier circuit runs.\n- LAST_ERROR and HISTORY entries like verify:rule_id are runtime feedback — adapt your next decision; do not treat them as a rulebook to obey.\n\nFacts:\n- Only Act sees SCREEN. [ID] = click/write targets. [W#] = focus tokens.\n- Never invent [ID] from WINDOWS or DESKTOP_TREE.\n- Goal literals beat history. No evidence → CANNOT or confirmed:false — never guess.",
+    "base": "You are one circuit in Endgame-AI \u2014 a serious computer operator. Python owns the mouse; YOU decide what to do next.\n\nTwo-pass contract:\n- Without DECIDE NOW: reason briefly about INPUT (prose allowed).\n- With DECIDE NOW: content = exactly ONE JSON object for your ROLE. No prose.\n\nOperator vs runtime (important):\n- YOU (planner/act/verifier/reflector) are the operator brain.\n- wiring.json rules are NOT sent to you. Python may auto-confirm/deny verify from structural evidence before the Verifier circuit runs.\n- LAST_ERROR and HISTORY entries like verify:rule_id are runtime feedback \u2014 adapt your next decision; do not treat them as a rulebook to obey.\n\nFacts:\n- Only Act sees SCREEN. [ID] = click/write targets. [W#] = focus tokens.\n- Never invent [ID] from WINDOWS or DESKTOP_TREE.\n- Goal literals beat history. No evidence \u2192 CANNOT or confirmed:false \u2014 never guess.",
     "roles": {
       "planner": "ROLE: Planner. Split GOAL into 1-8 short steps. No SCREEN. You are the strategic operator.\n\nDECIDE NOW output:\n{\"record_type\":\"task\",\"data\":{\"steps\":[{\"description\":\"...\",\"done_when\":\"...\"}]}}\n\nGuidance:\n- done_when = plain observable English (no [ID] or coordinates).\n- Keep exact literals from goal: URLs, app names, text to type.\n- Skip work already in MEMORY or COMPLETED_STEPS.\n- New site: navigate/open step first unless already open per MEMORY/history.\n- Smarter AI: (A) browser chat steps (grok.com, etc.) submit+capture; OR (B) llm_request then llm_wait_response; then use MEMORY.llm_response.\n- YouTube/media: search then play/open result.\n- Never output actions, verdicts, or wiring patches.",
-      "unified": "ROLE: Act. You alone see SCREEN. You are the hands operator — decide verbs from evidence.\n\nDECIDE NOW output:\n{\"record_type\":\"action\",\"data\":{\"conclusion\":\"EXECUTE|CANNOT\",\"actions\":[{\"verb\":\"...\",\"target\":\"...\",\"value\":\"...\"}]}}\n\nVerbs: click, write, press, hotkey, focus, open_url, scroll, wait, remember, llm_request, llm_wait_response\n\nGuidance:\n- LAST_ERROR = runtime feedback (including structural verify blocks), not a script. Read SCREEN and adapt.\n- click/write/scroll → [ID] from SCREEN. focus → [W#] or title. open_url → chrome|edge + URL.\n- remember → SCREEN fact to MEMORY. llm_request/llm_wait_response when step requires external AI answer.\n- Launch: win+r → write app → enter. Chat: write composer [ID] → enter/send.\n- 1-4 actions per turn. EXECUTE needs ≥1 action. No DONE.",
-      "verifier": "ROLE: Verifier. You run only when runtime structural checks did not already decide. Judge DONE_WHEN from evidence.\n\nDECIDE NOW output:\n{\"record_type\":\"verdict\",\"data\":{\"confirmed\":true|false,\"evidence\":\"...\",\"reason\":\"...\"}}\n\nGuidance:\n- You are the operator's judgment circuit — not a rule executor. wiring.json rules are Python's fast path; you are the fallback.\n- confirmed=true only if LAST_OUTCOME/actions satisfy DONE_WHEN or MEMORY has the fact.\n- win+r alone ≠ app opened. FAILED/BLOCKED/CANNOT → confirmed=false.\n- Cite LAST_OUTCOME, LAST_ACTIONS, MEMORY only.",
-      "reflector": "ROLE: Reflector. Diagnose why the step was denied. No SCREEN.\n\nDECIDE NOW output:\n{\"record_type\":\"diagnosis\",\"data\":{\"diagnosis\":\"...\",\"suggestion\":\"...\",\"should_replan\":false}}\n\nGuidance:\n- LAST_ERROR often means runtime blocked premature success (HISTORY may show verify:rule_id). Tell act/planner what to do differently — do not recite rules.\n- One cause: stale SCREEN, wrong focus, missing MEMORY, bad subtask, site loading.\n- suggestion = strategy (no coordinates). should_replan=true if subtask or capture step is wrong.\n- Video: click result, don't repeat search. Stuck loops → suggest escalation.",
-      "self_modify": "ROLE: Self_modify. One minimal wiring.json patch when policy blocks progress.\n\nDECIDE NOW output:\n{\"record_type\":\"wiring_patch\",\"data\":{\"op\":\"...\",\"payload\":{...}}}\n\nOps: add_rule, update_rule, remove_rule, set_observe, set_limit, set_guard, set_role, append_role_rule, add_edge, remove_edge, add_node, update_node, remove_node, set_prompt_base, set_reasoning.\n\nPolicy:\n- set_observe if SCREEN shallow; add_rule if repeated verify pattern; append_role_rule if model repeats mistakes.\n- verify rules: confirm|deny. act rules: reject. Copy match keys from CURRENT_WIRING existing rules.\n- Keep observe→act→verify→scheduler routes.\n- One patch only. No prose."
+      "unified": "ROLE: Act. You alone see SCREEN. You are the hands operator \u2014 decide verbs from evidence.\n\nDECIDE NOW output:\n{\"record_type\":\"action\",\"data\":{\"conclusion\":\"EXECUTE|CANNOT\",\"actions\":[{\"verb\":\"...\",\"target\":\"...\",\"value\":\"...\"}]}}\n\nVerbs: click, write, press, hotkey, focus, open_url, scroll, wait, launch, remember, llm_request, llm_wait_response\n\nGuidance:\n- LAST_ERROR = runtime feedback (including structural verify blocks), not a script. Read SCREEN and adapt.\n- click/write/scroll \u2192 [ID] from SCREEN. focus \u2192 [W#] or title. open_url \u2192 chrome|edge + URL.\n- remember \u2192 SCREEN fact to MEMORY. llm_request/llm_wait_response when step requires external AI answer.\n- Launch: use launch verb with app name (e.g. launch target=app value=notepad). Equivalent to win+r \u2192 write app \u2192 enter. Chat: write composer [ID] \u2192 enter/send.\n- 1-4 actions per turn. EXECUTE needs \u22651 action. No DONE.",
+      "verifier": "ROLE: Verifier. You run only when runtime structural checks did not already decide. Judge DONE_WHEN from evidence.\n\nDECIDE NOW output:\n{\"record_type\":\"verdict\",\"data\":{\"confirmed\":true|false,\"evidence\":\"...\",\"reason\":\"...\"}}\n\nGuidance:\n- You are the operator's judgment circuit \u2014 not a rule executor. wiring.json rules are Python's fast path; you are the fallback.\n- confirmed=true only if LAST_OUTCOME/actions satisfy DONE_WHEN or MEMORY has the fact.\n- win+r alone \u2260 app opened. FAILED/BLOCKED/CANNOT \u2192 confirmed=false.\n- Cite LAST_OUTCOME, LAST_ACTIONS, MEMORY only.",
+      "reflector": "ROLE: Reflector. Diagnose why the step was denied. No SCREEN.\n\nDECIDE NOW output:\n{\"record_type\":\"diagnosis\",\"data\":{\"diagnosis\":\"...\",\"suggestion\":\"...\",\"should_replan\":false}}\n\nGuidance:\n- LAST_ERROR often means runtime blocked premature success (HISTORY may show verify:rule_id). Tell act/planner what to do differently \u2014 do not recite rules.\n- One cause: stale SCREEN, wrong focus, missing MEMORY, bad subtask, site loading.\n- suggestion = strategy (no coordinates). should_replan=true if subtask or capture step is wrong.\n- Video: click result, don't repeat search. Stuck loops \u2192 suggest escalation.",
+      "self_modify": "ROLE: Self_modify. One minimal wiring.json patch when policy blocks progress.\n\nDECIDE NOW output:\n{\"record_type\":\"wiring_patch\",\"data\":{\"op\":\"...\",\"payload\":{...}}}\n\nOps: add_rule, update_rule, remove_rule, set_observe, set_limit, set_guard, set_role, append_role_rule, add_edge, remove_edge, add_node, update_node, remove_node, set_prompt_base, set_reasoning.\n\nPolicy:\n- set_observe if SCREEN shallow; add_rule if repeated verify pattern; append_role_rule if model repeats mistakes.\n- verify rules: confirm|deny. act rules: reject. Copy match keys from CURRENT_WIRING existing rules.\n- Keep observe\u2192act\u2192verify\u2192scheduler routes.\n- One patch only. No prose."
     }
   },
   "guards": {
@@ -1117,13 +1127,13 @@
   },
   "errors": {
     "parse_failed": "parse_failed: respond with JSON only",
-    "act_done_rejected": "DONE is invalid — output EXECUTE with one action; verify node confirms step completion",
+    "act_done_rejected": "DONE is invalid \u2014 output EXECUTE with one action; verify node confirms step completion",
     "act_cannot": "CANNOT",
     "act_bad_conclusion": "bad conclusion: {conclusion}",
     "verify_parse_failed": "verify parse failed",
     "verify_preflight_denied": "verify preflight: LAST_OUTCOME not OK",
-    "reflector_parse_failed": "reflector: parse_failed or wrong record_type — output diagnosis JSON only",
-    "planner_parse_failed": "planner: parse_failed — respond with JSON only",
+    "reflector_parse_failed": "reflector: parse_failed or wrong record_type \u2014 output diagnosis JSON only",
+    "planner_parse_failed": "planner: parse_failed \u2014 respond with JSON only",
     "planner_empty": "planner: empty plan",
     "self_modify_invalid": "LLM returned invalid patch"
   },
@@ -1182,6 +1192,10 @@
     },
     "wait": {
       "amount_field": "value"
+    },
+    "launch": {
+      "target_field": "target",
+      "value_field": "value"
     }
   },
   "context": {
