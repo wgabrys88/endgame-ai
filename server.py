@@ -2,7 +2,7 @@
 endgame-ai — stdlib only, zero pip.
 One file. Node handlers are pure functions. Wiring.json is the brain.
 """
-import json, http.server, urllib.request, urllib.error, pathlib, time, sys, threading, queue, os, re, signal
+import json, http.server, urllib.request, urllib.error, pathlib, time, sys, threading, queue, os, re, signal, subprocess
 from typing import Any
 
 class ThreadingHTTPServer(http.server.ThreadingHTTPServer):
@@ -10,11 +10,28 @@ class ThreadingHTTPServer(http.server.ThreadingHTTPServer):
 
 ROOT = pathlib.Path(__file__).parent
 PROMPTS = ROOT / "prompts"
-STATE_FILE = ROOT / "state.json"
+MAIN_WIRING_PATH = PROMPTS / "wiring.json"
+RELAY_WIRING_PATH = PROMPTS / "wiring_relay.json"
+WIRING_PATH = pathlib.Path(os.environ.get("ENDGAME_WIRING", str(PROMPTS / "wiring.json")))
+if not WIRING_PATH.is_absolute():
+    WIRING_PATH = ROOT / WIRING_PATH
+WIRING_PATH = WIRING_PATH.resolve()
+STATE_FILE = pathlib.Path(os.environ.get("ENDGAME_STATE", str(ROOT / "state.json")))
+if not STATE_FILE.is_absolute():
+    STATE_FILE = ROOT / STATE_FILE
+STATE_FILE = STATE_FILE.resolve()
 BUS_FILE = pathlib.Path(os.environ.get("ENDGAME_BUS", str(ROOT / "bus.json")))
 TRACES_FILE = ROOT / "prompts" / "traces.jsonl"
-WIRING = json.loads((PROMPTS / "wiring.json").read_text(encoding="utf-8"))
-MODEL = json.loads((PROMPTS / "model.json").read_text(encoding="utf-8"))
+MODEL_PATH = pathlib.Path(os.environ.get("ENDGAME_MODEL", str(PROMPTS / "model.json")))
+if not MODEL_PATH.is_absolute():
+    MODEL_PATH = ROOT / MODEL_PATH
+MODEL_PATH = MODEL_PATH.resolve()
+WIRING = json.loads(WIRING_PATH.read_text(encoding="utf-8"))
+MODEL = json.loads(MODEL_PATH.read_text(encoding="utf-8"))
+MODEL_LOCK = threading.Lock()
+LLM_PROXY_LOCK = threading.Lock()
+SLOT_PROCS_LOCK = threading.Lock()
+SLOT_PROCS: dict[int, subprocess.Popen] = {}
 
 
 def apply_instance_env():
@@ -182,6 +199,7 @@ RULE_CONDITIONS = {
     "step_has_domain_needle": bool,
     "goal_has_domain": bool,
     "screen_contains_domain_needle": bool,
+    "outcome_contains_domain_needle": bool,
     "screen_contains": list,
     "focused_title_matches": list,
     "focused_title_absent": list,
@@ -196,6 +214,9 @@ RULE_CONDITIONS = {
     "memory_value_not_title": bool,
     "memory_value_not_prior_write": bool,
     "memory_value_not_question": bool,
+    "memory_has_key": str,
+    "memory_key_min_length": int,
+    "memory_response_evidence": bool,
     "chain_is_launch": bool,
     "chain_launch_then_content_write": bool,
     "chain_launch_then_write_min_length": int,
@@ -564,6 +585,317 @@ def pause_run_state(state, node_id):
     sse_push("paused", {"node": node_id, "cycle": state.get("_cycle", 0)})
     return state
 
+def atomic_write_text(path: pathlib.Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+def atomic_write_json(path: pathlib.Path, data, indent=None, default=None) -> None:
+    atomic_write_text(path, json.dumps(data, indent=indent, default=default))
+
+def read_json_with_retry(path: pathlib.Path, default):
+    if not path.exists():
+        return default
+    for _ in range(3):
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            time.sleep(0.05)
+    return default
+
+DEFAULT_FILE_PROXY = {
+    "request_path": "comms/slot1_cognition/request.json",
+    "response_path": "comms/slot1_cognition/response.json",
+    "archive_dir": "comms/slot1_cognition/archive",
+    "poll_interval_ms": 1000,
+}
+DEFAULT_RELAY_PROXY = {
+    "request_path": "comms/llm_proxy/request.json",
+    "response_path": "comms/llm_proxy/response.json",
+    "archive_dir": "comms/llm_proxy/archive",
+    "poll_interval_ms": 1000,
+}
+
+def model_snapshot():
+    with MODEL_LOCK:
+        return json.loads(json.dumps(MODEL))
+
+def normalize_model_config(config):
+    out = dict(config or {})
+    transport = str(out.get("transport") or "openai").strip().lower()
+    out["transport"] = "file_proxy" if transport in {"file_proxy", "file-proxy", "self_proxy"} else "openai"
+    proxy = dict(DEFAULT_FILE_PROXY)
+    proxy.update(out.get("file_proxy") or {})
+    out["file_proxy"] = proxy
+    return out
+
+def reload_model_config():
+    global MODEL
+    with MODEL_LOCK:
+        MODEL = normalize_model_config(json.loads(MODEL_PATH.read_text(encoding="utf-8")))
+        return json.loads(json.dumps(MODEL))
+
+def persist_model_config(config):
+    global MODEL
+    normalized = normalize_model_config(config)
+    atomic_write_json(MODEL_PATH, normalized, indent=2)
+    with MODEL_LOCK:
+        MODEL = normalized
+    return json.loads(json.dumps(normalized))
+
+def set_model_transport(transport):
+    transport = str(transport or "").strip().lower()
+    if transport in {"lm_studio", "lm-studio", "openai_api"}:
+        transport = "openai"
+    if transport not in {"openai", "file_proxy"}:
+        raise ValueError("transport must be openai or file_proxy")
+    current = model_snapshot()
+    current["transport"] = transport
+    saved = persist_model_config(current)
+    sse_push("system", {"transport": saved.get("transport")})
+    return saved
+
+def model_runtime_path(cfg, key, default):
+    raw = str((cfg or {}).get(key, default) or default)
+    path = pathlib.Path(raw)
+    if not path.is_absolute():
+        path = ROOT / path
+    resolved = path.resolve()
+    try:
+        resolved.relative_to(ROOT.resolve())
+    except ValueError as exc:
+        raise ValueError(f"file_proxy.{key} must stay under {ROOT}") from exc
+    return resolved
+
+def file_proxy_config():
+    return dict(model_snapshot().get("file_proxy") or DEFAULT_FILE_PROXY)
+
+def file_proxy_paths():
+    cfg = file_proxy_config()
+    return {
+        "request": model_runtime_path(cfg, "request_path", DEFAULT_FILE_PROXY["request_path"]),
+        "response": model_runtime_path(cfg, "response_path", DEFAULT_FILE_PROXY["response_path"]),
+        "archive": model_runtime_path(cfg, "archive_dir", DEFAULT_FILE_PROXY["archive_dir"]),
+    }
+
+def unlink_if_exists(path):
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass
+
+def _archive_last_id(archive_dir):
+    if not archive_dir.exists():
+        return ""
+    files = list(archive_dir.glob("*.request.json"))
+    if not files:
+        return ""
+    latest = max(files, key=lambda p: p.stat().st_mtime)
+    return latest.name.removesuffix(".request.json")
+
+def _archive_last_file(archive_dir):
+    if not archive_dir.exists():
+        return ""
+    files = [p for p in archive_dir.glob("*.json") if p.is_file()]
+    if not files:
+        return ""
+    return max(files, key=lambda p: p.stat().st_mtime).name
+
+def llm_proxy_status():
+    try:
+        paths = file_proxy_paths()
+        request = read_json_with_retry(paths["request"], None)
+        response = read_json_with_retry(paths["response"], None)
+        pending = {}
+        if isinstance(request, dict):
+            pending = {
+                "id": request.get("id", ""),
+                "created_at": request.get("created_at"),
+                "model": request.get("model", ""),
+                "message_count": len(request.get("messages", [])) if isinstance(request.get("messages"), list) else 0,
+            }
+        return {
+            "transport": model_snapshot().get("transport", "openai"),
+            "request_path": str(paths["request"]),
+            "response_path": str(paths["response"]),
+            "archive_dir": str(paths["archive"]),
+            "request_exists": paths["request"].exists(),
+            "response_exists": paths["response"].exists(),
+            "pending": pending,
+            "response_id": response.get("id", "") if isinstance(response, dict) else "",
+            "last_archive_id": _archive_last_id(paths["archive"]),
+        }
+    except Exception as e:
+        return {"error": str(e), "transport": model_snapshot().get("transport", "openai")}
+
+def clear_llm_proxy_files():
+    paths = file_proxy_paths()
+    removed = []
+    for key in ("request", "response"):
+        path = paths[key]
+        if path.exists():
+            unlink_if_exists(path)
+            removed.append(str(path))
+    sse_push("llm_proxy_clear", {"removed": removed})
+    return {"removed": removed, "status": llm_proxy_status()}
+
+def relay_status():
+    try:
+        paths = {
+            "request": llm_request_path(),
+            "response": llm_response_path(),
+            "archive": llm_archive_dir(),
+        }
+        request = read_json_with_retry(paths["request"], None)
+        response = read_json_with_retry(paths["response"], None)
+        pending = {}
+        if isinstance(request, dict):
+            request_text = _request_text(request)
+            pending = {
+                "id": request.get("id", ""),
+                "status": request.get("status", "pending"),
+                "from_slot": request.get("from_slot"),
+                "created_at": request.get("created_at"),
+                "message_count": len(request.get("messages", [])) if isinstance(request.get("messages"), list) else 0,
+                "prompt_chars": len(request_text),
+            }
+        response_info = {}
+        if isinstance(response, dict):
+            response_text = str(response.get("response", "") or response.get("content", "") or "")
+            response_info = {
+                "id": response.get("id", ""),
+                "status": response.get("status", ""),
+                "from_slot": response.get("from_slot"),
+                "created_at": response.get("created_at"),
+                "response_chars": len(response_text),
+            }
+        return {
+            "request_path": str(paths["request"]),
+            "response_path": str(paths["response"]),
+            "archive_dir": str(paths["archive"]),
+            "request_exists": paths["request"].exists(),
+            "response_exists": paths["response"].exists(),
+            "pending": pending,
+            "response": response_info,
+            "last_archive_file": _archive_last_file(paths["archive"]),
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+def clear_relay_files():
+    paths = {
+        "request": llm_request_path(),
+        "response": llm_response_path(),
+    }
+    removed = []
+    for key in ("request", "response"):
+        path = paths[key]
+        if path.exists():
+            unlink_if_exists(path)
+            removed.append(str(path))
+    sse_push("relay_clear", {"removed": removed})
+    return {"removed": removed, "status": relay_status()}
+
+def new_llm_proxy_id():
+    return f"llm-{int(time.time() * 1000)}-{os.getpid()}-{threading.get_ident()}"
+
+def parse_file_proxy_response(resp, request_id):
+    if not isinstance(resp, dict):
+        return None
+    response_id = str(resp.get("id", "") or "")
+    if response_id and response_id != request_id:
+        return None
+    message = None
+    choices = resp.get("choices")
+    if isinstance(choices, list) and choices:
+        choice = choices[0] if isinstance(choices[0], dict) else {}
+        maybe = choice.get("message")
+        if isinstance(maybe, dict):
+            message = maybe
+    if message is None:
+        message = resp
+    content = message.get("content", "")
+    if not content and message is resp:
+        content = resp.get("response", "")
+    reasoning = message.get("reasoning_content", resp.get("reasoning_content", ""))
+    if content is None:
+        content = ""
+    if not isinstance(content, str):
+        content = json.dumps(content)
+    if reasoning is None:
+        reasoning = ""
+    if not isinstance(reasoning, str):
+        reasoning = json.dumps(reasoning)
+    return content, reasoning
+
+def archive_llm_proxy_exchange(request_id, request_payload, response_payload):
+    paths = file_proxy_paths()
+    archive = paths["archive"]
+    archive.mkdir(parents=True, exist_ok=True)
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", request_id)
+    atomic_write_json(archive / f"{safe}.request.json", request_payload, indent=2)
+    atomic_write_json(archive / f"{safe}.response.json", response_payload, indent=2)
+
+def archive_stale_proxy_response(path):
+    if not path.exists():
+        return
+    paths = file_proxy_paths()
+    paths["archive"].mkdir(parents=True, exist_ok=True)
+    stale = read_json_with_retry(path, None)
+    if stale is None:
+        stale = {"raw": path.read_text(encoding="utf-8", errors="replace")}
+    stamp = f"stale-response-{int(time.time() * 1000)}"
+    atomic_write_json(paths["archive"] / f"{stamp}.json", stale, indent=2)
+    unlink_if_exists(path)
+
+def llm_via_file_proxy(body):
+    cfg = file_proxy_config()
+    paths = file_proxy_paths()
+    poll = max(0.1, int(cfg.get("poll_interval_ms", 1000) or 1000) / 1000.0)
+    timeout = max(1.0, float(model_snapshot().get("timeout", 120) or 120))
+    request_id = new_llm_proxy_id()
+    payload = dict(body)
+    payload.update({
+        "id": request_id,
+        "status": "pending",
+        "transport": "file_proxy",
+        "created_at": time.time(),
+    })
+    t0 = time.time()
+    with LLM_PROXY_LOCK:
+        if paths["request"].exists():
+            existing = read_json_with_retry(paths["request"], {})
+            existing_id = existing.get("id", "") if isinstance(existing, dict) else ""
+            raise RuntimeError(
+                f"LLM file proxy request already pending id={existing_id or '(unknown)'}; "
+                f"answer it or clear {paths['request']}"
+            )
+        archive_stale_proxy_response(paths["response"])
+        atomic_write_json(paths["request"], payload, indent=2)
+        sse_push("llm_proxy_request", {"id": request_id, "request_path": str(paths["request"])})
+        deadline = time.time() + timeout
+        last_response_id = ""
+        while time.time() < deadline:
+            resp = read_json_with_retry(paths["response"], None)
+            parsed = parse_file_proxy_response(resp, request_id)
+            if parsed:
+                content, reasoning = parsed
+                archive_llm_proxy_exchange(request_id, payload, resp)
+                unlink_if_exists(paths["request"])
+                unlink_if_exists(paths["response"])
+                elapsed = time.time() - t0
+                sse_push("llm_proxy_response", {"id": request_id, "elapsed": elapsed})
+                return content, reasoning, elapsed
+            if isinstance(resp, dict):
+                last_response_id = str(resp.get("id", "") or "")
+            time.sleep(poll)
+    suffix = f"; saw response id={last_response_id}" if last_response_id else ""
+    raise RuntimeError(f"LLM file proxy timeout after {int(timeout)}s for id={request_id}{suffix}; request_path={paths['request']}")
+
+with MODEL_LOCK:
+    MODEL = normalize_model_config(MODEL)
+
 def save_state(state=None):
     if state is None:
         with STATE_LOCK:
@@ -571,7 +903,7 @@ def save_state(state=None):
         if state is None:
             return
     remember_state(state)
-    STATE_FILE.write_text(json.dumps(state, default=str), encoding="utf-8")
+    atomic_write_json(STATE_FILE, state, default=str)
 
 
 def _shutdown(sig, frame):
@@ -584,19 +916,118 @@ signal.signal(signal.SIGINT, _shutdown)
 signal.signal(signal.SIGTERM, _shutdown)
 
 def load_state():
-    if STATE_FILE.exists():
-        return json.loads(STATE_FILE.read_text(encoding="utf-8"))
-    return None
+    return read_json_with_retry(STATE_FILE, None)
 
 # ─── Bus ───
 
 def bus_read():
-    if BUS_FILE.exists():
-        return json.loads(BUS_FILE.read_text(encoding="utf-8"))
-    return []
+    return read_json_with_retry(BUS_FILE, [])
 
 def bus_write(msgs):
-    BUS_FILE.write_text(json.dumps(msgs[-wiring_limit("bus_max", 200):], indent=1), encoding="utf-8")
+    atomic_write_json(BUS_FILE, msgs[-wiring_limit("bus_max", 200):], indent=1)
+
+def runtime_path(key: str, default: str) -> pathlib.Path:
+    raw = str(WIRING.get("runtime", {}).get(key, default) or default)
+    path = pathlib.Path(raw)
+    if not path.is_absolute():
+        path = ROOT / path
+    resolved = path.resolve()
+    try:
+        resolved.relative_to(ROOT.resolve())
+    except ValueError as exc:
+        raise ValueError(f"runtime.{key} must stay under {ROOT}") from exc
+    return resolved
+
+def llm_request_path() -> pathlib.Path:
+    return runtime_path("llm_request_path", DEFAULT_RELAY_PROXY["request_path"])
+
+def llm_response_path() -> pathlib.Path:
+    return runtime_path("llm_response_path", DEFAULT_RELAY_PROXY["response_path"])
+
+def llm_archive_dir() -> pathlib.Path:
+    return runtime_path("llm_archive_dir", DEFAULT_RELAY_PROXY["archive_dir"])
+
+def _slot_id() -> int:
+    return int(WIRING.get("instance", {}).get("slot", 0) or 0)
+
+def _new_llm_request_id() -> str:
+    return f"slot{_slot_id()}-{int(time.time() * 1000)}"
+
+def _request_text(req: dict[str, Any]) -> str:
+    messages = req.get("messages")
+    if isinstance(messages, list):
+        blocks = []
+        for item in messages:
+            if not isinstance(item, dict):
+                continue
+            role = str(item.get("role", "message") or "message").upper()
+            content = item.get("content", "")
+            if isinstance(content, str):
+                text = content
+            else:
+                text = json.dumps(content, ensure_ascii=False)
+            if text.strip():
+                blocks.append(f"{role}:\n{text.strip()}")
+        if blocks:
+            return "\n\n".join(blocks)
+    for key in ("prompt", "request", "question", "content", "text"):
+        value = req.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+    return ""
+
+def apply_llm_request_action(existing_memory, target, value):
+    """Write the configured file-proxy request for the relay worker."""
+    memory = dict(existing_memory or {})
+    text = str(value or "").strip()
+    if not text:
+        return False, memory, "FAILED: empty llm request"
+    req_path = llm_request_path()
+    existing = read_json_with_retry(req_path, None)
+    if isinstance(existing, dict) and _request_text(existing) and existing.get("status", "pending") in {"pending", "claimed", "in_progress"}:
+        return False, memory, f"FAILED: pending llm request already exists ({existing.get('id', 'unknown')})"
+    req_id = str(target or "").strip() or _new_llm_request_id()
+    request = {
+        "id": req_id,
+        "status": "pending",
+        "from_slot": _slot_id(),
+        "created_at": time.time(),
+        "prompt": text,
+    }
+    atomic_write_json(req_path, request, indent=2)
+    memory.update({
+        "llm_request_id": req_id,
+        "llm_request_prompt": text,
+        "llm_response_pending": True,
+    })
+    return True, memory, f"wrote file-proxy request id={req_id} ({len(text)} chars)"
+
+def apply_llm_wait_response_action(existing_memory, target, value):
+    """Poll the configured file-proxy response and store the matching relay answer in memory."""
+    memory = dict(existing_memory or {})
+    req_id = str(target or "").strip() or str(memory.get("llm_request_id", "") or "")
+    try:
+        timeout_ms = int(value or WIRING.get("runtime", {}).get("llm_wait_timeout_ms", 30000))
+    except (TypeError, ValueError):
+        timeout_ms = 30000
+    timeout_ms = max(1000, min(timeout_ms, 300000))
+    deadline = time.time() + timeout_ms / 1000.0
+    resp_path = llm_response_path()
+    while time.time() < deadline:
+        resp = read_json_with_retry(resp_path, None)
+        if isinstance(resp, dict) and resp.get("status") == "complete":
+            resp_id = str(resp.get("id", "") or "")
+            text = str(resp.get("response", "") or "")
+            if text.strip() and (not req_id or resp_id == req_id):
+                memory.update({
+                    "llm_response": text,
+                    "llm_response_id": resp_id,
+                    "llm_response_pending": False,
+                    "llm_response_received_at": resp.get("created_at", time.time()),
+                })
+                return True, memory, f"received file-proxy response id={resp_id} ({len(text)} chars)"
+        time.sleep(0.5)
+    return False, memory, f"FAILED: llm response not ready for id={req_id or '(any)'}"
 
 def append_trace(state):
     """Persist successful ROD trace for few-shot replay."""
@@ -630,17 +1061,20 @@ def recent_traces(limit=3):
 # ─── LLM ───
 
 def llm(system, user, temperature=None):
+    model = model_snapshot()
     body = {
-        "model": MODEL.get("model", "local-model"),
+        "model": model.get("model", "local-model"),
         "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-        "temperature": MODEL.get("temperature", 0.3) if temperature is None else temperature,
-        "max_tokens": MODEL.get("max_tokens", 16384),
+        "temperature": model.get("temperature", 0.3) if temperature is None else temperature,
+        "max_tokens": model.get("max_tokens", 16384),
     }
-    url = MODEL["host"] + "/v1/chat/completions"
+    if model.get("transport", "openai") == "file_proxy":
+        return llm_via_file_proxy(body)
+    url = model["host"] + "/v1/chat/completions"
     t0 = time.time()
     req = urllib.request.Request(url, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
     try:
-        r = urllib.request.urlopen(req, timeout=MODEL.get("timeout", 120))
+        r = urllib.request.urlopen(req, timeout=model.get("timeout", 120))
     except urllib.error.HTTPError as e:
         detail = ""
         try:
@@ -721,8 +1155,9 @@ def call_node(node, state, extra=None):
         s.update(extra)
     system = load_system_prompt(circuit, s, node=node_cfg)
     user = build_user_message(circuit, s, node=node_cfg)
-    base_temp = MODEL.get("temperature", 0.3)
-    bump = MODEL.get("temperature_bump", 0.15)
+    model = model_snapshot()
+    base_temp = model.get("temperature", 0.3)
+    bump = model.get("temperature_bump", 0.15)
     max_retries = wiring_limit("llm_parse_retries", 2)
     content, reasoning, parsed, source = "", "", None, None
     patch = {}
@@ -997,11 +1432,22 @@ def _target_screen_line(state, target):
     return target.lower()
 
 def _focused_title(state):
+    post = (state.get("post_action_title") or "").strip().lower()
+    if post:
+        return post
     screen = state.get("screen", "") or ""
     for line in screen.splitlines():
         if line.lower().startswith("focused:"):
             return line.split(":", 1)[1].strip().lower()
     return ""
+
+
+def _verify_proof_text(state):
+    return " ".join([
+        state.get("screen", "") or "",
+        state.get("post_action_title", "") or "",
+        state.get("last_outcome", "") or "",
+    ]).lower()
 
 def _screen_action_id_count(screen, meta=None):
     if isinstance(meta, dict) and isinstance(meta.get("elements"), list):
@@ -1296,16 +1742,20 @@ def _check_goal_has_domain(state, _):
 
 
 def _check_screen_contains_domain_needle(state, _):
-    # Exclude last_outcome: it contains typed URL text which conflates
-    # "I typed the URL" with "the page loaded". Only screen/title count.
-    # Include post_action_title: fresh evidence captured after act executed.
     post_title = state.get("post_action_title", "") or ""
     proof = " ".join([state.get("screen", "") or "", _focused_title(state), post_title]).lower()
     return any(needle in proof for needle in _step_domain_needles(state))
 
 
+def _check_outcome_contains_domain_needle(state, _):
+    outcome = (state.get("last_outcome") or "").lower()
+    if "open_url" not in outcome:
+        return False
+    return any(needle in outcome for needle in _step_domain_needles(state))
+
+
 def _check_screen_contains(state, expected):
-    return _contains_any(state.get("screen", ""), expected)
+    return _contains_any(_verify_proof_text(state), expected)
 
 
 def _check_focused_title_matches(state, expected):
@@ -1377,6 +1827,25 @@ def _check_memory_value_not_question(state, _):
     return bool(values) and all(not v.strip().endswith("?") for v in values)
 
 
+def _check_memory_has_key(state, key):
+    memory = state.get("memory") if isinstance(state.get("memory"), dict) else {}
+    return bool(str(memory.get(str(key), "") or "").strip())
+
+
+def _check_memory_key_min_length(state, expected):
+    memory = state.get("memory") if isinstance(state.get("memory"), dict) else {}
+    key = "llm_response"
+    min_len = int(expected)
+    return len(str(memory.get(key, "") or "").strip()) >= min_len
+
+
+def _check_memory_response_evidence(state, _):
+    memory = state.get("memory") if isinstance(state.get("memory"), dict) else {}
+    if len(str(memory.get("llm_response", "") or "").strip()) >= 20:
+        return True
+    return bool(_memory_values_for_actions(state))
+
+
 def _check_chain_is_launch(state, _):
     actions = _rule_actions(state)
     if len(actions) < 3 or [a.get("verb") for a in actions[:3]] != ["hotkey", "write", "press"]:
@@ -1434,6 +1903,7 @@ RULE_CHECKERS = {
     "step_has_domain_needle": lambda state, _: bool(_step_domain_needles(state)),
     "goal_has_domain": _check_goal_has_domain,
     "screen_contains_domain_needle": _check_screen_contains_domain_needle,
+    "outcome_contains_domain_needle": _check_outcome_contains_domain_needle,
     "screen_contains": _check_screen_contains,
     "focused_title_matches": _check_focused_title_matches,
     "focused_title_absent": _check_focused_title_absent,
@@ -1448,6 +1918,9 @@ RULE_CHECKERS = {
     "memory_value_not_title": _check_memory_value_not_title,
     "memory_value_not_prior_write": _check_memory_value_not_prior_write,
     "memory_value_not_question": _check_memory_value_not_question,
+    "memory_has_key": _check_memory_has_key,
+    "memory_key_min_length": _check_memory_key_min_length,
+    "memory_response_evidence": _check_memory_response_evidence,
     "chain_is_launch": _check_chain_is_launch,
     "chain_launch_then_content_write": _check_chain_launch_then_content_write,
     "chain_launch_then_write_min_length": _check_chain_launch_then_write_min_length,
@@ -1603,6 +2076,14 @@ def node_act(state, node_cfg):
             ok_mem, memory, result = apply_memory_action(patch.get("memory") or state.get("memory"), target, value)
             if ok_mem:
                 patch["memory"] = memory
+        elif verb == "llm_request":
+            ok_mem, memory, result = apply_llm_request_action(patch.get("memory") or state.get("memory"), target, value)
+            if ok_mem:
+                patch["memory"] = memory
+        elif verb == "llm_wait_response":
+            ok_mem, memory, result = apply_llm_wait_response_action(patch.get("memory") or state.get("memory"), target, value)
+            if ok_mem:
+                patch["memory"] = memory
         else:
             result = execute_verb(verb, target, value)
         label = target
@@ -1610,6 +2091,10 @@ def node_act(state, node_cfg):
             label = f"{target or 'focused'} value={preview_text(value)!r}"
         if verb == "remember" and value:
             label = f"{target or 'note'} value={preview_text(value)!r}"
+        if verb == "llm_request" and value:
+            label = f"{target or 'auto'} value={preview_text(value)!r}"
+        if verb == "llm_wait_response" and value:
+            label = f"{target or 'memory'} timeout_ms={preview_text(value)!r}"
         results.append(f"{verb} {label}: {result}")
         if str(result).upper().startswith("FAILED"):
             failed = True
@@ -1644,27 +2129,52 @@ def node_act(state, node_cfg):
     })
     return {"signals": ["acted"], "patch": patch}
 
+def _verify_history_entry(state, rule_id: str, verdict: str, signal: str) -> dict:
+    history = list(state.get("history", []))
+    history.append({
+        "attempt": len(history) + 1,
+        "node": "verify",
+        "action": f"verify:{rule_id}",
+        "outcome": f"{signal}: rule {rule_id} ({verdict})",
+        "rule_id": rule_id,
+        "rule_verdict": verdict,
+    })
+    return history
+
+
 def node_verify(state, node_cfg):
     """Verify from descriptive step + act outcomes only — act is sole SCREEN consumer."""
     rule = evaluate_rules("verify", state, WIRING)
     if rule and rule.get("verdict") == "deny":
+        rid = str(rule.get("id", "") or "")
         return {
             "signals": ["step_denied"],
-            "patch": {"last_error": rule.get("description") or wiring_error("verify_preflight_denied")},
+            "patch": {
+                "last_error": rule.get("description") or wiring_error("verify_preflight_denied"),
+                "last_verify_rule": rid,
+                "history": _verify_history_entry(state, rid, "deny", "deny"),
+            },
             "preflight": True,
-            "rule_id": rule.get("id"),
+            "rule_id": rid,
             "rule_verdict": rule.get("verdict"),
             "rule_description": rule.get("description"),
         }
     if rule and rule.get("verdict") == "confirm":
         clear_keys = WIRING.get("reasoning", {}).get("clear_on_step_confirm", [])
+        rid = str(rule.get("id", "") or "")
         patch: dict[str, Any] = dict(clear_reasoning_patch(state, clear_keys))
-        patch.update({"step": state.get("step", 0) + 1, "retries": 0, "last_error": ""})
+        patch.update({
+            "step": state.get("step", 0) + 1,
+            "retries": 0,
+            "last_error": "",
+            "last_verify_rule": rid,
+            "history": _verify_history_entry(state, rid, "confirm", "confirm"),
+        })
         return {
             "signals": ["step_confirmed"],
             "patch": patch,
             "preflight": True,
-            "rule_id": rule.get("id"),
+            "rule_id": rid,
             "rule_verdict": rule.get("verdict"),
             "rule_description": rule.get("description"),
         }
@@ -1675,11 +2185,20 @@ def node_verify(state, node_cfg):
         if parsed and parsed.get("data", {}).get("confirmed"):
             clear_keys = WIRING.get("reasoning", {}).get("clear_on_step_confirm", [])
             patch.update(clear_reasoning_patch({**state, **patch}, clear_keys))
-            patch.update({"step": state.get("step", 0) + 1, "retries": 0, "last_error": ""})
-            return {"signals": ["step_confirmed"], "patch": patch}
+            patch.update({
+                "step": state.get("step", 0) + 1,
+                "retries": 0,
+                "last_error": "",
+                "last_verify_rule": "llm_verdict",
+                "history": _verify_history_entry(state, "llm_verdict", "confirm", "confirm"),
+            })
+            return {"signals": ["step_confirmed"], "patch": patch, "rule_id": "llm_verdict", "rule_verdict": "confirm"}
+        rid = "llm_verdict"
+        patch["last_verify_rule"] = rid
+        patch["history"] = _verify_history_entry(state, rid, "deny", "deny")
         if not parsed:
             patch["last_error"] = wiring_error("verify_parse_failed")
-        return {"signals": ["step_denied"], "patch": patch}
+        return {"signals": ["step_denied"], "patch": patch, "rule_id": rid, "rule_verdict": "deny"}
     except Exception as e:
         return {"signals": ["step_denied"], "patch": {"last_error": str(e)}}
 
@@ -1687,10 +2206,22 @@ def node_reflect(state, node_cfg):
     """Retry vs replan vs escalate. Retries exhausted → replan. Replans exhausted → escalate (self-modify)."""
     retries = state.get("retries", 0)
     replans = state.get("replan_count", 0)
-    max_r = wiring_limit("max_attempts", 5)
-    max_replans = wiring_limit("max_replans", 2)
+    max_r = wiring_limit("max_attempts", 7)
+    max_replans = wiring_limit("max_replans", 3)
     if retries >= max_r:
         if replans >= max_replans:
+            sm_count = int(state.get("self_modify_count", 0) or 0)
+            max_sm = int(wiring_limit("max_self_modify", 3) or 3)
+            if sm_count >= max_sm:
+                return {
+                    "signals": ["give_up"],
+                    "patch": {
+                        "retries": 0,
+                        "replan_count": 0,
+                        "self_modify_exhausted": True,
+                        "last_error": f"self_modify limit exhausted ({sm_count}/{max_sm})",
+                    },
+                }
             return {"signals": ["escalate"], "patch": {"retries": 0, "replan_count": 0}}
         return {"signals": ["replan"], "patch": {"retries": 0, "replan_count": replans + 1, "replanning": True}}
 
@@ -1703,15 +2234,113 @@ def node_reflect(state, node_cfg):
             return {"signals": ["retry"], "patch": patch}
         if parsed.get("data", {}).get("should_replan"):
             if replans >= max_replans:
+                sm_count = int(state.get("self_modify_count", 0) or 0)
+                max_sm = int(wiring_limit("max_self_modify", 3) or 3)
+                if sm_count >= max_sm:
+                    return {
+                        "signals": ["give_up"],
+                        "patch": {
+                            "retries": 0,
+                            "replan_count": 0,
+                            "self_modify_exhausted": True,
+                            "last_error": f"self_modify limit exhausted ({sm_count}/{max_sm})",
+                            **r["patch"],
+                        },
+                    }
                 return {"signals": ["escalate"], "patch": {"retries": 0, "replan_count": 0, **r["patch"]}}
             return {"signals": ["replan"], "patch": {"retries": 0, "replan_count": replans + 1, "replanning": True, **r["patch"]}}
         return {"signals": ["retry"], "patch": patch}
     except Exception:
         return {"signals": ["retry"], "patch": {"retries": retries + 1}}
 
+def node_llm_request_check(state, _):
+    """Relay worker poller: claim a pending file-proxy request and make it the active goal."""
+    req_path = llm_request_path()
+    req = read_json_with_retry(req_path, None)
+    if not isinstance(req, dict):
+        return {"signals": ["no_request"], "patch": {"last_error": ""}}
+    request_text = _request_text(req)
+    if not request_text:
+        return {"signals": ["no_request"], "patch": {"last_error": "llm proxy request has no prompt"}}
+    status = str(req.get("status", "pending") or "pending")
+    if status not in {"pending", "claimed", "in_progress"}:
+        return {"signals": ["no_request"], "patch": {"last_error": ""}}
+    req_id = str(req.get("id") or _new_llm_request_id())
+    claimed = dict(req)
+    claimed.update({
+        "id": req_id,
+        "status": "claimed",
+        "claimed_by_slot": _slot_id(),
+        "claimed_at": time.time(),
+    })
+    atomic_write_json(req_path, claimed, indent=2)
+    relay_goal = (
+        "Relay the pending file-proxy LLM request through the already-open browser chat, "
+        "wait for the assistant answer to finish, and capture only the latest assistant response.\n\n"
+        f"REQUEST_ID: {req_id}\n"
+        f"REQUEST_PROMPT:\n{request_text}"
+    )
+    patch = fresh_state(relay_goal)
+    patch.update({
+        "llm_request": claimed,
+        "llm_request_id": req_id,
+        "llm_request_text": request_text,
+        "llm_request_path": str(req_path),
+        "llm_response_path": str(llm_response_path()),
+        "bus_msg_type": "telemetry",
+        "memory": {},
+    })
+    return {"signals": ["request_ready"], "patch": patch}
+
+def _safe_archive_name(req_id: str) -> str:
+    safe = re.sub(r"[^a-zA-Z0-9_.-]+", "_", req_id or "request")
+    return safe[:120] or "request"
+
+def node_llm_response_write(state, _):
+    """Write the file-proxy response from relay memory and remove the pending request."""
+    key = str(WIRING.get("runtime", {}).get("llm_response_memory_key", "llm_response") or "llm_response")
+    memory = state.get("memory") if isinstance(state.get("memory"), dict) else {}
+    response = str(memory.get(key, "") or "").strip()
+    min_chars = int(WIRING.get("runtime", {}).get("llm_response_min_chars", 20) or 20)
+    if len(response) < min_chars:
+        return {"signals": ["write_failed"], "patch": {"last_error": f"missing relay response in memory.{key}"}}
+    req_id = str(state.get("llm_request_id") or memory.get("llm_request_id") or _new_llm_request_id())
+    req = state.get("llm_request") if isinstance(state.get("llm_request"), dict) else {}
+    payload = {
+        "id": req_id,
+        "status": "complete",
+        "from_slot": _slot_id(),
+        "created_at": time.time(),
+        "request": {
+            "prompt": state.get("llm_request_text", req.get("prompt", "")),
+            "from_slot": req.get("from_slot"),
+            "created_at": req.get("created_at"),
+        },
+        "content": response,
+        "reasoning_content": "",
+        "response": response,
+    }
+    resp_path = llm_response_path()
+    atomic_write_json(resp_path, payload, indent=2)
+    req_path = llm_request_path()
+    archive = llm_archive_dir() / f"llm_request.{_safe_archive_name(req_id)}.done.json"
+    if req_path.exists():
+        archive.parent.mkdir(parents=True, exist_ok=True)
+        os.replace(req_path, archive)
+    patch = {
+        "last_error": "",
+        "bus_msg_type": "relay_response",
+        "satisfied": True,
+        "llm_response_written": str(resp_path),
+        "llm_request_archived": str(archive),
+    }
+    return {"signals": ["response_written"], "patch": patch}
+
 def node_satisfied(state, _):
     if "delegated_to" in state:
         return {"signals": ["idle"], "patch": {"satisfied": False, "delegated": True}}
+    if state.get("self_modify_exhausted"):
+        return {"signals": ["idle"], "patch": {"satisfied": False}}
     if state.get("plan_failed"):
         return {"signals": ["idle"], "patch": {"satisfied": False}}
     steps = state.get("plan", [])
@@ -1874,7 +2503,7 @@ def apply_wiring_patch(current, parsed):
         node_type = _require_nonempty_text(payload.get("type"), "type")
         if node_type not in NODES:
             raise ValueError(f"no handler for node type: {node_type}")
-        node = {"id": node_id, "type": node_type, "label": str(payload.get("label") or node_id)}
+        node: dict[str, Any] = {"id": node_id, "type": node_type, "label": str(payload.get("label") or node_id)}
         if payload.get("circuit"):
             node["circuit"] = str(payload["circuit"])
         if "prompt" in payload:
@@ -1897,9 +2526,10 @@ def apply_wiring_patch(current, parsed):
 
     elif op == "update_node":
         node_id = _require_node_id(payload.get("id"))
-        node = _find_node(topo, node_id)
-        if not node:
+        found_node = _find_node(topo, node_id)
+        if not found_node:
             raise ValueError(f"unknown node: {node_id}")
+        node: dict[str, Any] = found_node
         updates = payload.get("set")
         if updates is None:
             updates = {k: v for k, v in payload.items() if k != "id"}
@@ -2043,12 +2673,22 @@ def node_self_modify(state, node_cfg):
     Triggered by reflect on 'escalate' signal when stuck.
     Uses LLM to decide what to change in the topology, prompts, or filters."""
     global WIRING
-    wiring_path = PROMPTS / "wiring.json"
+    sm_count = int(state.get("self_modify_count", 0) or 0)
+    max_sm = int(wiring_limit("max_self_modify", 3) or 3)
+    if sm_count >= max_sm:
+        return {
+            "signals": ["modify_failed"],
+            "patch": {
+                "self_modify_exhausted": True,
+                "last_error": f"self_modify limit exhausted ({sm_count}/{max_sm})",
+            },
+        }
+    wiring_path = WIRING_PATH
     current = json.loads(wiring_path.read_text(encoding="utf-8"))
     backup_text = json.dumps(current, indent=2)
-    (PROMPTS / "wiring.backup.json").write_text(backup_text, encoding="utf-8")
+    atomic_write_text(wiring_path.with_suffix(".backup.json"), backup_text)
     stamp = time.strftime("%Y%m%d-%H%M%S")
-    (PROMPTS / f"wiring.backup.{stamp}.json").write_text(backup_text, encoding="utf-8")
+    atomic_write_text(wiring_path.with_name(f"{wiring_path.stem}.backup.{stamp}.json"), backup_text)
     try:
         r = call_node(node_cfg, state)
         parsed = r["parsed"]
@@ -2065,12 +2705,16 @@ def node_self_modify(state, node_cfg):
             patch["last_error"] = wiring_error("self_modify_invalid") + ": " + "; ".join(errs[:5])
             return {"signals": ["modify_failed"], "patch": patch}
 
-        wiring_path.write_text(json.dumps(current, indent=2), encoding="utf-8")
+        atomic_write_json(wiring_path, current, indent=2)
         WIRING = current
         apply_instance_env()
         configure_runtime(WIRING)
         sse_push("wiring_modified", {"op": op, "payload": payload})
-        patch.update({"self_modify_op": op, "self_modify_payload": payload})
+        patch.update({
+            "self_modify_op": op,
+            "self_modify_payload": payload,
+            "self_modify_count": sm_count + 1,
+        })
         return {"signals": ["modified"], "patch": patch}
     except Exception as e:
         return {"signals": ["modify_failed"], "patch": {"last_error": f"self_modify: {e}"}}
@@ -2088,6 +2732,8 @@ NODES = {
     "bus_check": node_bus_check,
     "bus_post": node_bus_post,
     "moe_route": node_moe_route,
+    "llm_request_check": node_llm_request_check,
+    "llm_response_write": node_llm_response_write,
     "self_modify": node_self_modify,
 }
 
@@ -2235,6 +2881,279 @@ def run(goal, resume_state=None, max_cycles=None):
 
 # ─── HTTP ───
 
+def normalize_slots(value=None):
+    if value is None or value == "":
+        return [1, 2]
+    raw = value if isinstance(value, list) else [value]
+    slots = []
+    for item in raw:
+        try:
+            slot = int(item)
+        except (TypeError, ValueError):
+            continue
+        if slot > 0 and slot not in slots:
+            slots.append(slot)
+    return slots or [1, 2]
+
+def slot_wiring_path(slot):
+    if int(slot) == 2 and RELAY_WIRING_PATH.exists():
+        return RELAY_WIRING_PATH
+    return MAIN_WIRING_PATH
+
+def slot_permissions(slot, slots):
+    slot = int(slot)
+    if slot == 2 and RELAY_WIRING_PATH.exists():
+        return "desktop_exec"
+    return "desktop_exec" if slots and slot == min(slots) else ""
+
+def slot_health(slot, timeout=0.8):
+    port = http_port(int(slot))
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/health", timeout=timeout) as r:
+            data = json.loads(r.read())
+        return {"ok": bool(data.get("ok")), "data": data}
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as e:
+        return {"ok": False, "error": str(e)}
+
+def wait_slot_health(slot, timeout=8.0):
+    deadline = time.time() + timeout
+    last = {"ok": False}
+    while time.time() < deadline:
+        last = slot_health(slot, timeout=1.0)
+        if last.get("ok"):
+            return last
+        time.sleep(0.35)
+    return last
+
+def slot_status(slots=None):
+    slots = normalize_slots(slots)
+    out = []
+    with SLOT_PROCS_LOCK:
+        for slot in slots:
+            proc = SLOT_PROCS.get(slot)
+            running = bool(proc and proc.poll() is None)
+            if proc and not running:
+                SLOT_PROCS.pop(slot, None)
+            health = slot_health(slot)
+            wiring_path = slot_wiring_path(slot)
+            out.append({
+                "slot": slot,
+                "port": http_port(slot),
+                "url": f"http://127.0.0.1:{http_port(slot)}/",
+                "managed": bool(proc),
+                "running": running or bool(health.get("ok")),
+                "pid": proc.pid if proc and running else None,
+                "health": health,
+                "wiring": str(wiring_path),
+                "wiring_name": wiring_path.name,
+            })
+    return out
+
+def spawn_slot_process(slot, slots):
+    env = os.environ.copy()
+    wiring_path = slot_wiring_path(slot)
+    env["ENDGAME_SLOT"] = str(slot)
+    env["ENDGAME_STATE"] = str(ROOT / f"state.slot{slot}.json")
+    env["ENDGAME_WIRING"] = str(wiring_path)
+    env["ENDGAME_PERMISSIONS"] = slot_permissions(slot, slots)
+    relay_model = PROMPTS / "model_relay.json"
+    if int(slot) == 2 and relay_model.exists():
+        env["ENDGAME_MODEL"] = str(relay_model)
+    env.setdefault("PYTHONIOENCODING", "utf-8")
+    return subprocess.Popen([sys.executable, str(ROOT / "server.py")], cwd=str(ROOT), env=env)
+
+def start_slots(slots=None):
+    slots = normalize_slots(slots)
+    started = []
+    with SLOT_PROCS_LOCK:
+        for slot in slots:
+            proc = SLOT_PROCS.get(slot)
+            if proc and proc.poll() is None:
+                started.append({"slot": slot, "status": "already_managed", "pid": proc.pid, "port": http_port(slot)})
+                continue
+            health = slot_health(slot)
+            if health.get("ok"):
+                started.append({"slot": slot, "status": "already_running", "pid": None, "port": http_port(slot)})
+                continue
+            proc = spawn_slot_process(slot, slots)
+            SLOT_PROCS[slot] = proc
+            started.append({"slot": slot, "status": "started", "pid": proc.pid, "port": http_port(slot)})
+    for item in started:
+        if item["status"] == "started":
+            item["health"] = wait_slot_health(item["slot"])
+            if item["health"].get("ok"):
+                try:
+                    wiring = json.loads(slot_wiring_path(item["slot"]).read_text(encoding="utf-8"))
+                    auto_goal = wiring.get("runtime", {}).get("auto_start_goal", "")
+                    if auto_goal:
+                        item["auto_start"] = post_slot_goal(item["slot"], auto_goal)
+                except Exception as e:
+                    item["auto_start_error"] = str(e)
+    return {"slots": slot_status(slots), "started": started}
+
+def stop_slots(slots=None):
+    slots = normalize_slots(slots)
+    stopped = []
+    with SLOT_PROCS_LOCK:
+        targets = [(slot, SLOT_PROCS.get(slot)) for slot in slots]
+    for slot, proc in targets:
+        if not proc or proc.poll() is not None:
+            stopped.append({"slot": slot, "status": "not_managed"})
+            continue
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+            status = "stopped"
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            status = "killed"
+        stopped.append({"slot": slot, "status": status})
+        with SLOT_PROCS_LOCK:
+            SLOT_PROCS.pop(slot, None)
+    return {"slots": slot_status(slots), "stopped": stopped}
+
+def post_slot_goal(slot, goal):
+    slot = int(slot or 1)
+    goal = str(goal or "").strip()
+    if not goal:
+        raise ValueError("goal required")
+    body = json.dumps({"goal": goal}).encode()
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{http_port(slot)}/run",
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=8) as r:
+        data = json.loads(r.read())
+    return {"slot": slot, "port": http_port(slot), "result": data}
+
+def system_snapshot():
+    model = model_snapshot()
+    cognition_proxy = llm_proxy_status()
+    browser_relay = relay_status()
+    return {
+        "transport": model.get("transport", "openai"),
+        "model": {
+            "path": str(MODEL_PATH),
+            "host": model.get("host", ""),
+            "model": model.get("model", ""),
+            "timeout": model.get("timeout", 120),
+        },
+        "root": {
+            "slot": WIRING.get("instance", {}).get("slot", 0),
+            "port": http_port(),
+            "url": f"http://127.0.0.1:{http_port()}/",
+            "wiring": str(WIRING_PATH),
+        },
+        "slots": slot_status([1, 2]),
+        "llm_proxy": cognition_proxy,
+        "cognition_proxy": cognition_proxy,
+        "browser_relay": browser_relay,
+        "run": run_status_snapshot(),
+    }
+
+def wiring_audit():
+    topo = WIRING.get("topology", {})
+    nodes = topo.get("nodes", []) if isinstance(topo.get("nodes"), list) else []
+    edges = topo.get("edges", []) if isinstance(topo.get("edges"), list) else []
+    ids: set[str] = set()
+    for n in nodes:
+        if isinstance(n, dict):
+            node_id = n.get("id")
+            if isinstance(node_id, str):
+                ids.add(node_id)
+    issues = []
+
+    def add(severity, code, message, ref=""):
+        issues.append({"severity": severity, "code": code, "message": message, "ref": ref})
+
+    start = topo.get("cycle_start")
+    if start not in ids:
+        add("error", "missing_cycle_start", f"cycle_start {start!r} is not a node", "topology.cycle_start")
+
+    for n in nodes:
+        if not isinstance(n, dict):
+            continue
+        node_id = n.get("id", "")
+        node_type = n.get("type", "")
+        if node_type not in NODES:
+            add("error", "missing_handler", f"node {node_id} uses unknown handler type {node_type}", f"node:{node_id}")
+        if node_type in LLM_NODE_TYPES or n.get("prompt"):
+            circuit = circuit_for_node(n)
+            roles = WIRING.get("prompts", {}).get("roles", {})
+            if circuit and circuit not in roles:
+                add("warning", "missing_prompt_role", f"node {node_id} circuit {circuit} has no prompt role", f"node:{node_id}")
+
+    for i, edge in enumerate(edges):
+        if not isinstance(edge, dict):
+            add("error", "invalid_edge", f"edge {i} is not an object", f"edge:{i}")
+            continue
+        if edge.get("from") not in ids:
+            add("error", "edge_from_missing", f"edge {i} from {edge.get('from')!r} is missing", f"edge:{i}")
+        if edge.get("to") not in ids:
+            add("error", "edge_to_missing", f"edge {i} to {edge.get('to')!r} is missing", f"edge:{i}")
+
+    reachable: set[str] = set()
+    if isinstance(start, str) and start in ids:
+        queue_ids: list[str] = [start]
+        while queue_ids:
+            node_id = queue_ids.pop(0)
+            if node_id in reachable:
+                continue
+            reachable.add(node_id)
+            for edge in edges:
+                target = edge.get("to") if isinstance(edge, dict) else None
+                if isinstance(target, str) and edge.get("from") == node_id and target in ids:
+                    queue_ids.append(target)
+    for node_id in sorted(ids - reachable):
+        add("warning", "unreachable_node", f"node {node_id} is not reachable from cycle_start", f"node:{node_id}")
+
+    verbs = set((WIRING.get("verbs") or {}).keys())
+    prompt_text = "\n".join(str(v) for v in (WIRING.get("prompts", {}).get("roles", {}) or {}).values())
+    mentioned = set()
+    for match in re.finditer(r"Verbs:\s*([^\n]+)", prompt_text, re.IGNORECASE):
+        for raw in re.split(r"[, ]+", match.group(1)):
+            token = raw.strip(" .;:-`\"'")
+            if token:
+                mentioned.add(token)
+    for verb in sorted(v for v in mentioned if v and v not in verbs):
+        add("warning", "prompt_verb_missing", f"prompt mentions verb {verb} but verbs.{verb} is absent", f"verbs:{verb}")
+
+    for i, rule in enumerate(WIRING.get("rules", []) or []):
+        if not isinstance(rule, dict):
+            continue
+        for key in (rule.get("match") or {}).keys():
+            if key not in RULE_CONDITIONS:
+                add("error", "unknown_rule_match", f"rule {rule.get('id', i)} uses unknown match key {key}", f"rules:{rule.get('id', i)}")
+
+    moe_nodes = [n.get("id") for n in nodes if isinstance(n, dict) and n.get("type") == "moe_route"]
+    moe = WIRING.get("moe") or {}
+    moe_status = {
+        "nodes": moe_nodes,
+        "configured": bool(moe),
+        "delegate_keywords": len(moe.get("delegate_keywords", [])) if isinstance(moe, dict) else 0,
+        "default_exec_slot": moe.get("default_exec_slot") if isinstance(moe, dict) else None,
+    }
+    if moe_nodes and not moe:
+        add("warning", "moe_unconfigured", "moe_route exists but moe config is empty", "moe")
+
+    counts = {}
+    for issue in issues:
+        counts[issue["severity"]] = counts.get(issue["severity"], 0) + 1
+    return {
+        "ok": counts.get("error", 0) == 0,
+        "summary": {
+            "nodes": len(nodes),
+            "edges": len(edges),
+            "reachable": len(reachable),
+            "issues": len(issues),
+            "counts": counts,
+        },
+        "issues": issues,
+        "moe": moe_status,
+    }
+
 class H(http.server.BaseHTTPRequestHandler):
     def handle_one_request(self):
         try:
@@ -2262,9 +3181,19 @@ class H(http.server.BaseHTTPRequestHandler):
                 "slot": slot,
                 "port": http_port(slot),
                 "permissions": WIRING.get("instance", {}).get("permissions", []),
+                "model_path": str(MODEL_PATH),
+                "model_transport": model_snapshot().get("transport", "openai"),
                 "run": run_status_snapshot(),
                 "capabilities": wiring_summary().get("capabilities", {}),
             })
+        elif self.path == "/system":
+            self._j(system_snapshot())
+        elif self.path == "/llm-proxy/status":
+            self._j(llm_proxy_status())
+        elif self.path == "/relay/status":
+            self._j(relay_status())
+        elif self.path == "/wiring/audit":
+            self._j(wiring_audit())
         elif self.path == "/wiring":
             self._j(WIRING)
         elif self.path == "/wiring-schema":
@@ -2366,6 +3295,41 @@ class H(http.server.BaseHTTPRequestHandler):
             self._j({"resumed": True, "goal": s.get("goal",""), **queued})
         elif self.path == "/pause":
             self._j(request_pause())
+        elif self.path == "/system/transport":
+            try:
+                model = set_model_transport(body.get("transport", ""))
+                self._j({"transport": model.get("transport"), "model": model, "system": system_snapshot()})
+            except Exception as e:
+                self._j({"error": str(e)}, 400)
+        elif self.path == "/llm-proxy/clear":
+            if body.get("confirm") is not True:
+                self._j({"error": "confirm=true required"}, 400); return
+            try:
+                self._j(clear_llm_proxy_files())
+            except Exception as e:
+                self._j({"error": str(e)}, 500)
+        elif self.path == "/relay/clear":
+            if body.get("confirm") is not True:
+                self._j({"error": "confirm=true required"}, 400); return
+            try:
+                self._j(clear_relay_files())
+            except Exception as e:
+                self._j({"error": str(e)}, 500)
+        elif self.path == "/slots/start":
+            try:
+                self._j(start_slots(body.get("slots")))
+            except Exception as e:
+                self._j({"error": str(e)}, 500)
+        elif self.path == "/slots/stop":
+            try:
+                self._j(stop_slots(body.get("slots")))
+            except Exception as e:
+                self._j({"error": str(e)}, 500)
+        elif self.path == "/slots/run":
+            try:
+                self._j(post_slot_goal(body.get("slot", 1), body.get("goal", "")))
+            except Exception as e:
+                self._j({"error": str(e)}, 500)
         elif self.path == "/bus/post":
             msgs = bus_read(); msgs.append(body); bus_write(msgs)
             self._j({"ok": True})
@@ -2391,7 +3355,7 @@ class H(http.server.BaseHTTPRequestHandler):
                 self._j({"error": "validation failed", "details": errs}, 400)
                 return
             try:
-                (PROMPTS / "wiring.json").write_text(json.dumps(body, indent=2), encoding="utf-8")
+                atomic_write_json(WIRING_PATH, body, indent=2)
                 WIRING = body
                 apply_instance_env()
                 configure_runtime(WIRING)

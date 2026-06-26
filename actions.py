@@ -5,7 +5,14 @@ import threading
 from dataclasses import dataclass
 from typing import Any
 
-from desktop import Desktop, Element, Observation, configure_observation
+from desktop import (
+    Desktop,
+    Element,
+    Observation,
+    assign_window_tokens,
+    configure_observation,
+    resolve_window_target,
+)
 
 
 @dataclass(slots=True)
@@ -132,9 +139,20 @@ class ActionExecutor:
             title = str(args.get(cfg["title_field"], ""))
             if not title:
                 return ActionResult(verb, False, "no title")
-            if self._desktop.focus_window(title):
-                return ActionResult(verb, True, f"focused '{title}'")
+            windows = getattr(self, "_window_infos", None) or []
+            if self._desktop.focus_window(title, windows):
+                resolved = resolve_window_target(title, windows)
+                label = f"[{resolved['token']}] {resolved['title']}" if resolved else title
+                return ActionResult(verb, True, f"focused '{label}'")
             return ActionResult(verb, False, f"window '{title}' not found")
+
+        if verb == "open_url":
+            browser = str(args.get(cfg.get("browser_field", "target"), "")).strip()
+            url = str(args.get(cfg.get("url_field", "value"), "")).strip()
+            if not url:
+                return ActionResult(verb, False, "no url")
+            ok, message = self._desktop.open_url(browser, url)
+            return ActionResult(verb, ok, message)
 
         if verb == "wait":
             import time
@@ -183,15 +201,19 @@ def _remember_observation(obs: Observation) -> None:
 def _needs_elements(verb: str, target: str) -> bool:
     return verb in _ELEMENT_VERBS or (verb == "write" and bool(target))
 
+def _observation_windows(obs: Observation | None) -> list[dict[str, Any]]:
+    if obs is None:
+        return []
+    snapshot = getattr(obs, "snapshot", None)
+    if isinstance(snapshot, dict) and isinstance(snapshot.get("windows"), list):
+        return snapshot["windows"]
+    return []
+
+
 def _focus_already_satisfied(target: str, obs: Observation | None) -> bool:
-    focused = (getattr(obs, "focused_title", "") or "").lower().strip()
-    target_l = (target or "").lower().strip()
-    if not focused or not target_l:
-        return False
-    if target_l in focused or focused in target_l:
-        return True
-    words = [w for w in re.split(r"[\s\-]+", target_l) if len(w) > 3]
-    return bool(words and any(w in focused for w in words))
+    """Only skip focus when observation snapshot marks the resolved window focused."""
+    resolved = resolve_window_target(target, _observation_windows(obs))
+    return bool(resolved and resolved.get("focused"))
 
 def observe_screen() -> str:
     with _desktop_lock:
@@ -238,5 +260,6 @@ def execute_verb(verb: str, target: str, value: str = "") -> str:
             return f"focused '{focused}' (already focused)"
         executor = _executor
         assert executor is not None
+        executor._window_infos = _observation_windows(obs)
         result = executor.execute(verb, args, elements)
         return result.observation if result.success else f"FAILED: {result.observation}"

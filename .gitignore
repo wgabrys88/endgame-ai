@@ -13,11 +13,15 @@
 !colony.py
 !wiring-editor.html
 
+
+
 # ─── Tracked: Configuration ──────────────────────────────────
 !prompts/
 !prompts/wiring.json
+!prompts/wiring_relay.json
 !prompts/wiring-schema.json
 !prompts/model.json
+!prompts/model_relay.json
 
 # ─── Tracked: Documentation & Meta ───────────────────────────
 !README.md
@@ -26,12 +30,18 @@
 !.gitattributes
 
 # ─── Explicitly ignored runtime artifacts ─────────────────────
-# (redundant with * but documents what exists at runtime)
 state.json
+state.slot*.json
 bus.json
+comms/
 prompts/traces.jsonl
 prompts/wiring.backup.json
 prompts/wiring.backup.*.json
 __pycache__/
 *.pyc
 *.log
+terminals/
+mcps/
+.cursor/
+.grok/
+*.tmp

@@ -44,6 +44,7 @@
       "properties": {
         "max_attempts": { "type": "integer", "minimum": 1 },
         "max_replans": { "type": "integer", "minimum": 0 },
+        "max_self_modify": { "type": "integer", "minimum": 0 },
         "max_cycles": { "type": "integer", "minimum": 1 },
         "history_depth": { "type": "integer", "minimum": 1 },
         "reasoning_chain_depth": { "type": "integer", "minimum": 1 },
