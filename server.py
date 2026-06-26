@@ -624,7 +624,12 @@ def model_snapshot():
 def normalize_model_config(config):
     out = dict(config or {})
     transport = str(out.get("transport") or "openai").strip().lower()
-    out["transport"] = "file_proxy" if transport in {"file_proxy", "file-proxy", "self_proxy"} else "openai"
+    if transport in {"file_proxy", "file-proxy", "self_proxy"}:
+        out["transport"] = "file_proxy"
+    elif transport in {"browser_ai", "browser-ai"}:
+        out["transport"] = "browser_ai"
+    else:
+        out["transport"] = "openai"
     proxy = dict(DEFAULT_FILE_PROXY)
     proxy.update(out.get("file_proxy") or {})
     out["file_proxy"] = proxy
@@ -648,8 +653,8 @@ def set_model_transport(transport):
     transport = str(transport or "").strip().lower()
     if transport in {"lm_studio", "lm-studio", "openai_api"}:
         transport = "openai"
-    if transport not in {"openai", "file_proxy"}:
-        raise ValueError("transport must be openai or file_proxy")
+    if transport not in {"openai", "file_proxy", "browser_ai"}:
+        raise ValueError("transport must be openai, file_proxy, or browser_ai")
     current = model_snapshot()
     current["transport"] = transport
     saved = persist_model_config(current)
