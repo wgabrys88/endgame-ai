@@ -13,8 +13,6 @@
 !colony.py
 !wiring-editor.html
 
-
-
 # ─── Tracked: Configuration ──────────────────────────────────
 !prompts/
 !prompts/wiring.json
@@ -25,9 +23,14 @@
 
 # ─── Tracked: Documentation & Meta ───────────────────────────
 !README.md
+!DEDUCTION.md
 !LICENSE
 !.gitignore
 !.gitattributes
+
+# ─── Tracked: Proof & Run Logs ────────────────────────────────
+!proof_grok_satisfied.jsonl
+!run_log_phase3.md
 
 # ─── Explicitly ignored runtime artifacts ─────────────────────
 state.json
@@ -45,3 +48,4 @@ mcps/
 .cursor/
 .grok/
 *.tmp
+logs/

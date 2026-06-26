@@ -624,7 +624,12 @@ def model_snapshot():
 def normalize_model_config(config):
     out = dict(config or {})
     transport = str(out.get("transport") or "openai").strip().lower()
-    out["transport"] = "file_proxy" if transport in {"file_proxy", "file-proxy", "self_proxy"} else "openai"
+    if transport in {"file_proxy", "file-proxy", "self_proxy"}:
+        out["transport"] = "file_proxy"
+    elif transport in {"browser_ai", "browser-ai"}:
+        out["transport"] = "browser_ai"
+    else:
+        out["transport"] = "openai"
     proxy = dict(DEFAULT_FILE_PROXY)
     proxy.update(out.get("file_proxy") or {})
     out["file_proxy"] = proxy
@@ -648,8 +653,8 @@ def set_model_transport(transport):
     transport = str(transport or "").strip().lower()
     if transport in {"lm_studio", "lm-studio", "openai_api"}:
         transport = "openai"
-    if transport not in {"openai", "file_proxy"}:
-        raise ValueError("transport must be openai or file_proxy")
+    if transport not in {"openai", "file_proxy", "browser_ai"}:
+        raise ValueError("transport must be openai, file_proxy, or browser_ai")
     current = model_snapshot()
     current["transport"] = transport
     saved = persist_model_config(current)
@@ -915,6 +920,24 @@ def _shutdown(sig, frame):
 signal.signal(signal.SIGINT, _shutdown)
 signal.signal(signal.SIGTERM, _shutdown)
 
+# ─── Unified raw log ───
+
+import datetime as _dt
+
+_RAW_LOG_PATH = ROOT / 'logs' / 'endgame_raw.jsonl'
+
+def raw_log(event: str, **data):
+    """Append one JSON line to the unified raw log."""
+    entry = {'ts': time.time(), 'iso': _dt.datetime.now().isoformat(), 'slot': WIRING.get('instance', {}).get('slot', 0), 'event': event}
+    entry.update(data)
+    try:
+        _RAW_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with _RAW_LOG_PATH.open('a', encoding='utf-8') as f:
+            f.write(json.dumps(entry, default=str) + '\n')
+    except Exception:
+        pass
+
+
 def load_state():
     return read_json_with_retry(STATE_FILE, None)
 
@@ -1060,6 +1083,72 @@ def recent_traces(limit=3):
 
 # ─── LLM ───
 
+def llm_via_browser_ai(system, user):
+    """Use grok.com via browser GUI as LLM backend. Types prompt, reads response."""
+    model = model_snapshot()
+    cfg = model.get("browser_ai", {})
+    browser = cfg.get("browser", "opera")
+    url = cfg.get("url", "https://grok.com")
+    input_hint = cfg.get("input_element_hint", "Ask Grok anything")
+    wait_ms = cfg.get("response_wait_ms", 15000)
+    max_len = cfg.get("max_response_length", 4000)
+
+    t0 = time.time()
+
+    # Format prompt: combine system + user into single message
+    prompt = f"[SYSTEM]\n{system}\n\n[USER]\n{user}\n\n[RESPOND WITH JSON ONLY]"
+    if len(prompt) > max_len:
+        prompt = prompt[:max_len]
+
+    # Step 1: Ensure grok.com is open and focused
+    title = get_focused_title() or ""
+    if "grok" not in title.lower():
+        execute_verb("open_url", browser, url)
+        time.sleep(3)
+
+    # Step 2: Find and click chat input
+    screen = observe_screen()
+    meta = last_observation_snapshot()
+    input_id = "1"  # Default fallback
+    if isinstance(meta, dict) and isinstance(meta.get("elements"), list):
+        for el in meta["elements"]:
+            if input_hint.lower() in (el.get("name", "") or "").lower():
+                input_id = str(el.get("id", "1"))
+                break
+
+    execute_verb("click", input_id, "")
+    time.sleep(0.3)
+
+    # Step 3: Clear and type prompt
+    execute_verb("hotkey", "ctrl+a", "")
+    time.sleep(0.2)
+    execute_verb("write", input_id, prompt)
+    time.sleep(0.3)
+
+    # Step 4: Submit
+    execute_verb("press", "enter", "")
+
+    # Step 5: Wait for response
+    time.sleep(wait_ms / 1000.0)
+
+    # Step 6: Read response from fresh screen observation
+    screen = observe_screen()
+
+    # Extract response: find text content that isn't the prompt
+    response_text = ""
+    for line in (screen or "").splitlines():
+        if "Text \"" in line and "@background" not in line:
+            parts = line.split("\" = \"")
+            if len(parts) >= 2:
+                val = parts[1].rstrip().rstrip('"')
+                if len(val) > 20 and prompt[:20] not in val and input_hint not in val:
+                    response_text = val
+                    break
+
+    raw_log("browser_ai_call", prompt_len=len(prompt), response_len=len(response_text), elapsed=time.time()-t0)
+    return response_text, "", time.time() - t0
+
+
 def llm(system, user, temperature=None):
     model = model_snapshot()
     body = {
@@ -1137,13 +1226,17 @@ def clear_reasoning_patch(state, keys):
     return {"reasoning": reasoning}
 
 def parse_circuit_response(circuit, content, reasoning):
-    """Parse LLM JSON; enforce wiring.reasoning.expected_record_type per circuit."""
+    """Parse LLM JSON from content OR reasoning_content (Nemotron puts JSON in reasoning)."""
     cfg = WIRING.get("reasoning", {})
     expected = cfg.get("expected_record_type", {}).get(circuit)
     for parsed in extract_json_objects(content):
         if expected and parsed.get("record_type") != expected:
             continue
         return parsed, "content"
+    for parsed in extract_json_objects(reasoning):
+        if expected and parsed.get("record_type") != expected:
+            continue
+        return parsed, "reasoning_content"
     return None, None
 
 def call_node(node, state, extra=None):
@@ -1179,6 +1272,7 @@ def call_node(node, state, extra=None):
         parsed, source = parse_circuit_response(circuit, content, reasoning)
         if parsed:
             break
+    raw_log('llm_call', circuit=circuit, content=content, reasoning=reasoning, parsed=bool(parsed), parse_source=source)
     return {"content": content, "reasoning": reasoning, "parsed": parsed, "patch": patch, "parse_source": source}
 
 # ─── Prompt assembly: static system, dynamic user (from wiring.json) ───
@@ -1385,14 +1479,16 @@ def inspect_state(goal="", state=None, node_id=None):
 # ─── Guards (from wiring.json, evaluated in act node) ───
 
 def check_repeat_block(state, actions):
-    """Block if same actions as last time and last outcome was OK."""
-    last = state.get("last_actions_raw", [])
-    if not last:
-        return None
-    if actions == last and "OK" in state.get("last_outcome", ""):
-        hint = _find_advance_hint(state, actions)
-        return hint or "repeat blocked — try a different action"
+    """Disabled — repeat blocking caused unrecoverable deadlocks."""
     return None
+
+
+
+
+
+
+
+
 
 def apply_memory_action(existing_memory, target, value):
     """Apply act's remember verb without desktop or model side effects."""
@@ -2065,6 +2161,42 @@ def node_act(state, node_cfg):
         patch.update({"last_error": block, "history": history + [entry]})
         return {"signals": ["act_failed"], "patch": patch}
 
+    # Pre-execution target validation: reject invalid targets before mouse action
+    screen_meta = state.get("screen_meta") if isinstance(state.get("screen_meta"), dict) else {}
+    valid_ids = set()
+    if isinstance(screen_meta.get("elements"), list):
+        valid_ids = {str(e.get("id", "")) for e in screen_meta["elements"] if e.get("id")}
+    elif state.get("screen"):
+        for line in (state.get("screen") or "").splitlines():
+            m = re.match(r"\s*\[?(\d+)\]?", line)
+            if m:
+                valid_ids.add(m.group(1))
+    window_tokens = set()
+    if isinstance(screen_meta.get("windows"), list):
+        window_tokens = {str(w.get("token", "")).upper() for w in screen_meta["windows"] if w.get("token")}
+    for a in actions:
+        verb = a.get("verb", "")
+        target = str(a.get("target", "") or "").strip()
+        if verb in ("click", "scroll", "write") and target:
+            id_m = re.match(r"^\[?(\d+)\]?$", target)
+            if id_m:
+                if valid_ids and id_m.group(1) not in valid_ids:
+                    reason = f"invalid_target:not_in_current_targets (target={target}, valid=[{','.join(sorted(valid_ids, key=int)[:20])}])"
+                    entry = {"attempt": len(history) + 1, "action": "; ".join(f"{x.get('verb','')} {x.get('target','')}" for x in actions), "outcome": f"BLOCKED: {reason}"}
+                    patch.update({"last_error": reason, "history": history + [entry], "failed_targets": list(set(state.get("failed_targets", []) + [target]))})
+                    raw_log("act_target_rejected", target=target, valid_count=len(valid_ids))
+                    return {"signals": ["act_failed"], "patch": patch}
+            elif not id_m and verb != "write":
+                # Named target — resolve check done by executor, but log
+                pass
+        if verb == "focus" and target:
+            token_m = re.match(r"^\[?(W\d+)\]?$", target, re.IGNORECASE)
+            if token_m and window_tokens and token_m.group(1).upper() not in window_tokens:
+                reason = f"invalid_focus_target:not_in_windows (target={target})"
+                entry = {"attempt": len(history) + 1, "action": "; ".join(f"{x.get('verb','')} {x.get('target','')}" for x in actions), "outcome": f"BLOCKED: {reason}"}
+                patch.update({"last_error": reason, "history": history + [entry]})
+                return {"signals": ["act_failed"], "patch": patch}
+
     results = []
     failed = False
     chain_delay = int(WIRING.get("runtime", {}).get("action_chain_delay_ms", 0)) / 1000.0
@@ -2102,6 +2234,7 @@ def node_act(state, node_cfg):
         if chain_delay and i < len(actions) - 1:
             time.sleep(chain_delay)
 
+    raw_log('act_executed', actions=[{"verb":a.get("verb"),"target":a.get("target")} for a in actions], results=results)
     ok = not failed and all(": FAILED" not in str(r).upper() and not str(r).upper().startswith("FAILED") for r in results)
     prefix = "OK: " if ok else "FAILED: "
     outcome = prefix + "; ".join(results)
@@ -2143,10 +2276,17 @@ def _verify_history_entry(state, rule_id: str, verdict: str, signal: str) -> dic
 
 
 def node_verify(state, node_cfg):
-    """Verify from descriptive step + act outcomes only — act is sole SCREEN consumer."""
+    """Verify step with fresh SCREEN observation + act outcomes."""
+    if not state.get("no_desktop"):
+        state = dict(state)
+        state["screen"] = observe_screen()
+        meta = last_observation_snapshot()
+        if meta:
+            state["screen_meta"] = meta
     rule = evaluate_rules("verify", state, WIRING)
     if rule and rule.get("verdict") == "deny":
         rid = str(rule.get("id", "") or "")
+        raw_log('verify_rule', rule_id=rid, verdict='deny', phase='verify')
         return {
             "signals": ["step_denied"],
             "patch": {
@@ -2204,6 +2344,13 @@ def node_verify(state, node_cfg):
 
 def node_reflect(state, node_cfg):
     """Retry vs replan vs escalate. Retries exhausted → replan. Replans exhausted → escalate (self-modify)."""
+    # Inject strategy hints from failed targets
+    failed = state.get('failed_targets', [])
+    if failed:
+        hint = f'STRATEGY: avoid targets {failed}; use launch verb for app opening or hotkey win+r sequence'
+        current_error = state.get('last_error', '')
+        if hint not in current_error:
+            state = {**state, 'last_error': current_error + '\n' + hint if current_error else hint}
     retries = state.get("retries", 0)
     replans = state.get("replan_count", 0)
     max_r = wiring_limit("max_attempts", 7)
@@ -2346,6 +2493,7 @@ def node_satisfied(state, _):
     steps = state.get("plan", [])
     step = state.get("step", 0)
     if steps and step >= len(steps):
+        raw_log('run_satisfied', goal=state.get('goal',''))
         return {"signals": ["idle"], "patch": {"satisfied": True}}
     return {"signals": ["idle"], "patch": {"satisfied": False}}
 
@@ -2835,6 +2983,7 @@ def run(goal, resume_state=None, max_cycles=None):
     max_cycles = max_cycles if max_cycles is not None else wiring_limit("max_cycles", 300)
     cycle_delay = int(WIRING.get("runtime", {}).get("cycle_delay_ms", 300)) / 1000.0
 
+    raw_log('run_start', goal=goal, slot=WIRING.get('instance',{}).get('slot',0))
     print(f"\n{'='*50}\n  ROD [{WIRING.get('instance',{}).get('slot',0)}]: {goal}\n{'='*50}\n")
 
     while cycle < max_cycles:
