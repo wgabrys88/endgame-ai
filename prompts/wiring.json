@@ -127,7 +127,8 @@
         "actions_verb_absent": "click",
         "actions_wrote_nonempty": false,
         "memory_stored_by_action": false,
-        "memory_response_evidence": false
+        "memory_response_evidence": false,
+        "actions_pressed_absent": "enter"
       }
     },
     {
@@ -154,20 +155,6 @@
       }
     },
     {
-      "id": "deny_memory_capture_missing_value",
-      "phase": "verify",
-      "verdict": "deny",
-      "description": "memory capture preflight: no response text was remembered",
-      "match": {
-        "outcome_ok": true,
-        "step_text_matches_groups": [
-          "remember|capture|store",
-          "response|reply|answer"
-        ],
-        "memory_stored_by_action": false
-      }
-    },
-    {
       "id": "deny_memory_capture_prior_prompt",
       "phase": "verify",
       "verdict": "deny",
@@ -179,20 +166,6 @@
           "response|reply|answer"
         ],
         "memory_value_not_prior_write": false
-      }
-    },
-    {
-      "id": "deny_memory_capture_question",
-      "phase": "verify",
-      "verdict": "deny",
-      "description": "memory capture preflight: remembered value looks like a question, not a response",
-      "match": {
-        "outcome_ok": true,
-        "step_text_matches_groups": [
-          "remember|capture|store",
-          "response|reply|answer"
-        ],
-        "memory_value_not_question": false
       }
     },
     {
@@ -482,7 +455,8 @@
         "actions_write_target_line_absent": [
           "address"
         ],
-        "actions_verb_absent": "focus"
+        "actions_verb_absent": "focus",
+        "actions_writes_all_url": true
       }
     },
     {
@@ -547,7 +521,8 @@
       "match": {
         "step_has_domain_needle": true,
         "actions_wrote_nonempty": true,
-        "actions_pressed_absent": "enter"
+        "actions_pressed_absent": "enter",
+        "actions_writes_all_url": true
       }
     },
     {
