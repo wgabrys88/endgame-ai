@@ -4,9 +4,138 @@ Local Windows desktop **Reason–Observe–Decide (ROD)** graph operator. Python
 
 **Branch:** `codex/self-referential-relay`  
 **Platform:** Windows 10/11  
-**Entry point:** `server.py` (stdlib `http.server`, not FastAPI)
+**Entry point:** `server.py` (stdlib `http.server`, not FastAPI)  
+**Workspace:** `C:\Users\ewojgab\Downloads\endgame-ai`
 
 > Treat **code + wiring JSON** as truth. This README is the single handover document for human operators and external AI agents.
+
+---
+
+## Copy-paste handover prompt (for any AI coding agent)
+
+Paste the block below into Codex, Claude Code, Cursor, Grok, or any coding agent to continue this work without chat history.
+
+````
+You are continuing work on Endgame-AI — a local Windows desktop ROD (Reason–Observe–Decide) graph operator.
+
+## What Endgame-AI is
+
+- Python stdlib HTTP server (`server.py`) that runs a fixed wiring graph per goal.
+- Loop: goal_inbox → moe_route → planner → scheduler ↔ (bus_check → observe → act → verify | reflect | self_modify) → bus_post → satisfied
+- Slot 1 (`prompts/wiring.json`): primary desktop operator (Notepad, Chrome, YouTube, chat).
+- Slot 2 (`prompts/wiring_relay.json`): browser-chat relay worker.
+- Mechanical layer: `desktop.py` (UIA observe, window tokens, focus) + `actions.py` (verb dispatch).
+- Cognition is pluggable: `file_proxy` (agent writes JSON to comms/) or OpenAI-compatible LM Studio.
+- Shell/file-proxy is for server control and cognition only — NOT valid proof of desktop control. Proofs require Endgame-AI action history + final GET /state.
+
+Branch: codex/self-referential-relay
+Workspace: C:\Users\ewojgab\Downloads\endgame-ai
+Slot 1 port: 9078 (instance.slot=1, http_port_base=9077 + offset)
+
+Authoritative counts (inspect wiring.json — do not trust stale docs):
+- Slot 1 rules: 32 | topology: 12 nodes, 22 edges | verb_normalize: 5 | SELF_MODIFY_OPS: 15
+- limits: max_attempts 7, max_replans 3, max_self_modify 3
+- Slot 2 relay: 13 rules (confirm_relay_wait removed)
+
+## Primary goal
+
+Make Endgame-AI complete real multi-step desktop goals autonomously via its own observe/act — not merely plan them or pass unit tests while file-proxy masks runtime failures.
+
+### P0 benchmarks (must pass with action history + /state evidence)
+
+| Goal | Proves |
+|------|--------|
+| open notepad and type hello | Run dialog, write, confirm_launch_chain |
+| navigate to google.com in chrome | open_url or nav, confirm_browser_navigation / domain needle |
+| play Shakira Waka Waka on YouTube | Browser stack, video page, confirm_youtube_playback |
+
+### P1 benchmark
+
+| Goal | Proves |
+|------|--------|
+| have a conversation with an AI chatbot | Chat submit rules, wait deny, memory.llm_response capture |
+
+## Already implemented (commits 9715fe9, 51322b0, 61280bc)
+
+Mechanical + wiring:
+- Focus contract: [W#] tokens in SCREEN, shared resolve_window_target(), HWND-first focus_window()
+- open_url verb: start chrome <url> without prior focus
+- Wait semantics: deny_response_no_evidence broadened, deny_wait_only_content_receipt, confirm_llm_response_received requires memory; relay confirm_relay_wait removed
+- max_self_modify: 3 with give_up edge
+- observe.desktop_tree_enabled aligned (false for Slot 1; configure_observation() is source of truth)
+- node_reflect fallbacks match wiring 7/3
+
+Tests + harness (partial):
+- test_mechanical_fixes.py — 10 tests (focus resolver, live foreground focus, wait-deny rules) — PASSING
+- harness_common.py — shared kill_port, clear_comms, server lifecycle (started, not fully wired)
+- p0_file_proxy_runner.py — scripted P0 driver (needs fixes below)
+- run_verification.py — scratch captures (needs README-only doc-drift check; SETUP_AND_LAUNCH.md deleted)
+
+## Remaining work (priority order)
+
+1. Fix file-proxy two-pass LLM in p0_file_proxy_runner.py (and any proxy responder):
+   - call_node (server.py ~1160) does TWO llm() calls per circuit: first pass = reasoning; second pass user contains "DECIDE NOW" = role JSON only.
+   - Proxy must answer pass 1 with prose/reasoning (not JSON); pass 2 with exact circuit JSON.
+   - Detect circuit via ROLE: headers in system message (Planner, Act, Verifier, Reflector).
+
+2. Fix act script indexing on retries:
+   - Do NOT increment act_i on every act request — use SUBTASK:/step text to pick acts[step].
+   - Bug seen: step 0 retried with acts[1] (write hello) while planner still on step 0 → verify deny loop + repeated hover scans.
+
+3. Fix harness cleanup:
+   - kill_port(9078) before server start; clear comms via POST /llm-proxy/clear + unlink stale request.json.
+   - Do not delete state mid-run on live server.
+   - Poll until run.running == false or terminal satisfied/plan_failed.
+
+4. Re-run P0 benchmarks; capture to scratch:
+   C:\Users\ewojgab\AppData\Local\Temp\grok-goal-6eaf4693378c\implementer
+   - p0-*-run*.json, p0-summary.json, server-health.json with started:true and non-empty history
+
+5. Fix run_verification.py: use harness_common, real focus capture (no mock), doc-drift check README-only.
+
+6. Optional P1/P2: chatbot benchmark, self_modify recovery proof, MoE delegation doc, plan_failed recovery.
+
+## Definition of done
+
+- [ ] focus succeeds for every window title listed in SCREEN WINDOWS
+- [ ] Google.com navigation completes with confirm_browser_navigation or domain needle evidence
+- [ ] YouTube Shakira benchmark reaches video page with playback evidence (or honest structured failure)
+- [ ] Wait-only steps never step_confirmed without response/memory evidence
+- [ ] max_self_modify enforced; desktop_tree_enabled consistent
+- [ ] Regression tests pass; P0 scratch captures show real history (not planner: file proxy pending)
+- [ ] No new doc/code drift (use /system /health /state — no /slots/status)
+
+## Key files
+
+| File | Role |
+|------|------|
+| server.py | call_node two-pass LLM, RULE_CHECKERS, node_reflect, node_self_modify |
+| desktop.py | resolve_window_target, focus_window, open_url, observe |
+| actions.py | execute_verb focus/open_url dispatch |
+| prompts/wiring.json | Slot 1 brain (32 rules, 22 edges) |
+| prompts/wiring_relay.json | Slot 2 relay (13 rules) |
+| test_mechanical_fixes.py | Unit + live focus tests |
+| p0_file_proxy_runner.py | P0 benchmark driver — FIX FIRST |
+| harness_common.py | Shared harness — finish wiring into runners |
+
+## Commands
+
+cd C:\Users\ewojgab\Downloads\endgame-ai
+$env:PYTHONIOENCODING = 'utf-8'
+python test_mechanical_fixes.py
+python server.py   # Slot 1 on 9078 when ENDGAME_SLOT=1
+python p0_file_proxy_runner.py   # after proxy fixes
+
+Invoke-RestMethod http://127.0.0.1:9078/state
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:9078/llm-proxy/clear -ContentType 'application/json' -Body '{"confirm":true}'
+
+## Constraints
+
+- Minimal diff; prefer wiring.json rules over Python policy.
+- Do not manually drive Chrome/Notepad outside runtime for proofs.
+- New rule match keys need RULE_CONDITIONS + RULE_CHECKERS in server.py.
+- Preserve working paths: confirm_launch_chain, navigation rejects, chat write denies.
+````
 
 ---
 
@@ -293,10 +422,19 @@ If verify keeps denying (e.g. file-proxy returns `confirmed: false` while action
 
 ## Known limitations (honest status)
 
+**Goal paused** — mechanical layer fixes are in; P0 E2E proofs are not yet captured. Use the copy-paste handover prompt above to resume.
+
+| Benchmark | Status |
+|-----------|--------|
+| `open notepad and type hello` | Partial — hello typed in live runs; graph stuck on step 0 retries (file-proxy act indexing bug) |
+| `navigate to google.com in chrome` | Not proven in scratch captures |
+| `play Shakira Waka Waka on YouTube` | Not proven in scratch captures |
+| `have a conversation with an AI chatbot` | Not run |
+
 - **MoE delegation** on Slot 1 is inert when `desktop_exec` permission is present (browser goals stay on Slot 1).
 - **`plan_failed`** exits to `bus_post` without reflect/replan recovery.
 - **YouTube playback** has structural verify rules but no audio/OCR proof; ads/login/cookie paths are partial.
-- **File-proxy benchmarks** fail if a stale `request.json` is left pending — always clear before a new run.
+- **File-proxy benchmarks** fail if a stale `request.json` is left pending or two-pass DECIDE NOW is not honored — always clear before a new run.
 - **P0 E2E** requires a live Windows session with Chrome available for navigation goals.
 
 ---
