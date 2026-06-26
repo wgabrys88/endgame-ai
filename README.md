@@ -490,18 +490,66 @@ Deny rules block false success (e.g. `deny_wait_only_content_receipt`, `deny_res
 
 ---
 
-## 9. Rules — safety net or friction?
+## 9. Rules — operator decides, runtime guides
 
-### Short answer
+### Philosophy (your mental model is correct)
 
-**Rules are not what kills the system.** They prevent the *verifier LLM* from confirming false success (e.g. “step done” after only `wait` with no memory evidence). When runs feel stuck, it is usually:
+| Layer | Who decides | What it is |
+|-------|-------------|------------|
+| **Operator** | Planner, Act, Verifier, Reflector LLM circuits | The serious computer operator — plans, acts from SCREEN, judges |
+| **Runtime rules** | Python `evaluate_rules()` only | Structural **guidance rails** — not sent to the LLM, not a rulebook to memorize |
+| **Hands** | `desktop.py` / `actions.py` | Executes verbs the operator chose |
 
-- weak bootstrap JSON (Nemotron fails `DECIDE NOW`),
-- stale `request.json`,
-- SCREEN missing targets,
-- or **deny rules correctly blocking a premature confirm** → reflect loop.
+**The LLM never sees the 32 wiring rules.** Prompts say *Guidance* for role hints; *rules* in `wiring.json` are for Python preflight only. If `LAST_ERROR` or `HISTORY` shows `verify:deny_wait_only_...`, that is **feedback** — the operator should adapt the next act, not obey a hidden policy list.
 
-Rules are **structural guardrails**, not a second opinion replacing all judgment. When no rule matches, the **verifier LLM still runs**.
+### Pipeline cross-reference
+
+```mermaid
+flowchart TD
+    subgraph Prompts["Prompts (sent to Nemotron)"]
+        P[planner role]
+        A[unified/act role]
+        V[verifier role]
+        R[reflector role + LAST_ERROR]
+    end
+
+    subgraph Code["server.py handlers"]
+        NP[node_planner]
+        NA[node_act]
+        NV[node_verify]
+        NR[node_reflect]
+        ER[evaluate_rules]
+    end
+
+    subgraph Wiring["wiring.json"]
+        TOP[topology edges]
+        RL[32 rules — NOT in prompts]
+    end
+
+    TOP --> NP --> P
+    TOP --> NA --> A
+    NA --> ER
+    TOP --> NV --> ER
+    ER -->|deny/confirm| NV
+    ER -->|no match| V
+    NV -->|step_denied| NR --> R
+```
+
+| Wiring node | Circuit / role | Code handler | Rules phase |
+|-------------|----------------|--------------|-------------|
+| planner | planner | `node_planner` | — |
+| act | unified | `node_act` | act `reject` before execute |
+| verify | verifier | `node_verify` | verify `deny` then `confirm` before LLM |
+| reflect | reflector | `node_reflect` | — (reads LAST_ERROR after preflight) |
+| self_modify | self_modify | `node_self_modify` | — |
+
+### Loop behavior (bounded, not infinite)
+
+Deny → `step_denied` → reflect → retry → same step again. **Bounded:** `max_attempts: 7` → replan → `max_replans: 3` → `self_modify` → `give_up`.
+
+This is intentional: runtime blocked a **false success** (e.g. `wait` only when `done_when` implies a response). The **operator** must try a different act — not loop the same wait forever. If it feels stuck, weak Nemotron or a too-aggressive deny rule — tune in panel or let reflect replan.
+
+Rules are **not what kills the system** when understood this way. They stop cheating; the operator still drives recovery.
 
 ```mermaid
 flowchart TD
