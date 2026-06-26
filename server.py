@@ -928,8 +928,7 @@ def raw_log(event: str, **data):
     try:
         _RAW_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         with _RAW_LOG_PATH.open('a', encoding='utf-8') as f:
-            f.write(json.dumps(entry, default=str) + '
-')
+            f.write(json.dumps(entry, default=str) + '\n')
     except Exception:
         pass
 
@@ -2272,8 +2271,7 @@ def node_reflect(state, node_cfg):
         hint = f'STRATEGY: avoid targets {failed}; use launch verb for app opening or hotkey win+r sequence'
         current_error = state.get('last_error', '')
         if hint not in current_error:
-            state = {**state, 'last_error': f"{current_error}
-{hint}" if current_error else hint}
+            state = {**state, 'last_error': current_error + '\n' + hint if current_error else hint}
     retries = state.get("retries", 0)
     replans = state.get("replan_count", 0)
     max_r = wiring_limit("max_attempts", 7)
