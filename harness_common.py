@@ -12,7 +12,9 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).parent
-SCRATCH = Path(r"C:\Users\ewojgab\AppData\Local\Temp\grok-goal-6eaf4693378c\implementer")
+_SCRATCH_ROOT = Path(os.environ.get("USERPROFILE", os.environ.get("TEMP", ".")))
+SCRATCH = _SCRATCH_ROOT / "AppData" / "Local" / "Temp" / "endgame-ai-scratch"
+SCRATCH.mkdir(parents=True, exist_ok=True)
 SLOT_PORT = 9078
 BASE = f"http://127.0.0.1:{SLOT_PORT}"
 REQ = ROOT / "comms" / "slot1_cognition" / "request.json"

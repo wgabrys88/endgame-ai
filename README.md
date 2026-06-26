@@ -670,6 +670,20 @@ pie title Human operator replacement (~45% toward walk-away vision)
 
 ## 14. Run it yourself — walk away with LM Studio
 
+### What you do manually (once) vs what evolves alone
+
+| You (manual, before walk-away) | Endgame (autonomous after goal posted) |
+|--------------------------------|----------------------------------------|
+| Install Python, LM Studio, Chrome | Observe desktop, build SCREEN |
+| Clone repo to e.g. `%USERPROFILE%\Downloads\endgame-ai` | Plan subtasks via bootstrap cognition |
+| Set `prompts/model.json` → `transport: openai` | Execute verbs: click, write, focus, `open_url` |
+| Start LM Studio local server **:1234** | Verify steps (rules + verifier LLM) |
+| Run `python server.py` | Reflect, replan, escalate to `self_modify` when stuck |
+| Open panel, type goal, click Run (or `POST /run`) | Discover grok/ChatGPT/local agents via GUI if goal needs it |
+| Optionally return later to check `/state` | Hot-reload wiring when self_modify patches policy |
+
+**In theory:** give a proper goal and the seed evolves alone — opens browser, finds AI, captures answers, patches wiring. You only bootstrap the runtime and cognition transport.
+
 ### Prerequisites
 
 - Windows 10/11, Python 3.11+
@@ -683,7 +697,7 @@ Edit `prompts/model.json` — set `"transport": "openai"` (see §6.1).
 ### Start
 
 ```powershell
-cd C:\path\to\endgame-ai
+cd $env:USERPROFILE\Downloads\endgame-ai
 $env:PYTHONIOENCODING = 'utf-8'
 python server.py
 ```
@@ -706,6 +720,15 @@ Poll when you return:
 Invoke-RestMethod http://127.0.0.1:9078/state
 # satisfied: true → done
 ```
+
+### If stuck (optional manual intervention)
+
+| Symptom | Manual fix |
+|---------|------------|
+| Planner blocked on stale request | Panel or `POST /llm-proxy/clear {"confirm":true}` |
+| Suspect rule causing deny loops | Panel → Rules → Remove rule (hot-reloads) |
+| Nemotron JSON parse failures | Larger model in LM Studio, or `transport: file_proxy` + Grok Build |
+| Fresh run | Delete `state.slot1.json`, `bus.json` (gitignored runtime) |
 
 ### Example goals (increasing ambition)
 
@@ -863,7 +886,7 @@ Deliverables:
 | `test_mechanical_fixes.py` | 11 mechanical tests (not E2E proof) |
 | `p0_file_proxy_runner.py` | Canned driver — **not valid proof** |
 
-**Gitignored runtime:** `state*.json`, `bus.json`, `comms/`, `traces.jsonl`
+**Gitignored runtime (never commit):** `state*.json`, `bus.json`, `comms/`, `traces.jsonl`, `__pycache__/`, `mcps/`, scratch under `%USERPROFILE%\AppData\Local\Temp\endgame-ai-scratch\`
 
 ---
 
@@ -886,13 +909,16 @@ Re-count from `wiring.json` after edits.
 ### You — start the system now
 
 ```powershell
-cd C:\path\to\endgame-ai
+cd $env:USERPROFILE\Downloads\endgame-ai
 # 1. Start LM Studio, load model, server :1234
 # 2. Set prompts/model.json → "transport": "openai"
 $env:PYTHONIOENCODING = 'utf-8'
 python server.py
 # 3. Open http://127.0.0.1:9077/ — type goal — walk away
+# Endgame evolves alone from here (plan → act → verify → discover AI via GUI if needed)
 ```
+
+No usernames or machine-specific paths in docs — use `%USERPROFILE%` / `$env:USERPROFILE` on Windows.
 
 ### This session — completed
 

@@ -3,12 +3,14 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).parent
-SCRATCH = Path(r"C:\Users\ewojgab\AppData\Local\Temp\grok-goal-6eaf4693378c\implementer")
+_SCRATCH_ROOT = Path(os.environ.get("USERPROFILE", os.environ.get("TEMP", ".")))
+SCRATCH = _SCRATCH_ROOT / "AppData" / "Local" / "Temp" / "endgame-ai-scratch"
 SCRATCH.mkdir(parents=True, exist_ok=True)
 
 sys.path.insert(0, str(ROOT))
@@ -163,7 +165,7 @@ def capture_doc_drift() -> dict:
         "rule_count_in_readme": str(rule_count) in readme,
         "rule_count_actual": rule_count,
         "edge_count_actual": len(wiring.get("topology", {}).get("edges", [])),
-        "ewojgab_path": "ewojgab" in readme,
+        "hardcoded_username_in_readme": "ewojgab" in readme,
     }
     (SCRATCH / "doc-drift.log").write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return payload
