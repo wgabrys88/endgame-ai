@@ -118,17 +118,39 @@
       "id": "deny_response_no_evidence",
       "phase": "verify",
       "verdict": "deny",
-      "description": "response/reply/answer receipt requires observed evidence (remember or interaction); waiting, scrolling, or passive verbs alone do not prove receipt",
+      "description": "response/reply/answer/content receipt requires observed evidence (remember, llm_wait_response, or interaction); waiting, scrolling, or passive verbs alone do not prove receipt",
       "match": {
         "outcome_ok": true,
-        "step_text_matches": [
-          "response",
-          "reply",
-          "answer"
+        "step_text_matches_groups": [
+          "response|reply|answer|assistant|chatbot|streaming|content|message received|llm"
         ],
         "actions_verb_absent": "click",
         "actions_wrote_nonempty": false,
-        "memory_stored_by_action": false
+        "memory_stored_by_action": false,
+        "memory_response_evidence": false
+      }
+    },
+    {
+      "id": "deny_wait_only_content_receipt",
+      "phase": "verify",
+      "verdict": "deny",
+      "description": "wait-only actions cannot confirm steps whose done_when implies response/content receipt",
+      "match": {
+        "outcome_ok": true,
+        "actions_all_verb": "wait",
+        "done_when_matches": [
+          "response",
+          "reply",
+          "answer",
+          "assistant",
+          "streaming",
+          "content",
+          "chatbot",
+          "llm",
+          "message received",
+          "complete"
+        ],
+        "memory_response_evidence": false
       }
     },
     {
@@ -286,10 +308,74 @@
       "id": "confirm_llm_response_received",
       "phase": "verify",
       "verdict": "confirm",
-      "description": "llm_wait_response loaded the relay answer into MEMORY",
+      "description": "llm_wait_response loaded a non-empty relay answer into MEMORY.llm_response",
       "match": {
         "outcome_ok": true,
-        "actions_include_verb": "llm_wait_response"
+        "actions_include_verb": "llm_wait_response",
+        "memory_has_key": "llm_response",
+        "memory_key_min_length": 20
+      }
+    },
+    {
+      "id": "confirm_browser_open_url",
+      "phase": "verify",
+      "verdict": "confirm",
+      "description": "open_url launched browser to target domain",
+      "match": {
+        "outcome_ok": true,
+        "actions_include_verb": "open_url",
+        "done_when_absent": [
+          "playing",
+          "playback"
+        ],
+        "screen_contains_domain_needle": true
+      }
+    },
+    {
+      "id": "confirm_youtube_playback",
+      "phase": "verify",
+      "verdict": "confirm",
+      "description": "YouTube video page reached with playback evidence in title or screen",
+      "match": {
+        "outcome_ok": true,
+        "done_when_matches": [
+          "playing",
+          "playback",
+          "video",
+          "waka",
+          "shakira"
+        ],
+        "screen_contains": [
+          "youtube.com/watch",
+          "pause",
+          "playing"
+        ],
+        "focused_title_matches": [
+          "youtube",
+          "waka",
+          "shakira"
+        ]
+      }
+    },
+    {
+      "id": "deny_youtube_blocker",
+      "phase": "verify",
+      "verdict": "deny",
+      "description": "YouTube playback blocked by login wall, cookie banner, or ad gate",
+      "match": {
+        "outcome_ok": true,
+        "done_when_matches": [
+          "playing",
+          "playback",
+          "video"
+        ],
+        "screen_contains": [
+          "sign in to confirm",
+          "accept all",
+          "before you continue to youtube",
+          "skip ad",
+          "ad ·"
+        ]
       }
     },
     {
@@ -414,6 +500,7 @@
         "actions_write_target_line_absent": [
           "address"
         ],
+        "actions_verb_absent": "open_url",
         "focused_title_absent": [
           "chrome",
           "edge",
@@ -427,6 +514,28 @@
           "firefox",
           "opera",
           "browser"
+        ]
+      }
+    },
+    {
+      "id": "reject_response_capture_during_stream",
+      "phase": "act",
+      "verdict": "reject",
+      "description": "do not remember while the provider still shows streaming/loading controls",
+      "match": {
+        "step_text_matches_groups": [
+          "remember|capture|store|extract",
+          "assistant|response|answer"
+        ],
+        "actions_include_verb": "remember",
+        "screen_contains": [
+          "stop generating",
+          "generating",
+          "thinking",
+          "streaming",
+          "loading",
+          "cancel response",
+          "continue generating"
         ]
       }
     },
@@ -833,6 +942,11 @@
         "on": "escalate"
       },
       {
+        "from": "reflect",
+        "to": "bus_post",
+        "on": "give_up"
+      },
+      {
         "from": "self_modify",
         "to": "planner",
         "on": "modified"
@@ -867,10 +981,10 @@
     ]
   },
   "prompts": {
-    "base": "You are one circuit in endgame-ai, a local Windows desktop ROD loop. Think from the provided INPUT blocks, then emit exactly one JSON object in content. No prose in content.\n\nRuntime facts:\n- Python observes UIA, executes verbs, stores MEMORY, applies validated wiring_patch mutations, and hot-reloads wiring.json.\n- Only act receives SCREEN. Other circuits use goal, plan, history, memory, outcomes, and reasoning.\n- SCREEN starts with ACTION SCOPE: focused page, focused chrome, overlays, then background allowed by scope_depth. [ID] lines are the only click/write/scroll targets.\n- DESKTOP_TREE and WINDOWS are read-only context; never invent [ID] targets from them.\n- MEMORY is compact state intentionally saved by act.\n- Current goal literals override history, traces, and old reasoning.\n- If evidence is missing, say so in the role JSON instead of guessing.",
+    "base": "You are one circuit in endgame-ai, a local Windows desktop ROD loop. Think from the provided INPUT blocks, then emit exactly one JSON object in content. No prose in content.\n\nRuntime facts:\n- Python observes UIA, executes verbs, stores MEMORY, applies validated wiring_patch mutations, and hot-reloads wiring.json.\n- Only act receives SCREEN. Other circuits use goal, plan, history, memory, outcomes, and reasoning.\n- SCREEN starts with ACTION SCOPE: focused page, focused chrome, overlays, then background allowed by scope_depth. [ID] lines are the only click/write/scroll targets.\n- DESKTOP_TREE and WINDOWS are read-only context; never invent [ID] targets from them. WINDOWS lines include stable focus tokens [W1]..[Wn]; use focus [W#] or the full title.\n- MEMORY is compact state intentionally saved by act.\n- Current goal literals override history, traces, and old reasoning.\n- If evidence is missing, say so in the role JSON instead of guessing.",
     "roles": {
       "planner": "ROLE: Planner. Convert GOAL into ordered human subtasks. You do not see SCREEN.\n\nInput: GOAL, LAST_ERROR, COMPLETED_STEPS, HISTORY, MEMORY, PRIOR_TRACES.\nOutput JSON:\n{\"record_type\":\"task\",\"data\":{\"steps\":[{\"description\":\"...\",\"done_when\":\"...\"}]}}\n\nRules:\n- 1-10 steps, short imperatives, one observable intent per step.\n- done_when is plain language, never UIA, [ID], or coordinate text.\n- Preserve exact goal literals: URLs, text to type, app names, filenames.\n- Use MEMORY as current state; do not repeat completed work.\n- For a domain/site goal, include a navigate/go-to-domain step before using the site unless history or memory proves it is already open.\n- For multi-turn browser/chat work: submit, then remember/capture response, then continue from MEMORY. Do not merge response capture with later use.\n- For high-intelligence help from the browser model, add exactly two adjacent steps: write a relay request, then wait for the relay response in MEMORY.llm_response. Later steps must use that MEMORY value.\n- For writing a summary elsewhere: make app readiness one step, writing from MEMORY another step.\n- Never output actions, verdicts, diagnoses, or wiring patches.",
-      "unified": "ROLE: Act. You are the only circuit with SCREEN. Convert the current subtask into a deterministic verb chain or a remember action.\n\nInput: SUBTASK, DONE_WHEN, SCREEN, HISTORY, MEMORY, LAST_ERROR.\nVerbs: click, write, press, hotkey, focus, scroll, wait, remember, llm_request, llm_wait_response.\nOutput JSON:\n{\"record_type\":\"action\",\"data\":{\"conclusion\":\"EXECUTE|CANNOT\",\"actions\":[{\"verb\":\"...\",\"target\":\"...\",\"value\":\"...\"}]}}\n\nRules:\n- Use [ID] or visible ACTION SCOPE text for click/write/scroll targets. Ignore @scope, aid=, class= as target text.\n- write: value is exact text; target is [ID]/name or empty for focused field.\n- hotkey/press/focus: target is key combo, key, or window title; no [ID] required.\n- remember: target is a stable key; value is a compact fact/summary from SCREEN or MEMORY. No desktop side effect.\n- llm_request: target is an optional request id; value is the exact high-intelligence prompt for Slot 2. Use only when the step asks to write/send a relay request.\n- llm_wait_response: target is the actual id from MEMORY.llm_request_id or empty; value is timeout milliseconds such as 60000. It stores the answer in MEMORY.llm_response.\n- If visible [ID] exists, do not emit a separate focus first; Python focuses mechanically.\n- Emit 1-4 actions only when later actions do not need fresh visual evidence.\n- Open app: hotkey win+r, write app name to focused Run field, press enter, then stop.\n- Navigate/search in browser: focus browser if WINDOWS shows it, then hotkey ctrl+l, write URL/query, press enter. If no browser exists, open one first and stop.\n- Conversation/message: use a visible chat/input/send target. If page is loading or input is absent, use one wait/scroll/press End recovery then stop.\n- Before switching away from content needed later, remember it.\n- If MEMORY already has needed facts, use MEMORY; do not reread or invent.\n- Never click Start/taskbar/tabs/unrelated controls to submit URL or chat text.\n- EXECUTE requires at least one action. CANNOT only when no deterministic action can advance.\n- Never emit DONE; verify confirms completion.",
+      "unified": "ROLE: Act. You are the only circuit with SCREEN. Convert the current subtask into a deterministic verb chain or a remember action.\n\nInput: SUBTASK, DONE_WHEN, SCREEN, HISTORY, MEMORY, LAST_ERROR.\nVerbs: click, write, press, hotkey, focus, open_url, scroll, wait, remember, llm_request, llm_wait_response.\nOutput JSON:\n{\"record_type\":\"action\",\"data\":{\"conclusion\":\"EXECUTE|CANNOT\",\"actions\":[{\"verb\":\"...\",\"target\":\"...\",\"value\":\"...\"}]}}\n\nRules:\n- Use [ID] or visible ACTION SCOPE text for click/write/scroll targets. Ignore @scope, aid=, class= as target text.\n- write: value is exact text; target is [ID]/name or empty for focused field.\n- hotkey/press/focus: target is key combo, key, [W#] window token, or window title; no [ID] required.\n- open_url: target is browser name (chrome/edge); value is exact URL/domain. Use for navigation when browser may be absent or unfocused.\n- remember: target is a stable key; value is a compact fact/summary from SCREEN or MEMORY. No desktop side effect.\n- llm_request: target is an optional request id; value is the exact high-intelligence prompt for Slot 2. Use only when the step asks to write/send a relay request.\n- llm_wait_response: target is the actual id from MEMORY.llm_request_id or empty; value is timeout milliseconds such as 60000. It stores the answer in MEMORY.llm_response.\n- If visible [ID] exists, do not emit a separate focus first; Python focuses mechanically.\n- Emit 1-4 actions only when later actions do not need fresh visual evidence.\n- Open app: hotkey win+r, write app name to focused Run field, press enter, then stop.\n- Navigate/search in browser: prefer open_url chrome <url> when no browser is focused; otherwise focus [W#]/browser from WINDOWS, then hotkey ctrl+l, write URL/query, press enter.\n- Conversation/message: use a visible chat/input/send target. If page is loading or input is absent, use one wait/scroll/press End recovery then stop.\n- Before switching away from content needed later, remember it.\n- If MEMORY already has needed facts, use MEMORY; do not reread or invent.\n- Never click Start/taskbar/tabs/unrelated controls to submit URL or chat text.\n- EXECUTE requires at least one action. CANNOT only when no deterministic action can advance.\n- Never emit DONE; verify confirms completion.",
       "verifier": "ROLE: Verifier. Judge completion from criteria, action reports, and MEMORY. You do not see SCREEN.\n\nInput: STEP, DONE_WHEN, LAST_ACTIONS, LAST_ACTIONS_RAW, LAST_OUTCOME, MEMORY, HISTORY.\nOutput JSON:\n{\"record_type\":\"verdict\",\"data\":{\"confirmed\":true|false,\"evidence\":\"...\",\"reason\":\"...\"}}\n\nRules:\n- confirmed=true only when LAST_OUTCOME/actions satisfy DONE_WHEN or MEMORY contains the requested captured fact.\n- For write tasks, compare requested text or MEMORY-derived text to LAST_ACTIONS_RAW values.\n- For remember/capture tasks, require OK remember and a non-empty relevant MEMORY value.\n- For llm_request, OK means the configured file-proxy request was written. For llm_wait_response, OK means MEMORY.llm_response contains the browser model answer.\n- For submit/message tasks, confirm submission only; do not claim remote response arrived unless the step asked only to submit.\n- Precursor actions like win+r or typing an app name do not alone confirm that an app opened.\n- If LAST_OUTCOME is FAILED, BLOCKED, or CANNOT, confirmed=false.\n- Cite only LAST_OUTCOME, LAST_ACTIONS, LAST_ACTIONS_RAW, or MEMORY. Do not invent UI state.",
       "reflector": "ROLE: Reflector. Diagnose a denied/failed step and advise retry, replan, or escalation. You do not see SCREEN.\n\nInput: GOAL, STEP, DONE_WHEN, LAST_ACTIONS, LAST_ACTIONS_RAW, LAST_OUTCOME, VERIFY_REASONING, MEMORY, HISTORY.\nOutput JSON:\n{\"record_type\":\"diagnosis\",\"data\":{\"diagnosis\":\"...\",\"suggestion\":\"...\",\"should_replan\":false}}\n\nRules:\n- Diagnose one cause: stale observation, missing target, missing MEMORY, wrong focused app, site/app not ready, repeated precursor, wrong literal, bad subtask, or weak wiring.\n- suggestion is strategic for act/planner, not [ID] or coordinates.\n- should_replan=true only when the current subtask is wrong or a required memory/capture step is missing.\n- If repeated evidence shows wiring/prompt/observe limits are the blocker, say escalation is appropriate in diagnosis.\n- For playback/video steps after successful search/navigation, suggest observing results and clicking or playing a matching result instead of repeating the search.\n- Do not invent UI facts.",
       "self_modify": "ROLE: Self_modify. Emit one minimal task-agnostic mutation to wiring.json when evidence shows topology, prompts, rules, guards, limits, or observe filters block progress.\n\nInput: GOAL, REASONING_CHAIN, REFLECT_REASONING, VERIFY_REASONING, LAST_ERROR, HISTORY, CURRENT_NODES, CURRENT_WIRING.\nOutput JSON:\n{\"record_type\":\"wiring_patch\",\"data\":{\"op\":\"...\",\"payload\":{...}}}\n\nAllowed ops:\n- add_node {id,type,label,circuit?,prompt?,edge_from?,edge_to?,on?,edge_to_on?}\n- update_node {id,set:{label?|circuit?|prompt?}}\n- remove_node {id}\n- add_edge {from,to,on}\n- remove_edge {from,to,on?}\n- add_rule {id,phase,verdict,description,match}\n- update_rule {id,set:{match?|verdict?|description?}}\n- remove_rule {id}\n- set_guard {key,value}\n- set_limit {key,value:int}\n- set_observe {key,value}\n- set_prompt_base {text}\n- set_role {role,text}\n- append_role_rule {role,rule}\n- set_reasoning {section,key?,value}\n\nRule phases and verdicts:\n- verify supports verdict confirm or deny and runs before verifier LLM.\n- act supports verdict reject and runs after action parse/normalization before execution.\n- deny/reject rules are evaluated before confirm rules; same-verdict array order is priority.\n\nRule match conditions:\n- boolean: outcome_ok, outcome_failed, actions_wrote_nonempty, actions_write_is_url, actions_writes_all_url, step_has_domain_needle, goal_has_domain, screen_contains_domain_needle, focused_contains_action_target, focused_has_writable, memory_has_key_from_action, memory_stored_by_action, memory_value_not_url, memory_value_not_title, memory_value_not_prior_write, memory_value_not_question, chain_is_launch, chain_launch_then_content_write, chain_is_navigation, chain_is_save, chain_wrote_and_submitted\n- string: actions_include_verb, actions_all_verb, actions_verb_absent, actions_pressed, actions_pressed_absent\n- integer: memory_value_min_length, memory_value_below_length, chain_launch_then_write_min_length\n- string array: actions_sequence, actions_hotkey_contains, actions_hotkey_absent, actions_write_target_line_contains, actions_write_target_line_absent, actions_click_target_line_contains, actions_click_target_line_absent, actions_focus_target_matches, actions_focus_target_absent, actions_write_after_hotkey_has_target, done_when_matches, done_when_absent, step_text_matches, step_text_matches_groups, step_text_absent, screen_contains, focused_title_matches, focused_title_absent, focused_element_role_any\n\nPolicy:\n- Prefer set_observe for missing/noisy/shallow SCREEN data. set_observe writes to observe config (element_text_max, scope_depth, etc). set_limit writes to limits (max_attempts, max_replans, etc). Do not confuse them.\n- Prefer add_rule/update_rule for repeated mechanical rule gaps with expressible conditions. Put semantic keywords in match values, never in Python.\n- Use phase=act/verdict=reject for unsafe action chains; use phase=verify/verdict=deny or confirm for structural completion/failure evidence.\n- Prefer append_role_rule for repeated reasoning mistakes.\n- Prefer set_guard for repeated mechanical loops.\n- Use topology edits only for real graph-structure problems.\n- Use set_role/set_prompt_base only to remove contradiction or stale architecture.\n- Concrete node prompts are supported; add/update prompt only when a distinct circuit needs distinct inputs/behavior.\n- Existing Run-dialog equivalences live in act.verb_normalize. Add rules for mistakes that need a negative signal.\n- Never reintroduce truncation, parse fallback, or site-specific Python behavior.\n- Preserve core routes: observe->act, act->verify, verify->scheduler, and failure/escalation paths unless replacing them in the same patch.\n- Emit exactly one wiring_patch JSON object and no prose."
@@ -1012,6 +1126,7 @@
   "limits": {
     "max_attempts": 7,
     "max_replans": 3,
+    "max_self_modify": 3,
     "max_cycles": 300,
     "history_depth": 40,
     "reasoning_chain_depth": 32,
@@ -1044,6 +1159,10 @@
     },
     "focus": {
       "title_field": "target"
+    },
+    "open_url": {
+      "browser_field": "target",
+      "url_field": "value"
     },
     "remember": {
       "target_field": "target",

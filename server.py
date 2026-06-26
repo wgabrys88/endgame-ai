@@ -213,6 +213,9 @@ RULE_CONDITIONS = {
     "memory_value_not_title": bool,
     "memory_value_not_prior_write": bool,
     "memory_value_not_question": bool,
+    "memory_has_key": str,
+    "memory_key_min_length": int,
+    "memory_response_evidence": bool,
     "chain_is_launch": bool,
     "chain_launch_then_content_write": bool,
     "chain_launch_then_write_min_length": int,
@@ -1808,6 +1811,25 @@ def _check_memory_value_not_question(state, _):
     return bool(values) and all(not v.strip().endswith("?") for v in values)
 
 
+def _check_memory_has_key(state, key):
+    memory = state.get("memory") if isinstance(state.get("memory"), dict) else {}
+    return bool(str(memory.get(str(key), "") or "").strip())
+
+
+def _check_memory_key_min_length(state, expected):
+    memory = state.get("memory") if isinstance(state.get("memory"), dict) else {}
+    key = "llm_response"
+    min_len = int(expected)
+    return len(str(memory.get(key, "") or "").strip()) >= min_len
+
+
+def _check_memory_response_evidence(state, _):
+    memory = state.get("memory") if isinstance(state.get("memory"), dict) else {}
+    if len(str(memory.get("llm_response", "") or "").strip()) >= 20:
+        return True
+    return bool(_memory_values_for_actions(state))
+
+
 def _check_chain_is_launch(state, _):
     actions = _rule_actions(state)
     if len(actions) < 3 or [a.get("verb") for a in actions[:3]] != ["hotkey", "write", "press"]:
@@ -1879,6 +1901,9 @@ RULE_CHECKERS = {
     "memory_value_not_title": _check_memory_value_not_title,
     "memory_value_not_prior_write": _check_memory_value_not_prior_write,
     "memory_value_not_question": _check_memory_value_not_question,
+    "memory_has_key": _check_memory_has_key,
+    "memory_key_min_length": _check_memory_key_min_length,
+    "memory_response_evidence": _check_memory_response_evidence,
     "chain_is_launch": _check_chain_is_launch,
     "chain_launch_then_content_write": _check_chain_launch_then_content_write,
     "chain_launch_then_write_min_length": _check_chain_launch_then_write_min_length,
@@ -2130,10 +2155,22 @@ def node_reflect(state, node_cfg):
     """Retry vs replan vs escalate. Retries exhausted → replan. Replans exhausted → escalate (self-modify)."""
     retries = state.get("retries", 0)
     replans = state.get("replan_count", 0)
-    max_r = wiring_limit("max_attempts", 5)
-    max_replans = wiring_limit("max_replans", 2)
+    max_r = wiring_limit("max_attempts", 7)
+    max_replans = wiring_limit("max_replans", 3)
     if retries >= max_r:
         if replans >= max_replans:
+            sm_count = int(state.get("self_modify_count", 0) or 0)
+            max_sm = int(wiring_limit("max_self_modify", 3) or 3)
+            if sm_count >= max_sm:
+                return {
+                    "signals": ["give_up"],
+                    "patch": {
+                        "retries": 0,
+                        "replan_count": 0,
+                        "self_modify_exhausted": True,
+                        "last_error": f"self_modify limit exhausted ({sm_count}/{max_sm})",
+                    },
+                }
             return {"signals": ["escalate"], "patch": {"retries": 0, "replan_count": 0}}
         return {"signals": ["replan"], "patch": {"retries": 0, "replan_count": replans + 1, "replanning": True}}
 
@@ -2146,6 +2183,19 @@ def node_reflect(state, node_cfg):
             return {"signals": ["retry"], "patch": patch}
         if parsed.get("data", {}).get("should_replan"):
             if replans >= max_replans:
+                sm_count = int(state.get("self_modify_count", 0) or 0)
+                max_sm = int(wiring_limit("max_self_modify", 3) or 3)
+                if sm_count >= max_sm:
+                    return {
+                        "signals": ["give_up"],
+                        "patch": {
+                            "retries": 0,
+                            "replan_count": 0,
+                            "self_modify_exhausted": True,
+                            "last_error": f"self_modify limit exhausted ({sm_count}/{max_sm})",
+                            **r["patch"],
+                        },
+                    }
                 return {"signals": ["escalate"], "patch": {"retries": 0, "replan_count": 0, **r["patch"]}}
             return {"signals": ["replan"], "patch": {"retries": 0, "replan_count": replans + 1, "replanning": True, **r["patch"]}}
         return {"signals": ["retry"], "patch": patch}
@@ -2238,6 +2288,8 @@ def node_llm_response_write(state, _):
 def node_satisfied(state, _):
     if "delegated_to" in state:
         return {"signals": ["idle"], "patch": {"satisfied": False, "delegated": True}}
+    if state.get("self_modify_exhausted"):
+        return {"signals": ["idle"], "patch": {"satisfied": False}}
     if state.get("plan_failed"):
         return {"signals": ["idle"], "patch": {"satisfied": False}}
     steps = state.get("plan", [])
@@ -2570,6 +2622,16 @@ def node_self_modify(state, node_cfg):
     Triggered by reflect on 'escalate' signal when stuck.
     Uses LLM to decide what to change in the topology, prompts, or filters."""
     global WIRING
+    sm_count = int(state.get("self_modify_count", 0) or 0)
+    max_sm = int(wiring_limit("max_self_modify", 3) or 3)
+    if sm_count >= max_sm:
+        return {
+            "signals": ["modify_failed"],
+            "patch": {
+                "self_modify_exhausted": True,
+                "last_error": f"self_modify limit exhausted ({sm_count}/{max_sm})",
+            },
+        }
     wiring_path = WIRING_PATH
     current = json.loads(wiring_path.read_text(encoding="utf-8"))
     backup_text = json.dumps(current, indent=2)
@@ -2597,7 +2659,11 @@ def node_self_modify(state, node_cfg):
         apply_instance_env()
         configure_runtime(WIRING)
         sse_push("wiring_modified", {"op": op, "payload": payload})
-        patch.update({"self_modify_op": op, "self_modify_payload": payload})
+        patch.update({
+            "self_modify_op": op,
+            "self_modify_payload": payload,
+            "self_modify_count": sm_count + 1,
+        })
         return {"signals": ["modified"], "patch": patch}
     except Exception as e:
         return {"signals": ["modify_failed"], "patch": {"last_error": f"self_modify: {e}"}}

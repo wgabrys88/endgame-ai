@@ -3,6 +3,8 @@ from __future__ import annotations
 import ctypes
 import ctypes.wintypes as W
 import math
+import re
+import subprocess
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -32,7 +34,7 @@ OBSERVE_DEFAULTS = {
     "element_text_max": 500,
     "render_focused_first": True,
     "window_limit": 40,
-    "desktop_tree_enabled": True,
+    "desktop_tree_enabled": False,
     "desktop_tree_max_depth": 8,
     "desktop_tree_max_nodes": 900,
     "desktop_tree_child_limit": 180,
@@ -80,6 +82,76 @@ def _obs_text(text: str, default: int = 500) -> str:
     if limit <= 0:
         return str(text or "")
     return str(text or "")[:limit]
+
+
+WINDOW_TOKEN_RE = re.compile(r"^\[?(W\d+)\]?$", re.IGNORECASE)
+HWND_TARGET_RE = re.compile(r"^hwnd:(\d+|0x[0-9a-f]+)$", re.IGNORECASE)
+
+
+def assign_window_tokens(windows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Attach stable W1..Wn tokens to observed window rows."""
+    tokenized: list[dict[str, Any]] = []
+    for index, row in enumerate(windows, 1):
+        entry = dict(row)
+        entry["token"] = f"W{index}"
+        tokenized.append(entry)
+    return tokenized
+
+
+def resolve_window_target(target: str, windows: list[dict[str, Any]] | None) -> dict[str, Any] | None:
+    """Resolve a focus target to an observed window row (token, hwnd, or title)."""
+    needle = (target or "").strip()
+    if not needle or not windows:
+        return None
+    rows = assign_window_tokens(windows)
+    token_match = WINDOW_TOKEN_RE.match(needle)
+    if token_match:
+        token = token_match.group(1).upper()
+        for row in rows:
+            if str(row.get("token", "")).upper() == token:
+                return row
+    hwnd_match = HWND_TARGET_RE.match(needle)
+    if hwnd_match:
+        try:
+            hwnd = int(hwnd_match.group(1), 0)
+        except ValueError:
+            hwnd = 0
+        if hwnd:
+            for row in rows:
+                if int(row.get("hwnd", 0) or 0) == hwnd:
+                    return row
+    needle_l = needle.lower()
+    for row in rows:
+        title_l = str(row.get("title", "") or "").lower()
+        if not title_l or title_l == "(untitled)":
+            continue
+        if needle_l == title_l or needle_l in title_l or title_l in needle_l:
+            return row
+    keywords = [w for w in re.split(r"[\s\-]+", needle_l) if len(w) > 2]
+    best_row: dict[str, Any] | None = None
+    best_score = 0
+    for row in rows:
+        title_l = str(row.get("title", "") or "").lower()
+        overlap = sum(1 for word in keywords if word in title_l)
+        if overlap > best_score:
+            best_score = overlap
+            best_row = row
+    return best_row if best_score else None
+
+
+def format_window_lines(windows: list[dict[str, Any]], limit: int) -> list[str]:
+    """Render WINDOWS lines with stable focus tokens shared by act."""
+    lines: list[str] = []
+    for row in assign_window_tokens(windows):
+        title = str(row.get("title", "") or "").strip()
+        if not title or title == "(untitled)":
+            continue
+        prefix = "*" if row.get("focused") else "-"
+        token = row.get("token", "")
+        lines.append(f"  {prefix} [{token}] {title}")
+        if len(lines) >= limit:
+            break
+    return lines
 
 UIA_CONTROL_TYPE_MAP: dict[int, str] = {
     50000: "Button", 50001: "Calendar", 50002: "CheckBox", 50003: "ComboBox",
@@ -505,13 +577,10 @@ class Desktop:
                 tree_lines = [f"TREE_ERROR: {type(e).__name__}: {e}"]
             if tree_lines:
                 context_text += "\nDESKTOP_TREE:\n" + "\n".join(tree_lines)
-        windows = [
-            f"{'*' if w['focused'] else '-'} {w['title']}"
-            for w in window_infos
-            if w.get("title") and w.get("title") != "(untitled)"
-        ][:window_limit]
-        if windows:
-            context_text += "\nWINDOWS:\n" + "\n".join(f"  {w}" for w in windows)
+        window_lines = format_window_lines(window_infos, window_limit)
+        if window_lines:
+            context_text += "\nWINDOWS:\n" + "\n".join(window_lines)
+            context_text += "\nWINDOW_FOCUS: use focus target [W#] from WINDOWS, full title, or hwnd:<id>"
         if not focus_in_scan:
             context_text += "\nWINDOW_SCAN_WARNING: focused window was not reached; overlay ordering may be incomplete"
         if not elements:
@@ -659,10 +728,17 @@ class Desktop:
         time.sleep(0.02)
         self.user32.mouse_event(0x0800, 0, 0, amount * 120, 0)
 
-    def focus_window(self, title: str) -> bool:
-        import re
-        title_l = title.lower().strip()
-        keywords = [w for w in re.split(r"[\s\-]+", title_l) if len(w) > 3]
+    def focus_window(self, title: str, window_infos: list[dict[str, Any]] | None = None) -> bool:
+        title_l = (title or "").lower().strip()
+        keywords = [w for w in re.split(r"[\s\-]+", title_l) if len(w) > 2]
+        resolved = resolve_window_target(title, window_infos)
+        if resolved:
+            hwnd = int(resolved.get("hwnd", 0) or 0)
+            resolved_title = str(resolved.get("title", "") or title)
+            resolved_l = resolved_title.lower()
+            resolved_keywords = [w for w in re.split(r"[\s\-]+", resolved_l) if len(w) > 2] or keywords
+            if hwnd and self._set_foreground_verified(hwnd, resolved_l, resolved_keywords):
+                return True
         best_hwnd = None
         best_score = 99
         hwnd = self.user32.GetTopWindow(None)
@@ -680,6 +756,42 @@ class Desktop:
         if best_hwnd:
             return self._set_foreground_verified(int(best_hwnd), title_l, keywords)
         return False
+
+    def open_url(self, browser: str, url: str) -> tuple[bool, str]:
+        """Open a URL in a browser without requiring prior focus."""
+        raw_url = (url or "").strip()
+        if not raw_url:
+            return False, "empty url"
+        if not re.match(r"^https?://", raw_url, re.IGNORECASE):
+            raw_url = f"https://{raw_url}"
+        browser_l = (browser or "chrome").lower().strip()
+        launchers = {
+            "chrome": "chrome",
+            "google chrome": "chrome",
+            "edge": "msedge",
+            "microsoft edge": "msedge",
+            "msedge": "msedge",
+            "firefox": "firefox",
+            "opera": "opera",
+        }
+        launcher = launchers.get(browser_l)
+        if not launcher:
+            for name, exe in launchers.items():
+                if name in browser_l or browser_l in name:
+                    launcher = exe
+                    break
+        if not launcher:
+            launcher = "chrome"
+        try:
+            subprocess.run(
+                ["cmd", "/c", "start", "", launcher, raw_url],
+                check=False,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            time.sleep(1.0)
+            return True, f"opened {raw_url} via {launcher}"
+        except Exception as exc:
+            return False, f"{type(exc).__name__}: {exc}"
 
     def _set_foreground_verified(self, hwnd: int, title_l: str, keywords: list[str]) -> bool:
         self.user32.SetForegroundWindow(W.HWND(hwnd))
@@ -973,13 +1085,14 @@ class Desktop:
             ],
             "windows": [
                 {
-                    "hwnd": int(w.get("hwnd", 0) or 0),
-                    "title": w.get("title", ""),
-                    "rect": list(w["rect"]) if w.get("rect") else None,
-                    "focused": bool(w.get("focused")),
-                    "z": int(w.get("z", 0) or 0),
+                    "token": token_row.get("token", ""),
+                    "hwnd": int(token_row.get("hwnd", 0) or 0),
+                    "title": token_row.get("title", ""),
+                    "rect": list(token_row["rect"]) if token_row.get("rect") else None,
+                    "focused": bool(token_row.get("focused")),
+                    "z": int(token_row.get("z", 0) or 0),
                 }
-                for w in window_infos
+                for token_row in assign_window_tokens(window_infos)
             ],
             "overlays": [
                 {

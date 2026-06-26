@@ -155,16 +155,7 @@
         ]
       }
     },
-    {
-      "id": "confirm_relay_wait",
-      "phase": "verify",
-      "verdict": "confirm",
-      "description": "wait/recovery step completed; observe again for response state",
-      "match": {
-        "outcome_ok": true,
-        "actions_all_verb": "wait"
-      }
-    },
+
     {
       "id": "confirm_relay_remember_response",
       "phase": "verify",
