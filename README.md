@@ -535,3 +535,198 @@ MIT
 ---
 
 *Last updated: 2026-06-26T20:17 | Branch: runtime-optimization | Commit: 1648c7e*
+
+
+---
+
+## Appendix A: Mode A / Mode B Methodology
+
+### The Dual-Mode Protocol
+
+When an AI agent works on endgame-ai, it operates in two strictly separated modes:
+
+#### Mode A: LM Studio Persona (Brain Inside the Pipeline)
+
+```
+YOU ARE THE LLM BACKEND. You are stateless. You see ONLY what request.json contains.
+
+Rules:
+1. Read comms/slot1_cognition/request.json
+2. Determine ROLE from "ROLE:" line in messages[0].content
+3. Check if "DECIDE NOW" is in messages[1].content
+4. If NO "DECIDE NOW": respond with prose reasoning about the input
+5. If YES "DECIDE NOW": respond with EXACTLY ONE JSON object matching the role
+6. Write response to comms/slot1_cognition/response.json
+7. You NEVER check /state, /health, or any external context
+8. You NEVER peek at the screen yourself
+9. You decide ONLY from SCREEN/SUBTASK/DONE_WHEN/LAST_OUTCOME in the request
+10. You are a pure function: request → response
+
+Response format:
+{"id":"<copy from request>","status":"complete","choices":[{"message":{"content":"<your response>","reasoning_content":""}}]}
+
+Role outputs:
+- Planner (DECIDE NOW): {"record_type":"task","data":{"steps":[{"description":"...","done_when":"..."}]}}
+- Act (DECIDE NOW):     {"record_type":"action","data":{"conclusion":"EXECUTE","actions":[{"verb":"...","target":"...","value":"..."}]}}
+- Verifier (DECIDE NOW): {"record_type":"verdict","data":{"confirmed":true/false,"evidence":"...","reason":"..."}}
+- Reflector (DECIDE NOW): {"record_type":"diagnosis","data":{"diagnosis":"...","suggestion":"...","should_replan":false}}
+```
+
+#### Mode B: Observer/Orchestrator (Outside the Pipeline)
+
+```
+YOU ARE THE OPERATOR. You manage the system, observe outcomes, and NEVER write response.json.
+
+Allowed actions:
+1. Start/stop the server: powershell.exe -Command "Start-Process python -ArgumentList 'server.py' ..."
+2. Post goals: POST /run {"goal":"..."}
+3. Check state: GET /state → {step, satisfied, memory}
+4. Check health: GET /health → {ok, model_transport, run}
+5. Observe raw logs: tail logs/endgame_raw.jsonl
+6. Observe desktop (read-only): check what's on screen
+7. Commit to git
+8. Modify code (server.py, wiring.json, etc.) — but ONLY when server is stopped
+9. Write documentation
+
+NEVER actions:
+- Never write to comms/slot1_cognition/response.json (that's Mode A)
+- Never inject state via POST /state during a run
+- Never interfere with the pipeline while it's running
+- Never hot-reload wiring during a live run (stop first)
+```
+
+#### The Wall Between Modes
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  MODE A                    │  MODE B                          │
+│  (Inside pipeline)         │  (Outside pipeline)              │
+│                            │                                  │
+│  Reads: request.json       │  Reads: /state, /health, logs    │
+│  Writes: response.json     │  Writes: code, docs, git         │
+│  Sees: ONLY request content│  Sees: everything                │
+│  Decides: per-request      │  Decides: system-level           │
+│                            │                                  │
+│  NEVER touches /state      │  NEVER touches response.json     │
+│  NEVER peeks outside       │  NEVER interferes during run     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### When to Use Each Mode
+
+| Situation | Mode |
+|-----------|------|
+| Server running, file_proxy transport, request.json appears | **Mode A** |
+| Starting/stopping server | **Mode B** |
+| Checking if goal succeeded | **Mode B** |
+| Fixing code after a failure | **Mode B** |
+| Responding to a planner/act/verify/reflect request | **Mode A** |
+| Committing proof to git | **Mode B** |
+| Observing the Windows desktop to verify system behavior | **Mode B** |
+
+---
+
+## Appendix B: Goal & Prompt for Browser AI Proof
+
+### The Goal to Post
+
+```json
+{"goal": "open grok.com in opera, type what is 2+2 and capture the grok response to memory"}
+```
+
+This goal is chosen because:
+- Simple enough that grok.com will respond quickly
+- Has a verifiable answer (response should contain "4")
+- Tests the full pipeline: navigate → interact → capture
+- Short response won't overflow observation window
+
+### The Prompt to Give Your AI Agent (Next Session)
+
+```
+CONTEXT: endgame-ai project at C:\Users\ewojgab\Downloads\endgame-ai\
+BRANCH: runtime-optimization
+REPO: https://github.com/wgabrys88/endgame-ai
+
+READ README.md FIRST — it contains everything about the system.
+
+YOUR TASK: Prove browser_ai transport works end-to-end.
+
+STEPS:
+1. Read README.md completely (architecture, transports, methodology)
+2. Verify model.json has transport="browser_ai" (change if needed)
+3. Start server: powershell.exe -Command "Start-Process -FilePath 'python' -ArgumentList 'C:\Users\ewojgab\Downloads\endgame-ai\server.py' -WorkingDirectory 'C:\Users\ewojgab\Downloads\endgame-ai' -WindowStyle Hidden"
+4. Wait 5 seconds, check health: GET http://127.0.0.1:9078/health (should show model_transport=browser_ai)
+5. Post goal: POST http://127.0.0.1:9078/run with body {"goal":"open grok.com in opera, type what is 2+2 and capture the grok response to memory"}
+6. WAIT. The system is now AUTONOMOUS. It will:
+   - Call Nemotron via LM Studio for planning
+   - NO WAIT — it uses browser_ai — it types prompts INTO GROK.COM for cognition
+   - Observe the screen, act, verify, all powered by Grok's responses
+7. Check state every 60 seconds: GET /state
+8. When satisfied:true appears, check memory for grok_response
+9. Commit proof
+
+METHODOLOGY: You are MODE B ONLY. You observe. You do NOT write response.json.
+The system operates itself. Grok.com IS the brain (Mode A).
+If it fails, stop server, check logs, fix code, restart.
+
+IMPORTANT: 
+- browser_ai transport means ALL LLM calls go through grok.com browser GUI
+- The system types its own prompts (planner/act/verifier prompts) into grok.com
+- This is self-referential: the desktop operator operates its own brain
+- Expected time: 5-15 minutes per step (grok typing + response wait)
+- Total expected: 30-60 minutes for a 4-step goal
+
+IF IT FAILS:
+- Check logs/endgame_raw.jsonl for browser_ai_call events
+- Common issues: grok.com not logged in, Opera not open, element IDs changed
+- Fix: ensure Opera is open with grok.com loaded before starting
+- The response extraction parses Text elements from SCREEN — if Grok's
+  response isn't captured, the parsing logic in llm_via_browser_ai needs fixing
+
+SUCCESS CRITERIA:
+- GET /state shows satisfied:true
+- memory.grok_response contains Grok's actual answer
+- No human typed anything during the run
+- Commit and document the proof
+```
+
+### Pre-Run Checklist (Before Posting Goal)
+
+1. Opera browser is open and logged into grok.com
+2. A fresh conversation in grok.com (no prior messages)
+3. LM Studio is NOT needed (browser_ai bypasses it)
+4. `prompts/model.json` has `"transport": "browser_ai"`
+5. No `state.json` file exists (clean state)
+6. Server is freshly started (no stale state in memory)
+
+---
+
+## Appendix C: Efficiency Optimization Notes
+
+### Known Issues to Fix (Phase 4)
+
+| Issue | Impact | Fix |
+|-------|--------|-----|
+| Planner Pass B overthinks | 4+ minutes wasted on simple plans | `max_tokens: 256` for planner, `stop: ["</think>"]` |
+| Two calls per node | 2x browser interactions | Single-pass mode for browser_ai transport |
+| Fixed 15s response wait | Wastes time on fast responses | Poll for "Thinking" button disappearance |
+| Focus steal by LM Studio | Verifier sees wrong window | Not relevant for browser_ai (no LM Studio) |
+| Response extraction fragile | May miss multi-element responses | Parse all non-background Text elements |
+| Prompt too long for chat | Grok may truncate or confuse | Summarize system prompt, keep only role+task |
+
+### Optimal browser_ai Prompt Format
+
+Instead of sending the full 400-token system prompt + user message into Grok's chat, a more efficient format:
+
+```
+You are the PLANNER in an autonomous desktop operator.
+GOAL: open notepad and type hello world
+MEMORY: {}
+Respond with ONLY this JSON: {"record_type":"task","data":{"steps":[{"description":"...","done_when":"..."}]}}
+```
+
+This reduces token usage from ~2000 to ~100, making Grok respond faster.
+
+---
+
+*End of Appendices*
