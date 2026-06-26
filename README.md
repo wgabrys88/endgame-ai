@@ -1,405 +1,165 @@
 # Endgame-AI
 
-**A self-evolving Windows desktop operator. You post a goal and walk away.**
+**A self-evolving Windows desktop operator seed. Post a goal. Walk away.**
 
-Endgame-AI is not a chatbot with tools. It is not a cloud computer-use API. It is a **local runtime that owns the keyboard and screen**, reads the real desktop through UI Automation, executes verbs, judges progress with declarative rules, and asks models only for *decisions*. The model never drives the mouse.
+This document is the **only** project documentation. It is written for humans who will run the system and for coding agents who will extend it. Every claim is ordered by truth: `prompts/wiring.json` and `server.py` beat this file when they disagree.
 
-The breakthrough bet: **the GUI is the universal API.** Any intelligence reachable through a browser tab, a local agent UI, or a JSON file handoff can be discovered and used — without hardcoded integrations, without vendor APIs, without pip.
+---
 
-Python stdlib only. `prompts/wiring.json` is the brain. `server.py` is the body. Cognition is pluggable and upgradeable at runtime.
+## I. What this is
+
+Endgame-AI is **not** a chatbot with tools. It is **not** a cloud computer-use API. It is a **local runtime that owns the keyboard and screen** on Windows, observes the real desktop through UI Automation, executes verbs, and asks language models only for *decisions*. Python moves the mouse. The model never does.
+
+The design bet: **the GUI is the universal API.** Any intelligence reachable through a browser tab, a local agent UI, or a JSON file handoff can be discovered and used — without vendor APIs, without per-site integrations, without pip. Bootstrap on a small local model (Nemotron in LM Studio). Upgrade cognition by **navigating the GUI** to grok.com, Grok Build, OpenCode, ChatGPT, or any file-proxy agent.
 
 | Field | Value |
 |-------|-------|
 | Repository | `https://github.com/wgabrys88/endgame-ai` |
 | Branch | `codex/self-referential-relay` |
-| Platform | Windows 10/11, interactive desktop |
-| Entry | `python server.py` → panel at **http://127.0.0.1:9077/** |
-| Default slot port | **9078** (slot 1) |
-| Truth order | `wiring.json` + `server.py` + `desktop.py` + `actions.py` > this README |
+| Platform | Windows 10/11, interactive desktop session |
+| Entry | `python server.py` → panel **http://127.0.0.1:9077/** |
+| Slot 1 port | **9078** |
+| Dependencies | Python 3.11+ stdlib only — **no pip** |
+| Tracked files | **14** source files + this README (no test/harness scripts) |
 
-**This file is the only documentation.**
+### Use cases
 
-### Use cases (why this exists)
+| You want to… | Endgame does… |
+|--------------|---------------|
+| Type a goal and leave | ROD loop until `satisfied: true` or `give_up` |
+| Open Notepad, Chrome, any app | `observe` → `act` from SCREEN |
+| Navigate to any URL | `open_url` or focus + write |
+| Play YouTube / media | Plan + `open_url` (proven partial — see §X) |
+| Chat with grok/ChatGPT via browser | Discover chat UI, write, capture to MEMORY |
+| Use stronger AI mid-goal | `open_url` to web AI or `llm_request` / `llm_wait_response` |
+| Evolve when stuck | `reflect` → `self_modify` patches `wiring.json` at runtime |
 
-| Use case | What happens | Cognition needed |
-|----------|--------------|------------------|
-| **Walk-away desktop tasks** | Type goal in panel, leave, return to `satisfied: true` | Bootstrap Nemotron (LM Studio) |
-| **Play media** | `play shakira waka waka on youtube` → Chrome opens, watch URL reached | Bootstrap plans + `open_url` (proven partial) |
-| **Browse anywhere** | Navigate to any site via GUI — no API keys | `open_url` + SCREEN-driven act |
-| **Chat with grok/ChatGPT/etc.** | Open browser chat, submit prompt, capture answer into MEMORY | Bootstrap + GUI discovery (proven path via SCREEN/file_proxy) |
-| **Upgrade intelligence mid-goal** | Nemotron stuck → operator opens grok.com or Grok Build via `open_url` | Any webpage or JSON file-proxy agent |
-| **Self-evolve policy** | Repeated verify denies → `self_modify` patches wiring.json | self_modify circuit (coded, unproven E2E) |
-| **Unlimited future** | Any AI reachable by human can be reached by Endgame — GUI has no API caps | Discovered cognition, not hardcoded integrations |
-
-**Logical deduction:** If bootstrap can play YouTube (proven) and cognition can read SCREEN to drive Chrome (proven), the operator is **not API-limited** — it can route through any web UI or local agent. The seed must document *how* proofs were achieved so the next session extends them, not reinvents scripts.
-
----
-
-## Table of contents
-
-0. [The Seed — now vs complete vs future](#0-the-seed--now-vs-complete-vs-future)
-1. [What Endgame is (and is not)](#1-what-endgame-is-and-is-not)
-2. [The breakthrough thesis](#2-the-breakthrough-thesis)
-3. [Research context](#3-research-context--where-this-sits-in-agentic-ai)
-4. [Walk-away operator](#4-walk-away-operator--the-intended-experience)
-5. [Uniform architecture](#5-uniform-architecture)
-6. [Cognition bootstrap and discovery](#6-cognition-bootstrap-and-discovery)
-7. [ROD loop and self-evolution](#7-the-rod-loop-and-self-evolution)
-8. [SCREEN → act → verify](#8-screen--act--verify)
-9. [Rules — safety net or friction?](#9-rules--safety-net-or-friction)
-10. [Declarative brain (wiring.json)](#10-the-declarative-brain-wiringjson)
-11. [How benchmarks were achieved](#11-how-benchmarks-were-achieved)
-12. [Proven vs vision](#12-what-is-proven-vs-what-is-vision)
-13. [Operator replacement progress](#13-operator-replacement--honest-progress)
-14. [Run it yourself](#14-run-it-yourself--walk-away-with-lm-studio)
-15. [HTTP API](#15-http-api)
-16. [Known gaps](#16-known-gaps)
-17. [Remaining work](#17-remaining-work)
-18. [Next AI handover prompt](#18-next-ai-handover-prompt)
-19. [Deep Research prompt](#19-deep-research-prompt-chatgpt-project)
-20. [Repository layout](#20-repository-layout)
-21. [Appendix — session finish](#21-appendix--session-finish)
+**Logical consequence:** If the operator can reach a webpage a human can reach, it can use that page’s intelligence without an API key. The limitation is observation quality and bootstrap model skill — not integration count.
 
 ---
 
-## 0. The Seed — now vs complete vs future
+## II. The seed — now, complete, future
 
-Endgame is a **seed**, not a finished product. The seed has mechanical hands, an evolvable brain, bootstrap cognition, and a path to discovered intelligence. Later it self-modifies — wiring first, then (vision) heavier runtime evolution.
+Endgame is a **seed**, not a finished product. The seed must be honest, small, and self-describing so later evolution (by `self_modify` or future agents) does not inherit legacy confusion.
 
 ```mermaid
 flowchart TB
-    subgraph NOW["Seed today (what you have)"]
-        H1[UIA hands + verbs]
-        W1[wiring.json 32 rules]
-        B1[Nemotron bootstrap]
-        P1[Notepad + Google + YouTube partial proven]
+    subgraph NOW["Today — what exists"]
+        H[UIA hands + verbs]
+        W[wiring.json brain]
+        B[Nemotron bootstrap]
+        P[Notepad + Google proven; YouTube partial]
     end
 
-    subgraph SEED["Complete seed (next sessions)"]
-        H2[Walk-away panel UX]
-        W2[self_modify proven]
-        B2[Autonomous cognition discovery]
-        P2[Document HOW each benchmark was achieved]
-        P3[grok.com chat E2E via GUI]
+    subgraph SEED["Complete seed — next work"]
+        W1[Walk-away with LM Studio]
+        W2[Document HOW each proof was achieved]
+        W3[Autonomous grok discovery E2E]
+        W4[self_modify proven on stuck goal]
     end
 
-    subgraph FUTURE["Unrestricted evolution (vision)"]
-        E1[wiring evolves during runtime]
-        E2[Any AI via GUI — no API limits]
-        E3[Nemotron or grok/kiro-cli as interchangeable cognition]
-        E4[Operator improves PC + policy without human]
+    subgraph FUTURE["Vision — unrestricted evolution"]
+        F1[Any AI via GUI]
+        F2[Runtime replanning + wiring hot-evolve]
+        F3[Zero-human cognition loop]
     end
 
-    NOW --> SEED
-    SEED --> FUTURE
+    NOW --> SEED --> FUTURE
 ```
 
+| Stage | Operator replacement (honest) |
+|-------|-------------------------------|
+| Mechanical hands + SCREEN | ~20% |
+| Declarative policy + verify | ~15% |
+| Bootstrap cognition | ~10% |
+| GUI cognition discovery | ~5% proven, ~15% designed |
+| Walk-away reliability | ~7% |
+| **Total toward walk-away vision** | **~45%** |
+
+The architecture is credible. The gap is E2E proof of discovery, self-modify, and reliable Nemotron JSON — not missing bones.
+
+---
+
+## III. The thesis — why this is not a standard agent
+
+Most 2025–2026 agent stacks use **one model sees pixels and acts**. Endgame separates four layers:
+
 ```mermaid
-flowchart LR
-    subgraph You["You"]
-        G[Post goal in panel]
+flowchart TB
+    subgraph Hands["1. Hands — Python + UIA"]
+        OBS[observe → SCREEN]
+        ACT[execute_verb]
     end
 
-    subgraph Seed["Endgame seed"]
-        ROD[ROD loop]
-        RULES[Structural rules]
-        MEM[MEMORY + traces]
+    subgraph Runtime["2. Runtime rails — rules in Python"]
+        RL[evaluate_rules — NOT sent to LLM]
+    end
+
+    subgraph Operator["3. Operator — LLM circuits"]
+        PL[Planner]
+        AC[Act]
+        VF[Verifier fallback]
+        RF[Reflector]
         SM[self_modify]
     end
 
-    subgraph Cognition["Any cognition source"]
-        N[Nemotron start]
-        X[grok / ChatGPT / kiro-cli / Grok Build / OpenCode]
+    subgraph Cognition["4. Cognition sources — discoverable"]
+        NEM[Nemotron / LM Studio]
+        WEB[grok.com / ChatGPT / any browser UI]
+        FP[file_proxy JSON agents]
     end
 
-    G --> ROD
-    ROD --> N
-    ROD -->|"open_url focus write"| X
-    X -->|"SCREEN or JSON files"| ROD
-    RULES --> ROD
-    SM --> RULES
-    MEM --> ROD
+    PL --> AC --> Hands
+    AC --> Runtime --> VF
+    VF -->|deny| RF --> AC
+    SM --> WIRING[wiring.json hot-reload]
+    Operator --> Cognition
+    Hands -->|open_url focus write| WEB
+    WEB -->|SCREEN or JSON| Hands
 ```
 
-**Prepare the seed** = honest docs + proven paths + shrink code + no parallel script universe. The seed transforms itself later; documentation must not trap future agents in legacy thinking.
+| Layer | Decides | Does not |
+|-------|---------|----------|
+| **Operator (LLM)** | Plan, verbs from SCREEN, judgment when rules don’t match, recovery strategy | Move mouse, see rule catalog |
+| **Runtime rules** | Structural preflight: block false success, fast confirm launch chains | Replace operator planning |
+| **Hands** | Execute verbs, HWND focus, UIA scan | Plan or judge goals |
+| **wiring.json** | Topology, role prompts, rule matchers, limits | HTTP to models |
+
+Research context: OSWorld and Windows Agent Arena benchmark desktop agents; Anthropic/OpenAI Computer Use let the model drive input; Sakana DGM self-modifies code. Endgame’s novelty is **hands/brain/operator split**, **GUI-unlimited cognition routing**, and **policy evolution via wiring_patch** without pip.
 
 ---
 
-## 1. What Endgame is (and is not)
+## IV. Operator vs rules — read this twice
 
-### It is
+This is the most misunderstood part of the system.
 
-| Property | Meaning |
-|----------|---------|
-| **Desktop operator** | Sits at your PC like a human — sees UIA, moves cursor, types, switches windows |
-| **Uniform system** | One ROD graph, one wiring brain, one mechanical layer — not a bag of scripts |
-| **Decision / execution split** | LLM circuits emit JSON; Python executes and verifies |
-| **GUI-unlimited** | `open_url`, `focus`, `click`, `write` can reach *any* webpage or app UI |
-| **Cognition-pluggable** | Bootstrap on local Nemotron (LM Studio); upgrade to grok.com, Grok Build, OpenCode, or any file-proxy agent by *navigating there* |
-| **Self-evolving** | `self_modify` can patch `wiring.json` (rules, prompts, topology, observe) when stuck |
-| **Self-feeding** | Reasoning chains, MEMORY, traces, and file-proxy request/response loops accumulate context |
+**You are correct:** the LLM is the serious computer operator. **Rules are runtime guidance rails** — anti-cheat for premature “step done” — not instructions the model memorizes.
 
-### It is not
-
-| Anti-pattern | Why |
-|--------------|-----|
-| Standard tool-calling agent | Tools are not the interface — verbs + SCREEN + wiring rules are |
-| Cloud computer-use only | Runs fully local; no vendor lock-in for hands or brain |
-| Hardcoded grok/Chrome recipe | grok is one *discoverable* cognition source, not the architecture |
-| MCP-as-hands | Endgame owns HWND focus and UIA — external agents advise, never click |
-| **New harness/runner/proof scripts** | Coding agents must **use Endgame** (panel, `POST /run`, poll `request.json`) — never generate parallel test scripts |
-| Legacy multi-slot recipes | Slots are helpers; architecture is one uniform operator |
-
----
-
-## 2. The breakthrough thesis
-
-Most agentic systems in 2025–2026 follow one pattern: **one big model sees pixels and acts**.
-
-| Approach | Examples | Limit |
-|----------|----------|-------|
-| Screenshot + API loop | [Anthropic Computer Use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool), OpenAI CUA/Operator | Cloud cost, API caps, no local policy evolution |
-| Benchmark harnesses | [OSWorld](https://arxiv.org/abs/2409.08264), [Windows Agent Arena](https://microsoft.github.io/WindowsAgentArena/) | Measure agents, not ship operators |
-| Self-modifying code | [Sakana DGM](https://sakana.ai/dgm/) | Code evolution, not live desktop wiring |
-| Declarative graphs | LangGraph-style workflows | Static unless rebuilt |
-
-**Endgame's bet — four separations:**
-
-```mermaid
-flowchart TB
-    subgraph Hands["1. Mechanical hands (fixed, trusted)"]
-        UIA[UIA observe]
-        VERBS[verbs: click write focus open_url ...]
-        VERIFY[rule preflight + verifier]
-    end
-
-    subgraph Brain["2. Declarative brain (evolvable)"]
-        WIRING[wiring.json topology + rules + roles]
-        SM[self_modify wiring_patch]
-    end
-
-    subgraph Bootstrap["3. Bootstrap cognition (start)"]
-        NEMO[LM Studio Nemotron / local model]
-    end
-
-    subgraph Upgrade["4. Discovered cognition (GUI path)"]
-        GROK[grok.com in browser]
-        GB[Grok Build / Cursor / OpenCode UI]
-        FP[Any file_proxy JSON agent]
-    end
-
-    WIRING --> Hands
-    Bootstrap --> Brain
-    Hands -->|"open_url focus write click"| Upgrade
-    Upgrade -->|"answers via SCREEN or JSON files"| Hands
-    SM --> WIRING
-```
-
-1. **Hands** — Python + UIA. Deterministic. Never hallucinate a click.
-2. **Brain** — `wiring.json`. Hot-reloadable. Governs when steps confirm, deny, escalate, evolve.
-3. **Bootstrap cognition** — Small local model (Nemotron) for planner/act/verify when you walk away.
-4. **Discovered cognition** — Stronger intelligence reached by **navigating the GUI** to whatever service is available — grok.com, a build tab, a local agent that speaks JSON files. No API key required. The webpage *is* the API.
-
-This is why it is not a branch diagram. Slots and relay workers are **implementation helpers** for parallelism. The mental model is one operator that can find its own way to better thinking.
-
----
-
-## 3. Research context — where this sits in agentic AI
-
-Recent work validates pieces of this design. Endgame combines them in a way none of the papers do alone.
-
-| Research line | Key idea | Endgame mapping |
-|---------------|----------|-----------------|
-| **OSWorld** (2024–2025) | Open-ended desktop tasks in real OS environments | Same problem domain; Endgame targets Windows UIA + walk-away goals |
-| **Windows Agent Arena** (Microsoft, 2025) | Scalable Windows GUI benchmark | Endgame is operator-first, not benchmark-first |
-| **Computer Use** (Anthropic/OpenAI, 2025) | Model controls mouse/keyboard via API | Endgame inverts: runtime controls mouse, model advises |
-| **DGM / self-modifying agents** (Sakana, 2025) | Agents rewrite own code to improve | Endgame `self_modify` patches **wiring policy**, not random Python |
-| **GUI grounding surveys** (2025–2026) | Accessibility trees beat raw pixels for reliability | Endgame uses UIA `[ID]` + `[W#]` tokens, not screenshot-only |
-| **Declarative agent configs** (2025) | Separate workflow from execution | `wiring.json` is the workflow; `server.py` is the executor |
-
-**What is genuinely novel here:**
-
-- **GUI as cognition router** — the operator can `open_url` grok.com, open a local agent IDE, or point file_proxy paths at whatever JSON-speaking tool exists. No integration code per vendor.
-- **Policy evolution without redeploy** — `wiring_patch` ops (15 types) hot-reload rules/prompts/topology when reflect escalates.
-- **Structural verify before LLM verify** — 32 declarative rules prevent false success (e.g. wait-only steps confirming without memory evidence).
-- **Two-pass cognition contract** — reasoning pass then `DECIDE NOW` JSON pass reduces parse failures.
-- **Stdlib-only single runtime** — no pip, one `server.py`, auditable mechanical layer.
-
----
-
-## 4. Walk-away operator — the intended experience
-
-```mermaid
-sequenceDiagram
-    participant You as You
-    participant Panel as wiring-editor.html :9077
-    participant EG as Endgame runtime
-    participant Nemo as Bootstrap cognition<br/>LM Studio Nemotron
-    participant Desktop as Windows desktop
-    participant Smart as Discovered intelligence<br/>grok / build / opencode / file_proxy
-
-    You->>Panel: Open panel, type goal, click Run
-    You->>You: Walk away
-    loop ROD until satisfied or give_up
-        EG->>Desktop: observe → SCREEN
-        EG->>Nemo: planner / act / verify (HTTP or file_proxy)
-        Nemo-->>EG: JSON decisions
-        EG->>Desktop: execute verbs
-        alt Needs stronger cognition
-            EG->>Desktop: open_url / focus / navigate
-            EG->>Smart: GUI handoff (chat UI or JSON files)
-            Smart-->>EG: answer in SCREEN or response.json
-            EG->>EG: MEMORY.llm_response
-        end
-        alt Stuck — wiring limits
-            EG->>Nemo: self_modify
-            Nemo-->>EG: wiring_patch
-            EG->>EG: hot-reload wiring.json
-        end
-    end
-    Panel-->>You: satisfied / error visible on return
-```
-
-**Your job:** start LM Studio (bootstrap), start `server.py`, open panel, post goal, leave.
-
-**Endgame's job:** plan, observe, act, verify, discover cognition if needed, evolve wiring if stuck, finish.
-
-You do **not** manually poll `request.json` when bootstrap uses `transport: openai` (LM Studio HTTP). You do **not** pre-open grok.com — the operator can open it via `open_url` when the plan requires it.
-
----
-
-## 5. Uniform architecture
-
-```mermaid
-flowchart TB
-    subgraph Panel["Operator panel"]
-        HTML[wiring-editor.html]
-        API[HTTP :9077 root / :9078 slot]
-    end
-
-    subgraph Runtime["server.py — one runtime"]
-        ROD[ROD graph engine]
-        RULES[32 rules + RULE_CHECKERS]
-        LLM[call_node two-pass]
-        PATCH[self_modify + hot-reload]
-    end
-
-    subgraph Mechanical["Mechanical layer"]
-        DESK[desktop.py — UIA SCREEN focus open_url]
-        ACT[actions.py — verb dispatch]
-    end
-
-    subgraph Config["Declarative config"]
-        W[wiring.json]
-        M[model.json transport]
-    end
-
-    subgraph Cognition["Any cognition source"]
-        LS[LM Studio HTTP]
-        FP[file_proxy JSON files]
-        WEB[Web UI reached by GUI navigation]
-    end
-
-    HTML --> API
-    API --> ROD
-    W --> ROD
-    W --> RULES
-    M --> LLM
-    ROD --> LLM
-    LLM --> LS
-    LLM --> FP
-    ROD --> DESK
-    DESK --> ACT
-    ACT --> WEB
-    WEB --> DESK
-    PATCH --> W
-```
-
-### Layer ownership
-
-| Layer | Owns | Never owns |
-|-------|------|------------|
-| `wiring.json` | Topology, rules, roles, limits, observe, guards | Mouse, HWND, HTTP to models |
-| `server.py` | Graph traversal, rule eval, LLM orchestration, patches | UIA element resolution |
-| `desktop.py` | SCREEN, `[W#]`/`[ID]`, focus, `open_url` | Planning, verification policy |
-| `actions.py` | Verb execution, guards | Rule definitions |
-| Cognition provider | JSON per circuit (planner/act/verifier/reflector/self_modify) | Desktop control |
-
-### Optional slots (implementation detail)
-
-The repo can spawn slot workers for parallel tasks (e.g. relay capture). This is **not** the user mental model. One slot with bootstrap Nemotron is sufficient for most walk-away goals. Multi-slot is optimization, not architecture.
-
----
-
-## 6. Cognition bootstrap and discovery
-
-### 6.1 Bootstrap — Nemotron at start
-
-On first boot, configure `prompts/model.json`:
-
-```json
-{
-  "transport": "openai",
-  "host": "http://localhost:1234",
-  "model": "nvidia-nemotron-3-nano-4b",
-  "temperature": 0.3,
-  "max_tokens": 2048,
-  "timeout": 900
-}
-```
-
-LM Studio serves `/v1/chat/completions`. Endgame calls it automatically for every LLM circuit. **No manual JSON copy-paste.** This is the bootstrap brain — good enough to plan, act from SCREEN, and verify.
-
-### 6.2 Discovery — finding stronger cognition via GUI
-
-When a goal needs intelligence beyond bootstrap, the **planner and act circuits decide** — not a human config file:
+| Fact | Detail |
+|------|--------|
+| Rules in prompts? | **No.** The 32 `wiring.json` rules are never sent to Nemotron. |
+| Role text says “Guidance” | Hints for the operator role — not the wiring rule list. |
+| Who sees `verify:rule_id`? | `HISTORY` and `LAST_ERROR` — feedback to adapt the next act. |
+| What rules do in code | `evaluate_rules()` in `server.py` before verifier LLM runs |
 
 ```mermaid
 flowchart TD
-    G[Goal needs external intelligence] --> P[Planner decomposes steps]
-    P --> A1[open_url chrome grok.com]
-    A1 --> A2[focus chat window write prompt]
-    A2 --> A3[remember or llm_wait_response capture]
-    A3 --> M[MEMORY.llm_response]
-    M --> C[Continue goal from memory]
-
-    P --> B1[open_url / launch local agent UI]
-    B1 --> B2[Navigate to JSON proxy interface]
-    B2 --> B3[file_proxy handoff via llm_request verb]
-    B3 --> M
+    V[node_verify] --> D[deny rules — Python only]
+    D -->|match| DENY[step_denied → reflect]
+    D -->|no match| C[confirm rules]
+    C -->|match| OK[step_confirmed — skip verifier LLM]
+    C -->|no match| LLM[Verifier LLM — operator judges]
 ```
 
-**Paths the operator can discover without hardcoded scripts:**
+**Loop behavior:** deny → reflect → retry (same step). Bounded by `max_attempts: 7` → replan (`max_replans: 3`) → `self_modify` (`max_self_modify: 3`) → `give_up`. This is not infinite. It means runtime refused a **false success** (e.g. `wait` only when `done_when` implies a chat response). The operator must change strategy.
 
-| Target | How Endgame reaches it | Handoff mechanism |
-|--------|------------------------|-------------------|
-| grok.com | `open_url chrome grok.com` → write/click chat UI | SCREEN capture → `remember` or relay `response.json` |
-| Grok Build / Cursor | `open_url` or win+r launch → focus window | file_proxy if agent writes JSON; else SCREEN |
-| OpenCode / local agent | Navigate to local URL or app UI | `comms/.../request.json` ↔ `response.json` |
-| Any webpage AI | GUI navigation only | Unrestricted — if it renders in a browser, Endgame can reach it |
-
-**The GUI has no API rate limits.** If a human can click it, Endgame can click it. That is the unrestricted bridge.
-
-### 6.3 file_proxy — universal JSON bridge
-
-`transport: file_proxy` in `model.json` means: Endgame writes `comms/slot1_cognition/request.json`, any agent that reads JSON and writes `response.json` becomes cognition — Grok Build, OpenCode, a future local daemon, or you during development.
-
-The request system is **self-feeding**: each cycle includes GOAL, HISTORY, MEMORY, SCREEN (for act), and reasoning chains from prior passes.
-
-### 6.4 Two-pass LLM contract
-
-| Pass | Trigger | Output in `content` |
-|------|---------|---------------------|
-| 1 | No `DECIDE NOW` in user message | Prose reasoning |
-| 2 | `DECIDE NOW` present | Exactly one role JSON object |
-
-Implemented in `server.py:1164–1174`. Reduces JSON parse failures across all cognition sources.
+**Panel:** remove rules via Rules list → auto hot-reload `POST /wiring`. No `enabled` toggle — rules are in or out of the array.
 
 ---
 
-## 7. The ROD loop and self-evolution
+## V. Pipeline — topology, prompts, code, rules
 
-**ROD** = Reflect – Observe – Decide (act is decide-from-SCREEN; verify/reflect close the loop).
+One uniform ROD loop. Slots and relay wiring are optional helpers — not the product story.
 
 ```mermaid
 stateDiagram-v2
@@ -410,6 +170,7 @@ stateDiagram-v2
     planner --> planner: retry_plan
     planner --> bus_post: plan_failed
     scheduler --> bus_check: step_ready
+    scheduler --> bus_post: plan_complete
     bus_check --> observe: no_interrupt
     observe --> act: screen_ready
     act --> verify: acted
@@ -421,28 +182,19 @@ stateDiagram-v2
     reflect --> self_modify: escalate
     reflect --> bus_post: give_up
     self_modify --> planner: modified
-    self_modify --> reflect: modify_failed
     bus_post --> satisfied: posted
     satisfied --> [*]
 ```
 
-### Self-evolution loop
+| Node | wiring role | `server.py` handler | Rules |
+|------|-------------|---------------------|-------|
+| planner | `planner` | `node_planner` | — |
+| act | `unified` | `node_act` | act `reject` before execute |
+| verify | `verifier` | `node_verify` | verify `deny` then `confirm`; else LLM |
+| reflect | `reflector` | `node_reflect` | receives `LAST_ERROR` |
+| self_modify | `self_modify` | `node_self_modify` | — |
 
-```mermaid
-flowchart LR
-    FAIL[step_denied × max_attempts] --> REF[reflect]
-    REF --> ESC{escalate?}
-    ESC -->|yes| SM[self_modify circuit]
-    SM --> PATCH[wiring_patch op]
-    PATCH --> RELOAD[hot-reload wiring.json]
-    RELOAD --> PLAN[planner replans with new policy]
-```
-
-**15 `wiring_patch` ops:** `add_rule`, `update_rule`, `set_observe`, `set_role`, `add_edge`, `set_limit`, … — see `SELF_MODIFY_OPS` in `server.py`.
-
-`max_self_modify: 3` then `give_up`. Self-modify is coded; **not yet proven E2E** on a live stuck goal.
-
-### Per-step micro-loop
+**Per-step micro-loop:**
 
 ```
 scheduler → bus_check → observe → act → verify
@@ -450,357 +202,157 @@ scheduler → bus_check → observe → act → verify
                               └── reflect ← step_denied
 ```
 
-`max_attempts: 7`, `max_replans: 3`.
+### Cognition two-pass contract
+
+`call_node()` in `server.py` always runs two LLM calls:
+
+| Pass | User message | Model output |
+|------|--------------|--------------|
+| 1 | INPUT blocks only | Prose reasoning |
+| 2 | INPUT + `ROD_REASONING_CONTENT` + **`DECIDE NOW`** | Exactly one role JSON |
+
+`prompts.base` documents this. Pass-2 JSON shapes: `task`, `action`, `verdict`, `diagnosis`, `wiring_patch`.
+
+### What Nemotron receives
+
+```
+system = prompts.base + prompts.roles[role]
+user   = labeled blocks (GOAL, SCREEN, SUBTASK, LAST_ERROR, …)
+```
+
+Act blocks: `SUBTASK`, `DONE_WHEN`, `SCREEN`, `LAST_ERROR`, `HISTORY`, `MEMORY`.  
+Only **Act** receives `SCREEN`. Planner never sees pixels.
+
+Prompts were refactored for **4B models**: short Guidance sections, JSON shape first, no Slot-2 relay jargon, `self_modify` trimmed. Operator-vs-runtime split is in `prompts.base`.
 
 ---
 
-## 8. SCREEN → act → verify
+## VI. SCREEN, verbs, and navigation
 
-### SCREEN construction
-
+```mermaid
+flowchart LR
+    O[observe] --> W[WINDOWS W1..Wn]
+    O --> I[hover scan → ID targets]
+    O --> S[SCREEN text]
+    S --> A[act circuit]
+    A --> V[verbs]
+    V --> D[desktop.py / actions.py]
 ```
-1. Enumerate windows → [W1]..[Wn] tokens (HWND internally)
-2. Hover scan (~400+ points) → actionable [ID] elements
-3. Render: FOCUSED, ACTION SCOPE, WINDOWS list
-4. Inject into act circuit only
-```
 
-### Key verbs
-
-| Verb | Use |
-|------|-----|
-| `open_url` | `start chrome <url>` — no prior browser focus |
-| `focus` | Target `[W#]` or window title — HWND-first with retry |
-| `write` / `click` | Target `[ID]` from SCREEN |
+| Verb | Usage |
+|------|--------|
+| `open_url` | `start chrome <url>` — preferred for new navigation |
+| `focus` | Target `[W#]` or window title (HWND-first) |
+| `click` / `write` / `scroll` | Target `[ID]` from SCREEN only |
 | `remember` | Store fact in MEMORY from SCREEN |
-| `llm_request` | Write prompt to `comms/llm_proxy/request.json` for JSON handoff |
-| `llm_wait_response` | Poll `response.json` → `MEMORY.llm_response` |
+| `llm_request` | Write external-AI handoff file |
+| `llm_wait_response` | Poll response into `MEMORY.llm_response` |
 
-### Verify pipeline
-
-```mermaid
-flowchart TD
-    V[verify node] --> R[evaluate_rules — deny first]
-    R -->|confirm| OK[step_confirmed + rule_id in history]
-    R -->|deny| NO[step_denied]
-    R -->|no match| LLM[verifier LLM]
-```
-
-Deny rules block false success (e.g. `deny_wait_only_content_receipt`, `deny_response_no_evidence`).
+**Focus contract:** SCREEN shows `- [W3] YouTube - Google Chrome`. Act emits `{"verb":"focus","target":"W3"}`. Shared `resolve_window_target()` in `desktop.py` and `actions.py`.
 
 ---
 
-## 9. Rules — operator decides, runtime guides
-
-### Philosophy (your mental model is correct)
-
-| Layer | Who decides | What it is |
-|-------|-------------|------------|
-| **Operator** | Planner, Act, Verifier, Reflector LLM circuits | The serious computer operator — plans, acts from SCREEN, judges |
-| **Runtime rules** | Python `evaluate_rules()` only | Structural **guidance rails** — not sent to the LLM, not a rulebook to memorize |
-| **Hands** | `desktop.py` / `actions.py` | Executes verbs the operator chose |
-
-**The LLM never sees the 32 wiring rules.** Prompts say *Guidance* for role hints; *rules* in `wiring.json` are for Python preflight only. If `LAST_ERROR` or `HISTORY` shows `verify:deny_wait_only_...`, that is **feedback** — the operator should adapt the next act, not obey a hidden policy list.
-
-### Pipeline cross-reference
-
-```mermaid
-flowchart TD
-    subgraph Prompts["Prompts (sent to Nemotron)"]
-        P[planner role]
-        A[unified/act role]
-        V[verifier role]
-        R[reflector role + LAST_ERROR]
-    end
-
-    subgraph Code["server.py handlers"]
-        NP[node_planner]
-        NA[node_act]
-        NV[node_verify]
-        NR[node_reflect]
-        ER[evaluate_rules]
-    end
-
-    subgraph Wiring["wiring.json"]
-        TOP[topology edges]
-        RL[32 rules — NOT in prompts]
-    end
-
-    TOP --> NP --> P
-    TOP --> NA --> A
-    NA --> ER
-    TOP --> NV --> ER
-    ER -->|deny/confirm| NV
-    ER -->|no match| V
-    NV -->|step_denied| NR --> R
-```
-
-| Wiring node | Circuit / role | Code handler | Rules phase |
-|-------------|----------------|--------------|-------------|
-| planner | planner | `node_planner` | — |
-| act | unified | `node_act` | act `reject` before execute |
-| verify | verifier | `node_verify` | verify `deny` then `confirm` before LLM |
-| reflect | reflector | `node_reflect` | — (reads LAST_ERROR after preflight) |
-| self_modify | self_modify | `node_self_modify` | — |
-
-### Loop behavior (bounded, not infinite)
-
-Deny → `step_denied` → reflect → retry → same step again. **Bounded:** `max_attempts: 7` → replan → `max_replans: 3` → `self_modify` → `give_up`.
-
-This is intentional: runtime blocked a **false success** (e.g. `wait` only when `done_when` implies a response). The **operator** must try a different act — not loop the same wait forever. If it feels stuck, weak Nemotron or a too-aggressive deny rule — tune in panel or let reflect replan.
-
-Rules are **not what kills the system** when understood this way. They stop cheating; the operator still drives recovery.
-
-```mermaid
-flowchart TD
-    V[verify] --> D[deny rules first]
-    D -->|match| DENY[step_denied → reflect]
-    D -->|no match| C[confirm rules]
-    C -->|match| OK[step_confirmed — skips verifier LLM]
-    C -->|no match| LLM[verifier LLM decides]
-```
-
-Confirm rules that fire **skip** the verifier LLM (fast path). That is intentional when evidence is structural (e.g. `confirm_launch_chain`). If a confirm rule is wrong, it can advance too early — tune or remove it in the panel.
-
-### Can the HTML panel hot-disable rules?
-
-**Yes — by removing or editing rules, not an `enabled` toggle.**
-
-Verified in code:
-
-| Mechanism | Code location |
-|-----------|---------------|
-| Panel **Remove** on each rule | `wiring-editor.html` → `removeRule()` → `afterWiringEdit()` |
-| Auto hot-reload ~550ms after edit | `scheduleHotSave()` → `POST /wiring` |
-| Server applies live | `server.py` `POST /wiring` → `WIRING = body` + `configure_runtime()` |
-| No `enabled` field on rules | `wiring-schema.json` — rules are in or out of the array only |
-
-**To test without rules:**
-
-1. Open **http://127.0.0.1:9077/** → Rules list → **Remove** on rules you want gone (auto hot-reloads), or
-2. JSON tab → set `"rules": []` → **Save**, or
-3. `POST /wiring` with empty rules array.
-
-`evaluate_rules()` (`server.py:1527`) only iterates rules present in the array — removed rules are not evaluated.
-
-**Recommendation:** Do not delete all rules permanently. Remove suspect deny/confirm rules one at a time, reproduce, then fix match conditions or let `self_modify` add better ones.
-
----
-
-## 10. The declarative brain (wiring.json)
-
-| Section | Governs |
-|---------|---------|
-| `topology` | 12 nodes, 22 edges, signal routing |
-| `rules` | 32 verify/act matchers → `RULE_CHECKERS` |
-| `prompts.base` + `roles` | Cognition prompts (refactored for small models + two-pass DECIDE NOW) |
-| `limits` | max_attempts 7, max_replans 3, max_self_modify 3 |
-| `observe` | hover scan, scope_depth, desktop_tree_enabled false |
-| `verbs` / `verb_normalize` | Act JSON field mapping |
-| `guards` | Advance hints after successful verbs |
-| `reasoning` | Two-pass store/clear per circuit |
-
-**Only `act` receives SCREEN.** Planner never sees pixels — it plans from goal + memory + history. This prevents coordinate hallucination in planning.
-
-### Cognition prompts (what Nemotron / file_proxy receive)
-
-Refactored for **4B bootstrap models** and the **uniform operator** vision:
-
-| Change | Why |
-|--------|-----|
-| `base` explains **two-pass** (prose pass 1, JSON on DECIDE NOW) | Old base said "no prose" — conflicted with `call_node` pass 1 |
-| Shorter roles; JSON shape first | Less token noise for Nemotron |
-| Removed "Slot 2 relay" wording | GUI discovery: grok.com, chatgpt.com, `llm_request` path |
-| `self_modify` trimmed (~90% shorter) | Full rule-condition catalog blew 4B context |
-| Planner adds YouTube + browser-AI paths | Aligns with walk-away goals |
-
-System + role text is composed in `load_system_prompt()`. User blocks (GOAL, SCREEN, etc.) are appended by `build_user_message()`. Pass 2 adds `ROD_REASONING_CONTENT` + `DECIDE NOW` (`server.py` `call_node`).
-
-**No test scripts in repo** — proof is `POST /run` on the live operator only.
-
----
-
-## 11. How benchmarks were achieved
-
-**Next session priority:** extend these paths, document captures, do not replace with scripts.
-
-### Notepad + hello (proven)
-
-| Step | Mechanism |
-|------|-----------|
-| Cognition | file_proxy agent read **real SCREEN** in `request.json`, wrote `response.json` |
-| Act | `hotkey win+r` → `write notepad` → `press enter` → `write hello` |
-| Verify | `confirm_launch_chain`, `confirm_write_to_writable` (structural rules) |
-| Invalid proof | Any canned cognition script that does not read SCREEN from `request.json` |
-
-### Google Chrome (proven)
-
-| Step | Mechanism |
-|------|-----------|
-| Act | `{"verb":"open_url","target":"chrome","value":"google.com"}` |
-| Mechanical | `start chrome https://google.com` — no prior browser focus |
-| Verify | `confirm_browser_open_url` |
-
-### Shakira / YouTube (partial — proven path)
-
-| Step | Mechanism |
-|------|-----------|
-| Act pass 1 | `open_url` → `youtube.com/results?search_query=Shakira+Waka+Waka` |
-| Act pass 2 | `open_url` → `youtube.com/watch?v=pRpeEdMmmQ0` |
-| Verify | `confirm_youtube_playback` on clean runs |
-| Gap | No click on search result; no player DOM proof |
-| Implication | Bootstrap + `open_url` reaches media — click-play is polish, not architecture |
-
-### grok.com / browser cognition (proven mechanism, full P1 E2E pending)
-
-| Step | Mechanism |
-|------|-----------|
-| Hands | Endgame owns Chrome via `open_url`, `focus`, `write`, `click` |
-| Cognition | Agent read SCREEN from `request.json` — **did not** manually control desktop |
-| Bridge options | (a) SCREEN `remember` capture, (b) `llm_request` → `llm_proxy/request.json` → browser relay → `response.json` → `llm_wait_response` |
-| Next session | Document exact history + SCREEN snapshots for a full grok chat goal |
+## VII. Cognition bootstrap and discovery
 
 ```mermaid
 sequenceDiagram
-    participant EG as Endgame hands
-    participant SCR as SCREEN
-    participant COG as Cognition (Nemotron / grok / file_proxy)
-    participant WEB as Web AI page
+    participant You as You
+    participant Panel as Panel :9077
+    participant EG as Endgame
+    participant Nemo as Nemotron LM Studio
+    participant Web as Browser AI grok etc
 
-    EG->>SCR: observe
-    COG->>COG: read SCREEN in request
-    COG-->>EG: act JSON (open_url / write / click)
-    EG->>WEB: GUI navigation
-    WEB-->>SCR: assistant text visible
-    EG->>EG: remember or llm_wait_response
-    Note over EG,COG: No vendor API — GUI is the bridge
+    You->>Panel: goal + Run
+    You->>You: walk away
+    loop ROD
+        EG->>Nemo: planner / act / verify
+        Nemo-->>EG: JSON decisions
+        alt needs stronger AI
+            EG->>Web: open_url focus write click
+            Web-->>EG: answer in SCREEN or JSON file
+        end
+    end
+    Panel-->>You: satisfied or error
 ```
 
----
+| Transport | Config | Walk-away? |
+|-----------|--------|------------|
+| LM Studio HTTP | `model.json` → `"transport": "openai"`, host `:1234` | **Yes** — no JSON polling |
+| file_proxy | default in repo | Agent polls `comms/slot1_cognition/request.json` |
+| grok.com paste | same files | Human copies request — dev only |
 
-## 12. What is proven vs what is vision
-
-| Capability | Status | Evidence |
-|------------|--------|----------|
-| UIA observe + SCREEN + verbs | **Proven** | Live runs |
-| Bootstrap file_proxy cognition | **Proven** | Grok session read SCREEN → wrote response.json; Endgame acted |
-| Notepad typing goal | **Proven** | `confirm_launch_chain`, `confirm_write_to_writable` |
-| Chrome `open_url` navigation | **Proven** | `confirm_browser_open_url` |
-| YouTube via direct watch URL | **Partial** | No click-play from search |
-| Walk-away with LM Studio HTTP | **Designed** | `transport: openai` works; 4B model may fail JSON |
-| Autonomous grok discovery (no pre-open) | **Vision** | `open_url` exists; P1 chatbot not E2E proven |
-| self_modify recovery | **Coded, unproven** | Patch ops + hot-reload exist |
-| Uniform cognition upgrade via GUI | **Vision** | Architecture supports; needs E2E proof |
-| Zero-human session (post goal, leave) | **Target** | Requires reliable bootstrap model + discovery |
-
-### Forbidden proof paths
-
-| Path | Why invalid |
-|------|-------------|
-| New `*_runner.py`, `harness_*.py`, `run_verification.py`-style scripts | Canned cognition — never reads SCREEN; **removed from repo** |
-| Coding agent manually clicking desktop | Bypasses Endgame loop |
-| Anything except live `POST /run` + `/state` | Not E2E proof |
+**Discovery paths (no hardcoded recipes):** planner may plan `open_url grok.com` + chat steps; or `llm_request` + `llm_wait_response`; act executes from SCREEN. Grok Build, OpenCode, kiro-cli work via GUI or file_proxy — same uniform operator.
 
 ---
 
-## 13. Operator replacement — honest progress
+## VIII. What was proven — and how
 
-```mermaid
-pie title Human operator replacement (~45% toward walk-away vision)
-    "Mechanical hands + SCREEN" : 20
-    "Declarative verify policy" : 15
-    "Bootstrap cognition path" : 10
-    "Cognition discovery via GUI" : 5
-    "Self-modify evolution" : 3
-    "Walk-away reliability" : 7
-    "Remaining gap" : 40
-```
+Proof standard: `server.py` owned the loop; cognition read **real SCREEN** in `request.json`; `GET /state` → `satisfied: true` with action `history`. No harness scripts. No manual desktop by a coding agent.
 
-| Human skill | Endgame today |
-|-------------|---------------|
-| Sit at PC, receive goal | ✅ POST /run, panel |
-| Plan subtasks | ✅ planner circuit (needs cognition) |
-| See screen | ✅ UIA + hover |
-| Click, type, switch apps | ✅ verbs + focus contract |
-| Judge step completion | ✅ rules + verifier |
-| Recover from errors | ⚠️ reflect/replan coded; self_modify unproven |
-| Find better AI when stuck | ⚠️ GUI path exists; not proven autonomous |
-| Work all day unattended | ❌ not production-hardened |
+| Goal | Result | How |
+|------|--------|-----|
+| `open notepad and type hello` | **Pass** | `hotkey win+r` → `write notepad` → `enter` → `write hello`; verify `confirm_launch_chain`, `confirm_write_to_writable` |
+| `navigate to google.com in chrome` | **Pass** | `open_url chrome google.com`; verify `confirm_browser_open_url` |
+| `play shakira waka waka on youtube` | **Partial** | `open_url` search URL then `watch?v=pRpeEdMmmQ0`; no click-play from results |
+| grok.com chat / walk-away Nemotron | **Not E2E proven** | Architecture + prompts ready |
+| `self_modify` recovery | **Coded, not proven** | `wiring_patch` ops + hot-reload exist |
 
-**The idea works.** The vision is larger than what is proven. The gap is polish and E2E proof of discovery + self-modify — not a missing architecture.
+**Invalid proof forever:** canned cognition without reading SCREEN; coding agent manually clicking the desktop; anything except live `POST /run` + `/state`.
 
 ---
 
-## 14. Run it yourself — walk away with LM Studio
+## IX. Run it yourself
 
-### What you do manually (once) vs what evolves alone
+### What you do once vs what evolves alone
 
-| You (manual, before walk-away) | Endgame (autonomous after goal posted) |
-|--------------------------------|----------------------------------------|
-| Install Python, LM Studio, Chrome | Observe desktop, build SCREEN |
-| Clone repo to e.g. `%USERPROFILE%\Downloads\endgame-ai` | Plan subtasks via bootstrap cognition |
-| Set `prompts/model.json` → `transport: openai` | Execute verbs: click, write, focus, `open_url` |
-| Start LM Studio local server **:1234** | Verify steps (rules + verifier LLM) |
-| Run `python server.py` | Reflect, replan, escalate to `self_modify` when stuck |
-| Open panel, type goal, click Run (or `POST /run`) | Discover grok/ChatGPT/local agents via GUI if goal needs it |
-| Optionally return later to check `/state` | Hot-reload wiring when self_modify patches policy |
+| You (manual) | Endgame (autonomous) |
+|--------------|----------------------|
+| Install Python, LM Studio, Chrome | observe, plan, act, verify |
+| Clone repo | discover AI via GUI if goal requires |
+| Set `transport: openai` in `model.json` | reflect, replan, self_modify |
+| Start LM Studio :1234 | hot-reload wiring when patched |
+| `python server.py`, post goal, leave | finish or `give_up` |
 
-**In theory:** give a proper goal and the seed evolves alone — opens browser, finds AI, captures answers, patches wiring. You only bootstrap the runtime and cognition transport.
-
-### Prerequisites
-
-- Windows 10/11, Python 3.11+
-- [LM Studio](https://lmstudio.ai) — load Nemotron (or larger model), start server **port 1234**
-- Chrome installed
-
-### One-time config
-
-Edit `prompts/model.json` — set `"transport": "openai"` (see §6.1).
-
-### Start
+### Commands
 
 ```powershell
 cd $env:USERPROFILE\Downloads\endgame-ai
+
+# Edit prompts/model.json → "transport": "openai"
+# Start LM Studio local server port 1234
+
 $env:PYTHONIOENCODING = 'utf-8'
 python server.py
 ```
 
-Open **http://127.0.0.1:9077/** (workbench panel).
-
-### Post goal and leave
-
-Type goal in panel or:
+Open **http://127.0.0.1:9077/** — type goal — Run — walk away.
 
 ```powershell
+# Or API:
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:9078/run `
-  -ContentType 'application/json' `
-  -Body '{"goal":"open notepad and type hello"}'
-```
+  -ContentType 'application/json' -Body '{"goal":"open notepad and type hello"}'
 
-Poll when you return:
-
-```powershell
+# Return later:
 Invoke-RestMethod http://127.0.0.1:9078/state
-# satisfied: true → done
 ```
-
-### If stuck (optional manual intervention)
-
-| Symptom | Manual fix |
-|---------|------------|
-| Planner blocked on stale request | Panel or `POST /llm-proxy/clear {"confirm":true}` |
-| Suspect rule causing deny loops | Panel → Rules → Remove rule (hot-reloads) |
-| Nemotron JSON parse failures | Larger model in LM Studio, or `transport: file_proxy` + Grok Build |
-| Fresh run | Delete `state.slot1.json`, `bus.json` (gitignored runtime) |
 
 ### Example goals (increasing ambition)
 
-| Goal | What Endgame must discover |
-|------|---------------------------|
-| `open notepad and type hello` | Bootstrap Nemotron only |
-| `navigate to google.com in chrome` | `open_url` verb |
-| `ask grok what is the capital of France and save the answer` | Bootstrap plans → open grok → chat → capture → remember |
-| `use the best available AI on this PC to summarize my goal` | Full cognition discovery — hardest, unproven |
+| Goal | Expected behavior |
+|------|-------------------|
+| `open notepad and type hello` | Bootstrap only |
+| `navigate to google.com in chrome` | `open_url` |
+| `ask grok what is the capital of France and save the answer` | Plan → open grok → chat → MEMORY |
+| `play shakira waka waka on youtube` | Search + watch URL (partial) |
+
+### If stuck
+
+| Symptom | Action |
+|---------|--------|
+| Stale cognition | `POST /llm-proxy/clear {"confirm":true}` |
+| Suspect deny rule | Panel → Rules → Remove (hot-reloads) |
+| Nemotron bad JSON | Larger model or `file_proxy` + Grok Build |
+| Fresh run | Delete gitignored `state.slot1.json`, `bus.json` |
 
 ### Between goals
 
@@ -809,228 +361,162 @@ Invoke-RestMethod -Method Post -Uri http://127.0.0.1:9078/llm-proxy/clear `
   -ContentType 'application/json' -Body '{"confirm":true}'
 ```
 
-### If Nemotron fails JSON
-
-Use a larger LM Studio model, or set `transport: file_proxy` and let Grok Build / Cursor poll `comms/slot1_cognition/request.json` — same uniform system, different cognition source.
-
 ---
 
-## 15. HTTP API
+## X. Panel and HTTP API
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/health` | Transport, nodes, run status |
-| GET | `/state` | Full run state + history |
+| GET | `/health` | Transport, nodes, status |
+| GET | `/state` | goal, step, history, satisfied |
 | POST | `/run` | `{"goal":"..."}` |
 | POST | `/pause` / `/resume` | Control loop |
-| POST | `/llm-proxy/clear` | `{"confirm":true}` — clear stale cognition |
-| POST | `/wiring` | Hot-reload wiring |
-| GET | `/wiring/audit` | Validate wiring |
+| POST | `/wiring` | Hot-reload wiring.json |
+| POST | `/llm-proxy/clear` | `{"confirm":true}` |
 
-Ports: root **9077**, slot 1 **9078**, slot 2 **9079** (optional relay worker).
+Ports: root **9077**, slot 1 **9078**, slot 2 **9079** (optional relay).
 
----
-
-## 16. Known gaps
-
-| Gap | Impact |
-|-----|--------|
-| Bootstrap 4B model JSON reliability | Walk-away may fail on DECIDE NOW pass |
-| P1 chatbot / grok discovery | Not E2E proven |
-| self_modify | Coded, never demonstrated live |
-| `plan_failed` → silent death | No reflect recovery |
-| YouTube click-play | Partial benchmark only |
-| Slot 2 relay as separate worker | Should merge into uniform discovery story |
-| Codebase size | `server.py` needs shrink via modify/remove |
+Panel: edit rules, topology, observe settings — auto-saves to `POST /wiring` (~550ms).
 
 ---
 
-## 17. Remaining work
+## XI. Repository — fourteen files, no scripts
 
-**Next session focus:** *how* proofs were achieved — capture `history`, `request.json` SCREEN, `/state` for Shakira + grok paths; extend, do not script around.
+| File | Role |
+|------|------|
+| `server.py` | HTTP API, ROD loop, rules, LLM, self_modify |
+| `desktop.py` | UIA, SCREEN, `[W#]`/`[ID]`, focus, `open_url` |
+| `actions.py` | Verb dispatch |
+| `colony.py` | Multi-slot process wrapper |
+| `prompts/wiring.json` | Brain — topology, rules, roles, limits |
+| `prompts/wiring_relay.json` | Optional slot 2 relay |
+| `prompts/wiring-schema.json` | Validation schema |
+| `prompts/model.json` | Cognition transport |
+| `prompts/model_relay.json` | Relay transport |
+| `wiring-editor.html` | Walk-away panel |
 
-1. **Document proof captures** — reproducible walk-through of YouTube + grok runs with SCREEN evidence.
-2. **Walk-away Nemotron** — panel goal, leave, return `satisfied: true`.
-3. **Autonomous grok discovery** — no pre-opened tab; operator finds browser + chat via plan/act.
-4. **Prove self_modify** — stuck goal → `wiring_patch` → retry success.
-5. **Shrink `server.py`** — remove dead paths; brave architecture changes welcome.
+**No `test_*.py`. No `harness_*.py`. No `*_runner.py`.** Endgame is its own test harness: post a goal.
+
+**Gitignored runtime:** `state*.json`, `bus.json`, `comms/`, `traces.jsonl`, `__pycache__/`, `mcps/`
 
 ---
 
-## 18. Next AI handover prompt
+## XII. Authoritative counts
+
+From `prompts/wiring.json` (re-count after edits):
+
+| Item | Value |
+|------|-------|
+| Rules | **32** |
+| Nodes | **12** |
+| Edges | **22** |
+| `max_attempts` / `max_replans` | **7** / **3** |
+| `max_self_modify` | **3** |
+| `observe.desktop_tree_enabled` | **false** |
+
+Slot 2 relay: **13 rules** in `wiring_relay.json`.
+
+---
+
+## XIII. Known gaps and next work
+
+1. Prove walk-away Nemotron on Notepad + Google (`satisfied: true`, leave, return).
+2. Document reproducible captures: `history`, SCREEN in `request.json` for YouTube + grok paths.
+3. Prove autonomous grok discovery (no pre-opened tab).
+4. Prove `self_modify` on one stuck goal.
+5. Shrink `server.py` — modify/remove before adding.
+6. YouTube click-play from SCREEN `[ID]`.
+
+**Coding agents:** use Endgame only. Do not add scripts. Brave wiring changes welcome.
+
+---
+
+## XIV. Handover — paste for next AI session
 
 ```
-You are continuing Endgame-AI — a self-evolving desktop operator SEED.
+You are continuing Endgame-AI — a self-evolving Windows desktop operator SEED.
 
 REPO: https://github.com/wgabrys88/endgame-ai
 BRANCH: codex/self-referential-relay
-DOCS: README.md only — read §0 Seed, §9 Rules, §11 How benchmarks achieved.
+DOCS: README.md only — read it fully before any change.
 
-MINDSET — NOT legacy mode:
-- This is NOT a standard computer-use agent. GUI = universal API. No vendor API required.
-- One uniform operator. User posts goal in panel (:9077) and walks away.
-- Bootstrap = Nemotron (LM Studio transport:openai). Upgrade cognition by navigating to grok.com, Grok Build, OpenCode, kiro-cli, any JSON file-proxy — via open_url/focus/write.
-- wiring.json evolves (self_modify + panel hot-reload). Brave architecture changes and CODE REDUCTION encouraged.
+THESIS
+- Endgame owns the hands (UIA, verbs). LLM circuits are the operator brain.
+- GUI = universal API. grok.com, Grok Build, OpenCode, any browser or JSON file-proxy are discoverable — not hardcoded branches.
+- wiring.json rules are PYTHON preflight only — NOT sent to the model. LAST_ERROR / verify:rule_id in HISTORY = feedback. Operator adapts; does not memorize rules.
+- User posts goal at http://127.0.0.1:9077/ and walks away. Bootstrap: LM Studio Nemotron, model.json transport:openai, port 1234.
 
-YOU MUST USE ENDGAME TO TEST AND PROVE — NOT WRITE NEW SCRIPTS:
-- Start: python server.py → panel http://127.0.0.1:9077/
-- Post goal: POST /run on :9078 or panel Run button
-- Cognition: poll comms/slot1_cognition/request.json, read SCREEN, write response.json (file_proxy) OR use transport:openai + LM Studio
-- Proof: GET /state → satisfied:true + history with real verbs
-- DO NOT create harness_*.py, *_runner.py, test_*.py, ProxyResponder, or any canned cognition layer
-- DO NOT bypass Endgame with manual desktop control or scripted planner/act responses
-- If you need a test, it IS a goal string posted to /run
+REPO FACTS
+- 14 source files. NO test/harness/runner scripts. Proof = POST /run + GET /state satisfied:true + SCREEN-driven cognition.
+- 32 rules, 12 nodes, 22 edges. Two-pass DECIDE NOW in call_node.
 
-RULES: Structural guardrails, not the enemy. Panel can hot-remove rules (no enabled toggle).
+PROVEN
+- Notepad hello, Google open_url (SCREEN-driven file_proxy session; Endgame executed verbs)
+- YouTube partial via open_url watch URL
 
-PROVEN (SCREEN-driven, Endgame owned hands):
-- Notepad hello, Google open_url, YouTube via open_url (partial)
-- Cognition read request.json SCREEN — no manual desktop by dev agent
+NOT PROVEN
+- Walk-away Nemotron, grok chat E2E, self_modify, autonomous cognition discovery
 
-NEXT SESSION PRIORITY: Walk-away goals, autonomous grok discovery, self_modify proof. Shrink server.py.
+YOU MUST
+- python server.py → panel → POST /run — never create harness_*.py, test_*.py, *_runner.py, or canned cognition
+- Poll comms/slot1_cognition/request.json if file_proxy; read SCREEN; write response.json with matching id
+- Shrink server.py before adding features
+
+FORBIDDEN
+- Manual desktop control for proofs
+- Canned planner/act without SCREEN
+- Legacy slot-recipe thinking as primary architecture
 
 KEY FILES: server.py, desktop.py, actions.py, prompts/wiring.json, wiring-editor.html
 ```
 
 ---
 
-## 19. Deep Research prompt (ChatGPT project)
+## XV. Deep Research — paste into ChatGPT project
 
 ```
-Deep research: Endgame-AI — self-evolving desktop operator with GUI-as-universal-API
+Research brief: Endgame-AI — self-evolving desktop operator with GUI-as-universal-API
 
 Repository: https://github.com/wgabrys88/endgame-ai
 Branch: codex/self-referential-relay
 
-CONTEXT — read README first. This is NOT a standard computer-use agent.
+Read README.md first. This is NOT standard computer-use.
 
-Research questions:
+Questions:
 
-1. PARADIGM COMPARISON
-   Compare Endgame-AI to: Anthropic Computer Use, OpenAI CUA/Operator, OSWorld agents, Windows Agent Arena, UFO, Sakana DGM, LangGraph declarative agents.
-   What is Endgame's unique bet? (hands/brain/cognition separation, GUI-unlimited cognition discovery, wiring.json self-evolution, structural verify rules, stdlib-only runtime)
+1. PARADIGM
+   Compare to Anthropic Computer Use, OpenAI CUA, OSWorld, Windows Agent Arena, Sakana DGM, LangGraph.
+   What is unique? (hands/operator/runtime-rules split, GUI cognition discovery, wiring_patch evolution, stdlib runtime)
 
-2. SCIENTIFIC GROUNDING
-   Survey 2025–2026 papers on: GUI grounding (UIA vs pixels), desktop agent benchmarks, self-modifying agents, declarative agent policy, local+remote cognition routing.
-   Where does Endgame align with state of the art? Where is it ahead? Where behind?
+2. OPERATOR VS RULES
+   LLM is the operator; 32 wiring rules are Python preflight NOT in prompts. Do deny rules cause bounded loops? Is this the right anti-cheat design?
 
-3. WALK-AWAY OPERATOR MODEL
-   Analyze the intended UX: bootstrap Nemotron → autonomous cognition discovery via GUI → self_modify policy evolution.
-   What engineering gaps block "post goal and leave"? What is proven vs vision?
+3. PIPELINE INTEGRITY
+   Cross-reference wiring topology, role prompts, server.py handlers, evaluate_rules. Is the ROD graph coherent?
 
-4. GUI AS UNIVERSAL API
-   Analyze the claim that any browser-reachable or JSON-file-speaking intelligence can be integrated without vendor APIs.
-   Compare to MCP, tool-calling, and computer-use APIs. Security and reliability implications.
+4. COGNITION
+   Two-pass DECIDE NOW. Nemotron 4B bootstrap. file_proxy SCREEN contract. Discovery via open_url vs llm_request.
 
-5. SELF-EVOLUTION
-   Analyze wiring_patch ops vs code self-modification (DGM). Risks of policy drift. Hot-reload safety.
+5. PROOF STATUS
+   What is proven vs vision? How were Notepad, Google, YouTube achieved? What blocks walk-away?
 
-6. RULES VS VERIFIER LLM
-   Are 32 structural rules a safety net or friction? Panel hot-remove via POST /wiring. When should confirm rules skip verifier LLM?
+6. SEED ROADMAP
+   Complete seed vs future unrestricted evolution. 3-session plan. Effort S/M/L.
 
-7. SEED ROADMAP
-   What is "complete seed" vs unrestricted future evolution? How were YouTube + grok proofs achieved mechanically?
+7. NO SCRIPTS POLICY
+   Why zero test/harness files? Implications for agent development discipline.
 
-8. NO PARALLEL SCRIPTS POLICY
-   Why were harness_common.py, run_verification.py, p0_file_proxy_runner.py removed? How must coding agents test (panel + POST /run only)?
-
-Deliverables:
-- 1-page executive summary
-- Comparison table vs 5 closest systems
-- Mermaid architecture (hands / brain / bootstrap / discovered cognition)
-- Bibliography with arXiv links
-- Honest assessment: breakthrough potential vs current maturity (~45% operator replacement)
+Deliverables: executive summary, comparison table, mermaid architecture, honest maturity (~45%), bibliography.
 ```
 
 ---
 
-## 20. Repository layout
+## XVI. Truth order and license
 
-| Path | Role |
-|------|------|
-| `server.py` | HTTP API, ROD loop, rules, LLM, self_modify |
-| `desktop.py` | UIA, SCREEN, `[W#]`/`[ID]`, focus, `open_url` |
-| `actions.py` | Verb dispatch |
-| `prompts/wiring.json` | Brain — 32 rules, 12 nodes, 22 edges |
-| `prompts/model.json` | Cognition transport (openai or file_proxy) |
-| `wiring-editor.html` | Walk-away panel |
-
-**No test or harness scripts in repo.** Coding agents test via Endgame only (`POST /run`). Do not add runners or `test_*.py`.
-
-**Gitignored runtime (never commit):** `state*.json`, `bus.json`, `comms/`, `traces.jsonl`, `__pycache__/`, `mcps/`
-
----
-
-## Authoritative counts
-
-| Item | Slot 1 value |
-|------|--------------|
-| Rules | **32** |
-| Nodes | **12** |
-| Edges | **22** |
-| max_attempts / max_replans | **7** / **3** |
-| max_self_modify | **3** |
-
-Re-count from `wiring.json` after edits.
-
----
-
-## 21. Appendix — session finish
-
-### You — start the system now
-
-```powershell
-cd $env:USERPROFILE\Downloads\endgame-ai
-# 1. Start LM Studio, load model, server :1234
-# 2. Set prompts/model.json → "transport": "openai"
-$env:PYTHONIOENCODING = 'utf-8'
-python server.py
-# 3. Open http://127.0.0.1:9077/ — type goal — walk away
-# Endgame evolves alone from here (plan → act → verify → discover AI via GUI if needed)
-```
-
-No usernames or machine-specific paths in docs — use `%USERPROFILE%` / `$env:USERPROFILE` on Windows.
-
-### This session — completed
-
-| Deliverable | Status |
-|-------------|--------|
-| README rewritten around uniform operator + GUI-as-API thesis | Done |
-| Seed diagram (now → complete → future) | Done |
-| Rules honesty + panel hot-remove verified in code | Done |
-| How benchmarks achieved (§11) | Done |
-| Handover + Deep Research prompts updated | Done |
-| Harness scripts removed | Done |
-| Anti-script discipline in handover prompts | Done |
-
-### Next session — start here
-
-1. Read README §0, §9, §11, §18.
-2. Reproduce Shakira goal with Nemotron walk-away — capture `history` + how each step was decided.
-3. Reproduce grok.com chat — capture SCREEN in `request.json` at act steps.
-4. Shrink `server.py` — one dead path removed per feature added.
-
-### Developer discipline (all future agents)
-
-| Do | Don't |
-|----|-------|
-| `python server.py` → panel → `POST /run` | Create `harness_*.py`, `*_runner.py`, or verification wrappers |
-| Poll `request.json`, read SCREEN, write `response.json` | Canned planner/act scripts without SCREEN |
-| Read `/state` and `state.slot1.json` for proof | Manually click desktop during benchmarks |
-| Re-run same goal via panel if regression suspected | Add `test_*.py` or harness scripts |
-| Modify/remove `server.py` first | Inflate codebase |
-| Hot-edit rules in panel to debug | Assume rules are the root bug without checking SCREEN |
-| Brave wiring/topology changes | Treat slots as the product architecture |
-| Let self_modify evolve policy | Hardcode grok/YouTube recipes in Python |
-
-### Coding agent rule (mandatory)
-
-**Endgame-AI is the test harness.** Every benchmark is a goal posted to the running operator. If you are about to write a new Python script to "drive" or "prove" Endgame — stop. Post the goal instead.
-
----
-
-## License
+1. `prompts/wiring.json`
+2. `server.py`, `desktop.py`, `actions.py`
+3. This README
 
 Research operator tooling. Not production-hardened.
 
-**Prepare the seed. Walk away. Let Endgame find the way.**
+**Prepare the seed. Post the goal. Walk away. Let the operator find the way.**
