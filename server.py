@@ -1078,6 +1078,72 @@ def recent_traces(limit=3):
 
 # ─── LLM ───
 
+def llm_via_browser_ai(system, user):
+    """Use grok.com via browser GUI as LLM backend. Types prompt, reads response."""
+    model = model_snapshot()
+    cfg = model.get("browser_ai", {})
+    browser = cfg.get("browser", "opera")
+    url = cfg.get("url", "https://grok.com")
+    input_hint = cfg.get("input_element_hint", "Ask Grok anything")
+    wait_ms = cfg.get("response_wait_ms", 15000)
+    max_len = cfg.get("max_response_length", 4000)
+
+    t0 = time.time()
+
+    # Format prompt: combine system + user into single message
+    prompt = f"[SYSTEM]\n{system}\n\n[USER]\n{user}\n\n[RESPOND WITH JSON ONLY]"
+    if len(prompt) > max_len:
+        prompt = prompt[:max_len]
+
+    # Step 1: Ensure grok.com is open and focused
+    title = get_focused_title() or ""
+    if "grok" not in title.lower():
+        execute_verb("open_url", browser, url)
+        time.sleep(3)
+
+    # Step 2: Find and click chat input
+    screen = observe_screen()
+    meta = last_observation_snapshot()
+    input_id = "1"  # Default fallback
+    if isinstance(meta, dict) and isinstance(meta.get("elements"), list):
+        for el in meta["elements"]:
+            if input_hint.lower() in (el.get("name", "") or "").lower():
+                input_id = str(el.get("id", "1"))
+                break
+
+    execute_verb("click", input_id, "")
+    time.sleep(0.3)
+
+    # Step 3: Clear and type prompt
+    execute_verb("hotkey", "ctrl+a", "")
+    time.sleep(0.2)
+    execute_verb("write", input_id, prompt)
+    time.sleep(0.3)
+
+    # Step 4: Submit
+    execute_verb("press", "enter", "")
+
+    # Step 5: Wait for response
+    time.sleep(wait_ms / 1000.0)
+
+    # Step 6: Read response from fresh screen observation
+    screen = observe_screen()
+
+    # Extract response: find text content that isn't the prompt
+    response_text = ""
+    for line in (screen or "").splitlines():
+        if "Text \"" in line and "@background" not in line:
+            parts = line.split("\" = \"")
+            if len(parts) >= 2:
+                val = parts[1].rstrip().rstrip('"')
+                if len(val) > 20 and prompt[:20] not in val and input_hint not in val:
+                    response_text = val
+                    break
+
+    raw_log("browser_ai_call", prompt_len=len(prompt), response_len=len(response_text), elapsed=time.time()-t0)
+    return response_text, "", time.time() - t0
+
+
 def llm(system, user, temperature=None):
     model = model_snapshot()
     body = {

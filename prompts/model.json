@@ -19,5 +19,12 @@
   "presence_penalty": 0.0,
   "frequency_penalty": 0.0,
   "logit_bias": {},
-  "repeat_penalty": 1.06
+  "repeat_penalty": 1.06,
+  "browser_ai": {
+    "browser": "opera",
+    "url": "https://grok.com",
+    "input_element_hint": "Ask Grok anything",
+    "response_wait_ms": 15000,
+    "max_response_length": 4000
+  }
 }
