@@ -52,6 +52,7 @@ Endgame-AI observes the real desktop (UI Automation), executes declarative actio
 19. [ChatGPT Deep Research prompt](#19-chatgpt-deep-research-prompt)
 20. [Repository layout](#20-repository-layout)
 21. [Authoritative counts](#21-authoritative-counts)
+- [Appendix A — Run it yourself (LM Studio + grok.com relay)](#appendix-a--run-it-yourself-lm-studio--grokcom-relay)
 
 ---
 
@@ -948,6 +949,287 @@ Inspect `prompts/wiring.json` after edits:
 | `observe.desktop_tree_enabled` | **false** |
 
 Slot 2 relay: **13 rules** (`confirm_relay_wait` removed).
+
+---
+
+## Appendix A — Run it yourself (LM Studio + grok.com relay)
+
+This appendix is for **you** running Endgame on your own PC — not for a coding agent polling JSON files.
+
+### A.1 Are we on the same page?
+
+**Mostly yes — with one important correction.**
+
+| What you might think | What the project actually does |
+|----------------------|--------------------------------|
+| LM Studio Nemotron talks to grok.com for you | **No.** Nemotron has no grok API connection. |
+| Nemotron is a “bridge/proxy” to grok | **Partially.** Nemotron is the **local decision brain**. The **relay** is a separate bridge. |
+| Endgame uses grok.com graphically for chat | **Yes.** Slot 2 types into the **already-open** grok.com tab and reads the answer from SCREEN. |
+| Your real goal continues via grok’s answer | **Yes.** Slot 1 stores grok’s reply in `MEMORY.llm_response` and keeps executing the plan. |
+
+**Three layers in the chatbot scenario:**
+
+```mermaid
+flowchart TB
+    subgraph You["Your goal"]
+        G["e.g. ask grok a question and use the answer"]
+    end
+
+    subgraph Slot1["Slot 1 — desktop operator :9078"]
+        N1[LM Studio Nemotron<br/>planner / act / verify]
+        H1[Endgame hands<br/>desktop.py + actions.py]
+        LR[llm_request verb]
+        LW[llm_wait_response verb]
+    end
+
+    subgraph Handoff["Filesystem handoff"]
+        REQ[comms/llm_proxy/request.json]
+        RESP[comms/llm_proxy/response.json]
+    end
+
+    subgraph Slot2["Slot 2 — browser relay :9079"]
+        N2[LM Studio Nemotron<br/>relay planner / relay act]
+        H2[Endgame hands<br/>observe grok.com SCREEN]
+        RW[response_write node]
+    end
+
+    subgraph Grok["Browser — not automated by Nemotron"]
+        GC[grok.com chat UI<br/>you open this tab once]
+    end
+
+    G --> Slot1
+    N1 --> H1
+    H1 --> LR
+    LR --> REQ
+    REQ --> Slot2
+    N2 --> H2
+    H2 --> GC
+    GC --> H2
+    H2 --> RW
+    RW --> RESP
+    RESP --> LW
+    LW --> N1
+```
+
+| Role | Who | What |
+|------|-----|------|
+| **Hands on Windows** | Endgame `desktop.py` / `actions.py` | Mouse, keyboard, focus, `open_url` — both slots |
+| **Local decisions** | LM Studio Nemotron (HTTP) | “What verb next?” for planner/act/verify on each slot |
+| **High intelligence answer** | grok.com in Chrome | Slot 2 submits your prompt and captures the assistant reply from the page |
+
+Nemotron decides *how to operate the PC*. grok.com supplies *the smart chat answer*. They are connected only by `comms/llm_proxy/request.json` → Slot 2 browser work → `comms/llm_proxy/response.json`.
+
+**Status honesty:** Notepad and Google nav are proven. The full **P1 chatbot + relay** path is designed and coded but **not yet proven E2E** in a live session. Expect iteration.
+
+### A.2 Prerequisites
+
+- Windows 10/11, interactive desktop (not headless)
+- Python 3.11+ on PATH
+- [LM Studio](https://lmstudio.ai) with a loaded model (e.g. `nvidia-nemotron-3-nano-4b`)
+- LM Studio **local server** running on **port 1234**
+- Google Chrome installed
+- **grok.com** logged in and open in a Chrome tab (Slot 2 expects an *already-open* chat page)
+
+### A.3 Configure LM Studio on both slots
+
+Edit **`prompts/model.json`** (Slot 1):
+
+```json
+{
+  "transport": "openai",
+  "host": "http://localhost:1234",
+  "model": "nvidia-nemotron-3-nano-4b",
+  "temperature": 0.3,
+  "max_tokens": 2048,
+  "timeout": 900
+}
+```
+
+Edit **`prompts/model_relay.json`** (Slot 2) the same way — set `"transport": "openai"` and the same `host` / `model`.
+
+With `transport: openai`, Endgame calls LM Studio over HTTP automatically. You do **not** poll `comms/slot1_cognition/` or `comms/relay_cognition/` yourself.
+
+> **Caveat:** Small local models (4B) may fail the two-pass `DECIDE NOW` JSON contract. If planner/act responses are not valid JSON, use a larger model or switch Slot 1 back to `file_proxy` with a strong remote model (see §10).
+
+### A.4 Start the runtime
+
+**Option A — panel (recommended):**
+
+```powershell
+cd C:\path\to\endgame-ai
+$env:PYTHONIOENCODING = 'utf-8'
+python server.py
+```
+
+Open **http://127.0.0.1:9077/** (root panel).
+
+Start both slots:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:9077/slots/start `
+  -ContentType 'application/json' -Body '{"slots":[1,2]}'
+```
+
+Confirm health:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:9078/health   # Slot 1 — transport should be openai
+Invoke-RestMethod http://127.0.0.1:9079/health   # Slot 2 — relay wiring
+```
+
+**Option B — two terminals** (if you skip the panel):
+
+Terminal 1 — Slot 1:
+
+```powershell
+cd C:\path\to\endgame-ai
+$env:PYTHONIOENCODING = 'utf-8'
+$env:ENDGAME_SLOT = '1'
+$env:ENDGAME_STATE = "$PWD\state.slot1.json"
+$env:ENDGAME_WIRING = "$PWD\prompts\wiring.json"
+$env:ENDGAME_MODEL = "$PWD\prompts\model.json"
+python server.py
+```
+
+Terminal 2 — Slot 2:
+
+```powershell
+cd C:\path\to\endgame-ai
+$env:PYTHONIOENCODING = 'utf-8'
+$env:ENDGAME_SLOT = '2'
+$env:ENDGAME_STATE = "$PWD\state.slot2.json"
+$env:ENDGAME_WIRING = "$PWD\prompts\wiring_relay.json"
+$env:ENDGAME_MODEL = "$PWD\prompts\model_relay.json"
+python server.py
+```
+
+### A.5 Prepare grok.com (human step — once per session)
+
+1. Open Chrome.
+2. Navigate to **https://grok.com** and log in.
+3. Leave the chat tab open and visible (or at least running in Chrome).
+4. Do **not** close Chrome while a relay request is in flight.
+
+Slot 2 will focus that window, type into the chat composer, and capture the assistant reply from SCREEN — not via any grok API.
+
+### A.6 Start the relay worker (Slot 2)
+
+Slot 2 must be running its poll loop **before** Slot 1 emits `llm_request`:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:9079/run `
+  -ContentType 'application/json' `
+  -Body '{"goal":"Relay worker: poll comms/llm_proxy/request.json and capture browser chat responses"}'
+```
+
+Slot 2 will sit on `request_check` until a request file appears. You should see the loop idle in `/state` on port 9079.
+
+### A.7 Post your real goal (Slot 1)
+
+Example P1-style goal:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:9078/run `
+  -ContentType 'application/json' `
+  -Body '{"goal":"have a conversation with an AI chatbot: ask what is the capital of France and remember the answer"}'
+```
+
+Watch progress:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:9078/state
+```
+
+### A.8 What happens automatically (chatbot scenario)
+
+```mermaid
+sequenceDiagram
+    participant You as You
+    participant S1 as Slot 1 :9078
+    participant LM1 as LM Studio Nemotron
+    participant FS as comms/llm_proxy/
+    participant S2 as Slot 2 :9079
+    participant LM2 as LM Studio Nemotron
+    participant Grok as grok.com in Chrome
+
+    You->>S1: POST /run goal
+    S1->>LM1: planner (no SCREEN)
+    LM1-->>S1: plan steps
+    Note over S1: Steps may include open grok,<br/>llm_request, llm_wait_response
+    S1->>S1: act: llm_request writes prompt
+    S1->>FS: request.json
+    S2->>FS: request_check claims request
+    S2->>LM2: relay planner
+    loop Relay steps
+        S2->>Grok: observe → act (focus, write, enter)
+        S2->>LM2: relay act (reads SCREEN)
+    end
+    S2->>FS: response.json
+    S1->>FS: llm_wait_response polls
+    S1->>S1: MEMORY.llm_response filled
+    S1->>LM1: continue plan / verify
+    S1-->>You: GET /state satisfied:true
+```
+
+| Step | Port | What you see |
+|------|------|--------------|
+| Plan | 9078 | Nemotron decomposes goal; may include `llm_request` + `llm_wait_response` steps |
+| Request file | — | `comms/llm_proxy/request.json` appears with your prompt |
+| Relay claims | 9079 | Slot 2 picks up request, focuses grok tab, types prompt |
+| Response file | — | `comms/llm_proxy/response.json` when capture succeeds |
+| Continue | 9078 | `MEMORY.llm_response` holds grok’s answer; remaining steps run |
+| Done | 9078 | `satisfied: true` in `/state` |
+
+### A.9 What you still do manually
+
+| Action | When |
+|--------|------|
+| Start LM Studio server | Before `python server.py` |
+| Open / log in to grok.com | Before relay goal |
+| Start Slot 2 relay worker (`POST /run` on 9079) | Before Slot 1 emits `llm_request` |
+| Watch `/state` if stuck | Cursor sweeping, verify denies, JSON parse errors |
+| `POST /llm-proxy/clear {"confirm":true}` | Between goals if planner blocks on stale request |
+| `POST /relay/clear {"confirm":true}` | If relay queue is stuck |
+
+You do **not** manually copy JSON for Slot 1 or Slot 2 cognition when `transport: openai` is set.
+
+### A.10 Simpler goals (no grok relay)
+
+For Notepad or Google-only goals, **Slot 1 alone** is enough:
+
+```powershell
+# Only start Slot 1 if you use the panel:
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:9077/slots/start `
+  -ContentType 'application/json' -Body '{"slots":[1]}'
+
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:9078/run `
+  -ContentType 'application/json' -Body '{"goal":"open notepad and type hello"}'
+```
+
+No grok tab, no Slot 2, no `comms/llm_proxy/` — Nemotron + Endgame hands only.
+
+### A.11 Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---------|--------------|-----|
+| `LLM HTTP 404` or connection refused | LM Studio not running | Start local server on port 1234 |
+| Planner returns garbage / not JSON | Model too small for two-pass | Larger model or `file_proxy` with strong remote model |
+| `planner: LLM file proxy request already pending` | Stale cognition file | `POST /llm-proxy/clear {"confirm":true}` on affected slot |
+| Slot 2 idle forever | No `request.json` yet | Normal until Slot 1 hits `llm_request`; check Slot 1 `/state` |
+| Relay writes prompt to address bar | Wrong SCREEN target | Focus grok chat tab; check Slot 2 `history` |
+| `llm_wait_response` timeout | Slot 2 did not finish capture | Check 9079 `/state`, grok tab, `comms/llm_proxy/response.json` |
+| Cursor keeps sweeping | Verify retries | Read `retries`, `last_error` in `/state` |
+
+### A.12 Clean shutdown between runs
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:9078/llm-proxy/clear `
+  -ContentType 'application/json' -Body '{"confirm":true}'
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:9079/relay/clear `
+  -ContentType 'application/json' -Body '{"confirm":true}'
+```
+
+Optionally delete `state.slot1.json`, `state.slot2.json`, and `bus.json` for a fully fresh run.
 
 ---
 
