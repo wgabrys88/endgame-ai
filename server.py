@@ -1408,14 +1408,16 @@ def inspect_state(goal="", state=None, node_id=None):
 # ─── Guards (from wiring.json, evaluated in act node) ───
 
 def check_repeat_block(state, actions):
-    """Block if same actions as last time and last outcome was OK."""
-    last = state.get("last_actions_raw", [])
-    if not last:
-        return None
-    if actions == last and "OK" in state.get("last_outcome", ""):
-        hint = _find_advance_hint(state, actions)
-        return hint or "repeat blocked — try a different action"
+    """Disabled — repeat blocking caused unrecoverable deadlocks."""
     return None
+
+
+
+
+
+
+
+
 
 def apply_memory_action(existing_memory, target, value):
     """Apply act's remember verb without desktop or model side effects."""
