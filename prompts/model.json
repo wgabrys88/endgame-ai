@@ -1,5 +1,5 @@
 {
-  "transport": "browser_ai",
+  "transport": "openai",
   "host": "http://localhost:1234",
   "model": "nvidia-nemotron-3-nano-4b",
   "file_proxy": {
