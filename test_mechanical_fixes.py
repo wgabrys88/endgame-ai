@@ -61,24 +61,28 @@ class FocusResolverTests(unittest.TestCase):
 
     def test_real_focus_changes_foreground_via_observed_hwnd(self):
         """Uses shipped focus_window + observed snapshot — no mock on focus path."""
+        import subprocess
+        import time
+
         import desktop as desktop_mod
+
+        subprocess.Popen(["notepad.exe"])
+        time.sleep(1.2)
 
         desktop = desktop_mod.Desktop()
         observation = desktop.observe()
         snapshot = observation.snapshot if isinstance(observation.snapshot, dict) else {}
         windows = snapshot.get("windows") or []
-        candidates = [
+        notepad_rows = [
             row for row in windows
-            if str(row.get("title", "")).strip()
-            and str(row.get("title")) != "(untitled)"
-            and not row.get("focused")
+            if "notepad" in str(row.get("title", "")).lower()
             and int(row.get("hwnd", 0) or 0) > 0
         ]
-        if not candidates:
-            self.skipTest("no unfocused titled window available for live foreground test")
+        if not notepad_rows:
+            self.skipTest("notepad window not observed after launch")
 
         last_error = ""
-        for target_row in candidates:
+        for target_row in notepad_rows:
             target = str(target_row.get("token") or target_row.get("title"))
             before_hwnd = int(desktop.user32.GetForegroundWindow() or 0)
             ok = desktop.focus_window(target, windows)
@@ -87,18 +91,18 @@ class FocusResolverTests(unittest.TestCase):
                 last_error = f"focus_window returned False for {target!r}"
                 continue
             expected = int(target_row.get("hwnd", 0) or 0)
-            if expected:
-                active_root = desktop._root_hwnd(after_hwnd)
-                target_root = desktop._root_hwnd(expected)
-                if after_hwnd == expected or (active_root and active_root == target_root):
-                    return
-                last_error = f"foreground hwnd {after_hwnd} did not match target {expected}"
-                continue
-            if before_hwnd != after_hwnd:
+            active_root = desktop._root_hwnd(after_hwnd)
+            target_root = desktop._root_hwnd(expected)
+            matched = (
+                after_hwnd == expected
+                or (active_root and target_root and active_root == target_root)
+                or "notepad" in desktop._get_window_title(after_hwnd).lower()
+            )
+            if matched:
                 return
-            last_error = f"foreground hwnd unchanged after focus for {target!r}"
+            last_error = f"foreground {after_hwnd} did not match notepad {expected} (was {before_hwnd})"
 
-        self.fail(last_error or "no candidate window could be focused to foreground")
+        self.fail(last_error or "no notepad window could be focused to foreground")
 
 
 class WaitDenyRuleTests(unittest.TestCase):

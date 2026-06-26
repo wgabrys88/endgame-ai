@@ -281,12 +281,14 @@ Set `transport: openai` in the slot's `model.json` and point `host` at `/v1/chat
 
 When Endgame-AI uses `file_proxy`, a stronger coding agent (Codex, Claude Code, Grok, etc.) **is** the cognition backend. Endgame-AI still owns the state machine, observe/act, verify, and reflect.
 
+**Verification = you read runtime JSON, not scripted runners.** Poll `comms/slot1_cognition/request.json`, write `response.json` with matching `id`. Do not use canned `p0_file_proxy_runner.py` scripts for proofs — read actual SCREEN/SUBTASK/STEP from each request and decide actions from observed state.
+
 ### Contract
 
-1. Read `GET /health` and `GET /state` on the correct slot port.
+1. Read `GET /health` and `GET /state` on the correct slot port (9078 for Slot 1).
 2. Poll the active `comms/.../request.json`.
 3. Write `comms/.../response.json` with the **same `id`** as the request.
-4. Two-pass LLM: first pass may be reasoning; when user content contains **`DECIDE NOW`**, `content` must be exactly one role JSON object.
+4. Two-pass LLM: first pass (no `DECIDE NOW` in user) → prose/reasoning only; second pass (`DECIDE NOW` present) → exactly one role JSON object in `content`.
 
 ### Response shape
 
@@ -426,9 +428,9 @@ If verify keeps denying (e.g. file-proxy returns `confirmed: false` while action
 
 | Benchmark | Status |
 |-----------|--------|
-| `open notepad and type hello` | Partial — hello typed in live runs; graph stuck on step 0 retries (file-proxy act indexing bug) |
-| `navigate to google.com in chrome` | Not proven in scratch captures |
-| `play Shakira Waka Waka on YouTube` | Not proven in scratch captures |
+| `open notepad and type hello` | **Pass** — live file-proxy agent run, `satisfied=true`, history shows focus + write |
+| `navigate to google.com in chrome` | **Pass** — `open_url chrome google.com`, `satisfied=true` |
+| `play Shakira Waka Waka on YouTube` | **Pass** — search + watch URL via `open_url`, `satisfied=true` |
 | `have a conversation with an AI chatbot` | Not run |
 
 - **MoE delegation** on Slot 1 is inert when `desktop_exec` permission is present (browser goals stay on Slot 1).
