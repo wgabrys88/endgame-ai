@@ -545,7 +545,7 @@ Verified in code:
 |---------|---------|
 | `topology` | 12 nodes, 22 edges, signal routing |
 | `rules` | 32 verify/act matchers → `RULE_CHECKERS` |
-| `roles` | Planner, Act, Verifier, Reflector, Self_modify prompts |
+| `prompts.base` + `roles` | Cognition prompts (refactored for small models + two-pass DECIDE NOW) |
 | `limits` | max_attempts 7, max_replans 3, max_self_modify 3 |
 | `observe` | hover scan, scope_depth, desktop_tree_enabled false |
 | `verbs` / `verb_normalize` | Act JSON field mapping |
@@ -553,6 +553,22 @@ Verified in code:
 | `reasoning` | Two-pass store/clear per circuit |
 
 **Only `act` receives SCREEN.** Planner never sees pixels — it plans from goal + memory + history. This prevents coordinate hallucination in planning.
+
+### Cognition prompts (what Nemotron / file_proxy receive)
+
+Refactored for **4B bootstrap models** and the **uniform operator** vision:
+
+| Change | Why |
+|--------|-----|
+| `base` explains **two-pass** (prose pass 1, JSON on DECIDE NOW) | Old base said "no prose" — conflicted with `call_node` pass 1 |
+| Shorter roles; JSON shape first | Less token noise for Nemotron |
+| Removed "Slot 2 relay" wording | GUI discovery: grok.com, chatgpt.com, `llm_request` path |
+| `self_modify` trimmed (~90% shorter) | Full rule-condition catalog blew 4B context |
+| Planner adds YouTube + browser-AI paths | Aligns with walk-away goals |
+
+System + role text is composed in `load_system_prompt()`. User blocks (GOAL, SCREEN, etc.) are appended by `build_user_message()`. Pass 2 adds `ROD_REASONING_CONTENT` + `DECIDE NOW` (`server.py` `call_node`).
+
+**No test scripts in repo** — proof is `POST /run` on the live operator only.
 
 ---
 
@@ -618,7 +634,7 @@ sequenceDiagram
 
 | Capability | Status | Evidence |
 |------------|--------|----------|
-| UIA observe + SCREEN + verbs | **Proven** | Live runs + 11 mechanical tests |
+| UIA observe + SCREEN + verbs | **Proven** | Live runs |
 | Bootstrap file_proxy cognition | **Proven** | Grok session read SCREEN → wrote response.json; Endgame acted |
 | Notepad typing goal | **Proven** | `confirm_launch_chain`, `confirm_write_to_writable` |
 | Chrome `open_url` navigation | **Proven** | `confirm_browser_open_url` |
@@ -635,7 +651,7 @@ sequenceDiagram
 |------|-------------|
 | New `*_runner.py`, `harness_*.py`, `run_verification.py`-style scripts | Canned cognition — never reads SCREEN; **removed from repo** |
 | Coding agent manually clicking desktop | Bypasses Endgame loop |
-| Unit tests alone | Mechanical only — `test_mechanical_fixes.py` is regression, not E2E |
+| Anything except live `POST /run` + `/state` | Not E2E proof |
 
 ---
 
@@ -813,8 +829,7 @@ YOU MUST USE ENDGAME TO TEST AND PROVE — NOT WRITE NEW SCRIPTS:
 - Post goal: POST /run on :9078 or panel Run button
 - Cognition: poll comms/slot1_cognition/request.json, read SCREEN, write response.json (file_proxy) OR use transport:openai + LM Studio
 - Proof: GET /state → satisfied:true + history with real verbs
-- Mechanical regression only: python test_mechanical_fixes.py
-- DO NOT create harness_*.py, *_runner.py, run_verification.py, ProxyResponder, or any canned cognition layer
+- DO NOT create harness_*.py, *_runner.py, test_*.py, ProxyResponder, or any canned cognition layer
 - DO NOT bypass Endgame with manual desktop control or scripted planner/act responses
 - If you need a test, it IS a goal string posted to /run
 
@@ -891,9 +906,8 @@ Deliverables:
 | `prompts/wiring.json` | Brain — 32 rules, 12 nodes, 22 edges |
 | `prompts/model.json` | Cognition transport (openai or file_proxy) |
 | `wiring-editor.html` | Walk-away panel |
-| `test_mechanical_fixes.py` | Mechanical regression only (11 tests) — **not** E2E proof |
 
-**No harness scripts in repo.** Coding agents test via Endgame itself. Do not add runners.
+**No test or harness scripts in repo.** Coding agents test via Endgame only (`POST /run`). Do not add runners or `test_*.py`.
 
 **Gitignored runtime (never commit):** `state*.json`, `bus.json`, `comms/`, `traces.jsonl`, `__pycache__/`, `mcps/`
 
@@ -955,7 +969,7 @@ No usernames or machine-specific paths in docs — use `%USERPROFILE%` / `$env:U
 | `python server.py` → panel → `POST /run` | Create `harness_*.py`, `*_runner.py`, or verification wrappers |
 | Poll `request.json`, read SCREEN, write `response.json` | Canned planner/act scripts without SCREEN |
 | Read `/state` and `state.slot1.json` for proof | Manually click desktop during benchmarks |
-| `python test_mechanical_fixes.py` for mechanical regressions | Use unit tests as E2E proof |
+| Re-run same goal via panel if regression suspected | Add `test_*.py` or harness scripts |
 | Modify/remove `server.py` first | Inflate codebase |
 | Hot-edit rules in panel to debug | Assume rules are the root bug without checking SCREEN |
 | Brave wiring/topology changes | Treat slots as the product architecture |

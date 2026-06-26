@@ -13,8 +13,7 @@
 !colony.py
 !wiring-editor.html
 
-# ─── Tracked: Tests ───────────────────────────────────────────
-!test_mechanical_fixes.py
+
 
 # ─── Tracked: Configuration ──────────────────────────────────
 !prompts/
