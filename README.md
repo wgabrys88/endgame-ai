@@ -11,187 +11,259 @@ Endgame-AI observes the real desktop (UI Automation), executes declarative actio
 | Platform | Windows 10/11 |
 | Entry point | `server.py` (stdlib `http.server`, **not** FastAPI) |
 | Slot 1 port | **9078** (`instance.slot: 1`, base 9077 + offset) |
-| Last commit context | `e8933e7` — focus hardening, verify `rule_id` in history, nav confirm rule |
+| Default cognition | `file_proxy` (`prompts/model.json`) |
+| Mechanical tests | `python test_mechanical_fixes.py` → **11/11 pass** (verified this session) |
 
 > **Truth order:** `prompts/wiring.json` + `server.py` + `desktop.py` + `actions.py` beat this README. Re-count rules/edges after every wiring edit.
 
 **This file is the only documentation.** No other handover docs exist in the repo.
 
+### What this document is
+
+| Audience | Use it for |
+|----------|------------|
+| Next coding agent (Grok, Claude, Cursor) | §18 handover prompt + §3 cognition contract |
+| Human operator | §11 quick start + §12 examples |
+| ChatGPT Deep Research | §19 research brief — paste into a project |
+| Future you | §1 replacement progress + §4–§6 diagrams |
+
 ---
 
 ## Table of contents
 
-1. [Vision](#1-vision)
-2. [What was proven in live sessions](#2-what-was-proven-in-live-sessions)
-3. [How cognition agents must work (and what is forbidden)](#3-how-cognition-agents-must-work-and-what-is-forbidden)
-4. [Architecture overview](#4-architecture-overview)
-5. [The ROD loop step by step](#5-the-rod-loop-step-by-step)
-6. [Wiring.json — the declarative brain](#6-wiringjson--the-declarative-brain)
-7. [Rules engine](#7-rules-engine)
-8. [Mechanical layer (Python)](#8-mechanical-layer-python)
-9. [Cognition transports (file_proxy, LM Studio, external AI)](#9-cognition-transports-file_proxy-lm-studio-external-ai)
-10. [Multi-slot / MoE / bus](#10-multi-slot--moe--bus)
+1. [Vision and operator-replacement progress](#1-vision-and-operator-replacement-progress)
+2. [What was proven (live sessions)](#2-what-was-proven-live-sessions)
+3. [Cognition contract — valid vs forbidden](#3-cognition-contract--valid-vs-forbidden)
+4. [Architecture](#4-architecture)
+5. [ROD loop](#5-rod-loop)
+6. [SCREEN → act → verify pipeline](#6-screen--act--verify-pipeline)
+7. [Wiring.json — declarative brain](#7-wiringjson--declarative-brain)
+8. [Rules engine](#8-rules-engine)
+9. [Mechanical layer](#9-mechanical-layer)
+10. [Cognition transports](#10-cognition-transports)
 11. [Human quick start](#11-human-quick-start)
-12. [Examples: Notepad, Google, Shakira](#12-examples-notepad-google-shakira)
-13. [HTTP API reference](#13-http-api-reference)
-14. [Observation behavior (mouse sweeps)](#14-observation-behavior-mouse-sweeps)
-15. [Known failures (MoE / honest gaps)](#15-known-failures-moe--honest-gaps)
-16. [Remaining work](#16-remaining-work)
-17. [Development discipline for the next AI](#17-development-discipline-for-the-next-ai)
-18. [Copy-paste handover prompt](#18-copy-paste-handover-prompt)
-19. [Repository layout](#19-repository-layout)
-20. [Authoritative counts](#20-authoritative-counts)
+12. [Benchmark examples](#12-benchmark-examples)
+13. [HTTP API](#13-http-api)
+14. [Observation (mouse sweeps)](#14-observation-mouse-sweeps)
+15. [Known gaps](#15-known-gaps)
+16. [Remaining work (priority)](#16-remaining-work-priority)
+17. [Development discipline](#17-development-discipline)
+18. [Next AI — copy-paste handover prompt](#18-next-ai--copy-paste-handover-prompt)
+19. [ChatGPT Deep Research prompt](#19-chatgpt-deep-research-prompt)
+20. [Repository layout](#20-repository-layout)
+21. [Authoritative counts](#21-authoritative-counts)
 
 ---
 
-## 1. Vision
+## 1. Vision and operator-replacement progress
 
-Endgame-AI is a **living, evolving desktop operator** — closer to a human sitting at the PC than to a headless API or MCP tool:
+### 1.1 Vision
 
-- It **sees** the screen (UIA + hover probe → `SCREEN` text with `[ID]` targets and `[W#]` window tokens).
-- It **acts** (click, write, hotkey, focus, `open_url`, scroll, wait, remember, LLM relay verbs).
-- It **judges** completion via declarative rules + optional verifier LLM.
-- It **recovers** (reflect → retry/replan → bounded self_modify).
+Endgame-AI is a **living desktop operator** — closer to a human at the PC than to a headless API or MCP tool:
+
+| Human does | Endgame does |
+|------------|--------------|
+| Receives a goal | `POST /run` → `goal_inbox` |
+| Plans subtasks | `planner` circuit (LLM) |
+| Looks at screen | `observe` → UIA hover scan → `SCREEN` text |
+| Clicks, types, switches apps | `act` → `actions.py` verbs |
+| Decides step is done | `verify` → rules + optional verifier LLM |
+| Recovers from mistakes | `reflect` → retry / replan / `self_modify` |
 
 The LLM is **one circuit among many**. It does not drive the mouse. The runtime does.
 
 **Design claim** (`server.py:3`): *"Node handlers are pure functions. Wiring.json is the brain."*
 
-**Target state:** Any strong AI (Grok, Claude, GPT via LM Studio, grok.com in a browser tab) can supply cognition JSON while Endgame-AI owns observe/act/verify. Multiple providers can serve different slots simultaneously.
+**Target state:** Any strong AI (Grok, Claude, GPT via LM Studio, grok.com in a browser tab) supplies cognition JSON while Endgame-AI owns observe/act/verify. Multiple providers can serve different slots simultaneously.
 
-**Current state:** The idea **works** on real Windows — Notepad typing, Chrome navigation, YouTube watch URL were reached with `satisfied=true` and action history. Polish remains (click-play, chatbot, MoE delegation, bloat reduction).
+### 1.2 How much of the human operator is replaced?
+
+Honest assessment as of branch `codex/self-referential-relay` (June 2026 session):
+
+```mermaid
+flowchart LR
+    subgraph Done["Built and working"]
+        A[Goal intake HTTP API]
+        B[UIA observe + SCREEN]
+        C[Verb execution]
+        D[Declarative verify rules]
+        E[ROD graph + reflect/replan]
+        F[file_proxy cognition bridge]
+    end
+
+    subgraph Partial["Partial / unproven"]
+        G[YouTube click-play]
+        H[Chatbot P1 relay]
+        I[self_modify recovery]
+        J[MoE slot delegation]
+        K[LM Studio reliability]
+    end
+
+    subgraph Missing["Not yet human-equivalent"]
+        L[Zero-human cognition loop]
+        M[Long-run reliability]
+        N[Arbitrary app mastery]
+        O[Production hardening]
+    end
+
+    Done --> Partial
+    Partial --> Missing
+```
+
+| Capability layer | Human equivalent | Status | Weight |
+|------------------|------------------|--------|--------|
+| Mechanical hands (mouse, keyboard, focus) | Hands | **Works** — Notepad, Chrome `open_url`, focus HWND | 20% |
+| Eyes (screen understanding) | Vision | **Works** — UIA + `[ID]`/`[W#]` tokens; not pixel-DOM | 15% |
+| Policy (when is a step done?) | Judgment | **Works** — 32 declarative rules + verifier fallback | 15% |
+| Planning (decompose goal) | Intent | **Works with external LLM** — not autonomous alone | 10% |
+| Recovery (retry, replan, patch wiring) | Adaptation | **Coded** — reflect/self_modify paths exist; **not E2E proven** | 10% |
+| Benchmark goals (P0 suite) | Task completion | **~60%** — 2 full, 1 partial, 2 not run | 15% |
+| Cognition without babysitting | Autonomy | **~40%** — still needs file_proxy responder or LM Studio | 10% |
+| Multi-slot specialization | Teamwork | **~20%** — MoE inert on Slot 1; relay unproven | 5% |
+
+**Overall: ~40% of a full human desktop operator** — the *architecture* is credible and the *mechanical loop* works on real Windows; polish, autonomy, and benchmark coverage remain.
+
+What “100% replacement” requires:
+
+1. All P0 benchmarks pass with `satisfied: true` and real SCREEN-driven cognition (not canned scripts).
+2. Cognition transport stable enough that no human copies JSON mid-run (LM Studio or persistent file_proxy agent).
+3. Click-play and DOM-level evidence for media/browser goals.
+4. P1 chatbot: `llm_request` + `llm_wait_response` + `memory.llm_response` proven.
+5. `self_modify` proven on at least one stuck goal.
+6. Codebase shrunk — policy in wiring, not duplicated Python.
 
 ---
 
-## 2. What was proven in live sessions
+## 2. What was proven (live sessions)
 
-Facts from runs where `server.py` owned the loop (not from unit tests alone).
+Facts from runs where `server.py` owned the loop. Unit tests alone are **not** proof.
 
-### 2.1 Benchmark results (honest)
+### 2.1 P0 benchmark results
 
-| Goal | Result | Evidence in `history` / `state` |
-|------|--------|--------------------------------|
-| `open notepad and type hello` | **Works** | `hotkey win+r` → `write notepad` → `press enter` → `write hello`; verify rules `confirm_launch_chain`, `confirm_write_to_writable` |
-| `navigate to google.com in chrome` | **Works** | `open_url chrome google.com`; verify rule `confirm_browser_open_url` |
-| `play shakira waka waka on youtube` | **Partial** | `open_url` to search URL then watch URL (`pRpeEdMmmQ0`); `confirm_youtube_playback` on clean runs; **not** click-play from search results |
+| Goal | Result | Evidence |
+|------|--------|----------|
+| `open notepad and type hello` | **Pass** | `hotkey win+r` → `write notepad` → `press enter` → `write hello`; verify `confirm_launch_chain`, `confirm_write_to_writable` |
+| `navigate to google.com in chrome` | **Pass** | `open_url chrome google.com`; verify `confirm_browser_open_url` |
+| `play shakira waka waka on youtube` | **Partial** | `open_url` search + watch URL (`pRpeEdMmmQ0`); `confirm_youtube_playback` on clean runs; **no** click-play |
 | `have a conversation with an AI chatbot` | **Not run** | — |
-| Self-modify recovery | **Not run** | `max_self_modify: 3` enforced in code |
+| Self-modify recovery | **Not run** | `max_self_modify: 3` enforced in code only |
 
-### 2.2 Grok Build session — how cognition was supplied
+### 2.2 Grok Build session — cognition path (CONFIRMED)
 
-**CONFIRMED — valid path (no desktop workaround):**
+**Valid proof path — no desktop workaround:**
 
-During live proofs, the Grok agent acted as **`file_proxy` cognition only**:
+1. Endgame wrote `comms/slot1_cognition/request.json` with **real `SCREEN`** (FOCUSED, `[ID]`, `WINDOWS [W#]`, SUBTASK, DONE_WHEN).
+2. Grok **read** that JSON and wrote `response.json` (matching `id`).
+3. Endgame executed verbs via `desktop.py` / `actions.py`, re-observed, verified, looped.
 
-1. Endgame-AI wrote `comms/slot1_cognition/request.json` containing **real `SCREEN` data** (FOCUSED title, `[ID]` elements, `WINDOWS` with `[W#]` tokens, SUBTASK, DONE_WHEN).
-2. The agent **read that JSON** and wrote `comms/slot1_cognition/response.json` with the same `id`.
-3. Endgame-AI parsed the response, executed verbs via `desktop.py` / `actions.py`, re-observed, verified.
-
-The agent **did not** manually open Chrome, type in Notepad, or click YouTube outside the runtime. Shell was used for **server control** (`POST /run`, `/health`, `/state`) and **writing cognition JSON files** — not for desktop automation.
+Grok **did not** manually open Chrome, type in Notepad, or click YouTube. Shell was for **server control** (`POST /run`, `/health`, `/state`) and **writing cognition JSON** — not GUI automation.
 
 **Two-pass LLM contract** (`server.py:1164–1174`):
 
-| Pass | Trigger | Agent writes in `content` |
-|------|---------|---------------------------|
+| Pass | Trigger | `content` must be |
+|------|---------|-------------------|
 | 1 | User message has **no** `DECIDE NOW` | Prose / reasoning only |
 | 2 | User message contains `DECIDE NOW` | Exactly one role JSON object |
 
-### 2.3 DENIED — invalid paths (documented to prevent recurrence)
+### 2.3 Mechanical fixes on this branch
 
-| Path | Why invalid |
-|------|-------------|
-| `p0_file_proxy_runner.py` + `harness_common.ProxyResponder` | **Canned** planner/act/verdict scripts per goal — does **not** read `SCREEN` from requests. Useful for regression automation only; **not** proof of autonomous operation. |
-| Manual Chrome/Notepad control by the coding agent | Bypasses observe/act; invalid benchmark proof. |
-| Claiming success from unit tests alone | Tests prove mechanical pieces; P0 requires `history` + `/state`. |
-
-**If a future session uses scripted proxy responses, README and commit message must say so explicitly.**
-
-### 2.4 Mechanical fixes shipped (branch `codex/self-referential-relay`)
-
-| Fix | Files |
+| Fix | Where |
 |-----|-------|
-| `[W#]` window tokens + shared `resolve_window_target()` | `desktop.py`, `actions.py` |
+| `[W#]` window tokens + `resolve_window_target()` | `desktop.py`, `actions.py` |
 | HWND-first `focus_window` + `AttachThreadInput` retry | `desktop.py` |
-| Focus short-circuit only when snapshot marks `focused: true` | `actions.py` |
-| `open_url` verb (`start chrome <url>`) | `desktop.py`, `actions.py`, `wiring.json` |
-| `confirm_browser_open_url` via `outcome_contains_domain_needle` | `wiring.json`, `server.py` |
+| Focus short-circuit only when snapshot `focused: true` | `actions.py` |
+| `open_url` verb | `desktop.py`, `actions.py`, `wiring.json` |
+| `confirm_browser_open_url` | `wiring.json`, `server.py` |
 | Verify preflight appends `rule_id` to `history` | `server.py` `node_verify` |
-| Wait-deny rules broadened; `confirm_relay_wait` removed (relay) | both wirings |
-| `max_self_modify: 3` + `give_up` edge | `wiring.json`, `server.py` |
-| `desktop_tree_enabled` aligned via `configure_observation()` | `desktop.py`, wirings |
+| Wait-deny rules; `confirm_relay_wait` removed (relay) | both wirings |
+| `max_self_modify: 3` + `give_up` edge | `wiring.json` |
+| `configure_observation()` from wiring | `desktop.py` |
 
 ---
 
-## 3. How cognition agents must work (and what is forbidden)
+## 3. Cognition contract — valid vs forbidden
 
-### 3.1 The contract
+### 3.1 Valid path (mandatory for proofs)
 
-```
-Endgame observes desktop → builds request.json (SCREEN inside act requests)
-        ↓
-External AI reads request.json → writes response.json (matching id)
-        ↓
-Endgame executes actions → updates state → next request
+```mermaid
+sequenceDiagram
+    participant EG as Endgame server.py
+    participant DESK as desktop.py / actions.py
+    participant COMMS as comms/slot1_cognition/
+    participant AI as External AI (Grok / LM Studio / human)
+
+    EG->>DESK: observe → build SCREEN
+    EG->>COMMS: write request.json (SCREEN in act requests)
+    AI->>COMMS: read request.json
+    Note over AI: Pass 1: prose if no DECIDE NOW<br/>Pass 2: role JSON if DECIDE NOW
+    AI->>COMMS: write response.json (same id)
+    EG->>COMMS: poll response.json
+    EG->>DESK: execute_verb(actions)
+    DESK-->>EG: outcome OK/FAIL
+    EG->>EG: verify rules → next node
 ```
 
 The external AI is a **decision engine**. Endgame is the **operator**.
 
-### 3.2 What the AI sees per circuit
+### 3.2 What each circuit sees
 
-| Circuit | System header | User blocks | AI outputs |
-|---------|---------------|-------------|------------|
-| planner | `ROLE: Planner` | GOAL, MEMORY, HISTORY | `{"record_type":"task","data":{"steps":[...]}}` |
-| act | `ROLE: Act` | SUBTASK, DONE_WHEN, **SCREEN**, MEMORY | `{"record_type":"action","data":{"conclusion":"EXECUTE","actions":[...]}}` |
-| verifier | `ROLE: Verifier` | STEP, DONE_WHEN, LAST_OUTCOME, LAST_ACTIONS | `{"record_type":"verdict","data":{"confirmed":true/false,...}}` |
-| reflector | `ROLE: Reflector` | GOAL, STEP, LAST_OUTCOME, VERIFY_REASONING | `{"record_type":"diagnosis",...}` |
-| self_modify | `ROLE: Self_modify` | GOAL, REASONING_CHAIN, CURRENT_WIRING | `{"record_type":"wiring_patch",...}` |
+| Circuit | Sees SCREEN? | Outputs |
+|---------|--------------|---------|
+| planner | No | `{"record_type":"task","data":{"steps":[...]}}` |
+| act | **Yes** | `{"record_type":"action","data":{"conclusion":"EXECUTE","actions":[...]}}` |
+| verifier | No | `{"record_type":"verdict","data":{"confirmed":true/false,...}}` |
+| reflector | No | `{"record_type":"diagnosis",...}` |
+| self_modify | No | `{"record_type":"wiring_patch",...}` |
 
-**Only `act` receives `SCREEN`.** Decisions for navigation/focus must use `SCREEN` window tokens (`[W3]`), `[ID]` targets, or `open_url` — never invented coordinates.
+**Only `act` receives `SCREEN`.** Use `[W#]`, `[ID]`, or `open_url` — never invented coordinates.
 
-### 3.3 Act verbs
+**Act verbs:** `click`, `write`, `press`, `hotkey`, `focus`, `open_url`, `scroll`, `wait`, `remember`, `llm_request`, `llm_wait_response`
 
-`click`, `write`, `press`, `hotkey`, `focus`, `open_url`, `scroll`, `wait`, `remember`, `llm_request`, `llm_wait_response`
+### 3.3 FORBIDDEN paths
 
-### 3.4 Forbidden for proof runs
+| Path | Why invalid |
+|------|-------------|
+| `p0_file_proxy_runner.py` + `harness_common.ProxyResponder` | **Canned** planner/act/verdict per goal — **does not read SCREEN**. Regression automation only; **never** valid E2E proof. |
+| Coding agent manually driving Chrome/Notepad/YouTube | Bypasses observe/act loop. |
+| Claiming success from `test_mechanical_fixes.py` alone | Proves mechanical pieces only. |
+| Adding new proxy runner scripts | Poll `request.json` yourself. |
 
-- Do not drive GUI outside Endgame while claiming a benchmark passed.
-- Do not add new proxy runner scripts — poll `comms/.../request.json` yourself.
-- Do not add code without first reading whether existing code can be **modified or removed**.
+**Future sessions using scripted proxy responses must say so explicitly in commit message and captures.**
 
 ---
 
-## 4. Architecture overview
+## 4. Architecture
 
-### 4.1 Layer diagram
+### 4.1 Layer ownership
 
 ```mermaid
 flowchart TB
-    subgraph HumanOrAI["Human / External AI"]
+    subgraph HumanOrAI["Cognition providers"]
         FP[file_proxy responder]
         LMS[LM Studio OpenAI API]
-        WEB[grok.com / Claude web / etc.]
-    end
-
-    subgraph Runtime["Endgame runtime (server.py)"]
-        HTTP[HTTP API :9078]
-        ROD[ROD graph engine]
-        RULES[evaluate_rules / RULE_CHECKERS]
-        LLM[call_node two-pass LLM]
-    end
-
-    subgraph Mechanical["Mechanical layer"]
-        DESK[desktop.py observe + focus + open_url]
-        ACT[actions.py execute_verb]
+        WEB[grok.com / Claude web]
     end
 
     subgraph Declarative["Declarative config"]
-        WIRING[prompts/wiring.json]
-        MODEL[prompts/model.json]
+        WIRING[prompts/wiring.json<br/>topology rules roles limits]
+        MODEL[prompts/model.json<br/>transport]
+    end
+
+    subgraph Runtime["server.py"]
+        HTTP[HTTP API :9078]
+        ROD[ROD graph engine]
+        RULES[evaluate_rules / RULE_CHECKERS]
+        LLM[call_node two-pass]
+    end
+
+    subgraph Mechanical["Mechanical layer"]
+        DESK[desktop.py<br/>observe focus open_url]
+        ACT[actions.py<br/>execute_verb]
     end
 
     subgraph Desktop["Windows desktop"]
         UIA[UI Automation + hover scan]
-        WIN[Apps: Notepad Chrome etc.]
+        APPS[Notepad Chrome etc.]
     end
 
     subgraph IPC["Inter-slot IPC"]
@@ -199,45 +271,74 @@ flowchart TB
         COMMS[comms/slotN_cognition/]
     end
 
-    HumanOrAI <-->|request.json / response.json| COMMS
-    LMS <-->|HTTP chat completions| LLM
-    HTTP --> ROD
-    ROD --> LLM
-    LLM --> COMMS
-    ROD --> RULES
-    ROD --> DESK
-    DESK --> ACT
-    ACT --> WIN
-    DESK --> UIA
-    UIA --> WIN
     WIRING --> ROD
     WIRING --> RULES
     MODEL --> LLM
+    HTTP --> ROD
+    ROD --> LLM
+    ROD --> RULES
+    ROD --> DESK
+    DESK --> ACT
+    ACT --> APPS
+    DESK --> UIA
+    UIA --> APPS
+    LLM <-->|request/response JSON| COMMS
+    HumanOrAI <-->|poll/write| COMMS
+    LMS <-->|HTTP chat completions| LLM
     ROD <--> BUS
 ```
 
-### 4.2 What each layer owns
-
 | Layer | Owns | Does not own |
 |-------|------|--------------|
-| `wiring.json` | Topology edges, rules, roles, limits, observe config, verb schema | HWND calls, LLM HTTP |
-| `server.py` | Graph traversal, rule evaluation, LLM orchestration, self_modify patch, HTTP | UIA element finding |
-| `desktop.py` | UIA observation, SCREEN render, focus, open_url | Planning, verification policy |
-| `actions.py` | Verb dispatch, guard integration | Rule definitions |
-| External AI | planner/act/verifier/reflector JSON | Mouse, keyboard, focus |
+| `wiring.json` | Topology, rules, roles, limits, observe config | HWND, LLM HTTP |
+| `server.py` | Graph traversal, rules, LLM orchestration, self_modify, HTTP | UIA element finding |
+| `desktop.py` | UIA, SCREEN render, focus, `open_url` | Planning policy |
+| `actions.py` | Verb dispatch, guards | Rule definitions |
+| External AI | JSON decisions per circuit | Mouse, keyboard, focus |
 
-### 4.3 Event-driven vs polling
+### 4.2 End-to-end goal lifecycle
 
-Endgame is **not** a classic event bus for desktop events. It is a **synchronous graph loop** with:
+```mermaid
+sequenceDiagram
+    participant Op as Operator / AI responder
+    participant API as HTTP :9078
+    participant ROD as ROD loop
+    participant LLM as call_node
+    participant DESK as desktop.py
 
-- **Polling:** file_proxy waits on `response.json`; hover scan probes screen; `bus_check` reads `bus.json`.
-- **Signals:** Each node returns `signals[]` (e.g. `step_confirmed`, `acted`); `find_targets()` picks the next edge where `on` matches.
+    Op->>API: POST /run {"goal":"..."}
+    API->>ROD: goal_inbox → moe_route → planner
+    ROD->>LLM: planner request (no SCREEN)
+    LLM-->>Op: request.json
+    Op-->>LLM: response.json (task steps)
+    loop Each plan step
+        ROD->>ROD: scheduler → bus_check
+        ROD->>DESK: observe
+        DESK-->>ROD: SCREEN text
+        ROD->>LLM: act request (SCREEN included)
+        LLM-->>Op: request.json
+        Op-->>LLM: response.json (actions)
+        ROD->>DESK: execute verbs
+        ROD->>ROD: verify (rules then verifier LLM)
+        alt step_denied
+            ROD->>LLM: reflect → retry/replan/escalate
+        end
+    end
+    ROD->>API: satisfied
+    Op->>API: GET /state → satisfied: true
+```
 
-There is no separate scheduler process — `node_scheduler` is a pure function that advances `step` index.
+### 4.3 Event model
+
+Not a desktop event bus. A **synchronous graph loop**:
+
+- **Polling:** file_proxy waits on `response.json`; hover scan; `bus_check` reads `bus.json`.
+- **Signals:** Each node returns `signals[]`; `find_targets()` picks edge where `on` matches.
+- **Scheduler:** `node_scheduler` advances `step` index — not a separate OS process.
 
 ---
 
-## 5. The ROD loop step by step
+## 5. ROD loop
 
 ### 5.1 Topology (12 nodes, 22 edges)
 
@@ -269,239 +370,171 @@ stateDiagram-v2
     satisfied --> [*]
 ```
 
-### 5.2 One cycle (per graph node visit)
+### 5.2 Per-visit cycle
 
 ```
-1. Handler runs:  result = NODES[type](state, node_cfg)
-2. State patch:   state.update(result["patch"])
-3. Pick edge:     signals → find_targets(node_id, signals, topology)
-4. Persist:       save_state(state); sleep(cycle_delay_ms)
-5. Next node:     node_id = targets[0]
+handler → state patch → find_targets(signals) → save_state → sleep(cycle_delay_ms) → next node
 ```
 
-`run()` loops until terminal (no outgoing edge), `max_cycles`, or pause.
+`run()` stops at terminal node, `max_cycles`, or pause.
 
-### 5.3 Per-step micro-loop (retries)
+### 5.3 Per-step micro-loop
 
-For each plan step:
-
-```
-scheduler(step_ready) → bus_check → observe → act → verify
-                                    ↑                    |
-                                    └── reflect ← step_denied
+```mermaid
+flowchart TD
+    S[scheduler step_ready] --> B[bus_check]
+    B --> O[observe screen_ready]
+    O --> A[act]
+    A -->|acted| V[verify]
+    A -->|act_failed| R[reflect]
+    V -->|step_confirmed| S2[scheduler step++]
+    V -->|step_denied| R
+    R -->|retry| S
+    R -->|replan| P[planner]
+    R -->|escalate| SM[self_modify]
+    R -->|give_up| BP[bus_post]
+    SM --> P
+    P --> S
 ```
 
 `retries` increments on `step_denied`; `max_attempts` (7) triggers replan or escalate.
 
 ---
 
-## 6. Wiring.json — the declarative brain
+## 6. SCREEN → act → verify pipeline
 
-### 6.1 Sections
-
-| Section | Purpose |
-|---------|---------|
-| `topology.nodes` | Graph nodes (id, type, circuit, prompt blocks) |
-| `topology.edges` | `{from, to, on}` — signal-based routing |
-| `rules` | Declarative verify/act policy (`match` keys → `RULE_CHECKERS`) |
-| `roles` / `prompts.base` | LLM system prompts per circuit |
-| `limits` | max_attempts, max_replans, max_self_modify, token budgets |
-| `observe` | hover scan, scope_depth, desktop_tree_enabled, wait_retries |
-| `verbs` | Field mapping for act JSON (target/value fields) |
-| `verb_normalize` | Alias map applied before execute |
-| `guards` | act-node repeat block, advance hints |
-| `reasoning` | Two-pass store/clear/expected record types |
-| `moe` | Delegation keywords (mostly inert on Slot 1 — see §15) |
-| `runtime` | http_port_base, cycle_delay_ms |
-
-### 6.2 Node types → Python handlers
-
-| Node id | type | Handler | LLM? |
-|---------|------|---------|------|
-| goal_inbox | entry | `node_entry` | No |
-| moe_route | moe_route | `node_moe_route` | No |
-| planner | planner | `node_planner` | Yes |
-| scheduler | scheduler | `node_scheduler` | No |
-| bus_check | bus_check | `node_bus_check` | No |
-| observe | observe | `node_observe` | No |
-| act | act | `node_act` | Yes |
-| verify | verify | `node_verify` | Yes (after rule preflight) |
-| reflect | reflect | `node_reflect` | Yes |
-| self_modify | self_modify | `node_self_modify` | Yes |
-| bus_post | bus_post | `node_bus_post` | No |
-| satisfied | satisfied | `node_satisfied` | No |
-
-Slot 2 relay wiring adds `llm_request_check`, `llm_response_write` nodes for browser-chat capture.
-
-### 6.3 Prompt assembly
-
-`build_user_message()` concatenates labeled blocks from wiring `prompt.user.blocks`:
-
-- **Planner:** GOAL, MEMORY, HISTORY, …
-- **Act:** SUBTASK, DONE_WHEN, SCREEN (always for act)
-- **Verifier:** STEP, DONE_WHEN, LAST_OUTCOME, LAST_ACTIONS_RAW, MEMORY
-
-Token budget trims lowest-priority blocks first (`_BLOCK_PRIORITY`).
-
----
-
-## 7. Rules engine
-
-### 7.1 Flow in `node_verify`
+### 6.1 How SCREEN is built
 
 ```mermaid
 flowchart TD
-    A[node_verify] --> B[evaluate_rules verify phase]
-    B --> C{verdict?}
-    C -->|deny| D[step_denied + history rule_id]
-    C -->|confirm| E[step_confirmed + history rule_id + step++]
-    C -->|no match| F[call_node verifier LLM]
-    F --> G{confirmed?}
-    G -->|true| H[step_confirmed + history llm_verdict]
-    G -->|false| I[step_denied]
+    START[observe node] --> ENUM[Enumerate top-level windows]
+    ENUM --> WTOK[Assign W1..Wn tokens + HWND map]
+    WTOK --> HOVER[Hover scan ~400+ points]
+    HOVER --> SCOPE[Build ACTION SCOPE lines]
+    SCOPE --> IDS[Assign ID targets on actionable elements]
+    IDS --> RENDER[Render SCREEN text block]
+    RENDER --> ACTIN[Inject into act user message]
 ```
 
-Deny/reject rules run **before** confirm rules (`evaluate_rules` ordering).
+**SCREEN structure (act input):**
 
-### 7.2 Key confirm rules (Slot 1)
+```
+FOCUSED: <title>
+ACTION SCOPE: ...
+  [ID1] Button Name ...
+WINDOWS:
+  - [W1] App Title
+  - [W2] Chrome ...
+SUBTASK: ...
+DONE_WHEN: ...
+```
 
-| Rule id | When it fires |
-|---------|---------------|
+### 6.2 Focus and navigation contracts
+
+| Token | Act usage | Resolution |
+|-------|-----------|------------|
+| `[W3]` in WINDOWS | `{"verb":"focus","target":"W3"}` | `resolve_window_target()` → HWND → `focus_window()` |
+| `[ID12]` in SCOPE | `{"verb":"click","target":"ID12"}` | UIA element from observation cache |
+| Domain nav | `{"verb":"open_url","target":"chrome","value":"google.com"}` | `start chrome https://...` — no prior focus |
+
+Focus short-circuit in `actions.py`: skip only when observation snapshot marks resolved row `focused: true`.
+
+### 6.3 Verify pipeline
+
+```mermaid
+flowchart TD
+    V[node_verify] --> E[evaluate_rules verify phase]
+    E --> D{verdict?}
+    D -->|deny| DN[step_denied + history rule_id]
+    D -->|confirm| CF[step_confirmed + history rule_id + step++]
+    D -->|no match| LLM[call_node verifier LLM]
+    LLM --> C{confirmed?}
+    C -->|true| CF2[step_confirmed + llm_verdict]
+    C -->|false| DN2[step_denied]
+```
+
+Deny rules run **before** confirm rules.
+
+---
+
+## 7. Wiring.json — declarative brain
+
+### 7.1 Sections
+
+| Section | Purpose |
+|---------|---------|
+| `topology` | Nodes + signal edges |
+| `rules` | Verify/act policy (`match` → `RULE_CHECKERS`) |
+| `roles` / `prompts.base` | LLM system prompts |
+| `limits` | max_attempts, max_replans, max_self_modify |
+| `observe` | hover scan, scope_depth, desktop_tree_enabled |
+| `verbs` / `verb_normalize` | Act JSON field mapping |
+| `guards` | Repeat block, advance hints |
+| `reasoning` | Two-pass store/clear/expected record types |
+| `moe` | Delegation keywords (inert on Slot 1 — §15) |
+| `runtime` | Ports, delays, llm_proxy paths |
+
+### 7.2 Node handlers
+
+| Node | type | LLM? |
+|------|------|------|
+| goal_inbox | entry | No |
+| moe_route | moe_route | No |
+| planner | planner | Yes |
+| scheduler | scheduler | No |
+| bus_check | bus_check | No |
+| observe | observe | No |
+| act | act | Yes |
+| verify | verify | Yes (after rule preflight) |
+| reflect | reflect | Yes |
+| self_modify | self_modify | Yes |
+| bus_post | bus_post | No |
+| satisfied | satisfied | No |
+
+Slot 2 relay adds `llm_request_check`, `llm_response_write` for browser-chat capture.
+
+---
+
+## 8. Rules engine
+
+Key confirm rules (Slot 1):
+
+| Rule id | Fires when |
+|---------|------------|
 | `confirm_launch_chain` | win+r → write app → enter |
-| `confirm_write_to_writable` | write with OK outcome + writable focus |
-| `confirm_browser_open_url` | `open_url` OK + domain in `last_outcome` |
-| `confirm_browser_navigation` | ctrl+l URL chain (legacy path) |
-| `confirm_youtube_playback` | watch URL evidence in proof text + done_when keywords |
+| `confirm_write_to_writable` | write OK + writable focus |
+| `confirm_browser_open_url` | `open_url` OK + domain in outcome |
+| `confirm_browser_navigation` | ctrl+l URL chain (legacy) |
+| `confirm_youtube_playback` | watch URL + done_when keywords |
 | `confirm_llm_response_received` | `memory.llm_response` ≥ 20 chars |
 
-### 7.3 Key deny rules
+Key deny rules:
 
 | Rule id | Purpose |
 |---------|---------|
-| `deny_response_no_evidence` | No confirm on wait-only when step implies response |
-| `deny_wait_only_content_receipt` | wait + content-implying done_when → deny |
+| `deny_outcome_failed` | Any non-OK outcome |
+| `deny_response_no_evidence` | wait-only without memory evidence |
+| `deny_wait_only_content_receipt` | wait + content-implying done_when |
 | `reject_chat_write_to_address_bar` | Chat text must not go to URL bar |
-| `reject_response_capture_during_stream` | No premature capture |
 
-Adding a rule `match` key requires updating `RULE_CONDITIONS` and `RULE_CHECKERS` in `server.py`.
+New `match` keys require `RULE_CONDITIONS` + `RULE_CHECKERS` in `server.py`.
 
 ---
 
-## 8. Mechanical layer (Python)
+## 9. Mechanical layer
 
-### 8.1 Observation (`desktop.py`)
-
-1. Enumerate top-level windows → assign `[W1]..[Wn]` tokens (HWND stored internally).
-2. Hover scan (~400+ points when enabled) to find actionable `[ID]` elements.
-3. Render `SCREEN` text: FOCUSED, SCOPE lines, WINDOWS list, optional DESKTOP_TREE.
-
-`configure_observation(wiring.observe)` is the **source of truth** after wiring load.
-
-### 8.2 Focus contract
-
-- SCREEN shows: `- [W3] YouTube - Google Chrome`
-- Act emits: `{"verb":"focus","target":"W3"}` or full title
-- `resolve_window_target()` shared by SCREEN render and `execute_verb`
-- `focus_window()` uses observed HWND first; `AttachThreadInput` + 3 retries on failure
-- `execute_verb("focus")` skips only if observation snapshot has `focused: true` on resolved row
-
-### 8.3 Navigation (`open_url`)
-
-```json
-{"verb":"open_url","target":"chrome","value":"google.com"}
-```
-
-Runs `start chrome https://google.com` — does not require browser focused first.
-
-### 8.4 State persistence
+### 9.1 State files (runtime, gitignored)
 
 | File | Content |
 |------|---------|
-| `state.slot1.json` | goal, plan, step, retries, history, screen, memory, reasoning |
-| `bus.json` | Cross-slot messages (goals, telemetry) |
-| `comms/slot1_cognition/` | Pending LLM request/response |
+| `state.slot1.json` | goal, plan, step, retries, history, screen, memory |
+| `bus.json` | Cross-slot messages |
+| `comms/slot1_cognition/` | Pending LLM exchange |
 | `prompts/traces.jsonl` | Completed run traces |
 
----
+### 9.2 Stale request blocker
 
-## 9. Cognition transports (file_proxy, LM Studio, external AI)
-
-### 9.1 Transport comparison
-
-| Transport | Config | Who reads/writes | Best for |
-|-----------|--------|------------------|----------|
-| `file_proxy` | `prompts/model.json` | Any agent polls JSON files | Grok/Claude/Cursor without local GPU |
-| `openai` | `transport: openai`, `host: http://localhost:1234` | LM Studio serves `/v1/chat/completions` | Local 4B–70B models |
-| External web UI | Manual copy-paste into `response.json` | Human copies request → grok.com → pastes response | Zero setup cognition |
-
-### 9.2 file_proxy paths (Slot 1)
-
-| File | Role |
-|------|------|
-| `comms/slot1_cognition/request.json` | Outbound LLM request (written by server) |
-| `comms/slot1_cognition/response.json` | Inbound response (written by agent) |
-| `comms/slot1_cognition/archive/` | Completed exchange archive |
-
-Slot 2 relay: `comms/relay_cognition/` + browser handoff `comms/llm_proxy/`.
-
-### 9.3 Response JSON shape
-
-```json
-{
-  "id": "<same as request.id>",
-  "choices": [{
-    "message": {
-      "content": "<reasoning text OR role JSON string on DECIDE NOW pass>",
-      "reasoning_content": "<optional>"
-    }
-  }]
-}
-```
-
-### 9.4 LM Studio setup
-
-1. Install [LM Studio](https://lmstudio.ai); load a model; start local server on port **1234**.
-2. Edit `prompts/model.json`:
-
-```json
-{
-  "transport": "openai",
-  "host": "http://localhost:1234",
-  "model": "your-model-id",
-  "temperature": 0.3,
-  "max_tokens": 2048,
-  "timeout": 900
-}
-```
-
-3. Restart `server.py`. No `comms/` polling — server calls LM Studio HTTP directly.
-4. **Caveat:** Small local models struggle with two-pass JSON; file_proxy with a strong remote model is more reliable today.
-
-### 9.5 grok.com / external web UI offload
-
-Same as file_proxy — the mechanical steps are identical:
-
-1. `GET http://127.0.0.1:9078/state` — see current goal/step.
-2. Open `comms/slot1_cognition/request.json` when it appears.
-3. Copy `messages` (especially user `content` with **SCREEN**) into grok.com chat.
-4. First response: reasoning prose (no `DECIDE NOW` in request).
-5. When request contains `DECIDE NOW`: paste back **only** the JSON object.
-6. Save as `response.json` with matching `id`.
-
-### 9.6 Multiple providers at once
-
-| Slot | Wiring | Model config | Typical provider |
-|------|--------|--------------|------------------|
-| 1 | `wiring.json` | `model.json` | Strong model (file_proxy or LM Studio) |
-| 2 | `wiring_relay.json` | `model_relay.json` | Browser chat capture specialist |
-
-Start root on 9077, spawn slots via `POST /slots/start {"slots":[1,2]}`.
-
-Each slot has isolated `state.slotN.json`, cognition queue, and port (9078, 9079).
-
-### 9.7 Stale request blocker
-
-If `request.json` exists, new LLM calls fail:
+Pending `request.json` blocks new LLM calls:
 
 ```
 planner: LLM file proxy request already pending id=...
@@ -511,44 +544,75 @@ Fix: `POST /llm-proxy/clear {"confirm":true}` before a new goal.
 
 ---
 
-## 10. Multi-slot / MoE / bus
+## 10. Cognition transports
 
-### 10.1 bus.json
+| Transport | Config | Who responds | Best for |
+|-----------|--------|--------------|----------|
+| `file_proxy` | `model.json` default | Agent polls JSON files | Grok/Claude/Cursor without local GPU |
+| `openai` | `transport: openai`, host `:1234` | LM Studio HTTP | Local models |
+| Web UI copy-paste | Same files | Human pastes grok.com output | Zero setup |
 
-Append-only message list. Types include `goal` (delegate), `telemetry`. `bus_check` can interrupt the loop to replan.
-
-### 10.2 MoE route (`node_moe_route`)
-
-**Designed behavior:** If this slot lacks `desktop_exec` but goal mentions `chrome`/`browser`, delegate goal to another slot via bus.
-
-**Actual behavior on Slot 1:** Slot 1 always has `desktop_exec` → **always returns `self`** → MoE delegation is **inert**. Browser goals stay on Slot 1.
-
-Slot 2 is a **relay specialist** (capture `MEMORY.llm_response` from browser chat), not a general browser executor.
+### 10.1 file_proxy two-pass flow
 
 ```mermaid
-flowchart LR
-    G[Goal with chrome/browser keyword]
-    M[moe_route Slot 1]
-    P[planner Slot 1]
-    R[relay Slot 2]
+sequenceDiagram
+    participant S as server.py
+    participant F as request.json
+    participant A as AI responder
 
-    G --> M
-    M -->|desktop_exec present| P
-    M -.->|designed but inactive| R
+    S->>F: Write pass-1 request (no DECIDE NOW)
+    A->>F: Read request
+    A->>F: Write response (prose reasoning)
+    S->>F: Write pass-2 request (contains DECIDE NOW)
+    A->>F: Read request + SCREEN
+    A->>F: Write response (role JSON only)
+    S->>S: Parse JSON → execute / verify
 ```
+
+### 10.2 Response JSON shape
+
+```json
+{
+  "id": "<same as request.id>",
+  "choices": [{
+    "message": {
+      "content": "<prose OR role JSON on DECIDE NOW pass>"
+    }
+  }]
+}
+```
+
+### 10.3 LM Studio
+
+1. Load model; start server port **1234**.
+2. Set `transport: openai` in `prompts/model.json`.
+3. Restart `server.py` — no `comms/` polling.
+4. Small models often fail two-pass JSON; strong remote file_proxy is more reliable today.
+
+### 10.4 grok.com offload
+
+Same mechanical steps as file_proxy:
+
+1. `GET /state` — current goal/step.
+2. Open `comms/slot1_cognition/request.json`.
+3. Copy `messages` (especially **SCREEN**) into grok.com.
+4. Pass 1 → prose; Pass 2 (`DECIDE NOW`) → JSON only.
+5. Save `response.json` with matching `id`.
+
+### 10.5 Multi-slot
+
+| Slot | Wiring | Port | Role |
+|------|--------|------|------|
+| 1 | `wiring.json` | 9078 | Desktop executor |
+| 2 | `wiring_relay.json` | 9079 | Browser chat capture |
+
+`POST /slots/start {"slots":[1,2]}` from root **9077**.
 
 ---
 
 ## 11. Human quick start
 
-### 11.1 Prerequisites
-
-- Windows 10/11 with interactive desktop session
-- Python 3.11+ on PATH
-- Chrome installed (for browser goals)
-- Git clone: `git clone https://github.com/wgabrys88/endgame-ai.git`
-
-### 11.2 Start Slot 1 (file_proxy mode — default)
+**Prerequisites:** Windows 10/11, Python 3.11+, Chrome for browser goals.
 
 ```powershell
 cd C:\path\to\endgame-ai
@@ -561,62 +625,36 @@ python server.py
 
 Panel: **http://127.0.0.1:9078/**
 
-### 11.3 Post a goal
-
 ```powershell
+# Post goal
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:9078/run `
   -ContentType 'application/json' -Body '{"goal":"open notepad and type hello"}'
-```
 
-### 11.4 You (or an AI) respond to cognition
-
-Watch for `comms\slot1_cognition\request.json`. Write `response.json`. Repeat until:
-
-```powershell
+# Poll until done
 Invoke-RestMethod http://127.0.0.1:9078/state
-# satisfied: true, step >= len(plan)
-```
 
-### 11.5 Clean start between goals
-
-```powershell
+# Clean between goals
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:9078/llm-proxy/clear `
   -ContentType 'application/json' -Body '{"confirm":true}'
 ```
 
-Optionally delete `state.slot1.json` and `bus.json` for a fully fresh run.
-
-### 11.6 Switch to LM Studio
-
-1. Start LM Studio local server (port 1234).
-2. Set `transport: openai` in `prompts/model.json`.
-3. Restart `server.py`.
-4. Post goal — no `comms/` polling needed; model must still honor two-pass JSON.
+Watch `comms\slot1_cognition\request.json` → write `response.json` until `satisfied: true`.
 
 ---
 
-## 12. Examples: Notepad, Google, Shakira
+## 12. Benchmark examples
 
-### 12.1 Notepad + hello
+### Notepad
 
-**Goal:** `open notepad and type hello`
+Goal: `open notepad and type hello`
 
-**Typical successful history:**
+Success history pattern: `hotkey win+r` → `write notepad` → `press enter` → `write hello`; verify `confirm_launch_chain`, `confirm_write_to_writable`.
 
-```
-[1] hotkey win+r; write notepad; press enter  → OK
-[2] verify:confirm_launch_chain               → confirm
-[3] write hello                               → OK
-[4] verify:confirm_write_to_writable          → confirm
-```
+### Google
 
-**Act hint when SCREEN shows Notepad focused:** `write` with `value: hello`, empty target.
+Goal: `navigate to google.com in chrome`
 
-### 12.2 Google Chrome
-
-**Goal:** `navigate to google.com in chrome`
-
-**Reliable act (DECIDE NOW pass):**
+Act (DECIDE NOW):
 
 ```json
 {"record_type":"action","data":{"conclusion":"EXECUTE","actions":[
@@ -624,33 +662,19 @@ Optionally delete `state.slot1.json` and `bus.json` for a fully fresh run.
 ]}}
 ```
 
-**Expected verify:** `confirm_browser_open_url` in history (structural preflight).
+Expect `confirm_browser_open_url` in history.
 
-### 12.3 Shakira Waka Waka on YouTube
+### Shakira / YouTube (partial)
 
-**Goal:** `play shakira waka waka on youtube`
+Goal: `play shakira waka waka on youtube`
 
-**Proven path (open_url, not click-play):**
-
-Step 1 act:
-
-```json
-{"verb":"open_url","target":"chrome","value":"youtube.com/results?search_query=Shakira+Waka+Waka"}
-```
-
-Step 2 act:
-
-```json
-{"verb":"open_url","target":"chrome","value":"youtube.com/watch?v=pRpeEdMmmQ0"}
-```
-
-**Gap:** Does not click a search result or verify player DOM state (`pause`/`playing`). Reached watch URL — partial proof.
+Proven via two `open_url` steps (search URL, then `watch?v=pRpeEdMmmQ0`). **Gap:** no click on search result; no player DOM proof.
 
 ---
 
-## 13. HTTP API reference
+## 13. HTTP API
 
-**There is no `/slots/status`.** Use:
+**No `/slots/status`.** Use:
 
 | Method | Path | Purpose |
 |--------|------|---------|
@@ -658,151 +682,240 @@ Step 2 act:
 | GET | `/system` | Root snapshot (slot 0) |
 | GET | `/state` | Full run state |
 | POST | `/run` | `{"goal":"..."}` |
-| POST | `/resume` | Resume paused state |
-| POST | `/pause` | Pause loop |
-| POST | `/llm-proxy/clear` | `{"confirm":true}` — clear stale cognition |
-| POST | `/relay/clear` | Clear browser relay queue |
-| POST | `/slots/start` | `{"slots":[1,2]}` (root) |
-| POST | `/slots/stop` | Stop slot workers |
-| POST | `/slots/run` | Post goal to slot via root |
+| POST | `/resume` / `/pause` | Control loop |
+| POST | `/llm-proxy/clear` | `{"confirm":true}` |
+| POST | `/relay/clear` | Clear relay queue |
+| POST | `/slots/start` | `{"slots":[1,2]}` |
 | GET | `/wiring/audit` | Validate wiring |
-| POST | `/wiring` | Hot-reload wiring |
 
 Ports: root **9077**, Slot 1 **9078**, Slot 2 **9079**.
 
 ---
 
-## 14. Observation behavior (mouse sweeps)
+## 14. Observation (mouse sweeps)
 
-Each `observe` node runs a **full-screen hover scan** when `hover_scan_enabled: true` (~400+ cursor probes). Expected **once per step**.
+Each `observe` runs a full-screen hover scan when `hover_scan_enabled: true` (~400+ probes) — **once per step attempt**.
 
-**Multiple back-to-back sweeps** = verify retries:
+Multiple back-to-back sweeps = verify retries:
 
 ```
-observe → act → verify → reflect(deny) → observe → act → ...
+observe → act → verify(deny) → reflect → observe → ...
 ```
 
-Also: up to `observe.wait_retries` (6) extra observe passes inside one node if `< min_elements` actionable `[ID]` targets.
+Up to `observe.wait_retries` (6) extra passes if `< min_elements` actionable `[ID]` targets.
 
-Check `history`, `step`, `retries`, `last_error` in `/state` when the cursor keeps sweeping.
+Check `history`, `step`, `retries`, `last_error` in `/state` when cursor keeps sweeping.
 
 ---
 
-## 15. Known failures (MoE / honest gaps)
+## 15. Known gaps
 
 | ID | Issue | Impact |
 |----|-------|--------|
-| F1 | MoE inert on Slot 1 (`desktop_exec` always present) | Browser goals never delegate to Slot 2 |
-| F2 | `plan_failed` → `bus_post` with no reflect/replan | Silent death on planner parse failure |
-| F3 | YouTube via `open_url` direct watch URL | No click-play; thin player-state evidence |
-| F4 | Stale `request.json` between goals | Planner blocks until `/llm-proxy/clear` |
-| F5 | Small LM Studio models | JSON parse failures on two-pass DECIDE NOW |
+| F1 | MoE inert on Slot 1 (`desktop_exec` always present) | Browser never delegates to Slot 2 |
+| F2 | `plan_failed` → `bus_post` — no reflect | Silent death on planner parse failure |
+| F3 | YouTube via direct `open_url` watch URL | No click-play; thin player evidence |
+| F4 | Stale `request.json` between goals | Blocks until `/llm-proxy/clear` |
+| F5 | Small LM Studio models | JSON parse failures on DECIDE NOW |
 | F6 | Windows foreground lock (rare) | `focus_window` false on protected windows |
-| F7 | P1 chatbot benchmark not run | Wait/memory capture rules unproven E2E |
-| F8 | Codebase size | `server.py` ~3400 lines — candidate for shrink without losing behavior |
+| F7 | P1 chatbot not run | Wait/memory capture rules unproven E2E |
+| F8 | `server.py` size | Shrink candidate — modify/remove before adding |
+
+```mermaid
+flowchart LR
+    G[Goal mentions chrome]
+    M[moe_route Slot 1]
+    P[planner Slot 1]
+    R[relay Slot 2]
+
+    G --> M
+    M -->|desktop_exec present always| P
+    M -.->|designed inactive| R
+```
 
 ---
 
-## 16. Remaining work
+## 16. Remaining work (priority)
 
-Priority order for the next session:
-
-1. **Shrink, don't sprawl** — audit `server.py` / wiring for dead paths; remove before adding.
-2. **YouTube click-play** — act should click `[ID]` result, verify player signals in SCREEN.
-3. **P1 chatbot** — `llm_request` + `llm_wait_response` with wait-deny rules; prove `memory.llm_response`.
-4. **Harness cleanup** — ensure `/llm-proxy/clear` + idle wait between goals (no stale planner).
-5. **MoE or document** — either fix delegation semantics or remove MoE theater from wiring.
-6. **`plan_failed` recovery** — edge to reflect or explicit operator signal.
-7. **LM Studio path** — test with capable local model; document minimum model size.
-8. **Relay Slot 2** — prove browser chat capture E2E.
+```mermaid
+flowchart TD
+    P1[1. Shrink codebase] --> P2[2. YouTube click-play]
+    P2 --> P3[3. P1 chatbot E2E]
+    P3 --> P4[4. Harness hygiene clear between goals]
+    P4 --> P5[5. MoE fix or remove]
+    P5 --> P6[6. plan_failed recovery]
+    P6 --> P7[7. LM Studio capable model test]
+    P7 --> P8[8. Relay Slot 2 E2E]
+```
 
 **Definition of done (stretch):**
 
-- [ ] Every `[W#]` in WINDOWS focusable to foreground (HWND path)
+- [ ] Every `[W#]` in WINDOWS focusable via HWND path
 - [ ] Google nav with `confirm_browser_open_url` in history
-- [ ] YouTube with click-play or honest player-state failure reason
+- [ ] YouTube click-play or honest player-state failure
 - [ ] Wait-only steps never `step_confirmed` without memory evidence
 - [ ] Chatbot P1 benchmark
-- [ ] Net LOC reduced or documented justification for size
+- [ ] `self_modify` proven on one stuck goal
+- [ ] Net code reduced or dead paths removed
 
 ---
 
-## 17. Development discipline for the next AI
+## 17. Development discipline
 
-### 17.1 Read before write
+### Read before write
 
-1. `prompts/wiring.json` — rules, topology, roles
+1. `prompts/wiring.json`
 2. `server.py` — `NODES`, `node_verify`, `RULE_CHECKERS`, `call_node`
 3. `desktop.py` — `observe`, `resolve_window_target`, `focus_window`
 4. `comms/slot1_cognition/request.json` — **what Endgame actually saw**
 5. `state.slot1.json` — `history`, `last_error`, `step`
 
-### 17.2 Modify or remove — do not inflate
+### Modify or remove — do not inflate
 
 - Prefer wiring rule changes over Python policy.
-- If adding a `match` key → update `RULE_CONDITIONS` + `RULE_CHECKERS`.
-- **Do not** add new proxy runner scripts, verification frameworks, or duplicate docs.
-- **Do not** add features without removing equivalent dead code.
-- Run `python test_mechanical_fixes.py` after mechanical changes only.
+- New `match` key → update `RULE_CONDITIONS` + `RULE_CHECKERS`.
+- **Do not** add proxy runners, verification frameworks, or duplicate docs.
+- **Do not** add features without removing dead code.
+- `python test_mechanical_fixes.py` after mechanical changes only.
 
-### 17.3 Proof standard
-
-A benchmark passes only when:
+### Proof standard
 
 ```powershell
-(Invoke-RestMethod http://127.0.0.1:9078/state).history
 (Invoke-RestMethod http://127.0.0.1:9078/state).satisfied -eq $true
+(Invoke-RestMethod http://127.0.0.1:9078/state).history
 ```
 
-Cognition was file_proxy or LM Studio — stated explicitly in commit/capture.
+Cognition transport must be stated in commit/capture. SCREEN-driven responses only.
 
 ---
 
-## 18. Copy-paste handover prompt
+## 18. Next AI — copy-paste handover prompt
 
 Paste into Claude Code, Cursor, Grok, or any new session with **zero prior context**:
 
 ```
 You are continuing Endgame-AI — a Windows desktop ROD operator that replaces the human at the keyboard.
 
-REPO: https://github.com/wgabrys88/endgame-ai branch codex/self-referential-relay
+REPO: https://github.com/wgabrys88/endgame-ai
+BRANCH: codex/self-referential-relay
 PORT: Slot 1 = 9078
+DOCS: README.md is the only documentation — read it fully before changing code.
 
-VISION: Endgame observes UIA, executes verbs, evaluates wiring rules. External AI supplies JSON decisions only — never drives the mouse. wiring.json is the brain (32 rules, 12 nodes, 22 edges).
+VISION
+Endgame observes UIA, executes verbs, evaluates wiring rules. External AI supplies JSON decisions only — never drives the mouse. wiring.json is the brain (32 rules, 12 nodes, 22 edges). Target: any LLM provider via file_proxy, LM Studio, or grok.com offload.
 
-PROVEN (live file_proxy, Endgame owned observe/act):
+OPERATOR REPLACEMENT: ~40% complete. Mechanical loop works; autonomy and benchmark coverage incomplete.
+
+PROVEN (live file_proxy, Endgame owned observe/act — Grok read SCREEN, did NOT manually control desktop):
 - open notepad and type hello → satisfied, confirm_launch_chain + confirm_write_to_writable
-- navigate to google.com in chrome → open_url, confirm_browser_open_url in history
-- play shakira waka waka on youtube → open_url search + watch URL, partial (no click-play)
+- navigate to google.com in chrome → open_url, confirm_browser_open_url
+- play shakira waka waka on youtube → open_url search + watch URL, PARTIAL (no click-play)
 
-HOW TO OPERATE (mandatory):
-1. python server.py with ENDGAME_SLOT=1 env vars
+NOT PROVEN: P1 chatbot, self_modify recovery, MoE delegation, full P0 re-run after last fixes.
+
+YOUR PRIMARY GOAL
+Close the gap from ~40% to ~70% operator replacement:
+1. Re-run P0 benchmarks with SCREEN-driven file_proxy cognition (not p0_file_proxy_runner.py)
+2. YouTube: click [ID] search result OR add player-state verify rule
+3. P1 chatbot: llm_request + llm_wait_response with memory.llm_response proof
+4. Shrink server.py / remove dead paths BEFORE adding anything
+5. Fix plan_failed → reflect OR document removal
+6. /llm-proxy/clear between every goal in harness runs
+
+HOW TO OPERATE (mandatory every session)
+1. python server.py with ENDGAME_SLOT=1 env vars (see README §11)
 2. POST /run {"goal":"..."}
 3. Poll comms/slot1_cognition/request.json
-4. Write response.json with same id; two-pass: no DECIDE NOW → prose; DECIDE NOW → role JSON only
-5. Read SCREEN in act requests — decide from observed [W#] and [ID], never invent targets
-6. Poll GET /state until satisfied or terminal error
+4. Read SCREEN in act requests — decide from [W#] and [ID], never invent targets
+5. Two-pass: no DECIDE NOW → prose only; DECIDE NOW → role JSON only in content
+6. Write response.json with same id as request
+7. Poll GET /state until satisfied or terminal error
+8. Proof = satisfied:true + history showing real verbs + rule_id on verify entries
 
-FORBIDDEN:
-- Manual Chrome/Notepad control outside Endgame for proofs
-- p0_file_proxy_runner.py canned scripts as proof (automation only)
-- Adding new files before auditing what to remove/modify
+FORBIDDEN
+- Manual Chrome/Notepad/YouTube control outside Endgame for proofs
+- p0_file_proxy_runner.py / harness_common canned scripts as E2E proof
+- New files before auditing what to modify or remove
+- Claiming benchmark pass without reading request.json + state.slot1.json
 
-KEY FILES: server.py (graph+rules+LLM), desktop.py (observe+focus+open_url), actions.py (verbs), prompts/wiring.json
+KEY FILES
+server.py (graph+rules+LLM), desktop.py (observe+focus+open_url), actions.py (verbs), prompts/wiring.json
 
-REMAINING: shrink codebase, YouTube click-play, P1 chatbot, MoE fix or removal, plan_failed recovery, LM Studio hardening
-
-DISCIPLINE: Modify/remove existing code. wiring.json for policy. test_mechanical_fixes.py for mechanical regressions only.
-Read request.json + state.slot1.json to understand what Endgame produced — do not add parallel test harnesses.
+DISCIPLINE
+Modify/remove existing code. Policy in wiring.json. test_mechanical_fixes.py for mechanical regressions only (11 tests).
 ```
 
 ---
 
-## 19. Repository layout
+## 19. ChatGPT Deep Research prompt
+
+Paste into a **ChatGPT project** (Deep Research mode) with the repo URL attached or uploaded README:
+
+```
+Deep research brief: Endgame-AI desktop operator
+
+Repository: https://github.com/wgabrys88/endgame-ai
+Branch: codex/self-referential-relay
+Platform: Windows 10/11, Python stdlib only, no pip
+
+Research questions — answer each with evidence from the repo and comparable systems:
+
+1. WHAT WAS BUILT
+   - What is the ROD (Reflect-Observe-Decide) loop architecture?
+   - How does wiring.json act as a declarative "brain" separate from server.py?
+   - What mechanical capabilities exist (UIA observation, verbs, focus contract, open_url)?
+   - What cognition transports exist (file_proxy, LM Studio, multi-slot relay)?
+   - What was proven in live sessions vs what was only coded?
+
+2. HOW IT WAS BUILT
+   - Trace the data flow: POST /run → planner → observe → act(SCREEN) → verify(rules) → reflect
+   - How does the two-pass LLM contract work (reasoning pass vs DECIDE NOW JSON pass)?
+   - How do verify rules (RULE_CHECKERS) short-circuit before verifier LLM?
+   - What is the valid proof path (read request.json SCREEN → write response.json) vs forbidden path (p0_file_proxy_runner canned scripts)?
+   - What mechanical fixes landed on codex/self-referential-relay branch?
+
+3. HOW MUCH HUMAN OPERATOR IS REPLACED
+   - Map each human desktop operator skill to Endgame capability and rate completeness (~40% claimed).
+   - What benchmarks pass, partial-pass, or were not run?
+   - What gaps block claiming autonomous desktop operation?
+
+4. WHAT AND HOW TO BUILD MORE (prioritized recommendations)
+   - YouTube click-play and player-state verification — wiring vs Python changes?
+   - P1 chatbot (llm_request, llm_wait_response, memory.llm_response) — what rules already exist?
+   - self_modify wiring_patch — when should it fire, what ops exist?
+   - MoE delegation — fix or remove? Current inert behavior on Slot 1.
+   - plan_failed recovery — best pattern for ROD graphs?
+   - Codebase shrink strategy for server.py without losing behavior.
+   - LM Studio minimum model requirements for two-pass JSON reliability.
+   - Comparison to: Anthropic computer use, OpenAI operator agents, UFO/Windows Agent Arena, pywinauto+LLM wrappers — what is Endgame's unique design bet?
+
+5. RISKS AND ANTI-PATTERNS
+   - Why scripted file_proxy runners invalidate benchmarks.
+   - Stale request.json deadlock.
+   - Foreground focus failures on Windows.
+   - Policy drift between wiring.json and RULE_CHECKERS in server.py.
+
+Deliverable format:
+- Executive summary (1 page)
+- Architecture diagram description (mermaid-compatible)
+- Gap analysis table with effort estimates (S/M/L)
+- Recommended 3-session roadmap for next implementer
+- Bibliography of repo files to read in order
+
+Constraints for recommendations:
+- Python stdlib only, no pip
+- Prefer wiring.json policy changes over new Python
+- Modify/remove before add — codebase anti-bloat
+- Proofs require SCREEN-driven cognition, not canned responses
+```
+
+---
+
+## 20. Repository layout
 
 | Path | Role |
 |------|------|
-| `server.py` | HTTP API, ROD loop, rules, LLM, self_modify (~3400 LOC) |
+| `server.py` | HTTP API, ROD loop, rules, LLM, self_modify |
 | `desktop.py` | UIA observation, `[W#]` tokens, focus, `open_url` |
 | `actions.py` | Verb dispatch |
 | `colony.py` | Multi-slot process wrapper |
@@ -812,31 +925,29 @@ Read request.json + state.slot1.json to understand what Endgame produced — do 
 | `prompts/model.json` | Slot 1 cognition transport |
 | `prompts/model_relay.json` | Slot 2 cognition transport |
 | `wiring-editor.html` | Operator panel |
-| `test_mechanical_fixes.py` | Focus + wait-deny unit tests (11 tests) |
-| `harness_common.py` | Shared server/proxy helpers — **not proof** |
-| `p0_file_proxy_runner.py` | Canned P0 driver — **not proof** |
-| `run_verification.py` | Scratch artifact capture for CI |
+| `test_mechanical_fixes.py` | Focus + wait-deny tests (11 pass) |
+| `harness_common.py` | Server/proxy helpers — **not E2E proof** |
+| `p0_file_proxy_runner.py` | Canned P0 driver — **not E2E proof** |
+| `run_verification.py` | Scratch artifact capture |
 
 **Runtime (gitignored):** `state*.json`, `bus.json`, `comms/`, `__pycache__/`, `prompts/traces.jsonl`, `prompts/wiring.backup.*.json`
 
 ---
 
-## 20. Authoritative counts
+## 21. Authoritative counts
 
 Inspect `prompts/wiring.json` after edits:
 
-| Item | Slot 1 value |
-|------|--------------|
+| Item | Slot 1 |
+|------|--------|
 | Rules | **32** |
 | Topology nodes | **12** |
 | Topology edges | **22** |
-| `verb_normalize` entries | **5** |
-| `SELF_MODIFY_OPS` | **15** (`server.py`) |
 | `limits.max_attempts` / `max_replans` | **7** / **3** |
 | `limits.max_self_modify` | **3** |
 | `observe.desktop_tree_enabled` | **false** |
 
-Slot 2 relay: **13 rules** (`confirm_relay_wait` **removed**).
+Slot 2 relay: **13 rules** (`confirm_relay_wait` removed).
 
 ---
 
@@ -844,4 +955,4 @@ Slot 2 relay: **13 rules** (`confirm_relay_wait` **removed**).
 
 Research operator tooling. Not production-hardened.
 
-**Session handoff complete.** Next agent: read §17–§18, poll `request.json`, shrink and polish — do not bloat.
+**Session handoff complete.** Next agent: §18 prompt → poll `request.json` → shrink and polish — do not bloat.
