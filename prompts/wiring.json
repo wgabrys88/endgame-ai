@@ -332,6 +332,10 @@
                 "source": "state.current_step.done_when"
               },
               {
+                "label": "SCREEN",
+                "source": "state.screen"
+              },
+              {
                 "label": "LAST_ACTIONS",
                 "source": "state.last_actions"
               },

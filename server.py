@@ -2205,7 +2205,13 @@ def _verify_history_entry(state, rule_id: str, verdict: str, signal: str) -> dic
 
 
 def node_verify(state, node_cfg):
-    """Verify from descriptive step + act outcomes only — act is sole SCREEN consumer."""
+    """Verify step with fresh SCREEN observation + act outcomes."""
+    if not state.get("no_desktop"):
+        state = dict(state)
+        state["screen"] = observe_screen()
+        meta = last_observation_snapshot()
+        if meta:
+            state["screen_meta"] = meta
     rule = evaluate_rules("verify", state, WIRING)
     if rule and rule.get("verdict") == "deny":
         rid = str(rule.get("id", "") or "")
