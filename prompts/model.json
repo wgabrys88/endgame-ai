@@ -1,6 +1,6 @@
 {
   "transport": "openai",
-  "host": "http://localhost:1234",
+  "host": "http://192.168.16.31:1234",
   "model": "nvidia-nemotron-3-nano-4b",
   "temperature": 0.3,
   "top_p": 0.9,
