@@ -185,6 +185,27 @@ CRITICAL RULES:
 - System requires native Windows Python (UIA via ctypes)
 ```
 
+
+## Verifying ROD Is Active
+
+Check  after a run. If ROD is working:
+-  field = Call 1 output (free thinking, may contain prose + JSON)
+-  field = Call 2 output (clean JSON after self-echo)
+- These two fields will be DIFFERENT
+
+If they are IDENTICAL, ROD is broken — the system is doing single-call mode.
+
+## Model Configuration
+
+ hyperparameters that matter for ROD:
+
+| Key | Value | Why |
+|-----|-------|-----|
+|  | 0.15 | Retry escalation per attempt |
+|  | 1.06 | Encourages Call 2 to produce different (cleaner) output than Call 1 |
+|  | 2048 | Budget for EACH call (Call 1 can use it all for thinking) |
+
+LM Studio reasoning mode (reasoning_content field) is NOT required. ROD uses content from Call 1 as the echo. If reasoning_content is populated by the model, it's preferred over content.
 ## License
 
 MIT
