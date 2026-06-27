@@ -403,6 +403,8 @@ def ensure_files() -> None:
 
 
 def main() -> None:
+    if sys.platform != "win32":
+        sys.exit("ERROR: engine.py requires native Windows Python (desktop.py needs ctypes.WinDLL). Do not run from WSL.")
     ensure_files()
     wiring = runtime.load_wiring()
     bind = wiring.get("runtime", {}).get("http_bind", "0.0.0.0")
