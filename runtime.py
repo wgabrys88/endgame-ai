@@ -794,15 +794,11 @@ def call_node(node_cfg: dict[str, Any], state: dict[str, Any], wiring: dict[str,
         temp = base_temp if attempt == 0 else min(1.0, base_temp + bump * attempt)
         # Call 1: model reasons freely
         rod_content, rod_reasoning = llm(system, user, temperature=temp)
-        rod_output = (rod_reasoning or rod_content or "").strip()
-        # Call 2: echo reasoning back, model sees its own prior thought and produces clean output
-        rod_user = user + "\n\nROD_REASONING_CONTENT:\n" + (rod_output or "(none)")
+        reasoning = (rod_reasoning or rod_content or "").strip()
+        # Call 2: ALWAYS. Echo reasoning back — model re-reasons and produces smarter output
+        rod_user = user + "\n\nROD_REASONING_CONTENT:\n" + (reasoning or "(none)")
         content, _ = llm(system, rod_user, temperature=temp)
-        reasoning = rod_output
         parsed = extract_json_object(content)
-        if not parsed:
-            # Fallback: check if JSON is in reasoning itself
-            parsed = extract_json_object(reasoning)
         if parsed:
             break
     patch = reasoning_patch(circuit, content, parsed, state, wiring)

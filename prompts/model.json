@@ -1,7 +1,7 @@
 {
   "transport": "openai",
   "host": "http://192.168.16.31:1234",
-  "model": "gemma-4-e2b-it",
+  "model": "nvidia-nemotron-3-nano-4b",
   "temperature": 0.3,
   "top_p": 0.9,
   "top_k": 20,
