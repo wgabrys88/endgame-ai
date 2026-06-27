@@ -2,29 +2,36 @@
   "transport": "openai",
   "host": "http://localhost:1234",
   "model": "nvidia-nemotron-3-nano-4b",
+  "temperature": 0.3,
+  "top_p": 0.9,
+  "top_k": 20,
+  "max_tokens": 2048,
+  "timeout": 900,
+  "stream": false,
+  "stop": [],
   "file_proxy": {
     "request_path": "comms/slot1_cognition/request.json",
     "response_path": "comms/slot1_cognition/response.json",
     "archive_dir": "comms/slot1_cognition/archive",
     "poll_interval_ms": 1000
   },
-  "temperature_bump": 0.15,
-  "timeout": 900,
-  "temperature": 0.3,
-  "top_p": 0.9,
-  "top_k": 20,
-  "max_tokens": 2048,
-  "stream": false,
-  "stop": [],
-  "presence_penalty": 0.0,
-  "frequency_penalty": 0.0,
-  "logit_bias": {},
-  "repeat_penalty": 1.06,
   "browser_ai": {
     "browser": "opera",
     "url": "https://grok.com",
-    "input_element_hint": "Ask Grok anything",
+    "domain": "grok.com",
+    "open_wait_ms": 5000,
     "response_wait_ms": 15000,
-    "max_response_length": 4000
+    "response_min_chars": 20,
+    "retries": 2,
+    "submit_key": "enter",
+    "input_hints": [
+      "ask",
+      "message",
+      "prompt",
+      "chat",
+      "grok",
+      "anything",
+      "what do you want"
+    ]
   }
 }

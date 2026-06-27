@@ -1,9 +1,12 @@
 *
-!server.py
+!engine.py
+!runtime.py
 !desktop.py
 !actions.py
 !colony.py
 !wiring-editor.html
+!nodes/
+!nodes/*.py
 !prompts/
 !prompts/wiring.json
 !prompts/wiring_relay.json

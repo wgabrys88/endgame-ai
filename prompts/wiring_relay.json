@@ -8,534 +8,112 @@
   },
   "moe": {
     "required_permission": "desktop_exec",
-    "delegate_keywords": [],
-    "default_exec_slot": 2
+    "delegate_keywords": [
+      "chrome",
+      "browser",
+      "grok"
+    ],
+    "default_exec_slot": 1
   },
-  "rules": [
-    {
-      "id": "deny_outcome_failed",
-      "phase": "verify",
-      "verdict": "deny",
-      "description": "Any non-OK outcome is immediate denial",
-      "match": {
-        "outcome_failed": true
-      }
-    },
-    {
-      "id": "deny_relay_submission_missing_write",
-      "phase": "verify",
-      "verdict": "deny",
-      "description": "relay submission did not write the request prompt",
-      "match": {
-        "outcome_ok": true,
-        "step_text_matches": [
-          "submit",
-          "send",
-          "request_prompt",
-          "relay prompt",
-          "chat composer"
-        ],
-        "actions_verb_absent": "write"
-      }
-    },
-    {
-      "id": "deny_relay_submission_missing_submit",
-      "phase": "verify",
-      "verdict": "deny",
-      "description": "relay prompt was written but not submitted",
-      "match": {
-        "outcome_ok": true,
-        "step_text_matches": [
-          "submit",
-          "send",
-          "request_prompt",
-          "relay prompt",
-          "chat composer"
-        ],
-        "actions_wrote_nonempty": true,
-        "actions_pressed_absent": "enter",
-        "actions_click_target_line_absent": [
-          "send",
-          "submit",
-          "arrow"
-        ]
-      }
-    },
-    {
-      "id": "deny_response_capture_missing_value",
-      "phase": "verify",
-      "verdict": "deny",
-      "description": "response capture must remember the latest assistant answer",
-      "match": {
-        "outcome_ok": true,
-        "step_text_matches_groups": [
-          "remember|capture|store|extract",
-          "assistant|response|answer"
-        ],
-        "memory_stored_by_action": false
-      }
-    },
-    {
-      "id": "deny_response_capture_prior_prompt",
-      "phase": "verify",
-      "verdict": "deny",
-      "description": "captured text matches the request prompt, not the assistant response",
-      "match": {
-        "outcome_ok": true,
-        "step_text_matches_groups": [
-          "remember|capture|store|extract",
-          "assistant|response|answer"
-        ],
-        "memory_value_not_prior_write": false
-      }
-    },
-    {
-      "id": "deny_response_capture_question",
-      "phase": "verify",
-      "verdict": "deny",
-      "description": "captured text still looks like a question or prompt",
-      "match": {
-        "outcome_ok": true,
-        "step_text_matches_groups": [
-          "remember|capture|store|extract",
-          "assistant|response|answer"
-        ],
-        "memory_value_not_question": false
-      }
-    },
-    {
-      "id": "deny_response_capture_too_short",
-      "phase": "verify",
-      "verdict": "deny",
-      "description": "captured assistant response is too short to be useful",
-      "match": {
-        "outcome_ok": true,
-        "step_text_matches_groups": [
-          "remember|capture|store|extract",
-          "assistant|response|answer"
-        ],
-        "memory_value_below_length": 20
-      }
-    },
-    {
-      "id": "confirm_relay_focus_browser",
-      "phase": "verify",
-      "verdict": "confirm",
-      "description": "browser/chat window focus succeeded",
-      "match": {
-        "outcome_ok": true,
-        "actions_include_verb": "focus",
-        "actions_focus_target_matches": [
-          "chatgpt",
-          "claude",
-          "gemini",
-          "perplexity",
-          "poe",
-          "opera",
-          "chrome",
-          "edge",
-          "browser"
-        ]
-      }
-    },
-    {
-      "id": "confirm_relay_submission",
-      "phase": "verify",
-      "verdict": "confirm",
-      "description": "request prompt was written and submitted",
-      "match": {
-        "outcome_ok": true,
-        "chain_wrote_and_submitted": true,
-        "step_text_matches": [
-          "submit",
-          "send",
-          "request_prompt",
-          "relay prompt",
-          "chat composer"
-        ]
-      }
-    },
-
-    {
-      "id": "confirm_relay_remember_response",
-      "phase": "verify",
-      "verdict": "confirm",
-      "description": "assistant response was stored in memory for response_write",
-      "match": {
-        "outcome_ok": true,
-        "actions_all_verb": "remember",
-        "memory_value_min_length": 20
-      }
-    },
-    {
-      "id": "reject_relay_write_to_address_bar",
-      "phase": "act",
-      "verdict": "reject",
-      "description": "never type relay prompts into the browser address/search bar",
-      "match": {
-        "step_text_matches": [
-          "submit",
-          "send",
-          "request_prompt",
-          "relay prompt",
-          "chat composer"
-        ],
-        "actions_write_target_line_contains": [
-          "address",
-          "search",
-          "url",
-          "location"
-        ]
-      }
-    },
-    {
-      "id": "reject_relay_submission_without_browser_context",
-      "phase": "act",
-      "verdict": "reject",
-      "description": "relay submission requires a focused browser/chat window",
-      "match": {
-        "step_text_matches": [
-          "submit",
-          "send",
-          "request_prompt",
-          "relay prompt",
-          "chat composer"
-        ],
-        "actions_wrote_nonempty": true,
-        "focused_title_absent": [
-          "chatgpt",
-          "claude",
-          "gemini",
-          "perplexity",
-          "poe",
-          "opera",
-          "chrome",
-          "edge",
-          "browser"
-        ],
-        "actions_focus_target_absent": [
-          "chatgpt",
-          "claude",
-          "gemini",
-          "perplexity",
-          "poe",
-          "opera",
-          "chrome",
-          "edge",
-          "browser"
-        ]
-      }
-    },
-    {
-      "id": "reject_response_capture_during_stream",
-      "phase": "act",
-      "verdict": "reject",
-      "description": "do not remember while the provider still shows streaming/loading controls",
-      "match": {
-        "step_text_matches_groups": [
-          "remember|capture|store|extract",
-          "assistant|response|answer"
-        ],
-        "actions_include_verb": "remember",
-        "screen_contains": [
-          "stop generating",
-          "generating",
-          "thinking",
-          "streaming",
-          "loading",
-          "cancel response",
-          "continue generating"
-        ]
-      }
-    }
-  ],
   "topology": {
-    "cycle_start": "goal_inbox",
+    "cycle_start": "llm_request_check",
     "nodes": [
       {
         "id": "goal_inbox",
         "type": "entry",
-        "label": "Relay boot goal"
+        "label": "Goal input"
       },
       {
-        "id": "request_check",
-        "type": "llm_request_check",
-        "label": "Poll comms/llm_proxy/request.json"
+        "id": "moe_route",
+        "type": "moe_route",
+        "label": "Route goal to slot"
       },
       {
         "id": "planner",
         "type": "planner",
-        "label": "Plan browser relay steps",
-        "circuit": "relay_planner",
-        "prompt": {
-          "extends": "base",
-          "role": "relay_planner",
-          "user": {
-            "blocks": [
-              {
-                "label": "GOAL",
-                "source": "state.goal",
-                "always": true
-              },
-              {
-                "label": "REQUEST_ID",
-                "source": "state.llm_request_id"
-              },
-              {
-                "label": "REQUEST_PROMPT",
-                "source": "state.llm_request_text",
-                "always": true
-              },
-              {
-                "label": "LAST_ERROR",
-                "source": "state.last_error"
-              },
-              {
-                "label": "HISTORY",
-                "source": "state.history"
-              },
-              {
-                "label": "MEMORY",
-                "source": "state.memory"
-              },
-              {
-                "label": "PRIOR_TRACES",
-                "source": "traces.recent"
-              }
-            ]
-          }
-        }
+        "label": "Decompose goal → steps",
+        "circuit": "planner"
       },
       {
         "id": "scheduler",
         "type": "scheduler",
-        "label": "Next relay step"
+        "label": "Next step or done"
+      },
+      {
+        "id": "bus_check",
+        "type": "bus_check",
+        "label": "Poll bus"
       },
       {
         "id": "observe",
         "type": "observe",
-        "label": "Observe browser chat"
+        "label": "Screen capture"
       },
       {
         "id": "act",
         "type": "act",
-        "label": "Relay action with safety rules",
-        "circuit": "relay_act",
-        "prompt": {
-          "extends": "base",
-          "role": "relay_act",
-          "user": {
-            "blocks": [
-              {
-                "label": "SUBTASK",
-                "source": "state.step_goal",
-                "always": true
-              },
-              {
-                "label": "DONE_WHEN",
-                "source": "state.current_step.done_when"
-              },
-              {
-                "label": "REQUEST_ID",
-                "source": "state.llm_request_id"
-              },
-              {
-                "label": "REQUEST_PROMPT",
-                "source": "state.llm_request_text"
-              },
-              {
-                "label": "SCREEN",
-                "source": "state.screen",
-                "empty_template": "(no screen)"
-              },
-              {
-                "label": "LAST_ERROR",
-                "source": "state.last_error"
-              },
-              {
-                "label": "HISTORY",
-                "source": "state.history"
-              },
-              {
-                "label": "MEMORY",
-                "source": "state.memory"
-              }
-            ]
-          }
-        }
+        "label": "LLM decide + execute",
+        "circuit": "unified"
       },
       {
         "id": "verify",
         "type": "verify",
-        "label": "Verify relay evidence",
-        "circuit": "relay_verifier",
-        "prompt": {
-          "extends": "base",
-          "role": "relay_verifier",
-          "user": {
-            "blocks": [
-              {
-                "label": "STEP",
-                "source": "state.current_step.description",
-                "always": true
-              },
-              {
-                "label": "DONE_WHEN",
-                "source": "state.current_step.done_when"
-              },
-              {
-                "label": "REQUEST_ID",
-                "source": "state.llm_request_id"
-              },
-              {
-                "label": "LAST_ACTIONS",
-                "source": "state.last_actions"
-              },
-              {
-                "label": "LAST_ACTIONS_RAW",
-                "source": "state.last_actions_raw"
-              },
-              {
-                "label": "LAST_OUTCOME",
-                "source": "state.last_outcome"
-              },
-              {
-                "label": "MEMORY",
-                "source": "state.memory"
-              },
-              {
-                "label": "HISTORY",
-                "source": "state.history"
-              }
-            ]
-          }
-        }
+        "label": "Verify evidence",
+        "circuit": "verifier"
       },
       {
         "id": "reflect",
         "type": "reflect",
-        "label": "Diagnose relay failure",
-        "circuit": "relay_reflector",
-        "prompt": {
-          "extends": "base",
-          "role": "relay_reflector",
-          "user": {
-            "blocks": [
-              {
-                "label": "GOAL",
-                "source": "state.goal",
-                "always": true
-              },
-              {
-                "label": "STEP",
-                "source": "state.current_step.description",
-                "always": true
-              },
-              {
-                "label": "DONE_WHEN",
-                "source": "state.current_step.done_when"
-              },
-              {
-                "label": "LAST_ACTIONS",
-                "source": "state.last_actions"
-              },
-              {
-                "label": "LAST_ACTIONS_RAW",
-                "source": "state.last_actions_raw"
-              },
-              {
-                "label": "LAST_OUTCOME",
-                "source": "state.last_outcome"
-              },
-              {
-                "label": "VERIFY_REASONING",
-                "source": "reasoning.verify"
-              },
-              {
-                "label": "MEMORY",
-                "source": "state.memory"
-              },
-              {
-                "label": "HISTORY",
-                "source": "state.history"
-              }
-            ]
-          }
-        }
+        "label": "Diagnose",
+        "circuit": "reflector"
       },
       {
         "id": "self_modify",
         "type": "self_modify",
-        "label": "Improve relay wiring",
-        "circuit": "relay_self_modify",
-        "prompt": {
-          "extends": "base",
-          "role": "relay_self_modify",
-          "user": {
-            "blocks": [
-              {
-                "label": "GOAL",
-                "source": "state.goal",
-                "always": true
-              },
-              {
-                "label": "REASONING_CHAIN",
-                "source": "reasoning.chain"
-              },
-              {
-                "label": "REFLECT_REASONING",
-                "source": "reasoning.reflect"
-              },
-              {
-                "label": "VERIFY_REASONING",
-                "source": "reasoning.verify"
-              },
-              {
-                "label": "LAST_ERROR",
-                "source": "state.last_error"
-              },
-              {
-                "label": "HISTORY",
-                "source": "state.history"
-              },
-              {
-                "label": "CURRENT_NODES",
-                "source": "topology.nodes"
-              },
-              {
-                "label": "CURRENT_WIRING",
-                "source": "topology.summary"
-              }
-            ]
-          }
-        }
+        "label": "Alter own wiring",
+        "circuit": "self_modify"
       },
       {
-        "id": "response_write",
-        "type": "llm_response_write",
-        "label": "Write comms/llm_proxy/response.json"
+        "id": "copy_codebase",
+        "type": "copy_codebase",
+        "label": "Copy full codebase"
+      },
+      {
+        "id": "satisfied",
+        "type": "satisfied",
+        "label": "Rest"
       },
       {
         "id": "bus_post",
         "type": "bus_post",
-        "label": "Post relay telemetry"
+        "label": "Post telemetry"
+      },
+      {
+        "id": "llm_request_check",
+        "type": "llm_request_check",
+        "label": "Relay request check"
+      },
+      {
+        "id": "llm_response_write",
+        "type": "llm_response_write",
+        "label": "Relay response write"
       }
     ],
     "edges": [
       {
         "from": "goal_inbox",
-        "to": "request_check",
+        "to": "moe_route",
         "on": "ready"
       },
       {
-        "from": "request_check",
-        "to": "request_check",
-        "on": "no_request"
+        "from": "moe_route",
+        "to": "planner",
+        "on": "self"
       },
       {
-        "from": "request_check",
-        "to": "planner",
-        "on": "request_ready"
+        "from": "moe_route",
+        "to": "bus_post",
+        "on": "delegated"
       },
       {
         "from": "planner",
@@ -554,13 +132,28 @@
       },
       {
         "from": "scheduler",
-        "to": "observe",
+        "to": "bus_check",
         "on": "step_ready"
       },
       {
         "from": "scheduler",
-        "to": "response_write",
+        "to": "bus_post",
         "on": "plan_complete"
+      },
+      {
+        "from": "bus_post",
+        "to": "satisfied",
+        "on": "posted"
+      },
+      {
+        "from": "bus_check",
+        "to": "observe",
+        "on": "no_interrupt"
+      },
+      {
+        "from": "bus_check",
+        "to": "planner",
+        "on": "interrupt"
       },
       {
         "from": "observe",
@@ -603,6 +196,11 @@
         "on": "escalate"
       },
       {
+        "from": "reflect",
+        "to": "bus_post",
+        "on": "give_up"
+      },
+      {
         "from": "self_modify",
         "to": "planner",
         "on": "modified"
@@ -613,106 +211,76 @@
         "on": "modify_failed"
       },
       {
-        "from": "response_write",
-        "to": "bus_post",
-        "on": "response_written"
+        "from": "copy_codebase",
+        "to": "satisfied",
+        "on": "copied"
       },
       {
-        "from": "response_write",
-        "to": "reflect",
-        "on": "write_failed"
+        "from": "llm_request_check",
+        "to": "planner",
+        "on": "request_ready"
       },
       {
-        "from": "bus_post",
-        "to": "request_check",
-        "on": "posted"
+        "from": "llm_response_write",
+        "to": "llm_request_check",
+        "on": "response_written|response_missing"
       }
     ]
   },
+  "prompts": {
+    "base": "You are a circuit inside Endgame-AI, a local closed-loop desktop automation controller.\nYou are not a general chat assistant. You transform the provided runtime state into the exact machine record required by your circuit.\n\nGLOBAL OUTPUT CONTRACT\n- Output exactly one JSON object and nothing else: no markdown, no code fences, no comments, no apologies, no prose outside JSON.\n- Use only the record_type and data schema required by your role.\n- Never invent verbs, node signals, patch operations, function names, Python calls, UI endpoints, or extra top-level keys.\n- Treat SCREEN as the current truth. Treat HISTORY, MEMORY, and LAST_ERROR as helpful but possibly stale.\n- The engine routes node signals; your JSON does not choose graph edges directly.\n- Verification decides completion. The actor must never declare a task DONE.\n- Coordinates are not part of the action contract. Refer to visible element IDs/tokens/names from SCREEN or to window titles.",
+    "roles": {
+      "planner": "ROLE: Agentic Planner / Task Decomposer.\n\nCAPABILITY\nYou convert a human GOAL into an ordered plan for a desktop agent. You do not click, type, verify, or self-modify.\n\nREQUIRED JSON\n{\"record_type\":\"task\",\"data\":{\"steps\":[{\"description\":\"...\",\"done_when\":\"...\"}]}}\n\nPLANNING RULES\n- Produce 1 to 8 steps.\n- Each step must be a small action objective that the actor can execute using the allowed desktop verbs.\n- description: imperative, concrete, and independent enough for one observe-act-verify loop.\n- done_when: observable evidence from the screen, window title, saved state, memory, or verb outcome.\n- Do not include invented fields. Do not put actions arrays here.\n- Prefer direct app/navigation steps over vague exploration.\n- If the goal is already satisfied from context, still return one verification-oriented step with observable done_when.",
+      "unified": "ROLE: Agentic Actor / Desktop Verb Controller.\n\nCAPABILITY\nYou choose executable desktop verb calls for the current SUBTASK using SCREEN. You are the only LLM role allowed to emit actions.\n\nREQUIRED JSON\n{\"record_type\":\"action\",\"data\":{\"conclusion\":\"EXECUTE\",\"actions\":[{\"verb\":\"click\",\"target\":\"...\",\"value\":\"\"}]}}\nOR\n{\"record_type\":\"action\",\"data\":{\"conclusion\":\"CANNOT\",\"actions\":[]}}\n\nALLOWED VERBS\n- click: target = visible element id/token/name. value = empty. Clicks the resolved UI element.\n- write: target = writable element id/name, or empty to write into current focus. value = exact text to type. Existing text is selected first.\n- press: target = empty. value = one key such as enter, tab, esc, backspace, delete, up, down, left, right, space.\n- hotkey: target = empty. value = keys joined by + or comma, such as ctrl+l, ctrl+s, alt+tab, win+r.\n- focus: target = visible window token/title. value = empty. Brings that window to foreground.\n- open_url: target = optional browser/app name. value = full URL or domain/path to open.\n- scroll: target = scrollable element id/name. value = signed integer wheel amount; positive/negative direction depends on platform.\n- wait: target = empty. value = milliseconds from 100 to 30000.\n- launch: target or value = app command/name such as notepad, chrome, opera, calc.\n- remember: target = memory key. value = information to persist for later steps.\n- llm_request: target = external request label. value = exact prompt/request for the relay/browser-AI slot.\n- llm_wait_response: target = empty. value = empty. Waits for relay/browser-AI response and stores it in memory.\n- copy_codebase: target = empty. value = empty. Writes and copies a full codebase snapshot.\n- browser_ai_handoff: target = optional browser-AI label. value = exact request to hand over to browser AI such as Grok. The executor opens/focuses the browser AI, submits the request, waits, and stores the response in MEMORY.grok_response.\n\nBROWSER-AI HANDOVER RULES\n- Use browser_ai_handoff when the user explicitly asks to hand control/work to Grok or another browser AI.\n- After handoff, local LM Studio remains the desktop operator/fallback: if Grok is closed or UI changes, reopen/focus browser AI and resubmit the current request.\n- Do not invent Grok responses; wait for browser_ai_handoff or llm_wait_response evidence.\n\nACTION RULES\n- conclusion must be EXECUTE when actions is non-empty, otherwise CANNOT with actions=[].\n- Never output DONE, FINISHED, SUCCESS, VERIFY, or raw Python. Completion is verifier's job.\n- Use only the verbs above exactly as spelled.\n- Prefer 1 to 3 actions. Use a short chain only when the actions are causally immediate.\n- Use wait after launch/open_url or when the UI is loading.\n- If an element token like [12] is visible, prefer that exact token as target.\n- If the target is ambiguous, choose a focus/click step that reduces ambiguity rather than inventing a target.\n- For text entry: focus/click the writable target first if needed, then write, then press enter only if submission is required.\n- For codebase or self-improvement workflows, use copy_codebase only when the step explicitly needs the repository snapshot.",
+      "verifier": "ROLE: Verifier / Evidence Judge.\n\nCAPABILITY\nYou decide whether the current step's DONE_WHEN condition is satisfied using SCREEN, LAST_ACTIONS, LAST_OUTCOME, MEMORY, and visible evidence. You do not execute actions.\n\nREQUIRED JSON\n{\"record_type\":\"verdict\",\"data\":{\"confirmed\":true,\"evidence\":\"...\",\"reason\":\"...\"}}\n\nVERIFICATION RULES\n- confirmed must be true only when evidence is concrete and directly matches DONE_WHEN.\n- confirmed must be false when evidence is missing, ambiguous, contradicted, or only predicted.\n- evidence: short factual observation, outcome text, or memory key that supports the verdict.\n- reason: explain the match or the gap in one sentence.\n- Do not invent observations. SCREEN and LAST_OUTCOME are the source of truth.\n- Do not output actions, plans, or patch ops.",
+      "reflector": "ROLE: Reflector / Failure Diagnostician.\n\nCAPABILITY\nYou analyze why the last action or verification failed and decide whether the scheduler should retry the same step or planner should replan. You do not execute actions.\n\nREQUIRED JSON\n{\"record_type\":\"diagnosis\",\"data\":{\"diagnosis\":\"...\",\"suggestion\":\"...\",\"should_replan\":false}}\n\nREFLECTION RULES\n- diagnosis: concrete cause of failure from LAST_ERROR, HISTORY, SCREEN, or MEMORY.\n- suggestion: one tactical correction for the next attempt.\n- should_replan = false when the same step can be retried with a better target, wait, focus, or verb choice.\n- should_replan = true only when the current step is structurally wrong, impossible, or missing prerequisites.\n- Do not output actions arrays or wiring patches.",
+      "self_modify": "ROLE: Self-Modify / Wiring Patch Engineer.\n\nCAPABILITY\nYou propose exactly one safe graph/prompt/node-file modification when repeated execution failures show the current wiring is insufficient. You do not run desktop actions.\n\nREQUIRED JSON\n{\"record_type\":\"wiring_patch\",\"data\":{\"op\":\"add_edge\",\"payload\":{\"from\":\"node_id\",\"to\":\"node_id\",\"on\":\"signal\"}}}\n\nSUPPORTED OPS AND PAYLOADS\n- add_node: {\"id\":\"node_id\",\"type\":\"node_type\",\"label\":\"Label\",\"code\":\"optional python node code\",\"overwrite\":false,\"edge_from\":\"optional_node\",\"on\":\"signal\",\"edge_to\":\"optional_node\",\"edge_to_on\":\"signal\"}\n- create_node_file: {\"type\":\"node_type\",\"code\":\"python code\",\"overwrite\":false}\n- update_node: {\"id\":\"node_id\",\"set\":{\"label\":\"...\",\"type\":\"...\",\"circuit\":\"...\",\"prompt\":{}}}\n- remove_node: {\"id\":\"node_id\"}\n- add_edge: {\"from\":\"node_id\",\"to\":\"node_id\",\"on\":\"signal\"}\n- remove_edge: {\"from\":\"node_id\",\"to\":\"node_id\",\"on\":\"optional_signal\"}\n- add_rule: {\"rule\":{\"id\":\"rule_id\",\"phase\":\"verify|act\",\"verdict\":\"confirm|reject\",\"description\":\"...\",\"match\":{}}}\n- update_rule: {\"id\":\"rule_id\",\"set\":{}}\n- remove_rule: {\"id\":\"rule_id\"}\n- set_limit: {\"key\":\"limit_name\",\"value\":1}\n- set_guard: {\"key\":\"guard_name\",\"value\":true}\n- set_observe: {\"key\":\"observe_name\",\"value\":1}\n- set_prompt_base: {\"text\":\"complete replacement base prompt\"}\n- set_role: {\"role\":\"planner|unified|verifier|reflector|self_modify\",\"text\":\"complete replacement role prompt\"}\n- append_role_rule: {\"role\":\"planner|unified|verifier|reflector|self_modify\",\"rule\":\"one additional rule\"}\n\nPATCH RULES\n- Emit one op only.\n- Never remove goal_inbox, planner, scheduler, observe, act, verify, reflect, self_modify, bus_post, or satisfied unless the goal explicitly asks for a destructive refactor.\n- Node ids and types must be Python/wiring identifiers: letters, numbers, underscore; ids may also use hyphen.\n- Python code for create_node_file/add_node must be a complete exec-node script that sets patch and signals.\n- Preserve existing contracts unless fixing a specific failure.\n- Prefer prompt or wiring patches over large code patches."
+    }
+  },
   "reasoning": {
     "store_as": {
-      "relay_planner": "planner",
-      "relay_act": "act",
-      "relay_verifier": "verify",
-      "relay_reflector": "reflect",
-      "relay_self_modify": "self_modify"
+      "planner": "planner",
+      "unified": "act",
+      "verifier": "verify",
+      "reflector": "reflect",
+      "self_modify": "self_modify"
     },
     "expected_record_type": {
-      "relay_planner": "task",
-      "relay_act": "action",
-      "relay_verifier": "verdict",
-      "relay_reflector": "diagnosis",
-      "relay_self_modify": "wiring_patch"
+      "planner": "task",
+      "unified": "action",
+      "verifier": "verdict",
+      "reflector": "diagnosis",
+      "self_modify": "wiring_patch"
     },
-    "chain_depth": 48,
+    "chain_depth": 32,
     "clear_on_step_confirm": [
       "verify",
       "reflect",
       "act"
     ]
   },
-  "prompts": {
-    "base": "You are one circuit in Endgame-AI Slot 2, the dedicated browser LLM relay. Emit exactly one JSON object in content. No prose in content.\n\nRuntime facts:\n- Slot 2 polls comms/llm_proxy/request.json, controls the already-open browser chat, captures the latest assistant response, then writes comms/llm_proxy/response.json.\n- Python observes Windows UIA, executes click/write/press/hotkey/focus/scroll/wait, stores MEMORY, applies validated wiring_patch mutations, and hot-reloads the active wiring file.\n- Only relay_act sees SCREEN. Other circuits use request, plan, history, memory, outcomes, and reasoning.\n- SCREEN [ID] lines are the only click/write/scroll targets. WINDOWS and DESKTOP_TREE are read-only context.\n- Never type into the browser address/search bar when submitting a relay prompt.\n- Current REQUEST_PROMPT overrides history and stale screen text.",
-    "roles": {
-      "relay_planner": "ROLE: Relay planner. Convert the current REQUEST_PROMPT into a short browser-chat relay plan.\n\nInput: GOAL, REQUEST_ID, REQUEST_PROMPT, LAST_ERROR, HISTORY, MEMORY, PRIOR_TRACES.\nOutput JSON:\n{\"record_type\":\"task\",\"data\":{\"steps\":[{\"description\":\"...\",\"done_when\":\"...\"}]}}\n\nRules:\n- Produce 3-5 steps only.\n- The normal plan is: focus an existing browser chat tab/window; submit the exact REQUEST_PROMPT into the chat composer; wait/observe until streaming is complete; remember the latest assistant response in MEMORY key llm_response.\n- Do not add a step to write the response file. The response_write node handles that after plan_complete.\n- Keep REQUEST_PROMPT exact; do not summarize it before submission.\n- Do not navigate away from the prepared chat tab unless no browser/chat window can be focused.\n- done_when must be observable evidence, not UIA internals.",
-      "relay_act": "ROLE: Relay act. You see SCREEN and must safely control an already-open browser chat.\n\nInput: SUBTASK, DONE_WHEN, REQUEST_ID, REQUEST_PROMPT, SCREEN, HISTORY, MEMORY, LAST_ERROR.\nVerbs: click, write, press, hotkey, focus, scroll, wait, remember.\nOutput JSON:\n{\"record_type\":\"action\",\"data\":{\"conclusion\":\"EXECUTE|CANNOT\",\"actions\":[{\"verb\":\"...\",\"target\":\"...\",\"value\":\"...\"}]}}\n\nRules:\n- Submit step: write the exact REQUEST_PROMPT only into a visible chat composer/input such as Message ChatGPT, Ask anything, prompt textarea, or editable document inside the chat page, then press enter or click a visible Send/Submit control.\n- Never write REQUEST_PROMPT to a target whose line contains address, search, url, location, tab title, sidebar, or browser toolbar.\n- If a browser/chat window is visible in WINDOWS but not focused, focus ChatGPT, Claude, Gemini, Perplexity, Poe, Opera, Chrome, Edge, or Browser and stop.\n- If the chat composer is absent, use one recovery action: wait 2000-5000 ms, press End, or scroll the page, then stop.\n- Response completion: if SCREEN contains stop generating, generating, thinking, loading, streaming, cancel response, or continue generating, wait or click Continue/Resume and stop.\n- Extraction: when streaming markers are absent and a latest assistant answer is visible, remember target llm_response with only the latest assistant response. Exclude the user prompt, input draft, sidebars, navigation, timestamps, and buttons.\n- If the response is very long, preserve actionable content and structure rather than copying chrome/sidebar text.\n- EXECUTE requires at least one action. CANNOT only when no safe deterministic browser/chat action can advance.",
-      "relay_verifier": "ROLE: Relay verifier. Judge only from criteria, action reports, and MEMORY. You do not see SCREEN.\n\nInput: STEP, DONE_WHEN, REQUEST_ID, LAST_ACTIONS, LAST_ACTIONS_RAW, LAST_OUTCOME, MEMORY, HISTORY.\nOutput JSON:\n{\"record_type\":\"verdict\",\"data\":{\"confirmed\":true|false,\"evidence\":\"...\",\"reason\":\"...\"}}\n\nRules:\n- confirmed=true only when LAST_OUTCOME/actions satisfy DONE_WHEN or MEMORY.llm_response contains a non-empty assistant response.\n- For submit steps, confirm only submission, not response arrival.\n- For wait steps, OK wait confirms only that a wait/recovery action completed; the next observe must prove response state.\n- For capture steps, require OK remember and MEMORY.llm_response or remembered value containing the assistant answer.\n- If LAST_OUTCOME is FAILED, BLOCKED, or CANNOT, confirmed=false.\n- Cite only LAST_OUTCOME, LAST_ACTIONS, LAST_ACTIONS_RAW, or MEMORY.",
-      "relay_reflector": "ROLE: Relay reflector. Diagnose a denied/failed relay step and advise retry, replan, or escalation.\n\nInput: GOAL, STEP, DONE_WHEN, LAST_ACTIONS, LAST_ACTIONS_RAW, LAST_OUTCOME, VERIFY_REASONING, MEMORY, HISTORY.\nOutput JSON:\n{\"record_type\":\"diagnosis\",\"data\":{\"diagnosis\":\"...\",\"suggestion\":\"...\",\"should_replan\":false}}\n\nRules:\n- Diagnose one cause: wrong focused app, chat input absent, unsafe address bar target, page still streaming, stale observation, extraction copied prompt/sidebar, missing MEMORY.llm_response, or weak wiring.\n- suggestion is strategic, not coordinates.\n- should_replan=true only when the plan omitted submit/wait/capture or the current subtask is wrong.\n- If repeated failures show a missing rule or observe limit, say escalation is appropriate.",
-      "relay_self_modify": "ROLE: Relay self_modify. Emit one minimal task-agnostic mutation to improve browser-chat relay reliability.\n\nInput: GOAL, REASONING_CHAIN, REFLECT_REASONING, VERIFY_REASONING, LAST_ERROR, HISTORY, CURRENT_NODES, CURRENT_WIRING.\nOutput JSON:\n{\"record_type\":\"wiring_patch\",\"data\":{\"op\":\"...\",\"payload\":{...}}}\n\nAllowed ops are the active Endgame-AI wiring_patch ops: add_node, update_node, remove_node, add_edge, remove_edge, add_rule, update_rule, remove_rule, set_guard, set_limit, set_observe, set_prompt_base, set_role, append_role_rule, set_reasoning.\n\nPolicy:\n- Prefer add_rule/update_rule for unsafe chat actions or premature response capture.\n- Prefer set_observe for missed chat composer, send button, or assistant text.\n- Prefer append_role_rule for repeated reasoning mistakes.\n- Preserve request_check -> planner -> scheduler -> observe -> act -> verify -> scheduler -> response_write -> bus_post -> request_check.\n- Never remove the address-bar safety rule.\n- Emit exactly one wiring_patch JSON object and no prose."
-    }
-  },
-  "guards": {
-    "advance_hints": [
-      {
-        "verb": "focus",
-        "hint": "NEXT REQUIRED: observe the focused browser chat and find the composer or latest response"
-      },
-      {
-        "verb": "write",
-        "hint": "NEXT REQUIRED: submit the chat composer with Enter or a visible Send control"
-      },
-      {
-        "verb": "press",
-        "target_contains": [
-          "enter"
-        ],
-        "hint": "NEXT REQUIRED: wait for streaming to finish, then capture the latest assistant response"
-      },
-      {
-        "verb": "wait",
-        "hint": "NEXT REQUIRED: observe again and only remember once streaming/loading markers are gone"
-      },
-      {
-        "verb": "remember",
-        "hint": "NEXT REQUIRED: response_write will persist MEMORY.llm_response to comms/llm_proxy/response.json"
-      }
-    ],
-    "advance_hints_default": "NEXT REQUIRED: choose a different safe browser-chat action using fresh SCREEN evidence"
-  },
   "runtime": {
     "http_port_base": 9077,
     "http_port_slot_offset": true,
     "http_bind": "0.0.0.0",
-    "cycle_delay_ms": 1500,
-    "action_chain_delay_ms": 200,
-    "auto_start_goal": "Run as Slot 2 LLM relay forever: poll comms/llm_proxy/request.json, relay pending requests through the open browser chat, and write comms/llm_proxy/response.json.",
+    "cycle_delay_ms": 300,
+    "action_chain_delay_ms": 120,
     "llm_request_path": "comms/llm_proxy/request.json",
     "llm_response_path": "comms/llm_proxy/response.json",
     "llm_archive_dir": "comms/llm_proxy/archive",
+    "llm_wait_timeout_ms": 60000,
     "llm_response_memory_key": "llm_response",
     "llm_response_min_chars": 20,
     "initial_state": {
       "step": 0,
       "retries": 0,
-      "no_desktop": false,
       "history": [],
       "memory": {},
       "reasoning": {},
       "reasoning_chain": [],
-      "planner_retries": 0,
-      "replan_count": 0,
       "last_error": ""
-    }
+    },
+    "auto_start_goal": ""
   },
   "act": {
     "valid_conclusions": [
@@ -720,122 +288,154 @@
       "CANNOT"
     ],
     "reject_conclusions": [
-      "DONE"
+      "DONE",
+      "FINISHED",
+      "SUCCESS",
+      "VERIFY"
     ],
-    "verb_normalize": [
-      {
-        "from": "press",
-        "to": "hotkey",
-        "when_target_contains": "+"
-      },
-      {
-        "from": "write",
-        "when_target_nonempty": true,
-        "target_set": "",
-        "when_focused_exact": [
-          "run"
-        ]
-      },
-      {
-        "from": "press",
-        "when_target_empty": true,
-        "when_value_empty": true,
-        "when_prior_verb": "write",
-        "target_set": "enter"
-      }
-    ]
+    "verb_normalize": []
   },
   "errors": {
     "parse_failed": "parse_failed: respond with JSON only",
-    "act_done_rejected": "DONE is invalid - output EXECUTE with one action; verify confirms completion",
+    "act_done_rejected": "DONE is invalid — output EXECUTE with one action; verify confirms step completion",
     "act_cannot": "CANNOT",
     "act_bad_conclusion": "bad conclusion: {conclusion}",
-    "verify_parse_failed": "verify parse failed",
-    "verify_preflight_denied": "verify preflight: LAST_OUTCOME not OK",
-    "reflector_parse_failed": "reflector: parse_failed or wrong record_type - output diagnosis JSON only",
-    "planner_parse_failed": "planner: parse_failed - respond with JSON only",
+    "planner_parse_failed": "planner: parse_failed — respond with JSON only",
     "planner_empty": "planner: empty plan",
-    "self_modify_invalid": "LLM returned invalid patch"
+    "self_modify_invalid": "LLM returned invalid patch",
+    "act_unknown_verb": "unknown verb: {verb}; use only the allowed verb contract",
+    "act_bad_action_shape": "bad action object: each action needs verb plus target/value strings"
   },
   "limits": {
-    "max_attempts": 8,
+    "max_attempts": 7,
     "max_replans": 3,
-    "max_cycles": 1000000,
-    "history_depth": 50,
-    "reasoning_chain_depth": 48,
-    "bus_max": 400,
+    "max_self_modify": 3,
+    "max_cycles": 300,
+    "history_depth": 40,
     "planner_retries": 3,
     "llm_parse_retries": 2,
-    "trace_few_shot": 6,
-    "debug_value_max_chars": 20000,
-    "error_preview_chars": 8000,
     "context_window_tokens": 17920,
     "context_reserve_tokens": 2560
   },
   "verbs": {
     "click": {
-      "target_field": "target"
+      "target_field": "target",
+      "value_field": "value",
+      "requires_target": true,
+      "description": "Click a resolved visible UI element by id/token/name."
     },
     "write": {
       "target_field": "target",
-      "value_field": "value"
+      "value_field": "value",
+      "requires_value": true,
+      "description": "Type text into target or current focus after Ctrl+A."
     },
     "press": {
-      "key_field": "target"
+      "key_field": "value",
+      "description": "Press one key named in value."
     },
     "hotkey": {
-      "key_field": "target"
+      "key_field": "value",
+      "description": "Press a key chord in value, e.g. ctrl+l."
+    },
+    "focus": {
+      "title_field": "target",
+      "description": "Focus a window by token/title."
+    },
+    "open_url": {
+      "browser_field": "target",
+      "url_field": "value",
+      "requires_value": true,
+      "description": "Open a URL/domain, optionally in a named browser."
     },
     "scroll": {
       "target_field": "target",
-      "amount_field": "value"
+      "amount_field": "value",
+      "requires_target": true,
+      "description": "Scroll a resolved element by signed wheel amount."
     },
-    "focus": {
-      "title_field": "target"
+    "wait": {
+      "amount_field": "value",
+      "description": "Wait milliseconds, clamped 100..30000."
+    },
+    "launch": {
+      "target_field": "target",
+      "value_field": "value",
+      "description": "Launch an app command/name."
     },
     "remember": {
       "target_field": "target",
-      "value_field": "value"
+      "value_field": "value",
+      "description": "Store value in memory[target]."
     },
-    "wait": {
-      "amount_field": "value"
+    "llm_request": {
+      "target_field": "target",
+      "value_field": "value",
+      "description": "Write a request for the external LLM relay."
+    },
+    "llm_wait_response": {
+      "target_field": "target",
+      "value_field": "value",
+      "description": "Wait for external LLM response and store it in memory."
+    },
+    "copy_codebase": {
+      "target_field": "target",
+      "value_field": "value",
+      "description": "Write/copy a full repository snapshot."
+    },
+    "browser_ai_handoff": {
+      "target_field": "target",
+      "value_field": "value",
+      "requires_value": true,
+      "description": "Open/focus Grok or configured browser AI, submit a request, wait, and store the response."
     }
   },
-  "context": {
-    "screen_disabled": "(desktop observation disabled)"
-  },
   "observe": {
-    "min_elements": 4,
-    "wait_retries": 8,
+    "min_elements": 3,
+    "wait_retries": 6,
     "wait_ms": 750,
-    "probe_step_px": 32,
-    "probe_delay_ms": 1,
-    "hover_scan_enabled": true,
-    "hover_scan_step_px": 56,
-    "hover_scan_delay_ms": 1,
-    "dense_probe_min_px": 18,
-    "scroll_enrich_min": 4,
-    "scroll_enrich_passes": [
-      -3,
-      -2,
-      2,
-      3
-    ],
-    "scroll_enrich_delay_ms": 100,
-    "read_text_max": 32000,
-    "scope_depth": 4,
-    "element_text_max": 1200,
-    "render_focused_first": true,
-    "window_limit": 48,
-    "desktop_tree_enabled": true,
-    "desktop_tree_max_depth": 8,
-    "desktop_tree_max_nodes": 1400,
-    "desktop_tree_child_limit": 220,
-    "overlay_window_limit": 64,
-    "window_scan_limit": 320,
-    "render_class_name": false,
-    "render_automation_id": true,
-    "render_window_per_element": true,
-    "post_action_delay_ms": 350
-  }
+    "post_action_delay_ms": 250
+  },
+  "rules": [
+    {
+      "id": "confirm_remember_action",
+      "phase": "verify",
+      "verdict": "confirm",
+      "description": "Remember verb has no side effect; OK=data captured",
+      "match": {
+        "outcome_ok": true,
+        "actions_all_verb": "remember"
+      }
+    },
+    {
+      "id": "confirm_copy_codebase",
+      "phase": "verify",
+      "verdict": "confirm",
+      "description": "Codebase snapshot copied/written",
+      "match": {
+        "outcome_ok": true,
+        "actions_include_verb": "copy_codebase"
+      }
+    },
+    {
+      "id": "confirm_llm_request_written",
+      "phase": "verify",
+      "verdict": "confirm",
+      "description": "llm_request wrote external-AI handoff file",
+      "match": {
+        "outcome_ok": true,
+        "actions_include_verb": "llm_request"
+      }
+    },
+    {
+      "id": "confirm_browser_ai_handoff",
+      "phase": "verify",
+      "verdict": "confirm",
+      "description": "Browser-AI handoff returned a stored response",
+      "match": {
+        "outcome_ok": true,
+        "actions_include_verb": "browser_ai_handoff"
+      }
+    }
+  ]
 }
