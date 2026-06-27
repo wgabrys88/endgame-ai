@@ -3,7 +3,7 @@
 !runtime.py
 !desktop.py
 !actions.py
-!colony.py
+
 !wiring-editor.html
 !nodes/
 !nodes/*.py

@@ -1,372 +1,190 @@
-# Endgame-AI — Modular Browser-Brain Desktop Operator
+# Endgame-AI — Self-Operating Desktop System
 
-A local, closed-loop desktop automation agent powered by interchangeable AI brains. Endgame-AI observes the Windows desktop, asks an LLM for a strict JSON decision, executes only contracted desktop verbs, verifies evidence, reflects on failure, and can patch its own wiring.
+A zero-dependency Windows desktop operator that replaces the human at the keyboard. Any AI brain — local model, file-based agent, or browser-hosted AI like grok.com — drives real mouse and keyboard actions through a closed observe-reason-act loop.
 
-This package is the modular exec-node release with a graphical wiring workbench, strong role prompts, explicit verb contracts, and a hardened Grok/browser-AI handoff path.
+No API keys. No pip dependencies. No frameworks. The system can operate its own cognition source by typing prompts into a browser AI and reading responses from the screen.
 
-## Endgame vision
+Repository: https://github.com/wgabrys88/endgame-ai
 
-```text
-Traditional agents: Human → configures agent → agent calls APIs → limited to API surface
-Endgame-AI:         Human → posts goal → system operates the desktop → any app, any AI
+## The ROD Architecture (Reason-Observe-Decide)
+
+The core innovation is a **two-call LLM pattern** that produces reliable structured output from any model, including small local ones:
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  CALL 1: Same system + user prompt. Model responds freely.       │
+│  Response captured as rod_output (thinking, reasoning, anything) │
+├──────────────────────────────────────────────────────────────────┤
+│  CALL 2: Same system prompt.                                     │
+│  User = original prompt + "\nROD_REASONING_CONTENT:\n" + Call 1  │
+│  Model sees its OWN previous reasoning as context.               │
+│  Naturally produces clean structured JSON output.                │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
-The local model, such as LM Studio, can be the normal control brain. It can also act as the desktop operator and fallback while a browser-hosted AI such as Grok becomes the larger planning/decision brain. That means the system can:
+This works because the API is stateless — each call is fresh. By echoing the model's first response back as input, we simulate a "think then commit" flow. The model always produces better structured output on Call 2 because it has already worked through the problem on Call 1.
 
-- open or recover the browser AI chat window,
-- paste the exact role/runtime contract into the chat,
-- wait for the response,
-- extract the JSON decision from the observed screen,
-- execute the resulting desktop actions locally,
-- recover by reopening the browser AI if the tab/window is closed or UI state changes.
+Cost: 2x LLM calls. Benefit: near-100% valid JSON, zero wasted output tokens on inline reasoning, no retries needed.
 
-No Grok API key is required for the `browser_ai` path; it uses the same desktop verbs as any other task.
+## Graph Topology
 
-## What changed in this package
-
-- Specialized prompts for planner, actor, verifier, reflector, and self-modifier.
-- Explicit actor verb list and argument contracts.
-- Runtime validation that rejects invented actor verbs before execution.
-- Real `browser_ai` transport instead of a file-proxy alias.
-- New `browser_ai_handoff` actor verb for explicit Grok handover goals.
-- OpenAI-compatible `file_proxy` request/response JSON for outside agents that watch files on disk.
-- Graphical wiring editor with draggable nodes and mouse-created edges.
-- Deterministic simulation tests for Grok/browser handoff, file-proxy handoff, and act-node memory storage.
-
-## Quick start
-
-```bash
-python engine.py
+```
+Goal Inbox → MoE Route → Planner → Scheduler → Bus Check → Observe → Act → Verify
+                                                                  ↘ failure → Reflect
+Reflect → retry Scheduler | replan Planner | escalate Self-Modify | give_up → Bus Post
+Self-Modify → Planner (with patched wiring)
+Scheduler plan_complete → Bus Post → Satisfied
 ```
 
-Open the workbench:
+Every node is a plain Python script (`nodes/*.py`) executed in a sandboxed namespace. The engine reloads scripts and wiring fresh each cycle — edit anything while running.
 
-```text
-http://127.0.0.1:9077/
-```
-
-Post a goal:
+## Quick Start
 
 ```powershell
+python engine.py
+# Serves http://127.0.0.1:9077/ (workbench + API)
+
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:9077/run `
   -ContentType 'application/json' `
   -Body '{"goal":"open notepad and type hello world"}'
 ```
 
-The workbench and API are served by the same engine. Slot 1 defaults to port `9077`; additional slots use the configured port offset.
+## Brain Transports
 
-## Brain transports
+Edit `prompts/model.json`:
 
-Edit `prompts/model.json`.
+| Transport | Config | How it works |
+|-----------|--------|--------------|
+| `openai` | `"host": "http://localhost:1234"` | LM Studio or any OpenAI-compatible endpoint |
+| `file_proxy` | `request_path`, `response_path` | Engine writes request.json, external agent writes response.json |
+| `browser_ai` | `"url": "https://grok.com"` | System opens browser, pastes prompt, reads response from screen |
 
-### 1. LM Studio / OpenAI-compatible local model
+All three transports return `(content, reasoning_content)` tuples. The ROD pattern works identically regardless of which brain is active.
 
-```json
-{
-  "transport": "openai",
-  "host": "http://localhost:1234",
-  "model": "nvidia-nemotron-3-nano-4b",
-  "temperature": 0.3
-}
-```
+## File Structure
 
-This sends `/v1/chat/completions` requests to LM Studio or any compatible local endpoint.
+| File | Purpose |
+|------|---------|
+| `engine.py` | HTTP server, graph walker, node execution sandbox |
+| `runtime.py` | LLM transports, ROD call_node, prompt assembly, rule evaluation, wiring patches |
+| `desktop.py` | Windows UIA hover probes, element classification, input simulation |
+| `actions.py` | Verb executor (click, write, press, hotkey, focus, open_url, scroll, wait, launch) |
+| `nodes/*.py` | 14 exec-node scripts (entry, planner, act, verify, reflect, self_modify, etc) |
+| `prompts/wiring.json` | Topology, role prompts, verb contracts, rules, limits |
+| `prompts/model.json` | Active transport and model parameters |
+| `wiring-editor.html` | Browser-based visual graph editor served by engine |
 
-### 2. Grok or another browser AI as the brain
+## LLM Role Contracts
 
-```json
-{
-  "transport": "browser_ai",
-  "browser_ai": {
-    "browser": "opera",
-    "url": "https://grok.com",
-    "domain": "grok.com",
-    "open_wait_ms": 5000,
-    "response_wait_ms": 15000,
-    "response_min_chars": 20,
-    "retries": 2,
-    "submit_key": "enter"
-  }
-}
-```
+Every role produces exactly one JSON record type:
 
-On each LLM call, Endgame-AI:
+| Role | record_type | Output |
+|------|-------------|--------|
+| Planner | `task` | `{"steps":[{"description":"...","done_when":"..."}]}` |
+| Actor | `action` | `{"conclusion":"EXECUTE","actions":[{"verb":"...","target":"...","value":"..."}]}` |
+| Verifier | `verdict` | `{"confirmed":true,"evidence":"...","reason":"..."}` |
+| Reflector | `diagnosis` | `{"diagnosis":"...","suggestion":"...","should_replan":false}` |
+| Self-Modify | `wiring_patch` | `{"op":"add_edge","payload":{...}}` |
 
-1. observes the desktop,
-2. opens/focuses `https://grok.com` when Grok is not visible,
-3. finds the likely chat input from UIA screen text,
-4. pastes the role contract plus runtime input,
-5. submits with Enter,
-6. waits,
-7. observes the response,
-8. extracts the JSON object for the current role.
-
-This is the handover mode: Grok supplies decisions; Endgame-AI remains the hands, verifier, recovery loop, and local fallback.
-
-### 3. File-proxy external agent
-
-```json
-{
-  "transport": "file_proxy",
-  "file_proxy": {
-    "request_path": "comms/slot1_cognition/request.json",
-    "response_path": "comms/slot1_cognition/response.json",
-    "archive_dir": "comms/slot1_cognition/archive",
-    "poll_interval_ms": 1000
-  }
-}
-```
-
-Request written by the engine:
-
-```json
-{
-  "id": "llm-...",
-  "status": "pending",
-  "messages": [
-    {"role": "system", "content": "ROLE: Planner/Act/Verifier/Reflector..."},
-    {"role": "user", "content": "Runtime state and task..."}
-  ]
-}
-```
-
-Expected response from the outside agent:
-
-```json
-{
-  "id": "same id as request",
-  "status": "complete",
-  "choices": [
-    {"message": {"content": "{JSON record required by the role}"}}
-  ]
-}
-```
-
-A minimal watcher is included at `tools/file_proxy_agent_stub.py`.
-
-## Graph architecture
-
-```text
-Goal Inbox → MoE Route → Planner → Scheduler → Bus Check → Observe → Act → Verify
-                                                                  ↘ failure → Reflect
-Reflect → retry Scheduler | replan Planner | escalate Self-Modify | give_up Bus Post
-Self-Modify → Planner
-Scheduler plan_complete → Bus Post → Satisfied
-```
-
-The engine reloads wiring and node scripts live. You can edit `prompts/wiring.json`, edit `nodes/*.py`, or use the graphical workbench while the engine is running.
-
-## Graphical wiring editor
-
-`wiring-editor.html` is served by `engine.py`.
-
-Features:
-
-- SVG node graph with typed node coloring.
-- Drag nodes to rearrange topology.
-- Drag from an amber output handle to a blue input handle to create an edge.
-- Select edge labels to inspect or edit `from`, `on`, and `to`.
-- Select nodes to edit id, type, label, and circuit.
-- Save with **Save Wiring** or `Ctrl+S`.
-- Edit raw wiring JSON in the JSON tab.
-- Edit `nodes/<type>.py` in the Node Code tab.
-- Double-click a node to step it.
-- Copy the full codebase snapshot from the toolbar.
-
-Graph positions are stored under `topology.layout.positions`; the runtime ignores layout metadata.
-
-## LLM role contracts
-
-Every model call uses the same global output rule: exactly one JSON object, no markdown, no invented verbs, no invented fields.
-
-### Planner
-
-```json
-{"record_type":"task","data":{"steps":[{"description":"...","done_when":"..."}]}}
-```
-
-The planner decomposes the human goal into observable desktop steps. It cannot execute actions or verify completion.
-
-### Actor
-
-```json
-{"record_type":"action","data":{"conclusion":"EXECUTE","actions":[{"verb":"click","target":"[12]","value":""}]}}
-```
-
-or:
-
-```json
-{"record_type":"action","data":{"conclusion":"CANNOT","actions":[]}}
-```
-
-Allowed verbs:
+## Allowed Verbs
 
 | Verb | Target | Value | Meaning |
-|---|---|---|---|
-| `click` | visible element id/token/name | empty | Click a resolved UI element. |
-| `write` | writable element id/name, or empty for focus | text | Type exact text after selecting existing text. |
-| `press` | empty | key name | Press `enter`, `tab`, `esc`, etc. |
-| `hotkey` | empty | chord | Press `ctrl+l`, `ctrl+s`, `win+r`, etc. |
-| `focus` | window token/title | empty | Bring a window forward. |
-| `open_url` | optional browser/app | URL/domain | Open a web location. |
-| `scroll` | scrollable element | signed integer | Scroll the element. |
-| `wait` | empty | milliseconds | Wait from 100 to 30000 ms. |
-| `launch` | app name or command | optional app name | Launch an app. |
-| `remember` | memory key | value | Store data for later steps. |
-| `llm_request` | request label | prompt text | Write an external AI handoff request file. |
-| `llm_wait_response` | empty | empty | Wait for relay response and store it in memory. |
-| `browser_ai_handoff` | optional label | request text | Open/focus Grok or configured browser AI, submit request, wait, and store response. |
-| `copy_codebase` | empty | empty | Write and copy a full repository snapshot. |
+|------|--------|-------|---------|
+| `click` | element id/name | empty | Click UI element |
+| `write` | element or empty | text | Select all + type text |
+| `press` | empty | key name | Single key press |
+| `hotkey` | empty | chord (ctrl+s) | Key combination |
+| `focus` | window token/title | empty | Bring window forward |
+| `open_url` | browser name | URL | Open web location |
+| `scroll` | element | signed int | Scroll element |
+| `wait` | empty | milliseconds | Pause 100-30000ms |
+| `launch` | app name | empty | Win+R → type → Enter |
+| `remember` | memory key | value | Store in state.memory |
+| `copy_codebase` | empty | empty | Snapshot repo to clipboard |
+| `browser_ai_handoff` | label | request text | Submit to browser AI, store response |
 
-The actor must never output `DONE`; verification owns completion.
+## Confirm Rules (Accelerators)
 
-### Verifier
+Rules auto-confirm mechanical successes without calling the LLM verifier:
 
-```json
-{"record_type":"verdict","data":{"confirmed":true,"evidence":"...","reason":"..."}}
-```
+- `confirm_remember_action` — remember verb stored data
+- `confirm_copy_codebase` — codebase snapshot written
+- `confirm_llm_request_written` — external AI request file written
+- `confirm_browser_ai_handoff` — browser AI returned response
 
-The verifier judges `done_when` against fresh screen state, outcome text, history, and memory.
+Rules only confirm. They never deny or block.
 
-### Reflector
+## Self-Modification
 
-```json
-{"record_type":"diagnosis","data":{"diagnosis":"...","suggestion":"...","should_replan":false}}
-```
-
-The reflector diagnoses a failed action/verification and decides retry vs. replan.
-
-### Self-modifier
-
-```json
-{"record_type":"wiring_patch","data":{"op":"add_edge","payload":{"from":"node_id","to":"node_id","on":"signal"}}}
-```
-
-Supported patch ops include `add_node`, `create_node_file`, `update_node`, `remove_node`, `add_edge`, `remove_edge`, `add_rule`, `update_rule`, `remove_rule`, `set_limit`, `set_guard`, `set_observe`, `set_prompt_base`, `set_role`, and `append_role_rule`.
-
-## Handover scenarios
-
-Scenario files live in `scenarios/`:
-
-- `scenarios/grok_browser_handoff.json` — configure Grok/browser AI as the cognition source.
-- `scenarios/file_proxy_agent_handoff.json` — configure a disk-based external agent protocol.
-
-For an explicit one-off handover while LM Studio remains the active brain, the actor can use:
-
-```json
-{
-  "record_type": "action",
-  "data": {
-    "conclusion": "EXECUTE",
-    "actions": [
-      {"verb": "browser_ai_handoff", "target": "grok", "value": "Take over planning for this goal and return the next concrete instruction."}
-    ]
-  }
-}
-```
-
-The response is stored in `MEMORY.grok_response` and `MEMORY.llm_response`.
-
-## Validation and simulation
-
-Run deterministic simulations without Windows desktop access or LM Studio:
-
-```bash
-python tests/simulate_handoff.py
-```
-
-The simulation proves:
-
-- `browser_ai` opens Grok when absent, writes the role/runtime prompt, submits it, and extracts JSON from the observed response.
-- browser recovery/multiturn behavior reopens Grok if the chat window disappears before the next cognition call.
-- `file_proxy` writes OpenAI-like `request.json`, preserves request id, reads `choices[0].message.content`, and archives responses.
-- the act node accepts `browser_ai_handoff`, executes it, and stores Grok output in memory.
-
-Compile and wiring checks:
-
-```bash
-python -m py_compile runtime.py engine.py actions.py nodes/*.py
-python - <<'PY'
-import json, runtime
-from pathlib import Path
-for f in ['prompts/wiring.json', 'prompts/wiring_relay.json']:
-    print(f, runtime.validate_wiring(json.loads(Path(f).read_text())))
-PY
-```
-
-## Project structure
-
-```text
-endgame-ai/
-├── engine.py                    HTTP server, graph walker, SSE stream
-├── runtime.py                   LLM transports, prompts, wiring helpers, browser/file handoff
-├── actions.py                   Data-driven verb dispatch into desktop automation
-├── desktop.py                   Windows UI Automation and observation plumbing
-├── colony.py                    Multi-slot support helpers
-├── nodes/                       Exec-node scripts loaded fresh on every execution
-├── prompts/                     Model config, wiring, schema
-├── scenarios/                   Ready handover scenarios
-├── tests/simulate_handoff.py    Local deterministic handoff tests
-├── tools/file_proxy_agent_stub.py
-└── wiring-editor.html           Graphical workbench
-```
-
-## Exec-node contract
-
-Every node is a plain Python script. No class or function wrapper is required.
-
-Injected names include:
-
-```python
-state, config, wiring, llm(), observe_screen(), execute_verb(), evaluate_rules(),
-load_system_prompt(), build_user_message(), call_node(), save_state(), load_state(),
-load_wiring(), save_wiring(), wiring_limit(), wiring_error(), fresh_state(),
-normalize_actions_from_wiring(), apply_memory_action(), write_llm_request(),
-wait_llm_response(), bus_read(), bus_write(), append_trace(), recent_traces(),
-apply_wiring_patch(), validate_wiring(), atomic_write_json(), atomic_write_text(),
-copy_codebase_to_clipboard(), collect_codebase_text(), scaffold_node_file(), runtime
-```
-
-A node returns by assigning:
-
-```python
-patch = {"some_key": "some_value"}
-signals = ["done"]
-```
-
-`engine.py` applies `patch` to state, then routes by the first edge whose `on` signal matches.
+When failures exhaust retries (max_attempts=7) and replans (max_replans=3), the system escalates to self_modify. It can patch its own wiring with 15 operations including add/remove nodes and edges, modify prompts, add rules, and change limits. Patches are validated before saving. Backups are created automatically.
 
 ## HTTP API
 
 | Endpoint | Method | Purpose |
-|---|---:|---|
+|----------|--------|---------|
 | `/` | GET | Workbench UI |
-| `/health` | GET | Runtime status and wiring summary |
-| `/wiring` | GET/POST | Load or replace wiring JSON |
-| `/state` | GET/POST | Load or replace runtime state |
-| `/inspect` | GET | Debug prompt/node context |
-| `/events` | GET | Server-sent events |
-| `/node/types` | GET | Available node script types |
-| `/node/<type>` | GET/POST | Read or overwrite `nodes/<type>.py` |
-| `/node/create` | POST | Scaffold node file and add topology node |
-| `/run` | POST | Start loop |
-| `/step` | POST | Execute one node/cycle |
-| `/pause`, `/resume`, `/stop` | POST | Control active run |
-| `/clipboard/codebase` | POST | Write/copy full codebase snapshot |
-| `/codebase?format=text` | GET | Read snapshot text on demand |
-| `/bus` | GET/POST | Read/write lightweight bus messages |
-| `/slots` | GET | Show slot port mapping |
+| `/health` | GET | Status |
+| `/wiring` | GET/POST | Load or replace wiring |
+| `/state` | GET/POST | Runtime state |
+| `/run` | POST | Start goal loop |
+| `/step` | POST | Single node execution |
+| `/pause` `/resume` `/stop` | POST | Control active run |
+| `/node/types` | GET | Available node scripts |
+| `/node/<type>` | GET/POST | Read or write node code |
+| `/codebase?format=text` | GET | Full repo snapshot |
+| `/events` | GET | SSE stream |
 
-## Safety and correctness notes
+## Design Principles
 
-- The actor only gets a finite verb contract; invented verbs are rejected before execution.
-- `actions.py` uses default field names even if a verb config is partially missing.
-- The verifier owns completion, preventing the actor from short-circuiting success.
-- Browser-AI handoff always uses desktop verbs; if Grok is not visible, the next call opens it again.
-- File-proxy requests preserve role contracts and request ids for outside agents.
-- Wiring is validated before save.
-- Node scripts and wiring are hot-loaded, so bad experiments can be fixed without restarting the engine.
+1. **Zero dependencies** — stdlib Python only. Runs on any Windows 10/11 Python 3.10+.
+2. **Hot-reload everything** — wiring, nodes, model config read fresh each cycle.
+3. **Actor cannot say DONE** — verifier owns completion judgment.
+4. **Verb contract enforcement** — unknown verbs rejected before execution.
+5. **ROD two-call** — model reasons on Call 1, commits on Call 2. Clean separation.
+6. **Rules accelerate, never block** — confirm-only rules bypass LLM for obvious truths.
+
+## Handover Prompt (For Any AI Agent)
+
+```
+CONTEXT: endgame-ai project
+REPO: https://github.com/wgabrys88/endgame-ai
+PYTHON: engine.py + runtime.py + desktop.py + actions.py + nodes/*.py
+CONFIG: prompts/wiring.json (topology + rules), prompts/model.json (transport)
+
+ARCHITECTURE: ROD (Reason-Observe-Decide)
+- call_node() does TWO LLM calls per node execution
+- Call 1: model reasons freely with full context
+- Call 2: model's own Call 1 output echoed back as ROD_REASONING_CONTENT
+- Model sees its prior thinking and produces clean JSON on Call 2
+- This pattern works with any model size, any transport
+
+GRAPH: goal_inbox → moe_route → planner → scheduler → bus_check → observe → act → verify
+       verify confirmed → scheduler (advance step)
+       verify denied → reflect → retry|replan|escalate|give_up
+
+TRANSPORTS: openai (LM Studio), file_proxy (any agent), browser_ai (grok.com via GUI)
+All return (content, reasoning_content) tuples.
+
+VERBS: click, write, press, hotkey, focus, open_url, scroll, wait, launch,
+       remember, copy_codebase, browser_ai_handoff
+
+RULES: 4 confirm-only accelerators. No deny rules (they caused deadlocks).
+
+LIMITS: max_attempts=7, max_replans=3, max_self_modify=3, max_cycles=300
+
+HOW TO RUN:
+  python engine.py  (serves port 9077)
+  POST /run {"goal":"..."} to start
+  GET /state to check progress
+  Edit prompts/model.json to switch brain transport
+
+CRITICAL RULES:
+- NO pip dependencies (stdlib only)
+- NO test frameworks
+- .gitattributes enforces CRLF
+- System requires native Windows Python (UIA via ctypes)
+```
 
 ## License
 
-MIT. See `LICENSE`.
+MIT

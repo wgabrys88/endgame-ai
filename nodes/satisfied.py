@@ -1,3 +1,3 @@
 """Terminal rest node."""
-patch = {"satisfied": True, "last_error": ""}
+patch = {"satisfied": not state.get("plan_failed", False), "last_error": ""}
 signals = ["idle"]

@@ -497,7 +497,6 @@ def build_user_message(circuit: str, state: dict[str, Any], node_cfg: dict[str, 
     body = []
     for item in resolve_prompt_blocks(node_cfg, state, wiring):
         body.append(f"{item['label']}:\n{item['value']}")
-    body.append("DECIDE NOW")
     return "\n\n".join(body)
 
 
@@ -509,7 +508,7 @@ def load_system_prompt(circuit: str, state: dict[str, Any] | None = None, node_c
     return (base + "\n\n" + role).strip()
 
 
-def llm(system: str, user: str, temperature: float | None = None, model_override: dict[str, Any] | None = None) -> str:
+def llm(system: str, user: str, temperature: float | None = None, model_override: dict[str, Any] | None = None) -> tuple[str, str]:
     model = {**load_model(), **(model_override or {})}
     transport = model.get("transport", "openai")
     if transport == "file_proxy":
@@ -519,7 +518,7 @@ def llm(system: str, user: str, temperature: float | None = None, model_override
     return llm_openai_compatible(system, user, model, temperature)
 
 
-def llm_openai_compatible(system: str, user: str, model: dict[str, Any], temperature: float | None = None) -> str:
+def llm_openai_compatible(system: str, user: str, model: dict[str, Any], temperature: float | None = None) -> tuple[str, str]:
     host = str(model.get("host", "http://localhost:1234")).rstrip("/")
     url = host + "/v1/chat/completions"
     payload = {
@@ -538,7 +537,8 @@ def llm_openai_compatible(system: str, user: str, model: dict[str, Any], tempera
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             resp = json.loads(r.read().decode("utf-8", errors="replace"))
-        return resp.get("choices", [{}])[0].get("message", {}).get("content", "")
+        msg = resp.get("choices", [{}])[0].get("message", {})
+        return msg.get("content", ""), msg.get("reasoning_content", "")
     except Exception as e:
         raise RuntimeError(f"llm_openai: {e}")
 
@@ -718,7 +718,7 @@ def llm_browser_ai(system: str, user: str, model: dict[str, Any]) -> str:
         response_screen = observe_screen()
         content = _extract_browser_ai_content(response_screen, min_chars=min_chars)
         if len(content.strip()) >= min_chars or extract_json_object(content) is not None:
-            return content
+            return content, ""
         last_error = f"browser_ai response too short after attempt {attempt + 1}"
     raise RuntimeError(f"browser_ai failed: {last_error or 'no response extracted'}")
 
@@ -779,15 +779,35 @@ def reasoning_patch(circuit: str, content: str, parsed: dict[str, Any] | None, s
 
 
 def call_node(node_cfg: dict[str, Any], state: dict[str, Any], wiring: dict[str, Any] | None = None) -> dict[str, Any]:
+    """ROD two-call pattern: Call 1 lets model reason, Call 2 echoes that reasoning back for clean JSON."""
     wiring = wiring or load_wiring()
     circuit = circuit_for_node(node_cfg)
     system = load_system_prompt(circuit, state, node_cfg, wiring)
     user = build_user_message(circuit, state, node_cfg, wiring)
-    content = llm(system, user)
-    parsed = extract_json_object(content)
+    model_cfg = load_model()
+    base_temp = model_cfg.get("temperature", 0.3)
+    bump = model_cfg.get("temperature_bump", 0.15)
+    max_retries = wiring_limit("llm_parse_retries", 2, wiring)
+    content, reasoning, parsed = "", "", None
+    patch = {}
+    for attempt in range(max_retries + 1):
+        temp = base_temp if attempt == 0 else min(1.0, base_temp + bump * attempt)
+        # Call 1: model reasons freely
+        rod_content, rod_reasoning = llm(system, user, temperature=temp)
+        rod_output = (rod_reasoning or rod_content or "").strip()
+        # Call 2: echo reasoning back, model sees its own prior thought and produces clean output
+        rod_user = user + "\n\nROD_REASONING_CONTENT:\n" + (rod_output or "(none)")
+        content, _ = llm(system, rod_user, temperature=temp)
+        reasoning = rod_output
+        parsed = extract_json_object(content)
+        if not parsed:
+            # Fallback: check if JSON is in reasoning itself
+            parsed = extract_json_object(reasoning)
+        if parsed:
+            break
     patch = reasoning_patch(circuit, content, parsed, state, wiring)
-    append_trace({"circuit": circuit, "node": node_cfg.get("id"), "user": user[-4000:], "content": content, "parsed": parsed})
-    return {"content": content, "parsed": parsed, "patch": patch}
+    append_trace({"circuit": circuit, "node": node_cfg.get("id"), "user": user[-4000:], "reasoning": reasoning[:4000], "content": content, "parsed": parsed})
+    return {"content": content, "reasoning": reasoning, "parsed": parsed, "patch": patch}
 
 # ─── Actions / observation ─────────────────────────────────────────────────
 
@@ -850,7 +870,7 @@ def execute_verb(verb: str, target: str = "", value: str = "") -> str:
         )
         model = load_model()
         try:
-            response = llm_browser_ai(handoff_system, str(request), model)
+            response, _ = llm_browser_ai(handoff_system, str(request), model)
             return "browser_ai_response: " + response
         except Exception as e:
             return f"FAILED: browser_ai_handoff: {type(e).__name__}: {e}"
