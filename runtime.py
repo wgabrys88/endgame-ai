@@ -528,9 +528,11 @@ def llm_openai_compatible(system: str, user: str, model: dict[str, Any], tempera
         "max_tokens": model.get("max_tokens", 2048),
         "stream": False,
     }
-    for key in ("top_p", "presence_penalty", "frequency_penalty", "stop"):
+    for key in ("top_p", "presence_penalty", "frequency_penalty", "stop", "repeat_penalty"):
         if key in model:
             payload[key] = model[key]
+    if "thinking" in model:
+        payload["thinking"] = model["thinking"]
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
     timeout = float(model.get("timeout", 120))

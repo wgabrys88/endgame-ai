@@ -5,7 +5,7 @@
   "temperature": 0.3,
   "top_p": 0.9,
   "top_k": 20,
-  "max_tokens": 2048,
+  "max_tokens": 16384,
   "timeout": 900,
   "stream": false,
   "stop": [],
@@ -38,5 +38,8 @@
   "repeat_penalty": 1.06,
   "presence_penalty": 0.0,
   "frequency_penalty": 0.0,
-  "logit_bias": {}
+  "logit_bias": {},
+  "thinking": {
+    "budget_tokens": 4096
+  }
 }
