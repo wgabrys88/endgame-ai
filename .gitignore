@@ -1,51 +1,15 @@
-# ══════════════════════════════════════════════════════════════
-# endgame-ai: ALLOWLIST gitignore
-# Strategy: deny everything (*), then whitelist tracked sources.
-# ══════════════════════════════════════════════════════════════
-
-# Deny all by default
 *
-
-# ─── Tracked: Source ──────────────────────────────────────────
 !server.py
 !desktop.py
 !actions.py
 !colony.py
 !wiring-editor.html
-
-# ─── Tracked: Configuration ──────────────────────────────────
 !prompts/
 !prompts/wiring.json
 !prompts/wiring_relay.json
 !prompts/wiring-schema.json
 !prompts/model.json
 !prompts/model_relay.json
-
-# ─── Tracked: Meta ───────────────────────────────────────────
 !LICENSE
 !.gitignore
 !.gitattributes
-
-# ─── Tracked: Proof ──────────────────────────────────────────
-!proof_grok_satisfied.jsonl
-
-# ─── Explicitly ignored runtime artifacts ─────────────────────
-state.json
-state.slot*.json
-bus.json
-comms/
-prompts/traces.jsonl
-prompts/wiring.backup.json
-prompts/wiring.backup.*.json
-__pycache__/
-*.pyc
-*.log
-terminals/
-mcps/
-.cursor/
-.grok/
-*.tmp
-logs/
-README.md
-DEDUCTION.md
-run_log_phase3.md
