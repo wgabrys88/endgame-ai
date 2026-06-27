@@ -296,6 +296,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     except queue.Empty:
                         self.wfile.write(b": keepalive\n\n")
                         self.wfile.flush()
+                    except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError, OSError):
+                        break
             elif path == "/node/types":
                 send(self, 200, {"types": runtime.available_node_types()})
             elif path.startswith("/node/"):
@@ -319,10 +321,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 send(self, 200, {"slots": [{"slot": 1, "port": runtime.http_port(slot=1)}, {"slot": 2, "port": runtime.http_port(slot=2)}]})
             else:
                 send(self, 404, {"error": "not found", "path": path})
-        except BrokenPipeError:
+        except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError, OSError):
             pass
         except Exception as e:
-            send(self, 500, {"error": f"{type(e).__name__}: {e}"})
+            try:
+                send(self, 500, {"error": f"{type(e).__name__}: {e}"})
+            except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError, OSError):
+                pass
 
     def do_POST(self) -> None:
         path = urllib.parse.urlparse(self.path).path
@@ -379,8 +384,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 send(self, 200, {"ok": True})
             else:
                 send(self, 404, {"error": "not found", "path": path})
+        except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError, OSError):
+            pass
         except Exception as e:
-            send(self, 500, {"error": f"{type(e).__name__}: {e}"})
+            try:
+                send(self, 500, {"error": f"{type(e).__name__}: {e}"})
+            except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError, OSError):
+                pass
 
 
 def ensure_files() -> None:
