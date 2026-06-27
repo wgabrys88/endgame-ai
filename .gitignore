@@ -10,6 +10,7 @@
 !prompts/wiring-schema.json
 !prompts/model.json
 !prompts/model_relay.json
+!README.md
 !LICENSE
 !.gitignore
 !.gitattributes
