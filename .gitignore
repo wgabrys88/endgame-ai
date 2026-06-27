@@ -21,16 +21,13 @@
 !prompts/model.json
 !prompts/model_relay.json
 
-# ─── Tracked: Documentation & Meta ───────────────────────────
-!README.md
-!DEDUCTION.md
+# ─── Tracked: Meta ───────────────────────────────────────────
 !LICENSE
 !.gitignore
 !.gitattributes
 
-# ─── Tracked: Proof & Run Logs ────────────────────────────────
+# ─── Tracked: Proof ──────────────────────────────────────────
 !proof_grok_satisfied.jsonl
-!run_log_phase3.md
 
 # ─── Explicitly ignored runtime artifacts ─────────────────────
 state.json
@@ -49,3 +46,6 @@ mcps/
 .grok/
 *.tmp
 logs/
+README.md
+DEDUCTION.md
+run_log_phase3.md
