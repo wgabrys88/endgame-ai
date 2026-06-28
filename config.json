@@ -2,11 +2,15 @@
   "brain": {
     "transport": "openai",
     "host": "http://localhost:1234",
-    "model": "local-model",
-    "temperature": 0.4,
-    "max_tokens": 2048,
+    "model": "nvidia-nemotron-3-nano-4b",
+    "temperature": 0.3,
+    "top_p": 0.9,
+    "top_k": 20,
+    "repeat_penalty": 1.06,
+    "max_tokens": 16384,
     "timeout": 900,
-    "reason_feedback": true,
+    "thinking": { "budget_tokens": 4096 },
+    "parse_retries": 2,
     "gui": {
       "request_path": "comms/request.json",
       "response_path": "comms/response.json",
@@ -16,7 +20,6 @@
   },
   "loop": {
     "tick_delay_ms": 600,
-    "reasoning_chain_depth": 24,
     "idle_initiative": true
   }
 }

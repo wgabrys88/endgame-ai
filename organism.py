@@ -61,16 +61,6 @@ class Context:
     def memory(self) -> dict:
         return self.state.setdefault("memory", {})
 
-    def last_reasoning(self) -> str:
-        return self.state.get("reasoning", "")
-
-    def remember_reasoning(self, reasoning: str):
-        self.state["reasoning"] = reasoning
-        chain = self.state.setdefault("reasoning_chain", [])
-        chain.append(reasoning[:2000])
-        depth = int(self.cfg.get("loop", {}).get("reasoning_chain_depth", 24))
-        self.state["reasoning_chain"] = chain[-depth:]
-
     def narrate(self, msg: str):
         line = f"{time.strftime('%H:%M:%S')} {msg}"
         self.narration.append(line)
@@ -79,8 +69,10 @@ class Context:
 
     # the organism's own capabilities, exposed to nodes
     def think(self, system: str, user: str) -> tuple[str, dict | None]:
-        content, parsed, reasoning = self.brain.think(system, user, self.last_reasoning())
-        self.remember_reasoning(reasoning)
+        """A full ROD decision (two calls inside the brain). Reasoning feedback happens
+        within the decision; we keep the last reasoning in state for debugging only."""
+        content, parsed, reasoning = self.brain.think(system, user)
+        self.state["last_reasoning"] = reasoning[:2000]
         return content, parsed
 
     def write_node(self, name: str, code: str) -> tuple[bool, str]:
