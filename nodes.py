@@ -113,7 +113,15 @@ def build_user_message(circuit: str, state: dict, wiring: dict) -> str:
     body = []
     for label, source in _BLOCKS.get(circuit, []):
         if source == "wiring_summary":
-            value = {"transport": wiring.get("model", {}).get("transport"), "verbs": list(wiring.get("verbs", {}).keys())}
+            model = wiring.get("model", {})
+            # Show the organism its own cognition config so it can perceive what it is and
+            # what it could change. We name the keys, not the conclusion.
+            value = {
+                "model": {k: model.get(k) for k in ("transport", "host", "model") if k in model},
+                "model.file_proxy": model.get("file_proxy"),
+                "model.browser_ai": model.get("browser_ai"),
+                "verbs": list(wiring.get("verbs", {}).keys()),
+            }
         else:
             value = _block_value(state, source)
         text = _render(value)
