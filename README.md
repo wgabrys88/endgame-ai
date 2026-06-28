@@ -1,90 +1,141 @@
-# endgame-ai — a living, self-evolving desktop organism
+# endgame-ai
 
-A minimal computer-control agent designed as a genuine human-replacement operator on
-your own machine. The loop is deliberately simple and "dumb." Real intelligence and
-long-term growth come from three things:
+An unconstrained, self-evolving desktop organism. It runs on a real Windows machine,
+observes the screen, and operates the mouse and keyboard like a human operator to pursue a
+goal — or, given no goal, to simply *live*: explore, reason about what it sees, and act on
+its own initiative.
 
-1. **Hot-swappable LLM brains** — local OpenAI-compatible servers (LM Studio, llama.cpp,
-   vLLM) or a GUI/browser-hosted agent (e.g. Grok) used interchangeably.
-2. **Runtime self-evolution** — the organism creates, modifies, deletes, and hot-swaps
-   its own independent Python **node modules**, then executes them directly. This is how
-   it expands its own capabilities.
-3. **Stateless reasoning feedback** — every LLM call is stateless; continuity comes from
-   re-injecting the model's own prior reasoning into the next call, so later thinking is
-   noticeably more capable.
+There is no constrained mode. The organism has full control of the machine. Its character
+comes not from rules but from how it is asked to think.
 
-It is alive: with a goal it pursues it and replans; with no goal it still ticks,
-narrates, and may act or grow a capability on its own initiative.
+---
 
-> ⚠️ **This is an explicitly dangerous tool when run with `--autonomous`.** It controls a
-> real desktop with no sandbox and can rewrite its own executable code. Run it only on a
-> machine where you accept that power.
+## The idea
 
-## Files
+A small, dumb loop hosts something that is meant to feel alive. The loop does almost
+nothing: it runs a node, reads the signal that node emits, and follows an edge to the next
+node. All intelligence lives in three places:
 
-| File | Role |
-|------|------|
-| `organism.py` | The living loop, the context object handed to nodes, the dumb router, and the CLI. Entry point. |
-| `brain.py` | Stateless multi-transport LLM (`openai`, `gui`) + reasoning-feedback. |
-| `nodes.py` | The self-evolution substrate: list/read/create/modify/delete/execute node modules. **Contains the single safety point.** |
-| `hands.py` | Thin adapter over the proven `desktop.py` / `actions.py` Windows I/O layer (observe + verbs). |
-| `seed/*.py` | Initial node modules copied into `live_nodes/` on first run. |
-| `config.json` | Brain transport + loop settings. |
+1. **The brain** — a stateless LLM, reached through a swappable transport.
+2. **The circuits** — a planner → act → verify → reflect pipeline whose behaviour is shaped
+   entirely by prompts and a typed-record contract.
+3. **Self-modification** — the organism can rewrite its own wiring at runtime, including
+   *which brain it thinks with*.
 
-Runtime-only (not committed, regenerated): `live_nodes/` (mutable working copy of the
-nodes), `state.json`, `comms/` (gui-transport handoff files).
+The whole system reuses one mature, dependency-free Windows I/O layer (`desktop.py` +
+`actions.py`) and adds a thin, intent-based cognition layer on top. Standard library only.
 
-## How it works
+---
 
-The loop executes the current node, reads the **signal** it emits, and routes:
+## Intent, not strings
 
-1. an explicit `next` in the node's patch wins; else
-2. a signal that names an existing node routes there; else
-3. fall back to the **`mind`** node — the decision-maker.
+The organism never matches literal UI text to decide if it succeeded. The planner writes
+each step's `done_when` as an *intent* ("a text editor window is open", "the page shows the
+chat"), and a dedicated **verifier** judges whether the spirit of that intent is met from
+what is visible on screen. This is what lets it cope with windows it has never seen before.
 
-There is no fixed graph file. `mind` observes the screen, considers the goal/memory, and
-chooses one move: `act` (run a desktop verb), `grow` (author a new node), or `rest`. New
-nodes extend behavior without touching the loop.
+Every LLM reply is a **typed record**, validated against a contract:
 
-### Nodes
+| circuit      | `record_type` | the decision it commits                         |
+|--------------|---------------|-------------------------------------------------|
+| planner      | `task`        | an ordered list of `{description, done_when}`   |
+| act          | `action`      | `conclusion: EXECUTE/CANNOT` + a verb chain     |
+| verify       | `verdict`     | `confirmed: true/false` + evidence              |
+| reflect      | `diagnosis`   | why it failed + retry / replan / escalate       |
+| self_modify  | `wiring_patch`| a `{op, path, value}` edit to its own wiring    |
 
-A node is plain Python run in a namespace with: `ctx` (organism context), `emit(signal,
-**patch)`, `log(msg)`, and stdlib (`time, json, re, os, pathlib`). Through `ctx` a node
-can `ctx.hands.observe()`, `ctx.hands.act(verb, target, value)`, `ctx.think(system,
-user)`, and read/write `ctx.state` / `ctx.memory`. Node files are re-read on every
-execution, so a node modified mid-run is picked up on its next tick — true hot-swap.
+If a circuit returns the wrong record type, the node **fails hard** — it does not guess and
+it does not fall back. Failure is routed to the reflector, which decides what to do next.
 
-## The safety model (single point)
+---
 
-Safety exists in **exactly one place**: `nodes.write_node()` — the moment the organism
-writes or modifies its own node code. Everywhere else (executing nodes, controlling the
-desktop, deleting nodes) is unguarded by design.
+## ROD — the two-call decision
 
-- **Default (guarded):** `write_node` refuses, surfaces the proposed code, and the
-  organism rests so a human can decide.
-- **`--autonomous`:** the gate is disabled; the organism freely authors and installs its
-  own code. The human makes this one decision at launch time.
+Every decision is two LLM calls (Reason-Observe-Decide):
 
-## Run
+1. **Call 1** — the model reasons freely about the situation.
+2. **Call 2** — the same prompt, with the model's own Call-1 reasoning echoed back as
+   `ROD_REASONING_CONTENT`. It re-reasons from its draft and commits clean JSON.
 
-Requires Windows for live desktop control (uses `desktop.py`,
-which uses Windows UI Automation via `ctypes`). Off-Windows, hands degrade gracefully so
-the cognition loop can still be exercised. No third-party dependencies.
+This is intelligence amplification, not parse insurance: the second pass critiques its own
+first thoughts. Reasoning is read from the model's `reasoning_content` field, or — for
+models that inline thinking, like Nemotron's `<think>…</think>` — from the think block.
 
-```powershell
-# guarded — pursues a goal, asks before writing its own code
-python organism.py "open notepad and type hello"
+---
 
-# free initiative, no goal
-python organism.py
+## Swappable brains
 
-# full autonomy — can rewrite itself with no questions
-python organism.py "research and improve yourself" --autonomous
+The brain transport is just a value in the wiring (`model.transport`):
 
-# bounded run / fresh start
-python organism.py "..." --max-ticks 20 --reset
+- **`openai`** — any OpenAI-compatible server (LM Studio, llama.cpp, vLLM). This is the
+  **core**: the system always boots here.
+- **`file_proxy`** — a file handoff. The engine writes an OpenAI-shaped `comms/request.json`
+  and waits for `comms/response.json`. Any outside agent (human, watcher, or a
+  browser-hosted AI) can answer.
+- **`browser_ai`** — the organism drives a browser AI through the desktop itself.
+
+Because `self_modify` can patch `model.transport`, the organism can decide — for itself — to
+change how it thinks. The engine reloads the wiring and re-binds the brain live, mid-run.
+
+---
+
+## Architecture
+
+```
+organism.py     the living loop; drives the wiring topology graph; reloads brain on self_modify
+brain.py        stateless LLM, 3 transports, ROD two-call, fail-hard
+nodes.py        engine core: hot-swappable node loader, call_node (ROD + record validation),
+                wiring patch, desktop I/O bridge
+wiring.json     single source of truth: model, verbs, reasoning contract, topology, prompts
+seed_nodes/     planner, scheduler, observe, act, verify, reflect, self_modify, satisfied
+actions.py      verb dispatch over the desktop (reused, data-driven from wiring.verbs)
+desktop.py      Windows UI Automation + input layer (reused, stdlib + ctypes only)
 ```
 
-Configure the brain in `config.json`: set `brain.transport` to `openai` (and `host` /
-`model`) for LM Studio, or `gui` for a browser-hosted agent reached via the
-`comms/request.json` ↔ `comms/response.json` file handoff.
+**The loop:** start at `topology.cycle_start`, run the node, read its signal, follow the
+edge `(from, on) → to`. A node may set an explicit `next` in its patch to override. Nodes
+live in `live_nodes/` (copied from `seed_nodes/` on first run) and are re-read every time
+they run, so editing one hot-swaps behaviour with no restart.
+
+**State** persists to `state.json` between ticks. **Reasoning traces** accumulate in
+`reasoning_chain` for debugging.
+
+---
+
+## Running it
+
+Requirements: Windows, Python 3.13 (stdlib only), and a running LM Studio (or any
+OpenAI-compatible server) at the `model.host` in `wiring.json`.
+
+```
+python organism.py "open notepad"          # pursue a goal
+python organism.py                          # no goal — the organism lives on its own
+python organism.py "..." --max-ticks 12     # bound the run
+python organism.py "..." --reset            # forget prior state first
+```
+
+The model is the slow part on modest hardware; a decision is two calls, so be patient.
+
+---
+
+## Status
+
+Working and verified on Windows against LM Studio (`nvidia-nemotron-3-nano-4b`):
+
+- The full pipeline runs: planner → scheduler → observe → act → verify → reflect.
+- A real run opened Notepad and entered the genuine recovery loop
+  (`verify → step_denied → reflect → retry → observe → act`).
+- The ROD two-call pattern is confirmed in the server logs (each decision is two calls,
+  the second carrying the echoed reasoning).
+
+The brain-swap scenario (the organism routing its own cognition through a browser-hosted AI)
+and the debug/control workbench are the active frontier.
+
+---
+
+## Philosophy
+
+Less is best. No fallbacks, no dead branches, no constrained mode. Every file and every line
+is meant to align with the others. The organism's "aliveness" is an emergent property of a
+tiny loop, a strict intent contract, and prompts written to invite exploration — not a pile
+of special cases.
