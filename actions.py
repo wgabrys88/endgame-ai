@@ -83,7 +83,7 @@ class ActionExecutor:
 
     def _dispatch(self, verb: str, cfg: dict, args: dict[str, Any], elements: dict[str, Element]) -> ActionResult:
         if verb == "click":
-            target = str(args.get(cfg["target_field"], ""))
+            target = str(args.get(cfg.get("target_field", "target"), ""))
             el = self._resolve(target, elements)
             if not el:
                 return ActionResult(verb, False, f"element {target} not found")
@@ -108,7 +108,7 @@ class ActionExecutor:
             return ActionResult(verb, True, f"typed {len(text)} chars")
 
         if verb == "press":
-            key = str(args.get(cfg["key_field"], ""))
+            key = str(args.get(cfg.get("key_field", "value"), ""))
             if not key:
                 key = str(args.get("value", ""))
             if not key:
@@ -117,17 +117,17 @@ class ActionExecutor:
             return ActionResult(verb, True, f"pressed {key}")
 
         if verb == "hotkey":
-            raw = str(args.get(cfg["key_field"], ""))
+            raw = str(args.get(cfg.get("key_field", "value"), ""))
             if not raw:
                 raw = str(args.get("value", ""))
             keys = [k.strip() for k in raw.replace("+", ",").split(",") if k.strip()]
             if not keys:
-                return ActionResult(verb, False, f"no keys (field '{cfg['key_field']}' was empty)")
+                return ActionResult(verb, False, "no keys (field value/key was empty)")
             self._desktop.hotkey(keys)
             return ActionResult(verb, True, f"pressed {'+'.join(keys)}")
 
         if verb == "scroll":
-            target = str(args.get(cfg["target_field"], ""))
+            target = str(args.get(cfg.get("target_field", "target"), ""))
             amount = int(args.get(cfg.get("amount_field", "value"), 3) or 3)
             el = self._resolve(target, elements)
             if not el:
@@ -136,7 +136,7 @@ class ActionExecutor:
             return ActionResult(verb, True, f"scrolled {amount}")
 
         if verb == "focus":
-            title = str(args.get(cfg["title_field"], ""))
+            title = str(args.get(cfg.get("title_field", "target"), ""))
             if not title:
                 return ActionResult(verb, False, "no title")
             windows = getattr(self, "_window_infos", None) or []
