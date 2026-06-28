@@ -1,0 +1,22 @@
+{
+  "brain": {
+    "transport": "openai",
+    "host": "http://localhost:1234",
+    "model": "local-model",
+    "temperature": 0.4,
+    "max_tokens": 2048,
+    "timeout": 900,
+    "reason_feedback": true,
+    "gui": {
+      "request_path": "comms/request.json",
+      "response_path": "comms/response.json",
+      "archive_dir": "comms/archive",
+      "poll_ms": 800
+    }
+  },
+  "loop": {
+    "tick_delay_ms": 600,
+    "reasoning_chain_depth": 24,
+    "idle_initiative": true
+  }
+}

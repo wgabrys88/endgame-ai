@@ -1,20 +1,9 @@
-*
-!engine.py
-!runtime.py
-!desktop.py
-!actions.py
+# Runtime artifacts (regenerated)
+live_nodes/
+state.json
+comms/
+__pycache__/
+*.pyc
 
-!wiring-editor.html
-!nodes/
-!nodes/*.py
-!prompts/
-!prompts/wiring.json
-!prompts/wiring_relay.json
-!prompts/wiring-schema.json
-!prompts/model.json
-!prompts/model_relay.json
-!README.md
-!LICENSE
-!.gitignore
-!.gitattributes
-!RUNTIME-NOTES.md
+# Scratch / logs
+*.log
