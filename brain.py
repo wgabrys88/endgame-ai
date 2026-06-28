@@ -1,26 +1,21 @@
-"""brain — stateless LLM calls with the ROD (Reason-Observe-Decide) two-call pattern.
+"""brain — the cognition backend. Stateless LLM calls with the ROD two-call pattern.
 
-One brain object, swappable transports. Every call is stateless: the model holds no
-server-side session memory. Each DECISION is made with two calls:
+One brain, swappable transports selected by wiring model.transport:
+  - openai     : OpenAI-compatible HTTP server (LM Studio, llama.cpp, vLLM, ...). The CORE.
+  - file_proxy : file handoff to any outside agent. The engine writes an OpenAI-shaped
+                 request.json and waits for response.json. This is how cognition can be
+                 routed through a browser-hosted AI (e.g. Grok in Opera) driven by a
+                 human or a watcher process.
+  - browser_ai : the engine itself drives a browser AI via desktop verbs (open/focus,
+                 type the prompt, read the answer). Implemented in actions.py.
 
-  Call 1 — the model reasons freely about the situation.
-  Call 2 — the SAME prompt, with the model's own Call-1 reasoning echoed back as
-           ROD_REASONING_CONTENT, so it re-reasons from its draft and commits clean JSON.
+ROD (Reason-Observe-Decide): every decision is TWO calls. Call 1 the model reasons; Call 2
+re-sends the same prompt with the model's own Call-1 reasoning echoed back as
+ROD_REASONING_CONTENT, so it re-reasons from its draft and commits clean JSON.
 
-This is intelligence amplification: the second pass critiques its own first thoughts and
-is measurably sharper. The reasoning feedback lives entirely within one decision; there
-is no cross-turn chat state.
-
-Reasoning is read from the model's `reasoning_content` field when present; for models
-that inline their thinking (e.g. Nemotron emits <think>...</think> in `content`), it is
-extracted from the think block instead.
-
-Transports:
-  - openai : any OpenAI-compatible HTTP server (LM Studio, llama.cpp, vLLM, ...).
-  - gui    : a GUI/browser-hosted agent (e.g. Grok) reached through a file handoff;
-             an outside operator/agent reads request.json and writes response.json.
-
-_call() returns (content, reasoning_content) for both transports.
+Reasoning is read from the model's reasoning_content field; when empty (models like
+Nemotron inline thinking in content as <think>...</think>), it is taken from the think
+block. There are NO silent fallbacks: transport errors raise.
 """
 from __future__ import annotations
 
@@ -28,38 +23,36 @@ import json
 import os
 import pathlib
 import re
+import shutil
+import threading
 import time
 import urllib.request
 
 ROOT = pathlib.Path(__file__).parent.resolve()
 
 
-def _extract_json(text: str):
-    """Pull the model's decision JSON out of free-form text.
+# ─── JSON / reasoning extraction ────────────────────────────────────────────
 
-    Reasoning models (e.g. Nemotron) emit their thinking inline in `content`, often
-    closed by </think>, then the real JSON. That thinking contains brace-laden prose,
-    so we (1) drop any <think>...</think> or leading text up to the last </think>,
-    then (2) scan ALL balanced top-level {...} spans and return the LAST one that
-    parses — the committed decision comes after the reasoning, not before it.
-    """
+def extract_json_object(text: str):
+    """Return the model's committed JSON record, or None.
+
+    Reasoning models inline thinking and close it with </think>, then emit JSON. That
+    thinking contains brace-laden prose, so drop everything up to the final </think>,
+    then return the LAST balanced top-level {...} that parses."""
     if not text:
         return None
     text = text.strip()
-    # Drop chain-of-thought: keep only what follows the final </think>, if present.
     if "</think>" in text:
         text = text.rsplit("</think>", 1)[1].strip()
     try:
         return json.loads(text)
     except json.JSONDecodeError:
         pass
-    fenced = re.findall(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.S)
-    for block in reversed(fenced):
+    for block in reversed(re.findall(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.S)):
         try:
             return json.loads(block)
         except json.JSONDecodeError:
             pass
-    # Collect every balanced top-level object; prefer the last parseable one.
     candidates = []
     depth = 0
     in_str = esc = False
@@ -92,81 +85,64 @@ def _extract_json(text: str):
     return None
 
 
-def _strip_think(text: str) -> str:
-    """Return the committed answer with any <think>...</think> block removed."""
-    if not text:
-        return ""
-    if "</think>" in text:
-        return text.rsplit("</think>", 1)[1].strip()
-    return text.strip()
-
-
-def _think_block(content: str, reasoning_content: str) -> str:
-    """Extract the model's reasoning from a Call-1 response.
-
-    Prefer the dedicated reasoning_content field. If it is empty (models like
-    Nemotron inline their thinking in `content`), use the <think>...</think> block;
-    failing that, fall back to the whole content.
-    """
+def reasoning_from(content: str, reasoning_content: str) -> str:
+    """Call-1 reasoning: dedicated field, else the inline <think> block, else content."""
     if reasoning_content and reasoning_content.strip():
         return reasoning_content.strip()
     m = re.search(r"<think>(.*?)</think>", content, flags=re.S)
     if m:
         return m.group(1).strip()
-    if "</think>" in content:  # open think with no opening tag
+    if "</think>" in content:
         return content.rsplit("</think>", 1)[0].strip()
     return (content or "").strip()
 
 
+# ─── Brain ──────────────────────────────────────────────────────────────────
+
 class Brain:
-    def __init__(self, cfg: dict):
-        self.cfg = dict(cfg or {})
-        self.transport = self.cfg.get("transport", "openai")
-        self.retries = int(self.cfg.get("parse_retries", 2))
+    def __init__(self, model_cfg: dict):
+        self.cfg = dict(model_cfg or {})
 
-    # ── public API ─────────────────────────────────────────────────────────
-    def think(self, system: str, user: str) -> tuple[str, dict | None, str]:
-        """One decision via the ROD two-call pattern. Returns (content, parsed, reasoning).
+    def transport(self) -> str:
+        return self.cfg.get("transport", "openai")
 
-        Call 1: the model reasons freely. We capture its reasoning (from reasoning_content
-        or the inline <think> block). Call 2: the SAME prompt with the model's own reasoning
-        echoed back as ROD_REASONING_CONTENT, so it re-reasons from its draft and commits
-        clean JSON. This is intelligence amplification, not just parse insurance — the
-        second pass is measurably sharper because it critiques its own first thoughts.
+    def think(self, system: str, user: str, parse_retries: int = 2) -> tuple[str, dict | None, str]:
+        """One ROD decision. Returns (content, parsed_record_or_None, reasoning).
 
-        Each call is stateless (no chat session is carried server-side); the reasoning
-        feedback is the only continuity, and it lives entirely within this one decision.
-        """
+        Call 1 reasons; Call 2 commits with the reasoning echoed back. Retries only the
+        pair on a parse miss (the model produced no valid JSON), bumping temperature."""
+        base = self.cfg.get("temperature", 0.3)
+        bump = self.cfg.get("temperature_bump", 0.15)
         content, parsed, reasoning = "", None, ""
-        for _ in range(self.retries + 1):
-            # Call 1 — reason freely.
-            c1, r1 = self._call(system, user)
-            reasoning = _think_block(c1, r1)
-            # Call 2 — echo reasoning back; commit the decision.
+        for attempt in range(parse_retries + 1):
+            temp = base if attempt == 0 else min(1.0, base + bump * attempt)
+            c1, r1 = self._call(system, user, temp)
+            reasoning = reasoning_from(c1, r1)
             rod_user = user + "\n\nROD_REASONING_CONTENT:\n" + (reasoning or "(none)")
-            c2, _r2 = self._call(system, rod_user)
-            content = c2
-            parsed = _extract_json(c2)
+            content, _ = self._call(system, rod_user, temp)
+            parsed = extract_json_object(content)
             if parsed:
                 break
         return content, parsed, reasoning
 
-    # ── transports ─────────────────────────────────────────────────────────
-    def _call(self, system: str, user: str) -> tuple[str, str]:
-        if self.transport == "gui":
-            return self._gui(system, user)
-        return self._openai(system, user)
+    # ── transport dispatch ──────────────────────────────────────────────────
+    def _call(self, system: str, user: str, temperature: float) -> tuple[str, str]:
+        t = self.transport()
+        if t == "file_proxy":
+            return self._file_proxy(system, user), ""
+        if t == "browser_ai":
+            return self._browser_ai(system, user), ""
+        return self._openai(system, user, temperature)
 
-    def _openai(self, system: str, user: str) -> tuple[str, str]:
+    def _openai(self, system: str, user: str, temperature: float) -> tuple[str, str]:
         host = str(self.cfg.get("host", "http://localhost:1234")).rstrip("/")
         payload = {
             "model": self.cfg.get("model", "local-model"),
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-            "temperature": self.cfg.get("temperature", 0.4),
+            "temperature": temperature,
             "max_tokens": self.cfg.get("max_tokens", 2048),
             "stream": False,
         }
-        # Pass through proven sampling + reasoning-budget knobs when present.
         for key in ("top_p", "top_k", "repeat_penalty", "presence_penalty", "frequency_penalty", "stop", "thinking"):
             if key in self.cfg:
                 payload[key] = self.cfg[key]
@@ -175,39 +151,66 @@ class Brain:
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(req, timeout=float(self.cfg.get("timeout", 900))) as r:
-            resp = json.loads(r.read().decode("utf-8", errors="replace"))
+        try:
+            with urllib.request.urlopen(req, timeout=float(self.cfg.get("timeout", 900))) as r:
+                resp = json.loads(r.read().decode("utf-8", errors="replace"))
+        except Exception as e:
+            raise RuntimeError(f"openai transport: {e}")
         msg = (resp.get("choices") or [{}])[0].get("message", {})
         return msg.get("content", ""), msg.get("reasoning_content", "")
 
-    def _gui(self, system: str, user: str) -> tuple[str, str]:
-        """File handoff to a GUI/browser agent. Stateless: each call is a fresh
-        request id, so the outside agent treats every turn as a new chat marking."""
-        g = self.cfg.get("gui", {})
-        req_path = ROOT / g.get("request_path", "comms/request.json")
-        resp_path = ROOT / g.get("response_path", "comms/response.json")
-        archive = ROOT / g.get("archive_dir", "comms/archive")
+    def _file_proxy(self, system: str, user: str) -> str:
+        """Write an OpenAI-shaped request.json, wait for response.json. Fail hard on timeout."""
+        cfg = self.cfg.get("file_proxy", {})
+        req_path = ROOT / cfg.get("request_path", "comms/request.json")
+        resp_path = ROOT / cfg.get("response_path", "comms/response.json")
+        archive = ROOT / cfg.get("archive_dir", "comms/archive")
         for p in (req_path.parent, archive):
             p.mkdir(parents=True, exist_ok=True)
-        rid = f"egai-{int(time.time()*1000)}-{os.getpid()}"
+        rid = f"egai-{int(time.time()*1000)}-{os.getpid()}-{threading.get_ident() % 100000}"
         req_path.write_text(json.dumps({
             "id": rid, "status": "pending", "created_at": time.time(),
-            "session": "stateless-new-chat",
+            "transport": "file_proxy", "model": self.cfg.get("model"),
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
             "system": system, "user": user,
         }, ensure_ascii=False, indent=2), encoding="utf-8")
-        poll = max(0.05, int(g.get("poll_ms", 800)) / 1000.0)
+        poll = max(0.05, int(cfg.get("poll_interval_ms", 1000)) / 1000.0)
         deadline = time.time() + float(self.cfg.get("timeout", 900))
         while time.time() < deadline:
             if resp_path.exists():
-                resp = json.loads(resp_path.read_text(encoding="utf-8") or "{}")
+                try:
+                    resp = json.loads(resp_path.read_text(encoding="utf-8") or "{}")
+                except json.JSONDecodeError:
+                    time.sleep(poll)
+                    continue
                 if resp.get("id") in (None, "", rid):
-                    msg = (resp.get("choices") or [{}])[0].get("message", {}) if resp.get("choices") else {}
-                    content = msg.get("content") or resp.get("content") or resp.get("response") or ""
+                    content = _proxy_content(resp)
                     try:
-                        resp_path.replace(archive / f"response.{rid}.json")
+                        shutil.move(str(resp_path), str(archive / f"response.{rid}.json"))
                     except OSError:
                         pass
-                    return str(content), str(msg.get("reasoning_content", ""))
+                    return content
             time.sleep(poll)
-        raise TimeoutError(f"gui brain timed out waiting for {resp_path}")
+        raise TimeoutError(f"file_proxy transport timed out waiting for {resp_path}")
+
+    def _browser_ai(self, system: str, user: str) -> str:
+        """Drive a browser-hosted AI through the desktop I/O layer (actions.py)."""
+        import actions
+        if not hasattr(actions, "browser_ai_handoff"):
+            raise RuntimeError("browser_ai transport: actions.browser_ai_handoff not available; use file_proxy")
+        prompt = system + "\n\n" + user
+        out = actions.browser_ai_handoff(self.cfg.get("browser_ai", {}), prompt)
+        if str(out).upper().startswith("FAILED"):
+            raise RuntimeError(f"browser_ai transport: {out}")
+        return str(out).replace("browser_ai_response:", "", 1).strip()
+
+
+def _proxy_content(resp: dict) -> str:
+    if not isinstance(resp, dict):
+        return ""
+    choices = resp.get("choices")
+    if isinstance(choices, list) and choices and isinstance(choices[0], dict):
+        msg = choices[0].get("message")
+        if isinstance(msg, dict):
+            return str(msg.get("content") or msg.get("reasoning_content") or "")
+    return str(resp.get("content") or resp.get("response") or resp.get("text") or "")

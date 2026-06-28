@@ -1,127 +1,242 @@
-"""nodes — the self-evolution substrate.
+"""nodes — the engine core. Hot-swappable node modules + the cognition/execution helpers
+they call. Intent-based: every LLM reply is a typed record {record_type, data} validated
+against the wiring contract. No constrained mode, no safety gate — this is an unconstrained
+organism with full control of the machine.
 
-A "node" is an independent Python module on disk. The organism can create, modify,
-delete, and hot-swap nodes at RUNTIME, then execute them directly. This is the primary
-mechanism by which the system expands its own capabilities.
-
-A node file is plain Python executed in a namespace that contains:
-    ctx     -> the live organism context (state, memory, last reasoning, brain, hands)
-    emit    -> emit(signal, **patch): set the next signal and merge data into state
-    log     -> log(msg): append to the narration stream
-plus the stdlib modules already imported here (time, json, re, os, pathlib).
-
-After execution a node is expected to have called emit() at least once. Whatever it
-merged into ctx.state persists; whatever signal it emitted decides what happens next.
-
-══════════════════════════════════════════════════════════════════════════════
- THE SINGLE SAFETY POINT
-══════════════════════════════════════════════════════════════════════════════
-Safety exists in exactly ONE place in the whole system: write_node(). That is the
-moment the organism writes or modifies its own executable code. When autonomy is
-disabled (the default), write_node() refuses and asks the human. When the launch
-flag enables autonomy, write_node() proceeds with no questions asked. There are no
-other gates anywhere — execution, desktop control, and deletion are all unguarded by
-design, because this is an explicit human-replacement operator.
+A node is a plain Python file in NODES_DIR. It runs in a namespace that exposes the engine
+helpers below plus `ctx`, `state`, `wiring`, `config`. It sets two names: `patch` (dict to
+merge into state) and `signals` (list; first signal routes the graph). Nodes are re-read on
+every execution, so editing a node file hot-swaps behavior with no restart.
 """
 from __future__ import annotations
 
 import json
-import os
 import pathlib
 import re
+import shutil
 import time
+from typing import Any
+
+import actions
 
 ROOT = pathlib.Path(__file__).parent.resolve()
+SEED_DIR = ROOT / "seed_nodes"
 NODES_DIR = ROOT / "live_nodes"
-SEED_DIR = ROOT / "seed"
-
-_IDENT = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 
-def ensure_nodes() -> None:
-    """Populate the live node dir from seed on first run. Live nodes are mutable."""
+# ─── node files ─────────────────────────────────────────────────────────────
+
+def ensure_nodes():
+    """Copy seed nodes into the mutable live dir on first run. live_nodes is what runs."""
     NODES_DIR.mkdir(parents=True, exist_ok=True)
-    if SEED_DIR.exists():
-        for src in SEED_DIR.glob("*.py"):
-            dst = NODES_DIR / src.name
-            if not dst.exists():
-                dst.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+    if not any(NODES_DIR.glob("*.py")) and SEED_DIR.exists():
+        for f in SEED_DIR.glob("*.py"):
+            shutil.copy2(f, NODES_DIR / f.name)
 
 
-def list_nodes() -> list[str]:
-    NODES_DIR.mkdir(parents=True, exist_ok=True)
+def node_path(node_type: str) -> pathlib.Path:
+    return NODES_DIR / f"{node_type}.py"
+
+
+def list_node_types() -> list[str]:
     return sorted(p.stem for p in NODES_DIR.glob("*.py"))
 
 
-def read_node(name: str) -> str:
-    p = NODES_DIR / f"{name}.py"
-    return p.read_text(encoding="utf-8") if p.exists() else ""
-
-
-def node_catalog() -> str:
-    """A compact menu of available nodes + their one-line docstrings, for the brain."""
-    out = []
-    for name in list_nodes():
-        src = read_node(name)
-        doc = ""
-        m = re.search(r'^\s*"""(.*?)("""|\n)', src, flags=re.S)
-        if m:
-            doc = m.group(1).strip().splitlines()[0][:90]
-        out.append(f"- {name}: {doc}")
-    return "\n".join(out) or "(no nodes yet)"
-
-
-# ── THE SINGLE SAFETY POINT ──────────────────────────────────────────────────
-def write_node(name: str, code: str, autonomous: bool) -> tuple[bool, str]:
-    """Create or modify a node. This is the only safety gate in the system.
-
-    autonomous=False -> refuse and surface the proposed code for a human decision.
-    autonomous=True  -> write it. Full power, no further questions.
-    """
-    if not _IDENT.match(name or ""):
-        return False, f"invalid node name: {name!r} (must be a Python identifier)"
-    if not autonomous:
-        return False, (
-            f"SAFETY: node write blocked (autonomy disabled). The organism wanted to "
-            f"write node '{name}'. Re-launch with --autonomous to allow self-modification.\n"
-            f"--- proposed code ---\n{code}"
-        )
-    NODES_DIR.mkdir(parents=True, exist_ok=True)
-    (NODES_DIR / f"{name}.py").write_text(code.rstrip() + "\n", encoding="utf-8")
-    return True, f"wrote node '{name}' ({len(code)} chars)"
-
-
-def delete_node(name: str) -> tuple[bool, str]:
-    """Delete a node. Unguarded by design (not a code-authoring act)."""
-    p = NODES_DIR / f"{name}.py"
-    if not p.exists():
-        return False, f"no such node: {name}"
-    p.unlink()
-    return True, f"deleted node '{name}'"
-
-
-def execute_node(name: str, ctx) -> tuple[str, dict]:
-    """Hot-load the node file fresh and run it. Returns (signal, state_patch).
-
-    Reading the file every call is deliberate: a node modified mid-run is picked up
-    on its next execution with no reload machinery.
-    """
-    p = NODES_DIR / f"{name}.py"
-    if not p.exists():
-        return "missing", {"error": f"node '{name}' not found"}
-    code = p.read_text(encoding="utf-8")
-    result = {"signal": None, "patch": {}}
-
-    def emit(signal: str, **patch):
-        result["signal"] = signal
-        result["patch"].update(patch)
-
-    def log(msg: str):
-        ctx.narrate(f"[{name}] {msg}")
-
-    ns = {
-        "ctx": ctx, "emit": emit, "log": log,
-        "time": time, "json": json, "re": re, "os": os, "pathlib": pathlib,
+def execute_node(node_cfg: dict, ctx) -> tuple[str, dict]:
+    """Run one node by its type. Returns (signal, patch). Re-reads the file each call."""
+    node_type = node_cfg.get("type", "")
+    path = node_path(node_type)
+    if not path.exists():
+        raise FileNotFoundError(f"no node module for type '{node_type}' at {path}")
+    src = path.read_text(encoding="utf-8")
+    ns: dict[str, Any] = {
+        "ctx": ctx, "state": ctx.state, "wiring": ctx.wiring, "config": node_cfg,
+        "call_node": lambda cfg=node_cfg: call_node(cfg, ctx),
+        "observe_screen": observe_screen, "execute_verb": execute_verb,
+        "get_focused_title": get_focused_title, "last_observation_snapshot": last_observation_snapshot,
+        "wiring_limit": wiring_limit, "evaluate_rules": evaluate_rules,
+        "apply_memory_action": apply_memory_action, "apply_wiring_patch": apply_wiring_patch,
+        "save_wiring": save_wiring, "validate_wiring": validate_wiring,
+        "preview_text": preview_text, "time": time, "json": json, "re": re,
+        "patch": {}, "signals": ["idle"],
     }
-    exec(compile(code, str(p), "exec"), ns, ns)
-    return result["signal"] or "done", result["patch"]
+    exec(compile(src, str(path), "exec"), ns)
+    patch = ns.get("patch", {}) or {}
+    signals = ns.get("signals", []) or ["idle"]
+    return (signals[0] if signals else "idle"), patch
+
+
+# ─── cognition: ROD call + intent-record contract ───────────────────────────
+
+def circuit_for(node_cfg: dict) -> str:
+    return str(node_cfg.get("circuit") or node_cfg.get("type", ""))
+
+
+def _render(v: Any) -> str:
+    if v is None:
+        return ""
+    if isinstance(v, str):
+        return v
+    return json.dumps(v, ensure_ascii=False, indent=2)
+
+
+def _block_value(state: dict, source: str) -> Any:
+    cur: Any = state
+    parts = source.split(".")
+    if parts and parts[0] == "state":
+        parts = parts[1:]
+    for part in parts:
+        if isinstance(cur, dict):
+            cur = cur.get(part)
+        elif isinstance(cur, list):
+            try:
+                cur = cur[int(part)]
+            except (ValueError, IndexError):
+                return None
+        else:
+            return None
+    return cur
+
+
+# Per-circuit user-message blocks. Intent-based: the actor sees SCREEN; the verifier sees
+# the step intent + evidence; the planner sees the goal; etc.
+_BLOCKS = {
+    "planner":   [("GOAL", "goal"), ("LAST_ERROR", "last_error"), ("HISTORY", "history"), ("MEMORY", "memory")],
+    "unified":   [("SUBTASK", "step_goal"), ("DONE_WHEN", "current_step.done_when"), ("SCREEN", "screen"), ("LAST_ERROR", "last_error"), ("MEMORY", "memory")],
+    "verifier":  [("STEP", "current_step.description"), ("DONE_WHEN", "current_step.done_when"), ("SCREEN", "screen"), ("LAST_ACTIONS", "last_actions"), ("LAST_OUTCOME", "last_outcome"), ("MEMORY", "memory")],
+    "reflector": [("GOAL", "goal"), ("STEP", "current_step.description"), ("LAST_ERROR", "last_error"), ("HISTORY", "history"), ("MEMORY", "memory")],
+    "self_modify": [("GOAL", "goal"), ("LAST_ERROR", "last_error"), ("LAST_DIAGNOSIS", "last_diagnosis"), ("CURRENT_WIRING", "wiring_summary")],
+}
+
+
+def build_user_message(circuit: str, state: dict, wiring: dict) -> str:
+    body = []
+    for label, source in _BLOCKS.get(circuit, []):
+        if source == "wiring_summary":
+            value = {"transport": wiring.get("model", {}).get("transport"), "verbs": list(wiring.get("verbs", {}).keys())}
+        else:
+            value = _block_value(state, source)
+        text = _render(value)
+        if text:
+            body.append(f"{label}:\n{text}")
+    return "\n\n".join(body)
+
+
+def build_system_prompt(circuit: str, wiring: dict) -> str:
+    prompts = wiring.get("prompts", {})
+    base = prompts.get("base", "")
+    role = prompts.get("roles", {}).get(circuit, "")
+    return (base + "\n\n" + role).strip()
+
+
+def call_node(node_cfg: dict, ctx) -> dict:
+    """ROD two-call decision for an LLM circuit, with intent-record validation.
+
+    Returns {content, reasoning, parsed, record_ok}. `parsed` is the typed record; it is
+    only considered valid when its record_type matches the wiring contract for the circuit.
+    Fail hard: the brain raises on transport errors; we do not swallow them here."""
+    wiring = ctx.wiring
+    circuit = circuit_for(node_cfg)
+    system = build_system_prompt(circuit, wiring)
+    user = build_user_message(circuit, ctx.state, wiring)
+    retries = wiring_limit("llm_parse_retries", 2, wiring)
+    content, parsed, reasoning = ctx.brain.think(system, user, retries)
+
+    expected = wiring.get("reasoning", {}).get("expected_record_type", {}).get(circuit)
+    record_ok = bool(parsed) and (expected is None or parsed.get("record_type") == expected)
+
+    # reasoning trace (debug/workbench), bounded
+    chain = list(ctx.state.get("reasoning_chain", []) or [])
+    chain.append({"circuit": circuit, "reasoning": reasoning[:4000], "parsed": parsed, "ts": time.time()})
+    depth = int(wiring.get("reasoning", {}).get("chain_depth", 32) or 32)
+    ctx.state["reasoning_chain"] = chain[-depth:]
+    ctx.state["last_reasoning"] = reasoning[:2000]
+    return {"content": content, "reasoning": reasoning, "parsed": parsed, "record_ok": record_ok}
+
+
+# ─── desktop I/O (reuses the proven actions.py / desktop.py) ─────────────────
+
+_io_ready = False
+
+
+def _ensure_io(wiring: dict):
+    global _io_ready
+    if not _io_ready:
+        actions.configure_runtime(wiring)
+        _io_ready = True
+
+
+def observe_screen() -> str:
+    return actions.observe_screen()
+
+
+def last_observation_snapshot() -> dict:
+    return actions.last_observation_snapshot()
+
+
+def get_focused_title() -> str:
+    return actions.get_focused_title()
+
+
+def execute_verb(verb: str, target: str = "", value: str = "") -> str:
+    return actions.execute_verb(verb, target, value)
+
+
+# ─── helpers ────────────────────────────────────────────────────────────────
+
+def wiring_limit(name: str, default: int, wiring: dict) -> int:
+    try:
+        return int(wiring.get("limits", {}).get(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def evaluate_rules(circuit: str, state: dict, wiring: dict):
+    """Optional deterministic rules. Empty by default; intent judgment is the LLM's job."""
+    for rule in wiring.get("rules", []) or []:
+        if rule.get("circuit") == circuit:
+            return rule
+    return None
+
+
+def apply_memory_action(memory: dict, key: str, value: str) -> tuple[bool, dict, str]:
+    if not key:
+        return False, memory, "FAILED: remember needs a target key"
+    memory = dict(memory)
+    memory[key] = value
+    return True, memory, f"remembered {key}"
+
+
+def preview_text(text: str, n: int = 200) -> str:
+    return (text or "")[:n]
+
+
+def apply_wiring_patch(wiring: dict, parsed: dict) -> tuple[str, Any]:
+    """Apply a {op,path,value} wiring patch in place. op=set only (smallest surface)."""
+    data = (parsed or {}).get("data") or {}
+    op = data.get("op", "set")
+    path = str(data.get("path", "")).strip()
+    value = data.get("value")
+    if not path:
+        raise ValueError("wiring_patch missing path")
+    parts = path.split(".")
+    cur = wiring
+    for part in parts[:-1]:
+        if not isinstance(cur.get(part), dict):
+            cur[part] = {}
+        cur = cur[part]
+    cur[parts[-1]] = value
+    return op, {"path": path, "value": value}
+
+
+def validate_wiring(wiring: dict) -> list[str]:
+    errs = []
+    if "model" not in wiring or "transport" not in wiring.get("model", {}):
+        errs.append("model.transport missing")
+    if "topology" not in wiring:
+        errs.append("topology missing")
+    return errs
+
+
+def save_wiring(wiring: dict):
+    (ROOT / "wiring.json").write_text(json.dumps(wiring, ensure_ascii=False, indent=2), encoding="utf-8")
