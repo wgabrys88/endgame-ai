@@ -88,6 +88,7 @@ nodes.py        engine core: hot-swappable node loader, call_node (ROD + record 
                 wiring patch, desktop I/O bridge
 wiring.json     single source of truth: model, verbs, reasoning contract, topology, prompts
 seed_nodes/     planner, scheduler, observe, act, verify, reflect, self_modify, satisfied
+workbench.py    minimal http.server debug/control surface (no dependencies)
 actions.py      verb dispatch over the desktop (reused, data-driven from wiring.verbs)
 desktop.py      Windows UI Automation + input layer (reused, stdlib + ctypes only)
 ```
@@ -115,6 +116,25 @@ python organism.py "..." --reset            # forget prior state first
 ```
 
 The model is the slow part on modest hardware; a decision is two calls, so be patient.
+
+### The workbench
+
+A minimal debug and control surface, no dependencies — just the standard library:
+
+```
+python workbench.py        # then open http://localhost:8800
+```
+
+It reads the organism's live files and shows, refreshing every 1.5s:
+
+- **Narration** — what the organism is doing, newest first.
+- **Plan** — the current steps and their `done_when` intents.
+- **History** — executed action chains and their outcomes (failures in red).
+- **Reasoning chain** — the model's thinking per circuit.
+- **file_proxy handoff** — when the brain transport is `file_proxy`, the workbench shows
+  the prompt the organism is waiting on and lets you (or an AI) **answer as the brain** by
+  writing the response record. This is the human-in-the-loop / brain-swap surface.
+- **Control** — set or clear the goal for the next run (`goal.json`).
 
 ---
 
