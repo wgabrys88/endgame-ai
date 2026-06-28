@@ -89,7 +89,14 @@ def live(goal: str, max_ticks: int = 0):
             ctx.state = {}
     if goal:
         ctx.state["goal"] = goal
+    elif not ctx.state.get("goal"):
+        # the workbench may have dropped a goal for us; otherwise we live without one
+        gp = ROOT / "goal.json"
+        if gp.exists():
+            ctx.state["goal"] = (json.loads(gp.read_text(encoding="utf-8")) or {}).get("goal", "")
     ctx.state.setdefault("memory", {})
+
+    goal = ctx.state.get("goal", "")
 
     node_map, edges, start = build_routing(wiring)
     transport = wiring.get("model", {}).get("transport", "openai")

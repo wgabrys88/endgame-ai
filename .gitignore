@@ -1,6 +1,7 @@
 # Runtime artifacts (regenerated)
 live_nodes/
 state.json
+goal.json
 comms/
 __pycache__/
 *.pyc
