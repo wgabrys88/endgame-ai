@@ -654,3 +654,25 @@ force-pushes and never touches `main` without explicit instruction.
 *endgame-ai is a research organism, not a product. It runs unconstrained with full control of the
 machine it is on; run it only where that is acceptable. Everything claimed here is backed by logs
 in `evidence/` and by the self-modified `wiring.json` committed alongside this document.*
+
+---
+
+## Appendix A — Fresh-session starter prompt
+
+> Paste this at the start of a new conversation to resume with full context and land directly on
+> the "what next" decision.
+
+> You are resuming work on endgame-ai, a self-modifying autonomous desktop organism (small Python
+> loop + one wiring.json + a local 4B LLM, stdlib only, no frameworks/RAG/MCP) whose milestone is
+> documented in README.md — read that README in full first, especially §0 (bootstrap), §1–§2 (the
+> emergent goal-interpretation drift finding), §11–§12 (self-modification + honest MoE critique),
+> and §16 (roadmap). Operate under the project's hard rules: ground every claim in logs (run.log,
+> state.json, the LM Studio server log), stay transparent (failures are kept lessons, never
+> amended away), make the smallest change that serves the intention, and follow the two-layer
+> gate — gather data, report with evidence, and wait for my decision before editing or committing
+> anything (branch size-shrinking only, never main, never force-push, I push manually). Your first
+> task is not to code but to bring me a MoE mental-simulation of the §16 roadmap options —
+> especially "attack disposition not capability" (make "think differently" resolve to
+> model.transport) and "study the drift deliberately" (does introspection→assertion→contrast
+> reproduce across goals/brains, and is self-modification necessary to trigger it) — and let me
+> choose the direction.
