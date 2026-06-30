@@ -15,6 +15,7 @@ import os
 import pathlib
 import subprocess
 import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 from typing import Any
@@ -491,8 +492,9 @@ def _rod_seen_in_raw(entries: list[dict]) -> bool:
 def _brain_test(transport: str) -> dict:
     model = dict(_model_cfg())
     model["transport"] = transport
-    test_timeout = int(model.get("brain_test_timeout_s") or BRAIN_TEST_TIMEOUT_S)
-    model["timeout"] = test_timeout
+    test_timeout = max(5, int(model.get("brain_test_timeout_s") or BRAIN_TEST_TIMEOUT_S))
+    # ROD = 2 calls; cap each transport call so the whole test stays within test_timeout.
+    model["timeout"] = max(8, test_timeout // 2)
     if transport == "browser_ai":
         return {"ok": False, "transport": transport, "error": "browser_ai is not implemented"}
     started = time.time()
@@ -509,9 +511,12 @@ def _brain_test(transport: str) -> dict:
     )
     brain = brain_mod.Brain(model)
     try:
-        if time.time() > deadline:
-            raise TimeoutError(f"brain test budget exceeded ({test_timeout}s)")
-        content, parsed, reasoning = brain.think(system, user, parse_retries=0)
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            fut = pool.submit(brain.think, system, user, 0)
+            try:
+                content, parsed, reasoning = fut.result(timeout=max(0.1, deadline - time.time()))
+            except FuturesTimeout as e:
+                raise TimeoutError(f"brain test exceeded {test_timeout}s hard cap") from e
         entries = brain_mod.read_raw_log_tail(_active_raw_log(model))[before:]
         t_entries = [e for e in entries if e.get("transport") == transport]
         requests = [e for e in t_entries if e.get("phase") == "request"]

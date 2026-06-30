@@ -170,7 +170,7 @@
     "opencode": {
       "label": "OpenCode CLI stateless run",
       "kind": "cli_stateless",
-      "exe": "C:/Users/ewojgab/AppData/Local/OpenCode/opencode-cli.exe",
+      "exe": "%USERPROFILE%/AppData/Local/OpenCode/opencode-cli.exe",
       "model": "opencode/nemotron-3-ultra-free",
       "format": "json",
       "agent": "",
