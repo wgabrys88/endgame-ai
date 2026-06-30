@@ -1,6 +1,6 @@
 {
   "model": {
-    "transport": "openai",
+    "transport": "opencode",
     "host": "http://localhost:1234",
     "model": "nvidia-nemotron-3-nano-4b",
     "temperature": 0.3,
@@ -14,7 +14,7 @@
       "budget_tokens": 4096
     },
     "file_proxy": {
-      "request_path": "comms/think_log.txt",
+      "request_path": "comms/request.json",
       "response_path": "comms/response.json",
       "archive_dir": "comms/archive",
       "poll_interval_ms": 1000
@@ -35,7 +35,354 @@
         "grok",
         "anything"
       ]
-    }
+    },
+    "brain_io_log_path": "comms/brain_io.ndjson",
+    "usage_log_path": "comms/brain_usage.ndjson",
+    "log_brain_io": false,
+    "openai": {
+      "label": "LM Studio / OpenAI-compatible chat completions",
+      "kind": "api_chat_completions",
+      "host": "http://localhost:1234",
+      "endpoint_path": "/v1/chat/completions",
+      "model": "nvidia-nemotron-3-nano-4b",
+      "api_key_env": "",
+      "parameters": {
+        "temperature": 0.3,
+        "temperature_bump": 0.15,
+        "top_p": 0.9,
+        "top_k": 20,
+        "repeat_penalty": 1.06,
+        "presence_penalty": 0,
+        "frequency_penalty": 0,
+        "max_tokens": 16384,
+        "thinking": {
+          "budget_tokens": 4096
+        }
+      },
+      "controls": [
+        {
+          "key": "parameters.temperature",
+          "type": "range",
+          "min": 0,
+          "max": 2,
+          "step": 0.05,
+          "label": "temperature"
+        },
+        {
+          "key": "parameters.temperature_bump",
+          "type": "range",
+          "min": 0,
+          "max": 1,
+          "step": 0.05,
+          "label": "retry temperature bump"
+        },
+        {
+          "key": "parameters.top_p",
+          "type": "range",
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "label": "top_p"
+        },
+        {
+          "key": "parameters.top_k",
+          "type": "number",
+          "min": 0,
+          "max": 200,
+          "step": 1,
+          "label": "top_k"
+        },
+        {
+          "key": "parameters.repeat_penalty",
+          "type": "range",
+          "min": 0.8,
+          "max": 2,
+          "step": 0.01,
+          "label": "repeat_penalty"
+        },
+        {
+          "key": "parameters.presence_penalty",
+          "type": "range",
+          "min": -2,
+          "max": 2,
+          "step": 0.1,
+          "label": "presence_penalty"
+        },
+        {
+          "key": "parameters.frequency_penalty",
+          "type": "range",
+          "min": -2,
+          "max": 2,
+          "step": 0.1,
+          "label": "frequency_penalty"
+        },
+        {
+          "key": "parameters.max_tokens",
+          "type": "number",
+          "min": 256,
+          "max": 131072,
+          "step": 256,
+          "label": "max_tokens"
+        },
+        {
+          "key": "timeout",
+          "type": "number",
+          "min": 30,
+          "max": 7200,
+          "step": 30,
+          "label": "timeout seconds"
+        },
+        {
+          "key": "host",
+          "type": "text",
+          "label": "base URL"
+        },
+        {
+          "key": "model",
+          "type": "text",
+          "label": "model"
+        }
+      ]
+    },
+    "opencode": {
+      "label": "OpenCode CLI stateless run",
+      "kind": "cli_stateless",
+      "exe": "C:/Users/ewojgab/AppData/Local/OpenCode/opencode-cli.exe",
+      "model": "opencode/nemotron-3-ultra-free",
+      "format": "json",
+      "agent": "",
+      "variant": "",
+      "thinking": false,
+      "attach": "",
+      "dir": "",
+      "skip_permissions": false,
+      "timeout": 900,
+      "extra_args": [],
+      "controls": [
+        {
+          "key": "exe",
+          "type": "text",
+          "label": "executable"
+        },
+        {
+          "key": "model",
+          "type": "text",
+          "label": "provider/model"
+        },
+        {
+          "key": "format",
+          "type": "select",
+          "choices": [
+            "default",
+            "json"
+          ],
+          "label": "output format"
+        },
+        {
+          "key": "agent",
+          "type": "text",
+          "label": "agent"
+        },
+        {
+          "key": "variant",
+          "type": "text",
+          "label": "variant / reasoning effort"
+        },
+        {
+          "key": "thinking",
+          "type": "checkbox",
+          "label": "show thinking blocks"
+        },
+        {
+          "key": "attach",
+          "type": "text",
+          "label": "attach server URL"
+        },
+        {
+          "key": "dir",
+          "type": "text",
+          "label": "working dir"
+        },
+        {
+          "key": "skip_permissions",
+          "type": "checkbox",
+          "label": "dangerously skip permissions (brain mode should usually be off)"
+        },
+        {
+          "key": "timeout",
+          "type": "number",
+          "min": 30,
+          "max": 7200,
+          "step": 30,
+          "label": "timeout seconds"
+        },
+        {
+          "key": "prompt_mode",
+          "type": "select",
+          "choices": [
+            "file",
+            "argv"
+          ],
+          "label": "prompt delivery"
+        },
+        {
+          "key": "keep_prompt_files",
+          "type": "checkbox",
+          "label": "keep temp prompt files"
+        }
+      ],
+      "prompt_mode": "file",
+      "keep_prompt_files": false
+    },
+    "grok_build": {
+      "label": "Grok Build CLI headless",
+      "kind": "cli_stateless",
+      "exe": "grok",
+      "model": "grok-build",
+      "output_format": "streaming-json",
+      "timeout": 900,
+      "extra_args": [],
+      "controls": [
+        {
+          "key": "exe",
+          "type": "text",
+          "label": "executable"
+        },
+        {
+          "key": "model",
+          "type": "text",
+          "label": "model"
+        },
+        {
+          "key": "output_format",
+          "type": "select",
+          "choices": [
+            "streaming-json",
+            "text",
+            "json"
+          ],
+          "label": "output format"
+        },
+        {
+          "key": "timeout",
+          "type": "number",
+          "min": 30,
+          "max": 7200,
+          "step": 30,
+          "label": "timeout seconds"
+        }
+      ]
+    },
+    "xai_responses": {
+      "label": "xAI Responses API for grok-build-0.1",
+      "kind": "api_responses",
+      "host": "https://api.x.ai",
+      "endpoint_path": "/v1/responses",
+      "model": "grok-build-0.1",
+      "api_key_env": "XAI_API_KEY",
+      "store": false,
+      "temperature": 0.3,
+      "temperature_bump": 0.15,
+      "top_p": 0.95,
+      "max_output_tokens": 8192,
+      "reasoning": {
+        "effort": null
+      },
+      "parallel_tool_calls": false,
+      "controls": [
+        {
+          "key": "host",
+          "type": "text",
+          "label": "base URL"
+        },
+        {
+          "key": "model",
+          "type": "text",
+          "label": "model"
+        },
+        {
+          "key": "api_key_env",
+          "type": "text",
+          "label": "API key env var"
+        },
+        {
+          "key": "store",
+          "type": "checkbox",
+          "label": "store response at provider"
+        },
+        {
+          "key": "temperature",
+          "type": "range",
+          "min": 0,
+          "max": 2,
+          "step": 0.05,
+          "label": "temperature"
+        },
+        {
+          "key": "temperature_bump",
+          "type": "range",
+          "min": 0,
+          "max": 1,
+          "step": 0.05,
+          "label": "retry temperature bump"
+        },
+        {
+          "key": "top_p",
+          "type": "range",
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "label": "top_p"
+        },
+        {
+          "key": "max_output_tokens",
+          "type": "number",
+          "min": 256,
+          "max": 131072,
+          "step": 256,
+          "label": "max_output_tokens"
+        },
+        {
+          "key": "parallel_tool_calls",
+          "type": "checkbox",
+          "label": "parallel tool calls"
+        },
+        {
+          "key": "timeout",
+          "type": "number",
+          "min": 30,
+          "max": 7200,
+          "step": 30,
+          "label": "timeout seconds"
+        }
+      ]
+    },
+    "usage_limits": {
+      "period": "month",
+      "note": "Optional local budget targets for the workbench. Provider account quota/subscription state is not guessed.",
+      "openai": {
+        "monthly_tokens": null,
+        "monthly_cost_usd": null
+      },
+      "opencode": {
+        "monthly_tokens": null,
+        "monthly_cost_usd": null
+      },
+      "grok_build": {
+        "monthly_tokens": null,
+        "monthly_cost_usd": null
+      },
+      "xai_responses": {
+        "monthly_tokens": null,
+        "monthly_cost_usd": null
+      }
+    },
+    "presence_penalty": 0,
+    "frequency_penalty": 0,
+    "runtime_log_path": "comms/runtime.ndjson",
+    "log_runtime": true,
+    "log_session": true,
+    "session_log_dir": "comms"
   },
   "observe": {
     "min_elements": 3,

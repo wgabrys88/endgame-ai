@@ -8,3 +8,14 @@ __pycache__/
 
 # Scratch / logs
 *.log
+
+# Brain transport accounting / raw prompts
+comms/brain_io.ndjson
+comms/brain_usage.ndjson
+comms/archive/
+
+# Unified raw request/response session journal (per-run, regenerated)
+comms/session-*.log
+comms/session.log
+comms/runtime.ndjson
+comms/cli_prompts/
