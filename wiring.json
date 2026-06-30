@@ -60,9 +60,8 @@
         "anything"
       ]
     },
-    "brain_io_log_path": "comms/brain_io.ndjson",
-    "usage_log_path": "comms/brain_usage.ndjson",
-    "log_brain_io": false,
+    "log_raw": true,
+    "brain_test_timeout_s": 45,
     "openai": {
       "label": "LM Studio / OpenAI-compatible chat completions",
       "kind": "api_chat_completions",
@@ -404,9 +403,7 @@
     "presence_penalty": 0,
     "frequency_penalty": 0,
     "runtime_log_path": "comms/runtime.ndjson",
-    "log_runtime": true,
-    "log_session": true,
-    "session_log_dir": "comms"
+    "log_runtime": true
   },
   "observe": {
     "min_elements": 3,

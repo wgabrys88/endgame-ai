@@ -12,10 +12,10 @@ ROD remains unchanged: every decision is two stateless calls. Call 1 provides re
 Call 2 receives ROD_REASONING_CONTENT and commits the typed JSON record.
 
 Logging discipline:
-  - comms/runtime.ndjson is the compact live event stream used by the workbench.
-  - comms/session-*.log is the raw request/response journal for forensic debugging.
-  - comms/brain_usage.ndjson is the structured usage ledger.
-  - comms/brain_io.ndjson is optional raw transport JSON and is OFF by default.
+  - <timestamp>.txt in workspace root is the single forensic raw brain log (one JSON line per entry).
+  - Raw request/response bytes are captured at each transport boundary and appended with seq/ts/phase.
+  - comms/runtime.ndjson is a slim organism lifecycle stream only (node_start, narration — not brain I/O).
+  - state.json is live snapshot truth; forensic logs are never polled as live state.
 
 No silent fallbacks: if the selected transport is unavailable, the call raises with a
 specific falsifiable reason.
@@ -148,9 +148,118 @@ def _truncate(s: str, limit: int = 12000) -> str:
 
 _RUNTIME_SEQ = 0
 _RUNTIME_LOCK = threading.Lock()
-_SESSION_LOG_PATH: pathlib.Path | None = None
-_SESSION_SEQ = 0
-_SESSION_LOCK = threading.Lock()
+_RAW_LOG_PATH: pathlib.Path | None = None
+_RAW_SEQ = 0
+_RAW_LOCK = threading.Lock()
+
+
+def raw_log_path(cfg: dict | None = None) -> pathlib.Path:
+    """One append-only raw brain log per process, created at first brain call."""
+    global _RAW_LOG_PATH
+    cfg = cfg or {}
+    if _RAW_LOG_PATH is None:
+        explicit = cfg.get("raw_log_path")
+        if explicit:
+            p = _root_path(explicit, "")
+            _RAW_LOG_PATH = p
+        else:
+            stamp = time.strftime("%Y%m%dT%H%M%S", time.localtime())
+            _RAW_LOG_PATH = ROOT / f"{stamp}.txt"
+        _RAW_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        if not _RAW_LOG_PATH.exists():
+            _RAW_LOG_PATH.write_text("", encoding="utf-8")
+    return _RAW_LOG_PATH
+
+
+def _next_raw_seq() -> int:
+    global _RAW_SEQ
+    with _RAW_LOCK:
+        _RAW_SEQ += 1
+        return _RAW_SEQ
+
+
+def log_raw_entry(cfg: dict | None, entry: dict) -> None:
+    """Append one raw log line. Logging must never change organism behavior."""
+    cfg = cfg or {}
+    if cfg.get("log_raw", True) is False:
+        return
+    try:
+        row = dict(entry)
+        row.setdefault("ts", time.time())
+        row.setdefault("iso", time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime()))
+        _append_ndjson(raw_log_path(cfg), row)
+    except Exception:
+        pass
+
+
+def read_raw_log_tail(path: pathlib.Path | None = None, *, max_lines: int = 5000,
+                      max_bytes: int = 4_000_000) -> list[dict]:
+    rows: list[dict] = []
+    path = path or raw_log_path()
+    if not path.exists():
+        return rows
+    for line in _tail_text_lines(path, max_lines=max_lines, max_bytes=max_bytes):
+        try:
+            obj = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(obj, dict):
+            rows.append(obj)
+    return rows
+
+
+def _tail_text_lines(path: pathlib.Path, max_lines: int = 200, max_bytes: int = 600_000) -> list[str]:
+    try:
+        size = path.stat().st_size
+        with path.open("rb") as f:
+            if size > max_bytes:
+                f.seek(max(0, size - max_bytes))
+                f.readline()
+            raw = f.read()
+    except OSError:
+        return []
+    return raw.decode("utf-8", errors="replace").splitlines()[-max_lines:]
+
+
+def usage_from_raw_response(entry: dict) -> tuple[dict | None, str, float | None]:
+    """Derive usage dict, model name, and elapsed_s from one raw response log entry."""
+    raw = entry.get("raw") if isinstance(entry.get("raw"), dict) else {}
+    transport = str(entry.get("transport") or "")
+    model = str(raw.get("model") or entry.get("model") or "")
+    elapsed = entry.get("elapsed_s")
+    try:
+        elapsed = float(elapsed) if elapsed is not None else None
+    except (TypeError, ValueError):
+        elapsed = None
+
+    usage = None
+    body = raw.get("body")
+    if isinstance(body, dict):
+        usage = _first_usage(body)
+        if not model:
+            model = str(body.get("model") or "")
+    resp = raw.get("response")
+    if usage is None and isinstance(resp, dict):
+        usage = _first_usage(resp)
+        if not model:
+            model = str(resp.get("model") or "")
+
+    if usage is None and isinstance(raw.get("stdout"), str) and raw.get("stdout").strip():
+        _, _, usage, _ = _parse_json_or_ndjson(str(raw.get("stdout")))
+
+    if elapsed is None:
+        try:
+            elapsed = float(raw.get("elapsed_s"))
+        except (TypeError, ValueError):
+            elapsed = None
+    return usage, model, elapsed
+
+
+def _redact_headers(headers: dict) -> dict:
+    out = dict(headers or {})
+    if "Authorization" in out:
+        out["Authorization"] = "<redacted>"
+    return out
 
 
 def runtime_log_path(cfg: dict | None = None) -> pathlib.Path:
@@ -179,26 +288,6 @@ def log_runtime_event(cfg: dict | None, event: str, **payload: Any) -> None:
     except Exception:
         # Logging must never change organism behavior.
         pass
-
-
-def _session_log_path(cfg: dict) -> pathlib.Path:
-    """One raw request/response journal per process, across brain swaps."""
-    global _SESSION_LOG_PATH
-    if _SESSION_LOG_PATH is None:
-        explicit = cfg.get("session_log_path")
-        if explicit:
-            _SESSION_LOG_PATH = _root_path(explicit, "comms/session.log")
-        else:
-            stamp = time.strftime("%Y%m%dT%H%M%S", time.localtime())
-            base = cfg.get("session_log_dir") or "comms"
-            _SESSION_LOG_PATH = _root_path(None, f"{base}/session-{stamp}.log")
-    return _SESSION_LOG_PATH
-
-
-def _append_session(path: pathlib.Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as f:
-        f.write(text)
 
 
 # ─── usage / structured response helpers ───────────────────────────────────
@@ -415,57 +504,23 @@ def _make_prompt_file(name: str, prompt: str) -> pathlib.Path:
 class Brain:
     def __init__(self, model_cfg: dict):
         self.cfg = dict(model_cfg or {})
-        self.io_log = _root_path(self.cfg.get("brain_io_log_path"), "comms/brain_io.ndjson")
-        self.usage_log = _root_path(self.cfg.get("usage_log_path"), "comms/brain_usage.ndjson")
-        self.session_log = _session_log_path(self.cfg)
 
     def transport(self) -> str:
         return self.cfg.get("transport", "openai")
 
-    # ── raw session journal ────────────────────────────────────────────────
-    def _log_request(self, transport: str, system: str, user: str, temperature: float) -> int:
-        global _SESSION_SEQ
-        if not self.cfg.get("log_session", True):
-            return -1
-        try:
-            with _SESSION_LOCK:
-                _SESSION_SEQ += 1
-                seq = _SESSION_SEQ
-            ts = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())
-            model = self.cfg.get(transport, {}).get("model") if isinstance(self.cfg.get(transport), dict) else None
-            model = model or self.cfg.get("model", "")
-            block = (
-                f"\n===== REQUEST #{seq} | {ts} | transport={transport} | model={model} "
-                f"| temperature={temperature} =====\n"
-                f"----- SYSTEM -----\n{system}\n"
-                f"----- USER -----\n{user}\n"
-                f"===== END REQUEST #{seq} =====\n"
-            )
-            _append_session(self.session_log, block)
-            return seq
-        except Exception:
-            return -1
+    def _model_name(self, transport: str) -> str:
+        block = self.cfg.get(transport) if isinstance(self.cfg.get(transport), dict) else {}
+        return str(block.get("model") or self.cfg.get("model") or "")
 
-    def _log_response(self, seq: int, transport: str, started: float,
-                      content: str = "", reasoning: str = "", error: str = "") -> None:
-        if not self.cfg.get("log_session", True):
-            return
-        try:
-            ts = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())
-            elapsed = time.time() - started
-            head = (
-                f"\n===== RESPONSE #{seq} | {ts} | transport={transport} "
-                f"| elapsed_s={elapsed:.2f}{' | ERROR' if error else ''} =====\n"
-            )
-            body = (f"----- ERROR -----\n{error}\n" if error else "")
-            if reasoning:
-                body += f"----- REASONING -----\n{reasoning}\n"
-            if content or not error:
-                body += f"----- CONTENT -----\n{content}\n"
-            tail = f"===== END RESPONSE #{seq} =====\n"
-            _append_session(self.session_log, head + body + tail)
-        except Exception:
-            pass
+    def _log_raw(self, seq: int, phase: str, transport: str, raw: Any, **extra: Any) -> None:
+        log_raw_entry(self.cfg, {
+            "seq": seq,
+            "phase": phase,
+            "transport": transport,
+            "model": self._model_name(transport),
+            "raw": raw,
+            **extra,
+        })
 
     def think(self, system: str, user: str, parse_retries: int = 2) -> tuple[str, dict | None, str]:
         """One ROD decision. Returns (content, parsed_record_or_None, reasoning)."""
@@ -509,50 +564,29 @@ class Brain:
     # ── transport dispatch ─────────────────────────────────────────────────
     def _call(self, system: str, user: str, temperature: float) -> tuple[str, str]:
         t = self.transport()
-        seq = self._log_request(t, system, user, temperature)
+        seq = _next_raw_seq()
         started = time.time()
-        log_runtime_event(self.cfg, "brain_request", transport=t, request_seq=seq,
-                          model=self._provider_cfg(t).get("model", self.cfg.get("model", "")),
-                          prompt_chars=len(system) + len(user), temperature=temperature)
         try:
             if t == "file_proxy":
-                content, reasoning = self._file_proxy(system, user), ""
+                content, reasoning = self._file_proxy(system, user, seq), ""
             elif t == "opencode":
-                content, reasoning = self._opencode(system, user, temperature)
+                content, reasoning = self._opencode(system, user, temperature, seq)
             elif t in ("grok_build", "grok_build_cli"):
-                content, reasoning = self._grok_build_cli(system, user, temperature)
+                content, reasoning = self._grok_build_cli(system, user, temperature, seq)
             elif t in ("xai_responses", "grok_build_api"):
-                content, reasoning = self._xai_responses(system, user, temperature)
+                content, reasoning = self._xai_responses(system, user, temperature, seq)
             elif t == "browser_ai":
-                content, reasoning = self._browser_ai(system, user), ""
+                content, reasoning = self._browser_ai(system, user, seq), ""
             else:
-                content, reasoning = self._openai(system, user, temperature)
+                content, reasoning = self._openai(system, user, temperature, seq)
         except Exception as e:
-            self._log_response(seq, t, started, error=f"{type(e).__name__}: {e}")
-            log_runtime_event(self.cfg, "brain_error", transport=t, request_seq=seq,
-                              elapsed_s=round(time.time() - started, 3), error=f"{type(e).__name__}: {e}")
+            self._log_raw(seq, "response", t, {"error": f"{type(e).__name__}: {e}"},
+                          elapsed_s=round(time.time() - started, 3))
             raise
-        elapsed = time.time() - started
-        self._log_response(seq, t, started, content=content, reasoning=reasoning)
-        log_runtime_event(self.cfg, "brain_response", transport=t, request_seq=seq,
-                          elapsed_s=round(elapsed, 3), content_chars=len(content or ""),
-                          reasoning_chars=len(reasoning or ""), content_preview=_truncate(content, 600))
         return content, reasoning
 
-    def _record_io(self, transport: str, direction: str, payload: dict):
-        if self.cfg.get("log_brain_io", False):
-            _append_ndjson(self.io_log, {"ts": time.time(), "transport": transport, "direction": direction, **payload})
-
-    def _record_usage(self, transport: str, model: str | None, usage: dict | None, extra: dict | None = None):
-        row = {"ts": time.time(), "transport": transport, "model": model or "", "usage": usage or {}, **(extra or {})}
-        _append_ndjson(self.usage_log, row)
-        extra_row = dict(extra or {})
-        extra_row.setdefault("exact_usage", bool(usage))
-        log_runtime_event(self.cfg, "usage", transport=transport, model=model or "",
-                          usage=usage or {}, **extra_row)
-
     # ── OpenAI-compatible chat completions ─────────────────────────────────
-    def _openai(self, system: str, user: str, temperature: float) -> tuple[str, str]:
+    def _openai(self, system: str, user: str, temperature: float, seq: int) -> tuple[str, str]:
         cfg = self._provider_cfg("openai")
         host = str(cfg.get("host", "http://localhost:1234")).rstrip("/")
         path = str(cfg.get("endpoint_path", "/v1/chat/completions"))
@@ -573,27 +607,30 @@ class Brain:
         api_key = cfg.get("api_key") or os.environ.get(str(cfg.get("api_key_env", "")))
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
-        self._record_io("openai", "request", {"url": host + path, "model": payload.get("model"), "payload": payload})
-        req = urllib.request.Request(host + path, data=json.dumps(payload).encode("utf-8"), headers=headers)
+        url = host + path
+        self._log_raw(seq, "request", "openai", {
+            "url": url, "model": payload.get("model"), "headers": _redact_headers(headers), "body": payload,
+        }, rod_feedback="ROD_REASONING_CONTENT" in user)
+        started = time.time()
+        req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
         try:
             with urllib.request.urlopen(req, timeout=self._timeout(cfg)) as r:
-                raw = r.read().decode("utf-8", errors="replace")
-                resp = json.loads(raw)
+                raw_text = r.read().decode("utf-8", errors="replace")
+                resp = json.loads(raw_text)
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8", errors="replace")
             raise RuntimeError(f"openai transport: HTTP {e.code}: {body[:1000]}")
         except Exception as e:
             raise RuntimeError(f"openai transport: {e}")
-        self._record_io("openai", "response_raw", {"model": payload.get("model"), "response": resp})
-        self._record_usage("openai", str(payload.get("model")), resp.get("usage"), {"exact_usage": bool(resp.get("usage"))})
+        self._log_raw(seq, "response", "openai", {"model": payload.get("model"), "body": resp},
+                      elapsed_s=round(time.time() - started, 3))
         msg = (resp.get("choices") or [{}])[0].get("message", {})
         content = msg.get("content", "")
         reasoning = msg.get("reasoning_content", "") or msg.get("reasoning", "")
-        self._record_io("openai", "response", {"model": payload.get("model"), "content_preview": content[:1000]})
         return content, reasoning
 
     # ── xAI Responses API direct path ──────────────────────────────────────
-    def _xai_responses(self, system: str, user: str, temperature: float) -> tuple[str, str]:
+    def _xai_responses(self, system: str, user: str, temperature: float, seq: int) -> tuple[str, str]:
         cfg = self._provider_cfg("xai_responses")
         host = str(cfg.get("host", "https://api.x.ai")).rstrip("/")
         path = str(cfg.get("endpoint_path", "/v1/responses"))
@@ -616,12 +653,16 @@ class Brain:
         if not api_key:
             raise RuntimeError("xai_responses transport: missing API key; set XAI_API_KEY or model.xai_responses.api_key_env")
         headers["Authorization"] = f"Bearer {api_key}"
-        self._record_io("xai_responses", "request", {"url": host + path, "model": model, "payload": {**payload, "input": payload["input"][:12000]}})
-        req = urllib.request.Request(host + path, data=json.dumps(payload).encode("utf-8"), headers=headers)
+        url = host + path
+        self._log_raw(seq, "request", "xai_responses", {
+            "url": url, "model": model, "headers": _redact_headers(headers), "body": payload,
+        }, rod_feedback="ROD_REASONING_CONTENT" in user)
+        started = time.time()
+        req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
         try:
             with urllib.request.urlopen(req, timeout=self._timeout(cfg)) as r:
-                raw = r.read().decode("utf-8", errors="replace")
-                resp = json.loads(raw)
+                raw_text = r.read().decode("utf-8", errors="replace")
+                resp = json.loads(raw_text)
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8", errors="replace")
             raise RuntimeError(f"xai_responses transport: HTTP {e.code}: {body[:1000]}")
@@ -630,14 +671,12 @@ class Brain:
         content, reasoning = _xai_response_text(resp)
         if not content:
             raise RuntimeError("xai_responses transport: empty response text")
-        usage = resp.get("usage") if isinstance(resp.get("usage"), dict) else None
-        self._record_io("xai_responses", "response_raw", {"model": model, "response": resp})
-        self._record_usage("xai_responses", model, usage, {"exact_usage": bool(usage), "cost_usd": _cost_usd(usage)})
-        self._record_io("xai_responses", "response", {"model": model, "content_preview": content[:1000]})
+        self._log_raw(seq, "response", "xai_responses", {"model": model, "body": resp},
+                      elapsed_s=round(time.time() - started, 3))
         return content, reasoning
 
     # ── file proxy ─────────────────────────────────────────────────────────
-    def _file_proxy(self, system: str, user: str) -> str:
+    def _file_proxy(self, system: str, user: str, seq: int) -> str:
         cfg = self.cfg.get("file_proxy", {})
         req_path = _root_path(cfg.get("request_path"), "comms/request.json")
         resp_path = _root_path(cfg.get("response_path"), "comms/response.json")
@@ -652,10 +691,11 @@ class Brain:
             "system": system, "user": user,
         }
         _atomic_write_json(req_path, request_obj)
-        self._record_io("file_proxy", "request", {"request_path": str(req_path), "payload": request_obj})
-        log_runtime_event(self.cfg, "file_proxy_pending", id=rid, request_path=str(req_path))
+        self._log_raw(seq, "request", "file_proxy", {"request_path": str(req_path), "body": request_obj},
+                      rod_feedback="ROD_REASONING_CONTENT" in user)
+        started = time.time()
         poll = max(0.05, int(cfg.get("poll_interval_ms", 1000)) / 1000.0)
-        deadline = time.time() + self._timeout()
+        deadline = started + self._timeout()
         while time.time() < deadline:
             if resp_path.exists():
                 try:
@@ -665,20 +705,19 @@ class Brain:
                     continue
                 if resp.get("id") in (None, "", rid):
                     content = _proxy_content(resp)
-                    self._record_io("file_proxy", "response_raw", {"response_path": str(resp_path), "response": resp})
-                    usage = _first_usage(resp)
-                    self._record_usage("file_proxy", str(self.cfg.get("model", "file_proxy")), usage, {"exact_usage": bool(usage)})
+                    self._log_raw(seq, "response", "file_proxy",
+                                  {"response_path": str(resp_path), "body": resp, "id": rid},
+                                  elapsed_s=round(time.time() - started, 3))
                     try:
                         shutil.move(str(resp_path), str(archive / f"response.{rid}.json"))
                     except OSError:
                         pass
-                    log_runtime_event(self.cfg, "file_proxy_answered", id=rid, response_chars=len(content))
                     return content
             time.sleep(poll)
         raise TimeoutError(f"file_proxy transport timed out waiting for {resp_path}")
 
     # ── OpenCode CLI stateless run ─────────────────────────────────────────
-    def _opencode(self, system: str, user: str, temperature: float) -> tuple[str, str]:
+    def _opencode(self, system: str, user: str, temperature: float, seq: int) -> tuple[str, str]:
         cfg = self._provider_cfg("opencode")
         exe = _resolve_executable(str(cfg.get("exe") or "opencode"), "opencode")
         model = cfg.get("model")
@@ -721,7 +760,7 @@ class Brain:
 
         cmd += [str(x) for x in (cfg.get("extra_args") or [])]
         try:
-            return self._run_cli_transport("opencode", cmd, str(model or ""), cfg, prompt_values=prompt_values)
+            return self._run_cli_transport("opencode", cmd, str(model or ""), cfg, seq, prompt_values=prompt_values)
         finally:
             if temp_path and not cfg.get("keep_prompt_files", False):
                 try:
@@ -730,7 +769,7 @@ class Brain:
                     pass
 
     # ── Grok Build CLI stateless headless call ─────────────────────────────
-    def _grok_build_cli(self, system: str, user: str, temperature: float) -> tuple[str, str]:
+    def _grok_build_cli(self, system: str, user: str, temperature: float, seq: int) -> tuple[str, str]:
         cfg = self._provider_cfg("grok_build")
         exe = _resolve_executable(str(cfg.get("exe") or "grok"), "grok_build")
         model = cfg.get("model", "grok-build")
@@ -743,17 +782,16 @@ class Brain:
         if cfg.get("cwd_flag") and cfg.get("dir"):
             cmd += [str(cfg["cwd_flag"]), str(cfg["dir"])]
         cmd += [str(x) for x in (cfg.get("extra_args") or [])]
-        return self._run_cli_transport("grok_build", cmd, str(model), cfg, prompt_values={prompt})
+        return self._run_cli_transport("grok_build", cmd, str(model), cfg, seq, prompt_values={prompt})
 
-    def _run_cli_transport(self, name: str, cmd: list[str], model: str, cfg: dict,
+    def _run_cli_transport(self, name: str, cmd: list[str], model: str, cfg: dict, seq: int,
                            prompt_values: set[str] | None = None) -> tuple[str, str]:
         started = time.time()
         prompt_values = prompt_values or set()
         redacted_cmd = _redact_argv(cmd, prompt_values)
-        self._record_io(name, "request", {"argv": redacted_cmd, "model": model,
-                                           "prompt_chars": sum(len(x) for x in prompt_values)})
-        log_runtime_event(self.cfg, "cli_start", transport=name, model=model, argv=redacted_cmd,
-                          prompt_chars=sum(len(x) for x in prompt_values))
+        self._log_raw(seq, "request", name, {
+            "argv": redacted_cmd, "model": model, "prompt_chars": sum(len(x) for x in prompt_values),
+        }, rod_feedback=any("ROD_REASONING_CONTENT" in p for p in prompt_values))
         env = os.environ.copy()
         for k, v in (cfg.get("env") or {}).items():
             env[str(k)] = str(v)
@@ -772,34 +810,31 @@ class Brain:
         stdout = _read_text_lossy(proc.stdout or b"")
         stderr = _read_text_lossy(proc.stderr or b"")
         elapsed = time.time() - started
-        self._record_io(name, "response_raw", {"argv": redacted_cmd, "returncode": proc.returncode,
-                                                "elapsed_s": elapsed, "stdout": stdout, "stderr": stderr})
-        log_runtime_event(self.cfg, "cli_exit", transport=name, model=model, returncode=proc.returncode,
-                          elapsed_s=round(elapsed, 3), stdout_preview=_truncate(stdout, 800),
-                          stderr_preview=_truncate(stderr, 800))
+        self._log_raw(seq, "response", name, {
+            "argv": redacted_cmd, "model": model, "returncode": proc.returncode,
+            "stdout": _truncate(stdout, 200_000), "stderr": _truncate(stderr, 20_000),
+        }, elapsed_s=round(elapsed, 3))
         if proc.returncode != 0:
             raise RuntimeError(f"{name} transport: exit {proc.returncode}: {stderr[:1000] or stdout[:1000]}")
-        content, reasoning, usage, _objs = _parse_json_or_ndjson(stdout)
+        content, reasoning, _usage, _objs = _parse_json_or_ndjson(stdout)
         if not content:
             raise RuntimeError(f"{name} transport: empty response")
-        self._record_usage(name, model, usage, {
-            "exact_usage": bool(usage),
-            "elapsed_s": elapsed,
-            "note": "usage parsed from CLI stdout" if usage else "CLI did not expose per-call token usage in stdout",
-        })
-        self._record_io(name, "response", {"model": model, "content_preview": content[:1000],
-                                            "reasoning_preview": reasoning[:1000]})
         return content, reasoning
 
-    def _browser_ai(self, system: str, user: str) -> str:
+    def _browser_ai(self, system: str, user: str, seq: int) -> str:
         import actions
         if not hasattr(actions, "browser_ai_handoff"):
             raise RuntimeError("browser_ai transport: actions.browser_ai_handoff not available; use file_proxy")
         prompt = system + "\n\n" + user
+        self._log_raw(seq, "request", "browser_ai", {"prompt": prompt},
+                      rod_feedback="ROD_REASONING_CONTENT" in prompt)
+        started = time.time()
         out = actions.browser_ai_handoff(self.cfg.get("browser_ai", {}), prompt)
         if str(out).upper().startswith("FAILED"):
             raise RuntimeError(f"browser_ai transport: {out}")
-        return str(out).replace("browser_ai_response:", "", 1).strip()
+        text = str(out).replace("browser_ai_response:", "", 1).strip()
+        self._log_raw(seq, "response", "browser_ai", {"text": text}, elapsed_s=round(time.time() - started, 3))
+        return text
 
 
 def _proxy_content(resp: dict) -> str:

@@ -119,7 +119,7 @@ def build_user_message(circuit: str, state: dict, wiring: dict) -> str:
             value = {
                 "model": {k: model.get(k) for k in (
                     "transport", "host", "model", "temperature", "top_p", "max_tokens",
-                    "brain_io_log_path", "usage_log_path"
+                    "raw_log_path", "log_raw"
                 ) if k in model},
                 "model.openai": model.get("openai"),
                 "model.xai_responses": model.get("xai_responses"),

@@ -1,14 +1,12 @@
-"""workbench — reliable live control/debug panel for endgame-ai.
+"""workbench — live control/debug panel for endgame-ai.
 
-The old panel read bulky files as if they were live state. This version uses a compact
-truth model:
-  - state.json             current organism snapshot, atomically written by organism.py
-  - comms/runtime.ndjson   live event stream, compact and append-only
-  - comms/brain_usage.ndjson structured usage ledger
-  - wiring.json            editable brain/config topology
+Truth model:
+  - state.json              current organism snapshot (live truth)
+  - comms/runtime.ndjson    slim organism lifecycle events only
+  - <timestamp>.txt         single forensic raw brain log (request/response wire bytes)
+  - wiring.json             editable brain/config topology
 
-It never treats stale state as current: every status response includes file ages, mtimes,
-and a stale flag. Raw logs remain available for inspection but are not polled into the UI.
+Forensic raw logs are for inspection and derived usage stats — never live state.
 """
 from __future__ import annotations
 
@@ -21,8 +19,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 from typing import Any
 
+import brain as brain_mod
+
 ROOT = pathlib.Path(__file__).parent.resolve()
 PORT = int(os.environ.get("ENDGAME_WORKBENCH_PORT", "8800"))
+BRAIN_TEST_TIMEOUT_S = 45
 STATE_PATH = ROOT / "state.json"
 WIRING_PATH = ROOT / "wiring.json"
 GOAL_PATH = ROOT / "goal.json"
@@ -93,17 +94,25 @@ def _runtime_path(model: dict | None = None) -> pathlib.Path:
     return _root_path(model.get("runtime_log_path"), "comms/runtime.ndjson")
 
 
-def _usage_path(model: dict | None = None) -> pathlib.Path:
+def _raw_log_paths(limit: int = 20) -> list[dict]:
+    paths = sorted(ROOT.glob("*.txt"), key=lambda p: p.stat().st_mtime, reverse=True)
+    out = []
+    for p in paths[:limit]:
+        if p.name.lower() in ("readme.txt", "license.txt"):
+            continue
+        out.append({**_stat(p), "name": p.name})
+    return out
+
+
+def _active_raw_log(model: dict | None = None) -> pathlib.Path:
     model = model or _model_cfg()
-    return _root_path(model.get("usage_log_path"), "comms/brain_usage.ndjson")
-
-
-def _session_logs(limit: int = 20) -> list[dict]:
-    comms = ROOT / "comms"
-    if not comms.is_dir():
-        return []
-    paths = sorted(comms.glob("session-*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
-    return [{**_stat(p), "name": p.name} for p in paths[:limit]]
+    explicit = model.get("raw_log_path")
+    if explicit:
+        return _root_path(explicit, "")
+    logs = _raw_log_paths(limit=1)
+    if logs and logs[0].get("exists"):
+        return ROOT / logs[0]["name"]
+    return brain_mod.raw_log_path(model)
 
 
 def _safe_comms_file(name: str) -> pathlib.Path | None:
@@ -121,26 +130,22 @@ def _safe_comms_file(name: str) -> pathlib.Path | None:
 
 
 def _log_inventory(model: dict | None = None) -> dict:
-    """All log artifacts from prior runs still on disk."""
+    """Log artifacts on disk from current and prior runs."""
     model = model or _model_cfg()
     runtime = _runtime_path(model)
-    usage = _usage_path(model)
-    brain_io = _root_path(model.get("brain_io_log_path"), "comms/brain_io.ndjson")
-    sessions = _session_logs()
+    raw_logs = _raw_log_paths()
     prompts_dir = ROOT / "comms" / "cli_prompts"
     prompts = []
     if prompts_dir.is_dir():
         prompts = sorted(prompts_dir.glob("*.prompt.txt"), key=lambda p: p.stat().st_mtime, reverse=True)
-    last_session = sessions[0] if sessions else {}
+    last_raw = raw_logs[0] if raw_logs else {}
     return {
         "runtime": {**_stat(runtime), "name": runtime.name},
-        "usage": {**_stat(usage), "name": usage.name},
-        "brain_io": {**_stat(brain_io), "name": brain_io.name},
-        "sessions": sessions,
+        "raw_logs": raw_logs,
         "cli_prompts": [{**_stat(p), "name": p.name} for p in prompts[:10]],
         "last_run": {
-            "session": last_session.get("name", ""),
-            "session_mtime": last_session.get("mtime", 0),
+            "raw_log": last_raw.get("name", ""),
+            "raw_mtime": last_raw.get("mtime", 0),
             "runtime_age_s": _stat(runtime).get("age_s"),
             "runtime_size": _stat(runtime).get("size", 0),
         },
@@ -152,19 +157,15 @@ def _read_log_tail(*, kind: str, file: str = "", tail: int = 200) -> dict:
     model = _model_cfg()
     if kind == "runtime":
         path = _runtime_path(model)
-    elif kind == "usage":
-        path = _usage_path(model)
-    elif kind == "brain_io":
-        path = _root_path(model.get("brain_io_log_path"), "comms/brain_io.ndjson")
-    elif kind == "session":
-        if not file:
-            sessions = _session_logs(limit=1)
-            if not sessions:
-                return {"ok": False, "error": "no session logs in comms/"}
-            file = sessions[0]["name"]
-        path = _safe_comms_file(file)
-        if path is None:
-            return {"ok": False, "error": f"session log not found: {file!r}"}
+    elif kind == "raw":
+        if file:
+            path = (ROOT / file).resolve()
+            try:
+                path.relative_to(ROOT.resolve())
+            except ValueError:
+                return {"ok": False, "error": f"raw log not found: {file!r}"}
+        else:
+            path = _active_raw_log(model)
     elif kind == "cli_prompt":
         path = _safe_comms_file(f"cli_prompts/{file}" if file and "/" not in file else file)
         if path is None:
@@ -175,13 +176,13 @@ def _read_log_tail(*, kind: str, file: str = "", tail: int = 200) -> dict:
     if not path.exists():
         return {"ok": False, "error": f"log file missing: {path}", "path": str(path)}
 
-    if path.suffix == ".ndjson":
-        rows = _tail_ndjson(path, max_lines=tail, max_bytes=2_000_000)
+    if path.suffix == ".ndjson" or kind == "raw":
+        rows = brain_mod.read_raw_log_tail(path, max_lines=tail, max_bytes=2_000_000) if kind == "raw" else _tail_ndjson(path, max_lines=tail, max_bytes=2_000_000)
         return {
             "ok": True,
             "kind": kind,
             "path": str(path),
-            "format": "ndjson",
+            "format": "ndjson" if kind == "raw" else "ndjson",
             "lines": len(rows),
             "tail": rows,
             "stat": _stat(path),
@@ -209,7 +210,9 @@ def _num(v, default=0.0):
 # ─── usage / compact state projection ───────────────────────────────────────
 
 def _usage_rows(limit: int = 20000) -> list[dict]:
-    return _tail_ndjson(_usage_path(), max_lines=limit, max_bytes=2_000_000)
+    path = _active_raw_log()
+    rows = brain_mod.read_raw_log_tail(path, max_lines=limit, max_bytes=4_000_000)
+    return [r for r in rows if r.get("phase") == "response"]
 
 
 def _usage_summary() -> dict:
@@ -227,9 +230,10 @@ def _usage_summary() -> dict:
     for row in rows:
         ts = _num(row.get("ts"), 0)
         transport = str(row.get("transport") or "unknown")
-        model = str(row.get("model") or "")
+        usage, model, elapsed = brain_mod.usage_from_raw_response(row)
+        model = model or str(row.get("model") or "")
         key = f"{transport} | {model}".strip()
-        usage = row.get("usage") if isinstance(row.get("usage"), dict) else {}
+        usage = usage or {}
         prompt = usage.get("prompt_tokens", usage.get("input_tokens", 0))
         completion = usage.get("completion_tokens", usage.get("output_tokens", 0))
         total = usage.get("total_tokens", _num(prompt) + _num(completion))
@@ -238,8 +242,8 @@ def _usage_summary() -> dict:
             d = usage.get(details_key)
             if isinstance(d, dict):
                 reasoning += _num(d.get("reasoning_tokens"), 0)
-        cost = row.get("cost_usd")
-        if cost is None and usage.get("cost_in_usd_ticks") is not None:
+        cost = None
+        if usage.get("cost_in_usd_ticks") is not None:
             cost = _num(usage.get("cost_in_usd_ticks")) / 10_000_000_000
         for name, pred in buckets.items():
             if not pred(ts):
@@ -250,20 +254,18 @@ def _usage_summary() -> dict:
                 "total_tokens": 0, "cost_usd": 0.0, "elapsed_s": 0.0, "notes": set(),
             })
             cur["calls"] += 1
-            if row.get("exact_usage") or usage:
+            if usage:
                 cur["exact_calls"] += 1
             cur["prompt_tokens"] += int(_num(prompt, 0))
             cur["completion_tokens"] += int(_num(completion, 0))
             cur["reasoning_tokens"] += int(reasoning)
             cur["total_tokens"] += int(_num(total, 0))
             cur["cost_usd"] += _num(cost, 0.0)
-            cur["elapsed_s"] += _num(row.get("elapsed_s"), 0.0)
-            if row.get("note"):
-                cur["notes"].add(str(row["note"]))
+            cur["elapsed_s"] += _num(elapsed, 0.0)
     for bucket in out.values():
         for cur in bucket.values():
             cur["notes"] = sorted(cur["notes"])
-    return {"path": str(_usage_path()), "rows": len(rows), "buckets": out, "limits": _model_cfg().get("usage_limits", {})}
+    return {"path": str(_active_raw_log()), "rows": len(rows), "buckets": out, "limits": _model_cfg().get("usage_limits", {})}
 
 
 def _compact_state(state: dict) -> dict:
@@ -328,8 +330,7 @@ def _normalize_wiring(wiring: dict) -> dict:
         if key in params:
             model[key] = params[key]
     model.setdefault("runtime_log_path", "comms/runtime.ndjson")
-    model.setdefault("usage_log_path", "comms/brain_usage.ndjson")
-    model.setdefault("brain_io_log_path", "comms/brain_io.ndjson")
+    model.setdefault("log_raw", True)
     if isinstance(model.get("file_proxy"), dict):
         model["file_proxy"].setdefault("request_path", "comms/request.json")
         model["file_proxy"].setdefault("response_path", "comms/response.json")
@@ -342,7 +343,7 @@ def _status() -> dict:
     state = _read_json(STATE_PATH, {})
     state_stat = _stat(STATE_PATH)
     runtime_path = _runtime_path(model)
-    usage_path = _usage_path(model)
+    raw_path = _active_raw_log(model)
     runtime_rows = _tail_ndjson(runtime_path, max_lines=200, max_bytes=800_000)
     last_runtime = runtime_rows[-1] if runtime_rows else {}
     now = time.time()
@@ -350,7 +351,7 @@ def _status() -> dict:
     runtime_stat = _stat(runtime_path)
     runtime_age = runtime_stat["age_s"] if runtime_stat["age_s"] is not None else None
     phase = str(state.get("_phase", "") or "")
-    active = bool(phase not in ("rest", "stopped", "interrupted", "max_ticks", "") or (last_runtime.get("event") in ("brain_request", "cli_start", "node_start")))
+    active = bool(phase not in ("rest", "stopped", "interrupted", "max_ticks", "") or (last_runtime.get("event") in ("node_start", "node_signal")))
     stale = bool(state_age is None or state_age > 8 and not active)
     return {
         "now": now,
@@ -365,8 +366,7 @@ def _status() -> dict:
             "state": state_stat,
             "wiring": _stat(WIRING_PATH),
             "runtime": runtime_stat,
-            "usage": _stat(usage_path),
-            "sessions": _session_logs(),
+            "raw_log": _stat(raw_path),
             "inventory": _log_inventory(model),
         },
         "runtime": runtime_rows[-120:],
@@ -464,6 +464,100 @@ def _provider_stats(provider: str) -> dict:
     return {"ok": proc.returncode == 0, "stdout": out, "stderr": err, "returncode": proc.returncode, "cmd": cmd}
 
 
+def _rod_seen_in_raw(entries: list[dict]) -> bool:
+    for row in entries:
+        if row.get("phase") != "request":
+            continue
+        if row.get("rod_feedback"):
+            return True
+        raw = row.get("raw") if isinstance(row.get("raw"), dict) else {}
+        body = raw.get("body")
+        if isinstance(body, dict):
+            messages = body.get("messages")
+            if isinstance(messages, list):
+                for msg in messages:
+                    if isinstance(msg, dict) and "ROD_REASONING_CONTENT" in str(msg.get("content", "")):
+                        return True
+            if "ROD_REASONING_CONTENT" in str(body.get("input", "")) or "ROD_REASONING_CONTENT" in str(body.get("user", "")):
+                return True
+        argv = raw.get("argv")
+        if isinstance(argv, list) and any("ROD_REASONING_CONTENT" in str(x) for x in argv):
+            return True
+        if "ROD_REASONING_CONTENT" in str(raw.get("prompt", "")):
+            return True
+    return False
+
+
+def _brain_test(transport: str) -> dict:
+    model = dict(_model_cfg())
+    model["transport"] = transport
+    test_timeout = int(model.get("brain_test_timeout_s") or BRAIN_TEST_TIMEOUT_S)
+    model["timeout"] = test_timeout
+    if transport == "browser_ai":
+        return {"ok": False, "transport": transport, "error": "browser_ai is not implemented"}
+    started = time.time()
+    deadline = started + test_timeout
+    before = len(brain_mod.read_raw_log_tail(_active_raw_log(model)))
+    system = (
+        "ROD test assistant. Call 1: emit brief reasoning about the user task. "
+        "Call 2: commit ONLY one JSON object with no markdown fences."
+    )
+    user = (
+        f"Workbench falsification for transport {transport}. "
+        'On the final call output exactly: '
+        '{"record_type":"workbench_rod_test","ok":true,"transport":"' + transport + '"}'
+    )
+    brain = brain_mod.Brain(model)
+    try:
+        if time.time() > deadline:
+            raise TimeoutError(f"brain test budget exceeded ({test_timeout}s)")
+        content, parsed, reasoning = brain.think(system, user, parse_retries=0)
+        entries = brain_mod.read_raw_log_tail(_active_raw_log(model))[before:]
+        t_entries = [e for e in entries if e.get("transport") == transport]
+        requests = [e for e in t_entries if e.get("phase") == "request"]
+        responses = [e for e in t_entries if e.get("phase") == "response"]
+        parsed_ok = bool(
+            parsed
+            and parsed.get("record_type") == "workbench_rod_test"
+            and parsed.get("ok") is True
+            and str(parsed.get("transport", transport)) == transport
+        )
+        ok = bool(
+            parsed_ok
+            and len(requests) >= 2
+            and len(responses) >= 2
+            and bool((reasoning or "").strip())
+            and _rod_seen_in_raw(requests)
+        )
+        return {
+            "ok": ok,
+            "transport": transport,
+            "rod_calls": len(requests),
+            "rod_responses": len(responses),
+            "rod_feedback_in_request": _rod_seen_in_raw(requests),
+            "reasoning_chars": len(reasoning or ""),
+            "parsed": parsed,
+            "content_preview": (content or "")[:600],
+            "elapsed_s": round(time.time() - started, 3),
+            "test_timeout_s": test_timeout,
+            "raw_log": str(_active_raw_log(model)),
+            "raw_entries": len(t_entries),
+        }
+    except Exception as e:
+        entries = brain_mod.read_raw_log_tail(_active_raw_log(model))[before:]
+        t_entries = [e for e in entries if e.get("transport") == transport]
+        return {
+            "ok": False,
+            "transport": transport,
+            "error": f"{type(e).__name__}: {e}",
+            "rod_calls": len([e for e in t_entries if e.get("phase") == "request"]),
+            "rod_responses": len([e for e in t_entries if e.get("phase") == "response"]),
+            "elapsed_s": round(time.time() - started, 3),
+            "test_timeout_s": test_timeout,
+            "raw_log": str(_active_raw_log(model)),
+        }
+
+
 # ─── HTML ──────────────────────────────────────────────────────────────────
 
 PAGE = r'''<!doctype html><html><head><meta charset="utf-8"><title>endgame-ai live workbench</title>
@@ -481,13 +575,13 @@ main{display:grid;grid-template-columns:1.05fr .95fr;gap:12px;padding:12px}.pane
 <section class="panel"><h2>History + outcome</h2><div id="history"></div></section>
 <section class="panel"><h2>Reasoning chain</h2><div id="reasoning"></div></section>
 <section class="panel"><h2>Files / purpose</h2><div id="files"></div></section>
-<section class="panel full"><h2>Brain provider + parameters</h2><div class="row mut">This edits wiring.json. The organism notices wiring mtime and rebinds its brain on the next loop. OpenCode defaults to prompt_mode=file to avoid Windows command-length and PATH shim failures.</div><div style="margin:8px 0"><select id="brainSelect" onchange="renderBrainControls()"></select> <button onclick="saveBrain()">Save brain</button> <button class="alt" onclick="probeCurrent()">Probe selected</button> <span id="saveStatus" class="mut"></span></div><div id="brainControls" class="grid"></div><pre id="probeOut" class="row mut"></pre></section>
+<section class="panel full"><h2>Brain provider + parameters</h2><div class="row mut">This edits wiring.json. The organism notices wiring mtime and rebinds its brain on the next loop. OpenCode defaults to prompt_mode=file to avoid Windows command-length and PATH shim failures.</div><div style="margin:8px 0"><select id="brainSelect" onchange="renderBrainControls()"></select> <button onclick="saveBrain()">Save brain</button> <button class="alt" onclick="probeCurrent()">Probe selected</button> <button class="alt" onclick="testRod()">Test ROD (2-call)</button> <span id="saveStatus" class="mut"></span></div><div id="brainControls" class="grid"></div><pre id="probeOut" class="row mut"></pre></section>
 <section class="panel"><h2>File proxy handoff</h2><div id="proxyMeta" class="row mut">–</div><textarea id="prompt" readonly></textarea><textarea id="answer" placeholder="human/other brain response"></textarea><button onclick="respond()">Write response.json</button></section>
 <section class="panel"><h2>Goal</h2><textarea id="goalbox" placeholder="writes goal.json for next run"></textarea><button onclick="setGoal()">Set goal</button><button class="alt" onclick="setGoal('')">Clear goal</button></section>
 <section class="panel full usage"><h2>Usage ledger</h2><div id="usageMeta" class="row mut">–</div><div id="usage"></div></section>
-<section class="panel full"><h2>Prior run logs (forensic)</h2>
-<div class="row mut">Reads files still on disk from your last organism run — session-*.log, runtime.ndjson tail, cli prompts. Not mixed into live state.</div>
-<div style="margin:8px 0"><select id="logKind" onchange="syncLogPicker()"><option value="session">session log</option><option value="runtime">runtime.ndjson</option><option value="usage">brain_usage.ndjson</option><option value="brain_io">brain_io.ndjson</option><option value="cli_prompt">cli prompt</option></select>
+<section class="panel full"><h2>Forensic logs</h2>
+<div class="row mut">Raw brain log (*.txt, one JSON line per entry) and slim runtime.ndjson. Not live state.</div>
+<div style="margin:8px 0"><select id="logKind" onchange="syncLogPicker()"><option value="raw">raw brain log (.txt)</option><option value="runtime">runtime.ndjson</option><option value="cli_prompt">cli prompt</option></select>
 <select id="logFile"></select> <input id="logTail" type="number" min="20" max="2000" value="200" style="width:90px"/> lines
 <button onclick="loadLog(true)">Load</button> <span id="logMeta" class="mut"></span></div>
 <textarea id="logView" readonly style="min-height:220px"></textarea></section>
@@ -515,14 +609,14 @@ rows($('plan'),st.plan,(x,i)=>`<div class="row"><span class="${i==Number(st.step
 rows($('history'),(st.history||[]).slice().reverse(),x=>`<div class="row"><span class="${String(x.outcome||'').toUpperCase().startsWith('FAILED')?'bad':'good'}">${esc(x.action||'')}</span><br><span class="mut">${esc(x.outcome||'')}</span></div>`);
 rows($('reasoning'),(st.reasoning_chain||[]).slice().reverse(),x=>`<div class="row"><span class="k">${esc(x.circuit||'')}</span> <span class="mut">${x.ts?new Date(x.ts*1000).toLocaleTimeString():''}</span><br>${esc((x.reasoning||'').slice(0,800))}<details><summary>parsed</summary><pre>${esc(JSON.stringify(x.parsed,null,2))}</pre></details></div>`);
 const f=s.files||{}; const inv=f.inventory||{};
-$('files').innerHTML=['state','runtime','usage','wiring'].map(k=>{const v=f[k]||{};return `<div class="row"><span class="k">${k}</span> ${esc(v.path||'')}<br><span class="mut">exists=${!!v.exists} size=${fmt(v.size)} age=${age(v.age_s)}</span></div>`}).join('')
-+`<div class="row"><span class="k">last run</span><br><span class="mut">session=${esc(inv.last_run?.session||'–')} runtime age=${age(inv.last_run?.runtime_age_s)} size=${fmt(inv.last_run?.runtime_size)}</span></div>`
-+`<div class="row"><span class="k">session logs</span><br>${(f.sessions||[]).map(x=>`<span class="k mono">${esc(x.name||'')}</span> age=${age(x.age_s)} size=${fmt(x.size)}`).join('<br>')||'–'}</div>`
-+`<div class="row mut">state.json = snapshot; runtime.ndjson = live events; session-*.log = forensic ROD journal; brain_usage.ndjson = tokens/cost.</div>`;
+$('files').innerHTML=['state','runtime','raw_log','wiring'].map(k=>{const v=f[k]||{};return `<div class="row"><span class="k">${k}</span> ${esc(v.path||'')}<br><span class="mut">exists=${!!v.exists} size=${fmt(v.size)} age=${age(v.age_s)}</span></div>`}).join('')
++`<div class="row"><span class="k">last run</span><br><span class="mut">raw=${esc(inv.last_run?.raw_log||'–')} runtime age=${age(inv.last_run?.runtime_age_s)} size=${fmt(inv.last_run?.runtime_size)}</span></div>`
++`<div class="row"><span class="k">raw logs</span><br>${(inv.raw_logs||[]).map(x=>`<span class="k mono">${esc(x.name||'')}</span> age=${age(x.age_s)} size=${fmt(x.size)}`).join('<br>')||'–'}</div>`
++`<div class="row mut">state.json = live snapshot; *.txt = raw brain I/O; runtime.ndjson = organism lifecycle only.</div>`;
 window._logInventory=inv; syncLogPicker(); renderUsage(s.usage||{});
 }
-function syncLogPicker(){ const inv=window._logInventory||{}; const kind=$('logKind').value; const sel=$('logFile'); sel.innerHTML=''; sel.style.display=kind==='session'||kind==='cli_prompt'?'inline-block':'none';
- if(kind==='session'){(inv.sessions||[]).forEach(x=>{const o=document.createElement('option');o.value=x.name;o.textContent=x.name+' ('+age(x.age_s)+', '+fmt(x.size)+'b)';sel.appendChild(o);});}
+function syncLogPicker(){ const inv=window._logInventory||{}; const kind=$('logKind').value; const sel=$('logFile'); sel.innerHTML=''; sel.style.display=kind==='raw'||kind==='cli_prompt'?'inline-block':'none';
+ if(kind==='raw'){(inv.raw_logs||[]).forEach(x=>{const o=document.createElement('option');o.value=x.name;o.textContent=x.name+' ('+age(x.age_s)+', '+fmt(x.size)+'b)';sel.appendChild(o);});}
  else if(kind==='cli_prompt'){(inv.cli_prompts||[]).forEach(x=>{const o=document.createElement('option');o.value=x.name;o.textContent=x.name+' ('+age(x.age_s)+')';sel.appendChild(o);});}
 }
 async function loadLog(force){ if(!force&&paused)return; const kind=$('logKind').value; const file=$('logFile').value||''; const tail=$('logTail').value||200;
@@ -537,6 +631,7 @@ async function tick(force=false){ if(paused&&!force)return; if(inflight) infligh
 async function respond(){await api('/api/respond',{method:'POST',body:$('answer').value});$('answer').value='';tick(true);}
 async function setGoal(v){const g=v===''?'':$('goalbox').value;await api('/api/goal',{method:'POST',body:g});tick(true);}
 async function probe(provider){ const obj=await api('/api/provider_stats?provider='+encodeURIComponent(provider)); $('probeOut').textContent=JSON.stringify(obj,null,2); }
+async function testRod(){ const t=$('brainSelect').value||status?.model?.transport||'openai'; $('probeOut').textContent='ROD test running for '+t+' (max 45s)…'; const ctl=new AbortController(); const timer=setTimeout(()=>ctl.abort(),45000); try{ const r=await fetch('/api/brain_test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({transport:t}),cache:'no-store',signal:ctl.signal}); clearTimeout(timer); if(!r.ok) throw new Error(await r.text()); const obj=await r.json(); $('probeOut').textContent=JSON.stringify(obj,null,2); await loadLog(true); await tick(true); }catch(e){ clearTimeout(timer); $('probeOut').textContent=e.name==='AbortError'?'ROD test aborted after 45s':('error: '+e.message); } }
 loadWiring().then(()=>tick(true).then(()=>loadLog(true))); setInterval(()=>tick(false),1000); setInterval(()=>loadLog(false),5000);
 </script></body></html>'''
 
@@ -615,6 +710,13 @@ class Handler(BaseHTTPRequestHandler):
             wiring = _normalize_wiring(wiring)
             _write_json(WIRING_PATH, wiring)
             return self._send(200, '{"ok":true}')
+        if self.path == "/api/brain_test":
+            try:
+                payload = json.loads(body or "{}")
+            except json.JSONDecodeError as e:
+                return self._send(400, json.dumps({"error": str(e)}))
+            transport = str(payload.get("transport") or _model_cfg().get("transport") or "openai")
+            return self._send(200, json.dumps(_brain_test(transport), ensure_ascii=False, default=str))
         return self._send(404, json.dumps({"error": "not found"}))
 
 
