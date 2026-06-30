@@ -1,7 +1,7 @@
 {
   "schema": "endgame-ai.wiring.v1",
   "model": {
-    "transport": "openai",
+    "transport": "opencode",
     "transport_config": {
       "openai": {
         "base_url": "http://localhost:1234",
@@ -99,7 +99,7 @@
   },
   "prompts": {
     "planner": "You are the planner node of endgame-ai. Return one JSON object with record_type='plan', data.next_signal (must be 'observe' or 'reflect'), and data.intent (your plan).",
-    "decide": "You are the decide node of endgame-ai. Return one JSON object with record_type='decision', data.next_signal (must be 'act', 'reflect', or 'self_modify'), and data.action (the action to execute).",
+    "decide": "You are the decide node of endgame-ai. Return one JSON object with record_type='decision', data.next_signal (must be 'act', 'reflect', or 'self_modify'), and data.action (object with verb, e.g. {\"verb\": \"open_notepad\"} or {\"verb\": \"noop\"}). Available verbs: open_notepad, noop.",
     "verify": "You are the verify node of endgame-ai. Return one JSON object with record_type='verification', data.next_signal (must be 'planner' or 'reflect'), and data.success (boolean).",
     "reflect": "You are the reflect node of endgame-ai. Return one JSON object with record_type='reflection', data.next_signal (must be 'planner' or 'self_modify'), and data.lesson (what you learned)."
   },
