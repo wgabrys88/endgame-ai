@@ -27,6 +27,8 @@ ROD_BRAIN_CALLS = 2
 STATE_PATH = ROOT / "state.json"
 WIRING_PATH = ROOT / "wiring.json"
 GOAL_PATH = ROOT / "goal.json"
+CONTROL_PATH = ROOT / "comms" / "control.json"
+WORKBENCH_HTML = ROOT / "workbench.html"
 
 
 # ─── file helpers ───────────────────────────────────────────────────────────
@@ -43,6 +45,34 @@ def _write_json(path: pathlib.Path, obj):
     tmp = path.with_name(path.name + f".tmp.{os.getpid()}.{time.time_ns()}")
     tmp.write_text(json.dumps(obj, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
     os.replace(tmp, path)
+
+
+# ─── organism control / stepper ─────────────────────────────────────────────
+
+def _default_control() -> dict:
+    return {"mode": "run", "step_requested": False, "updated_at": 0, "updated_by": "default"}
+
+
+def _read_control() -> dict:
+    data = _read_json(CONTROL_PATH, _default_control())
+    if not isinstance(data, dict):
+        data = _default_control()
+    mode = data.get("mode")
+    if mode not in ("run", "pause", "step"):
+        data["mode"] = "run"
+    data.setdefault("step_requested", False)
+    data.setdefault("updated_at", 0)
+    return data
+
+
+def _write_control(patch: dict) -> dict:
+    cur = _read_control()
+    cur.update({k: v for k, v in patch.items() if k in {"mode", "step_requested", "updated_by"}})
+    if cur.get("mode") not in ("run", "pause", "step"):
+        cur["mode"] = "run"
+    cur["updated_at"] = time.time()
+    _write_json(CONTROL_PATH, cur)
+    return cur
 
 
 def _root_path(value: str | None, default: str) -> pathlib.Path:
@@ -379,6 +409,7 @@ def _status() -> dict:
             "message": _health_message(active, stale, state_age, runtime_age, last_runtime),
         },
         "usage": _usage_summary(),
+        "control": _read_control(),
     }
 
 
@@ -428,7 +459,7 @@ def _provider_stats(provider: str) -> dict:
     elif provider == "openai":
         cfg = model.get("openai") if isinstance(model.get("openai"), dict) else {}
         host = str(cfg.get("host") or model.get("host") or "http://localhost:1234").rstrip("/")
-        url = host + str(cfg.get("endpoint_path") or "/v1/models")
+        url = host + "/v1/models"
         try:
             import urllib.request
             with urllib.request.urlopen(url, timeout=5) as resp:
@@ -565,81 +596,7 @@ def _brain_test(transport: str) -> dict:
 
 # ─── HTML ──────────────────────────────────────────────────────────────────
 
-PAGE = r'''<!doctype html><html><head><meta charset="utf-8"><title>endgame-ai live workbench</title>
-<style>
-:root{--bg:#090d13;--fg:#d6deeb;--mut:#8291a7;--panel:#111827;--bd:#263244;--ac:#63b3ff;--ok:#4ade80;--warn:#fbbf24;--err:#fb7185;--hot:#c084fc}
-*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--fg);font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace} header{position:sticky;top:0;z-index:5;background:#0b111a;border-bottom:1px solid var(--bd);padding:10px 14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap} b{color:var(--ac)} .pill{border:1px solid var(--bd);border-radius:999px;padding:3px 9px;color:var(--mut);white-space:nowrap}.ok{color:var(--ok);border-color:var(--ok)}.warn{color:var(--warn);border-color:var(--warn)}.err{color:var(--err);border-color:var(--err)}.hot{color:var(--hot);border-color:var(--hot)}
-main{display:grid;grid-template-columns:1.05fr .95fr;gap:12px;padding:12px}.panel{background:var(--panel);border:1px solid var(--bd);border-radius:10px;padding:10px;min-height:80px;overflow:auto;max-height:50vh}.full{grid-column:1/3}.panel h2{margin:0 0 8px;color:var(--mut);font-size:11px;letter-spacing:.08em;text-transform:uppercase}.row{padding:5px 0;border-bottom:1px solid #1f2937;white-space:pre-wrap;word-break:break-word}.mut{color:var(--mut)}.k{color:var(--ac)}.bad{color:var(--err)}.good{color:var(--ok)}.mono{font-family:inherit} textarea{width:100%;min-height:120px;background:#0b111a;color:var(--fg);border:1px solid var(--bd);border-radius:8px;padding:8px;font:12px/1.4 ui-monospace,monospace} input,select{background:#0b111a;color:var(--fg);border:1px solid var(--bd);border-radius:7px;padding:6px} input[type=range]{width:220px;padding:0} input[type=checkbox]{width:auto}button{background:var(--ac);color:#07111f;border:0;border-radius:7px;padding:7px 11px;font-weight:700;cursor:pointer;margin:3px 5px 3px 0}button.alt{background:#1f2937;color:var(--fg);border:1px solid var(--bd)}button.danger{background:var(--err);color:#111}.grid{display:grid;grid-template-columns:190px 1fr 110px;gap:8px;align-items:center}.usage table{width:100%;border-collapse:collapse}.usage th,.usage td{border-bottom:1px solid #1f2937;padding:4px 6px;text-align:left}.usage th{font-weight:400;color:var(--mut)} details{margin-top:8px}.bar{height:6px;background:#1f2937;border-radius:8px;overflow:hidden}.bar span{display:block;height:6px;background:var(--ac);width:0%}
-</style></head><body>
-<header><b>endgame-ai</b><span id="health" class="pill">health: –</span><span id="node" class="pill">node: –</span><span id="brain" class="pill hot">brain: –</span><span id="goal" class="pill">goal: –</span><span id="age" class="pill">age: –</span><span id="seq" class="pill">seq: –</span><button class="alt" onclick="paused=!paused;this.textContent=paused?'Resume':'Pause'">Pause</button><span class="mut" id="now" style="margin-left:auto">–</span></header>
-<main>
-<section class="panel"><h2>Live event stream</h2><div id="events"></div></section>
-<section class="panel"><h2>Narration (last run)</h2><div id="narration"></div></section>
-<section class="panel"><h2>Current state truth</h2><div id="truth"></div></section>
-<section class="panel"><h2>Plan</h2><div id="plan"></div></section>
-<section class="panel"><h2>History + outcome</h2><div id="history"></div></section>
-<section class="panel"><h2>Reasoning chain</h2><div id="reasoning"></div></section>
-<section class="panel"><h2>Files / purpose</h2><div id="files"></div></section>
-<section class="panel full"><h2>Brain node + parameters</h2><div class="row mut">This edits wiring.json. The organism notices wiring mtime and rebinds its brain node on the next loop. Brain transports live in seed_brains/live_brains; OpenCode defaults to prompt_mode=file to avoid Windows command-length and PATH shim failures.</div><div style="margin:8px 0"><select id="brainSelect" onchange="renderBrainControls()"></select> <button onclick="saveBrain()">Save brain</button> <button class="alt" onclick="probeCurrent()">Probe selected</button> <button class="alt" onclick="testRod()">Test ROD (2-call)</button> <span id="saveStatus" class="mut"></span></div><div id="brainControls" class="grid"></div><pre id="probeOut" class="row mut"></pre></section>
-<section class="panel"><h2>File proxy handoff</h2><div id="proxyMeta" class="row mut">–</div><textarea id="prompt" readonly></textarea><textarea id="answer" placeholder="human/other brain response"></textarea><button onclick="respond()">Write response.json</button></section>
-<section class="panel"><h2>Goal</h2><textarea id="goalbox" placeholder="writes goal.json for next run"></textarea><button onclick="setGoal()">Set goal</button><button class="alt" onclick="setGoal('')">Clear goal</button></section>
-<section class="panel full usage"><h2>Usage ledger</h2><div id="usageMeta" class="row mut">–</div><div id="usage"></div></section>
-<section class="panel full"><h2>Forensic logs</h2>
-<div class="row mut">Raw brain log (*.txt, one JSON line per entry) and slim runtime.ndjson. Not live state.</div>
-<div style="margin:8px 0"><select id="logKind" onchange="syncLogPicker()"><option value="raw">raw brain log (.txt)</option><option value="runtime">runtime.ndjson</option><option value="cli_prompt">cli prompt</option></select>
-<select id="logFile"></select> <input id="logTail" type="number" min="20" max="2000" value="200" style="width:90px"/> lines
-<button onclick="loadLog(true)">Load</button> <span id="logMeta" class="mut"></span></div>
-<textarea id="logView" readonly style="min-height:220px"></textarea></section>
-</main>
-<script>
-const $=id=>document.getElementById(id); let wiring=null, status=null, paused=false, inflight=null;
-const transports=['openai','xai_responses','grok_build_api','opencode','grok_build','file_proxy','browser_ai'];
-function esc(s){return String(s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
-function rows(el,items,fmt){el.innerHTML=(items||[]).map(fmt).join('')||'<div class="row mut">–</div>';}
-function fmt(n){return Number(n||0).toLocaleString(undefined,{maximumFractionDigits:3})}
-function age(s){return s==null?'–':fmt(s)+'s'}
-function getPath(obj,path){return String(path).split('.').reduce((a,k)=>a&&a[k],obj)}
-function setPath(obj,path,val){const p=String(path).split('.');let c=obj;for(let i=0;i<p.length-1;i++){c[p[i]]=c[p[i]]||{};c=c[p[i]]}c[p[p.length-1]]=val}
-function parseVal(control, el){ if(control.type==='checkbox') return !!el.checked; if(control.type==='number'||control.type==='range'){ const n=Number(el.value); return Number.isFinite(n)?n:0; } return el.value; }
-async function api(path, opts={}){ const r=await fetch(path,{cache:'no-store',...opts}); if(!r.ok) throw new Error(await r.text()); return await r.json(); }
-async function loadWiring(){ wiring=await api('/api/wiring'); const m=wiring.model||{}; const sel=$('brainSelect'); sel.innerHTML=''; transports.filter(t=>m[t]||['file_proxy','browser_ai'].includes(t)).forEach(t=>{const o=document.createElement('option');o.value=t;o.textContent=(m[t]&&m[t].label)?m[t].label:t;sel.appendChild(o)}); sel.value=m.transport||'openai'; renderBrainControls(); }
-function renderBrainControls(){ if(!wiring)return; const m=wiring.model||{}; const t=$('brainSelect').value; const cfg=m[t]||{}; const controls=cfg.controls||[]; let html=''; controls.forEach((c,i)=>{ const id='ctl_'+i; const v=getPath(cfg,c.key); let input=''; if(c.type==='select'){ input=`<select id="${id}">${(c.choices||[]).map(x=>`<option ${x==v?'selected':''}>${esc(x)}</option>`).join('')}</select>`; } else if(c.type==='checkbox'){ input=`<input id="${id}" type="checkbox" ${v?'checked':''}>`; } else { input=`<input id="${id}" type="${c.type||'text'}" value="${esc(v??'')}" ${c.min!==undefined?'min="'+c.min+'"':''} ${c.max!==undefined?'max="'+c.max+'"':''} ${c.step!==undefined?'step="'+c.step+'"':''}>`; } html+=`<label class="mut">${esc(c.label||c.key)}</label><div>${input}</div><div class="mut">${esc(c.key)}</div>`; }); $('brainControls').innerHTML=html||'<div class="row mut">No control schema for this provider.</div>'; }
-async function saveBrain(){ const m=wiring.model||{}; const t=$('brainSelect').value; const cfg=m[t]||{}; (cfg.controls||[]).forEach((c,i)=>{const el=$('ctl_'+i); if(el) setPath(cfg,c.key,parseVal(c,el));}); m.transport=t; m[t]=cfg; wiring.model=m; const r=await api('/api/wiring',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(wiring)}); $('saveStatus').textContent=r.ok?'saved to wiring.json':'save failed'; await tick(true); }
-function eventLine(e){ const cls=e.event&&e.event.includes('error')?'bad':(e.event==='usage'?'good':'k'); return `<div class="row"><span class="${cls}">${esc(e.iso||'')} ${esc(e.event||'event')}</span> <span class="mut">${esc(e.transport||e.node||'')}</span><br>${esc(e.message||e.error||e.content_preview||e.stderr_preview||e.stdout_preview||JSON.stringify(e).slice(0,400))}</div>` }
-function renderStatus(s){ status=s; const h=s.health||{}, st=s.state||{}; $('health').textContent='health: '+(h.message||'–'); $('health').className='pill '+(h.stale?'err':h.active?'warn':'ok'); $('node').textContent='node: '+(st.active_node||st.node||'–')+' / '+(st.phase||''); $('brain').textContent='brain: '+(st.transport||s.model?.transport||'–'); $('goal').textContent='goal: '+(st.goal||'(none)'); if(document.activeElement!==$('goalbox')) $('goalbox').value=st.goal||''; $('age').textContent='state age: '+age(h.state_age_s); $('seq').textContent='seq: '+(st.state_seq||0); $('now').textContent=s.now_iso||new Date().toLocaleTimeString();
-rows($('events'),(s.runtime||[]).slice().reverse().slice(0,80),eventLine);
-rows($('narration'),(st.narration||[]).slice().reverse(),x=>`<div class="row">${esc(x)}</div>`);
-$('truth').innerHTML=`<div class="row"><span class="k">current step</span><br>${esc(st.current_step?.description||'–')}<br><span class="mut">done_when: ${esc(st.current_step?.done_when||'')}</span></div><div class="row"><span class="k">last outcome</span><br>${esc(st.last_outcome||'–')}</div><div class="row"><span class="${st.last_error?'bad':'good'}">last error</span><br>${esc(st.last_error||'none')}</div><div class="row"><span class="k">screen summary</span><br>focused=${esc(st.screen_summary?.focused_title||'–')} • elements=${fmt(st.screen_summary?.elements)} • windows=${fmt(st.screen_summary?.windows)} • chars=${fmt(st.screen_summary?.raw_screen_chars)}</div><div class="row"><span class="k">verify</span><br>${esc(st.verify_evidence||'–')}<br><span class="mut">${esc(st.verify_reason||'')}</span></div>`;
-rows($('plan'),st.plan,(x,i)=>`<div class="row"><span class="${i==Number(st.step)?'hot':'k'}">${i+1}.</span> ${esc(x.description||'')}<br><span class="mut">done_when: ${esc(x.done_when||'')}</span></div>`);
-rows($('history'),(st.history||[]).slice().reverse(),x=>`<div class="row"><span class="${String(x.outcome||'').toUpperCase().startsWith('FAILED')?'bad':'good'}">${esc(x.action||'')}</span><br><span class="mut">${esc(x.outcome||'')}</span></div>`);
-rows($('reasoning'),(st.reasoning_chain||[]).slice().reverse(),x=>`<div class="row"><span class="k">${esc(x.circuit||'')}</span> <span class="mut">${x.ts?new Date(x.ts*1000).toLocaleTimeString():''}</span><br>${esc((x.reasoning||'').slice(0,800))}<details><summary>parsed</summary><pre>${esc(JSON.stringify(x.parsed,null,2))}</pre></details></div>`);
-const f=s.files||{}; const inv=f.inventory||{};
-$('files').innerHTML=['state','runtime','raw_log','wiring'].map(k=>{const v=f[k]||{};return `<div class="row"><span class="k">${k}</span> ${esc(v.path||'')}<br><span class="mut">exists=${!!v.exists} size=${fmt(v.size)} age=${age(v.age_s)}</span></div>`}).join('')
-+`<div class="row"><span class="k">last run</span><br><span class="mut">raw=${esc(inv.last_run?.raw_log||'–')} runtime age=${age(inv.last_run?.runtime_age_s)} size=${fmt(inv.last_run?.runtime_size)}</span></div>`
-+`<div class="row"><span class="k">raw logs</span><br>${(inv.raw_logs||[]).map(x=>`<span class="k mono">${esc(x.name||'')}</span> age=${age(x.age_s)} size=${fmt(x.size)}`).join('<br>')||'–'}</div>`
-+`<div class="row mut">state.json = live snapshot; *.txt = raw brain I/O; runtime.ndjson = organism lifecycle only.</div>`;
-window._logInventory=inv; syncLogPicker(); renderUsage(s.usage||{});
-}
-function syncLogPicker(){ const inv=window._logInventory||{}; const kind=$('logKind').value; const sel=$('logFile'); sel.innerHTML=''; sel.style.display=kind==='raw'||kind==='cli_prompt'?'inline-block':'none';
- if(kind==='raw'){(inv.raw_logs||[]).forEach(x=>{const o=document.createElement('option');o.value=x.name;o.textContent=x.name+' ('+age(x.age_s)+', '+fmt(x.size)+'b)';sel.appendChild(o);});}
- else if(kind==='cli_prompt'){(inv.cli_prompts||[]).forEach(x=>{const o=document.createElement('option');o.value=x.name;o.textContent=x.name+' ('+age(x.age_s)+')';sel.appendChild(o);});}
-}
-async function loadLog(force){ if(!force&&paused)return; const kind=$('logKind').value; const file=$('logFile').value||''; const tail=$('logTail').value||200;
- const q=new URLSearchParams({kind,tail}); if(file) q.set('file',file);
- try{ const obj=await api('/api/logs/tail?'+q.toString()); $('logMeta').textContent=obj.ok?`${obj.path} • ${obj.format} • ${obj.lines} lines`:(obj.error||'load failed');
-  if(obj.ok){ $('logView').value=obj.format==='ndjson'?obj.tail.map(x=>JSON.stringify(x)).join('\n'):(obj.tail||[]).join('\n'); }
-  else $('logView').value=''; } catch(e){ $('logMeta').textContent='error: '+e.message; }
-}
-function renderUsage(u){ $('usageMeta').textContent=`rows: ${u.rows||0} • ${u.path||''}`; const limits=u.limits||{}; let html=''; if(limits.period){ html+=`<div class="row mut">budget period: ${esc(limits.period)} — ${esc(limits.note||'')}</div>`; for(const [prov,cfg] of Object.entries(limits)){ if(prov==='period'||prov==='note'||!cfg||typeof cfg!=='object') continue; const tok=cfg.monthly_tokens, usd=cfg.monthly_cost_usd; if(tok==null&&usd==null) continue; const month=u.buckets?.month||{}; let usedTok=0, usedUsd=0; Object.values(month).forEach(v=>{ if(String(v.transport||'')===prov){ usedTok+=Number(v.total_tokens||0); usedUsd+=Number(v.cost_usd||0); }}); if(tok!=null) html+=`<div class="row"><span class="k">${esc(prov)} tokens</span> ${fmt(usedTok)} / ${fmt(tok)} <div class="bar"><span style="width:${Math.min(100,100*usedTok/(tok||1))}%"></span></div></div>`; if(usd!=null) html+=`<div class="row"><span class="k">${esc(prov)} cost $</span> ${fmt(usedUsd)} / ${fmt(usd)} <div class="bar"><span style="width:${Math.min(100,100*usedUsd/(usd||1))}%"></span></div></div>`; }} for(const period of ['24h','30d','month','all']){ const b=u.buckets&&u.buckets[period]||{}; html+=`<h3>${period}</h3><table><tr><th>provider/model</th><th>calls</th><th>exact</th><th>prompt</th><th>completion</th><th>reasoning</th><th>total</th><th>elapsed</th><th>cost</th><th>notes</th></tr>`; for(const [k,v] of Object.entries(b)){ html+=`<tr><td>${esc(k)}</td><td>${fmt(v.calls)}</td><td>${fmt(v.exact_calls)}</td><td>${fmt(v.prompt_tokens)}</td><td>${fmt(v.completion_tokens)}</td><td>${fmt(v.reasoning_tokens)}</td><td>${fmt(v.total_tokens)}</td><td>${fmt(v.elapsed_s)}s</td><td>$${fmt(v.cost_usd)}</td><td>${esc((v.notes||[]).join('; '))}</td></tr>`; } html+='</table>'; } $('usage').innerHTML=html||'<div class="row mut">no usage rows yet</div>'; }
-async function probeCurrent(){ const t=$('brainSelect').value||status?.model?.transport||'openai'; await probe(t); }
-async function tick(force=false){ if(paused&&!force)return; if(inflight) inflight.abort(); inflight=new AbortController(); try{ renderStatus(await api('/api/status',{signal:inflight.signal})); const p=await api('/api/proxy',{signal:inflight.signal}); $('proxyMeta').textContent=p.pending?`WAITING id=${p.id||''}`:'idle'; $('proxyMeta').className='row '+(p.pending?'bad':'mut'); $('prompt').value=p.prompt||''; }catch(e){ if(e.name!=='AbortError') $('health').textContent='health: panel fetch error '+e.message; } finally{ inflight=null; } }
-async function respond(){await api('/api/respond',{method:'POST',body:$('answer').value});$('answer').value='';tick(true);}
-async function setGoal(v){const g=v===''?'':$('goalbox').value;await api('/api/goal',{method:'POST',body:g});tick(true);}
-async function probe(provider){ const obj=await api('/api/provider_stats?provider='+encodeURIComponent(provider)); $('probeOut').textContent=JSON.stringify(obj,null,2); }
-async function testRod(){ const t=$('brainSelect').value||status?.model?.transport||'openai'; $('probeOut').textContent='ROD test running for '+t+' (2 brain calls, counter breakpoint)…'; const obj=await api('/api/brain_test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({transport:t})}); $('probeOut').textContent=JSON.stringify(obj,null,2); await loadLog(true); await tick(true); }
-loadWiring().then(()=>tick(true).then(()=>loadLog(true))); setInterval(()=>tick(false),1000); setInterval(()=>loadLog(false),5000);
-</script></body></html>'''
-
+# ─── HTTP API + static single-file UI ───────────────────────────────────────
 
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code, body, ctype="application/json"):
@@ -647,12 +604,23 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Cache-Control", "no-store")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
-        self.wfile.write(data)
+        try:
+            self.wfile.write(data)
+        except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError):
+            # Browser-side AbortController / refresh closed the socket. This is not an
+            # organism failure; keep the workbench server quiet and alive.
+            return
 
     def log_message(self, *_a):
         pass
+
+    def do_OPTIONS(self):
+        return self._send(204, b"", "text/plain")
 
     def _body(self) -> str:
         n = int(self.headers.get("Content-Length", 0) or 0)
@@ -661,14 +629,17 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urlparse(self.path)
         path = parsed.path
-        if path in ("/", "/index.html"):
-            return self._send(200, PAGE, "text/html; charset=utf-8")
+        if path in ("/", "/index.html", "/workbench.html"):
+            html = WORKBENCH_HTML.read_text(encoding="utf-8") if WORKBENCH_HTML.exists() else "<h1>workbench.html missing</h1>"
+            return self._send(200, html, "text/html; charset=utf-8")
         if path == "/api/status":
             return self._send(200, json.dumps(_status(), ensure_ascii=False, default=str))
         if path == "/api/state/raw":
             return self._send(200, json.dumps(_read_json(STATE_PATH, {}), ensure_ascii=False, default=str))
         if path == "/api/wiring":
             return self._send(200, json.dumps(_read_json(WIRING_PATH, {}), ensure_ascii=False, default=str))
+        if path == "/api/control":
+            return self._send(200, json.dumps(_read_control(), ensure_ascii=False, default=str))
         if path == "/api/usage":
             return self._send(200, json.dumps(_usage_summary(), ensure_ascii=False, default=str))
         if path == "/api/provider_stats":
@@ -697,17 +668,25 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         body = self._body()
-        if self.path == "/api/respond":
+        parsed = urlparse(self.path)
+        path = parsed.path
+        if path == "/api/control":
+            try:
+                payload = json.loads(body or "{}")
+            except json.JSONDecodeError as e:
+                return self._send(400, json.dumps({"error": str(e)}))
+            return self._send(200, json.dumps(_write_control(payload), ensure_ascii=False, default=str))
+        if path == "/api/respond":
             model = _model_cfg()
             fp = model.get("file_proxy", {})
             req = _read_json(_root_path(fp.get("request_path"), "comms/request.json"), {})
             resp_path = _root_path(fp.get("response_path"), "comms/response.json")
             _write_json(resp_path, {"id": req.get("id"), "content": body})
             return self._send(200, '{"ok":true}')
-        if self.path == "/api/goal":
+        if path == "/api/goal":
             _write_json(GOAL_PATH, {"goal": body})
             return self._send(200, '{"ok":true}')
-        if self.path == "/api/wiring":
+        if path == "/api/wiring":
             try:
                 wiring = json.loads(body or "{}")
             except json.JSONDecodeError as e:
@@ -715,19 +694,20 @@ class Handler(BaseHTTPRequestHandler):
             wiring = _normalize_wiring(wiring)
             _write_json(WIRING_PATH, wiring)
             return self._send(200, '{"ok":true}')
-        if self.path == "/api/brain_test":
+        if path == "/api/brain_test":
             try:
                 payload = json.loads(body or "{}")
             except json.JSONDecodeError as e:
                 return self._send(400, json.dumps({"error": str(e)}))
-            transport = str(payload.get("transport") or _model_cfg().get("transport") or "openai")
+            transport = str(payload.get("transport") or _model_cfg().get("transport") or "opencode")
             return self._send(200, json.dumps(_brain_test(transport), ensure_ascii=False, default=str))
         return self._send(404, json.dumps({"error": "not found"}))
 
 
 def main():
     srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
-    print(f"workbench on http://localhost:{PORT}  (Ctrl+C to stop)", flush=True)
+    print(f"workbench API on http://127.0.0.1:{PORT}", flush=True)
+    print(f"UI: open http://127.0.0.1:{PORT}/ or file:///{WORKBENCH_HTML.as_posix()}", flush=True)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

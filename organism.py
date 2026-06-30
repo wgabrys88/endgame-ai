@@ -21,6 +21,7 @@ import nodes as nodes_mod
 ROOT = pathlib.Path(__file__).parent.resolve()
 WIRING_PATH = ROOT / "wiring.json"
 STATE_PATH = ROOT / "state.json"
+CONTROL_PATH = ROOT / "comms" / "control.json"
 
 
 class Context:
@@ -76,6 +77,51 @@ def save_state(ctx: Context, *, active_node: str | None = None, phase: str = "sn
     snap["_active_node"] = active_node or snap.get("_node", "")
     snap["_phase"] = phase
     _atomic_json(STATE_PATH, snap)
+
+
+def _read_control() -> dict:
+    if not CONTROL_PATH.exists():
+        return {"mode": "run", "step_requested": False}
+    try:
+        data = json.loads(CONTROL_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"mode": "run", "step_requested": False}
+    if not isinstance(data, dict):
+        return {"mode": "run", "step_requested": False}
+    mode = data.get("mode")
+    if mode not in ("run", "pause", "step"):
+        mode = "run"
+    return {"mode": mode, "step_requested": bool(data.get("step_requested"))}
+
+
+def _write_control(data: dict) -> None:
+    cur = dict(data)
+    cur.setdefault("mode", "run")
+    cur.setdefault("step_requested", False)
+    cur["updated_at"] = time.time()
+    cur["updated_by"] = "organism"
+    _atomic_json(CONTROL_PATH, cur)
+
+
+def _step_gate(ctx: Context, current: str) -> None:
+    """Single chokepoint for human step debugging: blocks before node execution."""
+    announced = False
+    while True:
+        ctl = _read_control()
+        mode = ctl.get("mode", "run")
+        if mode == "run":
+            return
+        if mode == "step" and ctl.get("step_requested"):
+            _write_control({"mode": "step", "step_requested": False})
+            return
+        if not announced:
+            phase = "step_wait" if mode == "step" else "paused"
+            ctx.state["_node"] = current
+            save_state(ctx, active_node=current, phase=phase)
+            brain_mod.log_runtime_event(ctx.wiring.get("model", {}), "organism_paused", node=current, mode=mode)
+            ctx.narrate(f"paused before node '{current}' — workbench control is {mode}")
+            announced = True
+        time.sleep(0.25)
 
 
 def build_routing(wiring: dict):
@@ -158,6 +204,8 @@ def live(goal: str, max_ticks: int = 0, max_brain_calls: int = 0):
                 nodes_mod._ensure_io(ctx.wiring)
                 wiring_mtime = latest_mtime
                 ctx.narrate(f"wiring file changed; core brain now: {ctx.wiring.get('model', {}).get('transport')}")
+
+            _step_gate(ctx, current)
 
             node_cfg = node_map.get(current)
             if node_cfg is None:

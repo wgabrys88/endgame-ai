@@ -16,6 +16,7 @@
 !nodes.py
 !organism.py
 !workbench.py
+!workbench.html
 !state.json
 
 # Seed node templates (copied to live_nodes/ at runtime)

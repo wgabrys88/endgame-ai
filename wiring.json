@@ -1,6 +1,6 @@
 {
   "model": {
-    "transport": "openai",
+    "transport": "opencode",
     "host": "http://localhost:1234",
     "model": "nvidia-nemotron-3-nano-4b",
     "temperature": 0.3,
@@ -428,7 +428,8 @@
         "file_brain": "file_proxy",
         "grok_build_cli": "grok_build",
         "grok_build_api": "grok_build_api"
-      }
+      },
+      "step_debug": "Workbench writes comms/control.json; organism.py _step_gate is the single chokepoint before node execution."
     },
     "grok_build_api": {
       "label": "Grok Build 0.1 via xAI Responses API brain node",

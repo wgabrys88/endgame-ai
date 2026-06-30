@@ -13,6 +13,7 @@ from collections import defaultdict, deque
 
 ROOT = pathlib.Path(__file__).parent.resolve()
 CORE = ["actions.py", "brain.py", "desktop.py", "nodes.py", "organism.py", "workbench.py"]
+STATIC = ["workbench.html"]
 SEED_NODES = {"planner", "scheduler", "observe", "act", "verify", "reflect", "self_modify", "satisfied"}
 SEED_BRAINS = {"openai", "xai_responses", "grok_build_api", "opencode", "grok_build", "file_proxy", "browser_ai"}
 
@@ -31,6 +32,9 @@ def main() -> None:
     for f in CORE:
         if not (ROOT / f).exists():
             fail(f"core file missing: {f}")
+    for f in STATIC:
+        if not (ROOT / f).exists():
+            fail(f"static file missing: {f}")
     for f in CORE:
         py_compile.compile(str(ROOT / f), doraise=True)
 

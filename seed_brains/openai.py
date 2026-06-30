@@ -37,6 +37,9 @@ except urllib.error.HTTPError as e:
     body = e.read().decode("utf-8", errors="replace")
     raise RuntimeError(f"openai brain: HTTP {e.code}: {body[:1000]}")
 except Exception as e:
+    msg = str(e)
+    if "10061" in msg or "Connection refused" in msg or "actively refused" in msg:
+        raise RuntimeError(f"openai brain: LM Studio/OpenAI-compatible server is not listening at {url}; start LM Studio Developer/Local Server or rewire model.transport. Original: {e}")
     raise RuntimeError(f"openai brain: {e}")
 brain._log_raw(seq, "response", "openai", {"model": payload.get("model"), "body": resp},
                elapsed_s=round(time.time() - started, 3))
