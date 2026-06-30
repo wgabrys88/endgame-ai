@@ -1,5 +1,4 @@
-"""Browser-hosted AI handoff brain node.
-
-This remains deliberately fail-hard until a real desktop handoff implementation is supplied.
-"""
-raise RuntimeError("browser_ai brain is not implemented; wire file_proxy, openai, opencode, grok_build, grok_build_api, or xai_responses")
+def call(messages, cfg):
+    raise RuntimeError(
+        "browser_ai is a documented fail-hard stub in this package. Implement the browser handoff or choose another model.transport intentionally; no fallback was attempted."
+    )

@@ -1,78 +1,154 @@
-# endgame-ai corrected runtime package
+# endgame-ai fixed source package
 
-A living Windows desktop organism driven by hot-swappable Python nodes and hot-swappable brain nodes.
+This archive is a clean, source-only build of `endgame-ai` prepared as `endgame-ai-fixed.zip`.
 
-This package keeps the ROD topology and fail-hard philosophy. It does **not** add fallback transport switching. If the selected brain is unavailable, the organism fails loudly and writes the evidence to `state.json`, `comms/runtime.ndjson`, and the raw `*.txt` brain log.
+## What the system is
 
-## What changed in this correction
+`endgame-ai` is a small Windows desktop organism:
 
-- Default `model.transport` is now `opencode`, matching the runtime evidence where OpenCode completed the two-call ROD workbench test on this machine.
-- `openai` still exists as a brain node for LM Studio/OpenAI-compatible servers, but it now reports a direct hint when `localhost:1234` refuses the connection.
-- The workbench UI is split into a standalone `workbench.html` file. You may open it from the server or directly as a local HTML file.
-- `workbench.py` is now a small CORS-enabled JSON API + static file server. The API is still required for filesystem and process access; a browser-only HTML file cannot safely write `wiring.json`, `goal.json`, or `comms/control.json` without a local API.
-- Added a single chokepoint stepper in `organism.py`: `_step_gate()` runs before every topology node. No node file knows about stepping.
-- Workbench buttons now control the organism through `comms/control.json`:
-  - **Run**: free-running loop.
-  - **Pause**: wait before the next node.
-  - **Step one node**: execute exactly one topology node, then wait again.
-- Workbench polling no longer aborts in-flight fetches every second, and the API silently ignores disconnected-browser write errors.
-- `validate_repo.py` validates the new `workbench.html` file and the existing topology/brain-node structure.
+- Python is the mechanical body.
+- `wiring.json` is the mutable brain/topology configuration.
+- `seed_nodes/` templates are copied to `live_nodes/` at runtime.
+- `seed_brains/` transport templates are copied to `live_brains/` at runtime.
+- The topology is wiring-defined.
+- Nodes are hot-swappable modules that emit exactly one signal and one patch.
+- Brain transports are also hot-swappable node-like modules selected only by `model.transport`.
+- ROD remains a two-call brain pattern: Reason → Observe/commit → Decide.
 
-## Runtime files
+This is not a LangChain/MCP/CCA replacement. The core uses only the Python standard library.
 
-| File | Role |
-|---|---|
-| `wiring.json` | Topology, prompts, verbs, brain config |
-| `seed_nodes/` | Source templates copied to `live_nodes/` on first run |
-| `seed_brains/` | Source templates copied to `live_brains/` on first run |
-| `state.json` | Current organism snapshot |
-| `comms/runtime.ndjson` | Compact lifecycle events |
-| `*.txt` | Raw brain request/response forensic logs |
-| `comms/control.json` | Human debugger control: run/pause/step |
-| `workbench.html` | Standalone UI file |
-| `workbench.py` | Local CORS API for the UI |
+## Fail-hard rule
 
-## Run
+There are no hidden transport fallbacks. If `model.transport` is `openai`, the organism calls only `live_brains/openai.py`. If LM Studio is not listening, the selected transport raises a clear error and the organism stops. It does not auto-switch to OpenCode, xAI, Grok, or file proxy.
+
+## Validate
+
+From PowerShell in the repository root:
 
 ```powershell
 python validate_repo.py
-python workbench.py
+python -m py_compile brain.py nodes.py organism.py workbench.py actions.py desktop.py
+python - <<'PY'
+import py_compile, pathlib
+for d in ["seed_nodes", "seed_brains"]:
+    for p in pathlib.Path(d).glob("*.py"):
+        print("compile", p)
+        py_compile.compile(str(p), doraise=True)
+PY
+```
+
+## Run the organism
+
+```powershell
 python organism.py --reset --max-ticks 1 --max-brain-calls 2 "open notepad"
 ```
 
-Workbench:
+With the default wiring, `model.transport` is `openai`, which targets LM Studio at `http://localhost:1234/v1/chat/completions`. Start LM Studio's local server first, or expect a hard failure.
 
-```text
-http://127.0.0.1:8800/
+To test `file_proxy` without cloud/local model calls, edit `wiring.json`:
+
+```json
+"model": { "transport": "file_proxy" }
 ```
 
-Or open `workbench.html` directly in Chrome/Opera. Keep `python workbench.py` running, because the HTML talks to the API at `http://127.0.0.1:8800`.
+Then run the organism. It will write `comms/request.json` and wait for a matching `comms/response.json` with this shape:
 
-## Brain nodes
+```json
+{
+  "content": "{\"record_type\":\"plan\",\"data\":{\"next_signal\":\"observe\",\"intent\":\"open notepad\"}}",
+  "reasoning": "human/file proxy response"
+}
+```
 
-Selected by `wiring.json -> model.transport`.
+## Workbench
 
-| Transport | Node | Notes |
-|---|---|---|
-| `opencode` | `seed_brains/opencode.py` | Default in this package; stateless CLI call |
-| `openai` | `seed_brains/openai.py` | LM Studio/OpenAI-compatible `/v1/chat/completions`; requires a server listening on `localhost:1234` unless rewired |
-| `xai_responses` | `seed_brains/xai_responses.py` | xAI Responses API; requires `XAI_API_KEY` |
-| `grok_build_api` | `seed_brains/grok_build_api.py` | Alias/copy for Grok Build through xAI Responses |
-| `grok_build` | `seed_brains/grok_build.py` | Headless Grok CLI |
-| `file_proxy` | `seed_brains/file_proxy.py` | Human/agent handoff via JSON files |
-| `browser_ai` | `seed_brains/browser_ai.py` | Stub; fail-hard |
+Start the optional workbench:
 
-## Evidence discipline
+```powershell
+python workbench.py
+```
 
-Claims are measured by artifacts:
+Open:
 
-- `state.json`: current truth.
-- `comms/runtime.ndjson`: lifecycle events.
-- Raw `*.txt`: exact brain transport requests/responses.
-- `validate_repo.py`: structural/syntax check only; it does not prove Windows UI control or remote brain availability.
+- `http://127.0.0.1:8800/`
+- `http://127.0.0.1:8800/workbench.html`
+- `http://127.0.0.1:8800/api/status`
 
-## Important diagnosis from the supplied run
+The workbench is optional. The organism does not require it. The server catches expected browser disconnects such as Windows `WinError 10053`/connection aborts and keeps running quietly, while real internal handler errors still return a visible `500` response.
 
-The `openai` failure was a refused TCP connection to `http://localhost:1234/v1/chat/completions`. That means the selected OpenAI-compatible brain was not listening. This package does not hide that behind fallback logic; it defaults to `opencode` for this machine and leaves `openai` available when LM Studio is explicitly running.
+### API controls
 
-The workbench `WinError 10053` was a disconnected-browser write. It is not evidence that the organism crashed. The corrected API catches that class of socket close and the frontend avoids unnecessary request aborts.
+```powershell
+Invoke-WebRequest http://127.0.0.1:8800/api/status
+Invoke-WebRequest -Method OPTIONS http://127.0.0.1:8800/api/control
+Invoke-WebRequest -Method POST http://127.0.0.1:8800/api/control -ContentType "application/json" -Body '{"mode":"pause"}'
+Invoke-WebRequest -Method POST http://127.0.0.1:8800/api/control -ContentType "application/json" -Body '{"mode":"step"}'
+Invoke-WebRequest -Method POST http://127.0.0.1:8800/api/control -ContentType "application/json" -Body '{"mode":"run"}'
+```
+
+## STEP mode
+
+STEP mode is centralized in `organism.py` immediately before node execution. Nodes do not contain step logic.
+
+Control file: `comms/control.json`
+
+```json
+{
+  "mode": "run",
+  "step_token": 0,
+  "updated_at": 0
+}
+```
+
+Modes:
+
+- `run`: execute normally.
+- `pause`: pause before executing the next topology node.
+- `step`: execute exactly one node per new `step_token`, then pause again before the following node.
+
+Missing `comms/control.json` is documented as `run` and will be created automatically. Malformed JSON or an invalid mode is a hard error.
+
+When paused, `state.json` uses `_phase: "paused_before_node"`. When a step token is consumed, `comms/runtime.ndjson` records the node that was allowed.
+
+## Brain transports
+
+Transport selection is only through `wiring.json` → `model.transport`. Implementations live in `seed_brains/` and are copied to `live_brains/`.
+
+Every brain transport exports:
+
+```python
+def call(messages, cfg):
+    return {"content": "...", "reasoning": "..."}  # or raise
+```
+
+Supported seed transports:
+
+- `openai`: OpenAI-compatible chat completions, defaulting to LM Studio at `localhost:1234`.
+- `file_proxy`: writes a request JSON and waits for a response JSON.
+- `opencode`: calls an explicitly configured OpenCode executable.
+- `xai_responses`: calls xAI Responses only when `XAI_API_KEY` is present.
+- `grok_build`: calls a configured `grok` CLI.
+- `browser_ai`: documented fail-hard stub, not a silent fallback.
+
+## Common errors
+
+- `WinError 10061` / connection refused for `openai`: LM Studio's local server is not running or is not listening on `http://localhost:1234`. Start LM Studio Local Server or intentionally change `model.transport`.
+- `WinError 10053` from workbench/browser: a browser disconnected while a response was being written. This package suppresses expected disconnect stack traces.
+- OpenCode executable missing: the configured `model.opencode.executable` does not exist and is not on `PATH`. Install OpenCode or intentionally change wiring.
+- xAI API key missing: `XAI_API_KEY` is not set. Set it only when you intend to use paid xAI calls.
+
+## Tested in this packaging session
+
+- `python validate_repo.py` passed in the unpacked archive.
+- `python -m py_compile brain.py nodes.py organism.py workbench.py actions.py desktop.py` passed.
+- Every `seed_nodes/*.py` and `seed_brains/*.py` compiled.
+- `file_proxy` path was exercised with `--max-ticks 1 --max-brain-calls 2` and a synthetic file response.
+- The source zip excludes `.git/`, `__pycache__/`, `.pytest_cache/`, `live_nodes/`, `live_brains/`, `comms/`, raw `*.txt` logs, `state.json`, and `goal.json`.
+
+## Experiment pending
+
+- Windows 11 GUI/body execution was not performed in this Linux packaging environment.
+- Real LM Studio success is pending until a server is listening on `localhost:1234`.
+- OpenCode and xAI/Grok real provider success are pending until executables/API keys are available.
+
+Research organism, not a product. Run only where full desktop control is acceptable.

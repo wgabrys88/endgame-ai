@@ -1,49 +1,41 @@
-"""File / human handoff brain node: request.json -> response.json."""
-req_path = _root_path(cfg.get("request_path"), "comms/request.json")
-resp_path = _root_path(cfg.get("response_path"), "comms/response.json")
-archive = _root_path(cfg.get("archive_dir"), "comms/archive")
-for p in (req_path.parent, archive):
-    p.mkdir(parents=True, exist_ok=True)
-rid = f"egai-{int(time.time()*1000)}-{os.getpid()}-{threading.get_ident() % 100000}"
-request_obj = {
-    "id": rid,
-    "status": "pending",
-    "created_at": time.time(),
-    "transport": "file_proxy",
-    "model": cfg.get("model"),
-    "messages": [
-        {"role": "system", "content": system},
-        {"role": "user", "content": user},
-    ],
-    "system": system,
-    "user": user,
-}
-_atomic_write_json(req_path, request_obj)
-brain._log_raw(seq, "request", "file_proxy", {"request_path": str(req_path), "body": request_obj},
-               rod_feedback="ROD_REASONING_CONTENT" in user)
-started = time.time()
-poll = max(0.05, int(cfg.get("poll_interval_ms", 1000)) / 1000.0)
-deadline = started + brain._timeout(cfg)
-while time.time() < deadline:
+from __future__ import annotations
+
+import json
+import os
+import pathlib
+import time
+
+
+def _root_path(value):
+    p = pathlib.Path(os.path.expandvars(os.path.expanduser(str(value))))
+    return p if p.is_absolute() else pathlib.Path(__file__).resolve().parents[1] / p
+
+
+def call(messages, cfg):
+    req_path = _root_path(cfg.get("request_path") or "comms/request.json")
+    resp_path = _root_path(cfg.get("response_path") or "comms/response.json")
+    req_path.parent.mkdir(parents=True, exist_ok=True)
+    request = {"messages": messages, "created_at": time.time(), "transport": "file_proxy"}
+    tmp = req_path.with_suffix(req_path.suffix + ".tmp")
+    tmp.write_text(json.dumps(request, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(tmp, req_path)
     if resp_path.exists():
-        try:
-            resp = json.loads(resp_path.read_text(encoding="utf-8") or "{}")
-        except json.JSONDecodeError:
-            time.sleep(poll)
-            continue
-        if resp.get("id") in (None, "", rid):
-            content = _proxy_content(resp)
-            reasoning = str(resp.get("reasoning") or resp.get("reasoning_content") or "") if isinstance(resp, dict) else ""
-            brain._log_raw(seq, "response", "file_proxy", {
-                "response_path": str(resp_path),
-                "body": resp,
-                "id": rid,
-            }, elapsed_s=round(time.time() - started, 3))
+        resp_path.unlink()
+    timeout = float(cfg.get("timeout") or 60)
+    interval = float(cfg.get("poll_interval") or 0.25)
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if resp_path.exists():
             try:
-                shutil.move(str(resp_path), str(archive / f"response.{rid}.json"))
-            except OSError:
-                pass
-            break
-    time.sleep(poll)
-else:
-    raise TimeoutError(f"file_proxy brain timed out waiting for {resp_path}")
+                obj = json.loads(resp_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError as exc:
+                raise RuntimeError(f"file_proxy response is malformed JSON: {resp_path}: {exc}") from exc
+            content = obj.get("content")
+            if not isinstance(content, str) or not content.strip():
+                raise RuntimeError(f"file_proxy response missing non-empty content: {resp_path}")
+            reasoning = obj.get("reasoning", "")
+            if reasoning is not None and not isinstance(reasoning, str):
+                raise RuntimeError("file_proxy response reasoning must be a string when present")
+            return {"content": content, "reasoning": reasoning or "", "response_path": str(resp_path)}
+        time.sleep(interval)
+    raise RuntimeError(f"file_proxy timed out waiting for {resp_path}; no fallback was attempted")

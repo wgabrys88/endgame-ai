@@ -1,40 +1,19 @@
-# endgame-ai allowlist policy
-*
-!*/
-
-# Repo metadata
-!.gitignore
-!.gitattributes
-!LICENSE
-!README.md
-
-# Organism core
-!wiring.json
-!actions.py
-!brain.py
-!desktop.py
-!nodes.py
-!organism.py
-!workbench.py
-!workbench.html
-!state.json
-
-# Seed node templates (copied to live_nodes/ at runtime)
-!seed_nodes/
-!seed_nodes/**
-
-# Seed brain nodes (copied to live_brains/ at runtime)
-!seed_brains/
-!seed_brains/**
-
-# Optional local validation helpers
-!validate_repo.py
-
-# Runtime state intentionally ignored unless explicitly forced
+# Runtime artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
 live_nodes/
 live_brains/
 comms/
-*.txt
+state.json
 goal.json
-*.tmp.*
-__pycache__/
+*.txt
+*.tmp
+*.log
+
+# OS/editor junk
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp

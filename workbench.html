@@ -1,121 +1,102 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>endgame-ai workbench</title>
-<style>
-:root{--bg:#071019;--panel:#0d1724;--panel2:#111f31;--fg:#dce7f7;--mut:#8ea0b8;--line:#20344d;--ok:#51d88a;--warn:#ffd166;--bad:#ff6b7a;--hot:#8cc8ff;--btn:#77b7ff;--ink:#06111f}
-*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 ui-sans-serif,system-ui,Segoe UI,Arial,sans-serif} code,pre,textarea,input,select{font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace} header{position:sticky;top:0;z-index:5;background:#08111d;border-bottom:1px solid var(--line);padding:10px 14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}h1{font-size:16px;margin:0 10px 0 0;color:var(--hot)}.pill{border:1px solid var(--line);border-radius:999px;padding:4px 9px;color:var(--mut);background:#0a1421}.ok{color:var(--ok);border-color:#2c8656}.warn{color:var(--warn);border-color:#8c7433}.bad{color:var(--bad);border-color:#8c3844}.hot{color:var(--hot);border-color:#396d9b}button{border:0;border-radius:8px;padding:7px 10px;background:var(--btn);color:var(--ink);font-weight:700;cursor:pointer}button.ghost{background:#142238;color:var(--fg);border:1px solid var(--line)}button.danger{background:var(--bad);color:#18050a}button:disabled{opacity:.5}select,input,textarea{width:100%;background:#07111e;color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:7px}textarea{min-height:120px;resize:vertical}.layout{display:grid;grid-template-columns:1.1fr .9fr;gap:12px;padding:12px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;min-width:0}.card h2{margin:0 0 10px;font-size:12px;text-transform:uppercase;letter-spacing:.1em;color:var(--mut)}.row{border-top:1px solid #18283d;padding:7px 0;word-break:break-word}.row:first-child{border-top:0}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.span2{grid-column:span 2}.span4{grid-column:1/-1}.kv{display:grid;grid-template-columns:140px 1fr;gap:8px;margin:6px 0}.mut{color:var(--mut)}.k{color:var(--hot)}.mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}.actions{display:flex;gap:8px;flex-wrap:wrap}.log{height:320px;white-space:pre;overflow:auto;background:#07111e;border:1px solid var(--line);border-radius:10px;padding:10px}.small{font-size:12px}.table{overflow:auto}table{width:100%;border-collapse:collapse;font-size:12px}td,th{border-top:1px solid #18283d;padding:6px;text-align:left;white-space:nowrap}th{color:var(--mut);font-weight:600}@media(max-width:1100px){.layout{grid-template-columns:1fr}.grid{grid-template-columns:1fr 1fr}.span2,.span4{grid-column:1/-1}}@media(max-width:650px){header{align-items:flex-start}.grid{grid-template-columns:1fr}.kv{grid-template-columns:1fr}.actions button{width:100%}}
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>endgame-ai workbench</title>
+  <style>
+    :root { color-scheme: dark; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif; }
+    body { margin: 0; background: #111318; color: #f2f4f8; }
+    header { padding: 18px 22px; border-bottom: 1px solid #2a2f3a; background: #171a21; position: sticky; top: 0; z-index: 2; }
+    h1 { margin: 0; font-size: clamp(20px, 3vw, 30px); }
+    main { display: grid; grid-template-columns: minmax(260px, 380px) 1fr; gap: 16px; padding: 16px; }
+    section { background: #171a21; border: 1px solid #2a2f3a; border-radius: 14px; padding: 16px; box-shadow: 0 10px 32px rgba(0,0,0,.22); }
+    .stack { display: grid; gap: 16px; align-content: start; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+    .card { background: #20242d; border: 1px solid #343a48; border-radius: 12px; padding: 12px; min-height: 72px; }
+    .label { color: #aab2c0; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+    .value { font-size: 17px; margin-top: 6px; overflow-wrap: anywhere; }
+    button { border: 0; border-radius: 10px; padding: 11px 14px; background: #354052; color: white; cursor: pointer; font-weight: 700; }
+    button:hover { filter: brightness(1.12); }
+    button.primary { background: #2764ff; }
+    button.warn { background: #9b5c00; }
+    button.danger { background: #8a2430; }
+    .controls { display: flex; flex-wrap: wrap; gap: 10px; }
+    pre { background: #0b0d11; border: 1px solid #2a2f3a; border-radius: 12px; padding: 12px; overflow: auto; max-height: 55vh; white-space: pre-wrap; }
+    details summary { cursor: pointer; color: #cbd5e1; margin-bottom: 10px; }
+    @media (max-width: 850px) { main { grid-template-columns: 1fr; } header { position: static; } }
+  </style>
 </head>
 <body>
-<header>
-  <h1>endgame-ai</h1>
-  <span id="health" class="pill">health —</span>
-  <span id="node" class="pill">node —</span>
-  <span id="brain" class="pill hot">brain —</span>
-  <span id="control" class="pill">control —</span>
-  <span id="goal" class="pill">goal —</span>
-  <span id="age" class="pill">age —</span>
-  <span style="flex:1"></span>
-  <button class="ghost" onclick="refresh(true)">Refresh</button>
-</header>
-<main class="layout">
-  <section class="card span4">
-    <h2>Control chokepoint</h2>
-    <div class="grid">
-      <div><label class="mut small">API base</label><input id="apiBase" value="http://127.0.0.1:8800"></div>
-      <div class="actions" style="align-items:end"><button onclick="saveApi()">Save API</button><button class="ghost" onclick="setControl('run')">Run</button><button class="ghost" onclick="setControl('pause')">Pause</button><button onclick="setControl('step')">Step one node</button></div>
-      <div class="span2 row small mut">Open this file directly or from the server. The HTML is standalone; the Python API still performs file/process work and now allows CORS.</div>
+  <header><h1>endgame-ai workbench</h1><div id="connection" class="label">connecting…</div></header>
+  <main>
+    <div class="stack">
+      <section>
+        <div class="label">Controls</div>
+        <div class="controls" style="margin-top: 12px">
+          <button class="primary" onclick="control('run')">Run</button>
+          <button class="warn" onclick="control('pause')">Pause</button>
+          <button onclick="control('step')">Step</button>
+        </div>
+      </section>
+      <section>
+        <div class="label">Status</div>
+        <div class="cards" style="margin-top:12px">
+          <div class="card"><div class="label">Phase</div><div id="phase" class="value">—</div></div>
+          <div class="card"><div class="label">Control</div><div id="mode" class="value">—</div></div>
+          <div class="card"><div class="label">Transport</div><div id="transport" class="value">—</div></div>
+          <div class="card"><div class="label">Step token</div><div id="token" class="value">—</div></div>
+        </div>
+      </section>
     </div>
-  </section>
-
-  <section class="card">
-    <h2>State truth</h2>
-    <div id="truth"></div>
-  </section>
-  <section class="card">
-    <h2>Plan / current step</h2>
-    <div id="plan"></div>
-  </section>
-
-  <section class="card">
-    <h2>Brain node</h2>
-    <div class="grid">
-      <div class="span2"><select id="brainSelect"></select></div>
-      <div class="actions span2"><button onclick="saveBrain()">Save brain</button><button class="ghost" onclick="probeBrain()">Probe</button><button class="ghost" onclick="testRod()">Test ROD</button></div>
-      <div id="brainControls" class="span4"></div>
+    <div class="stack">
+      <section>
+        <div class="cards">
+          <div class="card"><div class="label">Current node</div><div id="node" class="value">—</div></div>
+          <div class="card"><div class="label">Next node</div><div id="next" class="value">—</div></div>
+          <div class="card"><div class="label">Last action</div><div id="action" class="value">—</div></div>
+          <div class="card"><div class="label">Last error</div><div id="error" class="value">—</div></div>
+        </div>
+      </section>
+      <section>
+        <details open><summary>State</summary><pre id="state">{}</pre></details>
+        <details><summary>Runtime log tail</summary><pre id="runtime">[]</pre></details>
+      </section>
     </div>
-    <pre id="probeOut" class="log" style="height:180px"></pre>
-  </section>
-
-  <section class="card">
-    <h2>Goal + file proxy</h2>
-    <label class="mut small">Goal for next run</label><textarea id="goalbox"></textarea>
-    <div class="actions"><button onclick="setGoal()">Set goal</button><button class="ghost" onclick="clearGoal()">Clear</button></div>
-    <div class="row"><b class="k">File proxy:</b> <span id="proxyMeta" class="mut">—</span></div>
-    <textarea id="prompt" readonly placeholder="file_proxy prompt"></textarea>
-    <textarea id="answer" placeholder="human/other brain response"></textarea>
-    <button onclick="respondProxy()">Write response.json</button>
-  </section>
-
-  <section class="card">
-    <h2>Runtime events</h2>
-    <div id="events" class="log"></div>
-  </section>
-  <section class="card">
-    <h2>History + reasoning</h2>
-    <div id="history" class="log"></div>
-  </section>
-
-  <section class="card span4">
-    <h2>Forensic logs</h2>
-    <div class="grid">
-      <select id="logKind" onchange="syncLogPicker()"><option value="raw">raw brain log</option><option value="runtime">runtime.ndjson</option><option value="cli_prompt">cli prompt</option></select>
-      <select id="logFile"></select>
-      <input id="logTail" type="number" min="20" max="2000" value="200">
-      <button onclick="loadLog(true)">Load</button>
-    </div>
-    <div id="logMeta" class="row mut small">—</div>
-    <pre id="logView" class="log"></pre>
-  </section>
-
-  <section class="card span4">
-    <h2>Usage</h2>
-    <div id="usageMeta" class="row mut small">—</div>
-    <div id="usage" class="table"></div>
-  </section>
-</main>
+  </main>
 <script>
-const $=id=>document.getElementById(id); const transports=['openai','xai_responses','grok_build_api','opencode','grok_build','file_proxy','browser_ai']; let wiring=null,status=null,inventory={};
-$('apiBase').value=localStorage.endgameApiBase||'http://127.0.0.1:8800';
-function apiUrl(p){return $('apiBase').value.replace(/\/$/,'')+p} function saveApi(){localStorage.endgameApiBase=$('apiBase').value; refresh(true)}
-async function api(p,opts={}){const r=await fetch(apiUrl(p),{cache:'no-store',...opts}); if(!r.ok) throw new Error(await r.text()); return r.headers.get('content-type')?.includes('json')?await r.json():await r.text()}
-function esc(s){return String(s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))} function fmt(n){return Number(n||0).toLocaleString(undefined,{maximumFractionDigits:2})} function age(s){return s==null?'—':fmt(s)+'s'}
-function cls(ok,warn){return ok?'ok':warn?'warn':'bad'} function getPath(obj,path){return String(path).split('.').reduce((a,k)=>a&&a[k],obj)} function setPath(obj,path,val){const p=String(path).split('.');let c=obj;for(let i=0;i<p.length-1;i++){c[p[i]]=c[p[i]]||{};c=c[p[i]]}c[p[p.length-1]]=val}
-function parseVal(c,el){if(c.type==='checkbox')return !!el.checked;if(c.type==='number'||c.type==='range'){const n=Number(el.value);return Number.isFinite(n)?n:0}return el.value}
-function renderStatus(s){status=s; const st=s.state||{}, h=s.health||{}, c=s.control||{}; $('health').textContent='health '+(h.message||'—'); $('health').className='pill '+(h.stale?'bad':h.active?'warn':'ok'); $('node').textContent='node '+(st.active_node||st.node||'—')+' / '+(st.phase||'—'); $('brain').textContent='brain '+(st.transport||s.model?.transport||'—'); $('control').textContent='control '+(c.mode||'run')+(c.step_requested?' +step':''); $('control').className='pill '+(c.mode==='run'?'ok':c.mode==='step'?'hot':'warn'); $('goal').textContent='goal '+(st.goal||'(none)'); $('age').textContent='age '+age(h.state_age_s); if(document.activeElement!==$('goalbox'))$('goalbox').value=st.goal||'';
- $('truth').innerHTML=`<div class="row"><b class="k">last error</b><br>${esc(st.last_error||'—')}</div><div class="row"><b class="k">last outcome</b><br>${esc(st.last_outcome||'—')}</div><div class="row small mut">screen focused=${esc(st.screen_summary?.focused_title||'—')} elements=${fmt(st.screen_summary?.elements)} windows=${fmt(st.screen_summary?.windows)} chars=${fmt(st.screen_summary?.raw_screen_chars)}</div><div class="row"><b class="k">files</b><br>state ${esc(s.files?.state?.path||'—')}<br>runtime ${esc(s.files?.runtime?.path||'—')}<br>raw ${esc(s.files?.raw_log?.path||'—')}</div>`;
- const steps=st.plan||[]; $('plan').innerHTML=`<div class="row"><b class="k">current</b><br>${esc(st.current_step?.description||'—')}<br><span class="mut">done_when: ${esc(st.current_step?.done_when||'')}</span></div>`+steps.map((p,i)=>`<div class="row"><b>${i===st.step?'▶':' '} ${i+1}.</b> ${esc(p.description||p)}<br><span class="mut">${esc(p.done_when||'')}</span></div>`).join('');
- $('events').textContent=(s.runtime||[]).slice().reverse().map(e=>`${e.iso||''} ${e.event||''} ${e.node||e.transport||''}\n${e.message||e.error||JSON.stringify(e)}`).join('\n\n')||'—';
- $('history').textContent='HISTORY\n'+(st.history||[]).map(x=>`${x.attempt||''}. ${x.action||''}\n${x.outcome||''}`).join('\n\n')+'\n\nREASONING\n'+(st.reasoning_chain||[]).map(x=>`${x.circuit||''}: ${x.reasoning||''}\n${JSON.stringify(x.parsed||'')}`).join('\n\n');
- inventory=s.files?.inventory||{}; syncLogPicker(); renderUsage(s.usage||{});
+let inFlight = null;
+function text(v) { return v === undefined || v === null || v === '' ? '—' : (typeof v === 'string' ? v : JSON.stringify(v)); }
+async function control(mode) {
+  const body = mode === 'step' ? {mode:'step'} : {mode};
+  await fetch('/api/control', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+  await refresh();
 }
-async function loadWiring(){wiring=await api('/api/wiring'); const m=wiring.model||{}, sel=$('brainSelect'); sel.innerHTML=''; transports.filter(t=>m[t]||['file_proxy','browser_ai'].includes(t)).forEach(t=>{const o=document.createElement('option');o.value=t;o.textContent=(m[t]?.label||t);sel.appendChild(o)}); sel.value=m.transport||'opencode'; renderBrainControls()}
-function renderBrainControls(){if(!wiring)return; const m=wiring.model||{}, cfg=m[$('brainSelect').value]||{}, box=$('brainControls'); box.innerHTML=''; (cfg.controls||[]).forEach((c,i)=>{const wrap=document.createElement('div'); wrap.className='kv span2'; const lab=document.createElement('label'); lab.className='mut small'; lab.textContent=c.label||c.key; let el; if(c.type==='select'){el=document.createElement('select'); (c.choices||[]).forEach(x=>{const o=document.createElement('option');o.textContent=x;o.value=x;if(x==getPath(cfg,c.key))o.selected=true;el.appendChild(o)})} else {el=document.createElement('input'); el.type=c.type==='checkbox'?'checkbox':(c.type||'text'); if(el.type==='checkbox')el.checked=!!getPath(cfg,c.key); else el.value=getPath(cfg,c.key)??''; ['min','max','step'].forEach(k=>{if(c[k]!=null)el.setAttribute(k,c[k])})} el.id='ctl_'+i; wrap.appendChild(lab); wrap.appendChild(el); box.appendChild(wrap)})}
-$('brainSelect').addEventListener('change',renderBrainControls);
-async function saveBrain(){const m=wiring.model||{}, t=$('brainSelect').value, cfg=m[t]||{}; (cfg.controls||[]).forEach((c,i)=>{const el=$('ctl_'+i); if(el)setPath(cfg,c.key,parseVal(c,el))}); m.transport=t; m[t]=cfg; wiring.model=m; await api('/api/wiring',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(wiring)}); await refresh(true)}
-async function setControl(mode){await api('/api/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode,step_requested:mode==='step',updated_by:'workbench'})}); await refresh(true)}
-async function setGoal(){await api('/api/goal',{method:'POST',body:$('goalbox').value}); await refresh(true)} async function clearGoal(){$('goalbox').value=''; await setGoal()}
-async function respondProxy(){await api('/api/respond',{method:'POST',body:$('answer').value}); $('answer').value=''; await refresh(true)}
-async function probeBrain(){const t=$('brainSelect').value||status?.model?.transport||'opencode'; $('probeOut').textContent=JSON.stringify(await api('/api/provider_stats?provider='+encodeURIComponent(t)),null,2)}
-async function testRod(){const t=$('brainSelect').value||status?.model?.transport||'opencode'; $('probeOut').textContent='running ROD test for '+t+'...'; $('probeOut').textContent=JSON.stringify(await api('/api/brain_test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({transport:t})}),null,2); await loadLog(true); await refresh(true)}
-function syncLogPicker(){const kind=$('logKind').value, sel=$('logFile'); const cur=sel.value; sel.innerHTML=''; sel.disabled=!(kind==='raw'||kind==='cli_prompt'); const list=kind==='raw'?(inventory.raw_logs||[]):kind==='cli_prompt'?(inventory.cli_prompts||[]):[]; list.forEach(x=>{const o=document.createElement('option');o.value=x.name;o.textContent=`${x.name} (${age(x.age_s)}, ${fmt(x.size)}b)`; if(x.name===cur)o.selected=true;sel.appendChild(o)})}
-async function loadLog(force=false){const kind=$('logKind').value, file=$('logFile').value||'', tail=$('logTail').value||200; const q=new URLSearchParams({kind,tail}); if(file)q.set('file',file); const obj=await api('/api/logs/tail?'+q); $('logMeta').textContent=obj.ok?`${obj.path} • ${obj.lines} lines`:(obj.error||'load failed'); $('logView').textContent=obj.ok?(obj.format==='ndjson'?obj.tail.map(x=>JSON.stringify(x)).join('\n'):(obj.tail||[]).join('\n')):''}
-function renderUsage(u){$('usageMeta').textContent=`rows ${u.rows||0} • ${u.path||''}`; let html=''; for(const period of ['24h','30d','month','all']){const b=u.buckets?.[period]||{}; html+=`<h3>${period}</h3><table><tr><th>provider/model</th><th>calls</th><th>exact</th><th>total</th><th>reasoning</th><th>elapsed</th><th>cost</th></tr>`; for(const [k,v] of Object.entries(b))html+=`<tr><td>${esc(k)}</td><td>${fmt(v.calls)}</td><td>${fmt(v.exact_calls)}</td><td>${fmt(v.total_tokens)}</td><td>${fmt(v.reasoning_tokens)}</td><td>${fmt(v.elapsed_s)}s</td><td>$${fmt(v.cost_usd)}</td></tr>`; html+='</table>'} $('usage').innerHTML=html}
-async function refresh(force=false){try{renderStatus(await api('/api/status')); const p=await api('/api/proxy'); $('proxyMeta').textContent=p.pending?`WAITING ${p.id||''}`:'idle'; $('proxyMeta').className=p.pending?'bad':'mut'; if(document.activeElement!==$('prompt'))$('prompt').value=p.prompt||''}catch(e){$('health').textContent='health fetch error '+e.message; $('health').className='pill bad'}}
-loadWiring().then(()=>refresh(true).then(()=>loadLog(true))).catch(e=>{$('health').textContent='boot error '+e.message;$('health').className='pill bad'}); setInterval(()=>refresh(false),1500); setInterval(()=>loadLog(false).catch(()=>{}),7000);
+async function refresh() {
+  if (inFlight) return;
+  const ac = new AbortController();
+  inFlight = ac;
+  try {
+    const res = await fetch('/api/status', {signal: ac.signal, cache:'no-store'});
+    const data = await res.json();
+    document.getElementById('connection').textContent = 'connected';
+    const s = data.state || {}, c = data.control || {}, w = data.wiring || {};
+    phase.textContent = text(s._phase);
+    mode.textContent = text(c.mode);
+    transport.textContent = text(w.transport);
+    token.textContent = text(c.step_token);
+    node.textContent = text(s.current_node);
+    next.textContent = text(s.next_node);
+    action.textContent = text(s.last_action);
+    error.textContent = text(s.last_error);
+    state.textContent = JSON.stringify(s, null, 2);
+    runtime.textContent = JSON.stringify(data.runtime_tail || [], null, 2);
+  } catch (err) {
+    document.getElementById('connection').textContent = 'disconnected: ' + err;
+  } finally { inFlight = null; }
+}
+refresh();
+setInterval(refresh, 1000);
 </script>
 </body>
 </html>

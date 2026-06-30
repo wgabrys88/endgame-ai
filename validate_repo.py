@@ -1,93 +1,63 @@
-"""Local structural validation for endgame-ai rewired repo.
-
-This does not run desktop I/O or call any brain provider. It only validates files,
-JSON shape, topology reachability, brain node presence, and Python syntax.
-"""
 from __future__ import annotations
 
 import json
 import pathlib
 import py_compile
 import sys
-from collections import defaultdict, deque
 
 ROOT = pathlib.Path(__file__).parent.resolve()
-CORE = ["actions.py", "brain.py", "desktop.py", "nodes.py", "organism.py", "workbench.py"]
-STATIC = ["workbench.html"]
-SEED_NODES = {"planner", "scheduler", "observe", "act", "verify", "reflect", "self_modify", "satisfied"}
-SEED_BRAINS = {"openai", "xai_responses", "grok_build_api", "opencode", "grok_build", "file_proxy", "browser_ai"}
+REQUIRED = [
+    ".gitignore", ".gitattributes", "LICENSE", "README.md", "wiring.json",
+    "brain.py", "nodes.py", "organism.py", "actions.py", "desktop.py",
+    "workbench.py", "workbench.html", "validate_repo.py",
+]
+FORBIDDEN_DIRS = {".git", "__pycache__", ".pytest_cache", "live_nodes", "live_brains", "comms"}
+FORBIDDEN_FILES = {"state.json", "goal.json"}
+CORE_PY = ["brain.py", "nodes.py", "organism.py", "workbench.py", "actions.py", "desktop.py", "validate_repo.py"]
 
 
 def fail(msg: str) -> None:
-    print(f"FAIL: {msg}")
-    sys.exit(1)
+    raise SystemExit(f"validate_repo failed: {msg}")
 
 
-def main() -> None:
-    wiring_path = ROOT / "wiring.json"
-    if not wiring_path.exists():
-        fail("wiring.json missing")
-    wiring = json.loads(wiring_path.read_text(encoding="utf-8"))
-
-    for f in CORE:
-        if not (ROOT / f).exists():
-            fail(f"core file missing: {f}")
-    for f in STATIC:
-        if not (ROOT / f).exists():
-            fail(f"static file missing: {f}")
-    for f in CORE:
-        py_compile.compile(str(ROOT / f), doraise=True)
-
-    for name in SEED_NODES:
-        path = ROOT / "seed_nodes" / f"{name}.py"
-        if not path.exists():
-            fail(f"seed node missing: {path}")
-        py_compile.compile(str(path), doraise=True)
-
-    for name in SEED_BRAINS:
-        path = ROOT / "seed_brains" / f"{name}.py"
-        if not path.exists():
-            fail(f"seed brain missing: {path}")
-        py_compile.compile(str(path), doraise=True)
-
-    topo = wiring.get("topology", {})
-    nodes = topo.get("nodes", [])
-    edges = topo.get("edges", [])
-    ids = {n.get("id") for n in nodes}
-    if topo.get("cycle_start") not in ids:
-        fail("cycle_start does not point at a node")
-    seen = set()
-    for e in edges:
-        key = (e.get("from"), e.get("on"))
-        if key in seen:
-            fail(f"duplicate topology edge: {key}")
-        seen.add(key)
-        if e.get("from") not in ids or e.get("to") not in ids:
-            fail(f"edge points outside topology: {e}")
-
-    graph = defaultdict(list)
-    for e in edges:
-        graph[e["from"]].append(e["to"])
-    q = deque([topo["cycle_start"]])
-    reachable = set()
-    while q:
-        cur = q.popleft()
-        if cur in reachable:
-            continue
-        reachable.add(cur)
-        q.extend(graph[cur])
-    missing = ids - reachable
-    if missing:
-        fail(f"unreachable topology nodes: {sorted(missing)}")
-
+def main() -> int:
+    for rel in REQUIRED:
+        if not (ROOT / rel).exists():
+            fail(f"missing required file {rel}")
+    for p in ROOT.iterdir():
+        if p.is_dir() and p.name in FORBIDDEN_DIRS:
+            fail(f"runtime/cache directory must not be packaged: {p.name}")
+        if p.is_file() and (p.name in FORBIDDEN_FILES or p.suffix == ".txt"):
+            fail(f"runtime/raw file must not be packaged: {p.name}")
+    try:
+        wiring = json.loads((ROOT / "wiring.json").read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        fail(f"wiring.json malformed: {exc}")
     transport = wiring.get("model", {}).get("transport")
-    aliases = wiring.get("model", {}).get("brain_nodes", {}).get("aliases", {})
-    node = aliases.get(transport, transport)
-    if not (ROOT / "seed_brains" / f"{node}.py").exists():
-        fail(f"selected transport has no seed brain: {transport}")
-
-    print("OK: structural validation passed")
+    if not isinstance(transport, str) or not transport:
+        fail("wiring model.transport must be a non-empty string")
+    if not (ROOT / "seed_brains" / f"{transport}.py").exists():
+        fail(f"selected transport {transport!r} has no seed_brains module")
+    topo = wiring.get("topology", {})
+    nodes = topo.get("nodes")
+    if not isinstance(nodes, list) or not nodes:
+        fail("topology.nodes must be a non-empty list")
+    for node in nodes:
+        if not (ROOT / "seed_nodes" / f"{node}.py").exists():
+            fail(f"topology node {node!r} has no seed_nodes module")
+    if topo.get("cycle_start") not in nodes:
+        fail("topology.cycle_start must be present in topology.nodes")
+    for rel in CORE_PY:
+        py_compile.compile(str(ROOT / rel), doraise=True)
+    for d in ["seed_nodes", "seed_brains"]:
+        files = sorted((ROOT / d).glob("*.py"))
+        if not files:
+            fail(f"{d} has no python files")
+        for p in files:
+            py_compile.compile(str(p), doraise=True)
+    print("validate_repo: ok")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

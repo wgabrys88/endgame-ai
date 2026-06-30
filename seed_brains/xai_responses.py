@@ -1,45 +1,40 @@
-"""xAI Responses API brain node."""
-host = str(cfg.get("host", "https://api.x.ai")).rstrip("/")
-path = str(cfg.get("endpoint_path", "/v1/responses"))
-model = str(cfg.get("model", "grok-4"))
-payload = {
-    "model": model,
-    "input": [
-        {"role": "system", "content": system},
-        {"role": "user", "content": user},
-    ],
-    "store": bool(cfg.get("store", False)),
-}
-for key in (
-    "temperature", "top_p", "max_output_tokens", "parallel_tool_calls", "reasoning",
-    "text", "tools", "tool_choice", "metadata", "service_tier", "include", "user",
-):
-    if key == "temperature":
-        payload[key] = temperature
-    elif key in cfg:
-        payload[key] = cfg[key]
-headers = {"Content-Type": "application/json"}
-api_key = cfg.get("api_key") or os.environ.get(str(cfg.get("api_key_env", "XAI_API_KEY")))
-if not api_key:
-    raise RuntimeError("xai_responses brain: missing API key; set XAI_API_KEY or model.xai_responses.api_key_env")
-headers["Authorization"] = f"Bearer {api_key}"
-url = host + path
-brain._log_raw(seq, "request", "xai_responses", {
-    "url": url,
-    "model": model,
-    "headers": _redact_headers(headers),
-    "body": payload,
-}, rod_feedback="ROD_REASONING_CONTENT" in user)
-started = time.time()
-req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
-try:
-    with urllib.request.urlopen(req, timeout=brain._timeout(cfg)) as r:
-        resp = json.loads(r.read().decode("utf-8", errors="replace"))
-except urllib.error.HTTPError as e:
-    body = e.read().decode("utf-8", errors="replace")
-    raise RuntimeError(f"xai_responses brain: HTTP {e.code}: {body[:1000]}")
-except Exception as e:
-    raise RuntimeError(f"xai_responses brain: {e}")
-content, reasoning = _xai_response_text(resp)
-brain._log_raw(seq, "response", "xai_responses", {"model": model, "body": resp},
-               elapsed_s=round(time.time() - started, 3))
+from __future__ import annotations
+
+import json
+import os
+import urllib.error
+import urllib.request
+
+
+def call(messages, cfg):
+    api_key = os.environ.get("XAI_API_KEY")
+    if not api_key:
+        raise RuntimeError("xai_responses selected but XAI_API_KEY is missing; no fallback was attempted")
+    url = str(cfg.get("url") or "https://api.x.ai/v1/responses")
+    text = "\n".join(f"{m.get('role','user')}: {m.get('content','')}" for m in messages)
+    payload = {"model": cfg.get("model") or "grok-4", "input": text}
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=float(cfg.get("timeout") or 60)) as resp:
+            body = resp.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as exc:
+        err = exc.read().decode("utf-8", errors="replace")[:2000]
+        raise RuntimeError(f"xai_responses HTTP {exc.code}: {err}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"xai_responses URL error: {getattr(exc, 'reason', exc)}; no fallback was attempted") from exc
+    obj = json.loads(body)
+    content = obj.get("output_text") or ""
+    if not content and isinstance(obj.get("output"), list):
+        parts = []
+        for item in obj["output"]:
+            if isinstance(item, dict):
+                for c in item.get("content", []) or []:
+                    if isinstance(c, dict) and c.get("text"):
+                        parts.append(str(c["text"]))
+        content = "\n".join(parts)
+    return {"content": content, "reasoning": "", "body": obj}
