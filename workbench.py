@@ -15,7 +15,6 @@ import os
 import pathlib
 import subprocess
 import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 from typing import Any
@@ -24,7 +23,7 @@ import brain as brain_mod
 
 ROOT = pathlib.Path(__file__).parent.resolve()
 PORT = int(os.environ.get("ENDGAME_WORKBENCH_PORT", "8800"))
-BRAIN_TEST_TIMEOUT_S = 45
+ROD_BRAIN_CALLS = 2
 STATE_PATH = ROOT / "state.json"
 WIRING_PATH = ROOT / "wiring.json"
 GOAL_PATH = ROOT / "goal.json"
@@ -492,14 +491,13 @@ def _rod_seen_in_raw(entries: list[dict]) -> bool:
 def _brain_test(transport: str) -> dict:
     model = dict(_model_cfg())
     model["transport"] = transport
-    test_timeout = max(5, int(model.get("brain_test_timeout_s") or BRAIN_TEST_TIMEOUT_S))
-    # ROD = 2 calls; cap each transport call so the whole test stays within test_timeout.
-    model["timeout"] = max(8, test_timeout // 2)
+    model.pop("brain_test_timeout_s", None)
+    model["max_brain_calls"] = int(model.get("rod_brain_calls") or ROD_BRAIN_CALLS)
     if transport == "browser_ai":
         return {"ok": False, "transport": transport, "error": "browser_ai is not implemented"}
     started = time.time()
-    deadline = started + test_timeout
-    before = len(brain_mod.read_raw_log_tail(_active_raw_log(model)))
+    raw_before = brain_mod.read_raw_log_tail(_active_raw_log(model))
+    before_seq = max((int(r.get("seq") or 0) for r in raw_before), default=0)
     system = (
         "ROD test assistant. Call 1: emit brief reasoning about the user task. "
         "Call 2: commit ONLY one JSON object with no markdown fences."
@@ -511,54 +509,54 @@ def _brain_test(transport: str) -> dict:
     )
     brain = brain_mod.Brain(model)
     try:
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            fut = pool.submit(brain.think, system, user, 0)
-            try:
-                content, parsed, reasoning = fut.result(timeout=max(0.1, deadline - time.time()))
-            except FuturesTimeout as e:
-                raise TimeoutError(f"brain test exceeded {test_timeout}s hard cap") from e
-        entries = brain_mod.read_raw_log_tail(_active_raw_log(model))[before:]
+        content, parsed, reasoning = brain.think(system, user, parse_retries=0)
+        entries = [e for e in brain_mod.read_raw_log_tail(_active_raw_log(model)) if int(e.get("seq") or 0) > before_seq]
         t_entries = [e for e in entries if e.get("transport") == transport]
+        counts = brain_mod.count_raw_phases(t_entries, transport=transport)
         requests = [e for e in t_entries if e.get("phase") == "request"]
-        responses = [e for e in t_entries if e.get("phase") == "response"]
         parsed_ok = bool(
             parsed
             and parsed.get("record_type") == "workbench_rod_test"
             and parsed.get("ok") is True
             and str(parsed.get("transport", transport)) == transport
         )
+        budget = model["max_brain_calls"]
         ok = bool(
             parsed_ok
-            and len(requests) >= 2
-            and len(responses) >= 2
+            and counts["request"] == budget
+            and counts["response"] == budget
+            and brain.call_count() == budget
             and bool((reasoning or "").strip())
             and _rod_seen_in_raw(requests)
         )
         return {
             "ok": ok,
             "transport": transport,
-            "rod_calls": len(requests),
-            "rod_responses": len(responses),
+            "rod_calls": counts["request"],
+            "rod_responses": counts["response"],
+            "brain_calls": brain.call_count(),
+            "max_brain_calls": budget,
             "rod_feedback_in_request": _rod_seen_in_raw(requests),
             "reasoning_chars": len(reasoning or ""),
             "parsed": parsed,
             "content_preview": (content or "")[:600],
             "elapsed_s": round(time.time() - started, 3),
-            "test_timeout_s": test_timeout,
             "raw_log": str(_active_raw_log(model)),
             "raw_entries": len(t_entries),
         }
     except Exception as e:
-        entries = brain_mod.read_raw_log_tail(_active_raw_log(model))[before:]
+        entries = [e for e in brain_mod.read_raw_log_tail(_active_raw_log(model)) if int(e.get("seq") or 0) > before_seq]
         t_entries = [e for e in entries if e.get("transport") == transport]
+        counts = brain_mod.count_raw_phases(t_entries, transport=transport)
         return {
             "ok": False,
             "transport": transport,
             "error": f"{type(e).__name__}: {e}",
-            "rod_calls": len([e for e in t_entries if e.get("phase") == "request"]),
-            "rod_responses": len([e for e in t_entries if e.get("phase") == "response"]),
+            "rod_calls": counts["request"],
+            "rod_responses": counts["response"],
+            "brain_calls": brain.call_count(),
+            "max_brain_calls": model.get("max_brain_calls"),
             "elapsed_s": round(time.time() - started, 3),
-            "test_timeout_s": test_timeout,
             "raw_log": str(_active_raw_log(model)),
         }
 
@@ -636,7 +634,7 @@ async function tick(force=false){ if(paused&&!force)return; if(inflight) infligh
 async function respond(){await api('/api/respond',{method:'POST',body:$('answer').value});$('answer').value='';tick(true);}
 async function setGoal(v){const g=v===''?'':$('goalbox').value;await api('/api/goal',{method:'POST',body:g});tick(true);}
 async function probe(provider){ const obj=await api('/api/provider_stats?provider='+encodeURIComponent(provider)); $('probeOut').textContent=JSON.stringify(obj,null,2); }
-async function testRod(){ const t=$('brainSelect').value||status?.model?.transport||'openai'; $('probeOut').textContent='ROD test running for '+t+' (max 45s)…'; const ctl=new AbortController(); const timer=setTimeout(()=>ctl.abort(),45000); try{ const r=await fetch('/api/brain_test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({transport:t}),cache:'no-store',signal:ctl.signal}); clearTimeout(timer); if(!r.ok) throw new Error(await r.text()); const obj=await r.json(); $('probeOut').textContent=JSON.stringify(obj,null,2); await loadLog(true); await tick(true); }catch(e){ clearTimeout(timer); $('probeOut').textContent=e.name==='AbortError'?'ROD test aborted after 45s':('error: '+e.message); } }
+async function testRod(){ const t=$('brainSelect').value||status?.model?.transport||'openai'; $('probeOut').textContent='ROD test running for '+t+' (2 brain calls, counter breakpoint)…'; const obj=await api('/api/brain_test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({transport:t})}); $('probeOut').textContent=JSON.stringify(obj,null,2); await loadLog(true); await tick(true); }
 loadWiring().then(()=>tick(true).then(()=>loadLog(true))); setInterval(()=>tick(false),1000); setInterval(()=>loadLog(false),5000);
 </script></body></html>'''
 

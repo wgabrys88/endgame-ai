@@ -108,8 +108,10 @@ def _goal_from_file() -> str:
         return ""
 
 
-def live(goal: str, max_ticks: int = 0):
+def live(goal: str, max_ticks: int = 0, max_brain_calls: int = 0):
     wiring = load_wiring()
+    if max_brain_calls > 0:
+        wiring.setdefault("model", {})["max_brain_calls"] = max_brain_calls
     nodes_mod.ensure_nodes()
     nodes_mod._ensure_io(wiring)
     ctx = Context(wiring)
@@ -222,12 +224,15 @@ def live(goal: str, max_ticks: int = 0):
 def main():
     ap = argparse.ArgumentParser(description="endgame-ai — an unconstrained, self-evolving desktop organism.")
     ap.add_argument("goal", nargs="?", default="", help="the goal to pursue")
-    ap.add_argument("--max-ticks", type=int, default=0, help="stop after N ticks (0 = until rest/interrupt)")
+    ap.add_argument("--max-ticks", type=int, default=0,
+                    help="stop after N topology ticks (0 = until rest/interrupt)")
+    ap.add_argument("--max-brain-calls", type=int, default=0,
+                    help="stop brain after N transport calls via model.max_brain_calls (0 = unlimited)")
     ap.add_argument("--reset", action="store_true", help="forget prior state before starting")
     args = ap.parse_args()
     if args.reset and STATE_PATH.exists():
         STATE_PATH.unlink()
-    live(args.goal, args.max_ticks)
+    live(args.goal, args.max_ticks, args.max_brain_calls)
 
 
 if __name__ == "__main__":

@@ -192,6 +192,18 @@ def log_raw_entry(cfg: dict | None, entry: dict) -> None:
         pass
 
 
+def count_raw_phases(entries: list[dict], *, transport: str | None = None) -> dict[str, int]:
+    """Count request/response rows in raw log entries (optionally per transport)."""
+    out = {"request": 0, "response": 0}
+    for row in entries:
+        if transport and row.get("transport") != transport:
+            continue
+        phase = row.get("phase")
+        if phase in out:
+            out[phase] += 1
+    return out
+
+
 def read_raw_log_tail(path: pathlib.Path | None = None, *, max_lines: int = 5000,
                       max_bytes: int = 4_000_000) -> list[dict]:
     rows: list[dict] = []
@@ -504,6 +516,7 @@ def _make_prompt_file(name: str, prompt: str) -> pathlib.Path:
 class Brain:
     def __init__(self, model_cfg: dict):
         self.cfg = dict(model_cfg or {})
+        self._calls_made = 0
 
     def transport(self) -> str:
         return self.cfg.get("transport", "openai")
@@ -511,6 +524,24 @@ class Brain:
     def _model_name(self, transport: str) -> str:
         block = self.cfg.get(transport) if isinstance(self.cfg.get(transport), dict) else {}
         return str(block.get("model") or self.cfg.get("model") or "")
+
+    def _enforce_call_budget(self) -> None:
+        """Hard stop by brain-call counter — not wall-clock time."""
+        limit = self.cfg.get("max_brain_calls")
+        if limit is None:
+            return
+        try:
+            cap = int(limit)
+        except (TypeError, ValueError):
+            return
+        if cap > 0 and self._calls_made >= cap:
+            raise RuntimeError(
+                f"brain call budget exceeded ({self._calls_made} >= {cap}); "
+                "raise max_brain_calls or stop the run"
+            )
+
+    def call_count(self) -> int:
+        return self._calls_made
 
     def _log_raw(self, seq: int, phase: str, transport: str, raw: Any, **extra: Any) -> None:
         log_raw_entry(self.cfg, {
@@ -563,6 +594,8 @@ class Brain:
 
     # ── transport dispatch ─────────────────────────────────────────────────
     def _call(self, system: str, user: str, temperature: float) -> tuple[str, str]:
+        self._enforce_call_budget()
+        self._calls_made += 1
         t = self.transport()
         seq = _next_raw_seq()
         started = time.time()

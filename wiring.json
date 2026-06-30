@@ -61,7 +61,7 @@
       ]
     },
     "log_raw": true,
-    "brain_test_timeout_s": 45,
+    "rod_brain_calls": 2,
     "openai": {
       "label": "LM Studio / OpenAI-compatible chat completions",
       "kind": "api_chat_completions",

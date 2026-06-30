@@ -11,8 +11,8 @@ Built from a handful of Python files, one JSON config, and seed node templates. 
 library only** in the organism core. No LangChain, no MCP in the loop, no silent fallbacks.
 
 > **This README is the handover for `brains-integration`.** It states what changed vs `main`,
-> which claims from `main`'s README still hold, what was tested in-session (with limits), and
-> how to continue. Read §0 before editing anything.
+> which claims from `main` still hold, how run length is controlled (counters, not seconds), and
+> whether merge is warranted. Read §0 before editing anything.
 
 ---
 
@@ -23,15 +23,15 @@ library only** in the organism core. No LangChain, no MCP in the loop, no silent
 2. [Changelog vs `main` (line diffs)](#2-changelog-vs-main-line-diffs)
 3. [Is `main`'s README still true here?](#3-is-mains-readme-still-true-here)
 4. [Did the organism wiring logic change?](#4-did-the-organism-wiring-logic-change)
-5. [Architecture](#5-architecture)
-6. [ROD — the two-call decision](#6-rod--the-two-call-decision)
-7. [Brain transports](#7-brain-transports)
-8. [Logging contract](#8-logging-contract)
-9. [Running it](#9-running-it)
-10. [The workbench](#10-the-workbench)
-11. [ROD brain test (45s cap)](#11-rod-brain-test-45s-cap)
-12. [Essential tracked files](#12-essential-tracked-files)
-13. [Merge notes](#13-merge-notes)
+5. [Run-length control — counters, not seconds](#5-run-length-control--counters-not-seconds)
+6. [Architecture](#6-architecture)
+7. [ROD — the two-call decision](#7-rod--the-two-call-decision)
+8. [Brain transports](#8-brain-transports)
+9. [Logging contract](#9-logging-contract)
+10. [Running it](#10-running-it)
+11. [The workbench](#11-the-workbench)
+12. [ROD brain test (counter breakpoint)](#12-rod-brain-test-counter-breakpoint)
+13. [Essential tracked files](#13-essential-tracked-files)
 14. [Handover — open questions](#14-handover--open-questions)
 
 ---
@@ -51,294 +51,265 @@ WHAT THE SYSTEM IS
 WHAT THIS BRANCH ADDED (vs main)
 - Six transports: openai, xai_responses, opencode, grok_build, file_proxy, browser_ai (stub).
 - One forensic raw brain log per process: <timestamp>.txt at repo root (JSON lines, .txt extension).
-- Workbench panel: brain editor, probes, Test ROD (2-call), file_proxy handoff, raw log tail.
-- Allowlist .gitignore — only core source tracked; all runtime artifacts ignored.
+- Workbench: brain editor, probes, Test ROD (2-call), file_proxy handoff, raw log tail.
+- Allowlist .gitignore — only core source tracked; runtime artifacts ignored.
+
+RUN-LENGTH CONTROL (critical — do not use wall-clock caps for tests)
+- Organism loop: --max-ticks N  (topology tick counter; existing on main).
+- Brain calls: --max-brain-calls N  → model.max_brain_calls (hard stop in brain._call).
+- ROD test: max_brain_calls=2 + parse_retries=0; success = 2 request + 2 response rows in raw log.
+- Raw log rows: seq + phase (request|response). This is the forensic counter — not elapsed seconds.
 
 GROUND RULES
 - Work on brains-integration unless told otherwise. Do not touch main without explicit instruction.
-- Stdlib only in organism core. No fallbacks. No constrained mode. Fail-hard on transport errors.
-- Forensic *.txt logs are NOT live state. Live truth = state.json + slim runtime.ndjson events.
-- ROD tests: hard cap 45s (brain_test_timeout_s). One think() only. Never run unbounded brain tests.
-- OpenCode exe in wiring uses %USERPROFILE% (expanded by brain.py via os.path.expandvars).
+- Stdlib only in organism core. Fail-hard on transport errors. No fallback transports.
+- Forensic *.txt is NOT live state. Live truth = state.json + slim runtime.ndjson.
+- Test ONE transport at a time via workbench. Never batch all brains in one script.
+- OpenCode exe: %USERPROFILE%/AppData/Local/OpenCode/opencode-cli.exe (os.path.expandvars).
 
 FIRST ACTIONS
-1. Read this README and §2–§4 (changelog + main validity).
-2. Read organism.py, brain.py, nodes.py, wiring.json before changing behavior.
-3. Confirm chosen brain is reachable (Probe selected in workbench).
-4. Ground claims in raw *.txt log + state.json — not conversation memory.
+1. Read this README §2–§5 and §12.
+2. Read organism.py, brain.py, nodes.py, wiring.json.
+3. Probe selected brain in workbench.
+4. Ground claims in raw *.txt (request/response counts) + state.json.
 ```
 
 ---
 
 ## 1. What this branch is
 
-`main` documented a milestone run (goal-interpretation drift, self-modification, LM Studio 4B
-core brain) and shipped a minimal brain layer (`openai` + `file_proxy` + `browser_ai` stub).
+`main` documented a milestone run (goal-interpretation drift, self-modification, LM Studio 4B)
+and shipped a minimal brain layer (`openai` + `file_proxy` + `browser_ai` stub).
 
-`brains-integration` keeps the **same organism graph and intent contract** but replaces the
-brain/logging/workbench layer so you can:
+`brains-integration` keeps the **same organism graph and intent contract** but adds:
 
-- Swap among multiple real transports without code edits (wiring only).
-- Log **raw wire I/O** once, at transport boundaries, in one append-only `*.txt` file.
-- Control and falsify brains from the workbench (including human/agent `file_proxy` handoff).
+- Multi-transport brain swap (wiring-controlled).
+- Unified raw forensic log (`<timestamp>.txt`).
+- Workbench panel with counter-based ROD falsification.
 
-The milestone **research narrative** from `main` (§1–§2, evidence logs) is historical context
-on `main`; this branch does not carry `evidence/` in git (removed here; preserved on `main`).
+The milestone **research narrative** on `main` (§1–§2, `evidence/`) is historical context;
+this branch removed `evidence/` from git (still on `main` history).
 
 ---
 
 ## 2. Changelog vs `main` (line diffs)
 
-Measured with `git diff main...brains-integration --numstat` (2026-06-30).
+Measured with `git diff main...brains-integration --numstat` (2026-06-30, before latest commit).
 
 | File | +lines | −lines | Reason |
 |------|--------|--------|--------|
-| `brain.py` | 697 | 65 | Multi-transport implementations; unified raw `*.txt` log; ROD unchanged |
-| `workbench.py` | 667 | 91 | Live panel, brain editor, probes, ROD test API, usage from raw log |
-| `wiring.json` | 372 | 24 | Per-transport config blocks + controls; **topology section unchanged** |
-| `organism.py` | 106 | 37 | Atomic `state.json`, `state_seq`, slim runtime events, wiring hot-reload |
-| `README.md` | 676 | 631 | This document (replaces main's milestone README on this branch) |
-| `.gitignore` | 32 | 10 | Allowlist policy — track core source only |
-| `nodes.py` | 8 | 1 | Wiring summary keys for self_modify (`raw_log_path`, `log_raw`) |
-| `endgame-ai.code-workspace` | 0 | 8 | IDE workspace file removed |
-| `evidence/*` | 0 | 1389 | Milestone proof bundle removed (still on `main`) |
-
-**Net:** +1949 / −2236 lines across 11 paths. Largest behavioral surface: `brain.py`, `workbench.py`,
-`wiring.json` model section.
+| `brain.py` | ~710 | ~65 | Multi-transport; raw `*.txt` log; `max_brain_calls` budget |
+| `workbench.py` | ~670 | ~95 | Panel, ROD test by counter, usage from raw log |
+| `wiring.json` | ~372 | ~24 | Transport blocks; **topology unchanged** |
+| `organism.py` | ~110 | ~37 | Atomic state; `--max-brain-calls`; wiring hot-reload |
+| `README.md` | rewrite | rewrite | This handover |
+| `.gitignore` | 32 | 10 | Allowlist policy |
+| `nodes.py` | 8 | 1 | Wiring summary keys for self_modify |
+| `evidence/*` | 0 | 1389 | Removed on branch (preserved on `main`) |
 
 ---
 
 ## 3. Is `main`'s README still true here?
 
-Evaluated **without re-running** the milestone organism; by reading code + wiring diff.
-
-| Claim from `main` README | Still valid on `brains-integration`? |
-|--------------------------|--------------------------------------|
-| Topology graph (planner → … → self_modify) | **Yes** — same 8 nodes, 16 edges, `cycle_start: planner` |
-| ROD two-call cognition | **Yes** — `brain.think()` unchanged in contract |
-| Typed `record_type` intent contract | **Yes** — `nodes.call_node()` validation unchanged |
-| `self_modify` can edit wiring incl. transport | **Yes** |
-| Stdlib only, no frameworks | **Yes** |
-| Fail-hard, no silent fallbacks | **Yes** |
-| Core boots `openai` / LM Studio | **Partially** — `openai` still configured; **default transport is `opencode`** on this branch |
-| Only three transports (openai/file_proxy/browser_ai) | **No** — six transports; `browser_ai` still stub |
-| `file_proxy` uses `comms/think_log.txt` | **No** — now `comms/request.json` → `comms/response.json` |
-| Logs: run.log / session / usage ledgers | **No** — replaced by `<timestamp>.txt` raw log + slim `runtime.ndjson` |
-| Milestone goal-drift forensic (§1–§2) | **Historical** — proven on `main` run; not re-validated on this branch |
-| `evidence/` committed proof files | **No** — removed on this branch |
+| Claim from `main` | Still valid? |
+|-------------------|--------------|
+| Topology graph (8 nodes, 16 edges) | **Yes** — unchanged |
+| ROD two-call cognition | **Yes** |
+| Typed `record_type` contract | **Yes** |
+| `self_modify` edits wiring incl. transport | **Yes** |
+| Stdlib only, fail-hard | **Yes** |
+| Default transport `openai` / LM Studio | **No** — default is `opencode` on this branch |
+| Three transports only | **No** — six transports |
+| `file_proxy` → `comms/think_log.txt` | **No** — `comms/request.json` → `response.json` |
+| Session / usage log files | **No** — single raw `*.txt` |
+| Milestone drift forensic (§1–§2) | **Historical** — on `main`, not re-run here |
+| Anti-hang via `timeout` on shell | **Yes for ops** — but brain **test length** uses **call counter**, not seconds |
 
 ---
 
 ## 4. Did the organism wiring logic change?
 
-**The topology graph did not change.** `git diff main...brains-integration -- wiring.json` shows
-zero edits inside the `topology` object (nodes, edges, `cycle_start`).
+**No change to the topology graph.** `topology.nodes`, `topology.edges`, and `cycle_start` are
+identical to `main`.
 
-**What did change in `wiring.json`:**
+**Changed in `wiring.json`:** `model` section only (transports, logging, handoff paths, UI
+`controls`). **Changed in `organism.py`:** reliability (atomic `state.json`, runtime events,
+`--max-brain-calls`). **Not changed:** signal routing, node contracts, ROD in `nodes.call_node()`.
 
-- `model` section expanded (transport-specific blocks, UI `controls`, logging flags).
-- Default `model.transport`: `openai` → `opencode`.
-- `file_proxy.request_path`: `comms/think_log.txt` → `comms/request.json`.
-- Active `file_proxy` / `browser_ai` labels and handoff metadata.
-
-**Organism loop logic** (`organism.py`): same graph driver; additions are reliability only
-(atomic state writes, narration → runtime events, wiring mtime → brain rebind). No new nodes,
-no new edges, no change to signal routing rules.
-
-**Conclusion for merge:** You are merging **brain transport + observability + workbench**, not a
-new cognitive architecture. Post-merge, review `wiring.json` defaults (`transport`, `file_proxy`
-paths) so they match your intended production baseline.
+**Merge implication:** you are merging brain transport + observability + workbench, not a new
+cognitive architecture.
 
 ---
 
-## 5. Architecture
+## 5. Run-length control — counters, not seconds
 
-| Piece | File | Role |
-|-------|------|------|
-| Living loop | `organism.py` | Topology driver; atomic `state.json` |
-| Brain | `brain.py` | Stateless transports + ROD `think()` |
-| Engine | `nodes.py` | Node loader, ROD call, desktop I/O bridge |
-| Nodes | `live_nodes/*.py` | Hot-swappable circuits (copied from `seed_nodes/` on first run) |
-| Body | `actions.py`, `desktop.py` | Windows UI Automation + verbs |
-| Config | `wiring.json` | Topology, prompts, verbs, brain — single source of truth |
-| Panel | `workbench.py` | http://localhost:8800 |
+Wall-clock timeouts are a poor control for brain tests (slow CLIs false-fail; fast batch runs
+burn tokens). This branch uses **existing counter semantics**:
 
-```mermaid
-flowchart LR
-  O[organism.py] --> N[nodes / live_nodes]
-  N --> B[brain.py think ROD x2]
-  B --> T[transport boundary]
-  T --> L["timestamp.txt raw log"]
-  O --> S[state.json]
-  O --> R[comms/runtime.ndjson]
-  W[workbench.py] --> S
-  W --> L
-```
+| Layer | Control | Mechanism |
+|-------|---------|-----------|
+| Organism loop | `--max-ticks N` | Stops after N topology ticks (`organism.py`; **on main**) |
+| Brain calls | `--max-brain-calls N` | Sets `model.max_brain_calls`; `brain._call()` raises when `calls_made >= N` |
+| ROD falsification | `rod_brain_calls: 2` | Workbench test: `parse_retries=0` + `max_brain_calls=2` |
+| Forensic proof | raw log `phase` | Count `request` and `response` rows per transport; must equal 2 for ROD test |
+
+Each `brain._call()` increments an internal counter and appends one `request` + one `response`
+row to `<timestamp>.txt` (paired by `seq`). That is the breakpoint — not a sleep timer.
+
+`model.timeout` (seconds) remains a **transport I/O safety** per call (HTTP/CLI subprocess), not
+the test budget. Do not shorten it for ROD tests.
 
 ---
 
-## 6. ROD — the two-call decision
+## 6. Architecture
+
+| Piece | Role |
+|-------|------|
+| `organism.py` | Topology driver; `--max-ticks`, `--max-brain-calls` |
+| `brain.py` | Transports; ROD `think()`; raw log; call budget |
+| `nodes.py` + `live_nodes/` | Hot-swappable circuits (from `seed_nodes/`) |
+| `actions.py`, `desktop.py` | Windows body |
+| `wiring.json` | Topology, prompts, verbs, brain config |
+| `workbench.py` | http://localhost:8800 |
+
+---
+
+## 7. ROD — the two-call decision
 
 Unchanged from `main`:
 
-1. **Call 1** — model reasons (inline thinking, `reasoning_content`, or stream `thought` chunks).
-2. **Call 2** — user message + `ROD_REASONING_CONTENT:` + call-1 reasoning → typed JSON record.
+1. **Call 1** — reasoning.
+2. **Call 2** — user + `ROD_REASONING_CONTENT:` → typed JSON record.
 
-Request log entries carry `rod_feedback: true` on call 2 (envelope field; CLI argv is redacted).
-
----
-
-## 7. Brain transports
-
-| Transport | Status | Notes |
-|-----------|--------|-------|
-| `openai` | Implemented | LM Studio `localhost:1234`, `nvidia-nemotron-3-nano-4b` |
-| `opencode` | Implemented | CLI; exe `%USERPROFILE%/AppData/Local/OpenCode/opencode-cli.exe` |
-| `grok_build` | Implemented | CLI `grok -p`, `streaming-json` |
-| `xai_responses` | Implemented | Needs `XAI_API_KEY` |
-| `file_proxy` | Implemented | `comms/request.json` → `comms/response.json`; human/agent is the brain |
-| `browser_ai` | Stub | `actions.browser_ai_handoff` not implemented |
-
-Swap via workbench **Save brain** or edit `wiring.json`; organism picks up on next wiring mtime.
-
-Paths in `wiring.json` may use Windows env vars (`%USERPROFILE%`); `brain.py` expands via
-`os.path.expandvars` before resolving executables.
+Raw log marks call 2 requests with `rod_feedback: true`.
 
 ---
 
-## 8. Logging contract
+## 8. Brain transports
+
+| Transport | Notes |
+|-----------|-------|
+| `openai` | LM Studio `localhost:1234` |
+| `opencode` | `%USERPROFILE%/AppData/Local/OpenCode/opencode-cli.exe` |
+| `grok_build` | CLI `grok -p`, `streaming-json` |
+| `xai_responses` | Needs `XAI_API_KEY` |
+| `file_proxy` | `comms/request.json` → `comms/response.json`; you/agent is the brain |
+| `browser_ai` | Stub |
+
+---
+
+## 9. Logging contract
 
 | Tier | Path | Role |
 |------|------|------|
-| Live snapshot | `state.json` | Current truth (node, goal, plan, screen summary) |
-| Live events | `comms/runtime.ndjson` | Organism lifecycle only — **not** brain I/O |
-| Forensic raw | `<timestamp>.txt` (repo root) | One JSON line per entry; raw request/response at transport boundary |
+| Live snapshot | `state.json` | Current truth |
+| Live events | `comms/runtime.ndjson` | Organism lifecycle only |
+| Forensic raw | `<timestamp>.txt` | `seq` + `phase` + wire `raw` per brain call |
 
-Removed vs `main`: `session-*.log`, `brain_usage.ndjson`, `brain_io.ndjson`, duplicate brain
-events in runtime. Usage tables in workbench are **derived** from raw response entries.
-
-Runtime paths (`live_nodes/`, `comms/`, `state.json`, `*.txt` logs, `__pycache__/`) are
-gitignored and recreated on run.
+Usage in workbench is derived from raw `response` rows. Runtime paths are gitignored.
 
 ---
 
-## 9. Running it
-
-Requirements: Windows, Python 3.13+, chosen brain reachable (LM Studio, OpenCode CLI, Grok CLI,
-xAI key, or file_proxy responder).
+## 10. Running it
 
 ```powershell
-python workbench.py                              # optional panel
-python organism.py --reset "observe the screen"
+python workbench.py
 python organism.py --reset --max-ticks 1 "observe the screen"
+python organism.py --reset --max-ticks 1 --max-brain-calls 4 "observe the screen"
 ```
 
-Each ROD decision = 2 brain calls. Long runs are normal on slow/local models.
+- `--max-ticks 1` — one topology tick, then stop (phase `max_ticks` in `state.json`).
+- `--max-brain-calls N` — brain raises after N transport calls (counter breakpoint).
 
 ---
 
-## 10. The workbench
+## 11. The workbench
 
 ```powershell
 python workbench.py    # http://localhost:8800
 ```
 
-- Live state, narration, reasoning chain (from `state.json`)
-- Brain provider editor → writes `wiring.json`
-- **Probe selected** — reachability per transport
-- **Test ROD (2-call)** — falsification via `POST /api/brain_test`
-- **File proxy handoff** — shows pending `request.json`; write `response.json` as the brain
-- Forensic tail of `*.txt` raw log and `runtime.ndjson`
-
-On slow machines, confirm port 8800 with a TCP connect test, not a heavy HTTP poll loop.
+- Brain editor, **Probe selected**, **Test ROD (2-call)**
+- File proxy handoff (write `response.json` as the brain)
+- Raw log tail; usage derived from responses
 
 ---
 
-## 11. ROD brain test (45s cap)
+## 12. ROD brain test (counter breakpoint)
 
-Workbench **Test ROD (2-call)** runs one `think()` with `parse_retries=0` (exactly 2 transport
-calls). Hard limits:
+**Test ROD (2-call)** → `POST /api/brain_test` with selected transport.
 
-- `model.brain_test_timeout_s` = **45** (whole test, wiring + code)
-- Per-call transport timeout = **22s** (`test_timeout // 2`) during tests
-- Server: `ThreadPoolExecutor` hard cap on `think()`
-- Client: fetch abort at 45s
+| Setting | Value |
+|---------|-------|
+| `parse_retries` | `0` (one `think()` only) |
+| `max_brain_calls` | `2` (from `rod_brain_calls` in wiring) |
+| Success | `rod_calls==2`, `rod_responses==2`, `brain_calls==2`, valid JSON, `rod_feedback` on call 2 |
 
-Success criteria: 2 request + 2 response raw entries, `rod_feedback` on call 2, non-empty
-reasoning, parsed `{"record_type":"workbench_rod_test","ok":true,"transport":"<name>"}`.
+### Tested in-session (2026-06-30)
 
-### Tested in-session (2026-06-30, single pass, before hard cap tightening)
+| Transport | OK | `brain_calls` | Notes |
+|-----------|----|---------------|-------|
+| `file_proxy` | yes | 2/2 | agent wrote `response.json`; counter breakpoint verified |
+| `opencode` | yes | 2/2 | prior session (before timeout removal) |
+| `xai_responses` | yes | 2/2 | prior session |
+| `openai` | no | — | LM Studio not listening |
+| `grok_build` | slow | — | may exceed patience; counter still stops at 2 calls — not a timer failure |
 
-| Transport | OK | Elapsed | Notes |
-|-----------|----|---------|-------|
-| `opencode` | yes | ~27s | 2-call ROD, JSON parsed |
-| `file_proxy` | yes | ~2s | agent wrote `response.json` as brain |
-| `xai_responses` | yes | ~15s | 2-call ROD, JSON parsed |
-| `openai` | no | ~4s | LM Studio not listening (connection refused) |
-| `grok_build` | no | >45s | CLI too slow for 45s budget when run sequentially after others |
-
-Re-test one transport at a time via workbench; do not batch all transports in one script.
+`max_brain_calls` budget verified in code: third `_call()` raises `brain call budget exceeded`.
 
 ---
 
-## 12. Essential tracked files
-
-Minimum to run cold start (also the `.gitignore` allowlist):
+## 13. Essential tracked files
 
 ```
-wiring.json
-organism.py  brain.py  nodes.py  actions.py  desktop.py
-workbench.py   # optional for panel
-seed_nodes/*.py
+wiring.json, organism.py, brain.py, nodes.py, actions.py, desktop.py, workbench.py, seed_nodes/*.py
 ```
 
-Not required at runtime (but kept in git): `README.md`, `LICENSE`, `.gitignore`, `.gitattributes`.
-
-Created at runtime: `live_nodes/`, `state.json`, `goal.json`, `comms/`, `<timestamp>.txt`,
-`__pycache__/`.
-
----
-
-## 13. Merge notes
-
-When merging `brains-integration` → `main`:
-
-1. **Keep** `main`'s milestone README narrative or merge §1–§2 forensic into a `docs/` path —
-   this branch's README supersedes operational docs for the new brain layer.
-2. **Resolve** `wiring.json` defaults: transport, `file_proxy` paths, OpenCode exe (`%USERPROFILE%`).
-3. **Expect** `evidence/` to remain on `main` history; re-add if you want both proof bundles.
-4. **Verify** post-merge: one ROD test per transport at 45s cap; LM Studio up before `openai` test.
+Runtime-created: `live_nodes/`, `state.json`, `comms/`, `<timestamp>.txt`, `__pycache__/`.
 
 ---
 
 ## 14. Handover — open questions
 
-1. After merge, should default `model.transport` return to `openai` (main baseline) or stay `opencode`?
-2. Should `file_proxy.request_path` stay `comms/request.json` or restore `comms/think_log.txt` for continuity with the milestone run?
-3. `grok_build` under 45s: raise per-call budget for Grok only, or accept it as slow-transport manual test?
-4. Restore `evidence/` on merged tree or keep proof only on `main`?
+1. After merge, default `model.transport`: `openai` (main) or `opencode` (branch)?
+2. Restore `file_proxy` path `comms/think_log.txt` or keep `request.json` handoff?
+3. Re-add `evidence/` on merged tree or keep milestone proof on `main` only?
 
-### Suggested first action next session
+### Suggested first action
 
-Read §0. Start workbench. Run **Test ROD (2-call)** for **one** transport you care about (45s max).
-Inspect tail of newest `*.txt` raw log. Do not batch all brains in one unattended run.
-
----
-
-*endgame-ai is a research organism, not a product. Run only where full desktop control is acceptable.
-Claims in §11 are session-tested; claims inherited from `main` §1–§2 are historical unless re-run.*
+Workbench → **one** transport → **Test ROD (2-call)** → inspect raw log for exactly 2 request +
+2 response lines. For `file_proxy`, answer via **Write response.json**.
 
 ---
 
-## Appendix — Fresh-session starter prompt
+*Research organism, not a product. Run only where full desktop control is acceptable.*
 
-> Paste at the start of a new conversation to resume on `brains-integration`:
+---
 
-> You are resuming endgame-ai on branch **brains-integration** (merge target main). Read
-> README.md in full — especially §0, §2 changelog, §3–§4 main validity, §11 ROD tests (45s cap).
-> The organism topology and ROD contract are unchanged from main; this branch adds multi-transport
-> brains, unified raw `*.txt` logging, and the workbench panel. Rules: stdlib core, fail-hard, no
-> fallback transports, forensic logs are not live state, never run brain tests longer than 45s or
-> batch all transports unattended. OpenCode exe uses `%USERPROFILE%` in wiring.json. First: read
-> source, probe selected brain in workbench, then one ROD test if needed — wait for my direction
-> before merging or changing defaults.
+## Appendix A — Merge assessment vs `main`
+
+### Reasoning
+
+**Progress:** This branch delivers what `main` promised in §9 (swappable brains) but only
+partially implemented (`openai` / `file_proxy`). It adds real transports, forensic raw I/O,
+workbench falsification, and counter-based run control — without altering the topology graph or
+ROD contract. That is incremental, merge-friendly engineering.
+
+**Risk:** `wiring.json` defaults and `file_proxy` paths differ from `main`'s milestone config.
+`evidence/` is not carried on this branch. Post-merge defaults must be chosen explicitly.
+
+**Worth merging?** **Yes**, if the goal is multi-brain + unified logging + workbench on the
+proven organism substrate. **Defer merge** if you need the milestone `wiring.json` values and
+`evidence/` bundle unchanged in the same tree.
+
+**What merge is not:** It does not replace or disprove `main`'s goal-drift finding — that
+remains valid historical science on `main`. This branch adds **infrastructure**; re-run milestone
+goals after merge if you want drift science on the new brain layer.
+
+### Fresh-session starter prompt
+
+> You are resuming **brains-integration** (merge target `main`). Read this README — §0, §5
+> (counter control), §12 (ROD test). Topology and ROD are unchanged from `main`. Run length is
+> controlled by `--max-ticks`, `--max-brain-calls`, and raw log request/response counts — **not**
+> wall-clock test timeouts. Test one brain at a time. `file_proxy`: you write `response.json`.
+> Wait for human direction before merge or default changes.
