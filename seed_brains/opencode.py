@@ -22,17 +22,60 @@ def _resolve_executable(value):
 
 def call(messages, cfg):
     exe = _resolve_executable(cfg.get("executable") or "opencode")
-    args = list(cfg.get("args") or ["run", "--json"])
-    prompt = json.dumps({"messages": messages}, ensure_ascii=False)
-    cp = subprocess.run([exe, *args], input=prompt, capture_output=True, text=True, timeout=float(cfg.get("timeout") or 60))
+    model = cfg.get("model") or "opencode-go/deepseek-v4-flash"
+    
+    # Convert messages to a single prompt string for opencode CLI
+    prompt_parts = []
+    for m in messages:
+        role = m.get("role", "user")
+        content = m.get("content", "")
+        if role == "system":
+            prompt_parts.append(f"[SYSTEM]\n{content}")
+        elif role == "user":
+            prompt_parts.append(f"[USER]\n{content}")
+        elif role == "assistant":
+            prompt_parts.append(f"[ASSISTANT]\n{content}")
+        else:
+            prompt_parts.append(f"[{role.upper()}]\n{content}")
+    prompt = "\n\n".join(prompt_parts)
+
+    args = ["run", "-m", model, "--format", "json"]
+    extra_args = cfg.get("extra_args")
+    if extra_args:
+        args.extend(extra_args)
+
+    # Clear auth env vars that cause "Session not found" error
+    env = os.environ.copy()
+    env["OPENCODE_SERVER_PASSWORD"] = ""
+    env["OPENCODE_SERVER_USERNAME"] = ""
+    
+    cp = subprocess.run(
+        [exe, *args, prompt],
+        capture_output=True,
+        text=True,
+        timeout=float(cfg.get("timeout") or 120),
+        env=env
+    )
     if cp.returncode != 0:
         raise RuntimeError(f"opencode exited {cp.returncode}: {cp.stderr.strip()[:2000]}")
+
+    # Parse streaming JSON events
     text = cp.stdout.strip()
+    content = ""
+    reasoning = ""
     try:
-        obj = json.loads(text)
-        content = obj.get("content") or obj.get("message") or text
-        reasoning = obj.get("reasoning") or ""
+        for line in text.splitlines():
+            obj = json.loads(line)
+            if obj.get("type") == "text":
+                content = obj.get("part", {}).get("text", content)
+            elif obj.get("type") == "step_finish":
+                # Could extract reasoning from tokens if needed
+                pass
     except json.JSONDecodeError:
         content = text
         reasoning = ""
+    
+    if not content:
+        content = text
+    
     return {"content": content, "reasoning": reasoning, "stdout": cp.stdout, "stderr": cp.stderr}

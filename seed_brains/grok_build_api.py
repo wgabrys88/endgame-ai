@@ -1,45 +1,68 @@
-"""Grok Build 0.1 through xAI Responses API, as a separate wireable brain node."""
-host = str(cfg.get("host", "https://api.x.ai")).rstrip("/")
-path = str(cfg.get("endpoint_path", "/v1/responses"))
-model = str(cfg.get("model", "grok-build-0.1"))
-payload = {
-    "model": model,
-    "input": [
-        {"role": "system", "content": system},
-        {"role": "user", "content": user},
-    ],
-    "store": bool(cfg.get("store", False)),
-}
-for key in (
-    "temperature", "top_p", "max_output_tokens", "parallel_tool_calls", "reasoning",
-    "text", "tools", "tool_choice", "metadata", "service_tier", "include", "user",
-):
-    if key == "temperature":
-        payload[key] = temperature
-    elif key in cfg:
-        payload[key] = cfg[key]
-headers = {"Content-Type": "application/json"}
-api_key = cfg.get("api_key") or os.environ.get(str(cfg.get("api_key_env", "XAI_API_KEY")))
-if not api_key:
-    raise RuntimeError("grok_build_api brain: missing API key; set XAI_API_KEY or model.grok_build_api.api_key_env")
-headers["Authorization"] = f"Bearer {api_key}"
-url = host + path
-brain._log_raw(seq, "request", "grok_build_api", {
-    "url": url,
-    "model": model,
-    "headers": _redact_headers(headers),
-    "body": payload,
-}, rod_feedback="ROD_REASONING_CONTENT" in user)
-started = time.time()
-req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers)
-try:
-    with urllib.request.urlopen(req, timeout=brain._timeout(cfg)) as r:
-        resp = json.loads(r.read().decode("utf-8", errors="replace"))
-except urllib.error.HTTPError as e:
-    body = e.read().decode("utf-8", errors="replace")
-    raise RuntimeError(f"grok_build_api brain: HTTP {e.code}: {body[:1000]}")
-except Exception as e:
-    raise RuntimeError(f"grok_build_api brain: {e}")
-content, reasoning = _xai_response_text(resp)
-brain._log_raw(seq, "response", "grok_build_api", {"model": model, "body": resp},
-               elapsed_s=round(time.time() - started, 3))
+# grok_build_api.py - REFERENCE ONLY (non-functional)
+
+"""
+This file is kept as a reference for the xAI Responses API integration with grok-build-0.1 model.
+It is NOT functional in its current state - it references undefined variables and brain internals.
+
+For a working xAI Responses API transport, see:
+- seed_brains/xai_responses.py (current xAI Responses API transport)
+- Future: consolidate into a single xai_responses.py with model selection
+
+The xAI API endpoint for grok-build-0.1:
+  POST https://api.x.ai/v1/responses
+  Headers: Authorization: Bearer $XAI_API_KEY, Content-Type: application/json
+  Body: {"model": "grok-build-0.1", "input": [{"role": "user", "content": "..."}]}
+
+Reference implementation (pseudocode):
+"""
+# import json
+# import os
+# import urllib.request
+# 
+# 
+# def call(messages, cfg):
+#     api_key = os.environ.get("XAI_API_KEY") or cfg.get("api_key")
+#     if not api_key:
+#         raise RuntimeError("xai_responses/grok_build_api: XAI_API_KEY missing")
+#     
+#     url = "https://api.x.ai/v1/responses"
+#     # Convert messages to input format
+#     input_data = []
+#     for m in messages:
+#         role = m.get("role", "user")
+#         content = m.get("content", "")
+#         if role == "system":
+#             input_data.append({"role": "system", "content": content})
+#         elif role == "user":
+#             input_data.append({"role": "user", "content": content})
+#         elif role == "assistant":
+#             input_data.append({"role": "assistant", "content": content})
+#     
+#     payload = {
+#         "model": cfg.get("model", "grok-build-0.1"),
+#         "input": input_data,
+#         "temperature": cfg.get("temperature", 0.2),
+#     }
+#     
+#     req = urllib.request.Request(
+#         url,
+#         data=json.dumps(payload).encode("utf-8"),
+#         headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
+#         method="POST"
+#     )
+#     
+#     with urllib.request.urlopen(req, timeout=cfg.get("timeout", 120)) as resp:
+#         body = resp.read().decode("utf-8", errors="replace")
+#     
+#     obj = json.loads(body)
+#     # Extract output_text or content from responses
+#     content = obj.get("output_text") or ""
+#     if not content and isinstance(obj.get("output"), list):
+#         for item in obj["output"]:
+#             if isinstance(item, dict) and item.get("type") == "message":
+#                 for c in item.get("content", []) or []:
+#                     if isinstance(c, dict) and c.get("type") == "output_text":
+#                         content = c.get("text", "")
+#                         break
+#     
+#     return {"content": content, "reasoning": "", "body": obj}

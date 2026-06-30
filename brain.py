@@ -14,13 +14,48 @@ import re
 import shutil
 import threading
 import time
-from typing import Any
+from abc import ABC, abstractmethod
+from typing import Any, Protocol
 
 ROOT = pathlib.Path(__file__).parent.resolve()
 _RAW_LOG_PATH: pathlib.Path | None = None
 _RAW_SEQ = 0
 _RAW_LOCK = threading.Lock()
 _CALLS_MADE = 0
+
+
+class Transport(Protocol):
+    """Protocol for brain transports. Each transport must implement call()."""
+    
+    def call(self, messages: list[dict[str, str]], cfg: dict[str, Any]) -> dict[str, str]:
+        """Call the transport with messages and config. Returns {'content': str, 'reasoning': str}."""
+        ...
+
+
+class BaseTransport(ABC):
+    """Base class for brain transports with common functionality."""
+    
+    def __init__(self, cfg: dict[str, Any]):
+        self.cfg = cfg
+        self.timeout = float(cfg.get("timeout", 120))
+    
+    @abstractmethod
+    def _call_impl(self, messages: list[dict[str, str]]) -> dict[str, str]:
+        """Implementation-specific call logic."""
+        ...
+    
+    def call(self, messages: list[dict[str, str]], cfg: dict[str, Any]) -> dict[str, str]:
+        """Wrapper with common error handling and validation."""
+        result = self._call_impl(messages)
+        if not isinstance(result, dict):
+            raise RuntimeError(f"transport contract violation: expected dict, got {type(result).__name__}")
+        content = result.get("content")
+        reasoning = result.get("reasoning", "")
+        if not isinstance(content, str) or not content.strip():
+            raise RuntimeError("transport contract violation: missing non-empty content")
+        if reasoning is not None and not isinstance(reasoning, str):
+            raise RuntimeError("transport contract violation: reasoning must be string when present")
+        return {"content": content, "reasoning": reasoning or ""}
 
 
 def root_path(value: str | None, default: str = "") -> pathlib.Path:
@@ -117,27 +152,46 @@ def _load_transport_module(name: str, wiring: dict[str, Any]):
     return mod
 
 
-def _transport_cfg(wiring: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+def _get_transport_config(wiring: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """Extract transport name and merged config from wiring.json.
+    
+    New schema: model.transport_config.{transport} for per-transport config
+    Legacy schema: model.{transport} for backward compatibility
+    """
     model = wiring.get("model")
     if not isinstance(model, dict):
         raise RuntimeError("wiring.json missing object model")
+    
     transport = str(model.get("transport") or "").strip()
     if not transport:
         raise RuntimeError("wiring model.transport is empty; no fallback transport is allowed")
-    cfg = dict(model.get(transport) or {})
-    cfg.update({k: v for k, v in model.items() if k not in {"openai", "file_proxy", "opencode", "xai_responses", "grok_build", "browser_ai"}})
+    
+    # New normalized schema: transport_config.{transport}
+    transport_config = model.get("transport_config", {})
+    if isinstance(transport_config, dict) and transport in transport_config:
+        cfg = dict(transport_config[transport])
+    else:
+        # Legacy fallback: model.{transport}
+        cfg = dict(model.get(transport) or {})
+    
+    # Merge global config (timeout, max_brain_calls, raw_log, etc.)
+    global_keys = {"timeout", "max_brain_calls", "raw_log", "raw_log_path", "log_raw"}
+    for k in global_keys:
+        if k in model and k not in cfg:
+            cfg[k] = model[k]
+    
     cfg["transport"] = transport
     return transport, cfg
 
 
 def call(messages: list[dict[str, str]], wiring: dict[str, Any], *, rod_feedback: bool = False) -> dict[str, str]:
     """Call the selected transport exactly once or raise.
-
+    
     The function logs request, response, and error rows. It never switches transport.
     """
     global _CALLS_MADE
     ensure_live_brains(wiring)
-    transport, cfg = _transport_cfg(wiring)
+    transport, cfg = _get_transport_config(wiring)
     max_calls = wiring.get("model", {}).get("max_brain_calls")
     if max_calls is not None and _CALLS_MADE >= int(max_calls):
         raise RuntimeError(f"brain call budget exceeded: {_CALLS_MADE}/{max_calls}")
@@ -187,7 +241,7 @@ def call(messages: list[dict[str, str]], wiring: dict[str, Any], *, rod_feedback
 def reasoning_from(content: str, reasoning: str = "") -> str:
     if reasoning and reasoning.strip():
         return reasoning.strip()
-    m = re.search(r"<think>(.*?)</think>", content or "", flags=re.S)
+    m = re.search(r"�\u0085(.*?)�\u0085", content or "", flags=re.S)
     if m:
         return m.group(1).strip()
     return (content or "").strip()
@@ -197,8 +251,8 @@ def extract_json_object(text: str) -> dict[str, Any] | None:
     if not text:
         return None
     s = text.strip()
-    if "</think>" in s:
-        s = s.rsplit("</think>", 1)[1].strip()
+    if "�\u0085" in s:
+        s = s.rsplit("�\u0085", 1)[1].strip()
     fenced = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", s, flags=re.S | re.I)
     if fenced:
         s = fenced.group(1).strip()

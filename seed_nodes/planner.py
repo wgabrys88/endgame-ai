@@ -1,14 +1,18 @@
 from __future__ import annotations
 
-import brain
+from nodes import BaseNode
+
+
+class PlannerNode(BaseNode):
+    prompt_key = "planner"
+    expected_record_type = "plan"
+    
+    def signal_from_data(self, data):
+        return str(data.get("next_signal") or "observe")
+    
+    def patch_from_record(self, record):
+        return {"plan": record.get("data", {}), "reasoning": record.get("reasoning", "")}
 
 
 def run(ctx):
-    wiring = ctx["wiring"]
-    prompt = wiring.get("prompts", {}).get("planner", "Return JSON record_type plan")
-    record = brain.think(prompt, {"goal": ctx.get("goal", ""), "state": ctx.get("state", {})}, wiring)
-    if record.get("record_type") != "plan":
-        raise RuntimeError(f"planner expected record_type plan, got {record.get('record_type')!r}")
-    data = record.get("data", {})
-    signal = str(data.get("next_signal") or "observe")
-    return signal, {"plan": data, "reasoning": record.get("reasoning", "")}
+    return PlannerNode().run(ctx)

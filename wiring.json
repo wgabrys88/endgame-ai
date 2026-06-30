@@ -2,39 +2,42 @@
   "schema": "endgame-ai.wiring.v1",
   "model": {
     "transport": "openai",
-    "timeout": 60,
-    "max_brain_calls": null,
-    "raw_log": true,
-    "openai": {
-      "base_url": "http://localhost:1234",
-      "path": "/v1/chat/completions",
-      "model": "nvidia-nemotron-3-nano-4b",
-      "temperature": 0.2
+    "transport_config": {
+      "openai": {
+        "base_url": "http://localhost:1234",
+        "path": "/v1/chat/completions",
+        "model": "nvidia-nemotron-3-nano-4b",
+        "temperature": 0.2
+      },
+      "opencode": {
+        "executable": "%USERPROFILE%/AppData/Local/opencode/opencode-cli.exe",
+        "model": "opencode-go/deepseek-v4-flash",
+        "extra_args": []
+      },
+      "xai": {
+        "mode": "api",
+        "api_key_env": "XAI_API_KEY",
+        "model": "grok-build-0.1",
+        "url": "https://api.x.ai/v1/responses",
+        "temperature": 0.2
+      },
+      "grok_cli": {
+        "executable": "grok",
+        "extra_args": []
+      },
+      "file_proxy": {
+        "request_path": "comms/request.json",
+        "response_path": "comms/response.json",
+        "poll_interval": 0.25
+      },
+      "browser_ai": {
+        "documented_stub": true
+      }
     },
-    "opencode": {
-      "executable": "%USERPROFILE%/AppData/Local/OpenCode/opencode-cli.exe",
-      "args": [
-        "run",
-        "--json"
-      ]
-    },
-    "xai_responses": {
-      "url": "https://api.x.ai/v1/responses",
-      "model": "grok-4"
-    },
-    "grok_build": {
-      "executable": "grok",
-      "args": [
-        "-p"
-      ]
-    },
-    "file_proxy": {
-      "request_path": "comms/request.json",
-      "response_path": "comms/response.json",
-      "poll_interval": 0.25
-    },
-    "browser_ai": {
-      "documented_stub": true
+    "global": {
+      "timeout": 180,
+      "max_brain_calls": null,
+      "raw_log": true
     }
   },
   "paths": {
@@ -95,10 +98,10 @@
     }
   },
   "prompts": {
-    "planner": "You are the planner node of endgame-ai. Return one JSON object with record_type='plan', data.next_signal, and data.intent.",
-    "decide": "You are the decide node of endgame-ai. Return one JSON object with record_type='decision', data.next_signal, and data.action.",
-    "verify": "You are the verify node of endgame-ai. Return one JSON object with record_type='verification', data.next_signal, and data.success.",
-    "reflect": "You are the reflect node of endgame-ai. Return one JSON object with record_type='reflection', data.next_signal, and data.lesson."
+    "planner": "You are the planner node of endgame-ai. Return one JSON object with record_type='plan', data.next_signal (must be 'observe' or 'reflect'), and data.intent (your plan).",
+    "decide": "You are the decide node of endgame-ai. Return one JSON object with record_type='decision', data.next_signal (must be 'act', 'reflect', or 'self_modify'), and data.action (the action to execute).",
+    "verify": "You are the verify node of endgame-ai. Return one JSON object with record_type='verification', data.next_signal (must be 'planner' or 'reflect'), and data.success (boolean).",
+    "reflect": "You are the reflect node of endgame-ai. Return one JSON object with record_type='reflection', data.next_signal (must be 'planner' or 'self_modify'), and data.lesson (what you learned)."
   },
   "action_verbs": {
     "open_notepad": "Open Windows Notepad using the mechanical body.",

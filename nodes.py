@@ -4,6 +4,7 @@ from __future__ import annotations
 import importlib.util
 import pathlib
 import shutil
+from abc import ABC, abstractmethod
 from typing import Any
 
 import brain
@@ -40,6 +41,41 @@ def _load_node(node_name: str, wiring: dict[str, Any]):
     if not hasattr(mod, "run"):
         raise RuntimeError(f"node '{node_name}' does not export run(ctx)")
     return mod
+
+
+class BaseNode(ABC):
+    """Base class for nodes that call brain.think() with a prompt from wiring.json.
+    
+    Subclasses only need to define:
+    - prompt_key: key in wiring["prompts"] (e.g., "planner", "decide")
+    - expected_record_type: expected record_type in brain response (e.g., "plan", "decision")
+    - signal_from_data(): extracts next_signal from record["data"]
+    - patch_from_record(): builds patch dict from record
+    """
+    
+    prompt_key: str = ""
+    expected_record_type: str = ""
+    
+    @abstractmethod
+    def signal_from_data(self, data: dict[str, Any]) -> str:
+        """Extract next_signal from record data."""
+        ...
+    
+    @abstractmethod
+    def patch_from_record(self, record: dict[str, Any]) -> dict[str, Any]:
+        """Build patch dict from full record."""
+        ...
+    
+    def run(self, ctx: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+        wiring = ctx["wiring"]
+        prompt = wiring.get("prompts", {}).get(self.prompt_key, "")
+        record = brain.think(prompt, {"goal": ctx.get("goal", ""), "state": ctx.get("state", {})}, wiring)
+        if record.get("record_type") != self.expected_record_type:
+            raise RuntimeError(f"{self.prompt_key} expected record_type {self.expected_record_type!r}, got {record.get('record_type')!r}")
+        data = record.get("data", {})
+        signal = self.signal_from_data(data)
+        patch = self.patch_from_record(record)
+        return signal, patch
 
 
 def call_node(node_name: str, ctx: dict[str, Any]) -> tuple[str, dict[str, Any]]:
