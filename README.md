@@ -10,9 +10,9 @@ workbench panel. Intended to merge into `main` after review.
 Built from a handful of Python files, one JSON config, and seed node templates. **Standard
 library only** in the organism core. No LangChain, no MCP in the loop, no silent fallbacks.
 
-> **This README is the handover for `brains-integration`.** It states what changed vs `main`,
-> which claims from `main` still hold, how run length is controlled (counters, not seconds), and
-> whether merge is warranted. Read §0 before editing anything.
+> **This README is the handover for `brains-integration`.** Brain transports are wired and
+> falsified; default brain is **LM Studio (`openai`)** so the living organism never silently
+> burns paid tokens on a cloud transport. Read §0 before editing anything.
 
 ---
 
@@ -32,7 +32,7 @@ library only** in the organism core. No LangChain, no MCP in the loop, no silent
 11. [The workbench](#11-the-workbench)
 12. [ROD brain test (counter breakpoint)](#12-rod-brain-test-counter-breakpoint)
 13. [Essential tracked files](#13-essential-tracked-files)
-14. [Handover — open questions](#14-handover--open-questions)
+14. [Handover — next work toward the vision](#14-handover--next-work-toward-the-vision)
 
 ---
 
@@ -42,36 +42,45 @@ library only** in the organism core. No LangChain, no MCP in the loop, no silent
 You are continuing endgame-ai on branch brains-integration (merge target: main).
 
 WHAT THE SYSTEM IS
-- perceive → decide → act → verify → reflect loop driven by wiring.json topology graph.
+- A living organism on a real Windows desktop: perceive → decide → act → verify → reflect.
+- Topology graph in wiring.json (8 nodes, 16 edges) — identical to main.
 - Brain = stateless transports in brain.py; ROD = exactly 2 calls per think().
 - Every LLM circuit commits a typed record {record_type, data}. Wrong type → fail hard → reflect.
 - self_modify can rewrite wiring.json live, including model.transport. Organism reloads brain on
-  wiring mtime change. No fallback transports: errors raise.
+  wiring mtime change. No fallback transports: if the selected brain is down, the call raises.
 
-WHAT THIS BRANCH ADDED (vs main)
-- Six transports: openai, xai_responses, opencode, grok_build, file_proxy, browser_ai (stub).
-- One forensic raw brain log per process: <timestamp>.txt at repo root (JSON lines, .txt extension).
-- Workbench: brain editor, probes, Test ROD (2-call), file_proxy handoff, raw log tail.
-- Allowlist .gitignore — only core source tracked; runtime artifacts ignored.
+DEFAULT BRAIN (decided — do not change without explicit instruction)
+- model.transport = openai → LM Studio at http://localhost:1234 (nvidia-nemotron-3-nano-4b).
+- The organism pursues its own goal when none is given; a wrong default brain wastes tokens.
+- Alternate transports (opencode, xai_responses, grok_build, file_proxy) exist for wiring swap
+  or workbench falsification only — never auto-selected.
 
-RUN-LENGTH CONTROL (critical — do not use wall-clock caps for tests)
-- Organism loop: --max-ticks N  (topology tick counter; existing on main).
-- Brain calls: --max-brain-calls N  → model.max_brain_calls (hard stop in brain._call).
-- ROD test: max_brain_calls=2 + parse_retries=0; success = 2 request + 2 response rows in raw log.
-- Raw log rows: seq + phase (request|response). This is the forensic counter — not elapsed seconds.
+BRAIN LAYER STATUS (2026-06-30 — all real transports ROD-validated)
+- openai (LM Studio): yes — organism 2/2 via planner tick (~76s)
+- file_proxy: yes — 2/2; agent writes comms/response.json
+- opencode: yes — 2/2 (prior session)
+- xai_responses: yes — 2/2 (prior session; needs XAI_API_KEY)
+- grok_build: wired; slow CLI — counter stops at 2 calls, not a timer
+- browser_ai: stub only
+
+RUN-LENGTH CONTROL (counters, not seconds)
+- Organism loop: --max-ticks N
+- Brain calls: --max-brain-calls N  → model.max_brain_calls (hard stop in brain._call)
+- ROD falsification: rod_brain_calls=2; success = 2 request + 2 response rows in raw *.txt
+- model.timeout is per-call I/O safety only — not the test budget
 
 GROUND RULES
 - Work on brains-integration unless told otherwise. Do not touch main without explicit instruction.
-- Stdlib only in organism core. Fail-hard on transport errors. No fallback transports.
-- Forensic *.txt is NOT live state. Live truth = state.json + slim runtime.ndjson.
-- Test ONE transport at a time via workbench. Never batch all brains in one script.
-- OpenCode exe: %USERPROFILE%/AppData/Local/OpenCode/opencode-cli.exe (os.path.expandvars).
+- Stdlib only in organism core. Fail-hard. No fallback transports.
+- Forensic *.txt is NOT live state. Live truth = state.json + slim comms/runtime.ndjson.
+- Falsify brains one at a time (workbench Test ROD or organism with --max-brain-calls 2).
+- Never batch all transports in one script.
 
 FIRST ACTIONS
-1. Read this README §2–§5 and §12.
-2. Read organism.py, brain.py, nodes.py, wiring.json.
-3. Probe selected brain in workbench.
-4. Ground claims in raw *.txt (request/response counts) + state.json.
+1. Read README §5, §8, §12, §14.
+2. Confirm LM Studio is listening on :1234 before starting the organism.
+3. python workbench.py  OR  python organism.py --reset --max-ticks 1 --max-brain-calls 2 "<goal>"
+4. Ground claims in raw *.txt (transport + request/response counts) + state.json.
 ```
 
 ---
@@ -118,7 +127,7 @@ Measured with `git diff main...brains-integration --numstat` (2026-06-30, before
 | Typed `record_type` contract | **Yes** |
 | `self_modify` edits wiring incl. transport | **Yes** |
 | Stdlib only, fail-hard | **Yes** |
-| Default transport `openai` / LM Studio | **No** — default is `opencode` on this branch |
+| Default transport `openai` / LM Studio | **Yes** — `model.transport: openai` (LM Studio must be running) |
 | Three transports only | **No** — six transports |
 | `file_proxy` → `comms/think_log.txt` | **No** — `comms/request.json` → `response.json` |
 | Session / usage log files | **No** — single raw `*.txt` |
@@ -187,14 +196,17 @@ Raw log marks call 2 requests with `rod_feedback: true`.
 
 ## 8. Brain transports
 
-| Transport | Notes |
-|-----------|-------|
-| `openai` | LM Studio `localhost:1234` |
-| `opencode` | `%USERPROFILE%/AppData/Local/OpenCode/opencode-cli.exe` |
-| `grok_build` | CLI `grok -p`, `streaming-json` |
-| `xai_responses` | Needs `XAI_API_KEY` |
-| `file_proxy` | `comms/request.json` → `comms/response.json`; you/agent is the brain |
-| `browser_ai` | Stub |
+**Default:** `openai` → LM Studio at `http://localhost:1234`. No code path auto-switches
+transport; `brain._call()` uses only `model.transport` and raises on failure.
+
+| Transport | Default? | ROD 2/2 | Notes |
+|-----------|----------|---------|-------|
+| `openai` | **yes** | yes | LM Studio; local 4B — safe default for autonomous runs |
+| `file_proxy` | | yes | `comms/request.json` → `comms/response.json`; human/agent is the brain |
+| `opencode` | | yes | `%USERPROFILE%/AppData/Local/OpenCode/opencode-cli.exe` |
+| `xai_responses` | | yes | `XAI_API_KEY`; paid — swap only when intended |
+| `grok_build` | | slow | CLI `grok -p`, `streaming-json`; counter still stops at 2 |
+| `browser_ai` | | — | Stub |
 
 ---
 
@@ -213,13 +225,15 @@ Usage in workbench is derived from raw `response` rows. Runtime paths are gitign
 ## 10. Running it
 
 ```powershell
+# LM Studio must be running on :1234 before organism start (fail-hard otherwise)
 python workbench.py
-python organism.py --reset --max-ticks 1 "observe the screen"
+python organism.py --reset --max-ticks 1 --max-brain-calls 2 "observe the screen"
 python organism.py --reset --max-ticks 1 --max-brain-calls 4 "observe the screen"
 ```
 
 - `--max-ticks 1` — one topology tick, then stop (phase `max_ticks` in `state.json`).
-- `--max-brain-calls N` — brain raises after N transport calls (counter breakpoint).
+- `--max-brain-calls 2` — one ROD decision (planner tick); raises if a third call is attempted.
+- `--max-brain-calls N` — hard counter breakpoint for longer bounded runs.
 
 ---
 
@@ -249,13 +263,14 @@ python workbench.py    # http://localhost:8800
 
 | Transport | OK | `brain_calls` | Notes |
 |-----------|----|---------------|-------|
+| `openai` | yes | 2/2 | organism planner tick; raw log `20260630T082704.txt`; ~76s |
 | `file_proxy` | yes | 2/2 | agent wrote `response.json`; counter breakpoint verified |
-| `opencode` | yes | 2/2 | prior session (before timeout removal) |
+| `opencode` | yes | 2/2 | prior session |
 | `xai_responses` | yes | 2/2 | prior session |
-| `openai` | no | — | LM Studio not listening |
-| `grok_build` | slow | — | may exceed patience; counter still stops at 2 calls — not a timer failure |
+| `grok_build` | slow | 2/2* | *counter stops at 2; CLI may be slow — not a timer failure |
+| `browser_ai` | — | — | stub |
 
-`max_brain_calls` budget verified in code: third `_call()` raises `brain call budget exceeded`.
+`max_brain_calls` budget verified: third `_call()` raises `brain call budget exceeded`.
 
 ---
 
@@ -269,16 +284,46 @@ Runtime-created: `live_nodes/`, `state.json`, `comms/`, `<timestamp>.txt`, `__py
 
 ---
 
-## 14. Handover — open questions
+## 14. Handover — next work toward the vision
 
-1. After merge, default `model.transport`: `openai` (main) or `opencode` (branch)?
-2. Restore `file_proxy` path `comms/think_log.txt` or keep `request.json` handoff?
-3. Re-add `evidence/` on merged tree or keep milestone proof on `main` only?
+**Vision:** endgame-ai is a research organism — not a chatbot — that inhabits a real desktop,
+forms its own intentions when no goal is given, acts through typed records, verifies outcomes,
+reflects on failure, and can rewrite its own wiring (including which brain it thinks with). The
+milestone on `main` showed goal-interpretation drift and self-modification under a minimal brain
+layer; this branch adds **safe multi-brain infrastructure** so that science can continue without
+accidental token spend.
 
-### Suggested first action
+### Resolved on this branch
 
-Workbench → **one** transport → **Test ROD (2-call)** → inspect raw log for exactly 2 request +
-2 response lines. For `file_proxy`, answer via **Write response.json**.
+| Decision | Choice |
+|----------|--------|
+| Default brain | `openai` / LM Studio — fail-hard if not running |
+| Transport fallback | None — errors raise |
+| Run-length control | Counters (`--max-ticks`, `--max-brain-calls`, raw log phases) |
+| `file_proxy` handoff | `comms/request.json` → `comms/response.json` |
+| Brain falsification | All real transports ROD 2/2 except `browser_ai` stub |
+
+### Next work items (priority order)
+
+1. **Merge `brains-integration` → `main`** — topology unchanged; resolve `evidence/` policy at
+   merge time (keep on `main` history only vs restore bundle).
+2. **Bounded autonomous run** — LM Studio default, `--max-ticks` + `--max-brain-calls` budget,
+   empty or curiosity goal; observe whether planner/actor stay grounded on SCREEN tokens.
+3. **Re-run milestone goal-drift science** — same substrate as `main` §1–§2 but with unified raw
+   log; compare drift signatures across brains (local 4B vs file_proxy vs one cloud transport).
+4. **`self_modify` brain experiments** — organism changes `model.transport` deliberately; verify
+   hot-reload + raw log continuity; document when self-mod chooses cloud vs local.
+5. **`browser_ai`** — implement desktop handoff or remove from wiring to avoid false options.
+6. **`grok_build` patience run** — single workbench ROD test with counter only; confirm 2/2 when
+   CLI completes.
+7. **Observability** — optional `observability.py` or workbench views for tick/brain-call
+   budgets during long runs (forensic `*.txt` already has seq/phase).
+
+### Suggested first action for the next agent
+
+Start LM Studio → `python organism.py --reset --max-ticks 3 --max-brain-calls 12` with no goal
+(let the planner choose intention) → read `state.json` + newest `*.txt` raw log. Use workbench
+only to monitor; do not swap transport unless explicitly testing another brain.
 
 ---
 
@@ -295,12 +340,12 @@ partially implemented (`openai` / `file_proxy`). It adds real transports, forens
 workbench falsification, and counter-based run control — without altering the topology graph or
 ROD contract. That is incremental, merge-friendly engineering.
 
-**Risk:** `wiring.json` defaults and `file_proxy` paths differ from `main`'s milestone config.
-`evidence/` is not carried on this branch. Post-merge defaults must be chosen explicitly.
+**Risk:** `file_proxy` paths differ from `main`'s milestone config (`think_log.txt` vs
+`request.json`). `evidence/` is not carried on this branch. Default transport now matches
+`main` (`openai` / LM Studio).
 
-**Worth merging?** **Yes**, if the goal is multi-brain + unified logging + workbench on the
-proven organism substrate. **Defer merge** if you need the milestone `wiring.json` values and
-`evidence/` bundle unchanged in the same tree.
+**Worth merging?** **Yes** — brain layer is falsified, default is local LM Studio, counter
+control is in place. Remaining merge choice: `evidence/` bundle and `file_proxy` path policy.
 
 **What merge is not:** It does not replace or disprove `main`'s goal-drift finding — that
 remains valid historical science on `main`. This branch adds **infrastructure**; re-run milestone
@@ -308,8 +353,8 @@ goals after merge if you want drift science on the new brain layer.
 
 ### Fresh-session starter prompt
 
-> You are resuming **brains-integration** (merge target `main`). Read this README — §0, §5
-> (counter control), §12 (ROD test). Topology and ROD are unchanged from `main`. Run length is
-> controlled by `--max-ticks`, `--max-brain-calls`, and raw log request/response counts — **not**
-> wall-clock test timeouts. Test one brain at a time. `file_proxy`: you write `response.json`.
-> Wait for human direction before merge or default changes.
+> You are resuming **brains-integration** (merge target `main`). Brains are finalized; default is
+> **LM Studio (`openai`)** — start LM Studio before the organism. Read §0, §14. Topology and ROD
+> unchanged from `main`. Run length = `--max-ticks`, `--max-brain-calls`, raw log phases — not
+> wall-clock caps. Next: bounded autonomous run or merge to `main`. Swap transport only when
+> explicitly testing another brain; never batch transports.
