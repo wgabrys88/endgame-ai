@@ -98,9 +98,105 @@ def _usage_path(model: dict | None = None) -> pathlib.Path:
     return _root_path(model.get("usage_log_path"), "comms/brain_usage.ndjson")
 
 
-def _session_logs() -> list[dict]:
-    paths = sorted((ROOT / "comms").glob("session-*.log"), key=lambda p: p.stat().st_mtime if p.exists() else 0, reverse=True)
-    return [_stat(p) for p in paths[:5]]
+def _session_logs(limit: int = 20) -> list[dict]:
+    comms = ROOT / "comms"
+    if not comms.is_dir():
+        return []
+    paths = sorted(comms.glob("session-*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
+    return [{**_stat(p), "name": p.name} for p in paths[:limit]]
+
+
+def _safe_comms_file(name: str) -> pathlib.Path | None:
+    """Resolve a log file under comms/ only — blocks path traversal."""
+    raw = (name or "").strip().replace("\\", "/")
+    if not raw or ".." in raw or raw.startswith("/"):
+        return None
+    base = (ROOT / "comms").resolve()
+    path = (ROOT / "comms" / raw).resolve()
+    try:
+        path.relative_to(base)
+    except ValueError:
+        return None
+    return path if path.is_file() else None
+
+
+def _log_inventory(model: dict | None = None) -> dict:
+    """All log artifacts from prior runs still on disk."""
+    model = model or _model_cfg()
+    runtime = _runtime_path(model)
+    usage = _usage_path(model)
+    brain_io = _root_path(model.get("brain_io_log_path"), "comms/brain_io.ndjson")
+    sessions = _session_logs()
+    prompts_dir = ROOT / "comms" / "cli_prompts"
+    prompts = []
+    if prompts_dir.is_dir():
+        prompts = sorted(prompts_dir.glob("*.prompt.txt"), key=lambda p: p.stat().st_mtime, reverse=True)
+    last_session = sessions[0] if sessions else {}
+    return {
+        "runtime": {**_stat(runtime), "name": runtime.name},
+        "usage": {**_stat(usage), "name": usage.name},
+        "brain_io": {**_stat(brain_io), "name": brain_io.name},
+        "sessions": sessions,
+        "cli_prompts": [{**_stat(p), "name": p.name} for p in prompts[:10]],
+        "last_run": {
+            "session": last_session.get("name", ""),
+            "session_mtime": last_session.get("mtime", 0),
+            "runtime_age_s": _stat(runtime).get("age_s"),
+            "runtime_size": _stat(runtime).get("size", 0),
+        },
+    }
+
+
+def _read_log_tail(*, kind: str, file: str = "", tail: int = 200) -> dict:
+    tail = max(1, min(int(tail or 200), 2000))
+    model = _model_cfg()
+    if kind == "runtime":
+        path = _runtime_path(model)
+    elif kind == "usage":
+        path = _usage_path(model)
+    elif kind == "brain_io":
+        path = _root_path(model.get("brain_io_log_path"), "comms/brain_io.ndjson")
+    elif kind == "session":
+        if not file:
+            sessions = _session_logs(limit=1)
+            if not sessions:
+                return {"ok": False, "error": "no session logs in comms/"}
+            file = sessions[0]["name"]
+        path = _safe_comms_file(file)
+        if path is None:
+            return {"ok": False, "error": f"session log not found: {file!r}"}
+    elif kind == "cli_prompt":
+        path = _safe_comms_file(f"cli_prompts/{file}" if file and "/" not in file else file)
+        if path is None:
+            return {"ok": False, "error": f"cli prompt not found: {file!r}"}
+    else:
+        return {"ok": False, "error": f"unknown log kind: {kind!r}"}
+
+    if not path.exists():
+        return {"ok": False, "error": f"log file missing: {path}", "path": str(path)}
+
+    if path.suffix == ".ndjson":
+        rows = _tail_ndjson(path, max_lines=tail, max_bytes=2_000_000)
+        return {
+            "ok": True,
+            "kind": kind,
+            "path": str(path),
+            "format": "ndjson",
+            "lines": len(rows),
+            "tail": rows,
+            "stat": _stat(path),
+        }
+
+    lines = _tail_lines(path, max_lines=tail, max_bytes=2_000_000)
+    return {
+        "ok": True,
+        "kind": kind,
+        "path": str(path),
+        "format": "text",
+        "lines": len(lines),
+        "tail": lines,
+        "stat": _stat(path),
+    }
 
 
 def _num(v, default=0.0):
@@ -271,6 +367,7 @@ def _status() -> dict:
             "runtime": runtime_stat,
             "usage": _stat(usage_path),
             "sessions": _session_logs(),
+            "inventory": _log_inventory(model),
         },
         "runtime": runtime_rows[-120:],
         "last_runtime_event": last_runtime,
@@ -295,40 +392,69 @@ def _health_message(active: bool, stale: bool, state_age: float | None, runtime_
 
 # ─── provider diagnostics ──────────────────────────────────────────────────
 
-def _candidate_exes(name: str) -> list[str]:
+def _resolve_exe(name: str) -> str | None:
+    """Match brain.py resolution: absolute paths first, then PATH lookup."""
     import shutil
     expanded = os.path.expandvars(os.path.expanduser(str(name or ""))).strip()
     if not expanded:
-        return []
+        return None
+    p = pathlib.Path(expanded)
+    if p.is_absolute() and p.exists():
+        return str(p)
     names = [expanded]
-    if os.name == "nt" and not pathlib.Path(expanded).suffix:
+    if os.name == "nt" and not p.suffix:
         names += [expanded + ext for ext in (".exe", ".cmd", ".bat", ".ps1")]
-    out = []
     for n in names:
         hit = shutil.which(n)
-        if hit and hit not in out:
-            out.append(hit)
-    return out
+        if hit:
+            return hit
+    return None
 
 
 def _provider_stats(provider: str) -> dict:
     model = _model_cfg()
     if provider == "opencode":
         cfg = model.get("opencode") if isinstance(model.get("opencode"), dict) else {}
-        exe = str(cfg.get("exe") or "opencode")
-        hits = _candidate_exes(exe)
-        if not hits:
-            return {"ok": False, "error": f"OpenCode executable not found for {exe!r}. Install OpenCode or set model.opencode.exe to full opencode.cmd/opencode.exe path.", "candidates": []}
-        cmd = [hits[0], "stats", "--days", "30", "--models", "10"]
+        exe = _resolve_exe(str(cfg.get("exe") or "opencode"))
+        if not exe:
+            return {"ok": False, "error": f"OpenCode executable not found ({cfg.get('exe') or 'opencode'}). Set model.opencode.exe in wiring.", "candidates": []}
+        cmd = [exe, "stats", "--days", "30", "--models", "10"]
     elif provider == "grok_build":
         cfg = model.get("grok_build") if isinstance(model.get("grok_build"), dict) else {}
-        exe = str(cfg.get("exe") or "grok")
-        hits = _candidate_exes(exe)
-        if not hits:
-            return {"ok": False, "error": f"Grok executable not found for {exe!r}.", "candidates": []}
-        cmd = [hits[0], "models"]
+        exe = _resolve_exe(str(cfg.get("exe") or "grok"))
+        if not exe:
+            return {"ok": False, "error": f"Grok executable not found ({cfg.get('exe') or 'grok'}).", "candidates": []}
+        cmd = [exe, "models"]
+    elif provider == "openai":
+        cfg = model.get("openai") if isinstance(model.get("openai"), dict) else {}
+        host = str(cfg.get("host") or model.get("host") or "http://localhost:1234").rstrip("/")
+        url = host + str(cfg.get("endpoint_path") or "/v1/models")
+        try:
+            import urllib.request
+            with urllib.request.urlopen(url, timeout=5) as resp:
+                body = resp.read(4000).decode("utf-8", errors="replace")
+            return {"ok": True, "host": host, "url": url, "stdout": body[:2000]}
+        except Exception as e:
+            return {"ok": False, "error": f"LM Studio / openai host unreachable at {url}: {e}", "host": host}
+    elif provider in ("xai_responses", "grok_build_api"):
+        cfg = model.get("xai_responses") if isinstance(model.get("xai_responses"), dict) else {}
+        env_name = str(cfg.get("api_key_env") or "XAI_API_KEY")
+        key = os.environ.get(env_name, "")
+        return {
+            "ok": bool(key),
+            "api_key_env": env_name,
+            "key_present": bool(key),
+            "host": cfg.get("host", "https://api.x.ai"),
+            "model": cfg.get("model", ""),
+            "error": None if key else f"env {env_name} is not set",
+        }
+    elif provider == "file_proxy":
+        fp = model.get("file_proxy") if isinstance(model.get("file_proxy"), dict) else {}
+        req = _root_path(fp.get("request_path"), "comms/request.json")
+        resp = _root_path(fp.get("response_path"), "comms/response.json")
+        return {"ok": True, "request_path": str(req), "response_path": str(resp), "request": _stat(req), "response": _stat(resp)}
     else:
-        return {"ok": False, "error": "provider stats implemented for opencode and grok_build"}
+        return {"ok": False, "error": f"no probe for provider {provider!r}"}
     try:
         proc = subprocess.run(cmd, capture_output=True, timeout=20)
     except Exception as e:
@@ -349,15 +475,22 @@ main{display:grid;grid-template-columns:1.05fr .95fr;gap:12px;padding:12px}.pane
 <header><b>endgame-ai</b><span id="health" class="pill">health: –</span><span id="node" class="pill">node: –</span><span id="brain" class="pill hot">brain: –</span><span id="goal" class="pill">goal: –</span><span id="age" class="pill">age: –</span><span id="seq" class="pill">seq: –</span><button class="alt" onclick="paused=!paused;this.textContent=paused?'Resume':'Pause'">Pause</button><span class="mut" id="now" style="margin-left:auto">–</span></header>
 <main>
 <section class="panel"><h2>Live event stream</h2><div id="events"></div></section>
+<section class="panel"><h2>Narration (last run)</h2><div id="narration"></div></section>
 <section class="panel"><h2>Current state truth</h2><div id="truth"></div></section>
 <section class="panel"><h2>Plan</h2><div id="plan"></div></section>
 <section class="panel"><h2>History + outcome</h2><div id="history"></div></section>
 <section class="panel"><h2>Reasoning chain</h2><div id="reasoning"></div></section>
 <section class="panel"><h2>Files / purpose</h2><div id="files"></div></section>
-<section class="panel full"><h2>Brain provider + parameters</h2><div class="row mut">This edits wiring.json. The organism notices wiring mtime and rebinds its brain on the next loop. OpenCode defaults to prompt_mode=file to avoid Windows command-length and PATH shim failures.</div><div style="margin:8px 0"><select id="brainSelect" onchange="renderBrainControls()"></select> <button onclick="saveBrain()">Save brain</button> <button class="alt" onclick="probe('opencode')">Probe OpenCode</button> <button class="alt" onclick="probe('grok_build')">Probe Grok</button> <span id="saveStatus" class="mut"></span></div><div id="brainControls" class="grid"></div><pre id="probeOut" class="row mut"></pre></section>
+<section class="panel full"><h2>Brain provider + parameters</h2><div class="row mut">This edits wiring.json. The organism notices wiring mtime and rebinds its brain on the next loop. OpenCode defaults to prompt_mode=file to avoid Windows command-length and PATH shim failures.</div><div style="margin:8px 0"><select id="brainSelect" onchange="renderBrainControls()"></select> <button onclick="saveBrain()">Save brain</button> <button class="alt" onclick="probeCurrent()">Probe selected</button> <span id="saveStatus" class="mut"></span></div><div id="brainControls" class="grid"></div><pre id="probeOut" class="row mut"></pre></section>
 <section class="panel"><h2>File proxy handoff</h2><div id="proxyMeta" class="row mut">–</div><textarea id="prompt" readonly></textarea><textarea id="answer" placeholder="human/other brain response"></textarea><button onclick="respond()">Write response.json</button></section>
 <section class="panel"><h2>Goal</h2><textarea id="goalbox" placeholder="writes goal.json for next run"></textarea><button onclick="setGoal()">Set goal</button><button class="alt" onclick="setGoal('')">Clear goal</button></section>
 <section class="panel full usage"><h2>Usage ledger</h2><div id="usageMeta" class="row mut">–</div><div id="usage"></div></section>
+<section class="panel full"><h2>Prior run logs (forensic)</h2>
+<div class="row mut">Reads files still on disk from your last organism run — session-*.log, runtime.ndjson tail, cli prompts. Not mixed into live state.</div>
+<div style="margin:8px 0"><select id="logKind" onchange="syncLogPicker()"><option value="session">session log</option><option value="runtime">runtime.ndjson</option><option value="usage">brain_usage.ndjson</option><option value="brain_io">brain_io.ndjson</option><option value="cli_prompt">cli prompt</option></select>
+<select id="logFile"></select> <input id="logTail" type="number" min="20" max="2000" value="200" style="width:90px"/> lines
+<button onclick="loadLog(true)">Load</button> <span id="logMeta" class="mut"></span></div>
+<textarea id="logView" readonly style="min-height:220px"></textarea></section>
 </main>
 <script>
 const $=id=>document.getElementById(id); let wiring=null, status=null, paused=false, inflight=null;
@@ -374,21 +507,37 @@ async function loadWiring(){ wiring=await api('/api/wiring'); const m=wiring.mod
 function renderBrainControls(){ if(!wiring)return; const m=wiring.model||{}; const t=$('brainSelect').value; const cfg=m[t]||{}; const controls=cfg.controls||[]; let html=''; controls.forEach((c,i)=>{ const id='ctl_'+i; const v=getPath(cfg,c.key); let input=''; if(c.type==='select'){ input=`<select id="${id}">${(c.choices||[]).map(x=>`<option ${x==v?'selected':''}>${esc(x)}</option>`).join('')}</select>`; } else if(c.type==='checkbox'){ input=`<input id="${id}" type="checkbox" ${v?'checked':''}>`; } else { input=`<input id="${id}" type="${c.type||'text'}" value="${esc(v??'')}" ${c.min!==undefined?'min="'+c.min+'"':''} ${c.max!==undefined?'max="'+c.max+'"':''} ${c.step!==undefined?'step="'+c.step+'"':''}>`; } html+=`<label class="mut">${esc(c.label||c.key)}</label><div>${input}</div><div class="mut">${esc(c.key)}</div>`; }); $('brainControls').innerHTML=html||'<div class="row mut">No control schema for this provider.</div>'; }
 async function saveBrain(){ const m=wiring.model||{}; const t=$('brainSelect').value; const cfg=m[t]||{}; (cfg.controls||[]).forEach((c,i)=>{const el=$('ctl_'+i); if(el) setPath(cfg,c.key,parseVal(c,el));}); m.transport=t; m[t]=cfg; wiring.model=m; const r=await api('/api/wiring',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(wiring)}); $('saveStatus').textContent=r.ok?'saved to wiring.json':'save failed'; await tick(true); }
 function eventLine(e){ const cls=e.event&&e.event.includes('error')?'bad':(e.event==='usage'?'good':'k'); return `<div class="row"><span class="${cls}">${esc(e.iso||'')} ${esc(e.event||'event')}</span> <span class="mut">${esc(e.transport||e.node||'')}</span><br>${esc(e.message||e.error||e.content_preview||e.stderr_preview||e.stdout_preview||JSON.stringify(e).slice(0,400))}</div>` }
-function renderStatus(s){ status=s; const h=s.health||{}, st=s.state||{}; $('health').textContent='health: '+(h.message||'–'); $('health').className='pill '+(h.stale?'err':h.active?'warn':'ok'); $('node').textContent='node: '+(st.active_node||st.node||'–')+' / '+(st.phase||''); $('brain').textContent='brain: '+(st.transport||s.model?.transport||'–'); $('goal').textContent='goal: '+(st.goal||'(none)'); $('age').textContent='state age: '+age(h.state_age_s); $('seq').textContent='seq: '+(st.state_seq||0); $('now').textContent=s.now_iso||new Date().toLocaleTimeString();
+function renderStatus(s){ status=s; const h=s.health||{}, st=s.state||{}; $('health').textContent='health: '+(h.message||'–'); $('health').className='pill '+(h.stale?'err':h.active?'warn':'ok'); $('node').textContent='node: '+(st.active_node||st.node||'–')+' / '+(st.phase||''); $('brain').textContent='brain: '+(st.transport||s.model?.transport||'–'); $('goal').textContent='goal: '+(st.goal||'(none)'); if(document.activeElement!==$('goalbox')) $('goalbox').value=st.goal||''; $('age').textContent='state age: '+age(h.state_age_s); $('seq').textContent='seq: '+(st.state_seq||0); $('now').textContent=s.now_iso||new Date().toLocaleTimeString();
 rows($('events'),(s.runtime||[]).slice().reverse().slice(0,80),eventLine);
+rows($('narration'),(st.narration||[]).slice().reverse(),x=>`<div class="row">${esc(x)}</div>`);
 $('truth').innerHTML=`<div class="row"><span class="k">current step</span><br>${esc(st.current_step?.description||'–')}<br><span class="mut">done_when: ${esc(st.current_step?.done_when||'')}</span></div><div class="row"><span class="k">last outcome</span><br>${esc(st.last_outcome||'–')}</div><div class="row"><span class="${st.last_error?'bad':'good'}">last error</span><br>${esc(st.last_error||'none')}</div><div class="row"><span class="k">screen summary</span><br>focused=${esc(st.screen_summary?.focused_title||'–')} • elements=${fmt(st.screen_summary?.elements)} • windows=${fmt(st.screen_summary?.windows)} • chars=${fmt(st.screen_summary?.raw_screen_chars)}</div><div class="row"><span class="k">verify</span><br>${esc(st.verify_evidence||'–')}<br><span class="mut">${esc(st.verify_reason||'')}</span></div>`;
 rows($('plan'),st.plan,(x,i)=>`<div class="row"><span class="${i==Number(st.step)?'hot':'k'}">${i+1}.</span> ${esc(x.description||'')}<br><span class="mut">done_when: ${esc(x.done_when||'')}</span></div>`);
 rows($('history'),(st.history||[]).slice().reverse(),x=>`<div class="row"><span class="${String(x.outcome||'').toUpperCase().startsWith('FAILED')?'bad':'good'}">${esc(x.action||'')}</span><br><span class="mut">${esc(x.outcome||'')}</span></div>`);
 rows($('reasoning'),(st.reasoning_chain||[]).slice().reverse(),x=>`<div class="row"><span class="k">${esc(x.circuit||'')}</span> <span class="mut">${x.ts?new Date(x.ts*1000).toLocaleTimeString():''}</span><br>${esc((x.reasoning||'').slice(0,800))}<details><summary>parsed</summary><pre>${esc(JSON.stringify(x.parsed,null,2))}</pre></details></div>`);
-const f=s.files||{}; $('files').innerHTML=['state','runtime','usage','wiring'].map(k=>{const v=f[k]||{};return `<div class="row"><span class="k">${k}</span> ${esc(v.path||'')}<br><span class="mut">exists=${!!v.exists} size=${fmt(v.size)} age=${age(v.age_s)}</span></div>`}).join('')+`<div class="row"><span class="k">session logs</span><br>${(f.sessions||[]).map(x=>esc(x.path)+' age='+age(x.age_s)+' size='+fmt(x.size)).join('\n')||'–'}</div><div class="row mut">state.json = current snapshot; runtime.ndjson = compact live events; brain_usage.ndjson = token/cost ledger; session-*.log = raw forensic prompt/response; brain_io.ndjson = optional raw transport JSON, disabled by default.</div>`;
-renderUsage(s.usage||{});
+const f=s.files||{}; const inv=f.inventory||{};
+$('files').innerHTML=['state','runtime','usage','wiring'].map(k=>{const v=f[k]||{};return `<div class="row"><span class="k">${k}</span> ${esc(v.path||'')}<br><span class="mut">exists=${!!v.exists} size=${fmt(v.size)} age=${age(v.age_s)}</span></div>`}).join('')
++`<div class="row"><span class="k">last run</span><br><span class="mut">session=${esc(inv.last_run?.session||'–')} runtime age=${age(inv.last_run?.runtime_age_s)} size=${fmt(inv.last_run?.runtime_size)}</span></div>`
++`<div class="row"><span class="k">session logs</span><br>${(f.sessions||[]).map(x=>`<span class="k mono">${esc(x.name||'')}</span> age=${age(x.age_s)} size=${fmt(x.size)}`).join('<br>')||'–'}</div>`
++`<div class="row mut">state.json = snapshot; runtime.ndjson = live events; session-*.log = forensic ROD journal; brain_usage.ndjson = tokens/cost.</div>`;
+window._logInventory=inv; syncLogPicker(); renderUsage(s.usage||{});
 }
-function renderUsage(u){ $('usageMeta').textContent=`rows: ${u.rows||0} • ${u.path||''}`; let html=''; for(const period of ['24h','30d','month','all']){ const b=u.buckets&&u.buckets[period]||{}; html+=`<h3>${period}</h3><table><tr><th>provider/model</th><th>calls</th><th>exact</th><th>prompt</th><th>completion</th><th>reasoning</th><th>total</th><th>elapsed</th><th>cost</th><th>notes</th></tr>`; for(const [k,v] of Object.entries(b)){ html+=`<tr><td>${esc(k)}</td><td>${fmt(v.calls)}</td><td>${fmt(v.exact_calls)}</td><td>${fmt(v.prompt_tokens)}</td><td>${fmt(v.completion_tokens)}</td><td>${fmt(v.reasoning_tokens)}</td><td>${fmt(v.total_tokens)}</td><td>${fmt(v.elapsed_s)}s</td><td>$${fmt(v.cost_usd)}</td><td>${esc((v.notes||[]).join('; '))}</td></tr>`; } html+='</table>'; } $('usage').innerHTML=html; }
+function syncLogPicker(){ const inv=window._logInventory||{}; const kind=$('logKind').value; const sel=$('logFile'); sel.innerHTML=''; sel.style.display=kind==='session'||kind==='cli_prompt'?'inline-block':'none';
+ if(kind==='session'){(inv.sessions||[]).forEach(x=>{const o=document.createElement('option');o.value=x.name;o.textContent=x.name+' ('+age(x.age_s)+', '+fmt(x.size)+'b)';sel.appendChild(o);});}
+ else if(kind==='cli_prompt'){(inv.cli_prompts||[]).forEach(x=>{const o=document.createElement('option');o.value=x.name;o.textContent=x.name+' ('+age(x.age_s)+')';sel.appendChild(o);});}
+}
+async function loadLog(force){ if(!force&&paused)return; const kind=$('logKind').value; const file=$('logFile').value||''; const tail=$('logTail').value||200;
+ const q=new URLSearchParams({kind,tail}); if(file) q.set('file',file);
+ try{ const obj=await api('/api/logs/tail?'+q.toString()); $('logMeta').textContent=obj.ok?`${obj.path} • ${obj.format} • ${obj.lines} lines`:(obj.error||'load failed');
+  if(obj.ok){ $('logView').value=obj.format==='ndjson'?obj.tail.map(x=>JSON.stringify(x)).join('\n'):(obj.tail||[]).join('\n'); }
+  else $('logView').value=''; } catch(e){ $('logMeta').textContent='error: '+e.message; }
+}
+function renderUsage(u){ $('usageMeta').textContent=`rows: ${u.rows||0} • ${u.path||''}`; const limits=u.limits||{}; let html=''; if(limits.period){ html+=`<div class="row mut">budget period: ${esc(limits.period)} — ${esc(limits.note||'')}</div>`; for(const [prov,cfg] of Object.entries(limits)){ if(prov==='period'||prov==='note'||!cfg||typeof cfg!=='object') continue; const tok=cfg.monthly_tokens, usd=cfg.monthly_cost_usd; if(tok==null&&usd==null) continue; const month=u.buckets?.month||{}; let usedTok=0, usedUsd=0; Object.values(month).forEach(v=>{ if(String(v.transport||'')===prov){ usedTok+=Number(v.total_tokens||0); usedUsd+=Number(v.cost_usd||0); }}); if(tok!=null) html+=`<div class="row"><span class="k">${esc(prov)} tokens</span> ${fmt(usedTok)} / ${fmt(tok)} <div class="bar"><span style="width:${Math.min(100,100*usedTok/(tok||1))}%"></span></div></div>`; if(usd!=null) html+=`<div class="row"><span class="k">${esc(prov)} cost $</span> ${fmt(usedUsd)} / ${fmt(usd)} <div class="bar"><span style="width:${Math.min(100,100*usedUsd/(usd||1))}%"></span></div></div>`; }} for(const period of ['24h','30d','month','all']){ const b=u.buckets&&u.buckets[period]||{}; html+=`<h3>${period}</h3><table><tr><th>provider/model</th><th>calls</th><th>exact</th><th>prompt</th><th>completion</th><th>reasoning</th><th>total</th><th>elapsed</th><th>cost</th><th>notes</th></tr>`; for(const [k,v] of Object.entries(b)){ html+=`<tr><td>${esc(k)}</td><td>${fmt(v.calls)}</td><td>${fmt(v.exact_calls)}</td><td>${fmt(v.prompt_tokens)}</td><td>${fmt(v.completion_tokens)}</td><td>${fmt(v.reasoning_tokens)}</td><td>${fmt(v.total_tokens)}</td><td>${fmt(v.elapsed_s)}s</td><td>$${fmt(v.cost_usd)}</td><td>${esc((v.notes||[]).join('; '))}</td></tr>`; } html+='</table>'; } $('usage').innerHTML=html||'<div class="row mut">no usage rows yet</div>'; }
+async function probeCurrent(){ const t=$('brainSelect').value||status?.model?.transport||'openai'; await probe(t); }
 async function tick(force=false){ if(paused&&!force)return; if(inflight) inflight.abort(); inflight=new AbortController(); try{ renderStatus(await api('/api/status',{signal:inflight.signal})); const p=await api('/api/proxy',{signal:inflight.signal}); $('proxyMeta').textContent=p.pending?`WAITING id=${p.id||''}`:'idle'; $('proxyMeta').className='row '+(p.pending?'bad':'mut'); $('prompt').value=p.prompt||''; }catch(e){ if(e.name!=='AbortError') $('health').textContent='health: panel fetch error '+e.message; } finally{ inflight=null; } }
 async function respond(){await api('/api/respond',{method:'POST',body:$('answer').value});$('answer').value='';tick(true);}
 async function setGoal(v){const g=v===''?'':$('goalbox').value;await api('/api/goal',{method:'POST',body:g});tick(true);}
 async function probe(provider){ const obj=await api('/api/provider_stats?provider='+encodeURIComponent(provider)); $('probeOut').textContent=JSON.stringify(obj,null,2); }
-loadWiring().then(()=>tick(true)); setInterval(()=>tick(false),1000);
+loadWiring().then(()=>tick(true).then(()=>loadLog(true))); setInterval(()=>tick(false),1000); setInterval(()=>loadLog(false),5000);
 </script></body></html>'''
 
 
@@ -436,6 +585,14 @@ class Handler(BaseHTTPRequestHandler):
                 msgs = req.get("messages", [])
                 prompt = "\n\n".join(f"[{m.get('role')}]\n{m.get('content','')}" for m in msgs)
             return self._send(200, json.dumps({"pending": pending, "id": req.get("id"), "prompt": prompt}, ensure_ascii=False))
+        if path == "/api/logs":
+            return self._send(200, json.dumps(_log_inventory(), ensure_ascii=False, default=str))
+        if path == "/api/logs/tail" or path == "/api/logs/session":
+            qs = parse_qs(parsed.query)
+            kind = (qs.get("kind") or ["session" if path == "/api/logs/session" else "runtime"])[0]
+            file = (qs.get("file") or [""])[0]
+            tail = (qs.get("tail") or ["200"])[0]
+            return self._send(200, json.dumps(_read_log_tail(kind=kind, file=file, tail=tail), ensure_ascii=False, default=str))
         return self._send(404, json.dumps({"error": "not found"}))
 
     def do_POST(self):

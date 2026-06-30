@@ -712,8 +712,10 @@ class Brain:
             cmd.append(prompt)
         elif prompt_mode == "file":
             temp_path = _make_prompt_file("opencode", prompt)
+            # OpenCode requires a positional message AND -f attachments. Message before --file;
+            # a long trailing positional is misread as another file path (see runtime.ndjson 6/29).
+            cmd.append(str(cfg.get("file_message") or "Follow the attached prompt."))
             cmd += ["--file", str(temp_path)]
-            cmd.append("Read the attached prompt file as the complete stateless instruction. Return only the requested final answer.")
         else:
             raise ValueError(f"opencode prompt_mode must be 'file' or 'argv', got {prompt_mode!r}")
 

@@ -1,183 +1,192 @@
-# endgame-ai unified runtime patch
+# endgame-ai
 
-This zip is a replacement-files patch for the branch that already contains the main project files. Copy these files over the project root and replace the existing versions.
+A living, unconstrained organism that operates a real Windows desktop. Not a traditional agent framework: Python is the body (mouse, keyboard, screen), `wiring.json` is the mind's configuration, and a swappable **brain** provides stateless cognition.
 
-## What changed
+**Branch:** `brains-integration` — multi-transport brain swap, unified logging, live workbench panel.
 
-This patch keeps the ROD organism architecture intact: wiring controls topology, nodes remain hot-swappable Python modules, the brain is stateless, and failures raise instead of silently falling back. The changes are focused on the two failures shown in the attached run logs.
+Standard library only. No LangChain, no MCP in the organism core, no silent fallbacks.
 
-### 1. OpenCode transport repair
+---
 
-Observed failure from your run:
+## What it is
 
-```text
-RuntimeError: opencode transport: [WinError 2] The system cannot find the file specified
+| Piece | File | Role |
+|-------|------|------|
+| Living loop | `organism.py` | Drives the topology graph; writes `state.json` atomically |
+| Brain | `brain.py` | Stateless LLM transports + ROD two-call pattern |
+| Nodes | `nodes.py` + `live_nodes/` | Hot-swappable Python circuits (planner, act, verify, …) |
+| Body | `actions.py`, `desktop.py` | Windows UI Automation + input |
+| Config | `wiring.json` | Topology, prompts, verbs, brain transport — single source of truth |
+| Panel | `workbench.py` | Debug/control UI at http://localhost:8800 |
+
+### ROD (Reason → Observe → Decide)
+
+Every brain decision is **two stateless calls**:
+
+1. **Call 1:** Model reasons (thinking / `reasoning_content` / NDJSON `thought` chunks).
+2. **Call 2:** Same context + `ROD_REASONING_CONTENT:` echo → model commits one typed JSON record.
+
+This is load-bearing even for small local models (e.g. Nemotron 4B).
+
+### Topology (default)
+
+```
+planner → scheduler → observe → act → verify → reflect → self_modify → satisfied
 ```
 
-This means the selected executable could not be resolved by the Python process. The new `brain.py` now resolves Windows executables more explicitly, including `.exe`, `.cmd`, `.bat`, and `.ps1` candidates, and raises a precise hard failure that names the candidates if OpenCode is not installed or not on the Python PATH.
+Signals and edges live in `wiring.json` → `topology`. Change wiring, not code, to experiment.
 
-OpenCode now defaults to:
+---
 
-```json
-"format": "json",
-"prompt_mode": "file",
-"skip_permissions": false
-```
+## Quick start
 
-`prompt_mode=file` writes the full stateless system/user prompt to `comms/cli_prompts/*.prompt.txt` and calls `opencode run --file <prompt-file> ...` with a short instruction. This avoids long Windows command lines and avoids leaking the entire prompt into raw argv logs. Temporary prompt files are deleted after the call unless `keep_prompt_files` is enabled.
-
-Why `skip_permissions=false`: OpenCode is being used here as a brain transport, not as the desktop actor. The organism already has the body and acts through `actions.py`. The brain should return text records, not mutate the repository during cognition calls. You can still turn the permission flag on from the workbench when you intentionally want that experiment.
-
-### 2. Grok Build NDJSON repair
-
-Observed failure from your run:
-
-```text
-Error: Couldn't set model 'grok-build-0.1': Invalid params: "unknown model id". Run 'grok models' to see available models.
-```
-
-The CLI model default is now `grok-build`, because that is the model id shown working in your later run. The direct xAI Responses API path still keeps `grok-build-0.1`, because that is a separate API transport.
-
-Observed behavior after the model was corrected: Grok Build emitted streaming NDJSON chunks like:
-
-```json
-{"type":"thought","data":"..."}
-{"type":"text","data":"..."}
-```
-
-The old parser treated that stream as raw text. The new parser reconstructs final content from `type=text` chunks and separate reasoning from `type=thought` chunks, then applies the same typed-record JSON extraction as every other transport.
-
-### 3. Reliable workbench rewrite
-
-`workbench.py` has been rewritten around a compact live truth surface:
-
-| File | Purpose | Used by panel |
-|---|---|---|
-| `state.json` | Latest organism snapshot, atomically written before and after each node | Yes |
-| `comms/runtime.ndjson` | Compact append-only event stream: organism lifecycle, node start/signal, brain request/response, CLI start/exit, usage | Yes |
-| `comms/brain_usage.ndjson` | Structured usage ledger with exact provider usage when returned | Yes |
-| `comms/session-*.log` | Raw forensic prompt/response journal | Listed, not polled as state |
-| `comms/brain_io.ndjson` | Optional raw transport JSON | Disabled by default |
-
-The panel no longer treats bulky debug logs as current state. It shows state age, runtime event age, phase, node, transport, compact screen summary, current step, history, reasoning snippets, usage, and file purposes. If `state.json` is old, the panel says stale instead of pretending the data is live.
-
-### 4. Atomic state writes
-
-`organism.py` now writes `state.json` atomically. It saves before every node starts and after the node emits a signal, so the panel can display a real active node during long brain calls instead of waiting for the call to finish.
-
-## Files in this zip
-
-```text
-README.md
-brain.py
-organism.py
-wiring.json
-workbench.py
-```
-
-No node topology has been changed. No prompts have been weakened. No fallback brain has been added.
-
-## How to install
-
-1. Stop `organism.py` and `workbench.py`.
-2. Unzip this archive.
-3. Copy the files into the project root, replacing existing files.
-4. Optional but recommended for a clean run:
+**Terminal 1 — panel:**
 
 ```powershell
-Remove-Item .\state.json -ErrorAction SilentlyContinue
-Remove-Item .\comms\runtime.ndjson -ErrorAction SilentlyContinue
+cd C:\Users\ewojgab\Downloads\endgame-ai
+python workbench.py
 ```
 
-5. Start the workbench:
+Open http://localhost:8800
+
+**Terminal 2 — organism:**
 
 ```powershell
-python .\workbench.py
+python organism.py --reset "observe the screen"
 ```
 
-6. Start the organism:
+Optional: `--max-ticks N` to stop after N node transitions.
+
+---
+
+## Brain transports
+
+Set `model.transport` in `wiring.json` or use the workbench **Brain provider** dropdown.
+
+| Transport | Kind | How it calls (stateless) |
+|-----------|------|--------------------------|
+| `openai` | API | `POST /v1/chat/completions` — LM Studio default `localhost:1234` |
+| `opencode` | CLI | `opencode-cli run -m <model> --format json "<short msg>" --file <prompt.txt>` |
+| `grok_build` | CLI | `grok -p "<prompt>" -m grok-build --output-format streaming-json` |
+| `xai_responses` | API | `POST /v1/responses` with `XAI_API_KEY` |
+| `file_proxy` | Handoff | Writes `comms/request.json`, waits for `comms/response.json` (human/other agent) |
+| `browser_ai` | Desktop | **Not implemented** — raises; use `file_proxy` + workbench |
+
+**OpenCode exe** is set in wiring (`model.opencode.exe`). Use the full path to `opencode-cli.exe`.
+
+**OpenCode prompt delivery:** `prompt_mode: file` writes the full system+user prompt to `comms/cli_prompts/*.prompt.txt`, then passes a **short positional message** plus `--file` attachment. A long string after `--file` is misread as another file path.
+
+Organism hot-reloads brain when `wiring.json` mtime changes (no restart needed).
+
+---
+
+## Logging
+
+Three tiers — panel uses only the first two for live truth:
+
+| Tier | Path | Purpose |
+|------|------|---------|
+| Live | `comms/runtime.ndjson` | Compact events: `node_start`, `brain_request`, `cli_exit`, `usage`, … |
+| Snapshot | `state.json` | Current organism state (written before/after every node) |
+| Forensic | `comms/session-*.log` | Full prompt/response journal per process |
+| Usage | `comms/brain_usage.ndjson` | Token/cost ledger |
+| Optional | `comms/brain_io.ndjson` | Raw transport I/O (`log_brain_io: false` by default) |
+
+---
+
+## Workbench panel
+
+Stdlib HTTP server on port **8800** (`ENDGAME_WORKBENCH_PORT` to override).
+
+### Controls (tested on `brains-integration`)
+
+| Control | Works | Notes |
+|---------|-------|-------|
+| Header health / node / brain / goal / age / seq | Yes | Polls `/api/status` every 1s |
+| Pause / Resume | Yes | Stops polling when paused |
+| Live event stream | Yes | Last 80 `runtime.ndjson` events, reversed |
+| Narration | Yes | From `state._narration` |
+| State truth / plan / history / reasoning | Yes | Compact projection from `state.json` |
+| Files / last run | Yes | Mtimes, session log list, inventory |
+| Brain dropdown + Save brain | Yes | POST `/api/wiring`; organism picks up on next tick |
+| Provider parameter controls | Yes | Driven by `controls` schema in wiring per transport |
+| Probe selected | Yes | CLI: opencode `stats`, grok `models`; API: openai `/v1/models`, xai env key, file_proxy paths |
+| File proxy handoff | Yes | Shows pending `request.json`; POST writes `response.json` |
+| Goal set / clear | Yes | Writes `goal.json` for next organism run |
+| Usage ledger | Yes | 24h / 30d / month / all buckets |
+| Usage budget bars | Yes | When `usage_limits.*.monthly_*` set in wiring |
+| Prior run logs viewer | Yes | Session logs, runtime, usage, brain_io, cli prompts via `/api/logs/tail` |
+
+**Stale detection:** Panel marks state stale when `state.json` age > 8s and organism is not active (not in a brain call).
+
+---
+
+## Falsification tests
+
+### OpenCode (single stateless call)
 
 ```powershell
-python .\organism.py --reset "write in notepad what do you see and then it will be task completed"
+python -c "import json; from brain import Brain; b=Brain(json.load(open('wiring.json'))['model']); print(b._call('test','Return {\"ok\":true} only',0.3))"
 ```
 
-## Minimal falsification tests
-
-### LM Studio / OpenAI-compatible core
-
-Start LM Studio server, then run:
-
-```powershell
-python .\organism.py --reset --max-ticks 1 "observe the screen"
-```
-
-Pass condition: `state.json` updates, `comms/runtime.ndjson` contains `brain_request` and `brain_response`, and the workbench shows fresh state.
-
-### OpenCode transport
-
-From the same PowerShell that runs Python:
-
-```powershell
-opencode --help
-opencode run --format json "Return {\"ok\":true} and nothing else"
-```
-
-If PowerShell can run `opencode` but Python still cannot, set `model.opencode.exe` in the workbench to the full path, usually one of:
-
-```text
-C:\Users\<you>\AppData\Roaming\npm\opencode.cmd
-C:\ProgramData\chocolatey\bin\opencode.exe
-```
-
-Then switch brain to OpenCode and run:
-
-```powershell
-python .\organism.py --reset --max-ticks 1 "observe the screen"
-```
-
-Pass condition: runtime events show `cli_start`, `cli_exit`, `brain_response`; no `WinError 2`; parsed planner record appears in `state.json`.
+Pass: prints content with `ok` true, no `File not found` on trailing argv.
 
 ### Grok Build CLI
 
-Run:
+Switch transport to `grok_build` in workbench, then:
 
 ```powershell
-grok models
+python organism.py --reset --max-ticks 1 "observe the screen"
 ```
 
-Confirm `grok-build` appears. Then switch brain to Grok Build in the workbench.
+Pass: `runtime.ndjson` has `cli_start`/`cli_exit`, planner `plan_ready` in state.
 
-Pass condition: streaming JSON is reconstructed into a final typed record instead of being stored as raw NDJSON lines.
+### LM Studio
 
-### Workbench truthfulness
+Start LM Studio server, set transport `openai`, run same organism command.
 
-With the organism stopped, wait 10 seconds and refresh the panel.
+Pass: `brain_request`/`brain_response` in runtime; no HTTP errors.
 
-Pass condition: health shows stale/current honestly based on file age. It must not claim live execution when no state/runtime events are changing.
+### Workbench APIs
 
-With the organism running, the panel should show a current active node and recent runtime events even during long brain calls.
+With `python workbench.py` running:
 
-## Tested in this patch build
-
-Tested-in-session in the sandbox:
-
-```text
-python3 -m compileall -q .
-import brain, nodes, organism, workbench, actions in a full main-project copy
-parse attached Grok Build NDJSON stream into final content + reasoning
-extract typed JSON record from reconstructed Grok Build content
-fake OpenCode executable with --format json + prompt_mode=file
-fake Grok executable with streaming-json text chunks
-workbench compact status generation against attached state/runtime/usage files
+```powershell
+curl http://localhost:8800/api/status
+curl http://localhost:8800/api/logs/tail?kind=session&tail=20
+curl "http://localhost:8800/api/provider_stats?provider=opencode"
 ```
 
-Experiment pending on your machine:
+---
 
-```text
-real Windows OpenCode executable resolution
-real OpenCode account/model invocation
-real Grok Build CLI model list and live invocation
-real desktop UI action loop with Windows accessibility APIs
+## Project layout
+
+```
+organism.py          # main entry
+brain.py             # cognition transports
+nodes.py             # node loader + call_node (ROD contract)
+workbench.py         # debug panel
+wiring.json          # topology + prompts + brain config
+seed_nodes/          # immutable node templates → copied to live_nodes/
+live_nodes/          # runtime nodes (gitignored, hot-swapped)
+actions.py desktop.py
+comms/               # runtime logs (gitignored)
+state.json goal.json # runtime artifacts (gitignored)
 ```
 
-Those require your Windows environment and installed providers. The code now fails with concrete reasons and the panel exposes the live evidence needed to diagnose the next run.
+---
+
+## Philosophy
+
+- **Wiring is the brain** — topology and prompts are data, not hardcoded flow.
+- **Fail hard** — transport errors raise; no fallback provider.
+- **Self-modify** — `self_modify` node can patch `wiring.json` including `model.transport`.
+- **Unconstrained** — the organism can install software, explore, and reinterpret goals across a run.
+
+Do not recreate deleted legacy entrypoints (`server.py`, `colony.py`, `reactor.py`).
+
+---
+
+## License
+
+See `LICENSE`.

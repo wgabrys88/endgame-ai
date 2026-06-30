@@ -14,12 +14,36 @@
       "budget_tokens": 4096
     },
     "file_proxy": {
+      "label": "File proxy / human brain handoff",
+      "kind": "file_handoff",
       "request_path": "comms/request.json",
       "response_path": "comms/response.json",
       "archive_dir": "comms/archive",
-      "poll_interval_ms": 1000
+      "poll_interval_ms": 1000,
+      "controls": [
+        {
+          "key": "request_path",
+          "type": "text",
+          "label": "request.json path"
+        },
+        {
+          "key": "response_path",
+          "type": "text",
+          "label": "response.json path"
+        },
+        {
+          "key": "poll_interval_ms",
+          "type": "number",
+          "min": 100,
+          "max": 10000,
+          "step": 100,
+          "label": "poll interval ms"
+        }
+      ]
     },
     "browser_ai": {
+      "label": "Browser AI via desktop verbs (not implemented)",
+      "kind": "desktop_handoff",
       "browser": "opera",
       "url": "https://grok.com",
       "domain": "grok.com",

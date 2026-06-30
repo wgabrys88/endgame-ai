@@ -1,21 +1,32 @@
-# Runtime artifacts (regenerated)
-live_nodes/
-state.json
-goal.json
-comms/
-__pycache__/
-*.pyc
+# endgame-ai allowlist policy
+# ─────────────────────────────────────────────────────────────────────────────
+# Only paths explicitly un-ignored below are tracked. Everything else is ignored
+# by default (runtime logs, live_nodes, IDE/MCP harness, caches, local secrets).
+#
+# To track something new: add a !rule here, then git add -f <path>.
+# ─────────────────────────────────────────────────────────────────────────────
 
-# Scratch / logs
-*.log
+# Ignore everything first
+*
 
-# Brain transport accounting / raw prompts
-comms/brain_io.ndjson
-comms/brain_usage.ndjson
-comms/archive/
+# Allow descending into directories we un-ignore below
+!*/
 
-# Unified raw request/response session journal (per-run, regenerated)
-comms/session-*.log
-comms/session.log
-comms/runtime.ndjson
-comms/cli_prompts/
+# ─── Repo metadata ───────────────────────────────────────────────────────────
+!.gitignore
+!.gitattributes
+!LICENSE
+!README.md
+
+# ─── Organism core (source of truth) ───────────────────────────────────────
+!wiring.json
+!actions.py
+!brain.py
+!desktop.py
+!nodes.py
+!organism.py
+!workbench.py
+
+# ─── Seed node templates (copied to live_nodes/ at runtime — not tracked) ───
+!seed_nodes/
+!seed_nodes/**
