@@ -200,7 +200,7 @@ _runtime_wiring: dict[str, Any] | None = None
 _ELEMENT_VERBS = frozenset({"click", "scroll"})
 
 def configure_runtime(wiring: dict[str, Any] | None) -> None:
-    """Accept live wiring updates from server.py without recreating the desktop."""
+    """Accept live wiring updates without recreating the desktop."""
     global _runtime_wiring, _executor
     with _desktop_lock:
         _runtime_wiring = dict(wiring or {})
@@ -213,7 +213,7 @@ def _init():
     global _desktop, _executor
     if _desktop is None:
         import json, pathlib
-        wiring = _runtime_wiring or json.loads((pathlib.Path(__file__).parent / "prompts" / "wiring.json").read_text(encoding="utf-8"))
+        wiring = _runtime_wiring or json.loads((pathlib.Path(__file__).parent / "wiring.json").read_text(encoding="utf-8"))
         configure_observation(wiring.get("observe", {}))
         _desktop = Desktop()
         _executor = ActionExecutor(_desktop, wiring)

@@ -6,13 +6,26 @@ max_replans = wiring_limit("max_replans", 3, wiring)
 
 r = call_node()
 parsed = r["parsed"]
-data = (parsed or {}).get("data") or {}
-patch = {"last_diagnosis": data.get("diagnosis", ""), "suggestion": data.get("suggestion", ""), "retries": retries}
-
-if retries >= max_attempts:
-    signals = ["escalate"]
-elif data.get("should_replan") and replans < max_replans:
-    patch.update({"replan_count": replans + 1, "replanning": True, "planner_retries": 0})
-    signals = ["replan"]
+if not r["record_ok"]:
+    patch = {
+        "last_diagnosis": "reflector returned invalid diagnosis record",
+        "suggestion": preview_text(r["content"]),
+        "last_error": "reflect: invalid diagnosis record: " + preview_text(r["content"]),
+        "retries": retries,
+    }
+    signals = ["escalate" if retries >= max_attempts else "retry"]
 else:
-    signals = ["retry"]
+    data = (parsed or {}).get("data") or {}
+    patch = {
+        "last_diagnosis": data.get("diagnosis", ""),
+        "suggestion": data.get("suggestion", ""),
+        "retries": retries,
+        "last_error": "",
+    }
+    if retries >= max_attempts:
+        signals = ["escalate"]
+    elif data.get("should_replan") and replans < max_replans:
+        patch.update({"replan_count": replans + 1, "replanning": True, "planner_retries": 0})
+        signals = ["replan"]
+    else:
+        signals = ["retry"]

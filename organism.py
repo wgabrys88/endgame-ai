@@ -141,6 +141,7 @@ def live(goal: str, max_ticks: int = 0, max_brain_calls: int = 0):
 
     delay = int(wiring.get("observe", {}).get("post_action_delay_ms", 250)) / 1000.0
     tick = 0
+    terminal_phase = ""
     try:
         while True:
             tick += 1
@@ -206,19 +207,23 @@ def live(goal: str, max_ticks: int = 0, max_brain_calls: int = 0):
                 sig, p = nodes_mod.execute_node(node_map["satisfied"], ctx)
                 ctx.state.update(p)
                 save_state(ctx, active_node="satisfied", phase="rest")
+                terminal_phase = "rest"
                 brain_mod.log_runtime_event(ctx.wiring.get("model", {}), "organism_rest", signal=sig)
                 ctx.narrate("organism at rest")
                 break
             if max_ticks and tick >= max_ticks:
                 ctx.narrate(f"reached max_ticks={max_ticks}; stopping")
                 save_state(ctx, active_node=current, phase="max_ticks")
+                terminal_phase = "max_ticks"
                 break
             time.sleep(delay)
     except KeyboardInterrupt:
         ctx.narrate("interrupted by human — sleeping")
         save_state(ctx, active_node=current, phase="interrupted")
+        terminal_phase = "interrupted"
         brain_mod.log_runtime_event(ctx.wiring.get("model", {}), "organism_interrupted", node=current)
-    save_state(ctx, active_node=current, phase="stopped")
+    if not terminal_phase:
+        save_state(ctx, active_node=current, phase="stopped")
 
 
 def main():

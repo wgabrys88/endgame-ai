@@ -1,24 +1,14 @@
 # endgame-ai allowlist policy
-# ─────────────────────────────────────────────────────────────────────────────
-# Only paths explicitly un-ignored below are tracked. Everything else is ignored
-# by default (runtime logs, live_nodes, IDE/MCP harness, caches, local secrets).
-#
-# To track something new: add a !rule here, then git add -f <path>.
-# ─────────────────────────────────────────────────────────────────────────────
-
-# Ignore everything first
 *
-
-# Allow descending into directories we un-ignore below
 !*/
 
-# ─── Repo metadata ───────────────────────────────────────────────────────────
+# Repo metadata
 !.gitignore
 !.gitattributes
 !LICENSE
 !README.md
 
-# ─── Organism core (source of truth) ───────────────────────────────────────
+# Organism core
 !wiring.json
 !actions.py
 !brain.py
@@ -26,7 +16,24 @@
 !nodes.py
 !organism.py
 !workbench.py
+!state.json
 
-# ─── Seed node templates (copied to live_nodes/ at runtime — not tracked) ───
+# Seed node templates (copied to live_nodes/ at runtime)
 !seed_nodes/
 !seed_nodes/**
+
+# Seed brain nodes (copied to live_brains/ at runtime)
+!seed_brains/
+!seed_brains/**
+
+# Optional local validation helpers
+!validate_repo.py
+
+# Runtime state intentionally ignored unless explicitly forced
+live_nodes/
+live_brains/
+comms/
+*.txt
+goal.json
+*.tmp.*
+__pycache__/

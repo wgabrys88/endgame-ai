@@ -29,9 +29,16 @@ NODES_DIR = ROOT / "live_nodes"
 def ensure_nodes():
     """Copy seed nodes into the mutable live dir on first run. live_nodes is what runs."""
     NODES_DIR.mkdir(parents=True, exist_ok=True)
-    if not any(NODES_DIR.glob("*.py")) and SEED_DIR.exists():
-        for f in SEED_DIR.glob("*.py"):
-            shutil.copy2(f, NODES_DIR / f.name)
+    if any(NODES_DIR.glob("*.py")):
+        return
+    if not SEED_DIR.exists():
+        raise FileNotFoundError(f"seed node directory missing: {SEED_DIR}")
+    copied = 0
+    for f in SEED_DIR.glob("*.py"):
+        shutil.copy2(f, NODES_DIR / f.name)
+        copied += 1
+    if copied == 0:
+        raise FileNotFoundError(f"no seed node files found in {SEED_DIR}")
 
 
 def node_path(node_type: str) -> pathlib.Path:
@@ -127,6 +134,7 @@ def build_user_message(circuit: str, state: dict, wiring: dict) -> str:
                 "model.grok_build": model.get("grok_build"),
                 "model.file_proxy": model.get("file_proxy"),
                 "model.browser_ai": model.get("browser_ai"),
+                "brain_nodes": model.get("brain_nodes"),
                 "verbs": list(wiring.get("verbs", {}).keys()),
             }
         else:
@@ -246,10 +254,41 @@ def apply_wiring_patch(wiring: dict, parsed: dict) -> tuple[str, Any]:
 
 def validate_wiring(wiring: dict) -> list[str]:
     errs = []
-    if "model" not in wiring or "transport" not in wiring.get("model", {}):
+    model = wiring.get("model") if isinstance(wiring.get("model"), dict) else {}
+    if not model.get("transport"):
         errs.append("model.transport missing")
-    if "topology" not in wiring:
-        errs.append("topology missing")
+    topo = wiring.get("topology") if isinstance(wiring.get("topology"), dict) else {}
+    nodes = topo.get("nodes") if isinstance(topo.get("nodes"), list) else []
+    edges = topo.get("edges") if isinstance(topo.get("edges"), list) else []
+    ids = [str(n.get("id", "")) for n in nodes if isinstance(n, dict)]
+    if not ids:
+        errs.append("topology.nodes empty")
+    if len(ids) != len(set(ids)):
+        errs.append("topology has duplicate node ids")
+    idset = set(ids)
+    for n in nodes:
+        if not isinstance(n, dict):
+            errs.append("topology node is not an object")
+            continue
+        if not n.get("type"):
+            errs.append(f"node {n.get('id', '?')} missing type")
+    edge_keys = set()
+    for e in edges:
+        if not isinstance(e, dict):
+            errs.append("topology edge is not an object")
+            continue
+        a, b, sig = str(e.get("from", "")), str(e.get("to", "")), str(e.get("on", ""))
+        if a not in idset:
+            errs.append(f"edge from unknown node: {a}")
+        if b not in idset:
+            errs.append(f"edge to unknown node: {b}")
+        key = (a, sig)
+        if key in edge_keys:
+            errs.append(f"duplicate edge for {a} on {sig}")
+        edge_keys.add(key)
+    start = str(topo.get("cycle_start", ""))
+    if start and start not in idset:
+        errs.append(f"cycle_start unknown: {start}")
     return errs
 
 

@@ -360,7 +360,7 @@ def _status() -> dict:
         "model": {
             "transport": model.get("transport", ""),
             "label": (model.get(model.get("transport", ""), {}) or {}).get("label", model.get("transport", "")) if isinstance(model.get(model.get("transport", ""), {}), dict) else model.get("transport", ""),
-            "known_transports": [k for k in ("openai", "xai_responses", "opencode", "grok_build", "file_proxy", "browser_ai") if k in model or k in ("file_proxy", "browser_ai")],
+            "known_transports": [k for k in ("openai", "xai_responses", "grok_build_api", "opencode", "grok_build", "file_proxy", "browser_ai") if k in model or k in ("file_proxy", "browser_ai")],
         },
         "files": {
             "state": state_stat,
@@ -437,7 +437,8 @@ def _provider_stats(provider: str) -> dict:
         except Exception as e:
             return {"ok": False, "error": f"LM Studio / openai host unreachable at {url}: {e}", "host": host}
     elif provider in ("xai_responses", "grok_build_api"):
-        cfg = model.get("xai_responses") if isinstance(model.get("xai_responses"), dict) else {}
+        key_name = "grok_build_api" if provider == "grok_build_api" else "xai_responses"
+        cfg = model.get(key_name) if isinstance(model.get(key_name), dict) else {}
         env_name = str(cfg.get("api_key_env") or "XAI_API_KEY")
         key = os.environ.get(env_name, "")
         return {
@@ -445,6 +446,7 @@ def _provider_stats(provider: str) -> dict:
             "api_key_env": env_name,
             "key_present": bool(key),
             "host": cfg.get("host", "https://api.x.ai"),
+            "endpoint_path": cfg.get("endpoint_path", "/v1/responses"),
             "model": cfg.get("model", ""),
             "error": None if key else f"env {env_name} is not set",
         }
@@ -494,7 +496,7 @@ def _brain_test(transport: str) -> dict:
     model.pop("brain_test_timeout_s", None)
     model["max_brain_calls"] = int(model.get("rod_brain_calls") or ROD_BRAIN_CALLS)
     if transport == "browser_ai":
-        return {"ok": False, "transport": transport, "error": "browser_ai is not implemented"}
+        return {"ok": False, "transport": transport, "error": "browser_ai brain node is a fail-hard stub"}
     started = time.time()
     raw_before = brain_mod.read_raw_log_tail(_active_raw_log(model))
     before_seq = max((int(r.get("seq") or 0) for r in raw_before), default=0)
@@ -578,7 +580,7 @@ main{display:grid;grid-template-columns:1.05fr .95fr;gap:12px;padding:12px}.pane
 <section class="panel"><h2>History + outcome</h2><div id="history"></div></section>
 <section class="panel"><h2>Reasoning chain</h2><div id="reasoning"></div></section>
 <section class="panel"><h2>Files / purpose</h2><div id="files"></div></section>
-<section class="panel full"><h2>Brain provider + parameters</h2><div class="row mut">This edits wiring.json. The organism notices wiring mtime and rebinds its brain on the next loop. OpenCode defaults to prompt_mode=file to avoid Windows command-length and PATH shim failures.</div><div style="margin:8px 0"><select id="brainSelect" onchange="renderBrainControls()"></select> <button onclick="saveBrain()">Save brain</button> <button class="alt" onclick="probeCurrent()">Probe selected</button> <button class="alt" onclick="testRod()">Test ROD (2-call)</button> <span id="saveStatus" class="mut"></span></div><div id="brainControls" class="grid"></div><pre id="probeOut" class="row mut"></pre></section>
+<section class="panel full"><h2>Brain node + parameters</h2><div class="row mut">This edits wiring.json. The organism notices wiring mtime and rebinds its brain node on the next loop. Brain transports live in seed_brains/live_brains; OpenCode defaults to prompt_mode=file to avoid Windows command-length and PATH shim failures.</div><div style="margin:8px 0"><select id="brainSelect" onchange="renderBrainControls()"></select> <button onclick="saveBrain()">Save brain</button> <button class="alt" onclick="probeCurrent()">Probe selected</button> <button class="alt" onclick="testRod()">Test ROD (2-call)</button> <span id="saveStatus" class="mut"></span></div><div id="brainControls" class="grid"></div><pre id="probeOut" class="row mut"></pre></section>
 <section class="panel"><h2>File proxy handoff</h2><div id="proxyMeta" class="row mut">–</div><textarea id="prompt" readonly></textarea><textarea id="answer" placeholder="human/other brain response"></textarea><button onclick="respond()">Write response.json</button></section>
 <section class="panel"><h2>Goal</h2><textarea id="goalbox" placeholder="writes goal.json for next run"></textarea><button onclick="setGoal()">Set goal</button><button class="alt" onclick="setGoal('')">Clear goal</button></section>
 <section class="panel full usage"><h2>Usage ledger</h2><div id="usageMeta" class="row mut">–</div><div id="usage"></div></section>
@@ -591,7 +593,7 @@ main{display:grid;grid-template-columns:1.05fr .95fr;gap:12px;padding:12px}.pane
 </main>
 <script>
 const $=id=>document.getElementById(id); let wiring=null, status=null, paused=false, inflight=null;
-const transports=['openai','xai_responses','opencode','grok_build','file_proxy','browser_ai'];
+const transports=['openai','xai_responses','grok_build_api','opencode','grok_build','file_proxy','browser_ai'];
 function esc(s){return String(s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
 function rows(el,items,fmt){el.innerHTML=(items||[]).map(fmt).join('')||'<div class="row mut">–</div>';}
 function fmt(n){return Number(n||0).toLocaleString(undefined,{maximumFractionDigits:3})}
