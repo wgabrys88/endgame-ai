@@ -11,6 +11,10 @@ goal.json
 *.tmp
 *.log
 
+# Test/debug files
+test_*.py
+BOOTSTRAP.md
+
 # OS/editor junk
 .DS_Store
 Thumbs.db
