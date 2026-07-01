@@ -594,9 +594,25 @@ class Desktop:
         self.config.update(kwargs)
     
     # =============================================================================
-    # Desktop action methods
+    # Observation filtering and formatting
     # =============================================================================
     
+    # Interactive control types that are actionable
+    INTERACTIVE_CONTROL_TYPES = {
+        50000,  # Button
+        50004,  # Edit
+        50002,  # ComboBox
+        50009,  # ListItem
+        50011,  # TreeItem
+        50018,  # TabItem
+        50013,  # MenuItem
+        50001,  # CheckBox
+        50017,  # RadioButton
+        50014,  # Slider
+        50021,  # Spinner
+        50016,  # Hyperlink
+    }
+
     def click(self, x: int, y: int, hwnd: int = 0) -> dict[str, Any]:
         """Click at coordinates. If hwnd provided, click in that window."""
         user32 = ctypes.windll.user32
