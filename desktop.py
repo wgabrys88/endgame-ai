@@ -187,3 +187,88 @@ class IUIAutomation(IUnknown):
         COMMETHOD([], HRESULT, "ContentViewWalker",
                   (['out', 'retval'], ctypes.POINTER(ctypes.POINTER(IUIAutomationTreeWalker)), 'retVal')),
     ]
+
+
+# =============================================================================
+# Data classes for observation
+# =============================================================================
+
+
+@dataclass
+class Rect:
+    """Bounding rectangle."""
+    left: int = 0
+    top: int = 0
+    right: int = 0
+    bottom: int = 0
+    
+    @property
+    def width(self) -> int:
+        return self.right - self.left
+    
+    @property
+    def height(self) -> int:
+        return self.bottom - self.top
+    
+    def to_dict(self) -> dict[str, int]:
+        return {"left": self.left, "top": self.top, "right": self.right, "bottom": self.bottom}
+
+
+@dataclass
+class Element:
+    """UIA element with key properties for decision making."""
+    name: str = ""
+    control_type: str = ""
+    control_type_id: int = 0
+    automation_id: str = ""
+    class_name: str = ""
+    process_id: int = 0
+    rect: Rect = field(default_factory=Rect)
+    is_enabled: bool = True
+    is_offscreen: bool = False
+    has_focus: bool = False
+    framework_id: str = ""
+    runtime_id: list[int] = field(default_factory=list)
+    window_handle: int = 0
+    children: list["Element"] = field(default_factory=list)
+    
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "control_type": self.control_type,
+            "control_type_id": self.control_type_id,
+            "automation_id": self.automation_id,
+            "class_name": self.class_name,
+            "process_id": self.process_id,
+            "rect": self.rect.to_dict(),
+            "is_enabled": self.is_enabled,
+            "is_offscreen": self.is_offscreen,
+            "has_focus": self.has_focus,
+            "framework_id": self.framework_id,
+            "runtime_id": self.runtime_id,
+            "window_handle": self.window_handle,
+            "children": [c.to_dict() for c in self.children],
+        }
+
+
+@dataclass
+class Observation:
+    """Full desktop observation snapshot."""
+    timestamp: float = field(default_factory=time.time)
+    screen_width: int = 0
+    screen_height: int = 0
+    focused_element: Element | None = None
+    root_elements: list[Element] = field(default_factory=list)
+    active_window: Element | None = None
+    focused_title: str = ""
+    
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "timestamp": self.timestamp,
+            "screen_width": self.screen_width,
+            "screen_height": self.screen_height,
+            "focused_element": self.focused_element.to_dict() if self.focused_element else None,
+            "root_elements": [e.to_dict() for e in self.root_elements],
+            "active_window": self.active_window.to_dict() if self.active_window else None,
+            "focused_title": self.focused_title,
+        }
