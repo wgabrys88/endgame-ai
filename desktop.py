@@ -272,3 +272,88 @@ class Observation:
             "active_window": self.active_window.to_dict() if self.active_window else None,
             "focused_title": self.focused_title,
         }
+
+
+# =============================================================================
+# Control type name mapping
+# =============================================================================
+
+
+CONTROL_TYPE_NAMES: dict[int, str] = {
+    UIA_WindowControlTypeId: "Window",
+    UIA_PaneControlTypeId: "Pane",
+    UIA_ButtonControlTypeId: "Button",
+    UIA_TextControlTypeId: "Text",
+    UIA_EditControlTypeId: "Edit",
+    UIA_ListControlTypeId: "List",
+    UIA_ListItemControlTypeId: "ListItem",
+    UIA_TreeControlTypeId: "Tree",
+    UIA_TreeItemControlTypeId: "TreeItem",
+    UIA_TabControlTypeId: "Tab",
+    UIA_TabItemControlTypeId: "TabItem",
+    UIA_MenuControlTypeId: "Menu",
+    UIA_MenuItemControlTypeId: "MenuItem",
+    UIA_ToolBarControlTypeId: "ToolBar",
+    UIA_StatusBarControlTypeId: "StatusBar",
+    UIA_ScrollBarControlTypeId: "ScrollBar",
+    UIA_SliderControlTypeId: "Slider",
+    UIA_ProgressBarControlTypeId: "ProgressBar",
+    UIA_ImageControlTypeId: "Image",
+    UIA_HyperlinkControlTypeId: "Hyperlink",
+    UIA_CheckBoxControlTypeId: "CheckBox",
+    UIA_RadioButtonControlTypeId: "RadioButton",
+    UIA_ComboBoxControlTypeId: "ComboBox",
+    UIA_SpinnerControlTypeId: "Spinner",
+    UIA_ToolTipControlTypeId: "ToolTip",
+    UIA_GroupControlTypeId: "Group",
+    UIA_SeparatorControlTypeId: "Separator",
+    UIA_ThumbControlTypeId: "Thumb",
+}
+
+
+def control_type_name(control_type_id: int) -> str:
+    return CONTROL_TYPE_NAMES.get(control_type_id, f"Unknown({control_type_id})")
+
+
+# =============================================================================
+# Variant helpers
+# =============================================================================
+
+
+def variant_to_str(variant: VARIANT) -> str:
+    if variant.vt == VT_BSTR:
+        return variant.value or ""
+    if variant.vt == VT_I4:
+        return str(variant.value)
+    if variant.vt == VT_UI4:
+        return str(variant.value)
+    if variant.vt == VT_EMPTY:
+        return ""
+    return str(variant.value) if variant.value is not None else ""
+
+
+def variant_to_int(variant: VARIANT) -> int:
+    if variant.vt in (VT_I4, VT_UI4):
+        return int(variant.value or 0)
+    return 0
+
+
+def variant_to_bool(variant: VARIANT) -> bool:
+    if variant.vt == VT_I4:
+        return bool(variant.value)
+    return False
+
+
+def variant_to_runtime_id(variant: VARIANT) -> list[int]:
+    if variant.vt == (VT_ARRAY | VT_I4):
+        try:
+            arr = safearray_as_ndarray(variant)
+            return arr.tolist()
+        except Exception:
+            pass
+    return []
+
+
+# =============================================================================
+# Desktop class - main observation interface
+# =============================================================================
