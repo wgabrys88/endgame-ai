@@ -165,6 +165,12 @@ def run(goal: str | None, *, reset: bool = False, max_ticks: int | None = None, 
             ctx = {"wiring": wiring, "state": dict(state), "goal": goal or "", "node": current}
             signal_name, patch = nodes.call_node(current, ctx)
             state.update(patch)
+            # Handle halt signal for clean exit
+            if signal_name == "halt":
+                state["_phase"] = "halted"
+                write_state(wiring, state)
+                runtime_event(wiring, "halted", node=current, reason=state.get("error_handled", {}))
+                return state
             nxt = next_node_for(wiring, current, signal_name)
             state["last_signal"] = signal_name
             state["last_node"] = current
@@ -180,11 +186,29 @@ def run(goal: str | None, *, reset: bool = False, max_ticks: int | None = None, 
         runtime_event(wiring, "interrupted", node=current)
         return state
     except Exception as exc:
+        # Route to error node via topology instead of crashing
         state["_phase"] = "error"
         state["last_error"] = f"{type(exc).__name__}: {exc}"
         write_state(wiring, state)
         runtime_event(wiring, "error", node=current, error=state["last_error"])
-        raise
+        # Emit error signal to topology
+        try:
+            nxt = next_node_for(wiring, current, "error")
+            state["last_signal"] = "error"
+            state["last_node"] = current
+            state["next_node"] = nxt
+            state["tick"] += 1
+            state["_phase"] = "node_complete"
+            write_state(wiring, state)
+            runtime_event(wiring, "node_complete", node=current, signal="error", next_node=nxt, tick=state["tick"])
+            current = nxt
+        except RuntimeError as route_exc:
+            # If error routing fails (no error edge), halt cleanly
+            state["_phase"] = "halted"
+            state["last_error"] = f"Error routing failed: {route_exc}"
+            write_state(wiring, state)
+            runtime_event(wiring, "halted", node=current, error=state["last_error"])
+            return state
 
 
 def main(argv: list[str] | None = None) -> int:

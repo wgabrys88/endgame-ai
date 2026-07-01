@@ -58,6 +58,178 @@ class BaseTransport(ABC):
         return {"content": content, "reasoning": reasoning or ""}
 
 
+class ReasoningStrategy(Protocol):
+    """Protocol for reasoning strategies. Each strategy executes the ROD pattern."""
+    
+    def execute(self, system_prompt: str, payload: dict[str, Any], wiring: dict[str, Any], transport: str, cfg: dict[str, Any]) -> dict[str, Any]:
+        """Execute the reasoning pattern and return the committed JSON record."""
+        ...
+
+
+class TwoPassStrategy:
+    """Two-pass ROD: Call 1 gets reasoning, Call 2 injects reasoning and extracts JSON."""
+    
+    def execute(self, system_prompt: str, payload: dict[str, Any], wiring: dict[str, Any], transport: str, cfg: dict[str, Any]) -> dict[str, Any]:
+        user_text = json.dumps(payload, ensure_ascii=False, default=str)
+        first = call([
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_text},
+        ], wiring, rod_feedback=False)
+        reasoning = reasoning_from(first["content"], first.get("reasoning", ""))
+        
+        # Get injection template from config
+        injection_template = cfg.get("reasoning", {}).get("injection_template", "ROD_REASONING_CONTENT:\n{reasoning}")
+        second_user = user_text + "\n\n" + injection_template.format(reasoning=reasoning)
+        
+        second = call([
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": second_user},
+        ], wiring, rod_feedback=True)
+        
+        record = extract_json_object(second["content"])
+        if record is None:
+            raise RuntimeError(f"brain did not commit a valid JSON object: {second['content'][:800]}")
+        if not isinstance(record.get("record_type"), str):
+            raise RuntimeError(f"brain record missing string record_type: {record}")
+        if "data" not in record or not isinstance(record["data"], dict):
+            raise RuntimeError(f"brain record missing object data: {record}")
+        record.setdefault("reasoning", reasoning)
+        return record
+
+
+class SinglePassStrategy:
+    """Single-pass: One call with system + user, extract JSON directly."""
+    
+    def execute(self, system_prompt: str, payload: dict[str, Any], wiring: dict[str, Any], transport: str, cfg: dict[str, Any]) -> dict[str, Any]:
+        user_text = json.dumps(payload, ensure_ascii=False, default=str)
+        result = call([
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_text},
+        ], wiring, rod_feedback=False)
+        
+        record = extract_json_object(result["content"])
+        if record is None:
+            raise RuntimeError(f"brain did not commit a valid JSON object: {result['content'][:800]}")
+        if not isinstance(record.get("record_type"), str):
+            raise RuntimeError(f"brain record missing string record_type: {record}")
+        if "data" not in record or not isinstance(record["data"], dict):
+            raise RuntimeError(f"brain record missing object data: {record}")
+        # No separate reasoning in single-pass
+        record.setdefault("reasoning", reasoning_from(result["content"], result.get("reasoning", "")))
+        return record
+
+
+class NativeReasoningStrategy:
+    """Native reasoning: Model returns reasoning in a dedicated field (e.g., OpenAI reasoning_content)."""
+    
+    def execute(self, system_prompt: str, payload: dict[str, Any], wiring: dict[str, Any], transport: str, cfg: dict[str, Any]) -> dict[str, Any]:
+        user_text = json.dumps(payload, ensure_ascii=False, default=str)
+        result = call([
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_text},
+        ], wiring, rod_feedback=False)
+        
+        # Extract reasoning from transport's native field
+        reasoning = result.get("reasoning", "")
+        if not reasoning:
+            reasoning = reasoning_from(result["content"], "")
+        
+        record = extract_json_object(result["content"])
+        if record is None:
+            raise RuntimeError(f"brain did not commit a valid JSON object: {result['content'][:800]}")
+        if not isinstance(record.get("record_type"), str):
+            raise RuntimeError(f"brain record missing string record_type: {record}")
+        if "data" not in record or not isinstance(record["data"], dict):
+            raise RuntimeError(f"brain record missing object data: {record}")
+        record.setdefault("reasoning", reasoning)
+        return record
+
+
+class CustomStrategy:
+    """Custom reasoning: Configurable injection template and extractor."""
+    
+    def execute(self, system_prompt: str, payload: dict[str, Any], wiring: dict[str, Any], transport: str, cfg: dict[str, Any]) -> dict[str, Any]:
+        reasoning_config = cfg.get("reasoning", {})
+        pattern = reasoning_config.get("pattern", "two_pass")
+        injection_template = reasoning_config.get("injection_template", "ROD_REASONING_CONTENT:\n{reasoning}")
+        extractor = reasoning_config.get("extractor", "think_tags")
+        
+        user_text = json.dumps(payload, ensure_ascii=False, default=str)
+        
+        if pattern == "single_pass":
+            result = call([
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_text},
+            ], wiring, rod_feedback=False)
+            reasoning = self._extract_reasoning(result["content"], result.get("reasoning", ""), extractor)
+            
+        elif pattern == "two_pass":
+            first = call([
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_text},
+            ], wiring, rod_feedback=False)
+            reasoning = self._extract_reasoning(first["content"], first.get("reasoning", ""), extractor)
+            
+            second_user = user_text + "\n\n" + injection_template.format(reasoning=reasoning)
+            result = call([
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": second_user},
+            ], wiring, rod_feedback=True)
+            
+        elif pattern == "native":
+            result = call([
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_text},
+            ], wiring, rod_feedback=False)
+            reasoning = result.get("reasoning", "")
+            if not reasoning:
+                reasoning = self._extract_reasoning(result["content"], "", extractor)
+        else:
+            raise RuntimeError(f"unknown reasoning pattern: {pattern}")
+        
+        record = extract_json_object(result["content"])
+        if record is None:
+            raise RuntimeError(f"brain did not commit a valid JSON object: {result['content'][:800]}")
+        if not isinstance(record.get("record_type"), str):
+            raise RuntimeError(f"brain record missing string record_type: {record}")
+        if "data" not in record or not isinstance(record["data"], dict):
+            raise RuntimeError(f"brain record missing object data: {record}")
+        record.setdefault("reasoning", reasoning)
+        return record
+    
+    def _extract_reasoning(self, content: str, reasoning: str, extractor: str) -> str:
+        if reasoning and reasoning.strip():
+            return reasoning.strip()
+        if extractor == "think_tags":
+            m = re.search(r"�\u0085(.*?)�\u0085", content or "", flags=re.S)
+            if m:
+                return m.group(1).strip()
+        elif extractor == "reasoning_field":
+            # Already handled by transport returning reasoning field
+            pass
+        return (content or "").strip()
+
+
+def _get_reasoning_strategy(cfg: dict[str, Any]) -> ReasoningStrategy:
+    """Factory to get the reasoning strategy based on transport config."""
+    reasoning_cfg = cfg.get("reasoning", {})
+    if not reasoning_cfg.get("enabled", True):
+        return SinglePassStrategy()  # Disabled = single pass
+    
+    pattern = reasoning_cfg.get("pattern", "two_pass")
+    if pattern == "two_pass":
+        return TwoPassStrategy()
+    elif pattern == "single_pass":
+        return SinglePassStrategy()
+    elif pattern == "native":
+        return NativeReasoningStrategy()
+    elif pattern == "custom":
+        return CustomStrategy()
+    else:
+        # Default to two_pass for backward compatibility
+        return TwoPassStrategy()
+
+
 def root_path(value: str | None, default: str = "") -> pathlib.Path:
     raw = os.path.expandvars(os.path.expanduser(str(value or default)))
     p = pathlib.Path(raw)
@@ -299,26 +471,17 @@ def extract_json_object(text: str) -> dict[str, Any] | None:
 
 
 def think(system_prompt: str, payload: dict[str, Any], wiring: dict[str, Any]) -> dict[str, Any]:
-    """Two-call ROD brain pattern returning the committed JSON record."""
-    user_text = json.dumps(payload, ensure_ascii=False, default=str)
-    first = call([
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_text},
-    ], wiring, rod_feedback=False)
-    reasoning = reasoning_from(first["content"], first.get("reasoning", ""))
-    second = call([
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_text + "\n\nROD_REASONING_CONTENT:\n" + reasoning},
-    ], wiring, rod_feedback=True)
-    record = extract_json_object(second["content"])
-    if record is None:
-        raise RuntimeError(f"brain did not commit a valid JSON object: {second['content'][:800]}")
-    if not isinstance(record.get("record_type"), str):
-        raise RuntimeError(f"brain record missing string record_type: {record}")
-    if "data" not in record or not isinstance(record["data"], dict):
-        raise RuntimeError(f"brain record missing object data: {record}")
-    record.setdefault("reasoning", reasoning)
-    return record
+    """Pluggable ROD brain pattern returning the committed JSON record."""
+    _, cfg = _get_transport_config(wiring)
+    
+    # Check global reasoning toggle
+    global_reasoning = wiring.get("model", {}).get("global", {}).get("reasoning_enabled", True)
+    if not global_reasoning:
+        # Fallback to single pass without reasoning
+        return SinglePassStrategy().execute(system_prompt, payload, wiring, cfg["transport"], cfg)
+    
+    strategy = _get_reasoning_strategy(cfg)
+    return strategy.execute(system_prompt, payload, wiring, cfg["transport"], cfg)
 
 
 def read_raw_log_tail(path: pathlib.Path | None = None, *, max_lines: int = 200, max_bytes: int = 600_000) -> list[dict[str, Any]]:

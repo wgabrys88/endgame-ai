@@ -7,37 +7,66 @@
         "base_url": "http://localhost:1234",
         "path": "/v1/chat/completions",
         "model": "nvidia-nemotron-3-nano-4b",
-        "temperature": 0.2
+        "temperature": 0.2,
+        "reasoning": {
+          "enabled": true,
+          "pattern": "two_pass",
+          "injection_template": "ROD_REASONING_CONTENT:\n{reasoning}",
+          "extractor": "think_tags"
+        }
       },
       "opencode": {
         "executable": "%USERPROFILE%/AppData/Local/opencode/opencode-cli.exe",
         "model": "opencode-go/deepseek-v4-flash",
-        "extra_args": []
+        "extra_args": [],
+        "reasoning": {
+          "enabled": false
+        }
       },
       "xai": {
         "mode": "api",
         "api_key_env": "XAI_API_KEY",
         "model": "grok-build-0.1",
         "url": "https://api.x.ai/v1/responses",
-        "temperature": 0.2
+        "temperature": 0.2,
+        "reasoning": {
+          "enabled": true,
+          "pattern": "native",
+          "extractor": "reasoning_field"
+        }
       },
       "grok_cli": {
         "executable": "grok",
-        "extra_args": []
+        "extra_args": [],
+        "reasoning": {
+          "enabled": true,
+          "pattern": "native",
+          "extractor": "reasoning_field"
+        }
       },
       "file_proxy": {
         "request_path": "comms/request.json",
         "response_path": "comms/response.json",
-        "poll_interval": 0.25
+        "poll_interval": 0.25,
+        "reasoning": {
+          "enabled": true,
+          "pattern": "two_pass",
+          "injection_template": "ROD_REASONING_CONTENT:\n{reasoning}",
+          "extractor": "think_tags"
+        }
       },
       "browser_ai": {
-        "documented_stub": true
+        "documented_stub": true,
+        "reasoning": {
+          "enabled": false
+        }
       }
     },
     "global": {
       "timeout": 180,
       "max_brain_calls": null,
-      "raw_log": true
+      "raw_log": true,
+      "reasoning_enabled": true
     }
   },
   "paths": {
@@ -63,37 +92,50 @@
       "act",
       "verify",
       "reflect",
-      "self_modify"
+      "self_modify",
+      "error"
     ],
     "edges": {
       "planner": {
         "observe": "observe",
-        "reflect": "reflect"
+        "reflect": "reflect",
+        "error": "error"
       },
       "observe": {
         "decide": "decide",
-        "reflect": "reflect"
+        "reflect": "reflect",
+        "error": "error"
       },
       "decide": {
         "act": "act",
         "reflect": "reflect",
-        "self_modify": "self_modify"
+        "self_modify": "self_modify",
+        "error": "error"
       },
       "act": {
         "verify": "verify",
-        "reflect": "reflect"
+        "reflect": "reflect",
+        "error": "error"
       },
       "verify": {
         "planner": "planner",
-        "reflect": "reflect"
+        "reflect": "reflect",
+        "error": "error"
       },
       "reflect": {
         "planner": "planner",
-        "self_modify": "self_modify"
+        "self_modify": "self_modify",
+        "error": "error"
       },
       "self_modify": {
         "planner": "planner",
-        "reflect": "reflect"
+        "reflect": "reflect",
+        "error": "error"
+      },
+      "error": {
+        "planner": "planner",
+        "reflect": "reflect",
+        "halt": "halt"
       }
     }
   },
