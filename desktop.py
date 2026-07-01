@@ -346,6 +346,125 @@ class Desktop:
         
         return element
     
+    # =============================================================================
+    # Hover probing / mouse scanning
+    # =============================================================================
+    
+    def _probe_point(self, x: int, y: int) -> uia.IUIAutomationElement | None:
+        """Get element at screen coordinates via ElementFromPoint."""
+        try:
+            # ElementFromPoint takes a POINT struct (x, y as longlong)
+            pt = (y << 32) | (x & 0xFFFFFFFF)
+            return self.automation.ElementFromPoint(pt)
+        except Exception:
+            return None
+    
+    def hover_scan(self, config: dict[str, Any] | None = None) -> list[Element]:
+        """Perform hover scan across screen to discover interactive elements.
+        
+        Args:
+            config: {
+                "step_px": 40,           # grid step in pixels
+                "delay_ms": 1,           # delay between probes
+                "target_window_only": True,  # only scan foreground window
+                "min_size_px": 10,       # minimum element size
+                "max_elements": 100,     # max elements to return
+            }
+        """
+        if config is None:
+            config = {}
+        
+        step_px = config.get("step_px", self.config.get("hover_scan_step_px", 40))
+        delay_ms = config.get("delay_ms", self.config.get("hover_scan_delay_ms", 1))
+        target_window_only = config.get("target_window_only", self.config.get("hover_scan_target_window_only", True))
+        min_size = config.get("min_size_px", self.config.get("hover_scan_min_size_px", 10))
+        max_elements = config.get("max_elements", self.config.get("hover_scan_max_elements", 100))
+        
+        user32 = ctypes.windll.user32
+        screen_width = user32.GetSystemMetrics(0)
+        screen_height = user32.GetSystemMetrics(1)
+        
+        # Get target window rect if specified
+        target_rect = None
+        if target_window_only:
+            active_uia = self._get_active_window()
+            if active_uia:
+                rect_var = self._get_property(active_uia, UIA_BoundingRectanglePropertyId)
+                target_rect = variant_to_rect(rect_var)
+        
+        elements_found: dict[str, Element] = {}  # dedup by runtime_id
+        scanned = 0
+        
+        if target_rect and target_rect.width > 0 and target_rect.height > 0:
+            x_range = range(target_rect.left, target_rect.right, step_px)
+            y_range = range(target_rect.top, target_rect.bottom, step_px)
+        else:
+            x_range = range(0, screen_width, step_px)
+            y_range = range(0, screen_height, step_px)
+        
+        for y in y_range:
+            for x in x_range:
+                if len(elements_found) >= max_elements:
+                    break
+                
+                uia_elem = self._probe_point(x, y)
+                if not uia_elem:
+                    continue
+                
+                # Get rect to filter by size
+                rect_var = self._get_property(uia_elem, UIA_BoundingRectanglePropertyId)
+                rect = variant_to_rect(rect_var)
+                
+                if rect.width < min_size or rect.height < min_size:
+                    continue
+                
+                # Convert to our Element
+                elem = self._element_to_element(uia_elem, max_depth=1)
+                
+                # Dedup by runtime_id
+                rid_key = ",".join(map(str, elem.runtime_id)) if elem.runtime_id else f"{elem.window_handle}:{elem.rect.left}:{elem.rect.top}"
+                if rid_key not in elements_found:
+                    elements_found[rid_key] = elem
+                
+                scanned += 1
+                if delay_ms > 0:
+                    time.sleep(delay_ms / 1000.0)
+            if len(elements_found) >= max_elements:
+                break
+        
+        return list(elements_found.values())
+    
+    def dense_probe(self, region: Rect, config: dict[str, Any] | None = None) -> list[Element]:
+        """Dense probe a specific region (smaller step)."""
+        if config is None:
+            config = {}
+        config = dict(config)
+        config["step_px"] = config.get("step_px", 24)
+        config["target_window_only"] = False
+        return self.hover_scan(config)
+    
+    def scroll_enrich(self, config: dict[str, Any] | None = None) -> list[Element]:
+        """Scroll and re-probe to discover more elements."""
+        if config is None:
+            config = {}
+        
+        passes = config.get("passes", [-3, -2, 2, 3])  # scroll amounts
+        all_elements: dict[str, Element] = {}
+        
+        for amount in passes:
+            elements = self.hover_scan(config)
+            for elem in elements:
+                rid_key = ",".join(map(str, elem.runtime_id)) if elem.runtime_id else f"{elem.window_handle}:{elem.rect.left}:{elem.rect.top}"
+                if rid_key not in all_elements:
+                    all_elements[rid_key] = elem
+            
+            # Scroll
+            user32 = ctypes.windll.user32
+            user32.mouse_event(0x0800, 0, 0, amount * 120, 0)
+            time.sleep(0.1)
+        
+        return list(all_elements.values())
+    
     def _find_focused_element(self, root: uia.IUIAutomationElement) -> uia.IUIAutomationElement | None:
         """Find the element with keyboard focus."""
         try:
