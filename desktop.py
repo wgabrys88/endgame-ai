@@ -102,3 +102,88 @@ IID_IUIAutomationTreeWalker = GUID("{4042c624-389c-4a39-9c8d-9f1534729bc1}")
 IID_IUIAutomationCacheRequest = GUID("{b32a92b5-bc25-4078-9c08-d7ee95c48e03}")
 
 CLSID_CUIAutomation = GUID("{ff48dba4-60ef-4201-aa87-54103eef594e}")
+
+
+class IUIAutomationElement(IUnknown):
+    _iid_ = IID_IUIAutomationElement
+    _methods_ = [
+        COMMETHOD([], HRESULT, "GetCurrentPropertyValue",
+                  (['in'], ctypes.c_int, 'propertyId'),
+                  (['out', 'retval'], ctypes.POINTER(VARIANT), 'retVal')),
+        COMMETHOD([], HRESULT, "GetCachedPropertyValue",
+                  (['in'], ctypes.c_int, 'propertyId'),
+                  (['out', 'retval'], ctypes.POINTER(VARIANT), 'retVal')),
+        COMMETHOD([], HRESULT, "GetCurrentPatternAs",
+                  (['in'], GUID, 'patternId'),
+                  (['in'], GUIDispatch'], ctypes.POINTER(ctypes.c_void_p), 'retVal')),
+        COMMETHOD([], HRESULT, "FindFirst",
+                  (['in'], ctypes.c_int, 'scope'),
+                  (['in'], ctypes.POINTER(IUnknown), 'condition'),
+                  (['out', 'retval'], ctypes.POINTER(ctypes.POINTER(IUIAutomationElement)), 'retVal')),
+        COMMETHOD([], HRESULT, "FindAll",
+                  (['in'], ctypes.c_int, 'scope'),
+                  (['in'], ctypes.POINTER(IUnknown), 'condition'),
+                  (['out', 'retval'], ctypes.POINTER(ctypes.c_void_p), 'retVal')),
+    ]
+
+
+class IUIAutomationCondition(IUnknown):
+    _iid_ = IID_IUIAutomationCondition
+    _methods_ = []
+
+
+class IUIAutomationTreeWalker(IUnknown):
+    _iid_ = IID_IUIAutomationTreeWalker
+    _methods_ = [
+        COMMETHOD([], HRESULT, "GetParentElement",
+                  (['in'], ctypes.POINTER(IUIAutomationElement), 'element'),
+                  (['out', 'retval'], ctypes.POINTER(ctypes.POINTER(IUIAutomationElement)), 'retVal')),
+        COMMETHOD([], HRESULT, "GetFirstChildElement",
+                  (['in'], ctypes.POINTER(IUIAutomationElement), 'element'),
+                  (['out', 'retval'], ctypes.POINTER(ctypes.POINTER(IUIAutomationElement)), 'retVal')),
+        COMMETHOD([], HRESULT, "GetLastChildElement",
+                  (['in'], ctypes.POINTER(IUIAutomationElement), 'element'),
+                  (['out', 'retval'], ctypes.POINTER(ctypes.POINTER(IUIAutomationElement)), 'retVal')),
+        COMMETHOD([], HRESULT, "GetNextSiblingElement",
+                  (['in'], ctypes.POINTER(IUIAutomationElement), 'element'),
+                  (['out', 'retval'], ctypes.POINTER(ctypes.POINTER(IUIAutomationElement)), 'retVal')),
+        COMMETHOD([], HRESULT, "GetPreviousSiblingElement",
+                  (['in'], ctypes.POINTER(IUIAutomationElement), 'element'),
+                  (['out', 'retval'], ctypes.POINTER(ctypes.POINTER(IUIAutomationElement)), 'retVal')),
+    ]
+
+
+class IUIAutomationCacheRequest(IUnknown):
+    _iid_ = IID_IUIAutomationCacheRequest
+    _methods_ = [
+        COMMETHOD([], HRESULT, "AddProperty",
+                  (['in'], ctypes.c_int, 'propertyId')),
+        COMMETHOD([], HRESULT, "AddPattern",
+                  (['in'], ctypes.c_int, 'patternId')),
+    ]
+
+
+class IUIAutomation(IUnknown):
+    _iid_ = IID_IUIAutomation
+    _methods_ = [
+        COMMETHOD([], HRESULT, "GetRootElement",
+                  (['out', 'retval'], ctypes.POINTER(ctypes.POINTER(IUIAutomationElement)), 'retVal')),
+        COMMETHOD([], HRESULT, "ElementFromHandle",
+                  (['in'], wintypes.HWND, 'hwnd'),
+                  (['out', 'retval'], ctypes.POINTER(ctypes.POINTER(IUIAutomationElement)), 'retVal')),
+        COMMETHOD([], HRESULT, "ElementFromPoint",
+                  (['in'], ctypes.c_longlong, 'pt'),
+                  (['out', 'retval'], ctypes.POINTER(ctypes.POINTER(IUIAutomationElement)), 'retVal')),
+        COMMETHOD([], HRESULT, "CreateCacheRequest",
+                  (['out', 'retval'], ctypes.POINTER(ctypes.POINTER(IUIAutomationCacheRequest)), 'retVal')),
+        COMMETHOD([], HRESULT, "CreateTrueCondition",
+                  (['out', 'retval'], ctypes.POINTER(ctypes.POINTER(IUIAutomationCondition)), 'retVal')),
+        COMMETHOD([], HRESULT, "CreatePropertyCondition",
+                  (['in'], ctypes.c_int, 'propertyId'),
+                  (['in'], VARIANT, 'value'),
+                  (['out', 'retval'], ctypes.POINTER(ctypes.POINTER(IUIAutomationCondition)), 'retVal')),
+        COMMETHOD([], HRESULT, "ControlViewWalker",
+                  (['out', 'retval'], ctypes.POINTER(ctypes.POINTER(IUIAutomationTreeWalker)), 'retVal')),
+        COMMETHOD([], HRESULT, "ContentViewWalker",
+                  (['out', 'retval'], ctypes.POINTER(ctypes.POINTER(IUIAutomationTreeWalker)), 'retVal')),
+    ]
