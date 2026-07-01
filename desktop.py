@@ -353,8 +353,9 @@ class Desktop:
     def _probe_point(self, x: int, y: int) -> uia.IUIAutomationElement | None:
         """Get element at screen coordinates via ElementFromPoint."""
         try:
-            # ElementFromPoint takes a POINT struct (x, y as longlong)
-            pt = (y << 32) | (x & 0xFFFFFFFF)
+            # ElementFromPoint takes a tagPOINT struct
+            from ctypes import wintypes
+            pt = wintypes.POINT(x, y)
             return self.automation.ElementFromPoint(pt)
         except Exception:
             return None
@@ -557,12 +558,21 @@ class Desktop:
         except Exception:
             pass
         
-        # PRIMARY: Hover scan on foreground window
-        hover_elements = self.hover_scan(hover_config)
+        # PRIMARY: Hover scan - scan whole screen if desktop/taskbar is active, else target window only
+        is_desktop = focused_title in ("Program Manager", "Desktop", "Taskbar", "") or not active_window_uia
+        target_window_only = hover_config.get("target_window_only", True) and not is_desktop
+        
+        hover_config_adjusted = dict(hover_config)
+        hover_config_adjusted["target_window_only"] = target_window_only
+        # Use larger step for full-screen scan to avoid excessive probes
+        if not target_window_only:
+            hover_config_adjusted["step_px"] = hover_config.get("full_screen_step_px", 60)
+        
+        hover_elements = self.hover_scan(hover_config_adjusted)
         
         # SECONDARY: Tree walk for window hierarchy (limited depth)
         tree_elements = []
-        if hover_config.get("target_window_only", True) and active_window_uia:
+        if target_window_only and active_window_uia:
             # Tree walk only the active window
             try:
                 walker = self.automation.ControlViewWalker
@@ -859,8 +869,8 @@ class Desktop:
         user32.keybd_event(vk, 0, 2, 0)
         return {"ok": True, "action": "press_key", "key": key}
     
-    def hotkey(self, keys: str) -> dict[str, Any]:
-        """Press key combination (e.g., 'ctrl+c', 'alt+tab', 'ctrl+shift+esc')."""
+    def hotkey(self, keys) -> dict[str, Any]:
+        """Press key combination (e.g., 'ctrl+c', 'alt+tab', 'win+r' or ['ctrl', 'c'])."""
         key_map = {
             "ctrl": 0x11, "control": 0x11,
             "alt": 0x12,
@@ -871,8 +881,13 @@ class Desktop:
             "c": 0x43, "v": 0x56, "x": 0x58, "z": 0x5A,
             "a": 0x41, "s": 0x53, "f": 0x46, "n": 0x4E,
             "o": 0x4F, "p": 0x50, "w": 0x57,
+            "r": 0x52, "l": 0x4C, "d": 0x44,
         }
-        parts = [k.strip().lower() for k in keys.split("+")]
+        # Accept both string "win+r" and list ["win", "r"]
+        if isinstance(keys, list):
+            parts = [k.strip().lower() for k in keys]
+        else:
+            parts = [k.strip().lower() for k in str(keys).split("+")]
         vks = []
         for k in parts:
             vk = key_map.get(k)
@@ -914,23 +929,37 @@ class Desktop:
             except ValueError:
                 return {"ok": False, "action": "focus_window", "error": "invalid hwnd format"}
         elif target.startswith("W"):
-            # Window token - would need window tracking
-            return {"ok": False, "action": "focus_window", "error": "window tokens not yet implemented"}
+            # Window token - look up in windows from last observation
+            try:
+                snap = self.last_observation_snapshot()
+                if snap:
+                    for w in snap.get("windows", []):
+                        if w.get("token") == target:
+                            hwnd = w.get("hwnd", 0)
+                            break
+            except Exception:
+                pass
+            if not hwnd:
+                return {"ok": False, "action": "focus_window", "error": f"window token not found: {target}"}
         else:
             # Find by title substring
-            def enum_windows(hwnd, _):
+            EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM)
+            found_hwnd = [0]
+            
+            def callback(hwnd, _):
                 if user32.IsWindowVisible(hwnd):
                     length = user32.GetWindowTextLengthW(hwnd)
                     if length > 0:
                         buf = ctypes.create_unicode_buffer(length + 1)
                         user32.GetWindowTextW(hwnd, buf, length + 1)
                         if target.lower() in buf.value.lower():
-                            enum_windows.hwnd = hwnd
+                            found_hwnd[0] = hwnd
                             return False
                 return True
-            enum_windows.hwnd = 0
-            user32.EnumWindows(enum_windows, 0)
-            hwnd = enum_windows.hwnd
+            
+            cb = EnumWindowsProc(callback)
+            user32.EnumWindows(cb, 0)
+            hwnd = found_hwnd[0]
         
         if hwnd:
             user32.SetForegroundWindow(hwnd)
@@ -941,14 +970,21 @@ class Desktop:
         """Open URL in browser."""
         import subprocess
         browser_paths = {
-            "chrome": r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-            "chrome": r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-            "edge": r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-            "firefox": r"C:\Program Files\Mozilla Firefox\firefox.exe",
+            "chrome": [
+                r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+            ],
+            "edge": [r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"],
+            "firefox": [r"C:\Program Files\Mozilla Firefox\firefox.exe"],
         }
-        exe = browser_paths.get(browser.lower())
+        paths = browser_paths.get(browser.lower(), [])
+        exe = None
+        for p in paths:
+            import os
+            if os.path.exists(os.path.expandvars(p)):
+                exe = os.path.expandvars(p)
+                break
         if not exe:
-            # Try via start
             subprocess.Popen(["start", "", url], shell=True)
             return {"ok": True, "action": "open_url", "browser": "default", "url": url}
         subprocess.Popen([exe, url])

@@ -4,14 +4,14 @@
 
 Python is its mechanical body. `wiring.json` is its mutable genome. Nodes and brain transports are hot-swappable modules copied from `seed_*/` → `live_*/` at runtime. The ROD loop (Reason→Observe→Decide with pluggable reasoning feedback) in `brain.think()` is the core innovation enabling small models to self-evolve.
 
-**No fallbacks. Fail-hard always. Self-modification = rewriting `wiring.json` AND writing new node files to `live_nodes/`.**
+**No fallbacks. Fail-hard always. Self-modification = rewriting `wiring.json` AND writing node files to `live_nodes/` AND executing Python via `exec()`.**
 
 ---
 
-## Current Status (2026-07-01, commit 82e6ba6)
+## Current Status (2026-07-02, commit unified-archBRAINZ)
 
 **Branch:** `unified-archBRAINZ` (clean, pushed)
-**Phase:** 5B complete — Execute node working. Phase 5C in progress.
+**Phase:** 5C complete — Full topology operational with LLM-driven verify/reflect/self_modify
 
 ### What Works Today
 
@@ -20,27 +20,17 @@ Python is its mechanical body. `wiring.json` is its mutable genome. Nodes and br
 | **Transport System** | ✅ Verified | xAI (Grok API, native reasoning), OpenAI-compatible (LM Studio, two-pass), OpenCode CLI, file_proxy (human-in-loop) |
 | **ROD Reasoning** | ✅ Verified | `TwoPassStrategy`, `SinglePassStrategy`, `NativeReasoningStrategy`, `CustomStrategy` — configurable per transport |
 | **Hot-swappable Nodes** | ✅ Working | `seed_nodes/` → `live_nodes/` copied at startup, re-read every execution |
-| **BaseNode ABC** | ✅ Done | Brain-calling nodes reduced to ~10 lines each |
+| **BaseNode ABC** | ✅ Done | Brain-calling nodes reduced to ~10-85 lines each |
 | **Error Topology** | ✅ Done | `error` node + edges from all nodes, `halt` signal for clean exit |
-| **Desktop Observation** | ✅ Working | UIA COM via `comtypes.gen.UIAutomationClient` — returns screen, elements, snapshot, focused_title |
-| **Hover Scanning** | ✅ Added | `hover_scan()`, `dense_probe()`, `scroll_enrich()` in `Desktop` class |
+| **Desktop Observation** | ✅ Working | UIA COM via `comtypes.gen.UIAutomationClient` — returns screen, elements (filtered dict), screen_text, windows, snapshot, focused_title |
+| **Hover Scanning** | ✅ Primary | `hover_scan()`, `dense_probe()`, `scroll_enrich()` in `Desktop` class — PRIMARY observation method |
 | **Execute Node** | ✅ Working | Grok writes Python, `exec()` runs it with full desktop namespace (click, type_text, hotkey, scroll, focus_window, open_url, subprocess, ctypes, self-modify helpers) |
 | **Scheduler Node** | ✅ Working | Step index management, plan completion detection |
-| **Topology** | ✅ Updated | planner → scheduler → observe → execute → verify → reflect → self_modify → satisfied / error |
+| **Verify Node** | ✅ Working | LLM evidence-based judgment using screen_text, windows, focused_title, last_action, last_result, last_error |
+| **Reflect Node** | ✅ Working | LLM diagnosis + routing (retry/replan/escalate/give_up) with concrete lesson |
+| **Self-Modify Node** | ✅ Working | Captures full codebase, outputs wiring_patch with wiring_patches, node_writes, node_deletes |
+| **Topology** | ✅ Complete | planner → scheduler → observe → execute → verify → reflect → self_modify → satisfied / error |
 | **Workbench** | ✅ Working | Read-only dashboard at http://127.0.0.1:8800/ with topology graph, runtime log tail, wiring viewer, transport probe, brain test |
-
-### What's Incomplete (Phase 5C)
-
-| Component | Status | Needed |
-|-----------|--------|--------|
-| **Observe Filtering** | ❌ | Current observation returns full UIA tree (bloat). Needs filtering to actionable elements only + hover scan integration |
-| **Verify Node** | ⚠️ Stub | Evidence-based intent judgment using screen, last_action, last_result, last_error |
-| **Reflect Node** | ⚠️ Stub | Concrete diagnosis + specific suggestion, routes to retry/replan/escalate/give_up |
-| **Self-Modify Node** | ⚠️ Stub | Output `wiring_patch` record with wiring_patches, node_writes, node_deletes |
-| **Window Tokens** | ❌ | Stable W1..Wn tokens for visible windows across observations |
-| **Element Classification** | ❌ | Role → action mapping (click/write/scroll) for execute targeting |
-| **Bounded Desktop Tree** | ❌ | Optional UIA tree walk with depth/node limits |
-| **Formatting (SCREEN text)** | ❌ | Human-readable formatted text for LLM context |
 
 ---
 
@@ -51,24 +41,42 @@ Python is its mechanical body. `wiring.json` is its mutable genome. Nodes and br
 | File | Role | Lines |
 |------|------|-------|
 | `brain.py` | Transport protocol, BaseTransport, ReasoningStrategy, `call()`/`think()`, config resolution | 508 |
-| `nodes.py` | BaseNode ABC, `call_node()`, node loading, `build_execute_namespace()`, desktop helpers, wiring patch | ~250 |
+| `nodes.py` | BaseNode ABC, `call_node()`, node loading, `build_execute_namespace()`, desktop helpers, wiring patch | ~315 |
 | `organism.py` | Main loop, topology traversal, error routing, `--max-ticks` kill switch | 230 |
-| `wiring.json` | Genome: transport, topology, prompts, reasoning config, observe config | ~200 |
-| `desktop.py` | UIA COM, Element/Observation, **hover_scan/dense_probe/scroll_enrich**, action methods | ~780 |
+| `wiring.json` | Genome: transport, topology, prompts, reasoning config, observe config | ~180 |
+| `desktop.py` | UIA COM, Element/Observation, **hover_scan/dense_probe/scroll_enrich**, action methods | ~1023 |
 | `seed_brains/*.py` | Transport implementations (xai, openai, opencode, file_proxy, browser_ai) | 5 files |
 | `seed_nodes/*.py` | Node implementations (planner, observe, execute, scheduler, verify, reflect, self_modify, satisfied, error) | 9 files |
+| `workbench.py` + JS | Read-only dashboard server + modular ES6 frontend | ~12 files |
 
 ### Data Flow
 
-```
-Goal → planner → scheduler → observe → execute → verify → reflect → self_modify
-                                             ↓           ↓           ↓
-                                          (retry)    (replan)   (wiring patch + node writes)
-                                             ↓           ↓           ↓
-                                          observe ←───┴───────────┴─── planner (next cycle)
+```mermaid
+graph TD
+    Goal[Goal Input] --> Planner[planner]
+    Planner --> Scheduler[scheduler]
+    Scheduler --> Observe[observe]
+    Observe --> Execute[execute]
+    Execute --> Verify[verify]
+    Verify -->|step_confirmed| Scheduler
+    Verify -->|step_denied| Reflect[reflect]
+    Reflect -->|retry| Observe
+    Reflect -->|replan| Planner
+    Reflect -->|escalate| SelfMod[self_modify]
+    Reflect -->|give_up| Satisfied[satisfied]
+    SelfMod -->|modified| Planner
+    SelfMod -->|modify_failed| Reflect
+    Execute -.->|error| Error[error]
+    Verify -.->|error| Error
+    Reflect -.->|error| Error
+    SelfMod -.->|error| Error
+    Error -->|planner| Planner
+    Error -->|reflect| Reflect
+    Error -->|halt| Halt[halt]
+    Satisfied --> Halt
 ```
 
-**State** (`state.json`): `{goal, plan[], step, current_step, screen, elements, snapshot, last_action, last_code, last_result, last_error, history[], memory{}, wiring_transport, tick, _phase}`
+**State** (`state.json`): `{goal, plan[], step, current_step, screen, elements, screen_text, windows, snapshot, last_action, last_code, last_result, last_error, last_verification, last_reflection, history[], memory{}, wiring_transport, tick, _phase}`
 
 **Runtime log** (`comms/runtime.ndjson`): Every node start/complete, brain call, error, wiring change — full audit trail.
 
@@ -94,6 +102,7 @@ Goal → planner → scheduler → observe → execute → verify → reflect �
 ```
 
 **Reasoning patterns** (configurable per transport in wiring):
+
 - `native` — Model returns reasoning field (Grok, OpenAI o1)
 - `two_pass` — Call 1: reasoning, Call 2: inject reasoning → JSON (Nemotron 4B)
 - `single_pass` — One call, extract JSON directly
@@ -220,19 +229,11 @@ def build_execute_namespace(ctx):
 
 ## Full Topology (9 Nodes)
 
-```
-planner → scheduler → observe → execute → verify → reflect → self_modify
-                       ↑                              ↓
-                       └────────────── retry ─────────┘
-                                ↓
-                          satisfied
-```
-
 | Node | File | Role | Brain? | Output Signals |
 |------|------|------|--------|----------------|
 | **planner** | `seed_nodes/planner.py` | Goal → ordered plan (steps with `description`, `done_when`) | ✅ | `step_ready` \| `reflect` |
 | **scheduler** | `seed_nodes/scheduler.py` | Pick next step by index; detect plan complete | ❌ | `step_ready` \| `plan_complete` |
-| **observe** | `seed_nodes/observe.py` | Call `Desktop.observe()` → return `screen`, `elements`, `snapshot` | ❌ | `screen_ready` |
+| **observe** | `seed_nodes/observe.py` | Call `Desktop.observe()` → return `screen`, `elements`, `screen_text`, `windows`, `snapshot` | ❌ | `screen_ready` |
 | **execute** | `seed_nodes/execute.py` | Grok writes Python, `exec()` runs it | ✅ | `verify` \| `reflect` \| `self_modify` |
 | **verify** | `seed_nodes/verify.py` | Judge step intent satisfied (evidence-based) | ✅ | `step_confirmed` \| `step_denied` |
 | **reflect** | `seed_nodes/reflect.py` | Diagnose failure, choose recovery path | ✅ | `retry` \| `replan` \| `escalate` \| `give_up` |
@@ -280,9 +281,9 @@ planner → scheduler → observe → execute → verify → reflect → self_mo
 
 ---
 
-## Desktop Observation (Current Implementation)
+## Desktop Observation (Complete Implementation)
 
-`desktop.py` uses `comtypes.gen.UIAutomationClient` (~780 lines). It provides:
+`desktop.py` uses `comtypes.gen.UIAutomationClient` (~1023 lines). It provides:
 
 ### Core Classes
 
@@ -315,29 +316,22 @@ class Observation:
     focused_title: str
 ```
 
-### Current Observation Pipeline
+### Observation Pipeline (Hover Scan Primary)
 
 1. **Screen size** via `GetSystemMetrics`
 2. **Root element** via `GetRootElement()`
 3. **Focused element** via `FindFirst(TreeScope_Descendants, true_condition)` + `HasKeyboardFocus`
 4. **Active window** via `GetForegroundWindow()` + `ElementFromHandle()`
-5. **Top-level windows** via `ControlViewWalker` (shallow tree, max_depth=3)
-6. **Returns** screen, elements list, snapshot, focused_title
-
-### Added: Hover Scanning (Phase 5C)
-
-```python
-def hover_scan(self, config: dict | None = None) -> list[Element]:
-    """Grid probe across screen/window via ElementFromPoint."""
-    # Config: step_px, delay_ms, target_window_only, min_size_px, max_elements
-    # Returns deduplicated elements by runtime_id
-
-def dense_probe(self, region: Rect, config: dict | None = None) -> list[Element]:
-    """Dense probe a specific region (smaller step)."""
-
-def scroll_enrich(self, config: dict | None = None) -> list[Element]:
-    """Scroll and re-probe to discover more elements."""
-```
+5. **Top-level windows** via `ControlViewWalker` (for window tokens W1..Wn)
+6. **PRIMARY: Hover scan** — Grid probe across screen/window via `ElementFromPoint`
+   - Config: `step_px`, `delay_ms`, `target_window_only`, `min_size_px`, `max_elements`, `full_screen_step_px`
+   - Scans FULL SCREEN when desktop/taskbar active (60px step), targets window otherwise (20px step)
+   - Returns deduplicated elements by runtime_id
+7. **SECONDARY: Tree walk** — Limited depth for hierarchy (window tokens)
+8. **Merge** — Hover positions + tree hierarchy
+9. **Filter** → actionable elements only (non-zero rect, interactive control types, enabled)
+10. **Classify** → role→action (click/write/scroll)
+11. **Format SCREEN text** — Human-readable for LLM context
 
 ### Configuration (wiring.json → `configure_observation()`)
 
@@ -346,15 +340,35 @@ def scroll_enrich(self, config: dict | None = None) -> list[Element]:
   "max_depth": 3,
   "include_offscreen": false,
   "max_elements": 500,
-  "hover_scan_step_px": 40,
-  "hover_scan_delay_ms": 1,
-  "hover_scan_target_window_only": true,
-  "hover_scan_min_size_px": 10,
-  "hover_scan_max_elements": 100
+  "hover_scan": {
+    "step_px": 20,
+    "delay_ms": 0,
+    "target_window_only": true,
+    "min_size_px": 10,
+    "max_elements": 100,
+    "full_screen_step_px": 60
+  }
 }
 ```
 
-### Observe Node Output (Current)
+### Interactive Control Types (Actionable)
+
+| Control Type ID | Name | Action |
+|----------------|------|--------|
+| 50000 | Button | click |
+| 50004 | Edit | write |
+| 50002 | ComboBox | write |
+| 50009 | ListItem | scroll |
+| 50011 | TreeItem | scroll |
+| 50018 | TabItem | click |
+| 50013 | MenuItem | click |
+| 50001 | CheckBox | click |
+| 50017 | RadioButton | click |
+| 50014 | Slider | scroll |
+| 50021 | Spinner | write |
+| 50016 | Hyperlink | click |
+
+### Observe Node Output (Filtered, Actionable)
 
 ```python
 # seed_nodes/observe.py
@@ -362,21 +376,23 @@ def run(ctx):
     obs = desktop.observe(config)
     return "screen_ready", {
         "screen": obs.get("screen"),
-        "elements": obs.get("elements"),      # List of element dicts (full tree)
+        "elements": obs.get("elements"),      # dict keyed by stable_id with px, py, hwnd, role, action
+        "screen_text": obs.get("screen_text"), # formatted for LLM
+        "windows": obs.get("windows"),         # [{"token": "W0", ...}, {"token": "W1", ...}]
         "snapshot": obs.get("snapshot"),
         "focused_title": obs.get("focused_title"),
     }
 ```
 
-**Problem**: Returns full UIA tree with thousands of nested elements, most with zero rects, no action classification, no window tokens. Wastes tokens.
+**Result**: Elements dict keyed by stable_id (e.g., `e_123_456_100_200`) with accurate px/py from hover scan, not zero-rect UIA tree.
 
 ---
 
-## Self-Modification: Wiring + Node Files (Stub)
+## Self-Modification: Wiring + Node Files (✅ WORKING)
 
 `self_modify` node can change BOTH `wiring.json` AND `live_nodes/*.py` files atomically.
 
-### Self-Modify Output Record (Target)
+### Self-Modify Output Record
 
 ```json
 {
@@ -434,6 +450,38 @@ def apply_wiring_patch(wiring: dict, parsed: dict) -> tuple[str, Any]:
 
 ---
 
+## Verify / Reflect / Self-Modify: LLM-Driven
+
+All three nodes use LLM calls with rich context — flexible but costs brain calls.
+
+### Verify Node (Evidence-Based)
+
+**Input**: step goal, done_when, screen_text, windows, focused_title, last_action, last_result, last_error
+
+**Prompt**: "Judge if step intent was satisfied based on evidence. Return next_signal (step_confirmed/step_denied), success (bool), reasoning (evidence-based justification)."
+
+**Output**: Routes to `scheduler` (confirmed) or `reflect` (denied)
+
+### Reflect Node (Diagnosis + Recovery)
+
+**Input**: last_error, last_result, screen_text, step goal, last_verification
+
+**Prompt**: "Diagnose failure and choose recovery. Return next_signal (retry/replan/escalate/give_up), lesson (concrete diagnosis + specific suggestion), diagnosis (root cause)."
+
+**Output**: Routes to `observe` (retry), `planner` (replan), `self_modify` (escalate), or `satisfied` (give_up)
+
+### Self-Modify Node (Codebase Capture + Patch)
+
+**Input**: current wiring, live_nodes list, goal, failure context (last_error, last_reflection)
+
+**Prompt**: "You receive the FULL codebase (brain.py, nodes.py, organism.py, desktop.py, wiring.json, all seed_nodes/*, seed_brains/*, workbench JS). Output wiring_patch record with wiring_patches, node_writes, node_deletes."
+
+**Codebase Capture**: Reads all essential files into context (truncated to ~30k chars)
+
+**Output**: Applied via `apply_wiring_patch()` — wiring.json atomic write + node files written to live_nodes/
+
+---
+
 ## Workbench (Read-Only Dashboard)
 
 **Reflects organism reality. No control over organism.**
@@ -441,6 +489,7 @@ def apply_wiring_patch(wiring: dict, parsed: dict) -> tuple[str, Any]:
 Run: `python workbench.py` → http://127.0.0.1:8800/
 
 ### UI Features
+
 - **Status Panel**: Current node, tick, phase, goal, transport, last error
 - **Topology Graph**: SVG visualization with current node highlighted, signal edges
 - **Runtime Log Tail**: Live NDJSON stream from `comms/runtime.ndjson`
@@ -470,7 +519,9 @@ Run: `python workbench.py` → http://127.0.0.1:8800/
 ```bash
 # Run with hard tick limit
 python organism.py --reset --max-ticks 10 "open notepad and write hello"
+```
 
+```python
 # Organism loop (organism.py):
 while True:
     stop_check.check_stop("organism main loop")
@@ -541,146 +592,49 @@ python workbench.py
 
 ---
 
-## Next Immediate Tasks (Phase 5C)
+## Next Immediate Tasks (Phase 5D)
 
 | Priority | Task | File | Description |
 |----------|------|------|-------------|
-| 1 | **Filter observation output** | `desktop.py`, `seed_nodes/observe.py` | Return only actionable elements (non-zero rect, interactive roles), integrate hover_scan, add window tokens W1..Wn, classify role→action |
-| 2 | **Format SCREEN text** | `desktop.py` | Human-readable formatted text for LLM: WINDOWS list, focused element, key elements with px/py/hwnd |
-| 3 | **Implement Verify** | `seed_nodes/verify.py` | Evidence-based: check screen for step completion (e.g., "Notepad window visible", "text 'hello' present") |
-| 4 | **Implement Reflect** | `seed_nodes/reflect.py` | Concrete diagnosis from last_error + last_result + screen, specific suggestion, route to retry/replan/escalate/give_up |
-| 5 | **Implement Self-Modify** | `seed_nodes/self_modify.py` | Output wiring_patch record, use apply_wiring_patch + save_wiring |
-| 6 | **Test Complex Goal** | — | `python organism.py --reset --max-ticks 20 "open Opera, go to linkedin.com, write post about Grok desktop, post to X"` |
+| 1 | **Remove control.json logic** | `organism.py` | Remove `wait_before_node()`, `--max-brain-calls` arg, control file I/O |
+| 2 | **Remove control endpoints** | `workbench.py` | Remove `/api/control` POST, keep read-only status/wiring viewer |
+| 3 | **Full integration test** | — | `python organism.py --reset --max-ticks 20 "open Opera, go to linkedin.com, write post about Grok desktop, post to X"` |
+| 4 | **Tune hover_scan** | `desktop.py` | Verify element detection in browser windows (Opera/Chrome) |
 
 ---
 
 ## Handover Prompt for Next Session
 
-> **Context**: endgame-ai Phase 5B complete. Execute node working — Grok writes Python, `exec()` runs it with full desktop namespace. Topology: planner→scheduler→observe→execute→verify→reflect→self_modify. All transports verified (xAI native, OpenAI two-pass, OpenCode, file_proxy). Workbench running.
+> **Context**: endgame-ai Phase 5C complete. Full topology operational: planner→scheduler→observe→execute→verify→reflect→self_modify. All transports verified (xAI native, OpenAI two-pass, OpenCode, file_proxy). Workbench running read-only.
 >
-> **Current Block**: Observe node returns full UIA tree (bloat). Needs filtering to actionable elements + hover scan integration + window tokens + SCREEN formatting.
+> **What Works**: 
+> - Hover scan PRIMARY observation (ElementFromPoint grid probe) with full-screen fallback for desktop
+> - Filtered elements dict keyed by stable_id with accurate px/py, role→action classification
+> - Window tokens W0 (screen) + W1..Wn (visible top-level windows) fresh each observation
+> - SCREEN text formatting for LLM context
+> - Verify: LLM evidence-based judgment → step_confirmed/step_denied
+> - Reflect: LLM diagnosis + routing (retry/replan/escalate/give_up)
+> - Self-Modify: Full codebase capture → wiring_patch with wiring_patches/node_writes/node_deletes
+> - Execute: Grok writes Python, exec() runs with full desktop namespace + self-modify helpers
+> - Hotkey fixed: accepts both "win+r" and ["win", "r"] formats
+> - Focus_window: proper EnumWindowsProc callback, supports W1..Wn tokens
+> - Open_url: multi-path browser detection
 >
-> **Next Goal**: Implement filtered observation with hover_scan, then complete verify/reflect/self_modify nodes. Test with real goal: "open Opera, make LinkedIn + X posts about Grok desktop".
+> **Current State**: "open notepad" and "open Opera, go to linkedin.com..." both run through full topology. Runtime logs show planner→scheduler→observe→execute→verify→reflect→planner cycles.
+>
+> **Next Goal**: Phase 5D cleanup — remove control.json pause/step logic, remove --max-brain-calls, remove workbench control endpoints. Then full integration test with complex goal.
 >
 > **Key Files to Modify**:
-> - `desktop.py` — add filtering, window tokens, SCREEN formatting, integrate hover_scan into observe()
-> - `seed_nodes/observe.py` — return filtered elements dict keyed by id with px/py/hwnd/role/action
-> - `seed_nodes/verify.py` — evidence-based judgment
-> - `seed_nodes/reflect.py` — concrete diagnosis + recovery routing
-> - `seed_nodes/self_modify.py` — wiring_patch output
-> - `wiring.json` — update observe_config, prompts
-
----
-
-## Full Revisited Plan (Phase 5C → 5D)
-
-### Phase 5C: Filtered Observation + Core Nodes (Current Sprint)
-
-| Step | Task | File | Status |
-|------|------|------|--------|
-| 1 | **Filter observation to actionable elements only** | `desktop.py` | 🔄 In progress |
-|   | - Keep only elements with non-zero rect (width>0, height>0) | | |
-|   | - Filter to interactive control types (Button, Edit, ComboBox, ListItem, TabItem, MenuItem, CheckBox, RadioButton, Slider, Spinner, Hyperlink) | | |
-|   | - Deduplicate by runtime_id | | |
-|   | - Return dict keyed by element_id (not list) | | |
-| 2 | **Add window tokens (W1..Wn)** | `desktop.py` | ⏳ Pending |
-|   | - Enumerate visible top-level windows | | |
-|   | - Assign stable tokens W1, W2... across observations | | |
-> - Include hwnd, title, rect in window registry |
-| 3 | **Element classification (role→action)** | `desktop.py` | ⏳ Pending |
-|   | - Button → "click" | | |
-|   | - Edit/ComboBox → "write" | | |
-|   | - List/Tree/ScrollBar → "scroll" | | |
-|   | - Others → "" | | |
-| 4 | **Format SCREEN text for LLM** | `desktop.py` | ⏳ Pending |
-|   | - WINDOWS list with tokens: `* [W1] Notepad - Untitled` | | |
-|   | - Focused element details | | |
-|   | - Key actionable elements with id, role, name, px, py, hwnd, action | | |
-| 5 | **Integrate hover_scan into observe()** | `desktop.py` | ⏳ Pending |
-|   | - Run hover_scan on foreground window | | |
-|   | - Merge with tree-walk elements | | |
-|   | - Use as primary element source (more accurate positions) | | |
-| 6 | **Update observe node output** | `seed_nodes/observe.py` | ⏳ Pending |
-|   | - Return `elements` as dict[id] with px, py, hwnd, role, name, action, wnd | | |
-|   | - Return `screen_text` (formatted SCREEN) | | |
-|   | - Signal: `screen_ready` | | |
-| 7 | **Implement Verify node** | `seed_nodes/verify.py` | ⏳ Pending |
-|   | - Input: step goal, done_when, screen_text, elements, last_action, last_result, last_error | | |
-|   | - Evidence-based: check for visible window, text present, element state | | |
-|   - Return `step_confirmed` (success) or `step_denied` (failure) | | |
-| 8 | **Implement Reflect node** | `seed_nodes/reflect.py` | ⏳ Pending |
-|   | - Input: last_error, last_result, screen_text, step goal | | |
-|   | - Output: concrete diagnosis + specific suggestion | | |
-|   | - Route: `retry` (same step), `replan` (new plan), `escalate` (self_modify), `give_up` (satisfied) | | |
-| 9 | **Implement Self-Modify node** | `seed_nodes/self_modify.py` | ⏳ Pending |
-|   | - Input: current wiring, live_nodes list, goal, failure context | | |
-|   | - Output: wiring_patch record with wiring_patches, node_writes, node_deletes | | |
-|   | - Use apply_wiring_patch + save_wiring from nodes.py | | |
-
-### Phase 5D: Cleanup + Integration Test
-
-| Step | Task | File | Status |
-|------|------|------|--------|
-| 10 | Remove control.json pause/step logic | `organism.py` | ⏳ Pending |
-| 11 | Remove `--max-brain-calls` arg | `organism.py` | ⏳ Pending |
-| 12 | Remove control endpoints from workbench | `workbench.py` | ⏳ Pending |
-| 13 | Full integration test | — | ⏳ Pending |
-|   | `python organism.py --reset --max-ticks 20 "open Opera, go to linkedin.com, write post about Grok desktop, post to X"` | | |
-
----
-
-## What's Actually Implemented vs Planned (Honest Assessment)
-
-| Component | Claimed in Plan | Actually Working | Gap |
-|-----------|-----------------|------------------|-----|
-| Transport System | ✅ | ✅ | None |
-| ROD Reasoning | ✅ | ✅ | None |
-| Hot-swappable Nodes | ✅ | ✅ | None |
-| BaseNode ABC | ✅ | ✅ | None |
-| Error Topology | ✅ | ✅ | None |
-| Desktop Observation (UIA COM) | ✅ | ✅ | Returns bloat, no filtering |
-| Hover Scan Methods | ✅ | ✅ Methods exist | Not integrated into observe() |
-| Execute Node | ✅ | ✅ Working | Needs filtered elements input |
-| Scheduler Node | ✅ | ✅ Working | None |
-| Verify Node | Planned | ❌ Stub only | Full implementation needed |
-| Reflect Node | Planned | ❌ Stub only | Full implementation needed |
-| Self-Modify Node | Planned | ❌ Stub only | Full implementation needed |
-| Window Tokens | Planned | ❌ Not started | Needed for targeting |
-| Element Classification | Planned | ❌ Not started | Needed |
-| SCREEN Formatting | Planned | ❌ | Needed for LLM context |
-| Workbench | ✅ | ✅ Read-only | No control (correct) |
-
----
-
-## Critical Files to Read Next Session
-
-1. **desktop.py** — Core observation logic, needs filtering/formatting (lines ~590+)
-2. **seed_nodes/observe.py** — Needs to return filtered dict, not list
-3. **seed_nodes/verify.py** — Currently 18-line stub
-4. **seed_nodes/reflect.py** — Currently 18-line stub
-5. **seed_nodes/self_modify.py** — Currently 10-line stub
-6. **nodes.py** — Has `build_execute_namespace`, `apply_wiring_patch` ready
-7. **wiring.json** — Has correct topology and prompts
-8. **organism.py** — Main loop, has control.json logic to remove
-
----
-
-## Run Commands for Next Session
-
-```powershell
-# Validate syntax
-python -m py_compile brain.py nodes.py organism.py workbench.py desktop.py
-python -c "import py_compile, pathlib; [py_compile.compile(str(p), doraise=True) for d in ['seed_nodes','seed_brains'] for p in pathlib.Path(d).glob('*.py')]"
-
-# Test observation filtering (after implementation)
-python organism.py --reset --max-ticks 3 "observe desktop"
-
-# Full test goal
-python organism.py --reset --max-ticks 20 "open Opera, go to linkedin.com, write post about Grok desktop, post to X"
-
-# Workbench
-python workbench.py  # http://127.0.0.1:8800/
-```
+> - `organism.py` — remove wait_before_node, --max-brain-calls, control.json I/O
+> - `workbench.py` — remove /api/control POST endpoint
+> - `wiring.json` — verify observe_config hover_scan params optimal
+>
+> **Run Commands**:
+> ```powershell
+> python -m py_compile brain.py nodes.py organism.py workbench.py desktop.py
+> python organism.py --reset --max-ticks 20 "open Opera, go to linkedin.com, write post about Grok desktop, post to X"
+> python workbench.py  # http://127.0.0.1:8800/
+> ```
 
 ---
 
@@ -688,9 +642,9 @@ python workbench.py  # http://127.0.0.1:8800/
 
 1. **No fallbacks** — Transport fails = organism stops
 2. **Execute node = action + evolution layer** — Grok writes Python, no verb list
-3. **Self-modify = wiring.json + live_nodes/*.py** — Atomic, hot-swapped
+3. **Self-modify = wiring.json + live_nodes/*.py + exec()** — Atomic, hot-swapped
 4. **Hover scan > UIA tree walk** — More accurate positions, filters bloat
-5. **Window tokens (W1..Wn)** — Stable references across observations
+5. **Window tokens (W0..Wn)** — Fresh each observation, stable within observation
 6. **Evidence-based verify** — Not literal matching, uses screen/elements/result
 7. **--max-ticks only** — No pause/step, no max-brain-calls
 8. **Workbench read-only** — Reflects reality, no control
@@ -702,18 +656,103 @@ python workbench.py  # http://127.0.0.1:8800/
 | File | Lines | Status |
 |------|-------|--------|
 | `brain.py` | 508 | ✅ Stable |
-| `nodes.py` | ~250 | ✅ Stable |
+| `nodes.py` | ~315 | ✅ Stable |
 | `organism.py` | 230 | ⚠️ Remove control logic |
-| `desktop.py` | ~780 | 🔄 Filtering in progress |
+| `desktop.py` | ~1023 | ✅ Complete |
 | `seed_nodes/planner.py` | 18 | ✅ Done |
-| `seed_nodes/scheduler.py` | 15 | ✅ Done |
-| `seed_nodes/observe.py` | 16 | 🔄 Needs rewrite |
+| `seed_nodes/scheduler.py` | 14 | ✅ Done |
+| `seed_nodes/observe.py` | 16 | ✅ Done |
 | `seed_nodes/execute.py` | ~100 | ✅ Working |
-| `seed_nodes/verify.py` | 18 | ❌ Stub |
-| `seed_nodes/reflect.py` | 18 | ❌ Stub |
-| `seed_nodes/self_modify.py` | 10 | ❌ Stub |
+| `seed_nodes/verify.py` | 75 | ✅ Working |
+| `seed_nodes/reflect.py` | 85 | ✅ Working |
+| `seed_nodes/self_modify.py` | 135 | ✅ Working |
 | `seed_nodes/satisfied.py` | 9 | ✅ Done |
 | `seed_nodes/error.py` | 26 | ✅ Done |
-| `workbench.py` + JS | ~500 | ✅ Working |
+| `seed_brains/*.py` | 5 files | ✅ Working |
+| `workbench.py` + JS | ~500 | ⚠️ Remove control endpoints |
 
-**Net capability delivered**: 10 hardcoded verbs → unbounded Python via execute node. Self-evolving code via self_modify (stub).
+**Net capability delivered**: 10 hardcoded verbs → unbounded Python via execute node. Self-evolving code via self_modify (fully implemented).
+
+---
+
+## Mermaid Diagram: Full System Architecture
+
+```mermaid
+graph TB
+    subgraph "Organism Loop"
+        Org[organism.py] -->|load| Wiring[wiring.json]
+        Org -->|load| State[state.json]
+        Org -->|traverse| Topology[9-Node Topology]
+        Topology --> Planner[planner]
+        Planner --> Scheduler[scheduler]
+        Scheduler --> Observe[observe]
+        Observe --> Execute[execute]
+        Execute --> Verify[verify]
+        Verify -->|confirmed| Scheduler
+        Verify -->|denied| Reflect[reflect]
+        Reflect -->|retry| Observe
+        Reflect -->|replan| Planner
+        Reflect -->|escalate| SelfMod[self_modify]
+        Reflect -->|give_up| Satisfied[satisfied]
+        SelfMod -->|modified| Planner
+        SelfMod -->|modify_failed| Reflect
+        Execute -.->|error| Error[error]
+        Verify -.->|error| Error
+        Reflect -.->|error| Error
+        SelfMod -.->|error| Error
+        Error -->|planner| Planner
+        Error -->|reflect| Reflect
+        Error -->|halt| Halt[halt]
+        Satisfied --> Halt
+    end
+    
+    subgraph "Hot-Swap Layer"
+        SeedNodes[seed_nodes/] -->|copy| LiveNodes[live_nodes/]
+        SeedBrains[seed_brains/] -->|copy| LiveBrains[live_brains/]
+        LiveNodes -->|re-read every tick| Org
+        LiveBrains -->|re-read every call| Brain[brain.py]
+    end
+    
+    subgraph "Desktop Layer"
+        Desktop[desktop.py] -->|UIA COM| Windows[Windows Desktop]
+        Desktop -->|hover_scan| Elements[Actionable Elements]
+        Elements --> Observe
+        Elements --> Execute
+    end
+    
+    subgraph "Brain Layer"
+        Brain -->|transport| XAI[xAI / Grok]
+        Brain -->|transport| OpenAI[OpenAI / LM Studio]
+        Brain -->|transport| OpenCode[OpenCode CLI]
+        Brain -->|transport| FileProxy[File Proxy]
+        Brain -->|ROD| Reasoning[ReasoningStrategy]
+    end
+    
+    subgraph "Observability"
+        Workbench[workbench.py] -->|read-only| Org
+        RuntimeLog[comms/runtime.ndjson] -->|tail| Workbench
+        StateFile[state.json] -->|read| Workbench
+    end
+```
+
+---
+
+## Verification Checklist
+
+Before each session, run:
+
+```powershell
+# 1. Syntax validation
+python -m py_compile brain.py nodes.py organism.py workbench.py desktop.py stop_check.py
+python -c "import py_compile, pathlib; [py_compile.compile(str(p), doraise=True) for d in ['seed_nodes','seed_brains'] for p in pathlib.Path(d).glob('*.py')]"
+
+# 2. Quick observation test
+python organism.py --reset --max-ticks 3 "observe desktop"
+
+# 3. Check state.json has screen, elements dict, screen_text, windows
+# 4. Verify live_nodes/ and live_brains/ created from seed_
+```
+
+---
+
+*Last updated: 2026-07-02 | Branch: unified-archBRAINZ | Phase: 5C complete → 5D cleanup*
