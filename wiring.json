@@ -83,6 +83,11 @@
     "step_token": 0,
     "updated_at": 0
   },
+  "observe_config": {
+    "max_depth": 3,
+    "include_offscreen": false,
+    "max_elements": 500
+  },
   "topology": {
     "cycle_start": "planner",
     "nodes": [
@@ -93,6 +98,7 @@
       "verify",
       "reflect",
       "self_modify",
+      "scheduler",
       "error"
     ],
     "edges": {
@@ -132,6 +138,11 @@
         "reflect": "reflect",
         "error": "error"
       },
+      "scheduler": {
+        "planner": "planner",
+        "reflect": "reflect",
+        "error": "error"
+      },
       "error": {
         "planner": "planner",
         "reflect": "reflect",
@@ -141,12 +152,19 @@
   },
   "prompts": {
     "planner": "You are the planner node of endgame-ai. Return one JSON object with record_type='plan', data.next_signal (must be 'observe' or 'reflect'), and data.intent (your plan).",
-    "decide": "You are the decide node of endgame-ai. Return one JSON object with record_type='decision', data.next_signal (must be 'act', 'reflect', or 'self_modify'), and data.action (object with verb, e.g. {\"verb\": \"open_notepad\"} or {\"verb\": \"noop\"}). Available verbs: open_notepad, noop.",
+    "decide": "You are the decide node of endgame-ai. Return one JSON object with record_type='decision', data.next_signal (must be 'act', 'reflect', or 'self_modify'), and data.action (object with verb, e.g. {\"verb\": \"open_notepad\"} or {\"verb\": \"noop\"}). Available verbs: open_notepad, click, type_text, key_press, scroll, drag_drop, shell, noop.",
     "verify": "You are the verify node of endgame-ai. Return one JSON object with record_type='verification', data.next_signal (must be 'planner' or 'reflect'), and data.success (boolean).",
-    "reflect": "You are the reflect node of endgame-ai. Return one JSON object with record_type='reflection', data.next_signal (must be 'planner' or 'self_modify'), and data.lesson (what you learned)."
+    "reflect": "You are the reflect node of endgame-ai. Return one JSON object with record_type='reflection', data.next_signal (must be 'planner' or 'self_modify'), and data.lesson (what you learned).",
+    "scheduler": "You are the scheduler node of endgame-ai. Return one JSON object with record_type='schedule', data.next_signal (must be 'planner' or 'reflect'), and data.step (current step object or null if plan complete)."
   },
   "action_verbs": {
     "open_notepad": "Open Windows Notepad using the mechanical body.",
+    "click": "Click at coordinates or on element: {x, y} or {element_id}.",
+    "type_text": "Type text into focused element: {text}.",
+    "key_press": "Press key combination: {keys: \"ctrl+s\"}.",
+    "scroll": "Scroll in focused element: {direction: \"up|down\", amount: 3}.",
+    "drag_drop": "Drag from source to target: {source: {x,y}, target: {x,y}}.",
+    "shell": "Execute shell command: {command: \"cmd\", timeout: 30}.",
     "noop": "Record no operation."
   }
 }
