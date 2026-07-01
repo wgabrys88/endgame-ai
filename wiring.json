@@ -86,7 +86,14 @@
   "observe_config": {
     "max_depth": 3,
     "include_offscreen": false,
-    "max_elements": 500
+    "max_elements": 500,
+    "hover_scan": {
+      "step_px": 40,
+      "delay_ms": 1,
+      "target_window_only": true,
+      "min_size_px": 10,
+      "max_elements": 100
+    }
   },
   "topology": {
     "cycle_start": "planner",
