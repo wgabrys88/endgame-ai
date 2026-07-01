@@ -7,7 +7,10 @@ expected and are suppressed at the socket-write boundary.
 from __future__ import annotations
 
 import json
+import os
 import pathlib
+import shutil
+import subprocess
 import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -70,6 +73,114 @@ def _write_control(mode: str) -> dict[str, Any]:
     return current
 
 
+def _resolve_exe(name: str) -> str | None:
+    """Resolve executable: absolute path first, then PATH lookup."""
+    expanded = os.path.expandvars(os.path.expanduser(str(name or ""))).strip()
+    if not expanded:
+        return None
+    p = pathlib.Path(expanded)
+    if p.is_absolute() and p.exists():
+        return str(p)
+    found = shutil.which(expanded)
+    if found:
+        return found
+    if os.name == "nt" and not p.suffix:
+        for ext in (".exe", ".cmd", ".bat", ".ps1"):
+            found = shutil.which(expanded + ext)
+            if found:
+                return found
+    return None
+
+
+def _probe_transport(wiring: dict[str, Any]) -> dict[str, Any]:
+    """Probe current transport health."""
+    model = wiring.get("model", {})
+    transport = model.get("transport", "")
+    transport_config = model.get("transport_config", {}).get(transport, {})
+    
+    if transport == "openai":
+        base_url = str(transport_config.get("base_url") or "http://localhost:1234").rstrip("/")
+        path = str(transport_config.get("path") or "/v1/models")
+        try:
+            import urllib.request
+            with urllib.request.urlopen(base_url + path, timeout=5) as resp:
+                body = resp.read(4000).decode("utf-8", errors="replace")
+            return {"ok": True, "host": base_url, "models": body[:2000]}
+        except Exception as e:
+            return {"ok": False, "error": f"LM Studio unreachable: {e}", "host": base_url}
+    
+    elif transport == "opencode":
+        exe = _resolve_exe(transport_config.get("executable") or "opencode")
+        if not exe:
+            return {"ok": False, "error": "opencode executable not found"}
+        try:
+            cp = subprocess.run([exe, "--version"], capture_output=True, text=True, timeout=10)
+            return {"ok": cp.returncode == 0, "stdout": cp.stdout.strip(), "stderr": cp.stderr.strip()}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+    
+    elif transport in ("xai", "grok_cli"):
+        if transport == "xai" and transport_config.get("mode") == "api":
+            api_key = os.environ.get("XAI_API_KEY") or transport_config.get("api_key")
+            return {"ok": bool(api_key), "api_key_present": bool(api_key), "mode": "api"}
+        else:
+            exe = _resolve_exe(transport_config.get("executable") or "grok")
+            return {"ok": exe is not None, "executable": exe, "mode": "cli"}
+    
+    elif transport == "file_proxy":
+        req_path = brain.root_path(transport_config.get("request_path"), "comms/request.json")
+        resp_path = brain.root_path(transport_config.get("response_path"), "comms/response.json")
+        return {"ok": True, "request_path": str(req_path), "response_path": str(resp_path)}
+    
+    elif transport == "browser_ai":
+        return {"ok": False, "error": "browser_ai is a documented stub"}
+    
+    return {"ok": False, "error": f"unknown transport: {transport}"}
+
+
+def _brain_test(transport: str, wiring: dict[str, Any]) -> dict[str, Any]:
+    """Run ROD falsification test (2 brain calls)."""
+    # Temporarily override transport for test
+    test_wiring = dict(wiring)
+    test_wiring.setdefault("model", {})["transport"] = transport
+    test_wiring["model"]["max_brain_calls"] = 2
+    
+    system = (
+        "ROD test assistant. Call 1: emit brief reasoning about the user task. "
+        "Call 2: commit ONLY one JSON object with no markdown fences."
+    )
+    user = (
+        f"Workbench falsification for transport {transport}. "
+        'On the final call output exactly: '
+        '{"record_type":"workbench_rod_test","ok":true,"transport":"' + transport + '"}'
+    )
+    
+    started = time.time()
+    try:
+        record = brain.think(system, {"goal": user, "state": {}}, test_wiring)
+        elapsed = round(time.time() - started, 3)
+        parsed_ok = bool(
+            record
+            and record.get("record_type") == "workbench_rod_test"
+            and record.get("ok") is True
+            and str(record.get("transport", "")) == transport
+        )
+        return {
+            "ok": parsed_ok,
+            "transport": transport,
+            "parsed": parsed_ok,
+            "record": record,
+            "elapsed_s": elapsed,
+        }
+    except Exception as e:
+        return {
+            "ok": False,
+            "transport": transport,
+            "error": f"{type(e).__name__}: {e}",
+            "elapsed_s": round(time.time() - started, 3),
+        }
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "endgame-ai-workbench/1.0"
 
@@ -103,11 +214,18 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         try:
-            if self.path in {"/", "/workbench.html"}:
+            # Parse query parameters
+            from urllib.parse import urlparse, parse_qs
+            parsed = urlparse(self.path)
+            path = parsed.path
+            qs = parse_qs(parsed.query)
+            
+            if path in {"/", "/workbench.html"}:
                 html = (ROOT / "workbench.html").read_bytes()
                 self._send_bytes(200, "text/html; charset=utf-8", html)
                 return
-            if self.path == "/api/status":
+            
+            if path == "/api/status":
                 wiring = _load_wiring()
                 state = _safe_json(organism.state_path(wiring), {})
                 control = organism.read_control(wiring)
@@ -123,16 +241,33 @@ class Handler(BaseHTTPRequestHandler):
                     },
                 })
                 return
-            if self.path == "/api/control":
+            
+            if path == "/api/control":
                 self._send_json(organism.read_control(_load_wiring()))
                 return
-            if self.path == "/api/wiring":
+            
+            if path == "/api/wiring":
                 self._send_json(_load_wiring())
                 return
-            if self.path == "/api/state/raw":
+            
+            if path == "/api/state/raw":
                 wiring = _load_wiring()
                 self._send_json(_safe_json(organism.state_path(wiring), {}))
                 return
+            
+            if path == "/api/logs/tail":
+                lines = int(qs.get("lines", ["100"])[0])
+                wiring = _load_wiring()
+                runtime_tail = _tail_ndjson(organism.runtime_log_path(wiring), max_lines=lines)
+                self._send_json({"ok": True, "logs": runtime_tail})
+                return
+            
+            if path == "/api/transport/probe":
+                wiring = _load_wiring()
+                result = _probe_transport(wiring)
+                self._send_json(result)
+                return
+            
             self._send_json({"ok": False, "error": "not found"}, status=404)
         except CLIENT_DISCONNECTS:
             return
@@ -144,10 +279,27 @@ class Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length") or 0)
             raw = self.rfile.read(length) if length else b"{}"
             body = json.loads(raw.decode("utf-8") or "{}")
+            
             if self.path == "/api/control":
                 mode = str(body.get("mode") or "")
                 self._send_json({"ok": True, "control": _write_control(mode)})
                 return
+            
+            if self.path == "/api/wiring":
+                # Hot-reload wiring.json
+                wiring = _load_wiring()
+                wiring.update(body)
+                brain.atomic_write_json(ROOT / "wiring.json", wiring)
+                self._send_json({"ok": True, "message": "wiring updated"})
+                return
+            
+            if self.path == "/api/brain/test":
+                transport = str(body.get("transport") or _load_wiring().get("model", {}).get("transport") or "openai")
+                wiring = _load_wiring()
+                result = _brain_test(transport, wiring)
+                self._send_json(result)
+                return
+            
             self._send_json({"ok": False, "error": "not found"}, status=404)
         except CLIENT_DISCONNECTS:
             return
