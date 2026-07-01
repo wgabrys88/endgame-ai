@@ -1,13 +1,14 @@
-"""Desktop observation for Windows 11 using UIA COM.
+"""Desktop observation for Windows 11 using UIA COM via comtypes.gen.UIAutomationClient.
 
 Real Windows desktop observation with Element/Observation types, hover probing,
 window tokens, bounded tree, and configurable observation.
 """
 from __future__ import annotations
 
+import ctypes
+import json
 import platform
 import time
-import ctypes
 from ctypes import wintypes
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -15,17 +16,56 @@ from enum import IntEnum
 
 import comtypes
 import comtypes.client
-from comtypes import GUID, IUnknown, COMMETHOD, HRESULT
-from comtypes.automation import IDispatch, VARIANT, VT_EMPTY, VT_I4, VT_BSTR, VT_ARRAY, VT_VARIANT, VT_UI4
-from comtypes.safearray import safearray_as_ndarray
+import comtypes.gen.UIAutomationClient as uia
 
 # Initialize COM
 comtypes.CoInitialize()
 
-# Windows UIA constants
-UIA_ElementNotFound = 0x80040201
 
-# UIA Property IDs
+# =============================================================================
+# Control type name mapping (from UIAutomationClient)
+# =============================================================================
+
+CONTROL_TYPE_NAMES: dict[int, str] = {
+    50032: "Window",        # UIA_WindowControlTypeId
+    50033: "Pane",          # UIA_PaneControlTypeId
+    50000: "Button",        # UIA_ButtonControlTypeId
+    50020: "Text",          # UIA_TextControlTypeId
+    50004: "Edit",          # UIA_EditControlTypeId
+    50008: "List",          # UIA_ListControlTypeId
+    50009: "ListItem",      # UIA_ListItemControlTypeId
+    50010: "Tree",          # UIA_TreeControlTypeId
+    50011: "TreeItem",      # UIA_TreeItemControlTypeId
+    50017: "Tab",           # UIA_TabControlTypeId
+    50018: "TabItem",       # UIA_TabItemControlTypeId
+    50012: "Menu",          # UIA_MenuControlTypeId
+    50013: "MenuItem",      # UIA_MenuItemControlTypeId
+    50015: "ToolBar",       # UIA_ToolBarControlTypeId
+    50023: "StatusBar",     # UIA_StatusBarControlTypeId
+    50003: "ScrollBar",     # UIA_ScrollBarControlTypeId
+    50014: "Slider",        # UIA_SliderControlTypeId
+    50019: "ProgressBar",   # UIA_ProgressBarControlTypeId
+    50006: "Image",         # UIA_ImageControlTypeId
+    50016: "Hyperlink",     # UIA_HyperlinkControlTypeId
+    50001: "CheckBox",      # UIA_CheckBoxControlTypeId
+    50017: "RadioButton",   # UIA_RadioButtonControlTypeId
+    50002: "ComboBox",      # UIA_ComboBoxControlTypeId
+    50021: "Spinner",       # UIA_SpinnerControlTypeId
+    50022: "ToolTip",       # UIA_ToolTipControlTypeId
+    50026: "Group",         # UIA_GroupControlTypeId
+    50028: "Separator",     # UIA_SeparatorControlTypeId
+    50027: "Thumb",         # UIA_ThumbControlTypeId
+}
+
+
+def control_type_name(control_type_id: int) -> str:
+    return CONTROL_TYPE_NAMES.get(control_type_id, f"Unknown({control_type_id})")
+
+
+# =============================================================================
+# Property IDs (from UIAutomationClient)
+# =============================================================================
+
 UIA_NamePropertyId = 30005
 UIA_ControlTypePropertyId = 30003
 UIA_LocalizedControlTypePropertyId = 30013
@@ -43,151 +83,6 @@ UIA_NativeWindowHandlePropertyId = 30020
 UIA_WindowVisualStatePropertyId = 30027
 UIA_WindowWindowInteractionStatePropertyId = 30028
 UIA_IsWindowPatternAvailablePropertyId = 30029
-UIA_WindowPatternId = 10009
-UIA_LegacyIAccessiblePatternId = 10018
-UIA_ValuePatternId = 10002
-UIA_ExpandCollapsePatternId = 10005
-UIA_TogglePatternId = 10006
-UIA_SelectionItemPatternId = 10034
-UIA_InvokePatternId = 10000
-UIA_ScrollPatternId = 10004
-UIA_TransformPatternId = 10025
-
-# UIA Control Type IDs
-UIA_WindowControlTypeId = 50032
-UIA_PaneControlTypeId = 50033
-UIA_ButtonControlTypeId = 50000
-UIA_TextControlTypeId = 50020
-UIA_EditControlTypeId = 50004
-UIA_ListControlTypeId = 50008
-UIA_ListItemControlTypeId = 50009
-UIA_TreeControlTypeId = 50010
-UIA_TreeItemControlTypeId = 50011
-UIA_TabControlTypeId = 50017
-UIA_TabItemControlTypeId = 50018
-UIA_MenuControlTypeId = 50012
-UIA_MenuItemControlTypeId = 50013
-UIA_ToolBarControlTypeId = 50015
-UIA_StatusBarControlTypeId = 50023
-UIA_ScrollBarControlTypeId = 50003
-UIA_SliderControlTypeId = 50014
-UIA_ProgressBarControlTypeId = 50019
-UIA_ImageControlTypeId = 50006
-UIA_HyperlinkControlTypeId = 50016
-UIA_CheckBoxControlTypeId = 50001
-UIA_RadioButtonControlTypeId = 50017
-UIA_ComboBoxControlTypeId = 50002
-UIA_SpinnerControlTypeId = 50021
-UIA_ToolTipControlTypeId = 50022
-UIA_GroupControlTypeId = 50026
-UIA_SeparatorControlTypeId = 50028
-UIA_ThumbControlTypeId = 50027
-
-# TreeScope
-TreeScope_Element = 0x1
-TreeScope_Children = 0x2
-TreeScope_Descendants = 0x4
-TreeScope_Parent = 0x8
-TreeScope_Ancestors = 0x10
-TreeScope_Subtree = 0x7
-
-# CacheRequest flags
-UiaCacheRequestOptions_None = 0
-
-# UIA interface GUIDs
-IID_IUIAutomation = GUID("{30cbe57d-d9d0-452a-ab13-7ac5ac4825ee}")
-IID_IUIAutomationElement = GUID("{d22108aa-8ac5-49a5-837b-37bbb3d7591e}")
-IID_IUIAutomationCondition = GUID("{352ffba8-0973-437c-a61f-f64cafd81df9}")
-IID_IUIAutomationTreeWalker = GUID("{4042c624-389c-4a39-9c8d-9f1534729bc1}")
-IID_IUIAutomationCacheRequest = GUID("{b32a92b5-bc25-4078-9c08-d7ee95c48e03}")
-
-CLSID_CUIAutomation = GUID("{ff48dba4-60ef-4201-aa87-54103eef594e}")
-
-
-class IUIAutomationElement(IUnknown):
-    _iid_ = IID_IUIAutomationElement
-    _methods_ = [
-        COMMETHOD([], HRESULT, "GetCurrentPropertyValue",
-                  (['in'], ctypes.c_int, 'propertyId'),
-                  (['out', 'retval'], ctypes.POINTER(VARIANT), 'retVal')),
-        COMMETHOD([], HRESULT, "GetCachedPropertyValue",
-                  (['in'], ctypes.c_int, 'propertyId'),
-                  (['out', 'retval'], ctypes.POINTER(VARIANT), 'retVal')),
-        COMMETHOD([], HRESULT, "GetCurrentPatternAs",
-                  (['in'], GUID, 'patternId'),
-                  (['in'], GUID, 'riid'),
-                  (['out', 'retval'], ctypes.POINTER(ctypes.c_void_p), 'retVal')),
-        COMMETHOD([], HRESULT, "FindFirst",
-                  (['in'], ctypes.c_int, 'scope'),
-                  (['in'], ctypes.POINTER(IUnknown), 'condition'),
-                  (['out', 'retval'], ctypes.POINTER(ctypes.POINTER("IUIAutomationElement")), 'retVal')),
-        COMMETHOD([], HRESULT, "FindAll",
-                  (['in'], ctypes.c_int, 'scope'),
-                  (['in'], ctypes.POINTER(IUnknown), 'condition'),
-                  (['out', 'retval'], ctypes.POINTER(ctypes.c_void_p), 'retVal')),
-    ]
-
-
-class IUIAutomationCondition(IUnknown):
-    _iid_ = IID_IUIAutomationCondition
-    _methods_ = []
-
-
-class IUIAutomationTreeWalker(IUnknown):
-    _iid_ = IID_IUIAutomationTreeWalker
-    _methods_ = [
-        COMMETHOD([], HRESULT, "GetParentElement",
-                  (['in'], ctypes.POINTER("IUIAutomationElement"), 'element'),
-                  (['out', 'retval'], ctypes.POINTER(ctypes.POINTER("IUIAutomationElement")), 'retVal')),
-        COMMETHOD([], HRESULT, "GetFirstChildElement",
-                  (['in'], ctypes.POINTER("IUIAutomationElement"), 'element'),
-                  (['out', 'retval'], ctypes.POINTER(ctypes.POINTER("IUIAutomationElement")), 'retVal')),
-        COMMETHOD([], HRESULT, "GetLastChildElement",
-                  (['in'], ctypes.POINTER("IUIAutomationElement"), 'element'),
-                  (['out', 'retval'], ctypes.POINTER(ctypes.POINTER("IUIAutomationElement")), 'retVal')),
-        COMMETHOD([], HRESULT, "GetNextSiblingElement",
-                  (['in'], ctypes.POINTER("IUIAutomationElement"), 'element'),
-                  (['out', 'retval'], ctypes.POINTER(ctypes.POINTER("IUIAutomationElement")), 'retVal')),
-        COMMETHOD([], HRESULT, "GetPreviousSiblingElement",
-                  (['in'], ctypes.POINTER("IUIAutomationElement"), 'element'),
-                  (['out', 'retval'], ctypes.POINTER(ctypes.POINTER("IUIAutomationElement")), 'retVal')),
-    ]
-
-
-class IUIAutomationCacheRequest(IUnknown):
-    _iid_ = IID_IUIAutomationCacheRequest
-    _methods_ = [
-        COMMETHOD([], HRESULT, "AddProperty",
-                  (['in'], ctypes.c_int, 'propertyId')),
-        COMMETHOD([], HRESULT, "AddPattern",
-                  (['in'], ctypes.c_int, 'patternId')),
-    ]
-
-
-class IUIAutomation(IUnknown):
-    _iid_ = IID_IUIAutomation
-    _methods_ = [
-        COMMETHOD([], HRESULT, "GetRootElement",
-                  (['out', 'retval'], ctypes.POINTER(ctypes.POINTER("IUIAutomationElement")), 'retVal')),
-        COMMETHOD([], HRESULT, "ElementFromHandle",
-                  (['in'], wintypes.HWND, 'hwnd'),
-                  (['out', 'retval'], ctypes.POINTER(ctypes.POINTER("IUIAutomationElement")), 'retVal')),
-        COMMETHOD([], HRESULT, "ElementFromPoint",
-                  (['in'], ctypes.c_longlong, 'pt'),
-                  (['out', 'retval'], ctypes.POINTER(ctypes.POINTER("IUIAutomationElement")), 'retVal')),
-        COMMETHOD([], HRESULT, "CreateCacheRequest",
-                  (['out', 'retval'], ctypes.POINTER(ctypes.POINTER(IUIAutomationCacheRequest)), 'retVal')),
-        COMMETHOD([], HRESULT, "CreateTrueCondition",
-                  (['out', 'retval'], ctypes.POINTER(ctypes.POINTER(IUIAutomationCondition)), 'retVal')),
-        COMMETHOD([], HRESULT, "CreatePropertyCondition",
-                  (['in'], ctypes.c_int, 'propertyId'),
-                  (['in'], VARIANT, 'value'),
-                  (['out', 'retval'], ctypes.POINTER(ctypes.POINTER(IUIAutomationCondition)), 'retVal')),
-        COMMETHOD([], HRESULT, "ControlViewWalker",
-                  (['out', 'retval'], ctypes.POINTER(ctypes.POINTER(IUIAutomationTreeWalker)), 'retVal')),
-        COMMETHOD([], HRESULT, "ContentViewWalker",
-                  (['out', 'retval'], ctypes.POINTER(ctypes.POINTER(IUIAutomationTreeWalker)), 'retVal')),
-    ]
 
 
 # =============================================================================
@@ -276,83 +171,85 @@ class Observation:
 
 
 # =============================================================================
-# Control type name mapping
-# =============================================================================
-
-
-CONTROL_TYPE_NAMES: dict[int, str] = {
-    UIA_WindowControlTypeId: "Window",
-    UIA_PaneControlTypeId: "Pane",
-    UIA_ButtonControlTypeId: "Button",
-    UIA_TextControlTypeId: "Text",
-    UIA_EditControlTypeId: "Edit",
-    UIA_ListControlTypeId: "List",
-    UIA_ListItemControlTypeId: "ListItem",
-    UIA_TreeControlTypeId: "Tree",
-    UIA_TreeItemControlTypeId: "TreeItem",
-    UIA_TabControlTypeId: "Tab",
-    UIA_TabItemControlTypeId: "TabItem",
-    UIA_MenuControlTypeId: "Menu",
-    UIA_MenuItemControlTypeId: "MenuItem",
-    UIA_ToolBarControlTypeId: "ToolBar",
-    UIA_StatusBarControlTypeId: "StatusBar",
-    UIA_ScrollBarControlTypeId: "ScrollBar",
-    UIA_SliderControlTypeId: "Slider",
-    UIA_ProgressBarControlTypeId: "ProgressBar",
-    UIA_ImageControlTypeId: "Image",
-    UIA_HyperlinkControlTypeId: "Hyperlink",
-    UIA_CheckBoxControlTypeId: "CheckBox",
-    UIA_RadioButtonControlTypeId: "RadioButton",
-    UIA_ComboBoxControlTypeId: "ComboBox",
-    UIA_SpinnerControlTypeId: "Spinner",
-    UIA_ToolTipControlTypeId: "ToolTip",
-    UIA_GroupControlTypeId: "Group",
-    UIA_SeparatorControlTypeId: "Separator",
-    UIA_ThumbControlTypeId: "Thumb",
-}
-
-
-def control_type_name(control_type_id: int) -> str:
-    return CONTROL_TYPE_NAMES.get(control_type_id, f"Unknown({control_type_id})")
-
-
-# =============================================================================
 # Variant helpers
 # =============================================================================
 
 
-def variant_to_str(variant: VARIANT) -> str:
-    if variant.vt == VT_BSTR:
-        return variant.value or ""
-    if variant.vt == VT_I4:
-        return str(variant.value)
-    if variant.vt == VT_UI4:
-        return str(variant.value)
-    if variant.vt == VT_EMPTY:
+def variant_to_str(variant: Any) -> str:
+    if variant is None:
         return ""
-    return str(variant.value) if variant.value is not None else ""
+    if hasattr(variant, 'value'):
+        val = variant.value
+        if val is None:
+            return ""
+        return str(val)
+    return str(variant)
 
 
-def variant_to_int(variant: VARIANT) -> int:
-    if variant.vt in (VT_I4, VT_UI4):
-        return int(variant.value or 0)
-    return 0
-
-
-def variant_to_bool(variant: VARIANT) -> bool:
-    if variant.vt == VT_I4:
-        return bool(variant.value)
-    return False
-
-
-def variant_to_runtime_id(variant: VARIANT) -> list[int]:
-    if variant.vt == (VT_ARRAY | VT_I4):
+def variant_to_int(variant: Any) -> int:
+    if variant is None:
+        return 0
+    if hasattr(variant, 'value'):
+        val = variant.value
+        if val is None:
+            return 0
         try:
-            arr = safearray_as_ndarray(variant)
-            return arr.tolist()
-        except Exception:
-            pass
-    return []
+            return int(val)
+        except (ValueError, TypeError):
+            return 0
+    try:
+        return int(variant)
+    except (ValueError, TypeError):
+        return 0
+
+
+def variant_to_bool(variant: Any) -> bool:
+    if variant is None:
+        return False
+    if hasattr(variant, 'value'):
+        val = variant.value
+        if val is None:
+            return False
+        return bool(val)
+    return bool(variant)
+
+
+def variant_to_runtime_id(variant: Any) -> list[int]:
+    if variant is None:
+        return []
+    try:
+        if hasattr(variant, 'value'):
+            val = variant.value
+            if val is None:
+                return []
+            if hasattr(val, '__iter__'):
+                return list(val)
+        return []
+    except Exception:
+        return []
+
+
+def variant_to_rect(variant: Any) -> Rect:
+    rect = Rect()
+    if variant is None:
+        return rect
+    try:
+        if hasattr(variant, 'value'):
+            val = variant.value
+            if val is None:
+                return rect
+            if hasattr(val, '__iter__'):
+                arr = list(val)
+                if len(arr) >= 4:
+                    rect = Rect(
+                        left=int(arr[0]),
+                        top=int(arr[1]),
+                        right=int(arr[0] + arr[2]),
+                        bottom=int(arr[1] + arr[3]),
+                    )
+    except Exception:
+        pass
+    return rect
 
 
 # =============================================================================
@@ -361,11 +258,11 @@ def variant_to_runtime_id(variant: VARIANT) -> list[int]:
 
 
 class Desktop:
-    """Main desktop observation class using UIA COM."""
+    """Main desktop observation class using UIA COM via comtypes.gen.UIAutomationClient."""
     
     def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or {}
-        self._automation: IUIAutomation | None = None
+        self._automation: uia.IUIAutomation | None = None
         self._last_observation: Observation | None = None
         self._focused_title_cache: str = ""
         self._init_automation()
@@ -374,35 +271,32 @@ class Desktop:
         """Initialize UIA automation."""
         try:
             self._automation = comtypes.client.CreateObject(
-                CLSID_CUIAutomation, interface=IUIAutomation
+                uia.CUIAutomation, interface=uia.IUIAutomation
             )
         except Exception as e:
             raise RuntimeError(f"Failed to initialize UIA automation: {e}")
     
     @property
-    def automation(self) -> IUIAutomation:
+    def automation(self) -> uia.IUIAutomation:
         if self._automation is None:
             self._init_automation()
         return self._automation
     
-    def _get_root_element(self) -> IUIAutomationElement:
+    def _get_root_element(self) -> uia.IUIAutomationElement:
         """Get the desktop root element."""
-        root = ctypes.POINTER(IUIAutomationElement)()
-        hr = self.automation.GetRootElement(ctypes.byref(root))
-        if hr != 0 or not root:
-            raise RuntimeError(f"Failed to get root element: HRESULT={hr:#x}")
+        root = self.automation.GetRootElement()
+        if not root:
+            raise RuntimeError("Failed to get root element")
         return root
     
-    def _get_property(self, element: IUIAutomationElement, property_id: int) -> VARIANT:
+    def _get_property(self, element: uia.IUIAutomationElement, property_id: int) -> Any:
         """Get a property value from an element."""
-        variant = VARIANT()
-        variant.vt = VT_EMPTY
-        hr = element.GetCurrentPropertyValue(property_id, ctypes.byref(variant))
-        if hr != 0:
-            variant.vt = VT_EMPTY
-        return variant
+        try:
+            return element.GetCurrentPropertyValue(property_id)
+        except Exception:
+            return None
     
-    def _element_to_element(self, uia_element: IUIAutomationElement, max_depth: int = 3, current_depth: int = 0) -> Element:
+    def _element_to_element(self, uia_element: uia.IUIAutomationElement, max_depth: int = 3, current_depth: int = 0) -> Element:
         """Convert UIA element to our Element dataclass."""
         if current_depth >= max_depth:
             return Element()
@@ -410,7 +304,6 @@ class Desktop:
         # Get properties
         name_var = self._get_property(uia_element, UIA_NamePropertyId)
         control_type_var = self._get_property(uia_element, UIA_ControlTypePropertyId)
-        localized_type_var = self._get_property(uia_element, UIA_LocalizedControlTypePropertyId)
         rect_var = self._get_property(uia_element, UIA_BoundingRectanglePropertyId)
         class_name_var = self._get_property(uia_element, UIA_ClassNamePropertyId)
         process_id_var = self._get_property(uia_element, UIA_ProcessIdPropertyId)
@@ -424,21 +317,6 @@ class Desktop:
         
         control_type_id = variant_to_int(control_type_var)
         
-        # Build rect
-        rect = Rect()
-        if rect_var.vt == (VT_ARRAY | VT_I4):
-            try:
-                arr = safearray_as_ndarray(rect_var)
-                if len(arr) >= 4:
-                    rect = Rect(
-                        left=int(arr[0]),
-                        top=int(arr[1]),
-                        right=int(arr[0] + arr[2]),
-                        bottom=int(arr[1] + arr[3]),
-                    )
-            except Exception:
-                pass
-        
         element = Element(
             name=variant_to_str(name_var),
             control_type=control_type_name(control_type_id),
@@ -446,7 +324,7 @@ class Desktop:
             automation_id=variant_to_str(automation_id_var),
             class_name=variant_to_str(class_name_var),
             process_id=variant_to_int(process_id_var),
-            rect=rect,
+            rect=variant_to_rect(rect_var),
             is_enabled=variant_to_bool(is_enabled_var),
             is_offscreen=variant_to_bool(is_offscreen_var),
             has_focus=variant_to_bool(has_focus_var),
@@ -458,33 +336,22 @@ class Desktop:
         # Get children
         if current_depth < max_depth - 1:
             try:
-                walker = ctypes.POINTER(IUIAutomationTreeWalker)()
-                hr = self.automation.ControlViewWalker(ctypes.byref(walker))
-                if hr == 0 and walker:
-                    child = ctypes.POINTER(IUIAutomationElement)()
-                    hr = walker.GetFirstChildElement(uia_element, ctypes.byref(child))
-                    while hr == 0 and child:
-                        element.children.append(self._element_to_element(child, max_depth, current_depth + 1))
-                        next_sibling = ctypes.POINTER(IUIAutomationElement)()
-                        hr = walker.GetNextSiblingElement(child, ctypes.byref(next_sibling))
-                        child = next_sibling
+                walker = self.automation.ControlViewWalker
+                child = walker.GetFirstChildElement(uia_element)
+                while child:
+                    element.children.append(self._element_to_element(child, max_depth, current_depth + 1))
+                    child = walker.GetNextSiblingElement(child)
             except Exception:
                 pass
         
         return element
     
-    def _find_focused_element(self, root: IUIAutomationElement) -> IUIAutomationElement | None:
+    def _find_focused_element(self, root: uia.IUIAutomationElement) -> uia.IUIAutomationElement | None:
         """Find the element with keyboard focus."""
         try:
-            true_condition = ctypes.POINTER(IUIAutomationCondition)()
-            hr = self.automation.CreateTrueCondition(ctypes.byref(true_condition))
-            if hr != 0 or not true_condition:
-                return None
-            
-            focused = ctypes.POINTER(IUIAutomationElement)()
-            hr = root.FindFirst(TreeScope_Descendants, true_condition, ctypes.byref(focused))
-            if hr == 0 and focused:
-                # Check if this element has focus
+            true_condition = self.automation.CreateTrueCondition()
+            focused = root.FindFirst(0x4, true_condition)  # TreeScope_Descendants = 0x4
+            if focused:
                 focus_var = self._get_property(focused, UIA_HasKeyboardFocusPropertyId)
                 if variant_to_bool(focus_var):
                     return focused
@@ -492,22 +359,20 @@ class Desktop:
             pass
         return None
     
-    def _get_active_window(self) -> IUIAutomationElement | None:
+    def _get_active_window(self) -> uia.IUIAutomationElement | None:
         """Get the active (foreground) window."""
         try:
-            # Get foreground window handle
             user32 = ctypes.windll.user32
             hwnd = user32.GetForegroundWindow()
             if hwnd:
-                element = ctypes.POINTER(IUIAutomationElement)()
-                hr = self.automation.ElementFromHandle(hwnd, ctypes.byref(element))
-                if hr == 0 and element:
+                element = self.automation.ElementFromHandle(hwnd)
+                if element:
                     return element
         except Exception:
             pass
         return None
     
-    def _get_window_title(self, element: IUIAutomationElement) -> str:
+    def _get_window_title(self, element: uia.IUIAutomationElement) -> str:
         """Get window title from element."""
         name_var = self._get_property(element, UIA_NamePropertyId)
         return variant_to_str(name_var)
@@ -559,20 +424,15 @@ class Desktop:
         # Get root elements (top-level windows)
         root_elements = []
         try:
-            walker = ctypes.POINTER(IUIAutomationTreeWalker)()
-            hr = self.automation.ControlViewWalker(ctypes.byref(walker))
-            if hr == 0 and walker:
-                child = ctypes.POINTER(IUIAutomationElement)()
-                hr = walker.GetFirstChildElement(root, ctypes.byref(child))
-                count = 0
-                while hr == 0 and child and count < max_elements:
-                    elem = self._element_to_element(child, max_depth)
-                    if include_offscreen or not elem.is_offscreen:
-                        root_elements.append(elem)
-                        count += 1
-                    next_sibling = ctypes.POINTER(IUIAutomationElement)()
-                    hr = walker.GetNextSiblingElement(child, ctypes.byref(next_sibling))
-                    child = next_sibling
+            walker = self.automation.ControlViewWalker
+            child = walker.GetFirstChildElement(root)
+            count = 0
+            while child and count < max_elements:
+                elem = self._element_to_element(child, max_depth)
+                if include_offscreen or not elem.is_offscreen:
+                    root_elements.append(elem)
+                    count += 1
+                child = walker.GetNextSiblingElement(child)
         except Exception:
             pass
         
