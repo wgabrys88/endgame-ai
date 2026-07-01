@@ -572,17 +572,142 @@ python workbench.py
 
 ---
 
-## File Line Count (Current)
+## Full Revisited Plan (Phase 5C → 5D)
+
+### Phase 5C: Filtered Observation + Core Nodes (Current Sprint)
+
+| Step | Task | File | Status |
+|------|------|------|--------|
+| 1 | **Filter observation to actionable elements only** | `desktop.py` | 🔄 In progress |
+|   | - Keep only elements with non-zero rect (width>0, height>0) | | |
+|   | - Filter to interactive control types (Button, Edit, ComboBox, ListItem, TabItem, MenuItem, CheckBox, RadioButton, Slider, Spinner, Hyperlink) | | |
+|   | - Deduplicate by runtime_id | | |
+|   | - Return dict keyed by element_id (not list) | | |
+| 2 | **Add window tokens (W1..Wn)** | `desktop.py` | ⏳ Pending |
+|   | - Enumerate visible top-level windows | | |
+|   | - Assign stable tokens W1, W2... across observations | | |
+> - Include hwnd, title, rect in window registry |
+| 3 | **Element classification (role→action)** | `desktop.py` | ⏳ Pending |
+|   | - Button → "click" | | |
+|   | - Edit/ComboBox → "write" | | |
+|   | - List/Tree/ScrollBar → "scroll" | | |
+|   | - Others → "" | | |
+| 4 | **Format SCREEN text for LLM** | `desktop.py` | ⏳ Pending |
+|   | - WINDOWS list with tokens: `* [W1] Notepad - Untitled` | | |
+|   | - Focused element details | | |
+|   | - Key actionable elements with id, role, name, px, py, hwnd, action | | |
+| 5 | **Integrate hover_scan into observe()** | `desktop.py` | ⏳ Pending |
+|   | - Run hover_scan on foreground window | | |
+|   | - Merge with tree-walk elements | | |
+|   | - Use as primary element source (more accurate positions) | | |
+| 6 | **Update observe node output** | `seed_nodes/observe.py` | ⏳ Pending |
+|   | - Return `elements` as dict[id] with px, py, hwnd, role, name, action, wnd | | |
+|   | - Return `screen_text` (formatted SCREEN) | | |
+|   | - Signal: `screen_ready` | | |
+| 7 | **Implement Verify node** | `seed_nodes/verify.py` | ⏳ Pending |
+|   | - Input: step goal, done_when, screen_text, elements, last_action, last_result, last_error | | |
+|   | - Evidence-based: check for visible window, text present, element state | | |
+|   - Return `step_confirmed` (success) or `step_denied` (failure) | | |
+| 8 | **Implement Reflect node** | `seed_nodes/reflect.py` | ⏳ Pending |
+|   | - Input: last_error, last_result, screen_text, step goal | | |
+|   | - Output: concrete diagnosis + specific suggestion | | |
+|   | - Route: `retry` (same step), `replan` (new plan), `escalate` (self_modify), `give_up` (satisfied) | | |
+| 9 | **Implement Self-Modify node** | `seed_nodes/self_modify.py` | ⏳ Pending |
+|   | - Input: current wiring, live_nodes list, goal, failure context | | |
+|   | - Output: wiring_patch record with wiring_patches, node_writes, node_deletes | | |
+|   | - Use apply_wiring_patch + save_wiring from nodes.py | | |
+
+### Phase 5D: Cleanup + Integration Test
+
+| Step | Task | File | Status |
+|------|------|------|--------|
+| 10 | Remove control.json pause/step logic | `organism.py` | ⏳ Pending |
+| 11 | Remove `--max-brain-calls` arg | `organism.py` | ⏳ Pending |
+| 12 | Remove control endpoints from workbench | `workbench.py` | ⏳ Pending |
+| 13 | Full integration test | — | ⏳ Pending |
+|   | `python organism.py --reset --max-ticks 20 "open Opera, go to linkedin.com, write post about Grok desktop, post to X"` | | |
+
+---
+
+## What's Actually Implemented vs Planned (Honest Assessment)
+
+| Component | Claimed in Plan | Actually Working | Gap |
+|-----------|-----------------|------------------|-----|
+| Transport System | ✅ | ✅ | None |
+| ROD Reasoning | ✅ | ✅ | None |
+| Hot-swappable Nodes | ✅ | ✅ | None |
+| BaseNode ABC | ✅ | ✅ | None |
+| Error Topology | ✅ | ✅ | None |
+| Desktop Observation (UIA COM) | ✅ | ✅ | Returns bloat, no filtering |
+| Hover Scan Methods | ✅ | ✅ Methods exist | Not integrated into observe() |
+| Execute Node | ✅ | ✅ Working | Needs filtered elements input |
+| Scheduler Node | ✅ | ✅ Working | None |
+| Verify Node | Planned | ❌ Stub only | Full implementation needed |
+| Reflect Node | Planned | ❌ Stub only | Full implementation needed |
+| Self-Modify Node | Planned | ❌ Stub only | Full implementation needed |
+| Window Tokens | Planned | ❌ Not started | Needed for targeting |
+| Element Classification | Planned | ❌ Not started | Needed |
+| SCREEN Formatting | Planned | ❌ | Needed for LLM context |
+| Workbench | ✅ | ✅ Read-only | No control (correct) |
+
+---
+
+## Critical Files to Read Next Session
+
+1. **desktop.py** — Core observation logic, needs filtering/formatting (lines ~590+)
+2. **seed_nodes/observe.py** — Needs to return filtered dict, not list
+3. **seed_nodes/verify.py** — Currently 18-line stub
+4. **seed_nodes/reflect.py** — Currently 18-line stub
+5. **seed_nodes/self_modify.py** — Currently 10-line stub
+6. **nodes.py** — Has `build_execute_namespace`, `apply_wiring_patch` ready
+7. **wiring.json** — Has correct topology and prompts
+8. **organism.py** — Main loop, has control.json logic to remove
+
+---
+
+## Run Commands for Next Session
+
+```powershell
+# Validate syntax
+python -m py_compile brain.py nodes.py organism.py workbench.py desktop.py
+python -c "import py_compile, pathlib; [py_compile.compile(str(p), doraise=True) for d in ['seed_nodes','seed_brains'] for p in pathlib.Path(d).glob('*.py')]"
+
+# Test observation filtering (after implementation)
+python organism.py --reset --max-ticks 3 "observe desktop"
+
+# Full test goal
+python organism.py --reset --max-ticks 20 "open Opera, go to linkedin.com, write post about Grok desktop, post to X"
+
+# Workbench
+python workbench.py  # http://127.0.0.1:8800/
+```
+
+---
+
+## Key Design Decisions (Locked In)
+
+1. **No fallbacks** — Transport fails = organism stops
+2. **Execute node = action + evolution layer** — Grok writes Python, no verb list
+3. **Self-modify = wiring.json + live_nodes/*.py** — Atomic, hot-swapped
+4. **Hover scan > UIA tree walk** — More accurate positions, filters bloat
+5. **Window tokens (W1..Wn)** — Stable references across observations
+6. **Evidence-based verify** — Not literal matching, uses screen/elements/result
+7. **--max-ticks only** — No pause/step, no max-brain-calls
+8. **Workbench read-only** — Reflects reality, no control
+
+---
+
+## File Line Count (Current Snapshot)
 
 | File | Lines | Status |
 |------|-------|--------|
 | `brain.py` | 508 | ✅ Stable |
 | `nodes.py` | ~250 | ✅ Stable |
-| `organism.py` | 230 | ✅ Stable |
-| `desktop.py` | ~780 | ⚠️ Needs filtering/formatting |
+| `organism.py` | 230 | ⚠️ Remove control logic |
+| `desktop.py` | ~780 | 🔄 Filtering in progress |
 | `seed_nodes/planner.py` | 18 | ✅ Done |
 | `seed_nodes/scheduler.py` | 15 | ✅ Done |
-| `seed_nodes/observe.py` | 16 | ⚠️ Needs filtering |
+| `seed_nodes/observe.py` | 16 | 🔄 Needs rewrite |
 | `seed_nodes/execute.py` | ~100 | ✅ Working |
 | `seed_nodes/verify.py` | 18 | ❌ Stub |
 | `seed_nodes/reflect.py` | 18 | ❌ Stub |
@@ -591,4 +716,4 @@ python workbench.py
 | `seed_nodes/error.py` | 26 | ✅ Done |
 | `workbench.py` + JS | ~500 | ✅ Working |
 
-**Net capability**: 10 hardcoded verbs → unbounded Python via execute node. Self-evolving code via self_modify.
+**Net capability delivered**: 10 hardcoded verbs → unbounded Python via execute node. Self-evolving code via self_modify (stub).
