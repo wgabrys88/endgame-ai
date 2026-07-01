@@ -92,23 +92,28 @@
     "cycle_start": "planner",
     "nodes": [
       "planner",
+      "scheduler",
       "observe",
       "execute",
       "verify",
       "reflect",
       "self_modify",
-      "scheduler",
+      "satisfied",
       "error"
     ],
     "edges": {
       "planner": {
-        "observe": "observe",
+        "step_ready": "scheduler",
         "reflect": "reflect",
         "error": "error"
       },
+      "scheduler": {
+        "step_ready": "observe",
+        "plan_complete": "satisfied",
+        "error": "error"
+      },
       "observe": {
-        "execute": "execute",
-        "reflect": "reflect",
+        "screen_ready": "execute",
         "error": "error"
       },
       "execute": {
@@ -118,24 +123,24 @@
         "error": "error"
       },
       "verify": {
-        "planner": "planner",
-        "reflect": "reflect",
+        "step_confirmed": "scheduler",
+        "step_denied": "reflect",
         "error": "error"
       },
       "reflect": {
-        "planner": "planner",
-        "self_modify": "self_modify",
+        "retry": "observe",
+        "replan": "planner",
+        "escalate": "self_modify",
+        "give_up": "satisfied",
         "error": "error"
       },
       "self_modify": {
-        "planner": "planner",
-        "reflect": "reflect",
+        "modified": "planner",
+        "modify_failed": "reflect",
         "error": "error"
       },
-      "scheduler": {
-        "planner": "planner",
-        "reflect": "reflect",
-        "error": "error"
+      "satisfied": {
+        "halt": "halt"
       },
       "error": {
         "planner": "planner",
@@ -145,11 +150,13 @@
     }
   },
   "prompts": {
-    "planner": "You are the planner node of endgame-ai. Return one JSON object with record_type='plan', data.next_signal (must be 'observe' or 'reflect'), and data.intent (your plan).",
+    "planner": "You are the planner node of endgame-ai. Return one JSON object with record_type='plan', data.next_signal (must be 'step_ready' or 'reflect'), and data.intent (your plan as a list of steps, each with 'description' and 'done_when').",
+    "scheduler": "You are the scheduler node of endgame-ai. Pick the next step from state.plan by index state.step. Return record_type='schedule', data.next_signal ('step_ready' or 'plan_complete'), data.step (the step object or null if complete).",
     "execute": "You are the EXECUTE node. Write Python code to achieve the step goal. You have full access to the Windows desktop via the namespace. Return JSON with record_type='execution', data.code (Python string), data.conclusion ('EXECUTE' or 'CANNOT').",
-    "verify": "You are the verify node of endgame-ai. Return one JSON object with record_type='verification', data.next_signal (must be 'planner' or 'reflect'), and data.success (boolean).",
-    "reflect": "You are the reflect node of endgame-ai. Return one JSON object with record_type='reflection', data.next_signal (must be 'planner' or 'self_modify'), and data.lesson (what you learned).",
-    "scheduler": "You are the scheduler node of endgame-ai. Return one JSON object with record_type='schedule', data.next_signal (must be 'planner' or 'reflect'), and data.step (current step object or null if plan complete)."
+    "verify": "You are the verify node of endgame-ai. Judge if the step intent was satisfied based on evidence (screen, last_action, last_result, last_error). Return record_type='verification', data.next_signal ('step_confirmed' or 'step_denied'), data.success (boolean).",
+    "reflect": "You are the reflect node of endgame-ai. Diagnose failure and choose recovery. Return record_type='reflection', data.next_signal ('retry'|'replan'|'escalate'|'give_up'), data.lesson (concrete diagnosis + specific suggestion).",
+    "self_modify": "You are the self-modify node. You may rewrite wiring.json AND write new node files to live_nodes/. Return record_type='wiring_patch', data with wiring_patches, node_writes, node_deletes.",
+    "satisfied": "Goal achieved. Return record_type='satisfied', data.next_signal='halt'."
   },
   "action_verbs": {
     "click": "Click at coordinates or on element: {x, y} or {element_id}.",

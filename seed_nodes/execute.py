@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import brain
 import nodes
+import desktop
+import json
 
 
 def run(ctx):
@@ -9,12 +11,12 @@ def run(ctx):
     state = ctx.get("state", {})
     wiring = ctx.get("wiring", {})
     goal = ctx.get("goal", "")
-    
+
     # Get current step from scheduler
     step = state.get("current_step") or {}
     step_goal = step.get("description", goal)
     done_when = step.get("done_when", "")
-    
+
     # Get observation data
     screen = state.get("screen", {})
     elements = state.get("elements", {})
@@ -22,7 +24,7 @@ def run(ctx):
     last_error = state.get("last_error")
     last_result = state.get("last_result", "")
     last_action = state.get("last_action", {})
-    
+
     # Format elements for prompt
     elements_summary = {}
     if isinstance(elements, list):
@@ -30,7 +32,7 @@ def run(ctx):
             elements_summary[str(i)] = el
     elif isinstance(elements, dict):
         elements_summary = elements
-    
+
     # Build the execute prompt
     prompt = f"""You are the EXECUTE node. Write Python code to achieve the step goal.
 
@@ -84,16 +86,18 @@ RULES:
         payload={"prompt": prompt, "goal": goal, "state": state},
         wiring=wiring
     )
-    
+
     if record.get("record_type") != "execution":
         raise RuntimeError(f"execute expected record_type=execution, got {record.get('record_type')}")
-    
+
     data = record.get("data", {})
     code = data.get("code", "")
     conclusion = data.get("conclusion", "CANNOT")
-    
+
     if conclusion == "EXECUTE" and code.strip():
         ns = nodes.build_execute_namespace(ctx)
+        # Add desktop module to namespace
+        ns["desktop"] = desktop
         try:
             exec(code, ns)
             result = ns.get("result", "executed (no result variable)")
@@ -111,8 +115,5 @@ RULES:
     else:
         patch = {"last_action": {"code": "", "conclusion": "CANNOT"}, "last_error": "execute returned CANNOT"}
         signal = "reflect"
-    
+
     return signal, patch
-
-
-import json

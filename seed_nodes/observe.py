@@ -7,7 +7,7 @@ def run(ctx):
     """Observe the desktop and return observation data."""
     config = ctx.get("wiring", {}).get("observe_config", {})
     obs = desktop.observe(config)
-    return "decide", {
+    return "screen_ready", {
         "observation": obs,
         "screen": obs.get("screen"),
         "elements": obs.get("elements"),
