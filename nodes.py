@@ -8,6 +8,7 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 import brain
+import desktop
 
 ROOT = pathlib.Path(__file__).parent.resolve()
 
@@ -100,3 +101,23 @@ def topology_summary(wiring: dict[str, Any]) -> dict[str, Any]:
         "nodes": list(topo.get("nodes", [])),
         "edges": topo.get("edges", {}),
     }
+
+
+# =============================================================================
+# Desktop observation helpers for nodes
+# =============================================================================
+
+
+def observe_screen(ctx: dict[str, Any] | None = None) -> dict[str, int]:
+    """Get screen dimensions."""
+    return desktop.observe_screen()
+
+
+def last_observation_snapshot(ctx: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    """Get the last full observation snapshot."""
+    return desktop.last_observation_snapshot()
+
+
+def get_focused_title(ctx: dict[str, Any] | None = None) -> str:
+    """Get the title of the currently focused window."""
+    return desktop.get_focused_title()
