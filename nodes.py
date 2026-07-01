@@ -2,8 +2,12 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import pathlib
 import shutil
+import subprocess
+import sys
+import time
 from abc import ABC, abstractmethod
 from typing import Any
 
@@ -121,3 +125,191 @@ def last_observation_snapshot(ctx: dict[str, Any] | None = None) -> dict[str, An
 def get_focused_title(ctx: dict[str, Any] | None = None) -> str:
     """Get the title of the currently focused window."""
     return desktop.get_focused_title()
+
+
+# =============================================================================
+# Execute namespace builder
+# =============================================================================
+
+
+def _get_desktop_instance():
+    """Get the singleton Desktop instance."""
+    return desktop.get_desktop()
+
+
+def execute_verb(verb: str, target: dict[str, Any] | None = None, value: str | None = None) -> str:
+    """Convenience verbs for common actions."""
+    d = _get_desktop_instance()
+    target = target or {}
+    
+    if verb == "click":
+        x = target.get("px") or target.get("x")
+        y = target.get("py") or target.get("y")
+        hwnd = target.get("hwnd", 0)
+        if x is not None and y is not None:
+            d.click(x, y, hwnd)
+            return f"clicked at ({x},{y})"
+        return "click: missing x/y"
+    
+    elif verb == "write":
+        text = value or target.get("text", "")
+        d.type_text(text)
+        return f"typed: {text[:50]}"
+    
+    elif verb == "press":
+        key = value or target.get("key", "")
+        d.press_key(key)
+        return f"pressed: {key}"
+    
+    elif verb == "hotkey":
+        keys = value or target.get("keys", "")
+        d.hotkey(keys)
+        return f"hotkey: {keys}"
+    
+    elif verb == "focus":
+        target_str = value or target.get("title", "")
+        d.focus_window(target_str)
+        return f"focused: {target_str}"
+    
+    elif verb == "scroll":
+        amount = target.get("amount", 3)
+        direction = target.get("direction", "down")
+        x = target.get("px", 0)
+        y = target.get("py", 0)
+        hwnd = target.get("hwnd", 0)
+        d.scroll(x, y, amount if direction == "down" else -amount, hwnd)
+        return f"scrolled {direction} {amount}"
+    
+    elif verb == "wait":
+        wait_time = target.get("seconds", 1)
+        time.sleep(wait_time)
+        return f"waited {wait_time}s"
+    
+    elif verb == "launch":
+        cmd = value or target.get("command", "")
+        subprocess.Popen(cmd, shell=True)
+        return f"launched: {cmd}"
+    
+    elif verb == "open_url":
+        browser = target.get("browser", "chrome")
+        url = value or target.get("url", "")
+        if browser == "chrome":
+            subprocess.Popen(["chrome", url])
+        else:
+            import webbrowser
+            webbrowser.open(url)
+        return f"opened {url} in {browser}"
+    
+    elif verb == "remember":
+        key = target.get("key", "")
+        val = value or target.get("value", "")
+        return f"remembered {key}={val}"
+    
+    return f"unknown verb: {verb}"
+
+
+def apply_wiring_patch(wiring: dict[str, Any], parsed: dict[str, Any]) -> tuple[str, Any]:
+    """Apply wiring patches and node file writes from self_modify output."""
+    data = (parsed or {}).get("data") or {}
+    
+    # 1. Apply wiring patches
+    for patch in data.get("wiring_patches", []):
+        op = patch.get("op", "set")
+        path = patch.get("path", "")
+        value = patch.get("value")
+        if not path:
+            raise ValueError("wiring_patch missing path")
+        parts = path.split(".")
+        cur = wiring
+        for part in parts[:-1]:
+            if not isinstance(cur.get(part), dict):
+                cur[part] = {}
+            cur = cur[part]
+        if op == "set":
+            cur[parts[-1]] = value
+        elif op == "delete":
+            cur.pop(parts[-1], None)
+        else:
+            raise ValueError(f"unknown op: {op}")
+    
+    # 2. Write node files
+    for write in data.get("node_writes", []):
+        path = pathlib.Path(write["path"])
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(write["content"], encoding="utf-8")
+    
+    # 3. Delete node files
+    for delete_path in data.get("node_deletes", []):
+        pathlib.Path(delete_path).unlink(missing_ok=True)
+    
+    # 4. Atomic write wiring.json
+    save_wiring(wiring)
+    
+    return "set", {
+        "wiring_patches": len(data.get("wiring_patches", [])),
+        "node_writes": len(data.get("node_writes", [])),
+        "node_deletes": len(data.get("node_deletes", [])),
+    }
+
+
+def save_wiring(wiring: dict[str, Any]) -> None:
+    """Atomic write of wiring.json."""
+    brain.atomic_write_json(ROOT / "wiring.json", wiring)
+
+
+def wiring_limit(name: str, default: int, wiring: dict[str, Any]) -> int:
+    """Get a limit from wiring with default."""
+    return wiring.get("limits", {}).get(name, default)
+
+
+def build_execute_namespace(ctx: dict[str, Any]) -> dict[str, Any]:
+    """Build the namespace for execute node's exec()."""
+    d = _get_desktop_instance()
+    state = ctx.get("state", {})
+    wiring = ctx.get("wiring", {})
+    goal = ctx.get("goal", "")
+    
+    return {
+        # Observation
+        "observe_screen": observe_screen,
+        "last_observation_snapshot": last_observation_snapshot,
+        "get_focused_title": get_focused_title,
+        
+        # Convenience verbs
+        "execute_verb": execute_verb,
+        
+        # Raw desktop actions
+        "click": d.click,
+        "type_text": d.type_text,
+        "press_key": d.press_key,
+        "hotkey": d.hotkey,
+        "scroll": d.scroll,
+        "focus_window": d.focus_window,
+        "open_url": d.open_url,
+        
+        # System modules
+        "subprocess": subprocess,
+        "ctypes": ctypes,
+        "os": __import__("os"),
+        "sys": sys,
+        "json": json,
+        "re": __import__("re"),
+        "time": time,
+        "pathlib": pathlib,
+        "math": __import__("math"),
+        "random": __import__("random"),
+        
+        # Self-modification
+        "apply_wiring_patch": apply_wiring_patch,
+        "save_wiring": save_wiring,
+        "wiring_limit": wiring_limit,
+        
+        # Context
+        "state": state,
+        "wiring": wiring,
+        "goal": goal,
+    }
+
+
+# Need ctypes import for build_execute_namespace
+import ctypes

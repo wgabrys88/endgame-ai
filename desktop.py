@@ -473,6 +473,157 @@ class Desktop:
     def configure_observation(self, **kwargs) -> None:
         """Update observation configuration."""
         self.config.update(kwargs)
+    
+    # =============================================================================
+    # Desktop action methods
+    # =============================================================================
+    
+    def click(self, x: int, y: int, hwnd: int = 0) -> dict[str, Any]:
+        """Click at coordinates. If hwnd provided, click in that window."""
+        user32 = ctypes.windll.user32
+        if hwnd:
+            # Click in specific window
+            lparam = (y << 16) | (x & 0xFFFF)
+            user32.PostMessageW(hwnd, 0x0201, 0, lparam)  # WM_LBUTTONDOWN
+            user32.PostMessageW(hwnd, 0x0202, 0, lparam)  # WM_LBUTTONUP
+        else:
+            # Global click
+            user32.SetCursorPos(x, y)
+            user32.mouse_event(0x0002, 0, 0, 0, 0)  # MOUSEEVENTF_LEFTDOWN
+            user32.mouse_event(0x0004, 0, 0, 0, 0)  # MOUSEEVENTF_LEFTUP
+        return {"ok": True, "action": "click", "x": x, "y": y, "hwnd": hwnd}
+    
+    def type_text(self, text: str) -> dict[str, Any]:
+        """Type text into focused element."""
+        user32 = ctypes.windll.user32
+        for char in text:
+            vk = user32.VkKeyScanW(ord(char))
+            if vk == -1:
+                continue
+            vk_code = vk & 0xFF
+            shift = (vk >> 8) & 0xFF
+            if shift:
+                user32.keybd_event(0x10, 0, 0, 0)  # VK_SHIFT down
+            user32.keybd_event(vk_code, 0, 0, 0)  # key down
+            user32.keybd_event(vk_code, 0, 2, 0)  # key up
+            if shift:
+                user32.keybd_event(0x10, 0, 2, 0)  # VK_SHIFT up
+            time.sleep(0.01)
+        return {"ok": True, "action": "type_text", "text": text}
+    
+    def press_key(self, key: str) -> dict[str, Any]:
+        """Press a single key (e.g., 'enter', 'tab', 'escape')."""
+        key_map = {
+            "enter": 0x0D, "tab": 0x09, "escape": 0x1B, "space": 0x20,
+            "up": 0x26, "down": 0x28, "left": 0x25, "right": 0x27,
+            "home": 0x24, "end": 0x23, "pageup": 0x21, "pagedown": 0x22,
+            "delete": 0x2E, "backspace": 0x08, "insert": 0x2D,
+            "f1": 0x70, "f2": 0x71, "f3": 0x72, "f4": 0x73,
+            "f5": 0x74, "f6": 0x75, "f7": 0x76, "f8": 0x77,
+            "f9": 0x78, "f10": 0x79, "f11": 0x7A, "f12": 0x7B,
+        }
+        vk = key_map.get(key.lower())
+        if vk is None:
+            return {"ok": False, "action": "press_key", "error": f"unknown key: {key}"}
+        user32 = ctypes.windll.user32
+        user32.keybd_event(vk, 0, 0, 0)
+        user32.keybd_event(vk, 0, 2, 0)
+        return {"ok": True, "action": "press_key", "key": key}
+    
+    def hotkey(self, keys: str) -> dict[str, Any]:
+        """Press key combination (e.g., 'ctrl+c', 'alt+tab', 'ctrl+shift+esc')."""
+        key_map = {
+            "ctrl": 0x11, "control": 0x11,
+            "alt": 0x12,
+            "shift": 0x10,
+            "win": 0x5B, "windows": 0x5B,
+            "enter": 0x0D, "tab": 0x09, "escape": 0x1B, "space": 0x20,
+            "up": 0x26, "down": 0x28, "left": 0x25, "right": 0x27,
+            "c": 0x43, "v": 0x56, "x": 0x58, "z": 0x5A,
+            "a": 0x41, "s": 0x53, "f": 0x46, "n": 0x4E,
+            "o": 0x4F, "p": 0x50, "w": 0x57,
+        }
+        parts = [k.strip().lower() for k in keys.split("+")]
+        vks = []
+        for k in parts:
+            vk = key_map.get(k)
+            if vk is None:
+                return {"ok": False, "action": "hotkey", "error": f"unknown key in combination: {k}"}
+            vks.append(vk)
+        
+        user32 = ctypes.windll.user32
+        # Press modifiers first
+        for vk in vks[:-1]:
+            user32.keybd_event(vk, 0, 0, 0)
+        # Press main key
+        user32.keybd_event(vks[-1], 0, 0, 0)
+        user32.keybd_event(vks[-1], 0, 2, 0)
+        # Release modifiers
+        for vk in reversed(vks[:-1]):
+            user32.keybd_event(vk, 0, 2, 0)
+        return {"ok": True, "action": "hotkey", "keys": keys}
+    
+    def scroll(self, x: int, y: int, amount: int, hwnd: int = 0) -> dict[str, Any]:
+        """Scroll at coordinates. amount > 0 = up, < 0 = down."""
+        user32 = ctypes.windll.user32
+        if hwnd:
+            lparam = (y << 16) | (x & 0xFFFF)
+            user32.PostMessageW(hwnd, 0x020A, amount << 16, lparam)  # WM_MOUSEWHEEL
+        else:
+            user32.SetCursorPos(x, y)
+            user32.mouse_event(0x0800, 0, 0, amount * 120, 0)  # MOUSEEVENTF_WHEEL
+        return {"ok": True, "action": "scroll", "x": x, "y": y, "amount": amount, "hwnd": hwnd}
+    
+    def focus_window(self, target: str) -> dict[str, Any]:
+        """Focus window by token (W1), title substring, or hwnd."""
+        user32 = ctypes.windll.user32
+        hwnd = 0
+        
+        if target.startswith("hwnd:"):
+            try:
+                hwnd = int(target[5:])
+            except ValueError:
+                return {"ok": False, "action": "focus_window", "error": "invalid hwnd format"}
+        elif target.startswith("W"):
+            # Window token - would need window tracking
+            return {"ok": False, "action": "focus_window", "error": "window tokens not yet implemented"}
+        else:
+            # Find by title substring
+            def enum_windows(hwnd, _):
+                if user32.IsWindowVisible(hwnd):
+                    length = user32.GetWindowTextLengthW(hwnd)
+                    if length > 0:
+                        buf = ctypes.create_unicode_buffer(length + 1)
+                        user32.GetWindowTextW(hwnd, buf, length + 1)
+                        if target.lower() in buf.value.lower():
+                            enum_windows.hwnd = hwnd
+                            return False
+                return True
+            enum_windows.hwnd = 0
+            user32.EnumWindows(enum_windows, 0)
+            hwnd = enum_windows.hwnd
+        
+        if hwnd:
+            user32.SetForegroundWindow(hwnd)
+            return {"ok": True, "action": "focus_window", "target": target, "hwnd": hwnd}
+        return {"ok": False, "action": "focus_window", "error": f"window not found: {target}"}
+    
+    def open_url(self, browser: str = "chrome", url: str = "") -> dict[str, Any]:
+        """Open URL in browser."""
+        import subprocess
+        browser_paths = {
+            "chrome": r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            "chrome": r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+            "edge": r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+            "firefox": r"C:\Program Files\Mozilla Firefox\firefox.exe",
+        }
+        exe = browser_paths.get(browser.lower())
+        if not exe:
+            # Try via start
+            subprocess.Popen(["start", "", url], shell=True)
+            return {"ok": True, "action": "open_url", "browser": "default", "url": url}
+        subprocess.Popen([exe, url])
+        return {"ok": True, "action": "open_url", "browser": browser, "url": url}
 
 
 # Global desktop instance
