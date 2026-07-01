@@ -497,16 +497,17 @@ class Desktop:
         return variant_to_str(name_var)
     
     def observe(self, config: dict[str, Any] | None = None) -> dict[str, Any]:
-        """Perform a full desktop observation.
+        """Perform a full desktop observation using hover_scan as primary method.
         
         Args:
             config: Optional observation configuration with keys:
                 - max_depth: Maximum tree depth (default: 3)
                 - include_offscreen: Include offscreen elements (default: False)
                 - max_elements: Maximum elements to return (default: 500)
+                - hover_scan: dict with hover_scan config (step_px, delay_ms, target_window_only, min_size_px, max_elements)
         
         Returns:
-            Observation dict with screen, elements, snapshot, focused_title
+            Observation dict with screen, elements (filtered dict), screen_text, focused_title, windows, snapshot
         """
         if config is None:
             config = {}
@@ -514,13 +515,14 @@ class Desktop:
         max_depth = config.get("max_depth", self.config.get("max_depth", 3))
         include_offscreen = config.get("include_offscreen", self.config.get("include_offscreen", False))
         max_elements = config.get("max_elements", self.config.get("max_elements", 500))
+        hover_config = config.get("hover_scan", self.config.get("hover_scan", {}))
         
         # Get screen size
         user32 = ctypes.windll.user32
         screen_width = user32.GetSystemMetrics(0)
         screen_height = user32.GetSystemMetrics(1)
         
-        # Get root element
+        # Get root element for tree walk (for window enumeration)
         root = self._get_root_element()
         
         # Get focused element
@@ -540,7 +542,7 @@ class Desktop:
         else:
             focused_title = self._focused_title_cache
         
-        # Get root elements (top-level windows)
+        # Get root elements (top-level windows) for window tokens
         root_elements = []
         try:
             walker = self.automation.ControlViewWalker
@@ -554,6 +556,46 @@ class Desktop:
                 child = walker.GetNextSiblingElement(child)
         except Exception:
             pass
+        
+        # PRIMARY: Hover scan on foreground window
+        hover_elements = self.hover_scan(hover_config)
+        
+        # SECONDARY: Tree walk for window hierarchy (limited depth)
+        tree_elements = []
+        if hover_config.get("target_window_only", True) and active_window_uia:
+            # Tree walk only the active window
+            try:
+                walker = self.automation.ControlViewWalker
+                child = walker.GetFirstChildElement(active_window_uia)
+                tree_count = 0
+                while child and tree_count < 200:
+                    elem = self._element_to_element(child, 2)
+                    if include_offscreen or not elem.is_offscreen:
+                        tree_elements.append(elem)
+                        tree_count += 1
+                    child = walker.GetNextSiblingElement(child)
+            except Exception:
+                pass
+        else:
+            # Full tree walk (fallback)
+            tree_elements = root_elements
+        
+        # Merge: hover for positions, tree for hierarchy
+        merged_elements = self._merge_elements(tree_elements, hover_elements)
+        
+        # Filter to actionable elements, keyed by stable ID
+        filtered_elements = self.filter_elements(merged_elements)
+        
+        # Get window tokens
+        windows = self.get_window_tokens(root_elements)
+        
+        # Format SCREEN text for LLM
+        screen_text = self.format_screen_text(
+            {"width": screen_width, "height": screen_height},
+            filtered_elements,
+            windows,
+            focused_title
+        )
         
         # Build observation
         observation = Observation(
@@ -569,7 +611,9 @@ class Desktop:
         
         return {
             "screen": {"width": screen_width, "height": screen_height},
-            "elements": [e.to_dict() for e in root_elements],
+            "elements": filtered_elements,  # dict keyed by element_id
+            "screen_text": screen_text,
+            "windows": windows,
             "snapshot": observation.to_dict(),
             "focused_title": focused_title,
         }
@@ -597,21 +641,171 @@ class Desktop:
     # Observation filtering and formatting
     # =============================================================================
     
-    # Interactive control types that are actionable
-    INTERACTIVE_CONTROL_TYPES = {
-        50000,  # Button
-        50004,  # Edit
-        50002,  # ComboBox
-        50009,  # ListItem
-        50011,  # TreeItem
-        50018,  # TabItem
-        50013,  # MenuItem
-        50001,  # CheckBox
-        50017,  # RadioButton
-        50014,  # Slider
-        50021,  # Spinner
-        50016,  # Hyperlink
-    }
+    def _merge_elements(self, tree_elements: list[Element], hover_elements: list[Element]) -> list[Element]:
+        """Merge tree elements (hierarchy) with hover elements (accurate positions)."""
+        merged = []
+        hover_by_rid = {}
+        
+        # Index hover elements by runtime_id
+        for h in hover_elements:
+            rid_key = ",".join(map(str, h.runtime_id)) if h.runtime_id else f"{h.window_handle}:{h.rect.left}:{h.rect.top}"
+            hover_by_rid[rid_key] = h
+        
+        # Merge: use tree element but update position from hover if match
+        for t in tree_elements:
+            rid_key = ",".join(map(str, t.runtime_id)) if t.runtime_id else f"{t.window_handle}:{t.rect.left}:{t.rect.top}"
+            if rid_key in hover_by_rid:
+                h = hover_by_rid[rid_key]
+                # Create merged element with tree hierarchy but hover position
+                merged_elem = Element(
+                    name=t.name,
+                    control_type=t.control_type,
+                    control_type_id=t.control_type_id,
+                    automation_id=t.automation_id,
+                    class_name=t.class_name,
+                    process_id=t.process_id,
+                    rect=h.rect,  # Use hover position (accurate)
+                    is_enabled=t.is_enabled,
+                    is_offscreen=h.is_offscreen,
+                    has_focus=t.has_focus,
+                    framework_id=t.framework_id,
+                    runtime_id=t.runtime_id,
+                    window_handle=t.window_handle,
+                    children=t.children,
+                )
+                merged.append(merged_elem)
+                del hover_by_rid[rid_key]
+            else:
+                merged.append(t)
+        
+        # Add remaining hover elements not in tree
+        merged.extend(hover_by_rid.values())
+        
+        return merged
+    
+    def _stable_id(self, element: Element) -> str:
+        """Generate stable element ID from runtime_id or position."""
+        if element.runtime_id:
+            return "e_" + "_".join(map(str, element.runtime_id))
+        return f"e_{element.window_handle}_{element.rect.left}_{element.rect.top}"
+    
+    def classify_action(self, control_type_id: int) -> str:
+        """Map control type to default action."""
+        if control_type_id == 50000:  # Button
+            return "click"
+        if control_type_id in (50004, 50002):  # Edit, ComboBox
+            return "write"
+        if control_type_id in (50008, 50009, 50010, 50011, 50003):  # List, ListItem, Tree, TreeItem, ScrollBar
+            return "scroll"
+        if control_type_id in (50001, 50017):  # CheckBox, RadioButton
+            return "click"
+        if control_type_id == 50014:  # Slider
+            return "scroll"
+        if control_type_id == 50016:  # Hyperlink
+            return "click"
+        if control_type_id == 50018:  # TabItem
+            return "click"
+        if control_type_id == 50013:  # MenuItem
+            return "click"
+        if control_type_id == 50021:  # Spinner
+            return "write"
+        return ""
+    
+    def filter_elements(self, elements: list[Element]) -> dict[str, dict[str, Any]]:
+        """Filter to actionable elements, return dict keyed by stable element_id."""
+        result = {}
+        for el in elements:
+            # Skip zero-size rects
+            if el.rect.width <= 0 or el.rect.height <= 0:
+                continue
+            # Skip offscreen or disabled
+            if el.is_offscreen or not el.is_enabled:
+                continue
+            # Must be interactive type
+            if el.control_type_id not in self.INTERACTIVE_CONTROL_TYPES:
+                continue
+            action = self.classify_action(el.control_type_id)
+            if not action:
+                continue
+            
+            elem_id = self._stable_id(el)
+            px = el.rect.left + el.rect.width // 2
+            py = el.rect.top + el.rect.height // 2
+            
+            result[elem_id] = {
+                "id": elem_id,
+                "name": el.name,
+                "role": el.control_type,
+                "action": action,
+                "px": px,
+                "py": py,
+                "hwnd": el.window_handle,
+                "rect": el.rect.to_dict(),
+                "enabled": el.is_enabled,
+                "focused": el.has_focus,
+                "automation_id": el.automation_id,
+                "class_name": el.class_name,
+                "runtime_id": el.runtime_id,
+            }
+        return result
+    
+    def get_window_tokens(self, root_elements: list[Element]) -> list[dict[str, Any]]:
+        """Get window tokens W1..Wn for visible top-level windows.
+        
+        Screen is Window 0 (the entire desktop), then W1..Wn are top-level windows.
+        """
+        windows = []
+        # Screen as Window 0
+        user32 = ctypes.windll.user32
+        screen_w = user32.GetSystemMetrics(0)
+        screen_h = user32.GetSystemMetrics(1)
+        windows.append({
+            "token": "W0",
+            "name": "Screen",
+            "title": "Desktop",
+            "hwnd": 0,
+            "rect": {"left": 0, "top": 0, "right": screen_w, "bottom": screen_h},
+            "children": []
+        })
+        
+        # Top-level windows as W1, W2...
+        for i, el in enumerate(root_elements, 1):
+            if el.rect.width > 0 and el.rect.height > 0 and not el.is_offscreen:
+                windows.append({
+                    "token": f"W{i}",
+                    "name": el.control_type,
+                    "title": el.name,
+                    "hwnd": el.window_handle,
+                    "rect": el.rect.to_dict(),
+                    "process_id": el.process_id,
+                    "class_name": el.class_name,
+                })
+        return windows
+    
+    def format_screen_text(self, screen: dict, elements: dict, windows: list, focused_title: str) -> str:
+        """Format SCREEN text for LLM context with hierarchy."""
+        lines = []
+        
+        # Window hierarchy
+        lines.append("WINDOWS:")
+        for w in windows:
+            if w["token"] == "W0":
+                lines.append(f"  * [W0] Screen ({screen['width']}x{screen['height']})")
+            else:
+                rect = w["rect"]
+                lines.append(f"  * [{w['token']}] {w['title']} @({rect['left']},{rect['top']},{rect['right']},{rect['bottom']}) hwnd={w['hwnd']} pid={w.get('process_id',0)}")
+        
+        lines.append(f"\nFOCUSED WINDOW: {focused_title or 'none'}")
+        
+        # Key actionable elements
+        lines.append(f"\nELEMENTS ({len(elements)} actionable):")
+        for eid, el in list(elements.items())[:80]:
+            lines.append(f"  {eid}: {el['role']} '{el['name'][:60]}' @({el['px']},{el['py']}) hwnd={el['hwnd']} action={el['action']} enabled={el['enabled']} focused={el['focused']}")
+        
+        if len(elements) > 80:
+            lines.append(f"  ... and {len(elements) - 80} more elements")
+        
+        return "\n".join(lines)
 
     def click(self, x: int, y: int, hwnd: int = 0) -> dict[str, Any]:
         """Click at coordinates. If hwnd provided, click in that window."""
