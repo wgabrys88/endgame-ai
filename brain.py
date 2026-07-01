@@ -17,6 +17,8 @@ import time
 from abc import ABC, abstractmethod
 from typing import Any, Protocol
 
+import stop_check
+
 ROOT = pathlib.Path(__file__).parent.resolve()
 _RAW_LOG_PATH: pathlib.Path | None = None
 _RAW_SEQ = 0
@@ -361,6 +363,7 @@ def call(messages: list[dict[str, str]], wiring: dict[str, Any], *, rod_feedback
     
     The function logs request, response, and error rows. It never switches transport.
     """
+    stop_check.check_stop("brain call")
     global _CALLS_MADE
     ensure_live_brains(wiring)
     transport, cfg = _get_transport_config(wiring)

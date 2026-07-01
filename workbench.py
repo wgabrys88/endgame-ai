@@ -18,6 +18,7 @@ from typing import Any
 
 import brain
 import organism
+import stop_check
 
 ROOT = pathlib.Path(__file__).parent.resolve()
 HOST = "127.0.0.1"
@@ -312,6 +313,14 @@ class Handler(BaseHTTPRequestHandler):
 def main() -> None:
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"workbench: http://{HOST}:{PORT}/")
+    # Periodically check for stop.txt
+    import threading
+    def stop_checker():
+        while True:
+            stop_check.check_stop("workbench server")
+            time.sleep(1.0)
+    checker_thread = threading.Thread(target=stop_checker, daemon=True)
+    checker_thread.start()
     server.serve_forever()
 
 

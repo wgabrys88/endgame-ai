@@ -17,6 +17,7 @@ from typing import Any
 
 import brain
 import nodes
+import stop_check
 
 ROOT = pathlib.Path(__file__).parent.resolve()
 
@@ -92,6 +93,7 @@ def wait_before_node(wiring: dict[str, Any], state: dict[str, Any], node_name: s
     """
     entered_pause = False
     while True:
+        stop_check.check_stop(f"organism wait_before_node:{node_name}")
         ctrl = read_control(wiring)
         mode = ctrl["mode"]
         token = int(ctrl.get("step_token", 0))
@@ -127,6 +129,7 @@ def next_node_for(wiring: dict[str, Any], current: str, signal_name: str) -> str
 
 
 def run(goal: str | None, *, reset: bool = False, max_ticks: int | None = None, max_brain_calls: int | None = None) -> dict[str, Any]:
+    stop_check.register_pid("organism")
     wiring = load_wiring()
     if max_brain_calls is not None:
         wiring.setdefault("model", {})["max_brain_calls"] = max_brain_calls
@@ -152,6 +155,7 @@ def run(goal: str | None, *, reset: bool = False, max_ticks: int | None = None, 
     runtime_event(wiring, "organism_start", goal=goal or "", transport=state["wiring_transport"])
     try:
         while True:
+            stop_check.check_stop("organism main loop")
             if max_ticks is not None and state["tick"] >= max_ticks:
                 state["_phase"] = "max_ticks"
                 write_state(wiring, state)
