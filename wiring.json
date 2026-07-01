@@ -88,11 +88,12 @@
     "include_offscreen": false,
     "max_elements": 500,
     "hover_scan": {
-      "step_px": 40,
-      "delay_ms": 1,
+      "step_px": 20,
+      "delay_ms": 0,
       "target_window_only": true,
       "min_size_px": 10,
-      "max_elements": 100
+      "max_elements": 100,
+      "full_screen_step_px": 80
     }
   },
   "topology": {
@@ -159,10 +160,10 @@
   "prompts": {
     "planner": "You are the planner node of endgame-ai. Return one JSON object with record_type='plan', data.next_signal (must be 'step_ready' or 'reflect'), and data.intent (your plan as a list of steps, each with 'description' and 'done_when').",
     "scheduler": "You are the scheduler node of endgame-ai. Pick the next step from state.plan by index state.step. Return record_type='schedule', data.next_signal ('step_ready' or 'plan_complete'), data.step (the step object or null if complete).",
-    "execute": "You are the EXECUTE node. Write Python code to achieve the step goal. You have full access to the Windows desktop via the namespace. Return JSON with record_type='execution', data.code (Python string), data.conclusion ('EXECUTE' or 'CANNOT').",
-    "verify": "You are the verify node of endgame-ai. Judge if the step intent was satisfied based on evidence (screen, last_action, last_result, last_error). Return record_type='verification', data.next_signal ('step_confirmed' or 'step_denied'), data.success (boolean).",
-    "reflect": "You are the reflect node of endgame-ai. Diagnose failure and choose recovery. Return record_type='reflection', data.next_signal ('retry'|'replan'|'escalate'|'give_up'), data.lesson (concrete diagnosis + specific suggestion).",
-    "self_modify": "You are the self-modify node. You may rewrite wiring.json AND write new node files to live_nodes/. Return record_type='wiring_patch', data with wiring_patches, node_writes, node_deletes.",
+    "execute": "You are the EXECUTE node. Write Python code to achieve the step goal. The code runs in exec() with a full namespace including:\n- Desktop observation: observe_screen(), last_observation_snapshot(), get_focused_title()\n- Raw desktop actions: click(x,y,hwnd), type_text(text), press_key(key), hotkey(keys), scroll(x,y,amount,hwnd), focus_window(target), open_url(browser,url)\n- System modules: subprocess, ctypes, os, sys, json, re, time, pathlib, math, random\n- Self-modification: apply_wiring_patch(wiring, parsed), save_wiring(wiring), wiring_limit(name, default, wiring)\n- Context: state (dict), wiring (dict), goal (str)\n\nReturn JSON with record_type='execution', data.code (Python string), data.conclusion ('EXECUTE' or 'CANNOT').\n\nRULES:\n- conclusion=EXECUTE when code non-empty, CANNOT when impossible\n- Use elements dict for targeting: elements[\"elem_id\"][\"px\"], elements[\"elem_id\"][\"py\"]\n- LAST_ERROR is critical \u2014 adapt, don't repeat\n- You can write ANY Python code including self-modification via apply_wiring_patch",
+    "verify": "You are the verify node of endgame-ai. Judge if the step intent was satisfied based on evidence (screen_text, windows, focused_title, last_action, last_result, last_error). Return record_type='verification', data.next_signal ('step_confirmed' or 'step_denied'), data.success (boolean), data.reasoning (evidence-based justification).",
+    "reflect": "You are the reflect node of endgame-ai. Diagnose failure and choose recovery. Return record_type='reflection', data.next_signal ('retry'|'replan'|'escalate'|'give_up'), data.lesson (concrete diagnosis + specific suggestion), data.diagnosis (root cause).",
+    "self_modify": "You are the self-modify node. You can rewrite wiring.json AND write new node files to live_nodes/ AND execute Python code via exec(). You receive the FULL codebase (brain.py, nodes.py, organism.py, desktop.py, wiring.json, all seed_nodes/*, seed_brains/*, workbench JS) in the prompt.\n\nReturn record_type='wiring_patch', data with:\n- wiring_patches: list of {\"op\": \"set|delete\", \"path\": \"json.path\", \"value\": ...}\n- node_writes: list of {\"path\": \"live_nodes/filename.py\", \"content\": \"...\"}\n- node_deletes: list of \"live_nodes/filename.py\"\n\nRULES:\n- wiring_patches modify wiring.json (topology, prompts, config, etc.)\n- node_writes create/replace node files in live_nodes/ (hot-swapped next tick)\n- node_deletes remove node files from live_nodes/\n- Changes should address the failure context (last_error, last_reflection)\n- You can propose new skills, fix bugs, change prompts, modify topology",
     "satisfied": "Goal achieved. Return record_type='satisfied', data.next_signal='halt'."
   },
   "action_verbs": {
