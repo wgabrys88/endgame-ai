@@ -228,8 +228,6 @@ class StablePrefix:
             "files": self.files,
             "chars": len(self.text),
         }
-
-
 def stable_prefix() -> StablePrefix:
     global _STABLE_PREFIX_CACHE
     with _STABLE_PREFIX_LOCK:
@@ -239,11 +237,32 @@ def stable_prefix() -> StablePrefix:
         return _STABLE_PREFIX_CACHE
 
 
+def _stable_prefix_enabled(wiring: dict[str, Any]) -> bool:
+    """Check if stable prefix should be included in requests."""
+    sp_cfg = wiring.get("model", {}).get("stable_prefix", {})
+    return bool(sp_cfg.get("enabled", False))
 
 
-def _messages(system_prompt: str, user_text: str, prefix: StablePrefix) -> list[dict[str, str]]:
+def _stable_prefix_include_in_request(wiring: dict[str, Any]) -> bool:
+    """Check if stable prefix text should be included in request body."""
+    sp_cfg = wiring.get("model", {}).get("stable_prefix", {})
+    return bool(sp_cfg.get("include_in_request", False))
+
+
+def _stable_prefix_cache_key_only(wiring: dict[str, Any]) -> bool:
+    """Check if only cache_key should be sent (without full prefix text)."""
+    sp_cfg = wiring.get("model", {}).get("stable_prefix", {})
+    return bool(sp_cfg.get("cache_key_only", True))
+
+
+def _messages(system_prompt: str, user_text: str, prefix: StablePrefix | None) -> list[dict[str, str]]:
+    if prefix is not None:
+        return [
+            {"role": "system", "content": prefix.text + "\n\nDYNAMIC NODE PROMPT:\n" + system_prompt},
+            {"role": "user", "content": user_text},
+        ]
     return [
-        {"role": "system", "content": prefix.text + "\n\nDYNAMIC NODE PROMPT:\n" + system_prompt},
+        {"role": "system", "content": "DYNAMIC NODE PROMPT:\n" + system_prompt},
         {"role": "user", "content": user_text},
     ]
 
@@ -584,7 +603,12 @@ def think(
     """Pluggable ROD brain pattern returning the committed JSON record."""
     _, cfg = _get_transport_config(wiring)
     reasoning_cfg = _effective_reasoning_config(wiring, cfg)
-    prefix = stable_prefix()
+    
+    # Conditionally build stable prefix
+    prefix = None
+    if _stable_prefix_enabled(wiring):
+        prefix = stable_prefix()
+    
     payload = _with_fresh_observation(payload, wiring)
     user_text = json.dumps(payload, ensure_ascii=False, default=str)
     pattern = str(reasoning_cfg.get("pattern") or "single_pass")
@@ -594,8 +618,14 @@ def think(
         else None
     )
     request_cfg = dict(request_config or {})
-    request_cfg.setdefault("prompt_cache_key", prefix.cache_key)
-    request_cfg.setdefault("stable_prefix", prefix.metadata())
+    
+    # Add cache key if enabled (even without full prefix text)
+    if _stable_prefix_enabled(wiring) and _stable_prefix_cache_key_only(wiring) and prefix:
+        request_cfg.setdefault("prompt_cache_key", prefix.cache_key)
+        request_cfg.setdefault("stable_prefix", prefix.metadata())
+    elif _stable_prefix_enabled(wiring) and prefix:
+        request_cfg.setdefault("prompt_cache_key", prefix.cache_key)
+        request_cfg.setdefault("stable_prefix", prefix.metadata())
 
     if not reasoning_cfg["enabled"] or pattern == "single_pass":
         result = call(
