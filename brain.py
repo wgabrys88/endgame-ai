@@ -288,7 +288,6 @@ def _fresh_observation_payload(wiring: dict[str, Any]) -> dict[str, Any]:
     obs = desktop.observe(wiring.get("observe_config", {}))
     payload = {
         "focused_title": obs.get("focused_title", ""),
-        "observed_at": obs.get("observed_at"),
         "desktop_tree": obs.get("desktop_tree", {}),
         "observation_delta": obs.get("observation_delta", {}),
     }
