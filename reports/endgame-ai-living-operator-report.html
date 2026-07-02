@@ -1,0 +1,915 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>endgame-ai Living Operator Report</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #fbfaf6;
+      --ink: #171512;
+      --muted: #6a645d;
+      --line: #ded8ce;
+      --soft: #f1ece4;
+      --blue: #2563eb;
+      --green: #11855a;
+      --amber: #b36b00;
+      --red: #bd2d2d;
+      --violet: #6d3fc8;
+      --teal: #0f766e;
+      --shadow: 0 24px 70px rgba(27, 22, 16, 0.18);
+      --radius: 8px;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background:
+        linear-gradient(135deg, rgba(37, 99, 235, 0.10), transparent 30%),
+        linear-gradient(315deg, rgba(17, 133, 90, 0.12), transparent 32%),
+        var(--soft);
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    .page {
+      min-height: 100vh;
+      display: grid;
+      place-items: start center;
+      padding: 18px;
+    }
+
+    .portrait {
+      width: min(100%, 720px);
+      aspect-ratio: 9 / 16;
+      max-height: calc(100vh - 36px);
+      background: var(--paper);
+      border: 1px solid rgba(23, 21, 18, 0.12);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: auto 1fr;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      padding: 14px 16px 12px;
+      background: rgba(251, 250, 246, 0.92);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(16px);
+    }
+
+    .title-row {
+      display: flex;
+      align-items: start;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(1.55rem, 5vw, 2.4rem);
+      line-height: 0.98;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.35;
+      max-width: 46ch;
+    }
+
+    .status-pill {
+      flex: 0 0 auto;
+      display: inline-grid;
+      place-items: center;
+      min-width: 86px;
+      padding: 9px 10px;
+      border: 1px solid rgba(17, 133, 90, 0.30);
+      border-radius: 999px;
+      color: var(--green);
+      background: rgba(17, 133, 90, 0.08);
+      font-size: 0.78rem;
+      font-weight: 750;
+      text-transform: uppercase;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+      scrollbar-width: thin;
+    }
+
+    .tab {
+      flex: 0 0 auto;
+      border: 1px solid var(--line);
+      background: #fffdf9;
+      color: var(--muted);
+      border-radius: 999px;
+      padding: 8px 11px;
+      cursor: pointer;
+      font-size: 0.82rem;
+      font-weight: 700;
+    }
+
+    .tab[aria-selected="true"] {
+      color: #fff;
+      background: var(--ink);
+      border-color: var(--ink);
+    }
+
+    .content {
+      overflow: auto;
+      padding: 16px;
+      scroll-padding-top: 24px;
+    }
+
+    section {
+      display: none;
+      animation: appear 180ms ease-out;
+    }
+
+    section.active {
+      display: block;
+    }
+
+    @keyframes appear {
+      from { opacity: 0; translate: 0 6px; }
+      to { opacity: 1; translate: 0 0; }
+    }
+
+    .lede {
+      font-size: 1.08rem;
+      line-height: 1.45;
+      margin: 0 0 14px;
+    }
+
+    .grid {
+      display: grid;
+      gap: 12px;
+    }
+
+    .grid.two {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fffdf9;
+      padding: 13px;
+    }
+
+    .card strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 0.92rem;
+    }
+
+    .card p,
+    .card li {
+      color: var(--muted);
+      font-size: 0.9rem;
+      line-height: 1.45;
+    }
+
+    p {
+      line-height: 1.55;
+    }
+
+    ul,
+    ol {
+      padding-left: 20px;
+    }
+
+    li + li {
+      margin-top: 6px;
+    }
+
+    .verdict {
+      display: grid;
+      grid-template-columns: 112px 1fr;
+      gap: 14px;
+      align-items: center;
+      margin: 14px 0;
+      padding: 14px;
+      border: 1px solid rgba(179, 107, 0, 0.28);
+      border-radius: var(--radius);
+      background: rgba(179, 107, 0, 0.08);
+    }
+
+    .dial {
+      width: 104px;
+      aspect-ratio: 1;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background:
+        radial-gradient(circle at center, var(--paper) 0 54%, transparent 55%),
+        conic-gradient(var(--green) 0 57%, rgba(179, 107, 0, 0.38) 57% 76%, rgba(189, 45, 45, 0.28) 76% 100%);
+      border: 1px solid rgba(23, 21, 18, 0.1);
+      font-weight: 850;
+      color: var(--ink);
+    }
+
+    .label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      width: fit-content;
+      padding: 5px 8px;
+      border-radius: 999px;
+      background: rgba(23, 21, 18, 0.06);
+      color: var(--muted);
+      font-size: 0.75rem;
+      font-weight: 750;
+      text-transform: uppercase;
+    }
+
+    .ok { color: var(--green); }
+    .warn { color: var(--amber); }
+    .bad { color: var(--red); }
+    .info { color: var(--blue); }
+
+    .flow {
+      display: grid;
+      gap: 8px;
+      margin: 12px 0;
+    }
+
+    .flow-row {
+      display: grid;
+      grid-template-columns: 96px 1fr;
+      gap: 10px;
+      align-items: stretch;
+    }
+
+    .flow-step {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fffdf9;
+      padding: 10px;
+      transition: 160ms ease;
+      cursor: pointer;
+    }
+
+    .flow-step.active {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    }
+
+    .flow-step b {
+      display: block;
+      font-size: 0.86rem;
+    }
+
+    .flow-step span {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.35;
+    }
+
+    .step-detail {
+      border-left: 3px solid var(--blue);
+      background: rgba(37, 99, 235, 0.07);
+      padding: 12px;
+      border-radius: 0 var(--radius) var(--radius) 0;
+      min-height: 86px;
+    }
+
+    .branch-map {
+      display: grid;
+      gap: 10px;
+      margin: 14px 0;
+    }
+
+    .branch-node {
+      position: relative;
+      padding: 12px;
+      border-radius: var(--radius);
+      border: 1px solid var(--line);
+      background: #fffdf9;
+    }
+
+    .branch-node::before {
+      content: "";
+      position: absolute;
+      left: 18px;
+      top: -11px;
+      width: 2px;
+      height: 10px;
+      background: var(--line);
+    }
+
+    .branch-node:first-child::before {
+      display: none;
+    }
+
+    .branch-node.main { border-color: rgba(189, 45, 45, 0.35); background: rgba(189, 45, 45, 0.06); }
+    .branch-node.dev { border-color: rgba(179, 107, 0, 0.35); background: rgba(179, 107, 0, 0.07); }
+    .branch-node.self { border-color: rgba(109, 63, 200, 0.35); background: rgba(109, 63, 200, 0.07); }
+    .branch-node.review { border-color: rgba(17, 133, 90, 0.35); background: rgba(17, 133, 90, 0.07); }
+
+    .tree {
+      margin: 14px 0;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fffdf9;
+    }
+
+    .tree ul {
+      list-style: none;
+      padding-left: 18px;
+      border-left: 1px solid var(--line);
+    }
+
+    .tree li {
+      margin: 8px 0;
+    }
+
+    .tree button {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 7px 10px;
+      background: var(--paper);
+      cursor: pointer;
+      color: var(--ink);
+      font-weight: 700;
+    }
+
+    .tree button:hover,
+    .tree button:focus-visible {
+      outline: none;
+      border-color: var(--teal);
+      box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
+    }
+
+    .node-inspector {
+      margin-top: 10px;
+      padding: 12px;
+      border-radius: var(--radius);
+      background: rgba(15, 118, 110, 0.08);
+      border: 1px solid rgba(15, 118, 110, 0.24);
+      color: var(--muted);
+      min-height: 72px;
+    }
+
+    .split {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      gap: 12px;
+    }
+
+    details {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fffdf9;
+      padding: 0;
+      overflow: hidden;
+    }
+
+    details + details {
+      margin-top: 10px;
+    }
+
+    summary {
+      cursor: pointer;
+      padding: 12px 13px;
+      font-weight: 800;
+      list-style: none;
+    }
+
+    summary::-webkit-details-marker {
+      display: none;
+    }
+
+    details[open] summary {
+      border-bottom: 1px solid var(--line);
+      background: rgba(23, 21, 18, 0.04);
+    }
+
+    pre {
+      margin: 0;
+      padding: 12px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: #181612;
+      color: #f7f1e8;
+      font: 0.78rem/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.92em;
+    }
+
+    .mini-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0;
+      font-size: 0.86rem;
+    }
+
+    .mini-table th,
+    .mini-table td {
+      text-align: left;
+      vertical-align: top;
+      border-bottom: 1px solid var(--line);
+      padding: 9px 6px;
+    }
+
+    .mini-table th {
+      color: var(--muted);
+      font-size: 0.76rem;
+      text-transform: uppercase;
+    }
+
+    .callout {
+      border-radius: var(--radius);
+      padding: 13px;
+      border: 1px solid rgba(37, 99, 235, 0.22);
+      background: rgba(37, 99, 235, 0.07);
+    }
+
+    .callout.danger {
+      border-color: rgba(189, 45, 45, 0.26);
+      background: rgba(189, 45, 45, 0.06);
+    }
+
+    .callout.good {
+      border-color: rgba(17, 133, 90, 0.25);
+      background: rgba(17, 133, 90, 0.07);
+    }
+
+    .meter {
+      height: 10px;
+      border-radius: 999px;
+      overflow: hidden;
+      background: rgba(23, 21, 18, 0.1);
+      margin: 9px 0 4px;
+    }
+
+    .meter span {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--red), var(--amber), var(--green));
+    }
+
+    .footer-note {
+      margin: 18px 0 4px;
+      color: var(--muted);
+      font-size: 0.82rem;
+      text-align: center;
+    }
+
+    @media (max-width: 760px) {
+      .page {
+        padding: 0;
+      }
+
+      .portrait {
+        width: 100%;
+        min-height: 100vh;
+        max-height: none;
+        aspect-ratio: auto;
+        border-radius: 0;
+      }
+
+      .grid.two,
+      .split,
+      .verdict,
+      .flow-row {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <article class="portrait" aria-label="endgame-ai living operator report">
+      <header class="topbar">
+        <div class="title-row">
+          <div>
+            <h1>endgame-ai living operator report</h1>
+            <p class="subtitle">Mental simulation only. No organism run, no model call. Static code and README inspection from branch <code>unified-archBRAINZ</code>.</p>
+          </div>
+          <div class="status-pill">Not complete</div>
+        </div>
+        <nav class="tabs" aria-label="Report sections">
+          <button class="tab" data-tab="truth" aria-selected="true">Truth</button>
+          <button class="tab" data-tab="simulation">Simulation</button>
+          <button class="tab" data-tab="branches">Branches</button>
+          <button class="tab" data-tab="observation">Observation</button>
+          <button class="tab" data-tab="prompts">Prompts</button>
+          <button class="tab" data-tab="build">Next build</button>
+        </nav>
+      </header>
+
+      <div class="content">
+        <section id="truth" class="active">
+          <p class="lede">The vision is real as an engineering direction, but the system is not yet a reliable autonomous replacement for a human operator. It is currently a local Windows organism scaffold with a real perception-action loop, a real Grok brain transport, real structured JSON contracts, and a real git-native self-evolution branch workflow.</p>
+
+          <div class="verdict">
+            <div class="dial">57%</div>
+            <div>
+              <span class="label">Readiness estimate</span>
+              <p><strong>Ready for bounded experiments, not ready for unsupervised self-growth.</strong> The branch/patch/commit mechanism is meaningful. The screen observation layer and self-modification review loop are still too thin for a pure "give it a goal and it grows itself" claim.</p>
+            </div>
+          </div>
+
+          <div class="grid two">
+            <div class="card">
+              <strong class="ok">What is already real</strong>
+              <ul>
+                <li>Topology loop: planner, scheduler, observe, execute, verify, reflect, self_modify, satisfied, error.</li>
+                <li>Windows observation through UI Automation point probing and Win32 window tokens.</li>
+                <li>Desktop actions through Python: click, type, hotkey, scroll, focus window, open URL.</li>
+                <li>xAI/Grok selected as the current transport with JSON Schema structured output.</li>
+                <li>Git-native self-evolution creates <code>self-evolve/...</code> branches, applies validated patches locally, commits, and pushes there.</li>
+              </ul>
+            </div>
+            <div class="card">
+              <strong class="bad">What is missing</strong>
+              <ul>
+                <li>The "hover scan" is coordinate probing with <code>ElementFromPoint</code>, not necessarily real mouse movement and hover-state discovery.</li>
+                <li>The observation is mostly flat: <code>elements</code> is a dictionary, <code>root_elements=[]</code>, and <code>W0.children=[]</code>.</li>
+                <li>Direct <code>--start-node self_modify</code> has no fresh observation unless state already contains one.</li>
+                <li>Grok gets manifest plus GitHub URL, not an explicit iterative full-file request protocol.</li>
+                <li>There is no auto-merge, no persistent showroom branch, and no automated branch cleanup.</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="callout">
+            <p><strong>Direct answer to the key question:</strong> You can run a goal saying the organism must improve the screen observation system, but I would not expect reliable end-to-end self-repair from that single goal today. The safer current path is to start from a clean human/Codex branch, run direct <code>self_modify</code> with an explicit architecture request, inspect the created <code>self-evolve/...</code> branch, and then merge or cherry-pick only after review.</p>
+          </div>
+
+          <table class="mini-table">
+            <thead>
+              <tr><th>Claim</th><th>Reality</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Can it observe?</td><td>Yes, but the representation is not yet rich enough for reliable desktop navigation across difficult apps.</td></tr>
+              <tr><td>Can it act?</td><td>Yes. It can execute Python desktop actions. That is powerful and also needs stronger safety boundaries.</td></tr>
+              <tr><td>Can it self-modify?</td><td>Partly. The git branch and patch applier exist. The model still needs better code access and better validation loops.</td></tr>
+              <tr><td>Can it replace a human operator?</td><td>Not yet. It needs observation v2, safer execution policy, patch review cycles, and a branch promotion policy.</td></tr>
+              <tr><td>Is this sci-fi?</td><td>No. The current code already implements real pieces. The hard part is reliability, not imagination.</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section id="simulation">
+          <p class="lede">Mental simulation of the requested goal: "become a living operator; the screen observation is broken; mouse hover scan must be the single scan method; Python must filter, not truncate; keep a hierarchical desktop representation with screen as root."</p>
+
+          <div class="flow" id="simFlow">
+            <div class="flow-row">
+              <button class="flow-step active" data-step="0"><b>1. Start</b><span>Human runs a goal</span></button>
+              <div class="step-detail" id="stepDetail">The organism starts on the current branch. If this is a normal run, it begins at <code>planner</code>. If the user starts <code>--start-node self_modify</code>, it jumps directly into branch creation and Grok patch request.</div>
+            </div>
+            <div class="flow-row">
+              <button class="flow-step" data-step="1"><b>2. Plan</b><span>Grok creates intent</span></button>
+              <div class="flow-step"><b>Risk</b><span>The planner may create desktop-action steps rather than code-evolution steps unless the goal is explicit.</span></div>
+            </div>
+            <div class="flow-row">
+              <button class="flow-step" data-step="2"><b>3. Observe</b><span>Point probe scan</span></button>
+              <div class="flow-step"><b>Current output</b><span><code>screen</code>, <code>windows</code>, flat actionable <code>elements</code>, <code>screen_text</code>, <code>snapshot</code>, focused title.</span></div>
+            </div>
+            <div class="flow-row">
+              <button class="flow-step" data-step="3"><b>4. Execute</b><span>Python action code</span></button>
+              <div class="flow-step"><b>Risk</b><span>The execute namespace is broad enough to inspect or write files. That should be restricted so code mutation happens only through <code>self_modify</code>.</span></div>
+            </div>
+            <div class="flow-row">
+              <button class="flow-step" data-step="4"><b>5. Reflect</b><span>Escalate on failure</span></button>
+              <div class="flow-step"><b>Likely path</b><span>If observation fails, reflect can choose <code>escalate</code>, which routes to <code>self_modify</code>.</span></div>
+            </div>
+            <div class="flow-row">
+              <button class="flow-step" data-step="5"><b>6. Evolve</b><span>Create branch</span></button>
+              <div class="flow-step"><b>Real mechanism</b><span>Clean worktree required. Python creates and may push <code>self-evolve/YYYYMMDDTHHMMSS-sha</code>.</span></div>
+            </div>
+            <div class="flow-row">
+              <button class="flow-step" data-step="6"><b>7. Patch</b><span>Grok proposes</span></button>
+              <div class="flow-step"><b>Current contract</b><span>Grok returns <code>git_evolution_patch</code>. Local Python applies, validates, rolls back on failure, commits and pushes on the self branch.</span></div>
+            </div>
+          </div>
+
+          <div class="grid two">
+            <div class="card">
+              <strong>Best realistic outcome today</strong>
+              <p>Grok reads the public GitHub branch, understands <code>desktop.py</code>, returns a patch that builds hierarchical observation, and local Python commits it on a self-evolve branch. A human or Codex then reviews and merges.</p>
+            </div>
+            <div class="card">
+              <strong>Likely failure modes today</strong>
+              <p>Grok may return an empty patch, may not fetch enough code from GitHub, may rewrite full files too aggressively, or may pass compile validation while still failing real desktop behavior.</p>
+            </div>
+          </div>
+
+          <div class="callout danger">
+            <p><strong>Important critique:</strong> a plain goal is not the same as a reliable internal build order. Today the system is strongest when the goal is precise and starts at <code>self_modify</code>. The normal planner path can wander because it is designed for desktop tasks, not guaranteed architecture repair.</p>
+          </div>
+        </section>
+
+        <section id="branches">
+          <p class="lede">The branch model is close to what you described, but it does not yet include a persistent autonomous showroom branch. Current self-evolution branches are per-attempt branches.</p>
+
+          <div class="branch-map" aria-label="Branch workflow">
+            <div class="branch-node main">
+              <span class="label">main</span>
+              <p><strong>Human protected stable branch.</strong> The organism should not commit here. Promotion into main should be deliberate.</p>
+            </div>
+            <div class="branch-node dev">
+              <span class="label">unified-archBRAINZ</span>
+              <p><strong>Human plus Codex development branch.</strong> This is where guided engineering work happens. Self-modify starts from here only when the worktree is clean.</p>
+            </div>
+            <div class="branch-node self">
+              <span class="label">self-evolve/YYYYMMDDTHHMMSS-sha</span>
+              <p><strong>Automatic organism branch.</strong> Python creates it, pushes it for model context, applies Grok's patch, validates, commits, and pushes back to this same branch.</p>
+            </div>
+            <div class="branch-node review">
+              <span class="label">human review</span>
+              <p><strong>No auto-merge today.</strong> Human/Codex must review, merge, cherry-pick, or delete branches. This is correct for safety until the loop proves itself.</p>
+            </div>
+          </div>
+
+          <div class="split">
+            <div class="card">
+              <strong>Current answer</strong>
+              <ul>
+                <li>Grok does not work on <code>main</code>.</li>
+                <li>Grok does not directly commit to <code>unified-archBRAINZ</code> during <code>self_modify</code>.</li>
+                <li>Local Python commits and pushes only on <code>self-evolve/...</code>.</li>
+                <li>No branch is auto-merged.</li>
+                <li>Old local self branches may accumulate until cleaned manually.</li>
+              </ul>
+            </div>
+            <div class="card">
+              <strong>Showroom branch proposal</strong>
+              <p>Add a persistent branch such as <code>organism/showroom</code> or <code>self-demo</code>. Successful self-evolve branches would open a PR or fast-forward that branch only after validation and optional human approval. It should still not push directly to <code>main</code>.</p>
+            </div>
+          </div>
+
+          <pre>{
+  "branch_policy": {
+    "main": "human controlled stable branch",
+    "unified-archBRAINZ": "human/Codex engineering branch",
+    "self-evolve/*": "automatic organism attempt branches",
+    "self-demo": "recommended future public showroom branch",
+    "merge_policy": "manual today; gated promotion later"
+  }
+}</pre>
+        </section>
+
+        <section id="observation">
+          <p class="lede">The current observation layer has the right instinct: use point-based UIA probing instead of a heavy tree walker. But it is not yet the hierarchical, filter-not-truncate desktop world model you want.</p>
+
+          <div class="tree">
+            <strong>Target observation v2 shape</strong>
+            <ul>
+              <li>
+                <button data-node="screen">W0 Screen root</button>
+                <ul>
+                  <li>
+                    <button data-node="window">W1 Focused top window</button>
+                    <ul>
+                      <li><button data-node="region">Region clusters</button></li>
+                      <li><button data-node="element">Actionable controls</button></li>
+                      <li><button data-node="text">Nearby labels and text</button></li>
+                    </ul>
+                  </li>
+                  <li><button data-node="taskbar">Taskbar and shell windows</button></li>
+                  <li><button data-node="other">Other visible windows</button></li>
+                </ul>
+              </li>
+            </ul>
+            <div class="node-inspector" id="nodeInspector">Select a node to inspect what the organism should store.</div>
+          </div>
+
+          <table class="mini-table">
+            <thead>
+              <tr><th>Layer</th><th>Current code</th><th>Required change</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Scan method</td><td><code>ElementFromPoint</code> grid probe named <code>hover_scan</code>.</td><td>Define whether "hover" means actual cursor movement. If yes, add controlled cursor move, wait, probe, restore pointer. If no, rename to point scan and document it.</td></tr>
+              <tr><td>Filter</td><td>Drops non-interactive controls and disabled/offscreen controls.</td><td>Keep raw local scan artifact. Filter the prompt view, but preserve useful labels, text, containers, and parent/child evidence.</td></tr>
+              <tr><td>Hierarchy</td><td><code>windows</code> list has W0 and top-level windows. <code>elements</code> is flat. <code>root_elements=[]</code>.</td><td>Build <code>desktop_tree</code>: W0 screen root, top-level windows, child regions/elements assigned by hwnd and rectangle containment.</td></tr>
+              <tr><td>Navigation</td><td>Execute uses <code>elements[id].px/py/hwnd</code>.</td><td>Give every node a stable id and action candidates, so Grok can navigate by tree path, not just flat coordinates.</td></tr>
+              <tr><td>Self-modify evidence</td><td>Direct self_modify has no fresh observation unless state already contains one.</td><td>For observation goals, self_modify should either run observe first or include the latest observation artifact path explicitly.</td></tr>
+            </tbody>
+          </table>
+
+          <div class="grid two">
+            <div class="card">
+              <strong>Filtering is acceptable</strong>
+              <p>Filtering is not truncation when the full raw evidence is preserved locally and the model gets a deliberate, semantically useful view. The brain does not need every duplicate point hit; it needs a stable tree plus enough raw artifact access to audit mistakes.</p>
+            </div>
+            <div class="card">
+              <strong>Truncation is not acceptable</strong>
+              <p>Discarding tail/head file contents or runtime text because of prompt limits is not acceptable for self-evolution. The current self-modify path fixed this by using a manifest and GitHub branch, but observation still needs raw artifact preservation.</p>
+            </div>
+          </div>
+
+          <div class="callout good">
+            <p><strong>Recommended observation v2:</strong> keep <code>ElementFromPoint</code> as the core primitive, add optional real cursor-hover mode, collect dense active-window samples, cluster by runtime id and rectangle, assign elements to containing windows, preserve non-actionable labels, store full raw scan to an evidence file, and send Grok the filtered hierarchy plus artifact path.</p>
+          </div>
+        </section>
+
+        <section id="prompts">
+          <p class="lede">These are the active prompt strings from <code>wiring.json</code>. They explain why the organism behaves as it does: short prompts plus strict JSON records.</p>
+
+          <details open>
+            <summary>Planner prompt</summary>
+            <pre>Plan the goal as JSON only: record_type='plan'; data.next_signal='step_ready' or 'reflect'; data.intent=list of {description, done_when}. Keep steps few, observable, and executable.</pre>
+          </details>
+
+          <details>
+            <summary>Scheduler prompt</summary>
+            <pre>Pick state.plan.intent[state.step]. Return JSON only: record_type='schedule'; data.next_signal='step_ready' or 'plan_complete'; data.step=step or null.</pre>
+          </details>
+
+          <details>
+            <summary>Execute prompt</summary>
+            <pre>Write Python for the current desktop step. Return JSON only: record_type='execution'; data.conclusion='EXECUTE' or 'CANNOT'; data.code=Python string. Exec namespace includes state,wiring,goal,last,screen,elements,windows,screen_text,focused_title, observe_screen(), last_observation_snapshot(), get_focused_title(), click,type_text,press_key,hotkey,scroll,focus_window,open_url, standard modules, wiring_limit(name, default, wiring), repo_root, python_executable. Prefer existing observation fields. Use elements[id].px/py/hwnd for targeting. If last.error exists, adapt instead of repeating.</pre>
+          </details>
+
+          <details>
+            <summary>Verify prompt</summary>
+            <pre>Judge the step from provided evidence. Return JSON only: record_type='verification'; data.next_signal='step_confirmed' or 'step_denied'; data.success boolean; data.reasoning concise evidence.</pre>
+          </details>
+
+          <details>
+            <summary>Reflect prompt</summary>
+            <pre>Diagnose failure and choose recovery. Return JSON only: record_type='reflection'; data.next_signal='retry','replan','escalate',or 'give_up'; data.lesson=specific next change; data.diagnosis=root cause.</pre>
+          </details>
+
+          <details>
+            <summary>Self-modify prompt</summary>
+            <pre>Propose minimal git-native self-evolution from provided wiring, git_context, workspace_manifest, runtime evidence paths, and failure evidence. Return JSON only: record_type='git_evolution_patch'; data.summary string; data.rationale string; data.file_writes=list of {path:'repo-relative path',content:'complete file text'}; data.file_deletes=list of repo-relative paths; data.wiring_patches=list of {op:'set'|'delete',path,value}; data.commands=optional validation commands; data.expected_validation string or object. Target organism_nodes/ for node changes and brain_transports/ for transport changes. Do not push or assume direct repository authority; the local organism applies, validates, commits, and may publish the branch.</pre>
+          </details>
+
+          <details>
+            <summary>Satisfied prompt</summary>
+            <pre>Goal achieved. Return record_type='satisfied', data.next_signal='halt'.</pre>
+          </details>
+
+          <div class="split">
+            <div class="card">
+              <strong>Prompt alignment problem</strong>
+              <p>The execute prompt says "desktop step" but gives modules and repository paths. That means a model could modify files during normal execute. Proper architecture should state that repository writes are forbidden outside <code>self_modify</code>.</p>
+            </div>
+            <div class="card">
+              <strong>Contract strength</strong>
+              <p>The JSON Schema layer is real and useful. The next improvement is stricter nested schemas, diff-based patches, and a dedicated observation-upgrade record type or self-modify submode.</p>
+            </div>
+          </div>
+
+          <pre>{
+  "record_type": "git_evolution_patch",
+  "data": {
+    "summary": "short human summary",
+    "rationale": "evidence-backed reason",
+    "file_writes": [{"path": "repo-relative path", "content": "complete file text"}],
+    "file_deletes": [],
+    "wiring_patches": [{"op": "set", "path": "observe_config.hover_scan.step_px", "value": 18}],
+    "commands": [{"command": "python -m compileall -q ."}],
+    "expected_validation": "compile passes and observation tree shape exists"
+  }
+}</pre>
+        </section>
+
+        <section id="build">
+          <p class="lede">The next build should make observation and self-evolution boringly reliable. This is the concrete architecture I would implement before calling the organism self-growing.</p>
+
+          <div class="grid">
+            <div class="card">
+              <strong>1. Observation v2 data model</strong>
+              <p>Create a <code>desktop_tree</code> with <code>W0</code> as root. Every node should have id, parent_id, children, rect, hwnd, role, name, text, enabled, focused, confidence, source, action candidates, sample points, and reason it was kept.</p>
+              <div class="meter"><span style="width: 18%"></span></div>
+              <small>Current implementation is only partial.</small>
+            </div>
+
+            <div class="card">
+              <strong>2. Real hover policy</strong>
+              <p>Decide the exact primitive. If "mouse hover" means actual pointer movement, add a scan mode that moves the cursor, waits, probes, captures tooltip/hover changes, and restores position. If non-intrusive point probing is preferred, document it as the single scan method and stop calling it mouse hover.</p>
+            </div>
+
+            <div class="card">
+              <strong>3. Filter without losing auditability</strong>
+              <p>Write full raw observation artifacts locally. Send the model a filtered hierarchy, not a truncated dump. Include artifact paths and hashes so failures can be audited. Filtering should remove duplicates and noise, not evidence classes.</p>
+            </div>
+
+            <div class="card">
+              <strong>4. Route code changes only through self_modify</strong>
+              <p>Restrict normal execute so it cannot write repository files. Add an explicit "architecture problem" route from reflect to self_modify. That makes the living organism safer and easier to reason about.</p>
+            </div>
+
+            <div class="card">
+              <strong>5. Add iterative file access</strong>
+              <p>Add a <code>file_request</code> or patch-review step. The manifest plus GitHub URL is good, but the organism should have a deterministic way for Grok to request full local files before writing patches.</p>
+            </div>
+
+            <div class="card">
+              <strong>6. Replace full file writes for large changes</strong>
+              <p>Keep full file writes for tiny files, but use unified diffs or structured patches for larger files. Validate before and after applying. Store rejected patches as evidence.</p>
+            </div>
+
+            <div class="card">
+              <strong>7. Build a showroom branch</strong>
+              <p>Add an optional <code>self-demo</code> branch. Successful self-evolve commits can open a PR or update that branch after validation. Keep <code>main</code> human-controlled until the safety case is proven.</p>
+            </div>
+
+            <div class="card">
+              <strong>8. Behavioral validation</strong>
+              <p>Compile is not enough. Add dry-run observation checks that assert <code>desktop_tree.root.id == "W0"</code>, windows are children of W0, elements attach to windows, and no observation payload is silently truncated.</p>
+            </div>
+          </div>
+
+          <div class="callout">
+            <p><strong>Final honest answer:</strong> yes, this is a plausible path to a living desktop operator. No, it is not complete today. The current system can self-evolve in controlled git branches, but it still needs a stronger world model, stricter mutation boundaries, deterministic code access, and promotion rules before a human should trust it to grow without close review.</p>
+          </div>
+
+          <p class="footer-note">Report generated from static project inspection. No organism run, no live model call.</p>
+        </section>
+      </div>
+    </article>
+  </main>
+
+  <script>
+    const tabs = [...document.querySelectorAll(".tab")];
+    const sections = [...document.querySelectorAll("section")];
+
+    function setTab(id) {
+      tabs.forEach((tab) => tab.setAttribute("aria-selected", String(tab.dataset.tab === id)));
+      sections.forEach((section) => section.classList.toggle("active", section.id === id));
+      const active = document.getElementById(id);
+      if (active) active.scrollIntoView({ block: "start" });
+    }
+
+    tabs.forEach((tab) => {
+      tab.addEventListener("click", () => setTab(tab.dataset.tab));
+    });
+
+    const stepDetails = [
+      "The organism starts on the current branch. Normal runs begin at planner. Direct self_modify creates a branch first, but it does not observe the desktop unless state already contains observation.",
+      "Planner can turn the goal into steps, but the current prompt optimizes for observable executable steps, not guaranteed architecture repair. Precision matters.",
+      "Observe returns screen, windows, screen_text, snapshot, focused_title, and a flat actionable elements map. It does not yet return a real desktop_tree.",
+      "Execute asks the model for Python. It can act on the desktop. Today the namespace is broad enough that repository writes should be explicitly forbidden outside self_modify.",
+      "Reflect can choose retry, replan, escalate, or give_up. Escalate is the bridge to self_modify when the organism sees a code-level problem.",
+      "Self_modify requires a clean worktree, creates self-evolve/YYYYMMDDTHHMMSS-sha, and can push it to origin so Grok can inspect the public branch.",
+      "Grok returns git_evolution_patch. Local Python applies, validates, rolls back on failure, commits and pushes on the self-evolve branch. No auto-merge happens."
+    ];
+
+    const stepButtons = [...document.querySelectorAll("[data-step]")];
+    const detail = document.getElementById("stepDetail");
+    stepButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        stepButtons.forEach((b) => b.classList.remove("active"));
+        button.classList.add("active");
+        detail.innerHTML = stepDetails[Number(button.dataset.step)];
+      });
+    });
+
+    const nodeText = {
+      screen: "<strong>W0 Screen root:</strong> stores full screen dimensions, scan timestamp, focused window id, global coordinate space, and children window ids.",
+      window: "<strong>Top-level window:</strong> stores hwnd, title, class, pid, rect, z/order when available, focus state, and child region/element ids.",
+      region: "<strong>Region cluster:</strong> groups repeated point hits into stable areas so the brain sees layout structure instead of raw duplicate samples.",
+      element: "<strong>Actionable control:</strong> stores role, name, action candidate, center point, rect, hwnd, enabled/focused flags, runtime id, and source sample points.",
+      text: "<strong>Nearby labels and text:</strong> preserves context that filtering currently loses, especially labels attached to edit boxes, buttons, and list rows.",
+      taskbar: "<strong>Taskbar and shell:</strong> must be represented as navigable windows/regions when desktop or taskbar is active, not as zero-actionable-element failure.",
+      other: "<strong>Other windows:</strong> remain children of W0 with enough metadata to focus them and rescan them when the plan requires it."
+    };
+
+    const inspector = document.getElementById("nodeInspector");
+    document.querySelectorAll("[data-node]").forEach((button) => {
+      button.addEventListener("click", () => {
+        inspector.innerHTML = nodeText[button.dataset.node] || "No detail.";
+      });
+    });
+  </script>
+</body>
+</html>
