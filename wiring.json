@@ -105,12 +105,12 @@
     "hover_scan": {
       "mode": "cursor_hover",
       "restore_cursor": true,
-      "step_px": 32,
+      "step_px": 64,
       "delay_ms": 1,
       "target_window_only": false,
       "min_size_px": 6,
       "max_elements": 240,
-      "full_screen_step_px": 32
+      "full_screen_step_px": 64
     }
   },
   "self_modify": {

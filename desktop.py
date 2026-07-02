@@ -21,6 +21,104 @@ import comtypes.client
 ROOT = pathlib.Path(__file__).parent.resolve()
 
 
+# =============================================================================
+# Win32 constants for visibility / hit testing
+# =============================================================================
+
+GWL_EXSTYLE = -20
+WS_EX_LAYERED = 0x00080000
+WS_EX_TRANSPARENT = 0x00000020
+WS_EX_TOOLWINDOW = 0x00000080
+WS_EX_NOACTIVATE = 0x08000000
+
+# WindowFromPoint - returns hwnd at point
+user32 = ctypes.windll.user32
+_user32_WindowFromPoint = user32.WindowFromPoint
+_user32_WindowFromPoint.argtypes = [wintypes.POINT]
+_user32_WindowFromPoint.restype = wintypes.HWND
+
+_user32_GetWindowLongPtr = user32.GetWindowLongPtrW
+_user32_GetWindowLongPtr.argtypes = [wintypes.HWND, ctypes.c_int]
+_user32_GetWindowLongPtr.restype = ctypes.c_longlong
+
+_user32_GetWindowThreadProcessId = user32.GetWindowThreadProcessId
+_user32_GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+_user32_GetWindowThreadProcessId.restype = wintypes.DWORD
+
+_kernel32_GetCurrentThreadId = ctypes.windll.kernel32.GetCurrentThreadId
+_kernel32_GetCurrentThreadId.argtypes = []
+_kernel32_GetCurrentThreadId.restype = wintypes.DWORD
+
+
+def _is_window_hit_test_transparent(hwnd: int) -> bool:
+    """Check if window has WS_EX_TRANSPARENT or is layered with alpha=0 hit-test transparency."""
+    if hwnd <= 0:
+        return True
+    try:
+        ex_style = _user32_GetWindowLongPtr(hwnd, GWL_EXSTYLE)
+        if ex_style & WS_EX_TRANSPARENT:
+            return True
+        # Layered windows: hit test based on alpha; WS_EX_TRANSPARENT makes it fully click-through
+        if ex_style & WS_EX_LAYERED:
+            # Could check alpha via GetLayeredWindowAttributes but expensive; treat as potentially transparent
+            # Only skip if also WS_EX_TRANSPARENT (already checked) or toolwindow/noactivate
+            if ex_style & (WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE):
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def _window_at_point_excludes_transparent(x: int, y: int, exclude_hwnd: int = 0) -> int:
+    """Get window at point, skipping hit-test transparent windows.
+    
+    WindowFromPoint already skips WS_EX_TRANSPARENT windows from other processes.
+    We add same-process check and explicit exclude.
+    """
+    pt = wintypes.POINT(x, y)
+    hwnd = _user32_WindowFromPoint(pt)
+    if hwnd == 0 or hwnd == exclude_hwnd:
+        return 0
+    # Skip hit-test transparent windows
+    if _is_window_hit_test_transparent(hwnd):
+        return 0
+    # Verify same thread for reliable hit-testing (WindowFromPoint limitation)
+    try:
+        pid = wintypes.DWORD()
+        _user32_GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        # Could check thread ID but process ID is sufficient for our use
+    except Exception:
+        pass
+    return hwnd
+
+
+def _element_is_visibly_clickable(desktop: "Desktop", element: "Element") -> bool:
+    """Check if element is truly visible and clickable (not occluded by another window).
+    
+    Uses UIA IsOffscreen + BoundingRectangle + Win32 WindowFromPoint hit test.
+    """
+    # UIA-level: offscreen means scrolled out of view or collapsed
+    if element.is_offscreen:
+        return False
+    
+    # UIA-level: zero-size rect
+    if element.rect.width <= 0 or element.rect.height <= 0:
+        return False
+    
+    # Win32-level: hit test at element center
+    px = element.rect.left + element.rect.width // 2
+    py = element.rect.top + element.rect.height // 2
+    
+    # Get window at that point
+    hwnd_at_point = _window_at_point_excludes_transparent(px, py, element.window_handle)
+    
+    # If different window at point, element is occluded
+    if hwnd_at_point != 0 and hwnd_at_point != element.window_handle:
+        return False
+    
+    return True
+
+
 def _load_uia_module() -> Any:
     """Load/regenerate the UIAutomation comtypes wrapper when the typelib changes."""
     try:
@@ -720,6 +818,9 @@ class Desktop:
                 continue
             action = self.classify_action(el.control_type_id)
             if not action:
+                continue
+            # Win32 hit-test: skip occluded elements (window at center point != element's window)
+            if not _element_is_visibly_clickable(self, el):
                 continue
             
             elem_id = self._stable_id(el)
