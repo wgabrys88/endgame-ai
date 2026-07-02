@@ -426,6 +426,15 @@ def apply_evolution_patch(wiring: dict[str, Any], parsed: dict[str, Any]) -> tup
             wiring.update(patched_wiring)
             save_wiring(wiring)
 
+        # Minimal reliable architecture improvement: explicit post-create validation
+        # Ensures safe create/validate before any execute or potential rollback.
+        # Evidence-based from prior inspection gaps (no visible post-write checks).
+        for path, rel, _ in writes:
+            if path.suffix == ".py":
+                compile(path.read_text(encoding="utf-8"), rel, "exec")
+            elif path.suffix == ".json":
+                json.loads(path.read_text(encoding="utf-8"))
+
         ensure_live_nodes(wiring)
         brain.ensure_live_brains(wiring)
         command_results = _run_evolution_commands(list(data.get("commands") or []), wiring)
@@ -475,6 +484,13 @@ def build_execute_namespace(ctx: dict[str, Any]) -> dict[str, Any]:
     state = ctx.get("state", {})
     wiring = ctx.get("wiring", {})
     goal = ctx.get("goal", "")
+    last = {
+        "error": state.get("last_error"),
+        "result": state.get("last_result", ""),
+        "action": state.get("last_action", {}),
+        "verification": state.get("last_verification", {}),
+        "reflection": state.get("last_reflection", {}),
+    }
     
     return {
         # Observation
@@ -518,6 +534,7 @@ def build_execute_namespace(ctx: dict[str, Any]) -> dict[str, Any]:
         "state": state,
         "wiring": wiring,
         "goal": goal,
+        "last": last,
         "screen": state.get("screen", {}),
         "elements": state.get("elements", {}),
         "windows": state.get("windows", []),

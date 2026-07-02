@@ -3,11 +3,15 @@ from __future__ import annotations
 import brain
 import hashlib
 import pathlib
+import re
 
 
 ROOT = pathlib.Path(__file__).parent.parent.resolve()
 SKIP_DIRS = {".git", "__pycache__", ".pytest_cache", ".vscode", ".idea", "pids"}
 BINARY_SUFFIXES = {".pyc", ".pyd", ".dll", ".exe", ".ico", ".png", ".jpg", ".jpeg", ".gif", ".webp"}
+FULL_TEXT_LIMIT = 30000
+RUNTIME_TEXT_TAIL = 5000
+RUNTIME_TEXT_RE = re.compile(r"^\d{8}T\d{6}\.txt$")
 
 
 def _read_file_safe(path: pathlib.Path) -> str:
@@ -37,7 +41,17 @@ def _capture_workspace() -> dict[str, dict[str, object]]:
         if path.suffix.lower() in BINARY_SUFFIXES:
             info["binary"] = True
         else:
-            info["text"] = _read_file_safe(path)
+            text = _read_file_safe(path)
+            if RUNTIME_TEXT_RE.match(path.name):
+                info["text_tail"] = text[-RUNTIME_TEXT_TAIL:]
+                info["truncated"] = len(text) > RUNTIME_TEXT_TAIL
+                info["kind"] = "runtime_log_tail"
+            elif len(text) > FULL_TEXT_LIMIT:
+                info["text_head"] = text[: FULL_TEXT_LIMIT // 2]
+                info["text_tail"] = text[-FULL_TEXT_LIMIT // 2 :]
+                info["truncated"] = True
+            else:
+                info["text"] = text
         files[rel] = info
     return files
 
@@ -82,6 +96,7 @@ def run(ctx):
                     "Write seed_nodes/name.py or seed_brains/name.py, not live_nodes/live_brains; live copies are runtime cache.",
                     "Core files brain.py, nodes.py, organism.py, desktop.py, stop_check.py can be rewritten but activate on the next run.",
                     "Python and JSON writes are validated before any file is written.",
+                    "workspace_files enumerates all non-private workspace files, but large/runtime text may be represented by bounded head/tail fields.",
                 ],
             },
         },
