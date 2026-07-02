@@ -457,6 +457,7 @@ def _restore_snapshots(snapshots: dict[pathlib.Path, bytes | None]) -> None:
 
 def apply_evolution_patch(wiring: dict[str, Any], parsed: dict[str, Any]) -> tuple[str, Any]:
     """Apply a validated self-evolution patch to canonical repository source."""
+    require_self_evolve_branch(wiring)
     data = _patch_data(parsed)
     wiring_patches = list(data.get("wiring_patches") or [])
     patched_wiring = _apply_wiring_ops(wiring, wiring_patches)

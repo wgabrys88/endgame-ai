@@ -84,7 +84,7 @@ Current flow:
 3. It builds a non-lossy workspace manifest: path, size, sha256, tracked/untracked status, git status, branch, and commit SHA.
 4. It sends Grok the manifest, git context, runtime evidence paths, wiring, and patch schema.
 5. Grok returns `record_type="git_evolution_patch"`.
-6. `organism.py` refuses to apply unless the current branch starts with `self-evolve/`.
+6. `organism.py` and `nodes.apply_evolution_patch()` refuse to apply unless the current branch starts with `self-evolve/`.
 7. `nodes.apply_evolution_patch()` validates Python/JSON before writing, snapshots touched files, writes atomically, validates again after writing, runs optional bounded commands, and rolls back touched files on failure.
 8. `nodes.commit_self_evolution()` commits the successful patch on the timestamp branch.
 
