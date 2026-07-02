@@ -27,7 +27,11 @@ Core principles:
 
 Current branch: `unified-archBRAINZ`.
 
-Current implementation checkpoint: `62db244 Make self evolution git native`.
+Latest implementation commits in this handover:
+
+- `62db244 Make self evolution git native`
+- `5cdd97a Rewrite living organism handover`
+- `c980efa Enforce self evolve branch at patch applier`
 
 Current selected transport: `xai` with model `grok-build-0.1`.
 
@@ -89,6 +93,83 @@ Current flow:
 8. `nodes.commit_self_evolution()` commits the successful patch on the timestamp branch.
 
 No direct public push by Grok is implemented. That is deliberate. Local validation remains the authority.
+
+## Human Workflow
+
+The human does not need to create self-evolution branches manually. The organism creates them automatically when `self_modify` starts and the worktree is clean.
+
+Normal operation:
+
+1. Human or Codex starts from the working branch, currently `unified-archBRAINZ`.
+2. Normal planner/observe/execute/verify runs stay on that branch.
+3. If the topology reaches `self_modify`, the organism checks `git status --porcelain`.
+4. If the worktree is dirty, `self_modify` fails before creating a branch. Commit, stash, or intentionally discard local work first.
+5. If the worktree is clean, the organism creates `self-evolve/YYYYMMDDTHHMMSS-<shortsha>` automatically.
+6. Grok receives git context, manifest, runtime evidence metadata, and the patch schema.
+7. Grok proposes a patch. It does not push or commit.
+8. Local Python applies, validates, rolls back on failure, and commits on the self-evolve branch.
+9. Human/Codex reviews the branch, then decides whether to merge, cherry-pick, or push.
+
+### Workflow Diagram
+
+```mermaid
+flowchart TD
+    A["Human/Codex on unified-archBRAINZ"] --> B["Run organism.py"]
+    B --> C{"Topology reaches self_modify?"}
+    C -- "No" --> D["Continue normal perceive/act/verify loop"]
+    C -- "Yes" --> E["Check git worktree"]
+    E --> F{"Clean?"}
+    F -- "No" --> G["Fail hard before branch creation\nCommit/stash/discard first"]
+    F -- "Yes" --> H["Auto-create self-evolve/YYYYMMDDTHHMMSS-shortsha"]
+    H --> I["Build manifest + runtime evidence metadata"]
+    I --> J["Send context to Grok/xAI"]
+    J --> K["Grok returns git_evolution_patch"]
+    K --> L["Local applier validates and writes"]
+    L --> M{"Validation passes?"}
+    M -- "No" --> N["Rollback touched files\nNo commit"]
+    M -- "Yes" --> O["Commit on self-evolve branch"]
+    O --> P["Human/Codex reviews and decides merge/push"]
+
+    classDef human fill:#fff2cc,stroke:#d6a000,color:#111;
+    classDef organism fill:#d9ead3,stroke:#38761d,color:#111;
+    classDef grok fill:#d9e2f3,stroke:#1155cc,color:#111;
+    classDef fail fill:#f4cccc,stroke:#cc0000,color:#111;
+    classDef git fill:#eadcf8,stroke:#674ea7,color:#111;
+    class A,P human;
+    class B,C,D,E,F,I,L,M organism;
+    class J,K grok;
+    class G,N fail;
+    class H,O git;
+```
+
+### Branch Responsibility
+
+```mermaid
+sequenceDiagram
+    participant Human as Human/Codex
+    participant Org as Local organism
+    participant Git as Git repository
+    participant Grok as Grok/xAI
+
+    Human->>Org: Run normal goal or --start-node self_modify
+    Org->>Git: Check clean worktree
+    alt dirty
+        Git-->>Org: Dirty files
+        Org-->>Human: Fail before branch creation
+    else clean
+        Org->>Git: Create self-evolve timestamp branch
+        Org->>Grok: Send branch context, manifest, runtime evidence, schema
+        Grok-->>Org: Return git_evolution_patch
+        Org->>Org: Validate Python/JSON and commands
+        alt validation fails
+            Org->>Git: Restore touched files
+            Org-->>Human: Report failure, no commit
+        else validation passes
+            Org->>Git: Commit patch on self-evolve branch
+            Org-->>Human: Report branch, commit, changed files
+        end
+    end
+```
 
 ## Proven Run Evidence
 
@@ -170,15 +251,29 @@ This run also proved why the old self-modify context was wrong: the raw request 
 - Successful self-evolution patches are committed on the self-evolve branch.
 - Canonical code directories are now `organism_nodes/` and `brain_transports/`.
 
+## Post-Implementation Verification
+
+Verification run on July 2, 2026 after the git-native architecture rewrite:
+
+- `python -m compileall -q .` passed.
+- Runtime `rg` found no `FULL_TEXT_LIMIT`, `RUNTIME_TEXT_TAIL`, `text_head`, `text_tail`, or `truncated` in `organism_nodes`, `nodes.py`, `organism.py`, `brain.py`, or `wiring.json`.
+- Runtime `rg` found no `ensure_live`, `live_nodes`, `live_brains`, `seed_nodes`, or `seed_brains` in `organism_nodes`, `brain_transports`, `nodes.py`, `organism.py`, `brain.py`, or `wiring.json`.
+- Dirty worktree test stopped before branch creation with `RuntimeError: self_modify requires a clean git worktree before branch creation`.
+- Clean branch creation test created `self-evolve/20260702T123700-c980efa` and then stopped at `brain call budget exceeded: 0/0`, proving branch creation without a Grok request.
+- Off-branch direct patch application failed with `RuntimeError: self_modify patches must apply on a self-evolve/ branch`.
+- Invalid Python patch failed with `SyntaxError` before creating `self_evolve_invalid.py`.
+- Failing validation command rolled back `self_evolve_rollback.md`.
+- Successful patch wrote `self_evolve_success.md`, ran `compileall`, and committed on the self-evolve branch as `6848e9c`.
+
 ## Current Issues And Honest Limits
 
 1. Execute still runs generated Python in-process with broad powers.
 
    This is intentional for a self-evolving desktop organism, but it is not a sandbox.
 
-2. Clean self-evolution branch creation is implemented but not runtime-proven after this README rewrite.
+2. A real Grok call through the new git-native self-modify path has not been run after this rewrite.
 
-   The architecture commit compiled. The dirty-worktree gate could not be executed through the sandbox after the inline Python probe was denied, so a future session should run the git self-evolution test matrix after this README commit.
+   Branch creation, off-branch refusal, invalid-content rejection, rollback, and successful local commit are proven. The next live run should inspect the raw Grok request and confirm it contains branch URL, manifest, and runtime evidence metadata rather than file text dumps.
 
 3. `github_public` branch context is designed, not enabled by default.
 
@@ -432,7 +527,7 @@ Important run evidence: Grok/xAI normal run first exposed missing execute namesp
 
 Observation data flow: observe writes screen, elements, screen_text, windows, snapshot, focused_title. execute receives the full observation payload and namespace contract. verify receives focused_title, screen_text, elements, windows, last_action, last_result, last_error. reflect receives focused_title, screen_text, elements, last_action, last_result, last_error, last_verification. Direct --start-node self_modify has no fresh observation unless state already has one.
 
-Known issues: execute is powerful and not sandboxed; Task Manager can produce zero actionable hover-scan elements; github_public context is designed but publish_context_branch defaults false; clean self-evolution branch creation needs post-README runtime verification; direct Grok push is intentionally not implemented.
+Known issues: execute is powerful and not sandboxed; Task Manager can produce zero actionable hover-scan elements; github_public context is designed but publish_context_branch defaults false; a real Grok call through the new git-native manifest path still needs raw-log verification; direct Grok push is intentionally not implemented.
 
 Start by running git status, reading wiring.json, brain.py, nodes.py, organism.py, organism_nodes/self_modify.py, and newest runtime evidence files. Then run compileall and the static rg checks from README. If worktree is clean, run the git self-evolution verification matrix. If enabling GitHub public context, set self_modify.git.publish_context_branch=true, keep xAI web access restricted to GitHub/the repository, and keep local apply/validate/commit authority. Commit coherent chunks regularly and rewrite README.md before handoff.
 ```
