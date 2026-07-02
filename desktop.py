@@ -875,9 +875,8 @@ class Desktop:
             "role": node.get("role", ""),
             "name": node.get("name", "") or node.get("title", ""),
         }
-        for key in ("action", "focused"):
-            if key in node and not (is_root and key == "focused"):
-                semantic[key] = node.get(key)
+        if "action" in node:
+            semantic["action"] = node.get("action")
         children = node.get("children") if isinstance(node.get("children"), list) else []
         semantic["children"] = [self._semantic_node(child) for child in children if isinstance(child, dict)]
         return semantic
