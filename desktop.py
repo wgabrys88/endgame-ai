@@ -875,7 +875,7 @@ class Desktop:
             "role": node.get("role", ""),
             "name": node.get("name", "") or node.get("title", ""),
         }
-        for key in ("action", "enabled", "focused"):
+        for key in ("action", "focused"):
             if key in node and not (is_root and key == "focused"):
                 semantic[key] = node.get(key)
         children = node.get("children") if isinstance(node.get("children"), list) else []
