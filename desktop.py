@@ -652,6 +652,10 @@ class Desktop:
     def last_desktop_tree(self) -> dict[str, Any] | None:
         """Get the last fresh desktop tree produced by observe()."""
         return self._last_desktop_tree
+
+    def last_action_index(self) -> dict[str, dict[str, Any]]:
+        """Get body-side targeting data from the latest fresh observation."""
+        return self._last_action_index
     
     def get_focused_title(self) -> str:
         """Get the title of the currently focused window."""
@@ -1249,6 +1253,11 @@ def observe_screen() -> dict[str, int]:
 def last_desktop_tree() -> dict[str, Any] | None:
     """Convenience function for last desktop tree."""
     return get_desktop().last_desktop_tree()
+
+
+def last_action_index() -> dict[str, dict[str, Any]]:
+    """Convenience function for latest body-side targeting index."""
+    return get_desktop().last_action_index()
 
 
 def get_focused_title() -> str:

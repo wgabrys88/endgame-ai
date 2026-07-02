@@ -26,6 +26,8 @@ The current topology is only a seed nervous system. `planner`, `scheduler`, `obs
 - A stable-prefix brain chokepoint: every model call receives the real checked-out source and shared organism rules before dynamic state, so provider prompt caching can reuse the code/rules prefix.
 - Mandatory fresh observation before every brain call, including planner and self-modify. The UI is treated as dynamic; stale state is history only.
 - A two-surface observation model: `desktop_tree` is semantic and id-based for the brain, while `action_index` and raw artifacts keep coordinates, hwnds, runtime ids, and UIA metadata for the Python body.
+- A single fresh-observation brain chokepoint: model decisions receive current UI truth from `brain.think`; verify, reflect, and self-modify no longer perform separate duplicate scans before asking the model.
+- Node targeting uses the latest body-side action index from the desktop singleton, so `click_node(id)` and `scroll_node(id)` act on the same scan that informed the model response.
 - Self-modify patches must declare `read_files` for every existing touched source file, and the applier rejects ungrounded rewrites.
 - A public development branch, `unified-archBRAINZ`, where this final unification work is being prepared before merge to `main`.
 
@@ -365,6 +367,8 @@ This README states the target organism identity. Some code still reflects earlie
 - DONE: Build the hierarchical screen-rooted observation model.
 - DONE: Make fresh whole-screen hover observation mandatory before every brain call.
 - DONE: Split observation into semantic `desktop_tree`, body-side `action_index`, raw observation artifacts, and `observation_delta`.
+- DONE: Remove duplicate verify/reflect/self_modify observation passes; the brain chokepoint is the single fresh scan source for model decisions.
+- DONE: Make runtime node targeting prefer the latest action index captured during the brain-call scan.
 - DONE: Move the real checked-out source and organism rules into a stable prefix for prompt caching.
 - DONE: Require self-modify patches to declare `read_files` and reject ungrounded rewrites of existing files.
 - DONE: Rewrite seed prompts so each model call knows it is one organ inside the full topology.

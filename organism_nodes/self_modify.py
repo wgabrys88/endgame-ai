@@ -5,7 +5,6 @@ import subprocess
 from typing import Any
 
 import brain
-import desktop
 import nodes
 
 
@@ -90,7 +89,6 @@ def run(ctx):
     wiring = ctx.get("wiring", {})
     goal = ctx.get("goal", "")
     step = state.get("current_step") or {}
-    obs = desktop.observe(wiring.get("observe_config", {}))
     git_context = nodes.prepare_self_evolution(wiring)
 
     record = brain.think(
@@ -112,22 +110,7 @@ def run(ctx):
                 "state_summary": {
                     "current_node": ctx.get("node"),
                     "tick": state.get("tick"),
-                    "focused_title": obs.get("focused_title", ""),
-                    "fresh_scan": obs.get("fresh_scan", False),
-                    "observed_at": obs.get("observed_at"),
-                    "screen_text_chars": len(str(obs.get("screen_text", ""))),
-                    "element_count": int((obs.get("desktop_tree", {}) or {}).get("element_count", 0) or 0),
-                    "window_count": int((obs.get("desktop_tree", {}) or {}).get("window_count", 0) or 0),
                     "last_error": state.get("last_error"),
-                },
-                "observation": {
-                    "focused_title": obs.get("focused_title", ""),
-                    "fresh_scan": obs.get("fresh_scan", False),
-                    "observed_at": obs.get("observed_at"),
-                    "screen_text": obs.get("screen_text", ""),
-                    "desktop_tree": obs.get("desktop_tree", {}),
-                    "observation_artifact": obs.get("observation_artifact", {}),
-                    "observation_delta": obs.get("observation_delta", {}),
                 },
                 "evidence": _runtime_evidence(wiring, state),
             },
@@ -167,14 +150,14 @@ def run(ctx):
         raise RuntimeError(f"self_modify expected record_type=git_evolution_patch, got {record.get('record_type')}")
 
     data = record.get("data", {})
+    obs = brain.last_fresh_observation()
     return "modified", {
         "observed_at": obs.get("observed_at"),
         "fresh_scan": obs.get("fresh_scan"),
-            "desktop_tree": obs.get("desktop_tree", {}),
-            "action_index": obs.get("action_index", {}),
-            "observation_artifact": obs.get("observation_artifact", {}),
-            "observation_delta": obs.get("observation_delta", {}),
-            "screen_text": obs.get("screen_text", ""),
+        "desktop_tree": obs.get("desktop_tree", {}),
+        "observation_artifact": obs.get("observation_artifact", {}),
+        "observation_delta": obs.get("observation_delta", {}),
+        "screen_text": obs.get("screen_text", ""),
         "focused_title": obs.get("focused_title", ""),
         "git_evolution_patch": {
             "summary": data.get("summary", ""),

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import brain
-import desktop
 
 
 def run(ctx):
@@ -10,7 +9,6 @@ def run(ctx):
     wiring = ctx.get("wiring", {})
     goal = ctx.get("goal", "")
     step = state.get("current_step") or {}
-    obs = desktop.observe(wiring.get("observe_config", {}))
 
     record = brain.think(
         system_prompt=wiring.get("prompts", {}).get("reflect", ""),
@@ -21,13 +19,6 @@ def run(ctx):
                 "done_when": step.get("done_when", ""),
             },
             "evidence": {
-                "focused_title": obs.get("focused_title", ""),
-                "fresh_scan": obs.get("fresh_scan", False),
-                "observed_at": obs.get("observed_at"),
-                "screen_text": obs.get("screen_text", ""),
-                "desktop_tree": obs.get("desktop_tree", {}),
-                "observation_artifact": obs.get("observation_artifact", {}),
-                "observation_delta": obs.get("observation_delta", {}),
                 "last_action": state.get("last_action", {}),
                 "last_result": state.get("last_result", ""),
                 "last_error": state.get("last_error", ""),
@@ -46,12 +37,12 @@ def run(ctx):
         signal = "replan"
     lesson = data.get("lesson", "No lesson provided")
     diagnosis = data.get("diagnosis", "No diagnosis")
+    obs = brain.last_fresh_observation()
 
     return signal, {
         "observed_at": obs.get("observed_at"),
         "fresh_scan": obs.get("fresh_scan"),
         "desktop_tree": obs.get("desktop_tree", {}),
-        "action_index": obs.get("action_index", {}),
         "observation_artifact": obs.get("observation_artifact", {}),
         "observation_delta": obs.get("observation_delta", {}),
         "screen_text": obs.get("screen_text", ""),

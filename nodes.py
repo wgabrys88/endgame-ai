@@ -505,7 +505,7 @@ def _desktop_tree_index(state: dict[str, Any]) -> dict[str, Any]:
 
 
 def _action_index(state: dict[str, Any]) -> dict[str, Any]:
-    index = state.get("action_index") or {}
+    index = desktop.last_action_index() or state.get("action_index") or {}
     return index if isinstance(index, dict) else {}
 
 
