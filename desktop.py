@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import ctypes
 import importlib
+import json
+import pathlib
 import sys
 import time
 from ctypes import wintypes
@@ -15,6 +17,8 @@ from typing import Any
 
 import comtypes
 import comtypes.client
+
+ROOT = pathlib.Path(__file__).parent.resolve()
 
 
 def _load_uia_module() -> Any:
@@ -337,6 +341,7 @@ class Desktop:
         self.config = config or {}
         self._automation: uia.IUIAutomation | None = None
         self._last_desktop_tree: dict[str, Any] | None = None
+        self._last_action_index: dict[str, dict[str, Any]] = {}
         self._focused_title_cache: str = ""
         self._init_automation()
     
@@ -587,7 +592,7 @@ class Desktop:
         hover_elements = self.hover_scan(hover_config_adjusted)
         filtered_elements = self.filter_elements(hover_elements)
         windows = self.get_window_tokens()
-        desktop_tree = self.build_desktop_tree(
+        full_tree = self.build_desktop_tree(
             {"width": screen_width, "height": screen_height},
             filtered_elements,
             windows,
@@ -596,22 +601,45 @@ class Desktop:
             scan_config=hover_config_adjusted,
             raw_element_count=len(hover_elements),
         )
+        desktop_tree = self.semantic_desktop_tree(full_tree)
+        action_index = self.action_index_from_tree(full_tree)
+        delta = self.observation_delta(action_index)
+        artifact = self.write_observation_artifact(
+            {
+                "observed_at": observed_at,
+                "fresh_scan": True,
+                "focused_title": focused_title,
+                "observation_delta": delta,
+                "scan_config": hover_config_adjusted,
+                "windows": windows,
+                "raw_elements": [element.to_dict() for element in hover_elements],
+                "action_elements": filtered_elements,
+                "full_desktop_tree": full_tree,
+                "semantic_desktop_tree": desktop_tree,
+                "action_index": action_index,
+            },
+            observed_at,
+        )
         
         # Format SCREEN text for LLM
         screen_text = self.format_screen_text(
             {"width": screen_width, "height": screen_height},
-            filtered_elements,
-            windows,
+            desktop_tree.get("node_index", {}),
+            [],
             focused_title,
             desktop_tree,
         )
         
         self._last_desktop_tree = desktop_tree
+        self._last_action_index = action_index
         
         return {
             "observed_at": observed_at,
             "fresh_scan": True,
             "desktop_tree": desktop_tree,
+            "action_index": action_index,
+            "observation_artifact": artifact,
+            "observation_delta": delta,
             "screen_text": screen_text,
             "focused_title": focused_title,
         }
@@ -835,6 +863,111 @@ class Desktop:
             "window_count": len(window_nodes),
             "element_count": len(elements),
         }
+
+    def _semantic_node(self, node: dict[str, Any]) -> dict[str, Any]:
+        """Return the brain-facing node: identity, hierarchy, meaning, and action only."""
+        semantic: dict[str, Any] = {
+            "id": node.get("id", ""),
+            "role": node.get("role", ""),
+            "name": node.get("name", "") or node.get("title", ""),
+        }
+        for key in ("parent_id", "title", "action", "enabled", "focused", "fresh_scan", "observed_at", "source", "confidence"):
+            if key in node:
+                semantic[key] = node.get(key)
+        if isinstance(node.get("scan"), dict):
+            scan = node["scan"]
+            semantic["scan"] = {
+                "method": scan.get("method"),
+                "mode": scan.get("mode"),
+                "target_window_only": scan.get("target_window_only"),
+                "step_px": scan.get("step_px"),
+                "raw_element_count": scan.get("raw_element_count"),
+                "actionable_element_count": scan.get("actionable_element_count"),
+            }
+        children = node.get("children") if isinstance(node.get("children"), list) else []
+        semantic["children"] = [self._semantic_node(child) for child in children if isinstance(child, dict)]
+        if semantic["children"]:
+            semantic["child_count"] = len(semantic["children"])
+        return semantic
+
+    def semantic_desktop_tree(self, full_tree: dict[str, Any]) -> dict[str, Any]:
+        """Drop prompt-noisy coordinates and UIA metadata while preserving the hierarchy."""
+        root = self._semantic_node(full_tree.get("root", {}) if isinstance(full_tree.get("root"), dict) else {})
+        node_index: dict[str, dict[str, Any]] = {}
+
+        def walk(node: dict[str, Any]) -> None:
+            node_id = str(node.get("id") or "")
+            if node_id:
+                node_index[node_id] = {k: v for k, v in node.items() if k != "children"}
+            children = node.get("children") if isinstance(node.get("children"), list) else []
+            for child in children:
+                if isinstance(child, dict):
+                    walk(child)
+
+        walk(root)
+        return {
+            "id": "W0",
+            "role": "Screen",
+            "fresh_scan": True,
+            "observed_at": full_tree.get("observed_at"),
+            "focused_title": full_tree.get("focused_title", ""),
+            "focused_window_id": full_tree.get("focused_window_id", ""),
+            "root": root,
+            "node_index": node_index,
+            "window_count": full_tree.get("window_count", 0),
+            "element_count": full_tree.get("element_count", 0),
+        }
+
+    def action_index_from_tree(self, full_tree: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        """Keep body-only target data keyed by the same ids the brain sees."""
+        full_index = full_tree.get("node_index") if isinstance(full_tree.get("node_index"), dict) else {}
+        action_index: dict[str, dict[str, Any]] = {}
+        for node_id, node in full_index.items():
+            if not isinstance(node, dict):
+                continue
+            action_index[str(node_id)] = {
+                "id": node.get("id", node_id),
+                "parent_id": node.get("parent_id"),
+                "role": node.get("role"),
+                "name": node.get("name") or node.get("title"),
+                "title": node.get("title"),
+                "action": node.get("action"),
+                "px": node.get("px"),
+                "py": node.get("py"),
+                "hwnd": node.get("hwnd"),
+                "rect": node.get("rect"),
+                "enabled": node.get("enabled"),
+                "focused": node.get("focused"),
+                "automation_id": node.get("automation_id"),
+                "class_name": node.get("class_name"),
+                "runtime_id": node.get("runtime_id"),
+            }
+        return action_index
+
+    def observation_delta(self, action_index: dict[str, dict[str, Any]]) -> dict[str, Any]:
+        previous = self._last_action_index or {}
+        prev_ids = set(previous)
+        current_ids = set(action_index)
+        return {
+            "previous_nodes": len(prev_ids),
+            "current_nodes": len(current_ids),
+            "added_ids": sorted(current_ids - prev_ids),
+            "removed_ids": sorted(prev_ids - current_ids),
+            "stable_ids": len(prev_ids & current_ids),
+        }
+
+    def write_observation_artifact(self, payload: dict[str, Any], observed_at: float) -> dict[str, Any]:
+        artifact_dir = ROOT / "comms" / "observations"
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        path = artifact_dir / f"{int(observed_at * 1000)}.json"
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+        tmp.replace(path)
+        return {
+            "path": path.relative_to(ROOT).as_posix(),
+            "size": path.stat().st_size,
+            "kind": "raw_full_observation",
+        }
     
     def get_window_tokens(self) -> list[dict[str, Any]]:
         """Get window tokens W1..Wn for visible top-level windows.
@@ -890,24 +1023,35 @@ class Desktop:
         return windows
     
     def format_screen_text(self, screen: dict, elements: dict, windows: list, focused_title: str, desktop_tree: dict[str, Any] | None = None) -> str:
-        """Format SCREEN text for LLM context with hierarchy."""
-        lines = []
-        
-        # Window hierarchy
-        lines.append("DESKTOP TREE:")
-        lines.append(f"  * [W0] Screen ({screen['width']}x{screen['height']}) fresh_scan=true")
-        for w in windows:
-            if w["token"] != "W0":
-                rect = w["rect"]
-                lines.append(f"    * [{w['token']}] Window '{w['title']}' @({rect['left']},{rect['top']},{rect['right']},{rect['bottom']}) hwnd={w['hwnd']} pid={w.get('process_id',0)}")
-        
-        lines.append(f"\nFOCUSED WINDOW: {focused_title or 'none'}")
-        
-        # Key actionable tree nodes
-        lines.append(f"\nACTION NODES ({len(elements)} actionable):")
-        for eid, el in elements.items():
-            lines.append(f"  {eid}: {el['role']} '{el['name']}' @({el['px']},{el['py']}) hwnd={el['hwnd']} action={el['action']} enabled={el['enabled']} focused={el['focused']}")
-        
+        """Format the brain-facing screen text from the semantic hierarchy."""
+        tree = desktop_tree or {}
+        root = tree.get("root") if isinstance(tree.get("root"), dict) else {}
+        lines = [
+            "DESKTOP TREE:",
+            f"  * [W0] Screen ({screen['width']}x{screen['height']}) fresh_scan=true",
+            f"FOCUSED WINDOW: {focused_title or 'none'}",
+        ]
+
+        def describe(node: dict[str, Any], depth: int) -> None:
+            children = node.get("children") if isinstance(node.get("children"), list) else []
+            for child in children:
+                if not isinstance(child, dict):
+                    continue
+                node_id = str(child.get("id") or "")
+                role = str(child.get("role") or "")
+                name = str(child.get("name") or child.get("title") or "")
+                action = str(child.get("action") or "")
+                focused = " focused" if child.get("focused") else ""
+                enabled = ""
+                if "enabled" in child:
+                    enabled = " enabled=true" if child.get("enabled") else " enabled=false"
+                suffix = f" action={action}" if action else ""
+                lines.append(f"{'  ' * depth}* [{node_id}] {role} '{name}'{suffix}{enabled}{focused}")
+                describe(child, depth + 1)
+
+        describe(root, 2)
+        lines.append(f"ACTIONABLE ELEMENTS: {tree.get('element_count', 0)}")
+        lines.append("Use ids with click_node(id), scroll_node(id, amount), focus_window('Wn'), or node_by_id(id).")
         return "\n".join(lines)
 
     def click(self, x: int, y: int, hwnd: int = 0) -> dict[str, Any]:
@@ -1024,8 +1168,7 @@ class Desktop:
         elif target.startswith("W"):
             # Window token - look up in windows from last observation
             try:
-                tree = self.last_desktop_tree() or {}
-                node = (tree.get("node_index") or {}).get(target, {})
+                node = self._last_action_index.get(target, {})
                 hwnd = int(node.get("hwnd") or 0)
             except Exception:
                 pass

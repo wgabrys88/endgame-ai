@@ -225,6 +225,10 @@ def _collect_file_deletes(data: dict[str, Any]) -> list[str]:
     return [str(path) for path in list(data.get("file_deletes") or [])]
 
 
+def _declared_read_files(data: dict[str, Any]) -> set[str]:
+    return {str(path).replace("\\", "/").strip().lstrip("/") for path in list(data.get("read_files") or []) if str(path).strip()}
+
+
 def _activation_bucket(rel: str) -> str:
     if rel == "wiring.json" or rel.startswith("organism_nodes/") or rel.startswith("brain_transports/"):
         return "immediate"
@@ -353,6 +357,7 @@ def _restore_snapshots(snapshots: dict[pathlib.Path, bytes | None]) -> None:
 def apply_evolution_patch(wiring: dict[str, Any], parsed: dict[str, Any]) -> tuple[str, Any]:
     """Apply a validated self-evolution patch to canonical repository source."""
     data = _patch_data(parsed)
+    read_files = _declared_read_files(data)
     wiring_patches = list(data.get("wiring_patches") or [])
     patched_wiring = _apply_wiring_ops(wiring, wiring_patches)
 
@@ -368,6 +373,18 @@ def apply_evolution_patch(wiring: dict[str, Any], parsed: dict[str, Any]) -> tup
     for raw_path in _collect_file_deletes(data):
         path, rel = _evolution_target(raw_path, deleting=True)
         deletes.append((path, rel))
+
+    missing_reads = []
+    for path, rel, _ in writes:
+        if path.exists() and rel not in read_files:
+            missing_reads.append(rel)
+    for path, rel in deletes:
+        if path.exists() and rel not in read_files:
+            missing_reads.append(rel)
+    if wiring_patches and "wiring.json" not in read_files:
+        missing_reads.append("wiring.json")
+    if missing_reads:
+        raise ValueError(f"self_modify patch must declare read_files for touched existing files: {sorted(set(missing_reads))}")
 
     touched_paths = [path for path, _, _ in writes] + [path for path, _ in deletes]
     if wiring_patches:
@@ -446,6 +463,7 @@ def commit_self_evolution(wiring: dict[str, Any], applied: dict[str, Any], patch
         {
             "branch": git_current_branch(),
             "changed_files": changed_files,
+            "read_files": list(patch_data.get("read_files") or []),
             "rationale": rationale,
             "expected_validation": expected,
         },
@@ -483,6 +501,11 @@ def wiring_limit(name: str, default: int, wiring: dict[str, Any]) -> int:
 def _desktop_tree_index(state: dict[str, Any]) -> dict[str, Any]:
     tree = state.get("desktop_tree") or {}
     index = tree.get("node_index") if isinstance(tree, dict) else {}
+    return index if isinstance(index, dict) else {}
+
+
+def _action_index(state: dict[str, Any]) -> dict[str, Any]:
+    index = state.get("action_index") or {}
     return index if isinstance(index, dict) else {}
 
 
@@ -525,14 +548,18 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         return nodes
 
     def click_node(node_id: str) -> dict[str, Any]:
-        node = node_by_id(node_id)
+        node = dict(_action_index(state).get(str(node_id), {}) or {})
+        if not node:
+            node = node_by_id(node_id)
         if not node:
             return {"ok": False, "action": "click_node", "error": f"node not found: {node_id}"}
         x, y = _node_center(node)
         return d.click(x, y, int(node.get("hwnd") or 0))
 
     def scroll_node(node_id: str, amount: int = -3) -> dict[str, Any]:
-        node = node_by_id(node_id)
+        node = dict(_action_index(state).get(str(node_id), {}) or {})
+        if not node:
+            node = node_by_id(node_id)
         if not node:
             return {"ok": False, "action": "scroll_node", "error": f"node not found: {node_id}"}
         x, y = _node_center(node)
@@ -580,6 +607,8 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "goal": goal,
         "last": last,
         "desktop_tree": state.get("desktop_tree", {}),
+        "observation_artifact": state.get("observation_artifact", {}),
+        "observation_delta": state.get("observation_delta", {}),
         "screen_text": state.get("screen_text", ""),
         "focused_title": state.get("focused_title", ""),
         "observed_at": state.get("observed_at"),

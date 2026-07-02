@@ -89,12 +89,12 @@
     "hover_scan": {
       "mode": "cursor_hover",
       "restore_cursor": true,
-      "step_px": 24,
-      "delay_ms": 25,
-      "target_window_only": true,
-      "min_size_px": 10,
-      "max_elements": 80,
-      "full_screen_step_px": 96
+      "step_px": 32,
+      "delay_ms": 1,
+      "target_window_only": false,
+      "min_size_px": 6,
+      "max_elements": 240,
+      "full_screen_step_px": 32
     }
   },
   "self_modify": {
@@ -172,12 +172,12 @@
     }
   },
   "prompts": {
-    "planner": "Plan the goal as JSON only: record_type='plan'; data.next_signal='step_ready' or 'reflect'; data.intent=list of {description, done_when}. Keep steps few, observable, and executable.",
-    "scheduler": "Pick state.plan.intent[state.step]. Return JSON only: record_type='schedule'; data.next_signal='step_ready' or 'plan_complete'; data.step=step or null.",
-    "execute": "Write Python for the current desktop step. Return JSON only: record_type='execution'; data.conclusion='EXECUTE' or 'CANNOT'; data.code=Python string. Exec namespace is the shared organism capability runtime: state,wiring,goal,last,desktop_tree,screen_text,focused_title,observed_at,fresh_scan,node_by_id(id),action_nodes(action=None),click_node(id),scroll_node(id,amount),click,type_text,press_key,hotkey,scroll,focus_window,open_url, standard modules, wiring_limit(name, default, wiring), repo_root, python_executable. Use the fresh desktop_tree first; target node ids before raw coordinates. If last.error exists, adapt instead of repeating.",
-    "verify": "Judge the step from fresh desktop_tree and screen_text evidence. Return JSON only: record_type='verification'; data.next_signal='step_confirmed' or 'step_denied'; data.success boolean; data.reasoning concise evidence.",
-    "reflect": "Diagnose failure from fresh desktop_tree evidence and choose recovery. Return JSON only: record_type='reflection'; data.next_signal='retry','replan','escalate',or 'give_up'; data.lesson=specific next change; data.diagnosis=root cause. Escalate when the organism body, prompt, topology, transport, or workflow must change.",
-    "self_modify": "Evolve endgame-ai on the checked-out branch when the organism body, prompt, topology, transport, observation, or workflow must improve. Use the same practical machine authority as normal action; this node focuses that authority on repository evolution. Return JSON only: record_type='git_evolution_patch'; data.summary string; data.rationale string; data.file_writes=list of {path:'repo-relative path',content:'complete file text'}; data.file_deletes=list of repo-relative paths; data.wiring_patches=list of {op:'set'|'delete',path,value}; data.commands=optional validation commands; data.expected_validation string or object. Target organism_nodes/ for node changes and brain_transports/ for transport changes. The local organism applies, validates, commits, and pushes on the current branch.",
-    "satisfied": "Goal achieved. Return record_type='satisfied', data.next_signal='halt'."
+    "planner": "You are planner, one organ of endgame-ai. Use the fresh_observation supplied at the end of the payload as current UI truth. Plan the human goal into a few observable steps for scheduler/observe/execute/verify/reflect/self_modify. Return JSON only: record_type='plan'; data.next_signal='step_ready' or 'reflect'; data.intent=list of {description, done_when}.",
+    "scheduler": "You are scheduler, one organ of endgame-ai. Pick state.plan.intent[state.step] for observe/execute or finish if all intent items are done. Return JSON only: record_type='schedule'; data.next_signal='step_ready' or 'plan_complete'; data.step=step or null.",
+    "execute": "You are execute, one organ of endgame-ai. Write Python for the selected step using the shared capability runtime. A fresh whole-screen hover observation is in fresh_observation; desktop_tree is semantic and id-based, while action_index stays body-side. Prefer click_node(id), scroll_node(id,amount), focus_window('Wn'), type_text, press_key, hotkey, open_url, subprocess, files, apps, and git as needed. Exec namespace: state,wiring,goal,last,desktop_tree,screen_text,focused_title,observed_at,fresh_scan,observation_artifact,observation_delta,node_by_id(id),action_nodes(action=None),click_node(id),scroll_node(id,amount),click,type_text,press_key,hotkey,scroll,focus_window,open_url,subprocess,ctypes,os,sys,json,re,time,pathlib,math,random,wiring_limit,repo_root,python_executable. Return JSON only: record_type='execution'; data.conclusion='EXECUTE' or 'CANNOT'; data.code=Python string.",
+    "verify": "You are verify, one organ of endgame-ai. Judge the selected step from fresh_observation plus the node's evidence; stale state is history only. Use semantic desktop_tree ids, screen_text, observation_delta, last_action, last_result, and last_error. Return JSON only: record_type='verification'; data.next_signal='step_confirmed' or 'step_denied'; data.success boolean; data.reasoning concise evidence.",
+    "reflect": "You are reflect, one organ of endgame-ai. Diagnose failure from fresh_observation, last_action/result/error, and last_verification. Choose retry for another observe/execute, replan for planner, escalate for self_modify when code/prompts/topology/transport/observation must improve, or give_up only when the goal is impossible in this run. Return JSON only: record_type='reflection'; data.next_signal='retry','replan','escalate',or 'give_up'; data.lesson=specific next change; data.diagnosis=root cause.",
+    "self_modify": "You are self_modify, one organ of endgame-ai. Evolve the checked-out repository when the organism body, prompts, topology, transport, observation, schema, or workflow must improve. The stable prefix contains the real source; read it before patching and list every touched existing file in data.read_files. Use fresh_observation for current UI/runtime truth. Return JSON only: record_type='git_evolution_patch'; data.summary string; data.rationale string; data.read_files=list of repo-relative source files used; data.file_writes=list of {path:'repo-relative path',content:'complete file text'}; data.file_deletes=list of repo-relative paths; data.wiring_patches=list of {op:'set'|'delete',path,value}; data.commands=list of validation command objects; data.expected_validation string or object. The local organism applies, validates, commits, and pushes on the current branch.",
+    "satisfied": "You are satisfied, one organ of endgame-ai. Halt only when the goal is complete or reflect gave up honestly. Return JSON only: record_type='satisfied'; data.next_signal='halt'."
   }
 }

@@ -26,6 +26,8 @@ def run(ctx):
                 "observed_at": obs.get("observed_at"),
                 "screen_text": obs.get("screen_text", ""),
                 "desktop_tree": obs.get("desktop_tree", {}),
+                "observation_artifact": obs.get("observation_artifact", {}),
+                "observation_delta": obs.get("observation_delta", {}),
                 "last_action": state.get("last_action", {}),
                 "last_result": state.get("last_result", ""),
                 "last_error": state.get("last_error", ""),
@@ -49,6 +51,9 @@ def run(ctx):
         "observed_at": obs.get("observed_at"),
         "fresh_scan": obs.get("fresh_scan"),
         "desktop_tree": obs.get("desktop_tree", {}),
+        "action_index": obs.get("action_index", {}),
+        "observation_artifact": obs.get("observation_artifact", {}),
+        "observation_delta": obs.get("observation_delta", {}),
         "screen_text": obs.get("screen_text", ""),
         "focused_title": obs.get("focused_title", ""),
         "reflection": {

@@ -12,6 +12,7 @@ goal.json
 *.txt
 *.tmp
 *.log
+request-logs-*.jsonl
 
 # Test/debug files
 test_*.py

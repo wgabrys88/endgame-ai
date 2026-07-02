@@ -58,7 +58,18 @@ def _call_api(messages, cfg):
         "model": model,
         "input": input_data,
         "temperature": cfg.get("temperature", 0.2),
+        "truncation": str(cfg.get("truncation") or "disabled"),
     }
+    if cfg.get("prompt_cache_key"):
+        payload["prompt_cache_key"] = str(cfg["prompt_cache_key"])
+    if "store" in cfg:
+        payload["store"] = bool(cfg["store"])
+    if isinstance(cfg.get("metadata"), dict):
+        payload["metadata"] = cfg["metadata"]
+    if cfg.get("max_output_tokens") is not None:
+        payload["max_output_tokens"] = int(cfg["max_output_tokens"])
+    if isinstance(cfg.get("include"), list):
+        payload["include"] = list(cfg["include"])
     response_format = cfg.get("response_format")
     if isinstance(response_format, dict):
         payload["text"] = {

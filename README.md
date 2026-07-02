@@ -23,9 +23,13 @@ The current topology is only a seed nervous system. `planner`, `scheduler`, `obs
 - LM Studio/OpenAI-compatible transports as local or alternate brains.
 - JSON record contracts for communication between the organism body and the selected brain.
 - Git-native self-modification machinery that can write code, validate, commit, and push.
+- A stable-prefix brain chokepoint: every model call receives the real checked-out source and shared organism rules before dynamic state, so provider prompt caching can reuse the code/rules prefix.
+- Mandatory fresh observation before every brain call, including planner and self-modify. The UI is treated as dynamic; stale state is history only.
+- A two-surface observation model: `desktop_tree` is semantic and id-based for the brain, while `action_index` and raw artifacts keep coordinates, hwnds, runtime ids, and UIA metadata for the Python body.
+- Self-modify patches must declare `read_files` for every existing touched source file, and the applier rejects ungrounded rewrites.
 - A public development branch, `unified-archBRAINZ`, where this final unification work is being prepared before merge to `main`.
 
-The largest missing organ is still screen understanding. The organism must always scan the fresh screen before desktop decisions, and that scan must become a hierarchical desktop representation rooted at the screen itself. The current hover scan is a start, not the final perceptual system.
+The largest remaining reliability target is screen understanding quality. The organism now performs fresh whole-screen hover observation before every brain call, but the perception layer still needs live-run validation across hard Windows surfaces, browser pages, taskbar states, menus, and hover-only UI.
 
 ## How It Works
 
@@ -51,16 +55,18 @@ The screen is dynamic. A previous observation is history, not truth.
 
 Any decision that depends on the desktop must use a fresh scan. Old screen text, old element coordinates, old screenshots, old hashes, and old observation artifacts may explain what happened before, but they must not be treated as the current world.
 
-The target observation model is:
+The implemented observation model is:
 
 - The screen is the root window.
 - Top-level windows are children of the screen.
-- Regions, controls, text, hover results, menus, dialogs, and actionable targets are nested under the window or region that contains them.
-- Filtering is allowed only as semantic reduction of fresh data.
-- Filtering must reduce duplicate/noisy point hits, not erase evidence the organism needs to navigate.
-- The brain receives a compact hierarchy; the body can rescan whenever the desktop may have changed.
+- Controls and actionable targets are nested under the window that contains them.
+- Filtering is only semantic field reduction for the brain-facing view.
+- Element count is not the reduction mechanism; noisy metadata is moved out of prompt view instead.
+- The brain receives ids, roles, names, actions, focus/enabled state, hierarchy, and scan counts.
+- The Python body keeps `action_index` and raw observation artifacts for coordinates, hwnds, runtime ids, class names, automation ids, and full scan audit data.
+- Every brain call receives a new `fresh_observation` payload, plus `observation_delta` comparing current and previous node ids.
 
-The critical implementation direction is real hover-aware scanning: move or probe through the visible desktop, detect what is actually under points, notice hover-created UI when required, restore pointer position, and represent the result as a navigable hierarchy.
+The current default scan is fast whole-screen cursor hover with cursor restore. The critical next validation is empirical: prove the scan catches the controls needed in Chrome, Notepad, PowerShell, the taskbar, menus, dialogs, and desktop states without making each brain call too slow.
 
 ## Unified Authority
 
@@ -136,7 +142,7 @@ Current record types:
 {"record_type":"execution","data":{"conclusion":"EXECUTE","code":"python code"}}
 {"record_type":"verification","data":{"next_signal":"step_confirmed","success":true,"reasoning":"fresh evidence"}}
 {"record_type":"reflection","data":{"next_signal":"retry","lesson":"...","diagnosis":"..."}}
-{"record_type":"git_evolution_patch","data":{"summary":"...","rationale":"...","file_writes":[],"file_deletes":[],"wiring_patches":[],"commands":[],"expected_validation":"..."}}
+{"record_type":"git_evolution_patch","data":{"summary":"...","rationale":"...","read_files":["nodes.py"],"file_writes":[],"file_deletes":[],"wiring_patches":[],"commands":[],"expected_validation":"..."}}
 {"record_type":"satisfied","data":{"next_signal":"halt"}}
 ```
 
@@ -357,6 +363,11 @@ This README states the target organism identity. Some code still reflects earlie
 
 - DONE: Make fresh screen scan mandatory before desktop-dependent model decisions.
 - DONE: Build the hierarchical screen-rooted observation model.
+- DONE: Make fresh whole-screen hover observation mandatory before every brain call.
+- DONE: Split observation into semantic `desktop_tree`, body-side `action_index`, raw observation artifacts, and `observation_delta`.
+- DONE: Move the real checked-out source and organism rules into a stable prefix for prompt caching.
+- DONE: Require self-modify patches to declare `read_files` and reject ungrounded rewrites of existing files.
+- DONE: Rewrite seed prompts so each model call knows it is one organ inside the full topology.
 - DONE: Reuse one capability runtime for action and evolution.
 - DONE: Simplify git workflow toward direct checked-out-branch commit and push.
 - DONE: Keep validation as an operational health check, not as a permission boundary.
