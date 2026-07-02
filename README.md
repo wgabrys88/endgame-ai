@@ -1,543 +1,365 @@
-# endgame-ai Living Organism Handover
-
-This README is the handover document for humans and AI providers. Read it before changing code. Rewrite it before the next handover.
+# endgame-ai
 
 ## One Sentence
 
-endgame-ai is a local Windows desktop organism that observes the screen, reasons through Grok/xAI, acts through Win32/UIA/mouse/keyboard, verifies outcomes, reflects on failures, and can self-evolve by creating a git branch, asking Grok for a structured patch, validating locally, committing, and pushing the result.
+endgame-ai is a local living desktop organism that receives a written goal, observes the fresh screen, controls the computer, reasons, acts, verifies, reflects, self-modifies, commits, and pushes.
 
-## Current Reality
+## Vision
 
-- Branch to work from: `unified-archBRAINZ`.
-- Current transport: `xai`.
-- Current xAI model: `grok-4.3` for stronger structured output, tool use, and long context.
-- Coding-only alternative: `grok-build-0.1` remains a valid fast coding model if speed/cost matters more than broad agentic/tool reliability.
-- Reasoning feedback: OFF by default.
-- Native xAI reasoning effort: configured as `none` by default.
-- LM Studio/OpenAI-compatible two-pass ROD path: still present and configurable, OFF by default.
-- Canonical node directory: `organism_nodes/`.
-- Canonical brain transport directory: `brain_transports/`.
-- Old seed/live runtime copy workflow: removed.
-- Self-modify context: git-native manifest and public branch, not truncated file dumps.
-- Public branch behavior: enabled by default for self-evolution context and successful self-evolution commits.
+The human writes a goal and goes away.
 
-Recent implementation commits:
+endgame-ai stays on the machine and does the work. It sees the current desktop, reasons through the configured brain transport, uses the mouse and keyboard, opens apps, installs missing tools, reads and writes files, runs Python and subprocesses, edits its own code when the current body is not enough, commits the improvement, pushes it, and continues.
 
-- `62db244 Make self evolution git native`
-- `5cdd97a Rewrite living organism handover`
-- `c980efa Enforce self evolve branch at patch applier`
-- `e15ab47 Document self evolution operator workflow`
+This project is not meant to become another chat agent wrapped around a few tools. The name is literal: the aim is an endgame local AI organism that can operate the user account with the same practical authority as the user running it.
 
-The current implementation includes xAI structured outputs, GitHub-only web search for self-modify, reasoning-effort handling, and branch publishing for self-evolution.
+The current topology is only a seed nervous system. `planner`, `scheduler`, `observe`, `execute`, `verify`, `reflect`, `self_modify`, `satisfied`, and `error` are the first organs. They are not sacred. If the organism discovers a better topology, prompt layout, transport strategy, observation method, memory model, or git workflow, it should be able to rewrite itself toward that better form.
 
-## Official API Findings Checked July 2, 2026
+## What Exists Now
 
-Sources checked:
+- Windows desktop observation through Win32 and UI Automation point probing.
+- A topology loop: plan, schedule, observe, execute, verify, reflect, self-modify, halt.
+- Python execution as the body: mouse, keyboard, shell commands, files, git, apps, browser launches, and local modules.
+- xAI/Grok as the selected brain transport.
+- LM Studio/OpenAI-compatible transports as local or alternate brains.
+- JSON record contracts for communication between the organism body and the selected brain.
+- Git-native self-modification machinery that can write code, validate, commit, and push.
+- A public development branch, `unified-archBRAINZ`, where this final unification work is being prepared before merge to `main`.
 
-- xAI Structured Outputs: `https://docs.x.ai/developers/model-capabilities/text/structured-outputs`
-- xAI Web Search: `https://docs.x.ai/developers/tools/web-search`
-- xAI Reasoning: `https://docs.x.ai/developers/model-capabilities/text/reasoning`
-- xAI Models: `https://docs.x.ai/developers/models`
-- xAI REST API reference: `https://docs.x.ai/developers/rest-api-reference/inference/chat`
+The largest missing organ is still screen understanding. The organism must always scan the fresh screen before desktop decisions, and that scan must become a hierarchical desktop representation rooted at the screen itself. The current hover scan is a start, not the final perceptual system.
 
-Relevant conclusions:
+## How It Works
 
-- xAI supports strict structured output through JSON Schema. The Responses API uses `text.format.type="json_schema"` with `schema` and `strict=true`.
-- xAI structured outputs can also use `json_object`, but this organism now prefers `json_schema`.
-- xAI tool calling schemas are strict by default, but this project currently uses structured output, not client-side function calls, for node records.
-- xAI web search supports `allowed_domains` and `excluded_domains`; self-modify uses GitHub-only search with `allowed_domains=["github.com"]`.
-- `grok-4.3` is documented as current high-reliability general/agentic model with 1M context.
-- `grok-build-0.1` is documented as a fast coding model with 256k context.
-- `grok-4.3` supports `reasoning_effort`; `none` disables reasoning tokens, `low` is the default if reasoning is not explicitly disabled.
-- API responses include usage data, including token counts and cost-related fields when returned by xAI. Raw logs preserve the response body.
+The loop is simple:
 
-## Human Workflow
+1. Read the human goal.
+2. Plan a small set of observable steps.
+3. Select the next step.
+4. Freshly scan the current screen.
+5. Generate Python for the next action.
+6. Execute through the local machine.
+7. Verify from fresh evidence.
+8. Reflect if the result fails.
+9. Modify itself if the failure proves the organism needs a better body, prompt, topology, transport, or workflow.
+10. Commit and push durable improvements.
+11. Continue until the goal is done or the organism reaches an honest stop condition.
 
-You normally work on `unified-archBRAINZ`. You do not manually create self-evolution branches. The organism creates them only when `self_modify` runs and the worktree is clean.
+The model is the reasoning organ. Python is the body. Git is the biological history.
 
-Normal run:
+## Fresh Screen Rule
 
-```powershell
-& "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" organism.py --reset --max-ticks 5 "Observe the current desktop and report focused window title plus a few interactive elements"
-```
+The screen is dynamic. A previous observation is history, not truth.
 
-Direct self-modify run:
+Any decision that depends on the desktop must use a fresh scan. Old screen text, old element coordinates, old screenshots, old hashes, and old observation artifacts may explain what happened before, but they must not be treated as the current world.
 
-```powershell
-& "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" organism.py --reset --max-ticks 5 --start-node self_modify "Inspect the git-native self-evolution path and propose only evidence-backed changes."
-```
+The target observation model is:
 
-Self-evolution branch workflow:
+- The screen is the root window.
+- Top-level windows are children of the screen.
+- Regions, controls, text, hover results, menus, dialogs, and actionable targets are nested under the window or region that contains them.
+- Filtering is allowed only as semantic reduction of fresh data.
+- Filtering must reduce duplicate/noisy point hits, not erase evidence the organism needs to navigate.
+- The brain receives a compact hierarchy; the body can rescan whenever the desktop may have changed.
 
-1. Human/Codex starts on `unified-archBRAINZ`.
-2. The organism reaches `self_modify`.
-3. The organism checks `git status --porcelain`.
-4. If dirty, it fails before branch creation.
-5. If clean, it creates `self-evolve/YYYYMMDDTHHMMSS-<shortsha>`.
-6. It pushes that branch to `origin` because `publish_context_branch=true`.
-7. Grok receives the GitHub branch URL, commit SHA, manifest, runtime evidence metadata, and JSON schema contract.
-8. Grok proposes `record_type="git_evolution_patch"`.
-9. Local Python validates, writes, validates again, and runs bounded commands.
-10. If validation fails, local Python rolls back touched files and does not commit.
-11. If validation passes, local Python commits on the self-evolve branch.
-12. It pushes that commit because `push_after_commit=true`.
-13. Human/Codex reviews the public self-evolve branch and decides whether to merge or cherry-pick.
+The critical implementation direction is real hover-aware scanning: move or probe through the visible desktop, detect what is actually under points, notice hover-created UI when required, restore pointer position, and represent the result as a navigable hierarchy.
 
-Grok does not push directly. Local Python owns git mutation.
+## Unified Authority
 
-## Branch Policy: Where Grok Works
+Normal action and self-evolution use the same machine authority.
 
-Grok, LM Studio, OpenCode, or any future brain transport does not work directly on `main` and does not work directly on `unified-archBRAINZ` during self-evolution.
+There is no deep architectural difference between "use the computer" and "improve the organism." Both require the same body: Python, subprocesses, mouse, keyboard, files, apps, package managers, browsers, editors, and git.
 
-Rules:
+The difference is intent:
 
-- Human/Codex development starts on `unified-archBRAINZ`.
-- Normal organism runs stay on the current branch.
-- Self-evolution starts only from a clean current branch.
-- When `self_modify` begins, local Python creates a new branch named `self-evolve/YYYYMMDDTHHMMSS-<shortsha>`.
-- The selected brain transport sees that self-evolve branch as its code context.
-- The selected brain transport proposes a patch only.
-- Local Python applies, validates, commits, and pushes only on the `self-evolve/...` branch.
-- No self-evolution code path merges into `main`.
-- No self-evolution code path merges into `unified-archBRAINZ`.
-- Branch cleanup is currently manual.
-- Merge/cherry-pick is currently human/Codex responsibility after reviewing the self-evolve branch.
+- `execute` focuses the body on the current user goal.
+- `verify` checks whether the action worked.
+- `reflect` diagnoses failure and decides whether to retry, replan, give up, or evolve.
+- `self_modify` focuses the same body on changing endgame-ai itself.
 
-So the answer is:
+This is not a permission split. It is a workflow split. The organism should not grow by accumulating edge-case tool wrappers. It should reuse the same capability runtime everywhere and let prompts, state, and topology decide what the capability is being used for.
+
+## Git Model
+
+During this build phase, the public development branch is:
 
 ```text
-Does Grok work on main? No.
-Does Grok work on unified-archBRAINZ directly? No, not during self_modify.
-Does Grok commit? No.
-Does Grok push? No.
-Does local Python commit and push? Yes, only to self-evolve/... branches.
-Does the system auto-merge? No.
-Does the system auto-clean old branches? No.
+unified-archBRAINZ
 ```
 
-### Branch Policy Diagram
+After this branch is finalized, the intended operating model is:
 
-```mermaid
-flowchart LR
-    MAIN["main\nprotected idea / public stable"]:::protected
-    DEV["unified-archBRAINZ\nhuman/Codex working branch"]:::dev
-    CLEAN{"clean worktree?"}:::gate
-    SE["self-evolve/YYYYMMDDTHHMMSS-sha\nautomatic evolution branch"]:::evolve
-    GROK["Grok or future transport\nreads branch + proposes patch"]:::grok
-    LOCAL["local Python\napply + validate + commit + push"]:::local
-    REVIEW["human/Codex review\nmerge or cherry-pick later"]:::review
-    FAIL["fail before branch creation"]:::fail
-
-    MAIN -. "not mutated by self_modify" .- DEV
-    DEV --> CLEAN
-    CLEAN -- "dirty" --> FAIL
-    CLEAN -- "clean" --> SE
-    SE --> GROK
-    GROK --> LOCAL
-    LOCAL --> SE
-    SE --> REVIEW
-    REVIEW -. "manual only" .-> DEV
-    REVIEW -. "manual only" .-> MAIN
-
-    classDef protected fill:#f4cccc,stroke:#990000,color:#111;
-    classDef dev fill:#fff2cc,stroke:#bf9000,color:#111;
-    classDef gate fill:#d9ead3,stroke:#38761d,color:#111;
-    classDef evolve fill:#eadcf8,stroke:#674ea7,color:#111;
-    classDef grok fill:#cfe2f3,stroke:#1155cc,color:#111;
-    classDef local fill:#d9ead3,stroke:#38761d,color:#111;
-    classDef review fill:#fce5cd,stroke:#b45f06,color:#111;
-    classDef fail fill:#f4cccc,stroke:#cc0000,color:#111;
+```text
+main
 ```
 
-### Branch Lifecycle Diagram
+The final organism should run on the checked-out branch, normally `main`. When it improves itself, it writes the repo, commits to that branch, and pushes to the configured remote. Git history is the audit trail. GitHub stores every commit. The living system does not need a complicated branch ritual to prove it existed.
 
-```mermaid
-stateDiagram-v2
-    [*] --> WorkingBranch: human/Codex on unified-archBRAINZ
-    WorkingBranch --> DirtyRefusal: self_modify starts and worktree dirty
-    DirtyRefusal --> WorkingBranch: commit/stash/discard manually
-    WorkingBranch --> EvolutionBranch: clean worktree
-    EvolutionBranch: create self-evolve/timestamp-sha
-    EvolutionBranch --> PublishedContext: push branch for Grok inspection
-    PublishedContext --> PatchProposed: brain returns git_evolution_patch
-    PatchProposed --> RolledBack: validation fails
-    PatchProposed --> EvolutionCommit: validation passes
-    EvolutionCommit: commit and push self-evolve branch
-    EvolutionCommit --> HumanReview: inspect branch/commit
-    HumanReview --> WorkingBranch: manual merge/cherry-pick
-    HumanReview --> Cleanup: manual delete branch when obsolete
-    Cleanup --> [*]
-    RolledBack --> HumanReview: inspect failure evidence
+The final model is direct:
+
+```text
+goal -> run -> improve if needed -> commit -> push -> continue
 ```
 
-## System Diagram
+Human operators may still choose to work on another branch while developing the system manually. That is a human workflow choice, not the organism's final operating identity.
 
-```mermaid
-flowchart TD
-    H["Human or Codex"] --> O["organism.py loop"]
-    O --> P["planner"]
-    P --> S["scheduler"]
-    S --> OB["observe: Win32 + UIA hover scan"]
-    OB --> EX["execute: Python desktop namespace"]
-    EX --> V["verify"]
-    V -->|success| S
-    V -->|failure| R["reflect"]
-    R -->|retry| OB
-    R -->|replan| P
-    R -->|escalate| SM["self_modify"]
-    SM --> GIT["create/push self-evolve branch"]
-    GIT --> GX["Grok/xAI with schema + GitHub context"]
-    GX --> AP["local patch applier"]
-    AP --> VAL{"valid?"}
-    VAL -->|no| RB["rollback touched files"]
-    VAL -->|yes| CM["commit and push self-evolve branch"]
-    CM --> P
-    S -->|plan complete| HALT["halt"]
+## Brain Transports
 
-    classDef human fill:#fff2cc,stroke:#d6a000,color:#111;
-    classDef organism fill:#d9ead3,stroke:#38761d,color:#111;
-    classDef desktop fill:#cfe2f3,stroke:#1155cc,color:#111;
-    classDef grok fill:#eadcf8,stroke:#674ea7,color:#111;
-    classDef git fill:#fce5cd,stroke:#b45f06,color:#111;
-    classDef fail fill:#f4cccc,stroke:#cc0000,color:#111;
-    class H human;
-    class O,P,S,EX,V,R,SM,AP,VAL,HALT organism;
-    class OB desktop;
-    class GX grok;
-    class GIT,CM git;
-    class RB fail;
-```
+The current selected brain is xAI/Grok. It is used because it can provide strong structured output, long context, and useful reasoning for operating and evolving the organism.
 
-## Self-Evolution Sequence
+LM Studio and OpenAI-compatible transports exist so the organism can run with local or alternate models. Future transports should be treated as additional brain organs, not separate products.
 
-```mermaid
-sequenceDiagram
-    participant Human as Human/Codex
-    participant Org as organism.py
-    participant Git as local git
-    participant GH as GitHub origin
-    participant Grok as Grok/xAI
-    participant Apply as nodes.apply_evolution_patch
+The brain transport is replaceable. The body and loop remain:
 
-    Human->>Org: Run normal or --start-node self_modify
-    Org->>Git: Check clean worktree
-    alt dirty
-        Git-->>Org: Dirty files
-        Org-->>Human: Fail before branch creation
-    else clean
-        Org->>Git: git switch -c self-evolve/timestamp-sha
-        Org->>GH: git push -u origin self-evolve/timestamp-sha
-        Org->>Grok: branch URL + manifest + runtime evidence + JSON schema
-        Grok-->>Org: git_evolution_patch
-        Org->>Apply: Validate and apply
-        alt invalid
-            Apply->>Git: Restore touched files
-            Apply-->>Org: Raise error, no commit
-        else valid
-            Apply-->>Org: changed_files + validation result
-            Org->>Git: git commit
-            Org->>GH: git push origin self-evolve/timestamp-sha
-            Org-->>Human: branch, commit, changed files
-        end
-    end
-```
-
-## Code Map
-
-- `organism.py`: main topology loop, state writes, runtime log events, pause/step/run control, self-modify application handoff.
-- `brain.py`: transport config merge, raw logging, call budget, ROD/native reasoning orchestration, JSON extraction, JSON Schema response-format generation.
-- `nodes.py`: direct node loader, execute namespace, git branch creation, patch validation, rollback, commit, push.
-- `desktop.py`: Windows desktop observation and actions. Keep UIA `ElementFromPoint` hover scan plus Win32 APIs. Do not reintroduce `ControlViewWalker`.
-- `stop_check.py`: `stop.txt` stop mechanism and PID registration.
-- `organism_nodes/`: topology node implementations.
-- `brain_transports/`: xAI, OpenAI-compatible, opencode, file proxy, browser stub transports.
-- `wiring.json`: the nervous-system map.
+- observe fresh desktop state
+- reason over the goal and state
+- act through Python and the OS
+- verify
+- reflect
+- evolve when needed
 
 ## JSON Contracts
 
-All brain node responses are JSON objects with this envelope:
+Brain responses use a record envelope:
 
 ```json
 {
-  "record_type": "record name",
+  "record_type": "plan",
   "data": {},
-  "reasoning": "optional short reasoning"
+  "reasoning": "optional concise reasoning"
 }
 ```
 
-Current schema enforcement:
-
-- `brain.think(..., expected_record_type=...)` builds a compact JSON Schema.
-- `brain.call()` passes it to transports through `cfg["response_format"]`.
-- `brain_transports/xai.py` maps it to xAI Responses API `text.format`.
-- `brain_transports/openai.py` maps it to Chat Completions `response_format`.
-- Code still validates `record_type` after the response. API schema is a reliability layer, not the only guard.
-
-Record contracts:
+Current record types:
 
 ```json
-{"record_type":"plan","data":{"next_signal":"step_ready|reflect","intent":[{"description":"...","done_when":"..."}]}}
-{"record_type":"execution","data":{"conclusion":"EXECUTE|CANNOT","code":"python string"}}
-{"record_type":"verification","data":{"next_signal":"step_confirmed|step_denied","success":true,"reasoning":"evidence"}}
-{"record_type":"reflection","data":{"next_signal":"retry|replan|escalate|give_up","lesson":"...","diagnosis":"..."}}
+{"record_type":"plan","data":{"next_signal":"step_ready","intent":[{"description":"...","done_when":"..."}]}}
+{"record_type":"schedule","data":{"next_signal":"step_ready","step":{"description":"...","done_when":"..."}}}
+{"record_type":"execution","data":{"conclusion":"EXECUTE","code":"python code"}}
+{"record_type":"verification","data":{"next_signal":"step_confirmed","success":true,"reasoning":"fresh evidence"}}
+{"record_type":"reflection","data":{"next_signal":"retry","lesson":"...","diagnosis":"..."}}
 {"record_type":"git_evolution_patch","data":{"summary":"...","rationale":"...","file_writes":[],"file_deletes":[],"wiring_patches":[],"commands":[],"expected_validation":"..."}}
+{"record_type":"satisfied","data":{"next_signal":"halt"}}
 ```
 
-Is this optimal?
+These contracts are communication shapes. They are not the source of autonomy. Autonomy comes from the loop, the machine authority of the Python body, the fresh desktop observation, the model's reasoning, and the ability to rewrite the organism itself.
 
-- It is much better than prompt-only JSON because `record_type` and major `data` fields are now schema-constrained.
-- It is intentionally not fully closed at every nested level because self-evolution needs flexible file and wiring patches.
-- The next reliability upgrade is to define separate closed schemas for each node in `wiring.json` or code, then reject unknown fields by default except inside `wiring_patches.value`.
-- For large code changes, a diff/patch schema should replace full `file_writes` to reduce output tokens and review blast radius.
+The contracts should stay compact and clear. If the organism later needs better internal protocols, it can evolve them.
 
-## Token Spending And Cost Control
+## Prompt Map
 
-Current token strategy:
-
-- Prompts are short and schema-focused.
-- Self-modify sends a manifest, not file bodies.
-- GitHub branch context replaces lossy code dumps.
-- Structured output schema adds request overhead, but should reduce invalid JSON retries.
-- Reasoning is disabled by default with `effort="none"` for speed and cost.
-- Two-pass ROD is OFF by default because it doubles model calls.
-- Web search is scoped to self-modify and restricted to `github.com`.
-
-Where token/cost data lives:
-
-- `brain.py` writes raw request/response rows to timestamped root `*.txt` logs.
-- `brain_transports/xai.py` returns xAI `usage` and full response body.
-- Raw logs preserve token counts and any returned cost fields under the response `raw.body`.
-- `comms/runtime.ndjson` records runtime events but not full token accounting.
-
-How to estimate cost:
+The active seed prompts are intentionally short:
 
 ```text
-estimated_cost = input_tokens / 1_000_000 * input_rate
-               + output_tokens / 1_000_000 * output_rate
+planner:
+Plan the goal as JSON only. Produce a few observable and executable steps.
+
+scheduler:
+Pick the next unfinished plan step or report plan completion.
+
+observe:
+Scan the current desktop through the Windows observation body.
+
+execute:
+Write Python for the current desktop step using the organism runtime.
+
+verify:
+Judge the step from fresh evidence.
+
+reflect:
+Diagnose failure and choose retry, replan, self-modify, or give up.
+
+self_modify:
+Change endgame-ai itself when the failure shows the organism needs a better body, prompt, topology, transport, or workflow.
+
+satisfied:
+Halt when the goal is complete.
 ```
 
-As of the docs checked on July 2, 2026:
+Future prompts should preserve the spirit: direct, operational, fresh-screen grounded, and willing to evolve the system when the system is the bottleneck.
 
-- `grok-4.3`: 1M context, $1.25 / 1M input tokens, $2.50 / 1M output tokens.
-- `grok-build-0.1`: 256k context, $1.00 / 1M input tokens, $2.00 / 1M output tokens.
+## Mermaid Diagrams
 
-Operational recommendation:
+### Living Loop
 
-- Use `grok-4.3` for self-evolution, GitHub branch inspection, and reliability-critical runs.
-- Use `grok-build-0.1` only when coding speed/cost matters more than tool/search/reasoning breadth.
-- Keep `max_brain_calls` low during probes.
-- Use `--max-ticks` for bounded runtime experiments.
+```mermaid
+flowchart TD
+    H["Human writes goal and goes away"]:::human
+    O["endgame-ai organism"]:::organism
+    P["plan"]:::brain
+    S["schedule"]:::brain
+    F["fresh screen scan"]:::sense
+    A["act through Python, OS, apps, mouse, keyboard"]:::body
+    V["verify from fresh evidence"]:::brain
+    R["reflect"]:::brain
+    M["self-modify when the body is not enough"]:::evolve
+    C["commit and push improvement"]:::git
+    D["goal done"]:::done
 
-## ROD And Reasoning Flow
+    H --> O --> P --> S --> F --> A --> V
+    V -->|worked| S
+    V -->|failed| R
+    R -->|retry or replan| P
+    R -->|organism must improve| M --> C --> P
+    S -->|complete| D
 
-ROD means reasoning-output-driven two-pass feedback. In this repo it is implemented in `brain.think()`.
+    classDef human fill:#fff2cc,stroke:#bf9000,color:#111;
+    classDef organism fill:#d9ead3,stroke:#38761d,color:#111;
+    classDef brain fill:#cfe2f3,stroke:#1155cc,color:#111;
+    classDef sense fill:#d0e0e3,stroke:#0f766e,color:#111;
+    classDef body fill:#fce5cd,stroke:#b45f06,color:#111;
+    classDef evolve fill:#eadcf8,stroke:#674ea7,color:#111;
+    classDef git fill:#f4cccc,stroke:#990000,color:#111;
+    classDef done fill:#d9ead3,stroke:#11855a,color:#111;
+```
 
-Modes:
+### Fresh Screen Scan
 
-- `single_pass`: one call, parse final JSON.
-- `native`: one call, transport/model may produce reasoning metadata; parse final JSON.
-- `two_pass`: first call gets reasoning, second call injects that reasoning through `injection_template` and asks for final JSON.
+```mermaid
+flowchart TD
+    T["desktop changed"]:::event
+    SCAN["fresh hover-aware scan"]:::scan
+    ROOT["W0 screen root"]:::root
+    WIN["top-level windows"]:::window
+    REG["regions, menus, dialogs"]:::region
+    EL["controls, text, actions"]:::element
+    VIEW["filtered hierarchy for brain"]:::brain
+    ACT["act using current ids and coordinates"]:::body
 
-Default:
+    T --> SCAN --> ROOT --> WIN --> REG --> EL --> VIEW --> ACT
+    ACT --> T
 
-- xAI path uses `native` pattern but `enabled=false` and `effort="none"`.
-- LM Studio/OpenAI-compatible path supports `two_pass` but `enabled=false`.
+    classDef event fill:#f4cccc,stroke:#990000,color:#111;
+    classDef scan fill:#d0e0e3,stroke:#0f766e,color:#111;
+    classDef root fill:#d9ead3,stroke:#38761d,color:#111;
+    classDef window fill:#cfe2f3,stroke:#1155cc,color:#111;
+    classDef region fill:#fff2cc,stroke:#bf9000,color:#111;
+    classDef element fill:#fce5cd,stroke:#b45f06,color:#111;
+    classDef brain fill:#eadcf8,stroke:#674ea7,color:#111;
+    classDef body fill:#d9ead3,stroke:#11855a,color:#111;
+```
 
-Why default OFF:
+### Unified Authority
 
-- The LM Studio run proved two-pass can work mechanically but can also contaminate output shape.
-- Two-pass doubles calls and latency.
-- Strict structured output is now the primary reliability mechanism.
+```mermaid
+flowchart LR
+    GOAL["user goal"]:::goal
+    STATE["organism state"]:::state
+    PROMPT["current prompt intent"]:::brain
+    RT["shared Python capability runtime"]:::runtime
+    DESK["desktop actions"]:::body
+    CMD["commands and installers"]:::body
+    FILES["files and repo"]:::body
+    GIT["git commit and push"]:::git
+    WORLD["external task complete"]:::done
+    SELF["organism improved"]:::evolve
 
-When to turn reasoning on:
+    GOAL --> STATE --> PROMPT --> RT
+    RT --> DESK --> WORLD
+    RT --> CMD --> WORLD
+    RT --> FILES --> SELF
+    RT --> GIT --> SELF
 
-- Hard multi-step diagnosis.
-- Complex code evolution where a cheap failed patch would cost more than reasoning tokens.
-- Postmortem runs where speed is less important than insight.
+    classDef goal fill:#fff2cc,stroke:#bf9000,color:#111;
+    classDef state fill:#d9ead3,stroke:#38761d,color:#111;
+    classDef brain fill:#cfe2f3,stroke:#1155cc,color:#111;
+    classDef runtime fill:#eadcf8,stroke:#674ea7,color:#111;
+    classDef body fill:#fce5cd,stroke:#b45f06,color:#111;
+    classDef git fill:#f4cccc,stroke:#990000,color:#111;
+    classDef done fill:#d9ead3,stroke:#11855a,color:#111;
+    classDef evolve fill:#eadcf8,stroke:#674ea7,color:#111;
+```
 
-## Stopping And Control
+### Final Git Model
 
-The organism stops or pauses through several mechanisms:
+```mermaid
+flowchart LR
+    MAIN["main checked out"]:::main
+    RUN["run goal"]:::run
+    CHANGE["self-improvement or task change"]:::change
+    COMMIT["git commit"]:::commit
+    PUSH["git push"]:::push
+    HISTORY["GitHub commit history"]:::history
+    NEXT["continue from improved body"]:::next
 
-- `--max-ticks N`: stops after N topology node executions.
-- `--max-brain-calls N`: stops brain calls after N calls.
-- Topology `satisfied -> halt`: clean halt after plan completion or give-up path.
-- Error routing: node error follows the `error` edge if configured.
-- `comms/control.json`: supports `run`, `pause`, and `step`.
-- `stop.txt`: `stop_check.check_stop()` exits processes at chokepoints.
-- PID files in `pids/`: registered for operational visibility; they are runtime artifacts, not architecture.
+    MAIN --> RUN --> CHANGE --> COMMIT --> PUSH --> HISTORY --> NEXT --> RUN
 
-## Observation Data Flow
+    classDef main fill:#d9ead3,stroke:#38761d,color:#111;
+    classDef run fill:#cfe2f3,stroke:#1155cc,color:#111;
+    classDef change fill:#eadcf8,stroke:#674ea7,color:#111;
+    classDef commit fill:#fce5cd,stroke:#b45f06,color:#111;
+    classDef push fill:#f4cccc,stroke:#990000,color:#111;
+    classDef history fill:#fff2cc,stroke:#bf9000,color:#111;
+    classDef next fill:#d9ead3,stroke:#11855a,color:#111;
+```
 
-`observe` writes:
+### New Clone Bootstrap
 
-- `screen`
-- `elements`
-- `screen_text`
-- `windows`
-- `snapshot`
-- `focused_title`
+```mermaid
+flowchart TD
+    CLONE["clone repository"]:::step
+    PY["install Python dependencies"]:::step
+    BRAIN["configure Grok, LM Studio, or another brain"]:::brain
+    GOAL["write goal"]:::goal
+    RUN["run organism"]:::run
+    WORK["organism operates PC"]:::body
+    EVOLVE["organism improves itself if needed"]:::evolve
+    PUSH["commit and push"]:::git
 
-`execute` receives:
+    CLONE --> PY --> BRAIN --> GOAL --> RUN --> WORK
+    WORK -->|task needs better body| EVOLVE --> PUSH --> RUN
+    WORK -->|task complete| GOAL
 
-- full observation payload
-- `last.error`, `last.result`, `last.action`
-- namespace contract
-- direct namespace values: `state`, `wiring`, `goal`, `last`, `screen`, `elements`, `windows`, `screen_text`, `focused_title`
+    classDef step fill:#d9ead3,stroke:#38761d,color:#111;
+    classDef brain fill:#cfe2f3,stroke:#1155cc,color:#111;
+    classDef goal fill:#fff2cc,stroke:#bf9000,color:#111;
+    classDef run fill:#eadcf8,stroke:#674ea7,color:#111;
+    classDef body fill:#fce5cd,stroke:#b45f06,color:#111;
+    classDef evolve fill:#eadcf8,stroke:#674ea7,color:#111;
+    classDef git fill:#f4cccc,stroke:#990000,color:#111;
+```
 
-`verify` receives reduced evidence:
+## Bootstrap For A New Human
 
-- focused title
-- screen text
-- elements
-- windows
-- last action/result/error
+1. Clone the repository.
+2. Install Python dependencies required by the current code.
+3. Configure a brain transport:
+   - xAI/Grok through `XAI_API_KEY`
+   - LM Studio or another OpenAI-compatible local endpoint
+   - a future transport added by the organism itself
+4. Check out the operating branch. During current development this is `unified-archBRAINZ`; after final merge the normal branch should be `main`.
+5. Run endgame-ai with a written goal.
+6. Let it operate the desktop.
+7. If the system discovers it needs better code, prompts, topology, tooling, or transport behavior, let it self-modify and commit the improvement.
+8. Use git history to understand how the organism changed over time.
 
-`reflect` receives reduced failure evidence:
-
-- focused title
-- screen text
-- elements
-- last action/result/error
-- last verification
-
-`self_modify` receives no fresh observation by itself. Direct `--start-node self_modify` has no fresh desktop observation unless state already contains one.
-
-## Git-Native Context Model
-
-Removed old context behavior:
-
-- no `FULL_TEXT_LIMIT`
-- no `RUNTIME_TEXT_TAIL`
-- no `text_head`
-- no `text_tail`
-- no `truncated`
-- no seed/live source duplication
-
-Current self-modify context:
-
-- base branch
-- timestamped self-evolve branch
-- commit SHA
-- GitHub branch URL
-- published flag
-- file manifest: path, size, sha256, tracked/untracked, git status, binary flag
-- runtime evidence paths: `state.json`, `comms/runtime.ndjson`, raw `*.txt` logs with size and sha256
-- patch contract
-
-Important distinction:
-
-- A manifest is not truncation. It is a non-lossy index.
-- Full code access comes from GitHub branch inspection or a future explicit file-request step.
-
-## Proven Evidence
-
-Prior runs:
-
-- `20260702T111459.txt`: Grok/xAI normal run exposed missing execute namespace fields.
-- `20260702T111838.txt`: LM Studio two-pass worked mechanically but returned wrong record type, proving prompt contamination risk.
-- `20260702T113237.txt`: Grok/xAI run succeeded through execute and verify.
-- `20260702T115105.txt`: bounded self-modify inspection did not reach self_modify but surfaced validation/rollback concerns.
-- `20260702T115546.txt`: direct old self_modify proved Grok could suggest useful hardening, but also proved file-text prompt dumps were too large.
-
-Post git-native verification already performed:
-
-- `python -m compileall -q .` passed.
-- Runtime `rg` found no truncation symbols in runtime files.
-- Runtime `rg` found no seed/live copy workflow in runtime files.
-- Dirty worktree self_modify failed before branch creation.
-- Clean worktree created a `self-evolve/...` branch without a Grok call when `max_brain_calls=0`.
-- Off-branch direct patch application failed.
-- Invalid Python patch failed before creating the file.
-- Failing validation command rolled back touched files.
-- Successful patch committed on a self-evolve branch.
-
-Real Grok structured-output self-modify verification:
-
-- Run time: July 2, 2026, raw log `20260702T125258.txt`.
-- Branch created and pushed: `self-evolve/20260702T125256-e064c92`.
-- Remote branch verified at `origin/self-evolve/20260702T125256-e064c92`.
-- xAI model: `grok-4.3`.
-- xAI response used `text.format.type="json_schema"`.
-- xAI tools included `web_search` with `allowed_domains=["github.com"]`.
-- Reasoning effort was `none`; reasoning tokens were `0`.
-- Usage: 4,367 input tokens, 132 output tokens, 4,499 total tokens.
-- Grok returned a valid empty `git_evolution_patch` because no bug was proven.
-- No file writes, file deletes, wiring patches, commands, commit, or merge occurred.
-- State recorded the public branch URL: `https://github.com/wgabrys88/endgame-ai/tree/self-evolve/20260702T125256-e064c92`.
-- Raw request contained `workspace_manifest`, `git_context`, runtime evidence metadata, and branch URL.
-- Raw request did not contain old `FULL_TEXT_LIMIT`, `RUNTIME_TEXT_TAIL`, `text_head`, or `text_tail` fields.
-- The raw xAI response body includes API metadata `truncation="disabled"`; that is provider metadata, not an endgame-ai truncation field.
-
-## Bloat To Remove Next
-
-Already removed:
-
-- seed/live runtime copy workflow
-- lossy self-modify text truncation
-- legacy self-modify alias fields `node_writes`, `brain_writes`, `node_deletes`, `brain_deletes`
-- unused `action_verbs` wiring block
-- corrupted reasoning marker compatibility
-
-Next candidates:
-
-- `execute_verb()` is still present but no longer advertised; remove if no run evidence needs it.
-- `BaseNode` abstraction is small but may be unnecessary if all LLM nodes become explicit modules.
-- `extract_json_object()` is still needed for non-schema transports, but can be reduced after all active transports support strict schemas.
-- `file_proxy`, `browser_ai`, and `opencode` transports should stay only if they are actively used or documented as plugin points.
-- `wiring.json` prompts can be shorter now that JSON Schema enforces record shape.
-
-## Reliability Plan
-
-Highest value next changes:
-
-1. Run real Grok self_modify with structured schema and GitHub web search enabled.
-2. Inspect raw `*.txt` for request size, schema field, tools field, branch URL, and usage tokens.
-3. Add a two-step `file_request` record if Grok needs local full-file access beyond GitHub.
-4. Replace full-file `file_writes` with unified diff patches for large edits.
-5. Add explicit per-node prompt budget metrics from raw logs.
-6. Improve hover scan sampling for windows that expose zero actionable elements, without `ControlViewWalker`.
-7. Add a merge policy for successful self-evolve branches.
-
-## Verification Commands
-
-Compile:
+Example shape:
 
 ```powershell
-& "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" -m compileall -q .
+python organism.py --reset "Install the missing tool, open the app, complete the task, and improve yourself if your current body cannot do it."
 ```
 
-Runtime scans:
-
-```powershell
-rg -n "FULL_TEXT_LIMIT|RUNTIME_TEXT_TAIL|text_head|text_tail|truncated" organism_nodes nodes.py organism.py brain.py wiring.json
-rg -n "ensure_live|live_nodes|live_brains|seed_nodes|seed_brains" organism_nodes brain_transports nodes.py organism.py brain.py wiring.json
-rg -n "node_writes|brain_writes|node_deletes|brain_deletes|action_verbs|ï¿½|Ã" brain.py nodes.py wiring.json organism_nodes brain_transports
-```
-
-Status:
-
-```powershell
-git status --short --branch
-git log --oneline -6
-```
-
-## Handover Prompt For Another AI Provider
+## Bootstrap Prompt For Future AI
 
 ```text
-Read README.md fully before acting. You are continuing endgame-ai on branch unified-archBRAINZ. This is a living Windows desktop organism, not a chatbot. Preserve the loop: perceive -> plan -> schedule -> act -> verify -> reflect -> self-modify.
+Read README.md first. endgame-ai is a local living desktop organism, not a cautious tool wrapper. The goal is that a human writes a task and goes away while the organism observes the fresh screen, controls the computer, reasons, acts, verifies, reflects, installs tools if needed, edits itself if needed, commits, pushes, and continues.
 
-First inspect git status, wiring.json, brain.py, nodes.py, organism.py, brain_transports/xai.py, organism_nodes/self_modify.py, newest state.json, comms/runtime.ndjson, and newest raw *.txt logs.
+Preserve the unified authority model. Normal action and self-evolution use the same practical machine capability: Python, subprocesses, files, apps, browser, mouse, keyboard, and git. The difference is prompt intent and workflow, not a separate permission architecture.
 
-Current architecture: canonical nodes are in organism_nodes/ and transports are in brain_transports/. There is no seed/live runtime copy workflow. xAI is selected. Current default model is grok-4.3. Reasoning is OFF with effort none. LM Studio two-pass ROD remains configurable but OFF.
+The current development branch is unified-archBRAINZ. The target public operating model after final merge is direct work on main: run, improve if needed, commit, push, and continue. Git history is the organism history.
 
-Observation must remain Windows-native UIA ElementFromPoint hover scan plus Win32 focus/window APIs. Do not reintroduce ControlViewWalker.
+Fresh screen observation is mandatory. Desktop decisions must be based on fresh scan data, not stale state. The major missing organ is a stronger hover-aware hierarchical screen model rooted at W0 screen.
 
-Self-evolution is git-native. self_modify requires a clean worktree, creates self-evolve/YYYYMMDDTHHMMSS-shortsha, pushes that context branch to origin, sends Grok a GitHub branch URL, commit SHA, workspace manifest, runtime evidence paths, GitHub-only web search, and strict JSON Schema. Grok returns record_type="git_evolution_patch". Local Python applies, validates, rolls back on failure, commits on the self-evolve branch, and pushes the validated commit. Grok never pushes directly. The system does not auto-merge into main or unified-archBRAINZ and does not auto-clean old self-evolve branches; human/Codex review, merge/cherry-pick, and cleanup are separate manual steps.
-
-The active JSON contract is record_type + data. xAI and OpenAI-compatible transports now receive response_format/json_schema for expected records. Keep prompts short because schema enforces shape. The next schema improvement is to close nested fields further while preserving flexible wiring patch values.
-
-Token strategy: no file body dumps in self_modify. Use manifest + GitHub branch. Raw xAI responses contain usage/cost metadata under raw body in timestamped *.txt logs. Keep max_ticks and max_brain_calls low while probing. Use grok-4.3 for reliability and GitHub branch inspection; consider grok-build-0.1 only for fast coding-only runs.
-
-Before claiming success on future changes, run compileall and rg scans from README. For self-evolution changes, run one real Grok self_modify call and inspect the raw log for schema, tools, branch URL, manifest, usage, and absence of text_head/text_tail/file-body dumps. Commit coherent chunks regularly and rewrite README.md again before handoff.
+Before changing implementation, inspect wiring.json, organism.py, nodes.py, desktop.py, brain.py, organism_nodes, and brain_transports. Reuse code. Remove unnecessary branch rituals and edge cases when they fight the unified organism model. Keep JSON contracts compact. Keep prompts operational. Let the organism evolve its topology when evidence says the seed topology is no longer enough.
 ```
+
+## Current Finalization Work
+
+This README states the target organism identity. Some code still reflects earlier transitional engineering choices. The next implementation pass should align code with this document:
+
+- Make fresh screen scan mandatory before desktop-dependent model decisions.
+- Build the hierarchical screen-rooted observation model.
+- Reuse one capability runtime for action and evolution.
+- Simplify git workflow toward direct checked-out-branch commit and push.
+- Keep validation as an operational health check, not as a permission boundary.
+- Let future topology changes be ordinary self-evolution, not a special event.
+
+The final test is practical: clone it, give it a goal, walk away, and come back to a completed task or a committed improvement that makes the next run stronger.
