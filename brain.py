@@ -282,18 +282,35 @@ def _effective_reasoning_config(wiring: dict[str, Any], cfg: dict[str, Any]) -> 
     return reasoning_cfg
 
 
-def _fresh_observation_payload(wiring: dict[str, Any]) -> dict[str, Any]:
+def _fresh_observation_payload(wiring: dict[str, Any], payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    # Prefer fresh_observation from payload (set by observe node) to avoid duplicate scans
+    if payload and "fresh_observation" in payload:
+        fo = payload["fresh_observation"]
+        if isinstance(fo, dict) and fo.get("desktop_tree"):
+            return {
+                "focused_title": fo.get("focused_title", ""),
+                "desktop_tree": fo.get("desktop_tree", {}),
+                "observation_delta": fo.get("observation_delta", {}),
+                "screen_text": fo.get("screen_text", ""),
+                "observed_at": fo.get("observed_at"),
+                "fresh_scan": fo.get("fresh_scan", True),
+            }
+    
+    # Fallback: do a fresh scan (for nodes that don't have observe in their flow)
     import desktop
 
     obs = desktop.observe(wiring.get("observe_config", {}))
-    payload = {
+    result = {
         "focused_title": obs.get("focused_title", ""),
         "desktop_tree": obs.get("desktop_tree", {}),
         "observation_delta": obs.get("observation_delta", {}),
+        "screen_text": obs.get("screen_text", ""),
+        "observed_at": obs.get("observed_at"),
+        "fresh_scan": obs.get("fresh_scan", True),
     }
     global _LAST_FRESH_OBSERVATION
-    _LAST_FRESH_OBSERVATION = payload
-    return payload
+    _LAST_FRESH_OBSERVATION = result
+    return result
 
 
 def last_fresh_observation() -> dict[str, Any]:
@@ -313,7 +330,7 @@ def _brain_visible(value: Any) -> Any:
 
 def _with_fresh_observation(payload: dict[str, Any], wiring: dict[str, Any]) -> dict[str, Any]:
     enriched = _brain_visible(payload)
-    enriched["fresh_observation"] = _fresh_observation_payload(wiring)
+    enriched["fresh_observation"] = _fresh_observation_payload(wiring, enriched)
     return enriched
 
 

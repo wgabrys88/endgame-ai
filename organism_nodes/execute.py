@@ -14,6 +14,14 @@ def run(ctx):
     goal = ctx.get("goal", "")
     step = state.get("current_step") or {}
 
+    fresh_obs = state.get("fresh_observation", {})
+    observation_payload = {
+        "focused_title": state.get("focused_title", ""),
+        "desktop_tree": state.get("desktop_tree", {}),
+    }
+    if fresh_obs:
+        observation_payload["fresh_observation"] = fresh_obs
+
     record = brain.think(
         system_prompt=wiring.get("prompts", {}).get("execute", ""),
         payload={
@@ -22,10 +30,7 @@ def run(ctx):
                 "description": step.get("description", goal),
                 "done_when": step.get("done_when", ""),
             },
-            "observation": {
-                "focused_title": state.get("focused_title", ""),
-                "desktop_tree": state.get("desktop_tree", {}),
-            },
+            "observation": observation_payload,
             "last": {
                 "error": state.get("last_error"),
                 "result": state.get("last_result", ""),

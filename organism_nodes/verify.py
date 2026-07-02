@@ -18,16 +18,21 @@ def run(ctx):
     last_result = state.get("last_result", "")
     last_error = state.get("last_error", "")
 
+    fresh_obs = state.get("fresh_observation", {})
+    evidence_payload = {
+        "last_action": last_action,
+        "last_result": last_result,
+        "last_error": last_error,
+    }
+    if fresh_obs:
+        evidence_payload["fresh_observation"] = fresh_obs
+
     record = brain.think(
         system_prompt=wiring.get("prompts", {}).get("verify", ""),
         payload={
             "goal": goal,
             "step": {"description": step_goal, "done_when": done_when},
-            "evidence": {
-                "last_action": last_action,
-                "last_result": last_result,
-                "last_error": last_error,
-            },
+            "evidence": evidence_payload,
         },
         wiring=wiring,
         expected_record_type="verification",
@@ -45,16 +50,7 @@ def run(ctx):
         signal = "step_denied"
         success = False
 
-    obs = brain.last_fresh_observation()
-    
     patch = {
-        "observed_at": obs.get("observed_at"),
-        "fresh_scan": obs.get("fresh_scan"),
-        "desktop_tree": obs.get("desktop_tree", {}),
-        "observation_artifact": obs.get("observation_artifact", {}),
-        "observation_delta": obs.get("observation_delta", {}),
-        "screen_text": obs.get("screen_text", ""),
-        "focused_title": obs.get("focused_title", ""),
         "verification": {
             "success": success,
             "reasoning": data.get("reasoning", ""),

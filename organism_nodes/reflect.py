@@ -10,6 +10,16 @@ def run(ctx):
     goal = ctx.get("goal", "")
     step = state.get("current_step") or {}
 
+    fresh_obs = state.get("fresh_observation", {})
+    evidence = {
+        "last_action": state.get("last_action", {}),
+        "last_result": state.get("last_result", ""),
+        "last_error": state.get("last_error", ""),
+        "last_verification": state.get("last_verification", {}),
+    }
+    if fresh_obs:
+        evidence["fresh_observation"] = fresh_obs
+
     record = brain.think(
         system_prompt=wiring.get("prompts", {}).get("reflect", ""),
         payload={
@@ -18,12 +28,7 @@ def run(ctx):
                 "description": step.get("description", goal),
                 "done_when": step.get("done_when", ""),
             },
-            "evidence": {
-                "last_action": state.get("last_action", {}),
-                "last_result": state.get("last_result", ""),
-                "last_error": state.get("last_error", ""),
-                "last_verification": state.get("last_verification", {}),
-            },
+            "evidence": evidence,
         },
         wiring=wiring,
         expected_record_type="reflection",
@@ -37,16 +42,8 @@ def run(ctx):
         signal = "replan"
     lesson = data.get("lesson", "No lesson provided")
     diagnosis = data.get("diagnosis", "No diagnosis")
-    obs = brain.last_fresh_observation()
 
     return signal, {
-        "observed_at": obs.get("observed_at"),
-        "fresh_scan": obs.get("fresh_scan"),
-        "desktop_tree": obs.get("desktop_tree", {}),
-        "observation_artifact": obs.get("observation_artifact", {}),
-        "observation_delta": obs.get("observation_delta", {}),
-        "screen_text": obs.get("screen_text", ""),
-        "focused_title": obs.get("focused_title", ""),
         "reflection": {
             "lesson": lesson,
             "diagnosis": diagnosis,

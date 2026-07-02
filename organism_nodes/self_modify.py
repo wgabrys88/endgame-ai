@@ -91,57 +91,62 @@ def run(ctx):
     step = state.get("current_step") or {}
     git_context = nodes.prepare_self_evolution(wiring)
 
+    fresh_obs = state.get("fresh_observation", {})
+    payload = {
+        "goal": goal,
+        "step": {
+            "description": step.get("description", goal),
+            "done_when": step.get("done_when", ""),
+        },
+        "failure": {
+            "last_error": state.get("last_error", ""),
+            "last_reflection": state.get("last_reflection", {}),
+            "last_action": state.get("last_action", {}),
+            "last_result": state.get("last_result", ""),
+            "last_verification": state.get("last_verification", {}),
+        },
+        "runtime": {
+            "state_summary": {
+                "current_node": ctx.get("node"),
+                "tick": state.get("tick"),
+                "last_error": state.get("last_error"),
+            },
+            "evidence": _runtime_evidence(wiring, state),
+        },
+        "git_context": git_context,
+        "workspace_manifest": _capture_workspace_manifest(),
+        "full_file_access": {
+            "mode": git_context["context_mode"],
+            "github_branch_url": git_context.get("branch_url", ""),
+            "local_repo_root": str(ROOT),
+            "rule": "Use the checked-out repository, workspace manifest, fresh observation, and runtime evidence. The local organism applies, commits, and pushes on the current branch.",
+        },
+        "patch_contract": {
+            "record_type": "git_evolution_patch",
+            "data": {
+                "summary": "short human summary",
+                "rationale": "runtime/code evidence for the change",
+                "read_files": "repo files from the stable prefix that ground this patch",
+                "file_writes": "list of {path:'repo relative path', content:'complete file text'}",
+                "file_deletes": "list of repo relative paths",
+                "wiring_patches": "list of {op:'set'|'delete', path:'dotted.path', value:any}",
+                "commands": "optional list of validation commands from repo root",
+                "expected_validation": "what should pass after the patch",
+            },
+            "notes": [
+                "Target organism_nodes/ for node changes and brain_transports/ for transport changes.",
+                "Python and JSON writes are validated before write and again after write.",
+                "The local organism applies, validates, commits, and pushes on the checked-out branch.",
+                "Core files brain.py, nodes.py, organism.py, desktop.py, and stop_check.py activate on the next process run.",
+            ],
+        },
+    }
+    if fresh_obs:
+        payload["fresh_observation"] = fresh_obs
+
     record = brain.think(
         system_prompt=wiring.get("prompts", {}).get("self_modify", ""),
-        payload={
-            "goal": goal,
-            "step": {
-                "description": step.get("description", goal),
-                "done_when": step.get("done_when", ""),
-            },
-            "failure": {
-                "last_error": state.get("last_error", ""),
-                "last_reflection": state.get("last_reflection", {}),
-                "last_action": state.get("last_action", {}),
-                "last_result": state.get("last_result", ""),
-                "last_verification": state.get("last_verification", {}),
-            },
-            "runtime": {
-                "state_summary": {
-                    "current_node": ctx.get("node"),
-                    "tick": state.get("tick"),
-                    "last_error": state.get("last_error"),
-                },
-                "evidence": _runtime_evidence(wiring, state),
-            },
-            "git_context": git_context,
-            "workspace_manifest": _capture_workspace_manifest(),
-            "full_file_access": {
-                "mode": git_context["context_mode"],
-                "github_branch_url": git_context.get("branch_url", ""),
-                "local_repo_root": str(ROOT),
-                "rule": "Use the checked-out repository, workspace manifest, fresh observation, and runtime evidence. The local organism applies, commits, and pushes on the current branch.",
-            },
-            "patch_contract": {
-                "record_type": "git_evolution_patch",
-                "data": {
-                    "summary": "short human summary",
-                    "rationale": "runtime/code evidence for the change",
-                    "read_files": "repo files from the stable prefix that ground this patch",
-                    "file_writes": "list of {path:'repo relative path', content:'complete file text'}",
-                    "file_deletes": "list of repo relative paths",
-                    "wiring_patches": "list of {op:'set'|'delete', path:'dotted.path', value:any}",
-                    "commands": "optional list of validation commands from repo root",
-                    "expected_validation": "what should pass after the patch",
-                },
-                "notes": [
-                    "Target organism_nodes/ for node changes and brain_transports/ for transport changes.",
-                    "Python and JSON writes are validated before write and again after write.",
-                    "The local organism applies, validates, commits, and pushes on the checked-out branch.",
-                    "Core files brain.py, nodes.py, organism.py, desktop.py, and stop_check.py activate on the next process run.",
-                ],
-            },
-        },
+        payload=payload,
         wiring=wiring,
         expected_record_type="git_evolution_patch",
         request_config={"web_search": wiring.get("self_modify", {}).get("web_search", {})},
