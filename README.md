@@ -1,51 +1,66 @@
-# endgame-ai Handover Prompt
+# endgame-ai Session Handover
 
-Use this file as the first context block for any future Codex session or other AI provider. Keep it current after every run and commit. The goal is to make a new session productive without relying on hidden chat history.
+This README is the current handover prompt and plan for Codex or any other AI provider. Read it first, then update it before every handoff.
 
-## Mission
+## Project Vision
 
-endgame-ai is a Windows desktop automation organism. It observes the desktop with UIA `ElementFromPoint` hover scanning plus Win32 window/focus APIs, then uses a hot-swappable brain transport to plan, execute, verify, reflect, and self-modify.
+endgame-ai is a living Windows desktop organism. It should perceive the real desktop, form intentions, act through mouse/keyboard/Win32/UIA capabilities, verify outcomes, reflect on failures, and rewrite its own wiring when that improves the organism.
 
-Primary target: make the system reliable and fast for Grok/xAI while preserving local LM Studio/OpenAI-compatible testing.
+The main branch vision is not a chatbot or a task runner. It is a small, fail-hard organism built from Python files, `wiring.json`, seed nodes, and hot-swappable brain transports. Keep the core lean. Avoid frameworks in the organism loop. No silent transport fallback.
 
-Hard constraints:
+Current branch: `unified-archBRAINZ`.
 
-- Prefer reduction over feature growth.
-- Keep observation Windows-native: hover scan plus Win32. Do not reintroduce `ControlViewWalker`.
-- Keep 2-call reasoning feedback supported, but OFF by default.
-- Avoid prompt/context string truncation. Bound data at observation/config level instead.
-- Keep transports fail-hard. Do not silently fall back to another model.
+Current selected transport: `xai` / Grok via xAI API.
+
+Reasoning feedback default: OFF. Two-pass feedback remains configurable, but should be enabled only for explicit comparison/debug runs.
+
+## Ground Rules
+
+- Reduce code and prompt size before adding features.
+- Keep observation Windows-native: UIA `ElementFromPoint` hover scan plus Win32 focus/window APIs.
+- Do not reintroduce `ControlViewWalker`.
+- Keep transports fail-hard. If the selected brain fails, raise and route through organism error/reflect paths.
+- Runtime evidence beats speculation: inspect `state.json`, `comms/runtime.ndjson`, and the newest raw `*.txt`.
 - Commit coherent chunks regularly.
+- Keep this README fresh after every meaningful run or design decision.
 
-## Current State
+## PID Decision
 
-Current selected transport in `wiring.json`: `xai`.
+The PID mechanism is useful; the tracked PID file is not.
 
-Reasoning feedback default: OFF.
+`stop_check.py` writes `pids/{name}.pid` at runtime and uses those files for emergency termination. The repo does not need a committed `pids/organism.pid` value. This branch now ignores `pids/*.pid` and removes the tracked PID artifact.
 
-Two-pass reasoning remains configurable under each transport:
+## Current Architecture Notes
 
-- `model.global.reasoning_enabled`
-- `model.transport_config.<transport>.reasoning.enabled`
-- `model.transport_config.<transport>.reasoning.pattern`
+Observation:
 
-Recent commits:
+- `desktop.py` loads/regenerates the comtypes UIAutomation wrapper if the Windows typelib changed.
+- UIA control/property IDs come from the generated UIA module with numeric fallbacks.
+- `INTERACTIVE_CONTROL_TYPES` is defined.
+- UIA rectangles are normalized for this environment's `(left, top, width, height)` values.
+- Window tokens come from Win32 `EnumWindows`.
+- Focus comes from Win32/UIA foreground/focused APIs.
+- Actionable elements come from hover scanning with `ElementFromPoint`.
 
-- `e80453f` - `Fix Windows hover observation runtime`
-- `ac98c4e` - `Reduce brain and node runtime contracts`
+Brain:
 
-Runtime files are generated and should not be treated as source unless explicitly needed:
+- `brain.think()` has one consolidated path for `single_pass`, `native`, and `two_pass`.
+- `model.global` config is merged into transport config.
+- Reasoning feedback is OFF by default in `wiring.json`.
+- Raw model I/O logs are written to timestamped root `*.txt` files.
 
-- `state.json`
-- `comms/runtime.ndjson`
-- root timestamp raw logs like `20260702T111459.txt`
-- `live_nodes/`
-- `live_brains/`
-- `pids/organism.pid`
+Nodes/loop:
 
-## Evidence From Runs
+- Execute namespace exposes `state`, `wiring`, `goal`, `screen`, `elements`, `windows`, `screen_text`, and `focused_title`.
+- Execute/verify/reflect/self_modify use structured payloads instead of nested prompt strings.
+- Verify advances `state.step` on success.
+- Error node routes step failures to reflection.
+- `satisfied.py` is a valid terminal node.
+- Self-modify patches are applied by `organism.py` and live-node writes are constrained under `live_nodes/`.
 
-### Run 1: current transport, Grok/xAI
+## Run Evidence
+
+### Run A: Grok/xAI before contract fixes
 
 Command:
 
@@ -55,131 +70,131 @@ Command:
 
 Raw log: `20260702T111459.txt`
 
-Outcome:
+Result:
 
-- Completed 5 ticks with transport `xai`.
-- Nodes reached: planner -> scheduler -> observe -> execute -> reflect.
-- Model calls: 3 single calls.
-- Call latencies were about 21.3s, 29.9s, 29.2s.
-- Observation worked after UIA import fix and produced focused title `Task Manager`, Win32 window tokens, and actionable elements.
+- Transport: `xai`.
+- Reached planner -> scheduler -> observe -> execute -> reflect.
+- Three model calls: about 21.3s, 29.9s, 29.2s.
 - Execute failed with `NameError: name 'windows' is not defined`.
-- Grok reflection diagnosed the real contract bug: generated code was told to use `windows` and `elements`, but the exec namespace exposed only `state`.
+- Grok reflection correctly diagnosed the namespace contract bug: the model was told to use `windows` and `elements`, but the exec namespace did not expose them directly.
 
-Internalized changes from Grok feedback:
+Internalized fixes:
 
-- `nodes.build_execute_namespace()` now exposes `screen`, `elements`, `windows`, `screen_text`, and `focused_title` directly.
-- `seed_nodes/execute.py` now sends structured observation payloads instead of a nested prompt string.
-- The execute prompt in `wiring.json` now explicitly matches the actual namespace.
+- `nodes.build_execute_namespace()` now exposes observation fields directly.
+- `seed_nodes/execute.py` sends structured observation context.
+- `wiring.json` execute prompt matches the real namespace.
 
-### Run 2: LM Studio/OpenAI transport with two-pass feedback ON
+### Run B: LM Studio/OpenAI with two-pass feedback ON
 
-Temporary config used for this run:
+Temporary run config:
 
 - `model.transport = "openai"`
-- OpenAI-compatible base URL: `http://localhost:1234/v1/chat/completions`
-- Two-pass reasoning enabled for the run.
+- LM Studio endpoint: `http://localhost:1234/v1/chat/completions`
+- Two-pass reasoning feedback ON for `openai`.
 
 Raw log: `20260702T111838.txt`
 
-Outcome:
+Result:
 
-- Completed planner, scheduler, observe, then errored in execute.
-- Two-pass feedback was confirmed: planner used seq 1/2, execute used seq 3/4.
-- Total model time for planner+execute was about 72.2s.
-- Execute returned `record_type="plan"` instead of `record_type="execution"` in both feedback passes.
-- Root cause: prompt/payload contamination. Execute had an execute system prompt plus a second large execute prompt embedded inside JSON, and LM Studio repeated the planner-shaped response.
+- Reached planner -> scheduler -> observe -> execute.
+- Two-pass confirmed: planner seq 1/2, execute seq 3/4.
+- Model time for planner+execute was about 72.2s.
+- Execute returned `record_type="plan"` instead of `execution`.
+- Root cause: prompt/payload contamination from duplicate execute instructions and large nested prompt strings.
 
-Internalized changes from LM Studio feedback:
+Internalized fixes:
 
-- `brain.think()` now uses one consolidated path for `single_pass`, `native`, and `two_pass`.
-- `seed_nodes/execute.py`, `verify.py`, `reflect.py`, and `self_modify.py` now pass structured payloads under one system prompt.
-- `wiring.json` prompts are shorter and schema-focused.
-- Reasoning feedback is OFF by default for speed, but still configurable.
+- `brain.think()` consolidated.
+- Execute/verify/reflect/self_modify now pass structured payloads.
+- Prompts in `wiring.json` are shorter and schema-focused.
+- Reasoning feedback returned to OFF by default.
 
-## Implemented Architecture Changes
+### Run C: final Grok/xAI verification after fixes
 
-Observation:
+Raw log: `20260702T113237.txt`
 
-- `desktop.py` regenerates stale comtypes UIAutomation wrappers when the Windows typelib changes.
-- UIA control/property IDs now come from the generated UIA module with numeric fallbacks.
-- `INTERACTIVE_CONTROL_TYPES` is defined.
-- UIA rectangle normalization handles this environment's `(left, top, width, height)` values.
-- Active window/window list comes from Win32 `GetForegroundWindow` and `EnumWindows`.
-- Active element discovery stays hover-scan based through `ElementFromPoint`.
-- `ControlViewWalker` was removed from active observation.
+Result:
 
-Brain:
+- Transport: `xai`.
+- Reasoning feedback: OFF.
+- Reached planner -> scheduler -> observe -> execute -> verify.
+- Three model calls: about 10.9s, 37.0s, 7.8s.
+- Execute succeeded, verify returned `step_confirmed`, and `state.step` advanced to 1.
+- `focused_title` was `Task Manager`.
+- Window rectangles were correct after UIA rect normalization.
+- Actionable elements were 0 for the focused Task Manager view. This is not an execution failure; it is an observation/actionability gap to investigate.
 
-- `think()` now uses one consolidated implementation.
-- Reasoning feedback is governed by effective transport config.
-- `model.global` config is now merged into transport config.
-- Brain call budgeting checks global config too.
+## Current Known Gaps
 
-Nodes/loop:
+1. Hover scan can still return zero actionable elements for some Win32-heavy windows such as Task Manager.
 
-- Execute namespace now matches the model contract.
-- Execute/verify/reflect/self_modify payloads are structured and no longer manually truncated.
-- `satisfied.py` is now a valid node.
-- Planner default signal is now `step_ready`, not an invalid signal.
-- Verify advances `state.step` on success.
-- Error node routes step failures to reflection.
-- Self-modify patches are now actually applied by `organism.py`.
-- Self-modify node file writes are constrained to configured `live_nodes/`.
+   Next work: add better hover sampling around the focused window and inspect whether UIA returns panes/text without actionable control types. Do not tree-walk.
 
-## Known Issues To Fix Next
+2. The model can still produce code with local truncation patterns, such as `windows[:5]`, inside generated action code.
 
-1. Run the updated Grok/xAI path again and compare against `20260702T111459.txt`.
+   Next work: consider adding an execute prompt rule or post-generation lint that rejects unnecessary truncating slices when the task asks for full observation.
 
-Expected improvement:
+3. `reasoning_from()` still contains compatibility handling for the old corrupted marker.
 
-- Execute should no longer fail on undefined `windows` or `elements`.
-- Raw prompt size should be smaller.
-- Reasoning feedback should be absent unless explicitly enabled.
+   Next work: keep it if old logs/transports need it; otherwise replace with clean `<think>...</think>` extraction.
 
-2. Validate the observation after rectangle normalization.
+4. README and wiring disagree with main branch's old "safe default LM Studio" recommendation because this mission explicitly required switching back to Grok/xAI after both comparison runs.
 
-Expected improvement:
+   Next work: preserve this explicit branch decision unless the user asks to make LM Studio default again.
 
-- `snapshot.active_window.rect.right` should be greater than `left`.
-- Target-window hover scan should probe the focused window instead of falling back to whole screen.
-- More focused-window elements should appear when the active app exposes UIA controls.
+5. Self-modify is wired through but not deeply validated by a live self-modification run.
 
-3. Consider adding model contract repair at the brain chokepoint.
+   Next work: run a bounded self-modify scenario with `--max-ticks` and inspect whether wiring/live-node changes apply and reload cleanly.
 
-Potential design:
+## Next Implementation Plan
 
-- Node calls should pass `expected_record_type` into `brain.think()`.
-- If the model returns a different record type, optionally do one cheap repair call only when configured.
-- Default should remain fail-hard and fast.
+1. Run another bounded Grok/xAI verification with a focused app that exposes controls, not Task Manager.
 
-4. Finish removing legacy reasoning marker handling if not needed.
+   Goal: prove hover scan returns useful actionable elements when the active window has real UIA controls.
 
-Current status:
+2. Improve observation without tree walking.
 
-- Old strategy classes are removed.
-- The legacy `reasoning_from()` marker still exists for compatibility.
-- Add clean `<think>...</think>` extraction only if a real transport emits it.
+   Candidate changes:
 
-5. Re-run LM Studio with two-pass feedback only after Grok path is stable.
+   - Add focused-window edge/center sampling in addition to grid sampling.
+   - Deduplicate by runtime id, hwnd/rect/name/control type.
+   - Preserve Win32 window tokens.
+   - Keep `observe_config` as the only knob for scan density.
 
-Purpose:
+3. Add expected record type into the brain/node contract.
 
-- Confirm structured execute payload prevents the previous `record_type="plan"` failure.
-- Compare latency and request sizes against `20260702T111838.txt`.
+   Candidate design:
 
-6. Decide whether generated runtime files should be ignored or documented.
+   - Node calls pass `expected_record_type` to `brain.think()`.
+   - Default behavior remains fail-hard.
+   - Optional one-shot repair can be enabled in `wiring.json`, default OFF.
 
-Current repo already tracks `pids/organism.pid`, which changes during runs and creates noise.
+4. Validate self-modify path.
 
-## Recommended Next Session Prompt
+   Candidate scenario:
 
-Start with this exact prompt:
+   - Force a controlled failure.
+   - Route reflect -> self_modify.
+   - Confirm `organism.py` applies wiring patch, reloads wiring/live nodes, and logs `self_modify_applied`.
+
+5. Keep commits small.
+
+   Suggested commit boundaries:
+
+   - Observation sampling improvement.
+   - Brain expected-record contract.
+   - Self-modify validation/fixes.
+   - README evidence refresh.
+
+## Fresh Handover Prompt
+
+Use this prompt for a new Codex session or another AI provider:
 
 ```text
-Read README.md completely. Continue the endgame-ai reliability/speed mission from the current git state. First inspect git status and the latest commits. Do not reintroduce ControlViewWalker. Run the limited organism with current xai transport and --reset, analyze state.json, comms/runtime.ndjson, and the latest raw log. Compare against the run evidence recorded in README.md. Then implement the smallest reduction-focused fixes needed, commit each coherent chunk, update README.md with fresh evidence and the next handover plan, and leave wiring.json on xai with reasoning feedback OFF by default unless a run explicitly requires otherwise.
+Read README.md completely. You are continuing endgame-ai on branch unified-archBRAINZ. The project is a living Windows desktop organism, not a chatbot. Keep the core small, fail-hard, and evidence-driven. Current selected transport is xai/Grok, reasoning feedback OFF by default, after completed comparison runs against xai and LM Studio. Do not reintroduce ControlViewWalker. First inspect git status and the newest raw log/state evidence. Then run a bounded organism test only if needed, analyze state.json + comms/runtime.ndjson + newest *.txt, implement the smallest reduction-focused fix, commit it, and rewrite README.md with fresh evidence and the next exact handover plan. PID files are runtime artifacts; do not track pids/*.pid.
 ```
 
-## Validation Commands
+## Commands
 
 Compile:
 
@@ -187,15 +202,15 @@ Compile:
 & "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" -m compileall -q .
 ```
 
-Limited Grok/xAI run:
+Grok/xAI limited run:
 
 ```powershell
 & "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" organism.py --reset --max-ticks 5 "Observe the current desktop and report focused window title plus a few interactive elements"
 ```
 
-Limited LM Studio run:
+LM Studio comparison run:
 
 ```powershell
-# Temporarily set wiring.json model.transport to "openai" and enable reasoning for the openai transport.
+# Temporarily set model.transport to "openai" and enable reasoning for that transport if two-pass feedback is being tested.
 & "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" organism.py --reset --max-ticks 5 "Observe the current desktop and report focused window title plus a few interactive elements"
 ```

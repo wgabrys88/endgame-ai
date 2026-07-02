@@ -5,6 +5,7 @@ __pycache__/
 live_nodes/
 live_brains/
 comms/
+pids/*.pid
 state.json
 goal.json
 *.txt
