@@ -26,6 +26,7 @@ _RAW_LOCK = threading.Lock()
 _CALLS_MADE = 0
 _STABLE_PREFIX_CACHE: "StablePrefix | None" = None
 _STABLE_PREFIX_LOCK = threading.Lock()
+_LAST_FRESH_OBSERVATION: dict[str, Any] | None = None
 
 _OPEN_OBJECT_SCHEMA = {"type": "object", "additionalProperties": True}
 
@@ -272,7 +273,7 @@ def _fresh_observation_payload(wiring: dict[str, Any]) -> dict[str, Any]:
     import desktop
 
     obs = desktop.observe(wiring.get("observe_config", {}))
-    return {
+    payload = {
         "focused_title": obs.get("focused_title", ""),
         "fresh_scan": obs.get("fresh_scan", False),
         "observed_at": obs.get("observed_at"),
@@ -281,6 +282,13 @@ def _fresh_observation_payload(wiring: dict[str, Any]) -> dict[str, Any]:
         "observation_artifact": obs.get("observation_artifact", {}),
         "observation_delta": obs.get("observation_delta", {}),
     }
+    global _LAST_FRESH_OBSERVATION
+    _LAST_FRESH_OBSERVATION = payload
+    return payload
+
+
+def last_fresh_observation() -> dict[str, Any]:
+    return dict(_LAST_FRESH_OBSERVATION or {})
 
 
 BODY_ONLY_PAYLOAD_KEYS = {"action_index", "raw_elements", "action_elements", "full_desktop_tree"}

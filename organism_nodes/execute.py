@@ -36,7 +36,7 @@ def run(ctx):
                 "action": state.get("last_action", {}),
             },
             "namespace": {
-                "values": ["state", "wiring", "goal", "last", "desktop_tree", "screen_text", "focused_title", "observed_at", "fresh_scan", "observation_artifact", "observation_delta"],
+                "values": ["state", "wiring", "goal", "last", "fresh_observation", "desktop_tree", "screen_text", "focused_title", "observed_at", "fresh_scan", "observation_artifact", "observation_delta"],
                 "observation": ["observe_screen()", "last_desktop_tree()", "get_focused_title()", "node_by_id(id)", "action_nodes(action=None)"],
                 "actions": ["click_node(id)", "scroll_node(id,amount)", "click(x,y,hwnd)", "type_text(text)", "press_key(key)", "hotkey(keys)", "scroll(x,y,amount,hwnd)", "focus_window(target)", "open_url(browser,url)"],
                 "modules": ["subprocess", "ctypes", "os", "sys", "json", "re", "time", "pathlib", "math", "random"],

@@ -526,6 +526,15 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
     state = ctx.get("state", {})
     wiring = ctx.get("wiring", {})
     goal = ctx.get("goal", "")
+    fresh_observation = brain.last_fresh_observation() or {
+        "focused_title": state.get("focused_title", ""),
+        "fresh_scan": state.get("fresh_scan", False),
+        "observed_at": state.get("observed_at"),
+        "desktop_tree": state.get("desktop_tree", {}),
+        "screen_text": state.get("screen_text", ""),
+        "observation_artifact": state.get("observation_artifact", {}),
+        "observation_delta": state.get("observation_delta", {}),
+    }
     last = {
         "error": state.get("last_error"),
         "result": state.get("last_result", ""),
@@ -606,6 +615,7 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "wiring": wiring,
         "goal": goal,
         "last": last,
+        "fresh_observation": fresh_observation,
         "desktop_tree": state.get("desktop_tree", {}),
         "observation_artifact": state.get("observation_artifact", {}),
         "observation_delta": state.get("observation_delta", {}),
