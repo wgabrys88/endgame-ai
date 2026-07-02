@@ -28,7 +28,7 @@ Recent implementation commits:
 - `c980efa Enforce self evolve branch at patch applier`
 - `e15ab47 Document self evolution operator workflow`
 
-The current uncommitted work in this session upgrades xAI structured outputs, GitHub-only web search for self-modify, reasoning-effort handling, and this README.
+The current implementation includes xAI structured outputs, GitHub-only web search for self-modify, reasoning-effort handling, and branch publishing for self-evolution.
 
 ## Official API Findings Checked July 2, 2026
 
@@ -452,9 +452,22 @@ Post git-native verification already performed:
 - Failing validation command rolled back touched files.
 - Successful patch committed on a self-evolve branch.
 
-New unverified item after this README rewrite:
+Real Grok structured-output self-modify verification:
 
-- Run a real Grok self_modify call with `publish_context_branch=true`, `push_after_commit=true`, structured outputs enabled, and GitHub-only web search, then inspect the raw log to confirm Grok received schema + branch URL + manifest and did not receive file body dumps.
+- Run time: July 2, 2026, raw log `20260702T125258.txt`.
+- Branch created and pushed: `self-evolve/20260702T125256-e064c92`.
+- Remote branch verified at `origin/self-evolve/20260702T125256-e064c92`.
+- xAI model: `grok-4.3`.
+- xAI response used `text.format.type="json_schema"`.
+- xAI tools included `web_search` with `allowed_domains=["github.com"]`.
+- Reasoning effort was `none`; reasoning tokens were `0`.
+- Usage: 4,367 input tokens, 132 output tokens, 4,499 total tokens.
+- Grok returned a valid empty `git_evolution_patch` because no bug was proven.
+- No file writes, file deletes, wiring patches, commands, commit, or merge occurred.
+- State recorded the public branch URL: `https://github.com/wgabrys88/endgame-ai/tree/self-evolve/20260702T125256-e064c92`.
+- Raw request contained `workspace_manifest`, `git_context`, runtime evidence metadata, and branch URL.
+- Raw request did not contain old `FULL_TEXT_LIMIT`, `RUNTIME_TEXT_TAIL`, `text_head`, or `text_tail` fields.
+- The raw xAI response body includes API metadata `truncation="disabled"`; that is provider metadata, not an endgame-ai truncation field.
 
 ## Bloat To Remove Next
 
@@ -526,5 +539,5 @@ The active JSON contract is record_type + data. xAI and OpenAI-compatible transp
 
 Token strategy: no file body dumps in self_modify. Use manifest + GitHub branch. Raw xAI responses contain usage/cost metadata under raw body in timestamped *.txt logs. Keep max_ticks and max_brain_calls low while probing. Use grok-4.3 for reliability and GitHub branch inspection; consider grok-build-0.1 only for fast coding-only runs.
 
-Before claiming success, run compileall and rg scans from README. Then run one real Grok self_modify call and inspect the raw log for schema, tools, branch URL, manifest, usage, and absence of text_head/text_tail/truncated/file-body dumps. Commit coherent chunks regularly and rewrite README.md again before handoff.
+Before claiming success on future changes, run compileall and rg scans from README. For self-evolution changes, run one real Grok self_modify call and inspect the raw log for schema, tools, branch URL, manifest, usage, and absence of text_head/text_tail/file-body dumps. Commit coherent chunks regularly and rewrite README.md again before handoff.
 ```
