@@ -46,6 +46,7 @@ brain.py                    stable prefix, fresh-observation chokepoint, schemas
 desktop.py                  Windows UIA/Win32 hover observation and desktop actions
 nodes.py                    node loader, capability runtime, git self-evolution applier/committer
 wiring.json                 selected transport, prompts, topology, observation config, paths
+export_workspace_text.py    NotebookLM-ready full workspace text exporter
 organism_nodes/             planner, scheduler, observe, execute, verify, reflect, self_modify, satisfied, error
 brain_transports/           xai, openai-compatible, opencode, file_proxy, browser_ai stub
 ```
@@ -588,6 +589,16 @@ Runtime state is written to `state.json`. Runtime events are appended to `comms/
 
 These runtime artifacts are ignored by git.
 
+The repository uses a source allowlist in `.gitignore`. Git should see only the intended source, documentation, license, wiring, transport/node modules, and the committed HTML report. Runtime data, local agent files, caches, raw logs, pid files, request logs, and secret files stay local and ignored.
+
+For NotebookLM or other text-only readers, run:
+
+```powershell
+python export_workspace_text.py
+```
+
+The script writes a single `.txt` bundle under `notebooklm_exports/`. It includes current workspace text files, including runtime logs/state/observations when they exist, while skipping `.git`, caches, its own output folder, and secret-like files unless `--include-secrets` is explicitly passed.
+
 ## Bootstrap For A New Human
 
 1. Clone the repository.
@@ -607,24 +618,47 @@ python organism.py --reset --max-brain-calls 10 --max-ticks 25 "Open the browser
 
 ## Bootstrap For Future AI Sessions
 
-Use this prompt when handing the repository to Codex, Kiro CLI, OpenCode, Grok, or another capable AI:
+Use this prompt when handing the repository to Codex high reasoning, Kiro CLI, OpenCode, Grok, or another capable AI:
 
 ```text
-Read README.md, wiring.json, organism.py, brain.py, desktop.py, nodes.py, organism_nodes/, and brain_transports/ before changing anything.
+You are Codex GPT-5.5 high reasoning, acting as principal architect for endgame-ai.
 
-endgame-ai is a proven local living desktop organism. On July 2, 2026 it used Grok/xAI to publish a real X post about itself from the Windows desktop, then verified success and halted satisfied. Treat this as the baseline proof: the vision is real, not speculative.
+Start by reading README.md, wiring.json, organism.py, brain.py, desktop.py, nodes.py, organism_nodes/, and brain_transports/. Use the current worktree as truth. Do not infer structure from stale runtime artifacts.
 
-The operating branch is main. The target model is direct checked-out-branch operation: run, improve if needed, commit, push, continue. Do not reintroduce self-evolve branch rituals or seed/live directory duplication.
+endgame-ai is a proven local living desktop organism. On July 2, 2026 it used Grok/xAI to publish a real X post about itself from the Windows desktop, verified success, halted satisfied, and was tagged as posted-on-x-milestone. Treat this as the baseline proof: the vision is real, not speculative.
+
+The operating branch is main. The target model is direct checked-out-branch operation: run, improve if needed, commit, push, continue. Git history is the audit trail. Do not reintroduce self-evolve branch rituals, seed/live directory duplication, or edge-case shortcut layers.
 
 The body has unified authority: mouse, keyboard, browser, files, Python, subprocess, apps, installers, and git. Normal action and self-modification use the same capability runtime; prompts and topology decide intent.
 
-Fresh screen truth is mandatory. Every desktop-dependent brain decision must use fresh observation. The current remaining speed issue is duplicate adjacent scans: observe node scans, then brain.think scans again for execute/verify. Fix scan ownership architecturally. Do not add app-specific edge-case shortcuts.
+Fresh screen truth is mandatory. Every desktop-dependent brain decision must use fresh observation. The known speed issue is duplicate adjacent scans: observe node scans, then brain.think scans again for execute/verify. Fix scan ownership architecturally. Do not add app-specific shortcuts.
 
 The brain-facing observation must remain semantic and id-based. The body keeps coordinates and UIA/Win32 metadata. Never truncate source or observation truth as a substitute for architecture. Filter semantically for the brain, keep raw artifacts locally, and preserve exact body-side action data.
 
 Stable prefix caching matters. Current requests send the real checked-out source before dynamic data. Self-modification must ground patches in real files and declare read_files for touched existing files. Future optimization should reduce unnecessary prefix size through profiles, not lossy truncation.
 
-Do not make small tactical fixes. Reduce duplicated logic, align prompts with runtime contracts, preserve ROD as configurable and off by default, and make the organism faster by simplifying the topology.
+The workspace should start clean. .gitignore is a source allowlist. Runtime data belongs in state.json, comms/, pids/, timestamped raw logs, and local caches; those files are ignored and should not be committed. Do not commit API keys, request logs, raw provider payloads, state snapshots, or observation artifacts.
+
+Work on known and unknown problems with evidence. Known: duplicate scans, first-call prefix size, topology boilerplate, self-modification proof run, hover-scan validation. Unknown: failures discovered only by live desktop runs. Do not make small tactical fixes. Reduce duplicated logic, align prompts with runtime contracts, preserve ROD as configurable and off by default, and make the organism faster by simplifying the topology.
+```
+
+## Appendix: Clean Workspace Maintenance
+
+End a milestone session by leaving the repository clean:
+
+1. Confirm `git status --short --branch` is clean before deleting local runtime data.
+2. Confirm runtime files are not tracked with `git ls-files`.
+3. Remove local runtime data only: `state.json`, `comms/`, `pids/`, `__pycache__/`, nested `__pycache__/`, timestamped `*.txt` raw logs, request logs, temp files, and local secret files.
+4. Remove generated NotebookLM bundles from `notebooklm_exports/` when they are no longer needed.
+5. Keep `.gitignore` as a source allowlist so new runtime files stay invisible to git.
+6. Commit only source, documentation, wiring, and deliberate durable artifacts.
+7. Push commits and milestone tags.
+
+Current milestone tags:
+
+```text
+grok_api_ready
+posted-on-x-milestone
 ```
 
 ## What Is Proven

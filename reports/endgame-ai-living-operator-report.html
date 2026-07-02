@@ -3,22 +3,27 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>endgame-ai Living Operator Report</title>
+  <title>endgame-ai Posted On X Milestone Report</title>
   <style>
     :root {
       color-scheme: light;
-      --paper: #fbfaf6;
-      --ink: #171512;
-      --muted: #6a645d;
-      --line: #ded8ce;
-      --soft: #f1ece4;
-      --blue: #2563eb;
+      --bg: #eef2f7;
+      --paper: #fbfcfe;
+      --ink: #14171f;
+      --muted: #5e6675;
+      --line: #d8dee8;
+      --blue: #2458d8;
       --green: #11855a;
-      --amber: #b36b00;
-      --red: #bd2d2d;
-      --violet: #6d3fc8;
-      --teal: #0f766e;
-      --shadow: 0 24px 70px rgba(27, 22, 16, 0.18);
+      --amber: #b26a00;
+      --red: #b42335;
+      --violet: #674ea7;
+      --teal: #087b83;
+      --soft-blue: #e6edff;
+      --soft-green: #e5f5ed;
+      --soft-amber: #fff3d8;
+      --soft-red: #ffe8eb;
+      --soft-violet: #eee7ff;
+      --shadow: 0 24px 80px rgba(20, 23, 31, 0.16);
       --radius: 8px;
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
@@ -34,11 +39,11 @@
     body {
       margin: 0;
       min-height: 100vh;
-      color: var(--ink);
       background:
-        linear-gradient(135deg, rgba(37, 99, 235, 0.10), transparent 30%),
-        linear-gradient(315deg, rgba(17, 133, 90, 0.12), transparent 32%),
-        var(--soft);
+        linear-gradient(135deg, rgba(36, 88, 216, 0.14), transparent 34%),
+        linear-gradient(315deg, rgba(8, 123, 131, 0.12), transparent 36%),
+        var(--bg);
+      color: var(--ink);
     }
 
     button,
@@ -46,124 +51,152 @@
       font: inherit;
     }
 
-    .page {
+    button {
+      cursor: pointer;
+    }
+
+    .stage {
       min-height: 100vh;
       display: grid;
       place-items: start center;
       padding: 18px;
     }
 
-    .portrait {
-      width: min(100%, 720px);
+    .report {
+      width: min(100%, 760px);
       aspect-ratio: 9 / 16;
       max-height: calc(100vh - 36px);
-      background: var(--paper);
-      border: 1px solid rgba(23, 21, 18, 0.12);
-      border-radius: 18px;
-      box-shadow: var(--shadow);
-      overflow: hidden;
+      min-height: min(920px, calc(100vh - 36px));
       display: grid;
       grid-template-rows: auto 1fr;
+      overflow: hidden;
+      background: var(--paper);
+      border: 1px solid rgba(20, 23, 31, 0.12);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
     }
 
     .topbar {
-      position: sticky;
-      top: 0;
-      z-index: 20;
-      padding: 14px 16px 12px;
-      background: rgba(251, 250, 246, 0.92);
+      z-index: 5;
       border-bottom: 1px solid var(--line);
-      backdrop-filter: blur(16px);
+      background: rgba(251, 252, 254, 0.94);
+      backdrop-filter: blur(18px);
     }
 
-    .title-row {
-      display: flex;
+    .masthead {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 14px;
       align-items: start;
-      justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 12px;
+      padding: 18px 18px 12px;
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--blue);
+      font-size: 0.76rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
     }
 
     h1 {
       margin: 0;
-      font-size: clamp(1.55rem, 5vw, 2.4rem);
+      font-size: clamp(1.6rem, 5.4vw, 2.65rem);
       line-height: 0.98;
       letter-spacing: 0;
+      max-width: 10ch;
     }
 
     .subtitle {
-      margin: 6px 0 0;
+      margin: 8px 0 0;
       color: var(--muted);
-      font-size: 0.9rem;
-      line-height: 1.35;
-      max-width: 46ch;
+      font-size: 0.92rem;
+      line-height: 1.42;
+      max-width: 52ch;
     }
 
-    .status-pill {
-      flex: 0 0 auto;
-      display: inline-grid;
-      place-items: center;
-      min-width: 86px;
-      padding: 9px 10px;
-      border: 1px solid rgba(17, 133, 90, 0.30);
+    .stamp {
+      display: grid;
+      gap: 8px;
+      min-width: 136px;
+      justify-items: end;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 34px;
+      padding: 7px 10px;
       border-radius: 999px;
+      border: 1px solid rgba(17, 133, 90, 0.34);
       color: var(--green);
-      background: rgba(17, 133, 90, 0.08);
+      background: var(--soft-green);
       font-size: 0.78rem;
-      font-weight: 750;
-      text-transform: uppercase;
+      font-weight: 800;
+      white-space: nowrap;
     }
 
-    .tabs {
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: currentColor;
+    }
+
+    .tagline {
+      color: var(--muted);
+      font-size: 0.78rem;
+      text-align: right;
+      line-height: 1.3;
+    }
+
+    .nav {
       display: flex;
       gap: 6px;
       overflow-x: auto;
-      padding-bottom: 2px;
+      padding: 0 18px 14px;
       scrollbar-width: thin;
     }
 
     .tab {
       flex: 0 0 auto;
+      min-height: 34px;
+      padding: 7px 11px;
       border: 1px solid var(--line);
-      background: #fffdf9;
-      color: var(--muted);
       border-radius: 999px;
-      padding: 8px 11px;
-      cursor: pointer;
-      font-size: 0.82rem;
-      font-weight: 700;
+      color: var(--muted);
+      background: #fff;
+      font-size: 0.8rem;
+      font-weight: 750;
     }
 
     .tab[aria-selected="true"] {
       color: #fff;
-      background: var(--ink);
-      border-color: var(--ink);
+      border-color: var(--blue);
+      background: var(--blue);
     }
 
     .content {
       overflow: auto;
-      padding: 16px;
-      scroll-padding-top: 24px;
+      padding: 18px;
+      background:
+        linear-gradient(#fbfcfe, #f6f8fc 46%, #fbfcfe);
     }
 
-    section {
+    .panel {
       display: none;
-      animation: appear 180ms ease-out;
+      animation: rise 180ms ease-out;
     }
 
-    section.active {
+    .panel.active {
       display: block;
     }
 
-    @keyframes appear {
-      from { opacity: 0; translate: 0 6px; }
-      to { opacity: 1; translate: 0 0; }
-    }
-
-    .lede {
-      font-size: 1.08rem;
-      line-height: 1.45;
-      margin: 0 0 14px;
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
     }
 
     .grid {
@@ -175,740 +208,841 @@
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
+    .grid.three {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
     .card {
       border: 1px solid var(--line);
       border-radius: var(--radius);
-      background: #fffdf9;
-      padding: 13px;
+      background: #fff;
+      padding: 14px;
     }
 
-    .card strong {
-      display: block;
-      margin-bottom: 6px;
-      font-size: 0.92rem;
+    .card.blue { background: var(--soft-blue); border-color: rgba(36, 88, 216, 0.18); }
+    .card.green { background: var(--soft-green); border-color: rgba(17, 133, 90, 0.20); }
+    .card.amber { background: var(--soft-amber); border-color: rgba(178, 106, 0, 0.22); }
+    .card.violet { background: var(--soft-violet); border-color: rgba(103, 78, 167, 0.22); }
+    .card.red { background: var(--soft-red); border-color: rgba(180, 35, 53, 0.22); }
+
+    .section-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin: 0 0 10px;
     }
 
-    .card p,
-    .card li {
-      color: var(--muted);
-      font-size: 0.9rem;
-      line-height: 1.45;
+    h2,
+    h3 {
+      margin: 0;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      font-size: 1.08rem;
+      line-height: 1.18;
+    }
+
+    h3 {
+      font-size: 0.94rem;
+      line-height: 1.2;
     }
 
     p {
-      line-height: 1.55;
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.48;
     }
 
-    ul,
-    ol {
-      padding-left: 20px;
+    .lead {
+      color: var(--ink);
+      font-size: 1rem;
+      line-height: 1.48;
     }
 
-    li + li {
-      margin-top: 6px;
-    }
-
-    .verdict {
-      display: grid;
-      grid-template-columns: 112px 1fr;
-      gap: 14px;
-      align-items: center;
-      margin: 14px 0;
+    .quote {
+      margin: 12px 0 0;
       padding: 14px;
-      border: 1px solid rgba(179, 107, 0, 0.28);
-      border-radius: var(--radius);
-      background: rgba(179, 107, 0, 0.08);
+      border-left: 4px solid var(--green);
+      background: #fff;
+      color: var(--ink);
+      font-size: 0.95rem;
+      line-height: 1.45;
     }
 
-    .dial {
-      width: 104px;
-      aspect-ratio: 1;
-      border-radius: 50%;
+    .metric {
       display: grid;
-      place-items: center;
-      background:
-        radial-gradient(circle at center, var(--paper) 0 54%, transparent 55%),
-        conic-gradient(var(--green) 0 57%, rgba(179, 107, 0, 0.38) 57% 76%, rgba(189, 45, 45, 0.28) 76% 100%);
-      border: 1px solid rgba(23, 21, 18, 0.1);
-      font-weight: 850;
+      gap: 5px;
+    }
+
+    .metric strong {
+      font-size: 1.5rem;
+      line-height: 1;
       color: var(--ink);
     }
 
-    .label {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      width: fit-content;
-      padding: 5px 8px;
-      border-radius: 999px;
-      background: rgba(23, 21, 18, 0.06);
+    .metric span {
       color: var(--muted);
-      font-size: 0.75rem;
-      font-weight: 750;
+      font-size: 0.76rem;
+      font-weight: 700;
       text-transform: uppercase;
+      letter-spacing: 0.05em;
     }
 
-    .ok { color: var(--green); }
-    .warn { color: var(--amber); }
-    .bad { color: var(--red); }
-    .info { color: var(--blue); }
-
-    .flow {
+    .timeline {
+      position: relative;
       display: grid;
-      gap: 8px;
-      margin: 12px 0;
-    }
-
-    .flow-row {
-      display: grid;
-      grid-template-columns: 96px 1fr;
       gap: 10px;
-      align-items: stretch;
+      margin-top: 8px;
     }
 
-    .flow-step {
+    .event {
+      display: grid;
+      grid-template-columns: 70px 1fr;
+      gap: 10px;
+      align-items: start;
+      padding: 10px;
       border: 1px solid var(--line);
       border-radius: var(--radius);
-      background: #fffdf9;
-      padding: 10px;
-      transition: 160ms ease;
-      cursor: pointer;
+      background: #fff;
     }
 
-    .flow-step.active {
-      border-color: var(--blue);
-      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    .event-time {
+      color: var(--blue);
+      font-size: 0.8rem;
+      font-weight: 850;
     }
 
-    .flow-step b {
-      display: block;
-      font-size: 0.86rem;
+    .event-body {
+      display: grid;
+      gap: 4px;
     }
 
-    .flow-step span {
-      display: block;
-      margin-top: 4px;
+    .event-body b {
+      font-size: 0.9rem;
+    }
+
+    .event-body span {
       color: var(--muted);
       font-size: 0.82rem;
-      line-height: 1.35;
+      line-height: 1.38;
     }
 
-    .step-detail {
-      border-left: 3px solid var(--blue);
-      background: rgba(37, 99, 235, 0.07);
-      padding: 12px;
-      border-radius: 0 var(--radius) var(--radius) 0;
-      min-height: 86px;
-    }
-
-    .branch-map {
+    .call-list {
       display: grid;
-      gap: 10px;
-      margin: 14px 0;
+      gap: 9px;
     }
 
-    .branch-node {
-      position: relative;
-      padding: 12px;
-      border-radius: var(--radius);
-      border: 1px solid var(--line);
-      background: #fffdf9;
-    }
-
-    .branch-node::before {
-      content: "";
-      position: absolute;
-      left: 18px;
-      top: -11px;
-      width: 2px;
-      height: 10px;
-      background: var(--line);
-    }
-
-    .branch-node:first-child::before {
-      display: none;
-    }
-
-    .branch-node.main { border-color: rgba(189, 45, 45, 0.35); background: rgba(189, 45, 45, 0.06); }
-    .branch-node.dev { border-color: rgba(179, 107, 0, 0.35); background: rgba(179, 107, 0, 0.07); }
-    .branch-node.self { border-color: rgba(109, 63, 200, 0.35); background: rgba(109, 63, 200, 0.07); }
-    .branch-node.review { border-color: rgba(17, 133, 90, 0.35); background: rgba(17, 133, 90, 0.07); }
-
-    .tree {
-      margin: 14px 0;
-      padding: 12px;
+    .call {
       border: 1px solid var(--line);
       border-radius: var(--radius);
-      background: #fffdf9;
-    }
-
-    .tree ul {
-      list-style: none;
-      padding-left: 18px;
-      border-left: 1px solid var(--line);
-    }
-
-    .tree li {
-      margin: 8px 0;
-    }
-
-    .tree button {
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      padding: 7px 10px;
-      background: var(--paper);
-      cursor: pointer;
-      color: var(--ink);
-      font-weight: 700;
-    }
-
-    .tree button:hover,
-    .tree button:focus-visible {
-      outline: none;
-      border-color: var(--teal);
-      box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.12);
-    }
-
-    .node-inspector {
-      margin-top: 10px;
-      padding: 12px;
-      border-radius: var(--radius);
-      background: rgba(15, 118, 110, 0.08);
-      border: 1px solid rgba(15, 118, 110, 0.24);
-      color: var(--muted);
-      min-height: 72px;
-    }
-
-    .split {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-      gap: 12px;
-    }
-
-    details {
-      border: 1px solid var(--line);
-      border-radius: var(--radius);
-      background: #fffdf9;
-      padding: 0;
+      background: #fff;
       overflow: hidden;
     }
 
-    details + details {
+    .call button {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 44px 1fr auto;
+      gap: 10px;
+      align-items: center;
+      border: 0;
+      padding: 11px 12px;
+      background: transparent;
+      color: var(--ink);
+      text-align: left;
+    }
+
+    .call-index {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border-radius: 999px;
+      background: var(--soft-blue);
+      color: var(--blue);
+      font-weight: 850;
+      font-size: 0.82rem;
+    }
+
+    .call-title {
+      display: grid;
+      gap: 2px;
+    }
+
+    .call-title strong {
+      font-size: 0.9rem;
+    }
+
+    .call-title span {
+      color: var(--muted);
+      font-size: 0.77rem;
+    }
+
+    .call-meta {
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 750;
+    }
+
+    .call-detail {
+      display: none;
+      padding: 0 12px 12px 66px;
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.42;
+    }
+
+    .call.open .call-detail {
+      display: block;
+    }
+
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
       margin-top: 10px;
     }
 
-    summary {
-      cursor: pointer;
-      padding: 12px 13px;
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 5px 9px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--muted);
+      font-size: 0.76rem;
+      font-weight: 760;
+    }
+
+    .flow {
+      width: 100%;
+      min-height: 230px;
+    }
+
+    .flow text {
+      font-family: inherit;
+      fill: var(--ink);
+      font-size: 12px;
+      font-weight: 750;
+    }
+
+    .flow .small {
+      fill: var(--muted);
+      font-size: 10px;
+      font-weight: 650;
+    }
+
+    .bar-chart {
+      display: grid;
+      gap: 8px;
+    }
+
+    .bar-row {
+      display: grid;
+      grid-template-columns: 82px 1fr 52px;
+      gap: 8px;
+      align-items: center;
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+
+    .bar-track {
+      height: 10px;
+      border-radius: 999px;
+      background: #e8edf4;
+      overflow: hidden;
+    }
+
+    .bar-fill {
+      height: 100%;
+      border-radius: inherit;
+      background: var(--blue);
+    }
+
+    .switches {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .switch {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+      color: var(--muted);
+      min-height: 32px;
+      padding: 6px 10px;
+      font-size: 0.78rem;
       font-weight: 800;
-      list-style: none;
     }
 
-    summary::-webkit-details-marker {
-      display: none;
+    .switch.active {
+      color: #fff;
+      background: var(--violet);
+      border-color: var(--violet);
     }
 
-    details[open] summary {
-      border-bottom: 1px solid var(--line);
-      background: rgba(23, 21, 18, 0.04);
+    .data-row {
+      display: grid;
+      grid-template-columns: 120px 1fr;
+      gap: 10px;
+      padding: 8px 0;
+      border-top: 1px solid var(--line);
+      font-size: 0.83rem;
+    }
+
+    .data-row:first-child {
+      border-top: 0;
+      padding-top: 0;
+    }
+
+    .data-row b {
+      color: var(--ink);
+    }
+
+    .data-row span {
+      color: var(--muted);
+      line-height: 1.38;
+    }
+
+    .checklist {
+      display: grid;
+      gap: 8px;
+    }
+
+    .check {
+      display: grid;
+      grid-template-columns: 24px 1fr;
+      gap: 8px;
+      align-items: start;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: #fff;
+    }
+
+    .box {
+      width: 18px;
+      height: 18px;
+      border-radius: 5px;
+      display: grid;
+      place-items: center;
+      color: #fff;
+      background: var(--green);
+      font-size: 0.7rem;
+      font-weight: 900;
+    }
+
+    .check strong {
+      display: block;
+      margin-bottom: 2px;
+      font-size: 0.86rem;
+    }
+
+    .check span {
+      color: var(--muted);
+      font-size: 0.8rem;
+      line-height: 1.38;
+    }
+
+    .prompt-box {
+      display: grid;
+      gap: 10px;
     }
 
     pre {
       margin: 0;
-      padding: 12px;
+      max-height: 360px;
       overflow: auto;
-      white-space: pre-wrap;
-      word-break: break-word;
-      background: #181612;
-      color: #f7f1e8;
-      font: 0.78rem/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    }
-
-    code {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-      font-size: 0.92em;
-    }
-
-    .mini-table {
-      width: 100%;
-      border-collapse: collapse;
-      margin: 12px 0;
-      font-size: 0.86rem;
-    }
-
-    .mini-table th,
-    .mini-table td {
-      text-align: left;
-      vertical-align: top;
-      border-bottom: 1px solid var(--line);
-      padding: 9px 6px;
-    }
-
-    .mini-table th {
-      color: var(--muted);
-      font-size: 0.76rem;
-      text-transform: uppercase;
-    }
-
-    .callout {
+      border: 1px solid var(--line);
       border-radius: var(--radius);
-      padding: 13px;
-      border: 1px solid rgba(37, 99, 235, 0.22);
-      background: rgba(37, 99, 235, 0.07);
+      padding: 12px;
+      background: #111827;
+      color: #e7edf7;
+      font-size: 0.78rem;
+      line-height: 1.45;
+      white-space: pre-wrap;
     }
 
-    .callout.danger {
-      border-color: rgba(189, 45, 45, 0.26);
-      background: rgba(189, 45, 45, 0.06);
-    }
-
-    .callout.good {
-      border-color: rgba(17, 133, 90, 0.25);
-      background: rgba(17, 133, 90, 0.07);
-    }
-
-    .meter {
-      height: 10px;
+    .copy {
+      justify-self: start;
+      min-height: 34px;
+      padding: 7px 11px;
+      border: 1px solid var(--blue);
       border-radius: 999px;
-      overflow: hidden;
-      background: rgba(23, 21, 18, 0.1);
-      margin: 9px 0 4px;
-    }
-
-    .meter span {
-      display: block;
-      height: 100%;
-      border-radius: inherit;
-      background: linear-gradient(90deg, var(--red), var(--amber), var(--green));
+      background: var(--blue);
+      color: #fff;
+      font-size: 0.8rem;
+      font-weight: 800;
     }
 
     .footer-note {
-      margin: 18px 0 4px;
+      margin-top: 16px;
       color: var(--muted);
-      font-size: 0.82rem;
-      text-align: center;
+      font-size: 0.78rem;
+      line-height: 1.4;
     }
 
-    @media (max-width: 760px) {
-      .page {
+    [data-view] {
+      display: none;
+    }
+
+    [data-view].visible {
+      display: block;
+    }
+
+    @media (max-width: 680px) {
+      .stage {
         padding: 0;
       }
 
-      .portrait {
+      .report {
         width: 100%;
         min-height: 100vh;
         max-height: none;
-        aspect-ratio: auto;
         border-radius: 0;
+        border: 0;
+      }
+
+      .masthead {
+        grid-template-columns: 1fr;
+      }
+
+      .stamp {
+        justify-items: start;
+      }
+
+      .tagline {
+        text-align: left;
       }
 
       .grid.two,
-      .split,
-      .verdict,
-      .flow-row {
+      .grid.three {
+        grid-template-columns: 1fr;
+      }
+
+      .event {
         grid-template-columns: 1fr;
       }
     }
   </style>
 </head>
 <body>
-  <main class="page">
-    <article class="portrait" aria-label="endgame-ai living operator report">
+  <main class="stage">
+    <article class="report" aria-label="endgame-ai milestone report">
       <header class="topbar">
-        <div class="title-row">
+        <div class="masthead">
           <div>
-            <h1>endgame-ai living operator report</h1>
-            <p class="subtitle">Mental simulation only. No organism run, no model call. Static code and README inspection from branch <code>unified-archBRAINZ</code>.</p>
+            <p class="eyebrow">posted-on-x-milestone</p>
+            <h1>endgame-ai is alive on desktop</h1>
+            <p class="subtitle">A clean-room milestone report for the run where the organism used Grok/xAI, controlled Windows, posted on X, verified success, and halted satisfied.</p>
           </div>
-          <div class="status-pill">Not complete</div>
+          <div class="stamp">
+            <span class="badge"><span class="dot"></span> Proven run</span>
+            <span class="tagline">July 2, 2026<br>main branch<br>tag: posted-on-x-milestone</span>
+          </div>
         </div>
-        <nav class="tabs" aria-label="Report sections">
-          <button class="tab" data-tab="truth" aria-selected="true">Truth</button>
-          <button class="tab" data-tab="simulation">Simulation</button>
-          <button class="tab" data-tab="branches">Branches</button>
-          <button class="tab" data-tab="observation">Observation</button>
-          <button class="tab" data-tab="prompts">Prompts</button>
-          <button class="tab" data-tab="build">Next build</button>
+        <nav class="nav" aria-label="Report sections">
+          <button class="tab" type="button" data-tab="proof" aria-selected="true">Proof</button>
+          <button class="tab" type="button" data-tab="calls" aria-selected="false">Model Calls</button>
+          <button class="tab" type="button" data-tab="flow" aria-selected="false">Flow</button>
+          <button class="tab" type="button" data-tab="scan" aria-selected="false">Scan Issue</button>
+          <button class="tab" type="button" data-tab="handover" aria-selected="false">Next Session</button>
         </nav>
       </header>
 
       <div class="content">
-        <section id="truth" class="active">
-          <p class="lede">The vision is real as an engineering direction, but the system is not yet a reliable autonomous replacement for a human operator. It is currently a local Windows organism scaffold with a real perception-action loop, a real Grok brain transport, real structured JSON contracts, and a real git-native self-evolution branch workflow.</p>
-
-          <div class="verdict">
-            <div class="dial">57%</div>
-            <div>
-              <span class="label">Readiness estimate</span>
-              <p><strong>Ready for bounded experiments, not ready for unsupervised self-growth.</strong> The branch/patch/commit mechanism is meaningful. The screen observation layer and self-modification review loop are still too thin for a pure "give it a goal and it grows itself" claim.</p>
+        <section class="panel active" id="proof">
+          <div class="grid">
+            <div class="card green">
+              <div class="section-title">
+                <h2>Milestone Claim</h2>
+                <span class="pill">verified</span>
+              </div>
+              <p class="lead">endgame-ai completed a public external desktop task end to end. It opened X, composed a post about itself, published it through the logged-in account, verified the result from fresh screen evidence, and halted satisfied.</p>
+              <div class="quote">endgame-ai is a local living desktop organism that observes the fresh screen, controls the computer, reasons, acts, verifies, reflects, self-modifies, commits, and pushes.</div>
             </div>
-          </div>
 
-          <div class="grid two">
+            <div class="grid three">
+              <div class="card">
+                <div class="metric"><strong>10</strong><span>ticks to halt</span></div>
+              </div>
+              <div class="card">
+                <div class="metric"><strong>5</strong><span>Grok responses</span></div>
+              </div>
+              <div class="card">
+                <div class="metric"><strong>2</strong><span>macro steps</span></div>
+              </div>
+            </div>
+
+            <div class="grid two">
+              <div class="card blue">
+                <h3>Authoritative Evidence</h3>
+                <div class="data-row"><b>State</b><span><code>_phase=halted</code>, <code>satisfied=true</code>, focused title <code>Home / X - Google Chrome</code>.</span></div>
+                <div class="data-row"><b>Runtime</b><span><code>comms/runtime.ndjson</code> recorded plan, execute, verify, plan complete, and halt.</span></div>
+                <div class="data-row"><b>Raw log</b><span><code>20260702T185915.txt</code> contained five Grok/xAI responses.</span></div>
+                <div class="data-row"><b>Human</b><span>The user observed the X post published live.</span></div>
+              </div>
+              <div class="card violet">
+                <h3>Repository Markers</h3>
+                <div class="pill-row">
+                  <span class="pill">main</span>
+                  <span class="pill">3590db6 milestone docs</span>
+                  <span class="pill">posted-on-x-milestone</span>
+                  <span class="pill">grok_api_ready</span>
+                  <span class="pill">runtime data ignored</span>
+                </div>
+                <p class="footer-note">This report stores summarized evidence only. Raw logs, observations, state, pid files, and caches are local runtime artifacts and are not committed.</p>
+              </div>
+            </div>
+
             <div class="card">
-              <strong class="ok">What is already real</strong>
-              <ul>
-                <li>Topology loop: planner, scheduler, observe, execute, verify, reflect, self_modify, satisfied, error.</li>
-                <li>Windows observation through UI Automation point probing and Win32 window tokens.</li>
-                <li>Desktop actions through Python: click, type, hotkey, scroll, focus window, open URL.</li>
-                <li>xAI/Grok selected as the current transport with JSON Schema structured output.</li>
-                <li>Git-native self-evolution creates <code>self-evolve/...</code> branches, applies validated patches locally, commits, and pushes there.</li>
-              </ul>
+              <h3>Live Timeline</h3>
+              <div class="timeline">
+                <div class="event"><span class="event-time">18:59:07</span><span class="event-body"><b>organism_start</b><span>Goal: post on X about endgame-ai itself.</span></span></div>
+                <div class="event"><span class="event-time">18:59:19</span><span class="event-body"><b>planner</b><span>Grok chose two macro steps: reach X compose, then publish the post.</span></span></div>
+                <div class="event"><span class="event-time">18:59:44</span><span class="event-body"><b>execute step 1</b><span>Clicked pinned Chrome and opened <code>https://x.com/compose/post</code>.</span></span></div>
+                <div class="event"><span class="event-time">18:59:55</span><span class="event-body"><b>verify step 1</b><span>Fresh scan saw X compose UI and focused Post text field.</span></span></div>
+                <div class="event"><span class="event-time">19:00:21</span><span class="event-body"><b>execute step 2</b><span>Typed the post text and sent Ctrl+Enter.</span></span></div>
+                <div class="event"><span class="event-time">19:00:33</span><span class="event-body"><b>halted</b><span>Verification passed, scheduler completed the plan, satisfied halted.</span></span></div>
+              </div>
             </div>
-            <div class="card">
-              <strong class="bad">What is missing</strong>
-              <ul>
-                <li>The "hover scan" is coordinate probing with <code>ElementFromPoint</code>, not necessarily real mouse movement and hover-state discovery.</li>
-                <li>The observation is mostly flat: <code>elements</code> is a dictionary, <code>root_elements=[]</code>, and <code>W0.children=[]</code>.</li>
-                <li>Direct <code>--start-node self_modify</code> has no fresh observation unless state already contains one.</li>
-                <li>Grok gets manifest plus GitHub URL, not an explicit iterative full-file request protocol.</li>
-                <li>There is no auto-merge, no persistent showroom branch, and no automated branch cleanup.</li>
-              </ul>
-            </div>
-          </div>
-
-          <div class="callout">
-            <p><strong>Direct answer to the key question:</strong> You can run a goal saying the organism must improve the screen observation system, but I would not expect reliable end-to-end self-repair from that single goal today. The safer current path is to start from a clean human/Codex branch, run direct <code>self_modify</code> with an explicit architecture request, inspect the created <code>self-evolve/...</code> branch, and then merge or cherry-pick only after review.</p>
-          </div>
-
-          <table class="mini-table">
-            <thead>
-              <tr><th>Claim</th><th>Reality</th></tr>
-            </thead>
-            <tbody>
-              <tr><td>Can it observe?</td><td>Yes, but the representation is not yet rich enough for reliable desktop navigation across difficult apps.</td></tr>
-              <tr><td>Can it act?</td><td>Yes. It can execute Python desktop actions. That is powerful and also needs stronger safety boundaries.</td></tr>
-              <tr><td>Can it self-modify?</td><td>Partly. The git branch and patch applier exist. The model still needs better code access and better validation loops.</td></tr>
-              <tr><td>Can it replace a human operator?</td><td>Not yet. It needs observation v2, safer execution policy, patch review cycles, and a branch promotion policy.</td></tr>
-              <tr><td>Is this sci-fi?</td><td>No. The current code already implements real pieces. The hard part is reliability, not imagination.</td></tr>
-            </tbody>
-          </table>
-        </section>
-
-        <section id="simulation">
-          <p class="lede">Mental simulation of the requested goal: "become a living operator; the screen observation is broken; mouse hover scan must be the single scan method; Python must filter, not truncate; keep a hierarchical desktop representation with screen as root."</p>
-
-          <div class="flow" id="simFlow">
-            <div class="flow-row">
-              <button class="flow-step active" data-step="0"><b>1. Start</b><span>Human runs a goal</span></button>
-              <div class="step-detail" id="stepDetail">The organism starts on the current branch. If this is a normal run, it begins at <code>planner</code>. If the user starts <code>--start-node self_modify</code>, it jumps directly into branch creation and Grok patch request.</div>
-            </div>
-            <div class="flow-row">
-              <button class="flow-step" data-step="1"><b>2. Plan</b><span>Grok creates intent</span></button>
-              <div class="flow-step"><b>Risk</b><span>The planner may create desktop-action steps rather than code-evolution steps unless the goal is explicit.</span></div>
-            </div>
-            <div class="flow-row">
-              <button class="flow-step" data-step="2"><b>3. Observe</b><span>Point probe scan</span></button>
-              <div class="flow-step"><b>Current output</b><span><code>screen</code>, <code>windows</code>, flat actionable <code>elements</code>, <code>screen_text</code>, <code>snapshot</code>, focused title.</span></div>
-            </div>
-            <div class="flow-row">
-              <button class="flow-step" data-step="3"><b>4. Execute</b><span>Python action code</span></button>
-              <div class="flow-step"><b>Risk</b><span>The execute namespace is broad enough to inspect or write files. That should be restricted so code mutation happens only through <code>self_modify</code>.</span></div>
-            </div>
-            <div class="flow-row">
-              <button class="flow-step" data-step="4"><b>5. Reflect</b><span>Escalate on failure</span></button>
-              <div class="flow-step"><b>Likely path</b><span>If observation fails, reflect can choose <code>escalate</code>, which routes to <code>self_modify</code>.</span></div>
-            </div>
-            <div class="flow-row">
-              <button class="flow-step" data-step="5"><b>6. Evolve</b><span>Create branch</span></button>
-              <div class="flow-step"><b>Real mechanism</b><span>Clean worktree required. Python creates and may push <code>self-evolve/YYYYMMDDTHHMMSS-sha</code>.</span></div>
-            </div>
-            <div class="flow-row">
-              <button class="flow-step" data-step="6"><b>7. Patch</b><span>Grok proposes</span></button>
-              <div class="flow-step"><b>Current contract</b><span>Grok returns <code>git_evolution_patch</code>. Local Python applies, validates, rolls back on failure, commits and pushes on the self branch.</span></div>
-            </div>
-          </div>
-
-          <div class="grid two">
-            <div class="card">
-              <strong>Best realistic outcome today</strong>
-              <p>Grok reads the public GitHub branch, understands <code>desktop.py</code>, returns a patch that builds hierarchical observation, and local Python commits it on a self-evolve branch. A human or Codex then reviews and merges.</p>
-            </div>
-            <div class="card">
-              <strong>Likely failure modes today</strong>
-              <p>Grok may return an empty patch, may not fetch enough code from GitHub, may rewrite full files too aggressively, or may pass compile validation while still failing real desktop behavior.</p>
-            </div>
-          </div>
-
-          <div class="callout danger">
-            <p><strong>Important critique:</strong> a plain goal is not the same as a reliable internal build order. Today the system is strongest when the goal is precise and starts at <code>self_modify</code>. The normal planner path can wander because it is designed for desktop tasks, not guaranteed architecture repair.</p>
           </div>
         </section>
 
-        <section id="branches">
-          <p class="lede">The branch model is close to what you described, but it does not yet include a persistent autonomous showroom branch. Current self-evolution branches are per-attempt branches.</p>
-
-          <div class="branch-map" aria-label="Branch workflow">
-            <div class="branch-node main">
-              <span class="label">main</span>
-              <p><strong>Human protected stable branch.</strong> The organism should not commit here. Promotion into main should be deliberate.</p>
-            </div>
-            <div class="branch-node dev">
-              <span class="label">unified-archBRAINZ</span>
-              <p><strong>Human plus Codex development branch.</strong> This is where guided engineering work happens. Self-modify starts from here only when the worktree is clean.</p>
-            </div>
-            <div class="branch-node self">
-              <span class="label">self-evolve/YYYYMMDDTHHMMSS-sha</span>
-              <p><strong>Automatic organism branch.</strong> Python creates it, pushes it for model context, applies Grok's patch, validates, commits, and pushes back to this same branch.</p>
-            </div>
-            <div class="branch-node review">
-              <span class="label">human review</span>
-              <p><strong>No auto-merge today.</strong> Human/Codex must review, merge, cherry-pick, or delete branches. This is correct for safety until the loop proves itself.</p>
-            </div>
-          </div>
-
-          <div class="split">
-            <div class="card">
-              <strong>Current answer</strong>
-              <ul>
-                <li>Grok does not work on <code>main</code>.</li>
-                <li>Grok does not directly commit to <code>unified-archBRAINZ</code> during <code>self_modify</code>.</li>
-                <li>Local Python commits and pushes only on <code>self-evolve/...</code>.</li>
-                <li>No branch is auto-merged.</li>
-                <li>Old local self branches may accumulate until cleaned manually.</li>
-              </ul>
-            </div>
-            <div class="card">
-              <strong>Showroom branch proposal</strong>
-              <p>Add a persistent branch such as <code>organism/showroom</code> or <code>self-demo</code>. Successful self-evolve branches would open a PR or fast-forward that branch only after validation and optional human approval. It should still not push directly to <code>main</code>.</p>
-            </div>
-          </div>
-
-          <pre>{
-  "branch_policy": {
-    "main": "human controlled stable branch",
-    "unified-archBRAINZ": "human/Codex engineering branch",
-    "self-evolve/*": "automatic organism attempt branches",
-    "self-demo": "recommended future public showroom branch",
-    "merge_policy": "manual today; gated promotion later"
-  }
-}</pre>
-        </section>
-
-        <section id="observation">
-          <p class="lede">The current observation layer has the right instinct: use point-based UIA probing instead of a heavy tree walker. But it is not yet the hierarchical, filter-not-truncate desktop world model you want.</p>
-
-          <div class="tree">
-            <strong>Target observation v2 shape</strong>
-            <ul>
-              <li>
-                <button data-node="screen">W0 Screen root</button>
-                <ul>
-                  <li>
-                    <button data-node="window">W1 Focused top window</button>
-                    <ul>
-                      <li><button data-node="region">Region clusters</button></li>
-                      <li><button data-node="element">Actionable controls</button></li>
-                      <li><button data-node="text">Nearby labels and text</button></li>
-                    </ul>
-                  </li>
-                  <li><button data-node="taskbar">Taskbar and shell windows</button></li>
-                  <li><button data-node="other">Other visible windows</button></li>
-                </ul>
-              </li>
-            </ul>
-            <div class="node-inspector" id="nodeInspector">Select a node to inspect what the organism should store.</div>
-          </div>
-
-          <table class="mini-table">
-            <thead>
-              <tr><th>Layer</th><th>Current code</th><th>Required change</th></tr>
-            </thead>
-            <tbody>
-              <tr><td>Scan method</td><td><code>ElementFromPoint</code> grid probe named <code>hover_scan</code>.</td><td>Define whether "hover" means actual cursor movement. If yes, add controlled cursor move, wait, probe, restore pointer. If no, rename to point scan and document it.</td></tr>
-              <tr><td>Filter</td><td>Drops non-interactive controls and disabled/offscreen controls.</td><td>Keep raw local scan artifact. Filter the prompt view, but preserve useful labels, text, containers, and parent/child evidence.</td></tr>
-              <tr><td>Hierarchy</td><td><code>windows</code> list has W0 and top-level windows. <code>elements</code> is flat. <code>root_elements=[]</code>.</td><td>Build <code>desktop_tree</code>: W0 screen root, top-level windows, child regions/elements assigned by hwnd and rectangle containment.</td></tr>
-              <tr><td>Navigation</td><td>Execute uses <code>elements[id].px/py/hwnd</code>.</td><td>Give every node a stable id and action candidates, so Grok can navigate by tree path, not just flat coordinates.</td></tr>
-              <tr><td>Self-modify evidence</td><td>Direct self_modify has no fresh observation unless state already contains one.</td><td>For observation goals, self_modify should either run observe first or include the latest observation artifact path explicitly.</td></tr>
-            </tbody>
-          </table>
-
-          <div class="grid two">
-            <div class="card">
-              <strong>Filtering is acceptable</strong>
-              <p>Filtering is not truncation when the full raw evidence is preserved locally and the model gets a deliberate, semantically useful view. The brain does not need every duplicate point hit; it needs a stable tree plus enough raw artifact access to audit mistakes.</p>
-            </div>
-            <div class="card">
-              <strong>Truncation is not acceptable</strong>
-              <p>Discarding tail/head file contents or runtime text because of prompt limits is not acceptable for self-evolution. The current self-modify path fixed this by using a manifest and GitHub branch, but observation still needs raw artifact preservation.</p>
-            </div>
-          </div>
-
-          <div class="callout good">
-            <p><strong>Recommended observation v2:</strong> keep <code>ElementFromPoint</code> as the core primitive, add optional real cursor-hover mode, collect dense active-window samples, cluster by runtime id and rectangle, assign elements to containing windows, preserve non-actionable labels, store full raw scan to an evidence file, and send Grok the filtered hierarchy plus artifact path.</p>
-          </div>
-        </section>
-
-        <section id="prompts">
-          <p class="lede">These are the active prompt strings from <code>wiring.json</code>. They explain why the organism behaves as it does: short prompts plus strict JSON records.</p>
-
-          <details open>
-            <summary>Planner prompt</summary>
-            <pre>Plan the goal as JSON only: record_type='plan'; data.next_signal='step_ready' or 'reflect'; data.intent=list of {description, done_when}. Keep steps few, observable, and executable.</pre>
-          </details>
-
-          <details>
-            <summary>Scheduler prompt</summary>
-            <pre>Pick state.plan.intent[state.step]. Return JSON only: record_type='schedule'; data.next_signal='step_ready' or 'plan_complete'; data.step=step or null.</pre>
-          </details>
-
-          <details>
-            <summary>Execute prompt</summary>
-            <pre>Write Python for the current desktop step. Return JSON only: record_type='execution'; data.conclusion='EXECUTE' or 'CANNOT'; data.code=Python string. Exec namespace includes state,wiring,goal,last,screen,elements,windows,screen_text,focused_title, observe_screen(), last_observation_snapshot(), get_focused_title(), click,type_text,press_key,hotkey,scroll,focus_window,open_url, standard modules, wiring_limit(name, default, wiring), repo_root, python_executable. Prefer existing observation fields. Use elements[id].px/py/hwnd for targeting. If last.error exists, adapt instead of repeating.</pre>
-          </details>
-
-          <details>
-            <summary>Verify prompt</summary>
-            <pre>Judge the step from provided evidence. Return JSON only: record_type='verification'; data.next_signal='step_confirmed' or 'step_denied'; data.success boolean; data.reasoning concise evidence.</pre>
-          </details>
-
-          <details>
-            <summary>Reflect prompt</summary>
-            <pre>Diagnose failure and choose recovery. Return JSON only: record_type='reflection'; data.next_signal='retry','replan','escalate',or 'give_up'; data.lesson=specific next change; data.diagnosis=root cause.</pre>
-          </details>
-
-          <details>
-            <summary>Self-modify prompt</summary>
-            <pre>Propose minimal git-native self-evolution from provided wiring, git_context, workspace_manifest, runtime evidence paths, and failure evidence. Return JSON only: record_type='git_evolution_patch'; data.summary string; data.rationale string; data.file_writes=list of {path:'repo-relative path',content:'complete file text'}; data.file_deletes=list of repo-relative paths; data.wiring_patches=list of {op:'set'|'delete',path,value}; data.commands=optional validation commands; data.expected_validation string or object. Target organism_nodes/ for node changes and brain_transports/ for transport changes. Do not push or assume direct repository authority; the local organism applies, validates, commits, and may publish the branch.</pre>
-          </details>
-
-          <details>
-            <summary>Satisfied prompt</summary>
-            <pre>Goal achieved. Return record_type='satisfied', data.next_signal='halt'.</pre>
-          </details>
-
-          <div class="split">
-            <div class="card">
-              <strong>Prompt alignment problem</strong>
-              <p>The execute prompt says "desktop step" but gives modules and repository paths. That means a model could modify files during normal execute. Proper architecture should state that repository writes are forbidden outside <code>self_modify</code>.</p>
-            </div>
-            <div class="card">
-              <strong>Contract strength</strong>
-              <p>The JSON Schema layer is real and useful. The next improvement is stricter nested schemas, diff-based patches, and a dedicated observation-upgrade record type or self-modify submode.</p>
-            </div>
-          </div>
-
-          <pre>{
-  "record_type": "git_evolution_patch",
-  "data": {
-    "summary": "short human summary",
-    "rationale": "evidence-backed reason",
-    "file_writes": [{"path": "repo-relative path", "content": "complete file text"}],
-    "file_deletes": [],
-    "wiring_patches": [{"op": "set", "path": "observe_config.hover_scan.step_px", "value": 18}],
-    "commands": [{"command": "python -m compileall -q ."}],
-    "expected_validation": "compile passes and observation tree shape exists"
-  }
-}</pre>
-        </section>
-
-        <section id="build">
-          <p class="lede">The next build should make observation and self-evolution boringly reliable. This is the concrete architecture I would implement before calling the organism self-growing.</p>
-
+        <section class="panel" id="calls">
           <div class="grid">
             <div class="card">
-              <strong>1. Observation v2 data model</strong>
-              <p>Create a <code>desktop_tree</code> with <code>W0</code> as root. Every node should have id, parent_id, children, rect, hwnd, role, name, text, enabled, focused, confidence, source, action candidates, sample points, and reason it was kept.</p>
-              <div class="meter"><span style="width: 18%"></span></div>
-              <small>Current implementation is only partial.</small>
+              <div class="section-title">
+                <h2>Grok Response Data</h2>
+                <span class="pill">from raw log summary</span>
+              </div>
+              <p>The model did not report hidden faults or ask for architectural changes during this run. Its useful contribution was operational: minimal macro planning, id-based desktop actions, compose-field targeting, Ctrl+Enter posting, and fresh-scan verification.</p>
             </div>
 
-            <div class="card">
-              <strong>2. Real hover policy</strong>
-              <p>Decide the exact primitive. If "mouse hover" means actual pointer movement, add a scan mode that moves the cursor, waits, probes, captures tooltip/hover changes, and restores position. If non-intrusive point probing is preferred, document it as the single scan method and stop calling it mouse hover.</p>
-            </div>
+            <div class="call-list" id="callList"></div>
 
             <div class="card">
-              <strong>3. Filter without losing auditability</strong>
-              <p>Write full raw observation artifacts locally. Send the model a filtered hierarchy, not a truncated dump. Include artifact paths and hashes so failures can be audited. Filtering should remove duplicates and noise, not evidence classes.</p>
-            </div>
-
-            <div class="card">
-              <strong>4. Route code changes only through self_modify</strong>
-              <p>Restrict normal execute so it cannot write repository files. Add an explicit "architecture problem" route from reflect to self_modify. That makes the living organism safer and easier to reason about.</p>
-            </div>
-
-            <div class="card">
-              <strong>5. Add iterative file access</strong>
-              <p>Add a <code>file_request</code> or patch-review step. The manifest plus GitHub URL is good, but the organism should have a deterministic way for Grok to request full local files before writing patches.</p>
-            </div>
-
-            <div class="card">
-              <strong>6. Replace full file writes for large changes</strong>
-              <p>Keep full file writes for tiny files, but use unified diffs or structured patches for larger files. Validate before and after applying. Store rejected patches as evidence.</p>
-            </div>
-
-            <div class="card">
-              <strong>7. Build a showroom branch</strong>
-              <p>Add an optional <code>self-demo</code> branch. Successful self-evolve commits can open a PR or update that branch after validation. Keep <code>main</code> human-controlled until the safety case is proven.</p>
-            </div>
-
-            <div class="card">
-              <strong>8. Behavioral validation</strong>
-              <p>Compile is not enough. Add dry-run observation checks that assert <code>desktop_tree.root.id == "W0"</code>, windows are children of W0, elements attach to windows, and no observation payload is silently truncated.</p>
+              <h3>Token Cache Shape</h3>
+              <div class="bar-chart" id="tokenChart"></div>
+              <p class="footer-note">Later requests reused about 32k to 42k cached input tokens. The first request remains costly because the stable prefix includes real checked-out source and README.</p>
             </div>
           </div>
+        </section>
 
-          <div class="callout">
-            <p><strong>Final honest answer:</strong> yes, this is a plausible path to a living desktop operator. No, it is not complete today. The current system can self-evolve in controlled git branches, but it still needs a stronger world model, stricter mutation boundaries, deterministic code access, and promotion rules before a human should trust it to grow without close review.</p>
+        <section class="panel" id="flow">
+          <div class="grid">
+            <div class="card blue">
+              <h2>Living Organism Flow</h2>
+              <svg class="flow" viewBox="0 0 680 260" role="img" aria-label="endgame-ai living loop">
+                <defs>
+                  <marker id="arrow" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto">
+                    <path d="M0,0 L0,6 L8,3 z" fill="#5e6675"></path>
+                  </marker>
+                </defs>
+                <g stroke="#5e6675" stroke-width="2" marker-end="url(#arrow)" fill="none">
+                  <path d="M105 62 H220"></path>
+                  <path d="M300 62 H415"></path>
+                  <path d="M495 62 H595"></path>
+                  <path d="M595 94 V166 H495"></path>
+                  <path d="M415 180 H300"></path>
+                  <path d="M220 180 H105"></path>
+                  <path d="M105 146 V94"></path>
+                </g>
+                <g>
+                  <rect x="20" y="36" width="85" height="58" rx="8" fill="#fff3d8" stroke="#b26a00"></rect>
+                  <text x="62" y="61" text-anchor="middle">goal</text>
+                  <text x="62" y="78" text-anchor="middle" class="small">human leaves</text>
+
+                  <rect x="220" y="36" width="80" height="58" rx="8" fill="#e6edff" stroke="#2458d8"></rect>
+                  <text x="260" y="61" text-anchor="middle">plan</text>
+                  <text x="260" y="78" text-anchor="middle" class="small">macro steps</text>
+
+                  <rect x="415" y="36" width="80" height="58" rx="8" fill="#e5f5ed" stroke="#11855a"></rect>
+                  <text x="455" y="61" text-anchor="middle">scan</text>
+                  <text x="455" y="78" text-anchor="middle" class="small">fresh truth</text>
+
+                  <rect x="595" y="36" width="65" height="58" rx="8" fill="#fff" stroke="#d8dee8"></rect>
+                  <text x="628" y="61" text-anchor="middle">act</text>
+                  <text x="628" y="78" text-anchor="middle" class="small">Python</text>
+
+                  <rect x="415" y="152" width="80" height="58" rx="8" fill="#e6edff" stroke="#2458d8"></rect>
+                  <text x="455" y="177" text-anchor="middle">verify</text>
+                  <text x="455" y="194" text-anchor="middle" class="small">fresh scan</text>
+
+                  <rect x="220" y="152" width="80" height="58" rx="8" fill="#eee7ff" stroke="#674ea7"></rect>
+                  <text x="260" y="177" text-anchor="middle">reflect</text>
+                  <text x="260" y="194" text-anchor="middle" class="small">or evolve</text>
+
+                  <rect x="20" y="152" width="85" height="58" rx="8" fill="#f4cccc" stroke="#b42335"></rect>
+                  <text x="62" y="177" text-anchor="middle">commit</text>
+                  <text x="62" y="194" text-anchor="middle" class="small">push history</text>
+                </g>
+              </svg>
+            </div>
+
+            <div class="grid two">
+              <div class="card green">
+                <h3>Unified Authority</h3>
+                <p>The same body performs normal action and self-evolution: mouse, keyboard, browser, files, Python, subprocess, apps, installers, and git. Prompt intent decides whether the body works on the external task or the organism itself.</p>
+              </div>
+              <div class="card amber">
+                <h3>Stable Prefix</h3>
+                <p>Each brain request starts with real checked-out source and organism rules. Dynamic state and fresh observation are appended at the end so provider caching can reuse the static prefix.</p>
+              </div>
+            </div>
+
+            <div class="card">
+              <h3>Data Surfaces</h3>
+              <div class="switches" role="group" aria-label="Data surface filters">
+                <button class="switch active" type="button" data-surface="brain">Brain View</button>
+                <button class="switch" type="button" data-surface="body">Body View</button>
+                <button class="switch" type="button" data-surface="git">Git View</button>
+              </div>
+              <div data-view="brain" class="visible">
+                <div class="data-row"><b>Receives</b><span>fresh_observation, semantic desktop_tree, screen_text, observation_delta, goal, step, recent result/error.</span></div>
+                <div class="data-row"><b>Avoids</b><span>coordinates, hwnds, runtime ids, raw UIA metadata, and full raw artifacts.</span></div>
+              </div>
+              <div data-view="body">
+                <div class="data-row"><b>Receives</b><span>action_index, raw observation artifacts, node ids, coordinates, hwnds, and the Python code returned by execute.</span></div>
+                <div class="data-row"><b>Acts</b><span>click_node(id), scroll_node(id), focus_window('Wn'), type_text, press_key, hotkey, subprocess, files, browser, git.</span></div>
+              </div>
+              <div data-view="git">
+                <div class="data-row"><b>Branch</b><span>The organism works on the checked-out branch, normally main.</span></div>
+                <div class="data-row"><b>History</b><span>Self-modification is applied locally, validated, committed, and pushed. GitHub history is the audit trail.</span></div>
+              </div>
+            </div>
           </div>
+        </section>
 
-          <p class="footer-note">Report generated from static project inspection. No organism run, no live model call.</p>
+        <section class="panel" id="scan">
+          <div class="grid">
+            <div class="card red">
+              <div class="section-title">
+                <h2>The Remaining Fault</h2>
+                <span class="pill">speed issue</span>
+              </div>
+              <p class="lead">The run succeeded, but it scanned too many times. A two-step goal produced seven observation artifacts because the explicit observe node scanned and then brain.think scanned again for execute and verify.</p>
+            </div>
+
+            <div class="card">
+              <h3>Seven Scans In One Successful Run</h3>
+              <div class="timeline">
+                <div class="event"><span class="event-time">1</span><span class="event-body"><b>planner brain scan</b><span>fresh_observation before planning.</span></span></div>
+                <div class="event"><span class="event-time">2</span><span class="event-body"><b>observe node scan</b><span>state sync before step 1 execute.</span></span></div>
+                <div class="event"><span class="event-time">3</span><span class="event-body"><b>execute brain scan</b><span>fresh_observation before writing step 1 code.</span></span></div>
+                <div class="event"><span class="event-time">4</span><span class="event-body"><b>verify brain scan</b><span>fresh_observation after step 1.</span></span></div>
+                <div class="event"><span class="event-time">5</span><span class="event-body"><b>observe node scan</b><span>state sync before step 2 execute.</span></span></div>
+                <div class="event"><span class="event-time">6</span><span class="event-body"><b>execute brain scan</b><span>fresh_observation before writing step 2 code.</span></span></div>
+                <div class="event"><span class="event-time">7</span><span class="event-body"><b>verify brain scan</b><span>fresh_observation after posting.</span></span></div>
+              </div>
+            </div>
+
+            <div class="grid two">
+              <div class="card blue">
+                <h3>What Must Stay</h3>
+                <div class="checklist">
+                  <div class="check"><span class="box">1</span><span><strong>Fresh truth</strong><span>Every desktop-dependent model decision must use current screen state.</span></span></div>
+                  <div class="check"><span class="box">2</span><span><strong>Raw audit</strong><span>Full observation artifacts stay local for forensic analysis.</span></span></div>
+                  <div class="check"><span class="box">3</span><span><strong>Body precision</strong><span>Coordinates remain body-side and tied to the scan that informed the model.</span></span></div>
+                </div>
+              </div>
+              <div class="card green">
+                <h3>What Should Change</h3>
+                <div class="checklist">
+                  <div class="check"><span class="box">1</span><span><strong>Single owner</strong><span>Make brain.think or a dedicated observation service own scan freshness.</span></span></div>
+                  <div class="check"><span class="box">2</span><span><strong>No duplicate node scan</strong><span>Remove observe from the hot path or make it a cheap state sync.</span></span></div>
+                  <div class="check"><span class="box">3</span><span><strong>No app shortcuts</strong><span>Fix topology and data flow, not X-specific behavior.</span></span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" id="handover">
+          <div class="grid">
+            <div class="card violet">
+              <div class="section-title">
+                <h2>Next Session Goal</h2>
+                <span class="pill">clean start</span>
+              </div>
+              <p>Start from a clean workspace and treat the posted-on-X milestone as proven reality. The next work is not to prove the vision. The next work is to make the organism faster, simpler, and capable of proving self-modification without human edits.</p>
+            </div>
+
+            <div class="grid two">
+              <div class="card">
+                <h3>Known Work</h3>
+                <div class="checklist">
+                  <div class="check"><span class="box">1</span><span><strong>Collapse duplicate scans</strong><span>Preserve fresh truth while removing adjacent scan waste.</span></span></div>
+                  <div class="check"><span class="box">2</span><span><strong>Prove self-modification</strong><span>Run a real source-reading patch that validates, commits, and pushes.</span></span></div>
+                  <div class="check"><span class="box">3</span><span><strong>Profile stable prefix</strong><span>Keep full source for evolution, but make ordinary action calls lighter.</span></span></div>
+                </div>
+              </div>
+              <div class="card">
+                <h3>Unknown Work</h3>
+                <div class="checklist">
+                  <div class="check"><span class="box">1</span><span><strong>Live run failures</strong><span>Only real desktop runs reveal the next bottleneck.</span></span></div>
+                  <div class="check"><span class="box">2</span><span><strong>Hard UI surfaces</strong><span>Menus, installers, dialogs, hidden UI, and hostile web apps need evidence.</span></span></div>
+                  <div class="check"><span class="box">3</span><span><strong>Topology evolution</strong><span>The seed organs are allowed to collapse or change when evidence supports it.</span></span></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <h3>Handover Prompt</h3>
+              <div class="prompt-box">
+                <button class="copy" type="button" id="copyPrompt">Copy prompt</button>
+                <pre id="handoverPrompt">You are Codex GPT-5.5 high reasoning, principal architect for endgame-ai.
+
+Read README.md, wiring.json, organism.py, brain.py, desktop.py, nodes.py, organism_nodes/, brain_transports/, and reports/endgame-ai-living-operator-report.html before changing code.
+
+The posted-on-X milestone is proven. On July 2, 2026 endgame-ai used Grok/xAI to control Windows, open X, publish a real post about itself, verify success, and halt satisfied. The tag posted-on-x-milestone marks that state.
+
+Work on main. The intended organism model is direct checked-out-branch operation: run, improve if needed, commit, push, continue. Do not reintroduce self-evolve branch rituals, seed/live directories, app-specific shortcuts, or compatibility bloat.
+
+The body has unified authority: mouse, keyboard, browser, files, Python, subprocess, apps, installers, and git. Normal action and self-modification use the same capability runtime; prompts and topology decide intent.
+
+Fresh screen truth is mandatory. The known performance fault is duplicate adjacent scans. Fix scan ownership architecturally while preserving fresh_observation for desktop-dependent brain decisions.
+
+The brain-facing desktop view must remain semantic and id-based. Coordinates, hwnds, runtime ids, and raw UIA/Win32 metadata stay body-side in action_index and raw artifacts. Never solve context pressure with lossy truncation.
+
+The workspace should be clean. Runtime data, state, comms, raw logs, pid files, request logs, NotebookLM exports, caches, and secrets are ignored by the source allowlist .gitignore and must not be committed. Use python export_workspace_text.py when a single .txt bundle is needed for NotebookLM.
+
+Prioritize reduction and evidence. Collapse duplicated logic, align prompts with runtime contracts, keep ROD configurable and off by default, and prove self-modification with a real source-reading run only after the scan architecture is clean.</pre>
+              </div>
+            </div>
+
+            <div class="card green">
+              <h3>Clean Workspace Contract</h3>
+              <div class="pill-row">
+                <span class="pill">source allowlist</span>
+                <span class="pill">no raw logs</span>
+                <span class="pill">no state snapshots</span>
+                <span class="pill">no observation artifacts</span>
+                <span class="pill">no API keys</span>
+                <span class="pill">no local caches</span>
+                <span class="pill">NotebookLM exporter</span>
+              </div>
+              <p class="footer-note">Run <code>python export_workspace_text.py</code> when a single text bundle is needed for NotebookLM. Bundles are written under ignored <code>notebooklm_exports/</code> and should stay local.</p>
+            </div>
+          </div>
         </section>
       </div>
     </article>
   </main>
 
   <script>
-    const tabs = [...document.querySelectorAll(".tab")];
-    const sections = [...document.querySelectorAll("section")];
-
-    function setTab(id) {
-      tabs.forEach((tab) => tab.setAttribute("aria-selected", String(tab.dataset.tab === id)));
-      sections.forEach((section) => section.classList.toggle("active", section.id === id));
-      const active = document.getElementById(id);
-      if (active) active.scrollIntoView({ block: "start" });
-    }
-
+    const tabs = Array.from(document.querySelectorAll(".tab"));
+    const panels = Array.from(document.querySelectorAll(".panel"));
     tabs.forEach((tab) => {
-      tab.addEventListener("click", () => setTab(tab.dataset.tab));
+      tab.addEventListener("click", () => {
+        tabs.forEach((item) => item.setAttribute("aria-selected", String(item === tab)));
+        panels.forEach((panel) => panel.classList.toggle("active", panel.id === tab.dataset.tab));
+      });
     });
 
-    const stepDetails = [
-      "The organism starts on the current branch. Normal runs begin at planner. Direct self_modify creates a branch first, but it does not observe the desktop unless state already contains observation.",
-      "Planner can turn the goal into steps, but the current prompt optimizes for observable executable steps, not guaranteed architecture repair. Precision matters.",
-      "Observe returns screen, windows, screen_text, snapshot, focused_title, and a flat actionable elements map. It does not yet return a real desktop_tree.",
-      "Execute asks the model for Python. It can act on the desktop. Today the namespace is broad enough that repository writes should be explicitly forbidden outside self_modify.",
-      "Reflect can choose retry, replan, escalate, or give_up. Escalate is the bridge to self_modify when the organism sees a code-level problem.",
-      "Self_modify requires a clean worktree, creates self-evolve/YYYYMMDDTHHMMSS-sha, and can push it to origin so Grok can inspect the public branch.",
-      "Grok returns git_evolution_patch. Local Python applies, validates, rolls back on failure, commits and pushes on the self-evolve branch. No auto-merge happens."
+    const calls = [
+      {
+        seq: 1,
+        type: "plan",
+        elapsed: "3.688s",
+        input: 48484,
+        cached: 64,
+        output: 197,
+        detail: "Grok chose two macro steps: open Chrome/X compose, then compose and publish the post."
+      },
+      {
+        seq: 2,
+        type: "execution",
+        elapsed: "2.251s",
+        input: 53872,
+        cached: 32832,
+        output: 135,
+        detail: "The generated code clicked pinned Chrome, waited, focused a window, opened https://x.com/compose/post, and returned an ok result."
+      },
+      {
+        seq: 3,
+        type: "verification",
+        elapsed: "1.809s",
+        input: 48226,
+        cached: 42688,
+        output: 95,
+        detail: "Fresh observation confirmed Home / X in Chrome and a focused Post text edit field."
+      },
+      {
+        seq: 4,
+        type: "execution",
+        elapsed: "2.669s",
+        input: 53309,
+        cached: 42688,
+        output: 182,
+        detail: "The generated code typed the post text into the focused compose field and sent Ctrl+Enter."
+      },
+      {
+        seq: 5,
+        type: "verification",
+        elapsed: "1.683s",
+        input: 53955,
+        cached: 42688,
+        output: 61,
+        detail: "Verification succeeded: no visible error indicators and post content matched the goal."
+      }
     ];
 
-    const stepButtons = [...document.querySelectorAll("[data-step]")];
-    const detail = document.getElementById("stepDetail");
-    stepButtons.forEach((button) => {
+    const callList = document.getElementById("callList");
+    callList.innerHTML = calls.map((call) => `
+      <article class="call">
+        <button type="button" aria-expanded="false">
+          <span class="call-index">${call.seq}</span>
+          <span class="call-title"><strong>${call.type}</strong><span>${call.input.toLocaleString()} input / ${call.cached.toLocaleString()} cached / ${call.output} output</span></span>
+          <span class="call-meta">${call.elapsed}</span>
+        </button>
+        <div class="call-detail">${call.detail}</div>
+      </article>
+    `).join("");
+
+    callList.querySelectorAll(".call button").forEach((button) => {
       button.addEventListener("click", () => {
-        stepButtons.forEach((b) => b.classList.remove("active"));
-        button.classList.add("active");
-        detail.innerHTML = stepDetails[Number(button.dataset.step)];
+        const row = button.closest(".call");
+        const open = row.classList.toggle("open");
+        button.setAttribute("aria-expanded", String(open));
       });
     });
 
-    const nodeText = {
-      screen: "<strong>W0 Screen root:</strong> stores full screen dimensions, scan timestamp, focused window id, global coordinate space, and children window ids.",
-      window: "<strong>Top-level window:</strong> stores hwnd, title, class, pid, rect, z/order when available, focus state, and child region/element ids.",
-      region: "<strong>Region cluster:</strong> groups repeated point hits into stable areas so the brain sees layout structure instead of raw duplicate samples.",
-      element: "<strong>Actionable control:</strong> stores role, name, action candidate, center point, rect, hwnd, enabled/focused flags, runtime id, and source sample points.",
-      text: "<strong>Nearby labels and text:</strong> preserves context that filtering currently loses, especially labels attached to edit boxes, buttons, and list rows.",
-      taskbar: "<strong>Taskbar and shell:</strong> must be represented as navigable windows/regions when desktop or taskbar is active, not as zero-actionable-element failure.",
-      other: "<strong>Other windows:</strong> remain children of W0 with enough metadata to focus them and rescan them when the plan requires it."
-    };
+    const chart = document.getElementById("tokenChart");
+    const maxInput = Math.max(...calls.map((call) => call.input));
+    chart.innerHTML = calls.map((call) => `
+      <div class="bar-row">
+        <span>seq ${call.seq}</span>
+        <span class="bar-track"><span class="bar-fill" style="width:${Math.round((call.cached / maxInput) * 100)}%"></span></span>
+        <span>${Math.round((call.cached / call.input) * 100)}%</span>
+      </div>
+    `).join("");
 
-    const inspector = document.getElementById("nodeInspector");
-    document.querySelectorAll("[data-node]").forEach((button) => {
+    const switches = Array.from(document.querySelectorAll(".switch"));
+    const views = Array.from(document.querySelectorAll("[data-view]"));
+    switches.forEach((button) => {
       button.addEventListener("click", () => {
-        inspector.innerHTML = nodeText[button.dataset.node] || "No detail.";
+        switches.forEach((item) => item.classList.toggle("active", item === button));
+        views.forEach((view) => view.classList.toggle("visible", view.dataset.view === button.dataset.surface));
       });
+    });
+
+    const copyButton = document.getElementById("copyPrompt");
+    copyButton.addEventListener("click", async () => {
+      const prompt = document.getElementById("handoverPrompt").innerText;
+      try {
+        await navigator.clipboard.writeText(prompt);
+        copyButton.textContent = "Copied";
+        setTimeout(() => { copyButton.textContent = "Copy prompt"; }, 1200);
+      } catch {
+        copyButton.textContent = "Select text manually";
+      }
     });
   </script>
 </body>

@@ -1,26 +1,52 @@
-# Runtime artifacts
+# Source allowlist: ignore everything unless this file explicitly allows it.
+*
+.*
+
+!.gitattributes
+!.gitignore
+!LICENSE
+!README.md
+!brain.py
+!desktop.py
+!nodes.py
+!organism.py
+!export_workspace_text.py
+!stop_check.py
+!wiring.json
+
+!brain_transports/
+!brain_transports/*.py
+!organism_nodes/
+!organism_nodes/*.py
+!reports/
+!reports/endgame-ai-living-operator-report.html
+
+# Runtime and local-only data stay sealed.
 __pycache__/
 *.py[cod]
 .pytest_cache/
-# Legacy local artifacts from pre-git-native runs; the runtime no longer uses them.
-live_nodes/
-live_brains/
 comms/
-pids/*.pid
+pids/
 state.json
 goal.json
 *.txt
 *.tmp
 *.log
 request-logs-*.jsonl
+notebooklm_exports/
 
-# Test/debug files
-test_*.py
-BOOTSTRAP.md
+# Secrets and local environment.
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*.pfx
 
-# OS/editor junk
-.DS_Store
-Thumbs.db
+# Local tooling and OS/editor files.
+.agents/
 .vscode/
 .idea/
+.DS_Store
+Thumbs.db
 *.swp
