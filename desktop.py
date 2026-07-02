@@ -868,15 +868,15 @@ class Desktop:
             "element_count": len(elements),
         }
 
-    def _semantic_node(self, node: dict[str, Any]) -> dict[str, Any]:
+    def _semantic_node(self, node: dict[str, Any], is_root: bool = False) -> dict[str, Any]:
         """Return the brain-facing node: identity, hierarchy, meaning, and action only."""
         semantic: dict[str, Any] = {
             "id": node.get("id", ""),
             "role": node.get("role", ""),
             "name": node.get("name", "") or node.get("title", ""),
         }
-        for key in ("parent_id", "action", "enabled", "focused"):
-            if key in node:
+        for key in ("action", "enabled", "focused"):
+            if key in node and not (is_root and key == "focused"):
                 semantic[key] = node.get(key)
         children = node.get("children") if isinstance(node.get("children"), list) else []
         semantic["children"] = [self._semantic_node(child) for child in children if isinstance(child, dict)]
@@ -884,7 +884,7 @@ class Desktop:
 
     def semantic_desktop_tree(self, full_tree: dict[str, Any]) -> dict[str, Any]:
         """Drop prompt-noisy coordinates and UIA metadata while preserving the hierarchy."""
-        root = self._semantic_node(full_tree.get("root", {}) if isinstance(full_tree.get("root"), dict) else {})
+        root = self._semantic_node(full_tree.get("root", {}) if isinstance(full_tree.get("root"), dict) else {}, is_root=True)
         node_index: dict[str, dict[str, Any]] = {}
 
         def walk(node: dict[str, Any]) -> None:
@@ -897,12 +897,12 @@ class Desktop:
                     walk(child)
 
         walk(root)
+        # Remove duplicate root from node_index
+        node_index.pop("W0", None)
         return {
             "id": "W0",
             "role": "Screen",
-            "observed_at": full_tree.get("observed_at"),
             "focused_title": full_tree.get("focused_title", ""),
-            "focused_window_id": full_tree.get("focused_window_id", ""),
             "root": root,
             "node_index": node_index,
         }
