@@ -1,82 +1,98 @@
 # endgame-ai Living Organism Handover
 
-This README is the working handover document for this branch. Read it first in any future Codex session or AI-provider handoff, then rewrite it before the next handoff so it always reflects the current organism.
+This file is the current handover prompt, architecture map, and evidence ledger for endgame-ai. Read it before changing code. Rewrite it before handing the project to another Codex, Kiro CLI, OpenCode, or other AI provider.
 
 ## Project Vision
 
-endgame-ai is a living Windows desktop organism, not a chatbot and not a generic agent wrapper. Its loop is:
+endgame-ai is a living Windows desktop organism, not a chatbot and not a generic agent wrapper. The organism is meant to perceive the real Windows desktop, plan, act through UI controls, verify outcomes, reflect on failures, and evolve its own code when runtime evidence proves that evolution is useful.
+
+Loop:
 
 ```text
 perceive -> plan -> schedule -> act -> verify -> reflect -> self-modify
 ```
 
-The organism should observe the real Windows desktop, form concrete intentions, act through mouse/keyboard/Win32/UIA capabilities, verify outcomes, reflect on failures, and evolve its own wiring or code when runtime evidence proves that evolution is useful.
+Core principles:
 
-The intended core is small, local, explicit, and fail-hard:
-
-- Python source files are the organism body.
-- `wiring.json` is the nervous-system map: transport, topology, prompts, paths, limits.
-- `seed_nodes/` and `seed_brains/` are durable source.
-- `live_nodes/` and `live_brains/` are runtime caches regenerated from seeds.
+- The organism body is local Python source.
+- `wiring.json` is the nervous-system map: transport, paths, prompts, topology, limits, and self-evolution policy.
+- `organism_nodes/` contains canonical node modules.
+- `brain_transports/` contains canonical brain transport modules.
+- `brain.py` is the fail-hard brain chokepoint.
+- `nodes.py` is the node loader, execute namespace, and validated self-evolution authority.
+- `organism.py` is the topology loop and state/runtime event writer.
 - Transports are selected intentionally. No silent fallback.
-- Runtime evidence wins over speculation.
+- Runtime evidence beats speculation.
+- Reduction matters: remove duplication and prompt bloat before adding machinery.
 
 Current branch: `unified-archBRAINZ`.
 
-Current selected transport: `xai` using `grok-build-0.1`.
+Current implementation checkpoint: `62db244 Make self evolution git native`.
 
-Reasoning feedback default: OFF. Two-pass feedback remains configurable for comparison/debug runs only.
+Current selected transport: `xai` with model `grok-build-0.1`.
 
-## Ground Rules
-
-- Keep the organism lean. Remove duplication and prompt bloat before adding machinery.
-- Keep Windows observation native: UIA `ElementFromPoint` hover scan plus Win32 focus/window APIs.
-- Do not reintroduce `ControlViewWalker`.
-- Keep selected transports fail-hard.
-- Treat `state.json`, `comms/runtime.ndjson`, and newest raw `*.txt` logs as the audit trail.
-- Commit coherent chunks regularly.
-- README is part of the living system. Keep it current.
+Reasoning feedback: OFF by default. Two-pass/ROD remains configurable in `wiring.json` for comparison and debug runs.
 
 ## Current Architecture
 
-Observation:
+### Observation
 
-- `desktop.py` regenerates stale comtypes UIAutomation wrappers when needed.
-- UIA constants come from the generated module with numeric fallbacks.
-- Window tokens come from Win32 `EnumWindows`.
-- Active/focused context comes from Win32/UIA foreground and focused APIs.
-- Actionable elements come from bounded hover scanning with `ElementFromPoint`.
-- Tree walking is intentionally not active.
+`desktop.py` observes Windows through UIA `ElementFromPoint` hover scanning plus Win32 focus/window APIs. Tree walking is intentionally not active.
 
-Brain:
+Rules:
 
-- `brain.think()` is the single path for `single_pass`, `native`, and `two_pass`.
-- `model.global` merges into transport config.
+- Preserve hover scan plus Win32.
+- Do not reintroduce `ControlViewWalker`.
+- Keep observation bounded through `observe_config`.
+- Task Manager can still produce zero actionable elements by hover scan; improve sampling if needed, but keep the no-tree-walk invariant.
+
+### Brain
+
+`brain.think()` is the only reasoning path. It handles single-pass, native reasoning transports, and two-pass ROD feedback. The selected transport is loaded directly from `brain_transports/`.
+
+Important behavior:
+
+- `model.transport` selects the only transport.
+- Transport config comes from `model.transport_config`.
+- `model.global` merges timeout/raw-log/call-budget settings.
 - Raw request/response rows are written to timestamped root `*.txt` logs.
-- xAI Responses API is used through `seed_brains/xai.py`. Official xAI docs confirm Responses API support and web-search tooling, including domain filters.
+- xAI/Grok is current; LM Studio/OpenAI-compatible transport exists but is not selected.
 
-Node loop:
+### Nodes
 
-- `organism.py` runs topology nodes and can start from a specific node with `--start-node`.
-- `execute` now captures generated-code stdout/stderr into `state.last_result`.
-- Execute namespace includes `state`, `wiring`, `goal`, `last`, `screen`, `elements`, `windows`, `screen_text`, `focused_title`, action functions, modules, `repo_root`, `python_executable`, and self-modify helpers.
-- `verify` advances `state.step` on success.
-- `error` routes step failures toward reflection when a current step exists.
+`nodes.py` loads topology nodes directly from `organism_nodes/`. There is no seed/live copy step.
 
-Self-evolution:
+Node contracts:
 
-- `self_modify` receives recursive workspace metadata, including subfolders.
-- Runtime/private directories are skipped: `.git`, `__pycache__`, `.pytest_cache`, `.vscode`, `.idea`, `pids`.
-- Large text and timestamp raw logs are bounded by head/tail or tail-only fields to avoid huge self-modify prompts.
-- Model patches target repository source, not live caches.
-- `live_nodes/` and `live_brains/` are synchronized after source changes.
-- `nodes.apply_evolution_patch()` validates Python/JSON content before writing.
-- It snapshots touched files, writes atomically, performs post-write validation, syncs live caches, optionally executes bounded commands, and rolls back touched files on command failure.
-- Core file rewrites such as `nodes.py` activate on the next run because the current process already imported them.
+- `planner`: expects `record_type="plan"`.
+- `scheduler`: local deterministic step picker.
+- `observe`: local Windows observation.
+- `execute`: expects `record_type="execution"` and runs generated Python inside the desktop namespace.
+- `verify`: expects `record_type="verification"`.
+- `reflect`: expects `record_type="reflection"`.
+- `self_modify`: expects `record_type="git_evolution_patch"`.
+- `satisfied`: halts cleanly.
 
-## Proven Evidence
+### Self-Evolution
 
-### A. Initial Grok/xAI Run
+Self-modification is now git-native. Grok proposes; the local organism applies, validates, commits, and may publish.
+
+Current flow:
+
+1. `self_modify` requires a clean git worktree.
+2. It creates a timestamped branch named `self-evolve/YYYYMMDDTHHMMSS-<shortsha>`.
+3. It builds a non-lossy workspace manifest: path, size, sha256, tracked/untracked status, git status, branch, and commit SHA.
+4. It sends Grok the manifest, git context, runtime evidence paths, wiring, and patch schema.
+5. Grok returns `record_type="git_evolution_patch"`.
+6. `organism.py` refuses to apply unless the current branch starts with `self-evolve/`.
+7. `nodes.apply_evolution_patch()` validates Python/JSON before writing, snapshots touched files, writes atomically, validates again after writing, runs optional bounded commands, and rolls back touched files on failure.
+8. `nodes.commit_self_evolution()` commits the successful patch on the timestamp branch.
+
+No direct public push by Grok is implemented. That is deliberate. Local validation remains the authority.
+
+## Proven Run Evidence
+
+### Grok/xAI Normal Run
 
 Raw log: `20260702T111459.txt`
 
@@ -84,50 +100,42 @@ Route: planner -> scheduler -> observe -> execute -> reflect.
 
 Finding: execute failed with `NameError: name 'windows' is not defined`.
 
-Internalized Grok feedback: the execute prompt told Grok to use `windows` and `elements`, but the exec namespace did not expose them directly. This led to the namespace contract fix.
+Internalized feedback: the execute prompt advertised fields that were not present in the exec namespace. This produced the namespace contract fix.
 
-### B. LM Studio Two-Pass Comparison
+### LM Studio Two-Pass Comparison
 
 Raw log: `20260702T111838.txt`
 
-Temporary transport: `openai` at LM Studio local server.
+Temporary transport: OpenAI-compatible local LM Studio server.
 
-Finding: two-pass worked mechanically, but execute returned `record_type="plan"` instead of `execution`.
+Finding: two-pass mechanics worked, but execute returned `record_type="plan"` instead of `execution`.
 
-Internalized feedback: large nested prompt strings and duplicated instructions caused prompt contamination. Execute/verify/reflect/self_modify now use structured payloads and shorter schema-focused prompts.
+Internalized feedback: large nested prompt strings and duplicated instructions can contaminate model outputs. Node payloads and prompts were tightened. Two-pass stays configurable but OFF by default.
 
-### C. Grok/xAI Verification After Contract Fixes
+### Grok/xAI Verification After Contract Fixes
 
 Raw log: `20260702T113237.txt`
 
 Route: planner -> scheduler -> observe -> execute -> verify.
 
-Result: execute succeeded, verify returned `step_confirmed`, and `state.step` advanced to 1.
+Result: execute succeeded, verify returned `step_confirmed`, and `state.step` advanced.
 
-Remaining observation gap from this run: Task Manager can still produce zero actionable elements through hover scan.
+Remaining observation issue: Task Manager could still produce zero actionable hover-scan elements.
 
-### D. Bounded Self-Modify Inspection Run
+### Bounded Self-Modify Inspection Run
 
 Raw log: `20260702T115105.txt`
 
-Command shape:
+Normal topology did not reach `self_modify` within five ticks. Grok used execute to inspect runtime behavior and reported missing visible sandboxing, syntax validation, rollback, and test execution. Some of this was stale after local patches, but it correctly pushed the system toward explicit validation and rollback evidence.
 
-```powershell
-& "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" organism.py --reset --max-ticks 5 "Self-modify endgame-ai ..."
-```
-
-Route: planner -> scheduler -> observe -> execute -> verify.
-
-Finding: within 5 ticks, normal topology did not reach `self_modify`; Grok used execute to inspect the runtime and reported missing visible sandboxing, syntax validation, rollback, and test execution. Some of that was stale relative to our just-committed applier, but it correctly identified the need for explicit validation/rollback evidence.
-
-Implemented after this run:
+Implemented after that analysis:
 
 - `--start-node` support in `organism.py`.
 - stdout/stderr capture in execute.
 - rollback around command failures in `apply_evolution_patch`.
 - `last` object added to execute namespace.
 
-### E. Direct Grok Self-Modify Run
+### Direct Grok Self-Modify Run
 
 Raw log: `20260702T115546.txt`
 
@@ -141,156 +149,231 @@ Route: self_modify -> planner -> scheduler -> observe -> execute.
 
 Result:
 
-- Grok returned `record_type="wiring_patch"`.
-- The patch rewrote `nodes.py` with one meaningful architecture addition: explicit post-write validation of changed Python/JSON files after atomic write and before live-cache sync/command execution.
-- Runtime logged `self_modify_applied`.
-- Applied file: `nodes.py`.
-- Activation: `next_run`, because top-level source was rewritten while the current process still had the old module loaded.
-- Follow-up execute failed with `NameError: name 'last' is not defined`.
+- Grok returned the older `record_type="wiring_patch"`.
+- It produced one useful architecture change: explicit post-write validation of changed Python/JSON files before command execution.
+- Runtime logged self-modify application.
+- Follow-up execute failed with `NameError: name 'last' is not defined`; this is fixed now.
 
-Fix after analysis:
-
-- `nodes.build_execute_namespace()` now exposes `last`.
-- `seed_nodes/execute.py` and `wiring.json` now advertise `last`.
-
-### F. Local Validation
-
-Compile:
-
-```powershell
-& "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" -m compileall -q .
-```
-
-Result: passed.
-
-Rollback probe:
-
-- Wrote `self_evolve_probe.md` through `apply_evolution_patch`.
-- Deleted it through `apply_evolution_patch`.
-- Wrote it again with a deliberately failing command.
-- Verified command failure raised and rollback removed the file.
-
-Observed output:
-
-```json
-{
-  "write_applied": true,
-  "delete_applied": true,
-  "rollback_failed_command": true,
-  "rollback_removed_file": true
-}
-```
-
-Workspace capture shape after bounding:
-
-- Files enumerated: 46.
-- Serialized capture: about 225k chars.
-- Timestamp raw logs are represented as 5 KB tails with `kind="runtime_log_tail"`.
-- This fixes the 482 KB raw self-modify request bloat seen in `20260702T115546.txt`.
+This run also proved why the old self-modify context was wrong: the raw request reached about 482 KB because it included workspace file text. That has now been replaced by manifest-only git context.
 
 ## What Is Proven Now
 
-- The organism can run with Grok/xAI transport and no fallback.
-- It can observe desktop/window state through the Windows-native path.
-- It can execute generated Python and retain stdout/stderr in state.
-- It can start directly at `self_modify` for bounded evolution runs.
-- `self_modify` can read the workspace recursively and propose repository-level source changes.
-- `organism.py` can apply a self-modify patch, sync live caches, and log `self_modify_applied`.
-- Python/JSON writes are validated before writing and again after writing.
-- Failed post-write commands roll back touched files.
-- Seed files are authoritative; live files are runtime cache.
-- Grok self-modification produced an aligned architecture change that is now in the worktree.
+- The organism can run with Grok/xAI selected and no fallback.
+- The organism can observe Windows desktop/window state through the hover-scan/Win32 path.
+- Execute can run generated Python and capture stdout/stderr in state.
+- Verify can advance the plan after successful execution.
+- Direct `--start-node self_modify` exists.
+- Self-evolution now starts from a clean git worktree and a timestamped branch.
+- Workspace context no longer uses bounded text dumps or head/tail truncation fields.
+- Python/JSON writes are validated before and after writing.
+- Failed validation commands roll back touched files.
+- Successful self-evolution patches are committed on the self-evolve branch.
+- Canonical code directories are now `organism_nodes/` and `brain_transports/`.
 
-## Current Issues
+## Current Issues And Honest Limits
 
-1. Generated execute code still runs in-process with broad Python powers.
+1. Execute still runs generated Python in-process with broad powers.
 
-   This is intentional for now because the organism is meant to act and evolve, but it is not a sandbox. The self-evolution applier is safer than raw file writes; execute remains powerful.
+   This is intentional for a self-evolving desktop organism, but it is not a sandbox.
 
-2. Rollback is file-level, not git-level.
+2. Clean self-evolution branch creation is implemented but not runtime-proven after this README rewrite.
 
-   Failed commands restore touched files from snapshots. It does not automatically create a git branch, commit, revert, or open a PR.
+   The architecture commit compiled. The dirty-worktree gate could not be executed through the sandbox after the inline Python probe was denied, so a future session should run the git self-evolution test matrix after this README commit.
 
-3. Core rewrites activate on the next process run.
+3. `github_public` branch context is designed, not enabled by default.
 
-   `nodes.py`, `brain.py`, `organism.py`, `desktop.py`, and `stop_check.py` are already imported in the current process. If self_modify rewrites them, the current run records `activation.next_run`.
+   `self_modify.context_mode` defaults to `hybrid`, but `publish_context_branch` currently defaults to `false`. Set it to `true` when the operator wants Grok to inspect the pushed GitHub branch directly.
 
-4. `self_modify` still asks the model for full file contents.
+4. Grok cannot interactively request local files mid-call.
 
-   This is simple and robust for a small repo, but expensive for large files. Future improvement can add unified-diff patches with strict apply/validate semantics.
+   The v1 model gets manifest plus optional GitHub branch URL. If deeper local file retrieval is needed, add a two-step file request record before patch generation.
 
-5. Observation can still miss actionable controls.
+5. Core rewrites activate on next process run.
 
-   Task Manager produced zero actionable elements in one run. Do not solve this with tree walking. Improve hover sampling around focused window edges/centers and preserve bounded config knobs.
+   `brain.py`, `nodes.py`, `organism.py`, `desktop.py`, and `stop_check.py` are already imported in the running process.
 
-6. `reasoning_from()` still has old corrupted-marker compatibility.
+6. Observation can miss controls.
 
-   It compiles and is harmless for current xAI runs, but it should eventually be cleaned to normal `<think>...</think>` extraction if old compatibility is no longer needed.
+   Improve focused-window hover sampling and dedupe if needed. Do not solve this by tree walking.
 
-7. Public-repo self-evolution is not implemented.
+## Observation Data Appendix
 
-   The user proposed pointing Grok at the GitHub branch so Grok can fetch code itself and propose public commits. This is a useful direction, but not a replacement for local runtime evidence.
+### Observe Node Output
 
-## Public GitHub Branch Idea
+`organism_nodes/observe.py` creates and writes these fields into state:
 
-User idea: since the project is public and changes are pushed, maybe Grok should inspect the GitHub branch directly instead of receiving the whole workspace through `self_modify` payloads. Grok could use the online repo as source context and propose or commit changes publicly.
+- `screen`
+- `elements`
+- `screen_text`
+- `windows`
+- `snapshot`
+- `focused_title`
 
-Assessment:
+### Execute Input
 
-- This can reduce prompt size and avoid shipping the entire local workspace in every self-modify call.
-- It fits xAI's current API surface because official docs describe a Responses API with a `web_search` tool and domain filters such as `allowed_domains`.
-- It should be used as a source-context option, not as the only context. The live organism still needs local `state.json`, `comms/runtime.ndjson`, current raw logs, selected transport, desktop observation, and uncommitted diffs.
-- Letting Grok commit directly to the public repository is higher risk. A safer design is: Grok reads public branch + local runtime summary, returns a patch, local applier validates, Codex/human commits and pushes.
-- If implemented, add a `self_modify.context_mode` option:
-  - `local_full`: current bounded local workspace capture.
-  - `github_public`: send repo URL/branch plus local runtime summary.
-  - `hybrid`: public branch URL plus changed local files, runtime logs, and state.
-- If xAI web search is enabled, restrict domains to `github.com` and possibly the specific repository domain/path where possible.
+`organism_nodes/execute.py` sends the brain the full current observation payload:
 
-Relevant docs:
+- screen dimensions through `screen`
+- focused title through `focused_title`
+- windows list through `windows`
+- actionable elements through `elements`
+- formatted text through `screen_text`
+- full observation snapshot through `snapshot`
+- last error/result/action through `last`
+- namespace contract for values, observation helpers, actions, modules, and repo metadata
 
-- xAI overview: `https://docs.x.ai/overview`
-- xAI Web Search tool: `https://docs.x.ai/developers/tools/web-search`
+The exec namespace exposes the same major observation values directly:
 
-## Next Plan
+- `state`
+- `wiring`
+- `goal`
+- `last`
+- `screen`
+- `elements`
+- `windows`
+- `screen_text`
+- `focused_title`
 
-1. Commit the current self-evolution hardening.
+### Verify Input
 
-   Includes Grok's post-write validation addition, `last` namespace fix, and bounded self_modify workspace capture.
+`organism_nodes/verify.py` sends reduced evidence:
 
-2. Run one more direct self_modify verification only if needed.
+- focused title
+- screen text
+- elements
+- windows
+- last action
+- last result
+- last error
 
-   Recommended command:
+### Reflect Input
 
-   ```powershell
-   & "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" organism.py --reset --max-ticks 5 --start-node self_modify "Inspect and validate the existing self-evolution mechanism. Do not rewrite files unless a concrete missing validation or rollback invariant is found."
-   ```
+`organism_nodes/reflect.py` sends reduced failure evidence:
 
-3. Add optional GitHub public-branch context mode.
+- focused title
+- screen text
+- elements
+- last action
+- last result
+- last error
+- last verification
 
-   Do not let Grok push directly in the first implementation. Build it as context selection first, then keep local validated patch application.
+### Self-Modify Input
 
-4. Improve observation sampling without tree walking.
+`organism_nodes/self_modify.py` does not take a fresh observation. It uses whatever is already in state. If the organism starts directly with `--start-node self_modify`, there is no fresh screen observation unless a previous state already contains one.
 
-   Add focused-window center/edge probes and dedupe by runtime id, hwnd, rect, name, and control type.
+Self-modify currently sends:
 
-5. Add expected-record metadata to `brain.think()`.
+- goal and current step summary
+- last failure/reflection/action/result/verification
+- runtime state summary
+- runtime evidence file paths with size and sha256
+- git context
+- workspace manifest
+- patch contract
 
-   The current node-level checks work, but passing expected record type into the brain chokepoint would improve logging and optional one-shot repair.
+It does not send full screen bitmaps. It does not send full file text. It does not send text head/tail fields.
 
-## Fresh Handover Prompt
+## Codebase Context Appendix
 
-Use this prompt for the next Codex session or another AI provider:
+The previous approach sent recursive workspace metadata with file text and bounded large files using head/tail fields. That was wrong for this project because the user wants Grok to have non-lossy context and because lossy prompt dumps scale poorly.
 
-```text
-Read README.md completely before acting. You are continuing endgame-ai on branch unified-archBRAINZ. This is a living Windows desktop organism, not a chatbot and not a generic agent wrapper. Preserve the loop: perceive -> plan -> schedule -> act -> verify -> reflect -> self-modify. Keep the core small, fail-hard, and evidence-driven. Current transport is xai/Grok with reasoning feedback OFF by default. Do not reintroduce ControlViewWalker.
+Removed semantics:
 
-First inspect git status, then newest state.json, comms/runtime.ndjson, and newest raw *.txt. The latest proven self-evolution path is repository-level: self_modify proposes file_writes/wiring_patches, nodes.apply_evolution_patch validates Python/JSON before write, snapshots touched files, writes atomically, validates again after write, syncs live caches, executes bounded commands, and rolls back touched files on command failure. live_nodes/live_brains are runtime caches; seed_nodes/seed_brains and top-level source are durable.
+- `FULL_TEXT_LIMIT`
+- `RUNTIME_TEXT_TAIL`
+- `text_head`
+- `text_tail`
+- `truncated`
 
-Known latest issue: the direct Grok self_modify run applied a useful nodes.py post-write validation change, then execute failed because generated code used `last`; this is now fixed by exposing `last` in nodes.build_execute_namespace and documenting it in execute payload/prompt. Workspace capture now enumerates non-private files recursively but bounds large/runtime logs.
+Replacement:
 
-Next best work: commit current hardening, then implement optional `self_modify.context_mode` with a `github_public` or `hybrid` mode so Grok can inspect the public GitHub branch while the local organism still provides runtime state/logs and applies patches locally. Do not let Grok push directly until the local validate/apply/commit gate is proven.
+- `workspace_manifest.files[].path`
+- `workspace_manifest.files[].size`
+- `workspace_manifest.files[].sha256`
+- `workspace_manifest.files[].tracked`
+- `workspace_manifest.files[].status`
+- `workspace_manifest.commit_sha`
+- `workspace_manifest.branch`
+- `workspace_manifest.git_status`
+
+Full-file access strategy:
+
+- `git_local`: Grok gets manifest and local evidence metadata. A future two-step tool can serve exact requested files.
+- `github_public`: the organism creates and pushes a timestamped branch; Grok gets the GitHub branch URL and commit SHA.
+- `hybrid`: default mode; Grok gets branch URL metadata plus local runtime evidence metadata. Publishing is controlled by `self_modify.git.publish_context_branch`.
+
+Important: manifest-only context is not truncation. It is an index plus cryptographic identity. Full content must come from the branch or an explicit file-read protocol, not lossy prompt slices.
+
+## Self-Evolution Appendix
+
+Patch schema expected from Grok:
+
+```json
+{
+  "record_type": "git_evolution_patch",
+  "data": {
+    "summary": "short human summary",
+    "rationale": "runtime/code evidence",
+    "file_writes": [
+      {"path": "repo-relative path", "content": "complete file text"}
+    ],
+    "file_deletes": ["repo-relative path"],
+    "wiring_patches": [
+      {"op": "set", "path": "dotted.path", "value": "any JSON value"}
+    ],
+    "commands": [
+      {"command": ["python", "-m", "compileall", "-q", "."], "shell": false}
+    ],
+    "expected_validation": "what should pass after the patch"
+  }
+}
 ```
+
+Branch discipline:
+
+- Main/development branch should be clean before self-modify.
+- Self-modify creates `self-evolve/YYYYMMDDTHHMMSS-<shortsha>`.
+- Patches are applied only on that branch.
+- The branch is committed locally after validation.
+- Optional push belongs to local Python/git authority, not Grok.
+- Direct Grok push is intentionally not v1.
+
+Validation discipline:
+
+- Python content is compiled before write.
+- JSON content is parsed before write.
+- Writes are atomic.
+- Python/JSON content is validated again after write.
+- Optional commands are bounded by `self_modify.execution.max_commands` and `timeout_s`.
+- Command failure rolls back touched files.
+
+## GitHub/Grok Architecture
+
+The user's public-repo idea is valid: if the repository is public and changes are pushed, Grok can inspect the GitHub branch instead of receiving a giant prompt dump.
+
+Current implementation supports the safe half:
+
+- create timestamped branch locally
+- optionally push branch to origin
+- give Grok repo URL/branch URL/commit SHA/manifest/runtime evidence
+- receive a patch
+- apply locally
+- validate locally
+- commit locally
+
+Not implemented by design:
+
+- Grok pushing directly
+- Grok committing directly
+- trusting GitHub inspection without local runtime evidence
+
+Recommended next step if enabling GitHub public context:
+
+1. Set `self_modify.git.publish_context_branch=true`.
+2. Ensure xAI web search/tooling is configured only for `github.com` or the exact repository.
+3. Keep local apply/validate/commit authority.
+4. Add a two-step `file_request` record only if manifest plus GitHub branch is not enough.
 
 ## Commands
 
@@ -300,32 +383,56 @@ Compile:
 & "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" -m compileall -q .
 ```
 
-Limited normal Grok run:
+Normal Grok run:
 
 ```powershell
 & "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" organism.py --reset --max-ticks 5 "Observe the current desktop and report focused window title plus a few interactive elements"
 ```
 
-Direct self_modify run:
+Direct self-modify run:
 
 ```powershell
-& "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" organism.py --reset --max-ticks 5 --start-node self_modify "Inspect and validate the existing self-evolution mechanism. Do not rewrite files unless a concrete missing validation or rollback invariant is found."
+& "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" organism.py --reset --max-ticks 5 --start-node self_modify "Inspect the git-native self-evolution path. Propose no file writes unless runtime evidence proves a concrete missing invariant."
 ```
 
-Rollback probe pattern:
+Static scans:
 
 ```powershell
-@'
-import pathlib, sys, brain, nodes
-w = brain.load_json(brain.ROOT / "wiring.json")
-p = pathlib.Path("self_evolve_probe.md")
-p.unlink(missing_ok=True)
-nodes.apply_evolution_patch(w, {"data": {"file_writes": [{"path": "self_evolve_probe.md", "content": "probe\n"}]}})
-nodes.apply_evolution_patch(w, {"data": {"file_deletes": ["self_evolve_probe.md"]}})
-try:
-    nodes.apply_evolution_patch(w, {"data": {"file_writes": [{"path": "self_evolve_probe.md", "content": "rollback\n"}], "commands": [{"command": [sys.executable, "-c", "import sys; sys.exit(7)"], "shell": False}]}})
-except Exception:
-    pass
-print("rollback_removed_file", not p.exists())
-'@ | & "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" -
+rg -n "FULL_TEXT_LIMIT|RUNTIME_TEXT_TAIL|text_head|text_tail|truncated" organism_nodes nodes.py organism.py brain.py wiring.json
+rg -n "ensure_live|seed_nodes|seed_brains" organism_nodes brain_transports nodes.py organism.py brain.py wiring.json
+```
+
+## Next Verification Matrix
+
+Run this after committing the README:
+
+1. `python -m compileall -q .`
+2. `rg` confirms removed truncation symbols do not exist in the self-modify path.
+3. `rg` confirms no seed/live copy workflow remains in runtime code.
+4. Dirty worktree causes `nodes.prepare_self_evolution(wiring)` to fail before branch creation.
+5. Clean worktree creates `self-evolve/YYYYMMDDTHHMMSS-<shortsha>`.
+6. Patch application is refused off a `self-evolve/` branch.
+7. Invalid Python content is rejected before commit.
+8. Failing validation command rolls back touched files.
+9. Successful patch creates a git commit on the timestamp branch.
+10. Raw self-modify log shows branch URL/manifest/runtime evidence, not file text dumps.
+
+## Fresh Handover Prompt
+
+Use this exact prompt for the next AI provider:
+
+```text
+Read README.md fully before acting. You are continuing endgame-ai on branch unified-archBRAINZ. Treat it as a living Windows desktop organism, not a chatbot or generic agent. Preserve the loop: perceive -> plan -> schedule -> act -> verify -> reflect -> self-modify. Keep the system small, explicit, fail-hard, and evidence-driven.
+
+Current architecture: canonical nodes live in organism_nodes/ and brain transports live in brain_transports/. There is no seed/live runtime copy workflow. wiring.json selects xai/Grok with model grok-build-0.1. Reasoning feedback and LM Studio two-pass are configurable but OFF by default. Observation is Windows-native UIA ElementFromPoint hover scan plus Win32 focus/window APIs. Do not reintroduce ControlViewWalker.
+
+Self-evolution is git-native. self_modify requires a clean worktree, creates self-evolve/YYYYMMDDTHHMMSS-<shortsha>, sends Grok git_context + workspace_manifest + runtime evidence paths, expects record_type="git_evolution_patch", applies patches locally through nodes.apply_evolution_patch, validates Python/JSON before and after write, rolls back touched files on failing validation command, and commits successful changes locally through nodes.commit_self_evolution. Grok must not push or commit directly in v1.
+
+Important run evidence: Grok/xAI normal run first exposed missing execute namespace fields. LM Studio two-pass worked mechanically but produced prompt contamination, so two-pass stays OFF by default. Later Grok run succeeded through execute and verify. Direct old self_modify proved that file-text prompt dumps caused about 482 KB raw requests and that Grok could still suggest useful validation hardening. That old truncating context has been removed. The new context is manifest-only: path, size, sha256, tracked/untracked status, branch, commit SHA, and runtime evidence file metadata. No text_head, text_tail, truncated, FULL_TEXT_LIMIT, or RUNTIME_TEXT_TAIL should return.
+
+Observation data flow: observe writes screen, elements, screen_text, windows, snapshot, focused_title. execute receives the full observation payload and namespace contract. verify receives focused_title, screen_text, elements, windows, last_action, last_result, last_error. reflect receives focused_title, screen_text, elements, last_action, last_result, last_error, last_verification. Direct --start-node self_modify has no fresh observation unless state already has one.
+
+Known issues: execute is powerful and not sandboxed; Task Manager can produce zero actionable hover-scan elements; github_public context is designed but publish_context_branch defaults false; clean self-evolution branch creation needs post-README runtime verification; direct Grok push is intentionally not implemented.
+
+Start by running git status, reading wiring.json, brain.py, nodes.py, organism.py, organism_nodes/self_modify.py, and newest runtime evidence files. Then run compileall and the static rg checks from README. If worktree is clean, run the git self-evolution verification matrix. If enabling GitHub public context, set self_modify.git.publish_context_branch=true, keep xAI web access restricted to GitHub/the repository, and keep local apply/validate/commit authority. Commit coherent chunks regularly and rewrite README.md before handoff.
 ```
