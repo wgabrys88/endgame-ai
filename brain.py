@@ -283,8 +283,19 @@ def _fresh_observation_payload(wiring: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+BODY_ONLY_PAYLOAD_KEYS = {"action_index", "raw_elements", "action_elements", "full_desktop_tree"}
+
+
+def _brain_visible(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {k: _brain_visible(v) for k, v in value.items() if k not in BODY_ONLY_PAYLOAD_KEYS}
+    if isinstance(value, list):
+        return [_brain_visible(item) for item in value]
+    return value
+
+
 def _with_fresh_observation(payload: dict[str, Any], wiring: dict[str, Any]) -> dict[str, Any]:
-    enriched = dict(payload)
+    enriched = _brain_visible(payload)
     enriched["fresh_observation"] = _fresh_observation_payload(wiring)
     return enriched
 
