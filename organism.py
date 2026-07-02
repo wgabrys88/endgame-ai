@@ -1,10 +1,7 @@
-"""organism — the living loop.
+"""endgame-ai organism loop.
 
-The topology graph is still the architecture: each node emits one signal and wiring.json
-routes that signal to the next node. This file only makes runtime truth reliable:
-  - state.json is written atomically before and after every node.
-  - comms/runtime.ndjson receives compact lifecycle events used by the workbench.
-  - brain swaps still reload live when wiring changes.
+Central STEP mode is enforced here, immediately before executing the next node.
+Nodes do not know about pause/step/run.
 """
 from __future__ import annotations
 
@@ -12,228 +9,232 @@ import argparse
 import json
 import os
 import pathlib
+import signal
+import sys
 import time
 from typing import Any
 
-import brain as brain_mod
-import nodes as nodes_mod
+import brain
+import nodes
+import stop_check
 
 ROOT = pathlib.Path(__file__).parent.resolve()
-WIRING_PATH = ROOT / "wiring.json"
-STATE_PATH = ROOT / "state.json"
 
 
-class Context:
-    """Live organism context handed to every node."""
-
-    def __init__(self, wiring: dict):
-        self.wiring = wiring
-        self.brain = brain_mod.Brain(wiring.get("model", {}))
-        self.state: dict[str, Any] = {}
-        self.narration: list[str] = []
-        self.state_seq = 0
-
-    @property
-    def goal(self) -> str:
-        return self.state.get("goal", "")
-
-    @property
-    def memory(self) -> dict:
-        return self.state.setdefault("memory", {})
-
-    def reload_brain(self):
-        self.brain = brain_mod.Brain(self.wiring.get("model", {}))
-
-    def narrate(self, msg: str):
-        line = f"{time.strftime('%H:%M:%S')} {msg}"
-        self.narration.append(line)
-        self.narration = self.narration[-300:]
-        print(line, flush=True)
-        brain_mod.log_runtime_event(self.wiring.get("model", {}), "narration", message=msg)
+def load_wiring() -> dict[str, Any]:
+    return brain.load_json(ROOT / "wiring.json")
 
 
-def load_wiring() -> dict:
-    return json.loads(WIRING_PATH.read_text(encoding="utf-8"))
+def state_path(wiring: dict[str, Any]) -> pathlib.Path:
+    return brain.root_path(wiring.get("paths", {}).get("state"), "state.json")
 
 
-def _atomic_json(path: pathlib.Path, obj: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + f".tmp.{os.getpid()}.{time.time_ns()}")
-    tmp.write_text(json.dumps(obj, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
-    os.replace(tmp, path)
+def control_path(wiring: dict[str, Any]) -> pathlib.Path:
+    return brain.root_path(wiring.get("paths", {}).get("control"), "comms/control.json")
 
 
-def save_state(ctx: Context, *, active_node: str | None = None, phase: str = "snapshot") -> None:
-    ctx.state_seq += 1
-    now = time.time()
-    snap = dict(ctx.state)
-    snap["_narration"] = ctx.narration[-80:]
-    snap["_transport"] = ctx.wiring.get("model", {}).get("transport")
-    snap["_saved_at"] = now
-    snap["_saved_at_iso"] = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(now))
-    snap["_state_seq"] = ctx.state_seq
-    snap["_pid"] = os.getpid()
-    snap["_active_node"] = active_node or snap.get("_node", "")
-    snap["_phase"] = phase
-    _atomic_json(STATE_PATH, snap)
+def runtime_log_path(wiring: dict[str, Any]) -> pathlib.Path:
+    return brain.root_path(wiring.get("paths", {}).get("runtime_log"), "comms/runtime.ndjson")
 
 
-def build_routing(wiring: dict):
-    topo = wiring.get("topology", {})
-    nodes = {n["id"]: n for n in topo.get("nodes", [])}
-    edges = {}
-    for e in topo.get("edges", []):
-        edges[(e["from"], e["on"])] = e["to"]
-    return nodes, edges, topo.get("cycle_start", "planner")
+def write_state(wiring: dict[str, Any], state: dict[str, Any]) -> None:
+    brain.atomic_write_json(state_path(wiring), state)
 
 
-def _load_prior_state() -> dict:
-    if not STATE_PATH.exists():
-        return {}
+def runtime_event(wiring: dict[str, Any], event: str, **payload: Any) -> None:
+    row = {"ts": time.time(), "event": event, **payload}
+    brain.append_ndjson(runtime_log_path(wiring), row)
+
+
+def default_control(wiring: dict[str, Any]) -> dict[str, Any]:
+    ctrl = dict(wiring.get("control_default") or {"mode": "run", "step_token": 0, "updated_at": 0})
+    ctrl.setdefault("mode", "run")
+    ctrl.setdefault("step_token", 0)
+    ctrl.setdefault("updated_at", 0)
+    return ctrl
+
+
+def read_control(wiring: dict[str, Any]) -> dict[str, Any]:
+    path = control_path(wiring)
+    if not path.exists():
+        ctrl = default_control(wiring)
+        ctrl["updated_at"] = time.time()
+        brain.atomic_write_json(path, ctrl)
+        return ctrl
+    ctrl = brain.load_json(path)
+    mode = ctrl.get("mode")
+    if mode not in {"run", "pause", "step"}:
+        raise RuntimeError(f"invalid control mode in {path}: {mode!r}")
     try:
-        prior = json.loads(STATE_PATH.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return {}
-    # Keep organism memory/plan continuity, but never treat debug metadata as intent.
-    return {k: v for k, v in prior.items() if not k.startswith("_")}
+        ctrl["step_token"] = int(ctrl.get("step_token", 0))
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(f"invalid step_token in {path}: {ctrl.get('step_token')!r}") from exc
+    return ctrl
 
 
-def _goal_from_file() -> str:
-    gp = ROOT / "goal.json"
-    if not gp.exists():
-        return ""
-    try:
-        return (json.loads(gp.read_text(encoding="utf-8")) or {}).get("goal", "")
-    except json.JSONDecodeError:
-        return ""
+def reset_runtime(wiring: dict[str, Any]) -> None:
+    for key, default in [("state", "state.json"), ("runtime_log", "comms/runtime.ndjson")]:
+        p = brain.root_path(wiring.get("paths", {}).get(key), default)
+        if p.exists():
+            p.unlink()
+    comms = ROOT / "comms"
+    comms.mkdir(exist_ok=True)
 
 
-def live(goal: str, max_ticks: int = 0, max_brain_calls: int = 0):
+def wait_before_node(wiring: dict[str, Any], state: dict[str, Any], node_name: str) -> None:
+    """Centralized run/pause/step chokepoint.
+
+    Called immediately before the next topology node is executed.
+    """
+    entered_pause = False
+    while True:
+        stop_check.check_stop(f"organism wait_before_node:{node_name}")
+        ctrl = read_control(wiring)
+        mode = ctrl["mode"]
+        token = int(ctrl.get("step_token", 0))
+        if mode == "run":
+            return
+        consumed = int(state.get("_last_step_token_consumed", -1))
+        if mode == "step" and token > consumed:
+            state["_last_step_token_consumed"] = token
+            state["_phase"] = "stepping_node"
+            state["current_node"] = node_name
+            write_state(wiring, state)
+            runtime_event(wiring, "step_consumed", node=node_name, step_token=token)
+            return
+        if not entered_pause:
+            state["_phase"] = "paused_before_node"
+            state["current_node"] = node_name
+            state["control_mode"] = mode
+            write_state(wiring, state)
+            runtime_event(wiring, "paused_before_node", node=node_name, mode=mode, step_token=token)
+            entered_pause = True
+        time.sleep(0.1)
+
+
+def next_node_for(wiring: dict[str, Any], current: str, signal_name: str) -> str:
+    edges = wiring.get("topology", {}).get("edges", {})
+    node_edges = edges.get(current)
+    if not isinstance(node_edges, dict):
+        raise RuntimeError(f"topology has no edges for node '{current}'")
+    nxt = node_edges.get(signal_name)
+    if not isinstance(nxt, str) or not nxt:
+        raise RuntimeError(f"node '{current}' emitted signal '{signal_name}' with no topology edge")
+    return nxt
+
+
+def run(
+    goal: str | None,
+    *,
+    reset: bool = False,
+    max_ticks: int | None = None,
+    max_brain_calls: int | None = None,
+    start_node: str | None = None,
+) -> dict[str, Any]:
+    stop_check.register_pid("organism")
     wiring = load_wiring()
-    if max_brain_calls > 0:
+    if max_brain_calls is not None:
         wiring.setdefault("model", {})["max_brain_calls"] = max_brain_calls
-    nodes_mod.ensure_nodes()
-    nodes_mod._ensure_io(wiring)
-    ctx = Context(wiring)
-    ctx.state = _load_prior_state()
-
-    if goal:
-        ctx.state["goal"] = goal
-    elif not ctx.state.get("goal"):
-        dropped_goal = _goal_from_file()
-        if dropped_goal:
-            ctx.state["goal"] = dropped_goal
-    ctx.state.setdefault("memory", {})
-
-    goal = ctx.state.get("goal", "")
-    node_map, edges, start = build_routing(wiring)
-    transport = wiring.get("model", {}).get("transport", "openai")
-    try:
-        wiring_mtime = WIRING_PATH.stat().st_mtime
-    except OSError:
-        wiring_mtime = 0.0
-
-    ctx.narrate(f"organism awake (unconstrained) — core brain: {transport}; goal: {goal or '(none)'}")
-    current = ctx.state.get("_node") or start
-    ctx.state["_node"] = current
-    save_state(ctx, active_node=current, phase="awake")
-    brain_mod.log_runtime_event(ctx.wiring.get("model", {}), "organism_awake", transport=transport, goal=goal or "")
-
-    delay = int(wiring.get("observe", {}).get("post_action_delay_ms", 250)) / 1000.0
-    tick = 0
+    if reset:
+        reset_runtime(wiring)
+    brain.reset_call_budget()
+    topo = wiring.get("topology", {})
+    current = str(start_node or topo.get("cycle_start") or "planner")
+    if current not in set(topo.get("nodes", [])):
+        raise RuntimeError(f"start node '{current}' is not in topology.nodes")
+    state: dict[str, Any] = {
+        "_phase": "starting",
+        "goal": goal or "",
+        "tick": 0,
+        "current_node": current,
+        "last_error": None,
+        "last_action": None,
+        "wiring_transport": wiring.get("model", {}).get("transport"),
+        "start_node": current,
+    }
+    write_state(wiring, state)
+    runtime_event(wiring, "organism_start", goal=goal or "", transport=state["wiring_transport"])
     try:
         while True:
-            tick += 1
-
-            try:
-                latest_mtime = WIRING_PATH.stat().st_mtime
-            except OSError:
-                latest_mtime = wiring_mtime
-            if latest_mtime != wiring_mtime:
-                ctx.wiring = load_wiring()
-                node_map, edges, start = build_routing(ctx.wiring)
-                ctx.reload_brain()
-                nodes_mod._io_ready = False
-                nodes_mod._ensure_io(ctx.wiring)
-                wiring_mtime = latest_mtime
-                ctx.narrate(f"wiring file changed; core brain now: {ctx.wiring.get('model', {}).get('transport')}")
-
-            node_cfg = node_map.get(current)
-            if node_cfg is None:
-                ctx.narrate(f"no node '{current}' in topology; resting")
-                break
-
-            ctx.state["_node"] = current
-            ctx.state["_active_node"] = current
-            ctx.state["_node_started_at"] = time.time()
-            save_state(ctx, active_node=current, phase="before_node")
-            brain_mod.log_runtime_event(ctx.wiring.get("model", {}), "node_start", node=current, tick=tick)
-
-            try:
-                signal, patch = nodes_mod.execute_node(node_cfg, ctx)
-            except Exception as e:
-                ctx.state["last_error"] = f"node '{current}' crashed: {type(e).__name__}: {e}"
-                save_state(ctx, active_node=current, phase="node_crashed")
-                brain_mod.log_runtime_event(ctx.wiring.get("model", {}), "node_error", node=current,
-                                            error=ctx.state["last_error"])
-                ctx.narrate(ctx.state["last_error"])
-                raise
-
-            ctx.state.update(patch)
-
-            if patch.get("_wiring_changed"):
-                ctx.wiring = load_wiring()
-                node_map, edges, start = build_routing(ctx.wiring)
-                ctx.reload_brain()
-                nodes_mod._io_ready = False
-                nodes_mod._ensure_io(ctx.wiring)
-                try:
-                    wiring_mtime = WIRING_PATH.stat().st_mtime
-                except OSError:
-                    pass
-                ctx.narrate(f"wiring changed; core brain now: {ctx.wiring.get('model', {}).get('transport')}")
-
-            nxt = patch.get("next") or edges.get((current, signal))
-            ctx.narrate(f"[{current}] -> {signal} -> {nxt or 'satisfied'}")
-            brain_mod.log_runtime_event(ctx.wiring.get("model", {}), "node_signal", node=current, signal=signal,
-                                        next=nxt or "satisfied")
-            current = nxt or "satisfied"
-            ctx.state["_node"] = current
-            save_state(ctx, active_node=current, phase="after_node")
-
-            if current == "satisfied" and node_map.get("satisfied"):
-                save_state(ctx, active_node="satisfied", phase="before_node")
-                sig, p = nodes_mod.execute_node(node_map["satisfied"], ctx)
-                ctx.state.update(p)
-                save_state(ctx, active_node="satisfied", phase="rest")
-                brain_mod.log_runtime_event(ctx.wiring.get("model", {}), "organism_rest", signal=sig)
-                ctx.narrate("organism at rest")
-                break
-            if max_ticks and tick >= max_ticks:
-                ctx.narrate(f"reached max_ticks={max_ticks}; stopping")
-                save_state(ctx, active_node=current, phase="max_ticks")
-                break
-            time.sleep(delay)
+            stop_check.check_stop("organism main loop")
+            if max_ticks is not None and state["tick"] >= max_ticks:
+                state["_phase"] = "max_ticks"
+                write_state(wiring, state)
+                runtime_event(wiring, "max_ticks", tick=state["tick"])
+                return state
+            wait_before_node(wiring, state, current)
+            state["_phase"] = "executing_node"
+            state["current_node"] = current
+            write_state(wiring, state)
+            runtime_event(wiring, "node_start", node=current, tick=state["tick"])
+            ctx = {"wiring": wiring, "state": dict(state), "goal": goal or "", "node": current}
+            signal_name, patch = nodes.call_node(current, ctx)
+            evolution_patch = patch.get("git_evolution_patch")
+            if current == "self_modify" and evolution_patch:
+                _, applied = nodes.apply_evolution_patch(wiring, {"data": evolution_patch})
+                patch.setdefault("self_modify", {})["applied"] = applied
+                committed = nodes.commit_self_evolution(wiring, applied, evolution_patch)
+                patch["self_modify"]["commit"] = committed
+                wiring = load_wiring()
+                runtime_event(wiring, "self_modify_applied", **applied, commit=committed)
+            state.update(patch)
+            # Handle halt signal for clean exit
+            if signal_name == "halt":
+                state["_phase"] = "halted"
+                write_state(wiring, state)
+                runtime_event(wiring, "halted", node=current, reason=state.get("error_handled", {}))
+                return state
+            nxt = next_node_for(wiring, current, signal_name)
+            state["last_signal"] = signal_name
+            state["last_node"] = current
+            state["next_node"] = nxt
+            state["tick"] += 1
+            state["_phase"] = "node_complete"
+            write_state(wiring, state)
+            runtime_event(wiring, "node_complete", node=current, signal=signal_name, next_node=nxt, tick=state["tick"])
+            current = nxt
     except KeyboardInterrupt:
-        ctx.narrate("interrupted by human — sleeping")
-        save_state(ctx, active_node=current, phase="interrupted")
-        brain_mod.log_runtime_event(ctx.wiring.get("model", {}), "organism_interrupted", node=current)
-    save_state(ctx, active_node=current, phase="stopped")
+        state["_phase"] = "interrupted"
+        write_state(wiring, state)
+        runtime_event(wiring, "interrupted", node=current)
+        return state
+    except Exception as exc:
+        # Route to error node via topology instead of crashing
+        state["_phase"] = "error"
+        state["last_error"] = f"{type(exc).__name__}: {exc}"
+        write_state(wiring, state)
+        runtime_event(wiring, "error", node=current, error=state["last_error"])
+        # Emit error signal to topology
+        try:
+            nxt = next_node_for(wiring, current, "error")
+            state["last_signal"] = "error"
+            state["last_node"] = current
+            state["next_node"] = nxt
+            state["tick"] += 1
+            state["_phase"] = "node_complete"
+            write_state(wiring, state)
+            runtime_event(wiring, "node_complete", node=current, signal="error", next_node=nxt, tick=state["tick"])
+            current = nxt
+        except RuntimeError as route_exc:
+            # If error routing fails (no error edge), halt cleanly
+            state["_phase"] = "halted"
+            state["last_error"] = f"Error routing failed: {route_exc}"
+            write_state(wiring, state)
+            runtime_event(wiring, "halted", node=current, error=state["last_error"])
+            return state
 
 
-def main():
-    ap = argparse.ArgumentParser(description="endgame-ai — an unconstrained, self-evolving desktop organism.")
-    ap.add_argument("goal", nargs="?", default="", help="the goal to pursue")
-    ap.add_argument("--max-ticks", type=int, default=0,
-                    help="stop after N topology ticks (0 = until rest/interrupt)")
-    ap.add_argument("--max-brain-calls", type=int, default=0,
-                    help="stop brain after N transport calls via model.max_brain_calls (0 = unlimited)")
-    ap.add_argument("--reset", action="store_true", help="forget prior state before starting")
-    args = ap.parse_args()
-    if args.reset and STATE_PATH.exists():
-        STATE_PATH.unlink()
-    live(args.goal, args.max_ticks, args.max_brain_calls)
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("goal", nargs="?", default="")
+    ap.add_argument("--reset", action="store_true")
+    ap.add_argument("--max-ticks", type=int, default=None)
+    ap.add_argument("--max-brain-calls", type=int, default=None)
+    ap.add_argument("--start-node", default=None)
+    args = ap.parse_args(argv)
+    run(args.goal, reset=args.reset, max_ticks=args.max_ticks, max_brain_calls=args.max_brain_calls, start_node=args.start_node)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

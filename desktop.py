@@ -1,1623 +1,1118 @@
-"""Desktop observer - hover probes plus bounded UIA desktop tree."""
+"""Desktop observation for Windows 11 using UIA COM via comtypes.gen.UIAutomationClient.
+
+Real Windows desktop observation with Element types, hover probing,
+window tokens, a screen-rooted tree, and configurable observation.
+"""
 from __future__ import annotations
+
 import ctypes
-import ctypes.wintypes as W
-import math
-import re
-import subprocess
+import importlib
+import sys
 import time
-from dataclasses import dataclass
+from ctypes import wintypes
+from dataclasses import dataclass, field
 from typing import Any
 
-PROBE_STEP_PX = 40
-PROBE_DELAY = 0.001
-SCROLL_ENRICH_MIN = 3
-SCROLL_ENRICH_PASSES = (-3, -2, 2, 3)
-SCROLL_ENRICH_DELAY = 0.08
-SINE_AMP_RATIO = 0.4
-SINE_PERIOD = 6.0
-READ_TEXT_MAX = 16000
-FOCUS_DELAY = 0.3
-
-OBSERVE_DEFAULTS = {
-    "probe_step_px": PROBE_STEP_PX,
-    "probe_delay_ms": int(PROBE_DELAY * 1000),
-    "hover_scan_enabled": True,
-    "hover_scan_step_px": 70,
-    "hover_scan_delay_ms": int(PROBE_DELAY * 1000),
-    "dense_probe_min_px": 24,
-    "scroll_enrich_min": SCROLL_ENRICH_MIN,
-    "scroll_enrich_passes": list(SCROLL_ENRICH_PASSES),
-    "scroll_enrich_delay_ms": int(SCROLL_ENRICH_DELAY * 1000),
-    "read_text_max": READ_TEXT_MAX,
-    "scope_depth": 4,
-    "element_text_max": 500,
-    "render_focused_first": True,
-    "window_limit": 40,
-    "desktop_tree_enabled": False,
-    "desktop_tree_max_depth": 8,
-    "desktop_tree_max_nodes": 900,
-    "desktop_tree_child_limit": 180,
-    "overlay_window_limit": 48,
-    "window_scan_limit": 256,
-    "render_class_name": True,
-    "render_automation_id": True,
-    "render_window_per_element": True,
-}
-OBSERVE_CONFIG = dict(OBSERVE_DEFAULTS)
+import comtypes
+import comtypes.client
 
 
-def configure_observation(config: dict[str, Any] | None = None) -> None:
-    """Update observer detail from wiring.json without coupling desktop.py to it."""
-    global OBSERVE_CONFIG
-    merged = dict(OBSERVE_DEFAULTS)
-    if isinstance(config, dict):
-        for key in OBSERVE_DEFAULTS:
-            if key in config:
-                merged[key] = config[key]
-    OBSERVE_CONFIG = merged
-
-
-def _obs_int(key: str, default: int) -> int:
+def _load_uia_module() -> Any:
+    """Load/regenerate the UIAutomation comtypes wrapper when the typelib changes."""
     try:
-        return int(OBSERVE_CONFIG.get(key, default))
-    except (TypeError, ValueError):
+        comtypes.client.GetModule("UIAutomationCore.dll")
+        return importlib.import_module("comtypes.gen.UIAutomationClient")
+    except ImportError as exc:
+        if "Typelib different than module" not in str(exc):
+            raise
+        for name in list(sys.modules):
+            if name.startswith("comtypes.gen.UIAutomation"):
+                sys.modules.pop(name, None)
+        comtypes.client.GetModule("UIAutomationCore.dll")
+        return importlib.import_module("comtypes.gen.UIAutomationClient")
+
+
+uia = _load_uia_module()
+
+# Initialize COM
+comtypes.CoInitialize()
+
+
+# =============================================================================
+# Control type name mapping (from UIAutomationClient)
+# =============================================================================
+
+def _uia_const(name: str, default: int) -> int:
+    try:
+        return int(getattr(uia, name))
+    except Exception:
         return default
 
 
-def _obs_float_ms(key: str, default_seconds: float) -> float:
-    try:
-        return max(0.0, float(OBSERVE_CONFIG.get(key, default_seconds * 1000.0)) / 1000.0)
-    except (TypeError, ValueError):
-        return default_seconds
+UIA_ButtonControlTypeId = _uia_const("UIA_ButtonControlTypeId", 50000)
+UIA_CalendarControlTypeId = _uia_const("UIA_CalendarControlTypeId", 50001)
+UIA_CheckBoxControlTypeId = _uia_const("UIA_CheckBoxControlTypeId", 50002)
+UIA_ComboBoxControlTypeId = _uia_const("UIA_ComboBoxControlTypeId", 50003)
+UIA_EditControlTypeId = _uia_const("UIA_EditControlTypeId", 50004)
+UIA_HyperlinkControlTypeId = _uia_const("UIA_HyperlinkControlTypeId", 50005)
+UIA_ImageControlTypeId = _uia_const("UIA_ImageControlTypeId", 50006)
+UIA_ListItemControlTypeId = _uia_const("UIA_ListItemControlTypeId", 50007)
+UIA_ListControlTypeId = _uia_const("UIA_ListControlTypeId", 50008)
+UIA_MenuControlTypeId = _uia_const("UIA_MenuControlTypeId", 50009)
+UIA_MenuBarControlTypeId = _uia_const("UIA_MenuBarControlTypeId", 50010)
+UIA_MenuItemControlTypeId = _uia_const("UIA_MenuItemControlTypeId", 50011)
+UIA_ProgressBarControlTypeId = _uia_const("UIA_ProgressBarControlTypeId", 50012)
+UIA_RadioButtonControlTypeId = _uia_const("UIA_RadioButtonControlTypeId", 50013)
+UIA_ScrollBarControlTypeId = _uia_const("UIA_ScrollBarControlTypeId", 50014)
+UIA_SliderControlTypeId = _uia_const("UIA_SliderControlTypeId", 50015)
+UIA_SpinnerControlTypeId = _uia_const("UIA_SpinnerControlTypeId", 50016)
+UIA_StatusBarControlTypeId = _uia_const("UIA_StatusBarControlTypeId", 50017)
+UIA_TabControlTypeId = _uia_const("UIA_TabControlTypeId", 50018)
+UIA_TabItemControlTypeId = _uia_const("UIA_TabItemControlTypeId", 50019)
+UIA_TextControlTypeId = _uia_const("UIA_TextControlTypeId", 50020)
+UIA_ToolBarControlTypeId = _uia_const("UIA_ToolBarControlTypeId", 50021)
+UIA_ToolTipControlTypeId = _uia_const("UIA_ToolTipControlTypeId", 50022)
+UIA_TreeControlTypeId = _uia_const("UIA_TreeControlTypeId", 50023)
+UIA_TreeItemControlTypeId = _uia_const("UIA_TreeItemControlTypeId", 50024)
+UIA_CustomControlTypeId = _uia_const("UIA_CustomControlTypeId", 50025)
+UIA_GroupControlTypeId = _uia_const("UIA_GroupControlTypeId", 50026)
+UIA_ThumbControlTypeId = _uia_const("UIA_ThumbControlTypeId", 50027)
+UIA_DataGridControlTypeId = _uia_const("UIA_DataGridControlTypeId", 50028)
+UIA_DataItemControlTypeId = _uia_const("UIA_DataItemControlTypeId", 50029)
+UIA_DocumentControlTypeId = _uia_const("UIA_DocumentControlTypeId", 50030)
+UIA_SplitButtonControlTypeId = _uia_const("UIA_SplitButtonControlTypeId", 50031)
+UIA_WindowControlTypeId = _uia_const("UIA_WindowControlTypeId", 50032)
+UIA_PaneControlTypeId = _uia_const("UIA_PaneControlTypeId", 50033)
+UIA_HeaderControlTypeId = _uia_const("UIA_HeaderControlTypeId", 50034)
+UIA_HeaderItemControlTypeId = _uia_const("UIA_HeaderItemControlTypeId", 50035)
+UIA_TableControlTypeId = _uia_const("UIA_TableControlTypeId", 50036)
+UIA_TitleBarControlTypeId = _uia_const("UIA_TitleBarControlTypeId", 50037)
+UIA_SeparatorControlTypeId = _uia_const("UIA_SeparatorControlTypeId", 50038)
 
-
-def _obs_bool(key: str, default: bool) -> bool:
-    value = OBSERVE_CONFIG.get(key, default)
-    return value if type(value) is bool else default
-
-
-def _obs_text(text: str, default: int = 500) -> str:
-    limit = _obs_int("element_text_max", default)
-    if limit <= 0:
-        return str(text or "")
-    return str(text or "")[:limit]
-
-
-WINDOW_TOKEN_RE = re.compile(r"^\[?(W\d+)\]?$", re.IGNORECASE)
-HWND_TARGET_RE = re.compile(r"^hwnd:(\d+|0x[0-9a-f]+)$", re.IGNORECASE)
-
-
-def assign_window_tokens(windows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Attach stable W1..Wn tokens to observed window rows."""
-    tokenized: list[dict[str, Any]] = []
-    for index, row in enumerate(windows, 1):
-        entry = dict(row)
-        entry["token"] = f"W{index}"
-        tokenized.append(entry)
-    return tokenized
-
-
-def resolve_window_target(target: str, windows: list[dict[str, Any]] | None) -> dict[str, Any] | None:
-    """Resolve a focus target to an observed window row (token, hwnd, or title)."""
-    needle = (target or "").strip()
-    if not needle or not windows:
-        return None
-    rows = assign_window_tokens(windows)
-    token_match = WINDOW_TOKEN_RE.match(needle)
-    if token_match:
-        token = token_match.group(1).upper()
-        for row in rows:
-            if str(row.get("token", "")).upper() == token:
-                return row
-    hwnd_match = HWND_TARGET_RE.match(needle)
-    if hwnd_match:
-        try:
-            hwnd = int(hwnd_match.group(1), 0)
-        except ValueError:
-            hwnd = 0
-        if hwnd:
-            for row in rows:
-                if int(row.get("hwnd", 0) or 0) == hwnd:
-                    return row
-    needle_l = needle.lower()
-    for row in rows:
-        title_l = str(row.get("title", "") or "").lower()
-        if not title_l or title_l == "(untitled)":
-            continue
-        if needle_l == title_l or needle_l in title_l or title_l in needle_l:
-            return row
-    keywords = [w for w in re.split(r"[\s\-]+", needle_l) if len(w) > 2]
-    best_row: dict[str, Any] | None = None
-    best_score = 0
-    for row in rows:
-        title_l = str(row.get("title", "") or "").lower()
-        overlap = sum(1 for word in keywords if word in title_l)
-        if overlap > best_score:
-            best_score = overlap
-            best_row = row
-    return best_row if best_score else None
-
-
-def format_window_lines(windows: list[dict[str, Any]], limit: int) -> list[str]:
-    """Render WINDOWS lines with stable focus tokens shared by act."""
-    lines: list[str] = []
-    for row in assign_window_tokens(windows):
-        title = str(row.get("title", "") or "").strip()
-        if not title or title == "(untitled)":
-            continue
-        prefix = "*" if row.get("focused") else "-"
-        token = row.get("token", "")
-        lines.append(f"  {prefix} [{token}] {title}")
-        if len(lines) >= limit:
-            break
-    return lines
-
-UIA_CONTROL_TYPE_MAP: dict[int, str] = {
-    50000: "Button", 50001: "Calendar", 50002: "CheckBox", 50003: "ComboBox",
-    50004: "Edit", 50005: "Hyperlink", 50006: "Image", 50007: "ListItem",
-    50008: "List", 50009: "Menu", 50010: "MenuBar", 50011: "MenuItem",
-    50012: "ProgressBar", 50013: "RadioButton", 50014: "ScrollBar", 50015: "Slider",
-    50016: "Spinner", 50017: "StatusBar", 50018: "Tab", 50019: "TabItem",
-    50020: "Text", 50021: "ToolBar", 50022: "ToolTip", 50023: "Tree",
-    50024: "TreeItem", 50025: "Custom", 50026: "Group", 50027: "Thumb",
-    50028: "DataGrid", 50029: "DataItem", 50030: "Document", 50031: "SplitButton",
-    50032: "Window", 50033: "Pane", 50034: "Header", 50035: "HeaderItem",
-    50036: "Table", 50037: "TitleBar", 50038: "Separator",
+CONTROL_TYPE_NAMES: dict[int, str] = {
+    UIA_ButtonControlTypeId: "Button",
+    UIA_CalendarControlTypeId: "Calendar",
+    UIA_CheckBoxControlTypeId: "CheckBox",
+    UIA_ComboBoxControlTypeId: "ComboBox",
+    UIA_EditControlTypeId: "Edit",
+    UIA_HyperlinkControlTypeId: "Hyperlink",
+    UIA_ImageControlTypeId: "Image",
+    UIA_ListItemControlTypeId: "ListItem",
+    UIA_ListControlTypeId: "List",
+    UIA_MenuControlTypeId: "Menu",
+    UIA_MenuBarControlTypeId: "MenuBar",
+    UIA_MenuItemControlTypeId: "MenuItem",
+    UIA_ProgressBarControlTypeId: "ProgressBar",
+    UIA_RadioButtonControlTypeId: "RadioButton",
+    UIA_ScrollBarControlTypeId: "ScrollBar",
+    UIA_SliderControlTypeId: "Slider",
+    UIA_SpinnerControlTypeId: "Spinner",
+    UIA_StatusBarControlTypeId: "StatusBar",
+    UIA_TabControlTypeId: "Tab",
+    UIA_TabItemControlTypeId: "TabItem",
+    UIA_TextControlTypeId: "Text",
+    UIA_ToolBarControlTypeId: "ToolBar",
+    UIA_ToolTipControlTypeId: "ToolTip",
+    UIA_TreeControlTypeId: "Tree",
+    UIA_TreeItemControlTypeId: "TreeItem",
+    UIA_CustomControlTypeId: "Custom",
+    UIA_GroupControlTypeId: "Group",
+    UIA_ThumbControlTypeId: "Thumb",
+    UIA_DataGridControlTypeId: "DataGrid",
+    UIA_DataItemControlTypeId: "DataItem",
+    UIA_DocumentControlTypeId: "Document",
+    UIA_SplitButtonControlTypeId: "SplitButton",
+    UIA_WindowControlTypeId: "Window",
+    UIA_PaneControlTypeId: "Pane",
+    UIA_HeaderControlTypeId: "Header",
+    UIA_HeaderItemControlTypeId: "HeaderItem",
+    UIA_TableControlTypeId: "Table",
+    UIA_TitleBarControlTypeId: "TitleBar",
+    UIA_SeparatorControlTypeId: "Separator",
 }
 
-VK_MAP: dict[str, int] = {
-    "enter": 0x0D, "return": 0x0D, "tab": 0x09, "escape": 0x1B, "esc": 0x1B,
-    "backspace": 0x08, "delete": 0x2E, "del": 0x2E, "insert": 0x2D,
-    "home": 0x24, "end": 0x23, "pageup": 0x21, "pagedown": 0x22,
-    "up": 0x26, "down": 0x28, "left": 0x25, "right": 0x27,
-    "ctrl": 0x11, "control": 0x11, "alt": 0x12, "shift": 0x10,
-    "win": 0x5B, "space": 0x20,
-    "f1": 0x70, "f2": 0x71, "f3": 0x72, "f4": 0x73, "f5": 0x74,
-    "f6": 0x75, "f7": 0x76, "f8": 0x77, "f9": 0x78, "f10": 0x79,
-    "f11": 0x7A, "f12": 0x7B,
-    "`": 0xC0, "-": 0xBD, "=": 0xBB, "[": 0xDB, "]": 0xDD,
-    "\\": 0xDC, ";": 0xBA, "'": 0xDE, ",": 0xBC, ".": 0xBE, "/": 0xBF,
-} | {chr(ord("a") + i): ord("A") + i for i in range(26)} | {chr(ord("0") + i): ord("0") + i for i in range(10)}
-
-EXTENDED_VKS: frozenset[int] = frozenset({0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x2D, 0x2E})
-
-ACTIONABLE_ROLES = frozenset({
-    "Button", "Edit", "ComboBox", "ListItem", "Hyperlink", "MenuItem",
-    "TabItem", "SplitButton", "CheckBox", "RadioButton", "Slider",
-    "Document", "Text", "ScrollBar", "TreeItem", "DataItem", "Custom",
-})
-CLICKABLE_ROLES = frozenset({
-    "Button", "MenuItem", "ListItem", "Hyperlink", "TabItem", "TreeItem",
-    "SplitButton", "CheckBox", "RadioButton", "Slider", "ScrollBar", "DataItem",
-})
-WRITABLE_ROLES = frozenset({"Edit", "ComboBox", "Document"})
-PAGE_ROLES = frozenset({"Document", "Edit", "Hyperlink", "Text", "ComboBox", "DataItem", "Custom"})
-DOCUMENT_CHILD_ROLES = PAGE_ROLES | frozenset({"Button"})
+INTERACTIVE_CONTROL_TYPES = {
+    UIA_ButtonControlTypeId,
+    UIA_CalendarControlTypeId,
+    UIA_CheckBoxControlTypeId,
+    UIA_ComboBoxControlTypeId,
+    UIA_EditControlTypeId,
+    UIA_HyperlinkControlTypeId,
+    UIA_ListItemControlTypeId,
+    UIA_ListControlTypeId,
+    UIA_MenuItemControlTypeId,
+    UIA_RadioButtonControlTypeId,
+    UIA_ScrollBarControlTypeId,
+    UIA_SliderControlTypeId,
+    UIA_SpinnerControlTypeId,
+    UIA_TabControlTypeId,
+    UIA_TabItemControlTypeId,
+    UIA_TreeControlTypeId,
+    UIA_TreeItemControlTypeId,
+    UIA_DataGridControlTypeId,
+    UIA_DataItemControlTypeId,
+    UIA_DocumentControlTypeId,
+    UIA_SplitButtonControlTypeId,
+}
 
 
-@dataclass(slots=True)
+def control_type_name(control_type_id: int) -> str:
+    return CONTROL_TYPE_NAMES.get(control_type_id, f"Unknown({control_type_id})")
+
+
+# =============================================================================
+# Property IDs (from UIAutomationClient)
+# =============================================================================
+
+UIA_RuntimeIdPropertyId = _uia_const("UIA_RuntimeIdPropertyId", 30000)
+UIA_BoundingRectanglePropertyId = _uia_const("UIA_BoundingRectanglePropertyId", 30001)
+UIA_ProcessIdPropertyId = _uia_const("UIA_ProcessIdPropertyId", 30002)
+UIA_ControlTypePropertyId = _uia_const("UIA_ControlTypePropertyId", 30003)
+UIA_LocalizedControlTypePropertyId = _uia_const("UIA_LocalizedControlTypePropertyId", 30004)
+UIA_NamePropertyId = _uia_const("UIA_NamePropertyId", 30005)
+UIA_HasKeyboardFocusPropertyId = _uia_const("UIA_HasKeyboardFocusPropertyId", 30008)
+UIA_IsKeyboardFocusablePropertyId = _uia_const("UIA_IsKeyboardFocusablePropertyId", 30009)
+UIA_IsEnabledPropertyId = _uia_const("UIA_IsEnabledPropertyId", 30010)
+UIA_AutomationIdPropertyId = _uia_const("UIA_AutomationIdPropertyId", 30011)
+UIA_ClassNamePropertyId = _uia_const("UIA_ClassNamePropertyId", 30012)
+UIA_NativeWindowHandlePropertyId = _uia_const("UIA_NativeWindowHandlePropertyId", 30020)
+UIA_IsOffscreenPropertyId = _uia_const("UIA_IsOffscreenPropertyId", 30022)
+UIA_FrameworkIdPropertyId = _uia_const("UIA_FrameworkIdPropertyId", 30024)
+
+
+# =============================================================================
+# Data classes for observation
+# =============================================================================
+
+
+@dataclass
+class Rect:
+    """Bounding rectangle."""
+    left: int = 0
+    top: int = 0
+    right: int = 0
+    bottom: int = 0
+    
+    @property
+    def width(self) -> int:
+        return self.right - self.left
+    
+    @property
+    def height(self) -> int:
+        return self.bottom - self.top
+    
+    def to_dict(self) -> dict[str, int]:
+        return {"left": self.left, "top": self.top, "right": self.right, "bottom": self.bottom}
+
+
+@dataclass
 class Element:
-    id: str
-    role: str
-    name: str
-    value: str
-    hwnd: int
-    px: int
-    py: int
-    pw: int
-    ph: int
-    action: str
-    wnd: str = ""
-    scope: str = "focused"
+    """UIA element with key properties for decision making."""
+    name: str = ""
+    control_type: str = ""
+    control_type_id: int = 0
     automation_id: str = ""
     class_name: str = ""
-    enabled: bool = True
-    readonly: bool = False
+    process_id: int = 0
+    rect: Rect = field(default_factory=Rect)
+    is_enabled: bool = True
+    is_offscreen: bool = False
+    has_focus: bool = False
+    framework_id: str = ""
+    runtime_id: list[int] = field(default_factory=list)
+    window_handle: int = 0
+    children: list["Element"] = field(default_factory=list)
+    
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "control_type": self.control_type,
+            "control_type_id": self.control_type_id,
+            "automation_id": self.automation_id,
+            "class_name": self.class_name,
+            "process_id": self.process_id,
+            "rect": self.rect.to_dict(),
+            "is_enabled": self.is_enabled,
+            "is_offscreen": self.is_offscreen,
+            "has_focus": self.has_focus,
+            "framework_id": self.framework_id,
+            "runtime_id": self.runtime_id,
+            "window_handle": self.window_handle,
+            "children": [c.to_dict() for c in self.children],
+        }
 
 
-@dataclass(slots=True)
-class Observation:
-    focused_title: str
-    elements: dict[str, Element]
-    context_text: str
-    snapshot: dict[str, Any] | None = None
+# =============================================================================
+# Variant helpers
+# =============================================================================
 
 
-class _UIA:
-    """Minimal COM UIA wrapper for hover probing and bounded tree walking."""
-
-    CLSCTX_INPROC = 1
-    VT_I4 = 3
-    VT_BSTR = 8
-    VT_BOOL = 11
-    VT_R8_ARRAY = 8197
-    UIA_BOUNDING_RECT = 30001
-    UIA_CONTROL_TYPE = 30003
-    UIA_NAME = 30005
-    UIA_IS_ENABLED = 30010
-    UIA_IS_OFFSCREEN = 30022
-    UIA_NATIVE_WINDOW_HANDLE = 30020
-    UIA_ELEMENT_FROM_POINT = 7
-    UIA_GET_ROOT_ELEMENT = 5
-    UIA_GET_PROPERTY = 10
-    UIA_FIND_ALL = 6
-    UIA_CREATE_TRUE_CONDITION = 21
-    UIA_ARRAY_LENGTH = 3
-    UIA_ARRAY_GET_ELEMENT = 4
-    UIA_PROCESS_ID = 30002
-    UIA_LEGACY_PATTERN = 10018
-    LEGACY_VALUE_INDEX = 8
-    UIA_TEXT_PATTERN = 10014
-    TEXT_DOC_RANGE = 7
-    TEXT_GET_TEXT = 12
-    UIA_AUTOMATION_ID = 30011
-    UIA_CLASS_NAME = 30012
-    UIA_IS_CONTROL_ELEMENT = 30016
-
-    class GUID(ctypes.Structure):
-        _fields_ = [("Data1", W.DWORD), ("Data2", W.WORD), ("Data3", W.WORD), ("Data4", ctypes.c_ubyte * 8)]
-
-    class VARIANT(ctypes.Structure):
-        _fields_ = [("vt", W.WORD), ("r1", W.WORD), ("r2", W.WORD), ("r3", W.WORD), ("val", ctypes.c_ulonglong)]
-
-    class SAFEARRAY(ctypes.Structure):
-        class BOUND(ctypes.Structure):
-            _fields_ = [("cElements", W.DWORD), ("lLbound", W.LONG)]
-        _fields_ = [("cDims", W.USHORT), ("fFeatures", W.USHORT), ("cbElements", W.DWORD),
-                    ("cLocks", W.DWORD), ("pvData", ctypes.c_void_p), ("rgsabound", BOUND * 1)]
-
-    def __init__(self):
-        import uuid
-        self.ole32 = ctypes.OleDLL("ole32")
-        self.oleaut32 = ctypes.WinDLL("oleaut32")
-        self.oleaut32.SysFreeString.argtypes = [ctypes.c_void_p]
-        self.oleaut32.SysFreeString.restype = None
-        self.oleaut32.SafeArrayDestroy.argtypes = [ctypes.c_void_p]
-        self.ole32.CoInitialize(None)
-        clsid = self._make_guid("ff48dba4-60ef-4201-aa87-54103eef594e")
-        iid = self._make_guid("30cbe57d-d9d0-452a-ab13-7ac5ac4825ee")
-        self._uia = ctypes.c_void_p()
-        self.ole32.CoCreateInstance(ctypes.byref(clsid), None, self.CLSCTX_INPROC,
-                                    ctypes.byref(iid), ctypes.byref(self._uia))
-        self._iid_legacy = self._make_guid("828055ad-355b-4435-86d5-3b51c14a9b1b")
-        self._iid_text = self._make_guid("32eba289-3583-42c9-9c59-3b6d9a1e9b6a")
-
-    def _make_guid(self, s: str) -> "_UIA.GUID":
-        import uuid as _uuid
-        b = _uuid.UUID(s).bytes
-        return self.GUID(
-            int.from_bytes(b[0:4], "big"), int.from_bytes(b[4:6], "big"),
-            int.from_bytes(b[6:8], "big"), (ctypes.c_ubyte * 8)(*b[8:16]))
-
-    def _vt(self, this: ctypes.c_void_p, idx: int, proto_args: tuple, *args):
-        vtable = ctypes.cast(this, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p)))[0]
-        proto = ctypes.WINFUNCTYPE(ctypes.HRESULT, *proto_args)
-        return proto(vtable[idx])(this, *args)
-
-    def _release(self, ptr: ctypes.c_void_p):
-        if ptr.value:
-            vtable = ctypes.cast(ptr, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p)))[0]
-            proto = ctypes.WINFUNCTYPE(ctypes.c_ulong, ctypes.c_void_p)
-            proto(vtable[2])(ptr)
-
-    def element_from_point(self, px: int, py: int) -> ctypes.c_void_p | None:
-        packed = ctypes.c_int64(px | (py << 32))
-        found = ctypes.c_void_p()
-        hr = self._vt(self._uia, self.UIA_ELEMENT_FROM_POINT,
-                      (ctypes.c_void_p, ctypes.c_int64, ctypes.POINTER(ctypes.c_void_p)),
-                      packed, ctypes.byref(found))
-        return found if hr == 0 and found.value else None
-
-    def root_element(self) -> ctypes.c_void_p | None:
-        root = ctypes.c_void_p()
-        hr = self._vt(self._uia, self.UIA_GET_ROOT_ELEMENT,
-                      (ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)),
-                      ctypes.byref(root))
-        return root if hr == 0 and root.value else None
-
-    def true_condition(self) -> ctypes.c_void_p | None:
-        condition = ctypes.c_void_p()
-        hr = self._vt(self._uia, self.UIA_CREATE_TRUE_CONDITION,
-                      (ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)),
-                      ctypes.byref(condition))
-        return condition if hr == 0 and condition.value else None
-
-    def find_all_children(self, el: ctypes.c_void_p, condition: ctypes.c_void_p) -> ctypes.c_void_p | None:
-        found = ctypes.c_void_p()
-        hr = self._vt(el, self.UIA_FIND_ALL,
-                      (ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)),
-                      ctypes.c_int(2), condition, ctypes.byref(found))
-        return found if hr == 0 and found.value else None
-
-    def array_length(self, arr: ctypes.c_void_p) -> int:
-        length = ctypes.c_int()
-        hr = self._vt(arr, self.UIA_ARRAY_LENGTH,
-                      (ctypes.c_void_p, ctypes.POINTER(ctypes.c_int)),
-                      ctypes.byref(length))
-        return int(length.value) if hr == 0 else 0
-
-    def array_get(self, arr: ctypes.c_void_p, index: int) -> ctypes.c_void_p | None:
-        el = ctypes.c_void_p()
-        hr = self._vt(arr, self.UIA_ARRAY_GET_ELEMENT,
-                      (ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_void_p)),
-                      ctypes.c_int(index), ctypes.byref(el))
-        return el if hr == 0 and el.value else None
-
-    def get_property(self, el: ctypes.c_void_p, prop_id: int):
-        var = self.VARIANT()
-        self._vt(el, self.UIA_GET_PROPERTY,
-                 (ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(self.VARIANT)),
-                 ctypes.c_int(prop_id), ctypes.byref(var))
-        return var
-
-    def get_str(self, el: ctypes.c_void_p, prop_id: int) -> str:
-        var = self.get_property(el, prop_id)
-        if var.vt == self.VT_BSTR:
-            ptr = ctypes.c_void_p(var.val)
-            s = ctypes.cast(ptr, ctypes.c_wchar_p).value or ""
-            self.oleaut32.SysFreeString(ptr)
-            return s
+def variant_to_str(variant: Any) -> str:
+    if variant is None:
         return ""
-
-    def get_int(self, el: ctypes.c_void_p, prop_id: int) -> int:
-        var = self.get_property(el, prop_id)
-        return int(var.val & 0xFFFFFFFF) if var.vt == self.VT_I4 else 0
-
-    def get_bool(self, el: ctypes.c_void_p, prop_id: int) -> bool:
-        var = self.get_property(el, prop_id)
-        return (var.val & 0xFFFF) == 0xFFFF if var.vt == self.VT_BOOL else False
-
-    def get_rect(self, el: ctypes.c_void_p) -> tuple[int, int, int, int]:
-        var = self.get_property(el, self.UIA_BOUNDING_RECT)
-        if var.vt == self.VT_R8_ARRAY:
-            sa_ptr = ctypes.c_void_p(var.val)
-            sa = ctypes.cast(sa_ptr, ctypes.POINTER(self.SAFEARRAY)).contents
-            d = (ctypes.c_double * 4).from_address(sa.pvData)
-            result = (int(d[0]), int(d[1]), int(d[2]), int(d[3]))
-            self.oleaut32.SafeArrayDestroy(sa_ptr)
-            return result
-        return (0, 0, 0, 0)
-
-    def get_legacy_value(self, el: ctypes.c_void_p) -> str:
-        pattern = ctypes.c_void_p()
-        hr = self._vt(el, 14,
-                      (ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(self.GUID), ctypes.POINTER(ctypes.c_void_p)),
-                      ctypes.c_int(self.UIA_LEGACY_PATTERN), ctypes.byref(self._iid_legacy), ctypes.byref(pattern))
-        if hr != 0 or not pattern.value:
+    if hasattr(variant, 'value'):
+        val = variant.value
+        if val is None:
             return ""
-        bstr = ctypes.c_wchar_p()
-        hr2 = self._vt(pattern, self.LEGACY_VALUE_INDEX,
-                       (ctypes.c_void_p, ctypes.POINTER(ctypes.c_wchar_p)), ctypes.byref(bstr))
-        self._release(pattern)
-        return bstr.value or "" if hr2 == 0 else ""
+        return str(val)
+    return str(variant)
 
-    def get_text_content(self, el: ctypes.c_void_p, max_len: int = READ_TEXT_MAX) -> str:
-        pattern = ctypes.c_void_p()
-        hr = self._vt(el, 14,
-                      (ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(self.GUID), ctypes.POINTER(ctypes.c_void_p)),
-                      ctypes.c_int(self.UIA_TEXT_PATTERN), ctypes.byref(self._iid_text), ctypes.byref(pattern))
-        if hr != 0 or not pattern.value:
-            return ""
-        doc_range = ctypes.c_void_p()
-        hr2 = self._vt(pattern, self.TEXT_DOC_RANGE,
-                       (ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)), ctypes.byref(doc_range))
-        if hr2 != 0 or not doc_range.value:
-            self._release(pattern)
-            return ""
-        bstr = ctypes.c_wchar_p()
-        hr3 = self._vt(doc_range, self.TEXT_GET_TEXT,
-                       (ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_wchar_p)),
-                       ctypes.c_int(max_len), ctypes.byref(bstr))
-        text = bstr.value or "" if hr3 == 0 else ""
-        self._release(doc_range)
-        self._release(pattern)
-        return text
+
+def variant_to_int(variant: Any) -> int:
+    if variant is None:
+        return 0
+    if hasattr(variant, 'value'):
+        val = variant.value
+        if val is None:
+            return 0
+        try:
+            return int(val)
+        except (ValueError, TypeError):
+            return 0
+    try:
+        return int(variant)
+    except (ValueError, TypeError):
+        return 0
+
+
+def variant_to_bool(variant: Any) -> bool:
+    if variant is None:
+        return False
+    if hasattr(variant, 'value'):
+        val = variant.value
+        if val is None:
+            return False
+        return bool(val)
+    return bool(variant)
+
+
+def variant_to_runtime_id(variant: Any) -> list[int]:
+    if variant is None:
+        return []
+    try:
+        if hasattr(variant, 'value'):
+            val = variant.value
+            if val is None:
+                return []
+            if hasattr(val, '__iter__'):
+                return list(val)
+        return []
+    except Exception:
+        return []
+
+
+def variant_to_rect(variant: Any) -> Rect:
+    rect = Rect()
+    if variant is None:
+        return rect
+    try:
+        val = variant.value if hasattr(variant, "value") else variant
+        if val is None:
+            return rect
+        if all(hasattr(val, attr) for attr in ("left", "top", "right", "bottom")):
+            return Rect(int(val.left), int(val.top), int(val.right), int(val.bottom))
+        if all(hasattr(val, attr) for attr in ("Left", "Top", "Right", "Bottom")):
+            return Rect(int(val.Left), int(val.Top), int(val.Right), int(val.Bottom))
+        if hasattr(val, "__iter__"):
+            arr = list(val)
+            if len(arr) >= 4:
+                left, top, third, fourth = map(int, arr[:4])
+                right = third if third > left else left + third
+                bottom = fourth if fourth > top else top + fourth
+                return Rect(left=left, top=top, right=right, bottom=bottom)
+    except Exception:
+        pass
+    return rect
+
+
+# =============================================================================
+# Desktop class - main observation interface
+# =============================================================================
 
 
 class Desktop:
-    """Desktop observer using hover probing plus bounded desktop tree context."""
-
-    def __init__(self):
-        self.user32 = ctypes.WinDLL("user32", use_last_error=True)
-        self.kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-        self.user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
-        self.user32.GetForegroundWindow.restype = W.HWND
-        self.user32.GetTopWindow.restype = W.HWND
-        self.user32.GetWindow.restype = W.HWND
-        self.user32.GetAncestor.restype = W.HWND
-        self.user32.OpenClipboard.argtypes = [ctypes.c_void_p]
-        self.user32.OpenClipboard.restype = W.BOOL
-        self.user32.CloseClipboard.restype = W.BOOL
-        self.user32.EmptyClipboard.restype = W.BOOL
-        self.user32.GetClipboardData.argtypes = [W.UINT]
-        self.user32.GetClipboardData.restype = ctypes.c_void_p
-        self.user32.SetClipboardData.argtypes = [W.UINT, ctypes.c_void_p]
-        self.user32.SetClipboardData.restype = ctypes.c_void_p
-        self.kernel32.GlobalAlloc.argtypes = [W.UINT, ctypes.c_size_t]
-        self.kernel32.GlobalAlloc.restype = ctypes.c_void_p
-        self.kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
-        self.kernel32.GlobalLock.restype = ctypes.c_void_p
-        self.kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
-        self.kernel32.GlobalUnlock.restype = W.BOOL
-        self.kernel32.GlobalFree.argtypes = [ctypes.c_void_p]
-        self.kernel32.GlobalFree.restype = ctypes.c_void_p
-        self._uia = _UIA()
-
-    def observe(self) -> Observation:
-        screen_w = self.user32.GetSystemMetrics(0)
-        screen_h = self.user32.GetSystemMetrics(1)
-        focused_hwnd = int(self.user32.GetForegroundWindow())
-        focused_title = self._get_window_title(focused_hwnd) or "Desktop"
-        if focused_title.strip().lower() in {"desktop", "program manager"}:
-            fallback = self._top_application_window()
-            if fallback:
-                focused_hwnd, focused_title = fallback
-
-        rect = self._get_window_rect(focused_hwnd)
-        if rect:
-            x0, y0, x1, y1 = rect
-        else:
-            x0, y0, x1, y1 = 0, 0, screen_w, screen_h
-
-        saved = W.POINT()
-        self.user32.GetCursorPos(ctypes.byref(saved))
-        probe_step = max(10, _obs_int("probe_step_px", PROBE_STEP_PX))
-        enrich_min = max(0, _obs_int("scroll_enrich_min", SCROLL_ENRICH_MIN))
-        probe_stats: dict[str, Any] = {
-            "bounds": [x0, y0, x1, y1],
-            "primary_step": probe_step,
-            "primary_points": self._probe_point_count(x0, y0, x1, y1, probe_step),
-            "dense_used": False,
-            "dense_step": 0,
-            "dense_points": 0,
-            "dense_added": 0,
-            "scroll_used": False,
-            "scroll_passes": [],
-            "scroll_added": 0,
-            "overlay_probe_used": False,
-            "overlay_probe_points": 0,
-            "overlay_probe_found": 0,
-            "overlay_probe_added": 0,
-            "hover_scan_enabled": bool(OBSERVE_CONFIG.get("hover_scan_enabled", True)),
-            "hover_scan_used": False,
-            "hover_scan_step": 0,
-            "hover_scan_points": 0,
-            "hover_scan_found": 0,
-            "hover_scan_added": 0,
-        }
-        window_limit = max(1, _obs_int("window_limit", 8))
-        overlay_limit = max(window_limit, _obs_int("overlay_window_limit", 32))
-        window_infos = self._window_infos(
-            focused_hwnd,
-            limit=overlay_limit,
-            include_untitled=True,
-            include_until=focused_hwnd,
-            scan_limit=max(overlay_limit, _obs_int("window_scan_limit", 128)),
-        )
-        focus_in_scan = any(int(w.get("hwnd", 0) or 0) == focused_hwnd for w in window_infos)
-        z_index = {int(w["hwnd"]): int(w["z"]) for w in window_infos}
-        overlay_hwnds = self._overlay_hwnds(focused_hwnd, rect, window_infos)
-
-        def merge(found: list[dict[str, Any]]) -> int:
-            before = len(nodes)
-            for n in found:
-                key = self._node_key(n)
-                if key not in seen:
-                    seen.add(key)
-                    nodes.append(n)
-            return len(nodes) - before
-
-        # Single-pass: when hover_scan_enabled, one full-screen sweep replaces
-        # the separate primary + overlay + hover passes (3x fewer points).
-        if probe_stats["hover_scan_enabled"]:
-            hover_step = max(10, _obs_int("hover_scan_step_px", probe_step))
-            nodes = self._probe(0, 0, screen_w, screen_h, focused_hwnd, step=hover_step, delay_key="hover_scan_delay_ms", window_infos=window_infos)
-            seen = {self._node_key(n) for n in nodes}
-            probe_stats["hover_scan_used"] = True
-            probe_stats["hover_scan_step"] = hover_step
-            probe_stats["hover_scan_points"] = self._probe_point_count(0, 0, screen_w, screen_h, hover_step)
-            probe_stats["hover_scan_found"] = len(nodes)
-            probe_stats["hover_scan_added"] = len(nodes)
-            probe_stats["primary_found"] = 0
-        else:
-            nodes = self._probe(x0, y0, x1, y1, focused_hwnd, step=probe_step, window_infos=window_infos)
-            seen = {self._node_key(n) for n in nodes}
-            probe_stats["primary_found"] = len(nodes)
-            for info in window_infos:
-                hwnd = int(info.get("hwnd", 0) or 0)
-                rect = info.get("rect")
-                if hwnd not in overlay_hwnds or not rect:
-                    continue
-                found = self._probe(rect[0], rect[1], rect[2], rect[3], focused_hwnd, step=probe_step, window_infos=window_infos)
-                probe_stats["overlay_probe_used"] = True
-                probe_stats["overlay_probe_points"] += self._probe_point_count(rect[0], rect[1], rect[2], rect[3], probe_step)
-                probe_stats["overlay_probe_found"] += len(found)
-                probe_stats["overlay_probe_added"] += merge(found)
-        if len(nodes) < enrich_min:
-            dense_step = max(_obs_int("dense_probe_min_px", 45), probe_step // 2)
-            probe_stats["dense_used"] = True
-            probe_stats["dense_step"] = dense_step
-            probe_stats["dense_points"] = self._probe_point_count(0, 0, screen_w, screen_h, dense_step)
-            extra = self._probe(0, 0, screen_w, screen_h, focused_hwnd, step=dense_step, window_infos=window_infos)
-            probe_stats["dense_found"] = len(extra)
-            probe_stats["dense_added"] = merge(extra)
-        classified = self._classify(nodes, z_index)
-        if len(classified) < enrich_min:
-            cx = max(x0 + 40, min(x1 - 40, (x0 + x1) // 2))
-            cy = max(y0 + 40, min(y1 - 40, (y0 + y1) // 2))
-            passes = OBSERVE_CONFIG.get("scroll_enrich_passes", SCROLL_ENRICH_PASSES)
-            if not isinstance(passes, (list, tuple)):
-                passes = SCROLL_ENRICH_PASSES
-            for amount in passes:
-                self.scroll(cx, cy, amount)
-                time.sleep(_obs_float_ms("scroll_enrich_delay_ms", SCROLL_ENRICH_DELAY))
-                found_nodes = self._probe(x0, y0, x1, y1, focused_hwnd, step=probe_step, window_infos=window_infos)
-                added = merge(found_nodes)
-                probe_stats["scroll_used"] = True
-                probe_stats["scroll_added"] += added
-                probe_stats["scroll_passes"].append({"amount": int(amount), "found": len(found_nodes), "added": added})
-            classified = self._classify(nodes, z_index)
-        probe_stats["raw_nodes"] = len(nodes)
-        probe_stats["classified_nodes"] = len(classified)
-        self.user32.SetCursorPos(saved.x, saved.y)
-        elements, context_text = self._render(classified, focused_title, focused_hwnd, overlay_hwnds, window_infos)
-        context_text += "\n" + self._probe_stats_line(probe_stats)
-        overlay_lines = self._overlay_lines(overlay_hwnds, window_infos)
-        if overlay_lines:
-            context_text += "\nOVERLAYS:\n" + "\n".join(overlay_lines)
-        tree_snapshot = None
-        tree_error = ""
-        if OBSERVE_CONFIG.get("desktop_tree_enabled", True):
-            try:
-                tree_snapshot = self._desktop_tree_snapshot(window_infos, focused_hwnd, overlay_hwnds)
-                tree_lines = self._desktop_tree_lines(tree_snapshot)
-            except Exception as e:
-                tree_error = f"{type(e).__name__}: {e}"
-                tree_lines = [f"TREE_ERROR: {type(e).__name__}: {e}"]
-            if tree_lines:
-                context_text += "\nDESKTOP_TREE:\n" + "\n".join(tree_lines)
-        window_lines = format_window_lines(window_infos, window_limit)
-        if window_lines:
-            context_text += "\nWINDOWS:\n" + "\n".join(window_lines)
-            context_text += "\nWINDOW_FOCUS: use focus target [W#] from WINDOWS, full title, or hwnd:<id>"
-        if not focus_in_scan:
-            context_text += "\nWINDOW_SCAN_WARNING: focused window was not reached; overlay ordering may be incomplete"
-        if not elements:
-            context_text += (
-                "\n  (no interactive elements — use hotkey win+r for Run dialog, "
-                "or focus with window title substring)"
+        """Main desktop observation class using UIA COM via comtypes.gen.UIAutomationClient."""
+    
+    def __init__(self, config: dict[str, Any] | None = None):
+        self.config = config or {}
+        self._automation: uia.IUIAutomation | None = None
+        self._last_desktop_tree: dict[str, Any] | None = None
+        self._focused_title_cache: str = ""
+        self._init_automation()
+    
+    def _init_automation(self) -> None:
+        """Initialize UIA automation."""
+        try:
+            self._automation = comtypes.client.CreateObject(
+                uia.CUIAutomation, interface=uia.IUIAutomation
             )
-        snapshot = self._observation_snapshot(
-            focused_title,
-            focused_hwnd,
-            elements,
-            window_infos,
-            overlay_hwnds,
-            probe_stats,
-            tree_snapshot,
-            tree_error,
-            focus_in_scan,
-        )
-        return Observation(focused_title=focused_title, elements=elements, context_text=context_text, snapshot=snapshot)
-
-    def click(self, px: int, py: int, hwnd: int = 0):
-        if hwnd:
-            self.user32.SetForegroundWindow(hwnd)
-            time.sleep(0.05)
-        self.user32.SetCursorPos(px, py)
-        time.sleep(0.02)
-        self.user32.mouse_event(0x0002, 0, 0, 0, 0)
-        time.sleep(0.05)
-        self.user32.mouse_event(0x0004, 0, 0, 0, 0)
-
-    def type_text(self, text: str):
-        if len(text) > 80 or "\n" in text:
-            if self._paste_text(text):
-                return
-
-        class KEYBDINPUT(ctypes.Structure):
-            _fields_ = [("wVk", W.WORD), ("wScan", W.WORD), ("dwFlags", W.DWORD),
-                        ("time", W.DWORD), ("dwExtraInfo", ctypes.c_size_t)]
-
-        class INPUT(ctypes.Structure):
-            class _U(ctypes.Union):
-                _fields_ = [("ki", KEYBDINPUT), ("_pad", ctypes.c_ubyte * 32)]
-            _fields_ = [("type", W.DWORD), ("u", _U)]
-
-        for char in text:
-            inputs = (INPUT * 2)()
-            inputs[0].type = 1
-            inputs[0].u.ki.wScan = ord(char)
-            inputs[0].u.ki.dwFlags = 0x0004
-            inputs[1].type = 1
-            inputs[1].u.ki.wScan = ord(char)
-            inputs[1].u.ki.dwFlags = 0x0006
-            self.user32.SendInput(2, ctypes.byref(inputs), ctypes.sizeof(INPUT))
-            time.sleep(0.03)
-
-    def _paste_text(self, text: str) -> bool:
-        try:
-            previous = self._clipboard_text()
-            self._set_clipboard_text(text)
-            time.sleep(0.05)
-            self.hotkey(["ctrl", "v"])
-            time.sleep(0.15)
-            self._set_clipboard_text(previous)
-            return True
-        except Exception:
-            return False
-
-    def _open_clipboard(self) -> bool:
-        for _ in range(10):
-            if self.user32.OpenClipboard(None):
-                return True
-            time.sleep(0.03)
-        return False
-
-    def _clipboard_text(self) -> str:
-        CF_UNICODETEXT = 13
-        if not self._open_clipboard():
-            return ""
-        try:
-            handle = self.user32.GetClipboardData(CF_UNICODETEXT)
-            if not handle:
-                return ""
-            ptr = self.kernel32.GlobalLock(handle)
-            if not ptr:
-                return ""
-            try:
-                return ctypes.wstring_at(ptr)
-            finally:
-                self.kernel32.GlobalUnlock(handle)
-        finally:
-            self.user32.CloseClipboard()
-
-    def _set_clipboard_text(self, text: str) -> None:
-        CF_UNICODETEXT = 13
-        GMEM_MOVEABLE = 0x0002
-        data = (text + "\0").encode("utf-16-le")
-        handle = self.kernel32.GlobalAlloc(GMEM_MOVEABLE, len(data))
-        if not handle:
-            raise OSError("GlobalAlloc failed")
-        ptr = self.kernel32.GlobalLock(handle)
-        if not ptr:
-            self.kernel32.GlobalFree(handle)
-            raise OSError("GlobalLock failed")
-        try:
-            ctypes.memmove(ptr, data, len(data))
-        finally:
-            self.kernel32.GlobalUnlock(handle)
-        if not self._open_clipboard():
-            self.kernel32.GlobalFree(handle)
-            raise OSError("OpenClipboard failed")
-        try:
-            if not self.user32.EmptyClipboard():
-                raise OSError("EmptyClipboard failed")
-            if not self.user32.SetClipboardData(CF_UNICODETEXT, handle):
-                raise OSError("SetClipboardData failed")
-            handle = 0
-        finally:
-            self.user32.CloseClipboard()
-            if handle:
-                self.kernel32.GlobalFree(handle)
-
-    def press_key(self, key: str):
-        vk = VK_MAP.get(key.lower())
-        if not vk:
-            return
-        flags = 0x0001 if vk in EXTENDED_VKS else 0
-        self.user32.keybd_event(vk, 0, flags, None)
-        time.sleep(0.03)
-        self.user32.keybd_event(vk, 0, 0x0002 | flags, None)
-
-    def hotkey(self, keys: list[str]):
-        vks = [VK_MAP[k.lower()] for k in keys if k.lower() in VK_MAP]
-        for vk in vks:
-            self.user32.keybd_event(vk, 0, 0x0001 if vk in EXTENDED_VKS else 0, None)
-            time.sleep(0.03)
-        for vk in reversed(vks):
-            self.user32.keybd_event(vk, 0, 0x0002 | (0x0001 if vk in EXTENDED_VKS else 0), None)
-            time.sleep(0.03)
-
-    def scroll(self, px: int, py: int, amount: int = 3, hwnd: int = 0):
-        if hwnd:
-            self.user32.SetForegroundWindow(hwnd)
-            time.sleep(0.05)
-        self.user32.SetCursorPos(px, py)
-        time.sleep(0.02)
-        self.user32.mouse_event(0x0800, 0, 0, amount * 120, 0)
-
-    def focus_window(self, title: str, window_infos: list[dict[str, Any]] | None = None) -> bool:
-        title_l = (title or "").lower().strip()
-        keywords = [w for w in re.split(r"[\s\-]+", title_l) if len(w) > 2]
-        resolved = resolve_window_target(title, window_infos)
-        if resolved:
-            hwnd = int(resolved.get("hwnd", 0) or 0)
-            resolved_title = str(resolved.get("title", "") or title)
-            resolved_l = resolved_title.lower()
-            resolved_keywords = [w for w in re.split(r"[\s\-]+", resolved_l) if len(w) > 2] or keywords
-            if hwnd and self._set_foreground_verified(hwnd, resolved_l, resolved_keywords):
-                return True
-        best_hwnd = None
-        best_score = 99
-        hwnd = self.user32.GetTopWindow(None)
-        while hwnd:
-            if self.user32.IsWindowVisible(hwnd):
-                wt = self._get_window_title(int(hwnd))
-                wt_l = wt.lower()
-                if title_l in wt_l or wt_l in title_l:
-                    return self._set_foreground_verified(int(hwnd), title_l, keywords)
-                overlap = sum(1 for w in keywords if w in wt_l)
-                if overlap and overlap < best_score:
-                    best_score = overlap
-                    best_hwnd = hwnd
-            hwnd = self.user32.GetWindow(hwnd, 2)
-        if best_hwnd:
-            return self._set_foreground_verified(int(best_hwnd), title_l, keywords)
-        return False
-
-    def open_url(self, browser: str, url: str) -> tuple[bool, str]:
-        """Open a URL in a browser without requiring prior focus."""
-        raw_url = (url or "").strip()
-        if not raw_url:
-            return False, "empty url"
-        if not re.match(r"^https?://", raw_url, re.IGNORECASE):
-            raw_url = f"https://{raw_url}"
-        browser_l = (browser or "chrome").lower().strip()
-        launchers = {
-            "chrome": "chrome",
-            "google chrome": "chrome",
-            "edge": "msedge",
-            "microsoft edge": "msedge",
-            "msedge": "msedge",
-            "firefox": "firefox",
-            "opera": "opera",
-        }
-        launcher = launchers.get(browser_l)
-        if not launcher:
-            for name, exe in launchers.items():
-                if name in browser_l or browser_l in name:
-                    launcher = exe
-                    break
-        if not launcher:
-            launcher = "chrome"
-        try:
-            subprocess.run(
-                ["cmd", "/c", "start", "", launcher, raw_url],
-                check=False,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            )
-            time.sleep(1.0)
-            return True, f"opened {raw_url} via {launcher}"
-        except Exception as exc:
-            return False, f"{type(exc).__name__}: {exc}"
-
-    def _window_thread_id(self, hwnd: int) -> int:
-        if not hwnd:
-            return 0
-        pid = W.DWORD()
-        tid = self.user32.GetWindowThreadProcessId(W.HWND(hwnd), ctypes.byref(pid))
-        return int(tid or 0)
-
-    def _raise_foreground(self, hwnd: int) -> None:
-        """Best-effort foreground activation using AttachThreadInput + restore."""
-        hwnd = int(hwnd)
-        if not hwnd or not self.user32.IsWindow(W.HWND(hwnd)):
-            return
-        SW_RESTORE = 9
-        if self.user32.IsIconic(W.HWND(hwnd)):
-            self.user32.ShowWindow(W.HWND(hwnd), SW_RESTORE)
-            time.sleep(0.05)
-        foreground = int(self.user32.GetForegroundWindow() or 0)
-        if foreground == hwnd:
-            return
-        current_tid = int(self.kernel32.GetCurrentThreadId() or 0)
-        fg_tid = self._window_thread_id(foreground) if foreground else 0
-        target_tid = self._window_thread_id(hwnd)
-        attached_fg = False
-        attached_target = False
-        try:
-            if fg_tid and fg_tid != current_tid:
-                attached_fg = bool(self.user32.AttachThreadInput(fg_tid, current_tid, True))
-            if target_tid and target_tid != current_tid:
-                attached_target = bool(self.user32.AttachThreadInput(target_tid, current_tid, True))
-            self.user32.BringWindowToTop(W.HWND(hwnd))
-            self.user32.ShowWindow(W.HWND(hwnd), SW_RESTORE)
-            self.user32.SetForegroundWindow(W.HWND(hwnd))
-            # Alt key pulse helps Windows allow foreground steal in some sessions.
-            VK_MENU = 0x12
-            KEYEVENTF_KEYUP = 0x0002
-            self.user32.keybd_event(VK_MENU, 0, 0, 0)
-            self.user32.keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0)
-            self.user32.SetForegroundWindow(W.HWND(hwnd))
-        finally:
-            if attached_target and target_tid:
-                self.user32.AttachThreadInput(target_tid, current_tid, False)
-            if attached_fg and fg_tid:
-                self.user32.AttachThreadInput(fg_tid, current_tid, False)
-
-    def _foreground_matches(self, hwnd: int, title_l: str, keywords: list[str]) -> bool:
-        active = int(self.user32.GetForegroundWindow() or 0)
-        if not active:
-            return False
-        active_root = self._root_hwnd(active)
-        target_root = self._root_hwnd(hwnd)
-        if active == hwnd or (active_root and target_root and active_root == target_root):
-            return True
-        active_title = self._get_window_title(active).lower()
-        if title_l and (title_l in active_title or active_title in title_l):
-            return True
-        return bool(keywords and any(w in active_title for w in keywords))
-
-    def _set_foreground_verified(self, hwnd: int, title_l: str, keywords: list[str]) -> bool:
-        hwnd = int(hwnd)
-        if not hwnd:
-            return False
-        for _ in range(3):
-            self._raise_foreground(hwnd)
-            time.sleep(FOCUS_DELAY)
-            if self._foreground_matches(hwnd, title_l, keywords):
-                return True
-        return False
-
-    def _window_infos(
-        self,
-        focused_hwnd: int,
-        limit: int = 8,
-        include_untitled: bool = False,
-        include_until: int = 0,
-        scan_limit: int | None = None,
-    ) -> list[dict[str, Any]]:
-        infos: list[dict[str, Any]] = []
-        seen: set[int] = set()
-        hwnd = self.user32.GetTopWindow(None)
-        z = 0
-        scanned = 0
-        found_until = not include_until
-        max_scan = max(limit, scan_limit or limit)
-        while hwnd and scanned < max_scan:
-            scanned += 1
-            ihwnd = int(hwnd)
-            if ihwnd not in seen and self.user32.IsWindowVisible(hwnd):
-                seen.add(ihwnd)
-                title = self._get_window_title(ihwnd).strip()
-                if title or include_untitled or ihwnd == include_until:
-                    is_until = ihwnd == include_until
-                    if len(infos) < limit or is_until or not found_until:
-                        infos.append({
-                            "hwnd": ihwnd,
-                            "title": title or "(untitled)",
-                            "rect": self._get_window_rect(ihwnd),
-                            "focused": ihwnd == focused_hwnd,
-                            "z": z,
-                        })
-                    if is_until:
-                        found_until = True
-                    z += 1
-                if len(infos) >= limit and found_until:
-                    break
-            hwnd = self.user32.GetWindow(hwnd, 2)
-        return infos
-
-    def _overlay_hwnds(
-        self,
-        focused_hwnd: int,
-        focused_rect: tuple[int, int, int, int] | None,
-        window_infos: list[dict[str, Any]],
-    ) -> set[int]:
-        if not focused_hwnd or not focused_rect:
-            return set()
-        overlays: set[int] = set()
-        for info in window_infos:
-            hwnd = int(info.get("hwnd", 0) or 0)
-            if hwnd == focused_hwnd:
-                break
-            rect = info.get("rect")
-            if rect and self._rects_intersect(focused_rect, rect):
-                overlays.add(hwnd)
-        return overlays
-
-    def _overlay_lines(self, overlay_hwnds: set[int], window_infos: list[dict[str, Any]]) -> list[str]:
-        lines: list[str] = []
-        for info in window_infos:
-            hwnd = int(info.get("hwnd", 0) or 0)
-            if hwnd not in overlay_hwnds:
-                continue
-            rect = info.get("rect")
-            rect_s = f" @ {rect[0]},{rect[1]} {rect[2] - rect[0]}x{rect[3] - rect[1]}" if rect else ""
-            lines.append(f"  z={info.get('z', '?')} hwnd={hwnd} {info.get('title', '(untitled)')}{rect_s}")
-        return lines
-
-    @staticmethod
-    def _rects_intersect(a: tuple[int, int, int, int], b: tuple[int, int, int, int]) -> bool:
-        return max(a[0], b[0]) < min(a[2], b[2]) and max(a[1], b[1]) < min(a[3], b[3])
-
-    def _owner_hwnd_for_rect(self, rect: tuple[int, int, int, int], window_infos: list[dict[str, Any]]) -> int:
-        x, y, w, h = rect
-        if w <= 0 or h <= 0:
-            return 0
-        box = (x, y, x + w, y + h)
-        for info in window_infos:
-            wr = info.get("rect")
-            if not wr:
-                continue
-            if all(abs(int(a) - int(b)) <= 2 for a, b in zip(box, wr)):
-                return int(info.get("hwnd", 0) or 0)
-        cx, cy = x + w // 2, y + h // 2
-        for info in window_infos:
-            wr = info.get("rect")
-            if wr and wr[0] <= cx < wr[2] and wr[1] <= cy < wr[3]:
-                return int(info.get("hwnd", 0) or 0)
-        return 0
-
-    def _root_hwnd(self, hwnd: int) -> int:
-        if not hwnd:
-            return 0
-        root = self.user32.GetAncestor(W.HWND(hwnd), 2)
-        return int(root) if root else int(hwnd)
-
-    def _top_application_window(self) -> tuple[int, str] | None:
-        hwnd = self.user32.GetTopWindow(None)
-        while hwnd:
-            if self.user32.IsWindowVisible(hwnd):
-                title = self._get_window_title(int(hwnd)).strip()
-                if title and title.lower() not in {"desktop", "program manager"}:
-                    return int(hwnd), title
-            hwnd = self.user32.GetWindow(hwnd, 2)
-        return None
-
-    def _get_window_title(self, hwnd: int) -> str:
-        buf = ctypes.create_unicode_buffer(512)
-        self.user32.GetWindowTextW(W.HWND(hwnd), buf, 512)
-        return buf.value
-
-    def _get_window_rect(self, hwnd: int) -> tuple[int, int, int, int] | None:
-        rect = W.RECT()
-        if self.user32.GetWindowRect(W.HWND(hwnd), ctypes.byref(rect)):
-            return (rect.left, rect.top, rect.right, rect.bottom)
-        return None
-
-    @staticmethod
-    def _probe_point_count(x0: int, y0: int, x1: int, y1: int, step: int) -> int:
-        if step <= 0 or x1 <= x0 or y1 <= y0:
-            return 0
-        xs = range(x0 + step // 2, x1, step)
-        ys = range(y0 + step // 2, y1, step)
-        return len(xs) * len(ys)
-
-    @staticmethod
-    def _probe_stats_line(stats: dict[str, Any]) -> str:
-        parts = [
-            f"primary_step={stats.get('primary_step', 0)}",
-            f"primary_points={stats.get('primary_points', 0)}",
-            f"primary_found={stats.get('primary_found', 0)}",
-            f"raw={stats.get('raw_nodes', 0)}",
-            f"classified={stats.get('classified_nodes', 0)}",
-        ]
-        if stats.get("overlay_probe_used"):
-            parts.append(f"overlay_added={stats.get('overlay_probe_added', 0)}")
-        if stats.get("hover_scan_used"):
-            parts.append(f"hover_step={stats.get('hover_scan_step', 0)}")
-            parts.append(f"hover_points={stats.get('hover_scan_points', 0)}")
-            parts.append(f"hover_found={stats.get('hover_scan_found', 0)}")
-            parts.append(f"hover_added={stats.get('hover_scan_added', 0)}")
-        if stats.get("dense_used"):
-            parts.append(f"dense_step={stats.get('dense_step', 0)}")
-            parts.append(f"dense_added={stats.get('dense_added', 0)}")
-        if stats.get("scroll_used"):
-            parts.append(f"scroll_added={stats.get('scroll_added', 0)}")
-        return "PROBE: " + " ".join(parts)
-
-    @staticmethod
-    def _node_key(n: dict[str, Any]) -> tuple[Any, ...]:
-        return (
-            n.get("role", ""),
-            n.get("name", ""),
-            n.get("automation_id", ""),
-            n.get("class_name", ""),
-            n.get("x", 0),
-            n.get("y", 0),
-            n.get("w", 0),
-            n.get("h", 0),
-        )
-
-    def _desktop_tree_snapshot(
-        self,
-        window_infos: list[dict[str, Any]],
-        focused_hwnd: int = 0,
-        overlay_hwnds: set[int] | None = None,
-    ) -> dict[str, Any]:
-        max_depth = max(1, _obs_int("desktop_tree_max_depth", 5))
-        max_nodes = max(1, _obs_int("desktop_tree_max_nodes", 220))
-        child_limit = max(1, _obs_int("desktop_tree_child_limit", 80))
-        root = self._uia.root_element()
+        except Exception as e:
+            raise RuntimeError(f"Failed to initialize UIA automation: {e}")
+    
+    @property
+    def automation(self) -> uia.IUIAutomation:
+        if self._automation is None:
+            self._init_automation()
+        return self._automation
+    
+    def _get_root_element(self) -> uia.IUIAutomationElement:
+        """Get the desktop root element."""
+        root = self.automation.GetRootElement()
         if not root:
-            raise RuntimeError("UIA root element unavailable")
-        condition = self._uia.true_condition()
-        if not condition:
-            self._uia._release(root)
-            raise RuntimeError("UIA true condition unavailable")
-        z_index = {int(w["hwnd"]): int(w["z"]) for w in window_infos}
-        counter = {"count": 0, "truncated": False}
+            raise RuntimeError("Failed to get root element")
+        return root
+    
+    def _get_property(self, element: uia.IUIAutomationElement, property_id: int) -> Any:
+        """Get a property value from an element."""
         try:
-            root_node = self._collect_tree_node(root, condition, 0, max_depth, max_nodes, child_limit, counter, z_index, window_infos)
-        finally:
-            self._uia._release(condition)
-            self._uia._release(root)
-        if not root_node:
-            return {}
-        overlay_hwnds = overlay_hwnds or set()
-        self._order_tree(root_node, z_index, focused_hwnd, overlay_hwnds, window_infos=window_infos)
-        coverage = self._tree_coverage(root_node, focused_hwnd, overlay_hwnds)
-        return {
-            "order": "each tree level is sorted by owning top-level Win32 z-order, then screen position; scope marks desktop/focused/overlay/background; [ID] targets are the actionable scope",
-            "root": root_node,
-            "node_count": counter["count"],
-            "truncated": bool(counter.get("truncated")),
-            "max_depth": max_depth,
-            "max_nodes": max_nodes,
-            "child_limit": child_limit,
-            "focused_hwnd": int(focused_hwnd or 0),
-            "overlay_hwnds": sorted(int(h) for h in overlay_hwnds),
-            "overlay_count": len(overlay_hwnds),
-            **coverage,
-        }
-
-    def _desktop_tree_lines(self, snapshot: dict[str, Any]) -> list[str]:
-        root_node = snapshot.get("root")
-        if not root_node:
-            return []
-        lines = [
-            f"  ORDER: {snapshot.get('order', '')}.",
-            f"  TREE_NODES: {snapshot.get('node_count', 0)}",
-            (
-                "  TREE_COVERAGE: "
-                f"focused_captured={bool(snapshot.get('focused_captured'))} "
-                f"overlay_captured={bool(snapshot.get('overlay_captured'))} "
-                f"truncated={bool(snapshot.get('truncated'))}"
-            ),
-            f"  TREE_SCOPES: {self._format_scope_counts(snapshot.get('scope_counts', {}))}",
-        ]
-        if snapshot.get("focused_hwnd") and not snapshot.get("focused_captured"):
-            lines.append(f"  TREE_WARNING: focused hwnd {snapshot.get('focused_hwnd')} was not captured in bounded tree")
-        missing_overlays = snapshot.get("missing_overlay_hwnds") or []
-        if missing_overlays:
-            lines.append(f"  TREE_WARNING: overlay hwnds not captured: {', '.join(str(h) for h in missing_overlays)}")
-        self._render_tree_node(root_node, lines, 1)
-        if snapshot.get("truncated"):
-            lines.append(f"  ... tree truncated at {snapshot.get('max_nodes', '?')} UIA nodes")
-        return lines
-
-    def _observation_snapshot(
-        self,
-        focused_title: str,
-        focused_hwnd: int,
-        elements: dict[str, Element],
-        window_infos: list[dict[str, Any]],
-        overlay_hwnds: set[int],
-        probe_stats: dict[str, Any],
-        tree_snapshot: dict[str, Any] | None,
-        tree_error: str,
-        focus_in_scan: bool,
-    ) -> dict[str, Any]:
-        overlays = [w for w in window_infos if int(w.get("hwnd", 0) or 0) in overlay_hwnds]
-        tree_meta = tree_snapshot if isinstance(tree_snapshot, dict) else {}
-        return {
-            "focused_title": focused_title,
-            "focused_hwnd": int(focused_hwnd or 0),
-            "action_scope": "focused_window_or_top_overlay",
-            "window_scan_complete": focus_in_scan,
-            "focused_captured": tree_meta.get("focused_captured"),
-            "overlay_captured": tree_meta.get("overlay_captured"),
-            "truncated": tree_meta.get("truncated"),
-            "scope_counts": tree_meta.get("scope_counts", {}),
-            "captured_owner_hwnds": tree_meta.get("captured_owner_hwnds", []),
-            "missing_overlay_hwnds": tree_meta.get("missing_overlay_hwnds", []),
-            "probe": probe_stats,
-            "elements": [
-                {
-                    "id": e.id,
-                    "role": e.role,
-                    "name": e.name,
-                    "value": e.value,
-                    "hwnd": e.hwnd,
-                    "x": e.px,
-                    "y": e.py,
-                    "w": e.pw,
-                    "h": e.ph,
-                    "action": e.action,
-                    "window": e.wnd,
-                    "scope": e.scope,
-                    "automation_id": e.automation_id,
-                    "class_name": e.class_name,
-                    "enabled": e.enabled,
-                    "readonly": e.readonly,
-                }
-                for e in elements.values()
-            ],
-            "windows": [
-                {
-                    "token": token_row.get("token", ""),
-                    "hwnd": int(token_row.get("hwnd", 0) or 0),
-                    "title": token_row.get("title", ""),
-                    "rect": list(token_row["rect"]) if token_row.get("rect") else None,
-                    "focused": bool(token_row.get("focused")),
-                    "z": int(token_row.get("z", 0) or 0),
-                }
-                for token_row in assign_window_tokens(window_infos)
-            ],
-            "overlays": [
-                {
-                    "hwnd": int(w.get("hwnd", 0) or 0),
-                    "title": w.get("title", ""),
-                    "rect": list(w["rect"]) if w.get("rect") else None,
-                    "focused": bool(w.get("focused")),
-                    "z": int(w.get("z", 0) or 0),
-                }
-                for w in overlays
-            ],
-            "desktop_tree": tree_snapshot,
-            "desktop_tree_error": tree_error,
-        }
-
-    def _collect_tree_node(
-        self,
-        el: ctypes.c_void_p,
-        condition: ctypes.c_void_p,
-        depth: int,
-        max_depth: int,
-        max_nodes: int,
-        child_limit: int,
-        counter: dict[str, Any],
-        z_index: dict[int, int] | None = None,
-        window_infos: list[dict[str, Any]] | None = None,
-    ) -> dict[str, Any] | None:
-        if counter["count"] >= max_nodes:
-            counter["truncated"] = True
+            return element.GetCurrentPropertyValue(property_id)
+        except Exception:
             return None
-        counter["count"] += 1
-        node = self._tree_snapshot(el)
-        node["children"] = []
-        if depth >= max_depth:
-            return node
-        arr = self._uia.find_all_children(el, condition)
-        if not arr:
-            return node
+    
+    def _element_to_element(self, uia_element: uia.IUIAutomationElement, max_depth: int = 1, current_depth: int = 0) -> Element:
+        """Convert UIA element to our Element dataclass."""
+        name_var = self._get_property(uia_element, UIA_NamePropertyId)
+        control_type_var = self._get_property(uia_element, UIA_ControlTypePropertyId)
+        rect_var = self._get_property(uia_element, UIA_BoundingRectanglePropertyId)
+        class_name_var = self._get_property(uia_element, UIA_ClassNamePropertyId)
+        process_id_var = self._get_property(uia_element, UIA_ProcessIdPropertyId)
+        runtime_id_var = self._get_property(uia_element, UIA_RuntimeIdPropertyId)
+        is_enabled_var = self._get_property(uia_element, UIA_IsEnabledPropertyId)
+        is_offscreen_var = self._get_property(uia_element, UIA_IsOffscreenPropertyId)
+        has_focus_var = self._get_property(uia_element, UIA_HasKeyboardFocusPropertyId)
+        framework_id_var = self._get_property(uia_element, UIA_FrameworkIdPropertyId)
+        automation_id_var = self._get_property(uia_element, UIA_AutomationIdPropertyId)
+        window_handle_var = self._get_property(uia_element, UIA_NativeWindowHandlePropertyId)
+        
+        control_type_id = variant_to_int(control_type_var)
+        
+        return Element(
+            name=variant_to_str(name_var),
+            control_type=control_type_name(control_type_id),
+            control_type_id=control_type_id,
+            automation_id=variant_to_str(automation_id_var),
+            class_name=variant_to_str(class_name_var),
+            process_id=variant_to_int(process_id_var),
+            rect=variant_to_rect(rect_var),
+            is_enabled=variant_to_bool(is_enabled_var),
+            is_offscreen=variant_to_bool(is_offscreen_var),
+            has_focus=variant_to_bool(has_focus_var),
+            framework_id=variant_to_str(framework_id_var),
+            runtime_id=variant_to_runtime_id(runtime_id_var),
+            window_handle=variant_to_int(window_handle_var),
+        )
+    
+    # =============================================================================
+    # Hover probing / mouse scanning
+    # =============================================================================
+    
+    def _probe_point(self, x: int, y: int) -> uia.IUIAutomationElement | None:
+        """Get element at screen coordinates via ElementFromPoint."""
         try:
-            total = self._uia.array_length(arr)
-            sort_root_children = depth == 0 and bool(z_index)
-            read_limit = total if sort_root_children else min(total, child_limit)
-            child_refs: list[tuple[tuple[int, int, int, int], ctypes.c_void_p]] = []
-            for i in range(read_limit):
-                if counter["count"] >= max_nodes:
-                    counter["truncated"] = True
-                    break
-                child = self._uia.array_get(arr, i)
-                if not child:
-                    continue
-                key = self._tree_child_sort_key(child, z_index or {}, i, window_infos or []) if sort_root_children else (i, 0, 0, 0)
-                child_refs.append((key, child))
-            if sort_root_children:
-                child_refs.sort(key=lambda item: item[0])
-            limit = min(len(child_refs), child_limit)
-            for i, (_, child) in enumerate(child_refs):
-                try:
-                    if i >= limit:
-                        continue
-                    if counter["count"] >= max_nodes:
-                        counter["truncated"] = True
-                        continue
-                    child_node = self._collect_tree_node(
-                        child,
-                        condition,
-                        depth + 1,
-                        max_depth,
-                        max_nodes,
-                        child_limit,
-                        counter,
-                        z_index,
-                        window_infos,
-                    )
-                    if child_node and self._tree_node_visible(child_node):
-                        node["children"].append(child_node)
-                finally:
-                    self._uia._release(child)
-            if total > limit:
-                node["children_truncated"] = total - limit
-        finally:
-            self._uia._release(arr)
-        return node
-
-    def _tree_child_sort_key(
-        self,
-        el: ctypes.c_void_p,
-        z_index: dict[int, int],
-        fallback_index: int,
-        window_infos: list[dict[str, Any]],
-    ) -> tuple[int, int, int, int]:
-        hwnd = self._uia.get_int(el, _UIA.UIA_NATIVE_WINDOW_HANDLE)
-        owner_hwnd = self._root_hwnd(hwnd) or int(hwnd or 0)
-        x, y, _w, _h = self._uia.get_rect(el)
-        if not owner_hwnd:
-            owner_hwnd = self._owner_hwnd_for_rect((x, y, _w, _h), window_infos)
-        return (z_index.get(owner_hwnd, 9999), int(y), int(x), int(fallback_index))
-
-    @staticmethod
-    def _tree_coverage(node: dict[str, Any], focused_hwnd: int, overlay_hwnds: set[int]) -> dict[str, Any]:
-        counts: dict[str, int] = {}
-        owners: set[int] = set()
-        stack = [node]
-        while stack:
-            current = stack.pop()
-            scope = str(current.get("scope") or "unknown")
-            counts[scope] = counts.get(scope, 0) + 1
-            owner = int(current.get("owner_hwnd") or current.get("root_hwnd") or current.get("hwnd") or 0)
-            if owner:
-                owners.add(owner)
-            stack.extend(current.get("children") or [])
-        captured_overlays = sorted(int(h) for h in overlay_hwnds if int(h) in owners)
-        missing_overlays = sorted(int(h) for h in overlay_hwnds if int(h) not in owners)
-        return {
-            "scope_counts": counts,
-            "captured_owner_hwnds": sorted(owners),
-            "focused_captured": bool(focused_hwnd and int(focused_hwnd) in owners),
-            "captured_overlay_hwnds": captured_overlays,
-            "missing_overlay_hwnds": missing_overlays,
-            "overlay_captured": not missing_overlays,
-        }
-
-    @staticmethod
-    def _format_scope_counts(counts: dict[str, Any]) -> str:
-        ordered = ["desktop", "focused", "overlay", "background", "unknown"]
-        parts = [f"{key}={int(counts.get(key, 0) or 0)}" for key in ordered if counts.get(key)]
-        extras = sorted(k for k in counts if k not in ordered)
-        parts.extend(f"{key}={int(counts.get(key, 0) or 0)}" for key in extras)
-        return " ".join(parts) if parts else "none"
-
-    def _tree_snapshot(self, el: ctypes.c_void_p) -> dict[str, Any]:
-        ct = self._uia.get_int(el, _UIA.UIA_CONTROL_TYPE)
-        role = UIA_CONTROL_TYPE_MAP.get(ct, f"ControlType{ct}" if ct else "Element")
-        hwnd = self._uia.get_int(el, _UIA.UIA_NATIVE_WINDOW_HANDLE)
-        x, y, w, h = self._uia.get_rect(el)
-        value = self._uia.get_legacy_value(el)
-        return {
-            "role": role,
-            "name": _obs_text(self._uia.get_str(el, _UIA.UIA_NAME)),
-            "value": _obs_text(value),
-            "automation_id": self._uia.get_str(el, _UIA.UIA_AUTOMATION_ID),
-            "class_name": self._uia.get_str(el, _UIA.UIA_CLASS_NAME),
-            "hwnd": hwnd,
-            "root_hwnd": self._root_hwnd(hwnd),
-            "x": x,
-            "y": y,
-            "w": w,
-            "h": h,
-            "enabled": self._uia.get_bool(el, _UIA.UIA_IS_ENABLED),
-            "offscreen": self._uia.get_bool(el, _UIA.UIA_IS_OFFSCREEN),
-            "control": self._uia.get_bool(el, _UIA.UIA_IS_CONTROL_ELEMENT),
-        }
-
-    def _tree_node_visible(self, node: dict[str, Any]) -> bool:
-        if node.get("children"):
-            return True
-        if node.get("offscreen"):
-            return False
-        return bool(node.get("name") or node.get("value") or (node.get("w", 0) > 0 and node.get("h", 0) > 0))
-
-    def _order_tree(
-        self,
-        node: dict[str, Any],
-        z_index: dict[int, int],
-        focused_hwnd: int = 0,
-        overlay_hwnds: set[int] | None = None,
-        depth: int = 0,
-        inherited_owner_hwnd: int = 0,
-        window_infos: list[dict[str, Any]] | None = None,
-    ) -> None:
-        overlay_hwnds = overlay_hwnds or set()
-        window_infos = window_infos or []
-        own_hwnd = int(node.get("root_hwnd") or node.get("hwnd") or 0)
-        owner_hwnd = own_hwnd or int(inherited_owner_hwnd or 0)
-        if not owner_hwnd and depth > 0:
-            owner_hwnd = self._owner_hwnd_for_rect(
-                (int(node.get("x", 0)), int(node.get("y", 0)), int(node.get("w", 0)), int(node.get("h", 0))),
-                window_infos,
-            )
-        if owner_hwnd:
-            node["owner_hwnd"] = owner_hwnd
-        if owner_hwnd in z_index:
-            node["z"] = z_index[owner_hwnd]
-        if depth == 0:
-            node["scope"] = "desktop"
-        elif focused_hwnd and owner_hwnd == focused_hwnd:
-            node["scope"] = "focused"
-        elif owner_hwnd in overlay_hwnds:
-            node["scope"] = "overlay"
-        elif owner_hwnd:
-            node["scope"] = "background"
+            # ElementFromPoint takes a tagPOINT struct
+            from ctypes import wintypes
+            pt = wintypes.POINT(x, y)
+            return self.automation.ElementFromPoint(pt)
+        except Exception:
+            return None
+    
+    def hover_scan(self, config: dict[str, Any] | None = None) -> list[Element]:
+        """Perform hover scan across screen to discover interactive elements.
+        
+        Args:
+            config: {
+                "mode": "cursor_hover", # cursor_hover moves the real pointer, point_probe does not
+                "step_px": 40,           # grid step in pixels
+                "delay_ms": 1,           # delay between probes
+                "target_window_only": True,  # only scan foreground window
+                "min_size_px": 10,       # minimum element size
+                "max_elements": 100,     # max elements to return
+            }
+        """
+        if config is None:
+            config = {}
+        
+        mode = str(config.get("mode", self.config.get("hover_scan_mode", "point_probe")) or "point_probe")
+        restore_cursor = bool(config.get("restore_cursor", self.config.get("hover_scan_restore_cursor", True)))
+        step_px = config.get("step_px", self.config.get("hover_scan_step_px", 40))
+        delay_ms = config.get("delay_ms", self.config.get("hover_scan_delay_ms", 1))
+        target_window_only = config.get("target_window_only", self.config.get("hover_scan_target_window_only", True))
+        min_size = config.get("min_size_px", self.config.get("hover_scan_min_size_px", 10))
+        max_elements = config.get("max_elements", self.config.get("hover_scan_max_elements", 100))
+        
+        user32 = ctypes.windll.user32
+        screen_width = user32.GetSystemMetrics(0)
+        screen_height = user32.GetSystemMetrics(1)
+        
+        # Get target window rect if specified
+        target_rect = None
+        if target_window_only:
+            active_uia = self._get_active_window()
+            if active_uia:
+                rect_var = self._get_property(active_uia, UIA_BoundingRectanglePropertyId)
+                target_rect = variant_to_rect(rect_var)
+        
+        elements_found: dict[str, Element] = {}  # dedup by runtime_id
+        scanned = 0
+        
+        if target_rect and target_rect.width > 0 and target_rect.height > 0:
+            x_range = range(target_rect.left, target_rect.right, step_px)
+            y_range = range(target_rect.top, target_rect.bottom, step_px)
         else:
-            node["scope"] = "desktop"
-        children = node.get("children") or []
-        for child in children:
-            self._order_tree(child, z_index, focused_hwnd, overlay_hwnds, depth + 1, owner_hwnd, window_infos)
-        children.sort(key=lambda n: (
-            z_index.get(int(n.get("owner_hwnd") or n.get("root_hwnd") or n.get("hwnd") or 0), 9999),
-            int(n.get("y", 0)),
-            int(n.get("x", 0)),
-        ))
+            x_range = range(0, screen_width, step_px)
+            y_range = range(0, screen_height, step_px)
+        
+        saved_cursor = wintypes.POINT()
+        cursor_saved = False
+        if mode == "cursor_hover" and restore_cursor:
+            try:
+                cursor_saved = bool(user32.GetCursorPos(ctypes.byref(saved_cursor)))
+            except Exception:
+                cursor_saved = False
 
-    def _render_tree_node(self, node: dict[str, Any], lines: list[str], depth: int) -> None:
-        indent = "  " * depth
-        role = node.get("role") or "Element"
-        name = _obs_text(node.get("name", ""))
-        value = _obs_text(node.get("value", ""))
-        bits = [role]
-        if name:
-            bits.append(f'"{name}"')
-        if value and value != name:
-            bits.append(f'= "{value}"')
-        if node.get("automation_id"):
-            bits.append(f"aid={node['automation_id']}")
-        if node.get("class_name"):
-            bits.append(f"class={node['class_name']}")
-        hwnd = int(node.get("root_hwnd") or node.get("hwnd") or 0)
-        owner_hwnd = int(node.get("owner_hwnd") or hwnd or 0)
-        if hwnd:
-            bits.append(f"hwnd={hwnd}")
-        elif owner_hwnd:
-            bits.append(f"owner_hwnd={owner_hwnd}")
-        if "z" in node:
-            bits.append(f"z={node['z']}")
-        if node.get("scope"):
-            bits.append(f"scope={node['scope']}")
-        if node.get("w", 0) > 0 and node.get("h", 0) > 0:
-            bits.append(f"@ {node['x']},{node['y']} {node['w']}x{node['h']}")
-        if node.get("offscreen"):
-            bits.append("offscreen")
-        lines.append(indent + " ".join(bits))
-        for child in node.get("children", []):
-            self._render_tree_node(child, lines, depth + 1)
-        if node.get("children_truncated"):
-            lines.append(f"{indent}  ... {node['children_truncated']} more children")
+        try:
+            for y in y_range:
+                for x in x_range:
+                    if len(elements_found) >= max_elements:
+                        break
 
-    def _probe(
-        self,
-        x0: int,
-        y0: int,
-        x1: int,
-        y1: int,
-        hwnd: int,
-        step: int | None = None,
-        delay_key: str = "probe_delay_ms",
-        window_infos: list[dict[str, Any]] | None = None,
-    ) -> list[dict[str, Any]]:
-        nodes: list[dict[str, Any]] = []
-        seen_keys: set[tuple] = set()
-        step = step or max(10, _obs_int("probe_step_px", PROBE_STEP_PX))
-        amp = step * SINE_AMP_RATIO
-        freq = 2 * math.pi / (step * SINE_PERIOD)
-        probe_delay = _obs_float_ms(delay_key, PROBE_DELAY)
-        read_text_max = max(0, _obs_int("read_text_max", READ_TEXT_MAX))
+                    if mode == "cursor_hover":
+                        try:
+                            user32.SetCursorPos(int(x), int(y))
+                            if delay_ms > 0:
+                                time.sleep(delay_ms / 1000.0)
+                        except Exception:
+                            pass
 
-        for y in range(y0 + step // 2, y1, step):
-            for x in range(x0 + step // 2, x1, step):
-                py = max(y0, min(y1 - 1, y + int(amp * math.sin(freq * x))))
-                self.user32.SetCursorPos(x, py)
-                if probe_delay:
-                    time.sleep(probe_delay)
+                    uia_elem = self._probe_point(x, y)
+                    if not uia_elem:
+                        continue
+
+                    # Get rect to filter by size
+                    rect_var = self._get_property(uia_elem, UIA_BoundingRectanglePropertyId)
+                    rect = variant_to_rect(rect_var)
+
+                    if rect.width < min_size or rect.height < min_size:
+                        continue
+
+                    # Convert to our Element
+                    elem = self._element_to_element(uia_elem, max_depth=1)
+
+                    # Dedup by runtime_id
+                    rid_key = ",".join(map(str, elem.runtime_id)) if elem.runtime_id else f"{elem.window_handle}:{elem.rect.left}:{elem.rect.top}"
+                    if rid_key not in elements_found:
+                        elements_found[rid_key] = elem
+
+                    scanned += 1
+                    if mode != "cursor_hover" and delay_ms > 0:
+                        time.sleep(delay_ms / 1000.0)
+                if len(elements_found) >= max_elements:
+                    break
+        finally:
+            if mode == "cursor_hover" and restore_cursor and cursor_saved:
                 try:
-                    el = self._uia.element_from_point(x, py)
-                except OSError:
-                    continue
-                if not el:
-                    continue
-                try:
-                    ct = self._uia.get_int(el, _UIA.UIA_CONTROL_TYPE)
-                    role = UIA_CONTROL_TYPE_MAP.get(ct, "")
-                    if not role:
-                        continue
-                    name = self._uia.get_str(el, _UIA.UIA_NAME)
-                    value = self._uia.get_legacy_value(el)
-                    if not value:
-                        value = self._uia.get_text_content(el, read_text_max)
-                    automation_id = self._uia.get_str(el, _UIA.UIA_AUTOMATION_ID)
-                    class_name = self._uia.get_str(el, _UIA.UIA_CLASS_NAME)
-                    rx, ry, rw, rh = self._uia.get_rect(el)
-                    if rw <= 0 or rh <= 0:
-                        continue
-                    key = (role, name, automation_id, class_name, rx, ry, rw, rh)
-                    if key in seen_keys:
-                        continue
-                    seen_keys.add(key)
-                    if not name and not value:
-                        continue
-                    native_hwnd = self._uia.get_int(el, _UIA.UIA_NATIVE_WINDOW_HANDLE)
-                    owner_hwnd = self._owner_hwnd_for_rect((rx, ry, rw, rh), window_infos or [])
-                    el_hwnd = native_hwnd or owner_hwnd or hwnd
-                    root_hwnd = self._root_hwnd(el_hwnd)
-                    known_hwnds = {int(w.get("hwnd", 0) or 0) for w in (window_infos or [])}
-                    if owner_hwnd and (not root_hwnd or (known_hwnds and root_hwnd not in known_hwnds)):
-                        root_hwnd = owner_hwnd
-                    if owner_hwnd and not native_hwnd:
-                        el_hwnd = owner_hwnd
-                        root_hwnd = owner_hwnd
-                    nodes.append({
-                        "role": role, "name": _obs_text(name), "value": _obs_text(value),
-                        "automation_id": automation_id,
-                        "class_name": class_name,
-                        "x": rx, "y": ry, "w": rw, "h": rh,
-                        "hwnd": el_hwnd,
-                        "root_hwnd": root_hwnd,
-                        "enabled": self._uia.get_bool(el, _UIA.UIA_IS_ENABLED),
-                        "offscreen": self._uia.get_bool(el, _UIA.UIA_IS_OFFSCREEN),
-                    })
-                except OSError:
-                    continue
-                finally:
-                    self._uia._release(el)
-        return nodes
+                    user32.SetCursorPos(saved_cursor.x, saved_cursor.y)
+                except Exception:
+                    pass
+        
+        return list(elements_found.values())
+    
+    def _find_focused_element(self) -> uia.IUIAutomationElement | None:
+        """Find the element with keyboard focus."""
+        try:
+            return self.automation.GetFocusedElement()
+        except Exception:
+            pass
+        return None
+    
+    def _get_active_window(self) -> uia.IUIAutomationElement | None:
+        """Get the active (foreground) window."""
+        try:
+            user32 = ctypes.windll.user32
+            hwnd = user32.GetForegroundWindow()
+            if hwnd:
+                element = self.automation.ElementFromHandle(hwnd)
+                if element:
+                    return element
+        except Exception:
+            pass
+        return None
+    
+    def _get_window_title(self, element: uia.IUIAutomationElement) -> str:
+        """Get window title from element."""
+        name_var = self._get_property(element, UIA_NamePropertyId)
+        return variant_to_str(name_var)
+    
+    def observe(self, config: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Perform a full desktop observation using hover_scan as primary method.
+        
+        Args:
+            config: Optional observation configuration with keys:
+                - hover_scan: dict with hover_scan config (step_px, delay_ms, target_window_only, min_size_px, max_elements)
+        
+        Returns:
+            Fresh observation dict with desktop_tree, screen_text, focused_title, and scan metadata.
+        """
+        if config is None:
+            config = {}
+        
+        hover_config = config.get("hover_scan", self.config.get("hover_scan", {}))
+        
+        # Get screen size
+        user32 = ctypes.windll.user32
+        screen_width = user32.GetSystemMetrics(0)
+        screen_height = user32.GetSystemMetrics(1)
+        
+        # Get active window
+        active_window_uia = self._get_active_window()
+        focused_title = ""
+        if active_window_uia:
+            focused_title = self._get_window_title(active_window_uia)
+            self._focused_title_cache = focused_title
+        else:
+            focused_title = self._focused_title_cache
+        
+        observed_at = time.time()
 
-    def _classify(self, nodes: list[dict[str, Any]], z_index: dict[int, int] | None = None) -> list[dict[str, Any]]:
-        result: list[dict[str, Any]] = []
-        for n in nodes:
-            if n.get("offscreen") or n["w"] <= 0 or n["h"] <= 0:
+        # PRIMARY: Hover scan - scan whole screen if desktop/taskbar is active, else target window only
+        is_desktop = focused_title in ("Program Manager", "Desktop", "Taskbar", "") or not active_window_uia
+        target_window_only = hover_config.get("target_window_only", True) and not is_desktop
+        
+        hover_config_adjusted = dict(hover_config)
+        hover_config_adjusted["target_window_only"] = target_window_only
+        # Use larger step for full-screen scan to avoid excessive probes
+        if not target_window_only:
+            hover_config_adjusted["step_px"] = hover_config.get("full_screen_step_px", 60)
+        
+        hover_elements = self.hover_scan(hover_config_adjusted)
+        filtered_elements = self.filter_elements(hover_elements)
+        windows = self.get_window_tokens()
+        desktop_tree = self.build_desktop_tree(
+            {"width": screen_width, "height": screen_height},
+            filtered_elements,
+            windows,
+            focused_title,
+            observed_at=observed_at,
+            scan_config=hover_config_adjusted,
+            raw_element_count=len(hover_elements),
+        )
+        
+        # Format SCREEN text for LLM
+        screen_text = self.format_screen_text(
+            {"width": screen_width, "height": screen_height},
+            filtered_elements,
+            windows,
+            focused_title,
+            desktop_tree,
+        )
+        
+        self._last_desktop_tree = desktop_tree
+        
+        return {
+            "observed_at": observed_at,
+            "fresh_scan": True,
+            "desktop_tree": desktop_tree,
+            "screen_text": screen_text,
+            "focused_title": focused_title,
+        }
+    
+    def observe_screen(self) -> dict[str, int]:
+        """Get just the screen dimensions."""
+        user32 = ctypes.windll.user32
+        return {"width": user32.GetSystemMetrics(0), "height": user32.GetSystemMetrics(1)}
+    
+    def last_desktop_tree(self) -> dict[str, Any] | None:
+        """Get the last fresh desktop tree produced by observe()."""
+        return self._last_desktop_tree
+    
+    def get_focused_title(self) -> str:
+        """Get the title of the currently focused window."""
+        return self._focused_title_cache
+    
+    def configure_observation(self, **kwargs) -> None:
+        """Update observation configuration."""
+        self.config.update(kwargs)
+    
+    # =============================================================================
+    # Observation filtering and formatting
+    # =============================================================================
+    
+    def _stable_id(self, element: Element) -> str:
+        """Generate stable element ID from runtime_id or position."""
+        if element.runtime_id:
+            return "e_" + "_".join(map(str, element.runtime_id))
+        return f"e_{element.window_handle}_{element.rect.left}_{element.rect.top}"
+    
+    def classify_action(self, control_type_id: int) -> str:
+        """Map control type to default action."""
+        if control_type_id in {
+            UIA_ButtonControlTypeId,
+            UIA_CalendarControlTypeId,
+            UIA_CheckBoxControlTypeId,
+            UIA_HyperlinkControlTypeId,
+            UIA_ListItemControlTypeId,
+            UIA_MenuItemControlTypeId,
+            UIA_RadioButtonControlTypeId,
+            UIA_TabControlTypeId,
+            UIA_TabItemControlTypeId,
+            UIA_TreeItemControlTypeId,
+            UIA_DataItemControlTypeId,
+            UIA_SplitButtonControlTypeId,
+        }:
+            return "click"
+        if control_type_id in {UIA_EditControlTypeId, UIA_ComboBoxControlTypeId, UIA_SpinnerControlTypeId}:
+            return "write"
+        if control_type_id in {
+            UIA_ListControlTypeId,
+            UIA_ScrollBarControlTypeId,
+            UIA_SliderControlTypeId,
+            UIA_TreeControlTypeId,
+            UIA_DataGridControlTypeId,
+            UIA_DocumentControlTypeId,
+        }:
+            return "scroll"
+        return ""
+    
+    def filter_elements(self, elements: list[Element]) -> dict[str, dict[str, Any]]:
+        """Filter to actionable elements, return dict keyed by stable element_id."""
+        result = {}
+        for el in elements:
+            # Skip zero-size rects
+            if el.rect.width <= 0 or el.rect.height <= 0:
                 continue
-            role = n["role"]
-            enabled = n.get("enabled", True)
-            if enabled and role in WRITABLE_ROLES:
-                action = "write"
-            elif enabled and role in CLICKABLE_ROLES:
-                action = "click"
-            elif role in ACTIONABLE_ROLES:
-                action = "read"
-            else:
+            # Skip offscreen or disabled
+            if el.is_offscreen or not el.is_enabled:
                 continue
-            n["action"] = action
-            result.append(n)
-        z_index = z_index or {}
-        result.sort(key=lambda n: (z_index.get(int(n.get("root_hwnd") or n.get("hwnd") or 0), 9999), n["y"], n["x"]))
+            # Must be interactive type
+            if el.control_type_id not in INTERACTIVE_CONTROL_TYPES:
+                continue
+            action = self.classify_action(el.control_type_id)
+            if not action:
+                continue
+            
+            elem_id = self._stable_id(el)
+            px = el.rect.left + el.rect.width // 2
+            py = el.rect.top + el.rect.height // 2
+            
+            result[elem_id] = {
+                "id": elem_id,
+                "name": el.name,
+                "role": el.control_type,
+                "action": action,
+                "px": px,
+                "py": py,
+                "hwnd": el.window_handle,
+                "rect": el.rect.to_dict(),
+                "enabled": el.is_enabled,
+                "focused": el.has_focus,
+                "automation_id": el.automation_id,
+                "class_name": el.class_name,
+                "runtime_id": el.runtime_id,
+            }
         return result
 
-    @staticmethod
-    def _node_scope(n: dict[str, Any], focused_hwnd: int, overlay_hwnds: set[int]) -> str:
-        hwnd = int(n.get("hwnd", 0) or 0)
-        root_hwnd = int(n.get("root_hwnd") or hwnd or 0)
-        if not focused_hwnd or hwnd == focused_hwnd or root_hwnd == focused_hwnd:
-            return "focused"
-        if hwnd in overlay_hwnds or root_hwnd in overlay_hwnds:
-            return "overlay"
-        return "background"
+    def _contains_point(self, rect: dict[str, int], x: int, y: int) -> bool:
+        return int(rect.get("left", 0)) <= x <= int(rect.get("right", 0)) and int(rect.get("top", 0)) <= y <= int(rect.get("bottom", 0))
 
-    @staticmethod
-    def _center_in_rect(n: dict[str, Any], rect: tuple[int, int, int, int]) -> bool:
-        x1, y1, x2, y2 = rect
-        cx = int(n.get("x", 0)) + int(n.get("w", 0)) // 2
-        cy = int(n.get("y", 0)) + int(n.get("h", 0)) // 2
-        return x1 <= cx <= x2 and y1 <= cy <= y2
+    def _rect_area(self, rect: dict[str, int]) -> int:
+        return max(0, int(rect.get("right", 0)) - int(rect.get("left", 0))) * max(0, int(rect.get("bottom", 0)) - int(rect.get("top", 0)))
 
-    @classmethod
-    def _is_page_node(cls, n: dict[str, Any], document_rects: list[tuple[int, tuple[int, int, int, int]]]) -> bool:
-        role = n.get("role")
-        if role == "Document":
-            return True
-        if document_rects:
-            root_hwnd = int(n.get("root_hwnd") or n.get("hwnd") or 0)
-            return role in DOCUMENT_CHILD_ROLES and any(
-                (not doc_hwnd or not root_hwnd or doc_hwnd == root_hwnd) and cls._center_in_rect(n, rect)
-                for doc_hwnd, rect in document_rects
-            )
-        return role in PAGE_ROLES
-
-    @classmethod
-    def _scope_level(
-        cls,
-        n: dict[str, Any],
-        scope: str,
-        document_rects: list[tuple[int, tuple[int, int, int, int]]],
-    ) -> tuple[int, str]:
-        if scope == "focused":
-            if cls._is_page_node(n, document_rects):
-                return 1, "focused_page"
-            return 2, "focused_chrome"
-        if scope == "overlay":
-            return 3, "overlay"
-        return 4, "background"
-
-    def _render(
+    def build_desktop_tree(
         self,
-        nodes: list[dict[str, Any]],
+        screen: dict[str, int],
+        elements: dict[str, dict[str, Any]],
+        windows: list[dict[str, Any]],
         focused_title: str,
-        focused_hwnd: int = 0,
-        overlay_hwnds: set[int] | None = None,
-        window_infos: list[dict[str, Any]] | None = None,
-    ) -> tuple[dict[str, Element], str]:
-        elements: dict[str, Element] = {}
-        overlay_hwnds = overlay_hwnds or set()
-        window_titles = {
-            int(w.get("hwnd", 0) or 0): str(w.get("title", "") or "(untitled)")
-            for w in (window_infos or [])
+        *,
+        observed_at: float,
+        scan_config: dict[str, Any],
+        raw_element_count: int,
+    ) -> dict[str, Any]:
+        """Build a fresh screen-rooted desktop hierarchy from window tokens and hover scan hits."""
+        root_rect = {"left": 0, "top": 0, "right": int(screen.get("width", 0)), "bottom": int(screen.get("height", 0))}
+        root = {
+            "id": "W0",
+            "role": "Screen",
+            "name": "Screen",
+            "title": "Desktop",
+            "rect": root_rect,
+            "focused": False,
+            "fresh_scan": True,
+            "observed_at": observed_at,
+            "scan": {
+                "method": "hover_scan",
+                "mode": str(scan_config.get("mode", "point_probe")),
+                "target_window_only": bool(scan_config.get("target_window_only", False)),
+                "step_px": int(scan_config.get("step_px", 0) or 0),
+                "raw_element_count": raw_element_count,
+                "actionable_element_count": len(elements),
+            },
+            "children": [],
         }
-        lines: list[str] = [
-            f"FOCUSED: {focused_title}",
-            "SCOPE: [ID] targets are actionable in the focused window or top overlay; @focused/@overlay gives owner window.",
-        ]
-        scope_depth = max(1, _obs_int("scope_depth", 4))
-        render_focused_first = _obs_bool("render_focused_first", True)
-        document_rects = [
-            (
-                int(n.get("root_hwnd") or n.get("hwnd") or 0),
-                (
-                    int(n.get("x", 0)),
-                    int(n.get("y", 0)),
-                    int(n.get("x", 0)) + int(n.get("w", 0)),
-                    int(n.get("y", 0)) + int(n.get("h", 0)),
-                ),
-            )
-            for n in nodes
-            if n.get("role") == "Document" and self._node_scope(n, focused_hwnd, overlay_hwnds) == "focused"
-        ]
-        render_nodes: list[tuple[int, int, str, dict[str, Any]]] = []
-        filtered = 0
-        for index, n in enumerate(nodes):
-            scope = self._node_scope(n, focused_hwnd, overlay_hwnds)
-            level, bucket = self._scope_level(n, scope, document_rects)
-            if level > scope_depth:
-                filtered += 1
+        node_index: dict[str, dict[str, Any]] = {"W0": {k: v for k, v in root.items() if k != "children"}}
+        window_nodes: dict[str, dict[str, Any]] = {}
+        hwnd_to_window_id: dict[int, str] = {}
+        focused_window_id = ""
+
+        for window in windows:
+            token = str(window.get("token") or "")
+            if not token or token == "W0":
                 continue
-            render_nodes.append((index, level, bucket, n))
-        if render_focused_first:
-            render_nodes.sort(key=lambda item: (item[1], int(item[3].get("y", 0)), int(item[3].get("x", 0)), item[0]))
-        seq = 0
-        rendered = 0
-        for _index, _level, bucket, n in render_nodes:
-            role, name, value = n["role"], n.get("name", ""), n.get("value", "")
-            rendered += 1
-            scope = bucket.split("_", 1)[0] if bucket.startswith("focused_") else bucket
-            preview = _obs_text(value)
-            show_aid = _obs_bool("render_automation_id", True)
-            show_class = _obs_bool("render_class_name", True)
-            identity_bits = []
-            if show_aid and n.get("automation_id"):
-                identity_bits.append(f"aid={_obs_text(n.get('automation_id', ''))}")
-            if show_class and n.get("class_name"):
-                identity_bits.append(f"class={_obs_text(n.get('class_name', ''))}")
-            identity = (" " + " ".join(identity_bits)) if identity_bits else ""
-            root_hwnd = int(n.get("root_hwnd") or n.get("hwnd", 0) or 0)
-            owns_scope = scope in ("focused", "overlay")
-            if n["action"] != "read" and owns_scope:
-                seq += 1
-                eid = str(seq)
-                wnd_title = window_titles.get(root_hwnd) or window_titles.get(int(n.get("hwnd", 0) or 0)) or focused_title
-                if value and n["action"] == "write":
-                    desc = f'[{eid}] {role} "{name}" = "{preview}"' if name else f'[{eid}] {role} "{preview}"'
-                elif name:
-                    desc = f'[{eid}] {role} "{name}"'
-                else:
-                    desc = f'[{eid}] {role}'
-                desc += identity
-                if _obs_bool("render_window_per_element", True):
-                    desc += f' @{scope} "{wnd_title}"'
-                else:
-                    desc += f" @{scope}"
-                elements[eid] = Element(
-                    id=eid, role=role, name=name, value=value,
-                    hwnd=root_hwnd or n["hwnd"], px=n["x"], py=n["y"], pw=n["w"], ph=n["h"],
-                    action=n["action"], wnd=wnd_title, scope=scope,
-                    automation_id=n.get("automation_id", ""), class_name=n.get("class_name", ""),
-                    enabled=n.get("enabled", True), readonly=False,
-                )
+            title = str(window.get("title") or window.get("name") or "")
+            node = {
+                "id": token,
+                "parent_id": "W0",
+                "role": "Window",
+                "name": title,
+                "title": title,
+                "hwnd": int(window.get("hwnd") or 0),
+                "process_id": int(window.get("process_id") or 0),
+                "class_name": str(window.get("class_name") or ""),
+                "rect": window.get("rect", {}),
+                "focused": bool(focused_title and title == focused_title),
+                "source": "win32_enum_windows",
+                "children": [],
+            }
+            if node["focused"]:
+                focused_window_id = token
+            window_nodes[token] = node
+            hwnd_to_window_id[node["hwnd"]] = token
+            root["children"].append(node)
+            node_index[token] = {k: v for k, v in node.items() if k != "children"}
+
+        direct_elements: list[dict[str, Any]] = []
+        for element_id, element in elements.items():
+            px = int(element.get("px") or 0)
+            py = int(element.get("py") or 0)
+            hwnd = int(element.get("hwnd") or 0)
+            parent_id = hwnd_to_window_id.get(hwnd, "")
+            if not parent_id:
+                containing = [
+                    node for node in window_nodes.values()
+                    if self._contains_point(node.get("rect", {}), px, py)
+                ]
+                if containing:
+                    containing.sort(key=lambda node: self._rect_area(node.get("rect", {})))
+                    parent_id = str(containing[0]["id"])
+            if not parent_id:
+                parent_id = "W0"
+
+            node = {
+                "id": element_id,
+                "parent_id": parent_id,
+                "role": element.get("role", ""),
+                "name": element.get("name", ""),
+                "action": element.get("action", ""),
+                "px": px,
+                "py": py,
+                "hwnd": hwnd,
+                "rect": element.get("rect", {}),
+                "enabled": bool(element.get("enabled", False)),
+                "focused": bool(element.get("focused", False)),
+                "automation_id": element.get("automation_id", ""),
+                "class_name": element.get("class_name", ""),
+                "runtime_id": element.get("runtime_id", []),
+                "source": "hover_scan",
+                "confidence": "point_hit",
+                "children": [],
+            }
+            node_index[element_id] = {k: v for k, v in node.items() if k != "children"}
+            if parent_id == "W0":
+                direct_elements.append(node)
             else:
-                if name and value:
-                    desc = f'{role} "{name}" = "{preview}"'
-                elif name:
-                    desc = f'{role} "{name}"'
-                else:
-                    desc = f'{role} "{preview}"'
-                desc += identity
-                desc += f" @{scope}"
-            lines.append(f"  {desc}")
-        lines.insert(1, f"ELEMENTS: {seq}")
-        lines.insert(2, f"OBSERVED: {rendered}")
-        lines.insert(3, f"FILTERS: scope_depth={scope_depth} element_text_max={_obs_int('element_text_max', 500)} render_focused_first={str(render_focused_first).lower()} filtered={filtered}")
-        return elements, "\n".join(lines)
+                window_nodes[parent_id]["children"].append(node)
+
+        root["children"].extend(direct_elements)
+        return {
+            "id": "W0",
+            "role": "Screen",
+            "fresh_scan": True,
+            "observed_at": observed_at,
+            "focused_title": focused_title,
+            "focused_window_id": focused_window_id,
+            "root": root,
+            "node_index": node_index,
+            "window_count": len(window_nodes),
+            "element_count": len(elements),
+        }
+    
+    def get_window_tokens(self) -> list[dict[str, Any]]:
+        """Get window tokens W1..Wn for visible top-level windows.
+        
+        Screen is Window 0 (the entire desktop), then W1..Wn are top-level windows.
+        """
+        user32 = ctypes.windll.user32
+        screen_w = user32.GetSystemMetrics(0)
+        screen_h = user32.GetSystemMetrics(1)
+        windows = [{
+            "token": "W0",
+            "name": "Screen",
+            "title": "Desktop",
+            "hwnd": 0,
+            "rect": {"left": 0, "top": 0, "right": screen_w, "bottom": screen_h},
+            "children": [],
+        }]
+
+        EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+
+        def callback(hwnd, _):
+            if not user32.IsWindowVisible(hwnd) or user32.IsIconic(hwnd):
+                return True
+            length = user32.GetWindowTextLengthW(hwnd)
+            if length <= 0:
+                return True
+            rect = wintypes.RECT()
+            if not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+                return True
+            if rect.right <= rect.left or rect.bottom <= rect.top:
+                return True
+            title = ctypes.create_unicode_buffer(length + 1)
+            class_name = ctypes.create_unicode_buffer(256)
+            pid = wintypes.DWORD()
+            user32.GetWindowTextW(hwnd, title, length + 1)
+            user32.GetClassNameW(hwnd, class_name, 256)
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            windows.append({
+                "token": f"W{len(windows)}",
+                "name": "Window",
+                "title": title.value,
+                "hwnd": int(hwnd),
+                "rect": {"left": rect.left, "top": rect.top, "right": rect.right, "bottom": rect.bottom},
+                "process_id": int(pid.value),
+                "class_name": class_name.value,
+            })
+            return True
+
+        try:
+            user32.EnumWindows(EnumWindowsProc(callback), 0)
+        except Exception:
+            pass
+        return windows
+    
+    def format_screen_text(self, screen: dict, elements: dict, windows: list, focused_title: str, desktop_tree: dict[str, Any] | None = None) -> str:
+        """Format SCREEN text for LLM context with hierarchy."""
+        lines = []
+        
+        # Window hierarchy
+        lines.append("DESKTOP TREE:")
+        lines.append(f"  * [W0] Screen ({screen['width']}x{screen['height']}) fresh_scan=true")
+        for w in windows:
+            if w["token"] != "W0":
+                rect = w["rect"]
+                lines.append(f"    * [{w['token']}] Window '{w['title']}' @({rect['left']},{rect['top']},{rect['right']},{rect['bottom']}) hwnd={w['hwnd']} pid={w.get('process_id',0)}")
+        
+        lines.append(f"\nFOCUSED WINDOW: {focused_title or 'none'}")
+        
+        # Key actionable tree nodes
+        lines.append(f"\nACTION NODES ({len(elements)} actionable):")
+        for eid, el in elements.items():
+            lines.append(f"  {eid}: {el['role']} '{el['name']}' @({el['px']},{el['py']}) hwnd={el['hwnd']} action={el['action']} enabled={el['enabled']} focused={el['focused']}")
+        
+        return "\n".join(lines)
+
+    def click(self, x: int, y: int, hwnd: int = 0) -> dict[str, Any]:
+        """Click at coordinates. If hwnd provided, click in that window."""
+        user32 = ctypes.windll.user32
+        if hwnd:
+            # Click in specific window
+            lparam = (y << 16) | (x & 0xFFFF)
+            user32.PostMessageW(hwnd, 0x0201, 0, lparam)  # WM_LBUTTONDOWN
+            user32.PostMessageW(hwnd, 0x0202, 0, lparam)  # WM_LBUTTONUP
+        else:
+            # Global click
+            user32.SetCursorPos(x, y)
+            user32.mouse_event(0x0002, 0, 0, 0, 0)  # MOUSEEVENTF_LEFTDOWN
+            user32.mouse_event(0x0004, 0, 0, 0, 0)  # MOUSEEVENTF_LEFTUP
+        return {"ok": True, "action": "click", "x": x, "y": y, "hwnd": hwnd}
+    
+    def type_text(self, text: str) -> dict[str, Any]:
+        """Type text into focused element."""
+        user32 = ctypes.windll.user32
+        for char in text:
+            vk = user32.VkKeyScanW(ord(char))
+            if vk == -1:
+                continue
+            vk_code = vk & 0xFF
+            shift = (vk >> 8) & 0xFF
+            if shift:
+                user32.keybd_event(0x10, 0, 0, 0)  # VK_SHIFT down
+            user32.keybd_event(vk_code, 0, 0, 0)  # key down
+            user32.keybd_event(vk_code, 0, 2, 0)  # key up
+            if shift:
+                user32.keybd_event(0x10, 0, 2, 0)  # VK_SHIFT up
+            time.sleep(0.01)
+        return {"ok": True, "action": "type_text", "text": text}
+    
+    def press_key(self, key: str) -> dict[str, Any]:
+        """Press a single key (e.g., 'enter', 'tab', 'escape')."""
+        key_map = {
+            "enter": 0x0D, "tab": 0x09, "escape": 0x1B, "space": 0x20,
+            "up": 0x26, "down": 0x28, "left": 0x25, "right": 0x27,
+            "home": 0x24, "end": 0x23, "pageup": 0x21, "pagedown": 0x22,
+            "delete": 0x2E, "backspace": 0x08, "insert": 0x2D,
+            "f1": 0x70, "f2": 0x71, "f3": 0x72, "f4": 0x73,
+            "f5": 0x74, "f6": 0x75, "f7": 0x76, "f8": 0x77,
+            "f9": 0x78, "f10": 0x79, "f11": 0x7A, "f12": 0x7B,
+        }
+        vk = key_map.get(key.lower())
+        if vk is None:
+            return {"ok": False, "action": "press_key", "error": f"unknown key: {key}"}
+        user32 = ctypes.windll.user32
+        user32.keybd_event(vk, 0, 0, 0)
+        user32.keybd_event(vk, 0, 2, 0)
+        return {"ok": True, "action": "press_key", "key": key}
+    
+    def hotkey(self, keys) -> dict[str, Any]:
+        """Press key combination (e.g., 'ctrl+c', 'alt+tab', 'win+r' or ['ctrl', 'c'])."""
+        key_map = {
+            "ctrl": 0x11, "control": 0x11,
+            "alt": 0x12,
+            "shift": 0x10,
+            "win": 0x5B, "windows": 0x5B,
+            "enter": 0x0D, "tab": 0x09, "escape": 0x1B, "space": 0x20,
+            "up": 0x26, "down": 0x28, "left": 0x25, "right": 0x27,
+            "c": 0x43, "v": 0x56, "x": 0x58, "z": 0x5A,
+            "a": 0x41, "s": 0x53, "f": 0x46, "n": 0x4E,
+            "o": 0x4F, "p": 0x50, "w": 0x57,
+            "r": 0x52, "l": 0x4C, "d": 0x44,
+        }
+        # Accept both string "win+r" and list ["win", "r"]
+        if isinstance(keys, list):
+            parts = [k.strip().lower() for k in keys]
+        else:
+            parts = [k.strip().lower() for k in str(keys).split("+")]
+        vks = []
+        for k in parts:
+            vk = key_map.get(k)
+            if vk is None:
+                return {"ok": False, "action": "hotkey", "error": f"unknown key in combination: {k}"}
+            vks.append(vk)
+        
+        user32 = ctypes.windll.user32
+        # Press modifiers first
+        for vk in vks[:-1]:
+            user32.keybd_event(vk, 0, 0, 0)
+        # Press main key
+        user32.keybd_event(vks[-1], 0, 0, 0)
+        user32.keybd_event(vks[-1], 0, 2, 0)
+        # Release modifiers
+        for vk in reversed(vks[:-1]):
+            user32.keybd_event(vk, 0, 2, 0)
+        return {"ok": True, "action": "hotkey", "keys": keys}
+    
+    def scroll(self, x: int, y: int, amount: int, hwnd: int = 0) -> dict[str, Any]:
+        """Scroll at coordinates. amount > 0 = up, < 0 = down."""
+        user32 = ctypes.windll.user32
+        if hwnd:
+            lparam = (y << 16) | (x & 0xFFFF)
+            user32.PostMessageW(hwnd, 0x020A, amount << 16, lparam)  # WM_MOUSEWHEEL
+        else:
+            user32.SetCursorPos(x, y)
+            user32.mouse_event(0x0800, 0, 0, amount * 120, 0)  # MOUSEEVENTF_WHEEL
+        return {"ok": True, "action": "scroll", "x": x, "y": y, "amount": amount, "hwnd": hwnd}
+    
+    def focus_window(self, target: str) -> dict[str, Any]:
+        """Focus window by token (W1), title substring, or hwnd."""
+        user32 = ctypes.windll.user32
+        hwnd = 0
+        
+        if target.startswith("hwnd:"):
+            try:
+                hwnd = int(target[5:])
+            except ValueError:
+                return {"ok": False, "action": "focus_window", "error": "invalid hwnd format"}
+        elif target.startswith("W"):
+            # Window token - look up in windows from last observation
+            try:
+                tree = self.last_desktop_tree() or {}
+                node = (tree.get("node_index") or {}).get(target, {})
+                hwnd = int(node.get("hwnd") or 0)
+            except Exception:
+                pass
+            if not hwnd:
+                return {"ok": False, "action": "focus_window", "error": f"window token not found: {target}"}
+        else:
+            # Find by title substring
+            EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM)
+            found_hwnd = [0]
+            
+            def callback(hwnd, _):
+                if user32.IsWindowVisible(hwnd):
+                    length = user32.GetWindowTextLengthW(hwnd)
+                    if length > 0:
+                        buf = ctypes.create_unicode_buffer(length + 1)
+                        user32.GetWindowTextW(hwnd, buf, length + 1)
+                        if target.lower() in buf.value.lower():
+                            found_hwnd[0] = hwnd
+                            return False
+                return True
+            
+            cb = EnumWindowsProc(callback)
+            user32.EnumWindows(cb, 0)
+            hwnd = found_hwnd[0]
+        
+        if hwnd:
+            user32.SetForegroundWindow(hwnd)
+            return {"ok": True, "action": "focus_window", "target": target, "hwnd": hwnd}
+        return {"ok": False, "action": "focus_window", "error": f"window not found: {target}"}
+    
+    def open_url(self, browser: str = "chrome", url: str = "") -> dict[str, Any]:
+        """Open URL in browser."""
+        import subprocess
+        browser_paths = {
+            "chrome": [
+                r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+            ],
+            "edge": [r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"],
+            "firefox": [r"C:\Program Files\Mozilla Firefox\firefox.exe"],
+        }
+        paths = browser_paths.get(browser.lower(), [])
+        exe = None
+        for p in paths:
+            import os
+            if os.path.exists(os.path.expandvars(p)):
+                exe = os.path.expandvars(p)
+                break
+        if not exe:
+            subprocess.Popen(["start", "", url], shell=True)
+            return {"ok": True, "action": "open_url", "browser": "default", "url": url}
+        subprocess.Popen([exe, url])
+        return {"ok": True, "action": "open_url", "browser": browser, "url": url}
+
+
+# Global desktop instance
+_desktop_instance: Desktop | None = None
+
+
+def get_desktop(config: dict[str, Any] | None = None) -> Desktop:
+    """Get or create the global desktop instance."""
+    global _desktop_instance
+    if _desktop_instance is None:
+        _desktop_instance = Desktop(config)
+    return _desktop_instance
+
+
+def observe(config: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Convenience function for desktop observation."""
+    return get_desktop(config).observe(config)
+
+
+def observe_screen() -> dict[str, int]:
+    """Convenience function for screen dimensions."""
+    return get_desktop().observe_screen()
+
+
+def last_desktop_tree() -> dict[str, Any] | None:
+    """Convenience function for last desktop tree."""
+    return get_desktop().last_desktop_tree()
+
+
+def get_focused_title() -> str:
+    """Convenience function for focused window title."""
+    return get_desktop().get_focused_title()
+
+
+def configure_observation(**kwargs) -> None:
+    """Convenience function to configure observation."""
+    get_desktop().configure_observation(**kwargs)

@@ -1,32 +1,25 @@
-# endgame-ai allowlist policy
-# ─────────────────────────────────────────────────────────────────────────────
-# Only paths explicitly un-ignored below are tracked. Everything else is ignored
-# by default (runtime logs, live_nodes, IDE/MCP harness, caches, local secrets).
-#
-# To track something new: add a !rule here, then git add -f <path>.
-# ─────────────────────────────────────────────────────────────────────────────
+# Runtime artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+# Legacy local artifacts from pre-git-native runs; the runtime no longer uses them.
+live_nodes/
+live_brains/
+comms/
+pids/*.pid
+state.json
+goal.json
+*.txt
+*.tmp
+*.log
 
-# Ignore everything first
-*
+# Test/debug files
+test_*.py
+BOOTSTRAP.md
 
-# Allow descending into directories we un-ignore below
-!*/
-
-# ─── Repo metadata ───────────────────────────────────────────────────────────
-!.gitignore
-!.gitattributes
-!LICENSE
-!README.md
-
-# ─── Organism core (source of truth) ───────────────────────────────────────
-!wiring.json
-!actions.py
-!brain.py
-!desktop.py
-!nodes.py
-!organism.py
-!workbench.py
-
-# ─── Seed node templates (copied to live_nodes/ at runtime — not tracked) ───
-!seed_nodes/
-!seed_nodes/**
+# OS/editor junk
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
