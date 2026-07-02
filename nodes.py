@@ -154,7 +154,7 @@ def execute_verb(verb: str, target: dict[str, Any] | None = None, value: str | N
     elif verb == "write":
         text = value or target.get("text", "")
         d.type_text(text)
-        return f"typed: {text[:50]}"
+        return f"typed: {text}"
     
     elif verb == "press":
         key = value or target.get("key", "")
@@ -208,6 +208,19 @@ def execute_verb(verb: str, target: dict[str, Any] | None = None, value: str | N
     return f"unknown verb: {verb}"
 
 
+def _live_node_target(wiring: dict[str, Any], raw_path: str) -> pathlib.Path:
+    live_dir = _path(wiring, "live_nodes", "live_nodes").resolve()
+    requested = pathlib.Path(raw_path)
+    path = (ROOT / requested).resolve() if not requested.is_absolute() else requested.resolve()
+    try:
+        path.relative_to(live_dir)
+    except ValueError as exc:
+        raise ValueError(f"self_modify path must stay under {live_dir}: {raw_path}") from exc
+    if path.suffix != ".py":
+        raise ValueError(f"self_modify node path must be a .py file: {raw_path}")
+    return path
+
+
 def apply_wiring_patch(wiring: dict[str, Any], parsed: dict[str, Any]) -> tuple[str, Any]:
     """Apply wiring patches and node file writes from self_modify output."""
     data = (parsed or {}).get("data") or {}
@@ -234,13 +247,13 @@ def apply_wiring_patch(wiring: dict[str, Any], parsed: dict[str, Any]) -> tuple[
     
     # 2. Write node files
     for write in data.get("node_writes", []):
-        path = pathlib.Path(write["path"])
+        path = _live_node_target(wiring, write["path"])
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(write["content"], encoding="utf-8")
     
     # 3. Delete node files
     for delete_path in data.get("node_deletes", []):
-        pathlib.Path(delete_path).unlink(missing_ok=True)
+        _live_node_target(wiring, delete_path).unlink(missing_ok=True)
     
     # 4. Atomic write wiring.json
     save_wiring(wiring)
@@ -308,6 +321,11 @@ def build_execute_namespace(ctx: dict[str, Any]) -> dict[str, Any]:
         "state": state,
         "wiring": wiring,
         "goal": goal,
+        "screen": state.get("screen", {}),
+        "elements": state.get("elements", {}),
+        "windows": state.get("windows", []),
+        "screen_text": state.get("screen_text", ""),
+        "focused_title": state.get("focused_title", ""),
     }
 
 

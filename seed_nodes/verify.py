@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import brain
-import json
 
 
 def run(ctx):
@@ -23,33 +22,22 @@ def run(ctx):
     last_action = state.get("last_action", {})
     last_result = state.get("last_result", "")
     last_error = state.get("last_error", "")
-    
-    # Build prompt for LLM
-    prompt = f"""You are the VERIFY node of endgame-ai. Judge if the step intent was satisfied based on evidence.
-
-GOAL: {goal}
-STEP: {step_goal}
-DONE WHEN: {done_when or "not specified"}
-
-EVIDENCE:
-- FOCUSED WINDOW: {focused_title}
-- SCREEN: {screen_text[:4000] if screen_text else "empty"}
-
-LAST ACTION:
-{json.dumps(last_action, indent=2)[:2000] if last_action else "none"}
-
-LAST RESULT: {str(last_result)[:1000] if last_result else "none"}
-LAST ERROR: {last_error or "none"}
-
-Return JSON with:
-- next_signal: "step_confirmed" (success) or "step_denied" (failure)
-- success: true/false
-- reasoning: brief evidence-based justification
-"""
 
     record = brain.think(
         system_prompt=wiring.get("prompts", {}).get("verify", ""),
-        payload={"prompt": prompt, "goal": goal, "state": state},
+        payload={
+            "goal": goal,
+            "step": {"description": step_goal, "done_when": done_when},
+            "evidence": {
+                "focused_title": focused_title,
+                "screen_text": screen_text,
+                "elements": elements,
+                "windows": windows,
+                "last_action": last_action,
+                "last_result": last_result,
+                "last_error": last_error,
+            },
+        },
         wiring=wiring
     )
     
@@ -65,7 +53,7 @@ Return JSON with:
         signal = "step_denied"
         success = False
     
-    return signal, {
+    patch = {
         "verification": {
             "success": success,
             "reasoning": data.get("reasoning", ""),
@@ -74,3 +62,6 @@ Return JSON with:
         },
         "last_verification": {"success": success, "signal": signal},
     }
+    if success:
+        patch["step"] = int(state.get("step", 0) or 0) + 1
+    return signal, patch

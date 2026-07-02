@@ -339,7 +339,10 @@ def variant_to_rect(variant: Any) -> Rect:
         if hasattr(val, "__iter__"):
             arr = list(val)
             if len(arr) >= 4:
-                return Rect(left=int(arr[0]), top=int(arr[1]), right=int(arr[2]), bottom=int(arr[3]))
+                left, top, third, fourth = map(int, arr[:4])
+                right = third if third > left else left + third
+                bottom = fourth if fourth > top else top + fourth
+                return Rect(left=left, top=top, right=right, bottom=bottom)
     except Exception:
         pass
     return rect
@@ -685,24 +688,32 @@ class Desktop:
     
     def classify_action(self, control_type_id: int) -> str:
         """Map control type to default action."""
-        if control_type_id == 50000:  # Button
+        if control_type_id in {
+            UIA_ButtonControlTypeId,
+            UIA_CalendarControlTypeId,
+            UIA_CheckBoxControlTypeId,
+            UIA_HyperlinkControlTypeId,
+            UIA_ListItemControlTypeId,
+            UIA_MenuItemControlTypeId,
+            UIA_RadioButtonControlTypeId,
+            UIA_TabControlTypeId,
+            UIA_TabItemControlTypeId,
+            UIA_TreeItemControlTypeId,
+            UIA_DataItemControlTypeId,
+            UIA_SplitButtonControlTypeId,
+        }:
             return "click"
-        if control_type_id in (50004, 50002):  # Edit, ComboBox
+        if control_type_id in {UIA_EditControlTypeId, UIA_ComboBoxControlTypeId, UIA_SpinnerControlTypeId}:
             return "write"
-        if control_type_id in (50008, 50009, 50010, 50011, 50003):  # List, ListItem, Tree, TreeItem, ScrollBar
+        if control_type_id in {
+            UIA_ListControlTypeId,
+            UIA_ScrollBarControlTypeId,
+            UIA_SliderControlTypeId,
+            UIA_TreeControlTypeId,
+            UIA_DataGridControlTypeId,
+            UIA_DocumentControlTypeId,
+        }:
             return "scroll"
-        if control_type_id in (50001, 50017):  # CheckBox, RadioButton
-            return "click"
-        if control_type_id == 50014:  # Slider
-            return "scroll"
-        if control_type_id == 50016:  # Hyperlink
-            return "click"
-        if control_type_id == 50018:  # TabItem
-            return "click"
-        if control_type_id == 50013:  # MenuItem
-            return "click"
-        if control_type_id == 50021:  # Spinner
-            return "write"
         return ""
     
     def filter_elements(self, elements: list[Element]) -> dict[str, dict[str, Any]]:
@@ -813,11 +824,8 @@ class Desktop:
         
         # Key actionable elements
         lines.append(f"\nELEMENTS ({len(elements)} actionable):")
-        for eid, el in list(elements.items())[:80]:
-            lines.append(f"  {eid}: {el['role']} '{el['name'][:60]}' @({el['px']},{el['py']}) hwnd={el['hwnd']} action={el['action']} enabled={el['enabled']} focused={el['focused']}")
-        
-        if len(elements) > 80:
-            lines.append(f"  ... and {len(elements) - 80} more elements")
+        for eid, el in elements.items():
+            lines.append(f"  {eid}: {el['role']} '{el['name']}' @({el['px']},{el['py']}) hwnd={el['hwnd']} action={el['action']} enabled={el['enabled']} focused={el['focused']}")
         
         return "\n".join(lines)
 

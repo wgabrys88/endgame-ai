@@ -21,6 +21,5 @@ def run(ctx):
     # Log the error for debugging
     print(f"[ERROR NODE] Failed node: {error_info['failed_node']}, Error: {error_info['error']}")
     
-    # Recovery strategy: default to planner retry
-    # Could be made configurable via wiring.json in future
-    return "planner", {"error_handled": error_info, "recovery": "retry"}
+    recovery = "reflect" if state.get("current_step") else "planner"
+    return recovery, {"error_handled": error_info, "recovery": recovery}

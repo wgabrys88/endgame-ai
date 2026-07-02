@@ -168,6 +168,13 @@ def run(goal: str | None, *, reset: bool = False, max_ticks: int | None = None, 
             runtime_event(wiring, "node_start", node=current, tick=state["tick"])
             ctx = {"wiring": wiring, "state": dict(state), "goal": goal or "", "node": current}
             signal_name, patch = nodes.call_node(current, ctx)
+            if current == "self_modify" and patch.get("wiring_patch"):
+                _, applied = nodes.apply_wiring_patch(wiring, {"data": patch["wiring_patch"]})
+                patch.setdefault("self_modify", {})["applied"] = applied
+                wiring = load_wiring()
+                nodes.ensure_live_nodes(wiring)
+                brain.ensure_live_brains(wiring)
+                runtime_event(wiring, "self_modify_applied", **applied)
             state.update(patch)
             # Handle halt signal for clean exit
             if signal_name == "halt":

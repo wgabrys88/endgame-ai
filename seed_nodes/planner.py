@@ -8,7 +8,7 @@ class PlannerNode(BaseNode):
     expected_record_type = "plan"
     
     def signal_from_data(self, data):
-        return str(data.get("next_signal") or "observe")
+        return str(data.get("next_signal") or "step_ready")
     
     def patch_from_record(self, record):
         return {"plan": record.get("data", {}), "reasoning": record.get("reasoning", "")}
