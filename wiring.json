@@ -108,13 +108,6 @@
       "allowed_domains": [
         "github.com"
       ]
-    },
-    "execution": {
-      "enabled": true,
-      "max_commands": 3,
-      "timeout_s": 90,
-      "require_success": true,
-      "rollback_on_failure": true
     }
   },
   "topology": {

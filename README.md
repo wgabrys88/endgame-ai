@@ -359,7 +359,7 @@ This README states the target organism identity. Some code still reflects earlie
 - DONE: Build the hierarchical screen-rooted observation model.
 - DONE: Reuse one capability runtime for action and evolution.
 - DONE: Simplify git workflow toward direct checked-out-branch commit and push.
-- Keep validation as an operational health check, not as a permission boundary.
-- Let future topology changes be ordinary self-evolution, not a special event.
+- DONE: Keep validation as an operational health check, not as a permission boundary.
+- DONE: Let future topology changes be ordinary self-evolution, not a special event.
 
 The final test is practical: clone it, give it a goal, walk away, and come back to a completed task or a committed improvement that makes the next run stronger.

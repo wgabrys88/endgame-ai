@@ -130,77 +130,6 @@ def _get_desktop_instance():
     return desktop.get_desktop()
 
 
-def execute_verb(verb: str, target: dict[str, Any] | None = None, value: str | None = None) -> str:
-    """Convenience verbs for common actions."""
-    d = _get_desktop_instance()
-    target = target or {}
-    
-    if verb == "click":
-        x = target.get("px") or target.get("x")
-        y = target.get("py") or target.get("y")
-        hwnd = target.get("hwnd", 0)
-        if x is not None and y is not None:
-            d.click(x, y, hwnd)
-            return f"clicked at ({x},{y})"
-        return "click: missing x/y"
-    
-    elif verb == "write":
-        text = value or target.get("text", "")
-        d.type_text(text)
-        return f"typed: {text}"
-    
-    elif verb == "press":
-        key = value or target.get("key", "")
-        d.press_key(key)
-        return f"pressed: {key}"
-    
-    elif verb == "hotkey":
-        keys = value or target.get("keys", "")
-        d.hotkey(keys)
-        return f"hotkey: {keys}"
-    
-    elif verb == "focus":
-        target_str = value or target.get("title", "")
-        d.focus_window(target_str)
-        return f"focused: {target_str}"
-    
-    elif verb == "scroll":
-        amount = target.get("amount", 3)
-        direction = target.get("direction", "down")
-        x = target.get("px", 0)
-        y = target.get("py", 0)
-        hwnd = target.get("hwnd", 0)
-        d.scroll(x, y, amount if direction == "down" else -amount, hwnd)
-        return f"scrolled {direction} {amount}"
-    
-    elif verb == "wait":
-        wait_time = target.get("seconds", 1)
-        time.sleep(wait_time)
-        return f"waited {wait_time}s"
-    
-    elif verb == "launch":
-        cmd = value or target.get("command", "")
-        subprocess.Popen(cmd, shell=True)
-        return f"launched: {cmd}"
-    
-    elif verb == "open_url":
-        browser = target.get("browser", "chrome")
-        url = value or target.get("url", "")
-        if browser == "chrome":
-            subprocess.Popen(["chrome", url])
-        else:
-            import webbrowser
-            webbrowser.open(url)
-        return f"opened {url} in {browser}"
-    
-    elif verb == "remember":
-        key = target.get("key", "")
-        val = value or target.get("value", "")
-        return f"remembered {key}={val}"
-    
-    return f"unknown verb: {verb}"
-
-
 EVOLVABLE_SUFFIXES = {".py", ".json", ".md"}
 EVOLVABLE_NAMES = {".gitattributes", ".gitignore", "LICENSE"}
 BLOCKED_EVOLVE_PARTS = {".git", "__pycache__", "comms", "pids"}
@@ -368,19 +297,13 @@ def _run_evolution_commands(commands: list[Any], wiring: dict[str, Any]) -> list
     if not commands:
         return []
     cfg = wiring.get("self_modify", {}).get("execution", {})
-    if not cfg.get("enabled", True):
-        raise RuntimeError("self_modify commands requested but self_modify.execution.enabled is false")
-    max_commands = int(cfg.get("max_commands", 3))
-    default_timeout = float(cfg.get("timeout_s", 60))
-    require_success = bool(cfg.get("require_success", True))
-    if len(commands) > max_commands:
-        raise RuntimeError(f"self_modify command limit exceeded: {len(commands)}/{max_commands}")
+    default_timeout = cfg.get("timeout_s")
     results: list[dict[str, Any]] = []
     for item in commands:
         if isinstance(item, dict):
             command = item.get("command")
             shell = bool(item.get("shell", isinstance(command, str)))
-            timeout_s = float(item.get("timeout_s", default_timeout))
+            timeout_s = item.get("timeout_s", default_timeout)
         else:
             command = item
             shell = isinstance(command, str)
@@ -393,7 +316,7 @@ def _run_evolution_commands(commands: list[Any], wiring: dict[str, Any]) -> list
             shell=shell,
             capture_output=True,
             text=True,
-            timeout=timeout_s,
+            timeout=float(timeout_s) if timeout_s is not None else None,
         )
         result = {
             "command": command,
@@ -403,7 +326,7 @@ def _run_evolution_commands(commands: list[Any], wiring: dict[str, Any]) -> list
             "stderr": cp.stderr,
         }
         results.append(result)
-        if require_success and cp.returncode != 0:
+        if cp.returncode != 0:
             raise RuntimeError(f"self_modify command failed: {result}")
     return results
 
@@ -622,9 +545,6 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "get_focused_title": get_focused_title,
         "node_by_id": node_by_id,
         "action_nodes": action_nodes,
-        
-        # Convenience verbs
-        "execute_verb": execute_verb,
         
         # Raw desktop actions
         "click": d.click,

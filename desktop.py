@@ -517,37 +517,6 @@ class Desktop:
         
         return list(elements_found.values())
     
-    def dense_probe(self, region: Rect, config: dict[str, Any] | None = None) -> list[Element]:
-        """Dense probe a specific region (smaller step)."""
-        if config is None:
-            config = {}
-        config = dict(config)
-        config["step_px"] = config.get("step_px", 24)
-        config["target_window_only"] = False
-        return self.hover_scan(config)
-    
-    def scroll_enrich(self, config: dict[str, Any] | None = None) -> list[Element]:
-        """Scroll and re-probe to discover more elements."""
-        if config is None:
-            config = {}
-        
-        passes = config.get("passes", [-3, -2, 2, 3])  # scroll amounts
-        all_elements: dict[str, Element] = {}
-        
-        for amount in passes:
-            elements = self.hover_scan(config)
-            for elem in elements:
-                rid_key = ",".join(map(str, elem.runtime_id)) if elem.runtime_id else f"{elem.window_handle}:{elem.rect.left}:{elem.rect.top}"
-                if rid_key not in all_elements:
-                    all_elements[rid_key] = elem
-            
-            # Scroll
-            user32 = ctypes.windll.user32
-            user32.mouse_event(0x0800, 0, 0, amount * 120, 0)
-            time.sleep(0.1)
-        
-        return list(all_elements.values())
-    
     def _find_focused_element(self) -> uia.IUIAutomationElement | None:
         """Find the element with keyboard focus."""
         try:
