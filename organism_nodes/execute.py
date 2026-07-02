@@ -7,6 +7,26 @@ import io
 import nodes
 
 
+def _compiled_execution(code: str):
+    try:
+        return compile(code, "<brain_execution>", "exec"), code, None
+    except SyntaxError as original:
+        candidate = code.rstrip()
+        removed = 0
+        while candidate.endswith("}"):
+            candidate = candidate[:-1].rstrip()
+            removed += 1
+            try:
+                return compile(candidate, "<brain_execution>", "exec"), candidate, {
+                    "kind": "trimmed_trailing_json_brace",
+                    "removed_chars": removed,
+                    "original_error": f"{original.msg} line {original.lineno}",
+                }
+            except SyntaxError:
+                continue
+        raise original
+
+
 def run(ctx):
     """Ask the brain for executable Python, then run it in the desktop namespace."""
     state = ctx.get("state", {})
@@ -55,13 +75,23 @@ def run(ctx):
     if conclusion != "EXECUTE" or not code.strip():
         return "reflect", {"last_action": {"code": "", "conclusion": "CANNOT"}, "last_error": "execute returned CANNOT"}
 
+    try:
+        compiled, code, code_repair = _compiled_execution(code)
+    except SyntaxError as exc:
+        return "reflect", {
+            "last_action": {"code": code, "conclusion": conclusion},
+            "last_code": code,
+            "last_result": {"stdout": "", "stderr": ""},
+            "last_error": f"SyntaxError: {exc.msg} ({exc.filename}, line {exc.lineno})",
+        }
+
     ns = nodes.build_capability_runtime(ctx)
     ns["desktop"] = desktop
     stdout = io.StringIO()
     stderr = io.StringIO()
     try:
         with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-            exec(code, ns)
+            exec(compiled, ns)
         explicit_result = ns.get("result")
         output = stdout.getvalue()
         errors = stderr.getvalue()
@@ -76,7 +106,7 @@ def run(ctx):
         error = f"{type(exc).__name__}: {exc}"
 
     return ("reflect" if error else "verify"), {
-        "last_action": {"code": code, "conclusion": conclusion},
+        "last_action": {"code": code, "conclusion": conclusion, "code_repair": code_repair},
         "last_code": code,
         "last_result": result,
         "last_error": error,
