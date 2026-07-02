@@ -9,10 +9,7 @@ def run(ctx):
     obs = desktop.observe(config)
     return "screen_ready", {
         "observed_at": obs.get("observed_at"),
-        "fresh_scan": obs.get("fresh_scan"),
         "desktop_tree": obs.get("desktop_tree"),
-        "action_index": obs.get("action_index"),
-        "observation_artifact": obs.get("observation_artifact"),
-        "screen_text": obs.get("screen_text"),
+        "observation_delta": obs.get("observation_delta"),
         "focused_title": obs.get("focused_title"),
     }

@@ -875,23 +875,11 @@ class Desktop:
             "role": node.get("role", ""),
             "name": node.get("name", "") or node.get("title", ""),
         }
-        for key in ("parent_id", "title", "action", "enabled", "focused", "fresh_scan"):
+        for key in ("parent_id", "action", "enabled", "focused"):
             if key in node:
                 semantic[key] = node.get(key)
-        if isinstance(node.get("scan"), dict):
-            scan = node["scan"]
-            semantic["scan"] = {
-                "method": scan.get("method"),
-                "mode": scan.get("mode"),
-                "target_window_only": scan.get("target_window_only"),
-                "step_px": scan.get("step_px"),
-                "raw_element_count": scan.get("raw_element_count"),
-                "actionable_element_count": scan.get("actionable_element_count"),
-            }
         children = node.get("children") if isinstance(node.get("children"), list) else []
         semantic["children"] = [self._semantic_node(child) for child in children if isinstance(child, dict)]
-        if semantic["children"]:
-            semantic["child_count"] = len(semantic["children"])
         return semantic
 
     def semantic_desktop_tree(self, full_tree: dict[str, Any]) -> dict[str, Any]:
@@ -912,14 +900,11 @@ class Desktop:
         return {
             "id": "W0",
             "role": "Screen",
-            "fresh_scan": True,
             "observed_at": full_tree.get("observed_at"),
             "focused_title": full_tree.get("focused_title", ""),
             "focused_window_id": full_tree.get("focused_window_id", ""),
             "root": root,
             "node_index": node_index,
-            "window_count": full_tree.get("window_count", 0),
-            "element_count": full_tree.get("element_count", 0),
         }
 
     def action_index_from_tree(self, full_tree: dict[str, Any]) -> dict[str, dict[str, Any]]:
