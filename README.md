@@ -28,6 +28,7 @@ The current topology is only a seed nervous system. `planner`, `scheduler`, `obs
 - A two-surface observation model: `desktop_tree` is semantic and id-based for the brain, while `action_index` and raw artifacts keep coordinates, hwnds, runtime ids, and UIA metadata for the Python body.
 - A single fresh-observation brain chokepoint: model decisions receive current UI truth from `brain.think`; verify, reflect, and self-modify no longer perform separate duplicate scans before asking the model.
 - Node targeting uses the latest body-side action index from the desktop singleton, so `click_node(id)` and `scroll_node(id)` act on the same scan that informed the model response.
+- Macro-step prompting: planner decides its own decomposition and uses the fewest necessary observable steps; execute writes one complete multi-action Python script for each step when the next verification can judge real progress.
 - Self-modify patches must declare `read_files` for every existing touched source file, and the applier rejects ungrounded rewrites.
 - A public development branch, `unified-archBRAINZ`, where this final unification work is being prepared before merge to `main`.
 
@@ -38,7 +39,7 @@ The largest remaining reliability target is screen understanding quality. The or
 The loop is simple:
 
 1. Read the human goal.
-2. Plan a small set of observable steps.
+2. Decide the goal decomposition and plan the fewest necessary observable macro steps that can be verified from fresh scans.
 3. Select the next step.
 4. Freshly scan the current screen.
 5. Generate Python for the next action.
@@ -369,6 +370,7 @@ This README states the target organism identity. Some code still reflects earlie
 - DONE: Split observation into semantic `desktop_tree`, body-side `action_index`, raw observation artifacts, and `observation_delta`.
 - DONE: Remove duplicate verify/reflect/self_modify observation passes; the brain chokepoint is the single fresh scan source for model decisions.
 - DONE: Make runtime node targeting prefer the latest action index captured during the brain-call scan.
+- DONE: Tighten planner and execute prompts so the organism chooses macro-step granularity and avoids unnecessary verify checkpoints.
 - DONE: Move the real checked-out source and organism rules into a stable prefix for prompt caching.
 - DONE: Require self-modify patches to declare `read_files` and reject ungrounded rewrites of existing files.
 - DONE: Rewrite seed prompts so each model call knows it is one organ inside the full topology.
