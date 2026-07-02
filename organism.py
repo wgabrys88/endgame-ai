@@ -9,7 +9,6 @@ import argparse
 import json
 import os
 import pathlib
-import shutil
 import signal
 import sys
 import time
@@ -74,10 +73,6 @@ def read_control(wiring: dict[str, Any]) -> dict[str, Any]:
 
 
 def reset_runtime(wiring: dict[str, Any]) -> None:
-    for key in ["live_nodes", "live_brains"]:
-        p = brain.root_path(wiring.get("paths", {}).get(key), key)
-        if p.exists():
-            shutil.rmtree(p)
     for key, default in [("state", "state.json"), ("runtime_log", "comms/runtime.ndjson")]:
         p = brain.root_path(wiring.get("paths", {}).get(key), default)
         if p.exists():
@@ -142,8 +137,6 @@ def run(
         wiring.setdefault("model", {})["max_brain_calls"] = max_brain_calls
     if reset:
         reset_runtime(wiring)
-    nodes.ensure_live_nodes(wiring)
-    brain.ensure_live_brains(wiring)
     brain.reset_call_budget()
     topo = wiring.get("topology", {})
     current = str(start_node or topo.get("cycle_start") or "planner")
@@ -176,14 +169,15 @@ def run(
             runtime_event(wiring, "node_start", node=current, tick=state["tick"])
             ctx = {"wiring": wiring, "state": dict(state), "goal": goal or "", "node": current}
             signal_name, patch = nodes.call_node(current, ctx)
-            evolution_patch = patch.get("evolution_patch") or patch.get("wiring_patch")
+            evolution_patch = patch.get("git_evolution_patch")
             if current == "self_modify" and evolution_patch:
+                nodes.require_self_evolve_branch(wiring)
                 _, applied = nodes.apply_evolution_patch(wiring, {"data": evolution_patch})
                 patch.setdefault("self_modify", {})["applied"] = applied
+                committed = nodes.commit_self_evolution(wiring, applied, evolution_patch)
+                patch["self_modify"]["commit"] = committed
                 wiring = load_wiring()
-                nodes.ensure_live_nodes(wiring)
-                brain.ensure_live_brains(wiring)
-                runtime_event(wiring, "self_modify_applied", **applied)
+                runtime_event(wiring, "self_modify_applied", **applied, commit=committed)
             state.update(patch)
             # Handle halt signal for clean exit
             if signal_name == "halt":

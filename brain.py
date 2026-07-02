@@ -1,7 +1,7 @@
 """Brain chokepoint for endgame-ai.
 
 Brain transports are hot-swappable modules selected only by wiring.json model.transport.
-Every transport lives under seed_brains/ and is copied to live_brains/ before use.
+Every transport lives under brain_transports/ and is loaded directly.
 No selected transport has a fallback path.
 """
 from __future__ import annotations
@@ -11,7 +11,6 @@ import json
 import os
 import pathlib
 import re
-import shutil
 import threading
 import time
 from typing import Any
@@ -117,29 +116,16 @@ def reset_call_budget() -> None:
     _CALLS_MADE = 0
 
 
-def ensure_live_brains(wiring: dict[str, Any]) -> None:
-    paths = wiring.get("paths", {})
-    seed_dir = root_path(paths.get("seed_brains"), "seed_brains")
-    live_dir = root_path(paths.get("live_brains"), "live_brains")
-    if not seed_dir.exists():
-        raise RuntimeError(f"missing seed_brains directory: {seed_dir}")
-    live_dir.mkdir(parents=True, exist_ok=True)
-    for src in seed_dir.glob("*.py"):
-        dst = live_dir / src.name
-        if not dst.exists() or src.read_bytes() != dst.read_bytes():
-            shutil.copy2(src, dst)
-
-
 def _load_transport_module(name: str, wiring: dict[str, Any]):
     paths = wiring.get("paths", {})
-    live_dir = root_path(paths.get("live_brains"), "live_brains")
-    module_path = live_dir / f"{name}.py"
+    brain_dir = root_path(paths.get("brains"), "brain_transports")
+    module_path = brain_dir / f"{name}.py"
     if not module_path.exists():
         raise RuntimeError(
-            f"selected brain transport '{name}' has no live module at {module_path}; "
+            f"selected brain transport '{name}' has no module at {module_path}; "
             "brain selection is fail-hard and no fallback was attempted"
         )
-    spec = importlib.util.spec_from_file_location(f"endgame_live_brain_{name}", module_path)
+    spec = importlib.util.spec_from_file_location(f"endgame_brain_transport_{name}", module_path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"cannot load selected brain transport module: {module_path}")
     mod = importlib.util.module_from_spec(spec)
@@ -191,7 +177,6 @@ def call(messages: list[dict[str, str]], wiring: dict[str, Any], *, rod_feedback
     """
     stop_check.check_stop("brain call")
     global _CALLS_MADE
-    ensure_live_brains(wiring)
     transport, cfg = _get_transport_config(wiring)
     model_cfg = wiring.get("model", {})
     max_calls = model_cfg.get("max_brain_calls")

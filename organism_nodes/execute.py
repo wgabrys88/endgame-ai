@@ -40,7 +40,7 @@ def run(ctx):
                 "observation": ["observe_screen()", "last_observation_snapshot()", "get_focused_title()"],
                 "actions": ["click(x,y,hwnd)", "type_text(text)", "press_key(key)", "hotkey(keys)", "scroll(x,y,amount,hwnd)", "focus_window(target)", "open_url(browser,url)"],
                 "modules": ["subprocess", "ctypes", "os", "sys", "json", "re", "time", "pathlib", "math", "random"],
-                "self_modify": ["apply_evolution_patch(wiring, parsed)", "apply_wiring_patch(wiring, parsed)", "save_wiring(wiring)", "wiring_limit(name, default, wiring)", "repo_root", "python_executable"],
+                "repo": ["wiring_limit(name, default, wiring)", "repo_root", "python_executable"],
             },
         },
         wiring=wiring,

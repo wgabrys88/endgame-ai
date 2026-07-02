@@ -6,7 +6,6 @@ import copy
 import json
 import os
 import pathlib
-import shutil
 import subprocess
 import sys
 import time
@@ -23,24 +22,12 @@ def _path(wiring: dict[str, Any], key: str, default: str) -> pathlib.Path:
     return brain.root_path(wiring.get("paths", {}).get(key), default)
 
 
-def ensure_live_nodes(wiring: dict[str, Any]) -> None:
-    seed_dir = _path(wiring, "seed_nodes", "seed_nodes")
-    live_dir = _path(wiring, "live_nodes", "live_nodes")
-    if not seed_dir.exists():
-        raise RuntimeError(f"missing seed_nodes directory: {seed_dir}")
-    live_dir.mkdir(parents=True, exist_ok=True)
-    for src in seed_dir.glob("*.py"):
-        dst = live_dir / src.name
-        if not dst.exists() or src.read_bytes() != dst.read_bytes():
-            shutil.copy2(src, dst)
-
-
 def _load_node(node_name: str, wiring: dict[str, Any]):
-    live_dir = _path(wiring, "live_nodes", "live_nodes")
-    path = live_dir / f"{node_name}.py"
+    node_dir = _path(wiring, "nodes", "organism_nodes")
+    path = node_dir / f"{node_name}.py"
     if not path.exists():
-        raise RuntimeError(f"topology node '{node_name}' has no live module at {path}")
-    spec = importlib.util.spec_from_file_location(f"endgame_live_node_{node_name}", path)
+        raise RuntimeError(f"topology node '{node_name}' has no module at {path}")
+    spec = importlib.util.spec_from_file_location(f"endgame_node_{node_name}", path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"cannot load node module: {path}")
     mod = importlib.util.module_from_spec(spec)
@@ -87,7 +74,6 @@ class BaseNode(ABC):
 
 def call_node(node_name: str, ctx: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     wiring = ctx["wiring"]
-    ensure_live_nodes(wiring)
     mod = _load_node(node_name, wiring)
     result = mod.run(ctx)
     if not isinstance(result, tuple) or len(result) != 2:
@@ -224,17 +210,8 @@ def _patch_data(parsed: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
-def _rewrite_live_path(raw_path: str) -> str:
-    rel = str(raw_path).replace("\\", "/").strip().lstrip("/")
-    if rel.startswith("live_nodes/"):
-        return "seed_nodes/" + rel.split("/", 1)[1]
-    if rel.startswith("live_brains/"):
-        return "seed_brains/" + rel.split("/", 1)[1]
-    return rel
-
-
 def _evolution_target(raw_path: str, *, deleting: bool = False) -> tuple[pathlib.Path, str]:
-    rel = _rewrite_live_path(raw_path)
+    rel = str(raw_path).replace("\\", "/").strip().lstrip("/")
     if not rel:
         raise ValueError("self_modify path is empty")
     requested = pathlib.Path(rel)
@@ -321,11 +298,98 @@ def _collect_file_deletes(data: dict[str, Any]) -> list[str]:
 
 
 def _activation_bucket(rel: str) -> str:
-    if rel == "wiring.json" or rel.startswith("seed_nodes/") or rel.startswith("seed_brains/"):
+    if rel == "wiring.json" or rel.startswith("organism_nodes/") or rel.startswith("brain_transports/"):
         return "immediate"
     if rel in CORE_FILES:
         return "next_run"
     return "supporting"
+
+
+def _git(args: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
+    cp = subprocess.run(
+        ["git", *args],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    if check and cp.returncode != 0:
+        detail = (cp.stderr or cp.stdout or "").strip()
+        raise RuntimeError(f"git {' '.join(args)} failed: {detail}")
+    return cp
+
+
+def git_head_sha() -> str:
+    return _git(["rev-parse", "HEAD"]).stdout.strip()
+
+
+def git_current_branch() -> str:
+    return _git(["branch", "--show-current"]).stdout.strip()
+
+
+def git_worktree_status() -> list[str]:
+    return [line for line in _git(["status", "--porcelain"]).stdout.splitlines() if line.strip()]
+
+
+def require_clean_worktree() -> None:
+    status = git_worktree_status()
+    if status:
+        sample = "\n".join(status[:20])
+        raise RuntimeError(f"self_modify requires a clean git worktree before branch creation:\n{sample}")
+
+
+def _remote_url(remote: str) -> str:
+    cp = _git(["remote", "get-url", remote], check=False)
+    return cp.stdout.strip() if cp.returncode == 0 else ""
+
+
+def _github_branch_url(remote_url: str, branch: str) -> str:
+    url = remote_url.strip()
+    if not url:
+        return ""
+    if url.startswith("git@github.com:"):
+        url = "https://github.com/" + url.removeprefix("git@github.com:")
+    if url.endswith(".git"):
+        url = url[:-4]
+    return f"{url}/tree/{branch}" if url.startswith("https://github.com/") else ""
+
+
+def prepare_self_evolution(wiring: dict[str, Any]) -> dict[str, Any]:
+    """Create a clean timestamped branch before asking Grok for a patch."""
+    require_clean_worktree()
+    cfg = wiring.get("self_modify", {}).get("git", {})
+    remote = str(cfg.get("remote") or "origin")
+    prefix = str(cfg.get("branch_prefix") or "self-evolve").strip("/")
+    base_branch = git_current_branch()
+    base_commit = git_head_sha()
+    branch = f"{prefix}/{time.strftime('%Y%m%dT%H%M%S')}-{base_commit[:7]}"
+    _git(["switch", "-c", branch])
+    remote_url = _remote_url(remote)
+    published = False
+    if bool(cfg.get("publish_context_branch", False)):
+        _git(["push", "-u", remote, branch])
+        published = True
+    return {
+        "context_mode": wiring.get("self_modify", {}).get("context_mode", "hybrid"),
+        "base_branch": base_branch,
+        "branch": branch,
+        "base_commit": base_commit,
+        "current_commit": git_head_sha(),
+        "remote": remote,
+        "remote_url": remote_url,
+        "branch_url": _github_branch_url(remote_url, branch),
+        "published": published,
+    }
+
+
+def _self_evolve_prefix(wiring: dict[str, Any]) -> str:
+    return str(wiring.get("self_modify", {}).get("git", {}).get("branch_prefix") or "self-evolve").strip("/")
+
+
+def require_self_evolve_branch(wiring: dict[str, Any]) -> None:
+    branch = git_current_branch()
+    prefix = _self_evolve_prefix(wiring) + "/"
+    if not branch.startswith(prefix):
+        raise RuntimeError(f"self_modify patches must apply on a {prefix} branch, current branch is {branch!r}")
 
 
 def _run_evolution_commands(commands: list[Any], wiring: dict[str, Any]) -> list[dict[str, Any]]:
@@ -392,7 +456,7 @@ def _restore_snapshots(snapshots: dict[pathlib.Path, bytes | None]) -> None:
 
 
 def apply_evolution_patch(wiring: dict[str, Any], parsed: dict[str, Any]) -> tuple[str, Any]:
-    """Apply a validated self-evolution patch to repository source, wiring, and live caches."""
+    """Apply a validated self-evolution patch to canonical repository source."""
     data = _patch_data(parsed)
     wiring_patches = list(data.get("wiring_patches") or [])
     patched_wiring = _apply_wiring_ops(wiring, wiring_patches)
@@ -426,17 +490,12 @@ def apply_evolution_patch(wiring: dict[str, Any], parsed: dict[str, Any]) -> tup
             wiring.update(patched_wiring)
             save_wiring(wiring)
 
-        # Minimal reliable architecture improvement: explicit post-create validation
-        # Ensures safe create/validate before any execute or potential rollback.
-        # Evidence-based from prior inspection gaps (no visible post-write checks).
         for path, rel, _ in writes:
             if path.suffix == ".py":
                 compile(path.read_text(encoding="utf-8"), rel, "exec")
             elif path.suffix == ".json":
                 json.loads(path.read_text(encoding="utf-8"))
 
-        ensure_live_nodes(wiring)
-        brain.ensure_live_brains(wiring)
         command_results = _run_evolution_commands(list(data.get("commands") or []), wiring)
     except Exception:
         if rollback_on_failure:
@@ -444,8 +503,6 @@ def apply_evolution_patch(wiring: dict[str, Any], parsed: dict[str, Any]) -> tup
             if wiring_patches:
                 wiring.clear()
                 wiring.update(brain.load_json(ROOT / "wiring.json"))
-            ensure_live_nodes(wiring)
-            brain.ensure_live_brains(wiring)
         raise
 
     changed = [rel for _, rel, _ in writes] + [rel for _, rel in deletes]
@@ -463,9 +520,53 @@ def apply_evolution_patch(wiring: dict[str, Any], parsed: dict[str, Any]) -> tup
     }
 
 
-def apply_wiring_patch(wiring: dict[str, Any], parsed: dict[str, Any]) -> tuple[str, Any]:
-    """Backward-compatible alias for the repository-level evolution patch."""
-    return apply_evolution_patch(wiring, parsed)
+def commit_self_evolution(wiring: dict[str, Any], applied: dict[str, Any], patch_data: dict[str, Any]) -> dict[str, Any]:
+    """Commit a successful validated self-evolution patch on its timestamp branch."""
+    require_self_evolve_branch(wiring)
+    changed_files = list(applied.get("changed_files") or [])
+    if applied.get("wiring_patches"):
+        changed_files.append("wiring.json")
+    changed_files = sorted({str(path).replace("\\", "/") for path in changed_files if str(path).strip()})
+    if not changed_files:
+        return {
+            "committed": False,
+            "reason": "no_changed_files",
+            "branch": git_current_branch(),
+            "commit": git_head_sha(),
+        }
+    _git(["add", "-A", "--", *changed_files])
+    status = git_worktree_status()
+    if not status:
+        return {
+            "committed": False,
+            "reason": "no_git_changes",
+            "branch": git_current_branch(),
+            "commit": git_head_sha(),
+            "changed_files": changed_files,
+        }
+    summary = str(patch_data.get("summary") or "validated self evolution").strip()
+    title = "Self-evolve: " + summary.replace("\n", " ")[:60]
+    rationale = str(patch_data.get("rationale") or "").strip()
+    expected = patch_data.get("expected_validation")
+    body = json.dumps(
+        {
+            "branch": git_current_branch(),
+            "changed_files": changed_files,
+            "rationale": rationale,
+            "expected_validation": expected,
+        },
+        ensure_ascii=False,
+        indent=2,
+        default=str,
+    )
+    _git(["commit", "-m", title, "-m", body])
+    return {
+        "committed": True,
+        "branch": git_current_branch(),
+        "commit": git_head_sha(),
+        "changed_files": changed_files,
+        "status": git_worktree_status(),
+    }
 
 
 def save_wiring(wiring: dict[str, Any]) -> None:
@@ -522,10 +623,7 @@ def build_execute_namespace(ctx: dict[str, Any]) -> dict[str, Any]:
         "math": __import__("math"),
         "random": __import__("random"),
         
-        # Self-modification
-        "apply_evolution_patch": apply_evolution_patch,
-        "apply_wiring_patch": apply_wiring_patch,
-        "save_wiring": save_wiring,
+        # Repository context
         "wiring_limit": wiring_limit,
         "repo_root": str(ROOT),
         "python_executable": sys.executable,

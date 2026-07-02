@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+# Legacy local artifacts from pre-git-native runs; the runtime no longer uses them.
 live_nodes/
 live_brains/
 comms/
