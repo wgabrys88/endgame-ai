@@ -238,21 +238,15 @@ def stable_prefix() -> StablePrefix:
 
 
 def _stable_prefix_enabled(wiring: dict[str, Any]) -> bool:
-    """Check if stable prefix should be included in requests."""
+    """Check if stable prefix should be built (for self-modify read_files grounding)."""
     sp_cfg = wiring.get("model", {}).get("stable_prefix", {})
     return bool(sp_cfg.get("enabled", False))
 
 
 def _stable_prefix_include_in_request(wiring: dict[str, Any]) -> bool:
-    """Check if stable prefix text should be included in request body."""
+    """Check if stable prefix text should be included in request body (system message)."""
     sp_cfg = wiring.get("model", {}).get("stable_prefix", {})
     return bool(sp_cfg.get("include_in_request", False))
-
-
-def _stable_prefix_cache_key_only(wiring: dict[str, Any]) -> bool:
-    """Check if only cache_key should be sent (without full prefix text)."""
-    sp_cfg = wiring.get("model", {}).get("stable_prefix", {})
-    return bool(sp_cfg.get("cache_key_only", True))
 
 
 def _messages(system_prompt: str, user_text: str, prefix: StablePrefix | None) -> list[dict[str, str]]:
@@ -604,10 +598,11 @@ def think(
     _, cfg = _get_transport_config(wiring)
     reasoning_cfg = _effective_reasoning_config(wiring, cfg)
     
-    # Conditionally build stable prefix
-    prefix = None
-    if _stable_prefix_enabled(wiring):
-        prefix = stable_prefix()
+    # Build stable prefix if enabled (needed for self-modify read_files grounding)
+    prefix = stable_prefix() if _stable_prefix_enabled(wiring) else None
+    
+    # Include prefix text in system message only if include_in_request=true
+    prefix_for_messages = prefix if _stable_prefix_include_in_request(wiring) else None
     
     payload = _with_fresh_observation(payload, wiring)
     user_text = json.dumps(payload, ensure_ascii=False, default=str)
@@ -619,17 +614,15 @@ def think(
     )
     request_cfg = dict(request_config or {})
     
-    # Add cache key if enabled (even without full prefix text)
-    if _stable_prefix_enabled(wiring) and _stable_prefix_cache_key_only(wiring) and prefix:
-        request_cfg.setdefault("prompt_cache_key", prefix.cache_key)
-        request_cfg.setdefault("stable_prefix", prefix.metadata())
-    elif _stable_prefix_enabled(wiring) and prefix:
+    # Send prompt_cache_key only if prefix text is included in request
+    # (cache key without matching prefix text is useless)
+    if prefix and _stable_prefix_include_in_request(wiring):
         request_cfg.setdefault("prompt_cache_key", prefix.cache_key)
         request_cfg.setdefault("stable_prefix", prefix.metadata())
 
     if not reasoning_cfg["enabled"] or pattern == "single_pass":
         result = call(
-            _messages(system_prompt, user_text, prefix),
+            _messages(system_prompt, user_text, prefix_for_messages),
             wiring,
             rod_feedback=False,
             response_format=response_format,
@@ -641,7 +634,7 @@ def think(
 
     if pattern == "native":
         result = call(
-            _messages(system_prompt, user_text, prefix),
+            _messages(system_prompt, user_text, prefix_for_messages),
             wiring,
             rod_feedback=False,
             response_format=response_format,
@@ -654,9 +647,19 @@ def think(
     if pattern != "two_pass":
         raise RuntimeError(f"unknown reasoning pattern: {pattern}")
 
-    first = call(_messages(system_prompt, user_text, prefix), wiring, rod_feedback=False, request_config=request_cfg)
+    first = call(_messages(system_prompt, user_text, prefix_for_messages), wiring, rod_feedback=False, request_config=request_cfg)
     reasoning = reasoning_from(first["content"], first.get("reasoning", ""))
     template = str(reasoning_cfg.get("injection_template") or "REASONING_FEEDBACK:\n{reasoning}")
+    second = call(
+        _messages(system_prompt, user_text + "\n\n" + template.format(reasoning=reasoning), prefix_for_messages),
+        wiring,
+        rod_feedback=True,
+        response_format=response_format,
+        request_config=request_cfg,
+    )
+    record = _commit_record(second["content"])
+    record.setdefault("reasoning", reasoning)
+    return record
     second = call(
         _messages(system_prompt, user_text + "\n\n" + template.format(reasoning=reasoning), prefix),
         wiring,

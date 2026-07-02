@@ -86,8 +86,7 @@
     },
     "stable_prefix": {
       "enabled": false,
-      "include_in_request": false,
-      "cache_key_only": true
+      "include_in_request": false
     }
   },
   "paths": {
