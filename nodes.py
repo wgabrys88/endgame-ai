@@ -110,9 +110,9 @@ def observe_screen(ctx: dict[str, Any] | None = None) -> dict[str, int]:
     return desktop.observe_screen()
 
 
-def last_observation_snapshot(ctx: dict[str, Any] | None = None) -> dict[str, Any] | None:
-    """Get the last full observation snapshot."""
-    return desktop.last_observation_snapshot()
+def last_desktop_tree(ctx: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    """Get the last desktop tree."""
+    return desktop.last_desktop_tree()
 
 
 def get_focused_title(ctx: dict[str, Any] | None = None) -> str:
@@ -586,8 +586,25 @@ def wiring_limit(name: str, default: int, wiring: dict[str, Any]) -> int:
     return wiring.get("limits", {}).get(name, default)
 
 
-def build_execute_namespace(ctx: dict[str, Any]) -> dict[str, Any]:
-    """Build the namespace for execute node's exec()."""
+def _desktop_tree_index(state: dict[str, Any]) -> dict[str, Any]:
+    tree = state.get("desktop_tree") or {}
+    index = tree.get("node_index") if isinstance(tree, dict) else {}
+    return index if isinstance(index, dict) else {}
+
+
+def _node_center(node: dict[str, Any]) -> tuple[int, int]:
+    if node.get("px") is not None and node.get("py") is not None:
+        return int(node.get("px") or 0), int(node.get("py") or 0)
+    rect = node.get("rect") if isinstance(node.get("rect"), dict) else {}
+    left = int(rect.get("left", 0) or 0)
+    right = int(rect.get("right", left) or left)
+    top = int(rect.get("top", 0) or 0)
+    bottom = int(rect.get("bottom", top) or top)
+    return left + max(0, right - left) // 2, top + max(0, bottom - top) // 2
+
+
+def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
+    """Build the shared machine capability runtime for action and evolution nodes."""
     d = _get_desktop_instance()
     state = ctx.get("state", {})
     wiring = ctx.get("wiring", {})
@@ -599,22 +616,53 @@ def build_execute_namespace(ctx: dict[str, Any]) -> dict[str, Any]:
         "verification": state.get("last_verification", {}),
         "reflection": state.get("last_reflection", {}),
     }
+
+    def node_by_id(node_id: str) -> dict[str, Any]:
+        return dict(_desktop_tree_index(state).get(str(node_id), {}) or {})
+
+    def action_nodes(action: str | None = None) -> list[dict[str, Any]]:
+        nodes = []
+        for node in _desktop_tree_index(state).values():
+            if not isinstance(node, dict):
+                continue
+            node_action = node.get("action")
+            if node_action and (action is None or node_action == action):
+                nodes.append(dict(node))
+        return nodes
+
+    def click_node(node_id: str) -> dict[str, Any]:
+        node = node_by_id(node_id)
+        if not node:
+            return {"ok": False, "action": "click_node", "error": f"node not found: {node_id}"}
+        x, y = _node_center(node)
+        return d.click(x, y, int(node.get("hwnd") or 0))
+
+    def scroll_node(node_id: str, amount: int = -3) -> dict[str, Any]:
+        node = node_by_id(node_id)
+        if not node:
+            return {"ok": False, "action": "scroll_node", "error": f"node not found: {node_id}"}
+        x, y = _node_center(node)
+        return d.scroll(x, y, int(amount), int(node.get("hwnd") or 0))
     
     return {
         # Observation
         "observe_screen": observe_screen,
-        "last_observation_snapshot": last_observation_snapshot,
+        "last_desktop_tree": last_desktop_tree,
         "get_focused_title": get_focused_title,
+        "node_by_id": node_by_id,
+        "action_nodes": action_nodes,
         
         # Convenience verbs
         "execute_verb": execute_verb,
         
         # Raw desktop actions
         "click": d.click,
+        "click_node": click_node,
         "type_text": d.type_text,
         "press_key": d.press_key,
         "hotkey": d.hotkey,
         "scroll": d.scroll,
+        "scroll_node": scroll_node,
         "focus_window": d.focus_window,
         "open_url": d.open_url,
         
@@ -640,13 +688,13 @@ def build_execute_namespace(ctx: dict[str, Any]) -> dict[str, Any]:
         "wiring": wiring,
         "goal": goal,
         "last": last,
-        "screen": state.get("screen", {}),
-        "elements": state.get("elements", {}),
-        "windows": state.get("windows", []),
+        "desktop_tree": state.get("desktop_tree", {}),
         "screen_text": state.get("screen_text", ""),
         "focused_title": state.get("focused_title", ""),
+        "observed_at": state.get("observed_at"),
+        "fresh_scan": state.get("fresh_scan", False),
     }
 
 
-# Need ctypes import for build_execute_namespace
+# Need ctypes import for build_capability_runtime.
 import ctypes

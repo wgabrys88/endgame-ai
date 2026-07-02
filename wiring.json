@@ -86,12 +86,11 @@
     "updated_at": 0
   },
   "observe_config": {
-    "max_depth": 1,
-    "include_offscreen": false,
-    "max_elements": 120,
     "hover_scan": {
+      "mode": "cursor_hover",
+      "restore_cursor": true,
       "step_px": 24,
-      "delay_ms": 0,
+      "delay_ms": 25,
       "target_window_only": true,
       "min_size_px": 10,
       "max_elements": 80,
@@ -184,9 +183,9 @@
   "prompts": {
     "planner": "Plan the goal as JSON only: record_type='plan'; data.next_signal='step_ready' or 'reflect'; data.intent=list of {description, done_when}. Keep steps few, observable, and executable.",
     "scheduler": "Pick state.plan.intent[state.step]. Return JSON only: record_type='schedule'; data.next_signal='step_ready' or 'plan_complete'; data.step=step or null.",
-    "execute": "Write Python for the current desktop step. Return JSON only: record_type='execution'; data.conclusion='EXECUTE' or 'CANNOT'; data.code=Python string. Exec namespace includes state,wiring,goal,last,screen,elements,windows,screen_text,focused_title, observe_screen(), last_observation_snapshot(), get_focused_title(), click,type_text,press_key,hotkey,scroll,focus_window,open_url, standard modules, wiring_limit(name, default, wiring), repo_root, python_executable. Prefer existing observation fields. Use elements[id].px/py/hwnd for targeting. If last.error exists, adapt instead of repeating.",
-    "verify": "Judge the step from provided evidence. Return JSON only: record_type='verification'; data.next_signal='step_confirmed' or 'step_denied'; data.success boolean; data.reasoning concise evidence.",
-    "reflect": "Diagnose failure and choose recovery. Return JSON only: record_type='reflection'; data.next_signal='retry','replan','escalate',or 'give_up'; data.lesson=specific next change; data.diagnosis=root cause.",
+    "execute": "Write Python for the current desktop step. Return JSON only: record_type='execution'; data.conclusion='EXECUTE' or 'CANNOT'; data.code=Python string. Exec namespace is the shared organism capability runtime: state,wiring,goal,last,desktop_tree,screen_text,focused_title,observed_at,fresh_scan,node_by_id(id),action_nodes(action=None),click_node(id),scroll_node(id,amount),click,type_text,press_key,hotkey,scroll,focus_window,open_url, standard modules, wiring_limit(name, default, wiring), repo_root, python_executable. Use the fresh desktop_tree first; target node ids before raw coordinates. If last.error exists, adapt instead of repeating.",
+    "verify": "Judge the step from fresh desktop_tree and screen_text evidence. Return JSON only: record_type='verification'; data.next_signal='step_confirmed' or 'step_denied'; data.success boolean; data.reasoning concise evidence.",
+    "reflect": "Diagnose failure from fresh desktop_tree evidence and choose recovery. Return JSON only: record_type='reflection'; data.next_signal='retry','replan','escalate',or 'give_up'; data.lesson=specific next change; data.diagnosis=root cause. Escalate when the organism body, prompt, topology, transport, or workflow must change.",
     "self_modify": "Propose minimal git-native self-evolution from provided wiring, git_context, workspace_manifest, runtime evidence paths, and failure evidence. Return JSON only: record_type='git_evolution_patch'; data.summary string; data.rationale string; data.file_writes=list of {path:'repo-relative path',content:'complete file text'}; data.file_deletes=list of repo-relative paths; data.wiring_patches=list of {op:'set'|'delete',path,value}; data.commands=optional validation commands; data.expected_validation string or object. Target organism_nodes/ for node changes and brain_transports/ for transport changes. Do not push or assume direct repository authority; the local organism applies, validates, commits, and may publish the branch.",
     "satisfied": "Goal achieved. Return record_type='satisfied', data.next_signal='halt'."
   }

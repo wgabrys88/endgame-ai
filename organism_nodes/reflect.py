@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import brain
+import desktop
 
 
 def run(ctx):
@@ -9,6 +10,7 @@ def run(ctx):
     wiring = ctx.get("wiring", {})
     goal = ctx.get("goal", "")
     step = state.get("current_step") or {}
+    obs = desktop.observe(wiring.get("observe_config", {}))
 
     record = brain.think(
         system_prompt=wiring.get("prompts", {}).get("reflect", ""),
@@ -19,9 +21,11 @@ def run(ctx):
                 "done_when": step.get("done_when", ""),
             },
             "evidence": {
-                "focused_title": state.get("focused_title", ""),
-                "screen_text": state.get("screen_text", ""),
-                "elements": state.get("elements", {}),
+                "focused_title": obs.get("focused_title", ""),
+                "fresh_scan": obs.get("fresh_scan", False),
+                "observed_at": obs.get("observed_at"),
+                "screen_text": obs.get("screen_text", ""),
+                "desktop_tree": obs.get("desktop_tree", {}),
                 "last_action": state.get("last_action", {}),
                 "last_result": state.get("last_result", ""),
                 "last_error": state.get("last_error", ""),
@@ -42,6 +46,11 @@ def run(ctx):
     diagnosis = data.get("diagnosis", "No diagnosis")
 
     return signal, {
+        "observed_at": obs.get("observed_at"),
+        "fresh_scan": obs.get("fresh_scan"),
+        "desktop_tree": obs.get("desktop_tree", {}),
+        "screen_text": obs.get("screen_text", ""),
+        "focused_title": obs.get("focused_title", ""),
         "reflection": {
             "lesson": lesson,
             "diagnosis": diagnosis,

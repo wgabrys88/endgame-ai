@@ -23,12 +23,11 @@ def run(ctx):
                 "done_when": step.get("done_when", ""),
             },
             "observation": {
-                "screen": state.get("screen", {}),
                 "focused_title": state.get("focused_title", ""),
-                "windows": state.get("windows", []),
-                "elements": state.get("elements", {}),
+                "fresh_scan": state.get("fresh_scan", False),
+                "observed_at": state.get("observed_at"),
+                "desktop_tree": state.get("desktop_tree", {}),
                 "screen_text": state.get("screen_text", ""),
-                "snapshot": state.get("snapshot", {}),
             },
             "last": {
                 "error": state.get("last_error"),
@@ -36,9 +35,9 @@ def run(ctx):
                 "action": state.get("last_action", {}),
             },
             "namespace": {
-                "values": ["state", "wiring", "goal", "last", "screen", "elements", "windows", "screen_text", "focused_title"],
-                "observation": ["observe_screen()", "last_observation_snapshot()", "get_focused_title()"],
-                "actions": ["click(x,y,hwnd)", "type_text(text)", "press_key(key)", "hotkey(keys)", "scroll(x,y,amount,hwnd)", "focus_window(target)", "open_url(browser,url)"],
+                "values": ["state", "wiring", "goal", "last", "desktop_tree", "screen_text", "focused_title", "observed_at", "fresh_scan"],
+                "observation": ["observe_screen()", "last_desktop_tree()", "get_focused_title()", "node_by_id(id)", "action_nodes(action=None)"],
+                "actions": ["click_node(id)", "scroll_node(id,amount)", "click(x,y,hwnd)", "type_text(text)", "press_key(key)", "hotkey(keys)", "scroll(x,y,amount,hwnd)", "focus_window(target)", "open_url(browser,url)"],
                 "modules": ["subprocess", "ctypes", "os", "sys", "json", "re", "time", "pathlib", "math", "random"],
                 "repo": ["wiring_limit(name, default, wiring)", "repo_root", "python_executable"],
             },
@@ -55,7 +54,7 @@ def run(ctx):
     if conclusion != "EXECUTE" or not code.strip():
         return "reflect", {"last_action": {"code": "", "conclusion": "CANNOT"}, "last_error": "execute returned CANNOT"}
 
-    ns = nodes.build_execute_namespace(ctx)
+    ns = nodes.build_capability_runtime(ctx)
     ns["desktop"] = desktop
     stdout = io.StringIO()
     stderr = io.StringIO()

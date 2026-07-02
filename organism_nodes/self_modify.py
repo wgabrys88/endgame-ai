@@ -6,6 +6,7 @@ import subprocess
 from typing import Any
 
 import brain
+import desktop
 import nodes
 
 
@@ -90,7 +91,7 @@ def _runtime_evidence(wiring: dict[str, Any], state: dict[str, Any]) -> dict[str
         "runtime_log_path": _evidence_file(brain.root_path(wiring.get("paths", {}).get("runtime_log"), "comms/runtime.ndjson")),
         "raw_log_paths": [_evidence_file(path) for path in raw_logs],
         "current_state_keys": sorted(state.keys()),
-        "has_fresh_observation": all(key in state for key in ("screen", "elements", "screen_text", "windows", "focused_title")),
+        "has_fresh_observation": all(key in state for key in ("desktop_tree", "screen_text", "focused_title", "fresh_scan")),
     }
 
 
@@ -100,6 +101,7 @@ def run(ctx):
     wiring = ctx.get("wiring", {})
     goal = ctx.get("goal", "")
     step = state.get("current_step") or {}
+    obs = desktop.observe(wiring.get("observe_config", {}))
     git_context = nodes.prepare_self_evolution(wiring)
 
     record = brain.think(
@@ -121,11 +123,20 @@ def run(ctx):
                 "state_summary": {
                     "current_node": ctx.get("node"),
                     "tick": state.get("tick"),
-                    "focused_title": state.get("focused_title", ""),
-                    "screen_text_chars": len(str(state.get("screen_text", ""))),
-                    "element_count": len(state.get("elements", {}) or {}),
-                    "window_count": len(state.get("windows", []) or []),
+                    "focused_title": obs.get("focused_title", ""),
+                    "fresh_scan": obs.get("fresh_scan", False),
+                    "observed_at": obs.get("observed_at"),
+                    "screen_text_chars": len(str(obs.get("screen_text", ""))),
+                    "element_count": int((obs.get("desktop_tree", {}) or {}).get("element_count", 0) or 0),
+                    "window_count": int((obs.get("desktop_tree", {}) or {}).get("window_count", 0) or 0),
                     "last_error": state.get("last_error"),
+                },
+                "observation": {
+                    "focused_title": obs.get("focused_title", ""),
+                    "fresh_scan": obs.get("fresh_scan", False),
+                    "observed_at": obs.get("observed_at"),
+                    "screen_text": obs.get("screen_text", ""),
+                    "desktop_tree": obs.get("desktop_tree", {}),
                 },
                 "evidence": _runtime_evidence(wiring, state),
             },
@@ -166,6 +177,11 @@ def run(ctx):
 
     data = record.get("data", {})
     return "modified", {
+        "observed_at": obs.get("observed_at"),
+        "fresh_scan": obs.get("fresh_scan"),
+        "desktop_tree": obs.get("desktop_tree", {}),
+        "screen_text": obs.get("screen_text", ""),
+        "focused_title": obs.get("focused_title", ""),
         "git_evolution_patch": {
             "summary": data.get("summary", ""),
             "rationale": data.get("rationale", ""),

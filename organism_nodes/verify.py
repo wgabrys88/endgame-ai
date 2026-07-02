@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import brain
+import desktop
 
 
 def run(ctx):
@@ -14,11 +15,10 @@ def run(ctx):
     step_goal = step.get("description", goal)
     done_when = step.get("done_when", "")
     
-    # Evidence from state
-    screen_text = state.get("screen_text", "")
-    elements = state.get("elements", {})
-    windows = state.get("windows", [])
-    focused_title = state.get("focused_title", "")
+    obs = desktop.observe(wiring.get("observe_config", {}))
+    screen_text = obs.get("screen_text", "")
+    desktop_tree = obs.get("desktop_tree", {})
+    focused_title = obs.get("focused_title", "")
     last_action = state.get("last_action", {})
     last_result = state.get("last_result", "")
     last_error = state.get("last_error", "")
@@ -30,9 +30,10 @@ def run(ctx):
             "step": {"description": step_goal, "done_when": done_when},
             "evidence": {
                 "focused_title": focused_title,
+                "fresh_scan": obs.get("fresh_scan", False),
+                "observed_at": obs.get("observed_at"),
                 "screen_text": screen_text,
-                "elements": elements,
-                "windows": windows,
+                "desktop_tree": desktop_tree,
                 "last_action": last_action,
                 "last_result": last_result,
                 "last_error": last_error,
@@ -55,6 +56,11 @@ def run(ctx):
         success = False
     
     patch = {
+        "observed_at": obs.get("observed_at"),
+        "fresh_scan": obs.get("fresh_scan"),
+        "desktop_tree": desktop_tree,
+        "screen_text": screen_text,
+        "focused_title": focused_title,
         "verification": {
             "success": success,
             "reasoning": data.get("reasoning", ""),

@@ -4,14 +4,13 @@ import desktop
 
 
 def run(ctx):
-    """Observe the desktop using hover_scan as primary method, return filtered elements."""
+    """Observe the desktop using fresh hover-aware scan and return the screen-rooted tree."""
     config = ctx.get("wiring", {}).get("observe_config", {})
     obs = desktop.observe(config)
     return "screen_ready", {
-        "screen": obs.get("screen"),
-        "elements": obs.get("elements"),  # dict keyed by element_id
+        "observed_at": obs.get("observed_at"),
+        "fresh_scan": obs.get("fresh_scan"),
+        "desktop_tree": obs.get("desktop_tree"),
         "screen_text": obs.get("screen_text"),
-        "windows": obs.get("windows"),
-        "snapshot": obs.get("snapshot"),
         "focused_title": obs.get("focused_title"),
     }

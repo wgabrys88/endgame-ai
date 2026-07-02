@@ -1,7 +1,7 @@
 """Desktop observation for Windows 11 using UIA COM via comtypes.gen.UIAutomationClient.
 
-Real Windows desktop observation with Element/Observation types, hover probing,
-window tokens, bounded tree, and configurable observation.
+Real Windows desktop observation with Element types, hover probing,
+window tokens, a screen-rooted tree, and configurable observation.
 """
 from __future__ import annotations
 
@@ -242,29 +242,6 @@ class Element:
         }
 
 
-@dataclass
-class Observation:
-    """Full desktop observation snapshot."""
-    timestamp: float = field(default_factory=time.time)
-    screen_width: int = 0
-    screen_height: int = 0
-    focused_element: Element | None = None
-    root_elements: list[Element] = field(default_factory=list)
-    active_window: Element | None = None
-    focused_title: str = ""
-    
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "timestamp": self.timestamp,
-            "screen_width": self.screen_width,
-            "screen_height": self.screen_height,
-            "focused_element": self.focused_element.to_dict() if self.focused_element else None,
-            "root_elements": [e.to_dict() for e in self.root_elements],
-            "active_window": self.active_window.to_dict() if self.active_window else None,
-            "focused_title": self.focused_title,
-        }
-
-
 # =============================================================================
 # Variant helpers
 # =============================================================================
@@ -354,12 +331,12 @@ def variant_to_rect(variant: Any) -> Rect:
 
 
 class Desktop:
-    """Main desktop observation class using UIA COM via comtypes.gen.UIAutomationClient."""
+        """Main desktop observation class using UIA COM via comtypes.gen.UIAutomationClient."""
     
     def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or {}
         self._automation: uia.IUIAutomation | None = None
-        self._last_observation: Observation | None = None
+        self._last_desktop_tree: dict[str, Any] | None = None
         self._focused_title_cache: str = ""
         self._init_automation()
     
@@ -444,6 +421,7 @@ class Desktop:
         
         Args:
             config: {
+                "mode": "cursor_hover", # cursor_hover moves the real pointer, point_probe does not
                 "step_px": 40,           # grid step in pixels
                 "delay_ms": 1,           # delay between probes
                 "target_window_only": True,  # only scan foreground window
@@ -454,6 +432,8 @@ class Desktop:
         if config is None:
             config = {}
         
+        mode = str(config.get("mode", self.config.get("hover_scan_mode", "point_probe")) or "point_probe")
+        restore_cursor = bool(config.get("restore_cursor", self.config.get("hover_scan_restore_cursor", True)))
         step_px = config.get("step_px", self.config.get("hover_scan_step_px", 40))
         delay_ms = config.get("delay_ms", self.config.get("hover_scan_delay_ms", 1))
         target_window_only = config.get("target_window_only", self.config.get("hover_scan_target_window_only", True))
@@ -482,35 +462,58 @@ class Desktop:
             x_range = range(0, screen_width, step_px)
             y_range = range(0, screen_height, step_px)
         
-        for y in y_range:
-            for x in x_range:
+        saved_cursor = wintypes.POINT()
+        cursor_saved = False
+        if mode == "cursor_hover" and restore_cursor:
+            try:
+                cursor_saved = bool(user32.GetCursorPos(ctypes.byref(saved_cursor)))
+            except Exception:
+                cursor_saved = False
+
+        try:
+            for y in y_range:
+                for x in x_range:
+                    if len(elements_found) >= max_elements:
+                        break
+
+                    if mode == "cursor_hover":
+                        try:
+                            user32.SetCursorPos(int(x), int(y))
+                            if delay_ms > 0:
+                                time.sleep(delay_ms / 1000.0)
+                        except Exception:
+                            pass
+
+                    uia_elem = self._probe_point(x, y)
+                    if not uia_elem:
+                        continue
+
+                    # Get rect to filter by size
+                    rect_var = self._get_property(uia_elem, UIA_BoundingRectanglePropertyId)
+                    rect = variant_to_rect(rect_var)
+
+                    if rect.width < min_size or rect.height < min_size:
+                        continue
+
+                    # Convert to our Element
+                    elem = self._element_to_element(uia_elem, max_depth=1)
+
+                    # Dedup by runtime_id
+                    rid_key = ",".join(map(str, elem.runtime_id)) if elem.runtime_id else f"{elem.window_handle}:{elem.rect.left}:{elem.rect.top}"
+                    if rid_key not in elements_found:
+                        elements_found[rid_key] = elem
+
+                    scanned += 1
+                    if mode != "cursor_hover" and delay_ms > 0:
+                        time.sleep(delay_ms / 1000.0)
                 if len(elements_found) >= max_elements:
                     break
-                
-                uia_elem = self._probe_point(x, y)
-                if not uia_elem:
-                    continue
-                
-                # Get rect to filter by size
-                rect_var = self._get_property(uia_elem, UIA_BoundingRectanglePropertyId)
-                rect = variant_to_rect(rect_var)
-                
-                if rect.width < min_size or rect.height < min_size:
-                    continue
-                
-                # Convert to our Element
-                elem = self._element_to_element(uia_elem, max_depth=1)
-                
-                # Dedup by runtime_id
-                rid_key = ",".join(map(str, elem.runtime_id)) if elem.runtime_id else f"{elem.window_handle}:{elem.rect.left}:{elem.rect.top}"
-                if rid_key not in elements_found:
-                    elements_found[rid_key] = elem
-                
-                scanned += 1
-                if delay_ms > 0:
-                    time.sleep(delay_ms / 1000.0)
-            if len(elements_found) >= max_elements:
-                break
+        finally:
+            if mode == "cursor_hover" and restore_cursor and cursor_saved:
+                try:
+                    user32.SetCursorPos(saved_cursor.x, saved_cursor.y)
+                except Exception:
+                    pass
         
         return list(elements_found.values())
     
@@ -576,20 +579,14 @@ class Desktop:
         
         Args:
             config: Optional observation configuration with keys:
-                - max_depth: Maximum tree depth (default: 3)
-                - include_offscreen: Include offscreen elements (default: False)
-                - max_elements: Maximum elements to return (default: 500)
                 - hover_scan: dict with hover_scan config (step_px, delay_ms, target_window_only, min_size_px, max_elements)
         
         Returns:
-            Observation dict with screen, elements (filtered dict), screen_text, focused_title, windows, snapshot
+            Fresh observation dict with desktop_tree, screen_text, focused_title, and scan metadata.
         """
         if config is None:
             config = {}
         
-        max_depth = config.get("max_depth", self.config.get("max_depth", 3))
-        include_offscreen = config.get("include_offscreen", self.config.get("include_offscreen", False))
-        max_elements = config.get("max_elements", self.config.get("max_elements", 500))
         hover_config = config.get("hover_scan", self.config.get("hover_scan", {}))
         
         # Get screen size
@@ -597,23 +594,17 @@ class Desktop:
         screen_width = user32.GetSystemMetrics(0)
         screen_height = user32.GetSystemMetrics(1)
         
-        # Get focused element
-        focused_uia = self._find_focused_element()
-        focused_element = None
-        if focused_uia:
-            focused_element = self._element_to_element(focused_uia, max_depth=1)
-        
         # Get active window
         active_window_uia = self._get_active_window()
-        active_window = None
         focused_title = ""
         if active_window_uia:
-            active_window = self._element_to_element(active_window_uia, max_depth=2)
             focused_title = self._get_window_title(active_window_uia)
             self._focused_title_cache = focused_title
         else:
             focused_title = self._focused_title_cache
         
+        observed_at = time.time()
+
         # PRIMARY: Hover scan - scan whole screen if desktop/taskbar is active, else target window only
         is_desktop = focused_title in ("Program Manager", "Desktop", "Taskbar", "") or not active_window_uia
         target_window_only = hover_config.get("target_window_only", True) and not is_desktop
@@ -627,33 +618,32 @@ class Desktop:
         hover_elements = self.hover_scan(hover_config_adjusted)
         filtered_elements = self.filter_elements(hover_elements)
         windows = self.get_window_tokens()
+        desktop_tree = self.build_desktop_tree(
+            {"width": screen_width, "height": screen_height},
+            filtered_elements,
+            windows,
+            focused_title,
+            observed_at=observed_at,
+            scan_config=hover_config_adjusted,
+            raw_element_count=len(hover_elements),
+        )
         
         # Format SCREEN text for LLM
         screen_text = self.format_screen_text(
             {"width": screen_width, "height": screen_height},
             filtered_elements,
             windows,
-            focused_title
+            focused_title,
+            desktop_tree,
         )
         
-        # Build observation
-        observation = Observation(
-            screen_width=screen_width,
-            screen_height=screen_height,
-            focused_element=focused_element,
-            root_elements=[],
-            active_window=active_window,
-            focused_title=focused_title,
-        )
-        
-        self._last_observation = observation
+        self._last_desktop_tree = desktop_tree
         
         return {
-            "screen": {"width": screen_width, "height": screen_height},
-            "elements": filtered_elements,  # dict keyed by element_id
+            "observed_at": observed_at,
+            "fresh_scan": True,
+            "desktop_tree": desktop_tree,
             "screen_text": screen_text,
-            "windows": windows,
-            "snapshot": observation.to_dict(),
             "focused_title": focused_title,
         }
     
@@ -662,11 +652,9 @@ class Desktop:
         user32 = ctypes.windll.user32
         return {"width": user32.GetSystemMetrics(0), "height": user32.GetSystemMetrics(1)}
     
-    def last_observation_snapshot(self) -> dict[str, Any] | None:
-        """Get the last full observation snapshot."""
-        if self._last_observation:
-            return self._last_observation.to_dict()
-        return None
+    def last_desktop_tree(self) -> dict[str, Any] | None:
+        """Get the last fresh desktop tree produced by observe()."""
+        return self._last_desktop_tree
     
     def get_focused_title(self) -> str:
         """Get the title of the currently focused window."""
@@ -753,6 +741,131 @@ class Desktop:
                 "runtime_id": el.runtime_id,
             }
         return result
+
+    def _contains_point(self, rect: dict[str, int], x: int, y: int) -> bool:
+        return int(rect.get("left", 0)) <= x <= int(rect.get("right", 0)) and int(rect.get("top", 0)) <= y <= int(rect.get("bottom", 0))
+
+    def _rect_area(self, rect: dict[str, int]) -> int:
+        return max(0, int(rect.get("right", 0)) - int(rect.get("left", 0))) * max(0, int(rect.get("bottom", 0)) - int(rect.get("top", 0)))
+
+    def build_desktop_tree(
+        self,
+        screen: dict[str, int],
+        elements: dict[str, dict[str, Any]],
+        windows: list[dict[str, Any]],
+        focused_title: str,
+        *,
+        observed_at: float,
+        scan_config: dict[str, Any],
+        raw_element_count: int,
+    ) -> dict[str, Any]:
+        """Build a fresh screen-rooted desktop hierarchy from window tokens and hover scan hits."""
+        root_rect = {"left": 0, "top": 0, "right": int(screen.get("width", 0)), "bottom": int(screen.get("height", 0))}
+        root = {
+            "id": "W0",
+            "role": "Screen",
+            "name": "Screen",
+            "title": "Desktop",
+            "rect": root_rect,
+            "focused": False,
+            "fresh_scan": True,
+            "observed_at": observed_at,
+            "scan": {
+                "method": "hover_scan",
+                "mode": str(scan_config.get("mode", "point_probe")),
+                "target_window_only": bool(scan_config.get("target_window_only", False)),
+                "step_px": int(scan_config.get("step_px", 0) or 0),
+                "raw_element_count": raw_element_count,
+                "actionable_element_count": len(elements),
+            },
+            "children": [],
+        }
+        node_index: dict[str, dict[str, Any]] = {"W0": {k: v for k, v in root.items() if k != "children"}}
+        window_nodes: dict[str, dict[str, Any]] = {}
+        hwnd_to_window_id: dict[int, str] = {}
+        focused_window_id = ""
+
+        for window in windows:
+            token = str(window.get("token") or "")
+            if not token or token == "W0":
+                continue
+            title = str(window.get("title") or window.get("name") or "")
+            node = {
+                "id": token,
+                "parent_id": "W0",
+                "role": "Window",
+                "name": title,
+                "title": title,
+                "hwnd": int(window.get("hwnd") or 0),
+                "process_id": int(window.get("process_id") or 0),
+                "class_name": str(window.get("class_name") or ""),
+                "rect": window.get("rect", {}),
+                "focused": bool(focused_title and title == focused_title),
+                "source": "win32_enum_windows",
+                "children": [],
+            }
+            if node["focused"]:
+                focused_window_id = token
+            window_nodes[token] = node
+            hwnd_to_window_id[node["hwnd"]] = token
+            root["children"].append(node)
+            node_index[token] = {k: v for k, v in node.items() if k != "children"}
+
+        direct_elements: list[dict[str, Any]] = []
+        for element_id, element in elements.items():
+            px = int(element.get("px") or 0)
+            py = int(element.get("py") or 0)
+            hwnd = int(element.get("hwnd") or 0)
+            parent_id = hwnd_to_window_id.get(hwnd, "")
+            if not parent_id:
+                containing = [
+                    node for node in window_nodes.values()
+                    if self._contains_point(node.get("rect", {}), px, py)
+                ]
+                if containing:
+                    containing.sort(key=lambda node: self._rect_area(node.get("rect", {})))
+                    parent_id = str(containing[0]["id"])
+            if not parent_id:
+                parent_id = "W0"
+
+            node = {
+                "id": element_id,
+                "parent_id": parent_id,
+                "role": element.get("role", ""),
+                "name": element.get("name", ""),
+                "action": element.get("action", ""),
+                "px": px,
+                "py": py,
+                "hwnd": hwnd,
+                "rect": element.get("rect", {}),
+                "enabled": bool(element.get("enabled", False)),
+                "focused": bool(element.get("focused", False)),
+                "automation_id": element.get("automation_id", ""),
+                "class_name": element.get("class_name", ""),
+                "runtime_id": element.get("runtime_id", []),
+                "source": "hover_scan",
+                "confidence": "point_hit",
+                "children": [],
+            }
+            node_index[element_id] = {k: v for k, v in node.items() if k != "children"}
+            if parent_id == "W0":
+                direct_elements.append(node)
+            else:
+                window_nodes[parent_id]["children"].append(node)
+
+        root["children"].extend(direct_elements)
+        return {
+            "id": "W0",
+            "role": "Screen",
+            "fresh_scan": True,
+            "observed_at": observed_at,
+            "focused_title": focused_title,
+            "focused_window_id": focused_window_id,
+            "root": root,
+            "node_index": node_index,
+            "window_count": len(window_nodes),
+            "element_count": len(elements),
+        }
     
     def get_window_tokens(self) -> list[dict[str, Any]]:
         """Get window tokens W1..Wn for visible top-level windows.
@@ -807,23 +920,22 @@ class Desktop:
             pass
         return windows
     
-    def format_screen_text(self, screen: dict, elements: dict, windows: list, focused_title: str) -> str:
+    def format_screen_text(self, screen: dict, elements: dict, windows: list, focused_title: str, desktop_tree: dict[str, Any] | None = None) -> str:
         """Format SCREEN text for LLM context with hierarchy."""
         lines = []
         
         # Window hierarchy
-        lines.append("WINDOWS:")
+        lines.append("DESKTOP TREE:")
+        lines.append(f"  * [W0] Screen ({screen['width']}x{screen['height']}) fresh_scan=true")
         for w in windows:
-            if w["token"] == "W0":
-                lines.append(f"  * [W0] Screen ({screen['width']}x{screen['height']})")
-            else:
+            if w["token"] != "W0":
                 rect = w["rect"]
-                lines.append(f"  * [{w['token']}] {w['title']} @({rect['left']},{rect['top']},{rect['right']},{rect['bottom']}) hwnd={w['hwnd']} pid={w.get('process_id',0)}")
+                lines.append(f"    * [{w['token']}] Window '{w['title']}' @({rect['left']},{rect['top']},{rect['right']},{rect['bottom']}) hwnd={w['hwnd']} pid={w.get('process_id',0)}")
         
         lines.append(f"\nFOCUSED WINDOW: {focused_title or 'none'}")
         
-        # Key actionable elements
-        lines.append(f"\nELEMENTS ({len(elements)} actionable):")
+        # Key actionable tree nodes
+        lines.append(f"\nACTION NODES ({len(elements)} actionable):")
         for eid, el in elements.items():
             lines.append(f"  {eid}: {el['role']} '{el['name']}' @({el['px']},{el['py']}) hwnd={el['hwnd']} action={el['action']} enabled={el['enabled']} focused={el['focused']}")
         
@@ -943,12 +1055,9 @@ class Desktop:
         elif target.startswith("W"):
             # Window token - look up in windows from last observation
             try:
-                snap = self.last_observation_snapshot()
-                if snap:
-                    for w in snap.get("windows", []):
-                        if w.get("token") == target:
-                            hwnd = w.get("hwnd", 0)
-                            break
+                tree = self.last_desktop_tree() or {}
+                node = (tree.get("node_index") or {}).get(target, {})
+                hwnd = int(node.get("hwnd") or 0)
             except Exception:
                 pass
             if not hwnd:
@@ -1025,9 +1134,9 @@ def observe_screen() -> dict[str, int]:
     return get_desktop().observe_screen()
 
 
-def last_observation_snapshot() -> dict[str, Any] | None:
-    """Convenience function for last observation snapshot."""
-    return get_desktop().last_observation_snapshot()
+def last_desktop_tree() -> dict[str, Any] | None:
+    """Convenience function for last desktop tree."""
+    return get_desktop().last_desktop_tree()
 
 
 def get_focused_title() -> str:

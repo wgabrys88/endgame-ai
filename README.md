@@ -355,8 +355,8 @@ Before changing implementation, inspect wiring.json, organism.py, nodes.py, desk
 
 This README states the target organism identity. Some code still reflects earlier transitional engineering choices. The next implementation pass should align code with this document:
 
-- Make fresh screen scan mandatory before desktop-dependent model decisions.
-- Build the hierarchical screen-rooted observation model.
+- DONE: Make fresh screen scan mandatory before desktop-dependent model decisions.
+- DONE: Build the hierarchical screen-rooted observation model.
 - Reuse one capability runtime for action and evolution.
 - Simplify git workflow toward direct checked-out-branch commit and push.
 - Keep validation as an operational health check, not as a permission boundary.
