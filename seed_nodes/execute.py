@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import brain
+import contextlib
 import desktop
+import io
 import nodes
 
 
@@ -38,7 +40,7 @@ def run(ctx):
                 "observation": ["observe_screen()", "last_observation_snapshot()", "get_focused_title()"],
                 "actions": ["click(x,y,hwnd)", "type_text(text)", "press_key(key)", "hotkey(keys)", "scroll(x,y,amount,hwnd)", "focus_window(target)", "open_url(browser,url)"],
                 "modules": ["subprocess", "ctypes", "os", "sys", "json", "re", "time", "pathlib", "math", "random"],
-                "self_modify": ["apply_wiring_patch(wiring, parsed)", "save_wiring(wiring)", "wiring_limit(name, default, wiring)"],
+                "self_modify": ["apply_evolution_patch(wiring, parsed)", "apply_wiring_patch(wiring, parsed)", "save_wiring(wiring)", "wiring_limit(name, default, wiring)", "repo_root", "python_executable"],
             },
         },
         wiring=wiring,
@@ -54,17 +56,27 @@ def run(ctx):
 
     ns = nodes.build_execute_namespace(ctx)
     ns["desktop"] = desktop
+    stdout = io.StringIO()
+    stderr = io.StringIO()
     try:
-        exec(code, ns)
-        result = ns.get("result", "executed (no result variable)")
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            exec(code, ns)
+        explicit_result = ns.get("result")
+        output = stdout.getvalue()
+        errors = stderr.getvalue()
+        result = {
+            "result": explicit_result,
+            "stdout": output,
+            "stderr": errors,
+        }
         error = None
     except Exception as exc:
-        result = ""
+        result = {"stdout": stdout.getvalue(), "stderr": stderr.getvalue()}
         error = f"{type(exc).__name__}: {exc}"
 
     return ("reflect" if error else "verify"), {
         "last_action": {"code": code, "conclusion": conclusion},
         "last_code": code,
-        "last_result": str(result),
+        "last_result": result,
         "last_error": error,
     }

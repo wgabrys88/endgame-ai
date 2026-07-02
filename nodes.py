@@ -337,8 +337,10 @@ def _run_evolution_commands(commands: list[Any], wiring: dict[str, Any]) -> list
     max_commands = int(cfg.get("max_commands", 3))
     default_timeout = float(cfg.get("timeout_s", 60))
     require_success = bool(cfg.get("require_success", True))
+    if len(commands) > max_commands:
+        raise RuntimeError(f"self_modify command limit exceeded: {len(commands)}/{max_commands}")
     results: list[dict[str, Any]] = []
-    for item in commands[:max_commands]:
+    for item in commands:
         if isinstance(item, dict):
             command = item.get("command")
             shell = bool(item.get("shell", isinstance(command, str)))
@@ -367,9 +369,26 @@ def _run_evolution_commands(commands: list[Any], wiring: dict[str, Any]) -> list
         results.append(result)
         if require_success and cp.returncode != 0:
             raise RuntimeError(f"self_modify command failed: {result}")
-    if len(commands) > max_commands:
-        raise RuntimeError(f"self_modify command limit exceeded: {len(commands)}/{max_commands}")
     return results
+
+
+def _snapshot_paths(paths: list[pathlib.Path]) -> dict[pathlib.Path, bytes | None]:
+    snapshots: dict[pathlib.Path, bytes | None] = {}
+    for path in paths:
+        if path not in snapshots:
+            snapshots[path] = path.read_bytes() if path.exists() else None
+    return snapshots
+
+
+def _restore_snapshots(snapshots: dict[pathlib.Path, bytes | None]) -> None:
+    for path, content in snapshots.items():
+        if content is None:
+            path.unlink(missing_ok=True)
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_name(f"{path.name}.rollback.{os.getpid()}.{threading_id()}")
+            tmp.write_bytes(content)
+            os.replace(tmp, path)
 
 
 def apply_evolution_patch(wiring: dict[str, Any], parsed: dict[str, Any]) -> tuple[str, Any]:
@@ -391,18 +410,34 @@ def apply_evolution_patch(wiring: dict[str, Any], parsed: dict[str, Any]) -> tup
         path, rel = _evolution_target(raw_path, deleting=True)
         deletes.append((path, rel))
 
-    for path, _, content in writes:
-        _atomic_write_text(path, content)
-    for path, _ in deletes:
-        path.unlink(missing_ok=True)
+    touched_paths = [path for path, _, _ in writes] + [path for path, _ in deletes]
     if wiring_patches:
-        wiring.clear()
-        wiring.update(patched_wiring)
-        save_wiring(wiring)
+        touched_paths.append(ROOT / "wiring.json")
+    snapshots = _snapshot_paths(touched_paths)
+    rollback_on_failure = bool(wiring.get("self_modify", {}).get("execution", {}).get("rollback_on_failure", True))
 
-    ensure_live_nodes(wiring)
-    brain.ensure_live_brains(wiring)
-    command_results = _run_evolution_commands(list(data.get("commands") or []), wiring)
+    try:
+        for path, _, content in writes:
+            _atomic_write_text(path, content)
+        for path, _ in deletes:
+            path.unlink(missing_ok=True)
+        if wiring_patches:
+            wiring.clear()
+            wiring.update(patched_wiring)
+            save_wiring(wiring)
+
+        ensure_live_nodes(wiring)
+        brain.ensure_live_brains(wiring)
+        command_results = _run_evolution_commands(list(data.get("commands") or []), wiring)
+    except Exception:
+        if rollback_on_failure:
+            _restore_snapshots(snapshots)
+            if wiring_patches:
+                wiring.clear()
+                wiring.update(brain.load_json(ROOT / "wiring.json"))
+            ensure_live_nodes(wiring)
+            brain.ensure_live_brains(wiring)
+        raise
 
     changed = [rel for _, rel, _ in writes] + [rel for _, rel in deletes]
     activation = {"immediate": [], "next_run": [], "supporting": []}
@@ -413,6 +448,7 @@ def apply_evolution_patch(wiring: dict[str, Any], parsed: dict[str, Any]) -> tup
         "file_writes": len(writes),
         "file_deletes": len(deletes),
         "commands": command_results,
+        "rollback_on_failure": rollback_on_failure,
         "changed_files": changed,
         "activation": activation,
     }

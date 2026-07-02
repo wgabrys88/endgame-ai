@@ -128,7 +128,14 @@ def next_node_for(wiring: dict[str, Any], current: str, signal_name: str) -> str
     return nxt
 
 
-def run(goal: str | None, *, reset: bool = False, max_ticks: int | None = None, max_brain_calls: int | None = None) -> dict[str, Any]:
+def run(
+    goal: str | None,
+    *,
+    reset: bool = False,
+    max_ticks: int | None = None,
+    max_brain_calls: int | None = None,
+    start_node: str | None = None,
+) -> dict[str, Any]:
     stop_check.register_pid("organism")
     wiring = load_wiring()
     if max_brain_calls is not None:
@@ -139,9 +146,9 @@ def run(goal: str | None, *, reset: bool = False, max_ticks: int | None = None, 
     brain.ensure_live_brains(wiring)
     brain.reset_call_budget()
     topo = wiring.get("topology", {})
-    current = str(topo.get("cycle_start") or "planner")
+    current = str(start_node or topo.get("cycle_start") or "planner")
     if current not in set(topo.get("nodes", [])):
-        raise RuntimeError(f"topology cycle_start '{current}' is not in topology.nodes")
+        raise RuntimeError(f"start node '{current}' is not in topology.nodes")
     state: dict[str, Any] = {
         "_phase": "starting",
         "goal": goal or "",
@@ -150,6 +157,7 @@ def run(goal: str | None, *, reset: bool = False, max_ticks: int | None = None, 
         "last_error": None,
         "last_action": None,
         "wiring_transport": wiring.get("model", {}).get("transport"),
+        "start_node": current,
     }
     write_state(wiring, state)
     runtime_event(wiring, "organism_start", goal=goal or "", transport=state["wiring_transport"])
@@ -229,8 +237,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--reset", action="store_true")
     ap.add_argument("--max-ticks", type=int, default=None)
     ap.add_argument("--max-brain-calls", type=int, default=None)
+    ap.add_argument("--start-node", default=None)
     args = ap.parse_args(argv)
-    run(args.goal, reset=args.reset, max_ticks=args.max_ticks, max_brain_calls=args.max_brain_calls)
+    run(args.goal, reset=args.reset, max_ticks=args.max_ticks, max_brain_calls=args.max_brain_calls, start_node=args.start_node)
     return 0
 
 
