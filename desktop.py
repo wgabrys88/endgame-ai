@@ -331,7 +331,7 @@ def variant_to_rect(variant: Any) -> Rect:
 
 
 class Desktop:
-        """Main desktop observation class using UIA COM via comtypes.gen.UIAutomationClient."""
+    """Main desktop observation class using UIA COM via comtypes.gen.UIAutomationClient."""
     
     def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or {}
