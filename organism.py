@@ -168,8 +168,9 @@ def run(goal: str | None, *, reset: bool = False, max_ticks: int | None = None, 
             runtime_event(wiring, "node_start", node=current, tick=state["tick"])
             ctx = {"wiring": wiring, "state": dict(state), "goal": goal or "", "node": current}
             signal_name, patch = nodes.call_node(current, ctx)
-            if current == "self_modify" and patch.get("wiring_patch"):
-                _, applied = nodes.apply_wiring_patch(wiring, {"data": patch["wiring_patch"]})
+            evolution_patch = patch.get("evolution_patch") or patch.get("wiring_patch")
+            if current == "self_modify" and evolution_patch:
+                _, applied = nodes.apply_evolution_patch(wiring, {"data": evolution_patch})
                 patch.setdefault("self_modify", {})["applied"] = applied
                 wiring = load_wiring()
                 nodes.ensure_live_nodes(wiring)

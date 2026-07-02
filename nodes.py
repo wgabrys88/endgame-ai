@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import importlib.util
+import copy
 import json
+import os
 import pathlib
 import shutil
 import subprocess
@@ -208,61 +210,217 @@ def execute_verb(verb: str, target: dict[str, Any] | None = None, value: str | N
     return f"unknown verb: {verb}"
 
 
-def _live_node_target(wiring: dict[str, Any], raw_path: str) -> pathlib.Path:
-    live_dir = _path(wiring, "live_nodes", "live_nodes").resolve()
-    requested = pathlib.Path(raw_path)
+EVOLVABLE_SUFFIXES = {".py", ".json", ".md"}
+EVOLVABLE_NAMES = {".gitattributes", ".gitignore", "LICENSE"}
+BLOCKED_EVOLVE_PARTS = {".git", "__pycache__", "comms", "pids"}
+BLOCKED_EVOLVE_NAMES = {"state.json", "stop.txt"}
+CORE_FILES = {"brain.py", "desktop.py", "nodes.py", "organism.py", "stop_check.py"}
+
+
+def _patch_data(parsed: dict[str, Any]) -> dict[str, Any]:
+    data = (parsed or {}).get("data", parsed or {})
+    if not isinstance(data, dict):
+        raise ValueError("self_modify patch data must be an object")
+    return data
+
+
+def _rewrite_live_path(raw_path: str) -> str:
+    rel = str(raw_path).replace("\\", "/").strip().lstrip("/")
+    if rel.startswith("live_nodes/"):
+        return "seed_nodes/" + rel.split("/", 1)[1]
+    if rel.startswith("live_brains/"):
+        return "seed_brains/" + rel.split("/", 1)[1]
+    return rel
+
+
+def _evolution_target(raw_path: str, *, deleting: bool = False) -> tuple[pathlib.Path, str]:
+    rel = _rewrite_live_path(raw_path)
+    if not rel:
+        raise ValueError("self_modify path is empty")
+    requested = pathlib.Path(rel)
     path = (ROOT / requested).resolve() if not requested.is_absolute() else requested.resolve()
     try:
-        path.relative_to(live_dir)
+        repo_rel = path.relative_to(ROOT)
     except ValueError as exc:
-        raise ValueError(f"self_modify path must stay under {live_dir}: {raw_path}") from exc
-    if path.suffix != ".py":
-        raise ValueError(f"self_modify node path must be a .py file: {raw_path}")
-    return path
+        raise ValueError(f"self_modify path must stay under repository root: {raw_path}") from exc
+
+    parts = {part.lower() for part in repo_rel.parts}
+    if parts & BLOCKED_EVOLVE_PARTS:
+        raise ValueError(f"self_modify path targets runtime/private area: {repo_rel.as_posix()}")
+    if path.name in BLOCKED_EVOLVE_NAMES:
+        raise ValueError(f"self_modify path targets runtime state: {repo_rel.as_posix()}")
+    if path.name not in EVOLVABLE_NAMES and path.suffix not in EVOLVABLE_SUFFIXES:
+        raise ValueError(f"self_modify path has unsupported file type: {repo_rel.as_posix()}")
+    if deleting and repo_rel.as_posix() in CORE_FILES | {"wiring.json"}:
+        raise ValueError(f"self_modify may rewrite but not delete core file: {repo_rel.as_posix()}")
+    return path, repo_rel.as_posix()
 
 
-def apply_wiring_patch(wiring: dict[str, Any], parsed: dict[str, Any]) -> tuple[str, Any]:
-    """Apply wiring patches and node file writes from self_modify output."""
-    data = (parsed or {}).get("data") or {}
-    
-    # 1. Apply wiring patches
-    for patch in data.get("wiring_patches", []):
+def _validate_content(path: pathlib.Path, rel: str, content: Any) -> str:
+    if not isinstance(content, str):
+        raise ValueError(f"self_modify content for {rel} must be a string")
+    if path.suffix == ".py":
+        compile(content, rel, "exec")
+    elif path.suffix == ".json":
+        json.loads(content)
+    return content
+
+
+def _atomic_write_text(path: pathlib.Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}.{threading_id()}")
+    tmp.write_text(content, encoding="utf-8", newline="\n")
+    os.replace(tmp, path)
+
+
+def threading_id() -> int:
+    try:
+        import threading
+        return threading.get_ident()
+    except Exception:
+        return 0
+
+
+def _apply_wiring_ops(wiring: dict[str, Any], patches: list[dict[str, Any]]) -> dict[str, Any]:
+    patched = copy.deepcopy(wiring)
+    for patch in patches:
+        if not isinstance(patch, dict):
+            raise ValueError(f"wiring_patch must be object: {patch!r}")
         op = patch.get("op", "set")
-        path = patch.get("path", "")
-        value = patch.get("value")
-        if not path:
+        dotted = str(patch.get("path") or "")
+        if not dotted:
             raise ValueError("wiring_patch missing path")
-        parts = path.split(".")
-        cur = wiring
+        parts = dotted.split(".")
+        cur = patched
         for part in parts[:-1]:
             if not isinstance(cur.get(part), dict):
                 cur[part] = {}
             cur = cur[part]
         if op == "set":
-            cur[parts[-1]] = value
+            cur[parts[-1]] = patch.get("value")
         elif op == "delete":
             cur.pop(parts[-1], None)
         else:
-            raise ValueError(f"unknown op: {op}")
-    
-    # 2. Write node files
-    for write in data.get("node_writes", []):
-        path = _live_node_target(wiring, write["path"])
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(write["content"], encoding="utf-8")
-    
-    # 3. Delete node files
-    for delete_path in data.get("node_deletes", []):
-        _live_node_target(wiring, delete_path).unlink(missing_ok=True)
-    
-    # 4. Atomic write wiring.json
-    save_wiring(wiring)
-    
+            raise ValueError(f"unknown wiring_patch op: {op}")
+    json.dumps(patched, ensure_ascii=False, default=str)
+    return patched
+
+
+def _collect_file_writes(data: dict[str, Any]) -> list[dict[str, str]]:
+    writes = list(data.get("file_writes") or [])
+    writes.extend(data.get("node_writes") or [])
+    writes.extend(data.get("brain_writes") or [])
+    return writes
+
+
+def _collect_file_deletes(data: dict[str, Any]) -> list[str]:
+    deletes = list(data.get("file_deletes") or [])
+    deletes.extend(data.get("node_deletes") or [])
+    deletes.extend(data.get("brain_deletes") or [])
+    return [str(path) for path in deletes]
+
+
+def _activation_bucket(rel: str) -> str:
+    if rel == "wiring.json" or rel.startswith("seed_nodes/") or rel.startswith("seed_brains/"):
+        return "immediate"
+    if rel in CORE_FILES:
+        return "next_run"
+    return "supporting"
+
+
+def _run_evolution_commands(commands: list[Any], wiring: dict[str, Any]) -> list[dict[str, Any]]:
+    if not commands:
+        return []
+    cfg = wiring.get("self_modify", {}).get("execution", {})
+    if not cfg.get("enabled", True):
+        raise RuntimeError("self_modify commands requested but self_modify.execution.enabled is false")
+    max_commands = int(cfg.get("max_commands", 3))
+    default_timeout = float(cfg.get("timeout_s", 60))
+    require_success = bool(cfg.get("require_success", True))
+    results: list[dict[str, Any]] = []
+    for item in commands[:max_commands]:
+        if isinstance(item, dict):
+            command = item.get("command")
+            shell = bool(item.get("shell", isinstance(command, str)))
+            timeout_s = float(item.get("timeout_s", default_timeout))
+        else:
+            command = item
+            shell = isinstance(command, str)
+            timeout_s = default_timeout
+        if not isinstance(command, (str, list)) or not command:
+            raise ValueError(f"invalid self_modify command: {item!r}")
+        cp = subprocess.run(
+            command,
+            cwd=ROOT,
+            shell=shell,
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+        )
+        result = {
+            "command": command,
+            "shell": shell,
+            "returncode": cp.returncode,
+            "stdout": cp.stdout,
+            "stderr": cp.stderr,
+        }
+        results.append(result)
+        if require_success and cp.returncode != 0:
+            raise RuntimeError(f"self_modify command failed: {result}")
+    if len(commands) > max_commands:
+        raise RuntimeError(f"self_modify command limit exceeded: {len(commands)}/{max_commands}")
+    return results
+
+
+def apply_evolution_patch(wiring: dict[str, Any], parsed: dict[str, Any]) -> tuple[str, Any]:
+    """Apply a validated self-evolution patch to repository source, wiring, and live caches."""
+    data = _patch_data(parsed)
+    wiring_patches = list(data.get("wiring_patches") or [])
+    patched_wiring = _apply_wiring_ops(wiring, wiring_patches)
+
+    writes: list[tuple[pathlib.Path, str, str]] = []
+    for item in _collect_file_writes(data):
+        if not isinstance(item, dict):
+            raise ValueError(f"file_writes entry must be object: {item!r}")
+        path, rel = _evolution_target(str(item.get("path") or ""))
+        content = _validate_content(path, rel, item.get("content"))
+        writes.append((path, rel, content))
+
+    deletes: list[tuple[pathlib.Path, str]] = []
+    for raw_path in _collect_file_deletes(data):
+        path, rel = _evolution_target(raw_path, deleting=True)
+        deletes.append((path, rel))
+
+    for path, _, content in writes:
+        _atomic_write_text(path, content)
+    for path, _ in deletes:
+        path.unlink(missing_ok=True)
+    if wiring_patches:
+        wiring.clear()
+        wiring.update(patched_wiring)
+        save_wiring(wiring)
+
+    ensure_live_nodes(wiring)
+    brain.ensure_live_brains(wiring)
+    command_results = _run_evolution_commands(list(data.get("commands") or []), wiring)
+
+    changed = [rel for _, rel, _ in writes] + [rel for _, rel in deletes]
+    activation = {"immediate": [], "next_run": [], "supporting": []}
+    for rel in changed + (["wiring.json"] if wiring_patches else []):
+        activation[_activation_bucket(rel)].append(rel)
     return "set", {
-        "wiring_patches": len(data.get("wiring_patches", [])),
-        "node_writes": len(data.get("node_writes", [])),
-        "node_deletes": len(data.get("node_deletes", [])),
+        "wiring_patches": len(wiring_patches),
+        "file_writes": len(writes),
+        "file_deletes": len(deletes),
+        "commands": command_results,
+        "changed_files": changed,
+        "activation": activation,
     }
+
+
+def apply_wiring_patch(wiring: dict[str, Any], parsed: dict[str, Any]) -> tuple[str, Any]:
+    """Backward-compatible alias for the repository-level evolution patch."""
+    return apply_evolution_patch(wiring, parsed)
 
 
 def save_wiring(wiring: dict[str, Any]) -> None:
@@ -313,9 +471,12 @@ def build_execute_namespace(ctx: dict[str, Any]) -> dict[str, Any]:
         "random": __import__("random"),
         
         # Self-modification
+        "apply_evolution_patch": apply_evolution_patch,
         "apply_wiring_patch": apply_wiring_patch,
         "save_wiring": save_wiring,
         "wiring_limit": wiring_limit,
+        "repo_root": str(ROOT),
+        "python_executable": sys.executable,
         
         # Context
         "state": state,

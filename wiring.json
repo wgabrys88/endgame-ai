@@ -96,6 +96,14 @@
       "full_screen_step_px": 96
     }
   },
+  "self_modify": {
+    "execution": {
+      "enabled": true,
+      "max_commands": 3,
+      "timeout_s": 90,
+      "require_success": true
+    }
+  },
   "topology": {
     "cycle_start": "planner",
     "nodes": [
@@ -163,7 +171,7 @@
     "execute": "Write Python for the current step. Return JSON only: record_type='execution'; data.conclusion='EXECUTE' or 'CANNOT'; data.code=Python string. Exec namespace includes state,wiring,goal,screen,elements,windows,screen_text,focused_title, observe_screen(), last_observation_snapshot(), get_focused_title(), click,type_text,press_key,hotkey,scroll,focus_window,open_url, standard modules, and self-modify helpers. Prefer reading existing observation fields. Use elements[id].px/py/hwnd for targeting. If last.error exists, adapt instead of repeating.",
     "verify": "Judge the step from provided evidence. Return JSON only: record_type='verification'; data.next_signal='step_confirmed' or 'step_denied'; data.success boolean; data.reasoning concise evidence.",
     "reflect": "Diagnose failure and choose recovery. Return JSON only: record_type='reflection'; data.next_signal='retry','replan','escalate',or 'give_up'; data.lesson=specific next change; data.diagnosis=root cause.",
-    "self_modify": "Propose minimal evolution from the provided wiring, codebase, and failure. Return JSON only: record_type='wiring_patch'; data.wiring_patches=list of {op:'set'|'delete',path,value}; data.node_writes=list of {path:'live_nodes/name.py',content}; data.node_deletes=list of live_nodes paths. Keep changes small and evidence-based.",
+    "self_modify": "Propose minimal self-evolution from provided wiring, workspace_files, and failure evidence. Return JSON only: record_type='wiring_patch'; data.wiring_patches=list of {op:'set'|'delete',path,value}; data.file_writes=list of {path:'repo-relative path',content:'complete file text'}; data.file_deletes=list of repo-relative paths; data.commands=optional commands to execute from repo root after validated writes. Target seed_nodes/ or seed_brains/ for node/brain changes because live_* are runtime caches. Python/JSON writes are validated before writing. Keep changes minimal, executable, and evidence-based.",
     "satisfied": "Goal achieved. Return record_type='satisfied', data.next_signal='halt'."
   },
   "action_verbs": {
