@@ -171,7 +171,6 @@ def run(
             signal_name, patch = nodes.call_node(current, ctx)
             evolution_patch = patch.get("git_evolution_patch")
             if current == "self_modify" and evolution_patch:
-                nodes.require_self_evolve_branch(wiring)
                 _, applied = nodes.apply_evolution_patch(wiring, {"data": evolution_patch})
                 patch.setdefault("self_modify", {})["applied"] = applied
                 committed = nodes.commit_self_evolution(wiring, applied, evolution_patch)

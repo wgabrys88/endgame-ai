@@ -329,13 +329,6 @@ def git_worktree_status() -> list[str]:
     return [line for line in _git(["status", "--porcelain"]).stdout.splitlines() if line.strip()]
 
 
-def require_clean_worktree() -> None:
-    status = git_worktree_status()
-    if status:
-        sample = "\n".join(status[:20])
-        raise RuntimeError(f"self_modify requires a clean git worktree before branch creation:\n{sample}")
-
-
 def _remote_url(remote: str) -> str:
     cp = _git(["remote", "get-url", remote], check=False)
     return cp.stdout.strip() if cp.returncode == 0 else ""
@@ -353,42 +346,22 @@ def _github_branch_url(remote_url: str, branch: str) -> str:
 
 
 def prepare_self_evolution(wiring: dict[str, Any]) -> dict[str, Any]:
-    """Create a clean timestamped branch before asking Grok for a patch."""
-    require_clean_worktree()
+    """Describe the checked-out branch before asking the brain for an evolution patch."""
     cfg = wiring.get("self_modify", {}).get("git", {})
     remote = str(cfg.get("remote") or "origin")
-    prefix = str(cfg.get("branch_prefix") or "self-evolve").strip("/")
-    base_branch = git_current_branch()
-    base_commit = git_head_sha()
-    branch = f"{prefix}/{time.strftime('%Y%m%dT%H%M%S')}-{base_commit[:7]}"
-    _git(["switch", "-c", branch])
+    branch = git_current_branch()
     remote_url = _remote_url(remote)
-    published = False
-    if bool(cfg.get("publish_context_branch", False)):
-        _git(["push", "-u", remote, branch])
-        published = True
     return {
-        "context_mode": wiring.get("self_modify", {}).get("context_mode", "hybrid"),
-        "base_branch": base_branch,
+        "context_mode": wiring.get("self_modify", {}).get("context_mode", "checked_out_branch"),
         "branch": branch,
-        "base_commit": base_commit,
         "current_commit": git_head_sha(),
+        "worktree_status": git_worktree_status(),
         "remote": remote,
         "remote_url": remote_url,
         "branch_url": _github_branch_url(remote_url, branch),
-        "published": published,
+        "commit_target": "checked_out_branch",
+        "push_after_commit": bool(cfg.get("push_after_commit", True)),
     }
-
-
-def _self_evolve_prefix(wiring: dict[str, Any]) -> str:
-    return str(wiring.get("self_modify", {}).get("git", {}).get("branch_prefix") or "self-evolve").strip("/")
-
-
-def require_self_evolve_branch(wiring: dict[str, Any]) -> None:
-    branch = git_current_branch()
-    prefix = _self_evolve_prefix(wiring) + "/"
-    if not branch.startswith(prefix):
-        raise RuntimeError(f"self_modify patches must apply on a {prefix} branch, current branch is {branch!r}")
 
 
 def _run_evolution_commands(commands: list[Any], wiring: dict[str, Any]) -> list[dict[str, Any]]:
@@ -456,7 +429,6 @@ def _restore_snapshots(snapshots: dict[pathlib.Path, bytes | None]) -> None:
 
 def apply_evolution_patch(wiring: dict[str, Any], parsed: dict[str, Any]) -> tuple[str, Any]:
     """Apply a validated self-evolution patch to canonical repository source."""
-    require_self_evolve_branch(wiring)
     data = _patch_data(parsed)
     wiring_patches = list(data.get("wiring_patches") or [])
     patched_wiring = _apply_wiring_ops(wiring, wiring_patches)
@@ -521,8 +493,7 @@ def apply_evolution_patch(wiring: dict[str, Any], parsed: dict[str, Any]) -> tup
 
 
 def commit_self_evolution(wiring: dict[str, Any], applied: dict[str, Any], patch_data: dict[str, Any]) -> dict[str, Any]:
-    """Commit a successful validated self-evolution patch on its timestamp branch."""
-    require_self_evolve_branch(wiring)
+    """Commit a successful validated self-evolution patch on the checked-out branch."""
     changed_files = list(applied.get("changed_files") or [])
     if applied.get("wiring_patches"):
         changed_files.append("wiring.json")
@@ -545,7 +516,7 @@ def commit_self_evolution(wiring: dict[str, Any], applied: dict[str, Any], patch
             "changed_files": changed_files,
         }
     summary = str(patch_data.get("summary") or "validated self evolution").strip()
-    title = "Self-evolve: " + summary.replace("\n", " ")[:60]
+    title = "Self-modify: " + summary.replace("\n", " ")[:60]
     rationale = str(patch_data.get("rationale") or "").strip()
     expected = patch_data.get("expected_validation")
     body = json.dumps(

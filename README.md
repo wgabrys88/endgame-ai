@@ -357,8 +357,8 @@ This README states the target organism identity. Some code still reflects earlie
 
 - DONE: Make fresh screen scan mandatory before desktop-dependent model decisions.
 - DONE: Build the hierarchical screen-rooted observation model.
-- Reuse one capability runtime for action and evolution.
-- Simplify git workflow toward direct checked-out-branch commit and push.
+- DONE: Reuse one capability runtime for action and evolution.
+- DONE: Simplify git workflow toward direct checked-out-branch commit and push.
 - Keep validation as an operational health check, not as a permission boundary.
 - Let future topology changes be ordinary self-evolution, not a special event.
 

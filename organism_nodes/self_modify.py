@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import pathlib
 import subprocess
 from typing import Any
@@ -27,14 +26,6 @@ def _zsplit(raw: str) -> set[str]:
     return {item for item in raw.split("\0") if item}
 
 
-def _file_digest(path: pathlib.Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as fh:
-        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
-            h.update(chunk)
-    return h.hexdigest()
-
-
 def _status_map() -> dict[str, str]:
     rows = [line for line in _git(["status", "--porcelain"]).splitlines() if line.strip()]
     status: dict[str, str] = {}
@@ -59,13 +50,12 @@ def _capture_workspace_manifest() -> dict[str, Any]:
         files.append({
             "path": rel.replace("\\", "/"),
             "size": path.stat().st_size,
-            "sha256": _file_digest(path),
             "tracked": rel in tracked,
             "status": status.get(rel, "clean" if rel in tracked else "untracked"),
             "binary": path.suffix.lower() in BINARY_SUFFIXES,
         })
     return {
-        "commit_sha": nodes.git_head_sha(),
+        "current_commit": nodes.git_head_sha(),
         "branch": nodes.git_current_branch(),
         "git_status": nodes.git_worktree_status(),
         "files": files,
@@ -80,7 +70,6 @@ def _evidence_file(path: pathlib.Path) -> dict[str, Any]:
         "path": rel,
         "exists": True,
         "size": path.stat().st_size,
-        "sha256": _file_digest(path),
     }
 
 
@@ -145,9 +134,8 @@ def run(ctx):
             "full_file_access": {
                 "mode": git_context["context_mode"],
                 "github_branch_url": git_context.get("branch_url", ""),
-                "published": git_context.get("published", False),
                 "local_repo_root": str(ROOT),
-                "rule": "Do not infer full file contents from the manifest. Use the GitHub branch when published; otherwise propose only changes justified by manifest, wiring, and runtime evidence.",
+                "rule": "Use the checked-out repository, workspace manifest, fresh observation, and runtime evidence. The local organism applies, commits, and pushes on the current branch.",
             },
             "patch_contract": {
                 "record_type": "git_evolution_patch",
@@ -163,7 +151,7 @@ def run(ctx):
                 "notes": [
                     "Target organism_nodes/ for node changes and brain_transports/ for transport changes.",
                     "Python and JSON writes are validated before write and again after write.",
-                    "The local organism applies, validates, commits, and may publish; Grok must not push directly.",
+                    "The local organism applies, validates, commits, and pushes on the checked-out branch.",
                     "Core files brain.py, nodes.py, organism.py, desktop.py, and stop_check.py activate on the next process run.",
                 ],
             },
