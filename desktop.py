@@ -6,17 +6,33 @@ window tokens, bounded tree, and configurable observation.
 from __future__ import annotations
 
 import ctypes
-import json
-import platform
+import importlib
+import sys
 import time
 from ctypes import wintypes
 from dataclasses import dataclass, field
-from typing import Any, Literal
-from enum import IntEnum
+from typing import Any
 
 import comtypes
 import comtypes.client
-import comtypes.gen.UIAutomationClient as uia
+
+
+def _load_uia_module() -> Any:
+    """Load/regenerate the UIAutomation comtypes wrapper when the typelib changes."""
+    try:
+        comtypes.client.GetModule("UIAutomationCore.dll")
+        return importlib.import_module("comtypes.gen.UIAutomationClient")
+    except ImportError as exc:
+        if "Typelib different than module" not in str(exc):
+            raise
+        for name in list(sys.modules):
+            if name.startswith("comtypes.gen.UIAutomation"):
+                sys.modules.pop(name, None)
+        comtypes.client.GetModule("UIAutomationCore.dll")
+        return importlib.import_module("comtypes.gen.UIAutomationClient")
+
+
+uia = _load_uia_module()
 
 # Initialize COM
 comtypes.CoInitialize()
@@ -26,35 +42,117 @@ comtypes.CoInitialize()
 # Control type name mapping (from UIAutomationClient)
 # =============================================================================
 
+def _uia_const(name: str, default: int) -> int:
+    try:
+        return int(getattr(uia, name))
+    except Exception:
+        return default
+
+
+UIA_ButtonControlTypeId = _uia_const("UIA_ButtonControlTypeId", 50000)
+UIA_CalendarControlTypeId = _uia_const("UIA_CalendarControlTypeId", 50001)
+UIA_CheckBoxControlTypeId = _uia_const("UIA_CheckBoxControlTypeId", 50002)
+UIA_ComboBoxControlTypeId = _uia_const("UIA_ComboBoxControlTypeId", 50003)
+UIA_EditControlTypeId = _uia_const("UIA_EditControlTypeId", 50004)
+UIA_HyperlinkControlTypeId = _uia_const("UIA_HyperlinkControlTypeId", 50005)
+UIA_ImageControlTypeId = _uia_const("UIA_ImageControlTypeId", 50006)
+UIA_ListItemControlTypeId = _uia_const("UIA_ListItemControlTypeId", 50007)
+UIA_ListControlTypeId = _uia_const("UIA_ListControlTypeId", 50008)
+UIA_MenuControlTypeId = _uia_const("UIA_MenuControlTypeId", 50009)
+UIA_MenuBarControlTypeId = _uia_const("UIA_MenuBarControlTypeId", 50010)
+UIA_MenuItemControlTypeId = _uia_const("UIA_MenuItemControlTypeId", 50011)
+UIA_ProgressBarControlTypeId = _uia_const("UIA_ProgressBarControlTypeId", 50012)
+UIA_RadioButtonControlTypeId = _uia_const("UIA_RadioButtonControlTypeId", 50013)
+UIA_ScrollBarControlTypeId = _uia_const("UIA_ScrollBarControlTypeId", 50014)
+UIA_SliderControlTypeId = _uia_const("UIA_SliderControlTypeId", 50015)
+UIA_SpinnerControlTypeId = _uia_const("UIA_SpinnerControlTypeId", 50016)
+UIA_StatusBarControlTypeId = _uia_const("UIA_StatusBarControlTypeId", 50017)
+UIA_TabControlTypeId = _uia_const("UIA_TabControlTypeId", 50018)
+UIA_TabItemControlTypeId = _uia_const("UIA_TabItemControlTypeId", 50019)
+UIA_TextControlTypeId = _uia_const("UIA_TextControlTypeId", 50020)
+UIA_ToolBarControlTypeId = _uia_const("UIA_ToolBarControlTypeId", 50021)
+UIA_ToolTipControlTypeId = _uia_const("UIA_ToolTipControlTypeId", 50022)
+UIA_TreeControlTypeId = _uia_const("UIA_TreeControlTypeId", 50023)
+UIA_TreeItemControlTypeId = _uia_const("UIA_TreeItemControlTypeId", 50024)
+UIA_CustomControlTypeId = _uia_const("UIA_CustomControlTypeId", 50025)
+UIA_GroupControlTypeId = _uia_const("UIA_GroupControlTypeId", 50026)
+UIA_ThumbControlTypeId = _uia_const("UIA_ThumbControlTypeId", 50027)
+UIA_DataGridControlTypeId = _uia_const("UIA_DataGridControlTypeId", 50028)
+UIA_DataItemControlTypeId = _uia_const("UIA_DataItemControlTypeId", 50029)
+UIA_DocumentControlTypeId = _uia_const("UIA_DocumentControlTypeId", 50030)
+UIA_SplitButtonControlTypeId = _uia_const("UIA_SplitButtonControlTypeId", 50031)
+UIA_WindowControlTypeId = _uia_const("UIA_WindowControlTypeId", 50032)
+UIA_PaneControlTypeId = _uia_const("UIA_PaneControlTypeId", 50033)
+UIA_HeaderControlTypeId = _uia_const("UIA_HeaderControlTypeId", 50034)
+UIA_HeaderItemControlTypeId = _uia_const("UIA_HeaderItemControlTypeId", 50035)
+UIA_TableControlTypeId = _uia_const("UIA_TableControlTypeId", 50036)
+UIA_TitleBarControlTypeId = _uia_const("UIA_TitleBarControlTypeId", 50037)
+UIA_SeparatorControlTypeId = _uia_const("UIA_SeparatorControlTypeId", 50038)
+
 CONTROL_TYPE_NAMES: dict[int, str] = {
-    50032: "Window",        # UIA_WindowControlTypeId
-    50033: "Pane",          # UIA_PaneControlTypeId
-    50000: "Button",        # UIA_ButtonControlTypeId
-    50020: "Text",          # UIA_TextControlTypeId
-    50004: "Edit",          # UIA_EditControlTypeId
-    50008: "List",          # UIA_ListControlTypeId
-    50009: "ListItem",      # UIA_ListItemControlTypeId
-    50010: "Tree",          # UIA_TreeControlTypeId
-    50011: "TreeItem",      # UIA_TreeItemControlTypeId
-    50017: "Tab",           # UIA_TabControlTypeId
-    50018: "TabItem",       # UIA_TabItemControlTypeId
-    50012: "Menu",          # UIA_MenuControlTypeId
-    50013: "MenuItem",      # UIA_MenuItemControlTypeId
-    50015: "ToolBar",       # UIA_ToolBarControlTypeId
-    50023: "StatusBar",     # UIA_StatusBarControlTypeId
-    50003: "ScrollBar",     # UIA_ScrollBarControlTypeId
-    50014: "Slider",        # UIA_SliderControlTypeId
-    50019: "ProgressBar",   # UIA_ProgressBarControlTypeId
-    50006: "Image",         # UIA_ImageControlTypeId
-    50016: "Hyperlink",     # UIA_HyperlinkControlTypeId
-    50001: "CheckBox",      # UIA_CheckBoxControlTypeId
-    50017: "RadioButton",   # UIA_RadioButtonControlTypeId
-    50002: "ComboBox",      # UIA_ComboBoxControlTypeId
-    50021: "Spinner",       # UIA_SpinnerControlTypeId
-    50022: "ToolTip",       # UIA_ToolTipControlTypeId
-    50026: "Group",         # UIA_GroupControlTypeId
-    50028: "Separator",     # UIA_SeparatorControlTypeId
-    50027: "Thumb",         # UIA_ThumbControlTypeId
+    UIA_ButtonControlTypeId: "Button",
+    UIA_CalendarControlTypeId: "Calendar",
+    UIA_CheckBoxControlTypeId: "CheckBox",
+    UIA_ComboBoxControlTypeId: "ComboBox",
+    UIA_EditControlTypeId: "Edit",
+    UIA_HyperlinkControlTypeId: "Hyperlink",
+    UIA_ImageControlTypeId: "Image",
+    UIA_ListItemControlTypeId: "ListItem",
+    UIA_ListControlTypeId: "List",
+    UIA_MenuControlTypeId: "Menu",
+    UIA_MenuBarControlTypeId: "MenuBar",
+    UIA_MenuItemControlTypeId: "MenuItem",
+    UIA_ProgressBarControlTypeId: "ProgressBar",
+    UIA_RadioButtonControlTypeId: "RadioButton",
+    UIA_ScrollBarControlTypeId: "ScrollBar",
+    UIA_SliderControlTypeId: "Slider",
+    UIA_SpinnerControlTypeId: "Spinner",
+    UIA_StatusBarControlTypeId: "StatusBar",
+    UIA_TabControlTypeId: "Tab",
+    UIA_TabItemControlTypeId: "TabItem",
+    UIA_TextControlTypeId: "Text",
+    UIA_ToolBarControlTypeId: "ToolBar",
+    UIA_ToolTipControlTypeId: "ToolTip",
+    UIA_TreeControlTypeId: "Tree",
+    UIA_TreeItemControlTypeId: "TreeItem",
+    UIA_CustomControlTypeId: "Custom",
+    UIA_GroupControlTypeId: "Group",
+    UIA_ThumbControlTypeId: "Thumb",
+    UIA_DataGridControlTypeId: "DataGrid",
+    UIA_DataItemControlTypeId: "DataItem",
+    UIA_DocumentControlTypeId: "Document",
+    UIA_SplitButtonControlTypeId: "SplitButton",
+    UIA_WindowControlTypeId: "Window",
+    UIA_PaneControlTypeId: "Pane",
+    UIA_HeaderControlTypeId: "Header",
+    UIA_HeaderItemControlTypeId: "HeaderItem",
+    UIA_TableControlTypeId: "Table",
+    UIA_TitleBarControlTypeId: "TitleBar",
+    UIA_SeparatorControlTypeId: "Separator",
+}
+
+INTERACTIVE_CONTROL_TYPES = {
+    UIA_ButtonControlTypeId,
+    UIA_CalendarControlTypeId,
+    UIA_CheckBoxControlTypeId,
+    UIA_ComboBoxControlTypeId,
+    UIA_EditControlTypeId,
+    UIA_HyperlinkControlTypeId,
+    UIA_ListItemControlTypeId,
+    UIA_ListControlTypeId,
+    UIA_MenuItemControlTypeId,
+    UIA_RadioButtonControlTypeId,
+    UIA_ScrollBarControlTypeId,
+    UIA_SliderControlTypeId,
+    UIA_SpinnerControlTypeId,
+    UIA_TabControlTypeId,
+    UIA_TabItemControlTypeId,
+    UIA_TreeControlTypeId,
+    UIA_TreeItemControlTypeId,
+    UIA_DataGridControlTypeId,
+    UIA_DataItemControlTypeId,
+    UIA_DocumentControlTypeId,
+    UIA_SplitButtonControlTypeId,
 }
 
 
@@ -66,23 +164,20 @@ def control_type_name(control_type_id: int) -> str:
 # Property IDs (from UIAutomationClient)
 # =============================================================================
 
-UIA_NamePropertyId = 30005
-UIA_ControlTypePropertyId = 30003
-UIA_LocalizedControlTypePropertyId = 30013
-UIA_BoundingRectanglePropertyId = 30001
-UIA_ClassNamePropertyId = 30018
-UIA_ProcessIdPropertyId = 30016
-UIA_RuntimeIdPropertyId = 30019
-UIA_IsEnabledPropertyId = 30010
-UIA_IsOffscreenPropertyId = 30011
-UIA_HasKeyboardFocusPropertyId = 30014
-UIA_IsKeyboardFocusablePropertyId = 30015
-UIA_AutomationIdPropertyId = 30011
-UIA_FrameworkIdPropertyId = 30020
-UIA_NativeWindowHandlePropertyId = 30020
-UIA_WindowVisualStatePropertyId = 30027
-UIA_WindowWindowInteractionStatePropertyId = 30028
-UIA_IsWindowPatternAvailablePropertyId = 30029
+UIA_RuntimeIdPropertyId = _uia_const("UIA_RuntimeIdPropertyId", 30000)
+UIA_BoundingRectanglePropertyId = _uia_const("UIA_BoundingRectanglePropertyId", 30001)
+UIA_ProcessIdPropertyId = _uia_const("UIA_ProcessIdPropertyId", 30002)
+UIA_ControlTypePropertyId = _uia_const("UIA_ControlTypePropertyId", 30003)
+UIA_LocalizedControlTypePropertyId = _uia_const("UIA_LocalizedControlTypePropertyId", 30004)
+UIA_NamePropertyId = _uia_const("UIA_NamePropertyId", 30005)
+UIA_HasKeyboardFocusPropertyId = _uia_const("UIA_HasKeyboardFocusPropertyId", 30008)
+UIA_IsKeyboardFocusablePropertyId = _uia_const("UIA_IsKeyboardFocusablePropertyId", 30009)
+UIA_IsEnabledPropertyId = _uia_const("UIA_IsEnabledPropertyId", 30010)
+UIA_AutomationIdPropertyId = _uia_const("UIA_AutomationIdPropertyId", 30011)
+UIA_ClassNamePropertyId = _uia_const("UIA_ClassNamePropertyId", 30012)
+UIA_NativeWindowHandlePropertyId = _uia_const("UIA_NativeWindowHandlePropertyId", 30020)
+UIA_IsOffscreenPropertyId = _uia_const("UIA_IsOffscreenPropertyId", 30022)
+UIA_FrameworkIdPropertyId = _uia_const("UIA_FrameworkIdPropertyId", 30024)
 
 
 # =============================================================================
@@ -234,19 +329,17 @@ def variant_to_rect(variant: Any) -> Rect:
     if variant is None:
         return rect
     try:
-        if hasattr(variant, 'value'):
-            val = variant.value
-            if val is None:
-                return rect
-            if hasattr(val, '__iter__'):
-                arr = list(val)
-                if len(arr) >= 4:
-                    rect = Rect(
-                        left=int(arr[0]),
-                        top=int(arr[1]),
-                        right=int(arr[0] + arr[2]),
-                        bottom=int(arr[1] + arr[3]),
-                    )
+        val = variant.value if hasattr(variant, "value") else variant
+        if val is None:
+            return rect
+        if all(hasattr(val, attr) for attr in ("left", "top", "right", "bottom")):
+            return Rect(int(val.left), int(val.top), int(val.right), int(val.bottom))
+        if all(hasattr(val, attr) for attr in ("Left", "Top", "Right", "Bottom")):
+            return Rect(int(val.Left), int(val.Top), int(val.Right), int(val.Bottom))
+        if hasattr(val, "__iter__"):
+            arr = list(val)
+            if len(arr) >= 4:
+                return Rect(left=int(arr[0]), top=int(arr[1]), right=int(arr[2]), bottom=int(arr[3]))
     except Exception:
         pass
     return rect
@@ -296,12 +389,8 @@ class Desktop:
         except Exception:
             return None
     
-    def _element_to_element(self, uia_element: uia.IUIAutomationElement, max_depth: int = 3, current_depth: int = 0) -> Element:
+    def _element_to_element(self, uia_element: uia.IUIAutomationElement, max_depth: int = 1, current_depth: int = 0) -> Element:
         """Convert UIA element to our Element dataclass."""
-        if current_depth >= max_depth:
-            return Element()
-        
-        # Get properties
         name_var = self._get_property(uia_element, UIA_NamePropertyId)
         control_type_var = self._get_property(uia_element, UIA_ControlTypePropertyId)
         rect_var = self._get_property(uia_element, UIA_BoundingRectanglePropertyId)
@@ -317,7 +406,7 @@ class Desktop:
         
         control_type_id = variant_to_int(control_type_var)
         
-        element = Element(
+        return Element(
             name=variant_to_str(name_var),
             control_type=control_type_name(control_type_id),
             control_type_id=control_type_id,
@@ -332,19 +421,6 @@ class Desktop:
             runtime_id=variant_to_runtime_id(runtime_id_var),
             window_handle=variant_to_int(window_handle_var),
         )
-        
-        # Get children
-        if current_depth < max_depth - 1:
-            try:
-                walker = self.automation.ControlViewWalker
-                child = walker.GetFirstChildElement(uia_element)
-                while child:
-                    element.children.append(self._element_to_element(child, max_depth, current_depth + 1))
-                    child = walker.GetNextSiblingElement(child)
-            except Exception:
-                pass
-        
-        return element
     
     # =============================================================================
     # Hover probing / mouse scanning
@@ -466,15 +542,10 @@ class Desktop:
         
         return list(all_elements.values())
     
-    def _find_focused_element(self, root: uia.IUIAutomationElement) -> uia.IUIAutomationElement | None:
+    def _find_focused_element(self) -> uia.IUIAutomationElement | None:
         """Find the element with keyboard focus."""
         try:
-            true_condition = self.automation.CreateTrueCondition()
-            focused = root.FindFirst(0x4, true_condition)  # TreeScope_Descendants = 0x4
-            if focused:
-                focus_var = self._get_property(focused, UIA_HasKeyboardFocusPropertyId)
-                if variant_to_bool(focus_var):
-                    return focused
+            return self.automation.GetFocusedElement()
         except Exception:
             pass
         return None
@@ -523,11 +594,8 @@ class Desktop:
         screen_width = user32.GetSystemMetrics(0)
         screen_height = user32.GetSystemMetrics(1)
         
-        # Get root element for tree walk (for window enumeration)
-        root = self._get_root_element()
-        
         # Get focused element
-        focused_uia = self._find_focused_element(root)
+        focused_uia = self._find_focused_element()
         focused_element = None
         if focused_uia:
             focused_element = self._element_to_element(focused_uia, max_depth=1)
@@ -543,21 +611,6 @@ class Desktop:
         else:
             focused_title = self._focused_title_cache
         
-        # Get root elements (top-level windows) for window tokens
-        root_elements = []
-        try:
-            walker = self.automation.ControlViewWalker
-            child = walker.GetFirstChildElement(root)
-            count = 0
-            while child and count < max_elements:
-                elem = self._element_to_element(child, max_depth)
-                if include_offscreen or not elem.is_offscreen:
-                    root_elements.append(elem)
-                    count += 1
-                child = walker.GetNextSiblingElement(child)
-        except Exception:
-            pass
-        
         # PRIMARY: Hover scan - scan whole screen if desktop/taskbar is active, else target window only
         is_desktop = focused_title in ("Program Manager", "Desktop", "Taskbar", "") or not active_window_uia
         target_window_only = hover_config.get("target_window_only", True) and not is_desktop
@@ -569,35 +622,8 @@ class Desktop:
             hover_config_adjusted["step_px"] = hover_config.get("full_screen_step_px", 60)
         
         hover_elements = self.hover_scan(hover_config_adjusted)
-        
-        # SECONDARY: Tree walk for window hierarchy (limited depth)
-        tree_elements = []
-        if target_window_only and active_window_uia:
-            # Tree walk only the active window
-            try:
-                walker = self.automation.ControlViewWalker
-                child = walker.GetFirstChildElement(active_window_uia)
-                tree_count = 0
-                while child and tree_count < 200:
-                    elem = self._element_to_element(child, 2)
-                    if include_offscreen or not elem.is_offscreen:
-                        tree_elements.append(elem)
-                        tree_count += 1
-                    child = walker.GetNextSiblingElement(child)
-            except Exception:
-                pass
-        else:
-            # Full tree walk (fallback)
-            tree_elements = root_elements
-        
-        # Merge: hover for positions, tree for hierarchy
-        merged_elements = self._merge_elements(tree_elements, hover_elements)
-        
-        # Filter to actionable elements, keyed by stable ID
-        filtered_elements = self.filter_elements(merged_elements)
-        
-        # Get window tokens
-        windows = self.get_window_tokens(root_elements)
+        filtered_elements = self.filter_elements(hover_elements)
+        windows = self.get_window_tokens()
         
         # Format SCREEN text for LLM
         screen_text = self.format_screen_text(
@@ -612,7 +638,7 @@ class Desktop:
             screen_width=screen_width,
             screen_height=screen_height,
             focused_element=focused_element,
-            root_elements=root_elements,
+            root_elements=[],
             active_window=active_window,
             focused_title=focused_title,
         )
@@ -650,48 +676,6 @@ class Desktop:
     # =============================================================================
     # Observation filtering and formatting
     # =============================================================================
-    
-    def _merge_elements(self, tree_elements: list[Element], hover_elements: list[Element]) -> list[Element]:
-        """Merge tree elements (hierarchy) with hover elements (accurate positions)."""
-        merged = []
-        hover_by_rid = {}
-        
-        # Index hover elements by runtime_id
-        for h in hover_elements:
-            rid_key = ",".join(map(str, h.runtime_id)) if h.runtime_id else f"{h.window_handle}:{h.rect.left}:{h.rect.top}"
-            hover_by_rid[rid_key] = h
-        
-        # Merge: use tree element but update position from hover if match
-        for t in tree_elements:
-            rid_key = ",".join(map(str, t.runtime_id)) if t.runtime_id else f"{t.window_handle}:{t.rect.left}:{t.rect.top}"
-            if rid_key in hover_by_rid:
-                h = hover_by_rid[rid_key]
-                # Create merged element with tree hierarchy but hover position
-                merged_elem = Element(
-                    name=t.name,
-                    control_type=t.control_type,
-                    control_type_id=t.control_type_id,
-                    automation_id=t.automation_id,
-                    class_name=t.class_name,
-                    process_id=t.process_id,
-                    rect=h.rect,  # Use hover position (accurate)
-                    is_enabled=t.is_enabled,
-                    is_offscreen=h.is_offscreen,
-                    has_focus=t.has_focus,
-                    framework_id=t.framework_id,
-                    runtime_id=t.runtime_id,
-                    window_handle=t.window_handle,
-                    children=t.children,
-                )
-                merged.append(merged_elem)
-                del hover_by_rid[rid_key]
-            else:
-                merged.append(t)
-        
-        # Add remaining hover elements not in tree
-        merged.extend(hover_by_rid.values())
-        
-        return merged
     
     def _stable_id(self, element: Element) -> str:
         """Generate stable element ID from runtime_id or position."""
@@ -732,7 +716,7 @@ class Desktop:
             if el.is_offscreen or not el.is_enabled:
                 continue
             # Must be interactive type
-            if el.control_type_id not in self.INTERACTIVE_CONTROL_TYPES:
+            if el.control_type_id not in INTERACTIVE_CONTROL_TYPES:
                 continue
             action = self.classify_action(el.control_type_id)
             if not action:
@@ -759,37 +743,57 @@ class Desktop:
             }
         return result
     
-    def get_window_tokens(self, root_elements: list[Element]) -> list[dict[str, Any]]:
+    def get_window_tokens(self) -> list[dict[str, Any]]:
         """Get window tokens W1..Wn for visible top-level windows.
         
         Screen is Window 0 (the entire desktop), then W1..Wn are top-level windows.
         """
-        windows = []
-        # Screen as Window 0
         user32 = ctypes.windll.user32
         screen_w = user32.GetSystemMetrics(0)
         screen_h = user32.GetSystemMetrics(1)
-        windows.append({
+        windows = [{
             "token": "W0",
             "name": "Screen",
             "title": "Desktop",
             "hwnd": 0,
             "rect": {"left": 0, "top": 0, "right": screen_w, "bottom": screen_h},
-            "children": []
-        })
-        
-        # Top-level windows as W1, W2...
-        for i, el in enumerate(root_elements, 1):
-            if el.rect.width > 0 and el.rect.height > 0 and not el.is_offscreen:
-                windows.append({
-                    "token": f"W{i}",
-                    "name": el.control_type,
-                    "title": el.name,
-                    "hwnd": el.window_handle,
-                    "rect": el.rect.to_dict(),
-                    "process_id": el.process_id,
-                    "class_name": el.class_name,
-                })
+            "children": [],
+        }]
+
+        EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+
+        def callback(hwnd, _):
+            if not user32.IsWindowVisible(hwnd) or user32.IsIconic(hwnd):
+                return True
+            length = user32.GetWindowTextLengthW(hwnd)
+            if length <= 0:
+                return True
+            rect = wintypes.RECT()
+            if not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+                return True
+            if rect.right <= rect.left or rect.bottom <= rect.top:
+                return True
+            title = ctypes.create_unicode_buffer(length + 1)
+            class_name = ctypes.create_unicode_buffer(256)
+            pid = wintypes.DWORD()
+            user32.GetWindowTextW(hwnd, title, length + 1)
+            user32.GetClassNameW(hwnd, class_name, 256)
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            windows.append({
+                "token": f"W{len(windows)}",
+                "name": "Window",
+                "title": title.value,
+                "hwnd": int(hwnd),
+                "rect": {"left": rect.left, "top": rect.top, "right": rect.right, "bottom": rect.bottom},
+                "process_id": int(pid.value),
+                "class_name": class_name.value,
+            })
+            return True
+
+        try:
+            user32.EnumWindows(EnumWindowsProc(callback), 0)
+        except Exception:
+            pass
         return windows
     
     def format_screen_text(self, screen: dict, elements: dict, windows: list, focused_title: str) -> str:
