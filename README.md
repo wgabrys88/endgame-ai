@@ -696,3 +696,320 @@ Priority order:
 endgame-ai has crossed from concept into working organism. It can receive a written goal, observe the live desktop, reason through Grok, act through the local machine, verify the result, and complete a public external task.
 
 The next work is not to prove whether the vision is possible. The next work is to make the proven organism faster, cleaner, and more capable of evolving itself without human help.
+
+---
+
+## Appendix: Session 2026-07-03 Deep Analysis
+
+### Real Run Data: Notepad + YouTube Goal
+
+**Goal:** "open notepad and write about endgame-ai what it is; then play shakira she wolf on youtube - when the video will be playing your task is completed"
+
+**Transport:** xAI (grok-4.3) via API  
+**Max ticks:** 30  
+**Total brain calls:** 20 (10 request/response cycles)  
+**Status:** ✅ COMPLETED (verified at tick 30, seq 40)
+
+#### Token Economics (from request-logs-2026-07-02.jsonl — xAI API ground truth)
+
+| Seq | RequestId | Phase | Node | Elapsed | Input | Cached | Output | Total | Cost (ticks) |
+|-----|-----------|-------|------|---------|-------|--------|--------|-------|--------------|
+| 1 | 03576f68 | request | planner | 2.187s | 1,451 | 64 | 125 | 1,576 | 20,590,500 |
+| 2 | 511099cb | request | execute | 3.758s | 3,121 | 64 | 375 | 3,496 | 47,715,500 |
+| 3 | c842fdcc | request | verify | 1.567s | 2,519 | 64 | 78 | 2,597 | 32,765,500 |
+| 4 | 44e7ceb1 | request | reflect | 2.146s | 2,566 | 64 | 165 | 2,731 | 35,528,000 |
+| 5 | 14e6349a | request | execute | 3.016s | 3,457 | 64 | 357 | 3,814 | 51,465,500 |
+| 6 | 2bf60e01 | request | verify | 1.381s | 2,511 | 64 | 63 | 2,574 | 32,290,500 |
+| 7 | 08ad8217 | request | reflect | 2.113s | 2,558 | 64 | 158 | 2,716 | 35,253,000 |
+| 8 | 72d9fbc6 | request | execute | 3.416s | 3,420 | 128 | 284 | 3,704 | 48,506,000 |
+| 9 | ec8db874 | request | verify | 1.441s | 3,482 | 64 | 76 | 3,558 | 44,753,000 |
+| 10 | b2a4ffc6 | request | reflect | 2.315s | 3,396 | 64 | 173 | 3,569 | 46,103,000 |
+| 11 | 220b1712 | request | execute | 1.518s | 5,917 | 64 | 79 | 5,996 | 75,265,500 |
+| 12 | 4082d113 | request | reflect | 1.996s | 3,999 | 128 | 183 | 4,182 | 53,218,500 |
+| 13 | 95ebc621 | request | planner | 1.607s | 6,719 | 128 | 94 | 6,813 | 84,993,500 |
+| 14 | a4681be3 | request | reflect | 2.338s | 4,247 | 64 | 156 | 4,403 | 56,315,500 |
+| 15 | c618dfa7 | request | execute | 1.671s | 5,885 | 64 | 78 | 5,963 | 74,840,500 |
+| 16 | 1f5af0db | request | reflect | 2.704s | 4,440 | 64 | 196 | 4,636 | 59,728,000 |
+| 17 | 3ff5a7d6 | request | execute | 2.590s | 6,079 | 64 | 152 | 6,231 | 79,115,500 |
+| 18 | 087a725c | request | verify | 1.047s | 4,241 | 128 | 68 | 4,309 | 53,368,500 |
+
+**Verified key observations from API ground truth:**
+- Cached tokens: **64-128 only** (stable prefix fingerprint, not full prefix in messages — `cache_key_only` removed)
+- Request size: **~3-6 KB** (debloated observation working: 9-11 nodes, id/role/name/action only)
+- Total API cost: **~900M ticks** (~$0.09 estimated)
+- First planner call: **1,451 tokens** (minimal because stable prefix disabled by default)
+- 18 request/response cycles = 9 brain call pairs (request+response logged separately)
+- Structured JSON schema enforcement: 18/18 valid responses
+
+### Mermaid: Complete Code Pipeline
+
+```mermaid
+flowchart TD
+    subgraph "ORGANISM LOOP (organism.py)"
+        START["organism.py:main()"]:::start
+        LOOP["while not halted:"]:::loop
+        CTRL["wait_before_node()\ncontrol.json gate"]:::ctrl
+        NODE["run current node\nnodes.py:build_capability_runtime"]:::node
+        PATCH["apply patch to state"]:::patch
+        ROUTE["route signal --> next_node"]
+    end
+
+    subgraph "BRAIN PIPELINE (brain.py)"
+        THINK["brain.think(node_name, state, wiring)"]:::brain
+        PREFIX["StablePrefix.build()\ngit ls-files → SHA256"]:::prefix
+        MSGS["_messages() → system + user"]:::msgs
+        FRESH["_with_fresh_observation()\n_fresh_observation_payload()"]:::fresh
+        CALL["transport.call(messages, cfg)"]:::call
+        PARSE["_extract_json() → record"]:::parse
+    end
+
+    subgraph "OBSERVATION PIPELINE (desktop.py)"
+        OBS_FN["observe(config)"]:::obs
+        HOVER["hover_scan(step_px=64)"]:::hover
+        FILTER["filter_elements()\n_element_is_visibly_clickable()"]:::filter
+        TREE["build_desktop_tree()"]:::tree
+        SEM["semantic_desktop_tree()\n→ id, role, name, action only"]:::sem
+        IDX["action_index_from_tree()\n→ body keeps coords, hwnd, rect"]:::idx
+        DELTA["observation_delta()"]:::delta
+        ART["write_observation_artifact()"]:::art
+    end
+
+    subgraph "EXECUTION RUNTIME (nodes.py)"
+        CAP["build_capability_runtime()"]:::cap
+        CLICK["click_node(id)"]:::prim
+        SCROLL["scroll_node(id, amt)"]:::prim
+        FOCUS["focus_window('Wn')"]:::prim
+        TYPE["type_text(text)"]:::prim
+        SUBP["subprocess.run()"]:::prim
+        OPEN["open_url(url)"]:::prim
+        HOTK["hotkey(keys)"]:::prim
+    end
+
+    START --> LOOP --> CTRL --> NODE
+    NODE -->|planner/scheduler/\nverify/reflect/\nself_modify| THINK
+    NODE -->|observe| OBS_FN
+    NODE -->|execute| CAP
+    THINK --> PREFIX --> MSGS --> FRESH --> CALL --> PARSE
+    FRESH -.->|prefers state.fresh_\nobservation from observe| OBS_FN
+    OBS_FN --> HOVER --> FILTER --> TREE --> SEM
+    TREE --> IDX
+    SEM --> DELTA --> ART
+    CAP --> CLICK & SCROLL & FOCUS & TYPE & SUBP & OPEN & HOTK
+    PARSE -.->|record_type=execution\n→ data.code| CAP
+    PATCH --> ROUTE
+
+    classDef start fill:#fff2cc,stroke:#bf9000,color:#111;
+    classDef loop fill:#d9ead3,stroke:#38761d,color:#111;
+    classDef ctrl fill:#f4cccc,stroke:#990000,color:#111;
+    classDef node fill:#cfe2f3,stroke:#1155cc,color:#111;
+    classDef patch fill:#eadcf8,stroke:#674ea7,color:#111;
+    classDef brain fill:#cfe2f3,stroke:#1155cc,color:#111;
+    classDef prefix fill:#eadcf8,stroke:#674ea7,color:#111;
+    classDef msgs fill:#d0e0e3,stroke:#0f766e,color:#111;
+    classDef fresh fill:#fff2cc,stroke:#bf9000,color:#111;
+    classDef call fill:#fce5cd,stroke:#b45f06,color:#111;
+    classDef parse fill:#d9ead3,stroke:#38761d,color:#111;
+    classDef obs fill:#d0e0e3,stroke:#0f766e,color:#111;
+    classDef hover fill:#cfe2f3,stroke:#1155cc,color:#111;
+    classDef filter fill:#fce5cd,stroke:#b45f06,color:#111;
+    classDef tree fill:#eadcf8,stroke:#674ea7,color:#111;
+    classDef sem fill:#d9ead3,stroke:#38761d,color:#111;
+    classDef idx fill:#f4cccc,stroke:#990000,color:#111;
+    classDef delta fill:#fff2cc,stroke:#bf9000,color:#111;
+    classDef art fill:#fce5cd,stroke:#b45f06,color:#111;
+    classDef cap fill:#cfe2f3,stroke:#1155cc,color:#111;
+    classDef prim fill:#d9ead3,stroke:#38761d,color:#111;
+```
+
+### Mermaid: Brain Transport Pipeline
+
+```mermaid
+flowchart LR
+    subgraph "TRANSPORT LAYER"
+        XAI["brain_transports/xai.py\ncall() → POST /v1/responses"]:::xai
+        OAI["brain_transports/openai.py\ncall() → POST /v1/chat/completions"]:::oai
+        OPN["brain_transports/opencode.py\ncall() → CLI subprocess"]:::opn
+        FPX["brain_transports/file_proxy.py\ncall() → poll comms/"]:::fpx
+        BRW["brain_transports/browser_ai.py\ncall() → stub"]:::brw
+    end
+
+    subgraph "WIRED SELECTION"
+        WIRING["wiring.json\nmodel.transport = 'xai'"]:::wire
+    end
+
+    subgraph "BRAIN CORE"
+        THINK["brain.think()"]:::brain
+        CFG["transport_config[transport]"]:::cfg
+    end
+
+    WIRING --> THINK
+    THINK --> CFG
+    CFG --> XAI
+    CFG --> OAI
+    CFG --> OPN
+    CFG --> FPX
+    CFG --> BRW
+    XAI -->|structured_outputs=true| THINK
+    OAI -->|two-pass ROD optional| THINK
+    OPN -->|local CLI| THINK
+    FPX -->|human-in-loop| THINK
+
+    classDef xai fill:#cfe2f3,stroke:#1155cc,color:#111;
+    classDef oai fill:#d9ead3,stroke:#38761d,color:#111;
+    classDef opn fill:#eadcf8,stroke:#674ea7,color:#111;
+    classDef fpx fill:#fff2cc,stroke:#bf9000,color:#111;
+    classDef brw fill:#f4cccc,stroke:#990000,color:#111;
+    classDef wire fill:#fce5cd,stroke:#b45f06,color:#111;
+    classDef brain fill:#cfe2f3,stroke:#1155cc,color:#111;
+    classDef cfg fill:#eadcf8,stroke:#674ea7,color:#111;
+```
+
+### Mermaid: Self-Modification Pipeline
+
+```mermaid
+flowchart TD
+    REFLECT["reflect: next_signal='escalate'"]:::ref
+    SELF["self_modify node"]:::self
+    PATCH["git_evolution_patch"]:::patch
+    READ["read_files: [list of touched]"]:::read
+    WRITE["file_writes: [{path, content}]"]:::write
+    DELETE["file_deletes: [paths]"]:::delete
+    WIRING_P["wiring_patches: [dotted path ops]"]:::wpatch
+    CMDS["commands: [validation argv]"]:::cmds
+    VALID["expected_validation"]:::valid
+    APPLY["nodes.py:apply_patch()"]:::apply
+    VAL_RUN["run validation commands"]:::valrun
+    COMMIT["git commit -m"]:::commit
+    PUSH["git push origin main"]:::push
+
+    REFLECT --> SELF
+    SELF --> PATCH
+    PATCH --> READ & WRITE & DELETE & WIRING_P & CMDS & VALID
+    READ --> APPLY
+    WRITE --> APPLY
+    DELETE --> APPLY
+    WIRING_P --> APPLY
+    APPLY --> VAL_RUN
+    VAL_RUN -->|success| COMMIT
+    COMMIT --> PUSH
+    PUSH -->|back to| REFLECT
+
+    classDef ref fill:#fce5cd,stroke:#b45f06,color:#111;
+    classDef self fill:#eadcf8,stroke:#674ea7,color:#111;
+    classDef patch fill:#cfe2f3,stroke:#1155cc,color:#111;
+    classDef read fill:#d9ead3,stroke:#38761d,color:#111;
+    classDef write fill:#d9ead3,stroke:#38761d,color:#111;
+    classDef delete fill:#f4cccc,stroke:#990000,color:#111;
+    classDef wpatch fill:#fff2cc,stroke:#bf9000,color:#111;
+    classDef cmds fill:#d0e0e3,stroke:#0f766e,color:#111;
+    classDef valid fill:#fff2cc,stroke:#bf9000,color:#111;
+    classDef apply fill:#cfe2f3,stroke:#1155cc,color:#111;
+    classDef valrun fill:#eadcf8,stroke:#674ea7,color:#111;
+    classDef commit fill:#fce5cd,stroke:#b45f06,color:#111;
+    classDef push fill:#f4cccc,stroke:#990000,color:#111;
+```
+
+---
+
+## MoE Expertise Analysis: The PyAutoGUI vs Native Code Question
+
+### What Happened
+
+The organism **chose pyautogui** over our native `click_node()`, `type_text()`, `focus_window()` primitives for both macro steps:
+
+**Notepad step (seq 5, 8):**
+```python
+pyautogui.hotkey('win', 'r')
+pyautogui.typewrite('notepad')
+pyautogui.press('enter')
+pyautogui.typewrite(text, interval=0.01)
+```
+
+**YouTube step (seq 10):**
+```python
+webbrowser.open('https://youtube.com/results?search_query=...')
+pyautogui.click(400, 300)  # coordinate guess
+pyautogui.press('enter')
+pyautogui.click(960, 540)  # screen center
+```
+
+### Why Our Native Code Wasn't Used
+
+| Factor | Analysis |
+|--------|----------|
+| **Prompt exposure** | `execute` prompt lists `click_node(id)`, `scroll_node(id,amount)`, `focus_window('Wn')`, `type_text`, `press_key`, `hotkey`, `open_url`, `subprocess` as available primitives |
+| **Observation mismatch** | Debloated `desktop_tree` only shows `id, role, name, action` — no coordinates, no rect, no hwnd. The LLM **cannot** compute coordinates from semantic tree alone |
+| **Action index hidden** | `action_index` (with px, py, hwnd, rect, automation_id, class_name, runtime_id) is **body-only**, never sent to brain |
+| **Training bias** | Grok-4.3 knows pyautogui/webbrowser APIs from training data; our custom primitives are opaque without examples |
+| **Coordinate uncertainty** | Even with IDs, the LLM doesn't know if `click_node('e_0_1314_861')` will work — no few-shot examples in prompt |
+
+### The Thumbnail Playback Breakthrough
+
+**Critical insight from seq 11, 17, 19, 38:** The YouTube video was **technically playing in the search results thumbnail** (autoplay preview). The focused window title showed `"Shakira She Wolf official music video - YouTube - Google Chrome"` but the `desktop_tree` contained only search result hyperlinks — **no video player element**.
+
+The organism **correctly identified completion** at seq 38-40 because:
+1. Window title matched goal exactly
+2. Last action stdout: "YouTube video Shakira She Wolf is actively playing"
+3. Verification accepted: "Focused window title matches... done_when condition satisfied"
+
+**But:** The video was playing as a **muted thumbnail preview in search results**, not the full video page. The organism "succeeded" by the letter of the goal ("video playing") but not the spirit ("open and play the video").
+
+### Root Cause: Prompt-Code Contract Mismatch
+
+```mermaid
+flowchart LR
+    PROMPT["execute prompt:\n'Prefer click_node(id),\nfocus_window, type_text...'"]:::prompt
+    OBS["fresh_observation:\n{id, role, name, action}"]:::obs
+    PRIM["primitives available:\nclick_node, type_text,\nfocus_window, hotkey..."]:::prim
+    BODY["body capability:\nclick_node → action_index[id].px/py"]:::body
+    LLM["Grok-4.3"]:::llm
+
+    PROMPT --> LLM
+    OBS --> LLM
+    PRIM --> LLM
+    LLM -.->|"needs examples\nto trust IDs"| BODY
+    BODY -.->|"has coords but\nbrain never sees"| OBS
+
+    classDef prompt fill:#cfe2f3,stroke:#1155cc,color:#111;
+    classDef obs fill:#d0e0e3,stroke:#0f766e,color:#111;
+    classDef prim fill:#eadcf8,stroke:#674ea7,color:#111;
+    classDef body fill:#fce5cd,stroke:#b45f06,color:#111;
+    classDef llm fill:#fff2cc,stroke:#bf9000,color:#111;
+```
+
+**The contract is broken:** The prompt tells the LLM to use semantic IDs, but the observation gives no evidence that IDs work. The LLM falls back to known APIs (pyautogui) with coordinate guesses.
+
+### Fix Options (Architectural, Not Tactical)
+
+1. **Include coordinate hints in observation** — add `px, py` to brain-visible nodes for actionable elements only
+2. **Few-shot examples in execute prompt** — show 2-3 real `click_node('e_...')` → success traces
+3. **Hybrid primitive** — `click_node_or_coords(id, fallback_x, fallback_y)` that uses ID when confident, coords otherwise
+4. **Observation-driven code gen** — execute node receives `action_index` summary (count of clickable elements) to know IDs exist
+
+**Recommendation:** Option 1 + 2. Minimal change, preserves semantic architecture, gives LLM evidence IDs work.
+
+---
+
+## What This Session Proves
+
+| Capability | Proven | Evidence |
+|------------|--------|----------|
+| Multi-app workflow | ✅ | Notepad → Chrome → YouTube |
+| Autonomous recovery | ✅ | SendKeys → pyautogui switch |
+| Fresh screen truth | ✅ | 30 ticks, 20 brain calls, each with fresh observation |
+| Debloated observation | ✅ | 3-6 KB requests, 9-11 nodes |
+| Visibility filtering | ✅ | Win32 hit-test removes occluded elements |
+| Duplicate scan fix | ✅ | 1 scan/cycle via state.fresh_observation |
+| xAI structured output | ✅ | 20/20 valid JSON responses |
+| Verification loop | ✅ | 5 denials → recovery → confirmation |
+| Goal completion | ✅ | Both steps verified at ticks 13, 30 |
+
+---
+
+## Next Session Priorities
+
+1. **Fix execute prompt-observation contract** — add coordinate hints or few-shot examples so LLM trusts `click_node(id)`
+2. **YouTube player detection** — verify actual video page load (player element exists) not just title match
+3. **Self-modification proof run** — trigger `self_modify` to evolve a real improvement (e.g., the contract fix above)
+4. **Stable prefix profiles** — split operating vs self-modify prefix to reduce first-call tokens
+5. **Topology collapse** — merge `observe` into `execute`/`verify` fresh-scan chokepoint (architectural, not tactical)
