@@ -875,7 +875,7 @@ class Desktop:
             "role": node.get("role", ""),
             "name": node.get("name", "") or node.get("title", ""),
         }
-        for key in ("parent_id", "title", "action", "enabled", "focused", "fresh_scan", "observed_at", "source", "confidence"):
+        for key in ("parent_id", "title", "action", "enabled", "focused", "fresh_scan", "observed_at"):
             if key in node:
                 semantic[key] = node.get(key)
         if isinstance(node.get("scan"), dict):
