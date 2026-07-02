@@ -26,13 +26,17 @@
       "xai": {
         "mode": "api",
         "api_key_env": "XAI_API_KEY",
-        "model": "grok-build-0.1",
+        "model": "grok-4.3",
         "url": "https://api.x.ai/v1/responses",
         "temperature": 0.2,
+        "structured_outputs": {
+          "enabled": true
+        },
         "reasoning": {
           "enabled": false,
           "pattern": "native",
-          "extractor": "reasoning_field"
+          "extractor": "reasoning_field",
+          "effort": "none"
         }
       },
       "grok_cli": {
@@ -99,7 +103,14 @@
     "git": {
       "branch_prefix": "self-evolve",
       "remote": "origin",
-      "publish_context_branch": false
+      "publish_context_branch": true,
+      "push_after_commit": true
+    },
+    "web_search": {
+      "enabled": true,
+      "allowed_domains": [
+        "github.com"
+      ]
     },
     "execution": {
       "enabled": true,
@@ -178,15 +189,5 @@
     "reflect": "Diagnose failure and choose recovery. Return JSON only: record_type='reflection'; data.next_signal='retry','replan','escalate',or 'give_up'; data.lesson=specific next change; data.diagnosis=root cause.",
     "self_modify": "Propose minimal git-native self-evolution from provided wiring, git_context, workspace_manifest, runtime evidence paths, and failure evidence. Return JSON only: record_type='git_evolution_patch'; data.summary string; data.rationale string; data.file_writes=list of {path:'repo-relative path',content:'complete file text'}; data.file_deletes=list of repo-relative paths; data.wiring_patches=list of {op:'set'|'delete',path,value}; data.commands=optional validation commands; data.expected_validation string or object. Target organism_nodes/ for node changes and brain_transports/ for transport changes. Do not push or assume direct repository authority; the local organism applies, validates, commits, and may publish the branch.",
     "satisfied": "Goal achieved. Return record_type='satisfied', data.next_signal='halt'."
-  },
-  "action_verbs": {
-    "click": "Click at coordinates or on element: {x, y} or {element_id}.",
-    "type_text": "Type text into focused element: {text}.",
-    "key_press": "Press key combination: {keys: \"ctrl+s\"}.",
-    "scroll": "Scroll in focused element: {direction: \"up|down\", amount: 3}.",
-    "focus_window": "Focus window by title substring or hwnd.",
-    "open_url": "Open URL in browser: {browser, url}.",
-    "shell": "Execute shell command: {command: \"cmd\", timeout: 30}.",
-    "noop": "Record no operation."
   }
 }

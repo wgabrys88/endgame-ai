@@ -38,7 +38,8 @@ def run(ctx):
                 "last_error": last_error,
             },
         },
-        wiring=wiring
+        wiring=wiring,
+        expected_record_type="verification",
     )
     
     if record.get("record_type") != "verification":

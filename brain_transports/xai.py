@@ -59,6 +59,32 @@ def _call_api(messages, cfg):
         "input": input_data,
         "temperature": cfg.get("temperature", 0.2),
     }
+    response_format = cfg.get("response_format")
+    if isinstance(response_format, dict):
+        payload["text"] = {
+            "format": {
+                "type": response_format.get("type", "json_schema"),
+                "name": response_format.get("name", "record"),
+                "schema": response_format.get("schema", {}),
+                "strict": bool(response_format.get("strict", True)),
+            }
+        }
+
+    reasoning_cfg = cfg.get("reasoning") or {}
+    effort = cfg.get("reasoning_effort") or reasoning_cfg.get("effort")
+    if effort or model.startswith("grok-4.3"):
+        payload["reasoning"] = {"effort": str(effort or ("low" if reasoning_cfg.get("enabled") else "none"))}
+
+    web_search_cfg = cfg.get("web_search") or {}
+    if isinstance(web_search_cfg, dict) and web_search_cfg.get("enabled"):
+        tool = {"type": "web_search"}
+        allowed = web_search_cfg.get("allowed_domains")
+        excluded = web_search_cfg.get("excluded_domains")
+        if allowed:
+            tool["filters"] = {"allowed_domains": list(allowed)}
+        elif excluded:
+            tool["filters"] = {"excluded_domains": list(excluded)}
+        payload["tools"] = [tool]
     
     req = urllib.request.Request(
         url,
@@ -79,16 +105,22 @@ def _call_api(messages, cfg):
     
     obj = json.loads(body)
     content = obj.get("output_text") or ""
+    reasoning = ""
     if not content and isinstance(obj.get("output"), list):
         parts = []
         for item in obj["output"]:
             if isinstance(item, dict):
+                if item.get("type") == "reasoning":
+                    for c in item.get("content", []) or []:
+                        if isinstance(c, dict) and c.get("text"):
+                            reasoning += str(c["text"]) + "\n"
+                    continue
                 for c in item.get("content", []) or []:
                     if isinstance(c, dict) and c.get("text"):
                         parts.append(str(c["text"]))
         content = "\n".join(parts)
     
-    return {"content": content, "reasoning": "", "body": obj}
+    return {"content": content, "reasoning": reasoning.strip(), "usage": obj.get("usage", {}), "body": obj}
 
 
 def _call_cli(messages, cfg):

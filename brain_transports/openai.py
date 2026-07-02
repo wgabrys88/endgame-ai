@@ -14,6 +14,16 @@ def call(messages, cfg):
         "messages": messages,
         "temperature": cfg.get("temperature", 0.2),
     }
+    response_format = cfg.get("response_format")
+    if isinstance(response_format, dict):
+        payload["response_format"] = {
+            "type": response_format.get("type", "json_schema"),
+            "json_schema": {
+                "name": response_format.get("name", "record"),
+                "schema": response_format.get("schema", {}),
+                "strict": bool(response_format.get("strict", True)),
+            },
+        }
     data = json.dumps(payload).encode("utf-8")
     headers = {"Content-Type": "application/json"}
     if cfg.get("api_key"):

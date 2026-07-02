@@ -158,6 +158,8 @@ def run(ctx):
             },
         },
         wiring=wiring,
+        expected_record_type="git_evolution_patch",
+        request_config={"web_search": wiring.get("self_modify", {}).get("web_search", {})},
     )
     if record.get("record_type") != "git_evolution_patch":
         raise RuntimeError(f"self_modify expected record_type=git_evolution_patch, got {record.get('record_type')}")

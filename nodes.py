@@ -63,7 +63,12 @@ class BaseNode(ABC):
     def run(self, ctx: dict[str, Any]) -> tuple[str, dict[str, Any]]:
         wiring = ctx["wiring"]
         prompt = wiring.get("prompts", {}).get(self.prompt_key, "")
-        record = brain.think(prompt, {"goal": ctx.get("goal", ""), "state": ctx.get("state", {})}, wiring)
+        record = brain.think(
+            prompt,
+            {"goal": ctx.get("goal", ""), "state": ctx.get("state", {})},
+            wiring,
+            expected_record_type=self.expected_record_type,
+        )
         if record.get("record_type") != self.expected_record_type:
             raise RuntimeError(f"{self.prompt_key} expected record_type {self.expected_record_type!r}, got {record.get('record_type')!r}")
         data = record.get("data", {})
@@ -284,17 +289,11 @@ def _apply_wiring_ops(wiring: dict[str, Any], patches: list[dict[str, Any]]) -> 
 
 
 def _collect_file_writes(data: dict[str, Any]) -> list[dict[str, str]]:
-    writes = list(data.get("file_writes") or [])
-    writes.extend(data.get("node_writes") or [])
-    writes.extend(data.get("brain_writes") or [])
-    return writes
+    return list(data.get("file_writes") or [])
 
 
 def _collect_file_deletes(data: dict[str, Any]) -> list[str]:
-    deletes = list(data.get("file_deletes") or [])
-    deletes.extend(data.get("node_deletes") or [])
-    deletes.extend(data.get("brain_deletes") or [])
-    return [str(path) for path in deletes]
+    return [str(path) for path in list(data.get("file_deletes") or [])]
 
 
 def _activation_bucket(rel: str) -> str:
@@ -561,11 +560,18 @@ def commit_self_evolution(wiring: dict[str, Any], applied: dict[str, Any], patch
         default=str,
     )
     _git(["commit", "-m", title, "-m", body])
+    branch = git_current_branch()
+    pushed = False
+    git_cfg = wiring.get("self_modify", {}).get("git", {})
+    if bool(git_cfg.get("push_after_commit", False)):
+        _git(["push", str(git_cfg.get("remote") or "origin"), branch])
+        pushed = True
     return {
         "committed": True,
-        "branch": git_current_branch(),
+        "branch": branch,
         "commit": git_head_sha(),
         "changed_files": changed_files,
+        "pushed": pushed,
         "status": git_worktree_status(),
     }
 

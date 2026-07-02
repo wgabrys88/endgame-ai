@@ -29,6 +29,7 @@ def run(ctx):
             },
         },
         wiring=wiring,
+        expected_record_type="reflection",
     )
     if record.get("record_type") != "reflection":
         raise RuntimeError(f"reflect expected record_type=reflection, got {record.get('record_type')}")

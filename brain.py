@@ -23,6 +23,121 @@ _RAW_SEQ = 0
 _RAW_LOCK = threading.Lock()
 _CALLS_MADE = 0
 
+_OPEN_OBJECT_SCHEMA = {"type": "object", "additionalProperties": True}
+
+_RECORD_DATA_SCHEMAS: dict[str, dict[str, Any]] = {
+    "plan": {
+        "type": "object",
+        "additionalProperties": True,
+        "properties": {
+            "next_signal": {"enum": ["step_ready", "reflect"]},
+            "intent": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "properties": {
+                        "description": {"type": "string"},
+                        "done_when": {"type": "string"},
+                    },
+                },
+            },
+        },
+        "required": ["next_signal", "intent"],
+    },
+    "schedule": {
+        "type": "object",
+        "additionalProperties": True,
+        "properties": {
+            "next_signal": {"enum": ["step_ready", "plan_complete"]},
+            "step": {
+                "anyOf": [
+                    {"type": "object", "additionalProperties": True},
+                    {"type": "null"},
+                ]
+            },
+        },
+        "required": ["next_signal", "step"],
+    },
+    "execution": {
+        "type": "object",
+        "additionalProperties": True,
+        "properties": {
+            "conclusion": {"enum": ["EXECUTE", "CANNOT"]},
+            "code": {"type": "string"},
+        },
+        "required": ["conclusion", "code"],
+    },
+    "verification": {
+        "type": "object",
+        "additionalProperties": True,
+        "properties": {
+            "next_signal": {"enum": ["step_confirmed", "step_denied"]},
+            "success": {"type": "boolean"},
+            "reasoning": {"type": "string"},
+        },
+        "required": ["next_signal", "success", "reasoning"],
+    },
+    "reflection": {
+        "type": "object",
+        "additionalProperties": True,
+        "properties": {
+            "next_signal": {"enum": ["retry", "replan", "escalate", "give_up"]},
+            "lesson": {"type": "string"},
+            "diagnosis": {"type": "string"},
+        },
+        "required": ["next_signal", "lesson", "diagnosis"],
+    },
+    "git_evolution_patch": {
+        "type": "object",
+        "additionalProperties": True,
+        "properties": {
+            "summary": {"type": "string"},
+            "rationale": {"type": "string"},
+            "file_writes": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "properties": {
+                        "path": {"type": "string"},
+                        "content": {"type": "string"},
+                    },
+                    "required": ["path", "content"],
+                },
+            },
+            "file_deletes": {"type": "array", "items": {"type": "string"}},
+            "wiring_patches": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "properties": {
+                        "op": {"enum": ["set", "delete"]},
+                        "path": {"type": "string"},
+                    },
+                    "required": ["op", "path"],
+                },
+            },
+            "commands": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
+            "expected_validation": {
+                "anyOf": [
+                    {"type": "string"},
+                    {"type": "object", "additionalProperties": True},
+                    {"type": "null"},
+                ]
+            },
+        },
+        "required": ["summary", "rationale", "file_writes", "file_deletes", "wiring_patches", "commands", "expected_validation"],
+    },
+    "satisfied": {
+        "type": "object",
+        "additionalProperties": True,
+        "properties": {"next_signal": {"const": "halt"}},
+        "required": ["next_signal"],
+    },
+}
+
 
 
 
@@ -170,7 +285,40 @@ def _get_transport_config(wiring: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     return transport, cfg
 
 
-def call(messages: list[dict[str, str]], wiring: dict[str, Any], *, rod_feedback: bool = False) -> dict[str, str]:
+def _structured_outputs_enabled(cfg: dict[str, Any]) -> bool:
+    structured = cfg.get("structured_outputs")
+    if isinstance(structured, dict):
+        return bool(structured.get("enabled", False))
+    return bool(structured)
+
+
+def _record_response_format(record_type: str) -> dict[str, Any]:
+    data_schema = _RECORD_DATA_SCHEMAS.get(record_type, _OPEN_OBJECT_SCHEMA)
+    return {
+        "type": "json_schema",
+        "name": f"{record_type}_record",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "additionalProperties": True,
+            "properties": {
+                "record_type": {"const": record_type},
+                "data": data_schema,
+                "reasoning": {"type": "string"},
+            },
+            "required": ["record_type", "data"],
+        },
+    }
+
+
+def call(
+    messages: list[dict[str, str]],
+    wiring: dict[str, Any],
+    *,
+    rod_feedback: bool = False,
+    response_format: dict[str, Any] | None = None,
+    request_config: dict[str, Any] | None = None,
+) -> dict[str, str]:
     """Call the selected transport exactly once or raise.
     
     The function logs request, response, and error rows. It never switches transport.
@@ -178,6 +326,12 @@ def call(messages: list[dict[str, str]], wiring: dict[str, Any], *, rod_feedback
     stop_check.check_stop("brain call")
     global _CALLS_MADE
     transport, cfg = _get_transport_config(wiring)
+    if response_format is not None:
+        cfg = dict(cfg)
+        cfg["response_format"] = response_format
+    if request_config:
+        cfg = dict(cfg)
+        cfg.update(request_config)
     model_cfg = wiring.get("model", {})
     max_calls = model_cfg.get("max_brain_calls")
     if max_calls is None and isinstance(model_cfg.get("global"), dict):
@@ -230,7 +384,7 @@ def call(messages: list[dict[str, str]], wiring: dict[str, Any], *, rod_feedback
 def reasoning_from(content: str, reasoning: str = "") -> str:
     if reasoning and reasoning.strip():
         return reasoning.strip()
-    m = re.search(r"ï¿½\u0085(.*?)ï¿½\u0085", content or "", flags=re.S)
+    m = re.search(r"<think>(.*?)</think>", content or "", flags=re.S | re.I)
     if m:
         return m.group(1).strip()
     return (content or "").strip()
@@ -240,8 +394,8 @@ def extract_json_object(text: str) -> dict[str, Any] | None:
     if not text:
         return None
     s = text.strip()
-    if "ï¿½\u0085" in s:
-        s = s.rsplit("ï¿½\u0085", 1)[1].strip()
+    if "</think>" in s.lower():
+        s = re.split(r"</think>", s, maxsplit=1, flags=re.I)[-1].strip()
     fenced = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", s, flags=re.S | re.I)
     if fenced:
         s = fenced.group(1).strip()
@@ -287,21 +441,45 @@ def extract_json_object(text: str) -> dict[str, Any] | None:
     return None
 
 
-def think(system_prompt: str, payload: dict[str, Any], wiring: dict[str, Any]) -> dict[str, Any]:
+def think(
+    system_prompt: str,
+    payload: dict[str, Any],
+    wiring: dict[str, Any],
+    *,
+    expected_record_type: str | None = None,
+    request_config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Pluggable ROD brain pattern returning the committed JSON record."""
     _, cfg = _get_transport_config(wiring)
     reasoning_cfg = _effective_reasoning_config(wiring, cfg)
     user_text = json.dumps(payload, ensure_ascii=False, default=str)
     pattern = str(reasoning_cfg.get("pattern") or "single_pass")
+    response_format = (
+        _record_response_format(expected_record_type)
+        if expected_record_type and _structured_outputs_enabled(cfg)
+        else None
+    )
 
     if not reasoning_cfg["enabled"] or pattern == "single_pass":
-        result = call(_messages(system_prompt, user_text), wiring, rod_feedback=False)
+        result = call(
+            _messages(system_prompt, user_text),
+            wiring,
+            rod_feedback=False,
+            response_format=response_format,
+            request_config=request_config,
+        )
         record = _commit_record(result["content"])
         record.setdefault("reasoning", reasoning_from(result["content"], result.get("reasoning", "")))
         return record
 
     if pattern == "native":
-        result = call(_messages(system_prompt, user_text), wiring, rod_feedback=False)
+        result = call(
+            _messages(system_prompt, user_text),
+            wiring,
+            rod_feedback=False,
+            response_format=response_format,
+            request_config=request_config,
+        )
         record = _commit_record(result["content"])
         record.setdefault("reasoning", reasoning_from(result["content"], result.get("reasoning", "")))
         return record
@@ -312,7 +490,13 @@ def think(system_prompt: str, payload: dict[str, Any], wiring: dict[str, Any]) -
     first = call(_messages(system_prompt, user_text), wiring, rod_feedback=False)
     reasoning = reasoning_from(first["content"], first.get("reasoning", ""))
     template = str(reasoning_cfg.get("injection_template") or "REASONING_FEEDBACK:\n{reasoning}")
-    second = call(_messages(system_prompt, user_text + "\n\n" + template.format(reasoning=reasoning)), wiring, rod_feedback=True)
+    second = call(
+        _messages(system_prompt, user_text + "\n\n" + template.format(reasoning=reasoning)),
+        wiring,
+        rod_feedback=True,
+        response_format=response_format,
+        request_config=request_config,
+    )
     record = _commit_record(second["content"])
     record.setdefault("reasoning", reasoning)
     return record

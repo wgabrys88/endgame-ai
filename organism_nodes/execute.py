@@ -44,6 +44,7 @@ def run(ctx):
             },
         },
         wiring=wiring,
+        expected_record_type="execution",
     )
     if record.get("record_type") != "execution":
         raise RuntimeError(f"execute expected record_type=execution, got {record.get('record_type')}")
