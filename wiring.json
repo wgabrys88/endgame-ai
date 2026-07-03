@@ -163,6 +163,9 @@
       "full_screen_step_px": 64
     }
   },
+  "timing": {
+    "post_execute_delay_ms": 3000
+  },
   "self_modify": {
     "context_mode": "checked_out_branch",
     "git": {

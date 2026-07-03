@@ -192,6 +192,14 @@ def run(
             state["_phase"] = "node_complete"
             write_state(wiring, state)
             runtime_event(wiring, "node_complete", node=current, signal=signal_name, next_node=nxt, tick=state["tick"])
+            
+            # Configurable post-execute delay to avoid app launch race (e.g., Opera launch race)
+            if current == "execute":
+                delay_ms = wiring.get("timing", {}).get("post_execute_delay_ms", 0)
+                if delay_ms > 0:
+                    runtime_event(wiring, "post_execute_delay", node=current, delay_ms=delay_ms)
+                    time.sleep(delay_ms / 1000.0)
+            
             current = nxt
     except KeyboardInterrupt:
         state["_phase"] = "interrupted"
