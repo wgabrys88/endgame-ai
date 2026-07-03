@@ -226,5 +226,10 @@
     "browser": {
       "default": "opera"
     }
+  },
+  "action": {
+    "focus_window": {
+      "title_match": "contains"
+    }
   }
 }
