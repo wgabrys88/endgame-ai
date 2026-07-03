@@ -309,5 +309,13 @@
       "require_explicit": true
     },
     "default_browser": "opera"
+  },
+  "desktop": {
+    "focus": {
+      "enforce_browser": "any"
+    }
+  },
+  "step": {
+    "opera_only": false
   }
 }
