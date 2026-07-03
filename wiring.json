@@ -290,7 +290,14 @@
       "method": "title_or_coords",
       "fallback": "pyautogui_activate_by_title"
     },
-    "browser": "Opera",
+    "browser": {
+      "default": "opera",
+      "supported": [
+        "opera",
+        "chrome"
+      ],
+      "require_explicit": true
+    },
     "default_browser": "opera"
   }
 }
