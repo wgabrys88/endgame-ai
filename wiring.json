@@ -232,5 +232,15 @@
       "title_match": "contains",
       "support_non_chrome": true
     }
+  },
+  "action_helper": {
+    "window_focus": {
+      "supported_browsers": [
+        "Chrome",
+        "Opera"
+      ],
+      "method": "title_or_coords",
+      "fallback": "pyautogui_activate_by_title"
+    }
   }
 }
