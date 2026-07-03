@@ -248,7 +248,8 @@
         "Chrome",
         "Opera",
         "PowerShell"
-      ]
+      ],
+      "browser_preference": "opera"
     },
     "desktop": {
       "window_control": {
