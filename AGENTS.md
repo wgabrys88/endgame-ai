@@ -743,3 +743,33 @@ Replaced the 1355-line UIA/COM-based `desktop.py` with a 480-line pure Win32 hov
 - Contract check passes with new smaller desktop.py (adjust min bytes from 20000 → ~5000)
 - LLM receives spatial grid, not tree — planner/execute adapt to cell references
 - No more "shallow tree" failure mode — hover scan sees everything cursor touches
+
+---
+
+## Major Architectural Change: Brain Logging Rewrite (2026-07-04)
+
+### What Was Done
+Replaced the NDJSON-wrapped raw logging with pure JSONL request/response capture:
+
+| Before | After |
+|---|---|
+| `comms/runtime.ndjson` + timestamped `.txt` | Single `{timestamp}_brain.jsonl` |
+| NDJSON wrapper with phase/seq | Raw request/response + all hyperparameters |
+| Filtered fields | Full transport response body + usage + cost |
+| `log_raw` + `raw_log` config | Single `raw_log` boolean |
+
+### What Works Now
+- Every brain call writes: request (messages, transport, rod_feedback), response (content, reasoning, usage, cost, full body), or error
+- Hyperparameters captured: temperature, top_p, max_output_tokens, reasoning_effort, web_search config, prompt_cache_key
+- xAI usage: input/output/reasoning tokens, cached tokens, USD cost in ticks
+- File per session: `20260704T001732_brain.jsonl` (append-only JSONL)
+
+### Files Changed
+- `brain.py`: `log_raw_entry()` simplified, `_load_transport_module()` kept, dead code removed (hashlib, hashlib import, old append_ndjson for raw log)
+- Raw log path: `{ROOT}/{timestamp}_brain.jsonl` (no more `comms/` directory for brain logs)
+
+### Expectations
+- Debugging: full request/response visible for every organ call
+- Cost tracking: USD ticks per call in log
+- Prompt caching: `prompt_cache_key` visible in logs
+- No more dual logging (runtime.ndjson + .txt) for brain
