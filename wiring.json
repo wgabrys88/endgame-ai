@@ -267,6 +267,7 @@
       ],
       "method": "title_or_coords",
       "fallback": "pyautogui_activate_by_title"
-    }
+    },
+    "browser": "Opera"
   }
 }
