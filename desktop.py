@@ -719,15 +719,6 @@ class Desktop:
             observed_at,
         )
         
-        # Format SCREEN text for LLM
-        screen_text = self.format_screen_text(
-            {"width": screen_width, "height": screen_height},
-            desktop_tree.get("node_index", {}),
-            [],
-            focused_title,
-            desktop_tree,
-        )
-        
         self._last_desktop_tree = desktop_tree
         self._last_action_index = action_index
         
@@ -738,7 +729,6 @@ class Desktop:
             "action_index": action_index,
             "observation_artifact": artifact,
             "observation_delta": delta,
-            "screen_text": screen_text,
             "focused_title": focused_title,
         }
     
@@ -985,26 +975,11 @@ class Desktop:
     def semantic_desktop_tree(self, full_tree: dict[str, Any]) -> dict[str, Any]:
         """Drop prompt-noisy coordinates and UIA metadata while preserving the hierarchy."""
         root = self._semantic_node(full_tree.get("root", {}) if isinstance(full_tree.get("root"), dict) else {}, is_root=True)
-        node_index: dict[str, dict[str, Any]] = {}
-
-        def walk(node: dict[str, Any]) -> None:
-            node_id = str(node.get("id") or "")
-            if node_id:
-                node_index[node_id] = {k: v for k, v in node.items() if k != "children"}
-            children = node.get("children") if isinstance(node.get("children"), list) else []
-            for child in children:
-                if isinstance(child, dict):
-                    walk(child)
-
-        walk(root)
-        # Remove duplicate root from node_index
-        node_index.pop("W0", None)
         return {
             "id": "W0",
             "role": "Screen",
             "focused_title": full_tree.get("focused_title", ""),
             "root": root,
-            "node_index": node_index,
         }
 
     def action_index_from_tree(self, full_tree: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -1111,38 +1086,7 @@ class Desktop:
             pass
         return windows
     
-    def format_screen_text(self, screen: dict, elements: dict, windows: list, focused_title: str, desktop_tree: dict[str, Any] | None = None) -> str:
-        """Format the brain-facing screen text from the semantic hierarchy."""
-        tree = desktop_tree or {}
-        root = tree.get("root") if isinstance(tree.get("root"), dict) else {}
-        lines = [
-            "DESKTOP TREE:",
-            f"  * [W0] Screen ({screen['width']}x{screen['height']}) fresh_scan=true",
-            f"FOCUSED WINDOW: {focused_title or 'none'}",
-        ]
-
-        def describe(node: dict[str, Any], depth: int) -> None:
-            children = node.get("children") if isinstance(node.get("children"), list) else []
-            for child in children:
-                if not isinstance(child, dict):
-                    continue
-                node_id = str(child.get("id") or "")
-                role = str(child.get("role") or "")
-                name = str(child.get("name") or child.get("title") or "")
-                action = str(child.get("action") or "")
-                focused = " focused" if child.get("focused") else ""
-                enabled = ""
-                if "enabled" in child:
-                    enabled = " enabled=true" if child.get("enabled") else " enabled=false"
-                suffix = f" action={action}" if action else ""
-                lines.append(f"{'  ' * depth}* [{node_id}] {role} '{name}'{suffix}{enabled}{focused}")
-                describe(child, depth + 1)
-
-        describe(root, 2)
-        lines.append(f"ACTIONABLE ELEMENTS: {tree.get('element_count', 0)}")
-        lines.append("Use ids with click_node(id), scroll_node(id, amount), focus_window('Wn'), or node_by_id(id).")
-        return "\n".join(lines)
-
+    
     def click(self, x: int, y: int, hwnd: int = 0) -> dict[str, Any]:
         """Click at coordinates. If hwnd provided, click in that window."""
         user32 = ctypes.windll.user32

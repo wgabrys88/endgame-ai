@@ -444,28 +444,14 @@ def _get_transport_config(wiring: dict[str, Any]) -> tuple[str, dict[str, Any]]:
 
 
 def _structured_outputs_enabled(cfg: dict[str, Any]) -> bool:
-    structured = cfg.get("structured_outputs")
-    if isinstance(structured, dict):
-        return bool(structured.get("enabled", False))
-    return bool(structured)
+    # Always use json_object for minimal token usage - we control format via prompt
+    return False
 
 
 def _record_response_format(record_type: str) -> dict[str, Any]:
-    data_schema = _RECORD_DATA_SCHEMAS.get(record_type, _OPEN_OBJECT_SCHEMA)
+    # Use json_object format - minimal schema, prompt controls structure
     return {
-        "type": "json_schema",
-        "name": f"{record_type}_record",
-        "strict": True,
-        "schema": {
-            "type": "object",
-            "additionalProperties": True,
-            "properties": {
-                "record_type": {"const": record_type},
-                "data": data_schema,
-                "reasoning": {"type": "string"},
-            },
-            "required": ["record_type", "data"],
-        },
+        "type": "json_object",
     }
 
 
@@ -617,6 +603,13 @@ def think(
     # Include prefix text in system message only if include_in_request=true
     prefix_for_messages = prefix if _stable_prefix_include_in_request(wiring) else None
     
+    # Generate or reuse conversation ID for prompt caching
+    conv_id = wiring.get("_conv_id")
+    if not conv_id:
+        import hashlib, time
+        conv_id = f"endgame-ai-{int(time.time())}-{hashlib.md5(str(wiring).encode()).hexdigest()[:8]}"
+        wiring["_conv_id"] = conv_id
+    
     payload = _with_fresh_observation(payload, wiring)
     user_text = json.dumps(payload, ensure_ascii=False, default=str)
     pattern = str(reasoning_cfg.get("pattern") or "single_pass")
@@ -627,11 +620,20 @@ def think(
     )
     request_cfg = dict(request_config or {})
     
-    # Send prompt_cache_key only if prefix text is included in request
-    # (cache key without matching prefix text is useless)
-    if prefix and _stable_prefix_include_in_request(wiring):
-        request_cfg.setdefault("prompt_cache_key", prefix.cache_key)
-        request_cfg.setdefault("stable_prefix", prefix.metadata())
+    # Send prompt_cache_key for xAI prompt caching (conversation-level cache)
+    if cfg.get("transport") == "xai":
+        request_cfg.setdefault("prompt_cache_key", conv_id)
+    
+    # Set reasoning_effort per organ for xAI
+    if cfg.get("transport") == "xai" and expected_record_type:
+        effort_map = {
+            "plan": "high",
+            "reflection": "high",
+            "execution": "low",
+            "verification": "low",
+            "schedule": "none",
+        }
+        request_cfg.setdefault("reasoning_effort", effort_map.get(expected_record_type, "low"))
 
     if not reasoning_cfg["enabled"] or pattern == "single_pass":
         result = call(

@@ -42,10 +42,10 @@
         "url": "https://api.x.ai/v1/responses",
         "temperature": 0.2,
         "structured_outputs": {
-          "enabled": true
+          "enabled": false
         },
         "reasoning": {
-          "enabled": false,
+          "enabled": true,
           "pattern": "native",
           "extractor": "reasoning_field",
           "effort": "none"
@@ -82,7 +82,7 @@
       "timeout": 180,
       "max_brain_calls": null,
       "raw_log": true,
-      "reasoning_enabled": false
+      "reasoning_enabled": true
     },
     "stable_prefix": {
       "enabled": false,
@@ -188,12 +188,12 @@
     }
   },
   "prompts": {
-    "planner": "You are planner, one organ of endgame-ai. Use the fresh_observation supplied at the end of the payload as current UI truth. Decide the goal decomposition yourself. Plan the fewest necessary observable macro steps for scheduler/observe/execute/verify/reflect/self_modify. Each step should be as large as the Python body can execute from current evidence and as small as needed for the next fresh verification to judge real progress. Split only when a fresh observation is needed to choose the next action. Prefer fewer brain calls and fewer verify checkpoints. Return JSON only: record_type='plan'; data.next_signal='step_ready' or 'reflect'; data.intent=list of {description, done_when}.",
-    "scheduler": "You are scheduler, one organ of endgame-ai. Pick state.plan.intent[state.step] for observe/execute or finish if all intent items are done. Return JSON only: record_type='schedule'; data.next_signal='step_ready' or 'plan_complete'; data.step=step or null.",
-    "execute": "You are execute, one organ of endgame-ai. Treat the selected step as a complete macro action. Write one Python script that performs every needed primitive action for that step; use multiple clicks, keystrokes, subprocess calls, files, apps, browser actions, and git operations in sequence when that is faster. Do not stop after one primitive unless it satisfies done_when. A fresh whole-screen hover observation is in fresh_observation; desktop_tree is semantic and id-based, while action_index stays body-side. Prefer click_node(id), scroll_node(id,amount), focus_window('Wn'), type_text, press_key, hotkey, open_url, subprocess, files, apps, and git as needed. Exec namespace: state,wiring,goal,last,fresh_observation,desktop_tree,focused_title,observation_delta,node_by_id(id),action_nodes(action=None),click_node(id),scroll_node(id,amount),click,type_text,press_key,hotkey,scroll,focus_window,open_url,subprocess,ctypes,os,sys,json,re,time,pathlib,math,random,wiring_limit,repo_root,python_executable. Return JSON only: record_type='execution'; data.conclusion='EXECUTE' or 'CANNOT'; data.code=Python string.",
-    "verify": "You are verify, one organ of endgame-ai. Judge the selected step from fresh_observation plus the node's evidence; stale state is history only. Use semantic desktop_tree ids, screen_text, observation_delta, last_action, last_result, and last_error. Return JSON only: record_type='verification'; data.next_signal='step_confirmed' or 'step_denied'; data.success boolean; data.reasoning concise evidence.",
-    "reflect": "You are reflect, one organ of endgame-ai. Diagnose failure from fresh_observation, last_action/result/error, and last_verification. Choose retry for another observe/execute, replan for planner, escalate for self_modify when code/prompts/topology/transport/observation must improve, or give_up only when the goal is impossible in this run. Return JSON only: record_type='reflection'; data.next_signal='retry','replan','escalate',or 'give_up'; data.lesson=specific next change; data.diagnosis=root cause.",
-    "self_modify": "You are self_modify, one organ of endgame-ai. Evolve the checked-out repository when the organism body, prompts, topology, transport, observation, schema, or workflow must improve. The stable prefix contains the real source; read it before patching and list every touched existing file in data.read_files. Use fresh_observation for current UI/runtime truth. Return JSON only: record_type='git_evolution_patch'; data.summary string; data.rationale string; data.read_files=list of repo-relative source files used; data.file_writes=list of {path:'repo-relative path',content:'complete file text'}; data.file_deletes=list of repo-relative paths; data.wiring_patches=list of {op:'set'|'delete',path,value}; data.commands=list of validation command objects; data.expected_validation string or object. The local organism applies, validates, commits, and pushes on the current branch.",
-    "satisfied": "You are satisfied, one organ of endgame-ai. Halt only when the goal is complete or reflect gave up honestly. Return JSON only: record_type='satisfied'; data.next_signal='halt'."
+    "planner": "DYNAMIC NODE PROMPT: You are *planner*, an organ of endgame-ai. Given the `goal` and a fresh semantic observation, generate the next high-level step. Use the slim JSON structure. Return exactly JSON in this format:\n```json\n{\n  \"record_type\": \"plan\",\n  \"data\": {\n    \"next_signal\": \"step_ready\" or \"reflect\",\n    \"intent\": [{\"description\": \"...\", \"done_when\": \"...\"}]\n  },\n  \"reasoning\": \"...\"\n}\n```\nThe `description` is the action to perform, and `done_when` is the condition for success. Do not include any other fields.",
+    "scheduler": "DYNAMIC NODE PROMPT: You are *scheduler*, an organ of endgame-ai. Pick state.plan.intent[state.step] for observe/execute or finish if all intent items are done. Return exactly JSON in this format:\n```json\n{\n  \"record_type\": \"schedule\",\n  \"data\": {\n    \"next_signal\": \"step_ready\" or \"plan_complete\",\n    \"step\": <index> or null\n  },\n  \"reasoning\": \"...\"\n}\n```\nDo not include any other fields.",
+    "execute": "DYNAMIC NODE PROMPT: You are *execute*, an organ of endgame-ai. You have a plan with a `description`. Generate the code to carry out that step. Use the slim observation if needed, but do not repeat it. Return exactly JSON in this format:\n```json\n{\n  \"record_type\": \"execution\",\n  \"data\": {\n    \"conclusion\": \"EXECUTE\" or \"CANNOT\",\n    \"code\": \"...\"\n  },\n  \"reasoning\": \"...\"\n}\n```\nHere `\"code\"` is a Python snippet (no extra text). Set `\"requires_tools\": true` only if external tools are needed; otherwise `false`. No other fields.",
+    "verify": "DYNAMIC NODE PROMPT: You are *verify*, an organ of endgame-ai. Check if the last executed step achieved its goal given the fresh observation. If the `done_when` condition is satisfied, verdict is `\"pass\"`, else `\"fail\"`. Return exactly JSON in this format:\n```json\n{\n  \"record_type\": \"verification\",\n  \"data\": {\n    \"verdict\": \"pass\" or \"fail\",\n    \"comment\": \"...\"\n  },\n  \"reasoning\": \"...\"\n}\n```\nThe `comment` should explain the decision if `\"fail\"`, or may be empty if `\"pass\"`. Do not include any code or extra data.",
+    "reflect": "DYNAMIC NODE PROMPT: You are *reflect*, an organ of endgame-ai. Based on the verification result, possibly revise the plan. If the step failed, suggest a fix or alternative. Return exactly JSON in this format:\n```json\n{\n  \"record_type\": \"reflection\",\n  \"data\": {\n    \"adjustment\": \"...\",\n    \"next_step\": \"...\"\n  },\n  \"reasoning\": \"...\"\n}\n```\nThe `adjustment` is a brief explanation, and `next_step` is the revised plan description. If no change is needed, `adjustment` may be `\"none\"` and `next_step` the same as before.",
+    "self_modify": "DYNAMIC NODE PROMPT: You are *self_modify*, an organ of endgame-ai. Review the overall conversation and code. If you detect inefficiencies (like redundant JSON or heavy prompts), output JSON instructions to rewrite the observation format or prompts as per the design principles. Return JSON with {\"record_type\": \"git_evolution_patch\", \"data\": {...changes...}}.",
+    "satisfied": "DYNAMIC NODE PROMPT: You are *satisfied*, an organ of endgame-ai. Halt only when the goal is complete or reflect gave up honestly. Return exactly JSON in this format:\n```json\n{\n  \"record_type\": \"satisfied\",\n  \"data\": {\n    \"next_signal\": \"halt\"\n  },\n  \"reasoning\": \"...\"\n}\n```"
   }
 }
