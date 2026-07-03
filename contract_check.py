@@ -19,7 +19,7 @@ ROOT = pathlib.Path(__file__).parent.resolve()
 REQUIRED_FILES = {
     "brain.py": 12000,
     "bus.py": 2500,
-    "desktop.py": 20000,
+    "desktop.py": 5000,
     "nodes.py": 12000,
     "organism.py": 4500,
     "stop_check.py": 1000,

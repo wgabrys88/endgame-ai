@@ -7,7 +7,6 @@ No selected transport has a fallback path.
 from __future__ import annotations
 
 import importlib.util
-import hashlib
 import json
 import os
 import pathlib
@@ -398,7 +397,7 @@ def raw_log_path(cfg: dict[str, Any] | None = None) -> pathlib.Path:
         if explicit:
             _RAW_LOG_PATH = root_path(str(explicit))
         else:
-            _RAW_LOG_PATH = ROOT / f"{time.strftime('%Y%m%dT%H%M%S')}.txt"
+            _RAW_LOG_PATH = ROOT / f"{time.strftime('%Y%m%dT%H%M%S')}_brain.jsonl"
         _RAW_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         _RAW_LOG_PATH.touch(exist_ok=True)
     return _RAW_LOG_PATH
@@ -412,13 +411,17 @@ def _next_raw_seq() -> int:
 
 
 def log_raw_entry(cfg: dict[str, Any] | None, entry: dict[str, Any]) -> None:
+    """Write raw request/response to JSONL file - no filtering, no NDJSON wrapper."""
     cfg = cfg or {}
-    if cfg.get("raw_log", True) is False or cfg.get("log_raw", True) is False:
+    if cfg.get("raw_log", True) is False:
         return
     row = dict(entry)
     row.setdefault("ts", time.time())
     row.setdefault("iso", time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime()))
-    append_ndjson(raw_log_path(cfg), row)
+    row.setdefault("seq", _next_raw_seq())
+    path = raw_log_path(cfg)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
 
 
 def reset_call_budget() -> None:

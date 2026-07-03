@@ -348,7 +348,15 @@ def hover_scan_fullscreen(config: dict[str, Any] | None = None) -> dict[str, Any
 
 def observe(config: dict[str, Any] | None = None) -> dict[str, Any]:
     """Main observation entry point - calls hover_scan_fullscreen."""
-    return hover_scan_fullscreen(config)
+    result = hover_scan_fullscreen(config)
+    # Write observation artifact for debugging
+    artifact_dir = ROOT / "comms" / "observations"
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    import json
+    artifact_path = artifact_dir / f"{int(result['observed_at'] * 1000)}.json"
+    artifact_path.write_text(json.dumps(result, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    result["observation_artifact"] = {"path": artifact_path.relative_to(ROOT).as_posix(), "size": artifact_path.stat().st_size, "kind": "hover_scan_grid"}
+    return result
 
 
 def observe_screen() -> dict[str, int]:

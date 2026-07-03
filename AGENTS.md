@@ -700,3 +700,46 @@ python contract_check.py
 - **Desktop tree is SHALLOW** — plan actions around window-level + immediate children visibility
 - **Pause/step is EXTERNAL** — edit `comms/control.json`, don't add sleeps in code
 - **Self-modify corrupt patch blocks ALL evolution** — fix this first or nothing else matters
+
+---
+
+## Major Architectural Change: Desktop Simplification (2026-07-03)
+
+### What Was Done
+Replaced the 1355-line UIA/COM-based `desktop.py` with a 480-line pure Win32 hover scan:
+
+| Before (UIA) | After (Win32 Hover) |
+|---|---|
+| 1355 lines, comtypes, UIA COM | 480 lines, pure ctypes |
+| Hierarchical tree (W0→W1→children) | Excel grid (A1, B2, H1...) |
+| Element IDs, runtime_ids, automation_ids | Cursor shape + screen coordinates |
+| 20+ control type constants | 7 cursor semantics (ibeam, hand, size...) |
+| Filter → dedup → classify → tree build | Single pass: move mouse → detect cursor change |
+
+### New Files
+- `win32_api.py` — click, click, cursor detection, window enum
+- `winrt_ocr.py` — Windows 10/11 built-in OCR (ready for future)
+
+### Why
+1. **UIA was the bottleneck** — Chrome/Opera DOM opaque, shallow tree, 0 actionable elements in browser
+2. **Hover scan is universal** — cursor changes over ANY interactive element (Win32, WPF, Electron, Chrome, Flutter)
+3. **Excel grid > tree for LLMs** — spatial 2D reasoning (A1 right of B1, H1 below H2) beats hierarchy traversal
+4. **Fail-hard simplicity** — one method, no fallbacks, no filtering pipelines, <500 LOC
+
+### What Works Now
+- Full-screen grid scan (configurable `step_px`, `delay_ms`, `cell_size`)
+- Cursor shape detection → semantic classification (ibeam=type, hand=click, size=resize)
+- Excel-style output: `A1=ibeam, H1=hand, A9=ibeam` — LLM instantly knows where to act
+- `focused_title` correct, window list correct, action functions work
+
+### What's Next
+1. **Update `contract_check.py`** — validate new contract (grid_text, cursor detection, Excel mapping) not old UIA tree
+2. **Verify full-screen mouse movement** — ensure `step_px=60` actually traverses entire monitor
+3. **Run real task** — "Open Opera, go to x.com, post tweet" with new observation
+4. **Update wiring.json** — simplify `observe_config` (remove UIA-specific keys)
+
+### Expectations
+- LOC reduction: ~2000 lines removed (desktop.py + UIA constants + variant helpers + tree builders)
+- Contract check passes with new smaller desktop.py (adjust min bytes from 20000 → ~5000)
+- LLM receives spatial grid, not tree — planner/execute adapt to cell references
+- No more "shallow tree" failure mode — hover scan sees everything cursor touches
