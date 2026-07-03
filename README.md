@@ -1,127 +1,133 @@
 # endgame-ai
 
-A forensic desktop automation organism. Python is the body, the desktop is the world, wiring.json is the nervous system, JSON records are the bus, git is firmware memory.
+**Local desktop organism** — Python body, desktop world, wiring.json nervous system, JSON records bus, git firmware memory.
+
+---
 
 ## Architecture
 
 ```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│   planner   │────▶│  scheduler  │────▶│   observe   │────▶│  execute    │
-│ (decompose) │     │  (select)   │     │  (scan UIA) │     │   (act)     │
-└─────────────┘     └─────────────┘     └─────────────┘     └──────┬──────┘
-                                                                     │
-                                              ┌──────────────┐      │
-                                              │  self_modify │◀─────┤
-                                              │  (evolve)    │      │
-                                              └──────────────┘      │
-                                                    ▲               │
-                                                    │               ▼
-                                              ┌──────────────┐ ┌───────────┐
-                                              │   verify   │ │  reflect  │
-                                              │  (judge)   │ │ (diagnose)│
-                                              └─────────────┘ └───────────┘
+Goal → planner → scheduler → observe → execute → verify → (step_confirmed→scheduler | step_denied→reflect)
+reflect → (retry→observe | replan→planner | escalate→self_modify | give_up→satisfied)
+self_modify → (modified→planner | modify_failed→reflect | error→error)
 ```
 
-**Topology** (from `wiring.json`):
-- `planner` → `scheduler` → `observe` → `execute` → `verify`
-- `verify.step_confirmed` → `scheduler` (advance step)
-- `verify.step_denied` → `reflect` → `retry`→`observe` | `replan`→`planner` | `escalate`→`self_modify` | `give_up`→`satisfied`
-- `execute.frame` → `frame_action` → `framed`→`execute`
-- `error` node routes failures back to `planner`/`reflect`/`halt`
+**Organs** (in `organism_nodes/`):
+- `planner` — decomposes goal into verifiable steps
+- `scheduler` — selects next unfinished step
+- `observe` — fresh hover scan (Win32, cursor-shape grid)
+- `execute` — generates Python, runs in capability runtime
+- `frame_action` — ROD framing pass (optional, after failures)
+- `verify` — judges step.done_when against observation
+- `reflect` — routes retry/replan/escalate/give_up
+- `self_modify` — produces git patches, validated by immune system
+- `satisfied` — halt gate
+- `error` — mechanical failure router
 
-## Key Components
+**Body** (core modules):
+- `desktop.py` — Win32 hover scan, Excel grid (A1, B2...), cursor semantics (ibeam/hand/size/arr)
+- `win32_api.py` — click, type, hotkey, scroll, window enum, cursor detection
+- `winrt_ocr.py` — Windows built-in OCR (future)
+- `nodes.py` — node loader, capability runtime, self-modify apply/commit
+- `bus.py` — NodeOutput, signal validation, state briefs
+- `brain.py` — transport selection (fail-hard), ROD pattern, stable prefix, JSONL logging
+- `contract_check.py` — immune system (AST + wiring validation)
+- `organism.py` — main loop, topology routing, pause/step control
 
-| File | Role |
-|------|------|
-| `organism.py` | Main loop, pause/step control, topology routing |
-| `brain.py` | Transport-agnostic LLM chokepoint (xAI, OpenAI, file_proxy, opencode) |
-| `nodes.py` | Hot-swappable node loader, capability runtime, self-modify pipeline |
-| `bus.py` | NodeOutput, signal validation, state briefs |
-| `desktop.py` | Windows UIA COM observation (hover scan, window tokens, action index) |
-| `contract_check.py` | Immune system - AST + wiring validation (runs after every self-modify) |
-| `wiring.json` | Nervous system - topology, prompts, model config, observe config |
-| `organism_nodes/*.py` | One file per topology node (planner, execute, verify, reflect, self_modify, etc.) |
-| `brain_transports/*.py` | Single `call(messages, cfg)` export per transport |
-
-## External Control (Pause/Step/Run)
-
-Edit `comms/control.json` - no code changes needed:
-```json
-{"mode": "pause", "step_token": 0}   // pause before next node
-{"mode": "step", "step_token": 1}    // advance one node
-{"mode": "run"}                      // resume
-```
-
-## Quick Start
-
-```bash
-# 1. Set xAI API key (required for default wiring)
-set XAI_API_KEY=your_key_here
-
-# 2. Run with a goal (10 ticks max)
-python -m organism "Open Opera browser and navigate to x.com" --max-ticks 10 --reset
-
-# 3. Watch runtime
-tail -f comms/runtime.ndjson
-
-# 4. Pause/step externally
-echo {"mode": "pause", "step_token": 0} > comms/control.json
-```
-
-## Observation System
-
-- **Hover scan**: Grid probes across screen/window (configurable `step_px`, `delay_ms`)
-- **Target modes**: Full desktop (`target_window_only=false`) or foreground window only (`true`)
-- **Outputs**:
-  - `desktop_tree_text` - semantic indented tree for brain
-  - `action_index` - body-side targeting data (px, py, hwnd, rect) keyed by same IDs
-  - `observation_artifact` - raw JSON in `comms/observations/{timestamp}.json`
-
-## Capability Runtime (available to execute node)
-
-```python
-# Node-based actions (preferred - use IDs from action_index)
-click_node(id)
-scroll_node(id, amount)
-node_by_id(id)
-action_nodes(action="click")
-
-# Raw coordinate actions
-click(x, y, hwnd=0)
-type_text(text)
-press_key(key)
-hotkey(keys)
-scroll(x, y, amount, hwnd=0)
-focus_window(target)  # "W1", "title substring", or "hwnd:12345"
-open_url(browser, url)
-
-# pyautogui-compatible facade
-pyautogui.click(x, y)
-pyautogui.write(text)
-pyautogui.press("enter")
-pyautogui.hotkey("ctrl", "l")
-pag = pyautogui  # alias
-
-# Stdlib
-subprocess, ctypes, os, sys, json, re, time, pathlib, math, random, types
-```
+---
 
 ## Self-Modification Pipeline
 
-Trigger: `reflect.escalate` → `self_modify` node runs → `nodes.apply_evolution_patch()` → `git apply --check` → `contract_check.py` → `git commit` → reload wiring
+```
+reflect.escalate → self_modify node → nodes.apply_evolution_patch() →
+nodes.commit_self_evolution() → git commit [+ push] → reload wiring
+```
+
+**Validation order** (immune system):
+1. Parse patch, validate read_files declared for ALL touched existing files
+2. Validate unified_diffs (must name repo files, touched files in read_files)
+3. Validate file_writes (new files or non-protected supporting files only)
+4. Validate file_deletes (protected files cannot be deleted)
+5. Validate wiring_patches (only allowed prefixes)
+6. Snapshot touched paths for rollback
+7. Apply unified diffs via `git apply --check` then `git apply`
+8. Write new files atomically
+9. Apply wiring patches in-memory + save wiring.json
+10. Compile-check all modified `.py` files
+11. **Run contract_check.py** (IMMUNE SYSTEM — critical)
+12. Run user commands (must include `python contract_check.py`)
+13. Re-run contract_check.py after commands
+14. Commit + optional push
 
 **Protected files** (require unified diffs, not full rewrites):
-- `organism_nodes/*.py`, `brain_transports/*.py`
-- `brain.py`, `bus.py`, `desktop.py`, `nodes.py`, `organism.py`, `stop_check.py`, `contract_check.py`, `wiring.json`
+- `organism_nodes/*.py`
+- `brain_transports/*.py`
+- CORE_FILES: `brain.py`, `bus.py`, `desktop.py`, `nodes.py`, `organism.py`, `stop_check.py`, `contract_check.py`, `wiring.json`
 
-## Critical Bug Fixes (Applied)
+---
 
-| Bug | Fix | Location |
-|-----|-----|----------|
-| **App launch race** - execute→verify→observe with no delay | Added `post_execute_delay_ms` (default 3000ms) in `wiring.json`, consumed in `organism.py:run()` | `wiring.json:14`, `organism.py:172` |
-| **Corrupt patch** - self_modify hallucinates line numbers | *Pending*: self_modify must read file first or use full-file replacement | `nodes.py:283` |
+## Desktop Observation (Win32 Hover Scan)
 
-## Validation Pipeline (Run After Any Change)
+**Config** (`wiring.json:observe_config`):
+```json
+{
+  "step_px": 60,
+  "delay_ms": 0,
+  "cell_size": 100,
+  "max_elements": 200,
+  "restore_cursor": true
+}
+```
+
+**Output** (Excel grid):
+```
+A1=ibeam  B1=arr    H1=hand
+A2=siz    B2=ibeam  H2=arr
+...
+```
+- Cursor shape detection: `ibeam`=type, `hand`=click, `size`=resize, `arr`=default
+- Universal: works on Win32, WPF, Electron, Chrome, Flutter
+- No UIA/COM, no hierarchical tree, no DOM penetration needed
+
+**Action index** (body-facing): same grid IDs + targeting data (px, py, hwnd, rect)
+
+---
+
+## Brain / Transport
+
+**Single transport** (fail-hard): `wiring.json:model.transport = "xai"`
+
+**Per-organ tuning** (`model.organs`):
+| Organ | reasoning_effort | temperature | max_output_tokens |
+|-------|------------------|-------------|-------------------|
+| plan | medium | 0.35 | 2400 |
+| action_frame | medium | 0.45 | 2200 |
+| execution | low | 0.25 | 5000 |
+| verification | none | 0.05 | 1200 |
+| reflection | medium | 0.25 | 2400 |
+| git_evolution_patch | high | 0.2 | 24000 |
+| satisfied | none | 0.05 | 800 |
+
+**ROD pattern** (Reasoning-Oriented Dialogue): two-pass for most organs, native for xAI verification/self_modify
+
+**Logging**: `{timestamp}_brain.jsonl` — raw request/response + hyperparameters + usage + cost per call
+
+**Stable prefix**: git `ls-files` snapshot for self_modify only (source grounding)
+
+---
+
+## Pause/Step Control (External)
+
+Edit `comms/control.json`:
+```json
+{"mode": "pause", "step_token": 0}   # pause before next node
+{"mode": "step", "step_token": 1}    # advance one node
+{"mode": "run"}                      # resume
+```
+
+---
+
+## Validation Pipeline (Mandatory After Any Change)
 
 ```bash
 python -m compileall -q .
@@ -129,38 +135,163 @@ python -m json.tool wiring.json
 python contract_check.py
 ```
 
-## File Ownership
-
-| Path | Purpose |
-|------|---------|
-| `organism.py` | Main loop, step control |
-| `brain.py` | Transport chokepoint, ROD pattern, stable prefix |
-| `nodes.py` | Node loader, capability runtime, self-modify apply/commit |
-| `bus.py` | Protocol, signal validation |
-| `desktop.py` | UIA COM observation, hover scan, actions |
-| `contract_check.py` | Immune system (AST + wiring) |
-| `organism_nodes/*.py` | One organ per file, exports `run(ctx)` + `DATASHEET` |
-| `brain_transports/*.py` | Single `call(messages, cfg)` export |
-| `wiring.json` | Topology, prompts, model config |
-| `state.json` | Mutable runtime state |
-| `comms/control.json` | External pause/step/run |
+---
 
 ## Extending the Organism
 
-**New organ**: Create `organism_nodes/new_organ.py` with `run(ctx)` + `DATASHEET` → add to `wiring.json:topology.nodes` + `edges` + `prompts.new_organ`
+| Add | Steps |
+|-----|-------|
+| New organ | 1. Create `organism_nodes/new_organ.py` with `run(ctx)` + `DATASHEET`<br>2. Add to `wiring.json:topology.nodes`<br>3. Add edges in `topology.edges`<br>4. Add prompt in `prompts.new_organ` |
+| New transport | 1. Create `brain_transports/new_transport.py` with `call(messages, cfg)`<br>2. Set `model.transport` in wiring.json |
+| New capability | Add to `nodes.py:build_capability_runtime()` namespace |
+| New wiring path | Add to `self_modify.wiring_allowed_new_prefixes` before self-modify can create it |
 
-**New transport**: Create `brain_transports/new_transport.py` with `call(messages, cfg)` → set `model.transport` in wiring
+---
 
-**New capability**: Add to `nodes.py:build_capability_runtime()` → available to execute immediately
+## Current State (2026-07-04)
 
-**New wiring path**: Add to `self_modify.wiring_allowed_new_prefixes` before self-modify can create it
+### Working
+- Full organism loop: planner → scheduler → observe → execute → verify → reflect
+- Win32 hover scan: 55 elements, 17 cells with cursor semantics (ibe/siz/han/arr)
+- Verify correctly denies false success (app launch race fixed with `post_execute_delay_ms: 3000`)
+- Brain logging: single JSONL with full request/response + cost tracking
+- Contract check passes on current codebase
+- Self-modify pipeline structurally complete (git apply → contract_check → commit)
 
-## Environment
+### Known Issues (Priority Order)
 
-- Windows 11 (UIA COM via comtypes)
-- Python 3.10+
-- xAI API key for default transport (`XAI_API_KEY`)
+| Priority | Issue | Evidence |
+|----------|-------|----------|
+| **P0** | Self-modify corrupt patch | Both historic runs died at `git apply --check` (line numbers hallucinated) |
+| **P0** | App launch race | Verify runs before app appears → step_denied (fixed with 3s delay) |
+| **P1** | `open_url` fabricates success | Returns `navigated: true` but tab unchanged |
+| **P1** | Start menu needs `down+enter` | Typing + Enter submits search, doesn't launch app |
+| **P1** | `focus_window` activates wrong window | EnumWindows order-dependent |
+| **P2** | `frame_action` never triggered | 0 calls in any run; execute never returns FRAME |
+| **P2** | Opportunistic progress without step advance | Execute acts for next step while scheduler on current |
+| **P3** | Verify over-confirms content | Confirms by window title, not content readback |
 
-## License
+---
 
-MIT
+## Planned Self-Modify Test: Delete `desktop_old.py`
+
+**Goal**: Use self-modify organ to delete the stale 1355-line UIA backup file (`desktop_old.py`) as a validation of the self-modification pipeline.
+
+**Why this tests the system**:
+- Real git patch generation (unified diff for deletion)
+- Immune system validation (contract_check.py must pass after)
+- Rollback on failure (wired in `apply_evolution_patch`)
+- Cost verification (~$1 per self-modify call)
+- Recovery path test (`modify_failed` → `reflect`)
+
+**Mental simulation before execution**:
+1. Reflect escalates with diagnosis: "desktop_old.py is dead code, 1355 lines, not imported anywhere"
+2. Self-modify receives: workspace manifest (includes desktop_old.py), git context, immune contract
+3. Self-modify produces patch:
+   ```diff
+   diff --git a/desktop_old.py b/desktop_old.py
+   deleted file mode 100644
+   index <hash>..0000000
+   --- a/desktop_old.py
+   +++ /dev/null
+   @@ -1,1355 +0,0 @@
+   -# 1355 lines of UIA/COM code...
+   ```
+4. `apply_evolution_patch`:
+   - Validates read_files includes `desktop_old.py`
+   - `git apply --check` passes (deletion is simple)
+   - File deleted atomically
+   - `python -m compileall -q .` passes
+   - `python contract_check.py` passes (desktop_old.py not in REQUIRED_FILES)
+   - Commit + push
+5. Next run: organism loads without desktop_old.py
+
+**Risk**: Low. File is not imported, not in REQUIRED_FILES, not in topology. Pure deletion.
+
+**Cost**: ~68k-70k tokens (~$0.95) for self-modify call with web_search + stable prefix.
+
+**Execution**: Will run when explicitly requested with `python -m organism "Delete desktop_old.py via self-modify" --max-ticks 5`
+
+---
+
+## File Ownership Map
+
+| Path | Purpose | Critical |
+|------|---------|----------|
+| `organism.py` | Main loop, topology routing | YES |
+| `brain.py` | Transport, ROD, stable prefix, logging | YES |
+| `nodes.py` | Node loader, capability runtime, self-modify apply | YES |
+| `bus.py` | NodeOutput, signals, state briefs | YES |
+| `desktop.py` | Win32 hover scan, actions | YES |
+| `contract_check.py` | Immune system (AST + wiring) | YES |
+| `organism_nodes/*.py` | Organ implementations | YES |
+| `brain_transports/xai.py` | Active transport | YES |
+| `wiring.json` | Topology, prompts, model config | YES |
+| `state.json` | Mutable runtime state | YES |
+| `comms/control.json` | External pause/step | YES |
+
+---
+
+## Quick Start
+
+```bash
+# Set API key
+$env:XAI_API_KEY = "your-key"
+
+# Run a task
+python -m organism "Open Notepad and type hello" --max-ticks 10
+
+# Pause before next node
+echo '{"mode": "pause", "step_token": 0}' > comms/control.json
+
+# Step one node
+echo '{"mode": "step", "step_token": 1}' > comms/control.json
+
+# Resume
+echo '{"mode": "run"}' > comms/control.json
+
+# Validate after changes
+python contract_check.py
+```
+
+---
+
+## Cost Reference (Historic Runs)
+
+| Run | Planner | Execute | Verify | Reflect | Self_Modify | Total | Est. Cost |
+|-----|---------|---------|--------|---------|-------------|-------|-----------|
+| A (destructive) | 2,771 | ~6,500 | ~4,100 | ~4,900 | 138,281 | ~156,552 | ~$2.50 |
+| B (retry) | ~2,771 | ~10,000 | ~6,800 | ~7,300 | 69,964 | ~166,799 | ~$2.70 |
+
+**Self-modify dominates** (45% of tokens) — receives full workspace manifest + source fingerprints + immune contract + web_search.
+
+---
+
+## Line Counts (Core)
+
+```
+brain.py:              772
+nodes.py:              852
+organism.py:           248
+desktop.py:            495
+win32_api.py:          352
+winrt_ocr.py:          190
+contract_check.py:     313
+bus.py:                193
+stop_check.py:          85
+organism_nodes/:      ~14k (10 nodes)
+brain_transports/:     383 (4 files)
+TOTAL:                 ~6,080 lines (excluding tests)
+```
+
+---
+
+## Principles
+
+1. **Fail-hard**: one transport, no fallbacks; git apply fails → stop
+2. **Immune system first**: contract_check.py runs before commit, always
+3. **Unified diffs required** for existing protected Python files
+4. **Read before write**: self-modify must declare read_files for every touched file
+5. **Desktop tree is spatial grid**: plan actions around Excel cell references
+6. **Pause/step is external**: edit `comms/control.json`, no sleeps in code
+7. **Self-modify corrupt patch blocks ALL evolution** — fix this first or nothing else matters
