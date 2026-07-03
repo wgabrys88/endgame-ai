@@ -115,6 +115,9 @@
   "timing": {
     "post_execute_delay_ms": 3000
   },
+  "desktop": {
+    "default_browser": "chrome"
+  },
   "self_modify": {
     "context_mode": "checked_out_branch",
     "git": {
