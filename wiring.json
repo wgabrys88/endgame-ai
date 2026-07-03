@@ -225,14 +225,15 @@
   },
   "transports": {
     "browser": {
-      "default": "opera",
+      "default": "Opera",
       "action_helper": {
         "supported": [
           "Opera",
           "Chrome"
         ],
         "focus": "title_or_coords"
-      }
+      },
+      "force_target": true
     },
     "action_helper": {
       "supported_windows": [
