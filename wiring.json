@@ -217,7 +217,7 @@
   },
   "_conv_id": "endgame-ai-1783083007-fad23ea5",
   "browser": {
-    "default": "chrome"
+    "default": "opera"
   },
   "wiring_transport": {
     "browser": "opera"
