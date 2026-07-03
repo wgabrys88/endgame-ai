@@ -9,15 +9,13 @@ from __future__ import annotations
 
 import ctypes
 import time
-import json
 import pathlib
 from ctypes import wintypes
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from win32_api import (
     user32, get_screen_size, get_window_title, get_window_class,
-    get_window_rect, is_window_visible, get_window_process_id,
     enum_windows, set_foreground_window, click_at, type_text,
     press_key, hotkey, scroll_at, open_url, window_at_point,
 )
@@ -282,7 +280,6 @@ def hover_scan_fullscreen(config: dict[str, Any] | None = None) -> dict[str, Any
     
     elements: list[Element] = []
     last_cursor_type = IDC_ARROW
-    consecutive_same = 0
     
     try:
         y = 0

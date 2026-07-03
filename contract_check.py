@@ -65,7 +65,7 @@ REQUIRED_TOP_LEVEL_DEFS = {
 }
 
 REQUIRED_CLASSES = {
-    "bus.py": {"NodeOutput": ["as_tuple", "trace"]},
+    "bus.py": {"NodeOutput": ["trace"]},
     "desktop.py": {
         "Desktop": [
             "observe",

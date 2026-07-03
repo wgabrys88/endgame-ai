@@ -27,9 +27,6 @@ class NodeOutput:
     record: JsonDict | None = None
     evidence: JsonDict = field(default_factory=dict)
 
-    def as_tuple(self) -> tuple[str, JsonDict]:
-        return self.signal, dict(self.patch)
-
     def trace(self, *, node: str) -> JsonDict:
         record_type = None
         if isinstance(self.record, dict):

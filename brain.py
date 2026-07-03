@@ -234,14 +234,6 @@ class StablePrefix:
             chunks.append(content)
             chunks.append(f"--- END FILE {rel} ---")
         return "\n".join(chunks), digest.hexdigest()
-
-    def metadata(self) -> dict[str, Any]:
-        return {
-            "fingerprint": self.fingerprint,
-            "cache_key": self.cache_key,
-            "files": self.files,
-            "chars": len(self.text),
-        }
 def stable_prefix() -> StablePrefix:
     global _STABLE_PREFIX_CACHE
     with _STABLE_PREFIX_LOCK:
@@ -752,22 +744,4 @@ def think(
     return record
 
 
-def read_raw_log_tail(path: pathlib.Path | None = None, *, max_lines: int = 200, max_bytes: int = 600_000) -> list[dict[str, Any]]:
-    p = path or raw_log_path({"raw_log": True})
-    if not p.exists():
-        return []
-    size = p.stat().st_size
-    with p.open("rb") as f:
-        if size > max_bytes:
-            f.seek(size - max_bytes)
-            f.readline()
-        raw = f.read()
-    rows: list[dict[str, Any]] = []
-    for line in raw.decode("utf-8", errors="replace").splitlines()[-max_lines:]:
-        try:
-            obj = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(obj, dict):
-            rows.append(obj)
-    return rows
+

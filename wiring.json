@@ -3,37 +3,6 @@
   "model": {
     "transport": "xai",
     "transport_config": {
-      "file_proxy": {
-        "request_path": "comms/request.json",
-        "response_path": "comms/response.json",
-        "poll_interval": 0.25,
-        "reasoning": {
-          "enabled": false,
-          "pattern": "two_pass",
-          "injection_template": "ROD_REASONING_CONTENT:\n{reasoning}",
-          "extractor": "think_tags"
-        }
-      },
-      "openai": {
-        "base_url": "http://localhost:1234",
-        "path": "/v1/chat/completions",
-        "model": "nvidia-nemotron-3-nano-4b",
-        "temperature": 0.2,
-        "reasoning": {
-          "enabled": false,
-          "pattern": "two_pass",
-          "injection_template": "ROD_REASONING_CONTENT:\n{reasoning}",
-          "extractor": "think_tags"
-        }
-      },
-      "opencode": {
-        "executable": "%USERPROFILE%/AppData/Local/opencode/opencode-cli.exe",
-        "model": "opencode-go/deepseek-v4-flash",
-        "extra_args": [],
-        "reasoning": {
-          "enabled": false
-        }
-      },
       "xai": {
         "mode": "api",
         "api_key_env": "XAI_API_KEY",
@@ -52,21 +21,6 @@
         "max_output_tokens": 4096,
         "top_p": 0.95,
         "truncation": "disabled"
-      },
-      "grok_cli": {
-        "executable": "grok",
-        "extra_args": [],
-        "reasoning": {
-          "enabled": false,
-          "pattern": "native",
-          "extractor": "reasoning_field"
-        }
-      },
-      "browser_ai": {
-        "documented_stub": true,
-        "reasoning": {
-          "enabled": false
-        }
       }
     },
     "global": {

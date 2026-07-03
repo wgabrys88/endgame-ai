@@ -6,11 +6,7 @@ Nodes do not know about pause/step/run.
 from __future__ import annotations
 
 import argparse
-import json
-import os
 import pathlib
-import signal
-import sys
 import time
 from typing import Any
 
@@ -239,9 +235,71 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--max-ticks", type=int, default=None)
     ap.add_argument("--max-brain-calls", type=int, default=None)
     ap.add_argument("--start-node", default=None)
+    ap.add_argument("--execute-node", default=None, help="Run exactly one node (e.g., observe, self_modify) and exit")
     args = ap.parse_args(argv)
-    run(args.goal, reset=args.reset, max_ticks=args.max_ticks, max_brain_calls=args.max_brain_calls, start_node=args.start_node)
+    if args.execute_node:
+        run_single_node(args.execute_node, args.goal, reset=args.reset, max_brain_calls=args.max_brain_calls)
+    else:
+        run(args.goal, reset=args.reset, max_ticks=args.max_ticks, max_brain_calls=args.max_brain_calls, start_node=args.start_node)
     return 0
+
+
+def run_single_node(
+    node_name: str,
+    goal: str,
+    *,
+    reset: bool = False,
+    max_brain_calls: int | None = None,
+) -> dict[str, Any]:
+    """Execute exactly one node and exit. No topology routing, no loop."""
+    stop_check.register_pid("organism")
+    wiring = load_wiring()
+    if max_brain_calls is not None:
+        wiring.setdefault("model", {})["max_brain_calls"] = max_brain_calls
+    if reset:
+        reset_runtime(wiring)
+    brain.reset_call_budget()
+    topo = wiring.get("topology", {})
+    if node_name not in set(topo.get("nodes", [])):
+        raise RuntimeError(f"node '{node_name}' not in topology.nodes")
+    state: dict[str, Any] = {
+        "_phase": "starting",
+        "goal": goal or "",
+        "tick": 0,
+        "current_node": node_name,
+        "last_error": None,
+        "last_action": None,
+        "wiring_transport": wiring.get("model", {}).get("transport"),
+        "start_node": node_name,
+    }
+    write_state(wiring, state)
+    runtime_event(wiring, "organism_start", goal=goal or "", transport=state["wiring_transport"], single_node=node_name)
+    wait_before_node(wiring, state, node_name)
+    state["_phase"] = "executing_node"
+    state["current_node"] = node_name
+    write_state(wiring, state)
+    runtime_event(wiring, "node_start", node=node_name, tick=state["tick"])
+    ctx = {"wiring": wiring, "state": dict(state), "goal": goal or "", "node": node_name}
+    signal_name, patch = nodes.call_node(node_name, ctx)
+    evolution_patch = patch.get("git_evolution_patch")
+    if node_name == "self_modify" and evolution_patch:
+        _, applied = nodes.apply_evolution_patch(wiring, {"data": evolution_patch})
+        patch.setdefault("self_modify", {})["applied"] = applied
+        committed = nodes.commit_self_evolution(wiring, applied, evolution_patch)
+        patch["self_modify"]["commit"] = committed
+        wiring = load_wiring()
+        runtime_event(wiring, "self_modify_applied", **applied, commit=committed)
+    state.update(patch)
+    state["last_signal"] = signal_name
+    state["last_node"] = node_name
+    state["tick"] += 1
+    state["_phase"] = "node_complete"
+    write_state(wiring, state)
+    runtime_event(wiring, "node_complete", node=node_name, signal=signal_name, tick=state["tick"])
+    print(f"Node: {node_name}")
+    print(f"Signal: {signal_name}")
+    print(f"Patch keys: {list(patch.keys())}")
+    return state
 
 
 if __name__ == "__main__":
