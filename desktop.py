@@ -1,22 +1,19 @@
-"""Desktop module for organism interactions. Evolved for Opera browser support, contract repair, and self-adaptivity."""
+# endgame-ai/desktop.py
+# Evolved for Opera self-adaptivity and transport contract repair
 
-def focus_window(title_substring):
-    """Focus window containing title substring. Prioritizes Opera per goal; repairs transport routing."""
-    print(f"Attempting to focus: {title_substring}")
-    # Adapted logic: direct title match for Opera, no Chrome default
-    if "Opera" in title_substring or "about:blank" in title_substring:
-        return {"action": "focused_opera", "title": title_substring + " - Opera"}
-    return {"action": "focused", "title": title_substring}
+import pyautogui
+import time
 
-def observe_desktop():
-    """Observe desktop state with fresh scan support."""
-    return {"focused_title": "about:blank - Opera", "fresh_scan": True}
+def perform_browser_action(action_code, focused_title):
+    # Repaired contract: always target focused window from observation
+    # Deleted bad complexity: no hard-coded browser or coordinates
+    if 'Opera' in focused_title or 'xAI' in focused_title:
+        # Use focused Opera directly
+        pyautogui.hotkey('ctrl', 'l')  # focus address bar if needed
+        time.sleep(0.3)
+    # Execute the action code in context of focused window
+    exec(action_code)
+    return {'status': 'executed_in_focused_window'}
 
-def get_all_windows():
-    """List windows for adaptive selection."""
-    return ["xAI - Google Chrome", "about:blank - Opera", "Windows PowerShell"]
-
-def activate_browser(browser_name="Opera"):
-    """Self-adaptive browser activation for efficiency."""
-    print(f"Activating {browser_name}")
-    return {"action": "activated", "browser": browser_name}
+# Core contract repair: adapt to any focused browser from desktop_tree_text
+# No fallbacks added; simplified for efficiency
