@@ -14,6 +14,7 @@
 !stop_check.py
 !export_topology.py
 !bus.py
+!contract_check.py
 !wiring.json
 
 !brain_transports/

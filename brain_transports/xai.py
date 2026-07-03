@@ -60,6 +60,12 @@ def _call_api(messages, cfg):
         "temperature": cfg.get("temperature", 0.2),
         "truncation": str(cfg.get("truncation") or "disabled"),
     }
+    if cfg.get("top_p") is not None:
+        payload["top_p"] = float(cfg["top_p"])
+    if cfg.get("parallel_tool_calls") is not None:
+        payload["parallel_tool_calls"] = bool(cfg["parallel_tool_calls"])
+    if cfg.get("tool_choice") is not None:
+        payload["tool_choice"] = cfg["tool_choice"]
     if cfg.get("prompt_cache_key"):
         payload["prompt_cache_key"] = str(cfg["prompt_cache_key"])
     if "store" in cfg:
@@ -96,9 +102,15 @@ def _call_api(messages, cfg):
         allowed = web_search_cfg.get("allowed_domains")
         excluded = web_search_cfg.get("excluded_domains")
         if allowed:
-            tool["filters"] = {"allowed_domains": list(allowed)}
+            domains = [str(item) for item in allowed][:5]
+            tool["filters"] = {"allowed_domains": domains}
         elif excluded:
-            tool["filters"] = {"excluded_domains": list(excluded)}
+            domains = [str(item) for item in excluded][:5]
+            tool["filters"] = {"excluded_domains": domains}
+        if web_search_cfg.get("enable_image_understanding") is not None:
+            tool["enable_image_understanding"] = bool(web_search_cfg.get("enable_image_understanding"))
+        if web_search_cfg.get("enable_image_search") is not None:
+            tool["enable_image_search"] = bool(web_search_cfg.get("enable_image_search"))
         payload["tools"] = [tool]
     
     req = urllib.request.Request(

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import pathlib
 import subprocess
 from typing import Any
@@ -93,6 +95,69 @@ def _runtime_evidence(wiring: dict[str, Any], state: dict[str, Any]) -> dict[str
     }
 
 
+
+def _file_digest(path: pathlib.Path) -> dict[str, Any]:
+    if not path.exists() or not path.is_file():
+        return {"path": path.relative_to(ROOT).as_posix(), "exists": False}
+    content = path.read_text(encoding="utf-8", errors="replace")
+    return {
+        "path": path.relative_to(ROOT).as_posix(),
+        "exists": True,
+        "bytes": path.stat().st_size,
+        "sha256": hashlib.sha256(content.encode("utf-8", errors="replace")).hexdigest(),
+    }
+
+
+def _immune_contract() -> dict[str, Any]:
+    protected = [
+        "brain.py",
+        "bus.py",
+        "desktop.py",
+        "nodes.py",
+        "organism.py",
+        "stop_check.py",
+        "contract_check.py",
+        "organism_nodes/*.py",
+        "brain_transports/*.py",
+    ]
+    validation = [
+        "python -m compileall -q .",
+        "python -m json.tool wiring.json",
+        "python contract_check.py",
+    ]
+    return {
+        "principle": "self_modify is surgery: preserve organ contracts before committing firmware changes",
+        "protected_sources": protected,
+        "required_validation": validation,
+        "rules": [
+            "Use unified_diffs for existing Python files; full file_writes are for new files or non-protected supporting files.",
+            "Every touched existing file must be listed in read_files.",
+            "Do not create new wiring paths unless they are under an explicitly allowed prefix.",
+            "Do not replace a body organ with a stub that only compiles; contract_check.py must pass.",
+            "Prefer one narrow repair grounded in the current source over broad rewrites or placebo config keys.",
+        ],
+    }
+
+
+def _source_fingerprints() -> list[dict[str, Any]]:
+    candidates = [
+        "brain.py",
+        "bus.py",
+        "desktop.py",
+        "nodes.py",
+        "organism.py",
+        "contract_check.py",
+        "wiring.json",
+        "organism_nodes/execute.py",
+        "organism_nodes/frame_action.py",
+        "organism_nodes/reflect.py",
+        "organism_nodes/self_modify.py",
+        "organism_nodes/observe.py",
+        "brain_transports/xai.py",
+    ]
+    return [_file_digest(ROOT / rel) for rel in candidates]
+
+
 def run(ctx):
     """Ask Grok for a git-native self-evolution patch based on manifests and evidence paths."""
     state = ctx.get("state", {})
@@ -138,17 +203,20 @@ def run(ctx):
                 "summary": "short human summary",
                 "rationale": "runtime/code evidence for the change",
                 "read_files": "repo files from the stable prefix that ground this patch",
-                "file_writes": "list of {path:'repo relative path', content:'complete file text'}",
-                "file_deletes": "list of repo relative paths",
-                "wiring_patches": "list of {op:'set'|'delete', path:'dotted.path', value:any}",
-                "commands": "optional list of validation commands from repo root",
+                "unified_diffs": "preferred list of unified git diffs for existing Python source files",
+                "file_writes": "list of {path:'repo relative path', content:'complete file text'} for new files or non-protected supporting files only",
+                "file_deletes": "list of repo relative paths; protected organism source cannot be deleted",
+                "wiring_patches": "list of {op:'set'|'delete', path:'dotted.path', value:any}; new paths must use allowed prefixes",
+                "commands": "validation commands from repo root; include python contract_check.py",
                 "expected_validation": "what should pass after the patch",
             },
+            "immune_contract": _immune_contract(),
+            "source_fingerprints": _source_fingerprints(),
             "notes": [
-                "Target organism_nodes/ for node changes and brain_transports/ for transport changes.",
-                "Python and JSON writes are validated before write and again after write.",
-                "The local organism applies, validates, commits, and pushes on the checked-out branch.",
-                "Core files brain.py, nodes.py, organism.py, desktop.py, and stop_check.py activate on the next process run.",
+                "Target organism_nodes/ for node behavior changes and brain_transports/ for transport changes.",
+                "Existing Python source must be changed through unified_diffs, not full-file replacement.",
+                "Python, JSON, topology, node entrypoints, and core body symbols are validated before commit/push.",
+                "The local organism applies, validates, commits, and pushes only after contract_check.py passes.",
             ],
         },
     }
@@ -178,6 +246,7 @@ def run(ctx):
             "read_files": data.get("read_files", []),
             "wiring_patches": data.get("wiring_patches", []),
             "file_writes": data.get("file_writes", []),
+            "unified_diffs": data.get("unified_diffs", data.get("file_diffs", [])),
             "file_deletes": data.get("file_deletes", []),
             "commands": data.get("commands", []),
             "expected_validation": data.get("expected_validation", ""),
@@ -187,6 +256,7 @@ def run(ctx):
             "git_context": git_context,
             "patches": len(data.get("wiring_patches", []) or []),
             "writes": len(data.get("file_writes", []) or []),
+            "diffs": len(data.get("unified_diffs", data.get("file_diffs", [])) or []),
             "deletes": len(data.get("file_deletes", []) or []),
             "commands": len(data.get("commands", []) or []),
         },

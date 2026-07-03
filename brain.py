@@ -117,6 +117,20 @@ _RECORD_DATA_SCHEMAS: dict[str, dict[str, Any]] = {
                     "required": ["path", "content"],
                 },
             },
+            "unified_diffs": {
+                "type": "array",
+                "items": {
+                    "anyOf": [
+                        {"type": "string"},
+                        {
+                            "type": "object",
+                            "additionalProperties": True,
+                            "properties": {"diff": {"type": "string"}},
+                            "required": ["diff"],
+                        },
+                    ]
+                },
+            },
             "file_deletes": {"type": "array", "items": {"type": "string"}},
             "wiring_patches": {
                 "type": "array",
@@ -237,16 +251,26 @@ def stable_prefix() -> StablePrefix:
         return _STABLE_PREFIX_CACHE
 
 
-def _stable_prefix_enabled(wiring: dict[str, Any]) -> bool:
-    """Check if stable prefix should be built (for self-modify read_files grounding)."""
+def _stable_prefix_enabled(wiring: dict[str, Any], expected_record_type: str | None = None) -> bool:
+    """Check if stable prefix should be built for the current organ.
+
+    The source snapshot is most valuable for self_modify. Keeping it organ-scoped
+    prevents every small tick from paying the full source-context cost.
+    """
     sp_cfg = wiring.get("model", {}).get("stable_prefix", {})
-    return bool(sp_cfg.get("enabled", False))
+    if bool(sp_cfg.get("enabled", False)):
+        return True
+    record_types = sp_cfg.get("for_record_types") or []
+    return bool(expected_record_type and expected_record_type in set(map(str, record_types)))
 
 
-def _stable_prefix_include_in_request(wiring: dict[str, Any]) -> bool:
-    """Check if stable prefix text should be included in request body (system message)."""
+def _stable_prefix_include_in_request(wiring: dict[str, Any], expected_record_type: str | None = None) -> bool:
+    """Check if stable prefix text should be included in request body."""
     sp_cfg = wiring.get("model", {}).get("stable_prefix", {})
-    return bool(sp_cfg.get("include_in_request", False))
+    if bool(sp_cfg.get("include_in_request", False)):
+        return True
+    include_for = sp_cfg.get("include_for_record_types") or []
+    return bool(expected_record_type and expected_record_type in set(map(str, include_for)))
 
 
 def _messages(system_prompt: str, user_text: str, prefix: StablePrefix | None) -> list[dict[str, str]]:
@@ -463,6 +487,37 @@ def _record_response_format(record_type: str) -> dict[str, Any]:
     }
 
 
+def _organ_request_config(wiring: dict[str, Any], record_type: str | None) -> dict[str, Any]:
+    """Return per-organ transport knobs from wiring.json.
+
+    This keeps model behavior task-agnostic while still letting each organ use
+    appropriate creativity, reasoning, output budget, and tools. The caller may
+    override any of these values through explicit request_config.
+    """
+
+    if not record_type:
+        return {}
+    organs = wiring.get("model", {}).get("organs", {})
+    if not isinstance(organs, dict):
+        return {}
+    cfg = organs.get(record_type)
+    if not isinstance(cfg, dict):
+        return {}
+
+    allowed_keys = {
+        "temperature",
+        "top_p",
+        "max_output_tokens",
+        "timeout",
+        "truncation",
+        "reasoning_effort",
+        "web_search",
+        "tool_choice",
+        "parallel_tool_calls",
+    }
+    return {key: value for key, value in cfg.items() if key in allowed_keys}
+
+
 def call(
     messages: list[dict[str, str]],
     wiring: dict[str, Any],
@@ -605,11 +660,12 @@ def think(
     _, cfg = _get_transport_config(wiring)
     reasoning_cfg = _effective_reasoning_config(wiring, cfg)
     
-    # Build stable prefix if enabled (needed for self-modify read_files grounding)
-    prefix = stable_prefix() if _stable_prefix_enabled(wiring) else None
-    
-    # Include prefix text in system message only if include_in_request=true
-    prefix_for_messages = prefix if _stable_prefix_include_in_request(wiring) else None
+    # Build stable prefix only for organs that need source grounding, normally
+    # self_modify. Other organs keep prompts small and cheap.
+    prefix = stable_prefix() if _stable_prefix_enabled(wiring, expected_record_type) else None
+
+    # Include prefix text in system message only for configured record types.
+    prefix_for_messages = prefix if _stable_prefix_include_in_request(wiring, expected_record_type) else None
     
     # Generate or reuse conversation ID for prompt caching
     conv_id = wiring.get("_conv_id")
@@ -626,9 +682,12 @@ def think(
         if expected_record_type and _structured_outputs_enabled(cfg)
         else None
     )
-    request_cfg = dict(request_config or {})
+    request_cfg = _organ_request_config(wiring, expected_record_type)
+    request_cfg.update(dict(request_config or {}))
     
-    # Send prompt_cache_key for xAI prompt caching (conversation-level cache)
+    # Send prompt_cache_key for xAI prompt caching (conversation-level cache).
+    # Organ-specific prompt/output knobs may differ, but the stable prefix and
+    # organ prompt shape should remain cache-friendly.
     if cfg.get("transport") == "xai":
         request_cfg.setdefault("prompt_cache_key", conv_id)
     
@@ -637,19 +696,15 @@ def think(
     if cfg.get("transport") == "xai" and expected_record_type:
         default_effort_map = {
             "plan": "medium",
-            "action_frame": "low",
+            "action_frame": "medium",
             "execution": "low",
             "verification": "none",
-            "reflection": "low",
+            "reflection": "medium",
             "git_evolution_patch": "high",
             "schedule": "none",
             "satisfied": "none",
         }
-        organ_cfg = wiring.get("model", {}).get("organs", {})
-        effort = None
-        if isinstance(organ_cfg, dict):
-            effort = (organ_cfg.get(expected_record_type) or {}).get("reasoning_effort") if isinstance(organ_cfg.get(expected_record_type), dict) else None
-        request_cfg.setdefault("reasoning_effort", effort or default_effort_map.get(expected_record_type, "low"))
+        request_cfg.setdefault("reasoning_effort", default_effort_map.get(expected_record_type, "low"))
 
     if not reasoning_cfg["enabled"] or pattern == "single_pass":
         result = call(

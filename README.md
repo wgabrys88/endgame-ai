@@ -847,3 +847,61 @@ pyautogui.press("enter")
 ```
 
 No external `pyautogui` package is imported or required. This is only a familiar language layer over the existing body helpers.
+
+
+## Self-Modification Immune System v1
+
+Self-modification is firmware surgery, not normal task execution. A successful
+patch must preserve the organism's body contracts, not merely compile.
+
+The immune system is intentionally task-agnostic:
+
+- Existing Python organs must be edited with `unified_diffs`; full-file rewrites
+  are rejected for protected source files.
+- Every touched existing file must be listed in `read_files`.
+- `wiring_patches` may update known paths, but new runtime paths must use an
+  explicitly allowed prefix. This prevents placebo configuration keys that no
+  code consumes.
+- `contract_check.py` statically validates the organism after each patch: core
+  files are present, important body symbols still exist, every topology node has
+  `run(ctx)` and `DATASHEET`, and topology edges target known nodes.
+- Failed validation restores snapshots before commit/push.
+- `python contract_check.py` is part of the required validation set alongside
+  `python -m compileall -q .` and `python -m json.tool wiring.json`.
+
+This changes the meaning of a self-modify commit. The boundary is no longer
+"Python syntax is valid". The boundary is now "the organism still has a body,
+organs, bus contract, topology, and bootable source surface".
+
+## Grok Source Access and Organ Tuning
+
+`self_modify` is allowed to ask Grok to inspect public source through xAI Web Search,
+but only inside a narrow source-access cage:
+
+```text
+github.com
+raw.githubusercontent.com
+api.github.com
+```
+
+This fixes the previous failure mode where Grok tried to browse raw GitHub source
+but the web-search allowlist only contained `github.com`. Remote browsing is still
+advisory. The checked-out repository, source fingerprints, stable prefix, and
+`contract_check.py` remain authoritative.
+
+Model behavior is also tuned per organ instead of using one global personality:
+
+- planner and reflect get medium reasoning and enough output space to explain a
+  coherent route or diagnosis.
+- execute stays lower-temperature and code-focused, with a larger output budget
+  for non-trivial action snippets.
+- verify stays almost deterministic and reasoning-free because it is a reality
+  comparator, not a storyteller.
+- self_modify gets high reasoning, a large output budget, and source web access,
+  because firmware patches need room to inspect, justify, and produce complete
+  diffs.
+
+The prompts now share one identity: every LLM call is a specialized stateless
+organ inside the same local computer-control organism. The shared identity is
+not roleplay. It is a contract reminder: emit one typed JSON record, preserve the
+bus, and let Python route the body.

@@ -160,7 +160,16 @@ EVOLVABLE_SUFFIXES = {".py", ".json", ".md"}
 EVOLVABLE_NAMES = {".gitattributes", ".gitignore", "LICENSE"}
 BLOCKED_EVOLVE_PARTS = {".git", "__pycache__", "comms", "pids"}
 BLOCKED_EVOLVE_NAMES = {"state.json", "stop.txt"}
-CORE_FILES = {"brain.py", "desktop.py", "nodes.py", "organism.py", "stop_check.py"}
+CORE_FILES = {"brain.py", "desktop.py", "nodes.py", "organism.py", "stop_check.py", "bus.py", "contract_check.py"}
+PROTECTED_FULL_WRITE_PREFIXES = ("organism_nodes/", "brain_transports/")
+PROTECTED_FULL_WRITE_SUFFIXES = (".py",)
+DEFAULT_WIRING_NEW_PATH_PREFIXES = (
+    "self_modify.",
+    "model.stable_prefix.",
+    "model.organs.",
+    "limits.",
+    "prompts.",
+)
 
 
 def _patch_data(parsed: dict[str, Any]) -> dict[str, Any]:
@@ -191,6 +200,107 @@ def _evolution_target(raw_path: str, *, deleting: bool = False) -> tuple[pathlib
     if deleting and repo_rel.as_posix() in CORE_FILES | {"wiring.json"}:
         raise ValueError(f"self_modify may rewrite but not delete core file: {repo_rel.as_posix()}")
     return path, repo_rel.as_posix()
+
+
+
+def _path_exists_in_mapping(mapping: dict[str, Any], dotted: str) -> bool:
+    cur: Any = mapping
+    for part in dotted.split("."):
+        if not isinstance(cur, dict) or part not in cur:
+            return False
+        cur = cur[part]
+    return True
+
+
+def _wiring_new_path_allowed(wiring: dict[str, Any], dotted: str) -> bool:
+    allowed = list(DEFAULT_WIRING_NEW_PATH_PREFIXES)
+    allowed.extend(str(item) for item in wiring.get("self_modify", {}).get("wiring_allowed_new_prefixes", []) or [])
+    return any(dotted == prefix.rstrip(".") or dotted.startswith(prefix) for prefix in allowed)
+
+
+def _requires_diff_for_full_write(rel: str, path: pathlib.Path) -> bool:
+    if not path.exists() or path.suffix not in PROTECTED_FULL_WRITE_SUFFIXES:
+        return False
+    if rel in CORE_FILES:
+        return True
+    return any(rel.startswith(prefix) for prefix in PROTECTED_FULL_WRITE_PREFIXES)
+
+
+def _collect_unified_diffs(data: dict[str, Any]) -> list[str]:
+    raw_items = data.get("unified_diffs")
+    if raw_items is None:
+        raw_items = data.get("file_diffs")
+    if raw_items is None:
+        raw_items = []
+    if isinstance(raw_items, str):
+        raw_items = [raw_items]
+    diffs: list[str] = []
+    for item in list(raw_items or []):
+        if isinstance(item, str):
+            diff = item
+        elif isinstance(item, dict):
+            diff = str(item.get("diff") or item.get("patch") or "")
+        else:
+            raise ValueError(f"unified_diffs entry must be string or object: {item!r}")
+        if diff.strip():
+            diffs.append(diff if diff.endswith("\n") else diff + "\n")
+    return diffs
+
+
+def _paths_from_unified_diff(diff_text: str) -> set[str]:
+    paths: set[str] = set()
+    for line in diff_text.splitlines():
+        if line.startswith("diff --git "):
+            parts = line.split()
+            if len(parts) >= 4:
+                for raw in parts[2:4]:
+                    if raw.startswith("a/") or raw.startswith("b/"):
+                        rel = raw[2:]
+                        if rel != "/dev/null":
+                            paths.add(rel)
+        elif line.startswith("--- ") or line.startswith("+++ "):
+            raw = line[4:].split("\t", 1)[0].strip()
+            if raw in {"/dev/null", "dev/null"}:
+                continue
+            if raw.startswith("a/") or raw.startswith("b/"):
+                paths.add(raw[2:])
+    return {path.replace("\\", "/").strip().lstrip("/") for path in paths if path.strip()}
+
+
+def _validate_unified_diff_targets(diff_text: str, read_files: set[str]) -> list[str]:
+    touched: list[str] = []
+    paths = _paths_from_unified_diff(diff_text)
+    if not paths:
+        raise ValueError("unified diff does not name any repository files")
+    for rel in sorted(paths):
+        path, safe_rel = _evolution_target(rel)
+        touched.append(safe_rel)
+        if path.exists() and safe_rel not in read_files:
+            raise ValueError(f"unified diff touches existing file without declaring read_files: {safe_rel}")
+    return touched
+
+
+def _apply_unified_diff(diff_text: str) -> None:
+    for args in (["apply", "--check", "--whitespace=nowarn", "-"], ["apply", "--whitespace=nowarn", "-"]):
+        cp = subprocess.run(
+            ["git", *args],
+            cwd=ROOT,
+            input=diff_text,
+            capture_output=True,
+            text=True,
+        )
+        if cp.returncode != 0:
+            detail = (cp.stderr or cp.stdout or "").strip()
+            raise RuntimeError(f"git {' '.join(args)} failed for self_modify unified diff: {detail}")
+
+
+def _run_static_contract_check() -> dict[str, Any]:
+    import contract_check
+
+    errors = contract_check.validate_static_contract(ROOT)
+    if errors:
+        raise RuntimeError("organism contract validation failed after self_modify: " + "; ".join(errors))
+    return {"ok": True, "checker": "contract_check.validate_static_contract", "errors": []}
 
 
 def _validate_content(path: pathlib.Path, rel: str, content: Any) -> str:
@@ -227,21 +337,30 @@ def _apply_wiring_ops(wiring: dict[str, Any], patches: list[dict[str, Any]]) -> 
         dotted = str(patch.get("path") or "")
         if not dotted:
             raise ValueError("wiring_patch missing path")
+        existed = _path_exists_in_mapping(patched, dotted)
+        if not existed and not _wiring_new_path_allowed(wiring, dotted):
+            raise ValueError(
+                "self_modify wiring_patch creates undeclared path "
+                f"{dotted!r}; add an allowed prefix deliberately before using it"
+            )
         parts = dotted.split(".")
         cur = patched
         for part in parts[:-1]:
             if not isinstance(cur.get(part), dict):
+                if not _wiring_new_path_allowed(wiring, dotted):
+                    raise ValueError(f"self_modify may not create intermediate wiring path for {dotted!r}")
                 cur[part] = {}
             cur = cur[part]
         if op == "set":
             cur[parts[-1]] = patch.get("value")
         elif op == "delete":
+            if not existed:
+                raise ValueError(f"self_modify wiring delete targets missing path: {dotted!r}")
             cur.pop(parts[-1], None)
         else:
             raise ValueError(f"unknown wiring_patch op: {op}")
     json.dumps(patched, ensure_ascii=False, default=str)
     return patched
-
 
 def _collect_file_writes(data: dict[str, Any]) -> list[dict[str, str]]:
     return list(data.get("file_writes") or [])
@@ -381,23 +500,40 @@ def _restore_snapshots(snapshots: dict[pathlib.Path, bytes | None]) -> None:
 
 
 def apply_evolution_patch(wiring: dict[str, Any], parsed: dict[str, Any]) -> tuple[str, Any]:
-    """Apply a validated self-evolution patch to canonical repository source."""
+    """Apply a self-evolution patch with immune-system validation.
+
+    Existing Python organs must be changed by unified diff, not whole-file
+    replacement. After every proposed change, the static organism contract is
+    checked before commands, commit, or push can happen.
+    """
     data = _patch_data(parsed)
     read_files = _declared_read_files(data)
     wiring_patches = list(data.get("wiring_patches") or [])
+    unified_diffs = _collect_unified_diffs(data)
     patched_wiring = _apply_wiring_ops(wiring, wiring_patches)
+
+    diff_touched: list[str] = []
+    for diff_text in unified_diffs:
+        diff_touched.extend(_validate_unified_diff_targets(diff_text, read_files))
 
     writes: list[tuple[pathlib.Path, str, str]] = []
     for item in _collect_file_writes(data):
         if not isinstance(item, dict):
             raise ValueError(f"file_writes entry must be object: {item!r}")
         path, rel = _evolution_target(str(item.get("path") or ""))
+        if _requires_diff_for_full_write(rel, path):
+            raise ValueError(
+                f"self_modify may not full-rewrite protected existing Python file {rel}; "
+                "use unified_diffs with narrow context instead"
+            )
         content = _validate_content(path, rel, item.get("content"))
         writes.append((path, rel, content))
 
     deletes: list[tuple[pathlib.Path, str]] = []
     for raw_path in _collect_file_deletes(data):
         path, rel = _evolution_target(raw_path, deleting=True)
+        if path.exists() and (rel in CORE_FILES or rel.startswith(PROTECTED_FULL_WRITE_PREFIXES)):
+            raise ValueError(f"self_modify may not delete protected organism source file: {rel}")
         deletes.append((path, rel))
 
     missing_reads = []
@@ -413,12 +549,21 @@ def apply_evolution_patch(wiring: dict[str, Any], parsed: dict[str, Any]) -> tup
         raise ValueError(f"self_modify patch must declare read_files for touched existing files: {sorted(set(missing_reads))}")
 
     touched_paths = [path for path, _, _ in writes] + [path for path, _ in deletes]
+    for rel in diff_touched:
+        path = (ROOT / rel).resolve()
+        try:
+            path.relative_to(ROOT)
+        except ValueError:
+            continue
+        touched_paths.append(path)
     if wiring_patches:
         touched_paths.append(ROOT / "wiring.json")
     snapshots = _snapshot_paths(touched_paths)
     rollback_on_failure = bool(wiring.get("self_modify", {}).get("execution", {}).get("rollback_on_failure", True))
 
     try:
+        for diff_text in unified_diffs:
+            _apply_unified_diff(diff_text)
         for path, _, content in writes:
             _atomic_write_text(path, content)
         for path, _ in deletes:
@@ -434,7 +579,10 @@ def apply_evolution_patch(wiring: dict[str, Any], parsed: dict[str, Any]) -> tup
             elif path.suffix == ".json":
                 json.loads(path.read_text(encoding="utf-8"))
 
+        contract_result = _run_static_contract_check()
         command_results = _run_evolution_commands(list(data.get("commands") or []), wiring)
+        # Run the canary again after user-proposed commands in case they mutate files.
+        post_command_contract_result = _run_static_contract_check()
     except Exception:
         if rollback_on_failure:
             _restore_snapshots(snapshots)
@@ -443,20 +591,22 @@ def apply_evolution_patch(wiring: dict[str, Any], parsed: dict[str, Any]) -> tup
                 wiring.update(brain.load_json(ROOT / "wiring.json"))
         raise
 
-    changed = [rel for _, rel, _ in writes] + [rel for _, rel in deletes]
+    changed = [rel for _, rel, _ in writes] + [rel for _, rel in deletes] + sorted(set(diff_touched))
     activation = {"immediate": [], "next_run": [], "supporting": []}
     for rel in changed + (["wiring.json"] if wiring_patches else []):
         activation[_activation_bucket(rel)].append(rel)
     return "set", {
         "wiring_patches": len(wiring_patches),
         "file_writes": len(writes),
+        "unified_diffs": len(unified_diffs),
         "file_deletes": len(deletes),
         "commands": command_results,
+        "contract_check": contract_result,
+        "post_command_contract_check": post_command_contract_result,
         "rollback_on_failure": rollback_on_failure,
-        "changed_files": changed,
+        "changed_files": sorted(set(changed)),
         "activation": activation,
     }
-
 
 def commit_self_evolution(wiring: dict[str, Any], applied: dict[str, Any], patch_data: dict[str, Any]) -> dict[str, Any]:
     """Commit a successful validated self-evolution patch on the checked-out branch."""
