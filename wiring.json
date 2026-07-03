@@ -260,6 +260,12 @@
           }
         }
       }
+    },
+    "action": {
+      "browser_targets": {
+        "opera": "Opera",
+        "chrome": "Google Chrome"
+      }
     }
   },
   "action": {
@@ -282,6 +288,7 @@
       "method": "title_or_coords",
       "fallback": "pyautogui_activate_by_title"
     },
-    "browser": "Opera"
+    "browser": "Opera",
+    "default_browser": "opera"
   }
 }
