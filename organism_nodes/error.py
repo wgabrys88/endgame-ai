@@ -1,12 +1,17 @@
-"""error: mechanical error recovery node.
-
-This node runs when any node in the topology emits an 'error' signal.
-It receives error context from state and decides recovery action:
-- 'planner': retry from planner (default)
-- 'reflect': go to reflection for lesson extraction
-- 'halt': clean exit (no zombie processes)
-"""
+"""error: mechanical error recovery node."""
 from __future__ import annotations
+
+import bus
+
+
+DATASHEET = bus.datasheet(
+    "error",
+    kind="mechanical_recovery_router",
+    inputs=["last_node", "last_error", "current_step"],
+    signals=["planner", "reflect", "halt"],
+    writes=["error_handled", "recovery"],
+    record_type=None,
+)
 
 
 def run(ctx):
@@ -17,9 +22,8 @@ def run(ctx):
         "tick": state.get("tick"),
         "signal": state.get("last_signal"),
     }
-    
-    # Log the error for debugging
+
     print(f"[ERROR NODE] Failed node: {error_info['failed_node']}, Error: {error_info['error']}")
-    
+
     recovery = "reflect" if state.get("current_step") else "planner"
-    return recovery, {"error_handled": error_info, "recovery": recovery}
+    return bus.emit(recovery, {"error_handled": error_info, "recovery": recovery})

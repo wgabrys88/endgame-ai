@@ -990,19 +990,22 @@ class Desktop:
         """Render semantic tree as clean indented text for brain consumption.
         
         Format:
-        Screen (W0): "Desktop"
-          Window (W1): "Window Title" [FOCUSED]
-            Button: "Button Name" [click]
-            Edit: "Edit Name" [write]
+        (W0) Screen Desktop
+          (W1) Window Window Title [FOCUSED]
+            Button Button Name [click]
+            Edit Edit Name [write]
         """
         focused_title = semantic_tree.get("focused_title", "")
         lines = []
+
+        def clean_label(value: Any) -> str:
+            return " ".join(str(value or "").replace("\r", " ").replace("\n", " ").split())
         
         def render_node(node: dict[str, Any], indent: int = 0):
             prefix = "  " * indent
             node_id = node.get("id", "")
             role = node.get("role", "")
-            name = node.get("name", "") or node.get("title", "")
+            name = clean_label(node.get("name", "") or node.get("title", ""))
             action = node.get("action", "")
             focused = node.get("focused", False)
             
@@ -1012,7 +1015,7 @@ class Desktop:
             if role:
                 parts.append(role)
             if name:
-                parts.append(f'"{name}"')
+                parts.append(name)
             if action:
                 parts.append(f"[{action}]")
             if focused and role == "Window":
@@ -1031,13 +1034,13 @@ class Desktop:
             screen_parts = []
             screen_id = root.get("id", "W0")
             screen_role = root.get("role", "Screen")
-            screen_name = root.get("name", "Desktop")
+            screen_name = clean_label(root.get("name", "Desktop"))
             if screen_id:
                 screen_parts.append(f"({screen_id})")
             if screen_role:
                 screen_parts.append(screen_role)
             if screen_name:
-                screen_parts.append(f'"{screen_name}"')
+                screen_parts.append(screen_name)
             lines.append(" ".join(screen_parts))
             
             children = root.get("children", [])

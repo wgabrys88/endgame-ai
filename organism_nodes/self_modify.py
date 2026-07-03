@@ -5,12 +5,22 @@ import subprocess
 from typing import Any
 
 import brain
+import bus
 import nodes
 
 
 ROOT = pathlib.Path(__file__).parent.parent.resolve()
 SKIP_DIRS = {".git", "__pycache__", ".pytest_cache", ".vscode", ".idea", "pids"}
 BINARY_SUFFIXES = {".pyc", ".pyd", ".dll", ".exe", ".ico", ".png", ".jpg", ".jpeg", ".gif", ".webp"}
+
+DATASHEET = bus.datasheet(
+    "self_modify",
+    kind="llm_git_firmware_update",
+    inputs=["goal", "failure", "runtime_evidence", "git_context", "workspace_manifest"],
+    signals=["modified", "modify_failed", "error"],
+    writes=["git_evolution_patch", "self_modify", "desktop_tree_text", "focused_title"],
+    record_type="git_evolution_patch",
+)
 
 
 def _git(args: list[str]) -> str:
@@ -94,6 +104,7 @@ def run(ctx):
     fresh_obs = state.get("fresh_observation", {})
     payload = {
         "goal": goal,
+        "observation": bus.observation_brief(state),
         "step": {
             "description": step.get("description", goal),
             "done_when": step.get("done_when", ""),
@@ -156,7 +167,7 @@ def run(ctx):
 
     data = record.get("data", {})
     obs = brain.last_fresh_observation()
-    return "modified", {
+    return bus.emit("modified", {
         "observed_at": obs.get("observed_at"),
         "fresh_scan": obs.get("fresh_scan"),
         "desktop_tree_text": obs.get("desktop_tree_text", ""),
@@ -179,4 +190,4 @@ def run(ctx):
             "deletes": len(data.get("file_deletes", []) or []),
             "commands": len(data.get("commands", []) or []),
         },
-    }
+    }, record=record, evidence={"git_context": git_context, "failure": payload.get("failure", {})})

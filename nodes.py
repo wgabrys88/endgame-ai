@@ -3,16 +3,19 @@ from __future__ import annotations
 
 import importlib.util
 import copy
+import ctypes
 import json
 import os
 import pathlib
 import subprocess
 import sys
 import time
+import types
 from abc import ABC, abstractmethod
 from typing import Any
 
 import brain
+import bus
 import desktop
 
 ROOT = pathlib.Path(__file__).parent.resolve()
@@ -60,12 +63,17 @@ class BaseNode(ABC):
         """Build patch dict from full record."""
         ...
     
-    def run(self, ctx: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    def run(self, ctx: dict[str, Any]) -> bus.NodeOutput:
         wiring = ctx["wiring"]
+        state = ctx.get("state", {})
         prompt = wiring.get("prompts", {}).get(self.prompt_key, "")
         record = brain.think(
             prompt,
-            {"goal": ctx.get("goal", ""), "state": ctx.get("state", {})},
+            {
+                "goal": ctx.get("goal", ""),
+                "state": bus.state_brief(state),
+                "observation": bus.observation_brief(state),
+            },
             wiring,
             expected_record_type=self.expected_record_type,
         )
@@ -74,21 +82,21 @@ class BaseNode(ABC):
         data = record.get("data", {})
         signal = self.signal_from_data(data)
         patch = self.patch_from_record(record)
-        return signal, patch
+        return bus.emit(signal, patch, record=record, evidence={"state": bus.state_brief(state)})
 
 
 def call_node(node_name: str, ctx: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     wiring = ctx["wiring"]
     mod = _load_node(node_name, wiring)
     result = mod.run(ctx)
-    if not isinstance(result, tuple) or len(result) != 2:
-        raise RuntimeError(f"node '{node_name}' contract violation: expected (signal, patch)")
-    signal, patch = result
-    if not isinstance(signal, str) or not signal:
-        raise RuntimeError(f"node '{node_name}' contract violation: signal must be a non-empty string")
-    if not isinstance(patch, dict):
-        raise RuntimeError(f"node '{node_name}' contract violation: patch must be dict")
-    return signal, patch
+    output = bus.coerce_node_output(node_name, result)
+    bus.validate_signal(wiring, node_name, output.signal)
+    patch = dict(output.patch)
+    patch.setdefault("_last_bus_frame", output.trace(node=node_name))
+    sheet = getattr(mod, "DATASHEET", None)
+    if isinstance(sheet, dict):
+        patch.setdefault("_last_datasheet", dict(sheet))
+    return output.signal, patch
 
 
 def topology_summary(wiring: dict[str, Any]) -> dict[str, Any]:
@@ -98,6 +106,24 @@ def topology_summary(wiring: dict[str, Any]) -> dict[str, Any]:
         "nodes": list(topo.get("nodes", [])),
         "edges": topo.get("edges", {}),
     }
+
+
+def node_datasheets(wiring: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Load compact datasheets exported by node modules."""
+    sheets: dict[str, dict[str, Any]] = {}
+    for node_name in wiring.get("topology", {}).get("nodes", []):
+        try:
+            mod = _load_node(str(node_name), wiring)
+        except Exception:
+            continue
+        sheet = getattr(mod, "DATASHEET", None)
+        if isinstance(sheet, dict):
+            sheets[str(node_name)] = dict(sheet)
+    return sheets
+
+
+def topology_mermaid(wiring: dict[str, Any]) -> str:
+    return bus.mermaid_state_diagram(wiring, node_datasheets(wiring))
 
 
 # =============================================================================
@@ -572,6 +598,53 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
             return {"ok": False, "action": "scroll_node", "error": f"node not found: {node_id}"}
         x, y = _node_center(node)
         return d.scroll(x, y, int(amount), int(node.get("hwnd") or 0))
+
+    class _PyAutoGuiCompat:
+        """Dependency-free pyautogui-shaped facade backed by the organism body."""
+
+        def click(self, x: int | None = None, y: int | None = None, clicks: int = 1, interval: float = 0.0, **kwargs: Any) -> Any:
+            if x is None or y is None:
+                return {"ok": False, "action": "pyautogui.click", "error": "x and y are required in this body"}
+            result = None
+            for _ in range(max(1, int(clicks or 1))):
+                result = d.click(int(x), int(y), int(kwargs.get("hwnd") or 0))
+                if interval:
+                    time.sleep(float(interval))
+            return result
+
+        def write(self, text: str, interval: float = 0.0) -> Any:
+            if interval:
+                for ch in str(text):
+                    d.type_text(ch)
+                    time.sleep(float(interval))
+                return {"ok": True, "action": "pyautogui.write", "chars": len(str(text))}
+            return d.type_text(str(text))
+
+        typewrite = write
+
+        def press(self, key: str, presses: int = 1, interval: float = 0.0) -> Any:
+            result = None
+            for _ in range(max(1, int(presses or 1))):
+                result = d.press_key(str(key))
+                if interval:
+                    time.sleep(float(interval))
+            return result
+
+        def hotkey(self, *keys: str) -> Any:
+            if len(keys) == 1 and isinstance(keys[0], (list, tuple)):
+                keys = tuple(keys[0])
+            return d.hotkey(list(keys))
+
+        def scroll(self, clicks: int, x: int | None = None, y: int | None = None, **kwargs: Any) -> Any:
+            if x is None or y is None:
+                return d.scroll(0, 0, int(clicks), int(kwargs.get("hwnd") or 0))
+            return d.scroll(int(x), int(y), int(clicks), int(kwargs.get("hwnd") or 0))
+
+        def sleep(self, seconds: float) -> None:
+            time.sleep(float(seconds))
+
+    pyautogui = _PyAutoGuiCompat()
+    pag = pyautogui
     
     return {
         # Observation
@@ -591,6 +664,8 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "scroll_node": scroll_node,
         "focus_window": d.focus_window,
         "open_url": d.open_url,
+        "pyautogui": pyautogui,
+        "pag": pag,
         
         # System modules
         "subprocess": subprocess,
@@ -603,11 +678,14 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "pathlib": pathlib,
         "math": __import__("math"),
         "random": __import__("random"),
+        "types": types,
         
         # Repository context
         "wiring_limit": wiring_limit,
         "repo_root": str(ROOT),
         "python_executable": sys.executable,
+        "topology_summary": topology_summary(wiring),
+        "topology_mermaid": topology_mermaid(wiring),
         
         # Context
         "state": state,
@@ -622,7 +700,3 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "observed_at": state.get("observed_at"),
         "fresh_scan": state.get("fresh_scan", False),
     }
-
-
-# Need ctypes import for build_capability_runtime.
-import ctypes

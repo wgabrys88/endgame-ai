@@ -12,6 +12,8 @@
 !organism.py
 !export_workspace_text.py
 !stop_check.py
+!export_topology.py
+!bus.py
 !wiring.json
 
 !brain_transports/

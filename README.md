@@ -782,3 +782,68 @@ This README (regenerated from chunks) IS the session handover. If you're reading
 5. **Proceed to Roadmap Priority 1**
 
 No other documentation needed. This file contains: architecture, data flows, current blockers, roadmap, and bootstrap protocol.
+
+## Organism Bus Contract v1
+
+endgame-ai now treats the runtime as a small electronic organism:
+
+- **Nodes are chips.** Each node receives `ctx` and emits exactly one bus packet.
+- **The bus packet is `signal + patch`.** `signal` is the control line routed by `wiring.json`; `patch` is the state delta merged into organism memory.
+- **LLM organs emit typed records.** Every LLM-backed organ returns `{"record_type":"...","data":{...}}`. The Python wrapper validates that record and converts it into a bus signal.
+- **`wiring.json` is the circuit diagram.** A node may only emit signals declared in `topology.edges`.
+- **State is memory, observation is sensor input, execute is muscle, verify is comparator, reflect is diagnosis, and self_modify is firmware evolution.**
+
+The minimal Python contract is implemented in `bus.py`:
+
+```python
+return bus.emit("step_confirmed", {"step": state["step"] + 1}, record=record)
+```
+
+Legacy `(signal, patch)` tuples still load through the same chokepoint, but new nodes should use `bus.emit()` and export a `DATASHEET`:
+
+```python
+DATASHEET = bus.datasheet(
+    "verify",
+    kind="llm_reality_comparator",
+    inputs=["goal", "current_step", "fresh_observation"],
+    signals=["step_confirmed", "step_denied", "error"],
+    writes=["verification", "last_verification", "step"],
+    record_type="verification",
+)
+```
+
+Generate the living wiring diagram with:
+
+```bash
+python export_topology.py
+```
+
+## ROD / Framing Pass
+
+The old discovery that two small calls can behave like a much larger model is now represented as a real node: `frame_action`.
+
+Normal path:
+
+```text
+observe -> execute -> verify
+```
+
+When execution lacks enough clarity:
+
+```text
+observe -> execute -> frame_action -> execute -> verify
+```
+
+`frame_action` does not act. It compresses messy desktop evidence into a compact action frame: screen summary, target, strategy, risk, and notes. The next execute call then writes action code from a clearer world model.
+
+## Body Capability Language
+
+The executor can now use a dependency-free `pyautogui`/`pag` facade backed by the existing organism body. The model may write natural code such as:
+
+```python
+pyautogui.hotkey("ctrl", "l")
+pyautogui.write("https://example.com")
+pyautogui.press("enter")
+```
+
+No external `pyautogui` package is imported or required. This is only a familiar language layer over the existing body helpers.

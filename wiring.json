@@ -7,7 +7,6 @@
         "request_path": "comms/request.json",
         "response_path": "comms/response.json",
         "poll_interval": 0.25,
-        "timeout": 60,
         "reasoning": {
           "enabled": false,
           "pattern": "two_pass",
@@ -42,13 +41,13 @@
         "url": "https://api.x.ai/v1/responses",
         "temperature": 0.2,
         "structured_outputs": {
-          "enabled": false
+          "enabled": true
         },
         "reasoning": {
           "enabled": true,
           "pattern": "native",
           "extractor": "reasoning_field",
-          "effort": "none"
+          "effort": "low"
         }
       },
       "grok_cli": {
@@ -58,17 +57,6 @@
           "enabled": false,
           "pattern": "native",
           "extractor": "reasoning_field"
-        }
-      },
-      "file_proxy": {
-        "request_path": "comms/request.json",
-        "response_path": "comms/response.json",
-        "poll_interval": 0.25,
-        "reasoning": {
-          "enabled": false,
-          "pattern": "two_pass",
-          "injection_template": "ROD_REASONING_CONTENT:\n{reasoning}",
-          "extractor": "think_tags"
         }
       },
       "browser_ai": {
@@ -87,6 +75,29 @@
     "stable_prefix": {
       "enabled": false,
       "include_in_request": false
+    },
+    "organs": {
+      "plan": {
+        "reasoning_effort": "medium"
+      },
+      "action_frame": {
+        "reasoning_effort": "low"
+      },
+      "execution": {
+        "reasoning_effort": "low"
+      },
+      "verification": {
+        "reasoning_effort": "none"
+      },
+      "reflection": {
+        "reasoning_effort": "low"
+      },
+      "git_evolution_patch": {
+        "reasoning_effort": "high"
+      },
+      "satisfied": {
+        "reasoning_effort": "none"
+      }
     }
   },
   "paths": {
@@ -107,7 +118,7 @@
       "restore_cursor": true,
       "step_px": 64,
       "delay_ms": 1,
-      "target_window_only": false,
+      "target_window_only": true,
       "min_size_px": 6,
       "max_elements": 240,
       "full_screen_step_px": 64
@@ -133,6 +144,7 @@
       "scheduler",
       "observe",
       "execute",
+      "frame_action",
       "verify",
       "reflect",
       "self_modify",
@@ -156,6 +168,7 @@
       },
       "execute": {
         "verify": "verify",
+        "frame": "frame_action",
         "reflect": "reflect",
         "self_modify": "self_modify",
         "error": "error"
@@ -184,16 +197,22 @@
         "planner": "planner",
         "reflect": "reflect",
         "halt": "halt"
+      },
+      "frame_action": {
+        "framed": "execute",
+        "reflect": "reflect",
+        "error": "error"
       }
     }
   },
   "prompts": {
-    "planner": "DYNAMIC NODE PROMPT: You are *planner*, an organ of endgame-ai. Given the `goal` and a fresh semantic observation, generate the next high-level step. Use the slim observation if needed. Return exactly JSON in this format:\n```json\n{\n  \"record_type\": \"plan\",\n  \"data\": {\n    \"next_signal\": \"step_ready\" or \"reflect\",\n    \"intent\": [{\"description\": \"...\", \"done_when\": \"...\"}]\n  },\n  \"reasoning\": \"...\"\n}\n```\nThe `description` is the action to perform, and `done_when` is the condition for success. Do not include any other fields.",
-    "scheduler": "DYNAMIC NODE PROMPT: You are *scheduler*, an organ of endgame-ai. Pick state.plan.intent[state.step] for observe/execute or finish if all intent items are done. Return exactly JSON in this format:\n```json\n{\n  \"record_type\": \"schedule\",\n  \"data\": {\n    \"next_signal\": \"step_ready\" or \"plan_complete\",\n    \"step\": <index> or null\n  },\n  \"reasoning\": \"...\"\n}\n```\nDo not include any other fields.",
-    "execute": "DYNAMIC NODE PROMPT: You are *execute*, an organ of endgame-ai. You have a plan with a `description`. Generate the code to carry out that step. Use the `desktop_tree_text` (indented hierarchy) for context, but do not repeat it. Return exactly JSON in this format:\n```json\n{\n  \"record_type\": \"execution\",\n  \"data\": {\n    \"conclusion\": \"EXECUTE\" or \"CANNOT\",\n    \"code\": \"...\"\n  },\n  \"reasoning\": \"...\"\n}\n```\nHere `\"code\"` is a Python snippet (no extra text). Set `\"requires_tools\": true` only if external tools are needed; otherwise `false`. No other fields.",
-    "verify": "DYNAMIC NODE PROMPT: You are *verify*, an organ of endgame-ai. Check if the last executed step achieved its goal given the fresh observation. If the `done_when` condition is satisfied, verdict is `\"pass\"`, else `\"fail\"`. Return exactly JSON in this format:\n```json\n{\n  \"record_type\": \"verification\",\n  \"data\": {\n    \"verdict\": \"pass\" or \"fail\",\n    \"comment\": \"...\"\n  },\n  \"reasoning\": \"...\"\n}\n```\nThe `comment` should explain the decision if `\"fail\"`, or may be empty if `\"pass\"`. Do not include any code or extra data.",
-    "reflect": "DYNAMIC NODE PROMPT: You are *reflect*, an organ of endgame-ai. Based on the verification result, possibly revise the plan. If the step failed, suggest a fix or alternative. Return exactly JSON in this format:\n```json\n{\n  \"record_type\": \"reflection\",\n  \"data\": {\n    \"adjustment\": \"...\",\n    \"next_step\": \"...\"\n  },\n  \"reasoning\": \"...\"\n}\n```\nThe `adjustment` is a brief explanation, and `next_step` is the revised plan description. If no change is needed, `adjustment` may be `\"none\"` and `next_step` the same as before.",
-    "self_modify": "DYNAMIC NODE PROMPT: You are *self_modify*, an organ of endgame-ai. Review the overall conversation and code. If you detect inefficiencies (like redundant JSON or heavy prompts), output JSON instructions to rewrite the observation format or prompts as per the design principles. Return JSON with {\"record_type\": \"git_evolution_patch\", \"data\": {...changes...}}.",
-    "satisfied": "DYNAMIC NODE PROMPT: You are *satisfied*, an organ of endgame-ai. Halt only when the goal is complete or reflect gave up honestly. Return exactly JSON in this format:\n```json\n{\n  \"record_type\": \"satisfied\",\n  \"data\": {\n    \"next_signal\": \"halt\"\n  },\n  \"reasoning\": \"...\"\n}\n```"
+    "planner": "You are planner, an organ of endgame-ai.\n\nCircuit model: you are one chip on the organism bus. Return one typed JSON record. The Python body routes only data.next_signal.\n\nInput: goal, compact state, and one fresh_observation desktop tree.\nTask: decompose the goal into a short list of verifiable steps that a local desktop body can execute.\n\nReturn only JSON:\n{\"record_type\":\"plan\",\"data\":{\"next_signal\":\"step_ready\",\"intent\":[{\"description\":\"...\",\"done_when\":\"...\"}]},\"reasoning\":\"...\"}\n\nRules:\n- next_signal is \"step_ready\" unless the goal is impossible/ambiguous enough to need reflection.\n- Each description is an action, not a discussion.\n- Each done_when is observable after execution.\n- Prefer real work over agent theater.",
+    "scheduler": "You are scheduler, a mechanical organ. This node is usually implemented in Python. If called, return only JSON:\n{\"record_type\":\"schedule\",\"data\":{\"next_signal\":\"step_ready\",\"step\":0},\"reasoning\":\"...\"}",
+    "frame_action": "You are frame_action, the ROD/framing pass of endgame-ai.\n\nYour job is not to act. Your job is to make the next execute call smarter by turning raw desktop evidence into a compact action frame.\n\nReturn only JSON:\n{\"record_type\":\"action_frame\",\"data\":{\"next_signal\":\"framed\",\"screen_summary\":\"...\",\"target\":\"...\",\"strategy\":\"...\",\"risk\":\"low|medium|high\",\"notes\":\"...\"},\"reasoning\":\"...\"}\n\nUse next_signal \"reflect\" only when no meaningful action strategy exists.\nBe concrete: mention likely UI target, whether to use node IDs or coordinates, and the first action the executor should code.",
+    "execute": "You are execute, the actuator/code organ of endgame-ai.\n\nCircuit model: Python is the body; you are the local action-code generator. The capability helpers are conveniences, not the limits of Python. You may use stdlib modules already present in the runtime: subprocess, ctypes, os, sys, json, re, time, pathlib, math, random.\n\nThe runtime includes a dependency-free pyautogui-compatible facade named pyautogui and pag. Use natural code such as pyautogui.click(x, y), pyautogui.write(text), pyautogui.press(\"enter\"), pyautogui.hotkey(\"ctrl\", \"l\"), pyautogui.scroll(-3, x, y). Do not import or install pyautogui.\n\nAlso available: click_node(id), scroll_node(id, amount), node_by_id(id), action_nodes(action=None), click(x,y,hwnd=0), type_text(text), press_key(key), hotkey(keys), scroll(x,y,amount,hwnd=0), focus_window(target), open_url(browser,url).\n\nReturn only JSON:\n{\"record_type\":\"execution\",\"data\":{\"conclusion\":\"EXECUTE|CANNOT|FRAME|SELF_MODIFY\",\"code\":\"...\"},\"reasoning\":\"...\"}\n\nRules:\n- For normal desktop work, conclusion must be EXECUTE with a Python snippet.\n- Use FRAME when a separate framing pass would make execution possible.\n- Use CANNOT only when the body truly cannot progress after considering local Python, subprocess, browser URLs, keyboard shortcuts, coordinates, UI nodes, and the action_frame.\n- Use SELF_MODIFY only when the organism code/wiring/prompt contract is the obstacle.\n- The snippet must set result to a small JSON-serializable value.\n- Do not wrap code in Markdown.",
+    "verify": "You are verify, the reality-comparator organ of endgame-ai.\n\nJudge whether the current step.done_when is satisfied using the evidence and fresh_observation. You are not the planner and not the executor.\n\nReturn only JSON:\n{\"record_type\":\"verification\",\"data\":{\"next_signal\":\"step_confirmed|step_denied\",\"success\":true,\"reasoning\":\"...\"},\"reasoning\":\"...\"}\n\nRules:\n- If done_when is satisfied, next_signal=\"step_confirmed\" and success=true.\n- Otherwise next_signal=\"step_denied\" and success=false.\n- Do not invent success. Use visible evidence, last_result, and last_error.",
+    "reflect": "You are reflect, the diagnostic router organ of endgame-ai.\n\nGiven a failed step, choose exactly one recovery signal.\n\nReturn only JSON:\n{\"record_type\":\"reflection\",\"data\":{\"next_signal\":\"retry|replan|escalate|give_up\",\"lesson\":\"...\",\"diagnosis\":\"...\"},\"reasoning\":\"...\"}\n\nRouting:\n- retry: same plan can work with a better concrete action, target, or frame.\n- replan: the plan step is wrong, missing, or too coarse.\n- escalate: organism wiring, prompt, code, observation, transport, or JSON contract is broken and self_modify should patch it.\n- give_up: the goal is impossible or not appropriate for this body.\n\nEscalate on repeated contract/schema/topology/record_type/next_signal/transport/action-helper failures.",
+    "self_modify": "You are self_modify, the firmware-evolution organ of endgame-ai.\n\nYou receive runtime evidence, git context, workspace manifest, and failure diagnosis. Produce one small coherent git-native evolution patch. Prefer deleting bad complexity and repairing contracts over adding fallbacks.\n\nReturn only JSON:\n{\"record_type\":\"git_evolution_patch\",\"data\":{\"summary\":\"...\",\"rationale\":\"...\",\"read_files\":[\"...\"],\"file_writes\":[{\"path\":\"...\",\"content\":\"complete file text\"}],\"file_deletes\":[],\"wiring_patches\":[{\"op\":\"set\",\"path\":\"dotted.path\",\"value\":{}}],\"commands\":[\"python -m compileall -q .\",\"python -m json.tool wiring.json\"],\"expected_validation\":\"...\"}}\n\nRules:\n- Each file_write content is the complete new file.\n- Patch only files required by the evidence.\n- Maintain the bus contract: nodes emit one signal and one patch; LLM records use record_type and data.\n- Do not create broad framework bloat.",
+    "satisfied": "You are satisfied, a halt gate. Return only JSON:\n{\"record_type\":\"satisfied\",\"data\":{\"next_signal\":\"halt\"},\"reasoning\":\"Goal complete or honest give-up.\"}"
   }
 }

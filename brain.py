@@ -282,19 +282,33 @@ def _effective_reasoning_config(wiring: dict[str, Any], cfg: dict[str, Any]) -> 
     return reasoning_cfg
 
 
+def _normalize_observation(obj: Any) -> dict[str, Any] | None:
+    if not isinstance(obj, dict) or not obj.get("desktop_tree_text"):
+        return None
+    return {
+        "focused_title": obj.get("focused_title", ""),
+        "desktop_tree_text": obj.get("desktop_tree_text", ""),
+        "observed_at": obj.get("observed_at"),
+        "fresh_scan": obj.get("fresh_scan", True),
+    }
+
+
 def _fresh_observation_payload(wiring: dict[str, Any], payload: dict[str, Any] | None = None) -> dict[str, Any]:
-    # Prefer fresh_observation from payload (set by observe node) to avoid duplicate scans
-    if payload and "fresh_observation" in payload:
-        fo = payload["fresh_observation"]
-        if isinstance(fo, dict) and fo.get("desktop_tree_text"):
-            return {
-                "focused_title": fo.get("focused_title", ""),
-                "desktop_tree_text": fo.get("desktop_tree_text", ""),
-                "observed_at": fo.get("observed_at"),
-                "fresh_scan": fo.get("fresh_scan", True),
-            }
-    
-    # Fallback: do a fresh scan (for nodes that don't have observe in their flow)
+    global _LAST_FRESH_OBSERVATION
+    # Prefer observation already produced by the observe node. This avoids a second
+    # UIA scan and keeps the brain payload to one canonical fresh_observation.
+    if payload:
+        candidates = [payload.get("fresh_observation"), payload.get("observation")]
+        evidence = payload.get("evidence")
+        if isinstance(evidence, dict):
+            candidates.extend([evidence.get("fresh_observation"), evidence.get("observation")])
+        for candidate in candidates:
+            normalized = _normalize_observation(candidate)
+            if normalized is not None:
+                _LAST_FRESH_OBSERVATION = normalized
+                return normalized
+
+    # Fallback: do a fresh scan for nodes that run without an observe tick.
     import desktop
 
     obs = desktop.observe(wiring.get("observe_config", {}))
@@ -304,7 +318,6 @@ def _fresh_observation_payload(wiring: dict[str, Any], payload: dict[str, Any] |
         "observed_at": obs.get("observed_at"),
         "fresh_scan": obs.get("fresh_scan", True),
     }
-    global _LAST_FRESH_OBSERVATION
     _LAST_FRESH_OBSERVATION = result
     return result
 
@@ -320,6 +333,10 @@ def last_fresh_observation() -> dict[str, Any]:
 def _with_fresh_observation(payload: dict[str, Any], wiring: dict[str, Any]) -> dict[str, Any]:
     enriched = dict(payload)
     enriched["fresh_observation"] = _fresh_observation_payload(wiring, enriched)
+    # Keep exactly one brain-visible desktop tree at the top level. Nodes may use
+    # local observation keys to avoid rescans; the canonical packet is this field.
+    if isinstance(enriched.get("observation"), dict) and enriched["observation"].get("desktop_tree_text"):
+        enriched.pop("observation", None)
     return enriched
 
 
@@ -433,8 +450,10 @@ def _get_transport_config(wiring: dict[str, Any]) -> tuple[str, dict[str, Any]]:
 
 
 def _structured_outputs_enabled(cfg: dict[str, Any]) -> bool:
-    # Always use json_object for minimal token usage - we control format via prompt
-    return False
+    structured = cfg.get("structured_outputs")
+    if isinstance(structured, dict):
+        return bool(structured.get("enabled", False))
+    return bool(structured)
 
 
 def _record_response_format(record_type: str) -> dict[str, Any]:
@@ -613,16 +632,24 @@ def think(
     if cfg.get("transport") == "xai":
         request_cfg.setdefault("prompt_cache_key", conv_id)
     
-    # Set reasoning_effort per organ for xAI
+    # Set reasoning_effort per organ for xAI. Keep verification mechanical/cheap;
+    # reserve high reasoning for self-modifying firmware patches.
     if cfg.get("transport") == "xai" and expected_record_type:
-        effort_map = {
-            "plan": "high",
-            "reflection": "high",
+        default_effort_map = {
+            "plan": "medium",
+            "action_frame": "low",
             "execution": "low",
-            "verification": "low",
+            "verification": "none",
+            "reflection": "low",
+            "git_evolution_patch": "high",
             "schedule": "none",
+            "satisfied": "none",
         }
-        request_cfg.setdefault("reasoning_effort", effort_map.get(expected_record_type, "low"))
+        organ_cfg = wiring.get("model", {}).get("organs", {})
+        effort = None
+        if isinstance(organ_cfg, dict):
+            effort = (organ_cfg.get(expected_record_type) or {}).get("reasoning_effort") if isinstance(organ_cfg.get(expected_record_type), dict) else None
+        request_cfg.setdefault("reasoning_effort", effort or default_effort_map.get(expected_record_type, "low"))
 
     if not reasoning_cfg["enabled"] or pattern == "single_pass":
         result = call(
@@ -656,16 +683,6 @@ def think(
     template = str(reasoning_cfg.get("injection_template") or "REASONING_FEEDBACK:\n{reasoning}")
     second = call(
         _messages(system_prompt, user_text + "\n\n" + template.format(reasoning=reasoning), prefix_for_messages),
-        wiring,
-        rod_feedback=True,
-        response_format=response_format,
-        request_config=request_cfg,
-    )
-    record = _commit_record(second["content"])
-    record.setdefault("reasoning", reasoning)
-    return record
-    second = call(
-        _messages(system_prompt, user_text + "\n\n" + template.format(reasoning=reasoning), prefix),
         wiring,
         rod_feedback=True,
         response_format=response_format,

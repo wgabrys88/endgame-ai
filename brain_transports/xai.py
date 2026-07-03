@@ -72,14 +72,18 @@ def _call_api(messages, cfg):
         payload["include"] = list(cfg["include"])
     response_format = cfg.get("response_format")
     if isinstance(response_format, dict):
-        payload["text"] = {
-            "format": {
-                "type": response_format.get("type", "json_schema"),
-                "name": response_format.get("name", "record"),
-                "schema": response_format.get("schema", {}),
-                "strict": bool(response_format.get("strict", True)),
+        fmt_type = str(response_format.get("type", "json_schema"))
+        if fmt_type == "json_object":
+            payload["text"] = {"format": {"type": "json_object"}}
+        else:
+            payload["text"] = {
+                "format": {
+                    "type": fmt_type,
+                    "name": response_format.get("name", "record"),
+                    "schema": response_format.get("schema", {}),
+                    "strict": bool(response_format.get("strict", True)),
+                }
             }
-        }
 
     reasoning_cfg = cfg.get("reasoning") or {}
     effort = cfg.get("reasoning_effort") or reasoning_cfg.get("effort")
