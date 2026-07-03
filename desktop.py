@@ -969,6 +969,9 @@ class Desktop:
         }
         if "action" in node:
             semantic["action"] = node.get("action")
+        # Preserve focused flag for windows
+        if node.get("focused"):
+            semantic["focused"] = True
         children = node.get("children") if isinstance(node.get("children"), list) else []
         semantic["children"] = [self._semantic_node(child) for child in children if isinstance(child, dict)]
         return semantic
@@ -987,8 +990,8 @@ class Desktop:
         """Render semantic tree as clean indented text for brain consumption.
         
         Format:
-        Screen (W0): "Desktop" [focused: Window Title]
-          Window (W1): "Window Title"
+        Screen (W0): "Desktop"
+          Window (W1): "Window Title" [FOCUSED]
             Button: "Button Name" [click]
             Edit: "Edit Name" [write]
         """
@@ -1001,6 +1004,7 @@ class Desktop:
             role = node.get("role", "")
             name = node.get("name", "") or node.get("title", "")
             action = node.get("action", "")
+            focused = node.get("focused", False)
             
             parts = []
             if node_id:
@@ -1011,6 +1015,8 @@ class Desktop:
                 parts.append(f'"{name}"')
             if action:
                 parts.append(f"[{action}]")
+            if focused and role == "Window":
+                parts.append("[FOCUSED]")
             
             lines.append(f"{prefix}{' '.join(parts)}")
             
@@ -1021,7 +1027,7 @@ class Desktop:
         
         root = semantic_tree.get("root", {})
         if root:
-            # Screen line with focused title
+            # Screen line
             screen_parts = []
             screen_id = root.get("id", "W0")
             screen_role = root.get("role", "Screen")
@@ -1032,8 +1038,6 @@ class Desktop:
                 screen_parts.append(screen_role)
             if screen_name:
                 screen_parts.append(f'"{screen_name}"')
-            if focused_title:
-                screen_parts.append(f"[focused: {focused_title}]")
             lines.append(" ".join(screen_parts))
             
             children = root.get("children", [])
