@@ -275,7 +275,7 @@ sequenceDiagram
 
     Owner->>Planner: open notepad and write a short paragraph about endgame-ai
     Planner-->>Owner: plan: launch notepad, then type paragraph
-    Execute->>Desktop: subprocess.Popen(["notepad.exe"])
+    Execute->>Desktop: subprocess.Popen([notepad])
     Verify->>Desktop: observe desktop tree
     Verify-->>Reflect: step_denied: Notepad not visible yet
     Reflect-->>Execute: retry: likely timing/visibility gap
