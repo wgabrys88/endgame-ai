@@ -61,32 +61,32 @@ The design should stay closer to electronics than to enterprise software.
 
 ```mermaid
 flowchart LR
-    Human["🧑 owner goal"]:::human --> Planner["🧠 planner organ"]:::brain
-    Planner --> Scheduler["⏱ scheduler"]:::logic
-    Scheduler --> Observe["👁 observe sensor"]:::sensor
-    Observe --> Execute["🦾 execute actuator"]:::actuator
-    Execute --> Verify["✅ verify comparator"]:::verify
-    Verify -->|step_confirmed| Scheduler
-    Verify -->|step_denied| Reflect["🪞 reflect diagnostic"]:::reflect
-    Reflect -->|retry| Observe
-    Reflect -->|replan| Planner
-    Reflect -->|escalate| SelfModify["🧬 self_modify firmware"]:::firmware
-    SelfModify --> ContractCheck["🛡 contract_check immune system"]:::immune
-    ContractCheck -->|valid| Git["🌐 git commit / push"]:::git
-    ContractCheck -->|invalid| Rollback["↩ rollback"]:::danger
-    Git --> Planner
+Human["Human owner goal"]:::human --> Planner["Planner organ"]:::brain
+Planner --> Scheduler["Scheduler"]:::logic
+Scheduler --> Observe["Observe sensor"]:::sensor
+Observe --> Execute["Execute actuator"]:::actuator
+Execute --> Verify["Verify comparator"]:::verify
+Verify -->|step_confirmed| Scheduler
+Verify -->|step_denied| Reflect["Reflect diagnostic"]:::reflect
+Reflect -->|retry| Observe
+Reflect -->|replan| Planner
+Reflect -->|escalate| SelfModify["Self-modify firmware"]:::firmware
+SelfModify --> ContractCheck["Contract-check immune system"]:::immune
+ContractCheck -->|valid| Git["Git commit / push"]:::git
+ContractCheck -->|invalid| Rollback["Rollback"]:::danger
+Git --> Planner
 
-    classDef human fill:#fef3c7,stroke:#f59e0b,color:#111827;
-    classDef brain fill:#dbeafe,stroke:#2563eb,color:#111827;
-    classDef logic fill:#e0e7ff,stroke:#4f46e5,color:#111827;
-    classDef sensor fill:#dcfce7,stroke:#16a34a,color:#111827;
-    classDef actuator fill:#fee2e2,stroke:#dc2626,color:#111827;
-    classDef verify fill:#ccfbf1,stroke:#0d9488,color:#111827;
-    classDef reflect fill:#f3e8ff,stroke:#9333ea,color:#111827;
-    classDef firmware fill:#fae8ff,stroke:#c026d3,color:#111827;
-    classDef immune fill:#ecfccb,stroke:#65a30d,color:#111827;
-    classDef git fill:#e5e7eb,stroke:#374151,color:#111827;
-    classDef danger fill:#ffe4e6,stroke:#e11d48,color:#111827;
+classDef human fill:#fef3c7,stroke:#f59e0b,color:#111827;
+classDef brain fill:#dbeafe,stroke:#2563eb,color:#111827;
+classDef logic fill:#e0e7ff,stroke:#4f46e5,color:#111827;
+classDef sensor fill:#dcfce7,stroke:#16a34a,color:#111827;
+classDef actuator fill:#fee2e2,stroke:#dc2626,color:#111827;
+classDef verify fill:#ccfbf1,stroke:#0d9488,color:#111827;
+classDef reflect fill:#f3e8ff,stroke:#9333ea,color:#111827;
+classDef firmware fill:#fae8ff,stroke:#c026d3,color:#111827;
+classDef immune fill:#ecfccb,stroke:#65a30d,color:#111827;
+classDef git fill:#e5e7eb,stroke:#374151,color:#111827;
+classDef danger fill:#ffe4e6,stroke:#e11d48,color:#111827;
 ```
 
 The important idea is not that a model is "smart."
@@ -174,26 +174,26 @@ The immune system decides whether the body still lives.
 
 ```mermaid
 flowchart TD
-    Diagnosis["reflect: systemic diagnosis"]:::reflect --> Proposal["self_modify: proposed patch"]:::firmware
-    Proposal --> Source["source-grounded read_files"]:::source
-    Source --> PatchType{"patch type"}:::logic
-    PatchType -->|unified diff| Diff["apply diff"]:::ok
-    PatchType -->|full rewrite of protected organ| Reject["reject"]:::danger
-    Diff --> Compile["compileall"]:::check
-    Compile --> Json["json tool wiring.json"]:::check
-    Json --> Contract["contract_check.py"]:::immune
-    Contract -->|pass| Commit["git commit / optional push"]:::git
-    Contract -->|fail| Restore["restore snapshots"]:::danger
+Diagnosis["reflect: systemic diagnosis"]:::reflect --> Proposal["self_modify: proposed patch"]:::firmware
+Proposal --> Source["source-grounded read_files"]:::source
+Source --> PatchType{"patch type"}:::logic
+PatchType -->|unified diff| Diff["apply diff"]:::ok
+PatchType -->|full rewrite of protected organ| Reject["reject"]:::danger
+Diff --> Compile["compileall"]:::check
+Compile --> Json["json tool wiring.json"]:::check
+Json --> Contract["contract_check.py"]:::immune
+Contract -->|pass| Commit["git commit / optional push"]:::git
+Contract -->|fail| Restore["restore snapshots"]:::danger
 
-    classDef reflect fill:#f3e8ff,stroke:#9333ea,color:#111827;
-    classDef firmware fill:#fae8ff,stroke:#c026d3,color:#111827;
-    classDef source fill:#dbeafe,stroke:#2563eb,color:#111827;
-    classDef logic fill:#e0e7ff,stroke:#4f46e5,color:#111827;
-    classDef ok fill:#dcfce7,stroke:#16a34a,color:#111827;
-    classDef check fill:#fef3c7,stroke:#f59e0b,color:#111827;
-    classDef immune fill:#ecfccb,stroke:#65a30d,color:#111827;
-    classDef git fill:#e5e7eb,stroke:#374151,color:#111827;
-    classDef danger fill:#ffe4e6,stroke:#e11d48,color:#111827;
+classDef reflect fill:#f3e8ff,stroke:#9333ea,color:#111827;
+classDef firmware fill:#fae8ff,stroke:#c026d3,color:#111827;
+classDef source fill:#dbeafe,stroke:#2563eb,color:#111827;
+classDef logic fill:#e0e7ff,stroke:#4f46e5,color:#111827;
+classDef ok fill:#dcfce7,stroke:#16a34a,color:#111827;
+classDef check fill:#fef3c7,stroke:#f59e0b,color:#111827;
+classDef immune fill:#ecfccb,stroke:#65a30d,color:#111827;
+classDef git fill:#e5e7eb,stroke:#374151,color:#111827;
+classDef danger fill:#ffe4e6,stroke:#e11d48,color:#111827;
 ```
 
 The latest hardening expects:
@@ -273,7 +273,7 @@ sequenceDiagram
     participant Reflect
     participant Desktop
 
-    Owner->>Planner: "open notepad and write a short paragraph about endgame-ai"
+    Owner->>Planner: open notepad and write a short paragraph about endgame-ai
     Planner-->>Owner: plan: launch notepad, then type paragraph
     Execute->>Desktop: subprocess.Popen(["notepad.exe"])
     Verify->>Desktop: observe desktop tree
@@ -471,22 +471,31 @@ The explicit MoE is the topology.
 
 ```mermaid
 flowchart TB
-    Input["Owner goal + state + observation"]:::input --> Router["wiring.json signal router"]:::router
+    Input["Owner goal + state + observation"]:::input
+    Router["wiring.json signal router"]:::router
+    Planner["Planner expert<br/>decomposes intent"]:::planner
+    Execute["Execute expert<br/>generates local Python action"]:::execute
+    Verify["Verify expert<br/>compares done_when against reality"]:::verify
+    Reflect["Reflect expert<br/>chooses retry/replan/escalate/give_up"]:::reflect
+    SelfModify["Self-modify expert<br/>proposes firmware patch"]:::selfmod
+    Contract["Contract expert<br/>local immune validator"]:::immune
+    Bus["JSON bus"]:::bus
+    State["state.json memory"]:::state
 
-    Router --> Planner["Planner expert<br/>decomposes intent"]:::planner
-    Router --> Execute["Execute expert<br/>generates local Python action"]:::execute
-    Router --> Verify["Verify expert<br/>compares done_when against reality"]:::verify
-    Router --> Reflect["Reflect expert<br/>chooses retry/replan/escalate/give_up"]:::reflect
-    Router --> SelfModify["Self-modify expert<br/>proposes firmware patch"]:::selfmod
-    Router --> Contract["Contract expert<br/>local immune validator"]:::immune
-
-    Planner --> Bus["JSON bus"]:::bus
+    Input --> Router
+    Router --> Planner
+    Router --> Execute
+    Router --> Verify
+    Router --> Reflect
+    Router --> SelfModify
+    Router --> Contract
+    Planner --> Bus
     Execute --> Bus
     Verify --> Bus
     Reflect --> Bus
     SelfModify --> Bus
     Contract --> Bus
-    Bus --> State["state.json memory"]:::state
+    Bus --> State
     State --> Router
 
     classDef input fill:#fef3c7,stroke:#f59e0b,color:#111827;
