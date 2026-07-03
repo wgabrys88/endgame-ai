@@ -259,7 +259,8 @@
             "adapter": "general_browser"
           }
         }
-      }
+      },
+      "browser_target": "opera"
     },
     "action": {
       "browser_targets": {
