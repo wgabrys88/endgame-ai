@@ -279,7 +279,7 @@ sequenceDiagram
     Verify->>Desktop: observe desktop tree
     Verify-->>Reflect: step_denied: Notepad not visible yet
     Reflect-->>Execute: retry: likely timing/visibility gap
-    Execute->>Desktop: Notepad now focused; type paragraph
+    Execute->>Desktop: Notepad now focused type paragraph
     Verify->>Desktop: observe Notepad window
     Verify-->>Owner: step_confirmed
     Execute->>Desktop: append more sentences
