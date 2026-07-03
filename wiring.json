@@ -232,6 +232,13 @@
         ],
         "focus": "title_or_coords"
       }
+    },
+    "action_helper": {
+      "supported_windows": [
+        "Chrome",
+        "Opera",
+        "PowerShell"
+      ]
     }
   },
   "action": {
