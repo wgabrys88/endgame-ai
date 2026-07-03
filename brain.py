@@ -286,12 +286,10 @@ def _fresh_observation_payload(wiring: dict[str, Any], payload: dict[str, Any] |
     # Prefer fresh_observation from payload (set by observe node) to avoid duplicate scans
     if payload and "fresh_observation" in payload:
         fo = payload["fresh_observation"]
-        if isinstance(fo, dict) and fo.get("desktop_tree"):
+        if isinstance(fo, dict) and fo.get("desktop_tree_text"):
             return {
                 "focused_title": fo.get("focused_title", ""),
-                "desktop_tree": fo.get("desktop_tree", {}),
-                "observation_delta": fo.get("observation_delta", {}),
-                "screen_text": fo.get("screen_text", ""),
+                "desktop_tree_text": fo.get("desktop_tree_text", ""),
                 "observed_at": fo.get("observed_at"),
                 "fresh_scan": fo.get("fresh_scan", True),
             }
@@ -302,9 +300,7 @@ def _fresh_observation_payload(wiring: dict[str, Any], payload: dict[str, Any] |
     obs = desktop.observe(wiring.get("observe_config", {}))
     result = {
         "focused_title": obs.get("focused_title", ""),
-        "desktop_tree": obs.get("desktop_tree", {}),
-        "observation_delta": obs.get("observation_delta", {}),
-        "screen_text": obs.get("screen_text", ""),
+        "desktop_tree_text": obs.get("desktop_tree_text", ""),
         "observed_at": obs.get("observed_at"),
         "fresh_scan": obs.get("fresh_scan", True),
     }
@@ -317,19 +313,12 @@ def last_fresh_observation() -> dict[str, Any]:
     return dict(_LAST_FRESH_OBSERVATION or {})
 
 
-BODY_ONLY_PAYLOAD_KEYS = {"action_index", "raw_elements", "action_elements", "full_desktop_tree"}
-
-
-def _brain_visible(value: Any) -> Any:
-    if isinstance(value, dict):
-        return {k: _brain_visible(v) for k, v in value.items() if k not in BODY_ONLY_PAYLOAD_KEYS}
-    if isinstance(value, list):
-        return [_brain_visible(item) for item in value]
-    return value
+# Removed BODY_ONLY_PAYLOAD_KEYS - no more dict tree passed to brain
+# def _brain_visible removed - no filtering needed
 
 
 def _with_fresh_observation(payload: dict[str, Any], wiring: dict[str, Any]) -> dict[str, Any]:
-    enriched = _brain_visible(payload)
+    enriched = dict(payload)
     enriched["fresh_observation"] = _fresh_observation_payload(wiring, enriched)
     return enriched
 

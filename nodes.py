@@ -531,9 +531,8 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "fresh_scan": state.get("fresh_scan", False),
         "observed_at": state.get("observed_at"),
         "desktop_tree": state.get("desktop_tree", {}),
-        "screen_text": state.get("screen_text", ""),
+        "desktop_tree_text": state.get("desktop_tree_text", ""),
         "observation_artifact": state.get("observation_artifact", {}),
-        "observation_delta": state.get("observation_delta", {}),
     }
     last = {
         "error": state.get("last_error"),
@@ -617,9 +616,8 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "last": last,
         "fresh_observation": fresh_observation,
         "desktop_tree": state.get("desktop_tree", {}),
+        "desktop_tree_text": state.get("desktop_tree_text", ""),
         "observation_artifact": state.get("observation_artifact", {}),
-        "observation_delta": state.get("observation_delta", {}),
-        "screen_text": state.get("screen_text", ""),
         "focused_title": state.get("focused_title", ""),
         "observed_at": state.get("observed_at"),
         "fresh_scan": state.get("fresh_scan", False),

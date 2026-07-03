@@ -50,9 +50,9 @@ _kernel32_GetCurrentThreadId.argtypes = []
 _kernel32_GetCurrentThreadId.restype = wintypes.DWORD
 
 
-def _is_window_hit_test_transparent(hwnd: int) -> bool:
+def _is_window_hit_test_transparent(hwnd) -> bool:
     """Check if window has WS_EX_TRANSPARENT or is layered with alpha=0 hit-test transparency."""
-    if hwnd <= 0:
+    if hwnd is None or hwnd <= 0:
         return True
     try:
         ex_style = _user32_GetWindowLongPtr(hwnd, GWL_EXSTYLE)
@@ -654,7 +654,7 @@ class Desktop:
                 - hover_scan: dict with hover_scan config (step_px, delay_ms, target_window_only, min_size_px, max_elements)
         
         Returns:
-            Fresh observation dict with desktop_tree, screen_text, focused_title, and scan metadata.
+            Fresh observation dict with desktop_tree, desktop_tree_text, focused_title, and scan metadata.
         """
         if config is None:
             config = {}
@@ -701,13 +701,11 @@ class Desktop:
         )
         desktop_tree = self.semantic_desktop_tree(full_tree)
         action_index = self.action_index_from_tree(full_tree)
-        delta = self.observation_delta(action_index)
         artifact = self.write_observation_artifact(
             {
                 "observed_at": observed_at,
                 "fresh_scan": True,
                 "focused_title": focused_title,
-                "observation_delta": delta,
                 "scan_config": hover_config_adjusted,
                 "windows": windows,
                 "raw_elements": [element.to_dict() for element in hover_elements],
@@ -722,13 +720,16 @@ class Desktop:
         self._last_desktop_tree = desktop_tree
         self._last_action_index = action_index
         
+        # Render tree as clean indented text for brain consumption
+        desktop_tree_text = self.render_tree_text(desktop_tree)
+        
         return {
             "observed_at": observed_at,
             "fresh_scan": True,
             "desktop_tree": desktop_tree,
+            "desktop_tree_text": desktop_tree_text,
             "action_index": action_index,
             "observation_artifact": artifact,
-            "observation_delta": delta,
             "focused_title": focused_title,
         }
     
@@ -982,6 +983,66 @@ class Desktop:
             "root": root,
         }
 
+    def render_tree_text(self, semantic_tree: dict[str, Any]) -> str:
+        """Render semantic tree as clean indented text for brain consumption.
+        
+        Format:
+        Screen (W0): "Desktop" [focused: Window Title]
+          Window (W1): "Window Title"
+            Button: "Button Name" [click]
+            Edit: "Edit Name" [write]
+        """
+        focused_title = semantic_tree.get("focused_title", "")
+        lines = []
+        
+        def render_node(node: dict[str, Any], indent: int = 0):
+            prefix = "  " * indent
+            node_id = node.get("id", "")
+            role = node.get("role", "")
+            name = node.get("name", "") or node.get("title", "")
+            action = node.get("action", "")
+            
+            parts = []
+            if node_id:
+                parts.append(f"({node_id})")
+            if role:
+                parts.append(role)
+            if name:
+                parts.append(f'"{name}"')
+            if action:
+                parts.append(f"[{action}]")
+            
+            lines.append(f"{prefix}{' '.join(parts)}")
+            
+            children = node.get("children", [])
+            for child in children:
+                if isinstance(child, dict):
+                    render_node(child, indent + 1)
+        
+        root = semantic_tree.get("root", {})
+        if root:
+            # Screen line with focused title
+            screen_parts = []
+            screen_id = root.get("id", "W0")
+            screen_role = root.get("role", "Screen")
+            screen_name = root.get("name", "Desktop")
+            if screen_id:
+                screen_parts.append(f"({screen_id})")
+            if screen_role:
+                screen_parts.append(screen_role)
+            if screen_name:
+                screen_parts.append(f'"{screen_name}"')
+            if focused_title:
+                screen_parts.append(f"[focused: {focused_title}]")
+            lines.append(" ".join(screen_parts))
+            
+            children = root.get("children", [])
+            for child in children:
+                if isinstance(child, dict):
+                    render_node(child, 1)
+        
+        return "\n".join(lines)
+
     def action_index_from_tree(self, full_tree: dict[str, Any]) -> dict[str, dict[str, Any]]:
         """Keep body-only target data keyed by the same ids the brain sees."""
         full_index = full_tree.get("node_index") if isinstance(full_tree.get("node_index"), dict) else {}
@@ -1007,18 +1068,6 @@ class Desktop:
                 "runtime_id": node.get("runtime_id"),
             }
         return action_index
-
-    def observation_delta(self, action_index: dict[str, dict[str, Any]]) -> dict[str, Any]:
-        previous = self._last_action_index or {}
-        prev_ids = set(previous)
-        current_ids = set(action_index)
-        return {
-            "previous_nodes": len(prev_ids),
-            "current_nodes": len(current_ids),
-            "added_ids": sorted(current_ids - prev_ids),
-            "removed_ids": sorted(prev_ids - current_ids),
-            "stable_ids": len(prev_ids & current_ids),
-        }
 
     def write_observation_artifact(self, payload: dict[str, Any], observed_at: float) -> dict[str, Any]:
         artifact_dir = ROOT / "comms" / "observations"

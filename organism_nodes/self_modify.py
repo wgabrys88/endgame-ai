@@ -79,7 +79,7 @@ def _runtime_evidence(wiring: dict[str, Any], state: dict[str, Any]) -> dict[str
         "runtime_log_path": _evidence_file(brain.root_path(wiring.get("paths", {}).get("runtime_log"), "comms/runtime.ndjson")),
         "raw_log_paths": [_evidence_file(path) for path in raw_logs],
         "current_state_keys": sorted(state.keys()),
-        "has_fresh_observation": all(key in state for key in ("desktop_tree", "screen_text", "focused_title", "fresh_scan")),
+        "has_fresh_observation": all(key in state for key in ("desktop_tree_text", "focused_title", "fresh_scan")),
     }
 
 
@@ -159,10 +159,7 @@ def run(ctx):
     return "modified", {
         "observed_at": obs.get("observed_at"),
         "fresh_scan": obs.get("fresh_scan"),
-        "desktop_tree": obs.get("desktop_tree", {}),
-        "observation_artifact": obs.get("observation_artifact", {}),
-        "observation_delta": obs.get("observation_delta", {}),
-        "screen_text": obs.get("screen_text", ""),
+        "desktop_tree_text": obs.get("desktop_tree_text", ""),
         "focused_title": obs.get("focused_title", ""),
         "git_evolution_patch": {
             "summary": data.get("summary", ""),

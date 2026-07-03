@@ -14,11 +14,11 @@ def run(ctx):
     goal = ctx.get("goal", "")
     step = state.get("current_step") or {}
 
-    fresh_obs = state.get("fresh_observation", {})
     observation_payload = {
         "focused_title": state.get("focused_title", ""),
-        "desktop_tree": state.get("desktop_tree", {}),
+        "desktop_tree_text": state.get("desktop_tree_text", ""),
     }
+    fresh_obs = state.get("fresh_observation", {})
     if fresh_obs:
         observation_payload["fresh_observation"] = fresh_obs
 
@@ -37,7 +37,7 @@ def run(ctx):
                 "action": state.get("last_action", {}),
             },
             "namespace": {
-                "values": ["state", "wiring", "goal", "last", "fresh_observation", "desktop_tree", "focused_title", "observation_delta"],
+                "values": ["state", "wiring", "goal", "last", "fresh_observation", "desktop_tree_text", "focused_title"],
                 "observation": ["observe_screen()", "last_desktop_tree()", "get_focused_title()", "node_by_id(id)", "action_nodes(action=None)"],
                 "actions": ["click_node(id)", "scroll_node(id,amount)", "click(x,y,hwnd)", "type_text(text)", "press_key(key)", "hotkey(keys)", "scroll(x,y,amount,hwnd)", "focus_window(target)", "open_url(browser,url)"],
                 "modules": ["subprocess", "ctypes", "os", "sys", "json", "re", "time", "pathlib", "math", "random"],
