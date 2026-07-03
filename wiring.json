@@ -224,7 +224,14 @@
   },
   "transports": {
     "browser": {
-      "default": "opera"
+      "default": "opera",
+      "action_helper": {
+        "supported": [
+          "Opera",
+          "Chrome"
+        ],
+        "focus": "title_or_coords"
+      }
     }
   },
   "action": {
