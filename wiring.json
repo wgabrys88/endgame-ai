@@ -239,6 +239,17 @@
         "Opera",
         "PowerShell"
       ]
+    },
+    "desktop": {
+      "window_control": {
+        "targets": {
+          "opera": {
+            "enabled": true,
+            "focus_priority": 1,
+            "adapter": "general_browser"
+          }
+        }
+      }
     }
   },
   "action": {
