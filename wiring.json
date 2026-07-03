@@ -279,6 +279,10 @@
     "focus_contract": {
       "target": "Opera",
       "method": "title_bar_click"
+    },
+    "focus": {
+      "preferred_browser": "opera",
+      "method": "exact_title_or_contains"
     }
   },
   "action_helper": {
