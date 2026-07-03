@@ -226,7 +226,10 @@
       "target": "opera",
       "fallback": null,
       "contract": "direct"
-    }
+    },
+    "browser_target": "opera",
+    "opera_only": true,
+    "fallback": false
   },
   "transports": {
     "browser": {
