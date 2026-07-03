@@ -241,7 +241,8 @@
         ],
         "focus": "title_or_coords"
       },
-      "force_target": true
+      "force_target": true,
+      "action_target": "focused_window_direct"
     },
     "action_helper": {
       "supported_windows": [
