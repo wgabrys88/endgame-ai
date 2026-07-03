@@ -221,7 +221,12 @@
     "preferred": "Opera"
   },
   "wiring_transport": {
-    "browser": "opera"
+    "browser": "opera",
+    "opera": {
+      "target": "opera",
+      "fallback": null,
+      "contract": "direct"
+    }
   },
   "transports": {
     "browser": {
