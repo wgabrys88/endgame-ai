@@ -229,7 +229,8 @@
     },
     "browser_target": "opera",
     "opera_only": true,
-    "fallback": false
+    "fallback": false,
+    "default_browser": "opera"
   },
   "transports": {
     "browser": {
