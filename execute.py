@@ -61,6 +61,9 @@ class Execute(LlmNode):
                 exec(code, ns)
             result = {'result': ns.get('result'), 'stdout': stdout.getvalue(), 'stderr': stderr.getvalue()}
             error = None
+            helper = ns.get('result')
+            if isinstance(helper, dict) and helper.get('ok') is False:
+                error = str(helper.get('error') or 'helper returned ok:false')
         except Exception as exc:
             result = {'stdout': stdout.getvalue(), 'stderr': stderr.getvalue()}
             error = f'{type(exc).__name__}: {exc}'

@@ -27,6 +27,20 @@ IDC_HELP = 32651
 INTERACTIVE_CURSORS = {IDC_IBEAM, IDC_HAND, IDC_SIZEALL, IDC_SIZENWSE, IDC_SIZENESW, IDC_SIZEWE, IDC_SIZENS, IDC_UPARROW, IDC_CROSS}
 CURSOR_NAMES = {IDC_ARROW: 'arrow', IDC_IBEAM: 'ibeam', IDC_WAIT: 'wait', IDC_CROSS: 'cross', IDC_UPARROW: 'uparrow', IDC_SIZE: 'size', IDC_ICON: 'icon', IDC_SIZENWSE: 'sizenwse', IDC_SIZENESW: 'sizenesw', IDC_SIZEWE: 'sizewe', IDC_SIZENS: 'sizens', IDC_SIZEALL: 'sizeall', IDC_NO: 'no', IDC_HAND: 'hand', IDC_APPSTARTING: 'appstarting', IDC_HELP: 'help'}
 CURSOR_PRIORITY = {'ibeam': 0, 'hand': 1, 'sizeall': 2, 'sizenwse': 2, 'sizenesw': 2, 'sizewe': 2, 'sizens': 2, 'uparrow': 3, 'cross': 4, 'arrow': 5, 'wait': 6}
+BROWSER_WINDOW_CLASSES = frozenset({'Chrome_WidgetWin_1', 'MozillaWindowClass', 'ApplicationFrameWindow', 'OperaWindowClass'})
+SEMANTIC_ZONE_ORDER = ('chrome', 'toolbar', 'tabs', 'navigation', 'search', 'form', 'content', 'status', 'chrome_misc')
+ROLE_LABELS = {
+    'url_field': 'url_field (address bar)',
+    'search_field': 'search_field',
+    'text_editor': 'text_editor (compose/article body)',
+    'text_field': 'text_field',
+    'toolbar_button': 'toolbar_button',
+    'button': 'button',
+    'link': 'link',
+    'tab': 'tab',
+    'resize_handle': 'resize_handle',
+    'clickable': 'clickable',
+}
 
 class CURSORINFO(ctypes.Structure):
     _fields_ = [('cbSize', ctypes.c_uint), ('flags', ctypes.c_uint), ('hCursor', wintypes.HANDLE), ('ptScreenPos', wintypes.POINT)]
@@ -130,6 +144,215 @@ def _render_compact_grid(grid: dict[str, list[Element]], config: dict[str, Any])
         lines.append(''.join(row_parts))
     return lines
 
+def _window_rect_map(scan: dict[str, Any]) -> dict[int, dict[str, int]]:
+    out: dict[int, dict[str, int]] = {}
+    for win in scan.get('windows') or []:
+        hwnd = int(win.get('hwnd', 0) or 0)
+        rect = win.get('rect') or {}
+        if hwnd > 0 and rect:
+            out[hwnd] = {k: int(rect.get(k, 0)) for k in ('left', 'top', 'right', 'bottom')}
+    return out
+
+def _is_browser_window(window_class: str, title: str) -> bool:
+    cls = str(window_class or '')
+    if cls in BROWSER_WINDOW_CLASSES:
+        return True
+    low = f'{cls} {title}'.lower()
+    return any(token in low for token in ('opera', 'chrome', 'firefox', 'edge', 'brave', 'vivaldi'))
+
+def _cluster_elements(elements: list[Element], *, x_gap: int=56, y_gap: int=28) -> list[dict[str, Any]]:
+    if not elements:
+        return []
+    sorted_elems = sorted(elements, key=lambda e: (e.y, e.x))
+    clusters: list[dict[str, Any]] = []
+    for elem in sorted_elems:
+        placed = False
+        for cluster in clusters:
+            if abs(elem.x - cluster['x']) <= x_gap and abs(elem.y - cluster['y']) <= y_gap:
+                cluster['elements'].append(elem)
+                n = len(cluster['elements'])
+                cluster['x'] = (cluster['x'] * (n - 1) + elem.x) // n
+                cluster['y'] = (cluster['y'] * (n - 1) + elem.y) // n
+                cluster['x_min'] = min(cluster['x_min'], elem.x)
+                cluster['x_max'] = max(cluster['x_max'], elem.x)
+                cluster['y_min'] = min(cluster['y_min'], elem.y)
+                cluster['y_max'] = max(cluster['y_max'], elem.y)
+                if CURSOR_PRIORITY.get(elem.cursor_name, 9) < CURSOR_PRIORITY.get(cluster['cursor_name'], 9):
+                    cluster['cursor_name'] = elem.cursor_name
+                placed = True
+                break
+        if not placed:
+            clusters.append({'elements': [elem], 'x': elem.x, 'y': elem.y, 'x_min': elem.x, 'x_max': elem.x, 'y_min': elem.y, 'y_max': elem.y, 'cursor_name': elem.cursor_name})
+    return clusters
+
+def _classify_control(cluster: dict[str, Any], *, win_rect: dict[str, int] | None, window_class: str, title: str) -> tuple[str, str, str]:
+    cursor = str(cluster.get('cursor_name') or 'arrow')
+    x, y = int(cluster['x']), int(cluster['y'])
+    spread_x = int(cluster['x_max']) - int(cluster['x_min'])
+    spread_y = int(cluster['y_max']) - int(cluster['y_min'])
+    rel_y = 0.5
+    rel_x = 0.5
+    win_h = 1
+    if win_rect:
+        left, top, right, bottom = (win_rect['left'], win_rect['top'], win_rect['right'], win_rect['bottom'])
+        win_h = max(bottom - top, 1)
+        win_w = max(right - left, 1)
+        rel_y = (y - top) / win_h
+        rel_x = (x - left) / win_w
+    browser = _is_browser_window(window_class, title)
+    if cursor == 'ibeam':
+        if browser and rel_y < 0.16:
+            return ('url_field', 'chrome', 'Type URL here; use click_at then type_text then press_key RETURN')
+        if rel_y < 0.22 and spread_x > 80:
+            return ('search_field', 'search', 'Search or omnibox text input')
+        if spread_y >= 48 or spread_x >= 180:
+            return ('text_editor', 'content', 'Large editable area — article/compose body')
+        return ('text_field', 'form', 'Single-line or small text input')
+    if cursor == 'hand':
+        if browser and rel_y < 0.14:
+            return ('toolbar_button', 'toolbar', 'Browser chrome control (tab/menu/extension)')
+        if spread_x <= 48 and spread_y <= 48:
+            return ('button', 'content', 'Compact clickable control')
+        return ('link', 'content', 'Clickable link or wide button')
+    if cursor in {'sizeall', 'sizenwse', 'sizenesw', 'sizewe', 'sizens'}:
+        return ('resize_handle', 'chrome_misc', 'Resize/drag handle')
+    return ('clickable', 'content', f'Interactive target ({cursor})')
+
+def _merge_role_duplicates(controls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not controls:
+        return controls
+    merged: list[dict[str, Any]] = []
+    for ctrl in controls:
+        found = False
+        for existing in merged:
+            if existing['role'] != ctrl['role'] or existing['zone'] != ctrl['zone']:
+                continue
+            if abs(existing['y'] - ctrl['y']) > 24:
+                continue
+            if abs(existing['x'] - ctrl['x']) > 220:
+                continue
+            existing['x'] = (existing['x'] + ctrl['x']) // 2
+            existing['y'] = (existing['y'] + ctrl['y']) // 2
+            existing['action_click'] = f"click_at({existing['x']}, {existing['y']})"
+            found = True
+            break
+        if not found:
+            merged.append(dict(ctrl))
+    for idx, ctrl in enumerate(merged, start=1):
+        ctrl['id'] = f'ui_{idx}'
+    return merged
+
+def _build_semantic_controls(elements: list[Element], *, win_rect: dict[str, int] | None, window_class: str, title: str) -> list[dict[str, Any]]:
+    clusters = _cluster_elements(elements)
+    controls: list[dict[str, Any]] = []
+    for idx, cluster in enumerate(clusters, start=1):
+        role, zone, hint = _classify_control(cluster, win_rect=win_rect, window_class=window_class, title=title)
+        controls.append({
+            'id': f'ui_{idx}',
+            'role': role,
+            'label': ROLE_LABELS.get(role, role),
+            'zone': zone,
+            'x': cluster['x'],
+            'y': cluster['y'],
+            'cursor': cluster['cursor_name'],
+            'hint': hint,
+            'action_click': f'click_at({cluster["x"]}, {cluster["y"]})',
+        })
+    controls = _merge_role_duplicates(controls)
+    zone_rank = {z: i for i, z in enumerate(SEMANTIC_ZONE_ORDER)}
+    role_rank = {'url_field': 0, 'search_field': 1, 'text_editor': 2, 'text_field': 3, 'toolbar_button': 4, 'button': 5, 'link': 6}
+    controls.sort(key=lambda c: (zone_rank.get(c['zone'], 99), role_rank.get(c['role'], 99), c['y'], c['x']))
+    return controls
+
+def _suggested_actions(controls: list[dict[str, Any]], *, title: str, focused: bool) -> list[str]:
+    if not focused:
+        return []
+    actions: list[str] = []
+    url_fields = [c for c in controls if c['role'] == 'url_field']
+    editors = [c for c in controls if c['role'] in {'text_editor', 'text_field'}]
+    if url_fields:
+        c = url_fields[0]
+        actions.append(f"navigate: {c['action_click']}; type_text('https://example.com'); press_key('RETURN')")
+    if editors and not url_fields:
+        c = editors[0]
+        actions.append(f"type_into_field: {c['action_click']}; type_text('...')")
+    low = title.lower()
+    if 'x.com' in low or 'twitter' in low:
+        actions.append('x_compose: locate text_editor in content zone; click; type_text article body')
+    if 'linkedin' in low:
+        actions.append('linkedin_article: locate text_editor; click; type_text article body')
+    return actions[:4]
+
+def _render_semantic_ui_tree(scan: dict[str, Any], config: dict[str, Any]) -> str:
+    elements = [Element(**e) if isinstance(e, dict) else e for e in scan.get('elements', [])]
+    focused_hwnd = int(scan.get('focused_hwnd') or 0)
+    rects = _window_rect_map(scan)
+    max_windows = int(config.get('max_windows', 14))
+    max_controls = int(config.get('max_semantic_controls', 32))
+    by_hwnd: dict[int, list[Element]] = {}
+    for elem in elements:
+        if elem.cursor_type not in INTERACTIVE_CURSORS and elem.cursor_name not in CURSOR_PRIORITY:
+            continue
+        if elem.hwnd <= 0:
+            continue
+        by_hwnd.setdefault(elem.hwnd, []).append(elem)
+
+    def window_rank(hwnd: int) -> tuple[int, int, str]:
+        elems = by_hwnd.get(hwnd, [])
+        title = elems[0].window_title if elems else ''
+        return (0 if hwnd == focused_hwnd else 1, -len(elems), title.lower())
+
+    lines = [
+        'SEMANTIC_UI (python-prepared; use role names and @x,y — ignore raw cursor tokens)',
+        f"FOCUS: {scan.get('focused_title') or '(none)'}",
+        f"SCREEN: {scan.get('screen_width')}x{scan.get('screen_height')}",
+        f"SCAN: step={scan.get('step_px')}px raw_hits={scan.get('element_count', len(elements))}",
+    ]
+    ordered_hwnds = sorted(by_hwnd.keys(), key=window_rank)
+    total_controls = 0
+    for hwnd in ordered_hwnds[:max_windows]:
+        elems = by_hwnd[hwnd]
+        title = elems[0].window_title or '(untitled)'
+        cls = elems[0].window_class or ''
+        focused = hwnd == focused_hwnd
+        rect = rects.get(hwnd)
+        rect_s = ''
+        if rect:
+            w = rect['right'] - rect['left']
+            h = rect['bottom'] - rect['top']
+            rect_s = f' rect={w}x{h}'
+        marker = '*' if focused else ' '
+        lines.append(f"{marker} WINDOW [{hwnd}] \"{title}\" class={cls} focused={'yes' if focused else 'no'}{rect_s}")
+        controls = _build_semantic_controls(elems, win_rect=rect, window_class=cls, title=title)
+        by_zone: dict[str, list[dict[str, Any]]] = {}
+        for ctrl in controls:
+            by_zone.setdefault(ctrl['zone'], []).append(ctrl)
+        for zone in SEMANTIC_ZONE_ORDER:
+            zone_controls = by_zone.get(zone) or []
+            if not zone_controls:
+                continue
+            lines.append(f"    ZONE {zone}:")
+            for ctrl in zone_controls:
+                if total_controls >= max_controls:
+                    break
+                lines.append(f"      - {ctrl['label']} @{ctrl['x']},{ctrl['y']} id={ctrl['id']} | {ctrl['hint']}")
+                lines.append(f"        action: {ctrl['action_click']}")
+                total_controls += 1
+            if total_controls >= max_controls:
+                break
+        if not controls:
+            lines.append('    ZONE content: (no interactive controls detected)')
+        for action in _suggested_actions(controls, title=title, focused=focused):
+            lines.append(f"    SUGGESTED: {action}")
+        if total_controls >= max_controls:
+            lines.append('... semantic control cap reached')
+            break
+    if len(ordered_hwnds) > max_windows:
+        lines.append(f"... +{len(ordered_hwnds) - max_windows} windows omitted")
+    if not ordered_hwnds:
+        lines.append('(no interactive windows)')
+    return '\n'.join(lines)
+
 def _render_visible_windows(scan: dict[str, Any], config: dict[str, Any]) -> list[str]:
     windows = scan.get('windows') or []
     if not windows:
@@ -152,54 +375,8 @@ def _render_visible_windows(scan: dict[str, Any], config: dict[str, Any]) -> lis
     return lines
 
 def _render_hierarchical_tree(scan: dict[str, Any], config: dict[str, Any]) -> str:
-    elements = [Element(**e) if isinstance(e, dict) else e for e in scan.get('elements', [])]
-    focused_hwnd = int(scan.get('focused_hwnd') or 0)
     max_chars = int(config.get('max_tree_chars', 8000))
-    max_windows = int(config.get('max_windows', 14))
-    max_cells = int(config.get('max_cells_per_window', 24))
-    by_hwnd: dict[int, list[Element]] = {}
-    for elem in elements:
-        if elem.cursor_type not in INTERACTIVE_CURSORS and elem.cursor_name not in CURSOR_PRIORITY:
-            continue
-        if elem.hwnd <= 0:
-            continue
-        by_hwnd.setdefault(elem.hwnd, []).append(elem)
-    def window_rank(hwnd: int) -> tuple[int, int, str]:
-        elems = by_hwnd.get(hwnd, [])
-        title = elems[0].window_title if elems else ''
-        focus_rank = 0 if hwnd == focused_hwnd else 1
-        return (focus_rank, -len(elems), title.lower())
-    ordered_hwnds = sorted(by_hwnd.keys(), key=window_rank)
-    lines = [f"FOCUS: {scan.get('focused_title') or '(none)'}", f"SCREEN: {scan.get('screen_width')}x{scan.get('screen_height')}", f"SCAN: step={scan.get('step_px')}px elements={scan.get('element_count', len(elements))}", f"INTERACTIVE: {sum((len(v) for v in by_hwnd.values()))} hits / {len(by_hwnd)} windows"]
-    lines.extend(_render_visible_windows(scan, config))
-    lines.append('WINDOWS:')
-    omitted = 0
-    for hwnd in ordered_hwnds[:max_windows]:
-        elems = by_hwnd[hwnd]
-        title = elems[0].window_title or '(untitled)'
-        cls = elems[0].window_class or ''
-        marker = '*' if hwnd == focused_hwnd else ' '
-        lines.append(f"{marker} [{hwnd}] {title} ({cls})")
-        cells: dict[str, Element] = {}
-        for elem in elems:
-            if not elem.cell_id:
-                col = elem.x // int(scan.get('cell_size') or 100)
-                row = elem.y // int(scan.get('cell_size') or 100)
-                elem.cell_id = f'{_col_to_letter(col)}{row + 1}'
-            prev = cells.get(elem.cell_id)
-            if prev is None or CURSOR_PRIORITY.get(elem.cursor_name, 9) < CURSOR_PRIORITY.get(prev.cursor_name, 9):
-                cells[elem.cell_id] = elem
-        for cell_id in sorted(cells.keys(), key=_cell_sort_key)[:max_cells]:
-            elem = cells[cell_id]
-            lines.append(f"    {cell_id} {elem.cursor_name} @{elem.x},{elem.y}")
-        if len(cells) > max_cells:
-            lines.append(f"    ... +{len(cells) - max_cells} cells")
-    if len(ordered_hwnds) > max_windows:
-        omitted = len(ordered_hwnds) - max_windows
-        lines.append(f"... +{omitted} windows omitted")
-    grid = _create_grid_mapping(elements, int(scan.get('cell_size') or 100))
-    lines.extend(_render_compact_grid(grid, config))
-    text = '\n'.join(lines)
+    text = _render_semantic_ui_tree(scan, config)
     if len(text) > max_chars:
         trimmed = text[:max_chars].rsplit('\n', 1)[0]
         text = trimmed + f'\n... truncated at {max_chars} chars'
@@ -260,7 +437,7 @@ def observe(config: dict[str, Any] | None=None) -> dict[str, Any]:
     artifact_dir.mkdir(parents=True, exist_ok=True)
     artifact_path = artifact_dir / f"{int(scan['observed_at'] * 1000)}.json"
     artifact_path.write_text(json.dumps({**scan, 'desktop_tree_text': tree_text}, ensure_ascii=False, indent=2, default=str), encoding='utf-8')
-    return {'observed_at': scan['observed_at'], 'fresh_scan': True, 'desktop_tree_text': tree_text, 'focused_title': scan['focused_title'], 'observation_artifact': {'path': artifact_path.relative_to(ROOT).as_posix(), 'size': artifact_path.stat().st_size, 'kind': 'hover_scan_grid'}, 'element_count': scan['element_count'], 'cell_count': scan['cell_count']}
+    return {'observed_at': scan['observed_at'], 'fresh_scan': True, 'desktop_tree_text': tree_text, 'focused_title': scan['focused_title'], 'observation_artifact': {'path': artifact_path.relative_to(ROOT).as_posix(), 'size': artifact_path.stat().st_size, 'kind': 'semantic_ui_hover_scan'}, 'element_count': scan['element_count'], 'cell_count': scan['cell_count']}
 
 def observe_screen() -> dict[str, int]:
     w, h = get_screen_size()

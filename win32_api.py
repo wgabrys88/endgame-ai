@@ -231,7 +231,15 @@ def scroll_at(x: int, y: int, amount: int, hwnd: int=0) -> dict:
         user32.mouse_event(MOUSEEVENTF_WHEEL, 0, 0, amount * 120, 0)
     return {'ok': True, 'action': 'scroll', 'x': x, 'y': y, 'amount': amount, 'hwnd': hwnd}
 
-def open_url(browser: str | None = None, url: str = '') -> dict:
-    import subprocess
-    subprocess.Popen(['start', '', url], shell=True)
-    return {'ok': True, 'action': 'open_url', 'browser': browser or 'default', 'url': url, 'launched': True, 'verified': False}
+def open_url(url: str = '', browser: str | None = None, *, _legacy_browser: str | None = None) -> dict:
+    import webbrowser
+    effective_url = str(url or '').strip()
+    effective_browser = browser
+    if not effective_url and _legacy_browser:
+        effective_url, effective_browser = str(_legacy_browser).strip(), None
+    if not effective_url and effective_browser and ('.' in effective_browser or effective_browser.startswith('http')):
+        effective_url, effective_browser = effective_browser, None
+    if not effective_url:
+        return {'ok': False, 'action': 'open_url', 'error': 'no url provided', 'url': '', 'launched': False}
+    webbrowser.open(effective_url)
+    return {'ok': True, 'action': 'open_url', 'browser': effective_browser or 'default', 'url': effective_url, 'launched': True, 'verified': False}

@@ -22,8 +22,23 @@ _STABLE_PREFIX_LOCK = threading.Lock()
 _LAST_FRESH_OBSERVATION: dict[str, Any] | None = None
 STATIC_PREFIX_SUFFIXES = {'.py', '.json', '.md'}
 DYNAMIC_LAST_KEYS = ('fresh_observation', 'observation', 'desktop_tree_text', 'evidence', 'workspace_manifest')
-ORGAN_IDENTITY = {'planner': 'You are planner: maintain goal_narration (required every tick) as a living interpretation of goal_seed. Use goal_signals.power/disk/urgency to adapt narration and intent. Emit one JSON record.', 'execute': 'You are execute: runnable Python on this Windows body. Namespace includes win32_api: click_at, type_text, hotkey, press_key, set_foreground_window, open_url. Use desktop_tree_text GRID cells (@x,y) to click ibeam/hand targets. subprocess/ctypes/os for install/launch. Never use print() as the action. Never CANNOT for UI automation when helpers exist. Emit one JSON execution record.', 'frame_action': 'You are frame_action: explore the screen evidence and frame the next concrete action strategy. Emit one JSON record.', 'verify': 'You are verify: compare step.done_when against fresh observation and execution evidence. Emit one JSON record.', 'reflect': 'You are reflect: diagnose failures and choose one recovery signal. Emit one JSON record.', 'self_modify': 'You are self_modify: propose git-native firmware patches grounded in repository evidence. Emit one JSON record.', 'satisfied': 'You are satisfied: honest halt gate. Emit one JSON record.'}
-ORGAN_CORE = 'IDENTITY: Technical computer-control organ inside endgame-ai, a living organism on Windows 11. Python is the body, desktop is the world, wiring.json is the nervous system, git is firmware memory. Stance: exploratory, adaptive, source-grounded. BUS: emit exactly one signal + one patch per tick; topology routes signals only. OUTPUT: one JSON object with record_type, data, reasoning. Dynamic runtime data is in the user message tail; treat it as freshest truth.'
+ORGAN_IDENTITY = {
+    'planner': 'ORGAN planner — entry of cycle. Receives goal_seed + goal_signals + fresh SEMANTIC_UI. Emits plan with goal_narration (every tick), intent[] with observable done_when, next_signal in {step_ready, reflect}. You are not execute; you do not write UI code. Prior nodes: (start) or reflect(replan). Next: scheduler on step_ready.',
+    'execute': 'ORGAN execute — acts on Windows body after observe. Namespace: click_at(x,y), type_text(s), hotkey(...), press_key(name), set_foreground_window(hwnd), open_url(url), win32_api, subprocess, os, pathlib. Read SEMANTIC_UI: use role names (url_field, text_editor, button) and action lines — never raw ibeam/hand tokens. Signature: open_url(url) — url is first arg. Prefer click_at on url_field + type_text + press_key RETURN over open_url when browser already focused. last_error from Python exceptions is truth. print() is not action. Conclusion EXECUTE|CANNOT|FRAME|SELF_MODIFY. Next: verify (success) or reflect (error).',
+    'frame_action': 'ORGAN frame_action — strategize when execute returns CANNOT/FRAME or repeated UI failure. Read SEMANTIC_UI zones and SUGGESTED lines. Emit target role + @x,y + strategy for execute. Next: execute on framed.',
+    'verify': 'ORGAN verify — judge step.done_when against fresh SEMANTIC_UI + last_result + last_error. stdout alone is not proof. Browser title/zone/role changes are proof. Emit step_confirmed|step_denied. Next: scheduler or reflect.',
+    'reflect': 'ORGAN reflect — meta-critique. Read failure_streak, last_error (Python traceback), last_verification, SEMANTIC_UI. Signals: retry (same plan, better action), replan (wrong step), escalate (broken wiring/transport), give_up. Listen to your own prior lessons in state. Next: observe|planner|self_modify|satisfied.',
+    'self_modify': 'ORGAN self_modify — git evolution after escalate. Narrow unified_diffs; contract_check must pass. Next: planner on modified.',
+    'satisfied': 'ORGAN satisfied — honest halt. Emit halt only when goal done or truly impossible.',
+}
+ORGAN_CORE = (
+    'SYSTEM: endgame-ai living digital operator on Windows 11. You are ONE organ in a fixed topology (wiring.json). '
+    'Python organs run on the real PC — no sandbox. Observation is SEMANTIC_UI: Python clusters hover-scan hits into '
+    'named controls (url_field, text_editor, button) under WINDOW > ZONE > role. Never interpret ibeam/hand cursor names; '
+    'use prepared roles and action: lines. BUS: each tick emits exactly one signal; edges route only. '
+    'OUTPUT: single JSON {record_type, data, reasoning}. Dynamic user JSON tail is freshest runtime truth (observation, state, errors). '
+    'KV stable prefix = full firmware + this core + organ identity — reuse across ticks.'
+)
 STATIC_PREFIX_NAMES = {'.gitattributes', '.gitignore', 'LICENSE'}
 STATIC_PREFIX_SKIP_PARTS = {'.git', '__pycache__', '.pytest_cache', 'comms', 'pids'}
 STATIC_PREFIX_SKIP_PREFIXES = {'reports/'}
