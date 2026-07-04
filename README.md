@@ -1,133 +1,307 @@
 # endgame-ai
 
-**Local desktop organism** — Python body, desktop world, wiring.json nervous system, JSON records bus, git firmware memory.
+A **human-operated living organism** on Windows 11. Python is the body. The desktop is the world. `wiring.json` is the nervous system. Git is firmware memory.
+
+This is not a chat agent. It is a **wiring harness**: a scheduler runs **hotswappable nodes** in a fixed topology. Each node emits one signal and one state patch. The LLM is a peripheral used only by nodes that need it.
+
+**Constraints:** Windows 11 only. Stdlib + ctypes only (no pip). Unsafe by design — the operator watches it.
 
 ---
 
-## Architecture
+## Current size (2026-07-04)
 
-```
-Goal → planner → scheduler → observe → execute → verify → (step_confirmed→scheduler | step_denied→reflect)
-reflect → (retry→observe | replan→planner | escalate→self_modify | give_up→satisfied)
-self_modify → (modified→planner | modify_failed→reflect | error→error)
-```
+| Area | Lines | Files |
+|------|------:|------:|
+| Core Python (`organism`, `nodes`, `brain`, `desktop`, `win32_api`, `bus`, `contract_check`, `stop_check`, `export_topology`) | 2,050 | 9 |
+| `brain_transports/xai.py` | 141 | 1 |
+| `organism_nodes/*.py` | 287 | 10 |
+| **Python subtotal** | **2,478** | **20** |
+| `wiring.json` | 118 | 1 |
+| `README.md` (this file, pre-rewrite was 231) | — | 1 |
+| `LICENSE` | 21 | 1 |
+| **Project total** | **~2,617** | **23 tracked** |
 
-**Organs** (in `organism_nodes/`):
-- `planner` — decomposes goal into verifiable steps
-- `scheduler` — selects next unfinished step
-- `observe` — fresh hover scan (Win32, cursor-shape grid)
-- `execute` — generates Python, runs in capability runtime
-- `frame_action` — ROD framing pass (optional, after failures)
-- `verify` — judges step.done_when against observation
-- `reflect` — routes retry/replan/escalate/give_up
-- `self_modify` — produces git patches, validated by immune system
-- `satisfied` — halt gate
-- `error` — mechanical failure router
-
-**Body** (core modules):
-- `desktop.py` — Win32 hover scan, Excel grid (A1, B2...), cursor semantics (ibeam/hand/size/arr)
-- `win32_api.py` — click, type, hotkey, scroll, window enum, cursor detection
-- `winrt_ocr.py` — Windows built-in OCR (future)
-- `nodes.py` — node loader, capability runtime, self-modify apply/commit
-- `bus.py` — NodeOutput, signal validation, state briefs
-- `brain.py` — transport selection (fail-hard), ROD pattern, stable prefix, JSONL logging
-- `contract_check.py` — immune system (AST + wiring validation)
-- `organism.py` — main loop, topology routing, pause/step control
+Roughly **40% of wiring.json** and **15% of Python** is duplication, dead code, or ceremony that does not change behavior. Target after refactor: **~1,650 lines** (−37%) with the same organs and topology.
 
 ---
 
-## Self-Modification Pipeline
+## How it works today
 
 ```
-reflect.escalate → self_modify node → nodes.apply_evolution_patch() →
-nodes.commit_self_evolution() → git commit [+ push] → reload wiring
+Goal → planner → scheduler → observe → execute → verify
+                              ↑___________| step_denied → reflect → retry/replan/escalate/give_up
+execute → frame_action (on failure)    escalate → self_modify → planner
 ```
 
-**Validation order** (immune system):
-1. Parse patch, validate read_files declared for ALL touched existing files
-2. Validate unified_diffs (must name repo files, touched files in read_files)
-3. Validate file_writes (new files or non-protected supporting files only)
-4. Validate file_deletes (protected files cannot be deleted)
-5. Validate wiring_patches (only allowed prefixes)
-6. Snapshot touched paths for rollback
-7. Apply unified diffs via `git apply --check` then `git apply`
-8. Write new files atomically
-9. Apply wiring patches in-memory + save wiring.json
-10. Compile-check all modified `.py` files
-11. **Run contract_check.py** (IMMUNE SYSTEM — critical)
-12. Run user commands (must include `python contract_check.py`)
-13. Re-run contract_check.py after commands
-14. Commit + optional push
+**CLI**
 
-**Protected files** (require unified diffs, not full rewrites):
-- `organism_nodes/*.py`
-- `brain_transports/*.py`
-- CORE_FILES: `brain.py`, `bus.py`, `desktop.py`, `nodes.py`, `organism.py`, `stop_check.py`, `contract_check.py`, `wiring.json`
+```bash
+python organism.py "open notepad"              # full loop
+python organism.py --execute-node observe ""     # single hotswapped node
+python organism.py --start-node reflect "..."    # start mid-topology
+python contract_check.py                       # immune system
+```
+
+**Operator controls:** `comms/control.json` (`run` | `pause` | `step`), `stop.txt` to abort.
 
 ---
 
-## Desktop Observation (Win32 Hover Scan)
+## What is wrong (architecture audit)
 
-**Config** (`wiring.json:observe_config`):
-```json
-{
-  "step_px": 60,
-  "delay_ms": 0,
-  "cell_size": 100,
-  "max_elements": 200,
-  "restore_cursor": true
+These are not style issues. They inflate LOC and break the “everything is a node” model.
+
+### 1. Subdirectories for nodes and transports
+
+`organism_nodes/` and `brain_transports/` exist only because `nodes.py` loads them with `importlib`. That adds path config in `wiring.json`, dynamic loading, and `contract_check` path rules. **Nodes should live at repo root** next to `organism.py`. One directory. One mental model.
+
+### 2. The same metadata stored four times
+
+| Copy | Where |
+|------|--------|
+| Node kind, signals, inputs, writes | `wiring.json` → `nodes` |
+| Same again | each file → `DATASHEET = bus.datasheet(...)` |
+| Same again | `wiring.json` → `signals` (human comments on edges) |
+| Same again | `wiring.json` → `record_types` |
+
+Topology edges already define legal signals. **Delete `nodes`, `signals`, and `record_types` blocks from wiring.** Node classes own their contract.
+
+### 3. `nodes.py` is a god-module (521 lines)
+
+It mixes: dynamic node loader, unused `BaseNode`, dead `build_capability_runtime`, topology export, git evolution apply/commit/rollback. **Four domains, one file.** Evolution alone is ~350 lines and belongs in `evolution.py`. Registry belongs in `registry.py` (~40 lines).
+
+### 4. Half-abstractions and dead code
+
+| Item | Problem |
+|------|---------|
+| `BaseNode` | Used only by `planner`. Other LLM nodes copy-paste `brain.think` + validate + `bus.emit`. |
+| `build_capability_runtime` | ~80 lines. Never called. `execute` uses a hand-built `exec` namespace. |
+| `desktop.last_desktop_tree` / `last_action_index` | Always empty stubs from deleted UIA tree era. |
+| `Desktop` class | Duplicates module-level `observe()`; only one path sets `desktop_tree_text`. |
+| `_RECORD_DATA_SCHEMAS` in `brain.py` | Never used. Stale vs real contract. |
+| `bus.coerce_node_output(tuple)` | Legacy. All nodes should return `NodeOutput` only. |
+| `reflect` Python override | Second routing policy on top of LLM + prompt. |
+| `execute` conclusion fallbacks | Invalid conclusion silently becomes `CANNOT`. Fail-hard violation. |
+| Stable prefix text | Still describes “node id” / UIA — wrong for hover grid. |
+| `organism.run` exception handler | Routes to `error` then **exits without resuming loop**. |
+| `run` vs `run_single_node` | ~40 lines duplicated tick logic. |
+
+### 5. Prompt boilerplate in wiring
+
+Every prompt repeats the same SPI bus identity paragraph (~400 chars × 7 organs). **Move shared identity to `brain.think` prefix.** Per-organ prompts keep only organ-specific schema and payload hooks.
+
+### 6. `contract_check.py` validates fiction
+
+It requires `build_capability_runtime`, `Desktop` methods, `organism_nodes/` paths, and minimum byte sizes. It encodes the old architecture. **Shrink to:** wiring topology consistency, node registry completeness, required root files exist, `run(ctx)` on each node class.
+
+---
+
+## Target architecture (flat, OOP, fail-hard)
+
+### Layout after refactor
+
+```
+organism.py          # loop + control + single _tick() — ~90 LOC
+registry.py          # NODE_REGISTRY: name → Node instance — ~50 LOC
+evolution.py         # git patch apply/commit — ~280 LOC
+bus.py               # NodeOutput, emit, validate_signal, briefs — ~45 LOC
+brain.py             # think + xai transport inline — ~260 LOC
+desktop.py           # observe() one path — ~120 LOC
+win32_api.py         # ctypes body primitives — ~200 LOC (unchanged)
+stop_check.py        # ~50 LOC
+
+planner.py           # Node subclass — ~18 LOC
+scheduler.py         # ~15 LOC
+observe.py           # ~12 LOC
+execute.py           # ~35 LOC
+frame_action.py      # ~18 LOC
+verify.py            # ~22 LOC
+reflect.py           # ~18 LOC
+self_modify.py       # ~45 LOC
+satisfied.py         # ~8 LOC
+error.py             # ~10 LOC
+node.py              # abstract LlmNode + MechanicalNode — ~55 LOC
+
+contract_check.py    # ~70 LOC
+export_topology.py   # optional; merge into organism --topology — ~0 if deleted
+wiring.json          # topology + prompts + model + timing — ~55 LOC
+```
+
+**23 Python files at root** (more files, fewer lines). No subdirectories for source. `paths.nodes` and `paths.brains` **removed** from wiring.
+
+### OOP model (minimal, not enterprise)
+
+```python
+# node.py
+class Node(ABC):
+    name: str
+    def run(self, ctx: Ctx) -> NodeOutput: ...
+
+class LlmNode(Node):
+    record_type: str
+    prompt_key: str
+    def payload(self, ctx) -> dict: ...
+    def signal(self, data: dict) -> str: ...
+    def patch(self, record: dict, ctx) -> dict: ...
+    def run(self, ctx):
+        record = brain.think(self.prompt_key, self.payload(ctx), ...)
+        if record["record_type"] != self.record_type:
+            raise RuntimeError(...)
+        return bus.emit(self.signal(record["data"]), self.patch(record, ctx), record=record)
+
+class MechanicalNode(Node):
+    def run(self, ctx) -> NodeOutput: ...
+```
+
+Each organ file is **only** `class Planner(LlmNode): ...` plus `NODE = Planner()` or registry entry. No free `run(ctx)` + duplicate `DATASHEET`.
+
+**Registry (fail-hard):**
+
+```python
+NODE_REGISTRY: dict[str, Node] = {
+    "planner": Planner(),
+    ...
 }
+
+def call_node(name: str, ctx) -> NodeOutput:
+    node = NODE_REGISTRY[name]  # KeyError if missing — no dynamic import
+    out = node.run(ctx)
+    bus.validate_signal(ctx["wiring"], name, out.signal)
+    return out
 ```
 
-**Output** (Excel grid):
-```
-A1=ibeam  B1=arr    H1=hand
-A2=siz    B2=ibeam  H2=arr
-...
-```
-- Cursor shape detection: `ibeam`=type, `hand`=click, `size`=resize, `arr`=default
-- Universal: works on Win32, WPF, Electron, Chrome, Flutter
-- No UIA/COM, no hierarchical tree, no DOM penetration needed
+`topology.nodes` in wiring must match `NODE_REGISTRY.keys()` exactly. `contract_check` enforces set equality. **No branching** for unknown nodes.
 
-**Action index** (body-facing): same grid IDs + targeting data (px, py, hwnd, rect)
+### Hotswap / single-node CLI (unchanged behavior, simpler code)
+
+```bash
+python organism.py --execute-node observe ""
+```
+
+Implementation: `_tick(wiring, state, node_name, goal)` once. Full loop and single-node both call it. Single-node returns after one call. **No duplicated self_modify apply block.**
+
+### Fail-hard rules (no silent edge cases)
+
+| Today (soft) | After (hard) |
+|--------------|--------------|
+| `default_control` setdefault chain | `control_default` in wiring must be complete or `RuntimeError` |
+| Invalid execute conclusion → `CANNOT` | `RuntimeError` on bad record |
+| reflect overrides LLM signal | LLM signal only; escalation in prompt |
+| `desktop.observe` returns `grid_text` without `desktop_tree_text` | `observe()` always sets `desktop_tree_text` or raises |
+| `coerce_node_output` accepts tuple | `NodeOutput` only |
+| `node_datasheets` swallows load errors | Registry is static; import errors fail at startup |
+| Error in loop → return `None` | Resume loop at `error` node or re-raise |
+
+Construct invariants so invalid states cannot be represented. The organism will self-modify later — give it a **small, rigid** core.
 
 ---
 
-## Brain / Transport
+## wiring.json reduction
 
-**Single transport** (fail-hard): `wiring.json:model.transport = "xai"`
+**Keep**
 
-**Per-organ tuning** (`model.organs`):
-| Organ | reasoning_effort | temperature | max_output_tokens |
-|-------|------------------|-------------|-------------------|
-| plan | medium | 0.35 | 2400 |
-| action_frame | medium | 0.45 | 2200 |
-| execution | low | 0.25 | 5000 |
-| verification | none | 0.05 | 1200 |
-| reflection | medium | 0.25 | 2400 |
-| git_evolution_patch | high | 0.2 | 24000 |
-| satisfied | none | 0.05 | 800 |
+- `schema`, `topology` (cycle_start, nodes, edges)
+- `prompts` (shortened per-organ)
+- `model` (transport, organs tuning)
+- `observe_config`, `timing`, `self_modify`, `control_default`, `paths` (state, control, runtime_log only)
 
-**ROD pattern** (Reasoning-Oriented Dialogue): two-pass for most organs, native for xAI verification/self_modify
+**Delete**
 
-**Logging**: `{timestamp}_brain.jsonl` — raw request/response + hyperparameters + usage + cost per call
+- `bus` prose block (SPI is code in `bus.py`)
+- `signals` (duplicate of edges)
+- `nodes` (duplicate of Python registry)
+- `record_types` (duplicate of LlmNode.record_type + prompts)
+- `paths.nodes`, `paths.brains`
 
-**Stable prefix**: git `ls-files` snapshot for self_modify only (source grounding)
+**Prompt compression**
+
+Shared prefix injected by `brain.think`:
+
+```
+You are organ {name} in endgame-ai. Emit one JSON record. Topology routes your signal only.
+```
+
+Per-organ prompt: schema line + `{{goal}}` placeholders only. **Estimated wiring save: ~50 lines.**
 
 ---
 
-## Pause/Step Control (External)
+## LOC budget (confident targets)
 
-Edit `comms/control.json`:
-```json
-{"mode": "pause", "step_token": 0}   # pause before next node
-{"mode": "step", "step_token": 1}    # advance one node
-{"mode": "run"}                      # resume
+| Module | Now | Target | How |
+|--------|----:|-------:|-----|
+| `nodes.py` | 521 | 0 | → `registry.py` + `evolution.py` + `node.py` |
+| `registry.py` + `node.py` + `evolution.py` | — | 375 | split |
+| `organism_nodes/` | 287 | 0 | → 10 root `*.py` nodes (~161) |
+| `organism.py` | 225 | 90 | `_tick`, fix error loop |
+| `brain.py` + `xai.py` | 515 | 260 | merge transport, drop dead schemas |
+| `desktop.py` | 228 | 120 | one `observe()`, drop `Desktop` |
+| `bus.py` | 88 | 45 | drop mermaid or move to CLI flag |
+| `contract_check.py` | 184 | 70 | registry + topology only |
+| `wiring.json` | 118 | 55 | delete duplicate blocks + shorten prompts |
+| `README.md` | 231 | 120 | this doc stabilizes shorter |
+| Dead stubs (`build_capability_runtime`, etc.) | ~120 | 0 | delete |
+
+**Project total: ~2,617 → ~1,650 lines** (same features, same topology, same CLI flags).
+
+---
+
+## Implementation order
+
+Pure reduction. No new organs. No removed organs.
+
+| Phase | Work | LOC delta |
+|-------|------|----------:|
+| **1** | Add `node.py` + `registry.py`; static imports; flat root node files; delete `organism_nodes/` | −80 |
+| **2** | `LlmNode` for all LLM organs; delete per-file think boilerplate | −100 |
+| **3** | Extract `evolution.py`; delete `nodes.py` | −70 |
+| **4** | Merge `xai.py` into `brain.py`; delete dead schema/prefix lies | −90 |
+| **5** | `organism._tick()`; fix error resume; delete `run_single_node` dup | −50 |
+| **6** | `desktop.observe` one contract; delete `Desktop`, stubs | −60 |
+| **7** | Slim `wiring.json`; slim `contract_check.py` | −120 |
+| **8** | Delete `build_capability_runtime`; wire `execute` to `body.exec_ns(ctx)` or inline minimal ns | −40 |
+| **9** | Fail-hard pass: remove fallbacks listed above | −30 |
+
+After each phase: `python -m compileall -q .` and `python contract_check.py`.
+
+---
+
+## What the organism is allowed to evolve
+
+Self-modify may patch prompts, topology edges, organ tuning, and node implementations. It may **not** break:
+
+- SPI bus: one signal + one patch per tick
+- `NODE_REGISTRY` names match `topology.nodes`
+- `contract_check.py` passes before commit
+- Root-only layout (no new subdirectories for organs)
+- Fail-hard: no new silent fallbacks
+
+The immune system contract updates in the same refactor — protected paths become `planner.py` not `organism_nodes/planner.py`.
+
+---
+
+## Observation (body)
+
+Win32 hover scan → Excel grid (`A1=ibeam B1=hand`). No UIA. Config: `wiring.json` → `observe_config`.
+
+Output contract (fail-hard after refactor):
+
+```
+desktop_tree_text  # grid text, always set by observe()
+focused_title
+observed_at
+fresh_scan
 ```
 
 ---
 
-## Validation Pipeline (Mandatory After Any Change)
+## Brain
+
+Single transport: `xai` (API or CLI). Fail-hard if API credentials are unset in API mode (env var name is in `wiring.json`, never commit values).
+
+Per-organ tuning: `model.organs`. Logging: `comms/*_brain.jsonl`.
+
+---
+
+## Validation
 
 ```bash
 python -m compileall -q .
@@ -137,161 +311,6 @@ python contract_check.py
 
 ---
 
-## Extending the Organism
+## License
 
-| Add | Steps |
-|-----|-------|
-| New organ | 1. Create `organism_nodes/new_organ.py` with `run(ctx)` + `DATASHEET`<br>2. Add to `wiring.json:topology.nodes`<br>3. Add edges in `topology.edges`<br>4. Add prompt in `prompts.new_organ` |
-| New transport | 1. Create `brain_transports/new_transport.py` with `call(messages, cfg)`<br>2. Set `model.transport` in wiring.json |
-| New capability | Add to `nodes.py:build_capability_runtime()` namespace |
-| New wiring path | Add to `self_modify.wiring_allowed_new_prefixes` before self-modify can create it |
-
----
-
-## Current State (2026-07-04)
-
-### Working
-- Full organism loop: planner → scheduler → observe → execute → verify → reflect
-- Win32 hover scan: 55 elements, 17 cells with cursor semantics (ibe/siz/han/arr)
-- Verify correctly denies false success (app launch race fixed with `post_execute_delay_ms: 3000`)
-- Brain logging: single JSONL with full request/response + cost tracking
-- Contract check passes on current codebase
-- Self-modify pipeline structurally complete (git apply → contract_check → commit)
-
-### Known Issues (Priority Order)
-
-| Priority | Issue | Evidence |
-|----------|-------|----------|
-| **P0** | Self-modify corrupt patch | Both historic runs died at `git apply --check` (line numbers hallucinated) |
-| **P0** | App launch race | Verify runs before app appears → step_denied (fixed with 3s delay) |
-| **P1** | `open_url` fabricates success | Returns `navigated: true` but tab unchanged |
-| **P1** | Start menu needs `down+enter` | Typing + Enter submits search, doesn't launch app |
-| **P1** | `focus_window` activates wrong window | EnumWindows order-dependent |
-| **P2** | `frame_action` never triggered | 0 calls in any run; execute never returns FRAME |
-| **P2** | Opportunistic progress without step advance | Execute acts for next step while scheduler on current |
-| **P3** | Verify over-confirms content | Confirms by window title, not content readback |
-
----
-
-## Planned Self-Modify Test: Delete `desktop_old.py`
-
-**Goal**: Use self-modify organ to delete the stale 1355-line UIA backup file (`desktop_old.py`) as a validation of the self-modification pipeline.
-
-**Why this tests the system**:
-- Real git patch generation (unified diff for deletion)
-- Immune system validation (contract_check.py must pass after)
-- Rollback on failure (wired in `apply_evolution_patch`)
-- Cost verification (~$1 per self-modify call)
-- Recovery path test (`modify_failed` → `reflect`)
-
-**Mental simulation before execution**:
-1. Reflect escalates with diagnosis: "desktop_old.py is dead code, 1355 lines, not imported anywhere"
-2. Self-modify receives: workspace manifest (includes desktop_old.py), git context, immune contract
-3. Self-modify produces patch:
-   ```diff
-   diff --git a/desktop_old.py b/desktop_old.py
-   deleted file mode 100644
-   index <hash>..0000000
-   --- a/desktop_old.py
-   +++ /dev/null
-   @@ -1,1355 +0,0 @@
-   -# 1355 lines of UIA/COM code...
-   ```
-4. `apply_evolution_patch`:
-   - Validates read_files includes `desktop_old.py`
-   - `git apply --check` passes (deletion is simple)
-   - File deleted atomically
-   - `python -m compileall -q .` passes
-   - `python contract_check.py` passes (desktop_old.py not in REQUIRED_FILES)
-   - Commit + push
-5. Next run: organism loads without desktop_old.py
-
-**Risk**: Low. File is not imported, not in REQUIRED_FILES, not in topology. Pure deletion.
-
-**Cost**: ~68k-70k tokens (~$0.95) for self-modify call with web_search + stable prefix.
-
-**Execution**: Will run when explicitly requested with `python -m organism "Delete desktop_old.py via self-modify" --max-ticks 5`
-
----
-
-## File Ownership Map
-
-| Path | Purpose | Critical |
-|------|---------|----------|
-| `organism.py` | Main loop, topology routing | YES |
-| `brain.py` | Transport, ROD, stable prefix, logging | YES |
-| `nodes.py` | Node loader, capability runtime, self-modify apply | YES |
-| `bus.py` | NodeOutput, signals, state briefs | YES |
-| `desktop.py` | Win32 hover scan, actions | YES |
-| `contract_check.py` | Immune system (AST + wiring) | YES |
-| `organism_nodes/*.py` | Organ implementations | YES |
-| `brain_transports/xai.py` | Active transport | YES |
-| `wiring.json` | Topology, prompts, model config | YES |
-| `state.json` | Mutable runtime state | YES |
-| `comms/control.json` | External pause/step | YES |
-
----
-
-## Quick Start
-
-```bash
-# Set API key
-$env:XAI_API_KEY = "your-key"
-
-# Run a task
-python -m organism "Open Notepad and type hello" --max-ticks 10
-
-# Pause before next node
-echo '{"mode": "pause", "step_token": 0}' > comms/control.json
-
-# Step one node
-echo '{"mode": "step", "step_token": 1}' > comms/control.json
-
-# Resume
-echo '{"mode": "run"}' > comms/control.json
-
-# Validate after changes
-python contract_check.py
-```
-
----
-
-## Cost Reference (Historic Runs)
-
-| Run | Planner | Execute | Verify | Reflect | Self_Modify | Total | Est. Cost |
-|-----|---------|---------|--------|---------|-------------|-------|-----------|
-| A (destructive) | 2,771 | ~6,500 | ~4,100 | ~4,900 | 138,281 | ~156,552 | ~$2.50 |
-| B (retry) | ~2,771 | ~10,000 | ~6,800 | ~7,300 | 69,964 | ~166,799 | ~$2.70 |
-
-**Self-modify dominates** (45% of tokens) — receives full workspace manifest + source fingerprints + immune contract + web_search.
-
----
-
-## Line Counts (Core)
-
-```
-brain.py:              772
-nodes.py:              852
-organism.py:           248
-desktop.py:            495
-win32_api.py:          352
-winrt_ocr.py:          190
-contract_check.py:     313
-bus.py:                193
-stop_check.py:          85
-organism_nodes/:      ~14k (10 nodes)
-brain_transports/:     383 (4 files)
-TOTAL:                 ~6,080 lines (excluding tests)
-```
-
----
-
-## Principles
-
-1. **Fail-hard**: one transport, no fallbacks; git apply fails → stop
-2. **Immune system first**: contract_check.py runs before commit, always
-3. **Unified diffs required** for existing protected Python files
-4. **Read before write**: self-modify must declare read_files for every touched file
-5. **Desktop tree is spatial grid**: plan actions around Excel cell references
-6. **Pause/step is external**: edit `comms/control.json`, no sleeps in code
-7. **Self-modify corrupt patch blocks ALL evolution** — fix this first or nothing else matters
+MIT — see `LICENSE`.
