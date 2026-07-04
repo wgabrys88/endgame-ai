@@ -58,6 +58,21 @@ def state_brief(state: JsonDict) -> JsonDict:
 def observation_brief(state: JsonDict) -> JsonDict:
     return {'focused_title': state.get('focused_title', ''), 'desktop_tree_text': state.get('desktop_tree_text', ''), 'observed_at': state.get('observed_at'), 'fresh_scan': state.get('fresh_scan', False)}
 
+def action_index_brief(state: JsonDict, *, limit: int = 24) -> list[JsonDict]:
+    index = state.get('action_index') if isinstance(state.get('action_index'), dict) else {}
+    rows: list[JsonDict] = []
+    for node_id in sorted(index.keys(), key=lambda k: (str(index[k].get('zone', '')), str(index[k].get('role', '')), k)):
+        node = index[node_id]
+        if not isinstance(node, dict):
+            continue
+        rows.append({'id': node_id, 'role': node.get('role', ''), 'zone': node.get('zone', ''), 'x': node.get('x'), 'y': node.get('y'), 'hwnd': node.get('hwnd'), 'window_title': node.get('window_title', ''), 'hint': node.get('hint', '')})
+        if len(rows) >= limit:
+            break
+    omitted = max(0, len(index) - len(rows))
+    if omitted:
+        rows.append({'omitted': omitted})
+    return rows
+
 def failure_signature(state: JsonDict) -> str:
     step = state.get('current_step') or {}
     parts = {'step': step.get('description', ''), 'done_when': step.get('done_when', ''), 'error': state.get('last_error') or '', 'verification': state.get('last_verification') or {}, 'action_conclusion': (state.get('last_action') or {}).get('conclusion', '')}

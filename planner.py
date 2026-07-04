@@ -12,7 +12,7 @@ class Planner(LlmNode):
     def payload(self, ctx: dict[str, Any]) -> dict[str, Any]:
         state = ctx.get('state', {})
         goal_seed = state.get('goal_seed') or ctx.get('goal', '')
-        return {'goal_seed': goal_seed, 'goal_narration': state.get('goal_narration', goal_seed), 'goal_signals': body_signals.collect(state), 'state': bus.state_brief(state), 'last_reflection': state.get('last_reflection', {}), 'last_verification': state.get('last_verification', {}), 'plan_context': {'step': state.get('step', 0), 'plan_complete': state.get('plan_complete', False), 'replan': bool((state.get('last_reflection') or {}).get('signal') == 'replan')}}
+        return {'goal_seed': goal_seed, 'goal_narration': state.get('goal_narration', goal_seed), 'goal_signals': body_signals.collect(state), 'observation': bus.observation_brief(state), 'action_index': bus.action_index_brief(state), 'state': bus.state_brief(state), 'last_reflection': state.get('last_reflection', {}), 'last_verification': state.get('last_verification', {}), 'plan_context': {'step': state.get('step', 0), 'plan_complete': state.get('plan_complete', False), 'replan': bool((state.get('last_reflection') or {}).get('signal') == 'replan')}}
 
     def signal(self, data: dict[str, Any], record: dict[str, Any]) -> str:
         signal = str(data.get('next_signal') or 'step_ready')

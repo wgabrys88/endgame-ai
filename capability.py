@@ -11,8 +11,20 @@ import sys
 import time
 import types
 from typing import Any
-import brain
 import desktop
+
+CAPABILITY_CONTRACT: dict[str, Any] = {
+    'body_truth': 'Python runs locally in capability runtime. Helpers are conveniences, not the limit of stdlib.',
+    'physical_operator': 'All clicks move the real cursor (SetCursorPos + mouse_event). No PostMessage synthetic clicks.',
+    'pyautogui_compat': 'Use pyautogui.click/write/press/hotkey/scroll naturally; dependency-free facade on desktop body.',
+    'prefer': 'click_node(id) and scroll_node(id) over raw coordinates when action_index lists the target.',
+    'helpers': [
+        'click_node(id)', 'scroll_node(id, amount)', 'node_by_id(id)',
+        'pyautogui.click(x,y)', 'pyautogui.write(text)', 'pyautogui.press(key)', 'pyautogui.hotkey(*keys)',
+        'focus_window(title|hwnd:N)', 'open_url(url)', 'subprocess', 'os', 'pathlib', 'time',
+    ],
+    'result_rule': 'Set result to a small JSON-serializable dict describing what happened (include ok:true/false).',
+}
 
 def _node_center(node: dict[str, Any]) -> tuple[int, int]:
     if node.get('x') is not None and node.get('y') is not None:

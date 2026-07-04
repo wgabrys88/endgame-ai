@@ -21,13 +21,13 @@ _STABLE_PREFIX_CACHE: 'StablePrefix | None' = None
 _STABLE_PREFIX_LOCK = threading.Lock()
 _LAST_FRESH_OBSERVATION: dict[str, Any] | None = None
 STATIC_PREFIX_SUFFIXES = {'.py', '.json', '.md'}
-DYNAMIC_LAST_KEYS = ('fresh_observation', 'observation', 'desktop_tree_text', 'evidence', 'workspace_manifest')
+DYNAMIC_LAST_KEYS = ('fresh_observation', 'observation', 'desktop_tree_text', 'action_index', 'action_frame', 'evidence', 'workspace_manifest', 'failure')
 ORGAN_IDENTITY = {
-    'planner': 'ORGAN planner. Inputs: goal_seed, goal_signals, SEMANTIC_UI. Outputs: plan record with goal_narration, intent[], next_signal in {step_ready, reflect}. Does not emit code.',
-    'execute': 'ORGAN execute. Inputs: step, SEMANTIC_UI, action_index. Body: pyautogui, click_node(id), scroll_node(id), focus_window, open_url, subprocess. Prefer click_node over coordinates. Physical desktop only. Conclusion EXECUTE|CANNOT|FRAME|SELF_MODIFY.',
-    'frame_action': 'ORGAN frame_action. Inputs: step, SEMANTIC_UI, last_error. Outputs: action_frame with target role, @x,y, strategy for execute.',
+    'planner': 'ORGAN planner. Inputs: goal_seed, SEMANTIC_UI, action_index. Outputs: goal_narration, intent[] with observable done_when citing roles (text_input, button, link). next_signal step_ready|reflect. No code.',
+    'execute': 'ORGAN execute. Actuator: generate Python using capability_contract. Follow action_frame.target when present. click_node(id) first. Physical operator. Conclusion EXECUTE|CANNOT|FRAME|SELF_MODIFY.',
+    'frame_action': 'ORGAN frame_action. ROD framing pass — you do not act. Inputs: SEMANTIC_UI, action_index, last_error, action_frame. Output action_frame where target names click_node(ui_N) or focus_window(...) and strategy is executable Python steps for the next execute call.',
     'verify': 'ORGAN verify. Inputs: step.done_when, SEMANTIC_UI, last_result, last_error. stdout alone is not proof. Emit step_confirmed|step_denied.',
-    'reflect': 'ORGAN reflect. Inputs: failure_streak, last_error, last_verification, SEMANTIC_UI. Emit retry|replan|escalate|give_up with lesson and diagnosis.',
+    'reflect': 'ORGAN reflect. Route recovery: retry→observe+execute, replan→planner, escalate→self_modify (firmware), give_up→halt. Use failure_streak; retry before escalate when framing can help.',
     'self_modify': 'ORGAN self_modify. Inputs: failure, branch_url, workspace manifest paths. Emit git_evolution_patch response only; no request-side diff bloat.',
     'satisfied': 'ORGAN satisfied. Emit halt when goal is complete or impossible.',
 }
@@ -448,7 +448,7 @@ def think(system_prompt: str, payload: dict[str, Any], wiring: dict[str, Any], *
         import hashlib, time
         conv_id = f'endgame-ai-{int(time.time())}-{hashlib.md5(str(wiring).encode()).hexdigest()[:8]}'
         wiring['_conv_id'] = conv_id
-    rescan = organ not in ('execute',)
+    rescan = organ not in ('execute', 'frame_action', 'verify', 'reflect')
     payload = _cap_observation_fields(_with_fresh_observation(payload, wiring, rescan=rescan), wiring)
     user_text = json.dumps(_order_payload(payload), ensure_ascii=False, default=str)
     _preflight_request(wiring, user_text)

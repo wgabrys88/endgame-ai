@@ -12,7 +12,7 @@ class Verify(LlmNode):
         state = ctx.get('state', {})
         goal = ctx.get('goal', '')
         step = state.get('current_step') or {}
-        return {'goal': goal, 'goal_narration': state.get('goal_narration', goal), 'step': {'description': step.get('description', goal), 'done_when': step.get('done_when', '')}, 'evidence': {'last_action': state.get('last_action', {}), 'last_result': state.get('last_result', ''), 'last_error': state.get('last_error', ''), 'state': bus.state_brief(state)}}
+        return {'goal': goal, 'goal_narration': state.get('goal_narration', goal), 'step': {'description': step.get('description', goal), 'done_when': step.get('done_when', '')}, 'observation': bus.observation_brief(state), 'action_index': bus.action_index_brief(state), 'evidence': {'last_action': state.get('last_action', {}), 'last_code': state.get('last_code', ''), 'last_result': state.get('last_result', ''), 'last_error': state.get('last_error', ''), 'state': bus.state_brief(state)}}
 
     def signal(self, data: dict[str, Any], record: dict[str, Any]) -> str:
         signal = str(data.get('next_signal') or 'step_denied')

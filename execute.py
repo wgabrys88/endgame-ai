@@ -16,7 +16,19 @@ class Execute(LlmNode):
         state = ctx.get('state', {})
         goal = ctx.get('goal', '')
         step = state.get('current_step') or {}
-        return {'goal': goal, 'goal_narration': state.get('goal_narration', goal), 'step': {'description': step.get('description', goal), 'done_when': step.get('done_when', '')}, 'state': bus.state_brief(state), 'ui_context': {'focused_title': state.get('focused_title', ''), 'desktop_tree_text': state.get('desktop_tree_text', ''), 'observed_at': state.get('observed_at'), 'action_index_keys': sorted((state.get('action_index') or {}).keys())}, 'action_frame': state.get('action_frame'), 'last': {'error': state.get('last_error'), 'result': state.get('last_result', ''), 'action': state.get('last_action', {})}}
+        frame = state.get('action_frame') or {}
+        return {
+            'goal': goal,
+            'goal_narration': state.get('goal_narration', goal),
+            'step': {'description': step.get('description', goal), 'done_when': step.get('done_when', '')},
+            'observation': bus.observation_brief(state),
+            'action_index': bus.action_index_brief(state),
+            'action_frame': frame,
+            'capability_contract': capability.CAPABILITY_CONTRACT,
+            'state': bus.state_brief(state),
+            'last': {'error': state.get('last_error'), 'result': state.get('last_result', ''), 'action': state.get('last_action', {}), 'code': state.get('last_code', '')},
+            'execute_rule': 'If action_frame.target exists, implement it first. Prefer click_node(id) from action_index. Set result=.',
+        }
 
     def signal(self, data: dict[str, Any], record: dict[str, Any]) -> str:
         return str(data.get('_route_signal', 'verify'))
@@ -27,7 +39,6 @@ class Execute(LlmNode):
     def run(self, ctx: dict[str, Any]) -> bus.NodeOutput:
         state = ctx.get('state', {})
         wiring = ctx.get('wiring', {})
-        goal = ctx.get('goal', '')
         payload = self.payload(ctx)
         record = brain.think(organ=self.name, system_prompt=wiring.get('prompts', {}).get(self.prompt_key, ''), payload=payload, wiring=wiring, expected_record_type=self.record_type)
         if record.get('record_type') != 'execution':
