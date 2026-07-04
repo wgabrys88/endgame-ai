@@ -3,6 +3,7 @@ import argparse
 import pathlib
 import time
 from typing import Any
+import body_signals
 import brain
 import evolution
 import registry
@@ -109,6 +110,7 @@ def _tick(wiring: dict[str, Any], state: dict[str, Any], goal: str, current: str
     state['current_node'] = current
     write_state(wiring, state)
     runtime_event(wiring, 'node_start', node=current, tick=state['tick'])
+    print(f'[organism] tick={state["tick"]} node={current}', flush=True)
     ctx = {'wiring': wiring, 'state': dict(state), 'goal': goal, 'node': current}
     signal_name, patch = registry.call_node(current, ctx)
     if current == 'self_modify':
@@ -130,6 +132,7 @@ def _tick(wiring: dict[str, Any], state: dict[str, Any], goal: str, current: str
     if current == 'execute':
         delay_ms = int(wiring.get('timing', {}).get('post_execute_delay_ms', 0))
         if delay_ms > 0:
+            print(f'[organism] post_execute_delay {delay_ms}ms', flush=True)
             time.sleep(delay_ms / 1000.0)
     return state, signal_name, nxt
 
@@ -145,9 +148,11 @@ def run(goal: str | None, *, reset: bool=False, max_ticks: int | None=None, max_
     current = str(start_node or topo.get('cycle_start') or 'planner')
     if current not in set(topo.get('nodes', [])):
         raise RuntimeError(f"start node '{current}' is not in topology.nodes")
-    state: dict[str, Any] = {'_phase': 'starting', 'goal': goal or '', 'goal_narration': goal or '', 'tick': 0, 'current_node': current, 'last_error': None, 'last_action': None, 'wiring_transport': wiring.get('model', {}).get('transport'), 'start_node': current}
+    seed = goal or ''
+    state: dict[str, Any] = {'_phase': 'starting', 'goal': seed, 'goal_seed': seed, 'goal_narration': seed, 'goal_signals': body_signals.collect({}), 'tick': 0, 'current_node': current, 'last_error': None, 'last_action': None, 'wiring_transport': wiring.get('model', {}).get('transport'), 'start_node': current}
     write_state(wiring, state)
     runtime_event(wiring, 'organism_start', goal=goal or '', transport=state['wiring_transport'])
+    print(f'[organism] start goal={goal or "(empty)"} node={current} transport={state["wiring_transport"]}', flush=True)
     try:
         while True:
             stop_check.check_stop('organism main loop')
@@ -193,7 +198,8 @@ def run_single_node(node_name: str, goal: str, *, reset: bool=False, max_brain_c
     brain.reset_call_budget()
     if node_name not in set(wiring.get('topology', {}).get('nodes', [])):
         raise RuntimeError(f"node '{node_name}' not in topology.nodes")
-    state: dict[str, Any] = {'_phase': 'starting', 'goal': goal or '', 'goal_narration': goal or '', 'tick': 0, 'current_node': node_name, 'last_error': None, 'last_action': None, 'wiring_transport': wiring.get('model', {}).get('transport'), 'start_node': node_name}
+    seed = goal or ''
+    state: dict[str, Any] = {'_phase': 'starting', 'goal': seed, 'goal_seed': seed, 'goal_narration': seed, 'goal_signals': body_signals.collect({}), 'tick': 0, 'current_node': node_name, 'last_error': None, 'last_action': None, 'wiring_transport': wiring.get('model', {}).get('transport'), 'start_node': node_name}
     write_state(wiring, state)
     runtime_event(wiring, 'organism_start', goal=goal or '', transport=state['wiring_transport'], single_node=node_name)
     state, signal_name, _ = _tick(wiring, state, goal or '', node_name)

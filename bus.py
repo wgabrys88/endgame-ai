@@ -53,7 +53,7 @@ def datasheet(node: str, *, kind: str, inputs: list[str], signals: list[str], wr
 
 def state_brief(state: JsonDict) -> JsonDict:
     current_step = state.get('current_step') or {}
-    return {'tick': state.get('tick'), 'current_node': state.get('current_node'), 'step_index': state.get('step', 0), 'current_step': {'description': current_step.get('description', ''), 'done_when': current_step.get('done_when', '')}, 'last_signal': state.get('last_signal'), 'last_error': state.get('last_error'), 'last_verification': state.get('last_verification', {}), 'last_reflection': state.get('last_reflection', {}), 'failure_streak': state.get('failure_streak', {}), 'has_action_frame': bool(state.get('action_frame'))}
+    return {'tick': state.get('tick'), 'current_node': state.get('current_node'), 'step_index': state.get('step', 0), 'goal_narration': state.get('goal_narration', ''), 'goal_signals': state.get('goal_signals', {}), 'current_step': {'description': current_step.get('description', ''), 'done_when': current_step.get('done_when', '')}, 'last_signal': state.get('last_signal'), 'last_error': state.get('last_error'), 'last_verification': state.get('last_verification', {}), 'last_reflection': state.get('last_reflection', {}), 'failure_streak': state.get('failure_streak', {}), 'has_action_frame': bool(state.get('action_frame'))}
 
 def observation_brief(state: JsonDict) -> JsonDict:
     return {'focused_title': state.get('focused_title', ''), 'desktop_tree_text': state.get('desktop_tree_text', ''), 'observed_at': state.get('observed_at'), 'fresh_scan': state.get('fresh_scan', False)}

@@ -21,9 +21,12 @@ A **human operator in digital form** on Windows 11 — wiring harness, not chat 
 | 8 contract_check | **done** | Registry ↔ topology equality |
 | 9 fail-hard | **partial** | execute/reflect/planner hard errors; tuple coerce removed |
 | 10 request limits | **done** | `limits` + `brain._preflight_request` + observation cap |
-| 11 self-narrating goal | **partial** | `goal_narration` in state; planner prompt hook |
+| 11 self-narrating goal | **done** | `body_signals.py`; planner requires `goal_narration` + `intent[]` each tick |
+| 12 operator visibility | **done** | `[organism]`/`[observe]`/`[brain]` progress on stdout (no silent long steps) |
 
-**Last verified:** `python contract_check.py` OK · `python organism.py --execute-node observe "" --reset` → `screen_ready`, non-empty `desktop_tree_text`
+**Last verified:** observe → 2409-char tree (Chrome/IDE visible). Full loop needs `XAI_API_KEY`; observe scan ~30–90s at `step_px=32` — progress prints every row band.
+
+**Operator rule:** long steps always print to stdout (`[observe] scan 42%…`, `[brain] calling transport…`). Never silent sleep.
 
 ---
 

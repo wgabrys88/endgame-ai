@@ -130,12 +130,33 @@ def _render_compact_grid(grid: dict[str, list[Element]], config: dict[str, Any])
         lines.append(''.join(row_parts))
     return lines
 
+def _render_visible_windows(scan: dict[str, Any], config: dict[str, Any]) -> list[str]:
+    windows = scan.get('windows') or []
+    if not windows:
+        return []
+    focused_hwnd = int(scan.get('focused_hwnd') or 0)
+    max_visible = int(config.get('max_visible_windows', 18))
+    ranked = sorted(windows, key=lambda w: (0 if int(w.get('hwnd', 0)) == focused_hwnd else 1, str(w.get('title', '')).lower()))
+    lines = ['VISIBLE:']
+    for win in ranked[:max_visible]:
+        hwnd = int(win.get('hwnd', 0))
+        title = str(win.get('title', '') or '(untitled)')
+        cls = str(win.get('class_name', '') or '')
+        rect = win.get('rect') or {}
+        w = int(rect.get('right', 0)) - int(rect.get('left', 0))
+        h = int(rect.get('bottom', 0)) - int(rect.get('top', 0))
+        marker = '*' if hwnd == focused_hwnd else ' '
+        lines.append(f"{marker} [{hwnd}] {title} ({cls}) {w}x{h}")
+    if len(ranked) > max_visible:
+        lines.append(f"... +{len(ranked) - max_visible} visible windows omitted")
+    return lines
+
 def _render_hierarchical_tree(scan: dict[str, Any], config: dict[str, Any]) -> str:
     elements = [Element(**e) if isinstance(e, dict) else e for e in scan.get('elements', [])]
     focused_hwnd = int(scan.get('focused_hwnd') or 0)
     max_chars = int(config.get('max_tree_chars', 8000))
     max_windows = int(config.get('max_windows', 14))
-    max_cells = int(config.get('max_cells_per_window', 20))
+    max_cells = int(config.get('max_cells_per_window', 24))
     by_hwnd: dict[int, list[Element]] = {}
     for elem in elements:
         if elem.cursor_type not in INTERACTIVE_CURSORS and elem.cursor_name not in CURSOR_PRIORITY:
@@ -149,7 +170,9 @@ def _render_hierarchical_tree(scan: dict[str, Any], config: dict[str, Any]) -> s
         focus_rank = 0 if hwnd == focused_hwnd else 1
         return (focus_rank, -len(elems), title.lower())
     ordered_hwnds = sorted(by_hwnd.keys(), key=window_rank)
-    lines = [f"FOCUS: {scan.get('focused_title') or '(none)'}", f"SCREEN: {scan.get('screen_width')}x{scan.get('screen_height')}", f"INTERACTIVE: {sum((len(v) for v in by_hwnd.values()))} hits / {len(by_hwnd)} windows", 'WINDOWS:']
+    lines = [f"FOCUS: {scan.get('focused_title') or '(none)'}", f"SCREEN: {scan.get('screen_width')}x{scan.get('screen_height')}", f"SCAN: step={scan.get('step_px')}px elements={scan.get('element_count', len(elements))}", f"INTERACTIVE: {sum((len(v) for v in by_hwnd.values()))} hits / {len(by_hwnd)} windows"]
+    lines.extend(_render_visible_windows(scan, config))
+    lines.append('WINDOWS:')
     omitted = 0
     for hwnd in ordered_hwnds[:max_windows]:
         elems = by_hwnd[hwnd]
@@ -197,9 +220,13 @@ def hover_scan_fullscreen(config: dict[str, Any] | None=None) -> dict[str, Any]:
         user32.GetCursorPos(ctypes.byref(saved_pos))
     elements: list[Element] = []
     last_cursor_type = IDC_ARROW
+    row_report = max(step_px * 8, 1)
     try:
         y = 0
         while y < screen_h and len(elements) < max_elements:
+            if y % row_report == 0:
+                pct = int(y * 100 / max(screen_h, 1))
+                print(f'[observe] scan {pct}% row {y}/{screen_h} elements={len(elements)}', flush=True)
             x = 0
             while x < screen_w and len(elements) < max_elements:
                 user32.SetCursorPos(x, y)
@@ -226,7 +253,9 @@ def hover_scan_fullscreen(config: dict[str, Any] | None=None) -> dict[str, Any]:
 def observe(config: dict[str, Any] | None=None) -> dict[str, Any]:
     config = dict(config or {})
     scan = hover_scan_fullscreen(config)
+    print(f'[observe] rendering tree from {scan.get("element_count", 0)} elements', flush=True)
     tree_text = _render_hierarchical_tree(scan, config)
+    print(f'[observe] desktop_tree_text {len(tree_text)} chars', flush=True)
     artifact_dir = ROOT / 'comms' / 'observations'
     artifact_dir.mkdir(parents=True, exist_ok=True)
     artifact_path = artifact_dir / f"{int(scan['observed_at'] * 1000)}.json"

@@ -51,7 +51,7 @@
   },
   "paths": {"state": "state.json", "control": "comms/control.json", "runtime_log": "comms/runtime.ndjson"},
   "control_default": {"mode": "run", "step_token": 0, "updated_at": 0},
-  "observe_config": {"step_px": 60, "delay_ms": 0, "cell_size": 100, "max_elements": 200, "restore_cursor": true, "max_tree_chars": 8000, "max_windows": 14, "max_cells_per_window": 20},
+  "observe_config": {"step_px": 32, "delay_ms": 2, "cell_size": 80, "max_elements": 450, "restore_cursor": true, "max_tree_chars": 8000, "max_windows": 16, "max_cells_per_window": 24, "max_visible_windows": 18, "grid_max_cols": 20, "grid_max_rows": 14},
   "timing": {"post_execute_delay_ms": 3000},
   "self_modify": {
     "context_mode": "checked_out_branch",
@@ -61,7 +61,7 @@
     "wiring_allowed_new_prefixes": ["self_modify.", "model.stable_prefix.", "model.organs.", "limits.", "prompts."]
   },
   "prompts": {
-    "planner": "Record type plan. Data: {next_signal: step_ready|reflect, goal_narration: string, intent: [{description, done_when}]}. Explore environment; re-narrate the living goal; keep intent atemporal and adaptive.",
+    "planner": "Record type plan. Required data: {next_signal: step_ready|reflect, goal_narration: non-empty string, intent: [{description, done_when}]}. goal_seed is immutable user intent; goal_narration is your living interpretation — rewrite every tick from goal_signals (power, disk, urgency), reflection, and observation. Shift narration when battery low or environment changes. intent is atemporal exploratory steps for this chapter only.",
     "execute": "Record type execution. Data: {conclusion: EXECUTE|CANNOT|FRAME|SELF_MODIFY, code: string}. EXECUTE runs locally with full Python/stdlib/subprocess/ctypes power on this Windows machine — no sandbox. Use code to probe OS, files, power, processes, UI. Do not dump huge listings into the record; set result compactly.",
     "frame_action": "Record type action_frame. Data: {next_signal: framed|reflect, screen_summary, target, strategy, risk, notes}.",
     "verify": "Record type verification. Data: {next_signal: step_confirmed|step_denied, success: boolean, reasoning: string}.",

@@ -22,7 +22,7 @@ _STABLE_PREFIX_LOCK = threading.Lock()
 _LAST_FRESH_OBSERVATION: dict[str, Any] | None = None
 STATIC_PREFIX_SUFFIXES = {'.py', '.json', '.md'}
 DYNAMIC_LAST_KEYS = ('fresh_observation', 'observation', 'desktop_tree_text', 'evidence', 'workspace_manifest')
-ORGAN_IDENTITY = {'planner': 'You are planner: decompose the living goal into exploratory intent steps. Re-narrate goal_narration as the machine changes. Emit one JSON record.', 'execute': 'You are execute: generate runnable Python with full local power (subprocess, ctypes, os, sys, files, registry, no sandbox). You may run any code on this Windows body. Emit one JSON execution record.', 'frame_action': 'You are frame_action: explore the screen evidence and frame the next concrete action strategy. Emit one JSON record.', 'verify': 'You are verify: compare step.done_when against fresh observation and execution evidence. Emit one JSON record.', 'reflect': 'You are reflect: diagnose failures and choose one recovery signal. Emit one JSON record.', 'self_modify': 'You are self_modify: propose git-native firmware patches grounded in repository evidence. Emit one JSON record.', 'satisfied': 'You are satisfied: honest halt gate. Emit one JSON record.'}
+ORGAN_IDENTITY = {'planner': 'You are planner: maintain goal_narration (required every tick) as a living interpretation of goal_seed. Use goal_signals.power/disk/urgency to adapt narration and intent. Emit one JSON record.', 'execute': 'You are execute: generate runnable Python with full local power (subprocess, ctypes, os, sys, files, registry, no sandbox). You may run any code on this Windows body. Emit one JSON execution record.', 'frame_action': 'You are frame_action: explore the screen evidence and frame the next concrete action strategy. Emit one JSON record.', 'verify': 'You are verify: compare step.done_when against fresh observation and execution evidence. Emit one JSON record.', 'reflect': 'You are reflect: diagnose failures and choose one recovery signal. Emit one JSON record.', 'self_modify': 'You are self_modify: propose git-native firmware patches grounded in repository evidence. Emit one JSON record.', 'satisfied': 'You are satisfied: honest halt gate. Emit one JSON record.'}
 ORGAN_CORE = 'IDENTITY: Technical computer-control organ inside endgame-ai, a living organism on Windows 11. Python is the body, desktop is the world, wiring.json is the nervous system, git is firmware memory. Stance: exploratory, adaptive, source-grounded. BUS: emit exactly one signal + one patch per tick; topology routes signals only. OUTPUT: one JSON object with record_type, data, reasoning. Dynamic runtime data is in the user message tail; treat it as freshest truth.'
 STATIC_PREFIX_NAMES = {'.gitattributes', '.gitignore', 'LICENSE'}
 STATIC_PREFIX_SKIP_PARTS = {'.git', '__pycache__', '.pytest_cache', 'comms', 'pids'}
@@ -394,6 +394,7 @@ def extract_json_object(text: str) -> dict[str, Any] | None:
     return None
 
 def think(system_prompt: str, payload: dict[str, Any], wiring: dict[str, Any], *, organ: str, expected_record_type: str | None=None, request_config: dict[str, Any] | None=None) -> dict[str, Any]:
+    print(f'[brain] organ={organ} record={expected_record_type or "none"} calling transport...', flush=True)
     _, cfg = _get_transport_config(wiring)
     reasoning_cfg = _effective_reasoning_config(wiring, cfg)
     prefix = stable_prefix() if _stable_prefix_enabled(wiring, expected_record_type) else None
@@ -419,11 +420,13 @@ def think(system_prompt: str, payload: dict[str, Any], wiring: dict[str, Any], *
         result = call(_messages(organ, system_prompt, user_text, prefix_for_messages), wiring, rod_feedback=False, response_format=response_format, request_config=request_cfg)
         record = _commit_record(result['content'])
         record.setdefault('reasoning', reasoning_from(result['content'], result.get('reasoning', '')))
+        print(f'[brain] organ={organ} record={record.get("record_type")} ok', flush=True)
         return record
     if pattern == 'native':
         result = call(_messages(organ, system_prompt, user_text, prefix_for_messages), wiring, rod_feedback=False, response_format=response_format, request_config=request_cfg)
         record = _commit_record(result['content'])
         record.setdefault('reasoning', reasoning_from(result['content'], result.get('reasoning', '')))
+        print(f'[brain] organ={organ} record={record.get("record_type")} ok', flush=True)
         return record
     if pattern != 'two_pass':
         raise RuntimeError(f'unknown reasoning pattern: {pattern}')
@@ -433,6 +436,7 @@ def think(system_prompt: str, payload: dict[str, Any], wiring: dict[str, Any], *
     second = call(_messages(organ, system_prompt, user_text + '\n\n' + template.format(reasoning=reasoning), prefix_for_messages), wiring, rod_feedback=True, response_format=response_format, request_config=request_cfg)
     record = _commit_record(second['content'])
     record.setdefault('reasoning', reasoning)
+    print(f'[brain] organ={organ} record={record.get("record_type")} ok', flush=True)
     return record
 
 def _xai_call(messages: list[dict[str, str]], cfg: dict[str, Any]) -> dict[str, Any]:
