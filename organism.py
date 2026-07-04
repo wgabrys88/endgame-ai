@@ -144,6 +144,7 @@ def run(goal: str | None, *, reset: bool=False, max_ticks: int | None=None, max_
     if reset:
         reset_runtime(wiring)
     brain.reset_call_budget()
+    brain.reset_raw_log()
     topo = wiring.get('topology', {})
     current = str(start_node or topo.get('cycle_start') or 'planner')
     if current not in set(topo.get('nodes', [])):
@@ -196,6 +197,7 @@ def run_single_node(node_name: str, goal: str, *, reset: bool=False, max_brain_c
     if reset:
         reset_runtime(wiring)
     brain.reset_call_budget()
+    brain.reset_raw_log()
     if node_name not in set(wiring.get('topology', {}).get('nodes', [])):
         raise RuntimeError(f"node '{node_name}' not in topology.nodes")
     seed = goal or ''

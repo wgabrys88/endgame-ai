@@ -220,14 +220,25 @@ def raw_log_path(cfg: dict[str, Any] | None=None) -> pathlib.Path:
     global _RAW_LOG_PATH
     cfg = cfg or {}
     if _RAW_LOG_PATH is None:
-        explicit = cfg.get('raw_log_path')
-        if explicit:
-            _RAW_LOG_PATH = root_path(str(explicit))
-        else:
-            _RAW_LOG_PATH = ROOT / f"{time.strftime('%Y%m%dT%H%M%S')}_brain.jsonl"
+        explicit = cfg.get('raw_log_path') or 'comms/brain_raw.jsonl'
+        _RAW_LOG_PATH = root_path(str(explicit))
         _RAW_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         _RAW_LOG_PATH.touch(exist_ok=True)
     return _RAW_LOG_PATH
+
+def _redact_secrets(obj: Any) -> Any:
+    if isinstance(obj, dict):
+        out: dict[str, Any] = {}
+        for key, value in obj.items():
+            lk = str(key).lower()
+            if lk in {'authorization', 'api_key', 'xai_api_key'} or 'api_key' in lk:
+                out[key] = '[REDACTED]'
+            else:
+                out[key] = _redact_secrets(value)
+        return out
+    if isinstance(obj, list):
+        return [_redact_secrets(item) for item in obj]
+    return obj
 
 def _next_raw_seq() -> int:
     global _RAW_SEQ
@@ -250,6 +261,11 @@ def log_raw_entry(cfg: dict[str, Any] | None, entry: dict[str, Any]) -> None:
 def reset_call_budget() -> None:
     global _CALLS_MADE
     _CALLS_MADE = 0
+
+def reset_raw_log() -> None:
+    global _RAW_LOG_PATH, _RAW_SEQ
+    _RAW_LOG_PATH = None
+    _RAW_SEQ = 0
 
 def _transport_call(transport: str, messages: list[dict[str, str]], cfg: dict[str, Any]) -> dict[str, Any]:
     if transport != 'xai':
@@ -332,7 +348,7 @@ def call(messages: list[dict[str, str]], wiring: dict[str, Any], *, rod_feedback
     if reasoning is not None and (not isinstance(reasoning, str)):
         raise RuntimeError(f'{transport} brain contract violation: reasoning must be string when present')
     out = {'content': content, 'reasoning': reasoning or ''}
-    log_raw_entry(cfg, {'seq': seq, 'phase': 'response', 'transport': transport, 'elapsed_s': round(time.time() - started, 3), 'content': content, 'reasoning': reasoning or '', 'raw': {k: v for k, v in result.items() if k not in {'content', 'reasoning'}}})
+    log_raw_entry(cfg, {'seq': seq, 'phase': 'response', 'transport': transport, 'elapsed_s': round(time.time() - started, 3), 'content': content, 'reasoning': reasoning or '', 'api_response_body': result.get('api_response_body'), 'usage': result.get('usage'), 'raw': {k: v for k, v in result.items() if k not in {'content', 'reasoning', 'api_response_body'}}})
     return out
 
 def reasoning_from(content: str, reasoning: str='') -> str:
@@ -407,6 +423,7 @@ def think(system_prompt: str, payload: dict[str, Any], wiring: dict[str, Any], *
     payload = _cap_observation_fields(_with_fresh_observation(payload, wiring), wiring)
     user_text = json.dumps(_order_payload(payload), ensure_ascii=False, default=str)
     _preflight_request(wiring, user_text)
+    log_raw_entry(cfg, {'phase': 'think', 'organ': organ, 'expected_record_type': expected_record_type, 'payload': payload, 'user_text': user_text, 'user_text_len': len(user_text)})
     pattern = str(reasoning_cfg.get('pattern') or 'single_pass')
     response_format = _record_response_format(expected_record_type) if expected_record_type and _structured_outputs_enabled(cfg) else None
     request_cfg = _organ_request_config(wiring, expected_record_type)
@@ -467,12 +484,16 @@ def _xai_call(messages: list[dict[str, str]], cfg: dict[str, Any]) -> dict[str, 
         if allowed:
             tool['filters'] = {'allowed_domains': [str(item) for item in allowed][:5]}
         payload['tools'] = [tool]
+    log_raw_entry(cfg, {'phase': 'api_request', 'url': url, 'payload': _redact_secrets(payload)})
     req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {api_key}'}, method='POST')
     try:
         with urllib.request.urlopen(req, timeout=float(cfg.get('timeout') or 120)) as resp:
             body = resp.read().decode('utf-8', errors='replace')
     except urllib.error.HTTPError as exc:
-        raise RuntimeError(f'xai api HTTP {exc.code}: {exc.read().decode("utf-8", errors="replace")[:2000]}') from exc
+        err_body = exc.read().decode('utf-8', errors='replace')
+        log_raw_entry(cfg, {'phase': 'api_error', 'status': exc.code, 'body': err_body})
+        raise RuntimeError(f'xai api HTTP {exc.code}: {err_body[:2000]}') from exc
+    log_raw_entry(cfg, {'phase': 'api_response_body', 'body': body})
     obj = json.loads(body)
     content = obj.get('output_text') or ''
     reasoning = ''
@@ -490,7 +511,7 @@ def _xai_call(messages: list[dict[str, str]], cfg: dict[str, Any]) -> dict[str, 
                 if isinstance(c, dict) and c.get('text'):
                     parts.append(str(c['text']))
         content = '\n'.join(parts)
-    return {'content': content, 'reasoning': reasoning.strip(), 'usage': obj.get('usage', {}), 'body': obj}
+    return {'content': content, 'reasoning': reasoning.strip(), 'usage': obj.get('usage', {}), 'body': obj, 'api_response_body': body}
 
 def _xai_call_cli(messages: list[dict[str, str]], cfg: dict[str, Any]) -> dict[str, Any]:
     raw = os.path.expandvars(os.path.expanduser(str(cfg.get('executable') or 'grok')))

@@ -38,7 +38,7 @@
         "truncation": "disabled"
       }
     },
-    "global": {"timeout": 180, "max_brain_calls": null, "raw_log": true, "reasoning_enabled": true},
+    "global": {"timeout": 180, "max_brain_calls": null, "raw_log": true, "raw_log_path": "comms/brain_raw.jsonl", "reasoning_enabled": true},
     "stable_prefix": {"enabled": false, "include_in_request": false, "for_record_types": ["git_evolution_patch"], "include_for_record_types": ["git_evolution_patch"]},
     "organs": {
       "plan": {"reasoning_effort": "medium", "temperature": 0.35, "max_output_tokens": 2400},
@@ -49,7 +49,7 @@
       "git_evolution_patch": {"reasoning_effort": "high", "temperature": 0.2, "max_output_tokens": 24000, "timeout": 360, "web_search": {"enabled": true, "allowed_domains": ["github.com", "raw.githubusercontent.com", "api.github.com"]}}
     }
   },
-  "paths": {"state": "state.json", "control": "comms/control.json", "runtime_log": "comms/runtime.ndjson"},
+  "paths": {"state": "state.json", "control": "comms/control.json", "runtime_log": "comms/runtime.ndjson", "brain_raw_log": "comms/brain_raw.jsonl"},
   "control_default": {"mode": "run", "step_token": 0, "updated_at": 0},
   "observe_config": {"step_px": 32, "delay_ms": 2, "cell_size": 80, "max_elements": 450, "restore_cursor": true, "max_tree_chars": 8000, "max_windows": 16, "max_cells_per_window": 24, "max_visible_windows": 18, "grid_max_cols": 20, "grid_max_rows": 14},
   "timing": {"post_execute_delay_ms": 3000},
