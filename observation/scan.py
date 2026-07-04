@@ -14,12 +14,15 @@ from .models import CachedNode
 user32 = ctypes.windll.user32
 
 
-def create_cache_request(automation: Any) -> Any:
+def create_cache_request(automation: Any, scan_cfg: dict[str, Any] | None = None) -> Any:
+    scan_cfg = scan_cfg or {}
     req = automation.CreateCacheRequest()
     req.TreeScope = C.TreeScope_Subtree
-    for prop_id in C.PROPERTY_IDS:
+    prop_ids = scan_cfg.get("property_ids") or C.PROPERTY_IDS
+    pat_ids = scan_cfg.get("pattern_ids") or C.PATTERN_IDS
+    for prop_id in prop_ids:
         req.AddProperty(prop_id)
-    for pattern_id in C.PATTERN_IDS:
+    for pattern_id in pat_ids:
         req.AddPattern(pattern_id)
     return req
 
@@ -248,8 +251,10 @@ def fullscreen_hover_cache_scan(
     max_total_nodes: int = 2000,
     pattern: str = "grid",
     include_nodes: bool = False,
+    scan_cfg: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    cache_request = create_cache_request(automation)
+    scan_cfg = scan_cfg or {}
+    cache_request = create_cache_request(automation, scan_cfg)
     sw = user32.GetSystemMetrics(0)
     sh = user32.GetSystemMetrics(1)
 

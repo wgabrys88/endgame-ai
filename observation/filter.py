@@ -44,6 +44,25 @@ class ObservationFilter:
     def __init__(self, config: dict[str, Any] | None = None):
         self.config = dict(config or {})
 
+    @staticmethod
+    def _dedupe(nodes: list[CachedNode]) -> list[CachedNode]:
+        merged: dict[str, CachedNode] = {}
+        for node in nodes:
+            key = ",".join(map(str, node.runtime_id)) if node.runtime_id else node.id
+            prev = merged.get(key)
+            if prev is None:
+                merged[key] = node
+                continue
+            if node.text_full and (not prev.text_full or len(node.text_full) > len(prev.text_full)):
+                prev.text_full = node.text_full
+            if node.value and (not prev.value or len(node.value) > len(prev.value)):
+                prev.value = node.value
+            if node.keyboard_focus:
+                prev.keyboard_focus = True
+            if node.name and (not prev.name or len(node.name) > len(prev.name)):
+                prev.name = node.name
+        return list(merged.values())
+
     def apply(self, nodes: list[CachedNode]) -> FilteredObservation:
         filt = self.config.get("filter") or {}
         max_action = int(filt.get("max_action_nodes", 240))
@@ -52,6 +71,7 @@ class ObservationFilter:
         require_interactive = bool(filt.get("require_interactive", True))
         action_elements: dict[str, dict[str, Any]] = {}
         llm_nodes: list[dict[str, Any]] = []
+        nodes = self._dedupe(nodes)
         gather_nodes = [n.to_gather_dict() for n in nodes]
 
         ranked = sorted(

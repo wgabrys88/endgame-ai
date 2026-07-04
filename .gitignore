@@ -17,8 +17,8 @@
 !brain_transports/*.py
 !organism_nodes/
 !organism_nodes/*.py
-!hover_cache_probe/
-!hover_cache_probe/*.py
+!observation/
+!observation/*.py
 
 # Runtime and local-only data stay sealed.
 __pycache__/

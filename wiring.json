@@ -1,7 +1,7 @@
 {
   "schema": "endgame-ai.wiring.v1",
   "model": {
-    "transport": "xai",
+    "transport": "file_proxy",
     "transport_config": {
       "file_proxy": {
         "request_path": "comms/request.json",
@@ -114,7 +114,7 @@
   },
   "observe_config": {
     "hover_cache": {
-      "enabled": false,
+      "enabled": true,
       "scan": {
         "pattern": "sinusoidal",
         "step_px": 96,
