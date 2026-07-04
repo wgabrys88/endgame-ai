@@ -1,13 +1,15 @@
 from __future__ import annotations
 import hashlib
-import importlib.util
 import json
 import os
 import pathlib
 import re
+import shutil
 import subprocess
 import threading
 import time
+import urllib.error
+import urllib.request
 from typing import Any
 import stop_check
 ROOT = pathlib.Path(__file__).parent.resolve()
@@ -18,13 +20,13 @@ _CALLS_MADE = 0
 _STABLE_PREFIX_CACHE: 'StablePrefix | None' = None
 _STABLE_PREFIX_LOCK = threading.Lock()
 _LAST_FRESH_OBSERVATION: dict[str, Any] | None = None
-_OPEN_OBJECT_SCHEMA = {'type': 'object', 'additionalProperties': True}
 STATIC_PREFIX_SUFFIXES = {'.py', '.json', '.md'}
+DYNAMIC_LAST_KEYS = ('fresh_observation', 'observation', 'desktop_tree_text', 'evidence', 'workspace_manifest')
+ORGAN_IDENTITY = {'planner': 'You are planner: decompose the living goal into exploratory intent steps. Re-narrate goal_narration as the machine changes. Emit one JSON record.', 'execute': 'You are execute: generate runnable Python with full local power (subprocess, ctypes, os, sys, files, registry, no sandbox). You may run any code on this Windows body. Emit one JSON execution record.', 'frame_action': 'You are frame_action: explore the screen evidence and frame the next concrete action strategy. Emit one JSON record.', 'verify': 'You are verify: compare step.done_when against fresh observation and execution evidence. Emit one JSON record.', 'reflect': 'You are reflect: diagnose failures and choose one recovery signal. Emit one JSON record.', 'self_modify': 'You are self_modify: propose git-native firmware patches grounded in repository evidence. Emit one JSON record.', 'satisfied': 'You are satisfied: honest halt gate. Emit one JSON record.'}
+ORGAN_CORE = 'IDENTITY: Technical computer-control organ inside endgame-ai, a living organism on Windows 11. Python is the body, desktop is the world, wiring.json is the nervous system, git is firmware memory. Stance: exploratory, adaptive, source-grounded. BUS: emit exactly one signal + one patch per tick; topology routes signals only. OUTPUT: one JSON object with record_type, data, reasoning. Dynamic runtime data is in the user message tail; treat it as freshest truth.'
 STATIC_PREFIX_NAMES = {'.gitattributes', '.gitignore', 'LICENSE'}
 STATIC_PREFIX_SKIP_PARTS = {'.git', '__pycache__', '.pytest_cache', 'comms', 'pids'}
 STATIC_PREFIX_SKIP_PREFIXES = {'reports/'}
-_RECORD_DATA_SCHEMAS: dict[str, dict[str, Any]] = {'plan': {'type': 'object', 'additionalProperties': True, 'properties': {'next_signal': {'enum': ['step_ready', 'reflect']}, 'intent': {'type': 'array', 'items': {'type': 'object', 'additionalProperties': True, 'properties': {'description': {'type': 'string'}, 'done_when': {'type': 'string'}}}}}, 'required': ['next_signal', 'intent']}, 'schedule': {'type': 'object', 'additionalProperties': True, 'properties': {'next_signal': {'enum': ['step_ready', 'plan_complete']}, 'step': {'anyOf': [{'type': 'object', 'additionalProperties': True}, {'type': 'null'}]}}, 'required': ['next_signal', 'step']}, 'execution': {'type': 'object', 'additionalProperties': True, 'properties': {'conclusion': {'enum': ['EXECUTE', 'CANNOT']}, 'code': {'type': 'string'}}, 'required': ['conclusion', 'code']}, 'verification': {'type': 'object', 'additionalProperties': True, 'properties': {'next_signal': {'enum': ['step_confirmed', 'step_denied']}, 'success': {'type': 'boolean'}, 'reasoning': {'type': 'string'}}, 'required': ['next_signal', 'success', 'reasoning']}, 'reflection': {'type': 'object', 'additionalProperties': True, 'properties': {'next_signal': {'enum': ['retry', 'replan', 'escalate', 'give_up']}, 'lesson': {'type': 'string'}, 'diagnosis': {'type': 'string'}}, 'required': ['next_signal', 'lesson', 'diagnosis']}, 'git_evolution_patch': {'type': 'object', 'additionalProperties': True, 'properties': {'summary': {'type': 'string'}, 'rationale': {'type': 'string'}, 'read_files': {'type': 'array', 'items': {'type': 'string'}}, 'file_writes': {'type': 'array', 'items': {'type': 'object', 'additionalProperties': True, 'properties': {'path': {'type': 'string'}, 'content': {'type': 'string'}}, 'required': ['path', 'content']}}, 'unified_diffs': {'type': 'array', 'items': {'anyOf': [{'type': 'string'}, {'type': 'object', 'additionalProperties': True, 'properties': {'diff': {'type': 'string'}}, 'required': ['diff']}]}}, 'file_deletes': {'type': 'array', 'items': {'type': 'string'}}, 'wiring_patches': {'type': 'array', 'items': {'type': 'object', 'additionalProperties': True, 'properties': {'op': {'enum': ['set', 'delete']}, 'path': {'type': 'string'}}, 'required': ['op', 'path']}}, 'commands': {'type': 'array', 'items': {'type': 'object', 'additionalProperties': True}}, 'expected_validation': {'anyOf': [{'type': 'string'}, {'type': 'object', 'additionalProperties': True}, {'type': 'null'}]}}, 'required': ['summary', 'rationale', 'read_files', 'file_writes', 'file_deletes', 'wiring_patches', 'commands', 'expected_validation']}, 'satisfied': {'type': 'object', 'additionalProperties': True, 'properties': {'next_signal': {'const': 'halt'}}, 'required': ['next_signal']}}
-
 class StablePrefix:
 
     def __init__(self, root: pathlib.Path=ROOT):
@@ -70,7 +72,7 @@ class StablePrefix:
             digest.update(encoded)
             manifest.append({'path': rel, 'chars': len(content), 'bytes': len(encoded)})
             file_text.append((rel, content))
-        chunks = ['ENDGAME-AI STABLE PREFIX', 'This is the real checked-out source used by the local organism.', 'Provider prompt caches can reuse this prefix because dynamic run data appears after it.', 'Self-evolution must ground changes in these files, not in hallucinated structure.', '', 'ORGANISM OPERATING RULES:', 'You are one organ inside endgame-ai, a local desktop organism controlled by the Python body.', 'Organs: planner makes intent, scheduler selects a step, observe scans the screen, execute acts, verify judges, reflect diagnoses, self_modify evolves the repository, satisfied halts, error routes mechanical failures.', 'The body can use mouse, keyboard, subprocesses, files, apps, browser, Python modules, and git through the shared capability runtime.', 'Every brain call receives a fresh whole-screen hover observation at the end of the dynamic payload. Treat stale state as history only.', 'The brain-facing desktop_tree is semantic and id-based. Coordinates, hwnds, runtime ids, and UIA metadata live in body-side action_index/raw artifacts; act by node id.', '', 'STATIC MANIFEST:', json.dumps(manifest, ensure_ascii=False, indent=2), '', 'STATIC SOURCE FILES:']
+        chunks = ['ENDGAME-AI STABLE PREFIX', 'Checked-out firmware for KV-cache reuse. Dynamic runtime payload is appended after this block in the user message.', ORGAN_CORE, '', 'STATIC MANIFEST:', json.dumps(manifest, ensure_ascii=False, indent=2), '', 'STATIC SOURCE FILES:']
         for rel, content in file_text:
             chunks.append(f'\n--- BEGIN FILE {rel} ---')
             chunks.append(content)
@@ -99,10 +101,46 @@ def _stable_prefix_include_in_request(wiring: dict[str, Any], expected_record_ty
     include_for = sp_cfg.get('include_for_record_types') or []
     return bool(expected_record_type and expected_record_type in set(map(str, include_for)))
 
-def _messages(system_prompt: str, user_text: str, prefix: StablePrefix | None) -> list[dict[str, str]]:
+def _organ_system_prompt(organ: str, static_prompt: str) -> str:
+    organ_line = ORGAN_IDENTITY.get(organ, f'You are {organ}, an endgame-ai organ.')
+    return ORGAN_CORE + '\n' + organ_line + '\n\nORGAN PROMPT:\n' + static_prompt
+
+def _order_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    head: dict[str, Any] = {}
+    tail: dict[str, Any] = {}
+    for key, value in payload.items():
+        if key in DYNAMIC_LAST_KEYS:
+            tail[key] = value
+        else:
+            head[key] = value
+    return {**head, **tail}
+
+def _cap_observation_fields(payload: dict[str, Any], wiring: dict[str, Any]) -> dict[str, Any]:
+    limits = wiring.get('limits', {})
+    max_obs = int(limits.get('max_observation_chars', 8000))
+    out = dict(payload)
+    for key in ('fresh_observation', 'observation'):
+        block = out.get(key)
+        if isinstance(block, dict) and isinstance(block.get('desktop_tree_text'), str):
+            text = block['desktop_tree_text']
+            if len(text) > max_obs:
+                block = dict(block)
+                block['desktop_tree_text'] = text[:max_obs] + f'\n... observation capped at {max_obs} chars'
+                block['truncated'] = True
+                out[key] = block
+    return out
+
+def _preflight_request(wiring: dict[str, Any], user_text: str) -> None:
+    limits = wiring.get('limits', {})
+    max_chars = int(limits.get('max_request_chars', 120000))
+    if len(user_text) > max_chars:
+        raise RuntimeError(f'brain request size {len(user_text)} exceeds limits.max_request_chars={max_chars}')
+
+def _messages(organ: str, static_prompt: str, user_text: str, prefix: StablePrefix | None) -> list[dict[str, str]]:
+    system = _organ_system_prompt(organ, static_prompt)
     if prefix is not None:
-        return [{'role': 'system', 'content': prefix.text + '\n\nDYNAMIC NODE PROMPT:\n' + system_prompt}, {'role': 'user', 'content': user_text}]
-    return [{'role': 'system', 'content': 'DYNAMIC NODE PROMPT:\n' + system_prompt}, {'role': 'user', 'content': user_text}]
+        system = prefix.text + '\n\n' + system
+    return [{'role': 'system', 'content': system}, {'role': 'user', 'content': user_text}]
 
 def _commit_record(content: str) -> dict[str, Any]:
     record = extract_json_object(content)
@@ -213,20 +251,10 @@ def reset_call_budget() -> None:
     global _CALLS_MADE
     _CALLS_MADE = 0
 
-def _load_transport_module(name: str, wiring: dict[str, Any]):
-    paths = wiring.get('paths', {})
-    brain_dir = root_path(paths.get('brains'), 'brain_transports')
-    module_path = brain_dir / f'{name}.py'
-    if not module_path.exists():
-        raise RuntimeError(f"selected brain transport '{name}' has no module at {module_path}; brain selection is fail-hard and no fallback was attempted")
-    spec = importlib.util.spec_from_file_location(f'endgame_brain_transport_{name}', module_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f'cannot load selected brain transport module: {module_path}')
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    if not hasattr(mod, 'call'):
-        raise RuntimeError(f"brain transport '{name}' does not export call(messages, cfg)")
-    return mod
+def _transport_call(transport: str, messages: list[dict[str, str]], cfg: dict[str, Any]) -> dict[str, Any]:
+    if transport != 'xai':
+        raise RuntimeError(f"unsupported brain transport: {transport}")
+    return _xai_call(messages, cfg)
 
 def _get_transport_config(wiring: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     model = wiring.get('model')
@@ -290,9 +318,8 @@ def call(messages: list[dict[str, str]], wiring: dict[str, Any], *, rod_feedback
     seq = _next_raw_seq()
     started = time.time()
     log_raw_entry(cfg, {'seq': seq, 'phase': 'request', 'transport': transport, 'rod_feedback': rod_feedback, 'messages': messages})
-    mod = _load_transport_module(transport, wiring)
     try:
-        result = mod.call(messages, cfg)
+        result = _transport_call(transport, messages, cfg)
     except Exception as exc:
         log_raw_entry(cfg, {'seq': seq, 'phase': 'error', 'transport': transport, 'elapsed_s': round(time.time() - started, 3), 'error': f'{type(exc).__name__}: {exc}'})
         raise RuntimeError(f'{transport} brain failed hard: {exc}') from exc
@@ -366,7 +393,7 @@ def extract_json_object(text: str) -> dict[str, Any] | None:
             return obj
     return None
 
-def think(system_prompt: str, payload: dict[str, Any], wiring: dict[str, Any], *, expected_record_type: str | None=None, request_config: dict[str, Any] | None=None) -> dict[str, Any]:
+def think(system_prompt: str, payload: dict[str, Any], wiring: dict[str, Any], *, organ: str, expected_record_type: str | None=None, request_config: dict[str, Any] | None=None) -> dict[str, Any]:
     _, cfg = _get_transport_config(wiring)
     reasoning_cfg = _effective_reasoning_config(wiring, cfg)
     prefix = stable_prefix() if _stable_prefix_enabled(wiring, expected_record_type) else None
@@ -376,8 +403,9 @@ def think(system_prompt: str, payload: dict[str, Any], wiring: dict[str, Any], *
         import hashlib, time
         conv_id = f'endgame-ai-{int(time.time())}-{hashlib.md5(str(wiring).encode()).hexdigest()[:8]}'
         wiring['_conv_id'] = conv_id
-    payload = _with_fresh_observation(payload, wiring)
-    user_text = json.dumps(payload, ensure_ascii=False, default=str)
+    payload = _cap_observation_fields(_with_fresh_observation(payload, wiring), wiring)
+    user_text = json.dumps(_order_payload(payload), ensure_ascii=False, default=str)
+    _preflight_request(wiring, user_text)
     pattern = str(reasoning_cfg.get('pattern') or 'single_pass')
     response_format = _record_response_format(expected_record_type) if expected_record_type and _structured_outputs_enabled(cfg) else None
     request_cfg = _organ_request_config(wiring, expected_record_type)
@@ -388,21 +416,89 @@ def think(system_prompt: str, payload: dict[str, Any], wiring: dict[str, Any], *
         default_effort_map = {'plan': 'medium', 'action_frame': 'medium', 'execution': 'low', 'verification': 'none', 'reflection': 'medium', 'git_evolution_patch': 'high', 'schedule': 'none', 'satisfied': 'none'}
         request_cfg.setdefault('reasoning_effort', default_effort_map.get(expected_record_type, 'low'))
     if not reasoning_cfg['enabled'] or pattern == 'single_pass':
-        result = call(_messages(system_prompt, user_text, prefix_for_messages), wiring, rod_feedback=False, response_format=response_format, request_config=request_cfg)
+        result = call(_messages(organ, system_prompt, user_text, prefix_for_messages), wiring, rod_feedback=False, response_format=response_format, request_config=request_cfg)
         record = _commit_record(result['content'])
         record.setdefault('reasoning', reasoning_from(result['content'], result.get('reasoning', '')))
         return record
     if pattern == 'native':
-        result = call(_messages(system_prompt, user_text, prefix_for_messages), wiring, rod_feedback=False, response_format=response_format, request_config=request_cfg)
+        result = call(_messages(organ, system_prompt, user_text, prefix_for_messages), wiring, rod_feedback=False, response_format=response_format, request_config=request_cfg)
         record = _commit_record(result['content'])
         record.setdefault('reasoning', reasoning_from(result['content'], result.get('reasoning', '')))
         return record
     if pattern != 'two_pass':
         raise RuntimeError(f'unknown reasoning pattern: {pattern}')
-    first = call(_messages(system_prompt, user_text, prefix_for_messages), wiring, rod_feedback=False, request_config=request_cfg)
+    first = call(_messages(organ, system_prompt, user_text, prefix_for_messages), wiring, rod_feedback=False, request_config=request_cfg)
     reasoning = reasoning_from(first['content'], first.get('reasoning', ''))
     template = str(reasoning_cfg.get('injection_template') or 'REASONING_FEEDBACK:\n{reasoning}')
-    second = call(_messages(system_prompt, user_text + '\n\n' + template.format(reasoning=reasoning), prefix_for_messages), wiring, rod_feedback=True, response_format=response_format, request_config=request_cfg)
+    second = call(_messages(organ, system_prompt, user_text + '\n\n' + template.format(reasoning=reasoning), prefix_for_messages), wiring, rod_feedback=True, response_format=response_format, request_config=request_cfg)
     record = _commit_record(second['content'])
     record.setdefault('reasoning', reasoning)
     return record
+
+def _xai_call(messages: list[dict[str, str]], cfg: dict[str, Any]) -> dict[str, Any]:
+    if cfg.get('mode') == 'cli':
+        return _xai_call_cli(messages, cfg)
+    api_key = os.environ.get(str(cfg.get('api_key_env') or 'XAI_API_KEY')) or cfg.get('api_key')
+    if not api_key:
+        raise RuntimeError('xai api: API key missing')
+    url = str(cfg.get('url') or 'https://api.x.ai/v1/responses')
+    model = str(cfg.get('model') or 'grok-4.3')
+    input_data = [{'role': m.get('role', 'user'), 'content': m.get('content', '')} for m in messages]
+    payload: dict[str, Any] = {'model': model, 'input': input_data, 'temperature': cfg.get('temperature', 0.2), 'truncation': str(cfg.get('truncation') or 'disabled')}
+    for key in ('top_p', 'parallel_tool_calls', 'tool_choice', 'prompt_cache_key', 'store', 'metadata', 'max_output_tokens'):
+        if cfg.get(key) is not None:
+            payload[key] = cfg[key]
+    if isinstance(cfg.get('include'), list):
+        payload['include'] = list(cfg['include'])
+    response_format = cfg.get('response_format')
+    if isinstance(response_format, dict):
+        payload['text'] = {'format': {'type': 'json_object'}} if response_format.get('type') == 'json_object' else {'format': response_format}
+    effort = cfg.get('reasoning_effort') or (cfg.get('reasoning') or {}).get('effort')
+    if effort or str(model).startswith('grok-4'):
+        payload['reasoning'] = {'effort': str(effort or 'low')}
+    web_search_cfg = cfg.get('web_search') or {}
+    if isinstance(web_search_cfg, dict) and web_search_cfg.get('enabled'):
+        tool: dict[str, Any] = {'type': 'web_search'}
+        allowed = web_search_cfg.get('allowed_domains')
+        if allowed:
+            tool['filters'] = {'allowed_domains': [str(item) for item in allowed][:5]}
+        payload['tools'] = [tool]
+    req = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {api_key}'}, method='POST')
+    try:
+        with urllib.request.urlopen(req, timeout=float(cfg.get('timeout') or 120)) as resp:
+            body = resp.read().decode('utf-8', errors='replace')
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(f'xai api HTTP {exc.code}: {exc.read().decode("utf-8", errors="replace")[:2000]}') from exc
+    obj = json.loads(body)
+    content = obj.get('output_text') or ''
+    reasoning = ''
+    if not content and isinstance(obj.get('output'), list):
+        parts = []
+        for item in obj['output']:
+            if not isinstance(item, dict):
+                continue
+            if item.get('type') == 'reasoning':
+                for c in item.get('content', []) or []:
+                    if isinstance(c, dict) and c.get('text'):
+                        reasoning += str(c['text']) + '\n'
+                continue
+            for c in item.get('content', []) or []:
+                if isinstance(c, dict) and c.get('text'):
+                    parts.append(str(c['text']))
+        content = '\n'.join(parts)
+    return {'content': content, 'reasoning': reasoning.strip(), 'usage': obj.get('usage', {}), 'body': obj}
+
+def _xai_call_cli(messages: list[dict[str, str]], cfg: dict[str, Any]) -> dict[str, Any]:
+    raw = os.path.expandvars(os.path.expanduser(str(cfg.get('executable') or 'grok')))
+    exe = str(pathlib.Path(raw)) if pathlib.Path(raw).exists() else shutil.which(raw)
+    if not exe:
+        raise RuntimeError(f'grok cli missing: {raw}')
+    prompt = '\n\n'.join((f"[{m.get('role', 'user').upper()}]\n{m.get('content', '')}" for m in messages))
+    cp = subprocess.run([exe, '-p', '--output-format', 'json', '--no-auto-update', prompt], capture_output=True, text=True, timeout=float(cfg.get('timeout') or 120))
+    if cp.returncode != 0:
+        raise RuntimeError(f'grok cli exit {cp.returncode}: {cp.stderr.strip()[:2000]}')
+    try:
+        obj = json.loads(cp.stdout.strip())
+        return {'content': obj.get('content') or obj.get('message') or cp.stdout, 'reasoning': obj.get('reasoning') or '', 'stdout': cp.stdout}
+    except json.JSONDecodeError:
+        return {'content': cp.stdout, 'reasoning': '', 'stdout': cp.stdout}

@@ -33,14 +33,7 @@ def emit(signal: str, patch: JsonDict | None=None, *, record: JsonDict | None=No
 def coerce_node_output(node: str, result: Any) -> NodeOutput:
     if isinstance(result, NodeOutput):
         return result
-    if isinstance(result, tuple) and len(result) == 2:
-        signal, patch = result
-        if not isinstance(signal, str) or not signal:
-            raise RuntimeError(f"node '{node}' contract violation: signal must be a non-empty string")
-        if not isinstance(patch, dict):
-            raise RuntimeError(f"node '{node}' contract violation: patch must be dict")
-        return emit(signal, patch)
-    raise RuntimeError(f"node '{node}' contract violation: expected NodeOutput or (signal, patch)")
+    raise RuntimeError(f"node '{node}' contract violation: expected NodeOutput")
 
 def allowed_signals(wiring: JsonDict, node: str) -> set[str]:
     edges = wiring.get('topology', {}).get('edges', {})

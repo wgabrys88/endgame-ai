@@ -7,5 +7,3 @@
 !README.md
 !wiring.json
 !/*.py
-!brain_transports/**
-!organism_nodes/**

@@ -1,5 +1,6 @@
 from __future__ import annotations
 import ctypes
+import json
 import time
 import pathlib
 from ctypes import wintypes
@@ -25,6 +26,7 @@ IDC_APPSTARTING = 32650
 IDC_HELP = 32651
 INTERACTIVE_CURSORS = {IDC_IBEAM, IDC_HAND, IDC_SIZEALL, IDC_SIZENWSE, IDC_SIZENESW, IDC_SIZEWE, IDC_SIZENS, IDC_UPARROW, IDC_CROSS}
 CURSOR_NAMES = {IDC_ARROW: 'arrow', IDC_IBEAM: 'ibeam', IDC_WAIT: 'wait', IDC_CROSS: 'cross', IDC_UPARROW: 'uparrow', IDC_SIZE: 'size', IDC_ICON: 'icon', IDC_SIZENWSE: 'sizenwse', IDC_SIZENESW: 'sizenesw', IDC_SIZEWE: 'sizewe', IDC_SIZENS: 'sizens', IDC_SIZEALL: 'sizeall', IDC_NO: 'no', IDC_HAND: 'hand', IDC_APPSTARTING: 'appstarting', IDC_HELP: 'help'}
+CURSOR_PRIORITY = {'ibeam': 0, 'hand': 1, 'sizeall': 2, 'sizenwse': 2, 'sizenesw': 2, 'sizewe': 2, 'sizens': 2, 'uparrow': 3, 'cross': 4, 'arrow': 5, 'wait': 6}
 
 class CURSORINFO(ctypes.Structure):
     _fields_ = [('cbSize', ctypes.c_uint), ('flags', ctypes.c_uint), ('hCursor', wintypes.HANDLE), ('ptScreenPos', wintypes.POINT)]
@@ -38,10 +40,7 @@ _SYSTEM_CURSOR_HANDLES: dict[int, wintypes.HANDLE] = {}
 def _get_system_cursor_handle(cursor_id: int) -> wintypes.HANDLE:
     if cursor_id not in _SYSTEM_CURSOR_HANDLES:
         resource = SYSTEM_CURSOR_RESOURCES.get(cursor_id)
-        if resource:
-            _SYSTEM_CURSOR_HANDLES[cursor_id] = user32.LoadCursorW(0, resource)
-        else:
-            _SYSTEM_CURSOR_HANDLES[cursor_id] = 0
+        _SYSTEM_CURSOR_HANDLES[cursor_id] = user32.LoadCursorW(0, resource) if resource else 0
     return _SYSTEM_CURSOR_HANDLES[cursor_id]
 
 def get_current_cursor_type() -> tuple[int, str]:
@@ -87,54 +86,111 @@ def _create_grid_mapping(elements: list[Element], cell_size: int=100) -> dict[st
         grid.setdefault(cell_id, []).append(elem)
     return grid
 
-def _render_grid_text(grid: dict[str, list[Element]], max_cols: int=20, max_rows: int=15) -> str:
-    lines = ['SCREEN GRID (Excel-style cells, 100px each):']
-    all_cells = list(grid.keys())
-    if not all_cells:
-        return lines[0] + '\n  (empty)'
+def _cell_sort_key(cell_id: str) -> tuple[int, int]:
+    col_str = ''
+    row_str = ''
+    for ch in cell_id:
+        if ch.isalpha():
+            col_str += ch
+        else:
+            row_str += ch
+    col = 0
+    for ch in col_str:
+        col = col * 26 + (ord(ch.upper()) - 64)
+    return (int(row_str or '1') - 1, col - 1)
+
+def _pick_cell_element(cells: list[Element]) -> Element:
+    return min(cells, key=lambda e: (CURSOR_PRIORITY.get(e.cursor_name, 9), e.x, e.y))
+
+def _render_compact_grid(grid: dict[str, list[Element]], config: dict[str, Any]) -> list[str]:
+    interactive = {cid: _pick_cell_element(cells) for cid, cells in grid.items() if any((e.cursor_name in {'ibeam', 'hand', 'sizeall', 'sizenwse', 'sizenesw', 'sizewe', 'sizens', 'uparrow', 'cross'} for e in cells))}
+    if not interactive:
+        return ['GRID: (no interactive cells)']
     cols = set()
     rows = set()
-    for cell_id in all_cells:
-        col_str = ''
-        row_str = ''
-        for ch in cell_id:
-            if ch.isalpha():
-                col_str += ch
-            else:
-                row_str += ch
-        col = 0
-        for ch in col_str:
-            col = col * 26 + (ord(ch.upper()) - 64)
-        col -= 1
-        row = int(row_str) - 1
+    for cell_id in interactive:
+        row, col = _cell_sort_key(cell_id)
         cols.add(col)
         rows.add(row)
-    min_col, max_col = (min(cols), min(max(cols), max_cols - 1))
-    min_row, max_row = (min(rows), min(max(rows), max_rows - 1))
+    max_cols = int(config.get('grid_max_cols', 16))
+    max_rows = int(config.get('grid_max_rows', 12))
+    min_col, max_col = (min(cols), min(max(cols), min(cols) + max_cols - 1))
+    min_row, max_row = (min(rows), min(max(rows), min(rows) + max_rows - 1))
+    lines = ['GRID:']
     header = '    ' + ' '.join((f'{_col_to_letter(c):>3}' for c in range(min_col, max_col + 1)))
     lines.append(header)
     for r in range(min_row, max_row + 1):
         row_parts = [f'{r + 1:3} ']
         for c in range(min_col, max_col + 1):
             cell_id = f'{_col_to_letter(c)}{r + 1}'
-            if cell_id in grid:
-                cursor = grid[cell_id][0].cursor_name[:3]
-                row_parts.append(f' {cursor:>3}')
+            if cell_id in interactive:
+                row_parts.append(f' {interactive[cell_id].cursor_name[:3]:>3}')
             else:
                 row_parts.append('  .')
         lines.append(''.join(row_parts))
-    lines.append('\nLEGEND: ibe=text, han=click, siz=resize, uar=select, cro=precision, arr=default')
-    lines.append(f'TOTAL ELEMENTS: {sum((len(v) for v in grid.values()))} in {len(grid)} cells')
-    return '\n'.join(lines)
+    return lines
+
+def _render_hierarchical_tree(scan: dict[str, Any], config: dict[str, Any]) -> str:
+    elements = [Element(**e) if isinstance(e, dict) else e for e in scan.get('elements', [])]
+    focused_hwnd = int(scan.get('focused_hwnd') or 0)
+    max_chars = int(config.get('max_tree_chars', 8000))
+    max_windows = int(config.get('max_windows', 14))
+    max_cells = int(config.get('max_cells_per_window', 20))
+    by_hwnd: dict[int, list[Element]] = {}
+    for elem in elements:
+        if elem.cursor_type not in INTERACTIVE_CURSORS and elem.cursor_name not in CURSOR_PRIORITY:
+            continue
+        if elem.hwnd <= 0:
+            continue
+        by_hwnd.setdefault(elem.hwnd, []).append(elem)
+    def window_rank(hwnd: int) -> tuple[int, int, str]:
+        elems = by_hwnd.get(hwnd, [])
+        title = elems[0].window_title if elems else ''
+        focus_rank = 0 if hwnd == focused_hwnd else 1
+        return (focus_rank, -len(elems), title.lower())
+    ordered_hwnds = sorted(by_hwnd.keys(), key=window_rank)
+    lines = [f"FOCUS: {scan.get('focused_title') or '(none)'}", f"SCREEN: {scan.get('screen_width')}x{scan.get('screen_height')}", f"INTERACTIVE: {sum((len(v) for v in by_hwnd.values()))} hits / {len(by_hwnd)} windows", 'WINDOWS:']
+    omitted = 0
+    for hwnd in ordered_hwnds[:max_windows]:
+        elems = by_hwnd[hwnd]
+        title = elems[0].window_title or '(untitled)'
+        cls = elems[0].window_class or ''
+        marker = '*' if hwnd == focused_hwnd else ' '
+        lines.append(f"{marker} [{hwnd}] {title} ({cls})")
+        cells: dict[str, Element] = {}
+        for elem in elems:
+            if not elem.cell_id:
+                col = elem.x // int(scan.get('cell_size') or 100)
+                row = elem.y // int(scan.get('cell_size') or 100)
+                elem.cell_id = f'{_col_to_letter(col)}{row + 1}'
+            prev = cells.get(elem.cell_id)
+            if prev is None or CURSOR_PRIORITY.get(elem.cursor_name, 9) < CURSOR_PRIORITY.get(prev.cursor_name, 9):
+                cells[elem.cell_id] = elem
+        for cell_id in sorted(cells.keys(), key=_cell_sort_key)[:max_cells]:
+            elem = cells[cell_id]
+            lines.append(f"    {cell_id} {elem.cursor_name} @{elem.x},{elem.y}")
+        if len(cells) > max_cells:
+            lines.append(f"    ... +{len(cells) - max_cells} cells")
+    if len(ordered_hwnds) > max_windows:
+        omitted = len(ordered_hwnds) - max_windows
+        lines.append(f"... +{omitted} windows omitted")
+    grid = _create_grid_mapping(elements, int(scan.get('cell_size') or 100))
+    lines.extend(_render_compact_grid(grid, config))
+    text = '\n'.join(lines)
+    if len(text) > max_chars:
+        trimmed = text[:max_chars].rsplit('\n', 1)[0]
+        text = trimmed + f'\n... truncated at {max_chars} chars'
+    if not text.strip():
+        raise RuntimeError('observe produced empty desktop_tree_text')
+    return text
 
 def hover_scan_fullscreen(config: dict[str, Any] | None=None) -> dict[str, Any]:
-    if config is None:
-        config = {}
-    step_px = config.get('step_px', 40)
-    delay_ms = config.get('delay_ms', 1)
-    cell_size = config.get('cell_size', 100)
-    max_elements = config.get('max_elements', 500)
-    restore_cursor = config.get('restore_cursor', True)
+    config = config or {}
+    step_px = int(config.get('step_px', 40))
+    delay_ms = int(config.get('delay_ms', 1))
+    cell_size = int(config.get('cell_size', 100))
+    max_elements = int(config.get('max_elements', 500))
+    restore_cursor = bool(config.get('restore_cursor', True))
     screen_w, screen_h = get_screen_size()
     saved_pos = wintypes.POINT()
     if restore_cursor:
@@ -155,9 +211,7 @@ def hover_scan_fullscreen(config: dict[str, Any] | None=None) -> dict[str, Any]:
                 cursor_changed = cursor_type != last_cursor_type
                 if is_interactive or cursor_changed:
                     if hwnd > 0:
-                        title = get_window_title(hwnd)
-                        cls = get_window_class(hwnd)
-                        elements.append(Element(x=x, y=y, cursor_type=cursor_type, cursor_name=cursor_name, hwnd=hwnd, window_title=title, window_class=cls))
+                        elements.append(Element(x=x, y=y, cursor_type=cursor_type, cursor_name=cursor_name, hwnd=hwnd, window_title=get_window_title(hwnd), window_class=get_window_class(hwnd)))
                 last_cursor_type = cursor_type
                 x += step_px
             y += step_px
@@ -165,21 +219,19 @@ def hover_scan_fullscreen(config: dict[str, Any] | None=None) -> dict[str, Any]:
         if restore_cursor:
             user32.SetCursorPos(saved_pos.x, saved_pos.y)
     grid = _create_grid_mapping(elements, cell_size)
-    grid_text = _render_grid_text(grid)
-    windows = enum_windows()
     focused_hwnd = user32.GetForegroundWindow()
     focused_title = get_window_title(focused_hwnd) if focused_hwnd else ''
-    return {'observed_at': time.time(), 'screen_width': screen_w, 'screen_height': screen_h, 'step_px': step_px, 'cell_size': cell_size, 'elements': [e.to_dict() for e in elements], 'grid': {k: [e.to_dict() for e in v] for k, v in grid.items()}, 'grid_text': grid_text, 'windows': windows, 'focused_title': focused_title, 'focused_hwnd': focused_hwnd, 'element_count': len(elements), 'cell_count': len(grid)}
+    return {'observed_at': time.time(), 'screen_width': screen_w, 'screen_height': screen_h, 'step_px': step_px, 'cell_size': cell_size, 'elements': [e.to_dict() for e in elements], 'grid': {k: [e.to_dict() for e in v] for k, v in grid.items()}, 'windows': enum_windows(), 'focused_title': focused_title, 'focused_hwnd': focused_hwnd, 'element_count': len(elements), 'cell_count': len(grid)}
 
 def observe(config: dict[str, Any] | None=None) -> dict[str, Any]:
-    result = hover_scan_fullscreen(config)
+    config = dict(config or {})
+    scan = hover_scan_fullscreen(config)
+    tree_text = _render_hierarchical_tree(scan, config)
     artifact_dir = ROOT / 'comms' / 'observations'
     artifact_dir.mkdir(parents=True, exist_ok=True)
-    import json
-    artifact_path = artifact_dir / f"{int(result['observed_at'] * 1000)}.json"
-    artifact_path.write_text(json.dumps(result, ensure_ascii=False, indent=2, default=str), encoding='utf-8')
-    result['observation_artifact'] = {'path': artifact_path.relative_to(ROOT).as_posix(), 'size': artifact_path.stat().st_size, 'kind': 'hover_scan_grid'}
-    return result
+    artifact_path = artifact_dir / f"{int(scan['observed_at'] * 1000)}.json"
+    artifact_path.write_text(json.dumps({**scan, 'desktop_tree_text': tree_text}, ensure_ascii=False, indent=2, default=str), encoding='utf-8')
+    return {'observed_at': scan['observed_at'], 'fresh_scan': True, 'desktop_tree_text': tree_text, 'focused_title': scan['focused_title'], 'observation_artifact': {'path': artifact_path.relative_to(ROOT).as_posix(), 'size': artifact_path.stat().st_size, 'kind': 'hover_scan_grid'}, 'element_count': scan['element_count'], 'cell_count': scan['cell_count']}
 
 def observe_screen() -> dict[str, int]:
     w, h = get_screen_size()
@@ -188,73 +240,3 @@ def observe_screen() -> dict[str, int]:
 def get_focused_title() -> str:
     hwnd = user32.GetForegroundWindow()
     return get_window_title(hwnd) if hwnd else ''
-
-def last_desktop_tree() -> dict[str, Any] | None:
-    return None
-
-def last_action_index() -> dict[str, dict[str, Any]]:
-    return {}
-
-def configure_observation(**kwargs) -> None:
-    pass
-__all__ = ['hover_scan_fullscreen', 'observe', 'observe_screen', 'get_focused_title', 'last_desktop_tree', 'last_action_index', 'configure_observation', 'click_at', 'type_text', 'press_key', 'hotkey', 'scroll_at', 'open_url', 'Element', 'set_foreground_window', 'enum_windows', 'window_at_point', 'Desktop', 'get_desktop']
-
-class Desktop:
-
-    def __init__(self, config: dict[str, Any] | None=None):
-        self.config = config or {}
-
-    def observe(self, config: dict[str, Any] | None=None) -> dict[str, Any]:
-        result = hover_scan_fullscreen(config or self.config)
-        return {'observed_at': result['observed_at'], 'fresh_scan': True, 'desktop_tree_text': result['grid_text'], 'focused_title': result['focused_title'], 'observation_artifact': {'path': '', 'size': 0, 'kind': 'hover_scan_grid'}}
-
-    def observe_screen(self) -> dict[str, int]:
-        return observe_screen()
-
-    def last_desktop_tree(self) -> dict[str, Any] | None:
-        return None
-
-    def last_action_index(self) -> dict[str, dict[str, Any]]:
-        return {}
-
-    def get_focused_title(self) -> str:
-        return get_focused_title()
-
-    def configure_observation(self, **kwargs) -> None:
-        self.config.update(kwargs)
-
-    def click(self, x: int, y: int, hwnd: int=0) -> dict:
-        return click_at(x, y, hwnd)
-
-    def type_text(self, text: str) -> dict:
-        return type_text(text)
-
-    def press_key(self, key: str) -> dict:
-        return press_key(key)
-
-    def hotkey(self, keys) -> dict:
-        if isinstance(keys, str):
-            keys = [k.strip() for k in keys.split('+')]
-        return hotkey(keys)
-
-    def scroll(self, x: int, y: int, amount: int, hwnd: int=0) -> dict:
-        return scroll_at(x, y, amount, hwnd)
-
-    def focus_window(self, target: str) -> dict:
-        return set_foreground_window(int(target)) if target.isdigit() else {'ok': False, 'error': 'use hwnd'}
-
-    def open_url(self, browser: str='chrome', url: str='') -> dict:
-        return open_url(browser, url)
-
-    def render_tree_text(self, tree: dict[str, Any] | None=None) -> str:
-        if tree and isinstance(tree, dict) and ('grid_text' in tree):
-            return tree['grid_text']
-        result = hover_scan_fullscreen(self.config)
-        return result.get('grid_text', 'SCAN EMPTY')
-_desktop_instance: Desktop | None = None
-
-def get_desktop(config: dict[str, Any] | None=None) -> Desktop:
-    global _desktop_instance
-    if _desktop_instance is None:
-        _desktop_instance = Desktop(config)
-    return _desktop_instance

@@ -1,111 +1,20 @@
 from __future__ import annotations
-import importlib.util
 import copy
-import ctypes
 import json
 import os
 import pathlib
 import subprocess
-import sys
-import time
-import types
-from abc import ABC, abstractmethod
+import threading
 from typing import Any
 import brain
-import bus
-import desktop
 ROOT = pathlib.Path(__file__).parent.resolve()
 
-def _path(wiring: dict[str, Any], key: str, default: str) -> pathlib.Path:
-    return brain.root_path(wiring.get('paths', {}).get(key), default)
-
-def _load_node(node_name: str, wiring: dict[str, Any]):
-    node_dir = _path(wiring, 'nodes', 'organism_nodes')
-    path = node_dir / f'{node_name}.py'
-    if not path.exists():
-        raise RuntimeError(f"topology node '{node_name}' has no module at {path}")
-    spec = importlib.util.spec_from_file_location(f'endgame_node_{node_name}', path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f'cannot load node module: {path}')
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    if not hasattr(mod, 'run'):
-        raise RuntimeError(f"node '{node_name}' does not export run(ctx)")
-    return mod
-
-class BaseNode(ABC):
-    prompt_key: str = ''
-    expected_record_type: str = ''
-
-    @abstractmethod
-    def signal_from_data(self, data: dict[str, Any]) -> str:
-        ...
-
-    @abstractmethod
-    def patch_from_record(self, record: dict[str, Any]) -> dict[str, Any]:
-        ...
-
-    def run(self, ctx: dict[str, Any]) -> bus.NodeOutput:
-        wiring = ctx['wiring']
-        state = ctx.get('state', {})
-        prompt = wiring.get('prompts', {}).get(self.prompt_key, '')
-        record = brain.think(prompt, {'goal': ctx.get('goal', ''), 'state': bus.state_brief(state), 'observation': bus.observation_brief(state)}, wiring, expected_record_type=self.expected_record_type)
-        if record.get('record_type') != self.expected_record_type:
-            raise RuntimeError(f"{self.prompt_key} expected record_type {self.expected_record_type!r}, got {record.get('record_type')!r}")
-        data = record.get('data', {})
-        signal = self.signal_from_data(data)
-        patch = self.patch_from_record(record)
-        return bus.emit(signal, patch, record=record, evidence={'state': bus.state_brief(state)})
-
-def call_node(node_name: str, ctx: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-    wiring = ctx['wiring']
-    mod = _load_node(node_name, wiring)
-    result = mod.run(ctx)
-    output = bus.coerce_node_output(node_name, result)
-    bus.validate_signal(wiring, node_name, output.signal)
-    patch = dict(output.patch)
-    patch.setdefault('_last_bus_frame', output.trace(node=node_name))
-    sheet = getattr(mod, 'DATASHEET', None)
-    if isinstance(sheet, dict):
-        patch.setdefault('_last_datasheet', dict(sheet))
-    return (output.signal, patch)
-
-def topology_summary(wiring: dict[str, Any]) -> dict[str, Any]:
-    topo = wiring.get('topology', {})
-    return {'cycle_start': topo.get('cycle_start'), 'nodes': list(topo.get('nodes', [])), 'edges': topo.get('edges', {})}
-
-def node_datasheets(wiring: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    sheets: dict[str, dict[str, Any]] = {}
-    for node_name in wiring.get('topology', {}).get('nodes', []):
-        try:
-            mod = _load_node(str(node_name), wiring)
-        except Exception:
-            continue
-        sheet = getattr(mod, 'DATASHEET', None)
-        if isinstance(sheet, dict):
-            sheets[str(node_name)] = dict(sheet)
-    return sheets
-
-def topology_mermaid(wiring: dict[str, Any]) -> str:
-    return bus.mermaid_state_diagram(wiring, node_datasheets(wiring))
-
-def observe_screen(ctx: dict[str, Any] | None=None) -> dict[str, int]:
-    return desktop.observe_screen()
-
-def last_desktop_tree(ctx: dict[str, Any] | None=None) -> dict[str, Any] | None:
-    return desktop.last_desktop_tree()
-
-def get_focused_title(ctx: dict[str, Any] | None=None) -> str:
-    return desktop.get_focused_title()
-
-def _get_desktop_instance():
-    return desktop.get_desktop()
 EVOLVABLE_SUFFIXES = {'.py', '.json', '.md'}
 EVOLVABLE_NAMES = {'.gitattributes', '.gitignore', 'LICENSE'}
 BLOCKED_EVOLVE_PARTS = {'.git', '__pycache__', 'comms', 'pids'}
 BLOCKED_EVOLVE_NAMES = {'state.json', 'stop.txt'}
-CORE_FILES = {'brain.py', 'desktop.py', 'nodes.py', 'organism.py', 'stop_check.py', 'bus.py', 'contract_check.py'}
-PROTECTED_FULL_WRITE_PREFIXES = ('organism_nodes/', 'brain_transports/')
+CORE_FILES = frozenset({'brain.py', 'desktop.py', 'registry.py', 'evolution.py', 'node.py', 'organism.py', 'stop_check.py', 'bus.py', 'contract_check.py'})
+ORGAN_FILES = frozenset({'planner.py','scheduler.py','observe.py','execute.py','frame_action.py','verify.py','reflect.py','self_modify.py','satisfied.py','error.py'})
 PROTECTED_FULL_WRITE_SUFFIXES = ('.py',)
 DEFAULT_WIRING_NEW_PATH_PREFIXES = ('self_modify.', 'model.stable_prefix.', 'model.organs.', 'limits.', 'prompts.')
 
@@ -154,7 +63,7 @@ def _requires_diff_for_full_write(rel: str, path: pathlib.Path) -> bool:
         return False
     if rel in CORE_FILES:
         return True
-    return any((rel.startswith(prefix) for prefix in PROTECTED_FULL_WRITE_PREFIXES))
+    return rel in ORGAN_FILES
 
 def _collect_unified_diffs(data: dict[str, Any]) -> list[str]:
     raw_items = data.get('unified_diffs')
@@ -284,7 +193,7 @@ def _declared_read_files(data: dict[str, Any]) -> set[str]:
     return {str(path).replace('\\', '/').strip().lstrip('/') for path in list(data.get('read_files') or []) if str(path).strip()}
 
 def _activation_bucket(rel: str) -> str:
-    if rel == 'wiring.json' or rel.startswith('organism_nodes/') or rel.startswith('brain_transports/'):
+    if rel == 'wiring.json' or rel in ORGAN_FILES:
         return 'immediate'
     if rel in CORE_FILES:
         return 'next_run'
@@ -389,7 +298,7 @@ def apply_evolution_patch(wiring: dict[str, Any], parsed: dict[str, Any]) -> tup
     deletes: list[tuple[pathlib.Path, str]] = []
     for raw_path in _collect_file_deletes(data):
         path, rel = _evolution_target(raw_path, deleting=True)
-        if path.exists() and (rel in CORE_FILES or rel.startswith(PROTECTED_FULL_WRITE_PREFIXES)):
+        if path.exists() and (rel in CORE_FILES or rel in ORGAN_FILES):
             raise ValueError(f'self_modify may not delete protected organism source file: {rel}')
         deletes.append((path, rel))
     missing_reads = []
@@ -497,86 +406,3 @@ def _node_center(node: dict[str, Any]) -> tuple[int, int]:
     bottom = int(rect.get('bottom', top) or top)
     return (left + max(0, right - left) // 2, top + max(0, bottom - top) // 2)
 
-def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
-    d = _get_desktop_instance()
-    state = ctx.get('state', {})
-    wiring = ctx.get('wiring', {})
-    goal = ctx.get('goal', '')
-    fresh_observation = brain.last_fresh_observation() or {'focused_title': state.get('focused_title', ''), 'fresh_scan': state.get('fresh_scan', False), 'observed_at': state.get('observed_at'), 'desktop_tree': state.get('desktop_tree', {}), 'desktop_tree_text': state.get('desktop_tree_text', ''), 'observation_artifact': state.get('observation_artifact', {})}
-    last = {'error': state.get('last_error'), 'result': state.get('last_result', ''), 'action': state.get('last_action', {}), 'verification': state.get('last_verification', {}), 'reflection': state.get('last_reflection', {})}
-
-    def node_by_id(node_id: str) -> dict[str, Any]:
-        return dict(_desktop_tree_index(state).get(str(node_id), {}) or {})
-
-    def action_nodes(action: str | None=None) -> list[dict[str, Any]]:
-        nodes = []
-        for node in _desktop_tree_index(state).values():
-            if not isinstance(node, dict):
-                continue
-            node_action = node.get('action')
-            if node_action and (action is None or node_action == action):
-                nodes.append(dict(node))
-        return nodes
-
-    def click_node(node_id: str) -> dict[str, Any]:
-        node = dict(_action_index(state).get(str(node_id), {}) or {})
-        if not node:
-            node = node_by_id(node_id)
-        if not node:
-            return {'ok': False, 'action': 'click_node', 'error': f'node not found: {node_id}'}
-        x, y = _node_center(node)
-        return d.click(x, y, int(node.get('hwnd') or 0))
-
-    def scroll_node(node_id: str, amount: int=-3) -> dict[str, Any]:
-        node = dict(_action_index(state).get(str(node_id), {}) or {})
-        if not node:
-            node = node_by_id(node_id)
-        if not node:
-            return {'ok': False, 'action': 'scroll_node', 'error': f'node not found: {node_id}'}
-        x, y = _node_center(node)
-        return d.scroll(x, y, int(amount), int(node.get('hwnd') or 0))
-
-    class _PyAutoGuiCompat:
-
-        def click(self, x: int | None=None, y: int | None=None, clicks: int=1, interval: float=0.0, **kwargs: Any) -> Any:
-            if x is None or y is None:
-                return {'ok': False, 'action': 'pyautogui.click', 'error': 'x and y are required in this body'}
-            result = None
-            for _ in range(max(1, int(clicks or 1))):
-                result = d.click(int(x), int(y), int(kwargs.get('hwnd') or 0))
-                if interval:
-                    time.sleep(float(interval))
-            return result
-
-        def write(self, text: str, interval: float=0.0) -> Any:
-            if interval:
-                for ch in str(text):
-                    d.type_text(ch)
-                    time.sleep(float(interval))
-                return {'ok': True, 'action': 'pyautogui.write', 'chars': len(str(text))}
-            return d.type_text(str(text))
-        typewrite = write
-
-        def press(self, key: str, presses: int=1, interval: float=0.0) -> Any:
-            result = None
-            for _ in range(max(1, int(presses or 1))):
-                result = d.press_key(str(key))
-                if interval:
-                    time.sleep(float(interval))
-            return result
-
-        def hotkey(self, *keys: str) -> Any:
-            if len(keys) == 1 and isinstance(keys[0], (list, tuple)):
-                keys = tuple(keys[0])
-            return d.hotkey(list(keys))
-
-        def scroll(self, clicks: int, x: int | None=None, y: int | None=None, **kwargs: Any) -> Any:
-            if x is None or y is None:
-                return d.scroll(0, 0, int(clicks), int(kwargs.get('hwnd') or 0))
-            return d.scroll(int(x), int(y), int(clicks), int(kwargs.get('hwnd') or 0))
-
-        def sleep(self, seconds: float) -> None:
-            time.sleep(float(seconds))
-    pyautogui = _PyAutoGuiCompat()
-    pag = pyautogui
-    return {'observe_screen': observe_screen, 'last_desktop_tree': last_desktop_tree, 'get_focused_title': get_focused_title, 'node_by_id': node_by_id, 'action_nodes': action_nodes, 'click': d.click, 'click_node': click_node, 'type_text': d.type_text, 'press_key': d.press_key, 'hotkey': d.hotkey, 'scroll': d.scroll, 'scroll_node': scroll_node, 'focus_window': d.focus_window, 'open_url': d.open_url, 'pyautogui': pyautogui, 'pag': pag, 'subprocess': subprocess, 'ctypes': ctypes, 'os': __import__('os'), 'sys': sys, 'json': json, 're': __import__('re'), 'time': time, 'pathlib': pathlib, 'math': __import__('math'), 'random': __import__('random'), 'types': types, 'wiring_limit': wiring_limit, 'repo_root': str(ROOT), 'python_executable': sys.executable, 'topology_summary': topology_summary(wiring), 'topology_mermaid': topology_mermaid(wiring), 'state': state, 'wiring': wiring, 'goal': goal, 'last': last, 'fresh_observation': fresh_observation, 'desktop_tree': state.get('desktop_tree', {}), 'desktop_tree_text': state.get('desktop_tree_text', ''), 'observation_artifact': state.get('observation_artifact', {}), 'focused_title': state.get('focused_title', ''), 'observed_at': state.get('observed_at'), 'fresh_scan': state.get('fresh_scan', False)}
