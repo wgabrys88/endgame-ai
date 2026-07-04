@@ -77,10 +77,10 @@ class Desktop:
             return ""
 
     def observe(self, config: dict[str, Any] | None = None) -> dict[str, Any]:
-        from observation import Observer
+        from observation import observe as observe_desktop
         cfg = config or {}
         hc = cfg.get("hover_cache", self.config.get("hover_cache", {}))
-        return Observer(self).observe(hc)
+        return observe_desktop(self, hc)
 
     def observe_screen(self) -> dict[str, int]:
         return {"width": user32.GetSystemMetrics(0), "height": user32.GetSystemMetrics(1)}
@@ -98,9 +98,6 @@ class Desktop:
         if active:
             self._focused_title_cache = self._get_window_title(active)
         return self._focused_title_cache
-
-    def configure_observation(self, **kwargs) -> None:
-        self.config.update(kwargs)
 
     def get_window_tokens(self) -> list[dict[str, Any]]:
         sw, sh = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
@@ -299,7 +296,3 @@ def last_action_index() -> dict[str, dict[str, Any]]:
 
 def get_focused_title() -> str:
     return get_desktop().get_focused_title()
-
-
-def configure_observation(**kwargs) -> None:
-    get_desktop().configure_observation(**kwargs)

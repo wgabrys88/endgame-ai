@@ -145,7 +145,7 @@
     }
   },
   "topology": {
-    "cycle_start": "planner",
+    "cycle_start": "observe",
     "nodes": [
       "planner",
       "scheduler",
@@ -170,6 +170,7 @@
         "error": "error"
       },
       "observe": {
+        "initial_screen": "planner",
         "screen_ready": "execute",
         "error": "error"
       },

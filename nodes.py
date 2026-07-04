@@ -72,7 +72,7 @@ class BaseNode(ABC):
             {
                 "goal": ctx.get("goal", ""),
                 "state": bus.state_brief(state),
-                "observation": bus.observation_brief(state),
+                "fresh_observation": state.get("fresh_observation") or bus.observation_brief(state),
             },
             wiring,
             expected_record_type=self.expected_record_type,
@@ -556,14 +556,7 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
     state = ctx.get("state", {})
     wiring = ctx.get("wiring", {})
     goal = ctx.get("goal", "")
-    fresh_observation = brain.last_fresh_observation() or {
-        "focused_title": state.get("focused_title", ""),
-        "fresh_scan": state.get("fresh_scan", False),
-        "observed_at": state.get("observed_at"),
-        "desktop_tree": state.get("desktop_tree", {}),
-        "desktop_tree_text": state.get("desktop_tree_text", ""),
-        "observation_artifact": state.get("observation_artifact", {}),
-    }
+    fresh_observation = state.get("fresh_observation") or brain.last_fresh_observation() or bus.observation_brief(state)
     last = {
         "error": state.get("last_error"),
         "result": state.get("last_result", ""),

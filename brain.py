@@ -207,7 +207,7 @@ class StablePrefix:
             "You are one organ inside endgame-ai, a local desktop organism controlled by the Python body.",
             "Organs: planner makes intent, scheduler selects a step, observe scans the screen, execute acts, verify judges, reflect diagnoses, self_modify evolves the repository, satisfied halts, error routes mechanical failures.",
             "The body can use mouse, keyboard, subprocesses, files, apps, browser, Python modules, and git through the shared capability runtime.",
-            "Every brain call receives a fresh whole-screen hover observation at the end of the dynamic payload. Treat stale state as history only.",
+            "Every brain call receives fresh_observation from the observe node state patch. No rescan fallback exists.",
             "The brain-facing desktop_tree is semantic and id-based. Coordinates, hwnds, runtime ids, and UIA metadata live in body-side action_index/raw artifacts; act by node id.",
             "",
             "STATIC MANIFEST:",
@@ -295,8 +295,6 @@ def _normalize_observation(obj: Any) -> dict[str, Any] | None:
 
 def _fresh_observation_payload(wiring: dict[str, Any], payload: dict[str, Any] | None = None) -> dict[str, Any]:
     global _LAST_FRESH_OBSERVATION
-    # Prefer observation already produced by the observe node. This avoids a second
-    # UIA scan and keeps the brain payload to one canonical fresh_observation.
     if payload:
         candidates = [payload.get("fresh_observation"), payload.get("observation")]
         evidence = payload.get("evidence")
@@ -307,19 +305,7 @@ def _fresh_observation_payload(wiring: dict[str, Any], payload: dict[str, Any] |
             if normalized is not None:
                 _LAST_FRESH_OBSERVATION = normalized
                 return normalized
-
-    # Fallback: do a fresh scan for nodes that run without an observe tick.
-    import desktop
-
-    obs = desktop.observe(wiring.get("observe_config", {}))
-    result = {
-        "focused_title": obs.get("focused_title", ""),
-        "desktop_tree_text": obs.get("desktop_tree_text", ""),
-        "observed_at": obs.get("observed_at"),
-        "fresh_scan": obs.get("fresh_scan", True),
-    }
-    _LAST_FRESH_OBSERVATION = result
-    return result
+    raise RuntimeError("fresh_observation missing: observe node must run before any brain call")
 
 
 def last_fresh_observation() -> dict[str, Any]:
