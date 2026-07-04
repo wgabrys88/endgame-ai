@@ -8,7 +8,7 @@ import time
 
 def _root_path(value):
     p = pathlib.Path(os.path.expandvars(os.path.expanduser(str(value))))
-    return p if p.is_absolute() else pathlib.Path(__file__).resolve().parents[1] / p
+    return p if p.is_absolute() else pathlib.Path(__file__).resolve().parent / p
 
 
 def call(messages, cfg):
