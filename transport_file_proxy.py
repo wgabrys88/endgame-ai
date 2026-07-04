@@ -12,10 +12,9 @@ def _root_path(value):
 
 
 def call(messages, cfg):
-    req_path = _root_path(cfg.get("request_path") or "comms/request.json")
-    resp_path = _root_path(cfg.get("response_path") or "comms/response.json")
-    req_path.parent.mkdir(parents=True, exist_ok=True)
-    request = {"messages": messages, "created_at": time.time(), "transport": "file_proxy"}
+    req_path = _root_path(cfg.get("request_path") or "runtime_request.json")
+    resp_path = _root_path(cfg.get("response_path") or "runtime_response.json")
+    request = {"messages": messages, "created_at": time.time(), "transport": "transport_file_proxy"}
     tmp = req_path.with_suffix(req_path.suffix + ".tmp")
     tmp.write_text(json.dumps(request, ensure_ascii=False, indent=2), encoding="utf-8")
     os.replace(tmp, req_path)

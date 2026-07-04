@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import bus
+import core_bus as bus
 
 
 DATASHEET = bus.datasheet(
-    "satisfied",
+    "node_satisfied",
     kind="halt_gate",
     inputs=["plan_complete", "last_reflection", "last_error"],
     signals=["halt"],

@@ -17,7 +17,7 @@ import threading
 import time
 from typing import Any
 
-import stop_check
+import core_stop_check as stop_check
 
 ROOT = pathlib.Path(__file__).parent.resolve()
 _RAW_LOG_PATH: pathlib.Path | None = None
@@ -32,8 +32,9 @@ _OPEN_OBJECT_SCHEMA = {"type": "object", "additionalProperties": True}
 
 STATIC_PREFIX_SUFFIXES = {".py", ".json", ".md"}
 STATIC_PREFIX_NAMES = {".gitattributes", ".gitignore", "LICENSE"}
-STATIC_PREFIX_SKIP_PARTS = {".git", "__pycache__", ".pytest_cache", "comms", "pids"}
-STATIC_PREFIX_SKIP_PREFIXES = {"reports/"}
+STATIC_PREFIX_SKIP_PARTS = {".git", "__pycache__", ".pytest_cache"}
+STATIC_PREFIX_SKIP_PREFIXES = ("runtime_",)
+
 
 _RECORD_DATA_SCHEMAS: dict[str, dict[str, Any]] = {
     "plan": {
@@ -171,7 +172,8 @@ class StablePrefix:
         parts = set(pathlib.PurePosixPath(rel).parts)
         if parts & STATIC_PREFIX_SKIP_PARTS:
             return False
-        if any(rel.startswith(prefix) for prefix in STATIC_PREFIX_SKIP_PREFIXES):
+        name = pathlib.PurePosixPath(rel).name
+        if name.startswith(STATIC_PREFIX_SKIP_PREFIXES):
             return False
         path = pathlib.PurePosixPath(rel)
         return path.name in STATIC_PREFIX_NAMES or path.suffix in STATIC_PREFIX_SUFFIXES
@@ -360,8 +362,7 @@ def raw_log_path(cfg: dict[str, Any] | None = None) -> pathlib.Path:
         if explicit:
             _RAW_LOG_PATH = root_path(str(explicit))
         else:
-            _RAW_LOG_PATH = ROOT / f"{time.strftime('%Y%m%dT%H%M%S')}.txt"
-        _RAW_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            _RAW_LOG_PATH = ROOT / f"runtime_raw_{time.strftime('%Y%m%dT%H%M%S')}.txt"
         _RAW_LOG_PATH.touch(exist_ok=True)
     return _RAW_LOG_PATH
 
@@ -615,12 +616,12 @@ def think(
     request_cfg = dict(request_config or {})
     
     # Send prompt_cache_key for xAI prompt caching (conversation-level cache)
-    if cfg.get("transport") == "xai":
+    if cfg.get("transport") == "transport_xai":
         request_cfg.setdefault("prompt_cache_key", conv_id)
     
     # Set reasoning_effort per organ for xAI. Keep verification mechanical/cheap;
     # reserve high reasoning for self-modifying firmware patches.
-    if cfg.get("transport") == "xai" and expected_record_type:
+    if cfg.get("transport") == "transport_xai" and expected_record_type:
         default_effort_map = {
             "plan": "medium",
             "action_frame": "low",

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import bus
+import core_bus as bus
 
 
 DATASHEET = bus.datasheet(
-    "scheduler",
+    "node_scheduler",
     kind="mechanical_step_selector",
     inputs=["plan.intent", "state.step"],
     signals=["step_ready", "plan_complete", "error"],

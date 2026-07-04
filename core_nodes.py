@@ -14,9 +14,9 @@ import types
 from abc import ABC, abstractmethod
 from typing import Any
 
-import brain
-import bus
-import desktop
+import core_brain as brain
+import core_bus as bus
+import core_desktop as desktop
 
 ROOT = pathlib.Path(__file__).parent.resolve()
 
@@ -158,9 +158,16 @@ def _get_desktop_instance():
 
 EVOLVABLE_SUFFIXES = {".py", ".json", ".md"}
 EVOLVABLE_NAMES = {".gitattributes", ".gitignore", "LICENSE"}
-BLOCKED_EVOLVE_PARTS = {".git", "__pycache__", "comms", "pids"}
-BLOCKED_EVOLVE_NAMES = {"state.json", "stop.txt"}
-CORE_FILES = {"brain.py", "desktop.py", "nodes.py", "organism.py", "stop_check.py"}
+BLOCKED_EVOLVE_PARTS = {".git", "__pycache__"}
+BLOCKED_EVOLVE_PREFIXES = ("runtime_",)
+BLOCKED_EVOLVE_NAMES: set[str] = set()
+CORE_FILES = {
+    "core_brain.py",
+    "core_desktop.py",
+    "core_nodes.py",
+    "core_organism.py",
+    "core_stop_check.py",
+}
 
 
 def _patch_data(parsed: dict[str, Any]) -> dict[str, Any]:
@@ -184,6 +191,8 @@ def _evolution_target(raw_path: str, *, deleting: bool = False) -> tuple[pathlib
     parts = {part.lower() for part in repo_rel.parts}
     if parts & BLOCKED_EVOLVE_PARTS:
         raise ValueError(f"self_modify path targets runtime/private area: {repo_rel.as_posix()}")
+    if path.name.startswith(BLOCKED_EVOLVE_PREFIXES):
+        raise ValueError(f"self_modify path targets runtime artifact: {repo_rel.as_posix()}")
     if path.name in BLOCKED_EVOLVE_NAMES:
         raise ValueError(f"self_modify path targets runtime state: {repo_rel.as_posix()}")
     if path.name not in EVOLVABLE_NAMES and path.suffix not in EVOLVABLE_SUFFIXES:
@@ -257,9 +266,10 @@ def _declared_read_files(data: dict[str, Any]) -> set[str]:
 
 def _activation_bucket(rel: str) -> str:
     if rel == "wiring.json" or rel in {
-        "planner.py", "scheduler.py", "observe.py", "execute.py", "frame_action.py",
-        "verify.py", "reflect.py", "self_modify.py", "satisfied.py", "error.py",
-        "file_proxy.py", "xai.py", "openai.py", "opencode.py", "browser_ai.py", "observation.py",
+        "node_planner.py", "node_scheduler.py", "node_observe.py", "node_execute.py", "node_frame_action.py",
+        "node_verify.py", "node_reflect.py", "node_self_modify.py", "node_satisfied.py", "node_error.py",
+        "transport_file_proxy.py", "transport_xai.py", "transport_openai.py", "transport_opencode.py",
+        "transport_browser_ai.py", "core_observation.py",
     }:
         return "immediate"
     if rel in CORE_FILES:

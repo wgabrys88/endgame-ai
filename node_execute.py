@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-import brain
-import bus
+import core_brain as brain
+import core_bus as bus
 import contextlib
-import desktop
+import core_desktop as desktop
 import io
-import nodes
+import core_nodes as nodes
 
 
 DATASHEET = bus.datasheet(
-    "execute",
+    "node_execute",
     kind="llm_code_actuator",
     inputs=["goal", "current_step", "fresh_observation", "action_frame", "capability_runtime"],
     signals=["verify", "frame", "reflect", "self_modify", "error"],
@@ -65,7 +65,7 @@ def run(ctx):
     }
 
     record = brain.think(
-        system_prompt=wiring.get("prompts", {}).get("execute", ""),
+        system_prompt=wiring.get("prompts", {}).get("node_execute", ""),
         payload=payload,
         wiring=wiring,
         expected_record_type="execution",

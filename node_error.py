@@ -1,11 +1,11 @@
 """error: mechanical error recovery node."""
 from __future__ import annotations
 
-import bus
+import core_bus as bus
 
 
 DATASHEET = bus.datasheet(
-    "error",
+    "node_error",
     kind="mechanical_recovery_router",
     inputs=["last_node", "last_error", "current_step"],
     signals=["planner", "reflect", "halt"],

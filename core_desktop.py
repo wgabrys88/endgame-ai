@@ -77,7 +77,7 @@ class Desktop:
             return ""
 
     def observe(self, config: dict[str, Any] | None = None) -> dict[str, Any]:
-        from observation import observe as observe_desktop
+        from core_observation import observe as observe_desktop
         cfg = config or {}
         hc = cfg.get("hover_cache", self.config.get("hover_cache", {}))
         return observe_desktop(self, hc)

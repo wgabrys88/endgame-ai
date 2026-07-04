@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import bus
-import desktop
+import core_bus as bus
+import core_desktop as desktop
 
 
 DATASHEET = bus.datasheet(
-    "observe",
+    "node_observe",
     kind="desktop_sensor",
     inputs=["wiring.observe_config"],
     signals=["screen_ready", "initial_screen", "error"],

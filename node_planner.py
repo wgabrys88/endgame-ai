@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import bus
-from nodes import BaseNode
+import core_bus as bus
+from core_nodes import BaseNode
 
 
 DATASHEET = bus.datasheet(
-    "planner",
+    "node_planner",
     kind="llm_intent_decomposer",
     inputs=["goal", "state_brief", "fresh_observation"],
     signals=["step_ready", "reflect", "error"],
@@ -15,7 +15,7 @@ DATASHEET = bus.datasheet(
 
 
 class PlannerNode(BaseNode):
-    prompt_key = "planner"
+    prompt_key = "node_planner"
     expected_record_type = "plan"
 
     def signal_from_data(self, data):

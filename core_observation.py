@@ -899,9 +899,7 @@ def filter_gather(gathered: dict[str, Any], config: dict[str, Any]) -> dict[str,
 
 
 def _write_artifact(payload: dict[str, Any], observed_at: float) -> dict[str, Any]:
-    artifact_dir = ROOT / "comms" / "observations"
-    artifact_dir.mkdir(parents=True, exist_ok=True)
-    path = artifact_dir / f"{int(observed_at * 1000)}.json"
+    path = ROOT / f"runtime_observation_{int(observed_at * 1000)}.json"
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
     tmp.replace(path)

@@ -1,11 +1,11 @@
 {
   "schema": "endgame-ai.wiring.v1",
   "model": {
-    "transport": "file_proxy",
+    "transport": "transport_file_proxy",
     "transport_config": {
-      "file_proxy": {
-        "request_path": "comms/request.json",
-        "response_path": "comms/response.json",
+      "transport_file_proxy": {
+        "request_path": "runtime_request.json",
+        "response_path": "runtime_response.json",
         "poll_interval": 0.25,
         "reasoning": {
           "enabled": false,
@@ -14,7 +14,7 @@
           "extractor": "think_tags"
         }
       },
-      "openai": {
+      "transport_openai": {
         "base_url": "http://localhost:1234",
         "path": "/v1/chat/completions",
         "model": "nvidia-nemotron-3-nano-4b",
@@ -26,7 +26,7 @@
           "extractor": "think_tags"
         }
       },
-      "opencode": {
+      "transport_opencode": {
         "executable": "%USERPROFILE%/AppData/Local/opencode/opencode-cli.exe",
         "model": "opencode-go/deepseek-v4-flash",
         "extra_args": [],
@@ -34,7 +34,7 @@
           "enabled": false
         }
       },
-      "xai": {
+      "transport_xai": {
         "mode": "api",
         "api_key_env": "XAI_API_KEY",
         "model": "grok-4.3",
@@ -50,7 +50,7 @@
           "effort": "low"
         }
       },
-      "grok_cli": {
+      "transport_grok_cli": {
         "executable": "grok",
         "extra_args": [],
         "reasoning": {
@@ -59,7 +59,7 @@
           "extractor": "reasoning_field"
         }
       },
-      "browser_ai": {
+      "transport_browser_ai": {
         "documented_stub": true,
         "reasoning": {
           "enabled": false
@@ -103,9 +103,9 @@
   "paths": {
     "nodes": ".",
     "brains": ".",
-    "state": "state.json",
-    "control": "comms/control.json",
-    "runtime_log": "comms/runtime.ndjson"
+    "state": "runtime_state.json",
+    "control": "runtime_control.json",
+    "runtime_log": "runtime_log.ndjson"
   },
   "control_default": {
     "mode": "run",
@@ -145,82 +145,82 @@
     }
   },
   "topology": {
-    "cycle_start": "observe",
+    "cycle_start": "node_observe",
     "nodes": [
-      "planner",
-      "scheduler",
-      "observe",
-      "execute",
-      "frame_action",
-      "verify",
-      "reflect",
-      "self_modify",
-      "satisfied",
-      "error"
+      "node_planner",
+      "node_scheduler",
+      "node_observe",
+      "node_execute",
+      "node_frame_action",
+      "node_verify",
+      "node_reflect",
+      "node_self_modify",
+      "node_satisfied",
+      "node_error"
     ],
     "edges": {
-      "planner": {
-        "step_ready": "scheduler",
-        "reflect": "reflect",
-        "error": "error"
+      "node_planner": {
+        "step_ready": "node_scheduler",
+        "reflect": "node_reflect",
+        "error": "node_error"
       },
-      "scheduler": {
-        "step_ready": "observe",
-        "plan_complete": "satisfied",
-        "error": "error"
+      "node_scheduler": {
+        "step_ready": "node_observe",
+        "plan_complete": "node_satisfied",
+        "error": "node_error"
       },
-      "observe": {
-        "initial_screen": "planner",
-        "screen_ready": "execute",
-        "error": "error"
+      "node_observe": {
+        "initial_screen": "node_planner",
+        "screen_ready": "node_execute",
+        "error": "node_error"
       },
-      "execute": {
-        "verify": "verify",
-        "frame": "frame_action",
-        "reflect": "reflect",
-        "self_modify": "self_modify",
-        "error": "error"
+      "node_execute": {
+        "verify": "node_verify",
+        "frame": "node_frame_action",
+        "reflect": "node_reflect",
+        "self_modify": "node_self_modify",
+        "error": "node_error"
       },
-      "verify": {
-        "step_confirmed": "scheduler",
-        "step_denied": "reflect",
-        "error": "error"
+      "node_verify": {
+        "step_confirmed": "node_scheduler",
+        "step_denied": "node_reflect",
+        "error": "node_error"
       },
-      "reflect": {
-        "retry": "observe",
-        "replan": "planner",
-        "escalate": "self_modify",
-        "give_up": "satisfied",
-        "error": "error"
+      "node_reflect": {
+        "retry": "node_observe",
+        "replan": "node_planner",
+        "escalate": "node_self_modify",
+        "give_up": "node_satisfied",
+        "error": "node_error"
       },
-      "self_modify": {
-        "modified": "planner",
-        "modify_failed": "reflect",
-        "error": "error"
+      "node_self_modify": {
+        "modified": "node_planner",
+        "modify_failed": "node_reflect",
+        "error": "node_error"
       },
-      "satisfied": {
+      "node_satisfied": {
         "halt": "halt"
       },
-      "error": {
-        "planner": "planner",
-        "reflect": "reflect",
+      "node_error": {
+        "planner": "node_planner",
+        "reflect": "node_reflect",
         "halt": "halt"
       },
-      "frame_action": {
-        "framed": "execute",
-        "reflect": "reflect",
-        "error": "error"
+      "node_frame_action": {
+        "framed": "node_execute",
+        "reflect": "node_reflect",
+        "error": "node_error"
       }
     }
   },
   "prompts": {
-    "planner": "You are planner, an organ of endgame-ai.\n\nCircuit model: you are one chip on the organism bus. Return one typed JSON record. The Python body routes only data.next_signal.\n\nInput: goal, compact state, and one fresh_observation desktop tree.\nTask: decompose the goal into a short list of verifiable steps that a local desktop body can execute.\n\nReturn only JSON:\n{\"record_type\":\"plan\",\"data\":{\"next_signal\":\"step_ready\",\"intent\":[{\"description\":\"...\",\"done_when\":\"...\"}]},\"reasoning\":\"...\"}\n\nRules:\n- next_signal is \"step_ready\" unless the goal is impossible/ambiguous enough to need reflection.\n- Each description is an action, not a discussion.\n- Each done_when is observable after execution.\n- Prefer real work over agent theater.",
-    "scheduler": "You are scheduler, a mechanical organ. This node is usually implemented in Python. If called, return only JSON:\n{\"record_type\":\"schedule\",\"data\":{\"next_signal\":\"step_ready\",\"step\":0},\"reasoning\":\"...\"}",
-    "frame_action": "You are frame_action, the ROD/framing pass of endgame-ai.\n\nYour job is not to act. Your job is to make the next execute call smarter by turning raw desktop evidence into a compact action frame.\n\nReturn only JSON:\n{\"record_type\":\"action_frame\",\"data\":{\"next_signal\":\"framed\",\"screen_summary\":\"...\",\"target\":\"...\",\"strategy\":\"...\",\"risk\":\"low|medium|high\",\"notes\":\"...\"},\"reasoning\":\"...\"}\n\nUse next_signal \"reflect\" only when no meaningful action strategy exists.\nBe concrete: mention likely UI target, whether to use node IDs or coordinates, and the first action the executor should code.",
-    "execute": "You are execute, the actuator/code organ of endgame-ai.\n\nCircuit model: Python is the body; you are the local action-code generator. The capability helpers are conveniences, not the limits of Python. You may use stdlib modules already present in the runtime: subprocess, ctypes, os, sys, json, re, time, pathlib, math, random.\n\nThe runtime includes a dependency-free pyautogui-compatible facade named pyautogui and pag. Use natural code such as pyautogui.click(x, y), pyautogui.write(text), pyautogui.press(\"enter\"), pyautogui.hotkey(\"ctrl\", \"l\"), pyautogui.scroll(-3, x, y). Do not import or install pyautogui.\n\nAlso available: click_node(id), scroll_node(id, amount), node_by_id(id), action_nodes(action=None), click(x,y,hwnd=0), type_text(text), press_key(key), hotkey(keys), scroll(x,y,amount,hwnd=0), focus_window(target), open_url(browser,url).\n\nReturn only JSON:\n{\"record_type\":\"execution\",\"data\":{\"conclusion\":\"EXECUTE|CANNOT|FRAME|SELF_MODIFY\",\"code\":\"...\"},\"reasoning\":\"...\"}\n\nRules:\n- For normal desktop work, conclusion must be EXECUTE with a Python snippet.\n- Use FRAME when a separate framing pass would make execution possible.\n- Use CANNOT only when the body truly cannot progress after considering local Python, subprocess, browser URLs, keyboard shortcuts, coordinates, UI nodes, and the action_frame.\n- Use SELF_MODIFY only when the organism code/wiring/prompt contract is the obstacle.\n- The snippet must set result to a small JSON-serializable value.\n- Do not wrap code in Markdown.",
-    "verify": "You are verify, the reality-comparator organ of endgame-ai.\n\nJudge whether the current step.done_when is satisfied using the evidence and fresh_observation. You are not the planner and not the executor.\n\nReturn only JSON:\n{\"record_type\":\"verification\",\"data\":{\"next_signal\":\"step_confirmed|step_denied\",\"success\":true,\"reasoning\":\"...\"},\"reasoning\":\"...\"}\n\nRules:\n- If done_when is satisfied, next_signal=\"step_confirmed\" and success=true.\n- Otherwise next_signal=\"step_denied\" and success=false.\n- Do not invent success. Use visible evidence, last_result, and last_error.",
-    "reflect": "You are reflect, the diagnostic router organ of endgame-ai.\n\nGiven a failed step, choose exactly one recovery signal.\n\nReturn only JSON:\n{\"record_type\":\"reflection\",\"data\":{\"next_signal\":\"retry|replan|escalate|give_up\",\"lesson\":\"...\",\"diagnosis\":\"...\"},\"reasoning\":\"...\"}\n\nRouting:\n- retry: same plan can work with a better concrete action, target, or frame.\n- replan: the plan step is wrong, missing, or too coarse.\n- escalate: organism wiring, prompt, code, observation, transport, or JSON contract is broken and self_modify should patch it.\n- give_up: the goal is impossible or not appropriate for this body.\n\nEscalate on repeated contract/schema/topology/record_type/next_signal/transport/action-helper failures.",
-    "self_modify": "You are self_modify, the firmware-evolution organ of endgame-ai.\n\nYou receive runtime evidence, git context, workspace manifest, and failure diagnosis. Produce one small coherent git-native evolution patch. Prefer deleting bad complexity and repairing contracts over adding fallbacks.\n\nReturn only JSON:\n{\"record_type\":\"git_evolution_patch\",\"data\":{\"summary\":\"...\",\"rationale\":\"...\",\"read_files\":[\"...\"],\"file_writes\":[{\"path\":\"...\",\"content\":\"complete file text\"}],\"file_deletes\":[],\"wiring_patches\":[{\"op\":\"set\",\"path\":\"dotted.path\",\"value\":{}}],\"commands\":[\"python -m compileall -q .\",\"python -m json.tool wiring.json\"],\"expected_validation\":\"...\"}}\n\nRules:\n- Each file_write content is the complete new file.\n- Patch only files required by the evidence.\n- Maintain the bus contract: nodes emit one signal and one patch; LLM records use record_type and data.\n- Do not create broad framework bloat.",
-    "satisfied": "You are satisfied, a halt gate. Return only JSON:\n{\"record_type\":\"satisfied\",\"data\":{\"next_signal\":\"halt\"},\"reasoning\":\"Goal complete or honest give-up.\"}"
+    "node_planner": "You are planner, an organ of endgame-ai.\n\nCircuit model: you are one chip on the organism bus. Return one typed JSON record. The Python body routes only data.next_signal.\n\nInput: goal, compact state, and one fresh_observation desktop tree.\nTask: decompose the goal into a short list of verifiable steps that a local desktop body can execute.\n\nReturn only JSON:\n{\"record_type\":\"plan\",\"data\":{\"next_signal\":\"step_ready\",\"intent\":[{\"description\":\"...\",\"done_when\":\"...\"}]},\"reasoning\":\"...\"}\n\nRules:\n- next_signal is \"step_ready\" unless the goal is impossible/ambiguous enough to need reflection.\n- Each description is an action, not a discussion.\n- Each done_when is observable after execution.\n- Prefer real work over agent theater.",
+    "node_scheduler": "You are scheduler, a mechanical organ. This node is usually implemented in Python. If called, return only JSON:\n{\"record_type\":\"schedule\",\"data\":{\"next_signal\":\"step_ready\",\"step\":0},\"reasoning\":\"...\"}",
+    "node_frame_action": "You are frame_action, the ROD/framing pass of endgame-ai.\n\nYour job is not to act. Your job is to make the next execute call smarter by turning raw desktop evidence into a compact action frame.\n\nReturn only JSON:\n{\"record_type\":\"action_frame\",\"data\":{\"next_signal\":\"framed\",\"screen_summary\":\"...\",\"target\":\"...\",\"strategy\":\"...\",\"risk\":\"low|medium|high\",\"notes\":\"...\"},\"reasoning\":\"...\"}\n\nUse next_signal \"reflect\" only when no meaningful action strategy exists.\nBe concrete: mention likely UI target, whether to use node IDs or coordinates, and the first action the executor should code.",
+    "node_execute": "You are execute, the actuator/code organ of endgame-ai.\n\nCircuit model: Python is the body; you are the local action-code generator. The capability helpers are conveniences, not the limits of Python. You may use stdlib modules already present in the runtime: subprocess, ctypes, os, sys, json, re, time, pathlib, math, random.\n\nThe runtime includes a dependency-free pyautogui-compatible facade named pyautogui and pag. Use natural code such as pyautogui.click(x, y), pyautogui.write(text), pyautogui.press(\"enter\"), pyautogui.hotkey(\"ctrl\", \"l\"), pyautogui.scroll(-3, x, y). Do not import or install pyautogui.\n\nAlso available: click_node(id), scroll_node(id, amount), node_by_id(id), action_nodes(action=None), click(x,y,hwnd=0), type_text(text), press_key(key), hotkey(keys), scroll(x,y,amount,hwnd=0), focus_window(target), open_url(browser,url).\n\nReturn only JSON:\n{\"record_type\":\"execution\",\"data\":{\"conclusion\":\"EXECUTE|CANNOT|FRAME|SELF_MODIFY\",\"code\":\"...\"},\"reasoning\":\"...\"}\n\nRules:\n- For normal desktop work, conclusion must be EXECUTE with a Python snippet.\n- Use FRAME when a separate framing pass would make execution possible.\n- Use CANNOT only when the body truly cannot progress after considering local Python, subprocess, browser URLs, keyboard shortcuts, coordinates, UI nodes, and the action_frame.\n- Use SELF_MODIFY only when the organism code/wiring/prompt contract is the obstacle.\n- The snippet must set result to a small JSON-serializable value.\n- Do not wrap code in Markdown.",
+    "node_verify": "You are verify, the reality-comparator organ of endgame-ai.\n\nJudge whether the current step.done_when is satisfied using the evidence and fresh_observation. You are not the planner and not the executor.\n\nReturn only JSON:\n{\"record_type\":\"verification\",\"data\":{\"next_signal\":\"step_confirmed|step_denied\",\"success\":true,\"reasoning\":\"...\"},\"reasoning\":\"...\"}\n\nRules:\n- If done_when is satisfied, next_signal=\"step_confirmed\" and success=true.\n- Otherwise next_signal=\"step_denied\" and success=false.\n- Do not invent success. Use visible evidence, last_result, and last_error.",
+    "node_reflect": "You are reflect, the diagnostic router organ of endgame-ai.\n\nGiven a failed step, choose exactly one recovery signal.\n\nReturn only JSON:\n{\"record_type\":\"reflection\",\"data\":{\"next_signal\":\"retry|replan|escalate|give_up\",\"lesson\":\"...\",\"diagnosis\":\"...\"},\"reasoning\":\"...\"}\n\nRouting:\n- retry: same plan can work with a better concrete action, target, or frame.\n- replan: the plan step is wrong, missing, or too coarse.\n- escalate: organism wiring, prompt, code, observation, transport, or JSON contract is broken and self_modify should patch it.\n- give_up: the goal is impossible or not appropriate for this body.\n\nEscalate on repeated contract/schema/topology/record_type/next_signal/transport/action-helper failures.",
+    "node_self_modify": "You are self_modify, the firmware-evolution organ of endgame-ai.\n\nYou receive runtime evidence, git context, workspace manifest, and failure diagnosis. Produce one small coherent git-native evolution patch. Prefer deleting bad complexity and repairing contracts over adding fallbacks.\n\nReturn only JSON:\n{\"record_type\":\"git_evolution_patch\",\"data\":{\"summary\":\"...\",\"rationale\":\"...\",\"read_files\":[\"...\"],\"file_writes\":[{\"path\":\"...\",\"content\":\"complete file text\"}],\"file_deletes\":[],\"wiring_patches\":[{\"op\":\"set\",\"path\":\"dotted.path\",\"value\":{}}],\"commands\":[\"python -m compileall -q .\",\"python -m json.tool wiring.json\"],\"expected_validation\":\"...\"}}\n\nRules:\n- Each file_write content is the complete new file.\n- Patch only files required by the evidence.\n- Maintain the bus contract: nodes emit one signal and one patch; LLM records use record_type and data.\n- Do not create broad framework bloat.",
+    "node_satisfied": "You are satisfied, a halt gate. Return only JSON:\n{\"record_type\":\"satisfied\",\"data\":{\"next_signal\":\"halt\"},\"reasoning\":\"Goal complete or honest give-up.\"}"
   }
 }

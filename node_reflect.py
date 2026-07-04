@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import brain
-import bus
+import core_brain as brain
+import core_bus as bus
 
 
 DATASHEET = bus.datasheet(
-    "reflect",
+    "node_reflect",
     kind="llm_diagnostic_router",
     inputs=["goal", "current_step", "last_action", "last_result", "last_error", "last_verification", "failure_streak"],
     signals=["retry", "replan", "escalate", "give_up", "error"],
@@ -49,7 +49,7 @@ def run(ctx):
     }
 
     record = brain.think(
-        system_prompt=wiring.get("prompts", {}).get("reflect", ""),
+        system_prompt=wiring.get("prompts", {}).get("node_reflect", ""),
         payload={
             "goal": goal,
             "observation": bus.observation_brief(state),

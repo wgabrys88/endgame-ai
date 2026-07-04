@@ -4,17 +4,17 @@ import pathlib
 import subprocess
 from typing import Any
 
-import brain
-import bus
-import nodes
+import core_brain as brain
+import core_bus as bus
+import core_nodes as nodes
 
 
-ROOT = pathlib.Path(__file__).parent.parent.resolve()
-SKIP_DIRS = {".git", "__pycache__", ".pytest_cache", ".vscode", ".idea", "pids"}
+ROOT = pathlib.Path(__file__).resolve().parent
+SKIP_PREFIXES = ("runtime_",)
 BINARY_SUFFIXES = {".pyc", ".pyd", ".dll", ".exe", ".ico", ".png", ".jpg", ".jpeg", ".gif", ".webp"}
 
 DATASHEET = bus.datasheet(
-    "self_modify",
+    "node_self_modify",
     kind="llm_git_firmware_update",
     inputs=["goal", "failure", "runtime_evidence", "git_context", "workspace_manifest"],
     signals=["modified", "modify_failed", "error"],
@@ -54,7 +54,7 @@ def _capture_workspace_manifest() -> dict[str, Any]:
         if not path.is_file():
             continue
         parts = pathlib.PurePosixPath(rel.replace("\\", "/")).parts
-        if any(part in SKIP_DIRS for part in parts):
+        if any(part.startswith(SKIP_PREFIXES) for part in parts):
             continue
         files.append({
             "path": rel.replace("\\", "/"),
@@ -83,10 +83,10 @@ def _evidence_file(path: pathlib.Path) -> dict[str, Any]:
 
 
 def _runtime_evidence(wiring: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
-    raw_logs = sorted(ROOT.glob("*.txt"), key=lambda p: p.stat().st_mtime, reverse=True)[:5]
+    raw_logs = sorted(ROOT.glob("runtime_raw_*.txt"), key=lambda p: p.stat().st_mtime, reverse=True)[:5]
     return {
-        "state_path": _evidence_file(brain.root_path(wiring.get("paths", {}).get("state"), "state.json")),
-        "runtime_log_path": _evidence_file(brain.root_path(wiring.get("paths", {}).get("runtime_log"), "comms/runtime.ndjson")),
+        "state_path": _evidence_file(brain.root_path(wiring.get("paths", {}).get("state"), "runtime_state.json")),
+        "runtime_log_path": _evidence_file(brain.root_path(wiring.get("paths", {}).get("runtime_log"), "runtime_log.ndjson")),
         "raw_log_paths": [_evidence_file(path) for path in raw_logs],
         "current_state_keys": sorted(state.keys()),
         "has_fresh_observation": all(key in state for key in ("desktop_tree_text", "focused_title", "fresh_scan")),
@@ -145,10 +145,10 @@ def run(ctx):
                 "expected_validation": "what should pass after the patch",
             },
             "notes": [
-                "Target root-level node modules (planner.py, observe.py, etc.) and transport modules (file_proxy.py, xai.py, etc.).",
+                "Target root-level node modules (node_planner.py, node_observe.py, etc.) and transport modules (transport_file_proxy.py, transport_xai.py, etc.).",
                 "Python and JSON writes are validated before write and again after write.",
                 "The local organism applies, validates, commits, and pushes on the checked-out branch.",
-                "Core files brain.py, nodes.py, organism.py, desktop.py, and stop_check.py activate on the next process run.",
+                "Core files core_brain.py, core_nodes.py, core_organism.py, core_desktop.py, and core_stop_check.py activate on the next process run.",
             ],
         },
     }
@@ -156,7 +156,7 @@ def run(ctx):
         payload["fresh_observation"] = fresh_obs
 
     record = brain.think(
-        system_prompt=wiring.get("prompts", {}).get("self_modify", ""),
+        system_prompt=wiring.get("prompts", {}).get("node_self_modify", ""),
         payload=payload,
         wiring=wiring,
         expected_record_type="git_evolution_patch",

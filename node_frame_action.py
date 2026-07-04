@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import brain
-import bus
+import core_brain as brain
+import core_bus as bus
 
 
 DATASHEET = bus.datasheet(
-    "frame_action",
+    "node_frame_action",
     kind="llm_rod_framing_pass",
     inputs=["goal", "current_step", "last_action", "last_result", "last_error", "fresh_observation"],
     signals=["framed", "reflect", "error"],
@@ -29,7 +29,7 @@ def run(ctx):
     }
 
     record = brain.think(
-        system_prompt=wiring.get("prompts", {}).get("frame_action", ""),
+        system_prompt=wiring.get("prompts", {}).get("node_frame_action", ""),
         payload={
             "goal": goal,
             "observation": bus.observation_brief(state),

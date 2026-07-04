@@ -14,9 +14,9 @@ import sys
 import time
 from typing import Any
 
-import brain
-import nodes
-import stop_check
+import core_brain as brain
+import core_nodes as nodes
+import core_stop_check as stop_check
 
 ROOT = pathlib.Path(__file__).parent.resolve()
 
@@ -26,15 +26,15 @@ def load_wiring() -> dict[str, Any]:
 
 
 def state_path(wiring: dict[str, Any]) -> pathlib.Path:
-    return brain.root_path(wiring.get("paths", {}).get("state"), "state.json")
+    return brain.root_path(wiring.get("paths", {}).get("state"), "runtime_state.json")
 
 
 def control_path(wiring: dict[str, Any]) -> pathlib.Path:
-    return brain.root_path(wiring.get("paths", {}).get("control"), "comms/control.json")
+    return brain.root_path(wiring.get("paths", {}).get("control"), "runtime_control.json")
 
 
 def runtime_log_path(wiring: dict[str, Any]) -> pathlib.Path:
-    return brain.root_path(wiring.get("paths", {}).get("runtime_log"), "comms/runtime.ndjson")
+    return brain.root_path(wiring.get("paths", {}).get("runtime_log"), "runtime_log.ndjson")
 
 
 def write_state(wiring: dict[str, Any], state: dict[str, Any]) -> None:
@@ -73,12 +73,10 @@ def read_control(wiring: dict[str, Any]) -> dict[str, Any]:
 
 
 def reset_runtime(wiring: dict[str, Any]) -> None:
-    for key, default in [("state", "state.json"), ("runtime_log", "comms/runtime.ndjson")]:
+    for key, default in [("state", "runtime_state.json"), ("runtime_log", "runtime_log.ndjson")]:
         p = brain.root_path(wiring.get("paths", {}).get(key), default)
         if p.exists():
             p.unlink()
-    comms = ROOT / "comms"
-    comms.mkdir(exist_ok=True)
 
 
 def wait_before_node(wiring: dict[str, Any], state: dict[str, Any], node_name: str) -> None:
@@ -139,7 +137,7 @@ def run(
         reset_runtime(wiring)
     brain.reset_call_budget()
     topo = wiring.get("topology", {})
-    current = str(start_node or topo.get("cycle_start") or "planner")
+    current = str(start_node or topo.get("cycle_start") or "node_planner")
     if current not in set(topo.get("nodes", [])):
         raise RuntimeError(f"start node '{current}' is not in topology.nodes")
     state: dict[str, Any] = {
@@ -170,7 +168,7 @@ def run(
             ctx = {"wiring": wiring, "state": dict(state), "goal": goal or "", "node": current}
             signal_name, patch = nodes.call_node(current, ctx)
             evolution_patch = patch.get("git_evolution_patch")
-            if current == "self_modify" and evolution_patch:
+            if current == "node_self_modify" and evolution_patch:
                 _, applied = nodes.apply_evolution_patch(wiring, {"data": evolution_patch})
                 patch.setdefault("self_modify", {})["applied"] = applied
                 committed = nodes.commit_self_evolution(wiring, applied, evolution_patch)

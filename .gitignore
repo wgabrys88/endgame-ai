@@ -1,39 +1,28 @@
-# Source allowlist: ignore everything unless this file explicitly allows it.
 *
 .*
 
 !.gitattributes
 !.gitignore
-!LICENSE
-!*.py
 !wiring.json
-
-# Runtime and local-only data stay sealed.
-__pycache__/
-*.py[cod]
-.pytest_cache/
-comms/
-pids/
-state.json
-goal.json
-*.txt
-*.tmp
-*.log
-request-logs-*.jsonl
-notebooklm_exports/
-
-# Secrets and local environment.
-.env
-.env.*
-*.key
-*.pem
-*.p12
-*.pfx
-
-# Local tooling and OS/editor files.
-.agents/
-.vscode/
-.idea/
-.DS_Store
-Thumbs.db
-*.swp
+!core_brain.py
+!core_bus.py
+!core_desktop.py
+!core_nodes.py
+!core_observation.py
+!core_organism.py
+!core_stop_check.py
+!node_error.py
+!node_execute.py
+!node_frame_action.py
+!node_observe.py
+!node_planner.py
+!node_reflect.py
+!node_satisfied.py
+!node_scheduler.py
+!node_self_modify.py
+!node_verify.py
+!transport_browser_ai.py
+!transport_file_proxy.py
+!transport_openai.py
+!transport_opencode.py
+!transport_xai.py
