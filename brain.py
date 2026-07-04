@@ -142,12 +142,17 @@ def _messages(organ: str, static_prompt: str, user_text: str, prefix: StablePref
         system = prefix.text + '\n\n' + system
     return [{'role': 'system', 'content': system}, {'role': 'user', 'content': user_text}]
 
-def _commit_record(content: str) -> dict[str, Any]:
+def _commit_record(content: str, expected_record_type: str | None=None) -> dict[str, Any]:
     record = extract_json_object(content)
     if record is None:
         raise RuntimeError(f'brain did not commit a valid JSON object: {content}')
-    if not isinstance(record.get('record_type'), str):
-        raise RuntimeError(f'brain record missing string record_type: {record}')
+    if not isinstance(record.get('record_type'), str) or not str(record.get('record_type', '')).strip():
+        if expected_record_type:
+            reasoning = record.get('reasoning', '') if isinstance(record.get('reasoning'), str) else ''
+            data = record.get('data') if isinstance(record.get('data'), dict) else {k: v for k, v in record.items() if k != 'reasoning'}
+            record = {'record_type': expected_record_type, 'data': data, 'reasoning': reasoning}
+        else:
+            raise RuntimeError(f'brain record missing string record_type: {record}')
     if 'data' not in record or not isinstance(record['data'], dict):
         raise RuntimeError(f'brain record missing object data: {record}')
     return record
@@ -435,13 +440,13 @@ def think(system_prompt: str, payload: dict[str, Any], wiring: dict[str, Any], *
         request_cfg.setdefault('reasoning_effort', default_effort_map.get(expected_record_type, 'low'))
     if not reasoning_cfg['enabled'] or pattern == 'single_pass':
         result = call(_messages(organ, system_prompt, user_text, prefix_for_messages), wiring, rod_feedback=False, response_format=response_format, request_config=request_cfg)
-        record = _commit_record(result['content'])
+        record = _commit_record(result['content'], expected_record_type)
         record.setdefault('reasoning', reasoning_from(result['content'], result.get('reasoning', '')))
         print(f'[brain] organ={organ} record={record.get("record_type")} ok', flush=True)
         return record
     if pattern == 'native':
         result = call(_messages(organ, system_prompt, user_text, prefix_for_messages), wiring, rod_feedback=False, response_format=response_format, request_config=request_cfg)
-        record = _commit_record(result['content'])
+        record = _commit_record(result['content'], expected_record_type)
         record.setdefault('reasoning', reasoning_from(result['content'], result.get('reasoning', '')))
         print(f'[brain] organ={organ} record={record.get("record_type")} ok', flush=True)
         return record
@@ -451,7 +456,7 @@ def think(system_prompt: str, payload: dict[str, Any], wiring: dict[str, Any], *
     reasoning = reasoning_from(first['content'], first.get('reasoning', ''))
     template = str(reasoning_cfg.get('injection_template') or 'REASONING_FEEDBACK:\n{reasoning}')
     second = call(_messages(organ, system_prompt, user_text + '\n\n' + template.format(reasoning=reasoning), prefix_for_messages), wiring, rod_feedback=True, response_format=response_format, request_config=request_cfg)
-    record = _commit_record(second['content'])
+    record = _commit_record(second['content'], expected_record_type)
     record.setdefault('reasoning', reasoning)
     print(f'[brain] organ={organ} record={record.get("record_type")} ok', flush=True)
     return record
