@@ -20,6 +20,8 @@
 !brain_transports/*.py
 !organism_nodes/
 !organism_nodes/*.py
+!hover_cache_probe/
+!hover_cache_probe/*.py
 !reports/
 !reports/endgame-ai-living-operator-report.html
 
