@@ -97,6 +97,7 @@ def _run_probe_path(
     restore_cursor: bool,
     pattern: str,
     step_px: int,
+    include_nodes: bool = False,
 ) -> dict[str, Any]:
     sw = user32.GetSystemMetrics(0)
     sh = user32.GetSystemMetrics(1)
@@ -164,7 +165,7 @@ def _run_probe_path(
     ]
     text_blobs.sort(key=lambda t: t["length"], reverse=True)
 
-    return {
+    result = {
         "methodology": "SetCursorPos + ElementFromPointBuildCache(TreeScope_Subtree) + wide UIA property/pattern harvest",
         "screen": {"width": sw, "height": sh},
         "config": {
@@ -205,6 +206,9 @@ def _run_probe_path(
         },
         "probe_log_sample": probe_log[:30],
     }
+    if include_nodes:
+        result["_nodes"] = nodes
+    return result
 
 
 def merge_nodes(global_index: dict[str, CachedNode], new_nodes: list[CachedNode]) -> int:
@@ -243,8 +247,8 @@ def fullscreen_hover_cache_scan(
     max_subtree_nodes_per_point: int = 120,
     max_total_nodes: int = 2000,
     pattern: str = "grid",
+    include_nodes: bool = False,
 ) -> dict[str, Any]:
-    """Single-pass full-screen hover + UIA cache harvest."""
     cache_request = create_cache_request(automation)
     sw = user32.GetSystemMetrics(0)
     sh = user32.GetSystemMetrics(1)
@@ -265,6 +269,7 @@ def fullscreen_hover_cache_scan(
         restore_cursor=True,
         pattern=pattern,
         step_px=step_px,
+        include_nodes=include_nodes,
     )
 
 

@@ -113,15 +113,22 @@
     "updated_at": 0
   },
   "observe_config": {
-    "hover_scan": {
-      "mode": "cursor_hover",
-      "restore_cursor": true,
-      "step_px": 64,
-      "delay_ms": 1,
-      "target_window_only": true,
-      "min_size_px": 6,
-      "max_elements": 240,
-      "full_screen_step_px": 64
+    "hover_cache": {
+      "enabled": false,
+      "scan": {
+        "pattern": "sinusoidal",
+        "step_px": 96,
+        "delay_ms": 5,
+        "max_subtree_nodes_per_point": 250,
+        "max_total_nodes": 2000
+      },
+      "depth": {},
+      "filter": {
+        "max_llm_nodes": 180,
+        "max_action_nodes": 240,
+        "text_hint_max": 120,
+        "require_interactive": true
+      }
     }
   },
   "self_modify": {

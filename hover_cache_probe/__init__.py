@@ -1,11 +1,3 @@
-"""Independent hover+cache observation probe for endgame-ai R&D.
-
-Methodology:
-  1. SetCursorPos (real mouse hover)
-  2. IUIAutomation.ElementFromPointBuildCache with TreeScope_Subtree
-  3. Harvest cached descendants + TextPattern.GetText(-1) / ValuePattern
-  4. Gather everything; llm_preview shows filter layer (not wired to organism yet)
-"""
 from __future__ import annotations
 
 import json
@@ -13,7 +5,14 @@ import pathlib
 from typing import Any
 
 from . import constants as C
+from .depth import expand
+from .filter import ObservationFilter
 from .scan import fullscreen_hover_cache_scan, single_point_probe
+
+
+def create_automation() -> Any:
+    import comtypes.client
+    return comtypes.client.CreateObject(C.uia.CUIAutomation, interface=C.uia.IUIAutomation)
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DEFAULT_REPORT = ROOT / "comms" / "hover_cache_probe_report.json"

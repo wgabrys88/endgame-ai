@@ -647,89 +647,33 @@ class Desktop:
         return variant_to_str(name_var)
     
     def observe(self, config: dict[str, Any] | None = None) -> dict[str, Any]:
-        """Perform a full desktop observation using hover_scan as primary method.
-        
-        Args:
-            config: Optional observation configuration with keys:
-                - hover_scan: dict with hover_scan config (step_px, delay_ms, target_window_only, min_size_px, max_elements)
-        
-        Returns:
-            Fresh observation dict with desktop_tree, desktop_tree_text, focused_title, and scan metadata.
-        """
-        if config is None:
-            config = {}
-        
-        hover_config = config.get("hover_scan", self.config.get("hover_scan", {}))
-        
-        # Get screen size
-        user32 = ctypes.windll.user32
-        screen_width = user32.GetSystemMetrics(0)
-        screen_height = user32.GetSystemMetrics(1)
-        
-        # Get active window
-        active_window_uia = self._get_active_window()
-        focused_title = ""
-        if active_window_uia:
-            focused_title = self._get_window_title(active_window_uia)
-            self._focused_title_cache = focused_title
-        else:
-            focused_title = self._focused_title_cache
-        
-        observed_at = time.time()
+        config = config or {}
+        hc = config.get("hover_cache", self.config.get("hover_cache", {}))
+        if not hc.get("enabled", False):
+            return self._observe_idle()
+        from hover_cache_probe.observer import HoverCacheObserver
+        return HoverCacheObserver(self).observe(hc)
 
-        # PRIMARY: Hover scan - scan whole screen if desktop/taskbar is active, else target window only
-        is_desktop = focused_title in ("Program Manager", "Desktop", "Taskbar", "") or not active_window_uia
-        target_window_only = hover_config.get("target_window_only", True) and not is_desktop
-        
-        hover_config_adjusted = dict(hover_config)
-        hover_config_adjusted["target_window_only"] = target_window_only
-        # Use larger step for full-screen scan to avoid excessive probes
-        if not target_window_only:
-            hover_config_adjusted["step_px"] = hover_config.get("full_screen_step_px", 60)
-        
-        hover_elements = self.hover_scan(hover_config_adjusted)
-        filtered_elements = self.filter_elements(hover_elements)
-        windows = self.get_window_tokens()
-        full_tree = self.build_desktop_tree(
-            {"width": screen_width, "height": screen_height},
-            filtered_elements,
-            windows,
-            focused_title,
-            observed_at=observed_at,
-            scan_config=hover_config_adjusted,
-            raw_element_count=len(hover_elements),
-        )
-        desktop_tree = self.semantic_desktop_tree(full_tree)
-        action_index = self.action_index_from_tree(full_tree)
-        artifact = self.write_observation_artifact(
-            {
-                "observed_at": observed_at,
-                "fresh_scan": True,
-                "focused_title": focused_title,
-                "scan_config": hover_config_adjusted,
-                "windows": windows,
-                "raw_elements": [element.to_dict() for element in hover_elements],
-                "action_elements": filtered_elements,
-                "full_desktop_tree": full_tree,
-                "semantic_desktop_tree": desktop_tree,
-                "action_index": action_index,
-            },
-            observed_at,
-        )
-        
+    def _observe_idle(self) -> dict[str, Any]:
+        active_window_uia = self._get_active_window()
+        focused_title = self._get_window_title(active_window_uia) if active_window_uia else self._focused_title_cache
+        self._focused_title_cache = focused_title
+        observed_at = time.time()
+        desktop_tree = {
+            "id": "W0",
+            "role": "Screen",
+            "focused_title": focused_title,
+            "root": {"id": "W0", "role": "Screen", "name": "Desktop", "children": []},
+        }
         self._last_desktop_tree = desktop_tree
-        self._last_action_index = action_index
-        
-        # Render tree as clean indented text for brain consumption
-        desktop_tree_text = self.render_tree_text(desktop_tree)
-        
+        self._last_action_index = {}
         return {
             "observed_at": observed_at,
-            "fresh_scan": True,
+            "fresh_scan": False,
             "desktop_tree": desktop_tree,
-            "desktop_tree_text": desktop_tree_text,
-            "action_index": action_index,
-            "observation_artifact": artifact,
+            "desktop_tree_text": "(W0) Screen Desktop",
+            "action_index": {},
+            "observation_artifact": {},
             "focused_title": focused_title,
         }
     
