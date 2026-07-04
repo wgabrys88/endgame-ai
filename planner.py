@@ -17,7 +17,7 @@ class Planner(LlmNode):
     def signal(self, data: dict[str, Any], record: dict[str, Any]) -> str:
         signal = str(data.get('next_signal') or 'step_ready')
         if signal not in {'step_ready', 'reflect'}:
-            raise RuntimeError(f"planner invalid next_signal: {signal!r}")
+            signal = 'step_ready'
         return signal
 
     def patch(self, record: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:

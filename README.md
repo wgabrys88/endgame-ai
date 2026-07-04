@@ -9,7 +9,7 @@ No sandbox. No task ceiling. Install software, use logged-in browsers, post on y
 | **Risk** | Unconstrained machine, accounts, reputation |
 | **Greatness** | Living human-operator replacement — self-narrating, self-evolving |
 
-**Tags:** `survey-loop-complete` · **`handover-investigation`** (Run B postmortem) · next: **`handover-prompt-fix`**
+**Tags:** `survey-loop-complete` · `handover-investigation` · **`handover-prompt-fix`** · next: **`handover-opera-run`**
 
 ---
 
@@ -38,6 +38,8 @@ User confirmed: compose opened, **nothing typed, nothing published**. Logs agree
 | 3 | Verify prompt: stdout ≠ proof; compose still open = deny |
 | 4 | Execute `think()` skips hover rescan — uses `ui_context` from observe tick |
 | 5 | Planner: Opera preference, **article** not short post, concrete UI steps |
+| 6 | `_commit_record`: hoist flat Grok JSON when `record_type` present but `data` missing |
+| 7 | Planner: coerce invalid `next_signal` → `step_ready` |
 
 ---
 
@@ -53,11 +55,11 @@ User confirmed: compose opened, **nothing typed, nothing published**. Logs agree
 
 ## Next run (Opera handover)
 
-**Goal:** Publish **full articles** (not tweets) on X and LinkedIn about endgame-ai via **Opera** — logged-in user session, post on owner behalf.
+**Goal:** Publish **full articles** (not short posts) on X and LinkedIn about endgame-ai via **Opera** — owner is logged in; post on owner behalf.
 
-**Bounds:** `--max-ticks 40 --max-brain-calls 30`
+**Bounds:** `--max-ticks 50 --max-brain-calls 40`
 
-No prep required — organism deduces install/launch/login UI.
+No prep required — organism deduces install/launch; Opera session already authenticated.
 
 ---
 
@@ -90,7 +92,7 @@ stateDiagram-v2
 | P | Task | Status |
 |---|------|--------|
 | — | Prompt/body fixes (investigation) | **done** |
-| **Now** | Opera article handover Run B2 | running |
+| **Now** | Opera article handover Run B2 | **running** |
 | P1 | Live self_modify + reload | pending |
 | P1 | Post-evolve self-eval ticks | pending |
 
@@ -105,7 +107,7 @@ Poll `comms/` every ~30s · sport commentary · never commit runtime logs · arc
 ## CLI
 
 ```bash
-python organism.py "goal" --max-ticks 40 --max-brain-calls 30 --reset
+python organism.py "goal" --max-ticks 50 --max-brain-calls 40 --reset
 python comms_poll.py 30 20
 python contract_check.py
 ```

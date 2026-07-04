@@ -149,12 +149,16 @@ def _commit_record(content: str, expected_record_type: str | None=None) -> dict[
     if not isinstance(record.get('record_type'), str) or not str(record.get('record_type', '')).strip():
         if expected_record_type:
             reasoning = record.get('reasoning', '') if isinstance(record.get('reasoning'), str) else ''
-            data = record.get('data') if isinstance(record.get('data'), dict) else {k: v for k, v in record.items() if k != 'reasoning'}
+            data = record.get('data') if isinstance(record.get('data'), dict) else {k: v for k, v in record.items() if k not in {'reasoning', 'record_type'}}
             record = {'record_type': expected_record_type, 'data': data, 'reasoning': reasoning}
         else:
             raise RuntimeError(f'brain record missing string record_type: {record}')
     if 'data' not in record or not isinstance(record['data'], dict):
-        raise RuntimeError(f'brain record missing object data: {record}')
+        reasoning = record.get('reasoning', '') if isinstance(record.get('reasoning'), str) else ''
+        data = {k: v for k, v in record.items() if k not in {'reasoning', 'record_type'}}
+        if not data:
+            raise RuntimeError(f'brain record missing object data: {record}')
+        record = {'record_type': str(record['record_type']).strip(), 'data': data, 'reasoning': reasoning}
     return record
 
 def _effective_reasoning_config(wiring: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
