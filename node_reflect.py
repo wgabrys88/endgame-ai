@@ -8,25 +8,19 @@ DATASHEET = bus.datasheet(
     "node_reflect",
     kind="llm_diagnostic_router",
     inputs=["goal", "current_step", "last_action", "last_result", "last_error", "last_verification", "failure_streak"],
-    signals=["retry", "replan", "escalate", "give_up", "error"],
+    signals=["retry", "replan", "frame", "escalate", "give_up", "error"],
     writes=["reflection", "last_reflection", "failure_streak"],
     record_type="reflection",
 )
 
 
-ESCALATE_MARKERS = (
-    "contract",
-    "schema",
-    "record_type",
-    "next_signal",
-    "json",
-    "transport",
-    "prompt",
-    "topology",
-    "no topology edge",
-    "missing helper",
+MECHANICAL_ESCALATE_MARKERS = (
     "NameError",
     "AttributeError",
+    "SyntaxError",
+    "ImportError",
+    "no topology edge",
+    "missing helper",
 )
 
 
@@ -73,16 +67,27 @@ def run(ctx):
 
     data = record.get("data", {})
     signal = data.get("next_signal", "replan")
-    if signal not in {"retry", "replan", "escalate", "give_up"}:
+    if signal not in {"retry", "replan", "frame", "escalate", "give_up"}:
         signal = "replan"
 
+    step_index = int(state.get("step", 0) or 0)
+    last_verification = state.get("last_verification") or {}
     diagnostic_text = " ".join(str(x) for x in [
         state.get("last_error", ""),
         data.get("diagnosis", ""),
         data.get("lesson", ""),
         state.get("last_action", {}),
     ])
-    if projected_streak["count"] >= 2 and any(marker.lower() in diagnostic_text.lower() for marker in ESCALATE_MARKERS):
+    if (
+        last_verification.get("signal") == "step_denied"
+        and projected_streak["count"] >= 2
+        and state.get("framing_attempted_for_step") != step_index
+        and signal in {"retry", "replan"}
+    ):
+        signal = "frame"
+    elif state.get("last_error") and any(
+        marker.lower() in diagnostic_text.lower() for marker in MECHANICAL_ESCALATE_MARKERS
+    ):
         signal = "escalate"
 
     lesson = data.get("lesson", "No lesson provided")

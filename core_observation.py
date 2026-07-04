@@ -657,6 +657,8 @@ def gather(desktop: Any, config: dict[str, Any]) -> dict[str, Any]:
                 pass
 
     nodes = list(index.values())
+    if hasattr(desktop, "clear_focus_cache"):
+        desktop.clear_focus_cache()
     focused_title = desktop.get_focused_title()
     return {
         "nodes": nodes,
@@ -914,6 +916,8 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
     gathered = gather(desktop, cfg)
     filtered = filter_gather(gathered, cfg)
     observed_at = time.time()
+    if hasattr(desktop, "clear_focus_cache"):
+        desktop.clear_focus_cache()
     desktop._focused_title_cache = str(gathered.get("focused_title") or "")
     desktop._last_desktop_tree = filtered["desktop_tree"]
     desktop._last_action_index = filtered["action_index"]

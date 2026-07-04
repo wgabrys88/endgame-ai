@@ -189,12 +189,27 @@ def run(
             signal_name, patch = nodes.call_node(current, ctx)
             evolution_patch = patch.get("git_evolution_patch")
             if current == "node_self_modify" and evolution_patch:
-                _, applied = nodes.apply_evolution_patch(wiring, {"data": evolution_patch})
-                patch.setdefault("self_modify", {})["applied"] = applied
-                committed = nodes.commit_self_evolution(wiring, applied, evolution_patch)
-                patch["self_modify"]["commit"] = committed
-                wiring = load_wiring()
-                runtime_event(wiring, "self_modify_applied", **applied, commit=committed)
+                try:
+                    _, applied = nodes.apply_evolution_patch(wiring, {"data": evolution_patch})
+                    patch.setdefault("self_modify", {})["applied"] = applied
+                    committed = nodes.commit_self_evolution(wiring, applied, evolution_patch)
+                    patch["self_modify"]["commit"] = committed
+                    wiring = load_wiring()
+                    runtime_event(wiring, "self_modify_applied", **applied, commit=committed)
+                except Exception as exc:
+                    swap_cfg = wiring.get("self_modify", {})
+                    if bool(swap_cfg.get("hot_swap_on_failure", True)):
+                        touched = [
+                            str(item.get("path")).replace("\\", "/")
+                            for item in (evolution_patch.get("file_writes") or [])
+                            if isinstance(item, dict) and item.get("path")
+                        ]
+                        swap = nodes.hot_swap_to_known_good(wiring, paths=touched or None)
+                        if not swap.get("hot_swapped") and swap_cfg.get("known_good_commit"):
+                            swap = nodes.hot_swap_to_known_good(wiring)
+                        patch.setdefault("self_modify", {})["hot_swap"] = swap
+                        runtime_event(wiring, "self_modify_hot_swap", error=str(exc), **swap)
+                    raise
             state.update(patch)
             # Handle halt signal for clean exit
             if signal_name == "halt":

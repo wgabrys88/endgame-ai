@@ -51,6 +51,10 @@ class Desktop:
         self._last_desktop_tree: dict[str, Any] | None = None
         self._last_action_index: dict[str, dict[str, Any]] = {}
         self._focused_title_cache = ""
+        self._last_window_tokens: dict[str, dict[str, Any]] = {}
+
+    def clear_focus_cache(self) -> None:
+        self._focused_title_cache = ""
 
     def _init_automation(self) -> None:
         self._automation = comtypes.client.CreateObject(uia.CUIAutomation, interface=uia.IUIAutomation)
@@ -92,12 +96,10 @@ class Desktop:
         return self._last_action_index
 
     def get_focused_title(self) -> str:
-        if self._focused_title_cache:
-            return self._focused_title_cache
         active = self._get_active_window()
-        if active:
-            self._focused_title_cache = self._get_window_title(active)
-        return self._focused_title_cache
+        title = self._get_window_title(active) if active else ""
+        self._focused_title_cache = title
+        return title
 
     def get_window_tokens(self) -> list[dict[str, Any]]:
         sw, sh = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
@@ -141,6 +143,9 @@ class Desktop:
             user32.EnumWindows(EnumWindowsProc(callback), 0)
         except Exception:
             pass
+        self._last_window_tokens = {
+            str(w.get("token")): w for w in windows if w.get("token") and str(w.get("token")) != "W0"
+        }
         return windows
 
     def click(self, x: int, y: int, hwnd: int = 0) -> dict[str, Any]:
@@ -229,7 +234,13 @@ class Desktop:
             except ValueError:
                 return {"ok": False, "action": "focus_window", "error": "invalid hwnd format"}
         elif target.startswith("W"):
-            hwnd = int(self._last_action_index.get(target, {}).get("hwnd") or 0)
+            win = self._last_window_tokens.get(target) or {}
+            hwnd = int(win.get("hwnd") or 0)
+            if not hwnd:
+                for w in self.get_window_tokens():
+                    if str(w.get("token")) == target:
+                        hwnd = int(w.get("hwnd") or 0)
+                        break
             if not hwnd:
                 return {"ok": False, "action": "focus_window", "error": f"window token not found: {target}"}
         else:
@@ -250,8 +261,15 @@ class Desktop:
             user32.EnumWindows(EnumWindowsProc(callback), 0)
             hwnd = found[0]
         if hwnd:
-            user32.SetForegroundWindow(hwnd)
-            return {"ok": True, "action": "focus_window", "target": target, "hwnd": hwnd}
+            ok = bool(user32.SetForegroundWindow(hwnd))
+            self.clear_focus_cache()
+            return {
+                "ok": ok,
+                "action": "focus_window",
+                "target": target,
+                "hwnd": hwnd,
+                "focused_title": self.get_focused_title() if ok else "",
+            }
         return {"ok": False, "action": "focus_window", "error": f"window not found: {target}"}
 
     def open_url(self, browser: str = "chrome", url: str = "") -> dict[str, Any]:

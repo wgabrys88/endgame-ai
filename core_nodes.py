@@ -168,6 +168,7 @@ CORE_FILES = {
     "core_organism.py",
     "core_stop_check.py",
 }
+MIN_CORE_DESKTOP_LINES = 80
 
 
 def _patch_data(parsed: dict[str, Any]) -> dict[str, Any]:
@@ -207,6 +208,11 @@ def _validate_content(path: pathlib.Path, rel: str, content: Any) -> str:
         raise ValueError(f"self_modify content for {rel} must be a string")
     if path.suffix == ".py":
         compile(content, rel, "exec")
+        if rel == "core_desktop.py":
+            if "class Desktop" not in content:
+                raise ValueError("core_desktop.py must retain class Desktop")
+            if content.count("\n") + (1 if content and not content.endswith("\n") else 0) < MIN_CORE_DESKTOP_LINES:
+                raise ValueError(f"core_desktop.py below minimum line count ({MIN_CORE_DESKTOP_LINES})")
     elif path.suffix == ".json":
         json.loads(content)
     return content
@@ -300,6 +306,33 @@ def git_current_branch() -> str:
 
 def git_worktree_status() -> list[str]:
     return [line for line in _git(["status", "--porcelain"]).stdout.splitlines() if line.strip()]
+
+
+def known_good_commit(wiring: dict[str, Any]) -> str:
+    return str(wiring.get("self_modify", {}).get("known_good_commit") or "").strip()
+
+
+def hot_swap_to_known_good(
+    wiring: dict[str, Any],
+    *,
+    paths: list[str] | None = None,
+) -> dict[str, Any]:
+    """Restore tracked body files from the configured known-good commit (self hot-swap)."""
+    sha = known_good_commit(wiring)
+    if not sha:
+        return {"hot_swapped": False, "reason": "no_known_good_commit"}
+    if paths:
+        targets = [str(p).replace("\\", "/") for p in paths if str(p).strip()]
+    else:
+        tracked = [line.split("\t", 1)[-1].strip() for line in _git(["ls-files"]).stdout.splitlines() if line.strip()]
+        targets = sorted(
+            p for p in tracked
+            if p.endswith(tuple(EVOLVABLE_SUFFIXES)) or p in EVOLVABLE_NAMES
+        )
+    if not targets:
+        return {"hot_swapped": False, "reason": "no_targets", "commit": sha}
+    _git(["checkout", sha, "--", *targets])
+    return {"hot_swapped": True, "commit": sha, "paths": targets}
 
 
 def _remote_url(remote: str) -> str:
@@ -588,14 +621,27 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
                 nodes.append(dict(node))
         return nodes
 
+    def _focus_node_window(node: dict[str, Any]) -> dict[str, Any]:
+        hwnd = int(node.get("hwnd") or 0)
+        if hwnd:
+            return d.focus_window(f"hwnd:{hwnd}")
+        parent_id = str(node.get("parent_id") or "")
+        if parent_id.startswith("W"):
+            return d.focus_window(parent_id)
+        return {"ok": True, "action": "focus_window", "skipped": True}
+
     def click_node(node_id: str) -> dict[str, Any]:
         node = dict(_action_index(state).get(str(node_id), {}) or {})
         if not node:
             node = node_by_id(node_id)
         if not node:
             return {"ok": False, "action": "click_node", "error": f"node not found: {node_id}"}
+        focus_res = _focus_node_window(node)
+        if not focus_res.get("ok", False):
+            return {"ok": False, "action": "click_node", "error": "focus before click failed", "focus": focus_res}
         x, y = _node_center(node)
-        return d.click(x, y, int(node.get("hwnd") or 0))
+        click_res = d.click(x, y, int(node.get("hwnd") or 0))
+        return {"ok": bool(click_res.get("ok", True)), "action": "click_node", "node_id": node_id, "focus": focus_res, "click": click_res}
 
     def scroll_node(node_id: str, amount: int = -3) -> dict[str, Any]:
         node = dict(_action_index(state).get(str(node_id), {}) or {})

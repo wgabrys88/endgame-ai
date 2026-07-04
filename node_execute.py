@@ -57,10 +57,10 @@ def run(ctx):
             "helpers": [
                 "click_node(id)", "scroll_node(id, amount)", "node_by_id(id)", "action_nodes(action=None)",
                 "click(x,y,hwnd=0)", "type_text(text)", "press_key(key)", "hotkey(keys)",
-                "scroll(x,y,amount,hwnd=0)", "focus_window(target)", "open_url(browser,url)",
+                "scroll(x,y,amount,hwnd=0)", "open_url(browser,url)",
             ],
             "modules": ["subprocess", "ctypes", "os", "sys", "json", "re", "time", "pathlib", "math", "random"],
-            "result_rule": "Set result to a small JSON-serializable value describing what happened.",
+            "result_rule": "Set result to helper return values only. Do not claim UI success; verify reads fresh_observation. Body auto-focuses before click_node.",
         },
     }
 
@@ -100,6 +100,7 @@ def run(ctx):
             evidence=payload,
         )
 
+    focused_before = desktop.get_focused_title()
     ns = nodes.build_capability_runtime(ctx)
     ns["desktop"] = desktop
     stdout = io.StringIO()
@@ -108,10 +109,16 @@ def run(ctx):
         with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
             exec(code, ns)
         explicit_result = ns.get("result")
+        focused_after = desktop.get_focused_title()
         result = {
             "result": explicit_result,
             "stdout": stdout.getvalue(),
             "stderr": stderr.getvalue(),
+            "body_delta": {
+                "focused_before": focused_before,
+                "focused_after": focused_after,
+                "focused_changed": focused_before != focused_after,
+            },
         }
         error = None
     except Exception as exc:
