@@ -73,8 +73,8 @@
       "reasoning_enabled": true
     },
     "stable_prefix": {
-      "enabled": true,
-      "include_in_request": true
+      "enabled": false,
+      "include_in_request": false
     },
     "organs": {
       "plan": {
@@ -119,8 +119,13 @@
         "pattern": "sinusoidal",
         "step_px": 96,
         "delay_ms": 0,
-        "max_subtree_nodes_per_point": 250,
-        "max_total_nodes": 2000
+        "max_subtree_nodes_per_point": 200,
+        "max_total_nodes": 2000,
+        "property_ids": [
+          30000, 30001, 30003, 30005, 30011, 30012, 30010, 30008, 30022, 30020, 30024,
+          30013, 30159, 30026, 30006, 30007
+        ],
+        "pattern_ids": [10002, 10018, 10000, 10004]
       },
       "depth": {},
       "filter": {

@@ -18,12 +18,17 @@ import comtypes.client
 ROOT = pathlib.Path(__file__).resolve().parent
 user32 = ctypes.windll.user32
 
+
 CLICK = {
     "Button", "Calendar", "CheckBox", "Hyperlink", "ListItem", "MenuItem",
     "RadioButton", "Tab", "TabItem", "TreeItem", "DataItem", "SplitButton",
 }
 WRITE = {"Edit", "ComboBox", "Spinner", "Document"}
 SCROLL = {"List", "ScrollBar", "Slider", "Tree", "DataGrid"}
+CONTAINER_ROLES = {
+    "Pane", "Document", "Window", "Group", "List", "Tree", "DataGrid",
+    "Tab", "Menu", "ToolBar", "Table", "MenuBar", "SplitPane", "ScrollViewer",
+}
 
 
 def load_uia() -> Any:
@@ -51,6 +56,7 @@ def _const(name: str, default: int) -> int:
         return default
 
 
+TreeScope_Element = _const("TreeScope_Element", 1)
 TreeScope_Descendants = _const("TreeScope_Descendants", 4)
 TreeScope_Subtree = _const("TreeScope_Subtree", 7)
 
@@ -109,6 +115,42 @@ PID_KEYBOARD_FOCUS = _const("UIA_HasKeyboardFocusPropertyId", 30008)
 PID_OFFSCREEN = _const("UIA_IsOffscreenPropertyId", 30022)
 PID_FRAMEWORK = _const("UIA_FrameworkIdPropertyId", 30024)
 PID_RUNTIME_ID = _const("UIA_RuntimeIdPropertyId", 30000)
+
+SCAN_DEFAULT_PROPERTY_IDS = [
+    PID_RUNTIME_ID,
+    PID_BOUNDING_RECT,
+    PID_CONTROL_TYPE,
+    PID_NAME,
+    PID_AUTOMATION_ID,
+    PID_CLASS_NAME,
+    PID_ENABLED,
+    PID_KEYBOARD_FOCUS,
+    PID_OFFSCREEN,
+    PID_HWND,
+    PID_FRAMEWORK,
+    _const("UIA_HelpTextPropertyId", 30013),
+    _const("UIA_FullDescriptionPropertyId", 30159),
+    _const("UIA_ItemStatusPropertyId", 30026),
+    _const("UIA_AcceleratorKeyPropertyId", 30006),
+    _const("UIA_AccessKeyPropertyId", 30007),
+]
+SCAN_DEFAULT_PATTERN_IDS = [
+    _const("UIA_ValuePatternId", 10002),
+    _const("UIA_LegacyIAccessiblePatternId", 10018),
+    _const("UIA_InvokePatternId", 10000),
+    _const("UIA_ScrollPatternId", 10004),
+]
+
+
+def _scan_property_ids(scan_cfg: dict[str, Any]) -> list[int]:
+    ids = scan_cfg.get("property_ids")
+    return [int(x) for x in ids] if ids else list(SCAN_DEFAULT_PROPERTY_IDS)
+
+
+def _scan_pattern_ids(scan_cfg: dict[str, Any]) -> list[int]:
+    ids = scan_cfg.get("pattern_ids")
+    return [int(x) for x in ids] if ids else list(SCAN_DEFAULT_PATTERN_IDS)
+
 
 CONTROL_TYPE_NAMES: dict[int, str] = {}
 for attr in dir(uia):
@@ -302,9 +344,9 @@ def _get_current(element: Any, prop_id: int) -> Any:
         return None
 
 
-def _harvest_properties(element: Any) -> dict[str, Any]:
+def _harvest_properties(element: Any, property_ids: list[int]) -> dict[str, Any]:
     props: dict[str, Any] = {}
-    for pid in PROPERTY_IDS:
+    for pid in property_ids:
         label = PROPERTY_NAMES.get(pid, f"Property_{pid}")
         cached = _serialize_value(_get_cached(element, pid))
         if cached is not None and cached != "" and cached != []:
@@ -395,10 +437,10 @@ def _extract_pattern_payload(pattern: Any, label: str) -> dict[str, Any]:
     return out
 
 
-def _harvest_patterns(element: Any) -> tuple[list[str], dict[str, Any]]:
+def _harvest_patterns(element: Any, pattern_ids: list[int]) -> tuple[list[str], dict[str, Any]]:
     names: list[str] = []
     payloads: dict[str, Any] = {}
-    for pid in PATTERN_IDS:
+    for pid in pattern_ids:
         label = PATTERN_NAMES.get(pid, f"Pattern_{pid}")
         pattern, source = _get_pattern(element, pid)
         if pattern is None:
@@ -446,8 +488,16 @@ def _collect_text_sources(name: str, properties: dict[str, Any], pattern_payload
     return sources, text_full, value
 
 
-def _element_to_node(element: Any, *, probe_xy: tuple[int, int] | None = None) -> CachedNode | None:
+def _element_to_node(
+    element: Any,
+    *,
+    probe_xy: tuple[int, int] | None = None,
+    property_ids: list[int] | None = None,
+    pattern_ids: list[int] | None = None,
+) -> CachedNode | None:
     try:
+        prop_ids = property_ids or SCAN_DEFAULT_PROPERTY_IDS
+        pat_ids = pattern_ids or SCAN_DEFAULT_PATTERN_IDS
         rect = _variant_rect(_get_cached(element, PID_BOUNDING_RECT))
         if rect["right"] <= rect["left"] or rect["bottom"] <= rect["top"]:
             rect = _variant_rect(_get_current(element, PID_BOUNDING_RECT))
@@ -457,8 +507,8 @@ def _element_to_node(element: Any, *, probe_xy: tuple[int, int] | None = None) -
         hwnd = _variant_int(_get_cached(element, PID_HWND))
         role_id = _variant_int(_get_cached(element, PID_CONTROL_TYPE))
         name = _variant_str(_get_cached(element, PID_NAME)) or _variant_str(_get_current(element, PID_NAME))
-        properties = _harvest_properties(element)
-        patterns, pattern_payloads = _harvest_patterns(element)
+        properties = _harvest_properties(element, prop_ids)
+        patterns, pattern_payloads = _harvest_patterns(element, pat_ids)
         text_sources, text_full, value = _collect_text_sources(name, properties, pattern_payloads)
         return CachedNode(
             id=_node_id(runtime_id, hwnd, rect),
@@ -494,14 +544,23 @@ def _true_condition(automation: Any) -> Any:
         return automation.TrueCondition
 
 
-def _harvest_subtree(automation: Any, root_element: Any, cache_request: Any, *, probe_xy: tuple[int, int], max_nodes: int) -> list[CachedNode]:
+def _harvest_subtree(
+    automation: Any,
+    root_element: Any,
+    cache_request: Any,
+    *,
+    probe_xy: tuple[int, int],
+    max_nodes: int,
+    property_ids: list[int],
+    pattern_ids: list[int],
+) -> list[CachedNode]:
     nodes: list[CachedNode] = []
     seen: set[str] = set()
 
     def add_element(el: Any) -> None:
         if len(nodes) >= max_nodes:
             return
-        node = _element_to_node(el, probe_xy=probe_xy)
+        node = _element_to_node(el, probe_xy=probe_xy, property_ids=property_ids, pattern_ids=pattern_ids)
         if node is None or node.id in seen:
             return
         seen.add(node.id)
@@ -548,26 +607,71 @@ def _harvest_subtree(automation: Any, root_element: Any, cache_request: Any, *, 
 
 def _cache_request(automation: Any, scan_cfg: dict[str, Any]) -> Any:
     req = automation.CreateCacheRequest()
-    req.TreeScope = TreeScope_Subtree
-    for prop_id in scan_cfg.get("property_ids") or PROPERTY_IDS:
+    # Element | Descendants: hit node + below (not ancestors). Descendants alone skips the hit node.
+    req.TreeScope = TreeScope_Element | TreeScope_Descendants
+    for prop_id in _scan_property_ids(scan_cfg):
         req.AddProperty(prop_id)
-    for pattern_id in scan_cfg.get("pattern_ids") or PATTERN_IDS:
+    for pattern_id in _scan_pattern_ids(scan_cfg):
         req.AddPattern(pattern_id)
     return req
 
 
-def _probe(automation: Any, cache_request: Any, x: int, y: int, *, delay_ms: int, max_subtree_nodes: int) -> list[CachedNode]:
+def _hit_cache_request(automation: Any) -> Any:
+    req = automation.CreateCacheRequest()
+    req.TreeScope = TreeScope_Element
+    for prop_id in (PID_RUNTIME_ID, PID_BOUNDING_RECT, PID_CONTROL_TYPE, PID_HWND):
+        req.AddProperty(prop_id)
+    return req
+
+
+def _hit_key_from_element(element: Any) -> tuple[str, str]:
+    runtime_id = _variant_runtime_id(_get_cached(element, PID_RUNTIME_ID)) or _variant_runtime_id(_get_current(element, PID_RUNTIME_ID))
+    rect = _variant_rect(_get_cached(element, PID_BOUNDING_RECT))
+    if rect["right"] <= rect["left"] or rect["bottom"] <= rect["top"]:
+        rect = _variant_rect(_get_current(element, PID_BOUNDING_RECT))
+    hwnd = _variant_int(_get_cached(element, PID_HWND)) or _variant_int(_get_current(element, PID_HWND))
+    role_id = _variant_int(_get_cached(element, PID_CONTROL_TYPE)) or _variant_int(_get_current(element, PID_CONTROL_TYPE))
+    return _node_id(runtime_id, hwnd, rect), control_type_name(role_id)
+
+
+def _probe(
+    automation: Any,
+    hit_cache: Any,
+    cache_request: Any,
+    x: int,
+    y: int,
+    *,
+    delay_ms: int,
+    max_subtree_nodes: int,
+    property_ids: list[int],
+    pattern_ids: list[int],
+    saturated_hits: set[str],
+    index: dict[str, CachedNode],
+) -> tuple[list[CachedNode], str | None, bool]:
     user32.SetCursorPos(int(x), int(y))
     if delay_ms > 0:
         time.sleep(delay_ms / 1000.0)
     pt = wintypes.POINT(int(x), int(y))
     try:
-        root = automation.ElementFromPointBuildCache(pt, cache_request)
+        root = automation.ElementFromPointBuildCache(pt, hit_cache)
     except Exception:
         root = automation.ElementFromPoint(pt)
     if root is None:
-        return []
-    return _harvest_subtree(automation, root, cache_request, probe_xy=(x, y), max_nodes=max_subtree_nodes)
+        return [], None, False
+    hit_key, role = _hit_key_from_element(root)
+    if hit_key in saturated_hits:
+        return [], hit_key, True
+    if hit_key in index and role not in CONTAINER_ROLES:
+        return [], hit_key, True
+    return _harvest_subtree(
+        automation,
+        root,
+        cache_request,
+        probe_xy=(x, y),
+        max_nodes=max_subtree_nodes,
+        property_ids=property_ids,
+        pattern_ids=pattern_ids,
+    ), hit_key, False
 
 
 def _sinusoidal_points(sw: int, sh: int, *, step_px: int) -> list[tuple[int, int]]:
@@ -619,6 +723,10 @@ def gather(desktop: Any, config: dict[str, Any]) -> dict[str, Any]:
     scan_cfg = _scan_settings(config)
     automation = desktop.automation
     cache_request = _cache_request(automation, scan_cfg)
+    hit_cache = _hit_cache_request(automation)
+    property_ids = _scan_property_ids(scan_cfg)
+    pattern_ids = _scan_pattern_ids(scan_cfg)
+    stale_merge_stop = int(scan_cfg.get("stale_merge_stop", 12))
     sw = user32.GetSystemMetrics(0)
     sh = user32.GetSystemMetrics(1)
     step_px = int(scan_cfg.get("step_px", 96))
@@ -634,8 +742,13 @@ def gather(desktop: Any, config: dict[str, Any]) -> dict[str, Any]:
         points = ((x, y) for y in range(0, sh, step_px) for x in range(0, sw, step_px))
 
     index: dict[str, CachedNode] = {}
+    saturated_hits: set[str] = set()
     probes = 0
+    probes_skipped = 0
+    probes_harvested = 0
     subtree_seen = 0
+    consecutive_no_add = 0
+    early_stop: str | None = None
     t0 = time.time()
     saved = wintypes.POINT()
     had_cursor = bool(user32.GetCursorPos(ctypes.byref(saved)))
@@ -644,11 +757,37 @@ def gather(desktop: Any, config: dict[str, Any]) -> dict[str, Any]:
             if max_probes is not None and probes >= int(max_probes):
                 break
             if len(index) >= max_total:
+                early_stop = "max_total"
                 break
             probes += 1
-            nodes = _probe(automation, cache_request, x, y, delay_ms=delay_ms, max_subtree_nodes=max_subtree)
+            nodes, hit_key, skipped = _probe(
+                automation,
+                hit_cache,
+                cache_request,
+                x,
+                y,
+                delay_ms=delay_ms,
+                max_subtree_nodes=max_subtree,
+                property_ids=property_ids,
+                pattern_ids=pattern_ids,
+                saturated_hits=saturated_hits,
+                index=index,
+            )
+            if skipped:
+                probes_skipped += 1
+                continue
+            probes_harvested += 1
             subtree_seen += len(nodes)
-            _merge_nodes(index, nodes)
+            added = _merge_nodes(index, nodes)
+            if hit_key and (added == 0 or len(nodes) >= max_subtree):
+                saturated_hits.add(hit_key)
+            if added == 0:
+                consecutive_no_add += 1
+                if consecutive_no_add >= stale_merge_stop and len(index) > 0:
+                    early_stop = "stale_merges"
+                    break
+            else:
+                consecutive_no_add = 0
     finally:
         if had_cursor:
             try:
@@ -671,6 +810,10 @@ def gather(desktop: Any, config: dict[str, Any]) -> dict[str, Any]:
             "step_px": step_px,
             "stats": {
                 "probes": probes,
+                "probes_harvested": probes_harvested,
+                "probes_skipped": probes_skipped,
+                "saturated_hits": len(saturated_hits),
+                "early_stop": early_stop,
                 "subtree_nodes_seen": subtree_seen,
                 "unique_nodes": len(nodes),
                 "nodes_with_text": sum(1 for n in nodes if n.text_full),
