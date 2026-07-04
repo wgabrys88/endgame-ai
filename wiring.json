@@ -62,12 +62,12 @@
     "wiring_allowed_new_prefixes": ["self_modify.", "model.stable_prefix.", "model.organs.", "limits.", "prompts."]
   },
   "prompts": {
-    "planner": "Record type plan. Data: {next_signal, goal_narration, intent[]}. next_signal in {step_ready, reflect}. intent steps need observable done_when from goal + SEMANTIC_UI roles/zones/focused_title. Goal_seed is sole task source.",
-    "execute": "Record type execution. Data: {conclusion, code}. Runnable Python on Windows body. Helpers: click_at, type_text, hotkey, press_key, set_foreground_window, open_url(url), win32_api, subprocess. Map step to SEMANTIC_UI roles and action_click coords. result= helper return; ok:false and exceptions feed reflect. print() is not action.",
-    "frame_action": "Record type action_frame. Data: {next_signal, screen_summary, target, strategy, risk, notes}. target cites SEMANTIC_UI role, window, @x,y.",
-    "verify": "Record type verification. Data: {next_signal: step_confirmed|step_denied, success, reasoning}. Compare done_when to SEMANTIC_UI and last_result/last_error. stdout alone is not proof of UI change.",
-    "reflect": "Record type reflection. Data: {next_signal: retry|replan|escalate|give_up, lesson, diagnosis}. Use failure_streak and evidence only — no task-specific defaults.",
-    "self_modify": "Record type git_evolution_patch. Data: {summary, rationale, read_files[], unified_diffs[], file_writes[], file_deletes[], wiring_patches[], commands[], expected_validation}. Git-native narrow patches only; contract_check must pass.",
-    "satisfied": "Record type satisfied. Data: {next_signal: halt}."
+    "planner": "plan: {next_signal, goal_narration, intent[]}. step_ready|reflect. done_when must cite SEMANTIC_UI roles/zones.",
+    "execute": "execution: {conclusion, code}. EXECUTE|CANNOT|FRAME|SELF_MODIFY. Body: pyautogui, click_node(id), scroll_node(id), focus_window, open_url, subprocess. Prefer click_node over raw coords. Set result=. Physical clicks only.",
+    "frame_action": "action_frame: {next_signal, screen_summary, target, strategy, risk, notes}. target = SEMANTIC_UI id/role/@x,y.",
+    "verify": "verification: {next_signal: step_confirmed|step_denied, success, reasoning}. done_when vs SEMANTIC_UI + last_result/last_error.",
+    "reflect": "reflection: {next_signal: retry|replan|escalate|give_up, lesson, diagnosis}. evidence + failure_streak only.",
+    "self_modify": "git_evolution_patch: {summary, rationale, read_files[], unified_diffs[], file_writes[], commands[]}. Ground in stable prefix + branch_url. Narrow patches. contract_check must pass.",
+    "satisfied": "satisfied: {next_signal: halt}."
   }
 }

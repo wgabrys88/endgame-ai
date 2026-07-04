@@ -6,7 +6,11 @@ import pathlib
 from ctypes import wintypes
 from dataclasses import dataclass
 from typing import Any
-from win32_api import user32, get_screen_size, get_window_title, get_window_class, enum_windows, set_foreground_window, click_at, type_text, press_key, hotkey, scroll_at, open_url, window_at_point
+from win32_api import user32, get_screen_size, get_window_title, get_window_class, enum_windows, set_foreground_window, type_text, press_key, hotkey, open_url, window_at_point
+MOUSEEVENTF_LEFTDOWN = 2
+MOUSEEVENTF_LEFTUP = 4
+MOUSEEVENTF_WHEEL = 2048
+_LAST_ACTION_INDEX: dict[str, dict[str, Any]] = {}
 ROOT = pathlib.Path(__file__).parent.resolve()
 IDC_ARROW = 32512
 IDC_IBEAM = 32513
@@ -220,7 +224,7 @@ def _merge_role_duplicates(controls: list[dict[str, Any]]) -> list[dict[str, Any
                 continue
             existing['x'] = (existing['x'] + ctrl['x']) // 2
             existing['y'] = (existing['y'] + ctrl['y']) // 2
-            existing['action_click'] = f"click_at({existing['x']}, {existing['y']})"
+            existing['action_click'] = f"click_node('{existing['id']}')"
             found = True
             break
         if not found:
@@ -242,7 +246,7 @@ def _build_semantic_controls(elements: list[Element], *, win_rect: dict[str, int
             'x': cluster['x'],
             'y': cluster['y'],
             'hint': hint,
-            'action_click': f'click_at({cluster["x"]}, {cluster["y"]})',
+            'action_click': f"click_node('ui_{idx}')",
         })
     controls = _merge_role_duplicates(controls)
     zone_rank = {z: i for i, z in enumerate(SEMANTIC_ZONE_ORDER)}
@@ -303,7 +307,7 @@ def _render_semantic_ui_tree(scan: dict[str, Any], config: dict[str, Any]) -> st
                 if total_controls >= max_controls:
                     break
                 lines.append(f"      - {ctrl['label']} @{ctrl['x']},{ctrl['y']} id={ctrl['id']} | {ctrl['hint']}")
-                lines.append(f"        action: {ctrl['action_click']}")
+                lines.append(f"        action: click_node('{ctrl['id']}')")
                 total_controls += 1
             if total_controls >= max_controls:
                 break
@@ -392,17 +396,79 @@ def hover_scan_fullscreen(config: dict[str, Any] | None=None) -> dict[str, Any]:
     focused_title = get_window_title(focused_hwnd) if focused_hwnd else ''
     return {'observed_at': time.time(), 'screen_width': screen_w, 'screen_height': screen_h, 'step_px': step_px, 'cell_size': cell_size, 'elements': [e.to_dict() for e in elements], 'grid': {k: [e.to_dict() for e in v] for k, v in grid.items()}, 'windows': enum_windows(), 'focused_title': focused_title, 'focused_hwnd': focused_hwnd, 'element_count': len(elements), 'cell_count': len(grid)}
 
+def build_action_index(scan: dict[str, Any], config: dict[str, Any] | None=None) -> dict[str, dict[str, Any]]:
+    config = dict(config or {})
+    elements = [Element(**e) if isinstance(e, dict) else e for e in scan.get('elements', [])]
+    rects = _window_rect_map(scan)
+    by_hwnd: dict[int, list[Element]] = {}
+    for elem in elements:
+        if elem.hwnd <= 0:
+            continue
+        by_hwnd.setdefault(elem.hwnd, []).append(elem)
+    index: dict[str, dict[str, Any]] = {}
+    for hwnd, elems in by_hwnd.items():
+        rect = rects.get(hwnd)
+        for ctrl in _build_semantic_controls(elems, win_rect=rect):
+            index[str(ctrl['id'])] = {'id': ctrl['id'], 'role': ctrl['role'], 'zone': ctrl['zone'], 'x': ctrl['x'], 'y': ctrl['y'], 'hwnd': hwnd, 'window_title': elems[0].window_title if elems else '', 'hint': ctrl.get('hint', '')}
+    return index
+
+def last_action_index() -> dict[str, dict[str, Any]]:
+    return dict(_LAST_ACTION_INDEX)
+
+def click(x: int, y: int, hwnd: int = 0) -> dict[str, Any]:
+    px, py = int(x), int(y)
+    target = int(hwnd or 0)
+    if target > 0:
+        set_foreground_window(target)
+        time.sleep(0.05)
+    user32.SetCursorPos(px, py)
+    user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+    user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+    return {'ok': True, 'action': 'click', 'x': px, 'y': py, 'hwnd': target, 'physical': True}
+
+def scroll(x: int, y: int, amount: int, hwnd: int = 0) -> dict[str, Any]:
+    px, py = int(x), int(y)
+    target = int(hwnd or 0)
+    if target > 0:
+        set_foreground_window(target)
+        time.sleep(0.05)
+    user32.SetCursorPos(px, py)
+    user32.mouse_event(MOUSEEVENTF_WHEEL, 0, 0, int(amount) * 120, 0)
+    return {'ok': True, 'action': 'scroll', 'x': px, 'y': py, 'amount': int(amount), 'hwnd': target, 'physical': True}
+
+def focus_window(target: str | int) -> dict[str, Any]:
+    if isinstance(target, int) or str(target).isdigit():
+        hwnd = int(target)
+        ok = set_foreground_window(hwnd)
+        return {'ok': bool(ok), 'action': 'focus_window', 'hwnd': hwnd}
+    text = str(target).strip()
+    if text.lower().startswith('hwnd:'):
+        hwnd = int(text.split(':', 1)[1])
+        ok = set_foreground_window(hwnd)
+        return {'ok': bool(ok), 'action': 'focus_window', 'hwnd': hwnd}
+    for win in enum_windows():
+        title = str(win.get('title') or '')
+        if text.lower() in title.lower():
+            hwnd = int(win.get('hwnd') or 0)
+            if hwnd > 0:
+                ok = set_foreground_window(hwnd)
+                return {'ok': bool(ok), 'action': 'focus_window', 'hwnd': hwnd, 'title': title}
+    return {'ok': False, 'action': 'focus_window', 'error': f'window not found: {text}'}
+
 def observe(config: dict[str, Any] | None=None) -> dict[str, Any]:
+    global _LAST_ACTION_INDEX
     config = dict(config or {})
     scan = hover_scan_fullscreen(config)
     print(f'[observe] rendering tree from {scan.get("element_count", 0)} elements', flush=True)
     tree_text = _render_hierarchical_tree(scan, config)
-    print(f'[observe] desktop_tree_text {len(tree_text)} chars', flush=True)
+    action_index = build_action_index(scan, config)
+    _LAST_ACTION_INDEX = action_index
+    print(f'[observe] desktop_tree_text {len(tree_text)} chars action_index={len(action_index)}', flush=True)
     artifact_dir = ROOT / 'comms' / 'observations'
     artifact_dir.mkdir(parents=True, exist_ok=True)
     artifact_path = artifact_dir / f"{int(scan['observed_at'] * 1000)}.json"
-    artifact_path.write_text(json.dumps({**scan, 'desktop_tree_text': tree_text}, ensure_ascii=False, indent=2, default=str), encoding='utf-8')
-    return {'observed_at': scan['observed_at'], 'fresh_scan': True, 'desktop_tree_text': tree_text, 'focused_title': scan['focused_title'], 'observation_artifact': {'path': artifact_path.relative_to(ROOT).as_posix(), 'size': artifact_path.stat().st_size, 'kind': 'semantic_ui_hover_scan'}, 'element_count': scan['element_count'], 'cell_count': scan['cell_count']}
+    artifact_path.write_text(json.dumps({**scan, 'desktop_tree_text': tree_text, 'action_index': action_index}, ensure_ascii=False, indent=2, default=str), encoding='utf-8')
+    return {'observed_at': scan['observed_at'], 'fresh_scan': True, 'desktop_tree_text': tree_text, 'focused_title': scan['focused_title'], 'action_index': action_index, 'observation_artifact': {'path': artifact_path.relative_to(ROOT).as_posix(), 'size': artifact_path.stat().st_size, 'kind': 'semantic_ui_hover_scan'}, 'element_count': scan['element_count'], 'cell_count': scan['cell_count']}
 
 def observe_screen() -> dict[str, int]:
     w, h = get_screen_size()

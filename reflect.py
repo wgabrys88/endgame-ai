@@ -37,6 +37,11 @@ class Reflect(LlmNode):
             signal = 'escalate'
             lesson = f'Forced escalate after repeated observation contract failure. {force_reason}'
             diagnosis = 'SEMANTIC_UI observation contract is broken: done_when requires roles absent from the prepared tree; self_modify should repair desktop.py or observe limits.'
+        sm_failures = int(state.get('self_modify_failure_count', 0) or 0)
+        if signal == 'escalate' and sm_failures > 0 and (state.get('self_modify') or {}).get('status') == 'failed':
+            signal = 'replan'
+            lesson = f'{lesson} Self-modify already failed ({sm_failures}x); replan instead of re-entering evolution.'
+            diagnosis = f'{diagnosis} Last self_modify error: {(state.get("self_modify") or {}).get("error") or state.get("last_error") or "unknown"}'
         return {**streak_patch, 'reflection': {'lesson': lesson, 'diagnosis': diagnosis, 'step_goal': step.get('description', goal), 'recovery_signal': signal}, 'last_reflection': {'signal': signal, 'lesson': lesson, 'diagnosis': diagnosis}}
 
 NODE = Reflect()

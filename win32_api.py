@@ -1,6 +1,7 @@
 from __future__ import annotations
 import ctypes
 from ctypes import wintypes
+from typing import Any
 GWL_EXSTYLE = -20
 WS_EX_LAYERED = 524288
 WS_EX_TRANSPARENT = 32
@@ -86,6 +87,32 @@ user32.keybd_event.argtypes = [ctypes.c_byte, ctypes.c_byte, ctypes.c_ulong, cty
 user32.mouse_event.argtypes = [ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong]
 user32.VkKeyScanW.argtypes = [wintypes.WCHAR]
 user32.VkKeyScanW.restype = ctypes.c_short
+user32.mouse_event.restype = None
+user32.keybd_event.restype = None
+
+def _as_int(value: Any, *, name: str) -> int:
+    if value is None or value is False:
+        return 0
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    text = str(value).strip()
+    if not text:
+        return 0
+    return int(text, 0)
+
+def _as_hwnd(value: Any) -> int:
+    hwnd = _as_int(value, name='hwnd')
+    return hwnd if hwnd > 0 else 0
+
+def _client_lparam(x: int, y: int) -> int:
+    return (int(y) & 65535) << 16 | int(x) & 65535
+
+def _post_msg(hwnd: int, msg: int, wparam: int = 0, lparam: int = 0) -> None:
+    user32.PostMessageW(hwnd, msg, wintypes.WPARAM(wparam), wintypes.LPARAM(lparam))
 dwmapi.DwmGetWindowAttribute.argtypes = [wintypes.HWND, ctypes.c_ulong, ctypes.c_void_p, ctypes.c_ulong]
 dwmapi.DwmGetWindowAttribute.restype = ctypes.c_long
 
@@ -170,24 +197,18 @@ def enum_windows() -> list[dict]:
 def set_foreground_window(hwnd: int) -> bool:
     return bool(user32.SetForegroundWindow(hwnd))
 
-def click_at(x: int, y: int, hwnd: int=0) -> dict:
-    if hwnd:
-        lparam = y << 16 | x & 65535
-        user32.PostMessageW(hwnd, WM_LBUTTONDOWN, 0, lparam)
-        user32.PostMessageW(hwnd, WM_LBUTTONUP, 0, lparam)
-    else:
-        user32.SetCursorPos(x, y)
-        user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-        user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
-    return {'ok': True, 'action': 'click', 'x': x, 'y': y, 'hwnd': hwnd}
+def click_at(x: int, y: int, hwnd: int | str = 0) -> dict:
+    import desktop
+    px, py = (_as_int(x, name='x'), _as_int(y, name='y'))
+    return desktop.click(px, py, _as_hwnd(hwnd))
 
 def type_text(text: str) -> dict:
     for ch in text:
-        vk = user32.VkKeyScanW(ord(ch))
+        vk = user32.VkKeyScanW(ch)
         if vk == -1:
             continue
-        vk_code = vk & 255
-        shift = vk >> 8 & 255
+        vk_code = int(vk) & 255
+        shift = int(vk) >> 8 & 255
         if shift:
             user32.keybd_event(VK_SHIFT, 0, 0, 0)
         user32.keybd_event(vk_code, 0, 0, 0)
@@ -222,14 +243,10 @@ def hotkey(keys: list[str]) -> dict:
         user32.keybd_event(vk, 0, 2, 0)
     return {'ok': True, 'action': 'hotkey', 'keys': keys}
 
-def scroll_at(x: int, y: int, amount: int, hwnd: int=0) -> dict:
-    if hwnd:
-        lparam = y << 16 | x & 65535
-        user32.PostMessageW(hwnd, WM_MOUSEWHEEL, amount << 16, lparam)
-    else:
-        user32.SetCursorPos(x, y)
-        user32.mouse_event(MOUSEEVENTF_WHEEL, 0, 0, amount * 120, 0)
-    return {'ok': True, 'action': 'scroll', 'x': x, 'y': y, 'amount': amount, 'hwnd': hwnd}
+def scroll_at(x: int, y: int, amount: int, hwnd: int | str = 0) -> dict:
+    import desktop
+    px, py = (_as_int(x, name='x'), _as_int(y, name='y'))
+    return desktop.scroll(px, py, _as_int(amount, name='amount'), _as_hwnd(hwnd))
 
 def open_url(url: str = '', browser: str | None = None, *, _legacy_browser: str | None = None) -> dict:
     import webbrowser

@@ -6,7 +6,7 @@ import sys
 from typing import Any
 import registry
 ROOT = pathlib.Path(__file__).parent.resolve()
-REQUIRED_FILES = ['brain.py', 'bus.py', 'desktop.py', 'registry.py', 'evolution.py', 'node.py', 'organism.py', 'stop_check.py', 'wiring.json']
+REQUIRED_FILES = ['brain.py', 'bus.py', 'capability.py', 'desktop.py', 'registry.py', 'evolution.py', 'node.py', 'organism.py', 'stop_check.py', 'wiring.json']
 ORGAN_FILES = ['planner.py', 'scheduler.py', 'observe.py', 'execute.py', 'frame_action.py', 'verify.py', 'reflect.py', 'self_modify.py', 'satisfied.py', 'error.py']
 
 def _parse(rel: str, errors: list[str]) -> ast.Module | None:

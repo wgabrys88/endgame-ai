@@ -387,22 +387,3 @@ def save_wiring(wiring: dict[str, Any]) -> None:
 def wiring_limit(name: str, default: int, wiring: dict[str, Any]) -> int:
     return wiring.get('limits', {}).get(name, default)
 
-def _desktop_tree_index(state: dict[str, Any]) -> dict[str, Any]:
-    tree = state.get('desktop_tree') or {}
-    index = tree.get('node_index') if isinstance(tree, dict) else {}
-    return index if isinstance(index, dict) else {}
-
-def _action_index(state: dict[str, Any]) -> dict[str, Any]:
-    index = desktop.last_action_index() or state.get('action_index') or {}
-    return index if isinstance(index, dict) else {}
-
-def _node_center(node: dict[str, Any]) -> tuple[int, int]:
-    if node.get('px') is not None and node.get('py') is not None:
-        return (int(node.get('px') or 0), int(node.get('py') or 0))
-    rect = node.get('rect') if isinstance(node.get('rect'), dict) else {}
-    left = int(rect.get('left', 0) or 0)
-    right = int(rect.get('right', left) or left)
-    top = int(rect.get('top', 0) or 0)
-    bottom = int(rect.get('bottom', top) or top)
-    return (left + max(0, right - left) // 2, top + max(0, bottom - top) // 2)
-

@@ -24,11 +24,11 @@ STATIC_PREFIX_SUFFIXES = {'.py', '.json', '.md'}
 DYNAMIC_LAST_KEYS = ('fresh_observation', 'observation', 'desktop_tree_text', 'evidence', 'workspace_manifest')
 ORGAN_IDENTITY = {
     'planner': 'ORGAN planner. Inputs: goal_seed, goal_signals, SEMANTIC_UI. Outputs: plan record with goal_narration, intent[], next_signal in {step_ready, reflect}. Does not emit code.',
-    'execute': 'ORGAN execute. Inputs: step, SEMANTIC_UI, ui_context. Body namespace: click_at, type_text, hotkey, press_key, set_foreground_window, open_url(url), win32_api, subprocess, os, pathlib. Use SEMANTIC_UI roles and action_click coordinates — not raw cursor tokens. Python exceptions and helper ok:false become last_error. Conclusion EXECUTE|CANNOT|FRAME|SELF_MODIFY.',
+    'execute': 'ORGAN execute. Inputs: step, SEMANTIC_UI, action_index. Body: pyautogui, click_node(id), scroll_node(id), focus_window, open_url, subprocess. Prefer click_node over coordinates. Physical desktop only. Conclusion EXECUTE|CANNOT|FRAME|SELF_MODIFY.',
     'frame_action': 'ORGAN frame_action. Inputs: step, SEMANTIC_UI, last_error. Outputs: action_frame with target role, @x,y, strategy for execute.',
     'verify': 'ORGAN verify. Inputs: step.done_when, SEMANTIC_UI, last_result, last_error. stdout alone is not proof. Emit step_confirmed|step_denied.',
     'reflect': 'ORGAN reflect. Inputs: failure_streak, last_error, last_verification, SEMANTIC_UI. Emit retry|replan|escalate|give_up with lesson and diagnosis.',
-    'self_modify': 'ORGAN self_modify. Inputs: failure evidence, repository context. Emit git_evolution_patch; patches must pass contract_check.',
+    'self_modify': 'ORGAN self_modify. Inputs: failure, branch_url, workspace manifest paths. Emit git_evolution_patch response only; no request-side diff bloat.',
     'satisfied': 'ORGAN satisfied. Emit halt when goal is complete or impossible.',
 }
 ORGAN_CORE = (

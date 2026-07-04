@@ -95,21 +95,33 @@ def next_node_for(wiring: dict[str, Any], current: str, signal_name: str) -> str
         raise RuntimeError(f"node '{current}' emitted signal '{signal_name}' with no topology edge")
     return nxt
 
-def _apply_self_modify(wiring: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
+def _apply_self_modify(wiring: dict[str, Any], patch: dict[str, Any], signal_name: str, state: dict[str, Any]) -> tuple[dict[str, Any], str]:
     evolution_patch = patch.get('git_evolution_patch')
     if not evolution_patch:
-        return patch
-    _, applied = evolution.apply_evolution_patch(wiring, {'data': evolution_patch})
-    patch.setdefault('self_modify', {})['applied'] = applied
-    patch['self_modify']['commit'] = evolution.commit_self_evolution(wiring, applied, evolution_patch)
+        return patch, signal_name
+    try:
+        _, applied = evolution.apply_evolution_patch(wiring, {'data': evolution_patch})
+    except Exception as exc:
+        err = f'{type(exc).__name__}: {exc}'
+        sm = patch.setdefault('self_modify', {})
+        sm['status'] = 'failed'
+        sm['error'] = err
+        sm['applied'] = None
+        patch['self_modify_failure_count'] = int(state.get('self_modify_failure_count', 0) or 0) + 1
+        patch['last_error'] = err
+        return patch, 'modify_failed'
+    sm = patch.setdefault('self_modify', {})
+    sm['status'] = 'applied'
+    sm['applied'] = applied
+    sm['commit'] = evolution.commit_self_evolution(wiring, applied, evolution_patch)
     changed = list(applied.get('changed_files') or [])
     if applied.get('wiring_patches'):
         changed.append('wiring.json')
-    patch['self_modify']['reloaded'] = registry.reload_from_files(changed)
+    sm['reloaded'] = registry.reload_from_files(changed)
     if changed and 'wiring.json' in changed:
         wiring.clear()
         wiring.update(load_wiring())
-    return patch
+    return patch, signal_name
 
 def _tick(wiring: dict[str, Any], state: dict[str, Any], goal: str, current: str) -> tuple[dict[str, Any], str, str]:
     wait_before_node(wiring, state, current)
@@ -121,7 +133,7 @@ def _tick(wiring: dict[str, Any], state: dict[str, Any], goal: str, current: str
     ctx = {'wiring': wiring, 'state': dict(state), 'goal': goal, 'node': current}
     signal_name, patch = registry.call_node(current, ctx)
     if current == 'self_modify':
-        patch = _apply_self_modify(wiring, patch)
+        patch, signal_name = _apply_self_modify(wiring, patch, signal_name, state)
     state.update(patch)
     if signal_name == 'halt':
         state['_phase'] = 'halted'
@@ -179,6 +191,11 @@ def run(goal: str | None, *, reset: bool=False, max_ticks: int | None=None, max_
     except Exception as exc:
         state['_phase'] = 'error'
         state['last_error'] = f'{type(exc).__name__}: {exc}'
+        if current == 'self_modify':
+            sm = state.setdefault('self_modify', {})
+            sm['status'] = 'failed'
+            sm['error'] = state['last_error']
+            state['self_modify_failure_count'] = int(state.get('self_modify_failure_count', 0) or 0) + 1
         write_state(wiring, state)
         runtime_event(wiring, 'error', node=current, error=state['last_error'])
         nxt = next_node_for(wiring, current, 'error')
