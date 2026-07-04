@@ -41,6 +41,8 @@ def _validate_registry(errors: list[str], wiring: dict[str, Any]) -> None:
             errors.append(f'registry node {name!r} has mismatched name attribute {getattr(node, "name", None)!r}')
         if not hasattr(node, 'run'):
             errors.append(f'registry node {name!r} missing run()')
+    if not hasattr(registry, 'reload_from_files'):
+        errors.append('registry.reload_from_files missing')
 
 def _validate_wiring(errors: list[str]) -> dict[str, Any]:
     path = ROOT / 'wiring.json'

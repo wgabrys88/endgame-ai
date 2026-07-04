@@ -102,6 +102,13 @@ def _apply_self_modify(wiring: dict[str, Any], patch: dict[str, Any]) -> dict[st
     _, applied = evolution.apply_evolution_patch(wiring, {'data': evolution_patch})
     patch.setdefault('self_modify', {})['applied'] = applied
     patch['self_modify']['commit'] = evolution.commit_self_evolution(wiring, applied, evolution_patch)
+    changed = list(applied.get('changed_files') or [])
+    if applied.get('wiring_patches'):
+        changed.append('wiring.json')
+    patch['self_modify']['reloaded'] = registry.reload_from_files(changed)
+    if changed and 'wiring.json' in changed:
+        wiring.clear()
+        wiring.update(load_wiring())
     return patch
 
 def _tick(wiring: dict[str, Any], state: dict[str, Any], goal: str, current: str) -> tuple[dict[str, Any], str, str]:
@@ -157,7 +164,7 @@ def run(goal: str | None, *, reset: bool=False, max_ticks: int | None=None, max_
     try:
         while True:
             stop_check.check_stop('organism main loop')
-            if max_ticks is not None and state['tick'] >= max_ticks:
+            if max_ticks is not None and state['tick'] >= max_ticks and current != 'satisfied':
                 state['_phase'] = 'max_ticks'
                 write_state(wiring, state)
                 return state
@@ -182,7 +189,7 @@ def run(goal: str | None, *, reset: bool=False, max_ticks: int | None=None, max_
         current = nxt
         while True:
             stop_check.check_stop('organism error recovery')
-            if max_ticks is not None and state['tick'] >= max_ticks:
+            if max_ticks is not None and state['tick'] >= max_ticks and current != 'satisfied':
                 return state
             state, signal, nxt = _tick(wiring, state, goal or '', current)
             if signal == 'halt':

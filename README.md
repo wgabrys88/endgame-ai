@@ -47,7 +47,9 @@ Not a chat agent. A **wiring harness**: fixed topology, mechanical + LLM organs,
 | Unsandboxed body | ctypes `GetWindowTextW` → `Focused window: Task Manager` |
 | Bare JSON tolerance | `brain._commit_record` wraps Grok output missing `record_type` |
 
-**Not yet proven live:** runtime organ hot-swap after `self_modify`, post-evolve self-eval ticks, `satisfied` on clean halt.
+**Not yet proven live:** post-evolve self-eval ticks, live `self_modify` + reload end-to-end.
+
+**P0 shipped:** `registry.reload_from_files()` after evolution · `plan_complete` → `satisfied` even at `max_ticks` boundary.
 
 ---
 
@@ -61,7 +63,7 @@ The human is **not** the control loop. Handover is explicit: run = consent. READ
 
 Public-repo git patches are **half** of firmware evolution. The other half: **reload organs in the running process** after compile + contract pass — the old `importlib` loader existed for this.
 
-**Today:** `registry.py` uses static imports — git apply works, **hot-swap does not** until `registry.reload()` lands (~30 LOC).
+**Today:** `registry.reload_from_files()` hot-swaps changed organs + deps in the running PID after `self_modify` apply.
 
 ```mermaid
 flowchart LR
@@ -181,11 +183,11 @@ Static system prefix (identity + capabilities + handover stance). Dynamic payloa
 gantt
     title Next — OoO, minimal LOC
     dateFormat YYYY-MM-DD
-    section P0
-    registry.reload after self_modify     :a1, 2026-07-05, 1d
-    plan_complete to satisfied cleanly    :a2, after a1, 1d
+    section P0 done
+    registry.reload after self_modify     :done, 2026-07-04, 1d
+    plan_complete to satisfied cleanly    :done, 2026-07-04, 1d
     section P1
-    Post-evolve self_eval routing         :b1, after a2, 1d
+    Post-evolve self_eval routing         :b1, 2026-07-05, 1d
     Live self_modify end-to-end proof     :b2, after b1, 2d
     section P2
     Handover run 24/7 unattended test     :c1, after b2, 3d
@@ -193,8 +195,8 @@ gantt
 
 | P | Task | LOC budget | Why |
 |---|------|------------|-----|
-| **P0** | `registry.reload()` via importlib after evolution | ~30 | Runtime hot-swap — vision requirement |
-| **P0** | `plan_complete` → `satisfied` without `max_ticks` | ~10 | Clean handover session end |
+| ~~P0~~ | ~~`registry.reload_from_files()`~~ | done | Hot-swap after evolution |
+| ~~P0~~ | ~~`plan_complete` → `satisfied` at max_ticks~~ | done | Clean halt |
 | **P1** | `modified` → short self-eval ticks → resume `goal_seed` | ~40 | Post-evolve confidence; may self-prune later |
 | **P1** | Live git patch + reload + survey tick | — | Prove full evolution loop |
 | **P2** | Unattended multi-hour goal | — | Handover in practice |
