@@ -27,18 +27,14 @@ IDC_HELP = 32651
 INTERACTIVE_CURSORS = {IDC_IBEAM, IDC_HAND, IDC_SIZEALL, IDC_SIZENWSE, IDC_SIZENESW, IDC_SIZEWE, IDC_SIZENS, IDC_UPARROW, IDC_CROSS}
 CURSOR_NAMES = {IDC_ARROW: 'arrow', IDC_IBEAM: 'ibeam', IDC_WAIT: 'wait', IDC_CROSS: 'cross', IDC_UPARROW: 'uparrow', IDC_SIZE: 'size', IDC_ICON: 'icon', IDC_SIZENWSE: 'sizenwse', IDC_SIZENESW: 'sizenesw', IDC_SIZEWE: 'sizewe', IDC_SIZENS: 'sizens', IDC_SIZEALL: 'sizeall', IDC_NO: 'no', IDC_HAND: 'hand', IDC_APPSTARTING: 'appstarting', IDC_HELP: 'help'}
 CURSOR_PRIORITY = {'ibeam': 0, 'hand': 1, 'sizeall': 2, 'sizenwse': 2, 'sizenesw': 2, 'sizewe': 2, 'sizens': 2, 'uparrow': 3, 'cross': 4, 'arrow': 5, 'wait': 6}
-BROWSER_WINDOW_CLASSES = frozenset({'Chrome_WidgetWin_1', 'MozillaWindowClass', 'ApplicationFrameWindow', 'OperaWindowClass'})
-SEMANTIC_ZONE_ORDER = ('chrome', 'toolbar', 'tabs', 'navigation', 'search', 'form', 'content', 'status', 'chrome_misc')
+SEMANTIC_ZONE_ORDER = ('header_band', 'client_area', 'edge_band')
 ROLE_LABELS = {
-    'url_field': 'url_field (address bar)',
-    'search_field': 'search_field',
-    'text_editor': 'text_editor (compose/article body)',
-    'text_field': 'text_field',
-    'toolbar_button': 'toolbar_button',
+    'text_input': 'text_input',
+    'text_input_header': 'text_input_header',
+    'text_area': 'text_area',
     'button': 'button',
     'link': 'link',
-    'tab': 'tab',
-    'resize_handle': 'resize_handle',
+    'drag_handle': 'drag_handle',
     'clickable': 'clickable',
 }
 
@@ -153,13 +149,6 @@ def _window_rect_map(scan: dict[str, Any]) -> dict[int, dict[str, int]]:
             out[hwnd] = {k: int(rect.get(k, 0)) for k in ('left', 'top', 'right', 'bottom')}
     return out
 
-def _is_browser_window(window_class: str, title: str) -> bool:
-    cls = str(window_class or '')
-    if cls in BROWSER_WINDOW_CLASSES:
-        return True
-    low = f'{cls} {title}'.lower()
-    return any(token in low for token in ('opera', 'chrome', 'firefox', 'edge', 'brave', 'vivaldi'))
-
 def _cluster_elements(elements: list[Element], *, x_gap: int=56, y_gap: int=28) -> list[dict[str, Any]]:
     if not elements:
         return []
@@ -185,38 +174,36 @@ def _cluster_elements(elements: list[Element], *, x_gap: int=56, y_gap: int=28) 
             clusters.append({'elements': [elem], 'x': elem.x, 'y': elem.y, 'x_min': elem.x, 'x_max': elem.x, 'y_min': elem.y, 'y_max': elem.y, 'cursor_name': elem.cursor_name})
     return clusters
 
-def _classify_control(cluster: dict[str, Any], *, win_rect: dict[str, int] | None, window_class: str, title: str) -> tuple[str, str, str]:
+def _zone_from_geometry(rel_y: float) -> str:
+    if rel_y < 0.2:
+        return 'header_band'
+    if rel_y > 0.92:
+        return 'edge_band'
+    return 'client_area'
+
+def _classify_control(cluster: dict[str, Any], *, win_rect: dict[str, int] | None) -> tuple[str, str, str]:
     cursor = str(cluster.get('cursor_name') or 'arrow')
-    x, y = int(cluster['x']), int(cluster['y'])
+    y = int(cluster['y'])
     spread_x = int(cluster['x_max']) - int(cluster['x_min'])
     spread_y = int(cluster['y_max']) - int(cluster['y_min'])
     rel_y = 0.5
-    rel_x = 0.5
-    win_h = 1
     if win_rect:
-        left, top, right, bottom = (win_rect['left'], win_rect['top'], win_rect['right'], win_rect['bottom'])
-        win_h = max(bottom - top, 1)
-        win_w = max(right - left, 1)
-        rel_y = (y - top) / win_h
-        rel_x = (x - left) / win_w
-    browser = _is_browser_window(window_class, title)
+        top, bottom = win_rect['top'], win_rect['bottom']
+        rel_y = (y - top) / max(bottom - top, 1)
+    zone = _zone_from_geometry(rel_y)
     if cursor == 'ibeam':
-        if browser and rel_y < 0.16:
-            return ('url_field', 'chrome', 'Type URL here; use click_at then type_text then press_key RETURN')
-        if rel_y < 0.22 and spread_x > 80:
-            return ('search_field', 'search', 'Search or omnibox text input')
+        if zone == 'header_band':
+            return ('text_input_header', zone, 'single-line text target in header band')
         if spread_y >= 48 or spread_x >= 180:
-            return ('text_editor', 'content', 'Large editable area — article/compose body')
-        return ('text_field', 'form', 'Single-line or small text input')
+            return ('text_area', zone, 'multi-line text target')
+        return ('text_input', zone, 'text target')
     if cursor == 'hand':
-        if browser and rel_y < 0.14:
-            return ('toolbar_button', 'toolbar', 'Browser chrome control (tab/menu/extension)')
         if spread_x <= 48 and spread_y <= 48:
-            return ('button', 'content', 'Compact clickable control')
-        return ('link', 'content', 'Clickable link or wide button')
+            return ('button', zone, 'compact click target')
+        return ('link', zone, 'wide click target')
     if cursor in {'sizeall', 'sizenwse', 'sizenesw', 'sizewe', 'sizens'}:
-        return ('resize_handle', 'chrome_misc', 'Resize/drag handle')
-    return ('clickable', 'content', f'Interactive target ({cursor})')
+        return ('drag_handle', 'edge_band' if zone == 'edge_band' else zone, 'resize or drag target')
+    return ('clickable', zone, 'interactive target')
 
 def _merge_role_duplicates(controls: list[dict[str, Any]]) -> list[dict[str, Any]]:
     if not controls:
@@ -242,11 +229,11 @@ def _merge_role_duplicates(controls: list[dict[str, Any]]) -> list[dict[str, Any
         ctrl['id'] = f'ui_{idx}'
     return merged
 
-def _build_semantic_controls(elements: list[Element], *, win_rect: dict[str, int] | None, window_class: str, title: str) -> list[dict[str, Any]]:
+def _build_semantic_controls(elements: list[Element], *, win_rect: dict[str, int] | None) -> list[dict[str, Any]]:
     clusters = _cluster_elements(elements)
     controls: list[dict[str, Any]] = []
     for idx, cluster in enumerate(clusters, start=1):
-        role, zone, hint = _classify_control(cluster, win_rect=win_rect, window_class=window_class, title=title)
+        role, zone, hint = _classify_control(cluster, win_rect=win_rect)
         controls.append({
             'id': f'ui_{idx}',
             'role': role,
@@ -254,34 +241,14 @@ def _build_semantic_controls(elements: list[Element], *, win_rect: dict[str, int
             'zone': zone,
             'x': cluster['x'],
             'y': cluster['y'],
-            'cursor': cluster['cursor_name'],
             'hint': hint,
             'action_click': f'click_at({cluster["x"]}, {cluster["y"]})',
         })
     controls = _merge_role_duplicates(controls)
     zone_rank = {z: i for i, z in enumerate(SEMANTIC_ZONE_ORDER)}
-    role_rank = {'url_field': 0, 'search_field': 1, 'text_editor': 2, 'text_field': 3, 'toolbar_button': 4, 'button': 5, 'link': 6}
+    role_rank = {'text_input_header': 0, 'text_input': 1, 'text_area': 2, 'button': 3, 'link': 4, 'clickable': 5, 'drag_handle': 6}
     controls.sort(key=lambda c: (zone_rank.get(c['zone'], 99), role_rank.get(c['role'], 99), c['y'], c['x']))
     return controls
-
-def _suggested_actions(controls: list[dict[str, Any]], *, title: str, focused: bool) -> list[str]:
-    if not focused:
-        return []
-    actions: list[str] = []
-    url_fields = [c for c in controls if c['role'] == 'url_field']
-    editors = [c for c in controls if c['role'] in {'text_editor', 'text_field'}]
-    if url_fields:
-        c = url_fields[0]
-        actions.append(f"navigate: {c['action_click']}; type_text('https://example.com'); press_key('RETURN')")
-    if editors and not url_fields:
-        c = editors[0]
-        actions.append(f"type_into_field: {c['action_click']}; type_text('...')")
-    low = title.lower()
-    if 'x.com' in low or 'twitter' in low:
-        actions.append('x_compose: locate text_editor in content zone; click; type_text article body')
-    if 'linkedin' in low:
-        actions.append('linkedin_article: locate text_editor; click; type_text article body')
-    return actions[:4]
 
 def _render_semantic_ui_tree(scan: dict[str, Any], config: dict[str, Any]) -> str:
     elements = [Element(**e) if isinstance(e, dict) else e for e in scan.get('elements', [])]
@@ -303,7 +270,7 @@ def _render_semantic_ui_tree(scan: dict[str, Any], config: dict[str, Any]) -> st
         return (0 if hwnd == focused_hwnd else 1, -len(elems), title.lower())
 
     lines = [
-        'SEMANTIC_UI (python-prepared; use role names and @x,y — ignore raw cursor tokens)',
+        'SEMANTIC_UI (geometry-derived roles; goal interprets meaning)',
         f"FOCUS: {scan.get('focused_title') or '(none)'}",
         f"SCREEN: {scan.get('screen_width')}x{scan.get('screen_height')}",
         f"SCAN: step={scan.get('step_px')}px raw_hits={scan.get('element_count', len(elements))}",
@@ -323,7 +290,7 @@ def _render_semantic_ui_tree(scan: dict[str, Any], config: dict[str, Any]) -> st
             rect_s = f' rect={w}x{h}'
         marker = '*' if focused else ' '
         lines.append(f"{marker} WINDOW [{hwnd}] \"{title}\" class={cls} focused={'yes' if focused else 'no'}{rect_s}")
-        controls = _build_semantic_controls(elems, win_rect=rect, window_class=cls, title=title)
+        controls = _build_semantic_controls(elems, win_rect=rect)
         by_zone: dict[str, list[dict[str, Any]]] = {}
         for ctrl in controls:
             by_zone.setdefault(ctrl['zone'], []).append(ctrl)
@@ -341,9 +308,7 @@ def _render_semantic_ui_tree(scan: dict[str, Any], config: dict[str, Any]) -> st
             if total_controls >= max_controls:
                 break
         if not controls:
-            lines.append('    ZONE content: (no interactive controls detected)')
-        for action in _suggested_actions(controls, title=title, focused=focused):
-            lines.append(f"    SUGGESTED: {action}")
+            lines.append('    (no interactive controls detected)')
         if total_controls >= max_controls:
             lines.append('... semantic control cap reached')
             break

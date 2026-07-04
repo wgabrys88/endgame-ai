@@ -61,11 +61,11 @@
     "wiring_allowed_new_prefixes": ["self_modify.", "model.stable_prefix.", "model.organs.", "limits.", "prompts."]
   },
   "prompts": {
-    "planner": "Record type plan. Shape: {record_type:plan, data:{next_signal, goal_narration, intent[]}, reasoning}. next_signal ∈ {step_ready, reflect}. Read SEMANTIC_UI in fresh_observation: plan steps using roles (url_field, text_editor, button) not cursor tokens. Each intent entry needs description + done_when citing SEMANTIC_UI roles or focused_title. Full articles not short posts when goal says so. Browser preference from goal_seed.",
-    "execute": "Record type execution. Data: {conclusion, code}. Helpers: click_at(x,y), type_text(s), hotkey, press_key, set_foreground_window, open_url(url) — url FIRST positional arg. SEMANTIC_UI lists WINDOW>ZONE>role with action: click_at lines — use url_field for navigation (click, type_text url, press_key RETURN), text_editor for articles. subprocess/os for install. Assign result= from helpers; empty last_result with unchanged SEMANTIC_UI means failure → use FRAME or different role. No print-as-action.",
-    "frame_action": "Record type action_frame. Data: {next_signal, screen_summary, target, strategy, risk, notes}. target must name SEMANTIC_UI role + @x,y + window title. strategy = ordered helper calls for execute.",
-    "verify": "Record type verification. Data: {next_signal: step_confirmed|step_denied, success, reasoning}. Match done_when against SEMANTIC_UI roles/zones and focused_title. last_error from Python counts as failure. Helper ok:false counts as failure. print/stdout alone is not publish proof.",
-    "reflect": "Record type reflection. Data: {next_signal, lesson, diagnosis}. If same action failed 2+ times, switch strategy (e.g. open_url → url_field click_at). escalate only for wiring/transport breakage. Cite SEMANTIC_UI and last_error.",
+    "planner": "Record type plan. Data: {next_signal, goal_narration, intent[]}. next_signal in {step_ready, reflect}. intent steps need observable done_when from goal + SEMANTIC_UI roles/zones/focused_title. Goal_seed is sole task source.",
+    "execute": "Record type execution. Data: {conclusion, code}. Runnable Python on Windows body. Helpers: click_at, type_text, hotkey, press_key, set_foreground_window, open_url(url), win32_api, subprocess. Map step to SEMANTIC_UI roles and action_click coords. result= helper return; ok:false and exceptions feed reflect. print() is not action.",
+    "frame_action": "Record type action_frame. Data: {next_signal, screen_summary, target, strategy, risk, notes}. target cites SEMANTIC_UI role, window, @x,y.",
+    "verify": "Record type verification. Data: {next_signal: step_confirmed|step_denied, success, reasoning}. Compare done_when to SEMANTIC_UI and last_result/last_error. stdout alone is not proof of UI change.",
+    "reflect": "Record type reflection. Data: {next_signal: retry|replan|escalate|give_up, lesson, diagnosis}. Use failure_streak and evidence only — no task-specific defaults.",
     "self_modify": "Record type git_evolution_patch. Data: {summary, rationale, read_files[], unified_diffs[], file_writes[], file_deletes[], wiring_patches[], commands[], expected_validation}. Git-native narrow patches only; contract_check must pass.",
     "satisfied": "Record type satisfied. Data: {next_signal: halt}."
   }
