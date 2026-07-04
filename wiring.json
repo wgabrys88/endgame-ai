@@ -53,6 +53,7 @@
   "control_default": {"mode": "run", "step_token": 0, "updated_at": 0},
   "observe_config": {"step_px": 32, "delay_ms": 2, "cell_size": 80, "max_elements": 450, "restore_cursor": true, "max_tree_chars": 8000, "max_windows": 16, "max_semantic_controls": 32, "max_visible_windows": 18},
   "timing": {"post_execute_delay_ms": 3000},
+  "reflect_escalation": {"observation_missing_min_streak": 3},
   "self_modify": {
     "context_mode": "checked_out_branch",
     "git": {"remote": "origin", "push_after_commit": true},

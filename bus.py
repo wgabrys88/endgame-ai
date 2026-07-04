@@ -70,6 +70,51 @@ def update_failure_streak(state: JsonDict) -> JsonDict:
     count = int(previous.get('count', 0) or 0) + 1 if previous.get('signature') == signature else 1
     return {'failure_streak': {'signature': signature, 'count': count, 'updated_at': time.time()}}
 
+SEMANTIC_ROLES = ('text_input', 'text_area', 'button', 'link', 'clickable')
+
+def roles_required_by_done_when(done_when: str) -> set[str]:
+    text = (done_when or '').lower()
+    return {role for role in SEMANTIC_ROLES if role in text}
+
+def roles_present_in_semantic_ui(tree: str) -> set[str]:
+    present: set[str] = set()
+    for line in (tree or '').splitlines():
+        stripped = line.strip()
+        if not stripped.startswith('- '):
+            continue
+        for role in SEMANTIC_ROLES:
+            if stripped.startswith(f'- {role} '):
+                present.add(role)
+                break
+    return present
+
+def observation_contract_failure(state: JsonDict) -> tuple[bool, str]:
+    step = state.get('current_step') or {}
+    done_when = str(step.get('done_when') or '')
+    required = roles_required_by_done_when(done_when)
+    if not required:
+        return False, ''
+    tree = str(state.get('desktop_tree_text') or '')
+    if not tree.strip():
+        return True, f'done_when expects {sorted(required)} but SEMANTIC_UI tree is empty'
+    present = roles_present_in_semantic_ui(tree)
+    missing = sorted(required - present)
+    if not missing:
+        return False, ''
+    return True, f'done_when expects {sorted(required)} but SEMANTIC_UI lacks {missing}'
+
+def should_force_observation_escalate(state: JsonDict, wiring: JsonDict | None=None) -> tuple[bool, str]:
+    cfg = (wiring or {}).get('reflect_escalation', {})
+    min_streak = int(cfg.get('observation_missing_min_streak', 3) or 3)
+    streak = state.get('failure_streak') or {}
+    count = int(streak.get('count', 0) or 0)
+    if count < min_streak:
+        return False, ''
+    failed, reason = observation_contract_failure(state)
+    if not failed:
+        return False, ''
+    return True, f'failure_streak={count} with observation contract gap: {reason}'
+
 def mermaid_state_diagram(wiring: JsonDict, datasheets: dict[str, JsonDict] | None=None) -> str:
     topo = wiring.get('topology', {})
     edges = topo.get('edges', {})
