@@ -30,6 +30,11 @@ def run_fullscreen_scan(**kwargs) -> dict[str, Any]:
     return fullscreen_hover_cache_scan(automation, **kwargs)
 
 
+def run_sinusoidal_scan(**kwargs) -> dict[str, Any]:
+    automation = create_automation()
+    return fullscreen_hover_cache_scan(automation, pattern="sinusoidal", **kwargs)
+
+
 def run_point(x: int, y: int, **kwargs) -> dict[str, Any]:
     automation = create_automation()
     return single_point_probe(automation, x, y, **kwargs)

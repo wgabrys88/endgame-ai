@@ -10,15 +10,18 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 
 from . import DEFAULT_REPORT, run_fullscreen_scan, run_point, write_report
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Hover + UIA cache observation probe (independent module)")
+    ap.add_argument("--pattern", choices=("grid", "sinusoidal"), default="grid")
+    ap.add_argument("--start-delay", type=int, default=0, help="seconds before scan starts (arrange windows)")
     ap.add_argument("--step-px", type=int, default=32)
     ap.add_argument("--delay-ms", type=int, default=5, help="hover delay after SetCursorPos (tooltips/Text)")
-    ap.add_argument("--max-subtree", type=int, default=120, help="max cached nodes per probe point")
+    ap.add_argument("--max-subtree", type=int, default=200, help="max cached nodes per probe point")
     ap.add_argument("--max-total", type=int, default=2000, help="max unique nodes total")
     ap.add_argument("--max-probes", type=int, default=None, help="limit grid probes (debug)")
     ap.add_argument("--point", nargs=2, type=int, action="append", metavar=("X", "Y"), help="probe specific point(s)")
@@ -35,7 +38,14 @@ def main() -> int:
             for tb in run["text_blobs"][:3]:
                 print(f"  text[{tb['length']}] {tb['role']} {tb['name']!r}: {tb['text_full'][:120]!r}...")
     else:
-        print(f"fullscreen scan step_px={args.step_px} delay_ms={args.delay_ms} ...", flush=True)
+        if args.start_delay > 0:
+            for remaining in range(args.start_delay, 0, -1):
+                print(f"starting in {remaining}s — arrange your windows...", flush=True)
+                time.sleep(1)
+        print(
+            f"fullscreen scan pattern={args.pattern} step_px={args.step_px} delay_ms={args.delay_ms} ...",
+            flush=True,
+        )
         results = {
             "mode": "fullscreen",
             "run": run_fullscreen_scan(
@@ -44,11 +54,13 @@ def main() -> int:
                 max_probe_points=args.max_probes,
                 max_subtree_nodes_per_point=args.max_subtree,
                 max_total_nodes=args.max_total,
+                pattern=args.pattern,
             ),
         }
         st = results["run"]["stats"]
         print(
-            f"done: {st['unique_nodes']} unique nodes, {st['nodes_with_text']} with TextPattern, "
+            f"done: {st['unique_nodes']} unique nodes, {st['nodes_with_text']} with text, "
+            f"{st.get('nodes_with_text_sources', 0)} with text_sources, "
             f"{st['probes']} probes, {st['elapsed_s']}s",
             flush=True,
         )
