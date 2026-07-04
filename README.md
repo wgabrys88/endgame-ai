@@ -1,142 +1,130 @@
 # endgame-ai
 
-A **human operator in digital form** on Windows 11 — wiring harness, not chat agent. Python is the body. Desktop is the world. `wiring.json` is the nervous system. Git is firmware memory.
+A **human operator in digital form** on Windows 11 — a wiring harness, not a chat agent.
 
-**Tags:** `ooo-unification` (spec) · `arch-flat-root` (flat refactor) · **`first-live-loop`** (first Grok-backed multi-tick run)
+| Layer | Role |
+|-------|------|
+| Python + ctypes | Body (mouse, keyboard, files, subprocess, Win32) |
+| `wiring.json` | Nervous system (fixed topology, prompts, limits) |
+| Grok API | Brain peripheral (LLM organs only) |
+| Git | Firmware memory (`self_modify` evolution) |
 
----
+**Constraints:** Windows 11 · stdlib + ctypes in core · unsandboxed `execute` · operator watches.
 
-## Breakthrough (2026-07-04)
-
-First **live organism loop** on a real Windows desktop with Grok API:
-
-| Proof | Evidence |
-|-------|----------|
-| Self-narrating goal works | Planner emitted `goal_narration` + 2-step `intent[]` from fresh observation + `body_signals` (battery 96%, AC, 85GB free) |
-| Observation is deep | **3071 chars** hierarchical tree — Task Manager, Chrome/YouTube, grok IDE, 11 windows, GRID |
-| Topology executes | planner → scheduler → observe → execute in **4 ticks** without human steering |
-| Brain + body coupling | Execute returned `FRAME` (honest “need framing”) — topology routed to `frame_action` |
-| Raw audit trail | `comms/brain_raw.jsonl` — full think payloads + API request/response bodies (keys redacted) |
-
-Run stopped at tick 4: `--max-brain-calls 2` exhausted (planner + execute); `frame_action` needed call #3. **Not a architecture failure — a budget cap.**
+**Tags:** `arch-flat-root` · `first-live-loop` · **`survey-loop-complete`**
 
 ---
 
-## First run log (archived in README; runtime cleaned)
+## Current state (2026-07-04)
 
-**Goal:** `survey desktop and note open applications`
+Flat-root organism. **22 Python modules** at repo root. No `organism_nodes/`, no `nodes.py`, no dynamic import loader.
 
-| Tick | Node | Signal | Brain | Notes |
-|------|------|--------|-------|-------|
-| 0 | planner | step_ready | 8.0s | `goal_narration` rewritten; intent: catalog windows + record focus |
-| 1 | scheduler | step_ready | — | Step 0: extract window titles from observation |
-| 2 | observe | screen_ready | — | 212 elements, focus Task Manager, 3071-char tree |
-| 3 | execute | frame | 6.3s | Conclusion FRAME (no code); routed to frame_action |
-| 4 | frame_action | — | **budget** | `brain call budget exceeded: 2/2` |
-
-**Planner narration (excerpt):** *Survey desktop noting open applications; Task Manager focused amid visible windows including Chrome/YouTube, grok terminal…*
-
----
-
-## Progress
-
-| Phase | Status | Notes |
-|-------|--------|-------|
-| 0–8 | **done** | Flat root, registry, evolution, inline xai, wiring v2, contract_check |
-| 9 fail-hard | **partial** | Planner/execute/reflect hard errors; budget error recovery TBD |
-| 10 request limits | **done** | `limits` + preflight + observation cap |
-| 11 self-narrating goal | **done** | `body_signals.py`; planner requires `goal_narration` + `intent[]` |
-| 12 stdout visibility | **done** | `[organism]`/`[observe]`/`[brain]` on every long step |
-| 13 raw comms log | **done** | `comms/brain_raw.jsonl` — think, api_request, api_response_body |
-| 14 next live loop | **planned** | `--max-brain-calls 6`; complete frame → verify → scheduler |
+| Capability | Status |
+|------------|--------|
+| Hierarchical desktop observation | **proven** — 3k+ char trees, VISIBLE + WINDOWS + GRID |
+| Self-narrating goal | **proven** — `goal_seed` + planner `goal_narration` + `body_signals` |
+| Full topology loop | **proven** — planner → scheduler → observe → execute → verify ×2 → plan_complete |
+| Unsandboxed execute | **proven** — ctypes `GetWindowTextW` → `Focused window: Task Manager` |
+| Raw brain audit trail | **live** — `comms/brain_raw.jsonl` (gitignored) |
+| Git self-modify | **built, untested live** — `evolution.py` + immune contract |
 
 ---
 
-## Plan (aligned to first results)
+## Survey loop complete (breakthrough run)
+
+**Goal:** `survey desktop and note open applications`  
+**Command:** `python organism.py "…" --max-ticks 10 --max-brain-calls 12 --reset`  
+**Duration:** ~51s · **Brain calls:** 5/12 · **Exit:** 0
+
+| Tick | Node | Outcome |
+|------|------|---------|
+| 0 | planner | `goal_narration` + 2-step `intent[]` |
+| 1 | scheduler | Step 0: parse windows from observation |
+| 2 | observe | 3485-char tree |
+| 3 | execute | Survey code → verify |
+| 4 | verify | **step_confirmed** |
+| 5 | scheduler | Step 1: record focused window |
+| 6 | observe | 3302-char tree |
+| 7 | execute | ctypes foreground title → stdout `Task Manager` |
+| 8 | verify | **step_confirmed** |
+| 9 | scheduler | **plan_complete** |
+
+**Windows catalogued:** Task Manager, Notepad, Chrome/YouTube, grok IDE, Program Manager, shell, CvChartWindow overlays.
+
+**Fix shipped:** `brain._commit_record` wraps bare Grok JSON (no `record_type` wrapper) using expected organ type — commit `1026330`.
+
+---
+
+## Architecture today
 
 ```mermaid
-gantt
-    title Next work after first-live-loop
-    dateFormat YYYY-MM-DD
-    section Immediate
-    Full survey loop max_brain_calls 6     :a1, 2026-07-04, 1d
-    Budget-aware routing or default bump   :a2, after a1, 1d
-    section Hardening
-    Error node resume after budget error   :b1, after a2, 2d
-    Fail-hard phase 9 complete             :b2, after b1, 1d
-    section Evolution
-    Self_modify live patch test            :c1, after b2, 3d
-```
-
-| Priority | Task | Why |
-|----------|------|-----|
-| P0 | Re-run survey with `--max-brain-calls 6 --max-ticks 8` | Finish frame_action → verify path |
-| P1 | Default `max_brain_calls` in wiring or per-run guidance | Prevent false “hang” at FRAME |
-| P2 | Budget error → reflect instead of hard stop | Graceful degradation |
-| P3 | Self-modify tick on real defect | Git firmware path proof |
-
----
-
-## Architecture
-
-```mermaid
-flowchart LR
-    subgraph body [Body - stdlib ctypes]
-        desktop[desktop.observe]
-        signals[body_signals]
-        exec[execute.exec]
-    end
+flowchart TB
     subgraph harness [Wiring harness]
-        organism[organism._tick]
-        registry[registry.NODE_REGISTRY]
-        bus[bus.NodeOutput]
+        O[organism.py]
+        R[registry.py]
+        B[bus.py]
     end
-    subgraph brain [Brain peripheral]
-        think[brain.think]
-        xai[xai API inline]
+    subgraph organs [Flat-root organs]
+        P[planner]
+        S[scheduler]
+        Ob[observe]
+        E[execute]
+        V[verify]
+        Ref[reflect]
+        SM[self_modify]
     end
-    subgraph comms [Runtime comms - gitignored]
-        raw[comms/brain_raw.jsonl]
-        rt[comms/runtime.ndjson]
-        obs[comms/observations/]
+    subgraph body [Body]
+        D[desktop.py]
+        BS[body_signals.py]
+        W[win32_api.py]
     end
-    organism --> registry --> bus
-    registry --> think --> xai
-    think --> raw
-    organism --> rt
-    desktop --> think
-    signals --> registry
-    exec --> body
+    subgraph brain [Brain]
+        BR[brain.py + inline xai]
+    end
+    subgraph runtime [Runtime gitignored]
+        RAW[comms/brain_raw.jsonl]
+        RT[comms/runtime.ndjson]
+        ST[state.json]
+    end
+    O --> R --> organs
+    organs --> B
+    P & E & V & Ref & SM --> BR
+    Ob --> D
+    P --> BS
+    E --> W
+    BR --> RAW
+    O --> RT
+    O --> ST
 ```
 
 ### Topology
 
 ```mermaid
 stateDiagram-v2
-    [*] --> planner : cycle_start
-    planner --> scheduler : step_ready
-    planner --> reflect : reflect
-    scheduler --> observe : step_ready
-    scheduler --> satisfied : plan_complete
-    observe --> execute : screen_ready
-    execute --> verify : verify
-    execute --> frame_action : frame
-    execute --> reflect : reflect
-    execute --> self_modify : self_modify
-    verify --> scheduler : step_confirmed
-    verify --> reflect : step_denied
-    reflect --> observe : retry
-    reflect --> planner : replan
-    reflect --> self_modify : escalate
-    reflect --> satisfied : give_up
-    self_modify --> planner : modified
-    frame_action --> execute : framed
-    satisfied --> [*] : halt
-    error --> planner : recovery
-    error --> reflect : recovery
+    [*] --> planner
+    planner --> scheduler: step_ready
+    planner --> reflect: reflect
+    scheduler --> observe: step_ready
+    scheduler --> satisfied: plan_complete
+    observe --> execute: screen_ready
+    execute --> verify: verify
+    execute --> frame_action: frame
+    execute --> reflect: reflect
+    execute --> self_modify: self_modify
+    verify --> scheduler: step_confirmed
+    verify --> reflect: step_denied
+    reflect --> observe: retry
+    reflect --> planner: replan
+    reflect --> self_modify: escalate
+    reflect --> satisfied: give_up
+    self_modify --> planner: modified
+    frame_action --> execute: framed
+    satisfied --> [*]: halt
+    error --> planner
+    error --> reflect
 ```
 
-### First run actual path
+### Survey run sequence (actual)
 
 ```mermaid
 sequenceDiagram
@@ -145,63 +133,40 @@ sequenceDiagram
     participant S as scheduler
     participant Ob as observe
     participant E as execute
-    participant F as frame_action
-    participant B as brain/xai
+    participant V as verify
+    participant B as Grok
 
     O->>P: tick 0
-    P->>B: think plan (8s)
+    P->>B: plan
     B-->>P: goal_narration + intent
-    P-->>O: step_ready
     O->>S: tick 1
-    S-->>O: step_ready
     O->>Ob: tick 2
-    Ob-->>O: screen_ready 3071 chars
+    Ob-->>O: 3485 char tree
     O->>E: tick 3
-    E->>B: think execution (6s)
-    B-->>E: FRAME
-    E-->>O: frame
-    O->>F: tick 4
-    F-xB: budget exceeded 2/2
+    E->>B: execution
+    O->>V: tick 4
+    V->>B: verification
+    B-->>V: step_confirmed
+    O->>S: tick 5 step 1
+    O->>Ob: tick 6
+    O->>E: tick 7 ctypes execute
+    O->>V: tick 8
+    B-->>V: step_confirmed
+    O->>S: tick 9 plan_complete
 ```
 
 ---
 
-## Agent operator protocol (how the human’s AI partner works)
+## Repo layout
 
-When running endgame-ai on behalf of the operator:
-
-1. **Never silent long runs** — organism prints `[organism]`/`[observe]`/`[brain]`; agent does not background without telling the operator.
-2. **Raw logs on disk** — every brain call writes to `comms/brain_raw.jsonl` (payloads + API bodies; secrets redacted). Runtime events in `comms/runtime.ndjson`. Observations in `comms/observations/`.
-3. **Sport commentary every ~30s** — agent runs `python comms_poll.py 30 N` or reads those files and reports: current node, tick, phase, last signal, narration excerpt, observation size, last brain phase, errors.
-4. **No secrets in git** — never commit `comms/`, `state.json`, API keys, or raw logs with credentials.
-5. **Cleanup after archival** — once results are captured in README, delete runtime artifacts; commit code + README only.
-6. **Ask permission** before the next live loop (API cost + desktop control).
-
-```mermaid
-flowchart TD
-    A[Operator requests run] --> B[Agent starts organism in foreground or bg with notice]
-    B --> C[Poll comms every 30s]
-    C --> D{New event?}
-    D -->|yes| E[Commentary: node signal narration obs brain]
-    D -->|no| F[Report still scanning or waiting on API]
-    E --> C
-    F --> C
-    C --> G{Run ended?}
-    G -->|no| C
-    G -->|yes| H[Read logs archive to README cleanup commit tag ask permission]
+```
+brain.py bus.py desktop.py win32_api.py body_signals.py
+organism.py registry.py node.py evolution.py contract_check.py stop_check.py comms_poll.py
+planner.py scheduler.py observe.py execute.py frame_action.py verify.py reflect.py self_modify.py satisfied.py error.py
+wiring.json
 ```
 
----
-
-## Prompt engineering (KV cache + capabilities)
-
-**System (cacheable):** `ORGAN_CORE` + `ORGAN_IDENTITY[organ]` + short `wiring.prompts[organ]`
-
-**User JSON (dynamic tail):** `goal_seed`, `goal_narration`, `goal_signals`, state… then `fresh_observation` last.
-
-- Execute prompt declares **unsandboxed** full Python/subprocess/ctypes
-- No giant JSON schema in prompts — `json_object` + `record_type` check
-- `limits.max_request_chars` fail-hard before API
+Runtime (gitignored): `comms/`, `state.json`, `pids/`, `stop.txt`, `__pycache__/`
 
 ---
 
@@ -210,33 +175,123 @@ flowchart TD
 | Field | Role |
 |-------|------|
 | `goal_seed` | Immutable user intent |
-| `goal_narration` | Planner-maintained living interpretation (required every planner tick) |
-| `goal_signals` | `body_signals.collect()` — power, disk, urgency |
+| `goal_narration` | Planner rewrites every tick from observation + `goal_signals` |
+| `goal_signals` | `body_signals.collect()` — power, disk, urgency, failure streak |
+
+Planner **fail-hard** requires non-empty `goal_narration` and `intent[]`. Intent is atemporal — replan when environment shifts (battery, focus, failures).
+
+---
+
+## Observation
+
+Win32 hover scan → hierarchical `desktop_tree_text`:
+
+1. FOCUS + SCREEN + SCAN stats  
+2. VISIBLE windows (enum, focused first)  
+3. WINDOWS with per-window cells  
+4. Compact GRID  
+
+Config: `wiring.observe_config` (`step_px: 32`, `delay_ms: 2`, `max_tree_chars: 8000`).  
+Fail-hard if tree empty. Progress: `[observe] scan 59% row 512/864`.
+
+---
+
+## Brain + prompts
+
+**System (KV-cacheable):** `ORGAN_CORE` + organ identity + capabilities + short `wiring.prompts[organ]`
+
+**User JSON (dynamic tail):** `goal_seed`, `goal_narration`, `goal_signals`, state… then `fresh_observation` last.
+
+- Execute declares **full unsandboxed** Python/subprocess/ctypes  
+- No giant JSON schema walls — `json_object` + `record_type` check (+ bare JSON wrap fix)  
+- `limits.max_request_chars` fail-hard before API  
+- Raw log: `comms/brain_raw.jsonl` — think, api_request, api_response_body (secrets redacted)
+
+---
+
+## Execute
+
+`exec(code, ns)` with subprocess, ctypes, os, sys, json, state, wiring, goal. No sandbox.
+
+Conclusions: `EXECUTE` | `CANNOT` | `FRAME` | `SELF_MODIFY`. Invalid conclusion raises.
+
+---
+
+## Self-modify (next evolution proof)
+
+`self_modify` → `git_evolution_patch` → `evolution.apply_evolution_patch` → immune contract → `contract_check` → commit/push.
+
+Protected: core modules + all organ `*.py`. Existing files: unified diffs only.
+
+---
+
+## Agent operator protocol
+
+When an AI partner runs endgame for the operator:
+
+1. **No silent long steps** — stdout shows `[organism]` / `[observe]` / `[brain]`  
+2. **Raw logs on disk** — poll `comms/brain_raw.jsonl` + `comms/runtime.ndjson` + `state.json`  
+3. **Sport commentary ~30s** — `python comms_poll.py 30 N` or read those files  
+4. **No secrets in git** — never commit `comms/`, `state.json`, API keys  
+5. **Archive → cleanup → commit README → tag → ask permission** for next run
+
+```mermaid
+flowchart LR
+    A[Start run] --> B[Poll comms 30s]
+    B --> C[Commentary to operator]
+    C --> D{Done?}
+    D -->|no| B
+    D -->|yes| E[Archive in README]
+    E --> F[Cleanup runtime]
+    F --> G[Commit + tag + push]
+    G --> H[Ask permission]
+```
+
+---
+
+## What's next
+
+```mermaid
+gantt
+    title Roadmap after survey-loop-complete
+    dateFormat YYYY-MM-DD
+    section Prove
+    Live self_modify patch on real defect     :a1, 2026-07-05, 2d
+    satisfied node on plan_complete path      :a2, after a1, 1d
+    section Harden
+    Budget error routes to reflect not crash  :b1, 2026-07-05, 1d
+    Default max_brain_calls guidance in wiring :b2, after b1, 1d
+    section Expand
+    Goal with battery-low narration shift     :c1, after a2, 2d
+    Multi-goal session without --reset        :c2, after c1, 2d
+```
+
+| Priority | Task | Why |
+|----------|------|-----|
+| **P0** | Hit `satisfied` after `plan_complete` (auto or +1 tick) | Loop ends cleanly, not `max_ticks` |
+| **P1** | Live `self_modify` git patch + push | Prove firmware evolution |
+| **P2** | Graceful brain-budget exhaustion → reflect | No crash on capped runs |
+| **P3** | Operator goal that triggers replan (battery/file stress) | Stress self-narration |
 
 ---
 
 ## CLI
 
 ```bash
-python organism.py "survey desktop" --max-ticks 8 --max-brain-calls 6 --reset
+python organism.py "your goal" --max-ticks 12 --max-brain-calls 12 --reset
 python organism.py --execute-node observe ""
 python comms_poll.py 30 12
 python contract_check.py
 ```
 
-`comms/` and `state.json` are runtime-only (gitignored). `stop.txt` aborts.
-
----
-
-## Comms layout (runtime)
-
-| Path | Content |
+| Flag | Purpose |
 |------|---------|
-| `comms/brain_raw.jsonl` | think, api_request, api_response_body, response |
-| `comms/runtime.ndjson` | organism_start, node_start, node_complete, error |
-| `comms/observations/*.json` | Full hover scan artifacts |
-| `comms/control.json` | run / pause / step |
-| `state.json` | Live state patch |
+| `--reset` | Clear `state.json` + runtime logs |
+| `--max-ticks` | Cap topology iterations |
+| `--max-brain-calls` | Cap Grok API calls (use ≥8 for full verify loops) |
+| `--execute-node` | Single organ tick |
+
+Control: `comms/control.json` (`run`/`pause`/`step`). Abort: `stop.txt`.
 
 ---
 
