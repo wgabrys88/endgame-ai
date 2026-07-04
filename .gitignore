@@ -5,14 +5,11 @@
 !.gitattributes
 !.gitignore
 !LICENSE
-!README.md
 !brain.py
 !desktop.py
 !nodes.py
 !organism.py
-!export_workspace_text.py
 !stop_check.py
-!export_topology.py
 !bus.py
 !wiring.json
 
@@ -22,8 +19,6 @@
 !organism_nodes/*.py
 !hover_cache_probe/
 !hover_cache_probe/*.py
-!reports/
-!reports/endgame-ai-living-operator-report.html
 
 # Runtime and local-only data stay sealed.
 __pycache__/
