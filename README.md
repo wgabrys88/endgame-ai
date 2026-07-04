@@ -2,191 +2,111 @@
 
 ## Handover (read first)
 
-**Starting endgame-ai = you hand full control of this PC to a digital operator and walk away.**
+**Starting endgame-ai = full PC control handed to a digital operator. You walk away.**
 
-You give a goal. You start the process. You leave. The organism runs until the goal is done, it gives up honestly, or you create `stop.txt`.
+No sandbox. No task ceiling. Install software, use logged-in browsers, post on your accounts, evolve firmware, work 24/7.
 
-**No sandbox. No task ceiling.** The system may install software, use your browsers and logged-in accounts, post on social media, run git evolution, hot-swap its own organs, and build other systems as means to the goal.
+| **Risk** | Unconstrained machine, accounts, reputation |
+| **Greatness** | Living human-operator replacement — self-narrating, self-evolving |
 
-| | |
-|---|---|
-| **Risk** | Unconstrained access to machine, accounts, data, reputation |
-| **Greatness** | 24/7 human-operator replacement — self-narrating, self-evolving, atemporal |
-
-Evolution and handover **require** this freedom.
-
-**Tag:** `p0-hot-swap` · commit after this README
+**Tags:** `survey-loop-complete` · **`handover-investigation`** (Run B postmortem) · next: **`handover-prompt-fix`**
 
 ---
 
-## What it is
+## Investigation: Run B (Chrome/X) — what failed
 
-Wiring harness, not chat agent. Fixed topology · one signal + one patch per tick · Grok only in LLM organs.
+User confirmed: compose opened, **nothing typed, nothing published**. Logs agreed.
 
-| Layer | Role |
-|-------|------|
-| Python + ctypes | Body |
-| `wiring.json` | Nervous system |
-| Grok | Brain peripheral |
-| Git + `registry.reload_from_files` | Firmware + runtime hot-swap |
-
-**OoO · low LOC:** flat root · `node.py` bases · `NODE_REGISTRY` · fail-hard · no god-modules
-
----
-
-## Proven (milestone stack)
-
-| Milestone | Proof |
-|-----------|-------|
-| `arch-flat-root` | Flat organs, registry, evolution split, inline xai |
-| `survey-loop-complete` | Full survey: plan_complete, dual verify, ctypes execute (~51s, 5 brain calls) |
-| **`p0-hot-swap`** | `registry.reload_from_files()` after evolution · `plan_complete` → `satisfied` at max_ticks |
-
-| Capability | Status |
+| Root cause | Detail |
 |------------|--------|
-| Self-narrating goal | proven |
-| Hierarchical observation | proven |
-| Unsandboxed execute | proven |
-| Runtime organ reload | **built**, not live-tested via self_modify |
-| Post-evolve self-eval | planned (topology phase, not validator script) |
-| Social / browser handover | **next bounded run** |
+| Execute namespace | `win32_api` (`type_text`, `click_at`) **not exposed** — model said CANNOT |
+| Broken typing | Generated `SendInput(ord(ch))` — invalid VK codes |
+| Print as action | `print('Published to X')` with no UI interaction |
+| Verify hallucination | Accepted stdout as publish proof while compose window still open |
+| Focus destruction | `brain.think(execute)` ran full hover scan before code → stole Chrome focus |
+
+**Model asked for:** click coords from GRID, `type_text`, post-button click, Opera/browser launch — prompts did not document body helpers.
 
 ---
 
-## Evolution = git + hot-swap
+## Fixes applied (`handover-prompt-fix`)
 
-```mermaid
-flowchart LR
-    SM[self_modify] --> EV[evolution.apply_patch]
-    EV --> V[compileall + contract_check]
-    V --> REL[registry.reload_from_files]
-    REL --> LOOP[same PID continues]
-    REL -.->|optional future| EVAL[brief self-eval ticks]
-    EVAL --> LOOP
-```
+| # | Fix |
+|---|-----|
+| 1 | Execute namespace: `win32_api`, `click_at`, `type_text`, `hotkey`, `open_url`, … |
+| 2 | Execute prompt + ORGAN_IDENTITY: GRID @x,y, no print-as-action, no ord(ch) SendInput |
+| 3 | Verify prompt: stdout ≠ proof; compose still open = deny |
+| 4 | Execute `think()` skips hover rescan — uses `ui_context` from observe tick |
+| 5 | Planner: Opera preference, **article** not short post, concrete UI steps |
 
-Post-evolve self-eval: after `modified`, a short tick chapter proves body still works, then resume `goal_seed`. May self-prune later.
+---
+
+## Proven milestones
+
+| Tag | Proof |
+|-----|-------|
+| `survey-loop-complete` | Desktop survey loop, ctypes execute |
+| `p0-hot-swap` | `registry.reload_from_files` + satisfied at max_ticks |
+| Run B partial | Opened X compose; false verify on print |
+
+---
+
+## Next run (Opera handover)
+
+**Goal:** Publish **full articles** (not tweets) on X and LinkedIn about endgame-ai via **Opera** — logged-in user session, post on owner behalf.
+
+**Bounds:** `--max-ticks 40 --max-brain-calls 30`
+
+No prep required — organism deduces install/launch/login UI.
 
 ---
 
 ## Architecture
 
 ```mermaid
-flowchart TB
-    O[organism._tick] --> R[registry]
-    R --> organs[10 flat organs]
-    organs --> BR[brain + xai]
-    organs --> B[bus]
-    observe --> desktop
-    execute --> body[win32 ctypes subprocess]
-    self_modify --> evolution --> R
+flowchart LR
+    O[organism] --> R[registry]
+    R --> organs
+    organs --> BR[brain]
+    execute --> W[win32_api body]
+    self_modify --> EV[evolution] --> R
 ```
 
 ```mermaid
 stateDiagram-v2
     [*] --> planner
-    planner --> scheduler: step_ready
-    scheduler --> observe: step_ready
-    scheduler --> satisfied: plan_complete
-    observe --> execute: screen_ready
-    execute --> verify: verify
+    planner --> scheduler --> observe --> execute
+    execute --> verify
     verify --> scheduler: step_confirmed
     verify --> reflect: step_denied
-    reflect --> planner: replan
-    reflect --> self_modify: escalate
-    self_modify --> planner: modified
+    scheduler --> satisfied: plan_complete
     satisfied --> [*]: halt
 ```
 
 ---
 
-## Next handover run (not multi-hour)
+## Plan
 
-**Operator intent:** open Opera, publish on X and LinkedIn about endgame-ai on your behalf.
-
-**Re-deduced plan — staged, bounded, same vision:**
-
-| Run | Goal | Why |
-|-----|------|-----|
-| **A (recommended first)** | Open Opera → reach X + LinkedIn compose → write drafts about endgame-ai → **stop before Publish** (draft-only handover) | Proves browser + account UI + execute without irreversible post |
-| **B (operator choice)** | Same + click Publish/Post on both platforms | Full handover — only if Run A unnecessary |
-
-**Not this session:** multi-hour unattended marathon.
-
-**Suggested bounds:** `--max-ticks 24 --max-brain-calls 18 --reset` (~20–40 min wall clock)
-
-```mermaid
-flowchart TD
-    G[goal_seed: Opera + X + LinkedIn + endgame-ai article]
-    G --> P[planner narrates handover chapter]
-    P --> Ob[observe browser UI]
-    Ob --> E[execute: open Opera navigate compose]
-    E --> V[verify: drafts visible]
-    V -->|Run A| S[satisfied: drafts ready]
-    V -->|Run B| E2[execute: publish]
-    E2 --> S2[satisfied: posted]
-```
-
-**Prerequisites:** Opera installed · X and LinkedIn logged in in that browser · `XAI_API_KEY` set
-
----
-
-## Plan (re-deduced)
-
-```mermaid
-gantt
-    title After p0-hot-swap
-    dateFormat YYYY-MM-DD
-    section Next
-    Bounded handover Run A Opera drafts    :n1, 2026-07-05, 1d
-    Optional Run B publish                 :n2, after n1, 1d
-    section P1
-    Live self_modify + reload proof        :p1, after n2, 2d
-    Post-evolve self_eval routing          :p2, after p1, 1d
-    section Later
-    Multi-hour unattended handover         :l1, after p2, 5d
-```
-
-| Priority | Task | LOC |
-|----------|------|-----|
-| **Next** | Bounded Opera / X / LinkedIn handover (Run A or B) | 0 |
-| P1 | Live `self_modify` → reload → tick | — |
-| P1 | `modified` → self-eval ticks → resume goal | ~40 |
-| Later | 24/7 unattended sessions | — |
+| P | Task | Status |
+|---|------|--------|
+| — | Prompt/body fixes (investigation) | **done** |
+| **Now** | Opera article handover Run B2 | running |
+| P1 | Live self_modify + reload | pending |
+| P1 | Post-evolve self-eval ticks | pending |
 
 ---
 
 ## Agent protocol
 
-1. No silent runs — `[organism]` / `[observe]` / `[brain]` stdout  
-2. Poll `comms/` every ~30s — sport commentary  
-3. Raw logs on disk (`comms/brain_raw.jsonl`) — never commit  
-4. Archive → cleanup runtime → README → tag → **ask go**
+Poll `comms/` every ~30s · sport commentary · never commit runtime logs · archive → cleanup → README → tag → ask go
 
 ---
 
 ## CLI
 
 ```bash
-python organism.py "open Opera, draft on X and LinkedIn an article about endgame-ai, do not publish" --max-ticks 24 --max-brain-calls 18 --reset
+python organism.py "goal" --max-ticks 40 --max-brain-calls 30 --reset
 python comms_poll.py 30 20
-python contract_check.py
-```
-
-`stop.txt` revokes handover.
-
----
-
-## Repo
-
-22 flat `*.py` + `wiring.json`. Runtime gitignored: `comms/` (except session), `state.json`, `pids/`, `stop.txt`
-
----
-
-## Validation
-
-```bash
-python -m compileall -q .
 python contract_check.py
 ```
 
