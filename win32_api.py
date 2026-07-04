@@ -233,19 +233,5 @@ def scroll_at(x: int, y: int, amount: int, hwnd: int=0) -> dict:
 
 def open_url(browser: str | None = None, url: str = '') -> dict:
     import subprocess
-    import os
-    if not browser:
-        subprocess.Popen(['start', '', url], shell=True)
-        return {'ok': True, 'action': 'open_url', 'browser': 'default', 'url': url, 'launched': True, 'verified': False}
-    browser_paths = {'chrome': ['C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe'], 'edge': ['C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'], 'firefox': ['C:\\Program Files\\Mozilla Firefox\\firefox.exe'], 'opera': ['C:\\Program Files\\Opera\\launcher.exe', 'C:\\Program Files (x86)\\Opera\\launcher.exe', os.path.expandvars('%LOCALAPPDATA%\\Programs\\Opera\\launcher.exe')]}
-    paths = browser_paths.get(browser.lower(), [])
-    exe = None
-    for p in paths:
-        if os.path.exists(os.path.expandvars(p)):
-            exe = os.path.expandvars(p)
-            break
-    if not exe:
-        subprocess.Popen(['start', '', url], shell=True)
-        return {'ok': True, 'action': 'open_url', 'browser': 'default', 'url': url, 'launched': True, 'verified': False}
-    subprocess.Popen([exe, url])
-    return {'ok': True, 'action': 'open_url', 'browser': browser, 'url': url, 'launched': True, 'verified': False}
+    subprocess.Popen(['start', '', url], shell=True)
+    return {'ok': True, 'action': 'open_url', 'browser': browser or 'default', 'url': url, 'launched': True, 'verified': False}

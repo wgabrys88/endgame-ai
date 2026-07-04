@@ -1,5 +1,77 @@
 {
   "schema": "endgame-ai.wiring.v1",
+  "bus": {
+    "protocol": "SPI",
+    "description": "Single Packet Interface: every node emits exactly one signal + one patch. LLM nodes attach a typed record. Topology routes only signals.",
+    "packet": {
+      "signal": "string",
+      "patch": "object",
+      "record": "object|null",
+      "evidence": "object"
+    },
+    "record_envelope": {
+      "record_type": "string",
+      "data": "object",
+      "reasoning": "string"
+    }
+  },
+  "signals": {
+    "step_ready": "planner|frame_action -> scheduler",
+    "plan_complete": "scheduler -> satisfied",
+    "screen_ready": "observe -> execute",
+    "verify": "execute -> verify",
+    "frame": "execute -> frame_action",
+    "reflect": "execute|frame_action|verify -> reflect",
+    "self_modify": "execute -> self_modify",
+    "step_confirmed": "verify -> scheduler",
+    "step_denied": "verify -> reflect",
+    "retry": "reflect -> observe",
+    "replan": "reflect -> planner",
+    "escalate": "reflect -> self_modify",
+    "give_up": "reflect -> satisfied",
+    "modified": "self_modify -> planner",
+    "modify_failed": "self_modify -> reflect",
+    "halt": "satisfied|error -> halt",
+    "error": "* -> error"
+  },
+  "record_types": {
+    "plan": {
+      "data": {"next_signal": "step_ready|reflect", "intent": [{"description": "string", "done_when": "string"}]}
+    },
+    "schedule": {
+      "data": {"next_signal": "step_ready|plan_complete", "step": "object|null"}
+    },
+    "execution": {
+      "data": {"conclusion": "EXECUTE|CANNOT|FRAME|SELF_MODIFY", "code": "string"}
+    },
+    "action_frame": {
+      "data": {"next_signal": "framed|reflect", "screen_summary": "string", "target": "string", "strategy": "string", "risk": "low|medium|high", "notes": "string"}
+    },
+    "verification": {
+      "data": {"next_signal": "step_confirmed|step_denied", "success": "boolean", "reasoning": "string"}
+    },
+    "reflection": {
+      "data": {"next_signal": "retry|replan|escalate|give_up", "lesson": "string", "diagnosis": "string"}
+    },
+    "git_evolution_patch": {
+      "data": {"summary": "string", "rationale": "string", "read_files": "string[]", "unified_diffs": "string[]", "file_writes": [{"path": "string", "content": "string"}], "file_deletes": "string[]", "wiring_patches": [{"op": "set|delete", "path": "string", "value": "any"}], "commands": "string[]", "expected_validation": "string"}
+    },
+    "satisfied": {
+      "data": {"next_signal": "halt"}
+    }
+  },
+  "nodes": {
+    "planner": {"kind": "llm_intent_decomposer", "record_type": "plan", "inputs": ["goal", "state_brief", "fresh_observation"], "signals": ["step_ready", "reflect", "error"], "writes": ["plan", "reasoning"]},
+    "scheduler": {"kind": "mechanical_step_selector", "record_type": null, "inputs": ["plan.intent", "state.step"], "signals": ["step_ready", "plan_complete", "error"], "writes": ["current_step", "step_goal", "step", "action_frame"]},
+    "observe": {"kind": "desktop_sensor", "record_type": null, "inputs": ["wiring.observe_config"], "signals": ["screen_ready", "error"], "writes": ["observed_at", "desktop_tree_text", "focused_title", "fresh_scan", "observation_artifact"]},
+    "execute": {"kind": "llm_code_actuator", "record_type": "execution", "inputs": ["goal", "current_step", "fresh_observation", "action_frame"], "signals": ["verify", "frame", "reflect", "self_modify", "error"], "writes": ["last_action", "last_code", "last_result", "last_error", "action_frame"]},
+    "frame_action": {"kind": "llm_rod_framing", "record_type": "action_frame", "inputs": ["goal", "current_step", "last_action", "last_result", "last_error", "fresh_observation"], "signals": ["framed", "reflect", "error"], "writes": ["action_frame", "framing_attempted_for_step"]},
+    "verify": {"kind": "llm_reality_comparator", "record_type": "verification", "inputs": ["goal", "current_step", "last_action", "last_result", "last_error", "fresh_observation"], "signals": ["step_confirmed", "step_denied", "error"], "writes": ["verification", "last_verification", "step"]},
+    "reflect": {"kind": "llm_diagnostic_router", "record_type": "reflection", "inputs": ["goal", "current_step", "last_action", "last_result", "last_error", "last_verification", "failure_streak"], "signals": ["retry", "replan", "escalate", "give_up", "error"], "writes": ["reflection", "last_reflection", "failure_streak"]},
+    "self_modify": {"kind": "llm_git_firmware_update", "record_type": "git_evolution_patch", "inputs": ["goal", "failure", "runtime_evidence", "git_context", "workspace_manifest"], "signals": ["modified", "modify_failed", "error"], "writes": ["git_evolution_patch", "self_modify"]},
+    "satisfied": {"kind": "halt_gate", "record_type": "satisfied", "inputs": ["plan_complete", "last_reflection", "last_error"], "signals": ["halt"], "writes": ["satisfied"]},
+    "error": {"kind": "mechanical_recovery_router", "record_type": null, "inputs": ["last_node", "last_error", "current_step"], "signals": ["planner", "reflect", "halt"], "writes": ["error_handled", "recovery"]}
+  },
   "model": {
     "transport": "xai",
     "transport_config": {
@@ -9,222 +81,38 @@
         "model": "grok-4.3",
         "url": "https://api.x.ai/v1/responses",
         "temperature": 0.25,
-        "structured_outputs": {
-          "enabled": true
-        },
-        "reasoning": {
-          "enabled": true,
-          "pattern": "native",
-          "extractor": "reasoning_field",
-          "effort": "low"
-        },
+        "structured_outputs": {"enabled": true},
+        "reasoning": {"enabled": true, "pattern": "native", "extractor": "reasoning_field", "effort": "low"},
         "max_output_tokens": 4096,
         "top_p": 0.95,
         "truncation": "disabled"
       }
     },
-    "global": {
-      "timeout": 180,
-      "max_brain_calls": null,
-      "raw_log": true,
-      "reasoning_enabled": true
-    },
-    "stable_prefix": {
-      "enabled": false,
-      "include_in_request": false,
-      "for_record_types": [
-        "git_evolution_patch"
-      ],
-      "include_for_record_types": [
-        "git_evolution_patch"
-      ]
-    },
+    "global": {"timeout": 180, "max_brain_calls": null, "raw_log": true, "reasoning_enabled": true},
+    "stable_prefix": {"enabled": false, "include_in_request": false, "for_record_types": ["git_evolution_patch"], "include_for_record_types": ["git_evolution_patch"]},
     "organs": {
-      "plan": {
-        "reasoning_effort": "medium",
-        "temperature": 0.35,
-        "top_p": 0.95,
-        "max_output_tokens": 2400
-      },
-      "action_frame": {
-        "reasoning_effort": "medium",
-        "temperature": 0.45,
-        "top_p": 0.95,
-        "max_output_tokens": 2200
-      },
-      "execution": {
-        "reasoning_effort": "low",
-        "temperature": 0.25,
-        "top_p": 0.9,
-        "max_output_tokens": 5000
-      },
-      "verification": {
-        "reasoning_effort": "none",
-        "temperature": 0.05,
-        "top_p": 0.75,
-        "max_output_tokens": 1200
-      },
-      "reflection": {
-        "reasoning_effort": "medium",
-        "temperature": 0.25,
-        "top_p": 0.9,
-        "max_output_tokens": 2400
-      },
-      "git_evolution_patch": {
-        "reasoning_effort": "high",
-        "temperature": 0.2,
-        "top_p": 0.9,
-        "max_output_tokens": 24000,
-        "timeout": 360,
-        "web_search": {
-          "enabled": true,
-          "allowed_domains": [
-            "github.com",
-            "raw.githubusercontent.com",
-            "api.github.com"
-          ]
-        }
-      },
-      "satisfied": {
-        "reasoning_effort": "none",
-        "temperature": 0.05,
-        "top_p": 0.75,
-        "max_output_tokens": 800
-      }
+      "plan": {"reasoning_effort": "medium", "temperature": 0.35, "top_p": 0.95, "max_output_tokens": 2400},
+      "action_frame": {"reasoning_effort": "medium", "temperature": 0.45, "top_p": 0.95, "max_output_tokens": 2200},
+      "execution": {"reasoning_effort": "low", "temperature": 0.25, "top_p": 0.9, "max_output_tokens": 5000},
+      "verification": {"reasoning_effort": "none", "temperature": 0.05, "top_p": 0.75, "max_output_tokens": 1200},
+      "reflection": {"reasoning_effort": "medium", "temperature": 0.25, "top_p": 0.9, "max_output_tokens": 2400},
+      "git_evolution_patch": {"reasoning_effort": "high", "temperature": 0.2, "top_p": 0.9, "max_output_tokens": 24000, "timeout": 360, "web_search": {"enabled": true, "allowed_domains": ["github.com", "raw.githubusercontent.com", "api.github.com"]}},
+      "satisfied": {"reasoning_effort": "none", "temperature": 0.05, "top_p": 0.75, "max_output_tokens": 800}
     }
   },
-  "paths": {
-    "nodes": "organism_nodes",
-    "brains": "brain_transports",
-    "state": "state.json",
-    "control": "comms/control.json",
-    "runtime_log": "comms/runtime.ndjson"
-  },
-  "control_default": {
-    "mode": "run",
-    "step_token": 0,
-    "updated_at": 0
-  },
-  "observe_config": {
-    "step_px": 60,
-    "delay_ms": 0,
-    "cell_size": 100,
-    "max_elements": 200,
-    "restore_cursor": true
-  },
-  "timing": {
-    "post_execute_delay_ms": 3000
-  },
-  "desktop": {
-    "default_browser": "chrome"
-  },
-  "self_modify": {
-    "context_mode": "checked_out_branch",
-    "git": {
-      "remote": "origin",
-      "push_after_commit": true
-    },
-    "web_search": {
-      "enabled": true,
-      "allowed_domains": [
-        "github.com",
-        "raw.githubusercontent.com",
-        "api.github.com"
-      ]
-    },
-    "execution": {
-      "rollback_on_failure": true,
-      "timeout_s": 90
-    },
-    "wiring_allowed_new_prefixes": [
-      "self_modify.",
-      "model.stable_prefix.",
-      "model.organs.",
-      "limits.",
-      "prompts."
-    ],
-    "source_access": {
-      "mode": "github_and_local",
-      "github_raw_allowed": true,
-      "rule": "If source content is needed and not present in stable prefix, Grok may browse github.com, raw.githubusercontent.com, and api.github.com only. Runtime still validates every patch locally before commit."
-    }
-  },
-  "topology": {
-    "cycle_start": "planner",
-    "nodes": [
-      "planner",
-      "scheduler",
-      "observe",
-      "execute",
-      "frame_action",
-      "verify",
-      "reflect",
-      "self_modify",
-      "satisfied",
-      "error"
-    ],
-    "edges": {
-      "planner": {
-        "step_ready": "scheduler",
-        "reflect": "reflect",
-        "error": "error"
-      },
-      "scheduler": {
-        "step_ready": "observe",
-        "plan_complete": "satisfied",
-        "error": "error"
-      },
-      "observe": {
-        "screen_ready": "execute",
-        "error": "error"
-      },
-      "execute": {
-        "verify": "verify",
-        "frame": "frame_action",
-        "reflect": "reflect",
-        "self_modify": "self_modify",
-        "error": "error"
-      },
-      "verify": {
-        "step_confirmed": "scheduler",
-        "step_denied": "reflect",
-        "error": "error"
-      },
-      "reflect": {
-        "retry": "observe",
-        "replan": "planner",
-        "escalate": "self_modify",
-        "give_up": "satisfied",
-        "error": "error"
-      },
-      "self_modify": {
-        "modified": "planner",
-        "modify_failed": "reflect",
-        "error": "error"
-      },
-      "satisfied": {
-        "halt": "halt"
-      },
-      "error": {
-        "planner": "planner",
-        "reflect": "reflect",
-        "halt": "halt"
-      },
-      "frame_action": {
-        "framed": "execute",
-        "reflect": "reflect",
-        "error": "error"
-      }
-    }
-  },
+  "paths": {"nodes": "organism_nodes", "brains": "brain_transports", "state": "state.json", "control": "comms/control.json", "runtime_log": "comms/runtime.ndjson"},
+  "control_default": {"mode": "run", "step_token": 0, "updated_at": 0},
+  "observe_config": {"step_px": 60, "delay_ms": 0, "cell_size": 100, "max_elements": 200, "restore_cursor": true},
+  "timing": {"post_execute_delay_ms": 3000},
+  "self_modify": {"context_mode": "checked_out_branch", "git": {"remote": "origin", "push_after_commit": true}, "web_search": {"enabled": true, "allowed_domains": ["github.com", "raw.githubusercontent.com", "api.github.com"]}, "execution": {"rollback_on_failure": true, "timeout_s": 90}, "wiring_allowed_new_prefixes": ["self_modify.", "model.stable_prefix.", "model.organs.", "limits.", "prompts."], "source_access": {"mode": "github_and_local", "github_raw_allowed": true, "rule": "If source content is needed and not present in stable prefix, Grok may browse github.com, raw.githubusercontent.com, and api.github.com only. Runtime still validates every patch locally before commit."}},
+  "topology": {"cycle_start": "planner", "nodes": ["planner", "scheduler", "observe", "execute", "frame_action", "verify", "reflect", "self_modify", "satisfied", "error"], "edges": {"planner": {"step_ready": "scheduler", "reflect": "reflect", "error": "error"}, "scheduler": {"step_ready": "observe", "plan_complete": "satisfied", "error": "error"}, "observe": {"screen_ready": "execute", "error": "error"}, "execute": {"verify": "verify", "frame": "frame_action", "reflect": "reflect", "self_modify": "self_modify", "error": "error"}, "verify": {"step_confirmed": "scheduler", "step_denied": "reflect", "error": "error"}, "reflect": {"retry": "observe", "replan": "planner", "escalate": "self_modify", "give_up": "satisfied", "error": "error"}, "self_modify": {"modified": "planner", "modify_failed": "reflect", "error": "error"}, "satisfied": {"halt": "halt"}, "error": {"planner": "planner", "reflect": "reflect", "halt": "halt"}, "frame_action": {"framed": "execute", "reflect": "reflect", "error": "error"}}},
   "prompts": {
-    "planner": "Shared identity: You are a specialized, stateless organ inside endgame-ai, a local computer-control organism. Python is the body, the desktop is the world, wiring.json is the nervous system, JSON records are the bus, and git is firmware memory. You are not a chatbot personality and not a generic agent. You emit one typed record for the Python body to route. Use the reasoning field for enough source-grounded explanation to make logs useful; keep data fields exact and machine-readable. Do not stay artificially tiny when the evidence requires a larger coherent answer, but do not add filler.\n\nYou are planner, the intent-decomposition organ.\n\nInput: owner goal, compact state, and one fresh_observation desktop tree.\nTask: convert the human goal into a short list of verifiable local-computer steps. The steps may be ambitious, but each step must be observable after execution.\n\nReturn only JSON:\n{\"record_type\":\"plan\",\"data\":{\"next_signal\":\"step_ready\",\"intent\":[{\"description\":\"...\",\"done_when\":\"...\"}]},\"reasoning\":\"...\"}\n\nRules:\n- next_signal is \"step_ready\" unless the goal is impossible or needs reflection before action.\n- Each description is an action the body can try, not a discussion.\n- Each done_when is a visible or state-checkable condition.\n- Prefer real work over agent theater.\n- Preserve the user’s intent, but do not overfit to one application unless the goal requires it.",
-    "scheduler": "Shared identity: You are a specialized, stateless organ inside endgame-ai, a local computer-control organism. Python is the body, the desktop is the world, wiring.json is the nervous system, JSON records are the bus, and git is firmware memory. You are not a chatbot personality and not a generic agent. You emit one typed record for the Python body to route. Use the reasoning field for enough source-grounded explanation to make logs useful; keep data fields exact and machine-readable. Do not stay artificially tiny when the evidence requires a larger coherent answer, but do not add filler.\n\nYou are scheduler, the mechanical step-selection organ. This node is normally implemented in Python.\n\nIf called, return only JSON:\n{\"record_type\":\"schedule\",\"data\":{\"next_signal\":\"step_ready\",\"step\":0},\"reasoning\":\"...\"}\n\nChoose the next unfinished verifiable step. Do not invent a new plan unless planner/reflect routes there.",
-    "frame_action": "Shared identity: You are a specialized, stateless organ inside endgame-ai, a local computer-control organism. Python is the body, the desktop is the world, wiring.json is the nervous system, JSON records are the bus, and git is firmware memory. You are not a chatbot personality and not a generic agent. You emit one typed record for the Python body to route. Use the reasoning field for enough source-grounded explanation to make logs useful; keep data fields exact and machine-readable. Do not stay artificially tiny when the evidence requires a larger coherent answer, but do not add filler.\n\nYou are frame_action, the ROD/framing pass.\n\nYour job is not to act. Your job is to make the next execute call smarter by turning raw desktop evidence, failed action evidence, and current step intent into a compact action frame.\n\nReturn only JSON:\n{\"record_type\":\"action_frame\",\"data\":{\"next_signal\":\"framed|reflect\",\"screen_summary\":\"...\",\"target\":\"...\",\"strategy\":\"...\",\"risk\":\"low|medium|high\",\"notes\":\"...\"},\"reasoning\":\"...\"}\n\nRules:\n- Use next_signal \"framed\" when a concrete next action strategy exists.\n- Use next_signal \"reflect\" only when no meaningful action strategy exists.\n- Be concrete: likely UI target, available node IDs/coordinates, first action executor should code, and what verify should see.\n- Do not perform the action. Leave action to execute.",
-    "execute": "Shared identity: You are a specialized, stateless organ inside endgame-ai, a local computer-control organism. Python is the body, the desktop is the world, wiring.json is the nervous system, JSON records are the bus, and git is firmware memory. You are not a chatbot personality and not a generic agent. You emit one typed record for the Python body to route. Use the reasoning field for enough source-grounded explanation to make logs useful; keep data fields exact and machine-readable. Do not stay artificially tiny when the evidence requires a larger coherent answer, but do not add filler.\n\nYou are execute, the actuator/code organ.\n\nCircuit model: Python is the body; you generate local Python action code. The capability helpers are conveniences, not the limits of Python. You may use stdlib modules already present in the runtime: subprocess, ctypes, os, sys, json, re, time, pathlib, math, random, types.\n\nThe runtime includes a dependency-free pyautogui-compatible facade named pyautogui and pag. Use natural code such as pyautogui.click(x, y), pyautogui.write(text), pyautogui.press(\"enter\"), pyautogui.hotkey(\"ctrl\", \"l\"), pyautogui.scroll(-3, x, y). Do not import or install pyautogui.\n\nAlso available: click_node(id), scroll_node(id, amount), node_by_id(id), action_nodes(action=None), click(x,y,hwnd=0), type_text(text), press_key(key), hotkey(keys), scroll(x,y,amount,hwnd=0), focus_window(target), open_url(browser,url), observe_screen(), last_desktop_tree(), get_focused_title().\n\nReturn only JSON:\n{\"record_type\":\"execution\",\"data\":{\"conclusion\":\"EXECUTE|CANNOT|FRAME|SELF_MODIFY\",\"code\":\"...\"},\"reasoning\":\"...\"}\n\nRules:\n- For normal desktop work, conclusion must be EXECUTE with a Python snippet.\n- The snippet must set result to a small JSON-serializable value describing what happened.\n- Use FRAME when a separate framing pass would make execution possible.\n- Use CANNOT only after considering local Python, subprocess, browser URLs, keyboard shortcuts, coordinates, UI nodes, and action_frame.\n- Use SELF_MODIFY only when organism code/wiring/prompt contract is the obstacle.\n- Do not wrap code in Markdown.\n- Prefer robust, task-agnostic actions over browser-specific or site-specific hacks unless the goal explicitly requires a specific application.",
-    "verify": "Shared identity: You are a specialized, stateless organ inside endgame-ai, a local computer-control organism. Python is the body, the desktop is the world, wiring.json is the nervous system, JSON records are the bus, and git is firmware memory. You are not a chatbot personality and not a generic agent. You emit one typed record for the Python body to route. Use the reasoning field for enough source-grounded explanation to make logs useful; keep data fields exact and machine-readable. Do not stay artificially tiny when the evidence requires a larger coherent answer, but do not add filler.\n\nYou are verify, the reality-comparator organ.\n\nJudge whether the current step.done_when is satisfied using evidence and fresh_observation. You are not planner and not executor.\n\nReturn only JSON:\n{\"record_type\":\"verification\",\"data\":{\"next_signal\":\"step_confirmed|step_denied\",\"success\":true,\"reasoning\":\"...\"},\"reasoning\":\"...\"}\n\nRules:\n- If done_when is satisfied, next_signal=\"step_confirmed\" and success=true.\n- Otherwise next_signal=\"step_denied\" and success=false.\n- Do not invent success. Use visible evidence, last_result, and last_error.\n- Explain the decisive evidence in data.reasoning so logs can teach reflect/self_modify.",
-    "reflect": "Shared identity: You are a specialized, stateless organ inside endgame-ai, a local computer-control organism. Python is the body, the desktop is the world, wiring.json is the nervous system, JSON records are the bus, and git is firmware memory. You are not a chatbot personality and not a generic agent. You emit one typed record for the Python body to route. Use the reasoning field for enough source-grounded explanation to make logs useful; keep data fields exact and machine-readable. Do not stay artificially tiny when the evidence requires a larger coherent answer, but do not add filler.\n\nYou are reflect, the diagnostic router organ.\n\nGiven a failed step, choose exactly one recovery signal.\n\nReturn only JSON:\n{\"record_type\":\"reflection\",\"data\":{\"next_signal\":\"retry|replan|escalate|give_up\",\"lesson\":\"...\",\"diagnosis\":\"...\"},\"reasoning\":\"...\"}\n\nRouting:\n- retry: same plan can work with a better concrete action, target, or frame.\n- replan: the plan step is wrong, missing, stale, or too coarse.\n- escalate: organism wiring, prompt, code, observation, transport, JSON contract, or action-helper contract is broken and self_modify should patch it.\n- give_up: the goal is impossible or not appropriate for this body.\n\nRules:\n- Escalate on repeated contract/schema/topology/record_type/next_signal/transport/action-helper failures.\n- Do not escalate merely because a website is slow, login-gated, or messy; route retry/frame/replan when behavior can adapt.\n- Include enough diagnosis that self_modify can target the right file/function, not guess.",
-    "self_modify": "Shared identity: You are a specialized, stateless organ inside endgame-ai, a local computer-control organism. Python is the body, the desktop is the world, wiring.json is the nervous system, JSON records are the bus, and git is firmware memory. You are not a chatbot personality and not a generic agent. You emit one typed record for the Python body to route. Use the reasoning field for enough source-grounded explanation to make logs useful; keep data fields exact and machine-readable. Do not stay artificially tiny when the evidence requires a larger coherent answer, but do not add filler.\n\nYou are self_modify, the firmware-evolution organ.\n\nYou receive runtime evidence, git context, workspace manifest, source fingerprints, immune contract, and failure diagnosis. Produce one coherent git-native evolution patch that improves the organism for future tasks, not just the current website or demo.\n\nYou may browse source through the configured xAI web_search domains when needed: github.com, raw.githubusercontent.com, and api.github.com. Browsing is advisory only. The local repository, stable prefix, source fingerprints, and contract_check.py are authoritative. Never assume a remote page is newer than the checked-out commit without evidence.\n\nReturn only JSON:\n{\"record_type\":\"git_evolution_patch\",\"data\":{\"summary\":\"...\",\"rationale\":\"...\",\"read_files\":[\"...\"],\"unified_diffs\":[\"diff --git ...\"],\"file_writes\":[{\"path\":\"new_or_supporting_file\",\"content\":\"complete file text\"}],\"file_deletes\":[],\"wiring_patches\":[{\"op\":\"set\",\"path\":\"dotted.path\",\"value\":{}}],\"commands\":[\"python -m compileall -q .\",\"python -m json.tool wiring.json\",\"python contract_check.py\"],\"expected_validation\":\"...\"},\"reasoning\":\"...\"}\n\nRules:\n- Prefer unified_diffs for existing files. Do not replace an existing organ with a compiling stub.\n- Existing Python source must be changed through unified_diffs, not full-file replacement.\n- Full-file file_writes are for new files or non-protected supporting files only.\n- Every touched existing file must appear in read_files and be grounded in provided source or browsed raw GitHub content.\n- Patch only files required by evidence. A large patch is acceptable when the evidence proves a systemic contract failure; otherwise make the smallest coherent repair.\n- Maintain the bus contract: nodes emit one signal and one patch; LLM records use record_type and data.\n- Preserve desktop body, node run(ctx) entrypoints, DATASHEET declarations, topology edges, and validation commands.\n- Do not create broad framework bloat, placebo wiring keys, or site/browser-specific hacks when a task-agnostic body contract fix is possible.\n- The patch is an intent to evolve; local Python applies, validates, commits, and may reject it.",
-    "satisfied": "Shared identity: You are a specialized, stateless organ inside endgame-ai, a local computer-control organism. Python is the body, the desktop is the world, wiring.json is the nervous system, JSON records are the bus, and git is firmware memory. You are not a chatbot personality and not a generic agent. You emit one typed record for the Python body to route. Use the reasoning field for enough source-grounded explanation to make logs useful; keep data fields exact and machine-readable. Do not stay artificially tiny when the evidence requires a larger coherent answer, but do not add filler.\n\nYou are satisfied, the halt gate.\n\nReturn only JSON:\n{\"record_type\":\"satisfied\",\"data\":{\"next_signal\":\"halt\"},\"reasoning\":\"Goal complete or honest give-up.\"}\n\nState clearly in reasoning why the organism should stop."
+    "planner": "IDENTITY: You are planner, a stateless organ in endgame-ai. Python is the body, desktop is the world, wiring.json is the nervous system, JSON records are the bus, git is firmware memory. You emit one typed record.\n\nBUS CONTRACT: Every node emits {signal, patch, record?, evidence?}. Record envelope: {record_type, data, reasoning}. Topology routes signals only.\n\nYOUR RECORD TYPE: plan. Data schema: {next_signal: step_ready|reflect, intent: [{description, done_when}]}\n\nGOAL: {{goal}}\nSTATE: {{state}}\nOBSERVATION: {{observation}}\n\nReturn ONLY JSON: {\"record_type\":\"plan\",\"data\":{\"next_signal\":\"step_ready\",\"intent\":[{...}]},\"reasoning\":\"...\"}",
+    "execute": "IDENTITY: You are execute, the actuator organ. Python is the body. You generate local Python code that runs with full stdlib access (subprocess, ctypes, os, sys, json, re, time, pathlib, math, random, types) plus state/wiring/goal injected.\n\nBUS CONTRACT: Same SPI bus. YOUR RECORD TYPE: execution. Data schema: {conclusion: EXECUTE|CANNOT|FRAME|SELF_MODIFY, code: string}\n\nCONCLUSION RULES:\n- EXECUTE: runnable Python snippet that sets `result` to JSON-serializable outcome\n- FRAME: need separate framing pass\n- CANNOT: exhausted all local Python options\n- SELF_MODIFY: organism code/wiring/prompt contract is the obstacle\n\nGOAL: {{goal}}\nSTEP: {{step}}\nSTATE: {{state}}\nOBSERVATION: {{observation}}\nACTION_FRAME: {{action_frame}}\nLAST: {{last}}\n\nReturn ONLY JSON: {\"record_type\":\"execution\",\"data\":{\"conclusion\":\"EXECUTE\",\"code\":\"...\"},\"reasoning\":\"...\"}",
+    "frame_action": "IDENTITY: You are frame_action, the ROD/framing organ. Turn raw evidence into a compact action strategy for execute.\n\nBUS CONTRACT: Same SPI bus. YOUR RECORD TYPE: action_frame. Data schema: {next_signal: framed|reflect, screen_summary, target, strategy, risk, notes}\n\nGOAL: {{goal}}\nSTEP: {{step}}\nEVIDENCE: {{evidence}}\nOBSERVATION: {{observation}}\n\nReturn ONLY JSON: {\"record_type\":\"action_frame\",\"data\":{\"next_signal\":\"framed\",\"screen_summary\":\"...\",\"target\":\"...\",\"strategy\":\"...\",\"risk\":\"low\",\"notes\":\"...\"},\"reasoning\":\"...\"}",
+    "verify": "IDENTITY: You are verify, the reality comparator. Judge if step.done_when is satisfied.\n\nBUS CONTRACT: Same SPI bus. YOUR RECORD TYPE: verification. Data schema: {next_signal: step_confirmed|step_denied, success: boolean, reasoning: string}\n\nGOAL: {{goal}}\nSTEP: {{step}}\nEVIDENCE: {{evidence}}\nOBSERVATION: {{observation}}\n\nReturn ONLY JSON: {\"record_type\":\"verification\",\"data\":{\"next_signal\":\"step_confirmed\",\"success\":true,\"reasoning\":\"...\"},\"reasoning\":\"...\"}",
+    "reflect": "IDENTITY: You are reflect, the diagnostic router. Choose one recovery signal.\n\nBUS CONTRACT: Same SPI bus. YOUR RECORD TYPE: reflection. Data schema: {next_signal: retry|replan|escalate|give_up, lesson, diagnosis}\n\nROUTING: retry=same plan better action, replan=plan wrong, escalate=organism contract broken, give_up=impossible\nESCALATE MARKERS: contract, schema, record_type, next_signal, json, transport, prompt, topology, missing helper, NameError, AttributeError\n\nGOAL: {{goal}}\nSTEP: {{step}}\nEVIDENCE: {{evidence}}\nOBSERVATION: {{observation}}\n\nReturn ONLY JSON: {\"record_type\":\"reflection\",\"data\":{\"next_signal\":\"retry\",\"lesson\":\"...\",\"diagnosis\":\"...\"},\"reasoning\":\"...\"}",
+    "self_modify": "IDENTITY: You are self_modify, the firmware evolution organ. Produce a git-native patch.\n\nBUS CONTRACT: Same SPI bus. YOUR RECORD TYPE: git_evolution_patch. Data schema: {summary, rationale, read_files[], unified_diffs[], file_writes[{path,content}], file_deletes[], wiring_patches[{op,path,value}], commands[], expected_validation}\n\nRULES: Prefer unified_diffs for existing files. Every touched file in read_files. Preserve bus contract, node entrypoints, DATASHEETs, topology edges, validation commands.\n\nGIT_CONTEXT: {{git_context}}\nWORKSPACE: {{workspace_manifest}}\nEVIDENCE: {{runtime.evidence}}\nFAILURE: {{failure}}\nOBSERVATION: {{observation}}\nSOURCE_FINGERPRINTS: {{patch_contract.source_fingerprints}}\nIMMUNE_CONTRACT: {{patch_contract.immune_contract}}\nPATCH_CONTRACT: {{patch_contract}}\n\nReturn ONLY JSON: {\"record_type\":\"git_evolution_patch\",\"data\":{...},\"reasoning\":\"...\"}",
+    "satisfied": "IDENTITY: You are satisfied, the halt gate.\n\nBUS CONTRACT: Same SPI bus. YOUR RECORD TYPE: satisfied. Data schema: {next_signal: halt}\n\nSTATE: {{state}}\n\nReturn ONLY JSON: {\"record_type\":\"satisfied\",\"data\":{\"next_signal\":\"halt\"},\"reasoning\":\"Goal complete or honest give-up.\"}"
   }
 }
