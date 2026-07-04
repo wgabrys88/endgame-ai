@@ -26,7 +26,7 @@ def _path(wiring: dict[str, Any], key: str, default: str) -> pathlib.Path:
 
 
 def _load_node(node_name: str, wiring: dict[str, Any]):
-    node_dir = _path(wiring, "nodes", "organism_nodes")
+    node_dir = _path(wiring, "nodes", ".")
     path = node_dir / f"{node_name}.py"
     if not path.exists():
         raise RuntimeError(f"topology node '{node_name}' has no module at {path}")
@@ -256,7 +256,11 @@ def _declared_read_files(data: dict[str, Any]) -> set[str]:
 
 
 def _activation_bucket(rel: str) -> str:
-    if rel == "wiring.json" or rel.startswith("organism_nodes/") or rel.startswith("brain_transports/"):
+    if rel == "wiring.json" or rel in {
+        "planner.py", "scheduler.py", "observe.py", "execute.py", "frame_action.py",
+        "verify.py", "reflect.py", "self_modify.py", "satisfied.py", "error.py",
+        "file_proxy.py", "xai.py", "openai.py", "opencode.py", "browser_ai.py", "observation.py",
+    }:
         return "immediate"
     if rel in CORE_FILES:
         return "next_run"

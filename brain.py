@@ -1,7 +1,7 @@
 """Brain chokepoint for endgame-ai.
 
 Brain transports are hot-swappable modules selected only by wiring.json model.transport.
-Every transport lives under brain_transports/ and is loaded directly.
+Every transport is a root-level module loaded directly from wiring paths.brains.
 No selected transport has a fallback path.
 """
 from __future__ import annotations
@@ -404,7 +404,7 @@ def reset_call_budget() -> None:
 
 def _load_transport_module(name: str, wiring: dict[str, Any]):
     paths = wiring.get("paths", {})
-    brain_dir = root_path(paths.get("brains"), "brain_transports")
+    brain_dir = root_path(paths.get("brains"), ".")
     module_path = brain_dir / f"{name}.py"
     if not module_path.exists():
         raise RuntimeError(

@@ -5,20 +5,8 @@
 !.gitattributes
 !.gitignore
 !LICENSE
-!brain.py
-!desktop.py
-!nodes.py
-!organism.py
-!stop_check.py
-!bus.py
+!*.py
 !wiring.json
-
-!brain_transports/
-!brain_transports/*.py
-!organism_nodes/
-!organism_nodes/*.py
-!observation/
-!observation/*.py
 
 # Runtime and local-only data stay sealed.
 __pycache__/

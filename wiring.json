@@ -101,8 +101,8 @@
     }
   },
   "paths": {
-    "nodes": "organism_nodes",
-    "brains": "brain_transports",
+    "nodes": ".",
+    "brains": ".",
     "state": "state.json",
     "control": "comms/control.json",
     "runtime_log": "comms/runtime.ndjson"

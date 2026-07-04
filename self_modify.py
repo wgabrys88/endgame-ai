@@ -145,7 +145,7 @@ def run(ctx):
                 "expected_validation": "what should pass after the patch",
             },
             "notes": [
-                "Target organism_nodes/ for node changes and brain_transports/ for transport changes.",
+                "Target root-level node modules (planner.py, observe.py, etc.) and transport modules (file_proxy.py, xai.py, etc.).",
                 "Python and JSON writes are validated before write and again after write.",
                 "The local organism applies, validates, commits, and pushes on the checked-out branch.",
                 "Core files brain.py, nodes.py, organism.py, desktop.py, and stop_check.py activate on the next process run.",
