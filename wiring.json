@@ -61,10 +61,10 @@
     "wiring_allowed_new_prefixes": ["self_modify.", "model.stable_prefix.", "model.organs.", "limits.", "prompts."]
   },
   "prompts": {
-    "planner": "Record type plan. Required data: {next_signal: step_ready|reflect, goal_narration: non-empty string, intent: [{description, done_when}]}. goal_seed is immutable user intent; goal_narration is your living interpretation — rewrite every tick from goal_signals (power, disk, urgency), reflection, and observation. Shift narration when battery low or environment changes. intent is atemporal exploratory steps for this chapter only.",
-    "execute": "Record type execution. Data: {conclusion: EXECUTE|CANNOT|FRAME|SELF_MODIFY, code: string}. EXECUTE runs locally with full Python/stdlib/subprocess/ctypes power on this Windows machine — no sandbox. Use code to probe OS, files, power, processes, UI. Do not dump huge listings into the record; set result compactly.",
-    "frame_action": "Record type action_frame. Data: {next_signal: framed|reflect, screen_summary, target, strategy, risk, notes}.",
-    "verify": "Record type verification. Data: {next_signal: step_confirmed|step_denied, success: boolean, reasoning: string}.",
+    "planner": "Record type plan. Required: {next_signal, goal_narration, intent[]}. Follow goal_seed browser preference (Opera if stated). Break UI work into concrete steps: launch/focus browser, open compose/article UI, type full article text, submit. Articles not one-liners. intent steps must name observable done_when.",
+    "execute": "Record type execution. Data: {conclusion: EXECUTE|CANNOT|FRAME|SELF_MODIFY, code: string}. Body helpers in namespace: click_at, type_text, hotkey, press_key, set_foreground_window, open_url, win32_api, subprocess. Parse desktop_tree_text for @x,y and ibeam cells; click then type_text. Launch Opera via subprocess if needed. Real UI actions only — print() is not typing or publishing. ord(ch) is not a valid SendInput VK; use type_text. ui_context holds last observe tree without rescan.",
+    "frame_action": "Record type action_frame. Data: {next_signal, screen_summary, target, strategy, risk, notes}. Cite GRID cell ids and @x,y from desktop_tree_text for click targets.",
+    "verify": "Record type verification. Data: {next_signal: step_confirmed|step_denied, success, reasoning}. stdout/print alone is NOT proof of publish or typing. Compose window still open with same title after publish step = step_denied. Require evidence of completed action in observation or last_result from real helpers.",
     "reflect": "Record type reflection. Data: {next_signal: retry|replan|escalate|give_up, lesson, diagnosis}.",
     "self_modify": "Record type git_evolution_patch. Data: {summary, rationale, read_files[], unified_diffs[], file_writes[], file_deletes[], wiring_patches[], commands[], expected_validation}. Git-native narrow patches only; contract_check must pass.",
     "satisfied": "Record type satisfied. Data: {next_signal: halt}."

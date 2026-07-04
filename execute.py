@@ -15,6 +15,7 @@ import types
 from typing import Any
 import brain
 import bus
+import win32_api
 from node import LlmNode
 
 class Execute(LlmNode):
@@ -26,7 +27,7 @@ class Execute(LlmNode):
         state = ctx.get('state', {})
         goal = ctx.get('goal', '')
         step = state.get('current_step') or {}
-        return {'goal': goal, 'goal_narration': state.get('goal_narration', goal), 'step': {'description': step.get('description', goal), 'done_when': step.get('done_when', '')}, 'state': bus.state_brief(state), 'action_frame': state.get('action_frame'), 'last': {'error': state.get('last_error'), 'result': state.get('last_result', ''), 'action': state.get('last_action', {})}}
+        return {'goal': goal, 'goal_narration': state.get('goal_narration', goal), 'step': {'description': step.get('description', goal), 'done_when': step.get('done_when', '')}, 'state': bus.state_brief(state), 'ui_context': {'focused_title': state.get('focused_title', ''), 'desktop_tree_text': state.get('desktop_tree_text', ''), 'observed_at': state.get('observed_at')}, 'action_frame': state.get('action_frame'), 'last': {'error': state.get('last_error'), 'result': state.get('last_result', ''), 'action': state.get('last_action', {})}}
 
     def signal(self, data: dict[str, Any], record: dict[str, Any]) -> str:
         return str(data.get('_route_signal', 'verify'))
@@ -52,7 +53,7 @@ class Execute(LlmNode):
         if conclusion != 'EXECUTE' or not code.strip():
             signal = 'frame' if self._should_frame(state, conclusion) else 'reflect'
             return bus.emit(signal, {'last_action': {'code': '', 'conclusion': conclusion}, 'last_error': f'execute returned {conclusion}'}, record=record, evidence=payload)
-        ns = {'subprocess': subprocess, 'ctypes': ctypes, 'os': os, 'sys': sys, 'json': json, 're': re, 'time': time, 'pathlib': pathlib, 'math': math, 'random': random, 'types': types, 'state': state, 'wiring': wiring, 'goal': goal}
+        ns = {'subprocess': subprocess, 'ctypes': ctypes, 'os': os, 'sys': sys, 'json': json, 're': re, 'time': time, 'pathlib': pathlib, 'math': math, 'random': random, 'types': types, 'state': state, 'wiring': wiring, 'goal': goal, 'win32_api': win32_api, 'click_at': win32_api.click_at, 'type_text': win32_api.type_text, 'hotkey': win32_api.hotkey, 'press_key': win32_api.press_key, 'set_foreground_window': win32_api.set_foreground_window, 'open_url': win32_api.open_url}
         stdout = io.StringIO()
         stderr = io.StringIO()
         try:

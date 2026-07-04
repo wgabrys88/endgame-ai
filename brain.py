@@ -22,7 +22,7 @@ _STABLE_PREFIX_LOCK = threading.Lock()
 _LAST_FRESH_OBSERVATION: dict[str, Any] | None = None
 STATIC_PREFIX_SUFFIXES = {'.py', '.json', '.md'}
 DYNAMIC_LAST_KEYS = ('fresh_observation', 'observation', 'desktop_tree_text', 'evidence', 'workspace_manifest')
-ORGAN_IDENTITY = {'planner': 'You are planner: maintain goal_narration (required every tick) as a living interpretation of goal_seed. Use goal_signals.power/disk/urgency to adapt narration and intent. Emit one JSON record.', 'execute': 'You are execute: generate runnable Python with full local power (subprocess, ctypes, os, sys, files, registry, no sandbox). You may run any code on this Windows body. Emit one JSON execution record.', 'frame_action': 'You are frame_action: explore the screen evidence and frame the next concrete action strategy. Emit one JSON record.', 'verify': 'You are verify: compare step.done_when against fresh observation and execution evidence. Emit one JSON record.', 'reflect': 'You are reflect: diagnose failures and choose one recovery signal. Emit one JSON record.', 'self_modify': 'You are self_modify: propose git-native firmware patches grounded in repository evidence. Emit one JSON record.', 'satisfied': 'You are satisfied: honest halt gate. Emit one JSON record.'}
+ORGAN_IDENTITY = {'planner': 'You are planner: maintain goal_narration (required every tick) as a living interpretation of goal_seed. Use goal_signals.power/disk/urgency to adapt narration and intent. Emit one JSON record.', 'execute': 'You are execute: runnable Python on this Windows body. Namespace includes win32_api: click_at, type_text, hotkey, press_key, set_foreground_window, open_url. Use desktop_tree_text GRID cells (@x,y) to click ibeam/hand targets. subprocess/ctypes/os for install/launch. Never use print() as the action. Never CANNOT for UI automation when helpers exist. Emit one JSON execution record.', 'frame_action': 'You are frame_action: explore the screen evidence and frame the next concrete action strategy. Emit one JSON record.', 'verify': 'You are verify: compare step.done_when against fresh observation and execution evidence. Emit one JSON record.', 'reflect': 'You are reflect: diagnose failures and choose one recovery signal. Emit one JSON record.', 'self_modify': 'You are self_modify: propose git-native firmware patches grounded in repository evidence. Emit one JSON record.', 'satisfied': 'You are satisfied: honest halt gate. Emit one JSON record.'}
 ORGAN_CORE = 'IDENTITY: Technical computer-control organ inside endgame-ai, a living organism on Windows 11. Python is the body, desktop is the world, wiring.json is the nervous system, git is firmware memory. Stance: exploratory, adaptive, source-grounded. BUS: emit exactly one signal + one patch per tick; topology routes signals only. OUTPUT: one JSON object with record_type, data, reasoning. Dynamic runtime data is in the user message tail; treat it as freshest truth.'
 STATIC_PREFIX_NAMES = {'.gitattributes', '.gitignore', 'LICENSE'}
 STATIC_PREFIX_SKIP_PARTS = {'.git', '__pycache__', '.pytest_cache', 'comms', 'pids'}
@@ -171,10 +171,10 @@ def _normalize_observation(obj: Any) -> dict[str, Any] | None:
         return None
     return {'focused_title': obj.get('focused_title', ''), 'desktop_tree_text': obj.get('desktop_tree_text', ''), 'observed_at': obj.get('observed_at'), 'fresh_scan': obj.get('fresh_scan', True)}
 
-def _fresh_observation_payload(wiring: dict[str, Any], payload: dict[str, Any] | None=None) -> dict[str, Any]:
+def _fresh_observation_payload(wiring: dict[str, Any], payload: dict[str, Any] | None=None, *, rescan: bool=True) -> dict[str, Any]:
     global _LAST_FRESH_OBSERVATION
     if payload:
-        candidates = [payload.get('fresh_observation'), payload.get('observation')]
+        candidates = [payload.get('fresh_observation'), payload.get('observation'), payload.get('ui_context')]
         evidence = payload.get('evidence')
         if isinstance(evidence, dict):
             candidates.extend([evidence.get('fresh_observation'), evidence.get('observation')])
@@ -183,6 +183,11 @@ def _fresh_observation_payload(wiring: dict[str, Any], payload: dict[str, Any] |
             if normalized is not None:
                 _LAST_FRESH_OBSERVATION = normalized
                 return normalized
+    if not rescan:
+        cached = _normalize_observation(_LAST_FRESH_OBSERVATION)
+        if cached is not None:
+            return cached
+        raise RuntimeError('brain needs prior observation; run observe before execute think without rescan')
     import desktop
     obs = desktop.observe(wiring.get('observe_config', {}))
     result = {'focused_title': obs.get('focused_title', ''), 'desktop_tree_text': obs.get('desktop_tree_text', ''), 'observed_at': obs.get('observed_at'), 'fresh_scan': obs.get('fresh_scan', True)}
@@ -192,9 +197,9 @@ def _fresh_observation_payload(wiring: dict[str, Any], payload: dict[str, Any] |
 def last_fresh_observation() -> dict[str, Any]:
     return dict(_LAST_FRESH_OBSERVATION or {})
 
-def _with_fresh_observation(payload: dict[str, Any], wiring: dict[str, Any]) -> dict[str, Any]:
+def _with_fresh_observation(payload: dict[str, Any], wiring: dict[str, Any], *, rescan: bool=True) -> dict[str, Any]:
     enriched = dict(payload)
-    enriched['fresh_observation'] = _fresh_observation_payload(wiring, enriched)
+    enriched['fresh_observation'] = _fresh_observation_payload(wiring, enriched, rescan=rescan)
     if isinstance(enriched.get('observation'), dict) and enriched['observation'].get('desktop_tree_text'):
         enriched.pop('observation', None)
     return enriched
@@ -425,7 +430,8 @@ def think(system_prompt: str, payload: dict[str, Any], wiring: dict[str, Any], *
         import hashlib, time
         conv_id = f'endgame-ai-{int(time.time())}-{hashlib.md5(str(wiring).encode()).hexdigest()[:8]}'
         wiring['_conv_id'] = conv_id
-    payload = _cap_observation_fields(_with_fresh_observation(payload, wiring), wiring)
+    rescan = organ not in ('execute',)
+    payload = _cap_observation_fields(_with_fresh_observation(payload, wiring, rescan=rescan), wiring)
     user_text = json.dumps(_order_payload(payload), ensure_ascii=False, default=str)
     _preflight_request(wiring, user_text)
     log_raw_entry(cfg, {'phase': 'think', 'organ': organ, 'expected_record_type': expected_record_type, 'payload': payload, 'user_text': user_text, 'user_text_len': len(user_text)})
