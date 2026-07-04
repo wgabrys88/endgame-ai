@@ -1,7 +1,7 @@
 {
   "schema": "endgame-ai.wiring.v1",
   "model": {
-    "transport": "transport_file_proxy",
+    "transport": "transport_xai",
     "transport_config": {
       "transport_file_proxy": {
         "request_path": "runtime_request.json",

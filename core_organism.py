@@ -137,21 +137,41 @@ def run(
         reset_runtime(wiring)
     brain.reset_call_budget()
     topo = wiring.get("topology", {})
-    current = str(start_node or topo.get("cycle_start") or "node_planner")
+    sp = state_path(wiring)
+    resumed = False
+    if not reset and sp.exists():
+        state = brain.load_json(sp)
+        goal = goal or str(state.get("goal") or "")
+        current = str(start_node or state.get("next_node") or topo.get("cycle_start") or "node_planner")
+        resumed = True
+        if max_ticks is not None:
+            max_ticks = int(state.get("tick", 0)) + max_ticks
+    else:
+        current = str(start_node or topo.get("cycle_start") or "node_planner")
+        state = {
+            "_phase": "starting",
+            "goal": goal or "",
+            "tick": 0,
+            "current_node": current,
+            "last_error": None,
+            "last_action": None,
+            "wiring_transport": wiring.get("model", {}).get("transport"),
+            "start_node": current,
+        }
     if current not in set(topo.get("nodes", [])):
         raise RuntimeError(f"start node '{current}' is not in topology.nodes")
-    state: dict[str, Any] = {
-        "_phase": "starting",
-        "goal": goal or "",
-        "tick": 0,
-        "current_node": current,
-        "last_error": None,
-        "last_action": None,
-        "wiring_transport": wiring.get("model", {}).get("transport"),
-        "start_node": current,
-    }
+    state["_phase"] = "resuming" if resumed else state.get("_phase", "starting")
+    state["current_node"] = current
+    state.setdefault("wiring_transport", wiring.get("model", {}).get("transport"))
     write_state(wiring, state)
-    runtime_event(wiring, "organism_start", goal=goal or "", transport=state["wiring_transport"])
+    runtime_event(
+        wiring,
+        "organism_resume" if resumed else "organism_start",
+        goal=goal or "",
+        transport=state["wiring_transport"],
+        tick=state.get("tick", 0),
+        node=current,
+    )
     try:
         while True:
             stop_check.check_stop("organism main loop")
