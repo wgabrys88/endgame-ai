@@ -343,92 +343,129 @@ payload; the run-stable goal is currently in the system message (Part IV changes
 
 ## Part VII — Open work, re-evaluated under the living thesis
 
-Re-scoped from the old plan. Each item verified against current code and wiring, then judged
-against "does a living organism want this?" Ordered by consequence.
+Re-scoped after a full code + wiring re-read. Each item was verified against the actual source,
+not the old plan, and judged against "does a living organism want this?" A key correction from
+that re-read: **there is no missing circuit breaker to build.** `bus.update_failure_streak`
+already computes a same-signature failure count, and that count is already injected into both
+`node_reflect`'s evidence and `state_brief` (which `node_self_modify` receives). The brain that
+reflects and the brain that self-modifies **already see how many times the same thing failed**
+and can reason over it. Layering a hard-coded Python counter on top of an LLM that is already
+reflecting with that number in hand is redundant *and* anti-thesis — mechanical rules overriding
+the organism's own judgment is the opposite of a living, self-interpreting system. So the old
+"circuit breaker" item is deleted, and a new item (B2) questions the *existing* mechanical
+overrides instead.
+
+The genuine anti-repetition mechanism already exists and is stronger than any counter: when the
+same failure recurs, the living answer is **self_modify** (rewrite the code/contract that blocks
+progress) or **re-narration** (change what is being pursued). `core_organism.run()` already
+closes this loop — a self_modify patch is applied, validated (compile/JSON), commanded, committed,
+and on failure **rolled back / hot-swapped to the known-good commit**, then routed
+`modified → planner` so the next attempt runs against the evolved self. Evolution with rollback
+is real today; a repetition limiter adds nothing it does not already do more intelligently.
 
 ### A — Introduce the `narrator` organ and make the goal dynamic (defines the thesis)
 Add a `narrator` brain organ that rephrases the human seed into an atemporal narrative goal in
 relation to the organism + environment, runs periodically (not every tick), and updates the goal
-the other organs read. Move the goal from the system message to the **end of the user message**
-(volatile-last). Keep it in every prompt, but dynamic.
-**Why:** this is the mechanism that turns a task agent into a living organism, and it is the
-prerequisite for the self-evolution self-test (temporary goal swap).
-**Why not / cost:** a new organ is new tokens and a new failure surface; mitigate by running it
-sparingly and keeping its output short. Do NOT overload the planner with this — the user was
-explicit that narration is its own organ.
+the other organs read. Move the goal from the system message (`core_brain._messages`, currently
+`CURRENT GOAL (fixed for this run)`) to the **end of the user message** (volatile-last). Keep it
+in every prompt, but dynamic. This organ IS the living-way anti-repetition mechanism: a stuck
+organism re-narrates rather than repeats.
+**Why:** this turns a task agent into a living organism, and it is the prerequisite for the
+self-evolution self-test (temporary goal swap in Part IV).
+**Why not / cost:** a new organ is new tokens and a new failure surface; run it sparingly, keep
+its output short, and do NOT fold it into the planner — narration is its own organ by design.
 
 ### B — Remove `give_up` entirely (thesis-critical)
-Delete the `give_up` signal from `node_reflect`, delete the `reflect → give_up → satisfied` edge
-in `wiring.topology`, and rewrite the reflect prompt so the recovery choices are only
-`retry / replan / frame / escalate` (plus re-narration). `satisfied` is then reachable only via
+Delete the `give_up` signal from `node_reflect` (both the `DATASHEET.signals` list and the
+accepted-signal set in `signal_from_data`), delete the `node_reflect.give_up → node_satisfied`
+edge in `wiring.topology`, and remove `give_up` from the reflect prompt so the recovery choices
+are only `retry / replan / frame / escalate`. `satisfied` is then reachable only via
 `scheduler.plan_complete`.
-**Why:** a living organism does not surrender; every dead end must become another approach.
-**Why not / cost:** removing the only "abandon" path means a genuinely impossible goal will spin
-until the tick budget — which is acceptable *by design* here, because the human's `--max-ticks`
-and cooperative stop are the real bound (Part VIII), not an internal surrender.
+**Why:** a living organism does not surrender; every dead end becomes another approach or a
+re-narration.
+**Why not / cost:** removing the only "abandon" path means a truly impossible goal spins until
+the tick budget — accepted *by design*, because `--max-ticks` and the cooperative stop are the
+human's real bound (Part VIII), not an internal surrender.
 
-### C — Replace the missing circuit breaker with an anti-repetition / re-narration bound
-The old plan said "force give_up after N same-signature failures." Under the living thesis that
-is wrong. Instead: `bus.update_failure_streak` already counts same-signature failures; use that
-count not to surrender but to **force a change of approach** — beyond a threshold on the *same
-signature*, reflect must pick a *different* route than last time and/or trigger the narrator to
-drift the goal, so the organism stops repeating the identical failing patch.
-**Why:** this preserves "never give up" while preventing the escalate→self_modify→fail loop from
-repeating the same dead patch; it converts a breaker into a curiosity/variation pressure.
-**Why not / cost:** if the threshold is too low it abandons a legitimately multi-attempt fix, so
-key it strictly on identical signature, not on any failure.
+### B2 — Decide the fate of the existing mechanical overrides in `reflect` (FORK)
+`node_reflect.signal_from_data` does not just pass the brain's chosen signal through — it
+overrides it in two hard-coded ways: (1) if `failure_streak.count >= 2` and the step was denied
+and framing was not yet tried, it forces `frame`; (2) if `last_error` contains a
+`MECHANICAL_ESCALATE_MARKERS` string (NameError, SyntaxError, ...), it forces `escalate`. These
+are exactly the "mechanical rule on top of the LLM router" pattern the re-read flags. Under the
+living thesis the defensible move is to **remove these overrides** and let reflect's own decision
+stand, with `failure_streak` and the error text present as *evidence the brain reasons over*, not
+gates that override it.
+**Why (remove):** trust the reflecting brain; stop fighting its judgment with Python; less code.
+**Why (keep):** the marker→escalate rule reliably routes true mechanical failures to self_modify
+even when a weak local brain misdiagnoses; removing it may lower recovery quality on a 4B.
+**This is a human fork** — it is a behavior change, not cleanup.
 
-### D — Delete dead `transport_grok_cli` (confirmed by the user)
+### C — Delete dead `transport_grok_cli` (confirmed by the user)
 `wiring.model.transport_config.transport_grok_cli` has **no module**; `transport_file_proxy` is
 the generic path that covers the same ground. Remove the config block.
 **Why:** dead config is reconciliation cost for every reader, human and self_modify alike.
 **Why not / cost:** none — file_proxy subsumes it. Keep `transport_browser_ai` as the documented
 fail-hard stub.
 
-### E — Fix the self_modify contract truthfulness bug
-`self_modify.git.push_after_commit` is `false`, but the self_modify prompt tells the brain the
-organism "commits, and pushes on the current branch." The prompt lies to the brain. Make the
-prompt match config (commit only) or flip the config — decide explicitly.
-**Why:** the self-modifier reasons from its contract; a false contract corrupts its decisions.
+### D — Fix the `push_after_commit` double-default bug (real code bug, not just prompt)
+The re-read found a genuine inconsistency, not merely a prompt wording issue. `wiring` sets
+`self_modify.git.push_after_commit: false`, but the two functions that read it disagree on the
+default: `core_nodes.prepare_self_evolution` reports `push_after_commit` with default **`True`**
+(this is what the brain sees in `git_context`), while `core_nodes.commit_self_evolution` gates
+the actual push on the same key with default **`False`**. Same key, two defaults, so the brain is
+told pushing happens while the body does not push. Unify the default (to `False`, matching wiring
+and the "human pushes" posture), and make the self_modify prompt match — it currently claims the
+organism "commits, and pushes on the current branch."
+**Why:** the self-modifier reasons from `git_context`; a contract that says push=True while the
+body does push=False corrupts its decisions.
 **Why not / cost:** none; this is a correctness fix.
 
-### F — Decide the mechanical-organ brain surface (schedule / satisfied)
-`observe`, `scheduler`, `satisfied` never call the brain, yet `_RECORD_DATA_SCHEMAS`,
+### E — Decide the mechanical-organ brain surface (schedule / satisfied) (FORK)
+`observe`, `scheduler`, `satisfied` never call the brain, yet `core_brain._RECORD_DATA_SCHEMAS`,
 `wiring.model.organs`, and `wiring.prompts` all define brain contracts for `schedule`/`satisfied`.
 The prompts are worded as "normally Python, but answer if ever asked" — a deliberate affordance.
-Under the no-fallback rule this should go; under the living thesis a future where an LLM drives
-even mechanical organs is plausible. **This is a design fork for the human, not cleanup.**
-**Why (delete):** fewer tokens in the self-modify payload, contract describes only live paths.
-**Why not (keep):** it is a genuine "any organ can become brain-driven" affordance the topology
-already supports.
+**This is a design fork for the human, not cleanup.**
+**Why (delete):** fewer tokens in the self-modify payload; the contract describes only live paths.
+**Why (keep):** it is a genuine "any organ can become brain-driven" affordance the topology
+already supports, and consistent with the living thesis that any part may become mind-driven.
 
-### G — Decide stable-prefix / cache posture per transport
-`StablePrefix` (source-as-cached-prefix) exists but is disabled. For a paid frontier brain it is
-real money saved on repeated ticks; for a local 4B it is pure context bloat. Make it a
-per-transport switch, or delete the machinery from `core_brain` if we commit to local-first.
+### F — Decide stable-prefix / cache posture per transport (FORK)
+`StablePrefix` (source-as-cached-prefix) exists in `core_brain` but is disabled
+(`stable_prefix.enabled: false`). For a paid frontier brain it is real money saved on repeated
+ticks; for a local 4B it is pure context bloat. Make it a per-transport switch, or delete the
+machinery from `core_brain` if we commit to local-first.
 **Why:** either it earns cache hits or it is dead weight in the largest core module.
 **Why not / cost:** deleting forecloses cheap caching on paid providers — decide, don't drift.
 
-### H — Minimal desktop-free test harness (readiness)
+### G — Minimal desktop-free test harness (readiness)
 No tests exist. The bus contract, topology reachability, `filter_gather` output shape, and **R2
-prefix-uniformity** are all testable without a live desktop. This becomes doubly important once
-self_modify + narrator can rewrite the loop — the self-test goal-swap (Part IV) is the *runtime*
-check; these are the *static* check.
+prefix-uniformity** are all testable without a live desktop. This matters more once narrator +
+self_modify can rewrite the loop: the self-test goal-swap (Part IV) is the *runtime* check; these
+are the *static* check.
 **Why:** every core refactor is risky with nothing to catch a regression; these are cheap and
 CI-able.
 **Why not / cost:** UIA scan and real actuation still need Windows — leave those as manual smoke.
 
 ### Recommended order
-1. **D** (delete `transport_grok_cli`) and **E** (self_modify contract truth) — small, unblock clarity.
-2. **B** (remove `give_up`) + **C** (re-narration bound) — the thesis-critical pair; do together.
-3. **A** (narrator organ + dynamic goal) — the defining feature; largest change.
-4. **F** and **G** — the two human design forks.
-5. **H** — tests, once the loop shape stabilizes.
+1. **C** (delete `transport_grok_cli`) + **D** (fix the `push_after_commit` double-default bug)
+   — small, correctness, unblock clarity.
+2. **B** (remove `give_up`) — thesis-critical, self-contained.
+3. **A** (narrator organ + dynamic goal) — the defining feature and the true anti-repetition
+   mechanism; largest change.
+4. **B2**, **E**, **F** — the three human forks (reflect overrides, mechanical brain surface,
+   stable-prefix). Decide before touching.
+5. **G** — tests, once the loop shape stabilizes.
+
+**Deleted from the old plan:** the "circuit breaker / force give_up after N failures" item.
+Reason: `failure_streak` is already computed and already handed to reflect and self_modify as
+evidence; self_modify + rollback + re-narration is the living anti-repetition mechanism; a
+hard-coded limiter is redundant and fights the brain's judgment.
 
 **Invariant for every step:** re-run the observe→execute smoke test (open Notepad) *including the
 observer* before committing. Must-not-regress: end-to-end file_proxy control, resume/tick control,
 cooperative stop, fail-hard routing, and the self-evolution validation gates (compile + JSON
-before and after write, rollback on failure).
+before and after write, rollback / hot-swap on failure).
 
 ---
 
@@ -505,15 +542,22 @@ DONE (committed): OOP migration; all comments/docstrings stripped; ALL focus mac
 windows caught same scan, scan 4.39→3.94s); prompts rewritten focus-free; per-organ tuning
 single-sourced in wiring.model.organs; volatile observation placed last. ~4194 LOC / 22 files.
 
-OPEN (README Part VII, in order): D delete dead transport_grok_cli; E fix self_modify prompt
-that claims it pushes while git.push_after_commit=false; B remove `give_up` (signal + reflect
-prompt + wiring edge) — thesis-critical; C convert the missing circuit breaker into an
-anti-repetition/re-narration bound using the existing failure_streak (force a DIFFERENT approach
-on repeated same-signature failure, never surrender); A add the `narrator` organ + move goal to
-end of user message (dynamic, drifting) — the defining feature, its own organ, do NOT overload
-the planner; F human fork on keeping/deleting the schedule/satisfied brain surface; G stable-
-prefix posture per transport; H desktop-free tests (bus/topology/filter/R2). Present the concrete
-edit for each and wait for ewojgab's approval before changing code.
+OPEN (README Part VII, in order): C delete dead transport_grok_cli (file_proxy is the generic
+path); D fix the push_after_commit double-default bug — prepare_self_evolution defaults it True
+(what the brain sees) while commit_self_evolution defaults it False (what runs); unify to False
+and make the self_modify prompt match; B remove `give_up` (reflect DATASHEET.signals + the
+accepted-set in signal_from_data + reflect prompt + the wiring reflect.give_up→satisfied edge) —
+thesis-critical; A add the `narrator` organ + move goal from system message to END of the user
+message (dynamic, drifting) — the defining feature AND the true anti-repetition mechanism, its
+own organ, do NOT overload the planner. THREE HUMAN FORKS (decide before touching): B2 remove or
+keep the hard-coded mechanical overrides in reflect.signal_from_data (count>=2→frame and the
+MECHANICAL_ESCALATE_MARKERS→escalate rules that override the brain's chosen signal); E keep or
+delete the never-called schedule/satisfied brain schemas+prompts; F stable-prefix posture per
+transport. Then G desktop-free tests (bus/topology/filter/R2). DELETED FROM OLD PLAN: the
+"circuit breaker / force give_up after N failures" — failure_streak is already computed and given
+to reflect and self_modify as evidence, and self_modify+rollback+re-narration is the living
+anti-repetition mechanism, so a hard-coded limiter is redundant and fights the brain. Present the
+concrete edit for each and wait for ewojgab's approval before changing code.
 ```
 
 ---
