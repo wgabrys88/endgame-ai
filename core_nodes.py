@@ -11,7 +11,7 @@ import subprocess
 import sys
 import time
 import types
-from abc import ABC, abstractmethod
+from abc import ABC
 from typing import Any
 
 import core_brain as brain
@@ -41,48 +41,70 @@ def _load_node(node_name: str, wiring: dict[str, Any]):
 
 
 class BaseNode(ABC):
-    """Base class for nodes that call brain.think() with a prompt from wiring.json.
-    
-    Subclasses only need to define:
-    - prompt_key: key in wiring["prompts"] (e.g., "planner", "decide")
-    - expected_record_type: expected record_type in brain response (e.g., "plan", "decision")
-    - signal_from_data(): extracts next_signal from record["data"]
-    - patch_from_record(): builds patch dict from record
+    """Base class for LLM nodes that call brain.think() with a wiring prompt.
+
+    The run() skeleton is fixed: build payload -> think -> assert record_type
+    (fail-hard) -> derive signal -> build patch -> emit. Subclasses override the
+    hooks. No fallbacks: a wrong record_type raises, it does not degrade.
+
+    Class attributes:
+    - prompt_key: key in wiring["prompts"]
+    - expected_record_type: required record_type in the brain response
+    - request_config: optional dict passed to think() (e.g. reasoning_effort)
     """
-    
+
     prompt_key: str = ""
     expected_record_type: str = ""
-    
-    @abstractmethod
-    def signal_from_data(self, data: dict[str, Any]) -> str:
-        """Extract next_signal from record data."""
-        ...
-    
-    @abstractmethod
-    def patch_from_record(self, record: dict[str, Any]) -> dict[str, Any]:
-        """Build patch dict from full record."""
-        ...
-    
-    def run(self, ctx: dict[str, Any]) -> bus.NodeOutput:
-        wiring = ctx["wiring"]
+    request_config: dict[str, Any] | None = None
+
+    def build_payload(self, ctx: dict[str, Any]) -> dict[str, Any]:
+        """User-message payload for the brain. Default = goal + brief + observation."""
         state = ctx.get("state", {})
+        return {
+            "goal": ctx.get("goal", ""),
+            "state": bus.state_brief(state),
+            "fresh_observation": state.get("fresh_observation") or bus.observation_brief(state),
+        }
+
+    def evidence(self, ctx: dict[str, Any]) -> dict[str, Any]:
+        """Evidence attached to the emitted packet. Default = state brief."""
+        return {"state": bus.state_brief(ctx.get("state", {}))}
+
+    def signal_from_data(self, data: dict[str, Any], ctx: dict[str, Any]) -> str:
+        """Return the control signal from record data (may consult ctx/state).
+
+        Nodes that override run() (e.g. execute) need not implement this.
+        """
+        raise NotImplementedError(f"{type(self).__name__} must implement signal_from_data or override run()")
+
+    def patch_from_record(self, record: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
+        """Build the state patch from the full record (may consult ctx/state).
+
+        Nodes that override run() (e.g. execute) need not implement this.
+        """
+        raise NotImplementedError(f"{type(self).__name__} must implement patch_from_record or override run()")
+
+    def think(self, ctx: dict[str, Any]) -> dict[str, Any]:
+        """Build payload, call the brain, assert record_type (fail-hard). Returns the record."""
+        wiring = ctx["wiring"]
         prompt = wiring.get("prompts", {}).get(self.prompt_key, "")
-        record = brain.think(
-            prompt,
-            {
-                "goal": ctx.get("goal", ""),
-                "state": bus.state_brief(state),
-                "fresh_observation": state.get("fresh_observation") or bus.observation_brief(state),
-            },
-            wiring,
-            expected_record_type=self.expected_record_type,
-        )
+        think_kwargs: dict[str, Any] = {"expected_record_type": self.expected_record_type}
+        if self.request_config is not None:
+            think_kwargs["request_config"] = self.request_config
+        record = brain.think(prompt, self.build_payload(ctx), wiring, **think_kwargs)
         if record.get("record_type") != self.expected_record_type:
-            raise RuntimeError(f"{self.prompt_key} expected record_type {self.expected_record_type!r}, got {record.get('record_type')!r}")
+            raise RuntimeError(
+                f"{self.prompt_key} expected record_type {self.expected_record_type!r}, "
+                f"got {record.get('record_type')!r}"
+            )
+        return record
+
+    def run(self, ctx: dict[str, Any]) -> bus.NodeOutput:
+        record = self.think(ctx)
         data = record.get("data", {})
-        signal = self.signal_from_data(data)
-        patch = self.patch_from_record(record)
-        return bus.emit(signal, patch, record=record, evidence={"state": bus.state_brief(state)})
+        signal = self.signal_from_data(data, ctx)
+        patch = self.patch_from_record(record, ctx)
+        return bus.emit(signal, patch, record=record, evidence=self.evidence(ctx))
 
 
 def call_node(node_name: str, ctx: dict[str, Any]) -> tuple[str, dict[str, Any]]:

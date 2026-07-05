@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import core_brain as brain
 import core_bus as bus
+from core_nodes import BaseNode
 
 
 DATASHEET = bus.datasheet(
@@ -24,83 +24,96 @@ MECHANICAL_ESCALATE_MARKERS = (
 )
 
 
-def run(ctx):
-    """Diagnose a failed step and choose retry, replan, escalate, or give_up."""
-    state = ctx.get("state", {})
-    wiring = ctx.get("wiring", {})
-    goal = ctx.get("goal", "")
-    step = state.get("current_step") or {}
+class ReflectNode(BaseNode):
+    """Diagnose a failed step and choose retry, replan, frame, escalate, or give_up."""
 
-    streak_patch = bus.update_failure_streak(state)
-    projected_streak = streak_patch["failure_streak"]
-    evidence = {
-        "last_action": state.get("last_action", {}),
-        "last_result": state.get("last_result", ""),
-        "last_error": state.get("last_error", ""),
-        "last_verification": state.get("last_verification", {}),
-        "failure_streak": projected_streak,
-        "state": bus.state_brief(state),
-    }
+    prompt_key = "node_reflect"
+    expected_record_type = "reflection"
 
-    record = brain.think(
-        system_prompt=wiring.get("prompts", {}).get("node_reflect", ""),
-        payload={
+    def _prepare(self, ctx):
+        state = ctx.get("state", {})
+        self._streak_patch = bus.update_failure_streak(state)
+        self._projected_streak = self._streak_patch["failure_streak"]
+        self._evidence_payload = {
+            "last_action": state.get("last_action", {}),
+            "last_result": state.get("last_result", ""),
+            "last_error": state.get("last_error", ""),
+            "last_verification": state.get("last_verification", {}),
+            "failure_streak": self._projected_streak,
+            "state": bus.state_brief(state),
+        }
+
+    def evidence(self, ctx):
+        if not hasattr(self, "_evidence_payload"):
+            self._prepare(ctx)
+        return self._evidence_payload
+
+    def build_payload(self, ctx):
+        self._prepare(ctx)
+        state = ctx.get("state", {})
+        step = state.get("current_step") or {}
+        goal = ctx.get("goal", "")
+        return {
             "goal": goal,
             "observation": bus.observation_brief(state),
             "step": {
                 "description": step.get("description", goal),
                 "done_when": step.get("done_when", ""),
             },
-            "evidence": evidence,
+            "evidence": self._evidence_payload,
             "routing_rule": {
                 "retry": "same plan can work with a better concrete action or better target",
                 "replan": "plan step is wrong or too coarse",
                 "escalate": "organism wiring, prompt, code, observation, or transport contract is broken",
                 "give_up": "goal is impossible or unsafe with current body",
             },
-        },
-        wiring=wiring,
-        expected_record_type="reflection",
-    )
-    if record.get("record_type") != "reflection":
-        raise RuntimeError(f"reflect expected record_type=reflection, got {record.get('record_type')}")
+        }
 
-    data = record.get("data", {})
-    signal = data.get("next_signal", "replan")
-    if signal not in {"retry", "replan", "frame", "escalate", "give_up"}:
-        signal = "replan"
+    def signal_from_data(self, data, ctx):
+        state = ctx.get("state", {})
+        signal = data.get("next_signal", "replan")
+        if signal not in {"retry", "replan", "frame", "escalate", "give_up"}:
+            signal = "replan"
 
-    step_index = int(state.get("step", 0) or 0)
-    last_verification = state.get("last_verification") or {}
-    diagnostic_text = " ".join(str(x) for x in [
-        state.get("last_error", ""),
-        data.get("diagnosis", ""),
-        data.get("lesson", ""),
-        state.get("last_action", {}),
-    ])
-    if (
-        last_verification.get("signal") == "step_denied"
-        and projected_streak["count"] >= 2
-        and state.get("framing_attempted_for_step") != step_index
-        and signal in {"retry", "replan"}
-    ):
-        signal = "frame"
-    elif state.get("last_error") and any(
-        marker.lower() in diagnostic_text.lower() for marker in MECHANICAL_ESCALATE_MARKERS
-    ):
-        signal = "escalate"
+        step_index = int(state.get("step", 0) or 0)
+        last_verification = state.get("last_verification") or {}
+        diagnostic_text = " ".join(str(x) for x in [
+            state.get("last_error", ""),
+            data.get("diagnosis", ""),
+            data.get("lesson", ""),
+            state.get("last_action", {}),
+        ])
+        if (
+            last_verification.get("signal") == "step_denied"
+            and self._projected_streak["count"] >= 2
+            and state.get("framing_attempted_for_step") != step_index
+            and signal in {"retry", "replan"}
+        ):
+            signal = "frame"
+        elif state.get("last_error") and any(
+            marker.lower() in diagnostic_text.lower() for marker in MECHANICAL_ESCALATE_MARKERS
+        ):
+            signal = "escalate"
+        self._signal = signal
+        return signal
 
-    lesson = data.get("lesson", "No lesson provided")
-    diagnosis = data.get("diagnosis", "No diagnosis")
+    def patch_from_record(self, record, ctx):
+        data = record.get("data", {})
+        state = ctx.get("state", {})
+        step = state.get("current_step") or {}
+        lesson = data.get("lesson", "No lesson provided")
+        diagnosis = data.get("diagnosis", "No diagnosis")
+        return {
+            **self._streak_patch,
+            "reflection": {
+                "lesson": lesson,
+                "diagnosis": diagnosis,
+                "step_goal": step.get("description", ctx.get("goal", "")),
+                "recovery_signal": self._signal,
+            },
+            "last_reflection": {"signal": self._signal, "lesson": lesson, "diagnosis": diagnosis},
+        }
 
-    patch = {
-        **streak_patch,
-        "reflection": {
-            "lesson": lesson,
-            "diagnosis": diagnosis,
-            "step_goal": step.get("description", goal),
-            "recovery_signal": signal,
-        },
-        "last_reflection": {"signal": signal, "lesson": lesson, "diagnosis": diagnosis},
-    }
-    return bus.emit(signal, patch, record=record, evidence=evidence)
+
+def run(ctx):
+    return ReflectNode().run(ctx)

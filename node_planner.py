@@ -18,11 +18,11 @@ class PlannerNode(BaseNode):
     prompt_key = "node_planner"
     expected_record_type = "plan"
 
-    def signal_from_data(self, data):
+    def signal_from_data(self, data, ctx):
         signal = str(data.get("next_signal") or "step_ready")
         return signal if signal in {"step_ready", "reflect"} else "reflect"
 
-    def patch_from_record(self, record):
+    def patch_from_record(self, record, ctx):
         data = record.get("data", {})
         return {
             "plan": data,

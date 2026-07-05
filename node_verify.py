@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import core_brain as brain
 import core_bus as bus
+from core_nodes import BaseNode
 
 
 DATASHEET = bus.datasheet(
@@ -14,64 +14,73 @@ DATASHEET = bus.datasheet(
 )
 
 
-def run(ctx):
-    """Verify node: LLM judges if step intent was satisfied based on evidence."""
-    state = ctx.get("state", {})
-    wiring = ctx.get("wiring", {})
-    goal = ctx.get("goal", "")
+class VerifyNode(BaseNode):
+    """Verify node: LLM judges if the step intent was satisfied from evidence."""
 
-    step = state.get("current_step") or {}
-    step_goal = step.get("description", goal)
-    done_when = step.get("done_when", "")
+    prompt_key = "node_verify"
+    expected_record_type = "verification"
 
-    last_result = state.get("last_result", "")
-    body_delta = last_result.get("body_delta") if isinstance(last_result, dict) else None
-    evidence_payload = {
-        "last_action": state.get("last_action", {}),
-        "last_result": last_result,
-        "last_error": state.get("last_error", ""),
-        "body_delta": body_delta,
-        "state": bus.state_brief(state),
-    }
+    def _step_goal(self, ctx):
+        state = ctx.get("state", {})
+        step = state.get("current_step") or {}
+        return step.get("description", ctx.get("goal", "")), step.get("done_when", "")
 
-    record = brain.think(
-        system_prompt=wiring.get("prompts", {}).get("node_verify", ""),
-        payload={
-            "goal": goal,
-            "observation": bus.observation_brief(state),
+    def _evidence(self, ctx):
+        state = ctx.get("state", {})
+        last_result = state.get("last_result", "")
+        body_delta = last_result.get("body_delta") if isinstance(last_result, dict) else None
+        return {
+            "last_action": state.get("last_action", {}),
+            "last_result": last_result,
+            "last_error": state.get("last_error", ""),
+            "body_delta": body_delta,
+            "state": bus.state_brief(state),
+        }
+
+    def evidence(self, ctx):
+        return self._evidence(ctx)
+
+    def build_payload(self, ctx):
+        step_goal, done_when = self._step_goal(ctx)
+        return {
+            "goal": ctx.get("goal", ""),
+            "observation": bus.observation_brief(ctx.get("state", {})),
             "step": {"description": step_goal, "done_when": done_when},
-            "evidence": evidence_payload,
-        },
-        wiring=wiring,
-        expected_record_type="verification",
-    )
+            "evidence": self._evidence(ctx),
+        }
 
-    if record.get("record_type") != "verification":
-        raise RuntimeError(f"verify expected record_type=verification, got {record.get('record_type')}")
+    def signal_from_data(self, data, ctx):
+        signal = data.get("next_signal", "step_denied")
+        success = bool(data.get("success", False))
+        if signal not in ("step_confirmed", "step_denied"):
+            signal, success = "step_denied", False
+        if signal == "step_confirmed" and not success:
+            signal = "step_denied"
+        if success and signal != "step_confirmed":
+            success = False
+        self._success = success
+        self._signal = signal
+        return signal
 
-    data = record.get("data", {})
-    signal = data.get("next_signal", "step_denied")
-    success = bool(data.get("success", False))
+    def patch_from_record(self, record, ctx):
+        data = record.get("data", {})
+        state = ctx.get("state", {})
+        step_goal, done_when = self._step_goal(ctx)
+        patch = {
+            "verification": {
+                "success": self._success,
+                "reasoning": data.get("reasoning", record.get("reasoning", "")),
+                "step_goal": step_goal,
+                "done_when": done_when,
+            },
+            "last_verification": {"success": self._success, "signal": self._signal},
+        }
+        if self._success:
+            patch["step"] = int(state.get("step", 0) or 0) + 1
+            patch["failure_streak"] = {"signature": None, "count": 0}
+            patch["action_frame"] = None
+        return patch
 
-    if signal not in ("step_confirmed", "step_denied"):
-        signal = "step_denied"
-        success = False
-    if signal == "step_confirmed" and not success:
-        signal = "step_denied"
-    if success and signal != "step_confirmed":
-        success = False
 
-    patch = {
-        "verification": {
-            "success": success,
-            "reasoning": data.get("reasoning", record.get("reasoning", "")),
-            "step_goal": step_goal,
-            "done_when": done_when,
-        },
-        "last_verification": {"success": success, "signal": signal},
-    }
-    if success:
-        patch["step"] = int(state.get("step", 0) or 0) + 1
-        patch["failure_streak"] = {"signature": None, "count": 0}
-        patch["action_frame"] = None
-    return bus.emit(signal, patch, record=record, evidence=evidence_payload)
+def run(ctx):
+    return VerifyNode().run(ctx)
