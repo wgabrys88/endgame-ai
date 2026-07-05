@@ -406,3 +406,200 @@ to it (not the polled path). This validates the dual-file design and the future 
 **Inspection footnote:** reading `runtime_state.json` with Windows Python without
 `encoding='utf-8'` raises `UnicodeDecodeError` (cp1252 default). Organism code itself always uses
 `encoding="utf-8"`, so this only affects ad-hoc operator inspection commands — use utf-8 explicitly.
+
+---
+
+# Appendix B — Multi-expert architecture review
+
+Read-only analysis. Claims are marked **[verified]** (checked against source/runtime this
+session) or **[reasoned]** (inference from the code, not executed). No code was changed.
+
+## B.1 Systems Architect — body/brain boundary
+
+**The boundary is mostly clean and genuinely well-drawn.** `wiring.json` owns topology,
+prompts, transport selection, scan params, and reasoning effort; the Python body owns
+mechanism (bus, node loader, desktop actuators, observation). Nodes emit exactly one
+`(signal, patch)`; the loop routes only the signal via `topology.edges`. This is a real
+declarative circuit, not a config veneer.
+
+**Where it leaks [verified]:**
+
+1. **Reasoning-effort policy is duplicated in two places.** `core_brain.think()` hardcodes a
+   `default_effort_map` (plan=medium, execution=low, …) *and* `wiring.json` has
+   `model.organs.*.reasoning_effort` with the same values. The Python map is a body-side copy
+   of a brain-side policy. If someone tunes wiring, the code default silently shadows it when
+   the organ key is absent. This is a body/brain leak: policy living in mechanism.
+
+2. **`global.reasoning_enabled: true` is effectively dead for most transports [verified].**
+   `_effective_reasoning_config` reads `reasoning.enabled` from the *transport* cfg first;
+   file_proxy/openai/opencode all set `enabled=false`, so the global `true` never takes effect
+   there. Only `transport_xai` has `enabled=true`. The global flag is a misleading no-op.
+
+3. **`schedule` and `satisfied` record schemas exist in `core_brain._RECORD_DATA_SCHEMAS`
+   [verified]** but `node_scheduler` and `node_satisfied` are mechanical (they never call the
+   brain). Prompts for them also exist in wiring. Dead contract surface — harmless but it
+   implies an LLM path that does not run.
+
+**Duplicated / dead code [verified]:**
+
+- **UIA loader duplicated.** `core_desktop._load_uia_module()` and
+  `core_observation.load_uia()` are near-identical, and **both call `comtypes.CoInitialize()`
+  at import time**. Two modules initializing COM and building the UIA typelib is redundant and
+  a candidate for a single shared module (e.g. `core_uia.py`). This is the single strongest
+  "unify, don't duplicate" target in the codebase.
+- **`_variant_*` helpers duplicated.** `_variant_str` exists in both files; `core_observation`
+  additionally has `_variant_int/rect/bool/runtime_id`. All variant coercion belongs in one
+  place. (Counts this session: 2 refs in core_desktop, 23 in core_observation.)
+- **`transport_grok_cli` config has no module [verified].** wiring lists it under
+  `transport_config`, but there is no `transport_grok_cli.py`; grok CLI actually lives as
+  `mode="cli"` inside `transport_xai.py`. Aspirational/dead config; selecting it fails hard.
+- **`transport_browser_ai.py` is a documented fail-hard stub [verified].** Legitimate as a
+  placeholder, but it is dead until implemented.
+
+**OOP note (per project convention):** nodes are the natural class hierarchy, but only the
+LLM nodes use `BaseNode`. `node_execute`, `node_verify`, `node_reflect`, `node_frame_action`,
+`node_self_modify` each re-implement the same shape (build payload → `brain.think()` →
+check record_type → map signal → build patch) as free functions. That is the second big
+unification target: a richer `BaseNode` (or a couple of subclasses) could absorb the
+payload/verify/patch boilerplate the five LLM nodes repeat.
+
+## B.2 LLM Integration — reasoning loop, prompt assembly, KV-cache
+
+**Two-pass loop [verified].** `think()` supports `single_pass`, `native`, and `two_pass`.
+`two_pass` calls the transport twice: pass 1 harvests reasoning (via `<think>` tags or a
+reasoning field), then injects it back as `REASONING_FEEDBACK` for pass 2 which commits JSON.
+For the current live transport (xai) `pattern=native` (single call, provider-native
+reasoning). file_proxy/openai are `two_pass` but `enabled=false`, so they run single_pass.
+The machinery is sound; the risk is cost — `two_pass` doubles calls, and for a local 4B model
+the injected reasoning text is often low-value, so two_pass there mostly buys latency.
+
+**Prompt assembly [verified].** `_messages()` builds `[system, user]`. System = optional
+stable-prefix + `DYNAMIC NODE PROMPT:` + node prompt. User = one JSON blob (goal, state_brief,
+fresh_observation). This is clean and computer-use-appropriate: the observation is a compact,
+id-based semantic tree; body-only data (coords/hwnd) never reaches the brain. Confirmed in
+Appendix A: requests are well-shaped.
+
+**KV-cache friendliness — mixed [verified/reasoned].** The design *intends* cache reuse:
+`StablePrefix` renders the whole checked-out source as a stable leading block so providers can
+cache it, and `think()` sets `prompt_cache_key` (conv id) for xai. **But `stable_prefix` is
+disabled** (`enabled=false, include_in_request=false`), so today no large static prefix is
+sent. More importantly, the *dynamic* portion (fresh_observation) is injected **inside the
+system message region conceptually but as the user turn**, and it changes every tick — that is
+correct. The genuine cache hazard [reasoned]: the system prompt begins with a fixed
+`DYNAMIC NODE PROMPT:` marker but the node prompt *varies per organ*, so cross-organ cache
+reuse is limited to the stable prefix (currently off). Net: cache-friendliness is architected
+but effectively dormant. Turning the stable prefix on would help large-context providers and
+hurt a small local model (context bloat) — a per-transport decision, not global.
+
+## B.3 Graph Engine — topology trace
+
+**[verified] via BFS over `wiring.topology`:**
+- All 10 nodes reachable from `cycle_start=node_observe`. No unreachable nodes.
+- No dangling edge targets (every non-`halt` destination is a declared node).
+- Every node has an `error` edge **except** `node_satisfied` and `node_error` — correct by
+  design (satisfied only `halt`s; error is the terminal router with `planner`/`reflect`/`halt`).
+- The loop has proper cycles: reflect→observe (retry), reflect→planner (replan),
+  reflect→frame_action→execute, verify→scheduler→observe→execute.
+
+**Dead ends: none. Missing error paths: none structurally.**
+
+**What happens when self_modify fails repeatedly [verified — this is the main graph risk]:**
+`node_self_modify` returns `modified` and hands a `git_evolution_patch` to the loop.
+`core_organism` applies it; on exception it hot-swaps to known-good and **re-raises**
+(`core_organism.py:212`). The outer handler routes the exception to `node_error`, which — when
+a `current_step` exists — emits `reflect`. `node_reflect` can `escalate` again to
+`node_self_modify` on mechanical markers. **There is no circuit breaker on this cycle.**
+`node_reflect` tracks a `failure_streak` count but only uses `count >= 2` to upgrade
+retry/replan → `frame`; it **never forces `give_up`** on a high streak. So a persistently
+failing self-modify can loop escalate → self_modify → error → reflect → escalate…, bounded
+only by `--max-ticks` / `max_brain_calls`, not by any internal safety valve. On a local 4B
+model producing weak patches, this is the most likely runaway.
+
+**Duplicate edges: none.** Signals are unique per node.
+
+## B.4 Top 5 architectural weaknesses
+
+1. **No self-modify / failure circuit breaker [verified].** `failure_streak` is computed but
+   never terminates a loop. escalate↔self_modify↔error↔reflect can spin until tick budget
+   exhausts. A streak threshold that forces `give_up` (or blocks re-escalation) is missing.
+2. **COM/UIA duplicated across `core_desktop` and `core_observation` [verified].** Two loaders,
+   two `CoInitialize()`, duplicated `_variant_*`. Unify into one UIA module.
+3. **Observation request bloat under busy desktops [verified in Appendix A].** Tree grew
+   2.9KB→7KB, flooded by an unrelated YouTube window. No goal-relevance ranking or per-window
+   cap for non-focused windows. Directly degrades small-model performance and cost.
+4. **Policy duplicated between code and wiring [verified].** reasoning-effort map hardcoded in
+   `core_brain` shadows `model.organs`; `global.reasoning_enabled` is a dead flag for most
+   transports. Config that looks authoritative but isn't.
+5. **LLM-node boilerplate not unified [verified].** Five nodes repeat the same
+   payload→think→validate→patch structure as free functions instead of `BaseNode` subclasses,
+   against the project's stated OOP/unification preference.
+
+## B.5 Top 5 things done right
+
+1. **True single-signal bus + declarative topology [verified].** Nodes are chips, wiring is the
+   circuit. Routing logic is data, not branching code. This is the core strength.
+2. **Fail-hard, no hidden fallbacks [verified].** Missing transport, missing edge, missing
+   fresh_observation all raise. Behavior is legible; failures are loud, not silently patched.
+3. **Body/brain observation firewall [verified].** The brain sees a semantic id-based tree;
+   coordinates/hwnds stay body-side in `action_index`. Proven in Appendix A requests.
+4. **Self-evolution with real guardrails [verified].** `_evolution_target` blocks
+   runtime_/.git/__pycache__, enforces evolvable suffixes, forbids deleting core files,
+   validates Python (`compile`) and JSON before *and* after write, snapshots + rolls back,
+   and requires `read_files` grounding. For an "unconstrained" organism this is a
+   surprisingly disciplined mutation boundary.
+5. **Transport pluggability [verified].** One `call(messages, cfg)` contract; swapping brains
+   (local nemotron ↔ xai ↔ file_proxy ↔ coding-agent) is a single wiring edit. The file_proxy
+   experiment in Appendix A is the payoff.
+
+## B.6 If I could rewrite ONE component
+
+**The observation filter (`core_observation.filter_gather`) — or rather, split it into a
+`BaseObserver` OOP surface with a relevance-ranking stage.** Reasons: (a) it is the single
+biggest lever on small-model success — the request quality/bloat findings in Appendix A all
+originate here; (b) it currently emits *everything actionable* with only crude ranking
+(focus/name/offscreen), so an unrelated foreground app dominates the tree; (c) it duplicates
+UIA/variant plumbing with `core_desktop`. A rewrite would: unify the UIA layer, add a
+goal/step-aware relevance scorer, cap non-focused-window nodes, and expose it as a small class
+hierarchy so alternative observers (e.g. accessibility-only, or OCR-assisted) can be swapped
+via wiring — matching the transport pattern. This compounds value: every downstream node gets
+cheaper and sharper input.
+
+## B.7 Realistic ceiling for a 4B local model running this system
+
+**[reasoned, with one live datapoint].** The 4B nemotron (OpenAI-compatible transport) can
+plausibly drive the *mechanical* organs and simple, single-app steps reliably: launch an app,
+type text, click a clearly-labelled node — the kind of step this session executed correctly
+(a coding agent stood in as brain, but the record shapes are trivial for a 4B). The ceiling:
+
+- **Planning depth:** fine for 2–4 step linear goals; unreliable for goals needing branching,
+  recovery reasoning, or long horizons.
+- **Observation grounding:** degrades sharply as the tree grows (the 7KB YouTube-flooded tree
+  would likely cause a 4B to click the wrong node). Ceiling is set by observation quality
+  (B.6), not the model alone.
+- **Self-modify:** effectively out of reach. Producing a correct full-file `git_evolution_patch`
+  that compiles and preserves the bus contract is a strong-model task; a 4B here is the main
+  driver of the B.4#1 runaway loop. Recommend gating self_modify behind a higher-reasoning
+  transport (which the future dual-agent idea in Appendix A enables).
+- **Verification:** `verification` runs at `reasoning_effort=none` by design; a 4B can do
+  boolean done_when checks against a compact tree, but will over-confirm on ambiguous trees.
+
+Net ceiling: a 4B is a solid *actuator/verifier* brain for well-scoped desktop tasks with a
+clean observation, and a poor *planner/self-modifier*. The architecture already supports
+splitting these across transports per organ — that is the way to raise the ceiling without a
+bigger single model.
+
+## B.8 Declarative rule system: diminishing returns or compounding value?
+
+**Compounding — but two specific rules are already in diminishing-returns territory.**
+The declarative core (single-signal bus + topology + per-organ prompts/effort) compounds:
+adding an organ or rerouting behavior is a wiring edit, transports swap freely, and the whole
+system stayed legible enough that a full multi-expert audit fits in one file. That is the
+compounding-value signature.
+
+The diminishing-returns edges [verified]: the reasoning-effort map duplicated in code vs
+wiring, the dead `global.reasoning_enabled`, dead `schedule`/`satisfied` schemas+prompts, and
+aspirational transport configs (`grok_cli`, `browser_ai`) add declarative surface that must be
+read and reconciled but changes no behavior. These are where "more config" stopped paying.
+Trimming them (and unifying the code duplication in B.4#2 and B.4#5) would push the whole
+system back onto the compounding curve. The rule *system* is healthy; a few *rules* are
+barnacles.
