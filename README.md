@@ -127,13 +127,26 @@ absent); full observe→plan→execute→verify loop runs with the new prompts. 
 variance is pure scan/harvest timing on a just-created window — a bounded/adaptive-scan lever,
 tracked below, not a focus issue.
 
-### 1.4 (open) Bound scan latency / harvest freshness
-Observe took ~2.4s clean vs ~6.3s with a dense Chrome page; a just-launched window can miss a
-single scan's harvest window. Add a probe-time budget or adaptive `step_px`, or a short settle/
-re-probe for newly appeared top-level windows.
-**Why:** unbounded scan time makes tick cost and file_proxy timeouts unpredictable, and a missed
-harvest causes a false verify denial.
-**Why not:** a hard budget can truncate a dense screen; early-stop must not drop windows.
+### 1.4 DONE — R2 low-discrepancy probe order (fixes late-window capture)
+
+The residual miss was an ordering artifact: `_sinusoidal_points` visited probes strictly
+top-to-bottom (outer loop over increasing y), so the scan swept the top in its first second and
+the bottom in its last. A window appearing mid-scan in an already-passed region got no further
+probes until the next tick. Delays do not fix this — coverage was correlated with elapsed time.
+
+Fix: replace the top-down sweep with an **R2 low-discrepancy sequence** (Roberts' generalized
+golden ratio, plastic constant g≈1.32472, increments 1/g and 1/g²). Its defining property is that
+*every prefix* of the sequence is near-uniform over the whole screen, so the final probes of a
+scan are spread across the entire desktop rather than clustered at the bottom. Grid-cell dedup
+keeps density identical to `step_px`. `pattern` in wiring is now `r2` (raster kept as fallback);
+removed the now-unused sinusoidal wiggle math and the `math` import.
+
+Proven this session (1920×1080): last 20% of probes — old sweep touched only the bottom two
+quadrants, R2 touched all four near-evenly (7/8/9/10). All four quadrants covered after 5% of the
+R2 scan vs the old sweep needing most of the scan to reach the bottom. Hardest test (tested):
+Notepad launched ~1s INTO the scan was captured in that same scan. Scan cost improved (4.388s →
+3.935s) because the `stale_merges` early-stop now means true saturation instead of a spatial
+artifact. This also makes that early-stop safe, which it was not under raster order.
 
 ---
 

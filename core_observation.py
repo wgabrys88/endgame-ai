@@ -3,7 +3,6 @@ from __future__ import annotations
 import ctypes
 import importlib
 import json
-import math
 import pathlib
 import sys
 import time
@@ -630,11 +629,11 @@ class UiaScanner:
         max_subtree = int(scan_cfg.get("max_subtree_nodes_per_point", 250))
         max_total = int(scan_cfg.get("max_total_nodes", 2000))
         max_probes = scan_cfg.get("max_probe_points")
-        pattern = str(scan_cfg.get("pattern", "sinusoidal"))
-        if pattern == "sinusoidal":
-            points = _sinusoidal_points(sw, sh, step_px=step_px)
-        else:
+        pattern = str(scan_cfg.get("pattern", "r2"))
+        if pattern == "raster":
             points = ((x, y) for y in range(0, sh, step_px) for x in range(0, sw, step_px))
+        else:
+            points = _r2_points(sw, sh, step_px=step_px)
 
         index = {}
         saturated_hits = set()
@@ -730,20 +729,27 @@ def _hit_key_from_element(element: Any) -> tuple[str, str]:
     return _node_id(runtime_id, hwnd, rect), control_type_name(role_id)
 
 
-def _sinusoidal_points(sw: int, sh: int, *, step_px: int) -> list[tuple[int, int]]:
+def _r2_points(sw: int, sh: int, *, step_px: int) -> list[tuple[int, int]]:
     margin = max(8, step_px // 4)
-    row_step = max(step_px, (sh - 2 * margin) // max(6, sh // (step_px * 2)))
-    amplitude = max(4, row_step // 5)
-    wavelength = max(sw // 2, step_px * 4)
+    usable_w = max(1, sw - 2 * margin)
+    usable_h = max(1, sh - 2 * margin)
+    cols = max(1, usable_w // step_px)
+    rows = max(1, usable_h // step_px)
+    count = (cols + 1) * (rows + 1)
+    g = 1.32471795724474602596
+    ax, ay = 1.0 / g, 1.0 / (g * g)
+    seen: set[tuple[int, int]] = set()
     points: list[tuple[int, int]] = []
-    for row_idx, y_base in enumerate(range(margin, sh - margin, row_step)):
-        xs = list(range(margin, sw - margin, step_px))
-        if row_idx % 2 == 1:
-            xs.reverse()
-        for x in xs:
-            wiggle = int(amplitude * math.sin((2 * math.pi * x) / wavelength))
-            y = min(sh - 1, max(0, y_base + wiggle))
-            points.append((x, y))
+    for i in range(count):
+        fx = (0.5 + ax * (i + 1)) % 1.0
+        fy = (0.5 + ay * (i + 1)) % 1.0
+        x = margin + int(fx * usable_w)
+        y = margin + int(fy * usable_h)
+        cell = (x // step_px, y // step_px)
+        if cell in seen:
+            continue
+        seen.add(cell)
+        points.append((min(sw - 1, max(0, x)), min(sh - 1, max(0, y))))
     return points
 
 
