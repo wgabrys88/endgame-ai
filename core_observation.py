@@ -16,7 +16,6 @@ import comtypes.client
 ROOT = pathlib.Path(__file__).resolve().parent
 user32 = ctypes.windll.user32
 
-
 CLICK = {
     "Button", "Calendar", "CheckBox", "Hyperlink", "ListItem", "MenuItem",
     "RadioButton", "Tab", "TabItem", "TreeItem", "DataItem", "SplitButton",
@@ -28,6 +27,10 @@ CONTAINER_ROLES = {
     "Tab", "Menu", "ToolBar", "Table", "MenuBar", "SplitPane", "ScrollViewer",
 }
 
+JUNK_ROLES = {
+    "TitleBar", "ScrollBar", "StatusBar", "ProgressBar", "Separator",
+    "ToolTip", "Image", "Custom", "Header", "HeaderItem",
+}
 
 def load_uia() -> Any:
     try:
@@ -42,10 +45,8 @@ def load_uia() -> Any:
         comtypes.client.GetModule("UIAutomationCore.dll")
         return importlib.import_module("comtypes.gen.UIAutomationClient")
 
-
 comtypes.CoInitialize()
 uia = load_uia()
-
 
 def _const(name: str, default: int) -> int:
     try:
@@ -53,11 +54,10 @@ def _const(name: str, default: int) -> int:
     except Exception:
         return default
 
-
 TreeScope_Element = _const("TreeScope_Element", 1)
+TreeScope_Children = _const("TreeScope_Children", 2)
 TreeScope_Descendants = _const("TreeScope_Descendants", 4)
 TreeScope_Subtree = _const("TreeScope_Subtree", 7)
-
 
 def _collect_ids(suffix: str, prefix: str = "UIA_") -> tuple[list[int], dict[int, str]]:
     ids: list[int] = []
@@ -71,7 +71,6 @@ def _collect_ids(suffix: str, prefix: str = "UIA_") -> tuple[list[int], dict[int
         ids.append(val)
         names[val] = attr.replace(prefix, "").replace(suffix, "")
     return ids, names
-
 
 PROPERTY_IDS, PROPERTY_NAMES = _collect_ids("PropertyId")
 PATTERN_IDS, PATTERN_NAMES = _collect_ids("PatternId")
@@ -88,6 +87,11 @@ if not PROPERTY_IDS:
         _const("UIA_IsOffscreenPropertyId", 30022),
         _const("UIA_FrameworkIdPropertyId", 30024),
         _const("UIA_NativeWindowHandlePropertyId", 30020),
+        _const("UIA_IsKeyboardFocusablePropertyId", 30008),
+        _const("UIA_HasKeyboardFocusPropertyId", 30009),
+        _const("UIA_IsContentElementPropertyId", 30015),
+        _const("UIA_IsControlElementPropertyId", 30016),
+        _const("UIA_ProviderDescriptionPropertyId", 30025),
     ]
     PROPERTY_NAMES = {pid: f"Property_{pid}" for pid in PROPERTY_IDS}
 
@@ -98,6 +102,7 @@ if not PATTERN_IDS:
         _const("UIA_LegacyIAccessiblePatternId", 10018),
         _const("UIA_InvokePatternId", 10000),
         _const("UIA_ScrollPatternId", 10004),
+        _const("UIA_WindowPatternId", 10009),
     ]
     PATTERN_NAMES = {pid: f"Pattern_{pid}" for pid in PATTERN_IDS}
 
@@ -111,6 +116,10 @@ PID_ENABLED = _const("UIA_IsEnabledPropertyId", 30010)
 PID_OFFSCREEN = _const("UIA_IsOffscreenPropertyId", 30022)
 PID_FRAMEWORK = _const("UIA_FrameworkIdPropertyId", 30024)
 PID_RUNTIME_ID = _const("UIA_RuntimeIdPropertyId", 30000)
+PID_KEYBOARD_FOCUSABLE = _const("UIA_IsKeyboardFocusablePropertyId", 30008)
+PID_HAS_KEYBOARD_FOCUS = _const("UIA_HasKeyboardFocusPropertyId", 30009)
+PID_CONTENT_ELEMENT = _const("UIA_IsContentElementPropertyId", 30015)
+PID_CONTROL_ELEMENT = _const("UIA_IsControlElementPropertyId", 30016)
 
 SCAN_DEFAULT_PROPERTY_IDS = [
     PID_RUNTIME_ID,
@@ -123,6 +132,10 @@ SCAN_DEFAULT_PROPERTY_IDS = [
     PID_OFFSCREEN,
     PID_HWND,
     PID_FRAMEWORK,
+    PID_KEYBOARD_FOCUSABLE,
+    PID_HAS_KEYBOARD_FOCUS,
+    PID_CONTENT_ELEMENT,
+    PID_CONTROL_ELEMENT,
     _const("UIA_HelpTextPropertyId", 30013),
     _const("UIA_FullDescriptionPropertyId", 30159),
     _const("UIA_ItemStatusPropertyId", 30026),
@@ -134,18 +147,8 @@ SCAN_DEFAULT_PATTERN_IDS = [
     _const("UIA_LegacyIAccessiblePatternId", 10018),
     _const("UIA_InvokePatternId", 10000),
     _const("UIA_ScrollPatternId", 10004),
+    _const("UIA_WindowPatternId", 10009),
 ]
-
-
-def _scan_property_ids(scan_cfg: dict[str, Any]) -> list[int]:
-    ids = scan_cfg.get("property_ids")
-    return [int(x) for x in ids] if ids else list(SCAN_DEFAULT_PROPERTY_IDS)
-
-
-def _scan_pattern_ids(scan_cfg: dict[str, Any]) -> list[int]:
-    ids = scan_cfg.get("pattern_ids")
-    return [int(x) for x in ids] if ids else list(SCAN_DEFAULT_PATTERN_IDS)
-
 
 CONTROL_TYPE_NAMES: dict[int, str] = {}
 for attr in dir(uia):
@@ -154,16 +157,13 @@ for attr in dir(uia):
         if isinstance(val, int):
             CONTROL_TYPE_NAMES[val] = attr.replace("UIA_", "").replace("ControlTypeId", "")
 
-
 def control_type_name(control_type_id: int) -> str:
     return CONTROL_TYPE_NAMES.get(control_type_id, f"ControlType({control_type_id})")
-
 
 def _scan_settings(config: dict[str, Any]) -> dict[str, Any]:
     out = dict(config.get("scan") or {})
     out.update(config.get("depth") or {})
     return out
-
 
 def _action_for_role(role: str, class_name: str = "") -> str:
     if role in CLICK:
@@ -175,7 +175,6 @@ def _action_for_role(role: str, class_name: str = "") -> str:
     if role in SCROLL:
         return "scroll"
     return ""
-
 
 @dataclass
 class CachedNode:
@@ -199,6 +198,13 @@ class CachedNode:
     pattern_payloads: dict[str, Any] = field(default_factory=dict)
     text_sources: dict[str, str] = field(default_factory=dict)
     source_probe: tuple[int, int] | None = None
+    z_order: int = 0
+    depth: int = 0
+    parent_id: str = ""
+    has_focus: bool = False
+    is_keyboard_focusable: bool = False
+    is_content_element: bool = False
+    is_control_element: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {
@@ -213,6 +219,13 @@ class CachedNode:
             "offscreen": self.offscreen,
             "patterns": self.patterns,
             "runtime_id": self.runtime_id,
+            "z_order": self.z_order,
+            "depth": self.depth,
+            "parent_id": self.parent_id,
+            "has_focus": self.has_focus,
+            "is_keyboard_focusable": self.is_keyboard_focusable,
+            "is_content_element": self.is_content_element,
+            "is_control_element": self.is_control_element,
         }
         for key, val in (
             ("automation_id", self.automation_id),
@@ -484,6 +497,13 @@ def _collect_text_sources(name: str, properties: dict[str, Any], pattern_payload
     return sources, text_full, value
 
 
+def _true_condition(automation: Any) -> Any:
+    try:
+        return automation.CreateTrueCondition()
+    except Exception:
+        return automation.TrueCondition
+
+
 class UiaScanner:
 
     def __init__(self, desktop, config):
@@ -493,11 +513,12 @@ class UiaScanner:
         self.property_ids = _scan_property_ids(self.scan_cfg)
         self.pattern_ids = _scan_pattern_ids(self.scan_cfg)
         self.cache_request = self._build_cache_request()
-        self.hit_cache = self._build_hit_cache_request()
+        self.hit_cache_request = self._build_hit_cache_request()
+        self._z_counter = 0
 
     def _build_cache_request(self):
         req = self.automation.CreateCacheRequest()
-        req.TreeScope = TreeScope_Element | TreeScope_Descendants
+        req.TreeScope = TreeScope_Subtree
         for prop_id in self.property_ids:
             req.AddProperty(prop_id)
         for pattern_id in self.pattern_ids:
@@ -511,7 +532,11 @@ class UiaScanner:
             req.AddProperty(prop_id)
         return req
 
-    def element_to_node(self, element, probe_xy=None):
+    def _next_z(self) -> int:
+        self._z_counter += 1
+        return self._z_counter
+
+    def element_to_node(self, element, probe_xy=None, parent_id="", depth=0):
         try:
             rect = UiaVariant.to_rect(_get_cached(element, PID_BOUNDING_RECT))
             if rect["right"] <= rect["left"] or rect["bottom"] <= rect["top"]:
@@ -522,12 +547,23 @@ class UiaScanner:
             hwnd = UiaVariant.to_int(_get_cached(element, PID_HWND))
             role_id = UiaVariant.to_int(_get_cached(element, PID_CONTROL_TYPE))
             name = UiaVariant.to_str(_get_cached(element, PID_NAME)) or UiaVariant.to_str(_get_current(element, PID_NAME))
+            
             properties = _harvest_properties(element, self.property_ids)
             patterns, pattern_payloads = _harvest_patterns(element, self.pattern_ids)
             text_sources, text_full, value = _collect_text_sources(name, properties, pattern_payloads)
+            
+            role = control_type_name(role_id)
+            
+            has_focus = UiaVariant.to_bool(_get_cached(element, PID_HAS_KEYBOARD_FOCUS)) or UiaVariant.to_bool(_get_current(element, PID_HAS_KEYBOARD_FOCUS))
+            is_keyboard_focusable = UiaVariant.to_bool(_get_cached(element, PID_KEYBOARD_FOCUSABLE)) or UiaVariant.to_bool(_get_current(element, PID_KEYBOARD_FOCUSABLE))
+            is_content_element = UiaVariant.to_bool(_get_cached(element, PID_CONTENT_ELEMENT)) or UiaVariant.to_bool(_get_current(element, PID_CONTENT_ELEMENT))
+            is_control_element = UiaVariant.to_bool(_get_cached(element, PID_CONTROL_ELEMENT)) or UiaVariant.to_bool(_get_current(element, PID_CONTROL_ELEMENT))
+            
+            z_order = self._next_z()
+            
             return CachedNode(
                 id=_node_id(runtime_id, hwnd, rect),
-                role=control_type_name(role_id),
+                role=role,
                 name=name,
                 automation_id=UiaVariant.to_str(_get_cached(element, PID_AUTOMATION_ID)),
                 class_name=UiaVariant.to_str(_get_cached(element, PID_CLASS_NAME)),
@@ -546,24 +582,42 @@ class UiaScanner:
                 pattern_payloads=pattern_payloads,
                 text_sources=text_sources,
                 source_probe=probe_xy,
+                z_order=z_order,
+                depth=depth,
+                parent_id=parent_id,
+                has_focus=has_focus,
+                is_keyboard_focusable=is_keyboard_focusable,
+                is_content_element=is_content_element,
+                is_control_element=is_control_element,
             )
         except Exception:
             return None
 
-    def harvest_subtree(self, root_element, *, probe_xy, max_nodes):
+    def harvest_subtree(self, root_element, *, probe_xy, max_nodes, parent_id="", depth=0):
         nodes = []
         seen = set()
 
-        def add_element(el):
+        def get_node_id(el):
+            rid = UiaVariant.to_runtime_id(_get_cached(el, PID_RUNTIME_ID)) or UiaVariant.to_runtime_id(_get_current(el, PID_RUNTIME_ID))
+            hwnd = UiaVariant.to_int(_get_cached(el, PID_HWND))
+            rect = UiaVariant.to_rect(_get_cached(el, PID_BOUNDING_RECT))
+            if rect["right"] <= rect["left"] or rect["bottom"] <= rect["top"]:
+                rect = UiaVariant.to_rect(_get_current(el, PID_BOUNDING_RECT))
+            return _node_id(rid, hwnd, rect)
+
+        def add_element(el, pid="", d=0):
             if len(nodes) >= max_nodes:
                 return
-            node = self.element_to_node(el, probe_xy=probe_xy)
+            node = self.element_to_node(el, probe_xy=probe_xy, parent_id=pid, depth=d)
             if node is None or node.id in seen:
                 return
             seen.add(node.id)
             nodes.append(node)
+            return node
 
-        add_element(root_element)
+        root_node = add_element(root_element, parent_id, depth)
+        root_nid = root_node.id if root_node else ""
+        
         try:
             arr = root_element.FindAllBuildCache(TreeScope_Descendants, _true_condition(self.automation), self.cache_request)
             if arr is not None:
@@ -575,30 +629,18 @@ class UiaScanner:
                     if len(nodes) >= max_nodes:
                         break
                     try:
-                        add_element(arr.GetElement(i))
+                        el = arr.GetElement(i)
+                        nid = get_node_id(el)
+                        pid = parent_id
+                        if i > 0:
+                            prev = arr.GetElement(i - 1)
+                            prev_nid = get_node_id(prev)
+                            pid = prev_nid
+                        add_element(el, pid, depth + 1)
                     except Exception:
                         continue
         except Exception:
-            try:
-                walker = self.automation.CreateTreeWalkerBuildCache(_true_condition(self.automation), self.cache_request)
-                child = walker.GetFirstChildElement(root_element)
-                stack = [child] if child else []
-                while stack and len(nodes) < max_nodes:
-                    el = stack.pop()
-                    if el is None:
-                        continue
-                    add_element(el)
-                    try:
-                        sib = walker.GetNextSiblingElement(el)
-                        if sib:
-                            stack.append(sib)
-                        first = walker.GetFirstChildElement(el)
-                        if first:
-                            stack.append(first)
-                    except Exception:
-                        pass
-            except Exception:
-                pass
+            pass
         return nodes
 
     def probe(self, x, y, *, delay_ms, max_subtree_nodes, saturated_hits, index):
@@ -607,7 +649,7 @@ class UiaScanner:
             time.sleep(delay_ms / 1000.0)
         pt = wintypes.POINT(int(x), int(y))
         try:
-            root = self.automation.ElementFromPointBuildCache(pt, self.hit_cache)
+            root = self.automation.ElementFromPointBuildCache(pt, self.hit_cache_request)
         except Exception:
             root = self.automation.ElementFromPoint(pt)
         if root is None:
@@ -619,100 +661,163 @@ class UiaScanner:
             return [], hit_key, True
         return self.harvest_subtree(root, probe_xy=(x, y), max_nodes=max_subtree_nodes), hit_key, False
 
-    def scan(self):
-        scan_cfg = self.scan_cfg
-        stale_merge_stop = int(scan_cfg.get("stale_merge_stop", 12))
-        sw = user32.GetSystemMetrics(0)
-        sh = user32.GetSystemMetrics(1)
-        step_px = int(scan_cfg.get("step_px", 96))
-        delay_ms = int(scan_cfg.get("delay_ms", 5))
-        max_subtree = int(scan_cfg.get("max_subtree_nodes_per_point", 250))
-        max_total = int(scan_cfg.get("max_total_nodes", 2000))
-        max_probes = scan_cfg.get("max_probe_points")
-        points = _r2_points(sw, sh, step_px=step_px)
 
-        index = {}
-        saturated_hits = set()
-        probes = 0
-        probes_skipped = 0
-        probes_harvested = 0
-        subtree_seen = 0
-        consecutive_no_add = 0
-        early_stop = None
-        t0 = time.time()
-        saved = wintypes.POINT()
-        had_cursor = bool(user32.GetCursorPos(ctypes.byref(saved)))
-        try:
-            for x, y in points:
-                if max_probes is not None and probes >= int(max_probes):
-                    break
-                if len(index) >= max_total:
-                    early_stop = "max_total"
-                    break
-                probes += 1
-                nodes, hit_key, skipped = self.probe(
-                    x,
-                    y,
-                    delay_ms=delay_ms,
-                    max_subtree_nodes=max_subtree,
-                    saturated_hits=saturated_hits,
-                    index=index,
-                )
-                if skipped:
-                    probes_skipped += 1
-                    continue
-                probes_harvested += 1
-                subtree_seen += len(nodes)
-                added = _merge_nodes(index, nodes)
-                if hit_key and (added == 0 or len(nodes) >= max_subtree):
-                    saturated_hits.add(hit_key)
-                if added == 0:
-                    consecutive_no_add += 1
-                    if consecutive_no_add >= stale_merge_stop and len(index) > 0:
-                        early_stop = "stale_merges"
-                        break
-                else:
-                    consecutive_no_add = 0
-        finally:
-            if had_cursor:
-                try:
-                    user32.SetCursorPos(saved.x, saved.y)
-                except Exception:
-                    pass
+def _scan_property_ids(scan_cfg: dict[str, Any]) -> list[int]:
+    ids = scan_cfg.get("property_ids")
+    return [int(x) for x in ids] if ids else list(SCAN_DEFAULT_PROPERTY_IDS)
 
-        nodes = list(index.values())
-        return {
-            "nodes": nodes,
-            "screen": {"width": sw, "height": sh},
-            "windows": self.desktop.get_window_tokens(),
-            "scan": {
-                "method": "hover_cache",
-                "pattern": "r2",
-                "step_px": step_px,
-                "stats": {
-                    "probes": probes,
-                    "probes_harvested": probes_harvested,
-                    "probes_skipped": probes_skipped,
-                    "saturated_hits": len(saturated_hits),
-                    "early_stop": early_stop,
-                    "subtree_nodes_seen": subtree_seen,
-                    "unique_nodes": len(nodes),
-                    "nodes_with_text": sum(1 for n in nodes if n.text_full),
-                    "elapsed_s": round(time.time() - t0, 3),
-                },
+
+def _scan_pattern_ids(scan_cfg: dict[str, Any]) -> list[int]:
+    ids = scan_cfg.get("pattern_ids")
+    return [int(x) for x in ids] if ids else list(SCAN_DEFAULT_PATTERN_IDS)
+
+
+class WindowZOrder:
+    def __init__(self):
+        self.windows: list[dict] = []
+        self._hwnd_to_z: dict[int, int] = {}
+    
+    def add_window(self, hwnd: int, title: str, rect: dict, z_index: int):
+        self.windows.append({
+            "hwnd": hwnd,
+            "title": title,
+            "rect": rect,
+            "z_index": z_index,
+        })
+        self._hwnd_to_z[hwnd] = z_index
+    
+    def get_z_order(self, hwnd: int) -> int:
+        return self._hwnd_to_z.get(hwnd, 0)
+    
+    def sort_by_z(self):
+        self.windows.sort(key=lambda w: w["z_index"])
+
+
+def get_window_z_order() -> WindowZOrder:
+    z_order = WindowZOrder()
+    EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+    
+    windows = []
+    
+    def callback(hwnd, _):
+        if not user32.IsWindowVisible(hwnd) or user32.IsIconic(hwnd):
+            return True
+        length = user32.GetWindowTextLengthW(hwnd)
+        if length <= 0:
+            return True
+        rect = wintypes.RECT()
+        if not user32.GetWindowRect(hwnd, ctypes.byref(rect)) or rect.right <= rect.left or rect.bottom <= rect.top:
+            return True
+        title = ctypes.create_unicode_buffer(length + 1)
+        user32.GetWindowTextW(hwnd, title, length + 1)
+        windows.append({
+            "hwnd": int(hwnd),
+            "title": title.value,
+            "rect": {"left": rect.left, "top": rect.top, "right": rect.right, "bottom": rect.bottom},
+        })
+        return True
+    
+    try:
+        user32.EnumWindows(EnumWindowsProc(callback), 0)
+    except Exception:
+        pass
+    
+    for i, w in enumerate(windows):
+        z_order.add_window(w["hwnd"], w["title"], w["rect"], i)
+    
+    z_order.sort_by_z()
+    return z_order
+
+
+def scan(desktop, config):
+    scan_cfg = _scan_settings(config)
+    stale_merge_stop = int(scan_cfg.get("stale_merge_stop", 12))
+    sw = user32.GetSystemMetrics(0)
+    sh = user32.GetSystemMetrics(1)
+    step_px = int(scan_cfg.get("step_px", 96))
+    delay_ms = int(scan_cfg.get("delay_ms", 0))
+    max_subtree = int(scan_cfg.get("max_subtree_nodes_per_point", 200))
+    max_total = int(scan_cfg.get("max_total_nodes", 2000))
+    max_probes = scan_cfg.get("max_probe_points")
+    points = _r2_points(sw, sh, step_px=step_px)
+
+    z_order = get_window_z_order()
+    index = {}
+    saturated_hits = set()
+    probes = 0
+    probes_skipped = 0
+    probes_harvested = 0
+    subtree_seen = 0
+    consecutive_no_add = 0
+    early_stop = None
+    t0 = time.time()
+    saved = wintypes.POINT()
+    had_cursor = bool(user32.GetCursorPos(ctypes.byref(saved)))
+    try:
+        for x, y in points:
+            if max_probes is not None and probes >= int(max_probes):
+                break
+            if len(index) >= max_total:
+                early_stop = "max_total"
+                break
+            probes += 1
+            nodes, hit_key, skipped = UiaScanner(desktop, config).probe(
+                x,
+                y,
+                delay_ms=delay_ms,
+                max_subtree_nodes=max_subtree,
+                saturated_hits=saturated_hits,
+                index=index,
+            )
+            if skipped:
+                probes_skipped += 1
+                continue
+            probes_harvested += 1
+            subtree_seen += len(nodes)
+            added = _merge_nodes(index, nodes)
+            if hit_key and (added == 0 or len(nodes) >= max_subtree):
+                saturated_hits.add(hit_key)
+            if added == 0:
+                consecutive_no_add += 1
+                if consecutive_no_add >= stale_merge_stop and len(index) > 0:
+                    early_stop = "stale_merges"
+                    break
+            else:
+                consecutive_no_add = 0
+    finally:
+        if had_cursor:
+            try:
+                user32.SetCursorPos(saved.x, saved.y)
+            except Exception:
+                pass
+
+    nodes = list(index.values())
+    return {
+        "nodes": nodes,
+        "screen": {"width": sw, "height": sh},
+        "windows": desktop.get_window_tokens(),
+        "window_z_order": [w["hwnd"] for w in z_order.windows],
+        "scan": {
+            "method": "hover_cache",
+            "pattern": "r2",
+            "step_px": step_px,
+            "stats": {
+                "probes": probes,
+                "probes_harvested": probes_harvested,
+                "probes_skipped": probes_skipped,
+                "saturated_hits": len(saturated_hits),
+                "early_stop": early_stop,
+                "subtree_nodes_seen": subtree_seen,
+                "unique_nodes": len(nodes),
+                "nodes_with_text": sum(1 for n in nodes if n.text_full),
+                "elapsed_s": round(time.time() - t0, 3),
             },
-        }
+        },
+    }
 
 
 def gather(desktop, config):
-    return UiaScanner(desktop, config).scan()
-
-
-def _true_condition(automation: Any) -> Any:
-    try:
-        return automation.CreateTrueCondition()
-    except Exception:
-        return automation.TrueCondition
+    return scan(desktop, config)
 
 
 def _hit_key_from_element(element: Any) -> tuple[str, str]:
@@ -782,6 +887,7 @@ def filter_gather(gathered: dict[str, Any], config: dict[str, Any]) -> dict[str,
     nodes: list[CachedNode] = list(gathered.get("nodes") or [])
     screen = gathered.get("screen") or {}
     windows = gathered.get("windows") or []
+    window_z_order = gathered.get("window_z_order") or []
     scan = gathered.get("scan") or {}
 
     merged: dict[str, CachedNode] = {}
@@ -816,7 +922,9 @@ def filter_gather(gathered: dict[str, Any], config: dict[str, Any]) -> dict[str,
     text_hints: dict[str, str] = {}
     ranked = sorted(nodes, key=lambda n: (0 if n.name or n.text_full else 1, 0 if not n.offscreen else 1))
     for node in ranked:
-        if node.offscreen or not node.enabled:
+        if node.offscreen:
+            continue
+        if node.role in JUNK_ROLES:
             continue
         rect = node.rect
         if rect.get("right", 0) <= rect.get("left", 0) or rect.get("bottom", 0) <= rect.get("top", 0):
@@ -840,9 +948,14 @@ def filter_gather(gathered: dict[str, Any], config: dict[str, Any]) -> dict[str,
                     "automation_id": node.automation_id,
                     "class_name": node.class_name,
                     "runtime_id": node.runtime_id,
+                    "z_order": node.z_order,
+                    "depth": node.depth,
+                    "has_focus": node.has_focus,
                 }
 
     observed_at = time.time()
+    hwnd_to_z = {hwnd: i for i, hwnd in enumerate(window_z_order)}
+    
     root = {
         "id": "W0",
         "role": "Screen",
@@ -873,12 +986,15 @@ def filter_gather(gathered: dict[str, Any], config: dict[str, Any]) -> dict[str,
             "process_id": int(window.get("process_id") or 0),
             "class_name": str(window.get("class_name") or ""),
             "rect": window.get("rect", {}),
+            "z_order": hwnd_to_z.get(int(window.get("hwnd") or 0), 0),
             "children": [],
         }
         window_nodes[token] = node
         hwnd_to_window[node["hwnd"]] = token
         root["children"].append(node)
         node_index[token] = {k: v for k, v in node.items() if k != "children"}
+
+    root["children"].sort(key=lambda w: w.get("z_order", 0))
 
     direct: list[dict[str, Any]] = []
     for element in action_elements.values():
@@ -906,6 +1022,9 @@ def filter_gather(gathered: dict[str, Any], config: dict[str, Any]) -> dict[str,
             "automation_id": element.get("automation_id", ""),
             "class_name": element.get("class_name", ""),
             "runtime_id": element.get("runtime_id", []),
+            "z_order": element.get("z_order", 0),
+            "depth": element.get("depth", 0),
+            "has_focus": element.get("has_focus", False),
             "children": [],
         }
         node_index[node["id"]] = {k: v for k, v in node.items() if k != "children"}
@@ -919,7 +1038,7 @@ def filter_gather(gathered: dict[str, Any], config: dict[str, Any]) -> dict[str,
         children = node.get("children")
         if not isinstance(children, list):
             return
-        children.sort(key=lambda c: (int((c.get("rect") or {}).get("top", 0)), int((c.get("rect") or {}).get("left", 0)), rect_area(c.get("rect") or {})))
+        children.sort(key=lambda c: (c.get("z_order", 0), int((c.get("rect") or {}).get("top", 0)), int((c.get("rect") or {}).get("left", 0)), rect_area(c.get("rect") or {})))
         for child in children:
             if isinstance(child, dict):
                 sort_children(child)
@@ -968,6 +1087,7 @@ def filter_gather(gathered: dict[str, Any], config: dict[str, Any]) -> dict[str,
         "node_index": node_index,
         "window_count": len(window_nodes),
         "element_count": len(action_elements),
+        "window_z_order": window_z_order,
     }
     return {
         "gather_nodes": [n.to_dict() for n in nodes],
