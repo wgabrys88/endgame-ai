@@ -20,11 +20,6 @@ DATASHEET = bus.datasheet(
 
 
 class ExecuteNode(BaseNode):
-    """Ask the brain for executable Python, then run it in the desktop namespace.
-
-    Overrides run() because the control signal depends on runtime execution
-    results, not just the record — so the standard signal/patch hooks do not fit.
-    """
 
     prompt_key = "node_execute"
     expected_record_type = "execution"

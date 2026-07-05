@@ -25,7 +25,6 @@ MECHANICAL_ESCALATE_MARKERS = (
 
 
 class ReflectNode(BaseNode):
-    """Diagnose a failed step and choose retry, replan, frame, escalate, or give_up."""
 
     prompt_key = "node_reflect"
     expected_record_type = "reflection"

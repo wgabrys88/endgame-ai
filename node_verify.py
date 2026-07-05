@@ -15,7 +15,6 @@ DATASHEET = bus.datasheet(
 
 
 class VerifyNode(BaseNode):
-    """Verify node: LLM judges if the step intent was satisfied from evidence."""
 
     prompt_key = "node_verify"
     expected_record_type = "verification"

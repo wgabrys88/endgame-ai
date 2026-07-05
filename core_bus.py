@@ -1,11 +1,3 @@
-"""Minimal organism bus for endgame-ai.
-
-The bus is intentionally tiny: every node emits exactly one control signal and
-one state patch. LLM-backed nodes may attach a typed record, but the topology
-still routes only the signal. This keeps the organism close to the electronics
-model: nodes are chips, signals are pins, state is shared memory, and the wiring
-file is the circuit diagram.
-"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -20,7 +12,6 @@ JsonDict = dict[str, Any]
 
 @dataclass(frozen=True)
 class NodeOutput:
-    """A single packet emitted by one organism node."""
 
     signal: str
     patch: JsonDict = field(default_factory=dict)
@@ -52,11 +43,6 @@ def emit(
     record: JsonDict | None = None,
     evidence: JsonDict | None = None,
 ) -> NodeOutput:
-    """Create a bus packet.
-
-    This helper exists so nodes do not invent their own return shapes. It does
-    not add framework weight: the organism loop still receives signal + patch.
-    """
 
     if not isinstance(signal, str) or not signal.strip():
         raise ValueError("bus signal must be a non-empty string")
@@ -70,7 +56,6 @@ def emit(
 
 
 def coerce_node_output(node: str, result: Any) -> NodeOutput:
-    """Accept the new bus packet or the legacy (signal, patch) tuple."""
 
     if isinstance(result, NodeOutput):
         return result
@@ -100,7 +85,6 @@ def validate_signal(wiring: JsonDict, node: str, signal: str) -> None:
 
 
 def datasheet(node: str, *, kind: str, inputs: list[str], signals: list[str], writes: list[str], record_type: str | None = None) -> JsonDict:
-    """Return a compact node datasheet suitable for docs, prompts, and graph export."""
 
     return {
         "node": node,
@@ -113,7 +97,6 @@ def datasheet(node: str, *, kind: str, inputs: list[str], signals: list[str], wr
 
 
 def state_brief(state: JsonDict) -> JsonDict:
-    """Small state summary for prompts and logs; avoids shipping the full state bus."""
 
     current_step = state.get("current_step") or {}
     return {
@@ -156,7 +139,6 @@ def failure_signature(state: JsonDict) -> str:
 
 
 def update_failure_streak(state: JsonDict) -> JsonDict:
-    """Return an updated failure-streak patch for reflect/self_modify routing."""
 
     signature = failure_signature(state)
     previous = state.get("failure_streak") or {}

@@ -21,10 +21,6 @@ def _resolve_executable(value):
 
 
 def call(messages, cfg):
-    """Unified xAI transport supporting:
-    - mode="api": xAI Responses API (default, uses grok-build-0.1 or grok-4)
-    - mode="cli": grok CLI headless (grok -p --output-format json)
-    """
     mode = cfg.get("mode", "api")
     
     if mode == "cli":
@@ -34,7 +30,6 @@ def call(messages, cfg):
 
 
 def _call_api(messages, cfg):
-    """Call xAI Responses API at https://api.x.ai/v1/responses"""
     api_key = os.environ.get("XAI_API_KEY") or cfg.get("api_key")
     if not api_key:
         raise RuntimeError("xai transport (api mode): XAI_API_KEY missing; no fallback was attempted")
@@ -42,7 +37,6 @@ def _call_api(messages, cfg):
     url = str(cfg.get("url") or "https://api.x.ai/v1/responses")
     model = str(cfg.get("model") or "grok-build-0.1")
     
-    # Convert messages to input format
     input_data = []
     for m in messages:
         role = m.get("role", "user")
@@ -139,10 +133,8 @@ def _call_api(messages, cfg):
 
 
 def _call_cli(messages, cfg):
-    """Call grok CLI in headless mode: grok -p "prompt" --output-format json"""
     exe = _resolve_executable(cfg.get("executable") or "grok")
     
-    # Convert messages to single prompt
     prompt_parts = []
     for m in messages:
         role = m.get("role", "user")

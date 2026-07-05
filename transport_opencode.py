@@ -24,7 +24,6 @@ def call(messages, cfg):
     exe = _resolve_executable(cfg.get("executable") or "opencode")
     model = cfg.get("model") or "opencode-go/deepseek-v4-flash"
     
-    # Convert messages to a single prompt string for opencode CLI
     prompt_parts = []
     for m in messages:
         role = m.get("role", "user")
@@ -44,7 +43,6 @@ def call(messages, cfg):
     if extra_args:
         args.extend(extra_args)
 
-    # Clear auth env vars that cause "Session not found" error
     env = os.environ.copy()
     env["OPENCODE_SERVER_PASSWORD"] = ""
     env["OPENCODE_SERVER_USERNAME"] = ""
@@ -59,7 +57,6 @@ def call(messages, cfg):
     if cp.returncode != 0:
         raise RuntimeError(f"opencode exited {cp.returncode}: {cp.stderr.strip()[:2000]}")
 
-    # Parse streaming JSON events
     text = cp.stdout.strip()
     content = ""
     reasoning = ""
@@ -69,7 +66,6 @@ def call(messages, cfg):
             if obj.get("type") == "text":
                 content = obj.get("part", {}).get("text", content)
             elif obj.get("type") == "step_finish":
-                # Could extract reasoning from tokens if needed
                 pass
     except json.JSONDecodeError:
         content = text

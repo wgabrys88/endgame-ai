@@ -94,7 +94,6 @@ def _runtime_evidence(wiring: dict[str, Any], state: dict[str, Any]) -> dict[str
 
 
 def run(ctx):
-    """Ask Grok for a git-native self-evolution patch based on manifests and evidence paths."""
     state = ctx.get("state", {})
     wiring = ctx.get("wiring", {})
     goal = ctx.get("goal", "")

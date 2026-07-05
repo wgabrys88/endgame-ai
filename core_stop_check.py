@@ -1,11 +1,3 @@
-"""Stop check mechanism for endgame-ai.
-
-Every process should:
-1. Call core_stop_check.check_stop() periodically (or at chokepoints)
-2. Call core_stop_check.register_pid() at startup to create a flat runtime pid file
-
-When runtime_stop.txt exists in the workspace root, all processes exit immediately.
-"""
 from __future__ import annotations
 
 import os
@@ -22,21 +14,18 @@ def _pid_file(name: str) -> pathlib.Path:
 
 
 def register_pid(name: str) -> pathlib.Path:
-    """Register this process by writing its PID to runtime_{name}.pid."""
     pid_file = _pid_file(name)
     pid_file.write_text(str(os.getpid()), encoding="utf-8")
     return pid_file
 
 
 def unregister_pid(name: str) -> None:
-    """Remove PID file for this process."""
     pid_file = _pid_file(name)
     if pid_file.exists():
         pid_file.unlink()
 
 
 def check_stop(name: str = "process") -> None:
-    """Check for runtime_stop.txt and exit immediately if found."""
     if STOP_FILE.exists():
         print(f"[{name}] runtime_stop.txt detected, exiting", flush=True)
         unregister_pid(name)
@@ -44,20 +33,17 @@ def check_stop(name: str = "process") -> None:
 
 
 def request_stop(reason: str = "") -> None:
-    """Create runtime_stop.txt to signal all processes to stop."""
     STOP_FILE.write_text(f"{time.strftime('%Y-%m-%dT%H:%M:%S')}: {reason}\n", encoding="utf-8")
     print(f"[stop_check] runtime_stop.txt created: {reason}", flush=True)
 
 
 def clear_stop() -> None:
-    """Remove runtime_stop.txt to allow new runs."""
     if STOP_FILE.exists():
         STOP_FILE.unlink()
         print("[stop_check] runtime_stop.txt cleared", flush=True)
 
 
 def kill_all_pids() -> None:
-    """Kill all registered PIDs (fallback if runtime_stop.txt is ignored)."""
     import psutil
     for pid_file in ROOT.glob("runtime_*.pid"):
         try:
@@ -74,7 +60,6 @@ def kill_all_pids() -> None:
 
 
 def wait_for_stop(timeout: float = 0, poll_interval: float = 0.5) -> bool:
-    """Wait for runtime_stop.txt to appear. Returns True if stop requested."""
     start = time.time()
     while True:
         if STOP_FILE.exists():

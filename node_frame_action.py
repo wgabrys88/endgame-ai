@@ -15,7 +15,6 @@ DATASHEET = bus.datasheet(
 
 
 class FrameActionNode(BaseNode):
-    """ROD/framing pass: turn raw screen chaos into a compact action strategy."""
 
     prompt_key = "node_frame_action"
     expected_record_type = "action_frame"

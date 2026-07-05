@@ -1,4 +1,3 @@
-"""Hot-swappable node loader and one-node execution chokepoint."""
 from __future__ import annotations
 
 import importlib.util
@@ -34,31 +33,19 @@ def _load_node(node_name: str, wiring: dict[str, Any]):
     if spec is None or spec.loader is None:
         raise RuntimeError(f"cannot load node module: {path}")
     mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    spec.loader.exec_module(mod)
     if not hasattr(mod, "run"):
         raise RuntimeError(f"node '{node_name}' does not export run(ctx)")
     return mod
 
 
 class BaseNode(ABC):
-    """Base class for LLM nodes that call brain.think() with a wiring prompt.
-
-    The run() skeleton is fixed: build payload -> think -> assert record_type
-    (fail-hard) -> derive signal -> build patch -> emit. Subclasses override the
-    hooks. No fallbacks: a wrong record_type raises, it does not degrade.
-
-    Class attributes:
-    - prompt_key: key in wiring["prompts"]
-    - expected_record_type: required record_type in the brain response
-    - request_config: optional dict passed to think() (e.g. reasoning_effort)
-    """
 
     prompt_key: str = ""
     expected_record_type: str = ""
     request_config: dict[str, Any] | None = None
 
     def build_payload(self, ctx: dict[str, Any]) -> dict[str, Any]:
-        """User-message payload for the brain. Default = goal + brief + observation."""
         state = ctx.get("state", {})
         return {
             "goal": ctx.get("goal", ""),
@@ -67,25 +54,15 @@ class BaseNode(ABC):
         }
 
     def evidence(self, ctx: dict[str, Any]) -> dict[str, Any]:
-        """Evidence attached to the emitted packet. Default = state brief."""
         return {"state": bus.state_brief(ctx.get("state", {}))}
 
     def signal_from_data(self, data: dict[str, Any], ctx: dict[str, Any]) -> str:
-        """Return the control signal from record data (may consult ctx/state).
-
-        Nodes that override run() (e.g. execute) need not implement this.
-        """
         raise NotImplementedError(f"{type(self).__name__} must implement signal_from_data or override run()")
 
     def patch_from_record(self, record: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
-        """Build the state patch from the full record (may consult ctx/state).
-
-        Nodes that override run() (e.g. execute) need not implement this.
-        """
         raise NotImplementedError(f"{type(self).__name__} must implement patch_from_record or override run()")
 
     def think(self, ctx: dict[str, Any]) -> dict[str, Any]:
-        """Build payload, call the brain, assert record_type (fail-hard). Returns the record."""
         wiring = ctx["wiring"]
         prompt = wiring.get("prompts", {}).get(self.prompt_key, "")
         think_kwargs: dict[str, Any] = {"expected_record_type": self.expected_record_type}
@@ -131,7 +108,6 @@ def topology_summary(wiring: dict[str, Any]) -> dict[str, Any]:
 
 
 def node_datasheets(wiring: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    """Load compact datasheets exported by node modules."""
     sheets: dict[str, dict[str, Any]] = {}
     for node_name in wiring.get("topology", {}).get("nodes", []):
         try:
@@ -148,18 +124,7 @@ def topology_mermaid(wiring: dict[str, Any]) -> str:
     return bus.mermaid_state_diagram(wiring, node_datasheets(wiring))
 
 
-# =============================================================================
-# Desktop observation helpers for nodes
-# =============================================================================
-
-
-# =============================================================================
-# Execute namespace builder
-# =============================================================================
-
-
 def _get_desktop_instance():
-    """Get the singleton Desktop instance."""
     return desktop.get_desktop()
 
 
@@ -324,7 +289,6 @@ def hot_swap_to_known_good(
     *,
     paths: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Restore tracked body files from the configured known-good commit (self hot-swap)."""
     sha = known_good_commit(wiring)
     if not sha:
         return {"hot_swapped": False, "reason": "no_known_good_commit"}
@@ -359,7 +323,6 @@ def _github_branch_url(remote_url: str, branch: str) -> str:
 
 
 def prepare_self_evolution(wiring: dict[str, Any]) -> dict[str, Any]:
-    """Describe the checked-out branch before asking the brain for an evolution patch."""
     cfg = wiring.get("self_modify", {}).get("git", {})
     remote = str(cfg.get("remote") or "origin")
     branch = git_current_branch()
@@ -435,7 +398,6 @@ def _restore_snapshots(snapshots: dict[pathlib.Path, bytes | None]) -> None:
 
 
 def apply_evolution_patch(wiring: dict[str, Any], parsed: dict[str, Any]) -> tuple[str, Any]:
-    """Apply a validated self-evolution patch to canonical repository source."""
     data = _patch_data(parsed)
     read_files = _declared_read_files(data)
     wiring_patches = list(data.get("wiring_patches") or [])
@@ -513,7 +475,6 @@ def apply_evolution_patch(wiring: dict[str, Any], parsed: dict[str, Any]) -> tup
 
 
 def commit_self_evolution(wiring: dict[str, Any], applied: dict[str, Any], patch_data: dict[str, Any]) -> dict[str, Any]:
-    """Commit a successful validated self-evolution patch on the checked-out branch."""
     changed_files = list(applied.get("changed_files") or [])
     if applied.get("wiring_patches"):
         changed_files.append("wiring.json")
@@ -569,12 +530,10 @@ def commit_self_evolution(wiring: dict[str, Any], applied: dict[str, Any], patch
 
 
 def save_wiring(wiring: dict[str, Any]) -> None:
-    """Atomic write of wiring.json."""
     brain.atomic_write_json(ROOT / "wiring.json", wiring)
 
 
 def wiring_limit(name: str, default: int, wiring: dict[str, Any]) -> int:
-    """Get a limit from wiring with default."""
     return wiring.get("limits", {}).get(name, default)
 
 
@@ -601,7 +560,6 @@ def _node_center(node: dict[str, Any]) -> tuple[int, int]:
 
 
 def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
-    """Build the shared machine capability runtime for action and evolution nodes."""
     d = _get_desktop_instance()
     state = ctx.get("state", {})
     wiring = ctx.get("wiring", {})
@@ -660,7 +618,6 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         return d.scroll(x, y, int(amount), int(node.get("hwnd") or 0))
 
     class _PyAutoGuiCompat:
-        """Dependency-free pyautogui-shaped facade backed by the organism body."""
 
         def click(self, x: int | None = None, y: int | None = None, clicks: int = 1, interval: float = 0.0, **kwargs: Any) -> Any:
             if x is None or y is None:
@@ -707,14 +664,12 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
     pag = pyautogui
     
     return {
-        # Observation
         "observe_screen": d.observe_screen,
         "last_desktop_tree": d.last_desktop_tree,
         "get_focused_title": d.get_focused_title,
         "node_by_id": node_by_id,
         "action_nodes": action_nodes,
         
-        # Raw desktop actions
         "click": d.click,
         "click_node": click_node,
         "type_text": d.type_text,
@@ -727,7 +682,6 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "pyautogui": pyautogui,
         "pag": pag,
         
-        # System modules
         "subprocess": subprocess,
         "ctypes": ctypes,
         "os": __import__("os"),
@@ -740,14 +694,12 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "random": __import__("random"),
         "types": types,
         
-        # Repository context
         "wiring_limit": wiring_limit,
         "repo_root": str(ROOT),
         "python_executable": sys.executable,
         "topology_summary": topology_summary(wiring),
         "topology_mermaid": topology_mermaid(wiring),
         
-        # Context
         "state": state,
         "wiring": wiring,
         "goal": goal,

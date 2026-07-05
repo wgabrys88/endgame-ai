@@ -1,4 +1,3 @@
-"""Observation pipeline: gather everything, filter once for the LLM."""
 from __future__ import annotations
 
 import ctypes
@@ -238,11 +237,6 @@ class CachedNode:
 
 
 class UiaVariant:
-    """Stateless coercion of comtypes VARIANT values into plain Python.
-
-    Single source of truth for UIA value handling, shared with core_desktop.
-    All methods are static: no scan state is threaded through them.
-    """
 
     @staticmethod
     def to_int(v: Any) -> int:
@@ -497,14 +491,6 @@ def _collect_text_sources(name: str, properties: dict[str, Any], pattern_payload
 
 
 class UiaScanner:
-    """Holds scan state (automation, cache requests, property/pattern ids) once,
-    so the harvest pipeline does not thread it through every call.
-
-    Per-element COM failures are tolerated by design: a live desktop always has
-    inaccessible/transient elements, so a single bad element is skipped, not
-    fatal. This is resilience, not a silent-degrade fallback: the scan itself
-    fails hard if the automation object or screen metrics are unavailable.
-    """
 
     def __init__(self, desktop, config):
         self.desktop = desktop
@@ -517,7 +503,6 @@ class UiaScanner:
 
     def _build_cache_request(self):
         req = self.automation.CreateCacheRequest()
-        # Element | Descendants: hit node + below (not ancestors). Descendants alone skips the hit node.
         req.TreeScope = TreeScope_Element | TreeScope_Descendants
         for prop_id in self.property_ids:
             req.AddProperty(prop_id)
@@ -642,7 +627,6 @@ class UiaScanner:
         return self.harvest_subtree(root, probe_xy=(x, y), max_nodes=max_subtree_nodes), hit_key, False
 
     def scan(self):
-        """Collect the full desktop UIA harvest. No filtering here."""
         scan_cfg = self.scan_cfg
         stale_merge_stop = int(scan_cfg.get("stale_merge_stop", 12))
         sw = user32.GetSystemMetrics(0)
@@ -736,7 +720,6 @@ class UiaScanner:
 
 
 def gather(desktop, config):
-    """Backward-compatible entry point: run a full scan via UiaScanner."""
     return UiaScanner(desktop, config).scan()
 
 
@@ -802,7 +785,6 @@ def _merge_nodes(index: dict[str, CachedNode], new_nodes: list[CachedNode]) -> i
 
 
 def filter_gather(gathered: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
-    """Single filter pass: raw harvest -> LLM tree text, action index, desktop tree."""
     filt = config.get("filter") or {}
     text_max = int(filt.get("text_hint_max", 120))
     max_action = int(filt.get("max_action_nodes", 240))
@@ -1030,7 +1012,6 @@ def _write_artifact(payload: dict[str, Any], observed_at: float) -> dict[str, An
 
 
 def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Gather, filter once, return the observation packet for the organism."""
     cfg = dict(config or {})
     if not cfg.get("enabled", True):
         raise RuntimeError("hover_cache observation is disabled")

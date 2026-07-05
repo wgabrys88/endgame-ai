@@ -1,4 +1,3 @@
-"""error: mechanical error recovery node."""
 from __future__ import annotations
 
 import core_bus as bus

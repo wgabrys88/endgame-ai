@@ -14,7 +14,6 @@ DATASHEET = bus.datasheet(
 
 
 def run(ctx):
-    """Scheduler: pick the next plan step by index, or finish when plan is exhausted."""
     state = ctx.get("state", {})
     plan_obj = state.get("plan", {})
 

@@ -1,8 +1,3 @@
-"""endgame-ai organism loop.
-
-Central STEP mode is enforced here, immediately before executing the next node.
-Nodes do not know about pause/step/run.
-"""
 from __future__ import annotations
 
 import argparse
@@ -80,10 +75,6 @@ def reset_runtime(wiring: dict[str, Any]) -> None:
 
 
 def wait_before_node(wiring: dict[str, Any], state: dict[str, Any], node_name: str) -> None:
-    """Centralized run/pause/step chokepoint.
-
-    Called immediately before the next topology node is executed.
-    """
     entered_pause = False
     while True:
         stop_check.check_stop(f"organism wait_before_node:{node_name}")
@@ -211,7 +202,6 @@ def run(
                         runtime_event(wiring, "self_modify_hot_swap", error=str(exc), **swap)
                     raise
             state.update(patch)
-            # Handle halt signal for clean exit
             if signal_name == "halt":
                 state["_phase"] = "halted"
                 write_state(wiring, state)
@@ -232,12 +222,10 @@ def run(
         runtime_event(wiring, "interrupted", node=current)
         return state
     except Exception as exc:
-        # Route to error node via topology instead of crashing
         state["_phase"] = "error"
         state["last_error"] = f"{type(exc).__name__}: {exc}"
         write_state(wiring, state)
         runtime_event(wiring, "error", node=current, error=state["last_error"])
-        # Emit error signal to topology
         try:
             nxt = next_node_for(wiring, current, "error")
             state["last_signal"] = "error"
@@ -249,7 +237,6 @@ def run(
             runtime_event(wiring, "node_complete", node=current, signal="error", next_node=nxt, tick=state["tick"])
             current = nxt
         except RuntimeError as route_exc:
-            # If error routing fails (no error edge), halt cleanly
             state["_phase"] = "halted"
             state["last_error"] = f"Error routing failed: {route_exc}"
             write_state(wiring, state)

@@ -1,9 +1,3 @@
-"""Brain chokepoint for endgame-ai.
-
-Brain transports are hot-swappable modules selected only by wiring.json model.transport.
-Every transport is a root-level module loaded directly from wiring paths.brains.
-No selected transport has a fallback path.
-"""
 from __future__ import annotations
 
 import importlib.util
@@ -152,7 +146,6 @@ _RECORD_DATA_SCHEMAS: dict[str, dict[str, Any]] = {
 
 
 class StablePrefix:
-    """Real checked-out source snapshot prepended to every brain request."""
 
     def __init__(self, root: pathlib.Path = ROOT):
         self.root = root
@@ -240,13 +233,11 @@ def stable_prefix() -> StablePrefix:
 
 
 def _stable_prefix_enabled(wiring: dict[str, Any]) -> bool:
-    """Check if stable prefix should be built (for self-modify read_files grounding)."""
     sp_cfg = wiring.get("model", {}).get("stable_prefix", {})
     return bool(sp_cfg.get("enabled", False))
 
 
 def _stable_prefix_include_in_request(wiring: dict[str, Any]) -> bool:
-    """Check if stable prefix text should be included in request body (system message)."""
     sp_cfg = wiring.get("model", {}).get("stable_prefix", {})
     return bool(sp_cfg.get("include_in_request", False))
 
@@ -314,15 +305,9 @@ def last_fresh_observation() -> dict[str, Any]:
     return dict(_LAST_FRESH_OBSERVATION or {})
 
 
-# Removed BODY_ONLY_PAYLOAD_KEYS - no more dict tree passed to brain
-# def _brain_visible removed - no filtering needed
-
-
 def _with_fresh_observation(payload: dict[str, Any], wiring: dict[str, Any]) -> dict[str, Any]:
     enriched = dict(payload)
     enriched["fresh_observation"] = _fresh_observation_payload(wiring, enriched)
-    # Keep exactly one brain-visible desktop tree at the top level. Nodes may use
-    # local observation keys to avoid rescans; the canonical packet is this field.
     if isinstance(enriched.get("observation"), dict) and enriched["observation"].get("desktop_tree_text"):
         enriched.pop("observation", None)
     return enriched
@@ -402,14 +387,13 @@ def _load_transport_module(name: str, wiring: dict[str, Any]):
     if spec is None or spec.loader is None:
         raise RuntimeError(f"cannot load selected brain transport module: {module_path}")
     mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    spec.loader.exec_module(mod)
     if not hasattr(mod, "call"):
         raise RuntimeError(f"brain transport '{name}' does not export call(messages, cfg)")
     return mod
 
 
 def _get_transport_config(wiring: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-    """Extract transport name and merged config from wiring.json."""
     model = wiring.get("model")
     if not isinstance(model, dict):
         raise RuntimeError("wiring.json missing object model")
@@ -423,7 +407,6 @@ def _get_transport_config(wiring: dict[str, Any]) -> tuple[str, dict[str, Any]]:
         raise RuntimeError(f"wiring model.transport_config.{transport} missing; no fallback transport config is allowed")
     cfg = dict(transport_config[transport])
     
-    # Merge global config (timeout, max_brain_calls, raw_log, etc.)
     global_keys = {"timeout", "max_brain_calls", "raw_log", "raw_log_path", "log_raw"}
     global_cfg = model.get("global", {})
     for k in global_keys:
@@ -444,7 +427,6 @@ def _structured_outputs_enabled(cfg: dict[str, Any]) -> bool:
 
 
 def _record_response_format(record_type: str) -> dict[str, Any]:
-    # Use json_object format - minimal schema, prompt controls structure
     return {
         "type": "json_object",
     }
@@ -458,10 +440,6 @@ def call(
     response_format: dict[str, Any] | None = None,
     request_config: dict[str, Any] | None = None,
 ) -> dict[str, str]:
-    """Call the selected transport exactly once or raise.
-    
-    The function logs request, response, and error rows. It never switches transport.
-    """
     stop_check.check_stop("brain call")
     global _CALLS_MADE
     transport, cfg = _get_transport_config(wiring)
@@ -588,17 +566,13 @@ def think(
     expected_record_type: str | None = None,
     request_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Pluggable ROD brain pattern returning the committed JSON record."""
     _, cfg = _get_transport_config(wiring)
     reasoning_cfg = _effective_reasoning_config(wiring, cfg)
     
-    # Build stable prefix if enabled (needed for self-modify read_files grounding)
     prefix = stable_prefix() if _stable_prefix_enabled(wiring) else None
     
-    # Include prefix text in system message only if include_in_request=true
     prefix_for_messages = prefix if _stable_prefix_include_in_request(wiring) else None
     
-    # Generate or reuse conversation ID for prompt caching
     conv_id = wiring.get("_conv_id")
     if not conv_id:
         import hashlib, time
@@ -615,12 +589,9 @@ def think(
     )
     request_cfg = dict(request_config or {})
     
-    # Send prompt_cache_key for xAI prompt caching (conversation-level cache)
     if cfg.get("transport") == "transport_xai":
         request_cfg.setdefault("prompt_cache_key", conv_id)
     
-    # Set reasoning_effort per organ for xAI. Keep verification mechanical/cheap;
-    # reserve high reasoning for self-modifying firmware patches.
     if cfg.get("transport") == "transport_xai" and expected_record_type:
         default_effort_map = {
             "plan": "medium",

@@ -24,7 +24,6 @@ DATASHEET = bus.datasheet(
 
 
 def run(ctx):
-    """Gather desktop UIA data, filter once, emit the observation packet."""
     config = ctx.get("wiring", {}).get("observe_config", {})
     obs = desktop.get_desktop(config).observe(config)
     fresh_observation = {
