@@ -54,18 +54,12 @@ class ReflectNode(BaseNode):
         goal = ctx.get("goal", "")
         return {
             "goal": goal,
-            "observation": bus.observation_brief(state),
             "step": {
                 "description": step.get("description", goal),
                 "done_when": step.get("done_when", ""),
             },
             "evidence": self._evidence_payload,
-            "routing_rule": {
-                "retry": "same plan can work with a better concrete action or better target",
-                "replan": "plan step is wrong or too coarse",
-                "escalate": "organism wiring, prompt, code, observation, or transport contract is broken",
-                "give_up": "goal is impossible or unsafe with current body",
-            },
+            "observation": bus.observation_brief(state),
         }
 
     def signal_from_data(self, data, ctx):

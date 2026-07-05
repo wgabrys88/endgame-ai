@@ -45,25 +45,14 @@ class ExecuteNode(BaseNode):
                 "description": step.get("description", goal),
                 "done_when": step.get("done_when", ""),
             },
-            "state": bus.state_brief(state),
-            "observation": bus.observation_brief(state),
             "action_frame": state.get("action_frame"),
             "last": {
                 "error": state.get("last_error"),
                 "result": state.get("last_result", ""),
                 "action": state.get("last_action", {}),
             },
-            "capability_contract": {
-                "body_truth": "Code runs locally in the organism capability runtime. The listed helpers are conveniences, not the full limit of Python.",
-                "pyautogui_compat": "Use pyautogui.click/write/press/hotkey/scroll naturally; it is a dependency-free facade backed by the organism body.",
-                "helpers": [
-                    "click_node(id)", "scroll_node(id, amount)", "node_by_id(id)", "action_nodes(action=None)",
-                    "click(x,y,hwnd=0)", "type_text(text)", "press_key(key)", "hotkey(keys)",
-                    "scroll(x,y,amount,hwnd=0)", "open_url(browser,url)",
-                ],
-                "modules": ["subprocess", "ctypes", "os", "sys", "json", "re", "time", "pathlib", "math", "random"],
-                "result_rule": "Set result to helper return values only. Do not claim UI success; verify reads fresh_observation. Body auto-focuses before click_node.",
-            },
+            "state": bus.state_brief(state),
+            "observation": bus.observation_brief(state),
         }
 
     def run(self, ctx):

@@ -103,7 +103,6 @@ def run(ctx):
     fresh_obs = state.get("fresh_observation", {})
     payload = {
         "goal": goal,
-        "observation": bus.observation_brief(state),
         "step": {
             "description": step.get("description", goal),
             "done_when": step.get("done_when", ""),
@@ -123,33 +122,12 @@ def run(ctx):
             },
             "evidence": _runtime_evidence(wiring, state),
         },
+        "context_mode": git_context["context_mode"],
+        "github_branch_url": git_context.get("branch_url", ""),
+        "local_repo_root": str(ROOT),
+        "observation": bus.observation_brief(state),
         "git_context": git_context,
         "workspace_manifest": _capture_workspace_manifest(),
-        "full_file_access": {
-            "mode": git_context["context_mode"],
-            "github_branch_url": git_context.get("branch_url", ""),
-            "local_repo_root": str(ROOT),
-            "rule": "Use the checked-out repository, workspace manifest, fresh observation, and runtime evidence. The local organism applies, commits, and pushes on the current branch.",
-        },
-        "patch_contract": {
-            "record_type": "git_evolution_patch",
-            "data": {
-                "summary": "short human summary",
-                "rationale": "runtime/code evidence for the change",
-                "read_files": "repo files from the stable prefix that ground this patch",
-                "file_writes": "list of {path:'repo relative path', content:'complete file text'}",
-                "file_deletes": "list of repo relative paths",
-                "wiring_patches": "list of {op:'set'|'delete', path:'dotted.path', value:any}",
-                "commands": "optional list of validation commands from repo root",
-                "expected_validation": "what should pass after the patch",
-            },
-            "notes": [
-                "Target root-level node modules (node_planner.py, node_observe.py, etc.) and transport modules (transport_file_proxy.py, transport_xai.py, etc.).",
-                "Python and JSON writes are validated before write and again after write.",
-                "The local organism applies, validates, commits, and pushes on the checked-out branch.",
-                "Core files core_brain.py, core_nodes.py, core_organism.py, core_desktop.py, and core_stop_check.py activate on the next process run.",
-            ],
-        },
     }
     if fresh_obs:
         payload["fresh_observation"] = fresh_obs

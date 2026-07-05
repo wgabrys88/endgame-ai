@@ -242,14 +242,14 @@ def _stable_prefix_include_in_request(wiring: dict[str, Any]) -> bool:
     return bool(sp_cfg.get("include_in_request", False))
 
 
-def _messages(system_prompt: str, user_text: str, prefix: StablePrefix | None) -> list[dict[str, str]]:
+def _messages(system_prompt: str, user_text: str, prefix: StablePrefix | None, stable_context: str = "") -> list[dict[str, str]]:
+    system = system_prompt
+    if stable_context:
+        system = system + "\n\n" + stable_context
     if prefix is not None:
-        return [
-            {"role": "system", "content": prefix.text + "\n\nDYNAMIC NODE PROMPT:\n" + system_prompt},
-            {"role": "user", "content": user_text},
-        ]
+        system = prefix.text + "\n\n" + system
     return [
-        {"role": "system", "content": "DYNAMIC NODE PROMPT:\n" + system_prompt},
+        {"role": "system", "content": system},
         {"role": "user", "content": user_text},
     ]
 
@@ -265,10 +265,17 @@ def _commit_record(content: str) -> dict[str, Any]:
     return record
 
 
+def _organ_tuning(wiring: dict[str, Any], record_type: str | None) -> dict[str, Any]:
+    organs = wiring.get("model", {}).get("organs", {})
+    if not record_type or not isinstance(organs, dict):
+        return {}
+    organ = organs.get(record_type)
+    return dict(organ) if isinstance(organ, dict) else {}
+
+
 def _effective_reasoning_config(wiring: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
-    model_global = wiring.get("model", {}).get("global", {})
     reasoning_cfg = dict(cfg.get("reasoning") or {})
-    reasoning_cfg["enabled"] = bool(reasoning_cfg.get("enabled", model_global.get("reasoning_enabled", False)))
+    reasoning_cfg["enabled"] = bool(reasoning_cfg.get("enabled", False))
     reasoning_cfg.setdefault("pattern", "two_pass" if reasoning_cfg["enabled"] else "single_pass")
     reasoning_cfg.setdefault("extractor", "think_tags")
     reasoning_cfg.setdefault("injection_template", "REASONING_FEEDBACK:\n{reasoning}\n\nReturn only the requested JSON record.")
@@ -580,6 +587,10 @@ def think(
         wiring["_conv_id"] = conv_id
     
     payload = _with_fresh_observation(payload, wiring)
+    goal = ""
+    if isinstance(payload, dict) and "goal" in payload:
+        goal = str(payload.pop("goal") or "")
+    stable_context = f"CURRENT GOAL (fixed for this run):\n{goal}" if goal else ""
     user_text = json.dumps(payload, ensure_ascii=False, default=str)
     pattern = str(reasoning_cfg.get("pattern") or "single_pass")
     response_format = (
@@ -588,30 +599,19 @@ def think(
         else None
     )
     request_cfg = dict(request_config or {})
-    
+
+    tuning = _organ_tuning(wiring, expected_record_type)
+    if tuning.get("reasoning_effort") is not None:
+        request_cfg.setdefault("reasoning_effort", tuning["reasoning_effort"])
+    if tuning.get("max_output_tokens") is not None:
+        request_cfg.setdefault("max_output_tokens", tuning["max_output_tokens"])
+
     if cfg.get("transport") == "transport_xai":
         request_cfg.setdefault("prompt_cache_key", conv_id)
-    
-    if cfg.get("transport") == "transport_xai" and expected_record_type:
-        default_effort_map = {
-            "plan": "medium",
-            "action_frame": "low",
-            "execution": "low",
-            "verification": "none",
-            "reflection": "low",
-            "git_evolution_patch": "high",
-            "schedule": "none",
-            "satisfied": "none",
-        }
-        organ_cfg = wiring.get("model", {}).get("organs", {})
-        effort = None
-        if isinstance(organ_cfg, dict):
-            effort = (organ_cfg.get(expected_record_type) or {}).get("reasoning_effort") if isinstance(organ_cfg.get(expected_record_type), dict) else None
-        request_cfg.setdefault("reasoning_effort", effort or default_effort_map.get(expected_record_type, "low"))
 
     if not reasoning_cfg["enabled"] or pattern == "single_pass":
         result = call(
-            _messages(system_prompt, user_text, prefix_for_messages),
+            _messages(system_prompt, user_text, prefix_for_messages, stable_context),
             wiring,
             rod_feedback=False,
             response_format=response_format,
@@ -623,7 +623,7 @@ def think(
 
     if pattern == "native":
         result = call(
-            _messages(system_prompt, user_text, prefix_for_messages),
+            _messages(system_prompt, user_text, prefix_for_messages, stable_context),
             wiring,
             rod_feedback=False,
             response_format=response_format,
@@ -636,11 +636,11 @@ def think(
     if pattern != "two_pass":
         raise RuntimeError(f"unknown reasoning pattern: {pattern}")
 
-    first = call(_messages(system_prompt, user_text, prefix_for_messages), wiring, rod_feedback=False, request_config=request_cfg)
+    first = call(_messages(system_prompt, user_text, prefix_for_messages, stable_context), wiring, rod_feedback=False, request_config=request_cfg)
     reasoning = reasoning_from(first["content"], first.get("reasoning", ""))
     template = str(reasoning_cfg.get("injection_template") or "REASONING_FEEDBACK:\n{reasoning}")
     second = call(
-        _messages(system_prompt, user_text + "\n\n" + template.format(reasoning=reasoning), prefix_for_messages),
+        _messages(system_prompt, user_text + "\n\n" + template.format(reasoning=reasoning), prefix_for_messages, stable_context),
         wiring,
         rod_feedback=True,
         response_format=response_format,

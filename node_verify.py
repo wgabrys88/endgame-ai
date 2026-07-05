@@ -43,9 +43,9 @@ class VerifyNode(BaseNode):
         step_goal, done_when = self._step_goal(ctx)
         return {
             "goal": ctx.get("goal", ""),
-            "observation": bus.observation_brief(ctx.get("state", {})),
             "step": {"description": step_goal, "done_when": done_when},
             "evidence": self._evidence(ctx),
+            "observation": bus.observation_brief(ctx.get("state", {})),
         }
 
     def signal_from_data(self, data, ctx):

@@ -14,6 +14,8 @@ def call(messages, cfg):
         "messages": messages,
         "temperature": cfg.get("temperature", 0.2),
     }
+    if cfg.get("max_output_tokens") is not None:
+        payload["max_tokens"] = int(cfg["max_output_tokens"])
     response_format = cfg.get("response_format")
     if isinstance(response_format, dict):
         payload["response_format"] = {

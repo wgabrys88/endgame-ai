@@ -18,7 +18,6 @@ class FrameActionNode(BaseNode):
 
     prompt_key = "node_frame_action"
     expected_record_type = "action_frame"
-    request_config = {"reasoning_effort": "low"}
 
     def _evidence(self, ctx):
         state = ctx.get("state", {})
@@ -38,12 +37,12 @@ class FrameActionNode(BaseNode):
         goal = ctx.get("goal", "")
         return {
             "goal": goal,
-            "observation": bus.observation_brief(state),
             "step": {
                 "description": step.get("description", goal),
                 "done_when": step.get("done_when", ""),
             },
             "evidence": self._evidence(ctx),
+            "observation": bus.observation_brief(state),
         }
 
     def signal_from_data(self, data, ctx):
