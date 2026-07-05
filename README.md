@@ -322,3 +322,40 @@ Transport switched to `transport_file_proxy`; file_proxy `timeout` raised to 864
 manual review cycle does not error the brain loop. Runs use `--max-ticks` to stage the loop.
 
 Findings are appended below as they are observed.
+
+### A.1.1 Run 1 — boot + planner (ticks 0→2) — TESTED
+
+Command: `core_organism.py --reset --max-ticks 2 "open notepad and write hello"`
+Transport: `transport_file_proxy`. Run in background so the blocking poll can be serviced.
+
+Timeline (from `runtime_log.ndjson`):
+- tick 0: `node_observe` starts.
+- tick 1 (+2.44s): observe completes → `initial_screen` → `node_planner`.
+- planner blocks writing `runtime_request.json`, polling for `runtime_response.json`.
+- operator promotes reviewed proposal → response.
+- tick 2: planner completes → `step_ready` → `node_scheduler`, then `max_ticks`, clean exit.
+
+**Scan performance (observe):** `elapsed_s = 2.382`. 96 probe points, 80 skipped by hit-dedup
+(`saturated_hits`/already-indexed), 16 harvested, 230 subtree nodes seen, **89 unique nodes**,
+80 with text. Verdict: the sinusoidal hover-cache scan at `step_px=96` is fast (~2.4s) on a
+1920-wide desktop and the dedup is doing real work (83% of probes skipped). No speed problem
+observed at this resolution.
+
+**Request quality (what Mode A sees):** `runtime_request.json` = 2 messages.
+- system = planner prompt (clear, computer-use-appropriate, enumerates record contract + rules).
+- user = compact JSON: goal, `state_brief`, and `fresh_observation` with a **2857-char**
+  `desktop_tree_text`. The tree is semantic and id-based (`(e_...) Role Name [action]`),
+  exactly what a computer-use agent needs. No raw coordinates/hwnd leak into the brain view
+  (they live in the body-side `action_index`). This is a strong request shape.
+
+**Observations / notes for tuning:**
+- The tree included a Task Manager window with ~40 telemetry `Edit`/`Button` nodes (CPU/mem/net).
+  This is noise for a "open notepad" goal and inflates the tree. Not harmful here, but a busier
+  desktop could crowd out signal. Candidate future tuning: rank/trim by relevance to goal, or
+  cap per-window action nodes. (Do not change yet — measuring first.)
+- `focused_title` was "Program Manager" (the desktop shell) — correct baseline; Notepad absent.
+- Persona wall held: the plan was derived only from the request contents.
+
+**Risk flagged (untested):** step 2's `done_when` needs Notepad's typed document text to appear
+in `desktop_tree_text`. Whether the UIA scan surfaces Notepad edit-area content is unverified;
+the verify node will decide. Watching this in the next runs.
