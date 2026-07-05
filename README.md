@@ -18,7 +18,7 @@ A self-evolving Windows desktop organism that observes, plans, acts, verifies, a
 
 ### Transport Layer
 Interchangeable LLM backends:
-- `transport_xai` - Grok-4.3 via xAI API (used for Shakira milestone)
+- `transport_xai` - Grok-4.3 via xAI API (used for Shakira & Grok milestones)
 - `transport_file_proxy` - Human-in-the-loop file-based transport
 - `transport_openai` - Local OpenAI-compatible endpoint
 - `transport_opencode` - OpenCode CLI
@@ -27,7 +27,7 @@ Interchangeable LLM backends:
 
 ---
 
-## Shakira Milestone: Cognitive Power Demonstrated
+## Shakira Milestone: Cognitive Power Demonstrated (Tag: `shakira-latest`)
 
 **Goal**: *"search in youtube for a shakira latest video and play it"*
 
@@ -106,12 +106,44 @@ Interchangeable LLM backends:
 | 20 | reflect | 4,217 | 596 | 462 | 4,813 | 61,564,500 |
 | **TOTAL** | | **70,281** | **29,825** | **26,245** | **96,516** | **1,402,988,000** |
 
-**Average per call**: ~4,826 total tokens, ~$0.0014 (at xAI pricing)
+**Average per call**: ~4,826 total tokens, ~$0.0014 (at xAI pricing)  
 **Reasoning overhead**: ~27% of output tokens used for internal reasoning (native Grok reasoning)
 
 ---
 
-## Observation System (Redesigned - Tag: z-order-found)
+## Grok Answer Reading Milestone (Tag: `grok-answer-read`)
+
+**Goal**: Capture Grok chat content via UIA deep observation and enable read_node capability for cognitive loop integration.
+
+### Breakthrough: Deep Observation of React Virtualized Content
+
+The organism now stably captures **Grok chat messages** from the browser:
+
+- **Observation depth config**: `step_px=48`, `max_total_nodes=20000`, `max_subtree_nodes_per_point=5000`, `include_offscreen/disabled=true`, `require_interactive=false`
+- **READ action** added for `Text`/`ListItem` roles (browser chat messages)
+- **Spatial parent linking** for `hwnd=0` nodes (rect containment in window bounds)
+- **read_node()** capability added to execute runtime for reading chat messages
+
+**Proven capture** (2619 nodes, 1684 with text, 317 actionable including 6 Grok messages):
+```
+htht
+Htht right back at ya!
+😎
+Not sure what that means though—
+Hit me with more details...
+```
+
+### Technical Achievements
+
+1. **10x observation harvest limits** - Captures virtualized React content that standard scans miss
+2. **Disabled offscreen/enabled filters** - Deep inspection reaches all UIA elements
+3. **READ action for Text/ListItem roles** - Semantic reading of chat bubbles, not just clickable elements
+4. **Spatial linking solves hwnd=0 detachment** - Browser content elements linked via rect containment to window bounds
+5. **Z-order + focus + hierarchy** - Complete mechanical perception stack working
+
+---
+
+## Observation System (Redesigned - Tag: `z-order-found`)
 
 The `core_observation.py` produces a clean, accurate, deep hierarchical tree:
 
@@ -162,7 +194,7 @@ The organism can evolve its own code:
 core_organism.py      # Main loop, state machine, topology routing
 core_brain.py         # LLM transport, stable prefix, reasoning patterns, schemas
 core_nodes.py         # Node implementations (call_node dispatch)
-core_observation.py   # UIA whole-screen scan with Z-order, focus, hierarchy
+core_observation.py   1  # UIA whole-screen scan with Z-order, focus, hierarchy
 core_desktop.py       # Desktop automation, window tokens, UIA wrappers
 core_bus.py           # Signal bus, datasheets, emit
 core_stop_check.py    # PID-based stop coordination
@@ -189,7 +221,21 @@ The Shakira milestone demonstrates the **living organism vision**:
 - Verification **enforced honesty** (denied false success)
 - Reflection **extracted lessons** that drove progress
 
-This is cognitive behavior: **the system found and played the latest Shakira video without being told which song, which URL, or which element to click.** It searched, evaluated results, selected the most recent, and verified playback - all from semantic observation of the live desktop.
+The Grok answer reading milestone extends this: **the organism now reads live LLM chat responses** from the browser, enabling cognitive loops that can converse with other AIs, extract information, and act on it — all from semantic observation of the live desktop.
+
+This is cognitive behavior: **the system found and played the latest Shakira video without being told which song, which URL, or which element to click. It searched, evaluated results, selected the most recent, and verified playback - all from semantic observation of the live desktop.** Now it can also read Grok's answers.
+
+---
+
+## Current State (main branch)
+
+| Commit | Tag | Description |
+|--------|-----|-------------|
+| `40374e9` | `grok-answer-read` | Capture Grok chat content via UIA deep observation + read_node |
+| `f9f1ff4` | `shakira-latest` | Shakira milestone - living organism vision proven |
+| `ec7be73` | `z-order-found` | Redesign desktop observation: Z-order, focus, hierarchy, junk filtering |
+
+Clean linear history — all failed self-modify attempts removed.
 
 ---
 
