@@ -496,53 +496,248 @@ def _collect_text_sources(name: str, properties: dict[str, Any], pattern_payload
     return sources, text_full, value
 
 
-def _element_to_node(
-    element: Any,
-    *,
-    probe_xy: tuple[int, int] | None = None,
-    property_ids: list[int] | None = None,
-    pattern_ids: list[int] | None = None,
-) -> CachedNode | None:
-    try:
-        prop_ids = property_ids or SCAN_DEFAULT_PROPERTY_IDS
-        pat_ids = pattern_ids or SCAN_DEFAULT_PATTERN_IDS
-        rect = UiaVariant.to_rect(_get_cached(element, PID_BOUNDING_RECT))
-        if rect["right"] <= rect["left"] or rect["bottom"] <= rect["top"]:
-            rect = UiaVariant.to_rect(_get_current(element, PID_BOUNDING_RECT))
-        if rect["right"] <= rect["left"] or rect["bottom"] <= rect["top"]:
+class UiaScanner:
+    """Holds scan state (automation, cache requests, property/pattern ids) once,
+    so the harvest pipeline does not thread it through every call.
+
+    Per-element COM failures are tolerated by design: a live desktop always has
+    inaccessible/transient elements, so a single bad element is skipped, not
+    fatal. This is resilience, not a silent-degrade fallback: the scan itself
+    fails hard if the automation object or screen metrics are unavailable.
+    """
+
+    def __init__(self, desktop, config):
+        self.desktop = desktop
+        self.scan_cfg = _scan_settings(config)
+        self.automation = desktop.automation
+        self.property_ids = _scan_property_ids(self.scan_cfg)
+        self.pattern_ids = _scan_pattern_ids(self.scan_cfg)
+        self.cache_request = self._build_cache_request()
+        self.hit_cache = self._build_hit_cache_request()
+
+    def _build_cache_request(self):
+        req = self.automation.CreateCacheRequest()
+        # Element | Descendants: hit node + below (not ancestors). Descendants alone skips the hit node.
+        req.TreeScope = TreeScope_Element | TreeScope_Descendants
+        for prop_id in self.property_ids:
+            req.AddProperty(prop_id)
+        for pattern_id in self.pattern_ids:
+            req.AddPattern(pattern_id)
+        return req
+
+    def _build_hit_cache_request(self):
+        req = self.automation.CreateCacheRequest()
+        req.TreeScope = TreeScope_Element
+        for prop_id in (PID_RUNTIME_ID, PID_BOUNDING_RECT, PID_CONTROL_TYPE, PID_HWND):
+            req.AddProperty(prop_id)
+        return req
+
+    def element_to_node(self, element, probe_xy=None):
+        try:
+            rect = UiaVariant.to_rect(_get_cached(element, PID_BOUNDING_RECT))
+            if rect["right"] <= rect["left"] or rect["bottom"] <= rect["top"]:
+                rect = UiaVariant.to_rect(_get_current(element, PID_BOUNDING_RECT))
+            if rect["right"] <= rect["left"] or rect["bottom"] <= rect["top"]:
+                return None
+            runtime_id = UiaVariant.to_runtime_id(_get_cached(element, PID_RUNTIME_ID)) or UiaVariant.to_runtime_id(_get_current(element, PID_RUNTIME_ID))
+            hwnd = UiaVariant.to_int(_get_cached(element, PID_HWND))
+            role_id = UiaVariant.to_int(_get_cached(element, PID_CONTROL_TYPE))
+            name = UiaVariant.to_str(_get_cached(element, PID_NAME)) or UiaVariant.to_str(_get_current(element, PID_NAME))
+            properties = _harvest_properties(element, self.property_ids)
+            patterns, pattern_payloads = _harvest_patterns(element, self.pattern_ids)
+            text_sources, text_full, value = _collect_text_sources(name, properties, pattern_payloads)
+            return CachedNode(
+                id=_node_id(runtime_id, hwnd, rect),
+                role=control_type_name(role_id),
+                name=name,
+                automation_id=UiaVariant.to_str(_get_cached(element, PID_AUTOMATION_ID)),
+                class_name=UiaVariant.to_str(_get_cached(element, PID_CLASS_NAME)),
+                hwnd=hwnd,
+                framework_id=UiaVariant.to_str(_get_cached(element, PID_FRAMEWORK)),
+                px=(rect["left"] + rect["right"]) // 2,
+                py=(rect["top"] + rect["bottom"]) // 2,
+                rect=rect,
+                enabled=UiaVariant.to_bool(_get_cached(element, PID_ENABLED)),
+                keyboard_focus=UiaVariant.to_bool(_get_cached(element, PID_KEYBOARD_FOCUS)),
+                offscreen=UiaVariant.to_bool(_get_cached(element, PID_OFFSCREEN)),
+                runtime_id=runtime_id,
+                text_full=text_full,
+                value=value,
+                patterns=patterns,
+                properties=properties,
+                pattern_payloads=pattern_payloads,
+                text_sources=text_sources,
+                source_probe=probe_xy,
+            )
+        except Exception:
             return None
-        runtime_id = UiaVariant.to_runtime_id(_get_cached(element, PID_RUNTIME_ID)) or UiaVariant.to_runtime_id(_get_current(element, PID_RUNTIME_ID))
-        hwnd = UiaVariant.to_int(_get_cached(element, PID_HWND))
-        role_id = UiaVariant.to_int(_get_cached(element, PID_CONTROL_TYPE))
-        name = UiaVariant.to_str(_get_cached(element, PID_NAME)) or UiaVariant.to_str(_get_current(element, PID_NAME))
-        properties = _harvest_properties(element, prop_ids)
-        patterns, pattern_payloads = _harvest_patterns(element, pat_ids)
-        text_sources, text_full, value = _collect_text_sources(name, properties, pattern_payloads)
-        return CachedNode(
-            id=_node_id(runtime_id, hwnd, rect),
-            role=control_type_name(role_id),
-            name=name,
-            automation_id=UiaVariant.to_str(_get_cached(element, PID_AUTOMATION_ID)),
-            class_name=UiaVariant.to_str(_get_cached(element, PID_CLASS_NAME)),
-            hwnd=hwnd,
-            framework_id=UiaVariant.to_str(_get_cached(element, PID_FRAMEWORK)),
-            px=(rect["left"] + rect["right"]) // 2,
-            py=(rect["top"] + rect["bottom"]) // 2,
-            rect=rect,
-            enabled=UiaVariant.to_bool(_get_cached(element, PID_ENABLED)),
-            keyboard_focus=UiaVariant.to_bool(_get_cached(element, PID_KEYBOARD_FOCUS)),
-            offscreen=UiaVariant.to_bool(_get_cached(element, PID_OFFSCREEN)),
-            runtime_id=runtime_id,
-            text_full=text_full,
-            value=value,
-            patterns=patterns,
-            properties=properties,
-            pattern_payloads=pattern_payloads,
-            text_sources=text_sources,
-            source_probe=probe_xy,
-        )
-    except Exception:
-        return None
+
+    def harvest_subtree(self, root_element, *, probe_xy, max_nodes):
+        nodes = []
+        seen = set()
+
+        def add_element(el):
+            if len(nodes) >= max_nodes:
+                return
+            node = self.element_to_node(el, probe_xy=probe_xy)
+            if node is None or node.id in seen:
+                return
+            seen.add(node.id)
+            nodes.append(node)
+
+        add_element(root_element)
+        try:
+            arr = root_element.FindAllBuildCache(TreeScope_Descendants, _true_condition(self.automation), self.cache_request)
+            if arr is not None:
+                try:
+                    length = int(arr.Length)
+                except Exception:
+                    length = 0
+                for i in range(length):
+                    if len(nodes) >= max_nodes:
+                        break
+                    try:
+                        add_element(arr.GetElement(i))
+                    except Exception:
+                        continue
+        except Exception:
+            try:
+                walker = self.automation.CreateTreeWalkerBuildCache(_true_condition(self.automation), self.cache_request)
+                child = walker.GetFirstChildElement(root_element)
+                stack = [child] if child else []
+                while stack and len(nodes) < max_nodes:
+                    el = stack.pop()
+                    if el is None:
+                        continue
+                    add_element(el)
+                    try:
+                        sib = walker.GetNextSiblingElement(el)
+                        if sib:
+                            stack.append(sib)
+                        first = walker.GetFirstChildElement(el)
+                        if first:
+                            stack.append(first)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        return nodes
+
+    def probe(self, x, y, *, delay_ms, max_subtree_nodes, saturated_hits, index):
+        user32.SetCursorPos(int(x), int(y))
+        if delay_ms > 0:
+            time.sleep(delay_ms / 1000.0)
+        pt = wintypes.POINT(int(x), int(y))
+        try:
+            root = self.automation.ElementFromPointBuildCache(pt, self.hit_cache)
+        except Exception:
+            root = self.automation.ElementFromPoint(pt)
+        if root is None:
+            return [], None, False
+        hit_key, role = _hit_key_from_element(root)
+        if hit_key in saturated_hits:
+            return [], hit_key, True
+        if hit_key in index and role not in CONTAINER_ROLES:
+            return [], hit_key, True
+        return self.harvest_subtree(root, probe_xy=(x, y), max_nodes=max_subtree_nodes), hit_key, False
+
+    def scan(self):
+        """Collect the full desktop UIA harvest. No filtering here."""
+        scan_cfg = self.scan_cfg
+        stale_merge_stop = int(scan_cfg.get("stale_merge_stop", 12))
+        sw = user32.GetSystemMetrics(0)
+        sh = user32.GetSystemMetrics(1)
+        step_px = int(scan_cfg.get("step_px", 96))
+        delay_ms = int(scan_cfg.get("delay_ms", 5))
+        max_subtree = int(scan_cfg.get("max_subtree_nodes_per_point", 250))
+        max_total = int(scan_cfg.get("max_total_nodes", 2000))
+        max_probes = scan_cfg.get("max_probe_points")
+        pattern = str(scan_cfg.get("pattern", "sinusoidal"))
+        if pattern == "sinusoidal":
+            points = _sinusoidal_points(sw, sh, step_px=step_px)
+        else:
+            points = ((x, y) for y in range(0, sh, step_px) for x in range(0, sw, step_px))
+
+        index = {}
+        saturated_hits = set()
+        probes = 0
+        probes_skipped = 0
+        probes_harvested = 0
+        subtree_seen = 0
+        consecutive_no_add = 0
+        early_stop = None
+        t0 = time.time()
+        saved = wintypes.POINT()
+        had_cursor = bool(user32.GetCursorPos(ctypes.byref(saved)))
+        try:
+            for x, y in points:
+                if max_probes is not None and probes >= int(max_probes):
+                    break
+                if len(index) >= max_total:
+                    early_stop = "max_total"
+                    break
+                probes += 1
+                nodes, hit_key, skipped = self.probe(
+                    x,
+                    y,
+                    delay_ms=delay_ms,
+                    max_subtree_nodes=max_subtree,
+                    saturated_hits=saturated_hits,
+                    index=index,
+                )
+                if skipped:
+                    probes_skipped += 1
+                    continue
+                probes_harvested += 1
+                subtree_seen += len(nodes)
+                added = _merge_nodes(index, nodes)
+                if hit_key and (added == 0 or len(nodes) >= max_subtree):
+                    saturated_hits.add(hit_key)
+                if added == 0:
+                    consecutive_no_add += 1
+                    if consecutive_no_add >= stale_merge_stop and len(index) > 0:
+                        early_stop = "stale_merges"
+                        break
+                else:
+                    consecutive_no_add = 0
+        finally:
+            if had_cursor:
+                try:
+                    user32.SetCursorPos(saved.x, saved.y)
+                except Exception:
+                    pass
+
+        nodes = list(index.values())
+        if hasattr(self.desktop, "clear_focus_cache"):
+            self.desktop.clear_focus_cache()
+        focused_title = self.desktop.get_focused_title()
+        return {
+            "nodes": nodes,
+            "screen": {"width": sw, "height": sh},
+            "focused_title": focused_title,
+            "windows": self.desktop.get_window_tokens(),
+            "scan": {
+                "method": "hover_cache",
+                "pattern": pattern,
+                "step_px": step_px,
+                "stats": {
+                    "probes": probes,
+                    "probes_harvested": probes_harvested,
+                    "probes_skipped": probes_skipped,
+                    "saturated_hits": len(saturated_hits),
+                    "early_stop": early_stop,
+                    "subtree_nodes_seen": subtree_seen,
+                    "unique_nodes": len(nodes),
+                    "nodes_with_text": sum(1 for n in nodes if n.text_full),
+                    "elapsed_s": round(time.time() - t0, 3),
+                },
+            },
+        }
+
+
+def gather(desktop, config):
+    """Backward-compatible entry point: run a full scan via UiaScanner."""
+    return UiaScanner(desktop, config).scan()
 
 
 def _true_condition(automation: Any) -> Any:
@@ -550,86 +745,6 @@ def _true_condition(automation: Any) -> Any:
         return automation.CreateTrueCondition()
     except Exception:
         return automation.TrueCondition
-
-
-def _harvest_subtree(
-    automation: Any,
-    root_element: Any,
-    cache_request: Any,
-    *,
-    probe_xy: tuple[int, int],
-    max_nodes: int,
-    property_ids: list[int],
-    pattern_ids: list[int],
-) -> list[CachedNode]:
-    nodes: list[CachedNode] = []
-    seen: set[str] = set()
-
-    def add_element(el: Any) -> None:
-        if len(nodes) >= max_nodes:
-            return
-        node = _element_to_node(el, probe_xy=probe_xy, property_ids=property_ids, pattern_ids=pattern_ids)
-        if node is None or node.id in seen:
-            return
-        seen.add(node.id)
-        nodes.append(node)
-
-    add_element(root_element)
-    try:
-        arr = root_element.FindAllBuildCache(TreeScope_Descendants, _true_condition(automation), cache_request)
-        if arr is not None:
-            try:
-                length = int(arr.Length)
-            except Exception:
-                length = 0
-            for i in range(length):
-                if len(nodes) >= max_nodes:
-                    break
-                try:
-                    add_element(arr.GetElement(i))
-                except Exception:
-                    continue
-    except Exception:
-        try:
-            walker = automation.CreateTreeWalkerBuildCache(_true_condition(automation), cache_request)
-            child = walker.GetFirstChildElement(root_element)
-            stack = [child] if child else []
-            while stack and len(nodes) < max_nodes:
-                el = stack.pop()
-                if el is None:
-                    continue
-                add_element(el)
-                try:
-                    sib = walker.GetNextSiblingElement(el)
-                    if sib:
-                        stack.append(sib)
-                    first = walker.GetFirstChildElement(el)
-                    if first:
-                        stack.append(first)
-                except Exception:
-                    pass
-        except Exception:
-            pass
-    return nodes
-
-
-def _cache_request(automation: Any, scan_cfg: dict[str, Any]) -> Any:
-    req = automation.CreateCacheRequest()
-    # Element | Descendants: hit node + below (not ancestors). Descendants alone skips the hit node.
-    req.TreeScope = TreeScope_Element | TreeScope_Descendants
-    for prop_id in _scan_property_ids(scan_cfg):
-        req.AddProperty(prop_id)
-    for pattern_id in _scan_pattern_ids(scan_cfg):
-        req.AddPattern(pattern_id)
-    return req
-
-
-def _hit_cache_request(automation: Any) -> Any:
-    req = automation.CreateCacheRequest()
-    req.TreeScope = TreeScope_Element
-    for prop_id in (PID_RUNTIME_ID, PID_BOUNDING_RECT, PID_CONTROL_TYPE, PID_HWND):
-        req.AddProperty(prop_id)
-    return req
 
 
 def _hit_key_from_element(element: Any) -> tuple[str, str]:
@@ -640,46 +755,6 @@ def _hit_key_from_element(element: Any) -> tuple[str, str]:
     hwnd = UiaVariant.to_int(_get_cached(element, PID_HWND)) or UiaVariant.to_int(_get_current(element, PID_HWND))
     role_id = UiaVariant.to_int(_get_cached(element, PID_CONTROL_TYPE)) or UiaVariant.to_int(_get_current(element, PID_CONTROL_TYPE))
     return _node_id(runtime_id, hwnd, rect), control_type_name(role_id)
-
-
-def _probe(
-    automation: Any,
-    hit_cache: Any,
-    cache_request: Any,
-    x: int,
-    y: int,
-    *,
-    delay_ms: int,
-    max_subtree_nodes: int,
-    property_ids: list[int],
-    pattern_ids: list[int],
-    saturated_hits: set[str],
-    index: dict[str, CachedNode],
-) -> tuple[list[CachedNode], str | None, bool]:
-    user32.SetCursorPos(int(x), int(y))
-    if delay_ms > 0:
-        time.sleep(delay_ms / 1000.0)
-    pt = wintypes.POINT(int(x), int(y))
-    try:
-        root = automation.ElementFromPointBuildCache(pt, hit_cache)
-    except Exception:
-        root = automation.ElementFromPoint(pt)
-    if root is None:
-        return [], None, False
-    hit_key, role = _hit_key_from_element(root)
-    if hit_key in saturated_hits:
-        return [], hit_key, True
-    if hit_key in index and role not in CONTAINER_ROLES:
-        return [], hit_key, True
-    return _harvest_subtree(
-        automation,
-        root,
-        cache_request,
-        probe_xy=(x, y),
-        max_nodes=max_subtree_nodes,
-        property_ids=property_ids,
-        pattern_ids=pattern_ids,
-    ), hit_key, False
 
 
 def _sinusoidal_points(sw: int, sh: int, *, step_px: int) -> list[tuple[int, int]]:
@@ -724,111 +799,6 @@ def _merge_nodes(index: dict[str, CachedNode], new_nodes: list[CachedNode]) -> i
             prev.keyboard_focus = True
         prev.patterns = sorted(set(prev.patterns) | set(node.patterns))
     return added
-
-
-def gather(desktop: Any, config: dict[str, Any]) -> dict[str, Any]:
-    """Collect the full desktop UIA harvest. No filtering here."""
-    scan_cfg = _scan_settings(config)
-    automation = desktop.automation
-    cache_request = _cache_request(automation, scan_cfg)
-    hit_cache = _hit_cache_request(automation)
-    property_ids = _scan_property_ids(scan_cfg)
-    pattern_ids = _scan_pattern_ids(scan_cfg)
-    stale_merge_stop = int(scan_cfg.get("stale_merge_stop", 12))
-    sw = user32.GetSystemMetrics(0)
-    sh = user32.GetSystemMetrics(1)
-    step_px = int(scan_cfg.get("step_px", 96))
-    delay_ms = int(scan_cfg.get("delay_ms", 5))
-    max_subtree = int(scan_cfg.get("max_subtree_nodes_per_point", 250))
-    max_total = int(scan_cfg.get("max_total_nodes", 2000))
-    max_probes = scan_cfg.get("max_probe_points")
-    pattern = str(scan_cfg.get("pattern", "sinusoidal"))
-    points: Iterable[tuple[int, int]]
-    if pattern == "sinusoidal":
-        points = _sinusoidal_points(sw, sh, step_px=step_px)
-    else:
-        points = ((x, y) for y in range(0, sh, step_px) for x in range(0, sw, step_px))
-
-    index: dict[str, CachedNode] = {}
-    saturated_hits: set[str] = set()
-    probes = 0
-    probes_skipped = 0
-    probes_harvested = 0
-    subtree_seen = 0
-    consecutive_no_add = 0
-    early_stop: str | None = None
-    t0 = time.time()
-    saved = wintypes.POINT()
-    had_cursor = bool(user32.GetCursorPos(ctypes.byref(saved)))
-    try:
-        for x, y in points:
-            if max_probes is not None and probes >= int(max_probes):
-                break
-            if len(index) >= max_total:
-                early_stop = "max_total"
-                break
-            probes += 1
-            nodes, hit_key, skipped = _probe(
-                automation,
-                hit_cache,
-                cache_request,
-                x,
-                y,
-                delay_ms=delay_ms,
-                max_subtree_nodes=max_subtree,
-                property_ids=property_ids,
-                pattern_ids=pattern_ids,
-                saturated_hits=saturated_hits,
-                index=index,
-            )
-            if skipped:
-                probes_skipped += 1
-                continue
-            probes_harvested += 1
-            subtree_seen += len(nodes)
-            added = _merge_nodes(index, nodes)
-            if hit_key and (added == 0 or len(nodes) >= max_subtree):
-                saturated_hits.add(hit_key)
-            if added == 0:
-                consecutive_no_add += 1
-                if consecutive_no_add >= stale_merge_stop and len(index) > 0:
-                    early_stop = "stale_merges"
-                    break
-            else:
-                consecutive_no_add = 0
-    finally:
-        if had_cursor:
-            try:
-                user32.SetCursorPos(saved.x, saved.y)
-            except Exception:
-                pass
-
-    nodes = list(index.values())
-    if hasattr(desktop, "clear_focus_cache"):
-        desktop.clear_focus_cache()
-    focused_title = desktop.get_focused_title()
-    return {
-        "nodes": nodes,
-        "screen": {"width": sw, "height": sh},
-        "focused_title": focused_title,
-        "windows": desktop.get_window_tokens(),
-        "scan": {
-            "method": "hover_cache",
-            "pattern": pattern,
-            "step_px": step_px,
-            "stats": {
-                "probes": probes,
-                "probes_harvested": probes_harvested,
-                "probes_skipped": probes_skipped,
-                "saturated_hits": len(saturated_hits),
-                "early_stop": early_stop,
-                "subtree_nodes_seen": subtree_seen,
-                "unique_nodes": len(nodes),
-                "nodes_with_text": sum(1 for n in nodes if n.text_full),
-                "elapsed_s": round(time.time() - t0, 3),
-            },
-        },
-    }
 
 
 def filter_gather(gathered: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
