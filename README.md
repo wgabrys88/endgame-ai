@@ -20,22 +20,22 @@ Every item below is stated as *what it is*, then **Why** (2 sentences) and **Why
 local model. Observation quality is the functional centerpiece; the OOP consolidation is the
 structural one, and the two meet in `core_observation.py`.
 
-**Evidence base (measured this session).** Every file was read. The file_proxy loop was run
+**Evidence base (measured across sessions).** Every file was read. The file_proxy loop was run
 end-to-end and physically opened Notepad. An AST scan classified all functions. xAI transport
 fields were verified against live xAI docs. Numbers below are measured, not estimated:
 
-- Total: **4540 LOC across 23 `.py` files** (`core_observation.py` 1088, `core_nodes.py` 755,
-  `core_brain.py` 701, `core_organism.py` 273, `core_desktop.py` 315).
-- **132 of 223 functions (59%) have ≤3 statements.** 28 are single-return pass-throughs
-  (return a call/subscript/attribute); several are dead (no callers).
-- A **triple-hop delegation layer** exists for desktop access:
-  `core_nodes.observe_screen(ctx)` → `core_desktop.observe_screen()` →
-  `get_desktop().observe_screen()`. The `core_nodes` copies take a `ctx` they ignore and have
-  **no callers** (grep-confirmed).
+- Total: **4528 LOC across 22 `.py` files** (`core_observation.py` 1066, `core_nodes.py` 762,
+  `core_brain.py` 701, `core_desktop.py` 287, `core_organism.py` 273).
+- **Section 0 (the OOP migration) is DONE** — see below for per-item measured deltas.
+- The remaining plan (Sections 1–5) is observation quality, dead declarative surface, prompt
+  policy, failure control, and 4B readiness. None are pure line-count work.
 
-Reaching the old ~2500-LOC size by dedup alone is **not** achievable — the delta is partly
-genuine features (framing, self-modify manifests, structured outputs). Dedup realistically
-recovers **~230–310 LOC**; the rest would require removing features, which this plan does not do.
+The OOP consolidation's **line-count payoff was modest and is now measured, not projected**:
+`core_observation.py` went 1088→1066, total 4540→4528. Earlier drafts projected ~230–310 LOC of
+dedup recovery; that estimate was wrong. Method bodies move into classes rather than being
+deleted, and class scaffolding offsets removed parameter plumbing. The real payoff was
+**structural** (state held once, one source of truth per concern, one enforced node contract),
+not fewer lines.
 
 ---
 
@@ -62,58 +62,43 @@ python -c "import core_stop_check as s; s.request_stop('halt')"                 
 
 ---
 
-## Section 0 — Finish the OOP migration (the newly-found, highest-structural-value work)
+## Section 0 — Finish the OOP migration — DONE (committed, smoke-tested)
 
-This section is new: it is the through-line that connects the pass-through functions, the
-duplicated helpers, and the half-adopted base classes. Do these before cosmetic dedup, because
-each one deletes a whole category of small functions at once.
+The stalled procedural→OOP migration is finished. `Desktop`, `BaseNode`, `UiaVariant`, and
+`UiaScanner` are real classes with no leftover pass-through scaffolding. Each item was verified
+by re-running the observe→execute smoke test before commit.
 
-### 0.1 Delete the dead `core_nodes` desktop-delegation layer
-`core_nodes` defines `observe_screen`, `last_desktop_tree`, `get_focused_title`,
-`_get_desktop_instance`, each a one-line pass-through to the identically-named `core_desktop`
-function, each taking a `ctx` it ignores. Grep shows **no callers** outside the file.
-**Why:** these are dead code — the definition of non-compounding — and removing them proves the
-pass-through pattern on the lowest-risk target (~20 LOC, near-zero risk).
-**Why not:** `build_capability_runtime` may reference some by name when building the exec
-namespace, so confirm that before deleting and keep any name the runtime actually injects.
+- **0.1/0.2 — Desktop delegation collapsed** (`d293234`). Removed the dead `core_nodes`
+  ctx-ignoring desktop wrappers and the `core_desktop` per-method module delegators; callers now
+  use `get_desktop().<method>()`. The `get_desktop()` singleton accessor stays.
+- **0.3 — `BaseNode` generalized and adopted** (`5a51b3a`). Added `build_payload(ctx)`,
+  `evidence(ctx)`, and `request_config` hooks plus a shared `think()` helper; planner, verify,
+  reflect, frame_action, and execute are now subclasses (execute overrides `run()` because its
+  signal depends on runtime exec results). One record/one signal/one patch is enforced in one
+  place. Verified with a full brain loop (Notepad opened).
+- **0.4a — `UiaVariant`** (`0e8b1ed`). The scattered `_variant_*`/`_serialize_value` helpers are
+  now `UiaVariant` staticmethods, reused by `core_desktop` (retiring the "make core_uia.py"
+  idea — no new file).
+- **0.4b — `UiaScanner`** (`05c185b`). The harvest pipeline (`_element_to_node`,
+  `_harvest_subtree`, `_probe`, `_cache_request`, `_hit_cache_request`, `gather`) is folded into
+  one class that holds `automation`/`scan_cfg`/`property_ids`/`pattern_ids`/`cache_request`/
+  `hit_cache` as `self.*` instead of threading them through every call. `gather()` is now a thin
+  delegate to `UiaScanner(...).scan()`. Smoke-tested: 393 raw / 124 filtered nodes, full
+  `observe()` and the boot→observe→planner loop both intact.
 
-### 0.2 Collapse the `core_desktop` module-level delegators
-`core_desktop` exposes module-level `observe/observe_screen/last_desktop_tree/last_action_index/
-get_focused_title`, each just `get_desktop().<same>()`. This is a procedural facade over a class
-that already has these methods.
-**Why:** callers can use `get_desktop().x()` (or a single injected desktop handle) directly,
-removing a whole hop and ~25 LOC of wrapper+padding.
-**Why not:** the facade gives one import surface, so if many call sites use it, keep a *thin*
-accessor (`get_desktop()`) and delete only the per-method wrappers, not the singleton itself.
+**Measured deltas:** `core_observation.py` 1088→1066; total 4540→4528. The win is structural
+(one source of truth per concern), not line count.
 
-### 0.3 Finish the `BaseNode` adoption (generalize, then subclass)
-`BaseNode` exists but only `node_planner` uses it; `verify/reflect/frame_action/execute`
-re-implement the think→check-record-type→emit skeleton as free functions. `BaseNode.run()`
-hardcodes the payload, which is why the others could not adopt it.
-**Why:** adding a `build_payload(ctx)` hook (default = current planner payload) lets all five
-share the skeleton, enforcing the one-record/one-signal/one-patch contract in one place
-(~40–55 LOC measured, medium value).
-**Why not:** `execute` and `self_modify` carry real per-node logic (exec sandbox, git patch
-apply) that must **not** be pulled into the base — subclass only the shared skeleton and keep
-those bodies explicit, or the base becomes a leaky god-class.
-
-### 0.4 Fold observation's tiny helpers into a scanner class
-`core_observation.py` threads `automation`, `scan_cfg`, `property_ids`, `pattern_ids` through
-~15 free functions (`_harvest_*`, `_get_cached/current`, `_element_to_node`, `_probe`), and
-holds a scatter of one-liners (`_variant_*`, `_const`, `rect_area`, `contains`, `clean`).
-**Why:** holding that state as `self.*` on a `UiaScanner`/`ObservationFilter` class removes the
-repeated parameters and the plumbing that forwards them (~120–180 LOC, the single biggest win),
-and the `_variant_*` staticmethods then also serve `core_desktop`, retiring the old "make
-core_uia.py" idea (no new file needed — use a class in the existing module).
-**Why not:** this is the code that physically drove the proven scan, so it must be a pure
-structural port with **no behavior change in the same commit**, re-running the observe→execute
-smoke test before commit; the Section-1 relevance work comes *after* this lands.
+**Deliberately kept:** the per-element `try/except` in the harvest path. On a live desktop some
+elements are always inaccessible/transient, so a single bad element is skipped, not fatal — this
+is resilience, not a silent-degrade fallback. The scan still fails hard if `automation` or screen
+metrics are unavailable. The genuine silent-degrade fallbacks to remove live in Section 3.
 
 ---
 
 ## Section 1 — Observation: cost and correctness bottleneck (functional priority)
 
-Do 0.4 first (it creates the clean seam these edits need), then:
+Section 0 landed the clean `UiaScanner` / `filter_gather` seam these edits need. Then:
 
 ### 1.1 Add goal/step-relevance ranking to the filter
 Today the filter emits every actionable node with only crude ranking, so an unrelated
@@ -260,14 +245,15 @@ contract/topology/filter now and leave desktop actuation as manual smoke tests.
 
 ## Recommended order (safety × payoff)
 
-1. **0.1** dead node-delegators (verify no runtime refs) — safest, proves the pattern.
-2. **2.1 / 2.2 / 3.1 / 3.2** dead config + policy dedup — low risk, quick LOC + clarity.
-3. **0.2** collapse desktop facade — low risk.
-4. **0.3** generalize `BaseNode`, adopt in 4 nodes — medium risk, add contract tests (5.3) first.
-5. **0.4** observation → scanner/filter classes — biggest win, highest risk; pure structural
-   port + smoke test, no behavior change in the commit.
-6. **1.1–1.3** observation relevance/caps/latency — behavior change, measure before/after.
-7. **4.1** circuit breaker; **4.2** self_modify gating.
+Section 0 (OOP migration) is **done**. Remaining:
+
+1. **1.1–1.3** observation relevance/caps/latency — the functional centerpiece; behavior change,
+   measure tree-bytes/nodes/scan-seconds before and after each.
+2. **2.1 / 2.2** dead declarative surface — low risk, quick clarity.
+3. **3.1 / 3.2** reasoning-effort policy dedup + dead `global.reasoning_enabled` — the real
+   silent-degrade fallbacks deferred out of Section 0.
+4. **4.1** failure circuit breaker; **4.2** self_modify gating.
+5. **5.3** minimal contract/topology/filter test harness (desktop-free).
 
 **Invariant for every step:** re-run the observe→execute smoke test (open Notepad) before
 committing. Proven-working behaviors that must not regress: end-to-end file_proxy control,
