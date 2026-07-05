@@ -14,7 +14,6 @@ DATASHEET = bus.datasheet(
         "desktop_tree",
         "desktop_tree_text",
         "action_index",
-        "focused_title",
         "fresh_scan",
         "observation_artifact",
         "fresh_observation",
@@ -27,7 +26,6 @@ def run(ctx):
     config = ctx.get("wiring", {}).get("observe_config", {})
     obs = desktop.get_desktop(config).observe(config)
     fresh_observation = {
-        "focused_title": obs.get("focused_title", ""),
         "desktop_tree_text": obs.get("desktop_tree_text", ""),
         "observed_at": obs.get("observed_at"),
         "fresh_scan": obs.get("fresh_scan", True),
@@ -37,10 +35,9 @@ def run(ctx):
         "desktop_tree": obs.get("desktop_tree", {}),
         "desktop_tree_text": obs.get("desktop_tree_text", ""),
         "action_index": obs.get("action_index", {}),
-        "focused_title": obs.get("focused_title"),
         "fresh_scan": obs.get("fresh_scan"),
         "observation_artifact": obs.get("observation_artifact", {}),
         "fresh_observation": fresh_observation,
     }
     signal = "initial_screen" if not ctx.get("state", {}).get("plan") else "screen_ready"
-    return bus.emit(signal, patch, evidence={"focused_title": obs.get("focused_title"), "fresh_scan": obs.get("fresh_scan")})
+    return bus.emit(signal, patch, evidence={"fresh_scan": obs.get("fresh_scan")})

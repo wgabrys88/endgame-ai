@@ -32,7 +32,6 @@ def _load_uia_module() -> Any:
 
 uia = _load_uia_module()
 comtypes.CoInitialize()
-UIA_NamePropertyId = int(getattr(uia, "UIA_NamePropertyId", 30005))
 
 
 class Desktop:
@@ -41,11 +40,7 @@ class Desktop:
         self._automation: Any = None
         self._last_desktop_tree: dict[str, Any] | None = None
         self._last_action_index: dict[str, dict[str, Any]] = {}
-        self._focused_title_cache = ""
         self._last_window_tokens: dict[str, dict[str, Any]] = {}
-
-    def clear_focus_cache(self) -> None:
-        self._focused_title_cache = ""
 
     def _init_automation(self) -> None:
         self._automation = comtypes.client.CreateObject(uia.CUIAutomation, interface=uia.IUIAutomation)
@@ -55,22 +50,6 @@ class Desktop:
         if self._automation is None:
             self._init_automation()
         return self._automation
-
-    def _get_active_window(self) -> Any | None:
-        try:
-            hwnd = user32.GetForegroundWindow()
-            if hwnd:
-                return self.automation.ElementFromHandle(hwnd)
-        except Exception:
-            pass
-        return None
-
-    def _get_window_title(self, element: Any) -> str:
-        from core_observation import UiaVariant
-        try:
-            return UiaVariant.to_str(element.GetCurrentPropertyValue(UIA_NamePropertyId))
-        except Exception:
-            return ""
 
     def observe(self, config: dict[str, Any] | None = None) -> dict[str, Any]:
         from core_observation import observe as observe_desktop
@@ -86,12 +65,6 @@ class Desktop:
 
     def last_action_index(self) -> dict[str, dict[str, Any]]:
         return self._last_action_index
-
-    def get_focused_title(self) -> str:
-        active = self._get_active_window()
-        title = self._get_window_title(active) if active else ""
-        self._focused_title_cache = title
-        return title
 
     def get_window_tokens(self) -> list[dict[str, Any]]:
         sw, sh = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
@@ -217,52 +190,6 @@ class Desktop:
             user32.SetCursorPos(x, y)
             user32.mouse_event(0x0800, 0, 0, amount * 120, 0)
         return {"ok": True, "action": "scroll", "x": x, "y": y, "amount": amount, "hwnd": hwnd}
-
-    def focus_window(self, target: str) -> dict[str, Any]:
-        hwnd = 0
-        if target.startswith("hwnd:"):
-            try:
-                hwnd = int(target[5:])
-            except ValueError:
-                return {"ok": False, "action": "focus_window", "error": "invalid hwnd format"}
-        elif target.startswith("W"):
-            win = self._last_window_tokens.get(target) or {}
-            hwnd = int(win.get("hwnd") or 0)
-            if not hwnd:
-                for w in self.get_window_tokens():
-                    if str(w.get("token")) == target:
-                        hwnd = int(w.get("hwnd") or 0)
-                        break
-            if not hwnd:
-                return {"ok": False, "action": "focus_window", "error": f"window token not found: {target}"}
-        else:
-            found = [0]
-            EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
-
-            def callback(hwnd, _):
-                if user32.IsWindowVisible(hwnd):
-                    length = user32.GetWindowTextLengthW(hwnd)
-                    if length > 0:
-                        buf = ctypes.create_unicode_buffer(length + 1)
-                        user32.GetWindowTextW(hwnd, buf, length + 1)
-                        if target.lower() in buf.value.lower():
-                            found[0] = hwnd
-                            return False
-                return True
-
-            user32.EnumWindows(EnumWindowsProc(callback), 0)
-            hwnd = found[0]
-        if hwnd:
-            ok = bool(user32.SetForegroundWindow(hwnd))
-            self.clear_focus_cache()
-            return {
-                "ok": ok,
-                "action": "focus_window",
-                "target": target,
-                "hwnd": hwnd,
-                "focused_title": self.get_focused_title() if ok else "",
-            }
-        return {"ok": False, "action": "focus_window", "error": f"window not found: {target}"}
 
     def open_url(self, browser: str = "chrome", url: str = "") -> dict[str, Any]:
         browser_paths = {

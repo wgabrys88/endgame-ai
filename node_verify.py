@@ -26,13 +26,10 @@ class VerifyNode(BaseNode):
 
     def _evidence(self, ctx):
         state = ctx.get("state", {})
-        last_result = state.get("last_result", "")
-        body_delta = last_result.get("body_delta") if isinstance(last_result, dict) else None
         return {
             "last_action": state.get("last_action", {}),
-            "last_result": last_result,
+            "last_result": state.get("last_result", ""),
             "last_error": state.get("last_error", ""),
-            "body_delta": body_delta,
             "state": bus.state_brief(state),
         }
 

@@ -18,7 +18,7 @@ DATASHEET = bus.datasheet(
     kind="llm_git_firmware_update",
     inputs=["goal", "failure", "runtime_evidence", "git_context", "workspace_manifest"],
     signals=["modified", "modify_failed", "error"],
-    writes=["git_evolution_patch", "self_modify", "desktop_tree_text", "focused_title"],
+    writes=["git_evolution_patch", "self_modify", "desktop_tree_text"],
     record_type="git_evolution_patch",
 )
 
@@ -89,7 +89,7 @@ def _runtime_evidence(wiring: dict[str, Any], state: dict[str, Any]) -> dict[str
         "runtime_log_path": _evidence_file(brain.root_path(wiring.get("paths", {}).get("runtime_log"), "runtime_log.ndjson")),
         "raw_log_paths": [_evidence_file(path) for path in raw_logs],
         "current_state_keys": sorted(state.keys()),
-        "has_fresh_observation": all(key in state for key in ("desktop_tree_text", "focused_title", "fresh_scan")),
+        "has_fresh_observation": all(key in state for key in ("desktop_tree_text", "fresh_scan")),
     }
 
 
@@ -148,7 +148,6 @@ def run(ctx):
         "observed_at": obs.get("observed_at"),
         "fresh_scan": obs.get("fresh_scan"),
         "desktop_tree_text": obs.get("desktop_tree_text", ""),
-        "focused_title": obs.get("focused_title", ""),
         "git_evolution_patch": {
             "summary": data.get("summary", ""),
             "rationale": data.get("rationale", ""),

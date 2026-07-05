@@ -98,32 +98,42 @@ metrics are unavailable. The genuine silent-degrade fallbacks to remove live in 
 
 ## Section 1 — Observation: cost and correctness bottleneck (functional priority)
 
-Section 0 landed the clean `UiaScanner` / `filter_gather` seam these edits need. Then:
+### 1.1–1.3 DONE — focus machinery removed, whole-screen model unified
 
-### 1.1 Add goal/step-relevance ranking to the filter
-Today the filter emits every actionable node with only crude ranking, so an unrelated
-foreground app dominates the tree — this session a YouTube window flooded the request from
-~2.9KB to ~7KB. Rank nodes by relevance to the current step and keep a top-N slice.
-**Why:** request size and node ambiguity are the biggest driver of cost and wrong clicks, and a
-small model degrades sharply as the tree grows. Ranking makes every downstream organ cheaper.
-**Why not:** scoring can hide a node the plan needs, causing a false "CANNOT"; keep the focused
-window fully and apply the cap to non-focused windows only.
+Direction changed after diagnosis. The original 1.1/1.2/1.3 (relevance ranking,
+per-focused-window caps, focused-first early-stop) were all built on a focused-window concept
+that was itself the bug. Evidence (tested): a freshly launched Notepad was MISSING from the next
+verify tick's tree because `filter_gather` ranked `keyboard_focus` first, gated survival on
+`require_interactive or keyboard_focus`, tagged `[FOCUSED]`, and computed `focused_window_id` —
+so a window that was not foreground at the scan instant was discriminated against. Focus was also
+load-bearing in two more places: `get_focused_title()` did COM round-trips (GetForegroundWindow →
+ElementFromHandle → property) multiple times per tick, and `click_node` force-`SetForegroundWindow`
+before every click, stealing foreground and mutating desktop state mid-plan.
 
-### 1.2 Cap action nodes per non-focused window
-Any window can currently contribute up to `max_action_nodes` (240), so a busy browser consumes
-the whole budget. Reserve the budget for the window the step is about.
-**Why:** the focused window is almost always where the next action happens; capping background
-windows preserves signal without a semantic model.
-**Why not:** some goals span windows, so make the cap a soft reserve, not a hard exclusion, or
-cross-window steps silently lose their target.
+Resolution: the organism now has NO focus concept. One flat whole-screen scan; every window and
+element is present in one tree, ranked purely by content and on-screen position. Removed:
+`keyboard_focus` field + `PID_HasKeyboardFocus` reads, the focus-first rank, the focus survival
+gate, `[FOCUSED]`, `focused_window_id`, `focused_title` plumbing across observe/bus/brain/
+self_modify, `Desktop.get_focused_title`/`_get_active_window`/`_get_window_title`/`focus_window`/
+`clear_focus_cache`/`_focused_title_cache`, `_focus_node_window` + focus-before-click, the
+`focus_window`/`get_focused_title` capability-runtime helpers, and execute's `body_delta` focus
+capture. Prompts rewritten to the focus-free whole-screen contract; `focus_window` dropped from
+execute's helper list.
 
-### 1.3 Bound scan latency
-Observe took 2.38s clean vs 6.25s with a rich Chrome page foreground; cost scales with UI
-density. Add a probe-time budget or adaptive `step_px`.
-**Why:** unbounded scan time makes tick cost and file_proxy timeouts unpredictable, hurting the
-cheap-brain loop that pays per call.
-**Why not:** a hard budget can truncate a dense screen and drop the target, so early-stop must
-prioritize the focused window before cutting.
+Measured this session (quiet desktop): tree 7535→7525 bytes, action nodes 124→124, scan
+4.471→4.388s (fewer COM round-trips), focused_title removed from output. LOC 4367→4192 (−175).
+Correctness proof (tested): launch Notepad → observe → Notepad present in tree (previously
+absent); full observe→plan→execute→verify loop runs with the new prompts. Remaining observation
+variance is pure scan/harvest timing on a just-created window — a bounded/adaptive-scan lever,
+tracked below, not a focus issue.
+
+### 1.4 (open) Bound scan latency / harvest freshness
+Observe took ~2.4s clean vs ~6.3s with a dense Chrome page; a just-launched window can miss a
+single scan's harvest window. Add a probe-time budget or adaptive `step_px`, or a short settle/
+re-probe for newly appeared top-level windows.
+**Why:** unbounded scan time makes tick cost and file_proxy timeouts unpredictable, and a missed
+harvest causes a false verify denial.
+**Why not:** a hard budget can truncate a dense screen; early-stop must not drop windows.
 
 ---
 

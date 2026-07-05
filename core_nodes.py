@@ -586,27 +586,15 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
                 nodes.append(dict(node))
         return nodes
 
-    def _focus_node_window(node: dict[str, Any]) -> dict[str, Any]:
-        hwnd = int(node.get("hwnd") or 0)
-        if hwnd:
-            return d.focus_window(f"hwnd:{hwnd}")
-        parent_id = str(node.get("parent_id") or "")
-        if parent_id.startswith("W"):
-            return d.focus_window(parent_id)
-        return {"ok": True, "action": "focus_window", "skipped": True}
-
     def click_node(node_id: str) -> dict[str, Any]:
         node = dict(_action_index(state).get(str(node_id), {}) or {})
         if not node:
             node = node_by_id(node_id)
         if not node:
             return {"ok": False, "action": "click_node", "error": f"node not found: {node_id}"}
-        focus_res = _focus_node_window(node)
-        if not focus_res.get("ok", False):
-            return {"ok": False, "action": "click_node", "error": "focus before click failed", "focus": focus_res}
         x, y = _node_center(node)
         click_res = d.click(x, y, int(node.get("hwnd") or 0))
-        return {"ok": bool(click_res.get("ok", True)), "action": "click_node", "node_id": node_id, "focus": focus_res, "click": click_res}
+        return {"ok": bool(click_res.get("ok", True)), "action": "click_node", "node_id": node_id, "click": click_res}
 
     def scroll_node(node_id: str, amount: int = -3) -> dict[str, Any]:
         node = dict(_action_index(state).get(str(node_id), {}) or {})
@@ -666,7 +654,6 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
     return {
         "observe_screen": d.observe_screen,
         "last_desktop_tree": d.last_desktop_tree,
-        "get_focused_title": d.get_focused_title,
         "node_by_id": node_by_id,
         "action_nodes": action_nodes,
         
@@ -677,7 +664,6 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "hotkey": d.hotkey,
         "scroll": d.scroll,
         "scroll_node": scroll_node,
-        "focus_window": d.focus_window,
         "open_url": d.open_url,
         "pyautogui": pyautogui,
         "pag": pag,
@@ -708,7 +694,6 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "desktop_tree": state.get("desktop_tree", {}),
         "desktop_tree_text": state.get("desktop_tree_text", ""),
         "observation_artifact": state.get("observation_artifact", {}),
-        "focused_title": state.get("focused_title", ""),
         "observed_at": state.get("observed_at"),
         "fresh_scan": state.get("fresh_scan", False),
     }

@@ -86,7 +86,6 @@ if not PROPERTY_IDS:
         _const("UIA_AutomationIdPropertyId", 30011),
         _const("UIA_ClassNamePropertyId", 30012),
         _const("UIA_IsEnabledPropertyId", 30010),
-        _const("UIA_HasKeyboardFocusPropertyId", 30008),
         _const("UIA_IsOffscreenPropertyId", 30022),
         _const("UIA_FrameworkIdPropertyId", 30024),
         _const("UIA_NativeWindowHandlePropertyId", 30020),
@@ -110,7 +109,6 @@ PID_AUTOMATION_ID = _const("UIA_AutomationIdPropertyId", 30011)
 PID_CLASS_NAME = _const("UIA_ClassNamePropertyId", 30012)
 PID_HWND = _const("UIA_NativeWindowHandlePropertyId", 30020)
 PID_ENABLED = _const("UIA_IsEnabledPropertyId", 30010)
-PID_KEYBOARD_FOCUS = _const("UIA_HasKeyboardFocusPropertyId", 30008)
 PID_OFFSCREEN = _const("UIA_IsOffscreenPropertyId", 30022)
 PID_FRAMEWORK = _const("UIA_FrameworkIdPropertyId", 30024)
 PID_RUNTIME_ID = _const("UIA_RuntimeIdPropertyId", 30000)
@@ -123,7 +121,6 @@ SCAN_DEFAULT_PROPERTY_IDS = [
     PID_AUTOMATION_ID,
     PID_CLASS_NAME,
     PID_ENABLED,
-    PID_KEYBOARD_FOCUS,
     PID_OFFSCREEN,
     PID_HWND,
     PID_FRAMEWORK,
@@ -194,7 +191,6 @@ class CachedNode:
     py: int = 0
     rect: dict[str, int] = field(default_factory=dict)
     enabled: bool = True
-    keyboard_focus: bool = False
     offscreen: bool = False
     runtime_id: list[int] = field(default_factory=list)
     text_full: str | None = None
@@ -215,7 +211,6 @@ class CachedNode:
             "py": self.py,
             "rect": self.rect,
             "enabled": self.enabled,
-            "keyboard_focus": self.keyboard_focus,
             "offscreen": self.offscreen,
             "patterns": self.patterns,
             "runtime_id": self.runtime_id,
@@ -543,7 +538,6 @@ class UiaScanner:
                 py=(rect["top"] + rect["bottom"]) // 2,
                 rect=rect,
                 enabled=UiaVariant.to_bool(_get_cached(element, PID_ENABLED)),
-                keyboard_focus=UiaVariant.to_bool(_get_cached(element, PID_KEYBOARD_FOCUS)),
                 offscreen=UiaVariant.to_bool(_get_cached(element, PID_OFFSCREEN)),
                 runtime_id=runtime_id,
                 text_full=text_full,
@@ -692,13 +686,9 @@ class UiaScanner:
                     pass
 
         nodes = list(index.values())
-        if hasattr(self.desktop, "clear_focus_cache"):
-            self.desktop.clear_focus_cache()
-        focused_title = self.desktop.get_focused_title()
         return {
             "nodes": nodes,
             "screen": {"width": sw, "height": sh},
-            "focused_title": focused_title,
             "windows": self.desktop.get_window_tokens(),
             "scan": {
                 "method": "hover_cache",
@@ -778,8 +768,6 @@ def _merge_nodes(index: dict[str, CachedNode], new_nodes: list[CachedNode]) -> i
         for k, v in node.pattern_payloads.items():
             if k not in prev.pattern_payloads:
                 prev.pattern_payloads[k] = v
-        if node.keyboard_focus:
-            prev.keyboard_focus = True
         prev.patterns = sorted(set(prev.patterns) | set(node.patterns))
     return added
 
@@ -792,7 +780,6 @@ def filter_gather(gathered: dict[str, Any], config: dict[str, Any]) -> dict[str,
     nodes: list[CachedNode] = list(gathered.get("nodes") or [])
     screen = gathered.get("screen") or {}
     windows = gathered.get("windows") or []
-    focused_title = str(gathered.get("focused_title") or "")
     scan = gathered.get("scan") or {}
 
     merged: dict[str, CachedNode] = {}
@@ -806,8 +793,6 @@ def filter_gather(gathered: dict[str, Any], config: dict[str, Any]) -> dict[str,
             prev.text_full = node.text_full
         if node.value and (not prev.value or len(node.value) > len(prev.value)):
             prev.value = node.value
-        if node.keyboard_focus:
-            prev.keyboard_focus = True
         if node.name and (not prev.name or len(node.name) > len(prev.name)):
             prev.name = node.name
     nodes = list(merged.values())
@@ -827,7 +812,7 @@ def filter_gather(gathered: dict[str, Any], config: dict[str, Any]) -> dict[str,
 
     action_elements: dict[str, dict[str, Any]] = {}
     text_hints: dict[str, str] = {}
-    ranked = sorted(nodes, key=lambda n: (0 if n.keyboard_focus else 1, 0 if n.name or n.text_full else 1, 0 if not n.offscreen else 1))
+    ranked = sorted(nodes, key=lambda n: (0 if n.name or n.text_full else 1, 0 if not n.offscreen else 1))
     for node in ranked:
         if node.offscreen or not node.enabled:
             continue
@@ -839,7 +824,7 @@ def filter_gather(gathered: dict[str, Any], config: dict[str, Any]) -> dict[str,
         if label and label not in (node.name or ""):
             text_hints[node.id] = label
         if action and len(action_elements) < max_action:
-            if require_interactive or node.keyboard_focus:
+            if require_interactive:
                 action_elements[node.id] = {
                     "id": node.id,
                     "name": label or node.name,
@@ -850,7 +835,6 @@ def filter_gather(gathered: dict[str, Any], config: dict[str, Any]) -> dict[str,
                     "hwnd": node.hwnd,
                     "rect": node.rect,
                     "enabled": node.enabled,
-                    "focused": node.keyboard_focus,
                     "automation_id": node.automation_id,
                     "class_name": node.class_name,
                     "runtime_id": node.runtime_id,
@@ -863,7 +847,6 @@ def filter_gather(gathered: dict[str, Any], config: dict[str, Any]) -> dict[str,
         "name": "Screen",
         "title": "Desktop",
         "rect": {"left": 0, "top": 0, "right": int(screen.get("width", 0)), "bottom": int(screen.get("height", 0))},
-        "focused": False,
         "fresh_scan": True,
         "observed_at": observed_at,
         "scan": {**scan, "raw_element_count": len(nodes), "actionable_element_count": len(action_elements)},
@@ -872,7 +855,6 @@ def filter_gather(gathered: dict[str, Any], config: dict[str, Any]) -> dict[str,
     node_index: dict[str, dict[str, Any]] = {"W0": {k: v for k, v in root.items() if k != "children"}}
     window_nodes: dict[str, dict[str, Any]] = {}
     hwnd_to_window: dict[int, str] = {}
-    focused_window_id = ""
 
     for window in windows:
         token = str(window.get("token") or "")
@@ -889,11 +871,8 @@ def filter_gather(gathered: dict[str, Any], config: dict[str, Any]) -> dict[str,
             "process_id": int(window.get("process_id") or 0),
             "class_name": str(window.get("class_name") or ""),
             "rect": window.get("rect", {}),
-            "focused": bool(focused_title and title == focused_title),
             "children": [],
         }
-        if node["focused"]:
-            focused_window_id = token
         window_nodes[token] = node
         hwnd_to_window[node["hwnd"]] = token
         root["children"].append(node)
@@ -922,7 +901,6 @@ def filter_gather(gathered: dict[str, Any], config: dict[str, Any]) -> dict[str,
             "hwnd": hwnd,
             "rect": element.get("rect", {}),
             "enabled": bool(element.get("enabled", False)),
-            "focused": bool(element.get("focused", False)),
             "automation_id": element.get("automation_id", ""),
             "class_name": element.get("class_name", ""),
             "runtime_id": element.get("runtime_id", []),
@@ -950,8 +928,7 @@ def filter_gather(gathered: dict[str, Any], config: dict[str, Any]) -> dict[str,
         return " ".join(str(value or "").replace("\r", " ").replace("\n", " ").split())
 
     lines: list[str] = []
-    screen_parts = ["(W0)", "Screen", "Desktop"]
-    lines.append(" ".join(screen_parts))
+    lines.append("(W0) Screen Desktop")
 
     def render(node: dict[str, Any], indent: int = 1) -> None:
         prefix = "  " * indent
@@ -968,8 +945,6 @@ def filter_gather(gathered: dict[str, Any], config: dict[str, Any]) -> dict[str,
             parts.append(name)
         if action:
             parts.append(f"[{action}]")
-        if node.get("focused") and role == "Window":
-            parts.append("[FOCUSED]")
         hint = text_hints.get(node_id, "")
         if hint and hint not in name:
             parts.append(f"~{hint}")
@@ -987,8 +962,6 @@ def filter_gather(gathered: dict[str, Any], config: dict[str, Any]) -> dict[str,
         "role": "Screen",
         "fresh_scan": True,
         "observed_at": observed_at,
-        "focused_title": focused_title,
-        "focused_window_id": focused_window_id,
         "root": root,
         "node_index": node_index,
         "window_count": len(window_nodes),
@@ -1018,16 +991,12 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
     gathered = gather(desktop, cfg)
     filtered = filter_gather(gathered, cfg)
     observed_at = time.time()
-    if hasattr(desktop, "clear_focus_cache"):
-        desktop.clear_focus_cache()
-    desktop._focused_title_cache = str(gathered.get("focused_title") or "")
     desktop._last_desktop_tree = filtered["desktop_tree"]
     desktop._last_action_index = filtered["action_index"]
     artifact = _write_artifact(
         {
             "observed_at": observed_at,
             "fresh_scan": True,
-            "focused_title": gathered.get("focused_title", ""),
             "scan_config": _scan_settings(cfg),
             "gather": filtered["gather_nodes"],
             "scan_stats": (gathered.get("scan") or {}).get("stats", {}),
@@ -1040,7 +1009,6 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
     return {
         "observed_at": observed_at,
         "fresh_scan": True,
-        "focused_title": gathered.get("focused_title", ""),
         "desktop_tree": filtered["desktop_tree"],
         "desktop_tree_text": filtered["desktop_tree_text"],
         "action_index": filtered["action_index"],

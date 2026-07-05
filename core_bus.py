@@ -118,7 +118,6 @@ def state_brief(state: JsonDict) -> JsonDict:
 
 def observation_brief(state: JsonDict) -> JsonDict:
     return {
-        "focused_title": state.get("focused_title", ""),
         "desktop_tree_text": state.get("desktop_tree_text", ""),
         "observed_at": state.get("observed_at"),
         "fresh_scan": state.get("fresh_scan", False),

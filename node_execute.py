@@ -86,8 +86,6 @@ class ExecuteNode(BaseNode):
                 evidence=payload,
             )
 
-        d = desktop.get_desktop()
-        focused_before = d.get_focused_title()
         ns = nodes.build_capability_runtime(ctx)
         ns["desktop"] = desktop
         stdout = io.StringIO()
@@ -96,16 +94,10 @@ class ExecuteNode(BaseNode):
             with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
                 exec(code, ns)
             explicit_result = ns.get("result")
-            focused_after = d.get_focused_title()
             result = {
                 "result": explicit_result,
                 "stdout": stdout.getvalue(),
                 "stderr": stderr.getvalue(),
-                "body_delta": {
-                    "focused_before": focused_before,
-                    "focused_after": focused_after,
-                    "focused_changed": focused_before != focused_after,
-                },
             }
             error = None
         except Exception as exc:

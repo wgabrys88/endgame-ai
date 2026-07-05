@@ -286,7 +286,6 @@ def _normalize_observation(obj: Any) -> dict[str, Any] | None:
     if not isinstance(obj, dict) or not obj.get("desktop_tree_text"):
         return None
     return {
-        "focused_title": obj.get("focused_title", ""),
         "desktop_tree_text": obj.get("desktop_tree_text", ""),
         "observed_at": obj.get("observed_at"),
         "fresh_scan": obj.get("fresh_scan", True),
