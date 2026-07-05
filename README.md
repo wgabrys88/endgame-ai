@@ -359,3 +359,50 @@ observed at this resolution.
 **Risk flagged (untested):** step 2's `done_when` needs Notepad's typed document text to appear
 in `desktop_tree_text`. Whether the UIA scan surfaces Notepad edit-area content is unverified;
 the verify node will decide. Watching this in the next runs.
+
+### A.1.2 Run 2 — resume: scheduler → observe → execute (ticks 2→5) — TESTED
+
+Command: `core_organism.py --max-ticks 3` (resume; 3 additional ticks from tick 2).
+
+Timeline:
+- tick 3: `node_scheduler` (mechanical, no brain call) → `step_ready` → `node_observe`.
+- tick 4: observe rescan (**+6.25s**) → `screen_ready` → `node_execute` (blocks on file proxy).
+- operator services the execute request.
+- tick 5: execute runs the code → `verify` → `node_verify`, then `max_ticks`.
+
+**RESULT: real action succeeded.** Mode A (execute persona) returned `conclusion=EXECUTE`
+with `subprocess.Popen(['notepad.exe'])`. The body ran it with no exception. Ground truth:
+`Get-Process notepad` shows `Untitled - Notepad` running; organism `body_delta` reports
+`focused_before="Program Manager"` → `focused_after="Untitled - Notepad"`, `focused_changed=true`.
+The organism opened Notepad on the real desktop through the file-proxy brain loop. Feature proven:
+observe→plan→schedule→observe→execute all driven by an external coding agent as the brain.
+
+**Scan speed regression under load:** run 1 observe = 2.38s; run 2 observe = **6.25s**. Between
+runs, a Chrome/YouTube window came to the foreground. The scan cost scales with on-screen UI
+density because more probe points hit rich subtrees (fewer dedup skips). Not a defect, but a
+measured sensitivity: **scan latency is a function of desktop complexity, not a constant.**
+
+**Request bloat under load (important):** the execute request's `desktop_tree_text` grew from
+~2.9KB to **~7KB**, dominated by a full YouTube page dump — dozens of `Hyperlink`/`TabItem`
+nodes (video titles, sidebar tabs) completely irrelevant to "open notepad". The `action_index`
+was likewise flooded with YouTube links. This is the noise problem flagged in A.1.1, now clearly
+reproduced. For a computer-use agent this is a real quality risk: signal (the target app) can be
+buried under an unrelated foreground app, and token cost rises. **Candidate tuning (measure before
+changing):**
+- rank action nodes by relevance to the current step/goal, keep top-N;
+- lower per-window action-node cap for non-focused windows;
+- optionally drop deep browser content subtrees when the step targets a different app.
+
+**Prompt suitability (computer-use):** the execute system prompt is well-suited — it states the
+body truth (full Python, not just helpers), lists helpers + allowed stdlib, and the `result_rule`
+correctly prevents the brain from self-declaring success (verify owns truth from observation).
+Mode A correctly reached for `subprocess` (OS launch) instead of clicking a non-existent Notepad
+node — evidence the "helpers are conveniences, not limits" framing steers away from agent theater.
+
+**Approval-gate behavior:** proposal→review→promote worked cleanly both times. The organism only
+ever consumed the promoted `runtime_response.json`; `runtime_response_proposal.json` was invisible
+to it (not the polled path). This validates the dual-file design and the future dual-agent idea.
+
+**Inspection footnote:** reading `runtime_state.json` with Windows Python without
+`encoding='utf-8'` raises `UnicodeDecodeError` (cp1252 default). Organism code itself always uses
+`encoding="utf-8"`, so this only affects ad-hoc operator inspection commands — use utf-8 explicitly.
