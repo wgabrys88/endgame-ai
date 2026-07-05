@@ -282,3 +282,43 @@ rewritten but not deleted.
 The system now talks to its operators through concrete files and a predictable topology.
 That is the stabilization milestone: less code, flat layout, observable loop, resumable
 runs, and a body that acts on what it actually sees.
+
+---
+
+# Appendix A — file_proxy behavioral analysis log
+
+This appendix is a running, evidence-based log of the organism's behavior when driven
+through the `transport_file_proxy` brain, with a coding agent acting as the "brain."
+It is built incrementally across sessions. It contains **no API keys or sensitive data**.
+
+## A.0 Two-persona + approval-gate protocol
+
+The operator runs the loop under a strict split:
+
+- **Mode A (brain persona).** Reads only `runtime_request.json`. Its entire world is that
+  file's contents (goal, state, `desktop_tree_text`). It answers by producing one typed
+  record. It never works around a blocker by reaching outside the file protocol; if the
+  endgame-ai body cannot do the task, Mode A honestly returns `CANNOT` / `give_up`.
+  endgame-ai is its only body and only sensor.
+- **Mode B (operator/observer).** Watches how the system frames requests and consumes
+  responses. Tunes the *system* (prompts, wiring, code, scan speed), never the brain loop.
+
+**Approval gate (proposal → review → consume):**
+
+1. Mode A writes its answer to `runtime_response_proposal.json` (endgame-ai does NOT poll this).
+2. Mode B reviews the proposal, records findings here.
+3. On approval, Mode B promotes it to `runtime_response.json`, which endgame-ai consumes.
+
+This mirrors Claude-Code-style human approval. It also demonstrates a future capability:
+
+> **Future feature (NOT YET IMPLEMENTED — do not build until requested):** dual-agent
+> file_proxy. A cheap/local brain (e.g. LM Studio nemotron) writes response *proposals*;
+> a higher-reasoning model approves or rejects them before they are consumed. AI approves
+> AI. Implement only on explicit request.
+
+## A.1 Experiment: goal = "open notepad and write hello"
+
+Transport switched to `transport_file_proxy`; file_proxy `timeout` raised to 86400s so the
+manual review cycle does not error the brain loop. Runs use `--max-ticks` to stage the loop.
+
+Findings are appended below as they are observed.

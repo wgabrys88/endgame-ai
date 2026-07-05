@@ -1,12 +1,13 @@
 {
   "schema": "endgame-ai.wiring.v1",
   "model": {
-    "transport": "transport_xai",
+    "transport": "transport_file_proxy",
     "transport_config": {
       "transport_file_proxy": {
         "request_path": "runtime_request.json",
         "response_path": "runtime_response.json",
         "poll_interval": 0.25,
+        "timeout": 86400,
         "reasoning": {
           "enabled": false,
           "pattern": "two_pass",
