@@ -629,11 +629,7 @@ class UiaScanner:
         max_subtree = int(scan_cfg.get("max_subtree_nodes_per_point", 250))
         max_total = int(scan_cfg.get("max_total_nodes", 2000))
         max_probes = scan_cfg.get("max_probe_points")
-        pattern = str(scan_cfg.get("pattern", "r2"))
-        if pattern == "raster":
-            points = ((x, y) for y in range(0, sh, step_px) for x in range(0, sw, step_px))
-        else:
-            points = _r2_points(sw, sh, step_px=step_px)
+        points = _r2_points(sw, sh, step_px=step_px)
 
         index = {}
         saturated_hits = set()
@@ -691,7 +687,7 @@ class UiaScanner:
             "windows": self.desktop.get_window_tokens(),
             "scan": {
                 "method": "hover_cache",
-                "pattern": pattern,
+                "pattern": "r2",
                 "step_px": step_px,
                 "stats": {
                     "probes": probes,
