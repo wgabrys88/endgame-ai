@@ -35,15 +35,6 @@ comtypes.CoInitialize()
 UIA_NamePropertyId = int(getattr(uia, "UIA_NamePropertyId", 30005))
 
 
-def _variant_str(variant: Any) -> str:
-    if variant is None:
-        return ""
-    if hasattr(variant, "value"):
-        val = variant.value
-        return "" if val is None else str(val)
-    return str(variant)
-
-
 class Desktop:
     def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or {}
@@ -75,8 +66,9 @@ class Desktop:
         return None
 
     def _get_window_title(self, element: Any) -> str:
+        from core_observation import UiaVariant
         try:
-            return _variant_str(element.GetCurrentPropertyValue(UIA_NamePropertyId))
+            return UiaVariant.to_str(element.GetCurrentPropertyValue(UIA_NamePropertyId))
         except Exception:
             return ""
 

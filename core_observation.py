@@ -237,91 +237,99 @@ class CachedNode:
         return out
 
 
-def _variant_int(v: Any) -> int:
-    if v is None:
-        return 0
-    if hasattr(v, "value"):
-        v = v.value
-    try:
-        return int(v)
-    except (TypeError, ValueError):
-        return 0
+class UiaVariant:
+    """Stateless coercion of comtypes VARIANT values into plain Python.
 
+    Single source of truth for UIA value handling, shared with core_desktop.
+    All methods are static: no scan state is threaded through them.
+    """
 
-def _variant_str(v: Any) -> str:
-    if v is None:
-        return ""
-    if hasattr(v, "value"):
-        v = v.value
-    return "" if v is None else str(v)
+    @staticmethod
+    def to_int(v: Any) -> int:
+        if v is None:
+            return 0
+        if hasattr(v, "value"):
+            v = v.value
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return 0
 
+    @staticmethod
+    def to_str(v: Any) -> str:
+        if v is None:
+            return ""
+        if hasattr(v, "value"):
+            v = v.value
+        return "" if v is None else str(v)
 
-def _variant_bool(v: Any) -> bool:
-    if v is None:
-        return False
-    if hasattr(v, "value"):
-        v = v.value
-    return bool(v)
+    @staticmethod
+    def to_bool(v: Any) -> bool:
+        if v is None:
+            return False
+        if hasattr(v, "value"):
+            v = v.value
+        return bool(v)
 
-
-def _variant_rect(v: Any) -> dict[str, int]:
-    if v is None:
+    @staticmethod
+    def to_rect(v: Any) -> dict[str, int]:
+        if v is None:
+            return {"left": 0, "top": 0, "right": 0, "bottom": 0}
+        try:
+            val = v.value if hasattr(v, "value") else v
+            if isinstance(val, (tuple, list)) and len(val) >= 4:
+                left, top, third, fourth = (float(x) for x in val[:4])
+                left_i, top_i = int(left), int(top)
+                if third > left or fourth > top:
+                    right_i, bottom_i = int(third), int(fourth)
+                else:
+                    right_i, bottom_i = left_i + int(third), top_i + int(fourth)
+                return {"left": left_i, "top": top_i, "right": right_i, "bottom": bottom_i}
+            if hasattr(val, "left"):
+                return {
+                    "left": int(val.left),
+                    "top": int(val.top),
+                    "right": int(val.right),
+                    "bottom": int(val.bottom),
+                }
+        except Exception:
+            pass
         return {"left": 0, "top": 0, "right": 0, "bottom": 0}
-    try:
-        val = v.value if hasattr(v, "value") else v
-        if isinstance(val, (tuple, list)) and len(val) >= 4:
-            left, top, third, fourth = (float(x) for x in val[:4])
-            left_i, top_i = int(left), int(top)
-            if third > left or fourth > top:
-                right_i, bottom_i = int(third), int(fourth)
-            else:
-                right_i, bottom_i = left_i + int(third), top_i + int(fourth)
-            return {"left": left_i, "top": top_i, "right": right_i, "bottom": bottom_i}
-        if hasattr(val, "left"):
-            return {
-                "left": int(val.left),
-                "top": int(val.top),
-                "right": int(val.right),
-                "bottom": int(val.bottom),
-            }
-    except Exception:
-        pass
-    return {"left": 0, "top": 0, "right": 0, "bottom": 0}
 
-
-def _variant_runtime_id(v: Any) -> list[int]:
-    if v is None:
-        return []
-    try:
-        val = v.value if hasattr(v, "value") else v
-        if val is None:
+    @staticmethod
+    def to_runtime_id(v: Any) -> list[int]:
+        if v is None:
             return []
-        return [int(x) for x in list(val)]
-    except Exception:
-        return []
+        try:
+            val = v.value if hasattr(v, "value") else v
+            if val is None:
+                return []
+            return [int(x) for x in list(val)]
+        except Exception:
+            return []
 
-
-def _serialize_value(v: Any) -> Any:
-    if v is None:
-        return None
-    if hasattr(v, "value"):
-        v = v.value
-    if isinstance(v, (str, int, float, bool)):
-        return v
-    if isinstance(v, (tuple, list)):
-        return [_serialize_value(x) for x in v]
-    if isinstance(v, dict):
-        return {str(k): _serialize_value(val) for k, val in v.items()}
-    rect = _variant_rect(v)
-    if rect["right"] > rect["left"] and rect["bottom"] > rect["top"]:
-        return rect
-    try:
-        if hasattr(v, "__iter__") and not isinstance(v, (str, bytes)):
-            return [_serialize_value(x) for x in list(v)]
-    except Exception:
-        pass
-    s = str(v).strip()
-    return s if s else None
+    @staticmethod
+    def serialize(v: Any) -> Any:
+        if v is None:
+            return None
+        if hasattr(v, "value"):
+            v = v.value
+        if isinstance(v, (str, int, float, bool)):
+            return v
+        if isinstance(v, (tuple, list)):
+            return [UiaVariant.serialize(x) for x in v]
+        if isinstance(v, dict):
+            return {str(k): UiaVariant.serialize(val) for k, val in v.items()}
+        rect = UiaVariant.to_rect(v)
+        if rect["right"] > rect["left"] and rect["bottom"] > rect["top"]:
+            return rect
+        try:
+            if hasattr(v, "__iter__") and not isinstance(v, (str, bytes)):
+                return [UiaVariant.serialize(x) for x in list(v)]
+        except Exception:
+            pass
+        s = str(v).strip()
+        return s if s else None
 
 
 def _node_id(runtime_id: list[int], hwnd: int, rect: dict[str, int]) -> str:
@@ -348,11 +356,11 @@ def _harvest_properties(element: Any, property_ids: list[int]) -> dict[str, Any]
     props: dict[str, Any] = {}
     for pid in property_ids:
         label = PROPERTY_NAMES.get(pid, f"Property_{pid}")
-        cached = _serialize_value(_get_cached(element, pid))
+        cached = UiaVariant.serialize(_get_cached(element, pid))
         if cached is not None and cached != "" and cached != []:
             props[label] = cached
             continue
-        current = _serialize_value(_get_current(element, pid))
+        current = UiaVariant.serialize(_get_current(element, pid))
         if current is not None and current != "" and current != []:
             props[f"{label}_current"] = current
     return props
@@ -413,23 +421,23 @@ def _extract_pattern_payload(pattern: Any, label: str) -> dict[str, Any]:
         for key in ("Value", "IsReadOnly"):
             val = _safe_attr(pattern, key)
             if val is not None:
-                out[key] = _serialize_value(val)
+                out[key] = UiaVariant.serialize(val)
     elif label == "LegacyIAccessible":
         for key in ("Name", "Value", "Description", "Role", "State", "DefaultAction", "Help", "KeyboardShortcut", "ChildId"):
             val = _safe_attr(pattern, key)
             if val is not None and str(val).strip() not in ("", "0"):
-                out[key] = _serialize_value(val)
+                out[key] = UiaVariant.serialize(val)
     elif label == "Scroll":
         for key in ("HorizontallyScrollable", "HorizontalScrollPercent", "HorizontalViewSize",
                     "VerticallyScrollable", "VerticalScrollPercent", "VerticalViewSize"):
             val = _safe_attr(pattern, key)
             if val is not None:
-                out[key] = _serialize_value(val)
+                out[key] = UiaVariant.serialize(val)
     elif label == "Window":
         for key in ("CanMaximize", "CanMinimize", "IsModal", "IsTopmost", "WindowInteractionState", "WindowVisualState"):
             val = _safe_attr(pattern, key)
             if val is not None:
-                out[key] = _serialize_value(val)
+                out[key] = UiaVariant.serialize(val)
     elif label in ("Invoke", "Selection"):
         out["available"] = True
     else:
@@ -498,15 +506,15 @@ def _element_to_node(
     try:
         prop_ids = property_ids or SCAN_DEFAULT_PROPERTY_IDS
         pat_ids = pattern_ids or SCAN_DEFAULT_PATTERN_IDS
-        rect = _variant_rect(_get_cached(element, PID_BOUNDING_RECT))
+        rect = UiaVariant.to_rect(_get_cached(element, PID_BOUNDING_RECT))
         if rect["right"] <= rect["left"] or rect["bottom"] <= rect["top"]:
-            rect = _variant_rect(_get_current(element, PID_BOUNDING_RECT))
+            rect = UiaVariant.to_rect(_get_current(element, PID_BOUNDING_RECT))
         if rect["right"] <= rect["left"] or rect["bottom"] <= rect["top"]:
             return None
-        runtime_id = _variant_runtime_id(_get_cached(element, PID_RUNTIME_ID)) or _variant_runtime_id(_get_current(element, PID_RUNTIME_ID))
-        hwnd = _variant_int(_get_cached(element, PID_HWND))
-        role_id = _variant_int(_get_cached(element, PID_CONTROL_TYPE))
-        name = _variant_str(_get_cached(element, PID_NAME)) or _variant_str(_get_current(element, PID_NAME))
+        runtime_id = UiaVariant.to_runtime_id(_get_cached(element, PID_RUNTIME_ID)) or UiaVariant.to_runtime_id(_get_current(element, PID_RUNTIME_ID))
+        hwnd = UiaVariant.to_int(_get_cached(element, PID_HWND))
+        role_id = UiaVariant.to_int(_get_cached(element, PID_CONTROL_TYPE))
+        name = UiaVariant.to_str(_get_cached(element, PID_NAME)) or UiaVariant.to_str(_get_current(element, PID_NAME))
         properties = _harvest_properties(element, prop_ids)
         patterns, pattern_payloads = _harvest_patterns(element, pat_ids)
         text_sources, text_full, value = _collect_text_sources(name, properties, pattern_payloads)
@@ -514,16 +522,16 @@ def _element_to_node(
             id=_node_id(runtime_id, hwnd, rect),
             role=control_type_name(role_id),
             name=name,
-            automation_id=_variant_str(_get_cached(element, PID_AUTOMATION_ID)),
-            class_name=_variant_str(_get_cached(element, PID_CLASS_NAME)),
+            automation_id=UiaVariant.to_str(_get_cached(element, PID_AUTOMATION_ID)),
+            class_name=UiaVariant.to_str(_get_cached(element, PID_CLASS_NAME)),
             hwnd=hwnd,
-            framework_id=_variant_str(_get_cached(element, PID_FRAMEWORK)),
+            framework_id=UiaVariant.to_str(_get_cached(element, PID_FRAMEWORK)),
             px=(rect["left"] + rect["right"]) // 2,
             py=(rect["top"] + rect["bottom"]) // 2,
             rect=rect,
-            enabled=_variant_bool(_get_cached(element, PID_ENABLED)),
-            keyboard_focus=_variant_bool(_get_cached(element, PID_KEYBOARD_FOCUS)),
-            offscreen=_variant_bool(_get_cached(element, PID_OFFSCREEN)),
+            enabled=UiaVariant.to_bool(_get_cached(element, PID_ENABLED)),
+            keyboard_focus=UiaVariant.to_bool(_get_cached(element, PID_KEYBOARD_FOCUS)),
+            offscreen=UiaVariant.to_bool(_get_cached(element, PID_OFFSCREEN)),
             runtime_id=runtime_id,
             text_full=text_full,
             value=value,
@@ -625,12 +633,12 @@ def _hit_cache_request(automation: Any) -> Any:
 
 
 def _hit_key_from_element(element: Any) -> tuple[str, str]:
-    runtime_id = _variant_runtime_id(_get_cached(element, PID_RUNTIME_ID)) or _variant_runtime_id(_get_current(element, PID_RUNTIME_ID))
-    rect = _variant_rect(_get_cached(element, PID_BOUNDING_RECT))
+    runtime_id = UiaVariant.to_runtime_id(_get_cached(element, PID_RUNTIME_ID)) or UiaVariant.to_runtime_id(_get_current(element, PID_RUNTIME_ID))
+    rect = UiaVariant.to_rect(_get_cached(element, PID_BOUNDING_RECT))
     if rect["right"] <= rect["left"] or rect["bottom"] <= rect["top"]:
-        rect = _variant_rect(_get_current(element, PID_BOUNDING_RECT))
-    hwnd = _variant_int(_get_cached(element, PID_HWND)) or _variant_int(_get_current(element, PID_HWND))
-    role_id = _variant_int(_get_cached(element, PID_CONTROL_TYPE)) or _variant_int(_get_current(element, PID_CONTROL_TYPE))
+        rect = UiaVariant.to_rect(_get_current(element, PID_BOUNDING_RECT))
+    hwnd = UiaVariant.to_int(_get_cached(element, PID_HWND)) or UiaVariant.to_int(_get_current(element, PID_HWND))
+    role_id = UiaVariant.to_int(_get_cached(element, PID_CONTROL_TYPE)) or UiaVariant.to_int(_get_current(element, PID_CONTROL_TYPE))
     return _node_id(runtime_id, hwnd, rect), control_type_name(role_id)
 
 
