@@ -100,7 +100,7 @@ def run(ctx):
             evidence=payload,
         )
 
-    focused_before = desktop.get_focused_title()
+    focused_before = desktop.get_desktop().get_focused_title()
     ns = nodes.build_capability_runtime(ctx)
     ns["desktop"] = desktop
     stdout = io.StringIO()
@@ -109,7 +109,7 @@ def run(ctx):
         with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
             exec(code, ns)
         explicit_result = ns.get("result")
-        focused_after = desktop.get_focused_title()
+        focused_after = desktop.get_desktop().get_focused_title()
         result = {
             "result": explicit_result,
             "stdout": stdout.getvalue(),

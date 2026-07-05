@@ -131,21 +131,6 @@ def topology_mermaid(wiring: dict[str, Any]) -> str:
 # =============================================================================
 
 
-def observe_screen(ctx: dict[str, Any] | None = None) -> dict[str, int]:
-    """Get screen dimensions."""
-    return desktop.observe_screen()
-
-
-def last_desktop_tree(ctx: dict[str, Any] | None = None) -> dict[str, Any] | None:
-    """Get the last desktop tree."""
-    return desktop.last_desktop_tree()
-
-
-def get_focused_title(ctx: dict[str, Any] | None = None) -> str:
-    """Get the title of the currently focused window."""
-    return desktop.get_focused_title()
-
-
 # =============================================================================
 # Execute namespace builder
 # =============================================================================
@@ -578,7 +563,7 @@ def _desktop_tree_index(state: dict[str, Any]) -> dict[str, Any]:
 
 
 def _action_index(state: dict[str, Any]) -> dict[str, Any]:
-    index = desktop.last_action_index() or state.get("action_index") or {}
+    index = desktop.get_desktop().last_action_index() or state.get("action_index") or {}
     return index if isinstance(index, dict) else {}
 
 
@@ -701,9 +686,9 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
     
     return {
         # Observation
-        "observe_screen": observe_screen,
-        "last_desktop_tree": last_desktop_tree,
-        "get_focused_title": get_focused_title,
+        "observe_screen": d.observe_screen,
+        "last_desktop_tree": d.last_desktop_tree,
+        "get_focused_title": d.get_focused_title,
         "node_by_id": node_by_id,
         "action_nodes": action_nodes,
         

@@ -294,23 +294,3 @@ def get_desktop(config: dict[str, Any] | None = None) -> Desktop:
     if _desktop_instance is None:
         _desktop_instance = Desktop(config)
     return _desktop_instance
-
-
-def observe(config: dict[str, Any] | None = None) -> dict[str, Any]:
-    return get_desktop(config).observe(config)
-
-
-def observe_screen() -> dict[str, int]:
-    return get_desktop().observe_screen()
-
-
-def last_desktop_tree() -> dict[str, Any] | None:
-    return get_desktop().last_desktop_tree()
-
-
-def last_action_index() -> dict[str, dict[str, Any]]:
-    return get_desktop().last_action_index()
-
-
-def get_focused_title() -> str:
-    return get_desktop().get_focused_title()
