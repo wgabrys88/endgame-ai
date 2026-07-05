@@ -596,6 +596,15 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         click_res = d.click(x, y, int(node.get("hwnd") or 0))
         return {"ok": bool(click_res.get("ok", True)), "action": "click_node", "node_id": node_id, "click": click_res}
 
+    def read_node(node_id: str) -> dict[str, Any]:
+        node = dict(_action_index(state).get(str(node_id), {}) or {})
+        if not node:
+            node = node_by_id(node_id)
+        if not node:
+            return {"ok": False, "action": "read_node", "error": f"node not found: {node_id}"}
+        text = node.get("name") or node.get("text_full") or node.get("value") or ""
+        return {"ok": True, "action": "read_node", "node_id": node_id, "text": text}
+
     def scroll_node(node_id: str, amount: int = -3) -> dict[str, Any]:
         node = dict(_action_index(state).get(str(node_id), {}) or {})
         if not node:
@@ -659,6 +668,7 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         
         "click": d.click,
         "click_node": click_node,
+        "read_node": read_node,
         "type_text": d.type_text,
         "press_key": d.press_key,
         "hotkey": d.hotkey,

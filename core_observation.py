@@ -21,6 +21,7 @@ CLICK = {
     "RadioButton", "Tab", "TabItem", "TreeItem", "DataItem", "SplitButton",
 }
 WRITE = {"Edit", "ComboBox", "Spinner", "Document"}
+READ = {"Text", "ListItem"}
 SCROLL = {"List", "ScrollBar", "Slider", "Tree", "DataGrid"}
 CONTAINER_ROLES = {
     "Pane", "Document", "Window", "Group", "List", "Tree", "DataGrid",
@@ -170,6 +171,8 @@ def _action_for_role(role: str, class_name: str = "") -> str:
         return "click"
     if role in WRITE:
         return "write"
+    if role in READ:
+        return "read"
     if role == "Pane" and class_name == "Scintilla":
         return "write"
     if role in SCROLL:
@@ -736,8 +739,8 @@ def scan(desktop, config):
     sh = user32.GetSystemMetrics(1)
     step_px = int(scan_cfg.get("step_px", 96))
     delay_ms = int(scan_cfg.get("delay_ms", 0))
-    max_subtree = int(scan_cfg.get("max_subtree_nodes_per_point", 200))
-    max_total = int(scan_cfg.get("max_total_nodes", 2000))
+    max_subtree = int(scan_cfg.get("max_subtree_nodes_per_point", 5000))
+    max_total = int(scan_cfg.get("max_total_nodes", 20000))
     max_probes = scan_cfg.get("max_probe_points")
     points = _r2_points(sw, sh, step_px=step_px)
 
@@ -881,9 +884,9 @@ def _merge_nodes(index: dict[str, CachedNode], new_nodes: list[CachedNode]) -> i
 
 def filter_gather(gathered: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
     filt = config.get("filter") or {}
-    text_max = int(filt.get("text_hint_max", 120))
-    max_action = int(filt.get("max_action_nodes", 240))
-    require_interactive = bool(filt.get("require_interactive", True))
+    text_max = int(filt.get("text_hint_max", 10000))
+    max_action = int(filt.get("max_action_nodes", 5000))
+    require_interactive = bool(filt.get("require_interactive", False))
     nodes: list[CachedNode] = list(gathered.get("nodes") or [])
     screen = gathered.get("screen") or {}
     windows = gathered.get("windows") or []
@@ -1032,6 +1035,47 @@ def filter_gather(gathered: dict[str, Any], config: dict[str, Any]) -> dict[str,
             direct.append(node)
         else:
             window_nodes[parent_id]["children"].append(node)
+
+    for node in merged.values():
+        if node.id in action_elements:
+            continue
+        px, py = int(node.px or 0), int(node.py or 0)
+        hwnd = int(node.hwnd or 0)
+        parent_id = hwnd_to_window.get(hwnd, "")
+        if not parent_id:
+            containing = [n for n in window_nodes.values() if contains(n.get("rect", {}), px, py)]
+            if containing:
+                containing.sort(key=lambda n: rect_area(n.get("rect", {})))
+                parent_id = str(containing[0]["id"])
+        if not parent_id:
+            parent_id = "W0"
+        action = _action_for_role(node.role, node.class_name) or ""
+        n = {
+            "id": node.id,
+            "parent_id": parent_id,
+            "role": node.role,
+            "name": node.name or "",
+            "action": action,
+            "px": px,
+            "py": py,
+            "hwnd": hwnd,
+            "rect": node.rect,
+            "enabled": node.enabled,
+            "automation_id": node.automation_id,
+            "class_name": node.class_name,
+            "runtime_id": node.runtime_id,
+            "z_order": node.z_order,
+            "depth": node.depth,
+            "has_focus": node.has_focus,
+            "children": [],
+        }
+        node_index[n["id"]] = {k: v for k, v in n.items() if k != "children"}
+        if action and len(action_elements) < max_action:
+            action_elements[n["id"]] = n
+        if parent_id == "W0":
+            direct.append(n)
+        else:
+            window_nodes[parent_id]["children"].append(n)
     root["children"].extend(direct)
 
     def sort_children(node: dict[str, Any]) -> None:
