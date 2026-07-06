@@ -1137,13 +1137,23 @@ def filter_gather(gathered: dict[str, Any], config: dict[str, Any]) -> dict[str,
     short_id_map: dict[str, str] = {}
     assign_short_ids(root)
 
+    # Build node_index with short_ids as keys
+    node_index_by_short: dict[str, dict[str, Any]] = {}
     for node_id, node_data in node_index.items():
-        if node_id in short_id_map:
-            node_data["short_id"] = short_id_map[node_id]
+        short_id = short_id_map.get(node_id, node_id)
+        node_data["short_id"] = short_id
+        node_index_by_short[short_id] = node_data
     
+    node_index = node_index_by_short
+
+    # Build action_index with short_ids as keys
+    action_index_by_short_id: dict[str, dict[str, Any]] = {}
     for elem_id, elem_data in action_elements.items():
-        if elem_id in short_id_map:
-            elem_data["short_id"] = short_id_map[elem_id]
+        short_id = short_id_map.get(elem_id, elem_id)
+        elem_data["short_id"] = short_id
+        action_index_by_short_id[short_id] = elem_data
+    
+    action_elements = action_index_by_short_id
 
     def clean(value: Any) -> str:
         return " ".join(str(value or "").replace("\r", " ").replace("\n", " ").split())
