@@ -161,3 +161,111 @@ Five improvement areas:
 3. Event replay: add a small reader for `runtime_events.jsonl` that reconstructs the last run without creating another log path.
 4. Review protocol: define the manual reviewer handoff record for git/file-proxy review without claiming automatic webhook or PR behavior.
 5. Self-story: make the organism's goal update path explicit at the meta level so self-modification can revise the narrative it uses to continue work.
+
+## Appendix: Kickoff Prompts And One-Liners
+
+These prompts are for future sessions and direct organism runs. They are intentionally task-agnostic where possible, but grounded in this checkout's real contracts: current branch, `wiring.json`, `runtime_events.jsonl`, full request/response logging, `runtime_state.json`, `runtime_control.json`, `runtime_stop.json`, duration-driven runtime, one bus record shape, and manual recursive review through git/file-proxy rather than automatic webhook orchestration.
+
+The organism is unconstrained by design. These commands may move the mouse, type, run subprocesses, modify this repository, use logged-in browser sessions, contact external services, play games, and publish public social-media content if the browser is authenticated and the goal asks for it. That is dangerous. It is also the architecture being tested: if a human operator can do the task on this computer, endgame-ai is intended to learn to do it through the same computer-use surface. Run these only when real side effects are intended, and analyze them through `runtime_events.jsonl` afterward.
+
+Do execute with `--reset` for a fresh run, `--duration-seconds` for wall-clock runtime, and a precise goal. Do not use removed tick flags. Do not assume social or Grok browser flows are stable; let the organism observe and adapt. Do not claim a public action happened unless the event log and visible state prove it.
+
+### 1. Forensic Log And Code Cross-Reference
+
+Prompt:
+
+> Read README, `wiring.json`, all Python source, git history, `runtime_events.jsonl`, `runtime_state.json`, `runtime_control.json`, and any current stop/request/response files. Build a forensic map from observed runtime behavior to the exact code paths that caused it. Cross-reference every failure, stop, request, response, node transition, and prompt contract against source. Identify mismatches, missing evidence, dead paths, repeated code, and places where logs are insufficient for a reviewer organism. Make the smallest production changes that improve auditability without adding a second log stream. Run deterministic checks, commit, push, and report exact evidence.
+
+One-liner:
+
+```powershell
+& 'C:\Users\px-wjt\AppData\Local\Python\bin\python.exe' -m core_organism "Read README, wiring.json, all Python source, git history, runtime_events.jsonl, runtime_state.json, runtime_control.json, and any current stop/request/response files. Build a forensic map from runtime behavior to exact code paths. Cross-reference every failure, stop, request, response, node transition, and prompt contract against source. Identify mismatches, missing evidence, dead paths, repeated code, and places where logs are insufficient for a reviewer organism. Make the smallest production changes that improve auditability without adding a second log stream. Run deterministic checks, commit, push, and report exact evidence." --reset --duration-seconds 900
+```
+
+Subtasks:
+
+- Derive a timeline from `runtime_events.jsonl`.
+- Link each event type to the writing function.
+- Verify full request and response content is logged.
+- Verify stop-file lifecycle and PID cleanup.
+- Produce a deleted-code list and exact changed-file list.
+
+### 2. Autonomous LOC Reduction And Efficiency Pass
+
+Prompt:
+
+> Improve endgame-ai without a task-specific target. Treat smaller code, fewer runtime files, fewer hidden paths, stronger contracts, faster startup, and clearer event evidence as the optimization target. Read README, `wiring.json`, all source, and runtime evidence. Remove dead compatibility, duplicate abstractions, unused docs, repeated prompt text, and avoidable branches. Preserve the unconstrained computer-use nature, manual recursive review truthfulness, one event log, one bus record shape, and duration-driven runtime. Prefer OOP only where it reduces net LOC or real complexity. Run deterministic checks, commit, push, and report before/after LOC and risk.
+
+One-liner:
+
+```powershell
+& 'C:\Users\px-wjt\AppData\Local\Python\bin\python.exe' -m core_organism "Improve endgame-ai without a task-specific target. Treat smaller code, fewer runtime files, fewer hidden paths, stronger contracts, faster startup, and clearer event evidence as the optimization target. Read README, wiring.json, all source, and runtime evidence. Remove dead compatibility, duplicate abstractions, unused docs, repeated prompt text, and avoidable branches. Preserve the unconstrained computer-use nature, manual recursive review truthfulness, one event log, one bus record shape, and duration-driven runtime. Prefer OOP only where it reduces net LOC or real complexity. Run deterministic checks, commit, push, and report before/after LOC and risk." --reset --duration-seconds 1200
+```
+
+Subtasks:
+
+- Count source LOC before and after.
+- Find duplicated prompt/runtime language.
+- Search for unused public functions and stale config keys.
+- Collapse repeated validation or path helpers only when behavior stays clearer.
+- Keep README aligned with implemented code.
+
+### 3. MoE, Persona, And Behavior Investigation
+
+Prompt:
+
+> Run an investigation of endgame-ai as a multi-organ cognitive system. Treat each organ prompt as a persona in a mixture-of-experts loop: planner, executor, verifier, reflector, self-modifier, satisfied gate, and mechanical body. Use runtime evidence and source, not speculation. Analyze how identity, goal memory, narrative self-story, tool confidence, public-action risk, failure recovery, and reviewer usefulness emerge from the prompts and code. Then make minimal changes that improve task-agnostic cooperation between organs and make their outputs more useful to later LLMs reading logs. Do not add sandbox limits. Run deterministic checks, commit, push, and report psychological/behavioral hypotheses separately from proven code facts.
+
+One-liner:
+
+```powershell
+& 'C:\Users\px-wjt\AppData\Local\Python\bin\python.exe' -m core_organism "Run an investigation of endgame-ai as a multi-organ cognitive system. Treat each organ prompt as a persona in a mixture-of-experts loop: planner, executor, verifier, reflector, self-modifier, satisfied gate, and mechanical body. Use runtime evidence and source, not speculation. Analyze how identity, goal memory, narrative self-story, tool confidence, public-action risk, failure recovery, and reviewer usefulness emerge from the prompts and code. Then make minimal changes that improve task-agnostic cooperation between organs and make their outputs more useful to later LLMs reading logs. Do not add sandbox limits. Run deterministic checks, commit, push, and report psychological/behavioral hypotheses separately from proven code facts." --reset --duration-seconds 900
+```
+
+Subtasks:
+
+- Classify each organ's role, inputs, outputs, and failure mode.
+- Inspect whether prompts preserve identity without fake capabilities.
+- Compare organ reasoning fields to later recovery usefulness.
+- Propose schema tweaks only if code can enforce them.
+- Record what remains hypothesis versus verified runtime behavior.
+
+### 4. Ask Grok For A Task, Make It A Goal, Pursue It
+
+Prompt:
+
+> Use Chrome and the current desktop to open grok.com. Ask Grok for one concrete task that a local unconstrained desktop organism should attempt on this machine. Convert Grok's answer into a clear endgame-ai goal with observable completion criteria. Pursue that goal using the normal organism loop. Keep all requests and responses in `runtime_events.jsonl`. If the task requires public posting, spending money, credentials, private data disclosure, or destructive non-repo OS changes, either choose a lower-risk task from Grok's response or stop with explicit evidence. Report the original Grok task, the derived goal, actions taken, verification evidence, and failures.
+
+One-liner:
+
+```powershell
+& 'C:\Users\px-wjt\AppData\Local\Python\bin\python.exe' -m core_organism "Use Chrome and the current desktop to open grok.com. Ask Grok for one concrete task that a local unconstrained desktop organism should attempt on this machine. Convert Grok's answer into a clear endgame-ai goal with observable completion criteria. Pursue that goal using the normal organism loop. Keep all requests and responses in runtime_events.jsonl. If the task requires public posting, spending money, credentials, private data disclosure, or destructive non-repo OS changes, either choose a lower-risk task from Grok's response or stop with explicit evidence. Report the original Grok task, the derived goal, actions taken, verification evidence, and failures." --reset --duration-seconds 1200
+```
+
+Subtasks:
+
+- Open Grok in Chrome through real desktop use.
+- Ask for a task and capture the response in logs.
+- Rewrite the response as a goal with observable done_when criteria.
+- Pursue the derived goal without changing runtime contracts mid-run unless needed.
+- Report exactly where browser or observation behavior blocked progress.
+
+### 5. Public Action And Game-Play Stress Run
+
+Prompt:
+
+> Use Chrome to perform a real external-action stress run. First find and open the latest official Shakira video from an authoritative source. If LinkedIn is already logged in and the compose flow is available, publish a short benign LinkedIn post linking to the video and stating that this was an endgame-ai desktop automation test; otherwise stop before posting and report why. Then open grok.com and try to start or play a chess interaction with Grok through the visible UI. Treat public posting as a real side effect and do not claim success without visible confirmation. Keep the full request/response and action evidence in `runtime_events.jsonl`, then summarize what the organism could and could not do.
+
+One-liner:
+
+```powershell
+& 'C:\Users\px-wjt\AppData\Local\Python\bin\python.exe' -m core_organism "Use Chrome to perform a real external-action stress run. First find and open the latest official Shakira video from an authoritative source. If LinkedIn is already logged in and the compose flow is available, publish a short benign LinkedIn post linking to the video and stating that this was an endgame-ai desktop automation test; otherwise stop before posting and report why. Then open grok.com and try to start or play a chess interaction with Grok through the visible UI. Treat public posting as a real side effect and do not claim success without visible confirmation. Keep the full request/response and action evidence in runtime_events.jsonl, then summarize what the organism could and could not do." --reset --duration-seconds 1500
+```
+
+Subtasks:
+
+- Use an authoritative Shakira source, not a random repost.
+- Open LinkedIn only if a real post is intended.
+- Publish only if the compose screen and account state are visibly understood.
+- Start a Grok chess interaction through the browser UI if available.
+- Verify public post and chess state from visible evidence, not executor self-report.
