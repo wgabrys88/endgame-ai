@@ -62,11 +62,18 @@ class ExecuteNode(BaseNode):
         data = record.data
         code = str(data.get("code", "") or "")
         conclusion = str(data.get("conclusion", "CANNOT") or "CANNOT").upper()
+        requested_signal = str(data.get("next_signal") or "").lower()
 
         if conclusion not in {"EXECUTE", "CANNOT", "FRAME", "SELF_MODIFY"}:
             conclusion = "CANNOT"
+        if requested_signal not in {"verify", "frame", "reflect", "self_modify"}:
+            requested_signal = {
+                "EXECUTE": "verify",
+                "FRAME": "frame",
+                "SELF_MODIFY": "self_modify",
+            }.get(conclusion, "reflect")
 
-        if conclusion == "SELF_MODIFY":
+        if conclusion == "SELF_MODIFY" or requested_signal == "self_modify":
             return bus.emit(
                 "self_modify",
                 {"last_action": {"code": "", "conclusion": conclusion}, "last_error": "execute requested self modification"},
@@ -75,7 +82,9 @@ class ExecuteNode(BaseNode):
             )
 
         if conclusion != "EXECUTE" or not code.strip():
-            signal = "frame" if self._should_frame(state, conclusion) else "reflect"
+            signal = requested_signal if requested_signal in {"frame", "reflect"} else "reflect"
+            if signal == "reflect" and self._should_frame(state, conclusion):
+                signal = "frame"
             return bus.emit(
                 signal,
                 {

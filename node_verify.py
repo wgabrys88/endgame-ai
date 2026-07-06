@@ -62,7 +62,7 @@ class VerifyNode(BaseNode):
         data = record.data
         state = ctx.get("state", {})
         step_goal, done_when = self._step_goal(ctx)
-        patch = {
+        patch: dict[str, object] = {
             "verification": {
                 "success": self._success,
                 "reasoning": data.get("reasoning", record.reasoning),

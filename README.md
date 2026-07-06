@@ -20,7 +20,7 @@ No pip install. No MCP servers. No skills. No persistent memory — the **goal i
 
 ## Fractal Topology: Organisms All the Way Down
 
-Because the reviewer *is* an endgame-ai instance, the topology becomes **recursive/fractal**:
+Because a reviewer can be another endgame-ai instance, the topology can become **recursive/fractal**:
 
 ```
 Organism A (work) ←→ Organism B (review) ←→ Organism C (audit) ←→ ...
@@ -31,7 +31,7 @@ same loop,            same loop,            same loop,
 different goal        different goal        different goal
 ```
 
-An organism proposing a patch spawns a reviewer organism. That reviewer can be audited by another organism. **Same circuit, every level.** The goal string is the only difference.
+An organism proposing a patch can hand that patch to a reviewer organism over git plus the file-proxy protocol. That reviewer can be audited by another organism. **Same circuit, every level.** The goal string is the only difference.
 
 ## One Command
 
@@ -40,6 +40,19 @@ python -m core_organism "your goal here" --max-ticks 50
 ```
 
 That's it. The repository *is* the runtime. The goal *is* the context. The wiring *is* the architecture.
+
+## Auditable Reality Map
+
+| Claim | Current backing in this checkout |
+|-------|----------------------------------|
+| One Python organism loop | `core_organism.py` loads `wiring.json`, runs one node at a time, validates topology signals, writes `runtime_state.json`, and appends `runtime_log.ndjson`. |
+| One bus record shape | `core_bus.Record` is the only LLM record shape, and `core_brain.py` validates required `data.next_signal` fields for brain records. |
+| Whole-screen short IDs | `core_observation.py` gathers UIA nodes, maps them to `W...` short IDs, renders `desktop_tree_text`, and stores body-side metadata in `action_index`. |
+| Single action lookup | Execute helpers in `core_nodes.py` resolve `click_node`, `read_node`, `scroll_node`, and `node_by_id` through the state `action_index` keyed by short ID. |
+| File-proxy bridge | `transport_file_proxy.py` writes `runtime_request.json` and waits for `runtime_response.json` as a direct bus record: `{record_type, data, reasoning}`. |
+| Self-modification | `node_self_modify.py` proposes patches; `core_nodes.py` enforces read-before-write, validates Python/JSON, rejects destructive placeholder rewrites, commits on the current branch, and optionally pushes. |
+| Deterministic analysis | `ps_bridge.py` wraps git, compile/lint/analyzer commands with structured JSON output. Optional analyzers fail explicitly when not installed. |
+| Recursive review | The file-proxy protocol and git-native patch metadata can be used by a separate reviewer organism. Automatic GitHub webhook/PR spawning is not implemented in this checkout; run the reviewer organism manually against a shared branch/file-proxy channel. |
 
 ---
 
@@ -91,7 +104,7 @@ stateDiagram-v2
 
 ## Recursive/Fractal Topology (Distributed Evolution)
 
-When `node_self_modify` escalates to **distributed review**, the topology becomes a **tree of organisms** — each node in the tree is a full endgame-ai instance running the same wiring:
+When a self-modification is handed to **distributed review**, the topology becomes a **tree of organisms** — each node in the tree is a full endgame-ai instance running the same wiring:
 
 ```mermaid
 graph TD
@@ -183,7 +196,7 @@ Switching brains = changing one string. The organism doesn't care.
 
 ## Self-Modify as Topology Extension
 
-The `node_self_modify` organ doesn't just patch files — it **extends the topology** by spawning a review organism:
+The `node_self_modify` organ patches files locally. A separate review runner can **extend the topology** by running another organism against the same branch and file-proxy channel:
 
 ```mermaid
 sequenceDiagram
@@ -207,7 +220,7 @@ sequenceDiagram
     A->>A: Approve? Hot-reload & continue : Hot-swap to known_good
 ```
 
-The wiring.json doesn't change — the **topology extends dynamically** through the file-proxy protocol.
+The wiring.json doesn't change — when a reviewer is run, the **topology extends dynamically** through the file-proxy protocol.
 
 ---
 
@@ -340,7 +353,7 @@ sequenceDiagram
     Body->>Observe: (mechanical, no brain)
     Observe-->>Body: {desktop_tree, desktop_tree_text, action_index}
     Body->>Execute: {step, frame, observation}
-    Execute-->>Body: {record_type:"execution", data:{conclusion:"EXECUTE", code:"..."}}
+    Execute-->>Body: {record_type:"execution", data:{next_signal:"verify", conclusion:"EXECUTE", code:"..."}}
     Body->>Body: runs code in capability runtime
     Body->>Verify: {step, done_when, result, observation}
     Verify-->>Body: {record_type:"verification", data:{next_signal:"step_confirmed", success:true}}
@@ -372,7 +385,9 @@ sequenceDiagram
   "click_node": click_node,      # click_node("W1E2")
   "read_node": read_node,        # read_node("W1E4")
   "scroll_node": scroll_node,    # scroll_node("W2E3", -3)
+  "node_by_id": node_by_id,      # node_by_id("W1E2") via action_index only
   "action_nodes": action_nodes,  # filter by action type
+  "hotkey": hotkey,              # hotkey("ctrl", "a")
   "pyautogui": pag,              # coordinate fallback
   "subprocess", "ctypes", "os", "sys", "json", "re", "time",
   "pathlib", "math", "random", "types",
@@ -386,7 +401,7 @@ No sandbox. Full Python. The body trusts the brain.
 
 ## Recursive Organ Loops: Meta-Levels
 
-When `node_self_modify` escalates to distributed review, the **same organ loop runs at a higher meta-level**:
+When a self-modification is handed to distributed review, the **same organ loop runs at a higher meta-level**:
 
 ```
 META-LEVEL 0 (Work)          META-LEVEL 1 (Review)          META-LEVEL 2 (Audit)
@@ -411,7 +426,7 @@ META-LEVEL 0 (Work)          META-LEVEL 1 (Review)          META-LEVEL 2 (Audit)
 
 **The reviewer is not a special node** — it's a full endgame-ai instance. Its `node_execute` runs `pyright`, `vulture`, `pyan3`, `pydeps`, `code2flow`, `pytest`. Its `node_verify` judges: "Do all checks pass?" Its `node_satisfied` emits the verdict.
 
-The wiring.json doesn't change. The topology extends **dynamically** through the file-proxy protocol. Same organs, same bus, same signals — different goal.
+The wiring.json doesn't change. With a separately launched reviewer, the topology extends **dynamically** through the file-proxy protocol. Same organs, same bus, same signals — different goal.
 
 ---
 
@@ -494,7 +509,7 @@ The organism can request reasoning from *any* brain, then inject it back for a s
 
 ## The Vision: Organism Proposes, Peer Reviews, Organism Adopts
 
-endgame-ai doesn't just "self-modify" locally. It **proposes evolution patches to GitHub**, where **another endgame-ai instance (the reviewer)** clones the repo, runs deterministic analysis (pyright, vulture, pyan3, pydeps, code2flow), compiles, tests, validates — and **responds with approval or rejection** via the same file-proxy protocol.
+endgame-ai self-modifies locally today: it proposes a structured patch, validates it, commits it on the current branch, and optionally pushes it. A separate reviewer organism can use the same branch plus file-proxy protocol to review that patch, but automatic GitHub PR/webhook orchestration is an integration target, not code that runs by itself in this checkout.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -591,7 +606,7 @@ python -m pytest  # if tests exist
 ```
 
 ### 5. Organism A (Adopter) Hot-Reloads
-- Organism A polls for review response (file-proxy or webhook)
+- A manually coordinated Organism A can poll for review response through file-proxy; webhook/PR automation is an integration target
 - On **approve**: atomic write of validated files, reload wiring, continue from planner
 - On **reject**: hot-swap to `known_good_commit`, route to reflection for replan
 
@@ -613,7 +628,7 @@ The same `transport_file_proxy` that lets humans drive the organism lets **endga
 Organism A (proposer)          GitHub          Organism B (reviewer)
      │                           │                    │
      ├─ push patch ─────────────>│                    │
-     │                           ├─ webhook/poll ────>│
+     │                           ├─ manual poll ─────>│
      │                           │                    ├─ clone, analyze, test
      │                           │                    ├─ write runtime_response.json
      │                           │<──── approve ───────┤
@@ -634,7 +649,7 @@ Organism A (proposer)          GitHub          Organism B (reviewer)
 
 ## The Goal Remains the Memory
 
-No vector DB. No embeddings. The **goal string** — fixed for the run — is the atemporal narrative. Each organ receives it. Each patch references it. The reviewer evaluates against it. The organism *tells itself the story of what it's doing* across ticks, across machines, across reviews. Self-modification updates the story by updating the code that enacts it — **with peer approval**.
+No vector DB. No embeddings. The **goal string** — fixed for the run — is the atemporal narrative. Each organ receives it. Each patch references it. A reviewer can evaluate against it when one is run. The organism *tells itself the story of what it's doing* across ticks, across machines, across reviews. Self-modification updates the story by updating the code that enacts it — with optional peer approval through the file-proxy protocol.
 
 ## Fractal Topology: Recursive Self-Improvement
 
@@ -680,7 +695,7 @@ graph TD
 | **Unbounded meta-levels** | Reviewer can be reviewed, auditor audited — recursive improvement |
 | **Distributed by default** | Reviewer on different machine, OS, network — same protocol |
 
-The organism doesn't just evolve its code. It evolves **the process by which it evolves** — because the reviewer itself can be reviewed, and so on. This is **recursive self-improvement** where the improvement mechanism *is* the thing being improved.
+The protocol is recursive: the reviewer itself can be reviewed, and so on. This is the path to **recursive self-improvement** where the improvement mechanism *is* the thing being improved.
 
 ---
 
@@ -866,8 +881,14 @@ python -m core_organism "Open Notepad and write 'hello world'" --max-ticks 20
 ```bash
 python -m core_organism "your goal" --max-ticks 10
 # Organism writes runtime_request.json
-# YOU write runtime_response.json (act as the brain)
+# YOU write runtime_response.json as a direct bus record (act as the brain)
 # Organism reads, continues
+```
+
+Example response:
+
+```json
+{"record_type":"plan","data":{"next_signal":"step_ready","intent":[{"description":"...","done_when":"..."}]},"reasoning":"..."}
 ```
 
 ## Architecture in_one_command-line Arguments

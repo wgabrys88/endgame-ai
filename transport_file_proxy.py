@@ -14,7 +14,13 @@ def _root_path(value):
 def call(messages, cfg):
     req_path = _root_path(cfg.get("request_path") or "runtime_request.json")
     resp_path = _root_path(cfg.get("response_path") or "runtime_response.json")
-    request = {"messages": messages, "created_at": time.time(), "transport": "transport_file_proxy"}
+    request = {
+        "schema": "endgame-ai.file-proxy.request.v1",
+        "messages": messages,
+        "created_at": time.time(),
+        "transport": "transport_file_proxy",
+        "expected_response": "direct bus record: {record_type, data, reasoning}",
+    }
     tmp = req_path.with_suffix(req_path.suffix + ".tmp")
     tmp.write_text(json.dumps(request, ensure_ascii=False, indent=2), encoding="utf-8")
     os.replace(tmp, req_path)
@@ -29,12 +35,14 @@ def call(messages, cfg):
                 obj = json.loads(resp_path.read_text(encoding="utf-8"))
             except json.JSONDecodeError as exc:
                 raise RuntimeError(f"file_proxy response is malformed JSON: {resp_path}: {exc}") from exc
-            content = obj.get("content")
-            if not isinstance(content, str) or not content.strip():
-                raise RuntimeError(f"file_proxy response missing non-empty content: {resp_path}")
+            if not isinstance(obj.get("record_type"), str) or not isinstance(obj.get("data"), dict):
+                raise RuntimeError(
+                    f"file_proxy response must be a direct bus record with record_type and data: {resp_path}"
+                )
             reasoning = obj.get("reasoning", "")
             if reasoning is not None and not isinstance(reasoning, str):
                 raise RuntimeError("file_proxy response reasoning must be a string when present")
-            return {"content": content, "reasoning": reasoning or "", "response_path": str(resp_path)}
+            obj["reasoning"] = reasoning or ""
+            return {"content": json.dumps(obj, ensure_ascii=False), "reasoning": reasoning or "", "response_path": str(resp_path)}
         time.sleep(interval)
     raise RuntimeError(f"file_proxy timed out waiting for {resp_path}; no fallback was attempted")

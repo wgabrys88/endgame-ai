@@ -69,10 +69,24 @@ _RECORD_DATA_SCHEMAS: dict[str, dict[str, Any]] = {
         "type": "object",
         "additionalProperties": True,
         "properties": {
-            "conclusion": {"enum": ["EXECUTE", "CANNOT"]},
+            "next_signal": {"enum": ["verify", "frame", "reflect", "self_modify"]},
+            "conclusion": {"enum": ["EXECUTE", "CANNOT", "FRAME", "SELF_MODIFY"]},
             "code": {"type": "string"},
         },
-        "required": ["conclusion", "code"],
+        "required": ["next_signal", "conclusion", "code"],
+    },
+    "action_frame": {
+        "type": "object",
+        "additionalProperties": True,
+        "properties": {
+            "next_signal": {"enum": ["framed", "reflect"]},
+            "screen_summary": {"type": "string"},
+            "target": {"type": "string"},
+            "strategy": {"type": "string"},
+            "risk": {"enum": ["low", "medium", "high"]},
+            "notes": {"type": "string"},
+        },
+        "required": ["next_signal", "screen_summary", "target", "strategy", "risk", "notes"],
     },
     "verification": {
         "type": "object",
@@ -88,7 +102,7 @@ _RECORD_DATA_SCHEMAS: dict[str, dict[str, Any]] = {
         "type": "object",
         "additionalProperties": True,
         "properties": {
-            "next_signal": {"enum": ["retry", "replan", "escalate", "give_up"]},
+            "next_signal": {"enum": ["retry", "replan", "frame", "escalate", "give_up"]},
             "lesson": {"type": "string"},
             "diagnosis": {"type": "string"},
         },
@@ -98,6 +112,7 @@ _RECORD_DATA_SCHEMAS: dict[str, dict[str, Any]] = {
         "type": "object",
         "additionalProperties": True,
         "properties": {
+            "next_signal": {"enum": ["modified"]},
             "summary": {"type": "string"},
             "rationale": {"type": "string"},
             "read_files": {"type": "array", "items": {"type": "string"}},
@@ -135,7 +150,7 @@ _RECORD_DATA_SCHEMAS: dict[str, dict[str, Any]] = {
                 ]
             },
         },
-        "required": ["summary", "rationale", "read_files", "file_writes", "file_deletes", "wiring_patches", "commands", "expected_validation"],
+        "required": ["next_signal", "summary", "rationale", "read_files", "file_writes", "file_deletes", "wiring_patches", "commands", "expected_validation"],
     },
     "satisfied": {
         "type": "object",
@@ -255,7 +270,7 @@ def _messages(system_prompt: str, user_text: str, prefix: StablePrefix | None, s
     ]
 
 
-def _commit_record(content: str) -> bus.Record:
+def _commit_record(content: str, expected_record_type: str | None = None) -> bus.Record:
     record = extract_json_object(content)
     if record is None:
         raise RuntimeError(f"brain did not commit a valid JSON object: {content}")
@@ -263,7 +278,32 @@ def _commit_record(content: str) -> bus.Record:
         raise RuntimeError(f"brain record missing string record_type: {record}")
     if "data" not in record or not isinstance(record["data"], dict):
         raise RuntimeError(f"brain record missing object data: {record}")
-    return bus.Record.from_json(record)
+    committed = bus.Record.from_json(record)
+    _validate_record_contract(committed, expected_record_type)
+    return committed
+
+
+def _validate_record_contract(record: bus.Record, expected_record_type: str | None = None) -> None:
+    if expected_record_type and record.record_type != expected_record_type:
+        raise RuntimeError(
+            f"brain record_type mismatch: expected {expected_record_type!r}, got {record.record_type!r}"
+        )
+    schema = _RECORD_DATA_SCHEMAS.get(record.record_type)
+    if not schema:
+        return
+    data = record.data
+    missing = [key for key in schema.get("required", []) if key not in data]
+    if missing:
+        raise RuntimeError(f"{record.record_type} record missing required data keys: {missing}")
+    properties = schema.get("properties", {})
+    for key, rule in properties.items():
+        if key not in data or not isinstance(rule, dict):
+            continue
+        value = data.get(key)
+        if "const" in rule and value != rule["const"]:
+            raise RuntimeError(f"{record.record_type}.data.{key} must be {rule['const']!r}, got {value!r}")
+        if "enum" in rule and value not in set(rule["enum"]):
+            raise RuntimeError(f"{record.record_type}.data.{key}={value!r} outside {rule['enum']!r}")
 
 
 def _organ_tuning(wiring: dict[str, Any], record_type: str | None) -> dict[str, Any]:
@@ -434,6 +474,23 @@ def _structured_outputs_enabled(cfg: dict[str, Any]) -> bool:
 
 
 def _record_response_format(record_type: str) -> dict[str, Any]:
+    data_schema = _RECORD_DATA_SCHEMAS.get(record_type)
+    if data_schema:
+        return {
+            "type": "json_schema",
+            "name": f"{record_type}_record",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "record_type": {"enum": [record_type]},
+                    "data": data_schema,
+                    "reasoning": {"type": "string"},
+                },
+                "required": ["record_type", "data", "reasoning"],
+            },
+        }
     return {
         "type": "json_object",
     }
@@ -617,7 +674,7 @@ def think(
             response_format=response_format,
             request_config=request_cfg,
         )
-        record = _commit_record(result["content"])
+        record = _commit_record(result["content"], expected_record_type)
         reasoning = reasoning_from(result["content"], result.get("reasoning", ""))
         record = bus.Record(record.record_type, record.data, reasoning)
         return record.to_json()
@@ -630,7 +687,7 @@ def think(
             response_format=response_format,
             request_config=request_cfg,
         )
-        record = _commit_record(result["content"])
+        record = _commit_record(result["content"], expected_record_type)
         reasoning = reasoning_from(result["content"], result.get("reasoning", ""))
         record = bus.Record(record.record_type, record.data, reasoning)
         return record.to_json()
@@ -648,7 +705,7 @@ def think(
         response_format=response_format,
         request_config=request_cfg,
     )
-    record = _commit_record(second["content"])
+    record = _commit_record(second["content"], expected_record_type)
     record = bus.Record(record.record_type, record.data, reasoning)
     return record.to_json()
 

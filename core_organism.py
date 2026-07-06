@@ -236,6 +236,14 @@ def run(
             write_state(wiring, state)
             runtime_event(wiring, "node_complete", node=current, signal="error", next_node=nxt, tick=state["tick"])
             current = nxt
+            remaining_ticks = None if max_ticks is None else max(0, int(max_ticks) - int(state.get("tick", 0)))
+            return run(
+                goal,
+                reset=False,
+                max_ticks=remaining_ticks,
+                max_brain_calls=max_brain_calls,
+                start_node=current,
+            )
         except RuntimeError as route_exc:
             state["_phase"] = "halted"
             state["last_error"] = f"Error routing failed: {route_exc}"

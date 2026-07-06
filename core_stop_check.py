@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import signal
 import sys
 import time
 
@@ -44,16 +45,13 @@ def clear_stop() -> None:
 
 
 def kill_all_pids() -> None:
-    import psutil
     for pid_file in ROOT.glob("runtime_*.pid"):
         try:
             pid = int(pid_file.read_text(encoding="utf-8").strip())
-            if psutil.pid_exists(pid):
-                p = psutil.Process(pid)
-                p.terminate()
-                p.wait(timeout=2)
+            if pid != os.getpid():
+                os.kill(pid, signal.SIGTERM)
                 print(f"[stop_check] terminated PID {pid} ({pid_file.name})", flush=True)
-        except (ValueError, psutil.NoSuchProcess, psutil.TimeoutExpired, PermissionError):
+        except (ValueError, OSError, PermissionError):
             pass
         finally:
             pid_file.unlink(missing_ok=True)

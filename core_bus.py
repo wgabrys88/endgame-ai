@@ -81,13 +81,9 @@ def emit(
         raise TypeError("bus record must be a Record or dict when provided")
     if evidence is not None and not isinstance(evidence, dict):
         raise TypeError("bus evidence must be a dict when provided")
-    
-    if isinstance(record, Record):
-        record_dict = record.to_json()
-    else:
-        record_dict = record
-    
-    return NodeOutput(signal=signal.strip(), patch=dict(patch or {}), record=record, evidence=dict(evidence or {}))
+
+    record_obj = Record.from_json(record) if isinstance(record, dict) else record
+    return NodeOutput(signal=signal.strip(), patch=dict(patch or {}), record=record_obj, evidence=dict(evidence or {}))
 
 
 def coerce_node_output(node: str, result: Any) -> NodeOutput:
