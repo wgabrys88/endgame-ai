@@ -1,244 +1,666 @@
-# endgame-ai: Living Desktop Organism
+# endgame-ai: The Ultimate Bridge
 
-A self-evolving Windows desktop organism that observes, plans, acts, verifies, and reflects through a cognitive loop of interchangeable organs wired by a fixed circuit (`wiring.json`). The Python body owns mouse, keyboard, subprocess, and UIA-based whole-screen observation; LLM brains are the mind.
+endgame-ai is not merely a "living organism" that automates a Windows desktop. It is a **universal substrate** — a single, self-contained Python process that bridges *any* intelligence (human, LLM, another endgame-ai instance) to *any* Windows environment through a fixed circuit: `wiring.json`.
 
-## Architecture
+## The Meta Insight
 
-### Organs (Nodes)
-- **node_observe** - Mechanical whole-screen UIA scan with Z-order, focus tracking, deep hierarchy, junk filtering
-- **node_planner** - Decomposes high-level goals into ordered, verifiable steps
-- **node_scheduler** - Advances to next unfinished plan step
-- **node_frame_action** - Frames raw evidence into concrete action strategy
-- **node_execute** - Writes and runs Python code in the capability runtime (no sandbox)
-- **node_verify** - Sole judge of step success from fresh observation
-- **node_reflect** - Diagnoses failure and routes: retry, frame, replan, escalate, give_up
-- **node_self_modify** - Evolves repository via git-native patches
-- **node_satisfied** - Halts when goal complete
-- **node_error** - Routes mechanical failures
+We built a desktop automator. We discovered a **protocol**.
 
-### Transport Layer
-Interchangeable LLM backends:
-- `transport_xai` - Grok-4.3 via xAI API (used for Shakira & Grok milestones)
-- `transport_file_proxy` - Human-in-the-loop file-based transport
-- `transport_openai` - Local OpenAI-compatible endpoint
-- `transport_opencode` - OpenCode CLI
-- `transport_grok_cli` - Grok CLI
-- `transport_browser_ai` - Browser automation stub
+The organism owns mouse, keyboard, subprocess, and a whole-screen UIA observation tree. Interchangeable LLM brains are the mind; `wiring.json` is the immutable circuit. But the *file proxy transport* (`transport_file_proxy.py`) reveals the deeper truth: **the organism is an endpoint**.
 
----
+Any entity that can write JSON to `runtime_request.json` and read JSON from `runtime_response.json` can drive the organism. This includes:
+- You (human) editing a file
+- An LLM API (xAI, OpenAI, local via OpenAI-compatible)
+- A CLI tool (opencode, grok, custom)
+- **Another endgame-ai instance**
 
-## Shakira Milestone: Cognitive Power Demonstrated (Tag: `shakira-latest`)
+No pip install. No MCP servers. No skills. No persistent memory — the **goal is the memory**, an atemporal narrative that the organism tells itself across ticks.
 
-**Goal**: *"search in youtube for a shakira latest video and play it"*
-
-**Result**: The organism autonomously navigated to YouTube, searched for "shakira latest video", identified the most recent result (**"Shakira, Burna Boy - Dai Dai (Official Video)"**), clicked it, and verified playback with visible controls (seek slider at 0:03/4:00, play button, mute, theater mode, fullscreen, "Audio playing" status).
-
-### Execution Trace (32 ticks, 20 brain calls)
-
-| Tick | Node | Signal | Key Event |
-|------|------|--------|-----------|
-| 0-1 | observe | initial_screen | Fresh whole-screen scan: 7 windows, 371 elements, 120 actionable |
-| 1-2 | planner | step_ready | Initial 5-step plan (click search, type, submit, select, verify) |
-| 2-3 | scheduler | step_ready | Advanced to first step |
-| 3-4 | observe | screen_ready | YouTube window (W2) visible with recommendation tabs, no search bar |
-| 4-5 | execute | frame | CANNOT - no search input node in tree |
-| 5-6 | frame_action | reflect | Confirmed: search bar absent from observation |
-| 6-7 | reflect | replan | Lesson: step assumes UI state not in tree |
-| 7-8 | planner | reflect | Planner couldn't plan without search element |
-| 8-9 | reflect | replan | Diagnosis: plan step too coarse |
-| 9-10 | planner | step_ready | **Revised 4-step plan**: ensure homepage → activate search → input query → submit |
-| 10-11 | scheduler | step_ready | Advanced |
-| 11-12 | observe | screen_ready | Fresh scan |
-| 12-13 | execute | verify | Clicked YouTube tab + pressed `/` shortcut |
-| 13-14 | verify | step_denied | Search interface still not observable |
-| 14-15 | reflect | replan | Search still missing after shortcut |
-| 15-16 | planner | step_ready | **New 6-step plan** from observed state (category tabs dominant) |
-| 16-17 | scheduler | step_ready | Advanced |
-| 17-18 | observe | screen_ready | Fresh scan |
-| 18-19 | execute | verify | **Breakthrough**: `open_url("Chrome", "https://www.youtube.com/results?search_query=shakira+latest+video")` |
-| 19-20 | verify | step_confirmed | Search results page loaded with Shakira video hyperlinks visible |
-| 20-21 | scheduler | step_ready | Advanced to "activate search input" (obsolete step) |
-| 21-22 | observe | screen_ready | Fresh scan shows results page |
-| 22-23 | execute | verify | Clicked `e_42_657314_4_21_4_1391` (Shakira, Burna Boy - Dai Dai) |
-| 23-24 | verify | step_denied | Step still demanded search activation, not video click |
-| 24-25 | reflect | replan | Lesson: video page already loaded, step obsolete |
-| 25-26 | planner | step_ready | **Final 2-step plan**: click video hyperlink → verify playback |
-| 26-27 | scheduler | step_ready | Advanced |
-| 27-28 | observe | screen_ready | Fresh scan |
-| 28-29 | execute | frame | CANNOT - target node absent, **video already playing** |
-| 29-30 | frame_action | reflect | Screen summary: window titled "Shakira, Burna Boy - Dai Dai... Audio playing", playback controls visible |
-| 30-31 | reflect | replan | Goal state reached, step obsolete |
-| 31-32 | planner | error | Budget exceeded (20/20 calls) |
-
-### Cognitive Behaviors Demonstrated
-
-1. **Adaptive Replanning** - 4 major replans when observed reality diverged from plan assumptions
-2. **Observation-Grounded Decision Making** - Every decision based on fresh UIA tree, not memory
-3. **Strategy Pivot** - Switched from UI widget hunting (`/`, click search bar) to direct URL navigation when search elements weren't detectable
-4. **Obsolete Step Detection** - Execute organ recognized video was already playing and returned CANNOT instead of blindly clicking
-5. **Verification Integrity** - Verify organ denied success when done_when didn't match observation, forcing honest reflection
-6. **Lesson Accumulation** - Each reflection produced actionable lessons that shaped subsequent plans
-7. **Goal Achievement Without Explicit Success Signal** - System reached goal state (video playing) but continued due to plan/step mismatch; the organism *lived* the success before the budget ended
-
-### Token Usage (transport_xai / Grok-4.3)
-
-| Call | Organ | Input Tokens | Output Tokens | Reasoning Tokens | Total | Cost (USD ticks) |
-|------|-------|--------------|---------------|------------------|-------|------------------|
-| 1 | planner | 3,383 | 1,503 | 1,299 | 4,886 | 79,190,500 |
-| 2 | execute | 3,617 | 2,003 | 1,928 | 5,620 | 94,615,500 |
-| 3 | frame_action | 3,388 | 1,035 | 899 | 4,423 | 66,881,000 |
-| 4 | reflect | 3,486 | 1,453 | 1,288 | 4,939 | 78,556,000 |
-| 5 | planner | 3,522 | 3,253 | 3,189 | 6,775 | 122,662,000 |
-| 6 | reflect | 3,591 | 1,016 | 870 | 4,607 | 67,599,500 |
-| 7 | planner | 3,557 | 2,152 | 1,870 | 5,709 | 91,542,500 |
-| 8 | execute | 3,789 | 2,236 | 2,127 | 6,025 | 100,574,500 |
-| 9 | verify | 3,570 | 338 | 267 | 3,908 | 51,731,000 |
-| 10 | reflect | 3,697 | 1,042 | 923 | 4,739 | 69,574,500 |
-| 11 | planner | 3,522 | 2,152 | 1,870 | 5,709 | 91,542,500 |
-| 12 | execute | 3,980 | 2,778 | 2,691 | 6,758 | 118,528,000 |
-| 13 | verify | 3,732 | 360 | 275 | 4,092 | 54,306,000 |
-| 14 | execute | 3,470 | 1,511 | 1,405 | 4,981 | 80,478,000 |
-| 15 | verify | 3,215 | 405 | 341 | 3,620 | 44,936,500 |
-| 16 | reflect | 3,328 | 837 | 693 | 4,165 | 56,477,000 |
-| 17 | planner | 3,243 | 949 | 769 | 4,192 | 57,542,500 |
-| 18 | execute | 4,366 | 3,269 | 3,153 | 7,635 | 133,612,000 |
-| 19 | frame_action | 4,107 | 937 | 726 | 5,044 | 72,074,500 |
-| 20 | reflect | 4,217 | 596 | 462 | 4,813 | 61,564,500 |
-| **TOTAL** | | **70,281** | **29,825** | **26,245** | **96,516** | **1,402,988,000** |
-
-**Average per call**: ~4,826 total tokens, ~$0.0014 (at xAI pricing)  
-**Reasoning overhead**: ~27% of output tokens used for internal reasoning (native Grok reasoning)
-
----
-
-## Grok Answer Reading Milestone (Tag: `grok-answer-read`)
-
-**Goal**: Capture Grok chat content via UIA deep observation and enable read_node capability for cognitive loop integration.
-
-### Breakthrough: Deep Observation of React Virtualized Content
-
-The organism now stably captures **Grok chat messages** from the browser:
-
-- **Observation depth config**: `step_px=48`, `max_total_nodes=20000`, `max_subtree_nodes_per_point=5000`, `include_offscreen/disabled=true`, `require_interactive=false`
-- **READ action** added for `Text`/`ListItem` roles (browser chat messages)
-- **Spatial parent linking** for `hwnd=0` nodes (rect containment in window bounds)
-- **read_node()** capability added to execute runtime for reading chat messages
-
-**Proven capture** (2619 nodes, 1684 with text, 317 actionable including 6 Grok messages):
-```
-htht
-Htht right back at ya!
-😎
-Not sure what that means though—
-Hit me with more details...
-```
-
-### Technical Achievements
-
-1. **10x observation harvest limits** - Captures virtualized React content that standard scans miss
-2. **Disabled offscreen/enabled filters** - Deep inspection reaches all UIA elements
-3. **READ action for Text/ListItem roles** - Semantic reading of chat bubbles, not just clickable elements
-4. **Spatial linking solves hwnd=0 detachment** - Browser content elements linked via rect containment to window bounds
-5. **Z-order + focus + hierarchy** - Complete mechanical perception stack working
-
----
-
-## Observation System (Redesigned - Tag: `z-order-found`)
-
-The `core_observation.py` produces a clean, accurate, deep hierarchical tree:
-
-- **Z-order tracking** via `EnumWindows` - 7 windows ranked by OS stacking order
-- **Focus tracking** via UIA `HasKeyboardFocusPropertyId` (30009) and `IsKeyboardFocusablePropertyId` (30008)
-- **Deep hierarchy** via `FindAllBuildCache(TreeScope_Subtree)` - full subtree harvest per window
-- **Junk role filtering** - removes TitleBar, ScrollBar, StatusBar, ProgressBar, Separator, ToolTip, Image, Custom, Header, HeaderItem
-- **Parent/child relationships** with `depth` and `parent_id` fields
-- **Action indexing** - every interactive element gets stable node ID with coordinates, rect, enabled state, runtime_id
-
-Output verified: 7 windows in Z-order, 122 actionable elements, proper hierarchy, focus correctly identifying active elements.
-
----
-
-## Running
+## One Command
 
 ```bash
-# Reset and run with xAI (requires XAI_API_KEY)
-python -m core_organism "your goal here" --reset --max-brain-calls 20
-
-# File proxy mode (human-in-the-loop)
-# wiring.json: "transport": "transport_file_proxy"
-# Writes runtime_request.json, waits for runtime_response.json
+python -m core_organism "your goal here" --max-ticks 50
 ```
 
-### Wiring Configuration
-- `wiring.json` - Fixed circuit: model, transport, topology, prompts, paths, observe_config
-- `runtime_state.json` - Persistent organism state (goal, tick, current_node, plan, observations)
-- `runtime_control.json` - Manual control: `"mode": "run|pause|step"`, `"step_token": N`
-- `runtime_log.ndjson` - Event log (organism_start, node_start, node_complete, error, halted)
-- `runtime_raw_*.txt` - Full request/response with token usage, reasoning, raw API bodies
+That's it. The repository *is* the runtime. The goal *is* the context. The wiring *is* the architecture.
 
----
+# wiring.json: The Immutable Circuit
 
-## Self-Modification
+`wiring.json` is not configuration. It is **the organism's DNA** — a single JSON file that defines the complete topology, transports, prompts, and self-modification rules. The organism never rewires itself mid-run; `node_self_modify` proposes patches, the local body validates (Python compile + JSON parse), commits, and optionally pushes.
 
-The organism can evolve its own code:
-- `node_self_modify` reads checked-out repo + runtime evidence + failure diagnosis
-- Produces git-native patch: file_writes, file_deletes, wiring_patches, commands
-- Body validates (Python compile, JSON parse), commits, pushes on current branch
-- Hot-swap to known-good commit on failure
+```mermaid
+stateDiagram-v2
+    [*] --> node_planner
+    node_planner --> node_scheduler : step_ready
+    node_planner --> node_reflect : reflect
+    node_planner --> node_error : error
+    node_scheduler --> node_observe : step_ready
+    node_scheduler --> node_satisfied : plan_complete
+    node_scheduler --> node_error : error
+    node_observe --> node_planner : initial_screen
+    node_observe --> node_execute : screen_ready
+    node_observe --> node_error : error
+    node_execute --> node_verify : verify
+    node_execute --> node_frame_action : frame
+    node_execute --> node_reflect : reflect
+    node_execute --> node_self_modify : self_modify
+    node_execute --> node_error : error
+    node_verify --> node_scheduler : step_confirmed
+    node_verify --> node_reflect : step_denied
+    node_verify --> node_error : error
+    node_reflect --> node_observe : retry
+    node_reflect --> node_planner : replan
+    node_reflect --> node_frame_action : frame
+    node_reflect --> node_self_modify : escalate
+    node_reflect --> node_satisfied : give_up
+    node_reflect --> node_error : error
+    node_self_modify --> node_planner : modified
+    node_self_modify --> node_reflect : modify_failed
+    node_self_modify --> node_error : error
+    node_satisfied --> [*] : halt
+    node_frame_action --> node_execute : framed
+    node_frame_action --> node_reflect : reflect
+    node_frame_action --> node_error : error
+    node_error --> node_planner : planner
+    node_error --> node_reflect : reflect
+    node_error --> [*] : halt
+```
 
----
+## Transport Layer (Pluggable Brains)
 
-## Key Files
+```json
+"model": {
+  "transport": "transport_xai",
+  "transport_config": {
+    "transport_xai": {
+      "mode": "api",
+      "api_key_env": "XAI_API_KEY",
+      "model": "grok-4.3",
+      "reasoning": { "enabled": true, "effort": "low" }
+    },
+    "transport_file_proxy": {
+      "request_path": "runtime_request.json",
+      "response_path": "runtime_response.json"
+    },
+    "transport_openai": { "base_url": "http://localhost:1234", "model": "nemotron-3-nano-4b" },
+    "transport_opencode": { "executable": "opencode-cli.exe" }
+  }
+}
+```
+
+Switching brains = changing one string. The organism doesn't care.
+
+# 3. The Observation Model: Whole-Screen, Focus-Free
+
+## One Flat Scan, Every Visible Element
+
+```python
+def observe(desktop, config):
+    gathered = gather(desktop, config)      # UIA hover-cache scan
+    filtered = filter_gather(gathered, config)
+    return filtered
+```
+
+The scanner hovers a low-discrepancy grid over the entire desktop, caching UIA properties and patterns. Every visible window, button, edit, list, pane — ranked by content and on-screen position — ends up in one tree.
+
+**No focused window. No foreground tracking.** The body never steals, tracks, or reasons about focus. The brain acts on *any* element directly.
+
+## Short Hierarchical IDs: W2E4C1
 
 ```
-core_organism.py      # Main loop, state machine, topology routing
-core_brain.py         # LLM transport, stable prefix, reasoning patterns, schemas
-core_nodes.py         # Node implementations (call_node dispatch)
-core_observation.py   1  # UIA whole-screen scan with Z-order, focus, hierarchy
-core_desktop.py       # Desktop automation, window tokens, UIA wrappers
-core_bus.py           # Signal bus, datasheets, emit
-core_stop_check.py    # PID-based stop coordination
-wiring.json           # Fixed circuit configuration
-node_*.py             # Individual organ implementations
-transport_*.py        # LLM backend adapters
+W0 Screen Desktop
+  W1 Window Task Manager
+    W1E1 Text Task Manager [read]
+    W1E2 Button CPU 43% [click]
+    W1E3 Pane
+    W1E4 Pane CPU
+  W2 Window OpenCode
+    W2E1 Group
+    W2E2 Document OpenCode [write]
+    W2E3 List Desktop [scroll]
+    W2E4 Hyperlink ... [click]
+  W0C1 Button OpenCode - 1 running window [click]
+  W0C2 Button Task Manager CPU 50% [click]
 ```
 
+- `W0` = Screen root
+- `W{n}` = Window n (z-order)
+- `E{n}` = Element n within window
+- `C{n}` = Child n of parent element
+- Action suffix: `[click]`, `[read]`, `[write]`, `[scroll]`
+
+These IDs are **the only addressing the brain sees**. Long runtime IDs (`e_42_1638582_4_0_0_399`) live only in `action_index` values for execution.
+
+## Dual Index Architecture
+
+```python
+# Brain-facing: semantic tree with short_ids as keys
+"desktop_tree": {
+  "node_index": { "W1E2": {...}, "W1E4": {...} },
+  "root": { "id": "W0", "children": [...] }
+}
+
+# Body-facing: actionable elements with runtime_id for execution
+"action_index": {
+  "W1E2": { "id": "e_42_...", "runtime_id": [...], "px": 123, "py": 456, "hwnd": 789 }
+}
+```
+
+Brain picks `W1E2` from `desktop_tree_text`. Body executes via `action_index["W1E2"]["runtime_id"]`. Single lookup path. No fallback.
+
+# 4. The Organ Loop: One Bus, One Signal
+
+## Bus Contract
+
+Every organ receives **one typed record** and emits **exactly one JSON record** whose `data.next_signal` is the only value the body routes on. Organs never call each other directly.
+
+```mermaid
+sequenceDiagram
+    participant Body
+    participant Planner
+    participant Scheduler
+    participant Observe
+    participant Execute
+    participant Verify
+    participant Reflect
+    participant SelfModify
+    participant Satisfied
+    
+    Body->>Planner: {goal, state, observation}
+    Planner-->>Body: {record_type:"plan", data:{next_signal:"step_ready", intent:[...]}}
+    Body->>Scheduler: {step: 0}
+    Scheduler-->>Body: {record_type:"schedule", data:{next_signal:"step_ready", step:0}}
+    Body->>Observe: (mechanical, no brain)
+    Observe-->>Body: {desktop_tree, desktop_tree_text, action_index}
+    Body->>Execute: {step, frame, observation}
+    Execute-->>Body: {record_type:"execution", data:{conclusion:"EXECUTE", code:"..."}}
+    Body->>Body: runs code in capability runtime
+    Body->>Verify: {step, done_when, result, observation}
+    Verify-->>Body: {record_type:"verification", data:{next_signal:"step_confirmed", success:true}}
+    Body->>Scheduler: (advances to next step)
+    Note over Body,Scheduler: loop until plan_complete
+    Body->>Satisfied: {goal, evidence}
+    Satisfied-->>Body: {record_type:"satisfied", data:{next_signal:"halt"}}
+```
+
+## Organ Roles
+
+| Organ | Brain | Role |
+|-------|-------|------|
+| `node_planner` | ✅ | Decomposes goal into verifiable steps |
+| `node_scheduler` | ❌ | Mechanical: advances to next step |
+| `node_observe` | ❌ | Mechanical: whole-screen UIA scan |
+| `node_execute` | ✅ | Writes Python code, runs in capability runtime |
+| `node_verify` | ✅ | Judges step success from fresh observation only |
+| `node_reflect` | ✅ | Diagnoses failure, routes: retry/replan/frame/escalate/give_up |
+| `node_self_modify` | ✅ | Produces git-native evolution patches |
+| `node_satisfied` | ✅ | Halts when goal complete or honest give-up |
+
+## Capability Runtime (Injected into Execute)
+
+```python
+{
+  "click_node": click_node,      # click_node("W1E2")
+  "read_node": read_node,        # read_node("W1E4")
+  "scroll_node": scroll_node,    # scroll_node("W2E3", -3)
+  "action_nodes": action_nodes,  # filter by action type
+  "pyautogui": pag,              # coordinate fallback
+  "subprocess", "ctypes", "os", "sys", "json", "re", "time",
+  "pathlib", "math", "random", "types",
+  "wiring_limit", "repo_root", "topology_mermaid",
+  "state", "wiring", "goal", "last", "fresh_observation",
+  "desktop_tree_text", "action_index"
+}
+```
+
+No sandbox. Full Python. The body trusts the brain.
+
+# 5. File Proxy Transport: The Universal Bridge
+
+## How It Works
+
+```json
+"transport_file_proxy": {
+  "request_path": "runtime_request.json",
+  "response_path": "runtime_response.json",
+  "poll_interval": 0.25,
+  "timeout": 86400
+}
+```
+
+1. Organism writes `runtime_request.json` (system prompt + user payload + fresh observation)
+2. **Anything** reads it: human, another AI, another endgame-ai instance, a script
+3. That thing writes `runtime_response.json` (valid JSON with `record_type`, `data`, `reasoning`)
+4. Organism polls, reads, validates, continues
+
+## Why This Changes Everything
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    FILE PROXY TRANSPORT                      │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│   ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────┐  │
+│   │  Human   │    │  GPT-4   │    │  Claude  │    │ Grok │  │
+│   │  (you)   │    │  (API)   │    │  (API)   │    │ (API)│  │
+│   └────┬─────┘    └────┬─────┘    └────┬─────┘    └──┬────┘  │
+│        │               │               │               │      │
+│        ▼               ▼               ▼               ▼      │
+│   ┌─────────────────────────────────────────────────────┐    │
+│   │              runtime_request.json                    │    │
+│   │  {system_prompt, goal, state, fresh_observation}     │    │
+│   └─────────────────────────────────────────────────────┘    │
+│                        │                                     │
+│                        ▼                                     │
+│   ┌─────────────────────────────────────────────────────┐    │
+│   │              runtime_response.json                   │    │
+│   │  {record_type, data:{next_signal, ...}, reasoning}   │    │
+│   └─────────────────────────────────────────────────────┘    │
+│                        │                                     │
+│                        ▼                                     │
+│              ┌─────────────────┐                             │
+│              │  endgame-ai     │                             │
+│              │  organism body  │                             │
+│              └─────────────────┘                             │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**No MCP servers. No skills. No pip install.** The protocol is: *write JSON, read JSON*. Any agent that can read/write files participates.
+
+## Multi-Agent / Multi-Instance
+
+Two endgame-ai instances can talk via a shared directory:
+- Instance A writes request → Instance B reads, writes response → Instance A continues
+- A human can step in at any tick, inspect the request, write a response
+- CI/CD can inject responses for testing
+
+## ROD (Reasoning on Demand) Injection
+
+```json
+"reasoning": {
+  "enabled": true,
+  "pattern": "two_pass",
+  "injection_template": "ROD_REASONING_CONTENT:\n{reasoning}",
+  "extractor": "think_tags"
+}
+```
+
+The organism can request reasoning from *any* brain, then inject it back for a second pass — regardless of which transport produced it.
+
+# 6. Self-Modification: Git-Native Evolution
+
+## The Self-Modify Organ
+
+When the organism hits a wall (missing capability, broken contract, bad prompt), `node_self_modify` doesn't workaround — it **evolves the repository**.
+
+```mermaid
+flowchart TD
+    A[Execution fails or reflect escalates] --> B[node_self_modify]
+    B --> C{Read workspace manifest<br/>git_context, failure diagnosis,<br/>fresh observation}
+    C --> D[Produce evolution patch]
+    D --> E[Local body validates:<br/>Python compile + JSON parse]
+    E --> F{Valid?}
+    F -->|No| G[Hot-swap to known_good_commit]
+    F -->|Yes| H[Atomic write files]
+    H --> I[Commit with structured message]
+    I --> J[Push if push_after_commit=true]
+    J --> K[Reload wiring, continue from planner]
+    G --> K
+```
+
+## Patch Schema (Enforced)
+
+```json
+{
+  "record_type": "git_evolution_patch",
+  "data": {
+    "summary": "Unify short IDs everywhere, remove node_by_id fallback",
+    "rationale": "Single lookup path via action_index keyed by short_id...",
+    "read_files": ["core_nodes.py", "core_observation.py", "wiring.json"],
+    "file_writes": [
+      {"path": "core_nodes.py", "content": "..."},
+      {"path": "core_observation.py", "content": "..."}
+    ],
+    "file_deletes": [],
+    "wiring_patches": [
+      {"op": "set", "path": "model.transport", "value": "transport_xai"}
+    ],
+    "commands": [
+      {"command": "python -m pyright core_nodes.py", "shell": false}
+    ],
+    "expected_validation": "pyright clean, organism runs 5 ticks without error"
+  }
+}
+```
+
+## Safety Mechanisms
+
+- **Read-before-write**: Must declare `read_files` for every touched existing file
+- **Core file protection**: Cannot delete `core_*.py` or `wiring.json`
+- **Rollback on failure**: Snapshots restored automatically
+- **Hot-swap to known good**: `wiring.json`'s `known_good_commit` is the escape hatch
+- **Atomic writes**: Temp file + `os.replace`
+
+## The Goal Is the Memory
+
+No vector DB. No embeddings. The **goal string** — fixed for the run — is the atemporal narrative. Each organ receives it. Each patch references it. The organism *tells itself the story of what it's doing* across ticks. Self-modification updates the story by updating the code that enacts it.
+
+# 7. Deterministic Analysis Tools: Finding Bloat
+
+The repository includes a deterministic PowerShell bridge (`ps_bridge.py` at repo root) that wraps all analysis tools with structured JSON output. No shell syntax issues (`&&`, `||`, `|`).
+
+## ps_bridge.py Commands
+
+```bash
+# Move to repo root (already there)
+python ps_bridge.py run "command"
+python ps_bridge.py git_status
+python ps_bridge.py git_diff
+python ps_bridge.py git_add "file.py"
+python ps_bridge.py git_commit "message"
+python ps_bridge.py git_log 20
+python ps_bridge.py pyright .
+python ps_bridge.py vulture . 80
+python ps_bridge.py pyan3 . --uses --no-defines --colored --grouped --annotated --dot --file deps.dot
+python ps_bridge.py pydeps . --noshow
+python ps_bridge.py code2flow . --format dot
+python ps_bridge.py pycallgraph .
+```
+
+Each returns:
+```json
+{"exit_code": 0, "stdout": "...", "stderr": "...", "success": true}
+```
+
+## Vulture: Dead Code Detection
+
+```bash
+python ps_bridge.py vulture . 80
+```
+
+Finds unused imports, methods, attributes, classes. Run after every self-modify to catch regressions.
+
+## Pyright: Static Type Checking
+
+```bash
+python ps_bridge.py pyright .
+```
+
+Catches type errors the brain might introduce. The organism runs this as a validation command in self-modify patches.
+
+## Call Graph Analysis
+
+```bash
+# pyan3 (module import graph)
+python ps_bridge.py pyan3 .
+
+# pydeps (dependency graph, needs Graphviz dot)
+python ps_bridge.py pydeps .
+
+# code2flow (function call graph)
+python ps_bridge.py code2flow .
+
+# python-call-graph
+python ps_bridge.py pycallgraph .
+```
+
+Generate `.dot` files for Graphviz visualization. `deps.dot` (152KB) already exists from pyan3.
+
+## Finding Bloat: The Workflow
+
+1. `python ps_bridge.py vulture . 80` → dead code
+2. `python ps_bridge.py pyright .` → type errors, unused imports
+3. `python ps_bridge.py pyan3 . --uses --no-defines --dot --file deps.dot` → import cycles, unused modules
+4. `python ps_bridge.py pydeps . --noshow` → dependency clusters
+5. Delete. Simplify. Commit.
+
+The organism can run this workflow on itself via `node_self_modify`.
+
+# 8. Stable Prefix: Prompt Caching for Free
+
+## The Problem
+
+Every brain call sends the full system prompt + static source files. For large repos, this burns tokens and latency.
+
+## The Solution: Stable Prefix
+
+```json
+"stable_prefix": {
+  "enabled": true,
+  "include_in_request": true
+}
+```
+
+When enabled, the organism computes a **content-addressed fingerprint** of all tracked source files (`.py`, `.json`, `.md`, `.gitattributes`, `.gitignore`, `LICENSE` — excluding `.git`, `__pycache__`, `runtime_*`).
+
+```python
+class StablePrefix:
+    def _render(self) -> tuple[str, str]:
+        digest = hashlib.sha256()
+        for rel in self.files:  # sorted git ls-files
+            content = self._read_file(rel)
+            digest.update(rel.encode("utf-8"))
+            digest.update(b"\0")
+            digest.update(content.encode("utf-8"))
+        # cache_key = f"endgame-ai-{fingerprint[:24]}"
+```
+
+The fingerprint becomes the **prompt cache key** (`prompt_cache_key` sent to xAI API). Provider caches the prefix; only dynamic data (goal, state, fresh observation) follows.
+
+## Manifest + Source In Prompt
+
+```
+ENDGAME-AI STABLE PREFIX
+This is the real checked-out source used by the local organism.
+Provider prompt caches can reuse this prefix because dynamic run data appears after it.
+Self-evolution must ground changes in these files, not in hallucinated structure.
+
+ORGANISM OPERATING RULES:
+You are one organ inside endgame-ai...
+
+STATIC MANIFEST:
+[{"path": "core_nodes.py", "chars": 23456, "bytes": 23456}, ...]
+
+STATIC SOURCE FILES:
+--- BEGIN FILE core_nodes.py ---
+[full file content]
+--- END FILE core_nodes.py ---
+```
+
+## Why It Matters
+
+- **Tokens**: Static source sent once, cached by provider
+- **Latency**: Cache hit = faster first token
+- **Correctness**: Brain *always* sees actual checked-out code, never hallucinated structure
+- **Self-modify grounding**: Patches must match the fingerprint or cache invalidates
+
+Enable in `wiring.json`:
+```json
+"model": {
+  "stable_prefix": { "enabled": true, "include_in_request": true },
+  "transport": "transport_xai",
+  "transport_config": { "transport_xai": { "mode": "api", "model": "grok-4.3" } }
+}
+```
+
+# Deterministic Analysis Toolchain
+
+Endgame-ai includes a **deterministic analysis bridge** (`ps_bridge.py` at repo root) that wraps all static analysis tools behind structured JSON. No shell syntax issues (`&&`, `||`, `|`) — pure `subprocess.run`.
+
+## Available Commands
+
+```bash
+python ps_bridge.py run "powershell command"      # Raw PowerShell
+python ps_bridge.py git_status                    # git status --porcelain
+python ps_bridge.py git_diff [files...]           # git diff
+python ps_bridge.py git_add [files...]            # git add
+python ps_bridge.py git_commit "message"          # git commit -m
+python ps_bridge.py git_log [n]                   # git log --oneline -n
+python ps_bridge.py pyright [target]              # python -m pyright --outputjson
+python ps_bridge.py vulture [target] [min_conf]   # python -m vulture --min-confidence
+python ps_bridge.py pyan3 [target]                # pyan3 --uses --format dot
+python ps_bridge.py pydeps [target]               # pydeps --noshow
+python ps_bridge.py code2flow [target]            # code2flow --format dot
+python ps_bridge.py pycallgraph [target]          # python -m pycallgraph
+```
+
+Each returns:
+```json
+{"exit_code": 0, "stdout": "...", "stderr": "...", "success": true}
+```
+
+## Call Graph Analysis
+
+```bash
+# pyan3 (works via direct executable)
+python ps_bridge.py pyan3 . > deps.dot
+
+# pydeps (needs Graphviz dot)
+python ps_bridge.py pydeps .
+
+# code2flow (needs Graphviz dot)
+python ps_bridge.py code2flow .
+
+# pycallgraph
+python ps_bridge.py pycallgraph .
+```
+
+## Finding Bloat
+
+```bash
+# Dead code (vulture)
+python ps_bridge.py vulture . 90
+
+# Type errors (pyright)
+python ps_bridge.py pyright .
+
+# Call graph → find unreachable nodes
+python ps_bridge.py pyan3 . --uses --no-defines --colored --grouped --annotated --dot --file deps.dot
+```
+
+## Integration with Self-Modify
+
+`node_self_modify` can emit `commands` in its patch:
+```json
+{
+  "commands": [
+    {"command": "python ps_bridge.py pyright .", "shell": false},
+    {"command": "python ps_bridge.py vulture . 80", "shell": false}
+  ]
+}
+```
+
+The organism runs them, validates (Python compile + JSON parse), commits on success, hot-swaps to known-good on failure.
+
+# 10. Quick Start & Meta Summary
+
+## Run It
+
+```bash
+# Clone
+git clone https://github.com/your-org/endgame-ai
+cd endgame-ai
+
+# Set XAI_API_KEY for Grok-4.3 (or use file_proxy)
+$env:XAI_API_KEY = "xai-..."
+
+# Run with a goal
+python -m core_organism "Open Notepad and write 'hello world'" --max-ticks 20
+```
+
+## File Proxy Mode (No API Key)
+
+```json
+// wiring.json
+"model": { "transport": "transport_file_proxy" }
+```
+
+```bash
+python -m core_organism "your goal" --max-ticks 10
+# Organism writes runtime_request.json
+# YOU write runtime_response.json (act as the brain)
+# Organism reads, continues
+```
+
+## Architecture in One Diagram
+
+```mermaid
+graph TB
+    subgraph "Repository (DNA)"
+        W[wiring.json] --> T[Topology]
+        W --> P[Prompts]
+        W --> M[Model/Transport]
+        W --> S[Self-Modify Config]
+    end
+    
+    subgraph "Organism Body (Python Process)"
+        O[core_organism.py] --> B[core_bus.py]
+        O --> N[core_nodes.py]
+        O --> D[core_desktop.py]
+        O --> BR[core_brain.py]
+    end
+    
+    subgraph "Transports (Pluggable Brains)"
+        TX[transport_xai.py] --> XAI[xAI API / Grok-4.3]
+        TF[transport_file_proxy.py] --> RF[runtime_request.json / runtime_response.json]
+        TO[transport_openai.py] --> OAI[OpenAI-compatible]
+        TC[transport_opencode.py] --> OC[opencode CLI]
+    end
+    
+    subgraph "Observation (UIA)"
+        D --> SC[UiaScanner]
+        SC --> HT[Hover-Cache Grid Scan]
+        HT --> TI[Short IDs: W2E4C1]
+    end
+    
+    subgraph "Analysis (Deterministic)"
+        PS[ps_bridge.py] --> VT[Vulture]
+        PS --> PR[Pyright]
+        PS --> PA[pyan3/pydeps/code2flow]
+    end
+    
+    subgraph "Evolution (Git-Native)"
+        SM[node_self_modify] --> EP[Evolution Patch]
+        EP --> V[Validate: compile + parse]
+        V --> C[Commit]
+        C --> H[Hot-swap on failure]
+        C --> PUSH[Push if configured]
+    end
+    
+    O --> M
+    M --> TX
+    M --> TF
+    M --> TO
+    M --> TC
+    N --> SM
+    BR --> SP[Stable Prefix Cache]
+```
+
+## The Vision Realized
+
+**endgame-ai is the bridge.**
+
+| Before | After |
+|--------|-------|
+| "AI automates desktop" | Universal substrate: any intelligence ↔ any Windows |
+| Hardcoded LLM | `wiring.json` swaps brains in one line |
+| Skills/MCP/Tools | File protocol: write JSON, read JSON |
+| Persistent memory | Goal = atemporal narrative memory |
+| Sandboxed | No sandbox. Full Python. Trust the brain. |
+| Single agent | Multi-agent: human, AI, endgame-ai instances |
+
+## Contributing
+
+1. Run `python ps_bridge.py vulture . 80` — delete dead code
+2. Run `python ps_bridge.py pyright .` — fix type errors
+3. Run `python ps_bridge.py pyan3 . --dot --file deps.dot` — visualize imports
+4. Edit `wiring.json` to change behavior (no code changes needed)
+5. Self-modify: give the organism a goal to improve itself
+
+The organism *is* the development environment. It evolves itself via GitHub. You just give it goals.
+
 ---
 
-## Vision: Living Organism Proven
+**We're cooking.** The bridge is built. The protocol is live. The organism is running. Now we give it better goals and watch it build the rest.
 
-The Shakira milestone demonstrates the **living organism vision**:
-
-> **The organism doesn't just execute a script - it perceives, decides, adapts, and persists until the goal state is observably true in the world.**
-
-- No hardcoded YouTube selectors
-- No "click at coordinates" fallback
-- No focus/window management assumptions
-- Pure observation → reasoning → action → verification loop
-- When UI didn't match plan, it **replanned** (4 times)
-- When search widget was invisible, it **pivoted strategy** (direct URL)
-- When video was already playing, execute **recognized completion** (CANNOT)
-- Verification **enforced honesty** (denied false success)
-- Reflection **extracted lessons** that drove progress
-
-The Grok answer reading milestone extends this: **the organism now reads live LLM chat responses** from the browser, enabling cognitive loops that can converse with other AIs, extract information, and act on it — all from semantic observation of the live desktop.
-
-This is cognitive behavior: **the system found and played the latest Shakira video without being told which song, which URL, or which element to click. It searched, evaluated results, selected the most recent, and verified playback - all from semantic observation of the live desktop.** Now it can also read Grok's answers.
-
----
-
-## Current State (main branch)
-
-| Commit | Tag | Description |
-|--------|-----|-------------|
-| `40374e9` | `grok-answer-read` | Capture Grok chat content via UIA deep observation + read_node |
-| `f9f1ff4` | `shakira-latest` | Shakira milestone - living organism vision proven |
-| `ec7be73` | `z-order-found` | Redesign desktop observation: Z-order, focus, hierarchy, junk filtering |
-
-Clean linear history — all failed self-modify attempts removed.
-
----
-
-## License
-
-MIT

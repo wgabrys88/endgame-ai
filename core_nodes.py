@@ -551,7 +551,8 @@ def _action_index(state: dict[str, Any]) -> dict[str, Any]:
 def _node_center(node: dict[str, Any]) -> tuple[int, int]:
     if node.get("px") is not None and node.get("py") is not None:
         return int(node.get("px") or 0), int(node.get("py") or 0)
-    rect = node.get("rect") if isinstance(node.get("rect"), dict) else {}
+    rect_val = node.get("rect")
+    rect: dict[str, Any] = rect_val if isinstance(rect_val, dict) else {}
     left = int(rect.get("left", 0) or 0)
     right = int(rect.get("right", left) or left)
     top = int(rect.get("top", 0) or 0)

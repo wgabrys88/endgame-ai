@@ -290,6 +290,7 @@ class UiaVariant:
                     right_i, bottom_i = left_i + int(third), top_i + int(fourth)
                 return {"left": left_i, "top": top_i, "right": right_i, "bottom": bottom_i}
             if hasattr(val, "left"):
+                # val is a RECT-like object with left/top/right/bottom attributes
                 return {
                     "left": int(val.left),
                     "top": int(val.top),
