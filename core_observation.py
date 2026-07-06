@@ -8,7 +8,7 @@ import sys
 import time
 from ctypes import wintypes
 from dataclasses import dataclass, field
-from typing import Any, Iterable
+from typing import Any
 
 import comtypes
 import comtypes.client
@@ -31,6 +31,13 @@ CONTAINER_ROLES = {
 JUNK_ROLES = {
     "TitleBar", "ScrollBar", "StatusBar", "ProgressBar", "Separator",
     "ToolTip", "Image", "Custom", "Header", "HeaderItem",
+}
+
+DESKTOP_ICON_NAMES = {
+    "Recycle Bin", "TeamViewer", "CherryTree", "LM Studio", "GitHub Desktop",
+    "MPC-HC", "FileZilla", "Insomnia", "Microsoft Teams", "OneDrive",
+    "OneNote", "Microsoft 365 Copilot", "HWMonitor", "Tiled", "Blender",
+    "Blender 4.1", "MPC-HC x64",
 }
 
 def load_uia() -> Any:
@@ -179,6 +186,22 @@ def _action_for_role(role: str, class_name: str = "") -> str:
         return "scroll"
     return ""
 
+
+def _is_desktop_leakage(node: CachedNode, window_class: str = "", window_framework: str = "") -> bool:
+    """Generic detection of desktop SysListView32 leakage into any window's UIA tree.
+    
+    Detects when a window's UIA tree incorrectly contains the Desktop ListView
+    (named "Desktop") and its ListItem children (desktop icons).
+    """
+    # A List named "Desktop" with scroll action = the desktop SysListView32
+    node_action = _action_for_role(node.role, node.class_name)
+    if node.role == "List" and node.name == "Desktop" and "scroll" in (node_action or ""):
+        return True
+    # ListItems with known desktop icon names
+    if node.role == "ListItem" and node.name in DESKTOP_ICON_NAMES:
+        return True
+    return False
+
 @dataclass
 class CachedNode:
     id: str
@@ -208,6 +231,7 @@ class CachedNode:
     is_keyboard_focusable: bool = False
     is_content_element: bool = False
     is_control_element: bool = False
+    action: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         out: dict[str, Any] = {
@@ -281,21 +305,29 @@ class UiaVariant:
             return {"left": 0, "top": 0, "right": 0, "bottom": 0}
         try:
             val = v.value if hasattr(v, "value") else v
+            # Handle tuple/list with 4+ elements
             if isinstance(val, (tuple, list)) and len(val) >= 4:
-                left, top, third, fourth = (float(x) for x in val[:4])
+                left = float(val[0])
+                top = float(val[1])
+                third = float(val[2])
+                fourth = float(val[3])
                 left_i, top_i = int(left), int(top)
                 if third > left or fourth > top:
                     right_i, bottom_i = int(third), int(fourth)
                 else:
                     right_i, bottom_i = left_i + int(third), top_i + int(fourth)
                 return {"left": left_i, "top": top_i, "right": right_i, "bottom": bottom_i}
-            if hasattr(val, "left"):
-                # val is a RECT-like object with left/top/right/bottom attributes
+            # Handle object with left, top, right, bottom attributes
+            left_attr = getattr(val, "left", None)
+            top_attr = getattr(val, "top", None)
+            right_attr = getattr(val, "right", None)
+            bottom_attr = getattr(val, "bottom", None)
+            if left_attr is not None and top_attr is not None and right_attr is not None and bottom_attr is not None:
                 return {
-                    "left": int(val.left),
-                    "top": int(val.top),
-                    "right": int(val.right),
-                    "bottom": int(val.bottom),
+                    "left": int(left_attr),
+                    "top": int(top_attr),
+                    "right": int(right_attr),
+                    "bottom": int(bottom_attr),
                 }
         except Exception:
             pass
@@ -900,12 +932,46 @@ def filter_gather(gathered: dict[str, Any], config: dict[str, Any]) -> dict[str,
     text_max = int(filt.get("text_hint_max", 10000))
     max_action = int(filt.get("max_action_nodes", 5000))
     require_interactive = bool(filt.get("require_interactive", False))
+    max_depth = int(filt.get("max_depth", 10))
+    max_children_per_window = int(filt.get("max_children_per_window", 100))
+    exclude_desktop_leakage = bool(filt.get("exclude_desktop_leakage", True))
     nodes: list[CachedNode] = list(gathered.get("nodes") or [])
     screen = gathered.get("screen") or {}
     windows = gathered.get("windows") or []
     window_z_order = gathered.get("window_z_order") or []
     scan = gathered.get("scan") or {}
 
+    # Build hwnd -> (class_name, framework_id) map for desktop leakage detection
+    hwnd_to_window_info: dict[int, tuple[str, str]] = {}
+    for w in windows:
+        hwnd = int(w.get("hwnd") or 0)
+        if hwnd:
+            hwnd_to_window_info[hwnd] = (
+                str(w.get("class_name") or ""),
+                str(w.get("framework_id") or ""),
+            )
+
+    # Detect desktop leakage: windows that contain a List named "Desktop" with ListItems
+    # This is generic - any window that contains the desktop SysListView32 as a child
+    bad_runtime_id_prefixes: set[tuple[int, ...]] = set()
+    bad_hwnds: set[int] = set()
+    if exclude_desktop_leakage:
+        # Find all Lists named "Desktop" - get their runtime_id prefixes
+        for node in nodes:
+            if node.role == "List" and node.name == "Desktop" and node.runtime_id:
+                bad_runtime_id_prefixes.add(tuple(node.runtime_id))
+        
+        # Find all ListItems whose runtime_id starts with a Desktop list's runtime_id
+        # This handles the case where ListItems have hwnd=0 but share runtime_id prefix
+        for node in nodes:
+            if node.role == "ListItem" and node.runtime_id:
+                node_rid = tuple(node.runtime_id)
+                for bad_prefix in bad_runtime_id_prefixes:
+                    if len(node_rid) > len(bad_prefix) and node_rid[:len(bad_prefix)] == bad_prefix:
+                        bad_hwnds.add(node.hwnd)
+                        break
+
+    # Merge nodes by runtime_id
     merged: dict[str, CachedNode] = {}
     for node in nodes:
         key = ",".join(map(str, node.runtime_id)) if node.runtime_id else node.id
@@ -1012,6 +1078,9 @@ def filter_gather(gathered: dict[str, Any], config: dict[str, Any]) -> dict[str,
 
     root["children"].sort(key=lambda w: w.get("z_order", 0))
 
+    # Track child counts per window for max_children_per_window limit
+    window_child_counts: dict[str, int] = {token: 0 for token in window_nodes}
+
     direct: list[dict[str, Any]] = []
     for element in action_elements.values():
         px, py = int(element.get("px") or 0), int(element.get("py") or 0)
@@ -1024,6 +1093,11 @@ def filter_gather(gathered: dict[str, Any], config: dict[str, Any]) -> dict[str,
                 parent_id = str(containing[0]["id"])
         if not parent_id:
             parent_id = "W0"
+        
+        # Enforce max_children_per_window
+        if parent_id != "W0" and window_child_counts.get(parent_id, 0) >= max_children_per_window:
+            continue
+            
         node = {
             "id": element["id"],
             "parent_id": parent_id,
@@ -1048,9 +1122,24 @@ def filter_gather(gathered: dict[str, Any], config: dict[str, Any]) -> dict[str,
             direct.append(node)
         else:
             window_nodes[parent_id]["children"].append(node)
+            window_child_counts[parent_id] = window_child_counts.get(parent_id, 0) + 1
 
     for node in merged.values():
         if node.id in action_elements:
+            continue
+        # Filter desktop leakage: skip nodes from hwnds that contain desktop SysListView32
+        # Also check runtime_id prefix for nodes with hwnd=0
+        node_rid = tuple(node.runtime_id) if node.runtime_id else ()
+        is_desktop_leakage = False
+        if exclude_desktop_leakage:
+            if int(node.hwnd or 0) in bad_hwnds:
+                is_desktop_leakage = True
+            else:
+                for bad_prefix in bad_runtime_id_prefixes:
+                    if len(node_rid) > len(bad_prefix) and node_rid[:len(bad_prefix)] == bad_prefix:
+                        is_desktop_leakage = True
+                        break
+        if is_desktop_leakage:
             continue
         px, py = int(node.px or 0), int(node.py or 0)
         hwnd = int(node.hwnd or 0)
@@ -1085,10 +1174,16 @@ def filter_gather(gathered: dict[str, Any], config: dict[str, Any]) -> dict[str,
         node_index[n["id"]] = {k: v for k, v in n.items() if k != "children"}
         if action and len(action_elements) < max_action:
             action_elements[n["id"]] = n
+        
+        # Enforce max_children_per_window
+        if parent_id != "W0" and window_child_counts.get(parent_id, 0) >= max_children_per_window:
+            continue
+            
         if parent_id == "W0":
             direct.append(n)
         else:
             window_nodes[parent_id]["children"].append(n)
+            window_child_counts[parent_id] = window_child_counts.get(parent_id, 0) + 1
     root["children"].extend(direct)
 
     def sort_children(node: dict[str, Any]) -> None:
@@ -1101,6 +1196,24 @@ def filter_gather(gathered: dict[str, Any], config: dict[str, Any]) -> dict[str,
                 sort_children(child)
 
     sort_children(root)
+
+    # Enforce max_depth by removing nodes deeper than max_depth
+    def prune_by_depth(node: dict[str, Any], current_depth: int = 0) -> None:
+        children = node.get("children")
+        if not isinstance(children, list):
+            return
+        if current_depth >= max_depth:
+            node["children"] = []
+            return
+        # Filter children in place
+        kept_children = []
+        for child in children:
+            if isinstance(child, dict):
+                prune_by_depth(child, current_depth + 1)
+                kept_children.append(child)
+        node["children"] = kept_children
+
+    prune_by_depth(root)
 
     def assign_short_ids(node: dict[str, Any], window_prefix: str = "", elem_counter: dict[str, int] | None = None) -> None:
         if elem_counter is None:

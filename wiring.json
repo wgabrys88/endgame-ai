@@ -157,11 +157,14 @@
         ]
       },
       "depth": {},
-      "filter": {
+"filter": {
         "max_llm_nodes": 2000,
         "max_action_nodes": 5000,
         "text_hint_max": 10000,
-        "require_interactive": false
+        "require_interactive": false,
+        "max_depth": 10,
+        "max_children_per_window": 100,
+        "exclude_desktop_leakage": true
       }
     }
   },
