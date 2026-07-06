@@ -342,6 +342,18 @@ def _node_id(runtime_id: list[int], hwnd: int, rect: dict[str, int]) -> str:
     return f"e_{hwnd}_{rect['left']}_{rect['top']}"
 
 
+def _make_short_id(window_idx: int, elem_idx: int, child_idx: int = 0) -> str:
+    if window_idx == 0:
+        if child_idx > 0:
+            return f"W0C{child_idx}"
+        return "W0"
+    if elem_idx > 0:
+        if child_idx > 0:
+            return f"W{window_idx}E{elem_idx}C{child_idx}"
+        return f"W{window_idx}E{elem_idx}"
+    return f"W{window_idx}"
+
+
 def _get_cached(element: Any, prop_id: int) -> Any:
     try:
         return element.GetCachedPropertyValue(prop_id)
@@ -1089,28 +1101,72 @@ def filter_gather(gathered: dict[str, Any], config: dict[str, Any]) -> dict[str,
 
     sort_children(root)
 
+    def assign_short_ids(node: dict[str, Any], window_prefix: str = "", elem_counter: dict[str, int] | None = None) -> None:
+        if elem_counter is None:
+            elem_counter = {}
+        node_id = node.get("id", "")
+        parent_id = node.get("parent_id", "")
+        
+        if node_id == "W0":
+            short_id = "W0"
+        elif node_id.startswith("W") and parent_id == "W0":
+            short_id = node_id
+        elif parent_id.startswith("W") and parent_id != "W0":
+            win_key = parent_id
+            if win_key not in elem_counter:
+                elem_counter[win_key] = 0
+            elem_counter[win_key] += 1
+            short_id = f"{win_key}E{elem_counter[win_key]}"
+        else:
+            parent_short = parent_id
+            if parent_short in short_id_map:
+                parent_short = short_id_map[parent_short]
+            child_key = f"{parent_short}_child"
+            if child_key not in elem_counter:
+                elem_counter[child_key] = 0
+            elem_counter[child_key] += 1
+            short_id = f"{parent_short}C{elem_counter[child_key]}"
+        
+        short_id_map[node_id] = short_id
+        node["short_id"] = short_id
+        
+        for child in node.get("children") or []:
+            if isinstance(child, dict):
+                assign_short_ids(child, window_prefix, elem_counter)
+
+    short_id_map: dict[str, str] = {}
+    assign_short_ids(root)
+
+    for node_id, node_data in node_index.items():
+        if node_id in short_id_map:
+            node_data["short_id"] = short_id_map[node_id]
+    
+    for elem_id, elem_data in action_elements.items():
+        if elem_id in short_id_map:
+            elem_data["short_id"] = short_id_map[elem_id]
+
     def clean(value: Any) -> str:
         return " ".join(str(value or "").replace("\r", " ").replace("\n", " ").split())
 
     lines: list[str] = []
-    lines.append("(W0) Screen Desktop")
+    lines.append("W0 Screen Desktop")
 
     def render(node: dict[str, Any], indent: int = 1) -> None:
         prefix = "  " * indent
-        node_id = str(node.get("id", ""))
+        short_id = node.get("short_id", node.get("id", ""))
         role = str(node.get("role", ""))
         name = clean(node.get("name", "") or node.get("title", ""))
         action = str(node.get("action", ""))
         parts = []
-        if node_id:
-            parts.append(f"({node_id})")
+        if short_id:
+            parts.append(short_id)
         if role:
             parts.append(role)
         if name:
             parts.append(name)
         if action:
             parts.append(f"[{action}]")
-        hint = text_hints.get(node_id, "")
+        hint = text_hints.get(node.get("id", ""), "")
         if hint and hint not in name:
             parts.append(f"~{hint}")
         lines.append(f"{prefix}{' '.join(parts)}")
