@@ -64,3 +64,32 @@ sequenceDiagram
 ```
 
 No sandbox. Full Python. The body trusts the brain.
+
+## Recursive Organ Loops: Meta-Levels
+
+When `node_self_modify` escalates to distributed review, the **same organ loop runs at a higher meta-level**:
+
+```
+META-LEVEL 0 (Work)          META-LEVEL 1 (Review)          META-LEVEL 2 (Audit)
+┌─────────────────┐          ┌─────────────────┐          ┌─────────────────┐
+│ Goal: "Write    │          │ Goal: "Review   │          │ Goal: "Audit    │
+│  PS bridge"     │          │  PR #42"        │          │  reviewer B"    │
+├─────────────────┤          ├─────────────────┤          ├─────────────────┤
+│ Planner →       │          │ Planner →       │          │ Planner →       │
+│ Scheduler →     │          │ Scheduler →     │          │ Scheduler →     │
+│ Observe →       │          │ Observe →       │          │ Observe →       │
+│ Execute →       │          │ Execute →       │          │ Execute →       │
+│ Verify →        │          │ Verify →        │          │ Verify →        │
+│ Reflect →       │          │ Reflect →       │          │ Reflect →       │
+│ SelfMod → ──────┼─────────>│ SelfMod →       │          │ SelfMod →       │
+│ Satisfied       │          │ Satisfied       │          │ Satisfied       │
+└─────────────────┘          └─────────────────┘          └─────────────────┘
+       │                            │                            │
+       │  runtime_request.json      │  runtime_request.json      │
+       ▼                            ▼                            ▼
+  File Proxy                  File Proxy                  File Proxy
+```
+
+**The reviewer is not a special node** — it's a full endgame-ai instance. Its `node_execute` runs `pyright`, `vulture`, `pyan3`, `pydeps`, `code2flow`, `pytest`. Its `node_verify` judges: "Do all checks pass?" Its `node_satisfied` emits the verdict.
+
+The wiring.json doesn't change. The topology extends **dynamically** through the file-proxy protocol. Same organs, same bus, same signals — different goal.

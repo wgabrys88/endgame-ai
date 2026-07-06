@@ -16,6 +16,21 @@ Any entity that can write JSON to `runtime_request.json` and read JSON from `run
 
 No pip install. No MCP servers. No skills. No persistent memory — the **goal is the memory**, an atemporal narrative that the organism tells itself across ticks.
 
+## Fractal Topology: Organisms All the Way Down
+
+Because the reviewer *is* an endgame-ai instance, the topology becomes **recursive/fractal**:
+
+```
+Organism A (work) ←→ Organism B (review) ←→ Organism C (audit) ←→ ...
+     │                   │                   │
+     ▼                   ▼                   ▼
+Same wiring,          Same wiring,          Same wiring,
+same loop,            same loop,            same loop,
+different goal        different goal        different goal
+```
+
+An organism proposing a patch spawns a reviewer organism. That reviewer can be audited by another organism. **Same circuit, every level.** The goal string is the only difference.
+
 ## One Command
 
 ```bash
@@ -27,6 +42,8 @@ That's it. The repository *is* the runtime. The goal *is* the context. The wirin
 # wiring.json: The Immutable Circuit
 
 `wiring.json` is not configuration. It is **the organism's DNA** — a single JSON file that defines the complete topology, transports, prompts, and self-modification rules. The organism never rewires itself mid-run; `node_self_modify` proposes patches, the local body validates (Python compile + JSON parse), commits, and optionally pushes.
+
+## Base Topology (Single Organism)
 
 ```mermaid
 stateDiagram-v2
@@ -66,6 +83,41 @@ stateDiagram-v2
     node_error --> [*] : halt
 ```
 
+## Recursive/Fractal Topology (Distributed Evolution)
+
+When `node_self_modify` escalates to **distributed review**, the topology becomes a **tree of organisms** — each node in the tree is a full endgame-ai instance running the same wiring:
+
+```mermaid
+graph TD
+    subgraph "META-LEVEL 0: Original Goal"
+        O0[Organism A<br/>Proposer]
+    end
+    
+    subgraph "META-LEVEL 1: Review"
+        O1[Organism B<br/>Reviewer]
+        O1_1[Organism B1<br/>Sub-reviewer]
+    end
+    
+    subgraph "META-LEVEL 2: Audit"
+        O2[Organism C<br/>Auditor]
+    end
+    
+    O0 -.->|propose patch<br/>push to GitHub| O1
+    O1 -.->|review: pyright, vulture,<br/>pyan3, tests| O1_1
+    O1_1 -.->|audit reviewer| O2
+    O1 -.->|verdict: approve/reject<br/>runtime_response.json| O0
+    O0 -.->|hot-reload & continue| O0
+    
+    style O0 fill:#e1f5fe
+    style O1 fill:#fff3e0
+    style O1_1 fill:#fff3e0
+    style O2 fill:#fce4ec
+```
+
+**Key insight**: The reviewer (Organism B) is **not a special node** — it's a full endgame-ai instance with the *same wiring.json*, same topology, same organs. Its "goal" is simply *"Review PR #42: validate evolution patch"*. It runs the same planner→scheduler→observe→execute→verify→reflect loop. The only difference is the goal string and the transport (file-proxy for review channel).
+
+This makes the topology **fractal**: the same circuit at every meta-level.
+
 ## Transport Layer (Pluggable Brains)
 
 ```json
@@ -89,6 +141,34 @@ stateDiagram-v2
 ```
 
 Switching brains = changing one string. The organism doesn't care.
+
+## Self-Modify as Topology Extension
+
+The `node_self_modify` organ doesn't just patch files — it **extends the topology** by spawning a review organism:
+
+```mermaid
+sequenceDiagram
+    participant A as Organism A (Proposer)
+    participant GH as GitHub
+    participant B as Organism B (Reviewer)
+    
+    A->>A: node_self_modify produces patch
+    A->>A: Local validate (compile + pyright + vulture)
+    A->>GH: git push origin feature/xyz
+    GH->>B: Webhook / poll (trigger review)
+    B->>B: Goal: "Review PR #42"
+    B->>B: Planner: decompose review steps
+    B->>B: Execute: clone, pyright, vulture, pyan3, tests
+    B->>B: Verify: all checks pass?
+    B->>B: Reflect: if fail, diagnose
+    B->>B: Self-modify: (optional) patch review criteria
+    B->>B: Satisfied: emit verdict
+    B->>A: Write runtime_response.json (approve/reject)
+    A->>A: Poll response
+    A->>A: Approve? Hot-reload & continue : Hot-swap to known_good
+```
+
+The wiring.json doesn't change — the **topology extends dynamically** through the file-proxy protocol.
 
 # 3. The Observation Model: Whole-Screen, Focus-Free
 
@@ -215,6 +295,35 @@ sequenceDiagram
 
 No sandbox. Full Python. The body trusts the brain.
 
+## Recursive Organ Loops: Meta-Levels
+
+When `node_self_modify` escalates to distributed review, the **same organ loop runs at a higher meta-level**:
+
+```
+META-LEVEL 0 (Work)          META-LEVEL 1 (Review)          META-LEVEL 2 (Audit)
+┌─────────────────┐          ┌─────────────────┐          ┌─────────────────┐
+│ Goal: "Write    │          │ Goal: "Review   │          │ Goal: "Audit    │
+│  PS bridge"     │          │  PR #42"        │          │  reviewer B"    │
+├─────────────────┤          ├─────────────────┤          ├─────────────────┤
+│ Planner →       │          │ Planner →       │          │ Planner →       │
+│ Scheduler →     │          │ Scheduler →     │          │ Scheduler →     │
+│ Observe →       │          │ Observe →       │          │ Observe →       │
+│ Execute →       │          │ Execute →       │          │ Execute →       │
+│ Verify →        │          │ Verify →        │          │ Verify →        │
+│ Reflect →       │          │ Reflect →       │          │ Reflect →       │
+│ SelfMod → ──────┼─────────>│ SelfMod →       │          │ SelfMod →       │
+│ Satisfied       │          │ Satisfied       │          │ Satisfied       │
+└─────────────────┘          └─────────────────┘          └─────────────────┘
+       │                            │                            │
+       │  runtime_request.json      │  runtime_request.json      │
+       ▼                            ▼                            ▼
+  File Proxy                  File Proxy                  File Proxy
+```
+
+**The reviewer is not a special node** — it's a full endgame-ai instance. Its `node_execute` runs `pyright`, `vulture`, `pyan3`, `pydeps`, `code2flow`, `pytest`. Its `node_verify` judges: "Do all checks pass?" Its `node_satisfied` emits the verdict.
+
+The wiring.json doesn't change. The topology extends **dynamically** through the file-proxy protocol. Same organs, same bus, same signals — different goal.
+
 # 5. File Proxy Transport: The Universal Bridge
 
 ## How It Works
@@ -288,63 +397,197 @@ Two endgame-ai instances can talk via a shared directory:
 
 The organism can request reasoning from *any* brain, then inject it back for a second pass — regardless of which transport produced it.
 
-# 6. Self-Modification: Git-Native Evolution
+# 6. Self-Modification: Distributed Git-Native Evolution
 
-## The Self-Modify Organ
+## The Vision: Organism Proposes, Peer Reviews, Organism Adopts
 
-When the organism hits a wall (missing capability, broken contract, bad prompt), `node_self_modify` doesn't workaround — it **evolves the repository**.
+endgame-ai doesn't just "self-modify" locally. It **proposes evolution patches to GitHub**, where **another endgame-ai instance (the reviewer)** clones the repo, runs deterministic analysis (pyright, vulture, pyan3, pydeps, code2flow), compiles, tests, validates — and **responds with approval or rejection** via the same file-proxy protocol.
 
-```mermaid
-flowchart TD
-    A[Execution fails or reflect escalates] --> B[node_self_modify]
-    B --> C{Read workspace manifest<br/>git_context, failure diagnosis,<br/>fresh observation}
-    C --> D[Produce evolution patch]
-    D --> E[Local body validates:<br/>Python compile + JSON parse]
-    E --> F{Valid?}
-    F -->|No| G[Hot-swap to known_good_commit]
-    F -->|Yes| H[Atomic write files]
-    H --> I[Commit with structured message]
-    I --> J[Push if push_after_commit=true]
-    J --> K[Reload wiring, continue from planner]
-    G --> K
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        DISTRIBUTED SELF-EVOLUTION LOOP                       │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌──────────────┐     1. Propose Patch      ┌──────────────┐               │
+│  │  ORGANISM A  │ ────────────────────────> │   GITHUB     │               │
+│  │  (proposer)  │    git push origin        │  (registry)  │               │
+│  └──────────────┘                           └──────┬───────┘               │
+│                                                     │                       │
+│                                                     │ 2. Clone & Review     │
+│                                                     ▼                       │
+│  ┌──────────────┐     4. Approve/Reject      ┌──────────────┐               │
+│  │  ORGANISM A  │ <────────────────────────── │  ORGANISM B  │               │
+│  │  (adopter)   │    runtime_response.json   │  (reviewer)  │               │
+│  └──────────────┘                           └──────────────┘               │
+│        │                                             ▲                      │
+│        │ 5. Hot-reload & continue                     │                      │
+│        ▼                                             │                      │
+│  ┌──────────────┐                                    │                      │
+│  │  CONTINUE    │                                    │                      │
+│  │  EXECUTION   │                                    │                      │
+│  └──────────────┘                                    │                      │
+│                                                      │                      │
+│                    3. Deterministic Analysis         │                      │
+│              ┌────────────────────────┐              │                      │
+│              │ pyright, vulture,      │              │                      │
+│              │ pyan3, pydeps,         │              │                      │
+│              │ code2flow, tests       │              │                      │
+│              └────────────────────────┘              │                      │
+│                                                      │                      │
+└──────────────────────────────────────────────────────┘──────────────────────┘
 ```
 
-## Patch Schema (Enforced)
+## How It Works
 
-```json
-{
-  "record_type": "git_evolution_patch",
-  "data": {
-    "summary": "Unify short IDs everywhere, remove node_by_id fallback",
-    "rationale": "Single lookup path via action_index keyed by short_id...",
+### 1. Organism A (Proposer) Hits a Wall
+- Execution fails, reflection escalates, or capability missing
+- `node_self_modify` reads: workspace manifest, git context, failure diagnosis, fresh observation
+- Produces **evolution patch** (structured JSON: file_writes, wiring_patches, commands, expected_validation)
+
+### 2. Local Validation (Fast Path)
+- Python compile + JSON parse on every touched file
+- Runs declared `commands` (pyright, vulture, custom tests)
+- **Only if local validation passes**: commit + push to `origin/<branch>`
+
+### 3. GitHub as Registry
+- Patch lands on remote branch with structured commit message:
+  ```
+  Self-modify: Unify short IDs, remove node_by_id fallback
+  
+  {
+    "branch": "feature/short-ids",
+    "changed_files": ["core_nodes.py", "core_observation.py", "wiring.json"],
     "read_files": ["core_nodes.py", "core_observation.py", "wiring.json"],
-    "file_writes": [
-      {"path": "core_nodes.py", "content": "..."},
-      {"path": "core_observation.py", "content": "..."}
-    ],
-    "file_deletes": [],
-    "wiring_patches": [
-      {"op": "set", "path": "model.transport", "value": "transport_xai"}
-    ],
-    "commands": [
-      {"command": "python -m pyright core_nodes.py", "shell": false}
-    ],
+    "rationale": "Single lookup path via action_index keyed by short_id...",
     "expected_validation": "pyright clean, organism runs 5 ticks without error"
   }
-}
+  ```
+
+### 4. Organism B (Reviewer) — Can Be Anywhere
+- Another endgame-ai instance (different machine, same repo) runs in **review mode**:
+  ```bash
+  python -m core_organism "Review PR #42: validate evolution patch" --max-ticks 20
+  ```
+- Reviewer's wiring uses `transport_file_proxy` pointing to a shared review directory, OR `transport_xai` with a review prompt
+- Reviewer clones repo at the commit, runs **full deterministic analysis**:
+  ```bash
+  python ps_bridge.py pyright .
+  python ps_bridge.py vulture . 90
+  python ps_bridge.py pyan3 . --uses --dot --file deps.dot
+  python ps_bridge.py pydeps . --noshow
+  python ps_bridge.py code2flow . --format dot
+  python -m pytest  # if tests exist
+  ```
+- Reviewer writes `runtime_response.json` with verdict:
+  ```json
+  {
+    "record_type": "evolution_review",
+    "data": {
+      "verdict": "approve|reject",
+      "commit_sha": "abc1234",
+      "analysis": {
+        "pyright": {"errors": 0, "warnings": 2},
+        "vulture": {"dead_code": []},
+        "call_graph": {"cycles": 0, "unreachable": []},
+        "tests": {"passed": 5, "failed": 0}
+      },
+      "reasoning": "Patch passes all checks. Short ID unification is correct. Approved."
+    },
+    "reasoning": "..."
+  }
+  ```
+
+### 5. Organism A (Adopter) Hot-Reloads
+- Organism A polls for review response (file-proxy or webhook)
+- On **approve**: atomic write of validated files, reload wiring, continue from planner
+- On **reject**: hot-swap to `known_good_commit`, route to reflection for replan
+
+## Why This Architecture Matters
+
+| Traditional "Self-Modify" | endgame-ai Distributed Evolution |
+|---------------------------|----------------------------------|
+| Local-only, no verification | **Peer-reviewed by another instance** |
+| Trusts own validation | **Independent compilation & test** |
+| Single point of failure | **Reviewer can be on different machine/OS** |
+| No audit trail | **Full Git history + structured commit messages** |
+| Human-in-the-loop required | **AI-to-AI review via file proxy** |
+
+## The File Proxy as Review Channel
+
+The same `transport_file_proxy` that lets humans drive the organism lets **endgame-ai instances talk to each other**:
+
+```
+Organism A (proposer)          GitHub          Organism B (reviewer)
+     │                           │                    │
+     ├─ push patch ─────────────>│                    │
+     │                           ├─ webhook/poll ────>│
+     │                           │                    ├─ clone, analyze, test
+     │                           │                    ├─ write runtime_response.json
+     │                           │<──── approve ───────┤
+     ├─ poll response ───────────│                    │
+     ├─ hot-reload & continue    │                    │
 ```
 
-## Safety Mechanisms
+**No MCP servers. No custom protocols. Just JSON files.** Any entity that can read/write files participates.
+
+## Safety Mechanisms (Unchanged, Still Critical)
 
 - **Read-before-write**: Must declare `read_files` for every touched existing file
 - **Core file protection**: Cannot delete `core_*.py` or `wiring.json`
 - **Rollback on failure**: Snapshots restored automatically
 - **Hot-swap to known good**: `wiring.json`'s `known_good_commit` is the escape hatch
 - **Atomic writes**: Temp file + `os.replace`
+- **Reviewer veto**: Rejection triggers immediate hot-swap, no partial adoption
 
-## The Goal Is the Memory
+## The Goal Remains the Memory
 
-No vector DB. No embeddings. The **goal string** — fixed for the run — is the atemporal narrative. Each organ receives it. Each patch references it. The organism *tells itself the story of what it's doing* across ticks. Self-modification updates the story by updating the code that enacts it.
+No vector DB. No embeddings. The **goal string** — fixed for the run — is the atemporal narrative. Each organ receives it. Each patch references it. The reviewer evaluates against it. The organism *tells itself the story of what it's doing* across ticks, across machines, across reviews. Self-modification updates the story by updating the code that enacts it — **with peer approval**.
+
+## Fractal Topology: Recursive Self-Improvement
+
+The reviewer (Organism B) is **not a special node** — it's a full endgame-ai instance with the *same wiring.json*, same topology, same organs. Its "goal" is simply *"Review PR #42: validate evolution patch"*. It runs the same planner→scheduler→observe→execute→verify→reflect loop.
+
+This makes the topology **fractal**: the same circuit at every meta-level.
+
+```mermaid
+graph TD
+    subgraph "LEVEL 0: Work"
+        O0[Organism A<br/>Goal: "Write PS bridge"]
+    end
+    
+    subgraph "LEVEL 1: Review"
+        O1[Organism B<br/>Goal: "Review PR #42"]
+        O1 --> O0
+    end
+    
+    subgraph "LEVEL 2: Audit"
+        O2[Organism C<br/>Goal: "Audit reviewer B"]
+        O2 --> O1
+    end
+    
+    subgraph "LEVEL N: Meta-Audit"
+        ON[Organism N<br/>Goal: "Audit auditor..."]
+        ON --> O2
+    end
+    
+    O0 -.->|propose| O1
+    O1 -.->|approve/reject| O0
+    O1 -.->|propose review criteria| O2
+    O2 -.->|approve/reject| O1
+```
+
+**Implications:**
+
+| Property | Consequence |
+|----------|-------------|
+| **Same wiring at every level** | No special "reviewer code" — the reviewer *is* the organism |
+| **Goal drives behavior** | "Review PR #42" vs "Write PS bridge" — same loop, different intent |
+| **File proxy as universal channel** | Human↔AI, AI↔AI, AI↔AI↔AI — all JSON files |
+| **GitHub as coordination layer** | Commits = proposals, PRs = review contexts, merges = adoption |
+| **Unbounded meta-levels** | Reviewer can be reviewed, auditor audited — recursive improvement |
+| **Distributed by default** | Reviewer on different machine, OS, network — same protocol |
+
+The organism doesn't just evolve its code. It evolves **the process by which it evolves** — because the reviewer itself can be reviewed, and so on. This is **recursive self-improvement** where the improvement mechanism *is* the thing being improved.
 
 # 7. Deterministic Analysis Tools: Finding Bloat
 
