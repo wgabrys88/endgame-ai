@@ -83,11 +83,10 @@ def _evidence_file(path: pathlib.Path) -> dict[str, Any]:
 
 
 def _runtime_evidence(wiring: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
-    raw_logs = sorted(ROOT.glob("runtime_raw_*.txt"), key=lambda p: p.stat().st_mtime, reverse=True)[:5]
     return {
         "state_path": _evidence_file(brain.root_path(wiring.get("paths", {}).get("state"), "runtime_state.json")),
-        "runtime_log_path": _evidence_file(brain.root_path(wiring.get("paths", {}).get("runtime_log"), "runtime_log.ndjson")),
-        "raw_log_paths": [_evidence_file(path) for path in raw_logs],
+        "event_log_path": _evidence_file(brain.root_path(wiring.get("paths", {}).get("event_log"), "runtime_events.jsonl")),
+        "control_path": _evidence_file(brain.root_path(wiring.get("paths", {}).get("control"), "runtime_control.json")),
         "current_state_keys": sorted(state.keys()),
         "has_fresh_observation": all(key in state for key in ("desktop_tree_text", "fresh_scan")),
     }

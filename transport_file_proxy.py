@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import hashlib
 import time
 
 
@@ -11,14 +12,46 @@ def _root_path(value):
     return p if p.is_absolute() else pathlib.Path(__file__).resolve().parent / p
 
 
+def _sha256_text(text):
+    return hashlib.sha256(str(text).encode("utf-8", errors="replace")).hexdigest()
+
+
+def _dynamic_payload(content):
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        return str(content)
+
+
+def _logged_messages(messages):
+    logged = []
+    for message in messages:
+        role = str(message.get("role") or "user")
+        content = str(message.get("content") or "")
+        item = {
+            "role": role,
+            "chars": len(content),
+            "sha256": _sha256_text(content),
+            "content": content,
+        }
+        if role == "user":
+            item["dynamic_payload"] = _dynamic_payload(content)
+        logged.append(item)
+    return logged
+
+
 def call(messages, cfg):
     req_path = _root_path(cfg.get("request_path") or "runtime_request.json")
     resp_path = _root_path(cfg.get("response_path") or "runtime_response.json")
     request = {
         "schema": "endgame-ai.file-proxy.request.v1",
-        "messages": messages,
+        "messages": _logged_messages(messages),
         "created_at": time.time(),
         "transport": "transport_file_proxy",
+        "expected_record_type": cfg.get("expected_record_type"),
+        "response_format": cfg.get("response_format"),
+        "prompt_cache_key": cfg.get("prompt_cache_key"),
+        "stable_prefix": cfg.get("stable_prefix"),
         "expected_response": "direct bus record: {record_type, data, reasoning}",
     }
     tmp = req_path.with_suffix(req_path.suffix + ".tmp")

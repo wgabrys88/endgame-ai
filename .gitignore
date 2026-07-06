@@ -27,14 +27,3 @@
 !transport_openai.py
 !transport_opencode.py
 !transport_xai.py
-!ps_bridge.py
-!docs_readme_01_vision.md
-!docs_readme_02_wiring.md
-!docs_readme_03_observation.md
-!docs_readme_04_organ_loop.md
-!docs_readme_05_file_proxy.md
-!docs_readme_06_self_modify.md
-!docs_readme_07_analysis_tools.md
-!docs_readme_08_stable_prefix.md
-!docs_readme_09_analysis.md
-!docs_readme_10_start.md
