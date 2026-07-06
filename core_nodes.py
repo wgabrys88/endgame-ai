@@ -59,10 +59,10 @@ class BaseNode(ABC):
     def signal_from_data(self, data: dict[str, Any], ctx: dict[str, Any]) -> str:
         raise NotImplementedError(f"{type(self).__name__} must implement signal_from_data or override run()")
 
-    def patch_from_record(self, record: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
+    def patch_from_record(self, record: bus.Record, ctx: dict[str, Any]) -> dict[str, Any]:
         raise NotImplementedError(f"{type(self).__name__} must implement patch_from_record or override run()")
 
-    def think(self, ctx: dict[str, Any]) -> dict[str, Any]:
+    def think(self, ctx: dict[str, Any]) -> bus.Record:
         wiring = ctx["wiring"]
         prompt = wiring.get("prompts", {}).get(self.prompt_key, "")
         think_kwargs: dict[str, Any] = {"expected_record_type": self.expected_record_type}
@@ -74,11 +74,11 @@ class BaseNode(ABC):
                 f"{self.prompt_key} expected record_type {self.expected_record_type!r}, "
                 f"got {record.get('record_type')!r}"
             )
-        return record
+        return bus.Record.from_json(record)
 
     def run(self, ctx: dict[str, Any]) -> bus.NodeOutput:
         record = self.think(ctx)
-        data = record.get("data", {})
+        data = record.data
         signal = self.signal_from_data(data, ctx)
         patch = self.patch_from_record(record, ctx)
         return bus.emit(signal, patch, record=record, evidence=self.evidence(ctx))
@@ -551,7 +551,8 @@ def _action_index(state: dict[str, Any]) -> dict[str, Any]:
 def _node_center(node: dict[str, Any]) -> tuple[int, int]:
     if node.get("px") is not None and node.get("py") is not None:
         return int(node.get("px") or 0), int(node.get("py") or 0)
-    rect = node.get("rect") if isinstance(node.get("rect"), dict) else {}
+    rect_val = node.get("rect")
+    rect: dict[str, Any] = rect_val if isinstance(rect_val, dict) else {}
     left = int(rect.get("left", 0) or 0)
     right = int(rect.get("right", left) or left)
     top = int(rect.get("top", 0) or 0)
@@ -572,10 +573,7 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "verification": state.get("last_verification", {}),
         "reflection": state.get("last_reflection", {}),
     }
-
-    def node_by_id(node_id: str) -> dict[str, Any]:
-        return dict(_desktop_tree_index(state).get(str(node_id), {}) or {})
-
+    
     def action_nodes(action: str | None = None) -> list[dict[str, Any]]:
         nodes = []
         for node in _desktop_tree_index(state).values():
@@ -589,8 +587,6 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
     def click_node(node_id: str) -> dict[str, Any]:
         node = dict(_action_index(state).get(str(node_id), {}) or {})
         if not node:
-            node = node_by_id(node_id)
-        if not node:
             return {"ok": False, "action": "click_node", "error": f"node not found: {node_id}"}
         x, y = _node_center(node)
         click_res = d.click(x, y, int(node.get("hwnd") or 0))
@@ -599,16 +595,12 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
     def read_node(node_id: str) -> dict[str, Any]:
         node = dict(_action_index(state).get(str(node_id), {}) or {})
         if not node:
-            node = node_by_id(node_id)
-        if not node:
             return {"ok": False, "action": "read_node", "error": f"node not found: {node_id}"}
         text = node.get("name") or node.get("text_full") or node.get("value") or ""
         return {"ok": True, "action": "read_node", "node_id": node_id, "text": text}
 
     def scroll_node(node_id: str, amount: int = -3) -> dict[str, Any]:
         node = dict(_action_index(state).get(str(node_id), {}) or {})
-        if not node:
-            node = node_by_id(node_id)
         if not node:
             return {"ok": False, "action": "scroll_node", "error": f"node not found: {node_id}"}
         x, y = _node_center(node)
@@ -663,7 +655,6 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
     return {
         "observe_screen": d.observe_screen,
         "last_desktop_tree": d.last_desktop_tree,
-        "node_by_id": node_by_id,
         "action_nodes": action_nodes,
         
         "click": d.click,

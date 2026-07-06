@@ -59,7 +59,7 @@ class ExecuteNode(BaseNode):
         state = ctx.get("state", {})
         payload = self.build_payload(ctx)
         record = self.think(ctx)
-        data = record.get("data", {})
+        data = record.data
         code = str(data.get("code", "") or "")
         conclusion = str(data.get("conclusion", "CANNOT") or "CANNOT").upper()
 

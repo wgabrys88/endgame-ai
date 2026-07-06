@@ -1,7 +1,7 @@
 {
   "schema": "endgame-ai.wiring.v1",
   "model": {
-    "transport": "transport_file_proxy",
+    "transport": "transport_xai",
     "transport_config": {
       "transport_file_proxy": {
         "request_path": "runtime_request.json",
@@ -123,7 +123,7 @@
     "step_token": 0,
     "updated_at": 0
   },
-  "observe_config": {
+"observe_config": {
     "hover_cache": {
       "enabled": true,
       "scan": {
@@ -143,14 +143,12 @@
           30022,
           30020,
           30024,
-          30013,
-          30159,
-          30026,
-          30006,
-          30007
+          30009,
+          30015
         ],
         "pattern_ids": [
           10002,
+          10014,
           10018,
           10000,
           10004
@@ -161,7 +159,10 @@
         "max_llm_nodes": 2000,
         "max_action_nodes": 5000,
         "text_hint_max": 10000,
-        "require_interactive": false
+        "require_interactive": false,
+        "max_depth": 10,
+        "max_children_per_window": 100,
+        "exclude_desktop_leakage": true
       }
     }
   },

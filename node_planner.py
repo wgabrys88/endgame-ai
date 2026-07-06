@@ -23,12 +23,12 @@ class PlannerNode(BaseNode):
         return signal if signal in {"step_ready", "reflect"} else "reflect"
 
     def patch_from_record(self, record, ctx):
-        data = record.get("data", {})
+        data = record.data
         return {
             "plan": data,
             "step": 0,
             "plan_complete": False,
-            "reasoning": record.get("reasoning", ""),
+            "reasoning": record.reasoning,
         }
 
 
