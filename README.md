@@ -1,4 +1,4 @@
-# endgame-ai: The Ultimate Bridge
+# endgame-ai: The Universal Substrate
 
 endgame-ai is not merely a "living organism" that automates a Windows desktop. It is a **universal substrate** — a single, self-contained Python process that bridges *any* intelligence (human, LLM, another endgame-ai instance) to *any* Windows environment through a fixed circuit: `wiring.json`.
 
@@ -15,6 +15,8 @@ Any entity that can write JSON to `runtime_request.json` and read JSON from `run
 - **Another endgame-ai instance**
 
 No pip install. No MCP servers. No skills. No persistent memory — the **goal is the memory**, an atemporal narrative that the organism tells itself across ticks.
+
+---
 
 ## Fractal Topology: Organisms All the Way Down
 
@@ -39,6 +41,8 @@ python -m core_organism "your goal here" --max-ticks 50
 
 That's it. The repository *is* the runtime. The goal *is* the context. The wiring *is* the architecture.
 
+---
+
 # wiring.json: The Immutable Circuit
 
 `wiring.json` is not configuration. It is **the organism's DNA** — a single JSON file that defines the complete topology, transports, prompts, and self-modification rules. The organism never rewires itself mid-run; `node_self_modify` proposes patches, the local body validates (Python compile + JSON parse), commits, and optionally pushes.
@@ -47,16 +51,16 @@ That's it. The repository *is* the runtime. The goal *is* the context. The wirin
 
 ```mermaid
 stateDiagram-v2
-    [*] --> node_planner
+    [*] --> node_observe
+    node_observe --> node_planner : initial_screen
+    node_observe --> node_execute : screen_ready
+    node_observe --> node_error : error
     node_planner --> node_scheduler : step_ready
     node_planner --> node_reflect : reflect
     node_planner --> node_error : error
     node_scheduler --> node_observe : step_ready
     node_scheduler --> node_satisfied : plan_complete
     node_scheduler --> node_error : error
-    node_observe --> node_planner : initial_screen
-    node_observe --> node_execute : screen_ready
-    node_observe --> node_error : error
     node_execute --> node_verify : verify
     node_execute --> node_frame_action : frame
     node_execute --> node_reflect : reflect
@@ -82,6 +86,8 @@ stateDiagram-v2
     node_error --> node_reflect : reflect
     node_error --> [*] : halt
 ```
+
+**Key difference from legacy**: The cycle starts at `node_observe` (not `node_planner`), so every run begins with a fresh whole-screen scan before planning.
 
 ## Recursive/Fractal Topology (Distributed Evolution)
 
@@ -114,9 +120,11 @@ graph TD
     style O2 fill:#fce4ec
 ```
 
-**Key insight**: The reviewer (Organism B) is **not a special node** — it's a full endgame-ai instance with the *same wiring.json*, same topology, same organs. Its "goal" is simply *"Review PR #42: validate evolution patch"*. It runs the same planner→scheduler→observe→execute→verify→reflect loop. The only difference is the goal string and the transport (file-proxy for review channel).
+**Key insight**: The reviewer (Organism B) is **not a special node** — it's a full endgame-ai instance with the *same wiring.json*, same topology*, same organs. Its "goal" is simply *"Review PR #42: validate evolution patch"*. It runs the same planner→scheduler→observe→execute→verify→reflect loop. The only difference is the goal string and the transport (file-proxy for review channel).
 
 This makes the topology **fractal**: the same circuit at every meta-level.
+
+---
 
 ## Transport Layer (Pluggable Brains)
 
@@ -124,18 +132,49 @@ This makes the topology **fractal**: the same circuit at every meta-level.
 "model": {
   "transport": "transport_xai",
   "transport_config": {
+    "transport_file_proxy": {
+      "request_path": "runtime_request.json",
+      "response_path": "runtime_response.json",
+      "poll_interval": 0.25,
+      "timeout": 86400,
+      "reasoning": {
+        "enabled": false,
+        "pattern": "two_pass",
+        "injection_template": "ROD_REASONING_CONTENT:\n{reasoning}",
+        "extractor": "think_tags"
+      }
+    },
+    "transport_openai": {
+      "base_url": "http://localhost:1234",
+      "path": "/v1/chat/completions",
+      "model": "nvidia-nemotron-3-nano-4b",
+      "temperature": 0.2,
+      "reasoning": { "enabled": false, "pattern": "two_pass", "injection_template": "ROD_REASONING_CONTENT:\n{reasoning}", "extractor": "think_tags" }
+    },
+    "transport_opencode": {
+      "executable": "%USERPROFILE%/AppData/Local/opencode/opencode-cli.exe",
+      "model": "opencode-go/deepseek-v4-flash",
+      "extra_args": [],
+      "reasoning": { "enabled": false }
+    },
     "transport_xai": {
       "mode": "api",
       "api_key_env": "XAI_API_KEY",
       "model": "grok-4.3",
-      "reasoning": { "enabled": true, "effort": "low" }
+      "url": "https://api.x.ai/v1/responses",
+      "temperature": 0.2,
+      "structured_outputs": { "enabled": true },
+      "reasoning": { "enabled": true, "pattern": "native", "extractor": "reasoning_field", "effort": "low" }
     },
-    "transport_file_proxy": {
-      "request_path": "runtime_request.json",
-      "response_path": "runtime_response.json"
+    "transport_grok_cli": {
+      "executable": "grok",
+      "extra_args": [],
+      "reasoning": { "enabled": false, "pattern": "native", "extractor": "reasoning_field" }
     },
-    "transport_openai": { "base_url": "http://localhost:1234", "model": "nemotron-3-nano-4b" },
-    "transport_opencode": { "executable": "opencode-cli.exe" }
+    "transport_browser_ai": {
+      "documented_stub": true,
+      "reasoning": { "enabled": false }
+    }
   }
 }
 ```
@@ -170,20 +209,54 @@ sequenceDiagram
 
 The wiring.json doesn't change — the **topology extends dynamically** through the file-proxy protocol.
 
-# 3. The Observation Model: Whole-Screen, Focus-Free
+---
+
+# The Observation Model: Whole-Screen, Focus-Free
 
 ## One Flat Scan, Every Visible Element
 
-```python
-def observe(desktop, config):
-    gathered = gather(desktop, config)      # UIA hover-cache scan
-    filtered = filter_gather(gathered, config)
-    return filtered
-```
-
-The scanner hovers a low-discrepancy grid over the entire desktop, caching UIA properties and patterns. Every visible window, button, edit, list, pane — ranked by content and on-screen position — ends up in one tree.
+The scanner hovers a low-discrepancy R2 grid over the entire desktop, caching UIA properties and patterns via `ElementFromPointBuildCache`. Every visible window, button, edit, list, pane — ranked by content and on-screen position — ends up in one tree.
 
 **No focused window. No foreground tracking.** The body never steals, tracks, or reasons about focus. The brain acts on *any* element directly.
+
+## Three-Phase Pipeline (RAW → FILTER → MAP)
+
+The observation pipeline in `core_observation.py` is a pure three-phase transformation with single responsibility per phase:
+
+### Phase 1: RAW — Gather
+`gather_raw(config, desktop) → dict[nodes, screen, scan_stats]`
+
+- Mouse probe grid (R2 low-discrepancy sequence) over entire screen
+- At each point: `ElementFromPointBuildCache` → UIA cached subtree harvest
+- Extracts 13 property IDs + 5 pattern IDs (Value, Text, Legacy, Invoke, Scroll)
+- Deduplicates by runtime_id; merges longer text on collisions
+- Generic desktop leakage detection: any `List` named `"Desktop"` with scroll action = SysListView32 leakage
+
+### Phase 2: FILTER — Reduce
+`filter_raw(raw_nodes, config, screen) → dict[action_elements, text_hints, hwnd_to_z]`
+
+- Ranks: named/textual elements first, on-screen first
+- Selects actionable elements by role mapping:
+  - `click`: Button, Hyperlink, ListItem, MenuItem, CheckBox, RadioButton, Tab, TabItem, TreeItem, DataItem, SplitButton, Calendar
+  - `write`: Edit, ComboBox, Spinner, Document, Scintilla (class name)
+  - `read`: Text, ListItem
+  - `scroll`: List, ScrollBar, Slider, Tree, DataGrid
+- Enforces `max_action_nodes`, `max_depth`, `max_children_per_window`
+- Builds `hwnd_to_z` from Windows z-order (EnumWindows)
+
+### Phase 3: MAP — Hierarchize + Short IDs
+`build_tree_and_map(action_elements, text_hints, raw_nodes, hwnd_to_z, screen, config) → dict[root, node_index, action_index, desktop_tree_text, ...]`
+
+- Constructs window→element tree by hwnd containment
+- Assigns **hierarchical short IDs**:
+  - `W0` = Screen root (Desktop)
+  - `W{n}` = Window n (z-order bottom→top)
+  - `W{n}E{m}` = Element m within window n
+  - `W{n}E{m}C{k}` = Child k of element W{n}E{m}
+  - `W{n}E{m}C{k}D{p}` = Descendant p of child C{k}
+- Action suffix in `desktop_tree_text`: `[click]`, `[write]`, `[read]`, `[scroll]`
+- Renders `desktop_tree_text` for LLM prompt (short IDs only)
+- Builds `action_index` keyed by short_id with `runtime_id` for execution
 
 ## Short Hierarchical IDs: W2E4C1
 
@@ -202,12 +275,6 @@ W0 Screen Desktop
   W0C1 Button OpenCode - 1 running window [click]
   W0C2 Button Task Manager CPU 50% [click]
 ```
-
-- `W0` = Screen root
-- `W{n}` = Window n (z-order)
-- `E{n}` = Element n within window
-- `C{n}` = Child n of parent element
-- Action suffix: `[click]`, `[read]`, `[write]`, `[scroll]`
 
 These IDs are **the only addressing the brain sees**. Long runtime IDs (`e_42_1638582_4_0_0_399`) live only in `action_index` values for execution.
 
@@ -228,11 +295,31 @@ These IDs are **the only addressing the brain sees**. Long runtime IDs (`e_42_16
 
 Brain picks `W1E2` from `desktop_tree_text`. Body executes via `action_index["W1E2"]["runtime_id"]`. Single lookup path. No fallback.
 
-# 4. The Organ Loop: One Bus, One Signal
+---
+
+# The Organ Loop: One Bus, One Signal
 
 ## Bus Contract
 
 Every organ receives **one typed record** and emits **exactly one JSON record** whose `data.next_signal` is the only value the body routes on. Organs never call each other directly.
+
+The unified `bus.Record` dataclass (frozen, single source of truth):
+
+```python
+@dataclass(frozen=True)
+class Record:
+    record_type: str      # e.g., "plan", "execution", "verification"
+    data: dict            # must contain next_signal for routing
+    reasoning: str = ""   # LLM reasoning, injected back on two-pass
+```
+
+```python
+# Emission helper (used by all nodes)
+bus.emit(signal="step_ready",
+         patch={...},
+         record=bus.Record(record_type="plan", data={...}, reasoning="..."),
+         evidence={...})
+```
 
 ```mermaid
 sequenceDiagram
@@ -269,12 +356,14 @@ sequenceDiagram
 |-------|-------|------|
 | `node_planner` | ✅ | Decomposes goal into verifiable steps |
 | `node_scheduler` | ❌ | Mechanical: advances to next step |
-| `node_observe` | ❌ | Mechanical: whole-screen UIA scan |
+| `node_observe` | ❌ | Mechanical: whole-screen UIA scan (3-phase) |
 | `node_execute` | ✅ | Writes Python code, runs in capability runtime |
+| `node_frame_action` | ✅ | Framing pass: converts raw evidence → action frame |
 | `node_verify` | ✅ | Judges step success from fresh observation only |
 | `node_reflect` | ✅ | Diagnoses failure, routes: retry/replan/frame/escalate/give_up |
 | `node_self_modify` | ✅ | Produces git-native evolution patches |
 | `node_satisfied` | ✅ | Halts when goal complete or honest give-up |
+| `node_error` | ❌ | Mechanical error sink, routes to planner/reflect/halt |
 
 ## Capability Runtime (Injected into Execute)
 
@@ -317,14 +406,16 @@ META-LEVEL 0 (Work)          META-LEVEL 1 (Review)          META-LEVEL 2 (Audit)
        │                            │                            │
        │  runtime_request.json      │  runtime_request.json      │
        ▼                            ▼                            ▼
-  File Proxy                  File Proxy                  File Proxy
+   File Proxy                  File Proxy                  File Proxy
 ```
 
 **The reviewer is not a special node** — it's a full endgame-ai instance. Its `node_execute` runs `pyright`, `vulture`, `pyan3`, `pydeps`, `code2flow`, `pytest`. Its `node_verify` judges: "Do all checks pass?" Its `node_satisfied` emits the verdict.
 
 The wiring.json doesn't change. The topology extends **dynamically** through the file-proxy protocol. Same organs, same bus, same signals — different goal.
 
-# 5. File Proxy Transport: The Universal Bridge
+---
+
+# File Proxy Transport: The Universal Bridge
 
 ## How It Works
 
@@ -397,7 +488,9 @@ Two endgame-ai instances can talk via a shared directory:
 
 The organism can request reasoning from *any* brain, then inject it back for a second pass — regardless of which transport produced it.
 
-# 6. Self-Modification: Distributed Git-Native Evolution
+---
+
+# Self-Modification: Distributed Git-Native Evolution
 
 ## The Vision: Organism Proposes, Peer Reviews, Organism Adopts
 
@@ -451,51 +544,51 @@ endgame-ai doesn't just "self-modify" locally. It **proposes evolution patches t
 
 ### 3. GitHub as Registry
 - Patch lands on remote branch with structured commit message:
-  ```
-  Self-modify: Unify short IDs, remove node_by_id fallback
-  
-  {
-    "branch": "feature/short-ids",
-    "changed_files": ["core_nodes.py", "core_observation.py", "wiring.json"],
-    "read_files": ["core_nodes.py", "core_observation.py", "wiring.json"],
-    "rationale": "Single lookup path via action_index keyed by short_id...",
-    "expected_validation": "pyright clean, organism runs 5 ticks without error"
-  }
-  ```
+```
+Self-modify: Unify short IDs, remove node_by_id fallback
+
+{
+  "branch": "feature/short-ids",
+  "changed_files": ["core_nodes.py", "core_observation.py", "wiring.json"],
+  "read_files": ["core_nodes.py", "core_observation.py", "wiring.json"],
+  "rationale": "Single lookup path via action_index keyed by short_id...",
+  "expected_validation": "pyright clean, organism runs 5 ticks without error"
+}
+```
 
 ### 4. Organism B (Reviewer) — Can Be Anywhere
 - Another endgame-ai instance (different machine, same repo) runs in **review mode**:
-  ```bash
-  python -m core_organism "Review PR #42: validate evolution patch" --max-ticks 20
-  ```
+```bash
+python -m core_organism "Review PR #42: validate evolution patch" --max-ticks 20
+```
 - Reviewer's wiring uses `transport_file_proxy` pointing to a shared review directory, OR `transport_xai` with a review prompt
 - Reviewer clones repo at the commit, runs **full deterministic analysis**:
-  ```bash
-  python ps_bridge.py pyright .
-  python ps_bridge.py vulture . 90
-  python ps_bridge.py pyan3 . --uses --dot --file deps.dot
-  python ps_bridge.py pydeps . --noshow
-  python ps_bridge.py code2flow . --format dot
-  python -m pytest  # if tests exist
-  ```
+```bash
+python ps_bridge.py pyright .
+python ps_bridge.py vulture . 90
+python ps_bridge.py pyan3 . --uses --dot --file deps.dot
+python ps_bridge.py pydeps . --noshow
+python ps_bridge.py code2flow . --format dot
+python -m pytest  # if tests exist
+```
 - Reviewer writes `runtime_response.json` with verdict:
-  ```json
-  {
-    "record_type": "evolution_review",
-    "data": {
-      "verdict": "approve|reject",
-      "commit_sha": "abc1234",
-      "analysis": {
-        "pyright": {"errors": 0, "warnings": 2},
-        "vulture": {"dead_code": []},
-        "call_graph": {"cycles": 0, "unreachable": []},
-        "tests": {"passed": 5, "failed": 0}
-      },
-      "reasoning": "Patch passes all checks. Short ID unification is correct. Approved."
+```json
+{
+  "record_type": "evolution_review",
+  "data": {
+    "verdict": "approve|reject",
+    "commit_sha": "abc1234",
+    "analysis": {
+      "pyright": {"errors": 0, "warnings": 2},
+      "vulture": {"dead_code": []},
+      "call_graph": {"cycles": 0, "unreachable": []},
+      "tests": {"passed": 5, "failed": 0}
     },
-    "reasoning": "..."
-  }
-  ```
+    "reasoning": "Patch passes all checks. Short ID unification is correct. Approved."
+  },
+  "reasoning": "..."
+}
+```
 
 ### 5. Organism A (Adopter) Hot-Reloads
 - Organism A polls for review response (file-proxy or webhook)
@@ -589,7 +682,9 @@ graph TD
 
 The organism doesn't just evolve its code. It evolves **the process by which it evolves** — because the reviewer itself can be reviewed, and so on. This is **recursive self-improvement** where the improvement mechanism *is* the thing being improved.
 
-# 7. Deterministic Analysis Tools: Finding Bloat
+---
+
+# Deterministic Analysis Tools: Finding Bloat
 
 The repository includes a deterministic PowerShell bridge (`ps_bridge.py` at repo root) that wraps all analysis tools with structured JSON output. No shell syntax issues (`&&`, `||`, `|`).
 
@@ -660,7 +755,23 @@ Generate `.dot` files for Graphviz visualization. `deps.dot` (152KB) already exi
 
 The organism can run this workflow on itself via `node_self_modify`.
 
-# 8. Stable Prefix: Prompt Caching for Free
+## Integration with Self-Modify
+
+`node_self_modify` can emit `commands` in its patch:
+```json
+{
+  "commands": [
+    {"command": "python ps_bridge.py pyright .", "shell": false},
+    {"command": "python ps_bridge.py vulture . 80", "shell": false}
+  ]
+}
+```
+
+The organism runs them, validates (Python compile + JSON parse), commits on success, hot-swaps to known-good on failure.
+
+---
+
+# Stable Prefix: Prompt Caching for Free
 
 ## The Problem
 
@@ -727,76 +838,9 @@ Enable in `wiring.json`:
 }
 ```
 
-# Deterministic Analysis Toolchain
+---
 
-Endgame-ai includes a **deterministic analysis bridge** (`ps_bridge.py` at repo root) that wraps all static analysis tools behind structured JSON. No shell syntax issues (`&&`, `||`, `|`) — pure `subprocess.run`.
-
-## Available Commands
-
-```bash
-python ps_bridge.py run "powershell command"      # Raw PowerShell
-python ps_bridge.py git_status                    # git status --porcelain
-python ps_bridge.py git_diff [files...]           # git diff
-python ps_bridge.py git_add [files...]            # git add
-python ps_bridge.py git_commit "message"          # git commit -m
-python ps_bridge.py git_log [n]                   # git log --oneline -n
-python ps_bridge.py pyright [target]              # python -m pyright --outputjson
-python ps_bridge.py vulture [target] [min_conf]   # python -m vulture --min-confidence
-python ps_bridge.py pyan3 [target]                # pyan3 --uses --format dot
-python ps_bridge.py pydeps [target]               # pydeps --noshow
-python ps_bridge.py code2flow [target]            # code2flow --format dot
-python ps_bridge.py pycallgraph [target]          # python -m pycallgraph
-```
-
-Each returns:
-```json
-{"exit_code": 0, "stdout": "...", "stderr": "...", "success": true}
-```
-
-## Call Graph Analysis
-
-```bash
-# pyan3 (works via direct executable)
-python ps_bridge.py pyan3 . > deps.dot
-
-# pydeps (needs Graphviz dot)
-python ps_bridge.py pydeps .
-
-# code2flow (needs Graphviz dot)
-python ps_bridge.py code2flow .
-
-# pycallgraph
-python ps_bridge.py pycallgraph .
-```
-
-## Finding Bloat
-
-```bash
-# Dead code (vulture)
-python ps_bridge.py vulture . 90
-
-# Type errors (pyright)
-python ps_bridge.py pyright .
-
-# Call graph → find unreachable nodes
-python ps_bridge.py pyan3 . --uses --no-defines --colored --grouped --annotated --dot --file deps.dot
-```
-
-## Integration with Self-Modify
-
-`node_self_modify` can emit `commands` in its patch:
-```json
-{
-  "commands": [
-    {"command": "python ps_bridge.py pyright .", "shell": false},
-    {"command": "python ps_bridge.py vulture . 80", "shell": false}
-  ]
-}
-```
-
-The organism runs them, validates (Python compile + JSON parse), commits on success, hot-swaps to known-good on failure.
-
-# 10. Quick Start & Meta Summary
+# Quick Start & Meta Summary
 
 ## Run It
 
@@ -825,6 +869,15 @@ python -m core_organism "your goal" --max-ticks 10
 # YOU write runtime_response.json (act as the brain)
 # Organism reads, continues
 ```
+
+## Architecture in_one_command-line Arguments
+
+```bash
+python -m core_organism "goal" [--max-ticks N] [--wiring wiring.json]
+```
+
+- `--max-ticks`: Max organ loop iterations (default: 50)
+- `--wiring`: Alternate wiring file (default: wiring.json)
 
 ## Architecture in One Diagram
 
@@ -907,3 +960,4 @@ The organism *is* the development environment. It evolves itself via GitHub. You
 
 **We're cooking.** The bridge is built. The protocol is live. The organism is running. Now we give it better goals and watch it build the rest.
 
+---
