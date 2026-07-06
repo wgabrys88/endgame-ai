@@ -269,3 +269,15 @@ Subtasks:
 - Publish only if the compose screen and account state are visibly understood.
 - Start a Grok chess interaction through the browser UI if available.
 - Verify public post and chess state from visible evidence, not executor self-report.
+
+## Appendix: Handover Prompt For Self-Evolution Runtime Gate
+
+Future-session research prompt:
+
+> Add one new runtime-control concept to endgame-ai: a hot-swappable self-evolution enable file, similar in spirit to `runtime_stop.json`. Self-evolution should be enabled by default. The future design to investigate is a root runtime file such as `runtime_self_evolution_enabled.json`; if that file is deleted or absent, `node_self_modify` and the body-side evolution apply/commit/push path must not change code, wiring, git state, or remote branches. Instead, the organism should emit clear evidence into `runtime_events.jsonl`, update `runtime_state.json`, and route to a useful non-evolution recovery path. Research the exact lifecycle: who creates the file, whether `--reset` recreates it, whether manual deletion disables only apply/commit/push or also self-modify brain calls, and how reviewer organisms should interpret the disabled state. Keep the system unconstrained by default; this is not a sandbox, it is an operator runtime switch for evolution itself. Read README, `wiring.json`, `core_organism.py`, `node_self_modify.py`, `core_nodes.py`, `core_stop_check.py`, and runtime evidence before editing. Implement only if the contract is coherent, run deterministic checks, commit, push, and report evidence.
+
+One-liner:
+
+```powershell
+& 'C:\Users\px-wjt\AppData\Local\Python\bin\python.exe' -m core_organism "Add one new runtime-control concept to endgame-ai: a hot-swappable self-evolution enable file, similar in spirit to runtime_stop.json. Self-evolution should be enabled by default. The future design to investigate is a root runtime file such as runtime_self_evolution_enabled.json; if that file is deleted or absent, node_self_modify and the body-side evolution apply/commit/push path must not change code, wiring, git state, or remote branches. Instead, the organism should emit clear evidence into runtime_events.jsonl, update runtime_state.json, and route to a useful non-evolution recovery path. Research the exact lifecycle: who creates the file, whether --reset recreates it, whether manual deletion disables only apply/commit/push or also self-modify brain calls, and how reviewer organisms should interpret the disabled state. Keep the system unconstrained by default; this is not a sandbox, it is an operator runtime switch for evolution itself. Read README, wiring.json, core_organism.py, node_self_modify.py, core_nodes.py, core_stop_check.py, and runtime evidence before editing. Implement only if the contract is coherent, run deterministic checks, commit, push, and report evidence." --reset --duration-seconds 900
+```
