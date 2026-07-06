@@ -123,7 +123,7 @@
     "step_token": 0,
     "updated_at": 0
   },
-  "observe_config": {
+"observe_config": {
     "hover_cache": {
       "enabled": true,
       "scan": {
@@ -143,21 +143,19 @@
           30022,
           30020,
           30024,
-          30013,
-          30159,
-          30026,
-          30006,
-          30007
+          30009,
+          30015
         ],
         "pattern_ids": [
           10002,
+          10014,
           10018,
           10000,
           10004
         ]
       },
       "depth": {},
-"filter": {
+      "filter": {
         "max_llm_nodes": 2000,
         "max_action_nodes": 5000,
         "text_hint_max": 10000,

@@ -166,4 +166,4 @@ def run(ctx):
             "deletes": len(data.get("file_deletes", []) or []),
             "commands": len(data.get("commands", []) or []),
         },
-    }, record=record, evidence={"git_context": git_context, "failure": payload.get("failure", {})})
+    }, record=bus.Record.from_json(record), evidence={"git_context": git_context, "failure": payload.get("failure", {})})

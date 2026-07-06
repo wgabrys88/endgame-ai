@@ -59,13 +59,13 @@ class VerifyNode(BaseNode):
         return signal
 
     def patch_from_record(self, record, ctx):
-        data = record.get("data", {})
+        data = record.data
         state = ctx.get("state", {})
         step_goal, done_when = self._step_goal(ctx)
         patch = {
             "verification": {
                 "success": self._success,
-                "reasoning": data.get("reasoning", record.get("reasoning", "")),
+                "reasoning": data.get("reasoning", record.reasoning),
                 "step_goal": step_goal,
                 "done_when": done_when,
             },

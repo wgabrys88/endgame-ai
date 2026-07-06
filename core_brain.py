@@ -12,6 +12,7 @@ import time
 from typing import Any
 
 import core_stop_check as stop_check
+import core_bus as bus
 
 ROOT = pathlib.Path(__file__).parent.resolve()
 _RAW_LOG_PATH: pathlib.Path | None = None
@@ -254,7 +255,7 @@ def _messages(system_prompt: str, user_text: str, prefix: StablePrefix | None, s
     ]
 
 
-def _commit_record(content: str) -> dict[str, Any]:
+def _commit_record(content: str) -> bus.Record:
     record = extract_json_object(content)
     if record is None:
         raise RuntimeError(f"brain did not commit a valid JSON object: {content}")
@@ -262,7 +263,7 @@ def _commit_record(content: str) -> dict[str, Any]:
         raise RuntimeError(f"brain record missing string record_type: {record}")
     if "data" not in record or not isinstance(record["data"], dict):
         raise RuntimeError(f"brain record missing object data: {record}")
-    return record
+    return bus.Record.from_json(record)
 
 
 def _organ_tuning(wiring: dict[str, Any], record_type: str | None) -> dict[str, Any]:
@@ -617,8 +618,9 @@ def think(
             request_config=request_cfg,
         )
         record = _commit_record(result["content"])
-        record.setdefault("reasoning", reasoning_from(result["content"], result.get("reasoning", "")))
-        return record
+        reasoning = reasoning_from(result["content"], result.get("reasoning", ""))
+        record = bus.Record(record.record_type, record.data, reasoning)
+        return record.to_json()
 
     if pattern == "native":
         result = call(
@@ -629,8 +631,9 @@ def think(
             request_config=request_cfg,
         )
         record = _commit_record(result["content"])
-        record.setdefault("reasoning", reasoning_from(result["content"], result.get("reasoning", "")))
-        return record
+        reasoning = reasoning_from(result["content"], result.get("reasoning", ""))
+        record = bus.Record(record.record_type, record.data, reasoning)
+        return record.to_json()
 
     if pattern != "two_pass":
         raise RuntimeError(f"unknown reasoning pattern: {pattern}")
@@ -646,8 +649,8 @@ def think(
         request_config=request_cfg,
     )
     record = _commit_record(second["content"])
-    record.setdefault("reasoning", reasoning)
-    return record
+    record = bus.Record(record.record_type, record.data, reasoning)
+    return record.to_json()
 
 
 def read_raw_log_tail(path: pathlib.Path | None = None, *, max_lines: int = 200, max_bytes: int = 600_000) -> list[dict[str, Any]]:

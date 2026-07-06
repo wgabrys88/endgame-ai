@@ -11,11 +11,38 @@ JsonDict = dict[str, Any]
 
 
 @dataclass(frozen=True)
+class Record:
+    """Unified record format for ALL organs - single source of truth."""
+    record_type: str
+    data: JsonDict
+    reasoning: str = ""
+
+    def to_json(self) -> JsonDict:
+        return {
+            "record_type": self.record_type,
+            "data": self.data,
+            "reasoning": self.reasoning,
+        }
+
+    @classmethod
+    def from_json(cls, obj: JsonDict) -> "Record":
+        return cls(
+            record_type=obj.get("record_type", ""),
+            data=obj.get("data", {}),
+            reasoning=obj.get("reasoning", ""),
+        )
+
+    @classmethod
+    def create(cls, record_type: str, data: JsonDict, reasoning: str = "") -> "Record":
+        return cls(record_type=record_type, data=data, reasoning=reasoning)
+
+
+@dataclass(frozen=True)
 class NodeOutput:
 
     signal: str
     patch: JsonDict = field(default_factory=dict)
-    record: JsonDict | None = None
+    record: Record | None = None
     evidence: JsonDict = field(default_factory=dict)
 
     def as_tuple(self) -> tuple[str, JsonDict]:
@@ -23,7 +50,9 @@ class NodeOutput:
 
     def trace(self, *, node: str) -> JsonDict:
         record_type = None
-        if isinstance(self.record, dict):
+        if isinstance(self.record, Record):
+            record_type = self.record.record_type
+        elif isinstance(self.record, dict):
             record_type = self.record.get("record_type")
         return {
             "kind": "endgame.node_output.v1",
@@ -40,7 +69,7 @@ def emit(
     signal: str,
     patch: JsonDict | None = None,
     *,
-    record: JsonDict | None = None,
+    record: Record | JsonDict | None = None,
     evidence: JsonDict | None = None,
 ) -> NodeOutput:
 
@@ -48,10 +77,16 @@ def emit(
         raise ValueError("bus signal must be a non-empty string")
     if patch is not None and not isinstance(patch, dict):
         raise TypeError("bus patch must be a dict")
-    if record is not None and not isinstance(record, dict):
-        raise TypeError("bus record must be a dict when provided")
+    if record is not None and not isinstance(record, (Record, dict)):
+        raise TypeError("bus record must be a Record or dict when provided")
     if evidence is not None and not isinstance(evidence, dict):
         raise TypeError("bus evidence must be a dict when provided")
+    
+    if isinstance(record, Record):
+        record_dict = record.to_json()
+    else:
+        record_dict = record
+    
     return NodeOutput(signal=signal.strip(), patch=dict(patch or {}), record=record, evidence=dict(evidence or {}))
 
 

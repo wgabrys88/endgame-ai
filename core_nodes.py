@@ -59,10 +59,10 @@ class BaseNode(ABC):
     def signal_from_data(self, data: dict[str, Any], ctx: dict[str, Any]) -> str:
         raise NotImplementedError(f"{type(self).__name__} must implement signal_from_data or override run()")
 
-    def patch_from_record(self, record: dict[str, Any], ctx: dict[str, Any]) -> dict[str, Any]:
+    def patch_from_record(self, record: bus.Record, ctx: dict[str, Any]) -> dict[str, Any]:
         raise NotImplementedError(f"{type(self).__name__} must implement patch_from_record or override run()")
 
-    def think(self, ctx: dict[str, Any]) -> dict[str, Any]:
+    def think(self, ctx: dict[str, Any]) -> bus.Record:
         wiring = ctx["wiring"]
         prompt = wiring.get("prompts", {}).get(self.prompt_key, "")
         think_kwargs: dict[str, Any] = {"expected_record_type": self.expected_record_type}
@@ -74,11 +74,11 @@ class BaseNode(ABC):
                 f"{self.prompt_key} expected record_type {self.expected_record_type!r}, "
                 f"got {record.get('record_type')!r}"
             )
-        return record
+        return bus.Record.from_json(record)
 
     def run(self, ctx: dict[str, Any]) -> bus.NodeOutput:
         record = self.think(ctx)
-        data = record.get("data", {})
+        data = record.data
         signal = self.signal_from_data(data, ctx)
         patch = self.patch_from_record(record, ctx)
         return bus.emit(signal, patch, record=record, evidence=self.evidence(ctx))

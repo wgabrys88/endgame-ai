@@ -91,7 +91,7 @@ class ReflectNode(BaseNode):
         return signal
 
     def patch_from_record(self, record, ctx):
-        data = record.get("data", {})
+        data = record.data
         state = ctx.get("state", {})
         step = state.get("current_step") or {}
         lesson = data.get("lesson", "No lesson provided")

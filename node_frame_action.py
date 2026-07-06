@@ -50,7 +50,7 @@ class FrameActionNode(BaseNode):
         return signal if signal in {"framed", "reflect"} else "framed"
 
     def patch_from_record(self, record, ctx):
-        data = record.get("data", {})
+        data = record.data
         step_index = int(ctx.get("state", {}).get("step", 0) or 0)
         frame = {
             "screen_summary": data.get("screen_summary", ""),
