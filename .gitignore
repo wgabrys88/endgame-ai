@@ -27,3 +27,5 @@
 !transport_openai.py
 !transport_opencode.py
 !transport_xai.py
+!tools/
+!tools/ps_bridge.py
