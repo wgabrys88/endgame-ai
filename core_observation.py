@@ -479,7 +479,7 @@ def gather_raw(config: dict[str, Any], desktop: Any) -> dict[str, Any]:
     scanner = UiaScanner(config, desktop)
     index: dict[str, RawNode] = {}
     saturated_hits = set()
-    probes = 0
+    point_errors: list[dict[str, Any]] = []
     t0 = time.time()
 
     saved = wintypes.POINT()
@@ -494,8 +494,17 @@ def gather_raw(config: dict[str, Any], desktop: Any) -> dict[str, Any]:
             pt = wintypes.POINT(int(x), int(y))
             try:
                 root = scanner.automation.ElementFromPointBuildCache(pt, scanner._build_hit_cache_request())
-            except Exception:
-                root = scanner.automation.ElementFromPoint(pt)
+            except Exception as build_exc:
+                try:
+                    root = scanner.automation.ElementFromPoint(pt)
+                except Exception as point_exc:
+                    point_errors.append({
+                        "x": int(x),
+                        "y": int(y),
+                        "build_cache_error": f"{type(build_exc).__name__}: {build_exc}",
+                        "point_error": f"{type(point_exc).__name__}: {point_exc}",
+                    })
+                    continue
             if root is None:
                 continue
 
@@ -536,6 +545,8 @@ def gather_raw(config: dict[str, Any], desktop: Any) -> dict[str, Any]:
         "scan_stats": {
             "probes": len(points),
             "unique_nodes": len(index),
+            "point_errors": len(point_errors),
+            "first_point_errors": point_errors[:5],
             "elapsed_s": round(time.time() - t0, 3),
         },
     }

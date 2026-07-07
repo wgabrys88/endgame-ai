@@ -27,6 +27,11 @@ MECHANICAL_ESCALATE_MARKERS = (
     "produced no result",
 )
 
+ENVIRONMENT_REPLAN_MARKERS = (
+    "is not installed in known paths",
+    "unsupported browser",
+)
+
 
 class ReflectNode(BaseNode):
 
@@ -84,7 +89,17 @@ class ReflectNode(BaseNode):
             state.get("last_result", {}),
         ])
         self._routing_override = None
-        if (
+        if state.get("last_error") and any(
+            marker.lower() in diagnostic_text.lower() for marker in ENVIRONMENT_REPLAN_MARKERS
+        ) and signal in {"retry", "frame", "escalate"}:
+            self._routing_override = {
+                "from": requested_signal,
+                "to": "replan",
+                "reason": "requested local app/browser unavailable; choose equivalent or install explicitly",
+                "failure_streak": self._projected_streak,
+            }
+            signal = "replan"
+        elif (
             last_verification.get("signal") == "step_denied"
             and self._projected_streak["count"] >= 2
             and not framed_already

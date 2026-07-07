@@ -24,5 +24,22 @@ def run(ctx):
 
     print(f"[ERROR NODE] Failed node: {error_info['failed_node']}, Error: {error_info['error']}")
 
+    error_text = str(state.get("last_error") or "")
+    has_observation = bool((state.get("fresh_observation") or {}).get("desktop_tree_text"))
+    if not has_observation and (
+        state.get("last_node") in {"node_observe", "node_planner"}
+        or "fresh_observation missing" in error_text
+    ):
+        recovery = "halt"
+        return bus.emit(
+            recovery,
+            {
+                "error_handled": error_info,
+                "recovery": recovery,
+                "plan_failed": True,
+                "last_error": error_text,
+            },
+        )
+
     recovery = "reflect" if state.get("current_step") else "planner"
     return bus.emit(recovery, {"error_handled": error_info, "recovery": recovery})
