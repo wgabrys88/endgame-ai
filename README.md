@@ -591,3 +591,41 @@ Keep changes task-agnostic. Do not hard-code the job-search flow. Preserve
 fail-hard contracts, explicit evidence, GUI parity, script/process parity, and
 replayability from runtime_events.jsonl.
 ```
+
+### Appendix: Git Workflow for known_good Ref (Important!)
+
+This project uses a special git reference `refs/endgame/known_good` for recovery and self-evolution.
+
+#### Rules to always follow:
+
+1. **After merging any branch to `main` (via PR or direct):**
+   ```powershell
+   git checkout main
+   git pull origin main
+   git update-ref refs/endgame/known_good HEAD
+   git push origin refs/endgame/known_good:refs/endgame/known_good
+   ```
+
+2. **On a fresh clone (new computer or deleted folder):**
+   ```powershell
+   git clone <url>
+   cd endgame-ai
+   git fetch origin refs/endgame/known_good:refs/endgame/known_good
+   ```
+
+3. **Creating a new feature branch:**
+   ```powershell
+   git checkout main
+   git pull origin main
+   git checkout -b your-branch-name
+   ```
+   → No extra ref commands needed.
+
+4. **Never delete a branch before updating the ref on main** (after merge).
+
+#### Quick Check
+```powershell
+git show-ref refs/endgame/known_good
+```
+
+Keeping this ref up-to-date ensures self-evolution and recovery always use the latest stable code.
