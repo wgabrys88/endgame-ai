@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import urllib.error
 import urllib.request
+from typing import Any
 
 
 def _resolve_executable(value):
@@ -86,7 +87,7 @@ def _call_api(messages, cfg):
 
     web_search_cfg = cfg.get("web_search") or {}
     if isinstance(web_search_cfg, dict) and web_search_cfg.get("enabled"):
-        tool = {"type": "web_search"}
+        tool: dict[str, Any] = {"type": "web_search"}
         allowed = web_search_cfg.get("allowed_domains")
         excluded = web_search_cfg.get("excluded_domains")
         if allowed:

@@ -15,9 +15,8 @@ import core_stop_check as stop_check
 import core_bus as bus
 
 ROOT = pathlib.Path(__file__).parent.resolve()
-_RAW_LOG_PATH: pathlib.Path | None = None
-_RAW_SEQ = 0
-_RAW_LOCK = threading.Lock()
+_EVENT_SEQ = 0
+_EVENT_LOCK = threading.Lock()
 _CALLS_MADE = 0
 _STABLE_PREFIX_CACHE: "StablePrefix | None" = None
 _STABLE_PREFIX_LOCK = threading.Lock()
@@ -69,10 +68,24 @@ _RECORD_DATA_SCHEMAS: dict[str, dict[str, Any]] = {
         "type": "object",
         "additionalProperties": True,
         "properties": {
-            "conclusion": {"enum": ["EXECUTE", "CANNOT"]},
+            "next_signal": {"enum": ["verify", "frame", "reflect", "self_modify"]},
+            "conclusion": {"enum": ["EXECUTE", "CANNOT", "FRAME", "SELF_MODIFY"]},
             "code": {"type": "string"},
         },
-        "required": ["conclusion", "code"],
+        "required": ["next_signal", "conclusion", "code"],
+    },
+    "action_frame": {
+        "type": "object",
+        "additionalProperties": True,
+        "properties": {
+            "next_signal": {"enum": ["framed", "reflect"]},
+            "screen_summary": {"type": "string"},
+            "target": {"type": "string"},
+            "strategy": {"type": "string"},
+            "risk": {"enum": ["low", "medium", "high"]},
+            "notes": {"type": "string"},
+        },
+        "required": ["next_signal", "screen_summary", "target", "strategy", "risk", "notes"],
     },
     "verification": {
         "type": "object",
@@ -88,7 +101,7 @@ _RECORD_DATA_SCHEMAS: dict[str, dict[str, Any]] = {
         "type": "object",
         "additionalProperties": True,
         "properties": {
-            "next_signal": {"enum": ["retry", "replan", "escalate", "give_up"]},
+            "next_signal": {"enum": ["retry", "replan", "frame", "escalate", "give_up"]},
             "lesson": {"type": "string"},
             "diagnosis": {"type": "string"},
         },
@@ -98,6 +111,7 @@ _RECORD_DATA_SCHEMAS: dict[str, dict[str, Any]] = {
         "type": "object",
         "additionalProperties": True,
         "properties": {
+            "next_signal": {"enum": ["modified"]},
             "summary": {"type": "string"},
             "rationale": {"type": "string"},
             "read_files": {"type": "array", "items": {"type": "string"}},
@@ -135,7 +149,7 @@ _RECORD_DATA_SCHEMAS: dict[str, dict[str, Any]] = {
                 ]
             },
         },
-        "required": ["summary", "rationale", "read_files", "file_writes", "file_deletes", "wiring_patches", "commands", "expected_validation"],
+        "required": ["next_signal", "summary", "rationale", "read_files", "file_writes", "file_deletes", "wiring_patches", "commands", "expected_validation"],
     },
     "satisfied": {
         "type": "object",
@@ -255,7 +269,7 @@ def _messages(system_prompt: str, user_text: str, prefix: StablePrefix | None, s
     ]
 
 
-def _commit_record(content: str) -> bus.Record:
+def _commit_record(content: str, expected_record_type: str | None = None) -> bus.Record:
     record = extract_json_object(content)
     if record is None:
         raise RuntimeError(f"brain did not commit a valid JSON object: {content}")
@@ -263,7 +277,32 @@ def _commit_record(content: str) -> bus.Record:
         raise RuntimeError(f"brain record missing string record_type: {record}")
     if "data" not in record or not isinstance(record["data"], dict):
         raise RuntimeError(f"brain record missing object data: {record}")
-    return bus.Record.from_json(record)
+    committed = bus.Record.from_json(record)
+    _validate_record_contract(committed, expected_record_type)
+    return committed
+
+
+def _validate_record_contract(record: bus.Record, expected_record_type: str | None = None) -> None:
+    if expected_record_type and record.record_type != expected_record_type:
+        raise RuntimeError(
+            f"brain record_type mismatch: expected {expected_record_type!r}, got {record.record_type!r}"
+        )
+    schema = _RECORD_DATA_SCHEMAS.get(record.record_type)
+    if not schema:
+        return
+    data = record.data
+    missing = [key for key in schema.get("required", []) if key not in data]
+    if missing:
+        raise RuntimeError(f"{record.record_type} record missing required data keys: {missing}")
+    properties = schema.get("properties", {})
+    for key, rule in properties.items():
+        if key not in data or not isinstance(rule, dict):
+            continue
+        value = data.get(key)
+        if "const" in rule and value != rule["const"]:
+            raise RuntimeError(f"{record.record_type}.data.{key} must be {rule['const']!r}, got {value!r}")
+        if "enum" in rule and value not in set(rule["enum"]):
+            raise RuntimeError(f"{record.record_type}.data.{key}={value!r} outside {rule['enum']!r}")
 
 
 def _organ_tuning(wiring: dict[str, Any], record_type: str | None) -> dict[str, Any]:
@@ -346,34 +385,55 @@ def append_ndjson(path: pathlib.Path, obj: dict[str, Any]) -> None:
         f.write(json.dumps(obj, ensure_ascii=False, default=str) + "\n")
 
 
-def raw_log_path(cfg: dict[str, Any] | None = None) -> pathlib.Path:
-    global _RAW_LOG_PATH
+def runtime_event_path(cfg: dict[str, Any] | None = None) -> pathlib.Path:
     cfg = cfg or {}
-    if _RAW_LOG_PATH is None:
-        explicit = cfg.get("raw_log_path")
-        if explicit:
-            _RAW_LOG_PATH = root_path(str(explicit))
-        else:
-            _RAW_LOG_PATH = ROOT / f"runtime_raw_{time.strftime('%Y%m%dT%H%M%S')}.txt"
-        _RAW_LOG_PATH.touch(exist_ok=True)
-    return _RAW_LOG_PATH
+    return root_path(str(cfg.get("event_log_path") or "runtime_events.jsonl"))
 
 
-def _next_raw_seq() -> int:
-    global _RAW_SEQ
-    with _RAW_LOCK:
-        _RAW_SEQ += 1
-        return _RAW_SEQ
+def _next_event_seq() -> int:
+    global _EVENT_SEQ
+    with _EVENT_LOCK:
+        _EVENT_SEQ += 1
+        return _EVENT_SEQ
 
 
-def log_raw_entry(cfg: dict[str, Any] | None, entry: dict[str, Any]) -> None:
-    cfg = cfg or {}
-    if cfg.get("raw_log", True) is False or cfg.get("log_raw", True) is False:
-        return
-    row = dict(entry)
-    row.setdefault("ts", time.time())
-    row.setdefault("iso", time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime()))
-    append_ndjson(raw_log_path(cfg), row)
+def _sha256_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
+
+
+def _json_payload(content: str) -> Any:
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        return content
+
+
+def summarize_messages_for_log(messages: list[dict[str, str]]) -> list[dict[str, Any]]:
+    summary: list[dict[str, Any]] = []
+    for message in messages:
+        role = str(message.get("role") or "user")
+        content = str(message.get("content") or "")
+        row: dict[str, Any] = {
+            "role": role,
+            "chars": len(content),
+            "sha256": _sha256_text(content),
+            "content": content,
+        }
+        if role == "user":
+            row["dynamic_payload"] = _json_payload(content)
+        summary.append(row)
+    return summary
+
+
+def log_runtime_event(cfg: dict[str, Any] | None, event: str, **payload: Any) -> None:
+    row = {
+        "schema": "endgame-ai.runtime-event.v1",
+        "ts": time.time(),
+        "iso": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime()),
+        "event": event,
+        **payload,
+    }
+    append_ndjson(runtime_event_path(cfg), row)
 
 
 def reset_call_budget() -> None:
@@ -414,13 +474,16 @@ def _get_transport_config(wiring: dict[str, Any]) -> tuple[str, dict[str, Any]]:
         raise RuntimeError(f"wiring model.transport_config.{transport} missing; no fallback transport config is allowed")
     cfg = dict(transport_config[transport])
     
-    global_keys = {"timeout", "max_brain_calls", "raw_log", "raw_log_path", "log_raw"}
+    global_keys = {"timeout", "brain_call_budget"}
     global_cfg = model.get("global", {})
     for k in global_keys:
         if isinstance(global_cfg, dict) and k in global_cfg and k not in cfg:
             cfg[k] = global_cfg[k]
         if k in model and k not in cfg:
             cfg[k] = model[k]
+    paths = wiring.get("paths", {})
+    if isinstance(paths, dict):
+        cfg.setdefault("event_log_path", paths.get("event_log") or "runtime_events.jsonl")
     
     cfg["transport"] = transport
     return transport, cfg
@@ -434,6 +497,23 @@ def _structured_outputs_enabled(cfg: dict[str, Any]) -> bool:
 
 
 def _record_response_format(record_type: str) -> dict[str, Any]:
+    data_schema = _RECORD_DATA_SCHEMAS.get(record_type)
+    if data_schema:
+        return {
+            "type": "json_schema",
+            "name": f"{record_type}_record",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "record_type": {"enum": [record_type]},
+                    "data": data_schema,
+                    "reasoning": {"type": "string"},
+                },
+                "required": ["record_type", "data", "reasoning"],
+            },
+        }
     return {
         "type": "json_object",
     }
@@ -457,28 +537,29 @@ def call(
         cfg = dict(cfg)
         cfg.update(request_config)
     model_cfg = wiring.get("model", {})
-    max_calls = model_cfg.get("max_brain_calls")
+    max_calls = model_cfg.get("brain_call_budget")
     if max_calls is None and isinstance(model_cfg.get("global"), dict):
-        max_calls = model_cfg["global"].get("max_brain_calls")
+        max_calls = model_cfg["global"].get("brain_call_budget")
     if max_calls is not None and _CALLS_MADE >= int(max_calls):
         raise RuntimeError(f"brain call budget exceeded: {_CALLS_MADE}/{max_calls}")
     _CALLS_MADE += 1
-    seq = _next_raw_seq()
+    seq = _next_event_seq()
     started = time.time()
-    log_raw_entry(cfg, {
+    log_runtime_event(cfg, "brain_request", **{
         "seq": seq,
-        "phase": "request",
         "transport": transport,
         "rod_feedback": rod_feedback,
-        "messages": messages,
+        "prompt_cache_key": cfg.get("prompt_cache_key"),
+        "stable_prefix": cfg.get("stable_prefix"),
+        "response_format": cfg.get("response_format"),
+        "messages": summarize_messages_for_log(messages),
     })
     mod = _load_transport_module(transport, wiring)
     try:
         result = mod.call(messages, cfg)
     except Exception as exc:
-        log_raw_entry(cfg, {
+        log_runtime_event(cfg, "brain_error", **{
             "seq": seq,
-            "phase": "error",
             "transport": transport,
             "elapsed_s": round(time.time() - started, 3),
             "error": f"{type(exc).__name__}: {exc}",
@@ -493,9 +574,8 @@ def call(
     if reasoning is not None and not isinstance(reasoning, str):
         raise RuntimeError(f"{transport} brain contract violation: reasoning must be string when present")
     out = {"content": content, "reasoning": reasoning or ""}
-    log_raw_entry(cfg, {
+    log_runtime_event(cfg, "brain_response", **{
         "seq": seq,
-        "phase": "response",
         "transport": transport,
         "elapsed_s": round(time.time() - started, 3),
         "content": content,
@@ -599,6 +679,9 @@ def think(
         else None
     )
     request_cfg = dict(request_config or {})
+    request_cfg["expected_record_type"] = expected_record_type
+    if prefix is not None:
+        request_cfg["stable_prefix"] = prefix.metadata()
 
     tuning = _organ_tuning(wiring, expected_record_type)
     if tuning.get("reasoning_effort") is not None:
@@ -607,7 +690,7 @@ def think(
         request_cfg.setdefault("max_output_tokens", tuning["max_output_tokens"])
 
     if cfg.get("transport") == "transport_xai":
-        request_cfg.setdefault("prompt_cache_key", conv_id)
+        request_cfg.setdefault("prompt_cache_key", prefix.cache_key if prefix is not None else conv_id)
 
     if not reasoning_cfg["enabled"] or pattern == "single_pass":
         result = call(
@@ -617,7 +700,7 @@ def think(
             response_format=response_format,
             request_config=request_cfg,
         )
-        record = _commit_record(result["content"])
+        record = _commit_record(result["content"], expected_record_type)
         reasoning = reasoning_from(result["content"], result.get("reasoning", ""))
         record = bus.Record(record.record_type, record.data, reasoning)
         return record.to_json()
@@ -630,7 +713,7 @@ def think(
             response_format=response_format,
             request_config=request_cfg,
         )
-        record = _commit_record(result["content"])
+        record = _commit_record(result["content"], expected_record_type)
         reasoning = reasoning_from(result["content"], result.get("reasoning", ""))
         record = bus.Record(record.record_type, record.data, reasoning)
         return record.to_json()
@@ -648,13 +731,13 @@ def think(
         response_format=response_format,
         request_config=request_cfg,
     )
-    record = _commit_record(second["content"])
+    record = _commit_record(second["content"], expected_record_type)
     record = bus.Record(record.record_type, record.data, reasoning)
     return record.to_json()
 
 
-def read_raw_log_tail(path: pathlib.Path | None = None, *, max_lines: int = 200, max_bytes: int = 600_000) -> list[dict[str, Any]]:
-    p = path or raw_log_path({"raw_log": True})
+def read_runtime_event_tail(path: pathlib.Path | None = None, *, max_lines: int = 200, max_bytes: int = 600_000) -> list[dict[str, Any]]:
+    p = path or runtime_event_path()
     if not p.exists():
         return []
     size = p.stat().st_size

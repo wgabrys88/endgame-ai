@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import importlib.util
 import copy
 import ctypes
@@ -141,6 +142,13 @@ CORE_FILES = {
     "core_stop_check.py",
 }
 MIN_CORE_DESKTOP_LINES = 80
+DESTRUCTIVE_STUB_MARKERS = (
+    "original implementation assumed present",
+    "other methods preserved from original",
+    "full original methods retained",
+    "uia scan logic",
+    "minimal coherent evolution patch",
+)
 
 
 def _patch_data(parsed: dict[str, Any]) -> dict[str, Any]:
@@ -180,6 +188,7 @@ def _validate_content(path: pathlib.Path, rel: str, content: Any) -> str:
         raise ValueError(f"self_modify content for {rel} must be a string")
     if path.suffix == ".py":
         compile(content, rel, "exec")
+        _validate_non_destructive_python_rewrite(path, rel, content)
         if rel == "core_desktop.py":
             if "class Desktop" not in content:
                 raise ValueError("core_desktop.py must retain class Desktop")
@@ -188,6 +197,47 @@ def _validate_content(path: pathlib.Path, rel: str, content: Any) -> str:
     elif path.suffix == ".json":
         json.loads(content)
     return content
+
+
+def _line_count(text: str) -> int:
+    return text.count("\n") + (1 if text and not text.endswith("\n") else 0)
+
+
+def _public_python_defs(text: str) -> set[str]:
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return set()
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and not node.name.startswith("_"):
+            names.add(node.name)
+    return names
+
+
+def _validate_non_destructive_python_rewrite(path: pathlib.Path, rel: str, content: str) -> None:
+    if not path.exists():
+        return
+    lower = content.lower()
+    for marker in DESTRUCTIVE_STUB_MARKERS:
+        if marker in lower:
+            raise ValueError(f"self_modify content for {rel} contains destructive placeholder marker: {marker}")
+    original = path.read_text(encoding="utf-8", errors="replace")
+    original_lines = _line_count(original)
+    new_lines = _line_count(content)
+    if original_lines >= 40 and new_lines < max(20, int(original_lines * 0.55)):
+        raise ValueError(
+            f"self_modify rewrite of {rel} is suspiciously small "
+            f"({new_lines} lines vs {original_lines}); use a minimal patch, not a replacement stub"
+        )
+    original_defs = _public_python_defs(original)
+    new_defs = _public_python_defs(content)
+    if len(original_defs) >= 5 and len(new_defs) < max(2, len(original_defs) // 2):
+        missing = sorted(original_defs - new_defs)[:12]
+        raise ValueError(
+            f"self_modify rewrite of {rel} drops too many public definitions; "
+            f"missing examples: {missing}"
+        )
 
 
 def _atomic_write_text(path: pathlib.Path, content: str) -> None:
@@ -537,14 +587,8 @@ def wiring_limit(name: str, default: int, wiring: dict[str, Any]) -> int:
     return wiring.get("limits", {}).get(name, default)
 
 
-def _desktop_tree_index(state: dict[str, Any]) -> dict[str, Any]:
-    tree = state.get("desktop_tree") or {}
-    index = tree.get("node_index") if isinstance(tree, dict) else {}
-    return index if isinstance(index, dict) else {}
-
-
 def _action_index(state: dict[str, Any]) -> dict[str, Any]:
-    index = desktop.get_desktop().last_action_index() or state.get("action_index") or {}
+    index = state.get("action_index") or {}
     return index if isinstance(index, dict) else {}
 
 
@@ -566,6 +610,7 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
     wiring = ctx.get("wiring", {})
     goal = ctx.get("goal", "")
     fresh_observation = state.get("fresh_observation") or brain.last_fresh_observation() or bus.observation_brief(state)
+    action_index = _action_index(state)
     last = {
         "error": state.get("last_error"),
         "result": state.get("last_result", ""),
@@ -576,7 +621,7 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
     
     def action_nodes(action: str | None = None) -> list[dict[str, Any]]:
         nodes = []
-        for node in _desktop_tree_index(state).values():
+        for node in action_index.values():
             if not isinstance(node, dict):
                 continue
             node_action = node.get("action")
@@ -584,8 +629,11 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
                 nodes.append(dict(node))
         return nodes
 
+    def node_by_id(node_id: str) -> dict[str, Any]:
+        return dict(action_index.get(str(node_id), {}) or {})
+
     def click_node(node_id: str) -> dict[str, Any]:
-        node = dict(_action_index(state).get(str(node_id), {}) or {})
+        node = node_by_id(node_id)
         if not node:
             return {"ok": False, "action": "click_node", "error": f"node not found: {node_id}"}
         x, y = _node_center(node)
@@ -593,18 +641,23 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         return {"ok": bool(click_res.get("ok", True)), "action": "click_node", "node_id": node_id, "click": click_res}
 
     def read_node(node_id: str) -> dict[str, Any]:
-        node = dict(_action_index(state).get(str(node_id), {}) or {})
+        node = node_by_id(node_id)
         if not node:
             return {"ok": False, "action": "read_node", "error": f"node not found: {node_id}"}
         text = node.get("name") or node.get("text_full") or node.get("value") or ""
         return {"ok": True, "action": "read_node", "node_id": node_id, "text": text}
 
     def scroll_node(node_id: str, amount: int = -3) -> dict[str, Any]:
-        node = dict(_action_index(state).get(str(node_id), {}) or {})
+        node = node_by_id(node_id)
         if not node:
             return {"ok": False, "action": "scroll_node", "error": f"node not found: {node_id}"}
         x, y = _node_center(node)
         return d.scroll(x, y, int(amount), int(node.get("hwnd") or 0))
+
+    def open_url(browser: str = "chrome", url: str = "") -> dict[str, Any]:
+        if not url and str(browser).lower().startswith(("http://", "https://")):
+            return d.open_url("default", str(browser))
+        return d.open_url(str(browser or "chrome"), str(url or ""))
 
     class _PyAutoGuiCompat:
 
@@ -656,6 +709,7 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "observe_screen": d.observe_screen,
         "last_desktop_tree": d.last_desktop_tree,
         "action_nodes": action_nodes,
+        "node_by_id": node_by_id,
         
         "click": d.click,
         "click_node": click_node,
@@ -665,7 +719,7 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "hotkey": d.hotkey,
         "scroll": d.scroll,
         "scroll_node": scroll_node,
-        "open_url": d.open_url,
+        "open_url": open_url,
         "pyautogui": pyautogui,
         "pag": pag,
         
@@ -694,6 +748,7 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "fresh_observation": fresh_observation,
         "desktop_tree": state.get("desktop_tree", {}),
         "desktop_tree_text": state.get("desktop_tree_text", ""),
+        "action_index": action_index,
         "observation_artifact": state.get("observation_artifact", {}),
         "observed_at": state.get("observed_at"),
         "fresh_scan": state.get("fresh_scan", False),

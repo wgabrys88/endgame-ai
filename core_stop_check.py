@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import json
 import os
 import pathlib
+import signal
 import sys
 import time
 
 ROOT = pathlib.Path(__file__).parent.resolve()
-STOP_FILE = ROOT / "runtime_stop.txt"
+STOP_FILE = ROOT / "runtime_stop.json"
 
 
 def _pid_file(name: str) -> pathlib.Path:
@@ -15,7 +17,13 @@ def _pid_file(name: str) -> pathlib.Path:
 
 def register_pid(name: str) -> pathlib.Path:
     pid_file = _pid_file(name)
-    pid_file.write_text(str(os.getpid()), encoding="utf-8")
+    payload = {
+        "pid": os.getpid(),
+        "name": name,
+        "started_at": time.time(),
+        "started_iso": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime()),
+    }
+    pid_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return pid_file
 
 
@@ -25,35 +33,49 @@ def unregister_pid(name: str) -> None:
         pid_file.unlink()
 
 
+def stop_requested() -> bool:
+    return STOP_FILE.exists()
+
+
 def check_stop(name: str = "process") -> None:
-    if STOP_FILE.exists():
-        print(f"[{name}] runtime_stop.txt detected, exiting", flush=True)
+    if stop_requested():
+        print(f"[{name}] {STOP_FILE.name} detected, exiting", flush=True)
         unregister_pid(name)
         sys.exit(0)
 
 
-def request_stop(reason: str = "") -> None:
-    STOP_FILE.write_text(f"{time.strftime('%Y-%m-%dT%H:%M:%S')}: {reason}\n", encoding="utf-8")
-    print(f"[stop_check] runtime_stop.txt created: {reason}", flush=True)
+def request_stop(reason: str = "", *, source: str = "manual") -> None:
+    payload = {
+        "schema": "endgame-ai.stop.v1",
+        "created_at": time.time(),
+        "created_iso": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime()),
+        "source": source,
+        "reason": reason,
+        "pid": os.getpid(),
+    }
+    STOP_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"[stop_check] {STOP_FILE.name} created: {reason}", flush=True)
 
 
 def clear_stop() -> None:
-    if STOP_FILE.exists():
+    if stop_requested():
         STOP_FILE.unlink()
-        print("[stop_check] runtime_stop.txt cleared", flush=True)
+        print(f"[stop_check] {STOP_FILE.name} cleared", flush=True)
 
 
 def kill_all_pids() -> None:
-    import psutil
     for pid_file in ROOT.glob("runtime_*.pid"):
         try:
-            pid = int(pid_file.read_text(encoding="utf-8").strip())
-            if psutil.pid_exists(pid):
-                p = psutil.Process(pid)
-                p.terminate()
-                p.wait(timeout=2)
+            raw = pid_file.read_text(encoding="utf-8").strip()
+            try:
+                obj = json.loads(raw)
+                pid = int(obj.get("pid"))
+            except json.JSONDecodeError:
+                pid = int(raw)
+            if pid != os.getpid():
+                os.kill(pid, signal.SIGTERM)
                 print(f"[stop_check] terminated PID {pid} ({pid_file.name})", flush=True)
-        except (ValueError, psutil.NoSuchProcess, psutil.TimeoutExpired, PermissionError):
+        except (ValueError, OSError, PermissionError):
             pass
         finally:
             pid_file.unlink(missing_ok=True)

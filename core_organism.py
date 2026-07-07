@@ -1,11 +1,8 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import pathlib
-import signal
-import sys
 import time
 from typing import Any
 
@@ -16,8 +13,8 @@ import core_stop_check as stop_check
 ROOT = pathlib.Path(__file__).parent.resolve()
 
 
-def load_wiring() -> dict[str, Any]:
-    return brain.load_json(ROOT / "wiring.json")
+def load_wiring(path: str | None = None) -> dict[str, Any]:
+    return brain.load_json(brain.root_path(path, "wiring.json"))
 
 
 def state_path(wiring: dict[str, Any]) -> pathlib.Path:
@@ -28,8 +25,8 @@ def control_path(wiring: dict[str, Any]) -> pathlib.Path:
     return brain.root_path(wiring.get("paths", {}).get("control"), "runtime_control.json")
 
 
-def runtime_log_path(wiring: dict[str, Any]) -> pathlib.Path:
-    return brain.root_path(wiring.get("paths", {}).get("runtime_log"), "runtime_log.ndjson")
+def event_log_path(wiring: dict[str, Any]) -> pathlib.Path:
+    return brain.root_path(wiring.get("paths", {}).get("event_log"), "runtime_events.jsonl")
 
 
 def write_state(wiring: dict[str, Any], state: dict[str, Any]) -> None:
@@ -37,8 +34,7 @@ def write_state(wiring: dict[str, Any], state: dict[str, Any]) -> None:
 
 
 def runtime_event(wiring: dict[str, Any], event: str, **payload: Any) -> None:
-    row = {"ts": time.time(), "event": event, **payload}
-    brain.append_ndjson(runtime_log_path(wiring), row)
+    brain.log_runtime_event({"event_log_path": str(event_log_path(wiring))}, event, **payload)
 
 
 def default_control(wiring: dict[str, Any]) -> dict[str, Any]:
@@ -68,21 +64,76 @@ def read_control(wiring: dict[str, Any]) -> dict[str, Any]:
 
 
 def reset_runtime(wiring: dict[str, Any]) -> None:
-    for key, default in [("state", "runtime_state.json"), ("runtime_log", "runtime_log.ndjson")]:
+    for key, default in [("state", "runtime_state.json"), ("control", "runtime_control.json")]:
         p = brain.root_path(wiring.get("paths", {}).get(key), default)
         if p.exists():
             p.unlink()
+    for key, default in [("request", "runtime_request.json"), ("response", "runtime_response.json")]:
+        p = brain.root_path(wiring.get("paths", {}).get(key), default)
+        if p.exists():
+            p.unlink()
+    stop_check.clear_stop()
 
 
-def wait_before_node(wiring: dict[str, Any], state: dict[str, Any], node_name: str) -> None:
+def duration_expired(deadline_at: float | None) -> bool:
+    return deadline_at is not None and time.time() >= deadline_at
+
+
+def expire_duration(
+    wiring: dict[str, Any],
+    state: dict[str, Any],
+    duration_seconds: float | None,
+    node_name: str,
+) -> dict[str, Any]:
+    reason = f"duration_seconds expired after {duration_seconds:g}s" if duration_seconds is not None else "duration expired"
+    state["_phase"] = "duration_expired"
+    state["current_node"] = node_name
+    state["stop_reason"] = reason
+    write_state(wiring, state)
+    stop_check.request_stop(reason, source="duration")
+    runtime_event(
+        wiring,
+        "duration_expired",
+        node=node_name,
+        tick=state.get("tick"),
+        duration_seconds=duration_seconds,
+        stop_file=str(stop_check.STOP_FILE),
+    )
+    return state
+
+
+def stop_file_detected(wiring: dict[str, Any], state: dict[str, Any], node_name: str) -> dict[str, Any]:
+    state["_phase"] = "stop_requested"
+    state["current_node"] = node_name
+    state["stop_reason"] = f"stop file detected: {stop_check.STOP_FILE.name}"
+    write_state(wiring, state)
+    runtime_event(
+        wiring,
+        "stop_file_detected",
+        node=node_name,
+        tick=state.get("tick"),
+        stop_file=str(stop_check.STOP_FILE),
+    )
+    return state
+
+
+def wait_before_node(
+    wiring: dict[str, Any],
+    state: dict[str, Any],
+    node_name: str,
+    deadline_at: float | None = None,
+) -> bool:
     entered_pause = False
     while True:
-        stop_check.check_stop(f"organism wait_before_node:{node_name}")
+        if duration_expired(deadline_at):
+            return False
+        if stop_check.stop_requested():
+            return False
         ctrl = read_control(wiring)
         mode = ctrl["mode"]
         token = int(ctrl.get("step_token", 0))
         if mode == "run":
-            return
+            return True
         consumed = int(state.get("_last_step_token_consumed", -1))
         if mode == "step" and token > consumed:
             state["_last_step_token_consumed"] = token
@@ -90,7 +141,7 @@ def wait_before_node(wiring: dict[str, Any], state: dict[str, Any], node_name: s
             state["current_node"] = node_name
             write_state(wiring, state)
             runtime_event(wiring, "step_consumed", node=node_name, step_token=token)
-            return
+            return True
         if not entered_pause:
             state["_phase"] = "paused_before_node"
             state["current_node"] = node_name
@@ -116,62 +167,81 @@ def run(
     goal: str | None,
     *,
     reset: bool = False,
-    max_ticks: int | None = None,
-    max_brain_calls: int | None = None,
+    duration_seconds: float | None = None,
+    brain_call_budget: int | None = None,
     start_node: str | None = None,
+    wiring_path: str | None = None,
+    _pid_registered: bool = False,
+    _deadline_at: float | None = None,
 ) -> dict[str, Any]:
-    stop_check.register_pid("organism")
-    wiring = load_wiring()
-    if max_brain_calls is not None:
-        wiring.setdefault("model", {})["max_brain_calls"] = max_brain_calls
-    if reset:
-        reset_runtime(wiring)
-    brain.reset_call_budget()
-    topo = wiring.get("topology", {})
-    sp = state_path(wiring)
-    resumed = False
-    if not reset and sp.exists():
-        state = brain.load_json(sp)
-        goal = goal or str(state.get("goal") or "")
-        current = str(start_node or state.get("next_node") or topo.get("cycle_start") or "node_planner")
-        resumed = True
-        if max_ticks is not None:
-            max_ticks = int(state.get("tick", 0)) + max_ticks
-    else:
-        current = str(start_node or topo.get("cycle_start") or "node_planner")
-        state = {
-            "_phase": "starting",
-            "goal": goal or "",
-            "tick": 0,
-            "current_node": current,
-            "last_error": None,
-            "last_action": None,
-            "wiring_transport": wiring.get("model", {}).get("transport"),
-            "start_node": current,
-        }
-    if current not in set(topo.get("nodes", [])):
-        raise RuntimeError(f"start node '{current}' is not in topology.nodes")
-    state["_phase"] = "resuming" if resumed else state.get("_phase", "starting")
-    state["current_node"] = current
-    state.setdefault("wiring_transport", wiring.get("model", {}).get("transport"))
-    write_state(wiring, state)
-    runtime_event(
-        wiring,
-        "organism_resume" if resumed else "organism_start",
-        goal=goal or "",
-        transport=state["wiring_transport"],
-        tick=state.get("tick", 0),
-        node=current,
-    )
+    registered_here = False
+    if not _pid_registered:
+        stop_check.register_pid("organism")
+        registered_here = True
+    wiring = load_wiring(wiring_path)
+    current = str(start_node or "node_observe")
+    deadline_at = _deadline_at
+    state: dict[str, Any] = {"_phase": "starting", "tick": 0, "current_node": current}
     try:
+        if brain_call_budget is not None:
+            wiring.setdefault("model", {})["brain_call_budget"] = brain_call_budget
+        if reset:
+            reset_runtime(wiring)
+        if not _pid_registered:
+            brain.reset_call_budget()
+
+        if deadline_at is None and duration_seconds is not None:
+            deadline_at = time.time() + float(duration_seconds)
+
+        topo = wiring.get("topology", {})
+        sp = state_path(wiring)
+        resumed = False
+        if not reset and sp.exists():
+            state = brain.load_json(sp)
+            goal = goal or str(state.get("goal") or "")
+            current = str(start_node or state.get("next_node") or topo.get("cycle_start") or "node_planner")
+            resumed = True
+        else:
+            current = str(start_node or topo.get("cycle_start") or "node_planner")
+            state = {
+                "_phase": "starting",
+                "goal": goal or "",
+                "tick": 0,
+                "current_node": current,
+                "last_error": None,
+                "last_action": None,
+                "wiring_transport": wiring.get("model", {}).get("transport"),
+                "start_node": current,
+            }
+        if current not in set(topo.get("nodes", [])):
+            raise RuntimeError(f"start node '{current}' is not in topology.nodes")
+        state["_phase"] = "resuming" if resumed else state.get("_phase", "starting")
+        state["goal"] = goal or str(state.get("goal") or "")
+        state["current_node"] = current
+        state["duration_seconds"] = duration_seconds
+        state["deadline_at"] = deadline_at
+        state.setdefault("wiring_transport", wiring.get("model", {}).get("transport"))
+        write_state(wiring, state)
+        runtime_event(
+            wiring,
+            "organism_resume" if resumed else "organism_start",
+            goal=goal or "",
+            transport=state["wiring_transport"],
+            tick=state.get("tick", 0),
+            node=current,
+            duration_seconds=duration_seconds,
+            deadline_at=deadline_at,
+            pid=os.getpid(),
+        )
         while True:
-            stop_check.check_stop("organism main loop")
-            if max_ticks is not None and state["tick"] >= max_ticks:
-                state["_phase"] = "max_ticks"
-                write_state(wiring, state)
-                runtime_event(wiring, "max_ticks", tick=state["tick"])
-                return state
-            wait_before_node(wiring, state, current)
+            if duration_expired(deadline_at):
+                return expire_duration(wiring, state, duration_seconds, current)
+            if stop_check.stop_requested():
+                return stop_file_detected(wiring, state, current)
+            if not wait_before_node(wiring, state, current, deadline_at):
+                if duration_expired(deadline_at):
+                    return expire_duration(wiring, state, duration_seconds, current)
+                return stop_file_detected(wiring, state, current)
             state["_phase"] = "executing_node"
             state["current_node"] = current
             write_state(wiring, state)
@@ -185,7 +255,7 @@ def run(
                     patch.setdefault("self_modify", {})["applied"] = applied
                     committed = nodes.commit_self_evolution(wiring, applied, evolution_patch)
                     patch["self_modify"]["commit"] = committed
-                    wiring = load_wiring()
+                    wiring = load_wiring(wiring_path)
                     runtime_event(wiring, "self_modify_applied", **applied, commit=committed)
                 except Exception as exc:
                     swap_cfg = wiring.get("self_modify", {})
@@ -236,23 +306,44 @@ def run(
             write_state(wiring, state)
             runtime_event(wiring, "node_complete", node=current, signal="error", next_node=nxt, tick=state["tick"])
             current = nxt
+            return run(
+                goal,
+                reset=False,
+                duration_seconds=duration_seconds,
+                brain_call_budget=brain_call_budget,
+                start_node=current,
+                wiring_path=wiring_path,
+                _pid_registered=True,
+                _deadline_at=deadline_at,
+            )
         except RuntimeError as route_exc:
             state["_phase"] = "halted"
             state["last_error"] = f"Error routing failed: {route_exc}"
             write_state(wiring, state)
             runtime_event(wiring, "halted", node=current, error=state["last_error"])
             return state
+    finally:
+        if registered_here:
+            stop_check.unregister_pid("organism")
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("goal", nargs="?", default="")
     ap.add_argument("--reset", action="store_true")
-    ap.add_argument("--max-ticks", type=int, default=None)
-    ap.add_argument("--max-brain-calls", type=int, default=None)
+    ap.add_argument("--duration-seconds", type=float, default=120.0)
+    ap.add_argument("--brain-call-budget", type=int, default=None)
     ap.add_argument("--start-node", default=None)
+    ap.add_argument("--wiring", default="wiring.json")
     args = ap.parse_args(argv)
-    run(args.goal, reset=args.reset, max_ticks=args.max_ticks, max_brain_calls=args.max_brain_calls, start_node=args.start_node)
+    run(
+        args.goal,
+        reset=args.reset,
+        duration_seconds=args.duration_seconds,
+        brain_call_budget=args.brain_call_budget,
+        start_node=args.start_node,
+        wiring_path=args.wiring,
+    )
     return 0
 
 

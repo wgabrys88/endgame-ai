@@ -60,14 +60,12 @@ PID_OFFSCREEN = _const("UIA_IsOffscreenPropertyId", 30022)
 PID_HWND = _const("UIA_NativeWindowHandlePropertyId", 30020)
 PID_FRAMEWORK = _const("UIA_FrameworkIdPropertyId", 30024)
 PID_KEYBOARD_FOCUSABLE = _const("UIA_IsKeyboardFocusablePropertyId", 30008)
-PID_HAS_KEYBOARD_FOCUS = _const("UIA_HasKeyboardFocusPropertyId", 30009)
 PID_CONTENT_ELEMENT = _const("UIA_IsContentElementPropertyId", 30015)
 
 SCAN_PROPERTY_IDS = [
     PID_RUNTIME_ID, PID_BOUNDING_RECT, PID_CONTROL_TYPE, PID_NAME,
     PID_AUTOMATION_ID, PID_CLASS_NAME, PID_ENABLED, PID_OFFSCREEN,
-    PID_HWND, PID_FRAMEWORK, PID_KEYBOARD_FOCUSABLE, PID_HAS_KEYBOARD_FOCUS,
-    PID_CONTENT_ELEMENT,
+    PID_HWND, PID_FRAMEWORK, PID_KEYBOARD_FOCUSABLE, PID_CONTENT_ELEMENT,
 ]
 
 # Pattern IDs we actually use (5 total)
@@ -175,7 +173,6 @@ class RawNode:
     pattern_values: dict[str, str] = field(default_factory=dict)  # pattern_name -> extracted text
     depth: int = 0
     parent_runtime_id: list[int] = field(default_factory=list)
-    has_focus: bool = False
     is_keyboard_focusable: bool = False
     is_content_element: bool = False
     action: str = ""
@@ -314,7 +311,7 @@ class UiaScanner:
             pass
         return out
 
-    def element_to_raw(self, element: Any, parent_runtime_id: list[int] = None, depth: int = 0) -> RawNode | None:
+    def element_to_raw(self, element: Any, parent_runtime_id: list[int] | None = None, depth: int = 0) -> RawNode | None:
         """Convert single UIA element to RawNode."""
         try:
             rect = UiaVariant.to_rect(_get_cached(element, PID_BOUNDING_RECT))
@@ -337,8 +334,6 @@ class UiaScanner:
             framework_id = UiaVariant.to_str(_get_cached(element, PID_FRAMEWORK))
             enabled = UiaVariant.to_bool(_get_cached(element, PID_ENABLED))
             offscreen = UiaVariant.to_bool(_get_cached(element, PID_OFFSCREEN))
-            has_focus = UiaVariant.to_bool(_get_cached(element, PID_HAS_KEYBOARD_FOCUS)) or \
-                        UiaVariant.to_bool(_get_current(element, PID_HAS_KEYBOARD_FOCUS))
             is_keyboard_focusable = UiaVariant.to_bool(_get_cached(element, PID_KEYBOARD_FOCUSABLE)) or \
                                     UiaVariant.to_bool(_get_current(element, PID_KEYBOARD_FOCUSABLE))
             is_content_element = UiaVariant.to_bool(_get_cached(element, PID_CONTENT_ELEMENT)) or \
@@ -386,7 +381,6 @@ class UiaScanner:
                 pattern_values=pattern_values,
                 depth=depth,
                 parent_runtime_id=parent_runtime_id or [],
-                has_focus=has_focus,
                 is_keyboard_focusable=is_keyboard_focusable,
                 is_content_element=is_content_element,
                 action=action,
@@ -394,7 +388,7 @@ class UiaScanner:
         except Exception:
             return None
 
-    def harvest_subtree(self, root_element: Any, max_nodes: int, parent_runtime_id: list[int] = None, depth: int = 0) -> list[RawNode]:
+    def harvest_subtree(self, root_element: Any, max_nodes: int, parent_runtime_id: list[int] | None = None, depth: int = 0) -> list[RawNode]:
         """Harvest entire subtree from root element via UIA cache."""
         nodes: list[RawNode] = []
         seen: set[str] = set()
@@ -440,6 +434,11 @@ class UiaScanner:
             req.AddProperty(pid)
         for pid in SCAN_PATTERN_IDS:
             req.AddPattern(pid)
+        return req
+
+    def _build_hit_cache_request(self):
+        req = self._build_cache_request()
+        req.TreeScope = TreeScope_Element
         return req
 
 
@@ -608,7 +607,6 @@ def filter_raw(raw_nodes: list[RawNode], config: dict[str, Any], screen: dict[st
                     "class_name": node.class_name,
                     "runtime_id": node.runtime_id,
                     "depth": node.depth,
-                    "has_focus": node.has_focus,
                 }
 
     return {
@@ -680,12 +678,14 @@ def build_tree_and_map(action_elements: dict[str, dict[str, Any]], text_hints: d
                 parent_hwnd = w["hwnd"]
                 break
 
-        parent_id = next((w["id"] for w in sorted_windows if w["hwnd"] == parent_hwnd), "W0")
-        if parent_id != "W0" and window_child_counts.get(parent_hwnd, 0) >= max_children_per_window:
+        parent_id = "W0"
+        if parent_hwnd is not None:
+            parent_id = next((w["id"] for w in sorted_windows if w["hwnd"] == parent_hwnd), "W0")
+        if parent_hwnd is not None and parent_id != "W0" and window_child_counts.get(parent_hwnd, 0) >= max_children_per_window:
             continue
 
         elem["parent_id"] = parent_id
-        if parent_id == "W0":
+        if parent_id == "W0" or parent_hwnd is None:
             root["children"].append(elem)
         else:
             window_nodes[parent_hwnd]["children"].append(elem)

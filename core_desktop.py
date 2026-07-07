@@ -40,7 +40,6 @@ class Desktop:
         self._automation: Any = None
         self._last_desktop_tree: dict[str, Any] | None = None
         self._last_action_index: dict[str, dict[str, Any]] = {}
-        self._last_window_tokens: dict[str, dict[str, Any]] = {}
 
     def _init_automation(self) -> None:
         self._automation = comtypes.client.CreateObject(uia.CUIAutomation, interface=uia.IUIAutomation)
@@ -108,9 +107,6 @@ class Desktop:
             user32.EnumWindows(EnumWindowsProc(callback), 0)
         except Exception:
             pass
-        self._last_window_tokens = {
-            str(w.get("token")): w for w in windows if w.get("token") and str(w.get("token")) != "W0"
-        }
         return windows
 
     def click(self, x: int, y: int, hwnd: int = 0) -> dict[str, Any]:
@@ -157,7 +153,7 @@ class Desktop:
         user32.keybd_event(vk, 0, 2, 0)
         return {"ok": True, "action": "press_key", "key": key}
 
-    def hotkey(self, keys) -> dict[str, Any]:
+    def hotkey(self, *keys: Any) -> dict[str, Any]:
         key_map = {
             "ctrl": 0x11, "control": 0x11, "alt": 0x12, "shift": 0x10,
             "win": 0x5B, "windows": 0x5B,
@@ -167,7 +163,15 @@ class Desktop:
             "a": 0x41, "s": 0x53, "f": 0x46, "n": 0x4E,
             "o": 0x4F, "p": 0x50, "w": 0x57, "r": 0x52, "l": 0x4C, "d": 0x44,
         }
-        parts = [k.strip().lower() for k in keys] if isinstance(keys, list) else [k.strip().lower() for k in str(keys).split("+")]
+        if len(keys) == 1 and isinstance(keys[0], (list, tuple)):
+            raw_parts = list(keys[0])
+        elif len(keys) == 1:
+            raw_parts = str(keys[0]).split("+")
+        else:
+            raw_parts = list(keys)
+        parts = [str(k).strip().lower() for k in raw_parts if str(k).strip()]
+        if not parts:
+            return {"ok": False, "action": "hotkey", "error": "no keys provided"}
         vks = []
         for k in parts:
             vk = key_map.get(k)
@@ -180,7 +184,7 @@ class Desktop:
         user32.keybd_event(vks[-1], 0, 2, 0)
         for vk in reversed(vks[:-1]):
             user32.keybd_event(vk, 0, 2, 0)
-        return {"ok": True, "action": "hotkey", "keys": keys}
+        return {"ok": True, "action": "hotkey", "keys": parts}
 
     def scroll(self, x: int, y: int, amount: int, hwnd: int = 0) -> dict[str, Any]:
         if hwnd:
@@ -213,3 +217,19 @@ def get_desktop(config: dict[str, Any] | None = None) -> Desktop:
     if _desktop_instance is None:
         _desktop_instance = Desktop(config)
     return _desktop_instance
+
+
+def observe(config: dict[str, Any] | None = None) -> dict[str, Any]:
+    return get_desktop(config).observe(config)
+
+
+def observe_screen() -> dict[str, int]:
+    return get_desktop().observe_screen()
+
+
+def last_desktop_tree() -> dict[str, Any] | None:
+    return get_desktop().last_desktop_tree()
+
+
+def last_action_index() -> dict[str, dict[str, Any]]:
+    return get_desktop().last_action_index()
