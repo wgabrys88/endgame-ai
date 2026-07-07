@@ -635,10 +635,14 @@ def commit_self_evolution(wiring: dict[str, Any], applied: dict[str, Any], patch
     commit = git_head_sha()
     known_good = update_known_good_ref(wiring, commit, source="commit_self_evolution")
     pushed = False
+    known_good_ref_pushed = False
     git_cfg = wiring.get("self_modify", {}).get("git", {})
     if bool(git_cfg.get("push_after_commit", False)):
-        _git(["push", str(git_cfg.get("remote") or "origin"), branch])
+        remote = str(git_cfg.get("remote") or "origin")
+        _git(["push", remote, branch])
+        _git(["push", remote, f"{known_good['ref']}:{known_good['ref']}"])
         pushed = True
+        known_good_ref_pushed = True
     return {
         "committed": True,
         "branch": branch,
@@ -646,6 +650,7 @@ def commit_self_evolution(wiring: dict[str, Any], applied: dict[str, Any], patch
         "known_good": known_good,
         "changed_files": changed_files,
         "pushed": pushed,
+        "known_good_ref_pushed": known_good_ref_pushed,
         "status": git_worktree_status(),
     }
 

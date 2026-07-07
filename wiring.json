@@ -174,7 +174,7 @@
     },
     "git": {
       "remote": "origin",
-      "push_after_commit": false
+      "push_after_commit": true
     },
     "web_search": {
       "enabled": true,
