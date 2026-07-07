@@ -292,9 +292,14 @@ def run(
                                 for item in (evolution_patch.get("file_writes") or [])
                                 if isinstance(item, dict) and item.get("path")
                             ]
+                            touched.extend(
+                                str(path).replace("\\", "/")
+                                for path in (evolution_patch.get("file_deletes") or [])
+                                if str(path).strip()
+                            )
+                            if evolution_patch.get("wiring_patches"):
+                                touched.append("wiring.json")
                             swap = nodes.hot_swap_to_known_good(wiring, paths=touched or None)
-                            if not swap.get("hot_swapped") and swap_cfg.get("known_good_commit"):
-                                swap = nodes.hot_swap_to_known_good(wiring)
                             patch.setdefault("self_modify", {})["hot_swap"] = swap
                             runtime_event(wiring, "self_modify_hot_swap", error=str(exc), **swap)
                         raise

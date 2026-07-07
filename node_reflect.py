@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import core_bus as bus
+import core_stop_check as stop_check
 from core_nodes import BaseNode
 
 
@@ -89,7 +90,16 @@ class ReflectNode(BaseNode):
             state.get("last_result", {}),
         ])
         self._routing_override = None
-        if state.get("last_error") and any(
+        if signal == "give_up" and stop_check.self_evolution_enabled():
+            self._routing_override = {
+                "from": requested_signal,
+                "to": "escalate",
+                "reason": "give_up blocked while self-evolution is enabled",
+                "failure_streak": self._projected_streak,
+                "self_evolution_file": str(stop_check.SELF_EVOLUTION_FILE),
+            }
+            signal = "escalate"
+        elif state.get("last_error") and any(
             marker.lower() in diagnostic_text.lower() for marker in ENVIRONMENT_REPLAN_MARKERS
         ) and signal in {"retry", "frame", "escalate"}:
             self._routing_override = {

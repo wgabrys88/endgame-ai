@@ -330,8 +330,50 @@ def git_worktree_status() -> list[str]:
     return [line for line in _git(["status", "--porcelain"]).stdout.splitlines() if line.strip()]
 
 
+def known_good_ref_name(wiring: dict[str, Any]) -> str:
+    return str(wiring.get("self_modify", {}).get("known_good_ref") or "refs/endgame/known_good").strip()
+
+
+def resolve_known_good(wiring: dict[str, Any]) -> dict[str, Any]:
+    ref = known_good_ref_name(wiring)
+    if ref:
+        cp = _git(["rev-parse", "--verify", ref], check=False)
+        if cp.returncode == 0 and cp.stdout.strip():
+            return {"commit": cp.stdout.strip(), "source": "git_ref", "ref": ref}
+    configured = str(wiring.get("self_modify", {}).get("known_good_commit") or "").strip()
+    if configured:
+        return {"commit": configured, "source": "wiring_seed", "ref": ref}
+    return {"commit": "", "source": "missing", "ref": ref}
+
+
 def known_good_commit(wiring: dict[str, Any]) -> str:
-    return str(wiring.get("self_modify", {}).get("known_good_commit") or "").strip()
+    return str(resolve_known_good(wiring).get("commit") or "").strip()
+
+
+def update_known_good_ref(wiring: dict[str, Any], commit: str, *, source: str) -> dict[str, Any]:
+    sha = str(commit or "").strip()
+    if not sha:
+        raise ValueError("cannot update known-good ref without a commit")
+    _git(["cat-file", "-e", f"{sha}^{{commit}}"])
+    ref = known_good_ref_name(wiring)
+    if not ref:
+        raise ValueError("self_modify.known_good_ref is empty")
+    before = resolve_known_good(wiring)
+    _git(["update-ref", ref, sha])
+    payload = {
+        "schema": "endgame-ai.known-good.v1",
+        "ref": ref,
+        "previous": before,
+        "commit": sha,
+        "source": source,
+        "updated_at": time.time(),
+        "updated_iso": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime()),
+    }
+    (ROOT / "runtime_known_good_commit.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return payload
 
 
 def hot_swap_to_known_good(
@@ -339,9 +381,10 @@ def hot_swap_to_known_good(
     *,
     paths: list[str] | None = None,
 ) -> dict[str, Any]:
-    sha = known_good_commit(wiring)
+    known_good = resolve_known_good(wiring)
+    sha = str(known_good.get("commit") or "").strip()
     if not sha:
-        return {"hot_swapped": False, "reason": "no_known_good_commit"}
+        return {"hot_swapped": False, "reason": "no_known_good_commit", "known_good": known_good}
     if paths:
         targets = [str(p).replace("\\", "/") for p in paths if str(p).strip()]
     else:
@@ -351,9 +394,33 @@ def hot_swap_to_known_good(
             if p.endswith(tuple(EVOLVABLE_SUFFIXES)) or p in EVOLVABLE_NAMES
         )
     if not targets:
-        return {"hot_swapped": False, "reason": "no_targets", "commit": sha}
-    _git(["checkout", sha, "--", *targets])
-    return {"hot_swapped": True, "commit": sha, "paths": targets}
+        return {"hot_swapped": False, "reason": "no_targets", "commit": sha, "known_good": known_good}
+    checkout_targets: list[str] = []
+    missing_in_known_good: list[str] = []
+    for target in targets:
+        exists = _git(["cat-file", "-e", f"{sha}:{target}"], check=False).returncode == 0
+        if exists:
+            checkout_targets.append(target)
+        else:
+            missing_in_known_good.append(target)
+    if not checkout_targets:
+        return {
+            "hot_swapped": False,
+            "reason": "no_targets_in_known_good",
+            "commit": sha,
+            "known_good": known_good,
+            "missing_in_known_good": missing_in_known_good,
+        }
+    _git(["checkout", sha, "--", *checkout_targets])
+    result: dict[str, Any] = {
+        "hot_swapped": True,
+        "commit": sha,
+        "known_good": known_good,
+        "paths": checkout_targets,
+    }
+    if missing_in_known_good:
+        result["missing_in_known_good"] = missing_in_known_good
+    return result
 
 
 def _remote_url(remote: str) -> str:
@@ -381,6 +448,7 @@ def prepare_self_evolution(wiring: dict[str, Any]) -> dict[str, Any]:
         "context_mode": wiring.get("self_modify", {}).get("context_mode", "checked_out_branch"),
         "branch": branch,
         "current_commit": git_head_sha(),
+        "known_good": resolve_known_good(wiring),
         "worktree_status": git_worktree_status(),
         "remote": remote,
         "remote_url": remote_url,
@@ -564,6 +632,8 @@ def commit_self_evolution(wiring: dict[str, Any], applied: dict[str, Any], patch
     )
     _git(["commit", "-m", title, "-m", body])
     branch = git_current_branch()
+    commit = git_head_sha()
+    known_good = update_known_good_ref(wiring, commit, source="commit_self_evolution")
     pushed = False
     git_cfg = wiring.get("self_modify", {}).get("git", {})
     if bool(git_cfg.get("push_after_commit", False)):
@@ -572,7 +642,8 @@ def commit_self_evolution(wiring: dict[str, Any], applied: dict[str, Any], patch
     return {
         "committed": True,
         "branch": branch,
-        "commit": git_head_sha(),
+        "commit": commit,
+        "known_good": known_good,
         "changed_files": changed_files,
         "pushed": pushed,
         "status": git_worktree_status(),

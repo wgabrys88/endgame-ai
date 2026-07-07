@@ -638,6 +638,9 @@ def build_tree_and_map(action_elements: dict[str, dict[str, Any]], text_hints: d
     filt = config.get("filter") or {}
     max_depth = int(filt.get("max_depth", 10))
     max_children_per_window = int(filt.get("max_children_per_window", 100))
+    max_llm_nodes = int(filt.get("max_llm_nodes", 2000))
+    if max_llm_nodes < 1:
+        raise RuntimeError(f"hover_cache.filter.max_llm_nodes must be >= 1, got {max_llm_nodes}")
 
     # Build window list from raw nodes (unique hwnds with Window role)
     window_nodes: dict[int, dict[str, Any]] = {}
@@ -777,7 +780,14 @@ def build_tree_and_map(action_elements: dict[str, dict[str, Any]], text_hints: d
         return " ".join(str(v or "").replace("\r", " ").replace("\n", " ").split())
 
     lines = ["W0 Screen Desktop"]
+    rendered_node_count = 1
+    llm_node_limit_hit = False
+
     def render(node: dict[str, Any], indent: int = 1):
+        nonlocal rendered_node_count, llm_node_limit_hit
+        if rendered_node_count >= max_llm_nodes:
+            llm_node_limit_hit = True
+            return
         sid = node.get("short_id", node.get("id", ""))
         role = str(node.get("role", ""))
         name = clean(node.get("name", "") or node.get("title", ""))
@@ -790,6 +800,7 @@ def build_tree_and_map(action_elements: dict[str, dict[str, Any]], text_hints: d
         if hint and hint not in name:
             parts.append(f"~{hint}")
         lines.append("  " * indent + " ".join(parts))
+        rendered_node_count += 1
         for child in node.get("children", []):
             if isinstance(child, dict):
                 render(child, indent + 1)
@@ -805,6 +816,9 @@ def build_tree_and_map(action_elements: dict[str, dict[str, Any]], text_hints: d
         "desktop_tree_text": "\n".join(lines),
         "window_count": len(sorted_windows),
         "element_count": len(action_index_by_short),
+        "rendered_node_count": rendered_node_count,
+        "max_llm_nodes": max_llm_nodes,
+        "llm_node_limit_hit": llm_node_limit_hit,
         "window_z_order": [w["hwnd"] for w in sorted_windows],
     }
 
@@ -850,6 +864,9 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
             "node_index": mapped["node_index"],
             "window_count": mapped["window_count"],
             "element_count": mapped["element_count"],
+            "rendered_node_count": mapped["rendered_node_count"],
+            "max_llm_nodes": mapped["max_llm_nodes"],
+            "llm_node_limit_hit": mapped["llm_node_limit_hit"],
             "window_z_order": mapped["window_z_order"],
         },
         "action_index": mapped["action_index"],
@@ -866,5 +883,8 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
         "desktop_tree": artifact["desktop_tree"],
         "desktop_tree_text": mapped["desktop_tree_text"],
         "action_index": mapped["action_index"],
+        "rendered_node_count": mapped["rendered_node_count"],
+        "max_llm_nodes": mapped["max_llm_nodes"],
+        "llm_node_limit_hit": mapped["llm_node_limit_hit"],
         "observation_artifact": artifact,
     }
