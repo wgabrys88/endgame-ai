@@ -611,6 +611,7 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
     goal = ctx.get("goal", "")
     fresh_observation = state.get("fresh_observation") or brain.last_fresh_observation() or bus.observation_brief(state)
     action_index = _action_index(state)
+    action_events: list[dict[str, Any]] = []
     last = {
         "error": state.get("last_error"),
         "result": state.get("last_result", ""),
@@ -618,6 +619,37 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "verification": state.get("last_verification", {}),
         "reflection": state.get("last_reflection", {}),
     }
+
+    def _record_action(result: Any) -> Any:
+        event = dict(result) if isinstance(result, dict) else {"ok": True, "value": result}
+        event.setdefault("ok", True)
+        event["event_index"] = len(action_events)
+        event["recorded_at"] = time.time()
+        action_events.append(event)
+        if event.get("ok") is not True:
+            raise RuntimeError(f"body action failed: {event}")
+        return result
+
+    def _require_node(node_id: str) -> dict[str, Any]:
+        node = action_index.get(str(node_id))
+        if not isinstance(node, dict):
+            raise RuntimeError(f"node id is not actionable in the latest observation: {node_id}")
+        return dict(node)
+
+    def click(x: int, y: int, hwnd: int = 0) -> dict[str, Any]:
+        return _record_action(d.click(int(x), int(y), int(hwnd or 0)))
+
+    def type_text(text: str) -> dict[str, Any]:
+        return _record_action(d.type_text(str(text)))
+
+    def press_key(key: str) -> dict[str, Any]:
+        return _record_action(d.press_key(str(key)))
+
+    def hotkey(*keys: Any) -> dict[str, Any]:
+        return _record_action(d.hotkey(*keys))
+
+    def scroll(x: int, y: int, amount: int, hwnd: int = 0) -> dict[str, Any]:
+        return _record_action(d.scroll(int(x), int(y), int(amount), int(hwnd or 0)))
     
     def action_nodes(action: str | None = None) -> list[dict[str, Any]]:
         nodes = []
@@ -630,43 +662,35 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         return nodes
 
     def node_by_id(node_id: str) -> dict[str, Any]:
-        return dict(action_index.get(str(node_id), {}) or {})
+        return _require_node(node_id)
 
     def click_node(node_id: str) -> dict[str, Any]:
-        node = node_by_id(node_id)
-        if not node:
-            return {"ok": False, "action": "click_node", "error": f"node not found: {node_id}"}
+        node = _require_node(node_id)
         x, y = _node_center(node)
         click_res = d.click(x, y, int(node.get("hwnd") or 0))
-        return {"ok": bool(click_res.get("ok", True)), "action": "click_node", "node_id": node_id, "click": click_res}
+        return _record_action({"ok": bool(click_res.get("ok", True)), "action": "click_node", "node_id": node_id, "click": click_res})
 
     def read_node(node_id: str) -> dict[str, Any]:
-        node = node_by_id(node_id)
-        if not node:
-            return {"ok": False, "action": "read_node", "error": f"node not found: {node_id}"}
+        node = _require_node(node_id)
         text = node.get("name") or node.get("text_full") or node.get("value") or ""
-        return {"ok": True, "action": "read_node", "node_id": node_id, "text": text}
+        return _record_action({"ok": True, "action": "read_node", "node_id": node_id, "text": text})
 
     def scroll_node(node_id: str, amount: int = -3) -> dict[str, Any]:
-        node = node_by_id(node_id)
-        if not node:
-            return {"ok": False, "action": "scroll_node", "error": f"node not found: {node_id}"}
+        node = _require_node(node_id)
         x, y = _node_center(node)
-        return d.scroll(x, y, int(amount), int(node.get("hwnd") or 0))
+        return _record_action(d.scroll(x, y, int(amount), int(node.get("hwnd") or 0)))
 
-    def open_url(browser: str = "chrome", url: str = "") -> dict[str, Any]:
-        if not url and str(browser).lower().startswith(("http://", "https://")):
-            return d.open_url("default", str(browser))
-        return d.open_url(str(browser or "chrome"), str(url or ""))
+    def open_url(browser: str, url: str) -> dict[str, Any]:
+        return _record_action(d.open_url(str(browser), str(url)))
 
     class _PyAutoGuiCompat:
 
         def click(self, x: int | None = None, y: int | None = None, clicks: int = 1, interval: float = 0.0, **kwargs: Any) -> Any:
             if x is None or y is None:
-                return {"ok": False, "action": "pyautogui.click", "error": "x and y are required in this body"}
+                raise RuntimeError("pyautogui.click requires explicit x and y")
             result = None
             for _ in range(max(1, int(clicks or 1))):
-                result = d.click(int(x), int(y), int(kwargs.get("hwnd") or 0))
+                result = click(int(x), int(y), int(kwargs.get("hwnd") or 0))
                 if interval:
                     time.sleep(float(interval))
             return result
@@ -674,17 +698,17 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         def write(self, text: str, interval: float = 0.0) -> Any:
             if interval:
                 for ch in str(text):
-                    d.type_text(ch)
+                    type_text(ch)
                     time.sleep(float(interval))
-                return {"ok": True, "action": "pyautogui.write", "chars": len(str(text))}
-            return d.type_text(str(text))
+                return _record_action({"ok": True, "action": "pyautogui.write", "chars": len(str(text))})
+            return type_text(str(text))
 
         typewrite = write
 
         def press(self, key: str, presses: int = 1, interval: float = 0.0) -> Any:
             result = None
             for _ in range(max(1, int(presses or 1))):
-                result = d.press_key(str(key))
+                result = press_key(str(key))
                 if interval:
                     time.sleep(float(interval))
             return result
@@ -692,12 +716,12 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         def hotkey(self, *keys: str) -> Any:
             if len(keys) == 1 and isinstance(keys[0], (list, tuple)):
                 keys = tuple(keys[0])
-            return d.hotkey(list(keys))
+            return hotkey(list(keys))
 
         def scroll(self, clicks: int, x: int | None = None, y: int | None = None, **kwargs: Any) -> Any:
             if x is None or y is None:
-                return d.scroll(0, 0, int(clicks), int(kwargs.get("hwnd") or 0))
-            return d.scroll(int(x), int(y), int(clicks), int(kwargs.get("hwnd") or 0))
+                return scroll(0, 0, int(clicks), int(kwargs.get("hwnd") or 0))
+            return scroll(int(x), int(y), int(clicks), int(kwargs.get("hwnd") or 0))
 
         def sleep(self, seconds: float) -> None:
             time.sleep(float(seconds))
@@ -711,13 +735,13 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "action_nodes": action_nodes,
         "node_by_id": node_by_id,
         
-        "click": d.click,
+        "click": click,
         "click_node": click_node,
         "read_node": read_node,
-        "type_text": d.type_text,
-        "press_key": d.press_key,
-        "hotkey": d.hotkey,
-        "scroll": d.scroll,
+        "type_text": type_text,
+        "press_key": press_key,
+        "hotkey": hotkey,
+        "scroll": scroll,
         "scroll_node": scroll_node,
         "open_url": open_url,
         "pyautogui": pyautogui,
@@ -752,4 +776,6 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "observation_artifact": state.get("observation_artifact", {}),
         "observed_at": state.get("observed_at"),
         "fresh_scan": state.get("fresh_scan", False),
+        "action_events": action_events,
+        "_action_events": action_events,
     }

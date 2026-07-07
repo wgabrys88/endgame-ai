@@ -196,17 +196,32 @@ class Desktop:
         return {"ok": True, "action": "scroll", "x": x, "y": y, "amount": amount, "hwnd": hwnd}
 
     def open_url(self, browser: str = "chrome", url: str = "") -> dict[str, Any]:
+        if not str(url or "").strip():
+            raise RuntimeError("open_url requires a non-empty url")
         browser_paths = {
             "chrome": [r"C:\Program Files\Google\Chrome\Application\chrome.exe", r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"],
             "edge": [r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"],
             "firefox": [r"C:\Program Files\Mozilla Firefox\firefox.exe"],
+            "opera": [
+                r"%LOCALAPPDATA%\Programs\Opera\opera.exe",
+                r"%LOCALAPPDATA%\Programs\Opera\launcher.exe",
+                r"C:\Program Files\Opera\opera.exe",
+                r"C:\Program Files\Opera\launcher.exe",
+                r"C:\Program Files (x86)\Opera\opera.exe",
+                r"C:\Program Files (x86)\Opera\launcher.exe",
+            ],
         }
-        exe = next((os.path.expandvars(p) for p in browser_paths.get(browser.lower(), []) if os.path.exists(os.path.expandvars(p))), None)
-        if not exe:
-            subprocess.Popen(["start", "", url], shell=True)
+        browser_key = str(browser or "").strip().lower()
+        if browser_key == "default":
+            os.startfile(str(url))
             return {"ok": True, "action": "open_url", "browser": "default", "url": url}
+        if browser_key not in browser_paths:
+            raise RuntimeError(f"open_url unsupported browser '{browser}'; choose one of {sorted(browser_paths)} or 'default'")
+        exe = next((os.path.expandvars(p) for p in browser_paths[browser_key] if os.path.exists(os.path.expandvars(p))), None)
+        if not exe:
+            raise RuntimeError(f"open_url browser '{browser_key}' is not installed in known paths")
         subprocess.Popen([exe, url])
-        return {"ok": True, "action": "open_url", "browser": browser, "url": url}
+        return {"ok": True, "action": "open_url", "browser": browser_key, "url": url, "exe": exe}
 
 
 _desktop_instance: Desktop | None = None

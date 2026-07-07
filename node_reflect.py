@@ -19,8 +19,12 @@ MECHANICAL_ESCALATE_MARKERS = (
     "AttributeError",
     "SyntaxError",
     "ImportError",
+    "RuntimeError",
+    "ValueError",
     "no topology edge",
     "missing helper",
+    "body action failed",
+    "produced no result",
 )
 
 
@@ -64,28 +68,58 @@ class ReflectNode(BaseNode):
 
     def signal_from_data(self, data, ctx):
         state = ctx.get("state", {})
-        signal = data.get("next_signal", "replan")
+        requested_signal = data.get("next_signal")
+        signal = requested_signal
         if signal not in {"retry", "replan", "frame", "escalate", "give_up"}:
-            signal = "replan"
+            raise RuntimeError(f"reflection emitted invalid next_signal: {signal!r}")
 
         step_index = int(state.get("step", 0) or 0)
         last_verification = state.get("last_verification") or {}
+        framed_already = state.get("framing_attempted_for_step") == step_index
         diagnostic_text = " ".join(str(x) for x in [
             state.get("last_error", ""),
             data.get("diagnosis", ""),
             data.get("lesson", ""),
             state.get("last_action", {}),
+            state.get("last_result", {}),
         ])
+        self._routing_override = None
         if (
             last_verification.get("signal") == "step_denied"
             and self._projected_streak["count"] >= 2
-            and state.get("framing_attempted_for_step") != step_index
+            and not framed_already
             and signal in {"retry", "replan"}
         ):
+            self._routing_override = {
+                "from": requested_signal,
+                "to": "frame",
+                "reason": "same step denied twice before any action frame",
+                "failure_streak": self._projected_streak,
+            }
             signal = "frame"
+        elif (
+            last_verification.get("signal") == "step_denied"
+            and self._projected_streak["count"] >= 3
+            and framed_already
+            and signal in {"retry", "replan", "frame"}
+        ):
+            self._routing_override = {
+                "from": requested_signal,
+                "to": "escalate",
+                "reason": "same step denied after framing was already attempted",
+                "failure_streak": self._projected_streak,
+            }
+            signal = "escalate"
         elif state.get("last_error") and any(
             marker.lower() in diagnostic_text.lower() for marker in MECHANICAL_ESCALATE_MARKERS
         ):
+            if signal != "escalate":
+                self._routing_override = {
+                    "from": requested_signal,
+                    "to": "escalate",
+                    "reason": "mechanical error marker in reflection evidence",
+                    "failure_streak": self._projected_streak,
+                }
             signal = "escalate"
         self._signal = signal
         return signal
@@ -103,8 +137,16 @@ class ReflectNode(BaseNode):
                 "diagnosis": diagnosis,
                 "step_goal": step.get("description", ctx.get("goal", "")),
                 "recovery_signal": self._signal,
+                "requested_signal": data.get("next_signal"),
+                "routing_override": self._routing_override,
             },
-            "last_reflection": {"signal": self._signal, "lesson": lesson, "diagnosis": diagnosis},
+            "last_reflection": {
+                "signal": self._signal,
+                "requested_signal": data.get("next_signal"),
+                "lesson": lesson,
+                "diagnosis": diagnosis,
+                "routing_override": self._routing_override,
+            },
         }
 
 

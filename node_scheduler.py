@@ -22,7 +22,9 @@ def run(ctx):
     elif isinstance(plan_obj, list):
         plan = plan_obj
     else:
-        plan = []
+        raise RuntimeError(f"scheduler expected plan object or list, got {type(plan_obj).__name__}")
+    if not isinstance(plan, list):
+        raise RuntimeError(f"scheduler expected plan.intent list, got {type(plan).__name__}")
 
     step_idx = int(state.get("step", 0) or 0)
 
@@ -31,7 +33,9 @@ def run(ctx):
 
     step = plan[step_idx]
     if not isinstance(step, dict):
-        step = {"description": str(step), "done_when": ""}
+        raise RuntimeError(f"scheduler expected step object at index {step_idx}, got {type(step).__name__}")
+    if not isinstance(step.get("description"), str) or not isinstance(step.get("done_when"), str):
+        raise RuntimeError(f"scheduler step {step_idx} must contain string description and done_when")
     return bus.emit(
         "step_ready",
         {

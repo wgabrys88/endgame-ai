@@ -19,8 +19,10 @@ class PlannerNode(BaseNode):
     expected_record_type = "plan"
 
     def signal_from_data(self, data, ctx):
-        signal = str(data.get("next_signal") or "step_ready")
-        return signal if signal in {"step_ready", "reflect"} else "reflect"
+        signal = data.get("next_signal")
+        if signal not in {"step_ready", "reflect"}:
+            raise RuntimeError(f"planner emitted invalid next_signal: {signal!r}")
+        return signal
 
     def patch_from_record(self, record, ctx):
         data = record.data

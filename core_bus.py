@@ -50,10 +50,13 @@ class NodeOutput:
 
     def trace(self, *, node: str) -> JsonDict:
         record_type = None
+        record_json = None
         if isinstance(self.record, Record):
             record_type = self.record.record_type
+            record_json = self.record.to_json()
         elif isinstance(self.record, dict):
             record_type = self.record.get("record_type")
+            record_json = dict(self.record)
         return {
             "kind": "endgame.node_output.v1",
             "node": node,
@@ -61,6 +64,9 @@ class NodeOutput:
             "record_type": record_type,
             "patch_keys": sorted(self.patch.keys()),
             "evidence_keys": sorted(self.evidence.keys()),
+            "record": record_json,
+            "patch": self.patch,
+            "evidence": self.evidence,
             "emitted_at": time.time(),
         }
 
