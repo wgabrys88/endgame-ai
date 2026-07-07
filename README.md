@@ -1,283 +1,540 @@
 # endgame-ai
 
-endgame-ai is a local Windows desktop organism. The Python body owns the computer: mouse, keyboard, subprocesses, files, browser launch, UIA observation, and git. LLM brains are interchangeable organs. `wiring.json` is the circuit that binds organs, prompts, transports, and topology into one loop.
+`endgame-ai` is a local Windows desktop organism built around one auditable bus:
+observe, plan, schedule, execute, verify, reflect, and self-modify. It is not a
+single startup-style MVP flow. The target architecture is task-agnostic: the goal
+can be job search, browser research, document work, GUI operation, or repo repair,
+and the same organs should route the work through observation, evidence, action,
+verification, reflection, and evolution.
 
-The system is intentionally unconstrained. The body can execute Python and modify its own repository. Reliability comes from auditable contracts, deterministic validation, git history, and clear runtime records, not from a sandboxed capability list.
+This README is written from the 2026-07-07 forensic session on branch
+`prompts-adjust` after real desktop runs, log replay, patches, commits, and pushes.
+It intentionally lists what works and what is still weak.
 
-## Current Reality
+## Current Status
 
-| Surface | Implemented contract |
-| --- | --- |
-| Organ loop | `core_organism.py` loads `wiring.json`, resumes `runtime_state.json`, runs one topology node at a time, and routes only on bus signals. |
-| Bus record | `core_bus.Record` is the single LLM record shape: `record_type`, `data`, `reasoning`. LLM records route through `data.next_signal`. |
-| Observation | `core_observation.py` builds a whole-screen UIA tree with short IDs and a body-side `action_index`. The brain sees short IDs only. |
-| Execution | `node_execute.py` runs Python in the host interpreter with the capability runtime from `core_nodes.py`. |
-| Self-modification | `node_self_modify.py` proposes git-native patches; `core_nodes.py` validates file writes, rejects destructive stubs, commits on the current branch, and optionally pushes. |
-| Runtime events | One append-only root log, `runtime_events.jsonl`, records organism events plus full brain request/response data. |
-| Runtime state | `runtime_state.json` is the live resumable snapshot. `runtime_control.json` is the live run/pause/step control file. |
-| Stop file | `runtime_stop.json` is created by explicit stop requests or duration expiry and persists for audit until `--reset` clears it. |
-| PID file | `runtime_organism.pid` identifies the live process and is removed on normal process exit. |
-| Recursive review | Supported manually by protocol: git branch plus file-proxy request/response files plus a reviewer goal. Automatic webhook or PR orchestration is not implemented here. |
+The system is now useful as a real desktop research/action harness with replayable
+logs and autonomous self-evolution controls. It can observe Windows UIA elements,
+ask an LLM for plans and executable actions, perform desktop helper actions such
+as opening Chrome, verify visible effects, replan on mismatch, and commit code
+changes through its self-modify node.
 
-## Run
+It is not yet reliable enough for unattended high-value task completion such as
+fully applying to jobs, tailoring CV documents, and submitting forms. The latest
+3-minute job-search run opened Chrome and navigated to a Google search for AI
+development jobs in Krakow, but it expired before it verified search results,
+reached Grok, gathered offers, tailored documents, or submitted an application.
 
-```powershell
-python -m core_organism "your goal" --reset --duration-seconds 120
-```
-
-CLI contract:
-
-- `goal`: the atemporal narrative the organism carries through the run.
-- `--duration-seconds N`: wall-clock runtime length. When it expires, the organism writes `runtime_stop.json`, records `duration_expired`, and stops.
-- `--brain-call-budget N`: optional LLM call budget. This is not a runtime-length system.
-- `--reset`: clears live state/control/request/response and any existing stop file. It does not erase `runtime_events.jsonl`.
-- `--start-node NAME`: resume at a specific topology node when deliberately debugging.
-- `--wiring PATH`: load an alternate wiring file.
-
-There is no `--max-ticks` runtime contract. Ticks remain an internal trace counter only.
-
-## Runtime Files
-
-Root runtime files have distinct jobs:
-
-- `runtime_events.jsonl`: canonical append-only record stream for every run.
-- `runtime_state.json`: current resumable state snapshot.
-- `runtime_control.json`: live control file with `run`, `pause`, or `step`.
-- `runtime_stop.json`: durable stop request/audit file.
-- `runtime_organism.pid`: live process identity.
-- `runtime_request.json` / `runtime_response.json`: file-proxy IPC, not logs.
-
-Brain request events write full message content for every role, plus byte/character counts, hashes, prompt cache keys, stable-prefix metadata, and parsed dynamic user payload when available. Responses keep full committed content, reasoning, and raw transport fields because those are forensic evidence.
-
-## File Proxy
-
-`transport_file_proxy.py` lets any intelligence drive an organ by files. It writes `runtime_request.json` with full request messages and waits for `runtime_response.json`.
-
-The response must be a direct bus record:
-
-```json
-{"record_type":"plan","data":{"next_signal":"step_ready","intent":[]},"reasoning":""}
-```
-
-The file-proxy request keeps full system and user message content. Hashes and expected record metadata are included as indexes, not replacements.
-
-## Organ Topology
+## Architecture
 
 ```mermaid
-stateDiagram-v2
-    [*] --> node_observe
-    node_observe --> node_planner : initial_screen
-    node_observe --> node_execute : screen_ready
-    node_observe --> node_error : error
-    node_planner --> node_scheduler : step_ready
-    node_planner --> node_reflect : reflect
-    node_scheduler --> node_observe : step_ready
-    node_scheduler --> node_satisfied : plan_complete
-    node_execute --> node_verify : verify
-    node_execute --> node_frame_action : frame
-    node_execute --> node_reflect : reflect
-    node_execute --> node_self_modify : self_modify
-    node_verify --> node_scheduler : step_confirmed
-    node_verify --> node_reflect : step_denied
-    node_reflect --> node_observe : retry
-    node_reflect --> node_planner : replan
-    node_reflect --> node_frame_action : frame
-    node_reflect --> node_self_modify : escalate
-    node_reflect --> node_satisfied : give_up
-    node_self_modify --> node_planner : modified
-    node_self_modify --> node_reflect : modify_failed
-    node_frame_action --> node_execute : framed
-    node_frame_action --> node_reflect : reflect
-    node_error --> node_planner : planner
-    node_error --> node_reflect : reflect
-    node_error --> [*] : halt
-    node_satisfied --> [*] : halt
+flowchart TD
+    Goal["operator goal"] --> Observe["node_observe"]
+    Observe --> Planner["node_planner"]
+    Planner --> Scheduler["node_scheduler"]
+    Scheduler --> Observe2["node_observe"]
+    Observe2 --> Execute["node_execute"]
+    Execute --> Verify["node_verify"]
+    Verify -->|step_confirmed| Scheduler
+    Verify -->|step_denied| Reflect["node_reflect"]
+    Execute -->|reflect| Reflect
+    Reflect -->|retry| Scheduler
+    Reflect -->|replan| Planner
+    Reflect -->|frame| Frame["node_frame_action"]
+    Frame --> Execute
+    Reflect -->|escalate| SelfModify["node_self_modify"]
+    SelfModify -->|modified| Planner
+    SelfModify -->|modify_failed| Reflect
+    Reflect -->|give_up when evolution disabled| Satisfied["node_satisfied"]
+    Execute -->|error| Error["node_error"]
+    Observe -->|error| Error
+    Planner -->|error| Error
+    Error --> Planner
+    Error --> Reflect
+    Error -->|fatal| Halt["halt"]
 ```
 
-Every LLM organ emits one JSON record. The body routes on `data.next_signal` and the topology edge table. Organs do not call each other directly.
+The body is Python modules in the repo root:
 
-## Observation And Action
+- `core_organism.py`: run loop, state persistence, runtime events, duration stop.
+- `core_bus.py`: bus records, node outputs, state summaries, failure streaks.
+- `core_nodes.py`: node loading, git/self-evolution helpers, action runtime.
+- `core_observation.py`: Windows UIA raw scan, filter, hierarchy map, LLM text.
+- `core_desktop.py`: desktop actions, browser launch, typing, keypresses.
+- `core_stop_check.py`: runtime stop file and self-evolution enable file.
+- `node_*.py`: organism organs.
+- `transport_xai.py`, `transport_openai.py`, `transport_opencode.py`,
+  `transport_file_proxy.py`: LLM transports.
+- `wiring.json`: prompts, topology, limits, observation knobs, self-modify config.
 
-The observation model is focus-free. The scanner attempts one whole-screen UIA scan, builds a visible tree, assigns short IDs, and stores execution metadata in `action_index`.
+## Bus And Audit Schema
 
-The execution model is direct. `click_node`, `read_node`, `scroll_node`, and `node_by_id` resolve through `action_index`. Long UIA runtime IDs are body metadata, not brain targets.
+Every node returns one `endgame.node_output.v1` frame. Runtime events are JSONL in
+`runtime_events.jsonl`. The current enriched bus frame includes the full record,
+patch, evidence, patch keys, and evidence keys, making replay possible from logs.
 
-If observation fails, the current organism cannot make a normal brain call because brain calls require a fresh observation. That failure is visible in `runtime_state.json` and `runtime_events.jsonl`.
+```mermaid
+flowchart LR
+    Runtime["core_organism runtime_event"] --> Events["runtime_events.jsonl"]
+    Node["node output"] --> Frame["_last_bus_frame"]
+    Frame --> Record["LLM record"]
+    Frame --> Patch["state patch"]
+    Frame --> Evidence["node evidence"]
+    Patch --> State["runtime_state.json"]
+    Observe["observation_artifact"] --> Patch
+    Execute["action_events"] --> Patch
+    Verify["verification judgment"] --> Patch
+    Reflect["routing_override"] --> Patch
+    SelfModify["commit / hot_swap / known_good"] --> Patch
+```
 
-## Self-Modification
+Important runtime artifacts:
 
-Self-modification is local and git-native:
+- `runtime_state.json`: latest state snapshot.
+- `runtime_events.jsonl`: replay log of node starts, completions, brain requests,
+  brain responses, self-modify events, duration expiry, and halt events.
+- `runtime_stop.json`: presence requests stop.
+- `runtime_self_evolution_enabled.json`: presence enables self-evolution.
+- `runtime_known_good_commit.json`: local audit of known-good ref updates.
 
-1. A failing organ routes to `node_self_modify`.
-2. The self-modify brain proposes a complete structured patch.
-3. The body validates Python and JSON writes.
-4. The body rejects destructive placeholder rewrites.
-5. The body runs declared deterministic commands.
-6. The body commits changed files on the current branch.
-7. Optional push is controlled by `wiring.json`.
+Runtime files are intentionally not normal source artifacts.
 
-There is no hidden reviewer daemon. A reviewer is another endgame-ai process launched manually with a reviewer goal against the same branch or file-proxy channel.
+## Self-Evolution Gate
 
-## Recursive Review
+`runtime_self_evolution_enabled.json` is the control file for evolution.
 
-Recursive review is protocol-supported:
+- Present: `node_self_modify` may apply, commit, and push approved code patches.
+- Absent: `node_self_modify` fails closed and reports disabled status.
+- Present: `node_reflect` may not route to `give_up`; if the brain asks for
+  `give_up`, the body overrides it to `escalate` and logs the override.
+- Absent: `give_up` is allowed because evolution is no longer available.
 
-- The proposer commits a branch.
-- A human or another endgame-ai process receives the branch and a review goal.
-- The reviewer runs deterministic checks and inspects the patch.
-- The reviewer writes an approval or rejection through normal git/file-proxy coordination.
+This file is created by reset through `core_stop_check.ensure_self_evolution_enabled`.
+Deleting it is the explicit operator switch for disabling evolution.
 
-Recursive review is not automatic webhook orchestration in this checkout. Documentation and prompts must not claim otherwise unless code exists to run it.
+```mermaid
+flowchart TD
+    Reflect["node_reflect emits next_signal"] --> Check{"runtime_self_evolution_enabled.json exists?"}
+    Check -->|yes and signal is give_up| Escalate["override to escalate"]
+    Check -->|yes and signal is not give_up| Route["route requested signal"]
+    Check -->|no| Allow["allow give_up or disabled self_modify"]
+    Escalate --> SelfModify["node_self_modify"]
+    SelfModify --> Gate{"enable file exists?"}
+    Gate -->|yes| Apply["apply patch, commit, push"]
+    Gate -->|no| Disabled["modify_failed: disabled"]
+```
 
-## Deterministic Checks
+## Known-Good Hot Swap
 
-Use direct commands from the repo root:
+Hot swap no longer depends only on a stale SHA inside `wiring.json`.
+
+Operational source:
+
+- Git ref: `refs/endgame/known_good`
+- Seed fallback: `self_modify.known_good_commit` in `wiring.json`
+- Audit file: `runtime_known_good_commit.json`
+
+Successful self-modify commits update `refs/endgame/known_good`. When
+`self_modify.git.push_after_commit` is true, the branch and the known-good ref are
+pushed to the configured remote. Hot swap now checks whether each target path
+exists in the known-good commit before checkout and returns
+`missing_in_known_good` instead of crashing on Git pathspec errors.
+
+This fixed the observed failure where the old known-good commit predated
+`export_brain_forensics.py`, causing `git checkout OLD -- export_brain_forensics.py`
+to fail. The live organism tried to delete that exporter as a symptom-level repair;
+the exporter has been restored and the hot-swap mechanism has been corrected.
+
+## Observation Knobs
+
+The observation limits in `wiring.json` have been raised and made auditable:
+
+```json
+{
+  "max_subtree_nodes_per_point": 8000,
+  "max_total_nodes": 40000,
+  "max_llm_nodes": 5000,
+  "max_action_nodes": 12000,
+  "max_depth": 24,
+  "max_children_per_window": 240
+}
+```
+
+`max_llm_nodes` used to be present in configuration but was not used by the mapper.
+It is now enforced while rendering `desktop_tree_text`, and these fields are logged:
+
+- `rendered_node_count`
+- `max_llm_nodes`
+- `llm_node_limit_hit`
+
+Evidence:
+
+- Earlier smoke after UIA access-denied recovery: 312 unique raw nodes, 24
+  actionable elements.
+- Direct observation after raising knobs: 432 unique raw nodes, 28 actionable
+  elements, 29 rendered nodes, `max_llm_nodes=5000`, `limit_hit=false`.
+- Final 3-minute run before Chrome: 484 unique raw nodes, 31 action elements,
+  32 rendered nodes.
+- Final 3-minute run after Chrome opened: 546 unique raw nodes, 63 action
+  elements, 65 rendered nodes, `limit_hit=false`.
+
+The knob works. In the current screens it did not hit the 5000-node render cap,
+but the run proved more visible/actionable elements after Chrome appeared.
+
+## Latest Real Run
+
+Command shape:
 
 ```powershell
-python -m compileall -q .
-python -m json.tool wiring.json
-python -m pyright .
-python -m core_organism --help
+& "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" core_organism.py --reset --duration-seconds 180 "<goal>"
 ```
 
-Optional tools such as vulture or graph analyzers may be run if installed, but they are not wrapped by a repository bridge file.
+Goal used:
 
-## Prompt And Persona Contract
+```text
+Use the real Windows desktop to gather AI development job offers in Krakow,
+communicate with Grok through a browser GUI when available to compare the offers
+against the user's profile context, tailor application materials if an offer
+requires them, and attempt at least one real application workflow.
+```
 
-The prompts describe organs as parts of one larger local organism. Each organ should know its role, the shared bus contract, the computer-use nature of the body, and the fact that its output must be useful to other LLMs and humans reading the same event stream later.
+Run summary:
 
-The goal is memory. It is modifiable by the organism through code, wiring, and narrative self-description. The goal is not only a task string; it is the atemporal story the system uses to maintain identity across organs, runs, reviews, and self-edits.
+- Start: `2026-07-07T12:21:47`
+- Events in final run segment: 48
+- Brain requests/responses: 8/8
+- Node starts: observe 4, planner 2, scheduler 3, execute 3, verify 2, reflect 1
+- Stop reason: `duration_expired`
+- Final tick: 15
+- Final node: `node_verify`
+- Final active step: gather AI development job offers in Krakow
 
-## Appendix: Next Session Goal
+Failure chain:
 
-Use this as the next high-reasoning goal seed after compaction:
+```mermaid
+sequenceDiagram
+    participant O as observe
+    participant P as planner
+    participant S as scheduler
+    participant E as execute
+    participant V as verify
+    participant R as reflect
 
-> Continue making endgame-ai smaller, more alive, and more useful while preserving its unconstrained computer-use nature. Read README, wiring, source, git history, and runtime evidence first. Work on the current non-main branch. Treat the goal as modifiable narrative memory. Do not add sandbox limits. Improve the system so every organ produces outputs useful to the other organs, to reviewer organisms, and to outside LLMs reading the event log. Make precise production changes, run deterministic checks, commit, and report evidence.
+    O->>P: tick 1 initial_screen
+    P->>S: seq 1 plan browser/job/Grok steps
+    S->>O: tick 3 schedule step 0
+    O->>E: tick 4 screen_ready
+    E->>V: seq 2 open_url(default, google.com)
+    V->>R: seq 3 step_denied, browser not visible
+    R->>P: seq 4 replan for tool/environment mismatch
+    P->>S: seq 5 plan explore available interface
+    S->>O: tick 9 schedule explore step
+    O->>E: tick 10 screen_ready, Chrome visible in tree
+    E->>V: seq 6 click Task Manager taskbar node
+    V->>S: seq 7 step_confirmed, Chrome/browser tools visible
+    S->>O: tick 13 schedule job-search step
+    O->>E: tick 14 screen_ready
+    E->>V: seq 8 open_url(chrome, Google search for AI development jobs Krakow)
+    V-->>O: duration expired before verification of search results
+```
 
-Five improvement areas:
+Observed action evidence:
 
-1. Observation resilience: diagnose UIA `COMError: Access is denied` and make the observe node fail in a way that routes to a useful mechanical recovery path instead of repeated planner failures.
-2. Prompt compression: reduce repeated prompt text in `wiring.json` while preserving organ identity, bus contract, computer-use nature, and no-fake-automation claims.
-3. Event replay: add a small reader for `runtime_events.jsonl` that reconstructs the last run without creating another log path.
-4. Review protocol: define the manual reviewer handoff record for git/file-proxy review without claiming automatic webhook or PR behavior.
-5. Self-story: make the organism's goal update path explicit at the meta level so self-modification can revise the narrative it uses to continue work.
+```json
+{
+  "action": "open_url",
+  "browser": "chrome",
+  "url": "https://www.google.com/search?q=AI+development+job+offers+Krakow",
+  "exe": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+  "ok": true
+}
+```
 
-## Appendix: Kickoff Prompts And One-Liners
+The run showed real progress:
 
-These prompts are for future sessions and direct organism runs. They are intentionally task-agnostic where possible, but grounded in this checkout's real contracts: current branch, `wiring.json`, `runtime_events.jsonl`, full request/response logging, `runtime_state.json`, `runtime_control.json`, `runtime_stop.json`, duration-driven runtime, one bus record shape, and manual recursive review through git/file-proxy rather than automatic webhook orchestration.
+- Chrome was opened and became visible to UIA.
+- The system recovered from an initial false denial by replanning.
+- It performed a real Chrome navigation to an AI job search query.
 
-The organism is unconstrained by design. These commands may move the mouse, type, run subprocesses, modify this repository, use logged-in browser sessions, contact external services, play games, and publish public social-media content if the browser is authenticated and the goal asks for it. That is dangerous. It is also the architecture being tested: if a human operator can do the task on this computer, endgame-ai is intended to learn to do it through the same computer-use surface. Run these only when real side effects are intended, and analyze them through `runtime_events.jsonl` afterward.
+The run did not complete:
 
-Do execute with `--reset` for a fresh run, `--duration-seconds` for wall-clock runtime, and a precise goal. Do not use removed tick flags. Do not assume social or Grok browser flows are stable; let the organism observe and adapt. Do not claim a public action happened unless the event log and visible state prove it.
+- No Grok GUI conversation occurred.
+- No offers were extracted.
+- No CV or documents were created.
+- No application form was filled or submitted.
 
-### 1. Forensic Log And Code Cross-Reference
+## Patches From The Forensic Session
 
-Prompt:
+Committed and pushed on branch `prompts-adjust`:
 
-> Read README, `wiring.json`, all Python source, git history, `runtime_events.jsonl`, `runtime_state.json`, `runtime_control.json`, and any current stop/request/response files. Build a forensic map from observed runtime behavior to the exact code paths that caused it. Cross-reference every failure, stop, request, response, node transition, and prompt contract against source. Identify mismatches, missing evidence, dead paths, repeated code, and places where logs are insufficient for a reviewer organism. Make the smallest production changes that improve auditability without adding a second log stream. Run deterministic checks, commit, push, and report exact evidence.
+- `88a538d` - Harden action bus and self-evolution gate.
+- `443cf8e` - Recover from inaccessible UIA probe points.
+- `842e471` - Live self-modify symptom commit deleting the forensics exporter.
+- `5ba2533` - Wire known-good ref and observation visibility, restore exporter.
+- `50a0b98` - Push known-good ref after self-modify commits.
+- `47a8a40` - Block desktop actions after run deadline.
 
-One-liner:
+Remote ref:
+
+- `refs/endgame/known_good` pushed at `47a8a40`.
+
+## Accepted And Rejected Changes
+
+Accepted:
+
+- Full bus trace in runtime events.
+  Why: future replay needs actual record, patch, and evidence, not just patch keys.
+  Why not not enough: no downside except larger logs, and logs are the audit trail.
+
+- Per-point UIA access-denied recovery.
+  Why: one inaccessible point should not kill the entire observation pass.
+  Why not broad exception swallowing: point errors are counted and logged; the
+  scan still fails for structural config errors.
+
+- Strict action helper evidence.
+  Why: execute must prove it acted through `action_events`.
+  Why not silent success: executor now fails if no result, stdout, stderr, or
+  body action exists.
+
+- Self-evolution file gate.
+  Why: evolution needs an explicit runtime switch.
+  Why not config-only: a file mirrors the existing stop-file control pattern and
+  is easy for the operator or scripts to toggle.
+
+- `give_up` blocked while evolution is enabled.
+  Why: if the organism can evolve, `give_up` is not a coherent recovery route.
+  Why not prompt-only: the body enforces it even when the LLM emits `give_up`.
+
+- Known-good Git ref.
+  Why: a static commit in JSON becomes stale immediately.
+  Why not write current SHA into the same commit: a commit cannot contain its own
+  final SHA. A Git ref is the correct moving pointer.
+
+- Hot-swap target filtering.
+  Why: known-good commits may predate new files.
+  Why not broad whole-repo hot-swap: broad swaps mutate unrelated files and hide
+  the failing target.
+
+- Observation visibility counters.
+  Why: `max_llm_nodes` must be measured from logs.
+  Why not only raising numeric limits: an unused knob is dead configuration.
+
+- Deadline guard before body actions.
+  Why: an LLM response can arrive after duration expiry.
+  Why not rely on loop-level checks: the loop checks between nodes, not inside a
+  long brain response or multi-action execute script.
+
+Rejected:
+
+- Hard-coded Opera-to-Chrome fallback in prompts.
+  Why rejected: task-specific fallback would make the system less task-agnostic.
+  The correct body behavior is explicit tool availability evidence and replanning.
+
+- Leaving the forensics exporter deleted.
+  Why rejected: deletion treated a hot-swap pathspec crash as the file's fault.
+  Replay tooling is part of the audit system and must remain.
+
+- Treating absent browsers as organism code bugs.
+  Why rejected: unavailable tools should route to replan, equivalent discovery,
+  or explicit install steps.
+
+- Continuing to use only `known_good_commit` from `wiring.json`.
+  Why rejected: it already failed as a stale recovery pointer.
+
+## MoE Analysis
+
+Forensic expert:
+
+- The system is much more auditable now. Every node has start and completion
+  events, bus frames carry record/patch/evidence, observation artifacts contain
+  scan config and scan stats, and action events prove actual desktop calls.
+- Remaining gap: `runtime_events.jsonl` can become very large. Replay tooling
+  exists, but run-level slicing should become a first-class command.
+
+Windows desktop automation expert:
+
+- UIA scanning is good enough to see Chrome and actionable UI controls.
+- Access-denied points are now evidence instead of fatal failure.
+- Remaining gap: browser web content through UIA is incomplete. Chrome may show
+  browser chrome while page content is sparse or delayed. A CDP/browser-control
+  transport or DOM-level bridge is needed for robust web tasks.
+
+Agent architecture expert:
+
+- The organ topology is coherent: observe, plan, act, verify, reflect, evolve.
+- Reflect correctly replanned after visible evidence contradicted helper success.
+- Remaining gap: high-latency brain calls consume most of a 180-second run. The
+  system needs smaller prompts, faster model settings, or per-node time budgets.
+
+Self-evolution expert:
+
+- The enable file, known-good ref, path-filtered hot swap, and ref push make
+  evolution less fragile.
+- Remaining gap: the live self-modify commit deleted a useful file. Future
+  evolution should require stronger evidence of root cause before destructive
+  deletes, even while remaining fail-hard.
+
+Product usefulness expert:
+
+- Useful today for supervised desktop experiments, repo self-repair, and
+  observing whether an autonomous loop can make real GUI progress.
+- Not yet useful as a fully trusted job-application agent. It cannot yet
+  reliably collect offers, talk to Grok, tailor documents, and submit forms in
+  one unattended run.
+
+Operator-risk expert:
+
+- The system can now share data with external browser services when the operator
+  asks. Logs retain evidence of what was attempted.
+- Real form submission still needs hard facts, credentials, profile data, and
+  visible confirmation. Ambiguous submissions should block rather than invent.
+
+Meta-critique of this session:
+
+- I should have identified the stale known-good SHA before the user explicitly
+  called it out. The symptom was visible in the pathspec failure.
+- I patched the run-deadline guard after the 3-minute run exposed it. That should
+  have been part of the first audit pass because duration is a control boundary.
+- I initially let aggregate log counts include prior runs. The final analysis
+  corrected this by slicing from the last `organism_start`.
+- The final run proved progress but not completion. The correct conclusion is
+  "useful but not yet reliable for full task completion."
+
+## What Is Still Not Working Properly
+
+1. Browser content extraction is weak.
+   Chrome can open, but the organism depends on UIA and may not see enough page
+   DOM content to extract job listings. This blocks robust web research.
+
+2. Grok GUI integration was not reached.
+   The organism opened Google search but did not navigate to Grok, authenticate,
+   ask profile-context questions, or read Grok responses during the 180-second run.
+
+3. LLM latency dominates run time.
+   Eight brain responses took most of the 3-minute budget. The planner/executor
+   prompts are still too heavy for short live runs.
+
+4. Verification can be temporally brittle.
+   The first browser launch reported action success but verification denied it
+   because the next observation did not yet show a browser. Later observations
+   showed Chrome. Open-url actions need a wait/observe polling contract.
+
+5. The executor sometimes chooses indirect UI clicks.
+   After Chrome was visible, it clicked the Task Manager taskbar button to
+   explore tools instead of directly using known browser navigation. This is a
+   prompt/strategy weakness, not a desktop capability failure.
+
+6. Self-evolution needs better destructive-change judgment.
+   The live organism deleted `export_brain_forensics.py` to work around a
+   hot-swap bug. The architecture now protects that exact case, but destructive
+   changes still need stricter root-cause evidence.
+
+7. Run replay needs a dedicated summarizer.
+   `export_brain_forensics.py` exists, but runtime run segmentation and concise
+   forensic summaries should be first-class commands.
+
+## Next Engineering Focus
+
+Highest leverage:
+
+1. Add browser DOM/CDP observation for Chrome.
+   UIA should remain the generic desktop layer, but web tasks need page text,
+   links, form fields, and submitted navigation state from the browser.
+
+2. Add action wait contracts.
+   `open_url` should return after a bounded wait for a matching browser window or
+   page title, or return a hard failure with observed evidence.
+
+3. Add per-node time budgets.
+   The organism should know when a brain response consumed too much time and
+   adapt before entering a slow execute/verify loop.
+
+4. Compress prompts and state payloads.
+   Keep the bus auditable in logs, but send smaller targeted payloads to the LLM.
+
+5. Make run slicing a command.
+   Add a small first-party command to summarize the last run: event counts, node
+   chain, action evidence, observation counters, failures, and final state.
+
+6. Add a profile/document memory contract.
+   For job applications, the system needs explicit profile facts, resume files,
+   and consent boundaries before tailoring or submitting applications.
+
+## Running
+
+Use the project Python on this machine:
 
 ```powershell
-& 'C:\Users\px-wjt\AppData\Local\Python\bin\python.exe' -m core_organism "Read README, wiring.json, all Python source, git history, runtime_events.jsonl, runtime_state.json, runtime_control.json, and any current stop/request/response files. Build a forensic map from runtime behavior to exact code paths. Cross-reference every failure, stop, request, response, node transition, and prompt contract against source. Identify mismatches, missing evidence, dead paths, repeated code, and places where logs are insufficient for a reviewer organism. Make the smallest production changes that improve auditability without adding a second log stream. Run deterministic checks, commit, push, and report exact evidence." --reset --duration-seconds 900
+& "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" core_organism.py --reset --duration-seconds 180 "<goal>"
 ```
 
-Subtasks:
-
-- Derive a timeline from `runtime_events.jsonl`.
-- Link each event type to the writing function.
-- Verify full request and response content is logged.
-- Verify stop-file lifecycle and PID cleanup.
-- Produce a deleted-code list and exact changed-file list.
-
-### 2. Autonomous LOC Reduction And Efficiency Pass
-
-Prompt:
-
-> Improve endgame-ai without a task-specific target. Treat smaller code, fewer runtime files, fewer hidden paths, stronger contracts, faster startup, and clearer event evidence as the optimization target. Read README, `wiring.json`, all source, and runtime evidence. Remove dead compatibility, duplicate abstractions, unused docs, repeated prompt text, and avoidable branches. Preserve the unconstrained computer-use nature, manual recursive review truthfulness, one event log, one bus record shape, and duration-driven runtime. Prefer OOP only where it reduces net LOC or real complexity. Run deterministic checks, commit, push, and report before/after LOC and risk.
-
-One-liner:
+Compile check:
 
 ```powershell
-& 'C:\Users\px-wjt\AppData\Local\Python\bin\python.exe' -m core_organism "Improve endgame-ai without a task-specific target. Treat smaller code, fewer runtime files, fewer hidden paths, stronger contracts, faster startup, and clearer event evidence as the optimization target. Read README, wiring.json, all source, and runtime evidence. Remove dead compatibility, duplicate abstractions, unused docs, repeated prompt text, and avoidable branches. Preserve the unconstrained computer-use nature, manual recursive review truthfulness, one event log, one bus record shape, and duration-driven runtime. Prefer OOP only where it reduces net LOC or real complexity. Run deterministic checks, commit, push, and report before/after LOC and risk." --reset --duration-seconds 1200
+& "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" -m compileall -q .
 ```
 
-Subtasks:
-
-- Count source LOC before and after.
-- Find duplicated prompt/runtime language.
-- Search for unused public functions and stale config keys.
-- Collapse repeated validation or path helpers only when behavior stays clearer.
-- Keep README aligned with implemented code.
-
-### 3. MoE, Persona, And Behavior Investigation
-
-Prompt:
-
-> Run an investigation of endgame-ai as a multi-organ cognitive system. Treat each organ prompt as a persona in a mixture-of-experts loop: planner, executor, verifier, reflector, self-modifier, satisfied gate, and mechanical body. Use runtime evidence and source, not speculation. Analyze how identity, goal memory, narrative self-story, tool confidence, public-action risk, failure recovery, and reviewer usefulness emerge from the prompts and code. Then make minimal changes that improve task-agnostic cooperation between organs and make their outputs more useful to later LLMs reading logs. Do not add sandbox limits. Run deterministic checks, commit, push, and report psychological/behavioral hypotheses separately from proven code facts.
-
-One-liner:
+Validate wiring:
 
 ```powershell
-& 'C:\Users\px-wjt\AppData\Local\Python\bin\python.exe' -m core_organism "Run an investigation of endgame-ai as a multi-organ cognitive system. Treat each organ prompt as a persona in a mixture-of-experts loop: planner, executor, verifier, reflector, self-modifier, satisfied gate, and mechanical body. Use runtime evidence and source, not speculation. Analyze how identity, goal memory, narrative self-story, tool confidence, public-action risk, failure recovery, and reviewer usefulness emerge from the prompts and code. Then make minimal changes that improve task-agnostic cooperation between organs and make their outputs more useful to later LLMs reading logs. Do not add sandbox limits. Run deterministic checks, commit, push, and report psychological/behavioral hypotheses separately from proven code facts." --reset --duration-seconds 900
+& "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" -m json.tool wiring.json | Out-Null
 ```
 
-Subtasks:
-
-- Classify each organ's role, inputs, outputs, and failure mode.
-- Inspect whether prompts preserve identity without fake capabilities.
-- Compare organ reasoning fields to later recovery usefulness.
-- Propose schema tweaks only if code can enforce them.
-- Record what remains hypothesis versus verified runtime behavior.
-
-### 4. Ask Grok For A Task, Make It A Goal, Pursue It
-
-Prompt:
-
-> Use Chrome and the current desktop to open grok.com. Ask Grok for one concrete task that a local unconstrained desktop organism should attempt on this machine. Convert Grok's answer into a clear endgame-ai goal with observable completion criteria. Pursue that goal using the normal organism loop. Keep all requests and responses in `runtime_events.jsonl`. If the task requires public posting, spending money, credentials, private data disclosure, or destructive non-repo OS changes, either choose a lower-risk task from Grok's response or stop with explicit evidence. Report the original Grok task, the derived goal, actions taken, verification evidence, and failures.
-
-One-liner:
+Export brain forensics:
 
 ```powershell
-& 'C:\Users\px-wjt\AppData\Local\Python\bin\python.exe' -m core_organism "Use Chrome and the current desktop to open grok.com. Ask Grok for one concrete task that a local unconstrained desktop organism should attempt on this machine. Convert Grok's answer into a clear endgame-ai goal with observable completion criteria. Pursue that goal using the normal organism loop. Keep all requests and responses in runtime_events.jsonl. If the task requires public posting, spending money, credentials, private data disclosure, or destructive non-repo OS changes, either choose a lower-risk task from Grok's response or stop with explicit evidence. Report the original Grok task, the derived goal, actions taken, verification evidence, and failures." --reset --duration-seconds 1200
+& "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" export_brain_forensics.py --input runtime_events.jsonl --out-dir .
 ```
 
-Subtasks:
-
-- Open Grok in Chrome through real desktop use.
-- Ask for a task and capture the response in logs.
-- Rewrite the response as a goal with observable done_when criteria.
-- Pursue the derived goal without changing runtime contracts mid-run unless needed.
-- Report exactly where browser or observation behavior blocked progress.
-
-### 5. Public Action And Game-Play Stress Run
-
-Prompt:
-
-> Use Chrome to perform a real external-action stress run. First find and open the latest official Shakira video from an authoritative source. If LinkedIn is already logged in and the compose flow is available, publish a short benign LinkedIn post linking to the video and stating that this was an endgame-ai desktop automation test; otherwise stop before posting and report why. Then open grok.com and try to start or play a chess interaction with Grok through the visible UI. Treat public posting as a real side effect and do not claim success without visible confirmation. Keep the full request/response and action evidence in `runtime_events.jsonl`, then summarize what the organism could and could not do.
-
-One-liner:
+Stop a running organism:
 
 ```powershell
-& 'C:\Users\px-wjt\AppData\Local\Python\bin\python.exe' -m core_organism "Use Chrome to perform a real external-action stress run. First find and open the latest official Shakira video from an authoritative source. If LinkedIn is already logged in and the compose flow is available, publish a short benign LinkedIn post linking to the video and stating that this was an endgame-ai desktop automation test; otherwise stop before posting and report why. Then open grok.com and try to start or play a chess interaction with Grok through the visible UI. Treat public posting as a real side effect and do not claim success without visible confirmation. Keep the full request/response and action evidence in runtime_events.jsonl, then summarize what the organism could and could not do." --reset --duration-seconds 1500
+@{
+  schema = "endgame-ai.stop.v1"
+  reason = "manual stop"
+} | ConvertTo-Json | Set-Content runtime_stop.json
 ```
 
-Subtasks:
-
-- Use an authoritative Shakira source, not a random repost.
-- Open LinkedIn only if a real post is intended.
-- Publish only if the compose screen and account state are visibly understood.
-- Start a Grok chess interaction through the browser UI if available.
-- Verify public post and chess state from visible evidence, not executor self-report.
-
-## Appendix: Handover Prompt For Self-Evolution Runtime Gate
-
-Future-session research prompt:
-
-> Add one new runtime-control concept to endgame-ai: a hot-swappable self-evolution enable file, similar in spirit to `runtime_stop.json`. Self-evolution should be enabled by default. The future design to investigate is a root runtime file such as `runtime_self_evolution_enabled.json`; if that file is deleted or absent, `node_self_modify` and the body-side evolution apply/commit/push path must not change code, wiring, git state, or remote branches. Instead, the organism should emit clear evidence into `runtime_events.jsonl`, update `runtime_state.json`, and route to a useful non-evolution recovery path. Research the exact lifecycle: who creates the file, whether `--reset` recreates it, whether manual deletion disables only apply/commit/push or also self-modify brain calls, and how reviewer organisms should interpret the disabled state. Keep the system unconstrained by default; this is not a sandbox, it is an operator runtime switch for evolution itself. Read README, `wiring.json`, `core_organism.py`, `node_self_modify.py`, `core_nodes.py`, `core_stop_check.py`, and runtime evidence before editing. Implement only if the contract is coherent, run deterministic checks, commit, push, and report evidence.
-
-One-liner:
+Disable self-evolution:
 
 ```powershell
-& 'C:\Users\px-wjt\AppData\Local\Python\bin\python.exe' -m core_organism "Add one new runtime-control concept to endgame-ai: a hot-swappable self-evolution enable file, similar in spirit to runtime_stop.json. Self-evolution should be enabled by default. The future design to investigate is a root runtime file such as runtime_self_evolution_enabled.json; if that file is deleted or absent, node_self_modify and the body-side evolution apply/commit/push path must not change code, wiring, git state, or remote branches. Instead, the organism should emit clear evidence into runtime_events.jsonl, update runtime_state.json, and route to a useful non-evolution recovery path. Research the exact lifecycle: who creates the file, whether --reset recreates it, whether manual deletion disables only apply/commit/push or also self-modify brain calls, and how reviewer organisms should interpret the disabled state. Keep the system unconstrained by default; this is not a sandbox, it is an operator runtime switch for evolution itself. Read README, wiring.json, core_organism.py, node_self_modify.py, core_nodes.py, core_stop_check.py, and runtime evidence before editing. Implement only if the contract is coherent, run deterministic checks, commit, push, and report evidence." --reset --duration-seconds 900
+Remove-Item runtime_self_evolution_enabled.json
 ```
+
+Re-enable self-evolution:
+
+```powershell
+& "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" -c "import core_stop_check as s; s.ensure_self_evolution_enabled(source='manual')"
+```
+
+## Future Session Handover Prompt
+
+Use this prompt at the start of the next repair session:
+
+```text
+You are continuing endgame-ai on branch prompts-adjust.
+
+Start by reading the repo and latest runtime logs. Do not assume the README is
+truth unless it matches code and runtime_events.jsonl. The latest pushed commits
+include:
+- 88a538d Harden action bus and self-evolution gate
+- 443cf8e Recover from inaccessible UIA probe points
+- 5ba2533 Wire known-good ref and observation visibility
+- 50a0b98 Push known-good ref after self-modify commits
+- 47a8a40 Block desktop actions after run deadline
+
+The known-good ref refs/endgame/known_good is pushed at 47a8a40.
+runtime_self_evolution_enabled.json controls whether self-modify can apply,
+commit, and push. While it exists, node_reflect must not give up.
+
+Latest real run on 2026-07-07 opened Chrome and navigated to:
+https://www.google.com/search?q=AI+development+job+offers+Krakow
+It did not reach Grok, extract job offers, tailor documents, or submit an
+application. The run expired at tick 15 while node_verify was next.
+
+Focus next on browser DOM/CDP observation, action wait contracts for open_url,
+per-node time budgets, prompt compression, and a first-party last-run summarizer.
+Keep changes task-agnostic. Do not hard-code job-search flow. Preserve fail-hard
+contracts, explicit evidence, and replayability from runtime_events.jsonl.
+```
+
