@@ -688,6 +688,7 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
     fresh_observation = state.get("fresh_observation") or brain.last_fresh_observation() or bus.observation_brief(state)
     action_index = _action_index(state)
     action_events: list[dict[str, Any]] = []
+    deadline_at = state.get("deadline_at")
     last = {
         "error": state.get("last_error"),
         "result": state.get("last_result", ""),
@@ -695,6 +696,19 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "verification": state.get("last_verification", {}),
         "reflection": state.get("last_reflection", {}),
     }
+
+    def _assert_duration_open(action: str) -> None:
+        if deadline_at is None:
+            return
+        try:
+            deadline = float(deadline_at)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(f"invalid deadline_at in state: {deadline_at!r}") from exc
+        now = time.time()
+        if now >= deadline:
+            raise RuntimeError(
+                f"duration deadline expired before body action {action}: late_by_s={round(now - deadline, 3)}"
+            )
 
     def _record_action(result: Any) -> Any:
         event = dict(result) if isinstance(result, dict) else {"ok": True, "value": result}
@@ -713,18 +727,23 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         return dict(node)
 
     def click(x: int, y: int, hwnd: int = 0) -> dict[str, Any]:
+        _assert_duration_open("click")
         return _record_action(d.click(int(x), int(y), int(hwnd or 0)))
 
     def type_text(text: str) -> dict[str, Any]:
+        _assert_duration_open("type_text")
         return _record_action(d.type_text(str(text)))
 
     def press_key(key: str) -> dict[str, Any]:
+        _assert_duration_open("press_key")
         return _record_action(d.press_key(str(key)))
 
     def hotkey(*keys: Any) -> dict[str, Any]:
+        _assert_duration_open("hotkey")
         return _record_action(d.hotkey(*keys))
 
     def scroll(x: int, y: int, amount: int, hwnd: int = 0) -> dict[str, Any]:
+        _assert_duration_open("scroll")
         return _record_action(d.scroll(int(x), int(y), int(amount), int(hwnd or 0)))
     
     def action_nodes(action: str | None = None) -> list[dict[str, Any]]:
@@ -741,22 +760,26 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         return _require_node(node_id)
 
     def click_node(node_id: str) -> dict[str, Any]:
+        _assert_duration_open("click_node")
         node = _require_node(node_id)
         x, y = _node_center(node)
         click_res = d.click(x, y, int(node.get("hwnd") or 0))
         return _record_action({"ok": bool(click_res.get("ok", True)), "action": "click_node", "node_id": node_id, "click": click_res})
 
     def read_node(node_id: str) -> dict[str, Any]:
+        _assert_duration_open("read_node")
         node = _require_node(node_id)
         text = node.get("name") or node.get("text_full") or node.get("value") or ""
         return _record_action({"ok": True, "action": "read_node", "node_id": node_id, "text": text})
 
     def scroll_node(node_id: str, amount: int = -3) -> dict[str, Any]:
+        _assert_duration_open("scroll_node")
         node = _require_node(node_id)
         x, y = _node_center(node)
         return _record_action(d.scroll(x, y, int(amount), int(node.get("hwnd") or 0)))
 
     def open_url(browser: str, url: str) -> dict[str, Any]:
+        _assert_duration_open("open_url")
         return _record_action(d.open_url(str(browser), str(url)))
 
     class _PyAutoGuiCompat:

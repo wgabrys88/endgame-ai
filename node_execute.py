@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import time
 
 import core_bus as bus
 import core_desktop as desktop
@@ -102,6 +103,37 @@ class ExecuteNode(BaseNode):
             )
         if not code.strip():
             raise RuntimeError("execution conclusion EXECUTE requires non-empty code")
+        deadline_at = state.get("deadline_at")
+        if deadline_at is not None:
+            try:
+                deadline = float(deadline_at)
+            except (TypeError, ValueError) as exc:
+                raise RuntimeError(f"invalid deadline_at in state: {deadline_at!r}") from exc
+            now = time.time()
+            if now >= deadline:
+                late_by = round(now - deadline, 3)
+                return bus.emit(
+                    "reflect",
+                    {
+                        "last_action": {"code": code, "conclusion": conclusion, "not_executed": True},
+                        "last_code": code,
+                        "last_result": {
+                            "result": None,
+                            "stdout": "",
+                            "stderr": "",
+                            "action_events": [],
+                            "duration_guard": {
+                                "deadline_at": deadline,
+                                "now": now,
+                                "late_by_s": late_by,
+                            },
+                        },
+                        "last_error": f"duration deadline expired before executing body action: late_by_s={late_by}",
+                        "action_frame": state.get("action_frame"),
+                    },
+                    record=record,
+                    evidence=payload,
+                )
 
         ns = nodes.build_capability_runtime(ctx)
         ns["desktop"] = desktop
