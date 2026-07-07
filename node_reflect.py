@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import core_bus as bus
+import core_stop_check as stop_check
 from core_nodes import BaseNode
 
 
@@ -19,8 +20,17 @@ MECHANICAL_ESCALATE_MARKERS = (
     "AttributeError",
     "SyntaxError",
     "ImportError",
+    "RuntimeError",
+    "ValueError",
     "no topology edge",
     "missing helper",
+    "body action failed",
+    "produced no result",
+)
+
+ENVIRONMENT_REPLAN_MARKERS = (
+    "is not installed in known paths",
+    "unsupported browser",
 )
 
 
@@ -64,28 +74,77 @@ class ReflectNode(BaseNode):
 
     def signal_from_data(self, data, ctx):
         state = ctx.get("state", {})
-        signal = data.get("next_signal", "replan")
+        requested_signal = data.get("next_signal")
+        signal = requested_signal
         if signal not in {"retry", "replan", "frame", "escalate", "give_up"}:
-            signal = "replan"
+            raise RuntimeError(f"reflection emitted invalid next_signal: {signal!r}")
 
         step_index = int(state.get("step", 0) or 0)
         last_verification = state.get("last_verification") or {}
+        framed_already = state.get("framing_attempted_for_step") == step_index
         diagnostic_text = " ".join(str(x) for x in [
             state.get("last_error", ""),
             data.get("diagnosis", ""),
             data.get("lesson", ""),
             state.get("last_action", {}),
+            state.get("last_result", {}),
         ])
-        if (
+        self._routing_override = None
+        if signal == "give_up" and stop_check.self_evolution_enabled():
+            self._routing_override = {
+                "from": requested_signal,
+                "to": "escalate",
+                "reason": "give_up blocked while self-evolution is enabled",
+                "failure_streak": self._projected_streak,
+                "self_evolution_file": str(stop_check.SELF_EVOLUTION_FILE),
+            }
+            signal = "escalate"
+        elif state.get("last_error") and any(
+            marker.lower() in diagnostic_text.lower() for marker in ENVIRONMENT_REPLAN_MARKERS
+        ) and signal in {"retry", "frame", "escalate"}:
+            self._routing_override = {
+                "from": requested_signal,
+                "to": "replan",
+                "reason": "requested local app/browser unavailable; choose equivalent or install explicitly",
+                "failure_streak": self._projected_streak,
+            }
+            signal = "replan"
+        elif (
             last_verification.get("signal") == "step_denied"
             and self._projected_streak["count"] >= 2
-            and state.get("framing_attempted_for_step") != step_index
+            and not framed_already
             and signal in {"retry", "replan"}
         ):
+            self._routing_override = {
+                "from": requested_signal,
+                "to": "frame",
+                "reason": "same step denied twice before any action frame",
+                "failure_streak": self._projected_streak,
+            }
             signal = "frame"
+        elif (
+            last_verification.get("signal") == "step_denied"
+            and self._projected_streak["count"] >= 3
+            and framed_already
+            and signal in {"retry", "replan", "frame"}
+        ):
+            self._routing_override = {
+                "from": requested_signal,
+                "to": "escalate",
+                "reason": "same step denied after framing was already attempted",
+                "failure_streak": self._projected_streak,
+            }
+            signal = "escalate"
         elif state.get("last_error") and any(
             marker.lower() in diagnostic_text.lower() for marker in MECHANICAL_ESCALATE_MARKERS
         ):
+            if signal != "escalate":
+                self._routing_override = {
+                    "from": requested_signal,
+                    "to": "escalate",
+                    "reason": "mechanical error marker in reflection evidence",
+                    "failure_streak": self._projected_streak,
+                }
             signal = "escalate"
         self._signal = signal
         return signal
@@ -103,8 +162,16 @@ class ReflectNode(BaseNode):
                 "diagnosis": diagnosis,
                 "step_goal": step.get("description", ctx.get("goal", "")),
                 "recovery_signal": self._signal,
+                "requested_signal": data.get("next_signal"),
+                "routing_override": self._routing_override,
             },
-            "last_reflection": {"signal": self._signal, "lesson": lesson, "diagnosis": diagnosis},
+            "last_reflection": {
+                "signal": self._signal,
+                "requested_signal": data.get("next_signal"),
+                "lesson": lesson,
+                "diagnosis": diagnosis,
+                "routing_override": self._routing_override,
+            },
         }
 
 

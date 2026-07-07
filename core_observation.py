@@ -479,7 +479,7 @@ def gather_raw(config: dict[str, Any], desktop: Any) -> dict[str, Any]:
     scanner = UiaScanner(config, desktop)
     index: dict[str, RawNode] = {}
     saturated_hits = set()
-    probes = 0
+    point_errors: list[dict[str, Any]] = []
     t0 = time.time()
 
     saved = wintypes.POINT()
@@ -494,8 +494,17 @@ def gather_raw(config: dict[str, Any], desktop: Any) -> dict[str, Any]:
             pt = wintypes.POINT(int(x), int(y))
             try:
                 root = scanner.automation.ElementFromPointBuildCache(pt, scanner._build_hit_cache_request())
-            except Exception:
-                root = scanner.automation.ElementFromPoint(pt)
+            except Exception as build_exc:
+                try:
+                    root = scanner.automation.ElementFromPoint(pt)
+                except Exception as point_exc:
+                    point_errors.append({
+                        "x": int(x),
+                        "y": int(y),
+                        "build_cache_error": f"{type(build_exc).__name__}: {build_exc}",
+                        "point_error": f"{type(point_exc).__name__}: {point_exc}",
+                    })
+                    continue
             if root is None:
                 continue
 
@@ -536,6 +545,8 @@ def gather_raw(config: dict[str, Any], desktop: Any) -> dict[str, Any]:
         "scan_stats": {
             "probes": len(points),
             "unique_nodes": len(index),
+            "point_errors": len(point_errors),
+            "first_point_errors": point_errors[:5],
             "elapsed_s": round(time.time() - t0, 3),
         },
     }
@@ -627,6 +638,9 @@ def build_tree_and_map(action_elements: dict[str, dict[str, Any]], text_hints: d
     filt = config.get("filter") or {}
     max_depth = int(filt.get("max_depth", 10))
     max_children_per_window = int(filt.get("max_children_per_window", 100))
+    max_llm_nodes = int(filt.get("max_llm_nodes", 2000))
+    if max_llm_nodes < 1:
+        raise RuntimeError(f"hover_cache.filter.max_llm_nodes must be >= 1, got {max_llm_nodes}")
 
     # Build window list from raw nodes (unique hwnds with Window role)
     window_nodes: dict[int, dict[str, Any]] = {}
@@ -766,7 +780,14 @@ def build_tree_and_map(action_elements: dict[str, dict[str, Any]], text_hints: d
         return " ".join(str(v or "").replace("\r", " ").replace("\n", " ").split())
 
     lines = ["W0 Screen Desktop"]
+    rendered_node_count = 1
+    llm_node_limit_hit = False
+
     def render(node: dict[str, Any], indent: int = 1):
+        nonlocal rendered_node_count, llm_node_limit_hit
+        if rendered_node_count >= max_llm_nodes:
+            llm_node_limit_hit = True
+            return
         sid = node.get("short_id", node.get("id", ""))
         role = str(node.get("role", ""))
         name = clean(node.get("name", "") or node.get("title", ""))
@@ -779,6 +800,7 @@ def build_tree_and_map(action_elements: dict[str, dict[str, Any]], text_hints: d
         if hint and hint not in name:
             parts.append(f"~{hint}")
         lines.append("  " * indent + " ".join(parts))
+        rendered_node_count += 1
         for child in node.get("children", []):
             if isinstance(child, dict):
                 render(child, indent + 1)
@@ -794,6 +816,9 @@ def build_tree_and_map(action_elements: dict[str, dict[str, Any]], text_hints: d
         "desktop_tree_text": "\n".join(lines),
         "window_count": len(sorted_windows),
         "element_count": len(action_index_by_short),
+        "rendered_node_count": rendered_node_count,
+        "max_llm_nodes": max_llm_nodes,
+        "llm_node_limit_hit": llm_node_limit_hit,
         "window_z_order": [w["hwnd"] for w in sorted_windows],
     }
 
@@ -839,6 +864,9 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
             "node_index": mapped["node_index"],
             "window_count": mapped["window_count"],
             "element_count": mapped["element_count"],
+            "rendered_node_count": mapped["rendered_node_count"],
+            "max_llm_nodes": mapped["max_llm_nodes"],
+            "llm_node_limit_hit": mapped["llm_node_limit_hit"],
             "window_z_order": mapped["window_z_order"],
         },
         "action_index": mapped["action_index"],
@@ -855,5 +883,8 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
         "desktop_tree": artifact["desktop_tree"],
         "desktop_tree_text": mapped["desktop_tree_text"],
         "action_index": mapped["action_index"],
+        "rendered_node_count": mapped["rendered_node_count"],
+        "max_llm_nodes": mapped["max_llm_nodes"],
+        "llm_node_limit_hit": mapped["llm_node_limit_hit"],
         "observation_artifact": artifact,
     }

@@ -27,3 +27,4 @@
 !transport_openai.py
 !transport_opencode.py
 !transport_xai.py
+!export_brain_forensics.py

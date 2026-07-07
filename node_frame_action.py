@@ -46,8 +46,10 @@ class FrameActionNode(BaseNode):
         }
 
     def signal_from_data(self, data, ctx):
-        signal = str(data.get("next_signal") or "framed")
-        return signal if signal in {"framed", "reflect"} else "framed"
+        signal = data.get("next_signal")
+        if signal not in {"framed", "reflect"}:
+            raise RuntimeError(f"frame_action emitted invalid next_signal: {signal!r}")
+        return signal
 
     def patch_from_record(self, record, ctx):
         data = record.data

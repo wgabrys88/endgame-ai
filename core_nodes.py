@@ -330,8 +330,50 @@ def git_worktree_status() -> list[str]:
     return [line for line in _git(["status", "--porcelain"]).stdout.splitlines() if line.strip()]
 
 
+def known_good_ref_name(wiring: dict[str, Any]) -> str:
+    return str(wiring.get("self_modify", {}).get("known_good_ref") or "refs/endgame/known_good").strip()
+
+
+def resolve_known_good(wiring: dict[str, Any]) -> dict[str, Any]:
+    ref = known_good_ref_name(wiring)
+    if ref:
+        cp = _git(["rev-parse", "--verify", ref], check=False)
+        if cp.returncode == 0 and cp.stdout.strip():
+            return {"commit": cp.stdout.strip(), "source": "git_ref", "ref": ref}
+    configured = str(wiring.get("self_modify", {}).get("known_good_commit") or "").strip()
+    if configured:
+        return {"commit": configured, "source": "wiring_seed", "ref": ref}
+    return {"commit": "", "source": "missing", "ref": ref}
+
+
 def known_good_commit(wiring: dict[str, Any]) -> str:
-    return str(wiring.get("self_modify", {}).get("known_good_commit") or "").strip()
+    return str(resolve_known_good(wiring).get("commit") or "").strip()
+
+
+def update_known_good_ref(wiring: dict[str, Any], commit: str, *, source: str) -> dict[str, Any]:
+    sha = str(commit or "").strip()
+    if not sha:
+        raise ValueError("cannot update known-good ref without a commit")
+    _git(["cat-file", "-e", f"{sha}^{{commit}}"])
+    ref = known_good_ref_name(wiring)
+    if not ref:
+        raise ValueError("self_modify.known_good_ref is empty")
+    before = resolve_known_good(wiring)
+    _git(["update-ref", ref, sha])
+    payload = {
+        "schema": "endgame-ai.known-good.v1",
+        "ref": ref,
+        "previous": before,
+        "commit": sha,
+        "source": source,
+        "updated_at": time.time(),
+        "updated_iso": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime()),
+    }
+    (ROOT / "runtime_known_good_commit.json").write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return payload
 
 
 def hot_swap_to_known_good(
@@ -339,9 +381,10 @@ def hot_swap_to_known_good(
     *,
     paths: list[str] | None = None,
 ) -> dict[str, Any]:
-    sha = known_good_commit(wiring)
+    known_good = resolve_known_good(wiring)
+    sha = str(known_good.get("commit") or "").strip()
     if not sha:
-        return {"hot_swapped": False, "reason": "no_known_good_commit"}
+        return {"hot_swapped": False, "reason": "no_known_good_commit", "known_good": known_good}
     if paths:
         targets = [str(p).replace("\\", "/") for p in paths if str(p).strip()]
     else:
@@ -351,9 +394,33 @@ def hot_swap_to_known_good(
             if p.endswith(tuple(EVOLVABLE_SUFFIXES)) or p in EVOLVABLE_NAMES
         )
     if not targets:
-        return {"hot_swapped": False, "reason": "no_targets", "commit": sha}
-    _git(["checkout", sha, "--", *targets])
-    return {"hot_swapped": True, "commit": sha, "paths": targets}
+        return {"hot_swapped": False, "reason": "no_targets", "commit": sha, "known_good": known_good}
+    checkout_targets: list[str] = []
+    missing_in_known_good: list[str] = []
+    for target in targets:
+        exists = _git(["cat-file", "-e", f"{sha}:{target}"], check=False).returncode == 0
+        if exists:
+            checkout_targets.append(target)
+        else:
+            missing_in_known_good.append(target)
+    if not checkout_targets:
+        return {
+            "hot_swapped": False,
+            "reason": "no_targets_in_known_good",
+            "commit": sha,
+            "known_good": known_good,
+            "missing_in_known_good": missing_in_known_good,
+        }
+    _git(["checkout", sha, "--", *checkout_targets])
+    result: dict[str, Any] = {
+        "hot_swapped": True,
+        "commit": sha,
+        "known_good": known_good,
+        "paths": checkout_targets,
+    }
+    if missing_in_known_good:
+        result["missing_in_known_good"] = missing_in_known_good
+    return result
 
 
 def _remote_url(remote: str) -> str:
@@ -381,6 +448,7 @@ def prepare_self_evolution(wiring: dict[str, Any]) -> dict[str, Any]:
         "context_mode": wiring.get("self_modify", {}).get("context_mode", "checked_out_branch"),
         "branch": branch,
         "current_commit": git_head_sha(),
+        "known_good": resolve_known_good(wiring),
         "worktree_status": git_worktree_status(),
         "remote": remote,
         "remote_url": remote_url,
@@ -564,17 +632,25 @@ def commit_self_evolution(wiring: dict[str, Any], applied: dict[str, Any], patch
     )
     _git(["commit", "-m", title, "-m", body])
     branch = git_current_branch()
+    commit = git_head_sha()
+    known_good = update_known_good_ref(wiring, commit, source="commit_self_evolution")
     pushed = False
+    known_good_ref_pushed = False
     git_cfg = wiring.get("self_modify", {}).get("git", {})
     if bool(git_cfg.get("push_after_commit", False)):
-        _git(["push", str(git_cfg.get("remote") or "origin"), branch])
+        remote = str(git_cfg.get("remote") or "origin")
+        _git(["push", remote, branch])
+        _git(["push", remote, f"{known_good['ref']}:{known_good['ref']}"])
         pushed = True
+        known_good_ref_pushed = True
     return {
         "committed": True,
         "branch": branch,
-        "commit": git_head_sha(),
+        "commit": commit,
+        "known_good": known_good,
         "changed_files": changed_files,
         "pushed": pushed,
+        "known_good_ref_pushed": known_good_ref_pushed,
         "status": git_worktree_status(),
     }
 
@@ -604,6 +680,70 @@ def _node_center(node: dict[str, Any]) -> tuple[int, int]:
     return left + max(0, right - left) // 2, top + max(0, bottom - top) // 2
 
 
+def capability_manifest(ctx: dict[str, Any] | None = None) -> dict[str, Any]:
+    state = (ctx or {}).get("state", {}) if isinstance(ctx, dict) else {}
+    return {
+        "schema": "endgame-ai.execute-capabilities.v1",
+        "capability_model": "GUI control and Python/script/process control are equal first-class capabilities; choose the channel or composition that best advances and proves the step",
+        "python": {
+            "execution": "data.code is executed with Python exec in the organism process",
+            "builtins": "standard Python builtins and normal imports are available",
+            "modules": [
+                "subprocess",
+                "os",
+                "sys",
+                "json",
+                "re",
+                "time",
+                "pathlib",
+                "ctypes",
+                "math",
+                "random",
+                "types",
+            ],
+            "filesystem": "repo_root is available; file access follows process permissions",
+            "workspace_root": "repo_root is injected from the directory where the organism process was started",
+            "processes": "subprocess is available; command results must be captured in result, stdout, or stderr",
+        },
+        "desktop_helpers": [
+            "click",
+            "click_node",
+            "read_node",
+            "type_text",
+            "press_key",
+            "hotkey",
+            "scroll",
+            "scroll_node",
+            "action_nodes",
+            "node_by_id",
+            "pyautogui",
+            "pag",
+        ],
+        "browser_helpers": {
+            "open_url": "open_url(browser, url) with browser values opera, chrome, edge, firefox, or default; named browsers fail hard when unavailable",
+        },
+        "observation": [
+            "fresh_observation",
+            "desktop_tree",
+            "desktop_tree_text",
+            "action_index",
+            "observation_artifact",
+            "observed_at",
+            "fresh_scan",
+        ],
+        "audit_contract": [
+            "assign result for every EXECUTE path or write stdout/stderr",
+            "desktop helpers append action_events",
+            "invalid node ids and failed helpers raise hard",
+            "silent side effects are contract failures",
+        ],
+        "controls": {
+            "deadline_at": state.get("deadline_at"),
+            "deadline_guard": "desktop helpers refuse actions after deadline_at",
+        },
+    }
+
+
 def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
     d = _get_desktop_instance()
     state = ctx.get("state", {})
@@ -611,6 +751,8 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
     goal = ctx.get("goal", "")
     fresh_observation = state.get("fresh_observation") or brain.last_fresh_observation() or bus.observation_brief(state)
     action_index = _action_index(state)
+    action_events: list[dict[str, Any]] = []
+    deadline_at = state.get("deadline_at")
     last = {
         "error": state.get("last_error"),
         "result": state.get("last_result", ""),
@@ -618,6 +760,55 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "verification": state.get("last_verification", {}),
         "reflection": state.get("last_reflection", {}),
     }
+
+    def _assert_duration_open(action: str) -> None:
+        if deadline_at is None:
+            return
+        try:
+            deadline = float(deadline_at)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(f"invalid deadline_at in state: {deadline_at!r}") from exc
+        now = time.time()
+        if now >= deadline:
+            raise RuntimeError(
+                f"duration deadline expired before body action {action}: late_by_s={round(now - deadline, 3)}"
+            )
+
+    def _record_action(result: Any) -> Any:
+        event = dict(result) if isinstance(result, dict) else {"ok": True, "value": result}
+        event.setdefault("ok", True)
+        event["event_index"] = len(action_events)
+        event["recorded_at"] = time.time()
+        action_events.append(event)
+        if event.get("ok") is not True:
+            raise RuntimeError(f"body action failed: {event}")
+        return result
+
+    def _require_node(node_id: str) -> dict[str, Any]:
+        node = action_index.get(str(node_id))
+        if not isinstance(node, dict):
+            raise RuntimeError(f"node id is not actionable in the latest observation: {node_id}")
+        return dict(node)
+
+    def click(x: int, y: int, hwnd: int = 0) -> dict[str, Any]:
+        _assert_duration_open("click")
+        return _record_action(d.click(int(x), int(y), int(hwnd or 0)))
+
+    def type_text(text: str) -> dict[str, Any]:
+        _assert_duration_open("type_text")
+        return _record_action(d.type_text(str(text)))
+
+    def press_key(key: str) -> dict[str, Any]:
+        _assert_duration_open("press_key")
+        return _record_action(d.press_key(str(key)))
+
+    def hotkey(*keys: Any) -> dict[str, Any]:
+        _assert_duration_open("hotkey")
+        return _record_action(d.hotkey(*keys))
+
+    def scroll(x: int, y: int, amount: int, hwnd: int = 0) -> dict[str, Any]:
+        _assert_duration_open("scroll")
+        return _record_action(d.scroll(int(x), int(y), int(amount), int(hwnd or 0)))
     
     def action_nodes(action: str | None = None) -> list[dict[str, Any]]:
         nodes = []
@@ -630,43 +821,39 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         return nodes
 
     def node_by_id(node_id: str) -> dict[str, Any]:
-        return dict(action_index.get(str(node_id), {}) or {})
+        return _require_node(node_id)
 
     def click_node(node_id: str) -> dict[str, Any]:
-        node = node_by_id(node_id)
-        if not node:
-            return {"ok": False, "action": "click_node", "error": f"node not found: {node_id}"}
+        _assert_duration_open("click_node")
+        node = _require_node(node_id)
         x, y = _node_center(node)
         click_res = d.click(x, y, int(node.get("hwnd") or 0))
-        return {"ok": bool(click_res.get("ok", True)), "action": "click_node", "node_id": node_id, "click": click_res}
+        return _record_action({"ok": bool(click_res.get("ok", True)), "action": "click_node", "node_id": node_id, "click": click_res})
 
     def read_node(node_id: str) -> dict[str, Any]:
-        node = node_by_id(node_id)
-        if not node:
-            return {"ok": False, "action": "read_node", "error": f"node not found: {node_id}"}
+        _assert_duration_open("read_node")
+        node = _require_node(node_id)
         text = node.get("name") or node.get("text_full") or node.get("value") or ""
-        return {"ok": True, "action": "read_node", "node_id": node_id, "text": text}
+        return _record_action({"ok": True, "action": "read_node", "node_id": node_id, "text": text})
 
     def scroll_node(node_id: str, amount: int = -3) -> dict[str, Any]:
-        node = node_by_id(node_id)
-        if not node:
-            return {"ok": False, "action": "scroll_node", "error": f"node not found: {node_id}"}
+        _assert_duration_open("scroll_node")
+        node = _require_node(node_id)
         x, y = _node_center(node)
-        return d.scroll(x, y, int(amount), int(node.get("hwnd") or 0))
+        return _record_action(d.scroll(x, y, int(amount), int(node.get("hwnd") or 0)))
 
-    def open_url(browser: str = "chrome", url: str = "") -> dict[str, Any]:
-        if not url and str(browser).lower().startswith(("http://", "https://")):
-            return d.open_url("default", str(browser))
-        return d.open_url(str(browser or "chrome"), str(url or ""))
+    def open_url(browser: str, url: str) -> dict[str, Any]:
+        _assert_duration_open("open_url")
+        return _record_action(d.open_url(str(browser), str(url)))
 
     class _PyAutoGuiCompat:
 
         def click(self, x: int | None = None, y: int | None = None, clicks: int = 1, interval: float = 0.0, **kwargs: Any) -> Any:
             if x is None or y is None:
-                return {"ok": False, "action": "pyautogui.click", "error": "x and y are required in this body"}
+                raise RuntimeError("pyautogui.click requires explicit x and y")
             result = None
             for _ in range(max(1, int(clicks or 1))):
-                result = d.click(int(x), int(y), int(kwargs.get("hwnd") or 0))
+                result = click(int(x), int(y), int(kwargs.get("hwnd") or 0))
                 if interval:
                     time.sleep(float(interval))
             return result
@@ -674,17 +861,17 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         def write(self, text: str, interval: float = 0.0) -> Any:
             if interval:
                 for ch in str(text):
-                    d.type_text(ch)
+                    type_text(ch)
                     time.sleep(float(interval))
-                return {"ok": True, "action": "pyautogui.write", "chars": len(str(text))}
-            return d.type_text(str(text))
+                return _record_action({"ok": True, "action": "pyautogui.write", "chars": len(str(text))})
+            return type_text(str(text))
 
         typewrite = write
 
         def press(self, key: str, presses: int = 1, interval: float = 0.0) -> Any:
             result = None
             for _ in range(max(1, int(presses or 1))):
-                result = d.press_key(str(key))
+                result = press_key(str(key))
                 if interval:
                     time.sleep(float(interval))
             return result
@@ -692,12 +879,12 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         def hotkey(self, *keys: str) -> Any:
             if len(keys) == 1 and isinstance(keys[0], (list, tuple)):
                 keys = tuple(keys[0])
-            return d.hotkey(list(keys))
+            return hotkey(list(keys))
 
         def scroll(self, clicks: int, x: int | None = None, y: int | None = None, **kwargs: Any) -> Any:
             if x is None or y is None:
-                return d.scroll(0, 0, int(clicks), int(kwargs.get("hwnd") or 0))
-            return d.scroll(int(x), int(y), int(clicks), int(kwargs.get("hwnd") or 0))
+                return scroll(0, 0, int(clicks), int(kwargs.get("hwnd") or 0))
+            return scroll(int(x), int(y), int(clicks), int(kwargs.get("hwnd") or 0))
 
         def sleep(self, seconds: float) -> None:
             time.sleep(float(seconds))
@@ -711,13 +898,13 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "action_nodes": action_nodes,
         "node_by_id": node_by_id,
         
-        "click": d.click,
+        "click": click,
         "click_node": click_node,
         "read_node": read_node,
-        "type_text": d.type_text,
-        "press_key": d.press_key,
-        "hotkey": d.hotkey,
-        "scroll": d.scroll,
+        "type_text": type_text,
+        "press_key": press_key,
+        "hotkey": hotkey,
+        "scroll": scroll,
         "scroll_node": scroll_node,
         "open_url": open_url,
         "pyautogui": pyautogui,
@@ -736,6 +923,7 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "types": types,
         
         "wiring_limit": wiring_limit,
+        "capabilities": capability_manifest(ctx),
         "repo_root": str(ROOT),
         "python_executable": sys.executable,
         "topology_summary": topology_summary(wiring),
@@ -752,4 +940,6 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "observation_artifact": state.get("observation_artifact", {}),
         "observed_at": state.get("observed_at"),
         "fresh_scan": state.get("fresh_scan", False),
+        "action_events": action_events,
+        "_action_events": action_events,
     }

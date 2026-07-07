@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import time
 
 import core_bus as bus
 import core_desktop as desktop
@@ -53,6 +54,7 @@ class ExecuteNode(BaseNode):
             },
             "state": bus.state_brief(state),
             "observation": bus.observation_brief(state),
+            "capabilities": nodes.capability_manifest(ctx),
         }
 
     def run(self, ctx):
@@ -61,19 +63,25 @@ class ExecuteNode(BaseNode):
         record = self.think(ctx)
         data = record.data
         code = str(data.get("code", "") or "")
-        conclusion = str(data.get("conclusion", "CANNOT") or "CANNOT").upper()
+        conclusion = str(data.get("conclusion") or "").upper()
         requested_signal = str(data.get("next_signal") or "").lower()
 
         if conclusion not in {"EXECUTE", "CANNOT", "FRAME", "SELF_MODIFY"}:
-            conclusion = "CANNOT"
+            raise RuntimeError(f"execution emitted invalid conclusion: {conclusion!r}")
         if requested_signal not in {"verify", "frame", "reflect", "self_modify"}:
-            requested_signal = {
-                "EXECUTE": "verify",
-                "FRAME": "frame",
-                "SELF_MODIFY": "self_modify",
-            }.get(conclusion, "reflect")
+            raise RuntimeError(f"execution emitted invalid next_signal: {requested_signal!r}")
+        if conclusion == "EXECUTE" and requested_signal != "verify":
+            raise RuntimeError(f"execution conclusion EXECUTE requires next_signal verify, got {requested_signal!r}")
+        if conclusion == "FRAME" and requested_signal != "frame":
+            raise RuntimeError(f"execution conclusion FRAME requires next_signal frame, got {requested_signal!r}")
+        if conclusion == "SELF_MODIFY" and requested_signal != "self_modify":
+            raise RuntimeError(f"execution conclusion SELF_MODIFY requires next_signal self_modify, got {requested_signal!r}")
+        if conclusion == "CANNOT" and requested_signal not in {"frame", "reflect"}:
+            raise RuntimeError(f"execution conclusion CANNOT requires next_signal frame or reflect, got {requested_signal!r}")
+        if conclusion != "EXECUTE" and code.strip():
+            raise RuntimeError("execution emitted code when conclusion is not EXECUTE")
 
-        if conclusion == "SELF_MODIFY" or requested_signal == "self_modify":
+        if conclusion == "SELF_MODIFY":
             return bus.emit(
                 "self_modify",
                 {"last_action": {"code": "", "conclusion": conclusion}, "last_error": "execute requested self modification"},
@@ -81,8 +89,8 @@ class ExecuteNode(BaseNode):
                 evidence=payload,
             )
 
-        if conclusion != "EXECUTE" or not code.strip():
-            signal = requested_signal if requested_signal in {"frame", "reflect"} else "reflect"
+        if conclusion != "EXECUTE":
+            signal = requested_signal
             if signal == "reflect" and self._should_frame(state, conclusion):
                 signal = "frame"
             return bus.emit(
@@ -94,6 +102,39 @@ class ExecuteNode(BaseNode):
                 record=record,
                 evidence=payload,
             )
+        if not code.strip():
+            raise RuntimeError("execution conclusion EXECUTE requires non-empty code")
+        deadline_at = state.get("deadline_at")
+        if deadline_at is not None:
+            try:
+                deadline = float(deadline_at)
+            except (TypeError, ValueError) as exc:
+                raise RuntimeError(f"invalid deadline_at in state: {deadline_at!r}") from exc
+            now = time.time()
+            if now >= deadline:
+                late_by = round(now - deadline, 3)
+                return bus.emit(
+                    "reflect",
+                    {
+                        "last_action": {"code": code, "conclusion": conclusion, "not_executed": True},
+                        "last_code": code,
+                        "last_result": {
+                            "result": None,
+                            "stdout": "",
+                            "stderr": "",
+                            "action_events": [],
+                            "duration_guard": {
+                                "deadline_at": deadline,
+                                "now": now,
+                                "late_by_s": late_by,
+                            },
+                        },
+                        "last_error": f"duration deadline expired before executing body action: late_by_s={late_by}",
+                        "action_frame": state.get("action_frame"),
+                    },
+                    record=record,
+                    evidence=payload,
+                )
 
         ns = nodes.build_capability_runtime(ctx)
         ns["desktop"] = desktop
@@ -103,14 +144,23 @@ class ExecuteNode(BaseNode):
             with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
                 exec(code, ns)
             explicit_result = ns.get("result")
+            action_events = list(ns.get("_action_events") or [])
             result = {
                 "result": explicit_result,
                 "stdout": stdout.getvalue(),
                 "stderr": stderr.getvalue(),
+                "action_events": action_events,
             }
-            error = None
+            if explicit_result is None and not action_events and not result["stdout"] and not result["stderr"]:
+                error = "RuntimeError: EXECUTE produced no result, stdout, stderr, or recorded body action"
+            else:
+                error = None
         except Exception as exc:
-            result = {"stdout": stdout.getvalue(), "stderr": stderr.getvalue()}
+            result = {
+                "stdout": stdout.getvalue(),
+                "stderr": stderr.getvalue(),
+                "action_events": list(ns.get("_action_events") or []) if "ns" in locals() else [],
+            }
             error = f"{type(exc).__name__}: {exc}"
 
         signal = "reflect" if error else "verify"

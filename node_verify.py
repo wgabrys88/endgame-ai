@@ -46,14 +46,14 @@ class VerifyNode(BaseNode):
         }
 
     def signal_from_data(self, data, ctx):
-        signal = data.get("next_signal", "step_denied")
-        success = bool(data.get("success", False))
+        signal = data.get("next_signal")
         if signal not in ("step_confirmed", "step_denied"):
-            signal, success = "step_denied", False
+            raise RuntimeError(f"verification emitted invalid next_signal: {signal!r}")
+        success = bool(data.get("success", False))
         if signal == "step_confirmed" and not success:
-            signal = "step_denied"
+            raise RuntimeError("verification emitted step_confirmed with success=false")
         if success and signal != "step_confirmed":
-            success = False
+            raise RuntimeError("verification emitted success=true without step_confirmed")
         self._success = success
         self._signal = signal
         return signal
@@ -72,7 +72,14 @@ class VerifyNode(BaseNode):
             "last_verification": {"success": self._success, "signal": self._signal},
         }
         if self._success:
+            completed_steps = list(state.get("completed_steps") or [])
+            completed_steps.append({
+                "description": step_goal,
+                "done_when": done_when,
+                "confirmed_at_tick": state.get("tick"),
+            })
             patch["step"] = int(state.get("step", 0) or 0) + 1
+            patch["completed_steps"] = completed_steps
             patch["failure_streak"] = {"signature": None, "count": 0}
             patch["action_frame"] = None
         return patch

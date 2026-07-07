@@ -7,6 +7,7 @@ import time
 from typing import Any
 
 import core_brain as brain
+import core_bus as bus
 import core_nodes as nodes
 import core_stop_check as stop_check
 
@@ -73,6 +74,7 @@ def reset_runtime(wiring: dict[str, Any]) -> None:
         if p.exists():
             p.unlink()
     stop_check.clear_stop()
+    stop_check.ensure_self_evolution_enabled(source="reset")
 
 
 def duration_expired(deadline_at: float | None) -> bool:
@@ -232,6 +234,8 @@ def run(
             duration_seconds=duration_seconds,
             deadline_at=deadline_at,
             pid=os.getpid(),
+            self_evolution_enabled=stop_check.self_evolution_enabled(),
+            self_evolution_file=str(stop_check.SELF_EVOLUTION_FILE),
         )
         while True:
             if duration_expired(deadline_at):
@@ -245,32 +249,60 @@ def run(
             state["_phase"] = "executing_node"
             state["current_node"] = current
             write_state(wiring, state)
-            runtime_event(wiring, "node_start", node=current, tick=state["tick"])
+            runtime_event(
+                wiring,
+                "node_start",
+                node=current,
+                tick=state["tick"],
+                state=bus.state_brief(state),
+                last_bus_frame=state.get("_last_bus_frame"),
+            )
             ctx = {"wiring": wiring, "state": dict(state), "goal": goal or "", "node": current}
             signal_name, patch = nodes.call_node(current, ctx)
             evolution_patch = patch.get("git_evolution_patch")
             if current == "node_self_modify" and evolution_patch:
-                try:
-                    _, applied = nodes.apply_evolution_patch(wiring, {"data": evolution_patch})
-                    patch.setdefault("self_modify", {})["applied"] = applied
-                    committed = nodes.commit_self_evolution(wiring, applied, evolution_patch)
-                    patch["self_modify"]["commit"] = committed
-                    wiring = load_wiring(wiring_path)
-                    runtime_event(wiring, "self_modify_applied", **applied, commit=committed)
-                except Exception as exc:
-                    swap_cfg = wiring.get("self_modify", {})
-                    if bool(swap_cfg.get("hot_swap_on_failure", True)):
-                        touched = [
-                            str(item.get("path")).replace("\\", "/")
-                            for item in (evolution_patch.get("file_writes") or [])
-                            if isinstance(item, dict) and item.get("path")
-                        ]
-                        swap = nodes.hot_swap_to_known_good(wiring, paths=touched or None)
-                        if not swap.get("hot_swapped") and swap_cfg.get("known_good_commit"):
-                            swap = nodes.hot_swap_to_known_good(wiring)
-                        patch.setdefault("self_modify", {})["hot_swap"] = swap
-                        runtime_event(wiring, "self_modify_hot_swap", error=str(exc), **swap)
-                    raise
+                if not stop_check.self_evolution_enabled():
+                    patch.setdefault("self_modify", {})["status"] = "disabled"
+                    patch["self_modify"]["enabled_file"] = str(stop_check.SELF_EVOLUTION_FILE)
+                    patch["last_error"] = "self evolution disabled by missing runtime_self_evolution_enabled.json"
+                    patch.pop("git_evolution_patch", None)
+                    signal_name = "modify_failed"
+                    runtime_event(
+                        wiring,
+                        "self_modify_disabled",
+                        node=current,
+                        tick=state.get("tick"),
+                        enabled_file=str(stop_check.SELF_EVOLUTION_FILE),
+                        proposed_patch_summary=evolution_patch.get("summary") if isinstance(evolution_patch, dict) else None,
+                    )
+                    evolution_patch = None
+                else:
+                    try:
+                        _, applied = nodes.apply_evolution_patch(wiring, {"data": evolution_patch})
+                        patch.setdefault("self_modify", {})["applied"] = applied
+                        committed = nodes.commit_self_evolution(wiring, applied, evolution_patch)
+                        patch["self_modify"]["commit"] = committed
+                        wiring = load_wiring(wiring_path)
+                        runtime_event(wiring, "self_modify_applied", **applied, commit=committed)
+                    except Exception as exc:
+                        swap_cfg = wiring.get("self_modify", {})
+                        if bool(swap_cfg.get("hot_swap_on_failure", True)):
+                            touched = [
+                                str(item.get("path")).replace("\\", "/")
+                                for item in (evolution_patch.get("file_writes") or [])
+                                if isinstance(item, dict) and item.get("path")
+                            ]
+                            touched.extend(
+                                str(path).replace("\\", "/")
+                                for path in (evolution_patch.get("file_deletes") or [])
+                                if str(path).strip()
+                            )
+                            if evolution_patch.get("wiring_patches"):
+                                touched.append("wiring.json")
+                            swap = nodes.hot_swap_to_known_good(wiring, paths=touched or None)
+                            patch.setdefault("self_modify", {})["hot_swap"] = swap
+                            runtime_event(wiring, "self_modify_hot_swap", error=str(exc), **swap)
+                        raise
             state.update(patch)
             if signal_name == "halt":
                 state["_phase"] = "halted"
@@ -284,7 +316,16 @@ def run(
             state["tick"] += 1
             state["_phase"] = "node_complete"
             write_state(wiring, state)
-            runtime_event(wiring, "node_complete", node=current, signal=signal_name, next_node=nxt, tick=state["tick"])
+            runtime_event(
+                wiring,
+                "node_complete",
+                node=current,
+                signal=signal_name,
+                next_node=nxt,
+                tick=state["tick"],
+                state=bus.state_brief(state),
+                bus_frame=patch.get("_last_bus_frame"),
+            )
             current = nxt
     except KeyboardInterrupt:
         state["_phase"] = "interrupted"
