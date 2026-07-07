@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import core_bus as bus
 import core_stop_check as stop_check
-from core_nodes import BaseNode
+from core_node_base import BaseNode
 
 
 DATASHEET = bus.datasheet(

@@ -13,6 +13,8 @@ from typing import Any
 
 import core_stop_check as stop_check
 import core_bus as bus
+import core_wiring as wiring
+import core_state as state
 
 ROOT = pathlib.Path(__file__).parent.resolve()
 _EVENT_SEQ = 0
@@ -242,6 +244,7 @@ class StablePrefix:
             "files": self.files,
             "chars": len(self.text),
         }
+
 def stable_prefix() -> StablePrefix:
     global _STABLE_PREFIX_CACHE
     with _STABLE_PREFIX_LOCK:
@@ -251,13 +254,13 @@ def stable_prefix() -> StablePrefix:
         return _STABLE_PREFIX_CACHE
 
 
-def _stable_prefix_enabled(wiring: dict[str, Any]) -> bool:
-    sp_cfg = wiring.get("model", {}).get("stable_prefix", {})
+def _stable_prefix_enabled(w: dict[str, Any]) -> bool:
+    sp_cfg = w.get("model", {}).get("stable_prefix", {})
     return bool(sp_cfg.get("enabled", False))
 
 
-def _stable_prefix_include_in_request(wiring: dict[str, Any]) -> bool:
-    sp_cfg = wiring.get("model", {}).get("stable_prefix", {})
+def _stable_prefix_include_in_request(w: dict[str, Any]) -> bool:
+    sp_cfg = w.get("model", {}).get("stable_prefix", {})
     return bool(sp_cfg.get("include_in_request", False))
 
 
@@ -309,15 +312,15 @@ def _validate_record_contract(record: bus.Record, expected_record_type: str | No
             raise RuntimeError(f"{record.record_type}.data.{key}={value!r} outside {rule['enum']!r}")
 
 
-def _organ_tuning(wiring: dict[str, Any], record_type: str | None) -> dict[str, Any]:
-    organs = wiring.get("model", {}).get("organs", {})
+def _organ_tuning(w: dict[str, Any], record_type: str | None) -> dict[str, Any]:
+    organs = w.get("model", {}).get("organs", {})
     if not record_type or not isinstance(organs, dict):
         return {}
     organ = organs.get(record_type)
     return dict(organ) if isinstance(organ, dict) else {}
 
 
-def _effective_reasoning_config(wiring: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
+def _effective_reasoning_config(w: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
     reasoning_cfg = dict(cfg.get("reasoning") or {})
     reasoning_cfg["enabled"] = bool(reasoning_cfg.get("enabled", False))
     reasoning_cfg.setdefault("pattern", "two_pass" if reasoning_cfg["enabled"] else "single_pass")
@@ -336,7 +339,7 @@ def _normalize_observation(obj: Any) -> dict[str, Any] | None:
     }
 
 
-def _fresh_observation_payload(wiring: dict[str, Any], payload: dict[str, Any] | None = None) -> dict[str, Any]:
+def _fresh_observation_payload(w: dict[str, Any], payload: dict[str, Any] | None = None) -> dict[str, Any]:
     global _LAST_FRESH_OBSERVATION
     if payload:
         candidates = [payload.get("fresh_observation"), payload.get("observation")]
@@ -355,18 +358,12 @@ def last_fresh_observation() -> dict[str, Any]:
     return dict(_LAST_FRESH_OBSERVATION or {})
 
 
-def _with_fresh_observation(payload: dict[str, Any], wiring: dict[str, Any]) -> dict[str, Any]:
+def _with_fresh_observation(payload: dict[str, Any], w: dict[str, Any]) -> dict[str, Any]:
     enriched = dict(payload)
-    enriched["fresh_observation"] = _fresh_observation_payload(wiring, enriched)
+    enriched["fresh_observation"] = _fresh_observation_payload(w, enriched)
     if isinstance(enriched.get("observation"), dict) and enriched["observation"].get("desktop_tree_text"):
         enriched.pop("observation", None)
     return enriched
-
-
-def root_path(value: str | None, default: str = "") -> pathlib.Path:
-    raw = os.path.expandvars(os.path.expanduser(str(value or default)))
-    p = pathlib.Path(raw)
-    return p if p.is_absolute() else ROOT / p
 
 
 def load_json(path: pathlib.Path) -> dict[str, Any]:
@@ -387,11 +384,6 @@ def append_ndjson(path: pathlib.Path, obj: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(obj, ensure_ascii=False, default=str) + "\n")
-
-
-def runtime_event_path(cfg: dict[str, Any] | None = None) -> pathlib.Path:
-    cfg = cfg or {}
-    return root_path(str(cfg.get("event_log_path") or "runtime_events.jsonl"))
 
 
 def _next_event_seq() -> int:
@@ -437,7 +429,7 @@ def log_runtime_event(cfg: dict[str, Any] | None, event: str, **payload: Any) ->
         "event": event,
         **payload,
     }
-    append_ndjson(runtime_event_path(cfg), row)
+    append_ndjson(wiring.event_log_path(cfg) if cfg else wiring.event_log_path({}), row)
 
 
 def reset_call_budget() -> None:
@@ -445,9 +437,8 @@ def reset_call_budget() -> None:
     _CALLS_MADE = 0
 
 
-def _load_transport_module(name: str, wiring: dict[str, Any]):
-    paths = wiring.get("paths", {})
-    brain_dir = root_path(paths.get("brains"), ".")
+def _load_transport_module(name: str, w: dict[str, Any]):
+    brain_dir = wiring.root_path(w.get("paths", {}).get("brains"), ".")
     module_path = brain_dir / f"{name}.py"
     if not module_path.exists():
         raise RuntimeError(
@@ -464,20 +455,20 @@ def _load_transport_module(name: str, wiring: dict[str, Any]):
     return mod
 
 
-def _get_transport_config(wiring: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-    model = wiring.get("model")
+def _get_transport_config(w: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    model = w.get("model")
     if not isinstance(model, dict):
         raise RuntimeError("wiring.json missing object model")
-    
+
     transport = str(model.get("transport") or "").strip()
     if not transport:
         raise RuntimeError("wiring model.transport is empty; no fallback transport is allowed")
-    
+
     transport_config = model.get("transport_config", {})
     if not isinstance(transport_config, dict) or transport not in transport_config:
         raise RuntimeError(f"wiring model.transport_config.{transport} missing; no fallback transport config is allowed")
     cfg = dict(transport_config[transport])
-    
+
     global_keys = {"timeout", "brain_call_budget"}
     global_cfg = model.get("global", {})
     for k in global_keys:
@@ -485,10 +476,10 @@ def _get_transport_config(wiring: dict[str, Any]) -> tuple[str, dict[str, Any]]:
             cfg[k] = global_cfg[k]
         if k in model and k not in cfg:
             cfg[k] = model[k]
-    paths = wiring.get("paths", {})
+    paths = w.get("paths", {})
     if isinstance(paths, dict):
         cfg.setdefault("event_log_path", paths.get("event_log") or "runtime_events.jsonl")
-    
+
     cfg["transport"] = transport
     return transport, cfg
 
@@ -525,7 +516,7 @@ def _record_response_format(record_type: str) -> dict[str, Any]:
 
 def call(
     messages: list[dict[str, str]],
-    wiring: dict[str, Any],
+    w: dict[str, Any],
     *,
     rod_feedback: bool = False,
     response_format: dict[str, Any] | None = None,
@@ -533,14 +524,14 @@ def call(
 ) -> dict[str, str]:
     stop_check.check_stop("brain call")
     global _CALLS_MADE
-    transport, cfg = _get_transport_config(wiring)
+    transport, cfg = _get_transport_config(w)
     if response_format is not None:
         cfg = dict(cfg)
         cfg["response_format"] = response_format
     if request_config:
         cfg = dict(cfg)
         cfg.update(request_config)
-    model_cfg = wiring.get("model", {})
+    model_cfg = w.get("model", {})
     max_calls = model_cfg.get("brain_call_budget")
     if max_calls is None and isinstance(model_cfg.get("global"), dict):
         max_calls = model_cfg["global"].get("brain_call_budget")
@@ -558,8 +549,8 @@ def call(
         "response_format": cfg.get("response_format"),
         "messages": summarize_messages_for_log(messages),
     })
-    _check_message_size(messages, wiring)
-    mod = _load_transport_module(transport, wiring)
+    _check_message_size(messages, w)
+    mod = _load_transport_module(transport, w)
     try:
         result = mod.call(messages, cfg)
     except Exception as exc:
@@ -590,11 +581,11 @@ def call(
     return out
 
 
-def _check_message_size(messages: list[dict[str, str]], wiring: dict[str, Any], max_chars: int = 800000) -> None:
+def _check_message_size(messages: list[dict[str, str]], w: dict[str, Any], max_chars: int = 800000) -> None:
     """Safety guard: reject requests exceeding max_chars before sending to transport."""
     total = sum(len(str(m.get("content", ""))) for m in messages)
     if total > max_chars:
-        transport, cfg = _get_transport_config(wiring)
+        transport, cfg = _get_transport_config(w)
         log_runtime_event(cfg, "brain_request_rejected", **{
             "transport": transport,
             "total_chars": total,
@@ -617,8 +608,8 @@ def extract_json_object(text: str) -> dict[str, Any] | None:
     if not text:
         return None
     s = text.strip()
-    if "</think>" in s.lower():
-        s = re.split(r"</think>", s, maxsplit=1, flags=re.I)[-1].strip()
+    if "```" in s.lower():
+        s = re.split(r"", s, maxsplit=1, flags=re.I)[-1].strip()
     fenced = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", s, flags=re.S | re.I)
     if fenced:
         s = fenced.group(1).strip()
@@ -667,25 +658,25 @@ def extract_json_object(text: str) -> dict[str, Any] | None:
 def think(
     system_prompt: str,
     payload: dict[str, Any],
-    wiring: dict[str, Any],
+    w: dict[str, Any],
     *,
     expected_record_type: str | None = None,
     request_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    _, cfg = _get_transport_config(wiring)
-    reasoning_cfg = _effective_reasoning_config(wiring, cfg)
-    
-    prefix = stable_prefix() if _stable_prefix_enabled(wiring) else None
-    
-    prefix_for_messages = prefix if _stable_prefix_include_in_request(wiring) else None
-    
-    conv_id = wiring.get("_conv_id")
+    _, cfg = _get_transport_config(w)
+    reasoning_cfg = _effective_reasoning_config(w, cfg)
+
+    prefix = stable_prefix() if _stable_prefix_enabled(w) else None
+
+    prefix_for_messages = prefix if _stable_prefix_include_in_request(w) else None
+
+    conv_id = w.get("_conv_id")
     if not conv_id:
         import hashlib, time
-        conv_id = f"endgame-ai-{int(time.time())}-{hashlib.md5(str(wiring).encode()).hexdigest()[:8]}"
-        wiring["_conv_id"] = conv_id
-    
-    payload = _with_fresh_observation(payload, wiring)
+        conv_id = f"endgame-ai-{int(time.time())}-{hashlib.md5(str(w).encode()).hexdigest()[:8]}"
+        w["_conv_id"] = conv_id
+
+    payload = _with_fresh_observation(payload, w)
     goal = ""
     if isinstance(payload, dict) and "goal" in payload:
         goal = str(payload.pop("goal") or "")
@@ -702,7 +693,7 @@ def think(
     if prefix is not None:
         request_cfg["stable_prefix"] = prefix.metadata()
 
-    tuning = _organ_tuning(wiring, expected_record_type)
+    tuning = _organ_tuning(w, expected_record_type)
     if tuning.get("reasoning_effort") is not None:
         request_cfg.setdefault("reasoning_effort", tuning["reasoning_effort"])
     if tuning.get("max_output_tokens") is not None:
@@ -714,7 +705,7 @@ def think(
     if not reasoning_cfg["enabled"] or pattern == "single_pass":
         result = call(
             _messages(system_prompt, user_text, prefix_for_messages, stable_context),
-            wiring,
+            w,
             rod_feedback=False,
             response_format=response_format,
             request_config=request_cfg,
@@ -727,7 +718,7 @@ def think(
     if pattern == "native":
         result = call(
             _messages(system_prompt, user_text, prefix_for_messages, stable_context),
-            wiring,
+            w,
             rod_feedback=False,
             response_format=response_format,
             request_config=request_cfg,
@@ -740,12 +731,12 @@ def think(
     if pattern != "two_pass":
         raise RuntimeError(f"unknown reasoning pattern: {pattern}")
 
-    first = call(_messages(system_prompt, user_text, prefix_for_messages, stable_context), wiring, rod_feedback=False, request_config=request_cfg)
+    first = call(_messages(system_prompt, user_text, prefix_for_messages, stable_context), w, rod_feedback=False, request_config=request_cfg)
     reasoning = reasoning_from(first["content"], first.get("reasoning", ""))
     template = str(reasoning_cfg.get("injection_template") or "REASONING_FEEDBACK:\n{reasoning}")
     second = call(
         _messages(system_prompt, user_text + "\n\n" + template.format(reasoning=reasoning), prefix_for_messages, stable_context),
-        wiring,
+        w,
         rod_feedback=True,
         response_format=response_format,
         request_config=request_cfg,
@@ -756,7 +747,7 @@ def think(
 
 
 def read_runtime_event_tail(path: pathlib.Path | None = None, *, max_lines: int = 200, max_bytes: int = 600_000) -> list[dict[str, Any]]:
-    p = path or runtime_event_path()
+    p = path or wiring.event_log_path({})
     if not p.exists():
         return []
     size = p.stat().st_size

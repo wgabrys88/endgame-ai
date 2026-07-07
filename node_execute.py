@@ -8,7 +8,7 @@ import time
 import core_bus as bus
 import core_desktop as desktop
 import core_nodes as nodes
-from core_nodes import BaseNode
+from core_node_base import BaseNode
 
 
 DATASHEET = bus.datasheet(

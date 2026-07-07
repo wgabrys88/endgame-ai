@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import core_bus as bus
-from core_nodes import BaseNode
+from core_node_base import BaseNode
 
 
 DATASHEET = bus.datasheet(

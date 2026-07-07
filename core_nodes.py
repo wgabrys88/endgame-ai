@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import ast
-import importlib.util
 import copy
 import ctypes
 import json
@@ -11,12 +10,12 @@ import subprocess
 import sys
 import time
 import types
-from abc import ABC
 from typing import Any
 
 import core_brain as brain
 import core_bus as bus
 import core_desktop as desktop
+import core_wiring as wiring
 
 ROOT = pathlib.Path(__file__).parent.resolve()
 
@@ -39,114 +38,6 @@ def _blocked_wiring_set(path: str) -> str | None:
         if dotted == blocked or dotted.startswith(blocked + "."):
             return blocked
     return None
-
-
-def _path(wiring: dict[str, Any], key: str, default: str) -> pathlib.Path:
-    return brain.root_path(wiring.get("paths", {}).get(key), default)
-
-
-def _load_node(node_name: str, wiring: dict[str, Any]):
-    node_dir = _path(wiring, "nodes", ".")
-    path = node_dir / f"{node_name}.py"
-    if not path.exists():
-        raise RuntimeError(f"topology node '{node_name}' has no module at {path}")
-    spec = importlib.util.spec_from_file_location(f"endgame_node_{node_name}", path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"cannot load node module: {path}")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    if not hasattr(mod, "run"):
-        raise RuntimeError(f"node '{node_name}' does not export run(ctx)")
-    return mod
-
-
-class BaseNode(ABC):
-
-    prompt_key: str = ""
-    expected_record_type: str = ""
-    request_config: dict[str, Any] | None = None
-
-    def build_payload(self, ctx: dict[str, Any]) -> dict[str, Any]:
-        state = ctx.get("state", {})
-        return {
-            "goal": ctx.get("goal", ""),
-            "state": bus.state_brief(state),
-            "fresh_observation": state.get("fresh_observation") or bus.observation_brief(state),
-        }
-
-    def evidence(self, ctx: dict[str, Any]) -> dict[str, Any]:
-        return {"state": bus.state_brief(ctx.get("state", {}))}
-
-    def signal_from_data(self, data: dict[str, Any], ctx: dict[str, Any]) -> str:
-        raise NotImplementedError(f"{type(self).__name__} must implement signal_from_data or override run()")
-
-    def patch_from_record(self, record: bus.Record, ctx: dict[str, Any]) -> dict[str, Any]:
-        raise NotImplementedError(f"{type(self).__name__} must implement patch_from_record or override run()")
-
-    def think(self, ctx: dict[str, Any]) -> bus.Record:
-        wiring = ctx["wiring"]
-        prompt = wiring.get("prompts", {}).get(self.prompt_key, "")
-        think_kwargs: dict[str, Any] = {"expected_record_type": self.expected_record_type}
-        if self.request_config is not None:
-            think_kwargs["request_config"] = self.request_config
-        record = brain.think(prompt, self.build_payload(ctx), wiring, **think_kwargs)
-        if record.get("record_type") != self.expected_record_type:
-            raise bus.NodeRecordContractError(
-                f"{self.prompt_key} expected record_type {self.expected_record_type!r}, "
-                f"got {record.get('record_type')!r}"
-            )
-        return bus.Record.from_json(record)
-
-    def run(self, ctx: dict[str, Any]) -> bus.NodeOutput:
-        record = self.think(ctx)
-        data = record.data
-        signal = self.signal_from_data(data, ctx)
-        patch = self.patch_from_record(record, ctx)
-        return bus.emit(signal, patch, record=record, evidence=self.evidence(ctx))
-
-
-def call_node(node_name: str, ctx: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-    wiring = ctx["wiring"]
-    mod = _load_node(node_name, wiring)
-    result = mod.run(ctx)
-    output = bus.coerce_node_output(node_name, result)
-    bus.validate_signal(wiring, node_name, output.signal)
-    patch = dict(output.patch)
-    patch.setdefault("_last_bus_frame", output.trace(node=node_name))
-    sheet = getattr(mod, "DATASHEET", None)
-    if isinstance(sheet, dict):
-        patch.setdefault("_last_datasheet", dict(sheet))
-    return output.signal, patch
-
-
-def topology_summary(wiring: dict[str, Any]) -> dict[str, Any]:
-    topo = wiring.get("topology", {})
-    return {
-        "cycle_start": topo.get("cycle_start"),
-        "nodes": list(topo.get("nodes", [])),
-        "edges": topo.get("edges", {}),
-    }
-
-
-def node_datasheets(wiring: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    sheets: dict[str, dict[str, Any]] = {}
-    for node_name in wiring.get("topology", {}).get("nodes", []):
-        try:
-            mod = _load_node(str(node_name), wiring)
-        except Exception:
-            continue
-        sheet = getattr(mod, "DATASHEET", None)
-        if isinstance(sheet, dict):
-            sheets[str(node_name)] = dict(sheet)
-    return sheets
-
-
-def topology_mermaid(wiring: dict[str, Any]) -> str:
-    return bus.mermaid_state_diagram(wiring, node_datasheets(wiring))
-
-
-def _get_desktop_instance():
-    return desktop.get_desktop()
 
 
 EVOLVABLE_SUFFIXES = {".py", ".json", ".md"}
@@ -275,8 +166,8 @@ def threading_id() -> int:
         return 0
 
 
-def _apply_wiring_ops(wiring: dict[str, Any], patches: list[dict[str, Any]]) -> dict[str, Any]:
-    patched = copy.deepcopy(wiring)
+def _apply_wiring_ops(w: dict[str, Any], patches: list[dict[str, Any]]) -> dict[str, Any]:
+    patched = copy.deepcopy(w)
     for patch in patches:
         if not isinstance(patch, dict):
             raise ValueError(f"wiring_patch must be object: {patch!r}")
@@ -356,35 +247,35 @@ def git_worktree_status() -> list[str]:
     return [line for line in _git(["status", "--porcelain"]).stdout.splitlines() if line.strip()]
 
 
-def known_good_ref_name(wiring: dict[str, Any]) -> str:
-    return str(wiring.get("self_modify", {}).get("known_good_ref") or "refs/endgame/known_good").strip()
+def known_good_ref_name(w: dict[str, Any]) -> str:
+    return str(w.get("self_modify", {}).get("known_good_ref") or "refs/endgame/known_good").strip()
 
 
-def resolve_known_good(wiring: dict[str, Any]) -> dict[str, Any]:
-    ref = known_good_ref_name(wiring)
+def resolve_known_good(w: dict[str, Any]) -> dict[str, Any]:
+    ref = known_good_ref_name(w)
     if ref:
         cp = _git(["rev-parse", "--verify", ref], check=False)
         if cp.returncode == 0 and cp.stdout.strip():
             return {"commit": cp.stdout.strip(), "source": "git_ref", "ref": ref}
-    configured = str(wiring.get("self_modify", {}).get("known_good_commit") or "").strip()
+    configured = str(w.get("self_modify", {}).get("known_good_commit") or "").strip()
     if configured:
         return {"commit": configured, "source": "wiring_seed", "ref": ref}
     return {"commit": "", "source": "missing", "ref": ref}
 
 
-def known_good_commit(wiring: dict[str, Any]) -> str:
-    return str(resolve_known_good(wiring).get("commit") or "").strip()
+def known_good_commit(w: dict[str, Any]) -> str:
+    return str(resolve_known_good(w).get("commit") or "").strip()
 
 
-def update_known_good_ref(wiring: dict[str, Any], commit: str, *, source: str) -> dict[str, Any]:
+def update_known_good_ref(w: dict[str, Any], commit: str, *, source: str) -> dict[str, Any]:
     sha = str(commit or "").strip()
     if not sha:
         raise ValueError("cannot update known-good ref without a commit")
     _git(["cat-file", "-e", f"{sha}^{{commit}}"])
-    ref = known_good_ref_name(wiring)
+    ref = known_good_ref_name(w)
     if not ref:
         raise ValueError("self_modify.known_good_ref is empty")
-    before = resolve_known_good(wiring)
+    before = resolve_known_good(w)
     _git(["update-ref", ref, sha])
     payload = {
         "schema": "endgame-ai.known-good.v1",
@@ -403,11 +294,11 @@ def update_known_good_ref(wiring: dict[str, Any], commit: str, *, source: str) -
 
 
 def hot_swap_to_known_good(
-    wiring: dict[str, Any],
+    w: dict[str, Any],
     *,
     paths: list[str] | None = None,
 ) -> dict[str, Any]:
-    known_good = resolve_known_good(wiring)
+    known_good = resolve_known_good(w)
     sha = str(known_good.get("commit") or "").strip()
     if not sha:
         return {"hot_swapped": False, "reason": "no_known_good_commit", "known_good": known_good}
@@ -465,16 +356,16 @@ def _github_branch_url(remote_url: str, branch: str) -> str:
     return f"{url}/tree/{branch}" if url.startswith("https://github.com/") else ""
 
 
-def prepare_self_evolution(wiring: dict[str, Any]) -> dict[str, Any]:
-    cfg = wiring.get("self_modify", {}).get("git", {})
+def prepare_self_evolution(w: dict[str, Any]) -> dict[str, Any]:
+    cfg = w.get("self_modify", {}).get("git", {})
     remote = str(cfg.get("remote") or "origin")
     branch = git_current_branch()
     remote_url = _remote_url(remote)
     return {
-        "context_mode": wiring.get("self_modify", {}).get("context_mode", "checked_out_branch"),
+        "context_mode": w.get("self_modify", {}).get("context_mode", "checked_out_branch"),
         "branch": branch,
         "current_commit": git_head_sha(),
-        "known_good": resolve_known_good(wiring),
+        "known_good": resolve_known_good(w),
         "worktree_status": git_worktree_status(),
         "remote": remote,
         "remote_url": remote_url,
@@ -484,10 +375,10 @@ def prepare_self_evolution(wiring: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _run_evolution_commands(commands: list[Any], wiring: dict[str, Any]) -> list[dict[str, Any]]:
+def _run_evolution_commands(commands: list[Any], w: dict[str, Any]) -> list[dict[str, Any]]:
     if not commands:
         return []
-    cfg = wiring.get("self_modify", {}).get("execution", {})
+    cfg = w.get("self_modify", {}).get("execution", {})
     default_timeout = cfg.get("timeout_s")
     results: list[dict[str, Any]] = []
     for item in commands:
@@ -541,11 +432,11 @@ def _restore_snapshots(snapshots: dict[pathlib.Path, bytes | None]) -> None:
             os.replace(tmp, path)
 
 
-def apply_evolution_patch(wiring: dict[str, Any], parsed: dict[str, Any]) -> tuple[str, Any]:
+def apply_evolution_patch(w: dict[str, Any], parsed: dict[str, Any]) -> tuple[str, Any]:
     data = _patch_data(parsed)
     read_files = _declared_read_files(data)
     wiring_patches = list(data.get("wiring_patches") or [])
-    patched_wiring = _apply_wiring_ops(wiring, wiring_patches)
+    patched_wiring = _apply_wiring_ops(w, wiring_patches)
 
     writes: list[tuple[pathlib.Path, str, str]] = []
     for item in _collect_file_writes(data):
@@ -576,7 +467,7 @@ def apply_evolution_patch(wiring: dict[str, Any], parsed: dict[str, Any]) -> tup
     if wiring_patches:
         touched_paths.append(ROOT / "wiring.json")
     snapshots = _snapshot_paths(touched_paths)
-    rollback_on_failure = bool(wiring.get("self_modify", {}).get("execution", {}).get("rollback_on_failure", True))
+    rollback_on_failure = bool(w.get("self_modify", {}).get("execution", {}).get("rollback_on_failure", True))
 
     try:
         for path, _, content in writes:
@@ -584,9 +475,9 @@ def apply_evolution_patch(wiring: dict[str, Any], parsed: dict[str, Any]) -> tup
         for path, _ in deletes:
             path.unlink(missing_ok=True)
         if wiring_patches:
-            wiring.clear()
-            wiring.update(patched_wiring)
-            save_wiring(wiring)
+            w.clear()
+            w.update(patched_wiring)
+            save_wiring(w)
 
         for path, rel, _ in writes:
             if path.suffix == ".py":
@@ -594,13 +485,13 @@ def apply_evolution_patch(wiring: dict[str, Any], parsed: dict[str, Any]) -> tup
             elif path.suffix == ".json":
                 json.loads(path.read_text(encoding="utf-8"))
 
-        command_results = _run_evolution_commands(list(data.get("commands") or []), wiring)
+        command_results = _run_evolution_commands(list(data.get("commands") or []), w)
     except Exception:
         if rollback_on_failure:
             _restore_snapshots(snapshots)
             if wiring_patches:
-                wiring.clear()
-                wiring.update(brain.load_json(ROOT / "wiring.json"))
+                w.clear()
+                w.update(brain.load_json(ROOT / "wiring.json"))
         raise
 
     changed = [rel for _, rel, _ in writes] + [rel for _, rel in deletes]
@@ -618,7 +509,7 @@ def apply_evolution_patch(wiring: dict[str, Any], parsed: dict[str, Any]) -> tup
     }
 
 
-def commit_self_evolution(wiring: dict[str, Any], applied: dict[str, Any], patch_data: dict[str, Any]) -> dict[str, Any]:
+def commit_self_evolution(w: dict[str, Any], applied: dict[str, Any], patch_data: dict[str, Any]) -> dict[str, Any]:
     changed_files = list(applied.get("changed_files") or [])
     if applied.get("wiring_patches"):
         changed_files.append("wiring.json")
@@ -659,10 +550,10 @@ def commit_self_evolution(wiring: dict[str, Any], applied: dict[str, Any], patch
     _git(["commit", "-m", title, "-m", body])
     branch = git_current_branch()
     commit = git_head_sha()
-    known_good = update_known_good_ref(wiring, commit, source="commit_self_evolution")
+    known_good = update_known_good_ref(w, commit, source="commit_self_evolution")
     pushed = False
     known_good_ref_pushed = False
-    git_cfg = wiring.get("self_modify", {}).get("git", {})
+    git_cfg = w.get("self_modify", {}).get("git", {})
     if bool(git_cfg.get("push_after_commit", False)):
         remote = str(git_cfg.get("remote") or "origin")
         _git(["push", remote, branch])
@@ -681,12 +572,12 @@ def commit_self_evolution(wiring: dict[str, Any], applied: dict[str, Any], patch
     }
 
 
-def save_wiring(wiring: dict[str, Any]) -> None:
-    brain.atomic_write_json(ROOT / "wiring.json", wiring)
+def save_wiring(w: dict[str, Any]) -> None:
+    brain.atomic_write_json(ROOT / "wiring.json", w)
 
 
-def wiring_limit(name: str, default: int, wiring: dict[str, Any]) -> int:
-    return wiring.get("limits", {}).get(name, default)
+def wiring_limit(name: str, default: int, w: dict[str, Any]) -> int:
+    return w.get("limits", {}).get(name, default)
 
 
 def _action_index(state: dict[str, Any]) -> dict[str, Any]:
@@ -704,7 +595,6 @@ def _node_center(node: dict[str, Any]) -> tuple[int, int]:
     top = int(rect.get("top", 0) or 0)
     bottom = int(rect.get("bottom", top) or top)
     return left + max(0, right - left) // 2, top + max(0, bottom - top) // 2
-
 
 
 def execute_actor_doctrine() -> dict[str, Any]:
@@ -729,8 +619,9 @@ def execute_actor_doctrine() -> dict[str, Any]:
         "allowed_escape": "FRAME for a sharper route, CANNOT/reflect for clean evidence, or EXECUTE with explicit result/stdout/stderr/action_events",
     }
 
+
 def capability_manifest(ctx: dict[str, Any] | None = None) -> dict[str, Any]:
-    state = (ctx or {}).get("state", {}) if isinstance(ctx, dict) else {}
+    st = (ctx or {}).get("state", {}) if isinstance(ctx, dict) else {}
     return {
         "schema": "endgame-ai.execute-capabilities.v1",
         "capability_model": "GUI control and Python/script/process control are equal first-class capabilities; choose the channel or composition that best advances and proves the step",
@@ -739,17 +630,7 @@ def capability_manifest(ctx: dict[str, Any] | None = None) -> dict[str, Any]:
             "execution": "data.code is executed with Python exec in the organism process",
             "builtins": "standard Python builtins and normal imports are available",
             "modules": [
-                "subprocess",
-                "os",
-                "sys",
-                "json",
-                "re",
-                "time",
-                "pathlib",
-                "ctypes",
-                "math",
-                "random",
-                "types",
+                "subprocess", "os", "sys", "json", "re", "time", "pathlib", "ctypes", "math", "random", "types",
             ],
             "filesystem": "repo_root is available; file access follows process permissions",
             "workspace_root": "repo_root is injected from the directory where the organism process was started",
@@ -776,13 +657,8 @@ def capability_manifest(ctx: dict[str, Any] | None = None) -> dict[str, Any]:
         },
         "observation": {
             "state_fields": [
-                "fresh_observation",
-                "desktop_tree",
-                "desktop_tree_text",
-                "action_index",
-                "observation_artifact",
-                "observed_at",
-                "fresh_scan",
+                "fresh_observation", "desktop_tree", "desktop_tree_text", "action_index",
+                "observation_artifact", "observed_at", "fresh_scan",
             ],
             "consumed_knobs": "wiring.observe_config.hover_cache.scan/filter plus focused scan.area via observe_area",
             "discipline": "when the whole-screen tree is too shallow or token-limited, use a focused observation before guessing or escalating",
@@ -802,16 +678,16 @@ def capability_manifest(ctx: dict[str, Any] | None = None) -> dict[str, Any]:
         },
         "blocked_wiring_set_paths": sorted(UNCONSUMED_WIRING_SET_PATHS),
         "controls": {
-            "deadline_at": state.get("deadline_at"),
+            "deadline_at": st.get("deadline_at"),
             "deadline_guard": "desktop helpers refuse actions after deadline_at",
         },
     }
 
 
 def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
-    d = _get_desktop_instance()
+    d = desktop.get_desktop()
     state = ctx.get("state", {})
-    wiring = ctx.get("wiring", {})
+    w = ctx.get("wiring", {})
     goal = ctx.get("goal", "")
     fresh_observation = state.get("fresh_observation") or brain.last_fresh_observation() or bus.observation_brief(state)
     action_index = _action_index(state)
@@ -834,9 +710,7 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
             raise RuntimeError(f"invalid deadline_at in state: {deadline_at!r}") from exc
         now = time.time()
         if now >= deadline:
-            raise RuntimeError(
-                f"duration deadline expired before body action {action}: late_by_s={round(now - deadline, 3)}"
-            )
+            raise RuntimeError(f"duration deadline expired before body action {action}: late_by_s={round(now - deadline, 3)}")
 
     def _record_action(result: Any) -> Any:
         event = dict(result) if isinstance(result, dict) else {"ok": True, "value": result}
@@ -873,16 +747,16 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
     def scroll(x: int, y: int, amount: int, hwnd: int = 0) -> dict[str, Any]:
         _assert_duration_open("scroll")
         return _record_action(d.scroll(int(x), int(y), int(amount), int(hwnd or 0)))
-    
+
     def action_nodes(action: str | None = None) -> list[dict[str, Any]]:
-        nodes = []
+        nodes_list = []
         for node in action_index.values():
             if not isinstance(node, dict):
                 continue
             node_action = node.get("action")
             if node_action and (action is None or node_action == action):
-                nodes.append(dict(node))
-        return nodes
+                nodes_list.append(dict(node))
+        return nodes_list
 
     def node_by_id(node_id: str) -> dict[str, Any]:
         return _require_node(node_id)
@@ -911,7 +785,7 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         return _record_action(d.open_url(str(browser), str(url)))
 
     def _base_hover_cache_config() -> dict[str, Any]:
-        observe_cfg = wiring.get("observe_config", {}) if isinstance(wiring, dict) else {}
+        observe_cfg = w.get("observe_config", {}) if isinstance(w, dict) else {}
         hover = observe_cfg.get("hover_cache", observe_cfg) if isinstance(observe_cfg, dict) else {}
         return copy.deepcopy(hover if isinstance(hover, dict) else {})
 
@@ -934,10 +808,7 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         })
 
     def observe_area(
-        left: int,
-        top: int,
-        right: int,
-        bottom: int,
+        left: int, top: int, right: int, bottom: int,
         max_llm_nodes: int | None = None,
         max_depth: int | None = None,
         step_px: int | None = None,
@@ -958,7 +829,6 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         return observe_with_config(cfg)
 
     class _PyAutoGuiCompat:
-
         def click(self, x: int | None = None, y: int | None = None, clicks: int = 1, interval: float = 0.0, **kwargs: Any) -> Any:
             if x is None or y is None:
                 raise RuntimeError("pyautogui.click requires explicit x and y")
@@ -1002,13 +872,12 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
 
     pyautogui = _PyAutoGuiCompat()
     pag = pyautogui
-    
+
     return {
         "observe_screen": d.observe_screen,
         "last_desktop_tree": d.last_desktop_tree,
         "action_nodes": action_nodes,
         "node_by_id": node_by_id,
-        
         "click": click,
         "click_node": click_node,
         "read_node": read_node,
@@ -1022,7 +891,6 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "observe_area": observe_area,
         "pyautogui": pyautogui,
         "pag": pag,
-        
         "subprocess": subprocess,
         "ctypes": ctypes,
         "os": __import__("os"),
@@ -1034,16 +902,14 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "math": __import__("math"),
         "random": __import__("random"),
         "types": types,
-        
         "wiring_limit": wiring_limit,
         "capabilities": capability_manifest(ctx),
         "repo_root": str(ROOT),
         "python_executable": sys.executable,
-        "topology_summary": topology_summary(wiring),
-        "topology_mermaid": topology_mermaid(wiring),
-        
+        "topology_summary": wiring.topology_summary(w),
+        "topology_mermaid": wiring.topology_mermaid(w),
         "state": state,
-        "wiring": wiring,
+        "wiring": w,
         "goal": goal,
         "last": last,
         "fresh_observation": fresh_observation,

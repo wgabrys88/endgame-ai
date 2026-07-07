@@ -31,14 +31,14 @@
 
 ```
 Goal → Planner (semantic steps) → Scheduler (next step)
-                                    ↓
+                                     ↓
 Observe (UIA scan) → Execute (Python) → Verify (evidence)
-                                    ↓
-                              Reflect (routing)
-                                    ↓
-                        retry / replan / frame / escalate
-                                    ↓
-                            Self-Modify (surgery only)
+                                     ↓
+                               Reflect (routing)
+                                     ↓
+                         retry / replan / frame / escalate
+                                     ↓
+                             Self-Modify (surgery only)
 ```
 
 **Organs (7):**
@@ -52,6 +52,46 @@ Observe (UIA scan) → Execute (Python) → Verify (evidence)
 - `node_self_modify` — Surgeon: rare surgery only
 - `node_satisfied` — Halt gate: completion or honest give-up
 - `node_error` — Mechanical failure router
+
+## Organism Architecture (Consolidated)
+
+| Module | Role | Single Source |
+|--------|------|---------------|
+| `core_wiring.py` | Config, paths, atomic writes, topology summary | wiring.json loading |
+| `core_state.py` | State brief, observation brief, failure streak, runtime events, wait logic | State management |
+| `core_node_base.py` | BaseNode, call_node, _load_node, datasheets, mermaid | Node loading & execution |
+| `core_bus.py` | Contracts, Record, emit, datasheet, mermaid | Bus contracts |
+| `core_brain.py` | Think, transports, reasoning, stable prefix | Brain calls |
+| `core_organism.py` | Run loop, routing, error handling | Organism loop |
+| `core_nodes.py` | Evolution (git, patches, wiring), capability manifest | Self-modification only |
+| `core_desktop.py` | UIA observation, desktop tree, action index | Sensory organ |
+| `core_observation.py` | Filter/map observation for LLM | Observation pipeline |
+| `core_stop_check.py` | Stop file, self-evolution enable, PID registry | Control plane |
+
+**All 10 node_*.py modules now import `from core_node_base import BaseNode`** — single inheritance chain.
+
+## Signal Topology (Nervous System)
+
+```
+observe → planner → scheduler → observe → execute → verify (denied)
+                                    ↓
+                              reflect (retry)
+                                    ↓
+                              observe → execute → FRAME
+                                    ↓
+                              frame_action → FRAMED
+                                    ↓ (30+ cycles)
+                              execute → FRAME
+                              frame_action → FRAMED
+```
+
+**Golden run signal trace (117 ticks):** All 7 organs exercised. Execute↔frame_action sensing loop = organism correctly identifying sensory boundary ("cannot see taskbar, need focused observe_area") — alive, not stuck.
+
+## What "begin" Means (Correct Behavior)
+
+Goal `"begin"` → Planner emits step: *"Acknowledge initial state, confirm readiness for concrete goal"* → Execute concludes FRAME (no action without goal) → Frame_action frames readiness → Organism cycles in **sensing attractor** narrating "awaiting user goal."
+
+This is **correct**. The organism is alive in its waiting state, correctly refusing to hallucinate a task.
 
 ## Key Invariants (Enforced in Code)
 
@@ -113,6 +153,7 @@ cat runtime_events.jsonl | python check_events.py
 |------|-----|-------|---------|----------|
 | 2026-07-07 | Job search Krakow | 14 | Duration expiry | Execute FRAME violation, Planner amputation, Verify timing gap |
 | 2026-07-07 | Analysis run | 15 | **Halted (success)** | Filtering works (1.3KB obs), xAI transport stable, pipeline complete |
+| 2026-07-08 | Golden run "begin" | 117 | **Duration expiry (correct)** | Planner correctly interprets "begin" as "no concrete goal" → waits in sensing attractor; all 7 organs exercised; execute↔frame_action loop = alive sensing boundary, not bug |
 
 ## What Remains Unproven
 
