@@ -72,7 +72,14 @@ class VerifyNode(BaseNode):
             "last_verification": {"success": self._success, "signal": self._signal},
         }
         if self._success:
+            completed_steps = list(state.get("completed_steps") or [])
+            completed_steps.append({
+                "description": step_goal,
+                "done_when": done_when,
+                "confirmed_at_tick": state.get("tick"),
+            })
             patch["step"] = int(state.get("step", 0) or 0) + 1
+            patch["completed_steps"] = completed_steps
             patch["failure_streak"] = {"signature": None, "count": 0}
             patch["action_frame"] = None
         return patch

@@ -29,6 +29,15 @@ def run(ctx):
     step_idx = int(state.get("step", 0) or 0)
 
     if step_idx >= len(plan):
+        root_plan = state.get("root_plan_intent") or []
+        completed_steps = state.get("completed_steps") or []
+        if isinstance(root_plan, list) and root_plan:
+            completed_count = len(completed_steps) if isinstance(completed_steps, list) else 0
+            if completed_count < len(root_plan):
+                raise RuntimeError(
+                    "active plan completed before root goal obligations were complete: "
+                    f"completed={completed_count} root_obligations={len(root_plan)}"
+                )
         return bus.emit("plan_complete", {"plan_complete": True, "current_step": None, "action_frame": None})
 
     step = plan[step_idx]

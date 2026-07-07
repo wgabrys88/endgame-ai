@@ -54,6 +54,7 @@ class ExecuteNode(BaseNode):
             },
             "state": bus.state_brief(state),
             "observation": bus.observation_brief(state),
+            "capabilities": nodes.capability_manifest(ctx),
         }
 
     def run(self, ctx):

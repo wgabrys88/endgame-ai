@@ -680,6 +680,70 @@ def _node_center(node: dict[str, Any]) -> tuple[int, int]:
     return left + max(0, right - left) // 2, top + max(0, bottom - top) // 2
 
 
+def capability_manifest(ctx: dict[str, Any] | None = None) -> dict[str, Any]:
+    state = (ctx or {}).get("state", {}) if isinstance(ctx, dict) else {}
+    return {
+        "schema": "endgame-ai.execute-capabilities.v1",
+        "capability_model": "GUI control and Python/script/process control are equal first-class capabilities; choose the channel or composition that best advances and proves the step",
+        "python": {
+            "execution": "data.code is executed with Python exec in the organism process",
+            "builtins": "standard Python builtins and normal imports are available",
+            "modules": [
+                "subprocess",
+                "os",
+                "sys",
+                "json",
+                "re",
+                "time",
+                "pathlib",
+                "ctypes",
+                "math",
+                "random",
+                "types",
+            ],
+            "filesystem": "repo_root is available; file access follows process permissions",
+            "workspace_root": "repo_root is injected from the directory where the organism process was started",
+            "processes": "subprocess is available; command results must be captured in result, stdout, or stderr",
+        },
+        "desktop_helpers": [
+            "click",
+            "click_node",
+            "read_node",
+            "type_text",
+            "press_key",
+            "hotkey",
+            "scroll",
+            "scroll_node",
+            "action_nodes",
+            "node_by_id",
+            "pyautogui",
+            "pag",
+        ],
+        "browser_helpers": {
+            "open_url": "open_url(browser, url) with browser values opera, chrome, edge, firefox, or default; named browsers fail hard when unavailable",
+        },
+        "observation": [
+            "fresh_observation",
+            "desktop_tree",
+            "desktop_tree_text",
+            "action_index",
+            "observation_artifact",
+            "observed_at",
+            "fresh_scan",
+        ],
+        "audit_contract": [
+            "assign result for every EXECUTE path or write stdout/stderr",
+            "desktop helpers append action_events",
+            "invalid node ids and failed helpers raise hard",
+            "silent side effects are contract failures",
+        ],
+        "controls": {
+            "deadline_at": state.get("deadline_at"),
+            "deadline_guard": "desktop helpers refuse actions after deadline_at",
+        },
+    }
+
+
 def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
     d = _get_desktop_instance()
     state = ctx.get("state", {})
@@ -859,6 +923,7 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "types": types,
         
         "wiring_limit": wiring_limit,
+        "capabilities": capability_manifest(ctx),
         "repo_root": str(ROOT),
         "python_executable": sys.executable,
         "topology_summary": topology_summary(wiring),
