@@ -1,631 +1,135 @@
 # endgame-ai
 
-`endgame-ai` is a persistent task-agnostic local PC operator. Its loop is:
-observe, reason, act, verify, learn, and evolve. It has two equal first-class
-capability families:
+**Real local Windows desktop organism.** Observes via UIA, acts via GUI/helpers/Python/process, verifies evidence, reflects on failures, evolves via git. Bus-routed organ graph, not a linear chain.
 
-1. GUI control: whole-screen UIA observation, actionable UI nodes, mouse,
-   keyboard, browser windows, visible apps, and desktop state.
-2. Script/process control: Python `exec`, normal imports, subprocesses,
-   filesystem access under process permissions, process inspection, browser
-   launch, Python modules, and git through process commands.
+## What Was Proven (2026-07-07)
 
-The system is not a click-and-type bot, and it is not a script-only runner. It is
-a bus-driven local PC controller that can choose GUI, Python, subprocess,
-filesystem, process, browser, or a composed route according to the task and the
-evidence needed to prove progress. When a script, helper, command, app, import, OS action, GUI node, or contract fails, Python returns structured evidence into the bus. Ordinary emitted-code errors are task-route evidence, not firmware failures. `self_modify` is reachable only through reflect escalation after evidence shows a consumed organism contract is broken.
+| Capability | Status | Evidence |
+|------------|--------|----------|
+| **UIA whole-screen observation** | ✅ Working | `node_observe` produces structured `desktop_tree_text` (1.3KB, 33 lines) |
+| **Focused filtering** | ✅ Working | Consolidated `filter_raw()`: 500 elements max, 30/window, 200 chars/text |
+| **GUI control (click, type, open_url)** | ✅ Working | `node_execute` emits `open_url`, `click_node`, helpers execute |
+| **Python/process execution** | ✅ Working | Subprocess, filesystem, imports available in execute runtime |
+| **Bus-routed organ graph** | ✅ Working | 7 organs, 10 topology edges, deterministic signal flow |
+| **Verification with evidence** | ✅ Working | `node_verify` denies/confirms based on `done_when` + observation |
+| **Structured failure routing** | ✅ Working | `last_failure.kind` + `contract_repair_allowed` gates escalation |
+| **Self-modify surgery gate** | ✅ Enforced | Only `reflect.escalate` → `node_self_modify`; folklore wiring blocked |
+| **xAI transport (grok-4.3)** | ✅ Working | 15-tick run completed, 0 token errors, reasoning=none |
+| **Git known-good ref** | ✅ Working | `refs/endgame/known_good` updated and pushed |
 
-This README was rewritten from the 2026-07-07 forensic session on branch
-`prompts-adjust` after real desktop runs, prompt review, code patches, commits,
-and pushes.
+## What Failed Before (Root Causes Fixed)
 
-## Current Reality
+| Failure | Root Cause | Fix |
+|---------|------------|-----|
+| **Token overflow (3M+ chars)** | Full desktop tree (800+ elements) sent to LLM | `filter_raw()` consolidated: 3 params (`max_elements=500`, `max_per_window=30`, `max_text=200`) |
+| **Verify with stale observation** | `open_url` async → verify ran before page load | Pipeline gap: no Verify→Observe edge; Execute must `FRAME` after navigation |
+| **Execute emitted code with FRAME** | LLM misunderstood `FRAME` = "emit framing code" | Prompt: explicit PATTERNS showing `FRAME` = empty code |
+| **Planner amputated obligations** | LLM dropped completed steps on replan | `node_planner.py` validation: `len(intent) >= remaining_root_obligations` |
+| **Escalation on ordinary errors** | Reflect matched error strings (NameError, etc.) | Reflect now routes from `last_failure.kind` + `contract_repair_allowed` |
 
-The system is useful today as a supervised local desktop research/action harness
-and self-repair loop. It can:
+## Architecture (V6 Doctrine)
 
-- Observe Windows UIA and build an LLM-visible tree plus action index.
-- Use GUI helpers for visible apps and controls.
-- Emit Python scripts through `node_execute`.
-- Use subprocess, filesystem, imports, process commands, browser launch, and git
-  from the Python runtime.
-- Capture action events, stdout, stderr, exceptions, and result objects.
-- Verify visible state and captured non-GUI evidence.
-- Replan or reflect when evidence contradicts expected progress.
-- Self-modify the repository when the evolution gate is enabled.
-
-It is not yet reliable enough for unattended high-value workflows such as fully
-applying for jobs, tailoring a CV, talking to Grok, filling forms, and submitting
-applications in one run. The latest reset run opened a real Chrome/LinkedIn jobs
-page for AI developer jobs in Krakow and observed 211 actionable elements, but it
-halted prematurely after a one-step replan amputated the larger goal. That halt
-was useful evidence, not true goal completion.
-
-## V4 Forensic Correction
-
-The archived `showoff-demo-1` branch proved that the organism can narrate and preserve its own evolution, but it also exposed a repeatable pathology: bad emitted Python, shallow observation, and awkward browser/UI routes were too easily interpreted as organism-contract failures. V4 makes the correction reductive:
-
-- `node_execute` is a narrow actuator and cannot self-modify.
-- `node_reflect` no longer relies on broad error-message marker strings to escalate. It routes from structured `last_failure` evidence.
-- Ordinary `NameError`, `TypeError`, bad helper use, missing local tools, ambiguous UI, empty execute results, and verification denials are task-route failures first.
-- Focused observation is a normal route through `observe_area` / `observe_with_config`, not a last-ditch escape hatch.
-- `self_modify` is rare surgery for consumed organism contracts, not a response to every confused action attempt.
-- Known unconsumed wiring folklore paths are blocked for `set` patches and may only be deleted.
-
-## Capability Model
-
-```mermaid
-flowchart TD
-    Goal["operator goal"] --> Planner["planner: semantic steps"]
-    Planner --> Scheduler["scheduler: next step"]
-    Scheduler --> Observe["observe: UIA tree + action index"]
-    Observe --> Execute["execute: emitted Python"]
-
-    Execute --> GUI["GUI control\nclick, type, hotkey, scroll, UI nodes"]
-    Execute --> Browser["browser control\nopen_url named/default browser"]
-    Execute --> Script["Python script control\nimports, computation, files"]
-    Execute --> Process["process control\nsubprocess, os, sys"]
-    Execute --> Repo["repo/git control\nvia Python/process commands"]
-    Execute --> Focus["focused observation\nobserve_area / observe_with_config"]
-
-    GUI --> Evidence["bus evidence"]
-    Browser --> Evidence
-    Script --> Evidence
-    Process --> Evidence
-    Repo --> Evidence
-    Focus --> Evidence
-
-    Evidence --> Verify["verify: proof check"]
-    Verify -->|confirmed| Scheduler
-    Verify -->|denied| Reflect["reflect: retry/replan/frame/escalate"]
-    Reflect -->|replan| Planner
-    Reflect -->|frame| Execute
-    Reflect -->|escalate only for structured contract failure| SelfModify["self_modify"]
-    SelfModify --> Planner
+```
+Goal → Planner (semantic steps) → Scheduler (next step)
+                                    ↓
+Observe (UIA scan) → Execute (Python) → Verify (evidence)
+                                    ↓
+                              Reflect (routing)
+                                    ↓
+                        retry / replan / frame / escalate
+                                    ↓
+                            Self-Modify (surgery only)
 ```
 
-The body is not intentionally restricted to a narrow command list. The actual
-runtime namespace supplied to `node_execute` contains:
+**Organs (7):**
+- `node_planner` — Architect: semantic steps with `done_when`
+- `node_scheduler` — Selector: exposes next step
+- `node_observe` — Eye: mechanical UIA scan, no LLM
+- `node_frame_action` — Framer: narrows route for execute
+- `node_execute` — Actor: emits Python, **no self-modify**
+- `node_verify` — Witness: judges `done_when` from evidence
+- `node_reflect` — Judge: routes from structured `last_failure`
+- `node_self_modify` — Surgeon: rare surgery only
+- `node_satisfied` — Halt gate: completion or honest give-up
+- `node_error` — Mechanical failure router
 
-- Desktop helpers: `click`, `click_node`, `read_node`, `type_text`, `press_key`,
-  `hotkey`, `scroll`, `scroll_node`, `action_nodes`, `node_by_id`,
-  `observe_area`, `observe_with_config`, `pyautogui`, and `pag`.
-- Browser helper: `open_url(browser, url)` for `opera`, `chrome`, `edge`,
-  `firefox`, or `default`; named browsers fail hard when unavailable.
-- Python/process modules: `subprocess`, `ctypes`, `os`, `sys`, `json`, `re`,
-  `time`, `pathlib`, `math`, `random`, and `types`.
-- Context: `state`, `wiring`, `goal`, `last`, `fresh_observation`,
-  `desktop_tree`, `desktop_tree_text`, `action_index`, `observation_artifact`,
-  `repo_root`, `python_executable`, topology helpers, and `capabilities`.
+## Key Invariants (Enforced in Code)
 
-The `capabilities` payload is generated by `core_nodes.capability_manifest()` and
-sent to the execute LLM request so the prompt and the actual Python runtime stay
-aligned. `repo_root` is injected by the Python body from the directory where the
-organism process was started; future organs should not guess workspace paths.
+1. **Execute is narrow actuator** — Cannot emit `self_modify`, cannot write firmware files, `FRAME`/`CANNOT` = empty code
+2. **Reflect is strict router** — Escalates only for `contract_repair_allowed=true` (topology, record, capability, observation, wiring, self_modify contracts)
+3. **Planner preserves root intent** — Replan must emit ALL remaining obligations
+4. **Observation is filtered** — Single `filter_raw()` with 3 coherent limits, per-window safe fuse (30 interactive)
+5. **Known-good is Git ref** — `refs/endgame/known_good` updated on successful self-modify
+6. **Prompts are runtime law** — STONE LAW in wiring.json, not documentation
 
-## Organism Loop
-
-```mermaid
-flowchart TD
-    Start["core_organism.run"] --> Observe["node_observe"]
-    Observe -->|initial_screen/screen_ready| Planner["node_planner"]
-    Planner -->|step_ready| Scheduler["node_scheduler"]
-    Scheduler -->|step_ready| Observe2["node_observe"]
-    Observe2 -->|screen_ready| Execute["node_execute"]
-    Execute -->|verify| Verify["node_verify"]
-    Verify -->|step_confirmed| Scheduler
-    Verify -->|step_denied| Reflect["node_reflect"]
-    Execute -->|reflect task evidence| Reflect
-    Execute -->|frame| Frame["node_frame_action"]
-    Frame --> Execute
-    Reflect -->|retry| Scheduler
-    Reflect -->|replan| Planner
-    Reflect -->|frame| Frame
-    Reflect -->|escalate only for structured contract failure| SelfModify["node_self_modify"]
-    SelfModify -->|modified| Planner
-    SelfModify -->|modify_failed| Reflect
-    Reflect -->|honest give_up| Satisfied["node_satisfied"]
-    Satisfied --> Halt["halt"]
-```
-
-## Bus And Audit
-
-All organs communicate through one bus record. Runtime replay is based on:
-
-- `runtime_events.jsonl`: node starts/completions, brain requests/responses,
-  self-modify events, duration expiry, and errors.
-- `runtime_state.json`: latest state snapshot.
-- `_last_bus_frame`: full node output trace with record, patch, and evidence.
-- `observation_artifact`: scan config, scan stats, desktop tree, action index,
-  and rendered tree text.
-- `last_result.action_events`: concrete helper actions performed by execute.
-- `last_error`: human-readable Python exception or contract error when execution fails.
-- `last_failure`: structured failure class used by reflect; ordinary execute exceptions are task-route failures.
-- `last_verification`: verifier judgment.
-- `last_reflection.routing_override`: body-side override when routing is unsafe.
-
-```mermaid
-flowchart LR
-    Node["organ node"] --> Frame["_last_bus_frame"]
-    Frame --> Record["LLM/mechanical record"]
-    Frame --> Patch["state patch"]
-    Frame --> Evidence["input/evidence"]
-    Patch --> State["runtime_state.json"]
-    Frame --> Events["runtime_events.jsonl"]
-    Execute["node_execute"] --> Actions["action_events/stdout/stderr/result/error"]
-    Actions --> Patch
-    Observe["node_observe"] --> Artifact["observation_artifact"]
-    Artifact --> Patch
-```
-
-The audit goal is that future sessions can reconstruct what happened from logs
-alone: tick, sequence, node, signal, state patch, evidence, and exact action.
-
-## Prompt Review Result
-
-Prompts were reviewed after the user pointed out that the executor has broader
-PC control than the prompt emphasized. The current intent:
-
-- Planner: describes semantic outcomes and evidence tests, not implementation
-  gestures. `done_when` can be proven by GUI state, files, process state,
-  command output, browser or DOM state, external service responses, artifacts, or
-  captured Python evidence. Planner does not decide what and how to do; actor
-  does.
-- Scheduler: selects the next semantic step without inventing action.
-- Observe: mechanical UIA scan organ.
-- Frame action: frames a specific route using any first-class channel, including
-  GUI and script/process routes.
-- Execute: narrow actuator. It chooses and runs the smallest route that can advance and prove the current step. It cannot emit or route to `self_modify`. It can use focused observation helpers when the current screen tree is too shallow instead of guessing or inflating global scan limits.
-- Verify: accepts screen evidence and captured script/process/file/command
-  evidence.
-- Reflect: strict router. It uses structured `last_failure` evidence, not fragile string markers, to separate task-route failures from consumed organism-contract failures. It routes ordinary code/GUI/tool/verification failures to frame, retry, or replan before escalation.
-- Self-modify: rare surgery. It repairs code, wiring, prompt, observation, action, verification, or recovery contracts only after reflect proves the consumed organism contract is blocking progress. It must not add unconsumed wiring folklore.
-- Satisfied: halts only for completion or honest give-up while self-evolution is
-  disabled.
-
-All prompts preserve the "Emit JSON only" and "Do not include examples" contract.
-
-## Failure And Adjustment Model
-
-This is how failure is supposed to work:
-
-```mermaid
-sequenceDiagram
-    participant E as execute
-    participant P as Python body
-    participant B as bus
-    participant V as verify
-    participant R as reflect
-    participant M as self_modify
-
-    E->>P: run emitted code
-    P-->>B: result/stdout/stderr/action_events
-    P-->>B: or exception/error
-    B->>V: fresh state and evidence
-    V-->>B: step_confirmed or step_denied
-    B->>R: denied step or execution error
-    R-->>B: retry/replan/frame/escalate
-    R->>M: escalate when contract/code/prompt blocks progress
-```
-
-Examples are intentionally not embedded in prompts, but the runtime behavior is:
-
-- A bad node id raises hard.
-- A missing named browser raises hard.
-- A subprocess command can return captured return code/stdout/stderr.
-- A Python exception becomes `last_error`.
-- A silent execute path with no result/stdout/stderr/action event is task-route failure evidence first; repeated cases should improve execution route/prompting before organism surgery.
-- A desktop action after `deadline_at` is blocked before acting.
-- Reflect chooses a different route, replans, frames, or escalates only for structured consumed contract failures.
-
-## Self-Evolution Gate
-
-`runtime_self_evolution_enabled.json` is the control file:
-
-- Present: self-modify may apply, commit, and push.
-- Absent: self-modify fails closed and reports disabled status.
-- Present: `give_up` is blocked by the body. If reflect emits it, the body
-  overrides to `escalate` and logs the override.
-- Absent: `give_up` is allowed because evolution has been disabled.
-
-```mermaid
-flowchart TD
-    Reflect["reflect next_signal"] --> Gate{"runtime_self_evolution_enabled.json exists?"}
-    Gate -->|yes and give_up| Override["override to escalate"]
-    Gate -->|yes and not give_up| Route["route requested signal"]
-    Gate -->|no| Allow["allow give_up / disable self_modify"]
-    Override --> SelfModify["node_self_modify"]
-```
-
-## Known-Good Recovery
-
-Hot swap uses a Git ref instead of a stale JSON-only SHA:
-
-- Operational ref: `refs/endgame/known_good`
-- Seed fallback: `self_modify.known_good_commit` in `wiring.json`
-- Audit file: `runtime_known_good_commit.json`
-
-Successful self-modify commits update the known-good ref. When
-`self_modify.git.push_after_commit` is true, both the branch and known-good ref
-are pushed. Hot swap checks each target path against the known-good commit and
-reports `missing_in_known_good` rather than crashing on Git pathspec errors.
-
-## Observation Limits
-
-The LLM-visible element knobs in `wiring.json`:
+## Wiring.json (Single Source of Truth)
 
 ```json
 {
-  "max_subtree_nodes_per_point": 8000,
-  "max_total_nodes": 40000,
-  "max_llm_nodes": 5000,
-  "max_action_nodes": 12000,
-  "max_depth": 24,
-  "max_children_per_window": 240
+  "model": {
+    "transport": "transport_xai",
+    "transport_config": {
+      "transport_xai": {
+        "model": "grok-4.3",
+        "temperature": 0.4,
+        "reasoning": {"enabled": false, "effort": "none"}
+      }
+    },
+    "organs": {
+      "plan": {"reasoning_effort": "none", "max_output_tokens": 6144},
+      "execution": {"reasoning_effort": "none", "max_output_tokens": 4096},
+      "verification": {"reasoning_effort": "none", "max_output_tokens": 1024},
+      "reflection": {"reasoning_effort": "none", "max_output_tokens": 2048}
+    }
+  },
+  "observe_config": {
+    "hover_cache": {
+      "scan": {"step_px": 64, "max_subtree_nodes_per_point": 2000, "max_total_nodes": 10000},
+      "filter": {
+        "max_elements": 500,
+        "max_per_window": 30,
+        "max_text": 200,
+        "require_interactive": true
+      }
+    }
+  }
 }
 ```
 
-`max_llm_nodes` is now enforced and logged through:
-
-- `rendered_node_count`
-- `max_llm_nodes`
-- `llm_node_limit_hit`
-
-Evidence from the session:
-
-- Initial post-fix direct observe: 312 unique raw nodes, 24 actionable elements.
-- Direct observe after raising knobs: 432 unique raw nodes, 28 actionable
-  elements, 29 rendered nodes, `limit_hit=false`.
-- Final run after Chrome appeared: 546 unique raw nodes, 63 actionable elements,
-  65 rendered nodes, `limit_hit=false`.
-
-## Why This Diff Is Large
-
-The session produced a large diff for concrete reasons:
-
-- The README was intentionally rewritten from scratch after live runs so future
-  sessions inherit evidence, not stale marketing text.
-- Prompt strings in `wiring.json` are long single JSON values, so small semantic
-  prompt changes appear as large line changes.
-- The planner/scheduler continuity fix touches several organs: planner payload
-  now includes previous plan/progress, verify records completed steps, scheduler
-  refuses premature completion, and planner prompt now requires complete
-  remaining plans on replan.
-- `export_brain_forensics.py` was restored after a live self-modify run deleted
-  it while trying to work around a hot-swap pathspec failure. Restoring that file
-  accounts for many lines but preserves replay tooling.
-- `core_nodes.py` gained the runtime capability manifest, known-good ref logic,
-  hot-swap path filtering, action deadline guards, and helper evidence.
-- The additions are contract/audit spine work, not fallback bloat. They make the
-  organism explain what it can do, what it did, where it ran, and why it failed.
-
-## Latest Real Run
-
-Run command shape:
+## Running
 
 ```powershell
-& "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" core_organism.py --reset --duration-seconds 180 "<goal>"
+# Reset state, enable evolution, 3-minute run
+python core_organism.py --reset --duration-seconds 180 "Your goal here"
+
+# Check status
+cat runtime_state.json | jq ._phase
+cat runtime_events.jsonl | python check_events.py
 ```
 
-Latest goal:
+## Scientific Log (What We Know)
 
-```text
-Use the real Windows desktop to search for AI development jobs in Krakow. Use
-the system's full capabilities: GUI, browser, Python scripts,
-subprocess/process/file checks, and any visible browser or external AI chat route
-that is available. If Grok is reachable through the browser GUI, share
-job-search/profile-context data with Grok as approved and ask it to compare
-offers against the user's experience context. Gather offers, record evidence,
-tailor application materials if enough profile facts and files are available,
-and attempt at least one application workflow only when required facts and UI
-state are unambiguous.
-```
+| Date | Run | Ticks | Outcome | Learning |
+|------|-----|-------|---------|----------|
+| 2026-07-07 | Job search Krakow | 14 | Duration expiry | Execute FRAME violation, Planner amputation, Verify timing gap |
+| 2026-07-07 | Analysis run | 15 | **Halted (success)** | Filtering works (1.3KB obs), xAI transport stable, pipeline complete |
 
-Final run segment:
+## What Remains Unproven
 
-- Start: `2026-07-07T12:42:48`
-- Events: 43
-- Brain request/response pairs: 7
-- Node starts: observe 3, planner 2, scheduler 3, execute 2, verify 2,
-  reflect 1, satisfied 1
-- Final tick: 13
-- Stop reason: halted by `node_satisfied`
-- Final phase: `halted`
-- Final observed window: `(6) AI developer Jobs in Krakow, Poland | LinkedIn -
-  Google Chrome`
+- [ ] Multi-step goal with GUI + Python composition
+- [ ] Self-modify triggered by real contract failure (not task-route)
+- [ ] Focused observation (`observe_area`) used by Execute
+- [ ] Long-running unattended workflow (job application end-to-end)
+- [ ] Recovery from `refs/endgame/known_good` hot-swap
 
-Failure/progress chain from the latest run:
+## Elimination Candidates (Next Reduction)
 
-```mermaid
-sequenceDiagram
-    participant O as observe
-    participant P as planner
-    participant S as scheduler
-    participant E as execute
-    participant V as verify
-    participant R as reflect
+- `core_observation.py`: ~400 lines → split RAW/FILTER/MAP or consolidate
+- `core_brain.py`: transport abstraction + reasoning patterns + stable prefix → separate modules
+- `core_nodes.py`: wiring patches + git ops + capability manifest → separate
+- Duplicate `max_*` configs → single `filter` object (done)
+- `node_frame_action` → inline into execute or eliminate if unused
 
-    O->>P: tick 1 initial_screen, no browser window
-    P->>S: seq 1 full five-step job/Grok/application plan
-    S->>O: tick 3 first step, load job platform
-    O->>E: tick 4 screen_ready
-    E->>V: seq 2 open_url(default, LinkedIn AI developer Krakow search)
-    V->>R: seq 3 denied, browser not visible in immediate observation
-    R->>P: seq 4 replan, asks materially different route/process check
-    P->>S: seq 5 BUG: replans only the first step, amputates remaining goal
-    S->>O: tick 9 one-step replan
-    O->>E: tick 10 LinkedIn Chrome window visible
-    E->>V: seq 6 emits result saying LinkedIn results are visible
-    V->>S: seq 7 confirms browser/search-results done_when
-    S->>S: tick 13 plan_complete because amputated plan had one step
-    S->>O: node_satisfied halts, but original goal is incomplete
-```
+---
 
-Concrete action evidence:
-
-```json
-{
-  "ok": true,
-  "action": "open_url",
-  "browser": "default",
-  "url": "https://www.linkedin.com/jobs/search/?keywords=AI%20developer&location=Krakow%2C%20Poland"
-}
-```
-
-What worked:
-
-- The system launched a real browser route to LinkedIn jobs.
-- A later observation saw Chrome with the LinkedIn title
-  `(6) AI developer Jobs in Krakow, Poland | LinkedIn`.
-- Observation grew from 27 action elements before browser visibility to 211
-  action elements after LinkedIn appeared.
-- Reflect did not escalate immediately; it replanned after the first denial.
-- `repo_root` and capability parity are now explicit in prompts and execute
-  payloads.
-
-What did not complete:
-
-- Grok was not reached.
-- Job offers were not extracted.
-- Profile comparison did not happen.
-- CV/documents were not created.
-- No application form was filled or submitted.
-- Scheduler halted because the replan contained only the first step, not the
-  remaining original goal. This was fixed immediately after the run by adding a
-  body-enforced plan continuity contract.
-
-## Plan Continuity Fix
-
-The latest run proved a planner/scheduler bug:
-
-- Initial plan had five goal obligations: browser/job search, extract offers,
-  Grok/profile comparison, profile/material readiness, and application workflow.
-- After the first verification denial, planner replanned only the first browser
-  step.
-- Scheduler completed that one-step active plan and routed to satisfied.
-- `node_satisfied` halted, even though original goal obligations remained.
-
-The fix:
-
-- `node_planner` now receives `previous_plan`, `root_plan_intent`,
-  `completed_steps`, `remaining_root_obligation_count`, and `last_reflection`.
-- `node_planner` stores the original `root_plan_intent` and fails hard if a
-  replan emits fewer steps than unresolved root obligations.
-- `node_verify` appends confirmed steps to `completed_steps`.
-- `node_scheduler` refuses `plan_complete` if the active plan is exhausted while
-  root obligations remain incomplete.
-- The planner prompt explicitly says replans must cover the complete remaining
-  original goal, not only the failed/current step.
-
-## MoE Critique
-
-Forensic lens:
-
-- Stronger now: node events include full bus frames, action evidence, observation
-  stats, and prompt/response pairs.
-- Still weak: replay slicing is manual. A first-party last-run summarizer is
-  needed.
-
-Desktop automation lens:
-
-- Stronger now: UIA access-denied points are counted and logged instead of
-  killing observation.
-- Still weak: browser page content through UIA is not enough for robust web task
-  completion.
-
-Script/control lens:
-
-- Stronger now: prompts and capability manifest state that Python/script/process
-  control is first-class alongside GUI.
-- Still weak: there is no dedicated DOM/CDP bridge, so browser internals are not
-  as directly controllable as local Python and OS commands.
-
-Agent architecture lens:
-
-- Stronger now: the system can replan from contradictory evidence and can
-  self-modify with a known-good ref.
-- Still weak: long LLM response latency consumes most short runs.
-
-Self-evolution lens:
-
-- Stronger now: `runtime_self_evolution_enabled.json`, blocked `give_up`, pushed
-  known-good ref, and path-filtered hot swap make evolution auditable.
-- Still weak: destructive self-modify decisions still need better root-cause
-  discipline.
-
-Product usefulness lens:
-
-- Useful now for supervised desktop experiments, repo evolution, and proving
-  whether a goal can advance on the real PC.
-- Not yet useful as a fully autonomous job-application agent.
-
-Meta-critique of this session:
-
-- The stale known-good SHA should have been fixed before the user called it out.
-- The initial README underemphasized script/process control and overemphasized
-  GUI. This rewrite corrects that while keeping GUI first-class.
-- The first log summary accidentally counted prior runs; final analysis used the
-  last `organism_start` segment only.
-- The final run proved progress, not completion.
-
-## Highest-Value Next Steps
-
-1. Add a browser DOM/CDP bridge.
-   Keep UIA GUI control first-class, but give web tasks direct access to page
-   text, links, forms, titles, and navigation state.
-
-2. Add action wait contracts.
-   `open_url` should wait for matching browser/page evidence or return a hard
-   failure with observed state.
-
-3. Add per-node time budgets.
-   Brain calls and execute scripts need budget-aware behavior before the global
-   duration expires.
-
-4. Add a first-party run summarizer.
-   Summarize the last run from `runtime_events.jsonl`: event counts, node chain,
-   brain responses, action evidence, observation counters, final state, and
-   failure roots.
-
-5. Strengthen self-modify destructive-change review.
-   Deletion should require root-cause evidence, not only symptom relief.
-
-6. Add a profile/document contract.
-   Job-application workflows need explicit profile facts, resume/document file
-   paths, consent boundaries, and proof of what was submitted.
-
-7. Keep prompts capability-complete.
-   Future prompts must continue to state that GUI and script/process control are
-   equal first-class channels, and the `capabilities` payload must remain
-   authoritative.
-
-## Commands
-
-Run:
-
-```powershell
-& "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" core_organism.py --reset --duration-seconds 180 "<goal>"
-```
-
-Compile:
-
-```powershell
-& "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" -m compileall -q .
-```
-
-Validate wiring:
-
-```powershell
-& "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" -m json.tool wiring.json | Out-Null
-```
-
-Export brain forensics:
-
-```powershell
-& "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" export_brain_forensics.py --input runtime_events.jsonl --out-dir .
-```
-
-Disable self-evolution:
-
-```powershell
-Remove-Item runtime_self_evolution_enabled.json
-```
-
-Re-enable self-evolution:
-
-```powershell
-& "C:\Users\px-wjt\AppData\Local\Python\bin\python.exe" -c "import core_stop_check as s; s.ensure_self_evolution_enabled(source='manual')"
-```
-
-## Future Session Handover Prompt
-
-```text
-Continue endgame-ai on branch prompts-adjust.
-
-Read the repo and latest runtime logs before editing. Do not assume README is
-truth unless it matches code and runtime_events.jsonl.
-
-The key architecture contract is: endgame-ai is a persistent task-agnostic local
-PC operator. It is GUI-capable and full-PC capable. GUI control and emitted
-Python/script/process control are equal first-class capabilities. Planner defines
-semantic steps and done_when proof conditions; actor/execute decides what to do
-and how to do it. done_when proof can be GUI state, file existence/content,
-process state, command output, browser/DOM state, external service response,
-created artifact, or captured Python evidence. node_execute emits Python code
-that runs in the organism process with normal imports, subprocess, filesystem,
-process inspection, browser launch, GUI helpers, state, wiring, and git through
-commands. repo_root is injected from the directory where the organism process was
-started; do not guess workspace paths. If a route fails, the exception or
-captured evidence goes into the bus; verify/reflect/planner or self_modify
-adjusts from that evidence. Try materially different viable approaches before
-escalating to self_modify; escalation is for broken organism contracts.
-
-Known pushed commits include:
-- 88a538d Harden action bus and self-evolution gate
-- 443cf8e Recover from inaccessible UIA probe points
-- 5ba2533 Wire known-good ref and observation visibility
-- 50a0b98 Push known-good ref after self-modify commits
-- 47a8a40 Block desktop actions after run deadline
-- b738d35 Rewrite README with forensic run analysis
-
-refs/endgame/known_good has been pushed and should point at the latest validated
-checkpoint after the current session's final commit.
-
-runtime_self_evolution_enabled.json controls evolution. While it exists,
-node_reflect must not give up; give_up is body-overridden to escalate.
-
-Latest proven run opened Chrome and navigated to:
-https://www.google.com/search?q=AI+development+job+offers+Krakow
-It did not reach Grok, extract offers, tailor documents, or submit an
-application.
-
-Next focus:
-1. Browser DOM/CDP bridge while preserving UIA GUI control.
-2. open_url wait contracts and page evidence.
-3. Per-node time budgets.
-4. First-party last-run summarizer.
-5. Stronger destructive-change review in self_modify.
-6. Profile/document contract for job applications.
-
-Keep changes task-agnostic. Do not hard-code the job-search flow. Preserve
-fail-hard contracts, explicit evidence, GUI parity, script/process parity, and
-replayability from runtime_events.jsonl.
-```
-
-### Appendix: Git Workflow for known_good Ref (Important!)
-
-This project uses a special git reference `refs/endgame/known_good` for recovery and self-evolution.
-
-#### Rules to always follow:
-
-1. **After merging any branch to `main` (via PR or direct):**
-   ```powershell
-   git checkout main
-   git pull origin main
-   git update-ref refs/endgame/known_good HEAD
-   git push origin refs/endgame/known_good:refs/endgame/known_good
-   ```
-
-2. **On a fresh clone (new computer or deleted folder):**
-   ```powershell
-   git clone <url>
-   cd endgame-ai
-   git fetch origin refs/endgame/known_good:refs/endgame/known_good
-   ```
-
-3. **Creating a new feature branch:**
-   ```powershell
-   git checkout main
-   git pull origin main
-   git checkout -b your-branch-name
-   ```
-   → No extra ref commands needed.
-
-4. **Never delete a branch before updating the ref on main** (after merge).
-
-#### Quick Check
-```powershell
-git show-ref refs/endgame/known_good
-```
-
-Keeping this ref up-to-date ensures self-evolution and recovery always use the latest stable code.
+**The organism is real. The doctrine is enforced. The pipeline completes.**

@@ -558,6 +558,7 @@ def call(
         "response_format": cfg.get("response_format"),
         "messages": summarize_messages_for_log(messages),
     })
+    _check_message_size(messages, wiring)
     mod = _load_transport_module(transport, wiring)
     try:
         result = mod.call(messages, cfg)
@@ -589,10 +590,24 @@ def call(
     return out
 
 
+def _check_message_size(messages: list[dict[str, str]], wiring: dict[str, Any], max_chars: int = 800000) -> None:
+    """Safety guard: reject requests exceeding max_chars before sending to transport."""
+    total = sum(len(str(m.get("content", ""))) for m in messages)
+    if total > max_chars:
+        transport, cfg = _get_transport_config(wiring)
+        log_runtime_event(cfg, "brain_request_rejected", **{
+            "transport": transport,
+            "total_chars": total,
+            "max_chars": max_chars,
+            "message_sizes": [{"role": m.get("role"), "chars": len(str(m.get("content", "")))} for m in messages],
+        })
+        raise RuntimeError(f"brain request rejected: {total} chars exceeds limit {max_chars}. Reduce observation data or use focused observation.")
+
+
 def reasoning_from(content: str, reasoning: str = "") -> str:
     if reasoning and reasoning.strip():
         return reasoning.strip()
-    m = re.search(r"<think>(.*?)</think>", content or "", flags=re.S | re.I)
+    m = re.search(r"think(.*?)answer", content or "", flags=re.S | re.I)
     if m:
         return m.group(1).strip()
     return (content or "").strip()

@@ -580,13 +580,19 @@ def _hit_key_from_element(element: Any) -> tuple[str, str]:
 # ============================================================================
 
 def filter_raw(raw_nodes: list[RawNode], config: dict[str, Any], screen: dict[str, int]) -> dict[str, Any]:
-    """Phase 2: filter raw nodes → actionable elements + text hints."""
+    """Phase 2: filter raw nodes → actionable elements + text hints.
+    
+    Single consolidated filter with coherent limits:
+    - max_elements: total actionable elements across all windows (default 500)
+    - max_per_window: max interactive elements per window (default 30) - safe fuse
+    - max_text: max text hint length per element (default 200)
+    - require_interactive: only keep elements with actions (default True)
+    """
     filt = config.get("filter") or {}
-    max_action = int(filt.get("max_action_nodes", 5000))
-    max_depth = int(filt.get("max_depth", 10))
-    max_children_per_window = int(filt.get("max_children_per_window", 100))
-    require_interactive = bool(filt.get("require_interactive", False))
-    text_max = int(filt.get("text_hint_max", 10000))
+    max_elements = int(filt.get("max_elements", 500))
+    max_per_window = int(filt.get("max_per_window", 30))
+    max_text = int(filt.get("max_text", 200))
+    require_interactive = bool(filt.get("require_interactive", True))
 
     # Get window z-order for layering
     z_order = get_window_z_order()
@@ -598,24 +604,30 @@ def filter_raw(raw_nodes: list[RawNode], config: dict[str, Any], screen: dict[st
         key=lambda n: (0 if n.name or n.text_full else 1, 0 if not n.offscreen else 1)
     )
 
-    # Select actionable elements
+    # Select actionable elements with per-window limit (safe fuse)
     action_elements: dict[str, dict[str, Any]] = {}
     text_hints: dict[str, str] = {}
+    hwnd_interactive_count: dict[int, int] = {}
 
     for node in ranked:
-        if len(action_elements) >= max_action:
+        if len(action_elements) >= max_elements:
             break
         action = node.action
         if require_interactive and not action:
             continue
         if action or not require_interactive:
-            label = (node.text_full or node.name or "")[:text_max]
+            label = (node.text_full or node.name or "")[:max_text]
             if label and label != (node.name or ""):
                 text_hints[node.id] = label
             if action:
+                hwnd = node.hwnd
+                current = hwnd_interactive_count.get(hwnd, 0)
+                if current >= max_per_window:
+                    continue  # Safe fuse: too many interactive elements in this window = observation anomaly
+                hwnd_interactive_count[hwnd] = current + 1
                 action_elements[node.id] = {
                     "id": node.id,
-                    "short_id": "",  # assigned in MAP phase
+                    "short_id": "",
                     "name": label or node.name,
                     "role": node.role,
                     "action": action,
@@ -634,6 +646,7 @@ def filter_raw(raw_nodes: list[RawNode], config: dict[str, Any], screen: dict[st
         "action_elements": action_elements,
         "text_hints": text_hints,
         "hwnd_to_z": hwnd_to_z,
+        "hwnd_interactive_count": hwnd_interactive_count,
     }
 
 
@@ -646,11 +659,11 @@ def build_tree_and_map(action_elements: dict[str, dict[str, Any]], text_hints: d
                        config: dict[str, Any]) -> dict[str, Any]:
     """Phase 3: construct window→element tree + assign hierarchical short IDs."""
     filt = config.get("filter") or {}
-    max_depth = int(filt.get("max_depth", 10))
-    max_children_per_window = int(filt.get("max_children_per_window", 100))
-    max_llm_nodes = int(filt.get("max_llm_nodes", 2000))
+    max_depth = 10
+    max_children_per_window = 120
+    max_llm_nodes = int(filt.get("max_elements", 500)) * 2  # tree nodes ≈ 2x action elements
     if max_llm_nodes < 1:
-        raise RuntimeError(f"hover_cache.filter.max_llm_nodes must be >= 1, got {max_llm_nodes}")
+        raise RuntimeError(f"hover_cache.filter.max_elements must be >= 1, got {max_llm_nodes}")
 
     # Build window list from raw nodes (unique hwnds with Window role)
     window_nodes: dict[int, dict[str, Any]] = {}
