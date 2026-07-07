@@ -453,10 +453,19 @@ def gather_raw(config: dict[str, Any], desktop: Any) -> dict[str, Any]:
     sw = user32.GetSystemMetrics(0)
     sh = user32.GetSystemMetrics(1)
 
-    # R2 sequence points
-    margin = max(8, step_px // 4)
-    usable_w = max(1, sw - 2 * margin)
-    usable_h = max(1, sh - 2 * margin)
+    area = scan_cfg.get("area") or {}
+    if isinstance(area, dict) and area:
+        left = max(0, min(sw - 1, int(area.get("left", 0) or 0)))
+        top = max(0, min(sh - 1, int(area.get("top", 0) or 0)))
+        right = max(left + 1, min(sw, int(area.get("right", sw) or sw)))
+        bottom = max(top + 1, min(sh, int(area.get("bottom", sh) or sh)))
+    else:
+        left, top, right, bottom = 0, 0, sw, sh
+
+    # R2 sequence points over the whole screen or a focused rectangle.
+    margin = max(2, min(step_px // 4, max(0, min(right - left, bottom - top) // 8)))
+    usable_w = max(1, right - left - 2 * margin)
+    usable_h = max(1, bottom - top - 2 * margin)
     cols = max(1, usable_w // step_px)
     rows = max(1, usable_h // step_px)
     count = (cols + 1) * (rows + 1)
@@ -468,8 +477,8 @@ def gather_raw(config: dict[str, Any], desktop: Any) -> dict[str, Any]:
     for i in range(count):
         fx = (0.5 + ax * (i + 1)) % 1.0
         fy = (0.5 + ay * (i + 1)) % 1.0
-        x = margin + int(fx * usable_w)
-        y = margin + int(fy * usable_h)
+        x = left + margin + int(fx * usable_w)
+        y = top + margin + int(fy * usable_h)
         cell = (x // step_px, y // step_px)
         if cell in seen_cells:
             continue
@@ -543,6 +552,7 @@ def gather_raw(config: dict[str, Any], desktop: Any) -> dict[str, Any]:
         "nodes": list(index.values()),
         "screen": {"width": sw, "height": sh},
         "scan_stats": {
+            "area": {"left": left, "top": top, "right": right, "bottom": bottom},
             "probes": len(points),
             "unique_nodes": len(index),
             "point_errors": len(point_errors),

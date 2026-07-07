@@ -25,10 +25,16 @@ DATASHEET = bus.datasheet(
 def run(ctx):
     config = ctx.get("wiring", {}).get("observe_config", {})
     obs = desktop.get_desktop(config).observe(config)
+    artifact = obs.get("observation_artifact", {}) or {}
     fresh_observation = {
         "desktop_tree_text": obs.get("desktop_tree_text", ""),
         "observed_at": obs.get("observed_at"),
         "fresh_scan": obs.get("fresh_scan", True),
+        "scan_config": artifact.get("scan_config", {}),
+        "scan_stats": artifact.get("scan_stats", {}),
+        "rendered_node_count": obs.get("rendered_node_count"),
+        "max_llm_nodes": obs.get("max_llm_nodes"),
+        "llm_node_limit_hit": obs.get("llm_node_limit_hit"),
     }
     patch = {
         "observed_at": obs.get("observed_at"),
@@ -37,7 +43,10 @@ def run(ctx):
         "action_index": obs.get("action_index", {}),
         "fresh_scan": obs.get("fresh_scan"),
         "observation_artifact": obs.get("observation_artifact", {}),
+        "rendered_node_count": obs.get("rendered_node_count"),
+        "max_llm_nodes": obs.get("max_llm_nodes"),
+        "llm_node_limit_hit": obs.get("llm_node_limit_hit"),
         "fresh_observation": fresh_observation,
     }
     signal = "initial_screen" if not ctx.get("state", {}).get("plan") else "screen_ready"
-    return bus.emit(signal, patch, evidence={"fresh_scan": obs.get("fresh_scan")})
+    return bus.emit(signal, patch, evidence={"fresh_scan": obs.get("fresh_scan"), "scan_stats": fresh_observation.get("scan_stats")})

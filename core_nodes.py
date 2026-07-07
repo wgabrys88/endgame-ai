@@ -20,6 +20,26 @@ import core_desktop as desktop
 
 ROOT = pathlib.Path(__file__).parent.resolve()
 
+UNCONSUMED_WIRING_SET_PATHS = {
+    "action_contract",
+    "action_contracts",
+    "functions",
+    "self_modify.allowed_types",
+    "self_modify.allowed_commands",
+    "self_modify.allowed_command_types",
+    "self_modify.action_contract",
+    "self_modify.action_contracts",
+    "self_modify.functions",
+}
+
+
+def _blocked_wiring_set(path: str) -> str | None:
+    dotted = str(path or "").strip().strip(".")
+    for blocked in UNCONSUMED_WIRING_SET_PATHS:
+        if dotted == blocked or dotted.startswith(blocked + "."):
+            return blocked
+    return None
+
 
 def _path(wiring: dict[str, Any], key: str, default: str) -> pathlib.Path:
     return brain.root_path(wiring.get("paths", {}).get(key), default)
@@ -71,7 +91,7 @@ class BaseNode(ABC):
             think_kwargs["request_config"] = self.request_config
         record = brain.think(prompt, self.build_payload(ctx), wiring, **think_kwargs)
         if record.get("record_type") != self.expected_record_type:
-            raise RuntimeError(
+            raise bus.NodeRecordContractError(
                 f"{self.prompt_key} expected record_type {self.expected_record_type!r}, "
                 f"got {record.get('record_type')!r}"
             )
@@ -271,6 +291,12 @@ def _apply_wiring_ops(wiring: dict[str, Any], patches: list[dict[str, Any]]) -> 
                 cur[part] = {}
             cur = cur[part]
         if op == "set":
+            blocked = _blocked_wiring_set(dotted)
+            if blocked:
+                raise ValueError(
+                    f"self_modify wiring_patch cannot set unconsumed folklore path {dotted!r} "
+                    f"(blocked by {blocked!r}); delete dead folklore or patch consumed runtime code instead"
+                )
             cur[parts[-1]] = patch.get("value")
         elif op == "delete":
             cur.pop(parts[-1], None)
@@ -680,11 +706,35 @@ def _node_center(node: dict[str, Any]) -> tuple[int, int]:
     return left + max(0, right - left) // 2, top + max(0, bottom - top) // 2
 
 
+
+def execute_actor_doctrine() -> dict[str, Any]:
+    return {
+        "name": "execute_actor_doctrine.v2",
+        "role": "node_execute is the narrow actor organ only; it is not planner, judge, surgeon, architect, or firmware editor",
+        "power_acknowledgement": "execute can run powerful local Python, so prompt doctrine is runtime control",
+        "absolute_forbidden": [
+            "never conclude SELF_MODIFY",
+            "never emit or route to self_modify",
+            "never invoke node_self_modify or imitate git_evolution_patch",
+            "never modify organism source, prompts, wiring, Git history, runtime controls, or self-evolution state",
+            "never use subprocess/git/filesystem writes to perform organism repair from node_execute",
+            "never hide bad emitted code behind codebase edits",
+            "never diagnose architecture or patch imagined contracts",
+        ],
+        "allowed_conclusions": ["EXECUTE", "FRAME", "CANNOT"],
+        "allowed_signals": ["verify", "frame", "reflect"],
+        "failure_rule": "broken code emitted by execute is actor failure evidence; it is never firmware surgery permission",
+        "observation_rule": "if evidence is shallow, token-limited, or missing deep UI/DOM content, use observe_area or observe_with_config before guessing",
+        "runtime_guard": "node_execute preflights obvious firmware/git mutation attempts and converts them into actor_doctrine_violation evidence before exec",
+        "allowed_escape": "FRAME for a sharper route, CANNOT/reflect for clean evidence, or EXECUTE with explicit result/stdout/stderr/action_events",
+    }
+
 def capability_manifest(ctx: dict[str, Any] | None = None) -> dict[str, Any]:
     state = (ctx or {}).get("state", {}) if isinstance(ctx, dict) else {}
     return {
         "schema": "endgame-ai.execute-capabilities.v1",
         "capability_model": "GUI control and Python/script/process control are equal first-class capabilities; choose the channel or composition that best advances and proves the step",
+        "execute_actor_doctrine": execute_actor_doctrine(),
         "python": {
             "execution": "data.code is executed with Python exec in the organism process",
             "builtins": "standard Python builtins and normal imports are available",
@@ -705,38 +755,52 @@ def capability_manifest(ctx: dict[str, Any] | None = None) -> dict[str, Any]:
             "workspace_root": "repo_root is injected from the directory where the organism process was started",
             "processes": "subprocess is available; command results must be captured in result, stdout, or stderr",
         },
-        "desktop_helpers": [
-            "click",
-            "click_node",
-            "read_node",
-            "type_text",
-            "press_key",
-            "hotkey",
-            "scroll",
-            "scroll_node",
-            "action_nodes",
-            "node_by_id",
-            "pyautogui",
-            "pag",
-        ],
+        "desktop_helpers": {
+            "click": "click(x, y, hwnd=0)",
+            "click_node": "click_node(node_id)",
+            "read_node": "read_node(node_id)",
+            "type_text": "type_text(text) types into current focus; it does not accept node_id",
+            "press_key": "press_key(key)",
+            "hotkey": "hotkey(*keys)",
+            "scroll": "scroll(x, y, amount, hwnd=0)",
+            "scroll_node": "scroll_node(node_id, amount=-3)",
+            "action_nodes": "action_nodes(action=None)",
+            "node_by_id": "node_by_id(node_id)",
+            "observe_area": "observe_area(left, top, right, bottom, max_llm_nodes=None, max_depth=None, step_px=None) returns a focused fresh observation",
+            "observe_with_config": "observe_with_config(hover_cache_config) returns a fresh observation using consumed observe_config.hover_cache knobs",
+            "pyautogui": "small compatibility facade over the same helpers",
+            "pag": "alias for pyautogui",
+        },
         "browser_helpers": {
             "open_url": "open_url(browser, url) with browser values opera, chrome, edge, firefox, or default; named browsers fail hard when unavailable",
         },
-        "observation": [
-            "fresh_observation",
-            "desktop_tree",
-            "desktop_tree_text",
-            "action_index",
-            "observation_artifact",
-            "observed_at",
-            "fresh_scan",
-        ],
+        "observation": {
+            "state_fields": [
+                "fresh_observation",
+                "desktop_tree",
+                "desktop_tree_text",
+                "action_index",
+                "observation_artifact",
+                "observed_at",
+                "fresh_scan",
+            ],
+            "consumed_knobs": "wiring.observe_config.hover_cache.scan/filter plus focused scan.area via observe_area",
+            "discipline": "when the whole-screen tree is too shallow or token-limited, use a focused observation before guessing or escalating",
+        },
         "audit_contract": [
             "assign result for every EXECUTE path or write stdout/stderr",
             "desktop helpers append action_events",
             "invalid node ids and failed helpers raise hard",
-            "silent side effects are contract failures",
+            "silent side effects are task-route failures until reflect proves a consumed organism contract is broken",
         ],
+        "topology_contract": {
+            "execute_may_emit": ["verify", "frame", "reflect"],
+            "execute_may_not_emit": ["self_modify"],
+            "self_modify_route": "reflect.escalate only",
+            "ordinary_emitted_code_exceptions": "task_route_exception, not organism contract failure",
+            "actor_doctrine_violation": "task-route evidence caused by node_execute attempting firmware/git repair; never self_modify escalation",
+        },
+        "blocked_wiring_set_paths": sorted(UNCONSUMED_WIRING_SET_PATHS),
         "controls": {
             "deadline_at": state.get("deadline_at"),
             "deadline_guard": "desktop helpers refuse actions after deadline_at",
@@ -846,6 +910,53 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         _assert_duration_open("open_url")
         return _record_action(d.open_url(str(browser), str(url)))
 
+    def _base_hover_cache_config() -> dict[str, Any]:
+        observe_cfg = wiring.get("observe_config", {}) if isinstance(wiring, dict) else {}
+        hover = observe_cfg.get("hover_cache", observe_cfg) if isinstance(observe_cfg, dict) else {}
+        return copy.deepcopy(hover if isinstance(hover, dict) else {})
+
+    def observe_with_config(hover_cache_config: dict[str, Any] | None = None) -> dict[str, Any]:
+        _assert_duration_open("observe_with_config")
+        cfg = _base_hover_cache_config()
+        if hover_cache_config:
+            if not isinstance(hover_cache_config, dict):
+                raise RuntimeError("observe_with_config requires a dict hover_cache_config")
+            cfg.update(copy.deepcopy(hover_cache_config))
+        obs = d.observe({"hover_cache": cfg})
+        return _record_action({
+            "ok": True,
+            "action": "observe_with_config",
+            "desktop_tree_text": obs.get("desktop_tree_text", ""),
+            "scan_stats": (obs.get("observation_artifact") or {}).get("scan_stats", {}),
+            "rendered_node_count": obs.get("rendered_node_count"),
+            "max_llm_nodes": obs.get("max_llm_nodes"),
+            "llm_node_limit_hit": obs.get("llm_node_limit_hit"),
+        })
+
+    def observe_area(
+        left: int,
+        top: int,
+        right: int,
+        bottom: int,
+        max_llm_nodes: int | None = None,
+        max_depth: int | None = None,
+        step_px: int | None = None,
+    ) -> dict[str, Any]:
+        _assert_duration_open("observe_area")
+        cfg = _base_hover_cache_config()
+        scan = dict(cfg.get("scan", {}))
+        scan["area"] = {"left": int(left), "top": int(top), "right": int(right), "bottom": int(bottom)}
+        if step_px is not None:
+            scan["step_px"] = int(step_px)
+        cfg["scan"] = scan
+        filt = dict(cfg.get("filter", {}))
+        if max_llm_nodes is not None:
+            filt["max_llm_nodes"] = int(max_llm_nodes)
+        if max_depth is not None:
+            filt["max_depth"] = int(max_depth)
+        cfg["filter"] = filt
+        return observe_with_config(cfg)
+
     class _PyAutoGuiCompat:
 
         def click(self, x: int | None = None, y: int | None = None, clicks: int = 1, interval: float = 0.0, **kwargs: Any) -> Any:
@@ -907,6 +1018,8 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "scroll": scroll,
         "scroll_node": scroll_node,
         "open_url": open_url,
+        "observe_with_config": observe_with_config,
+        "observe_area": observe_area,
         "pyautogui": pyautogui,
         "pag": pag,
         

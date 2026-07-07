@@ -8,30 +8,28 @@ from core_nodes import BaseNode
 DATASHEET = bus.datasheet(
     "node_reflect",
     kind="llm_diagnostic_router",
-    inputs=["goal", "current_step", "last_action", "last_result", "last_error", "last_verification", "failure_streak"],
+    inputs=["goal", "current_step", "last_action", "last_result", "last_error", "last_failure", "last_verification", "failure_streak"],
     signals=["retry", "replan", "frame", "escalate", "give_up", "error"],
     writes=["reflection", "last_reflection", "failure_streak"],
     record_type="reflection",
 )
 
 
-MECHANICAL_ESCALATE_MARKERS = (
-    "NameError",
-    "AttributeError",
-    "SyntaxError",
-    "ImportError",
-    "RuntimeError",
-    "ValueError",
-    "no topology edge",
-    "missing helper",
-    "body action failed",
-    "produced no result",
-)
+CONTRACT_FAILURE_KINDS = {
+    "topology_contract_violation",
+    "observation_contract_violation",
+    "capability_manifest_contract_violation",
+    "wiring_patch_contract_violation",
+    "node_record_contract_violation",
+}
 
-ENVIRONMENT_REPLAN_MARKERS = (
-    "is not installed in known paths",
-    "unsupported browser",
-)
+TASK_ROUTE_KINDS = {
+    "task_route_exception",
+    "task_route_decision",
+    "empty_execute_result",
+    "duration_guard",
+    "actor_doctrine_violation",
+}
 
 
 class ReflectNode(BaseNode):
@@ -43,10 +41,12 @@ class ReflectNode(BaseNode):
         state = ctx.get("state", {})
         self._streak_patch = bus.update_failure_streak(state)
         self._projected_streak = self._streak_patch["failure_streak"]
+        self._failure = state.get("last_failure") or {}
         self._evidence_payload = {
             "last_action": state.get("last_action", {}),
             "last_result": state.get("last_result", ""),
             "last_error": state.get("last_error", ""),
+            "last_failure": self._failure,
             "last_verification": state.get("last_verification", {}),
             "failure_streak": self._projected_streak,
             "state": bus.state_brief(state),
@@ -70,82 +70,92 @@ class ReflectNode(BaseNode):
             },
             "evidence": self._evidence_payload,
             "observation": bus.observation_brief(state),
+            "routing_contract": {
+                "ordinary_execute_exceptions_are_task_route": True,
+                "task_route_signals": ["frame", "replan", "retry"],
+                "self_modify_signal": "escalate only for structured consumed organism-contract failure",
+                "contract_failure_kinds": sorted(CONTRACT_FAILURE_KINDS),
+            },
         }
+
+    def _is_contract_failure(self) -> bool:
+        if self._failure.get("source") == "execute":
+            return False
+        kind = str(self._failure.get("kind") or "")
+        return bool(self._failure.get("contract_repair_allowed")) and kind in CONTRACT_FAILURE_KINDS
+
+    def _is_task_route_failure(self) -> bool:
+        kind = str(self._failure.get("kind") or "")
+        if kind in TASK_ROUTE_KINDS:
+            return True
+        return self._failure.get("source") == "execute" and not self._failure.get("contract_repair_allowed")
+
+    def _task_route_signal(self, state: dict) -> str:
+        step_index = int(state.get("step", 0) or 0)
+        framed_already = state.get("framing_attempted_for_step") == step_index or bool(state.get("action_frame"))
+        last_verification = state.get("last_verification") or {}
+        limit_hit = bool(bus.observation_brief(state).get("llm_node_limit_hit"))
+        count = int(self._projected_streak.get("count", 0) or 0)
+        if limit_hit and not framed_already:
+            return "frame"
+        if not framed_already:
+            return "frame"
+        if last_verification.get("signal") == "step_denied" and count <= 2:
+            return "retry"
+        return "replan"
 
     def signal_from_data(self, data, ctx):
         state = ctx.get("state", {})
         requested_signal = data.get("next_signal")
-        signal = requested_signal
-        if signal not in {"retry", "replan", "frame", "escalate", "give_up"}:
-            raise RuntimeError(f"reflection emitted invalid next_signal: {signal!r}")
+        if requested_signal not in {"retry", "replan", "frame", "escalate", "give_up"}:
+            raise RuntimeError(f"reflection emitted invalid next_signal: {requested_signal!r}")
 
-        step_index = int(state.get("step", 0) or 0)
-        last_verification = state.get("last_verification") or {}
-        framed_already = state.get("framing_attempted_for_step") == step_index
-        diagnostic_text = " ".join(str(x) for x in [
-            state.get("last_error", ""),
-            data.get("diagnosis", ""),
-            data.get("lesson", ""),
-            state.get("last_action", {}),
-            state.get("last_result", {}),
-        ])
         self._routing_override = None
-        if signal == "give_up" and stop_check.self_evolution_enabled():
+        signal = requested_signal
+        contract_failure = self._is_contract_failure()
+        task_route_failure = self._is_task_route_failure()
+        evolution_enabled = stop_check.self_evolution_enabled()
+
+        if signal == "escalate" and not contract_failure:
+            replacement = self._task_route_signal(state) if task_route_failure else "replan"
+            self._routing_override = {
+                "from": requested_signal,
+                "to": replacement,
+                "reason": "escalation blocked: no structured consumed organism-contract failure",
+                "failure": self._failure,
+                "failure_streak": self._projected_streak,
+            }
+            signal = replacement
+        elif signal == "give_up" and evolution_enabled and contract_failure:
             self._routing_override = {
                 "from": requested_signal,
                 "to": "escalate",
-                "reason": "give_up blocked while self-evolution is enabled",
-                "failure_streak": self._projected_streak,
-                "self_evolution_file": str(stop_check.SELF_EVOLUTION_FILE),
-            }
-            signal = "escalate"
-        elif state.get("last_error") and any(
-            marker.lower() in diagnostic_text.lower() for marker in ENVIRONMENT_REPLAN_MARKERS
-        ) and signal in {"retry", "frame", "escalate"}:
-            self._routing_override = {
-                "from": requested_signal,
-                "to": "replan",
-                "reason": "requested local app/browser unavailable; choose equivalent or install explicitly",
-                "failure_streak": self._projected_streak,
-            }
-            signal = "replan"
-        elif (
-            last_verification.get("signal") == "step_denied"
-            and self._projected_streak["count"] >= 2
-            and not framed_already
-            and signal in {"retry", "replan"}
-        ):
-            self._routing_override = {
-                "from": requested_signal,
-                "to": "frame",
-                "reason": "same step denied twice before any action frame",
-                "failure_streak": self._projected_streak,
-            }
-            signal = "frame"
-        elif (
-            last_verification.get("signal") == "step_denied"
-            and self._projected_streak["count"] >= 3
-            and framed_already
-            and signal in {"retry", "replan", "frame"}
-        ):
-            self._routing_override = {
-                "from": requested_signal,
-                "to": "escalate",
-                "reason": "same step denied after framing was already attempted",
+                "reason": "give_up converted only because structured organism-contract failure exists and evolution is enabled",
+                "failure": self._failure,
                 "failure_streak": self._projected_streak,
             }
             signal = "escalate"
-        elif state.get("last_error") and any(
-            marker.lower() in diagnostic_text.lower() for marker in MECHANICAL_ESCALATE_MARKERS
-        ):
-            if signal != "escalate":
+        elif task_route_failure and signal in {"retry", "escalate", "give_up"}:
+            replacement = self._task_route_signal(state)
+            if replacement != signal:
                 self._routing_override = {
                     "from": requested_signal,
-                    "to": "escalate",
-                    "reason": "mechanical error marker in reflection evidence",
+                    "to": replacement,
+                    "reason": "task-route failure must try a different route/frame/replan before any organism repair",
+                    "failure": self._failure,
                     "failure_streak": self._projected_streak,
                 }
+            signal = replacement
+        elif contract_failure and signal != "escalate" and int(self._projected_streak.get("count", 0) or 0) >= 2 and evolution_enabled:
+            self._routing_override = {
+                "from": requested_signal,
+                "to": "escalate",
+                "reason": "repeated structured organism-contract failure",
+                "failure": self._failure,
+                "failure_streak": self._projected_streak,
+            }
             signal = "escalate"
+
         self._signal = signal
         return signal
 
@@ -164,6 +174,7 @@ class ReflectNode(BaseNode):
                 "recovery_signal": self._signal,
                 "requested_signal": data.get("next_signal"),
                 "routing_override": self._routing_override,
+                "failure": self._failure,
             },
             "last_reflection": {
                 "signal": self._signal,
@@ -171,6 +182,7 @@ class ReflectNode(BaseNode):
                 "lesson": lesson,
                 "diagnosis": diagnosis,
                 "routing_override": self._routing_override,
+                "failure": self._failure,
             },
         }
 

@@ -123,6 +123,7 @@ def run(ctx):
         "failure": {
             "last_error": state.get("last_error", ""),
             "last_reflection": state.get("last_reflection", {}),
+            "last_failure": state.get("last_failure", {}),
             "last_action": state.get("last_action", {}),
             "last_result": state.get("last_result", ""),
             "last_verification": state.get("last_verification", {}),
@@ -141,6 +142,11 @@ def run(ctx):
         "observation": bus.observation_brief(state),
         "git_context": git_context,
         "workspace_manifest": _capture_workspace_manifest(),
+        "organism_contract": {
+            "capabilities": nodes.capability_manifest(ctx),
+            "topology": nodes.topology_summary(wiring),
+            "self_modify_route": "reflect.escalate only",
+        },
     }
     if fresh_obs:
         payload["fresh_observation"] = fresh_obs
@@ -179,4 +185,4 @@ def run(ctx):
             "deletes": len(data.get("file_deletes", []) or []),
             "commands": len(data.get("commands", []) or []),
         },
-    }, record=bus.Record.from_json(record), evidence={"git_context": git_context, "failure": payload.get("failure", {})})
+    }, record=bus.Record.from_json(record), evidence={"git_context": git_context, "failure": payload.get("failure", {}), "organism_contract": payload.get("organism_contract", {})})

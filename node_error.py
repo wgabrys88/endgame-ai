@@ -20,6 +20,7 @@ def run(ctx):
         "error": state.get("last_error"),
         "tick": state.get("tick"),
         "signal": state.get("last_signal"),
+        "failure": state.get("last_failure", {}),
     }
 
     print(f"[ERROR NODE] Failed node: {error_info['failed_node']}, Error: {error_info['error']}")
@@ -38,8 +39,9 @@ def run(ctx):
                 "recovery": recovery,
                 "plan_failed": True,
                 "last_error": error_text,
+                "last_failure": state.get("last_failure", {}),
             },
         )
 
     recovery = "reflect" if state.get("current_step") else "planner"
-    return bus.emit(recovery, {"error_handled": error_info, "recovery": recovery})
+    return bus.emit(recovery, {"error_handled": error_info, "recovery": recovery, "last_failure": state.get("last_failure", {})})

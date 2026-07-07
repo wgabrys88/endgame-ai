@@ -104,6 +104,33 @@ def expire_duration(
     return state
 
 
+
+
+def classify_node_exception(node_name: str, exc: Exception) -> dict[str, Any]:
+    message = str(exc)
+    kind = "node_exception"
+    contract_repair_allowed = False
+    if node_name == "node_execute":
+        kind = "execute_actor_failure"
+    elif isinstance(exc, bus.TopologyContractError):
+        kind = "topology_contract_violation"
+        contract_repair_allowed = True
+    elif isinstance(exc, bus.NodeRecordContractError):
+        kind = "node_record_contract_violation"
+        contract_repair_allowed = True
+    elif node_name == "node_self_modify":
+        kind = "self_modify_patch_contract_violation"
+    elif node_name == "node_observe":
+        kind = "observation_contract_violation"
+        contract_repair_allowed = True
+    return {
+        "source": node_name,
+        "kind": kind,
+        "exception_type": type(exc).__name__,
+        "message": message,
+        "contract_repair_allowed": contract_repair_allowed,
+    }
+
 def stop_file_detected(wiring: dict[str, Any], state: dict[str, Any], node_name: str) -> dict[str, Any]:
     state["_phase"] = "stop_requested"
     state["current_node"] = node_name
@@ -158,10 +185,10 @@ def next_node_for(wiring: dict[str, Any], current: str, signal_name: str) -> str
     edges = wiring.get("topology", {}).get("edges", {})
     node_edges = edges.get(current)
     if not isinstance(node_edges, dict):
-        raise RuntimeError(f"topology has no edges for node '{current}'")
+        raise bus.TopologyContractError(f"topology has no edges for node '{current}'")
     nxt = node_edges.get(signal_name)
     if not isinstance(nxt, str) or not nxt:
-        raise RuntimeError(f"node '{current}' emitted signal '{signal_name}' with no topology edge")
+        raise bus.TopologyContractError(f"node '{current}' emitted signal '{signal_name}' with no topology edge")
     return nxt
 
 
@@ -335,6 +362,7 @@ def run(
     except Exception as exc:
         state["_phase"] = "error"
         state["last_error"] = f"{type(exc).__name__}: {exc}"
+        state["last_failure"] = classify_node_exception(current, exc)
         write_state(wiring, state)
         runtime_event(wiring, "error", node=current, error=state["last_error"])
         try:

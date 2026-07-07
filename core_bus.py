@@ -10,6 +10,18 @@ from typing import Any
 JsonDict = dict[str, Any]
 
 
+class BusContractError(RuntimeError):
+    """Base class for mechanical organism contract failures."""
+
+
+class TopologyContractError(BusContractError):
+    """Raised when a node emits a signal with no valid topology edge."""
+
+
+class NodeRecordContractError(BusContractError):
+    """Raised when a node returns an invalid bus/output/record shape."""
+
+
 @dataclass(frozen=True)
 class Record:
     """Unified record format for ALL organs - single source of truth."""
@@ -99,11 +111,11 @@ def coerce_node_output(node: str, result: Any) -> NodeOutput:
     if isinstance(result, tuple) and len(result) == 2:
         signal, patch = result
         if not isinstance(signal, str) or not signal:
-            raise RuntimeError(f"node '{node}' contract violation: signal must be a non-empty string")
+            raise NodeRecordContractError(f"node '{node}' contract violation: signal must be a non-empty string")
         if not isinstance(patch, dict):
-            raise RuntimeError(f"node '{node}' contract violation: patch must be dict")
+            raise NodeRecordContractError(f"node '{node}' contract violation: patch must be dict")
         return emit(signal, patch)
-    raise RuntimeError(f"node '{node}' contract violation: expected NodeOutput or (signal, patch)")
+    raise NodeRecordContractError(f"node '{node}' contract violation: expected NodeOutput or (signal, patch)")
 
 
 def allowed_signals(wiring: JsonDict, node: str) -> set[str]:
@@ -118,7 +130,7 @@ def validate_signal(wiring: JsonDict, node: str, signal: str) -> None:
     signals = allowed_signals(wiring, node)
     if signals and signal not in signals:
         allowed = ", ".join(sorted(signals))
-        raise RuntimeError(f"node '{node}' emitted signal '{signal}' outside topology contract; allowed: {allowed}")
+        raise TopologyContractError(f"node '{node}' emitted signal '{signal}' outside topology contract; allowed: {allowed}")
 
 
 def datasheet(node: str, *, kind: str, inputs: list[str], signals: list[str], writes: list[str], record_type: str | None = None) -> JsonDict:
@@ -148,16 +160,24 @@ def state_brief(state: JsonDict) -> JsonDict:
         "last_error": state.get("last_error"),
         "last_verification": state.get("last_verification", {}),
         "last_reflection": state.get("last_reflection", {}),
+        "last_failure": state.get("last_failure", {}),
         "failure_streak": state.get("failure_streak", {}),
         "has_action_frame": bool(state.get("action_frame")),
     }
 
 
 def observation_brief(state: JsonDict) -> JsonDict:
+    artifact = state.get("observation_artifact") or {}
+    tree = artifact.get("desktop_tree") if isinstance(artifact, dict) else {}
     return {
         "desktop_tree_text": state.get("desktop_tree_text", ""),
         "observed_at": state.get("observed_at"),
         "fresh_scan": state.get("fresh_scan", False),
+        "scan_config": artifact.get("scan_config", {}) if isinstance(artifact, dict) else {},
+        "scan_stats": artifact.get("scan_stats", {}) if isinstance(artifact, dict) else {},
+        "rendered_node_count": state.get("rendered_node_count") or (tree or {}).get("rendered_node_count"),
+        "max_llm_nodes": state.get("max_llm_nodes") or (tree or {}).get("max_llm_nodes"),
+        "llm_node_limit_hit": state.get("llm_node_limit_hit") or (tree or {}).get("llm_node_limit_hit"),
     }
 
 
@@ -166,7 +186,7 @@ def failure_signature(state: JsonDict) -> str:
     parts = {
         "step": step.get("description", ""),
         "done_when": step.get("done_when", ""),
-        "error": state.get("last_error") or "",
+        "failure": state.get("last_failure") or {},
         "verification": state.get("last_verification") or {},
         "action_conclusion": (state.get("last_action") or {}).get("conclusion", ""),
     }

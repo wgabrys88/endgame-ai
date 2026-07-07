@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import re
 import time
 
 import core_bus as bus
@@ -14,8 +15,8 @@ DATASHEET = bus.datasheet(
     "node_execute",
     kind="llm_code_actuator",
     inputs=["goal", "current_step", "fresh_observation", "action_frame", "capability_runtime"],
-    signals=["verify", "frame", "reflect", "self_modify", "error"],
-    writes=["last_action", "last_code", "last_result", "last_error", "action_frame"],
+    signals=["verify", "frame", "reflect", "error"],
+    writes=["last_action", "last_code", "last_result", "last_error", "last_failure", "action_frame"],
     record_type="execution",
 )
 
@@ -49,12 +50,70 @@ class ExecuteNode(BaseNode):
             "action_frame": state.get("action_frame"),
             "last": {
                 "error": state.get("last_error"),
+                "failure": state.get("last_failure", {}),
                 "result": state.get("last_result", ""),
                 "action": state.get("last_action", {}),
             },
             "state": bus.state_brief(state),
             "observation": bus.observation_brief(state),
             "capabilities": nodes.capability_manifest(ctx),
+        }
+
+    def _decision_failure(self, conclusion: str, reason: str) -> dict:
+        return {
+            "source": "execute",
+            "kind": "task_route_decision",
+            "conclusion": conclusion,
+            "reason": reason,
+            "contract_repair_allowed": False,
+        }
+
+    def _runtime_failure(self, exc: Exception) -> dict:
+        return {
+            "source": "execute",
+            "kind": "task_route_exception",
+            "exception_type": type(exc).__name__,
+            "message": str(exc),
+            "contract_repair_allowed": False,
+        }
+
+    def _actor_doctrine_violation(self, code: str) -> dict | None:
+        lower = code.lower()
+        reasons: list[str] = []
+        if re.search(r"\bgit\b[^\n;]*(commit|push|reset|checkout|switch|merge|rebase|tag)\b", lower):
+            reasons.append("execute attempted mutating git operation; self-evolution belongs to reflect -> self_modify")
+        firmware_names = (
+            "wiring.json",
+            "runtime_self_evolution_enabled.json",
+            "runtime_known_good_commit.json",
+            "core_brain.py",
+            "core_bus.py",
+            "core_nodes.py",
+            "core_observation.py",
+            "core_organism.py",
+            "node_execute.py",
+            "node_reflect.py",
+            "node_self_modify.py",
+            "node_planner.py",
+            "node_frame_action.py",
+            "node_verify.py",
+            "node_observe.py",
+            "node_scheduler.py",
+            "node_satisfied.py",
+            "node_error.py",
+        )
+        mutating_file_call = re.search(r"(write_text\s*\(|open\s*\([^\n)]*['\"]w|\.write\s*\(|json\.dump\s*\(|atomic_write_json\s*\()", lower)
+        if mutating_file_call and any(name in lower for name in firmware_names):
+            reasons.append("execute attempted to mutate organism firmware/configuration files")
+        if "node_self_modify" in lower or "git_evolution_patch" in lower:
+            reasons.append("execute attempted to invoke or imitate the self_modify organ")
+        if not reasons:
+            return None
+        return {
+            "source": "execute",
+            "kind": "actor_doctrine_violation",
+            "contract_repair_allowed": False,
+            "reasons": reasons,
         }
 
     def run(self, ctx):
@@ -66,44 +125,51 @@ class ExecuteNode(BaseNode):
         conclusion = str(data.get("conclusion") or "").upper()
         requested_signal = str(data.get("next_signal") or "").lower()
 
-        if conclusion not in {"EXECUTE", "CANNOT", "FRAME", "SELF_MODIFY"}:
-            raise RuntimeError(f"execution emitted invalid conclusion: {conclusion!r}")
-        if requested_signal not in {"verify", "frame", "reflect", "self_modify"}:
-            raise RuntimeError(f"execution emitted invalid next_signal: {requested_signal!r}")
+        if conclusion not in {"EXECUTE", "CANNOT", "FRAME"}:
+            raise RuntimeError(f"execution emitted invalid conclusion: {conclusion!r}; execute cannot self-modify")
+        if requested_signal not in {"verify", "frame", "reflect"}:
+            raise RuntimeError(f"execution emitted invalid next_signal: {requested_signal!r}; execute cannot route to self_modify")
         if conclusion == "EXECUTE" and requested_signal != "verify":
             raise RuntimeError(f"execution conclusion EXECUTE requires next_signal verify, got {requested_signal!r}")
         if conclusion == "FRAME" and requested_signal != "frame":
             raise RuntimeError(f"execution conclusion FRAME requires next_signal frame, got {requested_signal!r}")
-        if conclusion == "SELF_MODIFY" and requested_signal != "self_modify":
-            raise RuntimeError(f"execution conclusion SELF_MODIFY requires next_signal self_modify, got {requested_signal!r}")
         if conclusion == "CANNOT" and requested_signal not in {"frame", "reflect"}:
             raise RuntimeError(f"execution conclusion CANNOT requires next_signal frame or reflect, got {requested_signal!r}")
         if conclusion != "EXECUTE" and code.strip():
             raise RuntimeError("execution emitted code when conclusion is not EXECUTE")
 
-        if conclusion == "SELF_MODIFY":
-            return bus.emit(
-                "self_modify",
-                {"last_action": {"code": "", "conclusion": conclusion}, "last_error": "execute requested self modification"},
-                record=record,
-                evidence=payload,
-            )
-
         if conclusion != "EXECUTE":
             signal = requested_signal
             if signal == "reflect" and self._should_frame(state, conclusion):
                 signal = "frame"
+            failure = self._decision_failure(conclusion, f"execute returned {conclusion}")
             return bus.emit(
                 signal,
                 {
                     "last_action": {"code": "", "conclusion": conclusion},
-                    "last_error": f"execute returned {conclusion}",
+                    "last_error": failure["reason"],
+                    "last_failure": failure,
                 },
                 record=record,
                 evidence=payload,
             )
         if not code.strip():
             raise RuntimeError("execution conclusion EXECUTE requires non-empty code")
+        doctrine_violation = self._actor_doctrine_violation(code)
+        if doctrine_violation:
+            return bus.emit(
+                "reflect",
+                {
+                    "last_action": {"code": code, "conclusion": conclusion, "not_executed": True},
+                    "last_code": code,
+                    "last_result": {"result": None, "stdout": "", "stderr": "", "action_events": []},
+                    "last_error": "; ".join(doctrine_violation["reasons"]),
+                    "last_failure": doctrine_violation,
+                    "action_frame": state.get("action_frame"),
+                },
+                record=record,
+                evidence=payload,
+            )
         deadline_at = state.get("deadline_at")
         if deadline_at is not None:
             try:
@@ -113,6 +179,12 @@ class ExecuteNode(BaseNode):
             now = time.time()
             if now >= deadline:
                 late_by = round(now - deadline, 3)
+                failure = {
+                    "source": "execute",
+                    "kind": "duration_guard",
+                    "late_by_s": late_by,
+                    "contract_repair_allowed": False,
+                }
                 return bus.emit(
                     "reflect",
                     {
@@ -130,6 +202,7 @@ class ExecuteNode(BaseNode):
                             },
                         },
                         "last_error": f"duration deadline expired before executing body action: late_by_s={late_by}",
+                        "last_failure": failure,
                         "action_frame": state.get("action_frame"),
                     },
                     record=record,
@@ -153,8 +226,14 @@ class ExecuteNode(BaseNode):
             }
             if explicit_result is None and not action_events and not result["stdout"] and not result["stderr"]:
                 error = "RuntimeError: EXECUTE produced no result, stdout, stderr, or recorded body action"
+                failure = {
+                    "source": "execute",
+                    "kind": "empty_execute_result",
+                    "contract_repair_allowed": False,
+                }
             else:
                 error = None
+                failure = None
         except Exception as exc:
             result = {
                 "stdout": stdout.getvalue(),
@@ -162,6 +241,7 @@ class ExecuteNode(BaseNode):
                 "action_events": list(ns.get("_action_events") or []) if "ns" in locals() else [],
             }
             error = f"{type(exc).__name__}: {exc}"
+            failure = self._runtime_failure(exc)
 
         signal = "reflect" if error else "verify"
         return bus.emit(
@@ -171,6 +251,7 @@ class ExecuteNode(BaseNode):
                 "last_code": code,
                 "last_result": result,
                 "last_error": error,
+                "last_failure": failure,
                 "action_frame": None if not error else state.get("action_frame"),
             },
             record=record,

@@ -13,11 +13,7 @@ capability families:
 The system is not a click-and-type bot, and it is not a script-only runner. It is
 a bus-driven local PC controller that can choose GUI, Python, subprocess,
 filesystem, process, browser, or a composed route according to the task and the
-evidence needed to prove progress. When a script, helper, command, app, import,
-OS action, GUI node, or contract fails, Python returns an exception or captured
-result into the bus; the reflect, planner, or self-modify organs then adjust from
-that evidence. Escalation is for broken organism contracts, not the first failed
-route.
+evidence needed to prove progress. When a script, helper, command, app, import, OS action, GUI node, or contract fails, Python returns structured evidence into the bus. Ordinary emitted-code errors are task-route evidence, not firmware failures. `self_modify` is reachable only through reflect escalation after evidence shows a consumed organism contract is broken.
 
 This README was rewritten from the 2026-07-07 forensic session on branch
 `prompts-adjust` after real desktop runs, prompt review, code patches, commits,
@@ -45,6 +41,17 @@ page for AI developer jobs in Krakow and observed 211 actionable elements, but i
 halted prematurely after a one-step replan amputated the larger goal. That halt
 was useful evidence, not true goal completion.
 
+## V4 Forensic Correction
+
+The archived `showoff-demo-1` branch proved that the organism can narrate and preserve its own evolution, but it also exposed a repeatable pathology: bad emitted Python, shallow observation, and awkward browser/UI routes were too easily interpreted as organism-contract failures. V4 makes the correction reductive:
+
+- `node_execute` is a narrow actuator and cannot self-modify.
+- `node_reflect` no longer relies on broad error-message marker strings to escalate. It routes from structured `last_failure` evidence.
+- Ordinary `NameError`, `TypeError`, bad helper use, missing local tools, ambiguous UI, empty execute results, and verification denials are task-route failures first.
+- Focused observation is a normal route through `observe_area` / `observe_with_config`, not a last-ditch escape hatch.
+- `self_modify` is rare surgery for consumed organism contracts, not a response to every confused action attempt.
+- Known unconsumed wiring folklore paths are blocked for `set` patches and may only be deleted.
+
 ## Capability Model
 
 ```mermaid
@@ -59,19 +66,21 @@ flowchart TD
     Execute --> Script["Python script control\nimports, computation, files"]
     Execute --> Process["process control\nsubprocess, os, sys"]
     Execute --> Repo["repo/git control\nvia Python/process commands"]
+    Execute --> Focus["focused observation\nobserve_area / observe_with_config"]
 
     GUI --> Evidence["bus evidence"]
     Browser --> Evidence
     Script --> Evidence
     Process --> Evidence
     Repo --> Evidence
+    Focus --> Evidence
 
     Evidence --> Verify["verify: proof check"]
     Verify -->|confirmed| Scheduler
     Verify -->|denied| Reflect["reflect: retry/replan/frame/escalate"]
     Reflect -->|replan| Planner
     Reflect -->|frame| Execute
-    Reflect -->|escalate| SelfModify["self_modify"]
+    Reflect -->|escalate only for structured contract failure| SelfModify["self_modify"]
     SelfModify --> Planner
 ```
 
@@ -79,8 +88,8 @@ The body is not intentionally restricted to a narrow command list. The actual
 runtime namespace supplied to `node_execute` contains:
 
 - Desktop helpers: `click`, `click_node`, `read_node`, `type_text`, `press_key`,
-  `hotkey`, `scroll`, `scroll_node`, `action_nodes`, `node_by_id`, `pyautogui`,
-  and `pag`.
+  `hotkey`, `scroll`, `scroll_node`, `action_nodes`, `node_by_id`,
+  `observe_area`, `observe_with_config`, `pyautogui`, and `pag`.
 - Browser helper: `open_url(browser, url)` for `opera`, `chrome`, `edge`,
   `firefox`, or `default`; named browsers fail hard when unavailable.
 - Python/process modules: `subprocess`, `ctypes`, `os`, `sys`, `json`, `re`,
@@ -106,16 +115,16 @@ flowchart TD
     Execute -->|verify| Verify["node_verify"]
     Verify -->|step_confirmed| Scheduler
     Verify -->|step_denied| Reflect["node_reflect"]
-    Execute -->|reflect| Reflect
+    Execute -->|reflect task evidence| Reflect
     Execute -->|frame| Frame["node_frame_action"]
     Frame --> Execute
     Reflect -->|retry| Scheduler
     Reflect -->|replan| Planner
     Reflect -->|frame| Frame
-    Reflect -->|escalate| SelfModify["node_self_modify"]
+    Reflect -->|escalate only for structured contract failure| SelfModify["node_self_modify"]
     SelfModify -->|modified| Planner
     SelfModify -->|modify_failed| Reflect
-    Reflect -->|give_up only when evolution disabled| Satisfied["node_satisfied"]
+    Reflect -->|honest give_up| Satisfied["node_satisfied"]
     Satisfied --> Halt["halt"]
 ```
 
@@ -130,7 +139,8 @@ All organs communicate through one bus record. Runtime replay is based on:
 - `observation_artifact`: scan config, scan stats, desktop tree, action index,
   and rendered tree text.
 - `last_result.action_events`: concrete helper actions performed by execute.
-- `last_error`: Python exception or contract error when execution fails.
+- `last_error`: human-readable Python exception or contract error when execution fails.
+- `last_failure`: structured failure class used by reflect; ordinary execute exceptions are task-route failures.
 - `last_verification`: verifier judgment.
 - `last_reflection.routing_override`: body-side override when routing is unsafe.
 
@@ -165,20 +175,11 @@ PC control than the prompt emphasized. The current intent:
 - Observe: mechanical UIA scan organ.
 - Frame action: frames a specific route using any first-class channel, including
   GUI and script/process routes.
-- Execute: actor/execute decides what to do and how to do it for the current
-  semantic step. It explicitly states that `data.code` runs through Python `exec` with
-  normal imports, subprocess, filesystem, process inspection, browser launch,
-  GUI helpers, Python modules, state, wiring, and git through commands. It states
-  that GUI control and script/process control are equal first-class capabilities.
+- Execute: narrow actuator. It chooses and runs the smallest route that can advance and prove the current step. It cannot emit or route to `self_modify`. It can use focused observation helpers when the current screen tree is too shallow instead of guessing or inflating global scan limits.
 - Verify: accepts screen evidence and captured script/process/file/command
   evidence.
-- Reflect: treats failures from any channel as evidence and should try or route
-  toward materially different viable approaches before escalation. It can choose a
-  materially different GUI, Python, subprocess, file, process, browser, command,
-  observation, or composed channel.
-- Self-modify: repairs code, wiring, prompt, observation, action, verification,
-  or recovery contracts when they block progress after task-route alternatives
-  have been tried or ruled out by evidence.
+- Reflect: strict router. It uses structured `last_failure` evidence, not fragile string markers, to separate task-route failures from consumed organism-contract failures. It routes ordinary code/GUI/tool/verification failures to frame, retry, or replan before escalation.
+- Self-modify: rare surgery. It repairs code, wiring, prompt, observation, action, verification, or recovery contracts only after reflect proves the consumed organism contract is blocking progress. It must not add unconsumed wiring folklore.
 - Satisfied: halts only for completion or honest give-up while self-evolution is
   disabled.
 
@@ -213,10 +214,9 @@ Examples are intentionally not embedded in prompts, but the runtime behavior is:
 - A missing named browser raises hard.
 - A subprocess command can return captured return code/stdout/stderr.
 - A Python exception becomes `last_error`.
-- A silent execute path with no result/stdout/stderr/action event is a contract
-  failure.
+- A silent execute path with no result/stdout/stderr/action event is task-route failure evidence first; repeated cases should improve execution route/prompting before organism surgery.
 - A desktop action after `deadline_at` is blocked before acting.
-- Reflect chooses a different route, replans, frames, or escalates.
+- Reflect chooses a different route, replans, frames, or escalates only for structured consumed contract failures.
 
 ## Self-Evolution Gate
 
