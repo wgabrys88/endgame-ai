@@ -187,6 +187,7 @@ it.**
 KINDS = {
   "node":      PluginKind(paths_key="nodes",  module_prefix="endgame_node_",             export="run"),
   "transport": PluginKind(paths_key="brains", module_prefix="endgame_brain_transport_",  export="call"),
+  "cap":       PluginKind(paths_key="caps",   module_prefix="endgame_cap_",              export="run"),
 }
 ```
 
@@ -266,34 +267,42 @@ python3 check_topology.py                                    # exit 0, coherent
 | B1 | ✅ | List-valued topology edges; `next_nodes_for → list[str]`. |
 | B2 | ✅ | Frontier-loop scheduler (one-to-many fan-out); recursion in error path removed. |
 | B3 | ✅ | `node_barrier` many-to-one fan-in (`wait`/`join`, `topology.barriers`). |
-| **B4** | 🔲 | **`cap_spawn.spawn_organism`** — a node that is itself an organism. |
-| B5 | 🔲 | Runtime topology patch — `reflect` rewires the graph mid-run. |
+| B4 | ✅ | `cap_spawn` — a plugin that runs a **child organism**; depth-gated recursion. |
+| **B5** | 🔲 | Runtime topology patch — `reflect` rewires the graph mid-run. |
 | B6 | 🔲 | Rewrite `wiring.json` into the visionary fractal topology. |
 
-### 🔲 B4 — `cap_spawn.spawn_organism(goal, duration)` (do this next)
+### ✅ B4 done — `cap_spawn` (a node that is itself an organism)
 
-The literal fractal claim: a node that runs a **child** `core_organism` and folds
-the child's `effective_goal` back into the parent narrative.
+The literal fractal claim, realized. `cap_spawn.run(ctx)` runs a **child**
+`core_organism.run(...)` on the inherited `effective_goal` and folds the child's
+final narrative back into the parent, emitting `spawned`.
 
-- **Loader kind.** Add a `"cap"` entry to `core_loader.KINDS`
-  (`paths_key="caps"` or reuse `"nodes"`; `module_prefix="endgame_cap_"`,
-  `export="run"`), and a `paths.caps` entry in `wiring.json` + `validate_wiring`.
-  Create `cap_spawn.py` exporting `run(ctx)` (or `spawn_organism`) — file-based,
-  no registry.
-- **Depth gate.** Add a `fractal` block to `wiring.json`
-  (`{"max_recursion_depth": 3}`) + `validate_wiring` required path. Thread a depth
-  counter through `state` (e.g. `state["_depth"]`); the child runs with
-  `_depth + 1`; refuse to spawn past `max_recursion_depth` (fail hard).
-- **Child run.** Call `core_organism.run(child_goal, reset=True, duration_seconds=…,
-  wiring_path=…)`. **Isolate child state** — a child must not clobber the parent's
-  `runtime_state.json`. Give the child its own state/event paths (distinct
-  `paths.state` via a wiring override, or a temp dir) so parent/child don't race.
-  This is the main correctness risk in B4; design it explicitly.
-- **Return.** Append the child's final `effective_goal` into the parent's
-  `effective_goal` and emit a forward signal. Keep the biblical register.
-- **Verify.** A shallow child (depth 1) completes and its narrative appears in the
-  parent; depth gate halts hard at the cap; parent state uncorrupted; all
-  invariants green.
+- **New loader kind `"cap"`** in `core_loader.KINDS`
+  (`paths_key="caps"`, `module_prefix="endgame_cap_"`, `export="run"`). New wiring
+  keys `paths.caps` and a `fractal` block (`max_recursion_depth=3`,
+  `child_duration_seconds=60`) — all four added to `validate_wiring` required
+  paths. Caps load exactly like nodes; **no registry**.
+- **Depth gate.** `state["_depth"]` is seeded to 0 at organism start
+  (`st.setdefault("_depth", 0)`, beside `effective_goal`). The cap reads it
+  directly; if `depth >= fractal.max_recursion_depth` it begets **no** child and
+  writes a "reached the appointed depth" note. Otherwise the child runs at
+  `_depth + 1`.
+- **Child-state isolation (the key risk, handled).** `cap_spawn` deep-copies the
+  wiring, redirects `paths.state` / `paths.control` / `paths.event_log` to
+  depth+tick-suffixed `runtime_child_*` files, writes a temp child wiring JSON,
+  and passes its path to the child. The child **never** touches the parent's
+  `runtime_state.json`.
+- **Seed hook.** `core_organism.run(..., _seed=dict)` applies a seed onto `st`
+  right after the `_depth`/`effective_goal` defaults — this is how the child
+  starts at `_depth + 1` carrying the inherited narrative.
+- **Wiring it live (for B6).** `cap_spawn` is invoked by a node via
+  `core_loader.load("cap", "cap_spawn", w).run(ctx)`; the node forwards the
+  `spawned` patch. Not yet wired into the live topology (that's B6).
+- **Verified:** shallow spawn (child halts, narrative folds in, parent depth
+  preserved); **recursion** climbs `_depth` 0→1→2→3 then the cap halts further
+  begetting and the bottom note propagates back to root; depth-cap at max spawns
+  nothing and creates no files; parent `runtime_state.json` untouched; linear +
+  barrier regressions intact.
 
 ### 🔲 B5 — runtime topology patch
 
@@ -315,7 +324,7 @@ topology."**
 
 ## 🤝 Handover (for the next AI or human)
 
-- **You are here:** B1–B3 done and committed on `live-test-run`. Next is **B4**.
+- **You are here:** B1–B4 done and committed on `live-test-run`. Next is **B5**.
 - **Do:** read this whole README; keep code small, unified, non-branching; keep
   plugins dynamic/file-based; keep hot-swap + self-modify working; keep prompts +
   contracts aligned; verify then commit one step at a time; **update this README
@@ -325,6 +334,7 @@ topology."**
   the substrate step it depends on is verified.
 - **Reference commits:** `3443ee6` B3 barrier · `327cd82` B2 frontier ·
   `36d61eb` B1 list edges · `9339b1b` error-streak halt · `fa5260d` unified loader.
+  (B4 `cap_spawn` is the latest commit on the branch.)
 - **If in doubt:** the system is only nodes + wiring, everything hot-swappable,
   fail hard. Fewer moving parts wins.
 

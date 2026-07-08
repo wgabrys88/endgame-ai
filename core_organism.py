@@ -21,6 +21,7 @@ def run(
     wiring_path: str | None = None,
     _pid_registered: bool = False,
     _deadline_at: float | None = None,
+    _seed: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     registered_here = False
     if not _pid_registered:
@@ -66,6 +67,9 @@ def run(
         st["_phase"] = "resuming" if resumed else st.get("_phase", "starting")
         st["goal"] = goal or str(st.get("goal") or "")
         st.setdefault("effective_goal", st["goal"])
+        st.setdefault("_depth", 0)
+        if _seed:
+            st.update(_seed)
         st["current_node"] = current
         st["duration_seconds"] = duration_seconds
         st["deadline_at"] = deadline_at

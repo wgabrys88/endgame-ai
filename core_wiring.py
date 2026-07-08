@@ -44,7 +44,7 @@ def _require(obj: dict[str, Any], path: str, typ: type | tuple[type, ...]) -> An
 
 
 def validate_wiring(cfg: dict[str, Any]) -> None:
-    for key in ("schema", "model", "paths", "control_default", "observe_config", "self_modify", "topology", "prompts"):
+    for key in ("schema", "model", "paths", "control_default", "observe_config", "self_modify", "topology", "prompts", "fractal"):
         if key not in cfg:
             raise RuntimeError(f"wiring missing required key: {key}")
     model = _obj(cfg, "model")
@@ -62,6 +62,7 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
         "model.organs",
         "paths.nodes",
         "paths.brains",
+        "paths.caps",
         "paths.state",
         "paths.control",
         "paths.event_log",
@@ -89,6 +90,8 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
         "topology.edges",
         "topology.max_error_streak",
         "topology.barriers",
+        "fractal.max_recursion_depth",
+        "fractal.child_duration_seconds",
     ):
         _require(cfg, path, object)
     nodes = _require(cfg, "topology.nodes", list)

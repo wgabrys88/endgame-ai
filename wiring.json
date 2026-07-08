@@ -72,7 +72,8 @@
     "brains": ".",
     "state": "runtime_state.json",
     "control": "runtime_control.json",
-    "event_log": "runtime_events.jsonl"
+    "event_log": "runtime_events.jsonl",
+    "caps": "."
   },
   "control_default": {
     "mode": "run",
@@ -197,5 +198,9 @@
     "node_self_modify": "Self-modify JSON git_evolution_patch: modified plus summary,rationale,read_files,file_writes,file_deletes,wiring_patches,commands,expected_validation. Patch consumed runtime; prefer deletion.",
     "node_satisfied": "Mechanical halt with satisfied only when complete and no last_error.",
     "node_error": "Mechanical recovery to planner, reflect, or halt."
+  },
+  "fractal": {
+    "max_recursion_depth": 3,
+    "child_duration_seconds": 60
   }
 }
