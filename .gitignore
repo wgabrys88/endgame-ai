@@ -12,6 +12,9 @@
 !core_observation.py
 !core_organism.py
 !core_stop_check.py
+!core_wiring.py
+!core_state.py
+!core_node_base.py
 !node_error.py
 !node_execute.py
 !node_frame_action.py
@@ -28,3 +31,6 @@
 !transport_opencode.py
 !transport_xai.py
 !export_brain_forensics.py
+!analyze_graph.py
+!analyze_logs.py
+!check_events.py
