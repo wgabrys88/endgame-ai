@@ -32,5 +32,4 @@
 !transport_xai.py
 !export_brain_forensics.py
 !analyze_graph.py
-!analyze_logs.py
 !check_events.py

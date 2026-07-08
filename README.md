@@ -142,7 +142,7 @@ sequenceDiagram
     participant SelfMod
     
     User->>Planner: root_goal
-    Note over Planner: [PLANNER REWRITE] Current plan focuses on: X; Next: Y
+    Note over Planner: [PLANNER REWRITE] Current plan focuses on: X, Next: Y
     Planner->>Scheduler: effective_goal
     Scheduler->>Observe: effective_goal + [SCHEDULER] Current step: Z
     Observe->>Execute: effective_goal (fresh scan)
