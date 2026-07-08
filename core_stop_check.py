@@ -1,9 +1,6 @@
-from __future__ import annotations
-
 import json
 import os
 import pathlib
-import signal
 import sys
 import time
 
@@ -61,31 +58,3 @@ def clear_stop() -> None:
     if stop_requested():
         STOP_FILE.unlink()
         print(f"[stop_check] {STOP_FILE.name} cleared", flush=True)
-
-
-def kill_all_pids() -> None:
-    for pid_file in ROOT.glob("runtime_*.pid"):
-        try:
-            raw = pid_file.read_text(encoding="utf-8").strip()
-            try:
-                obj = json.loads(raw)
-                pid = int(obj.get("pid"))
-            except json.JSONDecodeError:
-                pid = int(raw)
-            if pid != os.getpid():
-                os.kill(pid, signal.SIGTERM)
-                print(f"[stop_check] terminated PID {pid} ({pid_file.name})", flush=True)
-        except (ValueError, OSError, PermissionError):
-            pass
-        finally:
-            pid_file.unlink(missing_ok=True)
-
-
-def wait_for_stop(timeout: float = 0, poll_interval: float = 0.5) -> bool:
-    start = time.time()
-    while True:
-        if STOP_FILE.exists():
-            return True
-        if timeout and time.time() - start >= timeout:
-            return False
-        time.sleep(poll_interval)

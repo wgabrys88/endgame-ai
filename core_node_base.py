@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from abc import ABC
 from typing import Any
 
@@ -81,16 +79,3 @@ def _load_node(node_name: str, w: JsonDict):
     if not hasattr(mod, "run"):
         raise RuntimeError(f"node '{node_name}' does not export run(ctx)")
     return mod
-
-
-def topology_summary(w: JsonDict) -> JsonDict:
-    topo = w.get("topology", {})
-    return {
-        "cycle_start": topo.get("cycle_start"),
-        "nodes": list(topo.get("nodes", [])),
-        "edges": topo.get("edges", {}),
-    }
-
-
-def topology_mermaid(w: JsonDict) -> str:
-    return bus.mermaid_state_diagram(w)

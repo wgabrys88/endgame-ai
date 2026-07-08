@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import pathlib
 from typing import Any
 
@@ -131,14 +129,6 @@ def event_log_path(wiring: dict[str, Any]) -> pathlib.Path:
     return root_path(wiring["paths"]["event_log"] if wiring else "runtime_events.jsonl")
 
 
-def request_path(wiring: dict[str, Any]) -> pathlib.Path:
-    return root_path(wiring["paths"]["request"])
-
-
-def response_path(wiring: dict[str, Any]) -> pathlib.Path:
-    return root_path(wiring["paths"]["response"])
-
-
 def default_control(wiring: dict[str, Any]) -> dict[str, Any]:
     return dict(wiring["control_default"])
 
@@ -182,8 +172,3 @@ def topology_summary(w: dict[str, Any]) -> dict[str, Any]:
         "nodes": list(topo["nodes"]),
         "edges": topo["edges"],
     }
-
-
-def topology_mermaid(w: dict[str, Any]) -> str:
-    import core_bus as bus
-    return bus.mermaid_state_diagram(w)

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import core_bus as bus
 import core_desktop as desktop
 

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import copy
 import ctypes
 import json
@@ -325,10 +323,6 @@ def save_wiring(w: dict[str, Any]) -> None:
     brain.atomic_write_json(ROOT / "wiring.json", w)
 
 
-def wiring_limit(name: str, default: int, w: dict[str, Any]) -> int:
-    return w.get("limits", {}).get(name, default)
-
-
 def _action_index(state: dict[str, Any]) -> dict[str, Any]:
     index = state.get("action_index") or {}
     return index if isinstance(index, dict) else {}
@@ -354,7 +348,7 @@ def capability_manifest(ctx: dict[str, Any] | None = None) -> dict[str, Any]:
             "scroll": "scroll(x,y,amount,hwnd=0)", "scroll_node": "scroll_node(node_id,amount=-3)",
             "action_nodes": "action_nodes(action=None)", "node_by_id": "node_by_id(node_id)",
             "open_url": "open_url(browser,url)", "observe_area": "observe_area(left,top,right,bottom,max_llm_nodes=None,max_depth=None,step_px=None)",
-            "observe_with_config": "observe_with_config(hover_cache_config)", "pyautogui": "compat facade", "pag": "alias",
+            "observe_with_config": "observe_with_config(hover_cache_config)",
         },
         "modules": ["subprocess", "os", "sys", "json", "re", "time", "pathlib", "ctypes", "math", "random", "types"],
         "state": ["fresh_observation", "desktop_tree_text", "action_index", "observation_artifact"],
@@ -467,56 +461,16 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         cfg["filter"] = filt
         return observe_with_config(cfg)
 
-    class _PyAutoGuiCompat:
-        def click(self, x: int | None = None, y: int | None = None, clicks: int = 1, interval: float = 0.0, **kwargs: Any) -> Any:
-            if x is None or y is None:
-                raise RuntimeError("pyautogui.click requires explicit x and y")
-            result = None
-            for _ in range(max(1, int(clicks or 1))):
-                result = click(int(x), int(y), int(kwargs.get("hwnd") or 0))
-                if interval:
-                    time.sleep(float(interval))
-            return result
-
-        def write(self, text: str, interval: float = 0.0) -> Any:
-            if interval:
-                for ch in str(text):
-                    type_text(ch); time.sleep(float(interval))
-                return _record_action({"ok": True, "action": "pyautogui.write", "chars": len(str(text))})
-            return type_text(str(text))
-
-        typewrite = write
-
-        def press(self, key: str, presses: int = 1, interval: float = 0.0) -> Any:
-            result = None
-            for _ in range(max(1, int(presses or 1))):
-                result = press_key(str(key))
-                if interval:
-                    time.sleep(float(interval))
-            return result
-
-        def hotkey(self, *keys: str) -> Any:
-            return hotkey(list(keys[0]) if len(keys) == 1 and isinstance(keys[0], (list, tuple)) else list(keys))
-
-        def scroll(self, clicks: int, x: int | None = None, y: int | None = None, **kwargs: Any) -> Any:
-            return scroll(0 if x is None else int(x), 0 if y is None else int(y), int(clicks), int(kwargs.get("hwnd") or 0))
-
-        def sleep(self, seconds: float) -> None:
-            time.sleep(float(seconds))
-
-    pyautogui = _PyAutoGuiCompat()
     last = {"error": state.get("last_error"), "result": state.get("last_result", ""), "action": state.get("last_action", {}), "verification": state.get("last_verification", {}), "reflection": state.get("last_reflection", {})}
     return {
-        "observe_screen": d.observe_screen, "last_desktop_tree": d.last_desktop_tree, "action_nodes": action_nodes,
-        "node_by_id": node_by_id, "click": click, "click_node": click_node, "read_node": read_node,
+        "action_nodes": action_nodes, "node_by_id": node_by_id, "click": click, "click_node": click_node, "read_node": read_node,
         "type_text": type_text, "press_key": press_key, "hotkey": hotkey, "scroll": scroll,
         "scroll_node": scroll_node, "open_url": open_url, "observe_with_config": observe_with_config,
-        "observe_area": observe_area, "pyautogui": pyautogui, "pag": pyautogui, "subprocess": subprocess,
+        "observe_area": observe_area, "subprocess": subprocess,
         "ctypes": ctypes, "os": os, "sys": sys, "json": json, "re": __import__("re"), "time": time,
         "pathlib": pathlib, "math": __import__("math"), "random": __import__("random"), "types": types,
-        "wiring_limit": wiring_limit, "capabilities": capability_manifest(ctx), "repo_root": str(ROOT),
-        "python_executable": sys.executable, "topology_summary": wiring.topology_summary(w),
-        "topology_mermaid": wiring.topology_mermaid(w), "state": state, "wiring": w, "goal": ctx.get("goal", ""),
+        "capabilities": capability_manifest(ctx), "repo_root": str(ROOT),
+        "python_executable": sys.executable, "topology_summary": wiring.topology_summary(w), "state": state, "wiring": w, "goal": ctx.get("goal", ""),
         "last": last, "fresh_observation": state.get("fresh_observation") or brain.last_fresh_observation() or bus.observation_brief(state),
         "desktop_tree": state.get("desktop_tree", {}), "desktop_tree_text": state.get("desktop_tree_text", ""),
         "action_index": action_index, "observation_artifact": state.get("observation_artifact", {}),

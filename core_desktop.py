@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import ctypes
 import importlib
 import os
@@ -56,58 +54,8 @@ class Desktop:
         hc = cfg.get("hover_cache", self.config.get("hover_cache", {}))
         return observe_desktop(self, hc)
 
-    def observe_screen(self) -> dict[str, int]:
-        return {"width": user32.GetSystemMetrics(0), "height": user32.GetSystemMetrics(1)}
-
-    def last_desktop_tree(self) -> dict[str, Any] | None:
-        return self._last_desktop_tree
-
     def last_action_index(self) -> dict[str, dict[str, Any]]:
         return self._last_action_index
-
-    def get_window_tokens(self) -> list[dict[str, Any]]:
-        sw, sh = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
-        windows = [{
-            "token": "W0",
-            "name": "Screen",
-            "title": "Desktop",
-            "hwnd": 0,
-            "rect": {"left": 0, "top": 0, "right": sw, "bottom": sh},
-            "children": [],
-        }]
-        EnumWindowsProc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
-
-        def callback(hwnd, _):
-            if not user32.IsWindowVisible(hwnd) or user32.IsIconic(hwnd):
-                return True
-            length = user32.GetWindowTextLengthW(hwnd)
-            if length <= 0:
-                return True
-            rect = wintypes.RECT()
-            if not user32.GetWindowRect(hwnd, ctypes.byref(rect)) or rect.right <= rect.left or rect.bottom <= rect.top:
-                return True
-            title = ctypes.create_unicode_buffer(length + 1)
-            class_name = ctypes.create_unicode_buffer(256)
-            pid = wintypes.DWORD()
-            user32.GetWindowTextW(hwnd, title, length + 1)
-            user32.GetClassNameW(hwnd, class_name, 256)
-            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-            windows.append({
-                "token": f"W{len(windows)}",
-                "name": "Window",
-                "title": title.value,
-                "hwnd": int(hwnd),
-                "rect": {"left": rect.left, "top": rect.top, "right": rect.right, "bottom": rect.bottom},
-                "process_id": int(pid.value),
-                "class_name": class_name.value,
-            })
-            return True
-
-        try:
-            user32.EnumWindows(EnumWindowsProc(callback), 0)
-        except Exception:
-            pass
-        return windows
 
     def click(self, x: int, y: int, hwnd: int = 0) -> dict[str, Any]:
         if hwnd:
@@ -236,15 +184,3 @@ def get_desktop(config: dict[str, Any] | None = None) -> Desktop:
 
 def observe(config: dict[str, Any] | None = None) -> dict[str, Any]:
     return get_desktop(config).observe(config)
-
-
-def observe_screen() -> dict[str, int]:
-    return get_desktop().observe_screen()
-
-
-def last_desktop_tree() -> dict[str, Any] | None:
-    return get_desktop().last_desktop_tree()
-
-
-def last_action_index() -> dict[str, dict[str, Any]]:
-    return get_desktop().last_action_index()

@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 import hashlib
 import json
@@ -212,18 +210,3 @@ def update_failure_streak(state: JsonDict) -> JsonDict:
             "updated_at": time.time(),
         }
     }
-
-
-def mermaid_state_diagram(wiring: JsonDict) -> str:
-    topo = wiring.get("topology", {})
-    edges = topo.get("edges", {})
-    lines = ["stateDiagram-v2", f"    [*] --> {topo.get('cycle_start', 'planner')} : cycle_start"]
-    for src, mapping in edges.items():
-        if not isinstance(mapping, dict):
-            continue
-        for signal, dst in mapping.items():
-            if dst == "halt":
-                lines.append(f"    {src} --> [*] : {signal}")
-            else:
-                lines.append(f"    {src} --> {dst} : {signal}")
-    return "\n".join(lines) + "\n"

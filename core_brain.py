@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import hashlib
 import importlib.util
 import json
@@ -29,27 +27,15 @@ STATIC_PREFIX_SKIP_PARTS = {".git", "__pycache__", ".pytest_cache"}
 STATIC_PREFIX_SKIP_PREFIXES = ("runtime_",)
 
 
-def _schema(required: list[str], props: dict[str, Any]) -> dict[str, Any]:
-    return {"type": "object", "additionalProperties": True, "properties": props, "required": required}
-
-
-_RECORD_DATA_SCHEMAS: dict[str, dict[str, Any]] = {
-    "plan": _schema(["next_signal", "intent"], {"next_signal": {"enum": ["step_ready", "reflect"]}, "intent": {"type": "array", "items": {"type": "object", "additionalProperties": True, "properties": {"description": {"type": "string"}, "done_when": {"type": "string"}}}}}),
-    "schedule": _schema(["next_signal", "step"], {"next_signal": {"enum": ["step_ready", "plan_complete"]}, "step": {"anyOf": [{"type": "object", "additionalProperties": True}, {"type": "null"}]}}),
-    "execution": _schema(["next_signal", "conclusion", "code"], {"next_signal": {"enum": ["verify", "frame", "reflect"]}, "conclusion": {"enum": ["EXECUTE", "CANNOT", "FRAME"]}, "code": {"type": "string"}}),
-    "action_frame": _schema(["next_signal", "screen_summary", "target", "strategy", "risk", "notes"], {"next_signal": {"enum": ["framed", "reflect"]}, "screen_summary": {"type": "string"}, "target": {"type": "string"}, "strategy": {"type": "string"}, "risk": {"enum": ["low", "medium", "high"]}, "notes": {"type": "string"}}),
-    "verification": _schema(["next_signal", "success", "reasoning"], {"next_signal": {"enum": ["step_confirmed", "step_denied"]}, "success": {"type": "boolean"}, "reasoning": {"type": "string"}}),
-    "reflection": _schema(["next_signal", "lesson", "diagnosis"], {"next_signal": {"enum": ["retry", "replan", "frame", "escalate", "give_up", "topology_patch"]}, "lesson": {"type": "string"}, "diagnosis": {"type": "string"}}),
-    "git_evolution_patch": _schema(["next_signal", "summary", "rationale", "read_files", "file_writes", "file_deletes", "wiring_patches", "commands", "expected_validation"], {
-        "next_signal": {"enum": ["modified"]}, "summary": {"type": "string"}, "rationale": {"type": "string"},
-        "read_files": {"type": "array", "items": {"type": "string"}},
-        "file_writes": {"type": "array", "items": {"type": "object", "additionalProperties": True, "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}},
-        "file_deletes": {"type": "array", "items": {"type": "string"}},
-        "wiring_patches": {"type": "array", "items": {"type": "object", "additionalProperties": True, "properties": {"op": {"enum": ["set", "delete"]}, "path": {"type": "string"}}, "required": ["op", "path"]}},
-        "commands": {"type": "array", "items": {"type": "object", "additionalProperties": True}},
-        "expected_validation": {"anyOf": [{"type": "string"}, {"type": "object", "additionalProperties": True}, {"type": "null"}]},
-    }),
-    "satisfied": _schema(["next_signal"], {"next_signal": {"const": "halt"}}),
+_RECORD_RULES: dict[str, tuple[list[str], dict[str, list[Any]]]] = {
+    "plan": (["next_signal", "intent"], {"next_signal": ["step_ready", "reflect"]}),
+    "schedule": (["next_signal", "step"], {"next_signal": ["step_ready", "plan_complete"]}),
+    "execution": (["next_signal", "conclusion", "code"], {"next_signal": ["verify", "frame", "reflect"], "conclusion": ["EXECUTE", "CANNOT", "FRAME"]}),
+    "action_frame": (["next_signal", "screen_summary", "target", "strategy", "risk", "notes"], {"next_signal": ["framed", "reflect"], "risk": ["low", "medium", "high"]}),
+    "verification": (["next_signal", "success", "reasoning"], {"next_signal": ["step_confirmed", "step_denied"]}),
+    "reflection": (["next_signal", "lesson", "diagnosis"], {"next_signal": ["retry", "replan", "frame", "escalate", "give_up", "topology_patch"]}),
+    "git_evolution_patch": (["next_signal", "summary", "rationale", "read_files", "file_writes", "file_deletes", "wiring_patches", "commands", "expected_validation"], {"next_signal": ["modified"]}),
+    "satisfied": (["next_signal"], {"next_signal": ["halt"]}),
 }
 
 
@@ -114,20 +100,16 @@ def _messages(system_prompt: str, user_text: str, prefix: StablePrefix | None, s
 def _validate_record_contract(record: bus.Record, expected_record_type: str | None = None) -> None:
     if expected_record_type and record.record_type != expected_record_type:
         raise RuntimeError(f"brain record_type mismatch: expected {expected_record_type!r}, got {record.record_type!r}")
-    schema = _RECORD_DATA_SCHEMAS.get(record.record_type)
-    if not schema:
+    rule = _RECORD_RULES.get(record.record_type)
+    if not rule:
         return
-    missing = [key for key in schema["required"] if key not in record.data]
+    required, enums = rule
+    missing = [key for key in required if key not in record.data]
     if missing:
         raise RuntimeError(f"{record.record_type} record missing required data keys: {missing}")
-    for key, rule in schema.get("properties", {}).items():
-        if key not in record.data or not isinstance(rule, dict):
-            continue
-        value = record.data.get(key)
-        if "const" in rule and value != rule["const"]:
-            raise RuntimeError(f"{record.record_type}.data.{key} must be {rule['const']!r}, got {value!r}")
-        if "enum" in rule and value not in set(rule["enum"]):
-            raise RuntimeError(f"{record.record_type}.data.{key}={value!r} outside {rule['enum']!r}")
+    for key, values in enums.items():
+        if key in record.data and record.data[key] not in set(values):
+            raise RuntimeError(f"{record.record_type}.data.{key}={record.data[key]!r} outside {values!r}")
 
 
 def _commit_record(content: str, expected_record_type: str | None = None) -> bus.Record:
@@ -248,10 +230,7 @@ def _structured_outputs_enabled(cfg: dict[str, Any]) -> bool:
 
 
 def _record_response_format(record_type: str) -> dict[str, Any]:
-    schema = _RECORD_DATA_SCHEMAS.get(record_type)
-    if not schema:
-        return {"type": "json_object"}
-    return {"type": "json_schema", "name": f"{record_type}_record", "strict": True, "schema": {"type": "object", "additionalProperties": False, "properties": {"record_type": {"enum": [record_type]}, "data": schema, "reasoning": {"type": "string"}}, "required": ["record_type", "data", "reasoning"]}}
+    return {"type": "json_schema", "name": f"{record_type}_record", "strict": True, "schema": {"type": "object", "additionalProperties": False, "properties": {"record_type": {"enum": [record_type]}, "data": {"type": "object", "additionalProperties": True}, "reasoning": {"type": "string"}}, "required": ["record_type", "data", "reasoning"]}}
 
 
 def call(messages: list[dict[str, str]], w: dict[str, Any], *, rod_feedback: bool = False, response_format: dict[str, Any] | None = None, request_config: dict[str, Any] | None = None) -> dict[str, str]:
@@ -372,23 +351,3 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
     second = call(_messages(system_prompt, user_text + "\n\n" + template.format(reasoning=reasoning), prefix_for_messages, stable_context), w, rod_feedback=True, response_format=response_format, request_config=request_cfg)
     record = _commit_record(second["content"], expected_record_type)
     return bus.Record(record.record_type, record.data, reasoning).to_json()
-
-
-def read_runtime_event_tail(path: pathlib.Path | None = None, *, max_lines: int = 200, max_bytes: int = 600_000) -> list[dict[str, Any]]:
-    p = path or wiring.event_log_path({})
-    if not p.exists():
-        return []
-    size = p.stat().st_size
-    with p.open("rb") as f:
-        if size > max_bytes:
-            f.seek(size - max_bytes); f.readline()
-        raw = f.read()
-    rows: list[dict[str, Any]] = []
-    for line in raw.decode("utf-8", errors="replace").splitlines()[-max_lines:]:
-        try:
-            obj = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(obj, dict):
-            rows.append(obj)
-    return rows
