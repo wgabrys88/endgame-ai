@@ -53,20 +53,20 @@ graph TD
     EXB -->|done| BAR[🚧 node_barrier]
     EXE -->|done| BAR
     EXT -->|done| BAR
-    BAR -->|join · arity 3| VER[✅ node_verify]
+    BAR -->|"join (arity 3)"| VER[✅ node_verify]
     VER -->|step_confirmed| SCHED
     VER -->|step_denied| REF
     REF -->|retry| GUIDE
     REF -->|replan| PLAN
     REF -->|frame| FRAME[🎯 node_frame_action]
-    REF -->|escalate / topology_patch| SELF[🔧 node_self_modify]
+    REF -->|"escalate / topology_patch"| SELF[🔧 node_self_modify]
     REF -->|spawn| SPAWN[🧬 node_spawn]
     REF -->|give_up| SAT[🕊️ node_satisfied]
     FRAME -->|framed| GUIDE
     SELF -->|modified| PLAN
     SELF -->|modify_failed| REF
     SPAWN -->|spawned| REF
-    SAT -->|halt · chosen| STOP[⏹️ HALT]
+    SAT -->|"halt (chosen)"| STOP[⏹️ HALT]
     ERR[💥 node_error] -->|planner| PLAN
     ERR -->|reflect| REF
     ERR -->|guidance| GUIDE
@@ -134,14 +134,14 @@ The only genuinely external bound is the **operator's leash** for finite develop
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#1a1a2e', 'edgeLabelBackground':'#16213e'}}}%%
 graph TD
-    R[🧠 node_reflect] -->|escalate / topology_patch| SM[🔧 node_self_modify]
-    SM -->|propose git_evolution_patch| GATE{coherence gate\ncheck_topology}
-    GATE -->|coherent| APPLY[apply · known_good ref]
-    GATE -->|incoherent| REJECT[reject · rollback]
+    R[🧠 node_reflect] -->|"escalate / topology_patch"| SM[🔧 node_self_modify]
+    SM -->|"propose git_evolution_patch"| GATE{"coherence gate<br/>check_topology"}
+    GATE -->|coherent| APPLY["apply (known_good ref)"]
+    GATE -->|incoherent| REJECT["reject (rollback)"]
     APPLY -->|modified| P[🏗️ node_planner]
     REJECT -->|modify_failed| R
     R -->|spawn| SP[🧬 node_spawn]
-    SP -->|child organism · cap_spawn| SP2[folds narrative back]
+    SP -->|"child organism (cap_spawn)"| SP2[folds narrative back]
     SP2 -->|spawned| R
     style SM fill:#1a1a2e,stroke:#e94560
     style SP fill:#2e0f2e,stroke:#c060e0
