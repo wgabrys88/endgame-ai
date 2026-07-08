@@ -13,7 +13,7 @@ class FrameActionNode(BaseNode):
     def build_payload(self, ctx):
         state = ctx.get("state", {})
         step = state.get("current_step") or {}
-        goal = state.get("effective_goal", ctx.get("goal", ""))
+        goal = bus.current_goal(state, ctx)
         return {"goal": goal, "step": {"description": step.get("description", goal), "done_when": step.get("done_when", "")}, "evidence": self.evidence(ctx), "observation": bus.observation_brief(state)}
 
     def signal_from_data(self, data, ctx):
@@ -27,7 +27,7 @@ class FrameActionNode(BaseNode):
         step_index = int(state.get("step", 0) or 0)
         frame = {key: data.get(key, "") for key in ("screen_summary", "target", "strategy", "risk", "notes")}
         frame["step_index"] = step_index
-        effective = state.get("effective_goal", ctx.get("goal", "")) + f"\n\n[FRAME_ACTION] Focusing on {frame.get('target', 'unknown')} via {frame.get('strategy', 'unknown')}: {frame.get('notes', '')[:200]}"
+        effective = bus.append_goal(state, ctx, f"[FRAME_ACTION] Focusing on {frame.get('target', 'unknown')} via {frame.get('strategy', 'unknown')}: {frame.get('notes', '')[:200]}")
         return {"action_frame": frame, "framing_attempted_for_step": step_index, "effective_goal": effective}
 
 

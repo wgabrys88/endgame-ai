@@ -132,6 +132,17 @@ def validate_signal(wiring: JsonDict, node: str, signal: str) -> None:
         raise TopologyContractError(f"node '{node}' emitted signal '{signal}' outside topology contract; allowed: {allowed}")
 
 
+def current_goal(state: JsonDict, ctx: JsonDict) -> str:
+    """The effective goal in play, falling through to the root goal. Single source."""
+    return state.get("effective_goal", ctx.get("goal", ""))
+
+
+def append_goal(state: JsonDict, ctx: JsonDict, note: str) -> str:
+    """Append a bracketed narrative note to the effective goal. Single source for the
+    '[TAG] ...' goal-rewrite ritual every node repeats."""
+    return current_goal(state, ctx) + f"\n\n{note}"
+
+
 def state_brief(state: JsonDict) -> JsonDict:
 
     current_step = state.get("current_step") or {}

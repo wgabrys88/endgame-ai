@@ -46,7 +46,7 @@ def _runtime_evidence(wiring: dict[str, Any], state: dict[str, Any]) -> dict[str
 
 def run(ctx):
     state, wiring = ctx.get("state", {}), ctx.get("wiring", {})
-    goal = state.get("effective_goal", ctx.get("goal", ""))
+    goal = bus.current_goal(state, ctx)
     step = state.get("current_step") or {}
     git_context = nodes.prepare_self_evolution(wiring)
     payload = {

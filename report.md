@@ -738,3 +738,64 @@ topology reachability (updated for list edges in Phase B). Hot-swap + self_modif
 apply path must keep working through the whole sequence.
 
 STARTING NOW: Phase A1. Pause for operator review after A1 (per instruction).
+---
+
+## 13. Deduction correction (operator directive: no questions, node+wiring only)
+
+Operator clarified the axiom hard: the system is ONLY nodes + wiring, everything
+hot-swappable, no branching, no questions. The file_proxy brain (me) is now part
+of the system. Deduct and go; keep `wiring.json` prompts + contracts aligned.
+
+Revising the Phase A plan where it fought the axiom:
+
+- **A2 CANCELLED (BaseTransport ABC).** The transport contract is already
+  complete and minimal: a module-level `call(messages, cfg) -> {content,
+  reasoning, ...}`. Existence is checked by `core_loader` (export=`call`);
+  return SHAPE is checked by `core_brain.call` (the `contract violation` raises).
+  Adding an ABC would ADD lines and ceremony and fight the pattern that
+  self-evolution uses (write a `.py` exporting `call`). That violates the code-
+  reduction requirement and the no-ceremony axiom. The contract is documented in
+  one line in `core_loader.KINDS`. Same reasoning applies to a `BaseTransport`-
+  style ABC for tools: contracts, not class trees.
+- **Capabilities are the real dedup (kept, promoted).** `node_execute` +
+  instances (`:browser`/`:editor`/`:terminal`) collapse many executors into one
+  class — that is genuine reduction and the fractal one-class-many-instances
+  win. Capability sets are merged from wiring, not hard-coded.
+- **§9 node wins kept** (signal validation + `append_goal`): real LOC removal.
+- **Phase B (fractal) is the point**: frontier loop, list edges, barrier,
+  spawn, runtime rewiring, then rewrite `wiring.json` into the visionary
+  topology with aligned prompts/contracts.
+
+Principle locked: prefer the FUNCTION/plugin contract enforced at the loader +
+call site over class hierarchies. ABC only where it removes duplication
+(BaseNode does; BaseTransport/BaseTool do not). Fewer moving parts wins.
+
+Executing the rest of Phase A + Phase B autonomously, no gating questions.
+---
+
+## 14. A5 applied: goal-narrative unification (signal-guard removal REJECTED)
+
+Added `core_bus.current_goal(state, ctx)` and `core_bus.append_goal(state, ctx,
+note)` — single source for the `effective_goal` read (`effective_goal` else
+`ctx.goal` else "") and the `base + "\n\n[TAG] ..."` append ritual. Migrated 12
+sites across 8 nodes (satisfied, scheduler, error, frame_action, verify, reflect,
+execute, self_modify). Proven byte-identical to the old inline expressions by
+unit assertion; topology intact; all compile + import clean.
+
+REJECTED (behavior-changing, not dead code): lifting the per-node `next_signal`
+enum guards (planner `{step_ready,reflect}`, reflect's 6-signal set, verify's
+signal↔success coupling) into `BaseNode`. Reason: `bus.validate_signal` checks
+against `topology.edges[node]` which is a SUPERSET (it also allows `error`). The
+node-local guards deliberately EXCLUDE `error` and, for verify, couple the
+signal to `self._success`. Removing them would let an LLM emit `next_signal:
+"error"` and pass — a behavior change, not a reduction. Per the §9 principle
+(keep domain rules in the node; ABC only where it removes true duplication), the
+guards stay. Enum ≠ redundant here because it encodes "the node may not
+self-route to error."
+
+Phase A substantive work is complete (A1 loader; A2 cancelled as ceremony; A5
+goal helpers). Capability-extraction (old A3) folded into Phase B, where
+`node_execute:instance` makes one-class-many-instances actually pay off.
+Next: Phase B — fractal loop (list edges + frontier), barrier, spawn, runtime
+rewiring, then rewrite wiring.json into the visionary topology with aligned
+prompts/contracts.

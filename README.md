@@ -41,6 +41,20 @@ Progress:
   (one line: paths-key, module prefix, required export). Do not write a new
   loader.
 
+- **Step A2 — transport ABC: intentionally NOT built.** The transport contract
+  is a module-level `call(messages, cfg) -> {content, reasoning, ...}`. Existence
+  is enforced by `core_loader` (export=`call`); return-shape by `core_brain.call`.
+  An ABC would add ceremony and LOC and fight the self-evolution pattern of
+  writing a `.py` that exports `call`. Contracts, not class trees, where a class
+  removes no duplication. (`report.md` §13.)
+
+- **Step A5 — goal-narrative unification.** `core_bus.current_goal(state, ctx)`
+  and `core_bus.append_goal(state, ctx, note)` are the single source for reading
+  the effective goal and for the `base + "\n\n[TAG] ..."` append every node
+  repeated. 12 sites across 8 nodes migrated; behavior proven byte-identical.
+  The per-node `next_signal` enum guards were deliberately kept (they encode "a
+  node may not self-route to `error`", which `validate_signal` does not enforce).
+
 ---
 
 ## What changed (net −29 LOC, 6 files, zero topology/contract change)

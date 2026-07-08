@@ -25,7 +25,7 @@ class ReflectNode(BaseNode):
         self._prepare(ctx)
         state = ctx.get("state", {})
         step = state.get("current_step") or {}
-        return {"goal": state.get("effective_goal", ctx.get("goal", "")), "step": {"description": step.get("description", ctx.get("goal", "")), "done_when": step.get("done_when", "")}, "evidence": self._evidence_payload, "observation": bus.observation_brief(state), "routing_contract": {"task_route_signals": ["frame", "replan", "retry"], "self_modify_signal": "escalate/topology_patch for consumed organism changes", "contract_failure_kinds": sorted(CONTRACT_FAILURE_KINDS)}}
+        return {"goal": bus.current_goal(state, ctx), "step": {"description": step.get("description", ctx.get("goal", "")), "done_when": step.get("done_when", "")}, "evidence": self._evidence_payload, "observation": bus.observation_brief(state), "routing_contract": {"task_route_signals": ["frame", "replan", "retry"], "self_modify_signal": "escalate/topology_patch for consumed organism changes", "contract_failure_kinds": sorted(CONTRACT_FAILURE_KINDS)}}
 
     def _contract_failure(self) -> bool:
         return self._failure.get("source") != "execute" and bool(self._failure.get("contract_repair_allowed")) and str(self._failure.get("kind") or "") in CONTRACT_FAILURE_KINDS
@@ -68,7 +68,7 @@ class ReflectNode(BaseNode):
         step = state.get("current_step") or {}
         lesson = data.get("lesson", "No lesson provided")
         diagnosis = data.get("diagnosis", "No diagnosis")
-        effective = state.get("effective_goal", ctx.get("goal", "")) + f"\n\n[REFLECT] Routed to {self._signal}. Lesson: {lesson[:100]}. Diagnosis: {diagnosis[:100]}."
+        effective = bus.append_goal(state, ctx, f"[REFLECT] Routed to {self._signal}. Lesson: {lesson[:100]}. Diagnosis: {diagnosis[:100]}.")
         reflection = {"lesson": lesson, "diagnosis": diagnosis, "step_goal": step.get("description", ctx.get("goal", "")), "recovery_signal": self._signal, "requested_signal": data.get("next_signal"), "routing_override": self._routing_override, "failure": self._failure}
         patch = {**self._streak_patch, "reflection": reflection, "last_reflection": {"signal": self._signal, "requested_signal": data.get("next_signal"), "lesson": lesson, "diagnosis": diagnosis, "routing_override": self._routing_override, "failure": self._failure}, "effective_goal": effective}
         if self._signal == "topology_patch" and "topology_patch" in data:
