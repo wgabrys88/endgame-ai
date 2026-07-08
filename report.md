@@ -848,3 +848,55 @@ LOC lower than A5. Behavior for the goal narrative is now FULL-FIDELITY
 
 Verified: py_compile all, core import smoke, no residual helper refs, no
 narrative `[:N]`, `bus` still used in every touched node, check_topology exit 0.
+---
+
+## 16. LIVE RUN ATTEMPT (file_proxy, WSL2) — findings
+
+Goal: "open shakira latest video on youtube and play it", 60s, transport
+file_proxy, me as the LLM answering on-disk requests.
+
+Hard reality confirmed: the system is Windows-11-only. `cycle_start` is
+`node_observe`, which imports `core_desktop -> comtypes` (Windows UIA). On WSL2
+that raises `ModuleNotFoundError: comtypes` at the first node. There is no
+fallback (by design). So a true end-to-end run is impossible from WSL2; only
+non-desktop nodes (planner) can execute.
+
+Two REAL bugs surfaced before any desktop dependency (valuable):
+
+1. **CONTRACT MISALIGNMENT (fixed): file_proxy transport missing `reasoning`.**
+   `core_brain.think` hard-reads `cfg["reasoning"]` (line ~302). `transport_xai`
+   config has a `reasoning` block; `transport_file_proxy` did NOT — so selecting
+   file_proxy raised `KeyError: 'reasoning'` before any brain call. This is
+   exactly the "prompts/contracts must stay aligned" class of defect. Fix: added
+   the `reasoning` block to `model.transport_config.transport_file_proxy` in
+   wiring.json (enabled:false, pattern:native — the anti-truncation/no-multi-pass
+   setting). This is a wiring alignment fix, not code. KEPT.
+
+2. **`fresh_observation` gate is correct and firing.** `think` refuses to call
+   the brain unless a prior observation exists ("observe node must run before any
+   brain call"). Starting at planner (to skip desktop) correctly hits this guard.
+   Not a bug — a contract. To exercise a brain call off-Windows you must seed a
+   fake `fresh_observation` with non-empty `desktop_tree_text`.
+
+3. **ROBUSTNESS GAP (noted, NOT yet fixed): error-routing hot-loop.** When a node
+   errors repeatedly, `core_organism`'s except-branch recursively re-calls `run`
+   with `start_node=<error target>`. With a persistently failing node this
+   becomes a TIGHT infinite loop (observed hundreds of identical
+   `[ERROR NODE] ... KeyError: 'paths'` lines in ~seconds, hot-spinning CPU, only
+   stopped by SIGKILL). The `KeyError: 'paths'` itself was triggered by a
+   hand-seeded partial state in the harness (loader/resume read a dict lacking
+   `paths`), so that specific key is a test artifact — but the UNBOUNDED,
+   NO-BACKOFF error recursion is a genuine defect: a failure_streak cap should
+   halt (or at least backoff) instead of spinning. Candidate fix for a later
+   step: bound error-routing recursion depth / consecutive-error count in the
+   loop and halt hard when exceeded (fail hard, not fail forever).
+
+What WORKED: unified loader resolves transport by name; file_proxy config now
+passes validate_wiring; reasoning fix lets `think` proceed to the observation
+gate; topology coherent; all modules compile. What is UNPROVEN on this host:
+the actual file_proxy request/response round-trip (blocked first by the
+reasoning KeyError, then by the observation gate; a real round-trip needs a
+seeded observation AND a clean state, or a Windows host).
+
+Harness cleanup: transport restored to transport_xai; runtime_*.json removed;
+only wiring.json (reasoning alignment) left modified, to be committed.
