@@ -21,7 +21,7 @@ class ExecuteNode(BaseNode):
 
     def build_payload(self, ctx):
         state = ctx.get("state", {})
-        goal = bus.current_goal(state, ctx)
+        goal = state["effective_goal"]
         step = state.get("current_step") or {}
         return {
             "goal": goal,
@@ -76,7 +76,7 @@ class ExecuteNode(BaseNode):
             result = {"stdout": stdout.getvalue(), "stderr": stderr.getvalue(), "action_events": list(ns.get("_action_events") or [])}
             error = f"{type(exc).__name__}: {exc}"
             failure = self._failure("task_route_exception", exception_type=type(exc).__name__, message=str(exc))
-        effective_goal = bus.append_goal(state, ctx, f"[EXECUTE] Action executed: {code[:120]}... Result: {'success' if not error else 'error: ' + str(error)[:80]}.")
+        effective_goal = state["effective_goal"] + f"\n\n[EXECUTE] Action executed: {code}. Result: {'success' if not error else 'error: ' + str(error)}."
         return bus.emit("reflect" if error else "verify", {"last_action": {"code": code, "conclusion": conclusion}, "last_code": code, "last_result": result, "last_error": error, "last_failure": failure, "action_frame": None if not error else state.get("action_frame"), "effective_goal": effective_goal}, record=record, evidence=payload)
 
 

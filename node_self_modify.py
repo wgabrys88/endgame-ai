@@ -46,7 +46,7 @@ def _runtime_evidence(wiring: dict[str, Any], state: dict[str, Any]) -> dict[str
 
 def run(ctx):
     state, wiring = ctx.get("state", {}), ctx.get("wiring", {})
-    goal = bus.current_goal(state, ctx)
+    goal = state["effective_goal"]
     step = state.get("current_step") or {}
     git_context = nodes.prepare_self_evolution(wiring)
     payload = {
@@ -69,7 +69,7 @@ def run(ctx):
         raise RuntimeError(f"self_modify expected record_type=git_evolution_patch, got {record.get('record_type')}")
     data = record.get("data", {})
     obs = brain.last_fresh_observation()
-    effective = f"{goal}\n\n[SELF_MODIFY] Proposed evolution: {data.get('summary', '')[:150]}. Patches: {len(data.get('wiring_patches', []) or [])}, writes: {len(data.get('file_writes', []) or [])}, deletes: {len(data.get('file_deletes', []) or [])}."
+    effective = f"{goal}\n\n[SELF_MODIFY] Proposed evolution: {data.get('summary', '')}. Patches: {len(data.get('wiring_patches', []) or [])}, writes: {len(data.get('file_writes', []) or [])}, deletes: {len(data.get('file_deletes', []) or [])}."
     patch = {
         "observed_at": obs.get("observed_at"), "fresh_scan": obs.get("fresh_scan"), "desktop_tree_text": obs.get("desktop_tree_text", ""),
         "git_evolution_patch": {key: data.get(key, [] if key.endswith("s") else "") for key in ("summary", "rationale", "read_files", "wiring_patches", "file_writes", "file_deletes", "commands", "expected_validation")},

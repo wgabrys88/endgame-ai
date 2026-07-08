@@ -35,7 +35,7 @@ class PlannerNode(BaseNode):
         if bool(state.get("plan")) and (state.get("last_reflection") or {}).get("signal") == "replan" and len(intent) < max(0, len(root_intent) - len(completed)):
             raise RuntimeError("planner replan amputated root goal obligations")
         descs = [s.get("description", "") for s in intent if isinstance(s, dict)]
-        effective = f"{ctx.get('goal', '')}\n\n[PLANNER REWRITE] Current plan focuses on: {'; '.join(descs[:3])}. Next: {descs[0] if descs else 'no steps'}."
+        effective = f"{ctx.get('goal', '')}\n\n[PLANNER REWRITE] Current plan focuses on: {'; '.join(descs)}. Next: {descs[0] if descs else 'no steps'}."
         return {"plan": data, "root_plan_intent": root_intent, "step": 0, "plan_complete": False, "reasoning": record.reasoning, "effective_goal": effective}
 
 

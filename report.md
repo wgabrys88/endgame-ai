@@ -799,3 +799,52 @@ goal helpers). Capability-extraction (old A3) folded into Phase B, where
 Next: Phase B — fractal loop (list edges + frontier), barrier, spawn, runtime
 rewiring, then rewrite wiring.json into the visionary topology with aligned
 prompts/contracts.
+---
+
+## 15. CRITICAL FIX: kill narrative truncations + de-bloat goal helpers (operator directive)
+
+Operator flagged two things, both correct:
+
+1. **Truncations are a critical defect.** Every node narrates its interpretation
+   of the goal into `effective_goal`; the next node reads it. That narrative is
+   the meta-mechanism that non-deterministically breaks loops and moves the
+   organism forward ("everyone knows how others interpret the goal"). Slicing
+   those strings (`lesson[:100]`, `code[:120]`, `descs[:3]`, ...) LOPS OFF the
+   interpretation mid-thought — corrupting exactly that mechanism. Removed ALL
+   narrative truncations:
+   - node_execute: `code[:120]`, `error[:80]` (+ removed misleading literal `...`)
+   - node_frame_action: `notes[:200]`
+   - node_reflect: `lesson[:100]`, `diagnosis[:100]`
+   - node_verify: `desc[:100]` x2, `reasoning[:100]`
+   - node_error: `error[:100]`
+   - node_self_modify: `summary[:150]`
+   - node_planner: `descs[:3]` (was DROPPING plan steps from the narrative)
+   - transport_xai: HTTP error body `[:2000]` (full error now visible)
+   Principle: if information is not wanted, FILTER at the source; never truncate
+   the organism's own narrative. `truncation: "disabled"` in xai stays (that is
+   the correct anti-truncation setting). `max_output_tokens` per-organ are wiring
+   dials (operator's choice), not code truncation — left to wiring.
+
+   KEPT (legitimate, not narrative data loss): cache/conv-id hash slices
+   (`fingerprint[:24]`, md5`[:8]`, sha256`[:16]`), git commit SUBJECT `title[:60]`
+   (full summary/rationale go in the commit BODY uncut), scan_stats
+   `first_point_errors errors[:5]` (debug telemetry sample), git porcelain
+   fixed-field parse (`row[:2]`, `row[3:]`).
+
+2. **`current_goal`/`append_goal` were bloat.** A one-line expression wrapped in
+   a named function + docstring is the ceremony we are removing. Deleted both
+   helpers. Root cause of the repetition was the `ctx.get("goal","")` FALLBACK —
+   which was defensive branching. Fixed at the source: seed
+   `st.setdefault("effective_goal", st["goal"])` ONCE at organism start
+   (core_organism), so `effective_goal` is always present. Every node now reads
+   `state["effective_goal"]` directly — hard key access, no function, no
+   fallback, no docstring. Non-defensive: if the seed is ever missing that is a
+   real bug and should raise, not silently fall back.
+
+This reverses part of A5 (§14): the helpers are gone, but the intent (single
+source, no per-node fallback) is achieved more directly by seeding once. Net
+LOC lower than A5. Behavior for the goal narrative is now FULL-FIDELITY
+(previously lossy) — an intentional behavior improvement, not just a refactor.
+
+Verified: py_compile all, core import smoke, no residual helper refs, no
+narrative `[:N]`, `bus` still used in every touched node, check_topology exit 0.

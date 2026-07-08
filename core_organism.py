@@ -65,6 +65,7 @@ def run(
             raise RuntimeError(f"start node '{current}' is not in topology.nodes")
         st["_phase"] = "resuming" if resumed else st.get("_phase", "starting")
         st["goal"] = goal or str(st.get("goal") or "")
+        st.setdefault("effective_goal", st["goal"])
         st["current_node"] = current
         st["duration_seconds"] = duration_seconds
         st["deadline_at"] = deadline_at

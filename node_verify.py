@@ -17,7 +17,7 @@ class VerifyNode(BaseNode):
 
     def build_payload(self, ctx):
         desc, done_when = self._step(ctx)
-        return {"goal": bus.current_goal(ctx.get("state", {}), ctx), "step": {"description": desc, "done_when": done_when}, "evidence": self.evidence(ctx), "observation": bus.observation_brief(ctx.get("state", {}))}
+        return {"goal": ctx.get("state", {})["effective_goal"], "step": {"description": desc, "done_when": done_when}, "evidence": self.evidence(ctx), "observation": bus.observation_brief(ctx.get("state", {}))}
 
     def signal_from_data(self, data, ctx):
         self._signal = data.get("next_signal")
@@ -29,7 +29,7 @@ class VerifyNode(BaseNode):
     def patch_from_record(self, record, ctx):
         data, state = record.data, ctx.get("state", {})
         desc, done_when = self._step(ctx)
-        effective = bus.append_goal(state, ctx, f"[VERIFY] Step confirmed: {desc[:100]}. Moving to next step." if self._success else f"[VERIFY] Step denied: {desc[:100]}. Evidence missing: {data.get('reasoning', '')[:100]}.")
+        effective = state["effective_goal"] + (f"\n\n[VERIFY] Step confirmed: {desc}. Moving to next step." if self._success else f"\n\n[VERIFY] Step denied: {desc}. Evidence missing: {data.get('reasoning', '')}.")
         patch: dict[str, object] = {"verification": {"success": self._success, "reasoning": data.get("reasoning", record.reasoning), "step_goal": desc, "done_when": done_when}, "last_verification": {"success": self._success, "signal": self._signal}, "effective_goal": effective}
         if self._success:
             completed = list(state.get("completed_steps") or [])

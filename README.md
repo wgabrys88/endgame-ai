@@ -48,12 +48,17 @@ Progress:
   writing a `.py` that exports `call`. Contracts, not class trees, where a class
   removes no duplication. (`report.md` §13.)
 
-- **Step A5 — goal-narrative unification.** `core_bus.current_goal(state, ctx)`
-  and `core_bus.append_goal(state, ctx, note)` are the single source for reading
-  the effective goal and for the `base + "\n\n[TAG] ..."` append every node
-  repeated. 12 sites across 8 nodes migrated; behavior proven byte-identical.
-  The per-node `next_signal` enum guards were deliberately kept (they encode "a
-  node may not self-route to `error`", which `validate_signal` does not enforce).
+- **Step A5 — goal-narrative unification, then de-bloated (see §15).** The
+  effective-goal read/append was first factored into `bus.current_goal`/
+  `append_goal`, then those helpers were DELETED as one-line bloat. Root fix:
+  seed `effective_goal = goal` once at organism start, so every node reads
+  `state["effective_goal"]` directly — no helper, no `ctx.get("goal")` fallback.
+
+- **Truncations removed (critical).** All narrative truncations that lopped off
+  a node's goal-interpretation (`lesson[:100]`, `code[:120]`, `descs[:3]`, …)
+  were removed — that narrative is the loop-breaking meta-mechanism and must be
+  full-fidelity. Filter at the source if content is unwanted; never truncate the
+  organism's own narrative. Legitimate hash/id/git-subject/field slices kept.
 
 ---
 

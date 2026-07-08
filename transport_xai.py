@@ -48,7 +48,7 @@ def call(messages, cfg):
         with urllib.request.urlopen(req, timeout=float(cfg.get("timeout") or 120)) as resp:
             obj = json.loads(resp.read().decode("utf-8", errors="replace"))
     except urllib.error.HTTPError as exc:
-        raise RuntimeError(f"xai transport HTTP {exc.code}: {exc.read().decode('utf-8', errors='replace')[:2000]}") from exc
+        raise RuntimeError(f"xai transport HTTP {exc.code}: {exc.read().decode('utf-8', errors='replace')}") from exc
     except urllib.error.URLError as exc:
         raise RuntimeError(f"xai transport URL error: {getattr(exc, 'reason', exc)}; no fallback was attempted") from exc
     content = obj.get("output_text") or ""
