@@ -18,6 +18,8 @@
 !core_state.py
 !core_node_base.py
 !node_error.py
+!node_dispatch.py
+!node_spawn.py
 !node_guidance.py
 !node_barrier.py
 !cap_spawn.py

@@ -2,7 +2,15 @@ import core_bus as bus
 
 
 def run(ctx):
-    state = ctx.get("state", {})
+    """Many-to-one fan-in: gather all branches of a fan-out back into one.
+
+    Reads its arity from topology.barriers[node], counts arrivals in
+    state["_barriers"][node], emits "wait" (absorb, push nothing) until the
+    assembly is whole, then resets the counter and emits "join". The dispatcher
+    fans out to all faculty branches; unchosen faculties pass through idle, so the
+    arity is the full branch count and every branch always reaches the gate.
+    """
+    state = ctx["state"]
     node = ctx["node"]
     arity = int(ctx["wiring"]["topology"]["barriers"][node])
     arrivals = dict(state.get("_barriers") or {})

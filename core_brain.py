@@ -31,9 +31,10 @@ _RECORD_RULES: dict[str, tuple[list[str], dict[str, list[Any]]]] = {
     "plan": (["next_signal", "intent"], {"next_signal": ["step_ready", "reflect"]}),
     "schedule": (["next_signal", "step"], {"next_signal": ["step_ready", "plan_complete"]}),
     "execution": (["next_signal", "conclusion", "code"], {"next_signal": ["verify", "frame", "reflect"], "conclusion": ["EXECUTE", "CANNOT", "FRAME"]}),
+    "dispatch": (["next_signal", "faculties", "rationale"], {"next_signal": ["dispatch"]}),
     "action_frame": (["next_signal", "screen_summary", "target", "strategy", "risk", "notes"], {"next_signal": ["framed", "reflect"], "risk": ["low", "medium", "high"]}),
     "verification": (["next_signal", "success", "reasoning"], {"next_signal": ["step_confirmed", "step_denied"]}),
-    "reflection": (["next_signal", "lesson", "diagnosis"], {"next_signal": ["retry", "replan", "frame", "escalate", "give_up", "topology_patch"]}),
+    "reflection": (["next_signal", "lesson", "diagnosis"], {"next_signal": ["retry", "replan", "frame", "escalate", "give_up", "topology_patch", "spawn"]}),
     "git_evolution_patch": (["next_signal", "summary", "rationale", "read_files", "file_writes", "file_deletes", "wiring_patches", "commands", "expected_validation"], {"next_signal": ["modified"]}),
     "satisfied": (["next_signal"], {"next_signal": ["halt"]}),
 }

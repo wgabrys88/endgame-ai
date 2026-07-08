@@ -47,7 +47,7 @@ class ReflectNode(BaseNode):
 
     def signal_from_data(self, data, ctx):
         requested = data.get("next_signal")
-        if requested not in {"retry", "replan", "frame", "escalate", "give_up", "topology_patch"}:
+        if requested not in {"retry", "replan", "frame", "escalate", "give_up", "topology_patch", "spawn"}:
             raise RuntimeError(f"reflection emitted invalid next_signal: {requested!r}")
         state = ctx.get("state", {})
         signal = requested

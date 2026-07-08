@@ -86,55 +86,64 @@ cannot run here; only pure-Python nodes and structural/behavioral tests execute.
 
 ---
 
-## 🔄 Current Topology (live wiring — still linear)
+## 🔄 Live Topology — the Fractal Wheel
 
-The fractal **substrate** exists (fan-out, fan-in, list edges) but the live
-`wiring.json` is still the linear Phase-3 pipeline. Fractal wiring lands in **B6**.
+The live `wiring.json` **is** the fractal wheel (F3). It is entered at
+`node_guidance` and **never terminates**: every path returns to the wheel; `halt`
+is reachable only as the organism's own choice (reflect → give_up → satisfied).
+`node_dispatch` wakes a chosen subset of faculty **instances**
+(`node_execute:browser` / `:editor` / `:terminal`), which converge on
+`node_barrier` (arity 3 — unchosen faculties pass through idle). `node_spawn`
+begets a child organism where recursion pays. Errors re-narrate and re-enter the
+wheel forever.
 
 ```mermaid
 %%{init: {'theme': 'base', 'themeVariables': {'primaryColor': '#1a1a2e', 'edgeLabelBackground':'#16213e', 'tertiaryColor': '#0f3460'}}}%%
 graph TD
-    D[🖥️ Desktop UIA] --> OBS[👁️ node_observe]
+    GUIDE[🧭 node_guidance] -->|attend| OBS[👁️ node_observe]
     OBS -->|initial_screen| PLAN[🏗️ node_planner]
-    OBS -->|screen_ready| EXEC[⚡ node_execute]
+    OBS -->|screen_ready| DISP[🔀 node_dispatch]
     PLAN -->|step_ready| SCHED[📋 node_scheduler]
     PLAN -->|reflect| REF[🧠 node_reflect]
-    SCHED -->|step_ready| OBS
-    SCHED -->|plan_complete| SAT[🛑 node_satisfied]
-    EXEC -->|verify| VER[✅ node_verify]
-    EXEC -->|frame| OBS
-    EXEC -->|reflect| REF
+    SCHED -->|step_ready| GUIDE
+    SCHED -->|plan_complete| REF
+    DISP -->|dispatch| EXB[⚡ :browser]
+    DISP -->|dispatch| EXE[⚡ :editor]
+    DISP -->|dispatch| EXT[⚡ :terminal]
+    EXB -->|done| BAR[🚧 node_barrier]
+    EXE -->|done| BAR
+    EXT -->|done| BAR
+    BAR -->|join arity 3| VER[✅ node_verify]
     VER -->|step_confirmed| SCHED
     VER -->|step_denied| REF
-    REF -->|retry| OBS
+    REF -->|retry| GUIDE
     REF -->|replan| PLAN
     REF -->|frame| FRAME[🎯 node_frame_action]
     REF -->|escalate / topology_patch| SELF[🔧 node_self_modify]
-    REF -->|give_up| SAT
-    FRAME -->|framed| OBS
+    REF -->|spawn| SPAWN[🧬 node_spawn]
+    REF -->|give_up| SAT[🕊️ node_satisfied]
+    FRAME -->|framed| GUIDE
     SELF -->|modified| PLAN
     SELF -->|modify_failed| REF
-    SAT -->|halt| STOP[⏹️ HALT]
-    PLAN -.error.-> ERR[💥 node_error]
-    SCHED -.error.-> ERR
-    OBS -.error.-> ERR
-    EXEC -.error.-> ERR
-    VER -.error.-> ERR
-    REF -.error.-> ERR
-    SELF -.error.-> ERR
-    FRAME -.error.-> ERR
-    ERR -->|planner| PLAN
+    SPAWN -->|spawned| REF
+    SAT -->|halt chosen| STOP[⏹️ HALT]
+    ERR[💥 node_error] -->|planner| PLAN
     ERR -->|reflect| REF
-    ERR -->|halt| STOP
+    ERR -->|guidance| GUIDE
 
-    style D fill:#0f0f23,stroke:#00d4ff,stroke-width:2px
+    style GUIDE fill:#0f2e2e,stroke:#00e0c0,stroke-width:2px
     style OBS fill:#16213e,stroke:#00d4ff
-    style EXEC fill:#0f3460,stroke:#00d4ff
+    style DISP fill:#0f3460,stroke:#00d4ff,stroke-width:2px
+    style EXB fill:#0f3460,stroke:#00d4ff
+    style EXE fill:#0f3460,stroke:#00d4ff
+    style EXT fill:#0f3460,stroke:#00d4ff
+    style BAR fill:#2e1a1a,stroke:#e9a545,stroke-width:2px
     style VER fill:#0f3460,stroke:#00d4ff
     style PLAN fill:#1a1a2e,stroke:#e94560
     style SCHED fill:#1a1a2e,stroke:#e94560
     style REF fill:#1a1a2e,stroke:#e94560
     style SELF fill:#1a1a2e,stroke:#e94560
+    style SPAWN fill:#2e0f2e,stroke:#c060e0,stroke-width:2px
     style FRAME fill:#16213e,stroke:#00d4ff
     style SAT fill:#1a1a2e,stroke:#e94560
     style ERR fill:#3a0f0f,stroke:#ff4d4d
@@ -143,11 +152,11 @@ graph TD
 
 `cycle_start = node_guidance` — the point where the ever-turning wheel is entered,
 **not** "step 1 of N". The wheel re-enters through `node_guidance` each lap so
-external counsel (the guidance file) is heard every turn. 11 wired nodes.
-`topology.barriers = {}` (empty until F3). The substrate imposes **no ending**:
-there is no error cap, and a drained frontier is a coherence bug (the wheel
-dead-ended), not an outcome. Stopping is only ever the organism's own choice via
-the `halt` sentinel.
+external counsel (the guidance file) is heard every turn. **16 wired nodes**
+(including 3 `node_execute` instances). `topology.barriers = {"node_barrier": 3}`.
+The substrate imposes **no ending**: there is no error cap, and a drained frontier
+is a coherence bug (the wheel dead-ended), not an outcome. Stopping is only ever
+the organism's own choice via the `halt` sentinel.
 
 ---
 
@@ -295,7 +304,7 @@ python3 check_topology.py                                    # exit 0, coherent
 | B5 | ✅ | Runtime topology-patch coherence gate — safe mid-run rewiring. |
 | **F1** | ✅ | **Final phase — remove imposed endings:** killed error-streak cap; drained frontier is now a coherence error, not an outcome; `halt` is only the organism's own choice. |
 | F2 | ✅ | Goal-file steering — `node_guidance` folds a workspace goal file into the narrative as a strong, ignorable signal. |
-| F3 | 🔲 | The fractal `wiring.json` — self-similar wheel, execute instances, barrier fan-in, `cap_spawn`, self-rewiring. |
+| F3 | ✅ | The fractal `wiring.json` — self-similar wheel: dispatcher fans out to faculty instances, barrier fan-in, `node_spawn` recursion, self-rewiring. |
 
 ### ✅ B4 done — `cap_spawn` (a node that is itself an organism)
 
@@ -413,23 +422,56 @@ truncates the narrative — counsel is appended, never replacing the goal.
   preserved; without → clean pass; consumed guidance does not re-inject; full lap
   enters at guidance and turns coherently (11 nodes, `check_topology` exit 0).
 
-### 🔲 F3 — write the visionary fractal `wiring.json`
+### ✅ F3 done — the fractal wheel is live
 
+The linear pipeline is gone; `wiring.json` is now a self-similar wheel entered at
+`node_guidance` with **no terminus** (every path returns to the wheel). 16 nodes.
 
-Rewrite the topology from linear to fractal: `node_execute` fans out to
-capability **instances** (`node_execute:browser`, `:editor`, `:terminal`), those
-converge on a `node_barrier` that joins into `node_reflect`; wire `spawn` where
-recursion pays off. Populate `topology.barriers`. Add aligned biblical-register
-prompts + record contracts for every new/instanced node. Verify reachability with
-`check_topology.py` under list-edge semantics. **This is "produce the visionary
-topology."**
+- **Faculty dispatch (model B — specialists engaged as needed).** `node_dispatch`
+  (new LLM node, `dispatch` record: `next_signal`/`faculties`/`rationale`) reads
+  the goal and step and **chooses a subset** of faculties. It fans out via a list
+  edge to **all three** `node_execute` instances (`:browser` `:editor`
+  `:terminal`); the chosen ones labour, the rest **pass through idle** — so every
+  turn costs only the LLM/desktop work the dispatcher selected, while barrier
+  arity stays a fixed, coherence-checkable `3`.
+- **Instances (one file, many roles).** `node_execute` is Windows-only (imports
+  `core_desktop`). Each instance reads `ctx["node_instance"]` (threaded by
+  `core_loader`/`call_node`), self-gates on `state["_dispatch_targets"]`, and emits
+  **`done`** to `node_barrier` (success or fail — the assembly is judged
+  collectively at `node_verify`). Instances share the `node_execute` prompt with
+  their faculty in the payload.
+- **Barrier fan-in.** `node_barrier` (arity 3 from `topology.barriers`) gathers all
+  three branches (`wait`,`wait`,`join`) then joins into `node_verify`.
+- **Recursion in the wheel.** `node_spawn` (new mechanical node) invokes the
+  `cap_spawn` capability and forwards `spawned → node_reflect`; `node_reflect` can
+  now emit `spawn` (added to the `reflection` contract) where the goal warrants a
+  child organism.
+- **No auto-halt.** `node_scheduler.plan_complete` now routes to `node_reflect`
+  (not straight to halt); `halt` is reachable only via `reflect → give_up →
+  node_satisfied` — the organism's own chosen stillness. `node_error` re-narrates
+  and re-enters the wheel (`planner`/`reflect`/`guidance`) and even self-routes on
+  its own failure, so nothing dead-ends.
+- **Verified (WSL-safe liveness):** dispatch unit (chooses faculties, rejects
+  unknown, tags narrative); full fan-out/fan-in lap with a stand-in executor
+  (`guidance→observe→dispatch→3 branches→barrier gathers 3→join→verify→scheduler→
+  reflect→chosen halt`); `node_spawn` begets a child and folds its narrative back;
+  `check_topology` 16 nodes coherent, `validate_wiring` OK, compile + import smoke
+  green. `node_execute` instances themselves run only on the Windows host.
+
+> **Next (not a code step): run it live.** On Windows, `python core_organism.py
+> "…" --duration-seconds N` with `transport_xai`; watch `runtime_events.jsonl` and
+> the narrative turn; steer via `guidance.txt`; iterate on prompts and the faculty
+> set. The architecture is complete; tuning is behavioral.
 
 ---
 
 ## 🤝 Handover (for the next AI or human)
 
-- **You are here:** substrate B1–B5 done; final phase **F1 + F2 done** (imposed
-  endings removed; goal-file steering wired). Next is **F3** (fractal wiring).
+- **You are here:** substrate B1–B5 done; final phase **F1 + F2 + F3 done** — the
+  fractal wheel is live. The visionary topology is realized; the organism turns
+  forever, steers by counsel, wakes faculties as needed, gathers them at the gate,
+  and begets children where recursion pays. **Next: run it live on Windows**
+  (`transport_xai`) and let the narrative turn; iterate on prompts/faculties.
 - **Do:** read this whole README; keep code small, unified, non-branching; keep
   plugins dynamic/file-based; keep hot-swap + self-modify working; keep prompts +
   contracts aligned; verify then commit one step at a time; **update this README
