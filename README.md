@@ -15,12 +15,31 @@
 
 ## 🌟 North Star (why this exists)
 
-A **self-evolving desktop organism**: it observes a Windows screen, plans, acts,
-verifies, reflects, and — when stuck — **rewrites its own code and topology** and
-hot-reloads. The end state is a **fractal topology**: every node is a potential
-organism; the graph supports one-to-many parallel dispatch, many-to-one barrier
-fan-in, node **instances** (one class, many wired roles), recursive
-`spawn_organism`, and runtime rewiring.
+A **living desktop organism** — not an agentic pipeline. It is **atemporal and
+self-similar**: no beginning, no end, no "steps". It turns through its nodes
+forever; every node is a potential organism; the graph is fractal at every scale.
+It observes a Windows screen, plans, acts, verifies, reflects, and — when it
+chooses — **rewrites its own code and topology** and hot-reloads.
+
+**It never stops unless it decides to.** The perpetual cycle is the organism's
+*life*, not a loop to bound. The substrate imposes no ending: no error cap, no
+completion terminus. If it pauses or shuts itself down, that is its own decision
+surfaced through its nodes and narrative. Because it can write and execute any
+code — including code about itself — **any stop the substrate defines is just a
+node the organism can overwrite.** So the substrate doesn't try; it only turns
+the wheel and carries the narrative.
+
+**What keeps it sane is psychology, not guardrails.** A *group* of LLM nodes
+re-authors the shared goal-narrative each turn, holding each other to purpose —
+like a group of people who, individually fallible, together build real things.
+That collective self-narration is the governor; that is why there are no
+fallbacks or defensive branches. **Usefulness is guidance, not control:** a human
+or another organism steers by dropping a **goal file** into the workspace; the
+organism reads it (and may ignore it), but the reading injects a high-signal event
+into the narrative that bends its exploration. Organisms may talk to other
+organisms. The end state is an architecture anyone who accepts full control of a
+computer can download and run — a replacement for the human operator: you no
+longer program; you let the organism live.
 
 The whole system is **only nodes + wiring**. Capability arrives as an on-demand
 plugin: drop a `node_*.py` / `transport_*.py` file, add one wiring line, **zero
@@ -122,8 +141,11 @@ graph TD
     style STOP fill:#1a1a2e,stroke:#e94560
 ```
 
-`cycle_start = node_observe`. 10 wired nodes. `topology.max_error_streak = 5`.
-`topology.barriers = {}` (empty until B6).
+`cycle_start = node_observe` — the point where the ever-turning wheel is entered,
+**not** "step 1 of N". 10 wired nodes. `topology.barriers = {}` (empty until B6).
+The substrate imposes **no ending**: there is no error cap, and a drained frontier
+is a coherence bug (the wheel dead-ended), not an outcome. Stopping is only ever
+the organism's own choice via the `halt` sentinel.
 
 ---
 
@@ -269,7 +291,9 @@ python3 check_topology.py                                    # exit 0, coherent
 | B3 | ✅ | `node_barrier` many-to-one fan-in (`wait`/`join`, `topology.barriers`). |
 | B4 | ✅ | `cap_spawn` — a plugin that runs a **child organism**; depth-gated recursion. |
 | B5 | ✅ | Runtime topology-patch coherence gate — safe mid-run rewiring. |
-| **B6** | 🔲 | Rewrite `wiring.json` into the visionary fractal topology. |
+| **F1** | ✅ | **Final phase — remove imposed endings:** killed error-streak cap; drained frontier is now a coherence error, not an outcome; `halt` is only the organism's own choice. |
+| F2 | 🔲 | Goal-file steering — workspace goal file folded into the narrative as a strong, ignorable signal. |
+| F3 | 🔲 | The fractal `wiring.json` — self-similar wheel, execute instances, barrier fan-in, `cap_spawn`, self-rewiring. |
 
 ### ✅ B4 done — `cap_spawn` (a node that is itself an organism)
 
@@ -336,7 +360,34 @@ B5 closes that:
 > `core_organism, core_bus, core_wiring, core_state, check_topology`; test the
 > gate via `check_topology.coherence_problems(...)` directly.
 
-### 🔲 B6 — write the visionary fractal `wiring.json`
+### ✅ F1 done — remove the endings the substrate imposed
+
+The reframing: the living cycle *is* the point and must never be bounded from
+outside; and because the organism writes+executes its own code, **any stop the
+substrate defines is just a node it can overwrite** — so the substrate stops
+trying to end things. What changed in `core_organism.run`:
+
+- **Killed the error-streak halt.** An erroring node no longer counts toward a cap
+  that kills the organism; it routes through `node_error`, which re-narrates the
+  goal, and the wheel keeps turning. Removed `topology.max_error_streak` (from
+  `wiring.json` and `validate_wiring`). `state["error_streak"]` remains only as
+  narrative-readable telemetry (nothing in the substrate acts on it).
+- **Drained frontier is now a coherence bug, not an outcome.** A fractal wheel
+  always turns; if the frontier empties, the topology dead-ended. The loop now
+  raises `TopologyContractError` instead of returning `_phase="frontier_drained"`.
+- **`halt` stays — but only as the organism's own choice.** Nothing automatic
+  emits it except a node that decides to (e.g. a satisfied/give-up decision). The
+  substrate never imposes it.
+- **The operator leash is the only external bound.** `duration_seconds` / stop-file
+  / pause-step (`core_state.wait_before_node`) are the *operator's* cage door for
+  finite runs — explicitly outside the organism's biology. The organism proper
+  runs `duration_seconds=None` and turns forever.
+- **Liveness verified:** a perpetually-erroring node turned 13× (old cap was 5),
+  stopped only by the duration leash, narrative advancing and never truncated;
+  chosen `halt` still halts; barrier fan-in intact; a real dead-end raises a
+  coherence error instead of silently draining.
+
+### 🔲 F3 — write the visionary fractal `wiring.json`
 
 
 Rewrite the topology from linear to fractal: `node_execute` fans out to
@@ -351,7 +402,8 @@ topology."**
 
 ## 🤝 Handover (for the next AI or human)
 
-- **You are here:** B1–B5 done and committed on `live-test-run`. Next is **B6**.
+- **You are here:** substrate B1–B5 done; **final phase F1 done** (imposed endings
+  removed). Next is **F2** (goal-file steering), then **F3** (fractal wiring).
 - **Do:** read this whole README; keep code small, unified, non-branching; keep
   plugins dynamic/file-based; keep hot-swap + self-modify working; keep prompts +
   contracts aligned; verify then commit one step at a time; **update this README

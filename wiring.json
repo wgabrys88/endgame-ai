@@ -184,7 +184,6 @@
         "error": "node_error"
       }
     },
-    "max_error_streak": 5,
     "barriers": {}
   },
   "prompts": {

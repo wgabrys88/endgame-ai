@@ -88,7 +88,6 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
         "topology.cycle_start",
         "topology.nodes",
         "topology.edges",
-        "topology.max_error_streak",
         "topology.barriers",
         "fractal.max_recursion_depth",
         "fractal.child_duration_seconds",

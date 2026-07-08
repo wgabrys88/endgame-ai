@@ -88,7 +88,6 @@ def run(
             deadline_at=deadline_at,
             pid=os.getpid(),
         )
-        max_streak = int(w["topology"]["max_error_streak"])
         while frontier:
             current = frontier.pop(0)
             st["frontier"] = list(frontier)
@@ -167,22 +166,7 @@ def run(
                 st["error_streak"] = int(st.get("error_streak", 0)) + 1
                 wiring.write_state(w, st)
                 state.runtime_event(w, "error", node=current, error=st["last_error"], error_streak=st["error_streak"])
-                if st["error_streak"] >= max_streak:
-                    st["_phase"] = "halted"
-                    st["frontier"] = []
-                    st["last_error"] = f"error streak {st['error_streak']} reached max {max_streak} at '{current}': {st['last_error']}"
-                    wiring.write_state(w, st)
-                    state.runtime_event(w, "halted", node=current, error=st["last_error"], error_streak=st["error_streak"])
-                    return st
-                try:
-                    successors = next_nodes_for(w, current, "error")
-                except bus.TopologyContractError as route_exc:
-                    st["_phase"] = "halted"
-                    st["frontier"] = []
-                    st["last_error"] = f"Error routing failed: {route_exc}"
-                    wiring.write_state(w, st)
-                    state.runtime_event(w, "halted", node=current, error=st["last_error"])
-                    return st
+                successors = next_nodes_for(w, current, "error")
                 signal_name = "error"
             frontier.extend(successors)
             st["last_signal"] = signal_name
@@ -207,7 +191,10 @@ def run(
         st["_phase"] = "frontier_drained"
         wiring.write_state(w, st)
         state.runtime_event(w, "frontier_drained", node=current, tick=st["tick"])
-        return st
+        raise bus.TopologyContractError(
+            f"frontier drained at '{current}' — the wheel dead-ended; a fractal topology must always turn. "
+            f"last signal '{st.get('last_signal')}' led nowhere. Fix the edges so every path returns to the wheel."
+        )
     except KeyboardInterrupt:
         st["_phase"] = "interrupted"
         wiring.write_state(w, st)
