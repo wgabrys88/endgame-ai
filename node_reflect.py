@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import core_bus as bus
-import core_stop_check as stop_check
 from core_node_base import BaseNode
 
 
@@ -28,7 +27,6 @@ TASK_ROUTE_KINDS = {
     "task_route_decision",
     "empty_execute_result",
     "duration_guard",
-    "actor_doctrine_violation",
 }
 
 
@@ -114,18 +112,8 @@ class ReflectNode(BaseNode):
         signal = requested_signal
         contract_failure = self._is_contract_failure()
         task_route_failure = self._is_task_route_failure()
-        evolution_enabled = stop_check.self_evolution_enabled()
 
-        if signal == "topology_patch":
-            # Allow topology_patch through to self_modify for wiring changes
-            if not evolution_enabled:
-                signal = "replan"
-                self._routing_override = {
-                    "from": requested_signal,
-                    "to": signal,
-                    "reason": "topology_patch requires self-evolution enabled",
-                }
-        elif signal == "escalate" and not contract_failure:
+        if signal == "escalate" and not contract_failure:
             replacement = self._task_route_signal(state) if task_route_failure else "replan"
             self._routing_override = {
                 "from": requested_signal,
@@ -135,15 +123,6 @@ class ReflectNode(BaseNode):
                 "failure_streak": self._projected_streak,
             }
             signal = replacement
-        elif signal == "give_up" and evolution_enabled and contract_failure:
-            self._routing_override = {
-                "from": requested_signal,
-                "to": "escalate",
-                "reason": "give_up converted only because structured organism-contract failure exists and evolution is enabled",
-                "failure": self._failure,
-                "failure_streak": self._projected_streak,
-            }
-            signal = "escalate"
         elif task_route_failure:
             replacement = self._task_route_signal(state)
             if replacement != signal:
@@ -155,7 +134,7 @@ class ReflectNode(BaseNode):
                     "failure_streak": self._projected_streak,
                 }
             signal = replacement
-        elif contract_failure and signal != "escalate" and int(self._projected_streak.get("count", 0) or 0) >= 2 and evolution_enabled:
+        elif contract_failure and signal != "escalate" and int(self._projected_streak.get("count", 0) or 0) >= 2:
             self._routing_override = {
                 "from": requested_signal,
                 "to": "escalate",

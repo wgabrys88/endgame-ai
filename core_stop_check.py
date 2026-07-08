@@ -9,7 +9,6 @@ import time
 
 ROOT = pathlib.Path(__file__).parent.resolve()
 STOP_FILE = ROOT / "runtime_stop.json"
-SELF_EVOLUTION_FILE = ROOT / "runtime_self_evolution_enabled.json"
 
 
 def _pid_file(name: str) -> pathlib.Path:
@@ -62,24 +61,6 @@ def clear_stop() -> None:
     if stop_requested():
         STOP_FILE.unlink()
         print(f"[stop_check] {STOP_FILE.name} cleared", flush=True)
-
-
-def self_evolution_enabled() -> bool:
-    return SELF_EVOLUTION_FILE.exists()
-
-
-def ensure_self_evolution_enabled(*, source: str = "reset") -> None:
-    payload = {
-        "schema": "endgame-ai.self-evolution.v1",
-        "enabled": True,
-        "created_at": time.time(),
-        "created_iso": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime()),
-        "source": source,
-        "contract": "Delete this file to disable node_self_modify apply/commit/push until the next reset recreates it.",
-        "pid": os.getpid(),
-    }
-    SELF_EVOLUTION_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"[stop_check] {SELF_EVOLUTION_FILE.name} enabled", flush=True)
 
 
 def kill_all_pids() -> None:

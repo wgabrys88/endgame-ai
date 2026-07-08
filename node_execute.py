@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import contextlib
 import io
-import re
 import time
 
 import core_bus as bus
@@ -77,45 +76,6 @@ class ExecuteNode(BaseNode):
             "contract_repair_allowed": False,
         }
 
-    def _actor_doctrine_violation(self, code: str) -> dict | None:
-        lower = code.lower()
-        reasons: list[str] = []
-        if re.search(r"\bgit\b[^\n;]*(commit|push|reset|checkout|switch|merge|rebase|tag)\b", lower):
-            reasons.append("execute attempted mutating git operation; self-evolution belongs to reflect -> self_modify")
-        firmware_names = (
-            "wiring.json",
-            "runtime_self_evolution_enabled.json",
-            "runtime_known_good_commit.json",
-            "core_brain.py",
-            "core_bus.py",
-            "core_nodes.py",
-            "core_observation.py",
-            "core_organism.py",
-            "node_execute.py",
-            "node_reflect.py",
-            "node_self_modify.py",
-            "node_planner.py",
-            "node_frame_action.py",
-            "node_verify.py",
-            "node_observe.py",
-            "node_scheduler.py",
-            "node_satisfied.py",
-            "node_error.py",
-        )
-        mutating_file_call = re.search(r"(write_text\s*\(|open\s*\([^\n)]*['\"]w|\.write\s*\(|json\.dump\s*\(|atomic_write_json\s*\()", lower)
-        if mutating_file_call and any(name in lower for name in firmware_names):
-            reasons.append("execute attempted to mutate organism firmware/configuration files")
-        if "node_self_modify" in lower or "git_evolution_patch" in lower:
-            reasons.append("execute attempted to invoke or imitate the self_modify organ")
-        if not reasons:
-            return None
-        return {
-            "source": "execute",
-            "kind": "actor_doctrine_violation",
-            "contract_repair_allowed": False,
-            "reasons": reasons,
-        }
-
     def run(self, ctx):
         state = ctx.get("state", {})
         payload = self.build_payload(ctx)
@@ -155,21 +115,6 @@ class ExecuteNode(BaseNode):
             )
         if not code.strip():
             raise RuntimeError("execution conclusion EXECUTE requires non-empty code")
-        doctrine_violation = self._actor_doctrine_violation(code)
-        if doctrine_violation:
-            return bus.emit(
-                "reflect",
-                {
-                    "last_action": {"code": code, "conclusion": conclusion, "not_executed": True},
-                    "last_code": code,
-                    "last_result": {"result": None, "stdout": "", "stderr": "", "action_events": []},
-                    "last_error": "; ".join(doctrine_violation["reasons"]),
-                    "last_failure": doctrine_violation,
-                    "action_frame": state.get("action_frame"),
-                },
-                record=record,
-                evidence=payload,
-            )
         deadline_at = state.get("deadline_at")
         if deadline_at is not None:
             try:

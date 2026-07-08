@@ -14,7 +14,9 @@ def root_path(value: str | None, default: str = "") -> pathlib.Path:
 
 
 def load_wiring(path: str | None = None) -> dict[str, Any]:
-    return load_json(root_path(path, "wiring.json"))
+    cfg = load_json(root_path(path, "wiring.json"))
+    validate_wiring(cfg)
+    return cfg
 
 
 def load_json(path: pathlib.Path) -> dict[str, Any]:
@@ -23,6 +25,76 @@ def load_json(path: pathlib.Path) -> dict[str, Any]:
         return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise RuntimeError(f"malformed JSON in {path}: {exc}") from exc
+
+
+def _obj(obj: dict[str, Any], key: str) -> dict[str, Any]:
+    value = obj[key]
+    if not isinstance(value, dict):
+        raise RuntimeError(f"wiring.{key} must be object")
+    return value
+
+
+def _require(obj: dict[str, Any], path: str, typ: type | tuple[type, ...]) -> Any:
+    cur: Any = obj
+    for part in path.split("."):
+        if not isinstance(cur, dict) or part not in cur:
+            raise RuntimeError(f"wiring missing required key: {path}")
+        cur = cur[part]
+    if not isinstance(cur, typ):
+        raise RuntimeError(f"wiring.{path} must be {typ}")
+    return cur
+
+
+def validate_wiring(cfg: dict[str, Any]) -> None:
+    for key in ("schema", "model", "paths", "control_default", "observe_config", "self_modify", "topology", "prompts"):
+        if key not in cfg:
+            raise RuntimeError(f"wiring missing required key: {key}")
+    model = _obj(cfg, "model")
+    transport = _require(cfg, "model.transport", str)
+    transport_cfg = _require(cfg, "model.transport_config", dict)
+    if transport not in transport_cfg:
+        raise RuntimeError(f"wiring.model.transport_config missing selected transport {transport!r}")
+    for path in (
+        "model.global",
+        "model.stable_prefix",
+        "model.organs",
+        "paths.nodes",
+        "paths.brains",
+        "paths.state",
+        "paths.control",
+        "paths.event_log",
+        "control_default.mode",
+        "control_default.step_token",
+        "control_default.updated_at",
+        "observe_config.hover_cache.enabled",
+        "observe_config.hover_cache.scan.step_px",
+        "observe_config.hover_cache.scan.delay_ms",
+        "observe_config.hover_cache.scan.max_subtree_nodes_per_point",
+        "observe_config.hover_cache.scan.max_total_nodes",
+        "observe_config.hover_cache.filter.max_elements",
+        "observe_config.hover_cache.filter.max_per_window",
+        "observe_config.hover_cache.filter.max_text",
+        "observe_config.hover_cache.filter.require_interactive",
+        "self_modify.context_mode",
+        "self_modify.known_good_ref",
+        "self_modify.hot_swap_on_failure",
+        "self_modify.execution.rollback_on_failure",
+        "self_modify.git.remote",
+        "self_modify.git.push_after_commit",
+        "self_modify.web_search",
+        "topology.cycle_start",
+        "topology.nodes",
+        "topology.edges",
+    ):
+        _require(cfg, path, object)
+    nodes = _require(cfg, "topology.nodes", list)
+    edges = _require(cfg, "topology.edges", dict)
+    prompts = _require(cfg, "prompts", dict)
+    if cfg["topology"]["cycle_start"] not in nodes:
+        raise RuntimeError("wiring.topology.cycle_start must name a topology node")
+    missing = [node for node in nodes if node not in edges or node not in prompts]
+    if missing:
+        raise RuntimeError(f"wiring missing edges/prompts for nodes: {missing}")
 
 
 def atomic_write_json(path: pathlib.Path, obj: Any) -> None:
@@ -36,60 +108,39 @@ def atomic_write_json(path: pathlib.Path, obj: Any) -> None:
 
 
 def get_transport_config(wiring: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-    model = wiring.get("model")
-    if not isinstance(model, dict):
-        raise RuntimeError("wiring.json missing object model")
-
-    transport = str(model.get("transport") or "").strip()
-    if not transport:
-        raise RuntimeError("wiring model.transport is empty; no fallback transport is allowed")
-
-    transport_config = model.get("transport_config", {})
-    if not isinstance(transport_config, dict) or transport not in transport_config:
-        raise RuntimeError(f"wiring model.transport_config.{transport} missing; no fallback transport config is allowed")
-    cfg = dict(transport_config[transport])
-
-    global_keys = {"timeout", "brain_call_budget"}
-    global_cfg = model.get("global", {})
-    for k in global_keys:
-        if isinstance(global_cfg, dict) and k in global_cfg and k not in cfg:
-            cfg[k] = global_cfg[k]
-        if k in model and k not in cfg:
-            cfg[k] = model[k]
-    paths = wiring.get("paths", {})
-    if isinstance(paths, dict):
-        cfg.setdefault("event_log_path", paths.get("event_log") or "runtime_events.jsonl")
-
+    model = wiring["model"]
+    transport = model["transport"].strip()
+    cfg = dict(model["transport_config"][transport])
+    for key in ("timeout", "brain_call_budget"):
+        if key not in cfg:
+            cfg[key] = model["global"][key]
+    cfg["event_log_path"] = wiring["paths"]["event_log"]
     cfg["transport"] = transport
     return transport, cfg
 
 
 def state_path(wiring: dict[str, Any]) -> pathlib.Path:
-    return root_path(wiring.get("paths", {}).get("state"), "runtime_state.json")
+    return root_path(wiring["paths"]["state"])
 
 
 def control_path(wiring: dict[str, Any]) -> pathlib.Path:
-    return root_path(wiring.get("paths", {}).get("control"), "runtime_control.json")
+    return root_path(wiring["paths"]["control"])
 
 
 def event_log_path(wiring: dict[str, Any]) -> pathlib.Path:
-    return root_path(wiring.get("paths", {}).get("event_log"), "runtime_events.jsonl")
+    return root_path(wiring["paths"]["event_log"] if wiring else "runtime_events.jsonl")
 
 
 def request_path(wiring: dict[str, Any]) -> pathlib.Path:
-    return root_path(wiring.get("paths", {}).get("request"), "runtime_request.json")
+    return root_path(wiring["paths"]["request"])
 
 
 def response_path(wiring: dict[str, Any]) -> pathlib.Path:
-    return root_path(wiring.get("paths", {}).get("response"), "runtime_response.json")
+    return root_path(wiring["paths"]["response"])
 
 
 def default_control(wiring: dict[str, Any]) -> dict[str, Any]:
-    ctrl = dict(wiring.get("control_default") or {"mode": "run", "step_token": 0, "updated_at": 0})
-    ctrl.setdefault("mode", "run")
-    ctrl.setdefault("step_token", 0)
-    ctrl.setdefault("updated_at", 0)
-    return ctrl
+    return dict(wiring["control_default"])
 
 
 def read_control(wiring: dict[str, Any]) -> dict[str, Any]:
@@ -117,24 +168,19 @@ def write_state(wiring: dict[str, Any], state: dict[str, Any]) -> None:
 
 def reset_runtime(wiring: dict[str, Any]) -> None:
     import core_stop_check as stop_check
-    for key, default in [("state", "runtime_state.json"), ("control", "runtime_control.json")]:
-        p = root_path(wiring.get("paths", {}).get(key), default)
-        if p.exists():
-            p.unlink()
-    for key, default in [("request", "runtime_request.json"), ("response", "runtime_response.json")]:
-        p = root_path(wiring.get("paths", {}).get(key), default)
+    for key in ("state", "control"):
+        p = root_path(wiring["paths"][key])
         if p.exists():
             p.unlink()
     stop_check.clear_stop()
-    stop_check.ensure_self_evolution_enabled(source="reset")
 
 
 def topology_summary(w: dict[str, Any]) -> dict[str, Any]:
-    topo = w.get("topology", {})
+    topo = w["topology"]
     return {
-        "cycle_start": topo.get("cycle_start"),
-        "nodes": list(topo.get("nodes", [])),
-        "edges": topo.get("edges", {}),
+        "cycle_start": topo["cycle_start"],
+        "nodes": list(topo["nodes"]),
+        "edges": topo["edges"],
     }
 
 

@@ -30,6 +30,3 @@
 !transport_openai.py
 !transport_opencode.py
 !transport_xai.py
-!export_brain_forensics.py
-!analyze_graph.py
-!check_events.py

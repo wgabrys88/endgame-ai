@@ -14,7 +14,6 @@ from typing import Any
 import core_stop_check as stop_check
 import core_bus as bus
 import core_wiring as wiring
-import core_state as state
 
 ROOT = pathlib.Path(__file__).parent.resolve()
 _EVENT_SEQ = 0
@@ -23,8 +22,6 @@ _CALLS_MADE = 0
 _STABLE_PREFIX_CACHE: "StablePrefix | None" = None
 _STABLE_PREFIX_LOCK = threading.Lock()
 _LAST_FRESH_OBSERVATION: dict[str, Any] | None = None
-
-_OPEN_OBJECT_SCHEMA = {"type": "object", "additionalProperties": True}
 
 STATIC_PREFIX_SUFFIXES = {".py", ".json", ".md"}
 STATIC_PREFIX_NAMES = {".gitattributes", ".gitignore", "LICENSE"}
@@ -255,13 +252,11 @@ def stable_prefix() -> StablePrefix:
 
 
 def _stable_prefix_enabled(w: dict[str, Any]) -> bool:
-    sp_cfg = w.get("model", {}).get("stable_prefix", {})
-    return bool(sp_cfg.get("enabled", False))
+    return bool(w["model"]["stable_prefix"]["enabled"])
 
 
 def _stable_prefix_include_in_request(w: dict[str, Any]) -> bool:
-    sp_cfg = w.get("model", {}).get("stable_prefix", {})
-    return bool(sp_cfg.get("include_in_request", False))
+    return bool(w["model"]["stable_prefix"]["include_in_request"])
 
 
 def _messages(system_prompt: str, user_text: str, prefix: StablePrefix | None, stable_context: str = "") -> list[dict[str, str]]:
@@ -313,20 +308,14 @@ def _validate_record_contract(record: bus.Record, expected_record_type: str | No
 
 
 def _organ_tuning(w: dict[str, Any], record_type: str | None) -> dict[str, Any]:
-    organs = w.get("model", {}).get("organs", {})
-    if not record_type or not isinstance(organs, dict):
+    if not record_type:
         return {}
-    organ = organs.get(record_type)
+    organ = w["model"]["organs"].get(record_type)
     return dict(organ) if isinstance(organ, dict) else {}
 
 
 def _effective_reasoning_config(w: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
-    reasoning_cfg = dict(cfg.get("reasoning") or {})
-    reasoning_cfg["enabled"] = bool(reasoning_cfg.get("enabled", False))
-    reasoning_cfg.setdefault("pattern", "two_pass" if reasoning_cfg["enabled"] else "single_pass")
-    reasoning_cfg.setdefault("extractor", "think_tags")
-    reasoning_cfg.setdefault("injection_template", "REASONING_FEEDBACK:\n{reasoning}\n\nReturn only the requested JSON record.")
-    return reasoning_cfg
+    return dict(cfg["reasoning"])
 
 
 def _normalize_observation(obj: Any) -> dict[str, Any] | None:
@@ -438,7 +427,7 @@ def reset_call_budget() -> None:
 
 
 def _load_transport_module(name: str, w: dict[str, Any]):
-    brain_dir = wiring.root_path(w.get("paths", {}).get("brains"), ".")
+    brain_dir = wiring.root_path(w["paths"]["brains"])
     module_path = brain_dir / f"{name}.py"
     if not module_path.exists():
         raise RuntimeError(
@@ -456,32 +445,7 @@ def _load_transport_module(name: str, w: dict[str, Any]):
 
 
 def _get_transport_config(w: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-    model = w.get("model")
-    if not isinstance(model, dict):
-        raise RuntimeError("wiring.json missing object model")
-
-    transport = str(model.get("transport") or "").strip()
-    if not transport:
-        raise RuntimeError("wiring model.transport is empty; no fallback transport is allowed")
-
-    transport_config = model.get("transport_config", {})
-    if not isinstance(transport_config, dict) or transport not in transport_config:
-        raise RuntimeError(f"wiring model.transport_config.{transport} missing; no fallback transport config is allowed")
-    cfg = dict(transport_config[transport])
-
-    global_keys = {"timeout", "brain_call_budget"}
-    global_cfg = model.get("global", {})
-    for k in global_keys:
-        if isinstance(global_cfg, dict) and k in global_cfg and k not in cfg:
-            cfg[k] = global_cfg[k]
-        if k in model and k not in cfg:
-            cfg[k] = model[k]
-    paths = w.get("paths", {})
-    if isinstance(paths, dict):
-        cfg.setdefault("event_log_path", paths.get("event_log") or "runtime_events.jsonl")
-
-    cfg["transport"] = transport
-    return transport, cfg
+    return wiring.get_transport_config(w)
 
 
 def _structured_outputs_enabled(cfg: dict[str, Any]) -> bool:
@@ -531,10 +495,9 @@ def call(
     if request_config:
         cfg = dict(cfg)
         cfg.update(request_config)
-    model_cfg = w.get("model", {})
-    max_calls = model_cfg.get("brain_call_budget")
-    if max_calls is None and isinstance(model_cfg.get("global"), dict):
-        max_calls = model_cfg["global"].get("brain_call_budget")
+    max_calls = w["model"].get("brain_call_budget")
+    if max_calls is None:
+        max_calls = w["model"]["global"]["brain_call_budget"]
     if max_calls is not None and _CALLS_MADE >= int(max_calls):
         raise RuntimeError(f"brain call budget exceeded: {_CALLS_MADE}/{max_calls}")
     _CALLS_MADE += 1
@@ -549,7 +512,6 @@ def call(
         "response_format": cfg.get("response_format"),
         "messages": summarize_messages_for_log(messages),
     })
-    _check_message_size(messages, w)
     mod = _load_transport_module(transport, w)
     try:
         result = mod.call(messages, cfg)
@@ -579,20 +541,6 @@ def call(
         "raw": {k: v for k, v in result.items() if k not in {"content", "reasoning"}},
     })
     return out
-
-
-def _check_message_size(messages: list[dict[str, str]], w: dict[str, Any], max_chars: int = 800000) -> None:
-    """Safety guard: reject requests exceeding max_chars before sending to transport."""
-    total = sum(len(str(m.get("content", ""))) for m in messages)
-    if total > max_chars:
-        transport, cfg = _get_transport_config(w)
-        log_runtime_event(cfg, "brain_request_rejected", **{
-            "transport": transport,
-            "total_chars": total,
-            "max_chars": max_chars,
-            "message_sizes": [{"role": m.get("role"), "chars": len(str(m.get("content", "")))} for m in messages],
-        })
-        raise RuntimeError(f"brain request rejected: {total} chars exceeds limit {max_chars}. Reduce observation data or use focused observation.")
 
 
 def reasoning_from(content: str, reasoning: str = "") -> str:

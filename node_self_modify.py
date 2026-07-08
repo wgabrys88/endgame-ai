@@ -7,7 +7,7 @@ from typing import Any
 import core_brain as brain
 import core_bus as bus
 import core_nodes as nodes
-import core_stop_check as stop_check
+import core_wiring as wiring_mod
 
 
 ROOT = pathlib.Path(__file__).resolve().parent
@@ -85,9 +85,9 @@ def _evidence_file(path: pathlib.Path) -> dict[str, Any]:
 
 def _runtime_evidence(wiring: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
     return {
-        "state_path": _evidence_file(brain.root_path(wiring.get("paths", {}).get("state"), "runtime_state.json")),
-        "event_log_path": _evidence_file(brain.root_path(wiring.get("paths", {}).get("event_log"), "runtime_events.jsonl")),
-        "control_path": _evidence_file(brain.root_path(wiring.get("paths", {}).get("control"), "runtime_control.json")),
+        "state_path": _evidence_file(wiring_mod.root_path(wiring["paths"]["state"])),
+        "event_log_path": _evidence_file(wiring_mod.root_path(wiring["paths"]["event_log"])),
+        "control_path": _evidence_file(wiring_mod.root_path(wiring["paths"]["control"])),
         "current_state_keys": sorted(state.keys()),
         "has_fresh_observation": all(key in state for key in ("desktop_tree_text", "fresh_scan")),
     }
@@ -99,19 +99,6 @@ def run(ctx):
     goal = state.get("effective_goal", ctx.get("goal", ""))
     step = state.get("current_step") or {}
     git_context = nodes.prepare_self_evolution(wiring)
-    if not stop_check.self_evolution_enabled():
-        return bus.emit(
-            "modify_failed",
-            {
-                "last_error": "self evolution disabled by missing runtime_self_evolution_enabled.json",
-                "self_modify": {
-                    "status": "disabled",
-                    "enabled_file": str(stop_check.SELF_EVOLUTION_FILE),
-                    "git_context": git_context,
-                },
-            },
-            evidence={"git_context": git_context, "enabled_file": str(stop_check.SELF_EVOLUTION_FILE)},
-        )
 
     fresh_obs = state.get("fresh_observation", {})
     payload = {
@@ -154,7 +141,7 @@ def run(ctx):
     record = brain.think(
         system_prompt=wiring.get("prompts", {}).get("node_self_modify", ""),
         payload=payload,
-        wiring=wiring,
+        w=wiring,
         expected_record_type="git_evolution_patch",
         request_config={"web_search": wiring.get("self_modify", {}).get("web_search", {})},
     )

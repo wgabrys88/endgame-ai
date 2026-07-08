@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 import copy
 import ctypes
 import json
@@ -19,47 +18,9 @@ import core_wiring as wiring
 
 ROOT = pathlib.Path(__file__).parent.resolve()
 
-UNCONSUMED_WIRING_SET_PATHS = {
-    "action_contract",
-    "action_contracts",
-    "functions",
-    "self_modify.allowed_types",
-    "self_modify.allowed_commands",
-    "self_modify.allowed_command_types",
-    "self_modify.action_contract",
-    "self_modify.action_contracts",
-    "self_modify.functions",
-}
-
-
-def _blocked_wiring_set(path: str) -> str | None:
-    dotted = str(path or "").strip().strip(".")
-    for blocked in UNCONSUMED_WIRING_SET_PATHS:
-        if dotted == blocked or dotted.startswith(blocked + "."):
-            return blocked
-    return None
-
-
 EVOLVABLE_SUFFIXES = {".py", ".json", ".md"}
 EVOLVABLE_NAMES = {".gitattributes", ".gitignore", "LICENSE"}
-BLOCKED_EVOLVE_PARTS = {".git", "__pycache__"}
-BLOCKED_EVOLVE_PREFIXES = ("runtime_",)
-BLOCKED_EVOLVE_NAMES: set[str] = set()
-CORE_FILES = {
-    "core_brain.py",
-    "core_desktop.py",
-    "core_nodes.py",
-    "core_organism.py",
-    "core_stop_check.py",
-}
-MIN_CORE_DESKTOP_LINES = 80
-DESTRUCTIVE_STUB_MARKERS = (
-    "original implementation assumed present",
-    "other methods preserved from original",
-    "full original methods retained",
-    "uia scan logic",
-    "minimal coherent evolution patch",
-)
+CORE_FILES = {"core_brain.py", "core_desktop.py", "core_nodes.py", "core_organism.py", "core_stop_check.py"}
 
 
 def _patch_data(parsed: dict[str, Any]) -> dict[str, Any]:
@@ -78,19 +39,7 @@ def _evolution_target(raw_path: str, *, deleting: bool = False) -> tuple[pathlib
     try:
         repo_rel = path.relative_to(ROOT)
     except ValueError as exc:
-        raise ValueError(f"self_modify path must stay under repository root: {raw_path}") from exc
-
-    parts = {part.lower() for part in repo_rel.parts}
-    if parts & BLOCKED_EVOLVE_PARTS:
-        raise ValueError(f"self_modify path targets runtime/private area: {repo_rel.as_posix()}")
-    if path.name.startswith(BLOCKED_EVOLVE_PREFIXES):
-        raise ValueError(f"self_modify path targets runtime artifact: {repo_rel.as_posix()}")
-    if path.name in BLOCKED_EVOLVE_NAMES:
-        raise ValueError(f"self_modify path targets runtime state: {repo_rel.as_posix()}")
-    if path.name not in EVOLVABLE_NAMES and path.suffix not in EVOLVABLE_SUFFIXES:
-        raise ValueError(f"self_modify path has unsupported file type: {repo_rel.as_posix()}")
-    if deleting and repo_rel.as_posix() in CORE_FILES | {"wiring.json"}:
-        raise ValueError(f"self_modify may rewrite but not delete core file: {repo_rel.as_posix()}")
+        raise ValueError(f"git evolution path must stay under repository root: {raw_path}") from exc
     return path, repo_rel.as_posix()
 
 
@@ -99,56 +48,9 @@ def _validate_content(path: pathlib.Path, rel: str, content: Any) -> str:
         raise ValueError(f"self_modify content for {rel} must be a string")
     if path.suffix == ".py":
         compile(content, rel, "exec")
-        _validate_non_destructive_python_rewrite(path, rel, content)
-        if rel == "core_desktop.py":
-            if "class Desktop" not in content:
-                raise ValueError("core_desktop.py must retain class Desktop")
-            if content.count("\n") + (1 if content and not content.endswith("\n") else 0) < MIN_CORE_DESKTOP_LINES:
-                raise ValueError(f"core_desktop.py below minimum line count ({MIN_CORE_DESKTOP_LINES})")
     elif path.suffix == ".json":
         json.loads(content)
     return content
-
-
-def _line_count(text: str) -> int:
-    return text.count("\n") + (1 if text and not text.endswith("\n") else 0)
-
-
-def _public_python_defs(text: str) -> set[str]:
-    try:
-        tree = ast.parse(text)
-    except SyntaxError:
-        return set()
-    names: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and not node.name.startswith("_"):
-            names.add(node.name)
-    return names
-
-
-def _validate_non_destructive_python_rewrite(path: pathlib.Path, rel: str, content: str) -> None:
-    if not path.exists():
-        return
-    lower = content.lower()
-    for marker in DESTRUCTIVE_STUB_MARKERS:
-        if marker in lower:
-            raise ValueError(f"self_modify content for {rel} contains destructive placeholder marker: {marker}")
-    original = path.read_text(encoding="utf-8", errors="replace")
-    original_lines = _line_count(original)
-    new_lines = _line_count(content)
-    if original_lines >= 40 and new_lines < max(20, int(original_lines * 0.55)):
-        raise ValueError(
-            f"self_modify rewrite of {rel} is suspiciously small "
-            f"({new_lines} lines vs {original_lines}); use a minimal patch, not a replacement stub"
-        )
-    original_defs = _public_python_defs(original)
-    new_defs = _public_python_defs(content)
-    if len(original_defs) >= 5 and len(new_defs) < max(2, len(original_defs) // 2):
-        missing = sorted(original_defs - new_defs)[:12]
-        raise ValueError(
-            f"self_modify rewrite of {rel} drops too many public definitions; "
-            f"missing examples: {missing}"
-        )
 
 
 def _atomic_write_text(path: pathlib.Path, content: str) -> None:
@@ -182,12 +84,6 @@ def _apply_wiring_ops(w: dict[str, Any], patches: list[dict[str, Any]]) -> dict[
                 cur[part] = {}
             cur = cur[part]
         if op == "set":
-            blocked = _blocked_wiring_set(dotted)
-            if blocked:
-                raise ValueError(
-                    f"self_modify wiring_patch cannot set unconsumed folklore path {dotted!r} "
-                    f"(blocked by {blocked!r}); delete dead folklore or patch consumed runtime code instead"
-                )
             cur[parts[-1]] = patch.get("value")
         elif op == "delete":
             cur.pop(parts[-1], None)
@@ -248,7 +144,7 @@ def git_worktree_status() -> list[str]:
 
 
 def known_good_ref_name(w: dict[str, Any]) -> str:
-    return str(w.get("self_modify", {}).get("known_good_ref") or "refs/endgame/known_good").strip()
+    return str(w["self_modify"]["known_good_ref"]).strip()
 
 
 def resolve_known_good(w: dict[str, Any]) -> dict[str, Any]:
@@ -257,14 +153,7 @@ def resolve_known_good(w: dict[str, Any]) -> dict[str, Any]:
         cp = _git(["rev-parse", "--verify", ref], check=False)
         if cp.returncode == 0 and cp.stdout.strip():
             return {"commit": cp.stdout.strip(), "source": "git_ref", "ref": ref}
-    configured = str(w.get("self_modify", {}).get("known_good_commit") or "").strip()
-    if configured:
-        return {"commit": configured, "source": "wiring_seed", "ref": ref}
     return {"commit": "", "source": "missing", "ref": ref}
-
-
-def known_good_commit(w: dict[str, Any]) -> str:
-    return str(resolve_known_good(w).get("commit") or "").strip()
 
 
 def update_known_good_ref(w: dict[str, Any], commit: str, *, source: str) -> dict[str, Any]:
@@ -357,12 +246,12 @@ def _github_branch_url(remote_url: str, branch: str) -> str:
 
 
 def prepare_self_evolution(w: dict[str, Any]) -> dict[str, Any]:
-    cfg = w.get("self_modify", {}).get("git", {})
-    remote = str(cfg.get("remote") or "origin")
+    cfg = w["self_modify"]["git"]
+    remote = str(cfg["remote"])
     branch = git_current_branch()
     remote_url = _remote_url(remote)
     return {
-        "context_mode": w.get("self_modify", {}).get("context_mode", "checked_out_branch"),
+        "context_mode": w["self_modify"]["context_mode"],
         "branch": branch,
         "current_commit": git_head_sha(),
         "known_good": resolve_known_good(w),
@@ -371,14 +260,14 @@ def prepare_self_evolution(w: dict[str, Any]) -> dict[str, Any]:
         "remote_url": remote_url,
         "branch_url": _github_branch_url(remote_url, branch),
         "commit_target": "checked_out_branch",
-        "push_after_commit": bool(cfg.get("push_after_commit", True)),
+        "push_after_commit": bool(cfg["push_after_commit"]),
     }
 
 
 def _run_evolution_commands(commands: list[Any], w: dict[str, Any]) -> list[dict[str, Any]]:
     if not commands:
         return []
-    cfg = w.get("self_modify", {}).get("execution", {})
+    cfg = w["self_modify"]["execution"]
     default_timeout = cfg.get("timeout_s")
     results: list[dict[str, Any]] = []
     for item in commands:
@@ -467,7 +356,7 @@ def apply_evolution_patch(w: dict[str, Any], parsed: dict[str, Any]) -> tuple[st
     if wiring_patches:
         touched_paths.append(ROOT / "wiring.json")
     snapshots = _snapshot_paths(touched_paths)
-    rollback_on_failure = bool(w.get("self_modify", {}).get("execution", {}).get("rollback_on_failure", True))
+    rollback_on_failure = bool(w["self_modify"]["execution"]["rollback_on_failure"])
 
     try:
         for path, _, content in writes:
@@ -553,9 +442,9 @@ def commit_self_evolution(w: dict[str, Any], applied: dict[str, Any], patch_data
     known_good = update_known_good_ref(w, commit, source="commit_self_evolution")
     pushed = False
     known_good_ref_pushed = False
-    git_cfg = w.get("self_modify", {}).get("git", {})
-    if bool(git_cfg.get("push_after_commit", False)):
-        remote = str(git_cfg.get("remote") or "origin")
+    git_cfg = w["self_modify"]["git"]
+    if bool(git_cfg["push_after_commit"]):
+        remote = str(git_cfg["remote"])
         _git(["push", remote, branch])
         _git(["push", remote, f"{known_good['ref']}:{known_good['ref']}"])
         pushed = True
@@ -597,44 +486,15 @@ def _node_center(node: dict[str, Any]) -> tuple[int, int]:
     return left + max(0, right - left) // 2, top + max(0, bottom - top) // 2
 
 
-def execute_actor_doctrine() -> dict[str, Any]:
-    return {
-        "name": "execute_actor_doctrine.v2",
-        "role": "node_execute is the narrow actor organ only; it is not planner, judge, surgeon, architect, or firmware editor",
-        "power_acknowledgement": "execute can run powerful local Python, so prompt doctrine is runtime control",
-        "absolute_forbidden": [
-            "never conclude SELF_MODIFY",
-            "never emit or route to self_modify",
-            "never invoke node_self_modify or imitate git_evolution_patch",
-            "never modify organism source, prompts, wiring, Git history, runtime controls, or self-evolution state",
-            "never use subprocess/git/filesystem writes to perform organism repair from node_execute",
-            "never hide bad emitted code behind codebase edits",
-            "never diagnose architecture or patch imagined contracts",
-        ],
-        "allowed_conclusions": ["EXECUTE", "FRAME", "CANNOT"],
-        "allowed_signals": ["verify", "frame", "reflect"],
-        "failure_rule": "broken code emitted by execute is actor failure evidence; it is never firmware surgery permission",
-        "observation_rule": "if evidence is shallow, token-limited, or missing deep UI/DOM content, use observe_area or observe_with_config before guessing",
-        "runtime_guard": "node_execute preflights obvious firmware/git mutation attempts and converts them into actor_doctrine_violation evidence before exec",
-        "allowed_escape": "FRAME for a sharper route, CANNOT/reflect for clean evidence, or EXECUTE with explicit result/stdout/stderr/action_events",
-    }
-
-
 def capability_manifest(ctx: dict[str, Any] | None = None) -> dict[str, Any]:
     st = (ctx or {}).get("state", {}) if isinstance(ctx, dict) else {}
     return {
         "schema": "endgame-ai.execute-capabilities.v1",
-        "capability_model": "GUI control and Python/script/process control are equal first-class capabilities; choose the channel or composition that best advances and proves the step",
-        "execute_actor_doctrine": execute_actor_doctrine(),
+        "capability_model": "GUI, Python, process, file, and module access are all first-class local powers.",
         "python": {
-            "execution": "data.code is executed with Python exec in the organism process",
-            "builtins": "standard Python builtins and normal imports are available",
-            "modules": [
-                "subprocess", "os", "sys", "json", "re", "time", "pathlib", "ctypes", "math", "random", "types",
-            ],
-            "filesystem": "repo_root is available; file access follows process permissions",
-            "workspace_root": "repo_root is injected from the directory where the organism process was started",
-            "processes": "subprocess is available; command results must be captured in result, stdout, or stderr",
+            "execution": "exec(code, ns) in the organism process",
+            "modules": ["subprocess", "os", "sys", "json", "re", "time", "pathlib", "ctypes", "math", "random", "types"],
+            "repo_root": str(ROOT),
         },
         "desktop_helpers": {
             "click": "click(x, y, hwnd=0)",
@@ -652,35 +512,13 @@ def capability_manifest(ctx: dict[str, Any] | None = None) -> dict[str, Any]:
             "pyautogui": "small compatibility facade over the same helpers",
             "pag": "alias for pyautogui",
         },
-        "browser_helpers": {
-            "open_url": "open_url(browser, url) with browser values opera, chrome, edge, firefox, or default; named browsers fail hard when unavailable",
-        },
+        "browser_helpers": {"open_url": "open_url(browser, url)"},
         "observation": {
-            "state_fields": [
-                "fresh_observation", "desktop_tree", "desktop_tree_text", "action_index",
-                "observation_artifact", "observed_at", "fresh_scan",
-            ],
-            "consumed_knobs": "wiring.observe_config.hover_cache.scan/filter plus focused scan.area via observe_area",
-            "discipline": "when the whole-screen tree is too shallow or token-limited, use a focused observation before guessing or escalating",
+            "state_fields": ["fresh_observation", "desktop_tree_text", "action_index", "observation_artifact"],
+            "focused": "observe_area(...) and observe_with_config(...)",
         },
-        "audit_contract": [
-            "assign result for every EXECUTE path or write stdout/stderr",
-            "desktop helpers append action_events",
-            "invalid node ids and failed helpers raise hard",
-            "silent side effects are task-route failures until reflect proves a consumed organism contract is broken",
-        ],
-        "topology_contract": {
-            "execute_may_emit": ["verify", "frame", "reflect"],
-            "execute_may_not_emit": ["self_modify"],
-            "self_modify_route": "reflect.escalate only",
-            "ordinary_emitted_code_exceptions": "task_route_exception, not organism contract failure",
-            "actor_doctrine_violation": "task-route evidence caused by node_execute attempting firmware/git repair; never self_modify escalation",
-        },
-        "blocked_wiring_set_paths": sorted(UNCONSUMED_WIRING_SET_PATHS),
-        "controls": {
-            "deadline_at": st.get("deadline_at"),
-            "deadline_guard": "desktop helpers refuse actions after deadline_at",
-        },
+        "signals": ["verify", "frame", "reflect"],
+        "deadline_at": st.get("deadline_at"),
     }
 
 

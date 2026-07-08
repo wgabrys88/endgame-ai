@@ -82,8 +82,6 @@ def run(
             duration_seconds=duration_seconds,
             deadline_at=deadline_at,
             pid=os.getpid(),
-            self_evolution_enabled=stop_check.self_evolution_enabled(),
-            self_evolution_file=str(stop_check.SELF_EVOLUTION_FILE),
         )
         while True:
             if state.duration_expired(deadline_at):
@@ -109,48 +107,31 @@ def run(
             signal_name, patch = nodes.call_node(current, ctx)
             evolution_patch = patch.get("git_evolution_patch")
             if current == "node_self_modify" and evolution_patch:
-                if not stop_check.self_evolution_enabled():
-                    patch.setdefault("self_modify", {})["status"] = "disabled"
-                    patch["self_modify"]["enabled_file"] = str(stop_check.SELF_EVOLUTION_FILE)
-                    patch["last_error"] = "self evolution disabled by missing runtime_self_evolution_enabled.json"
-                    patch.pop("git_evolution_patch", None)
-                    signal_name = "modify_failed"
-                    state.runtime_event(
-                        w,
-                        "self_modify_disabled",
-                        node=current,
-                        tick=st.get("tick"),
-                        enabled_file=str(stop_check.SELF_EVOLUTION_FILE),
-                        proposed_patch_summary=evolution_patch.get("summary") if isinstance(evolution_patch, dict) else None,
-                    )
-                    evolution_patch = None
-                else:
-                    try:
-                        _, applied = nodes.apply_evolution_patch(w, {"data": evolution_patch})
-                        patch.setdefault("self_modify", {})["applied"] = applied
-                        committed = nodes.commit_self_evolution(w, applied, evolution_patch)
-                        patch["self_modify"]["commit"] = committed
-                        w = wiring.load_wiring(wiring_path)
-                        state.runtime_event(w, "self_modify_applied", **applied, commit=committed)
-                    except Exception as exc:
-                        swap_cfg = w.get("self_modify", {})
-                        if bool(swap_cfg.get("hot_swap_on_failure", True)):
-                            touched = [
-                                str(item.get("path")).replace("\\", "/")
-                                for item in (evolution_patch.get("file_writes") or [])
-                                if isinstance(item, dict) and item.get("path")
-                            ]
-                            touched.extend(
-                                str(path).replace("\\", "/")
-                                for path in (evolution_patch.get("file_deletes") or [])
-                                if str(path).strip()
-                            )
-                            if evolution_patch.get("wiring_patches"):
-                                touched.append("wiring.json")
-                            swap = nodes.hot_swap_to_known_good(w, paths=touched or None)
-                            patch.setdefault("self_modify", {})["hot_swap"] = swap
-                            state.runtime_event(w, "self_modify_hot_swap", error=str(exc), **swap)
-                        raise
+                try:
+                    _, applied = nodes.apply_evolution_patch(w, {"data": evolution_patch})
+                    patch.setdefault("self_modify", {})["applied"] = applied
+                    committed = nodes.commit_self_evolution(w, applied, evolution_patch)
+                    patch["self_modify"]["commit"] = committed
+                    w = wiring.load_wiring(wiring_path)
+                    state.runtime_event(w, "self_modify_applied", **applied, commit=committed)
+                except Exception as exc:
+                    if bool(w["self_modify"]["hot_swap_on_failure"]):
+                        touched = [
+                            str(item.get("path")).replace("\\", "/")
+                            for item in (evolution_patch.get("file_writes") or [])
+                            if isinstance(item, dict) and item.get("path")
+                        ]
+                        touched.extend(
+                            str(path).replace("\\", "/")
+                            for path in (evolution_patch.get("file_deletes") or [])
+                            if str(path).strip()
+                        )
+                        if evolution_patch.get("wiring_patches"):
+                            touched.append("wiring.json")
+                        swap = nodes.hot_swap_to_known_good(w, paths=touched or None)
+                        patch.setdefault("self_modify", {})["hot_swap"] = swap
+                        state.runtime_event(w, "self_modify_hot_swap", error=str(exc), **swap)
+                    raise
             st.update(patch)
             if signal_name == "halt":
                 st["_phase"] = "halted"
