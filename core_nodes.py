@@ -13,6 +13,7 @@ import core_brain as brain
 import core_bus as bus
 import core_desktop as desktop
 import core_wiring as wiring
+import check_topology
 
 ROOT = pathlib.Path(__file__).parent.resolve()
 EVOLVABLE_SUFFIXES = {".py", ".json", ".md"}
@@ -251,6 +252,10 @@ def apply_evolution_patch(w: dict[str, Any], parsed: dict[str, Any]) -> tuple[st
     read_files = {str(path).replace("\\", "/").strip().lstrip("/") for path in list(data.get("read_files") or []) if str(path).strip()}
     wiring_patches = list(data.get("wiring_patches") or [])
     patched_wiring = _apply_wiring_ops(w, wiring_patches)
+    if wiring_patches and patched_wiring.get("topology") != w.get("topology"):
+        problems = check_topology.coherence_problems(patched_wiring)
+        if problems:
+            raise ValueError(f"topology_patch would make the graph incoherent: {problems}")
     writes = [
         (*_evolution_target(str(item.get("path") or "")), _validate_content(_evolution_target(str(item.get("path") or ""))[0], _evolution_target(str(item.get("path") or ""))[1], item.get("content")))
         for item in list(data.get("file_writes") or [])

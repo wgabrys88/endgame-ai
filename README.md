@@ -268,8 +268,40 @@ python3 check_topology.py                                    # exit 0, coherent
 | B2 | ✅ | Frontier-loop scheduler (one-to-many fan-out); recursion in error path removed. |
 | B3 | ✅ | `node_barrier` many-to-one fan-in (`wait`/`join`, `topology.barriers`). |
 | B4 | ✅ | `cap_spawn` — a plugin that runs a **child organism**; depth-gated recursion. |
-| **B5** | 🔲 | Runtime topology patch — `reflect` rewires the graph mid-run. |
-| B6 | 🔲 | Rewrite `wiring.json` into the visionary fractal topology. |
+| B5 | ✅ | Runtime topology-patch coherence gate — safe mid-run rewiring. |
+| **B6** | 🔲 | Rewrite `wiring.json` into the visionary fractal topology. |
+
+### ✅ B5 done — safe runtime topology patch
+
+Mid-run rewiring already worked mechanically: `_apply_wiring_ops` in `core_nodes`
+applies arbitrary dotted-path `set`/`delete` ops from a `git_evolution_patch`'s
+`wiring_patches`, so `node_reflect` → (`topology_patch`) → `node_self_modify` can
+already reshape `topology.edges`/`nodes`/`barriers`. **The gap was safety:** an
+incoherent rewrite (edge to a ghost node, unreachable node, orphan barrier) would
+silently corrupt the live graph and only blow up later at `next_nodes_for`.
+
+B5 closes that:
+- **Single source of coherence.** Extracted `check_topology.coherence_problems(w)
+  -> list[str]` (pure, takes the wiring dict). The CLI verifier `check()` now
+  calls it, and so does the runtime. No duplicated topology logic. It checks:
+  cycle_start ∈ nodes, no dangling edge targets (`halt`/`wait` are sentinels),
+  every node has an edge map, every barrier names a real node with positive-int
+  arity **and** a `join` edge, and all nodes reachable from `cycle_start` across
+  string+list edges.
+- **The gate.** In `apply_evolution_patch`, right after `_apply_wiring_ops`
+  produces `patched_wiring`, if the patch changed `topology` it runs
+  `coherence_problems(patched_wiring)` and **raises before any file write** on any
+  problem. The existing `except` then rolls back snapshots + hot-swaps to
+  known-good. Self-modify safety is unchanged; incoherent topology just can't land.
+- **Verified:** valid patch (add a node reachable via a reflect fan-out edge)
+  applies; dangling edge, unreachable node, orphan barrier, and barrier-without-
+  join are each rejected with a precise reason and would roll back; linear +
+  barrier + spawn regressions intact.
+
+> Note: `core_nodes.py` imports `core_desktop` → `comtypes` (Windows-only), so it
+> cannot be imported on WSL. Import-smoke on this dev box uses
+> `core_organism, core_bus, core_wiring, core_state, check_topology`; test the
+> gate via `check_topology.coherence_problems(...)` directly.
 
 ### ✅ B4 done — `cap_spawn` (a node that is itself an organism)
 
@@ -304,13 +336,8 @@ final narrative back into the parent, emitting `spawned`.
   nothing and creates no files; parent `runtime_state.json` untouched; linear +
   barrier regressions intact.
 
-### 🔲 B5 — runtime topology patch
-
-Extend `apply_evolution_patch` with topology ops (add/rewire edges, add nodes,
-set barriers) so `reflect` can emit `topology_patch` and reshape the graph
-mid-run, then hot-reload wiring. Keep hot-swap-on-failure intact.
-
 ### 🔲 B6 — write the visionary fractal `wiring.json`
+
 
 Rewrite the topology from linear to fractal: `node_execute` fans out to
 capability **instances** (`node_execute:browser`, `:editor`, `:terminal`), those
@@ -324,7 +351,7 @@ topology."**
 
 ## 🤝 Handover (for the next AI or human)
 
-- **You are here:** B1–B4 done and committed on `live-test-run`. Next is **B5**.
+- **You are here:** B1–B5 done and committed on `live-test-run`. Next is **B6**.
 - **Do:** read this whole README; keep code small, unified, non-branching; keep
   plugins dynamic/file-based; keep hot-swap + self-modify working; keep prompts +
   contracts aligned; verify then commit one step at a time; **update this README
@@ -334,7 +361,7 @@ topology."**
   the substrate step it depends on is verified.
 - **Reference commits:** `3443ee6` B3 barrier · `327cd82` B2 frontier ·
   `36d61eb` B1 list edges · `9339b1b` error-streak halt · `fa5260d` unified loader.
-  (B4 `cap_spawn` is the latest commit on the branch.)
+  (B4 `cap_spawn` and B5 topology-coherence gate are the two latest commits.)
 - **If in doubt:** the system is only nodes + wiring, everything hot-swappable,
   fail hard. Fewer moving parts wins.
 
