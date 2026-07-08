@@ -6,49 +6,17 @@ import core_bus as bus
 def run(ctx):
     state = ctx.get("state", {})
     plan_obj = state.get("plan", {})
-
-    if isinstance(plan_obj, dict):
-        plan = plan_obj.get("intent", [])
-    elif isinstance(plan_obj, list):
-        plan = plan_obj
-    else:
-        raise RuntimeError(f"scheduler expected plan object or list, got {type(plan_obj).__name__}")
+    plan = plan_obj.get("intent", []) if isinstance(plan_obj, dict) else plan_obj
     if not isinstance(plan, list):
         raise RuntimeError(f"scheduler expected plan.intent list, got {type(plan).__name__}")
-
-    step_idx = int(state.get("step", 0) or 0)
-
-    if step_idx >= len(plan):
-        root_plan = state.get("root_plan_intent") or []
-        completed_steps = state.get("completed_steps") or []
-        if isinstance(root_plan, list) and root_plan:
-            completed_count = len(completed_steps) if isinstance(completed_steps, list) else 0
-            if completed_count < len(root_plan):
-                raise RuntimeError(
-                    "active plan completed before root goal obligations were complete: "
-                    f"completed={completed_count} root_obligations={len(root_plan)}"
-                )
+    idx = int(state.get("step", 0) or 0)
+    if idx >= len(plan):
+        root, completed = state.get("root_plan_intent") or [], state.get("completed_steps") or []
+        if isinstance(root, list) and root and len(completed if isinstance(completed, list) else []) < len(root):
+            raise RuntimeError("active plan completed before root goal obligations were complete")
         return bus.emit("plan_complete", {"plan_complete": True, "current_step": None, "action_frame": None})
-
-    step = plan[step_idx]
-    if not isinstance(step, dict):
-        raise RuntimeError(f"scheduler expected step object at index {step_idx}, got {type(step).__name__}")
-    if not isinstance(step.get("description"), str) or not isinstance(step.get("done_when"), str):
-        raise RuntimeError(f"scheduler step {step_idx} must contain string description and done_when")
-    
-    # Propagate effective_goal with step-specific framing
-    effective_goal = state.get("effective_goal", ctx.get("goal", ""))
-    step_desc = step.get("description", str(step))
-    effective_goal = f"{effective_goal}\n\n[SCHEDULER] Current step: {step_desc}. Complete when: {step.get('done_when', '')}."
-
-    return bus.emit(
-        "step_ready",
-        {
-            "current_step": step,
-            "step_goal": step.get("description", str(step)),
-            "step": step_idx,
-            "action_frame": None,
-            "framing_attempted_for_step": None,
-            "effective_goal": effective_goal,
-        },
-    )
+    step = plan[idx]
+    if not isinstance(step, dict) or not isinstance(step.get("description"), str) or not isinstance(step.get("done_when"), str):
+        raise RuntimeError(f"scheduler step {idx} must contain string description and done_when")
+    effective = state.get("effective_goal", ctx.get("goal", "")) + f"\n\n[SCHEDULER] Current step: {step.get('description', str(step))}. Complete when: {step.get('done_when', '')}."
+    return bus.emit("step_ready", {"current_step": step, "step_goal": step.get("description", str(step)), "step": idx, "action_frame": None, "framing_attempted_for_step": None, "effective_goal": effective})

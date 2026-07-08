@@ -25,8 +25,4 @@
 !node_scheduler.py
 !node_self_modify.py
 !node_verify.py
-!transport_browser_ai.py
-!transport_file_proxy.py
-!transport_openai.py
-!transport_opencode.py
 !transport_xai.py

@@ -11,20 +11,15 @@ from core_node_base import BaseNode
 
 
 class ExecuteNode(BaseNode):
-
     prompt_key = "node_execute"
     expected_record_type = "execution"
 
     def _should_frame(self, state: dict, conclusion: str) -> bool:
-        step_index = int(state.get("step", 0) or 0)
-        if state.get("action_frame") and (state.get("action_frame") or {}).get("step_index") == step_index:
-            return False
-        if state.get("framing_attempted_for_step") == step_index:
-            return False
-        if conclusion in {"CANNOT", "FRAME"}:
-            return True
-        last_error = str(state.get("last_error") or "")
-        return bool(last_error) and state.get("framing_attempted_for_step") != step_index
+        step = int(state.get("step", 0) or 0)
+        return not (
+            (state.get("action_frame") and (state.get("action_frame") or {}).get("step_index") == step)
+            or state.get("framing_attempted_for_step") == step
+        ) and (conclusion in {"CANNOT", "FRAME"} or bool(state.get("last_error")))
 
     def build_payload(self, ctx):
         state = ctx.get("state", {})
@@ -32,39 +27,16 @@ class ExecuteNode(BaseNode):
         step = state.get("current_step") or {}
         return {
             "goal": goal,
-            "step": {
-                "description": step.get("description", goal),
-                "done_when": step.get("done_when", ""),
-            },
+            "step": {"description": step.get("description", goal), "done_when": step.get("done_when", "")},
             "action_frame": state.get("action_frame"),
-            "last": {
-                "error": state.get("last_error"),
-                "failure": state.get("last_failure", {}),
-                "result": state.get("last_result", ""),
-                "action": state.get("last_action", {}),
-            },
+            "last": {"error": state.get("last_error"), "failure": state.get("last_failure", {}), "result": state.get("last_result", ""), "action": state.get("last_action", {})},
             "state": bus.state_brief(state),
             "observation": bus.observation_brief(state),
             "capabilities": nodes.capability_manifest(ctx),
         }
 
-    def _decision_failure(self, conclusion: str, reason: str) -> dict:
-        return {
-            "source": "execute",
-            "kind": "task_route_decision",
-            "conclusion": conclusion,
-            "reason": reason,
-            "contract_repair_allowed": False,
-        }
-
-    def _runtime_failure(self, exc: Exception) -> dict:
-        return {
-            "source": "execute",
-            "kind": "task_route_exception",
-            "exception_type": type(exc).__name__,
-            "message": str(exc),
-            "contract_repair_allowed": False,
-        }
+    def _failure(self, kind: str, **extra) -> dict:
+        return {"source": "execute", "kind": kind, "contract_repair_allowed": False, **extra}
 
     def run(self, ctx):
         state = ctx.get("state", {})
@@ -73,134 +45,42 @@ class ExecuteNode(BaseNode):
         data = record.data
         code = str(data.get("code", "") or "")
         conclusion = str(data.get("conclusion") or "").upper()
-        requested_signal = str(data.get("next_signal") or "").lower()
-
-        if conclusion not in {"EXECUTE", "CANNOT", "FRAME"}:
-            raise RuntimeError(f"execution emitted invalid conclusion: {conclusion!r}; execute cannot self-modify")
-        if requested_signal not in {"verify", "frame", "reflect"}:
-            raise RuntimeError(f"execution emitted invalid next_signal: {requested_signal!r}; execute cannot route to self_modify")
-        if conclusion == "EXECUTE" and requested_signal != "verify":
-            raise RuntimeError(f"execution conclusion EXECUTE requires next_signal verify, got {requested_signal!r}")
-        if conclusion == "FRAME" and requested_signal != "frame":
-            raise RuntimeError(f"execution conclusion FRAME requires next_signal frame, got {requested_signal!r}")
-        if conclusion == "CANNOT" and requested_signal not in {"frame", "reflect"}:
-            raise RuntimeError(f"execution conclusion CANNOT requires next_signal frame or reflect, got {requested_signal!r}")
+        requested = str(data.get("next_signal") or "").lower()
+        valid = {"EXECUTE": {"verify"}, "FRAME": {"frame"}, "CANNOT": {"frame", "reflect"}}
+        if conclusion not in valid or requested not in valid[conclusion]:
+            raise RuntimeError(f"execution invalid conclusion/signal: {conclusion!r}/{requested!r}")
         if conclusion != "EXECUTE" and code.strip():
             raise RuntimeError("execution emitted code when conclusion is not EXECUTE")
-
         if conclusion != "EXECUTE":
-            signal = requested_signal
-            if signal == "reflect" and self._should_frame(state, conclusion):
-                signal = "frame"
-            failure = self._decision_failure(conclusion, f"execute returned {conclusion}")
-            return bus.emit(
-                signal,
-                {
-                    "last_action": {"code": "", "conclusion": conclusion},
-                    "last_error": failure["reason"],
-                    "last_failure": failure,
-                },
-                record=record,
-                evidence=payload,
-            )
+            signal = "frame" if requested == "reflect" and self._should_frame(state, conclusion) else requested
+            failure = self._failure("task_route_decision", conclusion=conclusion, reason=f"execute returned {conclusion}")
+            return bus.emit(signal, {"last_action": {"code": "", "conclusion": conclusion}, "last_error": failure["reason"], "last_failure": failure}, record=record, evidence=payload)
         if not code.strip():
             raise RuntimeError("execution conclusion EXECUTE requires non-empty code")
         deadline_at = state.get("deadline_at")
-        if deadline_at is not None:
-            try:
-                deadline = float(deadline_at)
-            except (TypeError, ValueError) as exc:
-                raise RuntimeError(f"invalid deadline_at in state: {deadline_at!r}") from exc
-            now = time.time()
-            if now >= deadline:
-                late_by = round(now - deadline, 3)
-                failure = {
-                    "source": "execute",
-                    "kind": "duration_guard",
-                    "late_by_s": late_by,
-                    "contract_repair_allowed": False,
-                }
-                return bus.emit(
-                    "reflect",
-                    {
-                        "last_action": {"code": code, "conclusion": conclusion, "not_executed": True},
-                        "last_code": code,
-                        "last_result": {
-                            "result": None,
-                            "stdout": "",
-                            "stderr": "",
-                            "action_events": [],
-                            "duration_guard": {
-                                "deadline_at": deadline,
-                                "now": now,
-                                "late_by_s": late_by,
-                            },
-                        },
-                        "last_error": f"duration deadline expired before executing body action: late_by_s={late_by}",
-                        "last_failure": failure,
-                        "action_frame": state.get("action_frame"),
-                    },
-                    record=record,
-                    evidence=payload,
-                )
+        if deadline_at is not None and time.time() >= float(deadline_at):
+            late_by = round(time.time() - float(deadline_at), 3)
+            failure = self._failure("duration_guard", late_by_s=late_by)
+            return bus.emit("reflect", {"last_action": {"code": code, "conclusion": conclusion, "not_executed": True}, "last_code": code, "last_result": {"result": None, "stdout": "", "stderr": "", "action_events": [], "duration_guard": {"deadline_at": float(deadline_at), "late_by_s": late_by}}, "last_error": f"duration deadline expired before executing body action: late_by_s={late_by}", "last_failure": failure, "action_frame": state.get("action_frame")}, record=record, evidence=payload)
 
         ns = nodes.build_capability_runtime(ctx)
         ns["desktop"] = desktop
-        stdout = io.StringIO()
-        stderr = io.StringIO()
+        stdout, stderr = io.StringIO(), io.StringIO()
+        error = failure = None
         try:
             with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
                 exec(code, ns)
-            explicit_result = ns.get("result")
-            action_events = list(ns.get("_action_events") or [])
-            result = {
-                "result": explicit_result,
-                "stdout": stdout.getvalue(),
-                "stderr": stderr.getvalue(),
-                "action_events": action_events,
-            }
-            if explicit_result is None and not action_events and not result["stdout"] and not result["stderr"]:
+            result = {"result": ns.get("result"), "stdout": stdout.getvalue(), "stderr": stderr.getvalue(), "action_events": list(ns.get("_action_events") or [])}
+            if result["result"] is None and not result["action_events"] and not result["stdout"] and not result["stderr"]:
                 error = "RuntimeError: EXECUTE produced no result, stdout, stderr, or recorded body action"
-                failure = {
-                    "source": "execute",
-                    "kind": "empty_execute_result",
-                    "contract_repair_allowed": False,
-                }
-            else:
-                error = None
-                failure = None
+                failure = self._failure("empty_execute_result")
         except Exception as exc:
-            result = {
-                "stdout": stdout.getvalue(),
-                "stderr": stderr.getvalue(),
-                "action_events": list(ns.get("_action_events") or []) if "ns" in locals() else [],
-            }
+            result = {"stdout": stdout.getvalue(), "stderr": stderr.getvalue(), "action_events": list(ns.get("_action_events") or [])}
             error = f"{type(exc).__name__}: {exc}"
-            failure = self._runtime_failure(exc)
-
-        signal = "reflect" if error else "verify"
-        # Rewrite goal for next nodes based on execution outcome
+            failure = self._failure("task_route_exception", exception_type=type(exc).__name__, message=str(exc))
         effective_goal = state.get("effective_goal", ctx.get("goal", ""))
-        if conclusion == "EXECUTE":
-            effective_goal = f"{effective_goal}\n\n[EXECUTE] Action executed: {code[:120]}... Result: {'success' if not error else 'error: ' + str(error)[:80]}."
-        elif conclusion == "FRAME":
-            effective_goal = f"{effective_goal}\n\n[EXECUTE] Need sharper observation/frame. Current step: {step.get('description', '')[:100]}."
-        elif conclusion == "CANNOT":
-            effective_goal = f"{effective_goal}\n\n[EXECUTE] Cannot execute current approach. Need different strategy for: {step.get('description', '')[:100]}."
-        return bus.emit(
-            signal,
-            {
-                "last_action": {"code": code, "conclusion": conclusion},
-                "last_code": code,
-                "last_result": result,
-                "last_error": error,
-                "last_failure": failure,
-                "action_frame": None if not error else state.get("action_frame"),
-                "effective_goal": effective_goal,
-            },
-            record=record,
-            evidence=payload,
-        )
+        effective_goal += f"\n\n[EXECUTE] Action executed: {code[:120]}... Result: {'success' if not error else 'error: ' + str(error)[:80]}."
+        return bus.emit("reflect" if error else "verify", {"last_action": {"code": code, "conclusion": conclusion}, "last_code": code, "last_result": result, "last_error": error, "last_failure": failure, "action_frame": None if not error else state.get("action_frame"), "effective_goal": effective_goal}, record=record, evidence=payload)
 
 
 def run(ctx):

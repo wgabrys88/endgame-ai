@@ -5,80 +5,38 @@ from core_node_base import BaseNode
 
 
 class VerifyNode(BaseNode):
-
     prompt_key = "node_verify"
     expected_record_type = "verification"
 
-    def _step_goal(self, ctx):
+    def _step(self, ctx):
         state = ctx.get("state", {})
         step = state.get("current_step") or {}
         return step.get("description", ctx.get("goal", "")), step.get("done_when", "")
 
-    def _evidence(self, ctx):
-        state = ctx.get("state", {})
-        return {
-            "last_action": state.get("last_action", {}),
-            "last_result": state.get("last_result", ""),
-            "last_error": state.get("last_error", ""),
-            "state": bus.state_brief(state),
-        }
-
     def evidence(self, ctx):
-        return self._evidence(ctx)
+        state = ctx.get("state", {})
+        return {"last_action": state.get("last_action", {}), "last_result": state.get("last_result", ""), "last_error": state.get("last_error", ""), "state": bus.state_brief(state)}
 
     def build_payload(self, ctx):
-        step_goal, done_when = self._step_goal(ctx)
-        effective_goal = ctx.get("state", {}).get("effective_goal", ctx.get("goal", ""))
-        return {
-            "goal": effective_goal,
-            "step": {"description": step_goal, "done_when": done_when},
-            "evidence": self._evidence(ctx),
-            "observation": bus.observation_brief(ctx.get("state", {})),
-        }
+        desc, done_when = self._step(ctx)
+        return {"goal": ctx.get("state", {}).get("effective_goal", ctx.get("goal", "")), "step": {"description": desc, "done_when": done_when}, "evidence": self.evidence(ctx), "observation": bus.observation_brief(ctx.get("state", {}))}
 
     def signal_from_data(self, data, ctx):
-        signal = data.get("next_signal")
-        if signal not in ("step_confirmed", "step_denied"):
-            raise RuntimeError(f"verification emitted invalid next_signal: {signal!r}")
-        success = bool(data.get("success", False))
-        if signal == "step_confirmed" and not success:
-            raise RuntimeError("verification emitted step_confirmed with success=false")
-        if success and signal != "step_confirmed":
-            raise RuntimeError("verification emitted success=true without step_confirmed")
-        self._success = success
-        self._signal = signal
-        return signal
+        self._signal = data.get("next_signal")
+        self._success = bool(data.get("success", False))
+        if self._signal not in {"step_confirmed", "step_denied"} or (self._signal == "step_confirmed") != self._success:
+            raise RuntimeError(f"verification invalid success/signal: {self._success!r}/{self._signal!r}")
+        return self._signal
 
     def patch_from_record(self, record, ctx):
-        data = record.data
-        state = ctx.get("state", {})
-        step_goal, done_when = self._step_goal(ctx)
-        patch: dict[str, object] = {
-            "verification": {
-                "success": self._success,
-                "reasoning": data.get("reasoning", record.reasoning),
-                "step_goal": step_goal,
-                "done_when": done_when,
-            },
-            "last_verification": {"success": self._success, "signal": self._signal},
-        }
-        effective_goal = state.get("effective_goal", ctx.get("goal", ""))
+        data, state = record.data, ctx.get("state", {})
+        desc, done_when = self._step(ctx)
+        effective = state.get("effective_goal", ctx.get("goal", "")) + (f"\n\n[VERIFY] Step confirmed: {desc[:100]}. Moving to next step." if self._success else f"\n\n[VERIFY] Step denied: {desc[:100]}. Evidence missing: {data.get('reasoning', '')[:100]}.")
+        patch: dict[str, object] = {"verification": {"success": self._success, "reasoning": data.get("reasoning", record.reasoning), "step_goal": desc, "done_when": done_when}, "last_verification": {"success": self._success, "signal": self._signal}, "effective_goal": effective}
         if self._success:
-            completed_steps = list(state.get("completed_steps") or [])
-            completed_steps.append({
-                "description": step_goal,
-                "done_when": done_when,
-                "confirmed_at_tick": state.get("tick"),
-            })
-            effective_goal = f"{effective_goal}\n\n[VERIFY] Step confirmed: {step_goal[:100]}. Moving to next step."
-        else:
-            effective_goal = f"{effective_goal}\n\n[VERIFY] Step denied: {step_goal[:100]}. Evidence missing: {data.get('reasoning', '')[:100]}."
-        patch["effective_goal"] = effective_goal
-        if self._success:
-            patch["step"] = int(state.get("step", 0) or 0) + 1
-            patch["completed_steps"] = completed_steps
-            patch["failure_streak"] = {"signature": None, "count": 0}
-            patch["action_frame"] = None
+            completed = list(state.get("completed_steps") or [])
+            completed.append({"description": desc, "done_when": done_when, "confirmed_at_tick": state.get("tick")})
+            patch.update({"step": int(state.get("step", 0) or 0) + 1, "completed_steps": completed, "failure_streak": {"signature": None, "count": 0}, "action_frame": None})
         return patch
 
 
