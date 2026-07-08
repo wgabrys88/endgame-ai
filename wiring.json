@@ -212,7 +212,7 @@
       },
       "node_execute": {
         "verify": "node_verify",
-        "frame": "node_frame_action",
+        "frame": "node_observe",
         "reflect": "node_reflect",
         "error": "node_error"
       },
@@ -243,7 +243,7 @@
         "halt": "halt"
       },
       "node_frame_action": {
-        "framed": "node_execute",
+        "framed": "node_observe",
         "reflect": "node_reflect",
         "error": "node_error"
       }
