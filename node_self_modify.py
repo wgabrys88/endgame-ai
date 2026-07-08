@@ -1,5 +1,4 @@
 import pathlib
-import subprocess
 from typing import Any
 
 import core_brain as brain
@@ -12,28 +11,21 @@ SKIP_PREFIXES = ("runtime_",)
 BINARY_SUFFIXES = {".pyc", ".pyd", ".dll", ".exe", ".ico", ".png", ".jpg", ".jpeg", ".gif", ".webp"}
 
 
-def _git(args: list[str]) -> str:
-    cp = subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True)
-    if cp.returncode != 0:
-        raise RuntimeError(f"git {' '.join(args)} failed: {(cp.stderr or cp.stdout or '').strip()}")
-    return cp.stdout
-
-
 def _zsplit(raw: str) -> set[str]:
     return {item for item in raw.split("\0") if item}
 
 
 def _status_map() -> dict[str, str]:
     status: dict[str, str] = {}
-    for row in [line for line in _git(["status", "--porcelain"]).splitlines() if line.strip()]:
+    for row in [line for line in nodes._git(["status", "--porcelain"]).stdout.splitlines() if line.strip()]:
         if len(row) >= 4:
             status[row[3:].replace("\\", "/")] = row[:2].strip() or "modified"
     return status
 
 
 def _capture_workspace_manifest() -> dict[str, Any]:
-    tracked = _zsplit(_git(["ls-files", "-z"]))
-    untracked = _zsplit(_git(["ls-files", "--others", "--exclude-standard", "-z"]))
+    tracked = _zsplit(nodes._git(["ls-files", "-z"]).stdout)
+    untracked = _zsplit(nodes._git(["ls-files", "--others", "--exclude-standard", "-z"]).stdout)
     status = _status_map()
     files = []
     for rel in sorted(tracked | untracked):

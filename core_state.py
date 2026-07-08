@@ -49,7 +49,7 @@ def duration_expired(deadline_at: float | None) -> bool:
 
 def runtime_event(wiring_cfg: dict[str, Any], event: str, **payload: Any) -> None:
     import core_brain as brain
-    brain.log_runtime_event({"event_log_path": str(wiring.event_log_path(wiring_cfg))}, event, **payload)
+    brain.log_runtime_event(wiring_cfg, event, **payload)
 
 
 def classify_node_exception(node_name: str, exc: Exception) -> dict[str, Any]:

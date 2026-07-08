@@ -1,16 +1,8 @@
 import json
-import os
 import time
 
 import core_brain as brain
 import core_wiring as wiring
-
-
-def _atomic_json(path, obj):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(obj, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
-    os.replace(tmp, path)
 
 
 def call(messages, cfg):
@@ -18,7 +10,7 @@ def call(messages, cfg):
     resp_path = wiring.root_path(cfg["response_path"])
     if resp_path.exists():
         resp_path.unlink()
-    _atomic_json(req_path, {
+    wiring.atomic_write_json(req_path, {
         "schema": "endgame-ai.file-proxy.request.v2",
         "created_at": time.time(),
         "transport": "transport_file_proxy",

@@ -45,7 +45,7 @@ def run(
         sp = wiring.state_path(w)
         resumed = False
         if not reset and sp.exists():
-            st = brain.load_json(sp)
+            st = wiring.load_json(sp)
             goal = goal or str(st.get("goal") or "")
             current = str(start_node or st.get("next_node") or topo.get("cycle_start") or "node_planner")
             resumed = True

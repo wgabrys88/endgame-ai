@@ -161,14 +161,6 @@ def _with_fresh_observation(payload: dict[str, Any], w: dict[str, Any]) -> dict[
     return enriched
 
 
-def load_json(path: pathlib.Path) -> dict[str, Any]:
-    return wiring.load_json(path)
-
-
-def atomic_write_json(path: pathlib.Path, obj: Any) -> None:
-    wiring.atomic_write_json(path, obj)
-
-
 def append_ndjson(path: pathlib.Path, obj: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as f:

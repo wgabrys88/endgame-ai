@@ -286,7 +286,7 @@ def apply_evolution_patch(w: dict[str, Any], parsed: dict[str, Any]) -> tuple[st
             _restore_snapshots(snapshots)
             if wiring_patches:
                 w.clear()
-                w.update(brain.load_json(ROOT / "wiring.json"))
+                w.update(wiring.load_json(ROOT / "wiring.json"))
         raise
     changed = [rel for _, rel, _ in writes] + [rel for _, rel in deletes]
     activation = {"immediate": [], "next_run": [], "supporting": []}
@@ -320,7 +320,7 @@ def commit_self_evolution(w: dict[str, Any], applied: dict[str, Any], patch_data
 
 
 def save_wiring(w: dict[str, Any]) -> None:
-    brain.atomic_write_json(ROOT / "wiring.json", w)
+    wiring.atomic_write_json(ROOT / "wiring.json", w)
 
 
 def _action_index(state: dict[str, Any]) -> dict[str, Any]:
@@ -389,20 +389,18 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
             raise RuntimeError(f"node id is not actionable in the latest observation: {node_id}")
         return dict(node)
 
-    def click(x: int, y: int, hwnd: int = 0) -> dict[str, Any]:
-        _assert_duration_open("click"); return _record_action(d.click(int(x), int(y), int(hwnd or 0)))
+    def _guarded(name: str, fn):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            _assert_duration_open(name)
+            return _record_action(fn(*args, **kwargs))
+        return wrapper
 
-    def type_text(text: str) -> dict[str, Any]:
-        _assert_duration_open("type_text"); return _record_action(d.type_text(str(text)))
-
-    def press_key(key: str) -> dict[str, Any]:
-        _assert_duration_open("press_key"); return _record_action(d.press_key(str(key)))
-
-    def hotkey(*keys: Any) -> dict[str, Any]:
-        _assert_duration_open("hotkey"); return _record_action(d.hotkey(*keys))
-
-    def scroll(x: int, y: int, amount: int, hwnd: int = 0) -> dict[str, Any]:
-        _assert_duration_open("scroll"); return _record_action(d.scroll(int(x), int(y), int(amount), int(hwnd or 0)))
+    click = _guarded("click", lambda x, y, hwnd=0: d.click(int(x), int(y), int(hwnd or 0)))
+    type_text = _guarded("type_text", lambda text: d.type_text(str(text)))
+    press_key = _guarded("press_key", lambda key: d.press_key(str(key)))
+    hotkey = _guarded("hotkey", lambda *keys: d.hotkey(*keys))
+    scroll = _guarded("scroll", lambda x, y, amount, hwnd=0: d.scroll(int(x), int(y), int(amount), int(hwnd or 0)))
+    open_url = _guarded("open_url", lambda browser, url: d.open_url(str(browser), str(url)))
 
     def action_nodes(action: str | None = None) -> list[dict[str, Any]]:
         return [dict(node) for node in action_index.values() if isinstance(node, dict) and node.get("action") and (action is None or node.get("action") == action)]
@@ -427,9 +425,6 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         node = _require_node(node_id)
         x, y = _node_center(node)
         return _record_action(d.scroll(x, y, int(amount), int(node.get("hwnd") or 0)))
-
-    def open_url(browser: str, url: str) -> dict[str, Any]:
-        _assert_duration_open("open_url"); return _record_action(d.open_url(str(browser), str(url)))
 
     def _base_hover_cache_config() -> dict[str, Any]:
         observe_cfg = w["observe_config"]
