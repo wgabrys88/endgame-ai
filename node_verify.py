@@ -59,7 +59,7 @@ class VerifyNode(BaseNode):
         self._signal = signal
         return signal
 
-def patch_from_record(self, record, ctx):
+    def patch_from_record(self, record, ctx):
         data = record.data
         state = ctx.get("state", {})
         step_goal, done_when = self._step_goal(ctx)
