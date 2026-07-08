@@ -194,8 +194,8 @@ def summarize_messages_for_log(messages: list[dict[str, str]]) -> list[dict[str,
     return out
 
 
-def log_runtime_event(cfg: dict[str, Any] | None, event: str, **payload: Any) -> None:
-    append_ndjson(wiring.event_log_path(cfg) if cfg else wiring.event_log_path({}), {"schema": "endgame-ai.runtime-event.v1", "ts": time.time(), "iso": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime()), "event": event, **payload})
+def log_runtime_event(w: dict[str, Any], event: str, **payload: Any) -> None:
+    append_ndjson(wiring.event_log_path(w), {"schema": "endgame-ai.runtime-event.v1", "ts": time.time(), "iso": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime()), "event": event, **payload})
 
 
 def reset_call_budget() -> None:
@@ -229,11 +229,11 @@ def call(messages: list[dict[str, str]], w: dict[str, Any], *, rod_feedback: boo
         raise RuntimeError(f"brain call budget exceeded: {_CALLS_MADE}/{max_calls}")
     _CALLS_MADE += 1
     seq, started = _next_event_seq(), time.time()
-    log_runtime_event(cfg, "brain_request", seq=seq, transport=transport, rod_feedback=rod_feedback, prompt_cache_key=cfg.get("prompt_cache_key"), stable_prefix=cfg.get("stable_prefix"), response_format=cfg.get("response_format"), messages=summarize_messages_for_log(messages))
+    log_runtime_event(w, "brain_request", seq=seq, transport=transport, rod_feedback=rod_feedback, prompt_cache_key=cfg.get("prompt_cache_key"), stable_prefix=cfg.get("stable_prefix"), response_format=cfg.get("response_format"), messages=summarize_messages_for_log(messages))
     try:
         result = _load_transport_module(transport, w).call(messages, cfg)
     except Exception as exc:
-        log_runtime_event(cfg, "brain_error", seq=seq, transport=transport, elapsed_s=round(time.time() - started, 3), error=f"{type(exc).__name__}: {exc}")
+        log_runtime_event(w, "brain_error", seq=seq, transport=transport, elapsed_s=round(time.time() - started, 3), error=f"{type(exc).__name__}: {exc}")
         raise RuntimeError(f"{transport} brain failed hard: {exc}") from exc
     if not isinstance(result, dict):
         raise RuntimeError(f"{transport} brain contract violation: expected dict, got {type(result).__name__}")
@@ -243,7 +243,7 @@ def call(messages: list[dict[str, str]], w: dict[str, Any], *, rod_feedback: boo
     if reasoning is not None and not isinstance(reasoning, str):
         raise RuntimeError(f"{transport} brain contract violation: reasoning must be string when present")
     out = {"content": content, "reasoning": reasoning or ""}
-    log_runtime_event(cfg, "brain_response", seq=seq, transport=transport, elapsed_s=round(time.time() - started, 3), content=content, reasoning=reasoning or "", raw={k: v for k, v in result.items() if k not in {"content", "reasoning"}})
+    log_runtime_event(w, "brain_response", seq=seq, transport=transport, elapsed_s=round(time.time() - started, 3), content=content, reasoning=reasoning or "", raw={k: v for k, v in result.items() if k not in {"content", "reasoning"}})
     return out
 
 

@@ -121,7 +121,6 @@ def get_transport_config(wiring: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     for key in ("timeout", "brain_call_budget"):
         if key not in cfg:
             cfg[key] = model["global"][key]
-    cfg["event_log_path"] = wiring["paths"]["event_log"]
     cfg["transport"] = transport
     return transport, cfg
 
@@ -135,7 +134,7 @@ def control_path(wiring: dict[str, Any]) -> pathlib.Path:
 
 
 def event_log_path(wiring: dict[str, Any]) -> pathlib.Path:
-    return root_path(wiring["paths"]["event_log"] if wiring else "runtime_events.jsonl")
+    return root_path((wiring["paths"]["event_log"]) if wiring else "runtime_events.jsonl")
 
 
 def guidance_path(wiring: dict[str, Any]) -> pathlib.Path:
