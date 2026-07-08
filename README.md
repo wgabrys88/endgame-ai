@@ -16,11 +16,13 @@ from any runtime prompt or stable-prefix source bundle if prompt size matters.
 
 Branch truth at the time this file was rewritten:
 
-- Current branch: `token-reduction`.
+- Current branch: `codex/real-system-run`, based on published
+  `token-reduction`.
 - Main source used for reinterpretation: `main:README.md`.
 - Current runtime topology is still bus-routed and hot-swappable through
   dynamic `node_*.py` imports.
-- Current selected LLM transport is only `transport_xai`.
+- Current default LLM transport is `transport_xai`; `transport_file_proxy` is
+  also tracked and can be selected explicitly in `wiring.json`.
 - Current UI observation is Windows UI Automation through `core_observation.py`
   and `core_desktop.py`.
 - Current execute capability still uses unrestricted local `exec(code, ns)`.
@@ -72,7 +74,8 @@ The old README also described several things that are no longer true:
 - There is no tracked `transport_openai.py`.
 - There is no tracked `transport_opencode.py`.
 - There is no tracked `transport_browser_ai.py`.
-- There is no tracked `transport_file_proxy.py`.
+- `transport_file_proxy.py` has been reintroduced as an explicit file handoff
+  transport; it is not selected by default.
 - There is no tracked `export_brain_forensics.py`.
 - There is no tracked `analyze_graph.py`.
 - There is no tracked `check_events.py`.
@@ -164,7 +167,7 @@ This table maps the old README concepts to the current branch truth.
 | Goal narrative memory | Preserved. Nodes append `[PLANNER REWRITE]`, `[SCHEDULER]`, `[EXECUTE]`, `[VERIFY]`, `[REFLECT]`, `[FRAME_ACTION]`, `[SELF_MODIFY]`, and `[SATISFIED]` text into `effective_goal` | This behavior is core organism state, not deleted | If richer narrative is needed, adjust node patch text in `node_*.py`, not duplicated prompts |
 | Bus frame propagation | Preserved as `_last_bus_frame` trace added by `core_node_base.call_node` | The shape is compacted but still logged in state/events | Extend `core_bus.NodeOutput.trace` if more fields are required |
 | Per-node datasheets and write whitelists | Removed. There is no datasheet object and no patch-key subset check | Datasheets duplicated code and prompts; topology plus record rules now carry the contract | Add a compact `wiring.contracts.<node>.writes` map and check it in `core_node_base.call_node` if write validation is required |
-| Many transport table entries | Removed except `transport_xai` | Unselected transports were recurring prompt cost | Reintroduce one transport module at a time with `call(messages, cfg)` and one config entry |
+| Many transport table entries | Removed except default `transport_xai` and reintroduced `transport_file_proxy` | Unselected transports were recurring prompt cost | Reintroduce one transport module at a time with `call(messages, cfg)` and one config entry |
 | `runtime_self_evolution_enabled.json` safety gate | Removed. `node_self_modify` can propose patches when routed; `core_organism` applies them without that flag | The branch preserves unsafe-by-design evolution and removes guardrail bloat | If a gate is intentionally wanted later, add one compact check before `nodes.apply_evolution_patch` in `core_organism.run` |
 | Forensics export scripts | Removed as tracked code | They are operator tools, not organism runtime | Recreate as untracked tools that parse `runtime_events.jsonl`, or add a compact command outside prompt surface |
 | Mermaid generator in runtime modules | Removed | Topology is already data in `wiring.json`; generated diagrams are docs, not runtime | Generate diagrams from `wiring["topology"]["edges"]` in an excluded tool |
@@ -828,7 +831,7 @@ runtime run:
 - Recursive child organisms.
 - Local LM Studio transport.
 - opencode transport.
-- file-proxy handoff transport.
+- file-proxy handoff with a real external responder.
 - Playwright/browser DOM transport.
 - Event-log compaction.
 - Visual forensics UI.
@@ -921,11 +924,22 @@ There is no current code that reads `runtime_self_evolution_enabled.json`.
 | `node_self_modify.py` | LLM git evolution proposal node |
 | `node_satisfied.py` | Mechanical halt node |
 | `node_error.py` | Mechanical error recovery node |
-| `transport_xai.py` | Only tracked selected brain transport |
+| `transport_file_proxy.py` | Explicit file handoff transport; writes `runtime_request.json`, waits for `runtime_response.json`, expects direct bus record |
+| `transport_xai.py` | Default selected brain transport |
 
 ## Removed Files And How To Reintroduce Them
 
 ### `transport_file_proxy.py`
+
+Current branch update:
+
+- This file has now been reintroduced.
+- It is compact and uses `core_brain.summarize_messages_for_log`.
+- It is configured under `wiring.model.transport_config.transport_file_proxy`.
+- It is not the default selected transport; `model.transport` remains
+  `transport_xai` to preserve default runtime behavior.
+- To use it intentionally, change `wiring.model.transport` to
+  `transport_file_proxy`.
 
 What it did on main:
 
@@ -935,7 +949,7 @@ What it did on main:
 - Expected the response to be a direct bus record with `record_type`, `data`,
   and optional `reasoning`.
 
-Why it was removed:
+Why it was removed during the reduction pass:
 
 - It was not selected by current `wiring.json`.
 - It duplicated message logging that `core_brain` already performs.
@@ -944,17 +958,21 @@ Why it was removed:
 - It kept a second human-in-the-loop execution path in the tracked prompt
   surface.
 
-How to reintroduce it compactly:
+How it was reintroduced compactly:
 
-1. Add `transport_file_proxy.py` with one function:
+1. Added `transport_file_proxy.py` with one public function:
    `call(messages, cfg) -> {"content": json_string, "reasoning": str}`.
-2. Reuse `core_brain.summarize_messages_for_log(messages)` instead of copying
+2. Reused `core_brain.summarize_messages_for_log(messages)` instead of copying
    `_sha256_text`, `_dynamic_payload`, and `_logged_messages`.
-3. Add only this config under `wiring.model.transport_config`:
-   `request_path`, `response_path`, `poll_interval`, `timeout`.
-4. Set `wiring.model.transport` to `"transport_file_proxy"` when intentionally
-   using it.
-5. Do not add automatic fallback from xAI to file proxy.
+3. Added only active transport-specific config under
+   `wiring.model.transport_config.transport_file_proxy`: `request_path`,
+   `response_path`, and `poll_interval`; `timeout` is inherited through
+   `model.global` by `core_wiring.get_transport_config`.
+4. Whitelisted `transport_file_proxy.py` in `.gitignore`.
+5. Added selected-transport load validation in `core_wiring.validate_wiring`.
+6. Added `transport_file_proxy.py` to the self-modify immediate activation
+   bucket in `core_nodes._activation_bucket`.
+7. Did not add automatic fallback from xAI to file proxy.
 
 Small modern shape:
 
@@ -969,7 +987,7 @@ def call(messages, cfg):
     # write request, poll response, return {"content": json.dumps(record), "reasoning": ...}
 ```
 
-No core loader change is required because `core_brain._load_transport_module`
+No core loader change was required because `core_brain._load_transport_module`
 already imports selected transport modules by name.
 
 ### `transport_openai.py`
@@ -1737,6 +1755,37 @@ Current behavior:
 
 ## Transport Deep Dive
 
+### `transport_file_proxy.py`
+
+Current behavior:
+
+- Resolves `request_path` and `response_path` through
+  `core_wiring.root_path`.
+- Deletes any stale response before publishing a new request.
+- Writes `runtime_request.json` atomically with schema
+  `endgame-ai.file-proxy.request.v2`.
+- Logs messages using `core_brain.summarize_messages_for_log`.
+- Includes expected record type, response format, prompt cache key, and stable
+  prefix metadata when present.
+- Waits for `runtime_response.json`.
+- Requires the response to be a direct bus record:
+  `{record_type: string, data: object, reasoning: string}`.
+- Returns the response as transport content for normal `core_brain` record
+  validation.
+- Fails hard on malformed response or timeout; no fallback is attempted.
+
+Current config:
+
+```json
+"transport_file_proxy": {
+  "request_path": "runtime_request.json",
+  "response_path": "runtime_response.json",
+  "poll_interval": 0.25
+}
+```
+
+It is available but not selected by default.
+
 ### `transport_xai.py`
 
 Current behavior:
@@ -1759,11 +1808,12 @@ Current behavior:
 - Parses `output_text` or `output` content parts.
 - Returns `content`, `reasoning`, `usage`, and raw body.
 
-Why only xAI remains:
+Why xAI remains the default:
 
 - It is selected in current `wiring.json`.
 - The organism should fail hard if selected model access is missing.
-- Other transports can be restored one at a time when selected.
+- File proxy is now available for explicit handoff; other transports can be
+  restored one at a time when selected.
 
 ## Observability
 
@@ -1884,7 +1934,7 @@ Current known issues from code and main README reinterpretation:
 | Browser SPA UIA depth | UIA may not expose Grok/LinkedIn internals well | Use `observe_area` and keyboard/browser shortcuts | Add Playwright/CDP execute helpers |
 | Event log growth | `runtime_events.jsonl` grows without rotation | Manually archive/delete untracked runtime log | Rotate in `core_brain.append_ndjson` |
 | README prompt bloat | This file is now large | Keep stable prefix disabled | Exclude README from prompt/stable prefix |
-| Only xAI transport tracked | Local/offline mode unavailable | Use xAI or reintroduce one selected transport | Add one transport module and config |
+| Only xAI and file-proxy transports tracked | Local OpenAI/opencode/browser modes unavailable | Use xAI, select file proxy, or reintroduce one selected transport | Add one transport module and config |
 | Strict schema incomplete | Some malformed inner wiring values may fail later than load | Keep wiring generated carefully | Tighten `validate_wiring` types |
 | No barrier/fan-out | No parallel execution topology | Sequential plan steps | Add list edges and barrier node |
 | Runtime state collision for child runs | Manual child organism can overwrite parent runtime files | Do not spawn child without path isolation | Unique wiring paths per child |
@@ -1911,15 +1961,23 @@ Current known issues from code and main README reinterpretation:
 
 Use this when a reader spots a removed critical part and wants it back.
 
-### Bring back file-proxy transport
+### File-proxy transport status
 
-Prompt to future agent:
+Status:
+
+- Done on `codex/real-system-run` after the README handover.
+- `transport_file_proxy.py` is tracked.
+- `.gitignore` whitelists it.
+- `wiring.json` contains inactive file-proxy config.
+- Default `model.transport` remains `transport_xai`.
+
+Prompt to future agent if this transport needs adjustment:
 
 ```text
-Reintroduce transport_file_proxy in the reduced architecture. Implement only
-call(messages, cfg), reuse core_brain.summarize_messages_for_log, add a compact
-transport_file_proxy config under wiring.model.transport_config, and select it
-explicitly. Do not add fallback from xAI.
+Adjust transport_file_proxy in the reduced architecture. Keep only
+call(messages, cfg), keep core_brain.summarize_messages_for_log reuse, keep
+transport_file_proxy config compact under wiring.model.transport_config, and
+select it explicitly only when needed. Do not add fallback from xAI.
 ```
 
 Expected touched files:
@@ -2081,3 +2139,88 @@ The cost of the reduction is that optional surfaces are no longer parked in the
 tracked repo. That is the point. Future work should add capabilities only when
 they are selected or consumed, and should add them in the smallest place that
 matches the current call graph.
+
+## Appendix D: File-Proxy Reintroduction Notes
+
+This appendix records the first feature reintroduction performed after the
+large reduction pass.
+
+### What Changed
+
+- Added `transport_file_proxy.py`.
+- Added `!transport_file_proxy.py` to `.gitignore`.
+- Added `model.transport_config.transport_file_proxy` to `wiring.json`.
+- Left `model.transport` set to `transport_xai`.
+- Added selected-file-proxy config validation in `core_wiring.validate_wiring`.
+- Added `transport_file_proxy.py` to `core_nodes._activation_bucket` as an
+  immediate runtime file for self-modify activation classification.
+- Updated this README so future readers no longer treat file proxy as absent.
+
+### Current File-Proxy Contract
+
+The transport is explicit and fail-hard:
+
+1. `core_brain._load_transport_module` imports it only when
+   `wiring.model.transport` is `transport_file_proxy`.
+2. `transport_file_proxy.call(messages, cfg)` writes the request file.
+3. An external responder writes the response file.
+4. The response must be a direct bus record:
+   `{record_type: string, data: object, reasoning: string}`.
+5. `core_brain._commit_record` and `_RECORD_RULES` still validate the record
+   after the transport returns it.
+6. Timeout or malformed response raises; there is no fallback to xAI or any
+   other transport.
+
+### Why It Was Reintroduced This Way
+
+The README reintroduction section was helpful. It prevented the old transport
+from being copied back verbatim and identified the reusable current primitive:
+`core_brain.summarize_messages_for_log`. That avoided restoring duplicated
+hashing and user-payload parsing helpers from main.
+
+The implementation intentionally did not add a new core loader, new node code,
+new fallback path, or new docs file. The existing transport loader already had
+the right shape:
+
+```text
+wiring.model.transport -> core_brain._load_transport_module -> transport.call
+```
+
+That is the pattern future reintroductions should follow: find the current
+small abstraction, then add the missing capability as a leaf module or one
+small helper rather than rebuilding the old architecture around it.
+
+### How To Use It
+
+Change only this wiring field when file-proxy operation is desired:
+
+```json
+"transport": "transport_file_proxy"
+```
+
+The default config already names:
+
+```json
+"transport_file_proxy": {
+  "request_path": "runtime_request.json",
+  "response_path": "runtime_response.json",
+  "poll_interval": 0.25
+}
+```
+
+`timeout` is inherited from `model.global.timeout` through
+`core_wiring.get_transport_config`, so it is not duplicated in the file-proxy
+config.
+
+### Notes For Future Reintroductions
+
+- The README handover is useful when it names the exact current reuse point.
+- Reintroduce one capability at a time.
+- Prefer inactive config plus explicit selection when preserving default runtime
+  behavior matters.
+- Update `.gitignore` whenever a deleted tracked file comes back.
+- Update `core_nodes._activation_bucket` when a reintroduced file is loaded
+  immediately by the running organism.
+- Add strict selected-config validation in `core_wiring`, but avoid validating
+  inactive transport configs so unused options do not become startup blockers.
+- Keep old behavior compatible at the edge, not by restoring old helper stacks.

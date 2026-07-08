@@ -94,7 +94,7 @@ def _activation_bucket(rel: str) -> str:
         "wiring.json", "core_observation.py",
         "node_planner.py", "node_scheduler.py", "node_observe.py", "node_execute.py",
         "node_frame_action.py", "node_verify.py", "node_reflect.py", "node_self_modify.py",
-        "node_satisfied.py", "node_error.py", "transport_xai.py",
+        "node_satisfied.py", "node_error.py", "transport_file_proxy.py", "transport_xai.py",
     }
     if rel in immediate:
         return "immediate"

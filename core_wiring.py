@@ -52,6 +52,10 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
     transport_cfg = _require(cfg, "model.transport_config", dict)
     if transport not in transport_cfg:
         raise RuntimeError(f"wiring.model.transport_config missing selected transport {transport!r}")
+    if transport == "transport_file_proxy":
+        _require(cfg, "model.transport_config.transport_file_proxy.request_path", str)
+        _require(cfg, "model.transport_config.transport_file_proxy.response_path", str)
+        _require(cfg, "model.transport_config.transport_file_proxy.poll_interval", (int, float))
     for path in (
         "model.global",
         "model.stable_prefix",
