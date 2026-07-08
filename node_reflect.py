@@ -135,13 +135,13 @@ class ReflectNode(BaseNode):
                 "failure_streak": self._projected_streak,
             }
             signal = "escalate"
-        elif task_route_failure and signal in {"retry", "escalate", "give_up"}:
+        elif task_route_failure:
             replacement = self._task_route_signal(state)
             if replacement != signal:
                 self._routing_override = {
                     "from": requested_signal,
                     "to": replacement,
-                    "reason": "task-route failure must try a different route/frame/replan before any organism repair",
+                    "reason": "task-route failure overridden to appropriate route (retry/frame/replan) per routing contract",
                     "failure": self._failure,
                     "failure_streak": self._projected_streak,
                 }
