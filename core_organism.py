@@ -145,6 +145,15 @@ def run(
                     wiring.write_state(w, st)
                     state.runtime_event(w, "halted", node=current, reason=st.get("error_handled", {}))
                     return st
+                if signal_name == "wait":
+                    st["error_streak"] = 0
+                    st["last_signal"] = "wait"
+                    st["last_node"] = current
+                    st["frontier"] = list(frontier)
+                    st["_phase"] = "barrier_wait"
+                    wiring.write_state(w, st)
+                    state.runtime_event(w, "barrier_wait", node=current, frontier=list(frontier), tick=st["tick"])
+                    continue
                 successors = next_nodes_for(w, current, signal_name)
                 st["error_streak"] = 0
             except Exception as exc:

@@ -107,10 +107,23 @@ is available but unused until B6.
 
 ## Remaining build order — Phase B (fractal). One verified commit each.
 
-- **B3 — `node_barrier`** mechanical node + join semantics for many-to-one
-  fan-in (wait for all inbound branches before firing the successor). Note: with
-  the BFS frontier, converging branches currently just both run; the barrier is
-  what makes convergence WAIT for all inbound branches before emitting once.
+- **B3 done — `node_barrier` (many-to-one fan-in).** Mechanical node
+  `node_barrier.py`. Reads its arity from `topology.barriers[<node>]`, counts
+  arrivals in `state["_barriers"][<node>]`. Emits `wait` (absorb) until the final
+  arrival, then resets the counter to 0 and emits `join` (proceed). `wait` is a
+  scheduler control signal like `halt`: the frontier loop intercepts it BEFORE
+  `next_nodes_for` — absorbs the slot (`_phase=barrier_wait`), pushes no
+  successor, `continue`. A barrier's wiring edges are `{"join": "<succ>",
+  "wait": "wait"}` (the `"wait":"wait"` sentinel satisfies `validate_signal`;
+  `check_topology` treats `halt`+`wait` as terminal sentinels). New required
+  wiring path `topology.barriers` (currently `{}`; populated in B6). NOT yet in
+  `topology.nodes` — the capability exists on disk, wired live only in B6 (adding
+  it to `nodes` would demand a prompt entry it doesn't need as a mechanical node).
+  Verified: arity-2 join fires the successor exactly once after both branches
+  arrive (1st→wait, 2nd→join), counter resets to 0; under-arity (3 expected, 2
+  arrive) holds the gate, successor never fires, count preserved; linear
+  regression intact.
+
 - **B4 — `cap_spawn.spawn_organism(goal, duration)`** capability: run
   `core_organism` as a child, return the child's `effective_goal`. Depth-gate via
   wiring (`fractal.max_recursion_depth`, default 3). This is the literal fractal

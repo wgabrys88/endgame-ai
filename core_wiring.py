@@ -88,6 +88,7 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
         "topology.nodes",
         "topology.edges",
         "topology.max_error_streak",
+        "topology.barriers",
     ):
         _require(cfg, path, object)
     nodes = _require(cfg, "topology.nodes", list)

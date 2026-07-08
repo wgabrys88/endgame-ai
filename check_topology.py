@@ -24,7 +24,8 @@ def check(path: str = "wiring.json") -> int:
     nodes = set(topo["nodes"])
     problems: list[str] = []
 
-    # dangling edge targets (halt is a terminal sentinel, not a node)
+    # dangling edge targets (halt/wait are terminal sentinels, not nodes)
+    sentinels = {"halt", "wait"}
     for src, sigmap in edges.items():
         if src not in nodes:
             problems.append(f"edge source '{src}' not in topology.nodes")
@@ -33,7 +34,7 @@ def check(path: str = "wiring.json") -> int:
             if not targets:
                 problems.append(f"{src}.{sig} has no valid target(s): {value!r}")
             for t in targets:
-                if t != "halt" and t not in nodes:
+                if t not in sentinels and t not in nodes:
                     problems.append(f"{src}.{sig} -> '{t}' is not a known node")
 
     # reachability from cycle_start across both edge forms
@@ -41,7 +42,7 @@ def check(path: str = "wiring.json") -> int:
     stack = [topo["cycle_start"]]
     while stack:
         cur = stack.pop()
-        if cur in seen or cur == "halt":
+        if cur in seen or cur in sentinels:
             continue
         seen.add(cur)
         for value in edges.get(cur, {}).values():
