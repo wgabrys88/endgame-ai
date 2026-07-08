@@ -1,183 +1,113 @@
-# endgame-ai — consolidation pass (dedup / dead-code removal)
+# endgame-ai — notes to self (post-compaction handover)
 
-This README documents **one specific change**: a behavior-preserving
-deduplication pass over the token-reduced organism branch. It is not a product
-overview. It records what was merged, why it was safe, why I was confident, and
-how to bring anything back **the smart way** if it is ever needed.
+This file is my own working memory. Read it first, trust it, then execute.
+It is intentionally short. If something is not here, it is not load-bearing.
 
-Design axioms this pass obeyed:
+Branch: `live-test-run`. Host reality: **Windows-11 only** at runtime (UIA via
+`comtypes`); this dev box is WSL2, so the loop cannot fully run here — only
+non-desktop nodes and structural/behavioral tests execute. `transport_file_proxy`
+is the WSL2 debug endpoint: it writes the request JSON to disk and the operator
+(me, acting as the LLM) answers. `transport_xai` is the real Windows transport.
 
-- The system is **wiring between nodes**. Everything that is not the node graph
-  or a node's real work is suspicious surface.
-- **Fail hard.** No fallbacks, no defensive branching, no silent defaults. One
-  canonical implementation per idea; callers depend on it directly.
-- Duplication is the enemy: N functions doing the same thing is N−1 too many.
+## Mission
 
----
+The organism is **only nodes + wiring**. Evolve it toward the fractal topology:
+every node is a potential organism; topology supports one-to-many parallel
+dispatch, many-to-one barrier fan-in, node instances (`node_execute:browser` =
+one class, many wired instances), recursive `spawn_organism`, and runtime
+rewiring. Build this on a minimal plugin substrate so any capability returns as
+an on-demand plugin: drop a `node_*.py` / `cap_*.py` / `transport_*.py` file,
+add one wiring line, zero core change. Minimum resting size, maximum reachable
+capability.
 
-## Plugin platform (fractal-topology substrate) — in progress
+## Axioms (hard — do not violate)
 
-Building toward the main-branch **fractal topology vision** (README Appendix B):
-each node is a potential organism; topology supports one-to-many, barrier
-fan-in, node instances, recursive spawn, and runtime rewiring. The substrate is
-a uniform plugin model so any capability (including everything from the 5000-LOC
-main branch) returns as an on-demand plugin — drop a file, add a wiring line,
-zero core change. Plugin *existence* stays dynamic and file-based so
-self-evolution can keep writing new plugins at runtime; ABCs define only *shape*.
+- System = nodes + wiring. Everything hot-swappable. No branching, no fallbacks,
+  no defensive coding, no ceremony.
+- No questions. Deduce and execute. The fractal design exists so nothing needs
+  to ask.
+- **Plugin existence is dynamic + file-based** (`core_loader.load(kind, name, w)`,
+  name → `<prefix><name>.py`). A compile-time registry is FORBIDDEN — self-modify
+  writes new `node_*.py` / `cap_*.py` at runtime; a registry would kill that.
+  ABCs (only `BaseNode`) define SHAPE, never existence.
+- **No one-line wrapper functions with docstrings** = bloat. Inline them.
+- **No truncation of the organism's narrative.** Each node writes its
+  interpretation of the goal into `state["effective_goal"]`; the next node reads
+  it. This non-deterministic narrative is what breaks loops and moves the live
+  organism forward. Never `str[:N]` it. If you must bound, filter at the source.
+  (Legit `[:N]` that stays: hashes/ids, git commit subject, telemetry samples,
+  fixed-field git-porcelain parsing.)
+- Prompts in `wiring.json` use a biblical register by design (it makes the LLM
+  controllable). Keep prompts + record contracts aligned whenever topology
+  changes.
 
-Progress:
+## Invariants to protect (verify after EVERY change)
 
-- **Step A1 — unified loader (`core_loader.py`).** One `load(kind, name, w)`
-  replaces the two ad-hoc loaders (`core_node_base._load_node`,
-  `core_brain._load_transport_module`), which are now gone/delegating. Resolves a
-  wiring-named file (`<name>.py`) and validates the kind's required export
-  (`run` for nodes, `call` for transports) — fail hard, no fallback. Adds the
-  fractal `base:instance` name split (e.g. `node_execute:browser` → one
-  `node_execute.py` class, instance label threaded into `ctx.node_instance`), so
-  one file backs many wired instances. Behavior-preserving for current linear
-  topology (existing names contain no `:`).
+- `python3 -m py_compile *.py` clean.
+- `python3 check_topology.py` exits 0 (reachability + no dangling targets).
+- Import smoke: `import core_organism, core_bus, core_wiring, core_state`.
+- Hot-swap + self-modify intact: `core_nodes.hot_swap_to_known_good`,
+  `resolve_known_good` / `update_known_good_ref`, and the self_modify apply block
+  in `core_organism.run` (`apply_evolution_patch` → `commit_self_evolution` →
+  reload wiring; on failure `hot_swap_to_known_good`) — currently at
+  `core_organism.py` ~L108–133.
+- `validate_wiring` and code must agree: if code hard-reads `w[...]["x"]`, `x`
+  must be a required path in `core_wiring.validate_wiring`. No fallbacks.
+- New tracked file ⇒ add a `!name` line to `.gitignore` (it is ignore-all + a
+  whitelist).
+- Commit each verified step. This README is the only doc; update it per step.
+  (`report.md` was deleted on purpose — do not recreate a scratch file.)
 
-  Bring back a plugin the smart way: add a new `kind` to `core_loader.KINDS`
-  (one line: paths-key, module prefix, required export). Do not write a new
-  loader.
+## Current state (verified, committed on `live-test-run`)
 
-- **Step A2 — transport ABC: intentionally NOT built.** The transport contract
-  is a module-level `call(messages, cfg) -> {content, reasoning, ...}`. Existence
-  is enforced by `core_loader` (export=`call`); return-shape by `core_brain.call`.
-  An ABC would add ceremony and LOC and fight the self-evolution pattern of
-  writing a `.py` that exports `call`. Contracts, not class trees, where a class
-  removes no duplication. (`report.md` §13.)
-
-- **Step A5 — goal-narrative unification, then de-bloated (see §15).** The
-  effective-goal read/append was first factored into `bus.current_goal`/
-  `append_goal`, then those helpers were DELETED as one-line bloat. Root fix:
-  seed `effective_goal = goal` once at organism start, so every node reads
+Substrate + hygiene already done:
+- `core_loader.load(kind, name, w)` is the single dynamic loader.
+  `KINDS = {node, transport}`; `split_instance("a:b") → ("a","b")` for fractal
+  instances. Add a plugin kind = one `KINDS` entry. `_load_node` and the inline
+  transport loader are gone.
+- Goal narrative: `effective_goal` is seeded once at organism start
+  (`st.setdefault("effective_goal", st["goal"])`); every node reads
   `state["effective_goal"]` directly — no helper, no `ctx.get("goal")` fallback.
+- All narrative truncations removed (full-fidelity narrative).
+- `transport_file_proxy` config has a `reasoning` block (was missing → the
+  transport was unusable; `core_brain.think` hard-reads `cfg["reasoning"]`).
+- Error-routing bounded: `state["error_streak"]` resets on any successful node,
+  increments on error, HALTS HARD at `topology.max_error_streak` (=5). Fixed the
+  unbounded recursive hot-loop in `run()`'s except branch.
 
-- **Truncations removed (critical).** All narrative truncations that lopped off
-  a node's goal-interpretation (`lesson[:100]`, `code[:120]`, `descs[:3]`, …)
-  were removed — that narrative is the loop-breaking meta-mechanism and must be
-  full-fidelity. Filter at the source if content is unwanted; never truncate the
-  organism's own narrative. Legitimate hash/id/git-subject/field slices kept.
+Topology data model (B1 done): edges may be a single node name OR a list.
+`core_organism.next_nodes_for` returns `list[str]`; `next_node_for` delegates and
+still REJECTS fan-out (`len != 1`) until the frontier loop (B2) exists.
 
-- **Error-routing bounded.** `core_organism.run` recurses into the `error` edge
-  on a node exception. A persistently-failing node with a looping error edge
-  used to recurse forever. Now an `error_streak` counter in state increments per
-  error, resets on any successful node, and HALTS HARD at
-  `topology.max_error_streak` (default 5). Fail hard and loud, no backoff.
+Current wiring is still the **linear** pipeline (fractal topology not written
+yet). `cycle_start = node_observe`. 10 nodes:
+planner, scheduler, observe, execute, frame_action, verify, reflect,
+self_modify, satisfied, error. The loop in `core_organism.run` is single-`current`
+and sequential; error path recurses via `run(start_node=nxt)`.
 
----
+## Remaining build order — Phase B (fractal). One verified commit each.
 
-## What changed (net −29 LOC, 6 files, zero topology/contract change)
+- **B2 — frontier loop.** Replace the single `current` in `core_organism.run`
+  with a set of active nodes. Sequential = a frontier of size 1 (linear behavior
+  must stay byte-identical until wiring fans out). This is the risky core change;
+  it touches state persistence, the bounded error-routing (§ error_streak), and
+  the self_modify apply path. Only after this can `next_node_for` stop rejecting
+  fan-out — route through `next_nodes_for`.
+- **B3 — `node_barrier`** mechanical node + join semantics for many-to-one
+  fan-in (wait for all inbound branches before firing the successor).
+- **B4 — `cap_spawn.spawn_organism(goal, duration)`** capability: run
+  `core_organism` as a child, return the child's `effective_goal`. Depth-gate via
+  wiring (`fractal.max_recursion_depth`, default 3). This is the literal fractal
+  claim: a node that is itself an organism.
+- **B5 — runtime topology patch.** Extend `apply_evolution_patch` with topology
+  ops so `reflect` can rewire the graph mid-run (`topology_patch` signal already
+  routes to self_modify).
+- **B6 — rewrite `wiring.json` into the visionary fractal topology**: one-to-many
+  execute-by-capability instances, barrier fan-in to reflect, aligned
+  biblical-register prompts + record contracts. Verify with `check_topology.py`
+  under list-edge semantics. THIS is "produce the visionary topology."
 
-| # | Cluster | Before | After | Files |
-|---|---------|--------|-------|-------|
-| 1 | Atomic JSON write | 3 real impls + 1 dead wrapper | 1 canonical (`core_wiring.atomic_write_json`) | `core_brain`, `core_nodes`, `transport_file_proxy` |
-| 2 | `load_json` | 2 (1 dead passthrough) | 1 canonical (`core_wiring.load_json`) | `core_brain`, `core_nodes`, `core_organism` |
-| 3 | `_git` subprocess runner | 3 near-identical | 2 (canonical `core_nodes._git`; `node_self_modify` now delegates) | `node_self_modify` |
-| 4 | Runtime event logging | indirection dict rebuild | direct call | `core_state` |
-| 5 | Desktop action wrappers | 6 copy-paste closures | 1 `_guarded(name, fn)` factory + 6 one-liners | `core_nodes` |
-
-### 1. Atomic JSON write — unified on `core_wiring.atomic_write_json`
-`core_brain.atomic_write_json` was a pure passthrough to `core_wiring` — deleted.
-`transport_file_proxy._atomic_json` re-implemented the same tmp-file + `os.replace`
-dance — deleted, now calls `core_wiring.atomic_write_json`. Callers in
-`core_nodes.save_wiring` repointed to `core_wiring` directly.
-
-Why safe: identical semantics (write temp, atomic rename). The canonical version
-is actually stronger (pid+tid-suffixed temp avoids concurrent-writer clobber).
-
-### 2. `load_json` — unified on `core_wiring.load_json`
-`core_brain.load_json` was a one-line passthrough — deleted. Its two real callers
-(`core_organism` resume-state read, `core_nodes` wiring reload) now import from
-`core_wiring`, which is where JSON-decode-error handling already lives.
-
-### 3. `_git` — one runner
-`core_nodes._git` is the superset (returns `CompletedProcess`, has a `check=`
-flag). `node_self_modify` had a stdout-only clone with 3 call sites; it already
-imported `core_nodes`, so those now call `core_nodes._git([...]).stdout`. The
-local `_git` and the now-unused `subprocess` import were removed.
-
-Not merged (deliberate): `core_brain.StablePrefix._git` stays local. `core_nodes`
-imports `core_brain`, so making `core_brain` import `core_nodes` would create a
-circular import. Fail-hard beats a circular dependency. Documented, not hidden.
-
-### 4. Runtime event logging — removed the middle dict
-`core_state.runtime_event` used to build a throwaway `{"event_log_path": ...}`
-dict before calling `core_brain.log_runtime_event`. All callers already pass the
-full wiring dict, and `log_runtime_event` resolves the log path from it, so the
-intermediate rebuild was pure churn. Now it calls straight through.
-
-### 5. Desktop action wrappers — factory instead of copy-paste
-`build_capability_runtime` had six near-identical closures
-(`click/type_text/press_key/hotkey/scroll/open_url`), each `_assert_duration_open`
-+ `_record_action` around one desktop method. Replaced with a `_guarded(name, fn)`
-factory and six one-line bindings that keep the exact per-method arg coercion.
-Same runtime namespace keys, same behavior, ~5× less code for that block.
-
----
-
-## Corrections to the prior review
-
-- An earlier note flagged `core_bus.observation_brief`'s local `tree` variable as
-  dead. **That was wrong** — `tree` is used to source `rendered_node_count`,
-  `max_llm_nodes`, and `llm_node_limit_hit`. I read the body before touching it
-  and left it intact. Recorded here so the mistake is not repeated.
-
----
-
-## Why I was confident (meta)
-
-- **Static verification, not vibes.** After every edit: `python3 -m py_compile
-  *.py` (all 26 files clean) plus an import smoke test of the pure-Python core
-  (`core_wiring/core_bus/core_state/core_organism`). Windows-only UIA/ctypes
-  imports are deferred inside functions, so compile is a valid check on Linux.
-- **Grepped every call site first.** Each removed symbol
-  (`brain.load_json`, `brain.atomic_write_json`, `_atomic_json`, the local
-  `_git`) was searched repo-wide before and after; post-change residual
-  references = none.
-- **Read bodies before merging**, not just names. That is how the `tree`
-  false-positive and the `core_brain._git` circular-import trap were caught.
-- **Topology untouched.** No edit went near `wiring.json`, the node graph, node
-  `run(ctx)` signatures, transport `call(messages, cfg)` signatures, or the
-  `_RECORD_RULES` contract. A reachability script confirmed the graph is intact
-  (10 nodes, all reachable from `node_observe`, no dangling edge targets).
-
-Confidence bound: this is a **static** guarantee (compiles, imports, contracts
-preserved). It is not a live-run guarantee — actually executing the organism
-needs Windows 11 + UIA + `XAI_API_KEY`, which this review host does not have.
-
----
-
-## How to bring things back — the smart way
-
-If any removed surface is ever wanted again, re-add it **as one canonical
-implementation**, never by re-cloning:
-
-- **Need a second atomic-write flavor** (e.g. text, or fsync-durable)? Add one
-  parameter to `core_wiring.atomic_write_json` (`durable: bool`), do not add a
-  new writer. One function, one behavior, one place to audit.
-- **Need git access from a module that can't import `core_nodes`** (circular)?
-  Do not clone `_git`. Extract the ~5-line runner into a tiny leaf module
-  (`core_git.py`) with no intra-project imports, and have `core_nodes`,
-  `core_brain`, and nodes all import *that*. Break the cycle at the dependency,
-  not by duplicating code.
-- **Need per-action logging/throttling on desktop helpers**? Extend the single
-  `_guarded(name, fn)` factory (e.g. add a rate limit or an event tag arg). Every
-  helper inherits it for free; do not re-expand into per-method bodies.
-- **Need richer runtime events**? Add fields at the single `log_runtime_event`
-  call, keep `core_state.runtime_event` a thin pass-through. Do not reintroduce
-  an intermediate reshaping dict.
-
-Rule of thumb for reintroduction: if the new thing shares behavior with an
-existing function, it is a **parameter or a shared leaf module**, not a new copy.
-The bad way is copy-paste-and-tweak; the smart way is one owner + explicit
-dependency.
-
----
-
-## Reversibility
-
-Every change is confined to code (no wiring/topology/prompt edits) and is a
-plain `git revert` away. The consolidation is diff-reviewable as a single pass:
-`git diff` shows +19 / −48 across the 6 files above.
+Design rule for B: ABC only where it removes real duplication (`BaseNode` does;
+transport/tool ABCs do NOT — their contract is the module-level `call`/`run`
+export enforced by the loader + call site). Capabilities are the real dedup:
+`node_execute` + instances collapse many executors into one class.
