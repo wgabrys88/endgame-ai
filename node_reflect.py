@@ -9,8 +9,8 @@ DATASHEET = bus.datasheet(
     "node_reflect",
     kind="llm_diagnostic_router",
     inputs=["goal", "current_step", "last_action", "last_result", "last_error", "last_failure", "last_verification", "failure_streak", "effective_goal"],
-    signals=["retry", "replan", "frame", "escalate", "give_up", "error"],
-    writes=["reflection", "last_reflection", "failure_streak", "effective_goal"],
+    signals=["retry", "replan", "frame", "escalate", "give_up", "topology_patch", "error"],
+    writes=["reflection", "last_reflection", "failure_streak", "effective_goal", "topology_patch"],
     record_type="reflection",
 )
 
@@ -107,7 +107,7 @@ class ReflectNode(BaseNode):
     def signal_from_data(self, data, ctx):
         state = ctx.get("state", {})
         requested_signal = data.get("next_signal")
-        if requested_signal not in {"retry", "replan", "frame", "escalate", "give_up"}:
+        if requested_signal not in {"retry", "replan", "frame", "escalate", "give_up", "topology_patch"}:
             raise RuntimeError(f"reflection emitted invalid next_signal: {requested_signal!r}")
 
         self._routing_override = None
@@ -116,7 +116,16 @@ class ReflectNode(BaseNode):
         task_route_failure = self._is_task_route_failure()
         evolution_enabled = stop_check.self_evolution_enabled()
 
-        if signal == "escalate" and not contract_failure:
+        if signal == "topology_patch":
+            # Allow topology_patch through to self_modify for wiring changes
+            if not evolution_enabled:
+                signal = "replan"
+                self._routing_override = {
+                    "from": requested_signal,
+                    "to": signal,
+                    "reason": "topology_patch requires self-evolution enabled",
+                }
+        elif signal == "escalate" and not contract_failure:
             replacement = self._task_route_signal(state) if task_route_failure else "replan"
             self._routing_override = {
                 "from": requested_signal,
@@ -166,9 +175,9 @@ class ReflectNode(BaseNode):
         lesson = data.get("lesson", "No lesson provided")
         diagnosis = data.get("diagnosis", "No diagnosis")
         effective_goal = state.get("effective_goal", ctx.get("goal", ""))
-        signal_desc = {"retry": "retry with fresh observation", "replan": "replan from scratch", "frame": "focus observation", "escalate": "escalate to self-modify", "give_up": "give up"}.get(self._signal, self._signal)
+        signal_desc = {"retry": "retry with fresh observation", "replan": "replan from scratch", "frame": "focus observation", "escalate": "escalate to self-modify", "give_up": "give up", "topology_patch": "propose topology change"}.get(self._signal, self._signal)
         effective_goal = f"{effective_goal}\n\n[REFLECT] Routed to {signal_desc}. Lesson: {lesson[:100]}. Diagnosis: {diagnosis[:100]}."
-        return {
+        patch = {
             **self._streak_patch,
             "reflection": {
                 "lesson": lesson,
@@ -189,6 +198,9 @@ class ReflectNode(BaseNode):
             },
             "effective_goal": effective_goal,
         }
+        if self._signal == "topology_patch" and "topology_patch" in data:
+            patch["topology_patch"] = data["topology_patch"]
+        return patch
 
 
 def run(ctx):

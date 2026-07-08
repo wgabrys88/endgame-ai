@@ -227,6 +227,7 @@
         "frame": "node_frame_action",
         "escalate": "node_self_modify",
         "give_up": "node_satisfied",
+        "topology_patch": "node_self_modify",
         "error": "node_error"
       },
       "node_self_modify": {
