@@ -60,6 +60,12 @@ Progress:
   full-fidelity. Filter at the source if content is unwanted; never truncate the
   organism's own narrative. Legitimate hash/id/git-subject/field slices kept.
 
+- **Error-routing bounded.** `core_organism.run` recurses into the `error` edge
+  on a node exception. A persistently-failing node with a looping error edge
+  used to recurse forever. Now an `error_streak` counter in state increments per
+  error, resets on any successful node, and HALTS HARD at
+  `topology.max_error_streak` (default 5). Fail hard and loud, no backoff.
+
 ---
 
 ## What changed (net −29 LOC, 6 files, zero topology/contract change)

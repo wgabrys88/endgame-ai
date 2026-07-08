@@ -900,3 +900,35 @@ seeded observation AND a clean state, or a Windows host).
 
 Harness cleanup: transport restored to transport_xai; runtime_*.json removed;
 only wiring.json (reasoning alignment) left modified, to be committed.
+---
+
+## 17. FIX: bound the error-routing hot-loop (§16 robustness gap)
+
+The §16 defect: `core_organism.run`'s `except Exception` branch recursively
+re-calls `run(start_node=<error target>)`. A node that fails on every entry
+whose `error` edge leads back to a still-failing node recursed FOREVER
+(unbounded stack + CPU hot-spin, only killable by SIGKILL). Wall-clock deadline
+did not save it because each recursion was cheap.
+
+Fix (fail hard, no backoff/ceremony — axiom-aligned):
+- `error_streak` counter lives in STATE (persists across the recursive re-entry
+  because re-entry loads state from disk with `reset=False`).
+- Every SUCCESSFUL node completion resets `st["error_streak"] = 0` (main loop).
+- The error branch increments `error_streak`, and when it reaches
+  `topology.max_error_streak` it HALTS HARD (`_phase="halted"`, records the
+  streak in `last_error`) instead of recursing. No backoff, no retry — loud stop.
+- New wiring key `topology.max_error_streak` (default 5), added to
+  `validate_wiring` required paths (contract alignment: code hard-reads
+  `w["topology"]["max_error_streak"]`).
+
+This preserves the existing two termination paths (halt signal; routing-failure
+`except RuntimeError`) and adds a third: persistent-failure streak cap.
+
+Verified:
+- compile all, import smoke, check_topology exit 0, validate_wiring accepts.
+- Behavioral test A: monkeypatched `call_node` to always raise + a self-looping
+  `node_planner.error -> node_planner` edge (the exact previously-infinite
+  shape). Result: halted at `error_streak == 5`, exactly 5 `call_node`
+  invocations, no infinite loop.
+- Behavioral test B: always-fail with the real topology halted via the existing
+  routing-failure path (node_error has no error edge). Both paths intact.

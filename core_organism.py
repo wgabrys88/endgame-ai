@@ -141,6 +141,7 @@ def run(
             st["last_signal"] = signal_name
             st["last_node"] = current
             st["next_node"] = nxt
+            st["error_streak"] = 0
             st["tick"] += 1
             st["_phase"] = "node_complete"
             wiring.write_state(w, st)
@@ -164,8 +165,16 @@ def run(
         st["_phase"] = "error"
         st["last_error"] = f"{type(exc).__name__}: {exc}"
         st["last_failure"] = state.classify_node_exception(current, exc)
+        st["error_streak"] = int(st.get("error_streak", 0)) + 1
         wiring.write_state(w, st)
-        state.runtime_event(w, "error", node=current, error=st["last_error"])
+        state.runtime_event(w, "error", node=current, error=st["last_error"], error_streak=st["error_streak"])
+        max_streak = int(w["topology"]["max_error_streak"])
+        if st["error_streak"] >= max_streak:
+            st["_phase"] = "halted"
+            st["last_error"] = f"error streak {st['error_streak']} reached max {max_streak} at '{current}': {st['last_error']}"
+            wiring.write_state(w, st)
+            state.runtime_event(w, "halted", node=current, error=st["last_error"], error_streak=st["error_streak"])
+            return st
         try:
             nxt = next_node_for(w, current, "error")
             st["last_signal"] = "error"

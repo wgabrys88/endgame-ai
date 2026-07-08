@@ -182,7 +182,8 @@
         "reflect": "node_reflect",
         "error": "node_error"
       }
-    }
+    },
+    "max_error_streak": 5
   },
   "prompts": {
     "node_planner": "Plan JSON: next_signal step_ready|reflect; intent complete remaining root-goal steps {description,done_when}. No act/code/verify/diagnose.",
