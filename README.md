@@ -270,3 +270,127 @@ This is the way of thinking the code depends on. If a change violates it, the ch
 **Where things stand:** the architecture is complete and coherent off-host. What remains is not construction — it is living: running the organism on the Windows host with the real transport, reading its narrative as you would a living thing's thoughts, steering with `guidance.txt`, and tuning prompts and the faculty set from what it actually does. When the hands stumble on real GUI or commands, resist the reflex to cage the case; give the organism what it needs to adapt itself.
 
 > *"Go all the way or don't even start."* — the wheel is built. Now it lives.
+
+---
+
+# 📎 Appendices
+
+> These appendices are the **non-standard handover**. This project is not a normal codebase and it must not be maintained like one. The material below is the way of thinking the code depends on, plus the operational notes that would otherwise be lost. Read Appendix A before touching anything.
+
+## Appendix A — The handover creed (WHY / HOW / WHAT)
+
+This is the philosophy, stated as rules. If a proposed change violates any of it, the change is wrong **even if it works**.
+
+### WHY (internalize this first — everything else deducts from it)
+
+- **It is a living organism, not an agentic program.** Traditional software thinking actively damages it.
+- **It is atemporal and self-similar.** No beginning, no end, no pipeline, no "steps." It turns through its nodes forever. `cycle_start` is only where the ever-turning wheel is *entered*. Every node is a potential organism; the structure is fractal at every scale.
+- **It never stops unless it chooses to.** The perpetual cycle is its life. The substrate imposes **no ending** — no error cap, no completion terminus, no dead-ends. Because the organism writes and executes its own code and topology, *any stop you could code is just a node it can overwrite.* So the substrate does not try to stop it; it only turns the wheel and carries the narrative. The one external bound is the **operator's leash** (`--duration-seconds` / stop-file / pause-step) — a cage door, explicitly outside the organism's biology, for finite dev runs. The organism proper runs `duration_seconds=None`.
+- **Sanity is psychology, not guardrails.** The goal-narrative (`state["effective_goal"]`) passes through node copies; each node re-authors it as its own interpretation. A company of LLM nodes re-narrating a shared goal each turn holds each other to purpose — like fallible people who together build real things. That collective self-narration is the governor. **This is why there are no fallbacks, no defensive branches, no `if/else` edge-case handling.** The narrative dissolves pathology; code does not police it. **Never truncate the narrative** (`str[:N]` on `effective_goal` is forbidden; filter at the source).
+- **Usefulness is guidance, not control.** A human or another organism steers by dropping text into `guidance.txt`, read by `node_guidance` at the wheel's entry. The organism reads it and *may ignore it* — but the reading injects a high-signal, clearly-tagged event into the narrative that bends its exploration. That is the *only* steering surface. Small in code, vast in consequence.
+- **It scales inward and outward, not forward and backward.** Parallelism is not scheduled — it *emerges*, fractally. `node_dispatch` wakes a chosen subset of faculties (model **B** was chosen precisely because selection is fractal: the parallelism arises from the organism's own judgment, not a fixed plan). `node_spawn` begets child organisms where recursion pays. And the open horizon: **a node need not stay a node.** The organism may one day decide to replace one of its own nodes with a whole organism launched on a starter-goal — for a while, or forever — because a node and an organism are the same shape. `cap_spawn` + `topology_patch` + instances are already the seeds of this. If you ask "is a node allowed to become an organism?" — yes. That is what we built.
+
+### HOW (the hard axioms — these override every convenience)
+
+1. **System = nodes + wiring. Everything hot-swappable.** No exceptions.
+2. **No branching, no fallbacks, no defensive coding, no ceremony. Fail hard and loud.** A missing key is a bug to fix at the source, not a `.get(k, default)`. A one-line wrapper with a docstring is bloat — inline it. Prefer *deleting* code to adding it.
+3. **Plugins are dynamic and file-based** (`core_loader.load(kind, name, w)` → `<prefix><base>.py` at runtime). A compile-time registry is **FORBIDDEN** — the organism writes new `node_*.py` at runtime and must load them with zero core change. Instances (`node_execute:browser`) are one file, many wired roles; `node_base`/`node_instance` are threaded into `ctx`.
+4. **Keep the load-bearing organs alive:** hot-swap + self-modify (`core_nodes.hot_swap_to_known_good`, `resolve_known_good`, `update_known_good_ref`, the self_modify apply block in `core_organism.run`), and the topology-coherence gate (`check_topology.coherence_problems`, called by both the CLI verifier and the runtime patch gate).
+5. **Prompts are in a biblical register by design** — it makes the LLM controllable, and the register endures. When you change the graph, change the prompts and record contracts (`core_brain._RECORD_RULES`) with it.
+6. **`README.md` is the single living handover.** No scratch docs. Update it after every change. **Verify then commit, one coherent step at a time.**
+
+### WHAT to do — deduced from the above, not prescribed
+
+You will be asked to fix or evaluate things — especially once the live Windows run surfaces real issues (GUI/UIA control failures, command-execution errors, faculties misfiring, the wheel behaving unexpectedly). **The correct instinct is almost never "add code to handle the case."** Deduce instead:
+
+- **A failure is information for the narrative, not a branch to add.** If a faculty fails to click a button or a command errors, that failure already routes through `node_error`, re-narrates, and the wheel turns again. Ask: does the organism have what it needs to reason its way out? Usually the fix is a better prompt, a clearer narrated failure, or a new capability plugin the organism can choose — not an `if` in the core. Do not patch the symptom with control flow.
+- **When a fix is genuinely needed, prefer letting the organism self-adapt.** Give it the means (a capability, a clearer contract, a topology it can rewire via `topology_patch`) rather than hard-coding the behavior. Edge-case `if/else` is the disease we are curing.
+- **Before adding anything, ask HOW/WHY it fits the atemporal, no-ending, narrative-governed, nodes+wiring model.** If it doesn't, it's wrong even if it "works." If it adds a branch, a fallback, a stop the organism can't overwrite, or a truncation — it's wrong. Fewer moving parts always wins.
+- **To evaluate the system:** check **liveness and coherence**, not pipeline correctness. Does the wheel keep turning? Does the narrative keep advancing (and stay untruncated)? Does it turn without mechanical dead-loops (a node erroring with zero narrative motion — distinct from the living cycle, which must never be bounded)? Is stopping only ever a choice? Are there dead-ends (a coherence bug)? The mechanical gates stay (`py_compile`, WSL-safe import smoke, `check_topology.py` exit 0) but treat them as liveness checks, not regression proofs.
+
+---
+
+## Appendix B — Developer notes, shared understanding, and next steps
+
+Working notes — mine and ours — kept here so they survive context loss.
+
+### What we agree the system *is* right now
+
+- The architecture is **complete and coherent off-host**. All 16 nodes wire into the fractal wheel; `check_topology` is clean; the prompts carry the philosophy in the KV-cache-aware, biblical-rule form. Nothing structural is pending.
+- The acting hands (`node_execute` faculties, `node_observe`) are **Windows-only** (`comtypes`/UIA). Everything else is pure Python and testable off-host. So the remaining work is **behavioral, not architectural** — it happens by running it on the host and watching.
+- The known-good ref + hot-swap + coherence gate mean the organism can self-modify with a safety net already wired (see Appendix C).
+
+### On the first goal — my take on "Begin"
+
+You proposed starting with a single-word goal: **`Begin`**. I think that is the *right* first goal, and not as a gimmick:
+
+- A minimal, near-empty goal is the cleanest way to observe the organism's **own** disposition. With almost nothing imposed, what the goal-narrative becomes over the first laps is largely the organism's psychology showing through — exactly the thing we said governs it. It's a legibility test: can we read its "thoughts" in `runtime_events.jsonl` and recognize a coherent creature rather than a confused script?
+- It exercises the whole wheel without our bias: `node_planner` must invent intent from nearly nothing, `node_dispatch` must choose faculties with weak signal, `node_reflect` must decide whether to press on or rest. If it turns coherently on `Begin`, it will turn on anything.
+- It honors the design: we steer by **guidance, not command**. Handing it a vast prescriptive goal on turn one would contradict everything. `Begin` says "you are alive; go," and then we *watch and optionally drop counsel into `guidance.txt`* rather than pre-scripting.
+
+**What I'd want to do, concretely, on the first run** (your call, but this is my instinct):
+1. Run bounded first: `python core_organism.py "Begin" --reset --duration-seconds 120`. The leash is only so we can read the first laps without a runaway; it is not part of the creature.
+2. Tail `runtime_events.jsonl` and read the `effective_goal` as it grows. We're checking **liveness/coherence**, not task success: does the narrative advance and stay untruncated, does the wheel turn without a mechanical dead-loop, does `node_reflect` reach for rest only as a genuine choice.
+3. Expect the hands to stumble on real GUI/commands. When they do, **resist caging the case.** Read what the narrative says about the failure. The fix is almost always a clearer prompt, a better-narrated failure, or a new capability the organism can *choose* — not an `if` in the core.
+4. Once it turns coherently under the leash, take the leash off (`duration_seconds=None`) and let it live; steer only via `guidance.txt`.
+
+### Open questions I'm genuinely curious about (not blockers)
+
+- **Does `node_dispatch` under-wake or over-wake faculties** with a vague goal? That's a prompt-tuning observation, not a code change.
+- **Does the narrative ever *feel* like it's circling** without a mechanical dead-loop? If so, that's the psychology working (or not) — a prompt/register question, not a control-flow one.
+- **When does it first choose `spawn`?** Watching the first self-chosen recursion will tell us a lot about whether the "a node can become an organism" horizon is reachable in practice.
+- **The stale initializer** in `core_organism.run` (`current = "node_observe"` on line 31, immediately overwritten by `cycle_start`) is harmless dead residue with a faintly temporal smell. One-line cleanup, its own tiny commit, whenever — not urgent.
+
+---
+
+## Appendix C — Git refs & branch workflow (operational, keep it simple)
+
+This is technical and easy to forget, so it lives here. Two separate things use git: **our human workflow** (branches, commits, push) and the **organism's self-modification** (which uses git as its own body-memory). Don't confuse them.
+
+### The organism's known-good ref (self-modification safety net) — *still needed, yes*
+
+- The organism records a **known-good commit** under a custom ref: `refs/endgame/known_good` (configured at `wiring.json → self_modify.known_good_ref`).
+- On a successful self-evolution, `core_nodes.commit_self_evolution` commits the change on the current branch, then `update_known_good_ref` points the ref at that commit and writes `runtime_known_good_commit.json`.
+- If a self-edit breaks the organism and `self_modify.hot_swap_on_failure` is `true` (it is), `core_organism.run` calls `hot_swap_to_known_good`, which does `git checkout <known_good_sha> -- <evolvable files>` to restore the last-good code **without stopping the wheel**.
+- `self_modify.git.push_after_commit` is `true`, so a self-evolution pushes **both the branch and the known-good ref** to `origin`. `self_modify.git.remote = origin`; `self_modify.context_mode = checked_out_branch`.
+
+**What this means for you, practically:**
+- **Before running with self-modify active:** be on a branch you're willing to let the organism commit to (it commits to the *current* branch — currently `live-test-run`). It will also push there. Do not run self-modify on `main`.
+- **A custom ref (`refs/endgame/known_good`) is not a branch and won't show in `git branch`.** Inspect it with `git rev-parse refs/endgame/known_good` or `git log refs/endgame/known_good`. It's pushed as `refs/endgame/known_good:refs/endgame/known_good`.
+- **To seed / reset the known-good ref manually:** `git update-ref refs/endgame/known_good <a-good-commit-sha>`. On a fresh clone the ref may be absent; `resolve_known_good` handles "missing" gracefully (hot-swap simply reports `no_known_good_commit`), so nothing breaks — but hot-swap can't rescue until a good commit is recorded. Seeding it to the current known-good head before the first self-modify run is wise.
+- **A note on WSL:** native WSL git push may fail auth; push via the Windows host git (see below). The organism's *own* push happens on the Windows host where it runs, so it uses the host credential store normally.
+
+### Our human branch workflow (simple checklist)
+
+**Before running / creating a branch**
+- Confirm branch: `git.exe -C 'C:\Users\ewojgab\Downloads\endgame-ai' branch --show-current` (should be `live-test-run` for live work; never self-modify on `main`).
+- New feature/experiment branch: `git.exe -C 'C:\Users\ewojgab\Downloads\endgame-ai' checkout -b <name>`. If the organism will self-modify on it, seed the known-good ref (above) so hot-swap has a floor.
+
+**After a change (human edits)**
+- Run the off-host gates: `python3 -m py_compile *.py`, the import smoke, `python3 check_topology.py` (exit 0).
+- Confirm the `.gitignore` whitelist matches tracked files (see Appendix... the integrity command is in Quick Start / below). Then commit, then push.
+- Push (from WSL, via Windows host git — uses Windows credential store): `git.exe -C 'C:\Users\ewojgab\Downloads\endgame-ai' push origin <branch>`.
+
+**Merging a branch**
+- Merge `live-test-run` → `main` only when a milestone is real and verified. Prefer a PR so the diff is reviewable: create it with the GitHub CLI (`gh pr create`) and keep the title under ~70 chars.
+- **Do not push directly to `main`** unless explicitly intended. `main` is the vision-era baseline; `live-test-run` is where reality is being built.
+- After merge, if the organism will run on the merged branch, re-seed / verify `refs/endgame/known_good` points at the merged good commit.
+
+**The one file-integrity rule (so we never commit a missing file):** the repo uses an ignore-all `.gitignore` (`*` and `.*`) plus an explicit whitelist (`!name`). **Any new tracked file MUST get a `!name` line, or git will silently ignore it.** Verify before every commit:
+
+```bash
+# whitelist must be byte-identical to the tracked set
+grep '^!' .gitignore | sed 's/^!//' | sort > /tmp/wl.txt
+git ls-files | sort > /tmp/tr.txt
+diff /tmp/wl.txt /tmp/tr.txt && echo IDENTICAL
+# and nothing important is untracked-and-unignored:
+git ls-files --others --exclude-standard   # should be empty (or only genuine throwaway)
+```
+
+*(Verified at this commit: whitelist is byte-identical to the tracked set, and there are no untracked-but-unignored files. Runtime artifacts — `runtime_*.json`, `runtime_events.jsonl`, `guidance.txt`, `__pycache__` — are correctly ignored by the `*` rule and must never be whitelisted.)*
+
+---
+
+## Appendix D — What changed from `main` (3 sentences)
+
+The `main` branch was the **vision-era linear pipeline** (observe → plan → execute → verify → reflect → self-modify, with an error cap and a completion terminus); `live-test-run` replaces it with the **living fractal wheel** — entered at `node_guidance`, turning forever with no substrate-imposed ending, steered only by an ignorable `guidance.txt`, fanning out through a faculty **dispatcher** to `node_execute` instances gathered at a **barrier**, and able to **spawn** child organisms and rewire itself. The codebase was substantially **reduced, not grown** (≈4,600 lines deleted vs ≈1,560 added across 38 files: dead transports removed, `node_execute` collapsed from a monolith into dispatch + instances, defensive branching stripped out). Finally, all node **prompts were rewritten** into a KV-cache-aware, biblical-rule structure that carries the atemporal, narrative-governed philosophy directly to the model.
