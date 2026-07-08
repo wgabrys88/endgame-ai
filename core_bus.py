@@ -134,18 +134,6 @@ def validate_signal(wiring: JsonDict, node: str, signal: str) -> None:
         raise TopologyContractError(f"node '{node}' emitted signal '{signal}' outside topology contract; allowed: {allowed}")
 
 
-def datasheet(node: str, *, kind: str, inputs: list[str], signals: list[str], writes: list[str], record_type: str | None = None) -> JsonDict:
-
-    return {
-        "node": node,
-        "kind": kind,
-        "inputs": list(inputs),
-        "signals": list(signals),
-        "writes": list(writes),
-        "record_type": record_type,
-    }
-
-
 def state_brief(state: JsonDict) -> JsonDict:
 
     current_step = state.get("current_step") or {}
@@ -226,7 +214,7 @@ def update_failure_streak(state: JsonDict) -> JsonDict:
     }
 
 
-def mermaid_state_diagram(wiring: JsonDict, datasheets: dict[str, JsonDict] | None = None) -> str:
+def mermaid_state_diagram(wiring: JsonDict) -> str:
     topo = wiring.get("topology", {})
     edges = topo.get("edges", {})
     lines = ["stateDiagram-v2", f"    [*] --> {topo.get('cycle_start', 'planner')} : cycle_start"]
@@ -238,12 +226,4 @@ def mermaid_state_diagram(wiring: JsonDict, datasheets: dict[str, JsonDict] | No
                 lines.append(f"    {src} --> [*] : {signal}")
             else:
                 lines.append(f"    {src} --> {dst} : {signal}")
-    for node, sheet in sorted((datasheets or {}).items()):
-        signals = ", ".join(sheet.get("signals") or [])
-        record_type = sheet.get("record_type") or "mechanical"
-        lines.append(f"    note right of {node}")
-        lines.append(f"        {sheet.get('kind', 'node')} | record={record_type}")
-        if signals:
-            lines.append(f"        signals: {signals}")
-        lines.append("    end note")
     return "\n".join(lines) + "\n"

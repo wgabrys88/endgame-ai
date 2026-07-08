@@ -4,16 +4,6 @@ import core_bus as bus
 from core_node_base import BaseNode
 
 
-DATASHEET = bus.datasheet(
-    "node_reflect",
-    kind="llm_diagnostic_router",
-    inputs=["goal", "current_step", "last_action", "last_result", "last_error", "last_failure", "last_verification", "failure_streak", "effective_goal"],
-    signals=["retry", "replan", "frame", "escalate", "give_up", "topology_patch", "error"],
-    writes=["reflection", "last_reflection", "failure_streak", "effective_goal", "topology_patch"],
-    record_type="reflection",
-)
-
-
 CONTRACT_FAILURE_KINDS = {
     "topology_contract_violation",
     "observation_contract_violation",

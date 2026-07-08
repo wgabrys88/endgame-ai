@@ -186,5 +186,4 @@ def topology_summary(w: dict[str, Any]) -> dict[str, Any]:
 
 def topology_mermaid(w: dict[str, Any]) -> str:
     import core_bus as bus
-    import core_node_base as nodes
-    return bus.mermaid_state_diagram(w, nodes.node_datasheets(w))
+    return bus.mermaid_state_diagram(w)

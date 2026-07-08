@@ -3,16 +3,6 @@ from __future__ import annotations
 import core_bus as bus
 
 
-DATASHEET = bus.datasheet(
-    "node_scheduler",
-    kind="mechanical_step_selector",
-    inputs=["plan.intent", "state.step", "effective_goal"],
-    signals=["step_ready", "plan_complete", "error"],
-    writes=["current_step", "step_goal", "step", "action_frame", "effective_goal"],
-    record_type=None,
-)
-
-
 def run(ctx):
     state = ctx.get("state", {})
     plan_obj = state.get("plan", {})

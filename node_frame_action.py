@@ -4,16 +4,6 @@ import core_bus as bus
 from core_node_base import BaseNode
 
 
-DATASHEET = bus.datasheet(
-    "node_frame_action",
-    kind="llm_rod_framing_pass",
-    inputs=["goal", "current_step", "last_action", "last_result", "last_error", "fresh_observation", "effective_goal"],
-    signals=["framed", "reflect", "error"],
-    writes=["action_frame", "framing_attempted_for_step", "effective_goal"],
-    record_type="action_frame",
-)
-
-
 class FrameActionNode(BaseNode):
 
     prompt_key = "node_frame_action"

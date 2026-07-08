@@ -1,77 +1,11 @@
 from __future__ import annotations
 
-import hashlib
-import json
 import time
 from typing import Any
 
 import core_wiring as wiring
 import core_stop_check as stop_check
 import core_bus as bus
-
-JsonDict = dict[str, Any]
-
-
-def state_brief(state: JsonDict) -> JsonDict:
-    current_step = state.get("current_step") or {}
-    return {
-        "tick": state.get("tick"),
-        "current_node": state.get("current_node"),
-        "step_index": state.get("step", 0),
-        "current_step": {
-            "description": current_step.get("description", ""),
-            "done_when": current_step.get("done_when", ""),
-        },
-        "last_signal": state.get("last_signal"),
-        "last_error": state.get("last_error"),
-        "last_verification": state.get("last_verification", {}),
-        "last_reflection": state.get("last_reflection", {}),
-        "last_failure": state.get("last_failure", {}),
-        "failure_streak": state.get("failure_streak", {}),
-        "has_action_frame": bool(state.get("action_frame")),
-    }
-
-
-def observation_brief(state: JsonDict) -> JsonDict:
-    artifact = state.get("observation_artifact") or {}
-    tree = artifact.get("desktop_tree") if isinstance(artifact, dict) else {}
-    return {
-        "desktop_tree_text": state.get("desktop_tree_text", ""),
-        "observed_at": state.get("observed_at"),
-        "fresh_scan": state.get("fresh_scan", False),
-        "scan_config": artifact.get("scan_config", {}) if isinstance(artifact, dict) else {},
-        "scan_stats": artifact.get("scan_stats", {}) if isinstance(artifact, dict) else {},
-        "rendered_node_count": state.get("rendered_node_count") or (tree or {}).get("rendered_node_count"),
-        "max_llm_nodes": state.get("max_llm_nodes") or (tree or {}).get("max_llm_nodes"),
-        "llm_node_limit_hit": state.get("llm_node_limit_hit") or (tree or {}).get("llm_node_limit_hit"),
-    }
-
-
-def failure_signature(state: JsonDict) -> str:
-    step = state.get("current_step") or {}
-    parts = {
-        "step": step.get("description", ""),
-        "done_when": step.get("done_when", ""),
-        "failure": state.get("last_failure") or {},
-        "verification": state.get("last_verification") or {},
-        "action_conclusion": (state.get("last_action") or {}).get("conclusion", ""),
-    }
-    raw = json.dumps(parts, sort_keys=True, ensure_ascii=False, default=str)
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
-
-
-def update_failure_streak(state: JsonDict) -> JsonDict:
-    signature = failure_signature(state)
-    previous = state.get("failure_streak") or {}
-    count = int(previous.get("count", 0) or 0) + 1 if previous.get("signature") == signature else 1
-    return {
-        "failure_streak": {
-            "signature": signature,
-            "count": count,
-            "updated_at": time.time(),
-        }
-    }
-
 
 def expire_duration(
     wiring_cfg: dict[str, Any],

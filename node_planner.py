@@ -4,16 +4,6 @@ import core_bus as bus
 from core_node_base import BaseNode
 
 
-DATASHEET = bus.datasheet(
-    "node_planner",
-    kind="llm_intent_decomposer",
-    inputs=["goal", "state_brief", "fresh_observation", "previous_plan", "completed_steps", "last_reflection"],
-    signals=["step_ready", "reflect", "error"],
-    writes=["plan", "root_plan_intent", "reasoning"],
-    record_type="plan",
-)
-
-
 class PlannerNode(BaseNode):
     prompt_key = "node_planner"
     expected_record_type = "plan"

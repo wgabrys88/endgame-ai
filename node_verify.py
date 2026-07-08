@@ -4,16 +4,6 @@ import core_bus as bus
 from core_node_base import BaseNode
 
 
-DATASHEET = bus.datasheet(
-    "node_verify",
-    kind="llm_reality_comparator",
-    inputs=["goal", "current_step", "last_action", "last_result", "last_error", "fresh_observation", "effective_goal"],
-    signals=["step_confirmed", "step_denied", "error"],
-    writes=["verification", "last_verification", "step", "effective_goal"],
-    record_type="verification",
-)
-
-
 class VerifyNode(BaseNode):
 
     prompt_key = "node_verify"

@@ -10,16 +10,6 @@ import core_nodes as nodes
 from core_node_base import BaseNode
 
 
-DATASHEET = bus.datasheet(
-    "node_execute",
-    kind="llm_code_actuator",
-    inputs=["goal", "current_step", "fresh_observation", "action_frame", "capability_runtime", "effective_goal"],
-    signals=["verify", "frame", "reflect", "error"],
-    writes=["last_action", "last_code", "last_result", "last_error", "last_failure", "action_frame", "effective_goal"],
-    record_type="execution",
-)
-
-
 class ExecuteNode(BaseNode):
 
     prompt_key = "node_execute"

@@ -6,7 +6,6 @@ from typing import Any
 import core_bus as bus
 import core_brain as brain
 import core_wiring as wiring
-import core_state as state
 
 JsonDict = dict[str, Any]
 
@@ -22,12 +21,12 @@ class BaseNode(ABC):
         st = ctx.get("state", {})
         return {
             "goal": ctx.get("goal", ""),
-            "state": state.state_brief(st),
-            "fresh_observation": st.get("fresh_observation") or state.observation_brief(st),
+            "state": bus.state_brief(st),
+            "fresh_observation": st.get("fresh_observation") or bus.observation_brief(st),
         }
 
     def evidence(self, ctx: JsonDict) -> JsonDict:
-        return {"state": state.state_brief(ctx.get("state", {}))}
+        return {"state": bus.state_brief(ctx.get("state", {}))}
 
     def signal_from_data(self, data: JsonDict, ctx: JsonDict) -> str:
         raise NotImplementedError(f"{type(self).__name__} must implement signal_from_data or override run()")
@@ -65,9 +64,6 @@ def call_node(node_name: str, ctx: JsonDict) -> tuple[str, JsonDict]:
     bus.validate_signal(w, node_name, output.signal)
     patch = dict(output.patch)
     patch.setdefault("_last_bus_frame", output.trace(node=node_name))
-    sheet = getattr(mod, "DATASHEET", None)
-    if isinstance(sheet, dict):
-        patch.setdefault("_last_datasheet", dict(sheet))
     return output.signal, patch
 
 
@@ -96,18 +92,5 @@ def topology_summary(w: JsonDict) -> JsonDict:
     }
 
 
-def node_datasheets(w: JsonDict) -> dict[str, JsonDict]:
-    sheets: dict[str, JsonDict] = {}
-    for node_name in w.get("topology", {}).get("nodes", []):
-        try:
-            mod = _load_node(str(node_name), w)
-        except Exception:
-            continue
-        sheet = getattr(mod, "DATASHEET", None)
-        if isinstance(sheet, dict):
-            sheets[str(node_name)] = dict(sheet)
-    return sheets
-
-
 def topology_mermaid(w: JsonDict) -> str:
-    return bus.mermaid_state_diagram(w, node_datasheets(w))
+    return bus.mermaid_state_diagram(w)

@@ -4,24 +4,6 @@ import core_bus as bus
 import core_desktop as desktop
 
 
-DATASHEET = bus.datasheet(
-    "node_observe",
-    kind="desktop_sensor",
-    inputs=["wiring.observe_config"],
-    signals=["screen_ready", "initial_screen", "error"],
-    writes=[
-        "observed_at",
-        "desktop_tree",
-        "desktop_tree_text",
-        "action_index",
-        "fresh_scan",
-        "observation_artifact",
-        "fresh_observation",
-    ],
-    record_type=None,
-)
-
-
 def run(ctx):
     config = ctx.get("wiring", {}).get("observe_config", {})
     obs = desktop.get_desktop(config).observe(config)

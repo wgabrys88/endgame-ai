@@ -14,15 +14,6 @@ ROOT = pathlib.Path(__file__).resolve().parent
 SKIP_PREFIXES = ("runtime_",)
 BINARY_SUFFIXES = {".pyc", ".pyd", ".dll", ".exe", ".ico", ".png", ".jpg", ".jpeg", ".gif", ".webp"}
 
-DATASHEET = bus.datasheet(
-    "node_self_modify",
-    kind="llm_git_firmware_update",
-    inputs=["goal", "failure", "runtime_evidence", "git_context", "workspace_manifest", "effective_goal"],
-    signals=["modified", "modify_failed", "error"],
-    writes=["git_evolution_patch", "self_modify", "desktop_tree_text", "effective_goal"],
-    record_type="git_evolution_patch",
-)
-
 
 def _git(args: list[str]) -> str:
     cp = subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True)

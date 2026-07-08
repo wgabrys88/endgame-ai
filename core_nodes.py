@@ -17,7 +17,6 @@ import core_desktop as desktop
 import core_wiring as wiring
 
 ROOT = pathlib.Path(__file__).parent.resolve()
-
 EVOLVABLE_SUFFIXES = {".py", ".json", ".md"}
 EVOLVABLE_NAMES = {".gitattributes", ".gitignore", "LICENSE"}
 CORE_FILES = {"core_brain.py", "core_desktop.py", "core_nodes.py", "core_organism.py", "core_stop_check.py"}
@@ -30,6 +29,14 @@ def _patch_data(parsed: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
+def _thread_id() -> int:
+    try:
+        import threading
+        return threading.get_ident()
+    except Exception:
+        return 0
+
+
 def _evolution_target(raw_path: str, *, deleting: bool = False) -> tuple[pathlib.Path, str]:
     rel = str(raw_path).replace("\\", "/").strip().lstrip("/")
     if not rel:
@@ -37,10 +44,9 @@ def _evolution_target(raw_path: str, *, deleting: bool = False) -> tuple[pathlib
     requested = pathlib.Path(rel)
     path = (ROOT / requested).resolve() if not requested.is_absolute() else requested.resolve()
     try:
-        repo_rel = path.relative_to(ROOT)
+        return path, path.relative_to(ROOT).as_posix()
     except ValueError as exc:
         raise ValueError(f"git evolution path must stay under repository root: {raw_path}") from exc
-    return path, repo_rel.as_posix()
 
 
 def _validate_content(path: pathlib.Path, rel: str, content: Any) -> str:
@@ -55,17 +61,9 @@ def _validate_content(path: pathlib.Path, rel: str, content: Any) -> str:
 
 def _atomic_write_text(path: pathlib.Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}.{threading_id()}")
+    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}.{_thread_id()}")
     tmp.write_text(content, encoding="utf-8", newline="\n")
     os.replace(tmp, path)
-
-
-def threading_id() -> int:
-    try:
-        import threading
-        return threading.get_ident()
-    except Exception:
-        return 0
 
 
 def _apply_wiring_ops(w: dict[str, Any], patches: list[dict[str, Any]]) -> dict[str, Any]:
@@ -93,38 +91,21 @@ def _apply_wiring_ops(w: dict[str, Any], patches: list[dict[str, Any]]) -> dict[
     return patched
 
 
-def _collect_file_writes(data: dict[str, Any]) -> list[dict[str, str]]:
-    return list(data.get("file_writes") or [])
-
-
-def _collect_file_deletes(data: dict[str, Any]) -> list[str]:
-    return [str(path) for path in list(data.get("file_deletes") or [])]
-
-
-def _declared_read_files(data: dict[str, Any]) -> set[str]:
-    return {str(path).replace("\\", "/").strip().lstrip("/") for path in list(data.get("read_files") or []) if str(path).strip()}
-
-
 def _activation_bucket(rel: str) -> str:
-    if rel == "wiring.json" or rel in {
-        "node_planner.py", "node_scheduler.py", "node_observe.py", "node_execute.py", "node_frame_action.py",
-        "node_verify.py", "node_reflect.py", "node_self_modify.py", "node_satisfied.py", "node_error.py",
-        "transport_file_proxy.py", "transport_xai.py", "transport_openai.py", "transport_opencode.py",
-        "transport_browser_ai.py", "core_observation.py",
-    }:
+    immediate = {
+        "wiring.json", "core_observation.py",
+        "node_planner.py", "node_scheduler.py", "node_observe.py", "node_execute.py",
+        "node_frame_action.py", "node_verify.py", "node_reflect.py", "node_self_modify.py",
+        "node_satisfied.py", "node_error.py", "transport_file_proxy.py", "transport_xai.py",
+        "transport_openai.py", "transport_opencode.py", "transport_browser_ai.py",
+    }
+    if rel in immediate:
         return "immediate"
-    if rel in CORE_FILES:
-        return "next_run"
-    return "supporting"
+    return "next_run" if rel in CORE_FILES else "supporting"
 
 
 def _git(args: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
-    cp = subprocess.run(
-        ["git", *args],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-    )
+    cp = subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True)
     if check and cp.returncode != 0:
         detail = (cp.stderr or cp.stdout or "").strip()
         raise RuntimeError(f"git {' '.join(args)} failed: {detail}")
@@ -149,10 +130,9 @@ def known_good_ref_name(w: dict[str, Any]) -> str:
 
 def resolve_known_good(w: dict[str, Any]) -> dict[str, Any]:
     ref = known_good_ref_name(w)
-    if ref:
-        cp = _git(["rev-parse", "--verify", ref], check=False)
-        if cp.returncode == 0 and cp.stdout.strip():
-            return {"commit": cp.stdout.strip(), "source": "git_ref", "ref": ref}
+    cp = _git(["rev-parse", "--verify", ref], check=False) if ref else None
+    if cp is not None and cp.returncode == 0 and cp.stdout.strip():
+        return {"commit": cp.stdout.strip(), "source": "git_ref", "ref": ref}
     return {"commit": "", "source": "missing", "ref": ref}
 
 
@@ -175,57 +155,29 @@ def update_known_good_ref(w: dict[str, Any], commit: str, *, source: str) -> dic
         "updated_at": time.time(),
         "updated_iso": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime()),
     }
-    (ROOT / "runtime_known_good_commit.json").write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    (ROOT / "runtime_known_good_commit.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return payload
 
 
-def hot_swap_to_known_good(
-    w: dict[str, Any],
-    *,
-    paths: list[str] | None = None,
-) -> dict[str, Any]:
+def hot_swap_to_known_good(w: dict[str, Any], *, paths: list[str] | None = None) -> dict[str, Any]:
     known_good = resolve_known_good(w)
     sha = str(known_good.get("commit") or "").strip()
     if not sha:
         return {"hot_swapped": False, "reason": "no_known_good_commit", "known_good": known_good}
-    if paths:
-        targets = [str(p).replace("\\", "/") for p in paths if str(p).strip()]
-    else:
-        tracked = [line.split("\t", 1)[-1].strip() for line in _git(["ls-files"]).stdout.splitlines() if line.strip()]
-        targets = sorted(
-            p for p in tracked
-            if p.endswith(tuple(EVOLVABLE_SUFFIXES)) or p in EVOLVABLE_NAMES
-        )
-    if not targets:
-        return {"hot_swapped": False, "reason": "no_targets", "commit": sha, "known_good": known_good}
-    checkout_targets: list[str] = []
-    missing_in_known_good: list[str] = []
+    targets = [str(p).replace("\\", "/") for p in paths if str(p).strip()] if paths else sorted(
+        line.split("\t", 1)[-1].strip()
+        for line in _git(["ls-files"]).stdout.splitlines()
+        if line.strip() and (line.endswith(tuple(EVOLVABLE_SUFFIXES)) or line.strip() in EVOLVABLE_NAMES)
+    )
+    checkout_targets, missing = [], []
     for target in targets:
-        exists = _git(["cat-file", "-e", f"{sha}:{target}"], check=False).returncode == 0
-        if exists:
-            checkout_targets.append(target)
-        else:
-            missing_in_known_good.append(target)
+        (checkout_targets if _git(["cat-file", "-e", f"{sha}:{target}"], check=False).returncode == 0 else missing).append(target)
     if not checkout_targets:
-        return {
-            "hot_swapped": False,
-            "reason": "no_targets_in_known_good",
-            "commit": sha,
-            "known_good": known_good,
-            "missing_in_known_good": missing_in_known_good,
-        }
+        return {"hot_swapped": False, "reason": "no_targets_in_known_good", "commit": sha, "known_good": known_good, "missing_in_known_good": missing}
     _git(["checkout", sha, "--", *checkout_targets])
-    result: dict[str, Any] = {
-        "hot_swapped": True,
-        "commit": sha,
-        "known_good": known_good,
-        "paths": checkout_targets,
-    }
-    if missing_in_known_good:
-        result["missing_in_known_good"] = missing_in_known_good
+    result: dict[str, Any] = {"hot_swapped": True, "commit": sha, "known_good": known_good, "paths": checkout_targets}
+    if missing:
+        result["missing_in_known_good"] = missing
     return result
 
 
@@ -236,8 +188,6 @@ def _remote_url(remote: str) -> str:
 
 def _github_branch_url(remote_url: str, branch: str) -> str:
     url = remote_url.strip()
-    if not url:
-        return ""
     if url.startswith("git@github.com:"):
         url = "https://github.com/" + url.removeprefix("git@github.com:")
     if url.endswith(".git"):
@@ -265,37 +215,19 @@ def prepare_self_evolution(w: dict[str, Any]) -> dict[str, Any]:
 
 
 def _run_evolution_commands(commands: list[Any], w: dict[str, Any]) -> list[dict[str, Any]]:
-    if not commands:
-        return []
-    cfg = w["self_modify"]["execution"]
-    default_timeout = cfg.get("timeout_s")
     results: list[dict[str, Any]] = []
+    default_timeout = w["self_modify"]["execution"].get("timeout_s")
     for item in commands:
         if isinstance(item, dict):
             command = item.get("command")
             shell = bool(item.get("shell", isinstance(command, str)))
             timeout_s = item.get("timeout_s", default_timeout)
         else:
-            command = item
-            shell = isinstance(command, str)
-            timeout_s = default_timeout
+            command, shell, timeout_s = item, isinstance(item, str), default_timeout
         if not isinstance(command, (str, list)) or not command:
             raise ValueError(f"invalid self_modify command: {item!r}")
-        cp = subprocess.run(
-            command,
-            cwd=ROOT,
-            shell=shell,
-            capture_output=True,
-            text=True,
-            timeout=float(timeout_s) if timeout_s is not None else None,
-        )
-        result = {
-            "command": command,
-            "shell": shell,
-            "returncode": cp.returncode,
-            "stdout": cp.stdout,
-            "stderr": cp.stderr,
-        }
+        cp = subprocess.run(command, cwd=ROOT, shell=shell, capture_output=True, text=True, timeout=float(timeout_s) if timeout_s is not None else None)
+        result = {"command": command, "shell": shell, "returncode": cp.returncode, "stdout": cp.stdout, "stderr": cp.stderr}
         results.append(result)
         if cp.returncode != 0:
             raise RuntimeError(f"self_modify command failed: {result}")
@@ -303,11 +235,7 @@ def _run_evolution_commands(commands: list[Any], w: dict[str, Any]) -> list[dict
 
 
 def _snapshot_paths(paths: list[pathlib.Path]) -> dict[pathlib.Path, bytes | None]:
-    snapshots: dict[pathlib.Path, bytes | None] = {}
-    for path in paths:
-        if path not in snapshots:
-            snapshots[path] = path.read_bytes() if path.exists() else None
-    return snapshots
+    return {path: path.read_bytes() if path.exists() else None for path in dict.fromkeys(paths)}
 
 
 def _restore_snapshots(snapshots: dict[pathlib.Path, bytes | None]) -> None:
@@ -316,48 +244,31 @@ def _restore_snapshots(snapshots: dict[pathlib.Path, bytes | None]) -> None:
             path.unlink(missing_ok=True)
         else:
             path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = path.with_name(f"{path.name}.rollback.{os.getpid()}.{threading_id()}")
+            tmp = path.with_name(f"{path.name}.rollback.{os.getpid()}.{_thread_id()}")
             tmp.write_bytes(content)
             os.replace(tmp, path)
 
 
 def apply_evolution_patch(w: dict[str, Any], parsed: dict[str, Any]) -> tuple[str, Any]:
     data = _patch_data(parsed)
-    read_files = _declared_read_files(data)
+    read_files = {str(path).replace("\\", "/").strip().lstrip("/") for path in list(data.get("read_files") or []) if str(path).strip()}
     wiring_patches = list(data.get("wiring_patches") or [])
     patched_wiring = _apply_wiring_ops(w, wiring_patches)
-
-    writes: list[tuple[pathlib.Path, str, str]] = []
-    for item in _collect_file_writes(data):
-        if not isinstance(item, dict):
-            raise ValueError(f"file_writes entry must be object: {item!r}")
-        path, rel = _evolution_target(str(item.get("path") or ""))
-        content = _validate_content(path, rel, item.get("content"))
-        writes.append((path, rel, content))
-
-    deletes: list[tuple[pathlib.Path, str]] = []
-    for raw_path in _collect_file_deletes(data):
-        path, rel = _evolution_target(raw_path, deleting=True)
-        deletes.append((path, rel))
-
-    missing_reads = []
-    for path, rel, _ in writes:
-        if path.exists() and rel not in read_files:
-            missing_reads.append(rel)
-    for path, rel in deletes:
-        if path.exists() and rel not in read_files:
-            missing_reads.append(rel)
+    writes = [
+        (*_evolution_target(str(item.get("path") or "")), _validate_content(_evolution_target(str(item.get("path") or ""))[0], _evolution_target(str(item.get("path") or ""))[1], item.get("content")))
+        for item in list(data.get("file_writes") or [])
+        if isinstance(item, dict)
+    ]
+    deletes = [_evolution_target(str(path), deleting=True) for path in list(data.get("file_deletes") or [])]
+    missing_reads = [rel for path, rel, _ in writes if path.exists() and rel not in read_files]
+    missing_reads += [rel for path, rel in deletes if path.exists() and rel not in read_files]
     if wiring_patches and "wiring.json" not in read_files:
         missing_reads.append("wiring.json")
     if missing_reads:
         raise ValueError(f"self_modify patch must declare read_files for touched existing files: {sorted(set(missing_reads))}")
-
-    touched_paths = [path for path, _, _ in writes] + [path for path, _ in deletes]
-    if wiring_patches:
-        touched_paths.append(ROOT / "wiring.json")
-    snapshots = _snapshot_paths(touched_paths)
-    rollback_on_failure = bool(w["self_modify"]["execution"]["rollback_on_failure"])
-
+    touched = [path for path, _, _ in writes] + [path for path, _ in deletes] + ([ROOT / "wiring.json"] if wiring_patches else [])
+    snapshots = _snapshot_paths(touched)
+    rollback = bool(w["self_modify"]["execution"]["rollback_on_failure"])
     try:
         for path, _, content in writes:
             _atomic_write_text(path, content)
@@ -367,35 +278,24 @@ def apply_evolution_patch(w: dict[str, Any], parsed: dict[str, Any]) -> tuple[st
             w.clear()
             w.update(patched_wiring)
             save_wiring(w)
-
         for path, rel, _ in writes:
             if path.suffix == ".py":
                 compile(path.read_text(encoding="utf-8"), rel, "exec")
             elif path.suffix == ".json":
                 json.loads(path.read_text(encoding="utf-8"))
-
         command_results = _run_evolution_commands(list(data.get("commands") or []), w)
     except Exception:
-        if rollback_on_failure:
+        if rollback:
             _restore_snapshots(snapshots)
             if wiring_patches:
                 w.clear()
                 w.update(brain.load_json(ROOT / "wiring.json"))
         raise
-
     changed = [rel for _, rel, _ in writes] + [rel for _, rel in deletes]
     activation = {"immediate": [], "next_run": [], "supporting": []}
     for rel in changed + (["wiring.json"] if wiring_patches else []):
         activation[_activation_bucket(rel)].append(rel)
-    return "set", {
-        "wiring_patches": len(wiring_patches),
-        "file_writes": len(writes),
-        "file_deletes": len(deletes),
-        "commands": command_results,
-        "rollback_on_failure": rollback_on_failure,
-        "changed_files": changed,
-        "activation": activation,
-    }
+    return "set", {"wiring_patches": len(wiring_patches), "file_writes": len(writes), "file_deletes": len(deletes), "commands": command_results, "rollback_on_failure": rollback, "changed_files": changed, "activation": activation}
 
 
 def commit_self_evolution(w: dict[str, Any], applied: dict[str, Any], patch_data: dict[str, Any]) -> dict[str, Any]:
@@ -404,61 +304,22 @@ def commit_self_evolution(w: dict[str, Any], applied: dict[str, Any], patch_data
         changed_files.append("wiring.json")
     changed_files = sorted({str(path).replace("\\", "/") for path in changed_files if str(path).strip()})
     if not changed_files:
-        return {
-            "committed": False,
-            "reason": "no_changed_files",
-            "branch": git_current_branch(),
-            "commit": git_head_sha(),
-        }
+        return {"committed": False, "reason": "no_changed_files", "branch": git_current_branch(), "commit": git_head_sha()}
     _git(["add", "-A", "--", *changed_files])
-    status = git_worktree_status()
-    if not status:
-        return {
-            "committed": False,
-            "reason": "no_git_changes",
-            "branch": git_current_branch(),
-            "commit": git_head_sha(),
-            "changed_files": changed_files,
-        }
-    summary = str(patch_data.get("summary") or "validated self evolution").strip()
-    title = "Self-modify: " + summary.replace("\n", " ")[:60]
-    rationale = str(patch_data.get("rationale") or "").strip()
-    expected = patch_data.get("expected_validation")
-    body = json.dumps(
-        {
-            "branch": git_current_branch(),
-            "changed_files": changed_files,
-            "read_files": list(patch_data.get("read_files") or []),
-            "rationale": rationale,
-            "expected_validation": expected,
-        },
-        ensure_ascii=False,
-        indent=2,
-        default=str,
-    )
+    if not git_worktree_status():
+        return {"committed": False, "reason": "no_git_changes", "branch": git_current_branch(), "commit": git_head_sha(), "changed_files": changed_files}
+    title = "Self-modify: " + str(patch_data.get("summary") or "validated self evolution").replace("\n", " ")[:60]
+    body = json.dumps({"branch": git_current_branch(), "changed_files": changed_files, "read_files": list(patch_data.get("read_files") or []), "rationale": str(patch_data.get("rationale") or "").strip(), "expected_validation": patch_data.get("expected_validation")}, ensure_ascii=False, indent=2, default=str)
     _git(["commit", "-m", title, "-m", body])
-    branch = git_current_branch()
-    commit = git_head_sha()
+    branch, commit = git_current_branch(), git_head_sha()
     known_good = update_known_good_ref(w, commit, source="commit_self_evolution")
-    pushed = False
-    known_good_ref_pushed = False
-    git_cfg = w["self_modify"]["git"]
-    if bool(git_cfg["push_after_commit"]):
-        remote = str(git_cfg["remote"])
+    pushed = known_good_ref_pushed = False
+    if bool(w["self_modify"]["git"]["push_after_commit"]):
+        remote = str(w["self_modify"]["git"]["remote"])
         _git(["push", remote, branch])
         _git(["push", remote, f"{known_good['ref']}:{known_good['ref']}"])
-        pushed = True
-        known_good_ref_pushed = True
-    return {
-        "committed": True,
-        "branch": branch,
-        "commit": commit,
-        "known_good": known_good,
-        "changed_files": changed_files,
-        "pushed": pushed,
-        "known_good_ref_pushed": known_good_ref_pushed,
-        "status": git_worktree_status(),
-    }
+        pushed = known_good_ref_pushed = True
+    return {"committed": True, "branch": branch, "commit": commit, "known_good": known_good, "changed_files": changed_files, "pushed": pushed, "known_good_ref_pushed": known_good_ref_pushed, "status": git_worktree_status()}
 
 
 def save_wiring(w: dict[str, Any]) -> None:
@@ -477,12 +338,9 @@ def _action_index(state: dict[str, Any]) -> dict[str, Any]:
 def _node_center(node: dict[str, Any]) -> tuple[int, int]:
     if node.get("px") is not None and node.get("py") is not None:
         return int(node.get("px") or 0), int(node.get("py") or 0)
-    rect_val = node.get("rect")
-    rect: dict[str, Any] = rect_val if isinstance(rect_val, dict) else {}
-    left = int(rect.get("left", 0) or 0)
-    right = int(rect.get("right", left) or left)
-    top = int(rect.get("top", 0) or 0)
-    bottom = int(rect.get("bottom", top) or top)
+    rect = node.get("rect") if isinstance(node.get("rect"), dict) else {}
+    left, top = int(rect.get("left", 0) or 0), int(rect.get("top", 0) or 0)
+    right, bottom = int(rect.get("right", left) or left), int(rect.get("bottom", top) or top)
     return left + max(0, right - left) // 2, top + max(0, bottom - top) // 2
 
 
@@ -490,35 +348,20 @@ def capability_manifest(ctx: dict[str, Any] | None = None) -> dict[str, Any]:
     st = (ctx or {}).get("state", {}) if isinstance(ctx, dict) else {}
     return {
         "schema": "endgame-ai.execute-capabilities.v1",
-        "capability_model": "GUI, Python, process, file, and module access are all first-class local powers.",
-        "python": {
-            "execution": "exec(code, ns) in the organism process",
-            "modules": ["subprocess", "os", "sys", "json", "re", "time", "pathlib", "ctypes", "math", "random", "types"],
-            "repo_root": str(ROOT),
+        "power": "GUI, Python, process, file, and module access run locally in exec(code, ns).",
+        "helpers": {
+            "click": "click(x,y,hwnd=0)", "click_node": "click_node(node_id)", "read_node": "read_node(node_id)",
+            "type_text": "type_text(text)", "press_key": "press_key(key)", "hotkey": "hotkey(*keys)",
+            "scroll": "scroll(x,y,amount,hwnd=0)", "scroll_node": "scroll_node(node_id,amount=-3)",
+            "action_nodes": "action_nodes(action=None)", "node_by_id": "node_by_id(node_id)",
+            "open_url": "open_url(browser,url)", "observe_area": "observe_area(left,top,right,bottom,max_llm_nodes=None,max_depth=None,step_px=None)",
+            "observe_with_config": "observe_with_config(hover_cache_config)", "pyautogui": "compat facade", "pag": "alias",
         },
-        "desktop_helpers": {
-            "click": "click(x, y, hwnd=0)",
-            "click_node": "click_node(node_id)",
-            "read_node": "read_node(node_id)",
-            "type_text": "type_text(text) types into current focus; it does not accept node_id",
-            "press_key": "press_key(key)",
-            "hotkey": "hotkey(*keys)",
-            "scroll": "scroll(x, y, amount, hwnd=0)",
-            "scroll_node": "scroll_node(node_id, amount=-3)",
-            "action_nodes": "action_nodes(action=None)",
-            "node_by_id": "node_by_id(node_id)",
-            "observe_area": "observe_area(left, top, right, bottom, max_llm_nodes=None, max_depth=None, step_px=None) returns a focused fresh observation",
-            "observe_with_config": "observe_with_config(hover_cache_config) returns a fresh observation using consumed observe_config.hover_cache knobs",
-            "pyautogui": "small compatibility facade over the same helpers",
-            "pag": "alias for pyautogui",
-        },
-        "browser_helpers": {"open_url": "open_url(browser, url)"},
-        "observation": {
-            "state_fields": ["fresh_observation", "desktop_tree_text", "action_index", "observation_artifact"],
-            "focused": "observe_area(...) and observe_with_config(...)",
-        },
+        "modules": ["subprocess", "os", "sys", "json", "re", "time", "pathlib", "ctypes", "math", "random", "types"],
+        "state": ["fresh_observation", "desktop_tree_text", "action_index", "observation_artifact"],
         "signals": ["verify", "frame", "reflect"],
         "deadline_at": st.get("deadline_at"),
+        "repo_root": str(ROOT),
     }
 
 
@@ -526,29 +369,16 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
     d = desktop.get_desktop()
     state = ctx.get("state", {})
     w = ctx.get("wiring", {})
-    goal = ctx.get("goal", "")
-    fresh_observation = state.get("fresh_observation") or brain.last_fresh_observation() or bus.observation_brief(state)
     action_index = _action_index(state)
     action_events: list[dict[str, Any]] = []
     deadline_at = state.get("deadline_at")
-    last = {
-        "error": state.get("last_error"),
-        "result": state.get("last_result", ""),
-        "action": state.get("last_action", {}),
-        "verification": state.get("last_verification", {}),
-        "reflection": state.get("last_reflection", {}),
-    }
 
     def _assert_duration_open(action: str) -> None:
-        if deadline_at is None:
-            return
-        try:
+        if deadline_at is not None:
             deadline = float(deadline_at)
-        except (TypeError, ValueError) as exc:
-            raise RuntimeError(f"invalid deadline_at in state: {deadline_at!r}") from exc
-        now = time.time()
-        if now >= deadline:
-            raise RuntimeError(f"duration deadline expired before body action {action}: late_by_s={round(now - deadline, 3)}")
+            now = time.time()
+            if now >= deadline:
+                raise RuntimeError(f"duration deadline expired before body action {action}: late_by_s={round(now - deadline, 3)}")
 
     def _record_action(result: Any) -> Any:
         event = dict(result) if isinstance(result, dict) else {"ok": True, "value": result}
@@ -567,34 +397,22 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         return dict(node)
 
     def click(x: int, y: int, hwnd: int = 0) -> dict[str, Any]:
-        _assert_duration_open("click")
-        return _record_action(d.click(int(x), int(y), int(hwnd or 0)))
+        _assert_duration_open("click"); return _record_action(d.click(int(x), int(y), int(hwnd or 0)))
 
     def type_text(text: str) -> dict[str, Any]:
-        _assert_duration_open("type_text")
-        return _record_action(d.type_text(str(text)))
+        _assert_duration_open("type_text"); return _record_action(d.type_text(str(text)))
 
     def press_key(key: str) -> dict[str, Any]:
-        _assert_duration_open("press_key")
-        return _record_action(d.press_key(str(key)))
+        _assert_duration_open("press_key"); return _record_action(d.press_key(str(key)))
 
     def hotkey(*keys: Any) -> dict[str, Any]:
-        _assert_duration_open("hotkey")
-        return _record_action(d.hotkey(*keys))
+        _assert_duration_open("hotkey"); return _record_action(d.hotkey(*keys))
 
     def scroll(x: int, y: int, amount: int, hwnd: int = 0) -> dict[str, Any]:
-        _assert_duration_open("scroll")
-        return _record_action(d.scroll(int(x), int(y), int(amount), int(hwnd or 0)))
+        _assert_duration_open("scroll"); return _record_action(d.scroll(int(x), int(y), int(amount), int(hwnd or 0)))
 
     def action_nodes(action: str | None = None) -> list[dict[str, Any]]:
-        nodes_list = []
-        for node in action_index.values():
-            if not isinstance(node, dict):
-                continue
-            node_action = node.get("action")
-            if node_action and (action is None or node_action == action):
-                nodes_list.append(dict(node))
-        return nodes_list
+        return [dict(node) for node in action_index.values() if isinstance(node, dict) and node.get("action") and (action is None or node.get("action") == action)]
 
     def node_by_id(node_id: str) -> dict[str, Any]:
         return _require_node(node_id)
@@ -603,14 +421,13 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         _assert_duration_open("click_node")
         node = _require_node(node_id)
         x, y = _node_center(node)
-        click_res = d.click(x, y, int(node.get("hwnd") or 0))
-        return _record_action({"ok": bool(click_res.get("ok", True)), "action": "click_node", "node_id": node_id, "click": click_res})
+        res = d.click(x, y, int(node.get("hwnd") or 0))
+        return _record_action({"ok": bool(res.get("ok", True)), "action": "click_node", "node_id": node_id, "click": res})
 
     def read_node(node_id: str) -> dict[str, Any]:
         _assert_duration_open("read_node")
         node = _require_node(node_id)
-        text = node.get("name") or node.get("text_full") or node.get("value") or ""
-        return _record_action({"ok": True, "action": "read_node", "node_id": node_id, "text": text})
+        return _record_action({"ok": True, "action": "read_node", "node_id": node_id, "text": node.get("name") or node.get("text_full") or node.get("value") or ""})
 
     def scroll_node(node_id: str, amount: int = -3) -> dict[str, Any]:
         _assert_duration_open("scroll_node")
@@ -619,13 +436,11 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         return _record_action(d.scroll(x, y, int(amount), int(node.get("hwnd") or 0)))
 
     def open_url(browser: str, url: str) -> dict[str, Any]:
-        _assert_duration_open("open_url")
-        return _record_action(d.open_url(str(browser), str(url)))
+        _assert_duration_open("open_url"); return _record_action(d.open_url(str(browser), str(url)))
 
     def _base_hover_cache_config() -> dict[str, Any]:
-        observe_cfg = w.get("observe_config", {}) if isinstance(w, dict) else {}
-        hover = observe_cfg.get("hover_cache", observe_cfg) if isinstance(observe_cfg, dict) else {}
-        return copy.deepcopy(hover if isinstance(hover, dict) else {})
+        observe_cfg = w["observe_config"]
+        return copy.deepcopy(observe_cfg["hover_cache"])
 
     def observe_with_config(hover_cache_config: dict[str, Any] | None = None) -> dict[str, Any]:
         _assert_duration_open("observe_with_config")
@@ -635,30 +450,17 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
                 raise RuntimeError("observe_with_config requires a dict hover_cache_config")
             cfg.update(copy.deepcopy(hover_cache_config))
         obs = d.observe({"hover_cache": cfg})
-        return _record_action({
-            "ok": True,
-            "action": "observe_with_config",
-            "desktop_tree_text": obs.get("desktop_tree_text", ""),
-            "scan_stats": (obs.get("observation_artifact") or {}).get("scan_stats", {}),
-            "rendered_node_count": obs.get("rendered_node_count"),
-            "max_llm_nodes": obs.get("max_llm_nodes"),
-            "llm_node_limit_hit": obs.get("llm_node_limit_hit"),
-        })
+        return _record_action({"ok": True, "action": "observe_with_config", "desktop_tree_text": obs.get("desktop_tree_text", ""), "scan_stats": (obs.get("observation_artifact") or {}).get("scan_stats", {}), "rendered_node_count": obs.get("rendered_node_count"), "max_llm_nodes": obs.get("max_llm_nodes"), "llm_node_limit_hit": obs.get("llm_node_limit_hit")})
 
-    def observe_area(
-        left: int, top: int, right: int, bottom: int,
-        max_llm_nodes: int | None = None,
-        max_depth: int | None = None,
-        step_px: int | None = None,
-    ) -> dict[str, Any]:
+    def observe_area(left: int, top: int, right: int, bottom: int, max_llm_nodes: int | None = None, max_depth: int | None = None, step_px: int | None = None) -> dict[str, Any]:
         _assert_duration_open("observe_area")
         cfg = _base_hover_cache_config()
-        scan = dict(cfg.get("scan", {}))
+        scan = dict(cfg["scan"])
         scan["area"] = {"left": int(left), "top": int(top), "right": int(right), "bottom": int(bottom)}
         if step_px is not None:
             scan["step_px"] = int(step_px)
         cfg["scan"] = scan
-        filt = dict(cfg.get("filter", {}))
+        filt = dict(cfg["filter"])
         if max_llm_nodes is not None:
             filt["max_llm_nodes"] = int(max_llm_nodes)
         if max_depth is not None:
@@ -680,8 +482,7 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         def write(self, text: str, interval: float = 0.0) -> Any:
             if interval:
                 for ch in str(text):
-                    type_text(ch)
-                    time.sleep(float(interval))
+                    type_text(ch); time.sleep(float(interval))
                 return _record_action({"ok": True, "action": "pyautogui.write", "chars": len(str(text))})
             return type_text(str(text))
 
@@ -696,67 +497,30 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
             return result
 
         def hotkey(self, *keys: str) -> Any:
-            if len(keys) == 1 and isinstance(keys[0], (list, tuple)):
-                keys = tuple(keys[0])
-            return hotkey(list(keys))
+            return hotkey(list(keys[0]) if len(keys) == 1 and isinstance(keys[0], (list, tuple)) else list(keys))
 
         def scroll(self, clicks: int, x: int | None = None, y: int | None = None, **kwargs: Any) -> Any:
-            if x is None or y is None:
-                return scroll(0, 0, int(clicks), int(kwargs.get("hwnd") or 0))
-            return scroll(int(x), int(y), int(clicks), int(kwargs.get("hwnd") or 0))
+            return scroll(0 if x is None else int(x), 0 if y is None else int(y), int(clicks), int(kwargs.get("hwnd") or 0))
 
         def sleep(self, seconds: float) -> None:
             time.sleep(float(seconds))
 
     pyautogui = _PyAutoGuiCompat()
-    pag = pyautogui
-
+    last = {"error": state.get("last_error"), "result": state.get("last_result", ""), "action": state.get("last_action", {}), "verification": state.get("last_verification", {}), "reflection": state.get("last_reflection", {})}
     return {
-        "observe_screen": d.observe_screen,
-        "last_desktop_tree": d.last_desktop_tree,
-        "action_nodes": action_nodes,
-        "node_by_id": node_by_id,
-        "click": click,
-        "click_node": click_node,
-        "read_node": read_node,
-        "type_text": type_text,
-        "press_key": press_key,
-        "hotkey": hotkey,
-        "scroll": scroll,
-        "scroll_node": scroll_node,
-        "open_url": open_url,
-        "observe_with_config": observe_with_config,
-        "observe_area": observe_area,
-        "pyautogui": pyautogui,
-        "pag": pag,
-        "subprocess": subprocess,
-        "ctypes": ctypes,
-        "os": __import__("os"),
-        "sys": sys,
-        "json": json,
-        "re": __import__("re"),
-        "time": time,
-        "pathlib": pathlib,
-        "math": __import__("math"),
-        "random": __import__("random"),
-        "types": types,
-        "wiring_limit": wiring_limit,
-        "capabilities": capability_manifest(ctx),
-        "repo_root": str(ROOT),
-        "python_executable": sys.executable,
-        "topology_summary": wiring.topology_summary(w),
-        "topology_mermaid": wiring.topology_mermaid(w),
-        "state": state,
-        "wiring": w,
-        "goal": goal,
-        "last": last,
-        "fresh_observation": fresh_observation,
-        "desktop_tree": state.get("desktop_tree", {}),
-        "desktop_tree_text": state.get("desktop_tree_text", ""),
-        "action_index": action_index,
-        "observation_artifact": state.get("observation_artifact", {}),
-        "observed_at": state.get("observed_at"),
-        "fresh_scan": state.get("fresh_scan", False),
-        "action_events": action_events,
-        "_action_events": action_events,
+        "observe_screen": d.observe_screen, "last_desktop_tree": d.last_desktop_tree, "action_nodes": action_nodes,
+        "node_by_id": node_by_id, "click": click, "click_node": click_node, "read_node": read_node,
+        "type_text": type_text, "press_key": press_key, "hotkey": hotkey, "scroll": scroll,
+        "scroll_node": scroll_node, "open_url": open_url, "observe_with_config": observe_with_config,
+        "observe_area": observe_area, "pyautogui": pyautogui, "pag": pyautogui, "subprocess": subprocess,
+        "ctypes": ctypes, "os": os, "sys": sys, "json": json, "re": __import__("re"), "time": time,
+        "pathlib": pathlib, "math": __import__("math"), "random": __import__("random"), "types": types,
+        "wiring_limit": wiring_limit, "capabilities": capability_manifest(ctx), "repo_root": str(ROOT),
+        "python_executable": sys.executable, "topology_summary": wiring.topology_summary(w),
+        "topology_mermaid": wiring.topology_mermaid(w), "state": state, "wiring": w, "goal": ctx.get("goal", ""),
+        "last": last, "fresh_observation": state.get("fresh_observation") or brain.last_fresh_observation() or bus.observation_brief(state),
+        "desktop_tree": state.get("desktop_tree", {}), "desktop_tree_text": state.get("desktop_tree_text", ""),
+        "action_index": action_index, "observation_artifact": state.get("observation_artifact", {}),
+        "observed_at": state.get("observed_at"), "fresh_scan": state.get("fresh_scan", False),
+        "action_events": action_events, "_action_events": action_events,
     }

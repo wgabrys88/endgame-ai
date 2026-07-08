@@ -3,16 +3,6 @@ from __future__ import annotations
 import core_bus as bus
 
 
-DATASHEET = bus.datasheet(
-    "node_error",
-    kind="mechanical_recovery_router",
-    inputs=["last_node", "last_error", "current_step", "effective_goal"],
-    signals=["planner", "reflect", "halt"],
-    writes=["error_handled", "recovery", "effective_goal"],
-    record_type=None,
-)
-
-
 def run(ctx):
     state = ctx.get("state", {})
     error_info = {
