@@ -17,9 +17,9 @@ BINARY_SUFFIXES = {".pyc", ".pyd", ".dll", ".exe", ".ico", ".png", ".jpg", ".jpe
 DATASHEET = bus.datasheet(
     "node_self_modify",
     kind="llm_git_firmware_update",
-    inputs=["goal", "failure", "runtime_evidence", "git_context", "workspace_manifest"],
+    inputs=["goal", "failure", "runtime_evidence", "git_context", "workspace_manifest", "effective_goal"],
     signals=["modified", "modify_failed", "error"],
-    writes=["git_evolution_patch", "self_modify", "desktop_tree_text"],
+    writes=["git_evolution_patch", "self_modify", "desktop_tree_text", "effective_goal"],
     record_type="git_evolution_patch",
 )
 
@@ -96,7 +96,7 @@ def _runtime_evidence(wiring: dict[str, Any], state: dict[str, Any]) -> dict[str
 def run(ctx):
     state = ctx.get("state", {})
     wiring = ctx.get("wiring", {})
-    goal = ctx.get("goal", "")
+    goal = state.get("effective_goal", ctx.get("goal", ""))
     step = state.get("current_step") or {}
     git_context = nodes.prepare_self_evolution(wiring)
     if not stop_check.self_evolution_enabled():
@@ -163,6 +163,7 @@ def run(ctx):
 
     data = record.get("data", {})
     obs = brain.last_fresh_observation()
+    effective_goal = f"{goal}\n\n[SELF_MODIFY] Proposed evolution: {data.get('summary', '')[:150]}. Patches: {len(data.get('wiring_patches', []) or [])}, writes: {len(data.get('file_writes', []) or [])}, deletes: {len(data.get('file_deletes', []) or [])}."
     return bus.emit("modified", {
         "observed_at": obs.get("observed_at"),
         "fresh_scan": obs.get("fresh_scan"),
@@ -185,4 +186,5 @@ def run(ctx):
             "deletes": len(data.get("file_deletes", []) or []),
             "commands": len(data.get("commands", []) or []),
         },
+        "effective_goal": effective_goal,
     }, record=bus.Record.from_json(record), evidence={"git_context": git_context, "failure": payload.get("failure", {}), "organism_contract": payload.get("organism_contract", {})})
