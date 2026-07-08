@@ -80,6 +80,7 @@ class NodeOutput:
             "patch": self.patch,
             "evidence": self.evidence,
             "emitted_at": time.time(),
+            "effective_goal": self.patch.get("effective_goal") or self.evidence.get("effective_goal"),
         }
 
 
@@ -163,6 +164,8 @@ def state_brief(state: JsonDict) -> JsonDict:
         "last_failure": state.get("last_failure", {}),
         "failure_streak": state.get("failure_streak", {}),
         "has_action_frame": bool(state.get("action_frame")),
+        "root_goal": state.get("goal", ""),
+        "effective_goal": state.get("effective_goal", state.get("goal", "")),
     }
 
 

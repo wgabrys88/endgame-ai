@@ -79,12 +79,20 @@ class PlannerNode(BaseNode):
                 "planner replan amputated root goal obligations: "
                 f"new_intent={len(intent)} remaining_root_obligations={remaining_root}"
             )
+        
+        # Rewrite goal for next nodes based on current plan
+        effective_goal = ctx.get("goal", "")
+        if intent:
+            step_descs = [s.get("description", "") for s in intent if isinstance(s, dict)]
+            effective_goal = f"{effective_goal}\n\n[PLANNER REWRITE] Current plan focuses on: {'; '.join(step_descs[:3])}. Next: {step_descs[0] if step_descs else 'no steps'}."
+        
         return {
             "plan": data,
             "root_plan_intent": root_intent,
             "step": 0,
             "plan_complete": False,
             "reasoning": record.reasoning,
+            "effective_goal": effective_goal,
         }
 
 

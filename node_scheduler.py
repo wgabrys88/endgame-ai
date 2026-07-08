@@ -6,9 +6,9 @@ import core_bus as bus
 DATASHEET = bus.datasheet(
     "node_scheduler",
     kind="mechanical_step_selector",
-    inputs=["plan.intent", "state.step"],
+    inputs=["plan.intent", "state.step", "effective_goal"],
     signals=["step_ready", "plan_complete", "error"],
-    writes=["current_step", "step_goal", "step", "action_frame"],
+    writes=["current_step", "step_goal", "step", "action_frame", "effective_goal"],
     record_type=None,
 )
 
@@ -45,6 +45,12 @@ def run(ctx):
         raise RuntimeError(f"scheduler expected step object at index {step_idx}, got {type(step).__name__}")
     if not isinstance(step.get("description"), str) or not isinstance(step.get("done_when"), str):
         raise RuntimeError(f"scheduler step {step_idx} must contain string description and done_when")
+    
+    # Propagate effective_goal with step-specific framing
+    effective_goal = state.get("effective_goal", ctx.get("goal", ""))
+    step_desc = step.get("description", str(step))
+    effective_goal = f"{effective_goal}\n\n[SCHEDULER] Current step: {step_desc}. Complete when: {step.get('done_when', '')}."
+
     return bus.emit(
         "step_ready",
         {
@@ -53,5 +59,6 @@ def run(ctx):
             "step": step_idx,
             "action_frame": None,
             "framing_attempted_for_step": None,
+            "effective_goal": effective_goal,
         },
     )
