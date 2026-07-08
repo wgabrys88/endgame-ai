@@ -196,15 +196,35 @@ def run(
             stop_check.unregister_pid("organism")
 
 
-def next_node_for(w: dict[str, Any], current: str, signal_name: str) -> str:
+def next_nodes_for(w: dict[str, Any], current: str, signal_name: str) -> list[str]:
+    """Resolve the successor frontier for (node, signal).
+
+    Edge value may be a single node name (linear) or a list of node names
+    (fractal one-to-many). Always returns a non-empty list of node-name strings.
+    Fail hard on missing edge or malformed value.
+    """
     edges = w.get("topology", {}).get("edges", {})
     node_edges = edges.get(current)
     if not isinstance(node_edges, dict):
         raise bus.TopologyContractError(f"topology has no edges for node '{current}'")
-    nxt = node_edges.get(signal_name)
-    if not isinstance(nxt, str) or not nxt:
-        raise bus.TopologyContractError(f"node '{current}' emitted signal '{signal_name}' with no topology edge")
-    return nxt
+    target = node_edges.get(signal_name)
+    if isinstance(target, str) and target:
+        return [target]
+    if isinstance(target, list) and target and all(isinstance(t, str) and t for t in target):
+        return list(target)
+    raise bus.TopologyContractError(f"node '{current}' emitted signal '{signal_name}' with no valid topology edge")
+
+
+def next_node_for(w: dict[str, Any], current: str, signal_name: str) -> str:
+    """Single-successor resolution (linear loop). Rejects one-to-many fan-out
+    until the frontier loop (B2) exists — fail hard, never silently drop targets."""
+    frontier = next_nodes_for(w, current, signal_name)
+    if len(frontier) != 1:
+        raise bus.TopologyContractError(
+            f"node '{current}' signal '{signal_name}' fans out to {len(frontier)} targets "
+            f"but the frontier scheduler is not enabled: {frontier}"
+        )
+    return frontier[0]
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -15,6 +15,7 @@
 !core_stop_check.py
 !core_wiring.py
 !core_loader.py
+!check_topology.py
 !core_state.py
 !core_node_base.py
 !node_error.py
