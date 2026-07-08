@@ -73,7 +73,8 @@
     "state": "runtime_state.json",
     "control": "runtime_control.json",
     "event_log": "runtime_events.jsonl",
-    "caps": "."
+    "caps": ".",
+    "guidance": "guidance.txt"
   },
   "control_default": {
     "mode": "run",
@@ -116,7 +117,7 @@
     }
   },
   "topology": {
-    "cycle_start": "node_observe",
+    "cycle_start": "node_guidance",
     "nodes": [
       "node_planner",
       "node_scheduler",
@@ -127,7 +128,8 @@
       "node_reflect",
       "node_self_modify",
       "node_satisfied",
-      "node_error"
+      "node_error",
+      "node_guidance"
     ],
     "edges": {
       "node_planner": {
@@ -136,7 +138,7 @@
         "error": "node_error"
       },
       "node_scheduler": {
-        "step_ready": "node_observe",
+        "step_ready": "node_guidance",
         "plan_complete": "node_satisfied",
         "error": "node_error"
       },
@@ -157,7 +159,7 @@
         "error": "node_error"
       },
       "node_reflect": {
-        "retry": "node_observe",
+        "retry": "node_guidance",
         "replan": "node_planner",
         "frame": "node_frame_action",
         "escalate": "node_self_modify",
@@ -179,8 +181,12 @@
         "halt": "halt"
       },
       "node_frame_action": {
-        "framed": "node_observe",
+        "framed": "node_guidance",
         "reflect": "node_reflect",
+        "error": "node_error"
+      },
+      "node_guidance": {
+        "attend": "node_observe",
         "error": "node_error"
       }
     },
@@ -196,7 +202,8 @@
     "node_reflect": "Reflect JSON: retry|replan|frame|escalate|give_up|topology_patch plus lesson,diagnosis. Task failures route; organism/topology changes self_modify.",
     "node_self_modify": "Self-modify JSON git_evolution_patch: modified plus summary,rationale,read_files,file_writes,file_deletes,wiring_patches,commands,expected_validation. Patch consumed runtime; prefer deletion.",
     "node_satisfied": "Mechanical halt with satisfied only when complete and no last_error.",
-    "node_error": "Mechanical recovery to planner, reflect, or halt."
+    "node_error": "Mechanical recovery to planner, reflect, or halt.",
+    "node_guidance": "Attend to the guidance file: a voice from without (human or fellow organism). Fold its counsel into the goal-narrative as a strong yet ignorable signal — heed it or not as the goal demands — then turn the wheel onward to observation."
   },
   "fractal": {
     "max_recursion_depth": 3,

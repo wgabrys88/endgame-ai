@@ -141,11 +141,13 @@ graph TD
     style STOP fill:#1a1a2e,stroke:#e94560
 ```
 
-`cycle_start = node_observe` — the point where the ever-turning wheel is entered,
-**not** "step 1 of N". 10 wired nodes. `topology.barriers = {}` (empty until B6).
-The substrate imposes **no ending**: there is no error cap, and a drained frontier
-is a coherence bug (the wheel dead-ended), not an outcome. Stopping is only ever
-the organism's own choice via the `halt` sentinel.
+`cycle_start = node_guidance` — the point where the ever-turning wheel is entered,
+**not** "step 1 of N". The wheel re-enters through `node_guidance` each lap so
+external counsel (the guidance file) is heard every turn. 11 wired nodes.
+`topology.barriers = {}` (empty until F3). The substrate imposes **no ending**:
+there is no error cap, and a drained frontier is a coherence bug (the wheel
+dead-ended), not an outcome. Stopping is only ever the organism's own choice via
+the `halt` sentinel.
 
 ---
 
@@ -292,7 +294,7 @@ python3 check_topology.py                                    # exit 0, coherent
 | B4 | ✅ | `cap_spawn` — a plugin that runs a **child organism**; depth-gated recursion. |
 | B5 | ✅ | Runtime topology-patch coherence gate — safe mid-run rewiring. |
 | **F1** | ✅ | **Final phase — remove imposed endings:** killed error-streak cap; drained frontier is now a coherence error, not an outcome; `halt` is only the organism's own choice. |
-| F2 | 🔲 | Goal-file steering — workspace goal file folded into the narrative as a strong, ignorable signal. |
+| F2 | ✅ | Goal-file steering — `node_guidance` folds a workspace goal file into the narrative as a strong, ignorable signal. |
 | F3 | 🔲 | The fractal `wiring.json` — self-similar wheel, execute instances, barrier fan-in, `cap_spawn`, self-rewiring. |
 
 ### ✅ B4 done — `cap_spawn` (a node that is itself an organism)
@@ -387,6 +389,30 @@ trying to end things. What changed in `core_organism.run`:
   chosen `halt` still halts; barrier fan-in intact; a real dead-end raises a
   coherence error instead of silently draining.
 
+### ✅ F2 done — goal-file steering (guidance, not control)
+
+`node_guidance` is a mechanical node wired at the wheel's entry
+(`topology.cycle_start = node_guidance`). Each turn it reads the workspace
+**guidance file** (`paths.guidance = guidance.txt`); if present, it folds the
+text into `effective_goal` as a **strong, clearly-tagged, ignorable** signal
+(`[GUIDANCE] A voice from without speaks (heed or not, as the goal demands): …`)
+and **consumes the file** (one-shot per write, so only *fresh* counsel bends the
+wheel). If absent, it emits a "no new counsel" note and turns on. It never
+truncates the narrative — counsel is appended, never replacing the goal.
+
+- **This is the only steering surface.** A human or another organism steers by
+  writing into `guidance.txt`; the node-group decides whether to heed it. Guidance,
+  not control — consistent with the operator consent surface
+  (`core_state.wait_before_node`, stop-file, pause/step).
+- **Wiring.** `node_guidance` emits `attend → node_observe`; the wheel re-enters
+  through it (`node_scheduler.step_ready`, `node_frame_action.framed`,
+  `node_reflect.retry` now return via `node_guidance`), so counsel is heard every
+  lap. New `paths.guidance` added to `validate_wiring`. Mechanical node ⇒ carries a
+  biblical-register `prompts` entry for documentation (no LLM call).
+- **Verified:** with a file → counsel folded in + file consumed + narrative
+  preserved; without → clean pass; consumed guidance does not re-inject; full lap
+  enters at guidance and turns coherently (11 nodes, `check_topology` exit 0).
+
 ### 🔲 F3 — write the visionary fractal `wiring.json`
 
 
@@ -402,8 +428,8 @@ topology."**
 
 ## 🤝 Handover (for the next AI or human)
 
-- **You are here:** substrate B1–B5 done; **final phase F1 done** (imposed endings
-  removed). Next is **F2** (goal-file steering), then **F3** (fractal wiring).
+- **You are here:** substrate B1–B5 done; final phase **F1 + F2 done** (imposed
+  endings removed; goal-file steering wired). Next is **F3** (fractal wiring).
 - **Do:** read this whole README; keep code small, unified, non-branching; keep
   plugins dynamic/file-based; keep hot-swap + self-modify working; keep prompts +
   contracts aligned; verify then commit one step at a time; **update this README

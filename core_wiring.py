@@ -66,6 +66,7 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
         "paths.state",
         "paths.control",
         "paths.event_log",
+        "paths.guidance",
         "control_default.mode",
         "control_default.step_token",
         "control_default.updated_at",
@@ -135,6 +136,10 @@ def control_path(wiring: dict[str, Any]) -> pathlib.Path:
 
 def event_log_path(wiring: dict[str, Any]) -> pathlib.Path:
     return root_path(wiring["paths"]["event_log"] if wiring else "runtime_events.jsonl")
+
+
+def guidance_path(wiring: dict[str, Any]) -> pathlib.Path:
+    return root_path(wiring["paths"]["guidance"])
 
 
 def default_control(wiring: dict[str, Any]) -> dict[str, Any]:
