@@ -8,9 +8,9 @@ from core_node_base import BaseNode
 DATASHEET = bus.datasheet(
     "node_reflect",
     kind="llm_diagnostic_router",
-    inputs=["goal", "current_step", "last_action", "last_result", "last_error", "last_failure", "last_verification", "failure_streak"],
+    inputs=["goal", "current_step", "last_action", "last_result", "last_error", "last_failure", "last_verification", "failure_streak", "effective_goal"],
     signals=["retry", "replan", "frame", "escalate", "give_up", "error"],
-    writes=["reflection", "last_reflection", "failure_streak"],
+    writes=["reflection", "last_reflection", "failure_streak", "effective_goal"],
     record_type="reflection",
 )
 
@@ -61,7 +61,7 @@ class ReflectNode(BaseNode):
         self._prepare(ctx)
         state = ctx.get("state", {})
         step = state.get("current_step") or {}
-        goal = ctx.get("goal", "")
+        goal = state.get("effective_goal", ctx.get("goal", ""))
         return {
             "goal": goal,
             "step": {
@@ -165,6 +165,9 @@ class ReflectNode(BaseNode):
         step = state.get("current_step") or {}
         lesson = data.get("lesson", "No lesson provided")
         diagnosis = data.get("diagnosis", "No diagnosis")
+        effective_goal = state.get("effective_goal", ctx.get("goal", ""))
+        signal_desc = {"retry": "retry with fresh observation", "replan": "replan from scratch", "frame": "focus observation", "escalate": "escalate to self-modify", "give_up": "give up"}.get(self._signal, self._signal)
+        effective_goal = f"{effective_goal}\n\n[REFLECT] Routed to {signal_desc}. Lesson: {lesson[:100]}. Diagnosis: {diagnosis[:100]}."
         return {
             **self._streak_patch,
             "reflection": {
@@ -184,6 +187,7 @@ class ReflectNode(BaseNode):
                 "routing_override": self._routing_override,
                 "failure": self._failure,
             },
+            "effective_goal": effective_goal,
         }
 
 

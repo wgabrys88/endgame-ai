@@ -14,9 +14,9 @@ from core_node_base import BaseNode
 DATASHEET = bus.datasheet(
     "node_execute",
     kind="llm_code_actuator",
-    inputs=["goal", "current_step", "fresh_observation", "action_frame", "capability_runtime"],
+    inputs=["goal", "current_step", "fresh_observation", "action_frame", "capability_runtime", "effective_goal"],
     signals=["verify", "frame", "reflect", "error"],
-    writes=["last_action", "last_code", "last_result", "last_error", "last_failure", "action_frame"],
+    writes=["last_action", "last_code", "last_result", "last_error", "last_failure", "action_frame", "effective_goal"],
     record_type="execution",
 )
 
@@ -39,7 +39,7 @@ class ExecuteNode(BaseNode):
 
     def build_payload(self, ctx):
         state = ctx.get("state", {})
-        goal = ctx.get("goal", "")
+        goal = state.get("effective_goal", ctx.get("goal", ""))
         step = state.get("current_step") or {}
         return {
             "goal": goal,
@@ -244,6 +244,14 @@ class ExecuteNode(BaseNode):
             failure = self._runtime_failure(exc)
 
         signal = "reflect" if error else "verify"
+        # Rewrite goal for next nodes based on execution outcome
+        effective_goal = state.get("effective_goal", ctx.get("goal", ""))
+        if conclusion == "EXECUTE":
+            effective_goal = f"{effective_goal}\n\n[EXECUTE] Action executed: {code[:120]}... Result: {'success' if not error else 'error: ' + str(error)[:80]}."
+        elif conclusion == "FRAME":
+            effective_goal = f"{effective_goal}\n\n[EXECUTE] Need sharper observation/frame. Current step: {step.get('description', '')[:100]}."
+        elif conclusion == "CANNOT":
+            effective_goal = f"{effective_goal}\n\n[EXECUTE] Cannot execute current approach. Need different strategy for: {step.get('description', '')[:100]}."
         return bus.emit(
             signal,
             {
@@ -253,6 +261,7 @@ class ExecuteNode(BaseNode):
                 "last_error": error,
                 "last_failure": failure,
                 "action_frame": None if not error else state.get("action_frame"),
+                "effective_goal": effective_goal,
             },
             record=record,
             evidence=payload,

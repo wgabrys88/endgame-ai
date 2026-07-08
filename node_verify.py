@@ -7,9 +7,9 @@ from core_node_base import BaseNode
 DATASHEET = bus.datasheet(
     "node_verify",
     kind="llm_reality_comparator",
-    inputs=["goal", "current_step", "last_action", "last_result", "last_error", "fresh_observation"],
+    inputs=["goal", "current_step", "last_action", "last_result", "last_error", "fresh_observation", "effective_goal"],
     signals=["step_confirmed", "step_denied", "error"],
-    writes=["verification", "last_verification", "step"],
+    writes=["verification", "last_verification", "step", "effective_goal"],
     record_type="verification",
 )
 
@@ -38,8 +38,9 @@ class VerifyNode(BaseNode):
 
     def build_payload(self, ctx):
         step_goal, done_when = self._step_goal(ctx)
+        effective_goal = ctx.get("state", {}).get("effective_goal", ctx.get("goal", ""))
         return {
-            "goal": ctx.get("goal", ""),
+            "goal": effective_goal,
             "step": {"description": step_goal, "done_when": done_when},
             "evidence": self._evidence(ctx),
             "observation": bus.observation_brief(ctx.get("state", {})),
@@ -58,7 +59,7 @@ class VerifyNode(BaseNode):
         self._signal = signal
         return signal
 
-    def patch_from_record(self, record, ctx):
+def patch_from_record(self, record, ctx):
         data = record.data
         state = ctx.get("state", {})
         step_goal, done_when = self._step_goal(ctx)
@@ -71,6 +72,7 @@ class VerifyNode(BaseNode):
             },
             "last_verification": {"success": self._success, "signal": self._signal},
         }
+        effective_goal = state.get("effective_goal", ctx.get("goal", ""))
         if self._success:
             completed_steps = list(state.get("completed_steps") or [])
             completed_steps.append({
@@ -78,6 +80,11 @@ class VerifyNode(BaseNode):
                 "done_when": done_when,
                 "confirmed_at_tick": state.get("tick"),
             })
+            effective_goal = f"{effective_goal}\n\n[VERIFY] Step confirmed: {step_goal[:100]}. Moving to next step."
+        else:
+            effective_goal = f"{effective_goal}\n\n[VERIFY] Step denied: {step_goal[:100]}. Evidence missing: {data.get('reasoning', '')[:100]}."
+        patch["effective_goal"] = effective_goal
+        if self._success:
             patch["step"] = int(state.get("step", 0) or 0) + 1
             patch["completed_steps"] = completed_steps
             patch["failure_streak"] = {"signature": None, "count": 0}

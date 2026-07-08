@@ -7,9 +7,9 @@ from core_node_base import BaseNode
 DATASHEET = bus.datasheet(
     "node_frame_action",
     kind="llm_rod_framing_pass",
-    inputs=["goal", "current_step", "last_action", "last_result", "last_error", "fresh_observation"],
+    inputs=["goal", "current_step", "last_action", "last_result", "last_error", "fresh_observation", "effective_goal"],
     signals=["framed", "reflect", "error"],
-    writes=["action_frame", "framing_attempted_for_step"],
+    writes=["action_frame", "framing_attempted_for_step", "effective_goal"],
     record_type="action_frame",
 )
 
@@ -34,7 +34,7 @@ class FrameActionNode(BaseNode):
     def build_payload(self, ctx):
         state = ctx.get("state", {})
         step = state.get("current_step") or {}
-        goal = ctx.get("goal", "")
+        goal = state.get("effective_goal", ctx.get("goal", ""))
         return {
             "goal": goal,
             "step": {
@@ -62,7 +62,10 @@ class FrameActionNode(BaseNode):
             "notes": data.get("notes", ""),
             "step_index": step_index,
         }
-        return {"action_frame": frame, "framing_attempted_for_step": step_index}
+        effective_goal = ctx.get("state", {}).get("effective_goal", ctx.get("goal", ""))
+        step_desc = frame.get("target", "") or frame.get("strategy", "")
+        effective_goal = f"{effective_goal}\n\n[FRAME_ACTION] Focusing on {frame.get('target', 'unknown')} via {frame.get('strategy', 'unknown')}: {frame.get('notes', '')[:200]}"
+        return {"action_frame": frame, "framing_attempted_for_step": step_index, "effective_goal": effective_goal}
 
 
 def run(ctx):
