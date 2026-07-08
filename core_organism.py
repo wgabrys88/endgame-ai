@@ -70,6 +70,7 @@ def run(
         st["duration_seconds"] = duration_seconds
         st["deadline_at"] = deadline_at
         st.setdefault("wiring_transport", w.get("model", {}).get("transport"))
+        frontier: list[str] = [str(n) for n in st.get("frontier") or [current]]
         wiring.write_state(w, st)
         state.runtime_event(
             w,
@@ -78,11 +79,15 @@ def run(
             transport=st["wiring_transport"],
             tick=st.get("tick", 0),
             node=current,
+            frontier=list(frontier),
             duration_seconds=duration_seconds,
             deadline_at=deadline_at,
             pid=os.getpid(),
         )
-        while True:
+        max_streak = int(w["topology"]["max_error_streak"])
+        while frontier:
+            current = frontier.pop(0)
+            st["frontier"] = list(frontier)
             if state.duration_expired(deadline_at):
                 return state.expire_duration(w, st, duration_seconds, current)
             if stop_check.stop_requested():
@@ -99,49 +104,78 @@ def run(
                 "node_start",
                 node=current,
                 tick=st["tick"],
+                frontier=list(frontier),
                 state=bus.state_brief(st),
                 last_bus_frame=st.get("_last_bus_frame"),
             )
-            ctx = {"wiring": w, "state": dict(st), "goal": goal or "", "node": current}
-            signal_name, patch = nodes.call_node(current, ctx)
-            evolution_patch = patch.get("git_evolution_patch")
-            if current == "node_self_modify" and evolution_patch:
-                try:
-                    _, applied = nodes.apply_evolution_patch(w, {"data": evolution_patch})
-                    patch.setdefault("self_modify", {})["applied"] = applied
-                    committed = nodes.commit_self_evolution(w, applied, evolution_patch)
-                    patch["self_modify"]["commit"] = committed
-                    w = wiring.load_wiring(wiring_path)
-                    state.runtime_event(w, "self_modify_applied", **applied, commit=committed)
-                except Exception as exc:
-                    if bool(w["self_modify"]["hot_swap_on_failure"]):
-                        touched = [
-                            str(item.get("path")).replace("\\", "/")
-                            for item in (evolution_patch.get("file_writes") or [])
-                            if isinstance(item, dict) and item.get("path")
-                        ]
-                        touched.extend(
-                            str(path).replace("\\", "/")
-                            for path in (evolution_patch.get("file_deletes") or [])
-                            if str(path).strip()
-                        )
-                        if evolution_patch.get("wiring_patches"):
-                            touched.append("wiring.json")
-                        swap = nodes.hot_swap_to_known_good(w, paths=touched or None)
-                        patch.setdefault("self_modify", {})["hot_swap"] = swap
-                        state.runtime_event(w, "self_modify_hot_swap", error=str(exc), **swap)
-                    raise
-            st.update(patch)
-            if signal_name == "halt":
-                st["_phase"] = "halted"
+            try:
+                ctx = {"wiring": w, "state": dict(st), "goal": goal or "", "node": current}
+                signal_name, patch = nodes.call_node(current, ctx)
+                evolution_patch = patch.get("git_evolution_patch")
+                if current == "node_self_modify" and evolution_patch:
+                    try:
+                        _, applied = nodes.apply_evolution_patch(w, {"data": evolution_patch})
+                        patch.setdefault("self_modify", {})["applied"] = applied
+                        committed = nodes.commit_self_evolution(w, applied, evolution_patch)
+                        patch["self_modify"]["commit"] = committed
+                        w = wiring.load_wiring(wiring_path)
+                        state.runtime_event(w, "self_modify_applied", **applied, commit=committed)
+                    except Exception as exc:
+                        if bool(w["self_modify"]["hot_swap_on_failure"]):
+                            touched = [
+                                str(item.get("path")).replace("\\", "/")
+                                for item in (evolution_patch.get("file_writes") or [])
+                                if isinstance(item, dict) and item.get("path")
+                            ]
+                            touched.extend(
+                                str(path).replace("\\", "/")
+                                for path in (evolution_patch.get("file_deletes") or [])
+                                if str(path).strip()
+                            )
+                            if evolution_patch.get("wiring_patches"):
+                                touched.append("wiring.json")
+                            swap = nodes.hot_swap_to_known_good(w, paths=touched or None)
+                            patch.setdefault("self_modify", {})["hot_swap"] = swap
+                            state.runtime_event(w, "self_modify_hot_swap", error=str(exc), **swap)
+                        raise
+                st.update(patch)
+                if signal_name == "halt":
+                    st["_phase"] = "halted"
+                    st["frontier"] = []
+                    wiring.write_state(w, st)
+                    state.runtime_event(w, "halted", node=current, reason=st.get("error_handled", {}))
+                    return st
+                successors = next_nodes_for(w, current, signal_name)
+                st["error_streak"] = 0
+            except Exception as exc:
+                st["_phase"] = "error"
+                st["last_error"] = f"{type(exc).__name__}: {exc}"
+                st["last_failure"] = state.classify_node_exception(current, exc)
+                st["error_streak"] = int(st.get("error_streak", 0)) + 1
                 wiring.write_state(w, st)
-                state.runtime_event(w, "halted", node=current, reason=st.get("error_handled", {}))
-                return st
-            nxt = next_node_for(w, current, signal_name)
+                state.runtime_event(w, "error", node=current, error=st["last_error"], error_streak=st["error_streak"])
+                if st["error_streak"] >= max_streak:
+                    st["_phase"] = "halted"
+                    st["frontier"] = []
+                    st["last_error"] = f"error streak {st['error_streak']} reached max {max_streak} at '{current}': {st['last_error']}"
+                    wiring.write_state(w, st)
+                    state.runtime_event(w, "halted", node=current, error=st["last_error"], error_streak=st["error_streak"])
+                    return st
+                try:
+                    successors = next_nodes_for(w, current, "error")
+                except bus.TopologyContractError as route_exc:
+                    st["_phase"] = "halted"
+                    st["frontier"] = []
+                    st["last_error"] = f"Error routing failed: {route_exc}"
+                    wiring.write_state(w, st)
+                    state.runtime_event(w, "halted", node=current, error=st["last_error"])
+                    return st
+                signal_name = "error"
+            frontier.extend(successors)
             st["last_signal"] = signal_name
             st["last_node"] = current
-            st["next_node"] = nxt
-            st["error_streak"] = 0
+            st["next_node"] = successors[0]
+            st["frontier"] = list(frontier)
             st["tick"] += 1
             st["_phase"] = "node_complete"
             wiring.write_state(w, st)
@@ -150,57 +184,22 @@ def run(
                 "node_complete",
                 node=current,
                 signal=signal_name,
-                next_node=nxt,
+                next_node=successors[0],
+                successors=list(successors),
+                frontier=list(frontier),
                 tick=st["tick"],
                 state=bus.state_brief(st),
-                bus_frame=patch.get("_last_bus_frame"),
+                bus_frame=st.get("_last_bus_frame"),
             )
-            current = nxt
+        st["_phase"] = "frontier_drained"
+        wiring.write_state(w, st)
+        state.runtime_event(w, "frontier_drained", node=current, tick=st["tick"])
+        return st
     except KeyboardInterrupt:
         st["_phase"] = "interrupted"
         wiring.write_state(w, st)
         state.runtime_event(w, "interrupted", node=current)
         return st
-    except Exception as exc:
-        st["_phase"] = "error"
-        st["last_error"] = f"{type(exc).__name__}: {exc}"
-        st["last_failure"] = state.classify_node_exception(current, exc)
-        st["error_streak"] = int(st.get("error_streak", 0)) + 1
-        wiring.write_state(w, st)
-        state.runtime_event(w, "error", node=current, error=st["last_error"], error_streak=st["error_streak"])
-        max_streak = int(w["topology"]["max_error_streak"])
-        if st["error_streak"] >= max_streak:
-            st["_phase"] = "halted"
-            st["last_error"] = f"error streak {st['error_streak']} reached max {max_streak} at '{current}': {st['last_error']}"
-            wiring.write_state(w, st)
-            state.runtime_event(w, "halted", node=current, error=st["last_error"], error_streak=st["error_streak"])
-            return st
-        try:
-            nxt = next_node_for(w, current, "error")
-            st["last_signal"] = "error"
-            st["last_node"] = current
-            st["next_node"] = nxt
-            st["tick"] += 1
-            st["_phase"] = "node_complete"
-            wiring.write_state(w, st)
-            state.runtime_event(w, "node_complete", node=current, signal="error", next_node=nxt, tick=st["tick"])
-            current = nxt
-            return run(
-                goal,
-                reset=False,
-                duration_seconds=duration_seconds,
-                brain_call_budget=brain_call_budget,
-                start_node=current,
-                wiring_path=wiring_path,
-                _pid_registered=True,
-                _deadline_at=deadline_at,
-            )
-        except RuntimeError as route_exc:
-            st["_phase"] = "halted"
-            st["last_error"] = f"Error routing failed: {route_exc}"
-            wiring.write_state(w, st)
-            state.runtime_event(w, "halted", node=current, error=st["last_error"])
-            return st
     finally:
         if registered_here:
             stop_check.unregister_pid("organism")
@@ -223,18 +222,6 @@ def next_nodes_for(w: dict[str, Any], current: str, signal_name: str) -> list[st
     if isinstance(target, list) and target and all(isinstance(t, str) and t for t in target):
         return list(target)
     raise bus.TopologyContractError(f"node '{current}' emitted signal '{signal_name}' with no valid topology edge")
-
-
-def next_node_for(w: dict[str, Any], current: str, signal_name: str) -> str:
-    """Single-successor resolution (linear loop). Rejects one-to-many fan-out
-    until the frontier loop (B2) exists — fail hard, never silently drop targets."""
-    frontier = next_nodes_for(w, current, signal_name)
-    if len(frontier) != 1:
-        raise bus.TopologyContractError(
-            f"node '{current}' signal '{signal_name}' fans out to {len(frontier)} targets "
-            f"but the frontier scheduler is not enabled: {frontier}"
-        )
-    return frontier[0]
 
 
 def main(argv: list[str] | None = None) -> int:

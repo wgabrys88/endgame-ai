@@ -82,19 +82,35 @@ still REJECTS fan-out (`len != 1`) until the frontier loop (B2) exists.
 Current wiring is still the **linear** pipeline (fractal topology not written
 yet). `cycle_start = node_observe`. 10 nodes:
 planner, scheduler, observe, execute, frame_action, verify, reflect,
-self_modify, satisfied, error. The loop in `core_organism.run` is single-`current`
-and sequential; error path recurses via `run(start_node=nxt)`.
+self_modify, satisfied, error.
+
+**B2 done — frontier loop.** `core_organism.run` now schedules a `frontier`
+(`list[str]` of active nodes) instead of a single `current`. Loop: pop head →
+process → `frontier.extend(next_nodes_for(...))`. Linear = pop 1 / push 1
+(byte-identical to the old sequential path). Fan-out = a list-valued edge pushes
+several successors (processed BFS: pop head, append successors). `next_node_for`
+DELETED (its only job was rejecting fan-out). Per-node try/except is now INSIDE
+the loop: on node exception it pushes the `error` successors back onto the
+frontier and continues — **the recursive `run(start_node=...)` re-entry is gone**;
+`error_streak`/`max_error_streak` halt still applies (iterative now). `halt`
+signal and streak-cap both clear the frontier and return. Frontier persists in
+`state["frontier"]`; resume seeds it from `state["frontier"]` else `[current]`
+(old state files without `frontier` still resume from `next_node`). New terminal
+`_phase = "frontier_drained"` when the frontier empties. Node-start/complete
+events now carry `frontier` + `successors`.
+
+Verified (stubbed `call_node` + real `wiring.json` base with topology override):
+linear traversal identical; fan-out dispatches all successors; persistent
+failure halts at streak 5 with exactly 5 invocations and NO recursion; fan-out
+BFS order correct; old-state resume works. Real wiring is STILL linear — fan-out
+is available but unused until B6.
 
 ## Remaining build order — Phase B (fractal). One verified commit each.
 
-- **B2 — frontier loop.** Replace the single `current` in `core_organism.run`
-  with a set of active nodes. Sequential = a frontier of size 1 (linear behavior
-  must stay byte-identical until wiring fans out). This is the risky core change;
-  it touches state persistence, the bounded error-routing (§ error_streak), and
-  the self_modify apply path. Only after this can `next_node_for` stop rejecting
-  fan-out — route through `next_nodes_for`.
 - **B3 — `node_barrier`** mechanical node + join semantics for many-to-one
-  fan-in (wait for all inbound branches before firing the successor).
+  fan-in (wait for all inbound branches before firing the successor). Note: with
+  the BFS frontier, converging branches currently just both run; the barrier is
+  what makes convergence WAIT for all inbound branches before emitting once.
 - **B4 — `cap_spawn.spawn_organism(goal, duration)`** capability: run
   `core_organism` as a child, return the child's `effective_goal`. Depth-gate via
   wiring (`fractal.max_recursion_depth`, default 3). This is the literal fractal
