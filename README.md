@@ -15,6 +15,34 @@ Design axioms this pass obeyed:
 
 ---
 
+## Plugin platform (fractal-topology substrate) — in progress
+
+Building toward the main-branch **fractal topology vision** (README Appendix B):
+each node is a potential organism; topology supports one-to-many, barrier
+fan-in, node instances, recursive spawn, and runtime rewiring. The substrate is
+a uniform plugin model so any capability (including everything from the 5000-LOC
+main branch) returns as an on-demand plugin — drop a file, add a wiring line,
+zero core change. Plugin *existence* stays dynamic and file-based so
+self-evolution can keep writing new plugins at runtime; ABCs define only *shape*.
+
+Progress:
+
+- **Step A1 — unified loader (`core_loader.py`).** One `load(kind, name, w)`
+  replaces the two ad-hoc loaders (`core_node_base._load_node`,
+  `core_brain._load_transport_module`), which are now gone/delegating. Resolves a
+  wiring-named file (`<name>.py`) and validates the kind's required export
+  (`run` for nodes, `call` for transports) — fail hard, no fallback. Adds the
+  fractal `base:instance` name split (e.g. `node_execute:browser` → one
+  `node_execute.py` class, instance label threaded into `ctx.node_instance`), so
+  one file backs many wired instances. Behavior-preserving for current linear
+  topology (existing names contain no `:`).
+
+  Bring back a plugin the smart way: add a new `kind` to `core_loader.KINDS`
+  (one line: paths-key, module prefix, required export). Do not write a new
+  loader.
+
+---
+
 ## What changed (net −29 LOC, 6 files, zero topology/contract change)
 
 | # | Cluster | Before | After | Files |

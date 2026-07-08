@@ -656,3 +656,85 @@ EXECUTE build order (from §10.7), one commit each, verify before commit:
 Verify hot-swap survives after steps 1-4 (loaders + self_modify path unchanged
 in behavior). Keep README as living doc: after each step, update it to describe
 what the plugin kind is and how to bring back / add features the smart way.
+---
+
+## 12. RECONCILIATION: fractal topology vision + plugin platform (post-compaction directive)
+
+New directive from operator: build toward the **main-branch fractal topology
+vision** (README Appendix B), NOT the legacy linear pipeline. Produce the
+visionary topology. Still: no fallbacks, code reduction, OOP/unification. Also:
+system is Windows-11-only; `transport_file_proxy` is the WSL2/PowerShell debug
+endpoint (writes request to disk, operator-as-LLM answers).
+
+### 12.1 The two designs are complementary, not competing
+- §10 plugin platform = the **substrate** (how organs/senses/transports/tools
+  are loaded and shaped).
+- Appendix B fractal topology = the **behavior** the substrate must support
+  (parallel one-to-many, barrier fan-in, node instances, recursive spawn,
+  runtime rewiring).
+- The plugin loader is what makes fractal cheap: `node_execute:browser` is the
+  same `NodeExecute` class loaded once and *instanced* with param `browser`.
+
+### 12.2 What the current code assumes (the linear constraint to break)
+- `core_organism.next_node_for` returns ONE string; loop does `current = nxt`.
+  Strictly sequential, single-successor.
+- `core_bus.allowed_signals` reads `edges[node].keys()`; edge VALUE is assumed a
+  single node name string.
+- Node names are 1:1 with files (`node_execute.py` -> `node_execute`). No
+  `name:instance` concept.
+- `next_node_for` value must be a string; a list would break it today.
+
+### 12.3 Fractal primitives to add (mapped to plugin substrate)
+1. **Node instances (`node_execute:browser`)**: split `name:instance` at load.
+   `core_loader` resolves the CLASS from `name`, passes `instance` as a param in
+   ctx. One class, many wired instances — pure win for code reduction (the whole
+   point: browser/editor/terminal executors are ONE class).
+2. **One-to-many edges**: edge value may be a list of targets -> parallel
+   dispatch. Loop must handle a *frontier* (set of active nodes), not one
+   `current`.
+3. **Barrier / fan-in**: a `NodeBarrier` mechanical node (or a join rule in the
+   loop) waits for all inbound branches before firing its successor.
+4. **Recursive spawn (`spawn_organism`)**: a Capability plugin `cap_spawn`
+   exposing `spawn_organism(goal, duration)` -> runs `core_organism` as child
+   process, returns child's `effective_goal`. Each node becomes a potential
+   organism = the fractal claim. Depth gate via wiring
+   (`fractal.max_recursion_depth`, default 3).
+5. **Runtime topology patch**: reflect emits `topology_patch`; self_modify
+   applies via existing `apply_evolution_patch` extended with topology ops;
+   hot-swap on failure. Topology becomes evolvable substrate.
+
+### 12.4 Ordering constraint / risk
+The fractal loop (frontier + barrier) is the RISKY core change — it rewrites the
+organism main loop. The plugin substrate (loader, ABCs, instances) is LOW risk
+and is the prerequisite. So build substrate first, prove it linear, THEN turn on
+fractal behavior. Each still one commit, each verified, each revertible.
+
+### 12.5 REVISED build order (supersedes §10.7/§11 order)
+Phase A — substrate (behavior-preserving, linear still works):
+  A1. `core_loader.load(kind, name, w)` unify `_load_node` +
+      `_load_transport_module`. Support `name:instance` split (instance flows
+      into ctx; linear topology unaffected because current names have no ':').
+  A2. `BaseTransport` ABC; xai + file_proxy subclass; loader validates.
+  A3. `BaseCapability` ABC + `wiring.capabilities`; desktop -> `cap_desktop.py`;
+      runtime = merge of named caps.
+  A4. `BaseTool` ABC + operator entry point off the loop; `tool_forensics.py`.
+  A5. §9 node wins: signal validation + `append_goal` in `BaseNode`.
+Phase B — fractal behavior (the vision; changes the loop):
+  B1. `core_bus`: allow list-valued edges; `allowed_signals`/`validate_signal`
+      + `next_node_for` return list of successors.
+  B2. `core_organism`: frontier-based loop (set of active nodes) replacing single
+      `current`; sequential remains a frontier of size 1.
+  B3. `NodeBarrier` mechanical node + join semantics for fan-in.
+  B4. `cap_spawn.spawn_organism` capability (recursive child organism) + depth
+      gate in wiring.
+  B5. Extend `apply_evolution_patch` with topology ops so reflect can rewire
+      mid-run (runtime topology patch).
+  B6. Rewrite `wiring.json` topology from linear -> fractal (one-to-many execute
+      by capability, barrier fan-in to reflect). THIS is "produce the visionary
+      topology." Verify reachability under new list-edge semantics.
+
+Verify after every step: `python3 -m py_compile *.py`, pure-py import smoke,
+topology reachability (updated for list edges in Phase B). Hot-swap + self_modify
+apply path must keep working through the whole sequence.
+
+STARTING NOW: Phase A1. Pause for operator review after A1 (per instruction).

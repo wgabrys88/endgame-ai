@@ -3,7 +3,7 @@ from typing import Any
 
 import core_bus as bus
 import core_brain as brain
-import core_wiring as wiring
+import core_loader as loader
 
 JsonDict = dict[str, Any]
 
@@ -56,26 +56,12 @@ class BaseNode(ABC):
 
 def call_node(node_name: str, ctx: JsonDict) -> tuple[str, JsonDict]:
     w = ctx["wiring"]
-    mod = _load_node(node_name, w)
+    base, instance = loader.split_instance(node_name)
+    mod = loader.load("node", node_name, w)
+    ctx = {**ctx, "node": node_name, "node_base": base, "node_instance": instance}
     result = mod.run(ctx)
     output = bus.coerce_node_output(node_name, result)
     bus.validate_signal(w, node_name, output.signal)
     patch = dict(output.patch)
     patch.setdefault("_last_bus_frame", output.trace(node=node_name))
     return output.signal, patch
-
-
-def _load_node(node_name: str, w: JsonDict):
-    import importlib.util
-    node_dir = wiring.root_path(w.get("paths", {}).get("nodes"), ".")
-    path = node_dir / f"{node_name}.py"
-    if not path.exists():
-        raise RuntimeError(f"topology node '{node_name}' has no module at {path}")
-    spec = importlib.util.spec_from_file_location(f"endgame_node_{node_name}", path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"cannot load node module: {path}")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    if not hasattr(mod, "run"):
-        raise RuntimeError(f"node '{node_name}' does not export run(ctx)")
-    return mod

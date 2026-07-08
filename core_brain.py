@@ -1,5 +1,4 @@
 import hashlib
-import importlib.util
 import json
 import os
 import pathlib
@@ -10,6 +9,7 @@ import time
 from typing import Any
 
 import core_bus as bus
+import core_loader as loader
 import core_stop_check as stop_check
 import core_wiring as wiring
 
@@ -203,17 +203,7 @@ def reset_call_budget() -> None:
 
 
 def _load_transport_module(name: str, w: dict[str, Any]):
-    module_path = wiring.root_path(w["paths"]["brains"]) / f"{name}.py"
-    if not module_path.exists():
-        raise RuntimeError(f"selected brain transport '{name}' has no module at {module_path}; no fallback was attempted")
-    spec = importlib.util.spec_from_file_location(f"endgame_brain_transport_{name}", module_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"cannot load selected brain transport module: {module_path}")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    if not hasattr(mod, "call"):
-        raise RuntimeError(f"brain transport '{name}' does not export call(messages, cfg)")
-    return mod
+    return loader.load("transport", name, w)
 
 
 def _structured_outputs_enabled(cfg: dict[str, Any]) -> bool:
