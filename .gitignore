@@ -4,6 +4,7 @@
 !.gitattributes
 !.gitignore
 !README.md
+!report.md
 !wiring.json
 !core_brain.py
 !core_bus.py
