@@ -21,28 +21,10 @@ _STABLE_PREFIX_CACHE: "StablePrefix | None" = None
 _STABLE_PREFIX_LOCK = threading.Lock()
 _LAST_OBSERVATION: dict[str, Any] | None = None
 
-STATIC_PREFIX_SUFFIXES = {".py", ".json", ".md"}
-STATIC_PREFIX_NAMES = {".gitattributes", ".gitignore", "LICENSE"}
-STATIC_PREFIX_SKIP_PARTS = {".git", "__pycache__", ".pytest_cache"}
-STATIC_PREFIX_SKIP_PREFIXES = ("runtime_",)
-
-
-_RECORD_RULES: dict[str, tuple[list[str], dict[str, list[Any]]]] = {
-    "plan": (["next_signal", "intent"], {"next_signal": ["step_ready", "reflect"]}),
-    "schedule": (["next_signal", "step"], {"next_signal": ["step_ready", "plan_complete"]}),
-    "execution": (["next_signal", "conclusion", "code"], {"next_signal": ["verify", "frame", "reflect"], "conclusion": ["EXECUTE", "CANNOT", "FRAME"]}),
-    "dispatch": (["next_signal", "faculties", "rationale"], {"next_signal": ["dispatch"]}),
-    "action_frame": (["next_signal", "screen_summary", "target", "strategy", "risk", "notes"], {"next_signal": ["framed", "reflect"], "risk": ["low", "medium", "high"]}),
-    "verification": (["next_signal", "success"], {"next_signal": ["step_confirmed", "step_denied"]}),
-    "reflection": (["next_signal", "lesson", "diagnosis"], {"next_signal": ["retry", "replan", "frame", "escalate", "give_up", "topology_patch", "spawn"]}),
-    "git_evolution_patch": (["next_signal", "summary", "rationale", "read_files", "file_writes", "file_deletes", "wiring_patches", "commands", "expected_validation"], {"next_signal": ["modified"]}),
-    "satisfied": (["next_signal"], {"next_signal": ["halt"]}),
-}
-
-
 class StablePrefix:
-    def __init__(self, root: pathlib.Path = ROOT):
+    def __init__(self, w: dict[str, Any], root: pathlib.Path = ROOT):
         self.root = root
+        self.source = w["model"]["stable_prefix"]["source"]
         self.files = self._source_files()
         self.text, self.fingerprint = self._render()
         self.cache_key = f"endgame-ai-{self.fingerprint[:24]}"
@@ -55,9 +37,10 @@ class StablePrefix:
 
     def _include(self, rel: str) -> bool:
         path = pathlib.PurePosixPath(rel.replace("\\", "/"))
-        if set(path.parts) & STATIC_PREFIX_SKIP_PARTS or path.name.startswith(STATIC_PREFIX_SKIP_PREFIXES):
+        skip_prefixes = tuple(self.source["skip_prefixes"])
+        if set(path.parts) & set(self.source["skip_parts"]) or path.name.startswith(skip_prefixes):
             return False
-        return path.name in STATIC_PREFIX_NAMES or path.suffix in STATIC_PREFIX_SUFFIXES
+        return path.name in set(self.source["names"]) or path.suffix in set(self.source["suffixes"])
 
     def _source_files(self) -> list[str]:
         return sorted(item.replace("\\", "/") for item in self._git(["ls-files", "-z"]).split("\0") if item and self._include(item))
@@ -82,10 +65,10 @@ class StablePrefix:
         return {"fingerprint": self.fingerprint, "cache_key": self.cache_key, "files": self.files, "chars": len(self.text)}
 
 
-def stable_prefix() -> StablePrefix:
+def stable_prefix(w: dict[str, Any]) -> StablePrefix:
     global _STABLE_PREFIX_CACHE
     with _STABLE_PREFIX_LOCK:
-        fresh = StablePrefix(ROOT)
+        fresh = StablePrefix(w, ROOT)
         if _STABLE_PREFIX_CACHE is None or _STABLE_PREFIX_CACHE.fingerprint != fresh.fingerprint:
             _STABLE_PREFIX_CACHE = fresh
         return _STABLE_PREFIX_CACHE
@@ -98,13 +81,19 @@ def _messages(system_prompt: str, user_text: str, prefix: StablePrefix | None, s
     return [{"role": "system", "content": system}, {"role": "user", "content": user_text}]
 
 
-def _validate_record_contract(record: bus.Record, expected_record_type: str | None = None) -> None:
+def get_record_contract(w: dict[str, Any], record_type: str) -> dict[str, Any]:
+    contract = w["record_contracts"][record_type]
+    if not isinstance(contract, dict):
+        raise RuntimeError(f"wiring.record_contracts.{record_type} must be object")
+    return contract
+
+
+def _validate_record_contract(w: dict[str, Any], record: bus.Record, expected_record_type: str | None = None) -> None:
     if expected_record_type and record.record_type != expected_record_type:
         raise RuntimeError(f"brain record_type mismatch: expected {expected_record_type!r}, got {record.record_type!r}")
-    rule = _RECORD_RULES.get(record.record_type)
-    if not rule:
-        return
-    required, enums = rule
+    contract = get_record_contract(w, record.record_type)
+    required = list(contract["required"])
+    enums = dict(contract["enums"])
     missing = [key for key in required if key not in record.data]
     if missing:
         raise RuntimeError(f"{record.record_type} record missing required data keys: {missing}")
@@ -113,15 +102,28 @@ def _validate_record_contract(record: bus.Record, expected_record_type: str | No
             raise RuntimeError(f"{record.record_type}.data.{key}={record.data[key]!r} outside {values!r}")
 
 
-def _commit_record(content: str, expected_record_type: str | None = None) -> bus.Record:
+def _commit_record(content: str, w: dict[str, Any], expected_record_type: str | None = None) -> bus.Record:
     record = extract_json_object(content)
     if record is None:
         raise RuntimeError(f"brain did not commit a valid JSON object: {content}")
     if not isinstance(record.get("record_type"), str) or "data" not in record or not isinstance(record["data"], dict):
         raise RuntimeError(f"brain record must contain string record_type and object data: {record}")
     committed = bus.Record.from_json(record)
-    _validate_record_contract(committed, expected_record_type)
+    _validate_record_contract(w, committed, expected_record_type)
     return committed
+
+
+
+def _record_contract_prompt(w: dict[str, Any], record_type: str | None) -> str:
+    if not record_type:
+        return ""
+    contract = get_record_contract(w, record_type)
+    return "\n".join([
+        "RECORD CONTRACT FROM wiring.record_contracts:",
+        f"record_type: {record_type}",
+        "required data keys: " + json.dumps(contract["required"], ensure_ascii=False),
+        "enum data values: " + json.dumps(contract["enums"], ensure_ascii=False),
+    ])
 
 
 def _organ_tuning(w: dict[str, Any], record_type: str | None) -> dict[str, Any]:
@@ -210,8 +212,31 @@ def _structured_outputs_enabled(cfg: dict[str, Any]) -> bool:
     return bool(structured.get("enabled", False)) if isinstance(structured, dict) else bool(structured)
 
 
-def _record_response_format(record_type: str) -> dict[str, Any]:
-    return {"type": "json_schema", "name": f"{record_type}_record", "strict": True, "schema": {"type": "object", "additionalProperties": False, "properties": {"record_type": {"enum": [record_type]}, "data": {"type": "object", "additionalProperties": True}, "reasoning": {"type": "string"}}, "required": ["record_type", "data", "reasoning"]}}
+def _record_response_format(w: dict[str, Any], record_type: str) -> dict[str, Any]:
+    contract = get_record_contract(w, record_type)
+    data_properties = {key: {} for key in contract["required"]}
+    for key, values in contract["enums"].items():
+        data_properties[key] = {"enum": list(values)}
+    return {
+        "type": "json_schema",
+        "name": f"{record_type}_record",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "record_type": {"enum": [record_type]},
+                "data": {
+                    "type": "object",
+                    "additionalProperties": True,
+                    "properties": data_properties,
+                    "required": list(contract["required"]),
+                },
+                "reasoning": {"type": "string"},
+            },
+            "required": ["record_type", "data", "reasoning"],
+        },
+    }
 
 
 def call(messages: list[dict[str, str]], w: dict[str, Any], *, rod_feedback: bool = False, response_format: dict[str, Any] | None = None, request_config: dict[str, Any] | None = None) -> dict[str, str]:
@@ -299,7 +324,7 @@ def extract_json_object(text: str) -> dict[str, Any] | None:
 def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, expected_record_type: str | None = None, request_config: dict[str, Any] | None = None) -> dict[str, Any]:
     _, cfg = wiring.get_transport_config(w)
     reasoning_cfg = dict(cfg["reasoning"])
-    prefix = stable_prefix() if w["model"]["stable_prefix"]["enabled"] else None
+    prefix = stable_prefix(w) if w["model"]["stable_prefix"]["enabled"] else None
     prefix_for_messages = prefix if w["model"]["stable_prefix"]["include_in_request"] else None
     conv_id = w.get("_conv_id")
     if not conv_id:
@@ -308,7 +333,7 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
     payload = _with_observation(payload, w)
     goal = str(payload.pop("goal") or "") if "goal" in payload else ""
     user_text = json.dumps(payload, ensure_ascii=False, default=str)
-    response_format = _record_response_format(expected_record_type) if expected_record_type and _structured_outputs_enabled(cfg) else None
+    response_format = _record_response_format(w, expected_record_type) if expected_record_type and _structured_outputs_enabled(cfg) else None
     request_cfg = dict(request_config or {})
     request_cfg["expected_record_type"] = expected_record_type
     if prefix is not None:
@@ -318,11 +343,17 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
             request_cfg.setdefault(key, value)
     if cfg.get("transport") == "transport_xai":
         request_cfg.setdefault("prompt_cache_key", prefix.cache_key if prefix is not None else conv_id)
-    stable_context = f"CURRENT GOAL (fixed for this run):\n{goal}" if goal else ""
+    stable_context_parts = []
+    if goal:
+        stable_context_parts.append(f"CURRENT GOAL (fixed for this run):\n{goal}")
+    contract_context = _record_contract_prompt(w, expected_record_type)
+    if contract_context:
+        stable_context_parts.append(contract_context)
+    stable_context = "\n\n".join(stable_context_parts)
     pattern = str(reasoning_cfg.get("pattern") or "single_pass")
     if not reasoning_cfg["enabled"] or pattern in {"single_pass", "native"}:
         result = call(_messages(system_prompt, user_text, prefix_for_messages, stable_context), w, response_format=response_format, request_config=request_cfg)
-        record = _commit_record(result["content"], expected_record_type)
+        record = _commit_record(result["content"], w, expected_record_type)
         return bus.Record(record.record_type, record.data, reasoning_from(result["content"], result.get("reasoning", ""))).to_json()
     if pattern != "two_pass":
         raise RuntimeError(f"unknown reasoning pattern: {pattern}")
@@ -330,5 +361,5 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
     reasoning = reasoning_from(first["content"], first.get("reasoning", ""))
     template = str(reasoning_cfg.get("injection_template") or "REASONING:\n{reasoning}")
     second = call(_messages(system_prompt, user_text + "\n\n" + template.format(reasoning=reasoning), prefix_for_messages, stable_context), w, rod_feedback=True, response_format=response_format, request_config=request_cfg)
-    record = _commit_record(second["content"], expected_record_type)
+    record = _commit_record(second["content"], w, expected_record_type)
     return bus.Record(record.record_type, record.data, reasoning).to_json()

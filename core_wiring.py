@@ -43,11 +43,18 @@ def _require(obj: dict[str, Any], path: str, typ: type | tuple[type, ...]) -> An
     return cur
 
 
+
+def _require_list_str(obj: dict[str, Any], path: str) -> list[str]:
+    value = _require(obj, path, list)
+    if not all(isinstance(item, str) and item for item in value):
+        raise RuntimeError(f"wiring.{path} must be list[str]")
+    return value
+
 def validate_wiring(cfg: dict[str, Any]) -> None:
-    for key in ("schema", "model", "paths", "control_default", "observe_config", "self_modify", "topology", "prompts", "fractal"):
+    for key in ("schema", "model", "paths", "control_default", "observe_config", "self_modify", "topology", "prompts", "prompt_aliases", "shared_prompt_prefix", "record_contracts", "capabilities", "fractal"):
         if key not in cfg:
             raise RuntimeError(f"wiring missing required key: {key}")
-    model = _obj(cfg, "model")
+    _obj(cfg, "model")
     transport = _require(cfg, "model.transport", str)
     transport_cfg = _require(cfg, "model.transport_config", dict)
     if transport not in transport_cfg:
@@ -92,16 +99,86 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
         "topology.barriers",
         "fractal.max_recursion_depth",
         "fractal.child_duration_seconds",
+        "model.stable_prefix.source",
+        "model.stable_prefix.source.suffixes",
+        "model.stable_prefix.source.names",
+        "model.stable_prefix.source.skip_parts",
+        "model.stable_prefix.source.skip_prefixes",
+        "self_modify.evolvable",
+        "self_modify.evolvable.suffixes",
+        "self_modify.evolvable.names",
+        "self_modify.evolvable.skip_prefixes",
+        "self_modify.evolvable.activation",
+        "self_modify.evolvable.activation.immediate",
+        "self_modify.evolvable.activation.next_run",
     ):
         _require(cfg, path, object)
-    nodes = _require(cfg, "topology.nodes", list)
+    nodes = _require_list_str(cfg, "topology.nodes")
     edges = _require(cfg, "topology.edges", dict)
     prompts = _require(cfg, "prompts", dict)
+    aliases = _require(cfg, "prompt_aliases", dict)
+    _require(cfg, "shared_prompt_prefix", str)
+    validate_record_contracts(cfg)
+    _require(cfg, "capabilities.schema", str)
+    _require(cfg, "capabilities.power", str)
+    _require(cfg, "capabilities.helpers", dict)
+    _require_list_str(cfg, "capabilities.modules")
+    _require_list_str(cfg, "capabilities.state")
+    _require_list_str(cfg, "capabilities.signals")
+    _require_list_str(cfg, "model.stable_prefix.source.suffixes")
+    _require_list_str(cfg, "model.stable_prefix.source.names")
+    _require_list_str(cfg, "model.stable_prefix.source.skip_parts")
+    _require_list_str(cfg, "model.stable_prefix.source.skip_prefixes")
+    _require_list_str(cfg, "self_modify.evolvable.suffixes")
+    _require_list_str(cfg, "self_modify.evolvable.names")
+    _require_list_str(cfg, "self_modify.evolvable.skip_prefixes")
+    _require_list_str(cfg, "self_modify.evolvable.activation.immediate")
+    _require_list_str(cfg, "self_modify.evolvable.activation.next_run")
     if cfg["topology"]["cycle_start"] not in nodes:
         raise RuntimeError("wiring.topology.cycle_start must name a topology node")
-    missing = [node for node in nodes if node not in edges or node not in prompts]
+    for alias, target in aliases.items():
+        if not isinstance(alias, str) or not isinstance(target, str) or target not in prompts:
+            raise RuntimeError(f"wiring.prompt_aliases.{alias} must name an existing prompt")
+    missing = [node for node in nodes if node not in edges or prompt_name(cfg, node) not in prompts]
     if missing:
         raise RuntimeError(f"wiring missing edges/prompts for nodes: {missing}")
+
+
+
+def validate_record_contracts(cfg: dict[str, Any]) -> None:
+    contracts = _require(cfg, "record_contracts", dict)
+    for record_type, contract in contracts.items():
+        if not isinstance(record_type, str) or not record_type:
+            raise RuntimeError(f"wiring.record_contracts key must be non-empty string: {record_type!r}")
+        if not isinstance(contract, dict):
+            raise RuntimeError(f"wiring.record_contracts.{record_type} must be object")
+        required = contract.get("required")
+        enums = contract.get("enums")
+        if not isinstance(required, list) or not all(isinstance(key, str) and key for key in required):
+            raise RuntimeError(f"wiring.record_contracts.{record_type}.required must be list[str]")
+        if not isinstance(enums, dict):
+            raise RuntimeError(f"wiring.record_contracts.{record_type}.enums must be object")
+        for key, values in enums.items():
+            if not isinstance(key, str) or not key:
+                raise RuntimeError(f"wiring.record_contracts.{record_type}.enums key must be non-empty string")
+            if not isinstance(values, list) or not values:
+                raise RuntimeError(f"wiring.record_contracts.{record_type}.enums.{key} must be non-empty list")
+    for record_type in cfg.get("model", {}).get("organs", {}):
+        if record_type not in contracts:
+            raise RuntimeError(f"wiring.model.organs.{record_type} has no matching wiring.record_contracts entry")
+
+
+def prompt_name(cfg: dict[str, Any], key: str) -> str:
+    aliases = cfg["prompt_aliases"]
+    return aliases[key] if key in aliases else key
+
+
+def prompt(cfg: dict[str, Any], key: str) -> str:
+    name = prompt_name(cfg, key)
+    prompts = cfg["prompts"]
+    if name not in prompts:
+        raise RuntimeError(f"wiring.prompts missing prompt: {key}")
+    return str(cfg["shared_prompt_prefix"]) + str(prompts[name])
 
 
 def atomic_write_json(path: pathlib.Path, obj: Any) -> None:

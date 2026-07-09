@@ -3,7 +3,6 @@ import io
 import time
 
 import core_bus as bus
-import core_desktop as desktop
 import core_nodes as nodes
 from core_node_base import BaseNode
 
@@ -63,6 +62,7 @@ class ExecuteNode(BaseNode):
             effective = state["effective_goal"] + f"\n\n[{label}] The hour passed before I could act (late {late_by}s); I bring nothing to the gate."
             return bus.emit("done", {"last_action": {"code": code, "conclusion": conclusion, "not_executed": True}, "last_code": code, "last_result": {"result": None, "stdout": "", "stderr": "", "action_events": [], "duration_guard": {"deadline_at": float(deadline_at), "late_by_s": late_by}}, "last_error": f"duration deadline expired before executing body action: late_by_s={late_by}", "last_failure": failure, "effective_goal": effective}, record=record, evidence=payload)
 
+        import core_desktop as desktop
         ns = nodes.build_capability_runtime(ctx)
         ns["desktop"] = desktop
         stdout, stderr = io.StringIO(), io.StringIO()

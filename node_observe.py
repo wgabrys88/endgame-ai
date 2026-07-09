@@ -1,8 +1,8 @@
 import core_bus as bus
-import core_desktop as desktop
 
 
 def run(ctx):
+    import core_desktop as desktop
     config = ctx["wiring"]["observe_config"]
     obs = desktop.get_desktop(config).observe(config)
     artifact = obs.get("observation_artifact", {}) or {}

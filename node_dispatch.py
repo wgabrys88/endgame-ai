@@ -1,21 +1,19 @@
 import core_bus as bus
+import core_loader as loader
 from core_node_base import BaseNode
-
-FACULTIES = ("browser", "editor", "terminal")
 
 
 class DispatchNode(BaseNode):
-    """The faculty selector: chooses which hands to engage this turn and fans out.
-
-    A group of specialists is not all woken for every task. The dispatcher reads
-    the goal-narrative and the current step, selects a subset of faculties
-    (browser / editor / terminal), records how many it sent so the barrier knows
-    the assembly size, and fans out to those node_execute instances via a list
-    edge. The barrier gathers them back as one.
-    """
+    """The faculty selector: topology decides which execute instances exist."""
 
     prompt_key = "node_dispatch"
     expected_record_type = "dispatch"
+
+    def _targets(self, wiring):
+        return list(wiring["topology"]["edges"]["node_dispatch"]["dispatch"])
+
+    def _faculties(self, wiring):
+        return [loader.split_instance(target)[1] for target in self._targets(wiring)]
 
     def build_payload(self, ctx):
         state = ctx["state"]
@@ -23,21 +21,21 @@ class DispatchNode(BaseNode):
         return {
             "goal": state["effective_goal"],
             "step": {"description": step.get("description", state["effective_goal"]), "done_when": step.get("done_when", "")},
-            "faculties": list(FACULTIES),
+            "faculties": self._faculties(ctx["wiring"]),
             "state": bus.state_brief(state),
             "observation": bus.observation_brief(state),
         }
 
     def run(self, ctx):
-        state = ctx["state"]
+        state, wiring = ctx["state"], ctx["wiring"]
         payload = self.build_payload(ctx)
         record = self.think(ctx)
-        chosen = [f for f in record.data["faculties"] if f in FACULTIES]
+        faculty_to_target = dict(zip(self._faculties(wiring), self._targets(wiring)))
+        chosen = [faculty_to_target[faculty] for faculty in record.data["faculties"] if faculty in faculty_to_target]
         if not chosen:
-            raise RuntimeError(f"dispatch selected no valid faculties from {record.data.get('faculties')!r}; known: {FACULTIES}")
-        targets = [f"node_execute:{f}" for f in chosen]
-        effective = state["effective_goal"] + f"\n\n[DISPATCH] I wake the faculties {chosen} to labour; the rest pass through idle. All {len(FACULTIES)} branches return to the gate as one."
-        return bus.emit("dispatch", {"_dispatch_targets": targets, "effective_goal": effective}, record=record, evidence=payload)
+            raise RuntimeError(f"dispatch selected no valid faculties from {record.data['faculties']!r}")
+        effective = state["effective_goal"] + f"\n\n[DISPATCH] I wake {record.data['faculties']} to labour; all {len(self._targets(wiring))} branches return to the gate."
+        return bus.emit("dispatch", {"_dispatch_targets": chosen, "effective_goal": effective}, record=record, evidence=payload)
 
 
 def run(ctx):

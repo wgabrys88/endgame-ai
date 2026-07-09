@@ -34,3 +34,5 @@
 !node_verify.py
 !transport_file_proxy.py
 !transport_xai.py
+!tests/
+!tests/**

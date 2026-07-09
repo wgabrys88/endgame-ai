@@ -28,7 +28,8 @@ def run(
         stop_check.register_pid("organism")
         registered_here = True
     w = wiring.load_wiring(wiring_path)
-    current = str(start_node or "node_observe")
+    topo = w["topology"]
+    current = str(start_node or topo["cycle_start"])
     deadline_at = _deadline_at
     st: dict[str, Any] = {"_phase": "starting", "tick": 0, "current_node": current}
     try:
@@ -42,16 +43,15 @@ def run(
         if deadline_at is None and duration_seconds is not None:
             deadline_at = time.time() + float(duration_seconds)
 
-        topo = w.get("topology", {})
         sp = wiring.state_path(w)
         resumed = False
         if not reset and sp.exists():
             st = wiring.load_json(sp)
             goal = goal or str(st.get("goal") or "")
-            current = str(start_node or st.get("next_node") or topo.get("cycle_start") or "node_planner")
+            current = str(start_node or st.get("next_node") or topo["cycle_start"])
             resumed = True
         else:
-            current = str(start_node or topo.get("cycle_start") or "node_planner")
+            current = str(start_node or topo["cycle_start"])
             st = {
                 "_phase": "starting",
                 "goal": goal or "",
@@ -59,10 +59,10 @@ def run(
                 "current_node": current,
                 "last_error": None,
                 "last_action": None,
-                "wiring_transport": w.get("model", {}).get("transport"),
+                "wiring_transport": w["model"]["transport"],
                 "start_node": current,
             }
-        if current not in set(topo.get("nodes", [])):
+        if current not in set(topo["nodes"]):
             raise RuntimeError(f"start node '{current}' is not in topology.nodes")
         st["_phase"] = "resuming" if resumed else st.get("_phase", "starting")
         st["goal"] = goal or str(st.get("goal") or "")
@@ -73,7 +73,7 @@ def run(
         st["current_node"] = current
         st["duration_seconds"] = duration_seconds
         st["deadline_at"] = deadline_at
-        st.setdefault("wiring_transport", w.get("model", {}).get("transport"))
+        st.setdefault("wiring_transport", w["model"]["transport"])
         frontier: list[str] = [str(n) for n in st.get("frontier") or [current]]
         wiring.write_state(w, st)
         state.runtime_event(

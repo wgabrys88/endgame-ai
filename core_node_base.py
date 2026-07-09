@@ -4,6 +4,7 @@ from typing import Any
 import core_bus as bus
 import core_brain as brain
 import core_loader as loader
+import core_wiring as wiring
 
 JsonDict = dict[str, Any]
 
@@ -34,7 +35,7 @@ class BaseNode(ABC):
 
     def think(self, ctx: JsonDict) -> bus.Record:
         w = ctx["wiring"]
-        prompt = w.get("prompts", {}).get(self.prompt_key, "")
+        prompt = wiring.prompt(w, self.prompt_key)
         think_kwargs: JsonDict = {"expected_record_type": self.expected_record_type}
         if self.request_config is not None:
             think_kwargs["request_config"] = self.request_config

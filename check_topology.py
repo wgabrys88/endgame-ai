@@ -8,7 +8,10 @@ Exit 0 = coherent, 1 = incoherent (prints reasons).
 from __future__ import annotations
 
 import json
+import re
 import sys
+
+import core_wiring as wiring
 
 SENTINELS = {"halt", "wait"}
 
@@ -21,13 +24,35 @@ def _targets(value) -> list[str]:
     return []
 
 
+def _contract_problems(w: dict) -> list[str]:
+    problems: list[str] = []
+    try:
+        wiring.validate_record_contracts(w)
+    except Exception as exc:
+        problems.append(f"record_contracts invalid: {type(exc).__name__}: {exc}")
+        return problems
+    contracts = w["record_contracts"]
+    for alias, target in w.get("prompt_aliases", {}).items():
+        if target not in w.get("prompts", {}):
+            problems.append(f"prompt_aliases.{alias} names missing prompt {target!r}")
+    for prompt_key, text in w.get("prompts", {}).items():
+        for record_type in re.findall(r"record_type '([^']+)'", str(text)):
+            if record_type not in contracts:
+                problems.append(f"prompt '{prompt_key}' names record_type '{record_type}' with no record_contracts entry")
+    for record_type in w.get("model", {}).get("organs", {}):
+        if record_type not in contracts:
+            problems.append(f"model.organs.{record_type} has no record_contracts entry")
+    return problems
+
+
 def coherence_problems(w: dict) -> list[str]:
-    """Return a list of topology-incoherence reasons for wiring `w`. Empty = coherent."""
+    """Return a list of topology/contract incoherence reasons for wiring `w`. Empty = coherent."""
     topo = w["topology"]
     edges = topo["edges"]
     nodes = set(topo["nodes"])
     barriers = topo["barriers"]
     problems: list[str] = []
+    problems.extend(_contract_problems(w))
 
     if topo["cycle_start"] not in nodes:
         problems.append(f"cycle_start '{topo['cycle_start']}' not in topology.nodes")
@@ -48,6 +73,8 @@ def coherence_problems(w: dict) -> list[str]:
     for n in nodes:
         if n not in edges:
             problems.append(f"node '{n}' has no edges")
+        if wiring.prompt_name(w, n) not in w.get("prompts", {}):
+            problems.append(f"node '{n}' has no prompt or prompt_alias")
 
     # each barrier must name a wired node with positive integer arity and a join edge
     for bnode, arity in barriers.items():
@@ -57,6 +84,10 @@ def coherence_problems(w: dict) -> list[str]:
             problems.append(f"barrier '{bnode}' arity must be a positive int, got {arity!r}")
         if bnode in edges and "join" not in edges[bnode]:
             problems.append(f"barrier '{bnode}' must declare a 'join' edge")
+
+    dispatch_targets = _targets(edges.get("node_dispatch", {}).get("dispatch"))
+    if dispatch_targets and barriers.get("node_barrier") != len(dispatch_targets):
+        problems.append(f"node_barrier arity {barriers.get('node_barrier')!r} must equal node_dispatch.dispatch fan-out {len(dispatch_targets)}")
 
     # reachability from cycle_start across both edge forms
     seen: set[str] = set()
@@ -76,6 +107,11 @@ def coherence_problems(w: dict) -> list[str]:
 
 def check(path: str = "wiring.json") -> int:
     w = json.load(open(path, encoding="utf-8"))
+    try:
+        wiring.validate_wiring(w)
+    except Exception as exc:
+        print(f"WIRING INVALID: {type(exc).__name__}: {exc}")
+        return 1
     problems = coherence_problems(w)
     if problems:
         print("TOPOLOGY INCOHERENT:")
@@ -83,7 +119,7 @@ def check(path: str = "wiring.json") -> int:
             print(f"  - {p}")
         return 1
     topo = w["topology"]
-    print(f"topology coherent: {len(topo['nodes'])} nodes, all reachable from '{topo['cycle_start']}', no dangling targets")
+    print(f"topology coherent: {len(topo['nodes'])} nodes, all reachable from '{topo['cycle_start']}', no dangling targets; contracts coherent: {len(w['record_contracts'])} record types")
     return 0
 
 

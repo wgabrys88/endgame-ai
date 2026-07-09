@@ -5,38 +5,31 @@ import os
 import pathlib
 import subprocess
 import sys
+import threading
 import time
 import types
 from typing import Any
 
 import core_brain as brain
 import core_bus as bus
-import core_desktop as desktop
 import core_wiring as wiring
 import check_topology
 
 ROOT = pathlib.Path(__file__).parent.resolve()
-EVOLVABLE_SUFFIXES = {".py", ".json", ".md"}
-EVOLVABLE_NAMES = {".gitattributes", ".gitignore", "LICENSE"}
-CORE_FILES = {"core_brain.py", "core_desktop.py", "core_nodes.py", "core_organism.py", "core_stop_check.py"}
 
 
 def _patch_data(parsed: dict[str, Any]) -> dict[str, Any]:
-    data = (parsed or {}).get("data", parsed or {})
+    data = parsed["data"]
     if not isinstance(data, dict):
         raise ValueError("self_modify patch data must be an object")
     return data
 
 
 def _thread_id() -> int:
-    try:
-        import threading
-        return threading.get_ident()
-    except Exception:
-        return 0
+    return threading.get_ident()
 
 
-def _evolution_target(raw_path: str, *, deleting: bool = False) -> tuple[pathlib.Path, str]:
+def _evolution_target(raw_path: str) -> tuple[pathlib.Path, str]:
     rel = str(raw_path).replace("\\", "/").strip().lstrip("/")
     if not rel:
         raise ValueError("self_modify path is empty")
@@ -70,36 +63,43 @@ def _apply_wiring_ops(w: dict[str, Any], patches: list[dict[str, Any]]) -> dict[
     for patch in patches:
         if not isinstance(patch, dict):
             raise ValueError(f"wiring_patch must be object: {patch!r}")
-        op = patch.get("op", "set")
-        dotted = str(patch.get("path") or "")
+        op = patch["op"]
+        dotted = str(patch["path"])
         if not dotted:
             raise ValueError("wiring_patch missing path")
         parts = dotted.split(".")
         cur = patched
         for part in parts[:-1]:
-            if not isinstance(cur.get(part), dict):
-                cur[part] = {}
             cur = cur[part]
+            if not isinstance(cur, dict):
+                raise ValueError(f"wiring_patch parent is not object: {dotted}")
         if op == "set":
-            cur[parts[-1]] = patch.get("value")
+            cur[parts[-1]] = patch["value"]
         elif op == "delete":
-            cur.pop(parts[-1], None)
+            del cur[parts[-1]]
         else:
             raise ValueError(f"unknown wiring_patch op: {op}")
     json.dumps(patched, ensure_ascii=False, default=str)
     return patched
 
 
-def _activation_bucket(rel: str) -> str:
-    immediate = {
-        "wiring.json", "core_observation.py",
-        "node_planner.py", "node_scheduler.py", "node_observe.py", "node_execute.py",
-        "node_frame_action.py", "node_verify.py", "node_reflect.py", "node_self_modify.py",
-        "node_satisfied.py", "node_error.py", "transport_file_proxy.py", "transport_xai.py",
-    }
-    if rel in immediate:
+def _activation_bucket(rel: str, w: dict[str, Any]) -> str:
+    activation = w["self_modify"]["evolvable"]["activation"]
+    if rel in set(activation["immediate"]):
         return "immediate"
-    return "next_run" if rel in CORE_FILES else "supporting"
+    if rel in set(activation["next_run"]):
+        return "next_run"
+    return "supporting"
+
+
+def _evolvable_source(w: dict[str, Any]) -> dict[str, Any]:
+    return w["self_modify"]["evolvable"]
+
+
+def _evolvable_rel(w: dict[str, Any], rel: str) -> bool:
+    cfg = _evolvable_source(w)
+    name = pathlib.PurePosixPath(rel.replace("\\", "/")).name
+    return name in set(cfg["names"]) or pathlib.PurePosixPath(rel).suffix in set(cfg["suffixes"])
 
 
 def _git(args: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -165,7 +165,7 @@ def hot_swap_to_known_good(w: dict[str, Any], *, paths: list[str] | None = None)
     targets = [str(p).replace("\\", "/") for p in paths if str(p).strip()] if paths else sorted(
         line.split("\t", 1)[-1].strip()
         for line in _git(["ls-files"]).stdout.splitlines()
-        if line.strip() and (line.endswith(tuple(EVOLVABLE_SUFFIXES)) or line.strip() in EVOLVABLE_NAMES)
+        if line.strip() and _evolvable_rel(w, line.strip())
     )
     checkout_targets, missing = [], []
     for target in targets:
@@ -247,21 +247,23 @@ def _restore_snapshots(snapshots: dict[pathlib.Path, bytes | None]) -> None:
             os.replace(tmp, path)
 
 
+
+def _file_write(item: dict[str, Any]) -> tuple[pathlib.Path, str, str]:
+    path, rel = _evolution_target(str(item["path"]))
+    return path, rel, _validate_content(path, rel, item["content"])
+
 def apply_evolution_patch(w: dict[str, Any], parsed: dict[str, Any]) -> tuple[str, Any]:
     data = _patch_data(parsed)
-    read_files = {str(path).replace("\\", "/").strip().lstrip("/") for path in list(data.get("read_files") or []) if str(path).strip()}
-    wiring_patches = list(data.get("wiring_patches") or [])
+    read_files = {str(path).replace("\\", "/").strip().lstrip("/") for path in data["read_files"]}
+    wiring_patches = list(data["wiring_patches"])
     patched_wiring = _apply_wiring_ops(w, wiring_patches)
-    if wiring_patches and patched_wiring.get("topology") != w.get("topology"):
+    if wiring_patches:
+        wiring.validate_wiring(patched_wiring)
         problems = check_topology.coherence_problems(patched_wiring)
         if problems:
-            raise ValueError(f"topology_patch would make the graph incoherent: {problems}")
-    writes = [
-        (*_evolution_target(str(item.get("path") or "")), _validate_content(_evolution_target(str(item.get("path") or ""))[0], _evolution_target(str(item.get("path") or ""))[1], item.get("content")))
-        for item in list(data.get("file_writes") or [])
-        if isinstance(item, dict)
-    ]
-    deletes = [_evolution_target(str(path), deleting=True) for path in list(data.get("file_deletes") or [])]
+            raise ValueError(f"wiring_patch would make the organism incoherent: {problems}")
+    writes = [_file_write(item) for item in data["file_writes"]]
+    deletes = [_evolution_target(str(path)) for path in data["file_deletes"]]
     missing_reads = [rel for path, rel, _ in writes if path.exists() and rel not in read_files]
     missing_reads += [rel for path, rel in deletes if path.exists() and rel not in read_files]
     if wiring_patches and "wiring.json" not in read_files:
@@ -275,7 +277,7 @@ def apply_evolution_patch(w: dict[str, Any], parsed: dict[str, Any]) -> tuple[st
         for path, _, content in writes:
             _atomic_write_text(path, content)
         for path, _ in deletes:
-            path.unlink(missing_ok=True)
+            path.unlink()
         if wiring_patches:
             w.clear()
             w.update(patched_wiring)
@@ -285,7 +287,7 @@ def apply_evolution_patch(w: dict[str, Any], parsed: dict[str, Any]) -> tuple[st
                 compile(path.read_text(encoding="utf-8"), rel, "exec")
             elif path.suffix == ".json":
                 json.loads(path.read_text(encoding="utf-8"))
-        command_results = _run_evolution_commands(list(data.get("commands") or []), w)
+        command_results = _run_evolution_commands(list(data["commands"]), w)
     except Exception:
         if rollback:
             _restore_snapshots(snapshots)
@@ -296,7 +298,7 @@ def apply_evolution_patch(w: dict[str, Any], parsed: dict[str, Any]) -> tuple[st
     changed = [rel for _, rel, _ in writes] + [rel for _, rel in deletes]
     activation = {"immediate": [], "next_run": [], "supporting": []}
     for rel in changed + (["wiring.json"] if wiring_patches else []):
-        activation[_activation_bucket(rel)].append(rel)
+        activation[_activation_bucket(rel, w)].append(rel)
     return "set", {"wiring_patches": len(wiring_patches), "file_writes": len(writes), "file_deletes": len(deletes), "commands": command_results, "rollback_on_failure": rollback, "changed_files": changed, "activation": activation}
 
 
@@ -344,26 +346,15 @@ def _node_center(node: dict[str, Any]) -> tuple[int, int]:
 
 def capability_manifest(ctx: dict[str, Any] | None = None) -> dict[str, Any]:
     st = (ctx or {}).get("state", {}) if isinstance(ctx, dict) else {}
-    return {
-        "schema": "endgame-ai.execute-capabilities.v1",
-        "power": "GUI, Python, process, file, and module access run locally in exec(code, ns).",
-        "helpers": {
-            "click": "click(x,y,hwnd=0)", "click_node": "click_node(node_id)", "read_node": "read_node(node_id)",
-            "type_text": "type_text(text)", "press_key": "press_key(key)", "hotkey": "hotkey(*keys)",
-            "scroll": "scroll(x,y,amount,hwnd=0)", "scroll_node": "scroll_node(node_id,amount=-3)",
-            "action_nodes": "action_nodes(action=None)", "node_by_id": "node_by_id(node_id)",
-            "open_url": "open_url(browser,url)", "observe_area": "observe_area(left,top,right,bottom,max_llm_nodes=None,max_depth=None,step_px=None)",
-            "observe_with_config": "observe_with_config(hover_cache_config)",
-        },
-        "modules": ["subprocess", "os", "sys", "json", "re", "time", "pathlib", "ctypes", "math", "random", "types"],
-        "state": ["observation", "desktop_tree_text", "action_index", "observation_artifact"],
-        "signals": ["verify", "frame", "reflect"],
-        "deadline_at": st.get("deadline_at"),
-        "repo_root": str(ROOT),
-    }
+    w = (ctx or {}).get("wiring", {}) if isinstance(ctx, dict) else {}
+    manifest = copy.deepcopy(w["capabilities"])
+    manifest["deadline_at"] = st.get("deadline_at")
+    manifest["repo_root"] = str(ROOT)
+    return manifest
 
 
 def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
+    import core_desktop as desktop
     d = desktop.get_desktop()
     state = ctx.get("state", {})
     w = ctx.get("wiring", {})
