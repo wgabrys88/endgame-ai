@@ -55,7 +55,7 @@ def _atomic_write_text(path: pathlib.Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}.{_thread_id()}")
     tmp.write_text(content, encoding="utf-8", newline="\n")
-    os.replace(tmp, path)
+    wiring.replace_with_retry(tmp, path)
 
 
 def _apply_wiring_ops(w: dict[str, Any], patches: list[dict[str, Any]]) -> dict[str, Any]:
@@ -244,7 +244,7 @@ def _restore_snapshots(snapshots: dict[pathlib.Path, bytes | None]) -> None:
             path.parent.mkdir(parents=True, exist_ok=True)
             tmp = path.with_name(f"{path.name}.rollback.{os.getpid()}.{_thread_id()}")
             tmp.write_bytes(content)
-            os.replace(tmp, path)
+            wiring.replace_with_retry(tmp, path)
 
 
 

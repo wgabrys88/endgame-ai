@@ -181,6 +181,27 @@ def prompt(cfg: dict[str, Any], key: str) -> str:
     return str(cfg["shared_prompt_prefix"]) + str(prompts[name])
 
 
+def replace_with_retry(tmp: pathlib.Path, path: pathlib.Path, *, attempts: int = 6, base_delay: float = 0.05) -> None:
+    """os.replace, but patient with a momentarily locked destination.
+
+    On Windows os.replace needs exclusive access to `path` for an instant; a
+    held handle (an editor, indexer, or a human's Notepad) makes it raise
+    PermissionError (WinError 5). Such locks are transient, so retry with
+    backoff before giving up. The final attempt is not caught, so a truly
+    stuck destination still fails loud rather than silently losing the write.
+    """
+    import os
+    import time
+    for i in range(attempts):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if i == attempts - 1:
+                raise
+            time.sleep(base_delay * (2 ** i))
+
+
 def atomic_write_json(path: pathlib.Path, obj: Any) -> None:
     import os
     import threading
@@ -188,7 +209,7 @@ def atomic_write_json(path: pathlib.Path, obj: Any) -> None:
     tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}.{threading.get_ident()}")
     import json
     tmp.write_text(json.dumps(obj, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
-    os.replace(tmp, path)
+    replace_with_retry(tmp, path)
 
 
 def get_transport_config(wiring: dict[str, Any]) -> tuple[str, dict[str, Any]]:
