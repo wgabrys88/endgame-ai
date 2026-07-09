@@ -20,7 +20,7 @@ class BaseNode(ABC):
         return {
             "goal": ctx.get("goal", ""),
             "state": bus.state_brief(st),
-            "fresh_observation": st.get("fresh_observation") or bus.observation_brief(st),
+            "observation": bus.observation_brief(st),
         }
 
     def evidence(self, ctx: JsonDict) -> JsonDict:

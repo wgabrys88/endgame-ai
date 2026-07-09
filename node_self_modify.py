@@ -41,7 +41,7 @@ def _evidence_file(path: pathlib.Path) -> dict[str, Any]:
 
 
 def _runtime_evidence(wiring: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
-    return {"state_path": _evidence_file(wiring_mod.root_path(wiring["paths"]["state"])), "event_log_path": _evidence_file(wiring_mod.root_path(wiring["paths"]["event_log"])), "control_path": _evidence_file(wiring_mod.root_path(wiring["paths"]["control"])), "current_state_keys": sorted(state.keys()), "has_fresh_observation": all(key in state for key in ("desktop_tree_text", "fresh_scan"))}
+    return {"state_path": _evidence_file(wiring_mod.root_path(wiring["paths"]["state"])), "event_log_path": _evidence_file(wiring_mod.root_path(wiring["paths"]["event_log"])), "control_path": _evidence_file(wiring_mod.root_path(wiring["paths"]["control"])), "current_state_keys": sorted(state.keys()), "has_observation": "desktop_tree_text" in state}
 
 
 def run(ctx):
@@ -62,16 +62,14 @@ def run(ctx):
         "workspace_manifest": _capture_workspace_manifest(),
         "organism_contract": {"capabilities": nodes.capability_manifest(ctx), "topology": wiring_mod.topology_summary(wiring), "self_modify_route": "reflect.escalate/topology_patch"},
     }
-    if state.get("fresh_observation"):
-        payload["fresh_observation"] = state["fresh_observation"]
     record = brain.think(wiring["prompts"]["node_self_modify"], payload, wiring, expected_record_type="git_evolution_patch", request_config={"web_search": wiring["self_modify"]["web_search"]})
     if record.get("record_type") != "git_evolution_patch":
         raise RuntimeError(f"self_modify expected record_type=git_evolution_patch, got {record.get('record_type')}")
     data = record.get("data", {})
-    obs = brain.last_fresh_observation()
+    obs = brain.last_observation()
     effective = f"{goal}\n\n[SELF_MODIFY] Proposed evolution: {data.get('summary', '')}. Patches: {len(data.get('wiring_patches', []) or [])}, writes: {len(data.get('file_writes', []) or [])}, deletes: {len(data.get('file_deletes', []) or [])}."
     patch = {
-        "observed_at": obs.get("observed_at"), "fresh_scan": obs.get("fresh_scan"), "desktop_tree_text": obs.get("desktop_tree_text", ""),
+        "observed_at": obs.get("observed_at"), "desktop_tree_text": obs.get("desktop_tree_text", ""),
         "git_evolution_patch": {key: data.get(key, [] if key.endswith("s") else "") for key in ("summary", "rationale", "read_files", "wiring_patches", "file_writes", "file_deletes", "commands", "expected_validation")},
         "self_modify": {"status": "proposed", "git_context": git_context, "patches": len(data.get("wiring_patches", []) or []), "writes": len(data.get("file_writes", []) or []), "deletes": len(data.get("file_deletes", []) or []), "commands": len(data.get("commands", []) or [])},
         "effective_goal": effective,

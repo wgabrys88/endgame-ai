@@ -19,7 +19,7 @@ _EVENT_LOCK = threading.Lock()
 _CALLS_MADE = 0
 _STABLE_PREFIX_CACHE: "StablePrefix | None" = None
 _STABLE_PREFIX_LOCK = threading.Lock()
-_LAST_FRESH_OBSERVATION: dict[str, Any] | None = None
+_LAST_OBSERVATION: dict[str, Any] | None = None
 
 STATIC_PREFIX_SUFFIXES = {".py", ".json", ".md"}
 STATIC_PREFIX_NAMES = {".gitattributes", ".gitignore", "LICENSE"}
@@ -132,33 +132,31 @@ def _organ_tuning(w: dict[str, Any], record_type: str | None) -> dict[str, Any]:
 def _normalize_observation(obj: Any) -> dict[str, Any] | None:
     if not isinstance(obj, dict) or not obj.get("desktop_tree_text"):
         return None
-    return {"desktop_tree_text": obj.get("desktop_tree_text", ""), "observed_at": obj.get("observed_at"), "fresh_scan": obj.get("fresh_scan", True)}
+    return {"desktop_tree_text": obj.get("desktop_tree_text", ""), "observed_at": obj.get("observed_at")}
 
 
-def _fresh_observation_payload(w: dict[str, Any], payload: dict[str, Any] | None = None) -> dict[str, Any]:
-    global _LAST_FRESH_OBSERVATION
+def _observation_payload(w: dict[str, Any], payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    global _LAST_OBSERVATION
     if payload:
-        candidates = [payload.get("fresh_observation"), payload.get("observation")]
+        candidates = [payload.get("observation")]
         evidence = payload.get("evidence")
         if isinstance(evidence, dict):
-            candidates.extend([evidence.get("fresh_observation"), evidence.get("observation")])
+            candidates.append(evidence.get("observation"))
         for candidate in candidates:
             normalized = _normalize_observation(candidate)
             if normalized is not None:
-                _LAST_FRESH_OBSERVATION = normalized
+                _LAST_OBSERVATION = normalized
                 return normalized
-    raise RuntimeError("fresh_observation missing: observe node must run before any brain call")
+    raise RuntimeError("observation missing: observe node must run before any brain call")
 
 
-def last_fresh_observation() -> dict[str, Any]:
-    return dict(_LAST_FRESH_OBSERVATION or {})
+def last_observation() -> dict[str, Any]:
+    return dict(_LAST_OBSERVATION or {})
 
 
-def _with_fresh_observation(payload: dict[str, Any], w: dict[str, Any]) -> dict[str, Any]:
+def _with_observation(payload: dict[str, Any], w: dict[str, Any]) -> dict[str, Any]:
     enriched = dict(payload)
-    enriched["fresh_observation"] = _fresh_observation_payload(w, enriched)
-    if isinstance(enriched.get("observation"), dict) and enriched["observation"].get("desktop_tree_text"):
-        enriched.pop("observation", None)
+    enriched["observation"] = _observation_payload(w, enriched)
     return enriched
 
 
@@ -307,7 +305,7 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
     if not conv_id:
         conv_id = f"endgame-ai-{int(time.time())}-{hashlib.md5(str(w).encode()).hexdigest()[:8]}"
         w["_conv_id"] = conv_id
-    payload = _with_fresh_observation(payload, w)
+    payload = _with_observation(payload, w)
     goal = str(payload.pop("goal") or "") if "goal" in payload else ""
     user_text = json.dumps(payload, ensure_ascii=False, default=str)
     response_format = _record_response_format(expected_record_type) if expected_record_type and _structured_outputs_enabled(cfg) else None

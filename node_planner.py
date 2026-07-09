@@ -12,7 +12,7 @@ class PlannerNode(BaseNode):
         prior_intent = prior.get("intent", []) if isinstance(prior, dict) else []
         root_intent = state.get("root_plan_intent") or prior_intent
         completed = state.get("completed_steps") if isinstance(state.get("completed_steps"), list) else []
-        return {"goal": ctx.get("goal", ""), "state": bus.state_brief(state), "fresh_observation": state.get("fresh_observation") or bus.observation_brief(state), "previous_plan": prior, "root_plan_intent": root_intent, "completed_steps": completed, "remaining_root_obligation_count": max(0, len(root_intent if isinstance(root_intent, list) else []) - len(completed)), "last_reflection": state.get("last_reflection", {}), "replan_contract": "Emit the complete remaining plan for the original goal."}
+        return {"goal": ctx.get("goal", ""), "state": bus.state_brief(state), "observation": bus.observation_brief(state), "previous_plan": prior, "root_plan_intent": root_intent, "completed_steps": completed, "remaining_root_obligation_count": max(0, len(root_intent if isinstance(root_intent, list) else []) - len(completed)), "last_reflection": state.get("last_reflection", {}), "replan_contract": "Emit the complete remaining plan for the original goal."}
 
     def signal_from_data(self, data, ctx):
         self._signal = data.get("next_signal")

@@ -153,20 +153,6 @@ def state_brief(state: JsonDict) -> JsonDict:
         "root_goal": state.get("goal", ""),
         "effective_goal": state.get("effective_goal", state.get("goal", "")),
     }
-    # Include fresh observation data for next node
-    if "fresh_observation" in state:
-        brief["fresh_observation"] = state["fresh_observation"]
-    elif "observation_artifact" in state:
-        brief["fresh_observation"] = {
-            "desktop_tree_text": state.get("desktop_tree_text", ""),
-            "observed_at": state.get("observed_at"),
-            "fresh_scan": state.get("fresh_scan", False),
-            "scan_config": (state.get("observation_artifact") or {}).get("scan_config", {}),
-            "scan_stats": (state.get("observation_artifact") or {}).get("scan_stats", {}),
-            "rendered_node_count": state.get("rendered_node_count"),
-            "max_llm_nodes": state.get("max_llm_nodes"),
-            "llm_node_limit_hit": state.get("llm_node_limit_hit"),
-        }
     return brief
 
 
@@ -176,7 +162,6 @@ def observation_brief(state: JsonDict) -> JsonDict:
     return {
         "desktop_tree_text": state.get("desktop_tree_text", ""),
         "observed_at": state.get("observed_at"),
-        "fresh_scan": state.get("fresh_scan", False),
         "scan_config": artifact.get("scan_config", {}) if isinstance(artifact, dict) else {},
         "scan_stats": artifact.get("scan_stats", {}) if isinstance(artifact, dict) else {},
         "rendered_node_count": state.get("rendered_node_count") or (tree or {}).get("rendered_node_count"),
