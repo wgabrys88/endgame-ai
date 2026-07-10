@@ -1,7 +1,6 @@
 import io
 import copy
 import ctypes
-import hashlib
 import json
 import os
 import pathlib
@@ -16,6 +15,8 @@ from typing import Any
 import core_brain as brain
 import core_bus as bus
 import core_wiring as wiring
+import check_topology
+
 ROOT = pathlib.Path(__file__).parent.resolve()
 
 
@@ -333,7 +334,7 @@ def commit_self_evolution(
     w: dict[str, Any],
     applied: dict[str, Any],
     patch_data: dict[str, Any],
-    *, 
+    *,
     advance_known_good: bool = True,
 ) -> dict[str, Any]:
     changed_files = list(applied.get("changed_files") or [])
@@ -586,81 +587,11 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
             "response_sha256": __import__("hashlib").sha256(response.encode("utf-8")).hexdigest(),
         })
 
-    # Direct web research helpers for terminal faculty (recorded actions)
-    try:
-        import tools as _tools  # type: ignore
-    except Exception:
-        _tools = None
-
-    def web_search(query: str, num_results: int = 10) -> dict[str, Any]:
-        """Perform a web search and record the results as a capability action."""
-        _assert_duration_open("web_search")
-        q = str(query).strip()
-        if not q:
-            raise RuntimeError("web_search requires a non-empty query")
-        n = max(1, min(30, int(num_results)))
-        if _tools is not None and hasattr(_tools, "web_search"):
-            results = _tools.web_search(q, num_results=n)
-        else:
-            results = []
-        return _record_action({
-            "ok": True,
-            "action": "web_search",
-            "query": q,
-            "num_results": n,
-            "results": results,
-        })
-
-    def open_page(url: str, start_line: int | None = None) -> dict[str, Any]:
-        """Fetch page content and record it as a capability action."""
-        _assert_duration_open("open_page")
-        u = str(url).strip()
-        if not u:
-            raise RuntimeError("open_page requires a non-empty url")
-        if _tools is not None and hasattr(_tools, "open_page"):
-            content = _tools.open_page(u, start_line=start_line)
-        else:
-            content = ""
-        return _record_action({
-            "ok": True,
-            "action": "open_page",
-            "url": u,
-            "start_line": start_line,
-            "content": content,
-        })
-
-    # Robust full-file read helper to eliminate truncation defects
-    def read_file(path: str, max_bytes: int | None = None) -> dict[str, Any]:
-        """Read entire file content with explicit size handling and return recorded action. Guarantees no truncation markers when max_bytes is None or sufficient."""
-        _assert_duration_open("read_file")
-        p = pathlib.Path(path)
-        if not p.exists() or not p.is_file():
-            raise RuntimeError(f"read_file target does not exist or is not a file: {path}")
-        size = p.stat().st_size
-        if max_bytes is not None and size > max_bytes:
-            raise RuntimeError(f"read_file target exceeds max_bytes limit: {size} > {max_bytes}")
-        try:
-            content = p.read_text(encoding="utf-8", errors="replace")
-        except Exception as exc:
-            raise RuntimeError(f"read_file failed: {type(exc).__name__}: {exc}") from exc
-        import hashlib
-        return _record_action({
-            "ok": True,
-            "action": "read_file",
-            "path": str(p.resolve()),
-            "size": size,
-            "content": content,
-            "content_chars": len(content),
-            "content_sha256": hashlib.sha256(content.encode("utf-8", errors="replace")).hexdigest(),
-        })
-
-    # Ensure tools helpers are always available even if import fails
-    if _tools is None:
-        try:
-            import tools as _tools_fallback
-            _tools = _tools_fallback
-        except Exception:
-            _tools = None
+    # NEW: bind the three declared terminal helpers
+    import tools as _tools
+    web_search = _guarded("web_search", lambda q, num_results=10: _tools.web_search(str(q), int(num_results)))
+    open_page = _guarded("open_page", lambda u, start_line=None: _tools.open_page(str(u), int(start_line) if start_line is not None else None))
+    read_file = _guarded("read_file", lambda p, max_bytes=None: _tools.read_file(str(p), int(max_bytes) if max_bytes is not None else None))
 
     last = {"error": state.get("last_error"), "result": state.get("last_result", ""), "action": state.get("last_action", {}), "verification": state.get("last_verification", {}), "reflection": state.get("last_reflection", {})}
     return {
