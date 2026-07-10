@@ -187,7 +187,6 @@
         "next_run": [
           "core_brain.py",
           "core_desktop.py",
-          "core_nodes.py",
           "core_organism.py",
           "core_stop_check.py"
         ]
