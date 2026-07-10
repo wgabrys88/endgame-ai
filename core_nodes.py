@@ -587,30 +587,6 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
             "response_sha256": __import__("hashlib").sha256(response.encode("utf-8")).hexdigest(),
         })
 
-    def read_repo_page() -> dict[str, Any]:
-        """Extract GitHub repo information directly from the current desktop_tree_text observation."""
-        _assert_duration_open("read_repo_page")
-        tree_text = state.get("desktop_tree_text", "")
-        if not tree_text or "github.com" not in tree_text.lower():
-            raise RuntimeError("read_repo_page requires a rendered GitHub repository page in the current observation")
-        # Simple extraction of key elements from the rendered tree
-        lines = tree_text.split("\n")
-        repo_url = ""
-        readme_content = []
-        for line in lines:
-            if "github.com/wgabrys88/endgame-ai" in line:
-                repo_url = "https://github.com/wgabrys88/endgame-ai"
-            if "README.md" in line or "OpenClaw" in line or "LM Studio" in line or "install" in line.lower() or "clone" in line.lower():
-                readme_content.append(line.strip())
-        return _record_action({
-            "ok": True,
-            "action": "read_repo_page",
-            "repo_url": repo_url or "https://github.com/wgabrys88/endgame-ai",
-            "page_title": "wgabrys88/endgame-ai at final-branch-for-today",
-            "readme_snippets": readme_content[:20],
-            "tree_text_excerpt": tree_text[:2000],
-        })
-
     last = {"error": state.get("last_error"), "result": state.get("last_result", ""), "action": state.get("last_action", {}), "verification": state.get("last_verification", {}), "reflection": state.get("last_reflection", {})}
     return {
         "action_nodes": action_nodes, "node_by_id": node_by_id, "click": click, "click_node": click_node, "read_node": read_node, "replace_node": replace_node,
@@ -627,5 +603,4 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "observed_at": state.get("observed_at"),
         "action_events": action_events, "_action_events": action_events,
         "consult_model": consult_model,
-        "read_repo_page": read_repo_page,
     }

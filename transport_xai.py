@@ -1,5 +1,6 @@
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 from typing import Any
@@ -43,25 +44,39 @@ def call(messages, cfg):
         elif web.get("excluded_domains"):
             tool["filters"] = {"excluded_domains": list(web["excluded_domains"])}
         payload["tools"] = [tool]
-    req = urllib.request.Request(str(cfg["url"]), data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}, method="POST")
-    try:
-        with urllib.request.urlopen(req, timeout=float(cfg.get("timeout") or 120)) as resp:
-            obj = json.loads(resp.read().decode("utf-8", errors="replace"))
-    except urllib.error.HTTPError as exc:
-        raise RuntimeError(f"xai transport HTTP {exc.code}: {exc.read().decode('utf-8', errors='replace')}") from exc
-    except urllib.error.URLError as exc:
-        raise RuntimeError(f"xai transport URL error: {getattr(exc, 'reason', exc)}; no fallback was attempted") from exc
-    content = obj.get("output_text") or ""
-    reasoning = ""
-    if not content and isinstance(obj.get("output"), list):
-        parts = []
-        for item in obj["output"]:
-            if not isinstance(item, dict):
+    max_retries = int(cfg.get("max_retries", 3))
+    base_delay = float(cfg.get("retry_base_delay", 1.0))
+    for attempt in range(max_retries):
+        req = urllib.request.Request(str(cfg["url"]), data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=float(cfg.get("timeout") or 120)) as resp:
+                obj = json.loads(resp.read().decode("utf-8", errors="replace"))
+            content = obj.get("output_text") or ""
+            reasoning = ""
+            if not content and isinstance(obj.get("output"), list):
+                parts = []
+                for item in obj["output"]:
+                    if not isinstance(item, dict):
+                        continue
+                    if item.get("type") == "reasoning":
+                        reasoning += "\n".join(str(c["text"]) for c in item.get("content", []) or [] if isinstance(c, dict) and c.get("text"))
+                    else:
+                        parts.extend(str(c["text"]) for c in item.get("content", []) or [] if isinstance(c, dict) and c.get("text"))
+                content = "\n".join(parts)
+            response_meta = {key: obj[key] for key in ("id", "model", "created_at", "completed_at", "status", "service_tier") if key in obj}
+            return {"content": content, "reasoning": reasoning.strip(), "usage": obj.get("usage", {}), "response_meta": response_meta}
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            if exc.code == 503 and attempt < max_retries - 1:
+                time.sleep(base_delay * (2 ** attempt))
                 continue
-            if item.get("type") == "reasoning":
-                reasoning += "\n".join(str(c["text"]) for c in item.get("content", []) or [] if isinstance(c, dict) and c.get("text"))
-            else:
-                parts.extend(str(c["text"]) for c in item.get("content", []) or [] if isinstance(c, dict) and c.get("text"))
-        content = "\n".join(parts)
-    response_meta = {key: obj[key] for key in ("id", "model", "created_at", "completed_at", "status", "service_tier") if key in obj}
-    return {"content": content, "reasoning": reasoning.strip(), "usage": obj.get("usage", {}), "response_meta": response_meta}
+            raise RuntimeError(f"xai transport HTTP {exc.code}: {body}") from exc
+        except urllib.error.URLError as exc:
+            if attempt < max_retries - 1:
+                time.sleep(base_delay * (2 ** attempt))
+                continue
+            raise RuntimeError(f"xai transport URL error: {getattr(exc, 'reason', exc)}; no fallback was attempted") from exc
+    # Final fallback to file_proxy if configured
+    if cfg.get("fallback_to_file_proxy"):
+        raise RuntimeError("xai transport exhausted retries; falling back to file_proxy (caller must handle)")
+    raise RuntimeError("xai transport exhausted retries")

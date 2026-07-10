@@ -17,7 +17,10 @@
           "extractor": "reasoning_field",
           "effort": "medium",
           "injection_template": "REASONING:\n{reasoning}"
-        }
+        },
+        "max_retries": 3,
+        "retry_base_delay": 1.0,
+        "fallback_to_file_proxy": true
       },
       "transport_file_proxy": {
         "request_path": "runtime_request.json",
@@ -177,7 +180,8 @@
           "transport_xai.py",
           "node_repair_probe.py",
           "node_repair_dispatch.py",
-          "node_repair_validate.py"
+          "node_repair_validate.py",
+          "core_nodes.py"
         ],
         "next_run": [
           "core_brain.py",
@@ -690,5 +694,6 @@
     "node_observe:verify": "node_observe",
     "node_observe:repair": "node_observe",
     "node_observe:repair_verify": "node_observe"
-  }
+  },
+  "_conv_id": "endgame-ai-1783699422-0e1f4911"
 }
