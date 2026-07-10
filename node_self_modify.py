@@ -56,7 +56,7 @@ class SelfModifyNode(BaseNode):
         step = state.get("current_step") or {}
         self._git_context = nodes.prepare_self_evolution(wiring)
         self._failure = {"last_error": state.get("last_error", ""), "last_reflection": state.get("last_reflection", {}), "last_failure": state.get("last_failure", {}), "last_action": state.get("last_action", {}), "last_result": state.get("last_result", ""), "last_verification": state.get("last_verification", {})}
-        self._organism_contract = {"capabilities": nodes.capability_manifest(ctx), "topology": wiring_mod.topology_summary(wiring), "self_modify_route": "reflect.escalate/topology_patch"}
+        self._organism_contract = {"capabilities": nodes.capability_manifest(ctx), "topology": wiring_mod.topology_summary(wiring), "activation": wiring["self_modify"]["evolvable"]["activation"], "self_modify_route": "reflect.escalate/topology_patch"}
         return {
             "goal": goal,
             "step": {"description": step.get("description", goal), "done_when": step.get("done_when", "")},

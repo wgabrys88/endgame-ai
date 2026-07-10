@@ -17,6 +17,7 @@ class PlannerNode(BaseNode):
             "previous_plan": prior,
             "completed_steps": completed,
             "last_reflection": state.get("last_reflection", {}),
+            "last_evolution": state.get("self_modify", {}),
             "replan_contract": "Emit the complete remaining plan for the immutable root goal. A replan may change step count and granularity; preserve obligations by meaning, not by matching the old number of steps.",
         }
 

@@ -1,3 +1,4 @@
+import io
 import copy
 import ctypes
 import json
@@ -8,6 +9,7 @@ import sys
 import threading
 import time
 import types
+import tokenize
 from typing import Any
 
 import core_brain as brain
@@ -255,18 +257,35 @@ def _file_write(item: dict[str, Any], w: dict[str, Any]) -> tuple[pathlib.Path, 
     return path, rel, _validate_content(path, rel, item["content"])
 
 
+def _semantic_noop(path: pathlib.Path, content: str) -> bool:
+    if not path.exists():
+        return False
+    current = path.read_text(encoding="utf-8")
+    if path.suffix == ".py":
+        ignored = {tokenize.NL, tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT, tokenize.ENDMARKER}
+        tokens = lambda text: [(token.type, token.string) for token in tokenize.generate_tokens(io.StringIO(text).readline) if token.type not in ignored]
+        return tokens(current) == tokens(content)
+    if path.suffix == ".json":
+        return json.loads(current) == json.loads(content)
+    return current == content
+
+
 def apply_evolution_patch(w: dict[str, Any], parsed: dict[str, Any]) -> tuple[str, Any]:
     data = _patch_data(parsed)
     read_files = {str(path).replace("\\", "/").strip().lstrip("/") for path in data["read_files"]}
     wiring_patches = list(data["wiring_patches"])
     patched_wiring = _apply_wiring_ops(w, wiring_patches)
+    if patched_wiring == w:
+        wiring_patches = []
     if wiring_patches:
         wiring.validate_wiring(patched_wiring)
         problems = check_topology.coherence_problems(patched_wiring)
         if problems:
             raise ValueError(f"wiring_patch would make the organism incoherent: {problems}")
-    writes = [_file_write(item, w) for item in data["file_writes"]]
+    writes = [write for write in (_file_write(item, w) for item in data["file_writes"]) if not _semantic_noop(write[0], write[2])]
     deletes = [_evolution_target(str(path), w) for path in data["file_deletes"]]
+    if not writes and not deletes and not wiring_patches:
+        raise ValueError("self_modify patch has no semantic change")
     missing_reads = [rel for path, rel, _ in writes if path.exists() and rel not in read_files]
     missing_reads += [rel for path, rel in deletes if path.exists() and rel not in read_files]
     if wiring_patches and "wiring.json" not in read_files:
@@ -357,6 +376,8 @@ def capability_manifest(ctx: dict[str, Any] | None = None) -> dict[str, Any]:
     st = (ctx or {}).get("state", {}) if isinstance(ctx, dict) else {}
     w = (ctx or {}).get("wiring", {}) if isinstance(ctx, dict) else {}
     manifest = copy.deepcopy(w["capabilities"])
+    transport, cfg = wiring.get_transport_config(w)
+    manifest["configured_model"] = {"transport": transport, "model": cfg.get("model")}
     manifest["deadline_at"] = st.get("deadline_at")
     manifest["repo_root"] = str(ROOT)
     instance = (ctx or {}).get("node_instance") if isinstance(ctx, dict) else None
@@ -476,54 +497,37 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         cfg["filter"] = filt
         return observe_with_config(cfg)
 
-    # NEW: terminal faculty helper for direct Grok/xAI API consultation (bypasses browser faculty)
-    def consult_grok_api(prompt: str, model: str = "grok-4.3") -> dict[str, Any]:
-        """Call the xAI Responses API directly via urllib to fetch actionable optimization advice.
-        Records a capability action event with the API response summary. Returns the parsed response."""
-        _assert_duration_open("consult_grok_api")
-        import urllib.request
-        import urllib.error
-        import os
-        api_key = os.environ.get("XAI_API_KEY")
-        if not api_key:
-            raise RuntimeError("XAI_API_KEY environment variable is required for Grok API calls")
-        payload = {
-            "model": model,
-            "input": [{"role": "user", "content": prompt}],
-            "temperature": 0.4,
-            "truncation": "disabled",
-        }
-        req = urllib.request.Request(
-            "https://api.x.ai/v1/responses",
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
-            method="POST",
+    def consult_model(prompt: str, max_output_tokens: int = 800) -> dict[str, Any]:
+        """Consult the configured model through the brain layer and record exact evidence."""
+        _assert_duration_open("consult_model")
+        text = str(prompt).strip()
+        if not text:
+            raise RuntimeError("consult_model requires a non-empty prompt")
+        limit = int(max_output_tokens)
+        if limit <= 0:
+            raise RuntimeError("consult_model max_output_tokens must be positive")
+        transport, cfg = wiring.get_transport_config(w)
+        result = brain.call(
+            [{"role": "user", "content": text}],
+            w,
+            request_config={
+                "max_output_tokens": limit,
+                "metadata": {"endgame_purpose": "external_consultation"},
+                "plain_text": True,
+            },
         )
-        try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                obj = json.loads(resp.read().decode("utf-8", errors="replace"))
-        except urllib.error.HTTPError as exc:
-            raise RuntimeError(f"Grok API HTTP {exc.code}: {exc.read().decode('utf-8', errors='replace')}") from exc
-        except urllib.error.URLError as exc:
-            raise RuntimeError(f"Grok API URL error: {getattr(exc, 'reason', exc)}") from exc
-        content = obj.get("output_text") or ""
-        if not content and isinstance(obj.get("output"), list):
-            parts = []
-            for item in obj["output"]:
-                if isinstance(item, dict) and item.get("type") != "reasoning":
-                    parts.extend(str(c["text"]) for c in item.get("content", []) or [] if isinstance(c, dict) and c.get("text"))
-            content = "\n".join(parts)
-        result = {
+        response = str(result["content"])
+        return _record_action({
             "ok": True,
-            "action": "consult_grok_api",
-            "model": model,
-            "prompt_chars": len(prompt),
-            "response_chars": len(content),
-            "response_preview": content[:500] + ("..." if len(content) > 500 else ""),
-            "usage": obj.get("usage", {}),
-            "response_id": obj.get("id"),
-        }
-        return _record_action(result)
+            "action": "consult_model",
+            "transport": transport,
+            "model": cfg.get("model"),
+            "prompt_chars": len(text),
+            "prompt_sha256": __import__("hashlib").sha256(text.encode("utf-8")).hexdigest(),
+            "response": response,
+            "response_chars": len(response),
+            "response_sha256": __import__("hashlib").sha256(response.encode("utf-8")).hexdigest(),
+        })
 
     last = {"error": state.get("last_error"), "result": state.get("last_result", ""), "action": state.get("last_action", {}), "verification": state.get("last_verification", {}), "reflection": state.get("last_reflection", {})}
     return {
@@ -540,5 +544,5 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "action_index": action_index, "observation_artifact": state.get("observation_artifact", {}),
         "observed_at": state.get("observed_at"),
         "action_events": action_events, "_action_events": action_events,
-        "consult_grok_api": consult_grok_api,  # NEW helper for terminal faculty Grok consultation
+        "consult_model": consult_model,
     }
