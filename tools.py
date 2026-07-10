@@ -105,60 +105,6 @@ def read_file(path: str, max_bytes: int | None = None) -> Dict[str, Any]:
     }
 
 
-def _run_gh(args: list[str]) -> Dict[str, Any]:
-    """Run gh CLI and return a recorded-action dict."""
-    try:
-        result = subprocess.run(["gh", *args], cwd=__import__("pathlib").Path.cwd(), capture_output=True, text=True)
-        return {
-            "ok": result.returncode == 0,
-            "action": "gh_" + args[0],
-            "args": args,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
-            "returncode": result.returncode,
-        }
-    except Exception as exc:
-        return {"ok": False, "action": "gh_" + args[0], "args": args, "error": f"{type(exc).__name__}: {exc}"}
-
-
-def github_create_issue(repo: str, title: str, body: str, labels: list[str] | None = None) -> Dict[str, Any]:
-    """Create a GitHub issue via gh CLI and record the action."""
-    args = ["issue", "create", "--repo", repo, "--title", title, "--body", body]
-    if labels:
-        for label in labels:
-            args.extend(["--label", label])
-    return _run_gh(args)
-
-
-def github_comment_issue(repo: str, issue_number: int, comment: str) -> Dict[str, Any]:
-    """Comment on a GitHub issue via gh CLI and record the action."""
-    return _run_gh(["issue", "comment", str(issue_number), "--repo", repo, "--body", comment])
-
-
-def github_list_issues(repo: str, state: str = "open") -> Dict[str, Any]:
-    """List issues on a repo via gh CLI and record the action."""
-    return _run_gh(["issue", "list", "--repo", repo, "--state", state, "--json", "number,title,state,labels,createdAt,updatedAt"])
-
-
-def github_push(branch: str | None = None) -> Dict[str, Any]:
-    """Push current or specified branch to origin via git and record the action."""
-    args = ["git", "push", "origin"]
-    if branch:
-        args.append(branch)
-    try:
-        result = subprocess.run(args, cwd=__import__("pathlib").Path.cwd(), capture_output=True, text=True)
-        return {
-            "ok": result.returncode == 0,
-            "action": "github_push",
-            "branch": branch,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
-            "returncode": result.returncode,
-        }
-    except Exception as exc:
-        return {"ok": False, "action": "github_push", "branch": branch, "error": f"{type(exc).__name__}: {exc}"}
-
-
 def git_current_branch() -> Dict[str, Any]:
     """Run git branch --show-current and return recorded action."""
     try:
@@ -179,3 +125,93 @@ def git_current_branch() -> Dict[str, Any]:
 def git_branch_show_current() -> Dict[str, Any]:
     """Run git branch --show-current and return recorded action (alias for verification step)."""
     return git_current_branch()
+
+
+def github_list_issues(repo: str, state: str = "open") -> Dict[str, Any]:
+    """List issues on a GitHub repo via gh CLI and record action (terminal faculty)."""
+    try:
+        cmd = ["gh", "issue", "list", "--repo", repo, "--state", state, "--json", "number,title,state,url,labels,createdAt,updatedAt,body"]
+        result = subprocess.run(cmd, cwd=__import__("pathlib").Path.cwd(), capture_output=True, text=True)
+        if result.returncode != 0:
+            return {"ok": False, "action": "github_list_issues", "repo": repo, "state": state, "error": result.stderr.strip() or result.stdout.strip(), "returncode": result.returncode}
+        issues = json.loads(result.stdout) if result.stdout.strip() else []
+        return {
+            "ok": True,
+            "action": "github_list_issues",
+            "repo": repo,
+            "state": state,
+            "issues": issues,
+            "count": len(issues),
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "returncode": result.returncode,
+        }
+    except Exception as exc:
+        return {"ok": False, "action": "github_list_issues", "repo": repo, "state": state, "error": f"{type(exc).__name__}: {exc}"}
+
+
+def github_create_issue(repo: str, title: str, body: str, labels: list | None = None) -> Dict[str, Any]:
+    """Create a GitHub issue via gh CLI and record action (terminal faculty)."""
+    try:
+        cmd = ["gh", "issue", "create", "--repo", repo, "--title", title, "--body", body]
+        if labels:
+            for label in labels:
+                cmd.extend(["--label", str(label)])
+        result = subprocess.run(cmd, cwd=__import__("pathlib").Path.cwd(), capture_output=True, text=True)
+        if result.returncode != 0:
+            return {"ok": False, "action": "github_create_issue", "repo": repo, "title": title, "error": result.stderr.strip() or result.stdout.strip(), "returncode": result.returncode}
+        url = result.stdout.strip()
+        return {
+            "ok": True,
+            "action": "github_create_issue",
+            "repo": repo,
+            "title": title,
+            "url": url,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "returncode": result.returncode,
+        }
+    except Exception as exc:
+        return {"ok": False, "action": "github_create_issue", "repo": repo, "title": title, "error": f"{type(exc).__name__}: {exc}"}
+
+
+def github_comment_issue(repo: str, issue_number: int, comment: str) -> Dict[str, Any]:
+    """Comment on a GitHub issue via gh CLI and record action (terminal faculty)."""
+    try:
+        cmd = ["gh", "issue", "comment", str(issue_number), "--repo", repo, "--body", comment]
+        result = subprocess.run(cmd, cwd=__import__("pathlib").Path.cwd(), capture_output=True, text=True)
+        if result.returncode != 0:
+            return {"ok": False, "action": "github_comment_issue", "repo": repo, "issue_number": issue_number, "error": result.stderr.strip() or result.stdout.strip(), "returncode": result.returncode}
+        return {
+            "ok": True,
+            "action": "github_comment_issue",
+            "repo": repo,
+            "issue_number": issue_number,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "returncode": result.returncode,
+        }
+    except Exception as exc:
+        return {"ok": False, "action": "github_comment_issue", "repo": repo, "issue_number": issue_number, "error": f"{type(exc).__name__}: {exc}"}
+
+
+def github_push(branch: str | None = None) -> Dict[str, Any]:
+    """Push current or specified branch to origin and record action (terminal faculty)."""
+    try:
+        if branch:
+            cmd = ["git", "push", "origin", branch]
+        else:
+            cmd = ["git", "push"]
+        result = subprocess.run(cmd, cwd=__import__("pathlib").Path.cwd(), capture_output=True, text=True)
+        if result.returncode != 0:
+            return {"ok": False, "action": "github_push", "branch": branch, "error": result.stderr.strip() or result.stdout.strip(), "returncode": result.returncode}
+        return {
+            "ok": True,
+            "action": "github_push",
+            "branch": branch,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "returncode": result.returncode,
+        }
+    except Exception as exc:
+        return {"ok": False, "action": "github_push", "branch": branch, "error": f"{type(exc).__name__}: {exc}"}
