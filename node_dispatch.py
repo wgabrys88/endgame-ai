@@ -32,7 +32,16 @@ class DispatchNode(BaseNode):
         chosen = [faculty_to_target[faculty] for faculty in record.data["faculties"] if faculty in faculty_to_target]
         if not chosen:
             raise RuntimeError(f"dispatch selected no valid faculties from {record.data['faculties']!r}")
-        return bus.emit("dispatch", {"_dispatch_targets": chosen, "turn_executions": {}}, record=record, evidence=payload)
+        return bus.emit(
+            "dispatch",
+            {
+                "_dispatch_targets": chosen,
+                "_barrier_release_signal": "join",
+                "turn_executions": {},
+            },
+            record=record,
+            evidence=payload,
+        )
 
 
 def run(ctx):

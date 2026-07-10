@@ -38,6 +38,14 @@ class ExecuteNode(BaseNode):
             "failure": failure,
         }
 
+    @staticmethod
+    def _repair_probe(state, instance):
+        repair = state.get("repair_validation") or {}
+        if repair.get("status") != "probing":
+            return None
+        probe = repair["probe"]
+        return probe if probe["faculty"] == instance else None
+
     def run(self, ctx):
         state = ctx["state"]
         instance = ctx["node_instance"]
@@ -46,19 +54,57 @@ class ExecuteNode(BaseNode):
             return bus.emit("done")
 
         payload = self.build_payload(ctx)
-        record = self.think(ctx)
-        code = record.data["code"]
-        label = f"EXECUTE:{instance}"
+        probe = self._repair_probe(state, instance)
+        if probe is None:
+            record = self.think(ctx)
+            code = record.data["code"]
+            label = f"EXECUTE:{instance}"
+        else:
+            code = probe["code"]
+            record = bus.Record.create(
+                "execution",
+                {"code": code},
+                reasoning=(
+                    f"Behavioral repair probe {state['repair_validation']['repair_id']} retries "
+                    f"failure {probe['failure_signature']} through the original {instance} faculty."
+                ),
+            )
+            payload["repair_probe"] = {
+                "repair_id": state["repair_validation"]["repair_id"],
+                "failure_signature": probe["failure_signature"],
+                "comparison_basis": probe["comparison_basis"],
+            }
+            label = f"REPAIR_EXECUTE:{instance}"
+
         deadline_at = state.get("deadline_at")
         if deadline_at is not None and time.time() >= float(deadline_at):
             late_by = round(time.time() - float(deadline_at), 3)
             error = f"duration deadline expired before executing body action: late_by_s={late_by}"
             failure = self._failure("duration_guard", late_by_s=late_by)
-            result = {"result": None, "stdout": "", "stderr": "", "action_events": [], "duration_guard": {"deadline_at": float(deadline_at), "late_by_s": late_by}}
+            result = {
+                "result": None,
+                "stdout": "",
+                "stderr": "",
+                "action_events": [],
+                "duration_guard": {"deadline_at": float(deadline_at), "late_by_s": late_by},
+            }
             turn = dict(state.get("turn_executions") or {})
             turn[instance] = self._turn_entry(code, result, error, failure)
             effective = state["effective_goal"] + f"\n\n[{label}] No action: {error}."
-            return bus.emit("done", {"turn_executions": turn, "last_action": {"code": code, "not_executed": True}, "last_code": code, "last_result": result, "last_error": error, "last_failure": failure, "effective_goal": effective}, record=record, evidence=payload)
+            return bus.emit(
+                "done",
+                {
+                    "turn_executions": turn,
+                    "last_action": {"code": code, "faculty": instance, "not_executed": True},
+                    "last_code": code,
+                    "last_result": result,
+                    "last_error": error,
+                    "last_failure": failure,
+                    "effective_goal": effective,
+                },
+                record=record,
+                evidence=payload,
+            )
 
         import core_desktop as desktop
 
@@ -69,7 +115,12 @@ class ExecuteNode(BaseNode):
         try:
             with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
                 exec(code, ns)
-            result = {"result": ns.get("result"), "stdout": stdout.getvalue(), "stderr": stderr.getvalue(), "action_events": list(ns["_action_events"])}
+            result = {
+                "result": ns.get("result"),
+                "stdout": stdout.getvalue(),
+                "stderr": stderr.getvalue(),
+                "action_events": list(ns["_action_events"]),
+            }
             policy = ctx["wiring"]["capabilities"]["faculties"][instance]
             if policy["requires_action_event"] and not result["action_events"]:
                 error = f"RuntimeError: {instance} faculty produced no recorded capability action"
@@ -78,7 +129,11 @@ class ExecuteNode(BaseNode):
                 error = "RuntimeError: EXECUTE produced no result, stdout, stderr, or recorded body action"
                 failure = self._failure("empty_execute_result")
         except Exception as exc:
-            result = {"stdout": stdout.getvalue(), "stderr": stderr.getvalue(), "action_events": list(ns["_action_events"])}
+            result = {
+                "stdout": stdout.getvalue(),
+                "stderr": stderr.getvalue(),
+                "action_events": list(ns["_action_events"]),
+            }
             error = f"{type(exc).__name__}: {exc}"
             failure = self._failure("task_route_exception", exception_type=type(exc).__name__, message=str(exc))
 
@@ -95,7 +150,11 @@ class ExecuteNode(BaseNode):
             "done",
             {
                 "turn_executions": turn,
-                "last_action": {"code": code, "faculty": instance},
+                "last_action": {
+                    "code": code,
+                    "faculty": instance,
+                    "repair_probe": probe is not None,
+                },
                 "last_code": code,
                 "last_result": result,
                 "last_error": aggregate_error,

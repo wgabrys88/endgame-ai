@@ -18,7 +18,13 @@ class PlannerNode(BaseNode):
             "completed_steps": completed,
             "last_reflection": state.get("last_reflection", {}),
             "last_evolution": state.get("self_modify", {}),
-            "replan_contract": "Emit the complete remaining plan for the immutable root goal. A replan may change step count and granularity; preserve obligations by meaning, not by matching the old number of steps.",
+            "last_repair_validation": state.get("last_repair_validation", {}),
+            "replan_contract": (
+                "Emit the complete remaining plan for the immutable root goal. A replan may change step count and "
+                "granularity; preserve obligations by meaning, not by matching the old number of steps. A resolved "
+                "repair validation proves only that the failed mechanism now works; it does not automatically verify "
+                "the original task step. An unresolved repair validation forbids treating that candidate repair as available."
+            ),
         }
 
     def signal_from_data(self, data, ctx):
@@ -30,11 +36,23 @@ class PlannerNode(BaseNode):
         if not isinstance(intent, list) or not intent:
             raise RuntimeError("planner step_ready requires non-empty data.intent list")
         for i, step in enumerate(intent):
-            if not isinstance(step, dict) or not isinstance(step.get("description"), str) or not step["description"].strip() or not isinstance(step.get("done_when"), str) or not step["done_when"].strip():
+            if (
+                not isinstance(step, dict)
+                or not isinstance(step.get("description"), str)
+                or not step["description"].strip()
+                or not isinstance(step.get("done_when"), str)
+                or not step["done_when"].strip()
+            ):
                 raise RuntimeError(f"planner intent[{i}] requires non-empty description and done_when strings")
         next_step = intent[0]["description"]
         effective = state["effective_goal"] + f"\n\n[PLANNER] Authored {len(intent)} remaining steps. Next: {next_step}."
-        return {"plan": data, "step": 0, "plan_complete": False, "reasoning": record.reasoning, "effective_goal": effective}
+        return {
+            "plan": data,
+            "step": 0,
+            "plan_complete": False,
+            "reasoning": record.reasoning,
+            "effective_goal": effective,
+        }
 
 
 def run(ctx):

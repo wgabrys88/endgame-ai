@@ -33,17 +33,70 @@ def _capture_workspace_manifest(wiring: dict[str, Any]) -> dict[str, Any]:
     for rel in sorted(tracked | untracked):
         path = ROOT / rel
         if path.is_file() and not any(part.startswith(skip_prefixes) for part in pathlib.PurePosixPath(rel.replace("\\", "/")).parts):
-            files.append({"path": rel.replace("\\", "/"), "size": path.stat().st_size, "tracked": rel in tracked, "status": status[rel] if rel in status else ("clean" if rel in tracked else "untracked"), "binary": path.suffix.lower() in BINARY_SUFFIXES})
-    return {"current_commit": nodes.git_head_sha(), "branch": nodes.git_current_branch(), "git_status": nodes.git_worktree_status(), "files": files}
+            files.append(
+                {
+                    "path": rel.replace("\\", "/"),
+                    "size": path.stat().st_size,
+                    "tracked": rel in tracked,
+                    "status": status[rel] if rel in status else ("clean" if rel in tracked else "untracked"),
+                    "binary": path.suffix.lower() in BINARY_SUFFIXES,
+                }
+            )
+    return {
+        "current_commit": nodes.git_head_sha(),
+        "branch": nodes.git_current_branch(),
+        "git_status": nodes.git_worktree_status(),
+        "files": files,
+    }
 
 
 def _evidence_file(path: pathlib.Path) -> dict[str, Any]:
     rel = path.relative_to(ROOT).as_posix() if path.is_absolute() and path.is_relative_to(ROOT) else str(path)
-    return {"path": rel, "exists": False} if not path.exists() or not path.is_file() else {"path": rel, "exists": True, "size": path.stat().st_size}
+    if not path.exists() or not path.is_file():
+        return {"path": rel, "exists": False}
+    return {"path": rel, "exists": True, "size": path.stat().st_size}
 
 
 def _runtime_evidence(wiring: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
-    return {"state_path": _evidence_file(wiring_mod.root_path(wiring["paths"]["state"])), "event_log_path": _evidence_file(wiring_mod.root_path(wiring["paths"]["event_log"])), "control_path": _evidence_file(wiring_mod.root_path(wiring["paths"]["control"])), "current_state_keys": sorted(state.keys()), "has_observation": "desktop_tree_text" in state}
+    return {
+        "state_path": _evidence_file(wiring_mod.root_path(wiring["paths"]["state"])),
+        "event_log_path": _evidence_file(wiring_mod.root_path(wiring["paths"]["event_log"])),
+        "control_path": _evidence_file(wiring_mod.root_path(wiring["paths"]["control"])),
+        "current_state_keys": sorted(state.keys()),
+        "has_observation": "desktop_tree_text" in state,
+    }
+
+
+def _repair_baseline(state: dict[str, Any]) -> dict[str, Any]:
+    step = state.get("current_step") or {
+        "description": state["goal"],
+        "done_when": "The original failure is retried and its intended observable effect is proven.",
+    }
+    executions = bus.execution_evidence(state)
+    turn = executions.get("faculties") if isinstance(executions, dict) else None
+    candidate_faculties = sorted(turn.keys()) if isinstance(turn, dict) else []
+    last_action = state.get("last_action") or {}
+    faculty = last_action.get("faculty") if isinstance(last_action, dict) else None
+    if not candidate_faculties and isinstance(faculty, str) and faculty:
+        candidate_faculties = [faculty]
+    return {
+        "failure_signature": bus.failure_signature(state),
+        "step": {
+            "description": str(step["description"]),
+            "done_when": str(step["done_when"]),
+        },
+        "candidate_faculties": candidate_faculties,
+        "executions": executions,
+        "verification": state.get("last_verification") or {},
+        "failure": state.get("last_failure") or {},
+        "error": state.get("last_error"),
+        "last_action": last_action,
+        "last_code": state.get("last_code") or "",
+        "last_result": state.get("last_result") or {},
+        "action_frame": state.get("action_frame"),
+        "observation": bus.observation_brief(state),
+        "captured_at_tick": state.get("tick"),
+    }
 
 
 class SelfModifyNode(BaseNode):
@@ -55,13 +108,35 @@ class SelfModifyNode(BaseNode):
         goal = state["effective_goal"]
         step = state.get("current_step") or {}
         self._git_context = nodes.prepare_self_evolution(wiring)
-        self._failure = {"last_error": state.get("last_error", ""), "last_reflection": state.get("last_reflection", {}), "last_failure": state.get("last_failure", {}), "last_action": state.get("last_action", {}), "last_result": state.get("last_result", ""), "last_verification": state.get("last_verification", {})}
-        self._organism_contract = {"capabilities": nodes.capability_manifest(ctx), "topology": wiring_mod.topology_summary(wiring), "activation": wiring["self_modify"]["evolvable"]["activation"], "self_modify_route": "reflect.escalate/topology_patch"}
+        self._failure = {
+            "last_error": state.get("last_error", ""),
+            "last_reflection": state.get("last_reflection", {}),
+            "last_failure": state.get("last_failure", {}),
+            "last_action": state.get("last_action", {}),
+            "last_result": state.get("last_result", ""),
+            "last_verification": state.get("last_verification", {}),
+        }
+        self._baseline = _repair_baseline(state)
+        self._organism_contract = {
+            "capabilities": nodes.capability_manifest(ctx),
+            "topology": wiring_mod.topology_summary(wiring),
+            "activation": wiring["self_modify"]["evolvable"]["activation"],
+            "self_modify_route": "reflect.escalate/topology_patch",
+            "behavioral_acceptance": "A candidate commit becomes known-good only after node_repair_validate proves the original failure resolved.",
+        }
         return {
             "goal": goal,
             "step": {"description": step.get("description", goal), "done_when": step.get("done_when", "")},
             "failure": self._failure,
-            "runtime": {"state_summary": {"current_node": ctx.get("node"), "tick": state.get("tick"), "last_error": state.get("last_error")}, "evidence": _runtime_evidence(wiring, state)},
+            "repair_baseline": self._baseline,
+            "runtime": {
+                "state_summary": {
+                    "current_node": ctx.get("node"),
+                    "tick": state.get("tick"),
+                    "last_error": state.get("last_error"),
+                },
+                "evidence": _runtime_evidence(wiring, state),
+            },
             "context_mode": self._git_context["context_mode"],
             "github_branch_url": self._git_context.get("branch_url", ""),
             "local_repo_root": str(ROOT),
@@ -77,15 +152,49 @@ class SelfModifyNode(BaseNode):
         record = self.think(ctx)
         data = record.data
         obs = brain.last_observation()
-        effective = f"{state['effective_goal']}\n\n[SELF_MODIFY] Proposed evolution: {data['summary']}. Patches: {len(data['wiring_patches'])}, writes: {len(data['file_writes'])}, deletes: {len(data['file_deletes'])}."
+        repair_id = f"repair-{state['tick']}-{self._baseline['failure_signature']}"
+        repair_validation = {
+            "repair_id": repair_id,
+            "status": "awaiting_apply",
+            "summary": data["summary"],
+            "rationale": data["rationale"],
+            "expected_validation": data["expected_validation"],
+            "baseline": self._baseline,
+            "proposed_at_tick": state["tick"],
+        }
+        effective = (
+            f"{state['effective_goal']}\n\n[SELF_MODIFY] Proposed candidate repair {repair_id}: "
+            f"{data['summary']}. Structural patches: {len(data['wiring_patches'])}, "
+            f"writes: {len(data['file_writes'])}, deletes: {len(data['file_deletes'])}. "
+            "The repair is not accepted until a fresh behavioral probe resolves the captured failure."
+        )
         patch = {
             "observed_at": obs.get("observed_at"),
             "desktop_tree_text": obs.get("desktop_tree_text", ""),
             "git_evolution_patch": {key: data[key] for key in PATCH_KEYS},
-            "self_modify": {"status": "proposed", "git_context": self._git_context, "patches": len(data["wiring_patches"]), "writes": len(data["file_writes"]), "deletes": len(data["file_deletes"]), "commands": len(data["commands"])},
+            "self_modify": {
+                "status": "proposed",
+                "git_context": self._git_context,
+                "patches": len(data["wiring_patches"]),
+                "writes": len(data["file_writes"]),
+                "deletes": len(data["file_deletes"]),
+                "commands": len(data["commands"]),
+                "repair_id": repair_id,
+            },
+            "repair_validation": repair_validation,
             "effective_goal": effective,
         }
-        return bus.emit("modified", patch, record=record, evidence={"git_context": self._git_context, "failure": self._failure, "organism_contract": self._organism_contract})
+        return bus.emit(
+            "modified",
+            patch,
+            record=record,
+            evidence={
+                "git_context": self._git_context,
+                "failure": self._failure,
+                "repair_baseline": self._baseline,
+                "organism_contract": self._organism_contract,
+            },
+        )
 
 
 def run(ctx):

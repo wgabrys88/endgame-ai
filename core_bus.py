@@ -59,7 +59,20 @@ class NodeOutput:
         elif isinstance(self.record, dict):
             record_type = self.record.get("record_type")
             record_json = dict(self.record)
-        omitted = {"goal", "effective_goal", "state", "focus", "observation", "desktop_tree_text", "action_index", "observation_artifact"}
+        omitted = {
+            "goal",
+            "effective_goal",
+            "state",
+            "focus",
+            "observation",
+            "desktop_tree_text",
+            "action_index",
+            "observation_artifact",
+            "repair_validation",
+            "repair_baseline",
+            "before",
+            "after",
+        }
         return {
             "kind": "endgame.node_output.v1",
             "node": node,
@@ -121,6 +134,31 @@ def _plan_intent(state: JsonDict) -> list[JsonDict]:
     return intent if isinstance(intent, list) else []
 
 
+def repair_validation_brief(state: JsonDict) -> JsonDict:
+    repair = state.get("repair_validation") or {}
+    if not isinstance(repair, dict) or not repair:
+        return {}
+    probe = repair.get("probe") or {}
+    commit = repair.get("commit") or {}
+    return {
+        "repair_id": repair.get("repair_id"),
+        "status": repair.get("status"),
+        "resolved": repair.get("resolved"),
+        "summary": repair.get("summary"),
+        "expected_validation": repair.get("expected_validation"),
+        "candidate_commit": commit.get("commit") if isinstance(commit, dict) else None,
+        "activation": repair.get("activation", {}),
+        "probe": {
+            "failure_signature": probe.get("failure_signature"),
+            "faculty": probe.get("faculty"),
+            "description": probe.get("description"),
+            "done_when": probe.get("done_when"),
+        } if isinstance(probe, dict) and probe else {},
+        "comparison": repair.get("comparison"),
+        "conclusion": repair.get("conclusion"),
+    }
+
+
 def state_brief(state: JsonDict) -> JsonDict:
     """Compact operational focus. The full append-only narrative remains in state, never in every prompt."""
     current_step = state.get("current_step") or {}
@@ -142,6 +180,7 @@ def state_brief(state: JsonDict) -> JsonDict:
         "last_reflection": state.get("last_reflection", {}),
         "last_failure": state.get("last_failure", {}),
         "failure_streak": state.get("failure_streak", {}),
+        "repair_validation": repair_validation_brief(state),
         "has_action_frame": bool(state.get("action_frame")),
         "timing": {
             "started_at": started_at,

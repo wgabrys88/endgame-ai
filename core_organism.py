@@ -70,6 +70,7 @@ def run(
         st["goal"] = goal or str(st.get("goal") or "")
         st.setdefault("effective_goal", st["goal"])
         st.setdefault("_depth", 0)
+        st.setdefault("_barrier_release_signal", "join")
         if _seed:
             st.update(_seed)
         st["current_node"] = current
@@ -121,10 +122,36 @@ def run(
                     try:
                         _, applied = nodes.apply_evolution_patch(w, {"data": evolution_patch})
                         patch.setdefault("self_modify", {})["applied"] = applied
-                        committed = nodes.commit_self_evolution(w, applied, evolution_patch)
+                        committed = nodes.commit_self_evolution(
+                            w,
+                            applied,
+                            evolution_patch,
+                            advance_known_good=False,
+                        )
+                        if not committed["committed"]:
+                            raise RuntimeError(f"self_modify produced no candidate commit: {committed}")
+                        patch["self_modify"]["status"] = "candidate_committed"
                         patch["self_modify"]["commit"] = committed
+                        repair_validation = dict(patch["repair_validation"])
+                        repair_validation.update(
+                            {
+                                "status": "awaiting_probe",
+                                "activation": applied["activation"],
+                                "applied": applied,
+                                "commit": committed,
+                                "applied_at": time.time(),
+                            }
+                        )
+                        patch["repair_validation"] = repair_validation
                         w = wiring.load_wiring(wiring_path)
-                        state.runtime_event(w, "self_modify_applied", **applied, commit=committed)
+                        state.runtime_event(
+                            w,
+                            "self_modify_candidate_committed",
+                            repair_id=repair_validation["repair_id"],
+                            expected_validation=repair_validation["expected_validation"],
+                            **applied,
+                            commit=committed,
+                        )
                     except Exception as exc:
                         if bool(w["self_modify"]["hot_swap_on_failure"]):
                             touched = [
@@ -143,6 +170,50 @@ def run(
                             patch.setdefault("self_modify", {})["hot_swap"] = swap
                             state.runtime_event(w, "self_modify_hot_swap", error=str(exc), **swap)
                         raise
+                if current == "node_repair_validate":
+                    repair_validation = dict(patch["repair_validation"])
+                    if signal_name == "repair_resolved":
+                        acceptance = nodes.accept_self_evolution(
+                            w,
+                            repair_validation["commit"]["commit"],
+                            source="behavioral_repair_validation",
+                        )
+                        repair_validation["acceptance"] = acceptance
+                        patch["repair_validation"] = repair_validation
+                        summary = dict(patch["last_repair_validation"])
+                        summary.update(
+                            {
+                                "accepted": True,
+                                "accepted_commit": acceptance["commit"],
+                                "known_good": acceptance["known_good"],
+                            }
+                        )
+                        patch["last_repair_validation"] = summary
+                        history = list(patch["repair_history"])
+                        history[-1] = summary
+                        patch["repair_history"] = history
+                        self_modify = dict(patch["self_modify"])
+                        self_modify["status"] = "behaviorally_accepted"
+                        self_modify["behavioral_validation"] = summary
+                        patch["self_modify"] = self_modify
+                        state.runtime_event(
+                            w,
+                            "self_modify_behaviorally_accepted",
+                            repair_id=repair_validation["repair_id"],
+                            comparison=repair_validation["comparison"],
+                            conclusion=repair_validation["conclusion"],
+                            acceptance=acceptance,
+                        )
+                    elif signal_name == "repair_unresolved":
+                        state.runtime_event(
+                            w,
+                            "self_modify_behaviorally_rejected",
+                            repair_id=repair_validation["repair_id"],
+                            candidate_commit=repair_validation["commit"]["commit"],
+                            comparison=repair_validation["comparison"],
+                            conclusion=repair_validation["conclusion"],
+                        )
+
                 st.update(patch)
                 if signal_name == "halt":
                     st["_phase"] = "halted"

@@ -36,3 +36,6 @@
 !transport_xai.py
 !tests/
 !tests/**
+!node_repair_probe.py
+!node_repair_dispatch.py
+!node_repair_validate.py

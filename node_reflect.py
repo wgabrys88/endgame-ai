@@ -10,11 +10,14 @@ class ReflectNode(BaseNode):
         state = ctx["state"]
         self._streak_patch = bus.update_failure_streak(state)
         self._failure = state.get("last_failure") or {}
+        self._repair_validation = bus.repair_validation_brief(state)
         self._evidence_payload = {
             "executions": bus.execution_evidence(state),
             "last_verification": state.get("last_verification", {}),
             "last_failure": self._failure,
             "failure_streak": self._streak_patch["failure_streak"],
+            "repair_validation": self._repair_validation,
+            "last_repair_validation": state.get("last_repair_validation", {}),
         }
 
     def evidence(self, ctx):
@@ -43,8 +46,26 @@ class ReflectNode(BaseNode):
         step = state.get("current_step") or {}
         lesson, diagnosis = data["lesson"], data["diagnosis"]
         effective = state["effective_goal"] + f"\n\n[REFLECT] {self._signal}. Lesson: {lesson}. Diagnosis: {diagnosis}."
-        reflection = {"lesson": lesson, "diagnosis": diagnosis, "step_goal": step.get("description", state["goal"]), "recovery_signal": self._signal, "failure": self._failure}
-        patch = {**self._streak_patch, "reflection": reflection, "last_reflection": {"signal": self._signal, "lesson": lesson, "diagnosis": diagnosis, "failure": self._failure}, "effective_goal": effective}
+        reflection = {
+            "lesson": lesson,
+            "diagnosis": diagnosis,
+            "step_goal": step.get("description", state["goal"]),
+            "recovery_signal": self._signal,
+            "failure": self._failure,
+            "repair_validation": self._repair_validation,
+        }
+        patch = {
+            **self._streak_patch,
+            "reflection": reflection,
+            "last_reflection": {
+                "signal": self._signal,
+                "lesson": lesson,
+                "diagnosis": diagnosis,
+                "failure": self._failure,
+                "repair_validation_status": self._repair_validation.get("status"),
+            },
+            "effective_goal": effective,
+        }
         if self._signal == "topology_patch" and "topology_patch" in data:
             patch["topology_patch"] = data["topology_patch"]
         return patch

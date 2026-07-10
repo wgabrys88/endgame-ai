@@ -330,7 +330,13 @@ def apply_evolution_patch(w: dict[str, Any], parsed: dict[str, Any]) -> tuple[st
     return "set", {"wiring_patches": len(wiring_patches), "file_writes": len(writes), "file_deletes": len(deletes), "commands": command_results, "rollback_on_failure": rollback, "changed_files": changed, "activation": activation}
 
 
-def commit_self_evolution(w: dict[str, Any], applied: dict[str, Any], patch_data: dict[str, Any]) -> dict[str, Any]:
+def commit_self_evolution(
+    w: dict[str, Any],
+    applied: dict[str, Any],
+    patch_data: dict[str, Any],
+    *,
+    advance_known_good: bool = True,
+) -> dict[str, Any]:
     changed_files = list(applied.get("changed_files") or [])
     if applied.get("wiring_patches"):
         changed_files.append("wiring.json")
@@ -339,19 +345,71 @@ def commit_self_evolution(w: dict[str, Any], applied: dict[str, Any], patch_data
         return {"committed": False, "reason": "no_changed_files", "branch": git_current_branch(), "commit": git_head_sha()}
     _git(["add", "-A", "-f", "--", *changed_files])
     if not git_worktree_status():
-        return {"committed": False, "reason": "no_git_changes", "branch": git_current_branch(), "commit": git_head_sha(), "changed_files": changed_files}
+        return {
+            "committed": False,
+            "reason": "no_git_changes",
+            "branch": git_current_branch(),
+            "commit": git_head_sha(),
+            "changed_files": changed_files,
+        }
     title = "Self-modify: " + str(patch_data.get("summary") or "validated self evolution").replace("\n", " ")[:60]
-    body = json.dumps({"branch": git_current_branch(), "changed_files": changed_files, "read_files": list(patch_data.get("read_files") or []), "rationale": str(patch_data.get("rationale") or "").strip(), "expected_validation": patch_data.get("expected_validation")}, ensure_ascii=False, indent=2, default=str)
+    body = json.dumps(
+        {
+            "branch": git_current_branch(),
+            "changed_files": changed_files,
+            "read_files": list(patch_data.get("read_files") or []),
+            "rationale": str(patch_data.get("rationale") or "").strip(),
+            "expected_validation": patch_data.get("expected_validation"),
+        },
+        ensure_ascii=False,
+        indent=2,
+        default=str,
+    )
     _git(["commit", "-m", title, "-m", body])
     branch, commit = git_current_branch(), git_head_sha()
-    known_good = update_known_good_ref(w, commit, source="commit_self_evolution")
+    known_good = (
+        update_known_good_ref(w, commit, source="commit_self_evolution")
+        if advance_known_good
+        else resolve_known_good(w)
+    )
     pushed = known_good_ref_pushed = False
     if bool(w["self_modify"]["git"]["push_after_commit"]):
         remote = str(w["self_modify"]["git"]["remote"])
         _git(["push", remote, branch])
+        pushed = True
+        if advance_known_good:
+            _git(["push", remote, f"{known_good['ref']}:{known_good['ref']}"])
+            known_good_ref_pushed = True
+    return {
+        "committed": True,
+        "branch": branch,
+        "commit": commit,
+        "known_good": known_good,
+        "known_good_advanced": advance_known_good,
+        "changed_files": changed_files,
+        "pushed": pushed,
+        "known_good_ref_pushed": known_good_ref_pushed,
+        "status": git_worktree_status(),
+    }
+
+
+def accept_self_evolution(w: dict[str, Any], commit: str, *, source: str) -> dict[str, Any]:
+    sha = str(commit or "").strip()
+    if not sha:
+        raise ValueError("cannot behaviorally accept self evolution without a commit")
+    _git(["cat-file", "-e", f"{sha}^{{commit}}"])
+    known_good = update_known_good_ref(w, sha, source=source)
+    pushed = False
+    if bool(w["self_modify"]["git"]["push_after_commit"]):
+        remote = str(w["self_modify"]["git"]["remote"])
         _git(["push", remote, f"{known_good['ref']}:{known_good['ref']}"])
-        pushed = known_good_ref_pushed = True
-    return {"committed": True, "branch": branch, "commit": commit, "known_good": known_good, "changed_files": changed_files, "pushed": pushed, "known_good_ref_pushed": known_good_ref_pushed, "status": git_worktree_status()}
+        pushed = True
+    return {
+        "accepted": True,
+        "commit": sha,
+        "known_good": known_good,
+        "known_good_ref_pushed": pushed,
+    }
 
 
 def save_wiring(w: dict[str, Any]) -> None:
