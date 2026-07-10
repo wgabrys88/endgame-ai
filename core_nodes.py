@@ -593,6 +593,24 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
     open_page = _guarded("open_page", lambda u, start_line=None: _tools.open_page(str(u), int(start_line) if start_line is not None else None))
     read_file = _guarded("read_file", lambda p, max_bytes=None: _tools.read_file(str(p), int(max_bytes) if max_bytes is not None else None))
 
+    # Git helpers for terminal faculty (new for branch verification step)
+    def git_current_branch() -> dict[str, Any]:
+        _assert_duration_open("git_current_branch")
+        try:
+            branch = _git(["branch", "--show-current"]).stdout.strip()
+            return _record_action({"ok": True, "action": "git_current_branch", "branch": branch})
+        except Exception as exc:
+            return _record_action({"ok": False, "action": "git_current_branch", "error": f"{type(exc).__name__}: {exc}"})
+
+    def git_branch_show_current() -> dict[str, Any]:
+        _assert_duration_open("git_branch_show_current")
+        try:
+            result = _git(["branch", "--show-current"])
+            branch = result.stdout.strip()
+            return _record_action({"ok": True, "action": "git_branch_show_current", "branch": branch, "stdout": result.stdout, "stderr": result.stderr})
+        except Exception as exc:
+            return _record_action({"ok": False, "action": "git_branch_show_current", "error": f"{type(exc).__name__}: {exc}"})
+
     last = {"error": state.get("last_error"), "result": state.get("last_result", ""), "action": state.get("last_action", {}), "verification": state.get("last_verification", {}), "reflection": state.get("last_reflection", {})}
     return {
         "action_nodes": action_nodes, "node_by_id": node_by_id, "click": click, "click_node": click_node, "read_node": read_node, "replace_node": replace_node,
@@ -612,4 +630,6 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "web_search": web_search,
         "open_page": open_page,
         "read_file": read_file,
+        "git_current_branch": git_current_branch,
+        "git_branch_show_current": git_branch_show_current,
     }

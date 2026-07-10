@@ -102,3 +102,26 @@ def read_file(path: str, max_bytes: int | None = None) -> Dict[str, Any]:
         "content_chars": len(content),
         "content_sha256": sha,
     }
+
+
+def git_current_branch() -> Dict[str, Any]:
+    """Run git branch --show-current and return recorded action."""
+    try:
+        import subprocess
+        result = subprocess.run(["git", "branch", "--show-current"], cwd=__import__("pathlib").Path.cwd(), capture_output=True, text=True)
+        branch = result.stdout.strip()
+        return {
+            "ok": True,
+            "action": "git_current_branch",
+            "branch": branch,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "returncode": result.returncode,
+        }
+    except Exception as exc:
+        return {"ok": False, "action": "git_current_branch", "error": f"{type(exc).__name__}: {exc}"}
+
+
+def git_branch_show_current() -> Dict[str, Any]:
+    """Run git branch --show-current and return recorded action (alias for verification step)."""
+    return git_current_branch()
