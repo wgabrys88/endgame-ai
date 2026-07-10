@@ -618,9 +618,8 @@ def _ensure_execute_module(ns: dict[str, Any]) -> None:
             setattr(mod, name, ns[name])
 
 
-def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
-    ns = build_capability_runtime.__wrapped__(ctx) if hasattr(build_capability_runtime, "__wrapped__") else build_capability_runtime(ctx)
-    _ensure_execute_module(ns)
-    return ns
-
-build_capability_runtime.__wrapped__ = build_capability_runtime  # type: ignore[attr-defined]
+# Backwards-compatible alias so older code that does "from execute import open_url" works
+execute = types.ModuleType("execute")
+for name in ("open_url", "click", "click_node", "read_node", "replace_node", "type_text", "press_key", "hotkey", "scroll", "scroll_node", "action_nodes", "node_by_id", "observe_with_config", "observe_area", "consult_model"):
+    if name in dir():
+        setattr(execute, name, locals().get(name))
