@@ -33,36 +33,36 @@ class ExecuteNode(BaseNode):
         state = ctx.get("state", {})
         instance = ctx.get("node_instance")
         targets = state.get("_dispatch_targets") or []
-        # Self-gate: a faculty not woken this turn passes through idle to the gate.
         if instance is not None and f"node_execute:{instance}" not in targets:
             effective = state["effective_goal"] + f"\n\n[EXECUTE:{instance}] Not woken this turn; I pass through idle to the gate."
             return bus.emit("done", {"effective_goal": effective})
+
         payload = self.build_payload(ctx)
         record = self.think(ctx)
-        data = record.data
-        code = str(data.get("code", "") or "")
-        conclusion = str(data.get("conclusion") or "").upper()
-        requested = str(data.get("next_signal") or "").lower()
-        valid = {"EXECUTE": {"verify"}, "FRAME": {"frame"}, "CANNOT": {"frame", "reflect"}}
-        if conclusion not in valid or requested not in valid[conclusion]:
-            raise RuntimeError(f"execution invalid conclusion/signal: {conclusion!r}/{requested!r}")
-        if conclusion != "EXECUTE" and code.strip():
-            raise RuntimeError("execution emitted code when conclusion is not EXECUTE")
+        code = record.data["code"]
+
         label = f"EXECUTE:{instance}" if instance else "EXECUTE"
-        if conclusion != "EXECUTE":
-            failure = self._failure("task_route_decision", conclusion=conclusion, reason=f"execute returned {conclusion}")
-            effective = state["effective_goal"] + f"\n\n[{label}] I could not act ({conclusion}); I bring nothing but this word to the gate."
-            return bus.emit("done", {"last_action": {"code": "", "conclusion": conclusion}, "last_error": failure["reason"], "last_failure": failure, "effective_goal": effective}, record=record, evidence=payload)
-        if not code.strip():
-            raise RuntimeError("execution conclusion EXECUTE requires non-empty code")
         deadline_at = state.get("deadline_at")
         if deadline_at is not None and time.time() >= float(deadline_at):
             late_by = round(time.time() - float(deadline_at), 3)
             failure = self._failure("duration_guard", late_by_s=late_by)
             effective = state["effective_goal"] + f"\n\n[{label}] The hour passed before I could act (late {late_by}s); I bring nothing to the gate."
-            return bus.emit("done", {"last_action": {"code": code, "conclusion": conclusion, "not_executed": True}, "last_code": code, "last_result": {"result": None, "stdout": "", "stderr": "", "action_events": [], "duration_guard": {"deadline_at": float(deadline_at), "late_by_s": late_by}}, "last_error": f"duration deadline expired before executing body action: late_by_s={late_by}", "last_failure": failure, "effective_goal": effective}, record=record, evidence=payload)
+            return bus.emit(
+                "done",
+                {
+                    "last_action": {"code": code, "not_executed": True},
+                    "last_code": code,
+                    "last_result": {"result": None, "stdout": "", "stderr": "", "action_events": [], "duration_guard": {"deadline_at": float(deadline_at), "late_by_s": late_by}},
+                    "last_error": f"duration deadline expired before executing body action: late_by_s={late_by}",
+                    "last_failure": failure,
+                    "effective_goal": effective,
+                },
+                record=record,
+                evidence=payload,
+            )
 
         import core_desktop as desktop
+
         ns = nodes.build_capability_runtime(ctx)
         ns["desktop"] = desktop
         stdout, stderr = io.StringIO(), io.StringIO()
@@ -79,7 +79,20 @@ class ExecuteNode(BaseNode):
             error = f"{type(exc).__name__}: {exc}"
             failure = self._failure("task_route_exception", exception_type=type(exc).__name__, message=str(exc))
         effective_goal = state["effective_goal"] + f"\n\n[{label}] Action executed: {code}. Result: {'success' if not error else 'error: ' + str(error)}."
-        return bus.emit("done", {"last_action": {"code": code, "conclusion": conclusion}, "last_code": code, "last_result": result, "last_error": error, "last_failure": failure, "action_frame": None if not error else state.get("action_frame"), "effective_goal": effective_goal}, record=record, evidence=payload)
+        return bus.emit(
+            "done",
+            {
+                "last_action": {"code": code},
+                "last_code": code,
+                "last_result": result,
+                "last_error": error,
+                "last_failure": failure,
+                "action_frame": None if not error else state.get("action_frame"),
+                "effective_goal": effective_goal,
+            },
+            record=record,
+            evidence=payload,
+        )
 
 
 def run(ctx):

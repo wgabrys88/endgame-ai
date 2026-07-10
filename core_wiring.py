@@ -154,10 +154,22 @@ def validate_record_contracts(cfg: dict[str, Any]) -> None:
             raise RuntimeError(f"wiring.record_contracts.{record_type} must be object")
         required = contract.get("required")
         enums = contract.get("enums")
+        types = contract.get("types", {})
+        non_empty = contract.get("non_empty", [])
+        additional_properties = contract.get("additional_properties", True)
         if not isinstance(required, list) or not all(isinstance(key, str) and key for key in required):
             raise RuntimeError(f"wiring.record_contracts.{record_type}.required must be list[str]")
         if not isinstance(enums, dict):
             raise RuntimeError(f"wiring.record_contracts.{record_type}.enums must be object")
+        if not isinstance(types, dict) or not all(isinstance(key, str) and value in {"string", "boolean", "array", "object", "number", "integer"} for key, value in types.items()):
+            raise RuntimeError(f"wiring.record_contracts.{record_type}.types must map keys to supported JSON types")
+        if not isinstance(non_empty, list) or not all(isinstance(key, str) and key for key in non_empty):
+            raise RuntimeError(f"wiring.record_contracts.{record_type}.non_empty must be list[str]")
+        if not isinstance(additional_properties, bool):
+            raise RuntimeError(f"wiring.record_contracts.{record_type}.additional_properties must be boolean")
+        known = set(required) | set(enums) | set(types)
+        if not set(non_empty) <= known:
+            raise RuntimeError(f"wiring.record_contracts.{record_type}.non_empty names unknown keys")
         for key, values in enums.items():
             if not isinstance(key, str) or not key:
                 raise RuntimeError(f"wiring.record_contracts.{record_type}.enums key must be non-empty string")

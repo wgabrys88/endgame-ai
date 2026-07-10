@@ -94,9 +94,25 @@ def _validate_record_contract(w: dict[str, Any], record: bus.Record, expected_re
     contract = get_record_contract(w, record.record_type)
     required = list(contract["required"])
     enums = dict(contract["enums"])
+    types = dict(contract.get("types", {}))
+    non_empty = set(contract.get("non_empty", []))
     missing = [key for key in required if key not in record.data]
     if missing:
         raise RuntimeError(f"{record.record_type} record missing required data keys: {missing}")
+    if not contract.get("additional_properties", True):
+        allowed = set(required) | set(enums) | set(types)
+        unexpected = sorted(set(record.data) - allowed)
+        if unexpected:
+            raise RuntimeError(f"{record.record_type} record has unexpected data keys: {unexpected}")
+    json_types = {"string": str, "boolean": bool, "array": list, "object": dict, "number": (int, float), "integer": int}
+    for key, type_name in types.items():
+        if key in record.data and (not isinstance(record.data[key], json_types[type_name]) or type_name in {"number", "integer"} and isinstance(record.data[key], bool)):
+            raise RuntimeError(f"{record.record_type}.data.{key} must be {type_name}")
+    for key in non_empty:
+        if key in record.data and not record.data[key]:
+            raise RuntimeError(f"{record.record_type}.data.{key} must be non-empty")
+        if key in record.data and isinstance(record.data[key], str) and not record.data[key].strip():
+            raise RuntimeError(f"{record.record_type}.data.{key} must be non-blank")
     for key, values in enums.items():
         if key in record.data and record.data[key] not in set(values):
             raise RuntimeError(f"{record.record_type}.data.{key}={record.data[key]!r} outside {values!r}")
@@ -123,6 +139,9 @@ def _record_contract_prompt(w: dict[str, Any], record_type: str | None) -> str:
         f"record_type: {record_type}",
         "required data keys: " + json.dumps(contract["required"], ensure_ascii=False),
         "enum data values: " + json.dumps(contract["enums"], ensure_ascii=False),
+        "data types: " + json.dumps(contract.get("types", {}), ensure_ascii=False),
+        "non-empty data keys: " + json.dumps(contract.get("non_empty", []), ensure_ascii=False),
+        "additional data keys allowed: " + json.dumps(contract.get("additional_properties", True)),
     ])
 
 
@@ -185,11 +204,6 @@ def summarize_messages_for_log(messages: list[dict[str, str]]) -> list[dict[str,
         role = str(message.get("role") or "user")
         content = str(message.get("content") or "")
         row: dict[str, Any] = {"role": role, "chars": len(content), "sha256": _sha256_text(content), "content": content}
-        if role == "user":
-            try:
-                row["dynamic_payload"] = json.loads(content)
-            except json.JSONDecodeError:
-                row["dynamic_payload"] = content
         out.append(row)
     return out
 
@@ -215,8 +229,15 @@ def _structured_outputs_enabled(cfg: dict[str, Any]) -> bool:
 def _record_response_format(w: dict[str, Any], record_type: str) -> dict[str, Any]:
     contract = get_record_contract(w, record_type)
     data_properties = {key: {} for key in contract["required"]}
+    for key, type_name in contract.get("types", {}).items():
+        data_properties.setdefault(key, {})["type"] = type_name
+    for key in contract.get("non_empty", []):
+        type_name = contract.get("types", {}).get(key)
+        limit_name = {"string": "minLength", "array": "minItems", "object": "minProperties"}.get(type_name)
+        if limit_name:
+            data_properties.setdefault(key, {})[limit_name] = 1
     for key, values in contract["enums"].items():
-        data_properties[key] = {"enum": list(values)}
+        data_properties.setdefault(key, {})["enum"] = list(values)
     return {
         "type": "json_schema",
         "name": f"{record_type}_record",
@@ -228,7 +249,7 @@ def _record_response_format(w: dict[str, Any], record_type: str) -> dict[str, An
                 "record_type": {"enum": [record_type]},
                 "data": {
                     "type": "object",
-                    "additionalProperties": True,
+                    "additionalProperties": contract.get("additional_properties", True),
                     "properties": data_properties,
                     "required": list(contract["required"]),
                 },

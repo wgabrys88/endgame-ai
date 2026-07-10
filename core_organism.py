@@ -108,8 +108,7 @@ def run(
                 node=current,
                 tick=st["tick"],
                 frontier=list(frontier),
-                state=bus.state_brief(st),
-                last_bus_frame=st.get("_last_bus_frame"),
+                state=bus.event_state_brief(st),
             )
             try:
                 ctx = {"wiring": w, "state": dict(st), "goal": goal or "", "node": current}
@@ -185,7 +184,7 @@ def run(
                 successors=list(successors),
                 frontier=list(frontier),
                 tick=st["tick"],
-                state=bus.state_brief(st),
+                state=bus.event_state_brief(st),
                 bus_frame=st.get("_last_bus_frame"),
             )
         st["_phase"] = "frontier_drained"

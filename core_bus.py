@@ -67,6 +67,7 @@ class NodeOutput:
         elif isinstance(self.record, dict):
             record_type = self.record.get("record_type")
             record_json = dict(self.record)
+        omitted = {"goal", "effective_goal", "state", "observation", "desktop_tree_text", "action_index", "observation_artifact"}
         return {
             "kind": "endgame.node_output.v1",
             "node": node,
@@ -75,10 +76,9 @@ class NodeOutput:
             "patch_keys": sorted(self.patch.keys()),
             "evidence_keys": sorted(self.evidence.keys()),
             "record": record_json,
-            "patch": self.patch,
-            "evidence": self.evidence,
+            "patch": {key: value for key, value in self.patch.items() if key not in omitted},
+            "evidence": {key: value for key, value in self.evidence.items() if key not in omitted},
             "emitted_at": time.time(),
-            "effective_goal": self.patch.get("effective_goal") or self.evidence.get("effective_goal"),
         }
 
 
@@ -153,6 +153,15 @@ def state_brief(state: JsonDict) -> JsonDict:
         "root_goal": state.get("goal", ""),
         "effective_goal": state.get("effective_goal", state.get("goal", "")),
     }
+    return brief
+
+
+
+
+def event_state_brief(state: JsonDict) -> JsonDict:
+    brief = state_brief(state)
+    del brief["root_goal"]
+    del brief["effective_goal"]
     return brief
 
 

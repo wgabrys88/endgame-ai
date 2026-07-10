@@ -63,4 +63,5 @@ def call(messages, cfg):
             else:
                 parts.extend(str(c["text"]) for c in item.get("content", []) or [] if isinstance(c, dict) and c.get("text"))
         content = "\n".join(parts)
-    return {"content": content, "reasoning": reasoning.strip(), "usage": obj.get("usage", {}), "body": obj}
+    response_meta = {key: obj[key] for key in ("id", "model", "created_at", "completed_at", "status", "service_tier") if key in obj}
+    return {"content": content, "reasoning": reasoning.strip(), "usage": obj.get("usage", {}), "response_meta": response_meta}
