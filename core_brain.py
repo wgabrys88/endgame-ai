@@ -345,8 +345,10 @@ def extract_json_object(text: str) -> dict[str, Any] | None:
 def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, expected_record_type: str | None = None, request_config: dict[str, Any] | None = None) -> dict[str, Any]:
     _, cfg = wiring.get_transport_config(w)
     reasoning_cfg = dict(cfg["reasoning"])
-    prefix = stable_prefix(w) if w["model"]["stable_prefix"]["enabled"] else None
-    prefix_for_messages = prefix if w["model"]["stable_prefix"]["include_in_request"] else None
+    organ_tuning = _organ_tuning(w, expected_record_type)
+    include_prefix = bool(w["model"]["stable_prefix"]["include_in_request"] or organ_tuning.get("include_stable_prefix"))
+    prefix = stable_prefix(w) if w["model"]["stable_prefix"]["enabled"] and include_prefix else None
+    prefix_for_messages = prefix
     conv_id = w.get("_conv_id")
     if not conv_id:
         conv_id = f"endgame-ai-{int(time.time())}-{hashlib.md5(str(w).encode()).hexdigest()[:8]}"
@@ -359,7 +361,7 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
     request_cfg["expected_record_type"] = expected_record_type
     if prefix is not None:
         request_cfg["stable_prefix"] = prefix.metadata()
-    for key, value in _organ_tuning(w, expected_record_type).items():
+    for key, value in organ_tuning.items():
         if key in {"reasoning_effort", "max_output_tokens"} and value is not None:
             request_cfg.setdefault(key, value)
     if cfg.get("transport") == "transport_xai":

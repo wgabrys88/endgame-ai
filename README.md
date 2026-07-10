@@ -1,95 +1,90 @@
 # endgame-ai
 
-`endgame-ai` is a task-agnostic autonomous organism for a real Windows 11 desktop. UI Automation supplies the eyes and hands; a wheel of dynamically loaded nodes carries one growing goal-narrative through planning, acting, verification, reflection, self-modification, recursion, and deliberate rest.
+`endgame-ai` is a task-agnostic autonomous organism for a real Windows 11 desktop. It reads the desktop through UI Automation, acts through a small capability surface, and carries one goal-narrative around a dynamically wired wheel of planning, execution, verification, reflection, self-modification, spawning, and deliberate rest.
 
-This repository contains the source, Git history, final state, runtime event log, model-provider request log, and per-phase forensic exports from the **2026-07-10 run**. That run proved liveness but not task completion. The code has since been corrected from the evidence. A fresh Windows run is still required to prove that the corrections produce sustained task progress.
+This revision is based on the attached **2026-07-10 failure run**, not on an inferred story. The run did not prove that the requested LinkedIn task was impossible. It stopped after **105.243 seconds** of a 600-second leash because the self-modification path was broken and the evidence used to diagnose the first action was unreliable. The corrected code removes those general defects without adding LinkedIn-, browser-, or task-specific branches.
 
-## Status at a glance
+The full derivation is in [`FAILURE_RUN_FORENSICS.md`](FAILURE_RUN_FORENSICS.md). Raw immutable run artifacts are packaged beside this repository under `failure-run-evidence/`.
 
-| Claim | Status | Evidence |
-|---|---|---|
-| The wheel stayed alive for about ten minutes | Proven | `runtime_events.jsonl`, `runtime_state.json` |
-| The provider and runtime logs describe 207 model calls | Proven | Both JSONL logs |
-| The run completed its desktop task | False | No step was verified; only six actions ran |
-| Most model-selected execute turns acted | False | 6 acted; 12 returned `FRAME` or `CANNOT` |
-| 48 model-selected execute turns were empty | False | 36 of those 48 were intentionally idle fan-out branches |
-| Planner refusal was a major loop source | Proven | 60 `reflect` results from 66 planner calls |
-| Reflection could freely escalate or rest | False in the old code | 59 requested `give_up` choices were rewritten to `replan` by Python |
-| The corrected code forbids planner and executor no-op exits | Proven statically and by contract replay | Commit `6fb1ab3`; validation commands below |
-| The corrected code progresses on Windows | Not yet proven | Requires a new live run |
+## Current verdict
 
-The complete evidence and derivations are in [`FORENSIC_AUDIT.md`](FORENSIC_AUDIT.md). Every statement unit from the previous README is tracked in [`README_SENTENCE_AUDIT.md`](README_SENTENCE_AUDIT.md).
+| Question | Evidence-based answer |
+|---|---|
+| Did the organism use the full ten-minute leash? | No. It halted after 105.243 seconds with about 494.75 seconds remaining. |
+| Did it try self-modification? | Reflection selected escalation five times, but zero patches reached application, validation, or Git. |
+| Why did every self-modification fail? | `core_organism.py` called evolution functions on `core_node_base`, although those functions live in `core_nodes`. The rollback call failed the same way and masked the first missing function. |
+| Was Chrome proven not to launch? | No. The selected click was `(339, 1050)` while the observation declared a `1536 × 864` screen. The click API reported only that a call returned, and verification used the pre-action observation. |
+| Was `give_up` justified? | No. It followed a broken repair mechanism, stale verification evidence, incorrect elapsed-time estimates, and an unexhausted leash. |
+| Should `give_up` exist? | Yes, as deliberate rest for completion, unsafe requests, a genuinely proven impossibility after working repair paths, or an external stop/deadline. A failed repair subsystem is evidence to repair the subsystem, not proof that the goal is impossible. |
+| Is live completion now proven? | Not yet. The corrected mechanics and gates pass deterministic tests; a fresh Windows desktop run is still required. |
 
-## The wheel
+## The corrected wheel
 
-The topology lives in `wiring.json`, not in a Python registry.
+Topology, prompts, contracts, aliases, capability descriptions, model configuration, and self-modification policy live in `wiring.json`.
 
 ```text
-node_guidance -> node_observe -> node_planner -> node_scheduler
-      ^                                              |
-      |                                              v
-node_frame_action <- node_reflect <- node_verify <- node_barrier
-      ^                                              ^
-      |                                              |
-      +---- node_dispatch -> browser/editor/terminal-+
-
-node_reflect -> node_self_modify -> node_planner
-node_reflect -> node_spawn -> node_reflect
-node_reflect -> node_satisfied -> halt
-errors -> node_error -> planner/reflect/guidance
+node_guidance:plan
+        |
+node_observe:plan
+        |
+   node_planner -> node_scheduler
+                         |
+                 node_guidance:act
+                         |
+                  node_observe:act
+                         |
+                    node_dispatch
+                / browser | editor \
+               + terminal faculties +
+                         |
+                    node_barrier
+                         |
+                node_observe:verify
+                         |
+                    node_verify
+                         |
+                    node_reflect
+          retry / replan / frame / escalate
+                         |
+          self-modify / spawn / deliberate rest
 ```
 
-Every node emits exactly `(signal, patch)`. The bus validates the signal against the edge for that exact node instance, applies the patch to the one persisted state dictionary, increments the tick, and routes the next frontier. Fan-out wakes the execute faculties; the barrier waits for all branches, including intentionally idle branches, before verification.
+The three observe instances are the same mechanical plugin loaded by name. They provide fresh evidence before planning, before action, and after the execution barrier. Every path returns to the wheel or reaches deliberate rest through a legal edge.
 
-## What the 2026-07-10 run actually did
+## What changed
 
-The provider log contains 207 requests for `grok-4.3`. The runtime log contains 207 matching `brain_request` and 207 `brain_response` events, 305 completed ticks, and one `duration_expired` event. Provider timestamps span `2026-07-10T06:23:54.685991Z` through `2026-07-10T06:33:52.702106Z`. Summed provider usage is 1,736,111 prompt tokens, 35,060 completion tokens, 441,088 cached prompt tokens, and `$0.179464635`.
+### Self-modification is now executable
 
-The progress failure had three linked causes:
+`core_organism.py` uses `core_node_base` only for dynamic node invocation and `core_nodes` for evolution operations. A proposed patch now follows one coherent path:
 
-1. **Planner refusal:** 60 of 66 planner records selected `reflect`; only six produced a plan.
-2. **Woken faculty refusal:** dispatch woke one faculty on each of 18 laps. Of those 18 model-selected execution records, six contained executable code, ten selected `FRAME`, and two selected `CANNOT`. The other 36 execute-node visits were expected idle branches created by the three-way fan-out.
-3. **Reflection override:** the model requested `give_up` 59 times. `node_reflect.py` mechanically changed all 59 to `replan`, so the organism could neither honor deliberate rest nor treat the repeated task failure as grounds for self-modification.
+1. validate the wiring-derived record;
+2. restrict every write/delete to the wiring's evolvable-file policy;
+3. apply complete file replacements, deletions, and JSON patches;
+4. run the mandatory coherence gate: wiring validation, topology/plugin reachability, and compilation of all root Python files;
+5. run the proposal's validation commands;
+6. force-stage only the already-approved paths, so convention-named runtime plugins can enter an allowlist-style Git worktree;
+7. commit, advance `refs/endgame/known_good`, and optionally push;
+8. hot-swap touched paths to known-good on failure.
 
-Verification denied all 18 attempts. Reflection ultimately routed 66 times to replan, eight times to frame, and five times to retry. `node_self_modify`, `node_spawn`, `node_satisfied`, and `node_error` were never visited.
+The self-modification model alone receives a stable prefix containing the complete tracked Python/JSON source. Its contract requires typed arrays, non-empty rationale and validation, complete file contents, and no placeholders or Git ceremony. Other organs do not pay that source-context cost.
 
-The observation system was also too narrow for the complex browser page. In the stuck profile state, the raw scan found 571 unique UIA nodes, but the filter rendered 31 nodes because `max_per_window` was 30. The model repeatedly saw the global navigation and only a small part of the profile controls.
+### Actions and observations now describe the same physical screen
 
-## Corrections made from that evidence
+The desktop thread opts into per-monitor DPI awareness before UI Automation starts. Click and scroll coordinates are checked against the physical screen and fail loudly when outside it. Mouse actions use physical global coordinates; the old window-message path incorrectly supplied global coordinates to an API that expected client coordinates.
 
-### 1. Planner must produce executable intent
+The observation artifact records physical screen dimensions. A mandatory post-action observation now occurs in the graph before verification. An action returning without an exception is therefore no longer treated as evidence that the intended UI state changed.
 
-The plan contract now permits only `step_ready`; the obsolete planner `reflect` edge was removed. The prompt requires a complete remaining plan whose first step is executable from the current observation. Uncertainty must become an observation, reading, navigation, or other evidence-gathering step rather than a refusal to plan.
+### Exact time replaces model estimation
 
-### 2. A woken execute faculty must act
+State now carries invocation start, deadline, elapsed seconds, and remaining seconds in the model brief. Reflection is told to use those values and never estimate elapsed time. The external leash remains mechanical and authoritative.
 
-Unchosen execute branches still pass through mechanically and make no model call. A chosen faculty now has one record field: non-empty Python `code`. `FRAME`, `CANNOT`, and their redundant pseudo-signals were removed from the execution contract and node code. When a direct target is absent, the faculty must use a listed observation or navigation capability to gather concrete evidence.
+### Deliberate rest remains legal but is harder to misuse
 
-The generic record-contract machinery now supports wiring-defined JSON types, non-empty fields, and rejection of additional fields. For execution, the schema requires a non-empty string and rejects every extra key. This keeps the requirement in `wiring.record_contracts` rather than recreating it as an execute-specific Python enum table.
+Reflection can still emit `give_up`; Python does not override its choice. The prompt now requires working repair paths and materially different approaches to be exhausted before declaring a correctable organism defect impossible. Failed self-modification is explicitly not such proof. Completion, unsafe action, logical impossibility, and external stop/deadline remain legitimate reasons to rest.
 
-### 3. Reflection owns its choice again
+### Direct capabilities are preferred over fragile gestures
 
-The Python routing override and its task/contract failure classifications were removed from `node_reflect.py`. All seven legal reflection signals now pass through unchanged. The prompt treats repeated identical failure as evidence, requires a correctable organism defect to escalate before deliberate rest, and rejects cycling without materially new evidence.
-
-### 4. The narrative no longer resets on accepted replans
-
-The planner now appends its plan retelling to `state["effective_goal"]`. The old code rebuilt the narrative from the root goal whenever a plan was accepted, which erased accumulated intermediate history six times in the analyzed run.
-
-### 5. Observation breadth increased without a task branch
-
-`observe_config.hover_cache.filter.max_per_window` increased from 30 to 120. This is a task-agnostic capability change. It does not assume a browser, website, or control name.
-
-### 6. Forensic logs no longer duplicate the largest values
-
-Node event summaries omit the full root/effective narrative. Node-output traces omit the full narrative and observation structures while retaining record data, patch/evidence key lists, action results, failures, and other compact evidence. Brain requests store each message once instead of storing the user content and a second parsed copy. The xAI transport logs usage and response metadata rather than embedding the full provider response body again.
-
-Applying the new logging shape to every event in the old 44,105,081-byte runtime log produces a measured projection of 10,332,671 bytes: **76.57% smaller**. This is a deterministic replay projection, not a claim from a new live run.
-
-Across the touched source and wiring files, the corrected version is 1,303 bytes smaller than commit `1b917b3` despite adding generic contract validation and repairing the error-node edge.
-
-### 7. Error recovery no longer emits an illegal dead-end
-
-`node_error` previously emitted `halt` when observation data was missing, but `halt` is not a legal edge from that node. It now emits the existing `guidance` signal, re-entering guidance and observation through the bus. Deliberate rest remains owned by `node_satisfied`.
+Planning and execution prompts prefer the most direct deterministic capability available. For example, a URL may be opened through `open_url` rather than clicking a taskbar icon. This is a general action-selection rule, not a browser special case.
 
 ## Architecture
 
@@ -98,84 +93,93 @@ Across the touched source and wiring files, the corrected version is 1,303 bytes
 | File | Responsibility |
 |---|---|
 | `core_organism.py` | Turns the frontier, persists state, applies self-evolution, and enforces the operator leash |
-| `core_node_base.py` | One lifecycle for LLM nodes: payload, think, signal, patch |
-| `core_loader.py` | Dynamic file-based loading by convention; no node registry |
-| `core_bus.py` | Records, node outputs, edge validation, compact state/evidence summaries |
-| `core_brain.py` | Model messages, structured schema, contract validation, cache key, event logging |
+| `core_node_base.py` | One lifecycle for LLM nodes: payload → think → signal → patch |
+| `core_loader.py` | Dynamic convention-based plugin loading; no compile-time registry |
+| `core_bus.py` | Record and edge validation, state/evidence briefs, node-output frames |
+| `core_brain.py` | The only model boundary: messages, source prefix, schema, validation, caching, logging |
 | `core_wiring.py` | Loads and validates `wiring.json`; atomic JSON persistence |
-| `core_state.py` | Duration, pause/step control, exception classification |
-| `check_topology.py` | Reachability, dangling-edge, barrier, prompt, and record-contract coherence gate |
-| `core_observation.py` | UIA raw scan, filter, tree rendering, and action index |
-| `core_nodes.py`, `core_desktop.py` | Local capabilities and desktop actions |
+| `core_state.py` | Runtime control, exact duration state, and exception classification |
+| `core_nodes.py` | Capability runtime and Git-backed self-evolution primitives |
+| `core_desktop.py` | Physical Windows input and deterministic launch capabilities |
+| `core_observation.py` | UI Automation scan, filter, rendering, action index, screen metadata |
+| `check_topology.py` | Reachability, dangling edges, barrier arity, contracts, prompts, and plugin files |
 
 ### Plugins
 
-LLM nodes subclass `BaseNode`; mechanical nodes remain pure functions of state. Execute instances are loaded from the same `node_execute.py` by names such as `node_execute:browser`. A new convention-named node requires no compile-time registry change.
+LLM nodes subclass one `BaseNode`; mechanical nodes remain pure state transformations. Instance names such as `node_observe:verify` and `node_execute:browser` resolve to convention-named files dynamically. A new wired node does not require a core registry edit.
 
-### Wiring as the behavioral source of truth
+### Bus law
 
-`wiring.json` contains topology, prompts, aliases, record contracts, capabilities, observation configuration, model configuration, and self-modification policy. A topology change must be accompanied by matching prompt and contract changes, then pass `check_topology.py`.
+Every node emits exactly `(signal, patch)`. The bus validates the signal against the edge for that exact node instance, applies the patch to the one persisted state dictionary, increments the tick, and routes the next frontier. Fan-out branches rejoin through the declared barrier. There are no side channels around the bus.
 
-## Running
+## Running on Windows 11
 
-The real eyes and hands require Windows 11 and UI Automation dependencies.
+Install the repository's Python dependencies in the same environment used to launch the organism. Start a fresh run with `--reset`; omitting it intentionally resumes persisted state.
 
-```bash
-# Fresh bounded run
-python core_organism.py "your goal in plain words" --reset --duration-seconds 120
-
-# Resume persisted state
-python core_organism.py "your goal in plain words" --duration-seconds 300
+```powershell
+python .\core_organism.py "your goal in plain words" --reset --duration-seconds 600
 ```
 
-The default development leash is 120 seconds. Use `guidance.txt` for external counsel. `runtime_control.json` supports run, pause, and step. `runtime_stop.json` is the external stop surface.
+Useful operator surfaces:
 
-## Verification performed on the corrected code
+- `guidance.txt` — external counsel read at guidance turns;
+- `runtime_control.json` — run, pause, and step control;
+- `runtime_stop.json` — external stop request;
+- `runtime_state.json` — atomically persisted organism state;
+- `runtime_events.jsonl` — append-only forensic event stream.
+
+A fresh validation run should demonstrate all of the following from logs, not narrative claims:
+
+1. the first observation reports physical screen dimensions consistent with action coordinates;
+2. a selected direct capability or click produces a recorded action;
+3. `node_observe:verify` scans after the action timestamp;
+4. verification cites that post-action evidence;
+5. any self-modification reaches `self_modify_applied` or records the original gate failure without a masked exception;
+6. `refs/endgame/known_good` advances only after a validated commit;
+7. deliberate rest states a valid terminal condition or the mechanical leash expires.
+
+## Verification in this package
+
+The corrected tree has passed:
 
 ```bash
-python3 -m py_compile *.py
-python3 check_topology.py
+python -m compileall -q .
+python check_topology.py
 ```
 
-The topology gate reports 16 reachable nodes, no dangling targets, correct barrier arity, and nine coherent record contracts.
+The topology gate reports 19 reachable node instances, no dangling edges, correct barrier arity, coherent prompts/contracts, and a convention plugin file for every wired node.
 
-Additional deterministic checks verified that:
+Deterministic tests also proved:
 
-- an old planner `reflect` record is rejected;
-- an old execution `FRAME/CANNOT` record is rejected for unexpected keys;
-- blank execution code is rejected;
-- a non-empty action program is accepted by the generated strict schema;
-- planner output preserves the prior narrative;
-- every legal reflection signal passes through unchanged;
-- compact event traces remove the large duplicate fields while retaining action/failure evidence.
+- all five historical self-modification records with dictionary-shaped `file_writes` are rejected by the strict contract;
+- a correctly shaped evolution record is accepted;
+- the self-modification source prefix is present only for that organ;
+- the route is `barrier → node_observe:verify → node_verify`;
+- all observe instances emit the same legal `observed` signal;
+- a disposable new plugin can be applied, gated, force-staged under the evolvable policy, committed, marked known-good, corrupted, and restored exactly;
+- the attached event timestamps reproduce the 105.243-second halt and remaining leash.
 
-These checks prove the old no-op outputs are no longer contract-valid. They do not substitute for a fresh Windows desktop run.
+These are mechanical proofs. This environment cannot operate the user's Windows desktop, so it does not claim that the LinkedIn goal has already been completed.
 
-## Development rules
+## Engineering rules
 
-1. Stay task-agnostic. Improve prompts, contracts, capabilities, or topology; never branch on a goal or application name.
+1. Stay task-agnostic. Improve prompts, contracts, capabilities, or topology; never branch on a goal, site, or application name.
 2. Keep behavior in nodes and wiring. Core modules turn and validate the wheel.
-3. Fail hard and fix the writer. Do not add silent fallbacks for missing state.
+3. Fail hard and fix the writer. Do not hide missing state behind defaults or swallowed exceptions.
 4. Keep record requirements in `wiring.record_contracts`.
-5. Preserve dynamic file-based plugins and the single LLM-node base lifecycle.
-6. Change topology, prompts, and contracts together.
-7. Never truncate or reset the goal-narrative.
-8. Treat failure as evidence for the narrative, not a new defensive branch.
-9. Prefer deletion and reuse. Validate, commit one coherent change, then advance the known-good ref.
+5. Preserve dynamic file-based plugins and the single LLM-node lifecycle.
+6. Change topology, prompts, contracts, and aliases together.
+7. Never truncate or silently reset the goal-narrative.
+8. Treat failure as evidence for reflection and evolution, not as a reason to add task branches.
+9. Prefer subtraction and reuse. Validate one coherent change, commit it, then advance known-good.
 
-## Evidence and history
+## Git history for this correction
 
-- Pre-correction evidence/docs commit: `1b917b3`
-- Progress correction: `6fb1ab3`
-- Forensic log slimming: `7f641fd`
-- Legal error recovery: `df52e08`
-- Escalation before premature rest: `36c9a0e`
-- Historical runtime events: `runtime_events.jsonl`
-- Provider ground truth: `request-logs-2026-07-10.jsonl`
-- Final historical state: `runtime_state.json`
-- Detailed derivation: `FORENSIC_AUDIT.md`
-- Previous README sentence tracking: `README_SENTENCE_AUDIT.md`
+- `8a4fee0` — source state contained in the uploaded failure archive;
+- `b2c90c9` — restore truthful action, post-action verification, exact timing, and working self-evolution routing;
+- `2669dd9` — permit only wiring-approved runtime plugin paths to be force-staged into the allowlist worktree;
+- the final documentation commit records the forensic verdict and packaged acceptance tests.
 
 ## Safety
 
-This software can operate a logged-in desktop and execute generated Python. Coherence is not a safety certification. Run it only with explicit permission, least-privilege accounts, a bounded operator leash, and active log review. Keep security boundaries in the environment and permissions rather than application-specific branches inside the organism.
+This software can operate a logged-in desktop, publish account data, execute generated Python, and modify its own source. Coherence is not a security certification. Run it only with explicit account-owner permission, least-privilege credentials, a bounded operator leash, active screen recording/log review, and external controls that the organism cannot silently widen.

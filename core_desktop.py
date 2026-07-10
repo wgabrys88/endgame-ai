@@ -12,6 +12,9 @@ import comtypes.client
 
 ROOT = __import__("pathlib").Path(__file__).parent.resolve()
 user32 = ctypes.windll.user32
+DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = ctypes.c_void_p(-4)
+if not user32.SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2):
+    raise ctypes.WinError()
 
 
 def _load_uia_module() -> Any:
@@ -58,15 +61,14 @@ class Desktop:
         return self._last_action_index
 
     def click(self, x: int, y: int, hwnd: int = 0) -> dict[str, Any]:
-        if hwnd:
-            lparam = (y << 16) | (x & 0xFFFF)
-            user32.PostMessageW(hwnd, 0x0201, 0, lparam)
-            user32.PostMessageW(hwnd, 0x0202, 0, lparam)
-        else:
-            user32.SetCursorPos(x, y)
-            user32.mouse_event(0x0002, 0, 0, 0, 0)
-            user32.mouse_event(0x0004, 0, 0, 0, 0)
-        return {"ok": True, "action": "click", "x": x, "y": y, "hwnd": hwnd}
+        width, height = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
+        if not 0 <= x < width or not 0 <= y < height:
+            raise RuntimeError(f"click coordinates ({x}, {y}) outside physical screen {width}x{height}")
+        if not user32.SetCursorPos(x, y):
+            raise ctypes.WinError()
+        user32.mouse_event(0x0002, 0, 0, 0, 0)
+        user32.mouse_event(0x0004, 0, 0, 0, 0)
+        return {"ok": True, "action": "click", "x": x, "y": y, "hwnd": hwnd, "screen": {"width": width, "height": height}}
 
     def type_text(self, text: str) -> dict[str, Any]:
         for char in text:
@@ -135,13 +137,13 @@ class Desktop:
         return {"ok": True, "action": "hotkey", "keys": parts}
 
     def scroll(self, x: int, y: int, amount: int, hwnd: int = 0) -> dict[str, Any]:
-        if hwnd:
-            lparam = (y << 16) | (x & 0xFFFF)
-            user32.PostMessageW(hwnd, 0x020A, amount << 16, lparam)
-        else:
-            user32.SetCursorPos(x, y)
-            user32.mouse_event(0x0800, 0, 0, amount * 120, 0)
-        return {"ok": True, "action": "scroll", "x": x, "y": y, "amount": amount, "hwnd": hwnd}
+        width, height = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
+        if not 0 <= x < width or not 0 <= y < height:
+            raise RuntimeError(f"scroll coordinates ({x}, {y}) outside physical screen {width}x{height}")
+        if not user32.SetCursorPos(x, y):
+            raise ctypes.WinError()
+        user32.mouse_event(0x0800, 0, 0, amount * 120, 0)
+        return {"ok": True, "action": "scroll", "x": x, "y": y, "amount": amount, "hwnd": hwnd, "screen": {"width": width, "height": height}}
 
     def open_url(self, browser: str = "chrome", url: str = "") -> dict[str, Any]:
         if not str(url or "").strip():

@@ -69,12 +69,16 @@ def coherence_problems(w: dict) -> list[str]:
                 if t not in SENTINELS and t not in nodes:
                     problems.append(f"{src}.{sig} -> '{t}' is not a known node")
 
-    # every wired node needs an edge map
+    # every wired node needs an edge map, prompt, and dynamically loadable source file
+    node_dir = wiring.root_path(w["paths"]["nodes"])
     for n in nodes:
         if n not in edges:
             problems.append(f"node '{n}' has no edges")
         if wiring.prompt_name(w, n) not in w.get("prompts", {}):
             problems.append(f"node '{n}' has no prompt or prompt_alias")
+        base = n.split(":", 1)[0]
+        if not (node_dir / f"{base}.py").is_file():
+            problems.append(f"node '{n}' has no plugin file {(node_dir / f'{base}.py')}")
 
     # each barrier must name a wired node with positive integer arity and a join edge
     for bnode, arity in barriers.items():

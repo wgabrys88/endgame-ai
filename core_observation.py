@@ -575,6 +575,7 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
         "observed_at": observed_at,
         "fresh_scan": True,
         "scan_config": cfg["scan"],
+        "screen": gathered["screen"],
         "scan_stats": gathered["scan_stats"],
         "desktop_tree": {
             "id": "W0", "role": "Screen", "fresh_scan": True, "observed_at": observed_at,

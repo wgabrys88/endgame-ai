@@ -29,16 +29,19 @@ def _thread_id() -> int:
     return threading.get_ident()
 
 
-def _evolution_target(raw_path: str) -> tuple[pathlib.Path, str]:
+def _evolution_target(raw_path: str, w: dict[str, Any] | None = None) -> tuple[pathlib.Path, str]:
     rel = str(raw_path).replace("\\", "/").strip().lstrip("/")
     if not rel:
         raise ValueError("self_modify path is empty")
     requested = pathlib.Path(rel)
     path = (ROOT / requested).resolve() if not requested.is_absolute() else requested.resolve()
     try:
-        return path, path.relative_to(ROOT).as_posix()
+        rel = path.relative_to(ROOT).as_posix()
     except ValueError as exc:
         raise ValueError(f"git evolution path must stay under repository root: {raw_path}") from exc
+    if w is not None and not _evolvable_rel(w, rel):
+        raise ValueError(f"git evolution path is outside wiring.self_modify.evolvable: {rel}")
+    return path, rel
 
 
 def _validate_content(path: pathlib.Path, rel: str, content: Any) -> str:
@@ -248,8 +251,8 @@ def _restore_snapshots(snapshots: dict[pathlib.Path, bytes | None]) -> None:
 
 
 
-def _file_write(item: dict[str, Any]) -> tuple[pathlib.Path, str, str]:
-    path, rel = _evolution_target(str(item["path"]))
+def _file_write(item: dict[str, Any], w: dict[str, Any]) -> tuple[pathlib.Path, str, str]:
+    path, rel = _evolution_target(str(item["path"]), w)
     return path, rel, _validate_content(path, rel, item["content"])
 
 def apply_evolution_patch(w: dict[str, Any], parsed: dict[str, Any]) -> tuple[str, Any]:
@@ -262,8 +265,8 @@ def apply_evolution_patch(w: dict[str, Any], parsed: dict[str, Any]) -> tuple[st
         problems = check_topology.coherence_problems(patched_wiring)
         if problems:
             raise ValueError(f"wiring_patch would make the organism incoherent: {problems}")
-    writes = [_file_write(item) for item in data["file_writes"]]
-    deletes = [_evolution_target(str(path)) for path in data["file_deletes"]]
+    writes = [_file_write(item, w) for item in data["file_writes"]]
+    deletes = [_evolution_target(str(path), w) for path in data["file_deletes"]]
     missing_reads = [rel for path, rel, _ in writes if path.exists() and rel not in read_files]
     missing_reads += [rel for path, rel in deletes if path.exists() and rel not in read_files]
     if wiring_patches and "wiring.json" not in read_files:
@@ -287,6 +290,12 @@ def apply_evolution_patch(w: dict[str, Any], parsed: dict[str, Any]) -> tuple[st
                 compile(path.read_text(encoding="utf-8"), rel, "exec")
             elif path.suffix == ".json":
                 json.loads(path.read_text(encoding="utf-8"))
+        wiring.validate_wiring(w)
+        problems = check_topology.coherence_problems(w)
+        if problems:
+            raise ValueError(f"self_modify result is incoherent: {problems}")
+        for source in ROOT.glob("*.py"):
+            compile(source.read_text(encoding="utf-8"), source.name, "exec")
         command_results = _run_evolution_commands(list(data["commands"]), w)
     except Exception:
         if rollback:
@@ -309,7 +318,7 @@ def commit_self_evolution(w: dict[str, Any], applied: dict[str, Any], patch_data
     changed_files = sorted({str(path).replace("\\", "/") for path in changed_files if str(path).strip()})
     if not changed_files:
         return {"committed": False, "reason": "no_changed_files", "branch": git_current_branch(), "commit": git_head_sha()}
-    _git(["add", "-A", "--", *changed_files])
+    _git(["add", "-A", "-f", "--", *changed_files])
     if not git_worktree_status():
         return {"committed": False, "reason": "no_git_changes", "branch": git_current_branch(), "commit": git_head_sha(), "changed_files": changed_files}
     title = "Self-modify: " + str(patch_data.get("summary") or "validated self evolution").replace("\n", " ")[:60]
@@ -434,7 +443,7 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
                 raise RuntimeError("observe_with_config requires a dict hover_cache_config")
             cfg.update(copy.deepcopy(hover_cache_config))
         obs = d.observe({"hover_cache": cfg})
-        return _record_action({"ok": True, "action": "observe_with_config", "desktop_tree_text": obs.get("desktop_tree_text", ""), "scan_stats": (obs.get("observation_artifact") or {}).get("scan_stats", {}), "rendered_node_count": obs.get("rendered_node_count"), "max_llm_nodes": obs.get("max_llm_nodes"), "llm_node_limit_hit": obs.get("llm_node_limit_hit")})
+        return _record_action({"ok": True, "action": "observe_with_config", "desktop_tree_text": obs.get("desktop_tree_text", ""), "screen": (obs.get("observation_artifact") or {}).get("screen", {}), "scan_stats": (obs.get("observation_artifact") or {}).get("scan_stats", {}), "rendered_node_count": obs.get("rendered_node_count"), "max_llm_nodes": obs.get("max_llm_nodes"), "llm_node_limit_hit": obs.get("llm_node_limit_hit")})
 
     def observe_area(left: int, top: int, right: int, bottom: int, max_llm_nodes: int | None = None, max_depth: int | None = None, step_px: int | None = None) -> dict[str, Any]:
         _assert_duration_open("observe_area")

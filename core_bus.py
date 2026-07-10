@@ -135,6 +135,9 @@ def validate_signal(wiring: JsonDict, node: str, signal: str) -> None:
 def state_brief(state: JsonDict) -> JsonDict:
 
     current_step = state.get("current_step") or {}
+    now = time.time()
+    started_at = state.get("started_at")
+    deadline_at = state.get("deadline_at")
     brief = {
         "tick": state.get("tick"),
         "current_node": state.get("current_node"),
@@ -150,6 +153,13 @@ def state_brief(state: JsonDict) -> JsonDict:
         "last_failure": state.get("last_failure", {}),
         "failure_streak": state.get("failure_streak", {}),
         "has_action_frame": bool(state.get("action_frame")),
+        "timing": {
+            "started_at": started_at,
+            "deadline_at": deadline_at,
+            "duration_seconds": state.get("duration_seconds"),
+            "elapsed_seconds": round(now - float(started_at), 3) if started_at is not None else None,
+            "remaining_seconds": round(float(deadline_at) - now, 3) if deadline_at is not None else None,
+        },
         "root_goal": state.get("goal", ""),
         "effective_goal": state.get("effective_goal", state.get("goal", "")),
     }
@@ -172,6 +182,7 @@ def observation_brief(state: JsonDict) -> JsonDict:
         "desktop_tree_text": state.get("desktop_tree_text", ""),
         "observed_at": state.get("observed_at"),
         "scan_config": artifact.get("scan_config", {}) if isinstance(artifact, dict) else {},
+        "screen": artifact.get("screen", {}) if isinstance(artifact, dict) else {},
         "scan_stats": artifact.get("scan_stats", {}) if isinstance(artifact, dict) else {},
         "rendered_node_count": state.get("rendered_node_count") or (tree or {}).get("rendered_node_count"),
         "max_llm_nodes": state.get("max_llm_nodes") or (tree or {}).get("max_llm_nodes"),

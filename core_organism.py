@@ -5,7 +5,8 @@ from typing import Any
 
 import core_brain as brain
 import core_bus as bus
-import core_node_base as nodes
+import core_node_base as node_base
+import core_nodes as nodes
 import core_state as state
 import core_stop_check as stop_check
 import core_wiring as wiring
@@ -23,6 +24,7 @@ def run(
     _deadline_at: float | None = None,
     _seed: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    invocation_started_at = time.time()
     registered_here = False
     if not _pid_registered:
         stop_check.register_pid("organism")
@@ -41,7 +43,7 @@ def run(
             brain.reset_call_budget()
 
         if deadline_at is None and duration_seconds is not None:
-            deadline_at = time.time() + float(duration_seconds)
+            deadline_at = invocation_started_at + float(duration_seconds)
 
         sp = wiring.state_path(w)
         resumed = False
@@ -71,6 +73,7 @@ def run(
         if _seed:
             st.update(_seed)
         st["current_node"] = current
+        st["started_at"] = invocation_started_at
         st["duration_seconds"] = duration_seconds
         st["deadline_at"] = deadline_at
         st.setdefault("wiring_transport", w["model"]["transport"])
@@ -112,7 +115,7 @@ def run(
             )
             try:
                 ctx = {"wiring": w, "state": dict(st), "goal": goal or "", "node": current}
-                signal_name, patch = nodes.call_node(current, ctx)
+                signal_name, patch = node_base.call_node(current, ctx)
                 evolution_patch = patch.get("git_evolution_patch")
                 if current == "node_self_modify" and evolution_patch:
                     try:
