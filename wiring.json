@@ -181,7 +181,8 @@
           "node_repair_probe.py",
           "node_repair_dispatch.py",
           "node_repair_validate.py",
-          "core_nodes.py"
+          "core_nodes.py",
+          "tools.py"
         ],
         "next_run": [
           "core_brain.py",

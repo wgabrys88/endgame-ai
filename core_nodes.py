@@ -588,7 +588,12 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
             "response_sha256": __import__("hashlib").sha256(response.encode("utf-8")).hexdigest(),
         })
 
-    # NEW: direct web research helpers for terminal faculty (recorded actions)
+    # Direct web research helpers for terminal faculty (recorded actions)
+    try:
+        import tools as _tools  # type: ignore
+    except Exception:
+        _tools = None
+
     def web_search(query: str, num_results: int = 10) -> dict[str, Any]:
         """Perform a web search and record the results as a capability action."""
         _assert_duration_open("web_search")
@@ -596,12 +601,10 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         if not q:
             raise RuntimeError("web_search requires a non-empty query")
         n = max(1, min(30, int(num_results)))
-        try:
-            from tools import web_search as _web_search  # type: ignore
-            results = _web_search(q, num_results=n)
-        except Exception:
-            # Fallback: use the organism's own web_search tool if available in the runtime
-            results = __import__("__main__", fromlist=["web_search"]).web_search(q, num_results=n) if hasattr(__import__("__main__", fromlist=["web_search"]), "web_search") else []
+        if _tools is not None and hasattr(_tools, "web_search"):
+            results = _tools.web_search(q, num_results=n)
+        else:
+            results = []
         return _record_action({
             "ok": True,
             "action": "web_search",
@@ -616,10 +619,9 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         u = str(url).strip()
         if not u:
             raise RuntimeError("open_page requires a non-empty url")
-        try:
-            from tools import open_page as _open_page  # type: ignore
-            content = _open_page(u, start_line=start_line)
-        except Exception:
+        if _tools is not None and hasattr(_tools, "open_page"):
+            content = _tools.open_page(u, start_line=start_line)
+        else:
             content = ""
         return _record_action({
             "ok": True,
