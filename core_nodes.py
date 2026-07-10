@@ -334,7 +334,7 @@ def commit_self_evolution(
     w: dict[str, Any],
     applied: dict[str, Any],
     patch_data: dict[str, Any],
-    *,
+    *, 
     advance_known_good: bool = True,
 ) -> dict[str, Any]:
     changed_files = list(applied.get("changed_files") or [])
@@ -611,6 +611,23 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         except Exception as exc:
             return _record_action({"ok": False, "action": "git_branch_show_current", "error": f"{type(exc).__name__}: {exc}"})
 
+    # GitHub helpers for terminal faculty (remote memory mechanism)
+    def github_list_issues(repo: str, state: str = "open") -> dict[str, Any]:
+        _assert_duration_open("github_list_issues")
+        return _record_action(_tools.github_list_issues(str(repo), str(state)))
+
+    def github_create_issue(repo: str, title: str, body: str, labels: list[str] | None = None) -> dict[str, Any]:
+        _assert_duration_open("github_create_issue")
+        return _record_action(_tools.github_create_issue(str(repo), str(title), str(body), labels))
+
+    def github_comment_issue(repo: str, issue_number: int, comment: str) -> dict[str, Any]:
+        _assert_duration_open("github_comment_issue")
+        return _record_action(_tools.github_comment_issue(str(repo), int(issue_number), str(comment)))
+
+    def github_push(branch: str | None = None) -> dict[str, Any]:
+        _assert_duration_open("github_push")
+        return _record_action(_tools.github_push(branch))
+
     last = {"error": state.get("last_error"), "result": state.get("last_result", ""), "action": state.get("last_action", {}), "verification": state.get("last_verification", {}), "reflection": state.get("last_reflection", {})}
     return {
         "action_nodes": action_nodes, "node_by_id": node_by_id, "click": click, "click_node": click_node, "read_node": read_node, "replace_node": replace_node,
@@ -632,4 +649,8 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "read_file": read_file,
         "git_current_branch": git_current_branch,
         "git_branch_show_current": git_branch_show_current,
+        "github_list_issues": github_list_issues,
+        "github_create_issue": github_create_issue,
+        "github_comment_issue": github_comment_issue,
+        "github_push": github_push,
     }
