@@ -105,10 +105,10 @@ def read_file(path: str, max_bytes: int | None = None) -> Dict[str, Any]:
     }
 
 
-def _run_gh_command(args: list[str]) -> Dict[str, Any]:
-    """Internal helper: run gh CLI and return recorded action dict."""
+def _run_gh(args: list[str]) -> Dict[str, Any]:
+    """Run gh CLI command and return recorded action with stdout/stderr/returncode."""
     try:
-        result = subprocess.run(["gh"] + args, cwd=__import__("pathlib").Path.cwd(), capture_output=True, text=True, timeout=60)
+        result = subprocess.run(["gh", *args], cwd=__import__("pathlib").Path.cwd(), capture_output=True, text=True)
         return {
             "ok": result.returncode == 0,
             "action": "gh_" + "_".join(args[:2]),
@@ -118,36 +118,34 @@ def _run_gh_command(args: list[str]) -> Dict[str, Any]:
             "returncode": result.returncode,
         }
     except Exception as exc:
-        return {"ok": False, "action": "gh_" + "_".join(args[:2]), "error": f"{type(exc).__name__}: {exc}"}
+        return {"ok": False, "action": "gh_" + "_".join(args[:2]), "args": args, "error": f"{type(exc).__name__}: {exc}"}
 
 
 def github_create_issue(repo: str, title: str, body: str, labels: list[str] | None = None) -> Dict[str, Any]:
-    """Create a GitHub issue via gh CLI and record the action."""
+    """Create GitHub issue via gh CLI and record action (terminal faculty)."""
     args = ["issue", "create", "--repo", repo, "--title", title, "--body", body]
     if labels:
         for label in labels:
             args.extend(["--label", label])
-    return _run_gh_command(args)
+    return _run_gh(args)
 
 
 def github_comment_issue(repo: str, issue_number: int, comment: str) -> Dict[str, Any]:
-    """Comment on a GitHub issue via gh CLI and record the action."""
-    args = ["issue", "comment", str(issue_number), "--repo", repo, "--body", comment]
-    return _run_gh_command(args)
+    """Comment on GitHub issue via gh CLI and record action (terminal faculty)."""
+    return _run_gh(["issue", "comment", "--repo", repo, str(issue_number), "--body", comment])
 
 
 def github_list_issues(repo: str, state: str = "open") -> Dict[str, Any]:
-    """List issues on a repo via gh CLI and record the action."""
-    args = ["issue", "list", "--repo", repo, "--state", state, "--json", "number,title,state,createdAt,updatedAt,labels,assignees"]
-    return _run_gh_command(args)
+    """List issues on repo via gh CLI and record action (terminal faculty)."""
+    return _run_gh(["issue", "list", "--repo", repo, "--state", state, "--json", "number,title,state,labels,url,createdAt,updatedAt"])
 
 
 def github_push(branch: str | None = None) -> Dict[str, Any]:
-    """Push current or specified branch to origin and record the action."""
+    """Push current or specified branch to origin and record action (terminal faculty)."""
     args = ["push", "origin"]
     if branch:
         args.append(branch)
-    return _run_gh_command(args)
+    return _run_gh(args)
 
 
 def git_current_branch() -> Dict[str, Any]:
