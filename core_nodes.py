@@ -333,7 +333,7 @@ def commit_self_evolution(
     w: dict[str, Any],
     applied: dict[str, Any],
     patch_data: dict[str, Any],
-    *,
+    *, 
     advance_known_good: bool = True,
 ) -> dict[str, Any]:
     changed_files = list(applied.get("changed_files") or [])
@@ -652,6 +652,14 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
             "content_chars": len(content),
             "content_sha256": hashlib.sha256(content.encode("utf-8", errors="replace")).hexdigest(),
         })
+
+    # Ensure tools helpers are always available even if import fails
+    if _tools is None:
+        try:
+            import tools as _tools_fallback
+            _tools = _tools_fallback
+        except Exception:
+            _tools = None
 
     last = {"error": state.get("last_error"), "result": state.get("last_result", ""), "action": state.get("last_action", {}), "verification": state.get("last_verification", {}), "reflection": state.get("last_reflection", {})}
     return {
