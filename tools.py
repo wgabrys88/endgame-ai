@@ -72,3 +72,33 @@ def open_page(url: str, start_line: int | None = None) -> str:
         except Exception:
             pass
     return text
+
+
+def read_file(path: str, max_bytes: int | None = None) -> Dict[str, Any]:
+    """Deterministic full-content read of a local file.
+
+    Returns a recorded-action dict with complete content, size, and SHA-256.
+    Guarantees no truncation markers when max_bytes is None or sufficient.
+    Raises RuntimeError on missing file or size violation.
+    """
+    p = __import__("pathlib").Path(path)
+    if not p.exists() or not p.is_file():
+        raise RuntimeError(f"read_file target does not exist or is not a file: {path}")
+    size = p.stat().st_size
+    if max_bytes is not None and size > max_bytes:
+        raise RuntimeError(f"read_file target exceeds max_bytes limit: {size} > {max_bytes}")
+    try:
+        content = p.read_text(encoding="utf-8", errors="replace")
+    except Exception as exc:
+        raise RuntimeError(f"read_file failed: {type(exc).__name__}: {exc}") from exc
+    import hashlib
+    sha = hashlib.sha256(content.encode("utf-8", errors="replace")).hexdigest()
+    return {
+        "ok": True,
+        "action": "read_file",
+        "path": str(p.resolve()),
+        "size": size,
+        "content": content,
+        "content_chars": len(content),
+        "content_sha256": sha,
+    }

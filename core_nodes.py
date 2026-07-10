@@ -643,6 +643,7 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
             content = p.read_text(encoding="utf-8", errors="replace")
         except Exception as exc:
             raise RuntimeError(f"read_file failed: {type(exc).__name__}: {exc}") from exc
+        import hashlib
         return _record_action({
             "ok": True,
             "action": "read_file",
