@@ -588,52 +588,7 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         })
 
     last = {"error": state.get("last_error"), "result": state.get("last_result", ""), "action": state.get("last_action", {}), "verification": state.get("last_verification", {}), "reflection": state.get("last_reflection", {})}
-    # Provide both the direct open_url (used by the manifest) and the 'execute' alias
-    # for legacy probe code that does 'from execute import open_url'.
-    execute_mod = types.ModuleType("execute")
-    execute_mod.open_url = open_url
-    execute_mod.click = click
-    execute_mod.click_node = click_node
-    execute_mod.read_node = read_node
-    execute_mod.replace_node = replace_node
-    execute_mod.type_text = type_text
-    execute_mod.press_key = press_key
-    execute_mod.hotkey = hotkey
-    execute_mod.scroll = scroll
-    execute_mod.scroll_node = scroll_node
-    execute_mod.action_nodes = action_nodes
-    execute_mod.node_by_id = node_by_id
-    execute_mod.observe_with_config = observe_with_config
-    execute_mod.observe_area = observe_area
-    execute_mod.consult_model = consult_model
-    execute_mod.subprocess = subprocess
-    execute_mod.ctypes = ctypes
-    execute_mod.os = os
-    execute_mod.sys = sys
-    execute_mod.json = json
-    execute_mod.re = __import__("re")
-    execute_mod.time = time
-    execute_mod.pathlib = pathlib
-    execute_mod.math = __import__("math")
-    execute_mod.random = __import__("random")
-    execute_mod.types = types
-    execute_mod.capabilities = capability_manifest(ctx)
-    execute_mod.repo_root = str(ROOT)
-    execute_mod.python_executable = sys.executable
-    execute_mod.topology_summary = wiring.topology_summary(w)
-    execute_mod.state = state
-    execute_mod.wiring = w
-    execute_mod.goal = ctx.get("goal", "")
-    execute_mod.last = last
-    execute_mod.observation = state.get("observation") or brain.last_observation() or bus.observation_brief(state)
-    execute_mod.desktop_tree = state.get("desktop_tree", {})
-    execute_mod.desktop_tree_text = state.get("desktop_tree_text", "")
-    execute_mod.action_index = action_index
-    execute_mod.observation_artifact = state.get("observation_artifact", {})
-    execute_mod.observed_at = state.get("observed_at")
-    execute_mod.action_events = action_events
-    execute_mod._action_events = action_events
-    ns = {
+    return {
         "action_nodes": action_nodes, "node_by_id": node_by_id, "click": click, "click_node": click_node, "read_node": read_node, "replace_node": replace_node,
         "type_text": type_text, "press_key": press_key, "hotkey": hotkey, "scroll": scroll,
         "scroll_node": scroll_node, "open_url": open_url, "observe_with_config": observe_with_config,
@@ -648,6 +603,22 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "observed_at": state.get("observed_at"),
         "action_events": action_events, "_action_events": action_events,
         "consult_model": consult_model,
-        "execute": execute_mod,
+        "execute": types.ModuleType("execute"),
     }
+
+
+def _ensure_execute_module(ns: dict[str, Any]) -> None:
+    if "execute" not in ns or not isinstance(ns.get("execute"), types.ModuleType):
+        ns["execute"] = types.ModuleType("execute")
+    mod = ns["execute"]
+    for name in ("open_url", "click", "click_node", "read_node", "replace_node", "type_text", "press_key", "hotkey", "scroll", "scroll_node", "action_nodes", "node_by_id", "observe_with_config", "observe_area", "consult_model"):
+        if hasattr(ns, name) or name in ns:
+            setattr(mod, name, ns.get(name) if name in ns else getattr(ns, name, None))
+
+
+def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
+    ns = build_capability_runtime.__wrapped__(ctx) if hasattr(build_capability_runtime, "__wrapped__") else build_capability_runtime(ctx)
+    _ensure_execute_module(ns)
     return ns
+
+build_capability_runtime.__wrapped__ = build_capability_runtime  # type: ignore[attr-defined]
