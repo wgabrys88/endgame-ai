@@ -631,6 +631,30 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
             "content": content,
         })
 
+    # Robust full-file read helper to eliminate truncation defects
+    def read_file(path: str, max_bytes: int | None = None) -> dict[str, Any]:
+        """Read entire file content with explicit size handling and return recorded action. Guarantees no truncation markers when max_bytes is None or sufficient."""
+        _assert_duration_open("read_file")
+        p = pathlib.Path(path)
+        if not p.exists() or not p.is_file():
+            raise RuntimeError(f"read_file target does not exist or is not a file: {path}")
+        size = p.stat().st_size
+        if max_bytes is not None and size > max_bytes:
+            raise RuntimeError(f"read_file target exceeds max_bytes limit: {size} > {max_bytes}")
+        try:
+            content = p.read_text(encoding="utf-8", errors="replace")
+        except Exception as exc:
+            raise RuntimeError(f"read_file failed: {type(exc).__name__}: {exc}") from exc
+        return _record_action({
+            "ok": True,
+            "action": "read_file",
+            "path": str(p.resolve()),
+            "size": size,
+            "content": content,
+            "content_chars": len(content),
+            "content_sha256": hashlib.sha256(content.encode("utf-8", errors="replace")).hexdigest(),
+        })
+
     last = {"error": state.get("last_error"), "result": state.get("last_result", ""), "action": state.get("last_action", {}), "verification": state.get("last_verification", {}), "reflection": state.get("last_reflection", {})}
     return {
         "action_nodes": action_nodes, "node_by_id": node_by_id, "click": click, "click_node": click_node, "read_node": read_node, "replace_node": replace_node,
@@ -649,4 +673,5 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "consult_model": consult_model,
         "web_search": web_search,
         "open_page": open_page,
+        "read_file": read_file,
     }
