@@ -1,10 +1,11 @@
 """tools.py — minimal external research helpers for terminal faculty.
 
 Exposes web_search(query, num_results=10) and open_page(url, start_line=None)
-using only stdlib (urllib). Results are returned as plain Python structures
+using only stdlib (urllib + re). Results are returned as plain Python structures
 so they can be recorded as capability actions.
 """
 import json
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -35,8 +36,6 @@ def web_search(query: str, num_results: int = 10) -> List[Dict[str, Any]]:
     except Exception:
         return []
     results: List[Dict[str, Any]] = []
-    # Very lightweight extraction of result links/titles
-    import re
     for m in re.finditer(r'<a[^>]+class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>', html, re.I | re.S):
         href = m.group(1)
         title = re.sub(r"<[^>]+>", "", m.group(2)).strip()
@@ -45,7 +44,6 @@ def web_search(query: str, num_results: int = 10) -> List[Dict[str, Any]]:
         if len(results) >= n:
             break
     if not results:
-        # Fallback: try to find any <a> with result links
         for m in re.finditer(r'href="(https?://[^"]+)"', html):
             href = m.group(1)
             if "duckduckgo" not in href.lower() and len(results) < n:
