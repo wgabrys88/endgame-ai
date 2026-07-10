@@ -588,7 +588,7 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         })
 
     last = {"error": state.get("last_error"), "result": state.get("last_result", ""), "action": state.get("last_action", {}), "verification": state.get("last_verification", {}), "reflection": state.get("last_reflection", {})}
-    return {
+    ns = {
         "action_nodes": action_nodes, "node_by_id": node_by_id, "click": click, "click_node": click_node, "read_node": read_node, "replace_node": replace_node,
         "type_text": type_text, "press_key": press_key, "hotkey": hotkey, "scroll": scroll,
         "scroll_node": scroll_node, "open_url": open_url, "observe_with_config": observe_with_config,
@@ -605,6 +605,8 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "consult_model": consult_model,
         "execute": types.ModuleType("execute"),
     }
+    _ensure_execute_module(ns)
+    return ns
 
 
 def _ensure_execute_module(ns: dict[str, Any]) -> None:
@@ -612,8 +614,8 @@ def _ensure_execute_module(ns: dict[str, Any]) -> None:
         ns["execute"] = types.ModuleType("execute")
     mod = ns["execute"]
     for name in ("open_url", "click", "click_node", "read_node", "replace_node", "type_text", "press_key", "hotkey", "scroll", "scroll_node", "action_nodes", "node_by_id", "observe_with_config", "observe_area", "consult_model"):
-        if hasattr(ns, name) or name in ns:
-            setattr(mod, name, ns.get(name) if name in ns else getattr(ns, name, None))
+        if name in ns:
+            setattr(mod, name, ns[name])
 
 
 def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
