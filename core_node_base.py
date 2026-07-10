@@ -39,7 +39,9 @@ class BaseNode(ABC):
         think_kwargs: JsonDict = {"expected_record_type": self.expected_record_type}
         if self.request_config is not None:
             think_kwargs["request_config"] = self.request_config
-        record = brain.think(prompt, self.build_payload(ctx), w, **think_kwargs)
+        payload = self.build_payload(ctx)
+        payload["goal"] = ctx["state"]["goal"]
+        record = brain.think(prompt, payload, w, **think_kwargs)
         if record.get("record_type") != self.expected_record_type:
             raise bus.NodeRecordContractError(
                 f"{self.prompt_key} expected record_type {self.expected_record_type!r}, "

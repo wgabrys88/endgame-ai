@@ -359,6 +359,9 @@ def capability_manifest(ctx: dict[str, Any] | None = None) -> dict[str, Any]:
     manifest = copy.deepcopy(w["capabilities"])
     manifest["deadline_at"] = st.get("deadline_at")
     manifest["repo_root"] = str(ROOT)
+    instance = (ctx or {}).get("node_instance") if isinstance(ctx, dict) else None
+    if instance is not None:
+        manifest["active_faculty"] = {"name": instance, **manifest["faculties"][instance]}
     return manifest
 
 
@@ -425,6 +428,18 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         node = _require_node(node_id)
         return _record_action({"ok": True, "action": "read_node", "node_id": node_id, "text": node.get("name") or node.get("text_full") or node.get("value") or ""})
 
+    def replace_node(node_id: str, text: str) -> dict[str, Any]:
+        _assert_duration_open("replace_node")
+        node = _require_node(node_id)
+        if node["action"] != "write":
+            raise RuntimeError(f"replace_node requires a write-capable node, got {node['action']!r}: {node_id}")
+        x, y = _node_center(node)
+        click_result = d.click(x, y, int(node.get("hwnd") or 0))
+        time.sleep(0.15)
+        select_result = d.hotkey("ctrl", "a")
+        type_result = d.type_text(str(text))
+        return _record_action({"ok": all(bool(item.get("ok")) for item in (click_result, select_result, type_result)), "action": "replace_node", "node_id": node_id, "text": str(text), "click": click_result, "select_all": select_result, "type": type_result})
+
     def scroll_node(node_id: str, amount: int = -3) -> dict[str, Any]:
         _assert_duration_open("scroll_node")
         node = _require_node(node_id)
@@ -463,7 +478,7 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
 
     last = {"error": state.get("last_error"), "result": state.get("last_result", ""), "action": state.get("last_action", {}), "verification": state.get("last_verification", {}), "reflection": state.get("last_reflection", {})}
     return {
-        "action_nodes": action_nodes, "node_by_id": node_by_id, "click": click, "click_node": click_node, "read_node": read_node,
+        "action_nodes": action_nodes, "node_by_id": node_by_id, "click": click, "click_node": click_node, "read_node": read_node, "replace_node": replace_node,
         "type_text": type_text, "press_key": press_key, "hotkey": hotkey, "scroll": scroll,
         "scroll_node": scroll_node, "open_url": open_url, "observe_with_config": observe_with_config,
         "observe_area": observe_area, "subprocess": subprocess,

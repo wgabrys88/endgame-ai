@@ -153,7 +153,8 @@ def _organ_tuning(w: dict[str, Any], record_type: str | None) -> dict[str, Any]:
 def _normalize_observation(obj: Any) -> dict[str, Any] | None:
     if not isinstance(obj, dict) or not obj.get("desktop_tree_text"):
         return None
-    return {"desktop_tree_text": obj.get("desktop_tree_text", ""), "observed_at": obj.get("observed_at")}
+    fields = ("desktop_tree_text", "focused_elements", "observed_at", "screen", "scan_stats", "rendered_node_count", "max_llm_nodes", "llm_node_limit_hit")
+    return {key: obj[key] for key in fields if key in obj}
 
 
 def _observation_payload(w: dict[str, Any], payload: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -377,7 +378,8 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
     if not reasoning_cfg["enabled"] or pattern in {"single_pass", "native"}:
         result = call(_messages(system_prompt, user_text, prefix_for_messages, stable_context), w, response_format=response_format, request_config=request_cfg)
         record = _commit_record(result["content"], w, expected_record_type)
-        return bus.Record(record.record_type, record.data, reasoning_from(result["content"], result.get("reasoning", ""))).to_json()
+        transport_reasoning = str(result.get("reasoning") or "").strip()
+        return bus.Record(record.record_type, record.data, transport_reasoning or record.reasoning).to_json()
     if pattern != "two_pass":
         raise RuntimeError(f"unknown reasoning pattern: {pattern}")
     first = call(_messages(system_prompt, user_text, prefix_for_messages, stable_context), w, rod_feedback=False, request_config=request_cfg)

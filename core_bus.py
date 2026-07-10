@@ -22,25 +22,18 @@ class NodeRecordContractError(BusContractError):
 
 @dataclass(frozen=True)
 class Record:
-    """Unified record format for ALL organs - single source of truth."""
+    """Unified record format for all LLM organs."""
+
     record_type: str
     data: JsonDict
     reasoning: str = ""
 
     def to_json(self) -> JsonDict:
-        return {
-            "record_type": self.record_type,
-            "data": self.data,
-            "reasoning": self.reasoning,
-        }
+        return {"record_type": self.record_type, "data": self.data, "reasoning": self.reasoning}
 
     @classmethod
     def from_json(cls, obj: JsonDict) -> "Record":
-        return cls(
-            record_type=obj.get("record_type", ""),
-            data=obj.get("data", {}),
-            reasoning=obj.get("reasoning", ""),
-        )
+        return cls(record_type=obj.get("record_type", ""), data=obj.get("data", {}), reasoning=obj.get("reasoning", ""))
 
     @classmethod
     def create(cls, record_type: str, data: JsonDict, reasoning: str = "") -> "Record":
@@ -49,7 +42,6 @@ class Record:
 
 @dataclass(frozen=True)
 class NodeOutput:
-
     signal: str
     patch: JsonDict = field(default_factory=dict)
     record: Record | None = None
@@ -67,7 +59,7 @@ class NodeOutput:
         elif isinstance(self.record, dict):
             record_type = self.record.get("record_type")
             record_json = dict(self.record)
-        omitted = {"goal", "effective_goal", "state", "observation", "desktop_tree_text", "action_index", "observation_artifact"}
+        omitted = {"goal", "effective_goal", "state", "focus", "observation", "desktop_tree_text", "action_index", "observation_artifact"}
         return {
             "kind": "endgame.node_output.v1",
             "node": node,
@@ -82,14 +74,7 @@ class NodeOutput:
         }
 
 
-def emit(
-    signal: str,
-    patch: JsonDict | None = None,
-    *,
-    record: Record | JsonDict | None = None,
-    evidence: JsonDict | None = None,
-) -> NodeOutput:
-
+def emit(signal: str, patch: JsonDict | None = None, *, record: Record | JsonDict | None = None, evidence: JsonDict | None = None) -> NodeOutput:
     if not isinstance(signal, str) or not signal.strip():
         raise ValueError("bus signal must be a non-empty string")
     if patch is not None and not isinstance(patch, dict):
@@ -98,13 +83,11 @@ def emit(
         raise TypeError("bus record must be a Record or dict when provided")
     if evidence is not None and not isinstance(evidence, dict):
         raise TypeError("bus evidence must be a dict when provided")
-
     record_obj = Record.from_json(record) if isinstance(record, dict) else record
     return NodeOutput(signal=signal.strip(), patch=dict(patch or {}), record=record_obj, evidence=dict(evidence or {}))
 
 
 def coerce_node_output(node: str, result: Any) -> NodeOutput:
-
     if isinstance(result, NodeOutput):
         return result
     if isinstance(result, tuple) and len(result) == 2:
@@ -122,7 +105,7 @@ def allowed_signals(wiring: JsonDict, node: str) -> set[str]:
     node_edges = edges.get(node, {})
     if not isinstance(node_edges, dict):
         return set()
-    return {str(signal) for signal in node_edges.keys()}
+    return {str(signal) for signal in node_edges}
 
 
 def validate_signal(wiring: JsonDict, node: str, signal: str) -> None:
@@ -132,20 +115,27 @@ def validate_signal(wiring: JsonDict, node: str, signal: str) -> None:
         raise TopologyContractError(f"node '{node}' emitted signal '{signal}' outside topology contract; allowed: {allowed}")
 
 
-def state_brief(state: JsonDict) -> JsonDict:
+def _plan_intent(state: JsonDict) -> list[JsonDict]:
+    plan = state.get("plan")
+    intent = plan.get("intent", []) if isinstance(plan, dict) else []
+    return intent if isinstance(intent, list) else []
 
+
+def state_brief(state: JsonDict) -> JsonDict:
+    """Compact operational focus. The full append-only narrative remains in state, never in every prompt."""
     current_step = state.get("current_step") or {}
+    intent = _plan_intent(state)
     now = time.time()
     started_at = state.get("started_at")
     deadline_at = state.get("deadline_at")
-    brief = {
+    step_index = int(state.get("step", 0) or 0)
+    return {
         "tick": state.get("tick"),
         "current_node": state.get("current_node"),
-        "step_index": state.get("step", 0),
-        "current_step": {
-            "description": current_step.get("description", ""),
-            "done_when": current_step.get("done_when", ""),
-        },
+        "step_index": step_index,
+        "current_step": {"description": current_step.get("description", ""), "done_when": current_step.get("done_when", "")},
+        "remaining_plan_steps": max(0, len(intent) - step_index),
+        "completed_step_count": len(state.get("completed_steps") or []),
         "last_signal": state.get("last_signal"),
         "last_error": state.get("last_error"),
         "last_verification": state.get("last_verification", {}),
@@ -160,19 +150,32 @@ def state_brief(state: JsonDict) -> JsonDict:
             "elapsed_seconds": round(now - float(started_at), 3) if started_at is not None else None,
             "remaining_seconds": round(float(deadline_at) - now, 3) if deadline_at is not None else None,
         },
-        "root_goal": state.get("goal", ""),
-        "effective_goal": state.get("effective_goal", state.get("goal", "")),
     }
-    return brief
-
-
 
 
 def event_state_brief(state: JsonDict) -> JsonDict:
-    brief = state_brief(state)
-    del brief["root_goal"]
-    del brief["effective_goal"]
-    return brief
+    return state_brief(state)
+
+
+def focused_elements(state: JsonDict) -> JsonDict:
+    """Expand only UI ids already named by the active focus; never dump the whole action index."""
+    action_index = state.get("action_index") or {}
+    if not isinstance(action_index, dict):
+        return {}
+    focus_sources = {
+        "current_step": state.get("current_step") or {},
+        "action_frame": state.get("action_frame") or {},
+        "last_action": state.get("last_action") or {},
+        "last_reflection": state.get("last_reflection") or {},
+        "focus_ids": state.get("focus_ids") or [],
+    }
+    focus_text = json.dumps(focus_sources, ensure_ascii=False, default=str)
+    fields = ("name", "role", "action", "rect", "enabled", "automation_id", "class_name", "hwnd", "depth")
+    return {
+        node_id: {key: node[key] for key in fields if key in node}
+        for node_id, node in action_index.items()
+        if isinstance(node, dict) and str(node_id) in focus_text
+    }
 
 
 def observation_brief(state: JsonDict) -> JsonDict:
@@ -180,13 +183,25 @@ def observation_brief(state: JsonDict) -> JsonDict:
     tree = artifact.get("desktop_tree") if isinstance(artifact, dict) else {}
     return {
         "desktop_tree_text": state.get("desktop_tree_text", ""),
+        "focused_elements": focused_elements(state),
         "observed_at": state.get("observed_at"),
-        "scan_config": artifact.get("scan_config", {}) if isinstance(artifact, dict) else {},
         "screen": artifact.get("screen", {}) if isinstance(artifact, dict) else {},
         "scan_stats": artifact.get("scan_stats", {}) if isinstance(artifact, dict) else {},
         "rendered_node_count": state.get("rendered_node_count") or (tree or {}).get("rendered_node_count"),
         "max_llm_nodes": state.get("max_llm_nodes") or (tree or {}).get("max_llm_nodes"),
         "llm_node_limit_hit": state.get("llm_node_limit_hit") or (tree or {}).get("llm_node_limit_hit"),
+    }
+
+
+def execution_evidence(state: JsonDict) -> JsonDict:
+    turn = state.get("turn_executions") or {}
+    if isinstance(turn, dict) and turn:
+        return {"faculties": turn}
+    return {
+        "last_action": state.get("last_action") or {},
+        "last_result": state.get("last_result") or {},
+        "last_error": state.get("last_error"),
+        "last_failure": state.get("last_failure") or {},
     }
 
 
@@ -197,21 +212,14 @@ def failure_signature(state: JsonDict) -> str:
         "done_when": step.get("done_when", ""),
         "failure": state.get("last_failure") or {},
         "verification": state.get("last_verification") or {},
-        "action_conclusion": (state.get("last_action") or {}).get("conclusion", ""),
+        "executions": state.get("turn_executions") or {},
     }
     raw = json.dumps(parts, sort_keys=True, ensure_ascii=False, default=str)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
 
 def update_failure_streak(state: JsonDict) -> JsonDict:
-
     signature = failure_signature(state)
     previous = state.get("failure_streak") or {}
     count = int(previous.get("count", 0) or 0) + 1 if previous.get("signature") == signature else 1
-    return {
-        "failure_streak": {
-            "signature": signature,
-            "count": count,
-            "updated_at": time.time(),
-        }
-    }
+    return {"failure_streak": {"signature": signature, "count": count, "updated_at": time.time()}}

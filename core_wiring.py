@@ -122,6 +122,19 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
     _require(cfg, "capabilities.schema", str)
     _require(cfg, "capabilities.power", str)
     _require(cfg, "capabilities.helpers", dict)
+    faculties = _require(cfg, "capabilities.faculties", dict)
+    execute_instances = {node.split(":", 1)[1] for node in nodes if node.startswith("node_execute:")}
+    if set(faculties) != execute_instances:
+        raise RuntimeError(f"wiring.capabilities.faculties must exactly match execute instances: {sorted(execute_instances)}")
+    for name, policy in faculties.items():
+        if not isinstance(policy, dict):
+            raise RuntimeError(f"wiring.capabilities.faculties.{name} must be object")
+        purpose = policy["purpose"]
+        requires_action = policy["requires_action_event"]
+        if not isinstance(purpose, str) or not purpose.strip():
+            raise RuntimeError(f"wiring.capabilities.faculties.{name}.purpose must be non-empty string")
+        if not isinstance(requires_action, bool):
+            raise RuntimeError(f"wiring.capabilities.faculties.{name}.requires_action_event must be boolean")
     _require_list_str(cfg, "capabilities.modules")
     _require_list_str(cfg, "capabilities.state")
     _require_list_str(cfg, "capabilities.signals")
