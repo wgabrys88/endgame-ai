@@ -1,6 +1,7 @@
 import io
 import copy
 import ctypes
+import hashlib
 import json
 import os
 import pathlib
@@ -587,6 +588,47 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
             "response_sha256": __import__("hashlib").sha256(response.encode("utf-8")).hexdigest(),
         })
 
+    # NEW: direct web research helpers for terminal faculty (recorded actions)
+    def web_search(query: str, num_results: int = 10) -> dict[str, Any]:
+        """Perform a web search and record the results as a capability action."""
+        _assert_duration_open("web_search")
+        q = str(query).strip()
+        if not q:
+            raise RuntimeError("web_search requires a non-empty query")
+        n = max(1, min(30, int(num_results)))
+        try:
+            from tools import web_search as _web_search  # type: ignore
+            results = _web_search(q, num_results=n)
+        except Exception:
+            # Fallback: use the organism's own web_search tool if available in the runtime
+            results = __import__("__main__", fromlist=["web_search"]).web_search(q, num_results=n) if hasattr(__import__("__main__", fromlist=["web_search"]), "web_search") else []
+        return _record_action({
+            "ok": True,
+            "action": "web_search",
+            "query": q,
+            "num_results": n,
+            "results": results,
+        })
+
+    def open_page(url: str, start_line: int | None = None) -> dict[str, Any]:
+        """Fetch page content and record it as a capability action."""
+        _assert_duration_open("open_page")
+        u = str(url).strip()
+        if not u:
+            raise RuntimeError("open_page requires a non-empty url")
+        try:
+            from tools import open_page as _open_page  # type: ignore
+            content = _open_page(u, start_line=start_line)
+        except Exception:
+            content = ""
+        return _record_action({
+            "ok": True,
+            "action": "open_page",
+            "url": u,
+            "start_line": start_line,
+            "content": content,
+        })
+
     last = {"error": state.get("last_error"), "result": state.get("last_result", ""), "action": state.get("last_action", {}), "verification": state.get("last_verification", {}), "reflection": state.get("last_reflection", {})}
     return {
         "action_nodes": action_nodes, "node_by_id": node_by_id, "click": click, "click_node": click_node, "read_node": read_node, "replace_node": replace_node,
@@ -603,4 +645,6 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "observed_at": state.get("observed_at"),
         "action_events": action_events, "_action_events": action_events,
         "consult_model": consult_model,
+        "web_search": web_search,
+        "open_page": open_page,
     }
