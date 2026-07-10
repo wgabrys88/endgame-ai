@@ -250,10 +250,10 @@ def _restore_snapshots(snapshots: dict[pathlib.Path, bytes | None]) -> None:
             wiring.replace_with_retry(tmp, path)
 
 
-
 def _file_write(item: dict[str, Any], w: dict[str, Any]) -> tuple[pathlib.Path, str, str]:
     path, rel = _evolution_target(str(item["path"]), w)
     return path, rel, _validate_content(path, rel, item["content"])
+
 
 def apply_evolution_patch(w: dict[str, Any], parsed: dict[str, Any]) -> tuple[str, Any]:
     data = _patch_data(parsed)
@@ -476,6 +476,55 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         cfg["filter"] = filt
         return observe_with_config(cfg)
 
+    # NEW: terminal faculty helper for direct Grok/xAI API consultation (bypasses browser faculty)
+    def consult_grok_api(prompt: str, model: str = "grok-4.3") -> dict[str, Any]:
+        """Call the xAI Responses API directly via urllib to fetch actionable optimization advice.
+        Records a capability action event with the API response summary. Returns the parsed response."""
+        _assert_duration_open("consult_grok_api")
+        import urllib.request
+        import urllib.error
+        import os
+        api_key = os.environ.get("XAI_API_KEY")
+        if not api_key:
+            raise RuntimeError("XAI_API_KEY environment variable is required for Grok API calls")
+        payload = {
+            "model": model,
+            "input": [{"role": "user", "content": prompt}],
+            "temperature": 0.4,
+            "truncation": "disabled",
+        }
+        req = urllib.request.Request(
+            "https://api.x.ai/v1/responses",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                obj = json.loads(resp.read().decode("utf-8", errors="replace"))
+        except urllib.error.HTTPError as exc:
+            raise RuntimeError(f"Grok API HTTP {exc.code}: {exc.read().decode('utf-8', errors='replace')}") from exc
+        except urllib.error.URLError as exc:
+            raise RuntimeError(f"Grok API URL error: {getattr(exc, 'reason', exc)}") from exc
+        content = obj.get("output_text") or ""
+        if not content and isinstance(obj.get("output"), list):
+            parts = []
+            for item in obj["output"]:
+                if isinstance(item, dict) and item.get("type") != "reasoning":
+                    parts.extend(str(c["text"]) for c in item.get("content", []) or [] if isinstance(c, dict) and c.get("text"))
+            content = "\n".join(parts)
+        result = {
+            "ok": True,
+            "action": "consult_grok_api",
+            "model": model,
+            "prompt_chars": len(prompt),
+            "response_chars": len(content),
+            "response_preview": content[:500] + ("..." if len(content) > 500 else ""),
+            "usage": obj.get("usage", {}),
+            "response_id": obj.get("id"),
+        }
+        return _record_action(result)
+
     last = {"error": state.get("last_error"), "result": state.get("last_result", ""), "action": state.get("last_action", {}), "verification": state.get("last_verification", {}), "reflection": state.get("last_reflection", {})}
     return {
         "action_nodes": action_nodes, "node_by_id": node_by_id, "click": click, "click_node": click_node, "read_node": read_node, "replace_node": replace_node,
@@ -491,4 +540,5 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "action_index": action_index, "observation_artifact": state.get("observation_artifact", {}),
         "observed_at": state.get("observed_at"),
         "action_events": action_events, "_action_events": action_events,
+        "consult_grok_api": consult_grok_api,  # NEW helper for terminal faculty Grok consultation
     }

@@ -526,7 +526,8 @@
       "open_url": "open_url(browser_name,url) where browser_name is exactly one of: chrome, edge, firefox, opera, default",
       "observe_area": "observe_area(left,top,right,bottom,max_llm_nodes=None,max_depth=None,step_px=None)",
       "observe_with_config": "observe_with_config(hover_cache_config)",
-      "replace_node": "replace_node(node_id,text): click the exact write-capable observed element, select its contents, and type replacement text as one recorded composite action"
+      "replace_node": "replace_node(node_id,text): click the exact write-capable observed element, select its contents, and type replacement text as one recorded composite action",
+      "consult_grok_api": "consult_grok_api(prompt, model=\"grok-4.3\"): direct xAI Responses API call for external consultation (terminal faculty). Returns recorded action event with response preview and usage."
     },
     "modules": [
       "subprocess",
