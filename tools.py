@@ -1,9 +1,9 @@
-"""tools.py — minimal external research helpers for terminal faculty.
+'''tools.py — minimal external research helpers for terminal faculty.
 
 Exposes web_search(query, num_results=10) and open_page(url, start_line=None)
 using only stdlib (urllib + re). Results are returned as plain Python structures
 so they can be recorded as capability actions.
-"""
+'''
 import json
 import re
 import urllib.error
@@ -125,3 +125,59 @@ def git_current_branch() -> Dict[str, Any]:
 def git_branch_show_current() -> Dict[str, Any]:
     """Run git branch --show-current and return recorded action (alias for verification step)."""
     return git_current_branch()
+
+
+def github_create_issue(repo: str, title: str, body: str, labels: list[str] | None = None) -> Dict[str, Any]:
+    """Create a GitHub issue on the specified repo using gh CLI (owner-authenticated)."""
+    try:
+        import subprocess, json
+        cmd = ["gh", "issue", "create", "--repo", repo, "--title", title, "--body", body]
+        if labels:
+            cmd.extend(["--label", ",".join(labels)])
+        result = subprocess.run(cmd, cwd=__import__("pathlib").Path.cwd(), capture_output=True, text=True)
+        if result.returncode != 0:
+            return {"ok": False, "action": "github_create_issue", "error": result.stderr.strip() or result.stdout.strip()}
+        issue_url = result.stdout.strip()
+        return {"ok": True, "action": "github_create_issue", "repo": repo, "title": title, "url": issue_url, "stdout": result.stdout, "stderr": result.stderr}
+    except Exception as exc:
+        return {"ok": False, "action": "github_create_issue", "error": f"{type(exc).__name__}: {exc}"}
+
+
+def github_comment_issue(repo: str, issue_number: int, comment: str) -> Dict[str, Any]:
+    """Comment on an existing GitHub issue using gh CLI."""
+    try:
+        import subprocess
+        cmd = ["gh", "issue", "comment", "--repo", repo, str(issue_number), "--body", comment]
+        result = subprocess.run(cmd, cwd=__import__("pathlib").Path.cwd(), capture_output=True, text=True)
+        if result.returncode != 0:
+            return {"ok": False, "action": "github_comment_issue", "error": result.stderr.strip() or result.stdout.strip()}
+        return {"ok": True, "action": "github_comment_issue", "repo": repo, "issue_number": issue_number, "comment": comment, "stdout": result.stdout, "stderr": result.stderr}
+    except Exception as exc:
+        return {"ok": False, "action": "github_comment_issue", "error": f"{type(exc).__name__}: {exc}"}
+
+
+def github_push(branch: str | None = None) -> Dict[str, Any]:
+    """Push current branch (or specified branch) to origin using git."""
+    try:
+        import subprocess
+        b = branch or __import__("subprocess").check_output(["git", "branch", "--show-current"], text=True).strip()
+        result = subprocess.run(["git", "push", "origin", b], cwd=__import__("pathlib").Path.cwd(), capture_output=True, text=True)
+        return {"ok": result.returncode == 0, "action": "github_push", "branch": b, "stdout": result.stdout, "stderr": result.stderr, "returncode": result.returncode}
+    except Exception as exc:
+        return {"ok": False, "action": "github_push", "error": f"{type(exc).__name__}: {exc}"}
+
+
+def github_list_issues(repo: str, state: str = "open") -> Dict[str, Any]:
+    """List issues on a repo using gh CLI."""
+    try:
+        import subprocess, json
+        result = subprocess.run(["gh", "issue", "list", "--repo", repo, "--state", state, "--json", "number,title,url,state,labels"], cwd=__import__("pathlib").Path.cwd(), capture_output=True, text=True)
+        if result.returncode != 0:
+            return {"ok": False, "action": "github_list_issues", "error": result.stderr.strip() or result.stdout.strip()}
+        try:
+            issues = json.loads(result.stdout)
+        except Exception:
+            issues = []
+        return {"ok": True, "action": "github_list_issues", "repo": repo, "state": state, "issues": issues, "stdout": result.stdout, "stderr": result.stderr}
+    except Exception as exc:
+        return {"ok": False, "action": "github_list_issues", "error": f"{type(exc).__name__}: {exc}"}
