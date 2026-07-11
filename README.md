@@ -26,4 +26,4 @@ The wheel turns until the goal is verified complete or the external leash (durat
 
 `node_observe` is the only fresh scan (`core_observation.py`: `gather_raw → filter_raw → build_tree_and_map`); it produces `desktop_tree`, `desktop_tree_text`, and `action_index`, all keyed by the single stable id. Every LLM node reads `bus.observation_brief(state)`.
 
-> Work slowly and deliberately. Every change must increase efficiency, reliability, or self-understanding without adding bloat.
+> Act deliberately and efficiently within the time budget. Every change must increase efficiency, reliability, or self-understanding without adding bloat. Self-evolution is a normal, safe faculty — use it whenever the evidence shows a simpler turn cannot produce the required proof.
