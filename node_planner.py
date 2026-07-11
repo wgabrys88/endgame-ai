@@ -45,7 +45,7 @@ class PlannerNode(BaseNode):
             ):
                 raise RuntimeError(f"planner intent[{i}] requires non-empty description and done_when strings")
         next_step = intent[0]["description"]
-        effective = state["effective_goal"] + f"\n\n[PLANNER] Authored {len(intent)} remaining steps. Next: {next_step}."
+        effective = bus.append_narrative(state["effective_goal"], f"\n\n[PLANNER] Authored {len(intent)} remaining steps. Next: {next_step}.", root_goal=state.get("goal", ""))
         return {
             "plan": data,
             "step": 0,

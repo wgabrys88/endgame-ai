@@ -17,12 +17,21 @@ class VerifyNode(BaseNode):
     def build_payload(self, ctx):
         state = ctx["state"]
         desc, done_when = self._step(ctx)
+        observation = bus.observation_brief(state)
+        # Freshness guard (symmetry with node_repair_validate): a verify must judge post-action
+        # state, never a scan taken before the action. Topology already routes observe before
+        # verify, but this assertion keeps verify robust if the organism self-modifies the graph.
+        observed_at = state.get("observed_at")
+        last_action_at = state.get("last_action_at")
+        observation["observation_fresh"] = bool(
+            observed_at is not None and (last_action_at is None or float(observed_at) >= float(last_action_at))
+        )
         return {
             "goal": state["goal"],
             "step": {"description": desc, "done_when": done_when},
             "focus": bus.state_brief(state),
             "evidence": self.evidence(ctx),
-            "observation": bus.observation_brief(state),
+            "observation": observation,
         }
 
     def signal_from_data(self, data, ctx):
@@ -36,7 +45,7 @@ class VerifyNode(BaseNode):
         data, state = record.data, ctx["state"]
         desc, done_when = self._step(ctx)
         reasoning = record.reasoning
-        effective = state["effective_goal"] + (f"\n\n[VERIFY] Confirmed: {desc}." if self._success else f"\n\n[VERIFY] Denied: {desc}. {reasoning}")
+        effective = bus.append_narrative(state["effective_goal"], (f"\n\n[VERIFY] Confirmed: {desc}." if self._success else f"\n\n[VERIFY] Denied: {desc}. {reasoning}"), root_goal=state.get("goal", ""))
         patch = {
             "verification": {"success": self._success, "reasoning": reasoning, "step_goal": desc, "done_when": done_when},
             "last_verification": {"success": self._success, "signal": self._signal, "reasoning": reasoning},

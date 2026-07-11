@@ -100,6 +100,23 @@ def emit(signal: str, patch: JsonDict | None = None, *, record: Record | JsonDic
     return NodeOutput(signal=signal.strip(), patch=dict(patch or {}), record=record_obj, evidence=dict(evidence or {}))
 
 
+# Rolling narrative bound. effective_goal = immutable root goal + append-only narrative; in the
+# analysed run it grew unbounded (tens of KB) and inflated every prompt, contradicting the README's
+# "minimal rolling buffer" principle. Keep the root goal (first paragraph) plus the most recent
+# NARRATIVE_TAIL_CHARS of appended history so recent context is preserved while growth is bounded.
+NARRATIVE_TAIL_CHARS = 12000
+
+
+def append_narrative(effective_goal: str, line: str, *, root_goal: str = "") -> str:
+    combined = f"{effective_goal}{line}"
+    if len(combined) <= NARRATIVE_TAIL_CHARS:
+        return combined
+    head = root_goal if root_goal and combined.startswith(root_goal) else ""
+    tail = combined[-NARRATIVE_TAIL_CHARS:]
+    marker = "\n\n[...earlier narrative trimmed for token efficiency...]\n"
+    return f"{head}{marker}{tail}" if head else f"{marker.lstrip()}{tail}"
+
+
 def coerce_node_output(node: str, result: Any) -> NodeOutput:
     if isinstance(result, NodeOutput):
         return result
@@ -209,11 +226,25 @@ def focused_elements(state: JsonDict) -> JsonDict:
         "focus_ids": state.get("focus_ids") or [],
     }
     focus_text = json.dumps(focus_sources, ensure_ascii=False, default=str)
-    fields = ("name", "role", "action", "rect", "enabled", "automation_id", "class_name", "hwnd", "depth")
+    fields = ("id", "name", "role", "action", "rect", "enabled", "automation_id", "class_name", "hwnd", "depth")
+    # Match focus references against the positional short_id key AND the identity-stable
+    # id / runtime_id. short_id (W{n}E{k}) is a positional label that churns across ticks
+    # when windows reorder or the element set changes; a reference minted last tick may now
+    # point elsewhere. Matching the stable id/runtime_id too lets a prior reference still
+    # resolve to the correct physical element, and the returned "id" gives callers a stable
+    # anchor to cite next turn.
+    def _referenced(node_id: str, node: JsonDict) -> bool:
+        if str(node_id) in focus_text:
+            return True
+        stable = str(node.get("id", ""))
+        if stable and stable in focus_text:
+            return True
+        rid = node.get("runtime_id")
+        return bool(rid) and str(rid) in focus_text
     return {
         node_id: {key: node[key] for key in fields if key in node}
         for node_id, node in action_index.items()
-        if isinstance(node, dict) and str(node_id) in focus_text
+        if isinstance(node, dict) and _referenced(node_id, node)
     }
 
 
@@ -229,19 +260,37 @@ def observation_brief(state: JsonDict) -> JsonDict:
         "rendered_node_count": state.get("rendered_node_count") or (tree or {}).get("rendered_node_count"),
         "max_llm_nodes": state.get("max_llm_nodes") or (tree or {}).get("max_llm_nodes"),
         "llm_node_limit_hit": state.get("llm_node_limit_hit") or (tree or {}).get("llm_node_limit_hit"),
+        "elements_truncated": (tree or {}).get("elements_truncated", False),
+        "elements_dropped_per_window": (tree or {}).get("elements_dropped_per_window", {}),
     }
+
+
+def _last_denial(state: JsonDict) -> str:
+    # Surface the most recent verify denial reason as an explicit, top-level constraint so the
+    # next execute/frame attempt converges instead of re-guessing. Empirically the wheel burned
+    # ~7 laps per step because the denial reason (e.g. "use read_file, not a directory listing")
+    # was only reachable buried inside focus.state_brief.last_verification.
+    lv = state.get("last_verification") or {}
+    if isinstance(lv, dict) and lv.get("success") is False:
+        return str(lv.get("reasoning", "")).strip()
+    return ""
 
 
 def execution_evidence(state: JsonDict) -> JsonDict:
+    denial = _last_denial(state)
     turn = state.get("turn_executions") or {}
     if isinstance(turn, dict) and turn:
-        return {"faculties": turn}
-    return {
-        "last_action": state.get("last_action") or {},
-        "last_result": state.get("last_result") or {},
-        "last_error": state.get("last_error"),
-        "last_failure": state.get("last_failure") or {},
-    }
+        evidence: JsonDict = {"faculties": turn}
+    else:
+        evidence = {
+            "last_action": state.get("last_action") or {},
+            "last_result": state.get("last_result") or {},
+            "last_error": state.get("last_error"),
+            "last_failure": state.get("last_failure") or {},
+        }
+    if denial:
+        evidence["unsatisfied_requirement"] = denial
+    return evidence
 
 
 def failure_signature(state: JsonDict) -> str:

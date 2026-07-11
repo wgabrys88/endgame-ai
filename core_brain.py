@@ -22,9 +22,10 @@ _STABLE_PREFIX_LOCK = threading.Lock()
 _LAST_OBSERVATION: dict[str, Any] | None = None
 
 class StablePrefix:
-    def __init__(self, w: dict[str, Any], root: pathlib.Path = ROOT):
+    def __init__(self, w: dict[str, Any], root: pathlib.Path = ROOT, focus_files: list[str] | None = None):
         self.root = root
         self.source = w["model"]["stable_prefix"]["source"]
+        self.focus_files = focus_files  # selective evolution: only these + core wiring if set (for targeted node fixes)
         self.files = self._source_files()
         self.text, self.fingerprint = self._render()
         self.cache_key = f"endgame-ai-{self.fingerprint[:24]}"
@@ -40,6 +41,11 @@ class StablePrefix:
         skip_prefixes = tuple(self.source["skip_prefixes"])
         if set(path.parts) & set(self.source["skip_parts"]) or path.name.startswith(skip_prefixes):
             return False
+        if self.focus_files is not None:
+            # Focused self-evolution: include only relevant node/tools/wiring + always core for context
+            core_always = {".gitattributes", ".gitignore", "wiring.json", "core_bus.py", "core_wiring.py", "core_loader.py", "check_topology.py"}
+            focus_set = set(self.focus_files) | core_always
+            return path.name in focus_set or path.suffix in {".py", ".json"} and any(f in str(path) for f in self.focus_files)
         return path.name in set(self.source["names"]) or path.suffix in set(self.source["suffixes"])
 
     def _source_files(self) -> list[str]:
@@ -65,11 +71,12 @@ class StablePrefix:
         return {"fingerprint": self.fingerprint, "cache_key": self.cache_key, "files": self.files, "chars": len(self.text)}
 
 
-def stable_prefix(w: dict[str, Any]) -> StablePrefix:
+def stable_prefix(w: dict[str, Any], focus_files: list[str] | None = None) -> StablePrefix:
     global _STABLE_PREFIX_CACHE
     with _STABLE_PREFIX_LOCK:
-        fresh = StablePrefix(w, ROOT)
-        if _STABLE_PREFIX_CACHE is None or _STABLE_PREFIX_CACHE.fingerprint != fresh.fingerprint:
+        fresh = StablePrefix(w, ROOT, focus_files=focus_files)
+        # Note: cache ignores focus for simplicity; in practice for evolution we bypass or key on focus
+        if focus_files is not None or _STABLE_PREFIX_CACHE is None or _STABLE_PREFIX_CACHE.fingerprint != fresh.fingerprint:
             _STABLE_PREFIX_CACHE = fresh
         return _STABLE_PREFIX_CACHE
 
@@ -348,7 +355,17 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
     reasoning_cfg = dict(cfg["reasoning"])
     organ_tuning = _organ_tuning(w, expected_record_type)
     include_prefix = bool(w["model"]["stable_prefix"]["include_in_request"] or organ_tuning.get("include_stable_prefix"))
-    prefix = stable_prefix(w) if w["model"]["stable_prefix"]["enabled"] and include_prefix else None
+    focus_files = None
+    if expected_record_type == "git_evolution_patch":
+        # Enable focused self-evolution: extract candidate files from last_reflection diagnosis or failure to target only relevant node + wiring
+        st = payload.get("state", {}) if isinstance(payload, dict) else {}
+        last_refl = st.get("last_reflection", {}) or {}
+        diagnosis = str(last_refl.get("diagnosis", "")) + str(last_refl.get("lesson", ""))
+        import re
+        candidates = re.findall(r"(node_[a-z_]+\.py|tools\.py|core_[a-z_]+\.py|wiring\.json)", diagnosis)
+        if candidates:
+            focus_files = sorted(set(candidates))
+    prefix = stable_prefix(w, focus_files=focus_files) if w["model"]["stable_prefix"]["enabled"] and include_prefix else None
     prefix_for_messages = prefix
     conv_id = w.get("_conv_id")
     if not conv_id:

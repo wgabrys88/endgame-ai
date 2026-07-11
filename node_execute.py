@@ -90,7 +90,7 @@ class ExecuteNode(BaseNode):
             }
             turn = dict(state.get("turn_executions") or {})
             turn[instance] = self._turn_entry(code, result, error, failure)
-            effective = state["effective_goal"] + f"\n\n[{label}] No action: {error}."
+            effective = bus.append_narrative(state["effective_goal"], f"\n\n[{label}] No action: {error}.", root_goal=state.get("goal", ""))
             return bus.emit(
                 "done",
                 {
@@ -145,7 +145,7 @@ class ExecuteNode(BaseNode):
         action_names = [str(event.get("action", "action")) for event in result["action_events"]]
         deed = ", ".join(action_names) if action_names else "local computation"
         outcome = "success" if error is None else error
-        effective = state["effective_goal"] + f"\n\n[{label}] {deed}: {outcome}."
+        effective = bus.append_narrative(state["effective_goal"], f"\n\n[{label}] {deed}: {outcome}.", root_goal=state.get("goal", ""))
         return bus.emit(
             "done",
             {
@@ -155,6 +155,7 @@ class ExecuteNode(BaseNode):
                     "faculty": instance,
                     "repair_probe": probe is not None,
                 },
+                "last_action_at": time.time(),
                 "last_code": code,
                 "last_result": result,
                 "last_error": aggregate_error,
