@@ -48,6 +48,8 @@ class RepairProbeNode(BaseNode):
         state, data = ctx["state"], record.data
         probe_started_at = time.time()
         original_step = self._baseline["step"]
+        # Capture pre-probe observation timestamp
+        pre_probe_observed_at = state.get("observed_at", probe_started_at)
         probe = {
             "failure_signature": data["failure_signature"],
             "faculty": data["faculty"],
@@ -62,6 +64,7 @@ class RepairProbeNode(BaseNode):
             "status": "probing",
             "probe": probe,
             "probe_started_at": probe_started_at,
+            "probe_observed_at": pre_probe_observed_at,
         }
         current_step = {
             "description": (

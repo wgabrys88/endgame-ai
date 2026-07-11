@@ -9,6 +9,48 @@ import comtypes
 import comtypes.client
 
 user32 = ctypes.windll.user32
+kernel32 = ctypes.windll.kernel32
+
+
+def _extract_console_text(hwnd: int) -> str:
+    """Extract text from Windows console/terminal via Win32 API."""
+    try:
+        # Attach to the console process
+        pid = wintypes.DWORD()
+        tid = user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        if not tid:
+            return ""
+        
+        # Try to get console screen buffer info
+        if not kernel32.AttachConsole(pid.value):
+            # If we can't attach, try to read from the console window directly
+            # using ReadConsoleOutputCharacterW on the console's output handle
+            return ""
+        
+        try:
+            stdout_handle = kernel32.GetStdHandle(wintypes.DWORD(-11))  # STD_OUTPUT_HANDLE
+            if not stdout_handle or stdout_handle == wintypes.HANDLE(-1).value:
+                return ""
+            
+            csbi = wintypes.CONSOLE_SCREEN_BUFFER_INFO()
+            if not kernel32.GetConsoleScreenBufferInfo(stdout_handle, ctypes.byref(csbi)):
+                return ""
+            
+            # Read the visible buffer area
+            size = csbi.dwSize.X * csbi.dwSize.Y
+            buffer = ctypes.create_unicode_buffer(size)
+            read = wintypes.DWORD()
+            coord = wintypes.COORD(0, 0)
+            
+            if kernel32.ReadConsoleOutputCharacterW(
+                stdout_handle, buffer, size, coord, ctypes.byref(read)
+            ):
+                return buffer.value[:read.value]
+            return ""
+        finally:
+            kernel32.FreeConsole()
+    except Exception:
+        return ""
 
 
 def load_uia() -> Any:
@@ -117,6 +159,57 @@ def get_window_z_order() -> list[int]:
     return out
 
 
+def _extract_console_text(hwnd: int) -> str:
+    """Extract text from Windows console/terminal via Win32 API."""
+    if not hwnd:
+        return ""
+    try:
+        kernel32 = ctypes.windll.kernel32
+        # Get the process ID for the window
+        pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(wintypes.HWND(hwnd), ctypes.byref(pid))
+        if not pid.value:
+            return ""
+        
+        # Open the process
+        PROCESS_QUERY_INFORMATION = 0x0400
+        PROCESS_VM_READ = 0x0010
+        h_process = kernel32.OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, False, pid.value)
+        if not h_process:
+            return ""
+        
+        try:
+            # Try to attach to the console
+            if not kernel32.AttachConsole(pid.value):
+                return ""
+            
+            # Get stdout handle
+            STD_OUTPUT_HANDLE = wintypes.DWORD(-11)
+            stdout = kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
+            if not stdout or stdout == wintypes.HANDLE(-1).value:
+                return ""
+            
+            # Get console screen buffer info
+            csbi = wintypes.CONSOLE_SCREEN_BUFFER_INFO()
+            if not kernel32.GetConsoleScreenBufferInfo(stdout, ctypes.byref(csbi)):
+                return ""
+            
+            # Read the visible buffer
+            size = csbi.dwSize.X * csbi.dwSize.Y
+            buffer = ctypes.create_unicode_buffer(size)
+            read = wintypes.DWORD()
+            coord = wintypes.COORD(0, 0)
+            if kernel32.ReadConsoleOutputCharacterW(stdout, buffer, size, coord, ctypes.byref(read)):
+                return buffer.value[:read.value]
+        finally:
+            kernel32.FreeConsole()
+            if h_process:
+                kernel32.CloseHandle(h_process)
+    except Exception:
+        pass
+    return ""
+
+
 def _unwrap(v: Any) -> Any:
     return v.value if hasattr(v, "value") else v
 
@@ -143,7 +236,8 @@ def _to_rect(v: Any) -> dict[str, int]:
         if isinstance(val, (tuple, list)) and len(val) >= 4:
             left, top = int(val[0]), int(val[1])
             third, fourth = float(val[2]), float(val[3])
-            if third > left or fourth > top:
+            sw, sh = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
+            if third >= left and fourth >= top and third <= sw and fourth <= sh:
                 return {"left": left, "top": top, "right": int(third), "bottom": int(fourth)}
             return {"left": left, "top": top, "right": left + int(third), "bottom": top + int(fourth)}
         if getattr(val, "left", None) is not None:
@@ -165,8 +259,15 @@ def _node_id(runtime_id: list[int], hwnd: int, rect: dict[str, int]) -> str:
     # Hierarchical shortest practical ID: prefer compact runtime-derived or hwnd+rect for action_index / focused_elements.
     # No long strings; keeps uniqueness for node_by_id / click_node while reducing prompt bloat.
     if runtime_id:
-        short = "_".join(map(str, runtime_id[-3:])) if len(runtime_id) > 3 else "_".join(map(str, runtime_id))
-        return f"e_{short}"
+        # Use more of runtime_id + a hash to prevent collisions
+        if len(runtime_id) > 4:
+            short = "_".join(map(str, runtime_id[-4:]))
+        else:
+            short = "_".join(map(str, runtime_id))
+        # Add 4-char hash of full runtime_id for uniqueness
+        import hashlib
+        full_hash = hashlib.md5(",".join(map(str, runtime_id)).encode()).hexdigest()[:4]
+        return f"e_{short}_{full_hash}"
     return f"e_{hwnd}_{rect.get('left',0)}_{rect.get('top',0)}"
 
 
@@ -254,6 +355,12 @@ class UiaScanner:
             for pid, label in ((PID_VALUE_PATTERN, "Value"), (PID_TEXT_PATTERN, "Text"), (PID_LEGACY_PATTERN, "LegacyIAccessible")):
                 pattern_values.update(self._pattern_text(_pattern(element, pid), label))
             text_full = pattern_values.get("text") or pattern_values.get("text_ranges") or pattern_values.get("value") or pattern_values.get("legacy_value") or pattern_values.get("legacy_name") or name or ""
+            # Terminal/console text extraction for PowerShell, cmd, etc.
+            if not text_full and class_name in ("CASCADIA_HOSTING_WINDOW_CLASS", "ConsoleWindowClass", "Windows Terminal"):
+                console_text = _extract_console_text(hwnd)
+                if console_text:
+                    text_full = console_text[:5000]  # Limit size
+                    pattern_values["console_text"] = console_text[:5000]
             px, py = (rect["left"] + rect["right"]) // 2, (rect["top"] + rect["bottom"]) // 2
             return {
                 "id": _node_id(runtime_id, hwnd, rect),
@@ -554,6 +661,8 @@ def build_tree_and_map(action_elements: dict[str, dict[str, Any]], text_hints: d
     for child in root.get("children", []):
         if isinstance(child, dict):
             render(child, 1)
+    if limit_hit:
+        lines.append(f"  ... [TRUNCATED: {rendered}/{max_llm_nodes} nodes shown, limit_hit=true]")
     return {
         "root": root,
         "node_index": node_index_short,

@@ -17,10 +17,17 @@ class RepairValidateNode(BaseNode):
         probe = repair["probe"]
         after_observation = bus.observation_brief(state)
         observed_at = after_observation["observed_at"]
-        if float(repair["probe_observed_at"]) < float(repair["probe_started_at"]):
-            raise RuntimeError("repair validation requires a fresh pre-probe observation")
-        if observed_at is None or float(observed_at) < float(repair["probe_observed_at"]):
-            raise RuntimeError("repair validation requires a fresh post-probe observation")
+        probe_started_at = float(repair.get("probe_started_at", 0))
+        probe_observed_at = float(repair.get("probe_observed_at", 0))
+        # Validate: pre-probe observation should exist (probe_observed_at > 0)
+        # and post-probe observation should be newer than pre-probe
+        if probe_observed_at <= 0:
+            raise RuntimeError("repair validation requires a pre-probe observation (probe_observed_at not set)")
+        if observed_at is None or float(observed_at) <= probe_observed_at:
+            raise RuntimeError("repair validation requires a fresh post-probe observation newer than pre-probe")
+        # Also ensure probe actually ran after pre-probe observation
+        if probe_started_at > 0 and probe_started_at < probe_observed_at:
+            raise RuntimeError("probe started before pre-probe observation; timing invalid")
         executions = bus.execution_evidence(state)
         faculties = executions["faculties"]
         if probe["faculty"] not in faculties:

@@ -118,16 +118,16 @@
     "hover_cache": {
       "enabled": true,
       "scan": {
-        "step_px": 64,
+        "step_px": 48,
         "delay_ms": 0,
         "max_subtree_nodes_per_point": 2000,
         "max_total_nodes": 10000
       },
       "filter": {
         "max_elements": 500,
-        "max_per_window": 120,
+        "max_per_window": 200,
         "max_text": 200,
-        "require_interactive": true
+        "require_interactive": false
       }
     }
   },

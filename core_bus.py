@@ -210,11 +210,17 @@ def focused_elements(state: JsonDict) -> JsonDict:
     }
     focus_text = json.dumps(focus_sources, ensure_ascii=False, default=str)
     fields = ("name", "role", "action", "rect", "enabled", "automation_id", "class_name", "hwnd", "depth")
-    return {
-        node_id: {key: node[key] for key in fields if key in node}
-        for node_id, node in action_index.items()
-        if isinstance(node, dict) and str(node_id) in focus_text
-    }
+    result = {}
+    for node_id, node in action_index.items():
+        if not isinstance(node, dict):
+            continue
+        sid = str(node.get("short_id", node_id))
+        name = str(node.get("name", "")).strip()
+        # Match by short_id OR by name (for elements referenced by name in step/frame)
+        if sid in focus_text or (name and name in focus_text):
+            result[sid] = {key: node[key] for key in fields if key in node}
+            result[sid]["short_id"] = sid
+    return result
 
 
 def observation_brief(state: JsonDict) -> JsonDict:
