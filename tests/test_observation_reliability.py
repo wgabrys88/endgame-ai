@@ -139,9 +139,62 @@ def test_inc2_focus_resolves_by_stable_id_after_shortid_churn():
     print("INC-2 OK: focus resolves by stable id and by short_id.")
 
 
+def test_phase6_stable_id_rendered_for_actionable_elements():
+    """desktop_tree_text must cite the identity-stable #id for actionable elements so the model
+    can reference a churn-proof address."""
+    screen = {"width": 1920, "height": 1080}
+    raw_nodes = [
+        {"role": "Window", "hwnd": 111, "name": "W", "text_full": "", "class_name": "C",
+         "framework_id": "Win32", "rect": {"left": 0, "top": 0, "right": 1920, "bottom": 1080},
+         "offscreen": False, "action": "", "px": 960, "py": 540, "depth": 0, "runtime_id": [111]},
+    ]
+    action_elements = {"e_1_2_7": _mk_elem("e_1_2_7", 100, 100, action="click", name="Go")}
+    mapped = obs.build_tree_and_map(action_elements, {}, raw_nodes, {111: 0}, screen, _mk_config())
+    assert "#e_1_2_7" in mapped["desktop_tree_text"], "stable id must be cited in text tree"
+    print("Phase6 OK: stable #id rendered for actionable element.")
+
+
+def test_phase6_append_narrative_bounds_growth():
+    """append_narrative must keep the root goal and bound the appended tail."""
+    root = "ROOT GOAL: do the thing."
+    eff = root
+    for i in range(5000):
+        eff = bus.append_narrative(eff, f"\n\n[STEP {i}] some fairly long narrative line about progress and evidence.", root_goal=root)
+    assert len(eff) <= bus.NARRATIVE_TAIL_CHARS + len(root) + 100, "narrative must be bounded"
+    assert eff.startswith(root), "root goal must be preserved at head"
+    assert "trimmed for token efficiency" in eff, "trim marker expected once bounded"
+    # under the bound, no trimming
+    small = bus.append_narrative(root, "\n\n[STEP] tiny", root_goal=root)
+    assert small == root + "\n\n[STEP] tiny"
+    print("Phase6 OK: effective_goal growth bounded, root preserved.")
+
+
+def test_phase6_offscreen_actionable_excluded():
+    """filter_raw must drop actionable elements whose center is off the visible screen."""
+    screen = {"width": 1920, "height": 1080}
+    raw = [
+        {"id": "e_on", "role": "Button", "name": "On", "text_full": "", "class_name": "", "hwnd": 5,
+         "framework_id": "", "rect": {"left": 90, "top": 90, "right": 110, "bottom": 110}, "px": 100, "py": 100,
+         "offscreen": False, "enabled": True, "automation_id": "", "runtime_id": [1], "depth": 1,
+         "action": "click", "value": "", "patterns": [], "pattern_values": {}},
+        {"id": "e_off", "role": "Button", "name": "Off", "text_full": "", "class_name": "", "hwnd": 5,
+         "framework_id": "", "rect": {"left": 90, "top": 1190, "right": 110, "bottom": 1210}, "px": 100, "py": 1200,
+         "offscreen": False, "enabled": True, "automation_id": "", "runtime_id": [2], "depth": 1,
+         "action": "click", "value": "", "patterns": [], "pattern_values": {}},
+    ]
+    obs.get_window_z_order = lambda: [5]  # stub Windows-only EnumWindows API
+    out = obs.filter_raw(raw, _mk_config(), screen)
+    ids = set(out["action_elements"].keys())
+    assert "e_on" in ids and "e_off" not in ids, f"off-screen actionable must be excluded, got {ids}"
+    print("Phase6 OK: off-screen actionable element excluded.")
+
+
 if __name__ == "__main__":
     test_inc1_orphan_recovery_to_nearest_window()
     test_inc3_truncation_flag_surfaces()
     test_inc3_no_truncation_flag_when_under_cap()
     test_inc2_focus_resolves_by_stable_id_after_shortid_churn()
+    test_phase6_stable_id_rendered_for_actionable_elements()
+    test_phase6_append_narrative_bounds_growth()
+    test_phase6_offscreen_actionable_excluded()
     print("\nAll observation-reliability regression tests passed.")

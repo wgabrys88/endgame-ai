@@ -425,6 +425,16 @@ def filter_raw(raw_nodes: list[dict[str, Any]], config: dict[str, Any], screen: 
     max_per_window = int(filt["max_per_window"])
     max_text = int(filt["max_text"])
     require_interactive = bool(filt["require_interactive"])
+    sw, sh = int(screen.get("width", 0) or 0), int(screen.get("height", 0) or 0)
+
+    def _on_screen(node: dict[str, Any]) -> bool:
+        # An actionable element must have its clickable center inside the visible screen;
+        # off-screen centers (e.g. content below the taskbar) would make click_node target an
+        # invisible point. Skip the check when screen size is unknown.
+        if not sw or not sh:
+            return True
+        return 0 <= node["px"] < sw and 0 <= node["py"] < sh
+
     hwnd_to_z = {hwnd: i for i, hwnd in enumerate(get_window_z_order())}
     ranked = sorted([n for n in raw_nodes if not n["offscreen"] and n["role"] not in JUNK_ROLES], key=lambda n: (0 if n["name"] or n["text_full"] else 1, 0 if not n["offscreen"] else 1))
     action_elements: dict[str, dict[str, Any]] = {}
@@ -440,6 +450,8 @@ def filter_raw(raw_nodes: list[dict[str, Any]], config: dict[str, Any], screen: 
         if label and label != (node["name"] or ""):
             text_hints[node["id"]] = label
         if action:
+            if not _on_screen(node):
+                continue
             hwnd = node["hwnd"]
             if hwnd_counts.get(hwnd, 0) >= max_per_window:
                 continue
@@ -559,6 +571,11 @@ def build_tree_and_map(action_elements: dict[str, dict[str, Any]], text_hints: d
         hint = text_hints.get(node.get("id", ""), "")
         if hint and hint not in name:
             parts.append(f"~{hint}")
+        # Cite the identity-stable id for actionable elements so the model can reference an
+        # address that survives short_id churn across ticks (click_node/node_by_id resolve it).
+        nid = node.get("id", "")
+        if action and nid and nid != sid:
+            parts.append(f"#{nid}")
         lines.append("  " * indent + " ".join(parts))
         rendered += 1
         for child in node.get("children", []):

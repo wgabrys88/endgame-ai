@@ -100,6 +100,23 @@ def emit(signal: str, patch: JsonDict | None = None, *, record: Record | JsonDic
     return NodeOutput(signal=signal.strip(), patch=dict(patch or {}), record=record_obj, evidence=dict(evidence or {}))
 
 
+# Rolling narrative bound. effective_goal = immutable root goal + append-only narrative; in the
+# analysed run it grew unbounded (tens of KB) and inflated every prompt, contradicting the README's
+# "minimal rolling buffer" principle. Keep the root goal (first paragraph) plus the most recent
+# NARRATIVE_TAIL_CHARS of appended history so recent context is preserved while growth is bounded.
+NARRATIVE_TAIL_CHARS = 12000
+
+
+def append_narrative(effective_goal: str, line: str, *, root_goal: str = "") -> str:
+    combined = f"{effective_goal}{line}"
+    if len(combined) <= NARRATIVE_TAIL_CHARS:
+        return combined
+    head = root_goal if root_goal and combined.startswith(root_goal) else ""
+    tail = combined[-NARRATIVE_TAIL_CHARS:]
+    marker = "\n\n[...earlier narrative trimmed for token efficiency...]\n"
+    return f"{head}{marker}{tail}" if head else f"{marker.lstrip()}{tail}"
+
+
 def coerce_node_output(node: str, result: Any) -> NodeOutput:
     if isinstance(result, NodeOutput):
         return result

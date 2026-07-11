@@ -30,7 +30,7 @@ class FrameActionNode(BaseNode):
         data, state = record.data, ctx["state"]
         frame = {key: data[key] for key in ("screen_summary", "target", "strategy", "risk", "notes")}
         frame["step_index"] = int(state.get("step", 0) or 0)
-        effective = state["effective_goal"] + f"\n\n[FRAME_ACTION] Target {frame['target']} via {frame['strategy']}: {frame['notes']}"
+        effective = bus.append_narrative(state["effective_goal"], f"\n\n[FRAME_ACTION] Target {frame['target']} via {frame['strategy']}: {frame['notes']}", root_goal=state.get("goal", ""))
         return {"action_frame": frame, "framing_attempted_for_step": frame["step_index"], "effective_goal": effective}
 
 
