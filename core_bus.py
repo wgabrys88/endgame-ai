@@ -227,24 +227,12 @@ def focused_elements(state: JsonDict) -> JsonDict:
     }
     focus_text = json.dumps(focus_sources, ensure_ascii=False, default=str)
     fields = ("id", "name", "role", "action", "rect", "enabled", "automation_id", "class_name", "hwnd", "depth")
-    # Match focus references against the positional short_id key AND the identity-stable
-    # id / runtime_id. short_id (W{n}E{k}) is a positional label that churns across ticks
-    # when windows reorder or the element set changes; a reference minted last tick may now
-    # point elsewhere. Matching the stable id/runtime_id too lets a prior reference still
-    # resolve to the correct physical element, and the returned "id" gives callers a stable
-    # anchor to cite next turn.
-    def _referenced(node_id: str, node: JsonDict) -> bool:
-        if str(node_id) in focus_text:
-            return True
-        stable = str(node.get("id", ""))
-        if stable and stable in focus_text:
-            return True
-        rid = node.get("runtime_id")
-        return bool(rid) and str(rid) in focus_text
+    # The action_index key is the identity-stable id (e_<runtime_id>) that the model cites, so a
+    # single membership test suffices — no positional short_id, no fallback matching.
     return {
         node_id: {key: node[key] for key in fields if key in node}
         for node_id, node in action_index.items()
-        if isinstance(node, dict) and _referenced(node_id, node)
+        if isinstance(node, dict) and str(node_id) in focus_text
     }
 
 

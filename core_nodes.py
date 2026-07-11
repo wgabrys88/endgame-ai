@@ -473,15 +473,6 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
     def _require_node(node_id: str) -> dict[str, Any]:
         node = action_index.get(str(node_id))
         if not isinstance(node, dict):
-            # Fall back to the identity-stable id: short_id (W{n}E{k}) is a positional label
-            # that churns across ticks, so a cited id may be a valid stable id / runtime_id
-            # rather than the current short_id key. Resolve by those to hit the right element.
-            target = str(node_id)
-            for candidate in action_index.values():
-                if isinstance(candidate, dict) and (str(candidate.get("id", "")) == target or str(candidate.get("runtime_id", "")) == target):
-                    node = candidate
-                    break
-        if not isinstance(node, dict):
             raise RuntimeError(f"node id is not actionable in the latest observation: {node_id}")
         return dict(node)
 

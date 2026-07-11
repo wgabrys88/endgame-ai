@@ -119,29 +119,9 @@ def test_inc3_no_truncation_flag_when_under_cap():
     print("INC-3 OK: no false truncation flag under cap.")
 
 
-def test_inc2_focus_resolves_by_stable_id_after_shortid_churn():
-    """A focus reference minted with a now-stale short_id (or the stable id) must still
-    resolve to the physical element via its stable id / runtime_id."""
-    action_index = {
-        # Current-tick short_id is W2E5, but its stable id is e_42_459492_2.
-        "W2E5": {"id": "e_42_459492_2", "runtime_id": [42, 459492, 4, 2], "name": "Terminal",
-                 "role": "Edit", "action": "write", "rect": {"left": 0, "top": 0, "right": 10, "bottom": 10}},
-    }
-    # last_reflection referenced the element by its stable id (churn-proof anchor)
-    state = {"action_index": action_index, "current_step": {}, "action_frame": {},
-             "last_action": {}, "last_reflection": {"lesson": "retry writing to e_42_459492_2"}, "focus_ids": []}
-    fe = bus.focused_elements(state)
-    assert "W2E5" in fe, "reference by stable id must resolve even when short_id churned"
-    assert fe["W2E5"]["id"] == "e_42_459492_2"
-    # Also resolves when the (possibly stale) short_id is what was cited
-    state2 = dict(state, last_reflection={"lesson": "retry W2E5"})
-    assert "W2E5" in bus.focused_elements(state2)
-    print("INC-2 OK: focus resolves by stable id and by short_id.")
-
-
-def test_phase6_stable_id_rendered_for_actionable_elements():
-    """desktop_tree_text must cite the identity-stable #id for actionable elements so the model
-    can reference a churn-proof address."""
+def test_single_id_addressing_no_positional_labels():
+    """Elements are addressed solely by their identity-stable id; there are no positional
+    W{n}E{k} labels, and the action_index is keyed by that stable id."""
     screen = {"width": 1920, "height": 1080}
     raw_nodes = [
         {"role": "Window", "hwnd": 111, "name": "W", "text_full": "", "class_name": "C",
@@ -150,8 +130,25 @@ def test_phase6_stable_id_rendered_for_actionable_elements():
     ]
     action_elements = {"e_1_2_7": _mk_elem("e_1_2_7", 100, 100, action="click", name="Go")}
     mapped = obs.build_tree_and_map(action_elements, {}, raw_nodes, {111: 0}, screen, _mk_config())
-    assert "#e_1_2_7" in mapped["desktop_tree_text"], "stable id must be cited in text tree"
-    print("Phase6 OK: stable #id rendered for actionable element.")
+    # action_index keyed by stable id, short_id == id, no W..E.. label anywhere
+    assert list(mapped["action_index"].keys()) == ["e_1_2_7"]
+    assert mapped["action_index"]["e_1_2_7"]["short_id"] == "e_1_2_7"
+    assert "E1" not in mapped["desktop_tree_text"] and "e_1_2_7" in mapped["desktop_tree_text"]
+    print("Single-id OK: elements addressed by stable id, no positional labels.")
+
+
+def test_single_id_focus_and_lookup_stable_across_window_reorder():
+    """A cited stable id resolves the same element regardless of window ordering; focused_elements
+    matches it directly with no fallback."""
+    action_index = {
+        "e_42_459492_2": {"id": "e_42_459492_2", "runtime_id": [42, 459492, 4, 2], "name": "Terminal",
+                          "role": "Edit", "action": "write", "rect": {"left": 0, "top": 0, "right": 10, "bottom": 10}},
+    }
+    state = {"action_index": action_index, "current_step": {}, "action_frame": {},
+             "last_action": {}, "last_reflection": {"lesson": "retry writing to e_42_459492_2"}, "focus_ids": []}
+    fe = bus.focused_elements(state)
+    assert "e_42_459492_2" in fe and fe["e_42_459492_2"]["id"] == "e_42_459492_2"
+    print("Single-id OK: focus resolves the stable id directly, no fallback.")
 
 
 def test_phase6_append_narrative_bounds_growth():
@@ -193,8 +190,8 @@ if __name__ == "__main__":
     test_inc1_orphan_recovery_to_nearest_window()
     test_inc3_truncation_flag_surfaces()
     test_inc3_no_truncation_flag_when_under_cap()
-    test_inc2_focus_resolves_by_stable_id_after_shortid_churn()
-    test_phase6_stable_id_rendered_for_actionable_elements()
+    test_single_id_addressing_no_positional_labels()
+    test_single_id_focus_and_lookup_stable_across_window_reorder()
     test_phase6_append_narrative_bounds_growth()
     test_phase6_offscreen_actionable_excluded()
     print("\nAll observation-reliability regression tests passed.")

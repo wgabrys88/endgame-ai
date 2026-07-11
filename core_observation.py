@@ -529,30 +529,19 @@ def build_tree_and_map(action_elements: dict[str, dict[str, Any]], text_hints: d
                 sort_prune(child, depth + 1)
 
     sort_prune(root)
-    short: dict[str, str] = {}
-    counters: dict[str, int] = {}
 
-    def assign(node: dict[str, Any], parent: str = "") -> None:
-        nid = node.get("id", "")
-        if nid == "W0":
-            sid = "W0"
-        elif nid.startswith("W") and node.get("parent_id") == "W0":
-            sid = nid
-        elif parent and parent.startswith("W") and "E" in parent:
-            key = f"{parent}_child"; counters[key] = counters.get(key, 0) + 1; sid = f"{parent}C{counters[key]}"
-        elif parent and parent.startswith("W") and parent != "W0":
-            counters[parent] = counters.get(parent, 0) + 1; sid = f"{parent}E{counters[parent]}"
-        else:
-            sid = nid
-        short[nid] = sid
-        node["short_id"] = sid
+    # Single identity-stable address: every node's short_id IS its id (windows keep W0/W1/W2 as
+    # readable tree headers; elements use e_<runtime_id>). No positional labels, no id map, no
+    # fallback — a control keeps the same address across ticks regardless of window ordering.
+    def assign(node: dict[str, Any]) -> None:
+        node["short_id"] = node.get("id", "")
         for child in node.get("children", []):
             if isinstance(child, dict):
-                assign(child, sid)
+                assign(child)
 
     assign(root)
-    node_index_short = {short.get(oid, oid): {**ndata, "short_id": short.get(oid, oid)} for oid, ndata in node_index.items()}
-    action_index_short = {short.get(oid, oid): {**edata, "short_id": short.get(oid, oid)} for oid, edata in action_elements.items()}
+    node_index_short = {oid: {**ndata, "short_id": oid} for oid, ndata in node_index.items()}
+    action_index_short = {oid: {**edata, "short_id": oid} for oid, edata in action_elements.items()}
 
     def clean(v: Any) -> str:
         return " ".join(str(v or "").replace("\r", " ").replace("\n", " ").split())
@@ -571,11 +560,6 @@ def build_tree_and_map(action_elements: dict[str, dict[str, Any]], text_hints: d
         hint = text_hints.get(node.get("id", ""), "")
         if hint and hint not in name:
             parts.append(f"~{hint}")
-        # Cite the identity-stable id for actionable elements so the model can reference an
-        # address that survives short_id churn across ticks (click_node/node_by_id resolve it).
-        nid = node.get("id", "")
-        if action and nid and nid != sid:
-            parts.append(f"#{nid}")
         lines.append("  " * indent + " ".join(parts))
         rendered += 1
         for child in node.get("children", []):
@@ -596,7 +580,7 @@ def build_tree_and_map(action_elements: dict[str, dict[str, Any]], text_hints: d
         "max_llm_nodes": max_llm_nodes,
         "llm_node_limit_hit": limit_hit,
         "window_z_order": [w["hwnd"] for w in sorted_windows],
-        "elements_dropped_per_window": {short.get(next((w["id"] for w in sorted_windows if w["hwnd"] == h), h), h): n for h, n in dropped_per_window.items() if n},
+        "elements_dropped_per_window": {next((w["id"] for w in sorted_windows if w["hwnd"] == h), h): n for h, n in dropped_per_window.items() if n},
         "elements_truncated": sum(dropped_per_window.values()) > 0,
     }
 
