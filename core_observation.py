@@ -470,16 +470,30 @@ def build_tree_and_map(action_elements: dict[str, dict[str, Any]], text_hints: d
     root = {"id": "W0", "role": "Screen", "name": "Screen", "title": "Desktop", "rect": {"left": 0, "top": 0, "right": screen["width"], "bottom": screen["height"]}, "fresh_scan": True, "observed_at": time.time(), "children": []}
     node_index: dict[str, dict[str, Any]] = {"W0": {k: v for k, v in root.items() if k != "children"}}
     counts = {w["hwnd"]: 0 for w in sorted_windows}
+    dropped_per_window: dict[int, int] = {}
     for window in sorted_windows:
         token = f"W{len(root['children']) + 1}"
         window["id"] = token
         window["parent_id"] = "W0"
         root["children"].append(window)
         node_index[token] = {k: v for k, v in window.items() if k != "children"}
+    def _rect_gap(r: dict[str, int], px: int, py: int) -> int:
+        # 0 when (px,py) is inside r; otherwise the squared distance to the nearest edge.
+        # Lets an element attach to the window it truly belongs to even when that window's
+        # reported BoundingRectangle under-covers its own rendered content (common with
+        # browsers/DPI), instead of orphaning ~1/3 of elements to the desktop root W0.
+        dx = max(r.get("left", 0) - px, 0, px - r.get("right", 0))
+        dy = max(r.get("top", 0) - py, 0, py - r.get("bottom", 0))
+        return dx * dx + dy * dy
+
     for elem in action_elements.values():
         parent_hwnd = next((w["hwnd"] for w in sorted_windows if w["rect"].get("left", 0) <= elem["px"] <= w["rect"].get("right", 0) and w["rect"].get("top", 0) <= elem["py"] <= w["rect"].get("bottom", 0)), None)
+        if parent_hwnd is None and sorted_windows:
+            nearest = min(sorted_windows, key=lambda w: _rect_gap(w["rect"], elem["px"], elem["py"]))
+            parent_hwnd = nearest["hwnd"]
         parent_id = next((w["id"] for w in sorted_windows if w["hwnd"] == parent_hwnd), "W0") if parent_hwnd is not None else "W0"
         if parent_hwnd is not None and parent_id != "W0" and counts.get(parent_hwnd, 0) >= max_children_per_window:
+            dropped_per_window[parent_hwnd] = dropped_per_window.get(parent_hwnd, 0) + 1
             continue
         elem["parent_id"] = parent_id
         (root["children"] if parent_id == "W0" or parent_hwnd is None else windows[parent_hwnd]["children"]).append(elem)
@@ -565,6 +579,8 @@ def build_tree_and_map(action_elements: dict[str, dict[str, Any]], text_hints: d
         "max_llm_nodes": max_llm_nodes,
         "llm_node_limit_hit": limit_hit,
         "window_z_order": [w["hwnd"] for w in sorted_windows],
+        "elements_dropped_per_window": {short.get(next((w["id"] for w in sorted_windows if w["hwnd"] == h), h), h): n for h, n in dropped_per_window.items() if n},
+        "elements_truncated": sum(dropped_per_window.values()) > 0,
     }
 
 
@@ -587,6 +603,7 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
             "root": mapped["root"], "node_index": mapped["node_index"], "window_count": mapped["window_count"],
             "element_count": mapped["element_count"], "rendered_node_count": mapped["rendered_node_count"],
             "max_llm_nodes": mapped["max_llm_nodes"], "llm_node_limit_hit": mapped["llm_node_limit_hit"],
+            "elements_truncated": mapped["elements_truncated"], "elements_dropped_per_window": mapped["elements_dropped_per_window"],
             "window_z_order": mapped["window_z_order"],
         },
         "action_index": mapped["action_index"],
