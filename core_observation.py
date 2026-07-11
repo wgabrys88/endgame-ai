@@ -162,7 +162,12 @@ def _to_runtime_id(v: Any) -> list[int]:
 
 
 def _node_id(runtime_id: list[int], hwnd: int, rect: dict[str, int]) -> str:
-    return "e_" + "_".join(map(str, runtime_id)) if runtime_id else f"e_{hwnd}_{rect['left']}_{rect['top']}"
+    # Hierarchical shortest practical ID: prefer compact runtime-derived or hwnd+rect for action_index / focused_elements.
+    # No long strings; keeps uniqueness for node_by_id / click_node while reducing prompt bloat.
+    if runtime_id:
+        short = "_".join(map(str, runtime_id[-3:])) if len(runtime_id) > 3 else "_".join(map(str, runtime_id))
+        return f"e_{short}"
+    return f"e_{hwnd}_{rect.get('left',0)}_{rect.get('top',0)}"
 
 
 def _cached(element: Any, prop_id: int) -> Any:
