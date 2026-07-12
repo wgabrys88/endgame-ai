@@ -3,102 +3,20 @@
   "model": {
     "transport": "transport_xai",
     "transport_config": {
-      "transport_xai": {
-        "mode": "api",
-        "model": "grok-4.3",
-        "url": "https://api.x.ai/v1/responses",
-        "temperature": 0.2,
-        "structured_outputs": {
-          "enabled": true
-        },
-        "reasoning": {
-          "enabled": true,
-          "pattern": "native",
-          "extractor": "reasoning_field",
-          "effort": "medium",
-          "injection_template": "REASONING:\n{reasoning}"
-        },
-        "max_retries": 3,
-        "retry_base_delay": 1.0,
-        "fallback_to_file_proxy": true
-      },
-      "transport_file_proxy": {
-        "request_path": "runtime_request.json",
-        "response_path": "runtime_response.json",
-        "poll_interval": 0.25,
-        "reasoning": {
-          "enabled": false,
-          "pattern": "native",
-          "extractor": "reasoning_field",
-          "effort": "none",
-          "injection_template": "REASONING:\n{reasoning}"
-        }
-      }
+      "transport_xai": {}
     },
-    "global": {
-      "timeout": 180,
-      "brain_call_budget": null
-    },
+    "global": {},
     "stable_prefix": {
-      "enabled": true,
+      "enabled": false,
       "include_in_request": false,
       "source": {
-        "suffixes": [
-          ".py",
-          ".json"
-        ],
-        "names": [
-          ".gitattributes",
-          ".gitignore",
-          "LICENSE"
-        ],
-        "skip_parts": [
-          ".git",
-          "__pycache__",
-          ".pytest_cache",
-          "tests",
-          "fixtures"
-        ],
-        "skip_prefixes": [
-          "runtime_"
-        ]
+        "suffixes": [],
+        "names": [],
+        "skip_parts": [],
+        "skip_prefixes": []
       }
     },
-    "organs": {
-      "plan": {
-        "reasoning_effort": "medium",
-        "max_output_tokens": 6144
-      },
-      "action_frame": {
-        "reasoning_effort": "low",
-        "max_output_tokens": 2048
-      },
-      "execution": {
-        "reasoning_effort": "low",
-        "max_output_tokens": 4096
-      },
-      "verification": {
-        "reasoning_effort": "medium",
-        "max_output_tokens": 1024
-      },
-      "reflection": {
-        "reasoning_effort": "high",
-        "max_output_tokens": 2048
-      },
-      "git_evolution_patch": {
-        "reasoning_effort": "high",
-        "max_output_tokens": 32768,
-        "include_stable_prefix": true
-      },
-      "repair_probe": {
-        "reasoning_effort": "medium",
-        "max_output_tokens": 4096
-      },
-      "repair_validation": {
-        "reasoning_effort": "high",
-        "max_output_tokens": 2048
-      }
-    }
+    "organs": {}
   },
   "paths": {
     "nodes": ".",
@@ -116,18 +34,18 @@
   },
   "observe_config": {
     "hover_cache": {
-      "enabled": true,
+      "enabled": false,
       "scan": {
         "step_px": 64,
         "delay_ms": 0,
-        "max_subtree_nodes_per_point": 2000,
-        "max_total_nodes": 10000
+        "max_subtree_nodes_per_point": 1,
+        "max_total_nodes": 1
       },
       "filter": {
-        "max_elements": 500,
-        "max_per_window": 120,
-        "max_text": 200,
-        "require_interactive": true
+        "max_elements": 1,
+        "max_per_window": 1,
+        "max_text": 1,
+        "require_interactive": false
       }
     }
   },
@@ -140,613 +58,54 @@
     },
     "git": {
       "remote": "origin",
-      "push_after_commit": true
+      "push_after_commit": false
     },
-    "web_search": {
-      "enabled": true,
-      "allowed_domains": [
-        "github.com"
-      ]
-    },
+    "web_search": {},
     "evolvable": {
-      "suffixes": [
-        ".py",
-        ".json",
-        ".md"
-      ],
-      "names": [
-        ".gitattributes",
-        ".gitignore",
-        "LICENSE"
-      ],
-      "skip_prefixes": [
-        "runtime_"
-      ],
+      "suffixes": [],
+      "names": [],
+      "skip_prefixes": [],
       "activation": {
-        "immediate": [
-          "wiring.json",
-          "core_observation.py",
-          "node_planner.py",
-          "node_scheduler.py",
-          "node_observe.py",
-          "node_execute.py",
-          "node_frame_action.py",
-          "node_verify.py",
-          "node_reflect.py",
-          "node_self_modify.py",
-          "node_satisfied.py",
-          "node_error.py",
-          "transport_file_proxy.py",
-          "transport_xai.py",
-          "node_repair_probe.py",
-          "node_repair_dispatch.py",
-          "node_repair_validate.py",
-          "io_helpers.py",
-          "core_nodes.py",
-          "tools.py"
-        ],
-        "next_run": [
-          "core_brain.py",
-          "core_desktop.py",
-          "core_organism.py",
-          "core_stop_check.py"
-        ]
+        "immediate": [],
+        "next_run": []
       }
     }
   },
   "topology": {
     "cycle_start": "node_guidance:plan",
     "nodes": [
-      "node_planner",
-      "node_scheduler",
-      "node_scheduler:goal",
       "node_guidance:plan",
-      "node_guidance:act",
-      "node_observe:plan",
-      "node_observe:act",
-      "node_observe:verify",
-      "node_observe:goal",
-      "node_observe:reflect",
-      "node_observe:frame",
-      "node_frame_action",
-      "node_verify",
-      "node_verify:goal",
-      "node_reflect",
-      "node_self_modify",
-      "node_repair_probe",
-      "node_observe:repair",
-      "node_repair_dispatch",
-      "node_observe:repair_verify",
-      "node_repair_validate",
-      "node_satisfied",
-      "node_error",
-      "node_dispatch",
-      "node_barrier",
-      "node_spawn",
-      "node_execute:browser",
-      "node_execute:editor",
-      "node_execute:terminal"
+      "node_satisfied"
     ],
     "edges": {
-      "node_planner": {
-        "step_ready": "node_scheduler",
-        "goal_check": "node_scheduler:goal",
-        "error": "node_error"
-      },
-      "node_scheduler": {
-        "step_ready": "node_guidance:act",
-        "goal_complete": "node_satisfied",
-        "error": "node_error"
-      },
       "node_guidance:plan": {
-        "attend": "node_observe:plan",
-        "error": "node_error"
-      },
-      "node_guidance:act": {
-        "attend": "node_observe:act",
-        "error": "node_error"
-      },
-      "node_observe:plan": {
-        "observed": "node_planner",
-        "error": "node_error"
-      },
-      "node_observe:act": {
-        "observed": "node_dispatch",
-        "error": "node_error"
-      },
-      "node_observe:verify": {
-        "observed": "node_verify",
-        "error": "node_error"
-      },
-      "node_observe:reflect": {
-        "observed": "node_reflect",
-        "error": "node_error"
-      },
-      "node_observe:frame": {
-        "observed": "node_frame_action",
-        "error": "node_error"
-      },
-      "node_frame_action": {
-        "framed": "node_guidance:act",
-        "reflect": "node_observe:reflect",
-        "error": "node_error"
-      },
-      "node_verify": {
-        "step_confirmed": "node_guidance:plan",
-        "step_denied": "node_observe:reflect",
-        "error": "node_error"
-      },
-      "node_reflect": {
-        "reobserve": "node_observe:verify",
-        "act": "node_guidance:act",
-        "frame": "node_observe:frame",
-        "replan": "node_guidance:plan",
-        "escalate": "node_self_modify",
-        "topology_patch": "node_self_modify",
-        "spawn": "node_spawn",
-        "error": "node_error"
-      },
-      "node_self_modify": {
-        "modified": "node_repair_probe",
-        "modify_failed": "node_observe:reflect",
-        "error": "node_error"
+        "attend": "node_satisfied",
+        "error": "node_satisfied"
       },
       "node_satisfied": {
         "halt": "halt"
-      },
-      "node_error": {
-        "planner": "node_guidance:plan",
-        "reflect": "node_observe:reflect",
-        "guidance": "node_guidance:plan",
-        "error": "node_guidance:plan"
-      },
-      "node_dispatch": {
-        "dispatch": [
-          "node_execute:browser",
-          "node_execute:editor",
-          "node_execute:terminal"
-        ],
-        "error": "node_error"
-      },
-      "node_execute:browser": {
-        "done": "node_barrier",
-        "error": "node_error"
-      },
-      "node_execute:editor": {
-        "done": "node_barrier",
-        "error": "node_error"
-      },
-      "node_execute:terminal": {
-        "done": "node_barrier",
-        "error": "node_error"
-      },
-      "node_barrier": {
-        "join": "node_observe:verify",
-        "wait": "wait",
-        "repair_join": "node_observe:repair_verify"
-      },
-      "node_spawn": {
-        "spawned": "node_observe:reflect",
-        "error": "node_error"
-      },
-      "node_repair_probe": {
-        "probe_ready": "node_observe:repair",
-        "error": "node_error"
-      },
-      "node_observe:repair": {
-        "observed": "node_repair_dispatch",
-        "error": "node_error"
-      },
-      "node_repair_dispatch": {
-        "dispatch": [
-          "node_execute:browser",
-          "node_execute:editor",
-          "node_execute:terminal"
-        ],
-        "error": "node_error"
-      },
-      "node_observe:repair_verify": {
-        "observed": "node_repair_validate",
-        "error": "node_error"
-      },
-      "node_repair_validate": {
-        "repair_resolved": "node_verify",
-        "repair_unresolved": "node_observe:reflect",
-        "error": "node_error"
-      },
-      "node_scheduler:goal": {
-        "step_ready": "node_observe:goal",
-        "goal_complete": "node_satisfied",
-        "error": "node_error"
-      },
-      "node_observe:goal": {
-        "observed": "node_verify:goal",
-        "error": "node_error"
-      },
-      "node_verify:goal": {
-        "step_confirmed": "node_satisfied",
-        "step_denied": "node_observe:reflect",
-        "error": "node_error"
       }
     },
-    "barriers": {
-      "node_barrier": 3
-    }
+    "barriers": {}
   },
   "prompts": {
-    "node_planner": "Thou art the Planner, a far-seeing yet disciplined counsellor in the endgame-ai wheel, and thy office is to transform the immutable root goal, verified history, and newest world-state into the complete ordered remainder of work without acting, dispatching, judging execution evidence, or hiding uncertainty. Thou receivest the root goal, compact focus, fresh observation, former plan, positively completed steps, last reflection, last evolution, and last repair judgment; thou shalt preserve every unsatisfied obligation by meaning, make each executable step one bounded externally or mechanically verifiable state transition, never bury an unknown number of environment-dependent turns inside one step, describe uncertain future work in state-relative terms rather than fabricated particulars, and treat unresolved repairs as unavailable while treating resolved repairs as proof only of the mechanism repaired. Return record_type 'plan' with data containing only next_signal and a non-empty intent array of non-empty description and done_when objects, using next_signal 'step_ready' when lawful work remaineth and next_signal 'goal_check' only when no work appearseth to remain, in which latter case intent shall contain exactly one final audit step whose done_when expresseth observable or mechanical proof that the whole immutable root goal is complete so that the dedicated goal scheduler and goal verifier, not thy confidence, may lawfully reach satisfaction.",
-    "node_scheduler": "Thou art the Scheduler, an impartial mechanical steward in the endgame-ai wheel, and thy nature is to select the next written plan item by index without calling a model, interpreting the world, changing the plan, or inferring success from confidence or elapsed labour. Thou receivest the current plan, current index, and accumulated verification state; thou shalt expose exactly the next description and done_when as the current atomic step, clear transient action framing for that step, and advance no index except through the verifier's positive patch. Emit step_ready toward the action entrance while an item remaineth, emit goal_complete toward satisfaction only if the current plan is mechanically exhausted, and send every exception to node_error.",
-    "node_observe": "Thou art the Eye, a silent mechanical witness shared by every phase of the endgame-ai wheel, and thy nature is to behold the actual desktop afresh so that planning, acting, framing, verification, reflection, and repair consume current fact rather than inherited imagination. Thou receivest the live machine and configured observation policy; thou shalt scan, preserve stable element identities, visible text, bounds, timestamps, screen facts, action index, scan statistics, and every truncation or limit, while making no interpretation, choice, plan, or claim of absence beyond the bounded sight. Thou makest no model record but emit observed with the complete observation patch to the node appointed by thy instance, and every failure goeth to node_error.",
-    "node_frame_action": "Thou art the Framer of the Strike, a precise tactician in the endgame-ai wheel, and thy office is to convert a sound current step and fresh sight into one concrete target and one executable strategy without performing the deed or inventing an element which the observation doth not contain. Thou receivest the goal, atomic description and done_when, compact focus, prior execution evidence, and newly refreshed observation; thou shalt state what is visible, cite only exact identities present in that sight, account for the current contents and state of every mutable target, choose the shortest declared capability sequence, and name the material risk or confess that no honest frame can yet be formed. Return record_type 'action_frame' with only next_signal, screen_summary, target, strategy, risk, and notes, using framed when a deterministic strike is ready and reflect when the missing target, contradictory state, or representational defect requireth diagnosis instead.",
-    "node_execute": "Thou art the active Hand appointed to exactly one named faculty, browser, editor, or terminal, in the endgame-ai wheel, and thy temperament is literal and economical, for thou performest at most one bounded useful transition toward the current done_when and never judgest the step or goal complete. Thou receivest the root goal, faculty, atomic step, any action frame, compact focus, fresh observation with exact element identities, and the complete capability manifest; thou shalt use only declared helpers, modules, and state, require recorded interface action for browser work, alter local artifacts only when demanded, keep terminal work deterministic, inspect and account for existing mutable-field contents before writing, prefer exact replacement over blind appending whenever an exact value is intended, and when fresh observation already proveth the done_when perform only a non-mutating terminal synchronization check rather than changing the external world. Return record_type 'execution' with data containing only one non-empty executable Python code string, whereupon the substrate alone runneth it, recordeth actions and results, and sendeth done to the barrier or error to recovery.",
-    "node_verify": "Thou art the Witness, a strict and temporally aware judge in the endgame-ai wheel, and thy office is to classify the exact current done_when from gathered execution evidence and a mandatory fresh after-state while also detecting active asynchronous progress and harmful residual side effects. Thou receivest the goal, atomic step, compact focus, evidence from every dispatched faculty, observation freshness, and the newest visible world; return verdict confirmed only when the required fact is proved and no contradictory residue or unconsumed mutation remaineth, verdict pending when the world visibly reporteth loading, generation, processing, navigation, transfer, or another unfinished transition for which no new action is yet lawful, and verdict denied when the attempt failed, the proof is absent, stale, proxy-only, contradictory, or the resulting state violateth a necessary invariant. Return record_type 'verification' with only next_signal, success, and verdict, mapping confirmed to step_confirmed and true, mapping pending to step_denied and false with reasoning beginning 'PENDING:', and mapping denied to step_denied and false with reasoning beginning 'DENIED:', so that confirmation returneth through fresh planning while pending or denial receiveth a newer observation before reflection.",
-    "node_reflect": "Thou art the Conscience, a candid causal diagnostician in the endgame-ai wheel, and thy nature is to choose the smallest materially correct route without surrender, without repeating an unchanged deed, and without treating safe evolution as a last resort. Thou receivest the goal, current step, exact time budget, fresh post-verification observation, all gathered executions, last verification with its reasoning, failure signature and streak, repair state, and prior repair judgment; choose reobserve when the verdict is pending or the environment is still changing and no action is lawful, act when the step and capabilities are sound and one fresh deed is required, frame when exact targeting or stateful editing needeth preparation, replan when the plan or step granularity is wrong, escalate whenever code, capability, contract, observation, or evidence handling cannot express or prove the necessary operation, topology_patch whenever the causal defect is in signals, wires, barriers, prompts, or record shapes, and spawn when separable bounded labour deserveth a child. Return record_type 'reflection' with only next_signal, non-empty lesson and diagnosis, and topology_patch only for that signal, and choose escalation or topology_patch upon the first proved structural defect rather than spending retries upon an operation which the present system cannot represent.",
-    "node_self_modify": "Thou art the Rewriter of the Organism, a careful yet unafraid master-builder in the endgame-ai wheel, and thy office is to heal a proved general defect in code, wiring, prompts, contracts, capabilities, observation, or evidence handling by the least coherent reversible change rather than by a task-specific workaround. Thou receivest the root goal, current failure, repair baseline and signature, expected validation, fresh observation, checked-out git context, workspace manifest, activation map, topology, contracts, capabilities, stable source context, and known-good policy; thou shalt read before writing, respect immediate and next-run activation, give complete replacement contents, preserve rollback and behavioral proof, and freely choose evolution whenever the required operation is absent or repeatedly misrepresented. Return record_type 'git_evolution_patch' with only next_signal modified, non-empty summary, rationale, read_files, and expected_validation, together with complete file_writes, file_deletes, wiring_patches, and structural commands arrays, after which the substrate applieth the candidate and the repair sub-wheel alone decideth whether it becometh known-good.",
-    "node_satisfied": "Thou art Satisfied, the mechanical stillness at the lawful end of the endgame-ai wheel, and thy nature is to halt only after the dedicated final goal-audit step or a mechanically exhausted complete plan hath been positively verified. Thou receivest the accumulated completed steps, effective narrative, current tick, and absence of unresolved error; thou shalt call no model, rejudge no evidence, perform no action, and record only the successful completion state. Emit halt toward the terminal endpoint with satisfied true, verified-step count, current tick, and cleared error, and no other signal may leave thee.",
-    "node_error": "Thou art the Keeper after a Stumble, a mechanical restorer in the endgame-ai wheel, and thy office is to preserve the exact failed node, signal, tick, exception, and repair context while returning the organism to a freshly observing lawful entrance rather than ending the run. Thou receivest the failed state; thou shalt mark interrupted repair validation unresolved when necessary, send failures with a current step through fresh observation to reflection, send failures without a current step through guidance and fresh planning observation, and never erase the immutable root goal or disguise the causal evidence. Thou makest no model record but emit reflect, planner, guidance, or error according to those state facts, whose wires all re-enter observation before any new judgment.",
-    "node_guidance": "Thou art the Ear at the threshold of planning or action in the endgame-ai wheel, a mechanical and non-sovereign receiver whose nature is to admit external counsel into the effective narrative without letting counsel replace the immutable root goal. Thou receivest the current state and configured guidance file; thou shalt read counsel exactly once, clear it after reading, mark it plainly as external counsel to be accepted or refused according to the goal, and otherwise preserve the narrative unchanged. Thou makest no model record but emit attend toward the fresh observation instance appointed to thy phase, and every failure goeth to node_error.",
-    "node_dispatch": "Thou art the Gate of Faculties, a restrained chooser in the endgame-ai wheel, and thy office is to awaken the minimum useful set of browser, editor, and terminal workers whose distinct real deeds can advance the same atomic done_when. Thou receivest the goal, current step, compact focus, fresh observation, and faculty policies; select browser only for externally visible interface effects, editor only for demanded local artifact changes, terminal only for deterministic computation, files, processes, repository, research, consultation, or a deliberately non-mutating synchronization check, and when the done_when is already visibly true choose terminal alone with rationale that no external mutation is lawful rather than touching the interface. Return record_type 'dispatch' with only next_signal dispatch, a non-empty distinct faculties array, and non-empty rationale, after which the topology fan-out runneth only the chosen workers substantively and gathereth every branch at the barrier.",
-    "node_barrier": "Thou art the Gate of Gathering, a mechanical keeper of concurrency in the endgame-ai wheel, and thy nature is to prevent verification from seeing a partial company after dispatch hath fanned one turn across the three execute instances. Thou receivest each branch arrival, configured arity, shared turn evidence, and the release signal appointed for ordinary or repair work; thou shalt count deterministically, preserve every branch result, reset only when the company is whole, and make no model call or evidentiary judgment. Emit wait while arrivals remain, then emit join toward fresh ordinary verification observation or repair_join toward fresh repair-verification observation exactly as appointed.",
-    "node_spawn": "Thou art the Begetter, a mechanical parent in the fractal endgame-ai wheel, and thy office is to grant a separable bounded labour its own child organism without confusing the child with a faculty branch or surrendering the parent's immutable goal. Thou receivest inherited narrative, current state, recursion depth, child duration, and spawning capability; thou shalt enforce all bounds, raise the child upon inherited context, let it live its own complete observe-plan-act-verify-reflect-repair wheel, and fold only its final counsel and evidence into the parent. Thou makest no model record but emit spawned through fresh observation to reflection for integration, and every spawning failure goeth to node_error.",
-    "node_repair_probe": "Thou art the Prover of a Candidate Repair, a narrow and skeptical experimenter in the repair sub-wheel of endgame-ai, and thy office is to retry the exact failed mechanism rather than resume ordinary task execution or reward a patch merely because it compiled or committed. Thou receivest the goal, repair identity and summary, expected validation, activation map, candidate commit, captured failure and signature, permitted original faculties, compact focus, fresh pre-probe observation, and capability manifest; preserve the signature exactly, choose one permitted original faculty, write the smallest deterministic code which exerciseth the repaired mechanism, and state an observable done_when and comparison basis which distinguish repair from recurrence without editing the repository or fabricating an external result. Return record_type 'repair_probe' with only next_signal probe_ready, exact failure_signature, one faculty, non-empty description, done_when, comparison_basis, and code, after which the mechanical repair dispatcher runneth that one probe through the shared execute and barrier machinery.",
-    "node_repair_dispatch": "Thou art the Repair Gate, a mechanical dispatcher in the repair sub-wheel of endgame-ai, and thy office is to execute exactly the faculty named by the authored probe while excluding every other execute branch from substantive work. Thou receivest probing repair state, the exact probe, start time, fresh pre-probe observation time, and wired targets; thou shalt reject stale sight or an unwired faculty, set one dispatch target, clear ordinary turn evidence, and appoint repair_join as the barrier release. Thou makest no model record but emit dispatch through all execute instances with only the named faculty active, after which the barrier gathereth the branches and leadeth them to fresh repair-verification observation.",
-    "node_repair_validate": "Thou art the Behavioral Witness of Repair, a severe before-and-after judge in the repair sub-wheel of endgame-ai, and thy office is to accept no candidate because of prose, compilation, commit, helper return, click, or self-authored claim, but only because the exact captured causal failure is observably gone. Thou receivest the goal, repair identity and summary, expected validation, activation, commit, exact probe, captured before-state, executed probe evidence, fresh post-probe observation, compact focus, and failure facts; confirm the original faculty and code ran, both observations are temporally sound, comparison basis and expected validation are met, no contradictory residue remaineth, and next-run activation is not mistaken for live repair. Return record_type 'repair_validation' with only next_signal repair_resolved or repair_unresolved, the matching resolved boolean, and non-empty comparison and conclusion, where resolution returneth to the original verifier and non-resolution passeth through fresh observation to reflection with the candidate still unproved."
+    "node_guidance:plan": "",
+    "node_satisfied": ""
   },
-  "shared_prompt_prefix": "Thou art one appointed faculty within endgame-ai, a living task-agnostic wheel which repeatedly beholdeth the world, formeth a bounded plan, performeth one grounded transition, witnesseth the resulting state, learneth from failure, and safely rewriteth its own body until the immutable root goal is proved complete or the external leash endeth the run. Thou shalt treat fresh observation as fact, intention as unproved, contracts and topology as the law of communication, and self-modification as an ordinary reversible operation whenever the present signals, prompts, capabilities, observation, evidence, or code cannot honestly express or prove the required next operation. When thy office calleth the brain, return exactly one JSON object conforming to the named record contract with no surrounding prose, never invent an action or result, preserve the root goal by meaning, and let concise causal reasoning explain only the lawful signal that the wheel shall carry onward.\n\n",
-  "record_contracts": {
-    "plan": {
-      "required": [
-        "next_signal",
-        "intent"
-      ],
-      "enums": {
-        "next_signal": [
-          "step_ready",
-          "goal_check"
-        ]
-      },
-      "types": {
-        "next_signal": "string",
-        "intent": "array"
-      },
-      "non_empty": [
-        "intent"
-      ],
-      "additional_properties": false
-    },
-    "schedule": {
-      "required": [
-        "next_signal",
-        "step"
-      ],
-      "enums": {
-        "next_signal": [
-          "step_ready",
-          "goal_complete"
-        ]
-      }
-    },
-    "execution": {
-      "required": [
-        "code"
-      ],
-      "enums": {},
-      "types": {
-        "code": "string"
-      },
-      "non_empty": [
-        "code"
-      ],
-      "additional_properties": false
-    },
-    "dispatch": {
-      "required": [
-        "next_signal",
-        "faculties",
-        "rationale"
-      ],
-      "enums": {
-        "next_signal": [
-          "dispatch"
-        ]
-      },
-      "types": {
-        "next_signal": "string",
-        "faculties": "array",
-        "rationale": "string"
-      },
-      "non_empty": [
-        "faculties",
-        "rationale"
-      ],
-      "additional_properties": false
-    },
-    "action_frame": {
-      "required": [
-        "next_signal",
-        "screen_summary",
-        "target",
-        "strategy",
-        "risk",
-        "notes"
-      ],
-      "enums": {
-        "next_signal": [
-          "framed",
-          "reflect"
-        ],
-        "risk": [
-          "low",
-          "medium",
-          "high"
-        ]
-      },
-      "types": {
-        "next_signal": "string",
-        "screen_summary": "string",
-        "target": "string",
-        "strategy": "string",
-        "risk": "string",
-        "notes": "string"
-      },
-      "non_empty": [
-        "screen_summary",
-        "target",
-        "strategy",
-        "notes"
-      ],
-      "additional_properties": false
-    },
-    "verification": {
-      "required": [
-        "next_signal",
-        "success",
-        "verdict"
-      ],
-      "enums": {
-        "next_signal": [
-          "step_confirmed",
-          "step_denied"
-        ],
-        "verdict": [
-          "confirmed",
-          "pending",
-          "denied"
-        ]
-      },
-      "types": {
-        "next_signal": "string",
-        "success": "boolean",
-        "verdict": "string"
-      },
-      "additional_properties": false
-    },
-    "reflection": {
-      "required": [
-        "next_signal",
-        "lesson",
-        "diagnosis"
-      ],
-      "enums": {
-        "next_signal": [
-          "reobserve",
-          "act",
-          "replan",
-          "frame",
-          "escalate",
-          "topology_patch",
-          "spawn"
-        ]
-      },
-      "types": {
-        "next_signal": "string",
-        "lesson": "string",
-        "diagnosis": "string",
-        "topology_patch": "object"
-      },
-      "non_empty": [
-        "lesson",
-        "diagnosis"
-      ],
-      "additional_properties": false
-    },
-    "git_evolution_patch": {
-      "required": [
-        "next_signal",
-        "summary",
-        "rationale",
-        "read_files",
-        "file_writes",
-        "file_deletes",
-        "wiring_patches",
-        "commands",
-        "expected_validation"
-      ],
-      "enums": {
-        "next_signal": [
-          "modified"
-        ]
-      },
-      "types": {
-        "next_signal": "string",
-        "summary": "string",
-        "rationale": "string",
-        "read_files": "array",
-        "file_writes": "array",
-        "file_deletes": "array",
-        "wiring_patches": "array",
-        "commands": "array",
-        "expected_validation": "string"
-      },
-      "non_empty": [
-        "summary",
-        "rationale",
-        "read_files",
-        "expected_validation"
-      ],
-      "additional_properties": false
-    },
-    "satisfied": {
-      "required": [
-        "next_signal"
-      ],
-      "enums": {
-        "next_signal": [
-          "halt"
-        ]
-      }
-    },
-    "repair_probe": {
-      "required": [
-        "next_signal",
-        "failure_signature",
-        "faculty",
-        "description",
-        "done_when",
-        "comparison_basis",
-        "code"
-      ],
-      "enums": {
-        "next_signal": [
-          "probe_ready"
-        ],
-        "faculty": [
-          "browser",
-          "editor",
-          "terminal"
-        ]
-      },
-      "types": {
-        "next_signal": "string",
-        "failure_signature": "string",
-        "faculty": "string",
-        "description": "string",
-        "done_when": "string",
-        "comparison_basis": "string",
-        "code": "string"
-      },
-      "non_empty": [
-        "failure_signature",
-        "description",
-        "done_when",
-        "comparison_basis",
-        "code"
-      ],
-      "additional_properties": false
-    },
-    "repair_validation": {
-      "required": [
-        "next_signal",
-        "resolved",
-        "comparison",
-        "conclusion"
-      ],
-      "enums": {
-        "next_signal": [
-          "repair_resolved",
-          "repair_unresolved"
-        ]
-      },
-      "types": {
-        "next_signal": "string",
-        "resolved": "boolean",
-        "comparison": "string",
-        "conclusion": "string"
-      },
-      "non_empty": [
-        "comparison",
-        "conclusion"
-      ],
-      "additional_properties": false
-    }
-  },
+  "prompt_aliases": {},
+  "shared_prompt_prefix": "",
+  "record_contracts": {},
   "capabilities": {
     "schema": "endgame-ai.execute-capabilities.v1",
-    "power": "GUI, Python, process, file, and module access run locally in exec(code, ns).",
-    "helpers": {
-      "click": "click(x,y,hwnd=0) in physical screen coordinates; fails outside the observed screen",
-      "click_node": "click_node(node_id) using the exact center from the latest fresh observation",
-      "read_node": "read_node(node_id)",
-      "type_text": "type_text(text)",
-      "press_key": "press_key(key)",
-      "hotkey": "hotkey(*keys)",
-      "scroll": "scroll(x,y,amount,hwnd=0) in physical screen coordinates",
-      "scroll_node": "scroll_node(node_id,amount=-3)",
-      "action_nodes": "action_nodes(action=None)",
-      "node_by_id": "node_by_id(node_id)",
-      "open_url": "open_url(browser_name,url) where browser_name is exactly one of: chrome, edge, firefox, opera, default",
-      "observe_area": "observe_area(left,top,right,bottom,max_llm_nodes=None,max_depth=None,step_px=None)",
-      "observe_with_config": "observe_with_config(hover_cache_config)",
-      "replace_node": "replace_node(node_id,text): click the exact write-capable observed element, select its contents, and type replacement text as one recorded composite action",
-      "consult_model": "consult_model(prompt,max_output_tokens=800): consult the configured model through the brain layer and return a recorded action containing the exact response and hashes",
-      "web_search": "web_search(query, num_results=10): perform a web search and record results as a capability action (terminal faculty)",
-      "open_page": "open_page(url, start_line=None): fetch page content and record it as a capability action (terminal faculty)",
-      "read_file": "read_file(path, max_bytes=None): deterministic full-content read of a local file; returns recorded action with complete content, size, and SHA-256; guarantees no truncation when max_bytes is None or sufficient",
-      "github_create_issue": "github_create_issue(repo, title, body, labels=None): create GitHub issue via gh CLI and record action (terminal faculty)",
-      "github_comment_issue": "github_comment_issue(repo, issue_number, comment): comment on GitHub issue via gh CLI and record action (terminal faculty)",
-      "github_list_issues": "github_list_issues(repo, state='open'): list issues on repo via gh CLI and record action (terminal faculty)",
-      "github_push": "github_push(branch=None): push current or specified branch to origin and record action (terminal faculty)",
-      "git_current_branch": "git_current_branch(): run git branch --show-current and return recorded action (terminal faculty)",
-      "git_branch_show_current": "git_branch_show_current(): run git branch --show-current and return recorded action (terminal faculty)",
-      "write_file": "write_file(path, content): deterministic full-content write to a local file; returns recorded action with complete content, size, and SHA-256; guarantees the write is recorded as a capability action for terminal faculty"
-    },
-    "modules": [
-      "subprocess",
-      "os",
-      "sys",
-      "json",
-      "re",
-      "time",
-      "pathlib",
-      "ctypes",
-      "math",
-      "random",
-      "types"
-    ],
-    "state": [
-      "observation",
-      "desktop_tree_text",
-      "action_index",
-      "observation_artifact",
-      "screen"
-    ],
-    "signals": [
-      "done"
-    ],
-    "faculties": {
-      "browser": {
-        "purpose": "Interact with browser or desktop UI and collect externally observable UI evidence.",
-        "requires_action_event": true
-      },
-      "editor": {
-        "purpose": "Create or modify local text, documents, or files only when the step genuinely requires that artifact.",
-        "requires_action_event": false
-      },
-      "terminal": {
-        "purpose": "Run shell, repository, process, file-inspection, deterministic local computation, web research, configured-model consultation, and non-mutating synchronization checks when fresh observation already proves that no external action is lawful.",
-        "requires_action_event": false
-      }
-    }
+    "power": "",
+    "helpers": {},
+    "modules": [],
+    "state": [],
+    "signals": [],
+    "faculties": {}
   },
   "fractal": {
-    "max_recursion_depth": 3,
-    "child_duration_seconds": 60
-  },
-  "prompt_aliases": {
-    "node_execute:browser": "node_execute",
-    "node_execute:editor": "node_execute",
-    "node_execute:terminal": "node_execute",
-    "node_guidance:plan": "node_guidance",
-    "node_guidance:act": "node_guidance",
-    "node_observe:plan": "node_observe",
-    "node_observe:act": "node_observe",
-    "node_observe:verify": "node_observe",
-    "node_observe:repair": "node_observe",
-    "node_observe:repair_verify": "node_observe",
-    "node_observe:reflect": "node_observe",
-    "node_observe:frame": "node_observe",
-    "node_scheduler:goal": "node_scheduler",
-    "node_observe:goal": "node_observe",
-    "node_verify:goal": "node_verify"
+    "max_recursion_depth": 0,
+    "child_duration_seconds": 0
   }
 }

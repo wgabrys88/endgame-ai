@@ -3,7 +3,6 @@
 
 !.gitattributes
 !.gitignore
-!README.md
 !wiring.json
 !core_brain.py
 !core_bus.py
