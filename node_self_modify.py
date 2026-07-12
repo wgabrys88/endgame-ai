@@ -1,3 +1,4 @@
+"""node_self_modify — proposes a candidate self-evolution (git_evolution_patch). EXPECTS: the failure context (last_error, last_failure, last_reflection, last_action, last_code, last_result, last_verification), current_step, the repair baseline, git context and workspace manifest, and the organism contract (capabilities + topology). PRODUCES summary, rationale, read_files, wiring_patches, file_writes, file_deletes, commands, expected_validation."""
 import pathlib
 from typing import Any
 
@@ -60,7 +61,6 @@ def _evidence_file(path: pathlib.Path) -> dict[str, Any]:
 def _runtime_evidence(wiring: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
     return {
         "state_path": _evidence_file(wiring_mod.root_path(wiring["paths"]["state"])),
-        "event_log_path": _evidence_file(wiring_mod.root_path(wiring["paths"]["event_log"])),
         "control_path": _evidence_file(wiring_mod.root_path(wiring["paths"]["control"])),
         "current_state_keys": sorted(state.keys()),
         "has_observation": "desktop_tree_text" in state,
@@ -73,24 +73,17 @@ def _repair_baseline(state: dict[str, Any]) -> dict[str, Any]:
         "done_when": "The original failure is retried and its intended observable effect is proven.",
     }
     executions = bus.execution_evidence(state)
-    turn = executions.get("faculties") if isinstance(executions, dict) else None
-    candidate_faculties = sorted(turn.keys()) if isinstance(turn, dict) else []
-    last_action = state.get("last_action") or {}
-    faculty = last_action.get("faculty") if isinstance(last_action, dict) else None
-    if not candidate_faculties and isinstance(faculty, str) and faculty:
-        candidate_faculties = [faculty]
     return {
         "failure_signature": bus.failure_signature(state),
         "step": {
             "description": str(step["description"]),
             "done_when": str(step["done_when"]),
         },
-        "candidate_faculties": candidate_faculties,
         "executions": executions,
         "verification": state.get("last_verification") or {},
         "failure": state.get("last_failure") or {},
         "error": state.get("last_error"),
-        "last_action": last_action,
+        "last_action": state.get("last_action") or {},
         "last_code": state.get("last_code") or "",
         "last_result": state.get("last_result") or {},
         "action_frame": state.get("action_frame"),

@@ -145,6 +145,16 @@ def validate_signal(wiring: JsonDict, node: str, signal: str) -> None:
         raise TopologyContractError(f"node '{node}' emitted signal '{signal}' outside topology contract; allowed: {allowed}")
 
 
+def emergent_signals(wiring: JsonDict, node: str | None) -> list[str]:
+    """The signals a node may emit are emergent from wiring: they are exactly its
+    outgoing topology edges, minus the universal 'error' fallback. This replaces the
+    hand-maintained record_contracts.enums.next_signal — the contract of what a node
+    outputs comes from what it is wired to, not a separate registry."""
+    if not node:
+        return []
+    return sorted(s for s in allowed_signals(wiring, node) if s != "error")
+
+
 def _plan_intent(state: JsonDict) -> list[JsonDict]:
     plan = state.get("plan")
     intent = plan.get("intent", []) if isinstance(plan, dict) else []
@@ -167,7 +177,6 @@ def repair_validation_brief(state: JsonDict) -> JsonDict:
         "activation": repair.get("activation", {}),
         "probe": {
             "failure_signature": probe.get("failure_signature"),
-            "faculty": probe.get("faculty"),
             "description": probe.get("description"),
             "done_when": probe.get("done_when"),
         } if isinstance(probe, dict) and probe else {},
@@ -207,10 +216,6 @@ def state_brief(state: JsonDict) -> JsonDict:
             "remaining_seconds": round(float(deadline_at) - now, 3) if deadline_at is not None else None,
         },
     }
-
-
-def event_state_brief(state: JsonDict) -> JsonDict:
-    return state_brief(state)
 
 
 def focused_elements(state: JsonDict) -> JsonDict:

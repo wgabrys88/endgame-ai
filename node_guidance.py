@@ -1,3 +1,4 @@
+"""node_guidance — folds external human counsel into the wheel. EXPECTS: effective_goal (and reads the guidance file). Emits 'attend' to continue, adding any counsel to the narrative."""
 import core_bus as bus
 import core_wiring as wiring
 

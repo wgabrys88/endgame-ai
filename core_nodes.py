@@ -1,6 +1,5 @@
 import io
 import copy
-import ctypes
 import json
 import os
 import pathlib
@@ -8,7 +7,6 @@ import subprocess
 import sys
 import threading
 import time
-import types
 import tokenize
 from typing import Any
 
@@ -436,27 +434,20 @@ def capability_manifest(ctx: dict[str, Any] | None = None) -> dict[str, Any]:
     manifest["configured_model"] = {"transport": transport, "model": cfg.get("model")}
     manifest["deadline_at"] = st.get("deadline_at")
     manifest["repo_root"] = str(ROOT)
-    instance = (ctx or {}).get("node_instance") if isinstance(ctx, dict) else None
-    if instance is not None:
-        manifest["active_faculty"] = {"name": instance, **manifest["faculties"][instance]}
     return manifest
 
 
 def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
+    """Namespace a runner script executes in. One flat set of primitives — no
+    faculty split. The script imports/calls whatever else it needs (tools,
+    desktop, subprocess) and sets `result` / prints / appends action_events."""
     import core_desktop as desktop
+    import tools as _tools
     d = desktop.get_desktop()
     state = ctx.get("state", {})
     w = ctx.get("wiring", {})
     action_index = _action_index(state)
     action_events: list[dict[str, Any]] = []
-    deadline_at = state.get("deadline_at")
-
-    def _assert_duration_open(action: str) -> None:
-        if deadline_at is not None:
-            deadline = float(deadline_at)
-            now = time.time()
-            if now >= deadline:
-                raise RuntimeError(f"duration deadline expired before body action {action}: late_by_s={round(now - deadline, 3)}")
 
     def _record_action(result: Any) -> Any:
         event = dict(result) if isinstance(result, dict) else {"ok": True, "value": result}
@@ -474,183 +465,60 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
             raise RuntimeError(f"node id is not actionable in the latest observation: {node_id}")
         return dict(node)
 
-    def _guarded(name: str, fn):
+    def _guarded(fn):
         def wrapper(*args: Any, **kwargs: Any) -> Any:
-            _assert_duration_open(name)
             return _record_action(fn(*args, **kwargs))
         return wrapper
 
-    click = _guarded("click", lambda x, y, hwnd=0: d.click(int(x), int(y), int(hwnd or 0)))
-    type_text = _guarded("type_text", lambda text: d.type_text(str(text)))
-    press_key = _guarded("press_key", lambda key: d.press_key(str(key)))
-    hotkey = _guarded("hotkey", lambda *keys: d.hotkey(*keys))
-    scroll = _guarded("scroll", lambda x, y, amount, hwnd=0: d.scroll(int(x), int(y), int(amount), int(hwnd or 0)))
-    open_url = _guarded("open_url", lambda browser, url: d.open_url(str(browser), str(url)))
-
-    def action_nodes(action: str | None = None) -> list[dict[str, Any]]:
-        return [dict(node) for node in action_index.values() if isinstance(node, dict) and node.get("action") and (action is None or node.get("action") == action)]
-
-    def node_by_id(node_id: str) -> dict[str, Any]:
-        return _require_node(node_id)
+    click = _guarded(lambda x, y, hwnd=0: d.click(int(x), int(y), int(hwnd or 0)))
+    type_text = _guarded(lambda text: d.type_text(str(text)))
+    press_key = _guarded(lambda key: d.press_key(str(key)))
+    hotkey = _guarded(lambda *keys: d.hotkey(*keys))
+    scroll = _guarded(lambda x, y, amount, hwnd=0: d.scroll(int(x), int(y), int(amount), int(hwnd or 0)))
+    open_url = _guarded(lambda browser, url: d.open_url(str(browser), str(url)))
 
     def click_node(node_id: str) -> dict[str, Any]:
-        _assert_duration_open("click_node")
         node = _require_node(node_id)
         x, y = _node_center(node)
         res = d.click(x, y, int(node.get("hwnd") or 0))
         return _record_action({"ok": bool(res.get("ok", True)), "action": "click_node", "node_id": node_id, "click": res})
 
     def read_node(node_id: str) -> dict[str, Any]:
-        _assert_duration_open("read_node")
         node = _require_node(node_id)
         return _record_action({"ok": True, "action": "read_node", "node_id": node_id, "text": node.get("name") or node.get("text_full") or node.get("value") or ""})
 
-    def replace_node(node_id: str, text: str) -> dict[str, Any]:
-        _assert_duration_open("replace_node")
-        node = _require_node(node_id)
-        if node["action"] != "write":
-            raise RuntimeError(f"replace_node requires a write-capable node, got {node['action']!r}: {node_id}")
-        x, y = _node_center(node)
-        click_result = d.click(x, y, int(node.get("hwnd") or 0))
-        time.sleep(0.15)
-        select_result = d.hotkey("ctrl", "a")
-        type_result = d.type_text(str(text))
-        return _record_action({"ok": all(bool(item.get("ok")) for item in (click_result, select_result, type_result)), "action": "replace_node", "node_id": node_id, "text": str(text), "click": click_result, "select_all": select_result, "type": type_result})
-
-    def scroll_node(node_id: str, amount: int = -3) -> dict[str, Any]:
-        _assert_duration_open("scroll_node")
-        node = _require_node(node_id)
-        x, y = _node_center(node)
-        return _record_action(d.scroll(x, y, int(amount), int(node.get("hwnd") or 0)))
-
-    def _base_hover_cache_config() -> dict[str, Any]:
-        observe_cfg = w["observe_config"]
-        return copy.deepcopy(observe_cfg["hover_cache"])
-
-    def observe_with_config(hover_cache_config: dict[str, Any] | None = None) -> dict[str, Any]:
-        _assert_duration_open("observe_with_config")
-        cfg = _base_hover_cache_config()
-        if hover_cache_config:
-            if not isinstance(hover_cache_config, dict):
-                raise RuntimeError("observe_with_config requires a dict hover_cache_config")
-            cfg.update(copy.deepcopy(hover_cache_config))
-        obs = d.observe({"hover_cache": cfg})
-        return _record_action({"ok": True, "action": "observe_with_config", "desktop_tree_text": obs.get("desktop_tree_text", ""), "screen": (obs.get("observation_artifact") or {}).get("screen", {}), "scan_stats": (obs.get("observation_artifact") or {}).get("scan_stats", {}), "rendered_node_count": obs.get("rendered_node_count"), "max_llm_nodes": obs.get("max_llm_nodes"), "llm_node_limit_hit": obs.get("llm_node_limit_hit")})
-
-    def observe_area(left: int, top: int, right: int, bottom: int, max_llm_nodes: int | None = None, max_depth: int | None = None, step_px: int | None = None) -> dict[str, Any]:
-        _assert_duration_open("observe_area")
-        cfg = _base_hover_cache_config()
-        scan = dict(cfg["scan"])
-        scan["area"] = {"left": int(left), "top": int(top), "right": int(right), "bottom": int(bottom)}
-        if step_px is not None:
-            scan["step_px"] = int(step_px)
-        cfg["scan"] = scan
-        filt = dict(cfg["filter"])
-        if max_llm_nodes is not None:
-            filt["max_llm_nodes"] = int(max_llm_nodes)
-        if max_depth is not None:
-            filt["max_depth"] = int(max_depth)
-        cfg["filter"] = filt
-        return observe_with_config(cfg)
+    def observe() -> dict[str, Any]:
+        obs = d.observe({"hover_cache": copy.deepcopy(w["observe_config"]["hover_cache"])})
+        return _record_action({"ok": True, "action": "observe", "desktop_tree_text": obs.get("desktop_tree_text", "")})
 
     def consult_model(prompt: str, max_output_tokens: int = 800) -> dict[str, Any]:
-        """Consult the configured model through the brain layer and record exact evidence."""
-        _assert_duration_open("consult_model")
         text = str(prompt).strip()
         if not text:
             raise RuntimeError("consult_model requires a non-empty prompt")
-        limit = int(max_output_tokens)
-        if limit <= 0:
-            raise RuntimeError("consult_model max_output_tokens must be positive")
-        transport, cfg = wiring.get_transport_config(w)
-        result = brain.call(
-            [{"role": "user", "content": text}],
-            w,
-            request_config={
-                "max_output_tokens": limit,
-                "metadata": {"endgame_purpose": "external_consultation"},
-                "plain_text": True,
-            },
-        )
-        response = str(result["content"])
-        return _record_action({
-            "ok": True,
-            "action": "consult_model",
-            "transport": transport,
-            "model": cfg.get("model"),
-            "prompt_chars": len(text),
-            "prompt_sha256": __import__("hashlib").sha256(text.encode("utf-8")).hexdigest(),
-            "response": response,
-            "response_chars": len(response),
-            "response_sha256": __import__("hashlib").sha256(response.encode("utf-8")).hexdigest(),
-        })
+        result = brain.call([{"role": "user", "content": text}], w, request_config={"max_output_tokens": int(max_output_tokens), "plain_text": True})
+        return _record_action({"ok": True, "action": "consult_model", "response": str(result["content"])})
 
-    # NEW: bind the three declared terminal helpers
-    import tools as _tools
-    web_search = _guarded("web_search", lambda q, num_results=10: _tools.web_search(str(q), int(num_results)))
-    open_page = _guarded("open_page", lambda u, start_line=None: _tools.open_page(str(u), int(start_line) if start_line is not None else None))
-    read_file = _guarded("read_file", lambda p, max_bytes=None: _tools.read_file(str(p), int(max_bytes) if max_bytes is not None else None))
-    write_file = _guarded("write_file", lambda p, content: _tools.write_file(str(p), str(content)))
-
-    # Git helpers for terminal faculty (new for branch verification step)
-    def git_current_branch() -> dict[str, Any]:
-        _assert_duration_open("git_current_branch")
-        try:
-            branch = _git(["branch", "--show-current"]).stdout.strip()
-            return _record_action({"ok": True, "action": "git_current_branch", "branch": branch})
-        except Exception as exc:
-            return _record_action({"ok": False, "action": "git_current_branch", "error": f"{type(exc).__name__}: {exc}"})
-
-    def git_branch_show_current() -> dict[str, Any]:
-        _assert_duration_open("git_branch_show_current")
-        try:
-            result = _git(["branch", "--show-current"])
-            branch = result.stdout.strip()
-            return _record_action({"ok": True, "action": "git_branch_show_current", "branch": branch, "stdout": result.stdout, "stderr": result.stderr})
-        except Exception as exc:
-            return _record_action({"ok": False, "action": "git_branch_show_current", "error": f"{type(exc).__name__}: {exc}"})
-
-    # GitHub helpers for terminal faculty (remote memory mechanism)
-    def github_list_issues(repo: str, state: str = "open") -> dict[str, Any]:
-        _assert_duration_open("github_list_issues")
-        return _record_action(_tools.github_list_issues(str(repo), str(state)))
-
-    def github_create_issue(repo: str, title: str, body: str, labels: list[str] | None = None) -> dict[str, Any]:
-        _assert_duration_open("github_create_issue")
-        return _record_action(_tools.github_create_issue(str(repo), str(title), str(body), labels))
-
-    def github_comment_issue(repo: str, issue_number: int, comment: str) -> dict[str, Any]:
-        _assert_duration_open("github_comment_issue")
-        return _record_action(_tools.github_comment_issue(str(repo), int(issue_number), str(comment)))
-
-    def github_push(branch: str | None = None) -> dict[str, Any]:
-        _assert_duration_open("github_push")
-        return _record_action(_tools.github_push(branch))
-
-    last = {"error": state.get("last_error"), "result": state.get("last_result", ""), "action": state.get("last_action", {}), "verification": state.get("last_verification", {}), "reflection": state.get("last_reflection", {})}
     return {
-        "action_nodes": action_nodes, "node_by_id": node_by_id, "click": click, "click_node": click_node, "read_node": read_node, "replace_node": replace_node,
+        "click": click, "click_node": click_node, "read_node": read_node,
         "type_text": type_text, "press_key": press_key, "hotkey": hotkey, "scroll": scroll,
-        "scroll_node": scroll_node, "open_url": open_url, "observe_with_config": observe_with_config,
-        "observe_area": observe_area, "subprocess": subprocess,
-        "ctypes": ctypes, "os": os, "sys": sys, "json": json, "re": __import__("re"), "time": time,
-        "pathlib": pathlib, "math": __import__("math"), "random": __import__("random"), "types": types,
-        "capabilities": capability_manifest(ctx), "repo_root": str(ROOT),
-        "python_executable": sys.executable, "topology_summary": wiring.topology_summary(w), "state": state, "wiring": w, "goal": ctx.get("goal", ""),
-        "last": last, "observation": state.get("observation") or brain.last_observation() or bus.observation_brief(state),
-        "desktop_tree": state.get("desktop_tree", {}), "desktop_tree_text": state.get("desktop_tree_text", ""),
-        "action_index": action_index, "observation_artifact": state.get("observation_artifact", {}),
+        "open_url": open_url, "observe": observe, "consult_model": consult_model,
+        "write_file": _tools.write_file,
+        "read_file": _tools.read_file,
+        "web_search": _tools.web_search,
+        "open_page": _tools.open_page,
+        "github_create_issue": _tools.github_create_issue,
+        "github_comment_issue": _tools.github_comment_issue,
+        "github_list_issues": _tools.github_list_issues,
+        "github_push": _tools.github_push,
+        "git_current_branch": _tools.git_current_branch,
+        "git_branch_show_current": _tools.git_branch_show_current,
+        "node_by_id": _require_node, "action_index": action_index,
+        "tools": _tools, "desktop": desktop, "subprocess": subprocess,
+        "os": os, "sys": sys, "json": json, "time": time, "pathlib": pathlib,
+        "repo_root": str(ROOT), "python_executable": sys.executable,
+        "state": state, "wiring": w, "goal": ctx.get("goal", ""),
+        "desktop_tree_text": state.get("desktop_tree_text", ""),
+        "observation": bus.observation_brief(state),
         "observed_at": state.get("observed_at"),
         "action_events": action_events, "_action_events": action_events,
-        "consult_model": consult_model,
-        "web_search": web_search,
-        "open_page": open_page,
-        "read_file": read_file,
-        "write_file": write_file,
-        "git_current_branch": git_current_branch,
-        "git_branch_show_current": git_branch_show_current,
-        "github_list_issues": github_list_issues,
-        "github_create_issue": github_create_issue,
-        "github_comment_issue": github_comment_issue,
-        "github_push": github_push,
     }

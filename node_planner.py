@@ -1,3 +1,4 @@
+"""node_planner — authors the remaining plan for the root goal. EXPECTS: the goal, the current effective_goal narrative, any previous plan and completed_steps, last_reflection, last_repair_validation, and self_modify status. PRODUCES a plan (intent: list of steps, each with description + done_when) and next_signal 'step_ready'."""
 import core_bus as bus
 from core_node_base import BaseNode
 

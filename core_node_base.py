@@ -36,7 +36,7 @@ class BaseNode(ABC):
     def think(self, ctx: JsonDict) -> bus.Record:
         w = ctx["wiring"]
         prompt = wiring.prompt(w, self.prompt_key)
-        think_kwargs: JsonDict = {"expected_record_type": self.expected_record_type}
+        think_kwargs: JsonDict = {"expected_record_type": self.expected_record_type, "emitting_node": ctx.get("node")}
         if self.request_config is not None:
             think_kwargs["request_config"] = self.request_config
         payload = self.build_payload(ctx)
@@ -57,12 +57,111 @@ class BaseNode(ABC):
         return bus.emit(signal, patch, record=record, evidence=self.evidence(ctx))
 
 
+# --- Declarative node engine -------------------------------------------------
+# A node definition in wiring["node_defs"][name] fully describes a think->signal
+# ->patch node as data. The resolver understands exactly these value forms and
+# nothing more (fail hard on anything else):
+#   - a literal (str/int/bool/None/list/dict of literals)
+#   - {"path": "a.b.c"}                     -> dotted lookup into the scope
+#   - {"call": "bus.helper", "arg": <v>}    -> whitelisted helper on a resolved arg
+#   - {"format": "..{0}..", "args": [<v>]}  -> str.format on resolved positional args
+#   - {"pick": <v>, "keys": [..]}           -> {k: resolved[k] for k in keys}
+#   - {"int": <v>, "default": 0}            -> int(resolved or default)
+#   - {"narrate": <goal>, "line": <v>, "root": <v>} -> bus.append_narrative
+# The scope exposes: state, data, record, goal, node, node_instance, signal.
+
+_HELPERS = {
+    "bus.state_brief": bus.state_brief,
+    "bus.observation_brief": bus.observation_brief,
+    "bus.execution_evidence": bus.execution_evidence,
+    "bus.repair_validation_brief": bus.repair_validation_brief,
+    "bus.update_failure_streak": bus.update_failure_streak,
+}
+
+
+def _lookup(scope: JsonDict, path: str) -> Any:
+    cur: Any = scope
+    for part in path.split("."):
+        cur = cur[part]
+    return cur
+
+
+def _resolve(spec: Any, scope: JsonDict) -> Any:
+    if isinstance(spec, dict):
+        if "path" in spec:
+            return _lookup(scope, spec["path"])
+        if "call" in spec:
+            return _HELPERS[spec["call"]](_resolve(spec["arg"], scope))
+        if "format" in spec:
+            return spec["format"].format(*[_resolve(a, scope) for a in spec["args"]])
+        if "pick" in spec:
+            source = _resolve(spec["pick"], scope)
+            return {key: source[key] for key in spec["keys"]}
+        if "int" in spec:
+            return int(_resolve(spec["int"], scope) or spec.get("default", 0))
+        if "narrate" in spec:
+            return bus.append_narrative(_resolve(spec["narrate"], scope), _resolve(spec["line"], scope), root_goal=_resolve(spec["root"], scope))
+        if "get" in spec:
+            source = _resolve(spec["get"], scope)
+            value = source.get(spec["key"]) if isinstance(source, dict) else None
+            return value if value not in (None, "") else _resolve(spec["default"], scope)
+        return {key: _resolve(value, scope) for key, value in spec.items()}
+    if isinstance(spec, list):
+        return [_resolve(item, scope) for item in spec]
+    return spec
+
+
+class DeclarativeNode(BaseNode):
+    """A node whose think->signal->patch behavior is fully described by JSON data."""
+
+    def __init__(self, definition: JsonDict) -> None:
+        self._def = definition
+        self.prompt_key = definition["prompt_key"]
+        self.expected_record_type = definition["expected_record_type"]
+        self.request_config = definition.get("request_config")
+        self._allowed_signals = definition.get("signals")
+
+    def _scope(self, ctx: JsonDict, *, data: JsonDict | None = None, record: bus.Record | None = None, signal: str | None = None) -> JsonDict:
+        st = ctx["state"]
+        return {
+            "state": st,
+            "goal": st["goal"],
+            "node": ctx.get("node"),
+            "node_instance": ctx.get("node_instance"),
+            "data": data or {},
+            "record": {"reasoning": record.reasoning} if record is not None else {},
+            "signal": signal,
+        }
+
+    def build_payload(self, ctx: JsonDict) -> JsonDict:
+        return _resolve(self._def["build_payload"], self._scope(ctx))
+
+    def evidence(self, ctx: JsonDict) -> JsonDict:
+        return _resolve(self._def["evidence"], self._scope(ctx))
+
+    def signal_from_data(self, data: JsonDict, ctx: JsonDict) -> str:
+        signal = str(_lookup({"data": data}, self._def["signal_source"]))
+        if self._allowed_signals is not None and signal not in self._allowed_signals:
+            raise bus.NodeRecordContractError(f"{self.prompt_key} emitted signal {signal!r} outside declared signals {self._allowed_signals!r}")
+        self._signal = signal
+        return signal
+
+    def patch_from_record(self, record: bus.Record, ctx: JsonDict) -> JsonDict:
+        scope = self._scope(ctx, data=record.data, record=record, signal=self._signal)
+        return _resolve(self._def["patch"], scope)
+
+
 def call_node(node_name: str, ctx: JsonDict) -> tuple[str, JsonDict]:
     w = ctx["wiring"]
     base, instance = loader.split_instance(node_name)
-    mod = loader.load("node", node_name, w)
     ctx = {**ctx, "node": node_name, "node_base": base, "node_instance": instance}
-    result = mod.run(ctx)
+    node_defs = w.get("node_defs", {})
+    if node_name in node_defs or base in node_defs:
+        definition = node_defs.get(node_name) or node_defs[base]
+        result = DeclarativeNode(definition).run(ctx)
+    else:
+        mod = loader.load("node", node_name, w)
+        result = mod.run(ctx)
     output = bus.coerce_node_output(node_name, result)
     bus.validate_signal(w, node_name, output.signal)
     patch = dict(output.patch)

@@ -70,7 +70,6 @@ def run(
         st["goal"] = goal or str(st.get("goal") or "")
         st.setdefault("effective_goal", st["goal"])
         st.setdefault("_depth", 0)
-        st.setdefault("_barrier_release_signal", "join")
         if _seed:
             st.update(_seed)
         st["current_node"] = current
@@ -80,40 +79,16 @@ def run(
         st.setdefault("wiring_transport", w["model"]["transport"])
         frontier: list[str] = [str(n) for n in st.get("frontier") or [current]]
         wiring.write_state(w, st)
-        state.runtime_event(
-            w,
-            "organism_resume" if resumed else "organism_start",
-            goal=goal or "",
-            transport=st["wiring_transport"],
-            tick=st.get("tick", 0),
-            node=current,
-            frontier=list(frontier),
-            duration_seconds=duration_seconds,
-            deadline_at=deadline_at,
-            pid=os.getpid(),
-        )
         while frontier:
             current = frontier.pop(0)
             st["frontier"] = list(frontier)
-            if state.duration_expired(deadline_at):
-                return state.expire_duration(w, st, duration_seconds, current)
             if stop_check.stop_requested():
                 return state.stop_file_detected(w, st, current)
-            if not state.wait_before_node(w, st, current, deadline_at):
-                if state.duration_expired(deadline_at):
-                    return state.expire_duration(w, st, duration_seconds, current)
+            if not state.wait_before_node(w, st, current):
                 return state.stop_file_detected(w, st, current)
             st["_phase"] = "executing_node"
             st["current_node"] = current
             wiring.write_state(w, st)
-            state.runtime_event(
-                w,
-                "node_start",
-                node=current,
-                tick=st["tick"],
-                frontier=list(frontier),
-                state=bus.event_state_brief(st),
-            )
             try:
                 ctx = {"wiring": w, "state": dict(st), "goal": goal or "", "node": current}
                 signal_name, patch = node_base.call_node(current, ctx)
@@ -144,14 +119,6 @@ def run(
                         )
                         patch["repair_validation"] = repair_validation
                         w = wiring.load_wiring(wiring_path)
-                        state.runtime_event(
-                            w,
-                            "self_modify_candidate_committed",
-                            repair_id=repair_validation["repair_id"],
-                            expected_validation=repair_validation["expected_validation"],
-                            **applied,
-                            commit=committed,
-                        )
                     except Exception as exc:
                         if bool(w["self_modify"]["hot_swap_on_failure"]):
                             touched = [
@@ -168,7 +135,6 @@ def run(
                                 touched.append("wiring.json")
                             swap = nodes.hot_swap_to_known_good(w, paths=touched or None)
                             patch.setdefault("self_modify", {})["hot_swap"] = swap
-                            state.runtime_event(w, "self_modify_hot_swap", error=str(exc), **swap)
                         raise
                 if current == "node_repair_validate":
                     repair_validation = dict(patch["repair_validation"])
@@ -196,30 +162,12 @@ def run(
                         self_modify["status"] = "behaviorally_accepted"
                         self_modify["behavioral_validation"] = summary
                         patch["self_modify"] = self_modify
-                        state.runtime_event(
-                            w,
-                            "self_modify_behaviorally_accepted",
-                            repair_id=repair_validation["repair_id"],
-                            comparison=repair_validation["comparison"],
-                            conclusion=repair_validation["conclusion"],
-                            acceptance=acceptance,
-                        )
-                    elif signal_name == "repair_unresolved":
-                        state.runtime_event(
-                            w,
-                            "self_modify_behaviorally_rejected",
-                            repair_id=repair_validation["repair_id"],
-                            candidate_commit=repair_validation["commit"]["commit"],
-                            comparison=repair_validation["comparison"],
-                            conclusion=repair_validation["conclusion"],
-                        )
 
                 st.update(patch)
                 if signal_name == "halt":
                     st["_phase"] = "halted"
                     st["frontier"] = []
                     wiring.write_state(w, st)
-                    state.runtime_event(w, "halted", node=current, reason=st.get("error_handled", {}))
                     return st
                 if signal_name == "wait":
                     st["error_streak"] = 0
@@ -228,7 +176,6 @@ def run(
                     st["frontier"] = list(frontier)
                     st["_phase"] = "barrier_wait"
                     wiring.write_state(w, st)
-                    state.runtime_event(w, "barrier_wait", node=current, frontier=list(frontier), tick=st["tick"])
                     continue
                 successors = next_nodes_for(w, current, signal_name)
                 st["error_streak"] = 0
@@ -238,7 +185,6 @@ def run(
                 st["last_failure"] = state.classify_node_exception(current, exc)
                 st["error_streak"] = int(st.get("error_streak", 0)) + 1
                 wiring.write_state(w, st)
-                state.runtime_event(w, "error", node=current, error=st["last_error"], error_streak=st["error_streak"])
                 successors = next_nodes_for(w, current, "error")
                 signal_name = "error"
             frontier.extend(successors)
@@ -249,21 +195,8 @@ def run(
             st["tick"] += 1
             st["_phase"] = "node_complete"
             wiring.write_state(w, st)
-            state.runtime_event(
-                w,
-                "node_complete",
-                node=current,
-                signal=signal_name,
-                next_node=successors[0],
-                successors=list(successors),
-                frontier=list(frontier),
-                tick=st["tick"],
-                state=bus.event_state_brief(st),
-                bus_frame=st.get("_last_bus_frame"),
-            )
         st["_phase"] = "frontier_drained"
         wiring.write_state(w, st)
-        state.runtime_event(w, "frontier_drained", node=current, tick=st["tick"])
         raise bus.TopologyContractError(
             f"frontier drained at '{current}' — the wheel dead-ended; a fractal topology must always turn. "
             f"last signal '{st.get('last_signal')}' led nowhere. Fix the edges so every path returns to the wheel."
@@ -271,7 +204,6 @@ def run(
     except KeyboardInterrupt:
         st["_phase"] = "interrupted"
         wiring.write_state(w, st)
-        state.runtime_event(w, "interrupted", node=current)
         return st
     finally:
         if registered_here:

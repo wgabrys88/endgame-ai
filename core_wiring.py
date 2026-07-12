@@ -74,7 +74,6 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
         "paths.caps",
         "paths.state",
         "paths.control",
-        "paths.event_log",
         "paths.guidance",
         "control_default.mode",
         "control_default.step_token",
@@ -124,19 +123,7 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
     _require(cfg, "capabilities.schema", str)
     _require(cfg, "capabilities.power", str)
     _require(cfg, "capabilities.helpers", dict)
-    faculties = _require(cfg, "capabilities.faculties", dict)
-    execute_instances = {node.split(":", 1)[1] for node in nodes if node.startswith("node_execute:")}
-    if set(faculties) != execute_instances:
-        raise RuntimeError(f"wiring.capabilities.faculties must exactly match execute instances: {sorted(execute_instances)}")
-    for name, policy in faculties.items():
-        if not isinstance(policy, dict):
-            raise RuntimeError(f"wiring.capabilities.faculties.{name} must be object")
-        purpose = policy["purpose"]
-        requires_action = policy["requires_action_event"]
-        if not isinstance(purpose, str) or not purpose.strip():
-            raise RuntimeError(f"wiring.capabilities.faculties.{name}.purpose must be non-empty string")
-        if not isinstance(requires_action, bool):
-            raise RuntimeError(f"wiring.capabilities.faculties.{name}.requires_action_event must be boolean")
+    _require(cfg, "capabilities.faculties", dict)
     _require_list_str(cfg, "capabilities.modules")
     _require_list_str(cfg, "capabilities.state")
     _require_list_str(cfg, "capabilities.signals")
@@ -157,6 +144,25 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
     missing = [node for node in nodes if node not in edges or prompt_name(cfg, node) not in prompts]
     if missing:
         raise RuntimeError(f"wiring missing edges/prompts for nodes: {missing}")
+    validate_node_defs(cfg, prompts)
+
+
+def validate_node_defs(cfg: dict[str, Any], prompts: dict[str, Any]) -> None:
+    node_defs = cfg.get("node_defs", {})
+    if not isinstance(node_defs, dict):
+        raise RuntimeError("wiring.node_defs must be object")
+    for name, defn in node_defs.items():
+        if not isinstance(defn, dict):
+            raise RuntimeError(f"wiring.node_defs.{name} must be object")
+        for key in ("prompt_key", "expected_record_type", "signal_source", "build_payload", "evidence", "patch"):
+            if key not in defn:
+                raise RuntimeError(f"wiring.node_defs.{name} missing required key: {key}")
+        if defn["prompt_key"] not in prompts:
+            raise RuntimeError(f"wiring.node_defs.{name}.prompt_key names missing prompt {defn['prompt_key']!r}")
+        if not isinstance(defn["expected_record_type"], str) or not defn["expected_record_type"]:
+            raise RuntimeError(f"wiring.node_defs.{name}.expected_record_type must be non-empty string")
+        if not isinstance(defn["signal_source"], str) or not defn["signal_source"]:
+            raise RuntimeError(f"wiring.node_defs.{name}.signal_source must be non-empty string")
 
 
 
@@ -223,14 +229,6 @@ def state_path(wiring: dict[str, Any]) -> pathlib.Path:
     return root_path(wiring["paths"]["state"])
 
 
-def control_path(wiring: dict[str, Any]) -> pathlib.Path:
-    return root_path(wiring["paths"]["control"])
-
-
-def event_log_path(wiring: dict[str, Any]) -> pathlib.Path:
-    return root_path((wiring["paths"]["event_log"]) if wiring else "runtime_events.jsonl")
-
-
 def guidance_path(wiring: dict[str, Any]) -> pathlib.Path:
     return root_path(wiring["paths"]["guidance"])
 
@@ -241,7 +239,7 @@ def default_control(wiring: dict[str, Any]) -> dict[str, Any]:
 
 def read_control(wiring: dict[str, Any]) -> dict[str, Any]:
     import time
-    path = control_path(wiring)
+    path = root_path(wiring["paths"]["control"])
     if not path.exists():
         ctrl = default_control(wiring)
         ctrl["updated_at"] = time.time()

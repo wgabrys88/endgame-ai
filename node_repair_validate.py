@@ -1,3 +1,4 @@
+"""node_repair_validate — judges whether a repair probe resolved the original failure. EXPECTS: goal, effective_goal, repair_validation (status probing, with probe + before baseline), the fresh after-observation and execution evidence, last_action/last_error/last_failure/last_result, repair_history, self_modify. Emits 'repair_resolved' or 'repair_unresolved'."""
 import hashlib
 import time
 
@@ -23,9 +24,9 @@ class RepairValidateNode(BaseNode):
             raise RuntimeError("repair validation requires a fresh post-probe observation")
         executions = bus.execution_evidence(state)
         faculties = executions["faculties"]
-        if probe["faculty"] not in faculties:
-            raise RuntimeError(f"repair probe produced no execution evidence for faculty {probe['faculty']!r}")
-        execution = faculties[probe["faculty"]]
+        if "exec" not in faculties:
+            raise RuntimeError("repair probe produced no execution evidence")
+        execution = faculties["exec"]
         expected_hash = hashlib.sha256(probe["code"].encode("utf-8", errors="replace")).hexdigest()
         if execution["code_sha256"] != expected_hash:
             raise RuntimeError("repair validation execution does not match the authored probe code")
@@ -97,7 +98,6 @@ class RepairValidateNode(BaseNode):
             "candidate_commit": repair["commit"]["commit"],
             "summary": repair["summary"],
             "expected_validation": repair["expected_validation"],
-            "probe_faculty": repair["probe"]["faculty"],
             "probe_description": repair["probe"]["description"],
             "comparison": data["comparison"],
             "conclusion": data["conclusion"],
@@ -123,8 +123,6 @@ class RepairValidateNode(BaseNode):
             "step_goal": original_step["description"],
             "action_frame": None,
             "turn_executions": {},
-            "_dispatch_targets": [],
-            "_barrier_release_signal": "join",
             "effective_goal": effective,
         }
         if self._resolved:

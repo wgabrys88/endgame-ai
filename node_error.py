@@ -1,3 +1,4 @@
+"""node_error — error recovery router. EXPECTS: last_error, last_failure, last_node, last_signal, current_step, observation, repair state (repair_validation, repair_history), self_modify status, tick. Routes to 'reflect', 'planner', or 'guidance' to re-enter the wheel."""
 import time
 
 import core_bus as bus
@@ -26,7 +27,6 @@ def _repair_interruption_patch(state, info):
         "candidate_commit": repair["commit"]["commit"],
         "summary": repair["summary"],
         "expected_validation": repair["expected_validation"],
-        "probe_faculty": (repair.get("probe") or {}).get("faculty"),
         "probe_description": (repair.get("probe") or {}).get("description"),
         "comparison": comparison,
         "conclusion": conclusion,
@@ -62,8 +62,6 @@ def _repair_interruption_patch(state, info):
         "step_goal": original_step["description"],
         "action_frame": None,
         "turn_executions": {},
-        "_dispatch_targets": [],
-        "_barrier_release_signal": "join",
         "last_error": conclusion,
         "last_failure": failure,
         "effective_goal": effective,
