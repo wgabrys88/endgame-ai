@@ -145,6 +145,16 @@ def validate_signal(wiring: JsonDict, node: str, signal: str) -> None:
         raise TopologyContractError(f"node '{node}' emitted signal '{signal}' outside topology contract; allowed: {allowed}")
 
 
+def emergent_signals(wiring: JsonDict, node: str | None) -> list[str]:
+    """The signals a node may emit are emergent from wiring: they are exactly its
+    outgoing topology edges, minus the universal 'error' fallback. This replaces the
+    hand-maintained record_contracts.enums.next_signal — the contract of what a node
+    outputs comes from what it is wired to, not a separate registry."""
+    if not node:
+        return []
+    return sorted(s for s in allowed_signals(wiring, node) if s != "error")
+
+
 def _plan_intent(state: JsonDict) -> list[JsonDict]:
     plan = state.get("plan")
     intent = plan.get("intent", []) if isinstance(plan, dict) else []

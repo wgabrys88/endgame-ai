@@ -105,7 +105,7 @@ def _validate_record_contract(w: dict[str, Any], record: bus.Record, expected_re
     if missing:
         raise RuntimeError(f"{record.record_type} record missing required data keys: {missing}")
     if not contract.get("additional_properties", True):
-        allowed = set(required) | set(enums) | set(types)
+        allowed = set(required) | set(enums) | set(types) | {"next_signal"}
         unexpected = sorted(set(record.data) - allowed)
         if unexpected:
             raise RuntimeError(f"{record.record_type} record has unexpected data keys: {unexpected}")
@@ -135,15 +135,20 @@ def _commit_record(content: str, w: dict[str, Any], expected_record_type: str | 
 
 
 
-def _record_contract_prompt(w: dict[str, Any], record_type: str | None) -> str:
+def _record_contract_prompt(w: dict[str, Any], record_type: str | None, emitting_node: str | None = None) -> str:
     if not record_type:
         return ""
     contract = get_record_contract(w, record_type)
+    # next_signal is emergent from wiring: the node's outgoing edges define what it may emit.
+    enums = dict(contract["enums"])
+    emergent = bus.emergent_signals(w, emitting_node)
+    if emergent:
+        enums = {**enums, "next_signal": emergent}
     return "\n".join([
-        "RECORD CONTRACT FROM wiring.record_contracts:",
+        "RECORD CONTRACT (data shape from wiring.record_contracts; next_signal from topology edges):",
         f"record_type: {record_type}",
         "required data keys: " + json.dumps(contract["required"], ensure_ascii=False),
-        "enum data values: " + json.dumps(contract["enums"], ensure_ascii=False),
+        "enum data values: " + json.dumps(enums, ensure_ascii=False),
         "data types: " + json.dumps(contract.get("types", {}), ensure_ascii=False),
         "non-empty data keys: " + json.dumps(contract.get("non_empty", []), ensure_ascii=False),
         "additional data keys allowed: " + json.dumps(contract.get("additional_properties", True)),
@@ -215,7 +220,7 @@ def _structured_outputs_enabled(cfg: dict[str, Any]) -> bool:
     return bool(structured.get("enabled", False)) if isinstance(structured, dict) else bool(structured)
 
 
-def _record_response_format(w: dict[str, Any], record_type: str) -> dict[str, Any]:
+def _record_response_format(w: dict[str, Any], record_type: str, emitting_node: str | None = None) -> dict[str, Any]:
     contract = get_record_contract(w, record_type)
     data_properties = {key: {} for key in contract["required"]}
     for key, type_name in contract.get("types", {}).items():
@@ -225,7 +230,12 @@ def _record_response_format(w: dict[str, Any], record_type: str) -> dict[str, An
         limit_name = {"string": "minLength", "array": "minItems", "object": "minProperties"}.get(type_name)
         if limit_name:
             data_properties.setdefault(key, {})[limit_name] = 1
-    for key, values in contract["enums"].items():
+    # next_signal enum is emergent from the node's topology edges, not the stored contract.
+    enums = dict(contract["enums"])
+    emergent = bus.emergent_signals(w, emitting_node)
+    if emergent:
+        enums = {**enums, "next_signal": emergent}
+    for key, values in enums.items():
         data_properties.setdefault(key, {})["enum"] = list(values)
     return {
         "type": "json_schema",
@@ -327,7 +337,7 @@ def extract_json_object(text: str) -> dict[str, Any] | None:
     return None
 
 
-def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, expected_record_type: str | None = None, request_config: dict[str, Any] | None = None) -> dict[str, Any]:
+def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, expected_record_type: str | None = None, emitting_node: str | None = None, request_config: dict[str, Any] | None = None) -> dict[str, Any]:
     _, cfg = wiring.get_transport_config(w)
     reasoning_cfg = dict(cfg["reasoning"])
     organ_tuning = _organ_tuning(w, expected_record_type)
@@ -351,7 +361,7 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
     payload = _with_observation(payload, w)
     goal = str(payload.pop("goal") or "") if "goal" in payload else ""
     user_text = json.dumps(payload, ensure_ascii=False, default=str)
-    response_format = _record_response_format(w, expected_record_type) if expected_record_type and _structured_outputs_enabled(cfg) else None
+    response_format = _record_response_format(w, expected_record_type, emitting_node) if expected_record_type and _structured_outputs_enabled(cfg) else None
     request_cfg = dict(request_config or {})
     request_cfg["expected_record_type"] = expected_record_type
     if prefix is not None:
@@ -364,7 +374,7 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
     stable_context_parts = []
     if goal:
         stable_context_parts.append(f"CURRENT GOAL (fixed for this run):\n{goal}")
-    contract_context = _record_contract_prompt(w, expected_record_type)
+    contract_context = _record_contract_prompt(w, expected_record_type, emitting_node)
     if contract_context:
         stable_context_parts.append(contract_context)
     stable_context = "\n\n".join(stable_context_parts)

@@ -36,7 +36,7 @@ class BaseNode(ABC):
     def think(self, ctx: JsonDict) -> bus.Record:
         w = ctx["wiring"]
         prompt = wiring.prompt(w, self.prompt_key)
-        think_kwargs: JsonDict = {"expected_record_type": self.expected_record_type}
+        think_kwargs: JsonDict = {"expected_record_type": self.expected_record_type, "emitting_node": ctx.get("node")}
         if self.request_config is not None:
             think_kwargs["request_config"] = self.request_config
         payload = self.build_payload(ctx)
