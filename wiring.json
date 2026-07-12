@@ -335,7 +335,7 @@
         "error": "node_error"
       },
       "node_repair_validate": {
-        "repair_resolved": "node_planner",
+        "repair_resolved": "node_verify",
         "repair_unresolved": "node_reflect",
         "error": "node_error"
       }
