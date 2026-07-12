@@ -156,6 +156,25 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
     missing = [node for node in nodes if node not in edges or prompt_name(cfg, node) not in prompts]
     if missing:
         raise RuntimeError(f"wiring missing edges/prompts for nodes: {missing}")
+    validate_node_defs(cfg, prompts)
+
+
+def validate_node_defs(cfg: dict[str, Any], prompts: dict[str, Any]) -> None:
+    node_defs = cfg.get("node_defs", {})
+    if not isinstance(node_defs, dict):
+        raise RuntimeError("wiring.node_defs must be object")
+    for name, defn in node_defs.items():
+        if not isinstance(defn, dict):
+            raise RuntimeError(f"wiring.node_defs.{name} must be object")
+        for key in ("prompt_key", "expected_record_type", "signal_source", "build_payload", "evidence", "patch"):
+            if key not in defn:
+                raise RuntimeError(f"wiring.node_defs.{name} missing required key: {key}")
+        if defn["prompt_key"] not in prompts:
+            raise RuntimeError(f"wiring.node_defs.{name}.prompt_key names missing prompt {defn['prompt_key']!r}")
+        if not isinstance(defn["expected_record_type"], str) or not defn["expected_record_type"]:
+            raise RuntimeError(f"wiring.node_defs.{name}.expected_record_type must be non-empty string")
+        if not isinstance(defn["signal_source"], str) or not defn["signal_source"]:
+            raise RuntimeError(f"wiring.node_defs.{name}.signal_source must be non-empty string")
 
 
 

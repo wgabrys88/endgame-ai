@@ -69,16 +69,24 @@ def coherence_problems(w: dict) -> list[str]:
                 if t not in SENTINELS and t not in nodes:
                     problems.append(f"{src}.{sig} -> '{t}' is not a known node")
 
-    # every wired node needs an edge map, prompt, and dynamically loadable source file
+    # every wired node needs an edge map, prompt, and either a declarative
+    # definition in node_defs or a dynamically loadable source file
     node_dir = wiring.root_path(w["paths"]["nodes"])
+    node_defs = w.get("node_defs", {})
     for n in nodes:
         if n not in edges:
             problems.append(f"node '{n}' has no edges")
-        if wiring.prompt_name(w, n) not in w.get("prompts", {}):
-            problems.append(f"node '{n}' has no prompt or prompt_alias")
         base = n.split(":", 1)[0]
-        if not (node_dir / f"{base}.py").is_file():
-            problems.append(f"node '{n}' has no plugin file {(node_dir / f'{base}.py')}")
+        declarative = n in node_defs or base in node_defs
+        if declarative:
+            prompt_key = (node_defs.get(n) or node_defs[base])["prompt_key"]
+            if prompt_key not in w.get("prompts", {}):
+                problems.append(f"declarative node '{n}' prompt_key '{prompt_key}' has no prompt")
+        else:
+            if wiring.prompt_name(w, n) not in w.get("prompts", {}):
+                problems.append(f"node '{n}' has no prompt or prompt_alias")
+            if not (node_dir / f"{base}.py").is_file():
+                problems.append(f"node '{n}' has no plugin file {(node_dir / f'{base}.py')}")
 
     # each barrier must name a wired node with positive integer arity and a join edge
     for bnode, arity in barriers.items():
