@@ -182,26 +182,6 @@ def downstream_contract(w: dict[str, Any], emitting_node: str | None) -> str:
     return "\n".join(lines)
 
 
-def _record_contract_prompt(w: dict[str, Any], record_type: str | None, emitting_node: str | None = None) -> str:
-    if not record_type:
-        return ""
-    contract = get_record_contract(w, record_type)
-    # next_signal is emergent from wiring: the node's outgoing edges define what it may emit.
-    enums = dict(contract["enums"])
-    emergent = bus.emergent_signals(w, emitting_node)
-    if emergent:
-        enums = {**enums, "next_signal": emergent}
-    return "\n".join([
-        "RECORD CONTRACT (data shape from wiring.record_contracts; next_signal from topology edges):",
-        f"record_type: {record_type}",
-        "required data keys: " + json.dumps(contract["required"], ensure_ascii=False),
-        "enum data values: " + json.dumps(enums, ensure_ascii=False),
-        "data types: " + json.dumps(contract.get("types", {}), ensure_ascii=False),
-        "non-empty data keys: " + json.dumps(contract.get("non_empty", []), ensure_ascii=False),
-        "additional data keys allowed: " + json.dumps(contract.get("additional_properties", True)),
-    ])
-
-
 def _organ_tuning(w: dict[str, Any], record_type: str | None) -> dict[str, Any]:
     organ = w["model"]["organs"].get(record_type) if record_type else None
     return dict(organ) if isinstance(organ, dict) else {}
@@ -421,9 +401,6 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
     stable_context_parts = []
     if goal:
         stable_context_parts.append(f"CURRENT GOAL (fixed for this run):\n{goal}")
-    contract_context = _record_contract_prompt(w, expected_record_type, emitting_node)
-    if contract_context:
-        stable_context_parts.append(contract_context)
     downstream = downstream_contract(w, emitting_node)
     if downstream:
         stable_context_parts.append(downstream)
