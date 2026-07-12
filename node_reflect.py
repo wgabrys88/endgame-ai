@@ -1,3 +1,4 @@
+"""node_reflect — reflects on a failure and chooses recovery. EXPECTS: current_step, last_failure, last_verification, last_repair_validation, execution evidence, and effective_goal. PRODUCES a reflection (lesson + diagnosis) and next_signal: retry | replan | frame | escalate | topology_patch | spawn."""
 import core_bus as bus
 from core_node_base import BaseNode
 

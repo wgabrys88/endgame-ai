@@ -1,3 +1,4 @@
+"""node_repair_probe — authors a behavioral probe to retry a captured failure. EXPECTS: goal, effective_goal, and repair_validation (status awaiting_probe, with the baseline failure). PRODUCES a probe (failure_signature, description, done_when, comparison_basis, code) and next_signal 'probe_ready'."""
 import time
 
 import core_bus as bus

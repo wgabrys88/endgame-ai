@@ -1,3 +1,4 @@
+"""node_repair_validate — judges whether a repair probe resolved the original failure. EXPECTS: goal, effective_goal, repair_validation (status probing, with probe + before baseline), the fresh after-observation and execution evidence, last_action/last_error/last_failure/last_result, repair_history, self_modify. Emits 'repair_resolved' or 'repair_unresolved'."""
 import hashlib
 import time
 

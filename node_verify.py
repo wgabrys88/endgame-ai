@@ -1,3 +1,4 @@
+"""node_verify — judges whether the current step's done_when is satisfied by observed effect. EXPECTS: current_step (description + done_when), the post-action observation, turn_executions / execution evidence, completed_steps, step index, tick, and observed_at/last_action_at for freshness. Emits 'step_confirmed' (success true) or 'step_denied' (success false) with a verification record."""
 import core_bus as bus
 from core_node_base import BaseNode
 

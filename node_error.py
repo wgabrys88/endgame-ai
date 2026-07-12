@@ -1,3 +1,4 @@
+"""node_error — error recovery router. EXPECTS: last_error, last_failure, last_node, last_signal, current_step, observation, repair state (repair_validation, repair_history), self_modify status, tick. Routes to 'reflect', 'planner', or 'guidance' to re-enter the wheel."""
 import time
 
 import core_bus as bus

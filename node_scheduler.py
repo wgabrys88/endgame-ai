@@ -1,3 +1,4 @@
+"""node_scheduler — selects the current step from the plan. EXPECTS: the plan (with intent list), the step index, and effective_goal. Emits 'step_ready' with the chosen current_step, or 'goal_complete' when the plan is exhausted."""
 import core_bus as bus
 
 

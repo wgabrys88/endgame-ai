@@ -1,3 +1,4 @@
+"""node_self_modify — proposes a candidate self-evolution (git_evolution_patch). EXPECTS: the failure context (last_error, last_failure, last_reflection, last_action, last_code, last_result, last_verification), current_step, the repair baseline, git context and workspace manifest, and the organism contract (capabilities + topology). PRODUCES summary, rationale, read_files, wiring_patches, file_writes, file_deletes, commands, expected_validation."""
 import pathlib
 from typing import Any
 

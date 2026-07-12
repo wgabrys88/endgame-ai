@@ -1,3 +1,4 @@
+"""node_spawn — begets a bounded child organism for a sub-goal. EXPECTS: effective_goal (the inherited narrative). Runs the child via cap_spawn and emits 'spawned', folding the child's final narrative back."""
 import core_bus as bus
 import core_loader as loader
 
