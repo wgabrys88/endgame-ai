@@ -3,6 +3,7 @@
 
 !.gitattributes
 !.gitignore
+!README.md
 !wiring.json
 !endgame_wiring_lab_v2.html
 !core_brain.py
