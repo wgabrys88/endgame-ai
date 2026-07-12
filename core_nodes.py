@@ -16,6 +16,7 @@ import core_brain as brain
 import core_bus as bus
 import core_wiring as wiring
 import check_topology
+import io_helpers
 
 ROOT = pathlib.Path(__file__).parent.resolve()
 
@@ -57,10 +58,7 @@ def _validate_content(path: pathlib.Path, rel: str, content: Any) -> str:
 
 
 def _atomic_write_text(path: pathlib.Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}.{_thread_id()}")
-    tmp.write_text(content, encoding="utf-8", newline="\n")
-    wiring.replace_with_retry(tmp, path)
+    io_helpers.atomic_write_text(path, content)
 
 
 def _apply_wiring_ops(w: dict[str, Any], patches: list[dict[str, Any]]) -> dict[str, Any]:

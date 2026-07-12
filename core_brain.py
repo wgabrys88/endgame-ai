@@ -12,6 +12,7 @@ import core_bus as bus
 import core_loader as loader
 import core_stop_check as stop_check
 import core_wiring as wiring
+import io_helpers
 
 ROOT = pathlib.Path(__file__).parent.resolve()
 _EVENT_SEQ = 0
@@ -190,9 +191,7 @@ def _with_observation(payload: dict[str, Any], w: dict[str, Any]) -> dict[str, A
 
 
 def append_ndjson(path: pathlib.Path, obj: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(obj, ensure_ascii=False, default=str) + "\n")
+    io_helpers.append_ndjson(path, obj)
 
 
 def _next_event_seq() -> int:

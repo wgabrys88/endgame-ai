@@ -13,6 +13,7 @@
 !core_organism.py
 !core_stop_check.py
 !core_wiring.py
+!io_helpers.py
 !core_loader.py
 !check_topology.py
 !core_state.py

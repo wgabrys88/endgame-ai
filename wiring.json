@@ -181,6 +181,7 @@
           "node_repair_probe.py",
           "node_repair_dispatch.py",
           "node_repair_validate.py",
+          "io_helpers.py",
           "core_nodes.py",
           "tools.py"
         ],
