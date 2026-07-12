@@ -16,6 +16,20 @@ import core_bus as bus
 import core_nodes as nodes
 
 FACULTY = "exec"
+MAX_RESULT_CHARS = 12000
+
+
+def _bound(value):
+    """Cap any captured execution output so a single script's stdout cannot flood the shared
+    narrative and inflate every subsequent prompt. Keeps head + tail; a bounded slice is evidence
+    enough, and the runner can page or slice large output deliberately when a step needs it."""
+    text = value if isinstance(value, str) else repr(value) if value is not None else None
+    if text is None:
+        return None
+    if len(text) <= MAX_RESULT_CHARS:
+        return text
+    half = MAX_RESULT_CHARS // 2
+    return f"{text[:half]}\n...[{len(text) - MAX_RESULT_CHARS} chars truncated by runner bound]...\n{text[-half:]}"
 
 
 def run(ctx):
@@ -38,15 +52,15 @@ def run(ctx):
         with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
             exec(code, ns)
         result = {
-            "result": ns.get("result"),
-            "stdout": stdout.getvalue(),
-            "stderr": stderr.getvalue(),
+            "result": _bound(ns.get("result")),
+            "stdout": _bound(stdout.getvalue()),
+            "stderr": _bound(stderr.getvalue()),
             "action_events": list(ns["_action_events"]),
         }
     except Exception as exc:
         result = {
-            "stdout": stdout.getvalue(),
-            "stderr": stderr.getvalue(),
+            "stdout": _bound(stdout.getvalue()),
+            "stderr": _bound(stderr.getvalue()),
             "action_events": list(ns["_action_events"]),
         }
         error = f"{type(exc).__name__}: {exc}"

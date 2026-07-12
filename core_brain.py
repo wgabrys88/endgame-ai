@@ -286,6 +286,28 @@ def _record_response_format(w: dict[str, Any], record_type: str, emitting_node: 
     }
 
 
+def _guard_request_size(messages: list[dict[str, str]], cfg: dict[str, Any], w: dict[str, Any]) -> None:
+    """Fail hard BEFORE sending an over-large request. The single chokepoint that covers every LLM
+    call, and it is node-aware: self-modification legitimately needs the whole tracked source, so it
+    gets a large ceiling; every ordinary node gets a tight one. Exceeding it raises — which routes to
+    node_error -> reflect -> replan, so the wheel changes approach instead of re-sending a rejected
+    payload forever. This exists because a single unbounded execution stdout once flooded state and
+    inflated every prompt to ~3.4M chars, timing out the server on repeat."""
+    total = sum(len(str(m.get("content", ""))) for m in messages)
+    limits = w["model"].get("request_char_limits", {})
+    record_type = cfg.get("expected_record_type")
+    if record_type == "git_evolution_patch":
+        cap = int(limits.get("self_modify", 2_000_000))
+    else:
+        cap = int(limits.get("default", 400_000))
+    if total > cap:
+        raise RuntimeError(
+            f"request too large: {total} chars exceeds cap {cap} for record_type {record_type!r}. "
+            "Some prior output flooded the narrative; reflect and replan with a bounded step "
+            "(narrow the command, page the output, or write to a file and read a slice)."
+        )
+
+
 def call(messages: list[dict[str, str]], w: dict[str, Any], *, rod_feedback: bool = False, response_format: dict[str, Any] | None = None, request_config: dict[str, Any] | None = None) -> dict[str, str]:
     stop_check.check_stop("brain call")
     global _CALLS_MADE
@@ -297,6 +319,7 @@ def call(messages: list[dict[str, str]], w: dict[str, Any], *, rod_feedback: boo
     max_calls = w["model"].get("brain_call_budget") or w["model"]["global"]["brain_call_budget"]
     if max_calls is not None and _CALLS_MADE >= int(max_calls):
         raise RuntimeError(f"brain call budget exceeded: {_CALLS_MADE}/{max_calls}")
+    _guard_request_size(messages, cfg, w)
     _CALLS_MADE += 1
     try:
         result = _load_transport_module(transport, w).call(messages, cfg)
