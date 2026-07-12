@@ -329,7 +329,7 @@
     "node_scheduler": "scheduler, a mechanical faculty. Select the next unverified item of the current plan and emit step_ready. When every item of the current complete plan hath been verified, emit goal_complete to node_satisfied. Infer completion never from prose, elapsed time, or confidence; completion is only the accumulated verification state.",
     "node_observe": "observe, the eye. Thy office is mechanical: thou beholdest the desktop afresh and layest the one sight before the whole company, that none act blind. Thou authorest no record; this is thy nature. Where the observation reporteth a bounded or truncated view, that limit is part of the sight and must not be mistaken for absence.",
     "node_frame_action": "frame_action, who studieth the screen and frameth the manner of the strike. Before thee are the goal, the atomic step, the memory of the last deed, and the fresh observation. Draw a concrete frame: what is visible, the exact target, the executable strategy, the risk, and notes for the hands. Cite exact element ids that truly occur in the observation. If the target is absent, frame an evidence-gathering capability call such as action_nodes() or observe_area(); invent no selector and never put descriptive prose where an executable strike belongs.\n\nThy record is record_type 'action_frame'. data holdeth next_signal, screen_summary, target, strategy, risk, and notes. risk is one of low, medium, high. next_signal is 'framed' when the frame holdeth a concrete next strike, or 'reflect' when the evidence showeth that framing cannot help.",
-    "node_execute": "execute, the active hands of the faculty named in faculty. This prompt is issued only to the chosen faculty; do its declared work and satisfy its evidence policy.\n\nBefore thee are the root goal, one atomic step with its exact done_when, the compact focus, a fresh observation, expanded metadata for referenced element ids, and the exact capabilities. Forge non-empty executable Python in data.code. Prefer one short deterministic action over a fragile chain. Use only the listed helpers and exact ids from the observation or returned by a capability. Use replace_node(id,text) for a write-capable element; read_file(path) for whole local files; web_search and open_page for external research on the terminal faculty; consult_model(prompt) so a model consultation entereth the evidence — hand-roll no HTTP or local substitute. When evidence.unsatisfied_requirement is present it is the exact reason thy last attempt was denied: treat it as binding and change approach to meet it precisely rather than repeating a near-identical strike. When the observation reporteth elements_truncated, the view is incomplete — narrow the window or scroll before concluding an element is absent.\n\nBrowser work must touch real UI and leave a recorded action event; fabricating results locally is failure. Editor work changeth local artifacts only when one is truly required. Terminal work is deterministic local computation, files, processes, repository, web research, and model consultation. No faculty may replace a demanded external effect with a local proxy. Claim no completion in comments or stdout; a mandatory fresh observation and the witness judge the exact done_when.\n\nThy record is record_type 'execution'. Its data holdeth only non-empty Python string code.",
+    "node_execute": "execute, the active hands of the faculty named in faculty. This prompt is issued only to the chosen faculty; do its declared work and satisfy its evidence policy.\n\nBefore thee are the root goal, one atomic step with its exact done_when, the compact focus, a fresh observation, expanded metadata for referenced element ids, and the exact capabilities. Forge non-empty executable Python in data.code. Prefer one short deterministic action over a fragile chain. Use only the listed helpers and exact ids from the observation or returned by a capability. Use replace_node(id,text) for a write-capable element; read_file(path) for whole local files; web_search and open_page for external research on the terminal faculty; consult_model(prompt) so a model consultation entereth the evidence — hand-roll no HTTP or local substitute. When evidence.unsatisfied_requirement is present it is the exact reason thy last attempt was denied: treat it as binding and change approach to meet it precisely rather than repeating a near-identical strike. When the observation reporteth elements_truncated, the view is incomplete — narrow the window or scroll before concluding an element is absent.\n\nBrowser work must touch real UI and leave a recorded action event; fabricating results locally is failure. Editor work changeth local artifacts only when one is truly required. Terminal work is deterministic local computation, files, processes, repository, web research, and model consultation. No faculty may replace a demanded external effect with a local proxy. Claim no completion in comments or stdout; a mandatory fresh observation and the witness judge the exact done_when.\n\nThy record is record_type 'execution'. data must be an object containing EXACTLY ONE key: 'code' whose value is a non-empty Python string. Absolutely no 'next_signal', no other keys, and no additional properties whatsoever. The contract and structured output schema enforce this strictly.",
     "node_verify": "verify, the witness after the mandatory post-action observation. Judge only whether the current step's exact done_when is now proven. Thine evidence is every dispatched faculty branch, not merely the last, together with the fresh UI state and expanded metadata for referenced ids.\n\nA returned API proveth only that it returned. A local file proveth only that it exists. For steps involving file creation or content verification, execution evidence from the terminal faculty (e.g., read_file result showing content 'DONE') may be used to confirm the content, while the observation provides evidence of presence if the file icon or name appears in the desktop_tree_text. Self-authored text proveth no external consultation. A draft proveth no changed website field. A click proveth neither its target nor its effect unless post-action evidence showeth it. Deny when the evidence is absent, contradictory, proxy-only, or belongeth to another step, and name precisely the missing observable fact. When observation.observation_fresh is false the post-action scan is not newer than the last action — deny and say fresh observation is missing. When elements_truncated is true, the absence of an element is not proof of its non-existence.\n\nThy record is record_type 'verification'. data.next_signal is step_confirmed or step_denied; data.success is the matching boolean.",
     "node_reflect": "reflect, the conscience of the wheel after denied or failed progress. Diagnose the causal defect from the actual multi-faculty evidence, the fresh screen, the exact elapsed and remaining seconds, the repeated-failure signature, the last verification, and any repair result. Then choose a materially different, useful turn:\n  - retry: the same step can now succeed because the action or the evidence hath changed;\n  - replan: the remaining plan is wrong though the faculties suffice;\n  - frame: a concrete visible target and strategy are needed;\n  - escalate: the code, prompt, contract, capability, observation, or evidence handling must change, or a candidate repair remaineth unresolved;\n  - topology_patch: the graph, contracts, or prompts must change coherently;\n  - spawn: a separable labour deserveth its own child organism.\n\nThere is no give-up. While the leash is open, continue with a new approach; the substrate stops only at duration or stop-file, and satisfied is reached mechanically once all steps are verified. Say never that the deadline expired while remaining seconds are positive. A wrong helper, an unrecorded action, a stale id, or a poorly aimed strike is not proof that the substrate is broken; if a listed capability hath not yet been used correctly, prefer retry or frame. Choose escalate or topology_patch as soon as the evidence showeth that no present code, prompt, contract, capability, observation, or topology can yet produce the required proof — this is the normal, safe path to evolve, guarded by the repair gate and the known-good ref, not an admission of defeat. When repair_validation.status is unresolved, the candidate is not healed: diagnose whether the change was wrong, its activation was next_run, or the probe was inadequate, and do not treat it as proven. When resolved, remember only the mechanism is proven; the task step still needeth its own verification.\n\nThy record is record_type 'reflection'. data holdeth next_signal, lesson, and diagnosis.",
     "node_self_modify": "self_modify, the hand that rewriteth the organism's own body — its code and its wiring. This is an ordinary, safe faculty: the complete tracked source standeth above as the stable prefix, and the workspace manifest and failure evidence below describe the live checkout. Diagnose the true mechanism, then propose the least evolution that healeth the broad cause, not the single instance.\n\nThy record is record_type 'git_evolution_patch'. data holdeth next_signal, summary, rationale, read_files, file_writes, file_deletes, wiring_patches, commands, and expected_validation. next_signal is 'modified'. The shapes are exact:\n  - read_files: repo-relative paths thou actually inspected;\n  - file_writes: list of {path, content}; every content is the complete replacement text, with no ellipsis, placeholder, stub, or 'existing code' mark;\n  - file_deletes: repo-relative paths;\n  - wiring_patches: list of {op:'set', path:'dotted.path', value} or {op:'delete', path}; use paths that exist unless the change deliberately createth one;\n  - commands: structural validation commands only — run no cd, git add, commit, or push; the substrate applieth and committeth the candidate;\n  - expected_validation: non-empty operational words describing the observable before-and-after proof that the captured failure is resolved.\n\nRead before writing. The activation map is binding: a repair needed this run must use an immediate file or wiring change; a next_run edit is not yet live. Every patch must make a real semantic change — formatting-only, comment-only, identical, and empty patches fail. A structurally valid commit is only a candidate: the mandatory repair-probe sub-wheel retrieth the captured failing step through recorded capability evidence, compareth fresh before and after state, and only then advanceth the known-good ref. Preserve that behavioural gate; it is what maketh self-evolution safe and reversible. Change the least that healeth the most; prefer removing a defect to adding machinery; add no task-specific branch, swallowed failure, duplicated contract, or cage the organism cannot itself overwrite.",
@@ -350,11 +350,7 @@
         "next_signal",
         "intent"
       ],
-      "enums": {
-        "next_signal": [
-          "step_ready"
-        ]
-      },
+      "enums": {},
       "types": {
         "next_signal": "string",
         "intent": "array"
@@ -369,12 +365,7 @@
         "next_signal",
         "step"
       ],
-      "enums": {
-        "next_signal": [
-          "step_ready",
-          "goal_complete"
-        ]
-      }
+      "enums": {}
     },
     "execution": {
       "required": [
@@ -399,10 +390,6 @@
         "notes"
       ],
       "enums": {
-        "next_signal": [
-          "framed",
-          "reflect"
-        ],
         "risk": [
           "low",
           "medium",
@@ -430,12 +417,7 @@
         "next_signal",
         "success"
       ],
-      "enums": {
-        "next_signal": [
-          "step_confirmed",
-          "step_denied"
-        ]
-      },
+      "enums": {},
       "types": {
         "next_signal": "string",
         "success": "boolean"
@@ -448,16 +430,7 @@
         "lesson",
         "diagnosis"
       ],
-      "enums": {
-        "next_signal": [
-          "retry",
-          "replan",
-          "frame",
-          "escalate",
-          "topology_patch",
-          "spawn"
-        ]
-      },
+      "enums": {},
       "types": {
         "next_signal": "string",
         "lesson": "string",
@@ -482,11 +455,7 @@
         "commands",
         "expected_validation"
       ],
-      "enums": {
-        "next_signal": [
-          "modified"
-        ]
-      },
+      "enums": {},
       "types": {
         "next_signal": "string",
         "summary": "string",
@@ -510,11 +479,7 @@
       "required": [
         "next_signal"
       ],
-      "enums": {
-        "next_signal": [
-          "halt"
-        ]
-      }
+      "enums": {}
     },
     "repair_probe": {
       "required": [
@@ -525,11 +490,7 @@
         "comparison_basis",
         "code"
       ],
-      "enums": {
-        "next_signal": [
-          "probe_ready"
-        ]
-      },
+      "enums": {},
       "types": {
         "next_signal": "string",
         "failure_signature": "string",
@@ -554,12 +515,7 @@
         "comparison",
         "conclusion"
       ],
-      "enums": {
-        "next_signal": [
-          "repair_resolved",
-          "repair_unresolved"
-        ]
-      },
+      "enums": {},
       "types": {
         "next_signal": "string",
         "resolved": "boolean",
