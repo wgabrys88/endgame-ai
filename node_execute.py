@@ -125,7 +125,7 @@ class ExecuteNode(BaseNode):
             if policy["requires_action_event"] and not result["action_events"]:
                 error = f"RuntimeError: {instance} faculty produced no recorded capability action"
                 failure = self._failure("faculty_evidence_missing", faculty=instance)
-            elif result["result"] is None and not result["action_events"] and not result["stdout"] and not result["stderr"]:
+            elif result["result"] is None and not result["action_events"] and not result["stdout"] and not result["stderr"] and policy["requires_action_event"]:
                 error = "RuntimeError: EXECUTE produced no result, stdout, stderr, or recorded body action"
                 failure = self._failure("empty_execute_result")
         except Exception as exc:
