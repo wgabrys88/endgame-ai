@@ -24,7 +24,6 @@
 !node_barrier.py
 !cap_spawn.py
 !node_execute.py
-!node_frame_action.py
 !node_observe.py
 !node_planner.py
 !node_reflect.py

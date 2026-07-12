@@ -89,7 +89,8 @@
   },
   "prompts": {
     "node_guidance:plan": "",
-    "node_satisfied": ""
+    "node_satisfied": "",
+    "node_frame_action": ""
   },
   "prompt_aliases": {},
   "shared_prompt_prefix": "",
@@ -106,5 +107,40 @@
   "fractal": {
     "max_recursion_depth": 0,
     "child_duration_seconds": 0
+  },
+  "node_defs": {
+    "node_frame_action": {
+      "prompt_key": "node_frame_action",
+      "expected_record_type": "action_frame",
+      "signals": ["framed", "reflect"],
+      "signal_source": "data.next_signal",
+      "build_payload": {
+        "goal": {"path": "state.goal"},
+        "step": {
+          "description": {"get": {"path": "state.current_step"}, "key": "description", "default": {"path": "state.goal"}},
+          "done_when": {"get": {"path": "state.current_step"}, "key": "done_when", "default": ""}
+        },
+        "focus": {"call": "bus.state_brief", "arg": {"path": "state"}},
+        "evidence": {"call": "bus.execution_evidence", "arg": {"path": "state"}},
+        "observation": {"call": "bus.observation_brief", "arg": {"path": "state"}}
+      },
+      "evidence": {"call": "bus.execution_evidence", "arg": {"path": "state"}},
+      "patch": {
+        "action_frame": {
+          "screen_summary": {"path": "data.screen_summary"},
+          "target": {"path": "data.target"},
+          "strategy": {"path": "data.strategy"},
+          "risk": {"path": "data.risk"},
+          "notes": {"path": "data.notes"},
+          "step_index": {"int": {"path": "state.step"}, "default": 0}
+        },
+        "framing_attempted_for_step": {"int": {"path": "state.step"}, "default": 0},
+        "effective_goal": {
+          "narrate": {"path": "state.effective_goal"},
+          "line": {"format": "\n\n[FRAME_ACTION] Target {0} via {1}: {2}", "args": [{"path": "data.target"}, {"path": "data.strategy"}, {"path": "data.notes"}]},
+          "root": {"path": "state.goal"}
+        }
+      }
+    }
   }
 }
