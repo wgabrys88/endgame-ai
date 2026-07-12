@@ -1,7 +1,5 @@
 import ctypes
 import importlib
-import os
-import hashlib
 import sys
 import time
 from ctypes import wintypes
@@ -164,6 +162,8 @@ def _to_runtime_id(v: Any) -> list[int]:
 
 
 def _node_id(runtime_id: list[int], hwnd: int, rect: dict[str, int]) -> str:
+    # Hierarchical shortest practical ID: prefer compact runtime-derived or hwnd+rect for action_index / focused_elements.
+    # No long strings; keeps uniqueness for node_by_id / click_node while reducing prompt bloat.
     if runtime_id:
         short = "_".join(map(str, runtime_id[-3:])) if len(runtime_id) > 3 else "_".join(map(str, runtime_id))
         return f"e_{short}"
@@ -194,111 +194,123 @@ def _pattern(element: Any, pattern_id: int) -> Any:
             return None
 
 
-def _pattern_text(pattern: Any, label: str) -> dict[str, str]:
-    out: dict[str, str] = {}
-    if pattern is None:
+class UiaScanner:
+    def __init__(self, config: dict[str, Any], desktop_instance: Any = None):
+        self.cfg = config
+        self.automation = desktop_instance.automation if desktop_instance and hasattr(desktop_instance, "automation") else comtypes.client.CreateObject(uia.CUIAutomation, interface=uia.IUIAutomation)
+
+    def _cache(self, scope: int = TreeScope_Subtree):
+        req = self.automation.CreateCacheRequest()
+        req.TreeScope = scope
+        for pid in SCAN_PROPERTY_IDS:
+            req.AddProperty(pid)
+        for pid in SCAN_PATTERN_IDS:
+            req.AddPattern(pid)
+        return req
+
+    def _pattern_text(self, pattern: Any, label: str) -> dict[str, str]:
+        out: dict[str, str] = {}
+        if pattern is None:
+            return out
+        try:
+            if label == "Value" and getattr(pattern, "Value", None) is not None:
+                out["value"] = str(pattern.Value)
+            elif label == "Text":
+                doc = getattr(pattern, "DocumentRange", None)
+                if doc is not None:
+                    text = doc.GetText(-1)
+                    if text and str(text).strip():
+                        out["text"] = str(text)
+                ranges = pattern.GetVisibleRanges()
+                texts = []
+                for i in range(int(getattr(ranges, "Length", 0)) if ranges is not None else 0):
+                    t = ranges.GetElement(i).GetText(-1)
+                    if t and str(t).strip():
+                        texts.append(str(t))
+                if texts:
+                    out["text_ranges"] = "\n".join(texts)
+            elif label == "LegacyIAccessible":
+                for key in ("Value", "Name", "Description"):
+                    val = getattr(pattern, key, None)
+                    if val is not None and str(val).strip() not in ("", "0"):
+                        out[f"legacy_{key.lower()}"] = str(val)
+        except Exception:
+            pass
         return out
-    try:
-        if label == "Value" and getattr(pattern, "Value", None) is not None:
-            out["value"] = str(pattern.Value)
-        elif label == "Text":
-            doc = getattr(pattern, "DocumentRange", None)
-            if doc is not None:
-                text = doc.GetText(-1)
-                if text and str(text).strip():
-                    out["text"] = str(text)
-            ranges = pattern.GetVisibleRanges()
-            texts = []
-            for i in range(int(getattr(ranges, "Length", 0)) if ranges is not None else 0):
-                t = ranges.GetElement(i).GetText(-1)
-                if t and str(t).strip():
-                    texts.append(str(t))
-            if texts:
-                out["text_ranges"] = "\n".join(texts)
-        elif label == "LegacyIAccessible":
-            for key in ("Value", "Name", "Description"):
-                val = getattr(pattern, key, None)
-                if val is not None and str(val).strip() not in ("", "0"):
-                    out[f"legacy_{key.lower()}"] = str(val)
-    except Exception:
-        pass
-    return out
 
-
-def element_to_raw(element: Any, parent_runtime_id: list[int] | None = None, depth: int = 0) -> dict[str, Any] | None:
-    try:
-        rect = _to_rect(_cached(element, PID_BOUNDING_RECT))
-        if rect["right"] <= rect["left"] or rect["bottom"] <= rect["top"]:
-            rect = _to_rect(_current(element, PID_BOUNDING_RECT))
-        if rect["right"] <= rect["left"] or rect["bottom"] <= rect["top"]:
+    def element_to_raw(self, element: Any, parent_runtime_id: list[int] | None = None, depth: int = 0) -> dict[str, Any] | None:
+        try:
+            rect = _to_rect(_cached(element, PID_BOUNDING_RECT))
+            if rect["right"] <= rect["left"] or rect["bottom"] <= rect["top"]:
+                rect = _to_rect(_current(element, PID_BOUNDING_RECT))
+            if rect["right"] <= rect["left"] or rect["bottom"] <= rect["top"]:
+                return None
+            runtime_id = _to_runtime_id(_cached(element, PID_RUNTIME_ID)) or _to_runtime_id(_current(element, PID_RUNTIME_ID))
+            hwnd = _to_int(_cached(element, PID_HWND))
+            role = control_type_name(_to_int(_cached(element, PID_CONTROL_TYPE)) or _to_int(_current(element, PID_CONTROL_TYPE)))
+            name = _to_str(_cached(element, PID_NAME)) or _to_str(_current(element, PID_NAME))
+            class_name = _to_str(_cached(element, PID_CLASS_NAME))
+            pattern_values: dict[str, str] = {}
+            for pid, label in ((PID_VALUE_PATTERN, "Value"), (PID_TEXT_PATTERN, "Text"), (PID_LEGACY_PATTERN, "LegacyIAccessible")):
+                pattern_values.update(self._pattern_text(_pattern(element, pid), label))
+            text_full = pattern_values.get("text") or pattern_values.get("text_ranges") or pattern_values.get("value") or pattern_values.get("legacy_value") or pattern_values.get("legacy_name") or name or ""
+            px, py = (rect["left"] + rect["right"]) // 2, (rect["top"] + rect["bottom"]) // 2
+            return {
+                "id": _node_id(runtime_id, hwnd, rect),
+                "role": role,
+                "name": name,
+                "automation_id": _to_str(_cached(element, PID_AUTOMATION_ID)),
+                "class_name": class_name,
+                "hwnd": hwnd,
+                "framework_id": _to_str(_cached(element, PID_FRAMEWORK)),
+                "rect": rect,
+                "px": px,
+                "py": py,
+                "enabled": _to_bool(_cached(element, PID_ENABLED)),
+                "offscreen": _to_bool(_cached(element, PID_OFFSCREEN)),
+                "runtime_id": runtime_id,
+                "text_full": text_full,
+                "value": pattern_values.get("value") or pattern_values.get("legacy_value") or "",
+                "patterns": list(pattern_values.keys()),
+                "pattern_values": pattern_values,
+                "depth": depth,
+                "parent_runtime_id": parent_runtime_id or [],
+                "is_keyboard_focusable": _to_bool(_cached(element, PID_KEYBOARD_FOCUSABLE)) or _to_bool(_current(element, PID_KEYBOARD_FOCUSABLE)),
+                "is_content_element": _to_bool(_cached(element, PID_CONTENT_ELEMENT)) or _to_bool(_current(element, PID_CONTENT_ELEMENT)),
+                "action": action_for_role(role, class_name),
+            }
+        except Exception:
             return None
-        runtime_id = _to_runtime_id(_cached(element, PID_RUNTIME_ID)) or _to_runtime_id(_current(element, PID_RUNTIME_ID))
-        hwnd = _to_int(_cached(element, PID_HWND))
-        role = control_type_name(_to_int(_cached(element, PID_CONTROL_TYPE)) or _to_int(_current(element, PID_CONTROL_TYPE)))
-        name = _to_str(_cached(element, PID_NAME)) or _to_str(_current(element, PID_NAME))
-        class_name = _to_str(_cached(element, PID_CLASS_NAME))
-        pattern_values: dict[str, str] = {}
-        for pid, label in ((PID_VALUE_PATTERN, "Value"), (PID_TEXT_PATTERN, "Text"), (PID_LEGACY_PATTERN, "LegacyIAccessible")):
-            pattern_values.update(_pattern_text(_pattern(element, pid), label))
-        text_full = pattern_values.get("text") or pattern_values.get("text_ranges") or pattern_values.get("value") or pattern_values.get("legacy_value") or pattern_values.get("legacy_name") or name or ""
-        px, py = (rect["left"] + rect["right"]) // 2, (rect["top"] + rect["bottom"]) // 2
-        return {
-            "id": _node_id(runtime_id, hwnd, rect),
-            "role": role,
-            "name": name,
-            "automation_id": _to_str(_cached(element, PID_AUTOMATION_ID)),
-            "class_name": class_name,
-            "hwnd": hwnd,
-            "framework_id": _to_str(_cached(element, PID_FRAMEWORK)),
-            "rect": rect,
-            "px": px,
-            "py": py,
-            "enabled": _to_bool(_cached(element, PID_ENABLED)),
-            "offscreen": _to_bool(_cached(element, PID_OFFSCREEN)),
-            "runtime_id": runtime_id,
-            "text_full": text_full,
-            "value": pattern_values.get("value") or pattern_values.get("legacy_value") or "",
-            "patterns": list(pattern_values.keys()),
-            "pattern_values": pattern_values,
-            "depth": depth,
-            "parent_runtime_id": parent_runtime_id or [],
-            "is_keyboard_focusable": _to_bool(_cached(element, PID_KEYBOARD_FOCUSABLE)) or _to_bool(_current(element, PID_KEYBOARD_FOCUSABLE)),
-            "is_content_element": _to_bool(_cached(element, PID_CONTENT_ELEMENT)) or _to_bool(_current(element, PID_CONTENT_ELEMENT)),
-            "action": action_for_role(role, class_name),
-        }
-    except Exception:
-        return None
 
+    def harvest_subtree(self, root_element: Any, max_nodes: int, parent_runtime_id: list[int] | None = None, depth: int = 0) -> list[dict[str, Any]]:
+        nodes: list[dict[str, Any]] = []
+        seen: set[str] = set()
 
-def harvest_subtree(root_element: Any, max_nodes: int, parent_runtime_id: list[int] | None = None, depth: int = 0) -> list[dict[str, Any]]:
-    nodes: list[dict[str, Any]] = []
-    seen: set[str] = set()
-
-    def add(el: Any, parent: list[int], d: int) -> dict[str, Any] | None:
-        if len(nodes) >= max_nodes:
-            return None
-        node = element_to_raw(el, parent, d)
-        if node is None or node["id"] in seen:
-            return None
-        seen.add(node["id"])
-        nodes.append(node)
-        return node
-
-    root_node = add(root_element, parent_runtime_id or [], depth)
-    if not root_node:
-        return nodes
-    try:
-        arr = root_element.FindAllBuildCache(TreeScope_Descendants, uia.CreateTrueCondition(), _cache())
-        for i in range(int(getattr(arr, "Length", 0)) if arr is not None else 0):
+        def add(el: Any, parent: list[int], d: int) -> dict[str, Any] | None:
             if len(nodes) >= max_nodes:
-                break
-            try:
-                add(arr.GetElement(i), root_node["runtime_id"], depth + 1)
-            except Exception:
-                continue
-    except Exception:
-        pass
-    return nodes
+                return None
+            node = self.element_to_raw(el, parent, d)
+            if node is None or node["id"] in seen:
+                return None
+            seen.add(node["id"])
+            nodes.append(node)
+            return node
+
+        root_node = add(root_element, parent_runtime_id or [], depth)
+        if not root_node:
+            return nodes
+        try:
+            arr = root_element.FindAllBuildCache(TreeScope_Descendants, self.automation.CreateTrueCondition(), self._cache())
+            for i in range(int(getattr(arr, "Length", 0)) if arr is not None else 0):
+                if len(nodes) >= max_nodes:
+                    break
+                try:
+                    add(arr.GetElement(i), root_node["runtime_id"], depth + 1)
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return nodes
 
 
 def _hit_key_from_element(element: Any) -> tuple[str, str]:
@@ -393,54 +405,6 @@ def gather_raw(config: dict[str, Any], desktop: Any) -> dict[str, Any]:
                 user32.SetCursorPos(saved.x, saved.y)
             except Exception:
                 pass
-
-    # File system augmentation for desktop file verification (resolves observation gap for file creation steps)
-    try:
-        userprofile = os.environ.get("USERPROFILE", "")
-        desktop_path = os.path.join(userprofile, "Desktop") if userprofile else ""
-        if desktop_path and os.path.isdir(desktop_path):
-            for fname in os.listdir(desktop_path):
-                if fname.startswith(".") or fname.lower() in {"desktop.ini", "thumbs.db"}:
-                    continue
-                fpath = os.path.join(desktop_path, fname)
-                if os.path.isfile(fpath):
-                    try:
-                        fsize = os.path.getsize(fpath)
-                        ftime = os.path.getmtime(fpath)
-                        ftime_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ftime))
-                    except Exception:
-                        fsize = 0
-                        ftime_str = "unknown"
-                    fid = "f_" + hashlib.md5(fpath.encode("utf-8", errors="replace")).hexdigest()[:12]
-                    file_node = {
-                        "id": fid,
-                        "role": "File",
-                        "name": fname,
-                        "automation_id": "",
-                        "class_name": "File",
-                        "hwnd": 0,
-                        "framework_id": "FileSystem",
-                        "rect": {"left": 0, "top": 0, "right": 0, "bottom": 0},
-                        "px": 0,
-                        "py": 0,
-                        "enabled": True,
-                        "offscreen": False,
-                        "runtime_id": [],
-                        "text_full": f"{fname} ({fsize} bytes, modified {ftime_str})",
-                        "value": fname,
-                        "patterns": [],
-                        "pattern_values": {},
-                        "depth": 0,
-                        "parent_runtime_id": [],
-                        "is_keyboard_focusable": False,
-                        "is_content_element": True,
-                        "action": "read",
-                    }
-                    if fid not in index:
-                        index[fid] = file_node
-    except Exception:
-        pass  # non-fatal; file scan is augmentation only
-
     return {
         "nodes": list(index.values()),
         "screen": {"width": sw, "height": sh},
@@ -464,6 +428,9 @@ def filter_raw(raw_nodes: list[dict[str, Any]], config: dict[str, Any], screen: 
     sw, sh = int(screen.get("width", 0) or 0), int(screen.get("height", 0) or 0)
 
     def _on_screen(node: dict[str, Any]) -> bool:
+        # An actionable element must have its clickable center inside the visible screen;
+        # off-screen centers (e.g. content below the taskbar) would make click_node target an
+        # invisible point. Skip the check when screen size is unknown.
         if not sw or not sh:
             return True
         return 0 <= node["px"] < sw and 0 <= node["py"] < sh
@@ -523,6 +490,10 @@ def build_tree_and_map(action_elements: dict[str, dict[str, Any]], text_hints: d
         root["children"].append(window)
         node_index[token] = {k: v for k, v in window.items() if k != "children"}
     def _rect_gap(r: dict[str, int], px: int, py: int) -> int:
+        # 0 when (px,py) is inside r; otherwise the squared distance to the nearest edge.
+        # Lets an element attach to the window it truly belongs to even when that window's
+        # reported BoundingRectangle under-covers its own rendered content (common with
+        # browsers/DPI), instead of orphaning ~1/3 of elements to the desktop root W0.
         dx = max(r.get("left", 0) - px, 0, px - r.get("right", 0))
         dy = max(r.get("top", 0) - py, 0, py - r.get("bottom", 0))
         return dx * dx + dy * dy
@@ -559,6 +530,9 @@ def build_tree_and_map(action_elements: dict[str, dict[str, Any]], text_hints: d
 
     sort_prune(root)
 
+    # Single identity-stable address: every node's short_id IS its id (windows keep W0/W1/W2 as
+    # readable tree headers; elements use e_<runtime_id>). No positional labels, no id map, no
+    # fallback — a control keeps the same address across ticks regardless of window ordering.
     def assign(node: dict[str, Any]) -> None:
         node["short_id"] = node.get("id", "")
         for child in node.get("children", []):

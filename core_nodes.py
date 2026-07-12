@@ -449,14 +449,7 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
     w = ctx.get("wiring", {})
     action_index = _action_index(state)
     action_events: list[dict[str, Any]] = []
-    deadline_at = state.get("deadline_at")
 
-    def _assert_duration_open(action: str) -> None:
-        if deadline_at is not None:
-            deadline = float(deadline_at)
-            now = time.time()
-            if now >= deadline:
-                raise RuntimeError(f"duration deadline expired before body action {action}: late_by_s={round(now - deadline, 3)}")
 
     def _record_action(result: Any) -> Any:
         event = dict(result) if isinstance(result, dict) else {"ok": True, "value": result}
@@ -476,7 +469,6 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
 
     def _guarded(name: str, fn):
         def wrapper(*args: Any, **kwargs: Any) -> Any:
-            _assert_duration_open(name)
             return _record_action(fn(*args, **kwargs))
         return wrapper
 
@@ -494,19 +486,16 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         return _require_node(node_id)
 
     def click_node(node_id: str) -> dict[str, Any]:
-        _assert_duration_open("click_node")
         node = _require_node(node_id)
         x, y = _node_center(node)
         res = d.click(x, y, int(node.get("hwnd") or 0))
         return _record_action({"ok": bool(res.get("ok", True)), "action": "click_node", "node_id": node_id, "click": res})
 
     def read_node(node_id: str) -> dict[str, Any]:
-        _assert_duration_open("read_node")
         node = _require_node(node_id)
         return _record_action({"ok": True, "action": "read_node", "node_id": node_id, "text": node.get("name") or node.get("text_full") or node.get("value") or ""})
 
     def replace_node(node_id: str, text: str) -> dict[str, Any]:
-        _assert_duration_open("replace_node")
         node = _require_node(node_id)
         if node["action"] != "write":
             raise RuntimeError(f"replace_node requires a write-capable node, got {node['action']!r}: {node_id}")
@@ -518,7 +507,6 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         return _record_action({"ok": all(bool(item.get("ok")) for item in (click_result, select_result, type_result)), "action": "replace_node", "node_id": node_id, "text": str(text), "click": click_result, "select_all": select_result, "type": type_result})
 
     def scroll_node(node_id: str, amount: int = -3) -> dict[str, Any]:
-        _assert_duration_open("scroll_node")
         node = _require_node(node_id)
         x, y = _node_center(node)
         return _record_action(d.scroll(x, y, int(amount), int(node.get("hwnd") or 0)))
@@ -528,7 +516,6 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         return copy.deepcopy(observe_cfg["hover_cache"])
 
     def observe_with_config(hover_cache_config: dict[str, Any] | None = None) -> dict[str, Any]:
-        _assert_duration_open("observe_with_config")
         cfg = _base_hover_cache_config()
         if hover_cache_config:
             if not isinstance(hover_cache_config, dict):
@@ -538,7 +525,6 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         return _record_action({"ok": True, "action": "observe_with_config", "desktop_tree_text": obs.get("desktop_tree_text", ""), "screen": (obs.get("observation_artifact") or {}).get("screen", {}), "scan_stats": (obs.get("observation_artifact") or {}).get("scan_stats", {}), "rendered_node_count": obs.get("rendered_node_count"), "max_llm_nodes": obs.get("max_llm_nodes"), "llm_node_limit_hit": obs.get("llm_node_limit_hit")})
 
     def observe_area(left: int, top: int, right: int, bottom: int, max_llm_nodes: int | None = None, max_depth: int | None = None, step_px: int | None = None) -> dict[str, Any]:
-        _assert_duration_open("observe_area")
         cfg = _base_hover_cache_config()
         scan = dict(cfg["scan"])
         scan["area"] = {"left": int(left), "top": int(top), "right": int(right), "bottom": int(bottom)}
@@ -555,7 +541,6 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
 
     def consult_model(prompt: str, max_output_tokens: int = 800) -> dict[str, Any]:
         """Consult the configured model through the brain layer and record exact evidence."""
-        _assert_duration_open("consult_model")
         text = str(prompt).strip()
         if not text:
             raise RuntimeError("consult_model requires a non-empty prompt")
@@ -594,7 +579,6 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
 
     # Git helpers for terminal faculty (new for branch verification step)
     def git_current_branch() -> dict[str, Any]:
-        _assert_duration_open("git_current_branch")
         try:
             branch = _git(["branch", "--show-current"]).stdout.strip()
             return _record_action({"ok": True, "action": "git_current_branch", "branch": branch})
@@ -602,7 +586,6 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
             return _record_action({"ok": False, "action": "git_current_branch", "error": f"{type(exc).__name__}: {exc}"})
 
     def git_branch_show_current() -> dict[str, Any]:
-        _assert_duration_open("git_branch_show_current")
         try:
             result = _git(["branch", "--show-current"])
             branch = result.stdout.strip()
@@ -612,19 +595,15 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
 
     # GitHub helpers for terminal faculty (remote memory mechanism)
     def github_list_issues(repo: str, state: str = "open") -> dict[str, Any]:
-        _assert_duration_open("github_list_issues")
         return _record_action(_tools.github_list_issues(str(repo), str(state)))
 
     def github_create_issue(repo: str, title: str, body: str, labels: list[str] | None = None) -> dict[str, Any]:
-        _assert_duration_open("github_create_issue")
         return _record_action(_tools.github_create_issue(str(repo), str(title), str(body), labels))
 
     def github_comment_issue(repo: str, issue_number: int, comment: str) -> dict[str, Any]:
-        _assert_duration_open("github_comment_issue")
         return _record_action(_tools.github_comment_issue(str(repo), int(issue_number), str(comment)))
 
     def github_push(branch: str | None = None) -> dict[str, Any]:
-        _assert_duration_open("github_push")
         return _record_action(_tools.github_push(branch))
 
     last = {"error": state.get("last_error"), "result": state.get("last_result", ""), "action": state.get("last_action", {}), "verification": state.get("last_verification", {}), "reflection": state.get("last_reflection", {})}

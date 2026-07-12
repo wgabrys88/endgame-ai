@@ -8,7 +8,6 @@ are separate wired steps so the topology controls the boundary.
 """
 import hashlib
 import pathlib
-import time
 
 import core_bus as bus
 import core_nodes as nodes
@@ -34,9 +33,6 @@ class ExecuteNode(BaseNode):
             "observation": bus.observation_brief(state),
             "capabilities": nodes.capability_manifest(ctx),
         }
-
-    def _failure(self, kind, **extra):
-        return {"source": "execute", "kind": kind, "contract_repair_allowed": False, **extra}
 
     @staticmethod
     def _repair_probe(state, instance):
@@ -82,31 +78,6 @@ class ExecuteNode(BaseNode):
                 "comparison_basis": probe["comparison_basis"],
             }
             label = f"REPAIR_EXECUTE:{instance}"
-
-        deadline_at = state.get("deadline_at")
-        if deadline_at is not None and time.time() >= float(deadline_at):
-            late_by = round(time.time() - float(deadline_at), 3)
-            error = f"duration deadline expired before executing body action: late_by_s={late_by}"
-            failure = self._failure("duration_guard", late_by_s=late_by)
-            result = {"result": None, "stdout": "", "stderr": "", "action_events": [], "duration_guard": {"deadline_at": float(deadline_at), "late_by_s": late_by}}
-            turn = dict(state.get("turn_executions") or {})
-            turn[instance] = {"code_sha256": hashlib.sha256(code.encode("utf-8", errors="replace")).hexdigest(), "code_chars": len(code), "result": result, "error": error, "failure": failure}
-            effective = bus.append_narrative(state["effective_goal"], f"\n\n[{label}] No action: {error}.", root_goal=state.get("goal", ""))
-            return bus.emit(
-                "built",
-                {
-                    "turn_executions": turn,
-                    "last_action": {"code": code, "faculty": instance, "not_executed": True},
-                    "last_code": code,
-                    "last_result": result,
-                    "last_error": error,
-                    "last_failure": failure,
-                    "effective_goal": effective,
-                    "_execute_artifacts": {**(state.get("_execute_artifacts") or {}), instance: {"not_executed": True, "label": label, "repair_probe": probe is not None}},
-                },
-                record=record,
-                evidence=payload,
-            )
 
         artifact_path = self._write_artifact(instance, code)
         artifacts = dict(state.get("_execute_artifacts") or {})

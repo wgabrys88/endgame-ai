@@ -6,20 +6,6 @@ import core_stop_check as stop_check
 import core_bus as bus
 import core_loader as loader
 
-def expire_duration(
-    wiring_cfg: dict[str, Any],
-    state: dict[str, Any],
-    duration_seconds: float | None,
-    node_name: str,
-) -> dict[str, Any]:
-    reason = f"duration_seconds expired after {duration_seconds:g}s" if duration_seconds is not None else "duration expired"
-    state["_phase"] = "duration_expired"
-    state["current_node"] = node_name
-    state["stop_reason"] = reason
-    wiring.write_state(wiring_cfg, state)
-    stop_check.request_stop(reason, source="duration")
-    return state
-
 
 def stop_file_detected(wiring_cfg: dict[str, Any], state: dict[str, Any], node_name: str) -> dict[str, Any]:
     state["_phase"] = "stop_requested"
@@ -27,10 +13,6 @@ def stop_file_detected(wiring_cfg: dict[str, Any], state: dict[str, Any], node_n
     state["stop_reason"] = f"stop file detected: {stop_check.STOP_FILE.name}"
     wiring.write_state(wiring_cfg, state)
     return state
-
-
-def duration_expired(deadline_at: float | None) -> bool:
-    return deadline_at is not None and time.time() >= deadline_at
 
 
 
@@ -66,12 +48,9 @@ def wait_before_node(
     wiring_cfg: dict[str, Any],
     state: dict[str, Any],
     node_name: str,
-    deadline_at: float | None = None,
 ) -> bool:
     entered_pause = False
     while True:
-        if duration_expired(deadline_at):
-            return False
         if stop_check.stop_requested():
             return False
         ctrl = wiring.read_control(wiring_cfg)

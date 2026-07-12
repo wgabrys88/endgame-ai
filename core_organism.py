@@ -83,13 +83,9 @@ def run(
         while frontier:
             current = frontier.pop(0)
             st["frontier"] = list(frontier)
-            if state.duration_expired(deadline_at):
-                return state.expire_duration(w, st, duration_seconds, current)
             if stop_check.stop_requested():
                 return state.stop_file_detected(w, st, current)
-            if not state.wait_before_node(w, st, current, deadline_at):
-                if state.duration_expired(deadline_at):
-                    return state.expire_duration(w, st, duration_seconds, current)
+            if not state.wait_before_node(w, st, current):
                 return state.stop_file_detected(w, st, current)
             st["_phase"] = "executing_node"
             st["current_node"] = current
