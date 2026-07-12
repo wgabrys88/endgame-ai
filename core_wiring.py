@@ -241,10 +241,6 @@ def state_path(wiring: dict[str, Any]) -> pathlib.Path:
     return root_path(wiring["paths"]["state"])
 
 
-def control_path(wiring: dict[str, Any]) -> pathlib.Path:
-    return root_path(wiring["paths"]["control"])
-
-
 def guidance_path(wiring: dict[str, Any]) -> pathlib.Path:
     return root_path(wiring["paths"]["guidance"])
 
@@ -255,7 +251,7 @@ def default_control(wiring: dict[str, Any]) -> dict[str, Any]:
 
 def read_control(wiring: dict[str, Any]) -> dict[str, Any]:
     import time
-    path = control_path(wiring)
+    path = root_path(wiring["paths"]["control"])
     if not path.exists():
         ctrl = default_control(wiring)
         ctrl["updated_at"] = time.time()

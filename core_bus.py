@@ -209,10 +209,6 @@ def state_brief(state: JsonDict) -> JsonDict:
     }
 
 
-def event_state_brief(state: JsonDict) -> JsonDict:
-    return state_brief(state)
-
-
 def focused_elements(state: JsonDict) -> JsonDict:
     """Expand only UI ids already named by the active focus; never dump the whole action index."""
     action_index = state.get("action_index") or {}
