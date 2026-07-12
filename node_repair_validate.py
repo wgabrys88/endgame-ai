@@ -123,8 +123,6 @@ class RepairValidateNode(BaseNode):
             "step_goal": original_step["description"],
             "action_frame": None,
             "turn_executions": {},
-            "_dispatch_targets": [],
-            "_barrier_release_signal": "join",
             "effective_goal": effective,
         }
         if self._resolved:

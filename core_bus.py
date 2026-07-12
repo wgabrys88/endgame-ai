@@ -177,7 +177,6 @@ def repair_validation_brief(state: JsonDict) -> JsonDict:
         "activation": repair.get("activation", {}),
         "probe": {
             "failure_signature": probe.get("failure_signature"),
-            "faculty": probe.get("faculty"),
             "description": probe.get("description"),
             "done_when": probe.get("done_when"),
         } if isinstance(probe, dict) and probe else {},

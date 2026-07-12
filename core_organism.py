@@ -70,7 +70,6 @@ def run(
         st["goal"] = goal or str(st.get("goal") or "")
         st.setdefault("effective_goal", st["goal"])
         st.setdefault("_depth", 0)
-        st.setdefault("_barrier_release_signal", "join")
         if _seed:
             st.update(_seed)
         st["current_node"] = current

@@ -62,8 +62,6 @@ def _repair_interruption_patch(state, info):
         "step_goal": original_step["description"],
         "action_frame": None,
         "turn_executions": {},
-        "_dispatch_targets": [],
-        "_barrier_release_signal": "join",
         "last_error": conclusion,
         "last_failure": failure,
         "effective_goal": effective,
