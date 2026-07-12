@@ -18,14 +18,6 @@ def expire_duration(
     state["stop_reason"] = reason
     wiring.write_state(wiring_cfg, state)
     stop_check.request_stop(reason, source="duration")
-    runtime_event(
-        wiring_cfg,
-        "duration_expired",
-        node=node_name,
-        tick=state.get("tick"),
-        duration_seconds=duration_seconds,
-        stop_file=str(stop_check.STOP_FILE),
-    )
     return state
 
 
@@ -34,13 +26,6 @@ def stop_file_detected(wiring_cfg: dict[str, Any], state: dict[str, Any], node_n
     state["current_node"] = node_name
     state["stop_reason"] = f"stop file detected: {stop_check.STOP_FILE.name}"
     wiring.write_state(wiring_cfg, state)
-    runtime_event(
-        wiring_cfg,
-        "stop_file_detected",
-        node=node_name,
-        tick=state.get("tick"),
-        stop_file=str(stop_check.STOP_FILE),
-    )
     return state
 
 
@@ -48,9 +33,6 @@ def duration_expired(deadline_at: float | None) -> bool:
     return deadline_at is not None and time.time() >= deadline_at
 
 
-def runtime_event(wiring_cfg: dict[str, Any], event: str, **payload: Any) -> None:
-    import core_brain as brain
-    brain.log_runtime_event(wiring_cfg, event, **payload)
 
 
 def classify_node_exception(node_name: str, exc: Exception) -> dict[str, Any]:
@@ -103,13 +85,11 @@ def wait_before_node(
             state["_phase"] = "stepping_node"
             state["current_node"] = node_name
             wiring.write_state(wiring_cfg, state)
-            runtime_event(wiring_cfg, "step_consumed", node=node_name, step_token=token)
             return True
         if not entered_pause:
             state["_phase"] = "paused_before_node"
             state["current_node"] = node_name
             state["control_mode"] = mode
             wiring.write_state(wiring_cfg, state)
-            runtime_event(wiring_cfg, "paused_before_node", node=node_name, mode=mode, step_token=token)
             entered_pause = True
         time.sleep(0.1)

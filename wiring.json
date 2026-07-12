@@ -23,7 +23,6 @@
     "brains": ".",
     "state": "runtime_state.json",
     "control": "runtime_control.json",
-    "event_log": "runtime_events.jsonl",
     "caps": ".",
     "guidance": "guidance.txt"
   },

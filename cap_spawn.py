@@ -6,9 +6,9 @@ let it pursue a sub-goal to its own terminus, and fold the child's final
 `wiring["fractal"]["max_recursion_depth"]`, threaded through `state["_depth"]`.
 
 Child state is ISOLATED: the child runs against a deep-copied wiring whose
-`paths.state`, `paths.control`, and `paths.event_log` are redirected to
-depth/tick-suffixed files, written to a temp wiring JSON the child loads. The
-parent's `runtime_state.json` is never touched by the child.
+`paths.state` and `paths.control` are redirected to depth/tick-suffixed files,
+written to a temp wiring JSON the child loads. The parent's `runtime_state.json`
+is never touched by the child.
 
 Contract: `run(ctx) -> bus.emit(signal, patch)`. Loaded as kind "cap".
 """
@@ -28,7 +28,6 @@ def _child_wiring_path(w: dict[str, Any], depth: int, tag: str) -> str:
     stem = f"runtime_child_d{depth}_{tag}"
     child["paths"]["state"] = f"{stem}_state.json"
     child["paths"]["control"] = f"{stem}_control.json"
-    child["paths"]["event_log"] = f"{stem}_events.jsonl"
     path = wiring.root_path(f"{stem}_wiring.json")
     path.write_text(json.dumps(child, ensure_ascii=False, indent=2), encoding="utf-8")
     return str(path)
