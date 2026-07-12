@@ -1,11 +1,21 @@
-import contextlib
+"""node_execute — the author. Writes code as a script artifact on disk, then hands
+off to node_run via the "built" signal. Running is node_run's job.
+
+Two-phase execution: this node authors code (from the LLM, or replays a repair
+probe) and persists it as a volatile script node under runtime/. The wheel then
+routes to node_run which loads and executes the artifact. Authoring and running
+are separate wired steps so the topology controls the boundary.
+"""
 import hashlib
-import io
+import pathlib
 import time
 
 import core_bus as bus
 import core_nodes as nodes
 from core_node_base import BaseNode
+
+ROOT = pathlib.Path(__file__).resolve().parent
+ARTIFACT_DIR = ROOT / "runtime_artifacts"
 
 
 class ExecuteNode(BaseNode):
@@ -25,18 +35,8 @@ class ExecuteNode(BaseNode):
             "capabilities": nodes.capability_manifest(ctx),
         }
 
-    def _failure(self, kind: str, **extra) -> dict:
+    def _failure(self, kind, **extra):
         return {"source": "execute", "kind": kind, "contract_repair_allowed": False, **extra}
-
-    @staticmethod
-    def _turn_entry(code, result, error, failure):
-        return {
-            "code_sha256": hashlib.sha256(code.encode("utf-8", errors="replace")).hexdigest(),
-            "code_chars": len(code),
-            "result": result,
-            "error": error,
-            "failure": failure,
-        }
 
     @staticmethod
     def _repair_probe(state, instance):
@@ -46,12 +46,19 @@ class ExecuteNode(BaseNode):
         probe = repair["probe"]
         return probe if probe["faculty"] == instance else None
 
+    def _write_artifact(self, instance, code):
+        ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
+        digest = hashlib.sha256(code.encode("utf-8", errors="replace")).hexdigest()[:16]
+        path = ARTIFACT_DIR / f"{instance}_{digest}.py"
+        path.write_text(code, encoding="utf-8", newline="\n")
+        return str(path)
+
     def run(self, ctx):
         state = ctx["state"]
         instance = ctx["node_instance"]
         targets = state.get("_dispatch_targets") or []
         if f"node_execute:{instance}" not in targets:
-            return bus.emit("done")
+            return bus.emit("built")
 
         payload = self.build_payload(ctx)
         probe = self._repair_probe(state, instance)
@@ -81,18 +88,12 @@ class ExecuteNode(BaseNode):
             late_by = round(time.time() - float(deadline_at), 3)
             error = f"duration deadline expired before executing body action: late_by_s={late_by}"
             failure = self._failure("duration_guard", late_by_s=late_by)
-            result = {
-                "result": None,
-                "stdout": "",
-                "stderr": "",
-                "action_events": [],
-                "duration_guard": {"deadline_at": float(deadline_at), "late_by_s": late_by},
-            }
+            result = {"result": None, "stdout": "", "stderr": "", "action_events": [], "duration_guard": {"deadline_at": float(deadline_at), "late_by_s": late_by}}
             turn = dict(state.get("turn_executions") or {})
-            turn[instance] = self._turn_entry(code, result, error, failure)
+            turn[instance] = {"code_sha256": hashlib.sha256(code.encode("utf-8", errors="replace")).hexdigest(), "code_chars": len(code), "result": result, "error": error, "failure": failure}
             effective = bus.append_narrative(state["effective_goal"], f"\n\n[{label}] No action: {error}.", root_goal=state.get("goal", ""))
             return bus.emit(
-                "done",
+                "built",
                 {
                     "turn_executions": turn,
                     "last_action": {"code": code, "faculty": instance, "not_executed": True},
@@ -101,68 +102,19 @@ class ExecuteNode(BaseNode):
                     "last_error": error,
                     "last_failure": failure,
                     "effective_goal": effective,
+                    "_execute_artifacts": {**(state.get("_execute_artifacts") or {}), instance: {"not_executed": True, "label": label, "repair_probe": probe is not None}},
                 },
                 record=record,
                 evidence=payload,
             )
 
-        import core_desktop as desktop
-
-        ns = nodes.build_capability_runtime(ctx)
-        ns["desktop"] = desktop
-        stdout, stderr = io.StringIO(), io.StringIO()
-        error = failure = None
-        try:
-            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-                exec(code, ns)
-            result = {
-                "result": ns.get("result"),
-                "stdout": stdout.getvalue(),
-                "stderr": stderr.getvalue(),
-                "action_events": list(ns["_action_events"]),
-            }
-            policy = ctx["wiring"]["capabilities"]["faculties"][instance]
-            if policy["requires_action_event"] and not result["action_events"]:
-                error = f"RuntimeError: {instance} faculty produced no recorded capability action"
-                failure = self._failure("faculty_evidence_missing", faculty=instance)
-            elif result["result"] is None and not result["action_events"] and not result["stdout"] and not result["stderr"] and policy["requires_action_event"]:
-                error = "RuntimeError: EXECUTE produced no result, stdout, stderr, or recorded body action"
-                failure = self._failure("empty_execute_result")
-        except Exception as exc:
-            result = {
-                "stdout": stdout.getvalue(),
-                "stderr": stderr.getvalue(),
-                "action_events": list(ns["_action_events"]),
-            }
-            error = f"{type(exc).__name__}: {exc}"
-            failure = self._failure("task_route_exception", exception_type=type(exc).__name__, message=str(exc))
-
-        turn = dict(state.get("turn_executions") or {})
-        turn[instance] = self._turn_entry(code, result, error, failure)
-        failed = {faculty: entry["error"] for faculty, entry in turn.items() if entry["error"] is not None}
-        aggregate_error = None if not failed else "faculty failures: " + "; ".join(f"{faculty}={message}" for faculty, message in failed.items())
-        aggregate_failure = None if not failed else self._failure("faculty_failures", faculties=failed)
-        action_names = [str(event.get("action", "action")) for event in result["action_events"]]
-        deed = ", ".join(action_names) if action_names else "local computation"
-        outcome = "success" if error is None else error
-        effective = bus.append_narrative(state["effective_goal"], f"\n\n[{label}] {deed}: {outcome}.", root_goal=state.get("goal", ""))
+        artifact_path = self._write_artifact(instance, code)
+        artifacts = dict(state.get("_execute_artifacts") or {})
+        artifacts[instance] = {"code": code, "path": artifact_path, "label": label, "repair_probe": probe is not None}
+        effective = bus.append_narrative(state["effective_goal"], f"\n\n[{label}] Authored script artifact {pathlib.Path(artifact_path).name}.", root_goal=state.get("goal", ""))
         return bus.emit(
-            "done",
-            {
-                "turn_executions": turn,
-                "last_action": {
-                    "code": code,
-                    "faculty": instance,
-                    "repair_probe": probe is not None,
-                },
-                "last_action_at": time.time(),
-                "last_code": code,
-                "last_result": result,
-                "last_error": aggregate_error,
-                "last_failure": aggregate_failure,
-                "action_frame": None if aggregate_error is None else state.get("action_frame"),
-                "effective_goal": effective,
-            },
+            "built",
+            {"_execute_artifacts": artifacts, "effective_goal": effective},
             record=record,
             evidence=payload,
         )
