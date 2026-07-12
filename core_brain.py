@@ -135,6 +135,53 @@ def _commit_record(content: str, w: dict[str, Any], expected_record_type: str | 
 
 
 
+def _node_docstring(w: dict[str, Any], node: str) -> str:
+    """Read a node's own input-contract declaration: the module docstring of its .py file.
+    The docstring IS the node's input pin spec — what it expects to receive. For a declarative
+    node (no .py), fall back to its node_defs expected_record_type as its spec."""
+    import ast
+    base = node.split(":", 1)[0]
+    node_dir = wiring.root_path(w["paths"]["nodes"])
+    path = node_dir / f"{base}.py"
+    if path.is_file():
+        try:
+            doc = ast.get_docstring(ast.parse(path.read_text(encoding="utf-8")))
+            if doc:
+                return doc.strip()
+        except SyntaxError:
+            pass
+    defn = w.get("node_defs", {}).get(node) or w.get("node_defs", {}).get(base)
+    if isinstance(defn, dict):
+        return f"declarative node; expects a payload for record_type '{defn.get('expected_record_type', '')}'."
+    return ""
+
+
+def downstream_contract(w: dict[str, Any], emitting_node: str | None) -> str:
+    """The producer reads, live, the input contracts (docstrings) of every node its output
+    edges are wired to, and copies them in. This is the whole contract mechanism: no stored
+    record_contracts, no pins registry — X learns what to produce by reading Y and Z's own
+    files, resolved through the JSON wiring. Rewire the edges and this changes automatically."""
+    if not emitting_node:
+        return ""
+    edges = w.get("topology", {}).get("edges", {}).get(emitting_node, {})
+    seen: list[tuple[str, str]] = []
+    for signal, value in edges.items():
+        if signal == "error":
+            continue
+        targets = [value] if isinstance(value, str) else (value if isinstance(value, list) else [])
+        for t in targets:
+            if isinstance(t, str) and t not in ("halt", "wait"):
+                seen.append((signal, t))
+    if not seen:
+        return ""
+    lines = ["DOWNSTREAM CONTRACT — your output is wired (via topology) to these consumers; produce what they expect:"]
+    for signal, succ in seen:
+        doc = _node_docstring(w, succ)
+        lines.append(f"\n[on signal '{signal}' -> {succ}]\n{doc}" if doc else f"\n[on signal '{signal}' -> {succ}] (no declared input contract)")
+    lines.append("\nChoose next_signal to route your output to the intended consumer.")
+    return "\n".join(lines)
+
+
 def _record_contract_prompt(w: dict[str, Any], record_type: str | None, emitting_node: str | None = None) -> str:
     if not record_type:
         return ""
@@ -377,6 +424,9 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
     contract_context = _record_contract_prompt(w, expected_record_type, emitting_node)
     if contract_context:
         stable_context_parts.append(contract_context)
+    downstream = downstream_contract(w, emitting_node)
+    if downstream:
+        stable_context_parts.append(downstream)
     stable_context = "\n\n".join(stable_context_parts)
     pattern = str(reasoning_cfg.get("pattern") or "single_pass")
     if not reasoning_cfg["enabled"] or pattern in {"single_pass", "native"}:

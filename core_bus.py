@@ -210,6 +210,51 @@ def consumed_by_successors(wiring: JsonDict, node: str) -> list[str]:
     return sorted(consumed)
 
 
+def dataflow(wiring: JsonDict) -> dict[str, list[str]]:
+    """Compute the data plane from the topology: for every input pin of every node, which
+    producer nodes feed it. A producer feeds an input pin `X` iff there is an edge path making
+    it a predecessor AND it outputs `X` (i.e. X is in its own consumed_by_successors set, i.e.
+    it forwards X). Returns {"<node>.<pin>": [producer, ...]}. Empty list = dangling pin.
+
+    This is the single authoritative function: the wiring is both representation and source.
+    Rebuilt every call, so runtime rewiring changes the data plane immediately."""
+    edges = wiring.get("topology", {}).get("edges", {})
+    # predecessors[node] = set of nodes with an edge into node
+    predecessors: dict[str, set[str]] = {}
+    for src, sigmap in edges.items():
+        for value in sigmap.values():
+            targets = [value] if isinstance(value, str) else (value if isinstance(value, list) else [])
+            for t in targets:
+                if isinstance(t, str) and t not in ("halt", "wait"):
+                    predecessors.setdefault(t, set()).add(src)
+    plane: dict[str, list[str]] = {}
+    for node in wiring.get("topology", {}).get("nodes", []):
+        preds = predecessors.get(node, set())
+        for pin in node_inputs(wiring, node):
+            # a predecessor feeds this pin if the pin is among what that predecessor produces.
+            # A node produces a field if it declares it as an output pin (node_pins[.].outputs)
+            # or, lacking that, if the field is in its own input set (it forwards shared rails).
+            feeders = [p for p in preds if pin in _node_produces(wiring, p)]
+            plane[f"{node}.{pin}"] = sorted(feeders)
+    return plane
+
+
+def _node_produces(wiring: JsonDict, node: str) -> set[str]:
+    """Fields a node makes available on its output. Explicit node_pins[node].outputs if declared;
+    otherwise the union of its own inputs (it forwards the rails it received) — this models the
+    shared-narrative fields as pins carried forward, without a global state bag."""
+    pins = wiring.get("node_pins", {}).get(node, {})
+    outs = pins.get("outputs")
+    if isinstance(outs, list):
+        return set(outs)
+    return set(node_inputs(wiring, node))
+
+
+def dangling_pins(wiring: JsonDict) -> list[str]:
+    """Input pins with no producer — with no shared-state fallback these are hard errors."""
+    return sorted(pin for pin, feeders in dataflow(wiring).items() if not feeders)
+
+
 def _plan_intent(state: JsonDict) -> list[JsonDict]:
     plan = state.get("plan")
     intent = plan.get("intent", []) if isinstance(plan, dict) else []

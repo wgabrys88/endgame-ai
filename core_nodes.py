@@ -518,6 +518,7 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "repo_root": str(ROOT), "python_executable": sys.executable,
         "state": state, "wiring": w, "goal": ctx.get("goal", ""),
         "desktop_tree_text": state.get("desktop_tree_text", ""),
+        "observation": bus.observation_brief(state),
         "observed_at": state.get("observed_at"),
         "action_events": action_events, "_action_events": action_events,
     }
