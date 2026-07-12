@@ -155,6 +155,61 @@ def emergent_signals(wiring: JsonDict, node: str | None) -> list[str]:
     return sorted(s for s in allowed_signals(wiring, node) if s != "error")
 
 
+def node_inputs(wiring: JsonDict, node: str) -> list[str]:
+    """Declared input pins of a node = the state/record fields it consumes.
+
+    Declared once in wiring.node_pins[node].inputs (or, for a declarative node, inferred
+    from the leaf state.* paths of its node_defs build_payload). Input pins are the µC-style
+    'many-in' side; output pins are the emergent signals (node_outputs)."""
+    pins = wiring.get("node_pins", {}).get(node)
+    if isinstance(pins, dict) and isinstance(pins.get("inputs"), list):
+        return list(pins["inputs"])
+    base = node.split(":", 1)[0]
+    defn = wiring.get("node_defs", {}).get(node) or wiring.get("node_defs", {}).get(base)
+    if isinstance(defn, dict):
+        return sorted(_collect_state_paths(defn.get("build_payload", {})))
+    return []
+
+
+def node_outputs(wiring: JsonDict, node: str) -> list[str]:
+    """Output pins of a node = the signals it can emit (emergent from edges)."""
+    return emergent_signals(wiring, node)
+
+
+def _collect_state_paths(spec: Any, acc: set[str] | None = None) -> set[str]:
+    """Walk a declarative build_payload template and collect the state.* leaf keys it reads."""
+    acc = acc if acc is not None else set()
+    if isinstance(spec, dict):
+        p = spec.get("path")
+        if isinstance(p, str) and p.startswith("state."):
+            acc.add(p.split(".", 2)[1])
+        for v in spec.values():
+            _collect_state_paths(v, acc)
+    elif isinstance(spec, list):
+        for v in spec:
+            _collect_state_paths(v, acc)
+    return acc
+
+
+def consumed_by_successors(wiring: JsonDict, node: str) -> list[str]:
+    """The emergent DATA output contract of a node: the union of input pins declared by every
+    node its output edges route to. What a node must produce is defined by what its wired
+    consumers read — not by a stored per-node output schema."""
+    edges = wiring.get("topology", {}).get("edges", {}).get(node, {})
+    successors: set[str] = set()
+    for value in edges.values():
+        if isinstance(value, str):
+            successors.add(value)
+        elif isinstance(value, list):
+            successors.update(t for t in value if isinstance(t, str))
+    successors.discard("halt")
+    successors.discard("wait")
+    consumed: set[str] = set()
+    for succ in successors:
+        consumed.update(node_inputs(wiring, succ))
+    return sorted(consumed)
+
+
 def _plan_intent(state: JsonDict) -> list[JsonDict]:
     plan = state.get("plan")
     intent = plan.get("intent", []) if isinstance(plan, dict) else []

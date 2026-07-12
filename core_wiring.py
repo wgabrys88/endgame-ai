@@ -145,6 +145,22 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
     if missing:
         raise RuntimeError(f"wiring missing edges/prompts for nodes: {missing}")
     validate_node_defs(cfg, prompts)
+    validate_node_pins(cfg, nodes)
+
+
+def validate_node_pins(cfg: dict[str, Any], nodes: list[str]) -> None:
+    node_pins = cfg.get("node_pins", {})
+    if not isinstance(node_pins, dict):
+        raise RuntimeError("wiring.node_pins must be object")
+    node_set = set(nodes)
+    for name, pins in node_pins.items():
+        if name not in node_set:
+            raise RuntimeError(f"wiring.node_pins.{name} is not a topology node")
+        if not isinstance(pins, dict):
+            raise RuntimeError(f"wiring.node_pins.{name} must be object")
+        inputs = pins.get("inputs", [])
+        if not isinstance(inputs, list) or not all(isinstance(i, str) and i for i in inputs):
+            raise RuntimeError(f"wiring.node_pins.{name}.inputs must be list[str]")
 
 
 def validate_node_defs(cfg: dict[str, Any], prompts: dict[str, Any]) -> None:
