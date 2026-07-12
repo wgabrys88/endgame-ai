@@ -592,6 +592,7 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
     web_search = _guarded("web_search", lambda q, num_results=10: _tools.web_search(str(q), int(num_results)))
     open_page = _guarded("open_page", lambda u, start_line=None: _tools.open_page(str(u), int(start_line) if start_line is not None else None))
     read_file = _guarded("read_file", lambda p, max_bytes=None: _tools.read_file(str(p), int(max_bytes) if max_bytes is not None else None))
+    write_file = _guarded("write_file", lambda p, content: _tools.write_file(str(p), str(content)))
 
     # Git helpers for terminal faculty (new for branch verification step)
     def git_current_branch() -> dict[str, Any]:
@@ -647,6 +648,7 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "web_search": web_search,
         "open_page": open_page,
         "read_file": read_file,
+        "write_file": write_file,
         "git_current_branch": git_current_branch,
         "git_branch_show_current": git_branch_show_current,
         "github_list_issues": github_list_issues,

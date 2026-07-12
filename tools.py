@@ -105,6 +105,32 @@ def read_file(path: str, max_bytes: int | None = None) -> Dict[str, Any]:
     }
 
 
+def write_file(path: str, content: str) -> Dict[str, Any]:
+    """Deterministic full-content write to a local file.
+
+    Returns a recorded-action dict with complete content, size, and SHA-256.
+    Guarantees the write is recorded as a capability action for terminal faculty.
+    """
+    p = __import__("pathlib").Path(path)
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(str(content), encoding="utf-8", errors="replace")
+        size = p.stat().st_size
+        import hashlib
+        sha = hashlib.sha256(str(content).encode("utf-8", errors="replace")).hexdigest()
+        return {
+            "ok": True,
+            "action": "write_file",
+            "path": str(p.resolve()),
+            "size": size,
+            "content": str(content),
+            "content_chars": len(str(content)),
+            "content_sha256": sha,
+        }
+    except Exception as exc:
+        return {"ok": False, "action": "write_file", "path": str(p), "error": f"{type(exc).__name__}: {exc}"}
+
+
 def _run_gh(args: list[str]) -> Dict[str, Any]:
     """Run gh CLI command and return recorded action dict."""
     try:

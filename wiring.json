@@ -648,7 +648,8 @@
       "github_list_issues": "github_list_issues(repo, state='open'): list issues on repo via gh CLI and record action (terminal faculty)",
       "github_push": "github_push(branch=None): push current or specified branch to origin and record action (terminal faculty)",
       "git_current_branch": "git_current_branch(): run git branch --show-current and return recorded action (terminal faculty)",
-      "git_branch_show_current": "git_branch_show_current(): run git branch --show-current and return recorded action (terminal faculty)"
+      "git_branch_show_current": "git_branch_show_current(): run git branch --show-current and return recorded action (terminal faculty)",
+      "write_file": "write_file(path, content): deterministic full-content write to a local file; returns recorded action with complete content, size, and SHA-256; guarantees the write is recorded as a capability action for terminal faculty"
     },
     "modules": [
       "subprocess",
