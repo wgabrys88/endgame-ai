@@ -97,10 +97,6 @@ def coherence_problems(w: dict) -> list[str]:
         if bnode in edges and "join" not in edges[bnode]:
             problems.append(f"barrier '{bnode}' must declare a 'join' edge")
 
-    dispatch_targets = _targets(edges.get("node_dispatch", {}).get("dispatch"))
-    if dispatch_targets and barriers.get("node_barrier") != len(dispatch_targets):
-        problems.append(f"node_barrier arity {barriers.get('node_barrier')!r} must equal node_dispatch.dispatch fan-out {len(dispatch_targets)}")
-
     # reachability from cycle_start across both edge forms
     seen: set[str] = set()
     stack = [topo["cycle_start"]]

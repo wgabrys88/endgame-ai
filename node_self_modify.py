@@ -72,24 +72,17 @@ def _repair_baseline(state: dict[str, Any]) -> dict[str, Any]:
         "done_when": "The original failure is retried and its intended observable effect is proven.",
     }
     executions = bus.execution_evidence(state)
-    turn = executions.get("faculties") if isinstance(executions, dict) else None
-    candidate_faculties = sorted(turn.keys()) if isinstance(turn, dict) else []
-    last_action = state.get("last_action") or {}
-    faculty = last_action.get("faculty") if isinstance(last_action, dict) else None
-    if not candidate_faculties and isinstance(faculty, str) and faculty:
-        candidate_faculties = [faculty]
     return {
         "failure_signature": bus.failure_signature(state),
         "step": {
             "description": str(step["description"]),
             "done_when": str(step["done_when"]),
         },
-        "candidate_faculties": candidate_faculties,
         "executions": executions,
         "verification": state.get("last_verification") or {},
         "failure": state.get("last_failure") or {},
         "error": state.get("last_error"),
-        "last_action": last_action,
+        "last_action": state.get("last_action") or {},
         "last_code": state.get("last_code") or "",
         "last_result": state.get("last_result") or {},
         "action_frame": state.get("action_frame"),

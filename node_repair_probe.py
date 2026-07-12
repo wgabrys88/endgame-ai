@@ -16,7 +16,6 @@ class RepairProbeNode(BaseNode):
             raise RuntimeError(f"repair probe requires awaiting_probe status, got {repair['status']!r}")
         self._repair = repair
         self._baseline = repair["baseline"]
-        self._candidate_faculties = list(self._baseline["candidate_faculties"])
         return {
             "goal": state["goal"],
             "repair_id": repair["repair_id"],
@@ -25,7 +24,6 @@ class RepairProbeNode(BaseNode):
             "activation": repair["activation"],
             "candidate_commit": repair["commit"],
             "original_failure": self._baseline,
-            "candidate_faculties": self._candidate_faculties,
             "focus": bus.state_brief(state),
             "observation": bus.observation_brief(state),
             "capabilities": nodes.capability_manifest(ctx),
@@ -37,11 +35,6 @@ class RepairProbeNode(BaseNode):
                 "repair probe changed the failure identity: "
                 f"expected {self._baseline['failure_signature']!r}, got {data['failure_signature']!r}"
             )
-        if self._candidate_faculties and data["faculty"] not in self._candidate_faculties:
-            raise RuntimeError(
-                f"repair probe must retry one of the original faculties {self._candidate_faculties!r}, "
-                f"got {data['faculty']!r}"
-            )
         return data["next_signal"]
 
     def patch_from_record(self, record, ctx):
@@ -50,7 +43,6 @@ class RepairProbeNode(BaseNode):
         original_step = self._baseline["step"]
         probe = {
             "failure_signature": data["failure_signature"],
-            "faculty": data["faculty"],
             "description": data["description"],
             "done_when": data["done_when"],
             "comparison_basis": data["comparison_basis"],
@@ -72,8 +64,8 @@ class RepairProbeNode(BaseNode):
         }
         effective = (
             state["effective_goal"]
-            + f"\n\n[REPAIR PROBE] Retrying failure {data['failure_signature']} through "
-            + f"the {data['faculty']} faculty. Proof required: {data['done_when']}."
+            + f"\n\n[REPAIR PROBE] Retrying failure {data['failure_signature']}. "
+            + f"Proof required: {data['done_when']}."
         )
         return {
             "repair_validation": repair,

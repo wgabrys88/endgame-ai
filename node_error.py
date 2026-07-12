@@ -26,7 +26,6 @@ def _repair_interruption_patch(state, info):
         "candidate_commit": repair["commit"]["commit"],
         "summary": repair["summary"],
         "expected_validation": repair["expected_validation"],
-        "probe_faculty": (repair.get("probe") or {}).get("faculty"),
         "probe_description": (repair.get("probe") or {}).get("description"),
         "comparison": comparison,
         "conclusion": conclusion,
