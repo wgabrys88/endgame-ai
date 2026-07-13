@@ -5,43 +5,152 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Endgame Wiring Lab</title>
 <style>
-:root{
-  color-scheme:dark;
-  --bg:#071017;--panel:#0b151d;--panel2:#0e1b25;--line:#20333f;--line2:#2d4655;
-  --text:#dce8ef;--muted:#8097a5;--accent:#52d7b6;--blue:#6ea8ff;--danger:#e06b7d;--warn:#e7ba5b;
-  --left-w:252px;--right-w:354px;--bar-h:44px;--status-h:24px;
-  --mono:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
-  --sans:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+@layer base, ui;
+@layer base{
+  :root{
+    color-scheme:dark;
+    --bg:#071017;--panel:#0b151d;--panel2:#0e1b25;--line:#20333f;--line2:#2d4655;
+    --text:#dce8ef;--muted:#8097a5;--accent:#52d7b6;--blue:#6ea8ff;--danger:#e06b7d;--warn:#e7ba5b;
+    --left-w:252px;--right-w:354px;--bar-h:44px;--status-h:24px;
+    --mono:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
+    --sans:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{width:100%;height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--text);font-family:var(--sans)}
+  button,input,select,textarea{font:inherit;color:inherit}
+  button{cursor:pointer}
 }
-*{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden;background:var(--bg);color:var(--text);font-family:var(--sans)}
-button,input,select,textarea{font:inherit;color:inherit}button{cursor:pointer}
-#app{height:100%;display:grid;grid-template-rows:var(--bar-h) 1fr var(--status-h);background:var(--bg)}
-.topbar{display:flex;align-items:center;gap:4px;padding:5px 8px;background:#0b1821;border-bottom:1px solid var(--line);z-index:30}
-.brand{display:flex;align-items:center;gap:8px;margin-right:5px;min-width:178px;font:700 12px var(--mono);letter-spacing:.08em;white-space:nowrap}.brand-mark{width:18px;height:18px;border:1px solid var(--accent);display:grid;place-items:center;color:var(--accent);font-size:11px}.brand small{font-weight:400;color:var(--muted);letter-spacing:0}
-.tool-group{display:flex;align-items:center;gap:3px;padding-right:5px;margin-right:3px;border-right:1px solid var(--line)}.tool-group:last-of-type{border-right:0}.spacer{flex:1}
-button.tool{height:32px;min-width:32px;padding:0 9px;border:1px solid transparent;background:transparent;border-radius:4px;color:#b9cad3;font-size:12px;display:inline-flex;align-items:center;justify-content:center;gap:6px}
-button.tool:hover{background:#142630;border-color:#2d4655;color:white}button.tool:active{transform:translateY(1px)}button.tool.primary{background:#174b44;border-color:#2e796d;color:#dffaf3}button.tool.danger{color:#f096a3}button.tool:disabled{opacity:.35;cursor:default}
-.icon{font:15px var(--mono);line-height:1}.file-label{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font:10px var(--mono);padding:0 6px}
-.workspace{min-height:0;display:grid;grid-template-columns:var(--left-w) 5px minmax(0,1fr) 5px var(--right-w);transition:grid-template-columns .16s ease}
-#app.left-closed .workspace{grid-template-columns:0 0 minmax(0,1fr) 5px var(--right-w)}#app.right-closed .workspace{grid-template-columns:var(--left-w) 5px minmax(0,1fr) 0 0}#app.left-closed.right-closed .workspace{grid-template-columns:0 0 minmax(0,1fr) 0 0}
-.panel{min-width:0;min-height:0;background:var(--panel);display:flex;flex-direction:column;overflow:hidden}.left-panel{border-right:1px solid var(--line)}.right-panel{border-left:1px solid var(--line)}#app.left-closed .left-panel,#app.right-closed .right-panel{visibility:hidden}
-.resizer{background:#09141c;cursor:col-resize;position:relative}.resizer:hover,.resizer:active{background:#214252}.resizer:after{content:"";position:absolute;inset:0 -3px}
-.panel-head{height:38px;flex:none;display:flex;align-items:center;gap:8px;padding:0 10px;border-bottom:1px solid var(--line);font:700 10px var(--mono);letter-spacing:.12em;color:#a9bdc8;text-transform:uppercase}.panel-head .count{margin-left:auto;color:var(--muted);font-weight:400;letter-spacing:0}
-.panel-body{padding:9px;overflow:auto;min-height:0}.search{width:100%;height:34px;border:1px solid var(--line2);background:#071118;border-radius:4px;padding:0 9px;outline:none;font-size:12px}.search:focus{border-color:#477486}
-.node-list{display:flex;flex-direction:column;gap:2px;margin-top:8px}.node-item{width:100%;display:grid;grid-template-columns:10px 1fr auto;align-items:center;gap:8px;text-align:left;border:1px solid transparent;border-radius:4px;background:transparent;padding:7px 8px;color:#cbd9e1}.node-item:hover{background:#10222d}.node-item.selected{background:#14303b;border-color:#315565}.node-led{width:6px;height:6px;border-radius:50%;background:var(--blue)}.node-led.endpoint{background:#a779be}.node-item-main{display:flex;flex-direction:column;gap:2px;min-width:0}.node-item-main b{font:11px var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.node-item-main small{font:9px var(--mono);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.node-count{font:9px var(--mono);color:var(--muted)}
-.canvas{position:relative;min-width:0;min-height:0;overflow:hidden;background-color:#071017;background-image:linear-gradient(#142630 1px,transparent 1px),linear-gradient(90deg,#142630 1px,transparent 1px),linear-gradient(#0c1b24 1px,transparent 1px),linear-gradient(90deg,#0c1b24 1px,transparent 1px);background-size:100px 100px,100px 100px,20px 20px,20px 20px}
-#paper{position:absolute;inset:0}.canvas-hud{position:absolute;left:10px;bottom:10px;display:flex;gap:4px;z-index:8}.canvas-hud button{width:30px;height:28px;border:1px solid var(--line2);background:#0c1c26;border-radius:4px;color:#b9cbd4}.canvas-hud button:hover{background:#15303d}.canvas-help{position:absolute;right:10px;bottom:10px;max-width:420px;padding:7px 9px;border:1px solid #263f4d;background:#08141cdd;border-radius:4px;color:#718a99;font-size:10px;line-height:1.4;pointer-events:none}
-.inspector-tabs{height:38px;display:flex;align-items:end;border-bottom:1px solid var(--line);padding:0 8px;flex:none}.inspector-tab{height:38px;border:0;border-bottom:2px solid transparent;background:transparent;color:#7f97a5;padding:0 9px;font-size:11px}.inspector-tab:hover{color:#c4d4dc}.inspector-tab.active{color:#e7f1f5;border-color:var(--accent)}
-#inspector{padding:10px;overflow:auto;min-height:0}.field{display:block;margin-bottom:11px}.field>span{display:block;margin-bottom:5px;color:#849ba8;font:9px var(--mono);letter-spacing:.08em;text-transform:uppercase}.field small{display:block;margin-top:4px;color:#6d8593;font-size:10px}.field input,.field select,.field textarea{width:100%;border:1px solid var(--line2);background:#071118;border-radius:4px;padding:7px 8px;outline:none;font-size:12px}.field input,.field select{height:34px}.field textarea{min-height:120px;resize:vertical;line-height:1.45}.field textarea.tall{min-height:390px}.field textarea.code{font:11px/1.5 var(--mono);tab-size:4}.field input:focus,.field select:focus,.field textarea:focus{border-color:#4a788a}
-.section-title{margin:15px 0 7px;padding-bottom:5px;border-bottom:1px solid var(--line);color:#9db1bc;font:700 9px var(--mono);letter-spacing:.1em;text-transform:uppercase}.actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}.actions button{height:31px;border:1px solid var(--line2);background:#10212b;border-radius:4px;padding:0 9px;font-size:11px}.actions button:hover{background:#17303c}.actions button.primary{border-color:#347e70;background:#17483f}.actions button.danger{border-color:#6d3440;color:#f095a2;background:#24171b}
-.pin-list{display:flex;flex-direction:column;gap:4px}.pin-row{display:grid;grid-template-columns:8px minmax(0,1fr) 75px 26px;gap:6px;align-items:center;min-height:30px}.pin-dot{width:6px;height:6px;border-radius:50%;background:var(--blue)}.pin-dot.out{background:var(--accent)}.pin-name{font:10px var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pin-row select{height:27px;border:1px solid var(--line2);background:#09151d;border-radius:3px;font-size:10px}.icon-btn{width:25px;height:25px;border:1px solid transparent;background:transparent;color:#849aa7;border-radius:3px}.icon-btn:hover{border-color:#613942;color:#f292a0}.note,.muted{color:#728996;font-size:10px;line-height:1.5}.empty-state{display:grid;place-items:center;text-align:center;gap:8px;padding:45px 20px;color:#8197a4}.empty-state b{color:#c6d5dc;font-size:12px}.empty-state p{margin:0;max-width:250px;font-size:10px;line-height:1.55}.empty-icon{font:30px var(--mono);color:#4b6f80}
-.statusbar{height:var(--status-h);display:flex;align-items:center;gap:12px;padding:0 9px;border-top:1px solid var(--line);background:#08131a;color:#718895;font:9px var(--mono)}.statusbar .spacer{flex:1}.statusbar .ok{color:var(--accent)}.statusbar .warning{color:var(--warn)}.statusbar .error{color:var(--danger)}
-.modal-back{position:fixed;inset:0;background:#000a;display:none;place-items:center;z-index:100}.modal-back.show{display:grid}.modal{width:min(650px,92vw);max-height:80vh;background:#0c1821;border:1px solid #35505f;border-radius:6px;box-shadow:0 24px 80px #000b;display:flex;flex-direction:column}.modal-title{height:44px;padding:0 13px;display:flex;align-items:center;border-bottom:1px solid var(--line);font-size:13px}.modal-body{padding:14px;overflow:auto}.modal-actions{display:flex;justify-content:flex-end;gap:6px;padding:10px 13px;border-top:1px solid var(--line)}.modal-actions button{height:32px;border:1px solid var(--line2);background:#10212b;border-radius:4px;padding:0 12px}.modal-actions button.primary{background:#17483f;border-color:#347e70}.modal-actions button.danger{background:#24171b;border-color:#6d3440;color:#f095a2}
-.issue-list{display:flex;flex-direction:column;gap:6px}.issue{display:grid;grid-template-columns:70px 1fr;gap:8px;padding:8px;border:1px solid var(--line2);background:#09141c;border-radius:4px;font:10px/1.45 var(--mono)}.issue.error{border-color:#66333d}.issue.warning{border-color:#67572c}.issue b{color:#8fa5b1}.issue.error b{color:var(--danger)}.issue.warning b{color:var(--warn)}
-.toast{position:fixed;left:50%;bottom:38px;transform:translate(-50%,12px);opacity:0;pointer-events:none;z-index:200;padding:8px 12px;border:1px solid #35505f;background:#10232d;border-radius:4px;font-size:11px;transition:.15s}.toast.show{opacity:1;transform:translate(-50%,0)}.toast.error{border-color:#6d3440}.toast.warning{border-color:#6b5a2e}
-/* JointJS schematic styling */
-.joint-paper{background:transparent!important}.joint-cell [joint-selector="body"],.joint-cell [joint-selector="header"]{shape-rendering:geometricPrecision}.joint-link .connection{shape-rendering:geometricPrecision}.joint-link:hover [joint-selector="line"]{stroke-width:2.1!important}.joint-link-tools .tool-remove circle{fill:#8f3c4b}.joint-port-body[joint-selector="portBody"]{transition:r .1s,stroke-width .1s}.joint-port-body[joint-selector="portBody"]:hover{r:6;stroke-width:2.3}.available-magnet{stroke:#f0c35e!important;stroke-width:2.4!important}.available-cell [joint-selector="body"]{stroke:#f0c35e!important}
-@media(max-width:1050px){:root{--left-w:220px;--right-w:310px}.tool .label{display:none}.brand{min-width:auto}.brand small{display:none}.file-label{max-width:110px}}
+@layer ui{
+  #app{height:100%;display:grid;grid-template-rows:var(--bar-h) 1fr var(--status-h);background:var(--bg)}
+  .topbar{display:flex;align-items:center;gap:4px;padding:5px 8px;background:#0b1821;border-bottom:1px solid var(--line);z-index:30}
+  .brand{display:flex;align-items:center;gap:8px;margin-right:5px;min-width:178px;font:700 12px var(--mono);letter-spacing:.08em;white-space:nowrap;
+    .brand-mark{width:18px;height:18px;border:1px solid var(--accent);display:grid;place-items:center;color:var(--accent);font-size:11px}
+    small{font-weight:400;color:var(--muted);letter-spacing:0}
+  }
+  .tool-group{display:flex;align-items:center;gap:3px;padding-right:5px;margin-right:3px;border-right:1px solid var(--line);
+    &:last-of-type{border-right:0}
+  }
+  .spacer{flex:1}
+  button.tool{height:32px;min-width:32px;padding:0 9px;border:1px solid transparent;background:transparent;border-radius:4px;color:#b9cad3;font-size:12px;display:inline-flex;align-items:center;justify-content:center;gap:6px;
+    &:hover{background:#142630;border-color:#2d4655;color:#fff}
+    &:active{transform:translateY(1px)}
+    &.primary{background:#174b44;border-color:#2e796d;color:#dffaf3}
+    &.danger{color:#f096a3}
+    &:disabled{opacity:.35;cursor:default}
+  }
+  .icon{font:15px var(--mono);line-height:1}
+  .file-label{max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font:10px var(--mono);padding:0 6px}
+  .workspace{min-height:0;display:grid;grid-template-columns:var(--left-w) 5px minmax(0,1fr) 5px var(--right-w);transition:grid-template-columns .16s ease}
+  #app.left-closed .workspace{grid-template-columns:0 0 minmax(0,1fr) 5px var(--right-w)}
+  #app.right-closed .workspace{grid-template-columns:var(--left-w) 5px minmax(0,1fr) 0 0}
+  #app.left-closed.right-closed .workspace{grid-template-columns:0 0 minmax(0,1fr) 0 0}
+  .panel{min-width:0;min-height:0;background:var(--panel);display:flex;flex-direction:column;overflow:hidden}
+  .left-panel{border-right:1px solid var(--line)}
+  .right-panel{border-left:1px solid var(--line)}
+  #app.left-closed .left-panel,#app.right-closed .right-panel{visibility:hidden}
+  .resizer{background:#09141c;cursor:col-resize;position:relative;
+    &:hover,&:active{background:#214252}
+    &:after{content:"";position:absolute;inset:0 -3px}
+  }
+  .panel-head{height:38px;flex:none;display:flex;align-items:center;gap:8px;padding:0 10px;border-bottom:1px solid var(--line);font:700 10px var(--mono);letter-spacing:.12em;color:#a9bdc8;text-transform:uppercase;
+    .count{margin-left:auto;color:var(--muted);font-weight:400;letter-spacing:0}
+  }
+  .panel-body{padding:9px;overflow:auto;min-height:0}
+  .search{width:100%;height:34px;border:1px solid var(--line2);background:#071118;border-radius:4px;padding:0 9px;outline:none;font-size:12px;
+    &:focus{border-color:#477486}
+  }
+  .node-list{display:flex;flex-direction:column;gap:2px;margin-top:8px}
+  .node-item{width:100%;display:grid;grid-template-columns:10px 1fr auto;align-items:center;gap:8px;text-align:left;border:1px solid transparent;border-radius:4px;background:transparent;padding:7px 8px;color:#cbd9e1;
+    &:hover{background:#10222d}
+    &.selected{background:#14303b;border-color:#315565}
+    .node-led{width:6px;height:6px;border-radius:50%;background:var(--blue)}
+    .node-led.endpoint{background:#a779be}
+    .node-item-main{display:flex;flex-direction:column;gap:2px;min-width:0;
+      b{font:11px var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+      small{font:9px var(--mono);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    }
+    .node-count{font:9px var(--mono);color:var(--muted)}
+  }
+  .canvas{position:relative;min-width:0;min-height:0;overflow:hidden;background:#071017}
+  #paper{position:absolute;inset:0;display:block;touch-action:none}
+  .canvas-hud{position:absolute;left:10px;bottom:10px;display:flex;gap:4px;z-index:8;
+    button{width:30px;height:28px;border:1px solid var(--line2);background:#0c1c26;border-radius:4px;color:#b9cbd4;
+      &:hover{background:#15303d}
+    }
+  }
+  .canvas-help{position:absolute;right:10px;bottom:10px;max-width:420px;padding:7px 9px;border:1px solid #263f4d;background:#08141cdd;border-radius:4px;color:#718a99;font-size:10px;line-height:1.4;pointer-events:none}
+  .inspector-tabs{height:38px;display:flex;align-items:end;border-bottom:1px solid var(--line);padding:0 8px;flex:none}
+  .inspector-tab{height:38px;border:0;border-bottom:2px solid transparent;background:transparent;color:#7f97a5;padding:0 9px;font-size:11px;
+    &:hover{color:#c4d4dc}
+    &.active{color:#e7f1f5;border-color:var(--accent)}
+  }
+  #inspector{padding:10px;overflow:auto;min-height:0}
+  .field{display:block;margin-bottom:11px;
+    >span{display:block;margin-bottom:5px;color:#849ba8;font:9px var(--mono);letter-spacing:.08em;text-transform:uppercase}
+    small{display:block;margin-top:4px;color:#6d8593;font-size:10px}
+    input,select,textarea{width:100%;border:1px solid var(--line2);background:#071118;border-radius:4px;padding:7px 8px;outline:none;font-size:12px}
+    input,select{height:34px}
+    textarea{min-height:120px;resize:vertical;line-height:1.45}
+    textarea.tall{min-height:390px}
+    textarea.code{font:11px/1.5 var(--mono);tab-size:4}
+    input:focus,select:focus,textarea:focus{border-color:#4a788a}
+  }
+  .section-title{margin:15px 0 7px;padding-bottom:5px;border-bottom:1px solid var(--line);color:#9db1bc;font:700 9px var(--mono);letter-spacing:.1em;text-transform:uppercase}
+  .actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px;
+    button{height:31px;border:1px solid var(--line2);background:#10212b;border-radius:4px;padding:0 9px;font-size:11px;
+      &:hover{background:#17303c}
+      &.primary{border-color:#347e70;background:#17483f}
+      &.danger{border-color:#6d3440;color:#f095a2;background:#24171b}
+    }
+  }
+  .pin-list{display:flex;flex-direction:column;gap:4px}
+  .pin-row{display:grid;grid-template-columns:8px minmax(0,1fr) 75px 26px;gap:6px;align-items:center;min-height:30px;
+    .pin-dot{width:6px;height:6px;border-radius:50%;background:var(--blue)}
+    .pin-dot.out{background:var(--accent)}
+    .pin-name{font:10px var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    select{height:27px;border:1px solid var(--line2);background:#09151d;border-radius:3px;font-size:10px}
+  }
+  .icon-btn{width:25px;height:25px;border:1px solid transparent;background:transparent;color:#849aa7;border-radius:3px;
+    &:hover{border-color:#613942;color:#f292a0}
+  }
+  .note,.muted{color:#728996;font-size:10px;line-height:1.5}
+  .empty-state{display:grid;place-items:center;text-align:center;gap:8px;padding:45px 20px;color:#8197a4;
+    b{color:#c6d5dc;font-size:12px}
+    p{margin:0;max-width:250px;font-size:10px;line-height:1.55}
+    .empty-icon{font:30px var(--mono);color:#4b6f80}
+  }
+  .statusbar{height:var(--status-h);display:flex;align-items:center;gap:12px;padding:0 9px;border-top:1px solid var(--line);background:#08131a;color:#718895;font:9px var(--mono);
+    .spacer{flex:1}
+    .ok{color:var(--accent)}
+    .warning{color:var(--warn)}
+    .error{color:var(--danger)}
+  }
+  dialog{width:min(650px,92vw);max-height:80vh;background:#0c1821;color:var(--text);border:1px solid #35505f;border-radius:6px;box-shadow:0 24px 80px #000b;padding:0;
+    &::backdrop{background:#000a}
+    .modal-title{height:44px;padding:0 13px;display:flex;align-items:center;border-bottom:1px solid var(--line);font-size:13px}
+    .modal-body{padding:14px;overflow:auto;max-height:60vh}
+    .modal-actions{display:flex;justify-content:flex-end;gap:6px;padding:10px 13px;border-top:1px solid var(--line);
+      button{height:32px;border:1px solid var(--line2);background:#10212b;border-radius:4px;padding:0 12px;
+        &.primary{background:#17483f;border-color:#347e70}
+        &.danger{background:#24171b;border-color:#6d3440;color:#f095a2}
+      }
+    }
+  }
+  .issue-list{display:flex;flex-direction:column;gap:6px}
+  .issue{display:grid;grid-template-columns:70px 1fr;gap:8px;padding:8px;border:1px solid var(--line2);background:#09141c;border-radius:4px;font:10px/1.45 var(--mono);
+    &.error{border-color:#66333d}
+    &.warning{border-color:#67572c}
+    b{color:#8fa5b1}
+    &.error b{color:var(--danger)}
+    &.warning b{color:var(--warn)}
+  }
+  .toast{position:fixed;left:50%;bottom:38px;transform:translate(-50%,12px);opacity:0;pointer-events:none;z-index:200;padding:8px 12px;border:1px solid #35505f;background:#10232d;border-radius:4px;font-size:11px;transition:.15s;
+    &.show{opacity:1;transform:translate(-50%,0)}
+    &.error{border-color:#6d3440}
+    &.warning{border-color:#6b5a2e}
+  }
+  @container (max-width:1050px){:root{--left-w:220px;--right-w:310px}}
+}
 </style>
 </head>
 <body>
@@ -50,9 +159,8 @@ button.tool:hover{background:#142630;border-color:#2d4655;color:white}button.too
     <button id="leftToggle" class="tool" title="Toggle component list"><span class="icon">☰</span></button>
     <div class="brand"><span class="brand-mark">W</span><span>WIRING LAB <small>schematic editor</small></span></div>
     <div class="tool-group">
-      <button id="openBtn" class="tool" title="Open JSON"><span class="icon">↥</span><span class="label">Open</span></button>
-      <button id="openWritableBtn" class="tool" title="Open a writable JSON file"><span class="icon">↥</span><span class="label">Writable</span></button>
-      <button id="saveBtn" class="tool primary" title="Save project JSON"><span class="icon">⌁</span><span class="label">Save</span></button>
+      <button id="openBtn" class="tool" title="Open a writable JSON file"><span class="icon">↥</span><span class="label">Open</span></button>
+      <button id="saveBtn" class="tool primary" title="Save (Ctrl+S)"><span class="icon">⌁</span><span class="label">Save</span></button>
       <button id="folderBtn" class="tool" title="Connect source folder"><span class="icon">▣</span><span class="label">Source</span></button>
     </div>
     <div class="tool-group">
@@ -65,10 +173,10 @@ button.tool:hover{background:#142630;border-color:#2d4655;color:white}button.too
       <button id="deleteBtn" class="tool danger" title="Delete selected"><span class="icon">×</span></button>
     </div>
     <div class="tool-group">
-      <button id="undoBtn" class="tool" title="Undo"><span class="icon">↶</span></button>
-      <button id="redoBtn" class="tool" title="Redo"><span class="icon">↷</span></button>
-      <button id="layoutBtn" class="tool" title="Auto layout"><span class="icon">⌘</span><span class="label">Layout</span></button>
-      <button id="fitBtn" class="tool" title="Fit diagram"><span class="icon">◎</span></button>
+      <button id="undoBtn" class="tool" title="Undo (Ctrl+Z)"><span class="icon">↶</span></button>
+      <button id="redoBtn" class="tool" title="Redo (Ctrl+Y)"><span class="icon">↷</span></button>
+      <button id="layoutBtn" class="tool" title="Auto layout (L)"><span class="icon">⌘</span><span class="label">Layout</span></button>
+      <button id="fitBtn" class="tool" title="Fit diagram (F)"><span class="icon">◎</span></button>
       <button id="validateBtn" class="tool" title="Validate"><span class="icon">✓</span></button>
     </div>
     <div class="spacer"></div><div id="fileLabel" class="file-label"></div>
@@ -82,9 +190,9 @@ button.tool:hover{background:#142630;border-color:#2d4655;color:white}button.too
     </aside>
     <div class="resizer" data-side="left"></div>
     <main class="canvas">
-      <div id="paper"></div>
-      <div class="canvas-hud"><button id="zoomIn" title="Zoom in">+</button><button id="zoomOut" title="Zoom out">−</button><button id="fitBtn2" title="Fit" onclick="document.getElementById('fitBtn').click()">◎</button></div>
-      <div class="canvas-help">Drag an output pin onto any component body. Select a wire to drag its endpoint or route handles. Crossing wires use schematic jump bridges.</div>
+      <canvas id="paper"></canvas>
+      <div class="canvas-hud"><button id="zoomIn" title="Zoom in">+</button><button id="zoomOut" title="Zoom out">−</button><button id="fitBtn2" title="Fit">◎</button></div>
+      <div class="canvas-help">Drag an output pin onto any component to wire it. Pins sit on all four sides; wires route Manhattan-style. Space+drag or middle-drag to pan, wheel to zoom.</div>
     </main>
     <div class="resizer" data-side="right"></div>
     <aside id="rightPanel" class="panel right-panel">
@@ -95,29 +203,852 @@ button.tool:hover{background:#142630;border-color:#2d4655;color:white}button.too
 
   <footer class="statusbar"><span id="statusText">Ready</span><span class="spacer"></span><span id="zoomLabel">100%</span></footer>
 </div>
-<input id="fileInput" type="file" accept="application/json,.json" hidden>
-<div id="modal" class="modal-back"><div class="modal"><div id="modalTitle" class="modal-title"></div><div id="modalBody" class="modal-body"></div><div id="modalActions" class="modal-actions"></div></div></div>
+<dialog id="modal"><div id="modalTitle" class="modal-title"></div><div id="modalBody" class="modal-body"></div><div id="modalActions" class="modal-actions"></div></dialog>
 <div id="toast" class="toast"></div>
-<script src="https://cdn.jsdelivr.net/npm/@dagrejs/dagre@1.1.5/dist/dagre.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@joint/core@4.0.4/dist/joint.min.js"></script>
-<script>(()=>{var Vp={schema:"endgame-ai.wiring",model:{transport:"transport_xai",transport_config:{transport_xai:{}},global:{},stable_prefix:{enabled:!1,include_in_request:!1,source:{suffixes:[],names:[],skip_parts:[],skip_prefixes:[]}},organs:{}},paths:{nodes:".",brains:".",state:"runtime_state.json",control:"runtime_control.json",caps:".",guidance:"guidance.txt"},control_default:{mode:"run",step_token:0,updated_at:0},observe_config:{hover_cache:{enabled:!1,scan:{step_px:64,delay_ms:0,max_subtree_nodes_per_point:1,max_total_nodes:1},filter:{max_elements:1,max_per_window:1,max_text:1,require_interactive:!1}}},self_modify:{context_mode:"checked_out_branch",known_good_ref:"refs/endgame/known_good",hot_swap_on_failure:!0,execution:{rollback_on_failure:!0},git:{remote:"origin",push_after_commit:!1},web_search:{},evolvable:{suffixes:[],names:[],skip_prefixes:[],activation:{immediate:[],next_run:[]}}},topology:{cycle_start:"node_guidance:plan",nodes:["node_guidance:plan","node_satisfied"],edges:{"node_guidance:plan":{attend:"node_satisfied",error:"node_satisfied"},node_satisfied:{halt:"halt"}},barriers:{}},prompts:{"node_guidance:plan":"",node_satisfied:""},prompt_aliases:{},shared_prompt_prefix:"",record_contracts:{},capabilities:{schema:"endgame-ai.execute-capabilities.v1",power:"",helpers:{},modules:[],state:[],signals:[],faculties:{}},fractal:{max_recursion_depth:0,child_duration_seconds:0}},Q=(t,e=document)=>e.querySelector(t),tr=(t,e=document)=>[...e.querySelectorAll(t)],Vn=t=>structuredClone(t),zt=(t="")=>String(t).replace(/[&<>'"]/g,e=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"})[e]),Qs=(t,e,n)=>Math.max(e,Math.min(n,t)),kP=t=>String(t||"wiring").replace(/[^a-z0-9._-]+/gi,"_"),Dp=(t,e=30)=>String(t).length>e?String(t).slice(0,e-1)+"\u2026":String(t),Dn=t=>btoa(unescape(encodeURIComponent(String(t)))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,""),MP=t=>{let e=String(t).replace(/-/g,"+").replace(/_/g,"/");return e+="=".repeat((4-e.length%4)%4),decodeURIComponent(escape(atob(e)))},OP=Q("#app"),pi=Q("#paper"),hO=Q("#leftPanel"),fO=Q("#rightPanel"),In=Q("#inspector"),Op=Q("#nodeList"),Zs=Q("#fileInput"),Js=Q("#modal"),NP=Q("#modalTitle"),RP=Q("#modalBody"),Np=Q("#modalActions"),_={wiring:Vn(Vp),filename:"wiring.json",fileHandle:null,dirHandle:null,dirty:!1,selected:null,tab:"properties",codeByFile:{},history:[],future:[],restoring:!1,suppressGraph:!1,editor:{version:2,nodes:{},pins:{},links:{},floatingOutputs:{}},zoom:1,pan:{x:0,y:0},space:!1,panning:null};function to(){let t=_.wiring;t.topology||={},t.topology.nodes||=[],t.topology.edges||={},t.topology.barriers||={},t.prompts||={},t.prompt_aliases||={},t.node_defs||={},"shared_prompt_prefix"in t||(t.shared_prompt_prefix="")}function Se(){return to(),_.wiring.topology.nodes}function le(){return to(),_.wiring.topology.edges}function IP(t){return String(t).split(":")[0]}function ll(t){return t&&!er(t)?`${IP(t)}.py`:""}function gi(t){return _.wiring.prompt_aliases?.[t]||t}function er(t){return!Se().includes(t)}function gn(t,e,n,r){_.editor.pins[t]||={in:{},out:{}};let i=_.editor.pins[t][e];return i[n]||={side:r,order:Object.keys(i).length}}function VP(t,e,n){return`${t}\u241F${e}\u241F${n}`}function Bp(t){let[e,n,r]=String(t).split("\u241F");return{source:e,signal:n,index:+r}}function en(){let t=[];for(let[e,n]of Object.entries(le()))for(let[r,i]of Object.entries(n||{}))(Array.isArray(i)?i:i==null?[]:[i]).forEach((o,l)=>t.push({key:VP(e,r,l),source:e,signal:r,target:o,index:l}));return t}function eo(){let t=new Set(Se());return[...new Set(en().map(e=>e.target).filter(e=>!t.has(e)))]}function mn(){return[...Se(),...eo()]}function mi(t){let e=Object.keys(le()[t]||{}),n=_.editor.floatingOutputs[t]||[];return[...new Set([...e,...n])]}function cl(t,e){let n=le()[t]?.[e];return Array.isArray(n)?[...n]:n==null?[]:[n]}function no(t,e,n,r=!0){le()[t]||={},n.length?(le()[t][e]=n.length===1?n[0]:n,_.editor.floatingOutputs[t]=(_.editor.floatingOutputs[t]||[]).filter(i=>i!==e)):(delete le()[t][e],r&&(_.editor.floatingOutputs[t]||=[],_.editor.floatingOutputs[t].includes(e)||_.editor.floatingOutputs[t].push(e)))}function Fp(t,e,n){let r=cl(t,e);r.push(n),no(t,e,r,!1)}function ul(t,e=!0){let{source:n,signal:r,index:i}=Bp(t),s=cl(n,r);i>=0&&i<s.length&&s.splice(i,1),no(n,r,s,e),delete _.editor.links[t];for(let o of Object.values(_.editor.pins))o?.in&&delete o.in[t]}function zp(t,{source:e,target:n,signal:r}){let i=Bp(t),s=cl(i.source,i.signal);i.index>=0&&i.index<s.length&&s.splice(i.index,1),no(i.source,i.signal,s,!0),Fp(e,r,n)}function DP(t){let e=Vn(t);return delete e.__wiring_lab,e}function Gp(){let t=Vn(_.wiring);return t.__wiring_lab=Vn(_.editor),t}function hl(t,e="wiring.json"){if(!t||typeof t!="object")throw new Error("JSON root must be an object.");_.wiring=Vn(t),_.editor=Vn(t.__wiring_lab||{version:2,nodes:{},pins:{},links:{},floatingOutputs:{}}),delete _.wiring.__wiring_lab,_.editor.version||=2,_.editor.nodes||={},_.editor.pins||={},_.editor.links||={},_.editor.floatingOutputs||={},_.filename=e,_.selected=null,to(),BP();let n=mn().some(r=>!_.editor.nodes[r]);_.history=[],_.future=[],_.dirty=!1,fl(!1),n&&vi(!1),Lr(),og(`Loaded ${e}`,"ok")}function BP(){for(let t of Object.keys(_.editor.nodes))mn().includes(t)||delete _.editor.nodes[t];for(let t of Object.keys(_.editor.pins))mn().includes(t)||delete _.editor.pins[t];for(let t of Object.keys(_.editor.floatingOutputs))Se().includes(t)||delete _.editor.floatingOutputs[t]}function Sr(){return JSON.stringify({w:_.wiring,e:_.editor,s:_.selected})}function Up(){if(_.restoring)return;let t=Sr();_.history.at(-1)!==t&&(_.history.push(t),_.history.length>80&&_.history.shift(),_.future=[],_.dirty=!0,dl())}function Hp(t){let e=JSON.parse(t);_.restoring=!0,_.wiring=e.w,_.editor=e.e,_.selected=e.s,to(),fl(!1),Lr(),_.restoring=!1,_.dirty=!0}function qp(){_.history.length&&(_.future.push(Sr()),Hp(_.history.pop()))}function ol(){_.future.length&&(_.history.push(Sr()),Hp(_.future.pop()))}function xe(t){let e=Sr();t(),Sr()!==e&&(_.history.push(e),_.history.length>80&&_.history.shift(),_.future=[],_.dirty=!0),fl(!1),Lr()}var FP=[{tagName:"circle",selector:"portBody"}],zP=[{tagName:"text",selector:"portLabel"}];function He(t,e){let n=t==="left"?"right":t==="right"?"left":t==="top"?"bottom":"top",r=t==="left"?{x:11}:t==="right"?{x:-11}:t==="top"?{y:11}:{y:-11},i=e==="out";return{position:{name:t},markup:FP,attrs:{portBody:{r:4.2,magnet:i?!0:"passive",fill:"#071018",stroke:i?"#53d8b5":"#6ea8ff",strokeWidth:1.7,cursor:i?"crosshair":"default"}},label:{position:{name:n,args:r},markup:zP}}}var $p=joint.dia.Element.define("lab.Node",{size:{width:286,height:150},attrs:{body:{width:"calc(w)",height:"calc(h)",rx:4,ry:4,fill:"#10202b",stroke:"#3d5868",strokeWidth:1.2,magnet:"passive",portId:"",cursor:"move"},header:{x:0,y:0,width:"calc(w)",height:34,fill:"#142b38",stroke:"#3d5868",strokeWidth:1.2},title:{x:13,y:21,fill:"#edf7fb",fontFamily:"ui-monospace, SFMono-Regular, Consolas, monospace",fontWeight:700,fontSize:12.5,textAnchor:"start"},subtitle:{x:13,y:52,fill:"#8199a8",fontFamily:"ui-monospace, SFMono-Regular, Consolas, monospace",fontSize:10.5,textAnchor:"start"},alias:{x:13,y:69,fill:"#667f8d",fontFamily:"ui-monospace, SFMono-Regular, Consolas, monospace",fontSize:9.5,textAnchor:"start"},startBadge:{x:"calc(w-8)",y:21,fill:"#52d7b6",fontFamily:"ui-monospace, SFMono-Regular, Consolas, monospace",fontSize:9,textAnchor:"end"}},ports:{groups:{"in-left":He("left","in"),"in-right":He("right","in"),"in-top":He("top","in"),"in-bottom":He("bottom","in"),"out-left":He("left","out"),"out-right":He("right","out"),"out-top":He("top","out"),"out-bottom":He("bottom","out")}}},{markup:[{tagName:"rect",selector:"body"},{tagName:"rect",selector:"header"},{tagName:"text",selector:"title"},{tagName:"text",selector:"subtitle"},{tagName:"text",selector:"alias"},{tagName:"text",selector:"startBadge"}]}),jp=joint.dia.Element.define("lab.Endpoint",{size:{width:190,height:82},attrs:{body:{width:"calc(w)",height:"calc(h)",rx:4,ry:4,fill:"#211b2a",stroke:"#75598a",strokeWidth:1.2,magnet:"passive",portId:"",cursor:"move"},title:{x:14,y:26,fill:"#eadff1",fontFamily:"ui-monospace, SFMono-Regular, Consolas, monospace",fontWeight:700,fontSize:12.5},subtitle:{x:14,y:49,fill:"#9a83a8",fontFamily:"ui-monospace, SFMono-Regular, Consolas, monospace",fontSize:10,text:"terminal endpoint"}},ports:{groups:{"in-left":He("left","in"),"in-right":He("right","in"),"in-top":He("top","in"),"in-bottom":He("bottom","in")}}},{markup:[{tagName:"rect",selector:"body"},{tagName:"text",selector:"title"},{tagName:"text",selector:"subtitle"}]}),Wp={...joint.shapes,lab:{Node:$p,Endpoint:jp}},re=new joint.dia.Graph({},{cellNamespace:Wp}),Ot=new joint.dia.Paper({el:pi,model:re,width:"100%",height:"100%",async:!0,cellViewNamespace:Wp,sorting:joint.dia.Paper.sorting.EXACT,background:{color:"transparent"},gridSize:10,defaultLink:()=>Yp(),linkPinning:!1,snapLinks:{radius:30},markAvailable:!0,validateMagnet:(t,e)=>e.getAttribute("magnet")!=="passive",validateConnection:(t,e,n,r,i,s)=>{if(!e||!n||!r||t===n&&!s?.model?.get("linkKey")||!e.getAttribute("port")?.startsWith("out:"))return!1;let l=r.getAttribute("port");return!(l?.startsWith("out:")||l?.startsWith("in:")&&re.getConnectedLinks(n.model,{inbound:!0}).filter(c=>c!==s?.model&&c.target().port===l).length)},interactive:t=>t.model.isLink()?{vertexAdd:!0,vertexMove:!0,labelMove:!1,arrowheadMove:!0}:!0});function Yp(t=null){let e=t?.signal||"",n=/error|denied|failed|unresolved/i.test(e),r=new joint.shapes.standard.Link({z:1,attrs:{line:{stroke:n?"#bd5b73":"#607f98",strokeWidth:1.35,strokeLinejoin:"round",strokeLinecap:"round",targetMarker:{type:"path",d:"M 5 -3 0 0 5 3 z",fill:n?"#bd5b73":"#607f98",stroke:"none"}},wrapper:{strokeWidth:12,stroke:"transparent"}},router:{name:"manhattan",args:{step:12,padding:24,maximumLoops:500,excludeEnds:["source","target"],excludeTypes:["lab.Endpoint"]}},connector:{name:"jumpover",args:{size:8,jump:"arc",radius:1}}});if(t){r.set({linkKey:t.key,signal:t.signal,sourceNode:t.source,targetNode:t.target});let i=_.editor.links[t.key]?.vertices;i?.length&&r.vertices(i)}else r.set("isDraft",!0);return r}function Xp(t){return`out:${Dn(t)}`}function Kp(t){return`in:${Dn(t)}`}function Rp(t,e){return{portLabel:{text:Dp(t,e==="left"||e==="right"?31:17),fill:"#cbd9e1",fontFamily:"ui-monospace, SFMono-Regular, Consolas, monospace",fontSize:9.5,textAnchor:e==="left"?"start":e==="right"?"end":"middle",textVerticalAnchor:"middle",pointerEvents:"none"}}}function al(t){if(er(t))return{width:190,height:82};let e=en().filter(o=>o.target===t),n=mi(t),r={left:0,right:0,top:0,bottom:0};e.forEach(o=>r[gn(t,"in",o.key,dO(o.source,t)).side]++),n.forEach(o=>r[gn(t,"out",o,mO(t,cl(t,o))).side]++);let i=Math.max(r.left,r.right),s=Math.max(r.top,r.bottom);return{width:Math.max(286,120+s*52),height:Math.max(118,84+i*26)}}function GP(t){return _.editor.nodes[t]||={x:80+Object.keys(_.editor.nodes).length*38,y:80+Object.keys(_.editor.nodes).length*28}}function UP(t){let e=er(t),n=al(t),r=GP(t),i=e?jp:$p,s=new i({id:`node:${Dn(t)}`,position:r,size:n,z:10,nodeId:t,endpoint:e});e?s.attr({title:{text:t}}):s.attr({title:{text:t},subtitle:{text:ll(t)},alias:{text:gi(t)!==t?`prompt \u2192 ${gi(t)}`:""},startBadge:{text:_.wiring.topology.cycle_start===t?"START":""}});let o=[];return e||mi(t).forEach(l=>{let a=gn(t,"out",l,mO(t,cl(t,l)));o.push({id:Xp(l),group:`out-${a.side}`,signal:l,kind:"out",attrs:Rp(l,a.side)})}),en().filter(l=>l.target===t).forEach(l=>{let a=gn(t,"in",l.key,dO(l.source,t)),c=l.signal;o.push({id:Kp(l.key),group:`in-${a.side}`,linkKey:l.key,kind:"in",attrs:Rp(c,a.side)})}),s.addPorts(o),s}function dO(t,e){let n=_.editor.nodes[t],r=_.editor.nodes[e];if(!n||!r)return t===e?"right":"left";let i=n.x-r.x,s=n.y-r.y;return Math.abs(i)>=Math.abs(s)?i<0?"left":"right":s<0?"top":"bottom"}function mO(t,e){let n=_.editor.nodes[t];if(!n)return"right";let r=(Array.isArray(e)?e:e==null?[]:[e]).map(o=>_.editor.nodes[o]).filter(o=>o&&o!==n),i=0,s=0;r.forEach(o=>{i+=o.x-n.x,s+=o.y-n.y}),!r.length&&(i=1);return Math.abs(i)>=Math.abs(s)?i<0?"left":"right":s<0?"top":"bottom"}function fl(t=!1){_.suppressGraph=!0,re.resetCells([]);let e=mn().map(UP);re.addCells(e);for(let n of en()){let r=re.getCell(`node:${Dn(n.source)}`),i=re.getCell(`node:${Dn(n.target)}`);if(!r||!i)continue;let s=Yp(n);s.source({id:r.id,port:Xp(n.signal)}),s.target({id:i.id,port:Kp(n.key)}),re.addCell(s)}_.suppressGraph=!1,t&&mn().some(n=>!_.editor.nodes[n])&&vi(!1),Zp()}function vi(t=!0){let e=new dagre.graphlib.Graph({multigraph:!0}).setGraph({rankdir:"LR",ranksep:82,nodesep:42,edgesep:18,marginx:38,marginy:38,ranker:"network-simplex"}).setDefaultEdgeLabel(()=>({}));for(let i of mn()){let s=al(i);e.setNode(i,{width:s.width,height:s.height})}let n=en(),r=n.filter(i=>!/^(error|wait|retry|replan|reflect|escalate|topology_patch|spawn|modify_failed|repair_unresolved|step_denied)$/i.test(i.signal));(r.length?r:n).forEach((i,s)=>e.setEdge(i.source,i.target,{},`${i.signal}:${s}`)),dagre.layout(e),re.startBatch("layout");for(let i of mn()){let s=e.node(i),o=al(i),l={x:s.x-o.width/2,y:s.y-o.height/2};_.editor.nodes[i]=l,re.getCell(`node:${Dn(i)}`)?.position(l.x,l.y)}re.stopBatch("layout"),t&&Up(),setTimeout(ro,50)}function ro(){try{Ot.scaleContentToFit({padding:70,minScale:.25,maxScale:1.25,preserveAspectRatio:!0}),_.zoom=Ot.scale().sx,yi()}catch{}}function HP(t){let e=re.getCell(`node:${Dn(t)}`);if(!e)return;let n=e.getBBox(),r=pi.getBoundingClientRect(),i=Ot.scale().sx;Ot.translate(r.width/2-(n.x+n.width/2)*i,r.height/2-(n.y+n.height/2)*i)}function io(t){_.selected=t,Zp(),Lr()}function Zp(){if(re.getElements().forEach(t=>t.attr("body/stroke",t.get("endpoint")?"#75598a":"#3d5868")),re.getLinks().forEach(t=>t.attr("line/strokeWidth",1.35)),tr(".joint-tools-layer").forEach(t=>t.remove()),!!_.selected){if(_.selected.type==="node"){let t=re.getCell(`node:${Dn(_.selected.id)}`);t&&t.attr("body/stroke","#52d7b6")}if(_.selected.type==="link"){let t=re.getLinks().find(r=>r.get("linkKey")===_.selected.key);if(!t)return;t.attr("line/strokeWidth",2.3);let e=Ot.findViewByModel(t);if(!e)return;let n=new joint.dia.ToolsView({tools:[new joint.linkTools.Vertices({snapRadius:8}),new joint.linkTools.Segments,new joint.linkTools.SourceArrowhead,new joint.linkTools.TargetArrowhead,new joint.linkTools.Remove({distance:"50%",offset:0,action:()=>xe(()=>ul(_.selected.key,!0))})]});e.addTools(n)}}}Ot.on("element:pointerdown",t=>t.model.set("_beforeDrag",Sr(),{silent:!0}));Ot.on("element:pointerclick",t=>io({type:"node",id:t.model.get("nodeId")}));Ot.on("link:pointerclick",t=>{let e=t.model.get("linkKey");e&&io({type:"link",key:e})});Ot.on("blank:pointerclick",()=>io(null));Ot.on("element:pointerup",t=>{let e=t.model.get("nodeId"),n=t.model.position();if(e&&(_.editor.nodes[e]?.x!==n.x||_.editor.nodes[e]?.y!==n.y)){let r=t.model.get("_beforeDrag");_.editor.nodes[e]={x:n.x,y:n.y},r&&(_.history.push(r),_.history.length>80&&_.history.shift(),_.future=[],_.dirty=!0),Lr()}t.model.unset("_beforeDrag",{silent:!0})});re.on("change:vertices",(t,e)=>{if(_.suppressGraph)return;let n=t.get("linkKey");n&&(_.editor.links[n]||={},_.editor.links[n].vertices=Vn(e),Up())});Ot.on("link:connect",(t,e,n,r,i)=>{let s=t.model,o=s.source(),l=s.target(),a=re.getCell(o.id)?.get("nodeId"),c=re.getCell(l.id)?.get("nodeId");if(!a||!c)return;let u="";if(o.port?.startsWith("out:")&&(u=MP(o.port.slice(4))),!u)return;let h=s.get("linkKey");xe(()=>{h?zp(h,{source:a,signal:u,target:c}):Fp(a,u,c);let p=qP(a,c),g=en().filter(v=>v.source===a&&v.signal===u&&v.target===c).at(-1);g&&(gn(c,"in",g.key,p).side=p)})});function qP(t,e){let n=_.editor.nodes[t]||{x:0,y:0},r=_.editor.nodes[e]||{x:0,y:0},i=n.x-r.x,s=n.y-r.y;return Math.abs(i)>Math.abs(s)?i<0?"left":"right":s<0?"top":"bottom"}pi.addEventListener("wheel",t=>{t.preventDefault();let e=Ot.scale().sx,n=Qs(e*(t.deltaY<0?1.1:.9),.2,2.2),r=pi.getBoundingClientRect(),i=t.clientX-r.left,s=t.clientY-r.top,o=Ot.translate(),l=(i-o.tx)/e,a=(s-o.ty)/e;Ot.scale(n,n),Ot.translate(i-l*n,s-a*n),_.zoom=n,yi()},{passive:!1});Ot.on("blank:pointerdown",t=>{if(t.button===1||_.space){let e=Ot.translate();_.panning={x:t.clientX,y:t.clientY,tx:e.tx,ty:e.ty},t.preventDefault()}});window.addEventListener("pointermove",t=>{_.panning&&Ot.translate(_.panning.tx+t.clientX-_.panning.x,_.panning.ty+t.clientY-_.panning.y)});window.addEventListener("pointerup",()=>_.panning=null);window.addEventListener("keydown",t=>{t.code==="Space"&&(_.space=!0),(t.ctrlKey||t.metaKey)&&t.key.toLowerCase()==="z"&&(t.preventDefault(),t.shiftKey?ol():qp()),(t.ctrlKey||t.metaKey)&&t.key.toLowerCase()==="y"&&(t.preventDefault(),ol()),t.key==="Delete"&&!["INPUT","TEXTAREA","SELECT"].includes(document.activeElement.tagName)&&eg(),t.key.toLowerCase()==="f"&&!["INPUT","TEXTAREA"].includes(document.activeElement.tagName)&&ro(),t.key.toLowerCase()==="l"&&!["INPUT","TEXTAREA"].includes(document.activeElement.tagName)&&vi()});window.addEventListener("keyup",t=>{t.code==="Space"&&(_.space=!1)});function Lr(){Jp(),pl(),dl()}function dl(){Q("#fileLabel").textContent=(_.dirty?"\u25CF ":"")+_.filename,Q("#counts").textContent=`${Se().length} nodes \xB7 ${en().length} wires \xB7 ${eo().length} endpoints`,Q("#undoBtn").disabled=!_.history.length,Q("#redoBtn").disabled=!_.future.length,yi()}function yi(){let t=Ot.scale().sx||1;Q("#zoomLabel").textContent=`${Math.round(t*100)}%`}function Jp(){let t=Q("#nodeSearch").value.trim().toLowerCase();Op.innerHTML=mn().filter(e=>e.toLowerCase().includes(t)).map(e=>{let n=er(e);return`<button class="node-item ${_.selected?.type==="node"&&_.selected.id===e?"selected":""}" data-node="${zt(e)}"><span class="node-led ${n?"endpoint":""}"></span><span class="node-item-main"><b>${zt(e)}</b><small>${zt(n?"endpoint":ll(e))}</small></span><span class="node-count">${n?"END":mi(e).length}</span></button>`}).join(""),tr(".node-item",Op).forEach(e=>e.onclick=()=>{io({type:"node",id:e.dataset.node}),HP(e.dataset.node)})}function Te(t,e,n=""){return`<label class="field"><span>${t}</span>${e}${n?`<small>${n}</small>`:""}</label>`}function pl(){if(tr(".inspector-tab").forEach(t=>t.classList.toggle("active",t.dataset.tab===_.tab)),!_.selected){In.innerHTML='<div class="empty-state"><div class="empty-icon">\u2301</div><b>Select a component or wire</b><p>Ports are labeled on the package edge. Drag from an output pin to any component body. Select a wire to reroute or reconnect it.</p></div>';return}if(_.selected.type==="link")return jP(_.selected.key);$P(_.selected.id)}function $P(t){let e=er(t),n=gi(t),r=_.wiring.prompt_aliases?.[t]||"",i=ll(t);if(_.tab==="prompt"){In.innerHTML=e?'<div class="empty-state"><b>Endpoint has no prompt.</b></div>':`${Te("Prompt alias",`<input id="promptAlias" value="${zt(r)}" placeholder="blank = direct prompt">`)}${Te("Resolved prompt key",`<input value="${zt(n)}" readonly>`)}${Te("System prompt",`<textarea id="promptText" class="tall" spellcheck="false">${zt(_.wiring.prompts?.[n]??"")}</textarea>`)}<div class="actions"><button id="detachPrompt">Detach shared prompt</button><button id="applyPrompt" class="primary">Apply</button></div>`,Q("#applyPrompt")?.addEventListener("click",()=>xe(()=>{let l=Q("#promptAlias").value.trim();l?_.wiring.prompt_aliases[t]=l:delete _.wiring.prompt_aliases[t];let a=l||t;_.wiring.prompts[a]=Q("#promptText").value})),Q("#detachPrompt")?.addEventListener("click",()=>xe(()=>{_.wiring.prompts[t]=_.wiring.prompts[n]||"",delete _.wiring.prompt_aliases[t]}));return}if(_.tab==="code"){let l=_.codeByFile[i]??"";In.innerHTML=e?'<div class="empty-state"><b>Endpoint has no Python file.</b></div>':`${Te("Source file",`<input id="sourceFile" value="${zt(i)}" readonly>`)}<div class="actions"><button id="chooseFolder">Choose source folder</button><button id="loadCode">Load</button></div>${Te("Python code",`<textarea id="codeText" class="code tall" spellcheck="false">${zt(l)}</textarea>`)}<div class="actions"><button id="saveCode" class="primary">Save file</button><button id="downloadCode">Download</button></div><p class="note">All logical instances with the same base name share this file.</p>`,Q("#chooseFolder")?.addEventListener("click",ng),Q("#loadCode")?.addEventListener("click",()=>tA(i)),Q("#saveCode")?.addEventListener("click",()=>eA(i,Q("#codeText").value)),Q("#downloadCode")?.addEventListener("click",()=>xi(i,Q("#codeText").value,"text/x-python")),Q("#codeText")?.addEventListener("input",a=>_.codeByFile[i]=a.target.value);return}if(_.tab==="contract"){let doc=f=>{let src=_.codeByFile[f]||"";let m=src.match(/^\s*(?:[ru]{0,2})?("""|''')([\s\S]*?)\1/);return m?m[2].trim():""};let ownFile=ll(t);let own=e?"":(doc(ownFile)||"(no docstring / source not loaded — connect Source folder)");let edges=le()[t]||{};let rows="";Object.keys(edges).forEach(sig=>{if(sig==="error")return;let tgts=Array.isArray(edges[sig])?edges[sig]:[edges[sig]];tgts.forEach(tg=>{if(tg==="halt"||tg==="wait")return;let d=doc(ll(tg))||"(no declared input contract)";rows+=`<div class="issue"><b>${zt(sig)} → ${zt(tg)}</b><div>${zt(d)}</div></div>`})});In.innerHTML=`${Te("This node's input contract (its own docstring)",`<textarea class="tall" readonly>${zt(own)}</textarea>`,"What producers wired to this node must supply. Lives in the node's own file — the single source of truth.")}<div class="section-title">Downstream contract (what this node must produce)</div><div class="note">Your output is wired to these consumers; the system copies their docstrings into this node's prompt at runtime.</div><div class="issue-list">${rows||'<div class="note">No downstream consumers wired.</div>'}</div>`;return}if(_.tab==="json"){let l=e?{id:t,kind:"endpoint"}:{id:t,edges:le()[t]||{},prompt_alias:_.wiring.prompt_aliases?.[t]||null,prompt:_.wiring.prompts?.[n]??null};In.innerHTML=Te("Selected JSON",`<textarea id="selectedJson" class="code tall">${zt(JSON.stringify(l,null,2))}</textarea>`)+'<div class="actions"><button id="applySelected" class="primary">Apply selected JSON</button></div>',Q("#applySelected")?.addEventListener("click",()=>{try{let a=JSON.parse(Q("#selectedJson").value);e||xe(()=>{a.edges&&(_.wiring.topology.edges[t]=a.edges),"prompt_alias"in a&&(a.prompt_alias?_.wiring.prompt_aliases[t]=a.prompt_alias:delete _.wiring.prompt_aliases[t]),"prompt"in a&&(_.wiring.prompts[gi(t)]=a.prompt)})}catch(a){fe(a.message,"error")}});return}let s=en().filter(l=>l.target===t),o=e?[]:mi(t);In.innerHTML=`${Te("Node ID",`<input id="nodeId" value="${zt(t)}" ${e?"readonly":""}>`)}${Te("Kind",`<input value="${e?"Terminal endpoint":"Topology component"}" readonly>`)}${e?"":Te("Python file",`<input value="${zt(i)}" readonly>`)}<div class="section-title">Input pins</div><div class="pin-list">${s.length?s.map(l=>Ip(t,"in",l.key,`${l.signal} \u2190 ${l.source}`)).join(""):'<div class="muted">No input wires</div>'}</div>${e?"":`<div class="section-title">Output pins</div><div class="pin-list">${o.length?o.map(l=>Ip(t,"out",l,l)).join(""):'<div class="muted">No output signals</div>'}</div><div class="actions"><button id="setStart">Set as start</button><button id="addSignal">Add signal</button><button id="deleteNode" class="danger">Delete node</button></div>`}`,Q("#nodeId")?.addEventListener("change",l=>{let a=l.target.value.trim();a&&a!==t&&WP(t,a)}),tr(".pin-side",In).forEach(l=>l.onchange=()=>xe(()=>{let{kind:a,key:c,node:u}=l.dataset;gn(u,a,c,a==="out"?"right":"left").side=l.value})),tr(".remove-pin",In).forEach(l=>l.onclick=()=>{let{kind:a,key:c,node:u}=l.dataset;a==="out"&&XP(u,c)}),Q("#setStart")?.addEventListener("click",()=>xe(()=>_.wiring.topology.cycle_start=t)),Q("#addSignal")?.addEventListener("click",()=>Qp(t)),Q("#deleteNode")?.addEventListener("click",()=>tg(t))}function Ip(t,e,n,r){let i=gn(t,e,n,e==="out"?"right":"left");return`<div class="pin-row"><span class="pin-dot ${e}"></span><span class="pin-name" title="${zt(r)}">${zt(Dp(r,27))}</span><select class="pin-side" data-node="${zt(t)}" data-kind="${e}" data-key="${zt(n)}">${["left","right","top","bottom"].map(s=>`<option ${i.side===s?"selected":""}>${s}</option>`).join("")}</select>${e==="out"?`<button class="icon-btn remove-pin" title="Remove output pin" data-node="${zt(t)}" data-kind="out" data-key="${zt(n)}">\xD7</button>`:""}</div>`}function jP(t){let e=en().find(r=>r.key===t);if(!e)return _.selected=null,pl();let n=gn(e.target,"in",t,"left");In.innerHTML=`${Te("Signal",`<input id="linkSignal" value="${zt(e.signal)}">`)}${Te("Source node",`<select id="linkSource">${Se().map(r=>`<option ${r===e.source?"selected":""}>${zt(r)}</option>`).join("")}</select>`)}${Te("Target node",`<select id="linkTarget">${mn().map(r=>`<option ${r===e.target?"selected":""}>${zt(r)}</option>`).join("")}</select>`)}${Te("Target pin side",`<select id="linkSide">${["left","right","top","bottom"].map(r=>`<option ${r===n.side?"selected":""}>${r}</option>`).join("")}</select>`)}<div class="section-title">Routing</div><p class="note">Orthogonal routing and jump-over bridges are automatic. Drag the yellow route handles on the selected wire to add or move bends.</p><div class="actions"><button id="applyLink" class="primary">Apply</button><button id="deleteLink" class="danger">Delete wire</button></div>`,Q("#applyLink").onclick=()=>xe(()=>{zp(t,{source:Q("#linkSource").value,signal:Q("#linkSignal").value.trim()||e.signal,target:Q("#linkTarget").value});let i=en().filter(s=>s.source===Q("#linkSource").value&&s.signal===(Q("#linkSignal").value.trim()||e.signal)&&s.target===Q("#linkTarget").value).at(-1)?.key;i&&(gn(Q("#linkTarget").value,"in",i,"left").side=Q("#linkSide").value),_.selected=i?{type:"link",key:i}:null}),Q("#deleteLink").onclick=()=>xe(()=>{ul(t,!0),_.selected=null})}function WP(t,e){if(Se().includes(e)||eo().includes(e))return fe("That node ID already exists.","error");xe(()=>{let n=Se().indexOf(t);Se()[n]=e,le()[t]&&(le()[e]=le()[t],delete le()[t]);for(let r of Object.values(le()))for(let[i,s]of Object.entries(r||{}))Array.isArray(s)?r[i]=s.map(o=>o===t?e:o):s===t&&(r[i]=e);_.wiring.topology.cycle_start===t&&(_.wiring.topology.cycle_start=e),t in _.wiring.prompts&&(_.wiring.prompts[e]=_.wiring.prompts[t],delete _.wiring.prompts[t]),t in _.wiring.prompt_aliases&&(_.wiring.prompt_aliases[e]=_.wiring.prompt_aliases[t],delete _.wiring.prompt_aliases[t]),_.editor.nodes[t]&&(_.editor.nodes[e]=_.editor.nodes[t],delete _.editor.nodes[t]),_.editor.pins[t]&&(_.editor.pins[e]=_.editor.pins[t],delete _.editor.pins[t]),_.editor.floatingOutputs[t]&&(_.editor.floatingOutputs[e]=_.editor.floatingOutputs[t],delete _.editor.floatingOutputs[t]),_.selected={type:"node",id:e}})}function YP(){ig("Add topology node","Logical node ID","node_new",t=>{if(!t||Se().includes(t)||eo().includes(t))return fe("Choose a unique node ID.","error");xe(()=>{Se().push(t),le()[t]={},_.wiring.prompts[t]="";let e=pi.getBoundingClientRect(),n=Ot.translate(),r=Ot.scale().sx;_.editor.nodes[t]={x:(e.width/2-n.tx)/r-143,y:(e.height/2-n.ty)/r-70},_.selected={type:"node",id:t}})})}function Qp(t){ig("Add output signal","Signal name","signal",e=>{e&&xe(()=>{_.editor.floatingOutputs[t]||=[],mi(t).includes(e)||_.editor.floatingOutputs[t].push(e)})})}function XP(t,e){sg(`Remove output pin \u201C${e}\u201D and all of its wires?`,()=>xe(()=>{delete le()[t]?.[e],_.editor.floatingOutputs[t]=(_.editor.floatingOutputs[t]||[]).filter(n=>n!==e),delete _.editor.pins[t]?.out?.[e]}))}function tg(t){sg(`Delete ${t} and every connected wire?`,()=>xe(()=>{let e=Se().indexOf(t);e>=0&&Se().splice(e,1),delete le()[t];for(let[n,r]of Object.entries(le()))for(let[i,s]of Object.entries(r||{})){let o=(Array.isArray(s)?s:[s]).filter(l=>l!==t);no(n,i,o,!0)}delete _.wiring.prompt_aliases[t],delete _.wiring.prompts[t],delete _.editor.nodes[t],delete _.editor.pins[t],delete _.editor.floatingOutputs[t],_.selected=null}))}function eg(){_.selected&&(_.selected.type==="node"&&!er(_.selected.id)?tg(_.selected.id):_.selected.type==="link"&&xe(()=>{ul(_.selected.key,!0),_.selected=null}))}function KP(){let t=[],e=Se(),n=new Set(e);_.wiring.topology.cycle_start?n.has(_.wiring.topology.cycle_start)||t.push(["error","cycle_start is not a declared topology node"]):t.push(["error","Missing topology.cycle_start"]),n.size!==e.length&&t.push(["error","Duplicate IDs in topology.nodes"]);for(let[r,i]of Object.entries(le())){n.has(r)||t.push(["warning",`Edge source ${r} is not declared`]);for(let[s,o]of Object.entries(i||{})){let l=Array.isArray(o)?o:[o];s||t.push(["error",`Empty signal name on ${r}`]),l.forEach(a=>{a==null||a===""?t.push(["error",`Empty target on ${r}.${s}`]):!n.has(a)&&!["halt","wait"].includes(a)&&t.push(["warning",`${r}.${s} targets undeclared endpoint ${a}`])})}}for(let r of e){let i=gi(r);i in _.wiring.prompts||t.push(["warning",`${r} resolves to missing prompt ${i}`])}for(let[r,i]of Object.entries(_.editor.floatingOutputs))i.forEach(s=>t.push(["warning",`${r}.${s} is an unconnected editor pin and will not appear in runtime JSON`]));return nA(t),t}async function ZP(t){let e=await t.text();hl(JSON.parse(e),t.name),_.fileHandle=null}async function JP(){if(!window.showOpenFilePicker)return fe("Writable file handles require Chrome over HTTPS or localhost.","error");try{let[t]=await showOpenFilePicker({types:[{description:"JSON",accept:{"application/json":[".json"]}}],multiple:!1}),e=await t.getFile();_.fileHandle=t,hl(JSON.parse(await e.text()),e.name),_.fileHandle=t}catch(t){t.name!=="AbortError"&&fe(t.message,"error")}}async function QP(){let t=JSON.stringify(Gp(),null,2)+`
-`;if(_.fileHandle){let e=await _.fileHandle.createWritable();await e.write(t),await e.close(),_.dirty=!1,dl(),fe("Saved project JSON.","ok")}else xi(_.filename,t,"application/json")}function xi(t,e,n="text/plain"){let r=document.createElement("a");r.href=URL.createObjectURL(new Blob([e],{type:n})),r.download=kP(t),r.click(),setTimeout(()=>URL.revokeObjectURL(r.href),1e3)}async function ng(){if(!window.showDirectoryPicker)return fe("Folder access requires Chrome over HTTPS or localhost.","error");try{_.dirHandle=await showDirectoryPicker({mode:"readwrite"}),fe("Source folder connected.","ok")}catch(t){t.name!=="AbortError"&&fe(t.message,"error")}}async function rg(t,e=!1){let n=_.dirHandle;if(!n)throw new Error("Choose the source folder first.");let r=t.split("/").filter(Boolean);for(let i=0;i<r.length-1;i++)n=await n.getDirectoryHandle(r[i],{create:!1});return n.getFileHandle(r.at(-1),{create:e})}async function tA(t){try{let n=await(await rg(t)).getFile();_.codeByFile[t]=await n.text(),pl(),fe(`Loaded ${t}`,"ok")}catch(e){fe(e.message,"error")}}async function eA(t,e){try{let r=await(await rg(t,!0)).createWritable();await r.write(e),await r.close(),_.codeByFile[t]=e,fe(`Saved ${t}`,"ok")}catch{xi(t,e,"text/x-python"),fe("Folder write unavailable; downloaded the code file.","warning")}}function gl(t,e,n=[]){NP.textContent=t,RP.innerHTML=e,Np.innerHTML="",n.forEach(r=>{let i=document.createElement("button");i.textContent=r.label,i.className=r.class||"",i.onclick=()=>r.action(i),Np.appendChild(i)}),Js.classList.add("show")}function Cr(){Js.classList.remove("show")}function ig(t,e,n,r){gl(t,Te(e,`<input id="modalInput" value="${zt(n)}">`),[{label:"Cancel",action:Cr},{label:"Apply",class:"primary",action:()=>{let i=Q("#modalInput").value.trim();Cr(),r(i)}}]),setTimeout(()=>Q("#modalInput")?.select(),20)}function sg(t,e){gl("Confirm",`<p>${zt(t)}</p>`,[{label:"Cancel",action:Cr},{label:"Delete",class:"danger",action:()=>{Cr(),e()}}])}function nA(t){gl("Validation",t.length?`<div class="issue-list">${t.map(([e,n])=>`<div class="issue ${e}"><b>${e.toUpperCase()}</b>${zt(n)}</div>`).join("")}</div>`:'<div class="empty-state"><div class="empty-icon">\u2713</div><b>No topology problems found.</b></div>',[{label:"Close",class:"primary",action:Cr}]),og(t.length?`${t.length} validation issue(s)`:"Validation passed",t.some(e=>e[0]==="error")?"error":t.length?"warning":"ok")}function fe(t,e="ok"){let n=Q("#toast");n.textContent=t,n.className=`toast show ${e}`,clearTimeout(fe.timer),fe.timer=setTimeout(()=>n.className="toast",2400)}function og(t,e=""){let n=Q("#statusText");n.textContent=t,n.className=e}function rA(){let t={};try{t=JSON.parse(localStorage.getItem("wiringLabPanels")||"{}")}catch{}t.left&&document.documentElement.style.setProperty("--left-w",t.left+"px"),t.right&&document.documentElement.style.setProperty("--right-w",t.right+"px"),tr(".resizer").forEach(e=>e.addEventListener("pointerdown",n=>{let r=e.dataset.side,i=n.clientX,s=getComputedStyle(document.documentElement),o=parseFloat(s.getPropertyValue(r==="left"?"--left-w":"--right-w"));e.setPointerCapture(n.pointerId);let l=c=>{let u=c.clientX-i,h=Qs(r==="left"?o+u:o-u,190,560);document.documentElement.style.setProperty(r==="left"?"--left-w":"--right-w",h+"px"),Ot.setDimensions("100%","100%")},a=()=>{e.removeEventListener("pointermove",l),e.removeEventListener("pointerup",a);let c=getComputedStyle(document.documentElement);try{localStorage.setItem("wiringLabPanels",JSON.stringify({left:parseFloat(c.getPropertyValue("--left-w")),right:parseFloat(c.getPropertyValue("--right-w"))}))}catch{}};e.addEventListener("pointermove",l),e.addEventListener("pointerup",a)}))}function ag(t){OP.classList.toggle(`${t}-closed`),setTimeout(()=>Ot.setDimensions("100%","100%"),180)}Q("#openBtn").onclick=()=>Zs.click();Zs.onchange=()=>Zs.files[0]&&ZP(Zs.files[0]);Q("#openWritableBtn").onclick=JP;Q("#saveBtn").onclick=QP;Q("#exportRuntimeBtn").onclick=()=>xi(_.filename.replace(/\.json$/i,"")+"_runtime.json",JSON.stringify(DP(_.wiring),null,2)+`
-`,"application/json");Q("#exportProjectBtn").onclick=()=>xi(_.filename.replace(/\.json$/i,"")+"_project.json",JSON.stringify(Gp(),null,2)+`
-`,"application/json");Q("#folderBtn").onclick=ng;Q("#addNodeBtn").onclick=YP;Q("#addSignalBtn").onclick=()=>_.selected?.type==="node"&&!er(_.selected.id)?Qp(_.selected.id):fe("Select a declared node first.","warning");Q("#deleteBtn").onclick=eg;Q("#undoBtn").onclick=qp;Q("#redoBtn").onclick=ol;Q("#layoutBtn").onclick=()=>vi();Q("#fitBtn").onclick=ro;Q("#validateBtn").onclick=KP;Q("#leftToggle").onclick=()=>ag("left");Q("#rightToggle").onclick=()=>ag("right");Q("#nodeSearch").oninput=Jp;tr(".inspector-tab").forEach(t=>t.onclick=()=>{_.tab=t.dataset.tab,Lr()});Q("#zoomIn").onclick=()=>{let t=Ot.scale().sx;Ot.scale(Qs(t*1.15,.2,2.2)),yi()};Q("#zoomOut").onclick=()=>{let t=Ot.scale().sx;Ot.scale(Qs(t*.87,.2,2.2)),yi()};Js.addEventListener("pointerdown",t=>{t.target===Js&&Cr()});window.addEventListener("resize",()=>Ot.setDimensions("100%","100%"));window.addEventListener("beforeunload",t=>{_.dirty&&(t.preventDefault(),t.returnValue="")});rA();hl(Vn(Vp),"wiring.json");setTimeout(()=>{Object.keys(_.editor.nodes).length?ro():vi(!1)},120);})();
-/*! Bundled license information:
+<script type="module">
+"use strict";
+// ============================================================================
+// Endgame Wiring Lab — zero-dependency single-file schematic editor.
+// No external libraries: Canvas2D + Path2D rendering, PointerEvents interaction,
+// File System Access I/O, structuredClone undo. Latest-Chrome-only, no fallbacks.
+// wiring.json is the single source of truth; editor layout lives under the
+// __wiring_lab key of a "project" export and is stripped from "runtime" export.
+// ============================================================================
 
-@joint/core/src/mvc/Dom/Dom.mjs:
-  (*!
-   * jQuery JavaScript Library v4.0.0-pre+c98597ea.dirty
-   * https://jquery.com/
-   *
-   * Copyright OpenJS Foundation and other contributors
-   * Released under the MIT license
-   * https://jquery.org/license
-   *
-   * Date: 2023-11-24T14:04Z
-   *)
-*/
+// ---- blank starter document (File -> New skeleton; overwritten on load) ----
+const BLANK = {
+  schema:"endgame-ai.wiring",
+  topology:{cycle_start:"node_guidance:plan",nodes:["node_guidance:plan","node_satisfied"],
+    edges:{"node_guidance:plan":{attend:"node_satisfied",error:"node_satisfied"},node_satisfied:{halt:"halt"}},barriers:{}},
+  prompts:{"node_guidance:plan":"",node_satisfied:""},prompt_aliases:{},node_defs:{}
+};
+const SENTINELS = new Set(["halt","wait"]);
+const SIDES = ["left","right","top","bottom"];
+
+// helpers -------------------------------------------------------------------
+const $ = (s,e=document)=>e.querySelector(s);
+const $$ = (s,e=document)=>[...e.querySelectorAll(s)];
+const clone = o=>structuredClone(o);
+const esc = (t="")=>String(t).replace(/[&<>'"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"})[c]);
+const clamp = (v,lo,hi)=>Math.max(lo,Math.min(hi,v));
+const short = (t,n=30)=>String(t).length>n?String(t).slice(0,n-1)+"…":String(t);
+const safeName = t=>String(t||"wiring").replace(/[^a-z0-9._-]+/gi,"_");
+const baseName = t=>String(t).split(":")[0];
+
+// ---- application state ----------------------------------------------------
+const S = {
+  wiring: clone(BLANK),
+  editor: {version:3, nodes:{}, pinSides:{}, wireVertices:{}},
+  filename:"wiring.json",
+  fileHandle:null, dirHandle:null,
+  dirty:false, selected:null, tab:"properties",
+  codeByFile:{},
+  history:[], future:[], restoring:false,
+  view:{scale:1, tx:0, ty:0},
+};
+
+// ---- wiring model accessors (edges: source -> {signal: target|[targets]}) --
+function normalize(){
+  const t=S.wiring;
+  t.topology ??= {}; t.topology.nodes ??= []; t.topology.edges ??= {};
+  t.topology.barriers ??= {}; t.prompts ??= {}; t.prompt_aliases ??= {}; t.node_defs ??= {};
+  if(!("shared_prompt_prefix" in t)) t.shared_prompt_prefix="";
+}
+const nodes = ()=>{normalize();return S.wiring.topology.nodes;};
+const edges = ()=>{normalize();return S.wiring.topology.edges;};
+const isEndpoint = n=>!nodes().includes(n);
+const promptKey = n=>S.wiring.prompt_aliases?.[n]||n;
+const pyFile = n=>(n&&!isEndpoint(n))?`${baseName(n)}.py`:"";
+
+// list of {source,signal,target,index} for every wire
+function wires(){
+  const out=[];
+  for(const [src,map] of Object.entries(edges()))
+    for(const [sig,val] of Object.entries(map||{})){
+      const tgts = Array.isArray(val)?val:(val==null?[]:[val]);
+      tgts.forEach((tg,i)=>out.push({source:src,signal:sig,target:tg,index:i}));
+    }
+  return out;
+}
+const endpoints = ()=>{const set=new Set(nodes());return [...new Set(wires().map(w=>w.target).filter(t=>!set.has(t)))];};
+const allBoxes = ()=>[...nodes(),...endpoints()];
+const targetsOf = (src,sig)=>{const v=edges()[src]?.[sig];return Array.isArray(v)?[...v]:(v==null?[]:[v]);};
+const outSignals = n=>Object.keys(edges()[n]||{});
+
+// mutate edges: write a signal's target list (collapse to scalar when single)
+function setTargets(src,sig,list){
+  edges()[src] ??= {};
+  if(list.length) edges()[src][sig] = list.length===1?list[0]:list;
+  else delete edges()[src][sig];
+}
+function addWire(src,sig,tgt){const l=targetsOf(src,sig);l.push(tgt);setTargets(src,sig,l);}
+function removeWire(src,sig,idx){const l=targetsOf(src,sig);if(idx>=0&&idx<l.length)l.splice(idx,1);setTargets(src,sig,l);}
+
+// pin side lookup (editor-only visual metadata), default by kind
+function pinSide(node,kind,key,def){
+  S.editor.pinSides[node] ??= {};
+  const bucket = (S.editor.pinSides[node][kind] ??= {});
+  bucket[key] ??= def;
+  return bucket[key];
+}
+
+// ---- exports --------------------------------------------------------------
+const runtimeJSON = ()=>{const w=clone(S.wiring);delete w.__wiring_lab;return w;};
+const projectJSON = ()=>{const w=clone(S.wiring);w.__wiring_lab=clone(S.editor);return w;};
+
+// ============================================================================
+// STEP 2 — Canvas2D renderer: transforms, IC nodes with 4-sided pins,
+// Manhattan wire routing with jump-over bridges, DPR-aware render loop.
+// ============================================================================
+const cv = $("#paper");
+const ctx = cv.getContext("2d");
+let cssW=0, cssH=0, dpr=1;
+
+// node geometry constants
+const NODE_W=200, HEADER_H=30, PIN_GAP=22, PIN_R=4.2, PIN_REACH=11;
+const END_W=150, END_H=54;
+
+// --- coordinate transforms (world <-> screen) ---
+const toWorld = (sx,sy)=>({x:(sx-S.view.tx)/S.view.scale, y:(sy-S.view.ty)/S.view.scale});
+
+// resize canvas to container at device pixel ratio
+function resize(){
+  const r = cv.parentElement.getBoundingClientRect();
+  cssW=r.width; cssH=r.height; dpr=window.devicePixelRatio||1;
+  cv.width=Math.round(cssW*dpr); cv.height=Math.round(cssH*dpr);
+  cv.style.width=cssW+"px"; cv.style.height=cssH+"px";
+  render();
+}
+
+// group a box's pins by side. returns {pins:[{key,kind,signal,label,side,order,x,y}], w,h}
+function layoutBox(name){
+  const end = isEndpoint(name);
+  if(end){
+    const ins = wires().filter(w=>w.target===name);
+    // endpoints: all inbound pins on the left
+    const pins = ins.map((w,i)=>({key:`in::${w.source}::${w.signal}::${w.index}`,kind:"in",signal:w.signal,
+      label:`${w.signal} ← ${baseName(w.source)}`,side:"left",order:i}));
+    const h = Math.max(END_H, 20+ Math.max(1,pins.length)*PIN_GAP);
+    return placePins(pins, END_W, h, end);
+  }
+  const ins = wires().filter(w=>w.target===name);
+  const outs = outSignals(name);
+  const bySide = {left:[],right:[],top:[],bottom:[]};
+  ins.forEach(w=>{const s=pinSide(name,"in",`${w.source}::${w.signal}::${w.index}`,sidePref(w.source,name,"in"));
+    bySide[s].push({key:`in::${w.source}::${w.signal}::${w.index}`,kind:"in",signal:w.signal,label:w.signal,side:s});});
+  outs.forEach(sig=>{const s=pinSide(name,"out",sig,sidePref(name,targetsOf(name,sig)[0],"out"));
+    bySide[s].push({key:`out::${sig}`,kind:"out",signal:sig,label:sig,side:s});});
+  const perV = Math.max(bySide.left.length,bySide.right.length);
+  const perH = Math.max(bySide.top.length,bySide.bottom.length);
+  const w = Math.max(NODE_W, 90+perH*70);
+  const h = Math.max(96, HEADER_H+18+perV*PIN_GAP);
+  const pins=[];
+  for(const side of SIDES) bySide[side].forEach((p,i)=>{p.order=i;pins.push(p);});
+  return placePins(pins, w, h, end);
+}
+
+// choose a default pin side based on relative position of the connected node
+function sidePref(from,to,kind){
+  const a=S.editor.nodes[from], b=S.editor.nodes[to];
+  if(!a||!b) return kind==="out"?"right":"left";
+  const dx=b.x-a.x, dy=b.y-a.y;
+  if(Math.abs(dx)>=Math.abs(dy)) return (kind==="out")?(dx>=0?"right":"left"):(dx>=0?"left":"right");
+  return (kind==="out")?(dy>=0?"bottom":"top"):(dy>=0?"top":"bottom");
+}
+
+// compute pin coordinates (local to box origin) given side buckets
+function placePins(pins,w,h,end){
+  const count={left:0,right:0,top:0,bottom:0};
+  for(const p of pins) count[p.side]++;
+  const seen={left:0,right:0,top:0,bottom:0};
+  for(const p of pins){
+    const n=count[p.side], k=seen[p.side]++;
+    if(p.side==="left"||p.side==="right"){
+      const y=(h/(n+1))*(k+1); p.x=p.side==="left"?0:w; p.y=y;
+      p.dir=p.side==="left"?"left":"right";
+    }else{
+      const x=(w/(n+1))*(k+1); p.y=p.side==="top"?0:h; p.x=x;
+      p.dir=p.side==="top"?"up":"down";
+    }
+  }
+  return {pins,w,h,end};
+}
+
+// cache of laid-out boxes for the current frame: name -> {x,y,w,h,pins,end,pinMap}
+let FRAME={};
+function buildFrame(){
+  FRAME={};
+  for(const name of allBoxes()){
+    const pos = S.editor.nodes[name] || {x:80+Object.keys(S.editor.nodes).length*40,y:80};
+    S.editor.nodes[name] ??= pos;
+    const lay = layoutBox(name);
+    const pinMap={};
+    for(const p of lay.pins) pinMap[p.key]={...p, wx:pos.x+p.x, wy:pos.y+p.y, _box:name};
+    FRAME[name]={x:pos.x,y:pos.y,w:lay.w,h:lay.h,end:lay.end,pins:lay.pins,pinMap};
+  }
+}
+
+// pin absolute world position + a small "stub" point just outside the box
+function pinPoint(name,key){const f=FRAME[name];const p=f?.pinMap[key];if(!p)return null;return p;}
+function stubOut(p,s=14){
+  return p.dir==="left"?{x:p.wx-s,y:p.wy}:p.dir==="right"?{x:p.wx+s,y:p.wy}:
+         p.dir==="up"?{x:p.wx,y:p.wy-s}:{x:p.wx,y:p.wy+s};}
+function dedupe(pts){const out=[pts[0]];for(let i=1;i<pts.length;i++){const p=pts[i],q=out.at(-1);if(Math.abs(p.x-q.x)>0.5||Math.abs(p.y-q.y)>0.5)out.push(p);}return out;}
+
+// ============================================================================
+// Orthogonal connector routing (Wybrow/Marriott/Stuckey 2010 approach):
+// build an orthogonal visibility grid from rulers through every node edge and
+// each pin's stub, mark node rectangles as obstacles, then A* over grid nodes
+// with a per-bend penalty. Rebuilt once per frame; per-wire A* reuses the grid.
+// ============================================================================
+const OBSTACLE_PAD=8;      // clearance kept around node bodies
+const BEND_PENALTY=14;     // cost added per 90° turn (favours straight runs)
+let GRID=null;
+
+function buildRoutingGrid(){
+  const boxes=Object.entries(FRAME).map(([n,f])=>({n,x:f.x,y:f.y,w:f.w,h:f.h}));
+  const xs=new Set(), ys=new Set();
+  // rulers: padded edges + centre lines of every box
+  for(const b of boxes){
+    xs.add(b.x-OBSTACLE_PAD);xs.add(b.x+b.w+OBSTACLE_PAD);xs.add(b.x+b.w/2);
+    ys.add(b.y-OBSTACLE_PAD);ys.add(b.y+b.h+OBSTACLE_PAD);ys.add(b.y+b.h/2);
+  }
+  // rulers through every pin stub so wires can always reach a pin
+  for(const f of Object.values(FRAME))for(const key in f.pinMap){
+    const p=f.pinMap[key],s=stubOut(p);xs.add(p.wx);ys.add(p.wy);xs.add(s.x);ys.add(s.y);
+  }
+  const X=[...xs].sort((a,b)=>a-b), Y=[...ys].sort((a,b)=>a-b);
+  const xi=new Map(X.map((v,i)=>[v,i])), yi=new Map(Y.map((v,i)=>[v,i]));
+  // obstacle test: a point strictly inside any padded box (minus a small eps)
+  const blocked=(px,py)=>{for(const b of boxes){
+    if(px>b.x-OBSTACLE_PAD+0.5&&px<b.x+b.w+OBSTACLE_PAD-0.5&&py>b.y-OBSTACLE_PAD+0.5&&py<b.y+b.h+OBSTACLE_PAD-0.5)return b;}return null;};
+  GRID={X,Y,xi,yi,boxes,blocked};
+}
+
+// snap a world point to nearest grid index (adds the exact coord if missing)
+function gridIndex(axis,v){
+  const arr=axis==="x"?GRID.X:GRID.Y, map=axis==="x"?GRID.xi:GRID.yi;
+  if(map.has(v))return map.get(v);
+  // insert to keep pin endpoints exactly reachable
+  let lo=0,hi=arr.length;while(lo<hi){const m=(lo+hi)>>1;arr[m]<v?lo=m+1:hi=m;}
+  arr.splice(lo,0,v);(axis==="x"?GRID.xi:GRID.yi).clear();
+  arr.forEach((x,i)=>(axis==="x"?GRID.xi:GRID.yi).set(x,i));
+  return lo;
+}
+
+// A* on the visibility grid between two pins, honouring exit directions.
+function routeWire(a,b){
+  if(!GRID)buildRoutingGrid();
+  const sa=stubOut(a), sb=stubOut(b);
+  const startX=gridIndex("x",sa.x), startY=gridIndex("y",sa.y);
+  const goalX=gridIndex("x",sb.x),  goalY=gridIndex("y",sb.y);
+  const {X,Y,blocked}=GRID;
+  const key=(ix,iy)=>iy*X.length+ix;
+  // segment between two adjacent grid points is walkable if its midpoint is clear
+  const walkable=(ix,iy,jx,jy)=>{
+    const mx=(X[ix]+X[jx])/2, my=(Y[iy]+Y[jy])/2;
+    const bx=blocked(mx,my); if(!bx)return true;
+    // allow the pin's own box (endpoints sit on its border)
+    return bx.n===a._box||bx.n===b._box;
+  };
+  const h=(ix,iy)=>Math.abs(X[ix]-X[goalX])+Math.abs(Y[iy]-Y[goalY]);
+  const open=[{ix:startX,iy:startY,dir:null,g:0,f:h(startX,startY),prev:null}];
+  const best=new Map();
+  const dirs=[[1,0,"h"],[-1,0,"h"],[0,1,"v"],[0,-1,"v"]];
+  let goalNode=null, guard=0;
+  while(open.length&&guard++<20000){
+    let bi=0;for(let i=1;i<open.length;i++)if(open[i].f<open[bi].f)bi=i;
+    const cur=open.splice(bi,1)[0];
+    if(cur.ix===goalX&&cur.iy===goalY){goalNode=cur;break;}
+    const bk=key(cur.ix,cur.iy)+":"+(cur.dir||"");
+    if(best.has(bk)&&best.get(bk)<=cur.g)continue; best.set(bk,cur.g);
+    for(const [dx,dy,axis] of dirs){
+      const nx=cur.ix+dx, ny=cur.iy+dy;
+      if(nx<0||ny<0||nx>=X.length||ny>=Y.length)continue;
+      if(!walkable(cur.ix,cur.iy,nx,ny))continue;
+      const stepLen=Math.abs(X[nx]-X[cur.ix])+Math.abs(Y[ny]-Y[cur.iy]);
+      const g=cur.g+stepLen+((cur.dir&&cur.dir!==axis)?BEND_PENALTY:0);
+      open.push({ix:nx,iy:ny,dir:axis,g,f:g+h(nx,ny),prev:cur});
+    }
+  }
+  if(!goalNode)  // A* failed (rare) — fall back to a direct L path via stubs
+    return dedupe([{x:a.wx,y:a.wy},sa,{x:sb.x,y:sa.y},sb,{x:b.wx,y:b.wy}]);
+  const path=[]; for(let n=goalNode;n;n=n.prev)path.unshift({x:X[n.ix],y:Y[n.iy]});
+  return dedupe([{x:a.wx,y:a.wy},sa,...path,sb,{x:b.wx,y:b.wy}]);
+}
+
+// draw an orthogonal polyline with jump-over arcs where it crosses others
+function strokePolyline(pts,others){
+  ctx.beginPath();
+  for(let i=0;i<pts.length-1;i++){
+    const a=pts[i],b=pts[i+1];
+    ctx.moveTo(a.x,a.y);
+    // only horizontal segments get jump bridges over vertical crossings
+    if(Math.abs(a.y-b.y)<0.5){
+      const y=a.y, x0=Math.min(a.x,b.x), x1=Math.max(a.x,b.x);
+      const cross=[];
+      for(const seg of others){if(Math.abs(seg.ay-seg.by)>0.5){const vx=seg.ax,vy0=Math.min(seg.ay,seg.by),vy1=Math.max(seg.ay,seg.by);
+        if(vx>x0+3&&vx<x1-3&&y>vy0+1&&y<vy1-1)cross.push(vx);}}
+      cross.sort((m,n)=>a.x<b.x?m-n:n-m);
+      let cx=a.x;
+      const dir=a.x<b.x?1:-1;
+      for(const vx of cross){ctx.lineTo(vx-6*dir,y);ctx.arc(vx,y,6,dir>0?Math.PI:0,dir>0?0:Math.PI,dir<0);cx=vx+6*dir;}
+      ctx.lineTo(b.x,b.y);
+    }else{ctx.lineTo(b.x,b.y);}
+  }
+  ctx.stroke();
+}
+
+// segment list for crossing detection
+function allSegments(){
+  GRID=null; buildRoutingGrid();
+  const segs=[];
+  for(const w of wires()){
+    const a=pinPoint(w.source,`out::${w.signal}`);
+    const b=pinPoint(w.target,`in::${w.source}::${w.signal}::${w.index}`);
+    if(!a||!b)continue;
+    const pts=routeWire(a,b);
+    w._pts=pts;
+    for(let i=0;i<pts.length-1;i++)segs.push({ax:pts[i].x,ay:pts[i].y,bx:pts[i+1].x,by:pts[i+1].y,wire:w});
+  }
+  return segs;
+}
+
+function isErrSig(s){return /error|denied|failed|unresolved/i.test(s);}
+
+function render(){
+  if(!ctx)return;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,cssW,cssH);
+  drawGrid();
+  ctx.setTransform(dpr*S.view.scale,0,0,dpr*S.view.scale,dpr*S.view.tx,dpr*S.view.ty);
+  buildFrame();
+  const segs=allSegments();
+  // wires first (under nodes)
+  for(const w of wires()){
+    if(!w._pts)continue;
+    const sel = S.selected?.type==="wire"&&S.selected.source===w.source&&S.selected.signal===w.signal&&S.selected.index===w.index;
+    ctx.strokeStyle = isErrSig(w.signal)?"#bd5b73":(sel?"#52d7b6":"#607f98");
+    ctx.lineWidth = (sel?2.3:1.35)/S.view.scale;
+    ctx.lineJoin="round"; ctx.lineCap="round";
+    strokePolyline(w._pts, segs.filter(s=>s.wire!==w));
+    // arrowhead at target
+    const p=w._pts.at(-1), q=w._pts.at(-2);
+    drawArrow(p,q,ctx.strokeStyle);
+  }
+  // nodes
+  for(const name of allBoxes()) drawBox(name);
+  // active wire-drag preview
+  if(DRAG?.type==="wire"&&DRAG.cur){
+    ctx.strokeStyle="#f0c35e";ctx.lineWidth=1.6/S.view.scale;ctx.setLineDash([5/S.view.scale,4/S.view.scale]);
+    const a=pinPoint(DRAG.source,`out::${DRAG.signal}`);
+    if(a){ctx.beginPath();ctx.moveTo(a.wx,a.wy);ctx.lineTo(DRAG.cur.x,DRAG.cur.y);ctx.stroke();}
+    ctx.setLineDash([]);
+  }
+  updateZoomLabel();
+}
+
+function drawGrid(){
+  const step=20*S.view.scale, big=100*S.view.scale;
+  if(step<4)return;
+  const ox=S.view.tx%big, oy=S.view.ty%big;
+  ctx.lineWidth=1;
+  ctx.strokeStyle="#0c1b24";
+  for(let x=S.view.tx%step;x<cssW;x+=step){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,cssH);ctx.stroke();}
+  for(let y=S.view.ty%step;y<cssH;y+=step){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(cssW,y);ctx.stroke();}
+  ctx.strokeStyle="#142630";
+  for(let x=ox;x<cssW;x+=big){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,cssH);ctx.stroke();}
+  for(let y=oy;y<cssH;y+=big){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(cssW,y);ctx.stroke();}
+}
+
+function drawArrow(tip,from,color){
+  const dx=tip.x-from.x, dy=tip.y-from.y, len=Math.hypot(dx,dy)||1;
+  const ux=dx/len, uy=dy/len, s=6/S.view.scale;
+  ctx.fillStyle=color;ctx.beginPath();
+  ctx.moveTo(tip.x,tip.y);
+  ctx.lineTo(tip.x-ux*s*1.6-uy*s,tip.y-uy*s*1.6+ux*s);
+  ctx.lineTo(tip.x-ux*s*1.6+uy*s,tip.y-uy*s*1.6-ux*s);
+  ctx.closePath();ctx.fill();
+}
+
+function drawBox(name){
+  const f=FRAME[name];const sel=S.selected?.type==="node"&&S.selected.id===name;
+  const start=S.wiring.topology.cycle_start===name;
+  ctx.lineWidth=1.2/S.view.scale;
+  if(f.end){
+    roundRect(f.x,f.y,f.w,f.h,4);ctx.fillStyle="#211b2a";ctx.fill();
+    ctx.strokeStyle=sel?"#52d7b6":"#75598a";ctx.stroke();
+    label(name,f.x+12,f.y+22,"#eadff1",700,12.5,"start");
+    label("endpoint",f.x+12,f.y+40,"#9a83a8",400,9.5,"start");
+  }else{
+    roundRect(f.x,f.y,f.w,f.h,4);ctx.fillStyle="#10202b";ctx.fill();
+    ctx.strokeStyle=sel?"#52d7b6":"#3d5868";ctx.stroke();
+    roundRectTop(f.x,f.y,f.w,HEADER_H,4);ctx.fillStyle="#142b38";ctx.fill();ctx.strokeStyle=sel?"#52d7b6":"#3d5868";ctx.stroke();
+    label(name,f.x+12,f.y+20,"#edf7fb",700,12.5,"start");
+    label(pyFile(name),f.x+12,f.y+HEADER_H+16,"#8199a8",400,10,"start");
+    if(promptKey(name)!==name) label(`prompt → ${promptKey(name)}`,f.x+12,f.y+HEADER_H+31,"#667f8d",400,9,"start");
+    if(start) label("START",f.x+f.w-8,f.y+20,"#52d7b6",700,9,"end");
+  }
+  // pins + labels
+  for(const key in f.pinMap){
+    const p=f.pinMap[key];
+    ctx.beginPath();ctx.arc(p.wx,p.wy,PIN_R/S.view.scale,0,Math.PI*2);
+    ctx.fillStyle="#071018";ctx.fill();
+    ctx.lineWidth=1.7/S.view.scale;ctx.strokeStyle=p.kind==="out"?"#53d8b5":"#6ea8ff";ctx.stroke();
+    const lx=p.side==="left"?p.wx+8:p.side==="right"?p.wx-8:p.wx;
+    const ly=p.side==="top"?p.wy+11:p.side==="bottom"?p.wy-11:p.wy;
+    const anchor=p.side==="left"?"start":p.side==="right"?"end":"center";
+    label(short(p.label,p.side==="top"||p.side==="bottom"?12:20),lx,ly+3,"#cbd9e1",400,9,anchor);
+  }
+}
+
+function label(t,x,y,color,weight,size,anchor){
+  ctx.fillStyle=color;ctx.textAlign=anchor||"start";ctx.textBaseline="alphabetic";
+  ctx.font=`${weight} ${size/S.view.scale}px var(--mono,monospace)`;
+  ctx.font=`${weight} ${size/S.view.scale}px ui-monospace,Consolas,monospace`;
+  ctx.fillText(t,x,y);
+}
+function roundRect(x,y,w,h,r){r/=S.view.scale;ctx.beginPath();ctx.roundRect(x,y,w,h,r);}
+function roundRectTop(x,y,w,h,r){r/=S.view.scale;ctx.beginPath();ctx.roundRect(x,y,w,h,[r,r,0,0]);}
+
+let DRAG=null; // interaction state
+
+// ============================================================================
+// STEP 3 — interaction: hit-testing, select/drag nodes, pan, zoom, wire draw.
+// ============================================================================
+
+// hit test: returns {kind:'pin',name,key,pin} | {kind:'node',name} | {kind:'wire',wire} | null
+function hitTest(wx,wy){
+  buildFrame();
+  const pr=(PIN_R+5)/S.view.scale;
+  // pins first (topmost)
+  for(const name of allBoxes()){const f=FRAME[name];
+    for(const key in f.pinMap){const p=f.pinMap[key];
+      if(Math.hypot(wx-p.wx,wy-p.wy)<=pr) return {kind:"pin",name,key,pin:p};}}
+  // node bodies (reverse so topmost drawn wins)
+  const list=allBoxes();
+  for(let i=list.length-1;i>=0;i--){const name=list[i],f=FRAME[name];
+    if(wx>=f.x&&wx<=f.x+f.w&&wy>=f.y&&wy<=f.y+f.h) return {kind:"node",name};}
+  // wires
+  allSegments();
+  const tol=6/S.view.scale;
+  for(const w of wires()){if(!w._pts)continue;
+    for(let i=0;i<w._pts.length-1;i++){if(distToSeg(wx,wy,w._pts[i],w._pts[i+1])<=tol)return {kind:"wire",wire:w};}}
+  return null;
+}
+function distToSeg(px,py,a,b){const dx=b.x-a.x,dy=b.y-a.y,l2=dx*dx+dy*dy;
+  if(l2===0)return Math.hypot(px-a.x,py-a.y);
+  let t=((px-a.x)*dx+(py-a.y)*dy)/l2;t=clamp(t,0,1);
+  return Math.hypot(px-(a.x+t*dx),py-(a.y+t*dy));}
+
+cv.addEventListener("pointerdown",e=>{
+  cv.setPointerCapture(e.pointerId);
+  const r=cv.getBoundingClientRect();
+  const sx=e.clientX-r.left, sy=e.clientY-r.top;
+  const w=toWorld(sx,sy);
+  if(e.button===1||SPACE){DRAG={type:"pan",sx,sy,tx:S.view.tx,ty:S.view.ty};return;}
+  const hit=hitTest(w.x,w.y);
+  if(hit?.kind==="pin"&&hit.pin.kind==="out"){
+    DRAG={type:"wire",source:hit.name,signal:hit.pin.signal,cur:w};select(null);return;
+  }
+  if(hit?.kind==="node"){
+    select({type:"node",id:hit.name});
+    const f=FRAME[hit.name];
+    DRAG={type:"node",name:hit.name,dx:w.x-f.x,dy:w.y-f.y,before:snapshot()};
+    return;
+  }
+  if(hit?.kind==="wire"){select({type:"wire",source:hit.wire.source,signal:hit.wire.signal,index:hit.wire.index});render();return;}
+  select(null);render();
+});
+
+window.addEventListener("pointermove",e=>{
+  if(!DRAG)return;
+  const r=cv.getBoundingClientRect();
+  const sx=e.clientX-r.left, sy=e.clientY-r.top;
+  const w=toWorld(sx,sy);
+  if(DRAG.type==="pan"){S.view.tx=DRAG.tx+(sx-DRAG.sx);S.view.ty=DRAG.ty+(sy-DRAG.sy);render();}
+  else if(DRAG.type==="node"){S.editor.nodes[DRAG.name]={x:w.x-DRAG.dx,y:w.y-DRAG.dy};render();}
+  else if(DRAG.type==="wire"){DRAG.cur=w;render();}
+});
+
+window.addEventListener("pointerup",e=>{
+  if(!DRAG)return;
+  if(DRAG.type==="node"&&DRAG.before){pushHistory(DRAG.before);S.dirty=true;refreshChrome();}
+  if(DRAG.type==="wire"){
+    const r=cv.getBoundingClientRect();
+    const w=toWorld(e.clientX-r.left,e.clientY-r.top);
+    const hit=hitTest(w.x,w.y);
+    const tgt = hit?.kind==="node"?hit.name : hit?.kind==="pin"?hit.name : null;
+    if(tgt && tgt!==DRAG.source) commit(()=>addWire(DRAG.source,DRAG.signal,tgt));
+  }
+  DRAG=null;render();
+});
+
+cv.addEventListener("wheel",e=>{
+  e.preventDefault();
+  const r=cv.getBoundingClientRect();
+  const sx=e.clientX-r.left, sy=e.clientY-r.top;
+  const old=S.view.scale, ns=clamp(old*(e.deltaY<0?1.1:0.9),0.2,2.4);
+  const wx=(sx-S.view.tx)/old, wy=(sy-S.view.ty)/old;
+  S.view.scale=ns; S.view.tx=sx-wx*ns; S.view.ty=sy-wy*ns; render();
+},{passive:false});
+
+let SPACE=false;
+window.addEventListener("keydown",e=>{
+  if(e.code==="Space")SPACE=true;
+  const typing=["INPUT","TEXTAREA","SELECT"].includes(document.activeElement?.tagName);
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="z"){e.preventDefault();e.shiftKey?redo():undo();}
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="y"){e.preventDefault();redo();}
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="s"){e.preventDefault();saveFile();}
+  if(typing)return;
+  if(e.key==="Delete")deleteSelected();
+  if(e.key.toLowerCase()==="f")fitView();
+  if(e.key.toLowerCase()==="l")autoLayout();
+});
+window.addEventListener("keyup",e=>{if(e.code==="Space")SPACE=false;});
+
+function select(sel){S.selected=sel;render();renderInspector();renderList();}
+
+// --- view helpers ---
+function fitView(){
+  buildFrame();
+  const names=allBoxes();if(!names.length)return;
+  let minX=1e9,minY=1e9,maxX=-1e9,maxY=-1e9;
+  for(const n of names){const f=FRAME[n];minX=Math.min(minX,f.x);minY=Math.min(minY,f.y);maxX=Math.max(maxX,f.x+f.w);maxY=Math.max(maxY,f.y+f.h);}
+  const pad=70,bw=maxX-minX,bh=maxY-minY;
+  const s=clamp(Math.min((cssW-pad*2)/bw,(cssH-pad*2)/bh),0.2,1.25);
+  S.view.scale=s;
+  S.view.tx=cssW/2-(minX+bw/2)*s; S.view.ty=cssH/2-(minY+bh/2)*s;
+  render();
+}
+function updateZoomLabel(){$("#zoomLabel").textContent=`${Math.round(S.view.scale*100)}%`;}
+
+// ============================================================================
+// STEP 4 — history/undo, commit wrapper, auto-layout, component list.
+// ============================================================================
+const snapshot = ()=>JSON.stringify({w:S.wiring,e:S.editor,s:S.selected});
+function restore(str){const o=JSON.parse(str);S.restoring=true;S.wiring=o.w;S.editor=o.e;S.selected=o.s;normalize();S.restoring=false;S.dirty=true;render();renderInspector();renderList();refreshChrome();}
+function pushHistory(before){if(S.history.at(-1)!==before){S.history.push(before);if(S.history.length>80)S.history.shift();S.future=[];}}
+// run a mutation, snapshotting for undo if it changed anything
+function commit(fn){const before=snapshot();fn();const after=snapshot();if(after!==before){S.history.push(before);if(S.history.length>80)S.history.shift();S.future=[];S.dirty=true;}render();renderInspector();renderList();refreshChrome();}
+function undo(){if(!S.history.length)return;S.future.push(snapshot());restore(S.history.pop());}
+function redo(){if(!S.future.length)return;S.history.push(snapshot());restore(S.future.pop());}
+
+// auto-layout: Sugiyama-lite. longest-path layering along non-feedback edges,
+// barycenter ordering per layer, then place left->right.
+function autoLayout(push=true){
+  const before=snapshot();
+  const ns=allBoxes();
+  const FEEDBACK=/^(error|wait|retry|replan|reflect|escalate|topology_patch|spawn|modify_failed|repair_unresolved|step_denied)$/i;
+  const fwd=wires().filter(w=>!FEEDBACK.test(w.signal));
+  const use=fwd.length?fwd:wires();
+  const succ={},pred={};ns.forEach(n=>{succ[n]=[];pred[n]=[];});
+  for(const w of use){if(w.source===w.target)continue;succ[w.source]?.push(w.target);pred[w.target]?.push(w.source);}
+  // longest-path layering
+  const layer={};const start=S.wiring.topology.cycle_start;
+  const indeg={};ns.forEach(n=>indeg[n]=pred[n].length);
+  let q=ns.filter(n=>indeg[n]===0);if(!q.length)q=[start];q.forEach(n=>layer[n]=0);
+  const seen=new Set(q);let guard=0;
+  while(q.length&&guard++<10000){const n=q.shift();for(const s of succ[n]){layer[s]=Math.max(layer[s]??0,(layer[n]??0)+1);if(!seen.has(s)){seen.add(s);q.push(s);}}}
+  ns.forEach(n=>layer[n]??=0);
+  // group by layer
+  const layers={};ns.forEach(n=>{(layers[layer[n]]??=[]).push(n);});
+  const maxL=Math.max(...Object.keys(layers).map(Number));
+  // barycenter ordering, a few sweeps
+  for(let it=0;it<4;it++)for(let L=1;L<=maxL;L++){const prev=layers[L-1]||[];const idx={};prev.forEach((n,i)=>idx[n]=i);
+    (layers[L]||[]).sort((a,b)=>bary(a,pred,idx)-bary(b,pred,idx));}
+  // place
+  const COLW=300, ROWH=150;
+  for(let L=0;L<=maxL;L++){(layers[L]||[]).forEach((n,i)=>{S.editor.nodes[n]={x:60+L*COLW,y:60+i*ROWH};});}
+  const after=snapshot();if(push&&after!==before){S.history.push(before);if(S.history.length>80)S.history.shift();S.future=[];S.dirty=true;}
+  render();refreshChrome();setTimeout(fitView,20);
+}
+function bary(n,pred,idx){const ps=pred[n].map(p=>idx[p]).filter(v=>v!=null);return ps.length?ps.reduce((a,b)=>a+b,0)/ps.length:1e6;}
+
+// --- left component list ---
+function renderList(){
+  const q=$("#nodeSearch").value.trim().toLowerCase();
+  const list=$("#nodeList");
+  list.innerHTML=allBoxes().filter(n=>n.toLowerCase().includes(q)).map(n=>{
+    const end=isEndpoint(n);
+    return `<button class="node-item ${S.selected?.type==="node"&&S.selected.id===n?"selected":""}" data-node="${esc(n)}">
+      <span class="node-led ${end?"endpoint":""}"></span>
+      <span class="node-item-main"><b>${esc(n)}</b><small>${esc(end?"endpoint":pyFile(n))}</small></span>
+      <span class="node-count">${end?"END":outSignals(n).length}</span></button>`;
+  }).join("");
+  $$(".node-item",list).forEach(b=>b.onclick=()=>{select({type:"node",id:b.dataset.node});centerOn(b.dataset.node);});
+}
+function centerOn(name){buildFrame();const f=FRAME[name];if(!f)return;
+  S.view.tx=cssW/2-(f.x+f.w/2)*S.view.scale;S.view.ty=cssH/2-(f.y+f.h/2)*S.view.scale;render();}
+
+function refreshChrome(){
+  $("#fileLabel").textContent=(S.dirty?"● ":"")+S.filename;
+  $("#counts").textContent=`${nodes().length} nodes · ${wires().length} wires · ${endpoints().length} endpoints`;
+  $("#undoBtn").disabled=!S.history.length; $("#redoBtn").disabled=!S.future.length;
+  updateZoomLabel();
+}
+
+// ============================================================================
+// STEP 5 — inspector tabs, modal/toast, node & wire mutations.
+// ============================================================================
+const IN=$("#inspector");
+const field=(label,inner,note="")=>`<label class="field"><span>${label}</span>${inner}${note?`<small>${note}</small>`:""}</label>`;
+
+function renderInspector(){
+  $$(".inspector-tab").forEach(t=>t.classList.toggle("active",t.dataset.tab===S.tab));
+  if(!S.selected){IN.innerHTML=`<div class="empty-state"><div class="empty-icon">⌱</div><b>Select a component or wire</b><p>Drag from an output pin (green) to any component to wire it. Pins sit on all four sides; drag their side in Properties.</p></div>`;return;}
+  if(S.selected.type==="wire")return inspectWire();
+  inspectNode(S.selected.id);
+}
+
+function inspectNode(name){
+  const end=isEndpoint(name), key=promptKey(name), alias=S.wiring.prompt_aliases?.[name]||"", file=pyFile(name);
+  const doc=f=>{const src=S.codeByFile[f]||"";const m=src.match(/^\s*[ru]{0,2}("""|''')([\s\S]*?)\1/);return m?m[2].trim():"";};
+  if(S.tab==="prompt"){
+    IN.innerHTML=end?`<div class="empty-state"><b>Endpoint has no prompt.</b></div>`:
+      field("Prompt alias",`<input id="promptAlias" value="${esc(alias)}" placeholder="blank = direct prompt">`)+
+      field("Resolved prompt key",`<input value="${esc(key)}" readonly>`)+
+      field("System prompt",`<textarea id="promptText" class="tall" spellcheck="false">${esc(S.wiring.prompts?.[key]??"")}</textarea>`)+
+      `<div class="actions"><button id="applyPrompt" class="primary">Apply</button></div>`;
+    $("#applyPrompt")?.addEventListener("click",()=>commit(()=>{const a=$("#promptAlias").value.trim();
+      if(a)S.wiring.prompt_aliases[name]=a;else delete S.wiring.prompt_aliases[name];
+      S.wiring.prompts[a||name]=$("#promptText").value;}));
+    return;
+  }
+  if(S.tab==="code"){
+    const code=S.codeByFile[file]??"";
+    IN.innerHTML=end?`<div class="empty-state"><b>Endpoint has no Python file.</b></div>`:
+      field("Source file",`<input value="${esc(file)}" readonly>`)+
+      `<div class="actions"><button id="chooseFolder">Choose source folder</button><button id="loadCode">Load</button></div>`+
+      field("Python code",`<textarea id="codeText" class="code tall" spellcheck="false">${esc(code)}</textarea>`)+
+      `<div class="actions"><button id="saveCode" class="primary">Save file</button></div>`+
+      `<p class="note">All logical instances sharing a base name share this file.</p>`;
+    $("#chooseFolder")?.addEventListener("click",connectFolder);
+    $("#loadCode")?.addEventListener("click",()=>loadCode(file));
+    $("#saveCode")?.addEventListener("click",()=>saveCode(file,$("#codeText").value));
+    $("#codeText")?.addEventListener("input",e=>S.codeByFile[file]=e.target.value);
+    return;
+  }
+  if(S.tab==="contract"){
+    const own=end?"":(doc(file)||"(no docstring / source not loaded — connect Source folder)");
+    let rows="";
+    for(const sig of Object.keys(edges()[name]||{})){if(sig==="error")continue;
+      for(const tg of targetsOf(name,sig)){if(SENTINELS.has(tg))continue;
+        const d=doc(pyFile(tg))||"(no declared input contract)";
+        rows+=`<div class="issue"><b>${esc(sig)} → ${esc(tg)}</b><div>${esc(d)}</div></div>`;}}
+    IN.innerHTML=field("This node's input contract (its own docstring)",`<textarea class="tall" readonly>${esc(own)}</textarea>`,"What producers wired to this node must supply. Lives in the node's own file.")+
+      `<div class="section-title">Downstream contract (what this node must produce)</div>`+
+      `<div class="note">Your output is wired to these consumers; the system copies their docstrings into this node's prompt at runtime.</div>`+
+      `<div class="issue-list">${rows||'<div class="note">No downstream consumers wired.</div>'}</div>`;
+    return;
+  }
+  if(S.tab==="json"){
+    const obj=end?{id:name,kind:"endpoint"}:{id:name,edges:edges()[name]||{},prompt_alias:alias||null,prompt:S.wiring.prompts?.[key]??null};
+    IN.innerHTML=field("Selected JSON",`<textarea id="selJson" class="code tall">${esc(JSON.stringify(obj,null,2))}</textarea>`)+
+      `<div class="actions"><button id="applySel" class="primary">Apply selected JSON</button></div>`;
+    $("#applySel")?.addEventListener("click",()=>{try{const a=JSON.parse($("#selJson").value);
+      if(!end)commit(()=>{if(a.edges)S.wiring.topology.edges[name]=a.edges;
+        if("prompt_alias"in a){a.prompt_alias?S.wiring.prompt_aliases[name]=a.prompt_alias:delete S.wiring.prompt_aliases[name];}
+        if("prompt"in a)S.wiring.prompts[promptKey(name)]=a.prompt;});
+    }catch(err){toast(err.message,"error");}});
+    return;
+  }
+  // properties
+  const ins=wires().filter(w=>w.target===name);
+  const outs=end?[]:outSignals(name);
+  const pinRow=(kind,keyid,lbl)=>{const side=pinSide(name,kind,keyid,kind==="out"?"right":"left");
+    return `<div class="pin-row"><span class="pin-dot ${kind}"></span><span class="pin-name" title="${esc(lbl)}">${esc(short(lbl,27))}</span>
+      <select class="pin-side" data-kind="${kind}" data-key="${esc(keyid)}">${SIDES.map(s=>`<option ${side===s?"selected":""}>${s}</option>`).join("")}</select>
+      ${kind==="out"?`<button class="icon-btn remove-pin" data-key="${esc(keyid)}" title="Remove output pin">×</button>`:`<span></span>`}</div>`;};
+  IN.innerHTML=field("Node ID",`<input id="nodeId" value="${esc(name)}" ${end?"readonly":""}>`)+
+    field("Kind",`<input value="${end?"Terminal endpoint":"Topology component"}" readonly>`)+
+    (end?"":field("Python file",`<input value="${esc(file)}" readonly>`))+
+    `<div class="section-title">Input pins</div><div class="pin-list">${ins.length?ins.map(w=>pinRow("in",`${w.source}::${w.signal}::${w.index}`,`${w.signal} ← ${w.source}`)).join(""):'<div class="muted">No input wires</div>'}</div>`+
+    (end?"":`<div class="section-title">Output pins</div><div class="pin-list">${outs.length?outs.map(s=>pinRow("out",s,s)).join(""):'<div class="muted">No output signals</div>'}</div>
+      <div class="actions"><button id="setStart">Set as start</button><button id="addSig">Add signal</button><button id="delNode" class="danger">Delete node</button></div>`);
+  $("#nodeId")?.addEventListener("change",e=>{const v=e.target.value.trim();if(v&&v!==name)renameNode(name,v);});
+  $$(".pin-side",IN).forEach(sel=>sel.onchange=()=>commit(()=>{pinSide(name,sel.dataset.kind,sel.dataset.key,"left");S.editor.pinSides[name][sel.dataset.kind][sel.dataset.key]=sel.value;}));
+  $$(".remove-pin",IN).forEach(b=>b.onclick=()=>removeSignal(name,b.dataset.key));
+  $("#setStart")?.addEventListener("click",()=>commit(()=>S.wiring.topology.cycle_start=name));
+  $("#addSig")?.addEventListener("click",()=>addSignal(name));
+  $("#delNode")?.addEventListener("click",()=>deleteNode(name));
+}
+
+function inspectWire(){
+  const w=wires().find(x=>x.source===S.selected.source&&x.signal===S.selected.signal&&x.index===S.selected.index);
+  if(!w){S.selected=null;return renderInspector();}
+  IN.innerHTML=field("Signal",`<input id="wSig" value="${esc(w.signal)}">`)+
+    field("Source node",`<select id="wSrc">${nodes().map(n=>`<option ${n===w.source?"selected":""}>${esc(n)}</option>`).join("")}</select>`)+
+    field("Target node",`<select id="wTgt">${allBoxes().map(n=>`<option ${n===w.target?"selected":""}>${esc(n)}</option>`).join("")}</select>`)+
+    `<div class="actions"><button id="applyW" class="primary">Apply</button><button id="delW" class="danger">Delete wire</button></div>`;
+  $("#applyW").onclick=()=>commit(()=>{removeWire(w.source,w.signal,w.index);
+    addWire($("#wSrc").value,$("#wSig").value.trim()||w.signal,$("#wTgt").value);S.selected=null;});
+  $("#delW").onclick=()=>commit(()=>{removeWire(w.source,w.signal,w.index);S.selected=null;});
+}
+
+// --- node/wire mutations ---
+function renameNode(from,to){
+  if(allBoxes().includes(to))return toast("That node ID already exists.","error");
+  commit(()=>{const i=nodes().indexOf(from);nodes()[i]=to;
+    if(edges()[from]){edges()[to]=edges()[from];delete edges()[from];}
+    for(const map of Object.values(edges()))for(const [sig,val] of Object.entries(map||{}))
+      map[sig]=Array.isArray(val)?val.map(t=>t===from?to:t):(val===from?to:val);
+    if(S.wiring.topology.cycle_start===from)S.wiring.topology.cycle_start=to;
+    for(const tbl of ["prompts","prompt_aliases"])if(from in S.wiring[tbl]){S.wiring[tbl][to]=S.wiring[tbl][from];delete S.wiring[tbl][from];}
+    for(const tbl of ["nodes","pinSides","wireVertices"])if(S.editor[tbl]?.[from]){S.editor[tbl][to]=S.editor[tbl][from];delete S.editor[tbl][from];}
+    S.selected={type:"node",id:to};});
+}
+function addNode(){modalInput("Add topology node","Logical node ID","node_new",v=>{
+  if(!v||allBoxes().includes(v))return toast("Choose a unique node ID.","error");
+  commit(()=>{nodes().push(v);edges()[v]={};S.wiring.prompts[v]="";
+    const c=toWorld(cssW/2,cssH/2);S.editor.nodes[v]={x:c.x-NODE_W/2,y:c.y-48};S.selected={type:"node",id:v};});});}
+function addSignal(name){modalInput("Add output signal","Signal name","signal",v=>{
+  if(!v||outSignals(name).includes(v))return toast("Choose a new signal name.","error");
+  commit(()=>{edges()[name]??={};edges()[name][v]="halt";});});}  // placeholder target; rewire by dragging
+function removeSignal(name,sig){modalConfirm(`Remove output signal "${sig}" and its wires?`,()=>commit(()=>{delete edges()[name]?.[sig];delete S.editor.pinSides[name]?.out?.[sig];}));}
+function deleteNode(name){modalConfirm(`Delete ${name} and every connected wire?`,()=>commit(()=>{
+  const i=nodes().indexOf(name);if(i>=0)nodes().splice(i,1);delete edges()[name];
+  for(const [src,map] of Object.entries(edges()))for(const [sig,val] of Object.entries(map||{}))
+    setTargets(src,sig,(Array.isArray(val)?val:[val]).filter(t=>t!==name));
+  delete S.wiring.prompts[name];delete S.wiring.prompt_aliases[name];
+  delete S.editor.nodes[name];delete S.editor.pinSides[name];S.selected=null;}));}
+function deleteSelected(){if(!S.selected)return;
+  if(S.selected.type==="node"&&!isEndpoint(S.selected.id))deleteNode(S.selected.id);
+  else if(S.selected.type==="wire")commit(()=>{removeWire(S.selected.source,S.selected.signal,S.selected.index);S.selected=null;});}
+
+// --- modal + toast ---
+const modal=$("#modal");
+function openModal(title,body,actions){$("#modalTitle").textContent=title;$("#modalBody").innerHTML=body;
+  const a=$("#modalActions");a.innerHTML="";actions.forEach(x=>{const b=document.createElement("button");b.textContent=x.label;b.className=x.class||"";b.onclick=()=>x.action();a.appendChild(b);});
+  modal.showModal();}
+const closeModal=()=>modal.close();
+function modalInput(title,label,val,cb){openModal(title,field(label,`<input id="mInput" value="${esc(val)}">`),
+  [{label:"Cancel",action:closeModal},{label:"Apply",class:"primary",action:()=>{const v=$("#mInput").value.trim();closeModal();cb(v);}}]);
+  setTimeout(()=>$("#mInput")?.select(),20);}
+function modalConfirm(msg,cb){openModal("Confirm",`<p>${esc(msg)}</p>`,[{label:"Cancel",action:closeModal},{label:"Delete",class:"danger",action:()=>{closeModal();cb();}}]);}
+modal.addEventListener("click",e=>{if(e.target===modal)closeModal();});
+let toastTimer;
+function toast(msg,kind="ok"){const t=$("#toast");t.textContent=msg;t.className=`toast show ${kind}`;clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.className="toast",2400);}
+function status(msg,kind=""){const s=$("#statusText");s.textContent=msg;s.className=kind;}
+
+// ============================================================================
+// STEP 6 — file I/O, validation, toolbar wiring, resizers, boot.
+// ============================================================================
+function loadDoc(obj,name="wiring.json"){
+  if(!obj||typeof obj!=="object")throw new Error("JSON root must be an object.");
+  S.wiring=clone(obj);
+  S.editor=clone(obj.__wiring_lab||{version:3,nodes:{},pinSides:{},wireVertices:{}});
+  delete S.wiring.__wiring_lab;
+  S.editor.nodes??={};S.editor.pinSides??={};S.editor.wireVertices??={};
+  S.filename=name;S.selected=null;S.history=[];S.future=[];S.dirty=false;
+  normalize();
+  const needLayout=allBoxes().some(n=>!S.editor.nodes[n]);
+  renderList();renderInspector();refreshChrome();
+  if(needLayout)autoLayout(false);else{render();fitView();}
+  status(`Loaded ${name}`,"ok");
+}
+
+async function openFile(){
+  if(!window.showOpenFilePicker)return toast("Needs Chrome File System Access.","error");
+  try{const [h]=await showOpenFilePicker({types:[{description:"JSON",accept:{"application/json":[".json"]}}]});
+    const f=await h.getFile();S.fileHandle=h;loadDoc(JSON.parse(await f.text()),f.name);
+  }catch(e){if(e.name!=="AbortError")toast(e.message,"error");}
+}
+async function saveFile(){
+  const text=JSON.stringify(projectJSON(),null,2)+"\n";
+  if(S.fileHandle){const w=await S.fileHandle.createWritable();await w.write(text);await w.close();S.dirty=false;refreshChrome();toast("Saved project JSON.","ok");}
+  else download(S.filename,text,"application/json");
+}
+function download(name,text,mime){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([text],{type:mime}));a.download=safeName(name);a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
+
+async function connectFolder(){
+  if(!window.showDirectoryPicker)return toast("Folder access needs Chrome.","error");
+  try{S.dirHandle=await showDirectoryPicker({mode:"readwrite"});toast("Source folder connected.","ok");}
+  catch(e){if(e.name!=="AbortError")toast(e.message,"error");}
+}
+async function fileHandleFor(path,create=false){
+  if(!S.dirHandle)throw new Error("Choose the source folder first.");
+  let dir=S.dirHandle;const parts=path.split("/").filter(Boolean);
+  for(let i=0;i<parts.length-1;i++)dir=await dir.getDirectoryHandle(parts[i],{create:false});
+  return dir.getFileHandle(parts.at(-1),{create});
+}
+async function loadCode(file){try{const h=await fileHandleFor(file);S.codeByFile[file]=await (await h.getFile()).text();renderInspector();toast(`Loaded ${file}`,"ok");}
+  catch(e){toast(e.message,"error");}}
+async function saveCode(file,text){try{const w=await(await fileHandleFor(file,true)).createWritable();await w.write(text);await w.close();S.codeByFile[file]=text;toast(`Saved ${file}`,"ok");}
+  catch(e){download(file,text,"text/x-python");toast("Folder write unavailable; downloaded instead.","warning");}}
+
+function validate(){
+  const problems=[];const set=new Set(nodes());
+  const cs=S.wiring.topology.cycle_start;
+  if(!cs)problems.push(["error","Missing topology.cycle_start"]);
+  else if(!set.has(cs))problems.push(["error","cycle_start is not a declared topology node"]);
+  if(set.size!==nodes().length)problems.push(["error","Duplicate IDs in topology.nodes"]);
+  for(const [src,map] of Object.entries(edges())){
+    if(!set.has(src))problems.push(["warning",`Edge source ${src} is not declared`]);
+    for(const [sig,val] of Object.entries(map||{})){
+      if(!sig)problems.push(["error",`Empty signal name on ${src}`]);
+      for(const t of (Array.isArray(val)?val:[val])){
+        if(t==null||t==="")problems.push(["error",`Empty target on ${src}.${sig}`]);
+        else if(!set.has(t)&&!SENTINELS.has(t))problems.push(["warning",`${src}.${sig} targets undeclared endpoint ${t}`]);
+      }
+    }
+  }
+  for(const n of nodes()){const k=promptKey(n);if(!(k in S.wiring.prompts))problems.push(["warning",`${n} resolves to missing prompt ${k}`]);}
+  // reachability from cycle_start
+  if(cs&&set.has(cs)){const seen=new Set(),stk=[cs];
+    while(stk.length){const c=stk.pop();if(seen.has(c)||SENTINELS.has(c))continue;seen.add(c);
+      for(const val of Object.values(edges()[c]||{}))for(const t of (Array.isArray(val)?val:[val]))stk.push(t);}
+    for(const n of nodes())if(!seen.has(n))problems.push(["warning",`${n} is unreachable from ${cs}`]);}
+  openModal("Validation",problems.length?`<div class="issue-list">${problems.map(([k,m])=>`<div class="issue ${k}"><b>${k.toUpperCase()}</b>${esc(m)}</div>`).join("")}</div>`:
+    `<div class="empty-state"><div class="empty-icon">✓</div><b>No topology problems found.</b></div>`,[{label:"Close",class:"primary",action:closeModal}]);
+  status(problems.length?`${problems.length} validation issue(s)`:"Validation passed",problems.some(p=>p[0]==="error")?"error":problems.length?"warning":"ok");
+}
+
+// --- toolbar ---
+$("#openBtn").onclick=openFile;
+$("#saveBtn").onclick=saveFile;
+$("#folderBtn").onclick=connectFolder;
+$("#exportRuntimeBtn").onclick=()=>download(S.filename.replace(/\.json$/i,"")+"_runtime.json",JSON.stringify(runtimeJSON(),null,2)+"\n","application/json");
+$("#exportProjectBtn").onclick=()=>download(S.filename.replace(/\.json$/i,"")+"_project.json",JSON.stringify(projectJSON(),null,2)+"\n","application/json");
+$("#addNodeBtn").onclick=addNode;
+$("#addSignalBtn").onclick=()=>S.selected?.type==="node"&&!isEndpoint(S.selected.id)?addSignal(S.selected.id):toast("Select a declared node first.","warning");
+$("#deleteBtn").onclick=deleteSelected;
+$("#undoBtn").onclick=undo;
+$("#redoBtn").onclick=redo;
+$("#layoutBtn").onclick=()=>autoLayout();
+$("#fitBtn").onclick=fitView;
+$("#fitBtn2").onclick=fitView;
+$("#validateBtn").onclick=validate;
+$("#zoomIn").onclick=()=>{S.view.scale=clamp(S.view.scale*1.15,0.2,2.4);render();};
+$("#zoomOut").onclick=()=>{S.view.scale=clamp(S.view.scale*0.87,0.2,2.4);render();};
+$("#nodeSearch").oninput=renderList;
+$$(".inspector-tab").forEach(t=>t.onclick=()=>{S.tab=t.dataset.tab;renderInspector();});
+$("#leftToggle").onclick=()=>togglePanel("left");
+$("#rightToggle").onclick=()=>togglePanel("right");
+function togglePanel(side){$("#app").classList.toggle(`${side}-closed`);setTimeout(resize,180);}
+
+// --- panel resizers ---
+(()=>{let saved={};try{saved=JSON.parse(localStorage.getItem("wiringLabPanels")||"{}");}catch{}
+  if(saved.left)document.documentElement.style.setProperty("--left-w",saved.left+"px");
+  if(saved.right)document.documentElement.style.setProperty("--right-w",saved.right+"px");
+  $$(".resizer").forEach(rz=>rz.addEventListener("pointerdown",down=>{
+    const side=rz.dataset.side, x0=down.clientX;
+    const varName=side==="left"?"--left-w":"--right-w";
+    const w0=parseFloat(getComputedStyle(document.documentElement).getPropertyValue(varName));
+    rz.setPointerCapture(down.pointerId);
+    const move=e=>{const d=e.clientX-x0;const w=clamp(side==="left"?w0+d:w0-d,190,560);document.documentElement.style.setProperty(varName,w+"px");resize();};
+    const up=()=>{rz.removeEventListener("pointermove",move);rz.removeEventListener("pointerup",up);
+      try{const cs=getComputedStyle(document.documentElement);localStorage.setItem("wiringLabPanels",JSON.stringify({left:parseFloat(cs.getPropertyValue("--left-w")),right:parseFloat(cs.getPropertyValue("--right-w"))}));}catch{}};
+    rz.addEventListener("pointermove",move);rz.addEventListener("pointerup",up);}));
+})();
+
+new ResizeObserver(resize).observe(cv.parentElement);
+window.addEventListener("beforeunload",e=>{if(S.dirty){e.preventDefault();e.returnValue="";}});
+
+// --- boot ---
+loadDoc(clone(BLANK),"wiring.json");
+resize();
+window.__LAB=S;
 </script>
 </body>
 </html>
