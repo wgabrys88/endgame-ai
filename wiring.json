@@ -1,5 +1,5 @@
 {
-  "schema": "endgame-ai.wiring.v2",
+  "schema": "endgame-ai.wiring",
   "model": {
     "transport": "transport_xai",
     "transport_config": {

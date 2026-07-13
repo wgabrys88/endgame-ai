@@ -103,7 +103,7 @@ python core_organism.py "<goal>" --reset --duration-seconds 900
 The goal is your immutable root goal for the run and becomes your persistent
 self-context. `--duration-seconds` sets the informational time budget (the timer
 informs, it does not kill). Drop `runtime_stop.json` in the folder to halt.
-`endgame_wiring_lab_v2.html` is your schematic editor — open it in Chrome, connect
+`endgame_wiring_lab.html` is your schematic editor — open it in Chrome, connect
 this folder as the source, and it shows your topology, prompts, code, and the live
 docstring-contract per node.
 
@@ -140,7 +140,7 @@ PowerShell. Remote: `origin`, branch `run-new-schema`. Rollback ref:
   matches `git ls-files`.
 
 **How to investigate.** Read code before changing it. The `code` tool (LSP) beats
-grep for symbols. `endgame_wiring_lab_v2.html` is now a small file whose graph
+grep for symbols. `endgame_wiring_lab.html` is now a small file whose graph
 libraries (JointJS, dagre) load from CDN, so you may read and edit it directly.
 Never load large trace/log files into context; extract with small
 Python scripts (sizes, counts, specific fields) and delete the script after.
@@ -161,7 +161,7 @@ guard: `core_brain.py`. Wiring load/validate: `core_wiring.py`. Capability
 namespace + self-evolution git machinery: `core_nodes.py`. Observation library:
 `core_observation.py` + `obs_scan/obs_filter/obs_build.py`. Everything else is a
 `node_*.py` body. Prompts and topology are in `wiring.json`. The Lab is
-`endgame_wiring_lab_v2.html`.
+`endgame_wiring_lab.html`.
 
 **Current frontier.** Architecture is: one wheel, one executor+runner, split
 observation, emergent signals, docstring-contracts, no shared-state bus fallback
