@@ -140,9 +140,9 @@ PowerShell. Remote: `origin`, branch `run-new-schema`. Rollback ref:
   matches `git ls-files`.
 
 **How to investigate.** Read code before changing it. The `code` tool (LSP) beats
-grep for symbols. For the giant minified `endgame_wiring_lab_v2.html`, never dump
-it — grep for byte offsets and edit with precise string matches; verify brace
-balance after. Never load large trace/log files into context; extract with small
+grep for symbols. `endgame_wiring_lab_v2.html` is now a small file whose graph
+libraries (JointJS, dagre) load from CDN, so you may read and edit it directly.
+Never load large trace/log files into context; extract with small
 Python scripts (sizes, counts, specific fields) and delete the script after.
 
 **How the user works.** Ideas flow fast; they value honest pushback over
