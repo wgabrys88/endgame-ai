@@ -1,6 +1,7 @@
 *
 .*
 
+!README.md
 !.gitattributes
 !.gitignore
 !wiring.json

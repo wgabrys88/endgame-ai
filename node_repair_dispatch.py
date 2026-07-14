@@ -13,7 +13,7 @@ def run(ctx):
     if repair["status"] != "probing":
         raise RuntimeError(f"repair dispatch requires probing status, got {repair['status']!r}")
     observed_at = state["observed_at"]
-    if observed_at is None or float(observed_at) < float(repair["probe_started_at"]):
+    if observed_at is None or float(observed_at) <= float(repair["probe_started_at"]):
         raise RuntimeError("repair dispatch requires a fresh pre-probe observation")
     repair = {**repair, "probe_observed_at": observed_at}
     return bus.emit(

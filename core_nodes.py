@@ -100,8 +100,11 @@ def _evolvable_source(w: dict[str, Any]) -> dict[str, Any]:
 
 def _evolvable_rel(w: dict[str, Any], rel: str) -> bool:
     cfg = _evolvable_source(w)
-    name = pathlib.PurePosixPath(rel.replace("\\", "/")).name
-    return name in set(cfg["names"]) or pathlib.PurePosixPath(rel).suffix in set(cfg["suffixes"])
+    path = pathlib.PurePosixPath(rel.replace("\\", "/"))
+    skip_prefixes = tuple(cfg["skip_prefixes"])
+    if any(part.startswith(skip_prefixes) for part in path.parts):
+        return False
+    return path.name in set(cfg["names"]) or path.suffix in set(cfg["suffixes"])
 
 
 def _git(args: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -208,8 +211,6 @@ def prepare_self_evolution(w: dict[str, Any]) -> dict[str, Any]:
     branch = git_current_branch()
     remote_url = _remote_url(remote)
     status = git_worktree_status()
-    if status:
-        raise RuntimeError(f"self evolution requires a clean worktree so the known-good marker remains exact: {status}")
     return {
         "context_mode": w["self_modify"]["context_mode"],
         "branch": branch,
@@ -257,6 +258,15 @@ def _restore_snapshots(snapshots: dict[pathlib.Path, bytes | None]) -> None:
             tmp = path.with_name(f"{path.name}.rollback.{os.getpid()}.{_thread_id()}")
             tmp.write_bytes(content)
             io_helpers.replace_with_retry(tmp, path)
+
+
+def restore_evolution_snapshot(snapshots: dict[pathlib.Path, bytes | None]) -> dict[str, Any]:
+    """Restore the exact live body captured immediately before a candidate patch."""
+    if not isinstance(snapshots, dict) or not snapshots:
+        return {"restored": False, "reason": "missing_pre_candidate_snapshot"}
+    _restore_snapshots(snapshots)
+    paths = sorted(path.relative_to(ROOT).as_posix() for path in snapshots)
+    return {"restored": True, "paths": paths}
 
 
 def _file_write(item: dict[str, Any], w: dict[str, Any]) -> tuple[pathlib.Path, str, str]:
@@ -331,7 +341,16 @@ def apply_evolution_patch(w: dict[str, Any], parsed: dict[str, Any]) -> tuple[st
     activation = {"immediate": [], "next_run": [], "supporting": []}
     for rel in changed + (["wiring.json"] if wiring_patches else []):
         activation[_activation_bucket(rel, w)].append(rel)
-    return "set", {"wiring_patches": len(wiring_patches), "file_writes": len(writes), "file_deletes": len(deletes), "commands": command_results, "rollback_on_failure": rollback, "changed_files": changed, "activation": activation}
+    return "set", {
+        "wiring_patches": len(wiring_patches),
+        "file_writes": len(writes),
+        "file_deletes": len(deletes),
+        "commands": command_results,
+        "rollback_on_failure": rollback,
+        "changed_files": changed,
+        "activation": activation,
+        "_rollback_snapshot": snapshots,
+    }
 
 
 def commit_self_evolution(
@@ -347,14 +366,26 @@ def commit_self_evolution(
     changed_files = sorted({str(path).replace("\\", "/") for path in changed_files if str(path).strip()})
     if not changed_files:
         return {"committed": False, "reason": "no_changed_files", "branch": git_current_branch(), "commit": git_head_sha()}
-    _git(["add", "-A", "-f", "--", *changed_files])
-    if _git(["diff", "--quiet", "HEAD", "--", *changed_files], check=False).returncode == 0:
+    # The candidate commit is a complete snapshot of the tracked living body.
+    # This matters after a human installs an update by overwriting files: a
+    # subset-only commit would make the eventual known-good ref point partly at
+    # the obsolete pre-install tree. Runtime artifacts remain excluded by the
+    # evolvable policy; newly authored files enter through changed_files.
+    tracked_body = {
+        rel.replace("\\", "/")
+        for rel in _git(["ls-files", "-z"]).stdout.split("\0")
+        if rel and _evolvable_rel(w, rel)
+    }
+    body_snapshot_files = sorted(tracked_body | set(changed_files))
+    _git(["add", "-A", "-f", "--", *body_snapshot_files])
+    if _git(["diff", "--quiet", "HEAD", "--", *body_snapshot_files], check=False).returncode == 0:
         return {
             "committed": False,
             "reason": "no_git_changes",
             "branch": git_current_branch(),
             "commit": git_head_sha(),
             "changed_files": changed_files,
+            "body_snapshot_files": body_snapshot_files,
         }
     title = "Self-modify: " + str(patch_data.get("summary") or "validated self evolution").replace("\n", " ")[:60]
     body = json.dumps(
@@ -369,7 +400,7 @@ def commit_self_evolution(
         indent=2,
         default=str,
     )
-    _git(["commit", "--only", "-m", title, "-m", body, "--", *changed_files])
+    _git(["commit", "--only", "-m", title, "-m", body, "--", *body_snapshot_files])
     branch, commit = git_current_branch(), git_head_sha()
     known_good = (
         update_known_good_ref(w, commit, source="commit_self_evolution")
@@ -391,6 +422,7 @@ def commit_self_evolution(
         "known_good": known_good,
         "known_good_advanced": advance_known_good,
         "changed_files": changed_files,
+        "body_snapshot_files": body_snapshot_files,
         "pushed": pushed,
         "known_good_ref_pushed": known_good_ref_pushed,
         "status": git_worktree_status(),
@@ -418,7 +450,9 @@ def accept_self_evolution(w: dict[str, Any], commit: str, *, source: str) -> dic
 
 
 def save_wiring(w: dict[str, Any]) -> None:
-    wiring.atomic_write_json(ROOT / "wiring.json", w)
+    # Invocation-local keys isolate nested state but are not part of the body's
+    # declarative source of truth.
+    wiring.atomic_write_json(ROOT / "wiring.json", {key: value for key, value in w.items() if not key.startswith("_")})
 
 
 def _action_index(state: dict[str, Any]) -> dict[str, Any]:
@@ -441,6 +475,10 @@ def capability_manifest(ctx: dict[str, Any] | None = None) -> dict[str, Any]:
     transport, cfg = wiring.get_transport_config(w)
     manifest["configured_model"] = {"transport": transport, "model": cfg.get("model")}
     manifest["repo_root"] = str(ROOT)
+    manifest["invocation"] = (
+        "Every helper name is already a top-level global in the runner. Call it directly; "
+        "never import GUI helpers from tools or desktop. Listed modules are also prebound top-level objects."
+    )
     return manifest
 
 
@@ -461,12 +499,6 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         event.setdefault("ok", True)
         event["event_index"] = len(action_events)
         event["recorded_at"] = time.time()
-        rendered = json.dumps(event, ensure_ascii=False, default=str)
-        if len(rendered) > 12000:
-            keep = {key: event[key] for key in ("ok", "action", "path", "size", "content_chars", "content_sha256", "returncode", "event_index", "recorded_at") if key in event}
-            keep["detail_chars"] = len(rendered)
-            keep["detail_preview"] = rendered[:6000] + "\n...[action detail bounded]...\n" + rendered[-6000:]
-            event = keep
         action_events.append(event)
         if event.get("ok") is not True:
             raise RuntimeError(f"body action failed: {event}")
@@ -513,6 +545,17 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         node = _require_node(node_id)
         return _record_action({"ok": True, "action": "read_node", "target": _target_label(node), "text": node.get("name") or node.get("text_full") or node.get("value") or ""})
 
+    def observe() -> dict[str, Any]:
+        obs = d.observe({"hover_cache": copy.deepcopy(w["observe_config"]["hover_cache"])})
+        return _record_action(
+            {
+                "ok": True,
+                "action": "observe",
+                "observed_at": obs.get("observed_at"),
+                "desktop_tree_text": obs.get("desktop_tree_text", ""),
+            }
+        )
+
     def consult_model(prompt: str, max_output_tokens: int = 800) -> dict[str, Any]:
         text = str(prompt).strip()
         if not text:
@@ -523,7 +566,7 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
     runtime = {
         "click": click, "click_node": click_node, "read_node": read_node,
         "type_text": type_text, "press_key": press_key, "hotkey": hotkey, "scroll": scroll,
-        "open_url": open_url, "consult_model": consult_model,
+        "open_url": open_url, "observe": observe, "consult_model": consult_model,
         "write_file": _recorded("write_file", _tools.write_file),
         "read_file": _recorded("read_file", _tools.read_file),
         "web_search": _recorded("web_search", _tools.web_search),

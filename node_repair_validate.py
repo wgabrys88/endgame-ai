@@ -18,9 +18,9 @@ class RepairValidateNode(BaseNode):
         probe = repair["probe"]
         after_observation = bus.observation_brief(state)
         observed_at = after_observation["observed_at"]
-        if float(repair["probe_observed_at"]) < float(repair["probe_started_at"]):
+        if float(repair["probe_observed_at"]) <= float(repair["probe_started_at"]):
             raise RuntimeError("repair validation requires a fresh pre-probe observation")
-        if observed_at is None or float(observed_at) < float(repair["probe_observed_at"]):
+        if observed_at is None or float(observed_at) <= float(repair["probe_observed_at"]):
             raise RuntimeError("repair validation requires a fresh post-probe observation")
         executions = bus.execution_evidence(state)
         faculties = executions["faculties"]
@@ -117,6 +117,7 @@ class RepairValidateNode(BaseNode):
             "self_modify": self_modify,
             "current_step": original_step,
             "step_goal": original_step["description"],
+            "action_frame": None,
             "turn_executions": {},
             "effective_goal": effective,
         }

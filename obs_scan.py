@@ -50,10 +50,12 @@ def run(config: dict[str, Any], desktop: Any) -> dict[str, Any]:
     saved = wintypes.POINT()
     had_cursor = bool(user32.GetCursorPos(ctypes.byref(saved)))
     t0 = time.time()
+    probes_run = 0
     try:
         for x, y in points:
             if len(index) >= max_total:
                 break
+            probes_run += 1
             user32.SetCursorPos(int(x), int(y))
             if delay_ms > 0:
                 time.sleep(delay_ms / 1000.0)
@@ -101,8 +103,10 @@ def run(config: dict[str, Any], desktop: Any) -> dict[str, Any]:
         "screen": {"width": sw, "height": sh},
         "scan_stats": {
             "area": {"left": left, "top": top, "right": right, "bottom": bottom},
-            "probes": len(points),
+            "probes": probes_run,
+            "planned_probes": len(points),
             "unique_nodes": len(index),
+            "node_limit_hit": len(index) >= max_total,
             "point_errors": len(errors),
             "first_point_errors": errors[:5],
             "elapsed_s": round(time.time() - t0, 3),

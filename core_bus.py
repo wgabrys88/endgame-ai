@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 import hashlib
 import json
+import re
 import time
 from typing import Any
 
@@ -85,7 +86,7 @@ def emit(signal: str, patch: JsonDict | None = None, *, record: Record | JsonDic
     return NodeOutput(signal=signal.strip(), patch=dict(patch or {}), record=record_obj, evidence=dict(evidence or {}))
 
 
-NARRATIVE_TAIL_CHARS = 8000
+NARRATIVE_TAIL_CHARS = 12000
 
 
 def append_narrative(effective_goal: str, line: str, *, root_goal: str = "") -> str:
@@ -177,7 +178,9 @@ def state_brief(state: JsonDict) -> JsonDict:
         narrative = narrative[len(root_goal):].lstrip()
     return {
         "tick": state.get("tick"),
+        "depth": state.get("_depth", 0),
         "current_node": state.get("current_node"),
+        "frontier": list(state.get("frontier") or []),
         "narrative": narrative,
         "step_index": step_index,
         "current_step": {"description": current_step.get("description", ""), "done_when": current_step.get("done_when", "")},
@@ -190,26 +193,35 @@ def state_brief(state: JsonDict) -> JsonDict:
         "last_failure": state.get("last_failure", {}),
         "failure_streak": state.get("failure_streak", {}),
         "repair_validation": repair_validation_brief(state),
+        "has_action_frame": bool(state.get("action_frame")),
     }
 
 
 def focused_elements(state: JsonDict) -> JsonDict:
-    """Expand metadata for the ids named in the current fresh observation's tree only.
+    """Map every visible short id compactly and expand only the current focus.
 
-    Ids are ephemeral per observation and never harvested from persisted memory; the
-    actor reads them from the current desktop_tree_text, acts, and discards them.
+    The full action index remains in memory for execution. Prompt evidence receives a
+    compact id map plus geometry for genuinely focused or action-framed ids, avoiding
+    giant duplicated class metadata without making the desktop scan shallow.
     """
     action_index = state.get("action_index") or {}
     if not isinstance(action_index, dict):
         return {}
     tree_text = str(state.get("desktop_tree_text") or "")
     visible_ids = {line.strip().split(" ", 1)[0] for line in tree_text.splitlines() if line.strip()}
-    fields = ("id", "name", "role", "action", "rect", "enabled", "focused", "automation_id", "class_name", "hwnd", "depth")
-    return {
-        node_id: {key: node[key] for key in fields if key in node}
-        for node_id, node in action_index.items()
-        if isinstance(node, dict) and str(node_id) in visible_ids
-    }
+    frame_text = json.dumps(state.get("action_frame") or {}, ensure_ascii=False, default=str)
+    framed_ids = set(re.findall(r"\b(?:e|W)\d+\b", frame_text))
+    compact_fields = ("name", "role", "action", "enabled", "focused")
+    detail_fields = ("rect", "automation_id", "class_name", "hwnd", "depth")
+    mapped: JsonDict = {}
+    for node_id, node in action_index.items():
+        if not isinstance(node, dict) or str(node_id) not in visible_ids:
+            continue
+        item = {key: node[key] for key in compact_fields if key in node}
+        if node.get("focused") or str(node_id) in framed_ids:
+            item.update({key: node[key] for key in detail_fields if key in node})
+        mapped[str(node_id)] = item
+    return mapped
 
 
 def observation_brief(state: JsonDict) -> JsonDict:
@@ -219,6 +231,7 @@ def observation_brief(state: JsonDict) -> JsonDict:
         "desktop_tree_text": state.get("desktop_tree_text", ""),
         "focused_elements": focused_elements(state),
         "observed_at": state.get("observed_at"),
+        "settle_seconds": artifact.get("settle_seconds") if isinstance(artifact, dict) else None,
         "screen": artifact.get("screen", {}) if isinstance(artifact, dict) else {},
         "scan_stats": artifact.get("scan_stats", {}) if isinstance(artifact, dict) else {},
         "rendered_node_count": state.get("rendered_node_count") or (tree or {}).get("rendered_node_count"),
@@ -226,6 +239,7 @@ def observation_brief(state: JsonDict) -> JsonDict:
         "llm_node_limit_hit": state.get("llm_node_limit_hit") or (tree or {}).get("llm_node_limit_hit"),
         "elements_truncated": (tree or {}).get("elements_truncated", False),
         "elements_dropped_per_window": (tree or {}).get("elements_dropped_per_window", {}),
+        "elements_dropped_global": (tree or {}).get("elements_dropped_global", 0),
     }
 
 

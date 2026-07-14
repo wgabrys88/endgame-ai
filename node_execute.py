@@ -28,6 +28,7 @@ class ExecuteNode(BaseNode):
         return {
             "goal": state["goal"],
             "step": {"description": step.get("description", state["goal"]), "done_when": step.get("done_when", "")},
+            "action_frame": state.get("action_frame"),
             "focus": bus.state_brief(state),
             "observation": bus.observation_brief(state),
             "capabilities": nodes.capability_manifest(ctx),

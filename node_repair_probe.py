@@ -72,6 +72,7 @@ class RepairProbeNode(BaseNode):
             "repair_validation": repair,
             "current_step": current_step,
             "step_goal": current_step["description"],
+            "action_frame": None,
             "turn_executions": {},
             "last_error": None,
             "last_failure": None,

@@ -1,4 +1,4 @@
-"""node_reflect — consume a denied step and its evidence; produce a causal lesson and route to retry, replan, evolve, or a named child sub-goal."""
+"""node_reflect — consume a denied step and its evidence; produce a causal lesson and choose retry, replan, frame, evolve, topology_patch, or a named child sub-goal."""
 import core_bus as bus
 from core_node_base import BaseNode
 
@@ -53,10 +53,12 @@ class ReflectNode(BaseNode):
             "step_goal": step.get("description", state["goal"]),
             "recovery_signal": self._signal,
             "failure": self._failure,
+            "action_frame": state.get("action_frame"),
             "repair_validation": self._repair_validation,
         }
         patch = {
             **self._streak_patch,
+            "action_frame": None,
             "reflection": reflection,
             "last_reflection": {
                 "signal": self._signal,
@@ -72,6 +74,11 @@ class ReflectNode(BaseNode):
             if not subgoal:
                 raise RuntimeError("reflection routed to spawn without a non-empty subgoal")
             patch["spawn_subgoal"] = subgoal
+        if self._signal == "topology_patch":
+            topology_patch = data.get("topology_patch")
+            if not isinstance(topology_patch, dict) or not topology_patch:
+                raise RuntimeError("reflection routed to topology_patch without a non-empty topology proposal")
+            patch["topology_patch"] = topology_patch
         return patch
 
 

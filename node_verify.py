@@ -22,7 +22,7 @@ class VerifyNode(BaseNode):
         observed_at = state.get("observed_at")
         last_action_at = state.get("last_action_at")
         observation["observation_fresh"] = bool(
-            observed_at is not None and (last_action_at is None or float(observed_at) >= float(last_action_at))
+            observed_at is not None and (last_action_at is None or float(observed_at) > float(last_action_at))
         )
         return {
             "goal": state["goal"],
@@ -50,7 +50,7 @@ class VerifyNode(BaseNode):
         if self._success:
             completed = list(state.get("completed_steps") or [])
             completed.append({"description": desc, "done_when": done_when, "confirmed_at_tick": state.get("tick")})
-            patch.update({"step": int(state.get("step", 0) or 0) + 1, "completed_steps": completed, "failure_streak": {"signature": None, "count": 0}, "last_error": None, "last_failure": None})
+            patch.update({"step": int(state.get("step", 0) or 0) + 1, "completed_steps": completed, "failure_streak": {"signature": None, "count": 0}, "action_frame": None, "last_error": None, "last_failure": None})
         return patch
 
 

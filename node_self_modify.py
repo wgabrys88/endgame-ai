@@ -81,6 +81,7 @@ def _repair_baseline(state: dict[str, Any]) -> dict[str, Any]:
         "verification": state.get("last_verification") or {},
         "failure": state.get("last_failure") or {},
         "last_code": state.get("last_code") or "",
+        "action_frame": state.get("action_frame"),
         "observation": bus.observation_brief(state),
         "captured_at_tick": state.get("tick"),
     }
@@ -92,7 +93,7 @@ class SelfModifyNode(BaseNode):
 
     def build_payload(self, ctx):
         state, wiring = ctx["state"], ctx["wiring"]
-        goal = state["effective_goal"]
+        goal = state["goal"]
         step = state.get("current_step") or {}
         self._git_context = nodes.prepare_self_evolution(wiring)
         self._failure = {
@@ -100,13 +101,14 @@ class SelfModifyNode(BaseNode):
             "last_reflection": state.get("last_reflection", {}),
             "last_failure": state.get("last_failure", {}),
             "last_verification": state.get("last_verification", {}),
+            "topology_patch": state.get("topology_patch", {}),
         }
         self._baseline = _repair_baseline(state)
         self._organism_contract = {
             "capabilities": nodes.capability_manifest(ctx),
             "topology": wiring_mod.topology_summary(wiring),
             "activation": wiring["self_modify"]["evolvable"]["activation"],
-            "self_modify_route": "reflect.escalate/topology_patch",
+            "self_modify_route": "reflect.evolve/topology_patch",
             "behavioral_acceptance": "A candidate commit becomes known-good only after node_repair_validate proves the original failure resolved.",
         }
         return {
@@ -156,6 +158,7 @@ class SelfModifyNode(BaseNode):
         )
         patch = {
             "git_evolution_patch": {key: data[key] for key in PATCH_KEYS},
+            "topology_patch": None,
             "self_modify": {
                 "status": "proposed",
                 "git_context": self._git_context,

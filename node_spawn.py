@@ -1,4 +1,4 @@
-"""node_spawn — consume a named spawn_subgoal and parent narrative; run one depth-bounded child and fold its final testimony back before replanning."""
+"""node_spawn — consume a named spawn_subgoal and parent narrative; run one depth-bounded child and fold its final testimony back for reflection."""
 import core_bus as bus
 import core_loader as loader
 
@@ -13,4 +13,4 @@ def run(ctx):
     """
     cap = loader.load("cap", "cap_spawn", ctx["wiring"])
     out = cap.run(ctx)
-    return bus.emit("spawned", {**dict(out.patch), "spawn_subgoal": None})
+    return bus.emit("spawned", {**dict(out.patch), "spawn_subgoal": None, "_reload_wiring": True})

@@ -14,12 +14,15 @@ def root_path(value: str | None, default: str = "") -> pathlib.Path:
 
 
 def load_wiring(path: str | None = None) -> dict[str, Any]:
-    cfg = load_json(root_path(path, "wiring.json"))
+    source_path = root_path(path, "wiring.json").resolve()
+    cfg = load_json(source_path)
     validate_wiring(cfg)
     import check_topology
     problems = check_topology.coherence_problems(cfg)
     if problems:
         raise RuntimeError(f"wiring topology is incoherent: {problems}")
+    # Private invocation metadata is live context, never persisted behavior.
+    cfg["_source_path"] = str(source_path)
     return cfg
 
 
@@ -69,7 +72,7 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
         "model.global", "model.stable_prefix", "model.stable_prefix.source", "model.organs",
         "observe_config.hover_cache", "observe_config.hover_cache.phases", "observe_config.hover_cache.scan", "observe_config.hover_cache.filter",
         "self_modify.execution", "self_modify.git", "self_modify.web_search", "self_modify.evolvable", "self_modify.evolvable.activation",
-        "topology.edges",
+        "topology.edges", "topology.barriers",
     ):
         _require(cfg, path, dict)
     for path in (
@@ -112,6 +115,9 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
         value = _require(cfg, path, int)
         if isinstance(value, bool) or value < 0 or (path.endswith(("step_px", "max_subtree_nodes_per_point", "max_total_nodes", "max_elements", "max_per_window", "max_text", "max_depth", "max_children_per_window", "max_llm_nodes")) and value == 0):
             raise RuntimeError(f"wiring.{path} must be a valid non-negative count")
+    settle_seconds = _require(cfg, "observe_config.hover_cache.settle_seconds", (int, float))
+    if isinstance(settle_seconds, bool) or settle_seconds < 0:
+        raise RuntimeError("wiring.observe_config.hover_cache.settle_seconds must be non-negative")
     nodes = _require_list_str(cfg, "topology.nodes")
     edges = _require(cfg, "topology.edges", dict)
     prompts = _require(cfg, "prompts", dict)
@@ -166,6 +172,8 @@ def validate_node_defs(cfg: dict[str, Any], prompts: dict[str, Any]) -> None:
             raise RuntimeError(f"wiring.node_defs.{name}.expected_record_type must be non-empty string")
         if not isinstance(defn["signal_source"], str) or not defn["signal_source"]:
             raise RuntimeError(f"wiring.node_defs.{name}.signal_source must be non-empty string")
+        if "description" in defn and (not isinstance(defn["description"], str) or not defn["description"].strip()):
+            raise RuntimeError(f"wiring.node_defs.{name}.description must be a non-empty string")
 
 
 
@@ -214,7 +222,7 @@ def prompt(cfg: dict[str, Any], key: str) -> str:
     prompts = cfg["prompts"]
     if name not in prompts:
         raise RuntimeError(f"wiring.prompts missing prompt: {key}")
-    return str(cfg["shared_prompt_prefix"]) + str(prompts[name])
+    return str(cfg["shared_prompt_prefix"]).rstrip() + "\n\n" + str(prompts[name]).lstrip()
 
 
 def get_transport_config(wiring: dict[str, Any]) -> tuple[str, dict[str, Any]]:
@@ -229,7 +237,8 @@ def get_transport_config(wiring: dict[str, Any]) -> tuple[str, dict[str, Any]]:
 
 
 def state_path(wiring: dict[str, Any]) -> pathlib.Path:
-    return root_path(wiring["paths"]["state"])
+    override = wiring.get("_state_path_override")
+    return root_path(str(override)) if override else root_path(wiring["paths"]["state"])
 
 
 def guidance_path(wiring: dict[str, Any]) -> pathlib.Path:
@@ -237,12 +246,15 @@ def guidance_path(wiring: dict[str, Any]) -> pathlib.Path:
 
 
 def write_state(wiring: dict[str, Any], state: dict[str, Any]) -> None:
-    ephemeral = {"action_index", "observation_artifact", "_execute_artifact", "git_evolution_patch"}
+    ephemeral = {
+        "action_index", "observation_artifact", "_execute_artifact", "git_evolution_patch",
+        "turn_executions", "last_result", "last_code", "repair_validation",
+    }
     atomic_write_json(state_path(wiring), {key: value for key, value in state.items() if key not in ephemeral})
 
 
 def reset_runtime(wiring: dict[str, Any]) -> None:
-    p = root_path(wiring["paths"]["state"])
+    p = state_path(wiring)
     if p.exists():
         p.unlink()
 
@@ -253,4 +265,5 @@ def topology_summary(w: dict[str, Any]) -> dict[str, Any]:
         "cycle_start": topo["cycle_start"],
         "nodes": list(topo["nodes"]),
         "edges": topo["edges"],
+        "barriers": topo["barriers"],
     }
