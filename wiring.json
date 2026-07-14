@@ -97,10 +97,10 @@
     "hover_cache": {
       "enabled": true,
       "scan": {
-        "step_px": 128,
+        "step_px": 256,
         "delay_ms": 0,
         "max_subtree_nodes_per_point": 500,
-        "max_total_nodes": 10000
+        "max_total_nodes": 2000
       },
       "filter": {
         "max_elements": 500,
