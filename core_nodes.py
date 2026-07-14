@@ -500,17 +500,16 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         result = brain.call([{"role": "user", "content": text}], w, request_config={"max_output_tokens": int(max_output_tokens), "plain_text": True})
         return _record_action({"ok": True, "action": "consult_model", "response": str(result["content"])})
 
-    # NEW: Direct PowerShell launch for reliable directory inspection and task-agnostic operation
-    # This addresses the core inefficiency where taskbar clicks and tab assumptions fail to activate real PowerShell
-    # Use this in execute scripts for benchmark tasks like Grok chess ASCII or file analysis
+    # Direct PowerShell launch for reliable directory inspection and task-agnostic operation
     def launch_powershell() -> dict[str, Any]:
         try:
-            subprocess.Popen(["powershell.exe"])
-            return _record_action({"ok": True, "action": "launch_powershell", "target": "powershell.exe"})
+            proc = subprocess.Popen(["powershell.exe"])
+            time.sleep(1.0)  # allow window to appear
+            return _record_action({"ok": True, "action": "launch_powershell", "target": "powershell.exe", "pid": proc.pid})
         except Exception as exc:
             return _record_action({"ok": False, "action": "launch_powershell", "error": f"{type(exc).__name__}: {exc}"})
 
-    # NEW: Direct directory inspection using Python to bypass UI focus issues
+    # Direct directory inspection using Python to bypass UI focus issues
     def list_directory(path: str = ".") -> dict[str, Any]:
         try:
             entries = os.listdir(path)
@@ -518,14 +517,21 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         except Exception as exc:
             return _record_action({"ok": False, "action": "list_directory", "path": path, "error": f"{type(exc).__name__}: {exc}"})
 
-    # NEW: Append long self-evolution report to active Notepad using type_text for human-readable appending
+    # Append long self-evolution report to active Notepad using type_text for human-readable appending
     def append_report_to_notepad(report: str) -> dict[str, Any]:
         try:
-            # Assume Notepad is focused; type the report
+            # Focus Notepad if possible via hotkey or assume focused; append via type_text
             res = type_text(report)
             return _record_action({"ok": True, "action": "append_report_to_notepad", "chars_appended": len(report)})
         except Exception as exc:
             return _record_action({"ok": False, "action": "append_report_to_notepad", "error": f"{type(exc).__name__}: {exc}"})
+
+    # NEW: Direct focus verification helper for post-action re-observation
+    def verify_focus(expected_role: str = "Window") -> dict[str, Any]:
+        obs = observe()
+        tree = obs.get("desktop_tree_text", "")
+        focused = any(expected_role.lower() in line.lower() for line in tree.splitlines() if "focused" in line.lower() or "active" in line.lower())
+        return _record_action({"ok": focused, "action": "verify_focus", "expected": expected_role, "found": focused})
 
     return {
         "click": click, "click_node": click_node, "read_node": read_node,
@@ -553,4 +559,5 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "launch_powershell": launch_powershell,
         "list_directory": list_directory,
         "append_report_to_notepad": append_report_to_notepad,
+        "verify_focus": verify_focus,
     }
