@@ -1,11 +1,10 @@
 *
 .*
 
+!README.md
 !.gitattributes
 !.gitignore
-!README.md
 !wiring.json
-!endgame_wiring_lab.html
 !core_brain.py
 !core_bus.py
 !core_desktop.py
@@ -15,20 +14,16 @@
 !obs_filter.py
 !obs_scan.py
 !core_organism.py
-!core_stop_check.py
 !core_wiring.py
 !io_helpers.py
 !core_loader.py
 !check_topology.py
-!core_state.py
 !core_node_base.py
-!node_error.py
 !node_spawn.py
 !node_guidance.py
 !cap_spawn.py
 !node_execute.py
 !node_run.py
-!node_timer.py
 !node_observe.py
 !node_planner.py
 !node_reflect.py
@@ -36,7 +31,6 @@
 !node_scheduler.py
 !node_self_modify.py
 !node_verify.py
-!transport_file_proxy.py
 !transport_xai.py
 !tools.py
 !node_repair_probe.py

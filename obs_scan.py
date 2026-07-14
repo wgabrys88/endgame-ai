@@ -29,7 +29,7 @@ def run(config: dict[str, Any], desktop: Any) -> dict[str, Any]:
         bottom = max(top + 1, min(sh, int(area.get("bottom", sh) or sh)))
     else:
         left, top, right, bottom = 0, 0, sw, sh
-    margin = max(2, min(step_px // 4, max(0, min(right - left, bottom - top) // 8)))
+    margin = 2
     usable_w, usable_h = max(1, right - left - 2 * margin), max(1, bottom - top - 2 * margin)
     cols, rows = max(1, usable_w // step_px), max(1, usable_h // step_px)
     g = 1.32471795724474602596
@@ -50,10 +50,12 @@ def run(config: dict[str, Any], desktop: Any) -> dict[str, Any]:
     saved = wintypes.POINT()
     had_cursor = bool(user32.GetCursorPos(ctypes.byref(saved)))
     t0 = time.time()
+    probes_run = 0
     try:
         for x, y in points:
             if len(index) >= max_total:
                 break
+            probes_run += 1
             user32.SetCursorPos(int(x), int(y))
             if delay_ms > 0:
                 time.sleep(delay_ms / 1000.0)
@@ -101,8 +103,10 @@ def run(config: dict[str, Any], desktop: Any) -> dict[str, Any]:
         "screen": {"width": sw, "height": sh},
         "scan_stats": {
             "area": {"left": left, "top": top, "right": right, "bottom": bottom},
-            "probes": len(points),
+            "probes": probes_run,
+            "planned_probes": len(points),
             "unique_nodes": len(index),
+            "node_limit_hit": len(index) >= max_total,
             "point_errors": len(errors),
             "first_point_errors": errors[:5],
             "elapsed_s": round(time.time() - t0, 3),

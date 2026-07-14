@@ -1,4 +1,4 @@
-"""Topology coherence check — handles both linear (string) and fractal (list) edges.
+"""Topology coherence check for linear and fractal one-to-many edges.
 
 `coherence_problems(w)` is the single source of truth for topology coherence,
 callable from the runtime (B5 gates mid-run topology_patch through it) and from
@@ -20,7 +20,7 @@ def _targets(value) -> list[str]:
     if isinstance(value, str):
         return [value]
     if isinstance(value, list):
-        return [t for t in value if isinstance(t, str)]
+        return [target for target in value if isinstance(target, str)]
     return []
 
 
@@ -57,20 +57,21 @@ def coherence_problems(w: dict) -> list[str]:
     if topo["cycle_start"] not in nodes:
         problems.append(f"cycle_start '{topo['cycle_start']}' not in topology.nodes")
 
-    # dangling edge targets (halt/wait are terminal sentinels, not nodes)
     for src, sigmap in edges.items():
         if src not in nodes:
             problems.append(f"edge source '{src}' not in topology.nodes")
         for sig, value in sigmap.items():
             targets = _targets(value)
-            if not targets:
+            if not targets or (isinstance(value, list) and len(targets) != len(value)):
                 problems.append(f"{src}.{sig} has no valid target(s): {value!r}")
             for t in targets:
                 if t not in SENTINELS and t not in nodes:
                     problems.append(f"{src}.{sig} -> '{t}' is not a known node")
+                if t in SENTINELS and sig != t:
+                    problems.append(
+                        f"{src}.{sig} targets terminal name '{t}' instead of emitting terminal signal '{t}'"
+                    )
 
-    # every wired node needs an edge map, prompt, and either a declarative
-    # definition in node_defs or a dynamically loadable source file
     node_dir = wiring.root_path(w["paths"]["nodes"])
     node_defs = w.get("node_defs", {})
     for n in nodes:
@@ -83,21 +84,24 @@ def coherence_problems(w: dict) -> list[str]:
             if prompt_key not in w.get("prompts", {}):
                 problems.append(f"declarative node '{n}' prompt_key '{prompt_key}' has no prompt")
         else:
-            if wiring.prompt_name(w, n) not in w.get("prompts", {}):
-                problems.append(f"node '{n}' has no prompt or prompt_alias")
             if not (node_dir / f"{base}.py").is_file():
                 problems.append(f"node '{n}' has no plugin file {(node_dir / f'{base}.py')}")
 
-    # each barrier must name a wired node with positive integer arity and a join edge
     for bnode, arity in barriers.items():
         if bnode not in nodes:
             problems.append(f"barrier '{bnode}' is not a topology node")
-        if not isinstance(arity, int) or arity < 1:
-            problems.append(f"barrier '{bnode}' arity must be a positive int, got {arity!r}")
-        if bnode in edges and "join" not in edges[bnode]:
-            problems.append(f"barrier '{bnode}' must declare a 'join' edge")
+        if not isinstance(arity, int) or isinstance(arity, bool) or arity < 2:
+            problems.append(f"barrier '{bnode}' arity must be an integer of at least 2, got {arity!r}")
+        incoming = sum(
+            1
+            for sigmap in edges.values()
+            for value in sigmap.values()
+            for target in _targets(value)
+            if target == bnode
+        )
+        if isinstance(arity, int) and not isinstance(arity, bool) and incoming < arity:
+            problems.append(f"barrier '{bnode}' arity {arity} exceeds its {incoming} incoming edges")
 
-    # reachability from cycle_start across both edge forms
     seen: set[str] = set()
     stack = [topo["cycle_start"]]
     while stack:

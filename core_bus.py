@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 import hashlib
 import json
+import re
 import time
 from typing import Any
 
@@ -52,27 +53,14 @@ class NodeOutput:
 
     def trace(self, *, node: str) -> JsonDict:
         record_type = None
-        record_json = None
+        record_summary = None
         if isinstance(self.record, Record):
             record_type = self.record.record_type
-            record_json = self.record.to_json()
+            record_summary = {"record_type": record_type, "data_keys": sorted(self.record.data)}
         elif isinstance(self.record, dict):
             record_type = self.record.get("record_type")
-            record_json = dict(self.record)
-        omitted = {
-            "goal",
-            "effective_goal",
-            "state",
-            "focus",
-            "observation",
-            "desktop_tree_text",
-            "action_index",
-            "observation_artifact",
-            "repair_validation",
-            "repair_baseline",
-            "before",
-            "after",
-        }
+            data = self.record.get("data")
+            record_summary = {"record_type": record_type, "data_keys": sorted(data) if isinstance(data, dict) else []}
         return {
             "kind": "endgame.node_output.v1",
             "node": node,
@@ -80,9 +68,7 @@ class NodeOutput:
             "record_type": record_type,
             "patch_keys": sorted(self.patch.keys()),
             "evidence_keys": sorted(self.evidence.keys()),
-            "record": record_json,
-            "patch": {key: value for key, value in self.patch.items() if key not in omitted},
-            "evidence": {key: value for key, value in self.evidence.items() if key not in omitted},
+            "record": record_summary,
             "emitted_at": time.time(),
         }
 
@@ -100,10 +86,6 @@ def emit(signal: str, patch: JsonDict | None = None, *, record: Record | JsonDic
     return NodeOutput(signal=signal.strip(), patch=dict(patch or {}), record=record_obj, evidence=dict(evidence or {}))
 
 
-# Rolling narrative bound. effective_goal = immutable root goal + append-only narrative; in the
-# analysed run it grew unbounded (tens of KB) and inflated every prompt, contradicting the README's
-# "minimal rolling buffer" principle. Keep the root goal (first paragraph) plus the most recent
-# NARRATIVE_TAIL_CHARS of appended history so recent context is preserved while growth is bounded.
 NARRATIVE_TAIL_CHARS = 12000
 
 
@@ -140,7 +122,7 @@ def allowed_signals(wiring: JsonDict, node: str) -> set[str]:
 
 def validate_signal(wiring: JsonDict, node: str, signal: str) -> None:
     signals = allowed_signals(wiring, node)
-    if signals and signal not in signals:
+    if signal not in signals:
         allowed = ", ".join(sorted(signals))
         raise TopologyContractError(f"node '{node}' emitted signal '{signal}' outside topology contract; allowed: {allowed}")
 
@@ -186,16 +168,20 @@ def repair_validation_brief(state: JsonDict) -> JsonDict:
 
 
 def state_brief(state: JsonDict) -> JsonDict:
-    """Compact operational focus. The full append-only narrative remains in state, never in every prompt."""
+    """Compact operational focus plus the bounded continuity narrative."""
     current_step = state.get("current_step") or {}
     intent = _plan_intent(state)
-    now = time.time()
-    started_at = state.get("started_at")
-    deadline_at = state.get("deadline_at")
     step_index = int(state.get("step", 0) or 0)
+    narrative = str(state.get("effective_goal") or "")
+    root_goal = str(state.get("goal") or "")
+    if root_goal and narrative.startswith(root_goal):
+        narrative = narrative[len(root_goal):].lstrip()
     return {
         "tick": state.get("tick"),
+        "depth": state.get("_depth", 0),
         "current_node": state.get("current_node"),
+        "frontier": list(state.get("frontier") or []),
+        "narrative": narrative,
         "step_index": step_index,
         "current_step": {"description": current_step.get("description", ""), "done_when": current_step.get("done_when", "")},
         "remaining_plan_steps": max(0, len(intent) - step_index),
@@ -208,37 +194,34 @@ def state_brief(state: JsonDict) -> JsonDict:
         "failure_streak": state.get("failure_streak", {}),
         "repair_validation": repair_validation_brief(state),
         "has_action_frame": bool(state.get("action_frame")),
-        "timing": {
-            "started_at": started_at,
-            "deadline_at": deadline_at,
-            "duration_seconds": state.get("duration_seconds"),
-            "elapsed_seconds": round(now - float(started_at), 3) if started_at is not None else None,
-            "remaining_seconds": round(float(deadline_at) - now, 3) if deadline_at is not None else None,
-        },
     }
 
 
 def focused_elements(state: JsonDict) -> JsonDict:
-    """Expand only UI ids already named by the active focus; never dump the whole action index."""
+    """Map every visible short id compactly and expand only the current focus.
+
+    The full action index remains in memory for execution. Prompt evidence receives a
+    compact id map plus geometry for genuinely focused or action-framed ids, avoiding
+    giant duplicated class metadata without making the desktop scan shallow.
+    """
     action_index = state.get("action_index") or {}
     if not isinstance(action_index, dict):
         return {}
-    focus_sources = {
-        "current_step": state.get("current_step") or {},
-        "action_frame": state.get("action_frame") or {},
-        "last_action": state.get("last_action") or {},
-        "last_reflection": state.get("last_reflection") or {},
-        "focus_ids": state.get("focus_ids") or [],
-    }
-    focus_text = json.dumps(focus_sources, ensure_ascii=False, default=str)
-    fields = ("id", "name", "role", "action", "rect", "enabled", "automation_id", "class_name", "hwnd", "depth")
-    # The action_index key is the identity-stable id (e_<runtime_id>) that the model cites, so a
-    # single membership test suffices — no positional short_id, no fallback matching.
-    return {
-        node_id: {key: node[key] for key in fields if key in node}
-        for node_id, node in action_index.items()
-        if isinstance(node, dict) and str(node_id) in focus_text
-    }
+    tree_text = str(state.get("desktop_tree_text") or "")
+    visible_ids = {line.strip().split(" ", 1)[0] for line in tree_text.splitlines() if line.strip()}
+    frame_text = json.dumps(state.get("action_frame") or {}, ensure_ascii=False, default=str)
+    framed_ids = set(re.findall(r"\b(?:e|W)\d+\b", frame_text))
+    compact_fields = ("name", "role", "action", "enabled", "focused")
+    detail_fields = ("rect", "automation_id", "class_name", "hwnd", "depth")
+    mapped: JsonDict = {}
+    for node_id, node in action_index.items():
+        if not isinstance(node, dict) or str(node_id) not in visible_ids:
+            continue
+        item = {key: node[key] for key in compact_fields if key in node}
+        if node.get("focused") or str(node_id) in framed_ids:
+            item.update({key: node[key] for key in detail_fields if key in node})
+        mapped[str(node_id)] = item
+    return mapped
 
 
 def observation_brief(state: JsonDict) -> JsonDict:
@@ -248,6 +231,7 @@ def observation_brief(state: JsonDict) -> JsonDict:
         "desktop_tree_text": state.get("desktop_tree_text", ""),
         "focused_elements": focused_elements(state),
         "observed_at": state.get("observed_at"),
+        "settle_seconds": artifact.get("settle_seconds") if isinstance(artifact, dict) else None,
         "screen": artifact.get("screen", {}) if isinstance(artifact, dict) else {},
         "scan_stats": artifact.get("scan_stats", {}) if isinstance(artifact, dict) else {},
         "rendered_node_count": state.get("rendered_node_count") or (tree or {}).get("rendered_node_count"),
@@ -255,14 +239,11 @@ def observation_brief(state: JsonDict) -> JsonDict:
         "llm_node_limit_hit": state.get("llm_node_limit_hit") or (tree or {}).get("llm_node_limit_hit"),
         "elements_truncated": (tree or {}).get("elements_truncated", False),
         "elements_dropped_per_window": (tree or {}).get("elements_dropped_per_window", {}),
+        "elements_dropped_global": (tree or {}).get("elements_dropped_global", 0),
     }
 
 
 def _last_denial(state: JsonDict) -> str:
-    # Surface the most recent verify denial reason as an explicit, top-level constraint so the
-    # next execute/frame attempt converges instead of re-guessing. Empirically the wheel burned
-    # ~7 laps per step because the denial reason (e.g. "use read_file, not a directory listing")
-    # was only reachable buried inside focus.state_brief.last_verification.
     lv = state.get("last_verification") or {}
     if isinstance(lv, dict) and lv.get("success") is False:
         return str(lv.get("reasoning", "")).strip()

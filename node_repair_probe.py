@@ -1,4 +1,4 @@
-"""node_repair_probe — authors a behavioral probe to retry a captured failure. EXPECTS: goal, effective_goal, and repair_validation (status awaiting_probe, with the baseline failure). PRODUCES a probe (failure_signature, description, done_when, comparison_basis, code) and next_signal 'probe_ready'."""
+"""node_repair_probe — consume an awaiting candidate and its captured baseline; author one behavioral probe with code and observable comparison criteria, then emit probe_ready."""
 import time
 
 import core_bus as bus
@@ -36,7 +36,7 @@ class RepairProbeNode(BaseNode):
                 "repair probe changed the failure identity: "
                 f"expected {self._baseline['failure_signature']!r}, got {data['failure_signature']!r}"
             )
-        return data["next_signal"]
+        return "probe_ready"
 
     def patch_from_record(self, record, ctx):
         state, data = ctx["state"], record.data
@@ -63,10 +63,10 @@ class RepairProbeNode(BaseNode):
             ),
             "done_when": data["done_when"],
         }
-        effective = (
-            state["effective_goal"]
-            + f"\n\n[REPAIR PROBE] Retrying failure {data['failure_signature']}. "
-            + f"Proof required: {data['done_when']}."
+        effective = bus.append_narrative(
+            state["effective_goal"],
+            f"\n\n[REPAIR PROBE] Retrying failure {data['failure_signature']}. Proof required: {data['done_when']}.",
+            root_goal=state.get("goal", ""),
         )
         return {
             "repair_validation": repair,

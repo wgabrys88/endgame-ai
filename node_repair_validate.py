@@ -18,9 +18,9 @@ class RepairValidateNode(BaseNode):
         probe = repair["probe"]
         after_observation = bus.observation_brief(state)
         observed_at = after_observation["observed_at"]
-        if float(repair["probe_observed_at"]) < float(repair["probe_started_at"]):
+        if float(repair["probe_observed_at"]) <= float(repair["probe_started_at"]):
             raise RuntimeError("repair validation requires a fresh pre-probe observation")
-        if observed_at is None or float(observed_at) < float(repair["probe_observed_at"]):
+        if observed_at is None or float(observed_at) <= float(repair["probe_observed_at"]):
             raise RuntimeError("repair validation requires a fresh post-probe observation")
         executions = bus.execution_evidence(state)
         faculties = executions["faculties"]
@@ -67,12 +67,8 @@ class RepairValidateNode(BaseNode):
         }
 
     def signal_from_data(self, data, ctx):
-        signal = data["next_signal"]
         resolved = data["resolved"]
-        if signal not in {"repair_resolved", "repair_unresolved"}:
-            raise RuntimeError(f"unknown repair validation signal: {signal!r}")
-        if (signal == "repair_resolved") != resolved:
-            raise RuntimeError(f"repair validation signal/resolved mismatch: {signal!r}/{resolved!r}")
+        signal = "repair_resolved" if resolved else "repair_unresolved"
         self._signal = signal
         self._resolved = resolved
         return signal
@@ -109,10 +105,10 @@ class RepairValidateNode(BaseNode):
         self_modify = dict(state["self_modify"])
         self_modify["status"] = "behaviorally_resolved_pending_acceptance" if self._resolved else "behaviorally_rejected"
         self_modify["behavioral_validation"] = summary
-        effective = (
-            state["effective_goal"]
-            + f"\n\n[REPAIR VALIDATION] {status.upper()}: {data['comparison']} "
-            + f"Conclusion: {data['conclusion']}."
+        effective = bus.append_narrative(
+            state["effective_goal"],
+            f"\n\n[REPAIR VALIDATION] {status.upper()}: {data['comparison']} Conclusion: {data['conclusion']}.",
+            root_goal=state.get("goal", ""),
         )
         patch = {
             "repair_validation": repair,

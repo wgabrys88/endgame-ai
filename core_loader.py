@@ -21,9 +21,9 @@ JsonDict = dict[str, Any]
 
 
 class PluginKind(NamedTuple):
-    paths_key: str      # key under wiring["paths"] giving the plugin directory
-    module_prefix: str  # import spec name prefix (module registry namespacing)
-    export: str         # required exported symbol name (the shape contract)
+    paths_key: str
+    module_prefix: str
+    export: str
 
 
 KINDS: dict[str, PluginKind] = {

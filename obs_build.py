@@ -1,7 +1,7 @@
 """obs_build — observation phase 3: build the window/element tree, index, and text.
 
 A wired, swappable observation phase. Input contract (from obs_scan + obs_filter):
-action_elements, text_hints, raw_nodes, hwnd_to_z, screen, config. Output: the
+action_elements, text_hints, raw_nodes, hwnd_to_z, screen, config, selection_stats. Output: the
 rendered tree, node_index, action_index, desktop_tree_text, and counts that the
 observation artifact and downstream LLM nodes consume.
 """
@@ -9,7 +9,7 @@ import time
 from typing import Any
 
 
-def run(action_elements: dict[str, dict[str, Any]], text_hints: dict[str, str], raw_nodes: list[dict[str, Any]], hwnd_to_z: dict[int, int], screen: dict[str, int], config: dict[str, Any]) -> dict[str, Any]:
+def run(action_elements: dict[str, dict[str, Any]], text_hints: dict[str, str], raw_nodes: list[dict[str, Any]], hwnd_to_z: dict[int, int], screen: dict[str, int], config: dict[str, Any], selection_stats: dict[str, Any] | None = None) -> dict[str, Any]:
     filt = config["filter"]
     max_depth = int(filt.get("max_depth", 10))
     max_children_per_window = int(filt.get("max_children_per_window", 120))
@@ -17,10 +17,12 @@ def run(action_elements: dict[str, dict[str, Any]], text_hints: dict[str, str], 
     windows: dict[int, dict[str, Any]] = {}
     for node in raw_nodes:
         if node["role"] == "Window" and node["hwnd"] and node["hwnd"] not in windows:
+            title = node["name"] or node["text_full"] or f"Window_{node['hwnd']}"
+            z_order = hwnd_to_z.get(node["hwnd"], len(hwnd_to_z))
             windows[node["hwnd"]] = {
-                "hwnd": node["hwnd"], "title": node["name"] or node["text_full"] or f"Window_{node['hwnd']}",
+                "hwnd": node["hwnd"], "role": "Window", "name": title, "title": title,
                 "class_name": node["class_name"], "framework_id": node["framework_id"], "rect": node["rect"],
-                "z_order": hwnd_to_z.get(node["hwnd"], 0), "children": [],
+                "z_order": z_order, "active": z_order == 0, "children": [],
             }
     sorted_windows = sorted(windows.values(), key=lambda w: w["z_order"])
     root = {"id": "W0", "role": "Screen", "name": "Screen", "title": "Desktop", "rect": {"left": 0, "top": 0, "right": screen["width"], "bottom": screen["height"]}, "fresh_scan": True, "observed_at": time.time(), "children": []}
@@ -71,15 +73,25 @@ def run(action_elements: dict[str, dict[str, Any]], text_hints: dict[str, str], 
 
     sort_prune(root)
 
+    short_by_id: dict[str, str] = {"W0": "W0"}
+    counter = {"n": 0}
+
     def assign(node: dict[str, Any]) -> None:
-        node["short_id"] = node.get("id", "")
+        internal = node.get("id", "")
+        if str(internal).startswith("W"):
+            short = str(internal)
+        else:
+            counter["n"] += 1
+            short = f"e{counter['n']}"
+        short_by_id[internal] = short
+        node["short_id"] = short
         for child in node.get("children", []):
             if isinstance(child, dict):
                 assign(child)
 
     assign(root)
-    node_index_short = {oid: {**ndata, "short_id": oid} for oid, ndata in node_index.items()}
-    action_index_short = {oid: {**edata, "short_id": oid} for oid, edata in action_elements.items()}
+    node_index_short = {short_by_id.get(oid, oid): {**ndata, "short_id": short_by_id.get(oid, oid)} for oid, ndata in node_index.items()}
+    action_index_short = {short_by_id[oid]: {**edata, "short_id": short_by_id[oid]} for oid, edata in action_elements.items() if oid in short_by_id}
 
     def clean(v: Any) -> str:
         return " ".join(str(v or "").replace("\r", " ").replace("\n", " ").split())
@@ -94,7 +106,7 @@ def run(action_elements: dict[str, dict[str, Any]], text_hints: dict[str, str], 
             limit_hit = True
             return
         sid, role, name, action = node.get("short_id", node.get("id", "")), str(node.get("role", "")), clean(node.get("name", "") or node.get("title", "")), str(node.get("action", ""))
-        parts = [p for p in (sid, role, name, f"[{action}]" if action else "") if p]
+        parts = [p for p in (sid, role, name, "[active]" if node.get("active") else "", "[focused]" if node.get("focused") else "", f"[{action}]" if action else "") if p]
         hint = text_hints.get(node.get("id", ""), "")
         if hint and hint not in name:
             parts.append(f"~{hint}")
@@ -107,6 +119,11 @@ def run(action_elements: dict[str, dict[str, Any]], text_hints: dict[str, str], 
     for child in root.get("children", []):
         if isinstance(child, dict):
             render(child, 1)
+    selection_stats = selection_stats or {}
+    filtered_drops = selection_stats.get("dropped_per_window") or {}
+    for hwnd, count in filtered_drops.items():
+        dropped_per_window[int(hwnd)] = dropped_per_window.get(int(hwnd), 0) + int(count)
+    dropped_global = int(selection_stats.get("dropped_global", 0) or 0)
     return {
         "root": root,
         "node_index": node_index_short,
@@ -119,5 +136,6 @@ def run(action_elements: dict[str, dict[str, Any]], text_hints: dict[str, str], 
         "llm_node_limit_hit": limit_hit,
         "window_z_order": [w["hwnd"] for w in sorted_windows],
         "elements_dropped_per_window": {next((w["id"] for w in sorted_windows if w["hwnd"] == h), h): n for h, n in dropped_per_window.items() if n},
-        "elements_truncated": sum(dropped_per_window.values()) > 0,
+        "elements_dropped_global": dropped_global,
+        "elements_truncated": dropped_global > 0 or sum(dropped_per_window.values()) > 0 or limit_hit,
     }

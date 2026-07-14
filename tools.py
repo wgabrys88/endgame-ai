@@ -4,7 +4,6 @@ Exposes web_search(query, num_results=10) and open_page(url, start_line=None)
 using only stdlib (urllib + re). Results are returned as plain Python structures
 so they can be recorded as capability actions.
 """
-import json
 import re
 import subprocess
 import urllib.error
@@ -32,10 +31,7 @@ def web_search(query: str, num_results: int = 10) -> List[Dict[str, Any]]:
     n = max(1, min(30, int(num_results or 10)))
     params = urllib.parse.urlencode({"q": q, "kl": "us-en"})
     url = f"https://html.duckduckgo.com/html/?{params}"
-    try:
-        html = _http_get(url)
-    except Exception:
-        return []
+    html = _http_get(url)
     results: List[Dict[str, Any]] = []
     for m in re.finditer(r'<a[^>]+class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>', html, re.I | re.S):
         href = m.group(1)
@@ -56,11 +52,8 @@ def open_page(url: str, start_line: int | None = None) -> str:
     """Fetch page text content. Optionally return only from start_line (1-based)."""
     u = (url or "").strip()
     if not u:
-        return ""
-    try:
-        html = _http_get(u)
-    except Exception as exc:
-        return f"[open_page error] {type(exc).__name__}: {exc}"
+        raise ValueError("open_page requires a non-empty URL")
+    html = _http_get(u)
     text = re.sub(r"<script[^>]*>.*?</script>", "", html, flags=re.I | re.S)
     text = re.sub(r"<style[^>]*>.*?</style>", "", text, flags=re.I | re.S)
     text = re.sub(r"<[^>]+>", " ", text)
@@ -88,10 +81,7 @@ def read_file(path: str, max_bytes: int | None = None) -> Dict[str, Any]:
     size = p.stat().st_size
     if max_bytes is not None and size > max_bytes:
         raise RuntimeError(f"read_file target exceeds max_bytes limit: {size} > {max_bytes}")
-    try:
-        content = p.read_text(encoding="utf-8", errors="replace")
-    except Exception as exc:
-        raise RuntimeError(f"read_file failed: {type(exc).__name__}: {exc}") from exc
+    content = p.read_text(encoding="utf-8", errors="replace")
     import hashlib
     sha = hashlib.sha256(content.encode("utf-8", errors="replace")).hexdigest()
     return {
@@ -112,39 +102,34 @@ def write_file(path: str, content: str) -> Dict[str, Any]:
     Guarantees the write is recorded as a capability action for terminal faculty.
     """
     p = __import__("pathlib").Path(path)
-    try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(str(content), encoding="utf-8", errors="replace")
-        size = p.stat().st_size
-        import hashlib
-        sha = hashlib.sha256(str(content).encode("utf-8", errors="replace")).hexdigest()
-        return {
-            "ok": True,
-            "action": "write_file",
-            "path": str(p.resolve()),
-            "size": size,
-            "content": str(content),
-            "content_chars": len(str(content)),
-            "content_sha256": sha,
-        }
-    except Exception as exc:
-        return {"ok": False, "action": "write_file", "path": str(p), "error": f"{type(exc).__name__}: {exc}"}
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(str(content), encoding="utf-8", errors="replace")
+    size = p.stat().st_size
+    import hashlib
+    sha = hashlib.sha256(str(content).encode("utf-8", errors="replace")).hexdigest()
+    return {
+        "ok": True,
+        "action": "write_file",
+        "path": str(p.resolve()),
+        "size": size,
+        "content_chars": len(str(content)),
+        "content_sha256": sha,
+    }
 
 
 def _run_gh(args: list[str]) -> Dict[str, Any]:
     """Run gh CLI command and return recorded action dict."""
-    try:
-        result = subprocess.run(["gh", *args], cwd=__import__("pathlib").Path.cwd(), capture_output=True, text=True)
-        return {
-            "ok": result.returncode == 0,
-            "action": "gh_" + args[0] if args else "gh",
-            "args": args,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
-            "returncode": result.returncode,
-        }
-    except Exception as exc:
-        return {"ok": False, "action": "gh", "args": args, "error": f"{type(exc).__name__}: {exc}"}
+    result = subprocess.run(["gh", *args], cwd=__import__("pathlib").Path.cwd(), capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"gh {' '.join(args)} failed: {(result.stderr or result.stdout).strip()}")
+    return {
+        "ok": True,
+        "action": "gh_" + args[0] if args else "gh",
+        "args": args,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        "returncode": result.returncode,
+    }
 
 
 def github_list_issues(repo: str, state: str = "open") -> Dict[str, Any]:
@@ -172,24 +157,26 @@ def github_push(branch: str | None = None) -> Dict[str, Any]:
     args = ["push", "origin"]
     if branch:
         args.append(branch)
-    return _run_gh(args)
+    result = subprocess.run(["git", *args], cwd=__import__("pathlib").Path.cwd(), capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"git {' '.join(args)} failed: {(result.stderr or result.stdout).strip()}")
+    return {"ok": True, "action": "git_push", "args": args, "stdout": result.stdout, "stderr": result.stderr, "returncode": result.returncode}
 
 
 def git_current_branch() -> Dict[str, Any]:
     """Run git branch --show-current and return recorded action."""
-    try:
-        result = subprocess.run(["git", "branch", "--show-current"], cwd=__import__("pathlib").Path.cwd(), capture_output=True, text=True)
-        branch = result.stdout.strip()
-        return {
-            "ok": True,
-            "action": "git_current_branch",
-            "branch": branch,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
-            "returncode": result.returncode,
-        }
-    except Exception as exc:
-        return {"ok": False, "action": "git_current_branch", "error": f"{type(exc).__name__}: {exc}"}
+    result = subprocess.run(["git", "branch", "--show-current"], cwd=__import__("pathlib").Path.cwd(), capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"git branch --show-current failed: {(result.stderr or result.stdout).strip()}")
+    branch = result.stdout.strip()
+    return {
+        "ok": True,
+        "action": "git_current_branch",
+        "branch": branch,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        "returncode": result.returncode,
+    }
 
 
 def git_branch_show_current() -> Dict[str, Any]:

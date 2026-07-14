@@ -50,11 +50,12 @@ PID_ENABLED = _const("UIA_IsEnabledPropertyId", 30010)
 PID_OFFSCREEN = _const("UIA_IsOffscreenPropertyId", 30022)
 PID_HWND = _const("UIA_NativeWindowHandlePropertyId", 30020)
 PID_FRAMEWORK = _const("UIA_FrameworkIdPropertyId", 30024)
-PID_KEYBOARD_FOCUSABLE = _const("UIA_IsKeyboardFocusablePropertyId", 30008)
+PID_HAS_KEYBOARD_FOCUS = _const("UIA_HasKeyboardFocusPropertyId", 30008)
+PID_KEYBOARD_FOCUSABLE = _const("UIA_IsKeyboardFocusablePropertyId", 30009)
 PID_CONTENT_ELEMENT = _const("UIA_IsContentElementPropertyId", 30015)
 SCAN_PROPERTY_IDS = [
     PID_RUNTIME_ID, PID_BOUNDING_RECT, PID_CONTROL_TYPE, PID_NAME, PID_AUTOMATION_ID, PID_CLASS_NAME,
-    PID_ENABLED, PID_OFFSCREEN, PID_HWND, PID_FRAMEWORK, PID_KEYBOARD_FOCUSABLE, PID_CONTENT_ELEMENT,
+    PID_ENABLED, PID_OFFSCREEN, PID_HWND, PID_FRAMEWORK, PID_HAS_KEYBOARD_FOCUS, PID_KEYBOARD_FOCUSABLE, PID_CONTENT_ELEMENT,
 ]
 
 PID_VALUE_PATTERN = _const("UIA_ValuePatternId", 10002)
@@ -162,8 +163,6 @@ def _to_runtime_id(v: Any) -> list[int]:
 
 
 def _node_id(runtime_id: list[int], hwnd: int, rect: dict[str, int]) -> str:
-    # Hierarchical shortest practical ID: prefer compact runtime-derived or hwnd+rect for action_index / focused_elements.
-    # No long strings; keeps uniqueness for node_by_id / click_node while reducing prompt bloat.
     if runtime_id:
         short = "_".join(map(str, runtime_id[-3:])) if len(runtime_id) > 3 else "_".join(map(str, runtime_id))
         return f"e_{short}"
@@ -275,6 +274,7 @@ class UiaScanner:
                 "pattern_values": pattern_values,
                 "depth": depth,
                 "parent_runtime_id": parent_runtime_id or [],
+                "focused": _to_bool(_cached(element, PID_HAS_KEYBOARD_FOCUS)) or _to_bool(_current(element, PID_HAS_KEYBOARD_FOCUS)),
                 "is_keyboard_focusable": _to_bool(_cached(element, PID_KEYBOARD_FOCUSABLE)) or _to_bool(_current(element, PID_KEYBOARD_FOCUSABLE)),
                 "is_content_element": _to_bool(_cached(element, PID_CONTENT_ELEMENT)) or _to_bool(_current(element, PID_CONTENT_ELEMENT)),
                 "action": action_for_role(role, class_name),
@@ -335,19 +335,30 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
     cfg = dict(config or {})
     if not cfg["enabled"]:
         raise RuntimeError("hover_cache observation is disabled")
-    # Phases are wired, swappable modules. Defaults keep the built-in pipeline; override
-    # any single phase via config["phases"] to rewire observation at runtime.
+    settle_seconds = float(cfg["settle_seconds"])
+    if settle_seconds:
+        time.sleep(settle_seconds)
     phases = cfg.get("phases") or {}
     scan = _load_phase(phases.get("scan", "obs_scan"))
     filt = _load_phase(phases.get("filter", "obs_filter"))
     build = _load_phase(phases.get("build", "obs_build"))
     gathered = scan.run(cfg, desktop)
     filtered = filt.run(gathered["nodes"], cfg, gathered["screen"])
-    mapped = build.run(filtered["action_elements"], filtered["text_hints"], gathered["nodes"], filtered["hwnd_to_z"], gathered["screen"], cfg)
+    mapped = build.run(
+        filtered["action_elements"],
+        filtered["text_hints"],
+        gathered["nodes"],
+        filtered["hwnd_to_z"],
+        gathered["screen"],
+        cfg,
+        filtered.get("selection_stats"),
+    )
+    elements_truncated = bool(mapped["elements_truncated"] or gathered["scan_stats"].get("node_limit_hit"))
     observed_at = time.time()
     artifact = {
         "observed_at": observed_at,
         "fresh_scan": True,
+        "settle_seconds": settle_seconds,
         "scan_config": cfg["scan"],
         "screen": gathered["screen"],
         "scan_stats": gathered["scan_stats"],
@@ -356,7 +367,9 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
             "root": mapped["root"], "node_index": mapped["node_index"], "window_count": mapped["window_count"],
             "element_count": mapped["element_count"], "rendered_node_count": mapped["rendered_node_count"],
             "max_llm_nodes": mapped["max_llm_nodes"], "llm_node_limit_hit": mapped["llm_node_limit_hit"],
-            "elements_truncated": mapped["elements_truncated"], "elements_dropped_per_window": mapped["elements_dropped_per_window"],
+            "elements_truncated": elements_truncated, "elements_dropped_per_window": mapped["elements_dropped_per_window"],
+            "elements_dropped_global": mapped["elements_dropped_global"],
+            "scan_node_limit_hit": bool(gathered["scan_stats"].get("node_limit_hit")),
             "window_z_order": mapped["window_z_order"],
         },
         "action_index": mapped["action_index"],
@@ -367,6 +380,7 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
     return {
         "observed_at": observed_at,
         "fresh_scan": True,
+        "settle_seconds": settle_seconds,
         "desktop_tree": artifact["desktop_tree"],
         "desktop_tree_text": mapped["desktop_tree_text"],
         "action_index": mapped["action_index"],

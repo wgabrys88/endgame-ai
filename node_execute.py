@@ -69,7 +69,7 @@ class ExecuteNode(BaseNode):
             label = "REPAIR_EXECUTE"
 
         artifact_path = self._write_artifact(code)
-        artifact = {"code": code, "path": artifact_path, "label": label, "repair_probe": probe is not None}
+        artifact = {"path": artifact_path, "label": label, "repair_probe": probe is not None}
         effective = bus.append_narrative(state["effective_goal"], f"\n\n[{label}] Authored script artifact {pathlib.Path(artifact_path).name}.", root_goal=state.get("goal", ""))
         return bus.emit("built", {"_execute_artifact": artifact, "effective_goal": effective}, record=record, evidence=payload)
 

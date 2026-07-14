@@ -1,8 +1,7 @@
-"""node_self_modify — proposes a candidate self-evolution (git_evolution_patch). EXPECTS: the failure context (last_error, last_failure, last_reflection, last_action, last_code, last_result, last_verification), current_step, the repair baseline, git context and workspace manifest, and the organism contract (capabilities + topology). PRODUCES summary, rationale, read_files, wiring_patches, file_writes, file_deletes, commands, expected_validation."""
+"""node_self_modify — consume a reasoned failure, live source manifest, topology, activation policy, and repair baseline; produce one complete candidate evolution and its behavioral proof condition."""
 import pathlib
 from typing import Any
 
-import core_brain as brain
 import core_bus as bus
 import core_nodes as nodes
 import core_wiring as wiring_mod
@@ -61,7 +60,6 @@ def _evidence_file(path: pathlib.Path) -> dict[str, Any]:
 def _runtime_evidence(wiring: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
     return {
         "state_path": _evidence_file(wiring_mod.root_path(wiring["paths"]["state"])),
-        "control_path": _evidence_file(wiring_mod.root_path(wiring["paths"]["control"])),
         "current_state_keys": sorted(state.keys()),
         "has_observation": "desktop_tree_text" in state,
     }
@@ -82,10 +80,7 @@ def _repair_baseline(state: dict[str, Any]) -> dict[str, Any]:
         "executions": executions,
         "verification": state.get("last_verification") or {},
         "failure": state.get("last_failure") or {},
-        "error": state.get("last_error"),
-        "last_action": state.get("last_action") or {},
         "last_code": state.get("last_code") or "",
-        "last_result": state.get("last_result") or {},
         "action_frame": state.get("action_frame"),
         "observation": bus.observation_brief(state),
         "captured_at_tick": state.get("tick"),
@@ -98,23 +93,22 @@ class SelfModifyNode(BaseNode):
 
     def build_payload(self, ctx):
         state, wiring = ctx["state"], ctx["wiring"]
-        goal = state["effective_goal"]
+        goal = state["goal"]
         step = state.get("current_step") or {}
         self._git_context = nodes.prepare_self_evolution(wiring)
         self._failure = {
             "last_error": state.get("last_error", ""),
             "last_reflection": state.get("last_reflection", {}),
             "last_failure": state.get("last_failure", {}),
-            "last_action": state.get("last_action", {}),
-            "last_result": state.get("last_result", ""),
             "last_verification": state.get("last_verification", {}),
+            "topology_patch": state.get("topology_patch", {}),
         }
         self._baseline = _repair_baseline(state)
         self._organism_contract = {
             "capabilities": nodes.capability_manifest(ctx),
             "topology": wiring_mod.topology_summary(wiring),
             "activation": wiring["self_modify"]["evolvable"]["activation"],
-            "self_modify_route": "reflect.escalate/topology_patch",
+            "self_modify_route": "reflect.evolve/topology_patch",
             "behavioral_acceptance": "A candidate commit becomes known-good only after node_repair_validate proves the original failure resolved.",
         }
         return {
@@ -144,7 +138,6 @@ class SelfModifyNode(BaseNode):
         self.request_config = {"web_search": ctx["wiring"]["self_modify"]["web_search"]}
         record = self.think(ctx)
         data = record.data
-        obs = brain.last_observation()
         repair_id = f"repair-{state['tick']}-{self._baseline['failure_signature']}"
         repair_validation = {
             "repair_id": repair_id,
@@ -155,16 +148,17 @@ class SelfModifyNode(BaseNode):
             "baseline": self._baseline,
             "proposed_at_tick": state["tick"],
         }
-        effective = (
-            f"{state['effective_goal']}\n\n[SELF_MODIFY] Proposed candidate repair {repair_id}: "
+        effective = bus.append_narrative(
+            state["effective_goal"],
+            f"\n\n[SELF_MODIFY] Proposed candidate repair {repair_id}: "
             f"{data['summary']}. Structural patches: {len(data['wiring_patches'])}, "
             f"writes: {len(data['file_writes'])}, deletes: {len(data['file_deletes'])}. "
-            "The repair is not accepted until a fresh behavioral probe resolves the captured failure."
+            "The repair is not accepted until a fresh behavioral probe resolves the captured failure.",
+            root_goal=state.get("goal", ""),
         )
         patch = {
-            "observed_at": obs.get("observed_at"),
-            "desktop_tree_text": obs.get("desktop_tree_text", ""),
             "git_evolution_patch": {key: data[key] for key in PATCH_KEYS},
+            "topology_patch": None,
             "self_modify": {
                 "status": "proposed",
                 "git_context": self._git_context,

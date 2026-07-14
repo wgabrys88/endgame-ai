@@ -10,7 +10,6 @@ from typing import Any
 
 import core_bus as bus
 import core_loader as loader
-import core_stop_check as stop_check
 import core_wiring as wiring
 
 ROOT = pathlib.Path(__file__).parent.resolve()
@@ -18,12 +17,13 @@ _CALLS_MADE = 0
 _STABLE_PREFIX_CACHE: "StablePrefix | None" = None
 _STABLE_PREFIX_LOCK = threading.Lock()
 _LAST_OBSERVATION: dict[str, Any] | None = None
+_CONV_ID = ""
 
 class StablePrefix:
     def __init__(self, w: dict[str, Any], root: pathlib.Path = ROOT, focus_files: list[str] | None = None):
         self.root = root
         self.source = w["model"]["stable_prefix"]["source"]
-        self.focus_files = focus_files  # selective evolution: only these + core wiring if set (for targeted node fixes)
+        self.focus_files = focus_files
         self.files = self._source_files()
         self.text, self.fingerprint = self._render()
         self.cache_key = f"endgame-ai-{self.fingerprint[:24]}"
@@ -40,7 +40,6 @@ class StablePrefix:
         if set(path.parts) & set(self.source["skip_parts"]) or path.name.startswith(skip_prefixes):
             return False
         if self.focus_files is not None:
-            # Focused self-evolution: include only relevant node/tools/wiring + always core for context
             core_always = {".gitattributes", ".gitignore", "wiring.json", "core_bus.py", "core_wiring.py", "core_loader.py", "check_topology.py"}
             focus_set = set(self.focus_files) | core_always
             return path.name in focus_set or path.suffix in {".py", ".json"} and any(f in str(path) for f in self.focus_files)
@@ -73,7 +72,6 @@ def stable_prefix(w: dict[str, Any], focus_files: list[str] | None = None) -> St
     global _STABLE_PREFIX_CACHE
     with _STABLE_PREFIX_LOCK:
         fresh = StablePrefix(w, ROOT, focus_files=focus_files)
-        # Note: cache ignores focus for simplicity; in practice for evolution we bypass or key on focus
         if focus_files is not None or _STABLE_PREFIX_CACHE is None or _STABLE_PREFIX_CACHE.fingerprint != fresh.fingerprint:
             _STABLE_PREFIX_CACHE = fresh
         return _STABLE_PREFIX_CACHE
@@ -105,7 +103,7 @@ def _validate_record_contract(w: dict[str, Any], record: bus.Record, expected_re
     if missing:
         raise RuntimeError(f"{record.record_type} record missing required data keys: {missing}")
     if not contract.get("additional_properties", True):
-        allowed = set(required) | set(enums) | set(types) | {"next_signal"}
+        allowed = set(required) | set(enums) | set(types)
         unexpected = sorted(set(record.data) - allowed)
         if unexpected:
             raise RuntimeError(f"{record.record_type} record has unexpected data keys: {unexpected}")
@@ -152,6 +150,9 @@ def _node_docstring(w: dict[str, Any], node: str) -> str:
             pass
     defn = w.get("node_defs", {}).get(node) or w.get("node_defs", {}).get(base)
     if isinstance(defn, dict):
+        description = str(defn.get("description") or "").strip()
+        if description:
+            return description
         return f"declarative node; expects a payload for record_type '{defn.get('expected_record_type', '')}'."
     return ""
 
@@ -178,7 +179,7 @@ def downstream_contract(w: dict[str, Any], emitting_node: str | None) -> str:
     for signal, succ in seen:
         doc = _node_docstring(w, succ)
         lines.append(f"\n[on signal '{signal}' -> {succ}]\n{doc}" if doc else f"\n[on signal '{signal}' -> {succ}] (no declared input contract)")
-    lines.append("\nChoose next_signal to route your output to the intended consumer.")
+    lines.append("\nWhen thy record includes next_signal, choose it from these wired routes.")
     return "\n".join(lines)
 
 
@@ -190,7 +191,12 @@ def _organ_tuning(w: dict[str, Any], record_type: str | None) -> dict[str, Any]:
 def _normalize_observation(obj: Any) -> dict[str, Any] | None:
     if not isinstance(obj, dict) or not obj.get("desktop_tree_text"):
         return None
-    fields = ("desktop_tree_text", "focused_elements", "observed_at", "screen", "scan_stats", "rendered_node_count", "max_llm_nodes", "llm_node_limit_hit")
+    fields = (
+        "desktop_tree_text", "focused_elements", "observed_at", "screen", "scan_stats",
+        "rendered_node_count", "max_llm_nodes", "llm_node_limit_hit",
+        "elements_truncated", "elements_dropped_per_window", "elements_dropped_global",
+        "observation_fresh", "settle_seconds",
+    )
     return {key: obj[key] for key in fields if key in obj}
 
 
@@ -219,23 +225,11 @@ def _with_observation(payload: dict[str, Any], w: dict[str, Any]) -> dict[str, A
     return enriched
 
 
-def _sha256_text(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
-
-
-def summarize_messages_for_log(messages: list[dict[str, str]]) -> list[dict[str, Any]]:
-    out: list[dict[str, Any]] = []
-    for message in messages:
-        role = str(message.get("role") or "user")
-        content = str(message.get("content") or "")
-        row: dict[str, Any] = {"role": role, "chars": len(content), "sha256": _sha256_text(content), "content": content}
-        out.append(row)
-    return out
-
-
 def reset_call_budget() -> None:
-    global _CALLS_MADE
+    global _CALLS_MADE, _CONV_ID, _LAST_OBSERVATION
     _CALLS_MADE = 0
+    _CONV_ID = f"endgame-ai-{int(time.time())}-{os.getpid()}"
+    _LAST_OBSERVATION = None
 
 
 def _load_transport_module(name: str, w: dict[str, Any]):
@@ -257,10 +251,9 @@ def _record_response_format(w: dict[str, Any], record_type: str, emitting_node: 
         limit_name = {"string": "minLength", "array": "minItems", "object": "minProperties"}.get(type_name)
         if limit_name:
             data_properties.setdefault(key, {})[limit_name] = 1
-    # next_signal enum is emergent from the node's topology edges, not the stored contract.
     enums = dict(contract["enums"])
     emergent = bus.emergent_signals(w, emitting_node)
-    if emergent:
+    if emergent and "next_signal" in (set(contract["required"]) | set(contract.get("types", {})) | set(enums)):
         enums = {**enums, "next_signal": emergent}
     for key, values in enums.items():
         data_properties.setdefault(key, {})["enum"] = list(values)
@@ -279,37 +272,13 @@ def _record_response_format(w: dict[str, Any], record_type: str, emitting_node: 
                     "properties": data_properties,
                     "required": list(contract["required"]),
                 },
-                "reasoning": {"type": "string"},
             },
-            "required": ["record_type", "data", "reasoning"],
+            "required": ["record_type", "data"],
         },
     }
 
 
-def _guard_request_size(messages: list[dict[str, str]], cfg: dict[str, Any], w: dict[str, Any]) -> None:
-    """Fail hard BEFORE sending an over-large request. The single chokepoint that covers every LLM
-    call, and it is node-aware: self-modification legitimately needs the whole tracked source, so it
-    gets a large ceiling; every ordinary node gets a tight one. Exceeding it raises — which routes to
-    node_error -> reflect -> replan, so the wheel changes approach instead of re-sending a rejected
-    payload forever. This exists because a single unbounded execution stdout once flooded state and
-    inflated every prompt to ~3.4M chars, timing out the server on repeat."""
-    total = sum(len(str(m.get("content", ""))) for m in messages)
-    limits = w["model"].get("request_char_limits", {})
-    record_type = cfg.get("expected_record_type")
-    if record_type == "git_evolution_patch":
-        cap = int(limits.get("self_modify", 2_000_000))
-    else:
-        cap = int(limits.get("default", 400_000))
-    if total > cap:
-        raise RuntimeError(
-            f"request too large: {total} chars exceeds cap {cap} for record_type {record_type!r}. "
-            "Some prior output flooded the narrative; reflect and replan with a bounded step "
-            "(narrow the command, page the output, or write to a file and read a slice)."
-        )
-
-
-def call(messages: list[dict[str, str]], w: dict[str, Any], *, rod_feedback: bool = False, response_format: dict[str, Any] | None = None, request_config: dict[str, Any] | None = None) -> dict[str, str]:
-    stop_check.check_stop("brain call")
+def call(messages: list[dict[str, str]], w: dict[str, Any], *, response_format: dict[str, Any] | None = None, request_config: dict[str, Any] | None = None) -> dict[str, str]:
     global _CALLS_MADE
     transport, cfg = wiring.get_transport_config(w)
     if response_format is not None:
@@ -319,7 +288,6 @@ def call(messages: list[dict[str, str]], w: dict[str, Any], *, rod_feedback: boo
     max_calls = w["model"].get("brain_call_budget") or w["model"]["global"]["brain_call_budget"]
     if max_calls is not None and _CALLS_MADE >= int(max_calls):
         raise RuntimeError(f"brain call budget exceeded: {_CALLS_MADE}/{max_calls}")
-    _guard_request_size(messages, cfg, w)
     _CALLS_MADE += 1
     try:
         result = _load_transport_module(transport, w).call(messages, cfg)
@@ -388,26 +356,24 @@ def extract_json_object(text: str) -> dict[str, Any] | None:
 
 
 def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, expected_record_type: str | None = None, emitting_node: str | None = None, request_config: dict[str, Any] | None = None) -> dict[str, Any]:
+    global _CONV_ID
     _, cfg = wiring.get_transport_config(w)
     reasoning_cfg = dict(cfg["reasoning"])
     organ_tuning = _organ_tuning(w, expected_record_type)
     include_prefix = bool(w["model"]["stable_prefix"]["include_in_request"] or organ_tuning.get("include_stable_prefix"))
     focus_files = None
     if expected_record_type == "git_evolution_patch":
-        # Enable focused self-evolution: extract candidate files from last_reflection diagnosis or failure to target only relevant node + wiring
-        st = payload.get("state", {}) if isinstance(payload, dict) else {}
-        last_refl = st.get("last_reflection", {}) or {}
+        failure = payload.get("failure", {}) if isinstance(payload, dict) else {}
+        last_refl = failure.get("last_reflection", {}) if isinstance(failure, dict) else {}
         diagnosis = str(last_refl.get("diagnosis", "")) + str(last_refl.get("lesson", ""))
         import re
-        candidates = re.findall(r"(node_[a-z_]+\.py|tools\.py|core_[a-z_]+\.py|wiring\.json)", diagnosis)
+        candidates = re.findall(r"((?:node|core|obs|cap|transport)_[a-z_]+\.py|tools\.py|wiring\.json)", diagnosis)
         if candidates:
             focus_files = sorted(set(candidates))
     prefix = stable_prefix(w, focus_files=focus_files) if w["model"]["stable_prefix"]["enabled"] and include_prefix else None
     prefix_for_messages = prefix
-    conv_id = w.get("_conv_id")
-    if not conv_id:
-        conv_id = f"endgame-ai-{int(time.time())}-{hashlib.md5(str(w).encode()).hexdigest()[:8]}"
-        w["_conv_id"] = conv_id
+    if not _CONV_ID:
+        _CONV_ID = f"endgame-ai-{int(time.time())}-{os.getpid()}"
     payload = _with_observation(payload, w)
     goal = str(payload.pop("goal") or "") if "goal" in payload else ""
     user_text = json.dumps(payload, ensure_ascii=False, default=str)
@@ -420,7 +386,7 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
         if key in {"reasoning_effort", "max_output_tokens"} and value is not None:
             request_cfg.setdefault(key, value)
     if cfg.get("transport") == "transport_xai":
-        request_cfg.setdefault("prompt_cache_key", prefix.cache_key if prefix is not None else conv_id)
+        request_cfg.setdefault("prompt_cache_key", prefix.cache_key if prefix is not None else _CONV_ID)
     stable_context_parts = []
     if goal:
         stable_context_parts.append(f"CURRENT GOAL (fixed for this run):\n{goal}")
@@ -436,9 +402,9 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
         return bus.Record(record.record_type, record.data, transport_reasoning or record.reasoning).to_json()
     if pattern != "two_pass":
         raise RuntimeError(f"unknown reasoning pattern: {pattern}")
-    first = call(_messages(system_prompt, user_text, prefix_for_messages, stable_context), w, rod_feedback=False, request_config=request_cfg)
+    first = call(_messages(system_prompt, user_text, prefix_for_messages, stable_context), w, request_config=request_cfg)
     reasoning = reasoning_from(first["content"], first.get("reasoning", ""))
     template = str(reasoning_cfg.get("injection_template") or "REASONING:\n{reasoning}")
-    second = call(_messages(system_prompt, user_text + "\n\n" + template.format(reasoning=reasoning), prefix_for_messages, stable_context), w, rod_feedback=True, response_format=response_format, request_config=request_cfg)
+    second = call(_messages(system_prompt, user_text + "\n\n" + template.format(reasoning=reasoning), prefix_for_messages, stable_context), w, response_format=response_format, request_config=request_cfg)
     record = _commit_record(second["content"], w, expected_record_type)
     return bus.Record(record.record_type, record.data, reasoning).to_json()
