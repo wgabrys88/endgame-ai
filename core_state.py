@@ -2,19 +2,8 @@ import time
 from typing import Any
 
 import core_wiring as wiring
-import core_stop_check as stop_check
 import core_bus as bus
 import core_loader as loader
-
-
-def stop_file_detected(wiring_cfg: dict[str, Any], state: dict[str, Any], node_name: str) -> dict[str, Any]:
-    state["_phase"] = "stop_requested"
-    state["current_node"] = node_name
-    state["stop_reason"] = f"stop file detected: {stop_check.STOP_FILE.name}"
-    wiring.write_state(wiring_cfg, state)
-    return state
-
-
 
 
 def classify_node_exception(node_name: str, exc: Exception) -> dict[str, Any]:
@@ -42,33 +31,3 @@ def classify_node_exception(node_name: str, exc: Exception) -> dict[str, Any]:
         "message": message,
         "contract_repair_allowed": contract_repair_allowed,
     }
-
-
-def wait_before_node(
-    wiring_cfg: dict[str, Any],
-    state: dict[str, Any],
-    node_name: str,
-) -> bool:
-    entered_pause = False
-    while True:
-        if stop_check.stop_requested():
-            return False
-        ctrl = wiring.read_control(wiring_cfg)
-        mode = ctrl["mode"]
-        token = int(ctrl.get("step_token", 0))
-        if mode == "run":
-            return True
-        consumed = int(state.get("_last_step_token_consumed", -1))
-        if mode == "step" and token > consumed:
-            state["_last_step_token_consumed"] = token
-            state["_phase"] = "stepping_node"
-            state["current_node"] = node_name
-            wiring.write_state(wiring_cfg, state)
-            return True
-        if not entered_pause:
-            state["_phase"] = "paused_before_node"
-            state["current_node"] = node_name
-            state["control_mode"] = mode
-            wiring.write_state(wiring_cfg, state)
-            entered_pause = True
-        time.sleep(0.1)

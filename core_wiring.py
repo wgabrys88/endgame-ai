@@ -1,7 +1,7 @@
 import pathlib
 from typing import Any
 
-from io_helpers import atomic_write_json, replace_with_retry  # re-exported for callers
+from io_helpers import atomic_write_json, replace_with_retry
 
 ROOT = pathlib.Path(__file__).parent.resolve()
 
@@ -53,7 +53,7 @@ def _require_list_str(obj: dict[str, Any], path: str) -> list[str]:
     return value
 
 def validate_wiring(cfg: dict[str, Any]) -> None:
-    for key in ("schema", "model", "paths", "control_default", "observe_config", "self_modify", "topology", "prompts", "prompt_aliases", "shared_prompt_prefix", "record_contracts", "capabilities", "fractal"):
+    for key in ("schema", "model", "paths", "observe_config", "self_modify", "topology", "prompts", "prompt_aliases", "shared_prompt_prefix", "record_contracts", "capabilities", "fractal"):
         if key not in cfg:
             raise RuntimeError(f"wiring missing required key: {key}")
     _obj(cfg, "model")
@@ -73,11 +73,7 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
         "paths.brains",
         "paths.caps",
         "paths.state",
-        "paths.control",
         "paths.guidance",
-        "control_default.mode",
-        "control_default.step_token",
-        "control_default.updated_at",
         "observe_config.hover_cache.enabled",
         "observe_config.hover_cache.scan.step_px",
         "observe_config.hover_cache.scan.delay_ms",
@@ -233,40 +229,14 @@ def guidance_path(wiring: dict[str, Any]) -> pathlib.Path:
     return root_path(wiring["paths"]["guidance"])
 
 
-def default_control(wiring: dict[str, Any]) -> dict[str, Any]:
-    return dict(wiring["control_default"])
-
-
-def read_control(wiring: dict[str, Any]) -> dict[str, Any]:
-    import time
-    path = root_path(wiring["paths"]["control"])
-    if not path.exists():
-        ctrl = default_control(wiring)
-        ctrl["updated_at"] = time.time()
-        atomic_write_json(path, ctrl)
-        return ctrl
-    ctrl = load_json(path)
-    mode = ctrl.get("mode")
-    if mode not in {"run", "pause", "step"}:
-        raise RuntimeError(f"invalid control mode in {path}: {mode!r}")
-    try:
-        ctrl["step_token"] = int(ctrl.get("step_token", 0))
-    except (TypeError, ValueError) as exc:
-        raise RuntimeError(f"invalid step_token in {path}: {ctrl.get('step_token')!r}") from exc
-    return ctrl
-
-
 def write_state(wiring: dict[str, Any], state: dict[str, Any]) -> None:
     atomic_write_json(state_path(wiring), state)
 
 
 def reset_runtime(wiring: dict[str, Any]) -> None:
-    import core_stop_check as stop_check
-    for key in ("state", "control"):
-        p = root_path(wiring["paths"][key])
-        if p.exists():
-            p.unlink()
-    stop_check.clear_stop()
+    p = root_path(wiring["paths"]["state"])
+    if p.exists():
+        p.unlink()
 
 
 def topology_summary(w: dict[str, Any]) -> dict[str, Any]:

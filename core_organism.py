@@ -8,7 +8,6 @@ import core_bus as bus
 import core_node_base as node_base
 import core_nodes as nodes
 import core_state as state
-import core_stop_check as stop_check
 import core_wiring as wiring
 
 
@@ -20,15 +19,10 @@ def run(
     brain_call_budget: int | None = None,
     start_node: str | None = None,
     wiring_path: str | None = None,
-    _pid_registered: bool = False,
     _deadline_at: float | None = None,
     _seed: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     invocation_started_at = time.time()
-    registered_here = False
-    if not _pid_registered:
-        stop_check.register_pid("organism")
-        registered_here = True
     w = wiring.load_wiring(wiring_path)
     topo = w["topology"]
     current = str(start_node or topo["cycle_start"])
@@ -39,8 +33,7 @@ def run(
             w.setdefault("model", {})["brain_call_budget"] = brain_call_budget
         if reset:
             wiring.reset_runtime(w)
-        if not _pid_registered:
-            brain.reset_call_budget()
+        brain.reset_call_budget()
 
         if deadline_at is None and duration_seconds is not None:
             deadline_at = invocation_started_at + float(duration_seconds)
@@ -82,10 +75,6 @@ def run(
         while frontier:
             current = frontier.pop(0)
             st["frontier"] = list(frontier)
-            if stop_check.stop_requested():
-                return state.stop_file_detected(w, st, current)
-            if not state.wait_before_node(w, st, current):
-                return state.stop_file_detected(w, st, current)
             st["_phase"] = "executing_node"
             st["current_node"] = current
             wiring.write_state(w, st)
@@ -205,9 +194,6 @@ def run(
         st["_phase"] = "interrupted"
         wiring.write_state(w, st)
         return st
-    finally:
-        if registered_here:
-            stop_check.unregister_pid("organism")
 
 
 def next_nodes_for(w: dict[str, Any], current: str, signal_name: str) -> list[str]:

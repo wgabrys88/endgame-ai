@@ -76,7 +76,6 @@ def call(messages, cfg):
                 time.sleep(base_delay * (2 ** attempt))
                 continue
             raise RuntimeError(f"xai transport URL error: {getattr(exc, 'reason', exc)}; no fallback was attempted") from exc
-    # Final fallback to file_proxy if configured
     if cfg.get("fallback_to_file_proxy"):
         raise RuntimeError("xai transport exhausted retries; falling back to file_proxy (caller must handle)")
     raise RuntimeError("xai transport exhausted retries")

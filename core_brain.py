@@ -10,7 +10,6 @@ from typing import Any
 
 import core_bus as bus
 import core_loader as loader
-import core_stop_check as stop_check
 import core_wiring as wiring
 
 ROOT = pathlib.Path(__file__).parent.resolve()
@@ -23,7 +22,7 @@ class StablePrefix:
     def __init__(self, w: dict[str, Any], root: pathlib.Path = ROOT, focus_files: list[str] | None = None):
         self.root = root
         self.source = w["model"]["stable_prefix"]["source"]
-        self.focus_files = focus_files  # selective evolution: only these + core wiring if set (for targeted node fixes)
+        self.focus_files = focus_files
         self.files = self._source_files()
         self.text, self.fingerprint = self._render()
         self.cache_key = f"endgame-ai-{self.fingerprint[:24]}"
@@ -40,7 +39,6 @@ class StablePrefix:
         if set(path.parts) & set(self.source["skip_parts"]) or path.name.startswith(skip_prefixes):
             return False
         if self.focus_files is not None:
-            # Focused self-evolution: include only relevant node/tools/wiring + always core for context
             core_always = {".gitattributes", ".gitignore", "wiring.json", "core_bus.py", "core_wiring.py", "core_loader.py", "check_topology.py"}
             focus_set = set(self.focus_files) | core_always
             return path.name in focus_set or path.suffix in {".py", ".json"} and any(f in str(path) for f in self.focus_files)
@@ -73,7 +71,6 @@ def stable_prefix(w: dict[str, Any], focus_files: list[str] | None = None) -> St
     global _STABLE_PREFIX_CACHE
     with _STABLE_PREFIX_LOCK:
         fresh = StablePrefix(w, ROOT, focus_files=focus_files)
-        # Note: cache ignores focus for simplicity; in practice for evolution we bypass or key on focus
         if focus_files is not None or _STABLE_PREFIX_CACHE is None or _STABLE_PREFIX_CACHE.fingerprint != fresh.fingerprint:
             _STABLE_PREFIX_CACHE = fresh
         return _STABLE_PREFIX_CACHE
@@ -257,7 +254,6 @@ def _record_response_format(w: dict[str, Any], record_type: str, emitting_node: 
         limit_name = {"string": "minLength", "array": "minItems", "object": "minProperties"}.get(type_name)
         if limit_name:
             data_properties.setdefault(key, {})[limit_name] = 1
-    # next_signal enum is emergent from the node's topology edges, not the stored contract.
     enums = dict(contract["enums"])
     emergent = bus.emergent_signals(w, emitting_node)
     if emergent:
@@ -309,7 +305,6 @@ def _guard_request_size(messages: list[dict[str, str]], cfg: dict[str, Any], w: 
 
 
 def call(messages: list[dict[str, str]], w: dict[str, Any], *, rod_feedback: bool = False, response_format: dict[str, Any] | None = None, request_config: dict[str, Any] | None = None) -> dict[str, str]:
-    stop_check.check_stop("brain call")
     global _CALLS_MADE
     transport, cfg = wiring.get_transport_config(w)
     if response_format is not None:
@@ -394,7 +389,6 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
     include_prefix = bool(w["model"]["stable_prefix"]["include_in_request"] or organ_tuning.get("include_stable_prefix"))
     focus_files = None
     if expected_record_type == "git_evolution_patch":
-        # Enable focused self-evolution: extract candidate files from last_reflection diagnosis or failure to target only relevant node + wiring
         st = payload.get("state", {}) if isinstance(payload, dict) else {}
         last_refl = st.get("last_reflection", {}) or {}
         diagnosis = str(last_refl.get("diagnosis", "")) + str(last_refl.get("lesson", ""))

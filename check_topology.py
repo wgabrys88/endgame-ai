@@ -57,7 +57,6 @@ def coherence_problems(w: dict) -> list[str]:
     if topo["cycle_start"] not in nodes:
         problems.append(f"cycle_start '{topo['cycle_start']}' not in topology.nodes")
 
-    # dangling edge targets (halt/wait are terminal sentinels, not nodes)
     for src, sigmap in edges.items():
         if src not in nodes:
             problems.append(f"edge source '{src}' not in topology.nodes")
@@ -69,8 +68,6 @@ def coherence_problems(w: dict) -> list[str]:
                 if t not in SENTINELS and t not in nodes:
                     problems.append(f"{src}.{sig} -> '{t}' is not a known node")
 
-    # every wired node needs an edge map, prompt, and either a declarative
-    # definition in node_defs or a dynamically loadable source file
     node_dir = wiring.root_path(w["paths"]["nodes"])
     node_defs = w.get("node_defs", {})
     for n in nodes:
@@ -88,7 +85,6 @@ def coherence_problems(w: dict) -> list[str]:
             if not (node_dir / f"{base}.py").is_file():
                 problems.append(f"node '{n}' has no plugin file {(node_dir / f'{base}.py')}")
 
-    # each barrier must name a wired node with positive integer arity and a join edge
     for bnode, arity in barriers.items():
         if bnode not in nodes:
             problems.append(f"barrier '{bnode}' is not a topology node")
@@ -97,7 +93,6 @@ def coherence_problems(w: dict) -> list[str]:
         if bnode in edges and "join" not in edges[bnode]:
             problems.append(f"barrier '{bnode}' must declare a 'join' edge")
 
-    # reachability from cycle_start across both edge forms
     seen: set[str] = set()
     stack = [topo["cycle_start"]]
     while stack:

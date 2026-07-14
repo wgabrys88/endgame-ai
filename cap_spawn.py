@@ -27,7 +27,6 @@ def _child_wiring_path(w: dict[str, Any], depth: int, tag: str) -> str:
     child = copy.deepcopy(w)
     stem = f"runtime_child_d{depth}_{tag}"
     child["paths"]["state"] = f"{stem}_state.json"
-    child["paths"]["control"] = f"{stem}_control.json"
     path = wiring.root_path(f"{stem}_wiring.json")
     path.write_text(json.dumps(child, ensure_ascii=False, indent=2), encoding="utf-8")
     return str(path)

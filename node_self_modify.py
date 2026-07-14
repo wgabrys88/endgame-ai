@@ -61,7 +61,6 @@ def _evidence_file(path: pathlib.Path) -> dict[str, Any]:
 def _runtime_evidence(wiring: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
     return {
         "state_path": _evidence_file(wiring_mod.root_path(wiring["paths"]["state"])),
-        "control_path": _evidence_file(wiring_mod.root_path(wiring["paths"]["control"])),
         "current_state_keys": sorted(state.keys()),
         "has_observation": "desktop_tree_text" in state,
     }

@@ -104,15 +104,9 @@
     "nodes": ".",
     "brains": ".",
     "state": "runtime_state.json",
-    "control": "runtime_control.json",
     "event_log": "runtime_events.jsonl",
     "caps": ".",
     "guidance": "guidance.txt"
-  },
-  "control_default": {
-    "mode": "run",
-    "step_token": 0,
-    "updated_at": 0
   },
   "observe_config": {
     "hover_cache": {
@@ -222,7 +216,7 @@
     ],
     "edges": {
       "node_planner": {
-        "step_ready": "node_scheduler",
+        "step_ready": "node_satisfied",
         "error": "node_error"
       },
       "node_scheduler": {
@@ -239,7 +233,7 @@
         "error": "node_error"
       },
       "node_observe:plan": {
-        "observed": "halt",
+        "observed": "node_planner",
         "error": "node_error"
       },
       "node_observe:act": {

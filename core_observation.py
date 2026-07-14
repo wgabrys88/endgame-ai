@@ -162,8 +162,6 @@ def _to_runtime_id(v: Any) -> list[int]:
 
 
 def _node_id(runtime_id: list[int], hwnd: int, rect: dict[str, int]) -> str:
-    # Hierarchical shortest practical ID: prefer compact runtime-derived or hwnd+rect for action_index / focused_elements.
-    # No long strings; keeps uniqueness for node_by_id / click_node while reducing prompt bloat.
     if runtime_id:
         short = "_".join(map(str, runtime_id[-3:])) if len(runtime_id) > 3 else "_".join(map(str, runtime_id))
         return f"e_{short}"
@@ -335,8 +333,6 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
     cfg = dict(config or {})
     if not cfg["enabled"]:
         raise RuntimeError("hover_cache observation is disabled")
-    # Phases are wired, swappable modules. Defaults keep the built-in pipeline; override
-    # any single phase via config["phases"] to rewire observation at runtime.
     phases = cfg.get("phases") or {}
     scan = _load_phase(phases.get("scan", "obs_scan"))
     filt = _load_phase(phases.get("filter", "obs_filter"))

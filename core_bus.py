@@ -100,10 +100,6 @@ def emit(signal: str, patch: JsonDict | None = None, *, record: Record | JsonDic
     return NodeOutput(signal=signal.strip(), patch=dict(patch or {}), record=record_obj, evidence=dict(evidence or {}))
 
 
-# Rolling narrative bound. effective_goal = immutable root goal + append-only narrative; in the
-# analysed run it grew unbounded (tens of KB) and inflated every prompt, contradicting the README's
-# "minimal rolling buffer" principle. Keep the root goal (first paragraph) plus the most recent
-# NARRATIVE_TAIL_CHARS of appended history so recent context is preserved while growth is bounded.
 NARRATIVE_TAIL_CHARS = 12000
 
 
@@ -232,8 +228,6 @@ def focused_elements(state: JsonDict) -> JsonDict:
     }
     focus_text = json.dumps(focus_sources, ensure_ascii=False, default=str)
     fields = ("id", "name", "role", "action", "rect", "enabled", "automation_id", "class_name", "hwnd", "depth")
-    # The action_index key is the identity-stable id (e_<runtime_id>) that the model cites, so a
-    # single membership test suffices — no positional short_id, no fallback matching.
     return {
         node_id: {key: node[key] for key in fields if key in node}
         for node_id, node in action_index.items()
@@ -259,10 +253,6 @@ def observation_brief(state: JsonDict) -> JsonDict:
 
 
 def _last_denial(state: JsonDict) -> str:
-    # Surface the most recent verify denial reason as an explicit, top-level constraint so the
-    # next execute/frame attempt converges instead of re-guessing. Empirically the wheel burned
-    # ~7 laps per step because the denial reason (e.g. "use read_file, not a directory listing")
-    # was only reachable buried inside focus.state_brief.last_verification.
     lv = state.get("last_verification") or {}
     if isinstance(lv, dict) and lv.get("success") is False:
         return str(lv.get("reasoning", "")).strip()
