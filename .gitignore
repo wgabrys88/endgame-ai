@@ -5,7 +5,8 @@
 !.gitignore
 !README.md
 !wiring.json
-!endgame_wiring_lab.html
+!endgame_wiring_lab_DESIGN_OK.html
+!endgame_wiring_lab_FEATURE_RICH.html
 !core_brain.py
 !core_bus.py
 !core_desktop.py

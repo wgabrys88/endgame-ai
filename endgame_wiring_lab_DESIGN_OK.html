@@ -1,0 +1,2951 @@
+<!doctype html>
+<html lang="en" data-visualize-standalone>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Endgame Wiring Lab</title>
+<style>:root {
+  color-scheme: light dark;
+  background-color: transparent !important;
+
+  /* Agent-facing contract; keep in sync with SKILL.md. */
+  --background: var(
+    --main-surface-primary,
+    light-dark(rgb(255 255 255), rgb(24 24 24))
+  );
+  --foreground: light-dark(rgb(26 28 31), rgb(255 255 255));
+  --card: color-mix(in oklab, var(--foreground) 5%, transparent);
+  --card-foreground: var(--foreground);
+  --popover: light-dark(rgb(255 255 255), rgb(45 45 45));
+  --popover-foreground: var(--foreground);
+  --primary: light-dark(rgb(51 156 255), rgb(131 195 255));
+  --primary-foreground: light-dark(rgb(255 255 255), rgb(13 13 13));
+  --secondary: light-dark(rgb(255 255 255 / 96%), rgb(54 54 54 / 96%));
+  --secondary-foreground: var(--foreground);
+  --muted: color-mix(in srgb, var(--foreground) 10%, transparent);
+  --muted-foreground: light-dark(
+    rgb(26 28 31 / 49.4%),
+    rgb(255 255 255 / 49.8%)
+  );
+  --accent: light-dark(rgb(229 242 255), rgb(13 39 63));
+  --accent-foreground: var(--primary);
+  --destructive: light-dark(rgb(226 85 7), rgb(255 133 73));
+  --border: light-dark(rgb(26 28 31 / 8%), rgb(255 255 255 / 8.2%));
+  --input: light-dark(
+    rgb(26 28 31 / 11.8%),
+    color-mix(in oklab, rgb(0 0 0) 10%, transparent)
+  );
+  --ring: light-dark(rgb(51 156 255), rgb(131 195 255 / 76%));
+  --font-size-base: 14px;
+
+  /* Internal implementation variables; not part of the agent contract. */
+  --font-sans: -apple-system, system-ui, "Segoe UI", sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono",
+    monospace;
+  --font-size-normal: max(11px, var(--font-size-base));
+  --font-size-tooltip: calc(var(--font-size-base) - 1px);
+  --font-size-small: max(11px, calc(var(--font-size-base) - 2px));
+  --font-size-h1: calc(var(--font-size-normal) * 1.7142857143);
+  --font-size-h2: calc(var(--font-size-normal) * 1.4285714286);
+  --font-size-h3: calc(var(--font-size-normal) * 1.2857142857);
+  --font-weight-normal: 430;
+  --font-weight-medium: 500;
+  --line-height-normal: calc(var(--font-size-normal) * 1.5);
+  --line-height-tooltip: calc(var(--font-size-tooltip) * 1.4285714286);
+  --line-height-small: calc(var(--font-size-small) + 4px);
+  --radius: 10px;
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-2xl: calc(var(--radius) * 1.6);
+  --radius-full: 9999px;
+  --shadow-sm: 0 1px 2px -1px rgb(0 0 0 / 8%);
+  --checkmark-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 17 17'%3E%3Cpath d='M12.8961 3.64101C13.1297 3.41418 13.4984 3.37523 13.7779 3.56581C14.0571 3.75635 14.1554 4.11331 14.0299 4.41347L13.9615 4.53847L7.71151 13.7045C7.59411 13.8767 7.4063 13.9877 7.19881 14.0072C6.99136 14.0267 6.78564 13.9533 6.63826 13.806L2.88826 10.056L2.79842 9.9457C2.6192 9.67407 2.64927 9.30496 2.88826 9.06581C3.12738 8.82669 3.49647 8.79676 3.76815 8.97597L3.8785 9.06581L7.03084 12.2182L12.8053 3.74941L12.8961 3.64101Z'/%3E%3C/svg%3E");
+
+  /* Legacy aliases; not part of the current agent contract. */
+  --viz-bg: transparent;
+  --viz-panel: var(--card);
+  --viz-border: var(--border);
+  --viz-text: var(--foreground);
+  --viz-muted: var(--muted-foreground);
+  --viz-accent: var(--primary);
+  --viz-accent-text: var(--primary-foreground);
+  --viz-accent-bg: var(--accent);
+  --viz-font-size: var(--font-size-base);
+  --viz-warning: var(--destructive);
+  --color-background-primary: var(--background);
+  --color-text-primary: var(--foreground);
+  --color-border-secondary: var(--border);
+}
+
+:root[data-visualize-standalone] {
+  background-color: var(--background) !important;
+}
+
+/* Generic mobile code-block hosts provide light/dark mode but no series palette.
+   AppBlock hosts set all six variables themselves. */
+:root:not([data-app-block-surface]) {
+  --viz-series-1: var(--primary);
+  --viz-series-2: light-dark(#f3883b, #f59a56);
+  --viz-series-3: light-dark(#5dc977, #74d58b);
+  --viz-series-4: light-dark(#eb77b1, #f08fc0);
+  --viz-series-5: light-dark(#9b79ec, #aa91ef);
+  --viz-series-6: light-dark(#3ab9b1, #5acbc2);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html > body {
+  margin: 0;
+  padding: 5px;
+  color: var(--foreground);
+  background: transparent !important;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-normal);
+  font-weight: var(--font-weight-normal);
+  line-height: var(--line-height-normal);
+}
+
+:root:not([data-app-block-surface]) > body {
+  padding: 12px;
+}
+
+a {
+  color: color-mix(in srgb, var(--viz-accent) 80%, var(--viz-text) 20%);
+  cursor: pointer;
+  font-weight: var(--viz-font-weight-medium);
+  text-decoration: none;
+  text-underline-offset: 2px;
+}
+
+a:is(:hover, :focus-visible) {
+  text-decoration-line: underline;
+  text-decoration-style: dashed;
+  text-decoration-thickness: 0.5px;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p {
+  margin-block: 0;
+}
+
+h1 {
+  font-size: var(--font-size-h1);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+h2 {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+h3,
+h4,
+h5,
+h6 {
+  font-size: var(--font-size-h3);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.3;
+}
+
+b,
+strong,
+th {
+  font-weight: var(--font-weight-medium);
+}
+
+code:not(pre code) {
+  display: inline;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  overflow-wrap: anywhere;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  word-break: break-word;
+}
+
+#widget {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  padding: 0;
+  background: transparent !important;
+}
+
+.card {
+  min-width: 0;
+  padding: 12px;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  border-radius: var(--radius-2xl);
+  color: var(--card-foreground);
+  background: var(--card);
+}
+
+#widget > :not(.card) {
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.tooltip {
+  position: fixed;
+  z-index: 50;
+  top: 0;
+  left: 0;
+  width: max-content;
+  max-width: min(
+    20rem,
+    var(--tooltip-available-width, calc(100vw - 10px)),
+    calc(100vw - 10px)
+  );
+  max-height: min(
+    var(--tooltip-available-height, calc(100vh - 10px)),
+    calc(100vh - 10px)
+  );
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--popover-foreground);
+  background: var(--popover);
+  box-shadow: none;
+  font-size: var(--font-size-tooltip);
+  line-height: var(--line-height-tooltip);
+  overflow-wrap: break-word;
+  white-space: normal;
+  pointer-events: none;
+  user-select: none;
+}
+
+.viz-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(max(180px, 24%), 1fr));
+  gap: 10px;
+}
+
+.viz-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.viz-stat-value {
+  font-size: var(--font-size-h2);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.25;
+}
+
+.viz-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.viz-badge {
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+  color: var(--accent-foreground);
+  background: var(--accent);
+  font-weight: var(--font-weight-medium);
+}
+
+small,
+.text-small,
+.viz-badge {
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-small);
+}
+
+.text-muted {
+  color: var(--muted-foreground);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.viz-legend,
+.viz-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.viz-controls > .form-label {
+  display: grid;
+  min-width: min(100%, 260px);
+  flex: 1 1 280px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 2px 12px;
+  margin-bottom: 0;
+}
+
+.viz-controls > .form-label > :is(.form-control, .form-range, .form-select) {
+  grid-column: 1 / -1;
+}
+
+.btn,
+.form-check-input,
+.form-control,
+.form-range,
+.form-select {
+  font: inherit;
+}
+
+.btn {
+  appearance: button;
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0 8px;
+  -webkit-app-region: no-drag;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  color: var(--secondary-foreground);
+  background: var(--secondary);
+  cursor: var(--cursor-interaction, pointer);
+  text-align: center;
+  text-decoration: none;
+  white-space: nowrap;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+a.btn {
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.btn:not(:disabled):hover {
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.btn-primary {
+  border-color: transparent;
+  color: var(--primary-foreground);
+  background: var(--foreground);
+  background-clip: padding-box;
+}
+
+.btn-primary:not(:disabled):hover {
+  background: color-mix(in srgb, var(--foreground) 80%, transparent);
+  background-clip: padding-box;
+}
+
+.btn-ghost {
+  border-color: transparent;
+  color: var(--muted-foreground);
+  background: transparent;
+}
+
+.btn-ghost:not(:disabled):hover {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+[data-lucide] {
+  stroke-width: 1.6;
+}
+
+.form-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--foreground);
+}
+
+.form-control {
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  padding: 0 8px;
+  outline: none;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  color: var(--foreground);
+  background: var(--secondary);
+}
+
+.form-control::placeholder {
+  color: var(--muted-foreground);
+}
+
+textarea.form-control {
+  height: auto;
+  min-height: 72px;
+  padding: 8px 10px;
+  resize: vertical;
+}
+
+.form-control:focus-visible {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-control:disabled,
+.form-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.form-select {
+  appearance: none;
+  display: block;
+  width: 100%;
+  min-height: 28px;
+  margin: 0;
+  padding: 0 32px 0 8px;
+  outline: none;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  color: var(--foreground);
+  background-color: var(--secondary);
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--muted-foreground) 50%),
+    linear-gradient(135deg, var(--muted-foreground) 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) 50%,
+    calc(100% - 10px) 50%;
+  background-repeat: no-repeat;
+  background-size: 4px 4px;
+  cursor: var(--cursor-interaction, default);
+}
+
+.form-select:not(:disabled):hover {
+  background-color: color-mix(in srgb, var(--foreground) 6%, var(--secondary));
+}
+
+.form-select:focus-visible {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-check {
+  display: flex;
+  min-height: 20px;
+  align-items: center;
+  gap: 6px;
+}
+
+.form-check-input {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  margin: 0;
+  border: 1px solid var(--input);
+  color: var(--primary-foreground);
+  background-color: transparent;
+  cursor: var(--cursor-interaction, default);
+  transition:
+    background-color 150ms,
+    border-color 150ms,
+    box-shadow 150ms;
+}
+
+.form-check:not(.form-switch) .form-check-input[type="checkbox"] {
+  border-color: var(--input);
+  border-radius: var(--radius-sm);
+  background-color: var(--secondary);
+  box-shadow: var(--shadow-sm);
+}
+
+.form-check:not(.form-switch)
+  .form-check-input:not(:disabled):not(:checked):hover {
+  background-color: var(--card);
+}
+
+.form-check:not(.form-switch) .form-check-input[type="checkbox"]:checked {
+  border-color: var(--primary);
+  background-color: var(--primary);
+}
+
+.form-check:not(.form-switch)
+  .form-check-input[type="checkbox"]:checked::before {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--primary-foreground);
+  content: "";
+  mask: var(--checkmark-image) center / 12px 12px no-repeat;
+}
+
+.form-check-input[type="radio"] {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+}
+
+.form-check-input[type="radio"]:checked {
+  border: 2px solid var(--primary);
+  background:
+    radial-gradient(circle, var(--primary-foreground) 0 2.5px, transparent 3px),
+    var(--primary);
+}
+
+.form-check:not(.form-switch) .form-check-input:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.form-check:not(.form-switch) .form-check-input:disabled {
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.form-check:not(.form-switch) .form-check-input:disabled + .form-check-label {
+  cursor: not-allowed;
+}
+
+.form-switch .form-check-input:disabled,
+.form-switch .form-check-input:disabled + .form-check-label {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.form-check-label {
+  color: var(--foreground);
+  cursor: var(--cursor-interaction, default);
+}
+
+.form-switch .form-check-input {
+  position: relative;
+  width: 32px;
+  height: 20px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--muted);
+  box-shadow: none;
+  transition: background-color 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.form-switch .form-check-input::before {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 1px solid light-dark(var(--primary-foreground), var(--foreground));
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+  box-shadow: var(--shadow-sm);
+  content: "";
+  transform: translate(2px, -50%);
+  transition: transform 200ms cubic-bezier(0, 0, 0.2, 1);
+}
+
+.form-switch .form-check-input:checked {
+  background: var(--primary);
+}
+
+.form-switch .form-check-input:checked::before {
+  transform: translate(14px, -50%);
+}
+
+.form-switch .form-check-input:focus-visible {
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+.form-range {
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 28px;
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  outline: none;
+  border: 0;
+  accent-color: var(--primary);
+  background: linear-gradient(
+      color-mix(in srgb, var(--foreground) 7%, transparent),
+      color-mix(in srgb, var(--foreground) 7%, transparent)
+    )
+    center / 100% 2px no-repeat;
+}
+
+.form-range::-webkit-slider-runnable-track {
+  height: 28px;
+  background: transparent;
+}
+
+.form-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+}
+
+.form-range:focus-visible::-webkit-slider-thumb {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-range::-moz-range-track {
+  height: 28px;
+  background: transparent;
+}
+
+.form-range::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: light-dark(var(--primary-foreground), var(--foreground));
+}
+
+.form-range:focus-visible::-moz-range-thumb {
+  border-color: var(--ring);
+  box-shadow: inset 0 0 0 1px var(--ring);
+}
+
+.form-range:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.btn:not(.btn-primary, .viz-tile):is(
+    [aria-pressed="true"],
+    [aria-selected="true"],
+    .is-selected
+  ) {
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+  background: var(--primary);
+}
+
+.btn.viz-tile:is([aria-pressed="true"], [aria-selected="true"], .is-selected) {
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+#widget > svg {
+  width: 100%;
+}
+
+.text-warning,
+.text-destructive {
+  color: var(--destructive);
+}
+</style>
+</head>
+<body>
+<div id="endgame-wiring-lab" class="ewl-shell">
+  <style>
+    #endgame-wiring-lab {
+      --ewl-paper: #f7f7f2;
+      --ewl-paper-strong: #ffffff;
+      --ewl-ink: #172033;
+      --ewl-muted: #667085;
+      --ewl-line: #ccd3df;
+      --ewl-line-strong: #9aa7bb;
+      --ewl-wire: #183aaf;
+      --ewl-wire-soft: #6e84d6;
+      --ewl-selected: #d97706;
+      --ewl-start: #07866f;
+      --ewl-danger: #b42318;
+      --ewl-family: #e7ecff;
+      --ewl-shadow: 0 12px 34px rgba(23, 32, 51, .16);
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      min-width: 320px;
+      min-height: 420px;
+      overflow: hidden;
+      color: var(--ewl-ink);
+      background: var(--ewl-paper);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 14px;
+      line-height: 1.35;
+      color-scheme: light;
+      -webkit-tap-highlight-color: transparent;
+      overscroll-behavior: none;
+    }
+
+    #endgame-wiring-lab *,
+    #endgame-wiring-lab *::before,
+    #endgame-wiring-lab *::after { box-sizing: border-box; }
+
+    #endgame-wiring-lab button,
+    #endgame-wiring-lab input,
+    #endgame-wiring-lab textarea,
+    #endgame-wiring-lab select { font: inherit; }
+
+    #endgame-wiring-lab button {
+      min-height: 44px;
+      border: 1px solid var(--ewl-line);
+      border-radius: 12px;
+      padding: 0 14px;
+      color: var(--ewl-ink);
+      background: var(--ewl-paper-strong);
+      font-weight: 650;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    #endgame-wiring-lab button:active { transform: translateY(1px); }
+    #endgame-wiring-lab button:disabled { opacity: .42; cursor: default; transform: none; }
+    #endgame-wiring-lab button:focus-visible,
+    #endgame-wiring-lab input:focus-visible,
+    #endgame-wiring-lab textarea:focus-visible { outline: 3px solid rgba(24, 58, 175, .26); outline-offset: 2px; }
+
+    #endgame-wiring-lab .ewl-primary {
+      color: #fff;
+      border-color: var(--ewl-wire);
+      background: var(--ewl-wire);
+    }
+
+    #endgame-wiring-lab .ewl-danger { color: var(--ewl-danger); border-color: rgba(180, 35, 24, .28); }
+    #endgame-wiring-lab .ewl-icon-button { width: 44px; padding: 0; font-size: 20px; }
+    #endgame-wiring-lab .ewl-hidden { display: none !important; }
+
+    #endgame-wiring-lab .ewl-topbar {
+      position: relative;
+      z-index: 12;
+      min-height: calc(58px + env(safe-area-inset-top));
+      padding: calc(8px + env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) 8px max(10px, env(safe-area-inset-left));
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 9px;
+      border-bottom: 1px solid var(--ewl-line);
+      background: rgba(255, 255, 255, .94);
+      backdrop-filter: blur(14px);
+    }
+
+    #endgame-wiring-lab .ewl-brand { min-width: 0; }
+    #endgame-wiring-lab .ewl-brand strong { display: block; font-size: 13px; letter-spacing: .09em; }
+    #endgame-wiring-lab .ewl-file-name { display: block; overflow: hidden; color: var(--ewl-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+    #endgame-wiring-lab .ewl-top-actions { display: flex; gap: 7px; }
+    #endgame-wiring-lab .ewl-top-actions button { min-height: 42px; padding-inline: 13px; }
+
+    #endgame-wiring-lab .ewl-stage {
+      position: relative;
+      min-height: 0;
+      overflow: hidden;
+      background-color: var(--ewl-paper);
+      background-image: radial-gradient(circle, rgba(102, 112, 133, .26) 1px, transparent 1.2px);
+      background-size: 20px 20px;
+    }
+
+    #endgame-wiring-lab .ewl-canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+      user-select: none;
+      cursor: grab;
+    }
+
+    #endgame-wiring-lab .ewl-canvas.ewl-dragging { cursor: grabbing; }
+    #endgame-wiring-lab .ewl-canvas text { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; pointer-events: none; }
+    #endgame-wiring-lab .ewl-group-box { fill: var(--ewl-family); fill-opacity: .72; stroke: var(--ewl-wire-soft); stroke-width: 1.5; stroke-dasharray: 8 6; }
+    #endgame-wiring-lab .ewl-group-label { fill: var(--ewl-wire); font-size: 13px; font-weight: 700; letter-spacing: .05em; }
+    #endgame-wiring-lab .ewl-group-handle { fill: transparent; cursor: move; pointer-events: all; }
+    #endgame-wiring-lab .ewl-wire-path { fill: none; stroke: var(--ewl-wire); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+    #endgame-wiring-lab .ewl-wire-path.is-selected { stroke: var(--ewl-selected); stroke-width: 2.8; }
+    #endgame-wiring-lab .ewl-wire-hit { fill: none; stroke: transparent; stroke-width: 24; stroke-linecap: round; stroke-linejoin: round; pointer-events: stroke; cursor: pointer; vector-effect: non-scaling-stroke; }
+    #endgame-wiring-lab .ewl-hop-under { fill: none; stroke: var(--ewl-paper); stroke-width: 5.5; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+    #endgame-wiring-lab .ewl-hop-over { fill: none; stroke: var(--ewl-wire); stroke-width: 1.5; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+    #endgame-wiring-lab .ewl-hop-over.is-selected { stroke: var(--ewl-selected); stroke-width: 2.8; }
+    #endgame-wiring-lab .ewl-node-shadow { fill: rgba(23, 32, 51, .12); }
+    #endgame-wiring-lab .ewl-node-shadow,
+    #endgame-wiring-lab .ewl-node-body,
+    #endgame-wiring-lab .ewl-node-head,
+    #endgame-wiring-lab .ewl-start-ring,
+    #endgame-wiring-lab .ewl-pin-in { pointer-events: none; }
+    #endgame-wiring-lab .ewl-node-body { fill: var(--ewl-paper-strong); stroke: var(--ewl-wire); stroke-width: 1.35; vector-effect: non-scaling-stroke; }
+    #endgame-wiring-lab .ewl-node-body.is-selected { stroke: var(--ewl-selected); stroke-width: 2.5; }
+    #endgame-wiring-lab .ewl-node-body.is-target { stroke: var(--ewl-start); stroke-width: 2.5; stroke-dasharray: 7 5; }
+    #endgame-wiring-lab .ewl-node-head { fill: #edf1ff; stroke: none; }
+    #endgame-wiring-lab .ewl-node-title { fill: var(--ewl-ink); font-size: 13px; font-weight: 750; }
+    #endgame-wiring-lab .ewl-node-subtitle { fill: var(--ewl-muted); font-size: 10px; }
+    #endgame-wiring-lab .ewl-signal-label { fill: var(--ewl-wire); font-size: 10px; }
+    #endgame-wiring-lab .ewl-signal-label.is-horizontal-edge { font-size: 8px; }
+    #endgame-wiring-lab .ewl-pin { fill: var(--ewl-paper-strong); stroke: var(--ewl-wire); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+    #endgame-wiring-lab .ewl-pin-in { fill: var(--ewl-wire); }
+    #endgame-wiring-lab .ewl-port-hit { fill: transparent; stroke: transparent; stroke-width: 1; pointer-events: all; cursor: crosshair; }
+    #endgame-wiring-lab .ewl-node-hit { fill: transparent; stroke: transparent; pointer-events: all; cursor: move; }
+    #endgame-wiring-lab .ewl-start-ring { fill: var(--ewl-start); stroke: var(--ewl-paper-strong); stroke-width: 2; vector-effect: non-scaling-stroke; }
+    #endgame-wiring-lab .ewl-terminal { fill: #fff9e9; stroke: var(--ewl-wire); stroke-width: 1.35; vector-effect: non-scaling-stroke; }
+    #endgame-wiring-lab .ewl-terminal.is-selected { stroke: var(--ewl-selected); stroke-width: 2.5; }
+    #endgame-wiring-lab .ewl-terminal-label { fill: var(--ewl-ink); font-size: 12px; font-weight: 750; }
+    #endgame-wiring-lab .ewl-preview { fill: none; stroke: var(--ewl-selected); stroke-width: 3.5; stroke-dasharray: 8 7; stroke-linecap: round; pointer-events: none; vector-effect: non-scaling-stroke; }
+
+    #endgame-wiring-lab .ewl-empty {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 28px;
+      background: rgba(247, 247, 242, .86);
+      text-align: center;
+      z-index: 4;
+    }
+
+    #endgame-wiring-lab .ewl-empty-card { width: min(430px, 100%); padding: 24px; border: 1px solid var(--ewl-line); border-radius: 22px; background: var(--ewl-paper-strong); box-shadow: var(--ewl-shadow); }
+    #endgame-wiring-lab .ewl-empty-mark { display: grid; width: 58px; height: 58px; margin: 0 auto 14px; place-items: center; border-radius: 18px; color: #fff; background: var(--ewl-wire); font-size: 25px; font-weight: 800; }
+    #endgame-wiring-lab .ewl-empty h2 { margin: 0 0 7px; font-size: 20px; }
+    #endgame-wiring-lab .ewl-empty p { margin: 0 0 18px; color: var(--ewl-muted); }
+    #endgame-wiring-lab .ewl-empty-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 9px; }
+
+    #endgame-wiring-lab .ewl-summary {
+      position: absolute;
+      z-index: 5;
+      top: 10px;
+      left: max(10px, env(safe-area-inset-left));
+      min-height: 34px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 0 11px;
+      border: 1px solid var(--ewl-line);
+      border-radius: 999px;
+      color: var(--ewl-muted);
+      background: rgba(255, 255, 255, .92);
+      box-shadow: 0 5px 16px rgba(23, 32, 51, .08);
+      font-size: 11px;
+      pointer-events: none;
+    }
+
+    #endgame-wiring-lab .ewl-mode-banner {
+      position: absolute;
+      z-index: 9;
+      top: 10px;
+      left: 50%;
+      width: min(560px, calc(100% - 20px));
+      min-height: 52px;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 7px 8px 7px 13px;
+      border: 1px solid rgba(7, 134, 111, .38);
+      border-radius: 15px;
+      background: rgba(255, 255, 255, .97);
+      box-shadow: var(--ewl-shadow);
+    }
+
+    #endgame-wiring-lab .ewl-mode-copy { min-width: 0; flex: 1; }
+    #endgame-wiring-lab .ewl-mode-copy strong,
+    #endgame-wiring-lab .ewl-mode-copy span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #endgame-wiring-lab .ewl-mode-copy span { color: var(--ewl-muted); font-size: 11px; }
+    #endgame-wiring-lab .ewl-mode-banner button { min-height: 38px; padding-inline: 10px; }
+
+    #endgame-wiring-lab .ewl-bottombar {
+      position: relative;
+      z-index: 13;
+      min-height: calc(66px + env(safe-area-inset-bottom));
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      align-items: start;
+      gap: 4px;
+      padding: 6px max(7px, env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) max(7px, env(safe-area-inset-left));
+      border-top: 1px solid var(--ewl-line);
+      background: rgba(255, 255, 255, .96);
+      backdrop-filter: blur(14px);
+    }
+
+    #endgame-wiring-lab .ewl-nav-button { min-width: 0; min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 3px 4px; border-color: transparent; background: transparent; color: var(--ewl-muted); font-size: 10px; }
+    #endgame-wiring-lab .ewl-nav-button b { color: var(--ewl-ink); font-size: 19px; line-height: 1; }
+    #endgame-wiring-lab .ewl-nav-button.is-active { color: var(--ewl-wire); background: #edf1ff; }
+    #endgame-wiring-lab .ewl-nav-button.is-active b { color: var(--ewl-wire); }
+
+    #endgame-wiring-lab .ewl-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 19;
+      background: rgba(23, 32, 51, .32);
+      backdrop-filter: blur(2px);
+    }
+
+    #endgame-wiring-lab .ewl-sheet {
+      position: fixed;
+      z-index: 20;
+      right: max(8px, env(safe-area-inset-right));
+      bottom: calc(74px + env(safe-area-inset-bottom));
+      left: max(8px, env(safe-area-inset-left));
+      max-height: min(67dvh, 680px);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border: 1px solid var(--ewl-line);
+      border-radius: 22px;
+      background: var(--ewl-paper-strong);
+      box-shadow: var(--ewl-shadow);
+    }
+
+    #endgame-wiring-lab .ewl-sheet-head { min-height: 58px; display: flex; align-items: center; gap: 10px; padding: 8px 9px 8px 16px; border-bottom: 1px solid var(--ewl-line); }
+    #endgame-wiring-lab .ewl-sheet-title { min-width: 0; flex: 1; }
+    #endgame-wiring-lab .ewl-sheet-title strong,
+    #endgame-wiring-lab .ewl-sheet-title span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #endgame-wiring-lab .ewl-sheet-title span { color: var(--ewl-muted); font-size: 11px; }
+    #endgame-wiring-lab .ewl-sheet-body { min-height: 0; overflow: auto; padding: 14px 16px calc(18px + env(safe-area-inset-bottom)); overscroll-behavior: contain; }
+    #endgame-wiring-lab .ewl-sheet-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+    #endgame-wiring-lab .ewl-sheet-grid button { width: 100%; min-width: 0; }
+    #endgame-wiring-lab .ewl-section { margin-top: 16px; }
+    #endgame-wiring-lab .ewl-section:first-child { margin-top: 0; }
+    #endgame-wiring-lab .ewl-section-title { margin: 0 0 8px; color: var(--ewl-muted); font-size: 11px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+    #endgame-wiring-lab .ewl-field { display: grid; gap: 6px; margin-bottom: 12px; }
+    #endgame-wiring-lab .ewl-field > span { color: var(--ewl-muted); font-size: 12px; font-weight: 650; }
+    #endgame-wiring-lab input[type="text"],
+    #endgame-wiring-lab textarea { width: 100%; min-height: 46px; border: 1px solid var(--ewl-line); border-radius: 12px; padding: 11px 12px; color: var(--ewl-ink); background: #fff; font-size: 16px; }
+    #endgame-wiring-lab textarea { min-height: 180px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.45; }
+    #endgame-wiring-lab .ewl-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+    #endgame-wiring-lab .ewl-row > button { flex: 1 1 120px; }
+    #endgame-wiring-lab .ewl-chip { min-height: 38px; padding: 0 10px; border-radius: 999px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; font-weight: 650; }
+    #endgame-wiring-lab .ewl-connection { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 9px; padding: 9px 0; border-bottom: 1px solid var(--ewl-line); }
+    #endgame-wiring-lab .ewl-connection:last-child { border-bottom: 0; }
+    #endgame-wiring-lab .ewl-connection-main { min-width: 0; }
+    #endgame-wiring-lab .ewl-connection-main b,
+    #endgame-wiring-lab .ewl-connection-main span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #endgame-wiring-lab .ewl-connection-main b { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+    #endgame-wiring-lab .ewl-connection-main span { color: var(--ewl-muted); font-size: 11px; }
+    #endgame-wiring-lab .ewl-badge { display: inline-flex; min-height: 26px; align-items: center; padding: 0 9px; border-radius: 999px; color: var(--ewl-wire); background: #edf1ff; font-size: 11px; font-weight: 750; }
+    #endgame-wiring-lab .ewl-badge.is-start { color: #056b59; background: #e4f7f2; }
+    #endgame-wiring-lab .ewl-badge.is-warning { color: #8a4b08; background: #fff3d6; }
+    #endgame-wiring-lab .ewl-switch { min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--ewl-line); }
+    #endgame-wiring-lab .ewl-switch-copy strong,
+    #endgame-wiring-lab .ewl-switch-copy span { display: block; }
+    #endgame-wiring-lab .ewl-switch-copy span { color: var(--ewl-muted); font-size: 11px; }
+    #endgame-wiring-lab .ewl-switch input { width: 24px; height: 24px; accent-color: var(--ewl-wire); }
+    #endgame-wiring-lab details { border-top: 1px solid var(--ewl-line); padding-top: 10px; }
+    #endgame-wiring-lab details summary { min-height: 40px; display: flex; align-items: center; color: var(--ewl-wire); font-weight: 700; cursor: pointer; }
+    #endgame-wiring-lab pre { max-height: 260px; overflow: auto; margin: 8px 0 0; padding: 12px; border-radius: 12px; color: #e8ecf6; background: #172033; font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
+    #endgame-wiring-lab .ewl-issue { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 9px; padding: 10px 0; border-bottom: 1px solid var(--ewl-line); }
+    #endgame-wiring-lab .ewl-issue:last-child { border-bottom: 0; }
+    #endgame-wiring-lab .ewl-issue-mark { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; color: #fff; background: var(--ewl-danger); font-size: 12px; font-weight: 800; }
+    #endgame-wiring-lab .ewl-issue.is-warning .ewl-issue-mark { background: #b66a12; }
+    #endgame-wiring-lab .ewl-issue p { margin: 2px 0 0; }
+    #endgame-wiring-lab .ewl-ok { padding: 18px; border-radius: 14px; color: #056b59; background: #e4f7f2; text-align: center; font-weight: 700; }
+    #endgame-wiring-lab .ewl-help { margin: 0; padding-left: 20px; }
+    #endgame-wiring-lab .ewl-help li { margin: 0 0 10px; }
+
+    #endgame-wiring-lab .ewl-search-box { display: grid; gap: 10px; }
+    #endgame-wiring-lab .ewl-search-results { display: grid; gap: 6px; }
+    #endgame-wiring-lab .ewl-search-result { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; text-align: left; }
+    #endgame-wiring-lab .ewl-search-result span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    #endgame-wiring-lab .ewl-toast {
+      position: fixed;
+      z-index: 30;
+      left: 50%;
+      bottom: calc(82px + env(safe-area-inset-bottom));
+      width: max-content;
+      max-width: calc(100% - 28px);
+      transform: translateX(-50%) translateY(16px);
+      padding: 11px 14px;
+      border-radius: 12px;
+      color: #fff;
+      background: #172033;
+      box-shadow: var(--ewl-shadow);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .18s ease, transform .18s ease;
+    }
+
+    #endgame-wiring-lab .ewl-toast.is-visible { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    @media (max-width: 520px) {
+      #endgame-wiring-lab .ewl-topbar { grid-template-columns: auto minmax(0, 1fr) auto; }
+      #endgame-wiring-lab .ewl-top-actions button { padding-inline: 10px; }
+      #endgame-wiring-lab .ewl-top-actions button span { display: none; }
+      #endgame-wiring-lab .ewl-sheet { right: 5px; left: 5px; border-radius: 19px; }
+      #endgame-wiring-lab .ewl-sheet-grid { grid-template-columns: 1fr; }
+      #endgame-wiring-lab .ewl-summary { top: 7px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      #endgame-wiring-lab .ewl-toast { transition: none; }
+    }
+  </style>
+
+  <input id="ewl-file-input" class="ewl-hidden" type="file" accept="application/json,.json">
+
+  <header class="ewl-topbar">
+    <button class="ewl-icon-button" type="button" data-action="menu" aria-label="Open menu">☰</button>
+    <div class="ewl-brand">
+      <strong>WIRING LAB</strong>
+      <span id="ewl-file-name" class="ewl-file-name">No wiring loaded</span>
+    </div>
+    <div class="ewl-top-actions">
+      <button type="button" data-action="open">↥ <span>Open</span></button>
+      <button id="ewl-save-button" class="ewl-primary" type="button" data-action="save" disabled>↓ <span>Save</span></button>
+    </div>
+  </header>
+
+  <main id="ewl-stage" class="ewl-stage">
+    <svg id="ewl-canvas" class="ewl-canvas" role="img" aria-label="Interactive wiring topology schematic">
+      <defs>
+        <marker id="ewl-arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="2.6" markerHeight="2.6" orient="auto-start-reverse" markerUnits="strokeWidth"><path d="M 0 0 L 10 5 L 0 10 z" fill="#183aaf"></path></marker>
+        <marker id="ewl-arrow-selected" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="2.6" markerHeight="2.6" orient="auto-start-reverse" markerUnits="strokeWidth"><path d="M 0 0 L 10 5 L 0 10 z" fill="#d97706"></path></marker>
+      </defs>
+      <g id="ewl-diagram"></g>
+    </svg>
+
+    <div id="ewl-summary" class="ewl-summary ewl-hidden"></div>
+
+    <div id="ewl-mode-banner" class="ewl-mode-banner ewl-hidden" role="status">
+      <div class="ewl-mode-copy"><strong id="ewl-mode-title">Choose a destination</strong><span id="ewl-mode-detail"></span></div>
+      <button type="button" data-action="target-sentinel" data-target="halt">halt</button>
+      <button type="button" data-action="target-sentinel" data-target="wait">wait</button>
+      <button type="button" data-action="cancel-connect" aria-label="Cancel connection">×</button>
+    </div>
+
+    <div id="ewl-empty" class="ewl-empty">
+      <div class="ewl-empty-card">
+        <div class="ewl-empty-mark">W</div>
+        <h2>Open a wiring document</h2>
+        <p>Load any <code>wiring.json</code>. The graph is rebuilt from its topology; nothing needs to be installed.</p>
+        <div class="ewl-empty-actions">
+          <button class="ewl-primary" type="button" data-action="open">Open wiring.json</button>
+          <button type="button" data-action="demo">Try a small demo</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <nav class="ewl-bottombar" aria-label="Diagram tools">
+    <button class="ewl-nav-button" type="button" data-action="fit" disabled><b>⊙</b><span>Fit</span></button>
+    <button id="ewl-layout-button" class="ewl-nav-button" type="button" data-action="layout" aria-pressed="false" disabled><b>⌗</b><span>Layout</span></button>
+    <button class="ewl-nav-button" type="button" data-action="search" disabled><b>⌕</b><span>Find</span></button>
+    <button id="ewl-undo-button" class="ewl-nav-button" type="button" data-action="undo" disabled><b>↶</b><span>Undo</span></button>
+    <button class="ewl-nav-button" type="button" data-action="menu"><b>•••</b><span>More</span></button>
+  </nav>
+
+  <div id="ewl-backdrop" class="ewl-backdrop ewl-hidden" data-action="close-sheet"></div>
+  <section id="ewl-sheet" class="ewl-sheet ewl-hidden" aria-label="Wiring details">
+    <div class="ewl-sheet-head">
+      <div class="ewl-sheet-title"><strong id="ewl-sheet-heading">Details</strong><span id="ewl-sheet-subheading"></span></div>
+      <button class="ewl-icon-button" type="button" data-action="close-sheet" aria-label="Close">×</button>
+    </div>
+    <div id="ewl-sheet-body" class="ewl-sheet-body"></div>
+  </section>
+
+  <div id="ewl-toast" class="ewl-toast" role="status" aria-live="polite"></div>
+
+  <script>
+  (() => {
+    "use strict";
+
+    const root = document.getElementById("endgame-wiring-lab");
+    const svg = root.querySelector("#ewl-canvas");
+    const diagram = root.querySelector("#ewl-diagram");
+    const stage = root.querySelector("#ewl-stage");
+    const fileInput = root.querySelector("#ewl-file-input");
+    const SENTINELS = new Set(["halt", "wait"]);
+    const NODE_W = 230;
+    const NODE_HEAD = 40;
+    const PORT_ROW = 29;
+    const NODE_PAD = 10;
+    const TERMINAL_W = 146;
+    const TERMINAL_H = 54;
+    const GROUP_PAD = 22;
+    const GROUP_HEAD = 34;
+    const FAMILY_COL_GAP = 34;
+    const FAMILY_ROW_GAP = 30;
+    const H_GAP = 240;
+    const V_GAP = 88;
+    const HOP_R = 12;
+    const MAX_HISTORY = 60;
+    const PORT_STUB = 38;
+    const CHANNEL_SPACING = 30;
+    const ROUTE_CLEARANCE = 42;
+    const SIDE_NORMALS = {
+      top: { x: 0, y: -1 },
+      right: { x: 1, y: 0 },
+      bottom: { x: 0, y: 1 },
+      left: { x: -1, y: 0 }
+    };
+    const SIDES = ["top", "right", "bottom", "left"];
+
+    const state = {
+      wiring: null,
+      fileName: "wiring.json",
+      importedMeta: {},
+      positions: {},
+      frames: new Map(),
+      groupFrames: new Map(),
+      wires: [],
+      routes: [],
+      crossings: new Map(),
+      selection: null,
+      connect: null,
+      preview: null,
+      groupFamilies: true,
+      autoLayoutResponsive: false,
+      includeLayout: false,
+      dirty: false,
+      history: [],
+      future: [],
+      view: { x: 0, y: 0, zoom: 1 },
+      bounds: { x: 0, y: 0, w: 1000, h: 700 },
+      gesture: null,
+      pointers: new Map(),
+      lastTap: null,
+      resizeTimer: 0,
+      lastStageSize: null,
+      toastTimer: 0,
+      renderQueued: false
+    };
+
+    const clone = value => typeof structuredClone === "function" ? structuredClone(value) : JSON.parse(JSON.stringify(value));
+    const esc = value => String(value ?? "").replace(/[&<>\"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" })[ch]);
+    const trunc = (value, length = 27) => String(value).length > length ? String(value).slice(0, length - 1) + "…" : String(value);
+    const round = value => Math.round(value * 10) / 10;
+    const isObject = value => value !== null && typeof value === "object" && !Array.isArray(value);
+    const baseName = name => String(name).split(":", 1)[0];
+    const variantName = name => String(name).includes(":") ? String(name).slice(String(name).indexOf(":") + 1) : "";
+    const nodeFile = name => baseName(name) + ".py";
+    const wireKey = wire => [wire.source, wire.signal, wire.index].join("\u001f");
+    const eventTarget = event => event.target instanceof Element ? event.target : null;
+
+    function topology() { return state.wiring?.topology || null; }
+    function nodes() { return Array.isArray(topology()?.nodes) ? topology().nodes : []; }
+    function edges() { return isObject(topology()?.edges) ? topology().edges : {}; }
+    function targetsOf(source, signal) {
+      const value = edges()[source]?.[signal];
+      if (Array.isArray(value)) return value.filter(item => typeof item === "string");
+      return typeof value === "string" ? [value] : [];
+    }
+
+    function listWires() {
+      const output = [];
+      for (const [source, signals] of Object.entries(edges())) {
+        if (!isObject(signals)) continue;
+        for (const [signal, raw] of Object.entries(signals)) {
+          const targets = Array.isArray(raw) ? raw : [raw];
+          targets.forEach((target, index) => {
+            if (typeof target === "string" && target) output.push({ source, signal, target, index });
+          });
+        }
+      }
+      return output;
+    }
+
+    function terminalNames() {
+      const declared = new Set(nodes());
+      const output = [];
+      for (const wire of state.wires) if (!declared.has(wire.target) && !output.includes(wire.target)) output.push(wire.target);
+      return output;
+    }
+
+    function allBoxNames() { return [...nodes(), ...terminalNames()]; }
+
+    function setTargets(source, signal, list) {
+      if (!isObject(topology().edges[source])) topology().edges[source] = {};
+      if (!list.length) delete topology().edges[source][signal];
+      else topology().edges[source][signal] = list.length === 1 ? list[0] : list;
+    }
+
+    function demoDocument() {
+      return {
+        schema: "endgame-ai.wiring",
+        topology: {
+          cycle_start: "node_timer",
+          nodes: ["node_timer", "node_guidance:plan", "node_guidance:act", "node_observe:plan", "node_observe:act", "node_planner", "node_execute", "node_verify", "node_error", "node_satisfied"],
+          edges: {
+            node_timer: { tick: "node_guidance:plan", error: "node_error" },
+            "node_guidance:plan": { attend: "node_observe:plan", error: "node_error" },
+            "node_guidance:act": { attend: "node_observe:act", error: "node_error" },
+            "node_observe:plan": { observed: "node_planner", error: "node_error" },
+            "node_observe:act": { observed: "node_execute", error: "node_error" },
+            node_planner: { act: "node_guidance:act", complete: "node_satisfied", error: "node_error" },
+            node_execute: { done: "node_verify", error: "node_error" },
+            node_verify: { confirmed: "node_planner", denied: "node_guidance:act", error: "node_error" },
+            node_error: { recover: "node_timer" },
+            node_satisfied: { halt: "halt" }
+          },
+          barriers: {}
+        },
+        prompts: {},
+        prompt_aliases: {},
+        node_defs: {}
+      };
+    }
+
+    function basicDocumentError(documentValue) {
+      if (!isObject(documentValue)) return "The JSON root must be an object.";
+      if (!isObject(documentValue.topology)) return "Missing object: topology.";
+      if (!Array.isArray(documentValue.topology.nodes) || !documentValue.topology.nodes.every(name => typeof name === "string" && name)) return "topology.nodes must be an array of non-empty strings.";
+      if (!isObject(documentValue.topology.edges)) return "topology.edges must be an object.";
+      return "";
+    }
+
+    function loadDocument(documentValue, fileName = "wiring.json", options = {}) {
+      const error = basicDocumentError(documentValue);
+      if (error) throw new Error(error);
+      const incoming = clone(documentValue);
+      state.importedMeta = isObject(incoming.__wiring_lab) ? clone(incoming.__wiring_lab) : {};
+      state.includeLayout = Boolean(incoming.__wiring_lab);
+      delete incoming.__wiring_lab;
+      state.wiring = incoming;
+      state.fileName = fileName || "wiring.json";
+      state.selection = null;
+      state.connect = null;
+      state.preview = null;
+      state.lastTap = null;
+      state.history = [];
+      state.future = [];
+      state.dirty = Boolean(options.dirty);
+      state.positions = {};
+      const savedNodes = isObject(state.importedMeta.nodes) ? state.importedMeta.nodes : {};
+      for (const [name, position] of Object.entries(savedNodes)) {
+        if (isObject(position) && Number.isFinite(position.x) && Number.isFinite(position.y)) state.positions[name] = { x: Number(position.x), y: Number(position.y) };
+      }
+      if (typeof state.importedMeta.groupFamilies === "boolean") state.groupFamilies = state.importedMeta.groupFamilies;
+      if (typeof state.importedMeta.autoLayoutResponsive === "boolean") state.autoLayoutResponsive = state.importedMeta.autoLayoutResponsive;
+      rebuildModel();
+      if (allBoxNames().some(name => !state.positions[name])) autoLayoutInternal();
+      else if (state.autoLayoutResponsive) autoLayoutInternal();
+      rebuildModel();
+      updateChrome();
+      render();
+      requestAnimationFrame(() => state.autoLayoutResponsive ? frameLayoutReadably() : stageSize().w <= 600 ? centerOn(topology().cycle_start, .72) : fitAll());
+      closeSheet();
+      toast(`${nodes().length} nodes and ${state.wires.length} connections loaded`);
+    }
+
+    function snapshot() {
+      return { wiring: clone(state.wiring), positions: clone(state.positions), groupFamilies: state.groupFamilies, autoLayoutResponsive: state.autoLayoutResponsive, selection: clone(state.selection) };
+    }
+
+    function restoreSnapshot(snap) {
+      state.wiring = clone(snap.wiring);
+      state.positions = clone(snap.positions);
+      state.groupFamilies = snap.groupFamilies;
+      state.autoLayoutResponsive = Boolean(snap.autoLayoutResponsive);
+      state.selection = clone(snap.selection);
+      state.connect = null;
+      state.preview = null;
+      state.dirty = true;
+      rebuildModel();
+      updateChrome();
+      render();
+      if (state.selection) renderInspector();
+    }
+
+    function pushHistory(snap) {
+      state.history.push(snap);
+      if (state.history.length > MAX_HISTORY) state.history.shift();
+      state.future = [];
+    }
+
+    function mutate(callback, message) {
+      if (!state.wiring) return;
+      const before = snapshot();
+      callback();
+      pushHistory(before);
+      state.dirty = true;
+      rebuildModel();
+      updateChrome();
+      render();
+      if (state.selection) renderInspector();
+      if (message) toast(message);
+    }
+
+    function undo() {
+      const previous = state.history.pop();
+      if (!previous) return;
+      state.future.push(snapshot());
+      restoreSnapshot(previous);
+      toast("Undone");
+    }
+
+    function redo() {
+      const next = state.future.pop();
+      if (!next) return;
+      state.history.push(snapshot());
+      restoreSnapshot(next);
+      toast("Redone");
+    }
+
+    function familyGroups() {
+      if (!state.groupFamilies) return new Map();
+      const buckets = new Map();
+      for (const name of nodes()) {
+        if (!name.includes(":")) continue;
+        const base = baseName(name);
+        if (!buckets.has(base)) buckets.set(base, []);
+        buckets.get(base).push(name);
+      }
+      for (const [base, members] of [...buckets]) if (members.length < 2) buckets.delete(base);
+      return buckets;
+    }
+
+    function frameDimensions(name, incomingByTarget, terminalSet) {
+      if (terminalSet.has(name)) return { w: TERMINAL_W, h: TERMINAL_H };
+      const outgoing = Object.keys(isObject(edges()[name]) ? edges()[name] : {});
+      const rows = Math.max(2, Math.min(4, Math.ceil(Math.max(1, outgoing.length) / 3)));
+      return { w: NODE_W, h: NODE_HEAD + 20 + rows * 24 };
+    }
+
+    function autoLayoutInternal() {
+      if (!state.wiring) return;
+      state.wires = listWires();
+      const declared = nodes();
+      const terminals = terminalNames();
+      const terminalSet = new Set(terminals);
+      const incoming = new Map();
+      for (const name of [...declared, ...terminals]) incoming.set(name, []);
+      for (const wire of state.wires) {
+        if (!incoming.has(wire.target)) incoming.set(wire.target, []);
+        incoming.get(wire.target).push(wire);
+      }
+      const dims = new Map([...declared, ...terminals].map(name => [name, frameDimensions(name, incoming, terminalSet)]));
+      const groups = familyGroups();
+      const memberToUnit = new Map();
+      const units = [];
+      for (const [base, members] of groups) {
+        const cols = members.length >= 4 ? 2 : 1;
+        const rows = Math.ceil(members.length / cols);
+        const rowHeights = Array.from({ length: rows }, (_, row) => Math.max(...members.slice(row * cols, row * cols + cols).map(member => dims.get(member).h)));
+        const h = GROUP_HEAD + GROUP_PAD + rowHeights.reduce((sum, value) => sum + value, 0) + Math.max(0, rows - 1) * FAMILY_ROW_GAP + GROUP_PAD;
+        const w = cols * NODE_W + Math.max(0, cols - 1) * FAMILY_COL_GAP + GROUP_PAD * 2;
+        const unit = { id: `family:${base}`, type: "family", base, members, cols, rowHeights, w, h };
+        units.push(unit);
+        members.forEach(member => memberToUnit.set(member, unit.id));
+      }
+      for (const name of [...declared, ...terminals]) {
+        if (memberToUnit.has(name)) continue;
+        const dim = dims.get(name);
+        const unit = { id: `node:${name}`, type: terminalSet.has(name) ? "terminal" : "node", name, members: [name], w: dim.w, h: dim.h };
+        units.push(unit);
+        memberToUnit.set(name, unit.id);
+      }
+      const unitById = new Map(units.map(unit => [unit.id, unit]));
+      const unitIncoming = new Map(units.map(unit => [unit.id, 0]));
+      const unitOutgoing = new Map(units.map(unit => [unit.id, 0]));
+      const unitErrorIncoming = new Map(units.map(unit => [unit.id, 0]));
+      for (const wire of state.wires) {
+        const from = memberToUnit.get(wire.source), to = memberToUnit.get(wire.target);
+        if (!from || !to || from === to) continue;
+        unitOutgoing.set(from, unitOutgoing.get(from) + 1);
+        unitIncoming.set(to, unitIncoming.get(to) + 1);
+        if (wire.signal === "error") unitErrorIncoming.set(to, unitErrorIncoming.get(to) + 1);
+      }
+      const hubThreshold = Math.max(7, Math.ceil(declared.length * .32));
+      const rootUnit = memberToUnit.get(topology().cycle_start) || units[0]?.id;
+      const hubIds = new Set(units.filter(unit => unit.id !== rootUnit && unit.type !== "terminal" && (unitIncoming.get(unit.id) >= hubThreshold || unitErrorIncoming.get(unit.id) >= hubThreshold - 1)).map(unit => unit.id));
+      const mainUnits = units.filter(unit => !hubIds.has(unit.id));
+      const hubUnits = units.filter(unit => hubIds.has(unit.id));
+      const mainIds = new Set(mainUnits.map(unit => unit.id));
+      const succ = new Map(mainUnits.map(unit => [unit.id, []]));
+      for (const wire of state.wires) {
+        if (wire.signal === "error") continue;
+        const from = memberToUnit.get(wire.source);
+        const to = memberToUnit.get(wire.target);
+        if (from && to && from !== to && mainIds.has(from) && mainIds.has(to) && !succ.get(from).includes(to)) succ.get(from).push(to);
+      }
+      const layer = new Map();
+      const queue = [];
+      if (rootUnit) { layer.set(rootUnit, 0); queue.push(rootUnit); }
+      while (queue.length) {
+        const current = queue.shift();
+        const currentLayer = layer.get(current);
+        for (const next of succ.get(current) || []) {
+          if (!layer.has(next)) { layer.set(next, currentLayer + 1); queue.push(next); }
+        }
+      }
+      let maxLayer = Math.max(0, ...layer.values());
+      for (const unit of mainUnits) {
+        if (layer.has(unit.id)) continue;
+        const predecessors = state.wires.filter(wire => memberToUnit.get(wire.target) === unit.id).map(wire => memberToUnit.get(wire.source)).filter(id => mainIds.has(id));
+        const reachablePred = predecessors.map(id => layer.get(id)).filter(Number.isFinite);
+        layer.set(unit.id, reachablePred.length ? Math.min(maxLayer + 1, Math.max(...reachablePred) + 1) : ++maxLayer);
+      }
+      maxLayer = Math.max(0, ...layer.values());
+      const layers = Array.from({ length: maxLayer + 1 }, () => []);
+      const sourceOrder = new Map([...declared, ...terminals].map((name, index) => [name, index]));
+      mainUnits.sort((a, b) => Math.min(...a.members.map(name => sourceOrder.get(name) ?? 99999)) - Math.min(...b.members.map(name => sourceOrder.get(name) ?? 99999)));
+      for (const unit of mainUnits) layers[layer.get(unit.id)].push(unit);
+      const predUnits = new Map(mainUnits.map(unit => [unit.id, []]));
+      for (const [from, targets] of succ) for (const target of targets) predUnits.get(target).push(from);
+      for (let pass = 0; pass < 4; pass++) {
+        for (let l = 1; l < layers.length; l++) {
+          const previousOrder = new Map(layers[l - 1].map((unit, index) => [unit.id, index]));
+          layers[l].sort((a, b) => {
+            const ap = predUnits.get(a.id).map(id => previousOrder.get(id)).filter(Number.isFinite);
+            const bp = predUnits.get(b.id).map(id => previousOrder.get(id)).filter(Number.isFinite);
+            const av = ap.length ? ap.reduce((sum, value) => sum + value, 0) / ap.length : 9999;
+            const bv = bp.length ? bp.reduce((sum, value) => sum + value, 0) / bp.length : 9999;
+            return av - bv;
+          });
+        }
+      }
+      const layerHeights = layers.map(items => items.reduce((sum, item) => sum + item.h, 0) + Math.max(0, items.length - 1) * V_GAP);
+      const layerWidths = layers.map(items => items.length ? Math.max(TERMINAL_W, ...items.map(item => item.w)) : TERMINAL_W);
+      const maxHeight = Math.max(600, ...layerHeights);
+      const placeUnit = (unit, ux, uy) => {
+        if (unit.type !== "family") {
+          state.positions[unit.name] = { x: ux, y: uy };
+          return;
+        }
+        const childTop = uy + GROUP_HEAD + GROUP_PAD;
+        const rowOffsets = [];
+        let offset = 0;
+        for (const rowHeight of unit.rowHeights) { rowOffsets.push(offset); offset += rowHeight + FAMILY_ROW_GAP; }
+        unit.members.forEach((member, index) => {
+          const row = Math.floor(index / unit.cols), col = index % unit.cols;
+          state.positions[member] = { x: ux + GROUP_PAD + col * (NODE_W + FAMILY_COL_GAP), y: childTop + rowOffsets[row] };
+        });
+      };
+      const size = stageSize();
+      const bandGapX = H_GAP;
+      const bandGapY = 260;
+      const targetAspect = Math.max(.48, Math.min(2.4, size.w / Math.max(1, size.h)));
+      const maxBandColumns = Math.min(layers.length, targetAspect > 1.45 ? 8 : targetAspect < .78 ? 4 : 6);
+      const bandMetrics = columns => {
+        const bands = [];
+        for (let start = 0; start < layers.length; start += columns) bands.push(Array.from({ length: Math.min(columns, layers.length - start) }, (_, offset) => start + offset));
+        const widths = bands.map(indices => indices.reduce((sum, layerIndex) => sum + layerWidths[layerIndex], 0) + Math.max(0, indices.length - 1) * bandGapX);
+        const heights = bands.map(indices => Math.max(...indices.map(layerIndex => layerHeights[layerIndex])));
+        const width = Math.max(1, ...widths);
+        const height = Math.max(1, heights.reduce((sum, value) => sum + value, 0) + Math.max(0, bands.length - 1) * bandGapY);
+        const aspectPenalty = Math.abs(Math.log((width / height) / targetAspect));
+        const narrowPenalty = columns === 1 && layers.length > 3 ? .18 : 0;
+        return { columns, bands, widths, heights, width, height, score: aspectPenalty + narrowPenalty };
+      };
+      let chosen = bandMetrics(1);
+      for (let columns = 2; columns <= maxBandColumns; columns++) {
+        const candidate = bandMetrics(columns);
+        if (candidate.score < chosen.score) chosen = candidate;
+      }
+      let bandY = 80;
+      chosen.bands.forEach((indices, bandIndex) => {
+        const ordered = bandIndex % 2 ? [...indices].reverse() : [...indices];
+        const rowHeight = chosen.heights[bandIndex];
+        let columnX = 90 + (chosen.width - chosen.widths[bandIndex]) / 2;
+        for (const layerIndex of ordered) {
+          const items = layers[layerIndex];
+          const columnWidth = layerWidths[layerIndex];
+          let itemY = bandY + (rowHeight - layerHeights[layerIndex]) / 2;
+          for (const unit of items) {
+            placeUnit(unit, columnX + (columnWidth - unit.w) / 2, itemY);
+            itemY += unit.h + V_GAP;
+          }
+          columnX += columnWidth + bandGapX;
+        }
+        bandY += rowHeight + bandGapY;
+      });
+      if (hubUnits.length) {
+        const mainMembers = mainUnits.flatMap(unit => unit.members).map(name => ({ name, ...state.positions[name], ...dims.get(name) })).filter(box => Number.isFinite(box.x));
+        const mainLeft = mainMembers.length ? Math.min(...mainMembers.map(box => box.x)) : 90;
+        const mainRight = mainMembers.length ? Math.max(...mainMembers.map(box => box.x + box.w)) : 90 + NODE_W;
+        const mainBottom = mainMembers.length ? Math.max(...mainMembers.map(box => box.y + box.h)) : 680;
+        const hubGap = 130;
+        const totalWidth = hubUnits.reduce((sum, unit) => sum + unit.w, 0) + Math.max(0, hubUnits.length - 1) * hubGap;
+        let hubX = (mainLeft + mainRight) / 2 - totalWidth / 2;
+        const hubY = mainBottom + 280;
+        for (const unit of hubUnits) {
+          placeUnit(unit, hubX, hubY);
+          hubX += unit.w + hubGap;
+        }
+      }
+    }
+
+    function portCapacity(frame, side) {
+      const length = side === "top" || side === "bottom" ? frame.w : frame.h;
+      return Math.max(2, Math.floor((length - 30) / 24));
+    }
+
+    function assignPorts() {
+      const centers = new Map([...state.frames].map(([name, frame]) => [name, { x: frame.x + frame.w / 2, y: frame.y + frame.h / 2 }]));
+      for (const frame of state.frames.values()) {
+        frame.inPorts = new Map();
+        frame.outPorts = new Map();
+        frame.sideEntries = Object.fromEntries(SIDES.map(side => [side, []]));
+        const center = centers.get(frame.name);
+        const entries = [];
+        for (const wire of frame.incoming) {
+          const neighbor = centers.get(wire.source) || { x: center.x - 1, y: center.y };
+          entries.push({ kind: "in", key: wireKey(wire), wire, neighbor, dx: neighbor.x - center.x, dy: neighbor.y - center.y });
+        }
+        for (const signal of frame.outSignals) {
+          const targetCenters = targetsOf(frame.name, signal).map(name => centers.get(name)).filter(Boolean);
+          let dx = 1, dy = 0, neighbor = { x: center.x + 1, y: center.y };
+          if (targetCenters.length) {
+            const normalized = targetCenters.map(target => {
+              const vx = target.x - center.x, vy = target.y - center.y, length = Math.hypot(vx, vy) || 1;
+              return { x: vx / length, y: vy / length };
+            });
+            dx = normalized.reduce((sum, value) => sum + value.x, 0) / normalized.length;
+            dy = normalized.reduce((sum, value) => sum + value.y, 0) / normalized.length;
+            neighbor = { x: center.x + dx * 100, y: center.y + dy * 100 };
+          }
+          entries.push({ kind: "out", key: signal, signal, neighbor, dx, dy });
+        }
+        entries.forEach(entry => { entry.distance = Math.hypot(entry.dx, entry.dy); });
+        entries.sort((a, b) => b.distance - a.distance || (a.kind === "out" ? -1 : 1));
+        const loads = Object.fromEntries(SIDES.map(side => [side, 0]));
+        for (const entry of entries) {
+          const length = entry.distance || 1;
+          let bestSide = "right", bestCost = Infinity;
+          for (const side of SIDES) {
+            const normal = SIDE_NORMALS[side];
+            const dot = (entry.dx * normal.x + entry.dy * normal.y) / length;
+            const saturation = loads[side] / portCapacity(frame, side);
+            const reversal = dot < -.2 ? Math.abs(dot) * 2.8 : 0;
+            const cost = (1 - dot) * 1.7 + saturation * saturation * 1.9 + reversal;
+            if (cost < bestCost) { bestCost = cost; bestSide = side; }
+          }
+          entry.side = bestSide;
+          loads[bestSide] += 1;
+          frame.sideEntries[bestSide].push(entry);
+        }
+        for (const side of SIDES) {
+          const bucket = frame.sideEntries[side];
+          bucket.sort((a, b) => (side === "top" || side === "bottom" ? a.neighbor.x - b.neighbor.x : a.neighbor.y - b.neighbor.y));
+          const horizontal = side === "top" || side === "bottom";
+          const start = horizontal ? frame.x + 17 : frame.y + 17;
+          const end = horizontal ? frame.x + frame.w - 17 : frame.y + frame.h - 17;
+          const step = (end - start) / (bucket.length + 1);
+          bucket.forEach((entry, index) => {
+            const normal = SIDE_NORMALS[side];
+            const point = horizontal
+              ? { x: start + step * (index + 1), y: side === "top" ? frame.y : frame.y + frame.h }
+              : { x: side === "left" ? frame.x : frame.x + frame.w, y: start + step * (index + 1) };
+            const port = { ...point, side, nx: normal.x, ny: normal.y };
+            if (entry.kind === "in") frame.inPorts.set(entry.key, port);
+            else frame.outPorts.set(entry.key, port);
+          });
+        }
+      }
+    }
+
+    function computeFrames() {
+      const incoming = new Map(allBoxNames().map(name => [name, []]));
+      for (const wire of state.wires) {
+        if (!incoming.has(wire.target)) incoming.set(wire.target, []);
+        incoming.get(wire.target).push(wire);
+      }
+      const terminalSet = new Set(terminalNames());
+      state.frames = new Map();
+      for (const name of allBoxNames()) {
+        const pos = state.positions[name] || { x: 80, y: 80 };
+        const dim = frameDimensions(name, incoming, terminalSet);
+        const inWires = incoming.get(name) || [];
+        const outSignals = terminalSet.has(name) ? [] : Object.keys(isObject(edges()[name]) ? edges()[name] : {});
+        const frame = { name, x: pos.x, y: pos.y, w: dim.w, h: dim.h, terminal: terminalSet.has(name), incoming: inWires, outSignals, inPorts: new Map(), outPorts: new Map(), sideEntries: {} };
+        state.frames.set(name, frame);
+      }
+      assignPorts();
+      state.groupFrames = new Map();
+      for (const [base, members] of familyGroups()) {
+        const boxes = members.map(name => state.frames.get(name)).filter(Boolean);
+        if (!boxes.length) continue;
+        const left = Math.min(...boxes.map(frame => frame.x)) - GROUP_PAD;
+        const top = Math.min(...boxes.map(frame => frame.y)) - GROUP_HEAD - GROUP_PAD / 2;
+        const right = Math.max(...boxes.map(frame => frame.x + frame.w)) + GROUP_PAD;
+        const bottom = Math.max(...boxes.map(frame => frame.y + frame.h)) + GROUP_PAD;
+        state.groupFrames.set(base, { base, members, x: left, y: top, w: right - left, h: bottom - top });
+      }
+      const boxes = [...state.frames.values(), ...state.groupFrames.values()];
+      if (!boxes.length) state.bounds = { x: 0, y: 0, w: 1000, h: 700 };
+      else {
+        const left = Math.min(...boxes.map(frame => frame.x));
+        const top = Math.min(...boxes.map(frame => frame.y));
+        const right = Math.max(...boxes.map(frame => frame.x + frame.w));
+        const bottom = Math.max(...boxes.map(frame => frame.y + frame.h));
+        state.bounds = { x: left, y: top, w: Math.max(100, right - left), h: Math.max(100, bottom - top) };
+      }
+    }
+
+    function pointInsideFrame(point, frame, pad = 10) {
+      return point.x > frame.x - pad && point.x < frame.x + frame.w + pad && point.y > frame.y - pad && point.y < frame.y + frame.h + pad;
+    }
+
+    function segmentHitsFrame(a, b, frame, pad = 10) {
+      if (a.x === b.x) {
+        const minY = Math.min(a.y, b.y);
+        const maxY = Math.max(a.y, b.y);
+        return a.x > frame.x - pad && a.x < frame.x + frame.w + pad && maxY > frame.y - pad && minY < frame.y + frame.h + pad;
+      }
+      const minX = Math.min(a.x, b.x);
+      const maxX = Math.max(a.x, b.x);
+      return a.y > frame.y - pad && a.y < frame.y + frame.h + pad && maxX > frame.x - pad && minX < frame.x + frame.w + pad;
+    }
+
+    function routeIsClear(points, source, target) {
+      const obstacles = [...state.frames.values()].filter(frame => frame.name !== source && frame.name !== target);
+      for (let i = 0; i < points.length - 1; i++) for (const frame of obstacles) if (segmentHitsFrame(points[i], points[i + 1], frame, 18)) return false;
+      return true;
+    }
+
+    function compactPoints(points) {
+      const clean = [];
+      for (const point of points) {
+        const previous = clean[clean.length - 1];
+        if (!previous || previous.x !== point.x || previous.y !== point.y) clean.push(point);
+      }
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (let i = 1; i < clean.length - 1; i++) {
+          const a = clean[i - 1], b = clean[i], c = clean[i + 1];
+          if ((a.x === b.x && b.x === c.x) || (a.y === b.y && b.y === c.y)) { clean.splice(i, 1); changed = true; break; }
+        }
+      }
+      return clean;
+    }
+
+    function pathSegments(points) {
+      const segments = [];
+      for (let index = 0; index < points.length - 1; index++) {
+        const a = points[index], b = points[index + 1];
+        if (a.x === b.x || a.y === b.y) segments.push({ a, b, vertical: a.x === b.x });
+      }
+      return segments;
+    }
+
+    function intervalOverlap(a1, a2, b1, b2) {
+      return Math.max(0, Math.min(Math.max(a1, a2), Math.max(b1, b2)) - Math.max(Math.min(a1, a2), Math.min(b1, b2)));
+    }
+
+    function routingScore(points, source, target, occupied) {
+      const segments = pathSegments(points);
+      let length = 0;
+      for (const segment of segments) length += Math.abs(segment.b.x - segment.a.x) + Math.abs(segment.b.y - segment.a.y);
+      let score = length + Math.max(0, segments.length - 1) * 48;
+      const obstacles = [...state.frames.values()].filter(frame => frame.name !== source && frame.name !== target);
+      for (const segment of segments) {
+        for (const frame of obstacles) if (segmentHitsFrame(segment.a, segment.b, frame, 18)) score += 240000;
+        for (const other of occupied) {
+          if (segment.vertical === other.vertical) {
+            const distance = segment.vertical ? Math.abs(segment.a.x - other.a.x) : Math.abs(segment.a.y - other.a.y);
+            const overlap = segment.vertical
+              ? intervalOverlap(segment.a.y, segment.b.y, other.a.y, other.b.y)
+              : intervalOverlap(segment.a.x, segment.b.x, other.a.x, other.b.x);
+            if (overlap > 0 && distance < .5) score += 560 + overlap * 9;
+            else if (overlap > 0 && distance < CHANNEL_SPACING * .75) score += 150 + overlap * 1.05;
+            else if (overlap > 0 && distance < CHANNEL_SPACING * 1.25) score += 34 + overlap * .22;
+          } else {
+            const vertical = segment.vertical ? segment : other;
+            const horizontal = segment.vertical ? other : segment;
+            const minY = Math.min(vertical.a.y, vertical.b.y), maxY = Math.max(vertical.a.y, vertical.b.y);
+            const minX = Math.min(horizontal.a.x, horizontal.b.x), maxX = Math.max(horizontal.a.x, horizontal.b.x);
+            if (vertical.a.x > minX + 2 && vertical.a.x < maxX - 2 && horizontal.a.y > minY + 2 && horizontal.a.y < maxY - 2) score += 58;
+          }
+        }
+      }
+      return score;
+    }
+
+    function routeWire(wire, index, occupied) {
+      const sourceFrame = state.frames.get(wire.source);
+      const targetFrame = state.frames.get(wire.target);
+      if (!sourceFrame || !targetFrame) return [];
+      const start = sourceFrame.outPorts.get(wire.signal) || { x: sourceFrame.x + sourceFrame.w, y: sourceFrame.y + sourceFrame.h / 2, side: "right", nx: 1, ny: 0 };
+      const end = targetFrame.inPorts.get(wireKey(wire)) || { x: targetFrame.x, y: targetFrame.y + targetFrame.h / 2, side: "left", nx: -1, ny: 0 };
+      const startStub = { x: start.x + start.nx * PORT_STUB, y: start.y + start.ny * PORT_STUB };
+      const endStub = { x: end.x + end.nx * PORT_STUB, y: end.y + end.ny * PORT_STUB };
+      if (wire.source === wire.target) {
+        const loopY = sourceFrame.y - 54 - (index % 5) * 12;
+        return compactPoints([start, startStub, { x: startStub.x, y: loopY }, { x: endStub.x, y: loopY }, endStub, end]);
+      }
+      const candidates = [];
+      const addCandidate = middle => {
+        const points = compactPoints([start, ...middle, end]);
+        if (points.every((point, pointIndex) => pointIndex === 0 || point.x === points[pointIndex - 1].x || point.y === points[pointIndex - 1].y)) candidates.push(points);
+      };
+      if (startStub.x === endStub.x || startStub.y === endStub.y) addCandidate([startStub, endStub]);
+      addCandidate([startStub, { x: endStub.x, y: startStub.y }, endStub]);
+      addCandidate([startStub, { x: startStub.x, y: endStub.y }, endStub]);
+      const slot = ((index % 11) - 5) * CHANNEL_SPACING * .34;
+      const midX = (startStub.x + endStub.x) / 2;
+      const midY = (startStub.y + endStub.y) / 2;
+      const outsideOffset = ROUTE_CLEARANCE + index % 5 * CHANNEL_SPACING;
+      const xChannels = [midX + slot, midX, state.bounds.x - outsideOffset, state.bounds.x + state.bounds.w + outsideOffset];
+      const yChannels = [midY + slot, midY, state.bounds.y - outsideOffset, state.bounds.y + state.bounds.h + outsideOffset];
+      for (let lane = -3; lane <= 3; lane++) {
+        xChannels.push(midX + lane * CHANNEL_SPACING);
+        yChannels.push(midY + lane * CHANNEL_SPACING);
+      }
+      for (const frame of state.frames.values()) {
+        if (frame.name === wire.source || frame.name === wire.target) continue;
+        xChannels.push(frame.x - ROUTE_CLEARANCE, frame.x + frame.w + ROUTE_CLEARANCE, frame.x - ROUTE_CLEARANCE - CHANNEL_SPACING, frame.x + frame.w + ROUTE_CLEARANCE + CHANNEL_SPACING);
+        yChannels.push(frame.y - ROUTE_CLEARANCE, frame.y + frame.h + ROUTE_CLEARANCE, frame.y - ROUTE_CLEARANCE - CHANNEL_SPACING, frame.y + frame.h + ROUTE_CLEARANCE + CHANNEL_SPACING);
+      }
+      const xLimit = { min: Math.min(startStub.x, endStub.x) - 380, max: Math.max(startStub.x, endStub.x) + 380 };
+      const yLimit = { min: Math.min(startStub.y, endStub.y) - 380, max: Math.max(startStub.y, endStub.y) + 380 };
+      for (const x of [...new Set(xChannels.map(value => round(value)))]) {
+        if (x < xLimit.min && x !== round(state.bounds.x - outsideOffset)) continue;
+        if (x > xLimit.max && x !== round(state.bounds.x + state.bounds.w + outsideOffset)) continue;
+        addCandidate([startStub, { x, y: startStub.y }, { x, y: endStub.y }, endStub]);
+      }
+      for (const y of [...new Set(yChannels.map(value => round(value)))]) {
+        if (y < yLimit.min && y !== round(state.bounds.y - outsideOffset)) continue;
+        if (y > yLimit.max && y !== round(state.bounds.y + state.bounds.h + outsideOffset)) continue;
+        addCandidate([startStub, { x: startStub.x, y }, { x: endStub.x, y }, endStub]);
+      }
+      let best = candidates[0] || [start, startStub, { x: endStub.x, y: startStub.y }, endStub, end];
+      let bestScore = Infinity;
+      for (const candidate of candidates) {
+        const score = routingScore(candidate, wire.source, wire.target, occupied);
+        if (score < bestScore) { best = candidate; bestScore = score; }
+      }
+      return best;
+    }
+
+    function routeAllWires() {
+      const routes = Array(state.wires.length);
+      const occupied = [];
+      const order = state.wires.map((wire, index) => index).sort((left, right) => {
+        const a = state.wires[left], b = state.wires[right];
+        const ap = a.signal === "error" ? 2 : a.target === a.source ? 1 : 0;
+        const bp = b.signal === "error" ? 2 : b.target === b.source ? 1 : 0;
+        return ap - bp || left - right;
+      });
+      for (const index of order) {
+        routes[index] = routeWire(state.wires[index], index, occupied);
+        occupied.push(...pathSegments(routes[index]));
+      }
+      return routes;
+    }
+
+    function findCrossings() {
+      const crossings = new Map(state.routes.map((route, routeIndex) => [routeIndex, new Map()]));
+      if (state.routes.length > 360) return crossings;
+      const segments = [];
+      state.routes.forEach((points, routeIndex) => {
+        for (let segmentIndex = 0; segmentIndex < points.length - 1; segmentIndex++) {
+          const a = points[segmentIndex], b = points[segmentIndex + 1];
+          if (a.x === b.x) segments.push({ routeIndex, segmentIndex, kind: "v", a, b });
+          else if (a.y === b.y) segments.push({ routeIndex, segmentIndex, kind: "h", a, b });
+        }
+      });
+      let count = 0;
+      for (const vertical of segments.filter(segment => segment.kind === "v")) {
+        for (const horizontal of segments.filter(segment => segment.kind === "h")) {
+          if (vertical.routeIndex === horizontal.routeIndex) continue;
+          const minY = Math.min(vertical.a.y, vertical.b.y), maxY = Math.max(vertical.a.y, vertical.b.y);
+          const minX = Math.min(horizontal.a.x, horizontal.b.x), maxX = Math.max(horizontal.a.x, horizontal.b.x);
+          const x = vertical.a.x, y = horizontal.a.y;
+          if (x <= minX + HOP_R + 2 || x >= maxX - HOP_R - 2 || y <= minY + HOP_R + 2 || y >= maxY - HOP_R - 2) continue;
+          const map = crossings.get(vertical.routeIndex);
+          if (!map.has(vertical.segmentIndex)) map.set(vertical.segmentIndex, []);
+          const list = map.get(vertical.segmentIndex);
+          if (!list.some(item => Math.abs(item.y - y) < HOP_R * 2.1)) list.push({ x, y });
+          if (++count > 900) return crossings;
+        }
+      }
+      return crossings;
+    }
+
+    function pathWithHops(points, routeCrossings) {
+      if (!points.length) return { d: "", hops: [] };
+      let d = `M ${round(points[0].x)} ${round(points[0].y)}`;
+      const hops = [];
+      for (let i = 0; i < points.length - 1; i++) {
+        const a = points[i], b = points[i + 1];
+        if (a.x !== b.x) { d += ` L ${round(b.x)} ${round(b.y)}`; continue; }
+        const direction = Math.sign(b.y - a.y) || 1;
+        const items = [...(routeCrossings?.get(i) || [])].sort((left, right) => direction * (left.y - right.y));
+        for (const item of items) {
+          const before = item.y - direction * HOP_R;
+          const after = item.y + direction * HOP_R;
+          d += ` L ${round(a.x)} ${round(before)}`;
+          const c1y = item.y - direction * HOP_R * .62;
+          const c2y = item.y + direction * HOP_R * .62;
+          d += ` C ${round(a.x + HOP_R)} ${round(c1y)} ${round(a.x + HOP_R)} ${round(c2y)} ${round(a.x)} ${round(after)}`;
+          hops.push(`M ${round(a.x)} ${round(before)} C ${round(a.x + HOP_R)} ${round(c1y)} ${round(a.x + HOP_R)} ${round(c2y)} ${round(a.x)} ${round(after)}`);
+        }
+        d += ` L ${round(b.x)} ${round(b.y)}`;
+      }
+      return { d, hops };
+    }
+
+    function rebuildModel() {
+      if (!state.wiring) return;
+      state.wires = listWires();
+      computeFrames();
+      state.routes = routeAllWires();
+      state.crossings = findCrossings();
+      const routePoints = state.routes.flat();
+      if (routePoints.length) {
+        const left = Math.min(state.bounds.x, ...routePoints.map(point => point.x)) - 58;
+        const top = Math.min(state.bounds.y, ...routePoints.map(point => point.y)) - 58;
+        const right = Math.max(state.bounds.x + state.bounds.w, ...routePoints.map(point => point.x)) + 58;
+        const bottom = Math.max(state.bounds.y + state.bounds.h, ...routePoints.map(point => point.y)) + 58;
+        state.bounds = { x: left, y: top, w: right - left, h: bottom - top };
+      }
+    }
+
+    function svgGroupMarkup() {
+      let output = "";
+      for (const frame of state.groupFrames.values()) {
+        output += `<g data-family="${esc(frame.base)}"><rect class="ewl-group-box" x="${round(frame.x)}" y="${round(frame.y)}" width="${round(frame.w)}" height="${round(frame.h)}" rx="18"></rect><text class="ewl-group-label" x="${round(frame.x + 14)}" y="${round(frame.y + 22)}">${esc(frame.base)} · family</text><rect class="ewl-group-handle" data-group="${esc(frame.base)}" x="${round(frame.x)}" y="${round(frame.y)}" width="${round(frame.w)}" height="${GROUP_HEAD}" rx="18"></rect></g>`;
+      }
+      return output;
+    }
+
+    function svgWireMarkup() {
+      let paths = "", hits = "", hopUnder = "", hopOver = "";
+      state.routes.forEach((points, index) => {
+        const wire = state.wires[index];
+        const selected = state.selection?.type === "wire" && wireKey(state.selection) === wireKey(wire);
+        const built = pathWithHops(points, state.crossings.get(index));
+        paths += `<path class="ewl-wire-path${selected ? " is-selected" : ""}" d="${built.d}" marker-end="url(#${selected ? "ewl-arrow-selected" : "ewl-arrow"})"></path>`;
+        hits += `<path class="ewl-wire-hit" data-wire-index="${index}" d="${built.d}"></path>`;
+        for (const hop of built.hops) {
+          hopUnder += `<path class="ewl-hop-under" d="${hop}"></path>`;
+          hopOver += `<path class="ewl-hop-over${selected ? " is-selected" : ""}" d="${hop}"></path>`;
+        }
+      });
+      return `<g>${paths}</g><g>${hopUnder}${hopOver}</g><g>${hits}</g>`;
+    }
+
+    function signalPortMarkup(frame, signal, port) {
+      let label = "";
+      if (port.side === "right") label = `<text class="ewl-signal-label" text-anchor="end" x="${round(frame.x + frame.w - 14)}" y="${round(port.y + 3.5)}">${esc(trunc(signal, 25))}</text>`;
+      else if (port.side === "left") label = `<text class="ewl-signal-label" text-anchor="start" x="${round(frame.x + 14)}" y="${round(port.y + 3.5)}">${esc(trunc(signal, 25))}</text>`;
+      else if (port.side === "top") label = `<text class="ewl-signal-label is-horizontal-edge" text-anchor="middle" x="${round(port.x)}" y="${round(frame.y + NODE_HEAD + 11)}">${esc(trunc(signal, 9))}</text>`;
+      else label = `<text class="ewl-signal-label is-horizontal-edge" text-anchor="middle" x="${round(port.x)}" y="${round(frame.y + frame.h - 9)}">${esc(trunc(signal, 9))}</text>`;
+      return `${label}<circle class="ewl-pin" cx="${round(port.x)}" cy="${round(port.y)}" r="4.2"></circle><circle class="ewl-port-hit" data-port-source="${esc(frame.name)}" data-port-signal="${esc(signal)}" data-port-side="${port.side}" cx="${round(port.x)}" cy="${round(port.y)}" r="18"></circle>`;
+    }
+
+    function nodeMarkup(frame) {
+      const name = frame.name;
+      const selected = state.selection?.type === "node" && state.selection.id === name;
+      const targetMode = Boolean(state.connect);
+      const isStart = topology().cycle_start === name;
+      const variant = variantName(name);
+      let markup = `<g data-node-group="${esc(name)}"><rect class="ewl-node-shadow" x="${round(frame.x + 5)}" y="${round(frame.y + 6)}" width="${round(frame.w)}" height="${round(frame.h)}" rx="13"></rect><rect class="ewl-node-body${selected ? " is-selected" : ""}${targetMode ? " is-target" : ""}" x="${round(frame.x)}" y="${round(frame.y)}" width="${round(frame.w)}" height="${round(frame.h)}" rx="13"></rect><path class="ewl-node-head" d="M ${round(frame.x + 13)} ${round(frame.y)} H ${round(frame.x + frame.w - 13)} Q ${round(frame.x + frame.w)} ${round(frame.y)} ${round(frame.x + frame.w)} ${round(frame.y + 13)} V ${round(frame.y + NODE_HEAD)} H ${round(frame.x)} V ${round(frame.y + 13)} Q ${round(frame.x)} ${round(frame.y)} ${round(frame.x + 13)} ${round(frame.y)} Z"></path><rect class="ewl-node-hit" data-node="${esc(name)}" x="${round(frame.x)}" y="${round(frame.y)}" width="${round(frame.w)}" height="${round(frame.h)}" rx="13"></rect>`;
+      markup += `<text class="ewl-node-title" x="${round(frame.x + 13)}" y="${round(frame.y + 18)}">${esc(trunc(name, 28))}</text><text class="ewl-node-subtitle" x="${round(frame.x + 13)}" y="${round(frame.y + 33)}">${esc(variant ? `${nodeFile(name)} · ${variant}` : nodeFile(name))}</text>`;
+      if (isStart) markup += `<circle class="ewl-start-ring" cx="${round(frame.x + frame.w - 15)}" cy="${round(frame.y + 16)}" r="7"></circle>`;
+      frame.incoming.forEach(wire => {
+        const port = frame.inPorts.get(wireKey(wire));
+        markup += `<circle class="ewl-pin ewl-pin-in" cx="${round(port.x)}" cy="${round(port.y)}" r="3.3"></circle>`;
+      });
+      frame.outSignals.forEach(signal => {
+        const port = frame.outPorts.get(signal);
+        if (port) markup += signalPortMarkup(frame, signal, port);
+      });
+      markup += `</g>`;
+      return markup;
+    }
+
+    function terminalMarkup(frame) {
+      const selected = state.selection?.type === "node" && state.selection.id === frame.name;
+      let markup = `<g data-node-group="${esc(frame.name)}"><rect class="ewl-node-shadow" x="${round(frame.x + 4)}" y="${round(frame.y + 5)}" width="${round(frame.w)}" height="${round(frame.h)}" rx="27"></rect><rect class="ewl-terminal${selected ? " is-selected" : ""}${state.connect ? " is-target" : ""}" x="${round(frame.x)}" y="${round(frame.y)}" width="${round(frame.w)}" height="${round(frame.h)}" rx="27"></rect><text class="ewl-terminal-label" x="${round(frame.x + 23)}" y="${round(frame.y + frame.h / 2 + 4)}">${esc(trunc(frame.name, 16))}</text><path d="M ${round(frame.x + frame.w - 30)} ${round(frame.y + frame.h / 2 - 7)} L ${round(frame.x + frame.w - 18)} ${round(frame.y + frame.h / 2)} L ${round(frame.x + frame.w - 30)} ${round(frame.y + frame.h / 2 + 7)} Z" fill="#183aaf"></path>`;
+      frame.incoming.forEach(wire => {
+        const port = frame.inPorts.get(wireKey(wire));
+        markup += `<circle class="ewl-pin ewl-pin-in" cx="${round(port.x)}" cy="${round(port.y)}" r="3.3"></circle>`;
+      });
+      markup += `<rect class="ewl-node-hit" data-node="${esc(frame.name)}" x="${round(frame.x)}" y="${round(frame.y)}" width="${round(frame.w)}" height="${round(frame.h)}" rx="27"></rect></g>`;
+      return markup;
+    }
+
+    function render() {
+      if (!state.wiring) {
+        diagram.innerHTML = "";
+        root.querySelector("#ewl-empty").classList.remove("ewl-hidden");
+        return;
+      }
+      root.querySelector("#ewl-empty").classList.add("ewl-hidden");
+      let nodesMarkup = "";
+      for (const frame of state.frames.values()) nodesMarkup += frame.terminal ? terminalMarkup(frame) : nodeMarkup(frame);
+      let preview = "";
+      if (state.preview) preview = `<path class="ewl-preview" d="M ${round(state.preview.start.x)} ${round(state.preview.start.y)} L ${round(state.preview.current.x)} ${round(state.preview.current.y)}"></path>`;
+      diagram.innerHTML = svgGroupMarkup() + svgWireMarkup() + nodesMarkup + preview;
+      applyView();
+      renderModeBanner();
+      const issues = validateDocument(state.wiring);
+      const errors = issues.filter(issue => issue.level === "error").length;
+      const warnings = issues.length - errors;
+      const terminals = terminalNames().length;
+      root.querySelector("#ewl-summary").innerHTML = `<span>${nodes().length} nodes</span><span>·</span><span>${state.wires.length} wires</span><span>·</span><span>${terminals} endpoint${terminals === 1 ? "" : "s"}</span>${errors || warnings ? `<span>·</span><span>${errors ? `${errors} errors` : `${warnings} warnings`}</span>` : ""}`;
+      root.querySelector("#ewl-summary").classList.remove("ewl-hidden");
+      svg.setAttribute("aria-label", `Wiring topology with ${nodes().length} nodes and ${state.wires.length} directed connections`);
+    }
+
+    function queueRender() {
+      if (state.renderQueued) return;
+      state.renderQueued = true;
+      requestAnimationFrame(() => { state.renderQueued = false; rebuildModel(); render(); });
+    }
+
+    function stageSize() {
+      const rect = stage.getBoundingClientRect();
+      return { w: Math.max(1, rect.width), h: Math.max(1, rect.height), left: rect.left, top: rect.top };
+    }
+
+    function applyView() {
+      const size = stageSize();
+      svg.setAttribute("viewBox", `${round(state.view.x)} ${round(state.view.y)} ${round(size.w / state.view.zoom)} ${round(size.h / state.view.zoom)}`);
+    }
+
+    function screenToWorld(clientX, clientY) {
+      const size = stageSize();
+      return { x: state.view.x + (clientX - size.left) / state.view.zoom, y: state.view.y + (clientY - size.top) / state.view.zoom };
+    }
+
+    function fitAll() {
+      if (!state.wiring) return;
+      const size = stageSize();
+      const margin = 54;
+      const zoom = Math.min(1.35, Math.max(.12, Math.min(size.w / (state.bounds.w + margin * 2), size.h / (state.bounds.h + margin * 2))));
+      state.view.zoom = zoom;
+      state.view.x = state.bounds.x - margin + (state.bounds.w + margin * 2 - size.w / zoom) / 2;
+      state.view.y = state.bounds.y - margin + (state.bounds.h + margin * 2 - size.h / zoom) / 2;
+      applyView();
+      updateChrome();
+    }
+
+    function frameLayoutReadably() {
+      if (!state.wiring) return;
+      const size = stageSize();
+      const margin = 72;
+      const boxes = [...state.frames.values(), ...state.groupFrames.values()];
+      const left = boxes.length ? Math.min(...boxes.map(frame => frame.x)) : state.bounds.x;
+      const top = boxes.length ? Math.min(...boxes.map(frame => frame.y)) : state.bounds.y;
+      const right = boxes.length ? Math.max(...boxes.map(frame => frame.x + frame.w)) : state.bounds.x + state.bounds.w;
+      const bottom = boxes.length ? Math.max(...boxes.map(frame => frame.y + frame.h)) : state.bounds.y + state.bounds.h;
+      const width = right - left, height = bottom - top;
+      const fitted = Math.min(size.w / (width + margin * 2), size.h / (height + margin * 2));
+      const readableFloor = size.w <= 560 ? .46 : .5;
+      const zoom = Math.min(1.2, Math.max(readableFloor, fitted));
+      state.view.zoom = zoom;
+      const visibleWidth = size.w / zoom, visibleHeight = size.h / zoom;
+      state.view.x = width + margin * 2 <= visibleWidth ? left + width / 2 - visibleWidth / 2 : left - margin;
+      state.view.y = height + margin * 2 <= visibleHeight ? top + height / 2 - visibleHeight / 2 : top - margin;
+      applyView();
+      updateChrome();
+    }
+
+    function centerOn(name, zoom = 1.05) {
+      const frame = state.frames.get(name);
+      if (!frame) return;
+      const size = stageSize();
+      state.view.zoom = Math.min(1.7, Math.max(.35, zoom));
+      state.view.x = frame.x + frame.w / 2 - size.w / state.view.zoom / 2;
+      state.view.y = frame.y + frame.h / 2 - size.h / state.view.zoom / 2;
+      applyView();
+    }
+
+    function zoomAt(clientX, clientY, nextZoom) {
+      const size = stageSize();
+      const world = screenToWorld(clientX, clientY);
+      const zoom = Math.min(2.6, Math.max(.1, nextZoom));
+      state.view.zoom = zoom;
+      state.view.x = world.x - (clientX - size.left) / zoom;
+      state.view.y = world.y - (clientY - size.top) / zoom;
+      applyView();
+      updateChrome();
+    }
+
+    function selectNode(name, open = true) {
+      state.selection = { type: "node", id: name };
+      render();
+      if (open) renderInspector();
+    }
+
+    function selectWire(index, open = true) {
+      const wire = state.wires[index];
+      if (!wire) return;
+      state.selection = { type: "wire", ...wire };
+      render();
+      if (open) renderInspector();
+    }
+
+    function handleCanvasTap(type, key, event) {
+      const now = performance.now();
+      const previous = state.lastTap;
+      const isDoubleTap = previous && previous.type === type && previous.key === key && now - previous.time <= 430 && Math.hypot(event.clientX - previous.x, event.clientY - previous.y) <= 30;
+      if (isDoubleTap) {
+        state.lastTap = null;
+        if (type === "node") selectNode(key, false);
+        else selectWire(state.wires.findIndex(wire => wireKey(wire) === key), false);
+        setTimeout(() => {
+          const stillSelected = type === "node"
+            ? state.selection?.type === "node" && state.selection.id === key
+            : state.selection?.type === "wire" && wireKey(state.selection) === key;
+          if (stillSelected) renderInspector();
+        }, 0);
+        return;
+      }
+      state.lastTap = { type, key, time: now, x: event.clientX, y: event.clientY };
+      if (type === "node") selectNode(key, false);
+      else selectWire(state.wires.findIndex(wire => wireKey(wire) === key), false);
+    }
+
+    function openSheet(title, subtitle, body) {
+      root.querySelector("#ewl-sheet-heading").textContent = title;
+      root.querySelector("#ewl-sheet-subheading").textContent = subtitle || "";
+      root.querySelector("#ewl-sheet-body").innerHTML = body;
+      root.querySelector("#ewl-sheet").classList.remove("ewl-hidden");
+      root.querySelector("#ewl-backdrop").classList.remove("ewl-hidden");
+    }
+
+    function closeSheet() {
+      root.querySelector("#ewl-sheet").classList.add("ewl-hidden");
+      root.querySelector("#ewl-backdrop").classList.add("ewl-hidden");
+    }
+
+    function nodeDetails(name) {
+      const declared = nodes().includes(name);
+      const incoming = state.wires.filter(wire => wire.target === name);
+      const outgoing = state.wires.filter(wire => wire.source === name);
+      const alias = state.wiring.prompt_aliases?.[name];
+      const promptKey = alias || name;
+      const prompt = isObject(state.wiring.prompts) ? state.wiring.prompts[promptKey] : undefined;
+      return { id: name, kind: declared ? "node" : SENTINELS.has(name) ? "sentinel" : "undeclared endpoint", file: declared ? nodeFile(name) : null, family: declared && name.includes(":") ? baseName(name) : null, cycle_start: topology().cycle_start === name, barrier_arity: topology().barriers?.[name] ?? null, prompt_key: promptKey, prompt_alias: alias || null, prompt: prompt ?? null, edges: declared ? edges()[name] || {} : null, incoming: incoming.map(wire => ({ source: wire.source, signal: wire.signal, index: wire.index })), outgoing: outgoing.map(wire => ({ signal: wire.signal, target: wire.target, index: wire.index })), node_def: state.wiring.node_defs?.[name] || state.wiring.node_defs?.[baseName(name)] || null };
+    }
+
+    function renderInspector() {
+      if (!state.selection || !state.wiring) return closeSheet();
+      if (state.selection.type === "wire") return renderWireInspector();
+      const name = state.selection.id;
+      const declared = nodes().includes(name);
+      const incoming = state.wires.filter(wire => wire.target === name);
+      const outgoingSignals = declared ? Object.keys(edges()[name] || {}) : [];
+      const badges = `${topology().cycle_start === name ? '<span class="ewl-badge is-start">cycle start</span>' : ""}${declared && name.includes(":") ? `<span class="ewl-badge">${esc(baseName(name))} family</span>` : ""}${!declared ? `<span class="ewl-badge is-warning">${SENTINELS.has(name) ? "sentinel" : "undeclared"}</span>` : ""}`;
+      const incomingHtml = incoming.length ? incoming.map(wire => `<div class="ewl-connection"><div class="ewl-connection-main"><b>${esc(wire.source)} · ${esc(wire.signal)}</b><span>incoming connection</span></div><button class="ewl-chip" type="button" data-action="select-wire" data-wire-key="${esc(wireKey(wire))}">Open</button></div>`).join("") : '<p class="ewl-file-name">No incoming connections.</p>';
+      const outgoingHtml = declared ? (outgoingSignals.length ? outgoingSignals.map(signal => {
+        const signalWires = state.wires.filter(wire => wire.source === name && wire.signal === signal);
+        const targets = signalWires.length ? signalWires.map(wire => `<button class="ewl-chip" type="button" data-action="select-wire" data-wire-key="${esc(wireKey(wire))}">→ ${esc(wire.target)}</button>`).join("") : '<span class="ewl-file-name">No target</span>';
+        return `<div class="ewl-connection"><div class="ewl-connection-main"><b>${esc(signal)}</b><div class="ewl-row">${targets}</div></div><button class="ewl-icon-button" type="button" data-action="add-branch" data-node="${esc(name)}" data-signal="${esc(signal)}" aria-label="Add target">＋</button></div>`;
+      }).join("") : '<p class="ewl-file-name">No outgoing signals yet.</p>') : "";
+      const promptKey = state.wiring.prompt_aliases?.[name] || name;
+      const prompt = isObject(state.wiring.prompts) && typeof state.wiring.prompts[promptKey] === "string" ? state.wiring.prompts[promptKey] : "";
+      const body = `<div class="ewl-row">${badges || '<span class="ewl-badge">node</span>'}</div><div class="ewl-section"><div class="ewl-row"><button type="button" data-action="center-selected">Center</button>${declared && topology().cycle_start !== name ? '<button type="button" data-action="set-start">Set start</button>' : ""}</div></div><div class="ewl-section"><h3 class="ewl-section-title">Inputs · ${incoming.length}</h3>${incomingHtml}</div>${declared ? `<div class="ewl-section"><h3 class="ewl-section-title">Outputs · ${outgoingSignals.length} signals</h3>${outgoingHtml}</div><div class="ewl-section"><div class="ewl-row"><button type="button" data-action="add-signal">Add signal</button><button type="button" data-action="rename-node">Rename</button><button class="ewl-danger" type="button" data-action="delete-node">Delete</button></div></div>` : ""}${declared && isObject(state.wiring.prompts) ? `<div class="ewl-section"><details><summary>Prompt · ${esc(promptKey)}</summary><label class="ewl-field"><span>System prompt</span><textarea id="ewl-prompt-editor" spellcheck="false">${esc(prompt)}</textarea></label><button type="button" data-action="save-prompt" data-prompt-key="${esc(promptKey)}">Save prompt</button></details></div>` : ""}<div class="ewl-section"><details><summary>Node schema</summary><pre>${esc(JSON.stringify(nodeDetails(name), null, 2))}</pre></details></div>`;
+      openSheet(name, declared ? nodeFile(name) : "Terminal endpoint", body);
+    }
+
+    function renderWireInspector() {
+      const wire = state.wires.find(item => wireKey(item) === wireKey(state.selection));
+      if (!wire) { state.selection = null; closeSheet(); return; }
+      const body = `<div class="ewl-section"><div class="ewl-connection"><div class="ewl-connection-main"><b>${esc(wire.source)}</b><span>source node</span></div><button class="ewl-chip" type="button" data-action="focus-node" data-node="${esc(wire.source)}">Open</button></div><div class="ewl-connection"><div class="ewl-connection-main"><b>${esc(wire.signal)}</b><span>emitted signal</span></div><span class="ewl-badge">signal</span></div><div class="ewl-connection"><div class="ewl-connection-main"><b>${esc(wire.target)}</b><span>target node</span></div><button class="ewl-chip" type="button" data-action="focus-node" data-node="${esc(wire.target)}">Open</button></div></div><div class="ewl-section"><div class="ewl-row"><button class="ewl-primary" type="button" data-action="reconnect-wire">Reconnect target</button><button class="ewl-danger" type="button" data-action="delete-wire">Delete wire</button></div></div><div class="ewl-section"><details><summary>Connection JSON</summary><pre>${esc(JSON.stringify(wire, null, 2))}</pre></details></div>`;
+      openSheet(`${wire.signal} → ${wire.target}`, wire.source, body);
+    }
+
+    function beginConnect(config) {
+      state.connect = config;
+      closeSheet();
+      render();
+      toast("Tap a destination node, or choose halt/wait");
+    }
+
+    function finishConnect(target) {
+      const config = state.connect;
+      if (!config || !target) return;
+      state.connect = null;
+      state.preview = null;
+      if (config.mode === "reconnect") {
+        mutate(() => {
+          const list = targetsOf(config.source, config.signal);
+          if (config.index >= list.length) throw new Error("Connection changed before it could be rewired.");
+          list[config.index] = target;
+          setTargets(config.source, config.signal, list);
+          state.selection = { type: "wire", source: config.source, signal: config.signal, target, index: config.index };
+        }, `Reconnected ${config.signal} to ${target}`);
+      } else if (config.mode === "new-signal") {
+        mutate(() => {
+          if (!isObject(edges()[config.source])) edges()[config.source] = {};
+          edges()[config.source][config.signal] = target;
+          state.selection = { type: "wire", source: config.source, signal: config.signal, target, index: 0 };
+        }, `Added ${config.signal} → ${target}`);
+      } else {
+        const current = targetsOf(config.source, config.signal);
+        if (current.includes(target)) { render(); return toast("That target is already connected"); }
+        mutate(() => {
+          const list = targetsOf(config.source, config.signal);
+          list.push(target);
+          setTargets(config.source, config.signal, list);
+          state.selection = { type: "wire", source: config.source, signal: config.signal, target, index: list.length - 1 };
+        }, `Added branch to ${target}`);
+      }
+      renderWireInspector();
+    }
+
+    function renderModeBanner() {
+      const banner = root.querySelector("#ewl-mode-banner");
+      if (!state.connect) return banner.classList.add("ewl-hidden");
+      const verb = state.connect.mode === "reconnect" ? "Reconnect target" : state.connect.mode === "new-signal" ? "New signal target" : "Add branch";
+      root.querySelector("#ewl-mode-title").textContent = verb;
+      root.querySelector("#ewl-mode-detail").textContent = `${state.connect.source} · ${state.connect.signal}`;
+      banner.classList.remove("ewl-hidden");
+    }
+
+    function validateDocument(documentValue) {
+      const issues = [];
+      const error = basicDocumentError(documentValue);
+      if (error) return [{ level: "error", text: error }];
+      const topo = documentValue.topology;
+      const nodeList = topo.nodes;
+      const nodeSet = new Set(nodeList);
+      const edgeMap = topo.edges;
+      const duplicateNames = nodeList.filter((name, index) => nodeList.indexOf(name) !== index);
+      if (duplicateNames.length) issues.push({ level: "error", text: `Duplicate node IDs: ${[...new Set(duplicateNames)].join(", ")}` });
+      if (typeof topo.cycle_start !== "string" || !nodeSet.has(topo.cycle_start)) issues.push({ level: "error", text: "topology.cycle_start must name a declared node." });
+      for (const name of nodeList) {
+        if (!isObject(edgeMap[name])) issues.push({ level: "error", text: `${name} has no edge map.` });
+      }
+      for (const [source, signals] of Object.entries(edgeMap)) {
+        if (!nodeSet.has(source)) issues.push({ level: "error", text: `Edge source ${source} is not declared in topology.nodes.` });
+        if (!isObject(signals)) { issues.push({ level: "error", text: `Edges for ${source} must be an object.` }); continue; }
+        for (const [signal, raw] of Object.entries(signals)) {
+          const targets = Array.isArray(raw) ? raw : [raw];
+          if (!targets.length || targets.some(target => typeof target !== "string" || !target)) issues.push({ level: "error", text: `${source}.${signal} must target a non-empty string or array of strings.` });
+          for (const target of targets) if (typeof target === "string" && !nodeSet.has(target) && !SENTINELS.has(target)) issues.push({ level: "warning", text: `${source}.${signal} targets undeclared endpoint ${target}.` });
+        }
+      }
+      if (isObject(topo.barriers)) {
+        for (const [name, arity] of Object.entries(topo.barriers)) {
+          if (!nodeSet.has(name)) issues.push({ level: "error", text: `Barrier ${name} is not a declared node.` });
+          if (!Number.isInteger(arity) || arity < 1) issues.push({ level: "error", text: `Barrier ${name} must have a positive integer arity.` });
+          if (nodeSet.has(name) && !Object.prototype.hasOwnProperty.call(edgeMap[name] || {}, "join")) issues.push({ level: "error", text: `Barrier ${name} needs a join edge.` });
+        }
+      }
+      if (typeof topo.cycle_start === "string" && nodeSet.has(topo.cycle_start)) {
+        const seen = new Set();
+        const stack = [topo.cycle_start];
+        while (stack.length) {
+          const current = stack.pop();
+          if (seen.has(current) || SENTINELS.has(current)) continue;
+          seen.add(current);
+          for (const raw of Object.values(edgeMap[current] || {})) for (const target of Array.isArray(raw) ? raw : [raw]) if (typeof target === "string") stack.push(target);
+        }
+        const unreachable = nodeList.filter(name => !seen.has(name));
+        if (unreachable.length) issues.push({ level: "warning", text: `Unreachable from ${topo.cycle_start}: ${unreachable.join(", ")}` });
+      }
+      if (isObject(documentValue.prompt_aliases) && isObject(documentValue.prompts)) {
+        for (const [name, promptName] of Object.entries(documentValue.prompt_aliases)) if (typeof promptName !== "string" || !(promptName in documentValue.prompts)) issues.push({ level: "error", text: `prompt_aliases.${name} names a missing prompt.` });
+        for (const name of nodeList) {
+          const promptName = documentValue.prompt_aliases[name] || name;
+          if (!(promptName in documentValue.prompts)) issues.push({ level: "warning", text: `${name} resolves to missing prompt ${promptName}.` });
+        }
+      }
+      return issues;
+    }
+
+    function showDiagnostics() {
+      const issues = state.wiring ? validateDocument(state.wiring) : [];
+      const body = issues.length ? issues.map(issue => `<div class="ewl-issue${issue.level === "warning" ? " is-warning" : ""}"><span class="ewl-issue-mark">${issue.level === "warning" ? "!" : "×"}</span><p>${esc(issue.text)}</p></div>`).join("") : '<div class="ewl-ok">Topology is coherent: every declared node is reachable and every wire has a valid destination.</div>';
+      openSheet("Validation", `${issues.length} issue${issues.length === 1 ? "" : "s"}`, body);
+    }
+
+    function openMenu() {
+      if (!state.wiring) {
+        openSheet("Wiring Lab", "Responsive schematic editor", '<div class="ewl-sheet-grid"><button class="ewl-primary" type="button" data-action="open">Open wiring.json</button><button type="button" data-action="demo">Try demo</button></div><div class="ewl-section"><ol class="ewl-help"><li>Import a wiring document from your device.</li><li>Drag nodes, pan with one finger, and pinch to zoom.</li><li>Tap once to select; tap twice to edit a node or wire.</li><li>Save a runtime-compatible JSON copy when finished.</li></ol></div>');
+        return;
+      }
+      const body = `<div class="ewl-sheet-grid"><button class="ewl-primary" type="button" data-action="open">Open JSON</button><button type="button" data-action="save">Save JSON</button><button type="button" data-action="add-node">Add node</button><button type="button" data-action="json-editor">Schema & JSON</button><button type="button" data-action="diagnostics">Validate</button><button type="button" data-action="new-document">New wiring</button></div><div class="ewl-section"><h3 class="ewl-section-title">View & export</h3><label class="ewl-switch"><span class="ewl-switch-copy"><strong>Nested families</strong><span>Group colon-qualified instances by base module.</span></span><input id="ewl-family-toggle" type="checkbox" ${state.groupFamilies ? "checked" : ""}></label><label class="ewl-switch"><span class="ewl-switch-copy"><strong>Responsive auto layout</strong><span>Recalculate topology spacing and orientation after the browser is resized.</span></span><input id="ewl-auto-layout-toggle" type="checkbox" ${state.autoLayoutResponsive ? "checked" : ""}></label><label class="ewl-switch"><span class="ewl-switch-copy"><strong>Include layout on save</strong><span>Add __wiring_lab metadata; leave off for clean runtime JSON.</span></span><input id="ewl-layout-toggle" type="checkbox" ${state.includeLayout ? "checked" : ""}></label></div><div class="ewl-section"><button type="button" data-action="help">Touch guide</button></div>`;
+      openSheet("Wiring Lab", `${nodes().length} nodes · ${state.wires.length} wires`, body);
+    }
+
+    function showHelp() {
+      openSheet("Touch guide", "Latest Chrome · phone, tablet, or PC", '<ol class="ewl-help"><li><b>Select and edit:</b> one tap selects a node or wire; two taps open its editor.</li><li><b>Four-sided pins:</b> inputs and outputs automatically move between the top, right, bottom, and left edges to face their connected neighbors.</li><li><b>Move a node:</b> drag the component body; its pin sides and wires are recalculated immediately.</li><li><b>Move a family:</b> drag its dashed container title.</li><li><b>Pan and zoom:</b> drag empty paper; pinch with two fingers. A mouse wheel also zooms.</li><li><b>Add a branch:</b> drag any output pin to another node, or use the + beside a signal.</li><li><b>Layout:</b> layered ordering, barycentric crossing minimization, adaptive bands, hub placement, and congestion-scored Manhattan channels spread the diagram.</li><li><b>Responsive layout:</b> enable it under More to recalculate after a browser resize without shrinking components below a readable scale.</li><li><b>Crossings:</b> vertical wires hop over horizontal wires; a hop is not a junction.</li><li><b>Save:</b> the default download preserves the complete imported document and edits only its topology. Layout metadata is optional.</li></ol>');
+    }
+
+    function openSearch() {
+      if (!state.wiring) return;
+      openSheet("Find node", `${allBoxNames().length} components`, '<div class="ewl-search-box"><label class="ewl-field"><span>Node ID</span><input id="ewl-search-input" type="text" inputmode="search" autocomplete="off" placeholder="Type a node name"></label><div id="ewl-search-results" class="ewl-search-results"></div></div>');
+      const input = root.querySelector("#ewl-search-input");
+      input.addEventListener("input", renderSearchResults);
+      renderSearchResults();
+      setTimeout(() => input.focus(), 30);
+    }
+
+    function renderSearchResults() {
+      const input = root.querySelector("#ewl-search-input");
+      const box = root.querySelector("#ewl-search-results");
+      if (!input || !box) return;
+      const query = input.value.trim().toLowerCase();
+      const matches = allBoxNames().filter(name => !query || name.toLowerCase().includes(query)).slice(0, 80);
+      box.innerHTML = matches.map(name => `<button class="ewl-search-result" type="button" data-action="search-result" data-node="${esc(name)}"><span>${esc(name)}</span><small>${nodes().includes(name) ? esc(nodeFile(name)) : "endpoint"}</small></button>`).join("") || '<p class="ewl-file-name">No matching nodes.</p>';
+    }
+
+    function openJsonEditor() {
+      if (!state.wiring) return;
+      const sections = Object.entries(state.wiring).map(([key, value]) => `<span class="ewl-badge">${esc(key)} · ${Array.isArray(value) ? `${value.length} items` : isObject(value) ? `${Object.keys(value).length} keys` : typeof value}</span>`).join(" ");
+      const body = `<div class="ewl-row">${sections}</div><div class="ewl-section"><label class="ewl-field"><span>Complete wiring document</span><textarea id="ewl-json-editor" spellcheck="false">${esc(JSON.stringify(state.wiring, null, 2))}</textarea></label><div class="ewl-row"><button class="ewl-primary" type="button" data-action="apply-json">Apply JSON</button><button type="button" data-action="format-json">Format</button></div></div>`;
+      openSheet("Schema & JSON", state.wiring.schema || "wiring document", body);
+    }
+
+    function updateChrome() {
+      root.querySelector("#ewl-file-name").textContent = state.wiring ? `${state.dirty ? "● " : ""}${state.fileName}` : "No wiring loaded";
+      root.querySelector("#ewl-save-button").disabled = !state.wiring;
+      root.querySelectorAll('[data-action="fit"], [data-action="layout"], [data-action="search"]').forEach(button => { button.disabled = !state.wiring; });
+      root.querySelector("#ewl-undo-button").disabled = !state.history.length;
+      const layoutButton = root.querySelector("#ewl-layout-button");
+      layoutButton.classList.toggle("is-active", Boolean(state.wiring && state.autoLayoutResponsive));
+      layoutButton.setAttribute("aria-pressed", String(Boolean(state.wiring && state.autoLayoutResponsive)));
+    }
+
+    function toast(message) {
+      const element = root.querySelector("#ewl-toast");
+      element.textContent = String(message);
+      element.classList.add("is-visible");
+      clearTimeout(state.toastTimer);
+      state.toastTimer = setTimeout(() => element.classList.remove("is-visible"), 2600);
+    }
+
+    function exportedDocument() {
+      const output = clone(state.wiring);
+      delete output.__wiring_lab;
+      if (state.includeLayout) {
+        output.__wiring_lab = { ...clone(state.importedMeta), version: 6, nodes: clone(state.positions), groupFamilies: state.groupFamilies, autoLayoutResponsive: state.autoLayoutResponsive, editor: "endgame-mobile-wiring-lab" };
+      }
+      return output;
+    }
+
+    function saveDocument() {
+      if (!state.wiring) return;
+      const issues = validateDocument(state.wiring);
+      const errors = issues.filter(issue => issue.level === "error");
+      if (errors.length && !window.confirm(`${errors.length} validation error${errors.length === 1 ? "" : "s"} remain. Save this JSON anyway?`)) return showDiagnostics();
+      const text = JSON.stringify(exportedDocument(), null, 2) + "\n";
+      const blob = new Blob([text], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = state.fileName.replace(/\.json$/i, "") + (state.includeLayout ? "_project.json" : ".json");
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1500);
+      state.dirty = false;
+      updateChrome();
+      closeSheet();
+      toast(state.includeLayout ? "Project JSON saved with layout" : "Runtime-compatible JSON saved");
+    }
+
+    async function importFile(file) {
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const parsed = JSON.parse(text.replace(/^\uFEFF/, ""));
+        loadDocument(parsed, file.name || "wiring.json");
+      } catch (error) {
+        toast(`Could not open JSON: ${error.message}`);
+      } finally {
+        fileInput.value = "";
+      }
+    }
+
+    function addNode() {
+      const name = window.prompt("New node ID", "node_new");
+      if (!name) return;
+      const clean = name.trim();
+      if (!clean) return;
+      if (allBoxNames().includes(clean)) return toast("Choose a unique node ID");
+      mutate(() => {
+        topology().nodes.push(clean);
+        topology().edges[clean] = {};
+        if (isObject(state.wiring.prompts) && !(clean in state.wiring.prompts)) state.wiring.prompts[clean] = "";
+        const size = stageSize();
+        const center = screenToWorld(size.left + size.w / 2, size.top + size.h / 2);
+        state.positions[clean] = { x: center.x - NODE_W / 2, y: center.y - 80 };
+        state.selection = { type: "node", id: clean };
+      }, `Added ${clean}`);
+      renderInspector();
+    }
+
+    function renameNode() {
+      const oldName = state.selection?.type === "node" ? state.selection.id : "";
+      if (!nodes().includes(oldName)) return;
+      const value = window.prompt("Rename node", oldName);
+      if (!value) return;
+      const newName = value.trim();
+      if (!newName || newName === oldName) return;
+      if (allBoxNames().includes(newName)) return toast("Choose a unique node ID");
+      mutate(() => {
+        const index = topology().nodes.indexOf(oldName);
+        topology().nodes[index] = newName;
+        const replacementEdges = {};
+        for (const [source, signals] of Object.entries(topology().edges)) replacementEdges[source === oldName ? newName : source] = signals;
+        topology().edges = replacementEdges;
+        for (const signals of Object.values(topology().edges)) for (const [signal, raw] of Object.entries(signals || {})) {
+          if (Array.isArray(raw)) signals[signal] = raw.map(target => target === oldName ? newName : target);
+          else if (raw === oldName) signals[signal] = newName;
+        }
+        if (topology().cycle_start === oldName) topology().cycle_start = newName;
+        if (isObject(topology().barriers) && Object.prototype.hasOwnProperty.call(topology().barriers, oldName)) { topology().barriers[newName] = topology().barriers[oldName]; delete topology().barriers[oldName]; }
+        if (isObject(state.wiring.prompt_aliases) && Object.prototype.hasOwnProperty.call(state.wiring.prompt_aliases, oldName)) { state.wiring.prompt_aliases[newName] = state.wiring.prompt_aliases[oldName]; delete state.wiring.prompt_aliases[oldName]; }
+        const sharedPrompt = isObject(state.wiring.prompt_aliases) && Object.values(state.wiring.prompt_aliases).includes(oldName);
+        if (isObject(state.wiring.prompts) && Object.prototype.hasOwnProperty.call(state.wiring.prompts, oldName) && !sharedPrompt) { state.wiring.prompts[newName] = state.wiring.prompts[oldName]; delete state.wiring.prompts[oldName]; }
+        if (isObject(state.wiring.node_defs) && Object.prototype.hasOwnProperty.call(state.wiring.node_defs, oldName)) { state.wiring.node_defs[newName] = state.wiring.node_defs[oldName]; delete state.wiring.node_defs[oldName]; }
+        state.positions[newName] = state.positions[oldName];
+        delete state.positions[oldName];
+        state.selection = { type: "node", id: newName };
+      }, `Renamed ${oldName} to ${newName}`);
+      renderInspector();
+    }
+
+    function deleteNode() {
+      const name = state.selection?.type === "node" ? state.selection.id : "";
+      if (!nodes().includes(name)) return;
+      if (!window.confirm(`Delete ${name} and every wire connected to it?`)) return;
+      mutate(() => {
+        topology().nodes = topology().nodes.filter(item => item !== name);
+        delete topology().edges[name];
+        for (const [source, signals] of Object.entries(topology().edges)) for (const [signal, raw] of Object.entries(signals || {})) {
+          const list = (Array.isArray(raw) ? raw : [raw]).filter(target => target !== name);
+          if (list.length) signals[signal] = list.length === 1 ? list[0] : list;
+          else delete signals[signal];
+        }
+        if (topology().cycle_start === name) topology().cycle_start = topology().nodes[0] || "";
+        if (isObject(topology().barriers)) delete topology().barriers[name];
+        if (isObject(state.wiring.prompt_aliases)) delete state.wiring.prompt_aliases[name];
+        if (isObject(state.wiring.node_defs)) delete state.wiring.node_defs[name];
+        delete state.positions[name];
+        state.selection = null;
+      }, `Deleted ${name}`);
+      closeSheet();
+    }
+
+    function addSignal() {
+      const name = state.selection?.type === "node" ? state.selection.id : "";
+      if (!nodes().includes(name)) return;
+      const value = window.prompt("New output signal", "next");
+      if (!value) return;
+      const signal = value.trim();
+      if (!signal) return;
+      if (Object.prototype.hasOwnProperty.call(edges()[name] || {}, signal)) return toast("That signal already exists");
+      beginConnect({ mode: "new-signal", source: name, signal });
+    }
+
+    function deleteWire() {
+      const wire = state.wires.find(item => wireKey(item) === wireKey(state.selection || {}));
+      if (!wire) return;
+      mutate(() => {
+        const list = targetsOf(wire.source, wire.signal);
+        list.splice(wire.index, 1);
+        setTargets(wire.source, wire.signal, list);
+        state.selection = { type: "node", id: wire.source };
+      }, `Deleted ${wire.signal} → ${wire.target}`);
+      renderInspector();
+    }
+
+    function pointerDown(event) {
+      if (!state.wiring || event.button > 0) return;
+      const target = eventTarget(event);
+      state.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      svg.setPointerCapture(event.pointerId);
+      if (state.pointers.size === 2) {
+        if (state.gesture?.type === "node") state.positions[state.gesture.name] = { ...state.gesture.origin };
+        if (state.gesture?.type === "group") for (const name of state.gesture.members) state.positions[name] = { ...state.gesture.origins[name] };
+        const values = [...state.pointers.values()];
+        const midpoint = { x: (values[0].x + values[1].x) / 2, y: (values[0].y + values[1].y) / 2 };
+        state.gesture = { type: "pinch", startDistance: Math.hypot(values[1].x - values[0].x, values[1].y - values[0].y), startZoom: state.view.zoom, midpoint, world: screenToWorld(midpoint.x, midpoint.y) };
+        state.preview = null;
+        return;
+      }
+      if (state.pointers.size > 1) return;
+      const port = target?.closest("[data-port-source]");
+      const nodeTarget = target?.closest("[data-node]");
+      const groupTarget = target?.closest("[data-group]");
+      const wireTarget = target?.closest("[data-wire-index]");
+      const world = screenToWorld(event.clientX, event.clientY);
+      if (port) {
+        const source = port.getAttribute("data-port-source");
+        const signal = port.getAttribute("data-port-signal");
+        const frame = state.frames.get(source);
+        state.gesture = { type: "wire", pointerId: event.pointerId, source, signal, startClient: { x: event.clientX, y: event.clientY }, moved: false };
+        state.preview = { start: frame.outPorts.get(signal), current: world };
+        render();
+      } else if (wireTarget) {
+        const index = Number(wireTarget.getAttribute("data-wire-index"));
+        const wire = state.wires[index];
+        selectWire(index, false);
+        state.gesture = { type: "tap", pointerId: event.pointerId, key: wire ? wireKey(wire) : "" };
+      } else if (nodeTarget) {
+        const name = nodeTarget.getAttribute("data-node");
+        if (state.connect) {
+          state.gesture = { type: "target", pointerId: event.pointerId, name };
+        } else {
+          const position = state.positions[name];
+          state.gesture = { type: "node", pointerId: event.pointerId, name, startWorld: world, origin: { ...position }, before: snapshot(), moved: false };
+          selectNode(name, false);
+        }
+      } else if (groupTarget) {
+        const base = groupTarget.getAttribute("data-group");
+        const members = familyGroups().get(base) || [];
+        state.gesture = { type: "group", pointerId: event.pointerId, base, members, startWorld: world, origins: Object.fromEntries(members.map(name => [name, { ...state.positions[name] }])), before: snapshot(), moved: false };
+      } else {
+        state.gesture = { type: "pan", pointerId: event.pointerId, start: { x: event.clientX, y: event.clientY }, view: { ...state.view }, moved: false };
+        svg.classList.add("ewl-dragging");
+      }
+    }
+
+    function pointerMove(event) {
+      if (!state.pointers.has(event.pointerId)) return;
+      state.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (state.gesture?.type === "pinch") {
+        const values = [...state.pointers.values()];
+        if (values.length < 2) return;
+        const distance = Math.hypot(values[1].x - values[0].x, values[1].y - values[0].y);
+        const midpoint = { x: (values[0].x + values[1].x) / 2, y: (values[0].y + values[1].y) / 2 };
+        const size = stageSize();
+        const zoom = Math.min(2.6, Math.max(.1, state.gesture.startZoom * distance / Math.max(1, state.gesture.startDistance)));
+        state.view.zoom = zoom;
+        state.view.x = state.gesture.world.x - (midpoint.x - size.left) / zoom;
+        state.view.y = state.gesture.world.y - (midpoint.y - size.top) / zoom;
+        applyView();
+        return;
+      }
+      const gesture = state.gesture;
+      if (!gesture || gesture.pointerId !== event.pointerId) return;
+      const world = screenToWorld(event.clientX, event.clientY);
+      if (gesture.type === "node") {
+        const dx = world.x - gesture.startWorld.x, dy = world.y - gesture.startWorld.y;
+        if (Math.hypot(dx, dy) > 3 / state.view.zoom) gesture.moved = true;
+        state.positions[gesture.name] = { x: gesture.origin.x + dx, y: gesture.origin.y + dy };
+        queueRender();
+      } else if (gesture.type === "group") {
+        const dx = world.x - gesture.startWorld.x, dy = world.y - gesture.startWorld.y;
+        if (Math.hypot(dx, dy) > 3 / state.view.zoom) gesture.moved = true;
+        for (const name of gesture.members) state.positions[name] = { x: gesture.origins[name].x + dx, y: gesture.origins[name].y + dy };
+        queueRender();
+      } else if (gesture.type === "wire") {
+        if (Math.hypot(event.clientX - gesture.startClient.x, event.clientY - gesture.startClient.y) > 8) gesture.moved = true;
+        state.preview.current = world;
+        render();
+      } else if (gesture.type === "pan") {
+        const dx = event.clientX - gesture.start.x, dy = event.clientY - gesture.start.y;
+        if (Math.hypot(dx, dy) > 4) gesture.moved = true;
+        state.view.x = gesture.view.x - dx / gesture.view.zoom;
+        state.view.y = gesture.view.y - dy / gesture.view.zoom;
+        applyView();
+      }
+    }
+
+    function targetAt(clientX, clientY) {
+      const element = document.elementFromPoint(clientX, clientY);
+      return element instanceof Element ? element.closest("[data-node]")?.getAttribute("data-node") || "" : "";
+    }
+
+    function pointerUp(event) {
+      const gesture = state.gesture;
+      if (gesture?.type === "pinch") {
+        state.pointers.delete(event.pointerId);
+        if (state.pointers.size < 2) state.gesture = null;
+        updateChrome();
+        return;
+      }
+      if (gesture && gesture.pointerId === event.pointerId) {
+        if (gesture.type === "node") {
+          if (gesture.moved) { pushHistory(gesture.before); state.dirty = true; updateChrome(); }
+          else { state.positions[gesture.name] = { ...gesture.origin }; handleCanvasTap("node", gesture.name, event); }
+        } else if (gesture.type === "group" && gesture.moved) {
+          pushHistory(gesture.before); state.dirty = true; updateChrome(); toast(`Moved ${gesture.base} family`);
+        } else if (gesture.type === "group") {
+          for (const name of gesture.members) state.positions[name] = { ...gesture.origins[name] };
+        } else if (gesture.type === "wire") {
+          const target = targetAt(event.clientX, event.clientY);
+          state.preview = null;
+          if (gesture.moved && target) { state.connect = { mode: "add", source: gesture.source, signal: gesture.signal }; finishConnect(target); }
+          else { state.connect = { mode: "add", source: gesture.source, signal: gesture.signal }; render(); }
+        } else if (gesture.type === "target") {
+          finishConnect(gesture.name);
+        } else if (gesture.type === "tap" && gesture.key) {
+          handleCanvasTap("wire", gesture.key, event);
+        }
+      }
+      state.pointers.delete(event.pointerId);
+      state.gesture = null;
+      state.preview = null;
+      svg.classList.remove("ewl-dragging");
+      queueRender();
+    }
+
+    function pointerCancel(event) {
+      state.pointers.delete(event.pointerId);
+      state.gesture = null;
+      state.preview = null;
+      svg.classList.remove("ewl-dragging");
+      queueRender();
+    }
+
+    function handleStageResize() {
+      const size = stageSize();
+      applyView();
+      if (!state.lastStageSize) {
+        state.lastStageSize = { w: size.w, h: size.h };
+        return;
+      }
+      const changed = Math.abs(size.w - state.lastStageSize.w) > 12 || Math.abs(size.h - state.lastStageSize.h) > 12;
+      state.lastStageSize = { w: size.w, h: size.h };
+      if (!changed || !state.wiring || !state.autoLayoutResponsive) return;
+      clearTimeout(state.resizeTimer);
+      state.resizeTimer = setTimeout(() => {
+        autoLayoutInternal();
+        rebuildModel();
+        render();
+        frameLayoutReadably();
+        toast("Layout adapted to the new screen size");
+      }, 220);
+    }
+
+    function handleAction(action, target) {
+      if (action === "open") fileInput.click();
+      else if (action === "save") saveDocument();
+      else if (action === "menu") openMenu();
+      else if (action === "close-sheet") closeSheet();
+      else if (action === "fit") fitAll();
+      else if (action === "layout") {
+        if (!state.wiring) return;
+        const before = snapshot();
+        autoLayoutInternal();
+        pushHistory(before);
+        state.dirty = true;
+        rebuildModel();
+        render();
+        updateChrome();
+        frameLayoutReadably();
+        toast("Automatic layout applied");
+      } else if (action === "search") openSearch();
+      else if (action === "undo") undo();
+      else if (action === "redo") redo();
+      else if (action === "demo") loadDocument(demoDocument(), "demo_wiring.json", { dirty: true });
+      else if (action === "diagnostics") showDiagnostics();
+      else if (action === "help") showHelp();
+      else if (action === "json-editor") openJsonEditor();
+      else if (action === "add-node") addNode();
+      else if (action === "new-document") {
+        if (state.dirty && !window.confirm("Discard unsaved changes and create a new wiring document?")) return;
+        const name = "node_start";
+        loadDocument({ schema: "endgame-ai.wiring", topology: { cycle_start: name, nodes: [name], edges: { [name]: { halt: "halt" } }, barriers: {} }, prompts: { [name]: "" }, prompt_aliases: {}, node_defs: {} }, "wiring.json", { dirty: true });
+      } else if (action === "select-wire") {
+        const key = target.getAttribute("data-wire-key");
+        const index = state.wires.findIndex(wire => wireKey(wire) === key);
+        selectWire(index, true);
+      } else if (action === "add-branch") {
+        beginConnect({ mode: "add", source: target.getAttribute("data-node"), signal: target.getAttribute("data-signal") });
+      } else if (action === "center-selected") {
+        if (state.selection?.type === "node") centerOn(state.selection.id, 1.15);
+        closeSheet();
+      } else if (action === "set-start") {
+        const name = state.selection?.id;
+        mutate(() => { topology().cycle_start = name; }, `${name} is now the cycle start`);
+      } else if (action === "add-signal") addSignal();
+      else if (action === "rename-node") renameNode();
+      else if (action === "delete-node") deleteNode();
+      else if (action === "save-prompt") {
+        const key = target.getAttribute("data-prompt-key");
+        const value = root.querySelector("#ewl-prompt-editor")?.value ?? "";
+        mutate(() => { state.wiring.prompts[key] = value; }, `Saved prompt ${key}`);
+      } else if (action === "focus-node") {
+        const name = target.getAttribute("data-node");
+        selectNode(name, true);
+        centerOn(name, 1.05);
+      } else if (action === "reconnect-wire") {
+        const wire = state.wires.find(item => wireKey(item) === wireKey(state.selection || {}));
+        if (wire) beginConnect({ mode: "reconnect", source: wire.source, signal: wire.signal, index: wire.index });
+      } else if (action === "delete-wire") deleteWire();
+      else if (action === "cancel-connect") { state.connect = null; state.preview = null; render(); }
+      else if (action === "target-sentinel") finishConnect(target.getAttribute("data-target"));
+      else if (action === "search-result") {
+        const name = target.getAttribute("data-node");
+        closeSheet();
+        selectNode(name, false);
+        centerOn(name, 1.25);
+      } else if (action === "format-json") {
+        const editor = root.querySelector("#ewl-json-editor");
+        try { editor.value = JSON.stringify(JSON.parse(editor.value), null, 2); } catch (error) { toast(`Invalid JSON: ${error.message}`); }
+      } else if (action === "apply-json") {
+        const editor = root.querySelector("#ewl-json-editor");
+        try {
+          const parsed = JSON.parse(editor.value);
+          const error = basicDocumentError(parsed);
+          if (error) throw new Error(error);
+          const before = snapshot();
+          const previousPositions = clone(state.positions);
+          state.wiring = clone(parsed);
+          delete state.wiring.__wiring_lab;
+          state.wires = listWires();
+          state.positions = Object.fromEntries(Object.entries(previousPositions).filter(([name]) => [...state.wiring.topology.nodes, ...listWires().map(wire => wire.target)].includes(name)));
+          if (allBoxNames().some(name => !state.positions[name])) autoLayoutInternal();
+          pushHistory(before);
+          state.dirty = true;
+          state.selection = null;
+          rebuildModel();
+          updateChrome();
+          render();
+          closeSheet();
+          state.autoLayoutResponsive ? frameLayoutReadably() : fitAll();
+          toast("JSON applied");
+        } catch (error) { toast(`Cannot apply JSON: ${error.message}`); }
+      }
+    }
+
+    root.addEventListener("click", event => {
+      const target = eventTarget(event)?.closest("[data-action]");
+      if (!target) return;
+      event.preventDefault();
+      handleAction(target.getAttribute("data-action"), target);
+    });
+
+    root.addEventListener("change", event => {
+      const target = eventTarget(event);
+      if (target?.id === "ewl-family-toggle") {
+        const before = snapshot();
+        state.groupFamilies = target.checked;
+        autoLayoutInternal();
+        pushHistory(before);
+        state.dirty = true;
+        rebuildModel();
+        updateChrome();
+        render();
+        frameLayoutReadably();
+        openMenu();
+      } else if (target?.id === "ewl-auto-layout-toggle") {
+        const before = snapshot();
+        state.autoLayoutResponsive = target.checked;
+        if (state.autoLayoutResponsive) {
+          autoLayoutInternal();
+          rebuildModel();
+          render();
+          requestAnimationFrame(frameLayoutReadably);
+        }
+        pushHistory(before);
+        state.dirty = true;
+        updateChrome();
+        openMenu();
+        toast(state.autoLayoutResponsive ? "Responsive auto layout enabled" : "Responsive auto layout disabled");
+      } else if (target?.id === "ewl-layout-toggle") {
+        state.includeLayout = target.checked;
+        openMenu();
+      }
+    });
+
+    fileInput.addEventListener("change", () => importFile(fileInput.files?.[0]));
+    svg.addEventListener("pointerdown", pointerDown);
+    svg.addEventListener("pointermove", pointerMove);
+    svg.addEventListener("pointerup", pointerUp);
+    svg.addEventListener("pointercancel", pointerCancel);
+    svg.addEventListener("wheel", event => {
+      if (!state.wiring) return;
+      event.preventDefault();
+      zoomAt(event.clientX, event.clientY, state.view.zoom * Math.exp(-event.deltaY * .0015));
+    }, { passive: false });
+
+    stage.addEventListener("dragover", event => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; });
+    stage.addEventListener("drop", event => { event.preventDefault(); importFile(event.dataTransfer.files?.[0]); });
+    new ResizeObserver(handleStageResize).observe(stage);
+
+    window.addEventListener("keydown", event => {
+      const editing = event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement;
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "o") { event.preventDefault(); fileInput.click(); }
+      else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); saveDocument(); }
+      else if (!editing && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") { event.preventDefault(); event.shiftKey ? redo() : undo(); }
+      else if (!editing && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "y") { event.preventDefault(); redo(); }
+      else if (!editing && event.key === "Escape") { if (state.connect) { state.connect = null; render(); } else closeSheet(); }
+      else if (!editing && (event.key === "Delete" || event.key === "Backspace")) {
+        if (state.selection?.type === "wire") deleteWire();
+        else if (state.selection?.type === "node" && nodes().includes(state.selection.id)) deleteNode();
+      }
+    });
+
+    window.addEventListener("beforeunload", event => {
+      if (!state.dirty) return;
+      event.preventDefault();
+      event.returnValue = "";
+    });
+
+    updateChrome();
+    render();
+  })();
+  </script>
+</div>
+
+<script id="codex-visualization-tooltip">/* oxlint-disable typescript/no-unsafe-argument, typescript/no-unsafe-call, typescript/no-unsafe-return */
+// Runs inside the visualization sandbox, not the host webview.
+(() => {
+  if (window.FloatingUIDOM == null) {
+    return;
+  }
+  const { autoUpdate, computePosition, flip, offset, shift, size } =
+    window.FloatingUIDOM;
+  const tooltipPlacements = new Set(["top", "right", "bottom", "left"]);
+  const tooltipId = `codex-visualization-tooltip-${
+    window.crypto?.randomUUID?.() ?? Date.now().toString(36)
+  }`;
+  const tooltipGap = 5;
+  const hoverDelay = 700;
+  const skipDelay = 300;
+  let activeTrigger = null;
+  let pendingTrigger = null;
+  let tooltip = null;
+  let openTimeout = null;
+  let autoUpdateCleanup = null;
+  let positionRequest = 0;
+  let skipDelayUntil = 0;
+
+  const getTrigger = (target) =>
+    target?.nodeType === Node.ELEMENT_NODE
+      ? target.closest("[data-tooltip]")
+      : null;
+  const containsTarget = (trigger, target) =>
+    target?.nodeType != null && trigger.contains(target);
+  const getContent = (trigger) =>
+    trigger.getAttribute("data-tooltip")?.trim() ?? "";
+  const getPlacement = (trigger) => {
+    const placement = trigger.getAttribute("data-tooltip-placement");
+    return tooltipPlacements.has(placement) ? placement : "top";
+  };
+  const getTooltip = () => {
+    if (tooltip == null) {
+      tooltip = document.createElement("div");
+      tooltip.id = tooltipId;
+      tooltip.className = "tooltip";
+      tooltip.setAttribute("role", "tooltip");
+    }
+    return tooltip;
+  };
+  const setDescribedBy = (trigger, described) => {
+    const ids = new Set(
+      (trigger.getAttribute("aria-describedby") ?? "")
+        .split(/\s+/)
+        .filter(Boolean),
+    );
+    if (described) {
+      ids.add(tooltipId);
+    } else {
+      ids.delete(tooltipId);
+    }
+    if (ids.size === 0) {
+      trigger.removeAttribute("aria-describedby");
+    } else {
+      trigger.setAttribute("aria-describedby", [...ids].join(" "));
+    }
+  };
+  const clearOpenTimeout = () => {
+    if (openTimeout != null) {
+      window.clearTimeout(openTimeout);
+      openTimeout = null;
+    }
+    pendingTrigger = null;
+  };
+  const closeTooltip = (activateSkipDelay = true) => {
+    clearOpenTimeout();
+    positionRequest += 1;
+    autoUpdateCleanup?.();
+    autoUpdateCleanup = null;
+    if (activeTrigger == null) {
+      return;
+    }
+    setDescribedBy(activeTrigger, false);
+    activeTrigger = null;
+    tooltip?.remove();
+    if (activateSkipDelay) {
+      skipDelayUntil = Date.now() + skipDelay;
+    }
+  };
+  const updatePosition = (trigger, floating) => {
+    const request = ++positionRequest;
+    void computePosition(trigger, floating, {
+      middleware: [
+        offset(tooltipGap),
+        flip({ padding: tooltipGap }),
+        shift({ padding: tooltipGap }),
+        size({
+          padding: tooltipGap,
+          apply({ availableHeight, availableWidth, elements }) {
+            elements.floating.style.setProperty(
+              "--tooltip-available-width",
+              `${Math.max(0, availableWidth)}px`,
+            );
+            elements.floating.style.setProperty(
+              "--tooltip-available-height",
+              `${Math.max(0, availableHeight)}px`,
+            );
+          },
+        }),
+      ],
+      placement: getPlacement(trigger),
+      strategy: "fixed",
+    })
+      .then(({ x, y }) => {
+        if (activeTrigger !== trigger || request !== positionRequest) {
+          return;
+        }
+        const scale = window.devicePixelRatio || 1;
+        floating.style.transform = `translate(${Math.round(x * scale) / scale}px, ${Math.round(y * scale) / scale}px)`;
+        floating.style.visibility = "visible";
+      })
+      .catch(() => {
+        if (activeTrigger === trigger && request === positionRequest) {
+          closeTooltip(false);
+        }
+      });
+  };
+  const openTooltip = (trigger) => {
+    const content = getContent(trigger);
+    if (!trigger.isConnected || content.length === 0) {
+      return;
+    }
+    clearOpenTimeout();
+    if (activeTrigger === trigger) {
+      return;
+    }
+    closeTooltip();
+    const floating = getTooltip();
+    floating.textContent = content;
+    floating.style.visibility = "hidden";
+    floating.style.transform = "translate(0, 0)";
+    document.body.appendChild(floating);
+    activeTrigger = trigger;
+    setDescribedBy(trigger, true);
+    autoUpdateCleanup = autoUpdate(trigger, floating, () => {
+      updatePosition(trigger, floating);
+    });
+  };
+  const requestOpen = (trigger, immediate = false) => {
+    if (
+      getContent(trigger).length === 0 ||
+      activeTrigger === trigger ||
+      pendingTrigger === trigger
+    ) {
+      return;
+    }
+    clearOpenTimeout();
+    pendingTrigger = trigger;
+    const delay =
+      immediate || activeTrigger != null || Date.now() < skipDelayUntil
+        ? 0
+        : hoverDelay;
+    if (delay === 0) {
+      openTooltip(trigger);
+      return;
+    }
+    openTimeout = window.setTimeout(() => {
+      openTimeout = null;
+      pendingTrigger = null;
+      openTooltip(trigger);
+    }, delay);
+  };
+  const handlePointerOpen = (event) => {
+    if (event.pointerType === "touch") {
+      return;
+    }
+    const trigger = getTrigger(event.target);
+    if (trigger == null || containsTarget(trigger, event.relatedTarget)) {
+      return;
+    }
+    requestOpen(trigger);
+  };
+  const handleLeave = (event) => {
+    const trigger = getTrigger(event.target);
+    if (trigger == null || containsTarget(trigger, event.relatedTarget)) {
+      return;
+    }
+    if (activeTrigger === trigger || pendingTrigger === trigger) {
+      closeTooltip();
+    }
+  };
+  const handleFocusIn = (event) => {
+    const trigger = getTrigger(event.target);
+    if (trigger?.matches(":focus-visible")) {
+      requestOpen(trigger, true);
+    }
+  };
+  const handleKeyDown = (event) => {
+    if (event.key === "Escape") {
+      closeTooltip();
+    }
+  };
+  const handleContextMenu = (event) => {
+    const trigger = getTrigger(event.target);
+    if (activeTrigger === trigger || pendingTrigger === trigger) {
+      closeTooltip();
+    }
+  };
+  const destroy = () => {
+    closeTooltip(false);
+    document.removeEventListener("pointerover", handlePointerOpen);
+    document.removeEventListener("pointerout", handleLeave);
+    document.removeEventListener("focusin", handleFocusIn);
+    document.removeEventListener("focusout", handleLeave);
+    document.removeEventListener("keydown", handleKeyDown);
+    document.removeEventListener("contextmenu", handleContextMenu);
+    tooltip = null;
+  };
+
+  document.addEventListener("pointerover", handlePointerOpen);
+  document.addEventListener("pointerout", handleLeave);
+  document.addEventListener("focusin", handleFocusIn);
+  document.addEventListener("focusout", handleLeave);
+  document.addEventListener("keydown", handleKeyDown);
+  document.addEventListener("contextmenu", handleContextMenu);
+  window.addEventListener("pagehide", destroy, { once: true });
+})();
+</script>
+<script id="codex-visualization-lucide-initialization">(() => {
+  const initialize = () => {
+    globalThis.lucide?.createIcons({ attrs: { width: 16, height: 16 } });
+  };
+  if (globalThis.lucide != null) {
+    initialize();
+    return;
+  }
+  document
+    .getElementById("codex-visualization-lucide")
+    ?.addEventListener("load", initialize, { once: true });
+})();
+</script>
+</body>
+</html>
