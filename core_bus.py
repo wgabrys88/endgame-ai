@@ -205,23 +205,20 @@ def state_brief(state: JsonDict) -> JsonDict:
 
 
 def focused_elements(state: JsonDict) -> JsonDict:
-    """Expand only UI ids already named by the active focus; never dump the whole action index."""
+    """Expand metadata for the ids named in the current fresh observation's tree only.
+
+    Ids are ephemeral per observation and never harvested from persisted memory; the
+    actor reads them from the current desktop_tree_text, acts, and discards them.
+    """
     action_index = state.get("action_index") or {}
     if not isinstance(action_index, dict):
         return {}
-    focus_sources = {
-        "current_step": state.get("current_step") or {},
-        "action_frame": state.get("action_frame") or {},
-        "last_action": state.get("last_action") or {},
-        "last_reflection": state.get("last_reflection") or {},
-        "focus_ids": state.get("focus_ids") or [],
-    }
-    focus_text = json.dumps(focus_sources, ensure_ascii=False, default=str)
+    tree_text = str(state.get("desktop_tree_text") or "")
     fields = ("id", "name", "role", "action", "rect", "enabled", "automation_id", "class_name", "hwnd", "depth")
     return {
         node_id: {key: node[key] for key in fields if key in node}
         for node_id, node in action_index.items()
-        if isinstance(node, dict) and str(node_id) in focus_text
+        if isinstance(node, dict) and str(node_id) in tree_text
     }
 
 

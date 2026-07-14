@@ -475,15 +475,19 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
     scroll = _guarded(lambda x, y, amount, hwnd=0: d.scroll(int(x), int(y), int(amount), int(hwnd or 0)))
     open_url = _guarded(lambda browser, url: d.open_url(str(browser), str(url)))
 
+    def _target_label(node: dict[str, Any]) -> str:
+        raw = str(node.get("name") or "").replace("\r", " ").replace("\n", " ")
+        return " ".join(raw.split()) or str(node.get("role") or "element")
+
     def click_node(node_id: str) -> dict[str, Any]:
         node = _require_node(node_id)
         x, y = _node_center(node)
         res = d.click(x, y, int(node.get("hwnd") or 0))
-        return _record_action({"ok": bool(res.get("ok", True)), "action": "click_node", "node_id": node_id, "click": res})
+        return _record_action({"ok": bool(res.get("ok", True)), "action": "click_node", "target": _target_label(node), "click": res})
 
     def read_node(node_id: str) -> dict[str, Any]:
         node = _require_node(node_id)
-        return _record_action({"ok": True, "action": "read_node", "node_id": node_id, "text": node.get("name") or node.get("text_full") or node.get("value") or ""})
+        return _record_action({"ok": True, "action": "read_node", "target": _target_label(node), "text": node.get("name") or node.get("text_full") or node.get("value") or ""})
 
     def observe() -> dict[str, Any]:
         obs = d.observe({"hover_cache": copy.deepcopy(w["observe_config"]["hover_cache"])})

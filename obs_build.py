@@ -71,15 +71,25 @@ def run(action_elements: dict[str, dict[str, Any]], text_hints: dict[str, str], 
 
     sort_prune(root)
 
+    short_by_id: dict[str, str] = {"W0": "W0"}
+    counter = {"n": 0}
+
     def assign(node: dict[str, Any]) -> None:
-        node["short_id"] = node.get("id", "")
+        internal = node.get("id", "")
+        if str(internal).startswith("W"):
+            short = str(internal)
+        else:
+            counter["n"] += 1
+            short = f"e{counter['n']}"
+        short_by_id[internal] = short
+        node["short_id"] = short
         for child in node.get("children", []):
             if isinstance(child, dict):
                 assign(child)
 
     assign(root)
-    node_index_short = {oid: {**ndata, "short_id": oid} for oid, ndata in node_index.items()}
-    action_index_short = {oid: {**edata, "short_id": oid} for oid, edata in action_elements.items()}
+    node_index_short = {short_by_id.get(oid, oid): {**ndata, "short_id": short_by_id.get(oid, oid)} for oid, ndata in node_index.items()}
+    action_index_short = {short_by_id[oid]: {**edata, "short_id": short_by_id[oid]} for oid, edata in action_elements.items() if oid in short_by_id}
 
     def clean(v: Any) -> str:
         return " ".join(str(v or "").replace("\r", " ").replace("\n", " ").split())
