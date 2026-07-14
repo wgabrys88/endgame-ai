@@ -160,7 +160,10 @@
           "node_repair_validate.py",
           "io_helpers.py",
           "core_nodes.py",
-          "tools.py"
+          "tools.py",
+          "core_brain.py",
+          "core_desktop.py",
+          "core_organism.py"
         ],
         "next_run": [
           "core_brain.py",
