@@ -185,9 +185,6 @@ def state_brief(state: JsonDict) -> JsonDict:
     """Compact operational focus. The full append-only narrative remains in state, never in every prompt."""
     current_step = state.get("current_step") or {}
     intent = _plan_intent(state)
-    now = time.time()
-    started_at = state.get("started_at")
-    deadline_at = state.get("deadline_at")
     step_index = int(state.get("step", 0) or 0)
     return {
         "tick": state.get("tick"),
@@ -204,13 +201,6 @@ def state_brief(state: JsonDict) -> JsonDict:
         "failure_streak": state.get("failure_streak", {}),
         "repair_validation": repair_validation_brief(state),
         "has_action_frame": bool(state.get("action_frame")),
-        "timing": {
-            "started_at": started_at,
-            "deadline_at": deadline_at,
-            "duration_seconds": state.get("duration_seconds"),
-            "elapsed_seconds": round(now - float(started_at), 3) if started_at is not None else None,
-            "remaining_seconds": round(float(deadline_at) - now, 3) if deadline_at is not None else None,
-        },
     }
 
 

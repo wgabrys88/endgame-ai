@@ -3,10 +3,7 @@
 
 !.gitattributes
 !.gitignore
-!README.md
 !wiring.json
-!endgame_wiring_lab_DESIGN_OK.html
-!endgame_wiring_lab_FEATURE_RICH.html
 !core_brain.py
 !core_bus.py
 !core_desktop.py
@@ -16,20 +13,16 @@
 !obs_filter.py
 !obs_scan.py
 !core_organism.py
-!core_stop_check.py
 !core_wiring.py
 !io_helpers.py
 !core_loader.py
 !check_topology.py
-!core_state.py
 !core_node_base.py
-!node_error.py
 !node_spawn.py
 !node_guidance.py
 !cap_spawn.py
 !node_execute.py
 !node_run.py
-!node_timer.py
 !node_observe.py
 !node_planner.py
 !node_reflect.py

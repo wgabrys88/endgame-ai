@@ -427,12 +427,10 @@ def _node_center(node: dict[str, Any]) -> tuple[int, int]:
 
 
 def capability_manifest(ctx: dict[str, Any] | None = None) -> dict[str, Any]:
-    st = (ctx or {}).get("state", {}) if isinstance(ctx, dict) else {}
     w = (ctx or {}).get("wiring", {}) if isinstance(ctx, dict) else {}
     manifest = copy.deepcopy(w["capabilities"])
     transport, cfg = wiring.get_transport_config(w)
     manifest["configured_model"] = {"transport": transport, "model": cfg.get("model")}
-    manifest["deadline_at"] = st.get("deadline_at")
     manifest["repo_root"] = str(ROOT)
     return manifest
 

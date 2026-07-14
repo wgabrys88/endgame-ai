@@ -80,8 +80,6 @@ def coherence_problems(w: dict) -> list[str]:
             if prompt_key not in w.get("prompts", {}):
                 problems.append(f"declarative node '{n}' prompt_key '{prompt_key}' has no prompt")
         else:
-            if wiring.prompt_name(w, n) not in w.get("prompts", {}):
-                problems.append(f"node '{n}' has no prompt or prompt_alias")
             if not (node_dir / f"{base}.py").is_file():
                 problems.append(f"node '{n}' has no plugin file {(node_dir / f'{base}.py')}")
 

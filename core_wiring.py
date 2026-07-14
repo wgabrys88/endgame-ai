@@ -95,7 +95,6 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
         "topology.edges",
         "topology.barriers",
         "fractal.max_recursion_depth",
-        "fractal.child_duration_seconds",
         "model.stable_prefix.source",
         "model.stable_prefix.source.suffixes",
         "model.stable_prefix.source.names",
@@ -137,9 +136,9 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
     for alias, target in aliases.items():
         if not isinstance(alias, str) or not isinstance(target, str) or target not in prompts:
             raise RuntimeError(f"wiring.prompt_aliases.{alias} must name an existing prompt")
-    missing = [node for node in nodes if node not in edges or prompt_name(cfg, node) not in prompts]
+    missing = [node for node in nodes if node not in edges]
     if missing:
-        raise RuntimeError(f"wiring missing edges/prompts for nodes: {missing}")
+        raise RuntimeError(f"wiring missing edges for nodes: {missing}")
     validate_node_defs(cfg, prompts)
 
 

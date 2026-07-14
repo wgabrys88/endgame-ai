@@ -285,9 +285,8 @@ def _record_response_format(w: dict[str, Any], record_type: str, emitting_node: 
 def _guard_request_size(messages: list[dict[str, str]], cfg: dict[str, Any], w: dict[str, Any]) -> None:
     """Fail hard BEFORE sending an over-large request. The single chokepoint that covers every LLM
     call, and it is node-aware: self-modification legitimately needs the whole tracked source, so it
-    gets a large ceiling; every ordinary node gets a tight one. Exceeding it raises — which routes to
-    node_error -> reflect -> replan, so the wheel changes approach instead of re-sending a rejected
-    payload forever. This exists because a single unbounded execution stdout once flooded state and
+    gets a large ceiling; every ordinary node gets a tight one. Exceeding it raises and stops the
+    wheel. This exists because a single unbounded execution stdout once flooded state and
     inflated every prompt to ~3.4M chars, timing out the server on repeat."""
     total = sum(len(str(m.get("content", ""))) for m in messages)
     limits = w["model"].get("request_char_limits", {})
