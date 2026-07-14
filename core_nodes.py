@@ -510,6 +510,23 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         except Exception as exc:
             return _record_action({"ok": False, "action": "launch_powershell", "error": f"{type(exc).__name__}: {exc}"})
 
+    # NEW: Direct directory inspection using Python to bypass UI focus issues
+    def list_directory(path: str = ".") -> dict[str, Any]:
+        try:
+            entries = os.listdir(path)
+            return _record_action({"ok": True, "action": "list_directory", "path": path, "entries": entries, "count": len(entries)})
+        except Exception as exc:
+            return _record_action({"ok": False, "action": "list_directory", "path": path, "error": f"{type(exc).__name__}: {exc}"})
+
+    # NEW: Append long self-evolution report to active Notepad using type_text for human-readable appending
+    def append_report_to_notepad(report: str) -> dict[str, Any]:
+        try:
+            # Assume Notepad is focused; type the report
+            res = type_text(report)
+            return _record_action({"ok": True, "action": "append_report_to_notepad", "chars_appended": len(report)})
+        except Exception as exc:
+            return _record_action({"ok": False, "action": "append_report_to_notepad", "error": f"{type(exc).__name__}: {exc}"})
+
     return {
         "click": click, "click_node": click_node, "read_node": read_node,
         "type_text": type_text, "press_key": press_key, "hotkey": hotkey, "scroll": scroll,
@@ -533,5 +550,7 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "observation": bus.observation_brief(state),
         "observed_at": state.get("observed_at"),
         "action_events": action_events, "_action_events": action_events,
-        "launch_powershell": launch_powershell,  # New helper for reliable PowerShell activation
+        "launch_powershell": launch_powershell,
+        "list_directory": list_directory,
+        "append_report_to_notepad": append_report_to_notepad,
     }
