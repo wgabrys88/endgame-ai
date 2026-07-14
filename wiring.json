@@ -19,7 +19,7 @@
           "injection_template": "REASONING:\n{reasoning}"
         },
         "max_retries": 3,
-        "retry_base_delay": 1.0,
+        "retry_base_delay": 1,
         "fallback_to_file_proxy": true
       },
       "transport_file_proxy": {
@@ -66,24 +66,24 @@
     },
     "organs": {
       "plan": {
-        "reasoning_effort": "low",
-        "max_output_tokens": 6144
+        "reasoning_effort": "high",
+        "max_output_tokens": 32768
       },
       "action_frame": {
-        "reasoning_effort": "low",
-        "max_output_tokens": 2048
+        "reasoning_effort": "high",
+        "max_output_tokens": 32768
       },
       "execution": {
-        "reasoning_effort": "low",
-        "max_output_tokens": 4096
+        "reasoning_effort": "high",
+        "max_output_tokens": 32768
       },
       "verification": {
-        "reasoning_effort": "medium",
-        "max_output_tokens": 1024
+        "reasoning_effort": "high",
+        "max_output_tokens": 32768
       },
       "reflection": {
         "reasoning_effort": "high",
-        "max_output_tokens": 2048
+        "max_output_tokens": 32768
       },
       "git_evolution_patch": {
         "reasoning_effort": "high",
@@ -91,12 +91,12 @@
         "include_stable_prefix": true
       },
       "repair_probe": {
-        "reasoning_effort": "medium",
-        "max_output_tokens": 4096
+        "reasoning_effort": "high",
+        "max_output_tokens": 32768
       },
       "repair_validation": {
         "reasoning_effort": "high",
-        "max_output_tokens": 2048
+        "max_output_tokens": 32768
       }
     }
   },
@@ -239,7 +239,7 @@
         "error": "node_error"
       },
       "node_observe:plan": {
-        "observed": "node_planner",
+        "observed": "halt",
         "error": "node_error"
       },
       "node_observe:act": {
