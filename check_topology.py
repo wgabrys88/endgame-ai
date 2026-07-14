@@ -1,4 +1,4 @@
-"""Topology coherence check — handles both linear (string) and fractal (list) edges.
+"""Topology coherence check for the organism's single linear wheel.
 
 `coherence_problems(w)` is the single source of truth for topology coherence,
 callable from the runtime (B5 gates mid-run topology_patch through it) and from
@@ -19,8 +19,6 @@ SENTINELS = {"halt", "wait"}
 def _targets(value) -> list[str]:
     if isinstance(value, str):
         return [value]
-    if isinstance(value, list):
-        return [t for t in value if isinstance(t, str)]
     return []
 
 
@@ -50,7 +48,6 @@ def coherence_problems(w: dict) -> list[str]:
     topo = w["topology"]
     edges = topo["edges"]
     nodes = set(topo["nodes"])
-    barriers = topo["barriers"]
     problems: list[str] = []
     problems.extend(_contract_problems(w))
 
@@ -82,14 +79,6 @@ def coherence_problems(w: dict) -> list[str]:
         else:
             if not (node_dir / f"{base}.py").is_file():
                 problems.append(f"node '{n}' has no plugin file {(node_dir / f'{base}.py')}")
-
-    for bnode, arity in barriers.items():
-        if bnode not in nodes:
-            problems.append(f"barrier '{bnode}' is not a topology node")
-        if not isinstance(arity, int) or arity < 1:
-            problems.append(f"barrier '{bnode}' arity must be a positive int, got {arity!r}")
-        if bnode in edges and "join" not in edges[bnode]:
-            problems.append(f"barrier '{bnode}' must declare a 'join' edge")
 
     seen: set[str] = set()
     stack = [topo["cycle_start"]]

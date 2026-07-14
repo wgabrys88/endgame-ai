@@ -1,5 +1,4 @@
 import argparse
-import os
 import time
 from typing import Any
 
@@ -18,6 +17,8 @@ def run(
     wiring_path: str | None = None,
     _seed: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    if not str(goal or "").strip():
+        raise ValueError("the organism requires a non-empty root goal")
     invocation_started_at = time.time()
     w = wiring.load_wiring(wiring_path)
     topo = w["topology"]
@@ -45,11 +46,8 @@ def run(
         if _seed:
             st.update(_seed)
         st["started_at"] = invocation_started_at
-        frontier: list[str] = [current]
         wiring.write_state(w, st)
-        while frontier:
-            current = frontier.pop(0)
-            st["frontier"] = list(frontier)
+        while True:
             st["_phase"] = "executing_node"
             st["current_node"] = current
             wiring.write_state(w, st)
@@ -57,6 +55,7 @@ def run(
             signal_name, patch = node_base.call_node(current, ctx)
             evolution_patch = patch.get("git_evolution_patch")
             if current == "node_self_modify" and evolution_patch:
+                applied = None
                 try:
                     _, applied = nodes.apply_evolution_patch(w, {"data": evolution_patch})
                     patch.setdefault("self_modify", {})["applied"] = applied
@@ -81,22 +80,14 @@ def run(
                         }
                     )
                     patch["repair_validation"] = repair_validation
+                    patch.pop("git_evolution_patch", None)
                     w = wiring.load_wiring(wiring_path)
                 except Exception:
-                    if bool(w["self_modify"]["hot_swap_on_failure"]):
-                        touched = [
-                            str(item.get("path")).replace("\\", "/")
-                            for item in (evolution_patch.get("file_writes") or [])
-                            if isinstance(item, dict) and item.get("path")
-                        ]
-                        touched.extend(
-                            str(path).replace("\\", "/")
-                            for path in (evolution_patch.get("file_deletes") or [])
-                            if str(path).strip()
-                        )
-                        if evolution_patch.get("wiring_patches"):
+                    if applied is not None and bool(w["self_modify"]["hot_swap_on_failure"]):
+                        touched = list(applied.get("changed_files") or [])
+                        if applied.get("wiring_patches"):
                             touched.append("wiring.json")
-                        swap = nodes.hot_swap_to_known_good(w, paths=touched or None)
+                        swap = nodes.hot_swap_to_known_good(w, paths=touched)
                         patch.setdefault("self_modify", {})["hot_swap"] = swap
                     raise
             if current == "node_repair_validate":
@@ -125,56 +116,56 @@ def run(
                     self_modify["status"] = "behaviorally_accepted"
                     self_modify["behavioral_validation"] = summary
                     patch["self_modify"] = self_modify
+                else:
+                    self_modify = dict(patch["self_modify"])
+                    applied = self_modify.get("applied") or {}
+                    touched = list(applied.get("changed_files") or [])
+                    if applied.get("wiring_patches"):
+                        touched.append("wiring.json")
+                    swap = nodes.hot_swap_to_known_good(w, paths=touched)
+                    if touched and not swap.get("hot_swapped"):
+                        raise RuntimeError(f"rejected candidate could not return to known-good: {swap}")
+                    self_modify["hot_swap"] = swap
+                    w = wiring.load_wiring(wiring_path)
+                    rollback = nodes.commit_self_evolution(
+                        w,
+                        applied,
+                        {"summary": f"revert rejected candidate {repair_validation['commit']['commit'][:12]}"},
+                        advance_known_good=False,
+                    )
+                    if touched and not rollback.get("committed"):
+                        raise RuntimeError(f"known-good restoration was not committed: {rollback}")
+                    self_modify["rollback_commit"] = rollback
+                    patch["self_modify"] = self_modify
 
             st.update(patch)
-            if signal_name == "halt":
-                st["_phase"] = "halted"
-                st["frontier"] = []
+            if signal_name in {"halt", "wait"}:
+                st["_phase"] = "halted" if signal_name == "halt" else "waiting"
+                st["last_signal"] = signal_name
+                st["last_node"] = current
                 wiring.write_state(w, st)
                 return st
-            if signal_name == "wait":
-                st["last_signal"] = "wait"
-                st["last_node"] = current
-                st["frontier"] = list(frontier)
-                st["_phase"] = "barrier_wait"
-                wiring.write_state(w, st)
-                continue
-            successors = next_nodes_for(w, current, signal_name)
-            frontier.extend(successors)
+            current = next_node_for(w, current, signal_name)
             st["last_signal"] = signal_name
-            st["last_node"] = current
-            st["frontier"] = list(frontier)
+            st["last_node"] = st["current_node"]
             st["tick"] += 1
             st["_phase"] = "node_complete"
             wiring.write_state(w, st)
-        st["_phase"] = "frontier_drained"
-        wiring.write_state(w, st)
-        raise bus.TopologyContractError(
-            f"frontier drained at '{current}' — the wheel dead-ended; a fractal topology must always turn. "
-            f"last signal '{st.get('last_signal')}' led nowhere. Fix the edges so every path returns to the wheel."
-        )
     except KeyboardInterrupt:
         st["_phase"] = "interrupted"
         wiring.write_state(w, st)
         return st
 
 
-def next_nodes_for(w: dict[str, Any], current: str, signal_name: str) -> list[str]:
-    """Resolve the successor frontier for (node, signal).
-
-    Edge value may be a single node name (linear) or a list of node names
-    (fractal one-to-many). Always returns a non-empty list of node-name strings.
-    Fail hard on missing edge or malformed value.
-    """
+def next_node_for(w: dict[str, Any], current: str, signal_name: str) -> str:
+    """Resolve the sole next node in the wheel for (node, signal)."""
     edges = w.get("topology", {}).get("edges", {})
     node_edges = edges.get(current)
     if not isinstance(node_edges, dict):
         raise bus.TopologyContractError(f"topology has no edges for node '{current}'")
     target = node_edges.get(signal_name)
     if isinstance(target, str) and target:
-        return [target]
-    if isinstance(target, list) and target and all(isinstance(t, str) and t for t in target):
-        return list(target)
+        return target
     raise bus.TopologyContractError(f"node '{current}' emitted signal '{signal_name}' with no valid topology edge")
 
 

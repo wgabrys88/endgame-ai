@@ -17,6 +17,7 @@ _CALLS_MADE = 0
 _STABLE_PREFIX_CACHE: "StablePrefix | None" = None
 _STABLE_PREFIX_LOCK = threading.Lock()
 _LAST_OBSERVATION: dict[str, Any] | None = None
+_CONV_ID = ""
 
 class StablePrefix:
     def __init__(self, w: dict[str, Any], root: pathlib.Path = ROOT, focus_files: list[str] | None = None):
@@ -102,7 +103,7 @@ def _validate_record_contract(w: dict[str, Any], record: bus.Record, expected_re
     if missing:
         raise RuntimeError(f"{record.record_type} record missing required data keys: {missing}")
     if not contract.get("additional_properties", True):
-        allowed = set(required) | set(enums) | set(types) | {"next_signal"}
+        allowed = set(required) | set(enums) | set(types)
         unexpected = sorted(set(record.data) - allowed)
         if unexpected:
             raise RuntimeError(f"{record.record_type} record has unexpected data keys: {unexpected}")
@@ -175,7 +176,7 @@ def downstream_contract(w: dict[str, Any], emitting_node: str | None) -> str:
     for signal, succ in seen:
         doc = _node_docstring(w, succ)
         lines.append(f"\n[on signal '{signal}' -> {succ}]\n{doc}" if doc else f"\n[on signal '{signal}' -> {succ}] (no declared input contract)")
-    lines.append("\nChoose next_signal to route your output to the intended consumer.")
+    lines.append("\nWhen thy record includes next_signal, choose it from these wired routes.")
     return "\n".join(lines)
 
 
@@ -187,7 +188,11 @@ def _organ_tuning(w: dict[str, Any], record_type: str | None) -> dict[str, Any]:
 def _normalize_observation(obj: Any) -> dict[str, Any] | None:
     if not isinstance(obj, dict) or not obj.get("desktop_tree_text"):
         return None
-    fields = ("desktop_tree_text", "focused_elements", "observed_at", "screen", "scan_stats", "rendered_node_count", "max_llm_nodes", "llm_node_limit_hit")
+    fields = (
+        "desktop_tree_text", "focused_elements", "observed_at", "screen", "scan_stats",
+        "rendered_node_count", "max_llm_nodes", "llm_node_limit_hit",
+        "elements_truncated", "elements_dropped_per_window", "observation_fresh",
+    )
     return {key: obj[key] for key in fields if key in obj}
 
 
@@ -216,23 +221,11 @@ def _with_observation(payload: dict[str, Any], w: dict[str, Any]) -> dict[str, A
     return enriched
 
 
-def _sha256_text(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
-
-
-def summarize_messages_for_log(messages: list[dict[str, str]]) -> list[dict[str, Any]]:
-    out: list[dict[str, Any]] = []
-    for message in messages:
-        role = str(message.get("role") or "user")
-        content = str(message.get("content") or "")
-        row: dict[str, Any] = {"role": role, "chars": len(content), "sha256": _sha256_text(content), "content": content}
-        out.append(row)
-    return out
-
-
 def reset_call_budget() -> None:
-    global _CALLS_MADE
+    global _CALLS_MADE, _CONV_ID, _LAST_OBSERVATION
     _CALLS_MADE = 0
+    _CONV_ID = f"endgame-ai-{int(time.time())}-{os.getpid()}"
+    _LAST_OBSERVATION = None
 
 
 def _load_transport_module(name: str, w: dict[str, Any]):
@@ -256,7 +249,7 @@ def _record_response_format(w: dict[str, Any], record_type: str, emitting_node: 
             data_properties.setdefault(key, {})[limit_name] = 1
     enums = dict(contract["enums"])
     emergent = bus.emergent_signals(w, emitting_node)
-    if emergent:
+    if emergent and "next_signal" in (set(contract["required"]) | set(contract.get("types", {})) | set(enums)):
         enums = {**enums, "next_signal": emergent}
     for key, values in enums.items():
         data_properties.setdefault(key, {})["enum"] = list(values)
@@ -275,9 +268,8 @@ def _record_response_format(w: dict[str, Any], record_type: str, emitting_node: 
                     "properties": data_properties,
                     "required": list(contract["required"]),
                 },
-                "reasoning": {"type": "string"},
             },
-            "required": ["record_type", "data", "reasoning"],
+            "required": ["record_type", "data"],
         },
     }
 
@@ -303,7 +295,7 @@ def _guard_request_size(messages: list[dict[str, str]], cfg: dict[str, Any], w: 
         )
 
 
-def call(messages: list[dict[str, str]], w: dict[str, Any], *, rod_feedback: bool = False, response_format: dict[str, Any] | None = None, request_config: dict[str, Any] | None = None) -> dict[str, str]:
+def call(messages: list[dict[str, str]], w: dict[str, Any], *, response_format: dict[str, Any] | None = None, request_config: dict[str, Any] | None = None) -> dict[str, str]:
     global _CALLS_MADE
     transport, cfg = wiring.get_transport_config(w)
     if response_format is not None:
@@ -382,25 +374,24 @@ def extract_json_object(text: str) -> dict[str, Any] | None:
 
 
 def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, expected_record_type: str | None = None, emitting_node: str | None = None, request_config: dict[str, Any] | None = None) -> dict[str, Any]:
+    global _CONV_ID
     _, cfg = wiring.get_transport_config(w)
     reasoning_cfg = dict(cfg["reasoning"])
     organ_tuning = _organ_tuning(w, expected_record_type)
     include_prefix = bool(w["model"]["stable_prefix"]["include_in_request"] or organ_tuning.get("include_stable_prefix"))
     focus_files = None
     if expected_record_type == "git_evolution_patch":
-        st = payload.get("state", {}) if isinstance(payload, dict) else {}
-        last_refl = st.get("last_reflection", {}) or {}
+        failure = payload.get("failure", {}) if isinstance(payload, dict) else {}
+        last_refl = failure.get("last_reflection", {}) if isinstance(failure, dict) else {}
         diagnosis = str(last_refl.get("diagnosis", "")) + str(last_refl.get("lesson", ""))
         import re
-        candidates = re.findall(r"(node_[a-z_]+\.py|tools\.py|core_[a-z_]+\.py|wiring\.json)", diagnosis)
+        candidates = re.findall(r"((?:node|core|obs|cap|transport)_[a-z_]+\.py|tools\.py|wiring\.json)", diagnosis)
         if candidates:
             focus_files = sorted(set(candidates))
     prefix = stable_prefix(w, focus_files=focus_files) if w["model"]["stable_prefix"]["enabled"] and include_prefix else None
     prefix_for_messages = prefix
-    conv_id = w.get("_conv_id")
-    if not conv_id:
-        conv_id = f"endgame-ai-{int(time.time())}-{hashlib.md5(str(w).encode()).hexdigest()[:8]}"
-        w["_conv_id"] = conv_id
+    if not _CONV_ID:
+        _CONV_ID = f"endgame-ai-{int(time.time())}-{os.getpid()}"
     payload = _with_observation(payload, w)
     goal = str(payload.pop("goal") or "") if "goal" in payload else ""
     user_text = json.dumps(payload, ensure_ascii=False, default=str)
@@ -413,7 +404,7 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
         if key in {"reasoning_effort", "max_output_tokens"} and value is not None:
             request_cfg.setdefault(key, value)
     if cfg.get("transport") == "transport_xai":
-        request_cfg.setdefault("prompt_cache_key", prefix.cache_key if prefix is not None else conv_id)
+        request_cfg.setdefault("prompt_cache_key", prefix.cache_key if prefix is not None else _CONV_ID)
     stable_context_parts = []
     if goal:
         stable_context_parts.append(f"CURRENT GOAL (fixed for this run):\n{goal}")
@@ -429,9 +420,9 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
         return bus.Record(record.record_type, record.data, transport_reasoning or record.reasoning).to_json()
     if pattern != "two_pass":
         raise RuntimeError(f"unknown reasoning pattern: {pattern}")
-    first = call(_messages(system_prompt, user_text, prefix_for_messages, stable_context), w, rod_feedback=False, request_config=request_cfg)
+    first = call(_messages(system_prompt, user_text, prefix_for_messages, stable_context), w, request_config=request_cfg)
     reasoning = reasoning_from(first["content"], first.get("reasoning", ""))
     template = str(reasoning_cfg.get("injection_template") or "REASONING:\n{reasoning}")
-    second = call(_messages(system_prompt, user_text + "\n\n" + template.format(reasoning=reasoning), prefix_for_messages, stable_context), w, rod_feedback=True, response_format=response_format, request_config=request_cfg)
+    second = call(_messages(system_prompt, user_text + "\n\n" + template.format(reasoning=reasoning), prefix_for_messages, stable_context), w, response_format=response_format, request_config=request_cfg)
     record = _commit_record(second["content"], w, expected_record_type)
     return bus.Record(record.record_type, record.data, reasoning).to_json()

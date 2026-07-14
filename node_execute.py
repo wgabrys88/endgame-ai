@@ -28,7 +28,6 @@ class ExecuteNode(BaseNode):
         return {
             "goal": state["goal"],
             "step": {"description": step.get("description", state["goal"]), "done_when": step.get("done_when", "")},
-            "action_frame": state.get("action_frame"),
             "focus": bus.state_brief(state),
             "observation": bus.observation_brief(state),
             "capabilities": nodes.capability_manifest(ctx),
@@ -69,7 +68,7 @@ class ExecuteNode(BaseNode):
             label = "REPAIR_EXECUTE"
 
         artifact_path = self._write_artifact(code)
-        artifact = {"code": code, "path": artifact_path, "label": label, "repair_probe": probe is not None}
+        artifact = {"path": artifact_path, "label": label, "repair_probe": probe is not None}
         effective = bus.append_narrative(state["effective_goal"], f"\n\n[{label}] Authored script artifact {pathlib.Path(artifact_path).name}.", root_goal=state.get("goal", ""))
         return bus.emit("built", {"_execute_artifact": artifact, "effective_goal": effective}, record=record, evidence=payload)
 

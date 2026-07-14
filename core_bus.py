@@ -52,27 +52,14 @@ class NodeOutput:
 
     def trace(self, *, node: str) -> JsonDict:
         record_type = None
-        record_json = None
+        record_summary = None
         if isinstance(self.record, Record):
             record_type = self.record.record_type
-            record_json = self.record.to_json()
+            record_summary = {"record_type": record_type, "data_keys": sorted(self.record.data)}
         elif isinstance(self.record, dict):
             record_type = self.record.get("record_type")
-            record_json = dict(self.record)
-        omitted = {
-            "goal",
-            "effective_goal",
-            "state",
-            "focus",
-            "observation",
-            "desktop_tree_text",
-            "action_index",
-            "observation_artifact",
-            "repair_validation",
-            "repair_baseline",
-            "before",
-            "after",
-        }
+            data = self.record.get("data")
+            record_summary = {"record_type": record_type, "data_keys": sorted(data) if isinstance(data, dict) else []}
         return {
             "kind": "endgame.node_output.v1",
             "node": node,
@@ -80,9 +67,7 @@ class NodeOutput:
             "record_type": record_type,
             "patch_keys": sorted(self.patch.keys()),
             "evidence_keys": sorted(self.evidence.keys()),
-            "record": record_json,
-            "patch": {key: value for key, value in self.patch.items() if key not in omitted},
-            "evidence": {key: value for key, value in self.evidence.items() if key not in omitted},
+            "record": record_summary,
             "emitted_at": time.time(),
         }
 
@@ -100,7 +85,7 @@ def emit(signal: str, patch: JsonDict | None = None, *, record: Record | JsonDic
     return NodeOutput(signal=signal.strip(), patch=dict(patch or {}), record=record_obj, evidence=dict(evidence or {}))
 
 
-NARRATIVE_TAIL_CHARS = 12000
+NARRATIVE_TAIL_CHARS = 8000
 
 
 def append_narrative(effective_goal: str, line: str, *, root_goal: str = "") -> str:
@@ -136,7 +121,7 @@ def allowed_signals(wiring: JsonDict, node: str) -> set[str]:
 
 def validate_signal(wiring: JsonDict, node: str, signal: str) -> None:
     signals = allowed_signals(wiring, node)
-    if signals and signal not in signals:
+    if signal not in signals:
         allowed = ", ".join(sorted(signals))
         raise TopologyContractError(f"node '{node}' emitted signal '{signal}' outside topology contract; allowed: {allowed}")
 
@@ -182,13 +167,18 @@ def repair_validation_brief(state: JsonDict) -> JsonDict:
 
 
 def state_brief(state: JsonDict) -> JsonDict:
-    """Compact operational focus. The full append-only narrative remains in state, never in every prompt."""
+    """Compact operational focus plus the bounded continuity narrative."""
     current_step = state.get("current_step") or {}
     intent = _plan_intent(state)
     step_index = int(state.get("step", 0) or 0)
+    narrative = str(state.get("effective_goal") or "")
+    root_goal = str(state.get("goal") or "")
+    if root_goal and narrative.startswith(root_goal):
+        narrative = narrative[len(root_goal):].lstrip()
     return {
         "tick": state.get("tick"),
         "current_node": state.get("current_node"),
+        "narrative": narrative,
         "step_index": step_index,
         "current_step": {"description": current_step.get("description", ""), "done_when": current_step.get("done_when", "")},
         "remaining_plan_steps": max(0, len(intent) - step_index),
@@ -200,7 +190,6 @@ def state_brief(state: JsonDict) -> JsonDict:
         "last_failure": state.get("last_failure", {}),
         "failure_streak": state.get("failure_streak", {}),
         "repair_validation": repair_validation_brief(state),
-        "has_action_frame": bool(state.get("action_frame")),
     }
 
 
@@ -214,11 +203,12 @@ def focused_elements(state: JsonDict) -> JsonDict:
     if not isinstance(action_index, dict):
         return {}
     tree_text = str(state.get("desktop_tree_text") or "")
-    fields = ("id", "name", "role", "action", "rect", "enabled", "automation_id", "class_name", "hwnd", "depth")
+    visible_ids = {line.strip().split(" ", 1)[0] for line in tree_text.splitlines() if line.strip()}
+    fields = ("id", "name", "role", "action", "rect", "enabled", "focused", "automation_id", "class_name", "hwnd", "depth")
     return {
         node_id: {key: node[key] for key in fields if key in node}
         for node_id, node in action_index.items()
-        if isinstance(node, dict) and str(node_id) in tree_text
+        if isinstance(node, dict) and str(node_id) in visible_ids
     }
 
 

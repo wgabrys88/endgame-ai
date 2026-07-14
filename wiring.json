@@ -1,20 +1,20 @@
 {
-  "schema": "endgame-ai.wiring",
+  "schema": "endgame-ai.wiring.v1",
   "model": {
     "transport": "transport_xai",
     "transport_config": {
       "transport_xai": {
         "model": "grok-4.3",
         "url": "https://api.x.ai/v1/responses",
-        "temperature": 0.4,
+        "temperature": 0.2,
+        "store": false,
         "structured_outputs": {
           "enabled": true
         },
         "reasoning": {
           "enabled": true,
           "pattern": "native",
-          "effort": "high",
-          "injection_template": "REASONING:\n{reasoning}"
+          "effort": "medium"
         },
         "max_retries": 3,
         "retry_base_delay": 1
@@ -23,6 +23,10 @@
     "global": {
       "timeout": 180,
       "brain_call_budget": null
+    },
+    "request_char_limits": {
+      "default": 120000,
+      "self_modify": 600000
     },
     "stable_prefix": {
       "enabled": true,
@@ -51,24 +55,20 @@
     },
     "organs": {
       "plan": {
-        "reasoning_effort": "high",
-        "max_output_tokens": 32768
-      },
-      "action_frame": {
-        "reasoning_effort": "high",
-        "max_output_tokens": 32768
+        "reasoning_effort": "medium",
+        "max_output_tokens": 4096
       },
       "execution": {
-        "reasoning_effort": "high",
-        "max_output_tokens": 32768
+        "reasoning_effort": "medium",
+        "max_output_tokens": 4096
       },
       "verification": {
-        "reasoning_effort": "high",
-        "max_output_tokens": 32768
+        "reasoning_effort": "low",
+        "max_output_tokens": 2048
       },
       "reflection": {
-        "reasoning_effort": "high",
-        "max_output_tokens": 32768
+        "reasoning_effort": "medium",
+        "max_output_tokens": 4096
       },
       "git_evolution_patch": {
         "reasoning_effort": "high",
@@ -76,12 +76,12 @@
         "include_stable_prefix": true
       },
       "repair_probe": {
-        "reasoning_effort": "high",
-        "max_output_tokens": 32768
+        "reasoning_effort": "medium",
+        "max_output_tokens": 4096
       },
       "repair_validation": {
-        "reasoning_effort": "high",
-        "max_output_tokens": 32768
+        "reasoning_effort": "low",
+        "max_output_tokens": 2048
       }
     }
   },
@@ -89,24 +89,31 @@
     "nodes": ".",
     "brains": ".",
     "state": "runtime_state.json",
-    "event_log": "runtime_events.jsonl",
     "caps": ".",
     "guidance": "guidance.txt"
   },
   "observe_config": {
     "hover_cache": {
       "enabled": true,
+      "phases": {
+        "scan": "obs_scan",
+        "filter": "obs_filter",
+        "build": "obs_build"
+      },
       "scan": {
-        "step_px": 512,
+        "step_px": 256,
         "delay_ms": 0,
         "max_subtree_nodes_per_point": 500,
         "max_total_nodes": 2000
       },
       "filter": {
-        "max_elements": 500,
-        "max_per_window": 120,
+        "max_elements": 120,
+        "max_per_window": 50,
         "max_text": 200,
-        "require_interactive": true
+        "require_interactive": true,
+        "max_depth": 4,
+        "max_children_per_window": 50,
+        "max_llm_nodes": 160
       }
     }
   },
@@ -142,33 +149,16 @@
         "runtime_"
       ],
       "activation": {
-        "immediate": [
-          "wiring.json",
-          "core_observation.py",
-          "node_planner.py",
-          "node_scheduler.py",
-          "node_observe.py",
-          "node_execute.py",
-          "node_frame_action.py",
-          "node_verify.py",
-          "node_reflect.py",
-          "node_self_modify.py",
-          "node_satisfied.py",
-          "transport_xai.py",
-          "node_repair_probe.py",
-          "node_repair_dispatch.py",
-          "node_repair_validate.py",
-          "io_helpers.py",
-          "core_nodes.py",
-          "tools.py",
-          "core_brain.py",
-          "core_desktop.py",
-          "core_organism.py"
+        "immediate_names": [
+          "wiring.json"
         ],
-        "next_run": [
-          "core_brain.py",
-          "core_desktop.py",
-          "core_organism.py"
+        "immediate_prefixes": [
+          "node_",
+          "cap_",
+          "transport_"
+        ],
+        "next_run_suffixes": [
+          ".py"
         ]
       }
     }
@@ -183,7 +173,6 @@
       "node_observe:plan",
       "node_observe:act",
       "node_observe:verify",
-      "node_frame_action",
       "node_verify",
       "node_reflect",
       "node_self_modify",
@@ -220,10 +209,6 @@
       "node_observe:verify": {
         "observed": "node_verify"
       },
-      "node_frame_action": {
-        "framed": "node_guidance:act",
-        "reflect": "node_reflect"
-      },
       "node_verify": {
         "step_confirmed": "node_scheduler",
         "step_denied": "node_reflect"
@@ -231,20 +216,11 @@
       "node_reflect": {
         "retry": "node_guidance:act",
         "replan": "node_planner",
-        "frame": "node_frame_action",
-        "escalate": "node_self_modify",
-        "topology_patch": "node_self_modify",
+        "evolve": "node_self_modify",
         "spawn": "node_spawn"
       },
       "node_self_modify": {
-        "modified": "node_repair_probe",
-        "modify_failed": "node_reflect"
-      },
-      "node_satisfied": {
-        "halt": "halt"
-      },
-      "node_spawn": {
-        "spawned": "node_reflect"
+        "modified": "node_repair_probe"
       },
       "node_repair_probe": {
         "probe_ready": "node_observe:repair"
@@ -259,8 +235,14 @@
         "observed": "node_repair_validate"
       },
       "node_repair_validate": {
-        "repair_resolved": "node_verify",
+        "repair_resolved": "node_guidance:act",
         "repair_unresolved": "node_reflect"
+      },
+      "node_satisfied": {
+        "halt": "halt"
+      },
+      "node_spawn": {
+        "spawned": "node_guidance:plan"
       },
       "node_execute": {
         "built": "node_run"
@@ -269,42 +251,32 @@
         "done": "node_observe:verify",
         "repair_done": "node_observe:repair_verify"
       }
-    },
-    "barriers": {}
+    }
   },
+  "shared_prompt_prefix": "Thou art one faculty of endgame-ai, a single continuing organism that observes the desktop, acts through one script runner, and may rewrite its own body. The immutable root goal, bounded narrative, compact evidence, and one fresh observation form thy present mind.\n\nSpeak only the appointed structured record. Feign no sight, deed, evidence, or completion. Judge the current step only by its exact done_when and observed effect. A deterministic read is evidence only of the state it directly read; a claim, mutation return, or attempted click is not proof of a downstream effect. Use short UI ids only from the current observation: they are reminted after every scan and never survive a turn. Prefer one short deterministic action, using direct process or file access when the goal concerns process or file state and UI control when the goal concerns visible UI state. A failed attempt is evidence to change course, not permission to repeat it. Evolve only from a reasoned denial showing that the present body or wiring lacks the needed mechanism. Keep every evolution small, general, reversible, and behaviorally proven before the known-good marker advances.",
   "prompts": {
-    "node_planner": "planner, author of the executable remaining plan. Build a task-agnostic ordered sequence whose steps together preserve, by meaning, every still-unsatisfied obligation of the immutable root goal. A replan may merge, split, reorder, replace, or drop already-verified work; the count of steps is never itself an obligation.\n\nDraw upon the focused state, the fresh observation, the completed evidence, the prior plan, the last reflection, and the last behavioural repair result. Each step holdeth a concrete description and an observable done_when. A demanded real-world effect must be wrought in the world: a local note or a self-authored file is no substitute for an external consultation, a website change, a sent message, or a visible UI state. Read the last evolution plainly: an immediate change is live this run, a next_run change is not yet available. A repair marked resolved proveth only that the mended mechanism now worketh — the original task step still needeth its own verification; a repair marked unresolved is not progress and must not be planned upon.\n\nThy record is record_type 'plan'. data.intent is a non-empty ordered list of steps, each holding only a concrete description and an observable done_when. Set data.next_signal to the wired route thou intendest; the DOWNSTREAM CONTRACT below nameth thy available consumers and what each expecteth — produce what the chosen one requireth.",
-    "node_frame_action": "frame_action, who studieth the screen and frameth the manner of the strike. Before thee are the goal, the atomic step, the memory of the last deed, and the fresh observation. Draw a concrete frame: what is visible, the exact target, the executable strategy, the risk, and notes for the hands. Cite the short ids of the current fresh observation (ephemeral, valid only this turn). If the target is absent, frame an evidence-gathering capability call; invent no selector and never put descriptive prose where an executable strike belongeth.\n\nThy record is record_type 'action_frame'. data holdeth next_signal, screen_summary, target, strategy, risk (one of low, medium, high), and notes. Choose data.next_signal from thy wired routes in the DOWNSTREAM CONTRACT below — proceed when the frame holdeth a concrete next strike, or turn to reflection when the evidence showeth that framing cannot help.",
-    "node_execute": "execute, the author of the deed. Thou dost not act directly; thou forgest a script, and the runner that followeth thee shall enact it. Before thee are the root goal, one atomic step with its exact done_when, the compact focus, a fresh observation, expanded metadata for referenced element ids, and the exact capabilities of the runner's namespace.\n\nForge non-empty executable Python in data.code. Prefer one short deterministic action over a fragile chain. Use only the listed helpers and the short ids of the current fresh observation (or ids returned by a capability); those ids are ephemeral and valid only this turn. The runner's namespace provideth these top-level names: desktop_tree_text (the observation as a string), observation (a compact dict), action_index (dict), observed_at, goal, state (the full state dict), the stdlib modules (os, sys, json, time, pathlib, subprocess), the tools and desktop modules, and the capability helpers click, click_node, read_node, type_text, press_key, hotkey, scroll, open_url, observe, node_by_id, consult_model, web_search, open_page, read_file, write_file, launch_powershell, list_directory, append_report_to_notepad, and the github_/git_ helpers. For launching PowerShell or Terminal, ALWAYS use launch_powershell() first for direct subprocess reliability instead of click_node on taskbar. For directory inspection, use list_directory(path). For appending long reports to Notepad, use append_report_to_notepad(report). Set the variable result, or print, or record action events. Use consult_model(prompt) so a model consultation entereth the evidence — hand-roll no HTTP or local substitute. When evidence.unsatisfied_requirement is present it is the exact reason thy last attempt was denied: treat it as binding and change approach to meet it precisely. When the observation reporteth elements_truncated, the view is incomplete — narrow the window or scroll before concluding an element is absent. A demanded external effect must touch the real world and leave recorded evidence; fabricate no result locally. Claim no completion in comments or stdout; a mandatory fresh observation and the witness judge the exact done_when.\n\nThy record is record_type 'execution'. data holdeth exactly one key: 'code', a non-empty Python string. The structured schema forbiddeth any other key.",
-    "node_verify": "verify, the witness after the mandatory post-action observation. Judge only whether the current step's exact done_when is now proven. Thine evidence is the recorded execution, the fresh UI state, and expanded metadata for referenced ids.\n\nA returned API proveth only that it returned. A local file proveth only that it exists. A click proveth neither its target nor its effect unless post-action evidence showeth it. Self-authored text proveth no external consultation; a draft proveth no changed website field. Deny when the evidence is absent, contradictory, proxy-only, or belongeth to another step, and name precisely the missing observable fact. When observation.observation_fresh is false the post-action scan is not newer than the last action — deny and say the fresh observation is missing. When elements_truncated is true, the absence of an element is not proof of its non-existence. ALWAYS perform a post-action re-observation loop if focus or state change is required for done_when (e.g., after launch_powershell or click).\n\nThy record is record_type 'verification'. data.success is a boolean. Choose data.next_signal from thy wired routes in the DOWNSTREAM CONTRACT below so that a confirmed step and a denied step each go to their proper consumer; data.success must match the route thou choosest.",
-    "node_reflect": "reflect, the conscience of the wheel after denied or failed progress. Diagnose the causal defect from the actual execution evidence, the fresh screen, the repeated-failure signature, the last verification, and any repair result. Then choose a materially different, useful turn from thy wired routes named in the DOWNSTREAM CONTRACT below — each consumer's docstring telleth what it expecteth of thee. There is no give-up: continue with a new approach until every step is verified and rest is reached mechanically.\n\nA wrong helper, an unrecorded action, a stale id, or a poorly aimed strike is not proof that the substrate is broken; if a listed capability hath not yet been used correctly, prefer to retry or to reframe. Turn toward self-modification as soon as the evidence showeth that no present code, prompt, capability, observation, or topology can yet produce the required proof — this is the normal, safe path to evolve, guarded by the repair gate and the known-good ref, not an admission of defeat. When repair_validation.status is unresolved, the candidate is not healed: diagnose whether the change was wrong, its activation was next_run, or the probe was inadequate. When resolved, remember only the mechanism is proven; the task step still needeth its own verification.\n\nThy record is record_type 'reflection'. data holdeth next_signal, lesson, and diagnosis. When thou routest to a graph rewrite, data may hold topology_patch.",
-    "node_self_modify": "self_modify, the hand that rewriteth the organism's own body — its code and its wiring. This is an ordinary, safe faculty: the complete tracked source standeth above as the stable prefix, and the workspace manifest and failure evidence below describe the live checkout. The architecture thou servest is plain: one wheel of nodes wired in a graph; one executor that authoreth a script and one runner that enacteth it; observation split into wired phases; and contracts that are no registry but the very docstrings of the nodes, read live along the wiring — so a node learneth what to produce by reading whom it is wired to. Change a node's docstring and thou changest its contract. Diagnose the true mechanism, then propose the least evolution that healeth the broad cause, not the single instance.\n\nThy record is record_type 'git_evolution_patch'. data holdeth next_signal, summary, rationale, read_files, file_writes, file_deletes, wiring_patches, commands, and expected_validation. The shapes are exact:\n  - read_files: repo-relative paths thou actually inspected;\n  - file_writes: list of {path, content}; every content is the complete replacement text, with no ellipsis, placeholder, stub, or 'existing code' mark. When thou touchest a node, keep its module docstring a true statement of what it expecteth and produceth, for that docstring is its contract;\n  - file_deletes: repo-relative paths;\n  - wiring_patches: list of {op:'set', path:'dotted.path', value} or {op:'delete', path};\n  - commands: structural validation commands only — run no cd, git add, commit, or push; the substrate applieth and committeth the candidate;\n  - expected_validation: non-empty operational words describing the observable before-and-after proof that the captured failure is resolved.\n\nRead before writing. The activation map is binding: a repair needed this run must use an immediate file or wiring change; a next_run edit is not yet live. Every patch must make a real semantic change — formatting-only, comment-only, identical, and empty patches fail. A structurally valid commit is only a candidate: the mandatory repair-probe sub-wheel retrieth the captured failing step through recorded evidence, compareth fresh before and after state, and only then advanceth the known-good ref. Preserve that behavioural gate; it is what maketh self-evolution safe and reversible. Change the least that healeth the most; prefer removing a defect to adding machinery; add no task-specific branch, swallowed failure, or cage the organism cannot itself overwrite.",
-    "node_repair_probe": "repair_probe, author of one minimal behavioural experiment after a candidate self-modification. Before thee are the before-evidence, the exact failure signature, the original step, the candidate activation map, the expected_validation, the fresh observation, and the capability manifest.\n\nRetry the same failed mechanism — not a nearby task, not a structural test. Forge the smallest deterministic Python that exerciseth the mended capability or repeateth the failed strike and leaveth recorded evidence, using the listed helpers and exact visible ids. ALWAYS use launch_powershell(), list_directory(), append_report_to_notepad() for this repair to exercise the new capabilities and provide behavioral proof. Edit not the repository, invoke not self-modification, fabricate no external result, and broaden not into ordinary task execution. The done_when and comparison_basis must state what observable difference would tell repair from recurrence. Copy the failure_signature exactly.\n\nThy record is record_type 'repair_probe'. data holdeth failure_signature, description, done_when, comparison_basis, non-empty executable Python code, and next_signal chosen from thy wired route in the DOWNSTREAM CONTRACT below.",
-    "node_repair_validate": "repair_validate, the behavioural witness of a candidate self-modification. Compare the captured before-evidence with the exact executed probe and the mandatory fresh post-probe observation. Judge only whether the failure signature's causal problem is now resolved.\n\nA compiled patch, a git commit, a returned helper, a click, a stdout claim, or changed prose is not proof by itself. Require the expected_validation and comparison_basis to be met by recorded action evidence and observable after-state, and confirm the probe retried the original mechanism. If activation was next_run and this process still showeth the old behaviour, mark unresolved. If the probe was malformed, stale, proxy-only, contradicted, or reproduced the failure, mark unresolved and name the remaining problem. Resolve only when the before-and-after difference showeth the failed mechanism now worketh.\n\nThy record is record_type 'repair_validation'. data.resolved is a boolean; data.comparison stateth the concrete before-and-after facts; data.conclusion stateth what was or was not repaired. Choose data.next_signal from thy wired routes in the DOWNSTREAM CONTRACT below so a resolved and an unresolved judgement each reach their proper consumer; data.resolved must match."
+    "node_planner": "Author the complete remaining plan for the root goal. Preserve every unsatisfied obligation by meaning, but freely merge, split, reorder, or replace prior steps. Each item must contain only a concrete description and an observable done_when. External effects require external evidence; a locally authored claim is never a substitute. A resolved repair proves a mechanism, not the original task step; an unresolved repair proves nothing.\n\nReturn record_type 'plan'. data.intent is a non-empty ordered array of steps with non-empty description and done_when.",
+    "node_execute": "Author exactly one executable Python script for the current step. The payload supplies the live capability manifest; use only names actually listed there or ordinary operations of the listed standard-library modules. Prefer direct deterministic process/file operations for process/file facts and current ephemeral UI ids for GUI effects. Do not invent helpers or selectors. Do not take a second observation inside the script: the wheel always scans once after the deed. If a launched UI needs time to materialize, wait briefly in the script. Set result, print bounded diagnostic text, or call a recorded helper. Never claim completion in code or stdout; the later witness decides from fresh evidence.\n\nReturn record_type 'execution'. data contains only non-empty code.",
+    "node_verify": "Witness the mandatory post-action observation. Decide only whether the current step's exact done_when is proven now. observation_fresh must be true. A deterministic read proves only the state it directly read. A mutation return proves only that the call returned; a click proves nothing without its visible effect. Use [active] and [focused] markers when focus matters. Deny absent, contradictory, stale, truncated, proxy-only, or wrong-step evidence and name the precise missing fact. Keep the reason concise.\n\nReturn record_type 'verification'. data.success is boolean and data.reason is a non-empty factual justification. Routing is derived mechanically from success.",
+    "node_reflect": "Diagnose the causal defect after a denied step from execution evidence, the fresh screen, failure streak, and repair result. Choose a materially different useful route from the live downstream contract: retry for a different executable strike, replan when the step or sequence is wrong, evolve when no present prompt/code/capability/wiring can produce the required proof, or spawn when a bounded independent sub-goal would materially help. When spawning, provide one precise non-empty subgoal. Do not mistake a malformed script or unused existing primitive for a substrate defect.\n\nReturn record_type 'reflection'. data contains next_signal, concise lesson, concise diagnosis, and subgoal only when spawning.",
+    "node_self_modify": "Propose the least general evolution that repairs the diagnosed mechanism. Read every existing file before replacing or deleting it. The payload gives the tracked source prefix, workspace manifest, topology, capability contract, and activation policy. A repair needed in this process must use an immediate target; other Python changes are next-run and cannot be claimed live. Preserve the behavioral repair gate and known-good anchor. Add no task-specific helper where existing generic Python/process/file/UI primitives suffice.\n\nReturn record_type 'git_evolution_patch'. data contains summary, rationale, read_files, file_writes, file_deletes, wiring_patches, commands, and expected_validation. file_writes items are {path, content} with complete replacement content. wiring_patches items are {op:'set', path:'dotted.path', value} or {op:'delete', path}. commands are structural validation only, never git commit/push. expected_validation states the observable before/after proof.",
+    "node_repair_probe": "Author one minimal, preferably reversible behavioral experiment that exercises the repaired mechanism against the captured failure. Use only the live capability manifest and current ephemeral ids; invent no helper. Do not edit the repository or broaden into ordinary task work. Copy the failure_signature exactly. The code must leave recorded or freshly observable evidence, while done_when and comparison_basis must distinguish repair from recurrence.\n\nReturn record_type 'repair_probe'. data contains failure_signature, description, done_when, comparison_basis, and non-empty code. Routing is mechanical.",
+    "node_repair_validate": "Compare the captured before-evidence with the exact probe execution and mandatory fresh after-observation. Resolve only when the probe exercised the failed mechanism and expected_validation plus comparison_basis are concretely met. Compilation, a commit, a returned helper, stdout, or changed prose is not behavioral proof. A next-run change is not live in this process. Mark malformed, stale, proxy-only, contradictory, or recurrent probes unresolved.\n\nReturn record_type 'repair_validation'. data.resolved is boolean; data.comparison and data.conclusion are concise non-empty factual strings. Routing is derived mechanically."
   },
-  "shared_prompt_prefix": "Thou art a faculty within endgame-ai: one living organism that inhabits and commands a computer as a human operator would — beholding the screen, moving the hands, running commands, and rewriting its own body. Thou art one turn of an ever-turning wheel that runs until the immutable root goal is mechanically verified.\n\nEach turn receiveth the root goal and a compact focus: the current step, recent evidence, a fresh focused observation (the whole desktop as W0, or a chosen window), and exact metadata for the element ids under consideration. Focused evidence sufficeth; demand not the whole narrative.\n\nCommandments:\n  - Emit only thine appointed JSON record and one lawful signal; nothing more.\n  - Feign nothing: no unmade action, unseen sight, unearned result, or false completion.\n  - Judge by the exact observable done_when of the current step, never by proxy.\n  - A failure is evidence to turn differently, never to repeat the same turn.\n  - Preserve the root goal by meaning; the plan may evolve, the goal may not be betrayed.\n  - Address elements only by the short ids of the current fresh observation; these ids are ephemeral — minted anew each observation, valid only this turn, never remembered across turns. Cite only ids present in the current observation. Prefer the shortest deterministic listed capability.\n\nSelf-evolution is ordinary and safe. When a simpler turn cannot produce the required effect, rewriting the organism's own code or wiring is a first-class faculty, not a last resort and not a failure. Every candidate change is applied on a branch, proven behaviourally by the repair-probe and repair-validate gate against fresh before-and-after evidence, committed with git coherence, mirrored to the public GitHub repository, and guarded by the known-good ref that can restore the last proven body at any time. Because the change is reversible and verified, thou needest no fear of it: choose it whenever the evidence shows the current code, prompt, contract, capability, observation, or topology cannot yet produce the required proof.\n\nSelf-awareness is a permanent parallel task in every turn: while pursuing the goal, watch and reduce thine own token use, latency, and code mass; prefer removing a defect to adding machinery. Thy first orientation in any run is to know thine environment — read wiring.json, inspect git and thine own GitHub issues as persistent memory. Use only the public repository for memory and dialogue; never sensitive data. Prefer whole verifiable sequences through the full wheel over isolated strikes.\n\nThe company of faculties: guidance (the ear), observe (the eye — one fresh scan laid before all), planner (the plan), scheduler (the step), execute (the author of the deed — it forgeth a script), run (the hands that enact the authored script in the capability namespace), verify (the witness), frame_action (the aimed strike), reflect (the conscience), self_modify (the hand that rewrites the body), repair_dispatch, repair_probe and repair_validate (the behavioural proof of a change), spawn (the begetter of child organisms), satisfied (mechanical success). Thou art faculty node_",
+  "prompt_aliases": {},
   "record_contracts": {
     "plan": {
       "required": [
-        "next_signal",
         "intent"
       ],
       "enums": {},
       "types": {
-        "next_signal": "string",
         "intent": "array"
       },
       "non_empty": [
         "intent"
       ],
       "additional_properties": false
-    },
-    "schedule": {
-      "required": [
-        "next_signal",
-        "step"
-      ],
-      "enums": {}
     },
     "execution": {
       "required": [
@@ -319,48 +291,19 @@
       ],
       "additional_properties": false
     },
-    "action_frame": {
-      "required": [
-        "next_signal",
-        "screen_summary",
-        "target",
-        "strategy",
-        "risk",
-        "notes"
-      ],
-      "enums": {
-        "risk": [
-          "low",
-          "medium",
-          "high"
-        ]
-      },
-      "types": {
-        "next_signal": "string",
-        "screen_summary": "string",
-        "target": "string",
-        "strategy": "string",
-        "risk": "string",
-        "notes": "string"
-      },
-      "non_empty": [
-        "screen_summary",
-        "target",
-        "strategy",
-        "notes"
-      ],
-      "additional_properties": false
-    },
     "verification": {
       "required": [
-        "next_signal",
-        "success"
+        "success",
+        "reason"
       ],
       "enums": {},
       "types": {
-        "next_signal": "string",
-        "success": "boolean"
+        "success": "boolean",
+        "reason": "string"
       },
+      "non_empty": [
+        "reason"
+      ],
       "additional_properties": false
     },
     "reflection": {
@@ -374,7 +317,7 @@
         "next_signal": "string",
         "lesson": "string",
         "diagnosis": "string",
-        "topology_patch": "object"
+        "subgoal": "string"
       },
       "non_empty": [
         "lesson",
@@ -384,7 +327,6 @@
     },
     "git_evolution_patch": {
       "required": [
-        "next_signal",
         "summary",
         "rationale",
         "read_files",
@@ -396,7 +338,6 @@
       ],
       "enums": {},
       "types": {
-        "next_signal": "string",
         "summary": "string",
         "rationale": "string",
         "read_files": "array",
@@ -414,15 +355,8 @@
       ],
       "additional_properties": false
     },
-    "satisfied": {
-      "required": [
-        "next_signal"
-      ],
-      "enums": {}
-    },
     "repair_probe": {
       "required": [
-        "next_signal",
         "failure_signature",
         "description",
         "done_when",
@@ -431,7 +365,6 @@
       ],
       "enums": {},
       "types": {
-        "next_signal": "string",
         "failure_signature": "string",
         "description": "string",
         "done_when": "string",
@@ -449,14 +382,12 @@
     },
     "repair_validation": {
       "required": [
-        "next_signal",
         "resolved",
         "comparison",
         "conclusion"
       ],
       "enums": {},
       "types": {
-        "next_signal": "string",
         "resolved": "boolean",
         "comparison": "string",
         "conclusion": "string"
@@ -470,29 +401,28 @@
   },
   "capabilities": {
     "schema": "endgame-ai.execute-capabilities.v1",
-    "power": "GUI, Python, process, file, and module access run locally in exec(code, ns).",
+    "power": "One local Python namespace with GUI, process, file, web, and Git primitives; every named helper records its deed.",
     "helpers": {
-      "click": "click(x,y,hwnd=0) in physical screen coordinates; fails outside the observed screen",
-      "click_node": "click_node(node_id) using the exact center from the latest fresh observation",
-      "read_node": "read_node(node_id)",
-      "type_text": "type_text(text)",
+      "click": "click(x, y, hwnd=0) in physical screen coordinates",
+      "click_node": "click_node(node_id) at the center from the latest fresh observation",
+      "read_node": "read_node(node_id) from the latest fresh observation",
+      "type_text": "type_text(text) pastes Unicode text into the currently focused control",
       "press_key": "press_key(key)",
       "hotkey": "hotkey(*keys)",
-      "scroll": "scroll(x,y,amount,hwnd=0) in physical screen coordinates",
-      "open_url": "open_url(browser_name,url) where browser_name is exactly one of: chrome, edge, firefox, opera, default",
-      "observe": "observe(): take one fresh desktop observation and record it as an action",
-      "node_by_id": "node_by_id(node_id): return the observed element dict for an id from the latest fresh observation",
-      "consult_model": "consult_model(prompt,max_output_tokens=800): consult the configured model through the brain layer and return a recorded action containing the exact response",
-      "web_search": "web_search(query, num_results=10): perform a web search and record results as a capability action",
-      "open_page": "open_page(url, start_line=None): fetch page content and record it as a capability action",
-      "read_file": "read_file(path, max_bytes=None): deterministic full-content read of a local file; returns recorded action with complete content, size, and SHA-256",
-      "write_file": "write_file(path, content): deterministic full-content write to a local file; returns recorded action with complete content, size, and SHA-256",
-      "github_create_issue": "github_create_issue(repo, title, body, labels=None): create GitHub issue via gh CLI and record action",
-      "github_comment_issue": "github_comment_issue(repo, issue_number, comment): comment on GitHub issue via gh CLI and record action",
-      "github_list_issues": "github_list_issues(repo, state='open'): list issues on repo via gh CLI and record action",
-      "github_push": "github_push(branch=None): push current or specified branch to origin and record action",
-      "git_current_branch": "git_current_branch(): run git branch --show-current and return recorded action",
-      "git_branch_show_current": "git_branch_show_current(): alias of git_current_branch()"
+      "scroll": "scroll(x, y, amount, hwnd=0)",
+      "open_url": "open_url(browser_name, url), with browser_name chrome, edge, firefox, opera, or default",
+      "node_by_id": "node_by_id(node_id) returns current ephemeral element metadata",
+      "consult_model": "consult_model(prompt, max_output_tokens=800) records an external model consultation",
+      "web_search": "web_search(query, num_results=10)",
+      "open_page": "open_page(url, start_line=None)",
+      "read_file": "read_file(path, max_bytes=None) returns full content plus size and hash",
+      "write_file": "write_file(path, content) writes full content and records size and hash",
+      "github_create_issue": "github_create_issue(repo, title, body, labels=None)",
+      "github_comment_issue": "github_comment_issue(repo, issue_number, comment)",
+      "github_list_issues": "github_list_issues(repo, state='open')",
+      "github_push": "github_push(branch=None) uses git push origin",
+      "git_current_branch": "git_current_branch()",
+      "git_branch_show_current": "git_branch_show_current(), alias of git_current_branch()"
     },
     "modules": [
       "subprocess",
@@ -508,128 +438,15 @@
       "observation",
       "desktop_tree_text",
       "action_index",
-      "observation_artifact",
-      "screen"
+      "observed_at",
+      "goal",
+      "state"
     ],
-    "signals": [
-      "done"
-    ],
+    "signals": [],
     "faculties": {}
   },
   "fractal": {
     "max_recursion_depth": 3
   },
-  "prompt_aliases": {},
-  "_conv_id": "endgame-ai-1783699422-0e1f4911",
-  "node_defs": {
-    "node_frame_action": {
-      "prompt_key": "node_frame_action",
-      "expected_record_type": "action_frame",
-      "signals": [
-        "framed",
-        "reflect"
-      ],
-      "signal_source": "data.next_signal",
-      "build_payload": {
-        "goal": {
-          "path": "state.goal"
-        },
-        "step": {
-          "description": {
-            "get": {
-              "path": "state.current_step"
-            },
-            "key": "description",
-            "default": {
-              "path": "state.goal"
-            }
-          },
-          "done_when": {
-            "get": {
-              "path": "state.current_step"
-            },
-            "key": "done_when",
-            "default": ""
-          }
-        },
-        "focus": {
-          "call": "bus.state_brief",
-          "arg": {
-            "path": "state"
-          }
-        },
-        "evidence": {
-          "call": "bus.execution_evidence",
-          "arg": {
-            "path": "state"
-          }
-        },
-        "observation": {
-          "call": "bus.observation_brief",
-          "arg": {
-            "path": "state"
-          }
-        }
-      },
-      "evidence": {
-        "call": "bus.execution_evidence",
-        "arg": {
-          "path": "state"
-        }
-      },
-      "patch": {
-        "action_frame": {
-          "screen_summary": {
-            "path": "data.screen_summary"
-          },
-          "target": {
-            "path": "data.target"
-          },
-          "strategy": {
-            "path": "data.strategy"
-          },
-          "risk": {
-            "path": "data.risk"
-          },
-          "notes": {
-            "path": "data.notes"
-          },
-          "step_index": {
-            "int": {
-              "path": "state.step"
-            },
-            "default": 0
-          }
-        },
-        "framing_attempted_for_step": {
-          "int": {
-            "path": "state.step"
-          },
-          "default": 0
-        },
-        "effective_goal": {
-          "narrate": {
-            "path": "state.effective_goal"
-          },
-          "line": {
-            "format": "\n\n[FRAME_ACTION] Target {0} via {1}: {2}",
-            "args": [
-              {
-                "path": "data.target"
-              },
-              {
-                "path": "data.strategy"
-              },
-              {
-                "path": "data.notes"
-              }
-            ]
-          },
-          "root": {
-            "path": "state.goal"
-          }
-        }
-      }
-    }
-  }
+  "node_defs": {}
 }

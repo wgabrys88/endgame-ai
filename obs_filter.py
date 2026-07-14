@@ -49,6 +49,6 @@ def run(raw_nodes: list[dict[str, Any]], config: dict[str, Any], screen: dict[st
                 "id": node["id"], "short_id": "", "name": label or node["name"], "role": node["role"],
                 "action": action, "px": node["px"], "py": node["py"], "hwnd": hwnd, "rect": node["rect"],
                 "enabled": node["enabled"], "automation_id": node["automation_id"], "class_name": node["class_name"],
-                "runtime_id": node["runtime_id"], "depth": node["depth"],
+                "runtime_id": node["runtime_id"], "depth": node["depth"], "focused": node["focused"],
             }
     return {"action_elements": action_elements, "text_hints": text_hints, "hwnd_to_z": hwnd_to_z, "hwnd_interactive_count": hwnd_counts}

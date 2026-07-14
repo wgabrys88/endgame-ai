@@ -33,26 +33,24 @@ class VerifyNode(BaseNode):
         }
 
     def signal_from_data(self, data, ctx):
-        self._signal = data["next_signal"]
         self._success = data["success"]
-        if self._signal not in {"step_confirmed", "step_denied"} or (self._signal == "step_confirmed") != self._success:
-            raise RuntimeError(f"verification invalid success/signal: {self._success!r}/{self._signal!r}")
+        self._signal = "step_confirmed" if self._success else "step_denied"
         return self._signal
 
     def patch_from_record(self, record, ctx):
         data, state = record.data, ctx["state"]
         desc, done_when = self._step(ctx)
-        reasoning = record.reasoning
-        effective = bus.append_narrative(state["effective_goal"], (f"\n\n[VERIFY] Confirmed: {desc}." if self._success else f"\n\n[VERIFY] Denied: {desc}. {reasoning}"), root_goal=state.get("goal", ""))
+        reason = data["reason"]
+        effective = bus.append_narrative(state["effective_goal"], f"\n\n[VERIFY] {'Confirmed' if self._success else 'Denied'}: {desc}. {reason}", root_goal=state.get("goal", ""))
         patch = {
-            "verification": {"success": self._success, "reasoning": reasoning, "step_goal": desc, "done_when": done_when},
-            "last_verification": {"success": self._success, "signal": self._signal, "reasoning": reasoning},
+            "verification": {"success": self._success, "reasoning": reason, "step_goal": desc, "done_when": done_when},
+            "last_verification": {"success": self._success, "signal": self._signal, "reasoning": reason},
             "effective_goal": effective,
         }
         if self._success:
             completed = list(state.get("completed_steps") or [])
             completed.append({"description": desc, "done_when": done_when, "confirmed_at_tick": state.get("tick")})
-            patch.update({"step": int(state.get("step", 0) or 0) + 1, "completed_steps": completed, "failure_streak": {"signature": None, "count": 0}, "action_frame": None, "last_error": None, "last_failure": None})
+            patch.update({"step": int(state.get("step", 0) or 0) + 1, "completed_steps": completed, "failure_streak": {"signature": None, "count": 0}, "last_error": None, "last_failure": None})
         return patch
 
 

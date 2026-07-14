@@ -10,9 +10,9 @@ def run(ctx):
         raise RuntimeError(f"scheduler expected plan.intent list, got {type(plan).__name__}")
     idx = int(state.get("step", 0) or 0)
     if idx >= len(plan):
-        return bus.emit("goal_complete", {"plan_complete": True, "current_step": None, "action_frame": None})
+        return bus.emit("goal_complete", {"plan_complete": True, "current_step": None})
     step = plan[idx]
     if not isinstance(step, dict) or not isinstance(step.get("description"), str) or not isinstance(step.get("done_when"), str):
         raise RuntimeError(f"scheduler step {idx} must contain string description and done_when")
-    effective = state["effective_goal"] + f"\n\n[SCHEDULER] Current step: {step['description']}. Complete when: {step['done_when']}."
-    return bus.emit("step_ready", {"current_step": step, "step_goal": step["description"], "step": idx, "action_frame": None, "framing_attempted_for_step": None, "effective_goal": effective})
+    effective = bus.append_narrative(state["effective_goal"], f"\n\n[SCHEDULER] Current step: {step['description']}. Complete when: {step['done_when']}.", root_goal=state.get("goal", ""))
+    return bus.emit("step_ready", {"current_step": step, "step_goal": step["description"], "step": idx, "effective_goal": effective})

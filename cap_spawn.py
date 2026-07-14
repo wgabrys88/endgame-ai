@@ -1,8 +1,8 @@
 """cap_spawn — the fractal capability: a plugin that runs a CHILD organism.
 
 The literal fractal claim: a node can spawn a whole `core_organism` as a child,
-let it pursue a sub-goal to its own terminus, and fold the child's final
-`effective_goal` back into the parent narrative. Depth is bounded by
+let it pursue the explicit `spawn_subgoal` to its own terminus, and fold the
+child's final `effective_goal` back into the parent narrative. Depth is bounded by
 `wiring["fractal"]["max_recursion_depth"]`, threaded through `state["_depth"]`.
 
 Child state is ISOLATED: the child runs against a deep-copied wiring whose
@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import copy
 import json
-import tempfile
 from typing import Any
 
 import core_bus as bus
@@ -38,15 +37,17 @@ def run(ctx: dict[str, Any]):
     w = ctx["wiring"]
     depth = int(state["_depth"])
     max_depth = int(w["fractal"]["max_recursion_depth"])
-    child_goal = str(state["effective_goal"])
+    child_goal = str(state.get("spawn_subgoal") or "").strip()
+    if not child_goal:
+        raise RuntimeError("spawn requires a non-empty child sub-goal")
     parent = state["effective_goal"]
     if depth >= max_depth:
-        note = parent + f"\n\n[SPAWN d{depth}] The line of descent has reached its appointed depth of {max_depth}; I beget no further child, and carry the work forward myself."
+        note = bus.append_narrative(parent, f"\n\n[SPAWN d{depth}] The line of descent reached its maximum depth {max_depth}; no child was started for: {child_goal}.", root_goal=state.get("goal", ""))
         return bus.emit("spawned", {"effective_goal": note, "_depth": depth})
     tag = f"t{int(state.get('tick', 0))}"
     child_path = _child_wiring_path(w, depth + 1, tag)
     child_seed = {"_depth": depth + 1, "effective_goal": child_goal}
     child_state = organism.run(child_goal, wiring_path=child_path, _seed=child_seed)
     child_narrative = str(child_state["effective_goal"])
-    note = parent + f"\n\n[SPAWN d{depth}->d{depth + 1}] I begot a child organism to pursue the sub-work; it returned having reached '{child_state['_phase']}'. Its testimony:\n{child_narrative}"
+    note = bus.append_narrative(parent, f"\n\n[SPAWN d{depth}->d{depth + 1}] Child sub-goal: {child_goal}. It returned in phase '{child_state['_phase']}'. Testimony:\n{child_narrative}", root_goal=state.get("goal", ""))
     return bus.emit("spawned", {"effective_goal": note, "_depth": depth, "_child_phase": child_state["_phase"]})

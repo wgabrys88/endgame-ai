@@ -107,7 +107,6 @@ class DeclarativeNode(BaseNode):
         self.prompt_key = definition["prompt_key"]
         self.expected_record_type = definition["expected_record_type"]
         self.request_config = definition.get("request_config")
-        self._allowed_signals = definition.get("signals")
 
     def _scope(self, ctx: JsonDict, *, data: JsonDict | None = None, record: bus.Record | None = None, signal: str | None = None) -> JsonDict:
         st = ctx["state"]
@@ -129,8 +128,6 @@ class DeclarativeNode(BaseNode):
 
     def signal_from_data(self, data: JsonDict, ctx: JsonDict) -> str:
         signal = str(_lookup({"data": data}, self._def["signal_source"]))
-        if self._allowed_signals is not None and signal not in self._allowed_signals:
-            raise bus.NodeRecordContractError(f"{self.prompt_key} emitted signal {signal!r} outside declared signals {self._allowed_signals!r}")
         self._signal = signal
         return signal
 

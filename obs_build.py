@@ -17,10 +17,11 @@ def run(action_elements: dict[str, dict[str, Any]], text_hints: dict[str, str], 
     windows: dict[int, dict[str, Any]] = {}
     for node in raw_nodes:
         if node["role"] == "Window" and node["hwnd"] and node["hwnd"] not in windows:
+            title = node["name"] or node["text_full"] or f"Window_{node['hwnd']}"
             windows[node["hwnd"]] = {
-                "hwnd": node["hwnd"], "title": node["name"] or node["text_full"] or f"Window_{node['hwnd']}",
+                "hwnd": node["hwnd"], "role": "Window", "name": title, "title": title,
                 "class_name": node["class_name"], "framework_id": node["framework_id"], "rect": node["rect"],
-                "z_order": hwnd_to_z.get(node["hwnd"], 0), "children": [],
+                "z_order": hwnd_to_z.get(node["hwnd"], 0), "active": hwnd_to_z.get(node["hwnd"]) == 0, "children": [],
             }
     sorted_windows = sorted(windows.values(), key=lambda w: w["z_order"])
     root = {"id": "W0", "role": "Screen", "name": "Screen", "title": "Desktop", "rect": {"left": 0, "top": 0, "right": screen["width"], "bottom": screen["height"]}, "fresh_scan": True, "observed_at": time.time(), "children": []}
@@ -104,7 +105,7 @@ def run(action_elements: dict[str, dict[str, Any]], text_hints: dict[str, str], 
             limit_hit = True
             return
         sid, role, name, action = node.get("short_id", node.get("id", "")), str(node.get("role", "")), clean(node.get("name", "") or node.get("title", "")), str(node.get("action", ""))
-        parts = [p for p in (sid, role, name, f"[{action}]" if action else "") if p]
+        parts = [p for p in (sid, role, name, "[active]" if node.get("active") else "", "[focused]" if node.get("focused") else "", f"[{action}]" if action else "") if p]
         hint = text_hints.get(node.get("id", ""), "")
         if hint and hint not in name:
             parts.append(f"~{hint}")

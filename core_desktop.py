@@ -3,8 +3,6 @@ import importlib
 import os
 import subprocess
 import sys
-import time
-from ctypes import wintypes
 from typing import Any
 
 import comtypes
@@ -71,20 +69,14 @@ class Desktop:
         return {"ok": True, "action": "click", "x": x, "y": y, "hwnd": hwnd, "screen": {"width": width, "height": height}}
 
     def type_text(self, text: str) -> dict[str, Any]:
-        for char in text:
-            vk = user32.VkKeyScanW(ord(char))
-            if vk == -1:
-                continue
-            vk_code = vk & 0xFF
-            shift = (vk >> 8) & 0xFF
-            if shift:
-                user32.keybd_event(0x10, 0, 0, 0)
-            user32.keybd_event(vk_code, 0, 0, 0)
-            user32.keybd_event(vk_code, 0, 2, 0)
-            if shift:
-                user32.keybd_event(0x10, 0, 2, 0)
-            time.sleep(0.01)
-        return {"ok": True, "action": "type_text", "text": text}
+        command = ["powershell.exe", "-NoProfile", "-Command", "Set-Clipboard -Value ([Console]::In.ReadToEnd())"]
+        completed = subprocess.run(command, input=str(text), text=True, capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+        if completed.returncode != 0:
+            raise RuntimeError(f"clipboard write failed: {(completed.stderr or completed.stdout).strip()}")
+        pasted = self.hotkey("ctrl", "v")
+        if pasted.get("ok") is not True:
+            raise RuntimeError(f"paste failed: {pasted}")
+        return {"ok": True, "action": "type_text", "chars": len(str(text))}
 
     def press_key(self, key: str) -> dict[str, Any]:
         key_map = {

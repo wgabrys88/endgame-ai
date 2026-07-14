@@ -1,4 +1,4 @@
-"""node_planner — authors the remaining plan for the root goal. EXPECTS: the goal, the current effective_goal narrative, any previous plan and completed_steps, last_reflection, last_repair_validation, and self_modify status. PRODUCES a plan (intent: list of steps, each with description + done_when) and next_signal 'step_ready'."""
+"""node_planner — consume the root goal, bounded narrative, evidence, and prior plan; produce the complete remaining intent as observable steps."""
 import core_bus as bus
 from core_node_base import BaseNode
 
@@ -29,7 +29,7 @@ class PlannerNode(BaseNode):
         }
 
     def signal_from_data(self, data, ctx):
-        return data["next_signal"]
+        return "step_ready"
 
     def patch_from_record(self, record, ctx):
         state, data = ctx["state"], record.data
@@ -51,7 +51,6 @@ class PlannerNode(BaseNode):
             "plan": data,
             "step": 0,
             "plan_complete": False,
-            "reasoning": record.reasoning,
             "effective_goal": effective,
         }
 

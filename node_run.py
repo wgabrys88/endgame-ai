@@ -82,13 +82,13 @@ def run(ctx):
         signal,
         {
             "turn_executions": turn,
-            "last_action": {"code": code, "repair_probe": probe},
+            "last_action": {"code_sha256": turn[FACULTY]["code_sha256"], "artifact": pathlib.Path(artifact["path"]).name, "repair_probe": probe},
             "last_action_at": time.time(),
             "last_code": code,
             "last_result": result,
             "last_error": error,
             "last_failure": failure,
-            "action_frame": None if error is None else state.get("action_frame"),
+            "_execute_artifact": None,
             "effective_goal": effective,
         },
     )

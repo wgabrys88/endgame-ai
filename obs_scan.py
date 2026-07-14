@@ -29,7 +29,7 @@ def run(config: dict[str, Any], desktop: Any) -> dict[str, Any]:
         bottom = max(top + 1, min(sh, int(area.get("bottom", sh) or sh)))
     else:
         left, top, right, bottom = 0, 0, sw, sh
-    margin = max(2, min(step_px // 4, max(0, min(right - left, bottom - top) // 8)))
+    margin = 2
     usable_w, usable_h = max(1, right - left - 2 * margin), max(1, bottom - top - 2 * margin)
     cols, rows = max(1, usable_w // step_px), max(1, usable_h // step_px)
     g = 1.32471795724474602596

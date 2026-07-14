@@ -1,4 +1,4 @@
-"""node_reflect — reflects on a failure and chooses recovery. EXPECTS: current_step, last_failure, last_verification, last_repair_validation, execution evidence, and effective_goal. PRODUCES a reflection (lesson + diagnosis) and next_signal: retry | replan | frame | escalate | topology_patch | spawn."""
+"""node_reflect — consume a denied step and its evidence; produce a causal lesson and route to retry, replan, evolve, or a named child sub-goal."""
 import core_bus as bus
 from core_node_base import BaseNode
 
@@ -67,8 +67,11 @@ class ReflectNode(BaseNode):
             },
             "effective_goal": effective,
         }
-        if self._signal == "topology_patch" and "topology_patch" in data:
-            patch["topology_patch"] = data["topology_patch"]
+        if self._signal == "spawn":
+            subgoal = str(data.get("subgoal") or "").strip()
+            if not subgoal:
+                raise RuntimeError("reflection routed to spawn without a non-empty subgoal")
+            patch["spawn_subgoal"] = subgoal
         return patch
 
 

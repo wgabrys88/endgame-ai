@@ -50,11 +50,12 @@ PID_ENABLED = _const("UIA_IsEnabledPropertyId", 30010)
 PID_OFFSCREEN = _const("UIA_IsOffscreenPropertyId", 30022)
 PID_HWND = _const("UIA_NativeWindowHandlePropertyId", 30020)
 PID_FRAMEWORK = _const("UIA_FrameworkIdPropertyId", 30024)
-PID_KEYBOARD_FOCUSABLE = _const("UIA_IsKeyboardFocusablePropertyId", 30008)
+PID_HAS_KEYBOARD_FOCUS = _const("UIA_HasKeyboardFocusPropertyId", 30008)
+PID_KEYBOARD_FOCUSABLE = _const("UIA_IsKeyboardFocusablePropertyId", 30009)
 PID_CONTENT_ELEMENT = _const("UIA_IsContentElementPropertyId", 30015)
 SCAN_PROPERTY_IDS = [
     PID_RUNTIME_ID, PID_BOUNDING_RECT, PID_CONTROL_TYPE, PID_NAME, PID_AUTOMATION_ID, PID_CLASS_NAME,
-    PID_ENABLED, PID_OFFSCREEN, PID_HWND, PID_FRAMEWORK, PID_KEYBOARD_FOCUSABLE, PID_CONTENT_ELEMENT,
+    PID_ENABLED, PID_OFFSCREEN, PID_HWND, PID_FRAMEWORK, PID_HAS_KEYBOARD_FOCUS, PID_KEYBOARD_FOCUSABLE, PID_CONTENT_ELEMENT,
 ]
 
 PID_VALUE_PATTERN = _const("UIA_ValuePatternId", 10002)
@@ -273,6 +274,7 @@ class UiaScanner:
                 "pattern_values": pattern_values,
                 "depth": depth,
                 "parent_runtime_id": parent_runtime_id or [],
+                "focused": _to_bool(_cached(element, PID_HAS_KEYBOARD_FOCUS)) or _to_bool(_current(element, PID_HAS_KEYBOARD_FOCUS)),
                 "is_keyboard_focusable": _to_bool(_cached(element, PID_KEYBOARD_FOCUSABLE)) or _to_bool(_current(element, PID_KEYBOARD_FOCUSABLE)),
                 "is_content_element": _to_bool(_cached(element, PID_CONTENT_ELEMENT)) or _to_bool(_current(element, PID_CONTENT_ELEMENT)),
                 "action": action_for_role(role, class_name),

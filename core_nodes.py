@@ -86,9 +86,10 @@ def _apply_wiring_ops(w: dict[str, Any], patches: list[dict[str, Any]]) -> dict[
 
 def _activation_bucket(rel: str, w: dict[str, Any]) -> str:
     activation = w["self_modify"]["evolvable"]["activation"]
-    if rel in set(activation["immediate"]):
+    name = pathlib.PurePosixPath(rel.replace("\\", "/")).name
+    if name in set(activation["immediate_names"]) or name.startswith(tuple(activation["immediate_prefixes"])):
         return "immediate"
-    if rel in set(activation["next_run"]):
+    if pathlib.PurePosixPath(name).suffix in set(activation["next_run_suffixes"]):
         return "next_run"
     return "supporting"
 
@@ -171,10 +172,17 @@ def hot_swap_to_known_good(w: dict[str, Any], *, paths: list[str] | None = None)
     checkout_targets, missing = [], []
     for target in targets:
         (checkout_targets if _git(["cat-file", "-e", f"{sha}:{target}"], check=False).returncode == 0 else missing).append(target)
-    if not checkout_targets:
+    if checkout_targets:
+        _git(["checkout", sha, "--", *checkout_targets])
+    removed = []
+    for target in missing:
+        path, _ = _evolution_target(target, w)
+        if path.exists():
+            path.unlink()
+            removed.append(target)
+    if not checkout_targets and not removed:
         return {"hot_swapped": False, "reason": "no_targets_in_known_good", "commit": sha, "known_good": known_good, "missing_in_known_good": missing}
-    _git(["checkout", sha, "--", *checkout_targets])
-    result: dict[str, Any] = {"hot_swapped": True, "commit": sha, "known_good": known_good, "paths": checkout_targets}
+    result: dict[str, Any] = {"hot_swapped": True, "commit": sha, "known_good": known_good, "paths": checkout_targets, "removed": removed}
     if missing:
         result["missing_in_known_good"] = missing
     return result
@@ -199,12 +207,15 @@ def prepare_self_evolution(w: dict[str, Any]) -> dict[str, Any]:
     remote = str(cfg["remote"])
     branch = git_current_branch()
     remote_url = _remote_url(remote)
+    status = git_worktree_status()
+    if status:
+        raise RuntimeError(f"self evolution requires a clean worktree so the known-good marker remains exact: {status}")
     return {
         "context_mode": w["self_modify"]["context_mode"],
         "branch": branch,
         "current_commit": git_head_sha(),
         "known_good": resolve_known_good(w),
-        "worktree_status": git_worktree_status(),
+        "worktree_status": status,
         "remote": remote,
         "remote_url": remote_url,
         "branch_url": _github_branch_url(remote_url, branch),
@@ -245,7 +256,7 @@ def _restore_snapshots(snapshots: dict[pathlib.Path, bytes | None]) -> None:
             path.parent.mkdir(parents=True, exist_ok=True)
             tmp = path.with_name(f"{path.name}.rollback.{os.getpid()}.{_thread_id()}")
             tmp.write_bytes(content)
-            wiring.replace_with_retry(tmp, path)
+            io_helpers.replace_with_retry(tmp, path)
 
 
 def _file_write(item: dict[str, Any], w: dict[str, Any]) -> tuple[pathlib.Path, str, str]:
@@ -275,9 +286,6 @@ def apply_evolution_patch(w: dict[str, Any], parsed: dict[str, Any]) -> tuple[st
         wiring_patches = []
     if wiring_patches:
         wiring.validate_wiring(patched_wiring)
-        problems = check_topology.coherence_problems(patched_wiring)
-        if problems:
-            raise ValueError(f"wiring_patch would make the organism incoherent: {problems}")
     writes = [write for write in (_file_write(item, w) for item in data["file_writes"]) if not _semantic_noop(write[0], write[2])]
     deletes = [_evolution_target(str(path), w) for path in data["file_deletes"]]
     if not writes and not deletes and not wiring_patches:
@@ -340,7 +348,7 @@ def commit_self_evolution(
     if not changed_files:
         return {"committed": False, "reason": "no_changed_files", "branch": git_current_branch(), "commit": git_head_sha()}
     _git(["add", "-A", "-f", "--", *changed_files])
-    if not git_worktree_status():
+    if _git(["diff", "--quiet", "HEAD", "--", *changed_files], check=False).returncode == 0:
         return {
             "committed": False,
             "reason": "no_git_changes",
@@ -361,7 +369,7 @@ def commit_self_evolution(
         indent=2,
         default=str,
     )
-    _git(["commit", "-m", title, "-m", body])
+    _git(["commit", "--only", "-m", title, "-m", body, "--", *changed_files])
     branch, commit = git_current_branch(), git_head_sha()
     known_good = (
         update_known_good_ref(w, commit, source="commit_self_evolution")
@@ -369,7 +377,7 @@ def commit_self_evolution(
         else resolve_known_good(w)
     )
     pushed = known_good_ref_pushed = False
-    if bool(w["self_modify"]["git"]["push_after_commit"]):
+    if advance_known_good and bool(w["self_modify"]["git"]["push_after_commit"]):
         remote = str(w["self_modify"]["git"]["remote"])
         _git(["push", remote, branch])
         pushed = True
@@ -398,6 +406,7 @@ def accept_self_evolution(w: dict[str, Any], commit: str, *, source: str) -> dic
     pushed = False
     if bool(w["self_modify"]["git"]["push_after_commit"]):
         remote = str(w["self_modify"]["git"]["remote"])
+        _git(["push", remote, git_current_branch()])
         _git(["push", remote, f"{known_good['ref']}:{known_good['ref']}"])
         pushed = True
     return {
@@ -452,6 +461,12 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         event.setdefault("ok", True)
         event["event_index"] = len(action_events)
         event["recorded_at"] = time.time()
+        rendered = json.dumps(event, ensure_ascii=False, default=str)
+        if len(rendered) > 12000:
+            keep = {key: event[key] for key in ("ok", "action", "path", "size", "content_chars", "content_sha256", "returncode", "event_index", "recorded_at") if key in event}
+            keep["detail_chars"] = len(rendered)
+            keep["detail_preview"] = rendered[:6000] + "\n...[action detail bounded]...\n" + rendered[-6000:]
+            event = keep
         action_events.append(event)
         if event.get("ok") is not True:
             raise RuntimeError(f"body action failed: {event}")
@@ -466,6 +481,15 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
     def _guarded(fn):
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             return _record_action(fn(*args, **kwargs))
+        return wrapper
+
+    def _recorded(action: str, fn):
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            result = fn(*args, **kwargs)
+            event = dict(result) if isinstance(result, dict) else {"ok": True, "value": result}
+            event.setdefault("action", action)
+            _record_action(event)
+            return result
         return wrapper
 
     click = _guarded(lambda x, y, hwnd=0: d.click(int(x), int(y), int(hwnd or 0)))
@@ -489,10 +513,6 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         node = _require_node(node_id)
         return _record_action({"ok": True, "action": "read_node", "target": _target_label(node), "text": node.get("name") or node.get("text_full") or node.get("value") or ""})
 
-    def observe() -> dict[str, Any]:
-        obs = d.observe({"hover_cache": copy.deepcopy(w["observe_config"]["hover_cache"])})
-        return _record_action({"ok": True, "action": "observe", "desktop_tree_text": obs.get("desktop_tree_text", "")})
-
     def consult_model(prompt: str, max_output_tokens: int = 800) -> dict[str, Any]:
         text = str(prompt).strip()
         if not text:
@@ -500,53 +520,20 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         result = brain.call([{"role": "user", "content": text}], w, request_config={"max_output_tokens": int(max_output_tokens), "plain_text": True})
         return _record_action({"ok": True, "action": "consult_model", "response": str(result["content"])})
 
-    # Direct PowerShell launch for reliable directory inspection and task-agnostic operation
-    def launch_powershell() -> dict[str, Any]:
-        try:
-            proc = subprocess.Popen(["powershell.exe"])
-            time.sleep(1.0)  # allow window to appear
-            return _record_action({"ok": True, "action": "launch_powershell", "target": "powershell.exe", "pid": proc.pid})
-        except Exception as exc:
-            return _record_action({"ok": False, "action": "launch_powershell", "error": f"{type(exc).__name__}: {exc}"})
-
-    # Direct directory inspection using Python to bypass UI focus issues
-    def list_directory(path: str = ".") -> dict[str, Any]:
-        try:
-            entries = os.listdir(path)
-            return _record_action({"ok": True, "action": "list_directory", "path": path, "entries": entries, "count": len(entries)})
-        except Exception as exc:
-            return _record_action({"ok": False, "action": "list_directory", "path": path, "error": f"{type(exc).__name__}: {exc}"})
-
-    # Append long self-evolution report to active Notepad using type_text for human-readable appending
-    def append_report_to_notepad(report: str) -> dict[str, Any]:
-        try:
-            # Focus Notepad if possible via hotkey or assume focused; append via type_text
-            res = type_text(report)
-            return _record_action({"ok": True, "action": "append_report_to_notepad", "chars_appended": len(report)})
-        except Exception as exc:
-            return _record_action({"ok": False, "action": "append_report_to_notepad", "error": f"{type(exc).__name__}: {exc}"})
-
-    # NEW: Direct focus verification helper for post-action re-observation
-    def verify_focus(expected_role: str = "Window") -> dict[str, Any]:
-        obs = observe()
-        tree = obs.get("desktop_tree_text", "")
-        focused = any(expected_role.lower() in line.lower() for line in tree.splitlines() if "focused" in line.lower() or "active" in line.lower())
-        return _record_action({"ok": focused, "action": "verify_focus", "expected": expected_role, "found": focused})
-
-    return {
+    runtime = {
         "click": click, "click_node": click_node, "read_node": read_node,
         "type_text": type_text, "press_key": press_key, "hotkey": hotkey, "scroll": scroll,
-        "open_url": open_url, "observe": observe, "consult_model": consult_model,
-        "write_file": _tools.write_file,
-        "read_file": _tools.read_file,
-        "web_search": _tools.web_search,
-        "open_page": _tools.open_page,
-        "github_create_issue": _tools.github_create_issue,
-        "github_comment_issue": _tools.github_comment_issue,
-        "github_list_issues": _tools.github_list_issues,
-        "github_push": _tools.github_push,
-        "git_current_branch": _tools.git_current_branch,
-        "git_branch_show_current": _tools.git_branch_show_current,
+        "open_url": open_url, "consult_model": consult_model,
+        "write_file": _recorded("write_file", _tools.write_file),
+        "read_file": _recorded("read_file", _tools.read_file),
+        "web_search": _recorded("web_search", _tools.web_search),
+        "open_page": _recorded("open_page", _tools.open_page),
+        "github_create_issue": _recorded("github_create_issue", _tools.github_create_issue),
+        "github_comment_issue": _recorded("github_comment_issue", _tools.github_comment_issue),
+        "github_list_issues": _recorded("github_list_issues", _tools.github_list_issues),
+        "github_push": _recorded("github_push", _tools.github_push),
+        "git_current_branch": _recorded("git_current_branch", _tools.git_current_branch),
+        "git_branch_show_current": _recorded("git_branch_show_current", _tools.git_branch_show_current),
         "node_by_id": _require_node, "action_index": action_index,
         "tools": _tools, "desktop": desktop, "subprocess": subprocess,
         "os": os, "sys": sys, "json": json, "time": time, "pathlib": pathlib,
@@ -556,8 +543,8 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "observation": bus.observation_brief(state),
         "observed_at": state.get("observed_at"),
         "action_events": action_events, "_action_events": action_events,
-        "launch_powershell": launch_powershell,
-        "list_directory": list_directory,
-        "append_report_to_notepad": append_report_to_notepad,
-        "verify_focus": verify_focus,
     }
+    missing = sorted(set(w["capabilities"]["helpers"]) - set(runtime))
+    if missing:
+        raise RuntimeError(f"wiring declares unavailable capability helpers: {missing}")
+    return runtime
