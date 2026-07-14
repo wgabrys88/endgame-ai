@@ -14,7 +14,6 @@ import core_wiring as wiring
 def run(
     goal: str | None,
     *,
-    reset: bool = False,
     duration_seconds: float | None = None,
     brain_call_budget: int | None = None,
     start_node: str | None = None,
@@ -27,50 +26,35 @@ def run(
     topo = w["topology"]
     current = str(start_node or topo["cycle_start"])
     deadline_at = _deadline_at
-    st: dict[str, Any] = {"_phase": "starting", "tick": 0, "current_node": current}
+    st: dict[str, Any] = {
+        "_phase": "starting",
+        "goal": goal or "",
+        "tick": 0,
+        "current_node": current,
+        "last_error": None,
+        "last_action": None,
+        "wiring_transport": w["model"]["transport"],
+        "start_node": current,
+    }
     try:
         if brain_call_budget is not None:
             w.setdefault("model", {})["brain_call_budget"] = brain_call_budget
-        if reset:
-            wiring.reset_runtime(w)
+        wiring.reset_runtime(w)
         brain.reset_call_budget()
 
         if deadline_at is None and duration_seconds is not None:
             deadline_at = invocation_started_at + float(duration_seconds)
 
-        sp = wiring.state_path(w)
-        resumed = False
-        if not reset and sp.exists():
-            st = wiring.load_json(sp)
-            goal = goal or str(st.get("goal") or "")
-            current = str(start_node or st.get("next_node") or topo["cycle_start"])
-            resumed = True
-        else:
-            current = str(start_node or topo["cycle_start"])
-            st = {
-                "_phase": "starting",
-                "goal": goal or "",
-                "tick": 0,
-                "current_node": current,
-                "last_error": None,
-                "last_action": None,
-                "wiring_transport": w["model"]["transport"],
-                "start_node": current,
-            }
         if current not in set(topo["nodes"]):
             raise RuntimeError(f"start node '{current}' is not in topology.nodes")
-        st["_phase"] = "resuming" if resumed else st.get("_phase", "starting")
-        st["goal"] = goal or str(st.get("goal") or "")
         st.setdefault("effective_goal", st["goal"])
         st.setdefault("_depth", 0)
         if _seed:
             st.update(_seed)
-        st["current_node"] = current
         st["started_at"] = invocation_started_at
         st["duration_seconds"] = duration_seconds
         st["deadline_at"] = deadline_at
-        st.setdefault("wiring_transport", w["model"]["transport"])
-        frontier: list[str] = [str(n) for n in st.get("frontier") or [current]]
+        frontier: list[str] = [current]
         wiring.write_state(w, st)
         while frontier:
             current = frontier.pop(0)
@@ -179,7 +163,6 @@ def run(
             frontier.extend(successors)
             st["last_signal"] = signal_name
             st["last_node"] = current
-            st["next_node"] = successors[0]
             st["frontier"] = list(frontier)
             st["tick"] += 1
             st["_phase"] = "node_complete"
@@ -218,7 +201,6 @@ def next_nodes_for(w: dict[str, Any], current: str, signal_name: str) -> list[st
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("goal", nargs="?", default="")
-    ap.add_argument("--reset", action="store_true")
     ap.add_argument("--duration-seconds", type=float, default=120.0)
     ap.add_argument("--brain-call-budget", type=int, default=None)
     ap.add_argument("--start-node", default=None)
@@ -226,7 +208,6 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     run(
         args.goal,
-        reset=args.reset,
         duration_seconds=args.duration_seconds,
         brain_call_budget=args.brain_call_budget,
         start_node=args.start_node,

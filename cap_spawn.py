@@ -46,7 +46,7 @@ def run(ctx: dict[str, Any]):
     tag = f"t{int(state.get('tick', 0))}"
     child_path = _child_wiring_path(w, depth + 1, tag)
     child_seed = {"_depth": depth + 1, "effective_goal": child_goal}
-    child_state = organism.run(child_goal, reset=True, duration_seconds=float(w["fractal"]["child_duration_seconds"]), wiring_path=child_path, _seed=child_seed)
+    child_state = organism.run(child_goal, duration_seconds=float(w["fractal"]["child_duration_seconds"]), wiring_path=child_path, _seed=child_seed)
     child_narrative = str(child_state["effective_goal"])
     note = parent + f"\n\n[SPAWN d{depth}->d{depth + 1}] I begot a child organism to pursue the sub-work; it returned having reached '{child_state['_phase']}'. Its testimony:\n{child_narrative}"
     return bus.emit("spawned", {"effective_goal": note, "_depth": depth, "_child_phase": child_state["_phase"]})
