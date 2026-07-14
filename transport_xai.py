@@ -40,6 +40,7 @@ def call(messages, cfg):
         "input": [{"role": m.get("role", "user"), "content": m.get("content", "")} for m in messages if m.get("role", "user") in {"system", "user", "assistant"}],
         "temperature": cfg.get("temperature", 0.2),
         "truncation": str(cfg.get("truncation") or "disabled"),
+        "store": True,
     }
     if cfg.get("prompt_cache_key"):
         payload["prompt_cache_key"] = str(cfg["prompt_cache_key"])
