@@ -30,7 +30,6 @@
 !node_scheduler.py
 !node_self_modify.py
 !node_verify.py
-!transport_file_proxy.py
 !transport_xai.py
 !tools.py
 !node_repair_probe.py
