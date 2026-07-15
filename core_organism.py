@@ -36,7 +36,6 @@ def run(
     try:
         brain.reset_call_budget()
 
-        st.setdefault("_depth", 0)
         if _seed:
             st.update(_seed)
         st["started_at"] = invocation_started_at

@@ -1,4 +1,4 @@
-"""[node_reflect] — Thou shalt consume a deed denied and its evidence; and thou shalt bring forth a causal lesson and choose retry, frame, or a named child sub-goal."""
+"""[node_reflect] — Thou shalt consume a deed denied and its evidence; and thou shalt bring forth a causal lesson and choose retry or frame."""
 import core_bus as bus
 from core_node_base import BaseNode
 
@@ -63,11 +63,6 @@ class ReflectNode(BaseNode):
             },
             "goal_interpretations": bus.with_interpretation(state.get("goal_interpretations"), "reflect", str(data.get("goal_interpretation") or "")),
         }
-        if self._signal == "spawn":
-            subgoal = str(data.get("subgoal") or "").strip()
-            if not subgoal:
-                raise RuntimeError("reflection routed to spawn without a non-empty subgoal")
-            patch["spawn_subgoal"] = subgoal
         return patch
 
 

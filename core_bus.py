@@ -157,20 +157,18 @@ def emergent_signals(wiring: JsonDict, node: str | None) -> list[str]:
 
 
 def state_brief(state: JsonDict) -> JsonDict:
-    """Compact operational focus. Continuity is the goal-interpretation table (carried
-    to the user tail) plus the structured record of witnessed deeds; there is no prose log."""
+    """Compact operational focus of the NOW. The sole within-waking continuity is the
+    immutable goal and the goal-interpretation table (carried to the user tail); there
+    is no memory, no history, no prior turn — only this present state and the fresh
+    observation that reveals the world as it now is."""
     current_deed = state.get("current_deed") or {}
     return {
         "tick": state.get("tick"),
-        "depth": state.get("_depth", 0),
         "current_node": state.get("current_node"),
         "frontier": list(state.get("frontier") or []),
         "goal_interpretations": dict(state.get("goal_interpretations") or {}),
-        "witnessed_deeds": list(state.get("witnessed_deeds") or []),
         "latest_counsel": state.get("latest_counsel") or "",
-        "child_testimony": state.get("child_testimony") or "",
         "current_deed": {"description": current_deed.get("description", ""), "done_when": current_deed.get("done_when", "")},
-        "witnessed_deed_count": len(state.get("witnessed_deeds") or []),
         "last_signal": state.get("last_signal"),
         "last_error": state.get("last_error"),
         "last_verification": state.get("last_verification", {}),

@@ -58,7 +58,7 @@ def _require_list_str(obj: dict[str, Any], path: str) -> list[str]:
     return value
 
 def validate_wiring(cfg: dict[str, Any]) -> None:
-    for key in ("schema", "model", "paths", "observe_config", "topology", "prompts", "prompt_aliases", "shared_prompt_prefix", "record_contracts", "capabilities", "fractal"):
+    for key in ("schema", "model", "paths", "observe_config", "topology", "prompts", "prompt_aliases", "shared_prompt_prefix", "record_contracts", "capabilities"):
         if key not in cfg:
             raise RuntimeError(f"wiring missing required key: {key}")
     _obj(cfg, "model")
@@ -99,7 +99,6 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
         "observe_config.hover_cache.filter.max_depth",
         "observe_config.hover_cache.filter.max_children_per_window",
         "observe_config.hover_cache.filter.max_llm_nodes",
-        "fractal.max_recursion_depth",
     )
     for path in numeric_paths:
         value = _require(cfg, path, int)

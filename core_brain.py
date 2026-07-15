@@ -262,9 +262,6 @@ def _record_response_format(w: dict[str, Any], record_type: str, emitting_node: 
         limit_name = {"string": "minLength", "array": "minItems", "object": "minProperties"}.get(type_name)
         if limit_name:
             data_properties.setdefault(key, {})[limit_name] = 1
-    for key, minimum in contract.get("min_length", {}).items():
-        if contract.get("types", {}).get(key) == "string":
-            data_properties.setdefault(key, {})["minLength"] = int(minimum)
     enums = dict(contract["enums"])
     emergent = bus.emergent_signals(w, emitting_node)
     if emergent and "next_signal" in (set(contract["required"]) | set(contract.get("types", {})) | set(enums)):
