@@ -156,7 +156,7 @@ def _node_docstring(w: dict[str, Any], node: str) -> str:
     return ""
 
 
-def downstream_contract(w: dict[str, Any], emitting_node: str | None) -> str:
+def downstream_contract(w: dict[str, Any], emitting_node: str | None, expected_record_type: str | None = None) -> str:
     """The producer reads, live, the input contracts (docstrings) of every node its output
     edges are wired to, and copies them in. This is the whole contract mechanism: no stored
     record_contracts, no pins registry — X learns what to produce by reading Y and Z's own
@@ -178,7 +178,16 @@ def downstream_contract(w: dict[str, Any], emitting_node: str | None) -> str:
     for signal, succ in seen:
         doc = _node_docstring(w, succ)
         lines.append(f"\n[on signal '{signal}' -> {succ}]\n{doc}" if doc else f"\n[on signal '{signal}' -> {succ}] (no input contract declared)")
-    lines.append("\nWhen thy record beareth next_signal, choose thou it from these wired routes.")
+    # The next_signal instruction is lawful ONLY when this node's own record can
+    # carry next_signal. For mechanically-routed nodes (plan, execution, verification,
+    # git_evolution_patch, repair_probe, repair_validation) the field is absent and the
+    # strict schema forbids it, so commanding a next_signal would be a contradiction at
+    # the recency slot. Gate on the actual contract, mirroring _record_response_format.
+    if expected_record_type:
+        contract = w.get("record_contracts", {}).get(expected_record_type, {})
+        contract_keys = set(contract.get("required", [])) | set(contract.get("types", {})) | set(contract.get("enums", {}))
+        if "next_signal" in contract_keys:
+            lines.append("\nWhen thy record beareth next_signal, choose thou it from these wired routes.")
     return "\n".join(lines)
 
 
@@ -383,7 +392,7 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
     stable_context_parts = []
     if goal:
         stable_context_parts.append(f"THE IMMUTABLE ROOT GOAL (fixed for this run):\n{goal}")
-    downstream = downstream_contract(w, emitting_node)
+    downstream = downstream_contract(w, emitting_node, expected_record_type)
     if downstream:
         stable_context_parts.append(downstream)
     stable_context = "\n\n".join(stable_context_parts)
