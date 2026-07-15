@@ -1,4 +1,4 @@
-"""[node_spawn] — Thou shalt consume a named [spawn_subgoal] and the parent narrative; run one child bounded in depth, and fold its final testimony back for reflection."""
+"""[node_spawn] — Thou shalt consume a named [spawn_subgoal]; run one child bounded in depth, and fold its final testimony back for reflection as [child_testimony]."""
 import core_bus as bus
 import core_loader as loader
 
@@ -8,7 +8,7 @@ def run(ctx):
 
     node_reflect routes here when it judges the goal warrants a sub-organism. This
     node invokes the cap_spawn capability (which runs a depth-gated child organism
-    on the inherited narrative and folds the child's final narrative back), then
+    and folds the child's final interpretation table back as child_testimony), then
     forwards the child's counsel into the wheel as "spawned".
     """
     cap = loader.load("cap", "cap_spawn", ctx["wiring"])

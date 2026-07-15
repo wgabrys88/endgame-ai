@@ -86,9 +86,9 @@ def emit(signal: str, patch: JsonDict | None = None, *, record: Record | JsonDic
     return NodeOutput(signal=signal.strip(), patch=dict(patch or {}), record=record_obj, evidence=dict(evidence or {}))
 
 
-NARRATIVE_TAIL_CHARS = 12000
-
 _INTERP_ORDER = ["execute", "verify", "reflect", "frame"]
+
+INTERP_MIN_CHARS = 300
 
 
 def render_interpretation_table(goal: str, interps: JsonDict | None) -> str:
@@ -116,16 +116,6 @@ def with_interpretation(interps: JsonDict | None, faculty: str, sentence: str) -
     merged = dict(interps or {})
     merged[faculty] = str(sentence or "").strip()
     return merged
-
-
-def append_narrative(effective_goal: str, line: str, *, root_goal: str = "") -> str:
-    combined = f"{effective_goal}{line}"
-    if len(combined) <= NARRATIVE_TAIL_CHARS:
-        return combined
-    head = root_goal if root_goal and combined.startswith(root_goal) else ""
-    tail = combined[-NARRATIVE_TAIL_CHARS:]
-    marker = "\n\n[...earlier narrative trimmed for token efficiency...]\n"
-    return f"{head}{marker}{tail}" if head else f"{marker.lstrip()}{tail}"
 
 
 def coerce_node_output(node: str, result: Any) -> NodeOutput:
@@ -167,19 +157,18 @@ def emergent_signals(wiring: JsonDict, node: str | None) -> list[str]:
 
 
 def state_brief(state: JsonDict) -> JsonDict:
-    """Compact operational focus plus the bounded continuity narrative."""
+    """Compact operational focus. Continuity is the goal-interpretation table (carried
+    to the user tail) plus the structured record of witnessed deeds; there is no prose log."""
     current_deed = state.get("current_deed") or {}
-    narrative = str(state.get("effective_goal") or "")
-    root_goal = str(state.get("goal") or "")
-    if root_goal and narrative.startswith(root_goal):
-        narrative = narrative[len(root_goal):].lstrip()
     return {
         "tick": state.get("tick"),
         "depth": state.get("_depth", 0),
         "current_node": state.get("current_node"),
         "frontier": list(state.get("frontier") or []),
-        "narrative": narrative,
         "goal_interpretations": dict(state.get("goal_interpretations") or {}),
+        "witnessed_deeds": list(state.get("witnessed_deeds") or []),
+        "latest_counsel": state.get("latest_counsel") or "",
+        "child_testimony": state.get("child_testimony") or "",
         "current_deed": {"description": current_deed.get("description", ""), "done_when": current_deed.get("done_when", "")},
         "witnessed_deed_count": len(state.get("witnessed_deeds") or []),
         "last_signal": state.get("last_signal"),

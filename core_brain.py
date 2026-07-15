@@ -98,6 +98,7 @@ def _validate_record_contract(w: dict[str, Any], record: bus.Record, expected_re
     enums = dict(contract["enums"])
     types = dict(contract.get("types", {}))
     non_empty = set(contract.get("non_empty", []))
+    min_length = dict(contract.get("min_length", {}))
     missing = [key for key in required if key not in record.data]
     if missing:
         raise RuntimeError(f"{record.record_type} record missing required data keys: {missing}")
@@ -118,6 +119,9 @@ def _validate_record_contract(w: dict[str, Any], record: bus.Record, expected_re
     for key, values in enums.items():
         if key in record.data and record.data[key] not in set(values):
             raise RuntimeError(f"{record.record_type}.data.{key}={record.data[key]!r} outside {values!r}")
+    for key, minimum in min_length.items():
+        if key in record.data and isinstance(record.data[key], str) and len(record.data[key].strip()) < int(minimum):
+            raise RuntimeError(f"{record.record_type}.data.{key} must be at least {minimum} characters; got {len(record.data[key].strip())}")
 
 
 def _commit_record(content: str, w: dict[str, Any], expected_record_type: str | None = None) -> bus.Record:
@@ -258,6 +262,9 @@ def _record_response_format(w: dict[str, Any], record_type: str, emitting_node: 
         limit_name = {"string": "minLength", "array": "minItems", "object": "minProperties"}.get(type_name)
         if limit_name:
             data_properties.setdefault(key, {})[limit_name] = 1
+    for key, minimum in contract.get("min_length", {}).items():
+        if contract.get("types", {}).get(key) == "string":
+            data_properties.setdefault(key, {})["minLength"] = int(minimum)
     enums = dict(contract["enums"])
     emergent = bus.emergent_signals(w, emitting_node)
     if emergent and "next_signal" in (set(contract["required"]) | set(contract.get("types", {})) | set(enums)):

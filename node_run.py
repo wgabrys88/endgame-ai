@@ -24,7 +24,6 @@ def run(ctx):
     if not artifact:
         return bus.emit("done")
 
-    label = artifact["label"]
     code = pathlib.Path(artifact["path"]).read_text(encoding="utf-8")
 
     import core_desktop as desktop
@@ -58,10 +57,6 @@ def run(ctx):
         "error": error,
         "failure": failure,
     }}
-    action_names = [str(event.get("action", "action")) for event in result["action_events"]]
-    deed = ", ".join(action_names) if action_names else "local computation"
-    outcome = "success" if error is None else error
-    effective = bus.append_narrative(state["effective_goal"], f"\n\n[{label}] {deed}: {outcome}.", root_goal=state.get("goal", ""))
     return bus.emit(
         "done",
         {
@@ -74,6 +69,5 @@ def run(ctx):
             "last_failure": failure,
             "action_frame": None if error is None else state.get("action_frame"),
             "_execute_artifact": None,
-            "effective_goal": effective,
         },
     )

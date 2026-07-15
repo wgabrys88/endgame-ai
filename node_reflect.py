@@ -43,7 +43,6 @@ class ReflectNode(BaseNode):
         data, state = record.data, ctx["state"]
         deed = state.get("current_deed") or {}
         lesson, diagnosis = data["lesson"], data["diagnosis"]
-        effective = bus.append_narrative(state["effective_goal"], f"\n\n[REFLECT] I turn by '{self._signal}'. The lesson: {lesson}. The diagnosis: {diagnosis}.", root_goal=state.get("goal", ""))
         reflection = {
             "lesson": lesson,
             "diagnosis": diagnosis,
@@ -62,7 +61,6 @@ class ReflectNode(BaseNode):
                 "diagnosis": diagnosis,
                 "failure": self._failure,
             },
-            "effective_goal": effective,
             "goal_interpretations": bus.with_interpretation(state.get("goal_interpretations"), "reflect", str(data.get("goal_interpretation") or "")),
         }
         if self._signal == "spawn":

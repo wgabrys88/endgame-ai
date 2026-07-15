@@ -36,7 +36,6 @@ def run(
     try:
         brain.reset_call_budget()
 
-        st.setdefault("effective_goal", st["goal"])
         st.setdefault("_depth", 0)
         if _seed:
             st.update(_seed)
