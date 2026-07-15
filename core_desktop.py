@@ -55,6 +55,11 @@ class Desktop:
         hc = cfg.get("hover_cache", self.config.get("hover_cache", {}))
         return observe_desktop(self, hc)
 
+    def expand(self, elements: Any, max_text: int = 5000, max_nodes: int = 200) -> dict[str, Any]:
+        from core_observation import expand as expand_elements
+        items = elements if isinstance(elements, list) else [elements]
+        return expand_elements(self, items, max_text=max_text, max_nodes=max_nodes)
+
     def last_action_index(self) -> dict[str, dict[str, Any]]:
         return self._last_action_index
 

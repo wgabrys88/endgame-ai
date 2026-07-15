@@ -331,6 +331,43 @@ def _load_phase(module_name: str):
     return mod
 
 
+def expand(desktop: Any, ids_or_points: list[Any], max_text: int = 5000, max_nodes: int = 200) -> dict[str, Any]:
+    """Targeted deeper look at named elements: re-acquire each at its screen point and
+    harvest its full subtree, returning untruncated text, value, and every child (including
+    non-interactive), which the shallow tree omitteth. This is a fresh independent look, not
+    memory: it readeth the live [UIA] now. `ids_or_points` are entries of the current
+    action_index (each bearing px/py) or explicit {'px':x,'py':y} points."""
+    from ctypes import wintypes
+    scanner = UiaScanner({}, desktop)
+    results: dict[str, Any] = {}
+    for i, item in enumerate(ids_or_points):
+        node = item if isinstance(item, dict) else {}
+        px, py = node.get("px"), node.get("py")
+        key = str(node.get("short_id") or node.get("id") or i)
+        if px is None or py is None:
+            results[key] = {"error": "element bears no screen point to expand"}
+            continue
+        pt = wintypes.POINT(int(px), int(py))
+        try:
+            root_el = scanner.automation.ElementFromPointBuildCache(pt, scanner._cache())
+        except Exception as exc:
+            results[key] = {"error": f"could not acquire element: {type(exc).__name__}: {exc}"}
+            continue
+        if root_el is None:
+            results[key] = {"error": "no element at point"}
+            continue
+        harvested = scanner.harvest_subtree(root_el, max_nodes)
+        results[key] = {
+            "text_full": (harvested[0].get("text_full", "") if harvested else "")[:max_text],
+            "value": (harvested[0].get("value", "") if harvested else "")[:max_text],
+            "children": [
+                {"role": n["role"], "name": n["name"], "action": n["action"], "text": (n.get("text_full") or "")[:max_text]}
+                for n in harvested[1:]
+            ],
+        }
+    return results
+
+
 def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any]:
     cfg = dict(config or {})
     if not cfg["enabled"]:
