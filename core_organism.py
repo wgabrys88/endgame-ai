@@ -12,8 +12,6 @@ import core_wiring as wiring
 def run(
     goal: str | None,
     *,
-    brain_call_budget: int | None = None,
-    start_node: str | None = None,
     wiring_path: str | None = None,
     _seed: dict[str, Any] | None = None,
     _state_path: str | None = None,
@@ -23,15 +21,13 @@ def run(
     invocation_started_at = time.time()
     def load_live_wiring() -> dict[str, Any]:
         loaded = wiring.load_wiring(wiring_path)
-        if brain_call_budget is not None:
-            loaded.setdefault("model", {})["brain_call_budget"] = brain_call_budget
         if _state_path:
             loaded["_state_path_override"] = _state_path
         return loaded
 
     w = load_live_wiring()
     topo = w["topology"]
-    current = str(start_node or topo["cycle_start"])
+    current = str(topo["cycle_start"])
     st: dict[str, Any] = {
         "_phase": "starting",
         "goal": goal or "",
@@ -40,14 +36,11 @@ def run(
         "last_error": None,
         "last_action": None,
         "wiring_transport": w["model"]["transport"],
-        "start_node": current,
     }
     try:
         wiring.reset_runtime(w)
         brain.reset_call_budget()
 
-        if current not in set(topo["nodes"]):
-            raise RuntimeError(f"start node '{current}' is not in topology.nodes")
         st.setdefault("effective_goal", st["goal"])
         st.setdefault("_depth", 0)
         if _seed:
@@ -235,14 +228,10 @@ def _extend_frontier(
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("goal", nargs="?", default="")
-    ap.add_argument("--brain-call-budget", type=int, default=None)
-    ap.add_argument("--start-node", default=None)
     ap.add_argument("--wiring", default="wiring.json")
     args = ap.parse_args(argv)
     run(
         args.goal,
-        brain_call_budget=args.brain_call_budget,
-        start_node=args.start_node,
         wiring_path=args.wiring,
     )
     return 0

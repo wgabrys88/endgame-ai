@@ -229,7 +229,7 @@ def get_transport_config(wiring: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     model = wiring["model"]
     transport = model["transport"].strip()
     cfg = dict(model["transport_config"][transport])
-    for key in ("timeout", "brain_call_budget"):
+    for key in ("timeout",):
         if key not in cfg:
             cfg[key] = model["global"][key]
     cfg["transport"] = transport

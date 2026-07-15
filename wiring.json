@@ -21,8 +21,7 @@
       }
     },
     "global": {
-      "timeout": 180,
-      "brain_call_budget": null
+      "timeout": 180
     },
     "stable_prefix": {
       "enabled": true,

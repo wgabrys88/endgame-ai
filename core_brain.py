@@ -13,7 +13,6 @@ import core_loader as loader
 import core_wiring as wiring
 
 ROOT = pathlib.Path(__file__).parent.resolve()
-_CALLS_MADE = 0
 _STABLE_PREFIX_CACHE: "StablePrefix | None" = None
 _STABLE_PREFIX_LOCK = threading.Lock()
 _LAST_OBSERVATION: dict[str, Any] | None = None
@@ -226,8 +225,7 @@ def _with_observation(payload: dict[str, Any], w: dict[str, Any]) -> dict[str, A
 
 
 def reset_call_budget() -> None:
-    global _CALLS_MADE, _CONV_ID, _LAST_OBSERVATION
-    _CALLS_MADE = 0
+    global _CONV_ID, _LAST_OBSERVATION
     _CONV_ID = f"endgame-ai-{int(time.time())}-{os.getpid()}"
     _LAST_OBSERVATION = None
 
@@ -279,16 +277,11 @@ def _record_response_format(w: dict[str, Any], record_type: str, emitting_node: 
 
 
 def call(messages: list[dict[str, str]], w: dict[str, Any], *, response_format: dict[str, Any] | None = None, request_config: dict[str, Any] | None = None) -> dict[str, str]:
-    global _CALLS_MADE
     transport, cfg = wiring.get_transport_config(w)
     if response_format is not None:
         cfg = {**cfg, "response_format": response_format}
     if request_config:
         cfg = {**cfg, **request_config}
-    max_calls = w["model"].get("brain_call_budget") or w["model"]["global"]["brain_call_budget"]
-    if max_calls is not None and _CALLS_MADE >= int(max_calls):
-        raise RuntimeError(f"brain call budget exceeded: {_CALLS_MADE}/{max_calls}")
-    _CALLS_MADE += 1
     try:
         result = _load_transport_module(transport, w).call(messages, cfg)
     except Exception as exc:
