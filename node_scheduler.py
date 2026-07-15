@@ -14,5 +14,5 @@ def run(ctx):
     step = plan[idx]
     if not isinstance(step, dict) or not isinstance(step.get("description"), str) or not isinstance(step.get("done_when"), str):
         raise RuntimeError(f"scheduler step {idx} must contain string description and done_when")
-    effective = bus.append_narrative(state["effective_goal"], f"\n\n[SCHEDULER] Current step: {step['description']}. Complete when: {step['done_when']}.", root_goal=state.get("goal", ""))
+    effective = bus.append_narrative(state["effective_goal"], f"\n\n[SCHEDULER] The step at hand: {step['description']}. It is fulfilled when: {step['done_when']}.", root_goal=state.get("goal", ""))
     return bus.emit("step_ready", {"current_step": step, "step_goal": step["description"], "step": idx, "action_frame": None, "effective_goal": effective})

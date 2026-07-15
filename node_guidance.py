@@ -10,5 +10,5 @@ def run(ctx):
     if not counsel:
         return bus.emit("attend")
     path.write_text("", encoding="utf-8")
-    effective = bus.append_narrative(state["effective_goal"], f"\n\n[GUIDANCE] External counsel, to heed or refuse as the goal demands: {counsel}", root_goal=state.get("goal", ""))
+    effective = bus.append_narrative(state["effective_goal"], f"\n\n[GUIDANCE] Counsel from the human, to heed or to refuse as the goal demandeth: {counsel}", root_goal=state.get("goal", ""))
     return bus.emit("attend", {"effective_goal": effective})

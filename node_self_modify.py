@@ -150,10 +150,10 @@ class SelfModifyNode(BaseNode):
         }
         effective = bus.append_narrative(
             state["effective_goal"],
-            f"\n\n[SELF_MODIFY] Proposed candidate repair {repair_id}: "
+            f"\n\n[SELF_MODIFY] I have proposed the candidate repair {repair_id}: "
             f"{data['summary']}. Structural patches: {len(data['wiring_patches'])}, "
             f"writes: {len(data['file_writes'])}, deletes: {len(data['file_deletes'])}. "
-            "The repair is not accepted until a fresh behavioral probe resolves the captured failure.",
+            "The repair is not accepted until a fresh behavioral probe hath resolved the captured failure.",
             root_goal=state.get("goal", ""),
         )
         patch = {

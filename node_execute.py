@@ -70,7 +70,7 @@ class ExecuteNode(BaseNode):
 
         artifact_path = self._write_artifact(code)
         artifact = {"path": artifact_path, "label": label, "repair_probe": probe is not None}
-        effective = bus.append_narrative(state["effective_goal"], f"\n\n[{label}] Authored script artifact {pathlib.Path(artifact_path).name}.", root_goal=state.get("goal", ""))
+        effective = bus.append_narrative(state["effective_goal"], f"\n\n[{label}] I have authored the script artifact {pathlib.Path(artifact_path).name}.", root_goal=state.get("goal", ""))
         return bus.emit("built", {"_execute_artifact": artifact, "effective_goal": effective}, record=record, evidence=payload)
 
 

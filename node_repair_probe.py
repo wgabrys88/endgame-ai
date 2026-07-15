@@ -65,7 +65,7 @@ class RepairProbeNode(BaseNode):
         }
         effective = bus.append_narrative(
             state["effective_goal"],
-            f"\n\n[REPAIR PROBE] Retrying failure {data['failure_signature']}. Proof required: {data['done_when']}.",
+            f"\n\n[REPAIR PROBE] I retry the failure {data['failure_signature']}. The proof required: {data['done_when']}.",
             root_goal=state.get("goal", ""),
         )
         return {

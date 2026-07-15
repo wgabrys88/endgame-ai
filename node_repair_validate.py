@@ -107,7 +107,7 @@ class RepairValidateNode(BaseNode):
         self_modify["behavioral_validation"] = summary
         effective = bus.append_narrative(
             state["effective_goal"],
-            f"\n\n[REPAIR VALIDATION] {status.upper()}: {data['comparison']} Conclusion: {data['conclusion']}.",
+            f"\n\n[REPAIR VALIDATION] {status.upper()}: {data['comparison']} The conclusion: {data['conclusion']}.",
             root_goal=state.get("goal", ""),
         )
         patch = {

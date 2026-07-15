@@ -443,7 +443,7 @@
   },
   "capabilities": {
     "schema": "endgame-ai.execute-capabilities.v1",
-    "power": "One local Python namespace with GUI, process, file, web, and Git primitives; every named helper records its deed.",
+    "power": "One local [Python] namespace with primitives of [GUI], of process, of file, of web, and of [Git]; every named helper recordeth its deed.",
     "helpers": {
       "click": "click(x, y, hwnd=0) in physical screen coordinates",
       "click_node": "click_node(node_id) at the center from the latest fresh observation",
@@ -493,7 +493,7 @@
   },
   "node_defs": {
     "node_frame_action": {
-      "description": "node_frame_action — consume the denied step, its evidence, the narrative, and the current fresh observation; produce a concrete framed strike or return to reflection.",
+      "description": "[node_frame_action] — Thou shalt consume the step denied, its evidence, the narrative, and the fresh observation; and thou shalt bring forth a concrete framed strike, or turn back unto reflection.",
       "prompt_key": "node_frame_action",
       "expected_record_type": "action_frame",
       "signal_source": "data.next_signal",
@@ -573,7 +573,7 @@
             "path": "state.effective_goal"
           },
           "line": {
-            "format": "\n\n[FRAME_ACTION] Target {0} via {1}: {2}",
+            "format": "\n\n[FRAME_ACTION] I aim at {0} by {1}: {2}",
             "args": [
               {
                 "path": "data.target"
