@@ -226,26 +226,15 @@ def _last_denial(state: JsonDict) -> str:
     return ""
 
 
-def _action_event_count(turn: JsonDict) -> int:
-    total = 0
-    if isinstance(turn, dict):
-        for faculty in turn.values():
-            events = faculty.get("action_events") if isinstance(faculty, dict) else None
-            if isinstance(events, list):
-                total += len(events)
-    return total
-
-
 def execution_evidence(state: JsonDict) -> JsonDict:
     denial = _last_denial(state)
     turn = state.get("turn_executions") or {}
     evidence: JsonDict = {"faculties": turn if isinstance(turn, dict) else {}}
     evidence["provenance"] = (
-        "actor-authored record: the [action_events] the runner's own primitives recorded of themselves. "
+        "actor-authored record: what code the runner enacted, by its own account. "
         "This is the actor's testimony about what it did, not proof of world-effect. "
         "Independent world state is carried separately in the observation field."
     )
-    evidence["action_event_count"] = _action_event_count(turn)
     if denial:
         evidence["unsatisfied_requirement"] = denial
     return evidence

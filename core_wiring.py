@@ -58,7 +58,7 @@ def _require_list_str(obj: dict[str, Any], path: str) -> list[str]:
     return value
 
 def validate_wiring(cfg: dict[str, Any]) -> None:
-    for key in ("schema", "model", "paths", "observe_config", "topology", "prompts", "shared_prompt_prefix", "record_contracts", "capabilities"):
+    for key in ("schema", "model", "paths", "observe_config", "topology", "prompts", "shared_prompt_prefix", "record_contracts"):
         if key not in cfg:
             raise RuntimeError(f"wiring missing required key: {key}")
     _obj(cfg, "model")
@@ -111,13 +111,6 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
     prompts = _require(cfg, "prompts", dict)
     _require(cfg, "shared_prompt_prefix", str)
     validate_record_contracts(cfg)
-    _require(cfg, "capabilities.schema", str)
-    _require(cfg, "capabilities.power", str)
-    helpers = _require(cfg, "capabilities.helpers", dict)
-    if not helpers or not all(isinstance(key, str) and key and isinstance(value, str) and value for key, value in helpers.items()):
-        raise RuntimeError("wiring.capabilities.helpers must map non-empty names to descriptions")
-    _require_list_str(cfg, "capabilities.modules")
-    _require_list_str(cfg, "capabilities.state")
     if len(nodes) != len(set(nodes)):
         raise RuntimeError("wiring.topology.nodes contains duplicates")
     if cfg["topology"]["cycle_start"] not in nodes:

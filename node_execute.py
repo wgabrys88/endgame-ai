@@ -10,7 +10,6 @@ import hashlib
 import pathlib
 
 import core_bus as bus
-import core_nodes as nodes
 from core_node_base import BaseNode
 
 ROOT = pathlib.Path(__file__).resolve().parent
@@ -29,7 +28,6 @@ class ExecuteNode(BaseNode):
             "action_frame": state.get("action_frame"),
             "focus": bus.state_brief(state),
             "observation": bus.observation_brief(state),
-            "capabilities": nodes.capability_manifest(ctx),
         }
 
     def _write_artifact(self, code):
