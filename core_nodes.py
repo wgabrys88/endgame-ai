@@ -477,17 +477,17 @@ def capability_manifest(ctx: dict[str, Any] | None = None) -> dict[str, Any]:
     manifest["repo_root"] = str(ROOT)
     manifest["invocation"] = (
         "Every helper name is already a top-level global within the [runner]. Call it directly; "
-        "import thou no [GUI] helper from [tools] nor [desktop]. The [modules] named are likewise prebound top-level objects."
+        "import thou no [GUI] helper from [desktop]. The [modules] named are likewise prebound top-level objects. "
+        "For all beyond the primitives, write plain [Python] and import from the standard library."
     )
     return manifest
 
 
 def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
     """Namespace a runner script executes in. One flat set of primitives — no
-    faculty split. The script imports/calls whatever else it needs (tools,
-    desktop, subprocess) and sets `result` / prints / appends action_events."""
+    faculty split. The script imports/calls whatever else it needs (desktop,
+    subprocess, stdlib) and sets `result` / prints / appends action_events."""
     import core_desktop as desktop
-    import tools as _tools
     d = desktop.get_desktop()
     state = ctx.get("state", {})
     w = ctx.get("wiring", {})
@@ -513,15 +513,6 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
     def _guarded(fn):
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             return _record_action(fn(*args, **kwargs))
-        return wrapper
-
-    def _recorded(action: str, fn):
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            result = fn(*args, **kwargs)
-            event = dict(result) if isinstance(result, dict) else {"ok": True, "value": result}
-            event.setdefault("action", action)
-            _record_action(event)
-            return result
         return wrapper
 
     click = _guarded(lambda x, y, hwnd=0: d.click(int(x), int(y), int(hwnd or 0)))
@@ -567,18 +558,8 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "click": click, "click_node": click_node, "read_node": read_node,
         "type_text": type_text, "press_key": press_key, "hotkey": hotkey, "scroll": scroll,
         "open_url": open_url, "observe": observe, "consult_model": consult_model,
-        "write_file": _recorded("write_file", _tools.write_file),
-        "read_file": _recorded("read_file", _tools.read_file),
-        "web_search": _recorded("web_search", _tools.web_search),
-        "open_page": _recorded("open_page", _tools.open_page),
-        "github_create_issue": _recorded("github_create_issue", _tools.github_create_issue),
-        "github_comment_issue": _recorded("github_comment_issue", _tools.github_comment_issue),
-        "github_list_issues": _recorded("github_list_issues", _tools.github_list_issues),
-        "github_push": _recorded("github_push", _tools.github_push),
-        "git_current_branch": _recorded("git_current_branch", _tools.git_current_branch),
-        "git_branch_show_current": _recorded("git_branch_show_current", _tools.git_branch_show_current),
         "node_by_id": _require_node, "action_index": action_index,
-        "tools": _tools, "desktop": desktop, "subprocess": subprocess,
+        "desktop": desktop, "subprocess": subprocess,
         "os": os, "sys": sys, "json": json, "time": time, "pathlib": pathlib,
         "repo_root": str(ROOT), "python_executable": sys.executable,
         "state": state, "wiring": w, "goal": ctx.get("goal", ""),

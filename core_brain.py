@@ -369,7 +369,7 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
         last_refl = failure.get("last_reflection", {}) if isinstance(failure, dict) else {}
         diagnosis = str(last_refl.get("diagnosis", "")) + str(last_refl.get("lesson", ""))
         import re
-        candidates = re.findall(r"((?:node|core|obs|cap|transport)_[a-z_]+\.py|tools\.py|wiring\.json)", diagnosis)
+        candidates = re.findall(r"((?:node|core|obs|cap|transport)_[a-z_]+\.py|wiring\.json)", diagnosis)
         if candidates:
             focus_files = sorted(set(candidates))
     prefix = stable_prefix(w, focus_files=focus_files) if w["model"]["stable_prefix"]["enabled"] and include_prefix else None

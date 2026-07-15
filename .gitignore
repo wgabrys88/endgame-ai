@@ -32,7 +32,6 @@
 !node_self_modify.py
 !node_verify.py
 !transport_xai.py
-!tools.py
 !node_repair_probe.py
 !node_repair_dispatch.py
 !node_repair_validate.py
