@@ -53,6 +53,7 @@ class VerifyNode(BaseNode):
             "verification": {"goal_satisfied": self._goal_satisfied, "deed_confirmed": self._deed_confirmed, "reasoning": reason, "deed_goal": desc, "done_when": done_when},
             "last_verification": {"success": confirmed, "signal": self._signal, "reasoning": reason},
             "effective_goal": effective,
+            "goal_interpretations": bus.with_interpretation(state.get("goal_interpretations"), "verify", str(data.get("goal_interpretation") or "")),
         }
         if confirmed:
             witnessed = list(state.get("witnessed_deeds") or [])

@@ -88,6 +88,35 @@ def emit(signal: str, patch: JsonDict | None = None, *, record: Record | JsonDic
 
 NARRATIVE_TAIL_CHARS = 12000
 
+_INTERP_ORDER = ["execute", "verify", "reflect", "frame"]
+
+
+def render_interpretation_table(goal: str, interps: JsonDict | None) -> str:
+    """The goal-interpretation table, rendered for the tail of every user message.
+
+    Row one is the immutable root goal. Each thinking faculty keeps exactly one row —
+    its own single-sentence reading of the ultimate goal — which it rewrites in place
+    whensoever it acts. The table is bounded (one row per faculty), never accumulates,
+    and never truncates. It rides the volatile user tail, so it costs no prefix cache."""
+    interps = interps or {}
+    lines = [
+        "GOAL INTERPRETATION TABLE — the root goal is immutable and standeth first; "
+        "each thinking faculty keepeth one row below it, being that faculty's own "
+        "single-sentence reading of the ultimate goal, rewritten whensoever it acteth:",
+        f"[ROOT GOAL] {goal}",
+    ]
+    for faculty in _INTERP_ORDER:
+        sentence = str(interps.get(faculty) or "").strip()
+        lines.append(f"[{faculty}] {sentence}" if sentence else f"[{faculty}] (not yet interpreted)")
+    return "\n".join(lines)
+
+
+def with_interpretation(interps: JsonDict | None, faculty: str, sentence: str) -> JsonDict:
+    """Return a copy of the interpretation table with one faculty's row rewritten."""
+    merged = dict(interps or {})
+    merged[faculty] = str(sentence or "").strip()
+    return merged
+
 
 def append_narrative(effective_goal: str, line: str, *, root_goal: str = "") -> str:
     combined = f"{effective_goal}{line}"
@@ -150,6 +179,7 @@ def state_brief(state: JsonDict) -> JsonDict:
         "current_node": state.get("current_node"),
         "frontier": list(state.get("frontier") or []),
         "narrative": narrative,
+        "goal_interpretations": dict(state.get("goal_interpretations") or {}),
         "current_deed": {"description": current_deed.get("description", ""), "done_when": current_deed.get("done_when", "")},
         "witnessed_deed_count": len(state.get("witnessed_deeds") or []),
         "last_signal": state.get("last_signal"),

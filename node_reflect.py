@@ -63,6 +63,7 @@ class ReflectNode(BaseNode):
                 "failure": self._failure,
             },
             "effective_goal": effective,
+            "goal_interpretations": bus.with_interpretation(state.get("goal_interpretations"), "reflect", str(data.get("goal_interpretation") or "")),
         }
         if self._signal == "spawn":
             subgoal = str(data.get("subgoal") or "").strip()

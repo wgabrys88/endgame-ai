@@ -54,7 +54,8 @@ class ExecuteNode(BaseNode):
         artifact_path = self._write_artifact(code)
         artifact = {"path": artifact_path, "label": label}
         effective = bus.append_narrative(state["effective_goal"], f"\n\n[{label}] I enact the deed: {intent}. It is fulfilled when: {done_when}. I have authored the script artifact {pathlib.Path(artifact_path).name}.", root_goal=state.get("goal", ""))
-        return bus.emit("built", {"_execute_artifact": artifact, "current_deed": {"description": intent, "done_when": done_when}, "effective_goal": effective}, record=record, evidence=payload)
+        interps = bus.with_interpretation(state.get("goal_interpretations"), "execute", str(data.get("goal_interpretation") or ""))
+        return bus.emit("built", {"_execute_artifact": artifact, "current_deed": {"description": intent, "done_when": done_when}, "effective_goal": effective, "goal_interpretations": interps}, record=record, evidence=payload)
 
 
 def run(ctx):

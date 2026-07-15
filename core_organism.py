@@ -30,6 +30,7 @@ def run(
         "current_node": current,
         "last_error": None,
         "last_action": None,
+        "goal_interpretations": {},
         "wiring_transport": w["model"]["transport"],
     }
     try:

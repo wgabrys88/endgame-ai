@@ -370,6 +370,9 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
     payload = _with_observation(payload, w)
     goal = str(payload.pop("goal") or "") if "goal" in payload else ""
     user_text = json.dumps(payload, ensure_ascii=False, default=str)
+    focus = payload.get("focus")
+    interps = focus.get("goal_interpretations") if isinstance(focus, dict) else None
+    user_text = f"{user_text}\n\n{bus.render_interpretation_table(goal, interps)}"
     response_format = _record_response_format(w, expected_record_type, emitting_node) if expected_record_type and _structured_outputs_enabled(cfg) else None
     request_cfg = dict(request_config or {})
     request_cfg["expected_record_type"] = expected_record_type
