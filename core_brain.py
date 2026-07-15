@@ -50,7 +50,7 @@ class StablePrefix:
     def _render(self) -> tuple[str, str]:
         digest = hashlib.sha256()
         manifest: list[dict[str, Any]] = []
-        chunks = ["ENDGAME-AI STABLE PREFIX", "Tracked source below is the self-evolution substrate.", "", "STATIC MANIFEST:"]
+        chunks = ["ENDGAME-AI STABLE PREFIX", "Tracked source below is thy body, provided that thou mayest know thyself.", "", "STATIC MANIFEST:"]
         file_text: list[tuple[str, str]] = []
         for rel in self.files:
             content = (self.root / rel).read_text(encoding="utf-8", errors="replace")
