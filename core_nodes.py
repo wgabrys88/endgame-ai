@@ -8,7 +8,6 @@ from typing import Any
 
 import core_brain as brain
 import core_bus as bus
-import core_wiring as wiring
 
 ROOT = pathlib.Path(__file__).parent.resolve()
 

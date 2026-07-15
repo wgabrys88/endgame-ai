@@ -88,8 +88,6 @@ def emit(signal: str, patch: JsonDict | None = None, *, record: Record | JsonDic
 
 _INTERP_ORDER = ["execute", "verify", "reflect", "frame"]
 
-INTERP_MIN_CHARS = 300
-
 
 def render_interpretation_table(goal: str, interps: JsonDict | None) -> str:
     """The goal-interpretation table, rendered for the tail of every user message.

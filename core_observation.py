@@ -405,8 +405,6 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
         "action_index": mapped["action_index"],
         "desktop_tree_text": mapped["desktop_tree_text"],
     }
-    desktop._last_desktop_tree = artifact["desktop_tree"]
-    desktop._last_action_index = mapped["action_index"]
     return {
         "observed_at": observed_at,
         "fresh_scan": True,

@@ -37,8 +37,6 @@ class Desktop:
     def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or {}
         self._automation: Any = None
-        self._last_desktop_tree: dict[str, Any] | None = None
-        self._last_action_index: dict[str, dict[str, Any]] = {}
 
     def _init_automation(self) -> None:
         self._automation = comtypes.client.CreateObject(uia.CUIAutomation, interface=uia.IUIAutomation)
@@ -59,9 +57,6 @@ class Desktop:
         from core_observation import expand as expand_elements
         items = elements if isinstance(elements, list) else [elements]
         return expand_elements(self, items, max_text=max_text, max_nodes=max_nodes)
-
-    def last_action_index(self) -> dict[str, dict[str, Any]]:
-        return self._last_action_index
 
     def click(self, x: int, y: int, hwnd: int = 0) -> dict[str, Any]:
         width, height = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)

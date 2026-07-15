@@ -10,8 +10,10 @@ import core_loader as loader
 import core_wiring as wiring
 
 ROOT = pathlib.Path(__file__).parent.resolve()
-_LAST_OBSERVATION: dict[str, Any] | None = None
 _CONV_ID = ""
+
+# Fields exempt from the prose word-bounds: [code] is a Python script, not prose.
+WORD_BOUND_EXEMPT = {"code"}
 
 
 def _messages(system_prompt: str, user_text: str, stable_context: str = "") -> list[dict[str, str]]:
@@ -34,7 +36,6 @@ def _validate_record_contract(w: dict[str, Any], record: bus.Record, expected_re
     enums = dict(contract["enums"])
     types = dict(contract.get("types", {}))
     non_empty = set(contract.get("non_empty", []))
-    min_length = dict(contract.get("min_length", {}))
     missing = [key for key in required if key not in record.data]
     if missing:
         raise RuntimeError(f"{record.record_type} record missing required data keys: {missing}")
@@ -55,9 +56,20 @@ def _validate_record_contract(w: dict[str, Any], record: bus.Record, expected_re
     for key, values in enums.items():
         if key in record.data and record.data[key] not in set(values):
             raise RuntimeError(f"{record.record_type}.data.{key}={record.data[key]!r} outside {values!r}")
-    for key, minimum in min_length.items():
-        if key in record.data and isinstance(record.data[key], str) and len(record.data[key].strip()) < int(minimum):
-            raise RuntimeError(f"{record.record_type}.data.{key} must be at least {minimum} characters; got {len(record.data[key].strip())}")
+    bounds = w.get("output_word_bounds", {})
+    min_words, max_words = int(bounds.get("min_words", 0)), int(bounds.get("max_words", 0))
+    if min_words or max_words:
+        for key in non_empty:
+            if key in WORD_BOUND_EXEMPT or types.get(key) != "string" or key in enums:
+                continue
+            value = record.data.get(key)
+            if not isinstance(value, str):
+                continue
+            count = len(value.split())
+            if min_words and count < min_words:
+                raise RuntimeError(f"{record.record_type}.data.{key} must be at least {min_words} words; got {count}")
+            if max_words and count > max_words:
+                raise RuntimeError(f"{record.record_type}.data.{key} must be at most {max_words} words; got {count}")
 
 
 def _commit_record(content: str, w: dict[str, Any], expected_record_type: str | None = None) -> bus.Record:
@@ -118,11 +130,6 @@ def downstream_contract(w: dict[str, Any], emitting_node: str | None, expected_r
     for signal, succ in seen:
         doc = _node_docstring(w, succ)
         lines.append(f"\n[on signal '{signal}' -> {succ}]\n{doc}" if doc else f"\n[on signal '{signal}' -> {succ}] (no input contract declared)")
-    # The next_signal instruction is lawful ONLY when this node's own record can
-    # carry next_signal. For mechanically-routed nodes (plan, execution, verification)
-    # the field is absent and the strict schema forbids it, so commanding a next_signal
-    # would be a contradiction at the recency slot. Gate on the actual contract,
-    # mirroring _record_response_format.
     if expected_record_type:
         contract = w.get("record_contracts", {}).get(expected_record_type, {})
         contract_keys = set(contract.get("required", [])) | set(contract.get("types", {})) | set(contract.get("enums", {}))
@@ -147,7 +154,6 @@ def _normalize_observation(obj: Any) -> dict[str, Any] | None:
 
 
 def _observation_payload(w: dict[str, Any], payload: dict[str, Any] | None = None) -> dict[str, Any]:
-    global _LAST_OBSERVATION
     if payload:
         candidates = [payload.get("observation")]
         evidence = payload.get("evidence")
@@ -156,13 +162,8 @@ def _observation_payload(w: dict[str, Any], payload: dict[str, Any] | None = Non
         for candidate in candidates:
             normalized = _normalize_observation(candidate)
             if normalized is not None:
-                _LAST_OBSERVATION = normalized
                 return normalized
     raise RuntimeError("observation missing: observe node must run before any brain call")
-
-
-def last_observation() -> dict[str, Any]:
-    return dict(_LAST_OBSERVATION or {})
 
 
 def _with_observation(payload: dict[str, Any], w: dict[str, Any]) -> dict[str, Any]:
@@ -172,9 +173,8 @@ def _with_observation(payload: dict[str, Any], w: dict[str, Any]) -> dict[str, A
 
 
 def reset_call_budget() -> None:
-    global _CONV_ID, _LAST_OBSERVATION
+    global _CONV_ID
     _CONV_ID = f"endgame-ai-{int(time.time())}-{os.getpid()}"
-    _LAST_OBSERVATION = None
 
 
 def _load_transport_module(name: str, w: dict[str, Any]):

@@ -19,7 +19,6 @@ def load_wiring(path: str | None = None) -> dict[str, Any]:
     problems = check_topology.coherence_problems(cfg)
     if problems:
         raise RuntimeError(f"wiring topology is incoherent: {problems}")
-    # Private invocation metadata is live context, never persisted behavior.
     cfg["_source_path"] = str(source_path)
     return cfg
 
@@ -58,9 +57,13 @@ def _require_list_str(obj: dict[str, Any], path: str) -> list[str]:
     return value
 
 def validate_wiring(cfg: dict[str, Any]) -> None:
-    for key in ("schema", "model", "paths", "observe_config", "topology", "prompts", "shared_prompt_prefix", "record_contracts"):
+    for key in ("schema", "model", "paths", "observe_config", "topology", "prompts", "shared_prompt_prefix", "record_contracts", "output_word_bounds"):
         if key not in cfg:
             raise RuntimeError(f"wiring missing required key: {key}")
+    bounds = _require(cfg, "output_word_bounds", dict)
+    lo, hi = bounds.get("min_words"), bounds.get("max_words")
+    if not isinstance(lo, int) or isinstance(lo, bool) or lo <= 0 or not isinstance(hi, int) or isinstance(hi, bool) or hi < lo:
+        raise RuntimeError("wiring.output_word_bounds must have positive int min_words and max_words >= min_words")
     _obj(cfg, "model")
     transport = _require(cfg, "model.transport", str)
     transport_cfg = _require(cfg, "model.transport_config", dict)
@@ -181,7 +184,10 @@ def prompt(cfg: dict[str, Any], key: str) -> str:
     prompts = cfg["prompts"]
     if key not in prompts:
         raise RuntimeError(f"wiring.prompts missing prompt: {key}")
-    return str(cfg["shared_prompt_prefix"]).rstrip() + "\n\n" + str(prompts[key]).lstrip()
+    bounds = cfg.get("output_word_bounds", {})
+    lo, hi = int(bounds.get("min_words", 0)), int(bounds.get("max_words", 0))
+    rule = f"\n\nEach field of prose thou writest shall bear no fewer than {lo} and no more than {hi} words; [code] alone is exempt." if lo or hi else ""
+    return str(cfg["shared_prompt_prefix"]).rstrip() + "\n\n" + str(prompts[key]).lstrip() + rule
 
 
 def get_transport_config(wiring: dict[str, Any]) -> tuple[str, dict[str, Any]]:
@@ -197,13 +203,3 @@ def get_transport_config(wiring: dict[str, Any]) -> tuple[str, dict[str, Any]]:
 
 def guidance_path(wiring: dict[str, Any]) -> pathlib.Path:
     return root_path(wiring["paths"]["guidance"])
-
-
-def topology_summary(w: dict[str, Any]) -> dict[str, Any]:
-    topo = w["topology"]
-    return {
-        "cycle_start": topo["cycle_start"],
-        "nodes": list(topo["nodes"]),
-        "edges": topo["edges"],
-        "barriers": topo["barriers"],
-    }
