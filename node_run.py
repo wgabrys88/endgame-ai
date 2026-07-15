@@ -25,7 +25,6 @@ def run(ctx):
         return bus.emit("done")
 
     label = artifact["label"]
-    probe = artifact["repair_probe"]
     code = pathlib.Path(artifact["path"]).read_text(encoding="utf-8")
 
     import core_desktop as desktop
@@ -63,12 +62,11 @@ def run(ctx):
     deed = ", ".join(action_names) if action_names else "local computation"
     outcome = "success" if error is None else error
     effective = bus.append_narrative(state["effective_goal"], f"\n\n[{label}] {deed}: {outcome}.", root_goal=state.get("goal", ""))
-    signal = "repair_done" if probe else "done"
     return bus.emit(
-        signal,
+        "done",
         {
             "turn_executions": turn,
-            "last_action": {"code_sha256": turn[FACULTY]["code_sha256"], "artifact": pathlib.Path(artifact["path"]).name, "repair_probe": probe},
+            "last_action": {"code_sha256": turn[FACULTY]["code_sha256"], "artifact": pathlib.Path(artifact["path"]).name},
             "last_action_at": time.time(),
             "last_code": code,
             "last_result": result,

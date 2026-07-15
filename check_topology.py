@@ -1,8 +1,7 @@
 """Topology coherence check for linear and fractal one-to-many edges.
 
 `coherence_problems(w)` is the single source of truth for topology coherence,
-callable from the runtime (B5 gates mid-run topology_patch through it) and from
-the CLI verifier below. Run: python3 check_topology.py
+callable from the runtime and from the CLI verifier below. Run: python3 check_topology.py
 Exit 0 = coherent, 1 = incoherent (prints reasons).
 """
 from __future__ import annotations

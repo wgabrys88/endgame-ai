@@ -62,7 +62,6 @@ _HELPERS = {
     "bus.state_brief": bus.state_brief,
     "bus.observation_brief": bus.observation_brief,
     "bus.execution_evidence": bus.execution_evidence,
-    "bus.repair_validation_brief": bus.repair_validation_brief,
     "bus.update_failure_streak": bus.update_failure_streak,
 }
 

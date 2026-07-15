@@ -1,4 +1,4 @@
-"""[node_reflect] — Thou shalt consume a step denied and its evidence; and thou shalt bring forth a causal lesson and choose retry, replan, frame, evolve, topology_patch, or a named child sub-goal."""
+"""[node_reflect] — Thou shalt consume a step denied and its evidence; and thou shalt bring forth a causal lesson and choose retry, replan, frame, or a named child sub-goal."""
 import core_bus as bus
 from core_node_base import BaseNode
 
@@ -11,14 +11,11 @@ class ReflectNode(BaseNode):
         state = ctx["state"]
         self._streak_patch = bus.update_failure_streak(state)
         self._failure = state.get("last_failure") or {}
-        self._repair_validation = bus.repair_validation_brief(state)
         self._evidence_payload = {
             "executions": bus.execution_evidence(state),
             "last_verification": state.get("last_verification", {}),
             "last_failure": self._failure,
             "failure_streak": self._streak_patch["failure_streak"],
-            "repair_validation": self._repair_validation,
-            "last_repair_validation": state.get("last_repair_validation", {}),
         }
 
     def evidence(self, ctx):
@@ -54,7 +51,6 @@ class ReflectNode(BaseNode):
             "recovery_signal": self._signal,
             "failure": self._failure,
             "action_frame": state.get("action_frame"),
-            "repair_validation": self._repair_validation,
         }
         patch = {
             **self._streak_patch,
@@ -65,7 +61,6 @@ class ReflectNode(BaseNode):
                 "lesson": lesson,
                 "diagnosis": diagnosis,
                 "failure": self._failure,
-                "repair_validation_status": self._repair_validation.get("status"),
             },
             "effective_goal": effective,
         }
@@ -74,11 +69,6 @@ class ReflectNode(BaseNode):
             if not subgoal:
                 raise RuntimeError("reflection routed to spawn without a non-empty subgoal")
             patch["spawn_subgoal"] = subgoal
-        if self._signal == "topology_patch":
-            topology_patch = data.get("topology_patch")
-            if not isinstance(topology_patch, dict) or not topology_patch:
-                raise RuntimeError("reflection routed to topology_patch without a non-empty topology proposal")
-            patch["topology_patch"] = topology_patch
         return patch
 
 

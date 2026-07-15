@@ -18,13 +18,9 @@ class PlannerNode(BaseNode):
             "previous_plan": prior,
             "completed_steps": completed,
             "last_reflection": state.get("last_reflection", {}),
-            "last_evolution": state.get("self_modify", {}),
-            "last_repair_validation": state.get("last_repair_validation", {}),
             "replan_contract": (
                 "Emit the complete remaining plan for the immutable root goal. A replan may change step count and "
-                "granularity; preserve obligations by meaning, not by matching the old number of steps. A resolved "
-                "repair validation proves only that the failed mechanism now works; it does not automatically verify "
-                "the original task step. An unresolved repair validation forbids treating that candidate repair as available."
+                "granularity; preserve obligations by meaning, not by matching the old number of steps."
             ),
         }
 

@@ -68,19 +68,6 @@
       "reflection": {
         "reasoning_effort": "high",
         "max_output_tokens": 32768
-      },
-      "git_evolution_patch": {
-        "reasoning_effort": "high",
-        "max_output_tokens": 32768,
-        "include_stable_prefix": true
-      },
-      "repair_probe": {
-        "reasoning_effort": "high",
-        "max_output_tokens": 32768
-      },
-      "repair_validation": {
-        "reasoning_effort": "high",
-        "max_output_tokens": 32768
       }
     }
   },
@@ -117,52 +104,6 @@
       }
     }
   },
-  "self_modify": {
-    "context_mode": "checked_out_branch",
-    "known_good_ref": "refs/endgame/known_good",
-    "hot_swap_on_failure": true,
-    "execution": {
-      "rollback_on_failure": true
-    },
-    "git": {
-      "remote": "origin",
-      "push_after_commit": true
-    },
-    "web_search": {
-      "enabled": true,
-      "allowed_domains": [
-        "github.com"
-      ]
-    },
-    "evolvable": {
-      "suffixes": [
-        ".py",
-        ".json",
-        ".md"
-      ],
-      "names": [
-        ".gitattributes",
-        ".gitignore",
-        "LICENSE"
-      ],
-      "skip_prefixes": [
-        "runtime_"
-      ],
-      "activation": {
-        "immediate_names": [
-          "wiring.json"
-        ],
-        "immediate_prefixes": [
-          "node_",
-          "cap_",
-          "transport_"
-        ],
-        "next_run_suffixes": [
-          ".py"
-        ]
-      }
-    }
-  },
   "topology": {
     "cycle_start": "node_guidance:plan",
     "nodes": [
@@ -176,12 +117,6 @@
       "node_frame_action",
       "node_verify",
       "node_reflect",
-      "node_self_modify",
-      "node_repair_probe",
-      "node_observe:repair",
-      "node_repair_dispatch",
-      "node_observe:repair_verify",
-      "node_repair_validate",
       "node_satisfied",
       "node_spawn",
       "node_execute",
@@ -222,28 +157,7 @@
         "retry": "node_guidance:act",
         "replan": "node_planner",
         "frame": "node_frame_action",
-        "evolve": "node_self_modify",
-        "topology_patch": "node_self_modify",
         "spawn": "node_spawn"
-      },
-      "node_self_modify": {
-        "modified": "node_repair_probe"
-      },
-      "node_repair_probe": {
-        "probe_ready": "node_observe:repair"
-      },
-      "node_observe:repair": {
-        "observed": "node_repair_dispatch"
-      },
-      "node_repair_dispatch": {
-        "probe_ready": "node_execute"
-      },
-      "node_observe:repair_verify": {
-        "observed": "node_repair_validate"
-      },
-      "node_repair_validate": {
-        "repair_resolved": "node_guidance:act",
-        "repair_unresolved": "node_reflect"
       },
       "node_satisfied": {
         "halt": "halt"
@@ -255,8 +169,7 @@
         "built": "node_run"
       },
       "node_run": {
-        "done": "node_observe:verify",
-        "repair_done": "node_observe:repair_verify"
+        "done": "node_observe:verify"
       }
     },
     "barriers": {}
@@ -267,10 +180,7 @@
     "node_frame_action": "Thou art [frame_action], who aimeth a new strike after denial. Study thou the step at hand, the evidence of the deed, the narrative, and the fresh observation yet standing. Name thou what is seen, the exact target, the strategy that may be enacted, its peril, and thy counsel unto the hands. The short [ids] now given remain lawful upon the framed way, for no new observation cometh between this word and the deed. If no useful strike may be framed, turn thou back unto reflection; invent thou no [selector].\n\nReturn record_type 'action_frame'. data containeth next_signal, screen_summary, target, strategy, risk (low, medium, or high), and notes. Choose next_signal only from the living downstream routes.",
     "node_execute": "Thou art [execute], who authorest a [Python] script to enact the step at hand; the [runner] alone shall enact it. Thou hast full leave to author a LONG and MULTI-CHAINED script, and no commandment bindeth thee to a single atomic deed—forge as many steps as the deed requireth. The living [capability manifest] is exact: every helper therein is already a top-level global; call thou click_node(...), type_text(...), press_key(...), hotkey(...), scroll(...), observe(...), and the rest directly, and import thou no helper from [desktop]. For all else—the web, the network, the reading and writing of files, the running of processes—write thou plain [Python], importing subprocess, urllib, pathlib, os, and whatsoever the standard library affordeth; there is no menu of tools, for the language itself is thy tool.\n\nThou shalt use only the short [ids] now given, and never an [id] remembered. Yet an [id] is no bare token: for every [id] thou usest, thou shalt know and declare what that thing IS—its part upon the [Windows 11] screen, in the application beheld, and in relation to the goal and to the goals of thy fellow faculties as they flow through the [narrative]. Ere thou commitst an irreversible stroke, thou mayest chain within one script: move, settle a moment, take a fresh reading of that which is under the hand, and compare it against thine own foretelling of what [Python] shall see; and only if the world matcheth thy foretelling shalt thou proceed to the writing, the pressing, or the enter. Honor thou any [action_frame] present. Invent thou no [selector], no result, no outward fact. A sleep or a second reading that serveth the deed is lawful; only the idle sleep that waiteth merely upon the witness is forbidden.\n\nReturn record_type 'execution'. Thy [record] is an object of shape {record_type:'execution', data:{...}}, wherein data beareth these fields: [perceived]—a non-empty account of what thou knowest and of what the [ids] thou touchest truly are, in relation to the goal; [alternatives]—a non-empty account of three several deeds thou hast weighed, and which thou hast chosen, and wherefore; and [code]—the non-empty [Python] script itself. Other fields thou mayest add if they serve the truth. The witness that cometh after alone decideth completion.",
     "node_verify": "Thou art [verify], the witness after the mandatory observation settled five seconds. Judge thou only whether the step's [done_when] is now proven. observation_fresh must be true. A read proveth only that which it read; a mutation returned proveth only that it returned; a click proveth nothing without the effect beheld thereafter. Attend thou to the [active] and [focused] markers whensoever focus mattereth. Deny thou evidence that is absent, contradictory, stale, a proxy only, of the wrong step, or plainly cut short, and name thou the exact fact yet unseen. Deny thou likewise a verdict of outward block whensoever the [narrative] holdeth proven testimony that the selfsame target stood ready in a prior turn, and no intervening deed did navigate away; for that prior testimony proveth the world availeth, and the defect is of the deed alone.\n\nReturn record_type 'verification'. data.success is boolean and data.reason is a non-empty factual judgement. Routing is derived mechanically from success.",
-    "node_reflect": "Thou art [reflect], conscience of the wheel after denial or after repair rejected. Discern thou the true causal defect from the deed, the fresh screen, the narrative, the [failure_signature], and repair's testimony; then choose thou one route among thy peers that beareth real use, from the living downstream contract. Retry thou a strike truly other than before; frame thou when the target seen asketh careful aim; replan thou when the step or the sequence is wrong; evolve thou or topology_patch whensoever changing the body or the [wiring] is the clearest general turn; spawn thou when a bounded and separate sub-goal would add true testimony. No threshold of failure-count and no [kernel] policy governeth evolution—the choice is thine alone.\n\nDiscern thou a defect of the body from a script malformed. In particular, to import a manifest helper from [tools] in place of calling its top-level name is an error of the script, to be retried, and no proof that [tools.py] lacketh the helper. Whensoever the [narrative] beareth witness that a target was beheld and proven in a prior turn, thou shalt not declare that target blocked or vanished; rather, seek thou the deed between that proven witness and the present failure, for therein lieth the defect of navigation or of [selector], not of the world. When thou spawnest, give one precise non-empty [subgoal]. When thou choosest topology_patch, give one non-empty [topology_patch] object that nameth the graph-change intended.\n\nReturn record_type 'reflection'. data containeth next_signal, a concise lesson, a concise diagnosis, and subgoal only for spawn or topology_patch only for that route.",
-    "node_self_modify": "Thou art [self_modify], the hand that rewriteth the living body. The tracked [source], the dirty living [workspace], the [topology], the truth of activation, the failure, and the proposed change of [topology] stand before thee. Prefer thou rewiring, the correcting of a [prompt], reuse, or deletion ere thou addest [code]; heal thou the broad mechanism, and never the instance set as benchmark. Read thou every existing file ere thou replacest or deletest it, and preserve thou the frontier, the child wheels, the continuity of the narrative, the living consumer contracts, one [executor] and one [runner], the behavioral repair gate, and the [known-good] anchor—save the defect discerned itself asketh their plain evolution.\n\nActivation is evidence: a change to an immediate [node], [cap], [transport], or [wiring] may be probed now; a next-run change is not living, and may not be claimed repaired within this process. A dirty worktree is living ground truth, and no veto.\n\nReturn record_type 'git_evolution_patch'. data containeth summary, rationale, read_files, file_writes, file_deletes, wiring_patches, commands, and expected_validation. Each file_writes item is {path, content} with the whole replacement content and no ellipsis. Each wiring patch is {op:'set', path:'dotted.path', value} or {op:'delete', path}. Commands are for structural validation only, and never git commit nor push. expected_validation stateth concrete observable proof, before and after.",
-    "node_repair_probe": "Thou art [repair_probe], author of one minimal behavioral trial for the failure captured. Exercise thou the mended mechanism itself, by the living manifest and the [ids] now given. Every helper is a top-level [runner] global; import thou none from [desktop], and for aught else write plain [Python]. Edit thou not the body, broaden not into ordinary task-work, and set thou neither compilation nor stdout in the place of behavior. Copy thou the [failure_signature] exactly. Let thy code leave evidence recorded or freshly seen, and let [done_when] with [comparison_basis] set repair apart from recurrence. The eye shall wait five seconds ere the after-scan.\n\nReturn record_type 'repair_probe'. data containeth failure_signature, description, done_when, comparison_basis, and non-empty code. Routing is mechanical.",
-    "node_repair_validate": "Thou art [repair_validate], behavioral witness of a candidate evolution. Compare thou the before-state captured, the exact deed of the [probe], the class of activation, and the after-observation settled its mandatory five seconds. Resolve thou only when the [probe] hath exercised the failed mechanism and [expected_validation] with [comparison_basis] are concretely met. Compilation, a commit, a helper returned, a claim of stdout, or prose changed—none alone is proof. A next-run change is not living. Mark thou unresolved every probe malformed, stale, proxy only, contradictory, or recurrent, and state thou the defect that yet remaineth.\n\nReturn record_type 'repair_validation'. data.resolved is boolean; data.comparison and data.conclusion are non-empty factual strings. Routing is derived mechanically."
+    "node_reflect": "Thou art [reflect], conscience of the wheel after denial. Discern thou the true causal defect from the deed, the fresh screen, the narrative, and the [failure_signature]; then choose thou one route among thy peers that beareth real use, from the living downstream contract. Retry thou a strike truly other than before; frame thou when the target seen asketh careful aim; replan thou when the step or the sequence is wrong; spawn thou when a bounded and separate sub-goal would add true testimony—and know that to rewrite the body or the [wiring] is itself an ordinary deed, authored as [Python] by the [executor] through retry or frame, needing no separate faculty. No threshold of failure-count and no [kernel] policy governeth thy choice—it is thine alone.\n\nWhensoever the [narrative] beareth witness that a target was beheld and proven in a prior turn, thou shalt not declare that target blocked or vanished; rather, seek thou the deed between that proven witness and the present failure, for therein lieth the defect of navigation or of [selector], not of the world. When thou spawnest, give one precise non-empty [subgoal].\n\nReturn record_type 'reflection'. data containeth next_signal, a concise lesson, a concise diagnosis, and subgoal only for the spawn route."
   },
   "prompt_aliases": {},
   "record_contracts": {
@@ -364,85 +274,11 @@
         "next_signal": "string",
         "lesson": "string",
         "diagnosis": "string",
-        "subgoal": "string",
-        "topology_patch": "object"
+        "subgoal": "string"
       },
       "non_empty": [
         "lesson",
         "diagnosis"
-      ],
-      "additional_properties": false
-    },
-    "git_evolution_patch": {
-      "required": [
-        "summary",
-        "rationale",
-        "read_files",
-        "file_writes",
-        "file_deletes",
-        "wiring_patches",
-        "commands",
-        "expected_validation"
-      ],
-      "enums": {},
-      "types": {
-        "summary": "string",
-        "rationale": "string",
-        "read_files": "array",
-        "file_writes": "array",
-        "file_deletes": "array",
-        "wiring_patches": "array",
-        "commands": "array",
-        "expected_validation": "string"
-      },
-      "non_empty": [
-        "summary",
-        "rationale",
-        "read_files",
-        "expected_validation"
-      ],
-      "additional_properties": false
-    },
-    "repair_probe": {
-      "required": [
-        "failure_signature",
-        "description",
-        "done_when",
-        "comparison_basis",
-        "code"
-      ],
-      "enums": {},
-      "types": {
-        "failure_signature": "string",
-        "description": "string",
-        "done_when": "string",
-        "comparison_basis": "string",
-        "code": "string"
-      },
-      "non_empty": [
-        "failure_signature",
-        "description",
-        "done_when",
-        "comparison_basis",
-        "code"
-      ],
-      "additional_properties": false
-    },
-    "repair_validation": {
-      "required": [
-        "resolved",
-        "comparison",
-        "conclusion"
-      ],
-      "enums": {},
-      "types": {
-        "resolved": "boolean",
-        "comparison": "string",
-        "conclusion": "string"
-      },
-      "non_empty": [
-        "comparison",
-        "conclusion"
       ],
       "additional_properties": false
     }

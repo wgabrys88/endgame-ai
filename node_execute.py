@@ -2,7 +2,7 @@
 then handest it to [node_run] by the "built" signal. The running is [node_run]'s office.
 
 One [executor], one [runner], no division of faculty. The executor's sole office is to
-fashion a [Python] script (from the [LLM], or to replay a repair [probe]). Whatsoever the
+fashion a [Python] script from the [LLM]. Whatsoever the
 script hath need of — desktop, files, shell, web — it importeth and calleth of itself; there is
 no wired split of browser, editor, nor terminal.
 """
@@ -34,11 +34,6 @@ class ExecuteNode(BaseNode):
             "capabilities": nodes.capability_manifest(ctx),
         }
 
-    @staticmethod
-    def _repair_probe(state):
-        repair = state.get("repair_validation") or {}
-        return repair["probe"] if repair.get("status") == "probing" else None
-
     def _write_artifact(self, code):
         ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
         digest = hashlib.sha256(code.encode("utf-8", errors="replace")).hexdigest()[:16]
@@ -49,27 +44,11 @@ class ExecuteNode(BaseNode):
     def run(self, ctx):
         state = ctx["state"]
         payload = self.build_payload(ctx)
-        probe = self._repair_probe(state)
-        if probe is None:
-            record = self.think(ctx)
-            code = record.data["code"]
-            label = "EXECUTE"
-        else:
-            code = probe["code"]
-            record = bus.Record.create(
-                "execution",
-                {"code": code},
-                reasoning=f"Behavioral repair probe {state['repair_validation']['repair_id']} retries failure {probe['failure_signature']}.",
-            )
-            payload["repair_probe"] = {
-                "repair_id": state["repair_validation"]["repair_id"],
-                "failure_signature": probe["failure_signature"],
-                "comparison_basis": probe["comparison_basis"],
-            }
-            label = "REPAIR_EXECUTE"
-
+        record = self.think(ctx)
+        code = record.data["code"]
+        label = "EXECUTE"
         artifact_path = self._write_artifact(code)
-        artifact = {"path": artifact_path, "label": label, "repair_probe": probe is not None}
+        artifact = {"path": artifact_path, "label": label}
         effective = bus.append_narrative(state["effective_goal"], f"\n\n[{label}] I have authored the script artifact {pathlib.Path(artifact_path).name}.", root_goal=state.get("goal", ""))
         return bus.emit("built", {"_execute_artifact": artifact, "effective_goal": effective}, record=record, evidence=payload)
 
