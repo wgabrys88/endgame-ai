@@ -179,10 +179,10 @@ def downstream_contract(w: dict[str, Any], emitting_node: str | None, expected_r
         doc = _node_docstring(w, succ)
         lines.append(f"\n[on signal '{signal}' -> {succ}]\n{doc}" if doc else f"\n[on signal '{signal}' -> {succ}] (no input contract declared)")
     # The next_signal instruction is lawful ONLY when this node's own record can
-    # carry next_signal. For mechanically-routed nodes (plan, execution, verification,
-    # git_evolution_patch, repair_probe, repair_validation) the field is absent and the
-    # strict schema forbids it, so commanding a next_signal would be a contradiction at
-    # the recency slot. Gate on the actual contract, mirroring _record_response_format.
+    # carry next_signal. For mechanically-routed nodes (plan, execution, verification)
+    # the field is absent and the strict schema forbids it, so commanding a next_signal
+    # would be a contradiction at the recency slot. Gate on the actual contract,
+    # mirroring _record_response_format.
     if expected_record_type:
         contract = w.get("record_contracts", {}).get(expected_record_type, {})
         contract_keys = set(contract.get("required", [])) | set(contract.get("types", {})) | set(contract.get("enums", {}))
@@ -363,16 +363,7 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
     reasoning_cfg = dict(cfg["reasoning"])
     organ_tuning = _organ_tuning(w, expected_record_type)
     include_prefix = bool(w["model"]["stable_prefix"]["include_in_request"] or organ_tuning.get("include_stable_prefix"))
-    focus_files = None
-    if expected_record_type == "git_evolution_patch":
-        failure = payload.get("failure", {}) if isinstance(payload, dict) else {}
-        last_refl = failure.get("last_reflection", {}) if isinstance(failure, dict) else {}
-        diagnosis = str(last_refl.get("diagnosis", "")) + str(last_refl.get("lesson", ""))
-        import re
-        candidates = re.findall(r"((?:node|core|obs|cap|transport)_[a-z_]+\.py|tools\.py|wiring\.json)", diagnosis)
-        if candidates:
-            focus_files = sorted(set(candidates))
-    prefix = stable_prefix(w, focus_files=focus_files) if w["model"]["stable_prefix"]["enabled"] and include_prefix else None
+    prefix = stable_prefix(w) if w["model"]["stable_prefix"]["enabled"] and include_prefix else None
     prefix_for_messages = prefix
     if not _CONV_ID:
         _CONV_ID = f"endgame-ai-{int(time.time())}-{os.getpid()}"

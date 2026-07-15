@@ -1,458 +1,18 @@
-import io
 import copy
 import json
 import os
 import pathlib
 import subprocess
 import sys
-import threading
 import time
-import tokenize
 from typing import Any
 
 import core_brain as brain
 import core_bus as bus
 import core_wiring as wiring
-import check_topology
-import io_helpers
 
 ROOT = pathlib.Path(__file__).parent.resolve()
 
-
-def _patch_data(parsed: dict[str, Any]) -> dict[str, Any]:
-    data = parsed["data"]
-    if not isinstance(data, dict):
-        raise ValueError("self_modify patch data must be an object")
-    return data
-
-
-def _thread_id() -> int:
-    return threading.get_ident()
-
-
-def _evolution_target(raw_path: str, w: dict[str, Any] | None = None) -> tuple[pathlib.Path, str]:
-    rel = str(raw_path).replace("\\", "/").strip().lstrip("/")
-    if not rel:
-        raise ValueError("self_modify path is empty")
-    requested = pathlib.Path(rel)
-    path = (ROOT / requested).resolve() if not requested.is_absolute() else requested.resolve()
-    try:
-        rel = path.relative_to(ROOT).as_posix()
-    except ValueError as exc:
-        raise ValueError(f"git evolution path must stay under repository root: {raw_path}") from exc
-    if w is not None and not _evolvable_rel(w, rel):
-        raise ValueError(f"git evolution path is outside wiring.self_modify.evolvable: {rel}")
-    return path, rel
-
-
-def _validate_content(path: pathlib.Path, rel: str, content: Any) -> str:
-    if not isinstance(content, str):
-        raise ValueError(f"self_modify content for {rel} must be a string")
-    if path.suffix == ".py":
-        compile(content, rel, "exec")
-    elif path.suffix == ".json":
-        json.loads(content)
-    return content
-
-
-def _atomic_write_text(path: pathlib.Path, content: str) -> None:
-    io_helpers.atomic_write_text(path, content)
-
-
-def _apply_wiring_ops(w: dict[str, Any], patches: list[dict[str, Any]]) -> dict[str, Any]:
-    patched = copy.deepcopy(w)
-    for patch in patches:
-        if not isinstance(patch, dict):
-            raise ValueError(f"wiring_patch must be object: {patch!r}")
-        op = patch["op"]
-        dotted = str(patch["path"])
-        if not dotted:
-            raise ValueError("wiring_patch missing path")
-        parts = dotted.split(".")
-        cur = patched
-        for part in parts[:-1]:
-            cur = cur[part]
-            if not isinstance(cur, dict):
-                raise ValueError(f"wiring_patch parent is not object: {dotted}")
-        if op == "set":
-            cur[parts[-1]] = patch["value"]
-        elif op == "delete":
-            del cur[parts[-1]]
-        else:
-            raise ValueError(f"unknown wiring_patch op: {op}")
-    json.dumps(patched, ensure_ascii=False, default=str)
-    return patched
-
-
-def _activation_bucket(rel: str, w: dict[str, Any]) -> str:
-    activation = w["self_modify"]["evolvable"]["activation"]
-    name = pathlib.PurePosixPath(rel.replace("\\", "/")).name
-    if name in set(activation["immediate_names"]) or name.startswith(tuple(activation["immediate_prefixes"])):
-        return "immediate"
-    if pathlib.PurePosixPath(name).suffix in set(activation["next_run_suffixes"]):
-        return "next_run"
-    return "supporting"
-
-
-def _evolvable_source(w: dict[str, Any]) -> dict[str, Any]:
-    return w["self_modify"]["evolvable"]
-
-
-def _evolvable_rel(w: dict[str, Any], rel: str) -> bool:
-    cfg = _evolvable_source(w)
-    path = pathlib.PurePosixPath(rel.replace("\\", "/"))
-    skip_prefixes = tuple(cfg["skip_prefixes"])
-    if any(part.startswith(skip_prefixes) for part in path.parts):
-        return False
-    return path.name in set(cfg["names"]) or path.suffix in set(cfg["suffixes"])
-
-
-def _git(args: list[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
-    cp = subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True)
-    if check and cp.returncode != 0:
-        detail = (cp.stderr or cp.stdout or "").strip()
-        raise RuntimeError(f"git {' '.join(args)} failed: {detail}")
-    return cp
-
-
-def git_head_sha() -> str:
-    return _git(["rev-parse", "HEAD"]).stdout.strip()
-
-
-def git_current_branch() -> str:
-    return _git(["branch", "--show-current"]).stdout.strip()
-
-
-def git_worktree_status() -> list[str]:
-    return [line for line in _git(["status", "--porcelain"]).stdout.splitlines() if line.strip()]
-
-
-def known_good_ref_name(w: dict[str, Any]) -> str:
-    return str(w["self_modify"]["known_good_ref"]).strip()
-
-
-def resolve_known_good(w: dict[str, Any]) -> dict[str, Any]:
-    ref = known_good_ref_name(w)
-    cp = _git(["rev-parse", "--verify", ref], check=False) if ref else None
-    if cp is not None and cp.returncode == 0 and cp.stdout.strip():
-        return {"commit": cp.stdout.strip(), "source": "git_ref", "ref": ref}
-    return {"commit": "", "source": "missing", "ref": ref}
-
-
-def update_known_good_ref(w: dict[str, Any], commit: str, *, source: str) -> dict[str, Any]:
-    sha = str(commit or "").strip()
-    if not sha:
-        raise ValueError("cannot update known-good ref without a commit")
-    _git(["cat-file", "-e", f"{sha}^{{commit}}"])
-    ref = known_good_ref_name(w)
-    if not ref:
-        raise ValueError("self_modify.known_good_ref is empty")
-    before = resolve_known_good(w)
-    _git(["update-ref", ref, sha])
-    payload = {
-        "schema": "endgame-ai.known-good.v1",
-        "ref": ref,
-        "previous": before,
-        "commit": sha,
-        "source": source,
-        "updated_at": time.time(),
-        "updated_iso": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime()),
-    }
-    (ROOT / "runtime_known_good_commit.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    return payload
-
-
-def hot_swap_to_known_good(w: dict[str, Any], *, paths: list[str] | None = None) -> dict[str, Any]:
-    known_good = resolve_known_good(w)
-    sha = str(known_good.get("commit") or "").strip()
-    if not sha:
-        return {"hot_swapped": False, "reason": "no_known_good_commit", "known_good": known_good}
-    targets = [str(p).replace("\\", "/") for p in paths if str(p).strip()] if paths else sorted(
-        line.split("\t", 1)[-1].strip()
-        for line in _git(["ls-files"]).stdout.splitlines()
-        if line.strip() and _evolvable_rel(w, line.strip())
-    )
-    checkout_targets, missing = [], []
-    for target in targets:
-        (checkout_targets if _git(["cat-file", "-e", f"{sha}:{target}"], check=False).returncode == 0 else missing).append(target)
-    if checkout_targets:
-        _git(["checkout", sha, "--", *checkout_targets])
-    removed = []
-    for target in missing:
-        path, _ = _evolution_target(target, w)
-        if path.exists():
-            path.unlink()
-            removed.append(target)
-    if not checkout_targets and not removed:
-        return {"hot_swapped": False, "reason": "no_targets_in_known_good", "commit": sha, "known_good": known_good, "missing_in_known_good": missing}
-    result: dict[str, Any] = {"hot_swapped": True, "commit": sha, "known_good": known_good, "paths": checkout_targets, "removed": removed}
-    if missing:
-        result["missing_in_known_good"] = missing
-    return result
-
-
-def _remote_url(remote: str) -> str:
-    cp = _git(["remote", "get-url", remote], check=False)
-    return cp.stdout.strip() if cp.returncode == 0 else ""
-
-
-def _github_branch_url(remote_url: str, branch: str) -> str:
-    url = remote_url.strip()
-    if url.startswith("git@github.com:"):
-        url = "https://github.com/" + url.removeprefix("git@github.com:")
-    if url.endswith(".git"):
-        url = url[:-4]
-    return f"{url}/tree/{branch}" if url.startswith("https://github.com/") else ""
-
-
-def prepare_self_evolution(w: dict[str, Any]) -> dict[str, Any]:
-    cfg = w["self_modify"]["git"]
-    remote = str(cfg["remote"])
-    branch = git_current_branch()
-    remote_url = _remote_url(remote)
-    status = git_worktree_status()
-    return {
-        "context_mode": w["self_modify"]["context_mode"],
-        "branch": branch,
-        "current_commit": git_head_sha(),
-        "known_good": resolve_known_good(w),
-        "worktree_status": status,
-        "remote": remote,
-        "remote_url": remote_url,
-        "branch_url": _github_branch_url(remote_url, branch),
-        "commit_target": "checked_out_branch",
-        "push_after_commit": bool(cfg["push_after_commit"]),
-    }
-
-
-def _run_evolution_commands(commands: list[Any], w: dict[str, Any]) -> list[dict[str, Any]]:
-    results: list[dict[str, Any]] = []
-    default_timeout = w["self_modify"]["execution"].get("timeout_s")
-    for item in commands:
-        if isinstance(item, dict):
-            command = item.get("command")
-            shell = bool(item.get("shell", isinstance(command, str)))
-            timeout_s = item.get("timeout_s", default_timeout)
-        else:
-            command, shell, timeout_s = item, isinstance(item, str), default_timeout
-        if not isinstance(command, (str, list)) or not command:
-            raise ValueError(f"invalid self_modify command: {item!r}")
-        cp = subprocess.run(command, cwd=ROOT, shell=shell, capture_output=True, text=True, timeout=float(timeout_s) if timeout_s is not None else None)
-        result = {"command": command, "shell": shell, "returncode": cp.returncode, "stdout": cp.stdout, "stderr": cp.stderr}
-        results.append(result)
-        if cp.returncode != 0:
-            raise RuntimeError(f"self_modify command failed: {result}")
-    return results
-
-
-def _snapshot_paths(paths: list[pathlib.Path]) -> dict[pathlib.Path, bytes | None]:
-    return {path: path.read_bytes() if path.exists() else None for path in dict.fromkeys(paths)}
-
-
-def _restore_snapshots(snapshots: dict[pathlib.Path, bytes | None]) -> None:
-    for path, content in snapshots.items():
-        if content is None:
-            path.unlink(missing_ok=True)
-        else:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = path.with_name(f"{path.name}.rollback.{os.getpid()}.{_thread_id()}")
-            tmp.write_bytes(content)
-            io_helpers.replace_with_retry(tmp, path)
-
-
-def restore_evolution_snapshot(snapshots: dict[pathlib.Path, bytes | None]) -> dict[str, Any]:
-    """Restore the exact live body captured immediately before a candidate patch."""
-    if not isinstance(snapshots, dict) or not snapshots:
-        return {"restored": False, "reason": "missing_pre_candidate_snapshot"}
-    _restore_snapshots(snapshots)
-    paths = sorted(path.relative_to(ROOT).as_posix() for path in snapshots)
-    return {"restored": True, "paths": paths}
-
-
-def _file_write(item: dict[str, Any], w: dict[str, Any]) -> tuple[pathlib.Path, str, str]:
-    path, rel = _evolution_target(str(item["path"]), w)
-    return path, rel, _validate_content(path, rel, item["content"])
-
-
-def _semantic_noop(path: pathlib.Path, content: str) -> bool:
-    if not path.exists():
-        return False
-    current = path.read_text(encoding="utf-8")
-    if path.suffix == ".py":
-        ignored = {tokenize.NL, tokenize.NEWLINE, tokenize.INDENT, tokenize.DEDENT, tokenize.ENDMARKER}
-        tokens = lambda text: [(token.type, token.string) for token in tokenize.generate_tokens(io.StringIO(text).readline) if token.type not in ignored]
-        return tokens(current) == tokens(content)
-    if path.suffix == ".json":
-        return json.loads(current) == json.loads(content)
-    return current == content
-
-
-def apply_evolution_patch(w: dict[str, Any], parsed: dict[str, Any]) -> tuple[str, Any]:
-    data = _patch_data(parsed)
-    read_files = {str(path).replace("\\", "/").strip().lstrip("/") for path in data["read_files"]}
-    wiring_patches = list(data["wiring_patches"])
-    patched_wiring = _apply_wiring_ops(w, wiring_patches)
-    if patched_wiring == w:
-        wiring_patches = []
-    if wiring_patches:
-        wiring.validate_wiring(patched_wiring)
-    writes = [write for write in (_file_write(item, w) for item in data["file_writes"]) if not _semantic_noop(write[0], write[2])]
-    deletes = [_evolution_target(str(path), w) for path in data["file_deletes"]]
-    if not writes and not deletes and not wiring_patches:
-        raise ValueError("self_modify patch has no semantic change")
-    missing_reads = [rel for path, rel, _ in writes if path.exists() and rel not in read_files]
-    missing_reads += [rel for path, rel in deletes if path.exists() and rel not in read_files]
-    if wiring_patches and "wiring.json" not in read_files:
-        missing_reads.append("wiring.json")
-    if missing_reads:
-        raise ValueError(f"self_modify patch must declare read_files for touched existing files: {sorted(set(missing_reads))}")
-    touched = [path for path, _, _ in writes] + [path for path, _ in deletes] + ([ROOT / "wiring.json"] if wiring_patches else [])
-    snapshots = _snapshot_paths(touched)
-    rollback = bool(w["self_modify"]["execution"]["rollback_on_failure"])
-    try:
-        for path, _, content in writes:
-            _atomic_write_text(path, content)
-        for path, _ in deletes:
-            path.unlink()
-        if wiring_patches:
-            w.clear()
-            w.update(patched_wiring)
-            save_wiring(w)
-        for path, rel, _ in writes:
-            if path.suffix == ".py":
-                compile(path.read_text(encoding="utf-8"), rel, "exec")
-            elif path.suffix == ".json":
-                json.loads(path.read_text(encoding="utf-8"))
-        wiring.validate_wiring(w)
-        problems = check_topology.coherence_problems(w)
-        if problems:
-            raise ValueError(f"self_modify result is incoherent: {problems}")
-        for source in ROOT.glob("*.py"):
-            compile(source.read_text(encoding="utf-8"), source.name, "exec")
-        command_results = _run_evolution_commands(list(data["commands"]), w)
-    except Exception:
-        if rollback:
-            _restore_snapshots(snapshots)
-            if wiring_patches:
-                w.clear()
-                w.update(wiring.load_json(ROOT / "wiring.json"))
-        raise
-    changed = [rel for _, rel, _ in writes] + [rel for _, rel in deletes]
-    activation = {"immediate": [], "next_run": [], "supporting": []}
-    for rel in changed + (["wiring.json"] if wiring_patches else []):
-        activation[_activation_bucket(rel, w)].append(rel)
-    return "set", {
-        "wiring_patches": len(wiring_patches),
-        "file_writes": len(writes),
-        "file_deletes": len(deletes),
-        "commands": command_results,
-        "rollback_on_failure": rollback,
-        "changed_files": changed,
-        "activation": activation,
-        "_rollback_snapshot": snapshots,
-    }
-
-
-def commit_self_evolution(
-    w: dict[str, Any],
-    applied: dict[str, Any],
-    patch_data: dict[str, Any],
-    *, 
-    advance_known_good: bool = True,
-) -> dict[str, Any]:
-    changed_files = list(applied.get("changed_files") or [])
-    if applied.get("wiring_patches"):
-        changed_files.append("wiring.json")
-    changed_files = sorted({str(path).replace("\\", "/") for path in changed_files if str(path).strip()})
-    if not changed_files:
-        return {"committed": False, "reason": "no_changed_files", "branch": git_current_branch(), "commit": git_head_sha()}
-    # The candidate commit is a complete snapshot of the tracked living body.
-    # This matters after a human installs an update by overwriting files: a
-    # subset-only commit would make the eventual known-good ref point partly at
-    # the obsolete pre-install tree. Runtime artifacts remain excluded by the
-    # evolvable policy; newly authored files enter through changed_files.
-    tracked_body = {
-        rel.replace("\\", "/")
-        for rel in _git(["ls-files", "-z"]).stdout.split("\0")
-        if rel and _evolvable_rel(w, rel)
-    }
-    body_snapshot_files = sorted(tracked_body | set(changed_files))
-    _git(["add", "-A", "-f", "--", *body_snapshot_files])
-    if _git(["diff", "--quiet", "HEAD", "--", *body_snapshot_files], check=False).returncode == 0:
-        return {
-            "committed": False,
-            "reason": "no_git_changes",
-            "branch": git_current_branch(),
-            "commit": git_head_sha(),
-            "changed_files": changed_files,
-            "body_snapshot_files": body_snapshot_files,
-        }
-    title = "Self-modify: " + str(patch_data.get("summary") or "validated self evolution").replace("\n", " ")[:60]
-    body = json.dumps(
-        {
-            "branch": git_current_branch(),
-            "changed_files": changed_files,
-            "read_files": list(patch_data.get("read_files") or []),
-            "rationale": str(patch_data.get("rationale") or "").strip(),
-            "expected_validation": patch_data.get("expected_validation"),
-        },
-        ensure_ascii=False,
-        indent=2,
-        default=str,
-    )
-    _git(["commit", "--only", "-m", title, "-m", body, "--", *body_snapshot_files])
-    branch, commit = git_current_branch(), git_head_sha()
-    known_good = (
-        update_known_good_ref(w, commit, source="commit_self_evolution")
-        if advance_known_good
-        else resolve_known_good(w)
-    )
-    pushed = known_good_ref_pushed = False
-    if advance_known_good and bool(w["self_modify"]["git"]["push_after_commit"]):
-        remote = str(w["self_modify"]["git"]["remote"])
-        _git(["push", remote, branch])
-        pushed = True
-        if advance_known_good:
-            _git(["push", remote, f"{known_good['ref']}:{known_good['ref']}"])
-            known_good_ref_pushed = True
-    return {
-        "committed": True,
-        "branch": branch,
-        "commit": commit,
-        "known_good": known_good,
-        "known_good_advanced": advance_known_good,
-        "changed_files": changed_files,
-        "body_snapshot_files": body_snapshot_files,
-        "pushed": pushed,
-        "known_good_ref_pushed": known_good_ref_pushed,
-        "status": git_worktree_status(),
-    }
-
-
-def accept_self_evolution(w: dict[str, Any], commit: str, *, source: str) -> dict[str, Any]:
-    sha = str(commit or "").strip()
-    if not sha:
-        raise ValueError("cannot behaviorally accept self evolution without a commit")
-    _git(["cat-file", "-e", f"{sha}^{{commit}}"])
-    known_good = update_known_good_ref(w, sha, source=source)
-    pushed = False
-    if bool(w["self_modify"]["git"]["push_after_commit"]):
-        remote = str(w["self_modify"]["git"]["remote"])
-        _git(["push", remote, git_current_branch()])
-        _git(["push", remote, f"{known_good['ref']}:{known_good['ref']}"])
-        pushed = True
-    return {
-        "accepted": True,
-        "commit": sha,
-        "known_good": known_good,
-        "known_good_ref_pushed": pushed,
-    }
-
-
-def save_wiring(w: dict[str, Any]) -> None:
-    # Invocation-local keys isolate nested state but are not part of the body's
-    # declarative source of truth.
-    wiring.atomic_write_json(ROOT / "wiring.json", {key: value for key, value in w.items() if not key.startswith("_")})
 
 
 def _action_index(state: dict[str, Any]) -> dict[str, Any]:
@@ -477,17 +37,17 @@ def capability_manifest(ctx: dict[str, Any] | None = None) -> dict[str, Any]:
     manifest["repo_root"] = str(ROOT)
     manifest["invocation"] = (
         "Every helper name is already a top-level global within the [runner]. Call it directly; "
-        "import thou no [GUI] helper from [tools] nor [desktop]. The [modules] named are likewise prebound top-level objects."
+        "import thou no [GUI] helper from [desktop]. The [modules] named are likewise prebound top-level objects. "
+        "For all beyond the primitives, write plain [Python] and import from the standard library."
     )
     return manifest
 
 
 def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
     """Namespace a runner script executes in. One flat set of primitives — no
-    faculty split. The script imports/calls whatever else it needs (tools,
-    desktop, subprocess) and sets `result` / prints / appends action_events."""
+    faculty split. The script imports/calls whatever else it needs (desktop,
+    subprocess, stdlib) and sets `result` / prints / appends action_events."""
     import core_desktop as desktop
-    import tools as _tools
     d = desktop.get_desktop()
     state = ctx.get("state", {})
     w = ctx.get("wiring", {})
@@ -513,15 +73,6 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
     def _guarded(fn):
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             return _record_action(fn(*args, **kwargs))
-        return wrapper
-
-    def _recorded(action: str, fn):
-        def wrapper(*args: Any, **kwargs: Any) -> Any:
-            result = fn(*args, **kwargs)
-            event = dict(result) if isinstance(result, dict) else {"ok": True, "value": result}
-            event.setdefault("action", action)
-            _record_action(event)
-            return result
         return wrapper
 
     click = _guarded(lambda x, y, hwnd=0: d.click(int(x), int(y), int(hwnd or 0)))
@@ -567,18 +118,8 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         "click": click, "click_node": click_node, "read_node": read_node,
         "type_text": type_text, "press_key": press_key, "hotkey": hotkey, "scroll": scroll,
         "open_url": open_url, "observe": observe, "consult_model": consult_model,
-        "write_file": _recorded("write_file", _tools.write_file),
-        "read_file": _recorded("read_file", _tools.read_file),
-        "web_search": _recorded("web_search", _tools.web_search),
-        "open_page": _recorded("open_page", _tools.open_page),
-        "github_create_issue": _recorded("github_create_issue", _tools.github_create_issue),
-        "github_comment_issue": _recorded("github_comment_issue", _tools.github_comment_issue),
-        "github_list_issues": _recorded("github_list_issues", _tools.github_list_issues),
-        "github_push": _recorded("github_push", _tools.github_push),
-        "git_current_branch": _recorded("git_current_branch", _tools.git_current_branch),
-        "git_branch_show_current": _recorded("git_branch_show_current", _tools.git_branch_show_current),
         "node_by_id": _require_node, "action_index": action_index,
-        "tools": _tools, "desktop": desktop, "subprocess": subprocess,
+        "desktop": desktop, "subprocess": subprocess,
         "os": os, "sys": sys, "json": json, "time": time, "pathlib": pathlib,
         "repo_root": str(ROOT), "python_executable": sys.executable,
         "state": state, "wiring": w, "goal": ctx.get("goal", ""),

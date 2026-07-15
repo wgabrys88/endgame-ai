@@ -137,41 +137,9 @@ def emergent_signals(wiring: JsonDict, node: str | None) -> list[str]:
     return sorted(s for s in allowed_signals(wiring, node) if s != "error")
 
 
-def _plan_intent(state: JsonDict) -> list[JsonDict]:
-    plan = state.get("plan")
-    intent = plan.get("intent", []) if isinstance(plan, dict) else []
-    return intent if isinstance(intent, list) else []
-
-
-def repair_validation_brief(state: JsonDict) -> JsonDict:
-    repair = state.get("repair_validation") or {}
-    if not isinstance(repair, dict) or not repair:
-        return {}
-    probe = repair.get("probe") or {}
-    commit = repair.get("commit") or {}
-    return {
-        "repair_id": repair.get("repair_id"),
-        "status": repair.get("status"),
-        "resolved": repair.get("resolved"),
-        "summary": repair.get("summary"),
-        "expected_validation": repair.get("expected_validation"),
-        "candidate_commit": commit.get("commit") if isinstance(commit, dict) else None,
-        "activation": repair.get("activation", {}),
-        "probe": {
-            "failure_signature": probe.get("failure_signature"),
-            "description": probe.get("description"),
-            "done_when": probe.get("done_when"),
-        } if isinstance(probe, dict) and probe else {},
-        "comparison": repair.get("comparison"),
-        "conclusion": repair.get("conclusion"),
-    }
-
-
 def state_brief(state: JsonDict) -> JsonDict:
     """Compact operational focus plus the bounded continuity narrative."""
-    current_step = state.get("current_step") or {}
-    intent = _plan_intent(state)
-    step_index = int(state.get("step", 0) or 0)
+    current_deed = state.get("current_deed") or {}
     narrative = str(state.get("effective_goal") or "")
     root_goal = str(state.get("goal") or "")
     if root_goal and narrative.startswith(root_goal):
@@ -182,17 +150,14 @@ def state_brief(state: JsonDict) -> JsonDict:
         "current_node": state.get("current_node"),
         "frontier": list(state.get("frontier") or []),
         "narrative": narrative,
-        "step_index": step_index,
-        "current_step": {"description": current_step.get("description", ""), "done_when": current_step.get("done_when", "")},
-        "remaining_plan_steps": max(0, len(intent) - step_index),
-        "completed_step_count": len(state.get("completed_steps") or []),
+        "current_deed": {"description": current_deed.get("description", ""), "done_when": current_deed.get("done_when", "")},
+        "witnessed_deed_count": len(state.get("witnessed_deeds") or []),
         "last_signal": state.get("last_signal"),
         "last_error": state.get("last_error"),
         "last_verification": state.get("last_verification", {}),
         "last_reflection": state.get("last_reflection", {}),
         "last_failure": state.get("last_failure", {}),
         "failure_streak": state.get("failure_streak", {}),
-        "repair_validation": repair_validation_brief(state),
         "has_action_frame": bool(state.get("action_frame")),
     }
 
@@ -269,10 +234,10 @@ def execution_evidence(state: JsonDict) -> JsonDict:
 
 
 def failure_signature(state: JsonDict) -> str:
-    step = state.get("current_step") or {}
+    deed = state.get("current_deed") or {}
     parts = {
-        "step": step.get("description", ""),
-        "done_when": step.get("done_when", ""),
+        "deed": deed.get("description", ""),
+        "done_when": deed.get("done_when", ""),
         "failure": state.get("last_failure") or {},
         "verification": state.get("last_verification") or {},
         "executions": state.get("turn_executions") or {},

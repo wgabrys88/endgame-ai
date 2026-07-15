@@ -1,8 +1,6 @@
 import pathlib
 from typing import Any
 
-from io_helpers import atomic_write_json
-
 ROOT = pathlib.Path(__file__).parent.resolve()
 
 
@@ -60,7 +58,7 @@ def _require_list_str(obj: dict[str, Any], path: str) -> list[str]:
     return value
 
 def validate_wiring(cfg: dict[str, Any]) -> None:
-    for key in ("schema", "model", "paths", "observe_config", "self_modify", "topology", "prompts", "prompt_aliases", "shared_prompt_prefix", "record_contracts", "capabilities", "fractal"):
+    for key in ("schema", "model", "paths", "observe_config", "topology", "prompts", "prompt_aliases", "shared_prompt_prefix", "record_contracts", "capabilities", "fractal"):
         if key not in cfg:
             raise RuntimeError(f"wiring missing required key: {key}")
     _obj(cfg, "model")
@@ -71,7 +69,6 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
     for path in (
         "model.global", "model.stable_prefix", "model.stable_prefix.source", "model.organs",
         "observe_config.hover_cache", "observe_config.hover_cache.phases", "observe_config.hover_cache.scan", "observe_config.hover_cache.filter",
-        "self_modify.execution", "self_modify.git", "self_modify.web_search", "self_modify.evolvable", "self_modify.evolvable.activation",
         "topology.edges", "topology.barriers",
     ):
         _require(cfg, path, dict)
@@ -79,23 +76,16 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
         "paths.nodes",
         "paths.brains",
         "paths.caps",
-        "paths.state",
         "paths.guidance",
         "observe_config.hover_cache.phases.scan",
         "observe_config.hover_cache.phases.filter",
         "observe_config.hover_cache.phases.build",
-        "self_modify.context_mode",
-        "self_modify.known_good_ref",
-        "self_modify.git.remote",
         "topology.cycle_start",
     ):
         _require(cfg, path, str)
     for path in (
         "observe_config.hover_cache.enabled",
         "observe_config.hover_cache.filter.require_interactive",
-        "self_modify.hot_swap_on_failure",
-        "self_modify.execution.rollback_on_failure",
-        "self_modify.git.push_after_commit",
     ):
         _require(cfg, path, bool)
     numeric_paths = (
@@ -137,12 +127,6 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
     _require_list_str(cfg, "model.stable_prefix.source.names")
     _require_list_str(cfg, "model.stable_prefix.source.skip_parts")
     _require_list_str(cfg, "model.stable_prefix.source.skip_prefixes")
-    _require_list_str(cfg, "self_modify.evolvable.suffixes")
-    _require_list_str(cfg, "self_modify.evolvable.names")
-    _require_list_str(cfg, "self_modify.evolvable.skip_prefixes")
-    _require_list_str(cfg, "self_modify.evolvable.activation.immediate_names")
-    _require_list_str(cfg, "self_modify.evolvable.activation.immediate_prefixes")
-    _require_list_str(cfg, "self_modify.evolvable.activation.next_run_suffixes")
     if len(nodes) != len(set(nodes)):
         raise RuntimeError("wiring.topology.nodes contains duplicates")
     if cfg["topology"]["cycle_start"] not in nodes:
@@ -236,27 +220,8 @@ def get_transport_config(wiring: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     return transport, cfg
 
 
-def state_path(wiring: dict[str, Any]) -> pathlib.Path:
-    override = wiring.get("_state_path_override")
-    return root_path(str(override)) if override else root_path(wiring["paths"]["state"])
-
-
 def guidance_path(wiring: dict[str, Any]) -> pathlib.Path:
     return root_path(wiring["paths"]["guidance"])
-
-
-def write_state(wiring: dict[str, Any], state: dict[str, Any]) -> None:
-    ephemeral = {
-        "action_index", "observation_artifact", "_execute_artifact", "git_evolution_patch",
-        "turn_executions", "last_result", "last_code", "repair_validation",
-    }
-    atomic_write_json(state_path(wiring), {key: value for key, value in state.items() if key not in ephemeral})
-
-
-def reset_runtime(wiring: dict[str, Any]) -> None:
-    p = state_path(wiring)
-    if p.exists():
-        p.unlink()
 
 
 def topology_summary(w: dict[str, Any]) -> dict[str, Any]:
