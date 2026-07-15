@@ -8,19 +8,12 @@ import core_node_base as node_base
 import core_wiring as wiring
 
 
-def run(
-    goal: str | None,
-    *,
-    wiring_path: str | None = None,
-    _seed: dict[str, Any] | None = None,
-) -> dict[str, Any]:
+def run(goal: str | None) -> dict[str, Any]:
     if not str(goal or "").strip():
         raise ValueError("the organism requires a non-empty root goal")
     invocation_started_at = time.time()
-    def load_live_wiring() -> dict[str, Any]:
-        return wiring.load_wiring(wiring_path)
 
-    w = load_live_wiring()
+    w = wiring.load_wiring()
     topo = w["topology"]
     current = str(topo["cycle_start"])
     st: dict[str, Any] = {
@@ -34,8 +27,6 @@ def run(
     try:
         brain.reset_call_budget()
 
-        if _seed:
-            st.update(_seed)
         st["started_at"] = invocation_started_at
         frontier: list[str] = [current]
         barrier_arrivals: dict[str, int] = {}
@@ -50,7 +41,7 @@ def run(
             reload_after_node = bool(patch.pop("_reload_wiring", False))
 
             if reload_after_node:
-                w = load_live_wiring()
+                w = wiring.load_wiring()
 
             st.update(patch)
             if signal_name in {"halt", "wait"}:
@@ -119,12 +110,8 @@ def _extend_frontier(
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("goal", nargs="?", default="")
-    ap.add_argument("--wiring", default="wiring.json")
     args = ap.parse_args(argv)
-    run(
-        args.goal,
-        wiring_path=args.wiring,
-    )
+    run(args.goal)
     return 0
 
 

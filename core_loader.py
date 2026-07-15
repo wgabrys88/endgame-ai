@@ -29,7 +29,6 @@ class PluginKind(NamedTuple):
 KINDS: dict[str, PluginKind] = {
     "node": PluginKind(paths_key="nodes", module_prefix="endgame_node_", export="run"),
     "transport": PluginKind(paths_key="brains", module_prefix="endgame_brain_transport_", export="call"),
-    "cap": PluginKind(paths_key="caps", module_prefix="endgame_cap_", export="run"),
 }
 
 

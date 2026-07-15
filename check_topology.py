@@ -31,9 +31,6 @@ def _contract_problems(w: dict) -> list[str]:
         problems.append(f"record_contracts invalid: {type(exc).__name__}: {exc}")
         return problems
     contracts = w["record_contracts"]
-    for alias, target in w.get("prompt_aliases", {}).items():
-        if target not in w.get("prompts", {}):
-            problems.append(f"prompt_aliases.{alias} names missing prompt {target!r}")
     for prompt_key, text in w.get("prompts", {}).items():
         for record_type in re.findall(r"record_type '([^']+)'", str(text)):
             if record_type not in contracts:

@@ -58,7 +58,7 @@ def _require_list_str(obj: dict[str, Any], path: str) -> list[str]:
     return value
 
 def validate_wiring(cfg: dict[str, Any]) -> None:
-    for key in ("schema", "model", "paths", "observe_config", "topology", "prompts", "prompt_aliases", "shared_prompt_prefix", "record_contracts", "capabilities"):
+    for key in ("schema", "model", "paths", "observe_config", "topology", "prompts", "shared_prompt_prefix", "record_contracts", "capabilities"):
         if key not in cfg:
             raise RuntimeError(f"wiring missing required key: {key}")
     _obj(cfg, "model")
@@ -75,7 +75,6 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
     for path in (
         "paths.nodes",
         "paths.brains",
-        "paths.caps",
         "paths.guidance",
         "observe_config.hover_cache.phases.scan",
         "observe_config.hover_cache.phases.filter",
@@ -110,7 +109,6 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
     nodes = _require_list_str(cfg, "topology.nodes")
     edges = _require(cfg, "topology.edges", dict)
     prompts = _require(cfg, "prompts", dict)
-    aliases = _require(cfg, "prompt_aliases", dict)
     _require(cfg, "shared_prompt_prefix", str)
     validate_record_contracts(cfg)
     _require(cfg, "capabilities.schema", str)
@@ -124,9 +122,6 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
         raise RuntimeError("wiring.topology.nodes contains duplicates")
     if cfg["topology"]["cycle_start"] not in nodes:
         raise RuntimeError("wiring.topology.cycle_start must name a topology node")
-    for alias, target in aliases.items():
-        if not isinstance(alias, str) or not isinstance(target, str) or target not in prompts:
-            raise RuntimeError(f"wiring.prompt_aliases.{alias} must name an existing prompt")
     missing = [node for node in nodes if node not in edges]
     if missing:
         raise RuntimeError(f"wiring missing edges for nodes: {missing}")
@@ -189,17 +184,11 @@ def validate_record_contracts(cfg: dict[str, Any]) -> None:
             raise RuntimeError(f"wiring.model.organs.{record_type} has no matching wiring.record_contracts entry")
 
 
-def prompt_name(cfg: dict[str, Any], key: str) -> str:
-    aliases = cfg["prompt_aliases"]
-    return aliases[key] if key in aliases else key
-
-
 def prompt(cfg: dict[str, Any], key: str) -> str:
-    name = prompt_name(cfg, key)
     prompts = cfg["prompts"]
-    if name not in prompts:
+    if key not in prompts:
         raise RuntimeError(f"wiring.prompts missing prompt: {key}")
-    return str(cfg["shared_prompt_prefix"]).rstrip() + "\n\n" + str(prompts[name]).lstrip()
+    return str(cfg["shared_prompt_prefix"]).rstrip() + "\n\n" + str(prompts[key]).lstrip()
 
 
 def get_transport_config(wiring: dict[str, Any]) -> tuple[str, dict[str, Any]]:
