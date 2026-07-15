@@ -2,9 +2,8 @@
 and writest [code] as a script artifact upon the disk, then handest it to [node_run]
 by the "built" signal. The running is [node_run]'s office.
 
-There is no plan laid up beforehand: decomposition liveth in the deed itself, for the
-executor may author a long, multi-chained script. One [executor], one [runner], no
-division of faculty. Whatsoever the script hath need of — desktop, files, shell, web,
+Decomposition liveth in the deed itself, for the
+executor may author a long, multi-chained script. Whatsoever the script hath need of — desktop, files, shell, web,
 or the rewriting of the body — it importeth and calleth of itself.
 """
 import hashlib

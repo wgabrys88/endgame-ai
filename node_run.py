@@ -1,10 +1,8 @@
 """[node_run] — the runner. Thou loadest the script artifact that [node_execute] wrote upon the disk,
 and enactest it within the [capability namespace], emitting "done" with the evidence of the deed.
 
-One [runner], no division of faculty. It runneth whatsoever script the executor authored.
 The script hath the [capability namespace] (desktop, subprocess, stdlib, and the rest)
-and setteth `result`, or printeth, or recordeth [action_events] as it seeth fit — there is
-no per-faculty policy that gateth what shall count as success.
+and setteth `result`, or printeth, or recordeth [action_events] as it seeth fit.
 """
 import contextlib
 import hashlib
