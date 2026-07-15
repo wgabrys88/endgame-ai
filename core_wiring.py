@@ -67,7 +67,7 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
     if transport not in transport_cfg:
         raise RuntimeError(f"wiring.model.transport_config missing selected transport {transport!r}")
     for path in (
-        "model.global", "model.stable_prefix", "model.stable_prefix.source", "model.organs",
+        "model.global", "model.organs",
         "observe_config.hover_cache", "observe_config.hover_cache.phases", "observe_config.hover_cache.scan", "observe_config.hover_cache.filter",
         "topology.edges", "topology.barriers",
     ):
@@ -120,10 +120,6 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
         raise RuntimeError("wiring.capabilities.helpers must map non-empty names to descriptions")
     _require_list_str(cfg, "capabilities.modules")
     _require_list_str(cfg, "capabilities.state")
-    _require_list_str(cfg, "model.stable_prefix.source.suffixes")
-    _require_list_str(cfg, "model.stable_prefix.source.names")
-    _require_list_str(cfg, "model.stable_prefix.source.skip_parts")
-    _require_list_str(cfg, "model.stable_prefix.source.skip_prefixes")
     if len(nodes) != len(set(nodes)):
         raise RuntimeError("wiring.topology.nodes contains duplicates")
     if cfg["topology"]["cycle_start"] not in nodes:

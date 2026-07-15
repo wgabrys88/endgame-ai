@@ -23,31 +23,6 @@
     "global": {
       "timeout": 180
     },
-    "stable_prefix": {
-      "enabled": true,
-      "include_in_request": false,
-      "source": {
-        "suffixes": [
-          ".py",
-          ".json"
-        ],
-        "names": [
-          ".gitattributes",
-          ".gitignore",
-          "LICENSE"
-        ],
-        "skip_parts": [
-          ".git",
-          "__pycache__",
-          ".pytest_cache",
-          "tests",
-          "fixtures"
-        ],
-        "skip_prefixes": [
-          "runtime_"
-        ]
-      }
-    },
     "organs": {
       "action_frame": {
         "reasoning_effort": "high",
