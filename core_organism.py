@@ -13,16 +13,12 @@ def run(
     *,
     wiring_path: str | None = None,
     _seed: dict[str, Any] | None = None,
-    _state_path: str | None = None,
 ) -> dict[str, Any]:
     if not str(goal or "").strip():
         raise ValueError("the organism requires a non-empty root goal")
     invocation_started_at = time.time()
     def load_live_wiring() -> dict[str, Any]:
-        loaded = wiring.load_wiring(wiring_path)
-        if _state_path:
-            loaded["_state_path_override"] = _state_path
-        return loaded
+        return wiring.load_wiring(wiring_path)
 
     w = load_live_wiring()
     topo = w["topology"]
@@ -37,7 +33,6 @@ def run(
         "wiring_transport": w["model"]["transport"],
     }
     try:
-        wiring.reset_runtime(w)
         brain.reset_call_budget()
 
         st.setdefault("effective_goal", st["goal"])
@@ -47,14 +42,12 @@ def run(
         st["started_at"] = invocation_started_at
         frontier: list[str] = [current]
         barrier_arrivals: dict[str, int] = {}
-        wiring.write_state(w, st)
         while frontier:
             current = frontier.pop(0)
             st["frontier"] = list(frontier)
             st["barrier_arrivals"] = dict(barrier_arrivals)
             st["_phase"] = "executing_node"
             st["current_node"] = current
-            wiring.write_state(w, st)
             ctx = {"wiring": w, "state": dict(st), "goal": goal or "", "node": current}
             signal_name, patch = node_base.call_node(current, ctx)
             reload_after_node = bool(patch.pop("_reload_wiring", False))
@@ -68,7 +61,6 @@ def run(
                 st["last_signal"] = signal_name
                 st["last_node"] = current
                 st["frontier"] = list(frontier)
-                wiring.write_state(w, st)
                 return st
             successors = next_nodes_for(w, current, signal_name)
             _extend_frontier(w, successors, frontier, barrier_arrivals)
@@ -78,16 +70,13 @@ def run(
             st["barrier_arrivals"] = dict(barrier_arrivals)
             st["tick"] += 1
             st["_phase"] = "node_complete"
-            wiring.write_state(w, st)
         st["_phase"] = "frontier_drained"
-        wiring.write_state(w, st)
         raise bus.TopologyContractError(
             f"frontier drained at '{current}' — the fractal wheel dead-ended after signal "
             f"'{st.get('last_signal')}'. Rewire the graph so every non-terminal path continues."
         )
     except KeyboardInterrupt:
         st["_phase"] = "interrupted"
-        wiring.write_state(w, st)
         return st
 
 

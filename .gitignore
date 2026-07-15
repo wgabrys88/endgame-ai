@@ -15,7 +15,6 @@
 !obs_scan.py
 !core_organism.py
 !core_wiring.py
-!io_helpers.py
 !core_loader.py
 !check_topology.py
 !core_node_base.py
@@ -29,9 +28,5 @@
 !node_reflect.py
 !node_satisfied.py
 !node_scheduler.py
-!node_self_modify.py
 !node_verify.py
 !transport_xai.py
-!node_repair_probe.py
-!node_repair_dispatch.py
-!node_repair_validate.py

@@ -1,8 +1,6 @@
 import pathlib
 from typing import Any
 
-from io_helpers import atomic_write_json
-
 ROOT = pathlib.Path(__file__).parent.resolve()
 
 
@@ -78,7 +76,6 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
         "paths.nodes",
         "paths.brains",
         "paths.caps",
-        "paths.state",
         "paths.guidance",
         "observe_config.hover_cache.phases.scan",
         "observe_config.hover_cache.phases.filter",
@@ -223,27 +220,8 @@ def get_transport_config(wiring: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     return transport, cfg
 
 
-def state_path(wiring: dict[str, Any]) -> pathlib.Path:
-    override = wiring.get("_state_path_override")
-    return root_path(str(override)) if override else root_path(wiring["paths"]["state"])
-
-
 def guidance_path(wiring: dict[str, Any]) -> pathlib.Path:
     return root_path(wiring["paths"]["guidance"])
-
-
-def write_state(wiring: dict[str, Any], state: dict[str, Any]) -> None:
-    ephemeral = {
-        "action_index", "observation_artifact", "_execute_artifact",
-        "turn_executions", "last_result", "last_code",
-    }
-    atomic_write_json(state_path(wiring), {key: value for key, value in state.items() if key not in ephemeral})
-
-
-def reset_runtime(wiring: dict[str, Any]) -> None:
-    p = state_path(wiring)
-    if p.exists():
-        p.unlink()
 
 
 def topology_summary(w: dict[str, Any]) -> dict[str, Any]:
