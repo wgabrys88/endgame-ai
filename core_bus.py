@@ -194,6 +194,10 @@ def observation_brief(state: JsonDict) -> JsonDict:
     artifact = state.get("observation_artifact") or {}
     tree = artifact.get("desktop_tree") if isinstance(artifact, dict) else {}
     return {
+        "provenance": (
+            "independent world state: the settled desktop as an outside eye beheld it, "
+            "produced by the OS and applications, not authored by the actor."
+        ),
         "desktop_tree_text": state.get("desktop_tree_text", ""),
         "focused_elements": focused_elements(state),
         "observed_at": state.get("observed_at"),
@@ -216,6 +220,17 @@ def _last_denial(state: JsonDict) -> str:
     return ""
 
 
+def _action_event_count(turn: JsonDict) -> int:
+    total = 0
+    if isinstance(turn, dict):
+        for faculty in turn.values():
+            result = faculty.get("result") if isinstance(faculty, dict) else None
+            events = result.get("action_events") if isinstance(result, dict) else None
+            if isinstance(events, list):
+                total += len(events)
+    return total
+
+
 def execution_evidence(state: JsonDict) -> JsonDict:
     denial = _last_denial(state)
     turn = state.get("turn_executions") or {}
@@ -228,6 +243,12 @@ def execution_evidence(state: JsonDict) -> JsonDict:
             "last_error": state.get("last_error"),
             "last_failure": state.get("last_failure") or {},
         }
+    evidence["provenance"] = (
+        "actor-authored output: the runner's own stdout, return value, and declarations. "
+        "This is the actor's testimony about itself — a claim of what the deed asserts, not proof of world-effect. "
+        "Independent world state is carried separately in the observation field."
+    )
+    evidence["action_event_count"] = _action_event_count(turn)
     if denial:
         evidence["unsatisfied_requirement"] = denial
     return evidence
