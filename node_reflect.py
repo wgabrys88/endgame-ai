@@ -1,4 +1,4 @@
-"""[node_reflect] — Thou shalt consume a step denied and its evidence; and thou shalt bring forth a causal lesson and choose retry, replan, frame, or a named child sub-goal."""
+"""[node_reflect] — Thou shalt consume a deed denied and its evidence; and thou shalt bring forth a causal lesson and choose retry, frame, or a named child sub-goal."""
 import core_bus as bus
 from core_node_base import BaseNode
 
@@ -26,10 +26,10 @@ class ReflectNode(BaseNode):
     def build_payload(self, ctx):
         self._prepare(ctx)
         state = ctx["state"]
-        step = state.get("current_step") or {}
+        deed = state.get("current_deed") or {}
         return {
             "goal": state["goal"],
-            "step": {"description": step.get("description", state["goal"]), "done_when": step.get("done_when", "")},
+            "deed": {"description": deed.get("description", state["goal"]), "done_when": deed.get("done_when", "")},
             "focus": bus.state_brief(state),
             "evidence": self._evidence_payload,
             "observation": bus.observation_brief(state),
@@ -41,13 +41,13 @@ class ReflectNode(BaseNode):
 
     def patch_from_record(self, record, ctx):
         data, state = record.data, ctx["state"]
-        step = state.get("current_step") or {}
+        deed = state.get("current_deed") or {}
         lesson, diagnosis = data["lesson"], data["diagnosis"]
         effective = bus.append_narrative(state["effective_goal"], f"\n\n[REFLECT] I turn by '{self._signal}'. The lesson: {lesson}. The diagnosis: {diagnosis}.", root_goal=state.get("goal", ""))
         reflection = {
             "lesson": lesson,
             "diagnosis": diagnosis,
-            "step_goal": step.get("description", state["goal"]),
+            "deed_goal": deed.get("description", state["goal"]),
             "recovery_signal": self._signal,
             "failure": self._failure,
             "action_frame": state.get("action_frame"),
