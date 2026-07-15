@@ -13,7 +13,6 @@ import core_loader as loader
 import core_wiring as wiring
 
 ROOT = pathlib.Path(__file__).parent.resolve()
-_CALLS_MADE = 0
 _STABLE_PREFIX_CACHE: "StablePrefix | None" = None
 _STABLE_PREFIX_LOCK = threading.Lock()
 _LAST_OBSERVATION: dict[str, Any] | None = None
@@ -157,7 +156,7 @@ def _node_docstring(w: dict[str, Any], node: str) -> str:
     return ""
 
 
-def downstream_contract(w: dict[str, Any], emitting_node: str | None) -> str:
+def downstream_contract(w: dict[str, Any], emitting_node: str | None, expected_record_type: str | None = None) -> str:
     """The producer reads, live, the input contracts (docstrings) of every node its output
     edges are wired to, and copies them in. This is the whole contract mechanism: no stored
     record_contracts, no pins registry — X learns what to produce by reading Y and Z's own
@@ -175,11 +174,20 @@ def downstream_contract(w: dict[str, Any], emitting_node: str | None) -> str:
                 seen.append((signal, t))
     if not seen:
         return ""
-    lines = ["DOWNSTREAM CONTRACT — your output is wired (via topology) to these consumers; produce what they expect:"]
+    lines = ["DOWNSTREAM CONTRACT — thine output is wired (through the [topology]) unto these consumers; bring forth that which they await:"]
     for signal, succ in seen:
         doc = _node_docstring(w, succ)
-        lines.append(f"\n[on signal '{signal}' -> {succ}]\n{doc}" if doc else f"\n[on signal '{signal}' -> {succ}] (no declared input contract)")
-    lines.append("\nWhen thy record includes next_signal, choose it from these wired routes.")
+        lines.append(f"\n[on signal '{signal}' -> {succ}]\n{doc}" if doc else f"\n[on signal '{signal}' -> {succ}] (no input contract declared)")
+    # The next_signal instruction is lawful ONLY when this node's own record can
+    # carry next_signal. For mechanically-routed nodes (plan, execution, verification,
+    # git_evolution_patch, repair_probe, repair_validation) the field is absent and the
+    # strict schema forbids it, so commanding a next_signal would be a contradiction at
+    # the recency slot. Gate on the actual contract, mirroring _record_response_format.
+    if expected_record_type:
+        contract = w.get("record_contracts", {}).get(expected_record_type, {})
+        contract_keys = set(contract.get("required", [])) | set(contract.get("types", {})) | set(contract.get("enums", {}))
+        if "next_signal" in contract_keys:
+            lines.append("\nWhen thy record beareth next_signal, choose thou it from these wired routes.")
     return "\n".join(lines)
 
 
@@ -226,8 +234,7 @@ def _with_observation(payload: dict[str, Any], w: dict[str, Any]) -> dict[str, A
 
 
 def reset_call_budget() -> None:
-    global _CALLS_MADE, _CONV_ID, _LAST_OBSERVATION
-    _CALLS_MADE = 0
+    global _CONV_ID, _LAST_OBSERVATION
     _CONV_ID = f"endgame-ai-{int(time.time())}-{os.getpid()}"
     _LAST_OBSERVATION = None
 
@@ -279,16 +286,11 @@ def _record_response_format(w: dict[str, Any], record_type: str, emitting_node: 
 
 
 def call(messages: list[dict[str, str]], w: dict[str, Any], *, response_format: dict[str, Any] | None = None, request_config: dict[str, Any] | None = None) -> dict[str, str]:
-    global _CALLS_MADE
     transport, cfg = wiring.get_transport_config(w)
     if response_format is not None:
         cfg = {**cfg, "response_format": response_format}
     if request_config:
         cfg = {**cfg, **request_config}
-    max_calls = w["model"].get("brain_call_budget") or w["model"]["global"]["brain_call_budget"]
-    if max_calls is not None and _CALLS_MADE >= int(max_calls):
-        raise RuntimeError(f"brain call budget exceeded: {_CALLS_MADE}/{max_calls}")
-    _CALLS_MADE += 1
     try:
         result = _load_transport_module(transport, w).call(messages, cfg)
     except Exception as exc:
@@ -389,8 +391,8 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
         request_cfg.setdefault("prompt_cache_key", prefix.cache_key if prefix is not None else _CONV_ID)
     stable_context_parts = []
     if goal:
-        stable_context_parts.append(f"CURRENT GOAL (fixed for this run):\n{goal}")
-    downstream = downstream_contract(w, emitting_node)
+        stable_context_parts.append(f"THE IMMUTABLE ROOT GOAL (fixed for this run):\n{goal}")
+    downstream = downstream_contract(w, emitting_node, expected_record_type)
     if downstream:
         stable_context_parts.append(downstream)
     stable_context = "\n\n".join(stable_context_parts)

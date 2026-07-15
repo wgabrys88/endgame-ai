@@ -1,4 +1,4 @@
-"""node_repair_validate — judges whether a repair probe resolved the original failure. EXPECTS: goal, effective_goal, repair_validation (status probing, with probe + before baseline), the fresh after-observation and execution evidence, last_action/last_error/last_failure/last_result, repair_history, self_modify. Emits 'repair_resolved' or 'repair_unresolved'."""
+"""[node_repair_validate] — Thou judgest whether a repair [probe] hath resolved the original failure. THOU EXPECTEST: the goal, the [effective_goal], the [repair_validation] (status probing, with the [probe] and the before-baseline), the fresh after-observation and evidence of the deed, [last_action]/[last_error]/[last_failure]/[last_result], the [repair_history], the [self_modify]. Thou emittest 'repair_resolved' or 'repair_unresolved'."""
 import hashlib
 import time
 
@@ -107,7 +107,7 @@ class RepairValidateNode(BaseNode):
         self_modify["behavioral_validation"] = summary
         effective = bus.append_narrative(
             state["effective_goal"],
-            f"\n\n[REPAIR VALIDATION] {status.upper()}: {data['comparison']} Conclusion: {data['conclusion']}.",
+            f"\n\n[REPAIR VALIDATION] {status.upper()}: {data['comparison']} The conclusion: {data['conclusion']}.",
             root_goal=state.get("goal", ""),
         )
         patch = {

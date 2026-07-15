@@ -1,4 +1,4 @@
-"""node_spawn — consume a named spawn_subgoal and parent narrative; run one depth-bounded child and fold its final testimony back for reflection."""
+"""[node_spawn] — Thou shalt consume a named [spawn_subgoal] and the parent narrative; run one child bounded in depth, and fold its final testimony back for reflection."""
 import core_bus as bus
 import core_loader as loader
 

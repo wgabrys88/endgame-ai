@@ -1,10 +1,10 @@
-"""node_execute — the author. Writes code as a script artifact on disk, then hands
-off to node_run via the "built" signal. Running is node_run's job.
+"""[node_execute] — the author. Thou writest [code] as a script artifact upon the disk,
+then handest it to [node_run] by the "built" signal. The running is [node_run]'s office.
 
-One executor, one runner, no faculty distinction. The executor's only job is to
-create a Python script (from the LLM, or replay a repair probe). Whatever the
-script needs — desktop, files, shell, web — it imports and calls itself; there is
-no wired browser/editor/terminal split.
+One [executor], one [runner], no division of faculty. The executor's sole office is to
+fashion a [Python] script (from the [LLM], or to replay a repair [probe]). Whatsoever the
+script hath need of — desktop, files, shell, web — it importeth and calleth of itself; there is
+no wired split of browser, editor, nor terminal.
 """
 import hashlib
 import pathlib
@@ -70,7 +70,7 @@ class ExecuteNode(BaseNode):
 
         artifact_path = self._write_artifact(code)
         artifact = {"path": artifact_path, "label": label, "repair_probe": probe is not None}
-        effective = bus.append_narrative(state["effective_goal"], f"\n\n[{label}] Authored script artifact {pathlib.Path(artifact_path).name}.", root_goal=state.get("goal", ""))
+        effective = bus.append_narrative(state["effective_goal"], f"\n\n[{label}] I have authored the script artifact {pathlib.Path(artifact_path).name}.", root_goal=state.get("goal", ""))
         return bus.emit("built", {"_execute_artifact": artifact, "effective_goal": effective}, record=record, evidence=payload)
 
 

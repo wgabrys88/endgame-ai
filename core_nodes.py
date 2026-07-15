@@ -476,8 +476,8 @@ def capability_manifest(ctx: dict[str, Any] | None = None) -> dict[str, Any]:
     manifest["configured_model"] = {"transport": transport, "model": cfg.get("model")}
     manifest["repo_root"] = str(ROOT)
     manifest["invocation"] = (
-        "Every helper name is already a top-level global in the runner. Call it directly; "
-        "never import GUI helpers from tools or desktop. Listed modules are also prebound top-level objects."
+        "Every helper name is already a top-level global within the [runner]. Call it directly; "
+        "import thou no [GUI] helper from [tools] nor [desktop]. The [modules] named are likewise prebound top-level objects."
     )
     return manifest
 

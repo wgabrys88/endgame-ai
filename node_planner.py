@@ -1,4 +1,4 @@
-"""node_planner — consume the root goal, bounded narrative, evidence, and prior plan; produce the complete remaining intent as observable steps."""
+"""[node_planner] — Thou shalt consume the root goal, the bounded narrative, the evidence, and the plan before; and thou shalt bring forth the whole remaining intent as steps that may be beheld."""
 import core_bus as bus
 from core_node_base import BaseNode
 
@@ -46,7 +46,7 @@ class PlannerNode(BaseNode):
             ):
                 raise RuntimeError(f"planner intent[{i}] requires non-empty description and done_when strings")
         next_step = intent[0]["description"]
-        effective = bus.append_narrative(state["effective_goal"], f"\n\n[PLANNER] Authored {len(intent)} remaining steps. Next: {next_step}.", root_goal=state.get("goal", ""))
+        effective = bus.append_narrative(state["effective_goal"], f"\n\n[PLANNER] I have authored {len(intent)} steps yet remaining. The next is: {next_step}.", root_goal=state.get("goal", ""))
         return {
             "plan": data,
             "step": 0,

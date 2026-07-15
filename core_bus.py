@@ -198,11 +198,15 @@ def state_brief(state: JsonDict) -> JsonDict:
 
 
 def focused_elements(state: JsonDict) -> JsonDict:
-    """Map every visible short id compactly and expand only the current focus.
+    """Expand geometry/identity only for genuinely focused or action-framed ids.
 
-    The full action index remains in memory for execution. Prompt evidence receives a
-    compact id map plus geometry for genuinely focused or action-framed ids, avoiding
-    giant duplicated class metadata without making the desktop scan shallow.
+    desktop_tree_text already carries the readable overview — id, role, name,
+    [active]/[focused] markers, [action], and ~text hint — for every visible
+    element. This map therefore adds ONLY what the tree lacks (enabled, rect,
+    automation_id, class_name, hwnd, depth) and ONLY for the element(s) currently
+    focused or named by an action_frame. It never re-emits the whole tree as
+    structured metadata, so the payload carries each element once. Element
+    targeting uses the full in-memory action_index, not this brief.
     """
     action_index = state.get("action_index") or {}
     if not isinstance(action_index, dict):
@@ -211,16 +215,13 @@ def focused_elements(state: JsonDict) -> JsonDict:
     visible_ids = {line.strip().split(" ", 1)[0] for line in tree_text.splitlines() if line.strip()}
     frame_text = json.dumps(state.get("action_frame") or {}, ensure_ascii=False, default=str)
     framed_ids = set(re.findall(r"\b(?:e|W)\d+\b", frame_text))
-    compact_fields = ("name", "role", "action", "enabled", "focused")
-    detail_fields = ("rect", "automation_id", "class_name", "hwnd", "depth")
+    detail_fields = ("name", "role", "action", "enabled", "rect", "automation_id", "class_name", "hwnd", "depth")
     mapped: JsonDict = {}
     for node_id, node in action_index.items():
         if not isinstance(node, dict) or str(node_id) not in visible_ids:
             continue
-        item = {key: node[key] for key in compact_fields if key in node}
         if node.get("focused") or str(node_id) in framed_ids:
-            item.update({key: node[key] for key in detail_fields if key in node})
-        mapped[str(node_id)] = item
+            mapped[str(node_id)] = {key: node[key] for key in detail_fields if key in node}
     return mapped
 
 

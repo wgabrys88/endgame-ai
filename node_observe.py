@@ -1,4 +1,4 @@
-"""node_observe — take one fresh UI observation and expose its compact tree and ephemeral action index to the next node."""
+"""[node_observe] — Thou takest one fresh sight of the [UI], and layest its compact tree and its ephemeral [action_index] before the node that cometh after."""
 import core_bus as bus
 
 

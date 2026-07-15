@@ -35,7 +35,7 @@ def run(ctx: dict[str, Any]):
         raise RuntimeError("spawn requires a non-empty child sub-goal")
     parent = state["effective_goal"]
     if depth >= max_depth:
-        note = bus.append_narrative(parent, f"\n\n[SPAWN d{depth}] The line of descent reached its maximum depth {max_depth}; no child was started for: {child_goal}.", root_goal=state.get("goal", ""))
+        note = bus.append_narrative(parent, f"\n\n[SPAWN d{depth}] The line of descent hath reached its utmost depth {max_depth}; no child was begotten for: {child_goal}.", root_goal=state.get("goal", ""))
         return bus.emit("spawned", {"effective_goal": note, "_depth": depth})
     tag = f"t{int(state.get('tick', 0))}"
     child_state_path = _child_state_path(depth + 1, tag)
@@ -47,5 +47,5 @@ def run(ctx: dict[str, Any]):
         _seed=child_seed,
     )
     child_narrative = str(child_state["effective_goal"])
-    note = bus.append_narrative(parent, f"\n\n[SPAWN d{depth}->d{depth + 1}] Child sub-goal: {child_goal}. It returned in phase '{child_state['_phase']}'. Testimony:\n{child_narrative}", root_goal=state.get("goal", ""))
+    note = bus.append_narrative(parent, f"\n\n[SPAWN d{depth}->d{depth + 1}] The child's sub-goal: {child_goal}. It returned in the phase '{child_state['_phase']}'. Its testimony:\n{child_narrative}", root_goal=state.get("goal", ""))
     return bus.emit("spawned", {"effective_goal": note, "_depth": depth, "_child_phase": child_state["_phase"]})

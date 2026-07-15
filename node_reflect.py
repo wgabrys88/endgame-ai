@@ -1,4 +1,4 @@
-"""node_reflect — consume a denied step and its evidence; produce a causal lesson and choose retry, replan, frame, evolve, topology_patch, or a named child sub-goal."""
+"""[node_reflect] — Thou shalt consume a step denied and its evidence; and thou shalt bring forth a causal lesson and choose retry, replan, frame, evolve, topology_patch, or a named child sub-goal."""
 import core_bus as bus
 from core_node_base import BaseNode
 
@@ -46,7 +46,7 @@ class ReflectNode(BaseNode):
         data, state = record.data, ctx["state"]
         step = state.get("current_step") or {}
         lesson, diagnosis = data["lesson"], data["diagnosis"]
-        effective = bus.append_narrative(state["effective_goal"], f"\n\n[REFLECT] {self._signal}. Lesson: {lesson}. Diagnosis: {diagnosis}.", root_goal=state.get("goal", ""))
+        effective = bus.append_narrative(state["effective_goal"], f"\n\n[REFLECT] I turn by '{self._signal}'. The lesson: {lesson}. The diagnosis: {diagnosis}.", root_goal=state.get("goal", ""))
         reflection = {
             "lesson": lesson,
             "diagnosis": diagnosis,

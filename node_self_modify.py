@@ -1,4 +1,4 @@
-"""node_self_modify — consume a reasoned failure, live source manifest, topology, activation policy, and repair baseline; produce one complete candidate evolution and its behavioral proof condition."""
+"""[node_self_modify] — Thou shalt consume a reasoned failure, the living [source] manifest, the [topology], the activation policy, and the repair baseline; and thou shalt bring forth one whole candidate evolution and the condition of its behavioral proof."""
 import pathlib
 from typing import Any
 
@@ -150,10 +150,10 @@ class SelfModifyNode(BaseNode):
         }
         effective = bus.append_narrative(
             state["effective_goal"],
-            f"\n\n[SELF_MODIFY] Proposed candidate repair {repair_id}: "
+            f"\n\n[SELF_MODIFY] I have proposed the candidate repair {repair_id}: "
             f"{data['summary']}. Structural patches: {len(data['wiring_patches'])}, "
             f"writes: {len(data['file_writes'])}, deletes: {len(data['file_deletes'])}. "
-            "The repair is not accepted until a fresh behavioral probe resolves the captured failure.",
+            "The repair is not accepted until a fresh behavioral probe hath resolved the captured failure.",
             root_goal=state.get("goal", ""),
         )
         patch = {

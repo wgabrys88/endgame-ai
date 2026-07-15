@@ -1,4 +1,4 @@
-"""node_repair_probe — consume an awaiting candidate and its captured baseline; author one behavioral probe with code and observable comparison criteria, then emit probe_ready."""
+"""[node_repair_probe] — Thou shalt consume a candidate awaiting and its captured baseline; and thou shalt author one behavioral [probe] with code and criteria of comparison that may be beheld, then emit 'probe_ready'."""
 import time
 
 import core_bus as bus
@@ -65,7 +65,7 @@ class RepairProbeNode(BaseNode):
         }
         effective = bus.append_narrative(
             state["effective_goal"],
-            f"\n\n[REPAIR PROBE] Retrying failure {data['failure_signature']}. Proof required: {data['done_when']}.",
+            f"\n\n[REPAIR PROBE] I retry the failure {data['failure_signature']}. The proof required: {data['done_when']}.",
             root_goal=state.get("goal", ""),
         )
         return {
