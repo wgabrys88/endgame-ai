@@ -1,4 +1,4 @@
-"""node_guidance — folds external human counsel into the wheel. EXPECTS: effective_goal (and reads the guidance file). Emits 'attend' to continue, adding any counsel to the narrative."""
+"""[node_guidance] — Thou foldest the counsel of the human into the wheel. THOU EXPECTEST: the [effective_goal] (and thou readest the [guidance] file). Thou emittest 'attend' to go on, joining any counsel unto the narrative."""
 import core_bus as bus
 import core_wiring as wiring
 

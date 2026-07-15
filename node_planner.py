@@ -1,4 +1,4 @@
-"""node_planner — consume the root goal, bounded narrative, evidence, and prior plan; produce the complete remaining intent as observable steps."""
+"""[node_planner] — Thou shalt consume the root goal, the bounded narrative, the evidence, and the plan before; and thou shalt bring forth the whole remaining intent as steps that may be beheld."""
 import core_bus as bus
 from core_node_base import BaseNode
 

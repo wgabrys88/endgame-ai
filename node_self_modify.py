@@ -1,4 +1,4 @@
-"""node_self_modify — consume a reasoned failure, live source manifest, topology, activation policy, and repair baseline; produce one complete candidate evolution and its behavioral proof condition."""
+"""[node_self_modify] — Thou shalt consume a reasoned failure, the living [source] manifest, the [topology], the activation policy, and the repair baseline; and thou shalt bring forth one whole candidate evolution and the condition of its behavioral proof."""
 import pathlib
 from typing import Any
 

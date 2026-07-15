@@ -1,8 +1,8 @@
-"""node_repair_dispatch — freshness gate before a repair probe runs.
+"""[node_repair_dispatch] — the gate of freshness ere a repair [probe] runneth.
 
-With one executor there is no faculty fan-out: this node only asserts a fresh
-pre-probe observation exists, records probe_observed_at, and hands the probe to
-node_execute via "probe_ready".
+With one [executor] there is no fan-out of faculty: this node only attesteth that a fresh
+observation before the probe existeth, recordeth [probe_observed_at], and handeth the probe unto
+[node_execute] by the "probe_ready" signal.
 """
 import core_bus as bus
 

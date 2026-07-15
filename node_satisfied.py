@@ -1,4 +1,4 @@
-"""node_satisfied — terminal rest. EXPECTS: completed_steps, effective_goal, tick. Emits 'halt' with a completion summary once every step is verified."""
+"""[node_satisfied] — the terminal rest. THOU EXPECTEST: the [completed_steps], the [effective_goal], the [tick]. Thou emittest 'halt' with a summary of completion, once every step is witnessed."""
 import core_bus as bus
 
 

@@ -1,4 +1,4 @@
-"""node_reflect — consume a denied step and its evidence; produce a causal lesson and choose retry, replan, frame, evolve, topology_patch, or a named child sub-goal."""
+"""[node_reflect] — Thou shalt consume a step denied and its evidence; and thou shalt bring forth a causal lesson and choose retry, replan, frame, evolve, topology_patch, or a named child sub-goal."""
 import core_bus as bus
 from core_node_base import BaseNode
 
