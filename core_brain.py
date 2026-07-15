@@ -174,11 +174,11 @@ def downstream_contract(w: dict[str, Any], emitting_node: str | None) -> str:
                 seen.append((signal, t))
     if not seen:
         return ""
-    lines = ["DOWNSTREAM CONTRACT — your output is wired (via topology) to these consumers; produce what they expect:"]
+    lines = ["DOWNSTREAM CONTRACT — thine output is wired (through the [topology]) unto these consumers; bring forth that which they await:"]
     for signal, succ in seen:
         doc = _node_docstring(w, succ)
-        lines.append(f"\n[on signal '{signal}' -> {succ}]\n{doc}" if doc else f"\n[on signal '{signal}' -> {succ}] (no declared input contract)")
-    lines.append("\nWhen thy record includes next_signal, choose it from these wired routes.")
+        lines.append(f"\n[on signal '{signal}' -> {succ}]\n{doc}" if doc else f"\n[on signal '{signal}' -> {succ}] (no input contract declared)")
+    lines.append("\nWhen thy record beareth next_signal, choose thou it from these wired routes.")
     return "\n".join(lines)
 
 
@@ -382,7 +382,7 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
         request_cfg.setdefault("prompt_cache_key", prefix.cache_key if prefix is not None else _CONV_ID)
     stable_context_parts = []
     if goal:
-        stable_context_parts.append(f"CURRENT GOAL (fixed for this run):\n{goal}")
+        stable_context_parts.append(f"THE IMMUTABLE ROOT GOAL (fixed for this run):\n{goal}")
     downstream = downstream_contract(w, emitting_node)
     if downstream:
         stable_context_parts.append(downstream)
