@@ -13,12 +13,6 @@ ROOT = pathlib.Path(__file__).parent.resolve()
 
 
 
-def save_wiring(w: dict[str, Any]) -> None:
-    # Invocation-local keys isolate nested state but are not part of the body's
-    # declarative source of truth.
-    wiring.atomic_write_json(ROOT / "wiring.json", {key: value for key, value in w.items() if not key.startswith("_")})
-
-
 def _action_index(state: dict[str, Any]) -> dict[str, Any]:
     index = state.get("action_index") or {}
     return index if isinstance(index, dict) else {}
