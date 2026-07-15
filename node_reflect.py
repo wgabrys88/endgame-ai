@@ -10,11 +10,9 @@ class ReflectNode(BaseNode):
     def _prepare(self, ctx):
         state = ctx["state"]
         self._streak_patch = bus.update_failure_streak(state)
-        self._failure = state.get("last_failure") or {}
         self._evidence_payload = {
             "executions": bus.execution_evidence(state),
             "last_verification": state.get("last_verification", {}),
-            "last_failure": self._failure,
             "failure_streak": self._streak_patch["failure_streak"],
         }
 
@@ -48,7 +46,6 @@ class ReflectNode(BaseNode):
             "diagnosis": diagnosis,
             "deed_goal": deed.get("description", state["goal"]),
             "recovery_signal": self._signal,
-            "failure": self._failure,
             "action_frame": state.get("action_frame"),
         }
         patch = {
@@ -59,7 +56,6 @@ class ReflectNode(BaseNode):
                 "signal": self._signal,
                 "lesson": lesson,
                 "diagnosis": diagnosis,
-                "failure": self._failure,
             },
             "goal_interpretations": bus.with_interpretation(state.get("goal_interpretations"), "reflect", str(data.get("goal_interpretation") or "")),
         }

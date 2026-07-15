@@ -28,8 +28,6 @@ def run(
         "goal": goal or "",
         "tick": 0,
         "current_node": current,
-        "last_error": None,
-        "last_action": None,
         "goal_interpretations": {},
         "wiring_transport": w["model"]["transport"],
     }

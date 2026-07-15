@@ -305,9 +305,7 @@
       "observed_at",
       "goal",
       "state"
-    ],
-    "signals": [],
-    "faculties": {}
+    ]
   },
   "node_defs": {
     "node_frame_action": {

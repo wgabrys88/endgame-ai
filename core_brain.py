@@ -204,9 +204,7 @@ def _normalize_observation(obj: Any) -> dict[str, Any] | None:
     if not isinstance(obj, dict) or not obj.get("desktop_tree_text"):
         return None
     fields = (
-        "desktop_tree_text", "focused_elements", "observed_at", "screen", "scan_stats",
-        "rendered_node_count", "max_llm_nodes", "llm_node_limit_hit",
-        "elements_truncated", "elements_dropped_per_window", "elements_dropped_global",
+        "desktop_tree_text", "focused_elements", "observed_at", "screen",
         "observation_fresh", "settle_seconds",
     )
     return {key: obj[key] for key in fields if key in obj}

@@ -165,15 +165,12 @@ def state_brief(state: JsonDict) -> JsonDict:
     return {
         "tick": state.get("tick"),
         "current_node": state.get("current_node"),
-        "frontier": list(state.get("frontier") or []),
         "goal_interpretations": dict(state.get("goal_interpretations") or {}),
         "latest_counsel": state.get("latest_counsel") or "",
         "current_deed": {"description": current_deed.get("description", ""), "done_when": current_deed.get("done_when", "")},
         "last_signal": state.get("last_signal"),
-        "last_error": state.get("last_error"),
         "last_verification": state.get("last_verification", {}),
         "last_reflection": state.get("last_reflection", {}),
-        "last_failure": state.get("last_failure", {}),
         "failure_streak": state.get("failure_streak", {}),
         "has_action_frame": bool(state.get("action_frame")),
     }
@@ -185,10 +182,10 @@ def focused_elements(state: JsonDict) -> JsonDict:
     desktop_tree_text already carries the readable overview — id, role, name,
     [active]/[focused] markers, [action], and ~text hint — for every visible
     element. This map therefore adds ONLY what the tree lacks (enabled, rect,
-    automation_id, class_name, hwnd, depth) and ONLY for the element(s) currently
-    focused or named by an action_frame. It never re-emits the whole tree as
-    structured metadata, so the payload carries each element once. Element
-    targeting uses the full in-memory action_index, not this brief.
+    automation_id, class_name) and ONLY for the element(s) currently focused or
+    named by an action_frame. It never re-emits the whole tree as structured
+    metadata, so the payload carries each element once. Element targeting uses
+    the full in-memory action_index, not this brief.
     """
     action_index = state.get("action_index") or {}
     if not isinstance(action_index, dict):
@@ -197,7 +194,7 @@ def focused_elements(state: JsonDict) -> JsonDict:
     visible_ids = {line.strip().split(" ", 1)[0] for line in tree_text.splitlines() if line.strip()}
     frame_text = json.dumps(state.get("action_frame") or {}, ensure_ascii=False, default=str)
     framed_ids = set(re.findall(r"\b(?:e|W)\d+\b", frame_text))
-    detail_fields = ("name", "role", "action", "enabled", "rect", "automation_id", "class_name", "hwnd", "depth")
+    detail_fields = ("name", "role", "action", "enabled", "rect", "automation_id", "class_name")
     mapped: JsonDict = {}
     for node_id, node in action_index.items():
         if not isinstance(node, dict) or str(node_id) not in visible_ids:
@@ -209,7 +206,6 @@ def focused_elements(state: JsonDict) -> JsonDict:
 
 def observation_brief(state: JsonDict) -> JsonDict:
     artifact = state.get("observation_artifact") or {}
-    tree = artifact.get("desktop_tree") if isinstance(artifact, dict) else {}
     return {
         "provenance": (
             "independent world state: the settled desktop as an outside eye beheld it, "
@@ -220,13 +216,6 @@ def observation_brief(state: JsonDict) -> JsonDict:
         "observed_at": state.get("observed_at"),
         "settle_seconds": artifact.get("settle_seconds") if isinstance(artifact, dict) else None,
         "screen": artifact.get("screen", {}) if isinstance(artifact, dict) else {},
-        "scan_stats": artifact.get("scan_stats", {}) if isinstance(artifact, dict) else {},
-        "rendered_node_count": state.get("rendered_node_count") or (tree or {}).get("rendered_node_count"),
-        "max_llm_nodes": state.get("max_llm_nodes") or (tree or {}).get("max_llm_nodes"),
-        "llm_node_limit_hit": state.get("llm_node_limit_hit") or (tree or {}).get("llm_node_limit_hit"),
-        "elements_truncated": (tree or {}).get("elements_truncated", False),
-        "elements_dropped_per_window": (tree or {}).get("elements_dropped_per_window", {}),
-        "elements_dropped_global": (tree or {}).get("elements_dropped_global", 0),
     }
 
 
@@ -241,8 +230,7 @@ def _action_event_count(turn: JsonDict) -> int:
     total = 0
     if isinstance(turn, dict):
         for faculty in turn.values():
-            result = faculty.get("result") if isinstance(faculty, dict) else None
-            events = result.get("action_events") if isinstance(result, dict) else None
+            events = faculty.get("action_events") if isinstance(faculty, dict) else None
             if isinstance(events, list):
                 total += len(events)
     return total
@@ -251,18 +239,10 @@ def _action_event_count(turn: JsonDict) -> int:
 def execution_evidence(state: JsonDict) -> JsonDict:
     denial = _last_denial(state)
     turn = state.get("turn_executions") or {}
-    if isinstance(turn, dict) and turn:
-        evidence: JsonDict = {"faculties": turn}
-    else:
-        evidence = {
-            "last_action": state.get("last_action") or {},
-            "last_result": state.get("last_result") or {},
-            "last_error": state.get("last_error"),
-            "last_failure": state.get("last_failure") or {},
-        }
+    evidence: JsonDict = {"faculties": turn if isinstance(turn, dict) else {}}
     evidence["provenance"] = (
-        "actor-authored output: the runner's own stdout, return value, and declarations. "
-        "This is the actor's testimony about itself — a claim of what the deed asserts, not proof of world-effect. "
+        "actor-authored record: the [action_events] the runner's own primitives recorded of themselves. "
+        "This is the actor's testimony about what it did, not proof of world-effect. "
         "Independent world state is carried separately in the observation field."
     )
     evidence["action_event_count"] = _action_event_count(turn)
@@ -276,7 +256,6 @@ def failure_signature(state: JsonDict) -> str:
     parts = {
         "deed": deed.get("description", ""),
         "done_when": deed.get("done_when", ""),
-        "failure": state.get("last_failure") or {},
         "verification": state.get("last_verification") or {},
         "executions": state.get("turn_executions") or {},
     }

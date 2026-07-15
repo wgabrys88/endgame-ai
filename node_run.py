@@ -1,12 +1,11 @@
 """[node_run] — the runner. Thou loadest the script artifact that [node_execute] wrote upon the disk,
-and enactest it within the [capability namespace], emitting "done" with the evidence of the deed.
+and enactest it within the [capability namespace], emitting "done" with the [action_events] of the deed.
 
-The script hath the [capability namespace] (desktop, subprocess, stdlib, and the rest)
-and setteth `result`, or printeth, or recordeth [action_events] as it seeth fit.
+The script hath the [capability namespace] (desktop, subprocess, stdlib, and the rest) and recordeth
+[action_events] as it acteth. A script that raiseth faileth hard and endeth the life; a script that
+runneth yet worketh no effect is judged not here but by the witness, upon the fresh observation.
 """
-import contextlib
 import hashlib
-import io
 import pathlib
 import time
 
@@ -28,44 +27,19 @@ def run(ctx):
 
     ns = nodes.build_capability_runtime(ctx)
     ns["desktop"] = desktop
-    stdout, stderr = io.StringIO(), io.StringIO()
-    error = failure = None
-    try:
-        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-            exec(code, ns)
-        result = {
-            "result": ns.get("result"),
-            "stdout": stdout.getvalue(),
-            "stderr": stderr.getvalue(),
-            "action_events": list(ns["_action_events"]),
-        }
-    except Exception as exc:
-        result = {
-            "stdout": stdout.getvalue(),
-            "stderr": stderr.getvalue(),
-            "action_events": list(ns["_action_events"]),
-        }
-        error = f"{type(exc).__name__}: {exc}"
-        failure = {"source": "execute", "kind": "task_route_exception", "contract_repair_allowed": False, "exception_type": type(exc).__name__, "message": str(exc)}
+    exec(code, ns)
 
     turn = {FACULTY: {
         "code_sha256": hashlib.sha256(code.encode("utf-8", errors="replace")).hexdigest(),
         "code_chars": len(code),
-        "result": result,
-        "error": error,
-        "failure": failure,
+        "action_events": list(ns["_action_events"]),
     }}
     return bus.emit(
         "done",
         {
             "turn_executions": turn,
-            "last_action": {"code_sha256": turn[FACULTY]["code_sha256"], "artifact": pathlib.Path(artifact["path"]).name},
             "last_action_at": time.time(),
-            "last_code": code,
-            "last_result": result,
-            "last_error": error,
-            "last_failure": failure,
-            "action_frame": None if error is None else state.get("action_frame"),
+            "action_frame": None,
             "_execute_artifact": None,
         },
     )

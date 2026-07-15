@@ -351,9 +351,7 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
         filtered["hwnd_to_z"],
         gathered["screen"],
         cfg,
-        filtered.get("selection_stats"),
     )
-    elements_truncated = bool(mapped["elements_truncated"] or gathered["scan_stats"].get("node_limit_hit"))
     observed_at = time.time()
     artifact = {
         "observed_at": observed_at,
@@ -361,15 +359,10 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
         "settle_seconds": settle_seconds,
         "scan_config": cfg["scan"],
         "screen": gathered["screen"],
-        "scan_stats": gathered["scan_stats"],
         "desktop_tree": {
             "id": "W0", "role": "Screen", "fresh_scan": True, "observed_at": observed_at,
             "root": mapped["root"], "node_index": mapped["node_index"], "window_count": mapped["window_count"],
-            "element_count": mapped["element_count"], "rendered_node_count": mapped["rendered_node_count"],
-            "max_llm_nodes": mapped["max_llm_nodes"], "llm_node_limit_hit": mapped["llm_node_limit_hit"],
-            "elements_truncated": elements_truncated, "elements_dropped_per_window": mapped["elements_dropped_per_window"],
-            "elements_dropped_global": mapped["elements_dropped_global"],
-            "scan_node_limit_hit": bool(gathered["scan_stats"].get("node_limit_hit")),
+            "element_count": mapped["element_count"],
             "window_z_order": mapped["window_z_order"],
         },
         "action_index": mapped["action_index"],
@@ -384,8 +377,5 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
         "desktop_tree": artifact["desktop_tree"],
         "desktop_tree_text": mapped["desktop_tree_text"],
         "action_index": mapped["action_index"],
-        "rendered_node_count": mapped["rendered_node_count"],
-        "max_llm_nodes": mapped["max_llm_nodes"],
-        "llm_node_limit_hit": mapped["llm_node_limit_hit"],
         "observation_artifact": artifact,
     }

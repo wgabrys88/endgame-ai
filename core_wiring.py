@@ -118,10 +118,8 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
     helpers = _require(cfg, "capabilities.helpers", dict)
     if not helpers or not all(isinstance(key, str) and key and isinstance(value, str) and value for key, value in helpers.items()):
         raise RuntimeError("wiring.capabilities.helpers must map non-empty names to descriptions")
-    _require(cfg, "capabilities.faculties", dict)
     _require_list_str(cfg, "capabilities.modules")
     _require_list_str(cfg, "capabilities.state")
-    _require_list_str(cfg, "capabilities.signals")
     _require_list_str(cfg, "model.stable_prefix.source.suffixes")
     _require_list_str(cfg, "model.stable_prefix.source.names")
     _require_list_str(cfg, "model.stable_prefix.source.skip_parts")
