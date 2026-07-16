@@ -113,22 +113,20 @@ _INTERP_ORDER = ["execute", "verify", "reflect", "frame"]
 
 
 def render_interpretation_table(goal: str, interps: JsonDict | None) -> str:
-    """The goal-interpretation table, rendered for the tail of every user message.
+    """The living word — the goal-interpretation rows — rendered for the tail of every user message.
 
-    Row one is the immutable root goal. Each thinking faculty keeps exactly one row —
-    its own reading of the ultimate goal — which it rewrites in place
-    whensoever it acts. The table is bounded (one row per faculty), never accumulates,
+    Each thinking faculty keeps exactly one row: what it has LEARNED (not a restating of
+    the goal), rewritten in place whensoever it acts. The immutable root goal follows as a
+    fixed lodestar footer. The table is bounded (one row per faculty), never accumulates,
     and never truncates. It rides the volatile user tail, so it costs no prefix cache."""
     interps = interps or {}
     lines = [
-        "GOAL INTERPRETATION TABLE — the root goal is immutable and standeth first; "
-        "each thinking faculty keepeth one row below it, being that faculty's own "
-        "reading of the ultimate goal, rewritten whensoever it acteth:",
-        f"[ROOT GOAL] {goal}",
+        "THE LIVING WORD — this is thy sole thread across wakings, and thou plannest FROM it, not from the root goal. Each faculty keepeth one row: not a restating of the goal (the goal changeth never and needeth no echo), but what it hath LEARNED—what the world revealed, what deed was tried and how it fared, what obstacle now standeth, what the next true deed must therefore be. Read thy peers' rows as the account of where the organism now standeth; act upon them first. A row that merely repeateth the goal is wasted and blind; write what advanceth the work:",
     ]
     for faculty in _INTERP_ORDER:
         sentence = str(interps.get(faculty) or "").strip()
         lines.append(f"[{faculty}] {sentence}" if sentence else f"[{faculty}] (not yet interpreted)")
+    lines.append(f"[the root goal, a fixed lodestar to consult but never to plan from] {goal}")
     return "\n".join(lines)
 
 
@@ -265,8 +263,6 @@ def failure_signature(state: JsonDict) -> str:
     parts = {
         "deed": deed.get("description", ""),
         "done_when": deed.get("done_when", ""),
-        "verification": state.get("last_verification") or {},
-        "executions": state.get("turn_executions") or {},
     }
     raw = json.dumps(parts, sort_keys=True, ensure_ascii=False, default=str)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]

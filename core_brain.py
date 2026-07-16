@@ -306,7 +306,7 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
         override.setdefault("prompt_cache_key", _CONV_ID)
     stable_context_parts = []
     if goal:
-        stable_context_parts.append(f"THE IMMUTABLE ROOT GOAL (fixed for this run):\n{goal}")
+        stable_context_parts.append(f"THE ROOT GOAL — a fixed lodestar to consult, never the oracle for HOW to act (plan from the living word at thy message tail):\n{goal}")
     downstream = downstream_contract(w, emitting_node, expected_record_type)
     if downstream:
         stable_context_parts.append(downstream)
