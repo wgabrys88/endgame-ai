@@ -372,9 +372,6 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
     cfg = dict(config or {})
     if not cfg["enabled"]:
         raise RuntimeError("hover_cache observation is disabled")
-    settle_seconds = float(cfg["settle_seconds"])
-    if settle_seconds:
-        time.sleep(settle_seconds)
     phases = cfg.get("phases") or {}
     scan = _load_phase(phases.get("scan", "obs_scan"))
     filt = _load_phase(phases.get("filter", "obs_filter"))
@@ -393,7 +390,6 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
     artifact = {
         "observed_at": observed_at,
         "fresh_scan": True,
-        "settle_seconds": settle_seconds,
         "scan_config": cfg["scan"],
         "screen": gathered["screen"],
         "desktop_tree": {
@@ -408,7 +404,6 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
     return {
         "observed_at": observed_at,
         "fresh_scan": True,
-        "settle_seconds": settle_seconds,
         "desktop_tree": artifact["desktop_tree"],
         "desktop_tree_text": mapped["desktop_tree_text"],
         "action_index": mapped["action_index"],

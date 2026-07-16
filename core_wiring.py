@@ -128,9 +128,6 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
         value = _require(cfg, path, int)
         if isinstance(value, bool) or value < 0 or (path.endswith(("step_px", "max_subtree_nodes_per_point", "max_total_nodes", "max_elements", "max_per_window", "max_text", "max_depth", "max_children_per_window", "max_llm_nodes")) and value == 0):
             raise RuntimeError(f"wiring.{path} must be a valid non-negative count")
-    settle_seconds = _require(cfg, "observe_config.hover_cache.settle_seconds", (int, float))
-    if isinstance(settle_seconds, bool) or settle_seconds < 0:
-        raise RuntimeError("wiring.observe_config.hover_cache.settle_seconds must be non-negative")
     nodes = _require_list_str(cfg, "topology.nodes")
     edges = _require(cfg, "topology.edges", dict)
     prompts = _require(cfg, "prompts", dict)

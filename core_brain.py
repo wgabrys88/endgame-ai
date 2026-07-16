@@ -149,7 +149,7 @@ def _normalize_observation(obj: Any) -> dict[str, Any] | None:
         return None
     fields = (
         "desktop_tree_text", "focused_elements", "observed_at", "screen",
-        "observation_fresh", "settle_seconds",
+        "observation_fresh",
     )
     return {key: obj[key] for key in fields if key in obj}
 

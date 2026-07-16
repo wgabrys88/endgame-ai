@@ -235,7 +235,6 @@ def observation_brief(state: JsonDict) -> JsonDict:
         "desktop_tree_text": state.get("desktop_tree_text", ""),
         "focused_elements": focused_elements(state),
         "observed_at": state.get("observed_at"),
-        "settle_seconds": artifact.get("settle_seconds") if isinstance(artifact, dict) else None,
         "screen": artifact.get("screen", {}) if isinstance(artifact, dict) else {},
     }
 

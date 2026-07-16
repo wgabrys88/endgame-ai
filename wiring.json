@@ -93,7 +93,6 @@
   "observe_config": {
     "hover_cache": {
       "enabled": true,
-      "settle_seconds": 5,
       "phases": {
         "scan": "obs_scan",
         "filter": "obs_filter",
