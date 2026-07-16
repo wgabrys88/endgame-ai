@@ -1,6 +1,5 @@
 import ctypes
 import importlib
-import sys
 import time
 from ctypes import wintypes
 from typing import Any
@@ -12,60 +11,48 @@ user32 = ctypes.windll.user32
 
 
 def load_uia() -> Any:
-    try:
-        comtypes.client.GetModule("UIAutomationCore.dll")
-        return importlib.import_module("comtypes.gen.UIAutomationClient")
-    except ImportError as exc:
-        if "Typelib different than module" not in str(exc):
-            raise
-        for name in list(sys.modules):
-            if name.startswith("comtypes.gen.UIAutomation"):
-                sys.modules.pop(name, None)
-        comtypes.client.GetModule("UIAutomationCore.dll")
-        return importlib.import_module("comtypes.gen.UIAutomationClient")
+    comtypes.client.GetModule("UIAutomationCore.dll")
+    return importlib.import_module("comtypes.gen.UIAutomationClient")
 
 
 comtypes.CoInitialize()
 uia = load_uia()
 
 
-def _const(name: str, default: int) -> int:
-    try:
-        return int(getattr(uia, name))
-    except Exception:
-        return default
+def _const(name: str) -> int:
+    return int(getattr(uia, name))
 
 
-TreeScope_Element = _const("TreeScope_Element", 1)
-TreeScope_Descendants = _const("TreeScope_Descendants", 4)
-TreeScope_Subtree = _const("TreeScope_Subtree", 7)
+TreeScope_Element = _const("TreeScope_Element")
+TreeScope_Descendants = _const("TreeScope_Descendants")
+TreeScope_Subtree = _const("TreeScope_Subtree")
 
-PID_RUNTIME_ID = _const("UIA_RuntimeIdPropertyId", 30000)
-PID_BOUNDING_RECT = _const("UIA_BoundingRectanglePropertyId", 30001)
-PID_CONTROL_TYPE = _const("UIA_ControlTypePropertyId", 30003)
-PID_NAME = _const("UIA_NamePropertyId", 30005)
-PID_AUTOMATION_ID = _const("UIA_AutomationIdPropertyId", 30011)
-PID_CLASS_NAME = _const("UIA_ClassNamePropertyId", 30012)
-PID_ENABLED = _const("UIA_IsEnabledPropertyId", 30010)
-PID_OFFSCREEN = _const("UIA_IsOffscreenPropertyId", 30022)
-PID_HWND = _const("UIA_NativeWindowHandlePropertyId", 30020)
-PID_FRAMEWORK = _const("UIA_FrameworkIdPropertyId", 30024)
-PID_HAS_KEYBOARD_FOCUS = _const("UIA_HasKeyboardFocusPropertyId", 30008)
-PID_KEYBOARD_FOCUSABLE = _const("UIA_IsKeyboardFocusablePropertyId", 30009)
-PID_CONTENT_ELEMENT = _const("UIA_IsContentElementPropertyId", 30015)
-PID_WINDOW_INTERACTION_STATE = _const("UIA_WindowWindowInteractionStatePropertyId", 30070)
-PID_ITEM_STATUS = _const("UIA_ItemStatusPropertyId", 30035)
+PID_RUNTIME_ID = _const("UIA_RuntimeIdPropertyId")
+PID_BOUNDING_RECT = _const("UIA_BoundingRectanglePropertyId")
+PID_CONTROL_TYPE = _const("UIA_ControlTypePropertyId")
+PID_NAME = _const("UIA_NamePropertyId")
+PID_AUTOMATION_ID = _const("UIA_AutomationIdPropertyId")
+PID_CLASS_NAME = _const("UIA_ClassNamePropertyId")
+PID_ENABLED = _const("UIA_IsEnabledPropertyId")
+PID_OFFSCREEN = _const("UIA_IsOffscreenPropertyId")
+PID_HWND = _const("UIA_NativeWindowHandlePropertyId")
+PID_FRAMEWORK = _const("UIA_FrameworkIdPropertyId")
+PID_HAS_KEYBOARD_FOCUS = _const("UIA_HasKeyboardFocusPropertyId")
+PID_KEYBOARD_FOCUSABLE = _const("UIA_IsKeyboardFocusablePropertyId")
+PID_CONTENT_ELEMENT = _const("UIA_IsContentElementPropertyId")
+PID_WINDOW_INTERACTION_STATE = _const("UIA_WindowWindowInteractionStatePropertyId")
+PID_ITEM_STATUS = _const("UIA_ItemStatusPropertyId")
 SCAN_PROPERTY_IDS = [
     PID_RUNTIME_ID, PID_BOUNDING_RECT, PID_CONTROL_TYPE, PID_NAME, PID_AUTOMATION_ID, PID_CLASS_NAME,
     PID_ENABLED, PID_OFFSCREEN, PID_HWND, PID_FRAMEWORK, PID_HAS_KEYBOARD_FOCUS, PID_KEYBOARD_FOCUSABLE, PID_CONTENT_ELEMENT,
     PID_WINDOW_INTERACTION_STATE, PID_ITEM_STATUS,
 ]
 
-PID_VALUE_PATTERN = _const("UIA_ValuePatternId", 10002)
-PID_TEXT_PATTERN = _const("UIA_TextPatternId", 10014)
-PID_LEGACY_PATTERN = _const("UIA_LegacyIAccessiblePatternId", 10018)
-PID_INVOKE_PATTERN = _const("UIA_InvokePatternId", 10000)
-PID_SCROLL_PATTERN = _const("UIA_ScrollPatternId", 10004)
+PID_VALUE_PATTERN = _const("UIA_ValuePatternId")
+PID_TEXT_PATTERN = _const("UIA_TextPatternId")
+PID_LEGACY_PATTERN = _const("UIA_LegacyIAccessiblePatternId")
+PID_INVOKE_PATTERN = _const("UIA_InvokePatternId")
+PID_SCROLL_PATTERN = _const("UIA_ScrollPatternId")
 SCAN_PATTERN_IDS = [PID_VALUE_PATTERN, PID_TEXT_PATTERN, PID_LEGACY_PATTERN, PID_INVOKE_PATTERN, PID_SCROLL_PATTERN]
 
 CONTROL_TYPE_NAMES = {
@@ -79,7 +66,6 @@ READ_ROLES = {"Text", "ListItem"}
 SCROLL_ROLES = {"List", "ScrollBar", "Slider", "Tree", "DataGrid"}
 CONTAINER_ROLES = {"Pane", "Document", "Window", "Group", "List", "Tree", "DataGrid", "Tab", "Menu", "ToolBar", "Table", "MenuBar", "SplitPane", "ScrollViewer"}
 JUNK_ROLES = {"TitleBar", "ScrollBar", "StatusBar", "ProgressBar", "Separator", "ToolTip", "Image", "Custom", "Header", "HeaderItem"}
-DESKTOP_ICON_NAMES = {"Recycle Bin", "TeamViewer", "CherryTree", "LM Studio", "GitHub Desktop", "MPC-HC", "FileZilla", "Insomnia", "Microsoft Teams", "OneDrive", "OneNote", "Microsoft 365 Copilot", "HWMonitor", "Tiled", "Blender", "Blender 4.1", "MPC-HC x64"}
 
 
 def control_type_name(control_type_id: int) -> str:
@@ -99,9 +85,7 @@ def action_for_role(role: str, class_name: str = "") -> str:
 
 
 def is_desktop_leakage(node: dict[str, Any]) -> bool:
-    return (
-        node["role"] == "List" and node["name"] == "Desktop" and action_for_role(node["role"], node["class_name"]) == "scroll"
-    ) or (node["role"] == "ListItem" and node["name"] in DESKTOP_ICON_NAMES)
+    return node["role"] == "List" and node["name"] == "Desktop" and action_for_role(node["role"], node["class_name"]) == "scroll"
 
 
 def get_window_z_order() -> list[int]:
@@ -287,13 +271,11 @@ class UiaScanner:
         except Exception:
             return None
 
-    def harvest_subtree(self, root_element: Any, max_nodes: int, parent_runtime_id: list[int] | None = None, depth: int = 0) -> list[dict[str, Any]]:
+    def harvest_subtree(self, root_element: Any, parent_runtime_id: list[int] | None = None, depth: int = 0) -> list[dict[str, Any]]:
         nodes: list[dict[str, Any]] = []
         seen: set[str] = set()
 
         def add(el: Any, parent: list[int], d: int) -> dict[str, Any] | None:
-            if len(nodes) >= max_nodes:
-                return None
             node = self.element_to_raw(el, parent, d)
             if node is None or node["id"] in seen:
                 return None
@@ -307,8 +289,6 @@ class UiaScanner:
         try:
             arr = root_element.FindAllBuildCache(TreeScope_Descendants, self.automation.CreateTrueCondition(), self._cache())
             for i in range(int(getattr(arr, "Length", 0)) if arr is not None else 0):
-                if len(nodes) >= max_nodes:
-                    break
                 try:
                     add(arr.GetElement(i), root_node["runtime_id"], depth + 1)
                 except Exception:
@@ -336,7 +316,7 @@ def _load_phase(module_name: str):
     return mod
 
 
-def expand(desktop: Any, ids_or_points: list[Any], char_budget: int, max_nodes: int) -> dict[str, Any]:
+def expand(desktop: Any, ids_or_points: list[Any], char_budget: int) -> dict[str, Any]:
     """Targeted deeper look at named elements: re-acquire each at its screen point and
     harvest its full subtree, returning the WHOLE untruncated text, value, and every child
     (including non-interactive), which the shallow tree omitteth. This is a fresh independent
@@ -346,7 +326,7 @@ def expand(desktop: Any, ids_or_points: list[Any], char_budget: int, max_nodes: 
     No text is ever cut short. The shallow tree already nameth each element's true size in
     chars, so thou knowest the cost ere thou askest. Shouldst the sum of what thou askest
     exceed [char_budget], this faileth hard and nameth each element's size—ask again for fewer
-    or other elements. `max_nodes` boundeth the subtree harvested per element."""
+    or other elements."""
     from ctypes import wintypes
     scanner = UiaScanner({}, desktop)
     harvested_by_key: dict[str, list[dict[str, Any]]] = {}
@@ -360,7 +340,7 @@ def expand(desktop: Any, ids_or_points: list[Any], char_budget: int, max_nodes: 
         root_el = scanner.automation.ElementFromPointBuildCache(pt, scanner._cache())
         if root_el is None:
             raise RuntimeError(f"expand: no element at point ({px}, {py}) for '{key}'")
-        harvested_by_key[key] = scanner.harvest_subtree(root_el, max_nodes)
+        harvested_by_key[key] = scanner.harvest_subtree(root_el)
 
     def _chars(harvested: list[dict[str, Any]]) -> int:
         if not harvested:
@@ -394,9 +374,9 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
     if not cfg["enabled"]:
         raise RuntimeError("hover_cache observation is disabled")
     phases = cfg.get("phases") or {}
-    scan = _load_phase(phases.get("scan", "obs_scan"))
-    filt = _load_phase(phases.get("filter", "obs_filter"))
-    build = _load_phase(phases.get("build", "obs_build"))
+    scan = _load_phase(phases["scan"])
+    filt = _load_phase(phases["filter"])
+    build = _load_phase(phases["build"])
     gathered = scan.run(cfg, desktop)
     filtered = filt.run(gathered["nodes"], cfg, gathered["screen"])
     mapped = build.run(

@@ -1,4 +1,4 @@
-"""[node_guidance] — Thou expectest the present state and any counsel awaiting in the [guidance] file."""
+"""[node_guidance] — Thou expectest the [guidance] file."""
 import core_bus as bus
 import core_wiring as wiring
 

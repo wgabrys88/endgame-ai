@@ -1,4 +1,4 @@
-"""[node_reflect] — Thou expectest the denied deed, its evidence, the [failure_signature], and the fresh observation."""
+"""[node_reflect] — Thou expectest the denied deed, its evidence and [failure_streak], and the fresh observation."""
 import core_bus as bus
 from core_node_base import BaseNode
 

@@ -22,7 +22,7 @@ def deep_merge(base: JsonDict, override: JsonDict) -> JsonDict:
 
 
 def drop_nulls(obj: Any) -> Any:
-    """Recursively drop keys whose value is None (a catalogued-but-unsent API field),
+    """Recursively drop keys whose value is None (an unsent API field),
     and drop any nested object left empty by that pruning. Lists are pruned in place."""
     if isinstance(obj, dict):
         pruned: JsonDict = {}
@@ -176,20 +176,12 @@ def emergent_signals(wiring: JsonDict, node: str | None) -> list[str]:
 
 
 def state_brief(state: JsonDict) -> JsonDict:
-    """Compact operational focus of the NOW. The sole within-waking continuity is the
-    immutable goal and the goal-interpretation table (carried to the user tail); there
-    is no memory, no history, no prior turn — only this present state and the fresh
-    observation that reveals the world as it now is."""
+    """Present deed facts; the living word is extracted from here into the user tail."""
     current_deed = state.get("current_deed") or {}
     return {
-        "tick": state.get("tick"),
-        "current_node": state.get("current_node"),
         "goal_interpretations": dict(state.get("goal_interpretations") or {}),
         "latest_counsel": state.get("latest_counsel") or "",
         "current_deed": {"description": current_deed.get("description", ""), "done_when": current_deed.get("done_when", "")},
-        "last_signal": state.get("last_signal"),
-        "last_verification": state.get("last_verification", {}),
-        "last_reflection": state.get("last_reflection", {}),
         "failure_streak": state.get("failure_streak", {}),
         "has_action_frame": bool(state.get("action_frame")),
     }

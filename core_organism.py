@@ -2,6 +2,7 @@ import argparse
 import time
 from typing import Any
 
+import core_brain as brain
 import core_bus as bus
 import core_node_base as node_base
 import core_wiring as wiring
@@ -24,6 +25,8 @@ def run(goal: str | None) -> dict[str, Any]:
         "wiring_transport": w["model"]["transport"],
     }
     try:
+        brain.reset_call_budget()
+
         st["started_at"] = invocation_started_at
         frontier: list[str] = [current]
         barrier_arrivals: dict[str, int] = {}

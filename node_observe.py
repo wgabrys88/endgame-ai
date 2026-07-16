@@ -1,4 +1,4 @@
-"""[node_observe] — Thou expectest the present state after the foregoing faculty."""
+"""[node_observe] — Thou expectest the present state and the observation law in [wiring]."""
 import core_bus as bus
 
 

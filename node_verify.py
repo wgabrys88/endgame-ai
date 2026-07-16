@@ -1,4 +1,4 @@
-"""[node_verify] — Thou expectest the last deed, its [done_when], and the fresh observation."""
+"""[node_verify] — Thou expectest the last deed, its [done_when], and one fresh observation."""
 import traceback
 
 import core_bus as bus
@@ -39,20 +39,17 @@ class VerifyNode(BaseNode):
         probe_fault = None
         try:
             exec(code, ns)
+            verdict = ns.get("verdict")
+            if not isinstance(verdict, dict) or not isinstance(verdict.get("goal_satisfied"), bool) or not isinstance(verdict.get("deed_confirmed"), bool) or not isinstance(verdict.get("reason"), str) or not verdict["reason"].strip():
+                raise RuntimeError("verification probe must set verdict with boolean goal_satisfied/deed_confirmed and non-blank reason")
         except Exception:
             probe_fault = traceback.format_exc()
-        verdict = ns.get("verdict")
-        if probe_fault:
-            goal_satisfied = deed_confirmed = False
-            reason = probe_fault
-        else:
-            if not isinstance(verdict, dict) or "goal_satisfied" not in verdict or "deed_confirmed" not in verdict or "reason" not in verdict:
-                raise RuntimeError("verification probe must set verdict = {goal_satisfied, deed_confirmed, reason}")
-            goal_satisfied = bool(verdict["goal_satisfied"])
-            deed_confirmed = bool(verdict["deed_confirmed"])
-            reason = str(verdict["reason"])
+            verdict = {"goal_satisfied": False, "deed_confirmed": False, "reason": probe_fault}
+        goal_satisfied = verdict["goal_satisfied"]
+        deed_confirmed = verdict["deed_confirmed"]
+        reason = verdict["reason"]
         if goal_satisfied:
-            signal = "goal_satisfied"
+            signal = "halt"
         elif deed_confirmed:
             signal = "deed_confirmed"
         else:
@@ -62,7 +59,7 @@ class VerifyNode(BaseNode):
         patch = {
             "verification": {"goal_satisfied": goal_satisfied, "deed_confirmed": deed_confirmed, "reasoning": reason, "deed_goal": desc, "done_when": done_when},
             "last_verification": {"success": confirmed, "signal": signal, "reasoning": reason},
-            "goal_interpretations": bus.with_interpretation(state.get("goal_interpretations"), "verify", str(record.data.get("goal_interpretation") or "")),
+            "goal_interpretations": bus.with_interpretation(state.get("goal_interpretations"), "verify", f"The witness probe failed ere verdict:\n{probe_fault}" if probe_fault else str(record.data.get("goal_interpretation") or "")),
         }
         if confirmed:
             patch.update({"witnessed_deed_count": int(state.get("witnessed_deed_count") or 0) + 1, "failure_streak": {"signature": None, "count": 0}, "action_frame": None, "current_deed": None})

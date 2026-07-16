@@ -1,6 +1,8 @@
 import json
+import os
 import pathlib
 import re
+import time
 from typing import Any
 
 import core_bus as bus
@@ -8,6 +10,9 @@ import core_loader as loader
 import core_wiring as wiring
 
 ROOT = pathlib.Path(__file__).parent.resolve()
+_CONV_ID = ""
+
+
 def _messages(system_prompt: str, user_text: str, stable_context: str = "") -> list[dict[str, str]]:
     system = system_prompt + ("\n\n" + stable_context if stable_context else "")
     return [{"role": "system", "content": system}, {"role": "user", "content": user_text}]
@@ -63,29 +68,26 @@ def _commit_record(content: str, w: dict[str, Any], expected_record_type: str | 
 
 
 def _node_docstring(w: dict[str, Any], node: str) -> str:
-    """Read the live input contract owned by the downstream node."""
+    """Read a node's input contract from its module docstring or declarative description."""
     import ast
     base = node.split(":", 1)[0]
-    path = wiring.root_path(w["paths"]["nodes"]) / f"{base}.py"
+    node_dir = wiring.root_path(w["paths"]["nodes"])
+    path = node_dir / f"{base}.py"
     if path.is_file():
         doc = ast.get_docstring(ast.parse(path.read_text(encoding="utf-8")))
         if not doc:
-            raise RuntimeError(f"node '{base}' hath no input-contract docstring")
+            raise RuntimeError(f"node '{base}' declareth no input contract")
         return doc.strip()
     defn = w.get("node_defs", {}).get(node) or w.get("node_defs", {}).get(base)
     if isinstance(defn, dict):
         description = str(defn.get("description") or "").strip()
-        if not description:
-            raise RuntimeError(f"declarative node '{node}' hath no input contract")
-        return description
-    raise RuntimeError(f"node '{node}' hath no input contract")
+        if description:
+            return description
+    raise RuntimeError(f"node '{node}' declareth no input contract")
 
 
 def downstream_contract(w: dict[str, Any], emitting_node: str | None, expected_record_type: str | None = None) -> str:
-    """The producer reads, live, the input contracts (docstrings) of every node its output
-    edges are wired to, and copies them in. This is the whole contract mechanism: no stored
-    record_contracts, no pins registry — X learns what to produce by reading Y and Z's own
-    files, resolved through the JSON wiring. Rewire the edges and this changes automatically."""
+    """Inject each wired consumer's live input contract; no separate pins registry exists."""
     if not emitting_node:
         return ""
     edges = w.get("topology", {}).get("edges", {}).get(emitting_node, {})
@@ -143,6 +145,10 @@ def _with_observation(payload: dict[str, Any], w: dict[str, Any]) -> dict[str, A
     enriched["observation"] = _observation_payload(w, enriched)
     return enriched
 
+
+def reset_call_budget() -> None:
+    global _CONV_ID
+    _CONV_ID = f"endgame-ai-{int(time.time())}-{os.getpid()}"
 
 
 def _load_transport_module(name: str, w: dict[str, Any]):
@@ -219,67 +225,35 @@ def reasoning_from(content: str, reasoning: str = "") -> str:
 def extract_json_object(text: str) -> dict[str, Any] | None:
     if not text:
         return None
-    s = text.strip()
-    fenced = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", s, flags=re.S | re.I)
-    if fenced:
-        s = fenced.group(1).strip()
     try:
-        obj = json.loads(s)
-        return obj if isinstance(obj, dict) else None
+        obj = json.loads(text)
     except json.JSONDecodeError:
-        pass
-    in_str = esc = False
-    depth, start = 0, -1
-    candidates: list[str] = []
-    for i, ch in enumerate(s):
-        if in_str:
-            if esc:
-                esc = False
-            elif ch == "\\":
-                esc = True
-            elif ch == '"':
-                in_str = False
-            continue
-        if ch == '"':
-            in_str = True
-        elif ch == "{":
-            if depth == 0:
-                start = i
-            depth += 1
-        elif ch == "}" and depth:
-            depth -= 1
-            if depth == 0 and start >= 0:
-                candidates.append(s[start:i + 1])
-    for candidate in reversed(candidates):
-        try:
-            obj = json.loads(candidate)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(obj, dict):
-            return obj
-    return None
-
+        return None
+    return obj if isinstance(obj, dict) else None
 
 
 def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, expected_record_type: str | None = None, emitting_node: str | None = None, body_override: dict[str, Any] | None = None) -> dict[str, Any]:
-    _, cfg = wiring.get_transport_config(w)
+    global _CONV_ID
+    transport, cfg = wiring.get_transport_config(w)
     organ_tuning = _organ_tuning(w, expected_record_type)
+    if not _CONV_ID:
+        _CONV_ID = f"endgame-ai-{int(time.time())}-{os.getpid()}"
     payload = _with_observation(payload, w)
     goal = str(payload.pop("goal") or "") if "goal" in payload else ""
-    user_text = json.dumps(payload, ensure_ascii=False, default=str)
     focus = payload.get("focus")
-    interps = focus.get("goal_interpretations") if isinstance(focus, dict) else None
+    interps = focus.pop("goal_interpretations", None) if isinstance(focus, dict) else None
+    user_text = json.dumps(payload, ensure_ascii=False, default=str)
     user_text = f"{user_text}\n\n{bus.render_interpretation_table(goal, interps)}"
     response_format = _record_response_format(w, expected_record_type, emitting_node) if expected_record_type and _structured_outputs_enabled(cfg) else None
     override = bus.deep_merge(organ_tuning, body_override or {})
+    if transport == "transport_xai":
+        override.setdefault("prompt_cache_key", _CONV_ID)
     stable_context_parts = []
-    if goal:
-        stable_context_parts.append(f"THE ROOT GOAL — a fixed lodestar to consult, never the oracle for HOW to act (plan from the living word at thy message tail):\n{goal}")
     downstream = downstream_contract(w, emitting_node, expected_record_type)
     if downstream:
         stable_context_parts.append(downstream)
     stable_context = "\n\n".join(stable_context_parts)
-    pattern = str(cfg.get("reasoning_pattern") or "native")
+    pattern = str(cfg["reasoning_pattern"])
     if pattern in {"single_pass", "native"}:
         result = call(_messages(system_prompt, user_text, stable_context), w, response_format=response_format, body_override=override)
         record = _commit_record(result["content"], w, expected_record_type)
@@ -289,7 +263,7 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
         raise RuntimeError(f"unknown reasoning pattern: {pattern}")
     first = call(_messages(system_prompt, user_text, stable_context), w, body_override=override)
     reasoning = reasoning_from(first["content"], first.get("reasoning", ""))
-    template = str(cfg.get("reasoning_injection_template") or "REASONING:\n{reasoning}")
+    template = str(cfg["reasoning_injection_template"])
     second = call(_messages(system_prompt, user_text + "\n\n" + template.format(reasoning=reasoning), stable_context), w, response_format=response_format, body_override=override)
     record = _commit_record(second["content"], w, expected_record_type)
     return bus.Record(record.record_type, record.data, reasoning).to_json()
