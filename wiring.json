@@ -121,7 +121,8 @@
         "observed": "node_execute"
       },
       "node_execute": {
-        "done": "node_observe:verify"
+        "done": "node_observe:verify",
+        "deed_denied": "node_reflect"
       },
       "node_observe:verify": {
         "observed": "node_verify"

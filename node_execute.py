@@ -1,8 +1,11 @@
 """[node_execute] — the author-enactor. Thou discernest the single next deed toward
 the goal, authorest [code] as one [Python] script, and straightway enactest it within
 the [capability namespace]. There is no menu of tools; the [Python] language itself is
-thy tool. A script that raiseth faileth hard and endeth the life; a script that runneth
-yet worketh no effect is judged not here but by the witness, upon the fresh observation.
+thy tool. Shouldst thy script raise, that fault is not death but a deed denied: its
+traceback is borne as evidence unto [reflect], who shall discern the defect and choose
+the next turn. Only a fault in the BODY itself—wiring, faculty, transport—endeth the
+life; a fault in thy DEED is counsel. A script that runneth yet worketh no effect is
+judged not here but by the witness, upon the fresh observation.
 
 Whatsoever the script hath need of — desktop, files, shell, web, or the rewriting of the
 body — it importeth and calleth of itself; and it may author a long, multi-chained script,
@@ -10,6 +13,7 @@ for decomposition liveth in the deed.
 """
 import hashlib
 import time
+import traceback
 
 import core_bus as bus
 import core_nodes as nodes
@@ -41,14 +45,19 @@ class ExecuteNode(BaseNode):
         if not intent or not done_when:
             raise RuntimeError("execution requires non-empty intent and done_when")
         ns = nodes.build_capability_runtime(ctx)
-        exec(code, ns)
+        deed_fault = None
+        try:
+            exec(code, ns)
+        except Exception:
+            deed_fault = traceback.format_exc()
         turn = {FACULTY: {
             "code_sha256": hashlib.sha256(code.encode("utf-8", errors="replace")).hexdigest(),
             "code_chars": len(code),
+            "deed_fault": deed_fault,
         }}
         interps = bus.with_interpretation(state.get("goal_interpretations"), "execute", str(data.get("goal_interpretation") or ""))
         return bus.emit(
-            "done",
+            "deed_denied" if deed_fault else "done",
             {
                 "current_deed": {"description": intent, "done_when": done_when},
                 "goal_interpretations": interps,
