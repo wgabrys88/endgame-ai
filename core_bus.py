@@ -121,7 +121,7 @@ def render_interpretation_table(goal: str, interps: JsonDict | None) -> str:
     and never truncates. It rides the volatile user tail, so it costs no prefix cache."""
     interps = interps or {}
     lines = [
-        "THE LIVING WORD — this is thy sole thread across wakings, and thou plannest FROM it, not from the root goal. Each faculty keepeth one row: not a restating of the goal (the goal changeth never and needeth no echo), but what it hath LEARNED—what the world revealed, what deed was tried and how it fared, what obstacle now standeth, what the next true deed must therefore be. Read thy peers' rows as the account of where the organism now standeth; act upon them first. A row that merely repeateth the goal is wasted and blind; write what advanceth the work:",
+        "THE LIVING WORD — this is thy sole thread across wakings, and thou plannest FROM it, not from the root goal. Each faculty keepeth one row: not a restating of the goal (the goal changeth never and needeth no echo), but what it hath LEARNED—what the world revealed, what deed was tried and how it fared, what obstacle now standeth, what the next true deed must therefore be. Try every row against the fresh observation and correct what it gainsayeth ere thou actest. A row that merely repeateth the goal is wasted and blind; write what advanceth the work:",
     ]
     for faculty in _INTERP_ORDER:
         sentence = str(interps.get(faculty) or "").strip()

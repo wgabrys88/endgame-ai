@@ -1,4 +1,4 @@
-"""[node_verify] — Thou expectest the last deed, its [done_when], and one fresh observation."""
+"""[node_verify] — Thou expectest the last deed, its [done_when] and action time, and one fresh observation."""
 import traceback
 
 import core_bus as bus
@@ -19,14 +19,9 @@ class VerifyNode(BaseNode):
         state = ctx["state"]
         desc, done_when = self._deed(ctx)
         observation = bus.observation_brief(state)
-        observed_at = state.get("observed_at")
-        last_action_at = state.get("last_action_at")
-        observation["observation_fresh"] = bool(
-            observed_at is not None and (last_action_at is None or float(observed_at) > float(last_action_at))
-        )
         return {
             "goal": state["goal"],
-            "deed": {"description": desc, "done_when": done_when},
+            "deed": {"description": desc, "done_when": done_when, "acted_at": state.get("last_action_at")},
             "focus": bus.state_brief(state),
             "observation": observation,
         }

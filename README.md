@@ -16,22 +16,22 @@ If prose and code ever disagree, read `wiring.json`, the node input-contract doc
 
 | Property | Final state |
 | --- | --- |
-| Runtime topology identities | 8 |
+| Runtime topology identities | 9 |
 | Python node implementations | 5 |
-| Observe identities sharing one implementation | 3 |
+| Observe identities sharing one implementation | 4 |
 | Declarative thinking faculties | 1 |
 | Structured record contracts | 4 |
 | Terminal pass-through faculty | None |
 | Executor action model | One authored Python script, immediately executed |
 | Verifier action model | One authored Python probe, desktop hand withheld |
-| Fresh observations | Before execute, before verify, and before reflection after an execution fault |
+| Fresh observations | Immediately before every thinking faculty |
 | Expansion size control | One wiring-owned character budget |
 | Internal retry counter | None |
-| Server-tool menu | None |
-| Request profiles | None |
+| Server-side model capability | Optional xAI web search, presently wired to reflection |
+| Request profiles | `observe` and `web_search`, both wiring-owned and low-reasoning |
 | Browser whitelist | None |
 | Hidden prompt-cache routing key | None |
-| Runtime body size | 2,728 lines across Python plus `wiring.json` |
+| Runtime body size | 2,783 lines across Python plus `wiring.json` |
 | Commit included | No |
 | Live Windows validation included | No; the operator requested packaging without execution |
 
@@ -69,7 +69,7 @@ The kernel routes mechanically from that verdict.
 
 A confirmed intermediate deed starts another lap.
 
-A denied deed enters reflection and possibly framing.
+A denied deed is observed again before reflection, framing is observed again before it reasons, and a framed deed is observed again before execution.
 
 A proven whole goal emits `halt` directly.
 
@@ -77,11 +77,13 @@ No extra satisfied node is required.
 
 ## Why this project is unusual
 
-endgame-ai is not a conventional tool-calling agent.
+endgame-ai is not a conventional client-tool-calling agent.
 
-There is no curated menu such as `click_button`, `search_web`, or `edit_file` exposed as separate tools.
+There is no curated host-action menu such as `click_button` or `edit_file` exposed as separate tools.
 
 Python is the deed language.
+
+The xAI transport may offer a wiring-selected server-side `web_search` capability to a thinking faculty; it gathers public knowledge inside that model request and never moves the Windows world.
 
 The live desktop object is one value inside the executor namespace.
 
@@ -280,6 +282,12 @@ It includes observation data.
 
 It includes `consult_model`.
 
+`consult_model(prompt, profile)` resolves only wiring-owned request profiles.
+
+The `observe` profile is a low-reasoning sub-reading for narrowed local data.
+
+The `web_search` profile is a low-reasoning request with xAI's native server-side web search available under a per-request tool-call budget.
+
 It includes `state`, `wiring`, and the goal.
 
 It includes the standard-library modules deliberately placed in the namespace.
@@ -298,11 +306,15 @@ Loading a model does not prove that the service is listening.
 
 The execute law therefore requires waiting inside the same authored script for a newly summoned thing.
 
-The script must call `desktop.observe()` again.
+Every script begins by calling `desktop.observe()` again and reacquiring its target from the returned present data.
 
 It must behold the new thing before acting on it or declaring it absent.
 
-Where fullness or state matters, it must search `screen_elements` or call `desktop.expand()`.
+It first uses ordinary Python to search `screen_elements`, then calls `desktop.expand()` only for the smallest relevant elements.
+
+Expansion returns whole text and descendants or fails hard with the measured character sizes, allowing the deed to narrow and ask again.
+
+When interpretation remains after mechanical narrowing, the script may send the selected material through the low-reasoning `observe` profile.
 
 The shallow tree alone is not enough for such a judgment.
 
@@ -344,7 +356,7 @@ Reflection therefore reasons from the post-fault world rather than the stale pre
 
 `node_observe:verify` takes one fresh observation after a non-raising deed.
 
-Its timestamp must be later than the action timestamp for `observation_fresh` to be true.
+Topology establishes that causal order directly. No age-insensitive `observation_fresh` boolean is manufactured.
 
 It emits `observed`.
 
@@ -444,7 +456,7 @@ The wiring sends that signal back to `node_guidance` for another lap.
 
 If neither is true, the node emits `deed_denied`.
 
-The wiring sends that signal to `node_reflect`.
+The wiring sends that signal to `node_observe:reflect`, then into `node_reflect`.
 
 If the probe itself raises or produces a malformed verdict, its traceback becomes the denial reason.
 
@@ -462,7 +474,9 @@ It receives a fresh observation.
 
 For execute faults, freshness comes from `node_observe:reflect`.
 
-For verification denials, freshness comes from `node_observe:verify`.
+For verification denials, a new `node_observe:reflect` scan replaces the earlier verifier input before reflection reasons.
+
+Reflection is assigned the wiring-owned `web_search` profile. Grok may choose its native server-side search when diagnosis requires current public knowledge; local deed proof still belongs to the verifier.
 
 The failure signature is built from deed description and `done_when` only.
 
@@ -475,6 +489,8 @@ When the same deed identity fails again, the streak count climbs.
 The reflection law forbids giving a failed strategy a new name and calling it different.
 
 On a repeated failed approach, reflection must emit `frame`.
+
+That signal first enters `node_observe:frame`.
 
 On a genuinely different deed, reflection may emit `retry`.
 
@@ -500,9 +516,9 @@ It names risk and notes.
 
 It writes its living-word row.
 
-It may emit `framed` back to execute.
+It may emit `framed` through `node_observe:act` and then to execute.
 
-It may emit `reflect` back to reflection.
+It may emit `reflect` through `node_observe:reflect` and then back to reflection.
 
 ## 18. Rest
 
@@ -531,14 +547,15 @@ flowchart TD
     E -->|done| OV["node_observe:verify"]
     OV -->|observed| V["node_verify"]
     V -->|deed_confirmed| G
-    V -->|deed_denied| R["node_reflect"]
+    V -->|deed_denied| OR["node_observe:reflect"]
     V -->|halt| H(("halt"))
-    E -->|deed_denied| OR["node_observe:reflect"]
+    E -->|deed_denied| OR
     OR -->|observed| R
     R -->|retry| G
-    R -->|frame| F["node_frame_action"]
-    F -->|framed| E
-    F -->|reflect| R
+    R -->|frame| OF["node_observe:frame"]
+    OF -->|observed| F["node_frame_action"]
+    F -->|framed| OA
+    F -->|reflect| OR
 
     classDef guidance fill:#1d4ed8,color:#ffffff,stroke:#93c5fd,stroke-width:3px;
     classDef observe fill:#0e7490,color:#ffffff,stroke:#67e8f9,stroke-width:3px;
@@ -548,7 +565,7 @@ flowchart TD
     classDef terminal fill:#15803d,color:#ffffff,stroke:#86efac,stroke-width:4px;
 
     class G guidance;
-    class OA,OV,OR observe;
+    class OA,OV,OR,OF observe;
     class E act;
     class V witness;
     class R,F recover;
@@ -565,29 +582,30 @@ flowchart TD
 | `node_execute` | `deed_denied` | `node_observe:reflect` | Script raised; inspect the resulting world |
 | `node_observe:verify` | `observed` | `node_verify` | Fresh post-deed world is ready |
 | `node_observe:reflect` | `observed` | `node_reflect` | Fresh post-fault world is ready |
+| `node_observe:frame` | `observed` | `node_frame_action` | Fresh recovery world is ready for framing |
 | `node_verify` | `halt` | `halt` | Whole goal independently proven |
 | `node_verify` | `deed_confirmed` | `node_guidance` | One deed proven; begin another lap |
-| `node_verify` | `deed_denied` | `node_reflect` | Effect not proven or probe faulted |
+| `node_verify` | `deed_denied` | `node_observe:reflect` | Effect not proven; refresh before diagnosis |
 | `node_reflect` | `retry` | `node_guidance` | Genuinely different deed may begin from counsel and a fresh look |
-| `node_reflect` | `frame` | `node_frame_action` | A new target/strategy frame is required |
-| `node_frame_action` | `framed` | `node_execute` | Execute the framed strategy against the current observation |
-| `node_frame_action` | `reflect` | `node_reflect` | Framing could not yet produce a true strike |
+| `node_reflect` | `frame` | `node_observe:frame` | Refresh before a new target/strategy frame |
+| `node_frame_action` | `framed` | `node_observe:act` | Refresh again before enacting the framed strategy |
+| `node_frame_action` | `reflect` | `node_observe:reflect` | Refresh before another diagnosis |
 
-## Why there are eight identities but five node files
+## Why there are nine identities but five node files
 
-Three identities are instances of the same observation implementation.
+Four identities are instances of the same observation implementation.
 
-They are `node_observe:act`, `node_observe:verify`, and `node_observe:reflect`.
+They are `node_observe:act`, `node_observe:verify`, `node_observe:reflect`, and `node_observe:frame`.
 
 The suffix changes topology identity, not implementation file.
 
-The loader resolves all three through `node_observe.py`.
+The loader resolves all four through `node_observe.py`.
 
 The declarative `node_frame_action` lives in wiring data.
 
 The remaining Python nodes are guidance, execute, verify, and reflect.
 
-That yields eight topology identities from five Python node files plus one declarative definition.
+That yields nine topology identities from five Python node files plus one declarative definition.
 
 ## Why direct halt is coherent
 
@@ -601,7 +619,7 @@ Deleting that pass-through reduces one file, one node contract, one edge, and on
 
 The final topology therefore maps the verifier's `halt` signal directly to the sentinel.
 
-## Why the third observation identity is essential
+## Why the recovery observation identities are essential
 
 An execution script can change the world before raising.
 
@@ -613,7 +631,9 @@ The one-fresh-observation law applies before it reasons.
 
 `node_observe:reflect` is therefore not duplication for its own sake.
 
-It is the minimum edge-level repair that gives reflection an honest post-fault present.
+`node_observe:frame` likewise prevents a slow reflection request from handing an aged screen directly to framing.
+
+Together with the return through `node_observe:act`, they give each thinking faculty a causally adjacent scan.
 
 ---
 
@@ -638,8 +658,14 @@ sequenceDiagram
         E-->>K: deed_denied plus traceback
         K->>O: observe:reflect
         O-->>K: fresh post-fault world
-        K->>R: reflect or frame
-        R-->>K: retry or framed strategy
+        K->>R: reflect
+        R-->>K: retry or request frame
+        opt frame requested
+            K->>O: observe:frame
+            O-->>K: fresh recovery world
+            K->>R: frame action
+            K->>O: observe:act before execution
+        end
     else authored deed returns
         E-->>K: done plus deed identity
         K->>O: observe:verify
@@ -654,6 +680,8 @@ sequenceDiagram
             K->>O: next lap
         else proof absent or probe faulty
             V-->>K: deed_denied
+            K->>O: observe:reflect
+            O-->>K: fresh denial world
             K->>R: reflect or frame
         end
     end
@@ -664,7 +692,9 @@ sequenceDiagram
 - A thinking actor never receives a pre-birth assumption in place of an observation.
 - Execute acts from one fresh observation.
 - Verify judges from a later fresh observation.
-- Reflection after an execution raise receives another fresh observation.
+- Reflection after either kind of denial receives another fresh observation.
+- Framing receives its own fresh observation.
+- A framed deed passes through another act observation before execute.
 - The goal string does not grow or mutate.
 - The living word is rewritten in place by faculty.
 - Element IDs do not survive their observation.
@@ -817,7 +847,7 @@ The actor namespace contains these deliberately supplied names:
 | `desktop_tree_text` | Compact readable observation tree |
 | `observation` | Compact observation facts |
 | `observed_at` | Observation timestamp |
-| `consult_model` | A sub-thought call through the configured transport |
+| `consult_model` | `consult_model(prompt, profile)` through a wiring-owned low-reasoning request profile |
 | `state` | Current state snapshot supplied to the node |
 | `wiring` | Live wiring object supplied to the node |
 | `goal` | Immutable root goal string |
@@ -895,6 +925,16 @@ The actor may search it with ordinary Python.
 
 `desktop.expand()` re-acquires selected points and harvests their deep subtrees.
 
+The intended progressive look is:
+
+1. call `desktop.observe()` at deed time;
+2. use Python predicates over `screen_elements` to narrow by role, name, text, bounds, or another present fact;
+3. expand only the smallest relevant entries;
+4. if the material still needs semantic reading, give the selected full element to `consult_model(..., "observe")`;
+5. repeat with a smaller or different element when the character-budget error reports that the chosen set is too large.
+
+This loop uses data selection and model consultation, not a new desktop tool.
+
 No hidden text truncation is applied inside expand.
 
 The only expansion size control is `expand_char_budget` in wiring.
@@ -902,6 +942,8 @@ The only expansion size control is `expand_char_budget` in wiring.
 If the requested harvested text exceeds that budget, expand raises and reports sizes.
 
 There is no `expand_max_nodes` control in the final body.
+
+The standing scan's existing `max_subtree_nodes_per_point` remains a scan-structure control. It is now passed into the correct `harvest_subtree` parameter rather than being mistaken for a parent runtime identifier.
 
 ## Summoned things
 
@@ -1305,9 +1347,13 @@ Python fills only dynamic input and structured-output format.
 
 The final synthesis removes the generated `prompt_cache_key` lifecycle.
 
-The final synthesis contains no named request profiles.
+The current body restores two named profiles because they now have live consumers rather than remaining dormant policy.
 
-The final synthesis contains no server-tool menu.
+`observe` lowers reasoning and output cost for narrowed local material.
+
+`web_search` lowers reasoning, offers xAI's native server-side search with automatic choice, and limits built-in calls per request in wiring.
+
+`model.node_profiles` presently assigns `web_search` to `node_reflect`; any thinking node may be assigned a wiring profile without changing Python.
 
 ## Request merge order
 
@@ -1315,6 +1361,7 @@ The final synthesis contains no server-tool menu.
 flowchart TD
     W["wiring request base"] --> M["deep merge"]
     O["wiring organ tuning"] --> M
+    R["wiring request profile"] --> M
     C["explicit caller override"] --> M
     M --> I["insert message input"]
     I --> S["insert response schema"]
@@ -1325,7 +1372,7 @@ flowchart TD
     classDef dynamic fill:#7e22ce,color:#ffffff,stroke:#d8b4fe,stroke-width:3px;
     classDef transport fill:#047857,color:#ffffff,stroke:#6ee7b7,stroke-width:3px;
 
-    class W,O,C wiring;
+    class W,O,R,C wiring;
     class M,I,S,N dynamic;
     class P transport;
 ```
@@ -1357,9 +1404,9 @@ Four organs have the same current band:
 | `action_frame` | 1,000 | 32,768 | high |
 | `execution` | 1,000 | 32,768 | high |
 | `verification` | 1,000 | 32,768 | high |
-| `reflection` | 1,000 | 32,768 | high |
+| `reflection` | 1,000 | 4,096 | low through its assigned profile |
 
-The values live only in `model.organs`.
+The standing organ bands live in `model.organs`; a wiring-selected request profile may override maximum and reasoning effort for its assigned node.
 
 ## `min_output_tokens` caveat
 
@@ -1381,6 +1428,18 @@ Do not add a retry.
 
 The transport should fail on the first rejected request.
 
+## `max_tool_calls` caveat
+
+xAI documents native web search, automatic tool choice, and successful server-side tool invocations as billable events.
+
+The restored profile also sends `max_tool_calls: 4`, the field carried by the supplied transport catalog, so one reflection request cannot elect more than four built-in calls.
+
+The public pages consulted for this correction did not independently expose that field in their prose examples.
+
+The first live reflection request is therefore its truth gate.
+
+If xAI rejects `max_tool_calls`, let the transport fault end the life; do not hide the rejection or silently remove the requested budget.
+
 ---
 
 # Runtime body composition
@@ -1391,13 +1450,13 @@ They exclude this README, meta descriptions, and forensic logs.
 
 ```mermaid
 pie showData
-    title Final runtime body by file family (2,728 lines)
-    "core_*.py" : 1662
-    "node_*.py" : 221
-    "obs_*.py" : 322
+    title Final runtime body by file family (2,783 lines)
+    "core_*.py" : 1693
+    "node_*.py" : 216
+    "obs_*.py" : 323
     "transport_xai.py" : 61
     "check_topology.py" : 135
-    "wiring.json" : 327
+    "wiring.json" : 355
 ```
 
 ## Elimination trajectory
@@ -1408,10 +1467,11 @@ pie showData
 | High-reasoning alternate correction | 2,857 | −112 | Restored terminal node; removed several seams |
 | Max-reasoning delivered correction | 2,769 | −200 | Eliminated terminal pass-through and second expansion cap |
 | Final reconciled synthesis | 2,728 | −241 | Also removed hidden cache-key lifecycle and distilled stale internals |
+| Present truth-restoration | 2,783 | −186 | Restored live profiles, per-thinker looks, progressive reading, and spatial coordinates |
 
 The mandated README is counted separately because its required 1,000+ lines necessarily increase repository documentation size.
 
-The executable organism itself continues the elimination trend.
+The executable organism remains 186 lines below the supplied original archive. Across the complete project, deletion of the redundant node-reference chapter more than offsets the requested runtime restoration.
 
 ---
 
@@ -1470,25 +1530,25 @@ This is an example of why a prose report and its patch must be cross-checked.
 | Concern | Original archive | High diff/report | Max correction | Final synthesis |
 | --- | --- | --- | --- | --- |
 | Missing `node_satisfied.py` | Broken topology | Restored node | Deleted pass-through and routed direct halt | Direct halt retained |
-| Fresh observation after execute fault | Missing | Direct execute → reflect | Added `observe:reflect` | Retained |
+| Fresh observation before every thinker | Missing | Partial | Added only post-execute-fault `observe:reflect` | Completed with denial, frame, and pre-act rewiring |
 | Expansion controls | Character budget plus node cap | Retained both | Character budget only | Retained |
 | JSON commitment | Fence/subobject recovery | Recovery retained | Exact JSON only | Retained |
 | Living-word duplication | Rows serialized and appended; root goal duplicated | Duplication retained | Rows extracted; one table and one footer | Retained |
-| Request profiles | Present | Removed from wiring/brain but stale hooks remained | Removed end to end | Retained |
+| Request profiles | Present but unused | Removed from wiring/brain but stale hooks remained | Removed end to end | Restored with live `observe` and `web_search` consumers |
 | Transport retries | Present | Removed | Removed | Retained |
 | Hidden cache routing | Generated key | Removed | Generated key remained | Removed |
 | Browser policy | Hardcoded browser paths and whitelist | Retained | Removed | Retained |
 | Task-specific desktop icon names | Present | Retained | Removed | Retained |
 | UIA fallback constants | Present | Retained | Removed | Retained |
 | UIA typelib recovery | Present | Retained | Removed | Retained |
-| Verifier namespace | Desktop withheld, other actor names present | Early-return minimal copy | Desktop withheld, Python uncaged | Retained with truthful docs |
+| Verifier namespace | Desktop withheld, other actor names present | Early-return minimal copy | Desktop withheld, other actor names remained | Restored early-return observational namespace |
 | Verifier booleans | Truthiness conversion | Truthiness conversion | Native booleans required | Retained |
 | Malformed verifier verdict | Could body-fault or coerce | Non-faulting malformed verdict body-faulted | Authored probe fault routed to reflection | Retained |
 | Record extras | Execution/verification allowed extras | Rejected extras | All four reject extras | Retained |
 | Downstream docstring syntax error | Swallowed | Raised | Raised | Retained |
 | Observation phase defaults | Hidden fallback names | Retained | Exact wiring names required | Retained |
 | `open_url` task policy | Known browser list | Retained | Default handler or supplied executable | Retained |
-| Runtime lines | 2,969 | 2,857 | 2,769 | 2,728 |
+| Runtime lines | 2,969 | 2,857 | 2,769 | Recounted by the packaged tree |
 
 ## Original forensic archive
 
@@ -1528,6 +1588,8 @@ The transport docstring carried a large provider API catalog.
 
 Wiring carried dormant request profiles, including server web search.
 
+They earned deletion while dormant. They earn restoration now because reflection is explicitly wired to `web_search` and executor Python can explicitly select either low-cost profile through `consult_model`.
+
 Desktop URL opening carried absolute browser installation paths and a whitelist.
 
 Observation carried a list of named desktop applications.
@@ -1556,7 +1618,7 @@ The alternate correction correctly removed transport retries.
 
 It correctly removed the large API catalog.
 
-It correctly removed request profiles from wiring and the brain.
+It correctly removed request profiles while they had no consumer.
 
 It correctly made invalid desktop key inputs raise.
 
@@ -1606,13 +1668,11 @@ That would make the string `"false"` true.
 
 The alternate correction created an early-return verifier namespace and deep-copied observation data.
 
-That narrows direct names but cannot make the uncaged standard library read-only.
+The current body restores that role boundary without calling it a sandbox: standard-library Python remains powerful, while actor-owned state, wiring, action index, consulting voice, and desktop hand are not injected into the witness namespace.
 
-The final synthesis avoids claiming that such a partial restriction is a sandbox.
+The alternate correction left stale profile hooks without live profile data.
 
-The alternate correction left stale profile hooks in `core_node_base.py` and `core_wiring.py`.
-
-Those hooks had no live profile data but still duplicated a deleted concept.
+The current body restores a complete profile path—validated wiring, node selection, request merge, and executor consultation—so no hook dangles.
 
 The literal diff also introduced the undefined-`cfg` transport defect described above.
 
@@ -1636,7 +1696,7 @@ It removed numeric UIA constant fallbacks.
 
 It required observation phase names from wiring.
 
-It removed stale request-profile hooks.
+It removed then-unused request-profile hooks; the present correction restores them only with live consumers.
 
 It made record JSON commitment exact.
 
@@ -1917,7 +1977,9 @@ Counsel does not replace the root goal.
 
 ## 5. Operator-run static gates
 
-The final ZIP was deliberately not executed after packaging.
+The Linux-compatible static and contract gates were run against the source and against a clean reconstruction of the final ZIP.
+
+Neither pass can execute Windows UI Automation or make a credentialed xAI request in this environment.
 
 Run these gates on the intended host before the live wheel if you want static confirmation:
 
@@ -1977,7 +2039,7 @@ Do not treat actor print output as success proof.
 
 Inspect the verifier's named witnesses.
 
-Check whether `observation_fresh` was true.
+Compare the deed's `acted_at` and the observation's `observed_at`, then inspect whether the probe itself observed anew before judging mutable screen state.
 
 For an absence verdict, check whether more than one kind of witness was used.
 
@@ -2037,202 +2099,6 @@ The second command is an operator gate, not a substitute for the third command's
 
 ---
 
-# Complete node reference
-
-## `node_guidance`
-
-Implementation: `node_guidance.py`.
-
-Kind: mechanical Python node.
-
-Input contract: the guidance file.
-
-Primary input state: configured guidance path.
-
-Output signal: `attend`.
-
-Output patch: `latest_counsel`.
-
-Side effect: clears non-empty guidance after reading.
-
-Next identity: `node_observe:act`.
-
-It does not call the model.
-
-It does not alter the goal.
-
-## `node_observe:act`
-
-Implementation: `node_observe.py`.
-
-Kind: mechanical observation identity.
-
-Input contract: present state and observation law in wiring.
-
-Output signal: `observed`.
-
-Output patch: fresh observation fields.
-
-Purpose: look immediately before execute.
-
-Next identity: `node_execute`.
-
-It does not call the model.
-
-It mints new ephemeral IDs.
-
-## `node_execute`
-
-Implementation: `node_execute.py`.
-
-Kind: thinking plus authored-code execution.
-
-Input contract: one fresh observation and any action frame.
-
-Prompt key: `node_execute`.
-
-Record contract: `execution`.
-
-Signals: `done` or `deed_denied`.
-
-`done` target: `node_observe:verify`.
-
-`deed_denied` target: `node_observe:reflect`.
-
-It writes the execute living-word row.
-
-It stores deed identity as description plus `done_when`.
-
-It captures only authored-script traceback, hash, and code length as execution evidence.
-
-It clears an consumed action frame.
-
-## `node_observe:verify`
-
-Implementation: `node_observe.py`.
-
-Kind: mechanical observation identity.
-
-Purpose: look after a non-raising deed.
-
-Output signal: `observed`.
-
-Next identity: `node_verify`.
-
-Its timestamp establishes observation freshness relative to the action.
-
-## `node_verify`
-
-Implementation: `node_verify.py`.
-
-Kind: thinking plus authored-probe execution.
-
-Input contract: last deed, `done_when`, and one fresh observation.
-
-Prompt key: `node_verify`.
-
-Record contract: `verification`.
-
-Signals: `halt`, `deed_confirmed`, or `deed_denied`.
-
-`halt` target: terminal sentinel.
-
-`deed_confirmed` target: `node_guidance`.
-
-`deed_denied` target: `node_reflect`.
-
-It withholds the `desktop` object.
-
-It requires exact verdict types.
-
-It converts authored probe faults into denial evidence.
-
-It resets the failure streak after a confirmed deed.
-
-It clears the current deed after confirmation.
-
-## `node_observe:reflect`
-
-Implementation: `node_observe.py`.
-
-Kind: mechanical observation identity.
-
-Purpose: look after an authored execution raise.
-
-Output signal: `observed`.
-
-Next identity: `node_reflect`.
-
-It prevents reflection from reasoning on the stale pre-deed world.
-
-## `node_reflect`
-
-Implementation: `node_reflect.py`.
-
-Kind: thinking recovery faculty.
-
-Input contract: denied deed, evidence, failure streak, and fresh observation.
-
-Prompt key: `node_reflect`.
-
-Record contract: `reflection`.
-
-Signals: `retry` or `frame`.
-
-`retry` target: `node_guidance`.
-
-`frame` target: `node_frame_action`.
-
-It updates the mechanical failure streak before thinking.
-
-It writes lesson and diagnosis.
-
-It rewrites the reflection living-word row.
-
-It clears any stale action frame.
-
-## `node_frame_action`
-
-Implementation: declarative definition in `wiring.json`.
-
-Kind: thinking data node.
-
-Input contract: denied deed, evidence, fresh observation.
-
-Prompt key: `node_frame_action`.
-
-Record contract: `action_frame`.
-
-Signal source: `data.next_signal`.
-
-Signals: `framed` or `reflect`.
-
-`framed` target: `node_execute`.
-
-`reflect` target: `node_reflect`.
-
-It builds the action-frame state patch from record fields.
-
-It writes the frame living-word row.
-
-It demonstrates that a thinking node can be pure wiring data.
-
-## Terminal `halt`
-
-Kind: kernel sentinel.
-
-It is not a node.
-
-It has no prompt.
-
-It has no docstring contract.
-
-It has no plugin file.
-
-It ends the wheel and returns state.
-
----
-
 # File atlas
 
 ## Runtime and configuration files
@@ -2277,7 +2143,7 @@ Resolves relative project paths.
 
 Provides prompt assembly and selected transport configuration.
 
-Contains no request-profile validator in the final body.
+Validates that every node profile names a live topology identity and a defined wiring request profile.
 
 Contains no expansion-node-cap validator.
 
@@ -2313,7 +2179,7 @@ Validates signals against live wiring.
 
 Implements declarative node evaluation.
 
-Contains no request-profile hook in the final body.
+Selects a node's optional request profile exclusively from wiring.
 
 ### `core_brain.py`
 
@@ -2326,6 +2192,8 @@ Discovers downstream input contracts.
 Places the living word at the user tail.
 
 Calls the configured transport.
+
+Resolves wiring-owned request profiles for node calls and executor sub-consultations.
 
 Commits exact JSON records.
 
@@ -2368,6 +2236,8 @@ Builds actor and verifier Python namespaces.
 Exposes the live desktop only to the actor.
 
 Provides `consult_model`.
+
+Withholds `consult_model`, actor state, wiring, action index, goal, and desktop hand from the verifier's early-return namespace.
 
 Supplies current observation and runtime paths.
 
@@ -2415,7 +2285,7 @@ Builds observation-local IDs.
 
 Builds the tree, action index, and searchable element list.
 
-Preserves rectangle mappings and text-size facts.
+Preserves rectangle mappings and text-size facts and renders compact center coordinates into the reasoning tree.
 
 ### `node_guidance.py`
 
@@ -2423,7 +2293,7 @@ Reads and clears optional counsel.
 
 ### `node_observe.py`
 
-Runs one fresh observation for all three observation identities.
+Runs one fresh observation for all four observation identities.
 
 ### `node_execute.py`
 
@@ -2633,9 +2503,9 @@ Names `node_guidance`.
 
 ## `topology.nodes`
 
-Lists all eight live identities.
+Lists all nine live identities.
 
-The list contains three observe instances.
+The list contains four observe instances.
 
 It does not contain `node_satisfied`.
 
@@ -2664,6 +2534,20 @@ Carries role-specific model-facing instructions for execute, verify, reflect, an
 ## `record_contracts`
 
 Carries the four exact structured output contracts.
+
+## `request_profiles`
+
+Carries the two reusable partial request bodies.
+
+`observe` is a low-reasoning, bounded-output sub-reading.
+
+`web_search` adds xAI's native server-side web search, automatic choice, bounded output, and a wiring-editable per-request tool-call budget.
+
+## `model.node_profiles`
+
+Assigns a named request profile to a thinking topology identity.
+
+The current assignment gives `node_reflect` the optional `web_search` capability.
 
 ## `node_defs`
 
@@ -3002,8 +2886,9 @@ Expected evidence:
 Expected evidence:
 
 - xAI accepts or explicitly rejects the minimum-token field;
-- no hidden request profile appears;
-- no server tool appears;
+- reflection receives the wiring-selected `web_search` profile;
+- Grok chooses or declines its server-side tool under `tool_choice: auto`;
+- the per-request built-in tool-call budget is serialized from wiring;
 - no generated prompt-cache key appears;
 - first transport fault ends the life.
 
@@ -3137,11 +3022,13 @@ It is a general wheel whose actor can use a desktop capability.
 
 ## Is Python the only tool?
 
-Yes in the project sense.
+Python is the only host deed language.
 
-There is no curated model tool menu.
+There is no curated host-action tool menu.
 
 Python can invoke the desktop object and ordinary libraries.
+
+Separately, wiring may offer xAI's server-side `web_search` capability to a model request. That consultation cannot move or prove the local Windows world.
 
 ## Does the actor call a separate runner?
 
@@ -3181,9 +3068,9 @@ An authored script may alter the world before raising.
 
 Reflection needs that post-fault present.
 
-## Why are there three observe identities?
+## Why are there four observe identities?
 
-The same implementation serves three distinct causal positions.
+The same implementation serves four distinct causal positions: before acting, before verification, before reflection, and before framing.
 
 Topology identity records when the look occurs.
 
@@ -3211,11 +3098,15 @@ No.
 
 Semantic change and survival in a new life require separate proof.
 
-## Why no web-search tool profile?
+## Why restore a web-search request profile?
 
-Python can perform network work when a deed calls for it.
+Python remains the only host deed capability.
 
-A dormant server-tool profile was duplicate policy and task bias.
+The restored profile is not dormant: wiring assigns it to reflection, where Grok may need current public knowledge to diagnose an obstacle, and actor Python may select it explicitly through `consult_model`.
+
+xAI executes that search on its own servers inside the model request. It cannot click the desktop or prove a local deed.
+
+Its low reasoning, maximum output, and per-request tool-call budget all live in wiring and remain editable by the organism.
 
 ## Why no retry on network errors?
 
@@ -3485,6 +3376,9 @@ There is no hidden launcher in the package.
 - [Mermaid: Flowchart styling](https://mermaid.js.org/syntax/flowchart.html)
 - [xAI: Responses REST reference](https://docs.x.ai/developers/rest-api-reference/inference/chat)
 - [xAI: Responses versus Chat Completions](https://docs.x.ai/developers/model-capabilities/text/comparison)
+- [xAI: Web Search](https://docs.x.ai/developers/tools/web-search)
+- [xAI: Function Calling and tool choice](https://docs.x.ai/developers/tools/function-calling)
+- [xAI: Tool Usage Details](https://docs.x.ai/developers/tools/tool-usage-details)
 - [Microsoft: about_PowerShell_exe](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_powershell_exe?view=powershell-5.1)
 - [Electron: Process Model](https://www.electronjs.org/docs/latest/tutorial/process-model)
 
@@ -3522,6 +3416,6 @@ The wiring owns the body's form.
 
 Python remains the sole deed language.
 
-The final body is smaller than every compared runtime body.
+The final body is smaller than the supplied original runtime, and the complete project remains net smaller after redundant documentation is removed.
 
 Its remaining uncertainty belongs to the real Windows wheel.

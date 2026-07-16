@@ -37,6 +37,10 @@ class BaseNode(ABC):
         w = ctx["wiring"]
         prompt = wiring.prompt(w, self.prompt_key)
         think_kwargs: JsonDict = {"expected_record_type": self.expected_record_type, "emitting_node": ctx.get("node")}
+        node_profiles = w["model"].get("node_profiles", {})
+        profile = node_profiles.get(ctx.get("node")) or node_profiles.get(self.prompt_key)
+        if profile:
+            think_kwargs["profile"] = profile
         if self.body_override is not None:
             think_kwargs["body_override"] = self.body_override
         payload = self.build_payload(ctx)

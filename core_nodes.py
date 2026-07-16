@@ -1,3 +1,4 @@
+import copy
 import json
 import os
 import pathlib
@@ -24,31 +25,30 @@ def build_capability_runtime(ctx: dict[str, Any], *, read_only: bool = False) ->
     import core_desktop as desktop
     d = desktop.get_desktop()
     state = ctx.get("state", {})
-    w = ctx.get("wiring", {})
-    action_index = _action_index(state)
-
-    def consult_model(prompt: str) -> dict[str, Any]:
-        text = str(prompt).strip()
-        if not text:
-            raise RuntimeError("consult_model requires a non-empty prompt")
-        result = brain.call([{"role": "user", "content": text}], w)
-        return {"ok": True, "action": "consult_model", "response": str(result["content"])}
-
     ns = {
-        "action_index": action_index,
-        "consult_model": consult_model,
         "subprocess": subprocess,
         "os": os, "sys": sys, "json": json, "time": time, "pathlib": pathlib, "hashlib": hashlib,
         "repo_root": str(ROOT), "python_executable": sys.executable,
-        "state": state, "wiring": w, "goal": ctx.get("goal", ""),
-        "desktop_tree_text": state.get("desktop_tree_text", ""),
-        "screen_elements": state.get("screen_elements", []),
-        "observation": bus.observation_brief(state),
+        "desktop_tree_text": str(state.get("desktop_tree_text", "")),
+        "screen_elements": copy.deepcopy(state.get("screen_elements", [])),
+        "observation": copy.deepcopy(bus.observation_brief(state)),
         "observed_at": state.get("observed_at"),
     }
     if read_only:
-        ns["observe"] = d.observe
-        ns["expand"] = d.expand
-    else:
-        ns["desktop"] = d
+        ns.update({"observe": d.observe, "expand": d.expand})
+        return ns
+
+    w = ctx.get("wiring", {})
+
+    def consult_model(prompt: str, profile: str | None = None) -> dict[str, Any]:
+        text = str(prompt).strip()
+        if not text:
+            raise RuntimeError("consult_model requires a non-empty prompt")
+        result = brain.call([{"role": "user", "content": text}], w, profile=profile)
+        return {"ok": True, "action": "consult_model", "profile": profile, "response": str(result["content"])}
+
+    ns.update({
+        "desktop": d, "action_index": _action_index(state), "consult_model": consult_model,
+        "state": state, "wiring": w, "goal": ctx.get("goal", ""),
+    })
     return ns

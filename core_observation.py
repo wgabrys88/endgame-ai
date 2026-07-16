@@ -271,11 +271,13 @@ class UiaScanner:
         except Exception:
             return None
 
-    def harvest_subtree(self, root_element: Any, parent_runtime_id: list[int] | None = None, depth: int = 0) -> list[dict[str, Any]]:
+    def harvest_subtree(self, root_element: Any, max_nodes: int | None = None, parent_runtime_id: list[int] | None = None, depth: int = 0) -> list[dict[str, Any]]:
         nodes: list[dict[str, Any]] = []
         seen: set[str] = set()
 
         def add(el: Any, parent: list[int], d: int) -> dict[str, Any] | None:
+            if max_nodes is not None and len(nodes) >= max_nodes:
+                return None
             node = self.element_to_raw(el, parent, d)
             if node is None or node["id"] in seen:
                 return None
@@ -289,6 +291,8 @@ class UiaScanner:
         try:
             arr = root_element.FindAllBuildCache(TreeScope_Descendants, self.automation.CreateTrueCondition(), self._cache())
             for i in range(int(getattr(arr, "Length", 0)) if arr is not None else 0):
+                if max_nodes is not None and len(nodes) >= max_nodes:
+                    break
                 try:
                     add(arr.GetElement(i), root_node["runtime_id"], depth + 1)
                 except Exception:
