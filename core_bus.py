@@ -251,7 +251,7 @@ def execution_evidence(state: JsonDict) -> JsonDict:
     turn = state.get("turn_executions") or {}
     evidence: JsonDict = {"faculties": turn if isinstance(turn, dict) else {}}
     evidence["provenance"] = (
-        "actor-authored record: what code the runner enacted, by its own account. "
+        "actor-authored record: what code the executor authored and enacted, by its own account. "
         "This is the actor's testimony about what it did, not proof of world-effect. "
         "Independent world state is carried separately in the observation field."
     )
