@@ -1,5 +1,4 @@
-"""[node_execute] — the author-enactor. It expecteth the present observation and any
-[action_frame], discerneth the single next deed, and enacteth one [Python] script."""
+"""[node_execute] — Thou expectest the fresh observation and any [action_frame]."""
 import hashlib
 import time
 import traceback

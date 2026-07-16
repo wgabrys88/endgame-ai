@@ -1,8 +1,6 @@
 import json
-import os
 import pathlib
 import re
-import time
 from typing import Any
 
 import core_bus as bus
@@ -10,9 +8,6 @@ import core_loader as loader
 import core_wiring as wiring
 
 ROOT = pathlib.Path(__file__).parent.resolve()
-_CONV_ID = ""
-
-
 def _messages(system_prompt: str, user_text: str, stable_context: str = "") -> list[dict[str, str]]:
     system = system_prompt + ("\n\n" + stable_context if stable_context else "")
     return [{"role": "system", "content": system}, {"role": "user", "content": user_text}]
@@ -68,27 +63,22 @@ def _commit_record(content: str, w: dict[str, Any], expected_record_type: str | 
 
 
 def _node_docstring(w: dict[str, Any], node: str) -> str:
-    """Read a node's own input-contract declaration: the module docstring of its .py file.
-    The docstring IS the node's input pin spec — what it expects to receive. For a declarative
-    node (no .py), fall back to its node_defs expected_record_type as its spec."""
+    """Read the live input contract owned by the downstream node."""
     import ast
     base = node.split(":", 1)[0]
-    node_dir = wiring.root_path(w["paths"]["nodes"])
-    path = node_dir / f"{base}.py"
+    path = wiring.root_path(w["paths"]["nodes"]) / f"{base}.py"
     if path.is_file():
-        try:
-            doc = ast.get_docstring(ast.parse(path.read_text(encoding="utf-8")))
-            if doc:
-                return doc.strip()
-        except SyntaxError:
-            pass
+        doc = ast.get_docstring(ast.parse(path.read_text(encoding="utf-8")))
+        if not doc:
+            raise RuntimeError(f"node '{base}' hath no input-contract docstring")
+        return doc.strip()
     defn = w.get("node_defs", {}).get(node) or w.get("node_defs", {}).get(base)
     if isinstance(defn, dict):
         description = str(defn.get("description") or "").strip()
-        if description:
-            return description
-        return f"declarative node; expects a payload for record_type '{defn.get('expected_record_type', '')}'."
-    return ""
+        if not description:
+            raise RuntimeError(f"declarative node '{node}' hath no input contract")
+        return description
+    raise RuntimeError(f"node '{node}' hath no input contract")
 
 
 def downstream_contract(w: dict[str, Any], emitting_node: str | None, expected_record_type: str | None = None) -> str:
@@ -111,8 +101,7 @@ def downstream_contract(w: dict[str, Any], emitting_node: str | None, expected_r
         return ""
     lines = ["DOWNSTREAM CONTRACT — thine output is wired (through the [topology]) unto these consumers; bring forth that which they await:"]
     for signal, succ in seen:
-        doc = _node_docstring(w, succ)
-        lines.append(f"\n[on signal '{signal}' -> {succ}]\n{doc}" if doc else f"\n[on signal '{signal}' -> {succ}] (no input contract declared)")
+        lines.append(f"\n[on signal '{signal}' -> {succ}]\n{_node_docstring(w, succ)}")
     if expected_record_type:
         contract = w.get("record_contracts", {}).get(expected_record_type, {})
         contract_keys = set(contract.get("required", [])) | set(contract.get("types", {})) | set(contract.get("enums", {}))
@@ -154,10 +143,6 @@ def _with_observation(payload: dict[str, Any], w: dict[str, Any]) -> dict[str, A
     enriched["observation"] = _observation_payload(w, enriched)
     return enriched
 
-
-def reset_call_budget() -> None:
-    global _CONV_ID
-    _CONV_ID = f"endgame-ai-{int(time.time())}-{os.getpid()}"
 
 
 def _load_transport_module(name: str, w: dict[str, Any]):
@@ -206,9 +191,9 @@ def _record_response_format(w: dict[str, Any], record_type: str, emitting_node: 
     }
 
 
-def call(messages: list[dict[str, str]], w: dict[str, Any], *, response_format: dict[str, Any] | None = None, body_override: dict[str, Any] | None = None, profile: str | None = None) -> dict[str, str]:
+def call(messages: list[dict[str, str]], w: dict[str, Any], *, response_format: dict[str, Any] | None = None, body_override: dict[str, Any] | None = None) -> dict[str, str]:
     transport, cfg = wiring.get_transport_config(w)
-    override = bus.deep_merge(resolve_profile(w, profile), body_override or {})
+    override = dict(body_override or {})
     try:
         result = _load_transport_module(transport, w).call(messages, cfg, body_override=override, response_format=response_format)
     except Exception as exc:
@@ -275,25 +260,10 @@ def extract_json_object(text: str) -> dict[str, Any] | None:
     return None
 
 
-def resolve_profile(w: dict[str, Any], profile: str | None) -> dict[str, Any]:
-    """A named send-policy from wiring's transport_config.request_profiles: a partial
-    request body (e.g. low-reasoning web search) the organism may choose at runtime and
-    evolve by editing wiring. Unknown names fail hard."""
-    if not profile:
-        return {}
+
+def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, expected_record_type: str | None = None, emitting_node: str | None = None, body_override: dict[str, Any] | None = None) -> dict[str, Any]:
     _, cfg = wiring.get_transport_config(w)
-    profiles = cfg.get("request_profiles", {})
-    if profile not in profiles:
-        raise RuntimeError(f"unknown request profile {profile!r}; wiring defines {sorted(profiles)}")
-    return dict(profiles[profile])
-
-
-def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, expected_record_type: str | None = None, emitting_node: str | None = None, body_override: dict[str, Any] | None = None, profile: str | None = None) -> dict[str, Any]:
-    global _CONV_ID
-    transport, cfg = wiring.get_transport_config(w)
     organ_tuning = _organ_tuning(w, expected_record_type)
-    if not _CONV_ID:
-        _CONV_ID = f"endgame-ai-{int(time.time())}-{os.getpid()}"
     payload = _with_observation(payload, w)
     goal = str(payload.pop("goal") or "") if "goal" in payload else ""
     user_text = json.dumps(payload, ensure_ascii=False, default=str)
@@ -301,9 +271,7 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
     interps = focus.get("goal_interpretations") if isinstance(focus, dict) else None
     user_text = f"{user_text}\n\n{bus.render_interpretation_table(goal, interps)}"
     response_format = _record_response_format(w, expected_record_type, emitting_node) if expected_record_type and _structured_outputs_enabled(cfg) else None
-    override = bus.deep_merge(bus.deep_merge(organ_tuning, resolve_profile(w, profile)), body_override or {})
-    if transport == "transport_xai":
-        override.setdefault("prompt_cache_key", _CONV_ID)
+    override = bus.deep_merge(organ_tuning, body_override or {})
     stable_context_parts = []
     if goal:
         stable_context_parts.append(f"THE ROOT GOAL — a fixed lodestar to consult, never the oracle for HOW to act (plan from the living word at thy message tail):\n{goal}")

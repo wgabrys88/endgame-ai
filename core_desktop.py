@@ -94,7 +94,7 @@ class Desktop:
         }
         vk = key_map.get(key.lower())
         if vk is None:
-            return {"ok": False, "action": "press_key", "error": f"unknown key: {key}"}
+            raise RuntimeError(f"unknown key: {key}")
         user32.keybd_event(vk, 0, 0, 0)
         user32.keybd_event(vk, 0, 2, 0)
         return {"ok": True, "action": "press_key", "key": key}
@@ -117,12 +117,12 @@ class Desktop:
             raw_parts = list(keys)
         parts = [str(k).strip().lower() for k in raw_parts if str(k).strip()]
         if not parts:
-            return {"ok": False, "action": "hotkey", "error": "no keys provided"}
+            raise RuntimeError("hotkey requires at least one key")
         vks = []
         for k in parts:
             vk = key_map.get(k)
             if vk is None:
-                return {"ok": False, "action": "hotkey", "error": f"unknown key in combination: {k}"}
+                raise RuntimeError(f"unknown key in combination: {k}")
             vks.append(vk)
         for vk in vks[:-1]:
             user32.keybd_event(vk, 0, 0, 0)

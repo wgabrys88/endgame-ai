@@ -1,4 +1,4 @@
-"""[node_satisfied] — the terminal rest. THOU EXPECTEST: the [witnessed_deed_count], the [tick]. Thou emittest 'halt' with a summary of completion, once the whole goal is witnessed accomplished."""
+"""[node_satisfied] — Thou expectest [witnessed_deed_count] and [tick] after the whole goal is witnessed."""
 import core_bus as bus
 
 

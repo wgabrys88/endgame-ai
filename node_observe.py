@@ -1,4 +1,4 @@
-"""[node_observe] — Thou takest one fresh sight of the [UI], and layest its compact tree and its ephemeral [action_index] before the node that cometh after."""
+"""[node_observe] — Thou expectest the present state after the foregoing faculty."""
 import core_bus as bus
 
 

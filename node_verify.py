@@ -1,6 +1,6 @@
-"""[node_verify] — the witness. It expecteth the last deed and its [done_when] and the
-fresh observation, and authoreth read-only [Python] that gathereth INDEPENDENT proof of
-world-effect, setting a [verdict] of goal_satisfied / deed_confirmed / reason."""
+"""[node_verify] — Thou expectest the last deed, its [done_when], and the fresh observation."""
+import traceback
+
 import core_bus as bus
 import core_nodes as nodes
 from core_node_base import BaseNode
@@ -36,13 +36,21 @@ class VerifyNode(BaseNode):
         record = self.think(ctx)
         code = record.data["code"]
         ns = nodes.build_capability_runtime(ctx, read_only=True)
-        exec(code, ns)
+        probe_fault = None
+        try:
+            exec(code, ns)
+        except Exception:
+            probe_fault = traceback.format_exc()
         verdict = ns.get("verdict")
-        if not isinstance(verdict, dict) or "goal_satisfied" not in verdict or "deed_confirmed" not in verdict or "reason" not in verdict:
-            raise RuntimeError("verification probe must set verdict = {goal_satisfied, deed_confirmed, reason}")
-        goal_satisfied = bool(verdict["goal_satisfied"])
-        deed_confirmed = bool(verdict["deed_confirmed"])
-        reason = str(verdict["reason"])
+        if probe_fault:
+            goal_satisfied = deed_confirmed = False
+            reason = probe_fault
+        else:
+            if not isinstance(verdict, dict) or "goal_satisfied" not in verdict or "deed_confirmed" not in verdict or "reason" not in verdict:
+                raise RuntimeError("verification probe must set verdict = {goal_satisfied, deed_confirmed, reason}")
+            goal_satisfied = bool(verdict["goal_satisfied"])
+            deed_confirmed = bool(verdict["deed_confirmed"])
+            reason = str(verdict["reason"])
         if goal_satisfied:
             signal = "goal_satisfied"
         elif deed_confirmed:
