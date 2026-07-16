@@ -1,19 +1,20 @@
-"""[node_execute] — the author. Thou discernest the single next deed toward the goal
-and writest [code] as a script artifact upon the disk, then handest it to [node_run]
-by the "built" signal. The running is [node_run]'s office.
+"""[node_execute] — the author-enactor. Thou discernest the single next deed toward
+the goal, authorest [code] as one [Python] script, and straightway enactest it within
+the [capability namespace]. There is no menu of tools; the [Python] language itself is
+thy tool. A script that raiseth faileth hard and endeth the life; a script that runneth
+yet worketh no effect is judged not here but by the witness, upon the fresh observation.
 
-Decomposition liveth in the deed itself, for the
-executor may author a long, multi-chained script. Whatsoever the script hath need of — desktop, files, shell, web,
-or the rewriting of the body — it importeth and calleth of itself.
+Whatsoever the script hath need of — desktop, files, shell, web, or the rewriting of the
+body — it importeth and calleth of itself; and it may author a long, multi-chained script,
+for decomposition liveth in the deed.
 """
 import hashlib
-import pathlib
+import time
 
 import core_bus as bus
+import core_nodes as nodes
 from core_node_base import BaseNode
 
-ROOT = pathlib.Path(__file__).resolve().parent
-ARTIFACT_DIR = ROOT / "runtime_artifacts"
 FACULTY = "exec"
 
 
@@ -30,16 +31,8 @@ class ExecuteNode(BaseNode):
             "observation": bus.observation_brief(state),
         }
 
-    def _write_artifact(self, code):
-        ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
-        digest = hashlib.sha256(code.encode("utf-8", errors="replace")).hexdigest()[:16]
-        path = ARTIFACT_DIR / f"{FACULTY}_{digest}.py"
-        path.write_text(code, encoding="utf-8", newline="\n")
-        return str(path)
-
     def run(self, ctx):
         state = ctx["state"]
-        payload = self.build_payload(ctx)
         record = self.think(ctx)
         data = record.data
         code = data["code"]
@@ -47,11 +40,25 @@ class ExecuteNode(BaseNode):
         done_when = str(data["done_when"]).strip()
         if not intent or not done_when:
             raise RuntimeError("execution requires non-empty intent and done_when")
-        label = "EXECUTE"
-        artifact_path = self._write_artifact(code)
-        artifact = {"path": artifact_path, "label": label}
+        ns = nodes.build_capability_runtime(ctx)
+        exec(code, ns)
+        turn = {FACULTY: {
+            "code_sha256": hashlib.sha256(code.encode("utf-8", errors="replace")).hexdigest(),
+            "code_chars": len(code),
+        }}
         interps = bus.with_interpretation(state.get("goal_interpretations"), "execute", str(data.get("goal_interpretation") or ""))
-        return bus.emit("built", {"_execute_artifact": artifact, "current_deed": {"description": intent, "done_when": done_when}, "goal_interpretations": interps}, record=record, evidence=payload)
+        return bus.emit(
+            "done",
+            {
+                "current_deed": {"description": intent, "done_when": done_when},
+                "goal_interpretations": interps,
+                "turn_executions": turn,
+                "last_action_at": time.time(),
+                "action_frame": None,
+            },
+            record=record,
+            evidence=self.build_payload(ctx),
+        )
 
 
 def run(ctx):

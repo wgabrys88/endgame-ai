@@ -125,7 +125,6 @@
       "node_observe:act",
       "node_observe:verify",
       "node_execute",
-      "node_run",
       "node_verify",
       "node_reflect",
       "node_frame_action",
@@ -139,9 +138,6 @@
         "observed": "node_execute"
       },
       "node_execute": {
-        "built": "node_run"
-      },
-      "node_run": {
         "done": "node_observe:verify"
       },
       "node_observe:verify": {
