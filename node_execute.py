@@ -1,15 +1,9 @@
 """[node_execute] — the author-enactor. Thou discernest the single next deed toward
 the goal, authorest [code] as one [Python] script, and straightway enactest it within
 the [capability namespace]. There is no menu of tools; the [Python] language itself is
-thy tool. Shouldst thy script raise, that fault is not death but a deed denied: its
-traceback is borne as evidence unto [reflect], who shall discern the defect and choose
-the next turn. Only a fault in the BODY itself—wiring, faculty, transport—endeth the
-life; a fault in thy DEED is counsel. A script that runneth yet worketh no effect is
-judged not here but by the witness, upon the fresh observation.
-
-Whatsoever the script hath need of — desktop, files, shell, web, or the rewriting of the
-body — it importeth and calleth of itself; and it may author a long, multi-chained script,
-for decomposition liveth in the deed.
+thy tool: whatsoever the script hath need of — desktop, files, shell, web, or the
+rewriting of the body — it importeth and calleth of itself, and it may author a long,
+multi-chained script, for decomposition liveth in the deed.
 """
 import hashlib
 import time
