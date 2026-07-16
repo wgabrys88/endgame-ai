@@ -116,14 +116,14 @@ def render_interpretation_table(goal: str, interps: JsonDict | None) -> str:
     """The goal-interpretation table, rendered for the tail of every user message.
 
     Row one is the immutable root goal. Each thinking faculty keeps exactly one row —
-    its own single-sentence reading of the ultimate goal — which it rewrites in place
+    its own reading of the ultimate goal — which it rewrites in place
     whensoever it acts. The table is bounded (one row per faculty), never accumulates,
     and never truncates. It rides the volatile user tail, so it costs no prefix cache."""
     interps = interps or {}
     lines = [
         "GOAL INTERPRETATION TABLE — the root goal is immutable and standeth first; "
         "each thinking faculty keepeth one row below it, being that faculty's own "
-        "single-sentence reading of the ultimate goal, rewritten whensoever it acteth:",
+        "reading of the ultimate goal, rewritten whensoever it acteth:",
         f"[ROOT GOAL] {goal}",
     ]
     for faculty in _INTERP_ORDER:
