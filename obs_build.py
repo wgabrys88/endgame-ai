@@ -8,6 +8,10 @@ observation artifact and downstream LLM nodes consume.
 import time
 from typing import Any
 
+# UIA WindowInteractionState: surface only states an actor must heed; a window
+# ready for interaction (2) needs no tag. Running(0) = still initializing/busy.
+_WINDOW_STATE_LABELS = {0: "busy", 1: "closing", 3: "modal-blocked", 4: "not-responding"}
+
 
 def run(action_elements: dict[str, dict[str, Any]], text_hints: dict[str, str], raw_nodes: list[dict[str, Any]], hwnd_to_z: dict[int, int], screen: dict[str, int], config: dict[str, Any]) -> dict[str, Any]:
     filt = config["filter"]
@@ -25,6 +29,7 @@ def run(action_elements: dict[str, dict[str, Any]], text_hints: dict[str, str], 
                 "hwnd": node["hwnd"], "role": "Window", "name": title, "title": title,
                 "class_name": node["class_name"], "framework_id": node["framework_id"], "rect": node["rect"],
                 "z_order": z_order, "active": z_order == 0, "children": [],
+                "interaction_state": node.get("interaction_state"), "item_status": node.get("item_status", ""),
             }
     sorted_windows = sorted(windows.values(), key=lambda w: w["z_order"])
     root = {"id": "W0", "role": "Screen", "name": "Screen", "title": "Desktop", "rect": {"left": 0, "top": 0, "right": screen["width"], "bottom": screen["height"]}, "fresh_scan": True, "observed_at": time.time(), "children": []}
@@ -113,6 +118,12 @@ def run(action_elements: dict[str, dict[str, Any]], text_hints: dict[str, str], 
         sid, role, action = node.get("short_id", node.get("id", "")), str(node.get("role", "")), str(node.get("action", ""))
         name_prev, name_total = preview(node.get("name", "") or node.get("title", ""))
         parts = [p for p in (sid, role, name_prev, "[active]" if node.get("active") else "", "[focused]" if node.get("focused") else "", f"[{action}]" if action else "") if p]
+        state_label = _WINDOW_STATE_LABELS.get(node.get("interaction_state"))
+        if state_label:
+            parts.append(f"[{state_label}]")
+        item_status = str(node.get("item_status") or "").strip()
+        if item_status:
+            parts.append(f"[status:{clean(item_status)}]")
         hint = text_hints.get(node.get("id", ""), "")
         hint_total = 0
         if hint and clean(hint) not in name_prev:
