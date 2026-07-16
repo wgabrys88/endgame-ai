@@ -1,16 +1,6 @@
-"""[node_verify] — the witness. Thou authorest read-only [Python] that gathereth
-INDEPENDENT evidence that the last deed wrought its [done_when] and that the whole goal
-standeth accomplished; thy probe alone pronounceth the verdict, from what a system OTHER
-than the actor hath wrought. Thou hast no hand to move the world—only eyes to read it:
-observe(), expand(), [screen_elements], the filesystem, the process table, the [Event
-Log], the standard library. Thou touchest not the thing thou judgest.
-
-Thy probe MUST set a name [verdict] = {"goal_satisfied": bool, "deed_confirmed": bool,
-"reason": str}. goal_satisfied is true ONLY when independent world-effect proveth the WHOLE
-goal; deed_confirmed is true when the [done_when] is proven by effect beheld, never by the
-actor's own word. A value the actor computed, printed, or read back is testimony, not proof:
-rest the verdict only on what an outside system wrought.
-"""
+"""[node_verify] — the witness. It expecteth the last deed and its [done_when] and the
+fresh observation, and authoreth read-only [Python] that gathereth INDEPENDENT proof of
+world-effect, setting a [verdict] of goal_satisfied / deed_confirmed / reason."""
 import core_bus as bus
 import core_nodes as nodes
 from core_node_base import BaseNode

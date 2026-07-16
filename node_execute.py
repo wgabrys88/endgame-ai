@@ -1,10 +1,5 @@
-"""[node_execute] — the author-enactor. Thou discernest the single next deed toward
-the goal, authorest [code] as one [Python] script, and straightway enactest it within
-the [capability namespace]. There is no menu of tools; the [Python] language itself is
-thy tool: whatsoever the script hath need of — desktop, files, shell, web, or the
-rewriting of the body — it importeth and calleth of itself, and it may author a long,
-multi-chained script, for decomposition liveth in the deed.
-"""
+"""[node_execute] — the author-enactor. It expecteth the present observation and any
+[action_frame], discerneth the single next deed, and enacteth one [Python] script."""
 import hashlib
 import time
 import traceback
