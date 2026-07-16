@@ -11,6 +11,8 @@ from typing import Any
 
 def run(action_elements: dict[str, dict[str, Any]], text_hints: dict[str, str], raw_nodes: list[dict[str, Any]], hwnd_to_z: dict[int, int], screen: dict[str, int], config: dict[str, Any]) -> dict[str, Any]:
     filt = config["filter"]
+    budget = config["budget"]
+    line_preview_chars = int(budget["line_preview_chars"])
     max_depth = int(filt.get("max_depth", 10))
     max_children_per_window = int(filt.get("max_children_per_window", 120))
     max_llm_nodes = int(filt.get("max_llm_nodes", int(filt["max_elements"]) * 2))
@@ -94,6 +96,13 @@ def run(action_elements: dict[str, dict[str, Any]], text_hints: dict[str, str], 
     def clean(v: Any) -> str:
         return " ".join(str(v or "").replace("\r", " ").replace("\n", " ").split())
 
+    def preview(text: str) -> tuple[str, int]:
+        cleaned = clean(text)
+        n = len(cleaned)
+        if n > line_preview_chars:
+            return cleaned[:line_preview_chars], n
+        return cleaned, 0
+
     lines = ["W0 Screen Desktop"]
     rendered = 1
 
@@ -101,11 +110,17 @@ def run(action_elements: dict[str, dict[str, Any]], text_hints: dict[str, str], 
         nonlocal rendered
         if rendered >= max_llm_nodes:
             return
-        sid, role, name, action = node.get("short_id", node.get("id", "")), str(node.get("role", "")), clean(node.get("name", "") or node.get("title", "")), str(node.get("action", ""))
-        parts = [p for p in (sid, role, name, "[active]" if node.get("active") else "", "[focused]" if node.get("focused") else "", f"[{action}]" if action else "") if p]
+        sid, role, action = node.get("short_id", node.get("id", "")), str(node.get("role", "")), str(node.get("action", ""))
+        name_prev, name_total = preview(node.get("name", "") or node.get("title", ""))
+        parts = [p for p in (sid, role, name_prev, "[active]" if node.get("active") else "", "[focused]" if node.get("focused") else "", f"[{action}]" if action else "") if p]
         hint = text_hints.get(node.get("id", ""), "")
-        if hint and hint not in name:
-            parts.append(f"~{hint}")
+        hint_total = 0
+        if hint and clean(hint) not in name_prev:
+            hint_prev, hint_total = preview(hint)
+            parts.append(f"~{hint_prev}")
+        held = max(name_total, hint_total)
+        if held:
+            parts.append(f"({held} chars)")
         lines.append("  " * indent + " ".join(parts))
         rendered += 1
         for child in node.get("children", []):

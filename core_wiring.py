@@ -93,7 +93,7 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
         raise RuntimeError(f"wiring.model.transport_config.{transport}.request_profiles must map names to partial request bodies")
     for path in (
         "model.global", "model.organs",
-        "observe_config.hover_cache", "observe_config.hover_cache.phases", "observe_config.hover_cache.scan", "observe_config.hover_cache.filter",
+        "observe_config.hover_cache", "observe_config.hover_cache.phases", "observe_config.hover_cache.scan", "observe_config.hover_cache.filter", "observe_config.hover_cache.budget",
         "topology.edges", "topology.barriers",
     ):
         _require(cfg, path, dict)
@@ -119,14 +119,16 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
         "observe_config.hover_cache.scan.max_total_nodes",
         "observe_config.hover_cache.filter.max_elements",
         "observe_config.hover_cache.filter.max_per_window",
-        "observe_config.hover_cache.filter.max_text",
         "observe_config.hover_cache.filter.max_depth",
         "observe_config.hover_cache.filter.max_children_per_window",
         "observe_config.hover_cache.filter.max_llm_nodes",
+        "observe_config.hover_cache.budget.line_preview_chars",
+        "observe_config.hover_cache.budget.expand_char_budget",
+        "observe_config.hover_cache.budget.expand_max_nodes",
     )
     for path in numeric_paths:
         value = _require(cfg, path, int)
-        if isinstance(value, bool) or value < 0 or (path.endswith(("step_px", "max_subtree_nodes_per_point", "max_total_nodes", "max_elements", "max_per_window", "max_text", "max_depth", "max_children_per_window", "max_llm_nodes")) and value == 0):
+        if isinstance(value, bool) or value < 0 or (path.endswith(("step_px", "max_subtree_nodes_per_point", "max_total_nodes", "max_elements", "max_per_window", "max_depth", "max_children_per_window", "max_llm_nodes", "expand_char_budget", "expand_max_nodes")) and value == 0):
             raise RuntimeError(f"wiring.{path} must be a valid non-negative count")
     nodes = _require_list_str(cfg, "topology.nodes")
     edges = _require(cfg, "topology.edges", dict)

@@ -331,37 +331,53 @@ def _load_phase(module_name: str):
     return mod
 
 
-def expand(desktop: Any, ids_or_points: list[Any], max_text: int = 5000, max_nodes: int = 200) -> dict[str, Any]:
+def expand(desktop: Any, ids_or_points: list[Any], char_budget: int, max_nodes: int) -> dict[str, Any]:
     """Targeted deeper look at named elements: re-acquire each at its screen point and
-    harvest its full subtree, returning untruncated text, value, and every child (including
-    non-interactive), which the shallow tree omitteth. This is a fresh independent look, not
-    memory: it readeth the live [UIA] now. `ids_or_points` are entries of the current
-    action_index (each bearing px/py) or explicit {'px':x,'py':y} points."""
+    harvest its full subtree, returning the WHOLE untruncated text, value, and every child
+    (including non-interactive), which the shallow tree omitteth. This is a fresh independent
+    look, not memory: it readeth the live [UIA] now. `ids_or_points` are entries of the current
+    action_index (each bearing px/py) or explicit {'px':x,'py':y} points.
+
+    No text is ever cut short. The shallow tree already nameth each element's true size in
+    chars, so thou knowest the cost ere thou askest. Shouldst the sum of what thou askest
+    exceed [char_budget], this faileth hard and nameth each element's size—ask again for fewer
+    or other elements. `max_nodes` boundeth the subtree harvested per element."""
     from ctypes import wintypes
     scanner = UiaScanner({}, desktop)
-    results: dict[str, Any] = {}
+    harvested_by_key: dict[str, list[dict[str, Any]]] = {}
     for i, item in enumerate(ids_or_points):
         node = item if isinstance(item, dict) else {}
         px, py = node.get("px"), node.get("py")
         key = str(node.get("short_id") or node.get("id") or i)
         if px is None or py is None:
-            results[key] = {"error": "element bears no screen point to expand"}
-            continue
+            raise RuntimeError(f"expand: element '{key}' bears no screen point to expand")
         pt = wintypes.POINT(int(px), int(py))
-        try:
-            root_el = scanner.automation.ElementFromPointBuildCache(pt, scanner._cache())
-        except Exception as exc:
-            results[key] = {"error": f"could not acquire element: {type(exc).__name__}: {exc}"}
-            continue
+        root_el = scanner.automation.ElementFromPointBuildCache(pt, scanner._cache())
         if root_el is None:
-            results[key] = {"error": "no element at point"}
-            continue
-        harvested = scanner.harvest_subtree(root_el, max_nodes)
+            raise RuntimeError(f"expand: no element at point ({px}, {py}) for '{key}'")
+        harvested_by_key[key] = scanner.harvest_subtree(root_el, max_nodes)
+
+    def _chars(harvested: list[dict[str, Any]]) -> int:
+        if not harvested:
+            return 0
+        head = harvested[0]
+        total = len(head.get("text_full", "") or "") + len(head.get("value", "") or "")
+        total += sum(len(n.get("text_full", "") or "") for n in harvested[1:])
+        return total
+
+    sizes = {key: _chars(h) for key, h in harvested_by_key.items()}
+    grand_total = sum(sizes.values())
+    if grand_total > char_budget:
+        detail = ", ".join(f"{k}={v} chars" for k, v in sizes.items())
+        raise RuntimeError(f"expand: requested {grand_total} chars exceedeth budget {char_budget} ({detail}); ask for fewer or other elements")
+
+    results: dict[str, Any] = {}
+    for key, harvested in harvested_by_key.items():
         results[key] = {
-            "text_full": (harvested[0].get("text_full", "") if harvested else "")[:max_text],
-            "value": (harvested[0].get("value", "") if harvested else "")[:max_text],
+            "text_full": harvested[0].get("text_full", "") if harvested else "",
+            "value": harvested[0].get("value", "") if harvested else "",
             "children": [
-                {"role": n["role"], "name": n["name"], "action": n["action"], "text": (n.get("text_full") or "")[:max_text]}
+                {"role": n["role"], "name": n["name"], "action": n["action"], "text": n.get("text_full") or ""}
                 for n in harvested[1:]
             ],
         }
