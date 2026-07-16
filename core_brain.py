@@ -1,8 +1,6 @@
 import json
-import os
 import pathlib
 import re
-import time
 from typing import Any
 
 import core_bus as bus
@@ -10,10 +8,6 @@ import core_loader as loader
 import core_wiring as wiring
 
 ROOT = pathlib.Path(__file__).parent.resolve()
-_CONV_ID = ""
-
-# Fields exempt from the prose word-bounds: [code] is a Python script, not prose.
-WORD_BOUND_EXEMPT = {"code"}
 
 
 def _messages(system_prompt: str, user_text: str, stable_context: str = "") -> list[dict[str, str]]:
@@ -56,20 +50,6 @@ def _validate_record_contract(w: dict[str, Any], record: bus.Record, expected_re
     for key, values in enums.items():
         if key in record.data and record.data[key] not in set(values):
             raise RuntimeError(f"{record.record_type}.data.{key}={record.data[key]!r} outside {values!r}")
-    bounds = w.get("output_word_bounds", {})
-    min_words, max_words = int(bounds.get("min_words", 0)), int(bounds.get("max_words", 0))
-    if min_words or max_words:
-        for key in non_empty:
-            if key in WORD_BOUND_EXEMPT or types.get(key) != "string" or key in enums:
-                continue
-            value = record.data.get(key)
-            if not isinstance(value, str):
-                continue
-            count = len(value.split())
-            if min_words and count < min_words:
-                raise RuntimeError(f"{record.record_type}.data.{key} must be at least {min_words} words; got {count}")
-            if max_words and count > max_words:
-                raise RuntimeError(f"{record.record_type}.data.{key} must be at most {max_words} words; got {count}")
 
 
 def _commit_record(content: str, w: dict[str, Any], expected_record_type: str | None = None) -> bus.Record:
@@ -85,34 +65,26 @@ def _commit_record(content: str, w: dict[str, Any], expected_record_type: str | 
 
 
 def _node_docstring(w: dict[str, Any], node: str) -> str:
-    """Read a node's own input-contract declaration: the module docstring of its .py file.
-    The docstring IS the node's input pin spec — what it expects to receive. For a declarative
-    node (no .py), fall back to its node_defs expected_record_type as its spec."""
+    """Read a node's input contract from its module docstring or declarative description."""
     import ast
     base = node.split(":", 1)[0]
     node_dir = wiring.root_path(w["paths"]["nodes"])
     path = node_dir / f"{base}.py"
     if path.is_file():
-        try:
-            doc = ast.get_docstring(ast.parse(path.read_text(encoding="utf-8")))
-            if doc:
-                return doc.strip()
-        except SyntaxError:
-            pass
+        doc = ast.get_docstring(ast.parse(path.read_text(encoding="utf-8")))
+        if not doc:
+            raise RuntimeError(f"node '{base}' declareth no input contract")
+        return doc.strip()
     defn = w.get("node_defs", {}).get(node) or w.get("node_defs", {}).get(base)
     if isinstance(defn, dict):
         description = str(defn.get("description") or "").strip()
         if description:
             return description
-        return f"declarative node; expects a payload for record_type '{defn.get('expected_record_type', '')}'."
-    return ""
+    raise RuntimeError(f"node '{node}' declareth no input contract")
 
 
 def downstream_contract(w: dict[str, Any], emitting_node: str | None, expected_record_type: str | None = None) -> str:
-    """The producer reads, live, the input contracts (docstrings) of every node its output
-    edges are wired to, and copies them in. This is the whole contract mechanism: no stored
-    record_contracts, no pins registry — X learns what to produce by reading Y and Z's own
-    files, resolved through the JSON wiring. Rewire the edges and this changes automatically."""
+    """Inject each wired consumer's live input contract; no separate pins registry exists."""
     if not emitting_node:
         return ""
     edges = w.get("topology", {}).get("edges", {}).get(emitting_node, {})
@@ -128,8 +100,7 @@ def downstream_contract(w: dict[str, Any], emitting_node: str | None, expected_r
         return ""
     lines = ["DOWNSTREAM CONTRACT — thine output is wired (through the [topology]) unto these consumers; bring forth that which they await:"]
     for signal, succ in seen:
-        doc = _node_docstring(w, succ)
-        lines.append(f"\n[on signal '{signal}' -> {succ}]\n{doc}" if doc else f"\n[on signal '{signal}' -> {succ}] (no input contract declared)")
+        lines.append(f"\n[on signal '{signal}' -> {succ}]\n{_node_docstring(w, succ)}")
     if expected_record_type:
         contract = w.get("record_contracts", {}).get(expected_record_type, {})
         contract_keys = set(contract.get("required", [])) | set(contract.get("types", {})) | set(contract.get("enums", {}))
@@ -148,7 +119,7 @@ def _normalize_observation(obj: Any) -> dict[str, Any] | None:
         return None
     fields = (
         "desktop_tree_text", "focused_elements", "observed_at", "screen",
-        "observation_fresh", "settle_seconds",
+        "observation_fresh",
     )
     return {key: obj[key] for key in fields if key in obj}
 
@@ -170,11 +141,6 @@ def _with_observation(payload: dict[str, Any], w: dict[str, Any]) -> dict[str, A
     enriched = dict(payload)
     enriched["observation"] = _observation_payload(w, enriched)
     return enriched
-
-
-def reset_call_budget() -> None:
-    global _CONV_ID
-    _CONV_ID = f"endgame-ai-{int(time.time())}-{os.getpid()}"
 
 
 def _load_transport_module(name: str, w: dict[str, Any]):
@@ -223,14 +189,11 @@ def _record_response_format(w: dict[str, Any], record_type: str, emitting_node: 
     }
 
 
-def call(messages: list[dict[str, str]], w: dict[str, Any], *, response_format: dict[str, Any] | None = None, request_config: dict[str, Any] | None = None) -> dict[str, str]:
+def call(messages: list[dict[str, str]], w: dict[str, Any], *, response_format: dict[str, Any] | None = None, body_override: dict[str, Any] | None = None) -> dict[str, str]:
     transport, cfg = wiring.get_transport_config(w)
-    if response_format is not None:
-        cfg = {**cfg, "response_format": response_format}
-    if request_config:
-        cfg = {**cfg, **request_config}
+    override = dict(body_override or {})
     try:
-        result = _load_transport_module(transport, w).call(messages, cfg)
+        result = _load_transport_module(transport, w).call(messages, cfg, body_override=override, response_format=response_format)
     except Exception as exc:
         raise RuntimeError(f"{transport} brain failed hard: {exc}") from exc
     if not isinstance(result, dict):
@@ -254,86 +217,40 @@ def reasoning_from(content: str, reasoning: str = "") -> str:
 def extract_json_object(text: str) -> dict[str, Any] | None:
     if not text:
         return None
-    s = text.strip()
-    fenced = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", s, flags=re.S | re.I)
-    if fenced:
-        s = fenced.group(1).strip()
     try:
-        obj = json.loads(s)
-        return obj if isinstance(obj, dict) else None
+        obj = json.loads(text)
     except json.JSONDecodeError:
-        pass
-    in_str = esc = False
-    depth, start = 0, -1
-    candidates: list[str] = []
-    for i, ch in enumerate(s):
-        if in_str:
-            if esc:
-                esc = False
-            elif ch == "\\":
-                esc = True
-            elif ch == '"':
-                in_str = False
-            continue
-        if ch == '"':
-            in_str = True
-        elif ch == "{":
-            if depth == 0:
-                start = i
-            depth += 1
-        elif ch == "}" and depth:
-            depth -= 1
-            if depth == 0 and start >= 0:
-                candidates.append(s[start:i + 1])
-    for candidate in reversed(candidates):
-        try:
-            obj = json.loads(candidate)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(obj, dict):
-            return obj
-    return None
+        return None
+    return obj if isinstance(obj, dict) else None
 
 
-def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, expected_record_type: str | None = None, emitting_node: str | None = None, request_config: dict[str, Any] | None = None) -> dict[str, Any]:
-    global _CONV_ID
+def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, expected_record_type: str | None = None, emitting_node: str | None = None, body_override: dict[str, Any] | None = None) -> dict[str, Any]:
     _, cfg = wiring.get_transport_config(w)
-    reasoning_cfg = dict(cfg["reasoning"])
     organ_tuning = _organ_tuning(w, expected_record_type)
-    if not _CONV_ID:
-        _CONV_ID = f"endgame-ai-{int(time.time())}-{os.getpid()}"
     payload = _with_observation(payload, w)
     goal = str(payload.pop("goal") or "") if "goal" in payload else ""
-    user_text = json.dumps(payload, ensure_ascii=False, default=str)
     focus = payload.get("focus")
-    interps = focus.get("goal_interpretations") if isinstance(focus, dict) else None
+    interps = focus.pop("goal_interpretations", None) if isinstance(focus, dict) else None
+    user_text = json.dumps(payload, ensure_ascii=False, default=str)
     user_text = f"{user_text}\n\n{bus.render_interpretation_table(goal, interps)}"
     response_format = _record_response_format(w, expected_record_type, emitting_node) if expected_record_type and _structured_outputs_enabled(cfg) else None
-    request_cfg = dict(request_config or {})
-    request_cfg["expected_record_type"] = expected_record_type
-    for key, value in organ_tuning.items():
-        if key in {"reasoning_effort", "max_output_tokens"} and value is not None:
-            request_cfg.setdefault(key, value)
-    if cfg.get("transport") == "transport_xai":
-        request_cfg.setdefault("prompt_cache_key", _CONV_ID)
+    override = bus.deep_merge(organ_tuning, body_override or {})
     stable_context_parts = []
-    if goal:
-        stable_context_parts.append(f"THE IMMUTABLE ROOT GOAL (fixed for this run):\n{goal}")
     downstream = downstream_contract(w, emitting_node, expected_record_type)
     if downstream:
         stable_context_parts.append(downstream)
     stable_context = "\n\n".join(stable_context_parts)
-    pattern = str(reasoning_cfg.get("pattern") or "single_pass")
-    if not reasoning_cfg["enabled"] or pattern in {"single_pass", "native"}:
-        result = call(_messages(system_prompt, user_text, stable_context), w, response_format=response_format, request_config=request_cfg)
+    pattern = str(cfg["reasoning_pattern"])
+    if pattern in {"single_pass", "native"}:
+        result = call(_messages(system_prompt, user_text, stable_context), w, response_format=response_format, body_override=override)
         record = _commit_record(result["content"], w, expected_record_type)
         transport_reasoning = str(result.get("reasoning") or "").strip()
         return bus.Record(record.record_type, record.data, transport_reasoning or record.reasoning).to_json()
     if pattern != "two_pass":
         raise RuntimeError(f"unknown reasoning pattern: {pattern}")
-    first = call(_messages(system_prompt, user_text, stable_context), w, request_config=request_cfg)
+    first = call(_messages(system_prompt, user_text, stable_context), w, body_override=override)
     reasoning = reasoning_from(first["content"], first.get("reasoning", ""))
-    template = str(reasoning_cfg.get("injection_template") or "REASONING:\n{reasoning}")
-    second = call(_messages(system_prompt, user_text + "\n\n" + template.format(reasoning=reasoning), stable_context), w, response_format=response_format, request_config=request_cfg)
+    template = str(cfg["reasoning_injection_template"])
+    second = call(_messages(system_prompt, user_text + "\n\n" + template.format(reasoning=reasoning), stable_context), w, response_format=response_format, body_override=override)
     record = _commit_record(second["content"], w, expected_record_type)
     return bus.Record(record.record_type, record.data, reasoning).to_json()

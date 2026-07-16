@@ -9,6 +9,36 @@ from typing import Any
 JsonDict = dict[str, Any]
 
 
+def deep_merge(base: JsonDict, override: JsonDict) -> JsonDict:
+    """Return a new dict: override laid over base, nested dicts merged recursively.
+    A non-dict override value replaces the base value wholesale."""
+    merged = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = deep_merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def drop_nulls(obj: Any) -> Any:
+    """Recursively drop keys whose value is None (an unsent API field),
+    and drop any nested object left empty by that pruning. Lists are pruned in place."""
+    if isinstance(obj, dict):
+        pruned: JsonDict = {}
+        for key, value in obj.items():
+            if value is None:
+                continue
+            cleaned = drop_nulls(value)
+            if isinstance(cleaned, dict) and not cleaned:
+                continue
+            pruned[key] = cleaned
+        return pruned
+    if isinstance(obj, list):
+        return [drop_nulls(item) for item in obj]
+    return obj
+
+
 class BusContractError(RuntimeError):
     """Base class for mechanical organism contract failures."""
 
@@ -36,10 +66,6 @@ class Record:
     def from_json(cls, obj: JsonDict) -> "Record":
         return cls(record_type=obj.get("record_type", ""), data=obj.get("data", {}), reasoning=obj.get("reasoning", ""))
 
-    @classmethod
-    def create(cls, record_type: str, data: JsonDict, reasoning: str = "") -> "Record":
-        return cls(record_type=record_type, data=data, reasoning=reasoning)
-
 
 @dataclass(frozen=True)
 class NodeOutput:
@@ -47,9 +73,6 @@ class NodeOutput:
     patch: JsonDict = field(default_factory=dict)
     record: Record | None = None
     evidence: JsonDict = field(default_factory=dict)
-
-    def as_tuple(self) -> tuple[str, JsonDict]:
-        return self.signal, dict(self.patch)
 
     def trace(self, *, node: str) -> JsonDict:
         record_type = None
@@ -90,22 +113,20 @@ _INTERP_ORDER = ["execute", "verify", "reflect", "frame"]
 
 
 def render_interpretation_table(goal: str, interps: JsonDict | None) -> str:
-    """The goal-interpretation table, rendered for the tail of every user message.
+    """The living word — the goal-interpretation rows — rendered for the tail of every user message.
 
-    Row one is the immutable root goal. Each thinking faculty keeps exactly one row —
-    its own single-sentence reading of the ultimate goal — which it rewrites in place
-    whensoever it acts. The table is bounded (one row per faculty), never accumulates,
+    Each thinking faculty keeps exactly one row: what it has LEARNED (not a restating of
+    the goal), rewritten in place whensoever it acts. The immutable root goal follows as a
+    fixed lodestar footer. The table is bounded (one row per faculty), never accumulates,
     and never truncates. It rides the volatile user tail, so it costs no prefix cache."""
     interps = interps or {}
     lines = [
-        "GOAL INTERPRETATION TABLE — the root goal is immutable and standeth first; "
-        "each thinking faculty keepeth one row below it, being that faculty's own "
-        "single-sentence reading of the ultimate goal, rewritten whensoever it acteth:",
-        f"[ROOT GOAL] {goal}",
+        "THE LIVING WORD — this is thy sole thread across wakings, and thou plannest FROM it, not from the root goal. Each faculty keepeth one row: not a restating of the goal (the goal changeth never and needeth no echo), but what it hath LEARNED—what the world revealed, what deed was tried and how it fared, what obstacle now standeth, what the next true deed must therefore be. Read thy peers' rows as the account of where the organism now standeth; act upon them first. A row that merely repeateth the goal is wasted and blind; write what advanceth the work:",
     ]
     for faculty in _INTERP_ORDER:
         sentence = str(interps.get(faculty) or "").strip()
         lines.append(f"[{faculty}] {sentence}" if sentence else f"[{faculty}] (not yet interpreted)")
+    lines.append(f"[the root goal, a fixed lodestar to consult but never to plan from] {goal}")
     return "\n".join(lines)
 
 
@@ -145,30 +166,19 @@ def validate_signal(wiring: JsonDict, node: str, signal: str) -> None:
 
 
 def emergent_signals(wiring: JsonDict, node: str | None) -> list[str]:
-    """The signals a node may emit are emergent from wiring: they are exactly its
-    outgoing topology edges, minus the universal 'error' fallback. This replaces the
-    hand-maintained record_contracts.enums.next_signal — the contract of what a node
-    outputs comes from what it is wired to, not a separate registry."""
+    """Return the live outgoing signal vocabulary, excluding reserved 'error'."""
     if not node:
         return []
     return sorted(s for s in allowed_signals(wiring, node) if s != "error")
 
 
 def state_brief(state: JsonDict) -> JsonDict:
-    """Compact operational focus of the NOW. The sole within-waking continuity is the
-    immutable goal and the goal-interpretation table (carried to the user tail); there
-    is no memory, no history, no prior turn — only this present state and the fresh
-    observation that reveals the world as it now is."""
+    """Present deed facts; the living word is extracted from here into the user tail."""
     current_deed = state.get("current_deed") or {}
     return {
-        "tick": state.get("tick"),
-        "current_node": state.get("current_node"),
         "goal_interpretations": dict(state.get("goal_interpretations") or {}),
         "latest_counsel": state.get("latest_counsel") or "",
         "current_deed": {"description": current_deed.get("description", ""), "done_when": current_deed.get("done_when", "")},
-        "last_signal": state.get("last_signal"),
-        "last_verification": state.get("last_verification", {}),
-        "last_reflection": state.get("last_reflection", {}),
         "failure_streak": state.get("failure_streak", {}),
         "has_action_frame": bool(state.get("action_frame")),
     }
@@ -212,7 +222,6 @@ def observation_brief(state: JsonDict) -> JsonDict:
         "desktop_tree_text": state.get("desktop_tree_text", ""),
         "focused_elements": focused_elements(state),
         "observed_at": state.get("observed_at"),
-        "settle_seconds": artifact.get("settle_seconds") if isinstance(artifact, dict) else None,
         "screen": artifact.get("screen", {}) if isinstance(artifact, dict) else {},
     }
 
@@ -229,7 +238,7 @@ def execution_evidence(state: JsonDict) -> JsonDict:
     turn = state.get("turn_executions") or {}
     evidence: JsonDict = {"faculties": turn if isinstance(turn, dict) else {}}
     evidence["provenance"] = (
-        "actor-authored record: what code the runner enacted, by its own account. "
+        "actor-authored record: what code the executor authored and enacted, by its own account. "
         "This is the actor's testimony about what it did, not proof of world-effect. "
         "Independent world state is carried separately in the observation field."
     )
@@ -243,8 +252,6 @@ def failure_signature(state: JsonDict) -> str:
     parts = {
         "deed": deed.get("description", ""),
         "done_when": deed.get("done_when", ""),
-        "verification": state.get("last_verification") or {},
-        "executions": state.get("turn_executions") or {},
     }
     raw = json.dumps(parts, sort_keys=True, ensure_ascii=False, default=str)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]

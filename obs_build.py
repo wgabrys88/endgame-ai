@@ -8,9 +8,15 @@ observation artifact and downstream LLM nodes consume.
 import time
 from typing import Any
 
+# UIA WindowInteractionState: surface only states an actor must heed; a window
+# ready for interaction (2) needs no tag. Running(0) = still initializing/busy.
+_WINDOW_STATE_LABELS = {0: "busy", 1: "closing", 3: "modal-blocked", 4: "not-responding"}
+
 
 def run(action_elements: dict[str, dict[str, Any]], text_hints: dict[str, str], raw_nodes: list[dict[str, Any]], hwnd_to_z: dict[int, int], screen: dict[str, int], config: dict[str, Any]) -> dict[str, Any]:
     filt = config["filter"]
+    budget = config["budget"]
+    line_preview_chars = int(budget["line_preview_chars"])
     max_depth = int(filt.get("max_depth", 10))
     max_children_per_window = int(filt.get("max_children_per_window", 120))
     max_llm_nodes = int(filt.get("max_llm_nodes", int(filt["max_elements"]) * 2))
@@ -23,6 +29,7 @@ def run(action_elements: dict[str, dict[str, Any]], text_hints: dict[str, str], 
                 "hwnd": node["hwnd"], "role": "Window", "name": title, "title": title,
                 "class_name": node["class_name"], "framework_id": node["framework_id"], "rect": node["rect"],
                 "z_order": z_order, "active": z_order == 0, "children": [],
+                "interaction_state": node.get("interaction_state"), "item_status": node.get("item_status", ""),
             }
     sorted_windows = sorted(windows.values(), key=lambda w: w["z_order"])
     root = {"id": "W0", "role": "Screen", "name": "Screen", "title": "Desktop", "rect": {"left": 0, "top": 0, "right": screen["width"], "bottom": screen["height"]}, "fresh_scan": True, "observed_at": time.time(), "children": []}
@@ -94,6 +101,13 @@ def run(action_elements: dict[str, dict[str, Any]], text_hints: dict[str, str], 
     def clean(v: Any) -> str:
         return " ".join(str(v or "").replace("\r", " ").replace("\n", " ").split())
 
+    def preview(text: str) -> tuple[str, int]:
+        cleaned = clean(text)
+        n = len(cleaned)
+        if n > line_preview_chars:
+            return cleaned[:line_preview_chars], n
+        return cleaned, 0
+
     lines = ["W0 Screen Desktop"]
     rendered = 1
 
@@ -101,11 +115,23 @@ def run(action_elements: dict[str, dict[str, Any]], text_hints: dict[str, str], 
         nonlocal rendered
         if rendered >= max_llm_nodes:
             return
-        sid, role, name, action = node.get("short_id", node.get("id", "")), str(node.get("role", "")), clean(node.get("name", "") or node.get("title", "")), str(node.get("action", ""))
-        parts = [p for p in (sid, role, name, "[active]" if node.get("active") else "", "[focused]" if node.get("focused") else "", f"[{action}]" if action else "") if p]
+        sid, role, action = node.get("short_id", node.get("id", "")), str(node.get("role", "")), str(node.get("action", ""))
+        name_prev, name_total = preview(node.get("name", "") or node.get("title", ""))
+        parts = [p for p in (sid, role, name_prev, "[active]" if node.get("active") else "", "[focused]" if node.get("focused") else "", f"[{action}]" if action else "") if p]
+        state_label = _WINDOW_STATE_LABELS.get(node.get("interaction_state"))
+        if state_label:
+            parts.append(f"[{state_label}]")
+        item_status = str(node.get("item_status") or "").strip()
+        if item_status:
+            parts.append(f"[status:{clean(item_status)}]")
         hint = text_hints.get(node.get("id", ""), "")
-        if hint and hint not in name:
-            parts.append(f"~{hint}")
+        hint_total = 0
+        if hint and clean(hint) not in name_prev:
+            hint_prev, hint_total = preview(hint)
+            parts.append(f"~{hint_prev}")
+        held = max(name_total, hint_total)
+        if held:
+            parts.append(f"({held} chars)")
         lines.append("  " * indent + " ".join(parts))
         rendered += 1
         for child in node.get("children", []):
@@ -115,10 +141,27 @@ def run(action_elements: dict[str, dict[str, Any]], text_hints: dict[str, str], 
     for child in root.get("children", []):
         if isinstance(child, dict):
             render(child, 1)
+
+    screen_elements = [
+        {
+            "id": short_by_id.get(n["id"], ""),
+            "name": n.get("name", ""),
+            "role": n.get("role", ""),
+            "text": n.get("text_full", "") or "",
+            "value": n.get("value", "") or "",
+            "px": n.get("px"),
+            "py": n.get("py"),
+            "rect": n.get("rect", {}),
+            "hwnd": n.get("hwnd", 0),
+        }
+        for n in raw_nodes
+        if not n.get("offscreen")
+    ]
     return {
         "root": root,
         "node_index": node_index_short,
         "action_index": action_index_short,
+        "screen_elements": screen_elements,
         "desktop_tree_text": "\n".join(lines),
         "window_count": len(sorted_windows),
         "element_count": len(action_index_short),

@@ -1,5 +1,8 @@
-"""[node_verify] — Thou judgest, by the effect beheld, both whether the last deed's [done_when] is fulfilled and whether the whole goal standeth accomplished. THOU EXPECTEST: the [current_deed] (description and done_when), the observation after the deed, the [turn_executions] and evidence of the deed, the [tick], and [observed_at] with [last_action_at] for freshness. Thou emittest 'goal_satisfied', 'deed_confirmed', or 'deed_denied' with a verification record."""
+"""[node_verify] — Thou expectest the last deed, its [done_when], and one fresh observation."""
+import traceback
+
 import core_bus as bus
+import core_nodes as nodes
 from core_node_base import BaseNode
 
 
@@ -11,9 +14,6 @@ class VerifyNode(BaseNode):
         state = ctx["state"]
         deed = state.get("current_deed") or {}
         return deed.get("description", state["goal"]), deed.get("done_when", "")
-
-    def evidence(self, ctx):
-        return bus.execution_evidence(ctx["state"])
 
     def build_payload(self, ctx):
         state = ctx["state"]
@@ -28,34 +28,42 @@ class VerifyNode(BaseNode):
             "goal": state["goal"],
             "deed": {"description": desc, "done_when": done_when},
             "focus": bus.state_brief(state),
-            "evidence": self.evidence(ctx),
             "observation": observation,
         }
 
-    def signal_from_data(self, data, ctx):
-        self._goal_satisfied = bool(data["goal_satisfied"])
-        self._deed_confirmed = bool(data["deed_confirmed"])
-        if self._goal_satisfied:
-            self._signal = "goal_satisfied"
-        elif self._deed_confirmed:
-            self._signal = "deed_confirmed"
+    def run(self, ctx):
+        state = ctx["state"]
+        record = self.think(ctx)
+        code = record.data["code"]
+        ns = nodes.build_capability_runtime(ctx, read_only=True)
+        probe_fault = None
+        try:
+            exec(code, ns)
+            verdict = ns.get("verdict")
+            if not isinstance(verdict, dict) or not isinstance(verdict.get("goal_satisfied"), bool) or not isinstance(verdict.get("deed_confirmed"), bool) or not isinstance(verdict.get("reason"), str) or not verdict["reason"].strip():
+                raise RuntimeError("verification probe must set verdict with boolean goal_satisfied/deed_confirmed and non-blank reason")
+        except Exception:
+            probe_fault = traceback.format_exc()
+            verdict = {"goal_satisfied": False, "deed_confirmed": False, "reason": probe_fault}
+        goal_satisfied = verdict["goal_satisfied"]
+        deed_confirmed = verdict["deed_confirmed"]
+        reason = verdict["reason"]
+        if goal_satisfied:
+            signal = "halt"
+        elif deed_confirmed:
+            signal = "deed_confirmed"
         else:
-            self._signal = "deed_denied"
-        return self._signal
-
-    def patch_from_record(self, record, ctx):
-        data, state = record.data, ctx["state"]
+            signal = "deed_denied"
         desc, done_when = self._deed(ctx)
-        reason = data["reason"]
-        confirmed = self._goal_satisfied or self._deed_confirmed
+        confirmed = goal_satisfied or deed_confirmed
         patch = {
-            "verification": {"goal_satisfied": self._goal_satisfied, "deed_confirmed": self._deed_confirmed, "reasoning": reason, "deed_goal": desc, "done_when": done_when},
-            "last_verification": {"success": confirmed, "signal": self._signal, "reasoning": reason},
-            "goal_interpretations": bus.with_interpretation(state.get("goal_interpretations"), "verify", str(data.get("goal_interpretation") or "")),
+            "verification": {"goal_satisfied": goal_satisfied, "deed_confirmed": deed_confirmed, "reasoning": reason, "deed_goal": desc, "done_when": done_when},
+            "last_verification": {"success": confirmed, "signal": signal, "reasoning": reason},
+            "goal_interpretations": bus.with_interpretation(state.get("goal_interpretations"), "verify", f"The witness probe failed ere verdict:\n{probe_fault}" if probe_fault else str(record.data.get("goal_interpretation") or "")),
         }
         if confirmed:
             patch.update({"witnessed_deed_count": int(state.get("witnessed_deed_count") or 0) + 1, "failure_streak": {"signature": None, "count": 0}, "action_frame": None, "current_deed": None})
-        return patch
+        return bus.emit(signal, patch, record=record, evidence=self.build_payload(ctx))
 
 
 def run(ctx):

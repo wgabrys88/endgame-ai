@@ -1,4 +1,4 @@
-"""[node_reflect] — Thou shalt consume a deed denied and its evidence; and thou shalt bring forth a causal lesson and choose retry or frame."""
+"""[node_reflect] — Thou expectest the denied deed, its evidence and [failure_streak], and the fresh observation."""
 import core_bus as bus
 from core_node_base import BaseNode
 

@@ -15,7 +15,6 @@ def run(raw_nodes: list[dict[str, Any]], config: dict[str, Any], screen: dict[st
     filt = config["filter"]
     max_elements = int(filt["max_elements"])
     max_per_window = int(filt["max_per_window"])
-    max_text = int(filt["max_text"])
     require_interactive = bool(filt["require_interactive"])
     sw, sh = int(screen.get("width", 0) or 0), int(screen.get("height", 0) or 0)
 
@@ -33,7 +32,7 @@ def run(raw_nodes: list[dict[str, Any]], config: dict[str, Any], screen: dict[st
         action = node["action"]
         if require_interactive and not action:
             continue
-        label = (node["text_full"] or node["name"] or "")[:max_text]
+        label = node["text_full"] or node["name"] or ""
         if label and label != (node["name"] or ""):
             text_hints[node["id"]] = label
         if action:

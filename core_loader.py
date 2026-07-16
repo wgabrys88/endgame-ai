@@ -1,15 +1,4 @@
-"""Unified plugin loader: resolve a wiring-named plugin file to a validated module.
-
-One loader for every plugin kind. Plugin EXISTENCE stays dynamic and file-based
-(name -> <name>.py) so the organism can write new plugins at runtime and load
-them without any registry. Plugin SHAPE is validated by requiring an exported
-symbol (duck-typed contract; ABCs layer on top in later steps).
-
-Fractal support: a plugin name may carry an instance suffix, "base:instance"
-(e.g. "node_execute:browser"). The CLASS/module is resolved from the base name;
-the instance label is returned so the caller can thread it into ctx. One file,
-many wired instances.
-"""
+"""Load wiring-named plugins from files; instance suffixes reuse one module."""
 from __future__ import annotations
 
 import importlib.util

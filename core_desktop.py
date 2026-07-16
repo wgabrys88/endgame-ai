@@ -2,7 +2,6 @@ import ctypes
 import importlib
 import os
 import subprocess
-import sys
 from typing import Any
 
 import comtypes
@@ -16,17 +15,8 @@ if not user32.SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWA
 
 
 def _load_uia_module() -> Any:
-    try:
-        comtypes.client.GetModule("UIAutomationCore.dll")
-        return importlib.import_module("comtypes.gen.UIAutomationClient")
-    except ImportError as exc:
-        if "Typelib different than module" not in str(exc):
-            raise
-        for name in list(sys.modules):
-            if name.startswith("comtypes.gen.UIAutomation"):
-                sys.modules.pop(name, None)
-        comtypes.client.GetModule("UIAutomationCore.dll")
-        return importlib.import_module("comtypes.gen.UIAutomationClient")
+    comtypes.client.GetModule("UIAutomationCore.dll")
+    return importlib.import_module("comtypes.gen.UIAutomationClient")
 
 
 uia = _load_uia_module()
@@ -53,10 +43,13 @@ class Desktop:
         hc = cfg.get("hover_cache", self.config.get("hover_cache", {}))
         return observe_desktop(self, hc)
 
-    def expand(self, elements: Any, max_text: int = 5000, max_nodes: int = 200) -> dict[str, Any]:
+    def expand(self, elements: Any, char_budget: int | None = None) -> dict[str, Any]:
         from core_observation import expand as expand_elements
+        hc = self.config.get("hover_cache", {})
+        budget = hc.get("budget", {})
+        cb = int(char_budget if char_budget is not None else budget["expand_char_budget"])
         items = elements if isinstance(elements, list) else [elements]
-        return expand_elements(self, items, max_text=max_text, max_nodes=max_nodes)
+        return expand_elements(self, items, char_budget=cb)
 
     def click(self, x: int, y: int, hwnd: int = 0) -> dict[str, Any]:
         width, height = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
@@ -90,7 +83,7 @@ class Desktop:
         }
         vk = key_map.get(key.lower())
         if vk is None:
-            return {"ok": False, "action": "press_key", "error": f"unknown key: {key}"}
+            raise RuntimeError(f"unknown key: {key}")
         user32.keybd_event(vk, 0, 0, 0)
         user32.keybd_event(vk, 0, 2, 0)
         return {"ok": True, "action": "press_key", "key": key}
@@ -113,12 +106,12 @@ class Desktop:
             raw_parts = list(keys)
         parts = [str(k).strip().lower() for k in raw_parts if str(k).strip()]
         if not parts:
-            return {"ok": False, "action": "hotkey", "error": "no keys provided"}
+            raise RuntimeError("hotkey requires at least one key")
         vks = []
         for k in parts:
             vk = key_map.get(k)
             if vk is None:
-                return {"ok": False, "action": "hotkey", "error": f"unknown key in combination: {k}"}
+                raise RuntimeError(f"unknown key in combination: {k}")
             vks.append(vk)
         for vk in vks[:-1]:
             user32.keybd_event(vk, 0, 0, 0)
@@ -137,33 +130,15 @@ class Desktop:
         user32.mouse_event(0x0800, 0, 0, amount * 120, 0)
         return {"ok": True, "action": "scroll", "x": x, "y": y, "amount": amount, "hwnd": hwnd, "screen": {"width": width, "height": height}}
 
-    def open_url(self, browser: str = "chrome", url: str = "") -> dict[str, Any]:
+    def open_url(self, browser: str = "default", url: str = "") -> dict[str, Any]:
         if not str(url or "").strip():
             raise RuntimeError("open_url requires a non-empty url")
-        browser_paths = {
-            "chrome": [r"C:\Program Files\Google\Chrome\Application\chrome.exe", r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"],
-            "edge": [r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"],
-            "firefox": [r"C:\Program Files\Mozilla Firefox\firefox.exe"],
-            "opera": [
-                r"%LOCALAPPDATA%\Programs\Opera\opera.exe",
-                r"%LOCALAPPDATA%\Programs\Opera\launcher.exe",
-                r"C:\Program Files\Opera\opera.exe",
-                r"C:\Program Files\Opera\launcher.exe",
-                r"C:\Program Files (x86)\Opera\opera.exe",
-                r"C:\Program Files (x86)\Opera\launcher.exe",
-            ],
-        }
         browser_key = str(browser or "").strip().lower()
         if browser_key == "default":
             os.startfile(str(url))
             return {"ok": True, "action": "open_url", "browser": "default", "url": url}
-        if browser_key not in browser_paths:
-            raise RuntimeError(f"open_url unsupported browser '{browser}'; choose one of {sorted(browser_paths)} or 'default'")
-        exe = next((os.path.expandvars(p) for p in browser_paths[browser_key] if os.path.exists(os.path.expandvars(p))), None)
-        if not exe:
-            raise RuntimeError(f"open_url browser '{browser_key}' is not installed in known paths")
-        subprocess.Popen([exe, url])
-        return {"ok": True, "action": "open_url", "browser": browser_key, "url": url, "exe": exe}
+        subprocess.Popen([str(browser), str(url)])
+        return {"ok": True, "action": "open_url", "browser": browser_key, "url": url}
 
 
 _desktop_instance: Desktop | None = None

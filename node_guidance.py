@@ -1,4 +1,4 @@
-"""[node_guidance] — Thou foldest the counsel of the human into the wheel. THOU EXPECTEST: to read the [guidance] file. Thou emittest 'attend' to go on, setting any counsel as [latest_counsel] for the faculties to heed or refuse."""
+"""[node_guidance] — Thou expectest the [guidance] file."""
 import core_bus as bus
 import core_wiring as wiring
 
