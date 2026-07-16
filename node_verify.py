@@ -48,16 +48,13 @@ class VerifyNode(BaseNode):
         desc, done_when = self._deed(ctx)
         reason = data["reason"]
         confirmed = self._goal_satisfied or self._deed_confirmed
-        effective = bus.append_narrative(state["effective_goal"], f"\n\n[VERIFY] {'Confirmed' if confirmed else 'Denied'}: {desc}. {reason}", root_goal=state.get("goal", ""))
         patch = {
             "verification": {"goal_satisfied": self._goal_satisfied, "deed_confirmed": self._deed_confirmed, "reasoning": reason, "deed_goal": desc, "done_when": done_when},
             "last_verification": {"success": confirmed, "signal": self._signal, "reasoning": reason},
-            "effective_goal": effective,
+            "goal_interpretations": bus.with_interpretation(state.get("goal_interpretations"), "verify", str(data.get("goal_interpretation") or "")),
         }
         if confirmed:
-            witnessed = list(state.get("witnessed_deeds") or [])
-            witnessed.append({"description": desc, "done_when": done_when, "confirmed_at_tick": state.get("tick")})
-            patch.update({"witnessed_deeds": witnessed, "failure_streak": {"signature": None, "count": 0}, "action_frame": None, "current_deed": None, "last_error": None, "last_failure": None})
+            patch.update({"witnessed_deed_count": int(state.get("witnessed_deed_count") or 0) + 1, "failure_streak": {"signature": None, "count": 0}, "action_frame": None, "current_deed": None})
         return patch
 
 

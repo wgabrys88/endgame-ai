@@ -86,17 +86,34 @@ def emit(signal: str, patch: JsonDict | None = None, *, record: Record | JsonDic
     return NodeOutput(signal=signal.strip(), patch=dict(patch or {}), record=record_obj, evidence=dict(evidence or {}))
 
 
-NARRATIVE_TAIL_CHARS = 12000
+_INTERP_ORDER = ["execute", "verify", "reflect", "frame"]
 
 
-def append_narrative(effective_goal: str, line: str, *, root_goal: str = "") -> str:
-    combined = f"{effective_goal}{line}"
-    if len(combined) <= NARRATIVE_TAIL_CHARS:
-        return combined
-    head = root_goal if root_goal and combined.startswith(root_goal) else ""
-    tail = combined[-NARRATIVE_TAIL_CHARS:]
-    marker = "\n\n[...earlier narrative trimmed for token efficiency...]\n"
-    return f"{head}{marker}{tail}" if head else f"{marker.lstrip()}{tail}"
+def render_interpretation_table(goal: str, interps: JsonDict | None) -> str:
+    """The goal-interpretation table, rendered for the tail of every user message.
+
+    Row one is the immutable root goal. Each thinking faculty keeps exactly one row —
+    its own single-sentence reading of the ultimate goal — which it rewrites in place
+    whensoever it acts. The table is bounded (one row per faculty), never accumulates,
+    and never truncates. It rides the volatile user tail, so it costs no prefix cache."""
+    interps = interps or {}
+    lines = [
+        "GOAL INTERPRETATION TABLE — the root goal is immutable and standeth first; "
+        "each thinking faculty keepeth one row below it, being that faculty's own "
+        "single-sentence reading of the ultimate goal, rewritten whensoever it acteth:",
+        f"[ROOT GOAL] {goal}",
+    ]
+    for faculty in _INTERP_ORDER:
+        sentence = str(interps.get(faculty) or "").strip()
+        lines.append(f"[{faculty}] {sentence}" if sentence else f"[{faculty}] (not yet interpreted)")
+    return "\n".join(lines)
+
+
+def with_interpretation(interps: JsonDict | None, faculty: str, sentence: str) -> JsonDict:
+    """Return a copy of the interpretation table with one faculty's row rewritten."""
+    merged = dict(interps or {})
+    merged[faculty] = str(sentence or "").strip()
+    return merged
 
 
 def coerce_node_output(node: str, result: Any) -> NodeOutput:
@@ -138,25 +155,20 @@ def emergent_signals(wiring: JsonDict, node: str | None) -> list[str]:
 
 
 def state_brief(state: JsonDict) -> JsonDict:
-    """Compact operational focus plus the bounded continuity narrative."""
+    """Compact operational focus of the NOW. The sole within-waking continuity is the
+    immutable goal and the goal-interpretation table (carried to the user tail); there
+    is no memory, no history, no prior turn — only this present state and the fresh
+    observation that reveals the world as it now is."""
     current_deed = state.get("current_deed") or {}
-    narrative = str(state.get("effective_goal") or "")
-    root_goal = str(state.get("goal") or "")
-    if root_goal and narrative.startswith(root_goal):
-        narrative = narrative[len(root_goal):].lstrip()
     return {
         "tick": state.get("tick"),
-        "depth": state.get("_depth", 0),
         "current_node": state.get("current_node"),
-        "frontier": list(state.get("frontier") or []),
-        "narrative": narrative,
+        "goal_interpretations": dict(state.get("goal_interpretations") or {}),
+        "latest_counsel": state.get("latest_counsel") or "",
         "current_deed": {"description": current_deed.get("description", ""), "done_when": current_deed.get("done_when", "")},
-        "witnessed_deed_count": len(state.get("witnessed_deeds") or []),
         "last_signal": state.get("last_signal"),
-        "last_error": state.get("last_error"),
         "last_verification": state.get("last_verification", {}),
         "last_reflection": state.get("last_reflection", {}),
-        "last_failure": state.get("last_failure", {}),
         "failure_streak": state.get("failure_streak", {}),
         "has_action_frame": bool(state.get("action_frame")),
     }
@@ -168,10 +180,10 @@ def focused_elements(state: JsonDict) -> JsonDict:
     desktop_tree_text already carries the readable overview — id, role, name,
     [active]/[focused] markers, [action], and ~text hint — for every visible
     element. This map therefore adds ONLY what the tree lacks (enabled, rect,
-    automation_id, class_name, hwnd, depth) and ONLY for the element(s) currently
-    focused or named by an action_frame. It never re-emits the whole tree as
-    structured metadata, so the payload carries each element once. Element
-    targeting uses the full in-memory action_index, not this brief.
+    automation_id, class_name) and ONLY for the element(s) currently focused or
+    named by an action_frame. It never re-emits the whole tree as structured
+    metadata, so the payload carries each element once. Element targeting uses
+    the full in-memory action_index, not this brief.
     """
     action_index = state.get("action_index") or {}
     if not isinstance(action_index, dict):
@@ -180,7 +192,7 @@ def focused_elements(state: JsonDict) -> JsonDict:
     visible_ids = {line.strip().split(" ", 1)[0] for line in tree_text.splitlines() if line.strip()}
     frame_text = json.dumps(state.get("action_frame") or {}, ensure_ascii=False, default=str)
     framed_ids = set(re.findall(r"\b(?:e|W)\d+\b", frame_text))
-    detail_fields = ("name", "role", "action", "enabled", "rect", "automation_id", "class_name", "hwnd", "depth")
+    detail_fields = ("name", "role", "action", "enabled", "rect", "automation_id", "class_name")
     mapped: JsonDict = {}
     for node_id, node in action_index.items():
         if not isinstance(node, dict) or str(node_id) not in visible_ids:
@@ -192,20 +204,16 @@ def focused_elements(state: JsonDict) -> JsonDict:
 
 def observation_brief(state: JsonDict) -> JsonDict:
     artifact = state.get("observation_artifact") or {}
-    tree = artifact.get("desktop_tree") if isinstance(artifact, dict) else {}
     return {
+        "provenance": (
+            "independent world state: the settled desktop as an outside eye beheld it, "
+            "produced by the OS and applications, not authored by the actor."
+        ),
         "desktop_tree_text": state.get("desktop_tree_text", ""),
         "focused_elements": focused_elements(state),
         "observed_at": state.get("observed_at"),
         "settle_seconds": artifact.get("settle_seconds") if isinstance(artifact, dict) else None,
         "screen": artifact.get("screen", {}) if isinstance(artifact, dict) else {},
-        "scan_stats": artifact.get("scan_stats", {}) if isinstance(artifact, dict) else {},
-        "rendered_node_count": state.get("rendered_node_count") or (tree or {}).get("rendered_node_count"),
-        "max_llm_nodes": state.get("max_llm_nodes") or (tree or {}).get("max_llm_nodes"),
-        "llm_node_limit_hit": state.get("llm_node_limit_hit") or (tree or {}).get("llm_node_limit_hit"),
-        "elements_truncated": (tree or {}).get("elements_truncated", False),
-        "elements_dropped_per_window": (tree or {}).get("elements_dropped_per_window", {}),
-        "elements_dropped_global": (tree or {}).get("elements_dropped_global", 0),
     }
 
 
@@ -219,15 +227,12 @@ def _last_denial(state: JsonDict) -> str:
 def execution_evidence(state: JsonDict) -> JsonDict:
     denial = _last_denial(state)
     turn = state.get("turn_executions") or {}
-    if isinstance(turn, dict) and turn:
-        evidence: JsonDict = {"faculties": turn}
-    else:
-        evidence = {
-            "last_action": state.get("last_action") or {},
-            "last_result": state.get("last_result") or {},
-            "last_error": state.get("last_error"),
-            "last_failure": state.get("last_failure") or {},
-        }
+    evidence: JsonDict = {"faculties": turn if isinstance(turn, dict) else {}}
+    evidence["provenance"] = (
+        "actor-authored record: what code the runner enacted, by its own account. "
+        "This is the actor's testimony about what it did, not proof of world-effect. "
+        "Independent world state is carried separately in the observation field."
+    )
     if denial:
         evidence["unsatisfied_requirement"] = denial
     return evidence
@@ -238,7 +243,6 @@ def failure_signature(state: JsonDict) -> str:
     parts = {
         "deed": deed.get("description", ""),
         "done_when": deed.get("done_when", ""),
-        "failure": state.get("last_failure") or {},
         "verification": state.get("last_verification") or {},
         "executions": state.get("turn_executions") or {},
     }

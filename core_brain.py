@@ -1,10 +1,7 @@
-import hashlib
 import json
 import os
 import pathlib
 import re
-import subprocess
-import threading
 import time
 from typing import Any
 
@@ -13,73 +10,14 @@ import core_loader as loader
 import core_wiring as wiring
 
 ROOT = pathlib.Path(__file__).parent.resolve()
-_STABLE_PREFIX_CACHE: "StablePrefix | None" = None
-_STABLE_PREFIX_LOCK = threading.Lock()
-_LAST_OBSERVATION: dict[str, Any] | None = None
 _CONV_ID = ""
 
-class StablePrefix:
-    def __init__(self, w: dict[str, Any], root: pathlib.Path = ROOT, focus_files: list[str] | None = None):
-        self.root = root
-        self.source = w["model"]["stable_prefix"]["source"]
-        self.focus_files = focus_files
-        self.files = self._source_files()
-        self.text, self.fingerprint = self._render()
-        self.cache_key = f"endgame-ai-{self.fingerprint[:24]}"
-
-    def _git(self, args: list[str]) -> str:
-        cp = subprocess.run(["git", *args], cwd=self.root, capture_output=True, text=True)
-        if cp.returncode != 0:
-            raise RuntimeError(f"git {' '.join(args)} failed while building stable prefix: {(cp.stderr or cp.stdout or '').strip()}")
-        return cp.stdout
-
-    def _include(self, rel: str) -> bool:
-        path = pathlib.PurePosixPath(rel.replace("\\", "/"))
-        skip_prefixes = tuple(self.source["skip_prefixes"])
-        if set(path.parts) & set(self.source["skip_parts"]) or path.name.startswith(skip_prefixes):
-            return False
-        if self.focus_files is not None:
-            core_always = {".gitattributes", ".gitignore", "wiring.json", "core_bus.py", "core_wiring.py", "core_loader.py", "check_topology.py"}
-            focus_set = set(self.focus_files) | core_always
-            return path.name in focus_set or path.suffix in {".py", ".json"} and any(f in str(path) for f in self.focus_files)
-        return path.name in set(self.source["names"]) or path.suffix in set(self.source["suffixes"])
-
-    def _source_files(self) -> list[str]:
-        return sorted(item.replace("\\", "/") for item in self._git(["ls-files", "-z"]).split("\0") if item and self._include(item))
-
-    def _render(self) -> tuple[str, str]:
-        digest = hashlib.sha256()
-        manifest: list[dict[str, Any]] = []
-        chunks = ["ENDGAME-AI STABLE PREFIX", "Tracked source below is the self-evolution substrate.", "", "STATIC MANIFEST:"]
-        file_text: list[tuple[str, str]] = []
-        for rel in self.files:
-            content = (self.root / rel).read_text(encoding="utf-8", errors="replace")
-            encoded = content.encode("utf-8", errors="replace")
-            digest.update(rel.encode()); digest.update(b"\0"); digest.update(encoded)
-            manifest.append({"path": rel, "chars": len(content), "bytes": len(encoded)})
-            file_text.append((rel, content))
-        chunks.extend([json.dumps(manifest, ensure_ascii=False, indent=2), "", "STATIC SOURCE FILES:"])
-        for rel, content in file_text:
-            chunks.extend([f"\n--- BEGIN FILE {rel} ---", content, f"--- END FILE {rel} ---"])
-        return "\n".join(chunks), digest.hexdigest()
-
-    def metadata(self) -> dict[str, Any]:
-        return {"fingerprint": self.fingerprint, "cache_key": self.cache_key, "files": self.files, "chars": len(self.text)}
+# Fields exempt from the prose word-bounds: [code] is a Python script, not prose.
+WORD_BOUND_EXEMPT = {"code"}
 
 
-def stable_prefix(w: dict[str, Any], focus_files: list[str] | None = None) -> StablePrefix:
-    global _STABLE_PREFIX_CACHE
-    with _STABLE_PREFIX_LOCK:
-        fresh = StablePrefix(w, ROOT, focus_files=focus_files)
-        if focus_files is not None or _STABLE_PREFIX_CACHE is None or _STABLE_PREFIX_CACHE.fingerprint != fresh.fingerprint:
-            _STABLE_PREFIX_CACHE = fresh
-        return _STABLE_PREFIX_CACHE
-
-
-def _messages(system_prompt: str, user_text: str, prefix: StablePrefix | None, stable_context: str = "") -> list[dict[str, str]]:
+def _messages(system_prompt: str, user_text: str, stable_context: str = "") -> list[dict[str, str]]:
     system = system_prompt + ("\n\n" + stable_context if stable_context else "")
-    if prefix is not None:
-        system = prefix.text + "\n\n" + system
     return [{"role": "system", "content": system}, {"role": "user", "content": user_text}]
 
 
@@ -118,6 +56,20 @@ def _validate_record_contract(w: dict[str, Any], record: bus.Record, expected_re
     for key, values in enums.items():
         if key in record.data and record.data[key] not in set(values):
             raise RuntimeError(f"{record.record_type}.data.{key}={record.data[key]!r} outside {values!r}")
+    bounds = w.get("output_word_bounds", {})
+    min_words, max_words = int(bounds.get("min_words", 0)), int(bounds.get("max_words", 0))
+    if min_words or max_words:
+        for key in non_empty:
+            if key in WORD_BOUND_EXEMPT or types.get(key) != "string" or key in enums:
+                continue
+            value = record.data.get(key)
+            if not isinstance(value, str):
+                continue
+            count = len(value.split())
+            if min_words and count < min_words:
+                raise RuntimeError(f"{record.record_type}.data.{key} must be at least {min_words} words; got {count}")
+            if max_words and count > max_words:
+                raise RuntimeError(f"{record.record_type}.data.{key} must be at most {max_words} words; got {count}")
 
 
 def _commit_record(content: str, w: dict[str, Any], expected_record_type: str | None = None) -> bus.Record:
@@ -178,11 +130,6 @@ def downstream_contract(w: dict[str, Any], emitting_node: str | None, expected_r
     for signal, succ in seen:
         doc = _node_docstring(w, succ)
         lines.append(f"\n[on signal '{signal}' -> {succ}]\n{doc}" if doc else f"\n[on signal '{signal}' -> {succ}] (no input contract declared)")
-    # The next_signal instruction is lawful ONLY when this node's own record can
-    # carry next_signal. For mechanically-routed nodes (plan, execution, verification)
-    # the field is absent and the strict schema forbids it, so commanding a next_signal
-    # would be a contradiction at the recency slot. Gate on the actual contract,
-    # mirroring _record_response_format.
     if expected_record_type:
         contract = w.get("record_contracts", {}).get(expected_record_type, {})
         contract_keys = set(contract.get("required", [])) | set(contract.get("types", {})) | set(contract.get("enums", {}))
@@ -200,16 +147,13 @@ def _normalize_observation(obj: Any) -> dict[str, Any] | None:
     if not isinstance(obj, dict) or not obj.get("desktop_tree_text"):
         return None
     fields = (
-        "desktop_tree_text", "focused_elements", "observed_at", "screen", "scan_stats",
-        "rendered_node_count", "max_llm_nodes", "llm_node_limit_hit",
-        "elements_truncated", "elements_dropped_per_window", "elements_dropped_global",
+        "desktop_tree_text", "focused_elements", "observed_at", "screen",
         "observation_fresh", "settle_seconds",
     )
     return {key: obj[key] for key in fields if key in obj}
 
 
 def _observation_payload(w: dict[str, Any], payload: dict[str, Any] | None = None) -> dict[str, Any]:
-    global _LAST_OBSERVATION
     if payload:
         candidates = [payload.get("observation")]
         evidence = payload.get("evidence")
@@ -218,13 +162,8 @@ def _observation_payload(w: dict[str, Any], payload: dict[str, Any] | None = Non
         for candidate in candidates:
             normalized = _normalize_observation(candidate)
             if normalized is not None:
-                _LAST_OBSERVATION = normalized
                 return normalized
     raise RuntimeError("observation missing: observe node must run before any brain call")
-
-
-def last_observation() -> dict[str, Any]:
-    return dict(_LAST_OBSERVATION or {})
 
 
 def _with_observation(payload: dict[str, Any], w: dict[str, Any]) -> dict[str, Any]:
@@ -234,9 +173,8 @@ def _with_observation(payload: dict[str, Any], w: dict[str, Any]) -> dict[str, A
 
 
 def reset_call_budget() -> None:
-    global _CONV_ID, _LAST_OBSERVATION
+    global _CONV_ID
     _CONV_ID = f"endgame-ai-{int(time.time())}-{os.getpid()}"
-    _LAST_OBSERVATION = None
 
 
 def _load_transport_module(name: str, w: dict[str, Any]):
@@ -362,24 +300,22 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
     _, cfg = wiring.get_transport_config(w)
     reasoning_cfg = dict(cfg["reasoning"])
     organ_tuning = _organ_tuning(w, expected_record_type)
-    include_prefix = bool(w["model"]["stable_prefix"]["include_in_request"] or organ_tuning.get("include_stable_prefix"))
-    prefix = stable_prefix(w) if w["model"]["stable_prefix"]["enabled"] and include_prefix else None
-    prefix_for_messages = prefix
     if not _CONV_ID:
         _CONV_ID = f"endgame-ai-{int(time.time())}-{os.getpid()}"
     payload = _with_observation(payload, w)
     goal = str(payload.pop("goal") or "") if "goal" in payload else ""
     user_text = json.dumps(payload, ensure_ascii=False, default=str)
+    focus = payload.get("focus")
+    interps = focus.get("goal_interpretations") if isinstance(focus, dict) else None
+    user_text = f"{user_text}\n\n{bus.render_interpretation_table(goal, interps)}"
     response_format = _record_response_format(w, expected_record_type, emitting_node) if expected_record_type and _structured_outputs_enabled(cfg) else None
     request_cfg = dict(request_config or {})
     request_cfg["expected_record_type"] = expected_record_type
-    if prefix is not None:
-        request_cfg["stable_prefix"] = prefix.metadata()
     for key, value in organ_tuning.items():
         if key in {"reasoning_effort", "max_output_tokens"} and value is not None:
             request_cfg.setdefault(key, value)
     if cfg.get("transport") == "transport_xai":
-        request_cfg.setdefault("prompt_cache_key", prefix.cache_key if prefix is not None else _CONV_ID)
+        request_cfg.setdefault("prompt_cache_key", _CONV_ID)
     stable_context_parts = []
     if goal:
         stable_context_parts.append(f"THE IMMUTABLE ROOT GOAL (fixed for this run):\n{goal}")
@@ -389,15 +325,15 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
     stable_context = "\n\n".join(stable_context_parts)
     pattern = str(reasoning_cfg.get("pattern") or "single_pass")
     if not reasoning_cfg["enabled"] or pattern in {"single_pass", "native"}:
-        result = call(_messages(system_prompt, user_text, prefix_for_messages, stable_context), w, response_format=response_format, request_config=request_cfg)
+        result = call(_messages(system_prompt, user_text, stable_context), w, response_format=response_format, request_config=request_cfg)
         record = _commit_record(result["content"], w, expected_record_type)
         transport_reasoning = str(result.get("reasoning") or "").strip()
         return bus.Record(record.record_type, record.data, transport_reasoning or record.reasoning).to_json()
     if pattern != "two_pass":
         raise RuntimeError(f"unknown reasoning pattern: {pattern}")
-    first = call(_messages(system_prompt, user_text, prefix_for_messages, stable_context), w, request_config=request_cfg)
+    first = call(_messages(system_prompt, user_text, stable_context), w, request_config=request_cfg)
     reasoning = reasoning_from(first["content"], first.get("reasoning", ""))
     template = str(reasoning_cfg.get("injection_template") or "REASONING:\n{reasoning}")
-    second = call(_messages(system_prompt, user_text + "\n\n" + template.format(reasoning=reasoning), prefix_for_messages, stable_context), w, response_format=response_format, request_config=request_cfg)
+    second = call(_messages(system_prompt, user_text + "\n\n" + template.format(reasoning=reasoning), stable_context), w, response_format=response_format, request_config=request_cfg)
     record = _commit_record(second["content"], w, expected_record_type)
     return bus.Record(record.record_type, record.data, reasoning).to_json()

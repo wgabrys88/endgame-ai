@@ -2,7 +2,7 @@
 
 A wired, swappable observation phase. Input contract (from obs_scan): raw nodes +
 config + screen. Output contract (what obs_build reads): {action_elements,
-text_hints, hwnd_to_z, hwnd_interactive_count, selection_stats}. Change this file to change how
+text_hints, hwnd_to_z, hwnd_interactive_count}. Change this file to change how
 observation filters — e.g. route some elements one way and some another — without
 touching scan or build.
 """
@@ -29,8 +29,6 @@ def run(raw_nodes: list[dict[str, Any]], config: dict[str, Any], screen: dict[st
     action_elements: dict[str, dict[str, Any]] = {}
     text_hints: dict[str, str] = {}
     hwnd_counts: dict[int, int] = {}
-    dropped_global = 0
-    dropped_per_window: dict[int, int] = {}
     for node in ranked:
         action = node["action"]
         if require_interactive and not action:
@@ -43,10 +41,8 @@ def run(raw_nodes: list[dict[str, Any]], config: dict[str, Any], screen: dict[st
                 continue
             hwnd = node["hwnd"]
             if hwnd_counts.get(hwnd, 0) >= max_per_window:
-                dropped_per_window[hwnd] = dropped_per_window.get(hwnd, 0) + 1
                 continue
             if len(action_elements) >= max_elements:
-                dropped_global += 1
                 continue
             hwnd_counts[hwnd] = hwnd_counts.get(hwnd, 0) + 1
             action_elements[node["id"]] = {
@@ -60,8 +56,4 @@ def run(raw_nodes: list[dict[str, Any]], config: dict[str, Any], screen: dict[st
         "text_hints": text_hints,
         "hwnd_to_z": hwnd_to_z,
         "hwnd_interactive_count": hwnd_counts,
-        "selection_stats": {
-            "dropped_global": dropped_global,
-            "dropped_per_window": dropped_per_window,
-        },
     }

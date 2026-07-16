@@ -2,16 +2,14 @@
 and writest [code] as a script artifact upon the disk, then handest it to [node_run]
 by the "built" signal. The running is [node_run]'s office.
 
-There is no plan laid up beforehand: decomposition liveth in the deed itself, for the
-executor may author a long, multi-chained script. One [executor], one [runner], no
-division of faculty. Whatsoever the script hath need of — desktop, files, shell, web,
+Decomposition liveth in the deed itself, for the
+executor may author a long, multi-chained script. Whatsoever the script hath need of — desktop, files, shell, web,
 or the rewriting of the body — it importeth and calleth of itself.
 """
 import hashlib
 import pathlib
 
 import core_bus as bus
-import core_nodes as nodes
 from core_node_base import BaseNode
 
 ROOT = pathlib.Path(__file__).resolve().parent
@@ -30,7 +28,6 @@ class ExecuteNode(BaseNode):
             "action_frame": state.get("action_frame"),
             "focus": bus.state_brief(state),
             "observation": bus.observation_brief(state),
-            "capabilities": nodes.capability_manifest(ctx),
         }
 
     def _write_artifact(self, code):
@@ -53,8 +50,8 @@ class ExecuteNode(BaseNode):
         label = "EXECUTE"
         artifact_path = self._write_artifact(code)
         artifact = {"path": artifact_path, "label": label}
-        effective = bus.append_narrative(state["effective_goal"], f"\n\n[{label}] I enact the deed: {intent}. It is fulfilled when: {done_when}. I have authored the script artifact {pathlib.Path(artifact_path).name}.", root_goal=state.get("goal", ""))
-        return bus.emit("built", {"_execute_artifact": artifact, "current_deed": {"description": intent, "done_when": done_when}, "effective_goal": effective}, record=record, evidence=payload)
+        interps = bus.with_interpretation(state.get("goal_interpretations"), "execute", str(data.get("goal_interpretation") or ""))
+        return bus.emit("built", {"_execute_artifact": artifact, "current_deed": {"description": intent, "done_when": done_when}, "goal_interpretations": interps}, record=record, evidence=payload)
 
 
 def run(ctx):

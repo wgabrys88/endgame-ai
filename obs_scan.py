@@ -2,7 +2,7 @@
 
 A wired, swappable observation phase. `observe()` in core_observation loads this by
 the name in wiring.observe_config.phases.scan. Input: config + desktop. Output
-contract (what the next phase, obs_filter, reads): {nodes, screen, scan_stats}.
+contract (what the next phase, obs_filter, reads): {nodes, screen}.
 """
 import ctypes
 import time
@@ -46,27 +46,22 @@ def run(config: dict[str, Any], desktop: Any) -> dict[str, Any]:
     scanner = obs.UiaScanner(config, desktop)
     index: dict[str, dict[str, Any]] = {}
     saturated: set[str] = set()
-    errors: list[dict[str, Any]] = []
     saved = wintypes.POINT()
     had_cursor = bool(user32.GetCursorPos(ctypes.byref(saved)))
-    t0 = time.time()
-    probes_run = 0
     try:
         for x, y in points:
             if len(index) >= max_total:
                 break
-            probes_run += 1
             user32.SetCursorPos(int(x), int(y))
             if delay_ms > 0:
                 time.sleep(delay_ms / 1000.0)
             pt = wintypes.POINT(int(x), int(y))
             try:
                 root = scanner.automation.ElementFromPointBuildCache(pt, scanner._cache(obs.TreeScope_Element))
-            except Exception as build_exc:
+            except Exception:
                 try:
                     root = scanner.automation.ElementFromPoint(pt)
-                except Exception as point_exc:
-                    errors.append({"x": int(x), "y": int(y), "build_cache_error": f"{type(build_exc).__name__}: {build_exc}", "point_error": f"{type(point_exc).__name__}: {point_exc}"})
+                except Exception:
                     continue
             if root is None:
                 continue
@@ -101,14 +96,4 @@ def run(config: dict[str, Any], desktop: Any) -> dict[str, Any]:
     return {
         "nodes": list(index.values()),
         "screen": {"width": sw, "height": sh},
-        "scan_stats": {
-            "area": {"left": left, "top": top, "right": right, "bottom": bottom},
-            "probes": probes_run,
-            "planned_probes": len(points),
-            "unique_nodes": len(index),
-            "node_limit_hit": len(index) >= max_total,
-            "point_errors": len(errors),
-            "first_point_errors": errors[:5],
-            "elapsed_s": round(time.time() - t0, 3),
-        },
     }

@@ -1,4 +1,4 @@
-"""[node_reflect] — Thou shalt consume a deed denied and its evidence; and thou shalt bring forth a causal lesson and choose retry, frame, or a named child sub-goal."""
+"""[node_reflect] — Thou shalt consume a deed denied and its evidence; and thou shalt bring forth a causal lesson and choose retry or frame."""
 import core_bus as bus
 from core_node_base import BaseNode
 
@@ -10,11 +10,9 @@ class ReflectNode(BaseNode):
     def _prepare(self, ctx):
         state = ctx["state"]
         self._streak_patch = bus.update_failure_streak(state)
-        self._failure = state.get("last_failure") or {}
         self._evidence_payload = {
             "executions": bus.execution_evidence(state),
             "last_verification": state.get("last_verification", {}),
-            "last_failure": self._failure,
             "failure_streak": self._streak_patch["failure_streak"],
         }
 
@@ -43,13 +41,11 @@ class ReflectNode(BaseNode):
         data, state = record.data, ctx["state"]
         deed = state.get("current_deed") or {}
         lesson, diagnosis = data["lesson"], data["diagnosis"]
-        effective = bus.append_narrative(state["effective_goal"], f"\n\n[REFLECT] I turn by '{self._signal}'. The lesson: {lesson}. The diagnosis: {diagnosis}.", root_goal=state.get("goal", ""))
         reflection = {
             "lesson": lesson,
             "diagnosis": diagnosis,
             "deed_goal": deed.get("description", state["goal"]),
             "recovery_signal": self._signal,
-            "failure": self._failure,
             "action_frame": state.get("action_frame"),
         }
         patch = {
@@ -60,15 +56,9 @@ class ReflectNode(BaseNode):
                 "signal": self._signal,
                 "lesson": lesson,
                 "diagnosis": diagnosis,
-                "failure": self._failure,
             },
-            "effective_goal": effective,
+            "goal_interpretations": bus.with_interpretation(state.get("goal_interpretations"), "reflect", str(data.get("goal_interpretation") or "")),
         }
-        if self._signal == "spawn":
-            subgoal = str(data.get("subgoal") or "").strip()
-            if not subgoal:
-                raise RuntimeError("reflection routed to spawn without a non-empty subgoal")
-            patch["spawn_subgoal"] = subgoal
         return patch
 
 

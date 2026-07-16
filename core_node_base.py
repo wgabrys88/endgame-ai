@@ -86,8 +86,8 @@ def _resolve(spec: Any, scope: JsonDict) -> Any:
             return {key: source[key] for key in spec["keys"]}
         if "int" in spec:
             return int(_resolve(spec["int"], scope) or spec.get("default", 0))
-        if "narrate" in spec:
-            return bus.append_narrative(_resolve(spec["narrate"], scope), _resolve(spec["line"], scope), root_goal=_resolve(spec["root"], scope))
+        if "interpret" in spec:
+            return bus.with_interpretation(_resolve(spec["interpret"], scope), spec["faculty"], _resolve(spec["sentence"], scope))
         if "get" in spec:
             source = _resolve(spec["get"], scope)
             value = source.get(spec["key"]) if isinstance(source, dict) else None

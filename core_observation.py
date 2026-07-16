@@ -331,6 +331,43 @@ def _load_phase(module_name: str):
     return mod
 
 
+def expand(desktop: Any, ids_or_points: list[Any], max_text: int = 5000, max_nodes: int = 200) -> dict[str, Any]:
+    """Targeted deeper look at named elements: re-acquire each at its screen point and
+    harvest its full subtree, returning untruncated text, value, and every child (including
+    non-interactive), which the shallow tree omitteth. This is a fresh independent look, not
+    memory: it readeth the live [UIA] now. `ids_or_points` are entries of the current
+    action_index (each bearing px/py) or explicit {'px':x,'py':y} points."""
+    from ctypes import wintypes
+    scanner = UiaScanner({}, desktop)
+    results: dict[str, Any] = {}
+    for i, item in enumerate(ids_or_points):
+        node = item if isinstance(item, dict) else {}
+        px, py = node.get("px"), node.get("py")
+        key = str(node.get("short_id") or node.get("id") or i)
+        if px is None or py is None:
+            results[key] = {"error": "element bears no screen point to expand"}
+            continue
+        pt = wintypes.POINT(int(px), int(py))
+        try:
+            root_el = scanner.automation.ElementFromPointBuildCache(pt, scanner._cache())
+        except Exception as exc:
+            results[key] = {"error": f"could not acquire element: {type(exc).__name__}: {exc}"}
+            continue
+        if root_el is None:
+            results[key] = {"error": "no element at point"}
+            continue
+        harvested = scanner.harvest_subtree(root_el, max_nodes)
+        results[key] = {
+            "text_full": (harvested[0].get("text_full", "") if harvested else "")[:max_text],
+            "value": (harvested[0].get("value", "") if harvested else "")[:max_text],
+            "children": [
+                {"role": n["role"], "name": n["name"], "action": n["action"], "text": (n.get("text_full") or "")[:max_text]}
+                for n in harvested[1:]
+            ],
+        }
+    return results
+
+
 def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any]:
     cfg = dict(config or {})
     if not cfg["enabled"]:
@@ -351,9 +388,7 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
         filtered["hwnd_to_z"],
         gathered["screen"],
         cfg,
-        filtered.get("selection_stats"),
     )
-    elements_truncated = bool(mapped["elements_truncated"] or gathered["scan_stats"].get("node_limit_hit"))
     observed_at = time.time()
     artifact = {
         "observed_at": observed_at,
@@ -361,22 +396,15 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
         "settle_seconds": settle_seconds,
         "scan_config": cfg["scan"],
         "screen": gathered["screen"],
-        "scan_stats": gathered["scan_stats"],
         "desktop_tree": {
             "id": "W0", "role": "Screen", "fresh_scan": True, "observed_at": observed_at,
             "root": mapped["root"], "node_index": mapped["node_index"], "window_count": mapped["window_count"],
-            "element_count": mapped["element_count"], "rendered_node_count": mapped["rendered_node_count"],
-            "max_llm_nodes": mapped["max_llm_nodes"], "llm_node_limit_hit": mapped["llm_node_limit_hit"],
-            "elements_truncated": elements_truncated, "elements_dropped_per_window": mapped["elements_dropped_per_window"],
-            "elements_dropped_global": mapped["elements_dropped_global"],
-            "scan_node_limit_hit": bool(gathered["scan_stats"].get("node_limit_hit")),
+            "element_count": mapped["element_count"],
             "window_z_order": mapped["window_z_order"],
         },
         "action_index": mapped["action_index"],
         "desktop_tree_text": mapped["desktop_tree_text"],
     }
-    desktop._last_desktop_tree = artifact["desktop_tree"]
-    desktop._last_action_index = mapped["action_index"]
     return {
         "observed_at": observed_at,
         "fresh_scan": True,
@@ -384,8 +412,5 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
         "desktop_tree": artifact["desktop_tree"],
         "desktop_tree_text": mapped["desktop_tree_text"],
         "action_index": mapped["action_index"],
-        "rendered_node_count": mapped["rendered_node_count"],
-        "max_llm_nodes": mapped["max_llm_nodes"],
-        "llm_node_limit_hit": mapped["llm_node_limit_hit"],
         "observation_artifact": artifact,
     }

@@ -19,7 +19,6 @@ def load_wiring(path: str | None = None) -> dict[str, Any]:
     problems = check_topology.coherence_problems(cfg)
     if problems:
         raise RuntimeError(f"wiring topology is incoherent: {problems}")
-    # Private invocation metadata is live context, never persisted behavior.
     cfg["_source_path"] = str(source_path)
     return cfg
 
@@ -58,16 +57,20 @@ def _require_list_str(obj: dict[str, Any], path: str) -> list[str]:
     return value
 
 def validate_wiring(cfg: dict[str, Any]) -> None:
-    for key in ("schema", "model", "paths", "observe_config", "topology", "prompts", "prompt_aliases", "shared_prompt_prefix", "record_contracts", "capabilities", "fractal"):
+    for key in ("schema", "model", "paths", "observe_config", "topology", "prompts", "shared_prompt_prefix", "record_contracts", "output_word_bounds"):
         if key not in cfg:
             raise RuntimeError(f"wiring missing required key: {key}")
+    bounds = _require(cfg, "output_word_bounds", dict)
+    lo, hi = bounds.get("min_words"), bounds.get("max_words")
+    if not isinstance(lo, int) or isinstance(lo, bool) or lo <= 0 or not isinstance(hi, int) or isinstance(hi, bool) or hi < lo:
+        raise RuntimeError("wiring.output_word_bounds must have positive int min_words and max_words >= min_words")
     _obj(cfg, "model")
     transport = _require(cfg, "model.transport", str)
     transport_cfg = _require(cfg, "model.transport_config", dict)
     if transport not in transport_cfg:
         raise RuntimeError(f"wiring.model.transport_config missing selected transport {transport!r}")
     for path in (
-        "model.global", "model.stable_prefix", "model.stable_prefix.source", "model.organs",
+        "model.global", "model.organs",
         "observe_config.hover_cache", "observe_config.hover_cache.phases", "observe_config.hover_cache.scan", "observe_config.hover_cache.filter",
         "topology.edges", "topology.barriers",
     ):
@@ -75,7 +78,6 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
     for path in (
         "paths.nodes",
         "paths.brains",
-        "paths.caps",
         "paths.guidance",
         "observe_config.hover_cache.phases.scan",
         "observe_config.hover_cache.phases.filter",
@@ -99,7 +101,6 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
         "observe_config.hover_cache.filter.max_depth",
         "observe_config.hover_cache.filter.max_children_per_window",
         "observe_config.hover_cache.filter.max_llm_nodes",
-        "fractal.max_recursion_depth",
     )
     for path in numeric_paths:
         value = _require(cfg, path, int)
@@ -111,29 +112,12 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
     nodes = _require_list_str(cfg, "topology.nodes")
     edges = _require(cfg, "topology.edges", dict)
     prompts = _require(cfg, "prompts", dict)
-    aliases = _require(cfg, "prompt_aliases", dict)
     _require(cfg, "shared_prompt_prefix", str)
     validate_record_contracts(cfg)
-    _require(cfg, "capabilities.schema", str)
-    _require(cfg, "capabilities.power", str)
-    helpers = _require(cfg, "capabilities.helpers", dict)
-    if not helpers or not all(isinstance(key, str) and key and isinstance(value, str) and value for key, value in helpers.items()):
-        raise RuntimeError("wiring.capabilities.helpers must map non-empty names to descriptions")
-    _require(cfg, "capabilities.faculties", dict)
-    _require_list_str(cfg, "capabilities.modules")
-    _require_list_str(cfg, "capabilities.state")
-    _require_list_str(cfg, "capabilities.signals")
-    _require_list_str(cfg, "model.stable_prefix.source.suffixes")
-    _require_list_str(cfg, "model.stable_prefix.source.names")
-    _require_list_str(cfg, "model.stable_prefix.source.skip_parts")
-    _require_list_str(cfg, "model.stable_prefix.source.skip_prefixes")
     if len(nodes) != len(set(nodes)):
         raise RuntimeError("wiring.topology.nodes contains duplicates")
     if cfg["topology"]["cycle_start"] not in nodes:
         raise RuntimeError("wiring.topology.cycle_start must name a topology node")
-    for alias, target in aliases.items():
-        if not isinstance(alias, str) or not isinstance(target, str) or target not in prompts:
-            raise RuntimeError(f"wiring.prompt_aliases.{alias} must name an existing prompt")
     missing = [node for node in nodes if node not in edges]
     if missing:
         raise RuntimeError(f"wiring missing edges for nodes: {missing}")
@@ -196,17 +180,14 @@ def validate_record_contracts(cfg: dict[str, Any]) -> None:
             raise RuntimeError(f"wiring.model.organs.{record_type} has no matching wiring.record_contracts entry")
 
 
-def prompt_name(cfg: dict[str, Any], key: str) -> str:
-    aliases = cfg["prompt_aliases"]
-    return aliases[key] if key in aliases else key
-
-
 def prompt(cfg: dict[str, Any], key: str) -> str:
-    name = prompt_name(cfg, key)
     prompts = cfg["prompts"]
-    if name not in prompts:
+    if key not in prompts:
         raise RuntimeError(f"wiring.prompts missing prompt: {key}")
-    return str(cfg["shared_prompt_prefix"]).rstrip() + "\n\n" + str(prompts[name]).lstrip()
+    bounds = cfg.get("output_word_bounds", {})
+    lo, hi = int(bounds.get("min_words", 0)), int(bounds.get("max_words", 0))
+    rule = f"\n\nEach field of prose thou writest shall bear no fewer than {lo} and no more than {hi} words; [code] alone is exempt." if lo or hi else ""
+    return str(cfg["shared_prompt_prefix"]).rstrip() + "\n\n" + str(prompts[key]).lstrip() + rule
 
 
 def get_transport_config(wiring: dict[str, Any]) -> tuple[str, dict[str, Any]]:
@@ -222,13 +203,3 @@ def get_transport_config(wiring: dict[str, Any]) -> tuple[str, dict[str, Any]]:
 
 def guidance_path(wiring: dict[str, Any]) -> pathlib.Path:
     return root_path(wiring["paths"]["guidance"])
-
-
-def topology_summary(w: dict[str, Any]) -> dict[str, Any]:
-    topo = w["topology"]
-    return {
-        "cycle_start": topo["cycle_start"],
-        "nodes": list(topo["nodes"]),
-        "edges": topo["edges"],
-        "barriers": topo["barriers"],
-    }

@@ -18,15 +18,11 @@
 !core_loader.py
 !check_topology.py
 !core_node_base.py
-!node_spawn.py
 !node_guidance.py
-!cap_spawn.py
 !node_execute.py
 !node_run.py
 !node_observe.py
-!node_planner.py
 !node_reflect.py
 !node_satisfied.py
-!node_scheduler.py
 !node_verify.py
 !transport_xai.py
