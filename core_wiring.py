@@ -88,6 +88,9 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
         raise RuntimeError(f"wiring.model.transport_config missing selected transport {transport!r}")
     _require(cfg, f"model.transport_config.{transport}.request", dict)
     _require(cfg, f"model.transport_config.{transport}.url", str)
+    profiles = transport_cfg[transport].get("request_profiles", {})
+    if not isinstance(profiles, dict) or not all(isinstance(v, dict) for v in profiles.values()):
+        raise RuntimeError(f"wiring.model.transport_config.{transport}.request_profiles must map names to partial request bodies")
     for path in (
         "model.global", "model.organs",
         "observe_config.hover_cache", "observe_config.hover_cache.phases", "observe_config.hover_cache.scan", "observe_config.hover_cache.filter",

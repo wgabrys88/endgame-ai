@@ -8,41 +8,33 @@
         "structured_outputs": {
           "enabled": true
         },
-        "web_search": {
-          "enabled": false
-        },
         "max_retries": 3,
         "retry_base_delay": 1,
         "reasoning_pattern": "native",
         "reasoning_injection_template": "REASONING:\n{reasoning}",
         "request": {
           "model": "grok-4.3",
-          "input": null,
-          "instructions": null,
           "temperature": 0.2,
-          "top_p": null,
-          "max_output_tokens": null,
           "reasoning": {
             "effort": "high"
           },
-          "text": null,
-          "tools": null,
-          "tool_choice": null,
-          "parallel_tool_calls": null,
-          "max_tool_calls": null,
           "store": false,
-          "prompt_cache_key": null,
-          "previous_response_id": null,
-          "truncation": "disabled",
-          "service_tier": null,
-          "metadata": null,
-          "background": null,
-          "include": null,
-          "stream": null,
-          "top_logprobs": null,
-          "seed": null,
-          "frequency_penalty": null,
-          "presence_penalty": null
+          "truncation": "disabled"
+        },
+        "request_profiles": {
+          "web_search": {
+            "reasoning": {
+              "effort": "low"
+            },
+            "tools": [
+              {
+                "type": "web_search"
+              }
+            ]
+          },
+          "deterministic": {
+            "temperature": 0
+          }
         }
       }
     },

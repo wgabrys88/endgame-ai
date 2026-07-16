@@ -66,10 +66,6 @@ class Record:
     def from_json(cls, obj: JsonDict) -> "Record":
         return cls(record_type=obj.get("record_type", ""), data=obj.get("data", {}), reasoning=obj.get("reasoning", ""))
 
-    @classmethod
-    def create(cls, record_type: str, data: JsonDict, reasoning: str = "") -> "Record":
-        return cls(record_type=record_type, data=data, reasoning=reasoning)
-
 
 @dataclass(frozen=True)
 class NodeOutput:
@@ -77,9 +73,6 @@ class NodeOutput:
     patch: JsonDict = field(default_factory=dict)
     record: Record | None = None
     evidence: JsonDict = field(default_factory=dict)
-
-    def as_tuple(self) -> tuple[str, JsonDict]:
-        return self.signal, dict(self.patch)
 
     def trace(self, *, node: str) -> JsonDict:
         record_type = None

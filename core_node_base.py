@@ -15,6 +15,7 @@ class BaseNode(ABC):
     prompt_key: str = ""
     expected_record_type: str = ""
     body_override: JsonDict | None = None
+    profile: str | None = None
 
     def build_payload(self, ctx: JsonDict) -> JsonDict:
         st = ctx.get("state", {})
@@ -39,6 +40,8 @@ class BaseNode(ABC):
         think_kwargs: JsonDict = {"expected_record_type": self.expected_record_type, "emitting_node": ctx.get("node")}
         if self.body_override is not None:
             think_kwargs["body_override"] = self.body_override
+        if self.profile is not None:
+            think_kwargs["profile"] = self.profile
         payload = self.build_payload(ctx)
         payload["goal"] = ctx["state"]["goal"]
         record = brain.think(prompt, payload, w, **think_kwargs)
@@ -57,12 +60,10 @@ class BaseNode(ABC):
         return bus.emit(signal, patch, record=record, evidence=self.evidence(ctx))
 
 
-
 _HELPERS = {
     "bus.state_brief": bus.state_brief,
     "bus.observation_brief": bus.observation_brief,
     "bus.execution_evidence": bus.execution_evidence,
-    "bus.update_failure_streak": bus.update_failure_streak,
 }
 
 
@@ -106,6 +107,7 @@ class DeclarativeNode(BaseNode):
         self.prompt_key = definition["prompt_key"]
         self.expected_record_type = definition["expected_record_type"]
         self.body_override = definition.get("body_override")
+        self.profile = definition.get("profile")
 
     def _scope(self, ctx: JsonDict, *, data: JsonDict | None = None, record: bus.Record | None = None, signal: str | None = None) -> JsonDict:
         st = ctx["state"]

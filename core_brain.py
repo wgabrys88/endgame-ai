@@ -224,10 +224,11 @@ def _record_response_format(w: dict[str, Any], record_type: str, emitting_node: 
     }
 
 
-def call(messages: list[dict[str, str]], w: dict[str, Any], *, response_format: dict[str, Any] | None = None, body_override: dict[str, Any] | None = None) -> dict[str, str]:
+def call(messages: list[dict[str, str]], w: dict[str, Any], *, response_format: dict[str, Any] | None = None, body_override: dict[str, Any] | None = None, profile: str | None = None) -> dict[str, str]:
     transport, cfg = wiring.get_transport_config(w)
+    override = bus.deep_merge(resolve_profile(w, profile), body_override or {})
     try:
-        result = _load_transport_module(transport, w).call(messages, cfg, body_override=body_override, response_format=response_format)
+        result = _load_transport_module(transport, w).call(messages, cfg, body_override=override, response_format=response_format)
     except Exception as exc:
         raise RuntimeError(f"{transport} brain failed hard: {exc}") from exc
     if not isinstance(result, dict):
@@ -292,7 +293,20 @@ def extract_json_object(text: str) -> dict[str, Any] | None:
     return None
 
 
-def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, expected_record_type: str | None = None, emitting_node: str | None = None, body_override: dict[str, Any] | None = None) -> dict[str, Any]:
+def resolve_profile(w: dict[str, Any], profile: str | None) -> dict[str, Any]:
+    """A named send-policy from wiring's transport_config.request_profiles: a partial
+    request body (e.g. low-reasoning web search) the organism may choose at runtime and
+    evolve by editing wiring. Unknown names fail hard."""
+    if not profile:
+        return {}
+    _, cfg = wiring.get_transport_config(w)
+    profiles = cfg.get("request_profiles", {})
+    if profile not in profiles:
+        raise RuntimeError(f"unknown request profile {profile!r}; wiring defines {sorted(profiles)}")
+    return dict(profiles[profile])
+
+
+def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, expected_record_type: str | None = None, emitting_node: str | None = None, body_override: dict[str, Any] | None = None, profile: str | None = None) -> dict[str, Any]:
     global _CONV_ID
     transport, cfg = wiring.get_transport_config(w)
     organ_tuning = _organ_tuning(w, expected_record_type)
@@ -305,7 +319,7 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
     interps = focus.get("goal_interpretations") if isinstance(focus, dict) else None
     user_text = f"{user_text}\n\n{bus.render_interpretation_table(goal, interps)}"
     response_format = _record_response_format(w, expected_record_type, emitting_node) if expected_record_type and _structured_outputs_enabled(cfg) else None
-    override = bus.deep_merge(organ_tuning, body_override or {})
+    override = bus.deep_merge(bus.deep_merge(organ_tuning, resolve_profile(w, profile)), body_override or {})
     if transport == "transport_xai":
         override.setdefault("prompt_cache_key", _CONV_ID)
     stable_context_parts = []
