@@ -57,30 +57,10 @@ def _require_list_str(obj: dict[str, Any], path: str) -> list[str]:
     return value
 
 
-def _validate_word_bounds_group(group: Any, path: str) -> None:
-    """A word-bounds group is an object bearing positive int min_words and
-    max_words >= min_words. An empty object means 'no bound'."""
-    if not isinstance(group, dict):
-        raise RuntimeError(f"wiring.{path} must be object")
-    if not group:
-        return
-    lo, hi = group.get("min_words"), group.get("max_words")
-    if not isinstance(lo, int) or isinstance(lo, bool) or lo <= 0 or not isinstance(hi, int) or isinstance(hi, bool) or hi < lo:
-        raise RuntimeError(f"wiring.{path} must have positive int min_words and max_words >= min_words")
-
 def validate_wiring(cfg: dict[str, Any]) -> None:
-    for key in ("schema", "model", "paths", "observe_config", "topology", "prompts", "shared_prompt_prefix", "record_contracts", "output_word_bounds"):
+    for key in ("schema", "model", "paths", "observe_config", "topology", "prompts", "shared_prompt_prefix", "record_contracts"):
         if key not in cfg:
             raise RuntimeError(f"wiring missing required key: {key}")
-    bounds = _require(cfg, "output_word_bounds", dict)
-    _validate_word_bounds_group(bounds.get("default", {}), "output_word_bounds.default")
-    per_field = bounds.get("per_field", {})
-    if not isinstance(per_field, dict):
-        raise RuntimeError("wiring.output_word_bounds.per_field must be object")
-    for field, group in per_field.items():
-        if group is None:
-            continue
-        _validate_word_bounds_group(group, f"output_word_bounds.per_field.{field}")
     _obj(cfg, "model")
     transport = _require(cfg, "model.transport", str)
     transport_cfg = _require(cfg, "model.transport_config", dict)

@@ -73,23 +73,6 @@
     "brains": ".",
     "guidance": "guidance.txt"
   },
-  "output_word_bounds": {
-    "default": {
-      "min_words": 50,
-      "max_words": 100
-    },
-    "per_field": {
-      "intent": {
-        "min_words": 3,
-        "max_words": 25
-      },
-      "done_when": {
-        "min_words": 3,
-        "max_words": 40
-      },
-      "code": null
-    }
-  },
   "observe_config": {
     "hover_cache": {
       "enabled": true,

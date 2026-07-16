@@ -53,24 +53,6 @@ def _validate_record_contract(w: dict[str, Any], record: bus.Record, expected_re
     for key, values in enums.items():
         if key in record.data and record.data[key] not in set(values):
             raise RuntimeError(f"{record.record_type}.data.{key}={record.data[key]!r} outside {values!r}")
-    bounds_cfg = w.get("output_word_bounds", {})
-    default_bounds = bounds_cfg.get("default", {})
-    per_field = bounds_cfg.get("per_field", {})
-    for key in non_empty:
-        if types.get(key) != "string" or key in enums:
-            continue
-        field_bounds = per_field[key] if key in per_field else default_bounds
-        if not field_bounds:
-            continue
-        value = record.data.get(key)
-        if not isinstance(value, str):
-            continue
-        min_words, max_words = int(field_bounds.get("min_words", 0)), int(field_bounds.get("max_words", 0))
-        count = len(value.split())
-        if min_words and count < min_words:
-            raise RuntimeError(f"{record.record_type}.data.{key} must be at least {min_words} words; got {count}")
-        if max_words and count > max_words:
-            raise RuntimeError(f"{record.record_type}.data.{key} must be at most {max_words} words; got {count}")
 
 
 def _commit_record(content: str, w: dict[str, Any], expected_record_type: str | None = None) -> bus.Record:
