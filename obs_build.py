@@ -130,10 +130,27 @@ def run(action_elements: dict[str, dict[str, Any]], text_hints: dict[str, str], 
     for child in root.get("children", []):
         if isinstance(child, dict):
             render(child, 1)
+
+    screen_elements = [
+        {
+            "id": short_by_id.get(n["id"], ""),
+            "name": n.get("name", ""),
+            "role": n.get("role", ""),
+            "text": n.get("text_full", "") or "",
+            "value": n.get("value", "") or "",
+            "px": n.get("px"),
+            "py": n.get("py"),
+            "rect": n.get("rect", {}),
+            "hwnd": n.get("hwnd", 0),
+        }
+        for n in raw_nodes
+        if not n.get("offscreen")
+    ]
     return {
         "root": root,
         "node_index": node_index_short,
         "action_index": action_index_short,
+        "screen_elements": screen_elements,
         "desktop_tree_text": "\n".join(lines),
         "window_count": len(sorted_windows),
         "element_count": len(action_index_short),

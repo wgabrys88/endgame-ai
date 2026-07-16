@@ -423,5 +423,6 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
         "desktop_tree": artifact["desktop_tree"],
         "desktop_tree_text": mapped["desktop_tree_text"],
         "action_index": mapped["action_index"],
+        "screen_elements": mapped["screen_elements"],
         "observation_artifact": artifact,
     }
