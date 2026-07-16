@@ -9,6 +9,36 @@ from typing import Any
 JsonDict = dict[str, Any]
 
 
+def deep_merge(base: JsonDict, override: JsonDict) -> JsonDict:
+    """Return a new dict: override laid over base, nested dicts merged recursively.
+    A non-dict override value replaces the base value wholesale."""
+    merged = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = deep_merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def drop_nulls(obj: Any) -> Any:
+    """Recursively drop keys whose value is None (a catalogued-but-unsent API field),
+    and drop any nested object left empty by that pruning. Lists are pruned in place."""
+    if isinstance(obj, dict):
+        pruned: JsonDict = {}
+        for key, value in obj.items():
+            if value is None:
+                continue
+            cleaned = drop_nulls(value)
+            if isinstance(cleaned, dict) and not cleaned:
+                continue
+            pruned[key] = cleaned
+        return pruned
+    if isinstance(obj, list):
+        return [drop_nulls(item) for item in obj]
+    return obj
+
+
 class BusContractError(RuntimeError):
     """Base class for mechanical organism contract failures."""
 

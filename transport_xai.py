@@ -3,46 +3,55 @@ import os
 import time
 import urllib.error
 import urllib.request
-from typing import Any
+
+import core_bus as bus
 
 
-def call(messages, cfg):
-    api_key = os.environ.get("XAI_API_KEY") or cfg.get("api_key")
-    if not api_key:
-        raise RuntimeError("xai transport: XAI_API_KEY missing; no fallback was attempted")
-    payload = {
-        "model": str(cfg["model"]),
-        "input": [{"role": m.get("role", "user"), "content": m.get("content", "")} for m in messages if m.get("role", "user") in {"system", "user", "assistant"}],
-        "temperature": cfg.get("temperature", 0.2),
-        "truncation": str(cfg.get("truncation") or "disabled"),
-        "store": bool(cfg.get("store", False)),
-    }
-    if cfg.get("prompt_cache_key"):
-        payload["prompt_cache_key"] = str(cfg["prompt_cache_key"])
-    if cfg.get("max_output_tokens") is not None:
-        payload["max_output_tokens"] = int(cfg["max_output_tokens"])
-    fmt = cfg.get("response_format")
-    if isinstance(fmt, dict):
-        if str(fmt.get("type", "json_schema")) == "json_object":
-            payload["text"] = {"format": {"type": "json_object"}}
+def _build_body(cfg, messages, body_override, response_format):
+    """The grok request body is wiring's transport_config.request, verbatim: the single
+    source of truth. Per-call overrides (organ tuning, prompt_cache_key) are laid over it,
+    the dynamic fields (input, text, tools) are filled, and every null-valued key — a
+    field catalogued as available but not sent — is dropped before the wire."""
+    body = bus.deep_merge(cfg["request"], body_override or {})
+    body["input"] = [
+        {"role": m.get("role", "user"), "content": m.get("content", "")}
+        for m in messages
+        if m.get("role", "user") in {"system", "user", "assistant"}
+    ]
+    if isinstance(response_format, dict):
+        if str(response_format.get("type", "json_schema")) == "json_object":
+            body["text"] = {"format": {"type": "json_object"}}
         else:
-            payload["text"] = {"format": {"type": fmt.get("type", "json_schema"), "name": fmt.get("name", "record"), "schema": fmt.get("schema", {}), "strict": bool(fmt.get("strict", True))}}
-    reasoning_cfg = cfg.get("reasoning") or {}
-    payload["reasoning"] = {"effort": str(cfg.get("reasoning_effort") or reasoning_cfg.get("effort") or "high")}
+            body["text"] = {"format": {
+                "type": response_format.get("type", "json_schema"),
+                "name": response_format.get("name", "record"),
+                "schema": response_format.get("schema", {}),
+                "strict": bool(response_format.get("strict", True)),
+            }}
     web = cfg.get("web_search") or {}
     if isinstance(web, dict) and web.get("enabled"):
-        tool: dict[str, Any] = {"type": "web_search"}
+        tool = {"type": "web_search"}
         if web.get("allowed_domains"):
             tool["filters"] = {"allowed_domains": list(web["allowed_domains"])}
         elif web.get("excluded_domains"):
             tool["filters"] = {"excluded_domains": list(web["excluded_domains"])}
-        payload["tools"] = [tool]
-    max_retries = int(cfg.get("max_retries", 3))
-    base_delay = float(cfg.get("retry_base_delay", 1.0))
+        body["tools"] = [tool]
+    return bus.drop_nulls(body)
+
+
+def call(messages, cfg, *, body_override=None, response_format=None):
+    api_key = os.environ.get("XAI_API_KEY")
+    if not api_key:
+        raise RuntimeError("xai transport: XAI_API_KEY missing; no fallback was attempted")
+    payload = _build_body(cfg, messages, body_override, response_format)
+    url = str(cfg["url"])
+    timeout = float(cfg["timeout"])
+    max_retries = int(cfg["max_retries"])
+    base_delay = float(cfg["retry_base_delay"])
     for attempt in range(max_retries):
-        req = urllib.request.Request(str(cfg["url"]), data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}, method="POST")
+        req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}, method="POST")
         try:
-            with urllib.request.urlopen(req, timeout=float(cfg.get("timeout") or 120)) as resp:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
                 obj = json.loads(resp.read().decode("utf-8", errors="replace"))
             content = obj.get("output_text") or ""
             reasoning = ""

@@ -4,20 +4,46 @@
     "transport": "transport_xai",
     "transport_config": {
       "transport_xai": {
-        "model": "grok-4.3",
         "url": "https://api.x.ai/v1/responses",
-        "temperature": 0.2,
-        "store": false,
         "structured_outputs": {
           "enabled": true
         },
-        "reasoning": {
-          "enabled": true,
-          "pattern": "native",
-          "effort": "high"
+        "web_search": {
+          "enabled": false
         },
         "max_retries": 3,
-        "retry_base_delay": 1
+        "retry_base_delay": 1,
+        "reasoning_pattern": "native",
+        "reasoning_injection_template": "REASONING:\n{reasoning}",
+        "request": {
+          "model": "grok-4.3",
+          "input": null,
+          "instructions": null,
+          "temperature": 0.2,
+          "top_p": null,
+          "max_output_tokens": null,
+          "reasoning": {
+            "effort": "high"
+          },
+          "text": null,
+          "tools": null,
+          "tool_choice": null,
+          "parallel_tool_calls": null,
+          "max_tool_calls": null,
+          "store": false,
+          "prompt_cache_key": null,
+          "previous_response_id": null,
+          "truncation": "disabled",
+          "service_tier": null,
+          "metadata": null,
+          "background": null,
+          "include": null,
+          "stream": null,
+          "top_logprobs": null,
+          "seed": null,
+          "frequency_penalty": null,
+          "presence_penalty": null
+        }
       }
     },
     "global": {
@@ -25,19 +51,27 @@
     },
     "organs": {
       "action_frame": {
-        "reasoning_effort": "high",
+        "reasoning": {
+          "effort": "high"
+        },
         "max_output_tokens": 32768
       },
       "execution": {
-        "reasoning_effort": "high",
+        "reasoning": {
+          "effort": "high"
+        },
         "max_output_tokens": 32768
       },
       "verification": {
-        "reasoning_effort": "high",
+        "reasoning": {
+          "effort": "high"
+        },
         "max_output_tokens": 32768
       },
       "reflection": {
-        "reasoning_effort": "high",
+        "reasoning": {
+          "effort": "high"
+        },
         "max_output_tokens": 32768
       }
     }
@@ -48,8 +82,21 @@
     "guidance": "guidance.txt"
   },
   "output_word_bounds": {
-    "min_words": 50,
-    "max_words": 100
+    "default": {
+      "min_words": 50,
+      "max_words": 100
+    },
+    "per_field": {
+      "intent": {
+        "min_words": 3,
+        "max_words": 25
+      },
+      "done_when": {
+        "min_words": 3,
+        "max_words": 40
+      },
+      "code": null
+    }
   },
   "observe_config": {
     "hover_cache": {

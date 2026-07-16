@@ -14,7 +14,7 @@ class BaseNode(ABC):
 
     prompt_key: str = ""
     expected_record_type: str = ""
-    request_config: JsonDict | None = None
+    body_override: JsonDict | None = None
 
     def build_payload(self, ctx: JsonDict) -> JsonDict:
         st = ctx.get("state", {})
@@ -37,8 +37,8 @@ class BaseNode(ABC):
         w = ctx["wiring"]
         prompt = wiring.prompt(w, self.prompt_key)
         think_kwargs: JsonDict = {"expected_record_type": self.expected_record_type, "emitting_node": ctx.get("node")}
-        if self.request_config is not None:
-            think_kwargs["request_config"] = self.request_config
+        if self.body_override is not None:
+            think_kwargs["body_override"] = self.body_override
         payload = self.build_payload(ctx)
         payload["goal"] = ctx["state"]["goal"]
         record = brain.think(prompt, payload, w, **think_kwargs)
@@ -105,7 +105,7 @@ class DeclarativeNode(BaseNode):
         self._def = definition
         self.prompt_key = definition["prompt_key"]
         self.expected_record_type = definition["expected_record_type"]
-        self.request_config = definition.get("request_config")
+        self.body_override = definition.get("body_override")
 
     def _scope(self, ctx: JsonDict, *, data: JsonDict | None = None, record: bus.Record | None = None, signal: str | None = None) -> JsonDict:
         st = ctx["state"]

@@ -56,19 +56,38 @@ def _require_list_str(obj: dict[str, Any], path: str) -> list[str]:
         raise RuntimeError(f"wiring.{path} must be list[str]")
     return value
 
+
+def _validate_word_bounds_group(group: Any, path: str) -> None:
+    """A word-bounds group is an object bearing positive int min_words and
+    max_words >= min_words. An empty object means 'no bound'."""
+    if not isinstance(group, dict):
+        raise RuntimeError(f"wiring.{path} must be object")
+    if not group:
+        return
+    lo, hi = group.get("min_words"), group.get("max_words")
+    if not isinstance(lo, int) or isinstance(lo, bool) or lo <= 0 or not isinstance(hi, int) or isinstance(hi, bool) or hi < lo:
+        raise RuntimeError(f"wiring.{path} must have positive int min_words and max_words >= min_words")
+
 def validate_wiring(cfg: dict[str, Any]) -> None:
     for key in ("schema", "model", "paths", "observe_config", "topology", "prompts", "shared_prompt_prefix", "record_contracts", "output_word_bounds"):
         if key not in cfg:
             raise RuntimeError(f"wiring missing required key: {key}")
     bounds = _require(cfg, "output_word_bounds", dict)
-    lo, hi = bounds.get("min_words"), bounds.get("max_words")
-    if not isinstance(lo, int) or isinstance(lo, bool) or lo <= 0 or not isinstance(hi, int) or isinstance(hi, bool) or hi < lo:
-        raise RuntimeError("wiring.output_word_bounds must have positive int min_words and max_words >= min_words")
+    _validate_word_bounds_group(bounds.get("default", {}), "output_word_bounds.default")
+    per_field = bounds.get("per_field", {})
+    if not isinstance(per_field, dict):
+        raise RuntimeError("wiring.output_word_bounds.per_field must be object")
+    for field, group in per_field.items():
+        if group is None:
+            continue
+        _validate_word_bounds_group(group, f"output_word_bounds.per_field.{field}")
     _obj(cfg, "model")
     transport = _require(cfg, "model.transport", str)
     transport_cfg = _require(cfg, "model.transport_config", dict)
     if transport not in transport_cfg:
         raise RuntimeError(f"wiring.model.transport_config missing selected transport {transport!r}")
+    _require(cfg, f"model.transport_config.{transport}.request", dict)
+    _require(cfg, f"model.transport_config.{transport}.url", str)
     for path in (
         "model.global", "model.organs",
         "observe_config.hover_cache", "observe_config.hover_cache.phases", "observe_config.hover_cache.scan", "observe_config.hover_cache.filter",
@@ -184,10 +203,7 @@ def prompt(cfg: dict[str, Any], key: str) -> str:
     prompts = cfg["prompts"]
     if key not in prompts:
         raise RuntimeError(f"wiring.prompts missing prompt: {key}")
-    bounds = cfg.get("output_word_bounds", {})
-    lo, hi = int(bounds.get("min_words", 0)), int(bounds.get("max_words", 0))
-    rule = f"\n\nEach field of prose thou writest shall bear no fewer than {lo} and no more than {hi} words; [code] alone is exempt." if lo or hi else ""
-    return str(cfg["shared_prompt_prefix"]).rstrip() + "\n\n" + str(prompts[key]).lstrip() + rule
+    return str(cfg["shared_prompt_prefix"]).rstrip() + "\n\n" + str(prompts[key]).lstrip()
 
 
 def get_transport_config(wiring: dict[str, Any]) -> tuple[str, dict[str, Any]]:

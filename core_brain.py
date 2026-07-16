@@ -12,9 +12,6 @@ import core_wiring as wiring
 ROOT = pathlib.Path(__file__).parent.resolve()
 _CONV_ID = ""
 
-# Fields exempt from the prose word-bounds: [code] is a Python script, not prose.
-WORD_BOUND_EXEMPT = {"code"}
-
 
 def _messages(system_prompt: str, user_text: str, stable_context: str = "") -> list[dict[str, str]]:
     system = system_prompt + ("\n\n" + stable_context if stable_context else "")
@@ -56,20 +53,24 @@ def _validate_record_contract(w: dict[str, Any], record: bus.Record, expected_re
     for key, values in enums.items():
         if key in record.data and record.data[key] not in set(values):
             raise RuntimeError(f"{record.record_type}.data.{key}={record.data[key]!r} outside {values!r}")
-    bounds = w.get("output_word_bounds", {})
-    min_words, max_words = int(bounds.get("min_words", 0)), int(bounds.get("max_words", 0))
-    if min_words or max_words:
-        for key in non_empty:
-            if key in WORD_BOUND_EXEMPT or types.get(key) != "string" or key in enums:
-                continue
-            value = record.data.get(key)
-            if not isinstance(value, str):
-                continue
-            count = len(value.split())
-            if min_words and count < min_words:
-                raise RuntimeError(f"{record.record_type}.data.{key} must be at least {min_words} words; got {count}")
-            if max_words and count > max_words:
-                raise RuntimeError(f"{record.record_type}.data.{key} must be at most {max_words} words; got {count}")
+    bounds_cfg = w.get("output_word_bounds", {})
+    default_bounds = bounds_cfg.get("default", {})
+    per_field = bounds_cfg.get("per_field", {})
+    for key in non_empty:
+        if types.get(key) != "string" or key in enums:
+            continue
+        field_bounds = per_field[key] if key in per_field else default_bounds
+        if not field_bounds:
+            continue
+        value = record.data.get(key)
+        if not isinstance(value, str):
+            continue
+        min_words, max_words = int(field_bounds.get("min_words", 0)), int(field_bounds.get("max_words", 0))
+        count = len(value.split())
+        if min_words and count < min_words:
+            raise RuntimeError(f"{record.record_type}.data.{key} must be at least {min_words} words; got {count}")
+        if max_words and count > max_words:
+            raise RuntimeError(f"{record.record_type}.data.{key} must be at most {max_words} words; got {count}")
 
 
 def _commit_record(content: str, w: dict[str, Any], expected_record_type: str | None = None) -> bus.Record:
@@ -223,14 +224,10 @@ def _record_response_format(w: dict[str, Any], record_type: str, emitting_node: 
     }
 
 
-def call(messages: list[dict[str, str]], w: dict[str, Any], *, response_format: dict[str, Any] | None = None, request_config: dict[str, Any] | None = None) -> dict[str, str]:
+def call(messages: list[dict[str, str]], w: dict[str, Any], *, response_format: dict[str, Any] | None = None, body_override: dict[str, Any] | None = None) -> dict[str, str]:
     transport, cfg = wiring.get_transport_config(w)
-    if response_format is not None:
-        cfg = {**cfg, "response_format": response_format}
-    if request_config:
-        cfg = {**cfg, **request_config}
     try:
-        result = _load_transport_module(transport, w).call(messages, cfg)
+        result = _load_transport_module(transport, w).call(messages, cfg, body_override=body_override, response_format=response_format)
     except Exception as exc:
         raise RuntimeError(f"{transport} brain failed hard: {exc}") from exc
     if not isinstance(result, dict):
@@ -295,10 +292,9 @@ def extract_json_object(text: str) -> dict[str, Any] | None:
     return None
 
 
-def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, expected_record_type: str | None = None, emitting_node: str | None = None, request_config: dict[str, Any] | None = None) -> dict[str, Any]:
+def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, expected_record_type: str | None = None, emitting_node: str | None = None, body_override: dict[str, Any] | None = None) -> dict[str, Any]:
     global _CONV_ID
-    _, cfg = wiring.get_transport_config(w)
-    reasoning_cfg = dict(cfg["reasoning"])
+    transport, cfg = wiring.get_transport_config(w)
     organ_tuning = _organ_tuning(w, expected_record_type)
     if not _CONV_ID:
         _CONV_ID = f"endgame-ai-{int(time.time())}-{os.getpid()}"
@@ -309,13 +305,9 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
     interps = focus.get("goal_interpretations") if isinstance(focus, dict) else None
     user_text = f"{user_text}\n\n{bus.render_interpretation_table(goal, interps)}"
     response_format = _record_response_format(w, expected_record_type, emitting_node) if expected_record_type and _structured_outputs_enabled(cfg) else None
-    request_cfg = dict(request_config or {})
-    request_cfg["expected_record_type"] = expected_record_type
-    for key, value in organ_tuning.items():
-        if key in {"reasoning_effort", "max_output_tokens"} and value is not None:
-            request_cfg.setdefault(key, value)
-    if cfg.get("transport") == "transport_xai":
-        request_cfg.setdefault("prompt_cache_key", _CONV_ID)
+    override = bus.deep_merge(organ_tuning, body_override or {})
+    if transport == "transport_xai":
+        override.setdefault("prompt_cache_key", _CONV_ID)
     stable_context_parts = []
     if goal:
         stable_context_parts.append(f"THE IMMUTABLE ROOT GOAL (fixed for this run):\n{goal}")
@@ -323,17 +315,17 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
     if downstream:
         stable_context_parts.append(downstream)
     stable_context = "\n\n".join(stable_context_parts)
-    pattern = str(reasoning_cfg.get("pattern") or "single_pass")
-    if not reasoning_cfg["enabled"] or pattern in {"single_pass", "native"}:
-        result = call(_messages(system_prompt, user_text, stable_context), w, response_format=response_format, request_config=request_cfg)
+    pattern = str(cfg.get("reasoning_pattern") or "native")
+    if pattern in {"single_pass", "native"}:
+        result = call(_messages(system_prompt, user_text, stable_context), w, response_format=response_format, body_override=override)
         record = _commit_record(result["content"], w, expected_record_type)
         transport_reasoning = str(result.get("reasoning") or "").strip()
         return bus.Record(record.record_type, record.data, transport_reasoning or record.reasoning).to_json()
     if pattern != "two_pass":
         raise RuntimeError(f"unknown reasoning pattern: {pattern}")
-    first = call(_messages(system_prompt, user_text, stable_context), w, request_config=request_cfg)
+    first = call(_messages(system_prompt, user_text, stable_context), w, body_override=override)
     reasoning = reasoning_from(first["content"], first.get("reasoning", ""))
-    template = str(reasoning_cfg.get("injection_template") or "REASONING:\n{reasoning}")
-    second = call(_messages(system_prompt, user_text + "\n\n" + template.format(reasoning=reasoning), stable_context), w, response_format=response_format, request_config=request_cfg)
+    template = str(cfg.get("reasoning_injection_template") or "REASONING:\n{reasoning}")
+    second = call(_messages(system_prompt, user_text + "\n\n" + template.format(reasoning=reasoning), stable_context), w, response_format=response_format, body_override=override)
     record = _commit_record(second["content"], w, expected_record_type)
     return bus.Record(record.record_type, record.data, reasoning).to_json()

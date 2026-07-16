@@ -37,7 +37,7 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
         text = str(prompt).strip()
         if not text:
             raise RuntimeError("consult_model requires a non-empty prompt")
-        result = brain.call([{"role": "user", "content": text}], w, request_config={"max_output_tokens": int(max_output_tokens), "plain_text": True})
+        result = brain.call([{"role": "user", "content": text}], w, body_override={"max_output_tokens": int(max_output_tokens)})
         return {"ok": True, "action": "consult_model", "response": str(result["content"])}
 
     return {
