@@ -33,11 +33,11 @@ def build_capability_runtime(ctx: dict[str, Any]) -> dict[str, Any]:
     w = ctx.get("wiring", {})
     action_index = _action_index(state)
 
-    def consult_model(prompt: str, max_output_tokens: int = 800) -> dict[str, Any]:
+    def consult_model(prompt: str) -> dict[str, Any]:
         text = str(prompt).strip()
         if not text:
             raise RuntimeError("consult_model requires a non-empty prompt")
-        result = brain.call([{"role": "user", "content": text}], w, body_override={"max_output_tokens": int(max_output_tokens)})
+        result = brain.call([{"role": "user", "content": text}], w)
         return {"ok": True, "action": "consult_model", "response": str(result["content"])}
 
     return {

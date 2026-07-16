@@ -100,7 +100,6 @@
       },
       "scan": {
         "step_px": 64,
-        "delay_ms": 0,
         "max_subtree_nodes_per_point": 2000,
         "max_total_nodes": 10000
       },

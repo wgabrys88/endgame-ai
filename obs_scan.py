@@ -5,7 +5,6 @@ the name in wiring.observe_config.phases.scan. Input: config + desktop. Output
 contract (what the next phase, obs_filter, reads): {nodes, screen}.
 """
 import ctypes
-import time
 from ctypes import wintypes
 from typing import Any
 
@@ -17,7 +16,6 @@ user32 = ctypes.windll.user32
 def run(config: dict[str, Any], desktop: Any) -> dict[str, Any]:
     scan = config["scan"]
     step_px = int(scan["step_px"])
-    delay_ms = int(scan["delay_ms"])
     max_subtree = int(scan["max_subtree_nodes_per_point"])
     max_total = int(scan["max_total_nodes"])
     sw, sh = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
@@ -53,8 +51,6 @@ def run(config: dict[str, Any], desktop: Any) -> dict[str, Any]:
             if len(index) >= max_total:
                 break
             user32.SetCursorPos(int(x), int(y))
-            if delay_ms > 0:
-                time.sleep(delay_ms / 1000.0)
             pt = wintypes.POINT(int(x), int(y))
             try:
                 root = scanner.automation.ElementFromPointBuildCache(pt, scanner._cache(obs.TreeScope_Element))

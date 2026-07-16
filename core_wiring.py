@@ -114,7 +114,6 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
         _require(cfg, path, bool)
     numeric_paths = (
         "observe_config.hover_cache.scan.step_px",
-        "observe_config.hover_cache.scan.delay_ms",
         "observe_config.hover_cache.scan.max_subtree_nodes_per_point",
         "observe_config.hover_cache.scan.max_total_nodes",
         "observe_config.hover_cache.filter.max_elements",
