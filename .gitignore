@@ -22,6 +22,5 @@
 !node_execute.py
 !node_observe.py
 !node_reflect.py
-!node_satisfied.py
 !node_verify.py
 !transport_xai.py

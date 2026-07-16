@@ -20,18 +20,7 @@ def _action_index(state: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_capability_runtime(ctx: dict[str, Any], *, read_only: bool = False) -> dict[str, Any]:
-    """Namespace a script executes in. There is no menu of tools: the [Python]
-    language is the tool. The script hath the live [desktop] instance (its methods
-    click/type_text/press_key/hotkey/scroll/open_url/observe drive the real machine),
-    the [action_index] mapping each observed [id] to what it IS (its role, name,
-    action, rect, hwnd), the present scan as searchable [screen_elements], and the
-    whole standard library. To strike an element the script readeth its geometry from
-    [action_index] and calleth the [desktop] method itself. A script that raiseth
-    faileth hard; a script that worketh no effect is judged by the witness upon fresh
-    observation, not here.
-
-    When read_only, the [desktop] hand is withheld and the bound observe()/expand()
-    eyes remain. Python stayeth uncaged; the witness is commanded to read, not move."""
+    """Build the capability namespace appointed to actor or witness."""
     import core_desktop as desktop
     d = desktop.get_desktop()
     state = ctx.get("state", {})

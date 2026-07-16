@@ -1,8 +1,6 @@
 import json
-import os
 import pathlib
 import re
-import time
 from typing import Any
 
 import core_bus as bus
@@ -10,7 +8,6 @@ import core_loader as loader
 import core_wiring as wiring
 
 ROOT = pathlib.Path(__file__).parent.resolve()
-_CONV_ID = ""
 
 
 def _messages(system_prompt: str, user_text: str, stable_context: str = "") -> list[dict[str, str]]:
@@ -146,11 +143,6 @@ def _with_observation(payload: dict[str, Any], w: dict[str, Any]) -> dict[str, A
     return enriched
 
 
-def reset_call_budget() -> None:
-    global _CONV_ID
-    _CONV_ID = f"endgame-ai-{int(time.time())}-{os.getpid()}"
-
-
 def _load_transport_module(name: str, w: dict[str, Any]):
     return loader.load("transport", name, w)
 
@@ -233,11 +225,8 @@ def extract_json_object(text: str) -> dict[str, Any] | None:
 
 
 def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, expected_record_type: str | None = None, emitting_node: str | None = None, body_override: dict[str, Any] | None = None) -> dict[str, Any]:
-    global _CONV_ID
-    transport, cfg = wiring.get_transport_config(w)
+    _, cfg = wiring.get_transport_config(w)
     organ_tuning = _organ_tuning(w, expected_record_type)
-    if not _CONV_ID:
-        _CONV_ID = f"endgame-ai-{int(time.time())}-{os.getpid()}"
     payload = _with_observation(payload, w)
     goal = str(payload.pop("goal") or "") if "goal" in payload else ""
     focus = payload.get("focus")
@@ -246,8 +235,6 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
     user_text = f"{user_text}\n\n{bus.render_interpretation_table(goal, interps)}"
     response_format = _record_response_format(w, expected_record_type, emitting_node) if expected_record_type and _structured_outputs_enabled(cfg) else None
     override = bus.deep_merge(organ_tuning, body_override or {})
-    if transport == "transport_xai":
-        override.setdefault("prompt_cache_key", _CONV_ID)
     stable_context_parts = []
     downstream = downstream_contract(w, emitting_node, expected_record_type)
     if downstream:
