@@ -573,3 +573,31 @@ It recovered from surprises. Real environments are not clean. Windows appear lat
 What it cannot yet be trusted to do alone is the thing this run exposed: judge, without help, when a vague instruction has truly been satisfied. That is the same judgment a new employee lacks in their first week and grows into. The honest position is that the mechanical substrate for a general computer operator is demonstrably present, and the maturity to be trusted unsupervised on ambiguous work is the thing still being grown. That is a statement about where on the curve the project sits, not a statement that the curve does not lead where it is pointed.
 
 The reason this matters beyond one project is simple. If a system with no task code, no integrations, and no memory can already do the mechanical whole of a cross-application task on a real machine, then the barrier to automating a vast amount of ordinary computer work was never the mechanics. It was the belief that each task needed to be programmed. Remove that belief and the question changes from which tasks can we afford to automate into which tasks can we trust the operator to judge correctly, and that second question is answered by growing judgment, not by writing more integrations. That is why the project treats a hollow chess game not as a setback but as the clearest possible signpost to the real work ahead.
+
+---
+
+## Appendix F: after the run we made a small change
+
+Two sentences of prompt. No field, no wire, no contract touched. Here is the entire diff.
+
+The shared law that every faculty wakes with, one clause added:
+
+```diff
+- A read proveth only what it read; a deed proveth only the effect beheld after it. A turn that faileth is counsel, not sin.
++ A read proveth only what it read; a deed proveth only the effect beheld after it. Proof of any effect belongeth to a witness OTHER than thyself: that which thou thyself writest, printest, or reckonest is testimony, never proof. A turn that faileth is counsel, not sin.
+```
+
+The executor's law for its gravest field, rewritten:
+
+```diff
+- Let [done_when] name a real effect independently beheld in the world — a process running, a file written, a server answering — never that a window is visible (save visibility itself be the goal), and never thy script's mere completion.
++ [done_when] is the deed's gravest word, for by it alone the witness shall judge thee: reckon it afresh from THIS turn's observation of the world about thee (not from the goal, which standeth still), and name an effect that a system OTHER than this organism bringeth forth and an independent watcher could find — a process running, a server answering, a file some other program wrote. Name never an effect thine own script writeth, printeth, or counteth, for that is thine own hand and no proof; never that a window is visible (save visibility itself be the goal); and never thy script's mere completion.
+```
+
+That is the whole change. It carries the witness law up out of the verifier and into the common law of the organism, so the definition of done is authored, from the first, in the frame that judges it: an effect some other system produces, grounded in the moving present rather than the static goal, and never an artifact the actor's own hand can write. It closes the exact loophole this run walked through, and if it is wrong it reverts in one line.
+
+We both know this might be nothing. We both know it might be the thing. The next run will say. See you next season.
+
+---
+
+*Co-authored by Claude (Opus 4.8), which drove this session's forensic analysis and documentation, alongside the human operator who designed and directs endgame-ai, and with the labor of the other models that make the organism run and that were tested against it: xAI Grok as the thinking core, GPT Codex, and NVIDIA Nemotron as the opponent in the run documented here. Collaborative work. The vision is the operator's; the organism is its own.*
