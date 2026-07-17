@@ -119,7 +119,6 @@ def _normalize_observation(obj: Any) -> dict[str, Any] | None:
         return None
     fields = (
         "desktop_tree_text", "focused_elements", "observed_at", "screen",
-        "observation_fresh",
     )
     return {key: obj[key] for key in fields if key in obj}
 
@@ -150,6 +149,17 @@ def _load_transport_module(name: str, w: dict[str, Any]):
 def _structured_outputs_enabled(cfg: dict[str, Any]) -> bool:
     structured = cfg.get("structured_outputs")
     return bool(structured.get("enabled", False)) if isinstance(structured, dict) else bool(structured)
+
+
+def resolve_profile(w: dict[str, Any], profile: str | None) -> dict[str, Any]:
+    """Resolve one wiring-owned partial request body; unknown names fail hard."""
+    if not profile:
+        return {}
+    _, cfg = wiring.get_transport_config(w)
+    profiles = cfg.get("request_profiles", {})
+    if profile not in profiles:
+        raise RuntimeError(f"unknown request profile {profile!r}; wiring defines {sorted(profiles)}")
+    return dict(profiles[profile])
 
 
 def _record_response_format(w: dict[str, Any], record_type: str, emitting_node: str | None = None) -> dict[str, Any]:
@@ -189,9 +199,9 @@ def _record_response_format(w: dict[str, Any], record_type: str, emitting_node: 
     }
 
 
-def call(messages: list[dict[str, str]], w: dict[str, Any], *, response_format: dict[str, Any] | None = None, body_override: dict[str, Any] | None = None) -> dict[str, str]:
+def call(messages: list[dict[str, str]], w: dict[str, Any], *, response_format: dict[str, Any] | None = None, body_override: dict[str, Any] | None = None, profile: str | None = None) -> dict[str, str]:
     transport, cfg = wiring.get_transport_config(w)
-    override = dict(body_override or {})
+    override = bus.deep_merge(resolve_profile(w, profile), body_override or {})
     try:
         result = _load_transport_module(transport, w).call(messages, cfg, body_override=override, response_format=response_format)
     except Exception as exc:
@@ -224,7 +234,7 @@ def extract_json_object(text: str) -> dict[str, Any] | None:
     return obj if isinstance(obj, dict) else None
 
 
-def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, expected_record_type: str | None = None, emitting_node: str | None = None, body_override: dict[str, Any] | None = None) -> dict[str, Any]:
+def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, expected_record_type: str | None = None, emitting_node: str | None = None, body_override: dict[str, Any] | None = None, profile: str | None = None) -> dict[str, Any]:
     _, cfg = wiring.get_transport_config(w)
     organ_tuning = _organ_tuning(w, expected_record_type)
     payload = _with_observation(payload, w)
@@ -234,7 +244,7 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
     user_text = json.dumps(payload, ensure_ascii=False, default=str)
     user_text = f"{user_text}\n\n{bus.render_interpretation_table(goal, interps)}"
     response_format = _record_response_format(w, expected_record_type, emitting_node) if expected_record_type and _structured_outputs_enabled(cfg) else None
-    override = bus.deep_merge(organ_tuning, body_override or {})
+    override = bus.deep_merge(bus.deep_merge(organ_tuning, resolve_profile(w, profile)), body_override or {})
     stable_context_parts = []
     downstream = downstream_contract(w, emitting_node, expected_record_type)
     if downstream:

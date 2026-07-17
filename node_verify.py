@@ -1,4 +1,4 @@
-"""[node_verify] — Thou expectest the last deed, its [done_when], and one fresh observation."""
+"""[node_verify] — Thou receivest the last deed, its [done_when] and hour of action, and one fresh observation."""
 import traceback
 
 import core_bus as bus
@@ -19,14 +19,9 @@ class VerifyNode(BaseNode):
         state = ctx["state"]
         desc, done_when = self._deed(ctx)
         observation = bus.observation_brief(state)
-        observed_at = state.get("observed_at")
-        last_action_at = state.get("last_action_at")
-        observation["observation_fresh"] = bool(
-            observed_at is not None and (last_action_at is None or float(observed_at) > float(last_action_at))
-        )
         return {
             "goal": state["goal"],
-            "deed": {"description": desc, "done_when": done_when},
+            "deed": {"description": desc, "done_when": done_when, "acted_at": state.get("last_action_at")},
             "focus": bus.state_brief(state),
             "observation": observation,
         }
@@ -62,7 +57,7 @@ class VerifyNode(BaseNode):
             "goal_interpretations": bus.with_interpretation(state.get("goal_interpretations"), "verify", f"The witness probe failed ere verdict:\n{probe_fault}" if probe_fault else str(record.data.get("goal_interpretation") or "")),
         }
         if confirmed:
-            patch.update({"witnessed_deed_count": int(state.get("witnessed_deed_count") or 0) + 1, "failure_streak": {"signature": None, "count": 0}, "action_frame": None, "current_deed": None})
+            patch.update({"witnessed_deed_count": int(state.get("witnessed_deed_count") or 0) + 1, "failure_streak": {"count": 0}, "action_frame": None, "current_deed": None})
         return bus.emit(signal, patch, record=record, evidence=self.build_payload(ctx))
 
 

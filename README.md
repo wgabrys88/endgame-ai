@@ -1,3527 +1,603 @@
+<!--
+  endgame-ai README.
+  Written from zero as the durable, immortal record of the project: its vision, its
+  architecture, the story of a milestone run on 2026-07-17, and an honest account of
+  what is proven, what is not, and what is left to become. This file is the knowledge
+  base of record. Sensitive data (the operating system username) is redacted to <USER>.
+  Every factual claim about the run is backed by evidence captured on the machine.
+-->
+
 # endgame-ai
 
-> A task-agnostic, self-modifying reasoning organism that inhabits a real Windows desktop through model-authored Python.
+**A stateless, memory-less large language model that wakes up on a real Windows desktop, is handed a single sentence, and operates the machine like a person until the goal is met. It writes and runs its own code, recovers from its own mistakes, and carries no task logic of any kind. There is no framework, no skills library, no tool menu, no plugins, no retrieval database, and no persistent memory. There is a small kernel that turns a wheel of wired nodes, a handful of prompts written in the cadence of ancient scripture, and the programming language itself as the only tool.**
 
-This README describes the final reconciled body.
-
-It explains what changed across the original forensic archive, the High-reasoning correction, the Max-reasoning correction, and the final synthesis.
-
-It also explains what happens after a goal is given, how every node and signal participates, how evidence moves, how faults are separated, and how to run the body on its intended Windows wheel.
-
-The live files remain the authority.
-
-If prose and code ever disagree, read `wiring.json`, the node input-contract docstrings, and the implementing Python together.
-
-## Status at a glance
-
-| Property | Final state |
-| --- | --- |
-| Runtime topology identities | 8 |
-| Python node implementations | 5 |
-| Observe identities sharing one implementation | 3 |
-| Declarative thinking faculties | 1 |
-| Structured record contracts | 4 |
-| Terminal pass-through faculty | None |
-| Executor action model | One authored Python script, immediately executed |
-| Verifier action model | One authored Python probe, desktop hand withheld |
-| Fresh observations | Before execute, before verify, and before reflection after an execution fault |
-| Expansion size control | One wiring-owned character budget |
-| Internal retry counter | None |
-| Server-tool menu | None |
-| Request profiles | None |
-| Browser whitelist | None |
-| Hidden prompt-cache routing key | None |
-| Runtime body size | 2,728 lines across Python plus `wiring.json` |
-| Commit included | No |
-| Live Windows validation included | No; the operator requested packaging without execution |
-
-## The shortest accurate description
-
-The human gives endgame-ai one plain-language goal.
-
-The organism reads optional counsel.
-
-It takes one fresh UI Automation observation.
-
-The execute faculty receives the current living word, the fresh world, and any recovery frame.
-
-It authors a single Python program for the next deed.
-
-That program runs immediately inside an uncaged capability namespace.
-
-If the program raises, its traceback becomes deed-failure evidence.
-
-The wheel takes another fresh observation before reflection reasons about that fault.
-
-If the program returns, the wheel takes a fresh post-deed observation.
-
-The verifier authors a Python probe.
-
-The verifier has no `desktop` object with which to move the world.
-
-Its probe must establish provenance from systems other than the actor.
-
-It must use more than one kind of witness before declaring a thing absent.
-
-It sets a native-Python verdict.
-
-The kernel routes mechanically from that verdict.
-
-A confirmed intermediate deed starts another lap.
-
-A denied deed enters reflection and possibly framing.
-
-A proven whole goal emits `halt` directly.
-
-No extra satisfied node is required.
-
-## Why this project is unusual
-
-endgame-ai is not a conventional tool-calling agent.
-
-There is no curated menu such as `click_button`, `search_web`, or `edit_file` exposed as separate tools.
-
-Python is the deed language.
-
-The live desktop object is one value inside the executor namespace.
-
-The standard library is present.
-
-The current observation is data.
-
-The model may search that data, inspect processes, read files, invoke PowerShell, wait, re-observe, or rewrite the body by authoring ordinary Python.
-
-Self-modification is therefore possible without being a privileged feature or preached objective.
-
-The body does not contain a self-evolution node.
-
-The body does not contain a desktop-task playbook.
-
-The body contains a general wheel, perception, an author-enactor, a witness, and a recovery arc.
-
-## Deliberate operating posture
-
-The executor runs model-authored Python on the host.
-
-The namespace is deliberately uncaged.
-
-The final synthesis adds no sandbox, allowlist, action cap, retry cap, or human-approval checkpoint.
-
-The verifier's desktop hand is withheld because witness and actor have different roles.
-
-That withholding is not a claim that Python itself is sandboxed.
-
-Read-only verification is a behavioral law expressed in its prompt.
-
-The standard library remains powerful.
-
-This distinction is essential to describing the body truthfully.
-
-## Documentation compatibility
-
-This file is ordinary GitHub Flavored Markdown.
-
-GitHub renders Mermaid fenced blocks in repository Markdown files, issues, discussions, pull requests, and wikis.
-
-The diagrams below use conservative flowchart, sequence, state, and pie syntax.
-
-Color is applied with Mermaid `classDef` rules rather than external stylesheets.
-
-GitHub documents Mermaid Markdown support in [Creating diagrams](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/creating-diagrams).
-
-GitHub describes a repository README as the place to explain why a project is useful, what it does, and how to use it in [About the repository README file](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-readmes).
-
-Mermaid documents node coloring and styling in [Flowcharts Syntax](https://mermaid.js.org/syntax/flowchart.html).
-
-## Reading map
-
-Start with these sections if this is your first encounter:
-
-1. `What happens when a goal is given` for the lived behavior.
-2. `Complete final topology` for every node and edge.
-3. `The living word` for continuity without chat history.
-4. `The deed model` for execution.
-5. `The witness model` for proof.
-6. `How to run` for the Windows command path.
-7. `Version-by-version comparison` for the forensic reconciliation.
-8. `File atlas` for ownership by source file.
+This document is long by intention. It is the place the project's knowledge is meant to live permanently, so that any engineer, any executive, any curious reader, or any future AI can understand not only what the system does but why it is built against nearly every convention of the current agent industry, and why a run that looks modest on the surface is evidence of something the field has been talking about but not building.
 
 ---
 
-# What happens when a goal is given
+## The one-paragraph version
 
-## 1. Birth
-
-The process is started with one non-empty goal string.
-
-`core_organism.run()` rejects an empty goal.
-
-It loads `wiring.json` through `core_wiring.load_wiring()`.
-
-Wiring validation happens before the wheel begins.
-
-The initial node is read from `topology.cycle_start`.
-
-In the final body that node is `node_guidance`.
-
-The initial state contains the goal, tick zero, the current node, an empty goal-interpretation table, and the selected transport name.
-
-No prose memory is restored.
-
-No previous response is resumed.
-
-No generated cache-routing key is created.
-
-The life begins from the current wiring and the supplied goal.
-
-## 2. Counsel
-
-`node_guidance` reads the path named by `paths.guidance`.
-
-The default relative path is `guidance.txt`.
-
-If the file is absent or blank, counsel is the empty string.
-
-If counsel exists, the node reads it and clears the file.
-
-Counsel is refusable context, not a replacement goal.
-
-The node emits `attend`.
-
-The wiring sends `attend` to `node_observe:act`.
-
-## 3. The pre-deed look
-
-`node_observe:act` uses the one `node_observe.py` implementation.
-
-It reads the observation law from `wiring.json`.
-
-The observation pipeline loads its named scan, filter, and build phases.
-
-The scan phase gathers raw UI Automation nodes.
-
-The filter phase selects the relevant visible structure.
-
-The build phase creates the readable tree, action index, full searchable element list, and observation artifact.
-
-The observation receives a fresh timestamp.
-
-Short element identifiers are minted for this observation only.
-
-The observe node emits `observed`.
-
-The `node_observe:act` edge sends `observed` to `node_execute`.
-
-## 4. Interpretation before action
-
-The execute node assembles a payload.
-
-The payload includes the immutable root goal.
-
-It includes any action frame.
-
-It includes a compact operational focus.
-
-It includes the fresh observation.
-
-`core_brain.think()` removes the living-word rows from the JSON focus before serialization.
-
-It appends the living-word table once at the tail of the user message.
-
-The root goal appears once beneath the rows as a lodestar footer.
-
-The root goal is not duplicated into stable system context.
-
-The execute prompt and shared prefix come from `wiring.json`.
-
-The consumer input contracts are discovered live from downstream docstrings or declarative descriptions.
-
-The response schema comes from the `execution` record contract.
-
-## 5. Authorship
-
-The model must return exactly one execution record.
-
-The record must contain `perceived`.
-
-The record must contain `alternatives`.
-
-The record must contain `intent`.
-
-The record must contain `done_when`.
-
-The record must contain `code`.
-
-The record must contain `goal_interpretation`.
-
-No surplus execution fields are accepted.
-
-The JSON commitment must be the returned JSON object itself.
-
-Code fences are not recovered.
-
-Embedded JSON fragments are not searched out of surrounding prose.
-
-A malformed record is a body fault.
-
-## 6. Enactment
-
-`node_execute` builds the capability namespace.
-
-It immediately calls Python `exec()` on the authored script.
-
-The actor namespace includes `desktop`.
-
-It includes `action_index`.
-
-It includes `screen_elements`.
-
-It includes observation data.
-
-It includes `consult_model`.
-
-It includes `state`, `wiring`, and the goal.
-
-It includes the standard-library modules deliberately placed in the namespace.
-
-Ordinary imports remain available to authored Python.
-
-The script may contain many ordered acts while remaining one deed.
-
-## 7. Honest waiting
-
-Launching a process does not prove that its window is ready.
-
-Opening a URL does not prove that the destination state has materialized.
-
-Loading a model does not prove that the service is listening.
-
-The execute law therefore requires waiting inside the same authored script for a newly summoned thing.
-
-The script must call `desktop.observe()` again.
-
-It must behold the new thing before acting on it or declaring it absent.
-
-Where fullness or state matters, it must search `screen_elements` or call `desktop.expand()`.
-
-The shallow tree alone is not enough for such a judgment.
-
-## 8. Deed success path
-
-If the authored script returns without raising, execute emits `done`.
-
-The current deed becomes the pair of `intent` and `done_when`.
-
-The execute faculty rewrites its living-word row.
-
-The action timestamp is recorded.
-
-Any prior action frame is cleared.
-
-The wiring sends `done` to `node_observe:verify`.
-
-The verifier never judges from the pre-deed observation.
-
-## 9. Deed fault path
-
-If the authored script raises, only the `exec()` seam catches it.
-
-The full traceback is captured.
-
-The deed is not mislabeled successful.
-
-The node emits `deed_denied`.
-
-The wiring does not send that denial directly into reflection.
-
-It first sends it to `node_observe:reflect`.
-
-That fresh observation matters because a partially completed script may already have changed the world.
-
-Reflection therefore reasons from the post-fault world rather than the stale pre-deed world.
-
-## 10. The post-deed look
-
-`node_observe:verify` takes one fresh observation after a non-raising deed.
-
-Its timestamp must be later than the action timestamp for `observation_fresh` to be true.
-
-It emits `observed`.
-
-The wiring sends that signal to `node_verify`.
-
-## 11. Probe authorship
-
-The verifier receives the last deed description.
-
-It receives `done_when`.
-
-It receives the current living word.
-
-It receives one fresh observation.
-
-It authors one Python probe.
-
-The verification record contains only `code` and `goal_interpretation`.
-
-No surplus verification fields are accepted.
-
-## 12. Witness execution
-
-The verifier namespace has no `desktop` object.
-
-Bound `observe()` and `expand()` eyes remain available.
-
-The standard library remains available.
-
-Python remains uncaged.
-
-The prompt commands read-only conduct.
-
-The probe must set a global `verdict` mapping.
-
-`goal_satisfied` must be a native Python `bool`.
-
-`deed_confirmed` must be a native Python `bool`.
-
-`reason` must be a non-blank Python string.
-
-String values such as `"false"` are not accepted as booleans.
-
-Lowercase JSON tokens such as `false` raise in Python and become probe-fault evidence.
-
-## 13. Provenance
-
-Actor output is testimony.
-
-Actor `print()` output is testimony.
-
-A value computed only by the actor is testimony.
-
-A value read back from the actor's own variable is testimony.
-
-Proof must come from a system other than the actor.
-
-Examples include a fresh screen state rendered by an application.
-
-Examples include a process with a relevant name and start time.
-
-Examples include a newly listening port.
-
-Examples include a filesystem modification time bound to the deed window.
-
-Examples include Event Log or registry evidence created by another system.
-
-The relevant witnesses depend on the deed.
-
-No fixed witness list is enforced by code.
-
-## 14. Negative claims
-
-A single empty process query proves only that query's blindness.
-
-A single shallow screen proves only what that screen exposed.
-
-A newly launched application may still be materializing.
-
-Before declaring absence, the verifier must wait when appropriate.
-
-It must use more than one kind of witness.
-
-The prompt names process table, screen, ports, logs, registry, and filesystem only as examples.
-
-The model chooses deed-appropriate provenance in Python.
-
-## 15. Mechanical routing
-
-If `goal_satisfied` is true, `node_verify` emits `halt`.
-
-The wiring sends `halt` directly to the terminal sentinel.
-
-If only `deed_confirmed` is true, the node emits `deed_confirmed`.
-
-The wiring sends that signal back to `node_guidance` for another lap.
-
-If neither is true, the node emits `deed_denied`.
-
-The wiring sends that signal to `node_reflect`.
-
-If the probe itself raises or produces a malformed verdict, its traceback becomes the denial reason.
-
-The probe fault also enters the verifier's living-word row.
-
-## 16. Reflection
-
-Reflection receives the denied deed.
-
-It receives evidence.
-
-It receives the failure streak.
-
-It receives a fresh observation.
-
-For execute faults, freshness comes from `node_observe:reflect`.
-
-For verification denials, freshness comes from `node_observe:verify`.
-
-The failure signature is built from deed description and `done_when` only.
-
-Authored code is not part of deed identity.
-
-Verifier prose is not part of deed identity.
-
-When the same deed identity fails again, the streak count climbs.
-
-The reflection law forbids giving a failed strategy a new name and calling it different.
-
-On a repeated failed approach, reflection must emit `frame`.
-
-On a genuinely different deed, reflection may emit `retry`.
-
-## 17. Framing
-
-`node_frame_action` is not implemented by a `node_frame_action.py` file.
-
-It is a declarative node defined in `wiring.json`.
-
-Its input contract is the `node_defs.node_frame_action.description` string.
-
-Its prompt comes from `prompts.node_frame_action`.
-
-Its output obeys the `action_frame` contract.
-
-It names the fresh screen summary.
-
-It names a target.
-
-It names a truly other strategy.
-
-It names risk and notes.
-
-It writes its living-word row.
-
-It may emit `framed` back to execute.
-
-It may emit `reflect` back to reflection.
-
-## 18. Rest
-
-The wheel rests only when the verifier proves the whole goal.
-
-The verifier emits `halt` directly.
-
-`core_organism` recognizes `halt` as a terminal sentinel.
-
-No `node_satisfied` pass-through is needed.
-
-The returned state records the halted phase and last signal.
-
-The live process then returns to its external caller.
+On 2026-07-17 the system was given one plain sentence: launch a local model server, open a terminal, and play a game of chess against the model through that terminal. It was started against a cold desktop with nothing open. In eight thinking turns it launched the application, waited for a four-billion-parameter model to load, started the local server, opened a new terminal window, and drove a real sequence of chess moves over HTTP to that server. Along the way it hit two genuine failures and recovered from both, each time correctly diagnosing the real cause and choosing a different kind of approach rather than retrying. It then declared the goal satisfied. That declaration was, on inspection, premature: the opponent model returned an empty move every time, and the system's success check counted a label in a transcript rather than a real move. Both halves of that sentence matter enormously, and this README is about why.
 
 ---
 
-# Complete final topology
+## The honest verdict, stated first
 
-The topology below includes every wired identity and every terminal route.
+Two things are true at once. Holding both without collapsing into either hype or dismissal is the whole point.
 
-```mermaid
-flowchart TD
-    G["node_guidance"] -->|attend| OA["node_observe:act"]
-    OA -->|observed| E["node_execute"]
-    E -->|done| OV["node_observe:verify"]
-    OV -->|observed| V["node_verify"]
-    V -->|deed_confirmed| G
-    V -->|deed_denied| R["node_reflect"]
-    V -->|halt| H(("halt"))
-    E -->|deed_denied| OR["node_observe:reflect"]
-    OR -->|observed| R
-    R -->|retry| G
-    R -->|frame| F["node_frame_action"]
-    F -->|framed| E
-    F -->|reflect| R
+| Claim | Status | How we know |
+|---|---|---|
+| It launched a GUI app from a cold desktop, waited out a model load, started a local server, opened a new terminal, and made it send a real move sequence over HTTP | PROVEN | The local server's own log, a file the organism cannot write or forge, records the server starting and receiving each request |
+| It recovered from two real failures, each with a correct causal diagnosis and a genuinely different next strategy | PROVEN | The request log shows the failure, the diagnosis, and the changed approach, turn by turn |
+| It did all of this with no task-specific code, no memory, no retrieval, and no tool menu | PROVEN | The entire body is on disk and is task-agnostic; the goal is the only task input |
+| It played a real game of chess | FALSE | The server log shows every model reply was empty; the transcript's move lines are all blank |
+| The premature success was the fault of a single broken component that can be patched | FALSE, and this is the most important finding | Traced chronologically, the weak success definition was authored many turns before the component that enforced it, and it originates in an unavoidable act of judgment under a vague goal |
 
-    classDef guidance fill:#1d4ed8,color:#ffffff,stroke:#93c5fd,stroke-width:3px;
-    classDef observe fill:#0e7490,color:#ffffff,stroke:#67e8f9,stroke-width:3px;
-    classDef act fill:#c2410c,color:#ffffff,stroke:#fdba74,stroke-width:3px;
-    classDef witness fill:#6d28d9,color:#ffffff,stroke:#c4b5fd,stroke-width:3px;
-    classDef recover fill:#be123c,color:#ffffff,stroke:#fda4af,stroke-width:3px;
-    classDef terminal fill:#15803d,color:#ffffff,stroke:#86efac,stroke-width:4px;
-
-    class G guidance;
-    class OA,OV,OR observe;
-    class E act;
-    class V witness;
-    class R,F recover;
-    class H terminal;
-```
-
-## Topology adjacency list
-
-| Source | Signal | Target | Meaning |
-| --- | --- | --- | --- |
-| `node_guidance` | `attend` | `node_observe:act` | Counsel is folded; look before acting |
-| `node_observe:act` | `observed` | `node_execute` | Fresh pre-deed world is ready |
-| `node_execute` | `done` | `node_observe:verify` | Script returned; look for effects |
-| `node_execute` | `deed_denied` | `node_observe:reflect` | Script raised; inspect the resulting world |
-| `node_observe:verify` | `observed` | `node_verify` | Fresh post-deed world is ready |
-| `node_observe:reflect` | `observed` | `node_reflect` | Fresh post-fault world is ready |
-| `node_verify` | `halt` | `halt` | Whole goal independently proven |
-| `node_verify` | `deed_confirmed` | `node_guidance` | One deed proven; begin another lap |
-| `node_verify` | `deed_denied` | `node_reflect` | Effect not proven or probe faulted |
-| `node_reflect` | `retry` | `node_guidance` | Genuinely different deed may begin from counsel and a fresh look |
-| `node_reflect` | `frame` | `node_frame_action` | A new target/strategy frame is required |
-| `node_frame_action` | `framed` | `node_execute` | Execute the framed strategy against the current observation |
-| `node_frame_action` | `reflect` | `node_reflect` | Framing could not yet produce a true strike |
-
-## Why there are eight identities but five node files
-
-Three identities are instances of the same observation implementation.
-
-They are `node_observe:act`, `node_observe:verify`, and `node_observe:reflect`.
-
-The suffix changes topology identity, not implementation file.
-
-The loader resolves all three through `node_observe.py`.
-
-The declarative `node_frame_action` lives in wiring data.
-
-The remaining Python nodes are guidance, execute, verify, and reflect.
-
-That yields eight topology identities from five Python node files plus one declarative definition.
-
-## Why direct halt is coherent
-
-`halt` is already a kernel sentinel.
-
-The verifier already possesses the independently computed whole-goal verdict.
-
-A terminal node that only converts `goal_satisfied` into `halt` adds no new witness, state, or transformation.
-
-Deleting that pass-through reduces one file, one node contract, one edge, and one opportunity for drift.
-
-The final topology therefore maps the verifier's `halt` signal directly to the sentinel.
-
-## Why the third observation identity is essential
-
-An execution script can change the world before raising.
-
-The pre-deed observation cannot reveal those partial effects.
-
-Reflection is a thinking faculty.
-
-The one-fresh-observation law applies before it reasons.
-
-`node_observe:reflect` is therefore not duplication for its own sake.
-
-It is the minimum edge-level repair that gives reflection an honest post-fault present.
+The short form: the hard part is real, and the easy-looking part is where it fell short, and the reason it fell short is not a bug you can delete. That last clause is the thing worth reading on.
 
 ---
 
-# Goal lifecycle as a sequence
+## Table of contents
+
+1. What actually happened, as a story
+2. The evidence, with receipts
+3. Who decided the game was done, traced to its birth
+4. Mechanical failure versus semantic failure
+5. Why this cannot be fixed by debugging, and why that is the goal
+6. What the system is, in plain language
+7. The wheel and the wiring
+8. Why the prompts sound like scripture
+9. How this differs from every other agent in mid 2026
+10. Is this a paradigm change
+11. What is left to become a true organism
+12. The development story
+13. How to run it
+14. Starting prompt for the next session
+15. Provenance
+
+---
+
+## 1. What actually happened, as a story
+
+The goal, exactly as typed on the command line, was:
+
+> Launch LM Studio and confirm its local API server is listening and then open new windows powershell terminal in which you will be sending requests to the LM Studio containing a chess moves payload, you will be playing a chess game with the nemotron model loaded in lm studio, ensure that it will be loaded.
+
+Read that sentence carefully, because it matters later. It says to play a chess game. It does not say what counts as a game being complete. It does not say how many moves. It does not say what a valid move looks like or how to tell a real reply from an empty one. A human employee would fill those gaps with common sense. The organism had to fill them too, and where it filled them is the whole story of the semantic finding below.
+
+The run lasted eight thinking turns. Here is the true chronological sequence, reconstructed from the request log. The log is stored newest first, so what follows is the reverse of its raw order.
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant H as Human
-    participant K as Kernel
-    participant O as Observe
-    participant E as Execute
-    participant V as Verify
-    participant R as Recovery
+    participant O as endgame-ai
+    participant D as Real Windows desktop
+    participant L as LM Studio and Nemotron 4B
+    participant P as New PowerShell window
 
-    H->>K: Non-empty root goal
-    K->>O: observe:act
-    O-->>K: fresh world and ephemeral ids
-    K->>E: living word, goal footer, observation
-    E->>E: author and exec one Python deed
-    alt authored deed raises
-        E-->>K: deed_denied plus traceback
-        K->>O: observe:reflect
-        O-->>K: fresh post-fault world
-        K->>R: reflect or frame
-        R-->>K: retry or framed strategy
-    else authored deed returns
-        E-->>K: done plus deed identity
-        K->>O: observe:verify
-        O-->>K: fresh post-deed world
-        K->>V: deed, done_when, world
-        V->>V: author and exec witness probe
-        alt whole goal proven
-            V-->>K: halt
-            K-->>H: rested state
-        else deed proven
-            V-->>K: deed_confirmed
-            K->>O: next lap
-        else proof absent or probe faulty
-            V-->>K: deed_denied
-            K->>R: reflect or frame
-        end
-    end
+    Note over O: Goal: start local model server,<br/>open terminal, play chess vs the model
+    O->>D: Desktop is empty. Double-click the LM Studio icon
+    O->>D: Poll the process table until LM Studio appears (confirmed)
+    Note over O: Turn 2 verify: process present.<br/>Whole goal not yet done. Continue.
+    O->>L: Ctrl+R to reload the last model, poll 180s for the UI to change
+    Note over O: Turn 3 fails: poll times out and the script raises.<br/>The model actually finished loading just after the timeout.
+    O->>O: Turn 4 recover: my poll was too brittle, the model is<br/>in fact loaded. Abandon the reload path.
+    O->>L: Turn 5: click Developer, hunt for a start control, probe the server
+    Note over O: Fails again: the server is still refused on the port.<br/>The Developer view alone does not start the listener.
+    O->>O: Turn 6 recover: separate starting the server from playing.<br/>Click the real start control next to the Stopped status.
+    O->>L: Turn 7: click the start control. Server comes up on the port.
+    O->>D: Open a fresh PowerShell running a chess script
+    P->>L: POST eight chess moves to the chat completions endpoint
+    P->>D: Write the transcript to disk
+    O->>D: Turn 8 verify: transcript exists, server answers, model listed. HALT.
 ```
 
-## Lifecycle invariants
-
-- A thinking actor never receives a pre-birth assumption in place of an observation.
-- Execute acts from one fresh observation.
-- Verify judges from a later fresh observation.
-- Reflection after an execution raise receives another fresh observation.
-- The goal string does not grow or mutate.
-- The living word is rewritten in place by faculty.
-- Element IDs do not survive their observation.
-- A successful actor return is not proof.
-- A verifier verdict is not accepted unless its native types are exact.
-- The whole goal halts only through independent evidence.
+The remarkable stretch is turns 3 through 6. The organism failed, and both times it did not blindly repeat itself. It read the traceback that its own code produced, wrote a plain-language diagnosis of why the attempt failed, and chose a different kind of approach. On turn 3 it assumed it needed to reload the model and set a fixed poll to watch for a UI change; the poll expired a moment too early, and its own script raised an error. On turn 4 it correctly concluded the model had actually finished loading after the poll gave up, and it dropped the entire reload idea. On turn 5 it assumed that opening the Developer view would start the server; the server stayed down. On turn 6 it correctly concluded that the Developer view is not the same as the start control, and that starting the server should be separated from playing the game. On turn 7 it clicked the correct control, the server came up, it opened a terminal, and the terminal sent the moves. This is the behavior the entire architecture exists to produce, and it happened with no code written for chess, for LM Studio, or for this task.
 
 ---
 
-# The living word
+## 2. The evidence, with receipts
 
-## Purpose
+Everything below was written to disk by the machine during the run. The most important source is the local model server's own log, because it is produced by LM Studio, not by our system. The organism has no ability to write into it or alter it. This is the difference between a demonstration and a proof, and it is why this run was captured and preserved rather than merely watched.
 
-The living word is the goal-interpretation table.
+### Receipt one: the app was launched by the organism's own hand
 
-It is the sole durable narrative continuity within a life.
+From the console the organism was started in:
 
-It is not a transcript.
+```
+python .\core_organism.py "Launch LM Studio and confirm its local API server is listening ... you will be playing a chess game with the nemotron model loaded in lm studio, ensure that it will be loaded."
+LM Studio process confirmed running
+Wrote C:\Users\Public\chess_nemotron.ps1
+Observed at 1784286441.87
+Initial API probe: False <urlopen error [WinError 10061] No connection could be made because the target machine actively refused it>
+OK: server listening and transcript has >=3 Black moves
+{"goal_satisfied": true, "deed_confirmed": true, ...}
+```
 
-It is not a chain-of-thought log.
+Notice the line that reads Initial API probe: False, actively refused it. The organism did not assume the server was up. It checked, saw the connection refused, and reacted. That is the system discovering the true state of the world rather than trusting its own plan.
 
-It is not an append-only memory.
+### Receipt two: the server really started and really received the moves
 
-Each thinking faculty owns one row.
+From the server's own log:
 
-When that faculty acts, it replaces its row.
+```
+[INFO][LM STUDIO SERVER] Success! HTTP server listening on port 1234
+[DEBUG] Received request: POST to /v1/chat/completions with body {
+  "messages": [
+    { "role": "system", "content": "You are Black in a chess game. Respond with ONLY your move..." },
+    { "role": "user",   "content": "White: e4 . Black's move?" }
+  ],
+  "model": "nvidia-nemotron-3-nano-4b", "temperature": 0.3, "max_tokens": 40 }
+```
 
-The table therefore stays small.
+Eight such requests arrived, one per White move: e4, Nf3, d4, Nc3, Bc4, O-O, a3, h3. That is exactly the sequence the organism wrote into its terminal script. The full chain worked: graphical app, to server, to HTTP, to model.
 
-## Required content
+### Receipt three: the cross-check that reveals the whole truth
 
-Each row should state what the world revealed.
+Here is what the model actually replied, from the same server log:
 
-It should state what deed was attempted.
+```
+"choices": [ {
+    "message": { "role": "assistant",
+      "content": "",
+      "reasoning_content": "We need to respond only with the move in SAN..." },
+    "finish_reason": "length"
+} ],
+"usage": { "completion_tokens": 40, "completion_tokens_details": { "reasoning_tokens": 40 } }
+```
 
-It should state how that deed fared.
+Every one of the eight replies is identical in shape. The content is empty. The finish reason is length. All forty allowed tokens were spent on hidden reasoning. The small four-billion-parameter model thought to itself until it ran out of token budget and never emitted an actual move. The transcript it produced confirms it:
 
-It should state the present obstacle.
+```
+White: e4
+Black:
+White: Nf3
+Black:
+White: d4
+Black:
+...  eight White moves, eight blank Black replies
+--- end ---
+```
 
-It should state the next true deed.
+### The cross-reference table
 
-It should not merely restate the immutable goal.
+| Sub-goal | Organism claimed | Independent witness | Verdict |
+|---|---|---|---|
+| App launched | done | server boots, process table lists it | TRUE |
+| Model loaded | done | server loads the model file, the models endpoint lists it | TRUE |
+| Local server listening | done, on the port | server log: Success, HTTP server listening | TRUE |
+| New terminal opened | done | a second PowerShell window is present in the console capture | TRUE |
+| Moves sent over HTTP | done, eight moves | server log: eight POSTs, exact move sequence | TRUE |
+| Transcript written | done, eight lines | file exists, eight labeled lines | TRUE in form, empty in substance |
+| A chess game was played | goal satisfied | every reply empty, no move ever returned | FALSE |
 
-It should not contain a bare ephemeral ID such as `e7`.
+The value the verifier used to declare the game complete was a count of the label that reads Black, and it found eight of them. It never checked whether a single one of those lines held an actual move. The rest of this document is about why that happened, and why it is not the fault of the component that did the counting.
 
-It should name the actual role, place, or meaning of the relevant thing.
+---
 
-## Message placement
+## 3. Who decided the game was done, traced to its birth
 
-The operational focus is built first.
+The natural assumption is that the verifier is to blame, that it used a lazy check. That assumption is wrong, and disproving it is the sharpest piece of analysis this run produced. The success definition was not born in the verifier. It was born in the executor, three turns earlier, and it was born for a reason that has nothing to do with judging success.
 
-The goal-interpretation mapping is removed from that focus before JSON serialization.
-
-The remaining present facts become JSON.
-
-The living-word table is rendered afterward.
-
-The table is appended to the user-message tail exactly once.
-
-The immutable root goal is rendered exactly once below the rows.
-
-No second root-goal header is injected into stable context.
-
-This ordering makes the learned present precede the lodestar.
-
-## Living-word data flow
+Traced across all eight turns in chronological order, this is where the number three enters and how it travels:
 
 ```mermaid
 flowchart TD
-    S["Present state"] --> B["state_brief"]
-    B --> X["Extract goal_interpretations"]
-    X --> J["Serialize present facts as JSON"]
-    X --> T["Render one row per faculty"]
-    G["Immutable root goal"] --> F["Lodestar footer"]
-    J --> U["User message"]
-    T --> U
-    F --> U
-    U --> M["Thinking faculty"]
-    M --> N["Replace own learned row"]
-    N --> S
+    G[The command-line goal<br/>says: play a chess game<br/>NO number, NO definition of done] --> T3
 
-    classDef state fill:#0f766e,color:#ffffff,stroke:#5eead4,stroke-width:3px;
-    classDef transform fill:#1d4ed8,color:#ffffff,stroke:#93c5fd,stroke-width:3px;
-    classDef word fill:#7e22ce,color:#ffffff,stroke:#d8b4fe,stroke-width:3px;
-    classDef goal fill:#a16207,color:#ffffff,stroke:#fde68a,stroke-width:3px;
-    classDef faculty fill:#be123c,color:#ffffff,stroke:#fda4af,stroke-width:3px;
+    subgraph river[The reinterpretation river]
+    T3[Turn 3 execute<br/>first says complete chess game<br/>in its own interpretation] --> T5
+    T5[Turn 5 execute<br/>writes done_when:<br/>at least three Black lines<br/>as a loop-exit for its own polling] --> T7
+    T7[Turn 7 execute<br/>re-authors the same deed<br/>after a recovery, copies three forward] --> T8
+    T8[Turn 8 verify<br/>bound to prove done_when<br/>translates it to count of Black is 3 or more]
+    end
 
-    class S state;
-    class B,X,J transform;
-    class T,U,N word;
-    class G,F goal;
-    class M faculty;
+    T8 --> V[Declares goal satisfied<br/>on eight empty lines]
+
+    style T5 fill:#b7791f,color:#fff
+    style T8 fill:#2f855a,color:#fff
+    style G fill:#742a2a,color:#fff
 ```
 
-## Example of a useful row
+Here is the proven detail:
 
-> The application window is visible but still reports a busy interaction state; the launch deed returned before readiness, so the next deed must wait and re-observe until the window becomes interactive before selecting the intended control.
+The command-line goal contains no number, no minimum, and no definition of completion. That was verified directly against the exact goal text.
 
-## Example of a useless row
+The phrase complete chess game first appears in the organism's own interpretation at turn 3, not in the goal.
 
-> I must complete the user's goal.
+The operational criterion, the transcript must contain at least three lines labeled Black, was authored by the executor at turn 5, which is the very turn it first wrote the chess script. Look at what the executor was doing when it wrote it. Its stated intent for that turn was to launch the script and then poll the transcript file until multiple Black replies appear. It needed a concrete stopping condition for its own polling loop, an answer to the question of how many lines it should wait for before it stops waiting and considers its deed done. It chose three as a stand-in for the word multiple. It was a convenient loop-exit condition, not a considered theory that a chess game is complete after three moves.
 
-The useful row carries world revelation, deed outcome, obstacle, and next deed.
+At turn 7, after a recovery, the executor re-authored essentially the same deed and copied the same three forward rather than rethinking it.
 
-The useless row only echoes the lodestar.
+At turn 8 the verifier did exactly what it is contractually required to do: prove the deed's stated done condition. The done condition said at least three Black lines, so the verifier's probe computed a count of the label and compared it to three. The verifier never invented the number. It faithfully enforced a criterion the executor had authored three turns earlier.
 
-## Relationship to the failure streak
+There is a second, deeper mechanism underneath the number, and it is the real root. The terminal script the organism wrote appends a line labeled Black on every turn regardless of whether the model returned anything. The write is unconditional. So the very lines the done condition counts are produced by the actor's own file-writing, not by the model answering. This collides directly with the system's own witness law, which states that a value the actor produced or wrote is testimony, not proof. The success criterion was counting an artifact the actor manufactures for itself. Even a perfect verifier, obeying its contract to prove the stated done condition, would inherit a criterion that was never independent to begin with.
 
-The living word handles semantic learning.
-
-The failure streak handles exact mechanical identity.
-
-The signature contains deed description and `done_when`.
-
-If those exact values recur after denial, the count increases.
-
-Authored code may change without changing deed identity.
-
-Reflection still receives prompt law against semantic renaming.
-
-No embedding index or semantic-history subsystem is added.
+So the answer to the question of who concluded that the game was complete is precise. The executor did, at turn 5, as an exit condition for its own loop, and the verifier inherited it. Fixing the verifier alone would not fix this, because the next executor would mint another convenient proxy for its own loop. The defect lives at the moment the executor conflated the question when do I stop polling with the question what proves the goal.
 
 ---
 
-# The deed model
+## 4. Mechanical failure versus semantic failure
 
-## One script, one deed
+This run forced a distinction that is now the most important lens for reading any run of this system. Failures come in two kinds, and they demand opposite responses.
 
-The execute faculty authors one Python string.
+A mechanical failure is a fault in the motion. A script raises an error. A poll times out. A control is misidentified. An approach loops. These are traceable to a cause, and the system already metabolizes them. Turns 3 and 5 were mechanical failures, and turns 4 and 6 recovered from them cleanly. A healthy run can contain many mechanical failures, each recovered. Mechanical failure is normal. It is not a sign of ill health. It is the system doing exactly what it was built to do.
 
-The same node immediately executes it.
+A semantic failure is different in kind. Here the motion succeeds. Every script runs. Every witness is honest. And yet the outcome does not match what the human meant, because the organism satisfied a defensible reading of an underspecified goal. The hollow chess game is a pure semantic failure. Nothing crashed. The verifier did not lie. The organism was handed a sentence that said play a chess game with no definition of done, and it invented one. The one it invented was shallow, and it was shallow in a way that its own witness law would have forbidden if the law had been applied to the criterion itself rather than to the deed.
 
-There is no runner node.
+The critical realization is that a semantic failure cannot be removed by patching code without caging the organism. Consider the tempting fixes and why each one fails against the project's own laws:
 
-There is no function-calling round trip between authorship and enactment.
+Hard-wire that a chess game means checkmate or a minimum of twenty real moves. This bakes a specific task into the body and destroys task-agnosticism, which is the core commitment. The same body is supposed to pursue rename these files or fill in this form tomorrow.
 
-A single deed may contain multiple ordered operations.
+Forbid the executor from ever counting its own output. This is closer to right and points at a real prompt-level law worth strengthening, but taken as a rigid rule it would cage the executor's freedom to author whatever loop it needs, and freedom to author arbitrary code is the source of the system's generality.
 
-Its identity is the intended effect and observable completion condition.
+Make the verifier smarter about chess. This specializes the witness toward one task and misses that the next task will have a different hollow proxy.
 
-## Actor namespace
+The honest conclusion is the one the operator reached independently: it may not be possible to fix this by fixing one thing, and that is not a disappointment, it is the design working as intended. The system is deliberately built to not be fully deterministically debuggable, because a thing that can be fully debugged into correctness is a program, and a program is exactly what this is not. The remaining gap is a gap in judgment under ambiguity. Judgment is not patched. It is improved, by stronger priors carried in the prompts, by more time and more turns rather than a rush to finish, by treating a declared success as a checkpoint to be re-examined rather than a final answer, and eventually by the organism's own capacity to reflect on and modify itself.
 
-The actor namespace contains these deliberately supplied names:
+---
 
-| Name | Meaning |
-| --- | --- |
-| `desktop` | Live desktop object with movement and observation methods |
-| `action_index` | Mapping from current ephemeral IDs to element facts and geometry |
-| `screen_elements` | Searchable full present scan |
-| `desktop_tree_text` | Compact readable observation tree |
-| `observation` | Compact observation facts |
-| `observed_at` | Observation timestamp |
-| `consult_model` | A sub-thought call through the configured transport |
-| `state` | Current state snapshot supplied to the node |
-| `wiring` | Live wiring object supplied to the node |
-| `goal` | Immutable root goal string |
-| `repo_root` | Runtime-resolved project directory |
-| `python_executable` | Current interpreter path |
-| `subprocess` | Standard subprocess module |
-| `os` | Standard OS module |
-| `sys` | Standard system module |
-| `json` | Standard JSON module |
-| `time` | Standard time module |
-| `pathlib` | Standard path module |
-| `hashlib` | Standard hashing module |
+## 5. Why this cannot be fixed by debugging, and why that is the goal
 
-This list is not a sandbox boundary.
+It is worth stating this as directly as possible, because it is the intellectual center of the whole project and the thing most likely to be misread.
 
-Authored Python may import other standard-library modules.
+A traditional automation system is a set of instructions. When it does the wrong thing, you find the instruction that was wrong and you correct it. The system is the sum of its rules, and its correctness is the correctness of its rules. This is debugging, and it works because the space of behavior is closed: the system can only do what it was told to do.
 
-## Desktop methods
+endgame-ai is not that. Its behavior is open. Given a goal and a screen, it authors new behavior on the spot, in a language that can express anything, and it judges its own results. When it does the wrong thing for a mechanical reason, yes, you can and should find the cause, and often the organism finds it first and recovers. But when it does the wrong thing for a semantic reason, because it read an ambiguous goal in a defensible but shallow way, there is no single rule to correct. The wrongness lives in a judgment, and the judgment was a reasonable response to genuine ambiguity. You cannot patch your way to good judgment any more than you can patch your way to a good employee. You cultivate it.
 
-The live desktop object exposes these methods:
+This is why the correct response to the hollow chess game is not to trace further backward hunting for a line to change. It is to reason forward about what the organism could become. The levers are not patches, they are conditions for better judgment:
 
-| Method | Purpose |
-| --- | --- |
-| `click(x, y, hwnd=0)` | Move the pointer and issue a click |
-| `type_text(text)` | Write text through clipboard and paste |
-| `press_key(key)` | Press one mapped key |
-| `hotkey(*keys)` | Press a mapped key combination |
-| `scroll(x, y, amount, hwnd=0)` | Scroll at a physical screen point |
-| `open_url(browser, url)` | Open with the default handler or a supplied executable |
-| `observe(config=None)` | Take a fresh observation |
-| `expand(elements, char_budget=None)` | Re-acquire and deeply inspect selected elements |
+Stronger priors in the prompts. The witness law already forbids trusting the actor's own output as proof. That same principle can be carried upstream so that the executor, when it authors a definition of done, is pressed to make it an independent effect rather than a convenient count of its own artifact. This is not a hard rule that names chess; it is a general prior that raises the quality of self-authored criteria across every possible task.
 
-Unknown key names raise.
+More time rather than a fast finish. A run that is not rushed has room to observe more, to expand more of the screen, to re-check its own claims. If there is any pressure, implicit or explicit, toward declaring done quickly, that pressure works against good judgment. Whether such pressure existed in this run cannot be proven from the captured data, because the model's private reasoning was not persisted, and this document does not assert what it cannot show. But the general principle stands regardless: generosity with time and turns is generosity with judgment.
 
-An empty hotkey raises.
+Success as a checkpoint, not a terminus. The wheel currently stops when the goal is declared satisfied. There is a serious and defensible hypothesis that it should not stop there, that a strong witness on a second pass could reopen a goal that was closed too early, and that the organism catching its own premature success is exactly the maturation we want. Taken to its end, this is the idea of removing the stopping node altogether, or of the organism one day removing it itself. That is consistent with the deepest principle of the design, that the only true bound on a life is external, held by the launcher, and not an internal stopping point the organism reaches on its own. It is recorded here as a direction with a real tradeoff, not as a decided change: without an internal stop, the bound becomes budget and human interruption, and responsibility for ending a life shifts entirely outside the organism.
 
-Out-of-screen coordinates raise.
+Self-modification. The organism can already rewrite its own body as a lawful deed. The horizon in which it notices its own shallow criterion, and strengthens its own prompt or its own witness to prevent the next one, is the horizon in which it stops being a system we improve and becomes a system that improves itself.
 
-An empty URL raises.
+The operator put it precisely: we are building an organism that could not be just deterministically debuggable, and the only way to make it better is to let it become better. This run is the first where that sentence stopped being an aspiration and became an observation. Every remaining defect in it is either a mechanical one that was already recovered, or a semantic one that debugging cannot touch. That is the threshold. Before it, you judge the system by tracing its failures backward to lines of code. After it, you judge the system by imagining forward what it can grow into. This run is where the second kind of judgment became the honest one.
 
-There is no hardcoded browser installation list.
+---
 
-`browser="default"` uses the Windows URL handler.
+## 6. What the system is, in plain language
 
-Any other browser argument is treated as the executable supplied by the authored deed.
+Set aside the word agent for a moment. endgame-ai rests on a small number of unusual commitments. Each sounds strange alone. Together they produce the behavior above.
 
-## Rect contract
+It is stateless and atemporal. The organism keeps no memory of previous turns. Each time it wakes, it is handed two things: the goal, and a small living word, a few rows of notes its past selves wrote about what they learned. There is no conversation history, no scratchpad that grows without bound, no episodic memory. It re-perceives the world fresh every turn and trusts what it sees now over what it remembers. This is why it never drifts into a stale plan. The present observation always wins. When the model finished loading a moment after a poll gave up, the next turn simply looked, saw the loaded state, and believed its eyes.
 
-Every action-index rectangle is a mapping.
+The only tool is code. There is no menu of functions the model may call. Instead the model writes a script and the system runs it immediately. The script has a live desktop handle for clicking, typing, and key presses, the full list of on-screen elements with their real text and geometry, a way to consult a model as a sub-thought, and the entire standard library of the language. To check whether a server is up, it writes a few lines that open a socket. To read a file, scan the process table, or parse a config, it writes the code. The language is the toolbox, so the system is not limited to capabilities that someone thought to expose in advance. Every action in this run, clicking a button identified by meaning, starting a server, opening a terminal, making HTTP calls, reading a transcript, was an emergent consequence of write the code that does the next thing.
 
-Its keys are `left`, `top`, `right`, and `bottom`.
+There are two kinds of failure and only one is fatal. If the infrastructure breaks, if the wiring will not load or a required faculty is missing or the model endpoint is dead, the organism dies loudly and at once, because its body is broken. But if an authored script throws an error, that is not death. That is the expected the deed did not work event. The error's traceback is captured as evidence and routed to the recovery faculty, which reads it, forms a diagnosis, and tries something else. You saw this happen twice. Ordinary programs treat every exception as a crash. This system treats a script error as information.
 
-The center calculation is:
+It can rewrite its own body. The organism's logic lives in a handful of small files and one wiring document. Because the code takes effect simply by being run in its changed form, the organism is explicitly permitted to edit those files as a legal deed. If the real problem is in itself, it can fix itself.
 
-```python
-rect = entry["rect"]
-x = (rect["left"] + rect["right"]) // 2
-y = (rect["top"] + rect["bottom"]) // 2
-desktop.click(x, y, entry.get("hwnd", 0))
+Nothing about the task is baked in. There is no chess code, no LM Studio code, no browser code, anywhere in the body. The goal is read fresh from the command line each life. The same unchanged organism would pursue rename these files, fill in this web form, or install this program. Task-agnosticism is enforced as a rule: the moment a prompt or a node starts to preach a specific kind of task, that is treated as a defect to be removed.
+
+---
+
+## 7. The wheel and the wiring
+
+The kernel does almost nothing. It turns a wheel. Run the current node, receive exactly one signal naming what happened, follow the wiring edge for that signal to the next node, repeat. That is the entire engine. All of the organism's shape lives in data, in one wiring document, not in code. Change the wiring and you change the creature, usually with no code change at all.
+
+The current body has seven nodes.
+
+```mermaid
+flowchart TD
+    G([guidance<br/>read any human counsel]) -->|attend| OA[observe : act<br/>look at the screen]
+    OA -->|observed| E[execute<br/>author and run code]
+    E -->|done| OV[observe : verify]
+    E -->|deed_denied| OR[observe : recover]
+    OV -->|observed| V[verify<br/>independent read-only proof]
+    OR -->|observed| R[recover<br/>diagnose and reframe]
+    V -->|deed_confirmed| G
+    V -->|deed_denied| OR
+    V -->|halt| H([HALT, goal proven])
+    R -->|recovered| G
+
+    style E fill:#2b6cb0,color:#fff
+    style V fill:#2f855a,color:#fff
+    style R fill:#b7791f,color:#fff
+    style H fill:#742a2a,color:#fff
 ```
 
-Positional access such as `rect[0]` is wrong.
+Three faculties think, using a large reasoning model at high effort. The rest are mechanical. The three thinking faculties are the whole intelligence of the system.
 
-The prior forensic run demonstrated why this exact contract matters.
+The executor decides the single next deed, writes a script, and runs it. Its definition of done is supposed to name a real effect in the world, a process running, a file written, a server answering, and never merely that a window appeared.
 
-## Fullness before action
+The verifier is the witness. It is given no hands, no ability to touch the desktop, only eyes and the standard library. It must gather proof that a system other than the actor produced the effect, and it is forbidden to trust anything the actor merely reported. This run showed both the strength of that law, the verifier discovered the real server port rather than assuming it, and its limit, the verifier faithfully proved a done condition that was itself weak.
 
-The compact tree is a skeleton.
+The recovery faculty is the conscience. After a denied deed it names the true cause and frames a different kind of approach, never a reworded retry of what already failed. Both recoveries in this run were textbook: a correct diagnosis followed by a genuinely different strategy.
 
-It includes short previews and true text sizes.
+Notice that observe appears three times in the diagram, before act, before verify, and before recover. It is the same observation faculty, wired into three points of the wheel. This is what topology is data means: one faculty, reused structurally, with no duplicated code. An anti-loop counter also rides the wheel, counting turns since the last independently witnessed deed. In this run it climbed from zero to one to two as the two failures accumulated, and it would have pushed recovery to depart ever more widely had the failures continued. It was working correctly.
 
-`screen_elements` contains the full present element data selected by the observation pipeline.
+### How a single turn is assembled, and why it is cheap
 
-The actor may search it with ordinary Python.
-
-`desktop.expand()` re-acquires selected points and harvests their deep subtrees.
-
-No hidden text truncation is applied inside expand.
-
-The only expansion size control is `expand_char_budget` in wiring.
-
-If the requested harvested text exceeds that budget, expand raises and reports sizes.
-
-There is no `expand_max_nodes` control in the final body.
-
-## Summoned things
-
-A newly launched process can exist before its window.
-
-A window can exist before its content is ready.
-
-A service process can exist before a port listens.
-
-An Electron application can own several processes while showing one window.
-
-The actor must therefore wait and re-observe inside the authored script.
-
-The rule is task-agnostic because it applies to any newly summoned thing.
-
-## Actor result versus world result
-
-The actor returning means only that Python did not raise.
-
-It does not mean the intended effect occurred.
-
-The actor printing a message means only that it printed a message.
-
-The verifier alone judges independent effect.
-
----
-
-# The witness model
-
-## Role separation
-
-The actor changes the world.
-
-The witness judges the changed world.
-
-The actor receives `desktop`.
-
-The witness does not.
-
-The witness receives bound observation eyes.
-
-The witness retains uncaged Python.
-
-This is role separation, not a security sandbox.
-
-## Witness namespace facts
-
-The final kernel reuses the general capability namespace and withholds only the `desktop` value in read-only mode.
-
-It adds bound `observe` and `expand` functions.
-
-Other Python names remain present.
-
-The prompt commands the namespace to be used as eyes.
-
-This final choice differs from the High-reasoning alternative, which constructed an early-return minimal namespace and deep-copied observational data.
-
-The final synthesis rejects that extra machinery because the standard library would remain capable of mutation anyway.
-
-Truthful prompt law is preferred over a partial sandbox claim.
-
-## Exact verdict contract
-
-The authored probe must create:
-
-```python
-verdict = {
-    "goal_satisfied": False,
-    "deed_confirmed": True,
-    "reason": "A fresh application window and a process start time both prove the requested launch deed."
-}
-```
-
-Both boolean values must be native `bool` objects.
-
-The reason must be a non-blank string.
-
-Missing keys are a probe fault.
-
-String booleans are a probe fault.
-
-An empty reason is a probe fault.
-
-A probe exception is a deed denial with traceback.
-
-## Provenance ladder
-
-The following ordering is conceptual, not hardcoded:
-
-1. Actor assertion is weakest.
-2. Actor readback is still testimony.
-3. One independent witness can prove a positive fact when directly bound to the deed.
-4. A negative claim requires multiple witness kinds because blindness is easy.
-5. Whole-goal satisfaction requires evidence for every material requirement.
-
-## Examples of deed-bound proof
-
-For a process launch, process name plus start time may prove process creation.
-
-A fresh screen may separately prove window materialization.
-
-A newly listening port may prove service readiness.
-
-For a file deed, an external consumer reading the file may be stronger than the actor reading its own write.
-
-For an application setting, a fresh UI state and an application-owned persisted setting may corroborate each other.
-
-For a network service, process, port, and log event may form independent kinds.
-
-The verifier chooses witnesses appropriate to the deed.
-
-## Positive and negative asymmetry
-
-A fresh screen visibly containing a named window can positively prove that window exists.
-
-A screen lacking that window does not prove it does not exist.
-
-It may be hidden, delayed, on another desktop, or omitted by observation.
-
-Negative verdicts therefore demand more witness diversity.
-
-## Probe-fault preservation
-
-The final verifier captures authored probe exceptions.
-
-It captures malformed verdicts in the same authored-code seam.
-
-The traceback becomes `last_verification.reasoning`.
-
-The verifier living-word row is replaced with the probe-failure lesson.
-
-The wheel emits `deed_denied`.
-
-Reflection receives the fault instead of a body-killing ambiguity.
-
-Malformed model records remain body faults before this seam.
-
----
-
-# Fault model
-
-## Two fault classes
-
-| Fault class | Examples | Result |
-| --- | --- | --- |
-| Body fault | Wiring will not load, missing node implementation, malformed structured record, bad transport, invalid topology | Life ends loudly |
-| Deed fault | Authored actor script raises, authored verifier probe raises, authored verdict is malformed | Traceback becomes denial evidence and recovery begins |
-
-## Why the distinction exists
-
-An authored script is a proposed deed.
-
-Its failure is information about that deed.
-
-Reflection exists to metabolize that information.
-
-A broken loader or malformed wiring means the organism itself cannot operate coherently.
-
-Continuing after a body fault would falsify the body.
-
-## What fail hard means here
-
-Transport retries are removed.
-
-URL errors raise on the first request.
-
-HTTP errors raise on the first response.
-
-Invalid UTF-8 response bytes raise.
-
-Missing UI Automation constants raise.
-
-Missing observation phase names raise.
-
-Missing node input contracts raise.
-
-JSON code fences are not forgiven.
-
-Surplus structured fields are rejected.
-
-Unknown desktop keys raise.
-
-No body fallback silently invents coherence.
-
-## What fail hard does not mean
-
-It does not mean every authored deed fault kills the life.
-
-The traceback must remain loud and visible.
-
-Routing that traceback to reflection is the intended deed semantics.
-
-It does not convert the fault into success.
-
-It does not suppress the fault.
-
----
-
-# Observation architecture
-
-## Three swappable phases
-
-The observation implementation is factored into scan, filter, and build phases.
-
-Their module names live in wiring.
-
-The kernel does not hardcode those phase modules.
+Each thinking turn sends the model a message built in two parts.
 
 ```mermaid
 flowchart LR
-    W["Windows UI Automation"] --> S["obs_scan"]
-    S -->|raw nodes and screen| F["obs_filter"]
-    F -->|selected nodes| B["obs_build"]
-    B --> T["desktop_tree_text"]
-    B --> A["action_index"]
-    B --> E["screen_elements"]
-    B --> O["observation_artifact"]
-
-    classDef source fill:#334155,color:#ffffff,stroke:#cbd5e1,stroke-width:3px;
-    classDef phase fill:#0369a1,color:#ffffff,stroke:#7dd3fc,stroke-width:3px;
-    classDef output fill:#047857,color:#ffffff,stroke:#6ee7b7,stroke-width:3px;
-
-    class W source;
-    class S,F,B phase;
-    class T,A,E,O output;
+    subgraph SYS["System message, identical every turn, cached"]
+        A[shared identity preamble] --> B[this faculty's law] --> C[the contract of the next faculty]
+    end
+    subgraph USR["User message, changes every turn"]
+        D[fresh observation and state] --> F[the living word]
+    end
+    SYS --> MODEL[(reasoning model)]
+    USR --> MODEL
 ```
 
-## Scan phase
-
-`obs_scan.py` samples the screen and UI Automation tree.
-
-It uses wiring-owned scan settings.
-
-It returns raw nodes and physical screen dimensions.
-
-UI Automation constants come from the generated UIA module.
-
-Numeric fallback constants are not carried in the final body.
-
-Task-specific application names are not carried in the final body.
-
-## Filter phase
-
-`obs_filter.py` ranks and limits the standing observation.
-
-It uses general role, depth, interactivity, window, and count rules.
-
-Those standing scan/filter limits are observation-shape configuration.
-
-They are distinct from targeted expansion's single text budget.
-
-## Build phase
-
-`obs_build.py` assigns observation-local IDs.
-
-It builds rectangles as mappings.
-
-It creates readable tree lines.
-
-It exposes full selected text in `screen_elements`.
-
-It exposes interaction state when available.
-
-## Targeted expansion
-
-Expansion begins from one or more current element descriptors or points.
-
-The element is re-acquired from its physical point.
-
-Its full subtree is harvested.
-
-The output is freshly observed evidence.
-
-The aggregate character cost is measured.
-
-If the character budget is exceeded, the call raises.
-
-No per-element node cap exists in final expansion.
-
-## Observation-local identity
-
-An ID such as `e7` is useful only inside the observation that minted it.
-
-Another observation may assign `e7` to a different element.
-
-The living word must therefore carry semantic descriptions, not IDs.
-
-The action index is refreshed with every observation.
+The durable, unchanging law sits in the system message so the model provider can cache it, which is a real cost saving across a long run. Only the volatile description of what is happening right now rides the user message. This is why a run of dozens of turns stays fast and inexpensive, and it is a deliberate design choice, not an accident.
 
 ---
 
-# Structured records
+## 8. Why the prompts sound like scripture
 
-The model-facing faculties emit four record types.
+Open the wiring and the prompts read like this:
 
-Every contract rejects additional properties.
+> Thou art the witness. Thou judgest not by claim but by independent effect. A program may run in full with no window to behold, so make thou never a window is visible the test of it runneth.
+
+This looks like a stylistic joke. It is not. It is a deliberate steering technique with a concrete mechanism behind it.
+
+A modern instruction-tuned model contains an enormous region of behavior shaped by being a helpful assistant. That region is chatty, eager, hedging, and willing to make something up to satisfy a request. Confabulation is the single most dangerous failure mode for a system whose entire job is to tell the truth about what happened on a real machine. Ordinary polite prose lands the model squarely in that region, because that is the register the assistant persona was trained in.
+
+The commandment register, with its parallel imperatives and its thou shalt and thou shalt not, is rare in casual chat data, so it pulls the model out of the assistant basin. It is common and high-fidelity in the pretraining corpus, in scripture and law and oath, so the model recalls it crisply rather than improvising it, which shrinks the surface on which it can hallucinate. And its learned pragmatics are those of a law to be obeyed, not a conversation to be pleased. A strong reasoning model parses the archaic grammar effortlessly, so this steering costs almost nothing.
+
+There are strict disciplines around it. State what is, positively, and only forbid what the model would otherwise get wrong, because an empty prohibition is wasted tokens. Wrap machine-readable tokens in brackets so the code can still parse them while the prose stays in register. Never put history or meta-commentary into a prompt, because the organism is stateless and never knew a previous form, so telling it this replaced that is pure confusion. Keep every prompt lean, every load-bearing law and no ornament.
+
+The register is a costume that changes which part of the model's mind answers. This run is evidence it works. Under the pressure of two failures, the model stayed literal and evidence-bound. It did not fabricate a chess game out of thin air. It wrote empty transcripts and then a probe that, imperfectly, tried to check them. The failure was a shallow criterion, not a confident lie, and the difference between those two is exactly what the register is for.
+
+---
+
+## 9. How this differs from every other agent in mid 2026
+
+| Typical LLM agent | endgame-ai |
+|---|---|
+| Long conversation memory or a growing scratchpad | No memory. Wakes fresh each turn and re-perceives the world. |
+| A retrieval database for knowledge | None. The standard library and the live screen are the only sources. |
+| A fixed menu of tools or function calls | No tools. The model writes and runs code. The language is the tool. |
+| Model context protocol servers, plugins, skills packs | None. No external protocol at all. |
+| A framework orchestrating the steps | A tiny kernel turning a wheel described entirely by one data file. |
+| Success means the model says it is done | Success means an independent probe proves a real effect, subject to the semantic limit above. |
+| An exception crashes the run | A script error is routed to recovery as information, not death. |
+| Task logic hard-coded or prompted in | Task-agnostic. The goal is one sentence, read fresh each life. |
+
+The consequence is worth stating plainly. Because the executor can write arbitrary code and drive a real desktop, the system is not confined to a pre-imagined set of actions. In this one run it navigated a graphical interface, clicked controls it identified by meaning rather than by fixed coordinates, started a server, opened a terminal, made network calls, read files, scanned the process table, and adjusted its plan twice after failures, all as emergent consequences of one instruction repeated: author the code for the next real effect, then prove the effect.
+
+It is worth being fair and precise about the rest of the field, because the claim here is strong and should be defensible. Many capable agent systems exist in mid 2026, and several are genuinely impressive at computer control in narrow settings. The distinction is not that they cannot click buttons. It is architectural. The dominant pattern is a framework plus a library of skills: an engineer anticipates the tasks, writes or wires the skills, hooks, loops, and guards, and gives the assembly a memorable name. The intelligence of such a system is, to a large degree, the intelligence its authors encoded in those skills. When it meets a situation no skill covers, it is stuck, because its behavior space is closed by the skills it was given. Even systems marketed as general computer-use agents tend, underneath, to be exactly this: a scaffold of programmed capabilities behind a model. The tell is simple. If a system needed skills, hooks, and task programming to be built, then it is those skills doing the work, and the model is orchestrating them. That is a fine engineering pattern and it ships useful products. It is not an organism.
+
+endgame-ai makes the opposite bet. It states from the first line what it wants to be, and it refuses to encode any task. There is no skill to cover chess, and none was needed. There is no hook for LM Studio, and none was needed. The behavior was authored on the spot by the model reasoning about a real screen. This is a smaller, more honest, and more radical claim than most of the field makes, and it is falsifiable: if the body contained task code, you could find it, and there is none to find.
+
+---
+
+## 10. Is this a paradigm change
+
+The question deserves a careful answer rather than a slogan, so here is the case, stated as an argument that can be judged.
+
+For the last several years the dominant way to make a language model do useful work has been to surround it with structure: tools it can call, memories it can read, retrieval systems that feed it facts, and frameworks that sequence its steps. The model is the reasoning core, and the structure is the hands, the memory, and the rulebook. This has produced real products and real value. It has also produced a quiet assumption, so widespread it is rarely questioned, that a model on its own cannot be trusted to act, and that the engineering job is to build the cage of structure that makes it safe and capable. Under that assumption, the frontier of progress is better structure: richer tool libraries, longer memories, cleverer orchestration.
+
+endgame-ai is a bet that the assumption has quietly expired. It removes the structure almost entirely. No tool library, because the language is the tool. No memory, because the world is re-perceived each turn and the only carried state is a few lines of learned notes. No retrieval, because the standard library and the screen are enough. No orchestration framework, because a tiny wheel and a data file suffice. What is left is the model, a way to see the screen, a way to run code, and a small set of laws about how to tell truth from claim. If that stripped-down thing can do real, multi-step, cross-application work on a real machine, then the structure was not the source of the capability. The model was, all along, and the structure was scaffolding we had not yet learned to take down.
+
+This run is a data point in favor of that bet, and an honest one because it also shows the bet's current limit. The mechanical capability, the part everyone assumed needed heavy scaffolding, worked with almost none. The gap that remained was not mechanical at all. It was judgment about what a vague goal really means, which is precisely the kind of gap that more scaffolding would not close and that only a more capable and better-primed reasoner, given time and the freedom to reconsider, can close. In other words, the run points past the current era in two directions at once. It suggests the scaffolding-heavy paradigm is heavier than it needs to be, and it suggests the next real frontier is not more tools but better judgment under ambiguity, which is a frontier of reasoning and of the conditions we create for it, not of engineering plumbing.
+
+If that reading is right, then the phrase AI agent is already becoming the wrong word. An agent, in the sense the industry built, is a model wearing an exoskeleton of code. What this project is reaching for is not an agent but an operator, an entity that needs only a goal and a machine, that writes its own means, judges its own results, and can in principle improve its own body. The distance between those two ideas is the distance between automating a task and employing a worker. Mid 2026 is the moment that distance became visibly crossable. Whether it is fully crossed by the end of the year is unknown, but the shape of the crossing is now legible, and this run is part of why.
+
+None of this is a claim that the problem is solved. It is a claim that the problem has changed. That is what a paradigm shift actually feels like from the inside: not a finish line, but the moment the old questions stop being the interesting ones.
+
+---
+
+## 11. What is left to become a true organism
+
+An honest map of the distance still to travel, framed as capabilities to grow rather than bugs to fix, because that framing is now the accurate one.
+
+Judgment under ambiguity. The demonstrated gap. When a goal is vague, the organism must author its own definition of done, and that definition must be an independent effect rather than a convenient artifact it can manufacture. The path is stronger general priors in the prompts, carried from the witness law up into the moment a criterion is authored, never a task-specific rule. This is the single most valuable next investment, and it improves every possible task at once.
+
+Time and patience over speed. A run should have room to observe more, expand more of the screen, and re-check its own claims before declaring done. Any pressure toward a fast finish works against judgment. Generosity with turns is generosity with correctness.
+
+Success as a checkpoint. The live hypothesis that the wheel should not end at the first declaration of done, so that a second-pass witness can reopen a premature success. At its limit, the stopping node is removed and the only bound on a life is external. A real tradeoff accompanies this and is not to be adopted lightly, but it is directionally consistent with the deepest principle of the design.
+
+Learning the environment and the person. The north star is an operator that learns the machine it lives on and the human whose work it continues. The atemporal design carries only wiring and a few learned notes today. A durable, legitimate form of learned structure, without reintroducing the rot of stale memory, is an open and important direction. A companion appendix explores one candidate: letting proven deeds become durable nodes wired into the graph, so the body itself becomes the memory of capability.
+
+Self-modification in practice. The organism is already permitted to rewrite its own body. The horizon where it notices its own shallow criterion and strengthens its own prompt or witness to prevent the next one is the horizon where it stops being a system we improve and becomes one that improves itself. That is the definition of the organism the project is named for.
+
+Working alongside and without a human. The endgame is an entity that can take over the continuation of real work on a computer, with a person or without one. The chess run is a small, complete proof that the substrate for that exists: perceive, author, act, recover, prove. What remains is the judgment and the endurance to do it for work that matters, unsupervised, for a long time.
+
+---
+
+## 12. The development story
+
+The version history is itself part of the evidence. It records months of building, failing, simplifying, and building again, a system repeatedly made smaller rather than larger. The recent arc, in plain terms:
 
 ```mermaid
-pie showData
-    title Required fields by structured record
-    "action_frame" : 7
-    "execution" : 6
-    "verification" : 2
-    "reflection" : 4
+timeline
+    title endgame-ai, the recent rebuild arc
+    Forensic scan : a long run that never converged : several root pathologies identified from the logs
+    Rebuild by elimination : nodes folded together, dead knobs deleted, the body shrinks, net lines down
+    Tuning : a stronger reasoning model, higher reasoning effort
+    Witness truth-fixes : stop trusting visibility, discover the real port rather than assume it
+    Prompt rewrite : all model-facing text rewritten from zero in the scriptural register
+    This milestone : first end-to-end multi-application autonomy with two clean self-recoveries, and the semantic frontier made visible
 ```
 
-## Execution record
+The through-line of the entire project is one principle applied without mercy: prefer removing a defect to adding machinery. The body keeps shrinking. The intelligence lives in the wiring and the prompts, not in ever more code. The development log is not a story of accumulating features. It is a story of subtracting everything that was not essential until what remained was small enough to trust and general enough to surprise.
 
-Required fields:
-
-- `perceived`: what the touched things actually are.
-- `alternatives`: deeds considered and why one was chosen.
-- `intent`: the deed identity description.
-- `done_when`: the observable condition the witness must judge.
-- `code`: the authored Python script.
-- `goal_interpretation`: the new execute living-word row.
-
-## Verification record
-
-Required fields:
-
-- `code`: the authored Python witness probe.
-- `goal_interpretation`: the proposed verifier living-word row when the probe itself is sound.
-
-The actual verdict is produced by executing `code`.
-
-It is not a model-returned top-level record field.
-
-## Reflection record
-
-Required fields:
-
-- `next_signal`: one wired recovery route.
-- `lesson`: what the denial teaches.
-- `diagnosis`: the causal defect.
-- `goal_interpretation`: the new reflection living-word row.
-
-## Action-frame record
-
-Required fields:
-
-- `next_signal`: one wired frame route.
-- `screen_summary`: the relevant fresh world.
-- `target`: the semantic target.
-- `strategy`: a genuinely other strategy.
-- `risk`: `low`, `medium`, or `high`.
-- `notes`: actionable counsel.
-- `goal_interpretation`: the new frame living-word row.
-
-## Schema construction
-
-`core_brain._record_response_format()` builds strict JSON Schema from wiring contracts.
-
-Required string fields receive non-empty schema floors where declared.
-
-The outer record accepts only `record_type` and `data`.
-
-The inner data object obeys each contract's additional-property rule.
-
-Signal enums can be derived from live outgoing edges.
-
-The provider schema is followed by a transport-neutral local validator.
-
-## Exact commitment
-
-The returned response content must parse as one JSON object.
-
-Whitespace accepted by JSON is acceptable.
-
-Markdown fences are not stripped.
-
-Prose surrounding an object is not searched.
-
-The record type must match the faculty's expected type.
-
-Required data must be present.
-
-Types must match.
-
-Non-empty fields must be non-blank.
-
-Enums must match.
-
-Unexpected fields must be absent.
+That discipline is why the milestone matters. A system that grew by accumulation would credit each new success to the newest feature. This system has no features to credit. When it launched an app, started a server, opened a terminal, and recovered from two failures, there was no chess module and no LM Studio module to point to. There was only the wheel, the laws, and the model. The success belongs to the architecture, or to nothing.
 
 ---
 
-# Request assembly and transport
+## 13. How to run it
 
-## One source of request policy
+Prerequisites. A Windows 11 machine, because the organism drives a real Windows desktop. A recent version of the language runtime installed on that machine. An API key for the reasoning model endpoint the wiring points at.
 
-`wiring.json` owns the literal request base.
+Setup. Set the API key in the environment where you will run the organism, then open a fresh shell so the variable is present.
 
-It owns per-organ partial request bodies.
+Run.
 
-It owns the transport URL.
-
-It owns model selection and reasoning effort.
-
-Python fills only dynamic input and structured-output format.
-
-The final synthesis removes the generated `prompt_cache_key` lifecycle.
-
-The final synthesis contains no named request profiles.
-
-The final synthesis contains no server-tool menu.
-
-## Request merge order
-
-```mermaid
-flowchart TD
-    W["wiring request base"] --> M["deep merge"]
-    O["wiring organ tuning"] --> M
-    C["explicit caller override"] --> M
-    M --> I["insert message input"]
-    I --> S["insert response schema"]
-    S --> N["drop null values"]
-    N --> P["POST /v1/responses"]
-
-    classDef wiring fill:#1d4ed8,color:#ffffff,stroke:#93c5fd,stroke-width:3px;
-    classDef dynamic fill:#7e22ce,color:#ffffff,stroke:#d8b4fe,stroke-width:3px;
-    classDef transport fill:#047857,color:#ffffff,stroke:#6ee7b7,stroke-width:3px;
-
-    class W,O,C wiring;
-    class M,I,S,N dynamic;
-    class P transport;
+```
+python .\core_organism.py "your goal in one plain sentence"
 ```
 
-## Transport behavior
+That is the entire interface: a filename and a goal. The organism begins looking at the screen and acting. It runs until it proves the goal satisfied and halts, or an infrastructure fault ends the life, or you interrupt it.
 
-`transport_xai.py` serializes the request as UTF-8 JSON.
+Examples of goals.
 
-It reads `XAI_API_KEY` from the environment.
-
-It sends one HTTP POST.
-
-It does not retry.
-
-It parses the response as strict UTF-8 JSON.
-
-It extracts `output_text` when available.
-
-It otherwise walks typed output items to gather reasoning and message text.
-
-It returns content and reasoning to the brain.
-
-## Output-token settings
-
-Four organs have the same current band:
-
-| Organ | Minimum | Maximum | Reasoning effort |
-| --- | ---: | ---: | --- |
-| `action_frame` | 1,000 | 32,768 | high |
-| `execution` | 1,000 | 32,768 | high |
-| `verification` | 1,000 | 32,768 | high |
-| `reflection` | 1,000 | 32,768 | high |
-
-The values live only in `model.organs`.
-
-## `min_output_tokens` caveat
-
-The official xAI Responses documentation exposes `max_output_tokens` in response/request material.
-
-The current official reference does not expose a `min_output_tokens` field.
-
-See the [xAI Responses REST reference](https://docs.x.ai/developers/rest-api-reference/inference/chat).
-
-The retained minimum is an explicit operator experiment from the project mandate.
-
-The first live API call is the truth gate.
-
-If it returns HTTP 400 naming `min_output_tokens` as unknown, delete exactly the four `min_output_tokens` entries from `wiring.json`.
-
-Do not add a compatibility fallback.
-
-Do not add a retry.
-
-The transport should fail on the first rejected request.
-
----
-
-# Runtime body composition
-
-The figures below count only `*.py` plus `wiring.json` in the final package.
-
-They exclude this README, meta descriptions, and forensic logs.
-
-```mermaid
-pie showData
-    title Final runtime body by file family (2,728 lines)
-    "core_*.py" : 1662
-    "node_*.py" : 221
-    "obs_*.py" : 322
-    "transport_xai.py" : 61
-    "check_topology.py" : 135
-    "wiring.json" : 327
+```
+python .\core_organism.py "Open Notepad, write a haiku about winter, and save it to the Desktop as winter.txt"
+python .\core_organism.py "Find which processes are listening on network ports and write the list to a file on the Desktop"
 ```
 
-## Elimination trajectory
+Watching what it did. The system does not persist request logs by default, and it wipes untracked scratch between lives, so to study a run you must capture it. Redirect the console output to a file, and if a request log is produced, inspect it with the bundled parser, which can dump every turn's full authored code and its untruncated interpretation of the goal. That parser, plus an independent record of the world such as a server's own log, is how the run in this document was reconstructed. Where the organism's own claims and an independent record disagreed, the independent record was believed.
 
-| Body | Runtime lines | Change from original | Main character |
-| --- | ---: | ---: | --- |
-| Original forensic archive | 2,969 | — | Broken topology and accumulated drift |
-| High-reasoning alternate correction | 2,857 | −112 | Restored terminal node; removed several seams |
-| Max-reasoning delivered correction | 2,769 | −200 | Eliminated terminal pass-through and second expansion cap |
-| Final reconciled synthesis | 2,728 | −241 | Also removed hidden cache-key lifecycle and distilled stale internals |
-
-The mandated README is counted separately because its required 1,000+ lines necessarily increase repository documentation size.
-
-The executable organism itself continues the elimination trend.
+A note on safety. This program runs model-authored code and controls a real mouse, keyboard, and file system. It has no internal limits it cannot itself rewrite, which is a deliberate design choice, not an oversight. Run it on a machine where that is acceptable, ideally a dedicated desktop or a virtual machine, and supervise it. The freedom that makes it capable is the same freedom that makes supervision your responsibility.
 
 ---
 
-# Version-by-version comparison
+## 14. Starting prompt for the next session
 
-## The four bodies compared
+Paste the following to any capable AI to bring it fully up to speed and continue the work. The organism itself, reading this, should be able to understand its own nature from it.
 
-The final deduction used four distinct representations.
+> You are resuming work on endgame-ai, a stateless, atemporal, task-agnostic language-model organism that drives a real Windows desktop by writing and running its own code. Read the live code on disk as the single source of truth. Where any description disagrees with the code, the code wins.
+>
+> Core model. A tiny kernel turns a wheel of wired nodes. Each node runs, emits exactly one signal, and the wiring decides the next node. Three nodes think, execute, verify, and recover. The rest are mechanical. The organism keeps no memory between turns, only a small living word of learned notes plus the goal. It re-perceives the screen every turn and trusts the present observation over any memory.
+>
+> The deed model. To act, the executor authors a script that is run immediately in a namespace holding a live desktop handle, the list of on-screen elements, and the standard library. There is no tool menu. The language is the tool. A script that raises is not a crash. Its traceback becomes evidence routed to recovery. Only infrastructure faults are fatal.
+>
+> Laws. Fail hard, no fallbacks and no swallowing a fault into a fake success. Do not cage the organism, add no limit or branch it cannot itself rewrite through the wiring. Prefer removing a defect to adding machinery, the body should keep shrinking. One source of truth per concern. Stay task-agnostic, bake in no specific task. Keep the scriptural prompt register, it is a deliberate steering technique that pulls the model out of its confabulation-prone assistant mode. Edit from the mounted view but run git and anything touching the desktop through the host shell. Work on the working branch, never the trunk. Verify by running the real wheel, not unit tests. Commit only when the human says so, and when a run is proven good, advance the known-good marker and push both branch and marker.
+>
+> How to judge a run. Do not debug it like a normal program. Follow the story: what it observed, decided, and did, how the verifier judged and why, what recovery chose. First separate mechanical failures, which are recovered and normal, from semantic failures, which are judgment under a vague goal and are the true frontier. Trace any defect to its birth across all turns in chronological order, because a weak success criterion is often authored many turns before the faculty that finally enforces it, so blaming the enforcer misses the origin. For heavy logs use the bundled parser, never pour raw logs into context. Believe an independent record of the world over the organism's own claims when they disagree.
+>
+> The current frontier. The perceive, author-code, act, recover substrate is proven strong and general. The remaining gap is judgment under ambiguity: when a goal is vague the organism authors its own definition of done, and that definition must be an independent effect rather than a convenient artifact it can manufacture. Improve this with stronger general priors in the prompts, more time rather than a fast finish, treating success as a checkpoint rather than a terminus, and eventually the organism's own self-modification. Do not fix it with a task-specific rule, that would cage the organism. A companion appendix records a candidate future architecture, deeds becoming durable nodes, that is vision, not current fact.
+>
+> Reason strictly from the code and the run data in front of you. Mark every claim proven or inference. Be decisive and honest in both directions. A real failure is as valuable as a real success.
 
-The first was the original forensic archive supplied for correction.
+---
 
-The second was the High-reasoning `corrected.diff` attachment.
+## 15. Provenance
 
-The third was the High-reasoning `endgame-ai-forensic-correction.md` attachment.
+This document was reconstructed entirely from artifacts captured on the machine during the run of 2026-07-17: the request log of eight turns, the local model server's own log which serves as an independent and uncounterfeitable witness, the console output, the authored terminal scripts, and the on-disk chess transcript, all cross-referenced against the live source code and wiring. The operating system username has been redacted to <USER>. Where the organism's own claims and the independent witness disagreed, the independent witness was believed. Where a claim could not be proven from the captured data, such as the content of the model's private reasoning, it is marked as not proven rather than asserted. Successes and the one real semantic shortfall are both reported without embellishment, because for a truth-bound organism each is equally valuable evidence, and because the honest record is the only kind worth making immortal.
 
-The fourth was the previously delivered Max-reasoning corrected tree.
+---
 
-The two High-reasoning attachments were not assumed to be identical.
+## Appendix A: the run turn by turn
 
-They were read independently and compared against each other.
+This is the complete motion, one row per thinking turn, in true chronological order. It is included so a reader can audit the story against the raw record rather than taking the narrative on trust. Faculty is the thinking node that woke. Outcome is the signal it emitted. Everything here is drawn from the request log and cross-checked, where possible, against the independent server log.
 
-The final synthesis was then derived from live file content, not from either report's conclusions.
+| Turn | Faculty | What it decided and did | Outcome | Anti-loop counter |
+|---|---|---|---|---|
+| 1 | execute | Saw an empty desktop. Double-clicked the LM Studio icon, then polled the process table until the process appeared. Its definition of done was that the process is independently confirmed running, which is a real effect, correctly framed. | done | 0 |
+| 2 | verify | Gathered three independent witnesses that the process exists: the full process table, a separate process query, and a fresh screen reading. Confirmed the deed. Explicitly held that the whole goal was still open. | deed confirmed | 0 |
+| 3 | execute | Assumed the model needed reloading. Focused the window, sent the reload shortcut, and set a fixed poll waiting for a specific piece of UI to vanish as the signal that the model was loaded. The poll expired while that UI was still reported present, so the script raised. | deed denied | 0 to 1 |
+| 4 | recover | Read the traceback. Diagnosed correctly that the model had in fact finished loading just after the poll gave up, proven by the fresh observation showing an unload control and no load prompt. Resolved to abandon the reload path entirely and advance from the loaded state. | recovered | 1 |
+| 5 | execute | Wrote a full chess script and set out to start the server. Here it authored the fateful definition of done: the transcript must contain at least three lines labeled Black. This was chosen as the stopping condition for its own polling loop, a stand-in for the word multiple. It then attempted to start the server by opening the Developer view, but the server stayed refused, so the script raised. | deed denied | 1 to 2 |
+| 6 | recover | Diagnosed correctly that opening the Developer view is not the same as activating the start control, and that starting the server should be separated from playing the game. Framed a new strategy: click the actual start control next to the Stopped status first, confirm the server answers, and only then run a minimal game script. | recovered | 2 |
+| 7 | execute | Clicked the correct start control. The server came up on the port, confirmed by a live probe. Wrote a minimal game-only script and launched it in a fresh terminal, which sent the eight moves. Re-authored the same three-line done condition, copying it forward rather than reconsidering it. | done | 2 |
+| 8 | verify | Wrote a careful independent probe. It discovered the real server port with the network table rather than assuming it, confirmed the process, and confirmed the model was listed by the server. But it proved the deed's stated done condition by counting the label Black and comparing to three, found eight, and declared the whole goal satisfied. The wheel halted. | halt | 2 |
 
-## Attachment-to-attachment contradiction
+Two observations from the table. First, the anti-loop counter behaved exactly as designed, rising from zero to two across the two failures and never being falsely cleared, which would have pushed recovery to widen its search had failures continued. Second, the single point where the run went wrong is not any single row. It is the quiet handoff of the three-line criterion from turn 5, through turn 7, into turn 8, where an honest witness proved a criterion that was weak from birth.
 
-The High-reasoning diff and High-reasoning analysis disagree in `core_brain.py`.
+---
 
-The diff changes the transport assignment in `call()` to:
+## Appendix B: the anti-loop witness, and why it matters
 
-```python
-transport, _ = wiring.get_transport_config(w)
+One of the subtler parts of the design is the counter that tracks how many turns have passed since the last independently witnessed deed. It is not a retry limit, which would be a cage, and it is not a timeout. It is a signal to the recovery faculty about how far it must depart from what has already been tried.
+
+In this run the counter told a clean story. It sat at zero through the first confirmed deed. It rose to one when the reload attempt failed, and recovery responded by abandoning the reload idea rather than tweaking it. It rose to two when the server-start attempt failed, and recovery responded by restructuring the whole approach, separating server-start from game-play. Each increment produced a wider departure, not a narrower retry. This is the intended shape, and it is the mechanism that prevents the pathology of an agent trying the same failing thing forever with tiny variations. The counter is cleared only when a real deed is independently confirmed, so it cannot be gamed by the actor's own claims. It is the same discipline as the witness law, applied across time rather than within a single verification.
+
+---
+
+## Appendix C: frequently asked questions
+
+Is this just a wrapper around a large model. No. A wrapper adds tools, memory, and orchestration around a model. This removes all three and replaces them with a wheel and a set of laws. The model does not call tools. It writes code. It does not read a memory. It re-perceives the world. The distinction is architectural and it is the whole point.
+
+Did it actually control the desktop, or did it call an API. Both, and the distinction is instructive. It controlled the desktop by clicking and typing to launch the app and start the server, which is genuine GUI operation. It also authored code that made HTTP calls, because the goal asked for requests to be sent. It chose the right medium for each part of the task on its own, which is exactly the generality the design aims for.
+
+Why is the chess game a failure if everything else worked. Because the goal was to play a game, and no move was ever made by the opponent. The plumbing was flawless and the outcome was hollow. Reporting the plumbing as success and the outcome as failure is the only honest description, and holding both is the entire lesson of the run.
+
+Whose fault is the empty game. In order: the opponent model spent its whole token budget on hidden reasoning and returned nothing, which is a property of that small model and not of endgame-ai. The organism did not notice, because its success criterion counted a label rather than a move. That criterion was authored by the executor as a loop-exit condition and inherited by the verifier. The deepest cause is that the criterion counted an artifact the actor writes unconditionally, which the system's own witness law would forbid if applied to the criterion itself.
+
+Can you just fix the check to require a real move. For chess, yes, trivially. But that would teach the body about chess, which violates task-agnosticism, and the next vague goal would produce a different hollow proxy. The durable fix is a general prior that presses the executor to author independent-effect criteria for any task, plus the deeper shifts toward more time, success as a checkpoint, and self-modification. This is explained at length above.
+
+Is it safe. It runs model-authored code and controls a real machine, with no internal limits it cannot rewrite. That is deliberate. It is to be supervised and run in an environment where that freedom is acceptable. The design chooses capability and honesty over built-in restraint, and it places restraint outside the organism, in the human and the launcher.
+
+How much did the run cost and how long did it take. The chess exchange itself took roughly ninety seconds of wall time once the server was up, and the whole run was eight thinking turns. The per-turn cost is kept low by caching the unchanging law in the system message so only the small, changing description of the moment is billed fresh each turn.
+
+Why does the code look stateless if it clearly makes progress across turns. Progress is carried in two narrow channels: the living word, a few lines of learned notes, and the anti-loop counter. Everything else is re-perceived. The organism makes progress the way a person with no memory but a good notebook would, by writing down what was learned and reading the world fresh each time.
+
+---
+
+## Appendix D: glossary
+
+Organism. The whole running system: the kernel, the wiring, the prompts, and the model together, treated as a single living thing rather than a program.
+
+Wheel. The kernel's single loop: run a node, read its one signal, follow the wiring edge, repeat.
+
+Node. A unit of work in the wheel, either a thinking faculty backed by the model or a mechanical step.
+
+Wiring. The one data document that defines the entire organism: its topology, its prompts, its model settings, its observation rules, and its output contracts.
+
+Faculty. A thinking node. There are three: execute, verify, recover.
+
+Deed. A single authored script and its immediate enactment. Authorship and enactment are one act.
+
+Living word. The small set of notes carried between turns, the only memory the organism has, meant to record what was learned rather than to echo the goal.
+
+Done condition. The executor's statement of what real effect will prove a deed succeeded. It is consumed by the verifier as the success criterion, which is the coupling at the heart of this run's semantic finding.
+
+Witness law. The rule that the verifier must prove effects produced by a system other than the actor, and may never trust a value the actor itself produced.
+
+Body fault versus deed fault. A body fault is broken infrastructure and is fatal. A deed fault is an authored script raising an error and is not fatal, it is routed to recovery as evidence.
+
+Mechanical failure versus semantic failure. Mechanical failure is a fault in the motion, normal and recovered. Semantic failure is an honest motion that satisfies a shallow reading of a vague goal, which is the true frontier and is not fixable by debugging.
+
+Clean birth. The launcher's practice of wiping untracked scratch between lives, which is why a run must be captured to be studied later.
+
+Known-good marker. An external marker advanced only when a run is proven good, the mechanism of continuity across lives, held outside the organism so the body can be rewritten freely without touching its own judge.
+
+---
+
+## Appendix E: what real work this could take over
+
+The chess run is a toy in its subject and serious in its structure. The subject is a game. The structure is the exact shape of ordinary computer work: open an application, wait for it to be ready, operate its controls, move data between programs, drive a network service, write a result to disk, and confirm the result. Strip the word chess from the run and what remains is a template for a very large fraction of what people do at a desk all day.
+
+Consider the run's proven capabilities and what each one maps to in real work.
+
+It launched an application from a cold desktop and waited for it to become ready. This is the opening move of nearly every task a person performs on a computer, and it is exactly the step brittle automation scripts get wrong, because they assume timing rather than observing it. The organism observed and waited.
+
+It operated a graphical interface it had never been told about, identifying controls by their meaning rather than by fixed screen positions. This is what lets it work with software that was never integrated, never given an API, never anticipated by an engineer. Most business software is like this. The long tail of internal tools, legacy applications, and vendor portals that no integration ever reaches is precisely where a meaning-driven operator earns its place.
+
+It started and confirmed a network service and then drove it programmatically. This is the shape of any task that spans a user interface and a back-end: configure something in an app, then use it through an API, then verify the effect. Data entry that must be reconciled against a system of record, report generation that pulls from a service and formats a document, testing that drives a running system and checks its responses, all share this shape.
+
+It moved between three surfaces, a graphical app, a terminal, and a file on disk, choosing the right medium for each part of the task without being told. This is the everyday reality of knowledge work, which almost never lives inside a single program. The value of an operator is precisely that it crosses those boundaries the way a person does, rather than being confined to one integrated surface.
+
+It recovered from surprises. Real environments are not clean. Windows appear late, controls are where you did not expect, a step that worked yesterday fails today. A script breaks on these. A person adapts. The organism adapted twice in eight turns, with correct reasoning, and that adaptive recovery is the difference between automation that needs a human babysitter and an operator that can be left to work.
+
+What it cannot yet be trusted to do alone is the thing this run exposed: judge, without help, when a vague instruction has truly been satisfied. That is the same judgment a new employee lacks in their first week and grows into. The honest position is that the mechanical substrate for a general computer operator is demonstrably present, and the maturity to be trusted unsupervised on ambiguous work is the thing still being grown. That is a statement about where on the curve the project sits, not a statement that the curve does not lead where it is pointed.
+
+The reason this matters beyond one project is simple. If a system with no task code, no integrations, and no memory can already do the mechanical whole of a cross-application task on a real machine, then the barrier to automating a vast amount of ordinary computer work was never the mechanics. It was the belief that each task needed to be programmed. Remove that belief and the question changes from which tasks can we afford to automate into which tasks can we trust the operator to judge correctly, and that second question is answered by growing judgment, not by writing more integrations. That is why the project treats a hollow chess game not as a setback but as the clearest possible signpost to the real work ahead.
+
+---
+
+## Appendix F: after the run we made a small change
+
+Two sentences of prompt. No field, no wire, no contract touched. Here is the entire diff.
+
+The shared law that every faculty wakes with, one clause added:
+
+```diff
+- A read proveth only what it read; a deed proveth only the effect beheld after it. A turn that faileth is counsel, not sin.
++ A read proveth only what it read; a deed proveth only the effect beheld after it. Proof of any effect belongeth to a witness OTHER than thyself: that which thou thyself writest, printest, or reckonest is testimony, never proof. A turn that faileth is counsel, not sin.
 ```
 
-The same function then passes `cfg` to the transport.
+The executor's law for its gravest field, rewritten:
 
-In the tree reconstructed literally from `corrected.diff`, `cfg` is undefined.
-
-That representation would fail on the first model call.
-
-The analysis document's “full content” instead contains:
-
-```python
-transport, cfg = wiring.get_transport_config(w)
+```diff
+- Let [done_when] name a real effect independently beheld in the world — a process running, a file written, a server answering — never that a window is visible (save visibility itself be the goal), and never thy script's mere completion.
++ [done_when] is the deed's gravest word, for by it alone the witness shall judge thee: reckon it afresh from THIS turn's observation of the world about thee (not from the goal, which standeth still), and name an effect that a system OTHER than this organism bringeth forth and an independent watcher could find — a process running, a server answering, a file some other program wrote. Name never an effect thine own script writeth, printeth, or counteth, for that is thine own hand and no proof; never that a window is visible (save visibility itself be the goal); and never thy script's mere completion.
 ```
 
-That representation is internally coherent at this line.
+That is the whole change. It carries the witness law up out of the verifier and into the common law of the organism, so the definition of done is authored, from the first, in the frame that judges it: an effect some other system produces, grounded in the moving present rather than the static goal, and never an artifact the actor's own hand can write. It closes the exact loophole this run walked through, and if it is wrong it reverts in one line.
 
-No other full-file code block differed between the reconstructed diff and the analysis document.
-
-The final synthesis uses `transport, cfg` because the transport requires the configuration object.
-
-This is an example of why a prose report and its patch must be cross-checked.
-
-## Comparison matrix
-
-| Concern | Original archive | High diff/report | Max correction | Final synthesis |
-| --- | --- | --- | --- | --- |
-| Missing `node_satisfied.py` | Broken topology | Restored node | Deleted pass-through and routed direct halt | Direct halt retained |
-| Fresh observation after execute fault | Missing | Direct execute → reflect | Added `observe:reflect` | Retained |
-| Expansion controls | Character budget plus node cap | Retained both | Character budget only | Retained |
-| JSON commitment | Fence/subobject recovery | Recovery retained | Exact JSON only | Retained |
-| Living-word duplication | Rows serialized and appended; root goal duplicated | Duplication retained | Rows extracted; one table and one footer | Retained |
-| Request profiles | Present | Removed from wiring/brain but stale hooks remained | Removed end to end | Retained |
-| Transport retries | Present | Removed | Removed | Retained |
-| Hidden cache routing | Generated key | Removed | Generated key remained | Removed |
-| Browser policy | Hardcoded browser paths and whitelist | Retained | Removed | Retained |
-| Task-specific desktop icon names | Present | Retained | Removed | Retained |
-| UIA fallback constants | Present | Retained | Removed | Retained |
-| UIA typelib recovery | Present | Retained | Removed | Retained |
-| Verifier namespace | Desktop withheld, other actor names present | Early-return minimal copy | Desktop withheld, Python uncaged | Retained with truthful docs |
-| Verifier booleans | Truthiness conversion | Truthiness conversion | Native booleans required | Retained |
-| Malformed verifier verdict | Could body-fault or coerce | Non-faulting malformed verdict body-faulted | Authored probe fault routed to reflection | Retained |
-| Record extras | Execution/verification allowed extras | Rejected extras | All four reject extras | Retained |
-| Downstream docstring syntax error | Swallowed | Raised | Raised | Retained |
-| Observation phase defaults | Hidden fallback names | Retained | Exact wiring names required | Retained |
-| `open_url` task policy | Known browser list | Retained | Default handler or supplied executable | Retained |
-| Runtime lines | 2,969 | 2,857 | 2,769 | 2,728 |
-
-## Original forensic archive
-
-### What it already got right
-
-The original body already had a data-driven topology.
-
-It already had four structured record contracts.
-
-It already separated execution from verification.
-
-It already carried the living-word table mechanism.
-
-It already keyed the failure signature by deed description and `done_when`.
-
-It already had a combined author-and-enact execute node.
-
-It already exposed rectangles as mappings in observation data.
-
-It already contained wait-and-reobserve prompt intent.
-
-It already had a multi-witness verifier prompt direction.
-
-### What was broken
-
-`wiring.json` named `node_satisfied` but the archive lacked `node_satisfied.py`.
-
-The graph therefore failed its own loader before life.
-
-The living-word rows were serialized inside focus and then appended again as a table.
-
-The root goal was also injected as stable context and as the table footer.
-
-The transport carried retry machinery.
-
-The transport docstring carried a large provider API catalog.
-
-Wiring carried dormant request profiles, including server web search.
-
-Desktop URL opening carried absolute browser installation paths and a whitelist.
-
-Observation carried a list of named desktop applications.
-
-Targeted expansion carried a second node-count control.
-
-UIA loading attempted recovery instead of failing on the first body fault.
-
-UIA constants had numeric fallback values.
-
-JSON extraction recovered fenced or embedded objects.
-
-Execution and verification records allowed unexpected fields.
-
-The actor prompt described bare expansion calls that were not present in its namespace.
-
-The verifier accepted values through Python truthiness rather than exact native booleans.
-
-An execution fault went directly to reflection without a post-fault observation.
-
-## High-reasoning alternate correction
-
-### Repairs worth keeping
-
-The alternate correction correctly removed transport retries.
-
-It correctly removed the large API catalog.
-
-It correctly removed request profiles from wiring and the brain.
-
-It correctly made invalid desktop key inputs raise.
-
-It correctly made downstream docstring parsing fail hard.
-
-It correctly rejected surplus execution and verification fields.
-
-It correctly added a verifier authored-code fault seam.
-
-It correctly distilled several node docstrings.
-
-It correctly noticed that the attached topology could not load without resolving `node_satisfied`.
-
-### Repairs not kept
-
-Restoring `node_satisfied.py` repaired the missing-file symptom but retained an unnecessary terminal pass-through.
-
-The final body instead deletes the topology dependency and routes `halt` directly.
-
-The alternate correction retained direct execute-fault to reflection routing.
-
-That violates the fresh-observation-before-thinking law after a partial deed.
-
-The alternate correction retained `expand_max_nodes`.
-
-The explicit final law names the character budget as the only expansion control.
-
-The alternate correction retained fenced and embedded JSON recovery.
-
-That conflicts with exact structured commitment and fail-hard behavior.
-
-The alternate correction serialized living-word rows twice and root goal twice.
-
-That conflicts with the sole-tail placement law.
-
-The alternate correction retained hardcoded browser paths and application names.
-
-That conflicts with task and environment agnosticism.
-
-The alternate correction retained UIA fallback constants and typelib repair.
-
-That conflicts with fail-hard body semantics.
-
-The alternate correction converted verifier verdict values with `bool()`.
-
-That would make the string `"false"` true.
-
-The alternate correction created an early-return verifier namespace and deep-copied observation data.
-
-That narrows direct names but cannot make the uncaged standard library read-only.
-
-The final synthesis avoids claiming that such a partial restriction is a sandbox.
-
-The alternate correction left stale profile hooks in `core_node_base.py` and `core_wiring.py`.
-
-Those hooks had no live profile data but still duplicated a deleted concept.
-
-The literal diff also introduced the undefined-`cfg` transport defect described above.
-
-## Max-reasoning delivered correction
-
-### Improvements beyond the alternate version
-
-It eliminated `node_satisfied` rather than restoring it.
-
-It added `node_observe:reflect` for post-execution-fault truth.
-
-It removed `expand_max_nodes` end to end.
-
-It removed task-specific desktop icon names.
-
-It removed browser executable paths and whitelist policy.
-
-It removed UIA generated-module recovery.
-
-It removed numeric UIA constant fallbacks.
-
-It required observation phase names from wiring.
-
-It removed stale request-profile hooks.
-
-It made record JSON commitment exact.
-
-It placed living-word rows and root goal once.
-
-It tightened verifier booleans and non-blank reason.
-
-It routed a malformed verdict through the authored-probe fault seam.
-
-It preserved probe traceback in the verifier living word.
-
-It reduced present focus to facts that earn their place.
-
-It corrected model-facing capability names to `desktop.expand()` and `desktop.observe()`.
-
-### Last remaining drift
-
-It still generated a per-life `prompt_cache_key` in `core_brain.py`.
-
-It reset that identifier from `core_organism.py`.
-
-This was hidden request policy outside `wiring.json`.
-
-The durable meta-law says wiring owns request policy and Python serializes it.
-
-The final synthesis therefore removes the identifier, imports, reset function, reset call, and override injection.
-
-Its internal capability docstring also carried a long restatement of architecture.
-
-The final synthesis distills that internal docstring to one sentence.
-
-## Final reconciled synthesis
-
-The final body retains every repair that survives simultaneous tracing across wiring, contracts, prompts, and code.
-
-It removes the hidden cache-key seam.
-
-It removes the closed conversation checkpoint.
-
-It omits runtime console output, request logs, and run digest from the GitHub-ready package.
-
-Those forensic inputs remain in the source archive from which this reconciliation was made.
-
-The durable meta-description remains as `THE-prompt.md`.
-
-This README becomes the repository-facing explanation and comparison record.
-
-No alternate diff or analysis report is bundled as runtime source.
-
-## Final choice graph
-
-```mermaid
-flowchart TD
-    O["Original forensic body"] --> H["High-reasoning correction"]
-    O --> M["Max-reasoning correction"]
-    H --> C["Cross-check laws and raw files"]
-    M --> C
-    C --> F["Final synthesis"]
-
-    H -. "keep: retry deletion, strict extras, fault seam" .-> F
-    M -. "keep: fresh reflect look, one budget, exact JSON" .-> F
-    C -. "delete: hidden cache key and forensic scratch" .-> F
-
-    classDef original fill:#475569,color:#ffffff,stroke:#cbd5e1,stroke-width:3px;
-    classDef alternate fill:#b45309,color:#ffffff,stroke:#fcd34d,stroke-width:3px;
-    classDef max fill:#6d28d9,color:#ffffff,stroke:#c4b5fd,stroke-width:3px;
-    classDef compare fill:#0369a1,color:#ffffff,stroke:#7dd3fc,stroke-width:3px;
-    classDef final fill:#15803d,color:#ffffff,stroke:#86efac,stroke-width:4px;
-
-    class O original;
-    class H alternate;
-    class M max;
-    class C compare;
-    class F final;
-```
+We both know this might be nothing. We both know it might be the thing. The next run will say. See you next season.
 
 ---
 
-# Forensic deductions from the captured run
-
-## Duplicate LM Studio opening
-
-The retained evidence did not prove two top-level LM Studio launches.
-
-Several `LM Studio.exe` process rows do not by themselves prove several application instances.
-
-Electron applications normally use multiple processes for one visible application.
-
-The captured taskbar observation reported one running window.
-
-One later authored restart script intended to focus, close, and relaunch the application.
-
-That script attempted positional rectangle access against a mapping.
-
-It faulted before the close and relaunch operations.
-
-The earliest launch request was absent from the supplied request-log slice.
-
-The human observation of a duplicate opening is therefore important but not causally proven by these artifacts.
-
-The startup-race hypothesis remains plausible.
-
-The general repair is not an LM Studio delay constant.
-
-The general repair is same-script wait, fresh observation, and multi-kind witness before absence.
-
-## Electron process interpretation
-
-Electron's official process model describes a main process and renderer processes associated with windows or embedded content.
-
-See [Electron Process Model](https://www.electronjs.org/docs/latest/tutorial/process-model).
-
-Therefore a process-table count is not a direct application-instance count.
-
-The verifier must combine process evidence with fresh window evidence and, where relevant, ports or logs.
-
-## Emergent self-editing
-
-The captured requests show that the model independently chose to read and write `node_execute.py`.
-
-The prompts did not contain a self-evolution sermon.
-
-This proves the emergence of self-modification attempts as ordinary deeds.
-
-It does not prove beneficial semantic evolution.
-
-The file's later timestamp is consistent with a write.
-
-The retained file content and line-targeting scripts do not prove a meaningful source transformation.
-
-At least one authored rewrite script was syntactically invalid before its write path.
-
-Some writes were consistent with no-op rewrites.
-
-The correct conclusion is narrower than “the system evolved itself.”
-
-The topology allowed self-editing behavior to emerge.
-
-The captured artifacts do not prove that a semantically changed body survived and ran.
-
-## Rect failure
-
-The captured authored code indexed a rectangle by position.
-
-The observation contract supplied a mapping.
-
-Converting a mapping key such as `left` to integer produced the observed error.
-
-The final execute prompt states the mapping keys and center formula explicitly.
-
-The desktop itself still validates physical screen bounds.
-
-## False-success seam
-
-One authored script enclosed broad work in `try/except` and printed its error.
-
-Because the script did not re-raise, the executor could only see a normal return.
-
-The final prompt commands every deed fault to rise and become traceback counsel.
-
-No parser is added to guess whether printed text means failure.
-
-The witness still judges actual effect.
-
-## False-negative witness seam
-
-The run showed a witness that looked through too few channels and concluded absence too early.
-
-The final verifier law requires more than one witness kind before a negative conclusion.
-
-The final actor law requires waiting for newly summoned things.
-
-The final graph ensures observations occur at the correct points.
-
-No application-specific witness is hardcoded.
-
-## Failure-streak observation
-
-Captured failure counts remained at one because near-identical strategies were paraphrased as different deed descriptions.
-
-The mechanical signature is still correctly scoped to description and `done_when`.
-
-The final prompts add the semantic law that a failed strategy earns no new name.
-
-No semantic embedding subsystem is added.
-
-Model obedience to that law remains a live-wheel question.
-
----
-
-# How to use endgame-ai
-
-## Intended host
-
-The intended host is Windows 11 with a visible interactive desktop.
-
-The desktop layer uses Windows UI Automation and `ctypes.windll`.
-
-The code is not intended to drive a headless Linux desktop.
-
-The host needs a working Python installation.
-
-The source imports `comtypes` in addition to the Python standard library.
-
-The host needs network access to the configured xAI Responses endpoint.
-
-The process needs `XAI_API_KEY` in its environment.
-
-## Repository placement
-
-Extract the ZIP into a normal project directory.
-
-Do not embed an absolute installation path into source files.
-
-The runtime resolves its own directory through `__file__`.
-
-The authored executor receives that resolved directory as `repo_root`.
-
-## PowerShell discipline
-
-Project operations intended to touch the Windows host should run through `powershell.exe -NoProfile`.
-
-Microsoft documents that `-NoProfile` prevents loading PowerShell profiles in [about_PowerShell_exe](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_powershell_exe?view=powershell-5.1).
-
-The examples below use relative paths.
-
-Adjust the relative directory name to where the archive was extracted.
-
-## 1. Extract the archive
-
-From a parent directory containing the final ZIP:
-
-```powershell
-powershell.exe -NoProfile -Command "Expand-Archive -LiteralPath '.\endgame-ai-final.zip' -DestinationPath '.\endgame-ai' -Force"
-```
-
-If the archive has a different filename, substitute that filename only.
-
-## 2. Install the external Python dependency
-
-```powershell
-powershell.exe -NoProfile -Command "Set-Location '.\endgame-ai'; py -m pip install comtypes"
-```
-
-The project does not introduce a dependency manager or lockfile in this correction.
-
-The source itself is the dependency authority.
-
-## 3. Set the xAI API key
-
-Set `XAI_API_KEY` in the Windows environment through your normal secret-management method.
-
-For a temporary PowerShell session, the shape is:
-
-```powershell
-$env:XAI_API_KEY = '<your-key>'
-```
-
-Do not put the real key in `wiring.json`.
-
-The transport reads only the environment variable.
-
-## 4. Optional counsel
-
-The default guidance path is `guidance.txt` in the project directory.
-
-The file may be absent.
-
-To provide one-time counsel before or during a life:
-
-```powershell
-powershell.exe -NoProfile -Command "Set-Location '.\endgame-ai'; Set-Content -LiteralPath '.\guidance.txt' -Value 'Re-read the fresh world and choose the smallest true next deed.' -Encoding utf8"
-```
-
-The guidance node clears non-empty counsel after reading it.
-
-Counsel does not replace the root goal.
-
-## 5. Operator-run static gates
-
-The final ZIP was deliberately not executed after packaging.
-
-Run these gates on the intended host before the live wheel if you want static confirmation:
-
-```powershell
-powershell.exe -NoProfile -Command "Set-Location '.\endgame-ai'; py -m json.tool .\wiring.json *> $null; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; py -m py_compile .\*.py; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; py -c \"import core_wiring; core_wiring.load_wiring()\"; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; py .\check_topology.py"
-```
-
-These checks are necessary but not behavioral proof.
-
-They do not exercise UI Automation against the live desktop.
-
-They do not call the model.
-
-They do not prove model obedience.
-
-## 6. Run one life
-
-If `XAI_API_KEY` is already inherited by the process:
-
-```powershell
-powershell.exe -NoProfile -Command "Set-Location '.\endgame-ai'; py .\core_organism.py 'Describe the goal here in plain language.'"
-```
-
-The CLI passes the positional text as the immutable root goal.
-
-An empty goal exits through a value error.
-
-The process turns until direct `halt`, a body fault, or a keyboard interrupt.
-
-There is no internal turn cap.
-
-## 7. Watch the first model call
-
-The first call determines whether the provider accepts `min_output_tokens`.
-
-If the call succeeds, no transport change is required from this caveat.
-
-If it fails with HTTP 400 and explicitly identifies `min_output_tokens` as unknown, edit `wiring.json`.
-
-Remove the four `min_output_tokens` lines under the four organs.
-
-Leave the `max_output_tokens` lines intact.
-
-Do not add conditional stripping in Python.
-
-Do not add retry behavior.
-
-Re-run as a fresh life after the wiring edit.
-
-## 8. Read a life correctly
-
-Follow node order and signals.
-
-Separate authored deed faults from body faults.
-
-Do not treat actor print output as success proof.
-
-Inspect the verifier's named witnesses.
-
-Check whether `observation_fresh` was true.
-
-For an absence verdict, check whether more than one kind of witness was used.
-
-Check whether reflection chose a truly different strategy.
-
-Check whether the living-word rows contain learned facts instead of goal echoes.
-
-Check whether bare IDs leaked into durable rows.
-
-## 9. Interrupt a life
-
-The kernel catches `KeyboardInterrupt`.
-
-It returns state with phase `interrupted`.
-
-No automatic commit follows.
-
-No known-good ref is advanced by this project body.
-
-## 10. Commit discipline
-
-This archive contains no commit.
-
-Review live behavior first.
-
-Commit only after explicit human approval.
-
-Run host git commands through `powershell.exe -NoProfile` under the project's operating law.
-
-Stage source deliberately.
-
-Do not stage runtime logs, request captures, generated guidance, or bytecode caches.
-
-Advance `refs/endgame/known_good` only under explicit approval.
-
-Mention the `min_output_tokens` HTTP-400 caveat in the eventual commit message while the experiment remains.
-
-## 11. Upload to GitHub
-
-Place `README.md` at repository root.
-
-GitHub will render the Markdown and Mermaid diagrams in the repository view.
-
-Keep the source files and `wiring.json` at the same root unless wiring paths are deliberately changed.
-
-Do not upload forensic runtime captures as project source.
-
-## Minimal command summary
-
-```powershell
-powershell.exe -NoProfile -Command "Set-Location '.\endgame-ai'; py -m pip install comtypes"
-powershell.exe -NoProfile -Command "Set-Location '.\endgame-ai'; py .\check_topology.py"
-powershell.exe -NoProfile -Command "Set-Location '.\endgame-ai'; py .\core_organism.py 'Your goal'"
-```
-
-The second command is an operator gate, not a substitute for the third command's live behavior.
-
----
-
-# Complete node reference
-
-## `node_guidance`
-
-Implementation: `node_guidance.py`.
-
-Kind: mechanical Python node.
-
-Input contract: the guidance file.
-
-Primary input state: configured guidance path.
-
-Output signal: `attend`.
-
-Output patch: `latest_counsel`.
-
-Side effect: clears non-empty guidance after reading.
-
-Next identity: `node_observe:act`.
-
-It does not call the model.
-
-It does not alter the goal.
-
-## `node_observe:act`
-
-Implementation: `node_observe.py`.
-
-Kind: mechanical observation identity.
-
-Input contract: present state and observation law in wiring.
-
-Output signal: `observed`.
-
-Output patch: fresh observation fields.
-
-Purpose: look immediately before execute.
-
-Next identity: `node_execute`.
-
-It does not call the model.
-
-It mints new ephemeral IDs.
-
-## `node_execute`
-
-Implementation: `node_execute.py`.
-
-Kind: thinking plus authored-code execution.
-
-Input contract: one fresh observation and any action frame.
-
-Prompt key: `node_execute`.
-
-Record contract: `execution`.
-
-Signals: `done` or `deed_denied`.
-
-`done` target: `node_observe:verify`.
-
-`deed_denied` target: `node_observe:reflect`.
-
-It writes the execute living-word row.
-
-It stores deed identity as description plus `done_when`.
-
-It captures only authored-script traceback, hash, and code length as execution evidence.
-
-It clears an consumed action frame.
-
-## `node_observe:verify`
-
-Implementation: `node_observe.py`.
-
-Kind: mechanical observation identity.
-
-Purpose: look after a non-raising deed.
-
-Output signal: `observed`.
-
-Next identity: `node_verify`.
-
-Its timestamp establishes observation freshness relative to the action.
-
-## `node_verify`
-
-Implementation: `node_verify.py`.
-
-Kind: thinking plus authored-probe execution.
-
-Input contract: last deed, `done_when`, and one fresh observation.
-
-Prompt key: `node_verify`.
-
-Record contract: `verification`.
-
-Signals: `halt`, `deed_confirmed`, or `deed_denied`.
-
-`halt` target: terminal sentinel.
-
-`deed_confirmed` target: `node_guidance`.
-
-`deed_denied` target: `node_reflect`.
-
-It withholds the `desktop` object.
-
-It requires exact verdict types.
-
-It converts authored probe faults into denial evidence.
-
-It resets the failure streak after a confirmed deed.
-
-It clears the current deed after confirmation.
-
-## `node_observe:reflect`
-
-Implementation: `node_observe.py`.
-
-Kind: mechanical observation identity.
-
-Purpose: look after an authored execution raise.
-
-Output signal: `observed`.
-
-Next identity: `node_reflect`.
-
-It prevents reflection from reasoning on the stale pre-deed world.
-
-## `node_reflect`
-
-Implementation: `node_reflect.py`.
-
-Kind: thinking recovery faculty.
-
-Input contract: denied deed, evidence, failure streak, and fresh observation.
-
-Prompt key: `node_reflect`.
-
-Record contract: `reflection`.
-
-Signals: `retry` or `frame`.
-
-`retry` target: `node_guidance`.
-
-`frame` target: `node_frame_action`.
-
-It updates the mechanical failure streak before thinking.
-
-It writes lesson and diagnosis.
-
-It rewrites the reflection living-word row.
-
-It clears any stale action frame.
-
-## `node_frame_action`
-
-Implementation: declarative definition in `wiring.json`.
-
-Kind: thinking data node.
-
-Input contract: denied deed, evidence, fresh observation.
-
-Prompt key: `node_frame_action`.
-
-Record contract: `action_frame`.
-
-Signal source: `data.next_signal`.
-
-Signals: `framed` or `reflect`.
-
-`framed` target: `node_execute`.
-
-`reflect` target: `node_reflect`.
-
-It builds the action-frame state patch from record fields.
-
-It writes the frame living-word row.
-
-It demonstrates that a thinking node can be pure wiring data.
-
-## Terminal `halt`
-
-Kind: kernel sentinel.
-
-It is not a node.
-
-It has no prompt.
-
-It has no docstring contract.
-
-It has no plugin file.
-
-It ends the wheel and returns state.
-
----
-
-# File atlas
-
-## Runtime and configuration files
-
-### `wiring.json`
-
-Owns topology.
-
-Owns prompts.
-
-Owns model and transport request values.
-
-Owns organ tuning.
-
-Owns observation phase names and settings.
-
-Owns four record contracts.
-
-Owns the declarative frame node.
-
-### `core_organism.py`
-
-Turns the frontier-based wheel.
-
-Loads wiring at birth.
-
-Calls nodes.
-
-Follows signals.
-
-Handles fan-out and barriers generically.
-
-Recognizes `halt` and `wait` sentinels.
-
-### `core_wiring.py`
-
-Loads and validates wiring.
-
-Validates transport, paths, phases, counts, topology, prompts, and contracts.
-
-Resolves relative project paths.
-
-Provides prompt assembly and selected transport configuration.
-
-Contains no request-profile validator in the final body.
-
-Contains no expansion-node-cap validator.
-
-### `check_topology.py`
-
-Performs the offline graph and contract check.
-
-Checks node identities and implementations.
-
-Checks reachability from cycle start.
-
-Checks edge targets and signal contracts.
-
-Checks record-contract coherence.
-
-It is an operator gate, not runtime behavior proof.
-
-### `core_loader.py`
-
-Loads Python modules by configured kind and name.
-
-Resolves instance suffixes to base modules.
-
-Supports live re-reading behavior according to its loader semantics.
-
-### `core_node_base.py`
-
-Defines the base node thinking pattern.
-
-Assembles prompts and payloads.
-
-Validates signals against live wiring.
-
-Implements declarative node evaluation.
-
-Contains no request-profile hook in the final body.
-
-### `core_brain.py`
-
-Builds messages.
-
-Builds strict response schemas.
-
-Discovers downstream input contracts.
-
-Places the living word at the user tail.
-
-Calls the configured transport.
-
-Commits exact JSON records.
-
-Validates record substance.
-
-Contains no generated prompt-cache key.
-
-### `core_bus.py`
-
-Defines records and emissions.
-
-Provides deep merge and null pruning.
-
-Renders the living-word table.
-
-Builds compact state and observation views.
-
-Builds execution evidence.
-
-Computes deed failure identity and streak.
-
-### `transport_xai.py`
-
-Builds the final request body from wiring and dynamic values.
-
-Sends one Responses API request.
-
-Parses response text and reasoning.
-
-Raises on transport faults.
-
-Contains no retry loop.
-
-Contains no API-field catalog.
-
-### `core_nodes.py`
-
-Builds actor and verifier Python namespaces.
-
-Exposes the live desktop only to the actor.
-
-Provides `consult_model`.
-
-Supplies current observation and runtime paths.
-
-### `core_desktop.py`
-
-Initializes Windows UI Automation.
-
-Provides click, type, key, hotkey, scroll, URL, observe, and expand methods.
-
-Fails on invalid key and coordinate inputs.
-
-Uses the default URL handler or an authored executable.
-
-Contains no browser whitelist.
-
-### `core_observation.py`
-
-Owns general UI Automation extraction.
-
-Loads scan, filter, and build phases by wiring name.
-
-Converts elements into raw facts.
-
-Supports fresh targeted expansion.
-
-Contains no task-specific icon names.
-
-Contains no expansion node cap.
-
-### `obs_scan.py`
-
-Scans UI Automation according to wiring-owned scan settings.
-
-Returns raw nodes and screen data.
-
-### `obs_filter.py`
-
-Filters and ranks the standing observation.
-
-Applies general interactivity and structural rules.
-
-### `obs_build.py`
-
-Builds observation-local IDs.
-
-Builds the tree, action index, and searchable element list.
-
-Preserves rectangle mappings and text-size facts.
-
-### `node_guidance.py`
-
-Reads and clears optional counsel.
-
-### `node_observe.py`
-
-Runs one fresh observation for all three observation identities.
-
-### `node_execute.py`
-
-Authors and enacts one Python deed.
-
-Captures authored traceback as denial evidence.
-
-### `node_verify.py`
-
-Authors and runs one Python witness probe.
-
-Requires an exact verdict.
-
-Routes whole-goal proof directly to `halt`.
-
-### `node_reflect.py`
-
-Updates the failure streak and authors a causal recovery record.
-
-## Documentation files
-
-### `THE-prompt.md`
-
-Durable atemporal meta-description.
-
-Names project law and architectural intent.
-
-The live code still wins if drift appears.
-
-### `README.md`
-
-Repository-facing explanation.
-
-Contains final topology, behavior, comparison, usage, and caveats.
-
-## Files deliberately absent
-
-### `node_satisfied.py`
-
-Absent because direct halt eliminates the pass-through faculty.
-
-### `THE-compact.md`
-
-Absent because the closed conversation checkpoint contained stale session state and TODOs.
-
-This README supersedes its durable explanatory function.
-
-### Captured console and request logs
-
-Absent from the GitHub-ready package because they are runtime forensic artifacts.
-
-Their source copies remain in the supplied forensic archive.
-
-### `requirements.txt`
-
-Not added because the task forbade new unearned machinery.
-
-The only non-stdlib import required by source is visible as `comtypes`.
-
-### A launcher
-
-Not included in the attached source body and not invented here.
-
-The meta-description discusses an external launcher, but this package contains the organism body only.
-
----
-
-# Wiring reference
-
-## `schema`
-
-The wiring schema label is `endgame-ai.wiring.v1`.
-
-It identifies the document shape.
-
-## `model.transport`
-
-Selects the transport module by name.
-
-The final value is `transport_xai`.
-
-## `model.transport_config`
-
-Maps transport names to their configuration.
-
-The selected transport configuration contains URL, structured-output selection, reasoning pattern, injection template, and request base.
-
-## `model.transport_config.transport_xai.url`
-
-Names the Responses endpoint.
-
-## `structured_outputs.enabled`
-
-Controls whether the brain supplies strict response format schemas.
-
-The final value is true.
-
-## `reasoning_pattern`
-
-Controls orchestration shape.
-
-The final value is `native`.
-
-The kernel also understands `single_pass` and `two_pass` when explicitly wired.
-
-There is no default fallback for a missing pattern in final `think()`.
-
-## `reasoning_injection_template`
-
-Provides the explicit template used only by `two_pass` orchestration.
-
-It remains required wiring even though the current pattern is native.
-
-## `request`
-
-Contains the literal provider request base.
-
-The final request names model `grok-4.3`.
-
-It sets temperature `0.2`.
-
-It sets high reasoning effort.
-
-It sets `store` false.
-
-It sets truncation disabled.
-
-It contains no tools array.
-
-It contains no generated cache key.
-
-## `model.global.timeout`
-
-Provides the network timeout consumed through selected transport configuration assembly.
-
-The final value is 180 seconds.
-
-This is a network operation timeout, not an organism turn cap.
-
-## `model.organs`
-
-Maps record type to per-call request tuning.
-
-Four thinking contracts have organ entries.
-
-Guidance and observation do not call the model.
-
-## `paths.nodes`
-
-Names the relative directory holding node modules.
-
-The final value is the project root.
-
-## `paths.brains`
-
-Names the relative directory holding transport/brain modules according to loader conventions.
-
-The final value is the project root.
-
-## `paths.guidance`
-
-Names the one-time counsel file.
-
-The final value is `guidance.txt`.
-
-## `observe_config.hover_cache.enabled`
-
-Requires the observation pipeline to be active.
-
-The final value is true.
-
-## `observe_config.hover_cache.phases`
-
-Names `obs_scan`, `obs_filter`, and `obs_build`.
-
-All three names are required.
-
-No fallback phase names are supplied in Python.
-
-## `scan`
-
-Owns standing observation scan density and raw count controls.
-
-These controls shape the ordinary scan.
-
-They are not the targeted expansion text budget.
-
-## `filter`
-
-Owns standing observation selection counts, depth, and interactivity requirements.
-
-## `budget.line_preview_chars`
-
-Controls compact tree-line preview size.
-
-It does not truncate `screen_elements` full text.
-
-## `budget.expand_char_budget`
-
-Is the single targeted expansion size control.
-
-The final value is 200,000 characters.
-
-## `topology.cycle_start`
-
-Names `node_guidance`.
-
-## `topology.nodes`
-
-Lists all eight live identities.
-
-The list contains three observe instances.
-
-It does not contain `node_satisfied`.
-
-## `topology.edges`
-
-Owns every signal vocabulary and route.
-
-A node's legal output signals derive from its outgoing edge names.
-
-## `topology.barriers`
-
-Is an empty mapping in the current graph.
-
-The kernel still implements barrier behavior generically.
-
-## `shared_prompt_prefix`
-
-Carries universal model-facing law.
-
-It carries identity, record-only speech, testimony discipline, atemporal living word, ID ephemerality, and row-writing law.
-
-## `prompts`
-
-Carries role-specific model-facing instructions for execute, verify, reflect, and frame.
-
-## `record_contracts`
-
-Carries the four exact structured output contracts.
-
-## `node_defs`
-
-Carries the declarative frame node's input contract, prompt key, record type, signal source, payload, evidence, and patch mapping.
-
----
-
-# Data-flow reference
-
-## State written at birth
-
-- `_phase`
-- `goal`
-- `tick`
-- `current_node`
-- `goal_interpretations`
-- `wiring_transport`
-- `started_at`
-
-## Observation patch
-
-- `observed_at`
-- `desktop_tree_text`
-- `action_index`
-- `screen_elements`
-- `observation_artifact`
-
-## Execute patch
-
-- `current_deed`
-- `goal_interpretations`
-- `turn_executions`
-- `last_action_at`
-- `action_frame`
-
-## Verification patch
-
-- `verification`
-- `last_verification`
-- `goal_interpretations`
-- On confirmation: `witnessed_deed_count`
-- On confirmation: reset `failure_streak`
-- On confirmation: clear `action_frame`
-- On confirmation: clear `current_deed`
-
-## Reflection patch
-
-- `failure_streak`
-- `action_frame`
-- `reflection`
-- `last_reflection`
-- `goal_interpretations`
-
-## Frame patch
-
-- `action_frame.screen_summary`
-- `action_frame.target`
-- `action_frame.strategy`
-- `action_frame.risk`
-- `action_frame.notes`
-- `goal_interpretations`
-
-## Kernel routing state
-
-- `frontier`
-- `barrier_arrivals`
-- `last_signal`
-- `last_node`
-- incremented `tick`
-
-## Compact focus sent to thinking faculties
-
-- living word, extracted to tail
-- latest counsel
-- current deed description and `done_when`
-- failure streak
-- whether an action frame exists
-
-Tick, current node, previous signal, full prior verification, and full prior reflection are not duplicated into every model focus.
-
-## Evidence flow
-
-```mermaid
-flowchart TD
-    A["Authored actor code"] -->|raises| T["Traceback evidence"]
-    A -->|returns| D["Current deed identity"]
-    D --> O["Fresh post-deed observation"]
-    O --> P["Authored witness probe"]
-    P -->|independent effect| V["Native verdict"]
-    P -->|raises or malformed| T2["Probe traceback"]
-    T --> R["Reflection"]
-    T2 --> R
-    V -->|denied| R
-    V -->|confirmed| L["Next lap"]
-    V -->|whole goal| H(("halt"))
-
-    classDef actor fill:#c2410c,color:#ffffff,stroke:#fdba74,stroke-width:3px;
-    classDef observe fill:#0e7490,color:#ffffff,stroke:#67e8f9,stroke-width:3px;
-    classDef witness fill:#6d28d9,color:#ffffff,stroke:#c4b5fd,stroke-width:3px;
-    classDef failure fill:#be123c,color:#ffffff,stroke:#fda4af,stroke-width:3px;
-    classDef success fill:#15803d,color:#ffffff,stroke:#86efac,stroke-width:3px;
-
-    class A,D actor;
-    class O observe;
-    class P,V witness;
-    class T,T2,R failure;
-    class L,H success;
-```
-
----
-
-# Troubleshooting by symptom
-
-## Wiring fails to load
-
-Treat it as a body fault.
-
-Read the exact exception.
-
-Check required wiring paths and types.
-
-Check that every listed Python node resolves to a file or declarative definition.
-
-Check every edge target.
-
-Do not add a fallback loader.
-
-## Topology checker reports a missing node
-
-First ask whether the node does essential work.
-
-If it is a pass-through, delete the dependency and route directly.
-
-If it owns essential transformation, restore or implement it only with evidence.
-
-The final resolution of `node_satisfied` followed the first path.
-
-## First model call raises `NameError: cfg`
-
-That symptom identifies the literal High-reasoning diff representation, not this final synthesis.
-
-Final `core_brain.call()` binds both `transport` and `cfg`.
-
-Confirm the final file was extracted rather than the alternate patch being applied independently.
-
-## First model call returns HTTP 400 for `min_output_tokens`
-
-Remove exactly four minimum-token entries from wiring.
-
-Do not remove maximum-token entries.
-
-Do not edit the transport to strip the field conditionally.
-
-Do not retry the rejected request.
-
-## Model returns JSON inside Markdown fences
-
-The body should fail the record commit.
-
-The model-facing contract requires one record only.
-
-Do not restore fence recovery.
-
-## Verifier returns string booleans
-
-The probe becomes a deed denial.
-
-Reflection receives the malformed-verdict traceback.
-
-The next strategy must produce native Python `True` or `False`.
-
-## Verifier reports absence too quickly
-
-Inspect the probe code.
-
-Check whether it waited for a newly summoned thing.
-
-Check whether it used more than one witness kind.
-
-Check process start times, fresh screen, ports, logs, or filesystem evidence as deed-appropriate.
-
-Do not add an application-specific sleep constant to the kernel.
-
-## Actor opens an application twice
-
-Do not infer duplicate launches from process count alone.
-
-Trace the authored scripts in order.
-
-Use process start times.
-
-Use fresh window observations.
-
-Distinguish a taskbar focus click from a process launch.
-
-Check whether a supposed restart script actually reached its restart operations.
-
-## Actor claims success after printing an exception
-
-The authored script swallowed its own fault.
-
-The execute prompt forbids this.
-
-The verifier must still deny absent effect.
-
-Do not parse console text into a synthetic failure channel.
-
-## Reflection loops with paraphrased strategies
-
-Compare deed description and `done_when`.
-
-Check the living-word rows for semantic repetition.
-
-Check whether reflection obeyed the SHALT-frame law.
-
-Check whether framing actually chose another target or method.
-
-Do not add a semantic memory subsystem without new evidence.
-
-## Bare IDs appear in the living word
-
-That is model disobedience to the ephemerality law.
-
-The row should name role, place, and meaning instead.
-
-The final body does not add a post-hoc ID sanitizer.
-
-Such a sanitizer would be new machinery and could erase legitimate text.
-
-## `desktop.expand()` exceeds budget
-
-The call should raise and report requested sizes.
-
-Ask for fewer elements in another authored deed or sub-step.
-
-Do not add truncation.
-
-Do not restore a hidden node cap.
-
-## UI Automation module fails to load
-
-Treat it as a body/environment fault.
-
-Confirm Windows, Python, `comtypes`, and UI Automation availability.
-
-The final body does not purge and regenerate modules silently.
-
-## URL opening fails for a named browser
-
-`default` uses the Windows association.
-
-Any non-default value must be an executable resolvable by the host.
-
-There is no known-browser lookup table.
-
-## Invalid key name raises
-
-That is the intended deed-fault behavior.
-
-Use one of the mapped key names or author a different Windows input method in Python.
-
-Do not convert the error into `{ok: false}` and ignore it.
-
----
-
-# Behavioral validation guide
-
-The package was not run after final reconciliation.
-
-The operator asked to perform the live run.
-
-The following guide describes what that run should establish.
-
-## Gate A: body birth
-
-Expected evidence:
-
-- wiring loads;
-- every topology identity resolves;
-- all nodes are reachable;
-- four record contracts validate;
-- guidance reaches the first observation.
-
-## Gate B: live observation
-
-Expected evidence:
-
-- UI Automation initializes;
-- screen dimensions are physical pixels;
-- the fresh tree contains real current windows;
-- action-index rectangles are mappings;
-- `screen_elements` carries searchable full selected text;
-- observation timestamps increase across looks.
-
-## Gate C: actor grounding
-
-Expected evidence:
-
-- execute names semantic targets;
-- rectangle access uses mapping keys;
-- fullness-dependent actions search or expand;
-- newly summoned things are waited for;
-- exceptions escape the authored script.
-
-## Gate D: verifier provenance
-
-Expected evidence:
-
-- verifier has no `desktop` value;
-- probe sets exact native booleans;
-- positive claims bind to outside-system effect;
-- negative claims use multiple witness kinds;
-- whole-goal proof covers all requirements.
-
-## Gate E: recovery
-
-Expected evidence:
-
-- actor traceback routes through `observe:reflect`;
-- reflection sees the post-fault world;
-- exact repeated deed identity increments its streak;
-- repeated strategy is framed rather than renamed;
-- a genuinely different deed can retry.
-
-## Gate F: terminal truth
-
-Expected evidence:
-
-- verifier emits `halt` only after whole-goal proof;
-- kernel recognizes direct terminal sentinel;
-- no missing terminal node is loaded;
-- returned state reports halted phase.
-
-## Gate G: transport experiment
-
-Expected evidence:
-
-- xAI accepts or explicitly rejects the minimum-token field;
-- no hidden request profile appears;
-- no server tool appears;
-- no generated prompt-cache key appears;
-- first transport fault ends the life.
-
-## What an offline pass cannot prove
-
-It cannot prove that the model follows the living-word law.
-
-It cannot prove that the model avoids bare IDs.
-
-It cannot prove that the model waits long enough for a particular application.
-
-It cannot prove that witness selection is causally sound.
-
-It cannot prove that self-modification is beneficial.
-
-It cannot prove that a changed body survives a new life.
-
-Only the real wheel can provide those facts.
-
----
-
-# Design laws retained in the final body
-
-## Ground truth
-
-Read live files.
-
-Trace wiring, prompt, docstring, contract, and implementation together.
-
-Distinguish proven facts from inference.
-
-## Elimination
-
-Delete pass-through faculties.
-
-Delete dormant policy.
-
-Delete duplicate limits.
-
-Delete hidden request mutation.
-
-Add only the observation identity required for honest ordering.
-
-## Task agnosticism
-
-No application name appears in model-facing law.
-
-No browser list is baked into action behavior.
-
-No self-evolution faculty exists.
-
-Desktop and Python are general capabilities, not goals.
-
-## Fail hard
-
-Body faults end the life.
-
-Deed faults retain traceback and enter recovery.
-
-No retry loop masks transport truth.
-
-No parser recovers malformed record prose.
-
-## No cage
-
-No sandbox is added.
-
-No action whitelist is added.
-
-No turn cap is added.
-
-No approval loop is added.
-
-The verifier's missing desktop hand is role definition, not a security claim.
-
-## One source of truth
-
-Wiring owns topology.
-
-Wiring owns model-facing prompts.
-
-Wiring owns request values.
-
-Wiring owns organ tuning.
-
-Wiring owns record contracts.
-
-Consumer docstrings own input contracts.
-
-Python implements the kernel.
-
-## Atemporalism
-
-The root goal is immutable.
-
-The living word is the narrative river.
-
-The fresh observation is the present tense.
-
-Failure streak is narrow mechanical state.
-
-No prose transcript is fed back as memory.
-
-## Witness discipline
-
-Actor testimony proves no world effect.
-
-Independent effect must be deed-bound.
-
-Absence requires witness diversity.
-
-Whole-goal proof covers the whole goal.
-
-## Scriptural register
-
-Shared and node prompts retain the commandment register.
-
-Injected node contracts retain it.
-
-This README uses natural technical language because it is for human repository readers, not a model-facing faculty artifact.
-
----
-
-# Frequently asked questions
-
-## Is endgame-ai a desktop automation script?
-
-No fixed desktop task is encoded.
-
-It is a general wheel whose actor can use a desktop capability.
-
-## Is Python the only tool?
-
-Yes in the project sense.
-
-There is no curated model tool menu.
-
-Python can invoke the desktop object and ordinary libraries.
-
-## Does the actor call a separate runner?
-
-No.
-
-Execute authors and immediately enacts one script.
-
-## Does the verifier run Python too?
-
-Yes.
-
-It authors a probe and executes it with the desktop hand withheld.
-
-## Is the verifier sandboxed?
-
-No.
-
-Python remains uncaged.
-
-Read-only conduct is prompt law.
-
-## Why not deep-copy everything for the verifier?
-
-A deep copy would narrow accidental mutation of supplied objects but would not make standard-library Python read-only.
-
-The final design avoids extra machinery and states the truth.
-
-## Why is `node_satisfied` absent?
-
-It added no transformation after whole-goal proof.
-
-Direct `halt` is the smaller complete topology.
-
-## Why is there an observe node before reflection?
-
-An authored script may alter the world before raising.
-
-Reflection needs that post-fault present.
-
-## Why are there three observe identities?
-
-The same implementation serves three distinct causal positions.
-
-Topology identity records when the look occurs.
-
-## Why is the root goal at the message tail?
-
-It is a lodestar beneath the learned living word.
-
-It should constrain direction without drowning current learning.
-
-## Is there cross-run memory?
-
-Not inside this body.
-
-Cross-life selection belongs to an external launcher described in the meta document.
-
-## Can the organism rewrite itself?
-
-Yes, as an ordinary Python deed.
-
-That possibility is not preached as the goal.
-
-## Does a file write prove self-evolution?
-
-No.
-
-Semantic change and survival in a new life require separate proof.
-
-## Why no web-search tool profile?
-
-Python can perform network work when a deed calls for it.
-
-A dormant server-tool profile was duplicate policy and task bias.
-
-## Why no retry on network errors?
-
-The fail-hard law makes the first transport fault truthful.
-
-Retries would hide timing and provider behavior.
-
-## Why no browser whitelist?
-
-It was environment-specific policy.
-
-The final method uses the default handler or the executable authored for the deed.
-
-## Why exact JSON only?
-
-The model is already constrained by a structured record contract.
-
-Recovering surrounding prose rewards contract violation and obscures body truth.
-
-## Why require native booleans?
-
-Python truthiness would make non-empty strings true.
-
-The verdict controls mechanical routing and must be exact.
-
-## Why is actor print output ignored?
-
-It is authored testimony.
-
-It cannot prove independent world effect.
-
-## What proves a deed?
-
-An effect wrought by another system and bound to the deed.
-
-## Why are negative claims harder?
-
-One witness can miss a thing for many reasons.
-
-Multiple witness kinds reduce false absence.
-
-## What is a deed identity?
-
-The pair of description and `done_when`.
-
-## Why not include authored code in the identity?
-
-Different code can attempt the same deed.
-
-Including code would reset the streak on cosmetic implementation changes.
-
-## What causes framing?
-
-Reflection chooses it when fresh aim or a truly other strategy is required.
-
-Repeated failed identity makes framing mandatory in prompt law.
-
-## Does the kernel enforce semantic strategy difference?
-
-No.
-
-That remains model reasoning guided by the living word and reflection prompt.
-
-## What is `action_frame`?
-
-A compact state object naming screen, target, strategy, risk, and notes for the next execute decision.
-
-## Is frame action a Python file?
-
-No.
-
-It is a declarative thinking node in wiring.
-
-## What happens if a node emits an unknown signal?
-
-The topology contract raises.
-
-## What happens if the frontier drains?
-
-The kernel raises a topology contract error.
-
-## Are barriers used now?
-
-No.
-
-The current mapping is empty, while generic kernel support remains.
-
-## Are fan-out edges used now?
-
-No current edge targets a list.
-
-Generic support remains.
-
-## Why keep generic fan-out and barriers?
-
-They are existing topology capabilities, not new machinery from this correction.
-
-## What controls observation size?
-
-Standing scan/filter configuration shapes the ordinary view.
-
-Targeted expansion text has one character budget.
-
-## Why no expansion node cap?
-
-The explicit final law names the character budget as the single expansion size control.
-
-## Does the compact tree contain all text?
-
-No.
-
-It carries previews and true sizes, while `screen_elements` and expansion expose fuller data.
-
-## Are element IDs stable?
-
-No.
-
-They die with each observation.
-
-## What if a bare ID enters the living word?
-
-The model violated the prompt law.
-
-No post-hoc sanitizer is added.
-
-## Does `open_url` know Chrome paths?
-
-No.
-
-That environment-specific list was removed.
-
-## What dependency is required?
-
-The source imports `comtypes` for Windows UI Automation.
-
-## Which model is configured?
-
-`wiring.json` currently names `grok-4.3`.
-
-Model selection is wiring data.
-
-## Which endpoint is configured?
-
-The xAI Responses endpoint named in wiring.
-
-## Does the project store responses?
-
-The request base sets `store` false.
-
-## Does it continue provider response IDs?
-
-No.
-
-The life sends stateless per-call messages assembled from present state.
-
-## Does it create a prompt cache key?
-
-No.
-
-That hidden request-policy seam was removed in the final synthesis.
-
-## Can provider-side automatic caching still occur?
-
-That is a provider behavior outside this body's explicit request policy.
-
-The body does not generate a routing key.
-
-## Why keep `min_output_tokens` if undocumented?
-
-The operator explicitly accepted the experiment.
-
-The first live request must settle it.
-
-## What if the minimum is rejected?
-
-Delete the four wiring entries immediately.
-
-No code fallback is appropriate.
-
-## Was this final package run?
-
-No.
-
-The user explicitly reserved the run for the live host.
-
-## Was the previous Max correction tested offline?
-
-Yes, before this final reconciliation.
-
-Those earlier passes are evidence about the baseline, not proof of the final package.
-
-## Was a commit made?
-
-No.
-
-## Were refs advanced?
-
-No.
-
-## Are the forensic logs in the final ZIP?
-
-No.
-
-They were deliberately omitted from the GitHub-ready tree.
-
-## Where is the comparison history?
-
-In this README.
-
-## Which file is the final authority?
-
-No single prose file overrides code.
-
-Read live wiring, contracts, node docstrings, and implementation together.
-
----
-
-# Final package manifest
-
-The final ZIP contains these project files:
-
-1. `README.md`
-2. `THE-prompt.md`
-3. `check_topology.py`
-4. `core_brain.py`
-5. `core_bus.py`
-6. `core_desktop.py`
-7. `core_loader.py`
-8. `core_node_base.py`
-9. `core_nodes.py`
-10. `core_observation.py`
-11. `core_organism.py`
-12. `core_wiring.py`
-13. `node_execute.py`
-14. `node_guidance.py`
-15. `node_observe.py`
-16. `node_reflect.py`
-17. `node_verify.py`
-18. `obs_build.py`
-19. `obs_filter.py`
-20. `obs_scan.py`
-21. `transport_xai.py`
-22. `wiring.json`
-
-There is no `__pycache__` directory in the package.
-
-There is no guidance scratch file in the package.
-
-There is no alternate patch in the package.
-
-There is no forensic request log in the package.
-
-There is no console capture in the package.
-
-There is no run digest in the package.
-
-There is no `node_satisfied.py` in the package.
-
-There is no hidden launcher in the package.
-
----
-
-# External references
-
-- [GitHub: About the repository README file](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-readmes)
-- [GitHub: Creating Mermaid diagrams](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/creating-diagrams)
-- [Mermaid: Flowchart styling](https://mermaid.js.org/syntax/flowchart.html)
-- [xAI: Responses REST reference](https://docs.x.ai/developers/rest-api-reference/inference/chat)
-- [xAI: Responses versus Chat Completions](https://docs.x.ai/developers/model-capabilities/text/comparison)
-- [Microsoft: about_PowerShell_exe](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_powershell_exe?view=powershell-5.1)
-- [Electron: Process Model](https://www.electronjs.org/docs/latest/tutorial/process-model)
-
----
-
-# Closing model
-
-Give the organism a goal.
-
-It reads counsel.
-
-It looks.
-
-It authors one deed.
-
-It acts.
-
-It looks again.
-
-An independent witness probes the effect.
-
-Truth advances the wheel.
-
-Denial becomes a causal lesson.
-
-Repetition must become another strategy.
-
-Whole-goal proof halts directly.
-
-The living word carries learned present meaning between faculties.
-
-The root goal remains beneath it as a lodestar.
-
-The wiring owns the body's form.
-
-Python remains the sole deed language.
-
-The final body is smaller than every compared runtime body.
-
-Its remaining uncertainty belongs to the real Windows wheel.
+*Co-authored by Claude (Opus 4.8), which drove this session's forensic analysis and documentation, alongside the human operator who designed and directs endgame-ai, and with the labor of the other models that make the organism run and that were tested against it: xAI Grok as the thinking core, GPT Codex, and NVIDIA Nemotron as the opponent in the run documented here. Collaborative work. The vision is the operator's; the organism is its own.*

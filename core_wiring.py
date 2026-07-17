@@ -66,8 +66,15 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
     transport_cfg = _require(cfg, "model.transport_config", dict)
     if transport not in transport_cfg:
         raise RuntimeError(f"wiring.model.transport_config missing selected transport {transport!r}")
+    selected_transport = _require(cfg, f"model.transport_config.{transport}", dict)
     _require(cfg, f"model.transport_config.{transport}.request", dict)
     _require(cfg, f"model.transport_config.{transport}.url", str)
+    request_profiles = selected_transport.get("request_profiles", {})
+    if not isinstance(request_profiles, dict) or not all(isinstance(name, str) and name and isinstance(body, dict) for name, body in request_profiles.items()):
+        raise RuntimeError(f"wiring.model.transport_config.{transport}.request_profiles must map names to request objects")
+    node_profiles = cfg["model"].get("node_profiles", {})
+    if not isinstance(node_profiles, dict) or not all(isinstance(node, str) and node and isinstance(profile, str) and profile for node, profile in node_profiles.items()):
+        raise RuntimeError("wiring.model.node_profiles must map node names to request-profile names")
     for path in (
         "model.global", "model.organs",
         "observe_config.hover_cache", "observe_config.hover_cache.phases", "observe_config.hover_cache.scan", "observe_config.hover_cache.filter", "observe_config.hover_cache.budget",
@@ -114,6 +121,12 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
         raise RuntimeError("wiring.topology.nodes contains duplicates")
     if cfg["topology"]["cycle_start"] not in nodes:
         raise RuntimeError("wiring.topology.cycle_start must name a topology node")
+    unknown_profile_nodes = sorted(set(node_profiles) - set(nodes))
+    if unknown_profile_nodes:
+        raise RuntimeError(f"wiring.model.node_profiles names unknown topology nodes: {unknown_profile_nodes}")
+    unknown_profiles = sorted(set(node_profiles.values()) - set(request_profiles))
+    if unknown_profiles:
+        raise RuntimeError(f"wiring.model.node_profiles names undefined request profiles: {unknown_profiles}")
     missing = [node for node in nodes if node not in edges]
     if missing:
         raise RuntimeError(f"wiring missing edges for nodes: {missing}")

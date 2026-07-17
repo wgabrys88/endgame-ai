@@ -1,15 +1,15 @@
-"""[node_reflect] — Thou expectest the denied deed, its evidence and [failure_streak], and the fresh observation."""
+"""[node_recover] — Thou receivest the denied deed, its evidence and [failure_streak], and the fresh observation."""
 import core_bus as bus
 from core_node_base import BaseNode
 
 
-class ReflectNode(BaseNode):
-    prompt_key = "node_reflect"
-    expected_record_type = "reflection"
+class RecoverNode(BaseNode):
+    prompt_key = "node_recover"
+    expected_record_type = "recovery"
 
     def _prepare(self, ctx):
         state = ctx["state"]
-        self._streak_patch = bus.update_failure_streak(state)
+        self._streak_patch = bus.bump_failure_streak(state)
         self._evidence_payload = {
             "executions": bus.execution_evidence(state),
             "last_verification": state.get("last_verification", {}),
@@ -34,33 +34,24 @@ class ReflectNode(BaseNode):
         }
 
     def signal_from_data(self, data, ctx):
-        self._signal = data["next_signal"]
-        return self._signal
+        return "recovered"
 
     def patch_from_record(self, record, ctx):
         data, state = record.data, ctx["state"]
         deed = state.get("current_deed") or {}
-        lesson, diagnosis = data["lesson"], data["diagnosis"]
-        reflection = {
-            "lesson": lesson,
-            "diagnosis": diagnosis,
-            "deed_goal": deed.get("description", state["goal"]),
-            "recovery_signal": self._signal,
-            "action_frame": state.get("action_frame"),
+        action_frame = {
+            "target": data["target"],
+            "strategy": data["strategy"],
+            "risk": data["risk"],
+            "lesson": data["lesson"],
         }
-        patch = {
+        return {
             **self._streak_patch,
-            "action_frame": None,
-            "reflection": reflection,
-            "last_reflection": {
-                "signal": self._signal,
-                "lesson": lesson,
-                "diagnosis": diagnosis,
-            },
-            "goal_interpretations": bus.with_interpretation(state.get("goal_interpretations"), "reflect", str(data.get("goal_interpretation") or "")),
+            "action_frame": action_frame,
+            "last_recovery": {"lesson": data["lesson"], "target": data["target"], "strategy": data["strategy"], "deed_goal": deed.get("description", state["goal"])},
+            "goal_interpretations": bus.with_interpretation(state.get("goal_interpretations"), "recover", str(data.get("goal_interpretation") or "")),
         }
-        return patch
 
 
 def run(ctx):
-    return ReflectNode().run(ctx)
+    return RecoverNode().run(ctx)
