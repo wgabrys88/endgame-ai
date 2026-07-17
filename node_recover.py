@@ -1,4 +1,4 @@
-"""[node_recover] — Thou expectest the denied deed, its evidence and [failure_streak], and the fresh observation."""
+"""[node_recover] — You receive the denied deed, its evidence and failure_streak, and the fresh observation."""
 import core_bus as bus
 from core_node_base import BaseNode
 

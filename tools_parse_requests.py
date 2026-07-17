@@ -101,11 +101,34 @@ def dump_full(rows: list[tuple[int, dict[str, Any]]], n: int) -> None:
     print(f"line {n} not found")
 
 
+def dump_code(rows: list[tuple[int, dict[str, Any]]]) -> None:
+    """Dump the FULL authored code + full goal_interpretation for every turn.
+    Nothing truncated — the launch script and the verifier probe are the crime scene."""
+    for ln, obj in rows:
+        resp = obj.get("logged", {}).get("chat", {}).get("response", {})
+        rec = _record(resp) or {}
+        rtype = str(rec.get("record_type", "?"))
+        data = rec.get("data", {}) if isinstance(rec, dict) else {}
+        print(f"\n{'='*100}\n=== LINE {ln}  [{rtype}] ===")
+        for field in ("perceived", "intent", "done_when", "target", "strategy", "lesson"):
+            v = data.get(field)
+            if v:
+                print(f"--- {field}:\n{v}")
+        gi = data.get("goal_interpretation")
+        if gi:
+            print(f"--- goal_interpretation:\n{gi}")
+        code = data.get("code")
+        if code:
+            print(f"--- code:\n{code}")
+
+
 if __name__ == "__main__":
     path = sys.argv[1] if len(sys.argv) > 1 else "request-logs-2026-07-16.jsonl"
     rows = _load(path)
     if "--full" in sys.argv:
         dump_full(rows, int(sys.argv[sys.argv.index("--full") + 1]))
+    elif "--code" in sys.argv:
+        dump_code(rows)
     else:
         summarize(rows)
         living_word_trace(rows)

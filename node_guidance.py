@@ -1,4 +1,4 @@
-"""[node_guidance] — Thou expectest the [guidance] file."""
+"""[node_guidance] — You receive the guidance file."""
 import core_bus as bus
 import core_wiring as wiring
 
