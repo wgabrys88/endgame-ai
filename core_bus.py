@@ -177,7 +177,7 @@ def state_brief(state: JsonDict) -> JsonDict:
     return {
         "goal_interpretations": dict(state.get("goal_interpretations") or {}),
         "latest_counsel": state.get("latest_counsel") or "",
-        "current_deed": {"description": current_deed.get("description", ""), "done_when": current_deed.get("done_when", "")},
+        "current_deed": {"description": current_deed.get("description", "")},
         "failure_streak": state.get("failure_streak", {}),
         "has_action_frame": bool(state.get("action_frame")),
     }
