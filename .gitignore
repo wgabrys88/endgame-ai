@@ -26,3 +26,4 @@
 !transport_xai.py
 !tools_parse_requests.py
 !tools_replay_grok.py
+!probe_cache.py
