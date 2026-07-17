@@ -11,8 +11,8 @@
         "reasoning_pattern": "native",
         "reasoning_injection_template": "REASONING:\n{reasoning}",
         "request": {
-          "model": "grok-4.3",
-          "temperature": 0.2,
+          "model": "grok-4.5",
+          "temperature": 0.4,
           "reasoning": {
             "effort": "high"
           },
@@ -22,7 +22,7 @@
         "request_profiles": {
           "observe": {
             "reasoning": {
-              "effort": "low"
+              "effort": "high"
             },
             "max_output_tokens": 4096
           },
