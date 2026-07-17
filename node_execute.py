@@ -1,4 +1,4 @@
-"""[node_execute] — You receive one fresh observation and any recovery frame."""
+"""[node_execute] — Thou receivest one fresh observation and any [action_frame]."""
 import hashlib
 import time
 import traceback

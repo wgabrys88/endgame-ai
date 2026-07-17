@@ -1,4 +1,4 @@
-"""[node_verify] — You receive the last deed, its done_when and action time, and one fresh observation."""
+"""[node_verify] — Thou receivest the last deed, its [done_when] and hour of action, and one fresh observation."""
 import traceback
 
 import core_bus as bus

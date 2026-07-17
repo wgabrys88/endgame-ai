@@ -1,4 +1,4 @@
-"""[node_observe] — You receive the present state and the observation law in the wiring."""
+"""[node_observe] — Thou receivest the present state and the observation law in the [wiring]."""
 import core_bus as bus
 
 
