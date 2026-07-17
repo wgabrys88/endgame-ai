@@ -1,5 +1,4 @@
 from dataclasses import dataclass, field
-import hashlib
 import json
 import re
 import time
@@ -109,7 +108,7 @@ def emit(signal: str, patch: JsonDict | None = None, *, record: Record | JsonDic
     return NodeOutput(signal=signal.strip(), patch=dict(patch or {}), record=record_obj, evidence=dict(evidence or {}))
 
 
-_INTERP_ORDER = ["execute", "verify", "reflect", "frame"]
+_INTERP_ORDER = ["execute", "verify", "recover"]
 
 
 def render_interpretation_table(goal: str, interps: JsonDict | None) -> str:
@@ -247,18 +246,11 @@ def execution_evidence(state: JsonDict) -> JsonDict:
     return evidence
 
 
-def failure_signature(state: JsonDict) -> str:
-    deed = state.get("current_deed") or {}
-    parts = {
-        "deed": deed.get("description", ""),
-        "done_when": deed.get("done_when", ""),
-    }
-    raw = json.dumps(parts, sort_keys=True, ensure_ascii=False, default=str)
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
-
-
-def update_failure_streak(state: JsonDict) -> JsonDict:
-    signature = failure_signature(state)
+def bump_failure_streak(state: JsonDict) -> JsonDict:
+    """Count denials since the last witnessed deed, monotonically. The tally is NOT
+    keyed to the deed's wording: a reworded description of the same obstacle cannot reset
+    it. Only a verifier confirmation clears it (see node_verify). The higher it climbs, the
+    wider recovery must forsake its tried approaches."""
     previous = state.get("failure_streak") or {}
-    count = int(previous.get("count", 0) or 0) + 1 if previous.get("signature") == signature else 1
-    return {"failure_streak": {"signature": signature, "count": count, "updated_at": time.time()}}
+    count = int(previous.get("count", 0) or 0) + 1
+    return {"failure_streak": {"count": count, "updated_at": time.time()}}

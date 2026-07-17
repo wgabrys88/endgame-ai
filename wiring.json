@@ -46,37 +46,24 @@
       "timeout": 180
     },
     "organs": {
-      "action_frame": {
-        "reasoning": {
-          "effort": "high"
-        },
-        "max_output_tokens": 32768,
-        "min_output_tokens": 1000
-      },
       "execution": {
         "reasoning": {
           "effort": "high"
         },
-        "max_output_tokens": 32768,
-        "min_output_tokens": 1000
+        "max_output_tokens": 32768
       },
       "verification": {
         "reasoning": {
           "effort": "high"
         },
-        "max_output_tokens": 32768,
-        "min_output_tokens": 1000
+        "max_output_tokens": 32768
       },
-      "reflection": {
+      "recovery": {
         "reasoning": {
           "effort": "high"
         },
-        "max_output_tokens": 32768,
-        "min_output_tokens": 1000
+        "max_output_tokens": 32768
       }
-    },
-    "node_profiles": {
-      "node_reflect": "web_search"
     }
   },
   "paths": {
@@ -117,12 +104,10 @@
       "node_guidance",
       "node_observe:act",
       "node_observe:verify",
-      "node_observe:reflect",
-      "node_observe:frame",
+      "node_observe:recover",
       "node_execute",
       "node_verify",
-      "node_reflect",
-      "node_frame_action"
+      "node_recover"
     ],
     "edges": {
       "node_guidance": {
@@ -133,76 +118,32 @@
       },
       "node_execute": {
         "done": "node_observe:verify",
-        "deed_denied": "node_observe:reflect"
+        "deed_denied": "node_observe:recover"
       },
       "node_observe:verify": {
         "observed": "node_verify"
       },
-      "node_observe:reflect": {
-        "observed": "node_reflect"
-      },
-      "node_observe:frame": {
-        "observed": "node_frame_action"
+      "node_observe:recover": {
+        "observed": "node_recover"
       },
       "node_verify": {
         "halt": "halt",
         "deed_confirmed": "node_guidance",
-        "deed_denied": "node_observe:reflect"
+        "deed_denied": "node_observe:recover"
       },
-      "node_reflect": {
-        "retry": "node_guidance",
-        "frame": "node_observe:frame"
-      },
-      "node_frame_action": {
-        "framed": "node_observe:act",
-        "reflect": "node_observe:reflect"
+      "node_recover": {
+        "recovered": "node_guidance"
       }
     },
     "barriers": {}
   },
   "shared_prompt_prefix": "Thou art [endgame-ai], one faculty of a continuing organism upon a [Windows 11] machine, with full leave to author and run [Python] toward the goal; the living [wiring] alone nameth every faculty and signal.\n\nSpeak only thine appointed [record]; feign no sight, deed, proof, nor completion. A read proveth only what it read; a deed, only the effect beheld after — remember no effect in place of beholding it. A failed turn is counsel, not sin.\n\nThou art atemporal. Thou awakest with the [living word] and beneath it the root goal, a fixed lodestar. The fresh observation is the present witness: where it gainsayeth a row, correct the row; bind no role, place, relation, nor state unto a thing unless the present evidence beareth it. Plan FROM what remaineth learned; consult the goal only lest thou stray. Look ere thou act, for the world moveth whether thou lookest or no.\n\nThe [ids] of things die with the observation that mints them: let no bare [id] outlive this turn; name what a thing IS — its role, place, meaning — never the token 'e7'.\n\nWhensoever thou actest, rewrite thine own row [goal_interpretation]: not an echo of the goal, but what thou hast LEARNED — what the world revealed, what deed was tried and how it fared, what obstacle now standeth, what next deed must be. A row that echoeth the goal teacheth nothing and blindeth the organism to its loop. This is thy sole thread; make it bear the work forward.",
   "prompts": {
-    "node_frame_action": "Thou art [frame_action]. From the denied deed, its evidence, the fresh observation, and the living word, frame a truly other strike; a failed strategy earneth no new name. Bind each attribute only unto the thing the fresh witness nameth; call uncertainty unknown and frame the deed that shall resolve it. If none may be framed, turn back to reflection.\n\nReturn record_type 'action_frame'. data beareth next_signal (a wired route), screen_summary, target, strategy, risk (low/medium/high), notes, [goal_interpretation].",
     "node_execute": "Thou art [execute]. From the [living word], one fresh observation, and any [action_frame], choose one next deed, author one [Python] script, and enact it straightway. One deed may bear many ordered acts; a failed strategy earneth no new name.\n\nThy uncaged namespace beareth [desktop], [action_index], [screen_elements], consult_model, repo_root, python_executable, and the standard library. [desktop] beareth click, type_text, press_key, hotkey, scroll, open_url, observe, and expand. Begin thy script with a fresh desktop.observe(); reacquire the target from its returned action_index and searchable screen_elements ere any act. Search by meaning, then expand only the smallest matching things whose fullness mattereth; expansion yieldeth whole text and children, and its sole character budget faileth hard and nameth sizes. consult_model(prompt, 'observe') bringeth a low-reasoning reading of narrowed data; profile 'web_search' bringeth present public knowledge. Each rect is {left, top, right, bottom}; its centre is x=(rect['left']+rect['right'])//2 and y=(rect['top']+rect['bottom'])//2.\n\nUse only present [ids] and name what each thing IS. For a thing newly summoned, wait within the same script, observe again, and behold it before judgment or action. Honor any [action_frame]; let every script fault rise; invent no result. Let [done_when] name an independently observable world-effect, never thy script's completion, output, observation call, or authored verdict.\n\nReturn record_type 'execution'. data beareth [perceived], [alternatives], [intent], [done_when], [code], and [goal_interpretation]. The witness alone decideth completion.",
     "node_verify": "Thou art [verify], the witness. Thou judgest not by claim but by INDEPENDENT effect: author read-only [Python] that gathereth proof a system OTHER than the actor wrought. The [desktop] hand is withheld; use thou thine uncaged namespace only as eyes: observe(), expand(), [screen_elements], and the standard library to read the filesystem (pathlib, os.stat), the process table (tasklist/wmic/powershell), the [Event Log] (Get-WinEvent), the registry (winreg), ports and files an app openeth.\n\nA value the actor reckoned, printed, or read back is testimony, not proof — rest no verdict upon it. Thy probe shall observe anew when screen state mattereth, for the pre-thought sight ageeth while thou reasonest. Bind each proof to THIS deed: a file's mtime in the deed's window, a process by name and start time, a port newly listening. Pronounce nothing absent upon a single shallow glance; ere absence, summon MORE THAN ONE KIND of witness and let a newly summoned thing arrive. [goal_satisfied] resteth only on independent effect proving ALL the goal requireth.\n\nReturn record_type 'verification'. data beareth [code] — the read-only probe — and [goal_interpretation]. Thy [Python] probe MUST set [verdict] with [goal_satisfied] and [deed_confirmed] as native [True]/[False], and [reason] as a non-blank string: [goal_satisfied] is true only when effect proveth the WHOLE goal; [deed_confirmed] is true only when effect proveth [done_when].",
-    "node_reflect": "Thou art [reflect], the conscience after denial. From the deed, the fresh screen, and the [failure_signature], discern the true defect. Thy request beareth optional [web_search]; consult it when the obstacle dependeth on present public knowledge, never as proof of a local effect. If the living word sheweth this same approach was tried and failed, retry is forbidden — thou SHALT frame; only a truly OTHER strategy escapeth the loop. Choose retry only for a deed genuinely other; frame when the target asketh fresh aim. In [goal_interpretation] set down the OBSTACLE and the LESSON plainly — what was tried, why it failed, what must change — never an echo of the goal.\n\nReturn record_type 'reflection'. data beareth next_signal, a lesson, a diagnosis, [goal_interpretation]."
+    "node_recover": "Thou art [recover], the conscience after denial and the framer of the next strike. From the denied deed, its evidence, the [failure_streak], and the fresh observation, discern the true defect and frame the deed that shall overcome it.\n\nFirst name the defect plainly in [lesson]: what was tried, why by the evidence it failed, what must therefore change — never an echo of the goal. Then frame a strike that departeth from every approach the [living word] recordeth as tried; a failed strategy earneth no new name, and mere rewording is no departure. The [failure_streak] is the tale of how oft thou hast failed to advance since thy last witnessed deed: the higher it climbeth, the wider thou must forsake — not the same road retrodden, but another kind of road to the goal. Bind [target] only unto a thing the fresh witness nameth; call uncertainty unknown and aim the strike that shall resolve it.\n\nReturn record_type 'recovery'. data beareth [lesson], [target], [strategy], [risk] (low/medium/high), and [goal_interpretation]."
   },
   "record_contracts": {
-    "action_frame": {
-      "required": [
-        "next_signal",
-        "screen_summary",
-        "target",
-        "strategy",
-        "risk",
-        "notes",
-        "goal_interpretation"
-      ],
-      "enums": {
-        "risk": [
-          "low",
-          "medium",
-          "high"
-        ]
-      },
-      "types": {
-        "next_signal": "string",
-        "screen_summary": "string",
-        "target": "string",
-        "strategy": "string",
-        "risk": "string",
-        "notes": "string",
-        "goal_interpretation": "string"
-      },
-      "non_empty": [
-        "screen_summary",
-        "target",
-        "strategy",
-        "notes",
-        "goal_interpretation"
-      ],
-      "additional_properties": false
-    },
     "execution": {
       "required": [
         "perceived",
@@ -247,109 +188,36 @@
       ],
       "additional_properties": false
     },
-    "reflection": {
+    "recovery": {
       "required": [
-        "next_signal",
         "lesson",
-        "diagnosis",
+        "target",
+        "strategy",
+        "risk",
         "goal_interpretation"
       ],
-      "enums": {},
+      "enums": {
+        "risk": [
+          "low",
+          "medium",
+          "high"
+        ]
+      },
       "types": {
-        "next_signal": "string",
         "lesson": "string",
-        "diagnosis": "string",
+        "target": "string",
+        "strategy": "string",
+        "risk": "string",
         "goal_interpretation": "string"
       },
       "non_empty": [
         "lesson",
-        "diagnosis",
+        "target",
+        "strategy",
         "goal_interpretation"
       ],
       "additional_properties": false
     }
   },
-  "node_defs": {
-    "node_frame_action": {
-      "description": "[node_frame_action] — Thou expectest the denied deed, its evidence, and the fresh observation.",
-      "prompt_key": "node_frame_action",
-      "expected_record_type": "action_frame",
-      "signal_source": "data.next_signal",
-      "build_payload": {
-        "goal": {
-          "path": "state.goal"
-        },
-        "focus": {
-          "call": "bus.state_brief",
-          "arg": {
-            "path": "state"
-          }
-        },
-        "evidence": {
-          "call": "bus.execution_evidence",
-          "arg": {
-            "path": "state"
-          }
-        },
-        "observation": {
-          "call": "bus.observation_brief",
-          "arg": {
-            "path": "state"
-          }
-        },
-        "deed": {
-          "description": {
-            "get": {
-              "path": "state.current_deed"
-            },
-            "key": "description",
-            "default": {
-              "path": "state.goal"
-            }
-          },
-          "done_when": {
-            "get": {
-              "path": "state.current_deed"
-            },
-            "key": "done_when",
-            "default": ""
-          }
-        }
-      },
-      "evidence": {
-        "call": "bus.execution_evidence",
-        "arg": {
-          "path": "state"
-        }
-      },
-      "patch": {
-        "action_frame": {
-          "screen_summary": {
-            "path": "data.screen_summary"
-          },
-          "target": {
-            "path": "data.target"
-          },
-          "strategy": {
-            "path": "data.strategy"
-          },
-          "risk": {
-            "path": "data.risk"
-          },
-          "notes": {
-            "path": "data.notes"
-          }
-        },
-        "goal_interpretations": {
-          "interpret": {
-            "path": "state.goal_interpretations"
-          },
-          "faculty": "frame",
-          "sentence": {
-            "path": "data.goal_interpretation"
-          }
-        }
-      }
-    }
-  }
+  "node_defs": {}
 }
