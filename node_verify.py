@@ -75,7 +75,17 @@ class VerifyNode(BaseNode):
             "goal_interpretations": bus.with_interpretation(state.get("goal_interpretations"), "verify", str(record.data.get("goal_interpretation") or "")),
         }
         if confirmed:
-            patch.update({"witnessed_deed_count": int(state.get("witnessed_deed_count") or 0) + 1, "failure_streak": {"count": 0}, "action_frame": None, "current_deed": None})
+            proven = list(state.get("proven_ledger") or [])
+            fact = f"{desc.strip()} — witnessed: {reason.strip()}" if desc.strip() else reason.strip()
+            if fact and fact not in proven:
+                proven.append(fact)
+            patch.update({
+                "witnessed_deed_count": int(state.get("witnessed_deed_count") or 0) + 1,
+                "failure_streak": {"count": 0},
+                "proven_ledger": proven,
+                "action_frame": None,
+                "current_deed": None,
+            })
         return bus.emit(signal, patch, record=record, evidence=self.build_payload(ctx))
 
 
