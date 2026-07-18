@@ -51,6 +51,7 @@ class ExecuteNode(BaseNode):
                 "turn_executions": turn,
                 "last_action_at": time.time(),
                 "action_frame": None,
+                "last_verification": None,
             },
             record=record,
             evidence=self.build_payload(ctx),

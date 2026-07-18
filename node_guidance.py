@@ -4,7 +4,6 @@ import core_wiring as wiring
 
 
 def run(ctx):
-    state = ctx["state"]
     path = wiring.guidance_path(ctx["wiring"])
     counsel = path.read_text(encoding="utf-8").strip() if path.exists() else ""
     if not counsel:

@@ -127,7 +127,9 @@ def summarize(rows: list[Row]) -> None:
         nxt = faculties[idx + 1] if idx + 1 < len(faculties) else None
         effort = str(_req(obj).get("reasoningEffort", "?"))
         pin, pout, preason = _usage(obj)
-        tot_in += pin; tot_out += pout; tot_reason += preason
+        tot_in += pin
+        tot_out += pout
+        tot_reason += preason
         counts[rtype] = counts.get(rtype, 0) + 1
         sig = _inferred_signal(rtype, nxt)
         if "ANOMALY" in sig:

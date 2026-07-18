@@ -225,25 +225,16 @@ def observation_brief(state: JsonDict) -> JsonDict:
     }
 
 
-def _last_denial(state: JsonDict) -> str:
-    lv = state.get("last_verification") or {}
-    if isinstance(lv, dict) and lv.get("success") is False:
-        return str(lv.get("reasoning", "")).strip()
-    return ""
-
-
 def execution_evidence(state: JsonDict) -> JsonDict:
-    denial = _last_denial(state)
     turn = state.get("turn_executions") or {}
-    evidence: JsonDict = {"faculties": turn if isinstance(turn, dict) else {}}
-    evidence["provenance"] = (
-        "actor-authored record: what code the executor authored and enacted, by its own account. "
-        "This is the actor's testimony about what it did, not proof of world-effect. "
-        "Independent world state is carried separately in the observation field."
-    )
-    if denial:
-        evidence["unsatisfied_requirement"] = denial
-    return evidence
+    return {
+        "faculties": turn if isinstance(turn, dict) else {},
+        "provenance": (
+            "actor-authored record: what code the executor authored and enacted, by its own account. "
+            "This is the actor's testimony about what it did, not proof of world-effect. "
+            "Independent world state is carried separately in the observation field."
+        ),
+    }
 
 
 def bump_failure_streak(state: JsonDict) -> JsonDict:
