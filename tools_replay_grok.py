@@ -27,23 +27,24 @@ Usage (run on Windows via powershell so XAI_API_KEY is in env):
 from __future__ import annotations
 
 import argparse
+import argparse
 import json
 from typing import Any
 
 import core_brain as brain
 import core_wiring as wiring
 import transport_xai as transport
+import tools_parse_requests as parse
 
 # record_type -> the node that emits it (for response_format emergent-signal resolution)
 _EMITTING_NODE = {"execution": "node_execute", "verification": "node_verify", "recovery": "node_recover"}
-_ROLE = {"ROLE_SYSTEM": "system", "ROLE_USER": "user", "ROLE_ASSISTANT": "assistant"}
+_ROLE = {"ROLE_SYSTEM": "system", "ROLE_USER": "user", "ROLE_ASSISTANT": "assistant", "system": "system", "user": "user", "assistant": "assistant"}
 
 
 def _line(path: str, n: int) -> dict[str, Any]:
-    with open(path, encoding="utf-8") as f:
-        for i, raw in enumerate(f):
-            if i == n:
-                return json.loads(raw)
+    for i, obj in parse.load(path):
+        if i == n:
+            return obj
     raise SystemExit(f"line {n} not found in {path}")
 
 
@@ -56,19 +57,16 @@ def _text(content: Any) -> str:
 
 
 def _messages(obj: dict[str, Any]) -> list[dict[str, str]]:
-    req = obj["logged"]["chat"]["request"]
+    raw = parse._dig(parse._request(obj), "messages", "input") or []
     out = []
-    for m in req["messages"]:
+    for m in raw:
         role = _ROLE.get(m.get("role", ""), "user")
         out.append({"role": role, "content": _text(m.get("content"))})
     return out
 
 
 def _record_type(obj: dict[str, Any]) -> str:
-    resp = obj["logged"]["chat"]["response"]
-    content = _text((resp.get("outputs") or [{}])[0].get("message", {}).get("content"))
-    rec = brain.extract_json_object(content) or {}
-    return str(rec.get("record_type") or "")
+    return parse._rtype(obj) if parse._rtype(obj) != "?" else ""
 
 
 def _committed_record(content: str) -> dict[str, Any]:
@@ -114,7 +112,7 @@ def _show(tag: str, record_type: str, rec: dict[str, Any]) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("log")
+    ap.add_argument("log", nargs="?", default=None, help="log path; omit to autodetect newest *.jsonl")
     ap.add_argument("--line", type=int, required=True)
     ap.add_argument("--system-file", default=None, help="replace the system prompt with this file's text")
     ap.add_argument("--user-file", default=None, help="replace the user tail with this file's text")
@@ -122,12 +120,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--field-only", action="store_true", help="print the logged record's fields; do not resend")
     args = ap.parse_args(argv)
 
-    obj = _line(args.log, args.line)
+    path = parse.autodetect(args.log)
+    obj = _line(path, args.line)
     record_type = _record_type(obj)
     messages = _messages(obj)
 
-    logged_resp = obj["logged"]["chat"]["response"]
-    logged_content = _text((logged_resp.get("outputs") or [{}])[0].get("message", {}).get("content"))
+    logged_content = parse._content(obj)
     _show("LOGGED (as it happened)", record_type, _committed_record(logged_content))
     if args.field_only:
         return 0
