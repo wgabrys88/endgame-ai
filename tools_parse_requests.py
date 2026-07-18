@@ -82,8 +82,25 @@ def _response(obj: dict[str, Any]) -> dict[str, Any]:
 
 
 def _content(obj: dict[str, Any]) -> str:
-    """The committed record text, from whichever response shape the log uses."""
+    """The committed record text, from whichever response shape the log uses.
+
+    The /v1/responses output is a LIST whose reasoning and message items may appear in
+    any order (reasoning commonly precedes the message), so the message is found by SHAPE
+    — the non-reasoning item bearing output_text — never by a fixed index."""
     resp = _response(obj)
+    output = _dig(resp, "output", "outputs")
+    if isinstance(output, list):
+        texts: list[str] = []
+        for item in output:
+            if not isinstance(item, dict) or item.get("type") == "reasoning":
+                continue
+            content = item.get("content")
+            if isinstance(content, list):
+                texts.extend(str(c.get("text", "")) for c in content if isinstance(c, dict) and c.get("text"))
+            elif isinstance(content, str):
+                texts.append(content)
+        if texts:
+            return "".join(texts)
     val = _dig(
         resp,
         "outputs[0].message.content",
