@@ -33,6 +33,11 @@ def run(raw_nodes: list[dict[str, Any]], config: dict[str, Any], screen: dict[st
         if require_interactive and not action:
             continue
         label = node["text_full"] or node["name"] or ""
+        # An interactive element the actor cannot name — no name, no text, no value, and no
+        # automation_id — is blind noise it can neither reason about nor confidently strike.
+        # Drop it here rather than render an anonymous row (e.g. a bare "Button" or "Document").
+        if action and not (node["name"] or node["text_full"] or node["value"] or node["automation_id"]):
+            continue
         if label and label != (node["name"] or ""):
             text_hints[node["id"]] = label
         if action:
@@ -49,6 +54,7 @@ def run(raw_nodes: list[dict[str, Any]], config: dict[str, Any], screen: dict[st
                 "action": action, "px": node["px"], "py": node["py"], "hwnd": hwnd, "rect": node["rect"],
                 "enabled": node["enabled"], "automation_id": node["automation_id"], "class_name": node["class_name"],
                 "runtime_id": node["runtime_id"], "depth": node["depth"], "focused": node["focused"],
+                "owner_hwnd": node.get("owner_hwnd", 0),
             }
     return {
         "action_elements": action_elements,

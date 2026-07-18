@@ -272,33 +272,50 @@ class UiaScanner:
             return None
 
     def harvest_subtree(self, root_element: Any, max_nodes: int | None = None, parent_runtime_id: list[int] | None = None, depth: int = 0) -> list[dict[str, Any]]:
+        """Walk the cached subtree preserving TRUE parent identity and depth. The cache is
+        built with Subtree scope, so GetCachedChildren recurses from that one cached read
+        with no further live [UIA] calls — unlike a flat descendant list, which would tag
+        every node with the subtree root and destroy the real hierarchy."""
         nodes: list[dict[str, Any]] = []
         seen: set[str] = set()
-
-        def add(el: Any, parent: list[int], d: int) -> dict[str, Any] | None:
-            if max_nodes is not None and len(nodes) >= max_nodes:
-                return None
-            node = self.element_to_raw(el, parent, d)
-            if node is None or node["id"] in seen:
-                return None
-            seen.add(node["id"])
-            nodes.append(node)
-            return node
-
-        root_node = add(root_element, parent_runtime_id or [], depth)
-        if not root_node:
-            return nodes
+        # Bound recursion by the same wiring-owned perception depth used when the tree is
+        # built (filter.max_depth), so a pathologically deep accessibility tree cannot
+        # overflow the Python stack. Falls back to a generous ceiling when scanned without
+        # config (e.g. the expand primitive), which real UIA trees never approach.
         try:
-            arr = root_element.FindAllBuildCache(TreeScope_Descendants, self.automation.CreateTrueCondition(), self._cache())
-            for i in range(int(getattr(arr, "Length", 0)) if arr is not None else 0):
+            depth_ceiling = int(((self.cfg or {}).get("filter") or {}).get("max_depth", 40)) + depth + 5
+        except Exception:
+            depth_ceiling = depth + 45
+        try:
+            root_element = root_element.BuildUpdatedCache(self._cache(TreeScope_Subtree))
+        except Exception:
+            pass
+
+        def visit(el: Any, parent_rid: list[int], d: int) -> None:
+            if (max_nodes is not None and len(nodes) >= max_nodes) or d >= depth_ceiling:
+                return
+            node = self.element_to_raw(el, parent_rid, d)
+            child_parent_rid, child_depth = parent_rid, d
+            if node is not None and node["id"] not in seen:
+                seen.add(node["id"])
+                nodes.append(node)
+                child_parent_rid, child_depth = node["runtime_id"], d + 1
+            elif node is not None:
+                return
+            try:
+                kids = el.GetCachedChildren()
+                count = int(getattr(kids, "Length", 0)) if kids is not None else 0
+            except (ValueError, Exception):
+                kids, count = None, 0
+            for i in range(count):
                 if max_nodes is not None and len(nodes) >= max_nodes:
                     break
                 try:
-                    add(arr.GetElement(i), root_node["runtime_id"], depth + 1)
+                    visit(kids.GetElement(i), child_parent_rid, child_depth)
                 except Exception:
                     continue
-        except Exception:
-            pass
+
+        visit(root_element, parent_runtime_id or [], depth)
         return nodes
 
 

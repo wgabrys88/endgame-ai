@@ -11,6 +11,13 @@ from typing import Any
 import core_observation as obs
 
 user32 = ctypes.windll.user32
+# Declare the ABI explicitly: WindowFromPoint takes a POINT struct BY VALUE, which ctypes
+# marshals reliably only when argtypes is set (else it works by x64 register-packing luck,
+# and a silent miscall would stamp every element owner 0 and re-corrupt attribution).
+user32.WindowFromPoint.argtypes = [wintypes.POINT]
+user32.WindowFromPoint.restype = wintypes.HWND
+user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+user32.GetAncestor.restype = wintypes.HWND
 
 
 def run(config: dict[str, Any], desktop: Any) -> dict[str, Any]:
@@ -61,6 +68,15 @@ def run(config: dict[str, Any], desktop: Any) -> dict[str, Any]:
                     continue
             if root is None:
                 continue
+            # The OS's own hit-test names the true top-level window under this point,
+            # honouring z-order and window regions — the authoritative owner identity that
+            # UIA elements lack (most report hwnd 0). Every node harvested from this probe
+            # is stamped with it, so attribution is by identity, never by which rectangle
+            # covereth the pixel (which let a maximized window swallow the whole screen).
+            try:
+                owner_hwnd = int(user32.GetAncestor(user32.WindowFromPoint(pt), 2) or 0)
+            except Exception:
+                owner_hwnd = 0
             hit_key, role = obs._hit_key_from_element(root)
             if hit_key in saturated or (hit_key in index and role not in obs.CONTAINER_ROLES):
                 continue
@@ -69,11 +85,14 @@ def run(config: dict[str, Any], desktop: Any) -> dict[str, Any]:
             for node in nodes:
                 if obs.is_desktop_leakage(node):
                     continue
+                node.setdefault("owner_hwnd", owner_hwnd)
                 prev = index.get(node["id"])
                 if prev is None:
                     index[node["id"]] = node
                     added += 1
                 else:
+                    if not prev.get("owner_hwnd") and owner_hwnd:
+                        prev["owner_hwnd"] = owner_hwnd
                     for key in ("text_full", "value"):
                         if node[key] and (not prev[key] or len(node[key]) > len(prev[key])):
                             prev[key] = node[key]
