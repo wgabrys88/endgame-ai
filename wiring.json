@@ -22,7 +22,7 @@
         "request_profiles": {
           "observe": {
             "reasoning": {
-              "effort": "high"
+              "effort": "low"
             },
             "max_output_tokens": 4096
           },
