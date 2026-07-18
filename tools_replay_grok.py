@@ -12,7 +12,7 @@ conversation is carried server-side; each replay is an independent waking. There
 conversation id to rotate — store=false IS the rotation. Nothing from one replay leaks
 into the next.
 
-The record is what proves behavior: the executor's authored [done_when]+[code], the
+The record is what proves behavior: the executor's authored [intent]+[code], the
 verifier's [goal_interpretation]+probe [code]. Replaying original vs mutated and diffing
 these fields shows whether a soul-level (prompt) change moves behavior — without ever
 touching the body (the .py) or running on the real desktop.
@@ -103,7 +103,7 @@ def _send(messages: list[dict[str, str]], w: dict[str, Any], record_type: str) -
 def _show(tag: str, record_type: str, rec: dict[str, Any]) -> None:
     data = rec.get("data", {}) if isinstance(rec, dict) else {}
     print(f"\n===== {tag} [{record_type or rec.get('record_type')}] =====")
-    for field in ("goal_interpretation", "done_when", "intent", "lesson", "target", "strategy", "perceived"):
+    for field in ("goal_interpretation", "intent", "lesson", "target", "strategy", "perceived"):
         v = data.get(field)
         if v:
             print(f"--- {field}:\n{str(v).strip()}")

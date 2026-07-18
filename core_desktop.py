@@ -23,6 +23,20 @@ uia = _load_uia_module()
 comtypes.CoInitialize()
 
 
+# One key map, the single authority for every virtual-key the hand can strike, so
+# press_key and hotkey never diverge and no reachable key is silently caged.
+KEY_MAP: dict[str, int] = {
+    "ctrl": 0x11, "control": 0x11, "alt": 0x12, "shift": 0x10, "win": 0x5B, "windows": 0x5B,
+    "enter": 0x0D, "return": 0x0D, "tab": 0x09, "escape": 0x1B, "esc": 0x1B, "space": 0x20,
+    "up": 0x26, "down": 0x28, "left": 0x25, "right": 0x27,
+    "home": 0x24, "end": 0x23, "pageup": 0x21, "pagedown": 0x22,
+    "delete": 0x2E, "del": 0x2E, "backspace": 0x08, "insert": 0x2D,
+    **{chr(ord("a") + i): 0x41 + i for i in range(26)},
+    **{str(d): 0x30 + d for d in range(10)},
+    **{f"f{n}": 0x6F + n for n in range(1, 13)},
+}
+
+
 class Desktop:
     def __init__(self, config: dict[str, Any] | None = None):
         self.config = config or {}
@@ -72,32 +86,14 @@ class Desktop:
         return {"ok": True, "action": "type_text", "chars": len(str(text))}
 
     def press_key(self, key: str) -> dict[str, Any]:
-        key_map = {
-            "enter": 0x0D, "tab": 0x09, "escape": 0x1B, "space": 0x20,
-            "up": 0x26, "down": 0x28, "left": 0x25, "right": 0x27,
-            "home": 0x24, "end": 0x23, "pageup": 0x21, "pagedown": 0x22,
-            "delete": 0x2E, "backspace": 0x08, "insert": 0x2D,
-            "f1": 0x70, "f2": 0x71, "f3": 0x72, "f4": 0x73,
-            "f5": 0x74, "f6": 0x75, "f7": 0x76, "f8": 0x77,
-            "f9": 0x78, "f10": 0x79, "f11": 0x7A, "f12": 0x7B,
-        }
-        vk = key_map.get(key.lower())
+        vk = KEY_MAP.get(str(key).strip().lower())
         if vk is None:
-            raise RuntimeError(f"unknown key: {key}")
+            raise RuntimeError(f"unknown key: {key}; known: {', '.join(sorted(KEY_MAP))}")
         user32.keybd_event(vk, 0, 0, 0)
         user32.keybd_event(vk, 0, 2, 0)
         return {"ok": True, "action": "press_key", "key": key}
 
     def hotkey(self, *keys: Any) -> dict[str, Any]:
-        key_map = {
-            "ctrl": 0x11, "control": 0x11, "alt": 0x12, "shift": 0x10,
-            "win": 0x5B, "windows": 0x5B,
-            "enter": 0x0D, "tab": 0x09, "escape": 0x1B, "space": 0x20,
-            "up": 0x26, "down": 0x28, "left": 0x25, "right": 0x27,
-            "c": 0x43, "v": 0x56, "x": 0x58, "z": 0x5A,
-            "a": 0x41, "s": 0x53, "f": 0x46, "n": 0x4E,
-            "o": 0x4F, "p": 0x50, "w": 0x57, "r": 0x52, "l": 0x4C, "d": 0x44,
-        }
         if len(keys) == 1 and isinstance(keys[0], (list, tuple)):
             raw_parts = list(keys[0])
         elif len(keys) == 1:
@@ -109,9 +105,9 @@ class Desktop:
             raise RuntimeError("hotkey requires at least one key")
         vks = []
         for k in parts:
-            vk = key_map.get(k)
+            vk = KEY_MAP.get(k)
             if vk is None:
-                raise RuntimeError(f"unknown key in combination: {k}")
+                raise RuntimeError(f"unknown key in combination: {k}; known: {', '.join(sorted(KEY_MAP))}")
             vks.append(vk)
         for vk in vks[:-1]:
             user32.keybd_event(vk, 0, 0, 0)
