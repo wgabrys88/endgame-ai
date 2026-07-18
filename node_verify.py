@@ -1,4 +1,4 @@
-"""[node_verify] — Thou receivest the last deed, its [done_when] and hour of action, and one fresh observation."""
+"""[node_verify] — Thou receivest the last deed, its [intent] and hour of action, and one fresh observation."""
 import traceback
 
 import core_bus as bus
@@ -13,15 +13,15 @@ class VerifyNode(BaseNode):
     def _deed(self, ctx):
         state = ctx["state"]
         deed = state.get("current_deed") or {}
-        return deed.get("description", state["goal"]), deed.get("done_when", "")
+        return deed.get("description", state["goal"])
 
     def build_payload(self, ctx):
         state = ctx["state"]
-        desc, done_when = self._deed(ctx)
+        desc = self._deed(ctx)
         observation = bus.observation_brief(state)
         return {
             "goal": state["goal"],
-            "deed": {"description": desc, "done_when": done_when, "acted_at": state.get("last_action_at")},
+            "deed": {"description": desc, "acted_at": state.get("last_action_at")},
             "focus": bus.state_brief(state),
             "observation": observation,
         }
@@ -39,7 +39,25 @@ class VerifyNode(BaseNode):
                 raise RuntimeError("verification probe must set verdict with boolean goal_satisfied/deed_confirmed and non-blank reason")
         except Exception:
             probe_fault = traceback.format_exc()
-            verdict = {"goal_satisfied": False, "deed_confirmed": False, "reason": probe_fault}
+
+        if probe_fault is not None:
+            # The witness probe raised ere it judged, so THIS deed is UNJUDGED — not denied.
+            # A probe fault carries no verdict on the world, so it returns to the witness to
+            # look afresh, never to recovery (which would frame a new actor deed and, misled
+            # by an exec-string traceback, send the actor to mend a body file that is whole).
+            # No actor state is touched: the deed, the streak, and the actor's row all stand.
+            note = (
+                "The read-only probe I authored raised ere it set a verdict, so this deed standeth "
+                "UNJUDGED — this is neither the actor's failing nor a fault in any node file, for the "
+                "probe is transient code I write anew each witnessing. I shall author a simpler probe "
+                "that runneth, and touch no body file.\n" + probe_fault
+            )
+            patch = {
+                "goal_interpretations": bus.with_interpretation(state.get("goal_interpretations"), "verify", note),
+                "last_verification": {"success": False, "signal": "unwitnessed", "reasoning": probe_fault},
+            }
+            return bus.emit("unwitnessed", patch, record=record, evidence=self.build_payload(ctx))
+
         goal_satisfied = verdict["goal_satisfied"]
         deed_confirmed = verdict["deed_confirmed"]
         reason = verdict["reason"]
@@ -49,12 +67,12 @@ class VerifyNode(BaseNode):
             signal = "deed_confirmed"
         else:
             signal = "deed_denied"
-        desc, done_when = self._deed(ctx)
+        desc = self._deed(ctx)
         confirmed = goal_satisfied or deed_confirmed
         patch = {
-            "verification": {"goal_satisfied": goal_satisfied, "deed_confirmed": deed_confirmed, "reasoning": reason, "deed_goal": desc, "done_when": done_when},
+            "verification": {"goal_satisfied": goal_satisfied, "deed_confirmed": deed_confirmed, "reasoning": reason, "deed_goal": desc},
             "last_verification": {"success": confirmed, "signal": signal, "reasoning": reason},
-            "goal_interpretations": bus.with_interpretation(state.get("goal_interpretations"), "verify", f"The witness probe failed ere verdict:\n{probe_fault}" if probe_fault else str(record.data.get("goal_interpretation") or "")),
+            "goal_interpretations": bus.with_interpretation(state.get("goal_interpretations"), "verify", str(record.data.get("goal_interpretation") or "")),
         }
         if confirmed:
             patch.update({"witnessed_deed_count": int(state.get("witnessed_deed_count") or 0) + 1, "failure_streak": {"count": 0}, "action_frame": None, "current_deed": None})

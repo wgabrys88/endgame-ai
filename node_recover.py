@@ -27,7 +27,7 @@ class RecoverNode(BaseNode):
         deed = state.get("current_deed") or {}
         return {
             "goal": state["goal"],
-            "deed": {"description": deed.get("description", state["goal"]), "done_when": deed.get("done_when", "")},
+            "deed": {"description": deed.get("description", state["goal"])},
             "focus": bus.state_brief(state),
             "evidence": self._evidence_payload,
             "observation": bus.observation_brief(state),

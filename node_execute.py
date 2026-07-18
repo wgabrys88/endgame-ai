@@ -29,9 +29,8 @@ class ExecuteNode(BaseNode):
         data = record.data
         code = data["code"]
         intent = str(data["intent"]).strip()
-        done_when = str(data["done_when"]).strip()
-        if not intent or not done_when:
-            raise RuntimeError("execution requires non-empty intent and done_when")
+        if not intent:
+            raise RuntimeError("execution requires non-empty intent")
         ns = nodes.build_capability_runtime(ctx)
         deed_fault = None
         try:
@@ -47,11 +46,12 @@ class ExecuteNode(BaseNode):
         return bus.emit(
             "deed_denied" if deed_fault else "done",
             {
-                "current_deed": {"description": intent, "done_when": done_when},
+                "current_deed": {"description": intent},
                 "goal_interpretations": interps,
                 "turn_executions": turn,
                 "last_action_at": time.time(),
                 "action_frame": None,
+                "last_verification": None,
             },
             record=record,
             evidence=self.build_payload(ctx),
