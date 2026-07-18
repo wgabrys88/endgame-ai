@@ -463,6 +463,38 @@ def stats(rows: list[Row]) -> None:
           " the witness honestly confirmed advances orthogonal to the real goal)")
 
 
+def verdicts(rows: list[Row]) -> None:
+    """Untruncated verification digest: for every verification turn, the witness's
+    bar (goal_satisfied / deed_confirmed) and its full reason, paired with the recovery
+    lesson that followed a denial. This maps the SEMANTIC frontier — where an honest
+    witness denies honest deeds because the confirmable bar sits many turns away — as
+    distinct from the proxy-gaming frontier that --stats exposes. When failure_streak
+    climbs monotonically with zero confirms, the bottleneck is HERE, not in the actor."""
+    chrono = chronological(rows)
+    print("=== VERDICT DIGEST (chronological) — the witness bar and why each deed was judged ===")
+    for ln, obj in ((r[0], r[1]) for r in chrono):
+        rt = _rtype(obj)
+        data = _data(obj)
+        if rt == "verification":
+            # The runtime verdict (goal_satisfied/deed_confirmed/reason) is computed by
+            # EXECUTING this code in node_verify and is NOT committed to the API log; the
+            # committed record carries only the authored verify code + goal_interpretation.
+            # The witness's own stated bar therefore lives in goal_interpretation here, and
+            # the realised denial reason surfaces in the FOLLOWING recovery lesson.
+            gi = str(data.get("goal_interpretation") or "").strip()
+            print(f"\n[ln {ln}] VERIFY (runtime verdict not logged) — witness bar:")
+            print(f"  {gi}")
+        elif rt == "recovery":
+            lesson = str(data.get("lesson") or "").strip()
+            strat = str(data.get("strategy") or "").strip()
+            print(f"\n[ln {ln}] RECOVER")
+            print(f"  lesson:   {lesson}")
+            print(f"  strategy: {strat}")
+        elif rt == "execution":
+            intent = str(data.get("intent") or "").strip()
+            print(f"\n[ln {ln}] EXECUTE intent: {intent}")
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="generic schema-agnostic endgame-ai brain-log reader")
     ap.add_argument("path", nargs="?", default=None, help="log path; omit to autodetect newest *.jsonl")
@@ -475,6 +507,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--stats", action="store_true",
                     help="untruncated per-turn motion: signal, failure_streak trajectory, "
                          "code-effects, goal-axis, RLE + histograms (the deduction instrument)")
+    ap.add_argument("--verdicts", action="store_true",
+                    help="untruncated verification bar + reason paired with recovery lesson "
+                         "(maps the semantic-frontier / honest-denial bottleneck)")
     ap.add_argument("--record-type", metavar="TYPE", help="filter summary to one faculty")
     ap.add_argument("--line", type=int, metavar="N", help="restrict summary/code/field/grep to one line")
     ap.add_argument("--no-truncate", action="store_true", help="disable every preview cap")
@@ -501,6 +536,8 @@ def main(argv: list[str] | None = None) -> int:
         usage_report(rows)
     elif args.stats:
         stats(rows)
+    elif args.verdicts:
+        verdicts(rows)
     else:
         summarize(rows, args.record_type)
         living_word(rows, truncate)
