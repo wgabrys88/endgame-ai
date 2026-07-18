@@ -8,13 +8,26 @@ Reverse-engineered structure (per line):
                         created, model, systemFingerprint, usage{...}
 
 The response message.content is the organism's committed record (record_type + data).
-This script reconstructs the SHAPE OF THE MOTION: for each turn — the faculty
-(record_type), reasoning effort, token usage, the emitted signal proxy (verdict /
-next_signal), and the living-word rows — so a run can be read as a story without
-pouring raw logs into context.
+
+Signal reconstruction (the shape of the motion):
+  Only thinking faculties call the model, so the JSONL holds exactly the
+  execution/verification/recovery turns — not the observe/guidance nodes between
+  them. The emitted signal of each turn is therefore inferred from the wiring by
+  the faculty that FOLLOWS it (turns sorted by timestamp):
+    execution   -> recovery      : execute emitted 'deed_denied' (authored script raised)
+    execution   -> verification  : execute emitted 'done'
+    verification-> guidance/exec  : verify emitted 'deed_confirmed' (goal advanced, not whole)
+    verification-> recovery      : verify emitted 'deed_denied'
+    verification-> (end)         : verify emitted 'halt' (goal_satisfied) — the only clean exit
+    recovery    -> execution     : recover emitted 'recovered'
+  A recovery followed directly by a verification is a TOPOLOGY VIOLATION under the
+  current wiring (recover routes only to guidance->observe:act->execute) and is
+  flagged, because it means the log is not in pure wheel order or a turn is missing.
 
 Usage:
-  python3 tools_parse_requests.py <file.jsonl> [--full N]   # N = dump full record for line N
+  python3 tools_parse_requests.py <file.jsonl>            # motion summary + living-word trace
+  python3 tools_parse_requests.py <file.jsonl> --full N   # full record for line N
+  python3 tools_parse_requests.py <file.jsonl> --code     # full authored code, every turn
 """
 from __future__ import annotations
 
@@ -22,9 +35,11 @@ import json
 import sys
 from typing import Any
 
+Row = tuple[int, dict[str, Any]]
 
-def _load(path: str) -> list[dict[str, Any]]:
-    out = []
+
+def _load(path: str) -> list[Row]:
+    out: list[Row] = []
     with open(path, encoding="utf-8") as f:
         for i, line in enumerate(f):
             line = line.strip()
@@ -34,10 +49,18 @@ def _load(path: str) -> list[dict[str, Any]]:
     return out
 
 
-def _record(resp: dict[str, Any]) -> dict[str, Any] | None:
+def _resp(obj: dict[str, Any]) -> dict[str, Any]:
+    return obj.get("logged", {}).get("chat", {}).get("response", {}) or {}
+
+
+def _req(obj: dict[str, Any]) -> dict[str, Any]:
+    return obj.get("logged", {}).get("chat", {}).get("request", {}) or {}
+
+
+def _record(resp: dict[str, Any]) -> dict[str, Any]:
     outs = resp.get("outputs") or []
     if not outs:
-        return None
+        return {}
     content = (outs[0].get("message") or {}).get("content") or ""
     try:
         return json.loads(content)
@@ -45,72 +68,105 @@ def _record(resp: dict[str, Any]) -> dict[str, Any] | None:
         return {"_unparsed": content[:200]}
 
 
-def _signal_proxy(rtype: str, data: dict[str, Any]) -> str:
-    if rtype == "verification":
-        # verdict lives in authored probe code, not the record; infer from goal_interp
-        return "verify(code-probe)"
-    return str(data.get("next_signal") or "").strip() or "-"
+def _rtype(obj: dict[str, Any]) -> str:
+    return str(_record(_resp(obj)).get("record_type", "?"))
 
 
-def summarize(rows: list[tuple[int, dict[str, Any]]]) -> None:
-    print(f"{'ln':>3} {'faculty':<12} {'effort':<5} {'in':>6} {'out':>6} {'reason':>6} signal / done_when")
+def _data(obj: dict[str, Any]) -> dict[str, Any]:
+    rec = _record(_resp(obj))
+    return rec.get("data", {}) if isinstance(rec, dict) else {}
+
+
+def _usage(obj: dict[str, Any]) -> tuple[int, int, int]:
+    u = _resp(obj).get("usage", {}) or {}
+    pin = int(u.get("promptTokens") or u.get("inputTokens") or u.get("prompt_tokens") or 0)
+    pout = int(u.get("completionTokens") or u.get("outputTokens") or u.get("completion_tokens") or 0)
+    preason = int(u.get("reasoningTokens") or (u.get("completionTokensDetails") or {}).get("reasoningTokens") or 0)
+    return pin, pout, preason
+
+
+# emitted signal of THIS faculty, inferred from the faculty that follows it
+_TRANSITION = {
+    ("execution", "recovery"): "deed_denied",
+    ("execution", "verification"): "done",
+    ("recovery", "execution"): "recovered",
+    ("verification", "execution"): "deed_confirmed",
+    ("verification", "recovery"): "deed_denied",
+}
+
+
+def _inferred_signal(this: str, nxt: str | None) -> str:
+    if nxt is None:
+        if this == "verification":
+            return "halt(goal_satisfied?)"
+        return "(log ends here)"
+    sig = _TRANSITION.get((this, nxt))
+    if sig:
+        return sig
+    return f"!! ANOMALY {this}->{nxt}"
+
+
+def _chronological(rows: list[Row]) -> list[Row]:
+    def ts(obj: dict[str, Any]) -> str:
+        return str(obj.get("meta", {}).get("timestamp") or obj.get("timestamp") or "")
+    if all(ts(o) for _, o in rows):
+        return sorted(rows, key=lambda r: ts(r[1]))
+    return rows
+
+
+def summarize(rows: list[Row]) -> None:
+    rows = _chronological(rows)
+    faculties = [_rtype(o) for _, o in rows]
+    print(f"{'ln':>3} {'faculty':<12} {'effort':<6} {'in':>6} {'out':>6} {'reason':>6}  emitted signal")
     print("-" * 100)
     tot_in = tot_out = tot_reason = 0
-    faculty_counts: dict[str, int] = {}
-    for ln, obj in rows:
-        req = obj.get("logged", {}).get("chat", {}).get("request", {})
-        resp = obj.get("logged", {}).get("chat", {}).get("response", {})
-        usage = resp.get("usage", {}) or {}
-        effort = str(req.get("reasoningEffort", "?"))
-        rec = _record(resp) or {}
-        rtype = str(rec.get("record_type", "?"))
-        data = rec.get("data", {}) if isinstance(rec, dict) else {}
-        faculty_counts[rtype] = faculty_counts.get(rtype, 0) + 1
-        pin = int(usage.get("promptTokens") or usage.get("inputTokens") or usage.get("prompt_tokens") or 0)
-        pout = int(usage.get("completionTokens") or usage.get("outputTokens") or usage.get("completion_tokens") or 0)
-        preason = int(usage.get("reasoningTokens") or (usage.get("completionTokensDetails") or {}).get("reasoningTokens") or 0)
-        tot_in += pin
-        tot_out += pout
-        tot_reason += preason
-        tail = _signal_proxy(rtype, data)
-        dw = str(data.get("done_when") or "")[:50]
-        print(f"{ln:>3} {rtype:<12} {effort:<5} {pin:>6} {pout:>6} {preason:>6} {tail} | {dw}")
+    counts: dict[str, int] = {}
+    anomalies: list[str] = []
+    for idx, (ln, obj) in enumerate(rows):
+        rtype = faculties[idx]
+        nxt = faculties[idx + 1] if idx + 1 < len(faculties) else None
+        effort = str(_req(obj).get("reasoningEffort", "?"))
+        pin, pout, preason = _usage(obj)
+        tot_in += pin; tot_out += pout; tot_reason += preason
+        counts[rtype] = counts.get(rtype, 0) + 1
+        sig = _inferred_signal(rtype, nxt)
+        if "ANOMALY" in sig:
+            anomalies.append(f"  line {ln}: {sig}")
+        print(f"{ln:>3} {rtype:<12} {effort:<6} {pin:>6} {pout:>6} {preason:>6}  {sig}")
     print("-" * 100)
     print(f"lines={len(rows)} tot_in={tot_in} tot_out={tot_out} tot_reason={tot_reason}")
-    print("faculty distribution:", faculty_counts)
+    print("faculty distribution:", counts)
+    verifications = counts.get("verification", 0)
+    print(f"verification share: {verifications}/{len(rows)} "
+          f"({100 * verifications / max(len(rows), 1):.0f}%) — a live-lock starves the witness")
+    if anomalies:
+        print("TRANSITION ANOMALIES (log not in wheel order, or a turn is missing):")
+        print("\n".join(anomalies))
 
 
-def living_word_trace(rows: list[tuple[int, dict[str, Any]]]) -> None:
+def living_word_trace(rows: list[Row]) -> None:
     print("\n=== LIVING WORD (goal_interpretation per turn) ===")
-    for ln, obj in rows:
-        resp = obj.get("logged", {}).get("chat", {}).get("response", {})
-        rec = _record(resp) or {}
-        data = rec.get("data", {}) if isinstance(rec, dict) else {}
-        gi = str(data.get("goal_interpretation") or "").strip()
-        rtype = str(rec.get("record_type", "?"))
+    for ln, obj in _chronological(rows):
+        gi = str(_data(obj).get("goal_interpretation") or "").strip()
         if gi:
-            print(f"[{ln:>3} {rtype:<11}] {gi[:220]}")
+            print(f"[{ln:>3} {_rtype(obj):<11}] {gi[:220]}")
 
 
-def dump_full(rows: list[tuple[int, dict[str, Any]]], n: int) -> None:
+def dump_full(rows: list[Row], n: int) -> None:
     for ln, obj in rows:
         if ln == n:
-            resp = obj.get("logged", {}).get("chat", {}).get("response", {})
-            print(json.dumps(_record(resp), indent=2, ensure_ascii=False))
+            print(json.dumps(_record(_resp(obj)), indent=2, ensure_ascii=False))
             return
     print(f"line {n} not found")
 
 
-def dump_code(rows: list[tuple[int, dict[str, Any]]]) -> None:
-    """Dump the FULL authored code + full goal_interpretation for every turn.
-    Nothing truncated — the launch script and the verifier probe are the crime scene."""
-    for ln, obj in rows:
-        resp = obj.get("logged", {}).get("chat", {}).get("response", {})
-        rec = _record(resp) or {}
-        rtype = str(rec.get("record_type", "?"))
-        data = rec.get("data", {}) if isinstance(rec, dict) else {}
+def dump_code(rows: list[Row]) -> None:
+    """Dump the FULL authored code + narrative fields for every turn — the crime scene, untruncated."""
+    for ln, obj in _chronological(rows):
+        rtype = _rtype(obj)
+        data = _data(obj)
         print(f"\n{'='*100}\n=== LINE {ln}  [{rtype}] ===")
-        for field in ("perceived", "intent", "done_when", "target", "strategy", "lesson"):
+        for field in ("perceived", "intent", "target", "strategy", "lesson", "risk"):
             v = data.get(field)
             if v:
                 print(f"--- {field}:\n{v}")
@@ -123,7 +179,7 @@ def dump_code(rows: list[tuple[int, dict[str, Any]]]) -> None:
 
 
 if __name__ == "__main__":
-    path = sys.argv[1] if len(sys.argv) > 1 else "request-logs-2026-07-16.jsonl"
+    path = sys.argv[1] if len(sys.argv) > 1 else "request-logs-2026-07-18.jsonl"
     rows = _load(path)
     if "--full" in sys.argv:
         dump_full(rows, int(sys.argv[sys.argv.index("--full") + 1]))
