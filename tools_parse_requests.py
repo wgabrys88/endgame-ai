@@ -27,6 +27,7 @@ USAGE (path optional everywhere — omit to autodetect):
   python tools_parse_requests.py --field goal_interpretation   # one field, all turns, untruncated
   python tools_parse_requests.py --grep IndentationError       # regex over code+data+reason
   python tools_parse_requests.py --usage              # tokens, cache hits, cost per turn
+  python tools_parse_requests.py --stats              # untruncated motion + failure-streak + effects
   python tools_parse_requests.py --record-type verification    # filter the summary
   python tools_parse_requests.py --line 7             # restrict any mode to one line
   python tools_parse_requests.py --no-truncate        # disable every preview cap
@@ -149,6 +150,10 @@ _TRANSITION = {
     ("recovery", "execution"): "recovered",
     ("verification", "execution"): "deed_confirmed",
     ("verification", "recovery"): "deed_denied",
+    # LEGAL self-loop: a witness probe that raised routes verify -> observe:verify ->
+    # verify again (the run-berta fix: a probe fault is NOT a deed denial). Two
+    # consecutive verification turns are this "unwitnessed" re-look, never an anomaly.
+    ("verification", "verification"): "unwitnessed",
 }
 
 
@@ -323,6 +328,141 @@ def grep(rows: list[Row], pattern: str) -> None:
             print(f"[{ln:>3} {_rtype(obj):<11}] …{snippet}…")
 
 
+# ---- effect extraction: what did an execution's authored code ACTUALLY do? ----
+# Schema-agnostic: scans the authored [code] string for the desktop-hand verbs and
+# stdlib effects that move the world or the disk. Names come from core_desktop's
+# public methods + the file/process primitives; each is a real effect, not a claim.
+
+_EFFECT_PATTERNS: dict[str, str] = {
+    "open_url": r"\.open_url\s*\(",
+    "click": r"\.click\s*\(",
+    "type_text": r"\.type_text\s*\(",
+    "press_key": r"\.press_key\s*\(",
+    "hotkey": r"\.hotkey\s*\(",
+    "scroll": r"\.scroll\s*\(",
+    "observe": r"\.observe\s*\(",
+    "expand": r"\.expand\s*\(",
+    "consult_model": r"\bconsult_model\s*\(",
+    "file_write": r"open\s*\([^)]*['\"][wax]\b|\.write_text\s*\(|\.write\s*\(|json\.dump\s*\(",
+    "file_read": r"\.read_text\s*\(|\.read\s*\(|json\.load\s*\(|open\s*\([^)]*['\"]r\b",
+    "subprocess": r"\bsubprocess\.|\bos\.system\s*\(|\bPopen\s*\(",
+    "glob_scan": r"\bglob\.|\.glob\s*\(|\.rglob\s*\(|os\.walk\s*\(|\.iterdir\s*\(",
+    "http": r"\brequests\.|urllib|http\.client|\.urlopen\s*\(",
+}
+
+
+def _effects(code: str) -> list[str]:
+    if not code:
+        return []
+    return [name for name, pat in _EFFECT_PATTERNS.items() if re.search(pat, code)]
+
+
+# Whole-goal axes for THIS run's goal, so axis attribution is printed & reproducible,
+# never a hidden judgment. Ordered; an effect/text is tagged to the first axis it hits.
+_GOAL_AXES: list[tuple[str, str]] = [
+    ("inventory_selftalk", r"inventory|self_inventory|witness\.json|self-aware|self aware|capabilit|creator|readme|README"),
+    ("open_code_improve", r"open\s*code|opencode|self[- ]?diagnose|self[- ]?improve|diagnose"),
+    ("chrome_publish", r"chrome|x\.com|twitter|linkedin|article|publish|browser|navigate|url"),
+]
+
+
+def _axis(code: str, data: dict[str, Any]) -> str:
+    blob = (code or "") + "\n" + "\n".join(str(v) for v in data.values() if isinstance(v, str))
+    hits = [name for name, pat in _GOAL_AXES if re.search(pat, blob, re.I)]
+    # An execution that only touches inventory AND mentions later axes only as
+    # "blocked/next" is still an inventory-axis deed. Prefer the axis whose verbs
+    # the CODE actually enacts; fall back to the first textual hit.
+    code_hits = [name for name, pat in _GOAL_AXES if code and re.search(pat, code, re.I)]
+    if code_hits:
+        return code_hits[0]
+    return hits[0] if hits else "(none)"
+
+
+def stats(rows: list[Row]) -> None:
+    """Untruncated per-turn motion: signal, failure_streak, effects, goal-axis; then
+    run-length encodings and histograms. This is the enriched instrument for deduction."""
+    rows = chronological(rows)
+    faculties = [_rtype(o) for _, o in rows]
+
+    # failure_streak per the KB law: monotonic count of turns since the last
+    # INDEPENDENTLY WITNESSED deed (deed_confirmed). Cleared only by deed_confirmed.
+    print("=== PER-TURN MOTION (untruncated) ===")
+    print(f"{'ln':>3} {'faculty':<12} {'signal':<14} {'fstreak':>7} {'axis':<18} effects")
+    print("-" * 100)
+    streak = 0
+    streak_traj: list[int] = []
+    signals: list[str] = []
+    axes: list[str] = []
+    effect_hist: dict[str, int] = {}
+    axis_hist: dict[str, int] = {}
+    confirmed_effects: list[list[str]] = []
+    prior: list[tuple[str, list[str]]] = []
+    for idx, (ln, obj) in enumerate(rows):
+        rt = faculties[idx]
+        nxt = faculties[idx + 1] if idx + 1 < len(faculties) else None
+        sig = _inferred_signal(rt, nxt)
+        signals.append(sig)
+        data = _data(obj)
+        code = str(data.get("code") or "")
+        eff = _effects(code) if rt == "execution" else []
+        ax = _axis(code, data) if rt == "execution" else "-"
+        for e in eff:
+            effect_hist[e] = effect_hist.get(e, 0) + 1
+        if rt == "execution":
+            axis_hist[ax] = axis_hist.get(ax, 0) + 1
+            axes.append(ax)
+        # streak update: a confirmed deed clears it; every other turn increments.
+        # deed_confirmed is emitted BY a verification turn ABOUT the deed of the
+        # preceding execution, so the confirmed effect is that prior execution's code.
+        if sig == "deed_confirmed":
+            prev_eff = next((e for (r, e) in reversed(prior) if r == "execution"), [])
+            confirmed_effects.append(prev_eff)
+            streak = 0
+        else:
+            streak += 1
+        prior.append((rt, eff))
+        streak_traj.append(streak)
+        print(f"{ln:>3} {rt:<12} {sig:<14} {streak:>7} {ax:<18} {','.join(eff) if eff else ''}")
+    print("-" * 100)
+
+    # run-length encoding of the signal stream
+    print("\n=== SIGNAL RUN-LENGTH ENCODING (chronological) ===")
+    rle: list[tuple[str, int]] = []
+    for s in signals:
+        if rle and rle[-1][0] == s:
+            rle[-1] = (s, rle[-1][1] + 1)
+        else:
+            rle.append((s, 1))
+    print("  " + "  ".join(f"{s}x{n}" if n > 1 else s for s, n in rle))
+
+    print("\n=== FAILURE-STREAK TRAJECTORY ===")
+    print("  max streak reached:", max(streak_traj) if streak_traj else 0,
+          "| final streak:", streak_traj[-1] if streak_traj else 0)
+    print("  (KB law: streak clears ONLY on deed_confirmed; the wider it climbs the more"
+          " recovery must change KIND of road. A proxy that keeps yielding confirmable"
+          " micro-advances keeps this near 0 and defeats the only escape mechanism.)")
+    print("  trajectory:", streak_traj)
+
+    print("\n=== EFFECT HISTOGRAM (what the executor's code actually did) ===")
+    for name, n in sorted(effect_hist.items(), key=lambda kv: -kv[1]):
+        print(f"  {name:<14} {n}")
+    if not effect_hist:
+        print("  (no world/disk effects detected in any execution's code)")
+
+    print("\n=== GOAL-AXIS HISTOGRAM (which axis each execution advanced) ===")
+    for name, n in sorted(axis_hist.items(), key=lambda kv: -kv[1]):
+        print(f"  {name:<20} {n}")
+
+    print("\n=== CONFIRMED-DEED EFFECTS (what each independently-witnessed deed did) ===")
+    for i, eff in enumerate(confirmed_effects):
+        print(f"  confirm #{i+1}: {','.join(eff) if eff else '(no code effect — narrative/again)'}")
+    print(f"\n  confirmed deeds: {len(confirmed_effects)} | "
+          f"of which touched chrome_publish axis: "
+          f"{sum(1 for e in confirmed_effects if any(x in ('open_url','click') for x in e))}"
+          " (proxy-divisibility test: if ~all confirms are file_write on inventory,"
+          " the witness honestly confirmed advances orthogonal to the real goal)")
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="generic schema-agnostic endgame-ai brain-log reader")
     ap.add_argument("path", nargs="?", default=None, help="log path; omit to autodetect newest *.jsonl")
@@ -332,6 +472,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--field", metavar="NAME", help="one data field across all turns, untruncated")
     ap.add_argument("--grep", metavar="PATTERN", help="regex over code + narrative fields")
     ap.add_argument("--usage", action="store_true", help="token + cache + cost breakdown")
+    ap.add_argument("--stats", action="store_true",
+                    help="untruncated per-turn motion: signal, failure_streak trajectory, "
+                         "code-effects, goal-axis, RLE + histograms (the deduction instrument)")
     ap.add_argument("--record-type", metavar="TYPE", help="filter summary to one faculty")
     ap.add_argument("--line", type=int, metavar="N", help="restrict summary/code/field/grep to one line")
     ap.add_argument("--no-truncate", action="store_true", help="disable every preview cap")
@@ -356,6 +499,8 @@ def main(argv: list[str] | None = None) -> int:
         grep(rows, args.grep)
     elif args.usage:
         usage_report(rows)
+    elif args.stats:
+        stats(rows)
     else:
         summarize(rows, args.record_type)
         living_word(rows, truncate)
