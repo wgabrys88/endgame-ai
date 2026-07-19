@@ -239,11 +239,15 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
     organ_tuning = _organ_tuning(w, expected_record_type)
     payload = _with_observation(payload, w)
     goal = str(payload.pop("goal") or "") if "goal" in payload else ""
+    environment_probe = payload.pop("environment_probe", None)
     focus = payload.get("focus")
     interps = focus.pop("goal_interpretations", None) if isinstance(focus, dict) else None
     ledger = focus.pop("proven_ledger", None) if isinstance(focus, dict) else None
     user_text = json.dumps(payload, ensure_ascii=False, default=str)
     user_text = f"{user_text}\n\n{bus.render_proven_ledger(ledger)}\n\n{bus.render_interpretation_table(goal, interps)}"
+    probe_text = bus.render_environment_probe(environment_probe)
+    if probe_text:
+        user_text = f"{user_text}\n\n{probe_text}"
     response_format = _record_response_format(w, expected_record_type, emitting_node) if expected_record_type and _structured_outputs_enabled(cfg) else None
     override = bus.deep_merge(bus.deep_merge(organ_tuning, resolve_profile(w, profile)), body_override or {})
     stable_context_parts = []

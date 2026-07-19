@@ -106,6 +106,7 @@
       "node_observe:act",
       "node_observe:verify",
       "node_observe:recover",
+      "node_probe",
       "node_execute",
       "node_verify",
       "node_recover"
@@ -115,7 +116,10 @@
         "attend": "node_observe:act"
       },
       "node_observe:act": {
-        "observed": "node_execute"
+        "observed": "node_probe"
+      },
+      "node_probe": {
+        "probed": "node_execute"
       },
       "node_execute": {
         "done": "node_observe:verify",

@@ -21,6 +21,7 @@ class ExecuteNode(BaseNode):
             "action_frame": state.get("action_frame"),
             "focus": bus.state_brief(state),
             "observation": bus.observation_brief(state),
+            "environment_probe": state.get("environment_probe"),
         }
 
     def run(self, ctx):
