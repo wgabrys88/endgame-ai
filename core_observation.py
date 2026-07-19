@@ -271,7 +271,7 @@ class UiaScanner:
         except Exception:
             return None
 
-    def harvest_subtree(self, root_element: Any, max_nodes: int | None = None, parent_runtime_id: list[int] | None = None, depth: int = 0) -> list[dict[str, Any]]:
+    def harvest_subtree(self, root_element: Any, max_nodes: int | None = None, parent_runtime_id: list[int] | None = None, depth: int = 0, max_depth: int | None = None) -> list[dict[str, Any]]:
         """Walk the cached subtree preserving TRUE parent identity and depth. The cache is
         built with Subtree scope, so GetCachedChildren recurses from that one cached read
         with no further live [UIA] calls — unlike a flat descendant list, which would tag
@@ -283,7 +283,10 @@ class UiaScanner:
         # overflow the Python stack. Falls back to a generous ceiling when scanned without
         # config (e.g. the expand primitive), which real UIA trees never approach.
         try:
-            depth_ceiling = int(((self.cfg or {}).get("filter") or {}).get("max_depth", 40)) + depth + 5
+            if max_depth is not None:
+                depth_ceiling = depth + int(max_depth)
+            else:
+                depth_ceiling = int(((self.cfg or {}).get("filter") or {}).get("max_depth", 40)) + depth + 5
         except Exception:
             depth_ceiling = depth + 45
         try:
@@ -419,12 +422,19 @@ def resolve_hit_point(scanner: "UiaScanner", target_rid: list[int], rect: dict[s
     return (None, occluder)
 
 
-def expand(desktop: Any, ids_or_points: list[Any], char_budget: int) -> dict[str, Any]:
+def expand(desktop: Any, ids_or_points: list[Any], char_budget: int, focal_depth: int = 0, band_px: int = 150) -> dict[str, Any]:
     """Targeted deeper look at named elements: re-acquire each at its screen point and
-    harvest its full subtree, returning the WHOLE untruncated text, value, and every child
+    harvest its subtree, returning the WHOLE untruncated text, value, and every child
     (including non-interactive), which the shallow tree omitteth. This is a fresh independent
     look, not memory: it readeth the live [UIA] now. `ids_or_points` are entries of the current
     action_index (each bearing px/py) or explicit {'px':x,'py':y} points.
+
+    GRADUATED DEPTH: the FIRST element thou namest is the focal point and is harvested
+    deepest; each later element is harvested shallower the farther its place lieth from the
+    focal, by the pixel distance between their centres — depth = max(1, focal_depth - dist//band_px).
+    Thus a deep web tree spendeth its depth where thou lookest, not on every neighbour. When
+    [focal_depth] is 0 (the default), all are harvested to full depth as of old. Order thy
+    elements so that what thou needest deepest cometh first.
 
     No text is ever cut short. The shallow tree already nameth each element's true size in
     chars, so thou knowest the cost ere thou askest. Shouldst the sum of what thou askest
@@ -433,17 +443,28 @@ def expand(desktop: Any, ids_or_points: list[Any], char_budget: int) -> dict[str
     from ctypes import wintypes
     scanner = UiaScanner({}, desktop)
     harvested_by_key: dict[str, list[dict[str, Any]]] = {}
+    focal_pt: tuple[int, int] | None = None
     for i, item in enumerate(ids_or_points):
         node = item if isinstance(item, dict) else {}
         px, py = node.get("px"), node.get("py")
         key = str(node.get("short_id") or node.get("id") or i)
         if px is None or py is None:
             raise RuntimeError(f"expand: element '{key}' bears no screen point to expand")
-        pt = wintypes.POINT(int(px), int(py))
+        px, py = int(px), int(py)
+        # Graduated depth: focal (first) deepest; neighbours shallower with pixel distance.
+        elem_depth: int | None = None
+        if focal_depth and focal_depth > 0:
+            if focal_pt is None:
+                focal_pt = (px, py)
+                elem_depth = focal_depth
+            else:
+                dist = ((px - focal_pt[0]) ** 2 + (py - focal_pt[1]) ** 2) ** 0.5
+                elem_depth = max(1, focal_depth - int(dist // max(1, band_px)))
+        pt = wintypes.POINT(px, py)
         root_el = scanner.automation.ElementFromPointBuildCache(pt, scanner._cache())
         if root_el is None:
             raise RuntimeError(f"expand: no element at point ({px}, {py}) for '{key}'")
-        harvested_by_key[key] = scanner.harvest_subtree(root_el)
+        harvested_by_key[key] = scanner.harvest_subtree(root_el, max_depth=elem_depth)
 
     def _chars(harvested: list[dict[str, Any]]) -> int:
         if not harvested:

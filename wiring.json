@@ -47,19 +47,19 @@
     "organs": {
       "execution": {
         "reasoning": {
-          "effort": "high"
+          "effort": "low"
         },
         "max_output_tokens": 16384
       },
       "verification": {
         "reasoning": {
-          "effort": "high"
+          "effort": "low"
         },
         "max_output_tokens": 8192
       },
       "recovery": {
         "reasoning": {
-          "effort": "high"
+          "effort": "low"
         },
         "max_output_tokens": 8192
       }
@@ -93,7 +93,9 @@
       },
       "budget": {
         "line_preview_chars": 120,
-        "expand_char_budget": 200000
+        "expand_char_budget": 200000,
+        "expand_focal_depth": 0,
+        "expand_band_px": 150
       }
     }
   },
