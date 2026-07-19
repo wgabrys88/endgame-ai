@@ -3,7 +3,6 @@ import pathlib
 from typing import Any
 
 import core_bus as bus
-import core_loader as loader
 import core_wiring as wiring
 
 ROOT = pathlib.Path(__file__).parent.resolve()
@@ -130,7 +129,7 @@ def _with_observation(payload: dict[str, Any], w: dict[str, Any]) -> dict[str, A
 
 
 def _load_transport_module(name: str, w: dict[str, Any]):
-    return loader.load("transport", name, w)
+    return wiring.load("transport", name, w)
 
 
 def _structured_outputs_enabled(cfg: dict[str, Any]) -> bool:
@@ -221,8 +220,9 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
     interps = focus.pop("goal_interpretations", None) if isinstance(focus, dict) else None
     ledger = focus.pop("proven_ledger", None) if isinstance(focus, dict) else None
     user_text = json.dumps(payload, ensure_ascii=False, default=str)
-    user_text = f"{user_text}\n\n{bus.render_proven_ledger(ledger)}\n\n{bus.render_interpretation_table(goal, interps)}"
-    probe_text = bus.render_environment_probe(environment_probe)
+    templates = w["prompt_templates"]
+    user_text = f"{user_text}\n\n{bus.render_proven_ledger(ledger, templates)}\n\n{bus.render_interpretation_table(goal, interps, templates)}"
+    probe_text = bus.render_environment_probe(environment_probe, templates)
     if probe_text:
         user_text = f"{user_text}\n\n{probe_text}"
     response_format = _record_response_format(w, expected_record_type) if expected_record_type and _structured_outputs_enabled(cfg) else None

@@ -1,6 +1,7 @@
+import importlib.util
 import pathlib
 import re
-from typing import Any
+from typing import Any, NamedTuple
 
 ROOT = pathlib.Path(__file__).parent.resolve()
 
@@ -104,6 +105,11 @@ def validate_wiring(cfg: dict[str, Any]) -> None:
     edges = _require(cfg, "topology.edges", dict)
     _require(cfg, "prompts", dict)
     _require(cfg, "shared_prompt_prefix", str)
+    templates = _require(cfg, "prompt_templates", dict)
+    for key in ("living_word_header", "living_word_goal_row", "living_word_empty_row",
+                "proven_ledger_empty", "proven_ledger_header", "standing_host_header"):
+        if not isinstance(templates.get(key), str) or not templates[key].strip():
+            raise RuntimeError(f"wiring.prompt_templates.{key} must be a non-empty string")
     validate_record_contracts(cfg)
     if len(nodes) != len(set(nodes)):
         raise RuntimeError("wiring.topology.nodes contains duplicates")
@@ -233,3 +239,49 @@ def get_transport_config(wiring: dict[str, Any]) -> tuple[str, dict[str, Any]]:
 
 def guidance_path(wiring: dict[str, Any]) -> pathlib.Path:
     return root_path(wiring["paths"]["guidance"])
+
+
+class PluginKind(NamedTuple):
+    paths_key: str
+    module_prefix: str
+    export: str
+
+
+KINDS: dict[str, PluginKind] = {
+    "node": PluginKind(paths_key="nodes", module_prefix="endgame_node_", export="run"),
+    "transport": PluginKind(paths_key="brains", module_prefix="endgame_brain_transport_", export="call"),
+}
+
+
+def split_instance(name: str) -> tuple[str, str | None]:
+    """Split "base:instance" -> ("base", "instance"). No colon -> (name, None)."""
+    if ":" in name:
+        base, instance = name.split(":", 1)
+        if not base or not instance:
+            raise RuntimeError(f"malformed plugin name '{name}': expected 'base:instance'")
+        return base, instance
+    return name, None
+
+
+def load(kind: str, name: str, w: dict[str, Any]):
+    """Resolve plugin `name` of `kind` to a module exporting the kind's contract.
+
+    Returns the loaded module. Raises hard on missing dir key, missing file,
+    unloadable spec, or missing exported symbol. No fallback.
+    """
+    spec_kind = KINDS.get(kind)
+    if spec_kind is None:
+        raise RuntimeError(f"unknown plugin kind '{kind}'; known: {', '.join(sorted(KINDS))}")
+    base, _instance = split_instance(name)
+    plugin_dir = root_path(w["paths"][spec_kind.paths_key])
+    path = plugin_dir / f"{base}.py"
+    if not path.exists():
+        raise RuntimeError(f"{kind} plugin '{base}' has no module at {path}; no fallback was attempted")
+    spec = importlib.util.spec_from_file_location(f"{spec_kind.module_prefix}{base}", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load {kind} plugin module: {path}")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    if not hasattr(mod, spec_kind.export):
+        raise RuntimeError(f"{kind} plugin '{base}' does not export {spec_kind.export}(...)")
+    return mod

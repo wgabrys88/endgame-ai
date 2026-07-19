@@ -12,7 +12,6 @@
 !core_observation.py
 !core_organism.py
 !core_wiring.py
-!core_loader.py
 !core_node_base.py
 !node_guidance.py
 !node_execute.py

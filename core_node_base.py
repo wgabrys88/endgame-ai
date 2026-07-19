@@ -3,7 +3,6 @@ from typing import Any
 
 import core_bus as bus
 import core_brain as brain
-import core_loader as loader
 import core_wiring as wiring
 
 JsonDict = dict[str, Any]
@@ -53,9 +52,9 @@ class BaseNode(ABC):
 
 def call_node(node_name: str, ctx: JsonDict) -> tuple[str, JsonDict]:
     w = ctx["wiring"]
-    base, instance = loader.split_instance(node_name)
+    base, instance = wiring.split_instance(node_name)
     ctx = {**ctx, "node": node_name, "node_base": base, "node_instance": instance}
-    mod = loader.load("node", node_name, w)
+    mod = wiring.load("node", node_name, w)
     result = mod.run(ctx)
     signal, patch = bus.coerce_node_output(node_name, result)
     bus.validate_signal(w, node_name, signal)

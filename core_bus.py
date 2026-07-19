@@ -77,39 +77,35 @@ def emit(signal: str, patch: JsonDict | None = None) -> tuple[str, JsonDict]:
 _INTERP_ORDER = ["execute", "verify", "recover"]
 
 
-def render_interpretation_table(goal: str, interps: JsonDict | None) -> str:
+def render_interpretation_table(goal: str, interps: JsonDict | None, templates: JsonDict) -> str:
     """The living word — the goal-interpretation rows — rendered for the tail of every user message.
 
     Each thinking faculty keeps exactly one row: what it has LEARNED (not a restating of
     the goal), rewritten in place whensoever it acts. The immutable root goal follows as a
     fixed lodestar footer. The table is bounded (one row per faculty), never accumulates,
-    and never truncates. It rides the volatile user tail, so it costs no prefix cache."""
+    and never truncates. It rides the volatile user tail, so it costs no prefix cache.
+    The model-facing prose lives in wiring.prompt_templates (single source of prompt text)."""
     interps = interps or {}
-    lines = [
-        "THE LIVING WORD — this is thy sole thread across wakings, and thou plannest FROM it, not from the root goal. Each faculty keepeth one row: not a restating of the goal (the goal changeth never and needeth no echo), but what it hath LEARNED—what the world revealed, what deed was tried and how it fared, what obstacle now standeth, what the next true deed must therefore be. Try every row against the fresh observation and correct what it gainsayeth ere thou actest. A row that merely repeateth the goal is wasted and blind; write what advanceth the work:",
-    ]
+    lines = [templates["living_word_header"]]
     for faculty in _INTERP_ORDER:
         sentence = str(interps.get(faculty) or "").strip()
-        lines.append(f"[{faculty}] {sentence}" if sentence else f"[{faculty}] (not yet interpreted)")
-    lines.append(f"[the root goal, a fixed lodestar to consult but never to plan from] {goal}")
+        lines.append(f"[{faculty}] {sentence}" if sentence else templates["living_word_empty_row"].format(faculty=faculty))
+    lines.append(templates["living_word_goal_row"].format(goal=goal))
     return "\n".join(lines)
 
 
-def render_proven_ledger(ledger: list | None) -> str:
+def render_proven_ledger(ledger: list | None, templates: JsonDict) -> str:
     """WHAT STANDETH PROVEN DONE — the independently-witnessed effects, deterministically
     recorded by the witness on each confirmation (never authored by the actor, so it
     cannot be a goal-echo). A faculty reads this to know what already standeth achieved
     upon the world, and MUST NOT redo it. This is the memory of the organism's own
-    successes that the free-text rows cannot carry."""
+    successes that the free-text rows cannot carry.
+    The model-facing prose lives in wiring.prompt_templates (single source of prompt text)."""
     entries = [str(e).strip() for e in (ledger or []) if str(e).strip()]
     if not entries:
-        return ("WHAT STANDETH PROVEN DONE (witnessed effects upon the world): none yet. "
-                "No deed hath yet been independently confirmed.")
+        return templates["proven_ledger_empty"]
     body = "\n".join(f"  - {e}" for e in entries)
-    return ("WHAT STANDETH PROVEN DONE (witnessed effects upon the world, recorded by the "
-            "witness itself — not thy testimony but proven fact; DO NOT redo any of these, "
-            "and if the whole of what remaineth is already herein, strike the ROOT goal "
-            "directly):\n" + body)
+    return templates["proven_ledger_header"] + "\n" + body
 
 
 def with_interpretation(interps: JsonDict | None, faculty: str, sentence: str) -> JsonDict:
@@ -119,15 +115,15 @@ def with_interpretation(interps: JsonDict | None, faculty: str, sentence: str) -
     return merged
 
 
-def render_environment_probe(probe: JsonDict | None) -> str:
+def render_environment_probe(probe: JsonDict | None, templates: JsonDict) -> str:
     """THE STANDING HOST — the machine's own facts (place, tongue, tools, dwelling apps),
     gathered fresh each turn by node_probe and laid at the tail of the user message so the
     executor knoweth what already standeth and reinventeth it not. Rides the volatile tail;
-    costs no prefix cache."""
+    costs no prefix cache. The header prose lives in wiring.prompt_templates."""
     probe = probe or {}
     if not probe:
         return ""
-    lines = ["THE STANDING HOST — what the machine itself beareth this turn; build upon it, rediscover it not:"]
+    lines = [templates["standing_host_header"]]
     for key, value in probe.items():
         if isinstance(value, list):
             value = ", ".join(str(v) for v in value)
