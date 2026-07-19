@@ -47,7 +47,6 @@ def run(goal: str | None) -> dict[str, Any]:
 
 
 def next_node_for(w: dict[str, Any], current: str, signal_name: str) -> str:
-    """Resolve the one successor for a signal from the live topology."""
     edges = w.get("topology", {}).get("edges", {})
     node_edges = edges.get(current)
     if not isinstance(node_edges, dict):

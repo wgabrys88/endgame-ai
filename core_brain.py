@@ -60,7 +60,6 @@ def _commit_record(content: str, w: dict[str, Any], expected_record_type: str | 
 
 
 def _node_docstring(w: dict[str, Any], node: str) -> str:
-    """Read a node's input contract from its module docstring."""
     import ast
     base = node.split(":", 1)[0]
     node_dir = wiring.root_path(w["paths"]["nodes"])
@@ -74,7 +73,6 @@ def _node_docstring(w: dict[str, Any], node: str) -> str:
 
 
 def downstream_contract(w: dict[str, Any], emitting_node: str | None) -> str:
-    """Inject each wired consumer's live input contract; no separate pins registry exists."""
     if not emitting_node:
         return ""
     edges = w.get("topology", {}).get("edges", {}).get(emitting_node, {})
@@ -131,7 +129,6 @@ def _structured_outputs_enabled(cfg: dict[str, Any]) -> bool:
 
 
 def resolve_profile(w: dict[str, Any], profile: str | None) -> dict[str, Any]:
-    """Resolve one wiring-owned partial request body; unknown names fail hard."""
     if not profile:
         return {}
     _, cfg = wiring.get_transport_config(w)

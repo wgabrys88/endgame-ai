@@ -34,8 +34,6 @@ def _screen() -> str:
 
 
 def _open_windows() -> list[str]:
-    # Titles of visible top-level windows, so the actor switches to what is already open rather
-    # than launching anew. Pure user32 EnumWindows; no UIA, no app-specific knowledge.
     if sys.platform != "win32":
         return []
     import ctypes

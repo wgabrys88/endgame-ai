@@ -86,9 +86,6 @@ def is_desktop_leakage(node: dict[str, Any]) -> bool:
 
 
 def enum_windows(min_area: int = 2500) -> list[dict[str, Any]]:
-    # Visible top-level windows front-to-back (EnumWindows order IS the z-order, computed nowhere
-    # else). LOOSE: no title requirement, so untitled menus/dropdowns/tooltips/dialogs/taskbar are
-    # seen; only invisible, minimised, or sub-min_area (1x1 helper/sliver) windows are cast out.
     out: list[dict[str, Any]] = []
     seen: set[int] = set()
     enum_proc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
@@ -289,9 +286,6 @@ class UiaScanner:
             return None
 
     def harvest_subtree(self, root_element: Any, max_nodes: int | None = None) -> list[dict[str, Any]]:
-        # Subtree-scope cache: GetCachedChildren recurses from ONE cached read with no further live
-        # UIA calls, preserving true parent identity/depth (a flat descendant list would tag every
-        # node with the subtree root and destroy the hierarchy).
         nodes: list[dict[str, Any]] = []
         seen: set[str] = set()
         depth_ceiling = 45
@@ -329,9 +323,6 @@ class UiaScanner:
 
 
 def expand(desktop: Any, ids_or_points: list[Any], char_budget: int | None = None) -> dict[str, Any]:
-    # Fresh live-UIA re-acquire of named elements at their screen points, harvesting each whole
-    # subtree (all text/value/children) which the shallow tree omits. char_budget, if given, fails
-    # hard when the summed char cost exceeds it (naming each size) rather than truncating.
     from ctypes import wintypes
     scanner = UiaScanner({}, desktop)
     harvested_by_key: dict[str, list[dict[str, Any]]] = {}
@@ -376,8 +367,6 @@ def expand(desktop: Any, ids_or_points: list[Any], char_budget: int | None = Non
 
 
 def _probe_points(rect: dict[str, int], step_px: int) -> list[tuple[int, int]]:
-    # Golden-ratio quasirandom grid confined to ONE window's rect: a small window gets a handful of
-    # points and a large one dense coverage, spending no probe on dead screen between windows.
     left, top = rect["left"], rect["top"]
     w, h = max(1, rect["right"] - left), max(1, rect["bottom"] - top)
     cols, rows = max(1, w // step_px), max(1, h // step_px)
@@ -396,10 +385,6 @@ def _probe_points(rect: dict[str, int], step_px: int) -> list[tuple[int, int]]:
 
 
 def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any]:
-    # ONE rule: per window, probe its own rect and keep only elements whose owner-hwnd is THIS
-    # window; a pixel owned by a nearer window fails the test and is dropped, so occlusion is
-    # answered for free and the click-point is proven by the probe. Window identity/rects are
-    # ground truth from EnumWindows — no z-order math, no hit-resolution, no window reconstruction.
     cfg = dict(config or {})
     if not cfg.get("enabled", True):
         raise RuntimeError("observation is disabled")
@@ -423,8 +408,6 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
             for x, y in _probe_points(rect, step_px):
                 user32.SetCursorPos(int(x), int(y))
                 pt = wintypes.POINT(int(x), int(y))
-                # THE RULE: whom doth this pixel own to? If not this window, it is a nearer
-                # window covering it — drop and move on. Free, and it IS the occlusion test.
                 try:
                     owner = int(user32.GetAncestor(user32.WindowFromPoint(pt), 2) or 0)
                 except Exception:
@@ -474,10 +457,6 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
 
 
 def _render(windows: list[dict[str, Any]], screen: dict[str, int], line_preview_chars: int) -> dict[str, Any]:
-    # Build the numbered tree the LLM reads and the action_index the body targets. Windows W1..Wn in
-    # z-order (front first); actionable elements e1..eN in tree-walk order, each nested under the
-    # nearest kept ancestor of its own window (by runtime-id chain) or its window. No pixel in the
-    # text — the body reads px,py from action_index by short_id.
     def clean(v: Any) -> str:
         return " ".join(str(v or "").replace("\r", " ").replace("\n", " ").split())
 
@@ -494,7 +473,6 @@ def _render(windows: list[dict[str, Any]], screen: dict[str, int], line_preview_
         wid = f"W{wi}"
         title = win["title"] or f"Window_{win['hwnd']}"
         elements = win["elements"]
-        # index every kept element for nesting by its true runtime-id chain within this window
         by_rid = {tuple(e.get("runtime_id") or []): e for e in elements if e.get("runtime_id")}
         action_children: dict[str, list[dict[str, Any]]] = {}
         roots: list[dict[str, Any]] = []

@@ -21,7 +21,6 @@ def _action_index(state: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_capability_runtime(ctx: dict[str, Any], *, read_only: bool = False) -> dict[str, Any]:
-    """Build the capability namespace appointed to actor or witness."""
     import core_desktop as desktop
     d = desktop.get_desktop()
     state = ctx.get("state", {})

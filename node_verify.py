@@ -41,11 +41,6 @@ class VerifyNode(BaseNode):
             probe_fault = traceback.format_exc()
 
         if probe_fault is not None:
-            # The witness probe raised ere it judged, so THIS deed is UNJUDGED — not denied.
-            # A probe fault carries no verdict on the world, so it returns to the witness to
-            # look afresh, never to recovery (which would frame a new actor deed and, misled
-            # by an exec-string traceback, send the actor to mend a body file that is whole).
-            # No actor state is touched: the deed, the streak, and the actor's row all stand.
             note = (
                 "The read-only probe I authored raised ere it set a verdict, so this deed standeth "
                 "UNJUDGED — this is neither the actor's failing nor a fault in any node file, for the "

@@ -9,8 +9,6 @@ JsonDict = dict[str, Any]
 
 
 class BaseNode(ABC):
-    """Unified base class for all LLM-driven nodes. Single source of truth for think/build_payload/signal/patch."""
-
     prompt_key: str = ""
     expected_record_type: str = ""
 

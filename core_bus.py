@@ -34,16 +34,13 @@ def drop_nulls(obj: Any) -> Any:
     return obj
 
 
-class BusContractError(RuntimeError):
-    pass
+class BusContractError(RuntimeError): pass
 
 
-class TopologyContractError(BusContractError):
-    pass
+class TopologyContractError(BusContractError): pass
 
 
-class NodeRecordContractError(BusContractError):
-    pass
+class NodeRecordContractError(BusContractError): pass
 
 
 @dataclass(frozen=True)
@@ -72,7 +69,6 @@ _INTERP_ORDER = ["execute", "verify", "recover"]
 
 
 def render_interpretation_table(goal: str, interps: JsonDict | None, templates: JsonDict) -> str:
-    # Rides the volatile user tail (one bounded row per faculty, never truncates), so it costs no prefix cache.
     interps = interps or {}
     lines = [templates["living_word_header"]]
     for faculty in _INTERP_ORDER:
@@ -97,7 +93,6 @@ def with_interpretation(interps: JsonDict | None, faculty: str, sentence: str) -
 
 
 def render_environment_probe(probe: JsonDict | None, templates: JsonDict) -> str:
-    # Rides the volatile user tail; costs no prefix cache. Header prose lives in wiring.prompt_templates.
     probe = probe or {}
     if not probe:
         return ""
@@ -136,7 +131,6 @@ def validate_signal(wiring: JsonDict, node: str, signal: str) -> None:
 
 
 def state_brief(state: JsonDict) -> JsonDict:
-    """Present deed facts; the living word is extracted from here into the user tail."""
     current_deed = state.get("current_deed") or {}
     return {
         "goal_interpretations": dict(state.get("goal_interpretations") or {}),
@@ -149,8 +143,6 @@ def state_brief(state: JsonDict) -> JsonDict:
 
 
 def focused_elements(state: JsonDict) -> JsonDict:
-    # Adds only what desktop_tree_text lacks (enabled, rect, automation_id, class_name), and only
-    # for focused/action-framed ids, so each element is carried once. Targeting uses action_index.
     action_index = state.get("action_index") or {}
     if not isinstance(action_index, dict):
         return {}
@@ -195,8 +187,6 @@ def execution_evidence(state: JsonDict) -> JsonDict:
 
 
 def bump_failure_streak(state: JsonDict) -> JsonDict:
-    # Monotonic denial tally NOT keyed to deed wording (a reworded obstacle cannot reset it);
-    # only a verifier confirmation clears it (node_verify). Higher = recovery must forsake more.
     previous = state.get("failure_streak") or {}
     count = int(previous.get("count", 0) or 0) + 1
     return {"failure_streak": {"count": count, "updated_at": time.time()}}
