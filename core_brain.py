@@ -1,6 +1,5 @@
 import json
 import pathlib
-import re
 from typing import Any
 
 import core_bus as bus
@@ -202,13 +201,6 @@ def call(messages: list[dict[str, str]], w: dict[str, Any], *, response_format: 
     return out
 
 
-def reasoning_from(content: str, reasoning: str = "") -> str:
-    if reasoning and reasoning.strip():
-        return reasoning.strip()
-    match = re.search(r"think(.*?)answer", content or "", flags=re.S | re.I)
-    return match.group(1).strip() if match else (content or "").strip()
-
-
 def extract_json_object(text: str) -> dict[str, Any] | None:
     if not text:
         return None
@@ -219,7 +211,7 @@ def extract_json_object(text: str) -> dict[str, Any] | None:
     return obj if isinstance(obj, dict) else None
 
 
-def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, expected_record_type: str | None = None, emitting_node: str | None = None, body_override: dict[str, Any] | None = None, profile: str | None = None) -> dict[str, Any]:
+def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, expected_record_type: str | None = None, emitting_node: str | None = None, body_override: dict[str, Any] | None = None) -> dict[str, Any]:
     _, cfg = wiring.get_transport_config(w)
     organ_tuning = _organ_tuning(w, expected_record_type)
     payload = _with_observation(payload, w)
@@ -234,19 +226,9 @@ def think(system_prompt: str, payload: dict[str, Any], w: dict[str, Any], *, exp
     if probe_text:
         user_text = f"{user_text}\n\n{probe_text}"
     response_format = _record_response_format(w, expected_record_type) if expected_record_type and _structured_outputs_enabled(cfg) else None
-    override = bus.deep_merge(bus.deep_merge(organ_tuning, resolve_profile(w, profile)), body_override or {})
+    override = bus.deep_merge(organ_tuning, body_override or {})
     stable_context = downstream_contract(w, emitting_node)
-    pattern = str(cfg["reasoning_pattern"])
-    if pattern in {"single_pass", "native"}:
-        result = call(_messages(system_prompt, user_text, stable_context), w, response_format=response_format, body_override=override)
-        record = _commit_record(result["content"], w, expected_record_type)
-        transport_reasoning = str(result.get("reasoning") or "").strip()
-        return bus.Record(record.record_type, record.data, transport_reasoning or record.reasoning).to_json()
-    if pattern != "two_pass":
-        raise RuntimeError(f"unknown reasoning pattern: {pattern}")
-    first = call(_messages(system_prompt, user_text, stable_context), w, body_override=override)
-    reasoning = reasoning_from(first["content"], first.get("reasoning", ""))
-    template = str(cfg["reasoning_injection_template"])
-    second = call(_messages(system_prompt, user_text + "\n\n" + template.format(reasoning=reasoning), stable_context), w, response_format=response_format, body_override=override)
-    record = _commit_record(second["content"], w, expected_record_type)
-    return bus.Record(record.record_type, record.data, reasoning).to_json()
+    result = call(_messages(system_prompt, user_text, stable_context), w, response_format=response_format, body_override=override)
+    record = _commit_record(result["content"], w, expected_record_type)
+    transport_reasoning = str(result.get("reasoning") or "").strip()
+    return bus.Record(record.record_type, record.data, transport_reasoning or record.reasoning).to_json()

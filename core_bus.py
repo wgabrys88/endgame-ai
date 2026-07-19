@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import json
 import re
 import time
@@ -66,46 +66,12 @@ class Record:
         return cls(record_type=obj.get("record_type", ""), data=obj.get("data", {}), reasoning=obj.get("reasoning", ""))
 
 
-@dataclass(frozen=True)
-class NodeOutput:
-    signal: str
-    patch: JsonDict = field(default_factory=dict)
-    record: Record | None = None
-    evidence: JsonDict = field(default_factory=dict)
-
-    def trace(self, *, node: str) -> JsonDict:
-        record_type = None
-        record_summary = None
-        if isinstance(self.record, Record):
-            record_type = self.record.record_type
-            record_summary = {"record_type": record_type, "data_keys": sorted(self.record.data)}
-        elif isinstance(self.record, dict):
-            record_type = self.record.get("record_type")
-            data = self.record.get("data")
-            record_summary = {"record_type": record_type, "data_keys": sorted(data) if isinstance(data, dict) else []}
-        return {
-            "kind": "endgame.node_output.v1",
-            "node": node,
-            "signal": self.signal,
-            "record_type": record_type,
-            "patch_keys": sorted(self.patch.keys()),
-            "evidence_keys": sorted(self.evidence.keys()),
-            "record": record_summary,
-            "emitted_at": time.time(),
-        }
-
-
-def emit(signal: str, patch: JsonDict | None = None, *, record: Record | JsonDict | None = None, evidence: JsonDict | None = None) -> NodeOutput:
+def emit(signal: str, patch: JsonDict | None = None) -> tuple[str, JsonDict]:
     if not isinstance(signal, str) or not signal.strip():
         raise ValueError("bus signal must be a non-empty string")
     if patch is not None and not isinstance(patch, dict):
         raise TypeError("bus patch must be a dict")
-    if record is not None and not isinstance(record, (Record, dict)):
-        raise TypeError("bus record must be a Record or dict when provided")
-    if evidence is not None and not isinstance(evidence, dict):
-        raise TypeError("bus evidence must be a dict when provided")
-    record_obj = Record.from_json(record) if isinstance(record, dict) else record
-    return NodeOutput(signal=signal.strip(), patch=dict(patch or {}), record=record_obj, evidence=dict(evidence or {}))
+    return signal.strip(), dict(patch or {})
 
 
 _INTERP_ORDER = ["execute", "verify", "recover"]
@@ -169,17 +135,15 @@ def render_environment_probe(probe: JsonDict | None) -> str:
     return "\n".join(lines)
 
 
-def coerce_node_output(node: str, result: Any) -> NodeOutput:
-    if isinstance(result, NodeOutput):
-        return result
-    if isinstance(result, tuple) and len(result) == 2:
-        signal, patch = result
-        if not isinstance(signal, str) or not signal:
-            raise NodeRecordContractError(f"node '{node}' contract violation: signal must be a non-empty string")
-        if not isinstance(patch, dict):
-            raise NodeRecordContractError(f"node '{node}' contract violation: patch must be dict")
-        return emit(signal, patch)
-    raise NodeRecordContractError(f"node '{node}' contract violation: expected NodeOutput or (signal, patch)")
+def coerce_node_output(node: str, result: Any) -> tuple[str, JsonDict]:
+    if not (isinstance(result, tuple) and len(result) == 2):
+        raise NodeRecordContractError(f"node '{node}' contract violation: expected (signal, patch)")
+    signal, patch = result
+    if not isinstance(signal, str) or not signal:
+        raise NodeRecordContractError(f"node '{node}' contract violation: signal must be a non-empty string")
+    if not isinstance(patch, dict):
+        raise NodeRecordContractError(f"node '{node}' contract violation: patch must be dict")
+    return signal, patch
 
 
 def allowed_signals(wiring: JsonDict, node: str) -> set[str]:

@@ -54,8 +54,6 @@ class ExecuteNode(BaseNode):
                 "action_frame": None,
                 "last_verification": None,
             },
-            record=record,
-            evidence=self.build_payload(ctx),
         )
 
 

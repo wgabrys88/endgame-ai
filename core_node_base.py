@@ -23,9 +23,6 @@ class BaseNode(ABC):
             "observation": bus.observation_brief(st),
         }
 
-    def evidence(self, ctx: JsonDict) -> JsonDict:
-        return {"state": bus.state_brief(ctx.get("state", {}))}
-
     def signal_from_data(self, data: JsonDict, ctx: JsonDict) -> str:
         raise NotImplementedError(f"{type(self).__name__} must implement signal_from_data or override run()")
 
@@ -46,12 +43,12 @@ class BaseNode(ABC):
             )
         return bus.Record.from_json(record)
 
-    def run(self, ctx: JsonDict) -> bus.NodeOutput:
+    def run(self, ctx: JsonDict) -> tuple[str, JsonDict]:
         record = self.think(ctx)
         data = record.data
         signal = self.signal_from_data(data, ctx)
         patch = self.patch_from_record(record, ctx)
-        return bus.emit(signal, patch, record=record, evidence=self.evidence(ctx))
+        return bus.emit(signal, patch)
 
 
 def call_node(node_name: str, ctx: JsonDict) -> tuple[str, JsonDict]:
@@ -60,8 +57,6 @@ def call_node(node_name: str, ctx: JsonDict) -> tuple[str, JsonDict]:
     ctx = {**ctx, "node": node_name, "node_base": base, "node_instance": instance}
     mod = loader.load("node", node_name, w)
     result = mod.run(ctx)
-    output = bus.coerce_node_output(node_name, result)
-    bus.validate_signal(w, node_name, output.signal)
-    patch = dict(output.patch)
-    patch.setdefault("_last_bus_frame", output.trace(node=node_name))
-    return output.signal, patch
+    signal, patch = bus.coerce_node_output(node_name, result)
+    bus.validate_signal(w, node_name, signal)
+    return signal, dict(patch)

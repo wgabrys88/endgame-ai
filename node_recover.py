@@ -16,11 +16,6 @@ class RecoverNode(BaseNode):
             "failure_streak": self._streak_patch["failure_streak"],
         }
 
-    def evidence(self, ctx):
-        if not hasattr(self, "_evidence_payload"):
-            self._prepare(ctx)
-        return self._evidence_payload
-
     def build_payload(self, ctx):
         self._prepare(ctx)
         state = ctx["state"]
@@ -42,7 +37,6 @@ class RecoverNode(BaseNode):
         action_frame = {
             "target": data["target"],
             "strategy": data["strategy"],
-            "risk": data["risk"],
             "lesson": data["lesson"],
         }
         return {

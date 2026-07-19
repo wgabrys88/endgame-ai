@@ -56,7 +56,7 @@ class VerifyNode(BaseNode):
                 "goal_interpretations": bus.with_interpretation(state.get("goal_interpretations"), "verify", note),
                 "last_verification": {"success": False, "signal": "unwitnessed", "reasoning": probe_fault},
             }
-            return bus.emit("unwitnessed", patch, record=record, evidence=self.build_payload(ctx))
+            return bus.emit("unwitnessed", patch)
 
         goal_satisfied = verdict["goal_satisfied"]
         deed_confirmed = verdict["deed_confirmed"]
@@ -86,7 +86,7 @@ class VerifyNode(BaseNode):
                 "action_frame": None,
                 "current_deed": None,
             })
-        return bus.emit(signal, patch, record=record, evidence=self.build_payload(ctx))
+        return bus.emit(signal, patch)
 
 
 def run(ctx):
