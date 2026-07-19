@@ -163,12 +163,12 @@ untitled windows — context menus, dropdowns, tooltips, system-error dialogs, a
 are seen; a minimum-area floor drops 1x1/sliver junk.
 
 The output the LLM reads is a shallow tree, one line per interactive element (short_id, role, name,
-and at most `[action]` and `[disabled]`; a window line carries `[active]`), with NO pixel coordinates
-in the text (the body reads px,py from the `action_index` by short_id; a coordinate on the line is a
-dead token that only tempts the actor to nail a stale pixel). The organism reads a flat 2D plane of
-windows and their reachable elements. Elements deepen on demand via `expand()`, a fresh independent
-look that harvests a subtree whole; an optional `char_budget` fails hard if a request is a glutton,
-else all is harvested.
+and `[action]` where the element affords one; a window line carries `[active]`), with NO pixel
+coordinates in the text (the body reads px,py from the `action_index` by short_id; a coordinate on the
+line is a dead token that only tempts the actor to nail a stale pixel). The organism reads a flat 2D
+plane of windows and their reachable elements. Elements deepen on demand via `expand()`, a fresh
+independent look that harvests a subtree whole; an optional `char_budget` fails hard if a request is a
+glutton, else all is harvested.
 
 **What the LLM receives vs what stays Python-side.** `core_bus.observation_brief` sends the model
 ONLY `desktop_tree_text` + framed-element detail (the elements named by an `action_frame`) (+ small

@@ -150,7 +150,7 @@ def framed_elements(state: JsonDict) -> JsonDict:
     visible_ids = {line.strip().split(" ", 1)[0] for line in tree_text.splitlines() if line.strip()}
     frame_text = json.dumps(state.get("action_frame") or {}, ensure_ascii=False, default=str)
     framed_ids = set(re.findall(r"\b(?:e|W)\d+\b", frame_text))
-    detail_fields = ("name", "role", "action", "enabled", "rect", "automation_id", "class_name")
+    detail_fields = ("name", "role", "action", "rect", "automation_id", "class_name")
     mapped: JsonDict = {}
     for node_id, node in action_index.items():
         if not isinstance(node, dict) or str(node_id) not in visible_ids:

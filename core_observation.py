@@ -494,13 +494,11 @@ def _render(windows: list[dict[str, Any]], screen: dict[str, int], line_preview_
             counter["n"] += 1
             sid = f"e{counter['n']}"
             e["short_id"] = sid
-            action = str(e.get("action", ""))
-            disabled = e.get("enabled") is False
+            action = str(e.get("action", "")) if e.get("enabled") is not False else ""
             name_prev, name_total = preview(e.get("name", "") or "")
             parts = [p for p in (
                 sid, str(e.get("role", "")), name_prev,
-                f"[{action}]" if action and not disabled else "",
-                "[disabled]" if disabled else "",
+                f"[{action}]" if action else "",
             ) if p]
             if name_total:
                 parts.append(f"({name_total} chars)")
