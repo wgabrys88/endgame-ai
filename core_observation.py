@@ -306,7 +306,7 @@ class UiaScanner:
             try:
                 kids = el.GetCachedChildren()
                 count = int(getattr(kids, "Length", 0)) if kids is not None else 0
-            except (ValueError, Exception):
+            except Exception:
                 kids, count = None, 0
             for i in range(count):
                 if max_nodes is not None and len(nodes) >= max_nodes:
