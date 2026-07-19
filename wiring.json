@@ -73,20 +73,9 @@
   "observe_config": {
     "hover_cache": {
       "enabled": true,
-      "phases": {
-        "scan": "obs_scan",
-        "filter": "obs_filter",
-        "build": "obs_build"
-      },
       "scan": {
         "step_px": 64,
-        "max_subtree_nodes_per_point": 2000,
-        "max_total_nodes": 10000
-      },
-      "filter": {
-        "max_elements": 500,
-        "max_per_window": 120,
-        "max_depth": 10
+        "max_subtree_nodes_per_point": 2000
       },
       "budget": {
         "line_preview_chars": 120

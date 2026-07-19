@@ -10,9 +10,6 @@
 !core_desktop.py
 !core_nodes.py
 !core_observation.py
-!obs_build.py
-!obs_filter.py
-!obs_scan.py
 !core_organism.py
 !core_wiring.py
 !core_loader.py

@@ -88,15 +88,44 @@ def is_desktop_leakage(node: dict[str, Any]) -> bool:
     return node["role"] == "List" and node["name"] == "Desktop" and action_for_role(node["role"], node["class_name"]) == "scroll"
 
 
-def get_window_z_order() -> list[int]:
-    out: list[int] = []
+def enum_windows(min_area: int = 2500) -> list[dict[str, Any]]:
+    """Every visible top-level window, front-to-back in true z-order, each with its hwnd,
+    rectangle, and title. LOOSE by design: no title-text requirement, so context menus,
+    dropdowns, tooltips, system-error dialogs, and the taskbar — all untitled — are seen.
+    Only the truly absent are cast out: invisible, minimised, or smaller than min_area (the
+    1x1 helper and sliver windows). EnumWindows yieldeth front-to-back, which we keep as the
+    z-order. This is the whole of window discovery; z is inherited here, computed nowhere."""
+    out: list[dict[str, Any]] = []
+    seen: set[int] = set()
     enum_proc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
 
     def callback(hwnd, _):
+        h = int(hwnd)
+        if h in seen or not user32.IsWindowVisible(hwnd) or user32.IsIconic(hwnd):
+            return True
         rect = wintypes.RECT()
-        if user32.IsWindowVisible(hwnd) and not user32.IsIconic(hwnd) and user32.GetWindowTextLengthW(hwnd) > 0 and user32.GetWindowRect(hwnd, ctypes.byref(rect)) and rect.right > rect.left and rect.bottom > rect.top:
-            out.append(int(hwnd))
+        if not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+            return True
+        w, ht = rect.right - rect.left, rect.bottom - rect.top
+        if w <= 0 or ht <= 0 or w * ht < min_area:
+            return True
+        length = int(user32.GetWindowTextLengthW(hwnd))
+        buf = ctypes.create_unicode_buffer(length + 1)
+        user32.GetWindowTextW(hwnd, buf, length + 1)
+        seen.add(h)
+        out.append({
+            "hwnd": h,
+            "title": buf.value or "",
+            "rect": {"left": int(rect.left), "top": int(rect.top), "right": int(rect.right), "bottom": int(rect.bottom)},
+            "z_order": len(out),
+        })
         return True
+
+    try:
+        user32.EnumWindows(enum_proc(callback), 0)
+    except Exception:
+        pass
+    return out
 
     try:
         user32.EnumWindows(enum_proc(callback), 0)
@@ -319,120 +348,6 @@ class UiaScanner:
         return nodes
 
 
-def _hit_key_from_element(element: Any) -> tuple[str, str]:
-    rect = _to_rect(_cached(element, PID_BOUNDING_RECT))
-    if rect["right"] <= rect["left"] or rect["bottom"] <= rect["top"]:
-        rect = _to_rect(_current(element, PID_BOUNDING_RECT))
-    runtime_id = _to_runtime_id(_cached(element, PID_RUNTIME_ID)) or _to_runtime_id(_current(element, PID_RUNTIME_ID))
-    hwnd = _to_int(_cached(element, PID_HWND)) or _to_int(_current(element, PID_HWND))
-    role_id = _to_int(_cached(element, PID_CONTROL_TYPE)) or _to_int(_current(element, PID_CONTROL_TYPE))
-    return _node_id(runtime_id, hwnd, rect), control_type_name(role_id)
-
-
-def _load_phase(module_name: str):
-    import importlib
-    mod = importlib.import_module(module_name)
-    if not hasattr(mod, "run"):
-        raise RuntimeError(f"observation phase '{module_name}' does not export run(...)")
-    return mod
-
-
-def _runtime_id_under(hit_rid: list[int], target_rid: list[int]) -> bool:
-    """True if the hit element IS the target or a descendant of it, judged by RuntimeId:
-    an exact match, or the target's id being a prefix of the hit's (UIA ids are hierarchical)."""
-    if not hit_rid or not target_rid:
-        return False
-    if hit_rid == target_rid:
-        return True
-    return len(hit_rid) > len(target_rid) and hit_rid[: len(target_rid)] == target_rid
-
-
-def resolve_hit_point(scanner: "UiaScanner", target_rid: list[int], rect: dict[str, int], known: tuple | None = None) -> tuple[tuple[int, int] | None, str]:
-    """Find a screen point that the OS hit-test resolves to the target element (or a
-    descendant), so a click landeth on the thing itself and not the window beneath it.
-    A wide field's rect centre oft falleth on dead chrome; this proveth the point instead.
-
-    Returns ((x, y), "") on success, or (None, occluder) naming what covereth the centre when
-    no point within the rect resolveth. `known` is a proven point from the scan grid, tried first."""
-    left, top, right, bottom = rect.get("left", 0), rect.get("top", 0), rect.get("right", 0), rect.get("bottom", 0)
-    w, h = right - left, bottom - top
-    if not target_rid or w <= 0 or h <= 0:
-        return (None, "")
-
-    def hit_cheap(px: int, py: int) -> int:
-        """One hit-test, no parent-walk. 1 = the hit is the target or a descendant (a true
-        landing); 2 = the hit is an ancestor on the target's own chain (its container chrome
-        — the target liveth at this pixel, the click landeth on it, no occlusion); 0 = a
-        foreign thing (a real cover) or nothing."""
-        try:
-            el = scanner.automation.ElementFromPoint(wintypes.POINT(int(px), int(py)))
-        except Exception:
-            return 0
-        if el is None:
-            return 0
-        rid = _to_runtime_id(_current(el, PID_RUNTIME_ID))
-        if _runtime_id_under(rid, target_rid):
-            return 1
-        if _runtime_id_under(target_rid, rid):
-            return 2
-        return 0
-
-    def hit_by_walk(px: int, py: int) -> bool:
-        """The costly fallback: walk up from the hit for providers whose child ids are not
-        strict prefixes of their parents (cross-provider chrome, e.g. a menu under a tab).
-        Run at most ONCE per element, only after every cheap trial hath failed."""
-        try:
-            el = scanner.automation.ElementFromPoint(wintypes.POINT(int(px), int(py)))
-            if el is None:
-                return False
-            walker = scanner.automation.RawViewWalker
-            cur = el
-            for _ in range(6):
-                cur = walker.GetParentElement(cur)
-                if cur is None:
-                    break
-                if _runtime_id_under(_to_runtime_id(_current(cur, PID_RUNTIME_ID)), target_rid):
-                    return True
-        except Exception:
-            pass
-        return False
-
-    cx, cy = (left + right) // 2, (top + bottom) // 2
-    trials: list[tuple[int, int]] = []
-    if known and len(known) == 2:
-        trials.append((int(known[0]), int(known[1])))
-    trials.append((cx, cy))
-    # a spread within the rect: quarters and inset edges (left-inset suits text fields)
-    for fx in (0.25, 0.5, 0.75):
-        for fy in (0.25, 0.5, 0.75):
-            trials.append((int(left + w * fx), int(top + h * fy)))
-    seen: set[tuple[int, int]] = set()
-    ordered: list[tuple[int, int]] = []
-    for px, py in trials:
-        if (px, py) in seen or not (left <= px < right and top <= py < bottom):
-            continue
-        seen.add((px, py))
-        ordered.append((px, py))
-    # First the CHEAP pass over every point (one hit-test each): a direct or ancestor-chain
-    # landing endeth at once. Only if ALL cheap trials fail do we pay the costly parent-walk,
-    # and but ONCE, at the centre — this is what maketh a truly-occluded element cheap to
-    # judge instead of running the walk at all eleven points.
-    for px, py in ordered:
-        if hit_cheap(px, py):
-            return ((px, py), "")
-    if hit_by_walk(cx, cy):
-        return ((cx, cy), "")
-    # nothing resolved — name the occluder at the centre for loud, honest report
-    occluder = "unknown"
-    try:
-        el = scanner.automation.ElementFromPoint(wintypes.POINT(cx, cy))
-        if el is not None:
-            occluder = f"{control_type_name(_to_int(_current(el, PID_CONTROL_TYPE)))}|{_to_str(_current(el, PID_NAME))[:40]!r}"
-    except Exception:
-        pass
-    return (None, occluder)
-
-
 def expand(desktop: Any, ids_or_points: list[Any], char_budget: int | None = None) -> dict[str, Any]:
     """Targeted deeper look at named elements: re-acquire each at its screen point and
     harvest its subtree, returning the WHOLE untruncated text, value, and every child
@@ -487,66 +402,223 @@ def expand(desktop: Any, ids_or_points: list[Any], char_budget: int | None = Non
     return results
 
 
+def _probe_points(rect: dict[str, int], step_px: int) -> list[tuple[int, int]]:
+    """A golden-ratio quasirandom grid over ONE window's rectangle. Confined to the window,
+    so a small window is probed with a handful of points and a large one densely, spending no
+    probe on dead screen between windows."""
+    left, top = rect["left"], rect["top"]
+    w, h = max(1, rect["right"] - left), max(1, rect["bottom"] - top)
+    cols, rows = max(1, w // step_px), max(1, h // step_px)
+    g = 1.32471795724474602596
+    ax, ay = 1.0 / g, 1.0 / (g * g)
+    points: list[tuple[int, int]] = []
+    cells: set[tuple[int, int]] = set()
+    for i in range((cols + 1) * (rows + 1)):
+        x = left + int(((0.5 + ax * (i + 1)) % 1.0) * w)
+        y = top + int(((0.5 + ay * (i + 1)) % 1.0) * h)
+        cell = (x // step_px, y // step_px)
+        if cell not in cells:
+            cells.add(cell)
+            points.append((x, y))
+    return points
+
+
 def observe(desktop: Any, config: dict[str, Any] | None = None, trace: Any = None) -> dict[str, Any]:
+    """The whole of desktop observation, by ONE rule: for each window, probe its own
+    rectangle and keep only the elements that own to THAT window. A pixel where a nearer
+    window lieth answereth with that nearer window's element, whose owner faileth the test
+    and is dropped — so what surviveth per window is exactly its visible, reachable face, and
+    the click-point is proven by the very probe that found it. No z-order math, no separate
+    hit-resolution, no window reconstruction: window identity and rectangles are ground truth
+    from EnumWindows, and occlusion is answered for free by the drop.
+
+    trace(phase, payload) is an optional witness seam for the instrument; None for the organism.
+    """
     cfg = dict(config or {})
-    if not cfg["enabled"]:
-        raise RuntimeError("hover_cache observation is disabled")
-    phases = cfg.get("phases") or {}
-    scan = _load_phase(phases["scan"])
-    filt = _load_phase(phases["filter"])
-    build = _load_phase(phases["build"])
-    # An optional observability seam: a trace(phase_name, payload) callback fired after each
-    # phase so an outside instrument may witness the pipeline without reimplementing it.
-    # None by default — zero behaviour change for the organism.
+    if not cfg.get("enabled", True):
+        raise RuntimeError("observation is disabled")
     _t = trace if callable(trace) else (lambda *a, **k: None)
-    gathered = scan.run(cfg, desktop)
-    _t("scan", gathered)
-    filtered = filt.run(gathered["nodes"], cfg, gathered["screen"])
-    _t("filter", filtered)
-    # Prove a hittable click point per element before render: a wide field's rect centre oft
-    # resolveth to the window beneath. Knob resolve_clicks (default on) the body may rewrite.
-    if cfg.get("resolve_clicks", True):
-        scanner = UiaScanner(cfg, desktop)
-        for elem in filtered["action_elements"].values():
-            rid = elem.get("runtime_id") or []
-            if not rid:
-                continue
-            point, occluder = resolve_hit_point(scanner, rid, elem.get("rect", {}), elem.get("hit_point"))
-            if point is not None:
-                elem["px"], elem["py"] = point
-            elif occluder:
-                elem["occluded_by"] = occluder
-        _t("resolve", filtered)
-    mapped = build.run(
-        filtered["action_elements"],
-        filtered["text_hints"],
-        gathered["nodes"],
-        filtered["hwnd_to_z"],
-        gathered["screen"],
-        cfg,
-    )
-    _t("build", mapped)
+    scan = cfg.get("scan", {})
+    step_px = int(scan.get("step_px", 64))
+    max_subtree = int(scan.get("max_subtree_nodes_per_point", 2000))
+    line_preview_chars = int(cfg.get("budget", {}).get("line_preview_chars", 120))
+    sw, sh = int(user32.GetSystemMetrics(0)), int(user32.GetSystemMetrics(1))
+    screen = {"width": sw, "height": sh}
+
+    windows = enum_windows()
+    _t("windows", {"windows": windows, "screen": screen})
+
+    scanner = UiaScanner(cfg, desktop)
+    saved = wintypes.POINT()
+    had_cursor = bool(user32.GetCursorPos(ctypes.byref(saved)))
+    # Per window: probe its rect, harvest the subtree at each hit, keep only own-owner nodes.
+    windows_out: list[dict[str, Any]] = []
+    try:
+        for win in windows:
+            hwnd, rect = win["hwnd"], win["rect"]
+            kept: dict[str, dict[str, Any]] = {}
+            saturated: set[str] = set()
+            for x, y in _probe_points(rect, step_px):
+                user32.SetCursorPos(int(x), int(y))
+                pt = wintypes.POINT(int(x), int(y))
+                # THE RULE: whom doth this pixel own to? If not this window, it is a nearer
+                # window covering it — drop and move on. Free, and it IS the occlusion test.
+                try:
+                    owner = int(user32.GetAncestor(user32.WindowFromPoint(pt), 2) or 0)
+                except Exception:
+                    owner = 0
+                if owner != hwnd:
+                    continue
+                try:
+                    root = scanner.automation.ElementFromPointBuildCache(pt, scanner._cache(TreeScope_Element))
+                except Exception:
+                    continue
+                if root is None:
+                    continue
+                for i, node in enumerate(scanner.harvest_subtree(root, max_subtree)):
+                    if is_desktop_leakage(node):
+                        continue
+                    node["owner_hwnd"] = hwnd
+                    if i == 0:
+                        node.setdefault("hit_point", (int(x), int(y)))
+                    nid = node["id"]
+                    if nid in saturated:
+                        continue
+                    prev = kept.get(nid)
+                    if prev is None:
+                        kept[nid] = node
+                    else:
+                        if not prev.get("hit_point") and node.get("hit_point"):
+                            prev["hit_point"] = node["hit_point"]
+                        for key in ("text_full", "value"):
+                            if node[key] and (not prev[key] or len(node[key]) > len(prev[key])):
+                                prev[key] = node[key]
+            win["elements"] = list(kept.values())
+            windows_out.append(win)
+    finally:
+        if had_cursor:
+            try:
+                user32.SetCursorPos(saved.x, saved.y)
+            except Exception:
+                pass
+    _t("scan", {"windows": windows_out, "screen": screen})
+
+    result = _render(windows_out, screen, line_preview_chars)
+    _t("build", result)
     observed_at = time.time()
     artifact = {
         "observed_at": observed_at,
         "fresh_scan": True,
-        "scan_config": cfg["scan"],
-        "screen": gathered["screen"],
+        "screen": screen,
         "desktop_tree": {
             "id": "W0", "role": "Screen", "fresh_scan": True, "observed_at": observed_at,
-            "root": mapped["root"], "node_index": mapped["node_index"], "window_count": mapped["window_count"],
-            "element_count": mapped["element_count"],
-            "window_z_order": mapped["window_z_order"],
+            "root": result["root"], "node_index": result["node_index"],
+            "window_count": result["window_count"], "element_count": result["element_count"],
         },
-        "action_index": mapped["action_index"],
-        "desktop_tree_text": mapped["desktop_tree_text"],
+        "action_index": result["action_index"],
+        "desktop_tree_text": result["desktop_tree_text"],
     }
     return {
         "observed_at": observed_at,
         "fresh_scan": True,
         "desktop_tree": artifact["desktop_tree"],
-        "desktop_tree_text": mapped["desktop_tree_text"],
-        "action_index": mapped["action_index"],
-        "screen_elements": mapped["screen_elements"],
+        "desktop_tree_text": result["desktop_tree_text"],
+        "action_index": result["action_index"],
+        "screen_elements": result["screen_elements"],
         "observation_artifact": artifact,
+    }
+
+
+def _render(windows: list[dict[str, Any]], screen: dict[str, int], line_preview_chars: int) -> dict[str, Any]:
+    """Turn the per-window kept elements into the numbered tree the LLM readeth and the
+    action_index the body targeteth. Windows are W1..Wn in z-order (front first); actionable
+    elements are e1..eN in tree-walk order. An element nesteth under the nearest kept ancestor
+    of its own window (by runtime-id chain) or else its window. No pixel point in the text —
+    the body readeth px,py from the action_index by short_id."""
+    def clean(v: Any) -> str:
+        return " ".join(str(v or "").replace("\r", " ").replace("\n", " ").split())
+
+    def preview(text: str) -> tuple[str, int]:
+        c = clean(text)
+        return (c[:line_preview_chars], len(c)) if len(c) > line_preview_chars else (c, 0)
+
+    root = {"id": "W0", "role": "Screen", "name": "Screen", "title": "Desktop", "children": []}
+    node_index: dict[str, dict[str, Any]] = {"W0": {"short_id": "W0", "role": "Screen", "name": "Screen"}}
+    action_index: dict[str, dict[str, Any]] = {}
+    screen_elements: list[dict[str, Any]] = []
+    counter = {"n": 0}
+    lines = ["W0 Screen Desktop"]
+
+    for wi, win in enumerate(windows, start=1):
+        wid = f"W{wi}"
+        title = win["title"] or f"Window_{win['hwnd']}"
+        elements = win["elements"]
+        # index every kept element for nesting by its true runtime-id chain within this window
+        by_rid = {tuple(e.get("runtime_id") or []): e for e in elements if e.get("runtime_id")}
+        action_children: dict[str, list[dict[str, Any]]] = {}
+        roots: list[dict[str, Any]] = []
+
+        def nearest_action_ancestor(e: dict[str, Any]) -> dict[str, Any] | None:
+            seen: set[tuple] = set()
+            prid = tuple(e.get("parent_runtime_id") or [])
+            while prid and prid not in seen:
+                seen.add(prid)
+                anc = by_rid.get(prid)
+                if anc is not None and anc is not e and anc.get("action"):
+                    return anc
+                cur = by_rid.get(prid)
+                prid = tuple(cur.get("parent_runtime_id") or []) if cur else ()
+            return None
+
+        actionable = [e for e in elements if e.get("action")]
+        for e in actionable:
+            anc = nearest_action_ancestor(e)
+            if anc is not None:
+                action_children.setdefault(id(anc), []).append(e)
+            else:
+                roots.append(e)
+            screen_elements.append({
+                "id": e["id"], "name": e.get("name", ""), "role": e.get("role", ""),
+                "text": e.get("text_full", "") or "", "value": e.get("value", "") or "",
+                "px": e.get("px"), "py": e.get("py"), "rect": e.get("rect", {}), "hwnd": win["hwnd"],
+                "enabled": e.get("enabled"),
+            })
+
+        win_node = {"short_id": wid, "role": "Window", "name": title, "hwnd": win["hwnd"], "rect": win["rect"], "active": wi == 1}
+        node_index[wid] = win_node
+        active = " [active]" if wi == 1 else ""
+        lines.append(f"{wid} Window {clean(title)}{active}")
+
+        def emit(e: dict[str, Any], indent: int) -> None:
+            counter["n"] += 1
+            sid = f"e{counter['n']}"
+            e["short_id"] = sid
+            action = str(e.get("action", ""))
+            disabled = e.get("enabled") is False
+            name_prev, name_total = preview(e.get("name", "") or "")
+            parts = [p for p in (
+                sid, str(e.get("role", "")), name_prev,
+                "[focused]" if e.get("focused") else "",
+                f"[{action}]" if action and not disabled else "",
+                "[disabled]" if disabled else "",
+            ) if p]
+            if name_total:
+                parts.append(f"({name_total} chars)")
+            lines.append("  " * indent + " ".join(parts))
+            action_index[sid] = {**{k: v for k, v in e.items() if k != "children"}, "short_id": sid}
+            node_index[sid] = action_index[sid]
+            for child in action_children.get(id(e), []):
+                emit(child, indent + 1)
+
+        for e in roots:
+            emit(e, 1)
+
+    return {
+        "root": root,
+        "node_index": node_index,
+        "action_index": action_index,
+        "screen_elements": screen_elements,
+        "desktop_tree_text": "\n".join(lines),
+        "window_count": len(windows),
+        "element_count": len(action_index),
     }
