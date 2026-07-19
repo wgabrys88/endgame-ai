@@ -480,6 +480,82 @@ def stats(rows: list[Row]) -> None:
           " the witness honestly confirmed advances orthogonal to the real goal)")
 
 
+def timing(rows: list[Row]) -> None:
+    """Wall-clock view: per-turn gap, cumulative elapsed, and a periodicity scan. The
+    model-call timestamps (meta.timestamp) mark when each thinking faculty was invoked, so
+    the GAP between consecutive turns is dominated by the real-world work between calls —
+    a slow app launch, a long observation, a human-scale wait, a stuck retry. Long recurring
+    gaps are where the organism stalls against the real desktop; this surfaces them at speed
+    so a pattern that recurs every so often across a multi-hour life becomes visible at once."""
+    chrono = chronological(rows)
+    stamps: list[tuple[int, str, str, float]] = []  # (ln, faculty, iso, epoch)
+    import datetime as _dt
+    def _epoch(iso: str) -> float | None:
+        if not iso:
+            return None
+        try:
+            return _dt.datetime.fromisoformat(iso.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            return None
+    for ln, obj in ((r[0], r[1]) for r in chrono):
+        iso = _timestamp(obj)
+        ep = _epoch(iso)
+        if ep is not None:
+            stamps.append((ln, _rtype(obj), iso, ep))
+    if len(stamps) < 2:
+        print("timing: fewer than two timestamped turns; nothing to measure")
+        return
+    t0 = stamps[0][3]
+    tN = stamps[-1][3]
+    total = tN - t0
+    print(f"=== WALL-CLOCK TIMING ({len(stamps)} timestamped turns) ===")
+    print(f"  life span: {total/60:.1f} min ({total:.0f}s)  from {stamps[0][2]} to {stamps[-1][2]}")
+    gaps: list[float] = []
+    print(f"\n{'ln':>3} {'faculty':<12} {'gap(s)':>9} {'elapsed(min)':>13}  {'timestamp':<27}")
+    print("-" * 74)
+    prev = None
+    for ln, fac, iso, ep in stamps:
+        gap = (ep - prev) if prev is not None else 0.0
+        if prev is not None:
+            gaps.append(gap)
+        flag = "  <== long stall" if gap >= 60 else ("  <- slow" if gap >= 20 else "")
+        print(f"{ln:>3} {fac:<12} {gap:>9.1f} {(ep-t0)/60:>13.2f}  {iso:<27}{flag}")
+        prev = ep
+    if gaps:
+        srt = sorted(gaps)
+        n = len(srt)
+        mean = sum(gaps) / n
+        median = srt[n // 2]
+        p90 = srt[min(n - 1, int(n * 0.9))]
+        mx = max(gaps)
+        print("\n=== GAP DISTRIBUTION (s) ===")
+        print(f"  mean {mean:.1f} | median {median:.1f} | p90 {p90:.1f} | max {mx:.1f}")
+        buckets = [(0, 5), (5, 10), (10, 20), (20, 40), (40, 60), (60, 120), (120, 300), (300, 1e9)]
+        print("  histogram:")
+        for lo, hi in buckets:
+            c = sum(1 for g in gaps if lo <= g < hi)
+            if c:
+                label = f"{lo}-{int(hi)}s" if hi < 1e9 else f"{lo}s+"
+                print(f"    {label:>10}: {'#'*c} ({c})")
+        # periodicity scan: cluster the long stalls and report their spacing in minutes
+        long_marks = [((ep - t0) / 60.0, ln, fac, g) for (ln, fac, _, ep), g in zip(stamps[1:], gaps) if g >= 60]
+        print("\n=== LONG STALLS (gap >= 60s) and their spacing ===")
+        if not long_marks:
+            print("  none")
+        else:
+            prev_min = None
+            for at_min, ln, fac, g in long_marks:
+                since = f"{at_min - prev_min:.1f} min since prev stall" if prev_min is not None else ""
+                print(f"  at {at_min:6.1f} min  ln {ln:>3} {fac:<12} gap {g:6.1f}s   {since}")
+                prev_min = at_min
+            if len(long_marks) >= 3:
+                spac = [long_marks[i][0] - long_marks[i-1][0] for i in range(1, len(long_marks))]
+                sm = sum(spac) / len(spac)
+                var = sum((x - sm) ** 2 for x in spac) / len(spac)
+                print(f"\n  stall spacing: mean {sm:.1f} min | min {min(spac):.1f} | max {max(spac):.1f} | stdev {var**0.5:.1f}")
+                print("  (a low stdev on the spacing is the signature of a REGULAR periodic stall)")
+
+
 def verdicts(rows: list[Row]) -> None:
     """Untruncated verification digest: for every verification turn, the witness's
     bar (goal_satisfied / deed_confirmed) and its full reason, paired with the recovery
@@ -527,6 +603,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--verdicts", action="store_true",
                     help="untruncated verification bar + reason paired with recovery lesson "
                          "(maps the semantic-frontier / honest-denial bottleneck)")
+    ap.add_argument("--timing", action="store_true",
+                    help="wall-clock per-turn gaps, cumulative elapsed, gap histogram, and a "
+                         "periodic-stall scan (surfaces regular real-desktop stalls at speed)")
     ap.add_argument("--record-type", metavar="TYPE", help="filter summary to one faculty")
     ap.add_argument("--line", type=int, metavar="N", help="restrict summary/code/field/grep to one line")
     ap.add_argument("--no-truncate", action="store_true", help="disable every preview cap")
@@ -555,6 +634,8 @@ def main(argv: list[str] | None = None) -> int:
         stats(rows)
     elif args.verdicts:
         verdicts(rows)
+    elif args.timing:
+        timing(rows)
     else:
         summarize(rows, args.record_type)
         living_word(rows, truncate)
