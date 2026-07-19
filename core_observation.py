@@ -61,8 +61,6 @@ CLICK_ROLES = {"Button", "Calendar", "CheckBox", "Hyperlink", "ListItem", "MenuI
 WRITE_ROLES = {"Edit", "ComboBox", "Spinner", "Document"}
 READ_ROLES = {"Text", "ListItem"}
 SCROLL_ROLES = {"List", "ScrollBar", "Slider", "Tree", "DataGrid"}
-CONTAINER_ROLES = {"Pane", "Document", "Window", "Group", "List", "Tree", "DataGrid", "Tab", "Menu", "ToolBar", "Table", "MenuBar", "SplitPane", "ScrollViewer"}
-JUNK_ROLES = {"TitleBar", "ScrollBar", "StatusBar", "ProgressBar", "Separator", "ToolTip", "Image", "Custom", "Header", "HeaderItem"}
 
 
 def control_type_name(control_type_id: int) -> str:
@@ -398,52 +396,42 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
     windows = enum_windows()
 
     scanner = UiaScanner(cfg, desktop)
-    saved = wintypes.POINT()
-    had_cursor = bool(user32.GetCursorPos(ctypes.byref(saved)))
     windows_out: list[dict[str, Any]] = []
-    try:
-        for win in windows:
-            hwnd, rect = win["hwnd"], win["rect"]
-            kept: dict[str, dict[str, Any]] = {}
-            for x, y in _probe_points(rect, step_px):
-                user32.SetCursorPos(int(x), int(y))
-                pt = wintypes.POINT(int(x), int(y))
-                try:
-                    owner = int(user32.GetAncestor(user32.WindowFromPoint(pt), 2) or 0)
-                except Exception:
-                    owner = 0
-                if owner != hwnd:
-                    continue
-                try:
-                    root = scanner.automation.ElementFromPointBuildCache(pt, scanner._cache(TreeScope_Element))
-                except Exception:
-                    continue
-                if root is None:
-                    continue
-                for i, node in enumerate(scanner.harvest_subtree(root, max_subtree)):
-                    if is_desktop_leakage(node):
-                        continue
-                    node["owner_hwnd"] = hwnd
-                    if i == 0:
-                        node.setdefault("hit_point", (int(x), int(y)))
-                    nid = node["id"]
-                    prev = kept.get(nid)
-                    if prev is None:
-                        kept[nid] = node
-                    else:
-                        if not prev.get("hit_point") and node.get("hit_point"):
-                            prev["hit_point"] = node["hit_point"]
-                        for key in ("text_full", "value"):
-                            if node[key] and (not prev[key] or len(node[key]) > len(prev[key])):
-                                prev[key] = node[key]
-            win["elements"] = list(kept.values())
-            windows_out.append(win)
-    finally:
-        if had_cursor:
+    for win in windows:
+        hwnd, rect = win["hwnd"], win["rect"]
+        kept: dict[str, dict[str, Any]] = {}
+        for x, y in _probe_points(rect, step_px):
+            pt = wintypes.POINT(int(x), int(y))
             try:
-                user32.SetCursorPos(saved.x, saved.y)
+                owner = int(user32.GetAncestor(user32.WindowFromPoint(pt), 2) or 0)
             except Exception:
-                pass
+                owner = 0
+            if owner != hwnd:
+                continue
+            try:
+                root = scanner.automation.ElementFromPointBuildCache(pt, scanner._cache(TreeScope_Element))
+            except Exception:
+                continue
+            if root is None:
+                continue
+            for i, node in enumerate(scanner.harvest_subtree(root, max_subtree)):
+                if is_desktop_leakage(node):
+                    continue
+                node["owner_hwnd"] = hwnd
+                if i == 0:
+                    node.setdefault("hit_point", (int(x), int(y)))
+                nid = node["id"]
+                prev = kept.get(nid)
+                if prev is None:
+                    kept[nid] = node
+                else:
+                    if not prev.get("hit_point") and node.get("hit_point"):
+                        prev["hit_point"] = node["hit_point"]
+                    for key in ("text_full", "value"):
+                        if node[key] and (not prev[key] or len(node[key]) > len(prev[key])):
+                            prev[key] = node[key]
+        win["elements"] = list(kept.values())
+        windows_out.append(win)
 
     result = _render(windows_out, screen, line_preview_chars)
     observed_at = time.time()
