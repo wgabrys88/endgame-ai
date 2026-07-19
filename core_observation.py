@@ -24,7 +24,6 @@ def _const(name: str) -> int:
 
 
 TreeScope_Element = _const("TreeScope_Element")
-TreeScope_Descendants = _const("TreeScope_Descendants")
 TreeScope_Subtree = _const("TreeScope_Subtree")
 
 PID_RUNTIME_ID = _const("UIA_RuntimeIdPropertyId")
@@ -51,9 +50,7 @@ SCAN_PROPERTY_IDS = [
 PID_VALUE_PATTERN = _const("UIA_ValuePatternId")
 PID_TEXT_PATTERN = _const("UIA_TextPatternId")
 PID_LEGACY_PATTERN = _const("UIA_LegacyIAccessiblePatternId")
-PID_INVOKE_PATTERN = _const("UIA_InvokePatternId")
-PID_SCROLL_PATTERN = _const("UIA_ScrollPatternId")
-SCAN_PATTERN_IDS = [PID_VALUE_PATTERN, PID_TEXT_PATTERN, PID_LEGACY_PATTERN, PID_INVOKE_PATTERN, PID_SCROLL_PATTERN]
+SCAN_PATTERN_IDS = [PID_VALUE_PATTERN, PID_TEXT_PATTERN, PID_LEGACY_PATTERN]
 
 CONTROL_TYPE_NAMES = {
     getattr(uia, attr): attr.replace("UIA_", "").replace("ControlTypeId", "")
@@ -85,7 +82,7 @@ def action_for_role(role: str, class_name: str = "") -> str:
 
 
 def is_desktop_leakage(node: dict[str, Any]) -> bool:
-    return node["role"] == "List" and node["name"] == "Desktop" and action_for_role(node["role"], node["class_name"]) == "scroll"
+    return node["role"] == "List" and node["name"] == "Desktop"
 
 
 def enum_windows(min_area: int = 2500) -> list[dict[str, Any]]:
@@ -294,21 +291,14 @@ class UiaScanner:
         except Exception:
             return None
 
-    def harvest_subtree(self, root_element: Any, max_nodes: int | None = None, parent_runtime_id: list[int] | None = None, depth: int = 0, max_depth: int | None = None) -> list[dict[str, Any]]:
+    def harvest_subtree(self, root_element: Any, max_nodes: int | None = None) -> list[dict[str, Any]]:
         """Walk the cached subtree preserving TRUE parent identity and depth. The cache is
         built with Subtree scope, so GetCachedChildren recurses from that one cached read
         with no further live [UIA] calls — unlike a flat descendant list, which would tag
         every node with the subtree root and destroy the real hierarchy."""
         nodes: list[dict[str, Any]] = []
         seen: set[str] = set()
-        # Cap recursion by explicit max_depth, else the wiring-owned filter.max_depth.
-        try:
-            if max_depth is not None:
-                depth_ceiling = depth + int(max_depth)
-            else:
-                depth_ceiling = int(((self.cfg or {}).get("filter") or {}).get("max_depth", 40)) + depth + 5
-        except Exception:
-            depth_ceiling = depth + 45
+        depth_ceiling = 45
         try:
             root_element = root_element.BuildUpdatedCache(self._cache(TreeScope_Subtree))
         except Exception:
@@ -338,7 +328,7 @@ class UiaScanner:
                 except Exception:
                     continue
 
-        visit(root_element, parent_runtime_id or [], depth)
+        visit(root_element, [], 0)
         return nodes
 
 
@@ -417,7 +407,7 @@ def _probe_points(rect: dict[str, int], step_px: int) -> list[tuple[int, int]]:
     return points
 
 
-def observe(desktop: Any, config: dict[str, Any] | None = None, trace: Any = None) -> dict[str, Any]:
+def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any]:
     """The whole of desktop observation, by ONE rule: for each window, probe its own
     rectangle and keep only the elements that own to THAT window. A pixel where a nearer
     window lieth answereth with that nearer window's element, whose owner faileth the test
@@ -425,13 +415,10 @@ def observe(desktop: Any, config: dict[str, Any] | None = None, trace: Any = Non
     the click-point is proven by the very probe that found it. No z-order math, no separate
     hit-resolution, no window reconstruction: window identity and rectangles are ground truth
     from EnumWindows, and occlusion is answered for free by the drop.
-
-    trace(phase, payload) is an optional witness seam for the instrument; None for the organism.
     """
     cfg = dict(config or {})
     if not cfg.get("enabled", True):
         raise RuntimeError("observation is disabled")
-    _t = trace if callable(trace) else (lambda *a, **k: None)
     scan = cfg.get("scan", {})
     step_px = int(scan.get("step_px", 64))
     max_subtree = int(scan.get("max_subtree_nodes_per_point", 2000))
@@ -440,18 +427,15 @@ def observe(desktop: Any, config: dict[str, Any] | None = None, trace: Any = Non
     screen = {"width": sw, "height": sh}
 
     windows = enum_windows()
-    _t("windows", {"windows": windows, "screen": screen})
 
     scanner = UiaScanner(cfg, desktop)
     saved = wintypes.POINT()
     had_cursor = bool(user32.GetCursorPos(ctypes.byref(saved)))
-    # Per window: probe its rect, harvest the subtree at each hit, keep only own-owner nodes.
     windows_out: list[dict[str, Any]] = []
     try:
         for win in windows:
             hwnd, rect = win["hwnd"], win["rect"]
             kept: dict[str, dict[str, Any]] = {}
-            saturated: set[str] = set()
             for x, y in _probe_points(rect, step_px):
                 user32.SetCursorPos(int(x), int(y))
                 pt = wintypes.POINT(int(x), int(y))
@@ -476,8 +460,6 @@ def observe(desktop: Any, config: dict[str, Any] | None = None, trace: Any = Non
                     if i == 0:
                         node.setdefault("hit_point", (int(x), int(y)))
                     nid = node["id"]
-                    if nid in saturated:
-                        continue
                     prev = kept.get(nid)
                     if prev is None:
                         kept[nid] = node
@@ -495,31 +477,15 @@ def observe(desktop: Any, config: dict[str, Any] | None = None, trace: Any = Non
                 user32.SetCursorPos(saved.x, saved.y)
             except Exception:
                 pass
-    _t("scan", {"windows": windows_out, "screen": screen})
 
     result = _render(windows_out, screen, line_preview_chars)
-    _t("build", result)
     observed_at = time.time()
-    artifact = {
-        "observed_at": observed_at,
-        "fresh_scan": True,
-        "screen": screen,
-        "desktop_tree": {
-            "id": "W0", "role": "Screen", "fresh_scan": True, "observed_at": observed_at,
-            "root": result["root"], "node_index": result["node_index"],
-            "window_count": result["window_count"], "element_count": result["element_count"],
-        },
-        "action_index": result["action_index"],
-        "desktop_tree_text": result["desktop_tree_text"],
-    }
     return {
         "observed_at": observed_at,
-        "fresh_scan": True,
-        "desktop_tree": artifact["desktop_tree"],
         "desktop_tree_text": result["desktop_tree_text"],
         "action_index": result["action_index"],
         "screen_elements": result["screen_elements"],
-        "observation_artifact": artifact,
+        "observation_artifact": {"screen": screen},
     }
 
 
@@ -536,8 +502,6 @@ def _render(windows: list[dict[str, Any]], screen: dict[str, int], line_preview_
         c = clean(text)
         return (c[:line_preview_chars], len(c)) if len(c) > line_preview_chars else (c, 0)
 
-    root = {"id": "W0", "role": "Screen", "name": "Screen", "title": "Desktop", "children": []}
-    node_index: dict[str, dict[str, Any]] = {"W0": {"short_id": "W0", "role": "Screen", "name": "Screen"}}
     action_index: dict[str, dict[str, Any]] = {}
     screen_elements: list[dict[str, Any]] = []
     counter = {"n": 0}
@@ -578,8 +542,6 @@ def _render(windows: list[dict[str, Any]], screen: dict[str, int], line_preview_
                 "enabled": e.get("enabled"),
             })
 
-        win_node = {"short_id": wid, "role": "Window", "name": title, "hwnd": win["hwnd"], "rect": win["rect"], "active": wi == 1}
-        node_index[wid] = win_node
         active = " [active]" if wi == 1 else ""
         lines.append(f"{wid} Window {clean(title)}{active}")
 
@@ -600,7 +562,6 @@ def _render(windows: list[dict[str, Any]], screen: dict[str, int], line_preview_
                 parts.append(f"({name_total} chars)")
             lines.append("  " * indent + " ".join(parts))
             action_index[sid] = {**{k: v for k, v in e.items() if k != "children"}, "short_id": sid}
-            node_index[sid] = action_index[sid]
             for child in action_children.get(id(e), []):
                 emit(child, indent + 1)
 
@@ -608,11 +569,7 @@ def _render(windows: list[dict[str, Any]], screen: dict[str, int], line_preview_
             emit(e, 1)
 
     return {
-        "root": root,
-        "node_index": node_index,
         "action_index": action_index,
         "screen_elements": screen_elements,
         "desktop_tree_text": "\n".join(lines),
-        "window_count": len(windows),
-        "element_count": len(action_index),
     }
