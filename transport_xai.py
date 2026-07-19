@@ -1,4 +1,3 @@
-"""[transport_xai] — Thou shalt serialize wiring's request unto POST /v1/responses."""
 import json
 import os
 import urllib.error
@@ -15,9 +14,7 @@ _SESSION_CACHE_KEY = f"endgame-{uuid.uuid4()}"
 
 
 def _build_body(cfg, messages, body_override, response_format):
-    """The body is wiring's [request] base, laid over by the caller's [body_override]
-    (an organ tuning), with the dynamic fields filled and every null-valued key
-    dropped. Null in an override explicitly unsets a base field."""
+    # Null in an override explicitly unsets a base field (drop_nulls below).
     body = bus.deep_merge(cfg["request"], body_override or {})
     body.setdefault("prompt_cache_key", _SESSION_CACHE_KEY)
     body["input"] = [

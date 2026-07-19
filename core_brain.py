@@ -1,11 +1,8 @@
 import json
-import pathlib
 from typing import Any
 
 import core_bus as bus
 import core_wiring as wiring
-
-ROOT = pathlib.Path(__file__).parent.resolve()
 
 
 def _messages(system_prompt: str, user_text: str, stable_context: str = "") -> list[dict[str, str]]:
@@ -128,10 +125,6 @@ def _with_observation(payload: dict[str, Any], w: dict[str, Any]) -> dict[str, A
     return enriched
 
 
-def _load_transport_module(name: str, w: dict[str, Any]):
-    return wiring.load("transport", name, w)
-
-
 def _structured_outputs_enabled(cfg: dict[str, Any]) -> bool:
     structured = cfg.get("structured_outputs")
     return bool(structured.get("enabled", False)) if isinstance(structured, dict) else bool(structured)
@@ -186,7 +179,7 @@ def call(messages: list[dict[str, str]], w: dict[str, Any], *, response_format: 
     transport, cfg = wiring.get_transport_config(w)
     override = bus.deep_merge(resolve_profile(w, profile), body_override or {})
     try:
-        result = _load_transport_module(transport, w).call(messages, cfg, body_override=override, response_format=response_format)
+        result = wiring.load("transport", transport, w).call(messages, cfg, body_override=override, response_format=response_format)
     except Exception as exc:
         raise RuntimeError(f"{transport} brain failed hard: {exc}") from exc
     if not isinstance(result, dict):

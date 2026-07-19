@@ -86,12 +86,9 @@ def is_desktop_leakage(node: dict[str, Any]) -> bool:
 
 
 def enum_windows(min_area: int = 2500) -> list[dict[str, Any]]:
-    """Every visible top-level window, front-to-back in true z-order, each with its hwnd,
-    rectangle, and title. LOOSE by design: no title-text requirement, so context menus,
-    dropdowns, tooltips, system-error dialogs, and the taskbar — all untitled — are seen.
-    Only the truly absent are cast out: invisible, minimised, or smaller than min_area (the
-    1x1 helper and sliver windows). EnumWindows yieldeth front-to-back, which we keep as the
-    z-order. This is the whole of window discovery; z is inherited here, computed nowhere."""
+    # Visible top-level windows front-to-back (EnumWindows order IS the z-order, computed nowhere
+    # else). LOOSE: no title requirement, so untitled menus/dropdowns/tooltips/dialogs/taskbar are
+    # seen; only invisible, minimised, or sub-min_area (1x1 helper/sliver) windows are cast out.
     out: list[dict[str, Any]] = []
     seen: set[int] = set()
     enum_proc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
@@ -292,10 +289,9 @@ class UiaScanner:
             return None
 
     def harvest_subtree(self, root_element: Any, max_nodes: int | None = None) -> list[dict[str, Any]]:
-        """Walk the cached subtree preserving TRUE parent identity and depth. The cache is
-        built with Subtree scope, so GetCachedChildren recurses from that one cached read
-        with no further live [UIA] calls — unlike a flat descendant list, which would tag
-        every node with the subtree root and destroy the real hierarchy."""
+        # Subtree-scope cache: GetCachedChildren recurses from ONE cached read with no further live
+        # UIA calls, preserving true parent identity/depth (a flat descendant list would tag every
+        # node with the subtree root and destroy the hierarchy).
         nodes: list[dict[str, Any]] = []
         seen: set[str] = set()
         depth_ceiling = 45
@@ -333,16 +329,9 @@ class UiaScanner:
 
 
 def expand(desktop: Any, ids_or_points: list[Any], char_budget: int | None = None) -> dict[str, Any]:
-    """Targeted deeper look at named elements: re-acquire each at its screen point and
-    harvest its subtree, returning the WHOLE untruncated text, value, and every child
-    (including non-interactive), which the shallow tree omitteth. This is a fresh independent
-    look, not memory: it readeth the live [UIA] now. `ids_or_points` are entries of the current
-    action_index (each bearing px/py) or explicit {'px':x,'py':y} points.
-
-    No text is ever cut short. The shallow tree already nameth each element's true size in
-    chars, so thou knowest the cost ere thou askest. When a [char_budget] is given and the sum
-    of what thou askest exceedeth it, this faileth hard and nameth each element's size—ask
-    again for fewer or other elements. Given none, all thou namest is harvested whole."""
+    # Fresh live-UIA re-acquire of named elements at their screen points, harvesting each whole
+    # subtree (all text/value/children) which the shallow tree omits. char_budget, if given, fails
+    # hard when the summed char cost exceeds it (naming each size) rather than truncating.
     from ctypes import wintypes
     scanner = UiaScanner({}, desktop)
     harvested_by_key: dict[str, list[dict[str, Any]]] = {}
@@ -387,9 +376,8 @@ def expand(desktop: Any, ids_or_points: list[Any], char_budget: int | None = Non
 
 
 def _probe_points(rect: dict[str, int], step_px: int) -> list[tuple[int, int]]:
-    """A golden-ratio quasirandom grid over ONE window's rectangle. Confined to the window,
-    so a small window is probed with a handful of points and a large one densely, spending no
-    probe on dead screen between windows."""
+    # Golden-ratio quasirandom grid confined to ONE window's rect: a small window gets a handful of
+    # points and a large one dense coverage, spending no probe on dead screen between windows.
     left, top = rect["left"], rect["top"]
     w, h = max(1, rect["right"] - left), max(1, rect["bottom"] - top)
     cols, rows = max(1, w // step_px), max(1, h // step_px)
@@ -408,14 +396,10 @@ def _probe_points(rect: dict[str, int], step_px: int) -> list[tuple[int, int]]:
 
 
 def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any]:
-    """The whole of desktop observation, by ONE rule: for each window, probe its own
-    rectangle and keep only the elements that own to THAT window. A pixel where a nearer
-    window lieth answereth with that nearer window's element, whose owner faileth the test
-    and is dropped — so what surviveth per window is exactly its visible, reachable face, and
-    the click-point is proven by the very probe that found it. No z-order math, no separate
-    hit-resolution, no window reconstruction: window identity and rectangles are ground truth
-    from EnumWindows, and occlusion is answered for free by the drop.
-    """
+    # ONE rule: per window, probe its own rect and keep only elements whose owner-hwnd is THIS
+    # window; a pixel owned by a nearer window fails the test and is dropped, so occlusion is
+    # answered for free and the click-point is proven by the probe. Window identity/rects are
+    # ground truth from EnumWindows — no z-order math, no hit-resolution, no window reconstruction.
     cfg = dict(config or {})
     if not cfg.get("enabled", True):
         raise RuntimeError("observation is disabled")
@@ -490,11 +474,10 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
 
 
 def _render(windows: list[dict[str, Any]], screen: dict[str, int], line_preview_chars: int) -> dict[str, Any]:
-    """Turn the per-window kept elements into the numbered tree the LLM readeth and the
-    action_index the body targeteth. Windows are W1..Wn in z-order (front first); actionable
-    elements are e1..eN in tree-walk order. An element nesteth under the nearest kept ancestor
-    of its own window (by runtime-id chain) or else its window. No pixel point in the text —
-    the body readeth px,py from the action_index by short_id."""
+    # Build the numbered tree the LLM reads and the action_index the body targets. Windows W1..Wn in
+    # z-order (front first); actionable elements e1..eN in tree-walk order, each nested under the
+    # nearest kept ancestor of its own window (by runtime-id chain) or its window. No pixel in the
+    # text — the body reads px,py from action_index by short_id.
     def clean(v: Any) -> str:
         return " ".join(str(v or "").replace("\r", " ").replace("\n", " ").split())
 

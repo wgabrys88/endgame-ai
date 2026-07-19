@@ -4,7 +4,7 @@ import core_wiring as wiring
 
 
 def run(ctx):
-    path = wiring.guidance_path(ctx["wiring"])
+    path = wiring.root_path(ctx["wiring"]["paths"]["guidance"])
     counsel = path.read_text(encoding="utf-8").strip() if path.exists() else ""
     if not counsel:
         return bus.emit("attend", {"latest_counsel": ""})

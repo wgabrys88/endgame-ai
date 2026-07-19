@@ -72,13 +72,10 @@ class Desktop:
         self.config = config or {}
         self._automation: Any = None
 
-    def _init_automation(self) -> None:
-        self._automation = comtypes.client.CreateObject(uia.CUIAutomation, interface=uia.IUIAutomation)
-
     @property
     def automation(self) -> Any:
         if self._automation is None:
-            self._init_automation()
+            self._automation = comtypes.client.CreateObject(uia.CUIAutomation, interface=uia.IUIAutomation)
         return self._automation
 
     def observe(self, config: dict[str, Any] | None = None) -> dict[str, Any]:

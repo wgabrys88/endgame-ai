@@ -174,7 +174,6 @@ def _contract_coherence(w: dict[str, Any]) -> list[str]:
 
 
 def coherence_problems(w: dict[str, Any]) -> list[str]:
-    """Return topology/contract incoherence reasons for wiring `w`. Empty = coherent."""
     topo = w["topology"]
     edges = topo["edges"]
     nodes = set(topo["nodes"])
@@ -237,10 +236,6 @@ def get_transport_config(wiring: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     return transport, cfg
 
 
-def guidance_path(wiring: dict[str, Any]) -> pathlib.Path:
-    return root_path(wiring["paths"]["guidance"])
-
-
 class PluginKind(NamedTuple):
     paths_key: str
     module_prefix: str
@@ -254,7 +249,6 @@ KINDS: dict[str, PluginKind] = {
 
 
 def split_instance(name: str) -> tuple[str, str | None]:
-    """Split "base:instance" -> ("base", "instance"). No colon -> (name, None)."""
     if ":" in name:
         base, instance = name.split(":", 1)
         if not base or not instance:
@@ -264,11 +258,6 @@ def split_instance(name: str) -> tuple[str, str | None]:
 
 
 def load(kind: str, name: str, w: dict[str, Any]):
-    """Resolve plugin `name` of `kind` to a module exporting the kind's contract.
-
-    Returns the loaded module. Raises hard on missing dir key, missing file,
-    unloadable spec, or missing exported symbol. No fallback.
-    """
     spec_kind = KINDS.get(kind)
     if spec_kind is None:
         raise RuntimeError(f"unknown plugin kind '{kind}'; known: {', '.join(sorted(KINDS))}")

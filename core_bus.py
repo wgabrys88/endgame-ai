@@ -9,8 +9,6 @@ JsonDict = dict[str, Any]
 
 
 def deep_merge(base: JsonDict, override: JsonDict) -> JsonDict:
-    """Return a new dict: override laid over base, nested dicts merged recursively.
-    A non-dict override value replaces the base value wholesale."""
     merged = dict(base)
     for key, value in override.items():
         if isinstance(value, dict) and isinstance(merged.get(key), dict):
@@ -21,8 +19,6 @@ def deep_merge(base: JsonDict, override: JsonDict) -> JsonDict:
 
 
 def drop_nulls(obj: Any) -> Any:
-    """Recursively drop keys whose value is None (an unsent API field),
-    and drop any nested object left empty by that pruning. Lists are pruned in place."""
     if isinstance(obj, dict):
         pruned: JsonDict = {}
         for key, value in obj.items():
@@ -39,21 +35,19 @@ def drop_nulls(obj: Any) -> Any:
 
 
 class BusContractError(RuntimeError):
-    """Base class for mechanical organism contract failures."""
+    pass
 
 
 class TopologyContractError(BusContractError):
-    """Raised when a node emits a signal with no valid topology edge."""
+    pass
 
 
 class NodeRecordContractError(BusContractError):
-    """Raised when a node returns an invalid bus/output/record shape."""
+    pass
 
 
 @dataclass(frozen=True)
 class Record:
-    """Unified record format for all LLM organs."""
-
     record_type: str
     data: JsonDict
     reasoning: str = ""
@@ -78,13 +72,7 @@ _INTERP_ORDER = ["execute", "verify", "recover"]
 
 
 def render_interpretation_table(goal: str, interps: JsonDict | None, templates: JsonDict) -> str:
-    """The living word — the goal-interpretation rows — rendered for the tail of every user message.
-
-    Each thinking faculty keeps exactly one row: what it has LEARNED (not a restating of
-    the goal), rewritten in place whensoever it acts. The immutable root goal follows as a
-    fixed lodestar footer. The table is bounded (one row per faculty), never accumulates,
-    and never truncates. It rides the volatile user tail, so it costs no prefix cache.
-    The model-facing prose lives in wiring.prompt_templates (single source of prompt text)."""
+    # Rides the volatile user tail (one bounded row per faculty, never truncates), so it costs no prefix cache.
     interps = interps or {}
     lines = [templates["living_word_header"]]
     for faculty in _INTERP_ORDER:
@@ -95,12 +83,6 @@ def render_interpretation_table(goal: str, interps: JsonDict | None, templates: 
 
 
 def render_proven_ledger(ledger: list | None, templates: JsonDict) -> str:
-    """WHAT STANDETH PROVEN DONE — the independently-witnessed effects, deterministically
-    recorded by the witness on each confirmation (never authored by the actor, so it
-    cannot be a goal-echo). A faculty reads this to know what already standeth achieved
-    upon the world, and MUST NOT redo it. This is the memory of the organism's own
-    successes that the free-text rows cannot carry.
-    The model-facing prose lives in wiring.prompt_templates (single source of prompt text)."""
     entries = [str(e).strip() for e in (ledger or []) if str(e).strip()]
     if not entries:
         return templates["proven_ledger_empty"]
@@ -109,17 +91,13 @@ def render_proven_ledger(ledger: list | None, templates: JsonDict) -> str:
 
 
 def with_interpretation(interps: JsonDict | None, faculty: str, sentence: str) -> JsonDict:
-    """Return a copy of the interpretation table with one faculty's row rewritten."""
     merged = dict(interps or {})
     merged[faculty] = str(sentence or "").strip()
     return merged
 
 
 def render_environment_probe(probe: JsonDict | None, templates: JsonDict) -> str:
-    """THE STANDING HOST — the machine's own facts (place, tongue, tools, dwelling apps),
-    gathered fresh each turn by node_probe and laid at the tail of the user message so the
-    executor knoweth what already standeth and reinventeth it not. Rides the volatile tail;
-    costs no prefix cache. The header prose lives in wiring.prompt_templates."""
+    # Rides the volatile user tail; costs no prefix cache. Header prose lives in wiring.prompt_templates.
     probe = probe or {}
     if not probe:
         return ""
@@ -171,16 +149,8 @@ def state_brief(state: JsonDict) -> JsonDict:
 
 
 def focused_elements(state: JsonDict) -> JsonDict:
-    """Expand geometry/identity only for genuinely focused or action-framed ids.
-
-    desktop_tree_text already carries the readable overview — id, role, name,
-    [active]/[focused] markers, [action], and ~text hint — for every visible
-    element. This map therefore adds ONLY what the tree lacks (enabled, rect,
-    automation_id, class_name) and ONLY for the element(s) currently focused or
-    named by an action_frame. It never re-emits the whole tree as structured
-    metadata, so the payload carries each element once. Element targeting uses
-    the full in-memory action_index, not this brief.
-    """
+    # Adds only what desktop_tree_text lacks (enabled, rect, automation_id, class_name), and only
+    # for focused/action-framed ids, so each element is carried once. Targeting uses action_index.
     action_index = state.get("action_index") or {}
     if not isinstance(action_index, dict):
         return {}
@@ -225,10 +195,8 @@ def execution_evidence(state: JsonDict) -> JsonDict:
 
 
 def bump_failure_streak(state: JsonDict) -> JsonDict:
-    """Count denials since the last witnessed deed, monotonically. The tally is NOT
-    keyed to the deed's wording: a reworded description of the same obstacle cannot reset
-    it. Only a verifier confirmation clears it (see node_verify). The higher it climbs, the
-    wider recovery must forsake its tried approaches."""
+    # Monotonic denial tally NOT keyed to deed wording (a reworded obstacle cannot reset it);
+    # only a verifier confirmation clears it (node_verify). Higher = recovery must forsake more.
     previous = state.get("failure_streak") or {}
     count = int(previous.get("count", 0) or 0) + 1
     return {"failure_streak": {"count": count, "updated_at": time.time()}}
