@@ -33,10 +33,13 @@ def run(raw_nodes: list[dict[str, Any]], config: dict[str, Any], screen: dict[st
         if require_interactive and not action:
             continue
         label = node["text_full"] or node["name"] or ""
-        # An interactive element the actor cannot name — no name, no text, no value, and no
+        # A clickable element the actor cannot name — no name, no text, no value, no
         # automation_id — is blind noise it can neither reason about nor confidently strike.
-        # Drop it here rather than render an anonymous row (e.g. a bare "Button" or "Document").
-        if action and not (node["name"] or node["text_full"] or node["value"] or node["automation_id"]):
+        # But a WRITABLE element is a target even when nameless: an edit field's label often
+        # lives in a sibling Text node (e.g. "Headline*" beside an unnamed input), so dropping
+        # nameless writables blinds the actor to the very fields it must fill. Cut only the
+        # nameless NON-write actions.
+        if action and action != "write" and not (node["name"] or node["text_full"] or node["value"] or node["automation_id"]):
             continue
         if label and label != (node["name"] or ""):
             text_hints[node["id"]] = label
