@@ -337,6 +337,88 @@ def _load_phase(module_name: str):
     return mod
 
 
+def _runtime_id_under(hit_rid: list[int], target_rid: list[int]) -> bool:
+    """True if the hit element IS the target or a descendant of it, judged by RuntimeId:
+    an exact match, or the target's id being a prefix of the hit's (UIA ids are hierarchical)."""
+    if not hit_rid or not target_rid:
+        return False
+    if hit_rid == target_rid:
+        return True
+    return len(hit_rid) > len(target_rid) and hit_rid[: len(target_rid)] == target_rid
+
+
+def resolve_hit_point(scanner: "UiaScanner", target_rid: list[int], rect: dict[str, int], known: tuple | None = None) -> tuple[tuple[int, int] | None, str]:
+    """Find a screen point that the OS hit-test resolves to the target element (or a
+    descendant), so a click landeth on the thing itself and not the window beneath it.
+    A wide field's rect centre oft falleth on dead chrome; this proveth the point instead.
+
+    Returns ((x, y), "") on success, or (None, occluder) naming what covereth the centre when
+    no point within the rect resolveth. `known` is a proven point from the scan grid, tried first."""
+    left, top, right, bottom = rect.get("left", 0), rect.get("top", 0), rect.get("right", 0), rect.get("bottom", 0)
+    w, h = right - left, bottom - top
+    if not target_rid or w <= 0 or h <= 0:
+        return (None, "")
+
+    def hit_ok_at(px: int, py: int) -> bool:
+        try:
+            el = scanner.automation.ElementFromPoint(wintypes.POINT(int(px), int(py)))
+        except Exception:
+            return False
+        if el is None:
+            return False
+        rid = _to_runtime_id(_current(el, PID_RUNTIME_ID))
+        # The point landeth truly on the target, or on a descendant of it: a real hit.
+        if _runtime_id_under(rid, target_rid):
+            return True
+        # Or it landeth on an ANCESTOR that shareth the target's identity chain and can take
+        # keyboard focus: some surfaces (web contenteditables and the like) expose an element
+        # in the tree that owneth no hittable pixel of its own — every point within its rect
+        # resolveth to the focusable container that holdeth it. Clicking that container AT the
+        # target's place focuseth into the target, whence the keyboard may write. This is a
+        # true focus point, not an occlusion.
+        if _runtime_id_under(target_rid, rid) and _to_bool(_current(el, PID_KEYBOARD_FOCUSABLE)):
+            return True
+        # cheap parent-walk (few hops) for providers whose child ids are not strict prefixes
+        try:
+            walker = scanner.automation.RawViewWalker
+            cur = el
+            for _ in range(6):
+                cur = walker.GetParentElement(cur)
+                if cur is None:
+                    break
+                if _runtime_id_under(_to_runtime_id(_current(cur, PID_RUNTIME_ID)), target_rid):
+                    return True
+        except Exception:
+            pass
+        return False
+
+    cx, cy = (left + right) // 2, (top + bottom) // 2
+    trials: list[tuple[int, int]] = []
+    if known and len(known) == 2:
+        trials.append((int(known[0]), int(known[1])))
+    trials.append((cx, cy))
+    # a spread within the rect: quarters and inset edges (left-inset suits text fields)
+    for fx in (0.25, 0.5, 0.75):
+        for fy in (0.25, 0.5, 0.75):
+            trials.append((int(left + w * fx), int(top + h * fy)))
+    seen: set[tuple[int, int]] = set()
+    for px, py in trials:
+        if (px, py) in seen or not (left <= px < right and top <= py < bottom):
+            continue
+        seen.add((px, py))
+        if hit_ok_at(px, py):
+            return ((px, py), "")
+    # nothing resolved — name the occluder at the centre for loud, honest report
+    occluder = "unknown"
+    try:
+        el = scanner.automation.ElementFromPoint(wintypes.POINT(cx, cy))
+        if el is not None:
+            occluder = f"{control_type_name(_to_int(_current(el, PID_CONTROL_TYPE)))}|{_to_str(_current(el, PID_NAME))[:40]!r}"
+    except Exception:
+        pass
+    return (None, occluder)
+
+
 def expand(desktop: Any, ids_or_points: list[Any], char_budget: int) -> dict[str, Any]:
     """Targeted deeper look at named elements: re-acquire each at its screen point and
     harvest its full subtree, returning the WHOLE untruncated text, value, and every child
@@ -400,6 +482,21 @@ def observe(desktop: Any, config: dict[str, Any] | None = None) -> dict[str, Any
     build = _load_phase(phases["build"])
     gathered = scan.run(cfg, desktop)
     filtered = filt.run(gathered["nodes"], cfg, gathered["screen"])
+    # Prove a hittable click point for each actionable element before it is rendered: the
+    # rect centre of a wide field oft resolveth to the window beneath, not the field. Reuse
+    # the scan's proven grid hit-point where it hath one, else probe the rect. Governed by a
+    # wiring knob the body may itself rewrite; absent the knob, on by default.
+    if cfg.get("resolve_clicks", True):
+        scanner = UiaScanner(cfg, desktop)
+        for elem in filtered["action_elements"].values():
+            rid = elem.get("runtime_id") or []
+            if not rid:
+                continue
+            point, occluder = resolve_hit_point(scanner, rid, elem.get("rect", {}), elem.get("hit_point"))
+            if point is not None:
+                elem["px"], elem["py"] = point
+            elif occluder:
+                elem["occluded_by"] = occluder
     mapped = build.run(
         filtered["action_elements"],
         filtered["text_hints"],

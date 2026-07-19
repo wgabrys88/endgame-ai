@@ -57,7 +57,7 @@ def run(raw_nodes: list[dict[str, Any]], config: dict[str, Any], screen: dict[st
                 "action": action, "px": node["px"], "py": node["py"], "hwnd": hwnd, "rect": node["rect"],
                 "enabled": node["enabled"], "automation_id": node["automation_id"], "class_name": node["class_name"],
                 "runtime_id": node["runtime_id"], "depth": node["depth"], "focused": node["focused"],
-                "owner_hwnd": node.get("owner_hwnd", 0),
+                "owner_hwnd": node.get("owner_hwnd", 0), "hit_point": node.get("hit_point"),
             }
     return {
         "action_elements": action_elements,

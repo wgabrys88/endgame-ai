@@ -221,6 +221,9 @@ def run(action_elements: dict[str, dict[str, Any]], text_hints: dict[str, str], 
         item_status = str(node.get("item_status") or "").strip()
         if item_status:
             parts.append(f"[status:{clean(item_status)}]")
+        occluded = str(node.get("occluded_by") or "").strip()
+        if occluded:
+            parts.append(f"[occluded-by:{clean(occluded)}]")
         hint = text_hints.get(node.get("id", ""), "")
         hint_total = 0
         if hint and clean(hint) not in name_prev:

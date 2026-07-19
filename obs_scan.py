@@ -82,10 +82,17 @@ def run(config: dict[str, Any], desktop: Any) -> dict[str, Any]:
                 continue
             nodes = scanner.harvest_subtree(root, max_subtree)
             added = 0
-            for node in nodes:
+            for i, node in enumerate(nodes):
                 if obs.is_desktop_leakage(node):
                     continue
                 node.setdefault("owner_hwnd", owner_hwnd)
+                # The grid point that FOUND this root element is, by the OS's own hit-test, a
+                # point that truly resolves to it — a proven-hittable click point, unlike the
+                # rect centre (which for a wide field oft falleth on the window beneath). Stamp
+                # it on the root only; descendants (harvested from the cache, not point-hit)
+                # bear no such proof and are resolved later.
+                if i == 0:
+                    node.setdefault("hit_point", (int(x), int(y)))
                 prev = index.get(node["id"])
                 if prev is None:
                     index[node["id"]] = node
@@ -93,6 +100,8 @@ def run(config: dict[str, Any], desktop: Any) -> dict[str, Any]:
                 else:
                     if not prev.get("owner_hwnd") and owner_hwnd:
                         prev["owner_hwnd"] = owner_hwnd
+                    if not prev.get("hit_point") and node.get("hit_point"):
+                        prev["hit_point"] = node["hit_point"]
                     for key in ("text_full", "value"):
                         if node[key] and (not prev[key] or len(node[key]) > len(prev[key])):
                             prev[key] = node[key]
