@@ -22,7 +22,4 @@
 !node_recover.py
 !node_verify.py
 !transport_xai.py
-!tools_parse_requests.py
-!tools_probe_observation.py
-!tools_replay_grok.py
 !capture_run.py
