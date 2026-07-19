@@ -84,7 +84,9 @@ STANDING HOST (`node_probe`'s host facts), each rendered by a `core_bus` functio
 
 ## The node faculties (what each waking does)
 
-- **node_guidance** — reads the living word and root goal, sets the guiding intent for this lap.
+- **node_guidance** (`cycle_start`) — pure Python, NO model call: reads and clears an external
+  operator-counsel file (a one-way human-to-organism mailbox), placing any counsel into state as
+  `latest_counsel`, then emits `attend`. It does not read the goal or living word and sets no intent.
 - **node_observe** (`act` / `verify` / `recover`) — pure Python, NO model call (~10 lines): calls
   `desktop.observe()` and emits the fresh desktop tree. Blind and fast by design; it must never be
   made goal-aware.
@@ -104,6 +106,21 @@ STANDING HOST (`node_probe`'s host facts), each rendered by a `core_bus` functio
 ---
 
 ## Enduring architecture truths (the how and why)
+
+**The Law of Separated Powers (the resolved liar paradox — the epistemic spine).** A claim that
+warrants itself proves nothing: a mouth that says "I speak true" offers the assertion and its only
+evidence in the same hand, and one hand cannot weigh itself — the liar's paradox. An amnesiac
+organism that trusted its own unverified claims would loop on a lie or declare false victory.
+endgame-ai resolves this structurally, by separation of powers, not by asking the model to be honest:
+the **actor** (`node_execute`) moves the world and may only CLAIM an intent; the **witness**
+(`node_verify`) proves an effect wrought by a system OTHER than the actor and is given no hand to move
+the world it judges. Testimony — any value the actor computed, printed, read back, or wrote to a file
+this life — is void as proof, being the same hand speaking of itself. Truth of "X is done" is
+established only by a party that did not and could not do X. This is enforced in code, not just prose:
+`build_capability_runtime(ctx)` gives the actor the full `desktop` hand; `build_capability_runtime(ctx,
+read_only=True)` gives the witness only `observe`/`expand` + stdlib reads — no `desktop`, no
+`consult_model` (so it borrows no other mouth). The `proven_ledger` is appended ONLY by `node_verify`,
+never by the actor. The law is stated once in `shared_prompt_prefix` and merely applied downstream.
 
 **Atemporalism and the living word.** The organism keeps no memory of past turns. Each thinking
 faculty wakes with the living word (a small set of rows recording what the faculties learned) and,
