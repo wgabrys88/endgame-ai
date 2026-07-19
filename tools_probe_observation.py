@@ -62,7 +62,11 @@ def _run_pipeline(cfg, desktop, logdir):
         if phase == "scan":
             snap = {"screen": payload["screen"], "node_count": len(payload["nodes"]), "nodes": payload["nodes"]}
         elif phase in ("filter", "resolve"):
-            snap = {"action_element_count": len(payload["action_elements"]), "text_hints": payload["text_hints"], "action_elements": payload["action_elements"]}
+            elim = payload.get("eliminated", {})
+            tally = {}
+            for reason in elim.values():
+                tally[reason] = tally.get(reason, 0) + 1
+            snap = {"action_element_count": len(payload["action_elements"]), "eliminated_count": len(elim), "eliminated_by_reason": dict(sorted(tally.items(), key=lambda kv: -kv[1])), "text_hints": payload["text_hints"], "action_elements": payload["action_elements"], "eliminated": elim}
         elif phase == "build":
             snap = payload
         else:
